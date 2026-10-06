@@ -116,6 +116,13 @@ fn signed_transfers_and_finite_heat_recipients_conserve_three_stocks() {
     }
     assert_eq!(w.property_requests, 15);
     assert_eq!(at(&n, &y, &vec![0.; y.len()], None).property_requests, 3);
+    assert_eq!(n.stock_dimension(), 17);
+    assert_eq!(n.dimension(), 19);
+    for edge in 0..n.config().hydraulic.len() {
+        assert_eq!(w.mass_flows[edge], y[n.flow_row(edge)]);
+        assert_eq!(w.rates[n.flow_row(edge)], 0.);
+        assert!(w.residual[n.flow_row(edge)].abs() < 1e-9);
+    }
 }
 
 #[test]
@@ -130,7 +137,9 @@ fn sparse_local_ida_matrix_matches_off_manifold_signed_network() {
     let base = at(&n, &y, &yp, Some(cj));
     for factor in [1., 0.5] {
         for col in 0..y.len() {
-            let step = if col >= 15 {
+            let step = if col >= n.stock_dimension() {
+                y[col].abs().max(1.) * 1e-5
+            } else if col >= 15 {
                 100.
             } else {
                 match col % 5 {
@@ -176,17 +185,34 @@ fn zero_flow_has_physical_viscous_limit_and_reversal_changes_real_donor() {
     let n = Network::new(cfg).unwrap();
     let y = n.initial_state().unwrap();
     let base = at(&n, &y, &vec![0.; y.len()], Some(0.));
+    let flow_row = n.flow_row(0);
     assert_eq!(base.mass_flows[0], 0.);
-    assert!(matrix(&n, &base, 0, 3) > 0.);
+    assert_eq!(matrix(&n, &base, 0, 3), 0.);
+    assert_eq!(matrix(&n, &base, 0, flow_row), 1.);
+    assert_eq!(matrix(&n, &base, 5, flow_row), -1.);
+    let l = base.liquids[0];
+    let viscous = n.config().hydraulic[0].pressure_loss(0., l.density, l.viscosity)[1];
+    assert_eq!(matrix(&n, &base, flow_row, flow_row), -viscous);
+    assert_eq!(matrix(&n, &base, flow_row, 3), 1.);
+    assert_eq!(matrix(&n, &base, flow_row, 8), -1.);
     let mut plus = y.clone();
-    plus[3] += 0.1;
+    plus[flow_row] = 1e-6;
     let a = at(&n, &plus, &vec![0.; y.len()], None);
     let mut minus = y.clone();
-    minus[3] -= 0.1;
+    minus[flow_row] = -1e-6;
     let b = at(&n, &minus, &vec![0.; y.len()], None);
     assert!(a.mass_flows[0] > 0. && b.mass_flows[0] < 0.);
     assert!((a.rates[2] / a.rates[0] - y[2] / y[0]).abs() < 1e-15);
     assert!((b.rates[2] / b.rates[0] - y[7] / y[5]).abs() < 1e-15);
+    assert!(a.residual[flow_row] < 0. && b.residual[flow_row] > 0.);
+    // The chosen q=0 tangent is from-side directional, not smoothed donor data.
+    assert!((a.residual[2] / plus[flow_row] - matrix(&n, &base, 2, flow_row)).abs() < 1e-15);
+    let altered_yp = vec![12345.; y.len()];
+    assert_eq!(at(&n, &y, &altered_yp, Some(917.)).residual[flow_row], 0.);
+    assert_eq!(
+        matrix(&n, &at(&n, &y, &altered_yp, Some(917.)), flow_row, flow_row),
+        -viscous
+    );
 }
 
 #[test]
@@ -280,8 +306,10 @@ fn sg_sensible_uses_natural_transfer_at_zero_and_actual_turbulent_flow_feedback(
     assert!(w.film_nusselt[0] > 3.66);
     assert!(w.heat_flows[0] < 0.);
     assert_eq!(w.property_requests, 42); // 15 network + 3 film + 8*3 local film probes.
-    for col in [3, 4, 8, 9, 15] {
-        let step = if col == 15 {
+    for col in [3, 4, 8, 9, 15, n.flow_row(0)] {
+        let step = if col == n.flow_row(0) {
+            y[col].abs() * 1e-5
+        } else if col == 15 {
             1000.
         } else if col % 5 == 3 {
             0.25
@@ -305,10 +333,119 @@ fn sg_sensible_uses_natural_transfer_at_zero_and_actual_turbulent_flow_feedback(
         }
     }
     let mut rest = y.clone();
-    rest[8] = rest[3];
+    rest[n.flow_row(0)] = 0.;
     let r = at(&n, &rest, &vec![0.; y.len()], None);
     assert_eq!(r.mass_flows[0], 0.);
     assert!(r.film_nusselt[0] > 3.66 && r.heat_flows[0] < 0.);
+    // A non-constraint-manifold Newton trial still has one consumed q: the
+    // same flow drives transport and the turbulent film, without a new inverse.
+    let mut fast = y.clone();
+    fast[n.flow_row(0)] = 6000.;
+    let f = at(&n, &fast, &vec![0.; y.len()], Some(0.));
+    assert_eq!(f.mass_flows[0], 6000.);
+    assert!(f.film_nusselt[0] > r.film_nusselt[0]);
+    assert!(matrix(&n, &f, 15, n.flow_row(0)).abs() > 0.);
+    for factor in [1., 0.5] {
+        let step = 0.06 * factor;
+        let mut plus = fast.clone();
+        let mut minus = fast.clone();
+        plus[n.flow_row(0)] += step;
+        minus[n.flow_row(0)] -= step;
+        let a = at(&n, &plus, &vec![0.; y.len()], None);
+        let b = at(&n, &minus, &vec![0.; y.len()], None);
+        for row in [1, 15, n.flow_row(0)] {
+            let seen = (a.residual[row] - b.residual[row]) / (2. * step);
+            let expected = matrix(&n, &f, row, n.flow_row(0));
+            assert!((seen - expected).abs() < 1e-4 + expected.abs() * 1e-4);
+        }
+    }
+}
+
+#[test]
+fn trial_flow_is_independent_coordinate_until_pressure_loss_constraint_is_solved() {
+    let n = fixture();
+    let y = n.initial_state().unwrap();
+    let a = at(&n, &y, &vec![0.; y.len()], Some(31.));
+    let mut changed = y.clone();
+    changed[3] += 100.;
+    let b = at(&n, &changed, &vec![0.; y.len()], Some(31.));
+    assert_eq!(a.mass_flows, b.mass_flows);
+    assert_eq!(a.rates[0], b.rates[0]);
+    assert_eq!(a.rates[2], b.rates[2]);
+    assert!(b.residual[n.flow_row(0)].abs() > 99.);
+    assert_eq!(matrix(&n, &b, n.flow_row(0), n.flow_row(1)), 0.);
+    let mut nonfinite = y.clone();
+    nonfinite[n.flow_row(0)] = f64::INFINITY;
+    assert!(
+        Workspace::new(&n)
+            .evaluate(&n, &nonfinite, &vec![0.; y.len()], None)
+            .is_err()
+    );
+}
+
+#[test]
+fn each_selected_forward_loss_has_local_algebraic_rank_and_endpoint_tangents() {
+    for law in [
+        LossLaw::EffectiveTotal,
+        LossLaw::ChurchillPipe,
+        LossLaw::ChurchillAnnulus,
+        LossLaw::CoreBundle,
+        LossLaw::GuideAnnulus {
+            laminar_darcy: 95.98,
+        },
+        LossLaw::SmoothColebrook,
+    ] {
+        let mut cfg = fixture().config().clone();
+        cfg.hydraulic.truncate(1);
+        cfg.hydraulic[0].law = law;
+        cfg.hydraulic[0].diameter = 0.05;
+        cfg.hydraulic[0].roughness = 2e-6;
+        cfg.hydraulic[0].fixed_loss = 1.;
+        cfg.hydraulic[0].grid_multiplier = 0.49;
+        cfg.water[1].geometry.elevation = 5.;
+        cfg.heat.clear();
+        let n = Network::new(cfg).unwrap();
+        let mut y = n.initial_state().unwrap();
+        let flow = n.flow_row(0);
+        for q in [-100., 0., 100.] {
+            y[flow] = q;
+            let base = at(&n, &y, &vec![0.; y.len()], Some(197.));
+            let a = base.liquids[0];
+            let b = base.liquids[1];
+            let rho = (a.density + b.density) * 0.5;
+            let mu = (a.viscosity + b.viscosity) * 0.5;
+            let loss = n.config().hydraulic[0].pressure_loss(q, rho, mu);
+            assert_eq!(
+                base.residual[flow],
+                y[3] - y[8] - rho * GRAVITY * 2. - loss[0]
+            );
+            assert_eq!(matrix(&n, &base, flow, flow), -loss[1]);
+            assert!(loss[1] > 0.);
+            for factor in [1., 0.5] {
+                for col in [3, 4, 8, 9, flow] {
+                    let step = if col == flow {
+                        q.abs().max(1.) * 1e-6
+                    } else if col % 5 == 3 {
+                        10.
+                    } else {
+                        1e-3
+                    } * factor;
+                    let mut plus = y.clone();
+                    let mut minus = y.clone();
+                    plus[col] += step;
+                    minus[col] -= step;
+                    let p = at(&n, &plus, &vec![0.; y.len()], None);
+                    let m = at(&n, &minus, &vec![0.; y.len()], None);
+                    let seen = (p.residual[flow] - m.residual[flow]) * 0.5;
+                    let expected = matrix(&n, &base, flow, col) * step;
+                    assert!(
+                        (seen - expected).abs() <= 5e-5 + expected.abs() * 0.001,
+                        "{law:?} q={q} G column={col}: seen={seen}, expected={expected}"
+                    );
+                }
+            }
+        }
+    }
 }
 
 #[test]

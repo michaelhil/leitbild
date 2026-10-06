@@ -4,6 +4,7 @@
 //! Short links are algebraic viscous/form-loss paths. Their pressure relaxation
 //! is not a claim to remove every fast lumped mode or qualify natural circulation.
 //! Shared donor enthalpy/elevation/tracer and thermal receipts are reciprocal.
+//! Signed link flows are algebraic coordinates, not differential momentum.
 use crate::{CellGeometry, GRAVITY, Liquid, LiquidQuery, liquid_batch};
 use std::collections::BTreeSet;
 mod hydraulic;
@@ -71,6 +72,7 @@ impl Network {
             || nw
                 .checked_mul(5)
                 .and_then(|x| x.checked_add(config.solids.len()))
+                .and_then(|x| x.checked_add(config.hydraulic.len()))
                 .is_none()
         {
             return Err("Invalid operating-network size".into());
@@ -166,7 +168,8 @@ impl Network {
                 return Err("Nonpositive thermal contact".into());
             }
         }
-        let n = 5 * nw + config.solids.len();
+        let stock_dimension = 5 * nw + config.solids.len();
+        let n = stock_dimension + config.hydraulic.len();
         let mut pattern = vec![BTreeSet::new(); n];
         for i in 0..nw {
             for column in 5 * i..5 * i + 5 {
@@ -175,16 +178,27 @@ impl Network {
                 }
             }
         }
-        for i in 5 * nw..n {
+        for i in 5 * nw..stock_dimension {
             pattern[i].insert(i);
         }
-        for e in &config.hydraulic {
+        for (edge, e) in config.hydraulic.iter().enumerate() {
+            let flow_row = stock_dimension + edge;
+            pattern[flow_row].insert(flow_row);
+            for recipient in [e.from, e.to] {
+                for row in 5 * recipient..5 * recipient + 3 {
+                    pattern[flow_row].insert(row);
+                }
+            }
             for node in [e.from, e.to] {
-                for column in 5 * node..5 * node + 5 {
+                for column in [5 * node + 3, 5 * node + 4] {
+                    pattern[column].insert(flow_row);
                     for recipient in [e.from, e.to] {
-                        for row in 5 * recipient..5 * recipient + 3 {
-                            pattern[column].insert(row);
-                        }
+                        pattern[column].insert(5 * recipient + 1);
+                    }
+                }
+                for column in [5 * node, 5 * node + 2] {
+                    for recipient in [e.from, e.to] {
+                        pattern[column].insert(5 * recipient + 2);
                     }
                 }
             }
@@ -206,15 +220,8 @@ impl Network {
                 }
             }
             if let HeatLaw::SgSensible { hydraulic_edge, .. } = e.law {
-                for node in [
-                    config.hydraulic[hydraulic_edge].from,
-                    config.hydraulic[hydraulic_edge].to,
-                ] {
-                    for column in [5 * node + 3, 5 * node + 4] {
-                        for row in [energy_row(e.from), energy_row(e.to)] {
-                            pattern[column].insert(row);
-                        }
-                    }
+                for row in [energy_row(e.from), energy_row(e.to)] {
+                    pattern[stock_dimension + hydraulic_edge].insert(row);
                 }
             }
         }
@@ -231,7 +238,15 @@ impl Network {
         })
     }
     pub fn dimension(&self) -> usize {
+        self.stock_dimension() + self.config.hydraulic.len()
+    }
+    /// End of water and solid coordinates, before algebraic signed flows.
+    pub fn stock_dimension(&self) -> usize {
         5 * self.config.water.len() + self.config.solids.len()
+    }
+    /// Signed kg/s coordinate and pressure-loss residual row for a contact.
+    pub fn flow_row(&self, edge: usize) -> usize {
+        self.stock_dimension() + edge
     }
     pub fn config(&self) -> &Config {
         &self.config
@@ -267,7 +282,7 @@ impl Network {
         liquid_batch(&queries, &mut water)
             .map_err(|e| format!("Original water {}: {}", e.index, e.message))?;
         let mut y = vec![0.; self.dimension()];
-        for (i, (w, l)) in self.config.water.iter().zip(water).enumerate() {
+        for (i, (w, l)) in self.config.water.iter().zip(&water).enumerate() {
             let mass = w.geometry.volume * l.density;
             y[5 * i] = mass;
             y[5 * i + 1] = mass * (l.internal_energy + GRAVITY * w.geometry.elevation);
@@ -278,6 +293,18 @@ impl Network {
         for (i, s) in self.config.solids.iter().enumerate() {
             y[5 * self.config.water.len() + i] =
                 s.heat_capacity * (s.initial_temperature - SOLID_DATUM_K);
+        }
+        // The scalar inverse is initialization only. Runtime residuals consume
+        // trial q directly and expose the forward pressure-loss equation.
+        for (edge, e) in self.config.hydraulic.iter().enumerate() {
+            let rho = (water[e.from].density + water[e.to].density) * 0.5;
+            let mu = (water[e.from].viscosity + water[e.to].viscosity) * 0.5;
+            let dz = self.config.water[e.to].geometry.elevation
+                - self.config.water[e.from].geometry.elevation;
+            let drive = y[5 * e.from + 3] - y[5 * e.to + 3] - rho * GRAVITY * dz;
+            y[self.flow_row(edge)] = hydraulic::flow(e, drive, rho, mu)
+                .map_err(|s| format!("Original hydraulic edge {edge}: {s}"))?
+                .0;
         }
         Ok(y)
     }
@@ -295,7 +322,6 @@ pub struct Workspace {
     pub property_requests: usize,
     pub film_nusselt: Vec<f64>,
     pub film_raw_prandtl_ratio: Vec<f64>,
-    flow_derivatives: Vec<[f64; 4]>,
     queries: Vec<LiquidQuery>,
     probe_queries: Vec<LiquidQuery>,
     probes: Vec<Liquid>,
@@ -315,7 +341,6 @@ impl Workspace {
             property_requests: 0,
             film_nusselt: vec![0.; network.config.heat.len()],
             film_raw_prandtl_ratio: vec![0.; network.config.heat.len()],
-            flow_derivatives: vec![[0.; 4]; network.config.hydraulic.len()],
             queries: vec![
                 LiquidQuery {
                     pressure: 0.,
@@ -364,7 +389,6 @@ impl Workspace {
             || self.probe_queries.len() != 4 * nw
             || self.transport_derivatives.len() != nw
             || self.mass_flows.len() != network.config.hydraulic.len()
-            || self.flow_derivatives.len() != network.config.hydraulic.len()
             || self.heat_flows.len() != network.config.heat.len()
             || self.film_nusselt.len() != network.config.heat.len()
             || self.film_raw_prandtl_ratio.len() != network.config.heat.len()
@@ -376,6 +400,7 @@ impl Workspace {
         }
         self.property_requests = 0;
         self.rates.fill(0.);
+        self.residual.copy_from_slice(yp);
         self.jacobian_values.fill(0.);
         self.heat_entropy_production = 0.;
         for i in 0..nw {
@@ -459,8 +484,13 @@ impl Workspace {
             let dz = network.config.water[e.to].geometry.elevation
                 - network.config.water[e.from].geometry.elevation;
             let drive = y[5 * e.from + 3] - y[5 * e.to + 3] - rho * GRAVITY * dz;
-            let (q, loss) = hydraulic::flow(e, drive, rho, mu)
-                .map_err(|s| format!("Hydraulic edge {edge}: {s}"))?;
+            let flow_row = network.flow_row(edge);
+            let q = y[flow_row];
+            let loss = e.pressure_loss(q, rho, mu);
+            if !loss.iter().all(|x| x.is_finite()) || loss[1] <= 0. {
+                return Err(format!("Invalid forward hydraulic loss at edge {edge}"));
+            }
+            self.residual[flow_row] = drive - loss[0];
             self.mass_flows[edge] = q;
             let donor = if q >= 0. { e.from } else { e.to };
             let l = self.liquids[donor];
@@ -474,9 +504,13 @@ impl Workspace {
                 self.rates[5 * recipient + 2] += sign * q * concentration;
             }
             if cj.is_some() {
-                for (side, (node, pressure_sign)) in
-                    [(e.from, 1.), (e.to, -1.)].into_iter().enumerate()
-                {
+                self.add(network, flow_row, flow_row, -loss[1]);
+                for (recipient, sign) in [(e.from, 1.), (e.to, -1.)] {
+                    self.add(network, 5 * recipient, flow_row, sign);
+                    self.add(network, 5 * recipient + 1, flow_row, sign * h);
+                    self.add(network, 5 * recipient + 2, flow_row, sign * concentration);
+                }
+                for (node, pressure_sign) in [(e.from, 1.), (e.to, -1.)] {
                     let lnode = self.liquids[node];
                     for (j, drho, dmu) in [
                         (
@@ -492,8 +526,12 @@ impl Workspace {
                     ] {
                         let dd = if j == 3 { pressure_sign } else { 0. };
                         let dd = dd - GRAVITY * dz * drho;
-                        let dq = (dd - loss[2] * dmu - loss[3] * drho) / loss[1];
-                        self.flow_derivatives[edge][2 * side + j - 3] = dq;
+                        self.add(
+                            network,
+                            flow_row,
+                            5 * node + j,
+                            dd - loss[2] * dmu - loss[3] * drho,
+                        );
                         let dh = if node == donor {
                             if j == 3 {
                                 (1. - y[5 * node + 4] * lnode.expansion) / lnode.density
@@ -504,19 +542,7 @@ impl Workspace {
                             0.
                         };
                         for (recipient, sign) in [(e.from, 1.), (e.to, -1.)] {
-                            self.add(network, 5 * recipient, 5 * node + j, sign * dq);
-                            self.add(
-                                network,
-                                5 * recipient + 1,
-                                5 * node + j,
-                                sign * (dq * h + q * dh),
-                            );
-                            self.add(
-                                network,
-                                5 * recipient + 2,
-                                5 * node + j,
-                                sign * dq * concentration,
-                            );
+                            self.add(network, 5 * recipient + 1, 5 * node + j, sign * q * dh);
                         }
                     }
                 }
@@ -631,17 +657,7 @@ impl Workspace {
                             network.energy_row(recipient),
                             s * d[2] / network.config.solids[e.to - nw].heat_capacity,
                         );
-                        let h = network.config.hydraulic[hydraulic_edge];
-                        for (side, node) in [h.from, h.to].into_iter().enumerate() {
-                            for j in 0..2 {
-                                self.add(
-                                    network,
-                                    row,
-                                    5 * node + 3 + j,
-                                    s * d[3] * self.flow_derivatives[hydraulic_edge][2 * side + j],
-                                );
-                            }
-                        }
+                        self.add(network, row, network.flow_row(hydraulic_edge), s * d[3]);
                     }
                     continue;
                 }
@@ -680,7 +696,7 @@ impl Workspace {
                 }
             }
         }
-        for i in 0..n {
+        for i in 0..network.stock_dimension() {
             self.residual[i] = yp[i] - self.rates[i];
         }
         for (i, w) in network.config.water.iter().enumerate() {
@@ -716,7 +732,7 @@ impl Workspace {
             }
         }
         if let Some(cj) = cj {
-            for i in 5 * nw..n {
+            for i in 5 * nw..network.stock_dimension() {
                 self.add(network, i, i, cj);
             }
         }

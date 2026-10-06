@@ -134,6 +134,8 @@ pub fn loss(e: &Hydraulic, q: f64, rho: f64, mu: f64) -> [f64; 4] {
     ]
 }
 
+/// Initialization-only inverse in the operating network. Advancing residuals
+/// consume a signed algebraic q and evaluate `pressure_loss` forward instead.
 pub fn flow(e: &Hydraulic, drive: f64, rho: f64, mu: f64) -> Result<(f64, [f64; 4]), String> {
     if drive == 0. {
         let d = loss(e, 0., rho, mu);

@@ -151,6 +151,29 @@ fn original_slopes(work: &mut Work, y: &[f64]) -> Result<Vec<f64>, String> {
         yp[5 * i + 3] = (yp[5 * i] * et - mt * yp[5 * i + 1]) / determinant;
         yp[5 * i + 4] = (mp * yp[5 * i + 1] - yp[5 * i] * ep) / determinant;
     }
+    // Differentiate each algebraic hydraulic law using the SAME nonsteady
+    // chart slopes. This is the physical tangent, not the IDA predictor seed.
+    for edge in 0..work.network.config().hydraulic.len() {
+        let row = work.network.flow_row(edge);
+        let diagonal = get(&work.workspace, &work.network, row, row);
+        if !diagonal.is_finite() || diagonal >= 0. {
+            return Err(format!("Original hydraulic chart rank edge {edge}"));
+        }
+        let other_rate: f64 = (0..work.network.stock_dimension())
+            .map(|col| get(&work.workspace, &work.network, row, col) * yp[col])
+            .sum();
+        yp[row] = -other_rate / diagonal;
+        let terms: Vec<f64> = (0..work.network.dimension())
+            .map(|col| get(&work.workspace, &work.network, row, col) * yp[col])
+            .collect();
+        let sum: f64 = terms.iter().sum();
+        let roundoff = 16. * f64::EPSILON * terms.iter().map(|v| v.abs()).sum::<f64>();
+        if !sum.is_finite() || sum.abs() > roundoff {
+            return Err(format!(
+                "Original differentiated hydraulic law edge {edge}: {sum}"
+            ));
+        }
+    }
     work.evaluate(y, &yp, None)?;
     if work
         .workspace
@@ -161,6 +184,42 @@ fn original_slopes(work: &mut Work, y: &[f64]) -> Result<Vec<f64>, String> {
         return Err("Original residual consistency refused".into());
     }
     Ok(yp)
+}
+// Algebraic derivatives are not arguments of this residual. Retain the exact
+// differentiated physical tangent above, but do not extrapolate that tangent
+// as if it were a finite stock in the first nonlinear predictor. IDA corrects
+// all algebraic coordinates and continues to control their temporal errors.
+fn predictor_slopes(physical: &[f64], id: &[f64]) -> Vec<f64> {
+    physical
+        .iter()
+        .zip(id)
+        .map(|(&rate, &kind)| if kind == 1. { rate } else { 0. })
+        .collect()
+}
+fn weighted_rate_norm(rates: &[f64], atol: &[f64]) -> f64 {
+    (rates
+        .iter()
+        .zip(atol)
+        .map(|(rate, weight)| (rate / weight).powi(2))
+        .sum::<f64>()
+        / rates.len() as f64)
+        .sqrt()
+}
+#[cfg(test)]
+mod predictor_tests {
+    use super::*;
+    #[test]
+    fn algebraic_seed_preserves_stock_rates_and_does_not_mutate_physical_tangent() {
+        let physical = vec![2., 3., 4., 1e12, -1e10, 5., 1e14];
+        let id = vec![1., 1., 1., 0., 0., 1., 0.];
+        let seed = predictor_slopes(&physical, &id);
+        assert_eq!(seed, vec![2., 3., 4., 0., 0., 5., 0.]);
+        assert_eq!(physical[6], 1e14);
+        assert_eq!(
+            weighted_rate_norm(&seed, &vec![1.; 7]),
+            (54_f64 / 7.).sqrt()
+        );
+    }
 }
 fn totals(n: &Network, y: &[f64]) -> [f64; 3] {
     let nw = n.config().water.len();
@@ -192,6 +251,11 @@ struct Receipt {
     nonlinear_fails: i64,
     max_ledgers: [f64; 3],
     max_chart: [f64; 2],
+    max_flow_law_residual: f64,
+    max_head_roundoff_to_flow_band: f64,
+    flow_atol: Vec<f64>,
+    flow_contrast: f64,
+    initial_rate_norms: [f64; 2],
     max_speed: f64,
     max_kinetic_temperature: f64,
     max_reynolds: f64,
@@ -206,6 +270,9 @@ fn screen(
     initial: &[f64],
     max_ledgers: &mut [f64; 3],
     max_chart: &mut [f64; 2],
+    flow_atol: &[f64],
+    max_flow_law_residual: &mut f64,
+    max_head_roundoff_to_flow_band: &mut f64,
     speed: &mut f64,
     kinetic_temperature: &mut f64,
 ) -> Result<(), String> {
@@ -254,6 +321,30 @@ fn screen(
             + work.workspace.liquids[e.to].viscosity)
             * 0.5;
         let re = q.abs() * e.diameter / (e.flow_area * mu);
+        let delta = flow_atol[edge];
+        let lower = e.pressure_loss(*q - delta, rho, mu)[0];
+        let upper = e.pressure_loss(*q + delta, rho, mu)[0];
+        let head = rho
+            * 9.80665
+            * (work.network.config().water[e.to].geometry.elevation
+                - work.network.config().water[e.from].geometry.elevation);
+        let drive = y[5 * e.from + 3] - y[5 * e.to + 3] - head;
+        // Explicit floating-point arithmetic allowance, NOT constitutive/model
+        // error or a floor in Pa. The receipt exposes arithmetic-limited bands.
+        let noise =
+            8. * f64::EPSILON * (y[5 * e.from + 3].abs() + y[5 * e.to + 3].abs() + head.abs());
+        let center = e.pressure_loss(*q, rho, mu)[0];
+        let band = (center - lower).min(upper - center);
+        if !band.is_finite() || band <= 0. {
+            return Err(format!("Unresolvable hydraulic accuracy band edge {edge}"));
+        }
+        *max_head_roundoff_to_flow_band = max_head_roundoff_to_flow_band.max(noise / band);
+        *max_flow_law_residual = max_flow_law_residual.max((drive - center).abs());
+        if drive < lower - noise || drive > upper + noise {
+            return Err(format!(
+                "Returned hydraulic law edge {edge}: drive={drive}, loss={center}, flow={q}, band=[{lower},{upper}], arithmetic={noise}"
+            ));
+        }
         if re > work.max_reynolds {
             work.max_reynolds = re;
             work.max_reynolds_edge = edge;
@@ -311,9 +402,89 @@ fn run(
     for i in 0..ns {
         atol[5 * nw + i] = work.network.config().solids[i].heat_capacity * 1e-3 * factor;
     }
+    // Fixed prospective q weights, allocated across actual incident edges from
+    // the existing 1 mK internal thermal weight over the requested horizon.
+    // Relative enthalpy/elevation and finite metal/fluid contrasts avoid a
+    // dependence on the arbitrary energy datum. This is engineering weighting,
+    // not a rigorous propagated-error bound; actual paired gates remain decisive.
+    let temperatures: Vec<f64> = (0..nw + ns)
+        .map(|i| work.network.temperature(i, &initial))
+        .collect();
+    let tmin = temperatures.iter().copied().fold(f64::INFINITY, f64::min);
+    let tmax = temperatures
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
+    let max_cp = work
+        .workspace
+        .liquids
+        .iter()
+        .map(|l| l.cp)
+        .fold(0_f64, f64::max);
+    let heads: Vec<f64> = (0..nw)
+        .map(|i| {
+            work.workspace.liquids[i].enthalpy
+                + 9.80665 * work.network.config().water[i].geometry.elevation
+        })
+        .collect();
+    let flow_contrast = max_cp * (tmax - tmin)
+        + heads.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+        - heads.iter().copied().fold(f64::INFINITY, f64::min);
+    if !flow_contrast.is_finite() || flow_contrast <= 0. {
+        return Err("Flow weighting requires the declared finite thermal contrast".into());
+    }
+    let mut degrees = vec![0_usize; nw];
+    for edge in &work.network.config().hydraulic {
+        degrees[edge.from] += 1;
+        degrees[edge.to] += 1;
+    }
+    let flow_atol: Vec<f64> = work
+        .network
+        .config()
+        .hydraulic
+        .iter()
+        .map(|edge| {
+            [edge.from, edge.to]
+                .iter()
+                .map(|&i| {
+                    initial[5 * i] * work.workspace.liquids[i].cp * 1e-3 * factor
+                        / (horizon * degrees[i] as f64 * flow_contrast)
+                })
+                .fold(f64::INFINITY, f64::min)
+        })
+        .collect();
+    for (edge, &weight) in flow_atol.iter().enumerate() {
+        if !weight.is_finite() || weight <= 0. {
+            return Err("Invalid hydraulic error weight".into());
+        }
+        let row = work.network.flow_row(edge);
+        id[row] = 0.;
+        atol[row] = weight;
+    }
+    let seed_slopes = predictor_slopes(&slopes, &id);
+    let initial_rate_norms = [
+        weighted_rate_norm(&slopes, &atol),
+        weighted_rate_norm(&seed_slopes, &atol),
+    ];
+    // Prove the numerical seed has not changed any physical initial equation.
+    let physical_residual = work.workspace.residual.clone();
+    work.evaluate(&initial, &seed_slopes, None)?;
+    if work.workspace.residual != physical_residual {
+        return Err("Algebraic predictor seed changed the physical initial residual".into());
+    }
+    // Immutable runner receipts retain stderr on success and failure. The
+    // first requested observation is one second; this reproduces pinned IDA's
+    // automatic min(.001*tdist, .5/WRMS) estimate without setting a solver knob.
+    eprintln!(
+        "{{\"scope\":\"original-operating-network-initialization\",\"meaning\":\"physical tangent versus residual-consistent first predictor; no change to y0, equations or error weights\",\"physicalWRMSRate_per_s\":{},\"predictorWRMSRate_per_s\":{},\"physicalDefaultStepEstimate_s\":{},\"predictorDefaultStepEstimate_s\":{},\"physicalDerivative\":{slopes:?},\"predictorDerivative\":{seed_slopes:?}}}",
+        initial_rate_norms[0],
+        initial_rate_norms[1],
+        (0.5 / initial_rate_norms[0]).min(0.001),
+        (0.5 / initial_rate_norms[1]).min(0.001)
+    );
     let mut resources = Resources::new()?;
     let y = resources.vector(&initial)?;
-    let yp = resources.vector(&slopes)?;
+    let yp = resources.vector(&seed_slopes)?;
     let id_vector = resources.vector(&id)?;
     let tolerance = resources.vector(&atol)?;
     let matrix = resources.matrix(n as i64, work.network.row_indices.len() as i64)?;
@@ -349,6 +520,8 @@ fn run(
     let mut samples = vec![];
     let mut max_ledgers = [0.; 3];
     let mut max_chart = [0.; 2];
+    let mut max_flow_law_residual = 0.;
+    let mut max_head_roundoff_to_flow_band = 0.;
     let mut max_speed = 0.;
     let mut max_kinetic_temperature = 0.;
     let mut sample = |time: f64, state: Vec<f64>, work: &mut Work| -> Result<(), String> {
@@ -358,6 +531,9 @@ fn run(
             &initial,
             &mut max_ledgers,
             &mut max_chart,
+            &flow_atol,
+            &mut max_flow_law_residual,
+            &mut max_head_roundoff_to_flow_band,
             &mut max_speed,
             &mut max_kinetic_temperature,
         )?;
@@ -461,11 +637,12 @@ fn run(
             }
             if state.iter().chain(&rates).all(|x| x.is_finite()) {
                 println!(
-                    "{{\"scope\":\"failed-operating-network-advancement\",\"solverReturnedTime_s\":{returned},\"independentlyAdmittedTime_s\":{},\"status\":{status},\"steps\":{steps},\"errorTestsFailed\":{error_fails},\"nonlinearFailures\":{nonlinear_fails},\"nonlinearIterations\":{nonlinear_iterations},\"lastStep_s\":{hlast},\"currentStep_s\":{hcurrent},\"initialStep_s\":{hinitial},\"currentOrder\":{order},\"currentCj\":{cj},\"callbackResiduals\":{},\"callbackJacobians\":{},\"propertyTuples\":{},\"returnedState\":{:?},\"returnedDerivative\":{:?}}}",
+                    "{{\"scope\":\"failed-operating-network-advancement\",\"representation\":\"explicit-algebraic-contact-flows\",\"solverReturnedTime_s\":{returned},\"independentlyAdmittedTime_s\":{},\"status\":{status},\"steps\":{steps},\"errorTestsFailed\":{error_fails},\"nonlinearFailures\":{nonlinear_fails},\"nonlinearIterations\":{nonlinear_iterations},\"lastStep_s\":{hlast},\"currentStep_s\":{hcurrent},\"initialStep_s\":{hinitial},\"currentOrder\":{order},\"currentCj\":{cj},\"callbackResiduals\":{},\"callbackJacobians\":{},\"propertyTuples\":{},\"flowAtol_kg_s\":{:?},\"preparedRelativeEnthalpyContrast_J_kg\":{flow_contrast},\"maxFlowLawResidual_Pa\":{max_flow_law_residual},\"maxArithmeticNoiseToFlowBand\":{max_head_roundoff_to_flow_band},\"returnedState\":{:?},\"returnedDerivative\":{:?}}}",
                     work.admitted_time,
                     work.residuals,
                     work.jacobians,
                     work.property_requests,
+                    flow_atol,
                     state,
                     rates
                 );
@@ -512,7 +689,9 @@ fn run(
         "Network nonlinear count",
     )?;
     let final_y = &samples.last().unwrap().y;
-    let solid_energy_change = (5 * nw..n).map(|i| final_y[i] - initial[i]).sum();
+    let solid_energy_change = (5 * nw..work.network.stock_dimension())
+        .map(|i| final_y[i] - initial[i])
+        .sum();
     Ok(Receipt {
         samples,
         elapsed: run_started.elapsed().as_secs_f64(),
@@ -525,6 +704,11 @@ fn run(
         nonlinear_fails,
         max_ledgers,
         max_chart,
+        max_flow_law_residual,
+        max_head_roundoff_to_flow_band,
+        flow_atol,
+        flow_contrast,
+        initial_rate_norms,
         max_speed,
         max_kinetic_temperature,
         max_reynolds: work.max_reynolds,
@@ -671,6 +855,9 @@ fn main() -> Result<(), String> {
     let tighter = run(config, horizon, began, budget, 0.1)?;
     let mut delta_temperature = 0_f64;
     let mut delta_pressure = 0_f64;
+    let mut delta_flow = vec![0_f64; ne];
+    let mut signed_transfer_difference = vec![0_f64; ne];
+    let mut gross_transfer_difference = vec![0_f64; ne];
     for (a, b) in normal.samples.iter().zip(&tighter.samples) {
         if a.time != b.time {
             return Err("Comparison times differ".into());
@@ -680,6 +867,24 @@ fn main() -> Result<(), String> {
         }
         for i in 0..nw {
             delta_pressure = delta_pressure.max((a.y[5 * i + 3] - b.y[5 * i + 3]).abs());
+        }
+        for edge in 0..ne {
+            delta_flow[edge] = delta_flow[edge].max((a.flows[edge] - b.flows[edge]).abs());
+        }
+    }
+    // Diagnostic samples, not solver-integrated fluxes: startup may be aliased.
+    // Compare each edge independently so opposing circulation cannot cancel.
+    for (a, b) in normal.samples.windows(2).zip(tighter.samples.windows(2)) {
+        let dt = a[1].time - a[0].time;
+        for edge in 0..ne {
+            signed_transfer_difference[edge] += dt
+                * 0.5
+                * (a[0].flows[edge] + a[1].flows[edge] - b[0].flows[edge] - b[1].flows[edge]);
+            gross_transfer_difference[edge] += dt
+                * 0.5
+                * (a[0].flows[edge].abs() + a[1].flows[edge].abs()
+                    - b[0].flows[edge].abs()
+                    - b[1].flows[edge].abs());
         }
     }
     let heat_difference = (normal.solid_energy_change - tighter.solid_energy_change).abs();
@@ -733,8 +938,22 @@ fn main() -> Result<(), String> {
     let receipt = receipt
         .strip_suffix('}')
         .expect("Receipt closing delimiter");
+    let receipt = format!(
+        "{receipt},\"initialization\":\"physical-differentiated-tangent-retained; algebraic-first-predictor-slopes-zero\",\"normalInitialPhysicalAndPredictorWRMSRate_per_s\":{:?},\"tighterInitialPhysicalAndPredictorWRMSRate_per_s\":{:?}",
+        normal.initial_rate_norms, tighter.initial_rate_norms
+    );
+    let receipt = format!(
+        "{receipt},\"pairedMaxFlowByEdge_kg_s\":{delta_flow:?},\"sampledSignedTransferDifferenceByEdge_kg\":{signed_transfer_difference:?},\"sampledGrossTransferDifferenceByEdge_kg\":{gross_transfer_difference:?},\"transferDiagnosticMeaning\":\"one-second trapezoidal samples; not solver-integrated; startup aliasing possible\""
+    );
     println!(
-        "{receipt},\"normalMaxReynolds\":{},\"normalMaxReynoldsEdge\":{},\"tighterMaxReynolds\":{},\"tighterMaxReynoldsEdge\":{}}}",
+        "{receipt},\"representation\":\"explicit-algebraic-contact-flows\",\"flowWeightMeaning\":\"fixed 1mK thermal consequence allocation over declared horizon and incident edges; heuristic, not propagated-error proof\",\"normalFlowAtol_kg_s\":{:?},\"tighterFlowAtol_kg_s\":{:?},\"preparedRelativeEnthalpyContrast_J_kg\":{},\"normalMaxFlowLawResidual_Pa\":{},\"tighterMaxFlowLawResidual_Pa\":{},\"normalMaxArithmeticNoiseToFlowBand\":{},\"tighterMaxArithmeticNoiseToFlowBand\":{},\"normalMaxReynolds\":{},\"normalMaxReynoldsEdge\":{},\"tighterMaxReynolds\":{},\"tighterMaxReynoldsEdge\":{}}}",
+        normal.flow_atol,
+        tighter.flow_atol,
+        normal.flow_contrast,
+        normal.max_flow_law_residual,
+        tighter.max_flow_law_residual,
+        normal.max_head_roundoff_to_flow_band,
+        tighter.max_head_roundoff_to_flow_band,
         normal.max_reynolds,
         normal.max_reynolds_edge,
         tighter.max_reynolds,

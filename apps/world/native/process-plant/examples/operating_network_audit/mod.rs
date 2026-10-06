@@ -137,21 +137,20 @@ pub fn audit(
                 4 => 1e-5,
                 _ => unreachable!(),
             }
-        } else {
+        } else if col < n.stock_dimension() {
             weights[col] * 100.
-        };
-        // Pressure transport tangent must remain on its actual startup branch.
-        if col < 5 * nw && col % 5 == 3 {
-            let node = col / 5;
-            for (j, e) in n.config().hydraulic.iter().enumerate() {
-                if e.from == node || e.to == node {
-                    if drives[j] != 0. {
-                        step = step.min(drives[j].abs() * 0.005);
-                    }
-                }
+        } else {
+            // Direct flow perturbations stay on the current donor branch when
+            // nonzero. At rest, report the actual signed branch crossing.
+            if y[col] == 0. {
+                weights[col]
+            } else {
+                y[col].abs() * 1e-5
             }
-            step = step.max(y[col].abs() * f64::EPSILON * 8.);
-        }
+        };
+        // q is independent at a Newton trial: pressure probes no longer change
+        // flow through an inner inverse. Do not inherit its tiny-drive FD step.
+        step = step.max(y[col].abs() * f64::EPSILON * 8.);
         let mut reports = vec![];
         for scale in [1., 0.5] {
             let delta = step * scale;
