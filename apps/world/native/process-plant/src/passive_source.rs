@@ -1,0 +1,199 @@
+//! Finite ordinary volume-material reactions in the selected comparator.
+//! Self-scattering affects transport collision, not net population loss. Actual
+//! optical stock capture belongs to the face law, not this second volume path.
+//! Cylinder/converter response and photon deposition are separate consumers.
+use std::{collections::HashSet, sync::Arc};
+pub const GROUPS: usize = 7;
+#[derive(Clone, Debug)]
+pub struct Target {
+    pub index: usize,
+    pub sigma_m2: [f64; GROUPS],
+}
+#[derive(Clone, Debug)]
+pub struct Stock {
+    pub volume: f64,
+    pub scatter_m1: [f64; GROUPS],
+    pub targets: Vec<Target>,
+}
+#[derive(Clone, Copy, Debug)]
+pub struct Intersection {
+    pub stock: usize,
+    pub region: usize,
+    pub volume: f64,
+}
+pub struct Model {
+    volumes: Vec<f64>,
+    speed: [f64; GROUPS],
+    stocks: Vec<Stock>,
+    intersections: Vec<Intersection>,
+    target_count: usize,
+    owner: Arc<()>,
+}
+pub struct Workspace {
+    capture: Vec<[f64; GROUPS]>,
+    collision: Vec<[f64; GROUPS]>,
+    owner: Arc<()>,
+    valid: bool,
+}
+impl Workspace {
+    pub fn collision(&self) -> Result<&[[f64; GROUPS]], &'static str> {
+        if !self.valid {
+            return Err("Unprepared passive workspace");
+        }
+        Ok(&self.collision)
+    }
+    pub fn buffer_bytes(&self) -> usize {
+        (self.capture.len() + self.collision.len()) * std::mem::size_of::<[f64; GROUPS]>()
+    }
+}
+impl Model {
+    pub fn new(
+        volumes: Vec<f64>,
+        speed: [f64; GROUPS],
+        stocks: Vec<Stock>,
+        intersections: Vec<Intersection>,
+        target_count: usize,
+    ) -> Result<Self, &'static str> {
+        if volumes.is_empty()
+            || volumes
+                .iter()
+                .chain(&speed)
+                .any(|v| !v.is_finite() || *v <= 0.)
+        {
+            return Err("Invalid passive source domain");
+        }
+        let mut targets = HashSet::new();
+        for s in &stocks {
+            if !s.volume.is_finite()
+                || s.volume <= 0.
+                || s.scatter_m1.iter().any(|v| !v.is_finite() || *v < 0.)
+            {
+                return Err("Invalid finite passive stock");
+            }
+            for t in &s.targets {
+                if t.index >= target_count
+                    || !targets.insert(t.index)
+                    || t.sigma_m2.iter().any(|v| !v.is_finite() || *v < 0.)
+                {
+                    return Err("Invalid/duplicated finite volume target ownership");
+                }
+            }
+        }
+        let mut seen = HashSet::new();
+        let mut represented = vec![0.; stocks.len()];
+        for e in &intersections {
+            if e.stock >= stocks.len()
+                || e.region >= volumes.len()
+                || !e.volume.is_finite()
+                || e.volume <= 0.
+                || !seen.insert((e.stock, e.region))
+            {
+                return Err("Invalid/duplicated passive material intersection");
+            }
+            represented[e.stock] += e.volume;
+        }
+        for (s, &v) in stocks.iter().zip(&represented) {
+            if v > s.volume * (1. + 3e-11) {
+                return Err("Passive incidence creates material");
+            }
+        }
+        Ok(Self {
+            volumes,
+            speed,
+            stocks,
+            intersections,
+            target_count,
+            owner: Arc::new(()),
+        })
+    }
+    pub fn workspace(&self) -> Workspace {
+        Workspace {
+            capture: vec![
+                [0.; GROUPS];
+                self.intersections
+                    .iter()
+                    .map(|e| self.stocks[e.stock].targets.len())
+                    .sum()
+            ],
+            collision: vec![[0.; GROUPS]; self.volumes.len()],
+            owner: self.owner.clone(),
+            valid: false,
+        }
+    }
+    pub fn update(&self, amounts: &[f64], work: &mut Workspace) -> Result<(), &'static str> {
+        work.valid = false;
+        if !Arc::ptr_eq(&work.owner, &self.owner)
+            || amounts.len() != self.target_count
+            || amounts.iter().any(|v| !v.is_finite() || *v < 0.)
+        {
+            return Err("Invalid actual passive target stocks/workspace");
+        }
+        work.collision.fill([0.; GROUPS]);
+        let mut i = 0;
+        for e in &self.intersections {
+            let s = &self.stocks[e.stock];
+            for g in 0..GROUPS {
+                work.collision[e.region][g] += s.scatter_m1[g] * e.volume / self.volumes[e.region];
+            }
+            for t in &s.targets {
+                for g in 0..GROUPS {
+                    let amount = amounts[t.index] * (e.volume / s.volume);
+                    let coefficient = amount * t.sigma_m2[g] / self.volumes[e.region];
+                    work.capture[i][g] = coefficient * self.speed[g];
+                    work.collision[e.region][g] += coefficient;
+                }
+                i += 1;
+            }
+        }
+        if work
+            .collision
+            .iter()
+            .chain(&work.capture)
+            .flatten()
+            .any(|v| !v.is_finite() || *v < 0.)
+        {
+            return Err("Unrepresentable passive reaction candidate");
+        }
+        work.valid = true;
+        Ok(())
+    }
+    /// Add rates to caller-owned accumulators. Events debit the single actual
+    /// target and create its product once; no thermal recipient is invented.
+    pub fn apply(
+        &self,
+        work: &Workspace,
+        n: &[f64],
+        rates: &mut [f64],
+        captures: &mut [f64],
+    ) -> Result<(), &'static str> {
+        if !work.valid
+            || !Arc::ptr_eq(&work.owner, &self.owner)
+            || n.len() != self.volumes.len() * GROUPS
+            || rates.len() != n.len()
+            || captures.len() != self.target_count
+            || n.iter()
+                .chain(rates.iter())
+                .chain(captures.iter())
+                .any(|v| !v.is_finite())
+        {
+            return Err("Invalid passive source application");
+        }
+        let mut i = 0;
+        for e in &self.intersections {
+            for t in &self.stocks[e.stock].targets {
+                let mut event = 0.;
+                for g in 0..GROUPS {
+                    let r = work.capture[i][g] * n[e.region * GROUPS + g];
+                    rates[e.region * GROUPS + g] -= r;
+                    event += r;
+                }
+                captures[t.index] += event;
+                i += 1;
+            }
+        }
+        if rates.iter().chain(captures.iter()).any(|v| !v.is_finite()) {
+            return Err("Nonfinite passive candidate rate");
+        }
+        Ok(())
+    }
+}

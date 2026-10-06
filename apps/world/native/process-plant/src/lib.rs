@@ -8,6 +8,8 @@ pub mod fuel_source;
 pub mod horizontal_passage;
 pub mod mixing;
 pub mod moderator_source;
+pub mod optical_source;
+pub mod passive_source;
 pub mod transport_source;
 pub mod original_water;
 pub mod primary_constraints;

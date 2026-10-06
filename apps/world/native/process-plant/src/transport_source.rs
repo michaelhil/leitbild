@@ -22,6 +22,9 @@ pub struct Face {
 #[derive(Clone, Debug)]
 pub struct OpticalInput {
     pub transmission: [f64; GROUPS],
+    /// Independently evaluated 1-T: a dilute nonzero capture must survive even
+    /// when its rounded transmission is exactly one.
+    pub loss: [f64; GROUPS],
     pub from_left: Vec<[f64; GROUPS]>,
     pub from_right: Vec<[f64; GROUPS]>,
 }
@@ -100,10 +103,10 @@ fn quotient(num: f64, dn: [f64; 3], det: f64, dd: [f64; 3]) -> Scalar {
         derivatives: std::array::from_fn(|j| (dn[j] - value * dd[j]) / det),
     }
 }
-fn optical(area: f64, rl: f64, rr: f64, dl: f64, dr: f64, t: f64) -> FaceCoefficients {
+fn optical(area: f64, rl: f64, rr: f64, dl: f64, dr: f64, t: f64, loss: f64) -> FaceCoefficients {
     let xl = rl / 4.;
     let xr = rr / 4.;
-    let one = (1. - t) * (1. + t);
+    let one = loss * (2. - loss);
     // Nonnegative determinant form avoids subtracting near-equal thick terms.
     let det = 0.25 * one + 0.5 * (xl + xr) * (1. + t * t) + xl * xr * one;
     let dd = [
@@ -112,19 +115,19 @@ fn optical(area: f64, rl: f64, rr: f64, dl: f64, dr: f64, t: f64) -> FaceCoeffic
         2. * t * (-0.25 + 0.5 * (xl + xr) - xl * xr),
     ];
     let a = area / 4.;
-    let nl = 0.5 * (1. - t) * (1. - t) + xr * one;
-    let nr = 0.5 * (1. - t) * (1. - t) + xl * one;
+    let nl = 0.5 * loss * loss + xr * one;
+    let nr = 0.5 * loss * loss + xl * one;
     FaceCoefficients {
         exchange: quotient(a * t, [0., 0., a], det, dd),
         capture_left: quotient(
             a * nl,
-            [0., a * 0.25 * one * dr, a * (-(1. - t) - 2. * xr * t)],
+            [0., a * 0.25 * one * dr, a * (-loss - 2. * xr * t)],
             det,
             dd,
         ),
         capture_right: quotient(
             a * nr,
-            [a * 0.25 * one * dl, 0., a * (-(1. - t) - 2. * xl * t)],
+            [a * 0.25 * one * dl, 0., a * (-loss - 2. * xl * t)],
             det,
             dd,
         ),
@@ -215,6 +218,7 @@ impl Model {
                 .filter_map(|f| match &f.law {
                     FaceLaw::Optical { targets } => Some(OpticalInput {
                         transmission: [0.; GROUPS],
+                        loss: [0.; GROUPS],
                         from_left: vec![[0.; GROUPS]; targets.len()],
                         from_right: vec![[0.; GROUPS]; targets.len()],
                     }),
@@ -251,6 +255,7 @@ impl Model {
                     || input
                         .transmission
                         .iter()
+                        .chain(input.loss.iter())
                         .any(|v| !v.is_finite() || !(0. ..=1.).contains(v))
                     || input
                         .from_left
@@ -262,10 +267,13 @@ impl Model {
                     return Err("Incomplete optical layer allocation");
                 }
                 for g in 0..GROUPS {
+                    if (input.transmission[g] + input.loss[g] - 1.).abs() > 8. * f64::EPSILON {
+                        return Err("Inconsistent optical transmission/loss");
+                    }
                     for side in [&input.from_left, &input.from_right] {
                         let sum = side.iter().map(|x| x[g]).sum::<f64>();
-                        if (input.transmission[g] == 1. && sum != 0.)
-                            || (input.transmission[g] < 1.
+                        if (input.loss[g] == 0. && sum != 0.)
+                            || (input.loss[g] > 0.
                                 && (!sum.is_finite() || (sum - 1.).abs() > 64. * f64::EPSILON))
                         {
                             return Err("Optical capture allocation does not close");
@@ -273,6 +281,7 @@ impl Model {
                     }
                 }
                 work.allocations[oi].transmission = input.transmission;
+                work.allocations[oi].loss = input.loss;
                 work.allocations[oi]
                     .from_left
                     .copy_from_slice(&input.from_left);
@@ -306,7 +315,7 @@ impl Model {
                             ..FaceCoefficients::default()
                         },
                         FaceLaw::Optical { .. } => {
-                            optical(f.area, rl, rr, dl, dr, optical_inputs[oi].transmission[g])
+                            optical(f.area, rl, rr, dl, dr, optical_inputs[oi].transmission[g], optical_inputs[oi].loss[g])
                         }
                         FaceLaw::Escape => unreachable!(),
                     }

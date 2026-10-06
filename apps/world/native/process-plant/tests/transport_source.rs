@@ -24,6 +24,7 @@ fn face(law: FaceLaw) -> Face {
 fn input(t: f64) -> OpticalInput {
     OpticalInput {
         transmission: [t; 7],
+        loss: [1. - t; 7],
         from_left: vec![
             [if t == 1. { 0. } else { 0.25 }; 7],
             [if t == 1. { 0. } else { 0.75 }; 7],

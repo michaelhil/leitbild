@@ -1,9 +1,13 @@
-//! Actual-input PARTIAL fuel + PRIMARY moderator + transparent/escape algebra.
-//! Not complete material/optical/source assembly, initial field or trajectory.
+//! Actual-input partial fuel, primary/receiving water, passive bulk and rack/gate
+//! optical assembly. No full source/history/heat operator or trajectory.
 #[path = "../src/fuel_source.rs"]
 mod fuel_source;
 #[path = "../src/moderator_source.rs"]
 mod moderator_source;
+#[path = "../src/optical_source.rs"]
+mod optical_source;
+#[path = "../src/passive_source.rs"]
+mod passive_source;
 #[path = "../src/transport_source.rs"]
 mod transport_source;
 use std::{env, fs, time::Instant};
@@ -177,6 +181,36 @@ fn main() {
     let mt = framed(&mut w);
     let (fuel, stocks, temperatures, prompt) = fuel(&ft);
     let (moderator, water) = moderator(&mt);
+    let nt = count(&mut w);
+    let amounts = (0..nt).map(|_| number(&mut w)).collect::<Vec<_>>();
+    let emissions = (0..nt).map(|_| array::<2>(&mut w)).collect::<Vec<_>>();
+    let ns = count(&mut w);
+    let passive_stocks = (0..ns)
+        .map(|_| {
+            let volume = number(&mut w);
+            let scatter_m1 = array(&mut w);
+            let n_targets = count(&mut w);
+            let targets = (0..n_targets)
+                .map(|_| passive_source::Target {
+                    index: count(&mut w),
+                    sigma_m2: array(&mut w),
+                })
+                .collect();
+            passive_source::Stock {
+                volume,
+                scatter_m1,
+                targets,
+            }
+        })
+        .collect::<Vec<_>>();
+    let ni = count(&mut w);
+    let passive_incidence = (0..ni)
+        .map(|_| passive_source::Intersection {
+            stock: count(&mut w),
+            region: count(&mut w),
+            volume: number(&mut w),
+        })
+        .collect::<Vec<_>>();
     let nr = count(&mut w);
     let nf = count(&mut w);
     assert!(
@@ -195,6 +229,8 @@ fn main() {
     assert_eq!(speed, fuel.law().speed);
     assert_eq!(speed, moderator.law().speed);
     let mut escape_faces = 0;
+    let mut optical_inputs = Vec::new();
+    let mut optical_faces = 0;
     let faces = (0..nf)
         .map(|_| {
             let left = count(&mut w);
@@ -206,17 +242,43 @@ fn main() {
             let area = number(&mut w);
             let left_distance = number(&mut w);
             let rd = number(&mut w);
+            let nl = count(&mut w);
+            let response = if nl > 0 {
+                assert!(right >= 0, "Optical exterior unsupported");
+                let layers = (0..nl)
+                    .map(|_| {
+                        let nc = count(&mut w);
+                        optical_source::Layer {
+                            columns: (0..nc)
+                                .map(|_| optical_source::Column {
+                                    target: count(&mut w),
+                                    atoms_per_m2: number(&mut w),
+                                    sigma_m2: array(&mut w),
+                                })
+                                .collect(),
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                Some(optical_source::layer_response(&layers).unwrap())
+            } else {
+                None
+            };
             assert!(right >= -1, "Invalid exterior index");
             let (right, right_distance, law) = if right == -1 {
                 escape_faces += 1;
                 assert_eq!(rd, 0.);
                 (None, None, transport_source::FaceLaw::Escape)
             } else {
-                (
-                    Some(right as usize),
-                    Some(rd),
-                    transport_source::FaceLaw::Transparent,
-                )
+                let law = if let Some(response) = response {
+                    optical_faces += 1;
+                    optical_inputs.push(response.input);
+                    transport_source::FaceLaw::Optical {
+                        targets: response.targets,
+                    }
+                } else {
+                    transport_source::FaceLaw::Transparent
+                };
+                (Some(right as usize), Some(rd), law)
             };
             transport_source::Face {
                 left,
@@ -230,19 +292,30 @@ fn main() {
         .collect();
     let supplied = (0..nr).map(|_| array::<7>(&mut w)).collect::<Vec<_>>();
     assert!(w.next().is_none(), "Trailing composed payload");
-    let transport = transport_source::Model::new(volumes, ell, speed, faces, 0).unwrap();
+    let passive = passive_source::Model::new(
+        volumes.clone(),
+        speed,
+        passive_stocks.clone(),
+        passive_incidence.clone(),
+        nt,
+    )
+    .unwrap();
+    let transport = transport_source::Model::new(volumes, ell, speed, faces, nt).unwrap();
     let mut fw = fuel.workspace();
     let mut mw = moderator.workspace();
     let mut tw = transport.workspace();
+    let mut pw = passive.workspace();
     let workspace_pattern_payload_bytes = fw.buffer_bytes()
         + mw.buffer_bytes()
         + tw.buffer_bytes()
+        + pw.buffer_bytes()
         + fuel.coordinates().len() * std::mem::size_of::<fuel_source::Coordinate>()
         + transport.coordinates().len() * std::mem::size_of::<transport_source::Coordinate>();
     let construction_seconds = started.elapsed().as_secs_f64();
     let update_start = Instant::now();
     fuel.update(&temperatures, &stocks, &mut fw).unwrap();
     moderator.update(&water, &mut mw).unwrap();
+    passive.update(&amounts, &mut pw).unwrap();
     let mut collision = vec![[0.; 7]; nr];
     let mut mc = collision.clone();
     fuel.collision_into(&fw, &mut collision).unwrap();
@@ -250,7 +323,7 @@ fn main() {
     let mut collision_error: f64 = 0.;
     for i in 0..nr {
         for g in 0..7 {
-            collision[i][g] += mc[i][g];
+            collision[i][g] += mc[i][g] + pw.collision().unwrap()[i][g];
             near(
                 collision[i][g],
                 supplied[i][g],
@@ -259,12 +332,17 @@ fn main() {
             collision_error = collision_error.max((collision[i][g] - supplied[i][g]).abs());
         }
     }
-    transport.update(&collision, &[], &mut tw).unwrap();
+    transport
+        .update(&collision, &optical_inputs, &mut tw)
+        .unwrap();
     let update_seconds = update_start.elapsed().as_secs_f64();
     let mut n = vec![0.; fuel.coordinate_count()];
     let mut fr = n.clone();
     let mut mr = vec![0.; nr * 7];
     let mut tr = mr.clone();
+    let mut pr = mr.clone();
+    let mut pc = vec![0.; nt];
+    let mut oc = vec![[0.; 7]; nt];
     let mut fe = vec![[0.; 2]; fuel.intersections().len()];
     let mut me = vec![moderator_source::Events::default(); water.len()];
     let mut esc = [0.; 7];
@@ -275,6 +353,7 @@ fn main() {
     let mut max_number_error: f64 = 0.;
     let mut max_relative_error: f64 = 0.;
     let mut max_matrix_error: f64 = 0.;
+    let mut capture_emission = [0.; 2];
     for probe in 0..3 {
         // Explicit algebra probes: zero original amounts, positive synthetic,
         // finite signed Newton synthetic. Neither synthetic is prepared history.
@@ -290,18 +369,25 @@ fn main() {
         moderator
             .apply(&mw, &n[..nr * 7], &mut mr, &mut me)
             .unwrap();
+        pr.fill(0.);
+        pc.fill(0.);
+        passive.apply(&pw, &n[..nr * 7], &mut pr, &mut pc).unwrap();
         transport
-            .apply(&tw, &n[..nr * 7], &mut tr, &mut [], &mut esc)
+            .apply(&tw, &n[..nr * 7], &mut tr, &mut oc, &mut esc)
             .unwrap();
         fuel.fuel_heat(&fe, prompt, &release, &mut heat).unwrap();
         composed_apply_seconds += call_start.elapsed().as_secs_f64();
         if probe == 0 {
-            assert!(fr
-                .iter()
-                .chain(&mr)
-                .chain(&tr)
-                .chain(heat.iter())
-                .all(|v| *v == 0.));
+            assert!(
+                fr.iter()
+                    .chain(&mr)
+                    .chain(&tr)
+                    .chain(&pr)
+                    .chain(&pc)
+                    .chain(oc.iter().flatten())
+                    .chain(heat.iter())
+                    .all(|v| *v == 0.)
+            );
             fuel.validate_accepted_state(&n).unwrap();
             transport.validate_accepted_state(&n[..nr * 7]).unwrap();
         }
@@ -336,7 +422,38 @@ fn main() {
             expected -= v;
             scale += v.abs();
         }
-        let measured = fr.iter().sum::<f64>() + mr.iter().sum::<f64>() + tr.iter().sum::<f64>();
+        let mut independent_capture = vec![0.; nt];
+        for e in &passive_incidence {
+            let s = &passive_stocks[e.stock];
+            for target in &s.targets {
+                for g in 0..7 {
+                    independent_capture[target.index] +=
+                        amounts[target.index] * e.volume / s.volume * target.sigma_m2[g]
+                            / fuel.volumes()[e.region]
+                            * speed[g]
+                            * n[e.region * 7 + g];
+                }
+            }
+        }
+        for j in 0..nt {
+            near(
+                pc[j],
+                independent_capture[j],
+                pc[j].abs() + independent_capture[j].abs(),
+            );
+            let optical = oc[j].iter().sum::<f64>();
+            expected -= pc[j] + optical;
+            scale += pc[j].abs() + oc[j].iter().map(|x| x.abs()).sum::<f64>();
+            if probe == 1 {
+                for k in 0..2 {
+                    capture_emission[k] += (pc[j] + optical) * emissions[j][k];
+                }
+            }
+        }
+        let measured = fr.iter().sum::<f64>()
+            + mr.iter().sum::<f64>()
+            + tr.iter().sum::<f64>()
+            + pr.iter().sum::<f64>();
         near(measured, expected, scale);
         max_number_error = max_number_error.max((measured - expected).abs());
         max_relative_error =
@@ -357,6 +474,27 @@ fn main() {
             max_matrix_error = max_matrix_error.max((a - b).abs());
         }
     }
+    // Actual finite target exhaustion changes capture, without changing fixed
+    // ordinary elastic scattering. It does not substitute for target evolution.
+    passive.update(&vec![0.; nt], &mut pw).unwrap();
+    pr.fill(0.);
+    pc.fill(0.);
+    passive.apply(&pw, &n[..nr * 7], &mut pr, &mut pc).unwrap();
+    assert!(pc.iter().chain(&pr).all(|v| *v == 0.));
+    assert!(
+        optical_faces > 0 && nt > 0 && ni > 0,
+        "Missing composed physical families"
+    );
     let apply_seconds = apply_start.elapsed().as_secs_f64();
-    println!("{{\"passed\":true,\"scope\":\"PARTIAL fuel+PRIMARY moderator+transparent/escape algebra; no complete source, covered optics, external births, target evolution, heat recipients or trajectory\",\"regions\":{nr},\"neutron_coordinates\":{},\"precursor_coordinates\":{},\"shared_transparent_faces\":{},\"escape_faces\":{escape_faces},\"transport_entries\":{},\"fuel_entries\":{},\"probes\":[\"original-zero-component-state\",\"positive-synthetic-operator\",\"signed-synthetic-Newton-operator\"],\"accepted_boundary_checks\":true,\"workspace_pattern_payload_bytes\":{workspace_pattern_payload_bytes},\"memory_scope\":\"known workspace/pattern Vec element payload only; excludes model, caller arrays, allocator and solver\",\"collision_max_difference\":{collision_error:e},\"number_balance_max_absolute\":{max_number_error:e},\"number_balance_max_scaled\":{max_relative_error:e},\"transport_matvec_max_difference\":{max_matrix_error:e},\"construction_seconds\":{construction_seconds},\"same_snapshot_update_seconds\":{update_seconds},\"three_composed_apply_seconds\":{composed_apply_seconds},\"three_probe_check_seconds\":{apply_seconds},\"total_seconds\":{}}}",nr*7,fuel.segment_count()*6,nf-escape_faces,transport.coordinates().len(),fuel.coordinates().len(),started.elapsed().as_secs_f64());
+    println!(
+        "{{\"passed\":true,\"scope\":\"Actual passive bulk/receiving water/rack-gate optics composed with fuel and primary moderator; no body/converter capture, complete births/history, photon deposition or trajectory\",\"regions\":{nr},\"neutron_coordinates\":{},\"precursor_coordinates\":{},\"shared_transparent_faces\":{},\"optical_faces\":{optical_faces},\"escape_faces\":{escape_faces},\"passive_stocks\":{ns},\"passive_intersections\":{ni},\"finite_passive_targets\":{nt},\"transport_entries\":{},\"fuel_entries\":{},\"probes\":[\"original-zero-component-state\",\"positive-synthetic-operator\",\"signed-synthetic-Newton-operator\"],\"accepted_boundary_checks\":true,\"volume_target_exhaustion_checked\":true,\"passive_capture_binding_emission_charged_J_per_s\":{},\"passive_capture_binding_emission_photon_J_per_s\":{},\"emission_is_deposited_heat\":false,\"workspace_pattern_payload_bytes\":{workspace_pattern_payload_bytes},\"memory_scope\":\"known workspace/pattern Vec element payload only; excludes model, caller arrays, allocator and solver\",\"collision_max_difference\":{collision_error:e},\"number_balance_max_absolute\":{max_number_error:e},\"number_balance_max_scaled\":{max_relative_error:e},\"transport_matvec_max_difference\":{max_matrix_error:e},\"construction_seconds\":{construction_seconds},\"same_snapshot_update_seconds\":{update_seconds},\"three_composed_apply_seconds\":{composed_apply_seconds},\"three_probe_check_seconds\":{apply_seconds},\"total_seconds\":{}}}",
+        nr * 7,
+        fuel.segment_count() * 6,
+        nf - escape_faces - optical_faces,
+        transport.coordinates().len(),
+        fuel.coordinates().len(),
+        capture_emission[0],
+        capture_emission[1],
+        started.elapsed().as_secs_f64()
+    );
 }

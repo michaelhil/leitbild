@@ -14,9 +14,10 @@ const positive=z.number().finite().positive(),finite=z.number().finite(),
  partitionSchema=z.object({result:z.object({regions:z.array(sourceRegionSchema).min(1)})}),
  receiptSchema=z.object({partitionSHA256:z.string().regex(/^[a-f0-9]{64}$/),
   result:z.object({faces:z.array(faceSchema).min(1)})}),
- bindingSchema=z.object({faceIndex:z.number().int().nonnegative(),supportId:z.string().min(1),
-  targetIds:z.array(z.string().min(1)).min(1)}).strict()
-export type OpticalBinding=z.infer<typeof bindingSchema>
+ bindingSchema=z.discriminatedUnion('kind',[
+  z.object({kind:z.literal('optical'),faceIndex:z.number().int().nonnegative(),supportId:z.string().min(1),targetIds:z.array(z.string().min(1)).min(1)}).strict(),
+  z.object({kind:z.literal('bulk'),faceIndex:z.number().int().nonnegative(),supportId:z.string().min(1),materialIds:z.array(z.string().min(1)).min(1)}).strict()])
+export type MaterialSupportBinding=z.infer<typeof bindingSchema>
 const sha=(s:string)=>createHash('sha256').update(s).digest('hex')
 
 function readGeometry(partitionText:string,facesText:string,speeds:number[]){
@@ -48,24 +49,26 @@ function nativeFace(face:SourceFace,indices:Map<string,number>,targets?:number[]
   law:targets?{kind:'optical' as const,targets}:{kind:face.right===undefined?'escape' as const:'transparent' as const}}
 }
 
-/** Every covered patch needs an explicit actual target-layer map. A map says
- * nothing about whether coefficients, heat recipients or birth inputs are ready. */
-export function compileTransportGeometry(partitionText:string,facesText:string,speeds:number[],supplied:OpticalBinding[]){
+/** Head support is bulk material plus actual water holes, not a planar film.
+ * Rack/gate films need ordered target maps. Both require an actual caller-owned
+ * material projection; bindings alone do not qualify coefficients/heat/births. */
+export function compileTransportGeometry(partitionText:string,facesText:string,speeds:number[],supplied:MaterialSupportBinding[]){
  const g=readGeometry(partitionText,facesText,speeds),bindings=z.array(bindingSchema).parse(supplied),
   byFace=new Map(bindings.map(b=>[b.faceIndex,b])),targets:string[]=[],targetIndex=new Map<string,number>()
  if(byFace.size!==bindings.length)throw Error('Duplicated optical face binding')
  for(const b of bindings){const face=g.sourceFaces[b.faceIndex]
   if(!face?.support||face.support.id!==b.supportId||face.right===undefined)
    throw Error('Unknown/unshared optical support binding')
-  for(const id of b.targetIds)if(!targetIndex.has(id)){targetIndex.set(id,targets.length);targets.push(id)}
+  if((face.support.kind==='head-mouth')!==(b.kind==='bulk'))throw Error('Bulk head and optical rack/gate material laws cannot be interchanged')
+  if(b.kind==='optical')for(const id of b.targetIds)if(!targetIndex.has(id)){targetIndex.set(id,targets.length);targets.push(id)}
  }
  const faces=g.sourceFaces.map((face,i)=>{
   const binding=byFace.get(i)
-  if(face.support&&!binding)throw Error('Missing optical target layers: '+face.support.id+' face '+i)
-  return nativeFace(face,g.indices,binding?.targetIds.map(id=>targetIndex.get(id)!))
+  if(face.support&&!binding)throw Error('Missing actual material support: '+face.support.id+' face '+i)
+  return nativeFace(face,g.indices,binding?.kind==='optical'?binding.targetIds.map(id=>targetIndex.get(id)!):undefined)
  })
  return {regionVolumes:g.regionVolumes,envelopeLengths:g.envelopeLengths,speed:g.speed,faces,
-  identities:{...g.identities,targets},partitionSHA256:g.partitionSHA256,
+  identities:{...g.identities,targets,bulkSupports:bindings.filter(b=>b.kind==='bulk')},partitionSHA256:g.partitionSHA256,
   completeReactorOperator:false,emissionIsDepositedHeat:false,
   scope:'Geometry and explicit layer-target incidence only. Same-trial collision, attenuation, captures, births and thermal deposition remain caller-owned.'}
 }

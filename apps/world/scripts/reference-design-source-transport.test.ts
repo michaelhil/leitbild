@@ -7,11 +7,11 @@ const region=(id:string,compartment:'UPPER'|'WELL')=>({id,compartment,volume_m3:
   meanOutwardNormal:[0,0,1],support:{id:'HEAD.MOUTH',kind:'head-mouth'}},
  outer={left:'UPPER',area_m2:2,leftDistance_m:2,axis:'equipment',meanOutwardNormal:[0,0,-1]},
  speed=Array(7).fill(1),receipt=(faces:unknown[],parent=partition)=>JSON.stringify({partitionSHA256:createHash('sha256').update(parent).digest('hex'),result:{faces}})
-test('covered geometry requires exact layer incidence, including closed head',()=>{
+test('actual material support resolves bulk head without an invented absorbing film',()=>{
  const faces=receipt([head,outer])
- expect(()=>compileTransportGeometry(partition,faces,speed,[])).toThrow('Missing optical')
- const g=compileTransportGeometry(partition,faces,speed,[{faceIndex:0,supportId:'HEAD.MOUTH',targetIds:['skin','matrix','skin']}])
- expect(g.faces[0]!.law).toEqual({kind:'optical',targets:[0,1,0]})
+ expect(()=>compileTransportGeometry(partition,faces,speed,[])).toThrow('Missing actual material')
+ const g=compileTransportGeometry(partition,faces,speed,[{kind:'bulk',faceIndex:0,supportId:'HEAD.MOUTH',materialIds:['actual-slab','primary-water-holes']}])
+ expect(g.faces[0]!.law).toEqual({kind:'transparent'})
  expect(g.faces[1]!.law).toEqual({kind:'escape'})
  expect(g.envelopeLengths).toEqual([9,9]);expect(g.completeReactorOperator).toBe(false)
  expect(g.emissionIsDepositedHeat).toBe(false)
@@ -19,7 +19,11 @@ test('covered geometry requires exact layer incidence, including closed head',()
   const a={...head,left:'WELL/1',right:'UPPER',support}
   // This fixture deliberately removes the head interface to test other covers.
   const p=partition.replaceAll('UPPER','LOWER')
-  expect(()=>compileTransportGeometry(p,receipt([{...a,right:'LOWER'}, {...outer,left:'LOWER'}],p),speed,[])).toThrow('Missing optical')
+  const f=receipt([{...a,right:'LOWER'}, {...outer,left:'LOWER'}],p)
+  expect(()=>compileTransportGeometry(p,f,speed,[])).toThrow('Missing actual material')
+  const optical=compileTransportGeometry(p,f,speed,[{kind:'optical',faceIndex:0,supportId:support.id,targetIds:['skin','matrix','skin']}])
+  expect(optical.faces[0]!.law).toEqual({kind:'optical',targets:[0,1,0]})
+  expect(()=>compileTransportGeometry(p,f,speed,[{kind:'bulk',faceIndex:0,supportId:support.id,materialIds:['not-an-optical-law']}])).toThrow('cannot be interchanged')
  }
 })
 test('partial fixture names exclusions; it cannot silently turn a cover transparent',()=>{
@@ -30,9 +34,10 @@ test('partial fixture names exclusions; it cannot silently turn a cover transpar
 test('old untagged head and malformed/ambiguous physical incidence refuse',()=>{
  const {support:_,...untagged}=head
  expect(()=>partialTransparentTransportGeometry(partition,receipt([untagged,outer]),speed)).toThrow('head-mouth')
- expect(()=>compileTransportGeometry(partition,receipt([head,outer]),speed,[{faceIndex:0,supportId:'OTHER',targetIds:['a']}])).toThrow()
- expect(()=>compileTransportGeometry(partition,receipt([head,outer]),speed,[{faceIndex:1,supportId:'HEAD.MOUTH',targetIds:['a']}])).toThrow()
- const b={faceIndex:0,supportId:'HEAD.MOUTH',targetIds:['a']}
+ expect(()=>compileTransportGeometry(partition,receipt([head,outer]),speed,[{kind:'optical',faceIndex:0,supportId:'HEAD.MOUTH',targetIds:['a']}])).toThrow('cannot be interchanged')
+ expect(()=>compileTransportGeometry(partition,receipt([head,outer]),speed,[{kind:'bulk',faceIndex:0,supportId:'OTHER',materialIds:['a']}])).toThrow()
+ expect(()=>compileTransportGeometry(partition,receipt([head,outer]),speed,[{kind:'bulk',faceIndex:1,supportId:'HEAD.MOUTH',materialIds:['a']}])).toThrow()
+ const b={kind:'bulk' as const,faceIndex:0,supportId:'HEAD.MOUTH',materialIds:['a']}
  expect(()=>compileTransportGeometry(partition,receipt([head,outer]),speed,[b,b])).toThrow('Duplicated')
  expect(()=>partialTransparentTransportGeometry(partition,receipt([outer,outer]),speed)).toThrow('Duplicated')
  expect(()=>partialTransparentTransportGeometry(partition,receipt([{...outer,rightDistance_m:1}]),speed)).toThrow('distance')
