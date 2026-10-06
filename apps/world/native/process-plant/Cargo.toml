@@ -11,6 +11,10 @@ offline-ida = []
 name = "fixed-volume-ida"
 required-features = ["offline-ida"]
 
+[[example]]
+name = "header-return-ida"
+required-features = ["offline-ida"]
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

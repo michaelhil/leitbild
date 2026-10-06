@@ -6,7 +6,7 @@
 //! The thermal chart uses rho(p,T)*A*L; K uses the INDEPENDENT trial M and w.
 //! This explicit off-manifold contract differs from substituting chart M in K.
 //!
-//! Supplied face p/T are independent stable-liquid EOS inputs, NOT a donor,
+//! Supplied donor p/T are independent stable-liquid EOS inputs, NOT a donor,
 //! acceleration, pressure reconstruction or connected-network closure. End
 //! velocities come from the owned momenta; q=rho_face*A*v uses the same volume
 //! flow as pressure work. Linear mass-flux and velocity interpolants define a
@@ -14,7 +14,9 @@
 //! No acoustic filter, phase/event law, elevation-changing pipe, or trajectory
 //! is implemented. Entropy defect is exposed, never repaired with heat.
 //! This API is adiabatic: external heat/shaft-power receipt is exactly absent.
-//! Traction and h=u+p/rho consume the independent pressure coordinate. The
+//! Traction pressure is separate from the transported bulk donor p/T. This
+//! upwind numerical reconstruction is NOT a static EOS face at that traction.
+//! Traction and h=u+p_traction/rho_donor consume the same mechanical pressure. The
 //! forward potential's signed pressure closure defect is retained separately;
 //! it must not become a noisy hidden traction law or an extra heater.
 use crate::{CellGeometry, GRAVITY, Liquid, LiquidQuery, liquid_batch, storage};
@@ -46,8 +48,9 @@ pub struct Derivative {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Face {
-    pub pressure: f64,
-    pub temperature: f64,
+    pub donor_pressure: f64,
+    pub donor_temperature: f64,
+    pub traction_pressure: f64,
 }
 
 /// Already projected stationary passive forces. No Darcy coefficient, wall law
@@ -81,10 +84,11 @@ pub struct Rates {
 pub struct Evaluation {
     /// Rows: M, E, wL, wR balances, then mass and total-energy charts.
     pub residual: [f64; 6],
-    /// Columns: M,E,wL,wR,p,T,pL,TL,pR,TR. The first six columns
+    /// Columns: M,E,wL,wR,p,T,pDonorL,TDonorL,pTractionL,
+    /// pDonorR,TDonorR,pTractionR. The first six columns
     /// include cj*F_ydot; geometry/force receipts are held fixed. A graph must
     /// add face constraints and derivatives of its actual force law.
-    pub jacobian: [[f64; 10]; 6],
+    pub jacobian: [[f64; 12]; 6],
     pub chart_mass: f64,
     pub chart_energy: f64,
     pub velocities: [f64; 2],
@@ -122,6 +126,30 @@ fn failure(message: impl Into<String>) -> BlockError {
 /// One forward batched EOS evaluation; no stock/face inverse or warm-state
 /// cache. Fixed-size caller-local arrays allocate no successful hot-path heap.
 pub fn evaluate(input: Input, cj: f64) -> Result<Evaluation, BlockError> {
+    validate(input, cj)?;
+    let queries = [
+        LiquidQuery {
+            pressure: input.trial.pressure,
+            temperature: input.trial.temperature,
+        },
+        LiquidQuery {
+            pressure: input.left.donor_pressure,
+            temperature: input.left.donor_temperature,
+        },
+        LiquidQuery {
+            pressure: input.right.donor_pressure,
+            temperature: input.right.donor_temperature,
+        },
+    ];
+    let mut liquids = [Liquid::default(); 3];
+    liquid_batch(&queries, &mut liquids).map_err(|e| BlockError {
+        index: e.index,
+        message: e.message,
+    })?;
+    evaluate_with_liquids(input, cj, liquids)
+}
+
+fn validate(input: Input, cj: f64) -> Result<(), BlockError> {
     let g = input.geometry;
     let y = input.trial;
     let d = input.derivative;
@@ -140,10 +168,12 @@ pub fn evaluate(input: Input, cj: f64) -> Result<Evaluation, BlockError> {
         d.energy,
         d.momentum_left,
         d.momentum_right,
-        input.left.pressure,
-        input.left.temperature,
-        input.right.pressure,
-        input.right.temperature,
+        input.left.donor_pressure,
+        input.left.donor_temperature,
+        input.left.traction_pressure,
+        input.right.donor_pressure,
+        input.right.donor_temperature,
+        input.right.traction_pressure,
         f.left,
         f.right,
         cj,
@@ -153,6 +183,8 @@ pub fn evaluate(input: Input, cj: f64) -> Result<Evaluation, BlockError> {
         || g.area <= 0.0
         || g.length <= 0.0
         || y.mass <= 0.0
+        || input.left.traction_pressure <= 0.0
+        || input.right.traction_pressure <= 0.0
     {
         return Err(failure(
             "Nonfinite or inadmissible horizontal-passage input",
@@ -179,25 +211,29 @@ pub fn evaluate(input: Input, cj: f64) -> Result<Evaluation, BlockError> {
             "Stationary passive force receipt supplies positive mechanical work",
         ));
     }
-    let queries = [
-        LiquidQuery {
-            pressure: y.pressure,
-            temperature: y.temperature,
-        },
-        LiquidQuery {
-            pressure: input.left.pressure,
-            temperature: input.left.temperature,
-        },
-        LiquidQuery {
-            pressure: input.right.pressure,
-            temperature: input.right.temperature,
-        },
-    ];
-    let mut liquids = [Liquid::default(); 3];
-    liquid_batch(&queries, &mut liquids).map_err(|e| BlockError {
-        index: e.index,
-        message: e.message,
-    })?;
+    Ok(())
+}
+
+// Internal finite-neighbor assembly shares its actually evaluated property
+// tuples; this is not an unchecked public property-provider/backend boundary.
+pub(crate) fn evaluate_with_liquids(
+    input: Input,
+    cj: f64,
+    liquids: [Liquid; 3],
+) -> Result<Evaluation, BlockError> {
+    validate(input, cj)?;
+    let g = input.geometry;
+    let y = input.trial;
+    let d = input.derivative;
+    let f = input.force;
+    let volume = g.area * g.length;
+    let vl = (4.0 * y.momentum_left - 2.0 * y.momentum_right) / y.mass;
+    let vr = (4.0 * y.momentum_right - 2.0 * y.momentum_left) / y.mass;
+    let kinetic = 2.0
+        * (y.momentum_left * y.momentum_left - y.momentum_left * y.momentum_right
+            + y.momentum_right * y.momentum_right)
+        / y.mass;
+    let force_power = vl * f.left + vr * f.right;
     let [bulk, left, right] = liquids;
     let cell = CellGeometry {
         volume,
@@ -209,22 +245,28 @@ pub fn evaluate(input: Input, cj: f64) -> Result<Evaluation, BlockError> {
     let thermal_energy = chart.energy;
     let ql = left.density * g.area * vl;
     let qr = right.density * g.area * vr;
-    let hl = left.internal_energy + input.left.pressure / left.density + vl * vl / 2.0 + gz;
-    let hr = right.internal_energy + input.right.pressure / right.density + vr * vr / 2.0 + gz;
+    let hl =
+        left.internal_energy + input.left.traction_pressure / left.density + vl * vl / 2.0 + gz;
+    let hr =
+        right.internal_energy + input.right.traction_pressure / right.density + vr * vr / 2.0 + gz;
     let transport = (ql * (2.0 * vl + vr) + qr * (vl + 2.0 * vr)) / 6.0;
     let rates = Rates {
         mass: ql - qr,
         energy: ql * hl - qr * hr,
-        momentum_left: ql * vl - transport + g.area * (input.left.pressure - y.pressure) + f.left,
+        momentum_left: ql * vl - transport
+            + g.area * (input.left.traction_pressure - y.pressure)
+            + f.left,
         momentum_right: transport - qr * vr
-            + g.area * (y.pressure - input.right.pressure)
+            + g.area * (y.pressure - input.right.traction_pressure)
             + f.right,
     };
     let kinetic_rate =
         vl * rates.momentum_left + vr * rates.momentum_right - kinetic / y.mass * rates.mass;
     let internal_energy_rate = rates.energy - kinetic_rate - gz * rates.mass;
-    let pressure_power =
-        g.area * (input.left.pressure * vl - input.right.pressure * vr - y.pressure * (vl - vr));
+    let pressure_power = g.area
+        * (input.left.traction_pressure * vl
+            - input.right.traction_pressure * vr
+            - y.pressure * (vl - vr));
     let chemical =
         bulk.internal_energy + y.pressure / bulk.density - bulk.temperature * bulk.entropy;
     let entropy_rate = (internal_energy_rate - chemical * rates.mass) / bulk.temperature;
@@ -237,8 +279,8 @@ pub fn evaluate(input: Input, cj: f64) -> Result<Evaluation, BlockError> {
     };
 
     // Analytic chain rule on all native and independent face coordinates.
-    let mut j = [[0.0; 10]; 6];
-    for column in 0..10 {
+    let mut j = [[0.0; 12]; 6];
+    for column in 0..12 {
         let mut dvl = 0.0;
         let mut dvr = 0.0;
         match column {
@@ -262,22 +304,44 @@ pub fn evaluate(input: Input, cj: f64) -> Result<Evaluation, BlockError> {
             _ => 0.0,
         };
         let drhor = match column {
-            8 => right.density * right.compressibility,
-            9 => -right.density * right.expansion,
+            9 => right.density * right.compressibility,
+            10 => -right.density * right.expansion,
             _ => 0.0,
         };
         let dql = g.area * (drhol * vl + left.density * dvl);
         let dqr = g.area * (drhor * vr + right.density * dvr);
         let dhl = vl * dvl
             + match column {
-                6 => (1.0 - left.temperature * left.expansion) / left.density,
-                7 => left.cp,
+                6 => {
+                    ((input.left.donor_pressure - input.left.traction_pressure)
+                        * left.compressibility
+                        - left.temperature * left.expansion)
+                        / left.density
+                }
+                7 => {
+                    left.cp
+                        - (input.left.donor_pressure - input.left.traction_pressure)
+                            * left.expansion
+                            / left.density
+                }
+                8 => 1.0 / left.density,
                 _ => 0.0,
             };
         let dhr = vr * dvr
             + match column {
-                8 => (1.0 - right.temperature * right.expansion) / right.density,
-                9 => right.cp,
+                9 => {
+                    ((input.right.donor_pressure - input.right.traction_pressure)
+                        * right.compressibility
+                        - right.temperature * right.expansion)
+                        / right.density
+                }
+                10 => {
+                    right.cp
+                        - (input.right.donor_pressure - input.right.traction_pressure)
+                            * right.expansion
+                            / right.density
+                }
+                11 => 1.0 / right.density,
                 _ => 0.0,
             };
         let dt = (dql * (2.0 * vl + vr)
@@ -286,8 +350,8 @@ pub fn evaluate(input: Input, cj: f64) -> Result<Evaluation, BlockError> {
             + qr * (dvl + 2.0 * dvr))
             / 6.0;
         let dp = if column == 4 { 1.0 } else { 0.0 };
-        let dpl = if column == 6 { 1.0 } else { 0.0 };
-        let dpr = if column == 8 { 1.0 } else { 0.0 };
+        let dpl = if column == 8 { 1.0 } else { 0.0 };
+        let dpr = if column == 11 { 1.0 } else { 0.0 };
         j[0][column] = -dql + dqr;
         j[1][column] = -dql * hl - ql * dhl + dqr * hr + qr * dhr;
         j[2][column] = -dql * vl - ql * dvl + dt - g.area * (dpl - dp);
@@ -341,8 +405,8 @@ pub fn evaluate(input: Input, cj: f64) -> Result<Evaluation, BlockError> {
         relative_availability: [availability(left), availability(right)],
         forward_pressure_defects: [
             bulk.pressure - y.pressure,
-            left.pressure - input.left.pressure,
-            right.pressure - input.right.pressure,
+            left.pressure - input.left.donor_pressure,
+            right.pressure - input.right.donor_pressure,
         ],
     };
     if !result
