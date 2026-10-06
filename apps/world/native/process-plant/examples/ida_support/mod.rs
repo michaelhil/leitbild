@@ -20,11 +20,28 @@ pub(crate) type JacobianFn = unsafe extern "C" fn(
     Handle,
     Handle,
 ) -> c_int;
+pub(crate) type PrecSetupFn =
+    unsafe extern "C" fn(f64, Handle, Handle, Handle, f64, Handle) -> c_int;
+pub(crate) type PrecSolveFn =
+    unsafe extern "C" fn(f64, Handle, Handle, Handle, Handle, Handle, f64, f64, Handle) -> c_int;
+pub(crate) type JacTimesFn = unsafe extern "C" fn(
+    f64,
+    Handle,
+    Handle,
+    Handle,
+    Handle,
+    Handle,
+    f64,
+    Handle,
+    Handle,
+    Handle,
+) -> c_int;
 
 #[link(name = "sundials_core")]
 #[link(name = "sundials_nvecserial")]
 #[link(name = "sundials_sunmatrixsparse")]
 #[link(name = "sundials_sunlinsolklu")]
+#[link(name = "sundials_sunlinsolspgmr")]
 #[link(name = "sundials_ida")]
 unsafe extern "C" {
     pub(crate) fn SUNContext_Create(comm: c_int, out: *mut Handle) -> c_int;
@@ -48,6 +65,13 @@ unsafe extern "C" {
     pub(crate) fn SUNSparseMatrix_NNZ(matrix: Handle) -> i64;
     pub(crate) fn SUNMatDestroy(matrix: Handle);
     pub(crate) fn SUNLinSol_KLU(vector: Handle, matrix: Handle, context: Handle) -> Handle;
+    pub(crate) fn SUNLinSol_SPGMR(
+        vector: Handle,
+        pretype: c_int,
+        maxl: c_int,
+        context: Handle,
+    ) -> Handle;
+    pub(crate) fn SUNLinSol_SPGMRSetMaxRestarts(solver: Handle, restarts: c_int) -> c_int;
     pub(crate) fn SUNLinSolInitialize(solver: Handle) -> c_int;
     pub(crate) fn SUNLinSolSetup(solver: Handle, matrix: Handle) -> c_int;
     pub(crate) fn SUNLinSolSolve(
@@ -69,8 +93,19 @@ unsafe extern "C" {
     pub(crate) fn IDASetUserData(memory: Handle, user: Handle) -> c_int;
     pub(crate) fn IDASVtolerances(memory: Handle, relative: f64, absolute: Handle) -> c_int;
     pub(crate) fn IDASetId(memory: Handle, id: Handle) -> c_int;
+    pub(crate) fn IDASetConstraints(memory: Handle, constraints: Handle) -> c_int;
     pub(crate) fn IDASetLinearSolver(memory: Handle, solver: Handle, matrix: Handle) -> c_int;
     pub(crate) fn IDASetJacFn(memory: Handle, jacobian: JacobianFn) -> c_int;
+    pub(crate) fn IDASetJacTimes(
+        memory: Handle,
+        setup: Option<PrecSetupFn>,
+        product: JacTimesFn,
+    ) -> c_int;
+    pub(crate) fn IDASetPreconditioner(
+        memory: Handle,
+        setup: PrecSetupFn,
+        solve: PrecSolveFn,
+    ) -> c_int;
     pub(crate) fn IDACalcIC(memory: Handle, option: c_int, tout: f64) -> c_int;
     pub(crate) fn IDAGetConsistentIC(memory: Handle, y: Handle, yp: Handle) -> c_int;
     pub(crate) fn IDASetStopTime(memory: Handle, stop: f64) -> c_int;
@@ -90,6 +125,16 @@ unsafe extern "C" {
     pub(crate) fn IDAGetNumNonlinSolvIters(memory: Handle, value: *mut c_long) -> c_int;
     pub(crate) fn IDAGetNumNonlinSolvConvFails(memory: Handle, value: *mut c_long) -> c_int;
     pub(crate) fn IDAGetCurrentTime(memory: Handle, value: *mut f64) -> c_int;
+    pub(crate) fn IDAGetActualInitStep(memory: Handle, value: *mut f64) -> c_int;
+    pub(crate) fn IDAGetCurrentStep(memory: Handle, value: *mut f64) -> c_int;
+    pub(crate) fn IDAGetLastStep(memory: Handle, value: *mut f64) -> c_int;
+    pub(crate) fn IDAGetCurrentCj(memory: Handle, value: *mut f64) -> c_int;
+    pub(crate) fn IDAGetDky(memory: Handle, time: f64, order: c_int, output: Handle) -> c_int;
+    pub(crate) fn IDAGetNumPrecEvals(memory: Handle, value: *mut c_long) -> c_int;
+    pub(crate) fn IDAGetNumPrecSolves(memory: Handle, value: *mut c_long) -> c_int;
+    pub(crate) fn IDAGetNumLinIters(memory: Handle, value: *mut c_long) -> c_int;
+    pub(crate) fn IDAGetNumLinConvFails(memory: Handle, value: *mut c_long) -> c_int;
+    pub(crate) fn IDAGetNumJtimesEvals(memory: Handle, value: *mut c_long) -> c_int;
     pub(crate) fn IDAFree(memory: *mut Handle);
 }
 
@@ -166,6 +211,26 @@ impl Resources {
         } else {
             Ok(self.solver)
         }
+    }
+    pub(crate) fn spgmr(
+        &mut self,
+        vector: Handle,
+        maxl: c_int,
+        restarts: c_int,
+    ) -> Result<Handle, String> {
+        if vector.is_null() || !self.solver.is_null() || maxl <= 0 || restarts < 0 {
+            return Err("Invalid or repeated owned SPGMR allocation".into());
+        }
+        // SUN_PREC_LEFT = 1 in the pinned SUNDIALS API.
+        self.solver = unsafe { SUNLinSol_SPGMR(vector, 1, maxl, self.context) };
+        if self.solver.is_null() {
+            return Err("SUNLinSol_SPGMR returned null".into());
+        }
+        checked(
+            unsafe { SUNLinSol_SPGMRSetMaxRestarts(self.solver, restarts) },
+            "SPGMRSetMaxRestarts",
+        )?;
+        Ok(self.solver)
     }
 }
 impl Drop for Resources {

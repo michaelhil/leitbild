@@ -1,7 +1,7 @@
 //! Actual ordered, no-scattering planar absorber layers. This is the rack/gate
 //! law, NOT the bulk head, cylindrical body or converter-film law.
 //! NIST DLMF 8.19.8/12/13/17 supplies E_n series, recurrence and derivatives.
-use crate::transport_source::{GROUPS, OpticalInput};
+use crate::transport_source::{OpticalInput, GROUPS};
 const GAMMA: f64 = 0.5772156649015329;
 
 #[derive(Clone, Copy, Debug)]
@@ -237,4 +237,303 @@ pub fn layer_response(layers: &[Layer]) -> Result<LayerResponse, &'static str> {
         },
         transmission_derivative: derivative,
     })
+}
+
+/// Fixed physical layer/target mapping for advancing finite material histories.
+/// Target coefficients are prepared once; no runtime allocation or opacity floor.
+pub struct LayerModel {
+    columns: Vec<(usize, [f64; GROUPS])>,
+    ends: Vec<usize>,
+    target_count: usize,
+    owner: std::sync::Arc<()>,
+}
+pub struct LayerWorkspace {
+    pub input: OpticalInput,
+    /// Unnormalized per-target side probabilities. Unlike normalized
+    /// allocations, their derivatives exist at complete transparency.
+    pub left_loss: Vec<[f64; GROUPS]>,
+    pub right_loss: Vec<[f64; GROUPS]>,
+    pub left_loss_jvp: Vec<[f64; GROUPS]>,
+    pub right_loss_jvp: Vec<[f64; GROUPS]>,
+    pub transmission_jvp: [f64; GROUPS],
+    depths: Vec<[f64; GROUPS]>,
+    direction: Vec<[f64; GROUPS]>,
+    sums: Vec<[f64; GROUPS]>,
+    sum_direction: Vec<[f64; GROUPS]>,
+    owner: std::sync::Arc<()>,
+    valid: bool,
+}
+impl LayerWorkspace {
+    /// Retained numeric Vec payload only, excluding allocator/model metadata.
+    pub fn buffer_bytes(&self) -> usize {
+        (self.input.from_left.len()
+            + self.input.from_right.len()
+            + self.left_loss.len()
+            + self.right_loss.len()
+            + self.left_loss_jvp.len()
+            + self.right_loss_jvp.len()
+            + self.depths.len()
+            + self.direction.len()
+            + self.sums.len()
+            + self.sum_direction.len())
+            * std::mem::size_of::<[f64; GROUPS]>()
+    }
+}
+fn e1(x: f64) -> Result<f64, &'static str> {
+    if !x.is_finite() || x <= 0. {
+        return Err("E1 positive argument required");
+    }
+    if x > 1. {
+        return continued(1, x);
+    }
+    let mut value = -GAMMA - x.ln();
+    let mut term = -x;
+    for k in 1..=128 {
+        let delta = -term / k as f64;
+        value += delta;
+        if delta.abs() <= f64::EPSILON * value.abs() {
+            return Ok(value);
+        }
+        term *= -x / (k + 1) as f64;
+    }
+    Err("E1 derivative series did not converge")
+}
+fn layer_loss_jvp(before: f64, depth: f64, db: f64, dd: f64) -> Result<f64, &'static str> {
+    if depth == 0. {
+        return Ok(-attenuation(before)?.derivative * dd);
+    }
+    if before == 0. && db == 0. {
+        return Ok(-attenuation(depth)?.derivative * dd);
+    }
+    if before > 0. && depth <= 1e-5 * (1. + before) {
+        const X: [f64; 4] = [
+            0.1834346424956498,
+            0.525532409916329,
+            0.7966664774136267,
+            0.9602898564975363,
+        ];
+        const W: [f64; 4] = [
+            0.362683783378362,
+            0.3137066458778873,
+            0.2223810344533745,
+            0.1012285362903763,
+        ];
+        let mut value = 0.;
+        for k in 0..4 {
+            for sign in [-1., 1.] {
+                let s = (1. + sign * X[k]) / 2.;
+                let x = before + depth * s;
+                value += W[k]
+                    * (-attenuation(x)?.derivative * dd - depth * 2. * e1(x)? * (db + s * dd))
+                    / 2.;
+            }
+        }
+        return Ok(value);
+    }
+    Ok(
+        (attenuation(before)?.derivative - attenuation(before + depth)?.derivative) * db
+            - attenuation(before + depth)?.derivative * dd,
+    )
+}
+impl LayerModel {
+    pub fn new(layers: &[Layer], references: &[f64]) -> Result<Self, &'static str> {
+        layer_response(layers)?;
+        let mut columns = Vec::new();
+        let mut ends = Vec::new();
+        for l in layers {
+            for c in &l.columns {
+                if c.target >= references.len()
+                    || !references[c.target].is_finite()
+                    || references[c.target] < 0.
+                    || (references[c.target] == 0. && c.atoms_per_m2 != 0.)
+                {
+                    return Err("Unowned optical reference target");
+                }
+                let scale = if references[c.target] > 0. {
+                    c.atoms_per_m2 / references[c.target]
+                } else {
+                    0.
+                };
+                let coefficient = std::array::from_fn(|g| scale * c.sigma_m2[g]);
+                if coefficient.iter().any(|v| !v.is_finite()) {
+                    return Err("Nonfinite optical target coefficient");
+                }
+                columns.push((c.target, coefficient));
+            }
+            ends.push(columns.len());
+        }
+        Ok(Self {
+            columns,
+            ends,
+            target_count: references.len(),
+            owner: std::sync::Arc::new(()),
+        })
+    }
+    pub fn targets(&self) -> impl Iterator<Item = usize> + '_ {
+        self.columns.iter().map(|c| c.0)
+    }
+    pub fn workspace(&self) -> LayerWorkspace {
+        let n = self.columns.len();
+        let l = self.ends.len();
+        LayerWorkspace {
+            input: OpticalInput {
+                transmission: [0.; GROUPS],
+                loss: [0.; GROUPS],
+                from_left: vec![[0.; GROUPS]; n],
+                from_right: vec![[0.; GROUPS]; n],
+            },
+            left_loss: vec![[0.; GROUPS]; n],
+            right_loss: vec![[0.; GROUPS]; n],
+            left_loss_jvp: vec![[0.; GROUPS]; n],
+            right_loss_jvp: vec![[0.; GROUPS]; n],
+            transmission_jvp: [0.; GROUPS],
+            depths: vec![[0.; GROUPS]; n],
+            direction: vec![[0.; GROUPS]; n],
+            sums: vec![[0.; GROUPS]; l],
+            sum_direction: vec![[0.; GROUPS]; l],
+            owner: self.owner.clone(),
+            valid: false,
+        }
+    }
+    pub fn update(&self, amounts: &[f64], w: &mut LayerWorkspace) -> Result<(), &'static str> {
+        w.valid = false;
+        self.check_workspace(w)?;
+        if amounts.len() != self.target_count || amounts.iter().any(|v| !v.is_finite() || *v < 0.) {
+            return Err("Invalid advancing optical target amounts");
+        }
+        w.sums.fill([0.; GROUPS]);
+        let mut start = 0;
+        for (l, &end) in self.ends.iter().enumerate() {
+            for j in start..end {
+                for g in 0..GROUPS {
+                    w.depths[j][g] = self.columns[j].1[g] * amounts[self.columns[j].0];
+                    w.sums[l][g] += w.depths[j][g];
+                }
+            }
+            start = end;
+        }
+        for g in 0..GROUPS {
+            let total = w.sums.iter().map(|s| s[g]).sum::<f64>();
+            let a = attenuation(total)?;
+            w.input.transmission[g] = a.transmission;
+            w.input.loss[g] = a.loss;
+            let mut before = 0.;
+            let mut start = 0;
+            for (l, &end) in self.ends.iter().enumerate() {
+                let depth = w.sums[l][g];
+                let after = w.sums[l + 1..].iter().map(|s| s[g]).sum::<f64>();
+                let left = layer_loss(before, depth)?;
+                let right = layer_loss(after, depth)?;
+                for j in start..end {
+                    let fraction = if depth > 0. {
+                        w.depths[j][g] / depth
+                    } else {
+                        0.
+                    };
+                    w.left_loss[j][g] = left * fraction;
+                    w.right_loss[j][g] = right * fraction;
+                    w.input.from_left[j][g] = if a.loss > 0. {
+                        w.left_loss[j][g] / a.loss
+                    } else {
+                        0.
+                    };
+                    w.input.from_right[j][g] = if a.loss > 0. {
+                        w.right_loss[j][g] / a.loss
+                    } else {
+                        0.
+                    };
+                }
+                before += depth;
+                start = end;
+            }
+        }
+        w.valid = true;
+        Ok(())
+    }
+    pub fn jvp(
+        &self,
+        amount_direction: &[f64],
+        w: &mut LayerWorkspace,
+    ) -> Result<(), &'static str> {
+        self.check_workspace(w)?;
+        if !w.valid
+            || amount_direction.len() != self.target_count
+            || amount_direction.iter().any(|v| !v.is_finite())
+        {
+            return Err("Invalid optical amount direction");
+        }
+        w.sum_direction.fill([0.; GROUPS]);
+        let mut start = 0;
+        for (l, &end) in self.ends.iter().enumerate() {
+            for j in start..end {
+                for g in 0..GROUPS {
+                    w.direction[j][g] = self.columns[j].1[g] * amount_direction[self.columns[j].0];
+                    w.sum_direction[l][g] += w.direction[j][g];
+                }
+            }
+            start = end;
+        }
+        for g in 0..GROUPS {
+            let total = w.sums.iter().map(|s| s[g]).sum::<f64>();
+            let dtotal = w.sum_direction.iter().map(|s| s[g]).sum::<f64>();
+            w.transmission_jvp[g] = attenuation(total)?.derivative * dtotal;
+            let mut before = 0.;
+            let mut db = 0.;
+            let mut start = 0;
+            for (l, &end) in self.ends.iter().enumerate() {
+                let depth = w.sums[l][g];
+                let dd = w.sum_direction[l][g];
+                let after = w.sums[l + 1..].iter().map(|s| s[g]).sum::<f64>();
+                let da = w.sum_direction[l + 1..].iter().map(|s| s[g]).sum::<f64>();
+                let left = layer_loss(before, depth)?;
+                let right = layer_loss(after, depth)?;
+                let dl = layer_loss_jvp(before, depth, db, dd)?;
+                let dr = layer_loss_jvp(after, depth, da, dd)?;
+                for j in start..end {
+                    let part = w.depths[j][g];
+                    let dp = w.direction[j][g];
+                    if depth == 0. {
+                        w.left_loss_jvp[j][g] = -attenuation(before)?.derivative * dp;
+                        w.right_loss_jvp[j][g] = -attenuation(after)?.derivative * dp;
+                    } else {
+                        let fraction = part / depth;
+                        let df = (dp - fraction * dd) / depth;
+                        w.left_loss_jvp[j][g] = dl * fraction + left * df;
+                        w.right_loss_jvp[j][g] = dr * fraction + right * df;
+                    }
+                }
+                before += depth;
+                db += dd;
+                start = end;
+            }
+        }
+        if w.left_loss_jvp
+            .iter()
+            .chain(&w.right_loss_jvp)
+            .flatten()
+            .chain(&w.transmission_jvp)
+            .any(|v| !v.is_finite())
+        {
+            return Err("Nonfinite advancing optical JVP");
+        }
+        Ok(())
+    }
+    fn check_workspace(&self, w: &LayerWorkspace) -> Result<(), &'static str> {
+        let n = self.columns.len();
+        if !std::sync::Arc::ptr_eq(&self.owner, &w.owner)
+            || [
+                w.input.from_left.len(),
+                w.input.from_right.len(),
+                w.left_loss.len(),
+                w.right_loss.len(),
+                w.left_loss_jvp.len(),
+                w.right_loss_jvp.len(),
+            ]
+            .iter()
+            .any(|&l| l != n)
+        {
+            return Err("Wrong advancing optical workspace");
+        }
+        Ok(())
+    }
 }

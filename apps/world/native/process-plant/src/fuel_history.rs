@@ -6,7 +6,7 @@
 //! deposited/advanced thermal energy. Geometry/temperature are supplied inputs.
 //! Poison/fertile capture event rates are exposed; this block does not silently
 //! assign their separate binding emission to a fuel thermal recipient.
-use crate::fuel_source::{DELAYED, FuelModel, GROUPS, Stocks, Workspace as FuelWorkspace};
+use crate::fuel_source::{FuelModel, Stocks, Workspace as FuelWorkspace, DELAYED, GROUPS};
 use crate::heat_history::{Kernel, Rates};
 use std::sync::Arc;
 
@@ -98,6 +98,14 @@ pub struct Workspace {
     direction_valid: bool,
 }
 impl Workspace {
+    pub fn fuel_coefficients(&self) -> Result<&[f64], &'static str> {
+        self.check()?;
+        Ok(self.fuel.coefficients())
+    }
+    pub fn fuel_events(&self) -> Result<&[crate::fuel_source::EventCoefficients], &'static str> {
+        self.check()?;
+        Ok(self.fuel.events())
+    }
     pub fn rates(&self) -> Result<&[f64], &'static str> {
         self.check()?;
         Ok(&self.rates)
@@ -165,6 +173,25 @@ fn nonnegative(v: f64) -> bool {
     v.is_finite() && v >= 0.
 }
 impl Assembly {
+    pub fn poison_law(&self) -> PoisonLaw {
+        self.poison
+    }
+    pub fn segment_volumes(&self) -> &[f64] {
+        &self.volumes
+    }
+    pub fn energy_groups(&self) -> &[crate::heat_history::Group] {
+        self.heat.groups()
+    }
+    pub fn spontaneous_neutrons_per_event(&self) -> f64 {
+        self.spontaneous_neutrons_per_event
+    }
+    pub fn fission_energy(&self) -> f64 {
+        // The heat kernel owns this exact event budget.
+        self.heat.fission_energy()
+    }
+    pub fn cf_decay_rate(&self) -> f64 {
+        self.cf.decay_rate
+    }
     pub fn new(
         fuel: FuelModel,
         segments: Vec<SegmentPreparation>,

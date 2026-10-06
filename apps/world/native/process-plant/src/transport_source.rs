@@ -41,6 +41,11 @@ pub struct FaceCoefficients {
     pub capture_left: Scalar,
     pub capture_right: Scalar,
     pub escape: Scalar,
+    /// Smooth capture/loss factor, including the transparent endpoint. This
+    /// permits target-probability derivatives without differentiating 0/0
+    /// normalized allocation fractions at an exhausted optical layer.
+    pub capture_per_loss_left: Scalar,
+    pub capture_per_loss_right: Scalar,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Coordinate {
@@ -132,6 +137,18 @@ fn optical(area: f64, rl: f64, rr: f64, dl: f64, dr: f64, t: f64, loss: f64) -> 
             dd,
         ),
         escape: Scalar::default(),
+        capture_per_loss_left: quotient(
+            a * (0.5 * loss + xr * (2. - loss)),
+            [0., a * 0.25 * (2. - loss) * dr, a * (-0.5 + xr)],
+            det,
+            dd,
+        ),
+        capture_per_loss_right: quotient(
+            a * (0.5 * loss + xl * (2. - loss)),
+            [a * 0.25 * (2. - loss) * dl, 0., a * (-0.5 + xl)],
+            det,
+            dd,
+        ),
     }
 }
 impl Model {
@@ -314,9 +331,15 @@ impl Model {
                             exchange: quotient(f.area, [0.; 3], rl + rr, [dl, dr, 0.]),
                             ..FaceCoefficients::default()
                         },
-                        FaceLaw::Optical { .. } => {
-                            optical(f.area, rl, rr, dl, dr, optical_inputs[oi].transmission[g], optical_inputs[oi].loss[g])
-                        }
+                        FaceLaw::Optical { .. } => optical(
+                            f.area,
+                            rl,
+                            rr,
+                            dl,
+                            dr,
+                            optical_inputs[oi].transmission[g],
+                            optical_inputs[oi].loss[g],
+                        ),
                         FaceLaw::Escape => unreachable!(),
                     }
                 } else {

@@ -23,6 +23,11 @@ required-features = ["offline-ida"]
 name = "operating-network-matrix-audit"
 required-features = ["offline-ida"]
 
+[[example]]
+name = "source-evolution-ida"
+path = "qualification/source-evolution-ida.rs"
+required-features = ["offline-ida"]
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

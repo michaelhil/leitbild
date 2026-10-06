@@ -188,15 +188,18 @@ impl ModeratorModel {
         }
         work.coefficients.fill(0.);
         for (i, (s, e)) in stocks.iter().zip(&self.intersections).enumerate() {
+            // A signed consumed-progress trial may temporarily give a signed
+            // product with an above-reference positive donor. Physical commit
+            // validation belongs to the shared native water owner, not here.
             if ![
                 s.water_mass,
                 s.liquid_volume,
                 s.hydrogen_target,
-                s.hydrogen_product,
                 s.mobile_boron10,
             ]
             .iter()
             .all(|v| nonnegative(*v))
+                || !s.hydrogen_product.is_finite()
                 || s.liquid_volume > e.volume * (1. + 3e-11)
                 || (s.mobile_boron10 > 0. && !(s.liquid_volume > 0. && s.water_mass > 0.))
                 || (s.water_mass > 0. && !(s.hydrogen_target + s.hydrogen_product > 0.))

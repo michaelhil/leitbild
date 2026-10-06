@@ -63,6 +63,18 @@ impl Kernel {
     pub fn group_count(&self) -> usize {
         self.groups.len()
     }
+    pub fn groups(&self) -> &[Group] {
+        &self.groups
+    }
+    pub fn fission_energy(&self) -> f64 {
+        self.prompt_fission_energy
+            + self
+                .groups
+                .iter()
+                .filter(|g| matches!(g.feed, Feed::Fission))
+                .map(|g| g.energy_per_event)
+                .sum::<f64>()
+    }
     fn validate(&self, values: &[f64], rates: Rates) -> Result<(), String> {
         if values.len() != self.groups.len()
             || values.iter().any(|x| !x.is_finite())

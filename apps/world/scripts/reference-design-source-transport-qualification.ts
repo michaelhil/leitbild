@@ -19,7 +19,7 @@ import {assembleReceivingWater,sampleReceivingLiquid} from './reference-design-s
 import {compileTransportGeometry,type MaterialSupportBinding} from './reference-design-source-transport'
 import {nativeIf97HeaderSha256,nativeIf97LicenseSha256,nativeIf97Source} from './reference-design-if97-primitives'
 const sha=(s:string|Uint8Array)=>createHash('sha256').update(s).digest('hex')
-const extraOwners=['systems/reactor/configuration-source-and-history.md','systems/reactor/heat-and-history.md',
+export const materialSourceOwnerFiles=['systems/reactor/configuration-source-and-history.md','systems/reactor/heat-and-history.md',
  'systems/reactor/radial-energy-transient.md','systems/instrumentation/nuclear-observation-apparatus.md','systems/reactor/cold-source-and-startup.md']
 
 /** Receiving stock identities/property preparation stay separate from PRIMARY.
@@ -99,7 +99,7 @@ export function compileMaterialSourceCheck(partitionText:string,materialText:str
  for(const q of cylinder.targets)fields.push(index(q.id),q.inner_radius,q.outer_radius,q.length,q.multiplicity,...q.sigma,q.escape_depth,q.collection)
  fields.push(cylinder.intersections.length,...cylinder.intersections.flatMap(q=>[q.target,q.region,q.share]),index(converter.id),
   ...Object.values(converterHeat.geometry),...converterHeat.emission,...Object.values(converterHeat.liquid))
- return {fixture:fields.join('\n')+'\n',faceReceipt,materialPayload:{passive,receiving,cylinder,converterHeat},input:{completeReactorOperator:false,advancedSeconds:0,
+ return {fixture:fields.join('\n')+'\n',faceReceipt,nativeInputs:{fuel:f,moderator:m,transport:t,targets},materialPayload:{passive,receiving,cylinder,converterHeat},input:{completeReactorOperator:false,advancedSeconds:0,
   probe:'Actual cold material coefficients; zero and artificial positive/signed N/C algebra, NOT a reached trajectory',
   counts:{regions:t.regionVolumes.length,fuelSegments:f.counts.segments,fuelCohorts:f.counts.fuelCohorts,
    primaryWaterIntersections:primary.counts.intersections,receivingWaterIntersections:receiving.sourceIncidence.length,
@@ -123,7 +123,7 @@ export async function qualifyMaterialSourceCheck(paths:string[],wiki:string,if97
  if(paths.length!==3)throw Error('Expected partition, material, qualified primary water receipts')
  try{await readFile(output);throw Error('Receipt exists; refusing overwrite')}
  catch(e){if(!(e&&typeof e==='object'&&'code' in e&&e.code==='ENOENT'))throw e}
- const ownerPaths=[...primaryWaterOwnerFiles,...extraOwners].map(p=>join(resolve(wiki),p)),
+ const ownerPaths=[...primaryWaterOwnerFiles,...materialSourceOwnerFiles].map(p=>join(resolve(wiki),p)),
   consumed=[...paths.map(p=>resolve(p)),...ownerPaths],texts=await Promise.all(consumed.map(p=>Bun.file(p).text())),docs=texts.slice(3),
   d=parsePrimaryWaterInputs(docs.slice(0,primaryWaterOwnerFiles.length)),root=resolve(import.meta.dir,'../native/process-plant'),
   helpers=['source-transport','source-passive','source-cylinder','converter-heat','source-receiving-water','source-water','source-material','source-fuel','source-moderator',
