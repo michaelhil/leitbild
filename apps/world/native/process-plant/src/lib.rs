@@ -10,6 +10,8 @@ pub mod mixing;
 pub mod moderator_source;
 pub mod optical_source;
 pub mod passive_source;
+pub mod cylindrical_source;
+pub mod converter_heat;
 pub mod transport_source;
 pub mod original_water;
 pub mod primary_constraints;

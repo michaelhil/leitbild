@@ -37,7 +37,7 @@ type Material=ReturnType<typeof compileColdSourceMaterial>
 type Kind='steel304'|'Zr'|'B4C'
 type Target={id:string,referenceAtoms:number,atoms:number,productAtoms:number,sigma_m2:number[],bindingEmission_J:[number,number]}
 export type PassiveStock={id:string,material:Kind,volume_m3:number,mass_kg:number,thermalRecipientId:string,
- referenceScatter_m1:number[],targets:Target[],captureMode:'volume'|'optical'|'unsupported-cylinder',original_K:number}
+ referenceScatter_m1:number[],targets:Target[],captureMode:'volume'|'optical'|'cylinder',original_K:number}
 type Primitive={stockId:string,lo:number,hi:number,shape:{kind:'annulus',x:number,y:number,inner:number,outer:number}|{kind:'box',box:Rectangle},scale:number}
 type Incidence={stockId:string,sourceRegionId:string,volume_m3:number}
 const overlap=(a:number,b:number,c:number,d:number)=>Math.max(0,Math.min(b,d)-Math.max(a,c))
@@ -141,7 +141,7 @@ export function compileOriginalPassiveGeometry(partition:ReturnType<typeof compi
  for(const s of cg.sites){const prefix=`CONTROL/${s.x}/${s.y}`,count=c.rodletsPerCluster,
   vb=count*Math.PI*(c.absorberDiameter_m/2)**2*c.activeLength_m,
   vs=cg.moving.bodySteel_kg/c.clusters/c.steelDensity_kg_m3
-  stock(prefix+'/B4C','B4C',vb,d.cold.primaryMetalTemperature_K,'unsupported-cylinder',prefix+'/BODY')
+  stock(prefix+'/B4C','B4C',vb,d.cold.primaryMetalTemperature_K,'cylinder',prefix+'/BODY')
   stock(prefix+'/STEEL','steel304',vs,d.cold.primaryMetalTemperature_K,'volume',prefix+'/BODY')
   for(const pin of cg.bodySites){const x=s.x_m+pin.x_m,y=s.y_m+pin.y_m,
    lo=c.insertedBodyBottom_m,hi=lo+c.bodyLength_m,activeLo=c.insertedActiveBottom_m,activeHi=activeLo+c.activeLength_m

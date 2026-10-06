@@ -27,7 +27,7 @@ describe.skipIf(!wiki)('actual ORIGINAL passive source payload',()=>{
    source:{birthEmission_neutrons_s:parseColdNuclear(read('systems/reactor/cold-source-and-startup.md')).source.birthEmission_neutrons_s}})
   faces=compileSourceFaces(partition,d.gates,[0,0]).faces
   actual=compileOriginalPassiveGeometry(partition,d,material,faces,sourceOwner)
- })
+ },20_000) // Actual-owner geometry setup, not the numerical qualification allowance.
  test('receiving free water and exact moments close actual occupied envelopes once',()=>{
   expect(actual.receivingPieces.every(p=>p.volume_m3>0&&Number.isFinite(p.momentZ_m4))).toBe(true)
   expect(new Set(actual.receivingPieces.map(p=>p.owner+'|'+p.sourceRegionId)).size).toBe(actual.receivingPieces.length)
@@ -55,7 +55,7 @@ describe.skipIf(!wiki)('actual ORIGINAL passive source payload',()=>{
   for(const row of actual.stockCoverage)expect(row.representedVolume_m3+row.uncreditedOutsideVolume_m3).toBeCloseTo(row.totalVolume_m3,9)
   const barrel=actual.stockCoverage.find(s=>s.stockId==='BARREL')!
   expect(barrel.representedVolume_m3/barrel.totalVolume_m3).toBeCloseTo(2/3,12)
-  expect(actual.stocks.filter(s=>s.captureMode==='unsupported-cylinder')).toHaveLength(52)
+  expect(actual.stocks.filter(s=>s.captureMode==='cylinder')).toHaveLength(52)
   expect(actual.stocks.filter(s=>s.id.endsWith('/guide-metal'))).toHaveLength(193)
  })
  test('head is bulk steel plus physical hole current; no invented optical head',()=>{
@@ -93,5 +93,5 @@ describe.skipIf(!wiki)('actual ORIGINAL passive source payload',()=>{
   expect(()=>compileOriginalPassiveGeometry(partition,d,material,faces.filter(f=>f.support?.id!=='GATE.WELL'),sourceOwner)).toThrow('closed gate')
   expect(()=>parsePassiveMaterialLaw(sourceOwner.replace('"scatterMapping":"within-group elastic in all seven groups"','"scatterMapping":"unselected"'))).toThrow()
   expect(()=>parsePassiveMaterialLaw(sourceOwner.replace('7.6461716 / 7.9394277 / 8.9992797 / 7.2704420','7.6461716'))).toThrow()
- })
+ },20_000) // Several deliberate full-input rejection builds; physical checks are unchanged.
 })

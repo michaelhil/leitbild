@@ -13,6 +13,8 @@ import {parseNuclearObservation} from './reference-design-nuclear-observation'
 import {parseColdNuclear} from './reference-design-cold-nuclear'
 import {parsePrimaryWaterInputs,primaryWaterOwnerFiles} from './reference-design-source-water'
 import {compileOriginalPassiveGeometry} from './reference-design-source-passive'
+import {compileCylinderInputs} from './reference-design-source-cylinder'
+import {compileConverterHeat} from './reference-design-converter-heat'
 import {assembleReceivingWater,sampleReceivingLiquid} from './reference-design-source-receiving-water'
 import {compileTransportGeometry,type MaterialSupportBinding} from './reference-design-source-transport'
 import {nativeIf97HeaderSha256,nativeIf97LicenseSha256,nativeIf97Source} from './reference-design-if97-primitives'
@@ -57,7 +59,11 @@ export function compileMaterialSourceCheck(partitionText:string,materialText:str
   bindings:MaterialSupportBinding[]=[...passive.opticalFaces.map(q=>({kind:'optical' as const,faceIndex:q.faceIndex,supportId:q.supportId,
    targetIds:q.layers.flatMap(l=>l.columns.map(c=>c.targetId))})),...passive.headBulkAdmission.map(q=>({kind:'bulk' as const,
    faceIndex:q.faceIndex,supportId:'HEAD.MOUTH',materialIds:['HEAD.SLAB',...primary.identities.rows.filter(id=>id.endsWith('|'+q.receiverRegionId))]}))],
-  t=compileTransportGeometry(partitionText,faceReceipt,f.law.speed,bindings),targets=passive.stocks.flatMap(s=>s.targets),
+  t=compileTransportGeometry(partitionText,faceReceipt,f.law.speed,bindings),
+  apparatus=parseNuclearObservation(docs[offset+3]!),cylinder=compileCylinderInputs(partition,d,material,passive,apparatus,source),
+  converter=cylinder.targets[cylinder.converterTarget]!,
+  targets=[...passive.stocks.flatMap(s=>s.targets),{id:converter.id,atoms:converter.atoms,bindingEmission_J:converter.binding_emission}],
+  converterHeat=compileConverterHeat(d,apparatus,primary,source,parseColdNuclear(docs[offset+4]!).source.birthEmission_neutrons_s),
   targetIndices=new Map(targets.map((q,i)=>[q.id,i])),index=(id:string)=>{
    const n=targetIndices.get(id);if(n===undefined)throw Error('Unowned passive target '+id);return n},
   optical=new Map(passive.opticalFaces.map(q=>[q.faceIndex,q])),collision=t.regionVolumes.map(()=>Array(7).fill(0) as number[])
@@ -89,21 +95,27 @@ export function compileMaterialSourceCheck(partitionText:string,materialText:str
   if(q)for(const layer of q.layers){fields.push(layer.columns.length)
    for(const c of layer.columns)fields.push(index(c.targetId),c.atoms_per_m2,...c.sigma_m2)}
  })
- fields.push(...collision.flat())
- return {fixture:fields.join('\n')+'\n',faceReceipt,materialPayload:{passive,receiving},input:{completeReactorOperator:false,advancedSeconds:0,
+ fields.push(...collision.flat(),cylinder.targets.length)
+ for(const q of cylinder.targets)fields.push(index(q.id),q.inner_radius,q.outer_radius,q.length,q.multiplicity,...q.sigma,q.escape_depth,q.collection)
+ fields.push(cylinder.intersections.length,...cylinder.intersections.flatMap(q=>[q.target,q.region,q.share]),index(converter.id),
+  ...Object.values(converterHeat.geometry),...converterHeat.emission,...Object.values(converterHeat.liquid))
+ return {fixture:fields.join('\n')+'\n',faceReceipt,materialPayload:{passive,receiving,cylinder,converterHeat},input:{completeReactorOperator:false,advancedSeconds:0,
   probe:'Actual cold material coefficients; zero and artificial positive/signed N/C algebra, NOT a reached trajectory',
   counts:{regions:t.regionVolumes.length,fuelSegments:f.counts.segments,fuelCohorts:f.counts.fuelCohorts,
    primaryWaterIntersections:primary.counts.intersections,receivingWaterIntersections:receiving.sourceIncidence.length,
    bulkStocks:passive.stocks.length,bulkIntersections:passive.volumeMaterial.length,passiveTargets:targets.length,
    volumeCaptureTargets:passive.nativeBulk.targets.length,
    opticalCaptureTargets:new Set(passive.opticalFaces.flatMap(q=>q.layers.flatMap(l=>l.columns.map(c=>c.targetId)))).size,
-   unsupportedCylinderTargets:passive.stocks.filter(s=>s.captureMode==='unsupported-cylinder').flatMap(s=>s.targets).length,
+   bodyCylinderTargets:cylinder.targets.length-1,converterTargets:1,cylinderIntersections:cylinder.intersections.length,
    opticalFaces:passive.opticalFaces.length,bulkHeadFaces:passive.headBulkAdmission.length,
    sharedFaces:t.faces.filter(q=>q.right!==undefined).length,escapeFaces:t.faces.filter(q=>q.right===undefined).length,
    regionsWithNoPresentCollision:collision.filter(gs=>gs.every(v=>v===0)).length},
-  missingPhysicalContributions:passive.missingPhysicalConsumers,reactionOmissions:passive.reactionOmissions,
-  collisionScope:'Present fresh-cold fuel, primary/receiving water and selected actual passive bulk contributors. Body capture and converter response are NOT inferred from scattering.',
-  geometryScope:'Original seven-group comparator, not a selected production source resolution.',emissionIsDepositedHeat:false}}
+  missingPhysicalContributions:['complete births/poison/finite-target/product/E25/Mn56 histories and source advancement',
+   'body and other nonconverter photon/contact heat paths; remaining solid/apparatus reactions and retained deposits',
+   'all finite thermal state advancement, acquired detector realization and whole-plant coupling'],reactionOmissions:passive.reactionOmissions,
+  collisionScope:'Independent Bun/native subtotal covers fuel, primary/receiving water and ordinary passive bulk. Native separately adds actual cylinder/converter effective capture collision before transport; geometry/law tested independently.',
+  geometryScope:'Original seven-group comparator, not a selected production source resolution.',
+  converterHeatScope:converterHeat.scope,nonconverterEmissionIsDepositedHeat:false}}
 }
 
 export async function qualifyMaterialSourceCheck(paths:string[],wiki:string,if97:string,output:string){
@@ -114,7 +126,7 @@ export async function qualifyMaterialSourceCheck(paths:string[],wiki:string,if97
  const ownerPaths=[...primaryWaterOwnerFiles,...extraOwners].map(p=>join(resolve(wiki),p)),
   consumed=[...paths.map(p=>resolve(p)),...ownerPaths],texts=await Promise.all(consumed.map(p=>Bun.file(p).text())),docs=texts.slice(3),
   d=parsePrimaryWaterInputs(docs.slice(0,primaryWaterOwnerFiles.length)),root=resolve(import.meta.dir,'../native/process-plant'),
-  helpers=['source-transport','source-passive','source-receiving-water','source-water','source-material','source-fuel','source-moderator',
+  helpers=['source-transport','source-passive','source-cylinder','converter-heat','source-receiving-water','source-water','source-material','source-fuel','source-moderator',
    'source-laws','source-faces','source-partition','fuel-transfer','decay-history','fuel-handling','fuel-construction',
    'control-absorber','current-cold-parent','head-pool','primary-mechanics','initialization','cold-pressure','chemistry-lifecycle',
    'nuclear-observation','cold-nuclear','if97-primitives'],
@@ -161,7 +173,7 @@ export async function qualifyMaterialSourceCheck(paths:string[],wiki:string,if97
    consumed:consumed.map((path,i)=>({path,sha256:sha(texts[i]!)})),sources:sourcePaths.map((path,i)=>({path,sha256:sha(sources[i]!)})),
    fixtureSHA256:sha(prepared.fixture),binarySHA256:bytes?sha(bytes):undefined,receivingBinarySHA256:sha(propertyBytes),
    upstream:{headerSHA256:sha(header),licenseSHA256:sha(license)},version,propertyBuild,compile,run,unchanged,
-   artifacts:{directory:artifactDirectory},scope:'Nonadvancing actual passive/receiving material composition. No complete neutron source, history/thermal advancement, calibrated reactor or real-time claim.'}
+   artifacts:{directory:artifactDirectory},scope:'Nonadvancing actual body/converter/material composition plus converter-specific physical energy-recipient/export rates. No complete neutron source, history/thermal advancement, calibrated reactor or real-time claim.'}
  await writeFile(output,JSON.stringify(result,null,2)+'\n',{flag:'wx'});return result
 }
 if(import.meta.main){
