@@ -10,6 +10,8 @@ pub mod mixing;
 pub mod moderator_source;
 pub mod original_water;
 pub mod primary_constraints;
+pub mod operating_network;
+pub mod heat_history;
 
 pub const GRAVITY: f64 = 9.80665;
 

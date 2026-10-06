@@ -15,6 +15,10 @@ required-features = ["offline-ida"]
 name = "header-return-ida"
 required-features = ["offline-ida"]
 
+[[example]]
+name = "operating-network-ida"
+required-features = ["offline-ida"]
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
