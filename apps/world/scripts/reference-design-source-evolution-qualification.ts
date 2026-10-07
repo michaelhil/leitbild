@@ -104,6 +104,17 @@ if(import.meta.main){
  if(debit.length>1)throw Error('Duplicate prior controller debit')
  if(!partition||!material||!water||!property||!wiki||!output||!artifacts.length)throw Error('Expected partition/material/water/material-evidence receipts, LD-01 root, NEW result and frozen native dependency artifacts')
  const r=await qualifySourceEvolution(partition,material,water,property,wiki,output,artifacts,debit[0]?.slice('--prior-controller-receipt='.length))
- console.log(JSON.stringify({passed:r.passed,elapsedSeconds:r.elapsedSeconds,buildSeconds:r.buildSeconds,counts:r.counts,outcome:r.outcome,retainedState:r.retainedState,termination:r.termination,output}))
+ // The immutable receipt retains full states and solver evidence. Do not dump
+ // those arrays into the console/context merely to report the run's verdict.
+ console.log(JSON.stringify({passed:r.passed,elapsedSeconds:r.elapsedSeconds,buildSeconds:r.buildSeconds,
+  counts:r.counts,lastAdmittedTime:r.advancedSeconds,termination:r.termination,unchanged:r.unchanged,
+  normal:r.outcome?.normal?{passed:r.outcome.normal.passed,reason:r.outcome.normal.reason,
+   lastAdmittedTime:r.outcome.normal.lastAdmittedTime,returnedTime:r.outcome.normal.returnedTime,
+   wallSeconds:r.outcome.normal.wallSeconds,stats:r.outcome.normal.stats,
+   preconditionerMetrics:r.outcome.normal.preconditionerMetrics}:undefined,
+  tighter:r.outcome?.tighter?{passed:r.outcome.tighter.passed,reason:r.outcome.tighter.reason,
+   lastAdmittedTime:r.outcome.tighter.lastAdmittedTime,wallSeconds:r.outcome.tighter.wallSeconds}:undefined,
+  retainedCheckpoint:r.retainedState?{lastAdmittedTime:r.retainedState.lastAdmittedTime,
+   path:r.retainedState.checkpointPath}:undefined,output}))
  if(!r.passed)process.exitCode=1
 }
