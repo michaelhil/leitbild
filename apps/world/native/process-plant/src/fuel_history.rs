@@ -6,9 +6,11 @@
 //! deposited/advanced thermal energy. Geometry/temperature are supplied inputs.
 //! Poison/fertile capture event rates are exposed; this block does not silently
 //! assign their separate binding emission to a fuel thermal recipient.
-use crate::fuel_source::{FuelModel, Stocks, Workspace as FuelWorkspace, DELAYED, GROUPS};
+use crate::fuel_source::{DELAYED, FuelModel, GROUPS, Stocks, Workspace as FuelWorkspace};
 use crate::heat_history::{Kernel, Rates};
 use std::sync::Arc;
+mod power;
+pub use power::PowerResponse;
 
 pub const HISTORY: usize = 34;
 pub const CONSUMED_235: usize = 0;
@@ -195,6 +197,11 @@ fn nonnegative(v: f64) -> bool {
     v.is_finite() && v >= 0.
 }
 impl Assembly {
+    /// Exact selected deposited-power response, without source transport, EOS,
+    /// stage workspaces or an evaluated-state cache.
+    pub fn power_response(&self) -> Result<PowerResponse, &'static str> {
+        PowerResponse::new(self)
+    }
     /// Immutable finite isotope references and their owned spontaneous laws.
     pub fn segment_preparations(&self) -> &[SegmentPreparation] {
         &self.segments

@@ -8,13 +8,13 @@ use leitbild_plant_numerics::{
     source_evolution::{Diagnostics, Workspace as SourceWorkspace},
 };
 
-pub(super) const POLICY: &str = "cold-source-cooling-2";
+pub(super) const POLICY: &str = "cold-source-cooling-4";
 pub(super) const OUTPUTS: [f64; 14] = [
     0.001, 0.01, 0.1, 1., 2., 5., 10., 20., 30., 60., 120., 180., 240., 300.,
 ];
 const TEMPERATURE_ATOL: f64 = 1e-3;
 const TEMPERATURE_PAIR: f64 = 0.01;
-const DEPOSIT_RESOLUTION_W: f64 = 1e-12;
+pub(super) const DEPOSIT_RESOLUTION_W: f64 = 1e-12;
 
 pub(super) struct Sample {
     pub time: f64,
@@ -520,7 +520,7 @@ impl Comparison {
     pub fn json(&self) -> String {
         let worst=self.worst.map_or("null".into(),|(family,row,a,b,difference,bound,value)|format!("{{\"family\":{},\"row\":{row},\"normal\":{},\"tighter\":{},\"difference\":{},\"bound\":{},\"ratio\":{}}}",quote(family),finite(a),finite(b),finite(difference),finite(bound),finite(value)));
         format!(
-            "{{\"policy\":\"cold-source-cooling-2\",\"provisional\":true,\"fullPairQualified\":false,\"source\":{},\"thermalTemperatureRatio\":{},\"thermalEnergyRatio\":{},\"thermalSUMABSRatio\":{},\"networkTemperatureRatio\":{},\"networkPressureRatio\":{},\"secondaryMassRatio\":{},\"SGHeatRatio\":{},\"carrierConsequenceRatio\":{},\"depositionLocalRatio\":{},\"depositionSUMABSRatio\":{},\"thermalTemperatureChange\":{},\"thermalTemperaturePairDifference\":{},\"worstCooling\":{}}}",
+            "{{\"policy\":\"cold-source-cooling-4\",\"provisional\":true,\"fullPairQualified\":false,\"source\":{},\"thermalTemperatureRatio\":{},\"thermalEnergyRatio\":{},\"thermalSUMABSRatio\":{},\"networkTemperatureRatio\":{},\"networkPressureRatio\":{},\"secondaryMassRatio\":{},\"SGHeatRatio\":{},\"carrierConsequenceRatio\":{},\"depositionLocalRatio\":{},\"depositionSUMABSRatio\":{},\"thermalTemperatureChange\":{},\"thermalTemperaturePairDifference\":{},\"worstCooling\":{}}}",
             self.source.json(),
             finite(self.thermal_temperature_ratio),
             finite(self.thermal_energy_ratio),

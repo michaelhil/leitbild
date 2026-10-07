@@ -46,12 +46,31 @@ pub struct Workspace {
     jacobian_cj: Option<f64>,
     owner: Arc<()>,
     valid: bool,
+    energy_rate_balance: f64,
+    energy_rate_tangent: Option<f64>,
+}
+fn compensated(values: impl Iterator<Item=f64>)->f64 {
+    let (mut s,mut c)=(0f64,0f64);
+    for v in values {let t=s+v;c+=if s.abs()>=v.abs(){(s-t)+v}else{(v-t)+s};s=t;}
+    s+c
 }
 impl Workspace {
     /// Read-only current primary view for a separately retained coefficient
     /// diagnostic. Never a second state owner or a frozen integration input.
     pub fn external_stocks(&self)->Result<&[Stocks],String> {
         if !self.valid {return Err("No current composed carrier view".into());} Ok(&self.stocks)
+    }
+    /// Actual independently assembled installed-energy rate minus paid fuel
+    /// release. Never replaced with the analytically expected zero.
+    pub fn complete_energy_rate(&self)->Result<f64,String> {
+        if !self.valid {return Err("No current composed energy-rate balance".into());}
+        Ok(self.energy_rate_balance)
+    }
+    /// Same rate balance differentiated by the last successful full JVP,
+    /// without recovering tiny rates by subtracting large cj-shifted actions.
+    pub fn complete_energy_rate_jvp(&self)->Result<f64,String> {
+        if !self.valid {return Err("No current composed energy-rate tangent".into());}
+        self.energy_rate_tangent.ok_or("No current composed energy-rate tangent".into())
     }
 }
 impl Model {
@@ -114,7 +133,7 @@ impl Model {
             dfuel_temperature:vec![0.;self.fuel_rows.len()],deposited:vec![0.;nt],ddeposited:vec![0.;nt],
             water:vec![water;nw],dwater:vec![ft::WaterDirection::default();nw],
             dflows:vec![0.;self.network.config().hydraulic.len()],state:vec![0.;self.dimension()],
-            jacobian_cj:None,owner:self.owner.clone(),valid:false}
+            jacobian_cj:None,owner:self.owner.clone(),valid:false,energy_rate_balance:0.,energy_rate_tangent:None}
     }
     /// Fresh physical preparation. Caller still solves network algebraic
     /// consistency; a zero-filled derivative is NOT a solved initial state.
@@ -129,7 +148,7 @@ impl Model {
         Ok(y)
     }
     pub fn evaluate(&self,y:&[f64],yp:&[f64],cj:Option<f64>,w:&mut Workspace)->Result<(),String> {
-        w.valid=false;w.jacobian_cj=None;
+        w.valid=false;w.jacobian_cj=None;w.energy_rate_tangent=None;
         if !Arc::ptr_eq(&self.owner,&w.owner) || y.len()!=self.dimension() || yp.len()!=self.dimension()
             || y.iter().chain(yp).any(|x| !x.is_finite()) || cj.is_some_and(|c| !c.is_finite()||c<0.) {
             return Err("Invalid composed cold trial/workspace".into());
@@ -150,7 +169,11 @@ impl Model {
         self.source.evaluate_coupled_into(&y[..l.source_end],&w.fuel_temperature,&w.stocks,&mut w.source)?;
         w.deposited.fill(0.);
         for (&r,&q) in self.fuel_rows.iter().zip(w.source.fuel_deposition()?) {w.deposited[r]=q;}
-        self.thermal.evaluate_into(&y[l.temperatures_start..],&w.deposited,&w.water,&mut w.thermal)?;
+        if cj.is_some() {
+            self.thermal.evaluate_into(&y[l.temperatures_start..],&w.deposited,&w.water,&mut w.thermal)?;
+        } else {
+            self.thermal.evaluate_values_into(&y[l.temperatures_start..],&w.deposited,&w.water,&mut w.thermal)?;
+        }
         self.carrier.rates_into(&w.mass,&w.products,&w.network.mass_flows,w.source.external_water_events()?,&mut w.product_rates)?;
         for i in 0..l.source_end {w.residual[i]=yp[i]-w.source.rates()?[i];}
         w.residual[l.network_start..l.products_start].copy_from_slice(&w.network.residual);
@@ -166,11 +189,20 @@ impl Model {
             w.residual[l.temperatures_start+i]=y[l.energies_start+i]-w.thermal.energies()?[i];
         }
         if w.residual.iter().any(|x|!x.is_finite()) {return Err("Nonfinite composed residual".into());}
+        w.energy_rate_balance=compensated(
+            (0..self.network.config().water.len()+self.network.config().solids.len())
+                .map(|i|w.network.rates[self.network.energy_row(i)])
+                .chain((0..self.network.config().secondaries.len()).map(|i|w.network.rates[self.network.secondary_energy_row(i)]))
+                .chain(w.thermal.wall_rates()?.iter().copied())
+                .chain(w.thermal.heat_rates()?.iter().copied())
+                .chain(std::iter::once(-w.source.rates()?[self.source.fuel_release_row()])));
+        if !w.energy_rate_balance.is_finite() {return Err("Nonfinite composed energy-rate balance".into());}
         w.state.copy_from_slice(y);w.jacobian_cj=cj;w.valid=true;Ok(())
     }
     /// Complete residual Jacobian action, including externally owned source
     /// columns. Same selected upwind/heat branches throughout one linear solve.
     pub fn jvp(&self,dy:&[f64],cj:f64,w:&mut Workspace)->Result<(),String> {
+        w.energy_rate_tangent=None;
         if !Arc::ptr_eq(&self.owner,&w.owner) || !w.valid || w.jacobian_cj!=Some(cj)
             || dy.len()!=self.dimension() || dy.iter().any(|v|!v.is_finite()) {
             return Err("Composed JVP requires current evaluated trial and matching cj".into());
@@ -214,6 +246,12 @@ impl Model {
             w.jvp[l.temperatures_start+i]=dy[l.energies_start+i]-w.thermal.energy_jvp()?[i];
         }
         if w.jvp.iter().any(|x| !x.is_finite()) {return Err("Nonfinite composed JVP".into());}
+        let balance=compensated(std::iter::once(w.network.energy_rate_jvp(&self.network,dn)?)
+            .chain(w.thermal.wall_jvp()?.iter().copied())
+            .chain(w.thermal.heat_jvp()?.iter().copied())
+            .chain(std::iter::once(-w.source.rate_jvp()?[self.source.fuel_release_row()])));
+        if !balance.is_finite() {return Err("Nonfinite composed energy-rate tangent".into());}
+        w.energy_rate_tangent=Some(balance);
         Ok(())
     }
     /// Domain and ownership only. Caller additionally admits current E(T),

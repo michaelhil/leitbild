@@ -302,6 +302,24 @@ impl FuelModel {
     pub fn segment_count(&self) -> usize {
         self.segment_volumes.len()
     }
+    /// Reference induced-event coefficient shared by the rate and paid-power
+    /// consumers. Temperature does not modify the selected fission law.
+    pub(crate) fn reference_fission(&self, intersection: usize, group: usize) -> f64 {
+        let e = &self.intersections[intersection];
+        self.law.speed[group] * (e.volume / self.region_volumes[e.region]) * self.law.fission[group]
+    }
+    /// Canonical originating-fuel allocation. None denotes retained segment
+    /// release; Some(i) denotes the actual intersection's induced events.
+    pub(crate) fn visit_heat_incidence(&self, mut emit: impl FnMut(usize, Option<usize>, f64)) {
+        for (i, e) in self.intersections.iter().enumerate() {
+            for w in &e.weights {
+                emit(w.cohort, Some(i), w.mass / self.weight_total[i]);
+            }
+        }
+        for (q, c) in self.cohorts.iter().enumerate() {
+            emit(q, None, c.mu);
+        }
+    }
     pub fn workspace(&self) -> Workspace {
         Workspace {
             coefficients: vec![0.; self.coordinates.len()],
@@ -383,11 +401,11 @@ impl FuelModel {
             for g in 0..GROUPS {
                 let response = if g == 2 || g == 3 { multiplier } else { 1. };
                 let factor = self.law.speed[g] * fraction;
-                events.fission[g] = factor * self.law.fission[g] * f;
+                events.fission[g] = self.reference_fission(i, g) * f;
                 events.capture[g] =
                     factor * (self.law.absorption[g] - self.law.fission[g]) * t * response;
                 events.d_fission_d_reserve[g] =
-                    factor * self.law.fission[g] / stock.reference_reserve;
+                    self.reference_fission(i, g) / stock.reference_reserve;
                 events.d_capture_d_fertile[g] =
                     factor * (self.law.absorption[g] - self.law.fission[g]) * response
                         / stock.reference_fertile;
@@ -540,15 +558,12 @@ impl FuelModel {
             return Err("Invalid paid fuel heat input");
         }
         heat.fill(0.);
-        for (i, e) in self.intersections.iter().enumerate() {
-            let mass = self.weight_total[i];
-            for w in &e.weights {
-                heat[w.cohort] += prompt_j_per_event * event_rates[i][0] * w.mass / mass;
-            }
-        }
-        for (q, c) in self.cohorts.iter().enumerate() {
-            heat[q] += c.mu * segment_release[c.segment];
-        }
+        self.visit_heat_incidence(|q, intersection, fraction| {
+            heat[q] += match intersection {
+                Some(i) => prompt_j_per_event * event_rates[i][0] * fraction,
+                None => fraction * segment_release[self.cohorts[q].segment],
+            };
+        });
         if heat.iter().any(|v| !v.is_finite()) {
             return Err("Nonfinite fuel heat candidate");
         }

@@ -5,11 +5,20 @@
 mod cooling_accuracy;
 #[path = "cooling_block/mod.rs"]
 mod cooling_block;
+#[path = "cooling_coordinates.rs"]
+mod cooling_coordinates;
+#[cfg(test)]
+#[path = "cooling_energy_diagnostic.rs"]
+mod cooling_energy_diagnostic;
+#[path = "cooling_energy_preconditioner.rs"]
+mod cooling_energy_preconditioner;
 #[cfg(test)]
 #[path = "../tests/source_cooling.rs"]
 mod cooling_fixture;
 #[path = "cooling_input/mod.rs"]
 mod cooling_input;
+#[path = "cooling_power.rs"]
+mod cooling_power;
 #[path = "evolution_input/mod.rs"]
 mod evolution_input;
 #[path = "../examples/ida_support/mod.rs"]
@@ -26,6 +35,7 @@ mod source_coordinates;
 mod source_input;
 #[path = "source_pair.rs"]
 mod source_pair;
+use cooling_coordinates::EnergyCoordinates;
 use ida_support::*;
 use leitbild_plant_numerics::{
     converter_heat, cylindrical_source, fuel_history, fuel_source, fuel_thermal, heat_history,
@@ -104,9 +114,17 @@ struct Callbacks<'a> {
     work: source_cooling::Workspace,
     p: cooling_block::Preconditioner,
     coordinates: Coordinates,
+    energy: EnergyCoordinates,
+    energy_p: cooling_energy_preconditioner::EnergyRow,
+    energy_p_setup_seconds: f64,
+    energy_p_solve_seconds: f64,
     state: Vec<f64>,
     slopes: Vec<f64>,
     direction: Vec<f64>,
+    preconditioner_rhs: Vec<f64>,
+    power_weights: cooling_power::PowerWeights,
+    power_work: cooling_power::PowerWorkspace,
+    power_resolution_w: f64,
     start: Instant,
     allowance: f64,
     fatal: Option<String>,
@@ -120,6 +138,8 @@ struct Callbacks<'a> {
     screen_seconds: f64,
     io_seconds: f64,
     error_telemetry_seconds: f64,
+    weight_calls: u64,
+    weight_seconds: f64,
     local_errors: LocalErrors,
     absolute: Vec<f64>,
     relative: f64,
@@ -256,7 +276,7 @@ impl LocalErrors {
             "{{\"family\":{},\"rows\":{},\"lastFamilyWRMS\":{},\"maximumWeightedCoordinateEstimate\":{},\"maximumRow\":{},\"maximumTime\":{}}}",
             quote(name),f.rows,finite(f.last_wrms),finite(f.maximum),f.row,finite(f.time))).collect::<Vec<_>>().join(",");
         format!(
-            "{{\"scope\":\"solver-coordinate-IDAGetEstLocalErrors-times-current-IDAGetErrWeights;D-ledger-transform-included;accepted-steps-only;not-global-error-bound-or-rejected-step-attribution\",\"observations\":{},\"lastOrder\":{},\"currentOrder\":{},\"lastH\":{},\"lastGlobalWRMS\":{},\"families\":[{}]}}",
+            "{{\"scope\":\"solver-coordinate-IDAGetEstLocalErrors-times-current-IDAGetErrWeights;D-ledger-and-G-energy-transforms-included;accepted-steps-only;not-global-error-bound-or-rejected-step-attribution\",\"observations\":{},\"lastOrder\":{},\"currentOrder\":{},\"lastH\":{},\"lastGlobalWRMS\":{},\"families\":[{}]}}",
             self.observations,
             self.last_order,
             self.current_order,
@@ -268,25 +288,48 @@ impl LocalErrors {
 }
 unsafe extern "C" fn error_weights(y: Handle, weights: Handle, user: Handle) -> c_int {
     callback(user, |c| {
-        let n = c.model.dimension();
-        let y = unsafe { values(y, n) }?;
-        let out = unsafe { output(weights, n) }?;
-        for i in 0..n {
-            let relative = if progress_relative(c.model, i) {
-                c.relative
-            } else {
-                0.
-            };
-            let scale = c.absolute[i] + relative * y[i].abs();
-            if !scale.is_finite() || scale <= 0. {
-                return Err("Invalid current per-row error scale".into());
+        let began = Instant::now();
+        c.weight_calls += 1;
+        let result = (|| {
+            let n = c.model.dimension();
+            let y = unsafe { values(y, n) }?;
+            let out = unsafe { output(weights, n) }?;
+            for i in 0..n {
+                let relative = if progress_relative(c.model, i) {
+                    c.relative
+                } else {
+                    0.
+                };
+                let scale = c.absolute[i] + relative * y[i].abs();
+                if !scale.is_finite() || scale <= 0. {
+                    return Err("Invalid current per-row error scale".into());
+                }
+                out[i] = scale;
             }
-            out[i] = 1. / scale;
-            if !out[i].is_finite() {
-                return Err("Unrepresentable per-row error weight".into());
+            // The response consumes only Assembly history stocks. Construction
+            // verifies this prefix ends before D; G is in the network suffix.
+            // Thus these solver coordinates are already physical, with no copy
+            // or full RHS/EOS preparation, and the current JVP base stays intact.
+            c.power_weights.cap(
+                &y[..c.model.source.history_dimension()],
+                c.relative,
+                c.power_resolution_w,
+                out,
+                &mut c.power_work,
+            )?;
+            for scale in out {
+                if !scale.is_finite() || *scale <= 0. {
+                    return Err("Invalid power-capped error scale".into());
+                }
+                *scale = 1. / *scale;
+                if !scale.is_finite() {
+                    return Err("Unrepresentable per-row error weight".into());
+                }
             }
-        }
-        Ok(())
+            Ok(())
+        })();
+        c.weight_seconds += began.elapsed().as_secs_f64();
+        result
     })
 }
 impl Callbacks<'_> {
@@ -301,20 +344,32 @@ impl Callbacks<'_> {
         let n = self.model.dimension();
         self.coordinates
             .physical(unsafe { values(y, n) }?, &mut self.state);
+        self.energy.state_to_physical(&mut self.state);
         self.coordinates
             .physical(unsafe { values(yp, n) }?, &mut self.slopes);
+        self.energy.vector_to_physical(&mut self.slopes);
         self.model
             .evaluate(&self.state, &self.slopes, cj, &mut self.work)
     }
     fn metrics(&self) -> String {
+        let completion = format!(
+            "{{\"identity\":\"closed-energy-P-only-rank-one-row-completion\",\"prepared\":{},\"unitResponsePivot\":{},\"unitResponseExactNonzeros\":{},\"extraSetupSolveSeconds\":{},\"completionSolveSeconds\":{},\"scope\":\"one-owned-Pbar-unit-solve-per-setup;frozen-cj;exact-nonzero-axpy;actual-F-J-unchanged\"}}",
+            self.energy_p.check().is_ok(),
+            finite(self.energy_p.pivot()),
+            self.energy_p.nonzeros(),
+            finite(self.energy_p_setup_seconds),
+            finite(self.energy_p_solve_seconds)
+        );
         format!(
-            "{{\"residuals\":{},\"linearBases\":{},\"JVPs\":{},\"residualSeconds\":{},\"linearBaseSeconds\":{},\"JVPSeconds\":{},\"acceptedAndCommonPreparationScreenSeconds\":{},\"retentionIOSeconds\":{},\"retentionIOScope\":\"checkpoint-common-and-terminal-file-write-flush-sync-rename;terminal-progress-flush-included\",\"localErrorTelemetrySeconds\":{},\"acceptedLocalErrorEstimates\":{},\"recoverableTrials\":{},\"P\":{}}}",
+            "{{\"residuals\":{},\"linearBases\":{},\"JVPs\":{},\"residualSeconds\":{},\"linearBaseSeconds\":{},\"JVPSeconds\":{},\"errorWeightCalls\":{},\"errorWeightSeconds\":{},\"errorWeightScope\":\"ordinary-scales-plus-current-sparse-power-cap-and-reciprocal;no-full-RHS-or-EOS\",\"acceptedAndCommonPreparationScreenSeconds\":{},\"retentionIOSeconds\":{},\"retentionIOScope\":\"checkpoint-common-and-terminal-file-write-flush-sync-rename;terminal-progress-flush-included\",\"localErrorTelemetrySeconds\":{},\"acceptedLocalErrorEstimates\":{},\"recoverableTrials\":{},\"energyPCompletion\":{completion},\"P\":{}}}",
             self.residuals,
             self.bases,
             self.actions,
             self.residual_seconds,
             self.base_seconds,
             self.action_seconds,
+            self.weight_calls,
+            self.weight_seconds,
             self.screen_seconds,
             self.io_seconds,
             self.error_telemetry_seconds,
@@ -381,6 +436,9 @@ unsafe extern "C" fn residual(_: f64, y: Handle, yp: Handle, r: Handle, user: Ha
         out[c.coordinates.ledger] = unsafe { values(yp, c.model.dimension()) }?
             [c.coordinates.ledger]
             - (rates[..c.coordinates.nc].iter().sum::<f64>() - rates[c.coordinates.ledger]);
+        // Actual independently assembled rate balance, never an imposed zero.
+        out[c.energy.row] = unsafe { values(yp, c.model.dimension()) }?[c.energy.row]
+            - c.work.complete_energy_rate()?;
         Ok(())
     })
 }
@@ -418,6 +476,7 @@ unsafe extern "C" fn jtimes(
         let n = c.model.dimension();
         c.coordinates
             .physical(unsafe { values(v, n) }?, &mut c.direction);
+        c.energy.vector_to_physical(&mut c.direction);
         c.model.jvp(&c.direction, cj, &mut c.work)?;
         let out = unsafe { output(jv, n) }?;
         out.copy_from_slice(&c.work.jvp);
@@ -425,6 +484,10 @@ unsafe extern "C" fn jtimes(
         let tangent = c.work.source.rate_jvp()?;
         out[c.coordinates.ledger] = cj * unsafe { values(v, n) }?[c.coordinates.ledger]
             - (tangent[..c.coordinates.nc].iter().sum::<f64>() - tangent[c.coordinates.ledger]);
+        // Unshifted physical rate partials avoid recovering a tiny derivative
+        // by subtracting enormous cj*dE terms at startup.
+        out[c.energy.row] =
+            cj * unsafe { values(v, n) }?[c.energy.row] - c.work.complete_energy_rate_jvp()?;
         c.action_seconds += t.elapsed().as_secs_f64();
         Ok(())
     })
@@ -438,12 +501,26 @@ unsafe extern "C" fn psetup(
     user: Handle,
 ) -> c_int {
     callback(user, |c| {
+        c.energy_p.invalidate();
         let n = c.model.dimension();
         c.coordinates
             .physical(unsafe { values(y, n) }?, &mut c.state);
+        c.energy.state_to_physical(&mut c.state);
         c.coordinates
             .physical(unsafe { values(yp, n) }?, &mut c.slopes);
-        c.p.setup(c.model, &c.state, &c.slopes, cj)
+        c.energy.vector_to_physical(&mut c.slopes);
+        c.p.setup(c.model, &c.state, &c.slopes, cj)?;
+        let began = Instant::now();
+        let result = (|| {
+            c.preconditioner_rhs.fill(0.);
+            c.preconditioner_rhs[c.energy.row] = 1.;
+            c.energy.vector_to_physical(&mut c.preconditioner_rhs);
+            c.p.solve(c.model, &c.preconditioner_rhs, &mut c.direction)?;
+            c.energy.vector_to_solver(&mut c.direction);
+            c.energy_p.prepare(cj, &c.direction)
+        })();
+        c.energy_p_setup_seconds += began.elapsed().as_secs_f64();
+        result
     })
 }
 unsafe extern "C" fn psolve(
@@ -459,7 +536,24 @@ unsafe extern "C" fn psolve(
 ) -> c_int {
     callback(user, |c| {
         let n = c.model.dimension();
-        c.p.solve(c.model, unsafe { values(r, n) }?, unsafe { output(z, n) }?)
+        let result = (|| {
+            c.energy_p.check()?;
+            let rhs = unsafe { values(r, n) }?;
+            let rhs_g = rhs[c.energy.row];
+            c.preconditioner_rhs.copy_from_slice(rhs);
+            c.energy.vector_to_physical(&mut c.preconditioner_rhs);
+            let out = unsafe { output(z, n) }?;
+            c.p.solve(c.model, &c.preconditioner_rhs, out)?;
+            c.energy.vector_to_solver(out);
+            let began = Instant::now();
+            let completed = c.energy_p.apply(rhs_g, out);
+            c.energy_p_solve_seconds += began.elapsed().as_secs_f64();
+            completed
+        })();
+        if result.is_err() {
+            c.energy_p.invalidate();
+        }
+        result
     })
 }
 
@@ -577,7 +671,8 @@ fn retain_common(path: &Path, time: f64, y: &[f64]) -> Result<(), String> {
     f.flush().map_err(|e| e.to_string())?;
     f.get_ref().sync_all().map_err(|e| e.to_string())?;
     drop(f);
-    fs::rename(pending, path).map_err(|e| e.to_string())
+    fs::hard_link(&pending, path).map_err(|e| e.to_string())?;
+    fs::remove_file(pending).map_err(|e| e.to_string())
 }
 fn retain_final_admitted(path: &Path, run: &Run, elapsed: f64, costs: &str) -> Result<(), String> {
     if run.steps == 0 {
@@ -620,7 +715,9 @@ fn run(
             slopes[i] = -work.residual[i];
         }
     }
-    let absolute = accuracy.absolute(refinement)?;
+    let mut absolute = accuracy.absolute(refinement)?;
+    let energy = EnergyCoordinates::new(model, &initial)?;
+    absolute[energy.row] = EnergyCoordinates::absolute(n, refinement);
     let flow_absolute = accuracy.flow_absolute(refinement)?;
     let p = cooling_block::Preconditioner::new(model, &initial, &slopes)?;
     let coordinates = Coordinates {
@@ -628,15 +725,27 @@ fn run(
         ledger: model.source.ledger_row(),
     };
     coordinates.transform(&mut initial);
+    energy.state_to_solver(&mut initial);
     coordinates.transform(&mut slopes);
+    energy.vector_to_solver(&mut slopes);
+    let power_weights = cooling_power::PowerWeights::new(&model.source)?;
+    let power_work = power_weights.workspace();
     let mut callbacks = Box::new(Callbacks {
         model,
         work,
         p,
         coordinates,
+        energy_p: cooling_energy_preconditioner::EnergyRow::new(n, energy.row)?,
+        energy_p_setup_seconds: 0.,
+        energy_p_solve_seconds: 0.,
+        energy,
         state: vec![0.; n],
         slopes: vec![0.; n],
         direction: vec![0.; n],
+        preconditioner_rhs: vec![0.; n],
+        power_weights,
+        power_work,
+        power_resolution_w: cooling_accuracy::DEPOSIT_RESOLUTION_W / refinement,
         start,
         allowance,
         fatal: None,
@@ -650,6 +759,8 @@ fn run(
         screen_seconds: 0.,
         io_seconds: 0.,
         error_telemetry_seconds: 0.,
+        weight_calls: 0,
+        weight_seconds: 0.,
         local_errors: LocalErrors::new(model),
         absolute,
         relative: 1e-5 / refinement,
@@ -670,6 +781,7 @@ fn run(
     let mut constraints = vec![0.; n];
     constraints[..l.source_end].fill(1.);
     constraints[model.source.ledger_row()] = 0.;
+    constraints[callbacks.energy.row] = 0.; // Signed aggregate defect, not a physical E stock.
     constraints[l.products_start..l.energies_start].fill(1.);
     constraints[l.temperatures_start..].fill(2.);
     let constraints = owned.vector(&constraints)?;
@@ -715,7 +827,9 @@ fn run(
         let mut failed_y = vec![0.; n];
         let mut failed_yp = vec![0.; n];
         coordinates.physical(unsafe { values(y, n) }?, &mut failed_y);
+        callbacks.energy.state_to_physical(&mut failed_y);
         coordinates.physical(unsafe { values(yp, n) }?, &mut failed_yp);
+        callbacks.energy.vector_to_physical(&mut failed_yp);
         let path = checkpoint_path.with_extension("initialization-refusal");
         checkpoint(&path, 0., &failed_y, &failed_yp)?;
         let reason = format!(
@@ -750,7 +864,9 @@ fn run(
     let mut physical = vec![0.; n];
     let mut physical_yp = vec![0.; n];
     coordinates.physical(&initial, &mut physical);
+    callbacks.energy.state_to_physical(&mut physical);
     coordinates.physical(&slopes, &mut physical_yp);
+    callbacks.energy.vector_to_physical(&mut physical_yp);
     let initial = physical.clone();
     let mut out = Run {
         passed: false,
@@ -770,8 +886,6 @@ fn run(
         stats: "null".into(),
     };
     let mut last_checkpoint = Instant::now();
-    let mut bucket = 0.;
-    let mut bucket_steps = 0;
     let advance = (|| -> Result<(), String> {
         loop {
             callbacks.budget()?;
@@ -780,15 +894,9 @@ fn run(
                 checked_ida_step(status, callbacks.fatal.as_deref())?;
                 retained_endpoint(owned.ida, out.returned, y, yp, endpoint_y, endpoint_yp)?;
                 coordinates.physical(unsafe { values(endpoint_y, n) }?, &mut physical);
+                callbacks.energy.state_to_physical(&mut physical);
                 coordinates.physical(unsafe { values(endpoint_yp, n) }?, &mut physical_yp);
-                if out.returned.floor() != bucket {
-                    bucket = out.returned.floor();
-                    bucket_steps = 0;
-                }
-                bucket_steps += 1;
-                if bucket_steps > 500 {
-                    return Err("Existing 500 accepted steps per 1 s observation guard".into());
-                }
+                callbacks.energy.vector_to_physical(&mut physical_yp);
             }
             // Admission needs current physical charts/receipts, not a new
             // full network Jacobian. JTsetup prepares its own next stage.
@@ -868,6 +976,7 @@ fn run(
                     "Common coupled polynomial",
                 )?;
                 coordinates.physical(unsafe { values(common, n) }?, &mut callbacks.state);
+                callbacks.energy.state_to_physical(&mut callbacks.state);
                 // Dense observations are explicitly not positivity-constrained endpoints.
                 let common_started = Instant::now();
                 model.evaluate(&callbacks.state, &vec![0.; n], None, &mut callbacks.work)?;
@@ -948,7 +1057,9 @@ fn run(
     callbacks.io_seconds += io_started.elapsed().as_secs_f64();
     if !out.passed {
         coordinates.physical(unsafe { values(y, n) }?, &mut physical);
+        callbacks.energy.state_to_physical(&mut physical);
         coordinates.physical(unsafe { values(yp, n) }?, &mut physical_yp);
+        callbacks.energy.vector_to_physical(&mut physical_yp);
         // Explicitly unadmitted raw solver buffers, never replace last accepted checkpoint.
         let io_started = Instant::now();
         checkpoint(
@@ -1183,8 +1294,9 @@ fn execute() -> Result<(), String> {
     let passed =
         pair_evaluated && thermal_developed == Some(true) && source_developed == Some(true);
     let tighter = tight.as_ref().map_or("null".into(), Run::json);
+    let fuel_power_resolution = finite(cooling_accuracy::DEPOSIT_RESOLUTION_W);
     println!(
-        "{{\"kind\":\"source-cooling-pair\",\"passed\":{passed},\"lastAdmittedTime\":{},\"scope\":\"same-trial-source-finite-fuel-He-primary-finite-SG;cold-fixed-prepared-geometry;no-fullplant-credit\",\"dimension\":{},\"differential\":{},\"settings\":{{\"accuracyPolicy\":\"cold-source-cooling-2\",\"provisional\":true,\"perRowErrorWeights\":\"source-carrier-relative-consequences;network-thermal-absolute-only\",\"referenceAllATOLandRTOLDivisor\":10,\"horizon\":300,\"maxl\":30,\"restarts\":0}},\"gates\":{{\"fullPairComparisonEvaluated\":{pair_evaluated},\"developedThermalResponse\":{},\"developedSourceResponse\":{},\"thermalResponse\":{thermal_details},\"sourceLocalRatio\":{},\"sourceFamilyRatio\":{},\"sourceObservableRatio\":{},\"sourceNCOperatorRatio\":{},\"thermalPairRatio\":{},\"networkPairRatio\":{},\"depositionPairRatio\":{},\"carrierPairRatio\":{}}},\"pairedComparisons\":[{}],\"fuelTemperatureFeedbackDiagnostic\":{feedback},\"normal\":{},\"tighter\":{tighter},\"aggregateWallSeconds\":{}}}",
+        "{{\"kind\":\"source-cooling-pair\",\"passed\":{passed},\"lastAdmittedTime\":{},\"scope\":\"same-trial-source-finite-fuel-He-primary-finite-SG;cold-fixed-prepared-geometry;no-fullplant-credit\",\"dimension\":{},\"differential\":{},\"settings\":{{\"accuracyPolicy\":\"cold-source-cooling-4\",\"provisional\":true,\"fuelPowerErrorWeights\":\"sparse-current-response-proportional-budget-cap\",\"fuelPowerResolutionW\":{fuel_power_resolution},\"fuelPowerWeightScope\":\"first-order-local-box-budget;not-WRMS-or-paired-error-guarantee\",\"perRowErrorWeights\":\"source-carrier-relative-consequences;network-thermal-absolute-only;energy-defect-absolute\",\"solverEnergyCoordinate\":\"G=sum-installed-energy-change-independent-fuel-release\",\"energyDefectATOLJ\":{},\"referenceAllATOLandRTOLDivisor\":10,\"horizon\":300,\"costGuard\":\"aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic\",\"maxl\":30,\"restarts\":0}},\"gates\":{{\"fullPairComparisonEvaluated\":{pair_evaluated},\"developedThermalResponse\":{},\"developedSourceResponse\":{},\"thermalResponse\":{thermal_details},\"sourceLocalRatio\":{},\"sourceFamilyRatio\":{},\"sourceObservableRatio\":{},\"sourceNCOperatorRatio\":{},\"thermalPairRatio\":{},\"networkPairRatio\":{},\"depositionPairRatio\":{},\"carrierPairRatio\":{}}},\"pairedComparisons\":[{}],\"fuelTemperatureFeedbackDiagnostic\":{feedback},\"normal\":{},\"tighter\":{tighter},\"aggregateWallSeconds\":{}}}",
         finite(
             tight
                 .as_ref()
@@ -1194,6 +1306,7 @@ fn execute() -> Result<(), String> {
         (0..prepared.model.dimension())
             .filter(|&i| prepared.model.is_differential(i))
             .count(),
+        EnergyCoordinates::absolute(prepared.model.dimension(), 1.),
         thermal_developed.map_or("null".into(), |v| v.to_string()),
         source_developed.map_or("null".into(), |v| v.to_string()),
         if pair_evaluated {
@@ -1251,9 +1364,11 @@ fn execute() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn callbacks(model: &source_cooling::Model) -> Callbacks<'_> {
+    pub(super) fn callbacks(model: &source_cooling::Model) -> Callbacks<'_> {
         let y = model.initial_state().unwrap();
         let yp = vec![0.; model.dimension()];
+        let power_weights = cooling_power::PowerWeights::new(&model.source).unwrap();
+        let power_work = power_weights.workspace();
         Callbacks {
             model,
             work: model.workspace(),
@@ -1262,9 +1377,21 @@ mod tests {
                 nc: model.source.nc_dimension(),
                 ledger: model.source.ledger_row(),
             },
+            energy: EnergyCoordinates::new(model, &y).unwrap(),
+            energy_p: cooling_energy_preconditioner::EnergyRow::new(
+                model.dimension(),
+                EnergyCoordinates::new(model, &y).unwrap().row,
+            )
+            .unwrap(),
+            energy_p_setup_seconds: 0.,
+            energy_p_solve_seconds: 0.,
             state: vec![0.; model.dimension()],
             slopes: vec![0.; model.dimension()],
             direction: vec![0.; model.dimension()],
+            preconditioner_rhs: vec![0.; model.dimension()],
+            power_weights,
+            power_work,
+            power_resolution_w: cooling_accuracy::DEPOSIT_RESOLUTION_W,
             start: Instant::now(),
             allowance: 120.,
             fatal: None,
@@ -1278,6 +1405,8 @@ mod tests {
             screen_seconds: 0.,
             io_seconds: 0.,
             error_telemetry_seconds: 0.,
+            weight_calls: 0,
+            weight_seconds: 0.,
             local_errors: LocalErrors::new(model),
             absolute: vec![0.01; model.dimension()],
             relative: 1e-5,
@@ -1291,6 +1420,7 @@ mod tests {
         let physical = model.initial_state().unwrap();
         let mut solver = physical.clone();
         c.coordinates.transform(&mut solver);
+        c.energy.state_to_solver(&mut solver);
         let mut resources = Resources::new().unwrap();
         let y = resources.vector(&solver).unwrap();
         let yp = resources.vector(&vec![0.; n]).unwrap();
@@ -1302,44 +1432,225 @@ mod tests {
         let rates = c.work.source.rates().unwrap();
         expected[c.coordinates.ledger] =
             -(rates[..c.coordinates.nc].iter().sum::<f64>() - rates[c.coordinates.ledger]);
-        assert_eq!(unsafe { values(r, n) }.unwrap(), expected);
-        let cj = 3.;
-        assert_eq!(unsafe { jtsetup(0., y, yp, r, cj, user) }, 0);
-        let direction = (0..n).map(|i| 0.001 / (i + 1) as f64).collect::<Vec<_>>();
-        let v = resources.vector(&direction).unwrap();
+        let physical_energy_residual = c.energy.balance(&c.work.residual);
+        expected[c.energy.row] = physical_energy_residual;
+        // Residual G uses independently assembled actual rates, so its summing
+        // association need not match the full physical-row sum bit-for-bit.
+        for (i, (&a, &b)) in unsafe { values(r, n) }
+            .unwrap()
+            .iter()
+            .zip(&expected)
+            .enumerate()
+        {
+            if i == c.energy.row {
+                assert!((a - b).abs() < 1e-8);
+            } else {
+                assert_eq!(a, b);
+            }
+        }
+        for cj in [3., 1e12] {
+            assert_eq!(unsafe { jtsetup(0., y, yp, r, cj, user) }, 0);
+            let mut direction = (0..n).map(|i| 0.001 / (i + 1) as f64).collect::<Vec<_>>();
+            direction[c.energy.row] = 0.125;
+            direction[model.layout.energies_start] = 2e10;
+            let v = resources.vector(&direction).unwrap();
+            assert_eq!(
+                unsafe {
+                    jtimes(
+                        0.,
+                        y,
+                        yp,
+                        r,
+                        v,
+                        r,
+                        cj,
+                        user,
+                        ptr::null_mut(),
+                        ptr::null_mut(),
+                    )
+                },
+                0
+            );
+            let mut physical_direction = vec![0.; n];
+            c.coordinates.physical(&direction, &mut physical_direction);
+            c.energy.vector_to_physical(&mut physical_direction);
+            let mut independent = model.workspace();
+            model
+                .evaluate(&physical, &vec![0.; n], Some(cj), &mut independent)
+                .unwrap();
+            model
+                .jvp(&physical_direction, cj, &mut independent)
+                .unwrap();
+            let mut expected = independent.jvp.clone();
+            c.coordinates.transform(&mut expected);
+            let tangent = independent.source.rate_jvp().unwrap();
+            expected[c.coordinates.ledger] = cj * direction[c.coordinates.ledger]
+                - (tangent[..c.coordinates.nc].iter().sum::<f64>() - tangent[c.coordinates.ledger]);
+            expected[c.energy.row] =
+                cj * direction[c.energy.row] - independent.complete_energy_rate_jvp().unwrap();
+            for (i, (&a, &b)) in unsafe { values(r, n) }
+                .unwrap()
+                .iter()
+                .zip(&expected)
+                .enumerate()
+            {
+                if i == c.energy.row {
+                    assert!((a - b).abs() < 1e-8);
+                } else {
+                    assert_eq!(a, b);
+                }
+            }
+            assert!(c.fatal.is_none());
+        }
+    }
+    #[test]
+    fn energy_chart_retains_injected_defect_release_and_distinct_affine_linear_maps() {
+        let model = cooling_fixture::fixture();
+        let initial = model.initial_state().unwrap();
+        let g = EnergyCoordinates::new(&model, &initial).unwrap();
+        assert!(g.row >= model.layout.network_start && g.row < model.layout.products_start);
+        let d = Coordinates {
+            nc: model.source.nc_dimension(),
+            ledger: model.source.ledger_row(),
+        };
+        let mut physical = initial.clone();
+        physical[g.row] += 2.;
+        physical[model.source.fuel_release_row()] = 0.125;
+        physical[d.ledger] = 0.25;
+        let mut solver = physical.clone();
+        d.transform(&mut solver);
+        g.state_to_solver(&mut solver);
+        assert_eq!(solver[g.row], 1.875);
+        assert_eq!(solver[model.source.fuel_release_row()], 0.125);
+        assert_eq!(solver[d.ledger], -0.25);
+        let mut reverse_order = physical.clone();
+        g.state_to_solver(&mut reverse_order);
+        d.transform(&mut reverse_order);
+        assert_eq!(solver, reverse_order);
+        g.state_to_physical(&mut solver);
+        d.transform(&mut solver);
+        assert_eq!(solver, physical);
+        let mut slope = vec![0.; initial.len()];
+        slope[g.row] = 3.;
+        slope[model.layout.energies_start] = 2.;
+        slope[model.source.fuel_release_row()] = 0.5;
+        let original = slope.clone();
+        g.vector_to_solver(&mut slope);
+        assert_eq!(slope[g.row], 4.5);
+        g.vector_to_physical(&mut slope);
+        assert_eq!(slope, original);
         assert_eq!(
-            unsafe {
-                jtimes(
-                    0.,
-                    y,
-                    yp,
-                    r,
-                    v,
-                    r,
-                    cj,
-                    user,
-                    ptr::null_mut(),
-                    ptr::null_mut(),
-                )
-            },
-            0
+            EnergyCoordinates::absolute(initial.len(), 1.)
+                / EnergyCoordinates::absolute(initial.len(), 10.),
+            10.
         );
-        let mut physical_direction = vec![0.; n];
-        c.coordinates.physical(&direction, &mut physical_direction);
-        let mut independent = model.workspace();
+    }
+    #[test]
+    fn energy_p_completion_keeps_non_g_rows_and_frozen_stage() {
+        let model = cooling_fixture::fixture();
+        let n = model.dimension();
+        let mut c = callbacks(&model);
+        let mut solver = model.initial_state().unwrap();
+        c.coordinates.transform(&mut solver);
+        c.energy.state_to_solver(&mut solver);
+        let mut resources = Resources::new().unwrap();
+        let y = resources.vector(&solver).unwrap();
+        let yp = resources.vector(&vec![0.; n]).unwrap();
+        let r = resources.vector(&vec![0.; n]).unwrap();
+        let z = resources.vector(&vec![0.; n]).unwrap();
+        let user = (&mut c as *mut Callbacks<'_>).cast();
+        assert_eq!(unsafe { psetup(0., y, yp, r, 3., user) }, 0);
+        let rhs = (0..n)
+            .map(|i| if i % 2 == 0 { 0.001 } else { -0.002 })
+            .collect::<Vec<_>>();
+        unsafe { output(r, n) }.unwrap().copy_from_slice(&rhs);
+        let mut physical_rhs = rhs.clone();
+        c.energy.vector_to_physical(&mut physical_rhs);
+        let mut expected = vec![0.; n];
+        c.p.solve(&model, &physical_rhs, &mut expected).unwrap();
+        c.energy.vector_to_solver(&mut expected);
+        assert_eq!(unsafe { psolve(0., y, yp, r, r, z, 3., 1., user) }, 0);
+        let completed = unsafe { values(z, n) }.unwrap().to_vec();
+        assert!((completed[c.energy.row] - rhs[c.energy.row] / 3.).abs() < 1e-12);
+        assert!(c.energy_p.unit().iter().all(
+            |&(row, _)| row >= model.layout.network_start && row < model.layout.products_start
+        ));
+        // Other components have zero unit response and are unchanged exactly.
+        for row in 0..n {
+            if row < model.layout.network_start || row >= model.layout.products_start {
+                assert_eq!(completed[row], expected[row]);
+            }
+        }
+        // Independently apply the native held-state network matrix, not the
+        // completion formula, to verify EVERY retained non-G network equation.
+        let physical = model.initial_state().unwrap();
         model
-            .evaluate(&physical, &vec![0.; n], Some(cj), &mut independent)
+            .evaluate(&physical, &vec![0.; n], Some(3.), &mut c.work)
             .unwrap();
-        model
-            .jvp(&physical_direction, cj, &mut independent)
-            .unwrap();
-        let mut expected = independent.jvp.clone();
-        c.coordinates.transform(&mut expected);
-        let tangent = independent.source.rate_jvp().unwrap();
-        expected[c.coordinates.ledger] = cj * direction[c.coordinates.ledger]
-            - (tangent[..c.coordinates.nc].iter().sum::<f64>() - tangent[c.coordinates.ledger]);
-        assert_eq!(unsafe { values(r, n) }.unwrap(), expected);
+        let mut physical_solution = completed.clone();
+        c.energy.vector_to_physical(&mut physical_solution);
+        let network = &model.network;
+        let mut action = vec![0.; network.dimension()];
+        let mut gross = vec![0.; network.dimension()];
+        for col in 0..network.dimension() {
+            for k in
+                network.column_pointers[col] as usize..network.column_pointers[col + 1] as usize
+            {
+                let row = network.row_indices[k] as usize;
+                let value = c.work.network.jacobian_values[k]
+                    * physical_solution[model.layout.network_start + col];
+                action[row] += value;
+                gross[row] += value.abs();
+            }
+        }
+        for row in 0..network.dimension() {
+            if row + model.layout.network_start != c.energy.row {
+                assert!(
+                    (action[row] - physical_rhs[model.layout.network_start + row]).abs()
+                        <= 1e-10 * gross[row].max(1.)
+                );
+            }
+        }
+        let mut changed = solver.clone();
+        changed[model.layout.temperatures_start] += 0.1;
+        unsafe { output(y, n) }.unwrap().copy_from_slice(&changed);
+        assert_eq!(unsafe { jtsetup(0., y, yp, r, 7., user) }, 0);
+        assert_eq!(unsafe { psolve(0., y, yp, r, r, z, 7., 1., user) }, 0);
+        assert_eq!(unsafe { values(z, n) }.unwrap(), completed);
         assert!(c.fatal.is_none());
+        assert_eq!(unsafe { psetup(0., y, yp, r, 0., user) }, -1);
+        assert!(c.energy_p.check().is_err());
+        assert_eq!(unsafe { psolve(0., y, yp, r, r, z, 7., 1., user) }, -1);
+    }
+    #[test]
+    fn energy_callback_does_not_suppress_off_invariant_state_or_slope() {
+        let model = cooling_fixture::fixture();
+        let n = model.dimension();
+        let mut c = callbacks(&model);
+        let mut solver = model.initial_state().unwrap();
+        solver[c.energy.row] += 2.;
+        c.coordinates.transform(&mut solver);
+        c.energy.state_to_solver(&mut solver);
+        assert_eq!(solver[c.energy.row], 2.);
+        let mut slope = vec![0.; n];
+        slope[c.energy.row] = 0.25;
+        let mut resources = Resources::new().unwrap();
+        let y = resources.vector(&solver).unwrap();
+        let yp = resources.vector(&slope).unwrap();
+        let r = resources.vector(&vec![0.; n]).unwrap();
+        let user = (&mut c as *mut Callbacks<'_>).cast();
+        assert_eq!(unsafe { residual(0., y, yp, r, user) }, 0);
+        assert_eq!(
+            c.state[c.energy.row],
+            model.initial_state().unwrap()[c.energy.row] + 2.
+        );
+        assert!((unsafe { values(r, n) }.unwrap()[c.energy.row] - 0.25).abs() < 1e-8);
+        c.absolute[c.energy.row] = EnergyCoordinates::absolute(n, 1.);
+        assert_eq!(unsafe { error_weights(y, r, user) }, 0);
+        assert_eq!(
+            unsafe { values(r, n) }.unwrap()[c.energy.row],
+            1. / EnergyCoordinates::absolute(n, 1.)
+        );
     }
     #[test]
     fn source_relative_weights_do_not_loosen_absolute_fluid_or_caloric_rows() {
@@ -1348,12 +1659,16 @@ mod tests {
         let mut c = callbacks(&model);
         let user = (&mut c as *mut Callbacks<'_>).cast();
         let mut resources = Resources::new().unwrap();
-        let mut state = vec![1e9; n];
+        let mut state = model.initial_state().unwrap();
+        state[0] = 1e9;
+        state[model.layout.products_start] = 1e9;
+        c.coordinates.transform(&mut state);
+        c.energy.state_to_solver(&mut state);
         let y = resources.vector(&state).unwrap();
         let w = resources.vector(&vec![0.; n]).unwrap();
         assert_eq!(unsafe { error_weights(y, w, user) }, 0);
         let weights = unsafe { values(w, n) }.unwrap();
-        assert!((weights[0] - 1. / (0.01 + 1e4)).abs() < 1e-15);
+        assert!(weights[0] >= 1. / (0.01 + 1e4));
         assert_eq!(weights[model.layout.network_start], 100.);
         assert_eq!(weights[model.layout.energies_start], 100.);
         assert!((weights[model.layout.products_start] - 1. / (0.01 + 1e4)).abs() < 1e-15);
@@ -1361,6 +1676,8 @@ mod tests {
         unsafe { output(y, n) }.unwrap().copy_from_slice(&state);
         assert_eq!(unsafe { error_weights(y, w, user) }, -1);
         assert!(c.fatal.is_some());
+        assert_eq!(c.weight_calls, 2);
+        assert!(c.weight_seconds.is_finite() && c.weight_seconds >= 0.);
     }
     #[test]
     fn carrier_progress_relative_weights_cover_only_owned_rows_and_refine_tenfold() {
@@ -1383,9 +1700,16 @@ mod tests {
             n - 1,
         ];
         for progress in [0., 1e-12, 1e12] {
-            unsafe { output(y, n) }.unwrap().fill(progress);
+            let mut state = model.initial_state().unwrap();
+            for &r in &boundaries {
+                state[r] = progress;
+            }
+            c.coordinates.transform(&mut state);
+            c.energy.state_to_solver(&mut state);
+            unsafe { output(y, n) }.unwrap().copy_from_slice(&state);
             c.absolute.fill(0.01);
             c.relative = 1e-5;
+            c.power_resolution_w = cooling_accuracy::DEPOSIT_RESOLUTION_W;
             assert_eq!(unsafe { error_weights(y, w, user) }, 0);
             let normal = unsafe { values(w, n) }.unwrap().to_vec();
             for &r in &boundaries {
@@ -1395,15 +1719,69 @@ mod tests {
                     } else {
                         0.
                     };
-                assert_eq!(normal[r], 1. / (0.01 + relative * progress));
+                assert_eq!(normal[r], 1. / (0.01 + relative * state[r].abs()));
             }
             c.absolute.fill(0.001);
             c.relative = 1e-6;
+            c.power_resolution_w = cooling_accuracy::DEPOSIT_RESOLUTION_W / 10.;
             assert_eq!(unsafe { error_weights(y, w, user) }, 0);
             for (&a, &b) in unsafe { values(w, n) }.unwrap().iter().zip(&normal) {
                 assert!((a / (10. * b) - 1.).abs() < 4e-16);
             }
         }
+    }
+    #[test]
+    fn power_weight_callback_uses_physical_source_without_changing_trial_base() {
+        let model = cooling_fixture::fixture();
+        let n = model.dimension();
+        let mut c = callbacks(&model);
+        let mut physical = model.initial_state().unwrap();
+        physical[0] = 2.;
+        physical[model.source.ledger_row()] = 7.;
+        let mut solver = physical.clone();
+        c.coordinates.transform(&mut solver);
+        c.energy.state_to_solver(&mut solver);
+        let mut resources = Resources::new().unwrap();
+        let y = resources.vector(&solver).unwrap();
+        let w = resources.vector(&vec![0.; n]).unwrap();
+        let user = (&mut c as *mut Callbacks<'_>).cast();
+        let before = c.state.clone();
+        assert!(model.source.history_dimension() <= c.coordinates.ledger);
+        assert_eq!(
+            &solver[..model.source.history_dimension()],
+            &physical[..model.source.history_dimension()]
+        );
+        let mut expected = (0..n)
+            .map(|i| {
+                c.absolute[i]
+                    + if progress_relative(&model, i) {
+                        c.relative * solver[i].abs()
+                    } else {
+                        0.
+                    }
+            })
+            .collect::<Vec<_>>();
+        let mut scratch = c.power_weights.workspace();
+        c.power_weights
+            .cap(
+                &physical[..model.layout.source_end],
+                c.relative,
+                c.power_resolution_w,
+                &mut expected,
+                &mut scratch,
+            )
+            .unwrap();
+        for _ in 0..2 {
+            assert_eq!(unsafe { error_weights(y, w, user) }, 0);
+            assert_eq!(c.state, before);
+            for (&weight, &scale) in unsafe { values(w, n) }.unwrap().iter().zip(&expected) {
+                assert_eq!(weight, 1. / scale);
+            }
+        }
+        assert_eq!(c.weight_calls, 2);
+        assert_eq!(c.residuals, 0);
+        assert_eq!(c.bases, 0);
+        assert!(c.metrics().contains("no-full-RHS-or-EOS"));
     }
     #[test]
     fn local_error_family_telemetry_is_a_coordinate_estimate_not_a_new_gate() {
@@ -1523,6 +1901,22 @@ mod tests {
         assert!(!path.with_extension("common-pending").exists());
         assert!(retain_common(&path, 3., &[9.]).is_err());
         assert_eq!(fs::read(&path).unwrap(), expected);
-        fs::remove_file(path).unwrap();
+        fs::remove_file(&path).unwrap();
+        #[cfg(unix)]
+        {
+            // exists() is false for a dangling destination: publication itself
+            // must refuse replacement, not rely on the preflight check.
+            std::os::unix::fs::symlink("absent-common-target", &path).unwrap();
+            assert!(!path.exists());
+            assert!(retain_common(&path, 3., &[9.]).is_err());
+            assert!(
+                fs::symlink_metadata(&path)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink()
+            );
+            fs::remove_file(path.with_extension("common-pending")).unwrap();
+            fs::remove_file(path).unwrap();
+        }
     }
 }

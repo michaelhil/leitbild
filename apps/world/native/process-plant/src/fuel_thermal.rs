@@ -102,11 +102,19 @@ pub struct Workspace {
     energy_direction: Vec<f64>,
     heat_direction: Vec<f64>,
     wall_direction: Vec<f64>,
-    temperature: Vec<f64>,
-    water: Vec<Water>,
+    // Complete local linearization of the last successful preparation. No
+    // direction or approximately matched state is a reuse key.
+    partials: Vec<BandPartials>,
     owner: Arc<()>,
     valid: bool,
+    linearized: bool,
     direction_valid: bool,
+}
+struct BandPartials {
+    radial: Vec<[f64; 2]>,
+    gap: [f64; 4], // q_f: fuel/gas; q_c: gas/clad
+    radiation: [f64; 2],
+    wall: [f64; 6], // wall T, water T, flow, conductivity, viscosity, cp
 }
 impl Workspace {
     pub fn energies(&self) -> Result<&[f64], &'static str> {
@@ -274,6 +282,7 @@ fn clad_increment(a: f64, b: f64) -> f64 {
     d * (7.51 + 0.0209 * (b + a) / 2. - 1.45e-5 * (b * b + a * b + a * a) / 3.
         + 7.67e-9 * (b + a) * (b * b + a * a) / 4.)
 }
+#[cfg(test)]
 fn wall(b: &Band, t: f64, w: Water, dt: f64, dw: WaterDirection) -> (f64, f64) {
     // Fixed base-state/generalized Newton branch: equality selects heating
     // for the Pr exponent and the conduction floor for max(Nu). At either
@@ -297,6 +306,36 @@ fn wall(b: &Band, t: f64, w: Water, dt: f64, dw: WaterDirection) -> (f64, f64) {
         h * (t - w.temperature_k),
         dh * (t - w.temperature_k) + h * (dt - dw.temperature_k),
     )
+}
+
+/// The same fixed heating/cooling and Nusselt-floor branches as the direct
+/// directional formula. Prepare the six local partials once, not per Krylov
+/// direction. Multiplication by the actual contact area belongs here too.
+fn wall_partials<const LINEARIZED: bool>(b: &CompiledBand, t: f64, w: Water) -> (f64, [f64; 6]) {
+    let b0 = &b.input;
+    let re =
+        w.mass_flow_kg_s.abs() * b0.hydraulic_diameter_m / (b0.flow_area_m2 * w.viscosity_pa_s);
+    let pr = w.cp_j_kg_k * w.viscosity_pa_s / w.conductivity_w_m_k;
+    let exponent = if t >= w.temperature_k { 0.4 } else { 0.3 };
+    let db = 0.023 * re.powf(0.8) * pr.powf(exponent);
+    let local_h = db.max(7.86) * w.conductivity_w_m_k / b0.hydraulic_diameter_m;
+    let q = b.wall_area * (local_h * (t - w.temperature_k));
+    let h = b.wall_area * local_h;
+    let partials = if !LINEARIZED {
+        [0.; 6]
+    } else if db > 7.86 {
+        [
+            h,
+            -h,
+            q * 0.8 / w.mass_flow_kg_s,
+            q * (1. - exponent) / w.conductivity_w_m_k,
+            q * (exponent - 0.8) / w.viscosity_pa_s,
+            q * exponent / w.cp_j_kg_k,
+        ]
+    } else {
+        [h, -h, 0., q / w.conductivity_w_m_k, 0., 0.]
+    };
+    (q, partials)
 }
 
 impl Model {
@@ -466,10 +505,19 @@ impl Model {
             energy_direction: vec![0.; n],
             heat_direction: vec![0.; n],
             wall_direction: vec![0.; self.band_count()],
-            temperature: vec![0.; n],
-            water: vec![Water::default(); self.waters],
+            partials: self
+                .bands
+                .iter()
+                .map(|b| BandPartials {
+                    radial: vec![[0.; 2]; b.radial.len()],
+                    gap: [0.; 4],
+                    radiation: [0.; 2],
+                    wall: [0.; 6],
+                })
+                .collect(),
             owner: self.owner.clone(),
             valid: false,
+            linearized: false,
             direction_valid: false,
         }
     }
@@ -491,7 +539,28 @@ impl Model {
         water: &[Water],
         w: &mut Workspace,
     ) -> Result<(), &'static str> {
+        self.evaluate::<true>(temperature, deposited_w, water, w)
+    }
+    /// Physical values only. Invalidates every earlier derivative preparation;
+    /// residual/admission callers do not prepare an unused linearized stage.
+    pub fn evaluate_values_into(
+        &self,
+        temperature: &[f64],
+        deposited_w: &[f64],
+        water: &[Water],
+        w: &mut Workspace,
+    ) -> Result<(), &'static str> {
+        self.evaluate::<false>(temperature, deposited_w, water, w)
+    }
+    fn evaluate<const LINEARIZED: bool>(
+        &self,
+        temperature: &[f64],
+        deposited_w: &[f64],
+        water: &[Water],
+        w: &mut Workspace,
+    ) -> Result<(), &'static str> {
         w.valid = false;
+        w.linearized = false;
         w.direction_valid = false;
         if !Arc::ptr_eq(&self.owner, &w.owner)
             || temperature.len() != self.node_count()
@@ -540,7 +609,9 @@ impl Model {
                     w.capacity[i] = m * if fuel { fuel_cp(t) } else { clad_cp(t) };
                 }
             }
-            for &(a, c, g, fuel) in &b.radial {
+            let partials = &mut w.partials[band_index];
+            let mut previous_endpoint = None;
+            for (local, &(a, c, g, fuel)) in partials.radial.iter_mut().zip(&b.radial) {
                 let q = g * if fuel {
                     fuel_increment(temperature[c], temperature[a])
                 } else {
@@ -548,6 +619,18 @@ impl Model {
                 };
                 w.heat[a] -= q;
                 w.heat[c] += q;
+                if LINEARIZED {
+                    let k = if fuel { fuel_k } else { clad_k };
+                    // Consecutive radial faces share an actual material node;
+                    // evaluate that endpoint conductivity once in this trial.
+                    let ka = match previous_endpoint {
+                        Some((row, value)) if row == a => value,
+                        _ => k(temperature[a]),
+                    };
+                    let kc = k(temperature[c]);
+                    *local = [g * ka, -g * kc];
+                    previous_endpoint = Some((c, kc));
+                }
             }
             let f = b.fuel_surface;
             let c = b.clad_inner;
@@ -556,26 +639,36 @@ impl Model {
             if tg < 290. || tg > 2000. {
                 return Err("Helium temperature outside selected cold package domain");
             }
-            let (g, _) = self.gap(b, tg);
+            let (g, dg) = self.gap(b, tg);
             let qf = g * (temperature[f] - tg);
             let qc = g * (tg - temperature[c]);
             w.heat[f] -= qf;
             w.heat[h] += qf - qc;
             w.heat[c] += qc;
+            if LINEARIZED {
+                partials.gap = [
+                    g,
+                    dg * (temperature[f] - tg) - g,
+                    dg * (tg - temperature[c]) + g,
+                    -g,
+                ];
+            }
             let tf = temperature[f];
             let tc = temperature[c];
             let qr = b.radiation * (tf - tc) * (tf + tc) * (tf * tf + tc * tc);
             w.heat[f] -= qr;
             w.heat[c] += qr;
-            let qwall = b.wall_area
-                * wall(
-                    &b.input,
-                    temperature[b.clad_outer],
-                    water[b.input.water],
-                    0.,
-                    WaterDirection::default(),
-                )
-                .0;
+            if LINEARIZED {
+                partials.radiation = [
+                    4. * b.radiation * tf.powi(3),
+                    -4. * b.radiation * tc.powi(3),
+                ];
+            }
+            let (qwall, wall) =
+                wall_partials::<LINEARIZED>(b, temperature[b.clad_outer], water[b.input.water]);
+            if LINEARIZED {
+                partials.wall = wall;
+            }
             w.wall[band_index] = qwall;
             w.heat[b.clad_outer] -= qwall;
         }
@@ -590,12 +683,21 @@ impl Model {
             .chain(&w.wall)
             .any(|x| !x.is_finite())
             || !w.capacity.iter().all(|&x| positive(x))
+            || (LINEARIZED
+                && w.partials.iter().any(|p| {
+                    p.radial
+                        .iter()
+                        .flatten()
+                        .chain(&p.gap)
+                        .chain(&p.radiation)
+                        .chain(&p.wall)
+                        .any(|v| !v.is_finite())
+                }))
         {
             return Err("Unrepresentable fuel thermal transaction");
         }
-        w.temperature.copy_from_slice(temperature);
-        w.water.copy_from_slice(water);
         w.valid = true;
+        w.linearized = LINEARIZED;
         Ok(())
     }
     fn fuel_rows_index(&self, b: &CompiledBand) -> std::ops::Range<usize> {
@@ -611,7 +713,7 @@ impl Model {
         w: &Workspace,
         mut emit: impl FnMut(usize, usize, f64),
     ) -> Result<(), &'static str> {
-        if !Arc::ptr_eq(&self.owner, &w.owner) || !w.valid {
+        if !Arc::ptr_eq(&self.owner, &w.owner) || !w.valid || !w.linearized {
             return Err("Thermal derivative assembly requires owned current preparation");
         }
         let mut transfer = |a: usize, c: usize, col: usize, dq: f64| {
@@ -622,37 +724,26 @@ impl Model {
             emit(c, col, dq);
             Ok(())
         };
-        for b in &self.bands {
-            for &(a, c, g, fuel) in &b.radial {
-                let k = if fuel { fuel_k } else { clad_k };
-                transfer(a, c, a, g * k(w.temperature[a]))?;
-                transfer(a, c, c, -g * k(w.temperature[c]))?;
+        for (b, p) in self.bands.iter().zip(&w.partials) {
+            for (&(a, c, _, _), d) in b.radial.iter().zip(&p.radial) {
+                transfer(a, c, a, d[0])?;
+                transfer(a, c, c, d[1])?;
             }
             let f = b.fuel_surface;
             let c = b.clad_inner;
             let h = self.helium_row(b.input.helium);
-            let tg = w.temperature[h];
-            let (g, dg) = self.gap(b, tg);
-            transfer(f, h, f, g)?;
-            transfer(f, h, h, dg * (w.temperature[f] - tg) - g)?;
-            transfer(h, c, h, dg * (tg - w.temperature[c]) + g)?;
-            transfer(h, c, c, -g)?;
-            transfer(f, c, f, 4. * b.radiation * w.temperature[f].powi(3))?;
-            transfer(f, c, c, -4. * b.radiation * w.temperature[c].powi(3))?;
+            transfer(f, h, f, p.gap[0])?;
+            transfer(f, h, h, p.gap[1])?;
+            transfer(h, c, h, p.gap[2])?;
+            transfer(h, c, c, p.gap[3])?;
+            transfer(f, c, f, p.radiation[0])?;
+            transfer(f, c, c, p.radiation[1])?;
         }
         // End the reciprocal-transfer borrow before emitting one-sided wall
         // debits. The matching recipient derivative belongs to the join.
         drop(transfer);
-        for b in &self.bands {
-            let dq = b.wall_area
-                * wall(
-                    &b.input,
-                    w.temperature[b.clad_outer],
-                    w.water[b.input.water],
-                    1.,
-                    WaterDirection::default(),
-                )
-                .1;
+        for (b, p) in self.bands.iter().zip(&w.partials) {
+            let dq = p.wall[0];
             if !dq.is_finite() {
                 return Err("Unrepresentable thermal wall derivative");
             }
@@ -670,6 +761,7 @@ impl Model {
         w.direction_valid = false;
         if !Arc::ptr_eq(&self.owner, &w.owner)
             || !w.valid
+            || !w.linearized
             || temperature.len() != self.node_count()
             || deposited_w.len() != self.node_count()
             || water.len() != self.waters
@@ -695,41 +787,30 @@ impl Model {
         for i in 0..self.node_count() {
             w.energy_direction[i] = w.capacity[i] * temperature[i];
         }
-        for (j, b) in self.bands.iter().enumerate() {
-            for &(a, c, g, fuel) in &b.radial {
-                let k = if fuel { fuel_k } else { clad_k };
-                let dq = g
-                    * (k(w.temperature[a]) * temperature[a] - k(w.temperature[c]) * temperature[c]);
+        for (j, (b, p)) in self.bands.iter().zip(&w.partials).enumerate() {
+            for (&(a, c, _, _), d) in b.radial.iter().zip(&p.radial) {
+                let dq = d[0] * temperature[a] + d[1] * temperature[c];
                 w.heat_direction[a] -= dq;
                 w.heat_direction[c] += dq;
             }
             let f = b.fuel_surface;
             let c = b.clad_inner;
             let h = self.helium_row(b.input.helium);
-            let tg = w.temperature[h];
-            let (g, dg) = self.gap(b, tg);
-            let dqf = g * (temperature[f] - temperature[h])
-                + dg * temperature[h] * (w.temperature[f] - tg);
-            let dqc = g * (temperature[h] - temperature[c])
-                + dg * temperature[h] * (tg - w.temperature[c]);
+            let dqf = p.gap[0] * temperature[f] + p.gap[1] * temperature[h];
+            let dqc = p.gap[2] * temperature[h] + p.gap[3] * temperature[c];
             w.heat_direction[f] -= dqf;
             w.heat_direction[h] += dqf - dqc;
             w.heat_direction[c] += dqc;
-            let dqr = 4.
-                * b.radiation
-                * (w.temperature[f].powi(3) * temperature[f]
-                    - w.temperature[c].powi(3) * temperature[c]);
+            let dqr = p.radiation[0] * temperature[f] + p.radiation[1] * temperature[c];
             w.heat_direction[f] -= dqr;
             w.heat_direction[c] += dqr;
-            let dq = b.wall_area
-                * wall(
-                    &b.input,
-                    w.temperature[b.clad_outer],
-                    w.water[b.input.water],
-                    temperature[b.clad_outer],
-                    water[b.input.water],
-                )
-                .1;
+            let dw = water[b.input.water];
+            let dq = p.wall[0] * temperature[b.clad_outer]
+                + p.wall[1] * dw.temperature_k
+                + p.wall[2] * dw.mass_flow_kg_s
+                + p.wall[3] * dw.conductivity_w_m_k
+                + p.wall[4] * dw.viscosity_pa_s
+                + p.wall[5] * dw.cp_j_kg_k;
             w.wall_direction[j] = dq;
             w.heat_direction[b.clad_outer] -= dq;
         }
@@ -1105,6 +1186,176 @@ mod tests {
         assert!(m.evaluate_into(&t, &dep, &water, &mut w).is_err());
         assert!(m.visit_heat_derivatives(&w, |_, _, _| {}).is_err());
     }
+    // Deliberately retain the pre-preparation directional formulas here, not
+    // the prepared coefficients or the sparse emitter, as an independent
+    // oracle for the exact local derivative optimization.
+    fn direct_heat_direction(
+        m: &Model,
+        t: &[f64],
+        water: &[Water],
+        dt: &[f64],
+        dep: &[f64],
+        dw: &[WaterDirection],
+    ) -> (Vec<f64>, Vec<f64>) {
+        let mut heat = dep.to_vec();
+        let mut walls = vec![0.; m.band_count()];
+        for (j, b) in m.bands.iter().enumerate() {
+            for &(a, c, g, fuel) in &b.radial {
+                let k = if fuel { fuel_k } else { clad_k };
+                let dq = g * (k(t[a]) * dt[a] - k(t[c]) * dt[c]);
+                heat[a] -= dq;
+                heat[c] += dq;
+            }
+            let f = b.fuel_surface;
+            let c = b.clad_inner;
+            let h = m.helium_row(b.input.helium);
+            let (g, dg) = m.gap(b, t[h]);
+            let dqf = g * (dt[f] - dt[h]) + dg * dt[h] * (t[f] - t[h]);
+            let dqc = g * (dt[h] - dt[c]) + dg * dt[h] * (t[h] - t[c]);
+            heat[f] -= dqf;
+            heat[h] += dqf - dqc;
+            heat[c] += dqc;
+            let dqr = 4. * b.radiation * (t[f].powi(3) * dt[f] - t[c].powi(3) * dt[c]);
+            heat[f] -= dqr;
+            heat[c] += dqr;
+            let dq = b.wall_area
+                * wall(
+                    &b.input,
+                    t[b.clad_outer],
+                    water[b.input.water],
+                    dt[b.clad_outer],
+                    dw[b.input.water],
+                )
+                .1;
+            walls[j] = dq;
+            heat[b.clad_outer] -= dq;
+        }
+        (heat, walls)
+    }
+    #[test]
+    fn prepared_local_partials_match_direct_formulas_across_changed_branches() {
+        let m = model();
+        let n = m.node_count();
+        let mut w = m.workspace();
+        let dt = (0..n)
+            .map(|i| {
+                if i % 2 == 0 {
+                    0.31 + i as f64 * 0.07
+                } else {
+                    -0.23 - i as f64 * 0.03
+                }
+            })
+            .collect::<Vec<_>>();
+        let dep = (0..n).map(|i| (i as f64 - 4.) * 0.1).collect::<Vec<_>>();
+        let dw = [WaterDirection {
+            temperature_k: -0.27,
+            mass_flow_kg_s: 2.,
+            conductivity_w_m_k: -0.001,
+            viscosity_pa_s: 1e-7,
+            cp_j_kg_k: -0.4,
+        }; 2];
+        for (base, tw, flow) in [
+            (510., 480., 5000.),
+            (510., 550., -5000.),
+            (300., 300., 5000.),
+            (300., 300., 0.),
+            (510., 480., 1e-12),
+            // Same solids with a changed water branch must refresh all wall
+            // partials, even when no temperature coefficient changed.
+            (510., 550., 0.),
+            (510., 480., -5000.),
+        ] {
+            let t = (0..n)
+                .map(|i| base + if base == 300. { 0. } else { i as f64 * 0.7 })
+                .collect::<Vec<_>>();
+            let waters = [water(tw, flow), water(tw, -flow)];
+            m.evaluate_into(&t, &dep, &waters, &mut w).unwrap();
+            for (j, b) in m.bands.iter().enumerate() {
+                assert_eq!(
+                    w.wall_rates().unwrap()[j],
+                    b.wall_area
+                        * wall(
+                            &b.input,
+                            t[b.clad_outer],
+                            waters[b.input.water],
+                            0.,
+                            WaterDirection::default()
+                        )
+                        .0
+                );
+            }
+            let (expected, walls) = direct_heat_direction(&m, &t, &waters, &dt, &dep, &dw);
+            m.jvp_into(&dt, &dep, &dw, &mut w).unwrap();
+            for (a, b) in w.heat_jvp().unwrap().iter().zip(&expected) {
+                close(*a, *b, 3e-14, 1e-8);
+            }
+            for (a, b) in w.wall_jvp().unwrap().iter().zip(&walls) {
+                close(*a, *b, 3e-14, 1e-8);
+            }
+            // A second signed direction cannot mutate the prepared stage.
+            let opposite = dt.iter().map(|x| -x).collect::<Vec<_>>();
+            let opposite_dep = dep.iter().map(|x| -x).collect::<Vec<_>>();
+            let opposite_dw = dw.map(|d| WaterDirection {
+                temperature_k: -d.temperature_k,
+                mass_flow_kg_s: -d.mass_flow_kg_s,
+                conductivity_w_m_k: -d.conductivity_w_m_k,
+                viscosity_pa_s: -d.viscosity_pa_s,
+                cp_j_kg_k: -d.cp_j_kg_k,
+            });
+            m.jvp_into(&opposite, &opposite_dep, &opposite_dw, &mut w)
+                .unwrap();
+            for (a, b) in w.heat_jvp().unwrap().iter().zip(&expected) {
+                close(*a, -*b, 3e-14, 1e-8);
+            }
+        }
+    }
+    #[test]
+    fn value_only_refresh_preserves_physics_but_never_old_derivatives() {
+        let m = model();
+        let other = model();
+        let n = m.node_count();
+        let mut w = m.workspace();
+        let mut t = (0..n).map(|i| 510. + i as f64 * 0.7).collect::<Vec<_>>();
+        let dep = vec![0.02; n];
+        let water = [water(480., 5000.), water(550., -5000.)];
+        m.evaluate_into(&t, &dep, &water, &mut w).unwrap();
+        m.jvp_into(&vec![1.; n], &dep, &[WaterDirection::default(); 2], &mut w)
+            .unwrap();
+        let energy = w.energy.clone();
+        let capacity = w.capacity.clone();
+        let heat = w.heat.clone();
+        let wall = w.wall.clone();
+        m.evaluate_values_into(&t, &dep, &water, &mut w).unwrap();
+        for (a, b) in w
+            .energy
+            .iter()
+            .chain(&w.capacity)
+            .chain(&w.heat)
+            .chain(&w.wall)
+            .zip(energy.iter().chain(&capacity).chain(&heat).chain(&wall))
+        {
+            assert_eq!(a.to_bits(), b.to_bits());
+        }
+        assert!(w.heat_rates().is_ok());
+        assert!(w.heat_jvp().is_err());
+        assert!(m.visit_heat_derivatives(&w, |_, _, _| {}).is_err());
+        assert!(m
+            .jvp_into(&vec![1.; n], &dep, &[WaterDirection::default(); 2], &mut w)
+            .is_err());
+        m.evaluate_into(&t, &dep, &water, &mut w).unwrap();
+        assert!(m.visit_heat_derivatives(&w, |_, _, _| {}).is_ok());
+        t[0] = 289.;
+        assert!(m.evaluate_values_into(&t, &dep, &water, &mut w).is_err());
+        assert!(w.energies().is_err());
+        assert!(m.visit_heat_derivatives(&w, |_, _, _| {}).is_err());
+        t[0] = 510.;
+        m.evaluate_into(&t, &dep, &water, &mut w).unwrap();
+        assert!(other
+            .evaluate_values_into(&t, &dep, &water, &mut w)
+            .is_err());
+        assert!(w.heat_rates().is_err());
+        assert!(m.visit_heat_derivatives(&w, |_, _, _| {}).is_err());
+    }
     #[test]
     fn failed_foreign_and_changed_trials_cannot_reuse_stale_heat_or_derivatives() {
         let m = model();
@@ -1121,10 +1372,9 @@ mod tests {
         t[0] = 289.;
         assert!(m.evaluate_into(&t, &dep, &waters, &mut w).is_err());
         assert!(w.heat_rates().is_err());
-        assert!(
-            m.jvp_into(&vec![0.; n], &dep, &[WaterDirection::default(); 2], &mut w)
-                .is_err()
-        );
+        assert!(m
+            .jvp_into(&vec![0.; n], &dep, &[WaterDirection::default(); 2], &mut w)
+            .is_err());
         t[0] = 300.;
         m.evaluate_into(&t, &dep, &waters, &mut w).unwrap();
         assert!(other.evaluate_into(&t, &dep, &waters, &mut w).is_err());

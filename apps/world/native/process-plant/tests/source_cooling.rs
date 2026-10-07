@@ -181,6 +181,50 @@ fn close(a: f64, b: f64, relative: f64, absolute: f64) {
 }
 
 #[test]
+fn complete_actual_heat_tangent_is_cj_independent_and_not_shift_subtraction() {
+    let m = fixture();
+    let y = resolved(&m);
+    let n = m.dimension();
+    let yp = vec![0.; n];
+    let mut dy = vec![0.; n];
+    for i in 0..m.thermal.node_count() {
+        dy[m.layout.temperatures_start + i] = 0.1 * (i as f64 + 1.);
+    }
+    dy[m.layout.network_start + m.network.pressure_row()] = 100.;
+    dy[m.layout.network_start + m.network.temperature_row(0)] = 0.2;
+    dy[m.layout.network_start + m.network.flow_row(0)] = 0.1;
+    // Large independent energy directions make shift recovery unsafe, but
+    // must not affect the physical heat-rate derivative.
+    dy[m.layout.network_start + m.network.energy_row(0)] = 1e10;
+    dy[m.layout.energies_start] = 2e10;
+    let mut reference = None;
+    for cj in [0., 1., 1e6, 1e12] {
+        let mut w = m.workspace();
+        assert!(w.complete_energy_rate().is_err());
+        m.evaluate(&y, &yp, Some(cj), &mut w).unwrap();
+        assert!(w.complete_energy_rate_jvp().is_err());
+        assert!(w.complete_energy_rate().unwrap().abs() < 1e-7);
+        m.jvp(&dy, cj, &mut w).unwrap();
+        let actual = w.complete_energy_rate_jvp().unwrap();
+        assert!(actual.abs() < 1e-7, "cj={cj}, tangent={actual:e}");
+        if let Some(old) = reference {
+            assert_eq!(actual, old);
+        } else {
+            reference = Some(actual);
+        }
+        let mut invalid = dy.clone();
+        invalid[0] = f64::NAN;
+        assert!(m.jvp(&invalid, cj, &mut w).is_err());
+        assert!(w.complete_energy_rate_jvp().is_err());
+        let mut bad = y.clone();
+        bad[0] = f64::NAN;
+        assert!(m.evaluate(&bad, &yp, Some(cj), &mut w).is_err());
+        assert!(w.complete_energy_rate().is_err());
+        assert!(w.complete_energy_rate_jvp().is_err());
+    }
+}
+
+#[test]
 fn full_composed_residual_direction_matches_same_trial_full_half_differences() {
     let m = fixture();
     let y = resolved(&m);

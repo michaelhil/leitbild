@@ -78,6 +78,40 @@ fn entry(n: &Network, w: &Workspace, row: usize, col: usize) -> f64 {
         .map(|i| w.jacobian_values[a + i])
         .unwrap_or(0.)
 }
+
+#[test]
+fn energy_rate_partials_are_unshifted_actual_rows_and_fail_closed() {
+    let n = fixture();
+    let mut y = n.initial_state().unwrap();
+    y[n.flow_row(0)] = 2.;
+    y[n.flow_row(1)] = -3.;
+    let yp = vec![0.; n.dimension()];
+    let zero = at(&n, &y, &yp, Some(0.));
+    let mut huge = at(&n, &y, &yp, Some(1e12));
+    let mut count = 0;
+    huge.visit_energy_rate_partials(&n, |row, col, value| {
+        assert_eq!(value, -entry(&n, &zero, row, col));
+        if value != 0. {
+            count += 1;
+        }
+    })
+    .unwrap();
+    assert!(count > 10); // Not a fabricated analytically-zero aggregate row.
+    let direction = (0..n.dimension())
+        .map(|i| (i as f64 + 1.) * 0.125)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        huge.energy_rate_jvp(&n, &direction).unwrap(),
+        zero.energy_rate_jvp(&n, &direction).unwrap()
+    );
+    assert!(huge.energy_rate_jvp(&fixture(), &direction).is_err());
+    let mut invalid = y.clone();
+    invalid[0] = f64::NAN;
+    assert!(huge.evaluate(&n, &invalid, &yp, Some(1e12)).is_err());
+    assert!(huge.energy_rate_jvp(&n, &direction).is_err());
+    huge.evaluate(&n, &y, &yp, None).unwrap();
+    assert!(huge.visit_energy_rate_partials(&n, |_, _, _| {}).is_err());
+}
 #[test]
 fn joined_finite_secondaries_have_reciprocal_energy_and_local_chart_matrix() {
     let mut c = fixture().config().clone();

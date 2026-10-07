@@ -25,8 +25,11 @@ test('retained coupled checkpoints and polynomial observations have distinct exa
 test('only a complete physically developed refined pair can receive admission',()=>{
  const outcome={kind:'source-cooling-pair',passed:true,lastAdmittedTime:300,dimension:7,differential:4,
   normal:{passed:true,lastAdmittedTime:300,commonSamples:14},tighter:{passed:true,lastAdmittedTime:300,commonSamples:14},
-  settings:{accuracyPolicy:'cold-source-cooling-2',provisional:true,horizon:300,referenceAllATOLandRTOLDivisor:10,
-   perRowErrorWeights:'source-carrier-relative-consequences;network-thermal-absolute-only'},
+  settings:{accuracyPolicy:'cold-source-cooling-4',provisional:true,horizon:300,referenceAllATOLandRTOLDivisor:10,
+   fuelPowerErrorWeights:'sparse-current-response-proportional-budget-cap',fuelPowerResolutionW:1e-12,
+   costGuard:'aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic',
+   solverEnergyCoordinate:'G=sum-installed-energy-change-independent-fuel-release',energyDefectATOLJ:0.01/Math.sqrt(7),
+   perRowErrorWeights:'source-carrier-relative-consequences;network-thermal-absolute-only;energy-defect-absolute'},
   gates:{fullPairComparisonEvaluated:true,developedThermalResponse:true,developedSourceResponse:true,
    sourceLocalRatio:0,sourceFamilyRatio:0,sourceObservableRatio:0,sourceNCOperatorRatio:0,
    thermalPairRatio:0,networkPairRatio:0,depositionPairRatio:0,carrierPairRatio:0},
@@ -46,7 +49,15 @@ test('only a complete physically developed refined pair can receive admission',(
  expect(fuelCoolingAdmission.safeParse({...outcome,tighter:null}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,pairedComparisons:outcome.pairedComparisons.slice(1)}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,referenceAllATOLandRTOLDivisor:1}}).success).toBe(false)
- expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,accuracyPolicy:'cold-source-cooling-1'}}).success).toBe(false)
+ for(const policy of ['cold-source-cooling-1','cold-source-cooling-2','cold-source-cooling-3'])
+  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,accuracyPolicy:policy}}).success).toBe(false)
+ for(const energyDefectATOLJ of [0,NaN,Infinity,0.01,1])
+  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,energyDefectATOLJ}}).success).toBe(false)
+ expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,solverEnergyCoordinate:'imposed-zero'}}).success).toBe(false)
+ for(const fuelPowerResolutionW of [0,NaN,Infinity,1e-10])
+  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,fuelPowerResolutionW}}).success).toBe(false)
+ expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,fuelPowerErrorWeights:'stock-count-only'}}).success).toBe(false)
+ expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,costGuard:'unlimited'}}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,
   perRowErrorWeights:'source-relative-consequences;network-thermal-carrier-absolute-only'}}).success).toBe(false)
 })

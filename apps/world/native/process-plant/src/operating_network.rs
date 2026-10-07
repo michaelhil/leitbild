@@ -8,6 +8,7 @@
 //! No pump, rotor, maintained boundary, nested chart inverse or acoustic mode.
 use crate::{CellGeometry, GRAVITY, Liquid, LiquidQuery, liquid_batch};
 use std::collections::BTreeSet;
+use std::sync::Arc;
 mod hydraulic;
 use crate::sg_secondary::{Inventory as SecondaryInventory, State as SecondaryState};
 pub use crate::sg_secondary::{Secondary, SecondaryHeat};
@@ -63,6 +64,8 @@ pub struct Network {
     secondary_inventories: Vec<SecondaryInventory>,
     pub column_pointers: Vec<i64>,
     pub row_indices: Vec<i64>,
+    energy_rate_slots: Vec<(usize, usize)>,
+    owner: Arc<()>,
 }
 impl Network {
     pub fn new(config: Config) -> Result<Self, String> {
@@ -226,6 +229,8 @@ impl Network {
             secondary_inventories,
             column_pointers: vec![],
             row_indices: vec![],
+            energy_rate_slots: vec![],
+            owner: Arc::new(()),
         };
         let n = network.dimension();
         let mut pattern = vec![BTreeSet::new(); n];
@@ -332,6 +337,19 @@ impl Network {
             network
                 .column_pointers
                 .push(network.row_indices.len() as i64);
+        }
+        let energy_rows = (0..network.config.water.len() + network.config.solids.len())
+            .map(|i| network.energy_row(i))
+            .chain((0..network.config.secondaries.len()).map(|i| network.secondary_energy_row(i)))
+            .collect::<BTreeSet<_>>();
+        for col in 0..network.dimension() {
+            for slot in
+                network.column_pointers[col] as usize..network.column_pointers[col + 1] as usize
+            {
+                if energy_rows.contains(&(network.row_indices[slot] as usize)) {
+                    network.energy_rate_slots.push((col, slot));
+                }
+            }
         }
         Ok(network)
     }
@@ -485,6 +503,9 @@ pub struct Workspace {
     probes: Vec<Liquid>,
     // mu_p,mu_T,k_p,k_T,a_p,a_T,b_p,b_T,cp_p,cp_T; bounded LOCAL probes.
     local_derivatives: Vec<[f64; 10]>,
+    energy_rate_partials: Vec<f64>,
+    owner: Arc<()>,
+    energy_rate_valid: bool,
 }
 fn chart(w: Water, l: Liquid, p: f64, t: f64) -> Result<([f64; 4], [f64; 2]), String> {
     let m = w.geometry.volume * l.density;
@@ -542,6 +563,9 @@ impl Workspace {
             ],
             probes: vec![Liquid::default(); 4 * nw],
             local_derivatives: vec![[0.; 10]; nw],
+            energy_rate_partials: vec![0.; n.energy_rate_slots.len()],
+            owner: n.owner.clone(),
+            energy_rate_valid: false,
         }
     }
     /// Same retained local property probes used by the network Jacobian.
@@ -549,7 +573,52 @@ impl Workspace {
     /// Return viscosity, conductivity and cp directions; no second EOS call.
     pub fn film_property_direction(&self, node: usize, dp: f64, dt: f64) -> [f64; 3] {
         let d = self.local_derivatives[node];
-        [d[0]*dp+d[1]*dt,d[2]*dp+d[3]*dt,d[8]*dp+d[9]*dt]
+        [
+            d[0] * dp + d[1] * dt,
+            d[2] * dp + d[3] * dt,
+            d[8] * dp + d[9] * dt,
+        ]
+    }
+    /// Aggregate installed-energy RATE tangent, saved before any cj shift.
+    /// Uses the existing independently assembled sparse energy rows, not an
+    /// assumed conservative zero and not subtraction of large shifted actions.
+    pub fn energy_rate_jvp(&self, n: &Network, direction: &[f64]) -> Result<f64, String> {
+        if !Arc::ptr_eq(&self.owner, &n.owner)
+            || !self.energy_rate_valid
+            || direction.len() != n.dimension()
+            || direction.iter().any(|v| !v.is_finite())
+        {
+            return Err("Network energy-rate tangent needs current owned Jacobian".into());
+        }
+        let (mut s, mut c) = (0f64, 0f64);
+        for (&partial, &(col, _)) in self.energy_rate_partials.iter().zip(&n.energy_rate_slots) {
+            let v = partial * direction[col];
+            let t = s + v;
+            c += if s.abs() >= v.abs() {
+                (s - t) + v
+            } else {
+                (v - t) + s
+            };
+            s = t;
+        }
+        let result = s + c;
+        if !result.is_finite() {
+            return Err("Nonfinite network energy-rate tangent".into());
+        }
+        Ok(result)
+    }
+    pub fn visit_energy_rate_partials(
+        &self,
+        n: &Network,
+        mut emit: impl FnMut(usize, usize, f64),
+    ) -> Result<(), String> {
+        if !Arc::ptr_eq(&self.owner, &n.owner) || !self.energy_rate_valid {
+            return Err("Network energy-rate partials need current owned Jacobian".into());
+        }
+        for (&value, &(col, slot)) in self.energy_rate_partials.iter().zip(&n.energy_rate_slots) {
+            emit(n.row_indices[slot] as usize, col, value);
+        }
+        Ok(())
     }
     fn add(&mut self, n: &Network, row: usize, col: usize, v: f64) {
         let start = n.column_pointers[col] as usize;
@@ -566,10 +635,13 @@ impl Workspace {
         yp: &[f64],
         cj: Option<f64>,
     ) -> Result<(), String> {
+        self.energy_rate_valid = false;
         let nw = n.config.water.len();
         let dim = n.dimension();
         let pcol = n.pressure_row();
-        if y.len() != dim
+        if !Arc::ptr_eq(&self.owner, &n.owner)
+            || self.energy_rate_partials.len() != n.energy_rate_slots.len()
+            || y.len() != dim
             || yp.len() != dim
             || self.residual.len() != dim
             || self.rates.len() != dim
@@ -912,9 +984,6 @@ impl Workspace {
         }
         for row in 0..n.stock_dimension() {
             self.residual[row] = yp[row] - self.rates[row];
-            if let Some(cj) = cj {
-                self.add(n, row, row, cj);
-            }
         }
         for (k, s) in n.config.secondaries.iter().enumerate() {
             let u = n.secondary_energy_row(k);
@@ -972,9 +1041,6 @@ impl Workspace {
         for k in 0..n.config.secondaries.len() {
             let u = n.secondary_energy_row(k);
             self.residual[u] = yp[u] - self.rates[u];
-            if let Some(c) = cj {
-                self.add(n, u, u, c);
-            }
         }
         self.residual[pcol] = y[n.total_mass_row()] - self.chart_mass.iter().sum::<f64>();
         let sum_a: f64 = self.redistribution.iter().map(|x| x[0]).sum();
@@ -1040,6 +1106,22 @@ impl Workspace {
                 }
             }
         }
+        if let Some(cj) = cj {
+            for (value, &(_, slot)) in self
+                .energy_rate_partials
+                .iter_mut()
+                .zip(&n.energy_rate_slots)
+            {
+                *value = -self.jacobian_values[slot];
+            }
+            for row in 0..n.stock_dimension() {
+                self.add(n, row, row, cj);
+            }
+            for k in 0..n.config.secondaries.len() {
+                let row = n.secondary_energy_row(k);
+                self.add(n, row, row, cj);
+            }
+        }
         if self
             .residual
             .iter()
@@ -1054,6 +1136,7 @@ impl Workspace {
         {
             return Err("Nonfinite pressure-territory result".into());
         }
+        self.energy_rate_valid = cj.is_some();
         Ok(())
     }
 }
