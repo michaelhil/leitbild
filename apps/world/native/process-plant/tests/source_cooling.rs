@@ -5,9 +5,9 @@
 mod source_fixture;
 
 use leitbild_plant_numerics::{
-    CellGeometry, barrel_thermal as bt, fuel_history as fh, fuel_source as fs, fuel_thermal as ft,
-    heat_history as hh, operating_network as on, source_cooling as sc, source_evolution as se,
-    water_carrier as wc,
+    barrel_thermal as bt, cold_pressurizer as cp, finite_surge as surge, fuel_history as fh,
+    fuel_source as fs, fuel_thermal as ft, heat_history as hh, operating_network as on,
+    source_cooling as sc, source_evolution as se, water_carrier as wc, CellGeometry,
 };
 
 pub(crate) fn fixture() -> sc::Model {
@@ -19,7 +19,165 @@ pub(crate) fn fixture_with_contrast() -> sc::Model {
 fn fixture_with_fuel_mass(thermal_mass: f64) -> Result<sc::Model, String> {
     fixture_with_preparation(thermal_mass, 0.)
 }
+// Reduced pressure apparatus with declared finite stores. It reuses the
+// component constitutive owners, not a second physical implementation.
+pub(crate) fn pressure_fixture(network: &on::Network) -> sc::PressureConnection {
+    pressure_fixture_at(network, 0)
+}
+fn pressure_fixture_at(network: &on::Network, cell: usize) -> sc::PressureConnection {
+    let yn = network.initial_state().unwrap();
+    let mut wn = on::Workspace::new(network);
+    wn.evaluate(network, &yn, &vec![0.; network.dimension()], None)
+        .unwrap();
+    let liquid = wn.liquids[cell];
+    let z = network.config().water[cell].geometry.elevation;
+    let boundaries = [0., 1., 3., 6., 9., 12.];
+    let input = cp::Input {
+        area: 5.,
+        height: 12.,
+        bottom_elevation: 6.5,
+        rods: [
+            cp::Rod {
+                displacement_area: 0.01,
+                height: 1.,
+            },
+            cp::Rod {
+                displacement_area: 0.08,
+                height: 3.,
+            },
+        ],
+        minimum_level: 3.,
+        maximum_level: 6.,
+        minimum_fluid_temperature: 290.,
+        maximum_fluid_temperature: 330.,
+        maximum_total_pressure: 600000.,
+        maximum_vapor_pressure: 20000.,
+        air_mass: 0.,
+        nitrogen_mass: 0.,
+        interface_length: 1.,
+        diffusivity_reference: 2.5e-5,
+        diffusivity_reference_temperature: 298.15,
+        diffusivity_reference_pressure: 101325.,
+        diffusivity_exponent: 1.75,
+        gas_conductivity: 0.0262,
+        wet_coefficient: 1000.,
+        gas_coefficient: 5.,
+        condensation_speed: 0.01,
+        cp0: 469.4448,
+        cp1: 0.13480848,
+        datum_temperature: 300.,
+        minimum_metal_temperature: 290.,
+        maximum_metal_temperature: 330.,
+        ambient_temperature: 313.15,
+        metals: std::array::from_fn(|k| cp::Metal {
+            mass: 10.,
+            ambient_conductance: 0.1,
+            contact: if k < 2 {
+                cp::Contact::Rod {
+                    height: [1., 3.][k],
+                    area: 0.1,
+                }
+            } else if k < 7 {
+                cp::Contact::Shell {
+                    bottom: boundaries[k - 2],
+                    top: boundaries[k - 1],
+                    area: 0.2,
+                }
+            } else if k == 7 {
+                cp::Contact::Bottom { area: 0.2 }
+            } else {
+                cp::Contact::Top { area: 0.2 }
+            },
+        }),
+        radiation: vec![],
+    };
+    let bottom = network.mechanical_pressure(cell, &yn)
+        + liquid.density * leitbild_plant_numerics::GRAVITY * (z - 6.5);
+    let (pressurizer, mut initial_pressurizer) =
+        cp::Model::prepare_at_bottom_pressure(input, bottom, 300., 300., 4., [300.; cp::METALS])
+            .unwrap();
+    // The component preparation is a truthful seed, not a solved Ti chart.
+    // This test-only local solve makes chart-guard fixtures consistent; the
+    // connected driver still owes the complete joint state AND rate solve.
+    let mut chart = pressurizer.workspace();
+    for _ in 0..6 {
+        pressurizer
+            .evaluate(
+                &initial_pressurizer,
+                &[0.; cp::STATES],
+                cp::Balance::default(),
+                Some(0.),
+                &mut chart,
+            )
+            .unwrap();
+        let delta = pressurizer
+            .chart_corrections(&chart, &initial_pressurizer)
+            .unwrap();
+        for k in 0..7 {
+            initial_pressurizer[cp::LIQUID_TEMPERATURE + k] += delta[k];
+        }
+        if delta.iter().all(|d| d.abs() < 1e-9) {
+            break;
+        }
+    }
+    let length = 16.;
+    let diameter = 0.3;
+    let volume = std::f64::consts::PI * diameter * diameter / 4. * length;
+    let surge = surge::Model::new(surge::Input {
+        geometry: CellGeometry {
+            volume,
+            elevation: 3.,
+        },
+        length,
+        diameter,
+        roughness: 1.5e-6,
+        entry_loss: 0.5,
+        bend_loss_each: 0.2,
+        steel_mass: 100.,
+        cp0: 469.4448,
+        cp1: 0.13480848,
+        datum_temperature: 300.,
+        minimum_temperature: 290.,
+        maximum_temperature: 330.,
+        wet_conductance: 10.,
+        ambient_conductance: 1.,
+        ambient_temperature: 313.15,
+    })
+    .unwrap();
+    let initial_surge = surge
+        .prepare(
+            network.mechanical_pressure(cell, &yn)
+                + liquid.density * leitbild_plant_numerics::GRAVITY * (z - 3.),
+            300.,
+            300.,
+        )
+        .unwrap();
+    sc::PressureConnection {
+        pressurizer,
+        surge,
+        primary_cell: cell,
+        atoms_per_marker: 400.,
+        initial_pool: wc::Amounts {
+            boron10: 0.8 * initial_pressurizer[cp::LIQUID_MASS],
+            ..Default::default()
+        },
+        initial_line: wc::Amounts {
+            boron10: 0.8 * initial_surge[surge::MASS],
+            ..Default::default()
+        },
+        initial_pressurizer,
+        initial_surge,
+        initial_gas_hydrogen_product: 0.,
+    }
+}
 fn fixture_with_preparation(thermal_mass: f64, contrast: f64) -> Result<sc::Model, String> {
+    fixture_with_preparation_at(thermal_mass, contrast, 0)
+}
+fn fixture_with_preparation_at(
+    thermal_mass: f64,
+    contrast: f64,
+    cell: usize,
+) -> Result<sc::Model, String> {
     let network = on::Network::new(on::Config {
         water: (0..2)
             .map(|i| on::Water {
@@ -27,7 +185,7 @@ fn fixture_with_preparation(thermal_mass: f64, contrast: f64) -> Result<sc::Mode
                     volume: 1.,
                     elevation: 0.,
                 },
-                initial_pressure: 1e7,
+                initial_pressure: 0.3e6,
                 initial_temperature: 300. + i as f64 * contrast,
                 initial_tracer_fraction: 0.002,
             })
@@ -49,6 +207,7 @@ fn fixture_with_preparation(thermal_mass: f64, contrast: f64) -> Result<sc::Mode
         }],
     })
     .unwrap();
+    let pressure = pressure_fixture_at(&network, cell);
     let yn = network.initial_state().unwrap();
     let mut wn = on::Workspace::new(&network);
     wn.evaluate(&network, &yn, &vec![0.; network.dimension()], None)
@@ -199,6 +358,7 @@ fn fixture_with_preparation(thermal_mass: f64, contrast: f64) -> Result<sc::Mode
             ],
         })
         .unwrap(),
+        pressure,
         vec![0, 1, 4, 5],
         vec![None, Some(0)],
         vec![300.; 9],
@@ -278,7 +438,14 @@ fn complete_actual_heat_tangent_is_cj_independent_and_not_shift_subtraction() {
 #[test]
 fn full_composed_residual_direction_matches_same_trial_full_half_differences() {
     let m = fixture();
-    let y = resolved(&m);
+    let mut y = resolved(&m);
+    // Unequal donor compositions at q=0 have only a fixed-upwind generalized
+    // derivative, not a two-sided derivative. Exercise central FD off the corner.
+    y[m.layout.surge_start + surge::LEFT_MOMENTUM] = 0.2;
+    y[m.layout.surge_start + surge::RIGHT_MOMENTUM] = -0.1;
+    for k in 0..cp::METALS {
+        y[m.layout.pressurizer_start + cp::METAL_TEMPERATURE_START + k] = 299.;
+    }
     let n = m.dimension();
     let cj = 7.;
     let yp = vec![0.01; n];
@@ -286,34 +453,172 @@ fn full_composed_residual_direction_matches_same_trial_full_half_differences() {
         .map(|i| 0.01 * ((i % 5) as f64 - 2.))
         .collect::<Vec<_>>();
     dy[m.layout.network_start + m.network.pressure_row()] = 100.;
+    let mut thermal_direction = dy.clone();
+    thermal_direction[m.layout.surge_start + surge::TEMPERATURE] = 0.03;
+    thermal_direction[m.layout.surge_start + surge::PRESSURE] = 100.;
+    // Preserve the original cancellation-sensitive direction AND an
+    // independent nonzero-T direction with a resolved forward-chart signal.
+    for dy in [dy, thermal_direction] {
+        let mut w = m.workspace();
+        m.evaluate(&y, &yp, Some(cj), &mut w).unwrap();
+        m.jvp(&dy, cj, &mut w).unwrap();
+        let analytic = w.jvp.clone();
+        for h in [0.01, 0.005] {
+            let arm = |sign: f64| {
+                let ya = y
+                    .iter()
+                    .zip(&dy)
+                    .map(|(v, d)| v + sign * h * d)
+                    .collect::<Vec<_>>();
+                let ypa = yp
+                    .iter()
+                    .zip(&dy)
+                    .map(|(v, d)| v + sign * h * cj * d)
+                    .collect::<Vec<_>>();
+                let mut a = m.workspace();
+                m.evaluate(&ya, &ypa, None, &mut a).unwrap();
+                a.residual
+            };
+            let p = arm(1.);
+            let q = arm(-1.);
+            for (row, (&a, (&up, &down))) in analytic.iter().zip(p.iter().zip(&q)).enumerate() {
+                let fd = (up - down) / (2. * h);
+                // A stored E minus its forward chart cancels two large operands.
+                // Residual magnitude alone cannot bound the subtraction's ULPs.
+                let chart_operand = if row == m.layout.surge_start + surge::TEMPERATURE {
+                    2. * y[m.layout.surge_start + surge::ENERGY].abs()
+                } else {
+                    0.
+                };
+                let roundoff =
+                    16. * f64::EPSILON * (up.abs() + down.abs() + chart_operand) / (2. * h);
+                assert!(
+                    (a - fd).abs() <= 3e-5 * a.abs().max(fd.abs()) + roundoff + 1e-7,
+                    "row={row}, h={h}, analytic={a:e}, fd={fd:e}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn coupled_fluid_rate_matrix_preserves_phase_work_and_reduced_continuity() {
+    let m = fixture();
+    let y = resolved(&m);
+    let n = m.dimension();
+    let yp = vec![0.; n];
     let mut w = m.workspace();
-    m.evaluate(&y, &yp, Some(cj), &mut w).unwrap();
-    m.jvp(&dy, cj, &mut w).unwrap();
-    let analytic = w.jvp.clone();
-    for h in [0.01, 0.005] {
-        let arm = |sign: f64| {
-            let ya = y
-                .iter()
-                .zip(&dy)
-                .map(|(v, d)| v + sign * h * d)
-                .collect::<Vec<_>>();
-            let ypa = yp
-                .iter()
-                .zip(&dy)
-                .map(|(v, d)| v + sign * h * cj * d)
-                .collect::<Vec<_>>();
-            let mut a = m.workspace();
-            m.evaluate(&ya, &ypa, None, &mut a).unwrap();
-            a.residual
-        };
-        let p = arm(1.);
-        let q = arm(-1.);
-        for (row, (&a, (&up, &down))) in analytic.iter().zip(p.iter().zip(&q)).enumerate() {
-            let fd = (up - down) / (2. * h);
-            let roundoff = 16. * f64::EPSILON * (up.abs() + down.abs()) / (2. * h);
-            assert!(
-                (a - fd).abs() <= 3e-5 * a.abs().max(fd.abs()) + roundoff + 1e-7,
-                "row={row}, h={h}, analytic={a:e}, fd={fd:e}"
+    m.evaluate(&y, &yp, Some(0.), &mut w).unwrap();
+    let mut rate = (0..n)
+        .map(|i| 0.01 * ((i % 7) as f64 - 3.))
+        .collect::<Vec<_>>();
+    rate[m.layout.pressurizer_start + cp::HEIGHT] = 0.03;
+    let mut action = vec![0.; n];
+    m.visit_fluid_rate_matrix(&w, |r, c, v| action[r] += v * rate[c])
+        .unwrap();
+    let mut other = m.workspace();
+    m.evaluate(&y, &rate, None, &mut other).unwrap();
+    for r in m.fluid_rows() {
+        let actual = other.residual[r] - w.residual[r];
+        close(action[r], actual, 3e-10, 1e-7);
+    }
+    let l = m.layout;
+    assert_ne!(
+        action[l.pressurizer_start + cp::LIQUID_ENERGY],
+        rate[l.pressurizer_start + cp::LIQUID_ENERGY]
+    );
+    // Opposite interface work cancels, independently of the Ti chart.
+    close(
+        action[l.pressurizer_start + cp::LIQUID_ENERGY]
+            + action[l.pressurizer_start + cp::GAS_ENERGY],
+        rate[l.pressurizer_start + cp::LIQUID_ENERGY] + rate[l.pressurizer_start + cp::GAS_ENERGY],
+        1e-12,
+        1e-9,
+    );
+    let charts = m.forward_chart_rows();
+    assert!(!charts.contains(&(l.network_start + m.network.flow_row(0))));
+    assert!(!charts.contains(&(l.surge_start + surge::LEFT_MOMENTUM)));
+    assert!(charts.contains(&(l.pressurizer_start + cp::HEIGHT)));
+    let foreign = fixture();
+    assert!(foreign.visit_fluid_rate_matrix(&w, |_, _, _| {}).is_err());
+    m.evaluate(&y, &yp, None, &mut w).unwrap();
+    assert!(m.visit_fluid_rate_matrix(&w, |_, _, _| {}).is_err());
+}
+
+#[test]
+fn pressure_material_is_reciprocal_in_both_flow_directions_and_phase_channels() {
+    let m = fixture();
+    let l = m.layout;
+    for sign in [-1., 1.] {
+        let mut y = resolved(&m);
+        y[l.surge_start + surge::LEFT_MOMENTUM] = sign * 0.2;
+        y[l.surge_start + surge::RIGHT_MOMENTUM] = -sign * 0.1;
+        y[l.surge_carrier_start] = 2.;
+        y[l.pool_carrier_start] = 4.;
+        y[l.gas_hydrogen_product] = 0.01;
+        y[l.pressurizer_start + cp::INTERFACE_TEMPERATURE] += sign * 0.01;
+        y[l.pressurizer_start + cp::METAL_TEMPERATURE_START + 8] -= 1.;
+        let mut w = m.workspace();
+        m.evaluate(&y, &vec![0.; m.dimension()], Some(2.), &mut w)
+            .unwrap();
+        let events = w.source.external_water_events().unwrap();
+        for (k, source) in [
+            (0, events.iter().map(|e| e.hydrogen).sum::<f64>()),
+            (1, -events.iter().map(|e| e.boron).sum::<f64>()),
+            (2, events.iter().map(|e| e.boron).sum::<f64>()),
+        ] {
+            let primary = (0..m.carrier.cells())
+                .map(|i| w.residual[l.carrier_start + wc::WIDTH * i + k])
+                .sum::<f64>();
+            let all = primary
+                + w.residual[l.surge_carrier_start + k]
+                + w.residual[l.pool_carrier_start + k]
+                + if k == 0 {
+                    w.residual[l.gas_hydrogen_product]
+                } else {
+                    0.
+                };
+            close(-all, source, 1e-11, 1e-11);
+        }
+        assert!(w.complete_energy_rate().unwrap().abs() < 1e-7);
+        let mut dy = vec![0.; m.dimension()];
+        dy[l.surge_start + surge::LEFT_MOMENTUM] = 0.3;
+        dy[l.pool_carrier_start] = 0.1;
+        dy[l.gas_hydrogen_product] = 0.001;
+        dy[l.pressurizer_start + cp::INTERFACE_TEMPERATURE] = 0.02;
+        m.jvp(&dy, 2., &mut w).unwrap();
+        assert!(w.complete_energy_rate_jvp().unwrap().abs() < 1e-7);
+    }
+}
+
+#[test]
+fn current_primary_multiplier_and_hydrostatic_pool_ports_preserve_cold_entropy() {
+    // Actual native port construction, not a reservoir whose EOS pressure is
+    // silently identified with the distinct mechanical/bottom pressure.
+    let m = fixture_with_preparation_at(0.5, 0., 1).unwrap();
+    let l = m.layout;
+    for pi in [-1., 0., 1.] {
+        for sign in [-1., 1.] {
+            let mut y = resolved(&m);
+            y[l.network_start + m.network.mechanical_row(1).unwrap()] = pi;
+            y[l.surge_start + surge::LEFT_MOMENTUM] = sign;
+            y[l.surge_start + surge::RIGHT_MOMENTUM] = sign;
+            let mut w = m.workspace();
+            m.evaluate(&y, &vec![0.; m.dimension()], Some(0.), &mut w)
+                .unwrap();
+            let d = w.surge.mechanics().unwrap();
+            assert!(d.entropy_production >= 0., "pi={pi},sign={sign},{d:?}");
+            close(
+                d.entropy_identity_defect,
+                0.,
+                0.,
+                128. * f64::EPSILON * d.entropy_identity_scale,
+            );
+            close(
+                d.kinetic_work_defect,
+                0.,
+                0.,
+                128. * f64::EPSILON * d.kinetic_work_scale,
             );
         }
     }
@@ -430,21 +735,22 @@ fn matching_owned_successful_state_is_required_and_changed_inputs_are_not_stale(
 fn composition_refuses_wrong_fuel_recipient_or_carrier_link_identity() {
     assert!(fixture_with_fuel_mass(0.6).is_err());
     let m = fixture();
+    let pressure = pressure_fixture(&m.network);
     // Row2 is clad, not the source's second fuel temperature/deposition owner.
-    assert!(
-        sc::Model::new(
-            m.source,
-            m.network,
-            m.thermal,
-            m.carrier,
-            m.barrel,
-            vec![0, 2, 4, 5],
-            vec![None, Some(0)],
-            vec![300.; 9]
-        )
-        .is_err()
-    );
+    assert!(sc::Model::new(
+        m.source,
+        m.network,
+        m.thermal,
+        m.carrier,
+        m.barrel,
+        pressure,
+        vec![0, 2, 4, 5],
+        vec![None, Some(0)],
+        vec![300.; 9]
+    )
+    .is_err());
     let m = fixture();
+    let pressure = pressure_fixture(&m.network);
     let prep = (0..2)
         .map(|_| wc::Preparation {
             mass: 1000.,
@@ -454,19 +760,18 @@ fn composition_refuses_wrong_fuel_recipient_or_carrier_link_identity() {
         })
         .collect::<Vec<_>>();
     let wrong = wc::Carrier::new(&prep, vec![wc::Link { from: 1, to: 0 }]).unwrap();
-    assert!(
-        sc::Model::new(
-            m.source,
-            m.network,
-            m.thermal,
-            wrong,
-            m.barrel,
-            vec![0, 1, 4, 5],
-            vec![None, Some(0)],
-            vec![300.; 9]
-        )
-        .is_err()
-    );
+    assert!(sc::Model::new(
+        m.source,
+        m.network,
+        m.thermal,
+        wrong,
+        m.barrel,
+        pressure,
+        vec![0, 1, 4, 5],
+        vec![None, Some(0)],
+        vec![300.; 9]
+    )
+    .is_err());
 }
 
 #[test]

@@ -15,18 +15,27 @@ const admittedRatio=z.number().finite().nonnegative().max(1),arm=z.object({passe
  * incomplete pair. The physical/error policy is owned by the native qualifier. */
 export const fuelCoolingAdmission=z.object({kind:z.literal('source-cooling-pair'),passed:z.literal(true),lastAdmittedTime:z.literal(300),
  dimension:z.number().int().positive(),differential:z.number().int().positive(),normal:arm,tighter:arm,
- settings:z.object({accuracyPolicy:z.literal('cold-source-cooling-5'),provisional:z.literal(true),horizon:z.literal(300),
+ settings:z.object({accuracyPolicy:z.literal('cold-source-cooling-6'),provisional:z.literal(true),horizon:z.literal(300),
   carrierCoordinates:z.literal('hydrogen-product,direct-boron10,boron-product'),
+  pressureCoordinates:z.literal('finite-pool-cushion-and-surge-forward-DAE;direct-liquid-B10-and-phase-H-products'),
+  pressureResponseResolutionPa:z.literal(1),pressureChangeRelativeBudget:z.literal(0.005),
+  surgeMomentumModel:z.literal('conjugate-linear-velocity-mass-metric'),
+  surgeGravityModel:z.literal('owned-bulk-density-Galerkin'),
+  surgeReductionScope:z.literal('observed-candidate-and-endpoint-envelope;current-chart-consequence-allocation;not-coupled-trajectory-bound'),
+  pressureChartHeightScope:z.literal('hydrostatic-equivalent-1Pa;P-T-coupled-correction-and-metal-caloric-admitted'),
   fuelPowerErrorWeights:z.literal('sparse-current-response-proportional-budget-cap'),fuelPowerResolutionW:z.literal(1e-12),
   barrelPowerErrorWeights:z.literal('sparse-current-bulk-capture-Mn-proportional-budget-cap'),barrelPowerResolutionW:z.literal(1e-12),
   costGuard:z.literal('aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic'),
-  nonlinearClosure:z.literal('stock-Newton-and-current-physical-network-chart'),
+  nonlinearClosure:z.literal('stock-Newton-and-current-physical-network-pressure-charts'),
   linearWeightedL2Budget:z.literal(0.0165),algebraicLTE:z.literal('included'),
-  solverEnergyCoordinate:z.literal('G=sum-installed-energy-change-independent-fuel-and-barrel-release-plus-barrel-export'),
+  solverEnergyCoordinate:z.literal('G=sum-installed-energy-change-independent-fuel-and-barrel-release-plus-barrel-export-and-ambient-export'),
   energyDefectATOLJ:z.number().finite().positive(),
   referenceAllATOLandRTOLDivisor:z.literal(10),perRowErrorWeights:z.literal('source-carrier-barrel-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute')}),
  gates:z.object({fullPairComparisonEvaluated:z.literal(true),developedThermalResponse:z.literal(true),developedSourceResponse:z.literal(true),
   developedBarrelResponse:z.literal(true),barrelPairRatio:admittedRatio,barrelPowerPairRatio:admittedRatio,
+  developedPressureResponse:z.literal(true),pressurePairRatio:admittedRatio,pressureMaterialPairRatio:admittedRatio,
+  pressureChartRatio:admittedRatio,pressureMomentumRatio:admittedRatio,
+  surgeReductionRatio:admittedRatio,
   sourceLocalRatio:admittedRatio,sourceFamilyRatio:admittedRatio,sourceObservableRatio:admittedRatio,sourceNCOperatorRatio:admittedRatio,
   thermalPairRatio:admittedRatio,networkPairRatio:admittedRatio,depositionPairRatio:admittedRatio,carrierPairRatio:admittedRatio}),
  pairedComparisons:z.array(z.unknown()).length(14),fuelTemperatureFeedbackDiagnostic:z.object({})})
@@ -43,11 +52,11 @@ export function coolingStateHeader(bytes:Uint8Array){
 type Options={wiki:string;partition:string;material:string;water:string;materialEvidence:string;
  binary:string;selectedStackManifest:string;output:string;priorAttempt?:string}
 export function fuelCoolingPriorSeconds(value:unknown){
- return z.object({passed:z.literal(false),allowanceSeconds:z.literal(120),elapsedSeconds:z.number().finite().nonnegative().lt(120),
+ return z.object({passed:z.literal(false),allowanceSeconds:z.literal(180),elapsedSeconds:z.number().finite().nonnegative().lt(180),
   noWholePlantReadinessCredit:z.literal(true)}).parse(value).elapsedSeconds
 }
 export async function qualifyFuelCooling(options:Options){
- const began=performance.now(),allowanceSeconds=120,output=resolve(options.output),directory=output+'.artifacts',
+ const began=performance.now(),allowanceSeconds=180,output=resolve(options.output),directory=output+'.artifacts',
   root=resolve(import.meta.dir,'../native/process-plant')
  if(await Bun.file(output).exists()||await Bun.file(join(directory,'input.txt')).exists())throw Error('Refusing to overwrite cold coupling evidence')
  requireControlledLoaderEnvironment(process.env)
@@ -78,7 +87,7 @@ export async function qualifyFuelCooling(options:Options){
  await mkdir(directory)
  await Promise.all(paths.map((p,i)=>writeFile(join(directory,`${i}-${basename(p)}`),bytes[i]!,{flag:'wx'})))
  await writeFile(join(directory,'input.txt'),fixture,{flag:'wx'})
- await writeFile(join(directory,'composition.json'),JSON.stringify({thermal:prepared.thermal,primary:prepared.primary,barrel:prepared.barrel,
+ await writeFile(join(directory,'composition.json'),JSON.stringify({thermal:prepared.thermal,primary:prepared.primary,barrel:prepared.barrel,pressure:prepared.pressure,
   ownerIdentities:prepared.ownerIdentities,limitations:prepared.limitations},null,2)+'\n',{flag:'wx'})
  // All linked non-system libraries must be retained; the old receipt is not a
  // substitute for inspecting this newly built binary and its actual links.
@@ -118,7 +127,8 @@ export async function qualifyFuelCooling(options:Options){
    admissionError:admission.success?undefined:admission.error.message,
    inputCounts:{bands:prepared.thermal.bands.length,thermalPhysicalStocks:prepared.thermal.thermalCoordinates,
     thermalSolverCoordinates:2*prepared.thermal.thermalCoordinates,primaryCells:prepared.network.water.length,
-    primaryCarrierCoordinates:3*prepared.network.water.length,primarySourceIntersections:prepared.primary.rows.length},
+    primaryCarrierCoordinates:3*prepared.network.water.length,primarySourceIntersections:prepared.primary.rows.length,
+    pressureCoordinates:45,pressurizerMetalStocks:prepared.pressure.metals.length},
    consumed:[...inputs.map((path,i)=>({path,sha256:sha(texts[i]!)})),...ownerPaths.map((path,i)=>({path,sha256:sha(ownerTexts[i]!)}))],
    sources:paths.map((path,i)=>({path,sha256:sha(bytes[i]!)})),fixtureSHA256:sha(fixture),
    artifacts:{directory,nativeStack,nativeStackUnchanged:stackUnchanged,states,completeStates},noWholePlantReadinessCredit:true,

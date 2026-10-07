@@ -486,11 +486,9 @@ fn coupled_cache_keys_all_consumed_inputs_and_failure_invalidates() {
     assert!(w.rates().is_err());
     m.evaluate_coupled_into(&y, &[500.], &[s], &mut w).unwrap();
     let foreign = Evolution::new(coupled_input()).unwrap();
-    assert!(
-        foreign
-            .evaluate_coupled_into(&y, &[500.], &[s], &mut w)
-            .is_err()
-    );
+    assert!(foreign
+        .evaluate_coupled_into(&y, &[500.], &[s], &mut w)
+        .is_err());
     let mut bad = coupled_input();
     bad.water_owners[1].authority = WaterAuthority::External { index: 1 };
     assert!(Evolution::new(bad).is_err());
@@ -697,11 +695,10 @@ fn full_jvp_and_nc_block_match_actual_forward_operator() {
 fn complete_sparse_jacobian_preserves_full_couplings_and_solver_basis() {
     let m = Evolution::new(input()).unwrap();
     let j = Jacobian::new(&m).unwrap();
-    assert!(
-        j.pattern()
-            .windows(2)
-            .all(|p| (p[0].1, p[0].0) < (p[1].1, p[1].0))
-    );
+    assert!(j
+        .pattern()
+        .windows(2)
+        .all(|p| (p[0].1, p[0].0) < (p[1].1, p[1].0)));
     let mut w = m.workspace();
     let mut values = vec![0.; j.pattern().len()];
     for y in [m.initial_state(), state(&m)] {

@@ -1,4 +1,4 @@
-//! Strict five-frame cold source/cooling/barrel preparation. Primary chemistry is
+//! Strict six-frame cold source/cooling/barrel/pressure preparation. Primary chemistry is
 //! replaced by actual carrier intersections, never cloned as source histories.
 use super::{
     barrel_thermal, evolution_input, fuel_thermal, moderator_source, operating_network,
@@ -6,11 +6,11 @@ use super::{
 };
 use source_input::{count, framed, number};
 use std::collections::BTreeSet;
+mod pressure;
 
 pub(crate) struct Prepared {
     pub model: source_cooling::Model,
     pub target_emissions: Vec<[f64; 2]>,
-    pub budget: f64,
 }
 
 pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
@@ -21,6 +21,7 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
     let thermal = framed(&mut words);
     let primary = framed(&mut words);
     let barrel = framed(&mut words);
+    let pressure = framed(&mut words);
     if words.next().is_some() {
         return Err("Trailing coupled payload".into());
     }
@@ -285,12 +286,14 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
         water_count: cells,
         contacts,
     })?;
+    let pressure = pressure::parse(&pressure, &network, &initial_network, &work, href, bref)?;
     let model = source_cooling::Model::new(
         source,
         network,
         thermal_model,
         carrier,
         barrel,
+        pressure,
         fuel_rows,
         water_flows,
         initial_t,
@@ -298,15 +301,15 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
     Ok(Prepared {
         model,
         target_emissions: prepared.target_emissions,
-        budget: network_input.budget,
     })
 }
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn fifth_barrel_frame_is_required_and_extra_frames_refuse() {
+    fn sixth_pressure_frame_is_required_and_extra_frames_refuse() {
         assert!(std::panic::catch_unwind(|| parse("0 0 0 0")).is_err());
-        assert!(parse("0 0 0 0 0 0").is_err());
+        assert!(std::panic::catch_unwind(|| parse("0 0 0 0 0")).is_err());
+        assert!(parse("0 0 0 0 0 0 0").is_err());
     }
 }

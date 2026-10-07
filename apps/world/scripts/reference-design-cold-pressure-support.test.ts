@@ -1,6 +1,6 @@
 import {expect,test} from 'bun:test'
 import {join} from 'node:path'
-import {compileColdPressure,parseColdPressureSelection} from './reference-design-cold-pressure-support'
+import {compileColdPressure,nativeColdPressureFrame,parseColdPressureSelection} from './reference-design-cold-pressure-support'
 import {compileFuelCooling} from './reference-design-fuel-cooling'
 
 const wiki=process.env.LEITBILD_REFERENCE_WIKI
@@ -18,6 +18,22 @@ ownerTest('actual cold pressure selection preserves finite hardware and route ow
  expect(d.metals.filter(m=>m.kind==='bottom'||m.kind==='top').map(m=>m.mass)).toEqual([5940,5940])
  expect(d.atomsPerMarker).toBe(p.primary.boronAtomsPerKg/p.primary.markerRatio)
  expect(d.route.exitLoss).toBe(1)
+ expect(d.lineAmbientConductance).toBeGreaterThan(0)
+ const frame=nativeColdPressureFrame(d)
+ expect(frame.every(Number.isFinite)).toBe(true)
+ expect(frame[0]).toBe(d.primary)
+ expect(frame[1]).toBe(d.route.liquidVolume_m3)
+ expect(frame.at(-1)).toBe(d.selection.initialTemperature_K)
+ // Native PZR metal applicability must remain cold even when the shared
+ // 304 coefficients are valid up to 1600 K (or a broader future domain).
+ expect(frame[43]).toBe(d.selection.minimumTemperature_K)
+ expect(frame[44]).toBe(d.selection.maximumTemperature_K)
+ expect(nativeColdPressureFrame(compileColdPressure(text,route,p.network.water,
+  {...p.barrel,maximum_k:2000},1))).toEqual(frame)
+ expect(()=>nativeColdPressureFrame({...d,lineAmbientConductance:NaN})).toThrow()
+ expect(()=>compileColdPressure(text,route,p.network.water,{...p.barrel,minimum_k:301},1)).toThrow('domain')
+ for(const caloric of [{...p.barrel,minimum_k:295},{...p.barrel,maximum_k:325}])
+  expect(()=>compileColdPressure(text,route,p.network.water,caloric,1)).toThrow('domain')
  expect(()=>parseColdPressureSelection(text+text)).toThrow()
  expect(()=>parseColdPressureSelection(text.replace('"initialLevel_m": 4','"initialLevel_m": 7'))).toThrow()
  expect(()=>parseColdPressureSelection(text.replace('"initialLevel_m": 4','"initialLevel_m": 4, "undeclared": 1'))).toThrow()

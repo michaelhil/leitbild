@@ -2,7 +2,7 @@
 //! Separate finite water/NC energies, finite-rate supersaturated dilute steam,
 //! exact pool geometry and reciprocal interface work. No electrical heater,
 //! gas port, dryout/flooding, slip, stratified withdrawal or stable-fog claim.
-use crate::{GRAVITY, Liquid, LiquidQuery, liquid_batch};
+use crate::{liquid_batch, Liquid, LiquidQuery, GRAVITY};
 use std::sync::Arc;
 
 pub const METALS: usize = 9;
@@ -556,22 +556,26 @@ impl Model {
         partials[SURFACE_PRESSURE] = crate::finite_surge::PortDirection {
             pressure: 1.,
             total_enthalpy: 1. / l.density,
+            density: 0.,
         };
         partials[HEIGHT] = crate::finite_surge::PortDirection {
             pressure: l.density * GRAVITY,
             total_enthalpy: GRAVITY,
+            density: 0.,
         };
         partials[LIQUID_PRESSURE] = crate::finite_surge::PortDirection {
             pressure: rp * GRAVITY * h,
             total_enthalpy: (l.pressure * l.compressibility - l.temperature * l.expansion)
                 / l.density
                 - ps * rp / l.density.powi(2),
+            density: rp,
         };
         partials[LIQUID_TEMPERATURE] = crate::finite_surge::PortDirection {
             pressure: rt * GRAVITY * h,
             total_enthalpy: l.cp
                 - l.pressure * l.expansion / l.density
                 - ps * rt / l.density.powi(2),
+            density: rt,
         };
         Ok(PortResponse {
             port: crate::finite_surge::Port {
@@ -580,6 +584,10 @@ impl Model {
                     + ps / l.density
                     + GRAVITY * (self.input.bottom_elevation + h),
                 elevation: self.input.bottom_elevation,
+                density: l.density,
+                temperature: l.temperature,
+                entropy: l.entropy,
+                eos_pressure: l.pressure,
             },
             partials,
         })
@@ -1367,7 +1375,11 @@ mod tests {
         let yp = [0.01; STATES];
         let d = std::array::from_fn(|k| {
             if m.is_differential(k) {
-                if k < 2 { 0.001 } else { 13. }
+                if k < 2 {
+                    0.001
+                } else {
+                    13.
+                }
             } else {
                 match k {
                     SURFACE_PRESSURE | VAPOR_PRESSURE | LIQUID_PRESSURE => 7.,
@@ -1385,6 +1397,7 @@ mod tests {
             |a, (p, v)| crate::finite_surge::PortDirection {
                 pressure: a.pressure + p.pressure * v,
                 total_enthalpy: a.total_enthalpy + p.total_enthalpy * v,
+                density: a.density + p.density * v,
             },
         );
         for eps in [1e-3, 5e-4] {
@@ -1440,27 +1453,23 @@ mod tests {
             .unwrap();
         assert!(w.diagnostics().unwrap().supersaturation_ratio > 1.);
         let (foreign, _) = prepared();
-        assert!(
-            foreign
-                .evaluate(&y, &z, Balance::default(), None, &mut w)
-                .is_err()
-        );
+        assert!(foreign
+            .evaluate(&y, &z, Balance::default(), None, &mut w)
+            .is_err());
         assert!(w.diagnostics().is_err());
         m.evaluate(&y, &z, Balance::default(), Some(1.), &mut w)
             .unwrap();
         let mut bad = y;
         bad[HEIGHT] = 3.;
-        assert!(
-            m.evaluate(&bad, &z, Balance::default(), None, &mut w)
-                .is_err()
-        );
+        assert!(m
+            .evaluate(&bad, &z, Balance::default(), None, &mut w)
+            .is_err());
         assert!(w.residual().is_err());
         bad = y;
         bad[LIQUID_TEMPERATURE] = f64::NAN;
-        assert!(
-            m.evaluate(&bad, &z, Balance::default(), Some(1.), &mut w)
-                .is_err()
-        );
+        assert!(m
+            .evaluate(&bad, &z, Balance::default(), Some(1.), &mut w)
+            .is_err());
     }
     #[test]
     fn local_probe_domain_is_explicit_not_a_hidden_one_sided_fallback() {
@@ -1470,10 +1479,9 @@ mod tests {
         y[METAL_TEMPERATURES] = m.input().minimum_metal_temperature;
         m.evaluate(&y, &z, Balance::default(), None, &mut w)
             .unwrap();
-        assert!(
-            m.evaluate(&y, &z, Balance::default(), Some(1.), &mut w)
-                .is_err()
-        );
+        assert!(m
+            .evaluate(&y, &z, Balance::default(), Some(1.), &mut w)
+            .is_err());
         assert!(w.residual().is_err());
         assert!(w.jacobian().is_err());
     }

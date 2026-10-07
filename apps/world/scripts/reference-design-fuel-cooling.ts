@@ -14,6 +14,7 @@ import {configurationBlock} from './reference-design-source-laws'
 import {z} from 'zod'
 import type {compileSourceEvolution} from './reference-design-source-evolution'
 import {compileColdBarrel,nativeColdBarrelFrame} from './reference-design-source-barrel'
+import {compileColdPressure,nativeColdPressureFrame} from './reference-design-cold-pressure-support'
 
 type Network=Awaited<ReturnType<typeof compileOperatingNetwork>>
 type Material=ReturnType<typeof compileColdSourceMaterialOwners>
@@ -171,12 +172,14 @@ export function nativeFuelCoolingFixture(p:Awaited<ReturnType<typeof compileFuel
   ...p.primary.rows.flatMap(r=>[r.region,r.cell,r.volume_m3,r.volume_fraction])]
  const frame=(s:string)=>{const tokens=s.trim().split(/\s+/);return [tokens.length,...tokens].join('\n')}
  const barrel=nativeColdBarrelFrame(p.barrel,source)
- return [source.fixture,p.network.nativeInput,fields.join('\n'),primary.join('\n'),barrel.fields.join('\n')].map(frame).join('\n')+'\n'
+ return [source.fixture,p.network.nativeInput,fields.join('\n'),primary.join('\n'),barrel.fields.join('\n'),
+  nativeColdPressureFrame(p.pressure).join('\n')].map(frame).join('\n')+'\n'
 }
 
 export async function compileFuelCooling(wiki:string){
  const extra=['systems/reactor/phase-dependent-heat-transfer.md','systems/primary-coolant/heater-equipment.md',
-  'systems/reactor/configuration-source-and-history.md'],names=[...new Set([...coldSourceMaterialOwnerFiles,...primaryWaterOwnerFiles,...extra])],
+  'systems/reactor/configuration-source-and-history.md','model/operating-pressure-support.md',
+  'systems/primary-coolant/surge-route.md'],names=[...new Set([...coldSourceMaterialOwnerFiles,...primaryWaterOwnerFiles,...extra])],
   texts=await Promise.all(names.map(p=>Bun.file(join(wiki,p)).text())),docs=new Map(names.map((p,i)=>[p,texts[i]!])),
   read=(p:string)=>{const s=docs.get(p);if(s===undefined)throw Error('Missing cold coupling owner '+p);return s},
   material=compileColdSourceMaterialOwners(coldSourceMaterialOwnerFiles.map(read)),
@@ -185,14 +188,17 @@ export async function compileFuelCooling(wiki:string){
   geometry=compilePrimaryWaterGeometry(material.partition,d),
   primary=compilePrimaryIncidence(network,material.partition,d,geometry),
   barrel=compileColdBarrel(d,network,geometry,read('systems/reactor/configuration-source-and-history.md'),read(extra[1]!)),
+  pressure=compileColdPressure(read('model/operating-pressure-support.md'),read('systems/primary-coolant/surge-route.md'),
+   network.water,barrel,primary.boronAtomsPerKg/primary.markerRatio),
   identities=names.map((name,i)=>({name,sha256:sha(texts[i]!)}))
  if(network.water.some(w=>w.markerRatio!==primary.markerRatio))throw Error('Connected primary preparation is not homogeneous')
  for(const identity of network.ownerIdentities){const same=identities.find(x=>x.name===identity.name)
   if(same&&same.sha256!==identity.sha256)throw Error('Owner changed across current coupling compilers')}
  if((await Promise.all(names.map(p=>Bun.file(join(wiki,p)).text()))).some((s,i)=>s!==texts[i]))throw Error('Owner changed during cold coupling compilation')
- return {thermal,primary,network,material,barrel,ownerIdentities:identities,
+ return {thermal,primary,network,material,barrel,pressure,ownerIdentities:identities,
   limitations:['Compilation is not an advancing coupled plant or empirical qualification',
-   'Cold fully wet liquid, fixed prepared fuel/guide geometry; no PZR/surge, motion, phase or coastdown',
+   'Cold fully wet primary, fixed prepared fuel/guide geometry; no primary phase continuation, motion or coastdown',
+   'Finite mixed surge and cold separated liquid/steam/air PZR; no hot pressure regulation, resolved thermal fronts or dryout',
    'BARREL prompt/Mn emissions join its finite 304 owner and five actual primary recipients, with explicit photon export',
    'Other nonfuel/Cf/particle/capture heat recipients remain separately unjoined, not invented exports',
    'Old hydrostatic source-stock receipt does not define the new point-lumped coupled preparation']}

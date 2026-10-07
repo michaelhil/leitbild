@@ -11,7 +11,7 @@ use std::{
     time::Instant,
 };
 
-struct Sparse {
+pub(super) struct Sparse {
     resources: Resources,
     b: Handle,
     x: Handle,
@@ -22,7 +22,7 @@ struct Sparse {
     size: usize,
 }
 impl Sparse {
-    fn new(
+    pub(super) fn new(
         size: usize,
         coordinates: impl IntoIterator<Item = (usize, usize)>,
     ) -> Result<Self, String> {
@@ -69,7 +69,7 @@ impl Sparse {
             size,
         })
     }
-    fn add(&mut self, r: usize, c: usize, v: f64) -> Result<(), String> {
+    pub(super) fn add(&mut self, r: usize, c: usize, v: f64) -> Result<(), String> {
         let slot = self
             .lookup
             .get(&(r, c))
@@ -77,7 +77,10 @@ impl Sparse {
         self.values[*slot] += v;
         Ok(())
     }
-    fn factor(&mut self) -> Result<(), String> {
+    pub(super) fn clear(&mut self) {
+        self.values.fill(0.);
+    }
+    pub(super) fn factor(&mut self) -> Result<(), String> {
         if self.values.iter().any(|v| !v.is_finite()) {
             return Err("Nonfinite coupled P matrix".into());
         }
@@ -92,7 +95,7 @@ impl Sparse {
             "Factor coupled KLU",
         )
     }
-    fn solve(&mut self, rhs: &[f64], out: &mut [f64]) -> Result<(), String> {
+    pub(super) fn solve(&mut self, rhs: &[f64], out: &mut [f64]) -> Result<(), String> {
         if rhs.len() != self.size || out.len() != self.size || rhs.iter().any(|v| !v.is_finite()) {
             return Err("Invalid coupled P RHS".into());
         }
@@ -115,14 +118,37 @@ impl Sparse {
         }
         Ok(())
     }
+    /// Contributor-scaled backward error of the actual assembled matrix.
+    pub(super) fn backward_error(&self, rhs: &[f64], x: &[f64]) -> (usize, f64, f64, f64) {
+        let mut residual = rhs.iter().map(|v| -v).collect::<Vec<_>>();
+        let mut scale = rhs.iter().map(|v| v.abs()).collect::<Vec<_>>();
+        for (c, &xc) in x.iter().enumerate() {
+            for slot in self.pointers[c] as usize..self.pointers[c + 1] as usize {
+                let r = self.rows[slot] as usize;
+                let v = self.values[slot] * xc;
+                residual[r] += v;
+                scale[r] += v.abs();
+            }
+        }
+        residual
+            .iter()
+            .zip(scale)
+            .enumerate()
+            .map(|(r, (v, s))| (r, if s == 0. { v.abs() } else { v.abs() / s }, v.abs(), s))
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .unwrap()
+    }
 }
 pub(super) struct Preconditioner {
     source: source_block::BlockPreconditioner,
     source_jac: Jacobian,
     source_values: Vec<f64>,
     thermal: Sparse,
-    network: Sparse,
-    carrier: Sparse,
+    fluid: Sparse,
+    fluid_rows: Vec<usize>,
+    fluid_indices: HashMap<usize, usize>,
+    fluid_rhs: Vec<f64>,
+    fluid_solution: Vec<f64>,
     barrel: Sparse,
     work: Workspace,
     valid: bool,
@@ -147,44 +173,40 @@ impl Preconditioner {
             .thermal
             .visit_heat_derivatives(&work.thermal, |r, c, _| thermal_pattern.push((r, nt + c)))?;
         let thermal = Sparse::new(2 * nt, thermal_pattern)?;
-        let n = &model.network;
-        let mut network_pattern = Vec::new();
-        for c in 0..n.dimension() {
-            for k in n.column_pointers[c] as usize..n.column_pointers[c + 1] as usize {
-                network_pattern.push((n.row_indices[k] as usize, c));
-            }
+        let fluid_rows = model.fluid_rows().collect::<Vec<_>>();
+        let fluid_indices = fluid_rows
+            .iter()
+            .enumerate()
+            .map(|(i, &r)| (r, i))
+            .collect::<HashMap<_, _>>();
+        if fluid_indices.len() != fluid_rows.len() {
+            return Err("Duplicate coupled fluid coordinate".into());
         }
-        let network = Sparse::new(n.dimension(), network_pattern)?;
-        let mut carrier_pattern = (0..leitbild_plant_numerics::water_carrier::WIDTH
-            * model.carrier.cells())
-            .map(|i| (i, i))
-            .collect::<Vec<_>>();
-        for e in model.carrier.links() {
-            for s in 0..leitbild_plant_numerics::water_carrier::WIDTH {
-                carrier_pattern.extend([
-                    (
-                        leitbild_plant_numerics::water_carrier::WIDTH * e.from + s,
-                        leitbild_plant_numerics::water_carrier::WIDTH * e.to + s,
-                    ),
-                    (
-                        leitbild_plant_numerics::water_carrier::WIDTH * e.to + s,
-                        leitbild_plant_numerics::water_carrier::WIDTH * e.from + s,
-                    ),
-                ]);
+        let mut fluid_pattern = Vec::new();
+        let mut invalid = false;
+        model.visit_fluid_jacobian(&work, |r, c, _| {
+            match (fluid_indices.get(&r), fluid_indices.get(&c)) {
+                (Some(&r), Some(&c)) => fluid_pattern.push((r, c)),
+                _ => invalid = true,
             }
+        })?;
+        if invalid {
+            return Err("Fluid P emission outside owned border".into());
         }
-        let carrier = Sparse::new(
-            leitbild_plant_numerics::water_carrier::WIDTH * model.carrier.cells(),
-            carrier_pattern,
-        )?;
+        let fluid = Sparse::new(fluid_rows.len(), fluid_pattern)?;
+        let fluid_rhs = vec![0.; fluid_rows.len()];
+        let fluid_solution = vec![0.; fluid_rows.len()];
         let barrel = Sparse::new(4, [(0, 0), (0, 1), (1, 0), (1, 1), (2, 2), (3, 3)])?;
         Ok(Self {
             source,
             source_jac,
             source_values,
             thermal,
-            network,
-            carrier,
+            fluid,
+            fluid_rows,
+            fluid_indices,
+            fluid_rhs,
+            fluid_solution,
             barrel,
             work,
             valid: false,
@@ -210,10 +232,20 @@ impl Preconditioner {
                 &mut self.source_values,
             )?;
             self.source.setup(&self.source_values)?;
-            self.network
-                .values
-                .copy_from_slice(&self.work.network.jacobian_values);
-            self.network.factor()?;
+            self.fluid.values.fill(0.);
+            let mut fluid_error = None;
+            model.visit_fluid_jacobian(&self.work, |r, c, v| {
+                if fluid_error.is_none() {
+                    fluid_error = match (self.fluid_indices.get(&r), self.fluid_indices.get(&c)) {
+                        (Some(&r), Some(&c)) => self.fluid.add(r, c, v).err(),
+                        _ => Some("Fluid P emission outside owned border".into()),
+                    };
+                }
+            })?;
+            if let Some(error) = fluid_error {
+                return Err(error);
+            }
+            self.fluid.factor()?;
             self.thermal.values.fill(0.);
             let nt = model.thermal.node_count();
             for (i, &capacity) in self.work.thermal.capacities()?.iter().enumerate() {
@@ -233,36 +265,6 @@ impl Preconditioner {
                 return Err(e);
             }
             self.thermal.factor()?;
-            self.carrier.values.fill(0.);
-            for i in 0..leitbild_plant_numerics::water_carrier::WIDTH * model.carrier.cells() {
-                self.carrier.add(i, i, cj)?;
-            }
-            for (e, &q) in model
-                .carrier
-                .links()
-                .iter()
-                .zip(&self.work.network.mass_flows)
-            {
-                let (donor, receiver) = if q >= 0. {
-                    (e.from, e.to)
-                } else {
-                    (e.to, e.from)
-                };
-                let a = q.abs() / self.work.network.chart_mass[donor];
-                for s in 0..leitbild_plant_numerics::water_carrier::WIDTH {
-                    self.carrier.add(
-                        leitbild_plant_numerics::water_carrier::WIDTH * donor + s,
-                        leitbild_plant_numerics::water_carrier::WIDTH * donor + s,
-                        a,
-                    )?;
-                    self.carrier.add(
-                        leitbild_plant_numerics::water_carrier::WIDTH * receiver + s,
-                        leitbild_plant_numerics::water_carrier::WIDTH * donor + s,
-                        -a,
-                    )?;
-                }
-            }
-            self.carrier.factor()?;
             self.barrel.values.fill(0.);
             self.barrel.add(0, 0, cj)?;
             let b = model.barrel.config();
@@ -292,20 +294,22 @@ impl Preconditioner {
             let l = model.layout;
             self.source
                 .solve(&rhs[..l.source_end], &mut out[..l.source_end])?;
-            self.network.solve(
-                &rhs[l.network_start..l.carrier_start],
-                &mut out[l.network_start..l.carrier_start],
-            )?;
-            self.carrier.solve(
-                &rhs[l.carrier_start..l.energies_start],
-                &mut out[l.carrier_start..l.energies_start],
-            )?;
+            for (i, &r) in self.fluid_rows.iter().enumerate() {
+                self.fluid_rhs[i] = rhs[r];
+            }
+            self.fluid
+                .solve(&self.fluid_rhs, &mut self.fluid_solution)?;
+            for (i, &r) in self.fluid_rows.iter().enumerate() {
+                out[r] = self.fluid_solution[i];
+            }
             self.thermal.solve(
                 &rhs[l.energies_start..l.barrel_energy],
                 &mut out[l.energies_start..l.barrel_energy],
             )?;
-            self.barrel
-                .solve(&rhs[l.barrel_energy..], &mut out[l.barrel_energy..])?;
+            self.barrel.solve(
+                &rhs[l.barrel_energy..l.pressurizer_start],
+                &mut out[l.barrel_energy..l.pressurizer_start],
+            )?;
             Ok(())
         })();
         self.solve_seconds += started.elapsed().as_secs_f64();
@@ -316,7 +320,7 @@ impl Preconditioner {
     }
     pub fn metrics_json(&self) -> String {
         format!(
-            "{{\"identity\":\"source9-thermalETKLU-networkKLU-carrierAdvectionKLU-barrelETauditsKLU;cross-component-feedback-outer-only\",\"setups\":{},\"solves\":{},\"setupSeconds\":{},\"solveSeconds\":{},\"source\":{}}}",
+            "{{\"identity\":\"source9-thermalETKLU-coupledPrimarySurgePZRMaterialKLU-barrelETauditsKLU;remaining-cross-component-feedback-outer-only\",\"setups\":{},\"solves\":{},\"setupSeconds\":{},\"solveSeconds\":{},\"source\":{}}}",
             self.setups,
             self.solves,
             self.setup_seconds,
@@ -377,13 +381,14 @@ mod tests {
             for (&a, &b) in solved.iter().zip(&x) {
                 assert!((a - b).abs() < 1e-10 * (1. + b.abs()), "{a} vs {b}");
             }
-            let x =
-                vec![0.3; leitbild_plant_numerics::water_carrier::WIDTH * model.carrier.cells()];
-            let rhs = action(&p.carrier, &x);
+            let x = (0..p.fluid.size)
+                .map(|i| 0.001 / (1. + i as f64))
+                .collect::<Vec<_>>();
+            let rhs = action(&p.fluid, &x);
             let mut out = vec![0.; x.len()];
-            p.carrier.solve(&rhs, &mut out).unwrap();
+            p.fluid.solve(&rhs, &mut out).unwrap();
             for (&a, &b) in out.iter().zip(&x) {
-                assert!((a - b).abs() < 1e-12);
+                assert!((a - b).abs() < 1e-9 * (1. + b.abs()));
             }
         }
     }

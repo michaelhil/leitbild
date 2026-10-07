@@ -1,13 +1,18 @@
-//! One offline cold source/fuel/primary/SG residual. Component owners retain
+//! One offline cold source/fuel/primary/SG/barrel/pressure-support residual.
+//! Component owners retain
 //! their laws; this module owns ONLY their physical incidence and chain rule.
-//! Includes only the separately selected finite-barrel capture/decay path.
+//! Includes the selected finite-barrel capture/decay path and restricted cold
+//! liquid/steam/air pressurizer with its finite mixed surge line.
 //! No time integrator, Pack installation, other unjoined binding recipients,
-//! acoustic mode, hot geometry or phase continuation is implied.
+//! all-passage acoustic mesh, hot geometry or primary phase continuation is implied.
 use crate::{
-    barrel_thermal as bt, fuel_thermal as ft, moderator_source::Stocks, operating_network as on,
-    sg_secondary, source_evolution as se, water_carrier as wc,
+    barrel_thermal as bt, cold_pressurizer as cp, finite_surge as fs, fuel_thermal as ft,
+    moderator_source::Stocks, operating_network as on, sg_secondary, source_evolution as se,
+    water_carrier as wc,
 };
 use std::sync::Arc;
+mod pressure;
+pub use pressure::PressureConnection;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Layout {
@@ -20,6 +25,12 @@ pub struct Layout {
     pub barrel_temperature: usize,
     pub barrel_released: usize,
     pub barrel_exported: usize,
+    pub pressurizer_start: usize,
+    pub surge_start: usize,
+    pub surge_carrier_start: usize,
+    pub pool_carrier_start: usize,
+    pub gas_hydrogen_product: usize,
+    pub ambient_exported: usize,
     pub dimension: usize,
 }
 pub struct Model {
@@ -29,6 +40,7 @@ pub struct Model {
     pub carrier: wc::Carrier,
     pub barrel: bt::Model,
     pub layout: Layout,
+    pressure_connection: PressureConnection,
     /// SOURCE fuel-cohort ordering -> thermal node ordering.
     fuel_rows: Vec<usize>,
     /// Native incoming core flow for film; all other water cells have no fuel wall.
@@ -41,6 +53,8 @@ pub struct Workspace {
     pub network: on::Workspace,
     pub thermal: ft::Workspace,
     pub barrel: bt::Workspace,
+    pub pressurizer: cp::Workspace,
+    pub surge: fs::Workspace,
     pub residual: Vec<f64>,
     pub jvp: Vec<f64>,
     mass: Vec<f64>,
@@ -66,6 +80,13 @@ pub struct Workspace {
     valid: bool,
     energy_rate_balance: f64,
     energy_rate_tangent: Option<f64>,
+    hot_liquid: crate::Liquid,
+    pressure_ports: [fs::Port; 2],
+    pool_port: Option<cp::PortResponse>,
+    pressure_material_rates: [f64; 10],
+}
+fn array<const N: usize>(slice: &[f64]) -> &[f64; N] {
+    slice.try_into().expect("validated component layout")
 }
 fn compensated(values: impl Iterator<Item = f64>) -> f64 {
     let (mut s, mut c) = (0f64, 0f64);
@@ -90,7 +111,8 @@ impl Workspace {
         Ok(&self.stocks)
     }
     /// Actual independently assembled installed-energy rate minus paid fuel
-    /// and barrel release, plus barrel photon export. Never replaced with the
+    /// and barrel release, plus barrel photon and signed ambient exports.
+    /// Never replaced with the
     /// analytically expected zero.
     pub fn complete_energy_rate(&self) -> Result<f64, String> {
         if !self.valid {
@@ -115,12 +137,33 @@ impl Model {
         thermal: ft::Model,
         carrier: wc::Carrier,
         barrel: bt::Model,
+        pressure_connection: PressureConnection,
         fuel_rows: Vec<usize>,
         water_flows: Vec<Option<usize>>,
         original_temperature: Vec<f64>,
     ) -> Result<Self, String> {
         let nw = network.config().water.len();
         let nt = thermal.node_count();
+        if pressure_connection.primary_cell >= nw
+            || !pressure_connection.atoms_per_marker.is_finite()
+            || pressure_connection.atoms_per_marker <= 0.
+            || pressure_connection
+                .initial_pressurizer
+                .iter()
+                .chain(&pressure_connection.initial_surge)
+                .any(|v| !v.is_finite())
+            || pressure_connection
+                .initial_pool
+                .values()
+                .iter()
+                .chain(&pressure_connection.initial_line.values())
+                .chain(std::iter::once(
+                    &pressure_connection.initial_gas_hydrogen_product,
+                ))
+                .any(|v| !v.is_finite() || *v < 0.)
+        {
+            return Err("Invalid finite pressure-support preparation".into());
+        }
         if source.external_water_count() != nw
             || carrier.cells() != nw
             || thermal.water_count() != nw
@@ -212,8 +255,26 @@ impl Model {
         let barrel_exported = barrel_energy
             .checked_add(3)
             .ok_or("Coupled layout overflow")?;
-        let dimension = barrel_energy
+        let pressurizer_start = barrel_energy
             .checked_add(4)
+            .ok_or("Coupled layout overflow")?;
+        let surge_start = pressurizer_start
+            .checked_add(cp::STATES)
+            .ok_or("Coupled layout overflow")?;
+        let surge_carrier_start = surge_start
+            .checked_add(fs::STATES)
+            .ok_or("Coupled layout overflow")?;
+        let pool_carrier_start = surge_carrier_start
+            .checked_add(wc::WIDTH)
+            .ok_or("Coupled layout overflow")?;
+        let gas_hydrogen_product = pool_carrier_start
+            .checked_add(wc::WIDTH)
+            .ok_or("Coupled layout overflow")?;
+        let ambient_exported = gas_hydrogen_product
+            .checked_add(1)
+            .ok_or("Coupled layout overflow")?;
+        let dimension = ambient_exported
+            .checked_add(1)
             .ok_or("Coupled layout overflow")?;
         Ok(Self {
             source,
@@ -221,6 +282,7 @@ impl Model {
             thermal,
             carrier,
             barrel,
+            pressure_connection,
             fuel_rows,
             water_flows,
             original_temperature,
@@ -234,6 +296,12 @@ impl Model {
                 barrel_temperature,
                 barrel_released,
                 barrel_exported,
+                pressurizer_start,
+                surge_start,
+                surge_carrier_start,
+                pool_carrier_start,
+                gas_hydrogen_product,
+                ambient_exported,
                 dimension,
             },
             owner: Arc::new(()),
@@ -245,6 +313,38 @@ impl Model {
     pub fn dimension(&self) -> usize {
         self.layout.dimension
     }
+    pub fn pressure_connection(&self) -> &PressureConnection {
+        &self.pressure_connection
+    }
+    /// Installed physical energies exactly once; gross release/export receipts
+    /// are independent audits, never installed stores.
+    pub fn installed_energy_rows(&self) -> impl Iterator<Item = usize> + '_ {
+        let l = self.layout;
+        (0..self.network.config().water.len() + self.network.config().solids.len())
+            .map(move |i| l.network_start + self.network.energy_row(i))
+            .chain(
+                (0..self.network.config().secondaries.len())
+                    .map(move |i| l.network_start + self.network.secondary_energy_row(i)),
+            )
+            .chain(l.energies_start..l.temperatures_start)
+            .chain(std::iter::once(l.barrel_energy))
+            .chain(
+                self.pressure_connection
+                    .pressurizer
+                    .energy_rows()
+                    .map(move |r| l.pressurizer_start + r),
+            )
+            .chain(
+                self.pressure_connection
+                    .surge
+                    .energy_rows()
+                    .map(move |r| l.surge_start + r),
+            )
+    }
+    pub fn fluid_rows(&self) -> impl Iterator<Item = usize> + '_ {
+        (self.layout.network_start..self.layout.energies_start)
+            .chain(self.layout.pressurizer_start..self.layout.dimension)
+    }
     pub fn is_differential(&self, row: usize) -> bool {
         let l = self.layout;
         row < l.source_end
@@ -253,6 +353,19 @@ impl Model {
             || row == l.barrel_energy
             || row == l.barrel_released
             || row == l.barrel_exported
+            || (row >= l.pressurizer_start
+                && row < l.surge_start
+                && self
+                    .pressure_connection
+                    .pressurizer
+                    .is_differential(row - l.pressurizer_start))
+            || (row >= l.surge_start
+                && row < l.surge_carrier_start
+                && self
+                    .pressure_connection
+                    .surge
+                    .is_differential(row - l.surge_start))
+            || (row >= l.surge_carrier_start && row <= l.ambient_exported)
     }
     pub fn workspace(&self) -> Workspace {
         let nw = self.carrier.cells();
@@ -278,6 +391,8 @@ impl Model {
             network: on::Workspace::new(&self.network),
             thermal: self.thermal.workspace(),
             barrel: self.barrel.workspace(),
+            pressurizer: self.pressure_connection.pressurizer.workspace(),
+            surge: self.pressure_connection.surge.workspace(),
             residual: vec![0.; self.dimension()],
             jvp: vec![0.; self.dimension()],
             mass: vec![0.; nw],
@@ -310,6 +425,10 @@ impl Model {
             valid: false,
             energy_rate_balance: 0.,
             energy_rate_tangent: None,
+            hot_liquid: crate::Liquid::default(),
+            pressure_ports: [fs::Port::default(); 2],
+            pool_port: None,
+            pressure_material_rates: [0.; 10],
         }
     }
     /// Fresh physical preparation. Caller still solves network algebraic
@@ -321,6 +440,12 @@ impl Model {
         y[l.network_start..l.carrier_start].copy_from_slice(&self.network.initial_state()?);
         y[l.temperatures_start..l.barrel_energy].copy_from_slice(&self.original_temperature);
         y[l.barrel_temperature] = self.barrel.initial_temperature();
+        let p = &self.pressure_connection;
+        y[l.pressurizer_start..l.surge_start].copy_from_slice(&p.initial_pressurizer);
+        y[l.surge_start..l.surge_carrier_start].copy_from_slice(&p.initial_surge);
+        y[l.surge_carrier_start..l.pool_carrier_start].copy_from_slice(&p.initial_line.values());
+        y[l.pool_carrier_start..l.gas_hydrogen_product].copy_from_slice(&p.initial_pool.values());
+        y[l.gas_hydrogen_product] = p.initial_gas_hydrogen_product;
         for (i, a) in self.carrier.initial().iter().enumerate() {
             y[l.carrier_start + wc::WIDTH * i..l.carrier_start + wc::WIDTH * (i + 1)]
                 .copy_from_slice(&a.values());
@@ -342,6 +467,7 @@ impl Model {
         w.valid = false;
         w.jacobian_cj = None;
         w.energy_rate_tangent = None;
+        w.pool_port = None;
         if !Arc::ptr_eq(&self.owner, &w.owner)
             || y.len() != self.dimension()
             || yp.len() != self.dimension()
@@ -352,8 +478,68 @@ impl Model {
         }
         let l = self.layout;
         let yn = &y[l.network_start..l.carrier_start];
-        w.network
-            .evaluate(&self.network, yn, &yp[l.network_start..l.carrier_start], cj)?;
+        let p = &self.pressure_connection;
+        let primary = p.primary_cell;
+        let pressure = self.network.eos_pressure(primary, yn);
+        let temperature = self.network.temperature(primary, yn);
+        let mut liquid = [crate::Liquid::default()];
+        crate::liquid_batch(
+            &[crate::LiquidQuery {
+                pressure,
+                temperature,
+            }],
+            &mut liquid,
+        )
+        .map_err(|e| e.message)?;
+        w.hot_liquid = liquid[0];
+        let (ports, pool_port) = self.current_pressure_ports(
+            yn,
+            w.hot_liquid,
+            array(&y[l.pressurizer_start..l.surge_start]),
+        )?;
+        w.pressure_ports = ports;
+        w.pool_port = Some(pool_port);
+        p.surge.evaluate(
+            array(&y[l.surge_start..l.surge_carrier_start]),
+            array(&yp[l.surge_start..l.surge_carrier_start]),
+            &w.pressure_ports,
+            cj,
+            &mut w.surge,
+        )?;
+        let receipts = w.surge.receipts()?;
+        p.pressurizer.evaluate(
+            array(&y[l.pressurizer_start..l.surge_start]),
+            array(&yp[l.pressurizer_start..l.surge_start]),
+            cp::Balance {
+                mass: -receipts.mass[1],
+                energy: -receipts.energy[1],
+            },
+            cj,
+            &mut w.pressurizer,
+        )?;
+        let mass = self.network.mass(primary, w.hot_liquid);
+        let (material, _) = self.pressure_material(
+            y,
+            None,
+            mass,
+            0.,
+            w.pressurizer.diagnostics()?,
+            None,
+            [receipts.mass[0], -receipts.mass[1]],
+        )?;
+        w.pressure_material_rates = material;
+        w.network.evaluate_with_ports(
+            &self.network,
+            yn,
+            &yp[l.network_start..l.carrier_start],
+            cj,
+            &[on::LiquidPort {
+                cell: primary,
+                mass_rate: -receipts.mass[0],
+                energy_rate: -receipts.energy[0],
+                marker_rate: (material[1] + material[2]) / p.atoms_per_marker,
+            }],
+        )?;
         for i in 0..self.carrier.cells() {
             w.mass[i] = w.network.chart_mass[i];
             w.products[i] = wc::Amounts {
@@ -428,6 +614,9 @@ impl Model {
             w.source.external_water_events()?,
             &mut w.product_rates,
         )?;
+        let primary_values = w.product_rates[primary].values();
+        w.product_rates[primary] =
+            wc::Amounts::from_values(std::array::from_fn(|k| primary_values[k] + material[k]));
         for i in 0..l.source_end {
             w.residual[i] = yp[i] - w.source.rates()?[i];
         }
@@ -455,6 +644,15 @@ impl Model {
         w.residual[l.barrel_temperature] = y[l.barrel_energy] - w.barrel.energy()?;
         w.residual[l.barrel_released] = yp[l.barrel_released] - w.barrel.emitted_rate()?;
         w.residual[l.barrel_exported] = yp[l.barrel_exported] - w.barrel.export_rate()?;
+        w.residual[l.pressurizer_start..l.surge_start].copy_from_slice(w.pressurizer.residual()?);
+        w.residual[l.surge_start..l.surge_carrier_start].copy_from_slice(w.surge.residual()?);
+        for (i, &rate) in material[3..9].iter().enumerate() {
+            w.residual[l.surge_carrier_start + i] = yp[l.surge_carrier_start + i] - rate;
+        }
+        w.residual[l.gas_hydrogen_product] = yp[l.gas_hydrogen_product] - material[9];
+        w.residual[l.ambient_exported] = yp[l.ambient_exported]
+            - w.pressurizer.diagnostics()?.ambient_heat
+            - receipts.ambient_heat;
         if w.residual.iter().any(|x| !x.is_finite()) {
             return Err("Nonfinite composed residual".into());
         }
@@ -475,7 +673,14 @@ impl Model {
                 ])
                 .chain(std::iter::once(
                     -w.source.rates()?[self.source.fuel_release_row()],
-                )),
+                ))
+                .chain(w.surge.receipts()?.energy.into_iter())
+                .chain([
+                    receipts.wall_heat,
+                    -receipts.wall_heat - receipts.ambient_heat,
+                ])
+                .chain(w.pressurizer.energy_rates()?.into_iter())
+                .chain([w.pressurizer.diagnostics()?.ambient_heat + receipts.ambient_heat]),
         );
         if !w.energy_rate_balance.is_finite() {
             return Err("Nonfinite composed energy-rate balance".into());
@@ -569,6 +774,13 @@ impl Model {
             w.source.external_water_event_jvp()?,
             &mut w.product_jvp,
         )?;
+        let (pool_action, line_action, line_tangent, phase_tangent, material_tangent) =
+            self.pressure_tangent(dy, cj, w)?;
+        let primary = self.pressure_connection.primary_cell;
+        let primary_values = w.product_jvp[primary].values();
+        w.product_jvp[primary] = wc::Amounts::from_values(std::array::from_fn(|k| {
+            primary_values[k] + material_tangent[k]
+        }));
         w.jvp.fill(0.);
         for i in 0..l.source_end {
             w.jvp[i] = cj * dy[i] - w.source.rate_jvp()?[i];
@@ -581,6 +793,16 @@ impl Model {
                     w.network.jacobian_values[k] * direction;
             }
         }
+        self.network.add_port_jvp(
+            &[on::LiquidPort {
+                cell: primary,
+                mass_rate: -line_tangent.mass[0],
+                energy_rate: -line_tangent.energy[0],
+                marker_rate: (material_tangent[1] + material_tangent[2])
+                    / self.pressure_connection.atoms_per_marker,
+            }],
+            &mut w.jvp[l.network_start..l.carrier_start],
+        )?;
         for i in 0..self.carrier.cells() {
             for (k, rate) in w.product_jvp[i].values().into_iter().enumerate() {
                 w.jvp[l.carrier_start + wc::WIDTH * i + k] =
@@ -603,6 +825,15 @@ impl Model {
             dy[l.barrel_energy] - w.barrel.capacity()? * dy[l.barrel_temperature];
         w.jvp[l.barrel_released] = cj * dy[l.barrel_released] - w.barrel.emitted_jvp()?;
         w.jvp[l.barrel_exported] = cj * dy[l.barrel_exported] - w.barrel.export_jvp()?;
+        w.jvp[l.pressurizer_start..l.surge_start].copy_from_slice(&pool_action);
+        w.jvp[l.surge_start..l.surge_carrier_start].copy_from_slice(&line_action);
+        for (i, &rate) in material_tangent[3..9].iter().enumerate() {
+            w.jvp[l.surge_carrier_start + i] = cj * dy[l.surge_carrier_start + i] - rate;
+        }
+        w.jvp[l.gas_hydrogen_product] = cj * dy[l.gas_hydrogen_product] - material_tangent[9];
+        w.jvp[l.ambient_exported] = cj * dy[l.ambient_exported]
+            - phase_tangent[cp::DIAGNOSTIC_AMBIENT_HEAT]
+            - line_tangent.ambient_heat;
         if w.jvp.iter().any(|x| !x.is_finite()) {
             return Err("Nonfinite composed JVP".into());
         }
@@ -618,7 +849,27 @@ impl Model {
                 ])
                 .chain(std::iter::once(
                     -w.source.rate_jvp()?[self.source.fuel_release_row()],
-                )),
+                ))
+                .chain([
+                    -line_tangent.energy[0],
+                    line_tangent.energy[0],
+                    line_tangent.energy[1],
+                    line_tangent.wall_heat,
+                    -line_tangent.wall_heat - line_tangent.ambient_heat,
+                ])
+                .chain(std::iter::once(
+                    self.pressure_connection
+                        .pressurizer
+                        .complete_energy_rate_jvp(
+                            &w.pressurizer,
+                            array(&dy[l.pressurizer_start..l.surge_start]),
+                            cp::Balance {
+                                mass: -line_tangent.mass[1],
+                                energy: -line_tangent.energy[1],
+                            },
+                        )?,
+                ))
+                .chain([phase_tangent[cp::DIAGNOSTIC_AMBIENT_HEAT] + line_tangent.ambient_heat]),
         );
         if !balance.is_finite() {
             return Err("Nonfinite composed energy-rate tangent".into());
@@ -642,6 +893,28 @@ impl Model {
         self.source
             .validate_accepted_state(&y[..self.layout.source_end])?;
         self.carrier.validate_accepted(&w.mass, &w.products)?;
+        let l = self.layout;
+        let h = self.carrier.hydrogen_per_kg();
+        for (row, mass) in [
+            (l.surge_carrier_start, y[l.surge_start + fs::MASS]),
+            (
+                l.pool_carrier_start,
+                y[l.pressurizer_start + cp::LIQUID_MASS],
+            ),
+        ] {
+            let a = &y[row..row + wc::WIDTH];
+            let total = h * mass;
+            if a.iter().any(|v| *v < 0.) || !total.is_finite() || a[0] > total {
+                return Err("Invalid accepted pressure-support liquid chemistry".into());
+            }
+        }
+        let gas_total = h * y[l.pressurizer_start + cp::VAPOR_MASS];
+        if !gas_total.is_finite()
+            || y[l.gas_hydrogen_product] < 0.
+            || y[l.gas_hydrogen_product] > gas_total
+        {
+            return Err("Invalid accepted pressure-support vapor hydrogen".into());
+        }
         if y[self.layout.barrel_released] < 0. || y[self.layout.barrel_exported] < 0. {
             return Err("Negative accepted barrel release/export history".into());
         }

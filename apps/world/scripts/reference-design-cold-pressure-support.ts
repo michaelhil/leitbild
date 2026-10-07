@@ -1,7 +1,6 @@
 /** One authored cold pressure-support reduction, compiled from existing physical geometry.
- * Native preparation derives the actual gas inventory from the current primary
- * boundary in a future connected preparation. This compiler is currently
- * geometry/selection-only: no numeric wire frame or runtime is implied. */
+ * Native preparation derives gas inventory from the actual primary boundary.
+ * Compilation is not an advancing trajectory or an installed plant. */
 import {z} from 'zod'
 import {configurationBlock} from './reference-design-source-laws'
 import {heaterBankBasis,heaterBankGeometry} from './reference-design-pressurizer-heater-banks'
@@ -24,7 +23,7 @@ const schema=z.object({primaryCell:z.string().min(1),initialLevel_m:positive,ini
 })
 export function parseColdPressureSelection(text:string){return schema.parse(configurationBlock(text,'reference-cold-pressure-support'))}
 type Water={id:string;elevation_m:number}
-type Caloric={cp0_j_kg_k:number;cp1_j_kg_k2:number;datum_k:number}
+type Caloric={cp0_j_kg_k:number;cp1_j_kg_k2:number;datum_k:number;minimum_k:number;maximum_k:number}
 export function compileColdPressure(selectionText:string,routeText:string,water:Water[],caloric:Caloric,atomsPerMarker:number){
  const s=parseColdPressureSelection(selectionText),r=resolveSurgeRoute(parseSurgeRoute(routeText)),
   primary=water.findIndex(w=>w.id===s.primaryCell),b=heaterBankBasis,
@@ -45,6 +44,47 @@ export function compileColdPressure(selectionText:string,routeText:string,water:
  ]
  // Finite solid-to-solid radiation is omitted in this low-temperature slice;
  // there is no invented radiation sink into a transparent gas.
- return {selection:s,primary,metals,route:r,caloric,atomsPerMarker,
+ const outsideRadius=r.internalDiameter_m/2+r.wallThickness_m,
+  insulatedRadius=outsideRadius+s.insulationThickness_m,
+  lineAmbientConductance=1/(Math.log(insulatedRadius/outsideRadius)/(2*Math.PI*s.insulationConductivity_W_m_K*r.developedLength_m)
+   +1/(s.exteriorContact_W_m2_K*2*Math.PI*insulatedRadius*r.developedLength_m))
+ // Coefficient validity is not operating applicability. The whole selected
+ // cold interval, not just its initial point, must fit the steel caloric law.
+ if(!(caloric.minimum_k<=s.minimumTemperature_K&&s.maximumTemperature_K<=caloric.maximum_k)
+  ||!Number.isFinite(lineAmbientConductance)||lineAmbientConductance<=0)
+  throw Error('Cold pressure caloric/contact preparation is outside its owned domain')
+ return {selection:s,primary,metals,route:r,caloric,atomsPerMarker,lineAmbientConductance,
   scope:'Fresh positive cold pool/cushion and finite surge only; no hot pressure control, resolved fronts, dryout or whole-plant qualification'}
+}
+
+/** Sixth exact native frame. Fixed physical populations are not padded with
+ * unused fields; each contact tag carries only its actual owned geometry. */
+export function nativeColdPressureFrame(p:ReturnType<typeof compileColdPressure>){
+ const {selection:s,route:r,caloric:c}=p,b=heaterBankBasis,
+  rods=heaterBankGeometry(s.initialLevel_m).banks,
+  fields=[p.primary,
+   r.liquidVolume_m3,r.volumeMeanElevation_m,r.developedLength_m,r.internalDiameter_m,r.roughness_m,
+   // Outflow kinetic energy is received by the actual finite neighbor.
+   // Its thermalization must not also appear as an extra exit-loss heater.
+   r.entryLoss,r.elbowLoss,r.steelMass_kg,c.cp0_j_kg_k,c.cp1_j_kg_k2,c.datum_k,
+   s.minimumTemperature_K,s.maximumTemperature_K,s.wetContact_W_m2_K*r.innerContactArea_m2,
+   p.lineAmbientConductance,s.ambientTemperature_K,
+   b.vesselArea_m2,b.vesselHeight_m,b.bottom_m,
+   rods.normal.crossSection_m2,b.normal.length_m,rods.backup.crossSection_m2,b.backup.length_m,
+   s.minimumLevel_m,s.maximumLevel_m,s.minimumTemperature_K,s.maximumTemperature_K,
+   s.maximumTotalPressure_Pa,s.maximumVaporPressure_Pa,s.nitrogenMass_kg,s.interfaceLength_m,
+   s.diffusivityReference_m2_s,s.diffusivityReferenceTemperature_K,s.diffusivityReferencePressure_Pa,
+   s.diffusivityExponent,s.gasConductivity_W_m_K,s.wetContact_W_m2_K,s.gasContact_W_m2_K,
+   s.wallCondensationSpeed_m_s,c.cp0_j_kg_k,c.cp1_j_kg_k2,c.datum_k,s.minimumTemperature_K,s.maximumTemperature_K,s.ambientTemperature_K]
+ for(const m of p.metals){
+  fields.push(m.mass,m.ambient)
+  if(m.kind==='rod')fields.push(0,m.top,m.area)
+  else if(m.kind==='shell')fields.push(1,m.bottom,m.top,m.area)
+  else fields.push(m.kind==='bottom'?2:3,m.area)
+ }
+ // Cold reduction omits solid radiation; no zero-stock radiation recipients.
+ fields.push(0,s.initialTemperature_K,s.initialTemperature_K,s.initialLevel_m,
+  ...p.metals.map(()=>s.initialTemperature_K),s.initialTemperature_K,s.initialTemperature_K)
+ if(fields.some(v=>!Number.isFinite(v)))throw Error('Nonfinite cold pressure frame')
+ return fields
 }

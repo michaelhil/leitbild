@@ -1,5 +1,5 @@
 //! Solver-only affine energy chart. Physical owners retain every E and the
-//! independent fuel/barrel-release and photon-export receipts. No balance is
+//! independent fuel/barrel-release, photon and ambient-export receipts. No balance is
 //! imposed or reset here.
 use leitbild_plant_numerics::source_cooling::Model;
 
@@ -29,19 +29,19 @@ impl EnergyCoordinates {
         }
         let n = &model.network;
         let l = model.layout;
-        let mut rows = (0..n.config().water.len() + n.config().solids.len())
+        let network_rows = (0..n.config().water.len() + n.config().solids.len())
             .map(|i| l.network_start + n.energy_row(i))
+            .chain(
+                (0..n.config().secondaries.len())
+                    .map(|i| l.network_start + n.secondary_energy_row(i)),
+            )
             .collect::<Vec<_>>();
-        rows.extend(
-            (0..n.config().secondaries.len()).map(|i| l.network_start + n.secondary_energy_row(i)),
-        );
         // Replace a large network E, never the small independently paid release.
-        let row = *rows
+        let row = *network_rows
             .iter()
             .max_by(|&&a, &&b| initial[a].abs().total_cmp(&initial[b].abs()))
             .ok_or("Energy chart needs installed network energy")?;
-        rows.extend(l.energies_start..l.temperatures_start);
-        rows.push(l.barrel_energy);
+        let rows = model.installed_energy_rows().collect::<Vec<_>>();
         if !model.is_differential(row) {
             return Err("Energy-chart anchor is not differential".into());
         }
@@ -49,6 +49,7 @@ impl EnergyCoordinates {
             (model.source.fuel_release_row(), -1.),
             (l.barrel_released, -1.),
             (l.barrel_exported, 1.),
+            (l.ambient_exported, 1.),
         ]
         .into_iter()
         .map(|(r, sign)| (r, sign, initial[r]))
@@ -60,7 +61,8 @@ impl EnergyCoordinates {
             energies: rows.into_iter().map(|r| (r, initial[r])).collect(),
         })
     }
-    /// Affine state map: G=sum(delta installed E)-delta fuel/barrel release+delta export.
+    /// Affine state map: installed E change minus independent release, plus
+    /// independently integrated photon and signed ambient exports.
     pub fn state_to_solver(&self, values: &mut [f64]) {
         values[self.row] = sum(self.energies.iter().map(|&(r, e0)| values[r] - e0).chain(
             self.receipts

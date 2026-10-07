@@ -1,82 +1,553 @@
 use super::*;
 
+fn energy_vector_roundtrip_bound(
+    model: &source_cooling::Model,
+    anchor: usize,
+    original: &[f64],
+    mapped_anchor: f64,
+    restored: &[f64],
+) -> Result<(f64, f64, f64), String> {
+    let l = model.layout;
+    let rows = model
+        .installed_energy_rows()
+        .chain([
+            model.source.fuel_release_row(),
+            l.barrel_released,
+            l.barrel_exported,
+            l.ambient_exported,
+        ])
+        .collect::<Vec<_>>();
+    let forward = rows.iter().map(|&r| original[r].abs()).sum::<f64>();
+    let inverse = mapped_anchor.abs()
+        + rows
+            .iter()
+            .filter(|&&r| r != anchor)
+            .map(|&r| original[r].abs())
+            .sum::<f64>();
+    let operations = 12. * rows.len() as f64 + 16.;
+    let u = f64::EPSILON / 2.;
+    // Conservative operation-count gamma budget for both compensated sums,
+    // including positive operand accumulation. The cancellation scale is the
+    // actual installed-energy/receipt operands, not the small restored anchor.
+    let gamma = operations * u / (1. - operations * u);
+    let operands = (forward + inverse) / (1. - operations * u);
+    let bound = gamma * operands;
+    if !operands.is_finite() || !bound.is_finite() || operations * u >= 1. {
+        return Err("Invalid energy vector roundtrip arithmetic bound".into());
+    }
+    for r in 0..original.len() {
+        if r != anchor && original[r].to_bits() != restored[r].to_bits() {
+            return Err(format!("Energy vector roundtrip changed nonanchor row{r}"));
+        }
+    }
+    let error = (restored[anchor] - original[anchor]).abs();
+    if !error.is_finite() || error > bound {
+        return Err(format!(
+            "Energy vector roundtrip row{anchor}: restored={} expected={} error={error:e} operandSum={operands:e} bound={bound:e}",
+            restored[anchor], original[anchor]
+        ));
+    }
+    Ok((error, operands, bound))
+}
+
+#[test]
+fn energy_vector_roundtrip_uses_all_operands_but_rejects_wrong_mapping() {
+    let m = cooling_fixture::fixture();
+    let initial = m.initial_state().unwrap();
+    let g = EnergyCoordinates::new(&m, &initial).unwrap();
+    let mut original = vec![0.; m.dimension()];
+    for r in m.installed_energy_rows() {
+        original[r] = 0.01 * ((r % 7 + 1) as f64);
+    }
+    original[m.layout.ambient_exported] = -0.125;
+    let mut mapped = original.clone();
+    g.vector_to_solver(&mut mapped);
+    let mapped_anchor = mapped[g.row];
+    g.vector_to_physical(&mut mapped);
+    energy_vector_roundtrip_bound(&m, g.row, &original, mapped_anchor, &mapped).unwrap();
+    mapped[g.row] -= original[m.layout.ambient_exported];
+    assert!(energy_vector_roundtrip_bound(&m, g.row, &original, mapped_anchor, &mapped).is_err());
+    mapped = original.clone();
+    mapped[m.layout.barrel_temperature] =
+        f64::from_bits(original[m.layout.barrel_temperature].to_bits() + 1);
+    assert!(energy_vector_roundtrip_bound(&m, g.row, &original, mapped_anchor, &mapped).is_err());
+}
+
+#[test]
+#[ignore = "Explicit actual six-frame pressure entry proof; no IDASolve; 30 s maximum"]
+fn actual_pressure_entry_without_advancement() {
+    use leitbild_plant_numerics::cold_pressurizer as cp;
+    let started = Instant::now();
+    let directory = PathBuf::from(std::env::var("LEITBILD_COOLING_DIAGNOSTIC_ARTIFACTS").unwrap());
+    let report = PathBuf::from(std::env::var("LEITBILD_COOLING_PRESSURE_REPORT").unwrap());
+    let deadline = || {
+        if started.elapsed().as_secs_f64() < 30. {
+            Ok(())
+        } else {
+            Err("Pressure entry proof30s allowance exhausted".to_string())
+        }
+    };
+    let mut cases = Vec::new();
+    let result = (|| -> Result<(), String> {
+        let prepared = cooling_input::parse(
+            &fs::read_to_string(directory.join("input.txt")).map_err(|e| e.to_string())?,
+        )?;
+        let m = &prepared.model;
+        let l = m.layout;
+        let n = m.dimension();
+        let initial = m.initial_state()?;
+        let accuracy = cooling_accuracy::Accuracy::new(m, &prepared.target_emissions)?;
+        let mut w = m.workspace();
+        m.evaluate(&initial, &vec![0.; n], Some(0.), &mut w)?;
+        let force = [
+            -w.residual[l.surge_start + finite_surge::LEFT_MOMENTUM],
+            -w.residual[l.surge_start + finite_surge::RIGHT_MOMENTUM],
+        ];
+        let area = m.pressure_connection().surge.input().geometry.volume
+            / m.pressure_connection().surge.input().length;
+        let pressure_scale = initial[l.surge_start + finite_surge::PRESSURE].abs()
+            + initial[l.network_start + m.network.pressure_row()].abs()
+            + w.pressurizer.diagnostics()?.bottom_pressure.abs();
+        if force
+            .iter()
+            .any(|f| f.abs() > 1024. * f64::EPSILON * area * pressure_scale)
+        {
+            return Err(format!(
+                "Fresh selected hydrostatic force is not roundoff-zero: {force:?}"
+            ));
+        }
+        deadline()?;
+        for refinement in [1., 10.] {
+            let mut y = initial.clone();
+            let mut yp = vec![0.; n];
+            let mut trace = cooling_initial::Trace::default();
+            let initialization = cooling_initial::initialize(
+                m,
+                &mut y,
+                &mut yp,
+                &accuracy.absolute(refinement)?,
+                &mut w,
+                started,
+                30.,
+                1e-5 / refinement,
+                &mut trace,
+            );
+            // Retain the actual failed operands, not merely an empty cases
+            // array. Fluid rows plus differentiated chart rates are contained
+            // here; no 72k source-state dump or second physical evaluation.
+            if let Err(reason) = &initialization {
+                let path = report.with_extension(format!("ic-{refinement}.json"));
+                let rows = m.fluid_rows().map(|r| format!(
+                    "{{\"row\":{r},\"differential\":{},\"state\":{},\"rate\":{},\"residualFromLastSuccessfulPreparation\":{}}}",
+                    m.is_differential(r), finite(y[r]), finite(yp[r]), finite(w.residual[r])
+                )).collect::<Vec<_>>().join(",");
+                let snapshot = format!(
+                    "{{\"scope\":\"raw-joint-IC-iterate-not-admitted;stored-workspace-residual-not-recomputed\",\"refinement\":{refinement},\"reason\":{},\"iterations\":{},\"fluid\":[{rows}]}}",
+                    quote(reason),
+                    trace.json()
+                );
+                use std::io::Write;
+                let mut file = fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&path)
+                    .map_err(|e| e.to_string())?;
+                writeln!(file, "{snapshot}").map_err(|e| e.to_string())?;
+                file.sync_all().map_err(|e| e.to_string())?;
+                cases.push(format!("{{\"refinement\":{refinement},\"passed\":false,\"initializationTrace\":{},\"failedIterateFile\":{}}}", trace.json(), quote(&path.to_string_lossy())));
+            }
+            let ic = initialization?;
+            let case_index = cases.len();
+            cases.push(format!("{{\"refinement\":{refinement},\"passed\":false,\"completedStage\":\"joint-initialization\",\"initialization\":{},\"initializationTrace\":{}}}",ic.json(),trace.json()));
+            deadline()?;
+            accuracy.carrier_ledger(m, &y)?;
+            let g = EnergyCoordinates::new(m, &initial)?;
+            let mut off = y.clone();
+            off[l.pressurizer_start + cp::INTERFACE_TEMPERATURE] += 1e-4;
+            m.evaluate(&off, &yp, Some(0.), &mut w)?;
+            let independent = g.balance(&yp) - g.balance(&w.residual);
+            let rate = w.complete_energy_rate()?;
+            let energy_error = (independent - rate).abs();
+            let scale = g.balance(&yp).abs() + g.balance(&w.residual).abs() + rate.abs();
+            if energy_error > 1e-6 + 4096. * f64::EPSILON * scale {
+                return Err(format!(
+                    "Off-interface independent energy RHS identity {energy_error:e}"
+                ));
+            }
+            let mut direction = vec![0.; n];
+            for r in m.installed_energy_rows() {
+                direction[r] = 0.01 * ((r % 7 + 1) as f64);
+            }
+            direction[l.pressurizer_start + cp::HEIGHT] = 1e-3;
+            direction[l.pressurizer_start + cp::INTERFACE_TEMPERATURE] = 1e-3;
+            direction[l.surge_start + finite_surge::LEFT_MOMENTUM] = 1e-3;
+            direction[l.surge_start + finite_surge::RIGHT_MOMENTUM] = -1e-3;
+            direction[l.ambient_exported] = -0.1;
+            m.jvp(&direction, 0., &mut w)?;
+            let unshifted_error = (g.balance(&w.jvp) + w.complete_energy_rate_jvp()?).abs();
+            let gross = w.jvp.iter().map(|v| v.abs()).sum::<f64>();
+            if unshifted_error > 1e-6 + 4096. * f64::EPSILON * gross {
+                return Err(format!(
+                    "Unshifted complete energy JVP identity {unshifted_error:e}"
+                ));
+            }
+            // Affine states and linear vectors include every newly installed
+            // store and signed export, without suppressing an injected defect.
+            let mut injected = y.clone();
+            injected[g.row] += 0.25;
+            injected[l.ambient_exported] = -0.125;
+            let physical = injected.clone();
+            g.state_to_solver(&mut injected);
+            let defect = injected[g.row];
+            g.state_to_physical(&mut injected);
+            if injected != physical || defect == 0. {
+                return Err("Pressure energy state roundtrip/independent defect failed".into());
+            }
+            let original = direction.clone();
+            g.vector_to_solver(&mut direction);
+            let mapped_anchor = direction[g.row];
+            g.vector_to_physical(&mut direction);
+            let (roundtrip_error, roundtrip_operands, roundtrip_bound) =
+                energy_vector_roundtrip_bound(m, g.row, &original, mapped_anchor, &direction)?;
+            let roundtrip_json = format!(
+                "{{\"row\":{},\"actual\":{},\"expected\":{},\"error\":{roundtrip_error:e},\"operandSum\":{roundtrip_operands:e},\"bound\":{roundtrip_bound:e}}}",
+                g.row, direction[g.row], original[g.row]
+            );
+            deadline()?;
+            let mut c = tests::callbacks(m);
+            c.allowance = 30.;
+            c.start = started;
+            c.absolute = accuracy.absolute(refinement)?;
+            c.relative = 1e-5 / refinement;
+            let mut solver = y.clone();
+            c.coordinates.transform(&mut solver);
+            c.energy.state_to_solver(&mut solver);
+            let mut slope = yp.clone();
+            c.coordinates.transform(&mut slope);
+            c.energy.vector_to_solver(&mut slope);
+            let mut resources = Resources::new()?;
+            let sy = resources.vector(&solver)?;
+            let syp = resources.vector(&slope)?;
+            let rhs = (0..n)
+                .map(|i| if i % 2 == 0 { 1e-4 } else { -2e-4 })
+                .collect::<Vec<_>>();
+            let rv = resources.vector(&rhs)?;
+            let zv = resources.vector(&vec![0.; n])?;
+            let user = (&mut c as *mut Callbacks<'_>).cast();
+            let began = Instant::now();
+            checked(
+                unsafe { psetup(0., sy, syp, rv, 3., user) },
+                "Actual pressure Psetup",
+            )?;
+            checked(
+                unsafe { psolve(0., sy, syp, rv, rv, zv, 3., 1., user) },
+                "Actual pressure Psolve",
+            )?;
+            let p_seconds = began.elapsed().as_secs_f64();
+            let mut solution = unsafe { values(zv, n) }?.to_vec();
+            if solution[g.row] != rhs[g.row] / 3. {
+                return Err("Actual completed P energy row failed".into());
+            }
+            c.energy.vector_to_physical(&mut solution);
+            let mut physical_rhs = rhs.clone();
+            c.energy.vector_to_physical(&mut physical_rhs);
+            m.evaluate(&y, &yp, Some(3.), &mut w)?;
+            let mut action = vec![0.; n];
+            let mut gross = vec![0.; n];
+            m.visit_fluid_jacobian(&w, |r, col, a| {
+                let v = a * solution[col];
+                action[r] += v;
+                gross[r] += v.abs();
+            })?;
+            let mut p_error = 0_f64;
+            for r in m.fluid_rows() {
+                if r != g.row {
+                    let e = (action[r] - physical_rhs[r]).abs();
+                    p_error = p_error.max(e);
+                    if e > 1e-10 * gross[r].max(1.) {
+                        return Err(format!(
+                            "Actual completed non-G border row{r} failed: {e:e}"
+                        ));
+                    }
+                }
+            }
+            deadline()?;
+            let mut v = original.clone();
+            c.coordinates.transform(&mut v);
+            c.energy.vector_to_solver(&mut v);
+            v[g.row] = 0.125;
+            unsafe { output(rv, n) }?.copy_from_slice(&v);
+            checked(
+                unsafe { jtsetup(0., sy, syp, zv, 1e12, user) },
+                "Actual huge-cj JTsetup",
+            )?;
+            checked(
+                unsafe {
+                    jtimes(
+                        0.,
+                        sy,
+                        syp,
+                        zv,
+                        rv,
+                        zv,
+                        1e12,
+                        user,
+                        ptr::null_mut(),
+                        ptr::null_mut(),
+                    )
+                },
+                "Actual huge-cj JVP",
+            )?;
+            let expected = 1e12 * v[g.row] - c.work.complete_energy_rate_jvp()?;
+            let huge_error = (unsafe { values(zv, n) }?[g.row] - expected).abs();
+            if huge_error > 32. * f64::EPSILON * expected.abs().max(1.) {
+                return Err(format!(
+                    "Huge-cj direct unshifted G action failed: {huge_error:e}"
+                ));
+            }
+            c.convergence.budget(started, 30.);
+            let status = c
+                .convergence
+                .corrected_chart(&solver, &slope, &vec![0.; n], 1.)?;
+            if status != 0 {
+                return Err(format!(
+                    "Actual current candidate closure refused: {status}"
+                ));
+            }
+            m.evaluate(&y, &yp, Some(0.), &mut w)?;
+            let mass_rows = [
+                l.network_start + m.network.total_mass_row(),
+                l.pressurizer_start + cp::LIQUID_MASS,
+                l.pressurizer_start + cp::VAPOR_MASS,
+                l.surge_start + finite_surge::MASS,
+            ];
+            let mass_rate = mass_rows
+                .iter()
+                .map(|&r| yp[r] - w.residual[r])
+                .sum::<f64>();
+            let boron_rows = (0..m.carrier.cells())
+                .flat_map(|i| {
+                    [
+                        l.carrier_start + water_carrier::WIDTH * i + 1,
+                        l.carrier_start + water_carrier::WIDTH * i + 2,
+                    ]
+                })
+                .chain([
+                    l.surge_carrier_start + 1,
+                    l.surge_carrier_start + 2,
+                    l.pool_carrier_start + 1,
+                    l.pool_carrier_start + 2,
+                ]);
+            let boron_rate = boron_rows
+                .map(|r| (yp[r] - w.residual[r]) / m.pressure_connection().atoms_per_marker)
+                .sum::<f64>();
+            if mass_rate.abs() > 1e-10 || boron_rate.abs() > 1e-10 {
+                return Err(format!(
+                    "Actual closed fluid/material RHS leak: {mass_rate:e}/{boron_rate:e}"
+                ));
+            }
+            let mechanical = w.surge.mechanics()?;
+            cases[case_index] = format!(
+                "{{\"refinement\":{refinement},\"passed\":true,\"initialization\":{},\"initializationTrace\":{},\"energyVectorRoundtrip\":{roundtrip_json},\"freshMomentumForcesN\":{force:?},\"jointMomentumRatesN\":[{},{}],\"heightRateMPerS\":{},\"closedWaterRateKgPerS\":{mass_rate:e},\"closedBRateKgEquivalentPerS\":{boron_rate:e},\"offInterfaceRHSIdentityErrorW\":{energy_error:e},\"unshiftedEnergyJVPIdentityError\":{unshifted_error:e},\"hugeCjEnergyActionError\":{huge_error:e},\"completedPNonGMaxError\":{p_error:e},\"onePSetupAndSolveSeconds\":{p_seconds},\"kineticWorkDefectW\":{},\"signedGravityMixingPowerW\":{},\"signedMechanicalAvailabilityPowerW\":{},\"reductionRatio\":{},\"currentCandidateMomentumRatio\":{}}}",
+                ic.json(),
+                trace.json(),
+                yp[l.surge_start + finite_surge::LEFT_MOMENTUM],
+                yp[l.surge_start + finite_surge::RIGHT_MOMENTUM],
+                yp[l.pressurizer_start + cp::HEIGHT],
+                mechanical.kinetic_work_defect,
+                mechanical.gravity_mixing_power,
+                mechanical.mechanical_availability_power,
+                c.convergence.reduction_envelope().ratio()?,
+                c.convergence.max_converged_momentum()
+            );
+            deadline()?;
+        }
+        Ok(())
+    })();
+    let elapsed = started.elapsed().as_secs_f64();
+    let reason = result
+        .as_ref()
+        .err()
+        .map_or("Complete actual entry proof without advancement", |e| {
+            e.as_str()
+        });
+    let json = format!(
+        "{{\"kind\":\"actual-pressure-entry-no-advancement\",\"passed\":{},\"elapsedSeconds\":{elapsed},\"allowanceSeconds\":30,\"IDASolveCalls\":0,\"reason\":{},\"cases\":[{}]}}",
+        result.is_ok(),
+        quote(reason),
+        cases.join(",")
+    );
+    use std::io::Write;
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(report)
+        .unwrap();
+    writeln!(file, "{json}").unwrap();
+    file.sync_all().unwrap();
+    println!("{json}");
+    assert!(
+        result.is_ok(),
+        "Actual pressure entry refused; immutable receipt retained: {reason}"
+    );
+}
+
 #[test]
 #[ignore = "Explicit saved carrier3 global/local balance diagnostic; no IDASolve"]
 fn archived_carrier_global_and_local_transport_without_advancement() {
     let started = Instant::now();
     let directory = PathBuf::from(std::env::var("LEITBILD_COOLING_DIAGNOSTIC_ARTIFACTS").unwrap());
     let report = PathBuf::from(std::env::var("LEITBILD_COOLING_CARRIER_REPORT").unwrap());
-    let prepared = cooling_input::parse(&fs::read_to_string(directory.join("input.txt")).unwrap()).unwrap();
+    let prepared =
+        cooling_input::parse(&fs::read_to_string(directory.join("input.txt")).unwrap()).unwrap();
     let m = &prepared.model;
     let l = m.layout;
     let n = m.dimension();
     let nw = m.carrier.cells();
     let initial = m.initial_state().unwrap();
-    let conversion = m.carrier.initial().iter().map(|p| p.boron10+p.boron).sum::<f64>()
-        / (0..nw).map(|i|initial[l.network_start+m.network.marker_row(i)]).sum::<f64>();
+    let conversion = m
+        .carrier
+        .initial()
+        .iter()
+        .map(|p| p.boron10 + p.boron)
+        .sum::<f64>()
+        / (0..nw)
+            .map(|i| initial[l.network_start + m.network.marker_row(i)])
+            .sum::<f64>();
     let mut cases = Vec::new();
     for name in ["input.normal.checkpoint", "input.normal.unadmitted-raw"] {
         let bytes = fs::read(directory.join(name)).unwrap();
         assert_eq!(&bytes[..8], b"LDCOOL01");
-        assert_eq!(u64::from_le_bytes(bytes[8..16].try_into().unwrap()), n as u64);
-        assert_eq!(bytes.len(),24+16*n);
+        assert_eq!(
+            u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
+            n as u64
+        );
+        assert_eq!(bytes.len(), 24 + 16 * n);
         let time = f64::from_le_bytes(bytes[16..24].try_into().unwrap());
-        let all = bytes[24..].chunks_exact(8).map(|b|f64::from_le_bytes(b.try_into().unwrap())).collect::<Vec<_>>();
-        assert!(all.iter().all(|x|x.is_finite()));
-        let (y,yp) = all.split_at(n);
+        let all = bytes[24..]
+            .chunks_exact(8)
+            .map(|b| f64::from_le_bytes(b.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        assert!(all.iter().all(|x| x.is_finite()));
+        let (y, yp) = all.split_at(n);
         let mut w = m.workspace();
-        m.evaluate(y,yp,Some(1.),&mut w).unwrap();
-        let marker = |i|l.network_start+m.network.marker_row(i);
-        let b = |i|l.carrier_start+water_carrier::WIDTH*i+1;
-        let amounts = (0..nw).map(|i|water_carrier::Amounts {hydrogen:y[b(i)-1],boron10:y[b(i)],boron:y[b(i)+1]}).collect::<Vec<_>>();
-        let a = (0..nw).map(|i|(y[b(i)]+y[b(i)+1])/conversion-y[marker(i)]).collect::<Vec<_>>();
-        let mut rates = vec![water_carrier::Amounts::default();nw];
-        m.carrier.rates_into(&w.network.chart_mass,&amounts,&w.network.mass_flows,w.source.external_water_events().unwrap(),&mut rates).unwrap();
-        let mut expected = vec![0.;nw];
-        for (link,&q) in m.carrier.links().iter().zip(&w.network.mass_flows) {
-            let donor = if q>=0. {link.from} else {link.to};
-            let flux=q*a[donor]/w.network.chart_mass[donor];
-            expected[link.from]-=flux; expected[link.to]+=flux;
+        m.evaluate(y, yp, Some(1.), &mut w).unwrap();
+        let marker = |i| l.network_start + m.network.marker_row(i);
+        let b = |i| l.carrier_start + water_carrier::WIDTH * i + 1;
+        let amounts = (0..nw)
+            .map(|i| water_carrier::Amounts {
+                hydrogen: y[b(i) - 1],
+                boron10: y[b(i)],
+                boron: y[b(i) + 1],
+            })
+            .collect::<Vec<_>>();
+        let a = (0..nw)
+            .map(|i| (y[b(i)] + y[b(i) + 1]) / conversion - y[marker(i)])
+            .collect::<Vec<_>>();
+        let mut rates = vec![water_carrier::Amounts::default(); nw];
+        m.carrier
+            .rates_into(
+                &w.network.chart_mass,
+                &amounts,
+                &w.network.mass_flows,
+                w.source.external_water_events().unwrap(),
+                &mut rates,
+            )
+            .unwrap();
+        let mut expected = vec![0.; nw];
+        for (link, &q) in m.carrier.links().iter().zip(&w.network.mass_flows) {
+            let donor = if q >= 0. { link.from } else { link.to };
+            let flux = q * a[donor] / w.network.chart_mass[donor];
+            expected[link.from] -= flux;
+            expected[link.to] += flux;
         }
-        let actual=(0..nw).map(|i|(rates[i].boron10+rates[i].boron)/conversion-w.network.rates[m.network.marker_row(i)]).collect::<Vec<_>>();
-        let rhs_error=actual.iter().zip(&expected).map(|(a,b)|(a-b).abs()).fold(0f64,f64::max);
-        let mut d=vec![0.;n];
-        d[l.network_start+m.network.pressure_row()]=2.;
+        let actual = (0..nw)
+            .map(|i| {
+                (rates[i].boron10 + rates[i].boron) / conversion
+                    - w.network.rates[m.network.marker_row(i)]
+            })
+            .collect::<Vec<_>>();
+        let rhs_error = actual
+            .iter()
+            .zip(&expected)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0f64, f64::max);
+        let mut d = vec![0.; n];
+        d[l.network_start + m.network.pressure_row()] = 2.;
         for i in 0..nw {
-            d[b(i)]=conversion*(i as f64+1.)*1e-4;
-            d[b(i)+1]=-conversion*(i as f64)*3e-5;
-            d[marker(i)]=(i as f64)*2e-5;
-            d[l.network_start+m.network.temperature_row(i)]=1e-3;
+            d[b(i)] = conversion * (i as f64 + 1.) * 1e-4;
+            d[b(i) + 1] = -conversion * (i as f64) * 3e-5;
+            d[marker(i)] = (i as f64) * 2e-5;
+            d[l.network_start + m.network.temperature_row(i)] = 1e-3;
         }
-        for e in 0..m.carrier.links().len(){d[l.network_start+m.network.flow_row(e)]=1e-3;}
-        m.jvp(&d,1.,&mut w).unwrap();
-        let da=(0..nw).map(|i|(d[b(i)]+d[b(i)+1])/conversion-d[marker(i)]).collect::<Vec<_>>();
-        let mut expected_j=da.clone();
-        for (e,(link,&q)) in m.carrier.links().iter().zip(&w.network.mass_flows).enumerate() {
-            let donor=if q>=0. {link.from}else{link.to};
-            let mass=w.network.chart_mass[donor];
-            let partial=w.network.chart_derivatives[donor];
-            let dm=partial[0]*2.+partial[1]*1e-3;
-            let dq=d[l.network_start+m.network.flow_row(e)];
-            let flux=dq*a[donor]/mass+q*(da[donor]/mass-a[donor]/mass*dm/mass);
-            expected_j[link.from]+=flux;expected_j[link.to]-=flux;
+        for e in 0..m.carrier.links().len() {
+            d[l.network_start + m.network.flow_row(e)] = 1e-3;
         }
-        let j_error=(0..nw).map(|i|((w.jvp[b(i)]+w.jvp[b(i)+1])/conversion-w.jvp[marker(i)]-expected_j[i]).abs()).fold(0f64,f64::max);
-        let global_b=(0..nw).map(|i|((y[b(i)]-initial[b(i)])+(y[b(i)+1]-initial[b(i)+1]))/conversion).sum::<f64>();
-        let global_rhs=rates.iter().map(|p|(p.boron10+p.boron)/conversion).sum::<f64>();
-        let global_j=(0..nw).map(|i|(w.jvp[b(i)]+w.jvp[b(i)+1]-d[b(i)]-d[b(i)+1])/conversion).sum::<f64>();
-        let local=a.iter().map(|x|x.abs()).fold(0f64,f64::max);
-        let roundoff=(0..nw).map(|i|f64::EPSILON*((y[b(i)].abs()+y[b(i)+1].abs())/conversion+y[marker(i)].abs())).fold(0f64,f64::max);
-        assert!(global_b.abs()<1e-8 && global_rhs.abs()<1e-12 && global_j.abs()<1e-12);
-        assert!(rhs_error<1e-12 && j_error<1e-12,"{rhs_error:e} {j_error:e}");
+        m.jvp(&d, 1., &mut w).unwrap();
+        let da = (0..nw)
+            .map(|i| (d[b(i)] + d[b(i) + 1]) / conversion - d[marker(i)])
+            .collect::<Vec<_>>();
+        let mut expected_j = da.clone();
+        for (e, (link, &q)) in m
+            .carrier
+            .links()
+            .iter()
+            .zip(&w.network.mass_flows)
+            .enumerate()
+        {
+            let donor = if q >= 0. { link.from } else { link.to };
+            let mass = w.network.chart_mass[donor];
+            let partial = w.network.chart_derivatives[donor];
+            let dm = partial[0] * 2. + partial[1] * 1e-3;
+            let dq = d[l.network_start + m.network.flow_row(e)];
+            let flux = dq * a[donor] / mass + q * (da[donor] / mass - a[donor] / mass * dm / mass);
+            expected_j[link.from] += flux;
+            expected_j[link.to] -= flux;
+        }
+        let j_error = (0..nw)
+            .map(|i| {
+                ((w.jvp[b(i)] + w.jvp[b(i) + 1]) / conversion - w.jvp[marker(i)] - expected_j[i])
+                    .abs()
+            })
+            .fold(0f64, f64::max);
+        let global_b = (0..nw)
+            .map(|i| ((y[b(i)] - initial[b(i)]) + (y[b(i) + 1] - initial[b(i) + 1])) / conversion)
+            .sum::<f64>();
+        let global_rhs = rates
+            .iter()
+            .map(|p| (p.boron10 + p.boron) / conversion)
+            .sum::<f64>();
+        let global_j = (0..nw)
+            .map(|i| (w.jvp[b(i)] + w.jvp[b(i) + 1] - d[b(i)] - d[b(i) + 1]) / conversion)
+            .sum::<f64>();
+        let local = a.iter().map(|x| x.abs()).fold(0f64, f64::max);
+        let roundoff = (0..nw)
+            .map(|i| {
+                f64::EPSILON
+                    * ((y[b(i)].abs() + y[b(i) + 1].abs()) / conversion + y[marker(i)].abs())
+            })
+            .fold(0f64, f64::max);
+        assert!(global_b.abs() < 1e-8 && global_rhs.abs() < 1e-12 && global_j.abs() < 1e-12);
+        assert!(
+            rhs_error < 1e-12 && j_error < 1e-12,
+            "{rhs_error:e} {j_error:e}"
+        );
         cases.push(format!("{{\"frame\":{},\"time\":{time:e},\"globalBChangeKgEquivalent\":{global_b:e},\"maxLocalBMarkerDifferenceKg\":{local:e},\"singleOperationRoundoffScaleKg\":{roundoff:e},\"globalBRHSKgPerS\":{global_rhs:e},\"globalBJVPBalanceError\":{global_j:e},\"localUpwindRHSIdentityErrorKgPerS\":{rhs_error:e},\"localUpwindJVPIdentityError\":{j_error:e}}}",quote(name)));
     }
-    let seconds=started.elapsed().as_secs_f64();
-    assert!(seconds<10.);
-    let json=format!("{{\"kind\":\"saved-carrier3-balance-no-advancement\",\"passed\":true,\"representativeCj\":1,\"actualStageCjAvailable\":false,\"elapsedSeconds\":{seconds},\"classification\":\"local-independent-tracer-disagreement-not-global-B-loss\",\"cases\":[{}]}}",cases.join(","));
-    let mut file=fs::OpenOptions::new().write(true).create_new(true).open(report).unwrap();
+    let seconds = started.elapsed().as_secs_f64();
+    assert!(seconds < 10.);
+    let json = format!(
+        "{{\"kind\":\"saved-carrier3-balance-no-advancement\",\"passed\":true,\"representativeCj\":1,\"actualStageCjAvailable\":false,\"elapsedSeconds\":{seconds},\"classification\":\"local-independent-tracer-disagreement-not-global-B-loss\",\"cases\":[{}]}}",
+        cases.join(",")
+    );
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(report)
+        .unwrap();
     use std::io::Write;
-    file.write_all(json.as_bytes()).unwrap();file.sync_all().unwrap();
+    file.write_all(json.as_bytes()).unwrap();
+    file.sync_all().unwrap();
     eprintln!("{json}");
 }
 
@@ -563,9 +1034,13 @@ fn archived_energy_p_completion_without_advancement() {
         );
         let actual_j_before = unsafe { values(r, n) }.unwrap().to_vec();
         assert_eq!(unsafe { psetup(0., y, yp, r, 3., user) }, 0);
-        assert!(c.energy_p.unit().iter().all(
-            |&(row, _)| row >= model.layout.network_start && row < model.layout.carrier_start
-        ));
+        assert!(
+            c.energy_p
+                .unit()
+                .iter()
+                .all(|&(row, _)| row >= model.layout.network_start
+                    && row < model.layout.carrier_start)
+        );
         let mut physical_rhs = rhs.clone();
         c.energy.vector_to_physical(&mut physical_rhs);
         let mut baseline = vec![0.; n];
