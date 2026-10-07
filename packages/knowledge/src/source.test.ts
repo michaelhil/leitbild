@@ -8,9 +8,27 @@ import { findProductSourceReferences, parseProductSourceReference } from './sour
 test('native kernel sources remain inspectable but compiled/private paths do not', () => {
   expect(parseProductSourceReference('apps/world/native/process-plant/src/lib.rs:1-5')).not.toBeNull()
   expect(parseProductSourceReference('apps/world/native/process-plant/src/if97-bridge.cpp')).not.toBeNull()
+  expect(parseProductSourceReference('apps/world/native/process-plant/src/sundials-abi.c')).not.toBeNull()
+  expect(parseProductSourceReference('apps/world/native/.env/secrets.c')).toBeNull()
   expect(parseProductSourceReference('apps/world/native/process-plant/target/release/build.rs')).toBeNull()
   expect(parseProductSourceReference('apps/world/native/../private.rs')).toBeNull()
   expect(parseProductSourceReference('apps/world/native/.env/secrets.rs')).toBeNull()
+})
+
+test('authored C boundary and public licence notice share the source inspection path', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'knowledge-native-'))
+  const path = 'apps/example/native/src/abi.c'
+  try {
+    await mkdir(join(root, 'apps/example/native/src'), { recursive: true })
+    await writeFile(join(root, path), 'int abi(void) { return 0; }\n')
+    await writeFile(join(root, 'NOTICE.md'), '# Third-party notices\n')
+    for (const source of [path, 'NOTICE.md']) {
+      expect(parseProductSourceReference(source)?.path).toBe(source)
+      expect(findProductSourceReferences(`See ${source} for implementation.`)[0]?.path).toBe(source)
+      expect((await readProductSource(source, root)).path).toBe(source)
+    }
+    expect(parseProductSourceReference('private.c')).toBeNull()
+  } finally { await rm(root, { recursive: true, force: true }) }
 })
 
 test('authored dependency diffs use the same read-only source inspection boundary', async () => {

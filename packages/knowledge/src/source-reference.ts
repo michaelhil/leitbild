@@ -1,5 +1,5 @@
 /** Shared read-only source corpus used by wiki and conversational inspectors. */
-export const PRODUCT_SOURCE_EXTENSIONS = new Set(['.md', '.ts', '.svelte', '.json', '.css', '.rs', '.cpp', '.h', '.hpp', '.patch'])
+export const PRODUCT_SOURCE_EXTENSIONS = new Set(['.md', '.ts', '.svelte', '.json', '.css', '.rs', '.c', '.cpp', '.h', '.hpp', '.patch'])
 export const PRODUCT_SOURCE_EXCLUDED_SEGMENTS = new Set([
   'node_modules', 'dist', 'build', 'target', 'coverage', '.git', '.svelte-kit',
 ])
@@ -8,7 +8,7 @@ export const isExcludedProductSegment = (segment: string): boolean =>
   PRODUCT_SOURCE_EXCLUDED_SEGMENTS.has(segment) || segment.startsWith('.env')
 
 export const isAllowedProductPath = (path: string): boolean => {
-  if (path === 'README.md' || path === 'CONTEXT-MAP.md') return true
+  if (path === 'README.md' || path === 'NOTICE.md' || path === 'CONTEXT-MAP.md') return true
   const segments = path.split('/')
   if (segments.some(segment => segment.length === 0 || segment === '.' || segment === '..' || isExcludedProductSegment(segment))) return false
   if (path.startsWith('docs/') || path.startsWith('contexts/')) return true
@@ -93,7 +93,7 @@ const extensionPattern = [...PRODUCT_SOURCE_EXTENSIONS]
   .join('|')
 
 const inlineReferencePattern = new RegExp(
-  `(?:README\\.md|CONTEXT-MAP\\.md|(?:knowledge|docs|contexts|apps|packages)\\/[A-Za-z0-9_@./-]+\\.(?:${extensionPattern}))(?::\\d+(?:[-–—]\\d+)?(?:\\s*,\\s*\\d+(?:[-–—]\\d+)?)*)?`,
+  `(?:(?:README|NOTICE)\\.md|CONTEXT-MAP\\.md|(?:knowledge|docs|contexts|apps|packages)\\/[A-Za-z0-9_@./-]+\\.(?:${extensionPattern}))(?::\\d+(?:[-–—]\\d+)?(?:\\s*,\\s*\\d+(?:[-–—]\\d+)?)*)?`,
   'g',
 )
 
