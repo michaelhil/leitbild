@@ -13,6 +13,12 @@ test('native kernel sources remain inspectable but compiled/private paths do not
   expect(parseProductSourceReference('apps/world/native/process-plant/target/release/build.rs')).toBeNull()
   expect(parseProductSourceReference('apps/world/native/../private.rs')).toBeNull()
   expect(parseProductSourceReference('apps/world/native/.env/secrets.rs')).toBeNull()
+  for (const extension of ['c', 'cpp', 'h', 'hpp']) {
+    const path = `apps/world/native/process-plant/src/boundary.${extension}`
+    expect(findProductSourceReferences(`See ${path}:2-4 for implementation.`)[0]).toMatchObject({
+      path, lineRanges: [{ startLine: 2, endLine: 4 }],
+    })
+  }
 })
 
 test('authored C boundary and public licence notice share the source inspection path', async () => {

@@ -89,6 +89,7 @@ export const parseProductSourceReference = (
 }
 
 const extensionPattern = [...PRODUCT_SOURCE_EXTENSIONS]
+  .sort((left, right) => right.length - left.length)
   .map(extension => extension.slice(1).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
   .join('|')
 
