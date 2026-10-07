@@ -192,6 +192,24 @@ impl Assembly {
     pub fn cf_decay_rate(&self) -> f64 {
         self.cf.decay_rate
     }
+    pub fn cf_law(&self) -> CfLaw {
+        self.cf
+    }
+    pub fn cf_support(&self) -> &[(usize, f64)] {
+        &self.cf_support
+    }
+    /// Positive magnitude of the immutable SF rate's consumed-progress partial.
+    /// No division by a trial remaining amount, including at donor exhaustion.
+    pub fn spontaneous_rate_derivatives(&self, segment: usize) -> Result<(f64, f64), &'static str> {
+        let p = self
+            .segments
+            .get(segment)
+            .ok_or("Invalid spontaneous segment index")?;
+        Ok((
+            p.sf235_neutrons_per_second / self.spontaneous_neutrons_per_event / p.reference_u235,
+            p.sf238_neutrons_per_second / self.spontaneous_neutrons_per_event / p.reference_u238,
+        ))
+    }
     pub fn new(
         fuel: FuelModel,
         segments: Vec<SegmentPreparation>,
@@ -537,18 +555,13 @@ impl Assembly {
             w.segment_direction[e.segment].induced_fission += de[0];
             w.segment_direction[e.segment].fertile_capture += de[1];
         }
-        for (s, p) in self.segments.iter().enumerate() {
+        for s in 0..self.segments.len() {
             let row = self.history_row(s, 0);
             let dh = &dy[row..row + HISTORY];
             let r = &mut w.segment_direction[s];
-            r.sf235 = -p.sf235_neutrons_per_second
-                / self.spontaneous_neutrons_per_event
-                / p.reference_u235
-                * dh[CONSUMED_235];
-            r.sf238 = -p.sf238_neutrons_per_second
-                / self.spontaneous_neutrons_per_event
-                / p.reference_u238
-                * (dh[CAPTURED_238] + dh[SF_238]);
+            let (sf235, sf238) = self.spontaneous_rate_derivatives(s)?;
+            r.sf235 = -sf235 * dh[CONSUMED_235];
+            r.sf238 = -sf238 * (dh[CAPTURED_238] + dh[SF_238]);
             w.direction[row + CONSUMED_235] = r.induced_fission + r.sf235;
             w.direction[row + CAPTURED_238] = r.fertile_capture;
             w.direction[row + SF_238] = r.sf238;

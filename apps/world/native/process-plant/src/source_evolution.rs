@@ -117,6 +117,57 @@ pub struct Workspace {
     valid: bool,
     jvp_valid: bool,
     owner: Arc<()>,
+    evaluation_serial: u64,
+    stage_owner: Arc<()>,
+    preconditioner_direction: Vec<f64>,
+}
+#[derive(Clone, Copy, Default)]
+struct LocalFuel {
+    fissile: f64,
+    capture: f64,
+    sf238: f64,
+    xe: f64,
+    sm: f64,
+}
+/// Fixed-current-stage local history blocks, NOT another physical model or
+/// integrator. Off-owner optical and history→N/C feedback is omitted only in P.
+pub struct HistoryPreconditioner {
+    owner: Arc<()>,
+    valid: bool,
+    serial: u64,
+    workspace_owner: Option<Arc<()>>,
+    cj: f64,
+    nc: usize,
+    n: usize,
+    cf: usize,
+    cf_decay: f64,
+    cf_column: Vec<f64>,
+    fuel: Vec<LocalFuel>,
+    loss: Vec<f64>,
+    optical: Vec<os::LayerWorkspace>,
+    target_direction: Vec<f64>,
+    target_collision: HashMap<(usize, usize), [f64; GROUPS]>,
+}
+impl HistoryPreconditioner {
+    /// Cf spent energy leads the block ordering. Its signed neutron forcing is
+    /// negative: more spent energy means fewer remaining source births.
+    pub fn prepare_nc_rhs(&self, rhs: &[f64], out: &mut [f64]) -> Result<f64, &'static str> {
+        if !self.valid
+            || rhs.len() != self.n
+            || out.len() != self.nc
+            || rhs.iter().any(|v| !v.is_finite())
+        {
+            return Err("Invalid prepared Cf/N-C preconditioner input");
+        }
+        let cf = rhs[self.cf] / (self.cj + self.cf_decay);
+        for i in 0..self.nc {
+            out[i] = rhs[i] + self.cf_column[i] * cf;
+        }
+        if !cf.is_finite() || out.iter().any(|v| !v.is_finite()) {
+            return Err("Nonfinite prepared Cf/N-C forcing");
+        }
+        Ok(cf)
+    }
 }
 impl Workspace {
     pub fn rates(&self) -> Result<&[f64], &'static str> {
@@ -162,6 +213,7 @@ impl Workspace {
                 .sum::<usize>()
             + (self.history_state.len()
                 + self.history_direction.len()
+                + self.preconditioner_direction.len()
                 + self.zero_temperature.len()
                 + self.state.len()
                 + self.rates.len()
@@ -478,6 +530,9 @@ impl Evolution {
             valid: false,
             jvp_valid: false,
             owner: self.owner.clone(),
+            evaluation_serial: 0,
+            stage_owner: Arc::new(()),
+            preconditioner_direction: vec![0.; self.state_count()],
         }
     }
     pub fn validate_accepted_state(&self, y: &[f64]) -> Result<(), String> {
@@ -505,7 +560,13 @@ impl Evolution {
             .map_err(|e| format!("Fuel-history accepted boundary: {e}"))?;
         for (i, o) in self.input.water_owners.iter().enumerate() {
             if y[self.water_row(i, false)] > o.hydrogen || y[self.water_row(i, true)] > o.boron {
-                return Err(format!("Exhausted accepted water owner={i},Hprogress={:e},Hreference={:e},Bprogress={:e},Breference={:e}",y[self.water_row(i,false)],o.hydrogen,y[self.water_row(i,true)],o.boron));
+                return Err(format!(
+                    "Exhausted accepted water owner={i},Hprogress={:e},Hreference={:e},Bprogress={:e},Breference={:e}",
+                    y[self.water_row(i, false)],
+                    o.hydrogen,
+                    y[self.water_row(i, true)],
+                    o.boron
+                ));
             }
         }
         for (i, &a) in self.input.targets.iter().enumerate() {
@@ -732,6 +793,10 @@ impl Evolution {
         }
         w.state.copy_from_slice(y);
         w.diagnostics = d;
+        w.evaluation_serial = w
+            .evaluation_serial
+            .checked_add(1)
+            .ok_or("Source evaluation serial exhausted")?;
         w.valid = true;
         Ok(())
     }
@@ -990,38 +1055,301 @@ impl Evolution {
         }
         Ok(())
     }
-    pub fn history_diagonal(
+    pub fn history_preconditioner(&self) -> HistoryPreconditioner {
+        let nc = self.nc_dimension();
+        let cf = self.input.history.cf_law();
+        let mut column = vec![0.; nc];
+        for &(r, weight) in self.input.history.cf_support() {
+            for g in 0..GROUPS {
+                column[r * GROUPS + g] -= self.input.history.fuel().law().chi[g]
+                    * weight
+                    * cf.initial_neutrons_per_second
+                    / cf.initial_energy_j;
+            }
+        }
+        HistoryPreconditioner {
+            owner: self.owner.clone(),
+            valid: false,
+            serial: 0,
+            workspace_owner: None,
+            cj: 0.,
+            nc,
+            n: self.state_count(),
+            cf: self.cf_row(),
+            cf_decay: cf.decay_rate,
+            cf_column: column,
+            fuel: vec![LocalFuel::default(); self.segment_count()],
+            loss: vec![0.; self.state_count() - nc],
+            optical: self.optical.iter().map(|m| m.workspace()).collect(),
+            target_direction: vec![0.; self.input.targets.len()],
+            target_collision: HashMap::new(),
+        }
+    }
+    /// Fixed-current-stage local fuel/poison/energy, water and target blocks.
+    /// Optical target self partials are retained; off-target partials are not.
+    pub fn prepare_history_preconditioner(
         &self,
         w: &Workspace,
         cj: f64,
-        out: &mut [f64],
+        p: &mut HistoryPreconditioner,
     ) -> Result<(), &'static str> {
+        p.valid = false;
         w.check()?;
-        if out.len() != self.state_count() - self.nc_dimension() || !cj.is_finite() || cj <= 0. {
-            return Err("Invalid history preconditioner output");
+        if !Arc::ptr_eq(&self.owner, &w.owner)
+            || !Arc::ptr_eq(&self.owner, &p.owner)
+            || !cj.is_finite()
+            || cj <= 0.
+        {
+            return Err("Invalid local history preconditioner stage/workspace");
         }
-        out.fill(cj);
-        let p = self.input.history.poison_law();
-        for s in 0..self.input.history.fuel().segment_count() {
-            let row = self.input.history.history_row(s, 0) - self.nc_dimension();
-            out[row + fh::IODINE] += p.lambda_i;
-            out[row + fh::XENON] += p.lambda_xe;
-            out[row + fh::PROMETHIUM] += p.lambda_pm;
-            for (i, g) in self.input.history.energy_groups().iter().enumerate() {
-                out[row + fh::ENERGY + i] += g.decay_rate;
+        p.cj = cj;
+        p.serial = w.evaluation_serial;
+        p.workspace_owner = Some(w.stage_owner.clone());
+        p.fuel.fill(LocalFuel::default());
+        p.loss.fill(0.);
+        p.target_collision.clear();
+        let volumes = self.input.history.fuel().volumes();
+        let speed = self.input.history.fuel().law().speed;
+        let poison = self.input.history.poison_law();
+        for s in 0..self.segment_count() {
+            let (a, b) = self.input.history.spontaneous_rate_derivatives(s)?;
+            p.fuel[s].fissile = a;
+            p.fuel[s].sf238 = b;
+        }
+        for (e, k) in self
+            .input
+            .history
+            .fuel()
+            .intersections()
+            .iter()
+            .zip(w.history.fuel_events()?)
+        {
+            let f = &mut p.fuel[e.segment];
+            for g in 0..GROUPS {
+                let n = w.state[e.region * GROUPS + g];
+                f.fissile += k.d_fission_d_reserve[g] * n;
+                f.capture += k.d_capture_d_fertile[g] * n;
+            }
+            let flux = speed[6] * w.state[e.region * GROUPS + 6] / volumes[e.region] * e.volume
+                / self.input.history.segment_volumes()[e.segment];
+            f.xe += poison.xe_sigma_m2 * flux;
+            f.sm += poison.sm_sigma_m2 * flux;
+        }
+        for (i, (e, m)) in self
+            .input
+            .moderator
+            .intersections()
+            .iter()
+            .zip(&self.input.row_map)
+            .enumerate()
+        {
+            let c = w.moderator.rows()?[i];
+            for g in 0..GROUPS {
+                let n = w.state[e.region * GROUPS + g];
+                p.loss[self.water_row(m.owner, false) - p.nc] -=
+                    (c.d_hydrogen_d_product[g] - c.d_hydrogen_d_target[g]) * m.h_fraction * n;
+                p.loss[self.water_row(m.owner, true) - p.nc] +=
+                    c.d_boron_d_atoms[g] * m.b_fraction * n;
+            }
+        }
+        for e in &self.input.passive_incidence {
+            let s = &self.input.passive_stocks[e.stock];
+            for t in &s.targets {
+                let dc = p
+                    .target_collision
+                    .entry((t.index, e.region))
+                    .or_insert([0.; GROUPS]);
+                for g in 0..GROUPS {
+                    let k = t.sigma_m2[g] * e.volume / s.volume / volumes[e.region];
+                    p.loss[self.target_row(t.index) - p.nc] +=
+                        speed[g] * k * w.state[e.region * GROUPS + g];
+                    dc[g] -= k;
+                }
+            }
+        }
+        for e in &self.input.cylinder_incidence {
+            let t = &self.input.cylinder_targets[e.target];
+            let c = w.cylinder.responses()?[e.target];
+            let dc = p
+                .target_collision
+                .entry((t.index, e.region))
+                .or_insert([0.; GROUPS]);
+            for g in 0..GROUPS {
+                let k = c.d_capture_d_amount[g] * e.share / volumes[e.region];
+                p.loss[self.target_row(t.index) - p.nc] +=
+                    speed[g] * k * w.state[e.region * GROUPS + g];
+                dc[g] -= k;
+            }
+        }
+        let mut oi = 0;
+        p.target_direction.fill(0.);
+        for (face, coeff) in self
+            .input
+            .faces
+            .iter()
+            .zip(w.transport.face_coefficients()?)
+        {
+            if let ts::FaceLaw::Optical { targets } = &face.law {
+                let r = face
+                    .right
+                    .ok_or("Optical preconditioner exterior unsupported")?;
+                self.optical[oi].update(&w.amounts, &mut p.optical[oi])?;
+                for (j, &target) in targets.iter().enumerate() {
+                    p.target_direction[target] = -1.;
+                    let result = self.optical[oi].jvp(&p.target_direction, &mut p.optical[oi]);
+                    p.target_direction[target] = 0.;
+                    result?;
+                    let o = &p.optical[oi];
+                    for g in 0..GROUPS {
+                        let dl = p
+                            .target_collision
+                            .get(&(target, face.left))
+                            .map_or(0., |a| a[g]);
+                        let dr = p.target_collision.get(&(target, r)).map_or(0., |a| a[g]);
+                        let dir = [dl, dr, o.transmission_jvp[g]];
+                        let derivative = |s: ts::Scalar| {
+                            s.derivatives
+                                .iter()
+                                .zip(dir)
+                                .map(|(a, b)| a * b)
+                                .sum::<f64>()
+                        };
+                        let c = coeff[g];
+                        let pl = speed[g] * w.state[face.left * GROUPS + g] / volumes[face.left];
+                        let pr = speed[g] * w.state[r * GROUPS + g] / volumes[r];
+                        let dcap = (derivative(c.capture_per_loss_left) * o.left_loss[j][g]
+                            + c.capture_per_loss_left.value * o.left_loss_jvp[j][g])
+                            * pl
+                            + (derivative(c.capture_per_loss_right) * o.right_loss[j][g]
+                                + c.capture_per_loss_right.value * o.right_loss_jvp[j][g])
+                                * pr;
+                        p.loss[self.target_row(target) - p.nc] -= dcap;
+                    }
+                }
+                oi += 1;
             }
         }
         for (i, m) in self.input.mn.iter().enumerate() {
-            out[self.mn_row(i) - self.nc_dimension()] += m.decay_rate;
+            p.loss[self.mn_row(i) - p.nc] = m.decay_rate;
         }
-        // Finite Cf linear decay: paid release/dprogress = -lambda.
-        let e = self.initial_cf - w.state[self.cf_row()];
-        let release = w.history.cf()?.paid_release;
-        if e > 0. {
-            out[self.cf_row() - self.nc_dimension()] += release / e;
+        for f in &p.fuel {
+            if [
+                cj + f.fissile,
+                cj + f.capture + f.sf238,
+                cj + poison.lambda_i,
+                cj + poison.lambda_xe + f.xe,
+                cj + poison.lambda_pm,
+                cj + f.sm,
+            ]
+            .iter()
+            .any(|v| !v.is_finite() || *v <= 0.)
+            {
+                return Err("Invalid local fuel-history preconditioner pivot");
+            }
         }
-        if out.iter().any(|v| !v.is_finite() || *v <= 0.) {
-            return Err("Nonfinite history preconditioner");
+        if !(cj + p.cf_decay).is_finite()
+            || p.loss
+                .iter()
+                .any(|k| !k.is_finite() || !(cj + k).is_finite() || cj + k <= 0.)
+        {
+            return Err("Invalid local target-history preconditioner pivot");
+        }
+        p.valid = true;
+        Ok(())
+    }
+    /// One exact JVP supplies incoming N/C and Cf forcing; only local blocks
+    /// are inverted. Other history→audit feedback is an off-block P omission,
+    /// never a change to the independently assembled RHS/JVP/physical ledgers.
+    pub fn solve_preconditioner_history(
+        &self,
+        w: &mut Workspace,
+        p: &HistoryPreconditioner,
+        rhs: &[f64],
+        out: &mut [f64],
+    ) -> Result<(), &'static str> {
+        w.check()?;
+        if !p.valid
+            || !Arc::ptr_eq(&self.owner, &p.owner)
+            || !Arc::ptr_eq(&self.owner, &w.owner)
+            || p.serial != w.evaluation_serial
+            || !p
+                .workspace_owner
+                .as_ref()
+                .is_some_and(|owner| Arc::ptr_eq(owner, &w.stage_owner))
+            || rhs.len() != self.state_count()
+            || out.len() != self.state_count()
+            || rhs.iter().chain(out.iter()).any(|v| !v.is_finite())
+        {
+            return Err("Invalid/stale local history preconditioner solve");
+        }
+        let mut direction = std::mem::take(&mut w.preconditioner_direction);
+        direction.fill(0.);
+        direction[..p.nc].copy_from_slice(&out[..p.nc]);
+        direction[p.cf] = out[p.cf];
+        let result = self.jvp_into(&direction, w);
+        w.preconditioner_direction = direction;
+        result?;
+        let force = w.rate_jvp()?;
+        let cj = p.cj;
+        let poison = self.input.history.poison_law();
+        let mut local_release = 0.;
+        let prompt = self.input.history.fission_energy()
+            - self
+                .input
+                .history
+                .energy_groups()
+                .iter()
+                .filter(|g| matches!(g.feed, crate::heat_history::Feed::Fission))
+                .map(|g| g.energy_per_event)
+                .sum::<f64>();
+        for s in 0..self.segment_count() {
+            let row = self.input.history.history_row(s, 0);
+            let f = p.fuel[s];
+            let b = |slot: usize| rhs[row + slot] + force[row + slot];
+            out[row + fh::CONSUMED_235] = b(fh::CONSUMED_235) / (cj + f.fissile);
+            let total = (b(fh::CAPTURED_238) + b(fh::SF_238)) / (cj + f.capture + f.sf238);
+            out[row + fh::CAPTURED_238] = (b(fh::CAPTURED_238) - f.capture * total) / cj;
+            out[row + fh::SF_238] = (b(fh::SF_238) - f.sf238 * total) / cj;
+            let df = -f.fissile * out[row + fh::CONSUMED_235] - f.sf238 * total;
+            let dc = -f.capture * total;
+            out[row + fh::IODINE] = (b(fh::IODINE) + poison.yield_i * df) / (cj + poison.lambda_i);
+            out[row + fh::XENON] =
+                (b(fh::XENON) + poison.yield_xe * df + poison.lambda_i * out[row + fh::IODINE])
+                    / (cj + poison.lambda_xe + f.xe);
+            out[row + fh::PROMETHIUM] =
+                (b(fh::PROMETHIUM) + poison.yield_pm * df) / (cj + poison.lambda_pm);
+            out[row + fh::SAMARIUM] =
+                (b(fh::SAMARIUM) + poison.lambda_pm * out[row + fh::PROMETHIUM]) / (cj + f.sm);
+            out[row + fh::XENON_PRODUCT] =
+                (b(fh::XENON_PRODUCT) + f.xe * out[row + fh::XENON]) / cj;
+            out[row + fh::SAMARIUM_PRODUCT] =
+                (b(fh::SAMARIUM_PRODUCT) + f.sm * out[row + fh::SAMARIUM]) / cj;
+            local_release += prompt * df;
+            for (i, g) in self.input.history.energy_groups().iter().enumerate() {
+                let feed = match g.feed {
+                    crate::heat_history::Feed::Fission => df,
+                    crate::heat_history::Feed::FertileCapture => dc,
+                };
+                let e = row + fh::ENERGY + i;
+                out[e] = (rhs[e] + force[e] + g.energy_per_event * feed) / (cj + g.decay_rate);
+                local_release += g.decay_rate * out[e];
+            }
+        }
+        for i in self.history_dimension()..self.ledger_row() {
+            out[i] = (rhs[i] + force[i]) / (cj + p.loss[i - p.nc]);
+        }
+        for (i, m) in self.input.mn.iter().enumerate() {
+            let row = self.mn_row(i);
+            out[row] = (rhs[row] + force[row] + m.decay_rate * out[self.target_row(m.target)])
+                / (cj + m.decay_rate);
+        }
+        for row in [self.ledger_row(), self.escape_row(), self.collected_row()] {
+            out[row] = (rhs[row] + force[row]) / cj;
+        }
+        out[self.fuel_release_row()] =
+            (rhs[self.fuel_release_row()] + force[self.fuel_release_row()] + local_release) / cj;
+        if out.iter().any(|x| !x.is_finite()) {
+            return Err("Nonfinite local history preconditioner result");
         }
         Ok(())
     }

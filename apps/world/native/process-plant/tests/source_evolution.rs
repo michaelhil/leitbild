@@ -4,7 +4,7 @@ use leitbild_plant_numerics::{
     moderator_source as ms, optical_source as os, passive_source as ps, source_evolution::*,
     transport_source as ts,
 };
-fn input() -> Input {
+pub(crate) fn input() -> Input {
     let volumes = vec![2., 3.];
     let speed = [3.; 7];
     let fuel = fs::FuelModel::new(
@@ -327,9 +327,136 @@ fn full_jvp_and_nc_block_match_actual_forward_operator() {
     for i in 0..m.nc_dimension() {
         close(product[i], cj * direction[i] - w.rate_jvp().unwrap()[i]);
     }
-    let mut diagonal = vec![0.; m.state_count() - m.nc_dimension()];
-    m.history_diagonal(&w, cj, &mut diagonal).unwrap();
-    assert!(diagonal.iter().all(|v| *v >= cj));
+}
+
+#[test]
+fn local_history_stage_matches_independent_full_jvp_with_incoming_forcing() {
+    let m = Evolution::new(input()).unwrap();
+    let mut w = m.workspace();
+    m.evaluate_into(&state(&m), &mut w).unwrap();
+    let rhs = (0..m.state_count())
+        .map(|i| 0.13 * ((i % 7) as f64 - 3.))
+        .collect::<Vec<_>>();
+    let mut p = m.history_preconditioner();
+    for cj in [0.01, 3., 1e5] {
+        m.prepare_history_preconditioner(&w, cj, &mut p).unwrap();
+        let mut ncrhs = vec![0.; m.nc_dimension()];
+        let cf = p.prepare_nc_rhs(&rhs, &mut ncrhs).unwrap();
+        let mut x = vec![0.; m.state_count()];
+        for (i, v) in x[..m.nc_dimension()].iter_mut().enumerate() {
+            *v = 0.07 * ((i % 5) as f64 - 2.);
+        }
+        x[m.cf_row()] = cf;
+        let incoming = x.clone();
+        m.jvp_into(&incoming, &mut w).unwrap();
+        let forcing = w.rate_jvp().unwrap().to_vec();
+        let mut cf_only = vec![0.; m.state_count()];
+        cf_only[m.cf_row()] = cf;
+        m.jvp_into(&cf_only, &mut w).unwrap();
+        for i in 0..m.nc_dimension() {
+            close(ncrhs[i], rhs[i] + w.rate_jvp().unwrap()[i]);
+        }
+        m.solve_preconditioner_history(&mut w, &p, &rhs, &mut x)
+            .unwrap();
+        assert_eq!(&x[..m.nc_dimension()], &incoming[..m.nc_dimension()]);
+        assert_eq!(x[m.cf_row()], cf);
+        m.jvp_into(&x, &mut w).unwrap();
+        let full = w.rate_jvp().unwrap().to_vec();
+        // All 34 fuel histories, their coupled U238 depletion, Cf, water,
+        // Mn chain and the energy-release audit use their full local stage.
+        for i in m.nc_dimension()..m.history_dimension() {
+            close(cj * x[i] - full[i], rhs[i]);
+        }
+        for i in [
+            m.water_row(0, false),
+            m.water_row(0, true),
+            m.mn_row(0),
+            m.fuel_release_row(),
+        ] {
+            close(cj * x[i] - full[i], rhs[i]);
+        }
+        // Only the target's OWN opacity/collision derivative belongs to P.
+        // Other target histories stay coupled in the unchanged outer JVP.
+        for t in 0..4 {
+            let row = m.target_row(t);
+            let mut local = incoming.clone();
+            local[row] = x[row];
+            m.jvp_into(&local, &mut w).unwrap();
+            close(cj * x[row] - w.rate_jvp().unwrap()[row], rhs[row]);
+        }
+        for row in [m.ledger_row(), m.escape_row(), m.collected_row()] {
+            close(cj * x[row] - forcing[row], rhs[row]);
+        }
+    }
+    let mut other_workspace = m.workspace();
+    m.evaluate_into(&state(&m), &mut other_workspace).unwrap();
+    assert!(m
+        .solve_preconditioner_history(
+            &mut other_workspace,
+            &p,
+            &rhs,
+            &mut vec![0.; m.state_count()]
+        )
+        .is_err());
+    // Re-evaluation invalidates factors even when numerical state is equal.
+    m.evaluate_into(&state(&m), &mut w).unwrap();
+    let mut x = vec![0.; m.state_count()];
+    assert!(m
+        .solve_preconditioner_history(&mut w, &p, &rhs, &mut x)
+        .is_err());
+    m.prepare_history_preconditioner(&w, 3., &mut p).unwrap();
+    m.solve_preconditioner_history(&mut w, &p, &rhs, &mut x)
+        .unwrap();
+    assert!(m
+        .prepare_history_preconditioner(&w, f64::NAN, &mut p)
+        .is_err());
+    assert!(p
+        .prepare_nc_rhs(&rhs, &mut vec![0.; m.nc_dimension()])
+        .is_err());
+}
+
+#[test]
+fn exhausted_sf_and_cf_donors_retain_prepared_linear_derivatives() {
+    let i = input();
+    let rates = i.history.spontaneous_rate_derivatives(0).unwrap();
+    assert!(rates.0 > 0. && rates.1 > 0.);
+    assert!(i.history.spontaneous_rate_derivatives(1).is_err());
+    assert_eq!(i.history.cf_support(), &[(0, 0.25), (1, 0.75)]);
+    let cf_law = i.history.cf_law();
+    let m = Evolution::new(i).unwrap();
+    let mut y = state(&m);
+    y[..m.nc_dimension()].fill(0.);
+    let r = m.nc_dimension();
+    y[r + fh::CONSUMED_235] = 1000.;
+    y[r + fh::CAPTURED_238] = 2000.;
+    y[r + fh::SF_238] = 0.;
+    y[m.cf_row()] = cf_law.initial_energy_j;
+    let mut w = m.workspace();
+    m.evaluate_into(&y, &mut w).unwrap();
+    let mut sf_direction = vec![0.; m.state_count()];
+    sf_direction[r + fh::CONSUMED_235] = 1.;
+    sf_direction[r + fh::CAPTURED_238] = 1.;
+    m.jvp_into(&sf_direction, &mut w).unwrap();
+    close(w.rate_jvp().unwrap()[r + fh::CONSUMED_235], -rates.0);
+    close(w.rate_jvp().unwrap()[r + fh::SF_238], -rates.1);
+    let mut p = m.history_preconditioner();
+    m.prepare_history_preconditioner(&w, 2., &mut p).unwrap();
+    let mut rhs = vec![0.; m.state_count()];
+    rhs[m.cf_row()] = 1.;
+    let mut nc = vec![0.; m.nc_dimension()];
+    let cf = p.prepare_nc_rhs(&rhs, &mut nc).unwrap();
+    close(cf, 1. / (2. + cf_law.decay_rate));
+    let mut d = vec![0.; m.state_count()];
+    d[m.cf_row()] = cf;
+    m.jvp_into(&d, &mut w).unwrap();
+    for (a, b) in nc.iter().zip(w.rate_jvp().unwrap()) {
+        close(*a, *b);
+    }
+    let mut x = vec![0.; m.state_count()];
+    x[m.cf_row()] = cf;
+    m.solve_preconditioner_history(&mut w, &p, &rhs, &mut x)
+        .unwrap();
+    assert!(x.iter().all(|v| v.is_finite()));
 }
 #[test]
 fn zero_opacity_exhaustion_has_finite_analytic_target_derivative() {

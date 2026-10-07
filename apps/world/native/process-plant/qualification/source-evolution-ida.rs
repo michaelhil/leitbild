@@ -17,7 +17,7 @@ use std::{
     ffi::{c_int, c_long},
     fs,
     io::{self, Write},
-    panic::{AssertUnwindSafe, catch_unwind},
+    panic::{catch_unwind, AssertUnwindSafe},
     path::Path,
     ptr, slice,
     time::Instant,
@@ -164,172 +164,10 @@ unsafe fn output<'a>(v: Handle, n: usize) -> Result<&'a mut [f64], String> {
     Ok(unsafe { slice::from_raw_parts_mut(p, n) })
 }
 
-/// The full matrix-free solver and the N/C-only KLU preconditioner have separate
-/// Resources owners. KLU symbolic structure never changes; every pset refreshes
-/// numeric values and all history diagonals for that current state and cj.
-struct Preconditioner {
-    owned: Resources,
-    b: Handle,
-    x: Handle,
-    pointers: Vec<i64>,
-    indices: Vec<i64>,
-    slots: Vec<usize>,
-    values: Vec<f64>,
-    native_values: Vec<f64>,
-    diagonal: Vec<f64>,
-    rhs: Vec<f64>,
-    setups: u64,
-    solves: u64,
-    setup_seconds: f64,
-    solve_seconds: f64,
-    assembly_seconds: f64,
-    factor_seconds: f64,
-}
-impl Preconditioner {
-    fn new(model: &Evolution) -> Result<Self, String> {
-        let n = model.nc_dimension();
-        let pattern = model.nc_pattern();
-        let mut order = (0..pattern.len()).collect::<Vec<_>>();
-        order.sort_unstable_by_key(|&i| (pattern[i].1, pattern[i].0));
-        let mut pointers = vec![0i64; n + 1];
-        let mut indices = Vec::with_capacity(order.len());
-        for &slot in &order {
-            let (r, c) = pattern[slot];
-            if r >= n || c >= n {
-                return Err("N/C pattern outside block".into());
-            }
-            pointers[c + 1] += 1;
-            indices.push(r as i64);
-        }
-        for c in 0..n {
-            pointers[c + 1] += pointers[c];
-        }
-        let mut owned = Resources::new()?;
-        let b = owned.vector(&vec![0.; n])?;
-        let x = owned.vector(&vec![0.; n])?;
-        owned.matrix(n as i64, order.len() as i64)?;
-        owned.solver(x)?;
-        checked(
-            unsafe { SUNLinSolInitialize(owned.solver) },
-            "Initialize N/C KLU",
-        )?;
-        Ok(Self {
-            owned,
-            b,
-            x,
-            pointers,
-            indices,
-            slots: order,
-            values: vec![0.; pattern.len()],
-            native_values: vec![0.; pattern.len()],
-            diagonal: vec![0.; model.state_count() - n],
-            rhs: vec![0.; model.state_count()],
-            setups: 0,
-            solves: 0,
-            setup_seconds: 0.,
-            solve_seconds: 0.,
-            assembly_seconds: 0.,
-            factor_seconds: 0.,
-        })
-    }
-    fn setup(
-        &mut self,
-        model: &Evolution,
-        work: &Workspace,
-        cj: f64,
-        memory: Handle,
-        started: Instant,
-        last_admitted: f64,
-    ) -> Result<(), String> {
-        let start = Instant::now();
-        self.setups += 1;
-        self.phase("nc-setup-enter", cj, memory, started, last_admitted, None)?;
-        model
-            .nc_values(work, cj, &mut self.native_values)
-            .map_err(str::to_owned)?;
-        model
-            .history_diagonal(work, cj, &mut self.diagonal)
-            .map_err(str::to_owned)?;
-        for (v, &slot) in self.values.iter_mut().zip(&self.slots) {
-            *v = self.native_values[slot];
-        }
-        matrix_data(
-            self.owned.matrix,
-            &self.pointers,
-            &self.indices,
-            &self.values,
-        )?;
-        self.assembly_seconds += start.elapsed().as_secs_f64();
-        self.phase("nc-factor-enter", cj, memory, started, last_admitted, None)?;
-        let factor_start = Instant::now();
-        let status = unsafe { SUNLinSolSetup(self.owned.solver, self.owned.matrix) };
-        self.factor_seconds += factor_start.elapsed().as_secs_f64();
-        self.setup_seconds += start.elapsed().as_secs_f64();
-        self.phase(
-            "nc-factor-exit",
-            cj,
-            memory,
-            started,
-            last_admitted,
-            Some(status),
-        )?;
-        checked(status, "Numeric N/C KLU setup")?;
-        self.phase(
-            "nc-setup-exit",
-            cj,
-            memory,
-            started,
-            last_admitted,
-            Some(status),
-        )
-    }
-    fn phase(
-        &self,
-        phase: &str,
-        cj: f64,
-        memory: Handle,
-        started: Instant,
-        last_admitted: f64,
-        status: Option<c_int>,
-    ) -> Result<(), String> {
-        let (stats, stats_error) = telemetry_stats(memory);
-        println!(
-            "{{\"kind\":\"solver-phase\",\"phase\":{},\"lastAdmittedTime\":{last_admitted:e},\"aggregateElapsedSeconds\":{},\"cj\":{cj:e},\"setupAttempts\":{},\"completedSetupSeconds\":{},\"completedAssemblySeconds\":{},\"completedFactorSeconds\":{},\"completedPreconditionerSolves\":{},\"completedPreconditionerSolveSeconds\":{},\"status\":{},\"solverStats\":{stats},\"telemetryStatsError\":{stats_error}}}",
-            quote(phase),
-            finite(started.elapsed().as_secs_f64()),
-            self.setups,
-            finite(self.setup_seconds),
-            finite(self.assembly_seconds),
-            finite(self.factor_seconds),
-            self.solves,
-            finite(self.solve_seconds),
-            status.map_or("null".into(), |s| s.to_string())
-        );
-        io::stdout()
-            .flush()
-            .map_err(|e| format!("Solver phase flush: {e}"))
-    }
-    fn solve(&mut self, r: Handle, z: Handle, nc: usize) -> Result<(), String> {
-        let start = Instant::now();
-        let n = self.rhs.len();
-        self.rhs.copy_from_slice(unsafe { values(r, n) }?);
-        unsafe { output(self.b, nc) }?.copy_from_slice(&self.rhs[..nc]);
-        let status =
-            unsafe { SUNLinSolSolve(self.owned.solver, self.owned.matrix, self.x, self.b, 0.) };
-        self.solves += 1;
-        self.solve_seconds += start.elapsed().as_secs_f64();
-        checked(status, "N/C KLU preconditioner solve")?;
-        let result = unsafe { output(z, n) }?;
-        result[..nc].copy_from_slice(unsafe { values(self.x, nc) }?);
-        for i in nc..n {
-            result[i] = self.rhs[i] / self.diagonal[i - nc];
-        }
-        if result.iter().any(|x| !x.is_finite()) {
-            return Err("Nonfinite preconditioner result".into());
-        }
-        Ok(())
-    }
-}
+#[path = "source_group_preconditioner/mod.rs"]
+mod source_group_preconditioner;
+use source_group_preconditioner::Preconditioner;
+
 struct Callbacks<'a> {
     model: &'a Evolution,
     work: Workspace,
@@ -373,7 +211,7 @@ fn trial_failure(error: &'static str) -> CallbackFailure {
 impl Callbacks<'_> {
     fn metrics_json(&self) -> String {
         format!(
-            "{{\"RHSAttempts\":{},\"RHSSeconds\":{},\"linearBaseAttempts\":{},\"linearBaseSeconds\":{},\"JVPCalls\":{},\"JVPSeconds\":{},\"setupAttempts\":{},\"completedSetupSeconds\":{},\"completedAssemblySeconds\":{},\"completedFactorSeconds\":{},\"completedPreconditionerSolves\":{},\"completedPreconditionerSolveSeconds\":{},\"recoverableDomainErrors\":{}}}",
+            "{{\"RHSAttempts\":{},\"RHSSeconds\":{},\"linearBaseAttempts\":{},\"linearBaseSeconds\":{},\"JVPCalls\":{},\"JVPSeconds\":{},\"setupAttempts\":{},\"completedSetupSeconds\":{},\"completedAssemblySeconds\":{},\"completedFactorSeconds\":{},\"preconditionerSolveAttempts\":{},\"completedPreconditionerSolveSeconds\":{},\"preconditionerMetrics\":{},\"recoverableDomainErrors\":{}}}",
             self.rhs_calls,
             finite(self.rhs_seconds),
             self.base_calls,
@@ -386,6 +224,7 @@ impl Callbacks<'_> {
             finite(self.preconditioner.factor_seconds),
             self.preconditioner.solves,
             finite(self.preconditioner.solve_seconds),
+            self.preconditioner.metrics_json(),
             self.recoverable_errors
         )
     }
@@ -506,9 +345,10 @@ unsafe extern "C" fn psetup(
     user: Handle,
 ) -> c_int {
     callback(user, |c| {
-        c.base(y)?;
+        c.budget()?;
+        let state = unsafe { values(y, c.model.state_count()) }?;
         c.preconditioner
-            .setup(c.model, &c.work, cj, c.memory, c.started, c.last_admitted)?;
+            .setup(c.model, state, cj, c.memory, c.started, c.last_admitted)?;
         c.budget().map_err(Into::into)
     })
 }
@@ -525,7 +365,7 @@ unsafe extern "C" fn psolve(
 ) -> c_int {
     callback(user, |c| {
         c.budget()?;
-        c.preconditioner.solve(r, z, c.model.nc_dimension())?;
+        c.preconditioner.solve(c.model, r, z)?;
         c.budget().map_err(Into::into)
     })
 }
@@ -595,6 +435,12 @@ impl Stats {
     }
 }
 fn telemetry_stats(memory: Handle) -> (String, String) {
+    if memory.is_null() {
+        return (
+            "null".into(),
+            quote("No IDA memory supplied to non-advancing block test"),
+        );
+    }
     match Stats::read(memory) {
         Ok(s) => (s.json(), "null".into()),
         Err(e) => ("null".into(), quote(&e)),
@@ -604,6 +450,17 @@ struct Sample {
     time: f64,
     y: Vec<f64>,
     d: Diagnostics,
+}
+fn check_schedule(samples: &[Sample]) -> Result<(), String> {
+    if samples.len() != OUTPUTS.len()
+        || samples
+            .iter()
+            .zip(OUTPUTS)
+            .any(|(sample, time)| sample.time != time)
+    {
+        return Err("Missing, truncated or mismatched common output schedule".into());
+    }
+    Ok(())
 }
 struct Run {
     passed: bool,
@@ -624,6 +481,7 @@ struct Run {
     base_seconds: f64,
     prec_setup_seconds: f64,
     prec_solve_seconds: f64,
+    preconditioner_metrics: String,
     workspace_bytes: usize,
     max_rhs_number_defect: f64,
     max_integrated_number_defect: f64,
@@ -678,7 +536,7 @@ impl Run {
             )
         };
         format!(
-            "{{\"passed\":{},\"reason\":{},\"lastAdmittedTime\":{},\"returnedTime\":{},\"wallSeconds\":{},\"stats\":{},\"initialWeightedDerivativeWRMS\":{},\"initialDominantRow\":{},\"initialDominantWeightedDerivative\":{},\"RHSCalls\":{},\"JVPCalls\":{},\"linearBaseCalls\":{},\"RHSSeconds\":{},\"JVPSeconds\":{},\"linearBaseSeconds\":{},\"preconditionerSetupSeconds\":{},\"preconditionerSolveSeconds\":{},\"workspacePayloadBytes\":{},\"recoverableDomainErrors\":{},\"lastRecoverableDomainError\":{},\"startupAcceptedStepsTimeH\":[{}],\"minAcceptedH\":{},\"maxAcceptedH\":{},\"screenOutputCalls\":{},\"screenOutputSeconds\":{},\"maxRHSNumberDefect\":{},\"maxIntegratedNumberDefect\":{},\"maxIntegratedEnergyDefectJ\":{},\"maxCfProgressErrorJ\":{},\"trace\":[{}],\"failureSnapshot\":{}}}",
+            "{{\"passed\":{},\"reason\":{},\"lastAdmittedTime\":{},\"returnedTime\":{},\"wallSeconds\":{},\"stats\":{},\"initialWeightedDerivativeWRMS\":{},\"initialDominantRow\":{},\"initialDominantWeightedDerivative\":{},\"RHSCalls\":{},\"JVPCalls\":{},\"linearBaseCalls\":{},\"RHSSeconds\":{},\"JVPSeconds\":{},\"linearBaseSeconds\":{},\"preconditionerSetupSeconds\":{},\"preconditionerSolveSeconds\":{},\"preconditionerMetrics\":{},\"workspacePayloadBytes\":{},\"recoverableDomainErrors\":{},\"lastRecoverableDomainError\":{},\"startupAcceptedStepsTimeH\":[{}],\"minAcceptedH\":{},\"maxAcceptedH\":{},\"screenOutputCalls\":{},\"screenOutputSeconds\":{},\"maxRHSNumberDefect\":{},\"maxIntegratedNumberDefect\":{},\"maxIntegratedEnergyDefectJ\":{},\"maxCfProgressErrorJ\":{},\"trace\":[{}],\"failureSnapshot\":{}}}",
             self.passed,
             quote(&self.reason),
             finite(self.last_admitted),
@@ -696,6 +554,7 @@ impl Run {
             finite(self.base_seconds),
             finite(self.prec_setup_seconds),
             finite(self.prec_solve_seconds),
+            self.preconditioner_metrics,
             self.workspace_bytes,
             self.recoverable_errors,
             self.last_recoverable
@@ -848,6 +707,7 @@ fn run(
         base_seconds: 0.,
         prec_setup_seconds: 0.,
         prec_solve_seconds: 0.,
+        preconditioner_metrics: String::from("null"),
         workspace_bytes,
         max_rhs_number_defect: 0.,
         max_integrated_number_defect: 0.,
@@ -1031,6 +891,7 @@ fn run(
     out.base_seconds = callbacks.base_seconds;
     out.prec_setup_seconds = callbacks.preconditioner.setup_seconds;
     out.prec_solve_seconds = callbacks.preconditioner.solve_seconds;
+    out.preconditioner_metrics = callbacks.preconditioner.metrics_json();
     out.wall = run_started.elapsed().as_secs_f64();
     Ok(out)
 }
@@ -1125,6 +986,8 @@ fn main_result(started: Instant) -> Result<(), String> {
     let mut developed = true;
     if let Some(t) = &tighter {
         if passed {
+            check_schedule(&normal.samples)?;
+            check_schedule(&t.samples)?;
             for (a, b) in normal.samples.iter().zip(&t.samples) {
                 if a.time != b.time {
                     return Err("Common output times differ".into());
@@ -1247,7 +1110,7 @@ fn main_result(started: Instant) -> Result<(), String> {
         normal.last_admitted
     };
     println!(
-        "{{\"passed\":{passed},\"scope\":\"Birth-driven represented ORIGINAL fixed-geometry/fixed-temperature source and finite target/history advancement; no thermal feedback, deposited heat, plant or live qualification\",\"coordinates\":{},\"physicalCoordinates\":{},\"auditIntegrals\":{},\"neutronCoordinates\":{},\"precursorCoordinates\":{},\"segments\":{},\"waterOwners\":{},\"targets\":{},\"MnTargets\":{},\"lastAdmittedTime\":{},\"constructionSeconds\":{},\"wallSeconds\":{},\"settings\":{{\"horizon\":300,\"rtol\":[1e-5,1e-6],\"countAtol\":1e-3,\"energyAtolJ\":1e-12,\"SPGMRmaxl\":30,\"SPGMRrestarts\":0,\"nonnegativeConstraints\":true,\"allowanceSeconds\":{},\"reportReserveSeconds\":2,\"rateResolution\":\"chosen20atol/time;notderivedstockerrorbound\",\"outputs\":{:?}}},\"gates\":{{\"localPairRatio\":{},\"SUMABSFamilyPairRatio\":{},\"observablePairRatio\":{},\"comparedFamilyOutputs\":{compared_family_outputs},\"negligibleFamilyOutputs\":{negligible_family_outputs},\"developedSignal\":{developed},\"strictAcceptedBoundary\":true}},\"normal\":{},\"tighter\":{},\"tighterSetupFailure\":{}}}",
+        "{{\"passed\":{passed},\"scope\":\"Birth-driven represented ORIGINAL fixed-geometry/fixed-temperature source and finite target/history advancement; no thermal feedback, deposited heat, plant or live qualification\",\"coordinates\":{},\"physicalCoordinates\":{},\"auditIntegrals\":{},\"neutronCoordinates\":{},\"precursorCoordinates\":{},\"segments\":{},\"waterOwners\":{},\"targets\":{},\"MnTargets\":{},\"lastAdmittedTime\":{},\"constructionSeconds\":{},\"wallSeconds\":{},\"settings\":{{\"horizon\":300,\"rtol\":[1e-5,1e-6],\"countAtol\":1e-3,\"energyAtolJ\":1e-12,\"preconditioner\":\"spatial-KLU-fixed-forward-energy-GS-local-history\",\"SPGMRmaxl\":30,\"SPGMRrestarts\":0,\"nonnegativeConstraints\":true,\"allowanceSeconds\":{},\"reportReserveSeconds\":2,\"rateResolution\":\"chosen20atol/time;notderivedstockerrorbound\",\"outputs\":{:?}}},\"gates\":{{\"localPairRatio\":{},\"SUMABSFamilyPairRatio\":{},\"observablePairRatio\":{},\"comparedFamilyOutputs\":{compared_family_outputs},\"negligibleFamilyOutputs\":{negligible_family_outputs},\"developedSignal\":{developed},\"strictAcceptedBoundary\":true}},\"normal\":{},\"tighter\":{},\"tighterSetupFailure\":{}}}",
         model.state_count(),
         model.ledger_row(),
         model.state_count() - model.ledger_row(),
@@ -1308,5 +1171,27 @@ mod tests {
             trial_failure("Nonfinite full source JVP"),
             CallbackFailure::Fatal(_)
         ));
+    }
+    #[test]
+    fn paired_outputs_require_the_entire_exact_common_schedule() {
+        let mut samples = OUTPUTS
+            .iter()
+            .map(|&time| Sample {
+                time,
+                y: Vec::new(),
+                d: Diagnostics::default(),
+            })
+            .collect::<Vec<_>>();
+        assert!(check_schedule(&samples).is_ok());
+        samples.pop();
+        assert!(check_schedule(&samples).is_err());
+        samples.push(Sample {
+            time: 300.001,
+            y: Vec::new(),
+            d: Diagnostics::default(),
+        });
+        assert!(check_schedule(&samples).is_err());
+        samples.clear();
+        assert!(check_schedule(&samples).is_err());
     }
 }
