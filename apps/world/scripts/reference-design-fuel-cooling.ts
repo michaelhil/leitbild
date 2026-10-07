@@ -31,6 +31,10 @@ const requireIndex=(map:Map<string,number>,id:string)=>{
 const gapSchema=z.object({fuelEmissivity:z.number().finite().positive().max(1),
  cladEmissivity:z.number().finite().positive().max(1)}).strict()
 export function parseOperatingFuelGap(document:string){return gapSchema.parse(configurationBlock(document,'reference-operating-fuel-gap'))}
+const conditioningSchema=z.object({liquidTemperature_K:z.number().finite().positive()}).strict()
+export function parseColdConditioningPreparation(document:string){
+ return conditioningSchema.parse(configurationBlock(document,'reference-cold-conditioning-preparation'))
+}
 export function compileFuelCoolingMaterial(material:Material,network:Pick<Network,'water'|'hydraulic'>,gap:z.infer<typeof gapSchema>){
  const {result:r,input:{fuel:f,grid}}=material,waterIndexes=new Map(network.water.map((w,i)=>[w.id,i])),
   heliumIndexes=new Map(r.helium.map((h,i)=>[h.faId,i])),fg=fuelGeometry(f),
@@ -179,23 +183,24 @@ export function nativeFuelCoolingFixture(p:Awaited<ReturnType<typeof compileFuel
 export async function compileFuelCooling(wiki:string){
  const extra=['systems/reactor/phase-dependent-heat-transfer.md','systems/primary-coolant/heater-equipment.md',
   'systems/reactor/configuration-source-and-history.md','model/operating-pressure-support.md',
-  'systems/primary-coolant/surge-route.md'],names=[...new Set([...coldSourceMaterialOwnerFiles,...primaryWaterOwnerFiles,...extra])],
+  'systems/primary-coolant/surge-route.md','model/operating-source-model.md'],names=[...new Set([...coldSourceMaterialOwnerFiles,...primaryWaterOwnerFiles,...extra])],
   texts=await Promise.all(names.map(p=>Bun.file(join(wiki,p)).text())),docs=new Map(names.map((p,i)=>[p,texts[i]!])),
   read=(p:string)=>{const s=docs.get(p);if(s===undefined)throw Error('Missing cold coupling owner '+p);return s},
   material=compileColdSourceMaterialOwners(coldSourceMaterialOwnerFiles.map(read)),
-  network=await compileOperatingNetwork(wiki,{horizon_s:300,remainingBudget_s:120}),
+  conditioning=parseColdConditioningPreparation(read('model/operating-source-model.md')),
+  network=await compileOperatingNetwork(wiki,{horizon_s:300,remainingBudget_s:120},{temperature_K:conditioning.liquidTemperature_K}),
   d=parsePrimaryWaterInputs(primaryWaterOwnerFiles.map(read)),thermal=compileFuelCoolingMaterial(material,network,parseOperatingFuelGap(read(extra[0]!))),
   geometry=compilePrimaryWaterGeometry(material.partition,d),
   primary=compilePrimaryIncidence(network,material.partition,d,geometry),
   barrel=compileColdBarrel(d,network,geometry,read('systems/reactor/configuration-source-and-history.md'),read(extra[1]!)),
   pressure=compileColdPressure(read('model/operating-pressure-support.md'),read('systems/primary-coolant/surge-route.md'),
-   network.water,barrel,primary.boronAtomsPerKg/primary.markerRatio),
+   network.water,barrel,primary.boronAtomsPerKg/primary.markerRatio,conditioning.liquidTemperature_K),
   identities=names.map((name,i)=>({name,sha256:sha(texts[i]!)}))
  if(network.water.some(w=>w.markerRatio!==primary.markerRatio))throw Error('Connected primary preparation is not homogeneous')
  for(const identity of network.ownerIdentities){const same=identities.find(x=>x.name===identity.name)
   if(same&&same.sha256!==identity.sha256)throw Error('Owner changed across current coupling compilers')}
  if((await Promise.all(names.map(p=>Bun.file(join(wiki,p)).text()))).some((s,i)=>s!==texts[i]))throw Error('Owner changed during cold coupling compilation')
- return {thermal,primary,network,material,barrel,pressure,ownerIdentities:identities,
+ return {thermal,primary,network,material,barrel,pressure,conditioning,ownerIdentities:identities,
   limitations:['Compilation is not an advancing coupled plant or empirical qualification',
    'Cold fully wet primary, fixed prepared fuel/guide geometry; no primary phase continuation, motion or coastdown',
    'Finite mixed surge and cold separated liquid/steam/air PZR; no hot pressure regulation, resolved thermal fronts or dryout',

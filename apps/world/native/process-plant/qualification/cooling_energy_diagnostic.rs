@@ -101,6 +101,33 @@ fn actual_pressure_entry_without_advancement() {
         let accuracy = cooling_accuracy::Accuracy::new(m, &prepared.target_emissions)?;
         let mut w = m.workspace();
         m.evaluate(&initial, &vec![0.; n], Some(0.), &mut w)?;
+        let range = |values: &[f64]| {
+            [
+                values.iter().copied().fold(f64::INFINITY, f64::min),
+                values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+            ]
+        };
+        let primary_t = (0..m.carrier.cells())
+            .map(|i| initial[l.network_start + m.network.temperature_row(i)])
+            .collect::<Vec<_>>();
+        let primary_mass = initial[l.network_start + m.network.total_mass_row()];
+        let primary_energy = (0..m.carrier.cells())
+            .map(|i| initial[l.network_start + m.network.energy_row(i)])
+            .sum::<f64>();
+        let primary_b = (0..m.carrier.cells())
+            .map(|i| initial[l.carrier_start + water_carrier::WIDTH * i + 1])
+            .sum::<f64>();
+        let preparation_json = format!(
+            "{{\"scope\":\"fresh-physical-initial-stocks-before-IC;not-reached-state-reset\",\"primaryTemperatureRangeK\":{:?},\"primaryMassKg\":{primary_mass},\"primaryEnergyJ\":{primary_energy},\"primaryHydrogenTargetAtoms\":{},\"primaryBoron10Atoms\":{primary_b},\"thermalTemperatureRangeK\":{:?},\"sourcePreparedFuelTemperatureRangeK\":{:?},\"barrelTemperatureK\":{},\"surge\":{{\"liquidTemperatureK\":{},\"steelTemperatureK\":{},\"massKg\":{},\"energyJ\":{}}},\"pressurizer\":{{\"liquidTemperatureK\":{},\"gasTemperatureK\":{},\"liquidMassKg\":{},\"vaporMassKg\":{},\"liquidEnergyJ\":{},\"gasEnergyJ\":{},\"derivedAirMassKg\":{}}}}}",
+            range(&primary_t), m.carrier.hydrogen_per_kg()*primary_mass,
+            range(&initial[l.temperatures_start..l.barrel_energy]),range(m.source.prepared_temperatures()),
+            initial[l.barrel_temperature],initial[l.surge_start+finite_surge::TEMPERATURE],
+            initial[l.surge_start+finite_surge::STEEL_TEMPERATURE],initial[l.surge_start+finite_surge::MASS],
+            initial[l.surge_start+finite_surge::ENERGY],initial[l.pressurizer_start+cp::LIQUID_TEMPERATURE],
+            initial[l.pressurizer_start+cp::GAS_TEMPERATURE],initial[l.pressurizer_start+cp::LIQUID_MASS],
+            initial[l.pressurizer_start+cp::VAPOR_MASS],initial[l.pressurizer_start+cp::LIQUID_ENERGY],
+            initial[l.pressurizer_start+cp::GAS_ENERGY],m.pressure_connection().pressurizer.input().air_mass
+        );
         let head = [
             -w.residual[l.surge_start + finite_surge::LEFT_FLOW],
             -w.residual[l.surge_start + finite_surge::RIGHT_FLOW],
@@ -154,11 +181,11 @@ fn actual_pressure_entry_without_advancement() {
                     .map_err(|e| e.to_string())?;
                 writeln!(file, "{snapshot}").map_err(|e| e.to_string())?;
                 file.sync_all().map_err(|e| e.to_string())?;
-                cases.push(format!("{{\"refinement\":{refinement},\"passed\":false,\"initializationTrace\":{},\"failedIterateFile\":{}}}", trace.json(), quote(&path.to_string_lossy())));
+                cases.push(format!("{{\"refinement\":{refinement},\"passed\":false,\"preparation\":{preparation_json},\"initializationTrace\":{},\"failedIterateFile\":{}}}", trace.json(), quote(&path.to_string_lossy())));
             }
             let ic = initialization?;
             let case_index = cases.len();
-            cases.push(format!("{{\"refinement\":{refinement},\"passed\":false,\"completedStage\":\"joint-initialization\",\"initialization\":{},\"initializationTrace\":{}}}",ic.json(),trace.json()));
+            cases.push(format!("{{\"refinement\":{refinement},\"passed\":false,\"preparation\":{preparation_json},\"completedStage\":\"joint-initialization\",\"initialization\":{},\"initializationTrace\":{}}}",ic.json(),trace.json()));
             deadline()?;
             accuracy.carrier_ledger(m, &y)?;
             let g = EnergyCoordinates::new(m, &initial)?;
@@ -349,7 +376,7 @@ fn actual_pressure_entry_without_advancement() {
             let hydraulic = w.surge.diagnostics()?;
             let flow = w.surge.receipts()?.mass;
             cases[case_index] = format!(
-                "{{\"refinement\":{refinement},\"passed\":true,\"initialization\":{},\"initializationTrace\":{},\"energyVectorRoundtrip\":{roundtrip_json},\"freshHydraulicResidualPa\":{head:?},\"jointActualFlowKgS\":[{},{}],\"heightRateMPerS\":{},\"closedWaterRateKgPerS\":{mass_rate:e},\"closedBRateKgEquivalentPerS\":{boron_rate:e},\"offInterfaceRHSIdentityErrorW\":{energy_error:e},\"unshiftedEnergyJVPIdentityError\":{unshifted_error:e},\"hugeCjEnergyActionError\":{huge_error:e},\"completedPNonGMaxError\":{p_error:e},\"onePSetupAndSolveSeconds\":{p_seconds},\"passiveHydraulicDissipationW\":{},\"kineticTemperatureEquivalentK\":{:?},\"currentCandidateFlowClosureRatio\":{}}}",
+                "{{\"refinement\":{refinement},\"passed\":true,\"preparation\":{preparation_json},\"initialization\":{},\"initializationTrace\":{},\"energyVectorRoundtrip\":{roundtrip_json},\"freshHydraulicResidualPa\":{head:?},\"jointActualFlowKgS\":[{},{}],\"heightRateMPerS\":{},\"closedWaterRateKgPerS\":{mass_rate:e},\"closedBRateKgEquivalentPerS\":{boron_rate:e},\"offInterfaceRHSIdentityErrorW\":{energy_error:e},\"unshiftedEnergyJVPIdentityError\":{unshifted_error:e},\"hugeCjEnergyActionError\":{huge_error:e},\"completedPNonGMaxError\":{p_error:e},\"onePSetupAndSolveSeconds\":{p_seconds},\"passiveHydraulicDissipationW\":{},\"kineticTemperatureEquivalentK\":{:?},\"currentCandidateFlowClosureRatio\":{}}}",
                 ic.json(),
                 trace.json(),
                 flow[0],

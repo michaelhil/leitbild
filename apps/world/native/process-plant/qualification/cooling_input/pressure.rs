@@ -1,6 +1,6 @@
 //! Required fresh pressure-support preparation; never a reached-state reset.
 use super::*;
-use leitbild_plant_numerics::{CellGeometry, GRAVITY, cold_pressurizer as cp, finite_surge as fs};
+use leitbild_plant_numerics::{cold_pressurizer as cp, finite_surge as fs, CellGeometry, GRAVITY};
 
 /// Fresh preparation of the selected bulk-density hydrostatic force, not a
 /// runtime inverse or a correction to reached stocks.
@@ -217,5 +217,34 @@ mod tests {
             assert!((p - bottom + rho * GRAVITY * 4.).abs() < 1e-10);
         }
         assert!(fresh_line_pressure(f64::NAN, 300., 0.).is_err());
+    }
+    #[test]
+    fn conditioned_liquid_recomputes_finite_stocks_without_changing_steel_preparation() {
+        let model = super::super::super::cooling_fixture::fixture();
+        let line = &model.pressure_connection().surge;
+        let (p, density) = fresh_line_pressure(3e5, 293.15, 8.).unwrap();
+        let cold = line.prepare(p, 293.15, 300.).unwrap();
+        let warm = line.prepare(p, 300., 300.).unwrap();
+        assert_eq!(cold[fs::TEMPERATURE], 293.15);
+        assert_eq!(cold[fs::STEEL_TEMPERATURE], 300.);
+        assert_eq!(cold[fs::STEEL_ENERGY], warm[fs::STEEL_ENERGY]);
+        assert_eq!(cold[fs::MASS], density * line.input().geometry.volume);
+        assert!(cold[fs::MASS] > warm[fs::MASS]);
+        assert!(cold[fs::ENERGY] < warm[fs::ENERGY]);
+        let mut liquid = [leitbild_plant_numerics::Liquid::default()];
+        leitbild_plant_numerics::liquid_batch(
+            &[leitbild_plant_numerics::LiquidQuery {
+                pressure: p,
+                temperature: 293.15,
+            }],
+            &mut liquid,
+        )
+        .unwrap();
+        assert_eq!(
+            cold[fs::ENERGY],
+            cold[fs::MASS]
+                * (liquid[0].internal_energy + GRAVITY * line.input().geometry.elevation)
+        );
+        assert!((p - 3e5 - density * GRAVITY * 8.).abs() < 1e-9);
     }
 }

@@ -129,10 +129,14 @@ async function helperIdentities(entry: string) {
   return rows.sort((a, b) => a.path.localeCompare(b.path))
 }
 
-export async function compileOperatingNetwork(wikiDirectory: string, controls: z.infer<typeof controlsSchema>) {
+export async function compileOperatingNetwork(wikiDirectory: string, controls: z.infer<typeof controlsSchema>,
+  currentPreparation?: { temperature_K: number }) {
   if (typeof wikiDirectory !== 'string' || !wikiDirectory.trim()) throw Error('Explicit LD-01 owner directory required')
   const run = controlsSchema.parse(controls), wiki = resolve(wikiDirectory)
   const physical = await currentPhysicalPrimaryGeometry(wiki), d = physical.physicalInputs, g = physical.input.geometry, hb = physical.hydraulicBasis
+  const preparation = currentPreparation === undefined ? undefined
+    : z.object({temperature_K:z.number().finite().positive()}).strict().parse(currentPreparation),
+    currentAnchor = {...d.anchor, temperature_K:preparation?.temperature_K ?? d.anchor.temperature_K}
   const extras = ['model/primary-hydraulic-basis.md', 'systems/steam-generation/thermodynamics.md',
     'systems/reactor/radial-energy-transient.md', 'model/connected-primary-initialization.md',
     'systems/reactor/control-absorber-and-guide-water.md', 'systems/reactor/core-coolant-delivery.md',
@@ -245,7 +249,7 @@ export async function compileOperatingNetwork(wikiDirectory: string, controls: z
   if (Math.abs(V + omittedV - physical.expectedTotalVolume_m3) > 1e-10 * physical.expectedTotalVolume_m3)
     throw Error('Operating partial/omitted physical inventory does not partition current primary')
   const nativeInput = [ [water.length, solids.length, hydraulic.length, heat.length, run.horizon_s, run.remainingBudget_s,
-    d.anchor.pressure_Pa, d.anchor.temperature_K, d.anchor.elevation_m,
+    currentAnchor.pressure_Pa, currentAnchor.temperature_K, currentAnchor.elevation_m,
     originalPreparation.minimumHSSpan_m, originalWaterMassRelativeScreen].join(' '),
     ...water.map(w => [w.volume_m3, w.elevation_m, w.markerRatio].join(' ')),
     ...solids.map(s => [s.capacity_J_K, s.temperature_K].join(' ')),
@@ -265,7 +269,7 @@ export async function compileOperatingNetwork(wikiDirectory: string, controls: z
   }
   const uniqueIdentities = [...new Map(identities.map(i => [i.name, i])).values()]
   return { design: 'LD-01', preparation: 'Fresh cold point-lumped primary/finite SG metal and closed wet water-steam-air secondaries, stationary fully inserted physical geometry',
-    anchor: d.anchor, controls: run, originalPreparation: { minimumSpan_m: originalPreparation.minimumHSSpan_m,
+    anchor: currentAnchor, referenceAnchor:d.anchor, controls: run, originalPreparation: { minimumSpan_m: originalPreparation.minimumHSSpan_m,
       relativeMassScreen: originalWaterMassRelativeScreen, scope: 'Original point initializer precision allocation only, not inherited quadrature inventory acceptance' },
     water, solids, hydraulic, heat, secondaries, secondaryHeat, includedWaterVolume_m3: V,
     omittedWaterSupports: [{ id: 'PZR', volume_m3: g.PZR.volume_m3 }, { id: 'SURGE', volume_m3: physical.input.surge.liquidVolume_m3 }],

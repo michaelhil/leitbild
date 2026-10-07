@@ -24,10 +24,13 @@ const schema=z.object({primaryCell:z.string().min(1),initialLevel_m:positive,ini
 export function parseColdPressureSelection(text:string){return schema.parse(configurationBlock(text,'reference-cold-pressure-support'))}
 type Water={id:string;elevation_m:number}
 type Caloric={cp0_j_kg_k:number;cp1_j_kg_k2:number;datum_k:number;minimum_k:number;maximum_k:number}
-export function compileColdPressure(selectionText:string,routeText:string,water:Water[],caloric:Caloric,atomsPerMarker:number){
+export function compileColdPressure(selectionText:string,routeText:string,water:Water[],caloric:Caloric,atomsPerMarker:number,
+ surgeLiquidTemperature_K:number){
  const s=parseColdPressureSelection(selectionText),r=resolveSurgeRoute(parseSurgeRoute(routeText)),
   primary=water.findIndex(w=>w.id===s.primaryCell),b=heaterBankBasis,
   rods=heaterBankGeometry(s.initialLevel_m).banks,g=shellContactGeometry()
+ if(!Number.isFinite(surgeLiquidTemperature_K)||surgeLiquidTemperature_K<s.minimumTemperature_K
+  ||surgeLiquidTemperature_K>s.maximumTemperature_K)throw Error('Current surge preparation is outside the cold domain')
  if(primary<0||water[primary]!.elevation_m!==r.sourceElevation_m||r.receiverElevation_m!==b.bottom_m
   ||s.minimumLevel_m<Math.max(b.normal.length_m,b.backup.length_m)||s.maximumLevel_m>=b.vesselHeight_m
   ||!Number.isFinite(atomsPerMarker)||atomsPerMarker<=0)throw Error('Cold pressure geometry/material join differs from actual owners')
@@ -53,7 +56,7 @@ export function compileColdPressure(selectionText:string,routeText:string,water:
  if(!(caloric.minimum_k<=s.minimumTemperature_K&&s.maximumTemperature_K<=caloric.maximum_k)
   ||!Number.isFinite(lineAmbientConductance)||lineAmbientConductance<=0)
   throw Error('Cold pressure caloric/contact preparation is outside its owned domain')
- return {selection:s,primary,metals,route:r,caloric,atomsPerMarker,lineAmbientConductance,
+ return {selection:s,primary,metals,route:r,caloric,atomsPerMarker,lineAmbientConductance,surgeLiquidTemperature_K,
   scope:'Fresh positive cold pool/cushion and finite surge only; no hot pressure control, resolved fronts, dryout or whole-plant qualification'}
 }
 
@@ -84,7 +87,7 @@ export function nativeColdPressureFrame(p:ReturnType<typeof compileColdPressure>
  }
  // Cold reduction omits solid radiation; no zero-stock radiation recipients.
  fields.push(0,s.initialTemperature_K,s.initialTemperature_K,s.initialLevel_m,
-  ...p.metals.map(()=>s.initialTemperature_K),s.initialTemperature_K,s.initialTemperature_K)
+  ...p.metals.map(()=>s.initialTemperature_K),p.surgeLiquidTemperature_K,s.initialTemperature_K)
  if(fields.some(v=>!Number.isFinite(v)))throw Error('Nonfinite cold pressure frame')
  return fields
 }

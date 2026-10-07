@@ -1,5 +1,5 @@
 import {expect,test} from 'bun:test'
-import {compileFuelCooling,compileFuelCoolingMaterial,compilePrimaryIncidence,parseOperatingFuelGap} from './reference-design-fuel-cooling'
+import {compileFuelCooling,compileFuelCoolingMaterial,compilePrimaryIncidence,parseOperatingFuelGap,parseColdConditioningPreparation} from './reference-design-fuel-cooling'
 import {compilePrimaryWaterGeometry,parsePrimaryWaterInputs,primaryWaterOwnerFiles} from './reference-design-source-water'
 import {join} from 'node:path'
 import {coolingCommonTimes,coolingStateHeader,coolingStatesComplete,fuelCoolingAdmission,fuelCoolingPriorSeconds,qualifyFuelCooling} from './reference-design-fuel-cooling-qualification'
@@ -118,6 +118,12 @@ test('cold gap selection is explicit, unique and physically bounded',()=>{
  for(const bad of ['',doc+doc,doc.replace('0.7','0'),doc.replace('0.7','1.1'),
   doc.replace('"cladEmissivity"','"unspecified"')])expect(()=>parseOperatingFuelGap(bad)).toThrow()
 })
+test('joined conditioning is explicit and does not replace source reference preparation',()=>{
+ const doc='```reference-cold-conditioning-preparation\n{"liquidTemperature_K":293.15}\n```\n'
+ expect(parseColdConditioningPreparation(doc)).toEqual({liquidTemperature_K:293.15})
+ for(const bad of ['',doc+doc,doc.replace('293.15','0'),doc.replace('"liquidTemperature_K"','"implicit"'),
+  doc.replace('293.15','293.15,"extra":300')])expect(()=>parseColdConditioningPreparation(bad)).toThrow()
+})
 test('qualification refuses immutable evidence overwrite before any native execution',async()=>{
  await expect(qualifyFuelCooling({wiki:'unused',partition:'unused',material:'unused',water:'unused',
   materialEvidence:'unused',binary:'unused',selectedStackManifest:'unused',output:import.meta.path})).rejects.toThrow('overwrite')
@@ -126,6 +132,13 @@ test('qualification refuses immutable evidence overwrite before any native execu
 const wiki=process.env.LEITBILD_REFERENCE_WIKI,ownerTest=wiki?test:test.skip
 ownerTest('current owners close fuel/helium recipients and actual non-proportional guide incidence',async()=>{
  const p=await compileFuelCooling(wiki!)
+ expect(p.conditioning.liquidTemperature_K).toBe(293.15)
+ expect(p.network.anchor.temperature_K).toBe(p.conditioning.liquidTemperature_K)
+ expect(p.network.referenceAnchor.temperature_K).toBe(300)
+ expect(p.network.nativeInput.split(/\s+/)[7]).toBe(String(p.conditioning.liquidTemperature_K))
+ expect(p.thermal.originalTemperatures.every(t=>t===300)).toBe(true)
+ expect(p.pressure.surgeLiquidTemperature_K).toBe(p.conditioning.liquidTemperature_K)
+ expect(p.barrel.initial_temperature_k).toBe(300)
  expect(p.thermal.bands).toHaveLength(193*4)
  expect(p.thermal.helium).toHaveLength(193)
  expect(p.thermal.thermalCoordinates).toBe(9264+193)

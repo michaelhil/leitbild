@@ -38,6 +38,8 @@ test('selected prose/table inputs fail closed, rather than supplying plausible c
 const ownerTest = wiki ? test : test.skip
 ownerTest('actual owners compile both finite SG secondaries and reciprocal metal contacts', async () => {
   const p = await compileOperatingNetwork(wiki!, { horizon_s: 300, remainingBudget_s: 120 })
+  expect(p.anchor.temperature_K).toBe(300)
+  expect(p.referenceAnchor).toEqual(p.anchor)
   expect(p.water.length).toBe(26)
   expect(p.solids.length).toBe(8)
   expect(p.hydraulic.length).toBe(32)

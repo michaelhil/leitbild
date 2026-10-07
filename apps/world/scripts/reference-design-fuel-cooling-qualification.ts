@@ -101,7 +101,7 @@ export async function qualifyFuelCooling(options:Options){
  await mkdir(directory)
  await Promise.all(paths.map((p,i)=>writeFile(join(directory,`${i}-${basename(p)}`),bytes[i]!,{flag:'wx'})))
  await writeFile(join(directory,'input.txt'),fixture,{flag:'wx'})
- await writeFile(join(directory,'composition.json'),JSON.stringify({thermal:prepared.thermal,primary:prepared.primary,barrel:prepared.barrel,pressure:prepared.pressure,
+ await writeFile(join(directory,'composition.json'),JSON.stringify({conditioning:prepared.conditioning,thermal:prepared.thermal,primary:prepared.primary,barrel:prepared.barrel,pressure:prepared.pressure,
   ownerIdentities:prepared.ownerIdentities,limitations:prepared.limitations},null,2)+'\n',{flag:'wx'})
  // All linked non-system libraries must be retained; the old receipt is not a
  // substitute for inspecting this newly built binary and its actual links.

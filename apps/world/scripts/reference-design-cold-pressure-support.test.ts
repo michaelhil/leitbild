@@ -9,7 +9,7 @@ ownerTest('actual cold pressure selection preserves finite hardware and route ow
  const p=await compileFuelCooling(wiki!),text=await Bun.file(join(wiki!,'model/operating-pressure-support.md')).text(),
   route=await Bun.file(join(wiki!,'systems/primary-coolant/surge-route.md')).text(),
   selection=parseColdPressureSelection(text),d=compileColdPressure(text,route,p.network.water,p.barrel,
-   p.primary.boronAtomsPerKg/p.primary.markerRatio)
+   p.primary.boronAtomsPerKg/p.primary.markerRatio,p.conditioning.liquidTemperature_K)
  expect(d.primary).toBe(p.network.water.findIndex(w=>w.id==='HOT.A'))
  expect(d.metals).toHaveLength(9)
  expect(d.route.liquidVolume_m3).toBeCloseTo(Math.PI*.3**2/4*16,12)
@@ -28,19 +28,25 @@ ownerTest('actual cold pressure selection preserves finite hardware and route ow
  expect(changed[6]).toBe(frame[6]!+1)
  expect(changed.filter((v,i)=>v!==frame[i])).toHaveLength(1)
  expect(frame.at(-1)).toBe(d.selection.initialTemperature_K)
+ expect(frame.at(-2)).toBe(p.conditioning.liquidTemperature_K)
+ expect(d.selection.initialTemperature_K).toBe(300)
+ const changedPreparation=nativeColdPressureFrame({...d,surgeLiquidTemperature_K:298.15})
+ expect(changedPreparation.filter((v,i)=>v!==frame[i])).toEqual([298.15])
  // Native PZR metal applicability must remain cold even when the shared
  // 304 coefficients are valid up to 1600 K (or a broader future domain).
  expect(frame[43]).toBe(d.selection.minimumTemperature_K)
  expect(frame[44]).toBe(d.selection.maximumTemperature_K)
  expect(nativeColdPressureFrame(compileColdPressure(text,route,p.network.water,
-  {...p.barrel,maximum_k:2000},1))).toEqual(frame)
+  {...p.barrel,maximum_k:2000},1,p.conditioning.liquidTemperature_K))).toEqual(frame)
  expect(()=>nativeColdPressureFrame({...d,lineAmbientConductance:NaN})).toThrow()
- expect(()=>compileColdPressure(text,route,p.network.water,{...p.barrel,minimum_k:301},1)).toThrow('domain')
+ expect(()=>compileColdPressure(text,route,p.network.water,{...p.barrel,minimum_k:301},1,293.15)).toThrow('domain')
  for(const caloric of [{...p.barrel,minimum_k:295},{...p.barrel,maximum_k:325}])
-  expect(()=>compileColdPressure(text,route,p.network.water,caloric,1)).toThrow('domain')
+  expect(()=>compileColdPressure(text,route,p.network.water,caloric,1,293.15)).toThrow('domain')
  expect(()=>parseColdPressureSelection(text+text)).toThrow()
  expect(()=>parseColdPressureSelection(text.replace('"initialLevel_m": 4','"initialLevel_m": 7'))).toThrow()
  expect(()=>parseColdPressureSelection(text.replace('"initialLevel_m": 4','"initialLevel_m": 4, "undeclared": 1'))).toThrow()
- expect(()=>compileColdPressure(text,route,p.network.water.filter(w=>w.id!==selection.primaryCell),p.barrel,1)).toThrow()
- expect(()=>compileColdPressure(text,route,p.network.water,p.barrel,0)).toThrow()
+ expect(()=>compileColdPressure(text,route,p.network.water.filter(w=>w.id!==selection.primaryCell),p.barrel,1,293.15)).toThrow()
+ expect(()=>compileColdPressure(text,route,p.network.water,p.barrel,0,293.15)).toThrow()
+ for(const temperature of [NaN,selection.minimumTemperature_K-1,selection.maximumTemperature_K+1])
+  expect(()=>compileColdPressure(text,route,p.network.water,p.barrel,1,temperature)).toThrow('domain')
 },60_000)
