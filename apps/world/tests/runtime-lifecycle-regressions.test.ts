@@ -5,7 +5,7 @@ import type { PackRuntimeConnectionConfig } from '../src/simulation/protocol.ts'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createSimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
-import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testScenarioAuthoring } from './helpers.ts'
+import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testScenarioAuthoring, waitForCondition } from './helpers.ts'
 import { createRuntimeHub } from '../src/simulation/runtime-hub.ts'
 import { electricalPortsFromObject } from '../src/core/model/electrical.ts'
 import { testScenarioDefinitions } from './fixtures/scenarios.ts'
@@ -119,7 +119,7 @@ test('regression: API-only run lifetime honors idle policy and recent access', a
   const registry = createSimulationRunRegistry({dataDir,workspaceId,...testScenarioAuthoring(),runtimeAdapters:createTestPackRuntimeAdapters(),scenarioRuntimeResolver:createTestScenarioRuntimeResolver(),idleRuntimeCloseDelayMs:80})
   try {
     const run=await registry.create({scenarioId:'test-response'})
-    await Bun.sleep(150)
+    await waitForCondition('unleased Run finishes idle close and checkpoint', () => registry.get(run.id) === undefined)
     const stillLoadedWithoutLeases=registry.get(run.id)!==undefined
     await registry.load(run.id)
     const release=registry.acquireLease(run.id,'realtime')
