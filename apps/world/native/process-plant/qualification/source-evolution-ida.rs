@@ -7,6 +7,9 @@ mod evolution_input;
 mod ida_support;
 #[path = "source_accuracy.rs"]
 mod source_accuracy;
+#[path = "source_pair.rs"]
+mod source_pair;
+use source_pair::*;
 #[path = "source_input/mod.rs"]
 mod source_input;
 use ida_support::*;
@@ -534,6 +537,17 @@ struct Sample {
     captured_targets: Vec<f64>,
     nc_coefficients: Vec<f64>,
 }
+impl Sample {
+    fn view(&self) -> SourceSample<'_> {
+        SourceSample {
+            time: self.time,
+            y: &self.y,
+            d: self.d,
+            captured_targets: &self.captured_targets,
+            nc_coefficients: &self.nc_coefficients,
+        }
+    }
+}
 fn captured_targets(model: &Evolution, y: &[f64]) -> Result<Vec<f64>, String> {
     (0..model.mn_product_row(0) - model.target_row(0))
         .map(|i| model.consumed_target(y, i).map_err(str::to_owned))
@@ -585,465 +599,6 @@ fn retain_common(
         .flush()
         .map_err(|e| format!("Common observation metadata flush: {e}"))
 }
-#[derive(Debug)]
-struct LocalDiscrepancy {
-    time: f64,
-    source: &'static str,
-    index: usize,
-    family: &'static str,
-    normal: f64,
-    tighter: f64,
-    difference: f64,
-    bound: f64,
-    atol: f64,
-    ratio: f64,
-}
-impl LocalDiscrepancy {
-    fn json(&self) -> String {
-        format!(
-            "{{\"time\":{},\"source\":{},\"index\":{},\"family\":{},\"normal\":{},\"tighter\":{},\"absoluteDifference\":{},\"bound\":{},\"atol\":{},\"ratio\":{}}}",
-            finite(self.time),
-            quote(self.source),
-            self.index,
-            quote(self.family),
-            finite(self.normal),
-            finite(self.tighter),
-            finite(self.difference),
-            finite(self.bound),
-            finite(self.atol),
-            finite(self.ratio)
-        )
-    }
-}
-fn local_family(model: &Evolution, row: usize) -> &'static str {
-    if row < model.region_count() * fuel_source::GROUPS {
-        "neutrons"
-    } else if row < model.nc_dimension() {
-        "precursors"
-    } else if row == model.cf_row() {
-        "Cf-spent"
-    } else if row < model.history_dimension() {
-        if model.is_energy_row(row) {
-            "E25"
-        } else {
-            "fuel-isotope-poison-products"
-        }
-    } else if row < model.target_row(0) {
-        "shared-water-HB"
-    } else if row < model.mn_product_row(0) {
-        if model
-            .mn_targets()
-            .iter()
-            .any(|m| model.target_row(m.target) == row)
-        {
-            "Mn56-inventory"
-        } else {
-            "target-capture-progress"
-        }
-    } else if row < model.ledger_row() {
-        "Fe56-product"
-    } else {
-        "independent-audit-integrals"
-    }
-}
-fn local_discrepancy(
-    model: &Evolution,
-    a: &Sample,
-    b: &Sample,
-) -> Result<LocalDiscrepancy, String> {
-    if a.time != b.time
-        || !a.time.is_finite()
-        || a.y.len() != model.state_count()
-        || b.y.len() != model.state_count()
-        || a.captured_targets.len() != b.captured_targets.len()
-        || a.captured_targets.len() != model.mn_product_row(0) - model.target_row(0)
-    {
-        return Err("Wrong local common-output comparison shape/time".into());
-    }
-    let mut worst = None;
-    for (source, index, x, y, atol) in
-        a.y.iter()
-            .zip(&b.y)
-            .enumerate()
-            .map(|(i, (&x, &y))| {
-                (
-                    "native-state-row",
-                    i,
-                    x,
-                    y,
-                    if model.is_energy_row(i) {
-                        ENERGY_ATOL
-                    } else {
-                        COUNT_ATOL
-                    },
-                )
-            })
-            .chain(
-                a.captured_targets
-                    .iter()
-                    .zip(&b.captured_targets)
-                    .enumerate()
-                    .map(|(i, (&x, &y))| ("derived-capture-target", i, x, y, COUNT_ATOL)),
-            )
-    {
-        let difference = (x - y).abs();
-        let bound = 1e-3 * y.abs() + 20. * atol;
-        let value = ratio(difference, bound)?;
-        if worst
-            .as_ref()
-            .is_none_or(|w: &LocalDiscrepancy| value > w.ratio)
-        {
-            worst = Some(LocalDiscrepancy {
-                time: a.time,
-                source,
-                index,
-                family: if source == "native-state-row" {
-                    local_family(model, index)
-                } else {
-                    "physical-target-capture-consumption"
-                },
-                normal: x,
-                tighter: y,
-                difference,
-                bound,
-                atol,
-                ratio: value,
-            });
-        }
-    }
-    worst.ok_or("Empty local comparison".into())
-}
-fn pair_families(model: &Evolution) -> Vec<Vec<usize>> {
-    // Never SUMABS unlike units (counts and joules) into one error family.
-    let mut families = vec![
-        (0..model.region_count() * fuel_source::GROUPS).collect::<Vec<_>>(),
-        (model.region_count() * fuel_source::GROUPS..model.nc_dimension()).collect(),
-    ];
-    for slot in 0..fuel_history::ENERGY {
-        families.push(
-            (0..model.segment_count())
-                .map(|s| model.nc_dimension() + s * fuel_history::HISTORY + slot)
-                .collect(),
-        );
-    }
-    families.push(
-        model
-            .energy_rows()
-            .filter(|&i| i < model.cf_row())
-            .collect(),
-    );
-    families.push(vec![model.cf_row()]);
-    families.push((model.history_dimension()..model.target_row(0)).collect());
-    families.push((model.target_row(0)..model.mn_product_row(0)).collect());
-    // Live Mn inventories must also stand alone: unrelated passive capture
-    // progress must not dilute their aggregate comparison.
-    families.push(
-        model
-            .mn_targets()
-            .iter()
-            .map(|target| model.target_row(target.target))
-            .collect(),
-    );
-    families.push((model.mn_product_row(0)..model.ledger_row()).collect());
-    families.push(vec![model.escape_row(), model.collected_row()]);
-    families.push(vec![model.fuel_release_row()]);
-    families
-}
-
-struct RawPairComparator {
-    families: Vec<Vec<usize>>,
-}
-struct PairComparison {
-    local: LocalDiscrepancy,
-    family_ratio: f64,
-    observable_ratio: f64,
-    compared_families: usize,
-    negligible_families: usize,
-    raw_local_ratio: f64,
-    raw_family_ratio: f64,
-    nc_ratio: f64,
-    nc_worst: Option<(usize, usize, f64, f64, f64)>,
-}
-impl PairComparison {
-    fn failed(&self) -> bool {
-        self.local.ratio > 1.
-            || self.family_ratio > 1.
-            || self.observable_ratio > 1.
-            || self.nc_ratio > 1.
-    }
-    fn json(&self) -> String {
-        format!(
-            "{{\"comparisonScope\":\"one-common-time;not-full-pair\",\"accuracyPolicy\":\"source-consequences-1\",\"time\":{},\"local\":{},\"SUMABSFamilyPairRatio\":{},\"observablePairRatio\":{},\"comparedFamilyOutputs\":{},\"negligibleFamilyOutputs\":{},\"rawAtomCountDiagnostic\":{{\"localPairRatio\":{},\"SUMABSFamilyPairRatio\":{},\"admission\":false}},\"NCOperatorPairRatio\":{},\"worstNCOperator\":{}}}",
-            finite(self.local.time),
-            self.local.json(),
-            finite(self.family_ratio),
-            finite(self.observable_ratio),
-            self.compared_families,
-            self.negligible_families,
-            finite(self.raw_local_ratio),finite(self.raw_family_ratio),finite(self.nc_ratio),
-            self.nc_worst.map_or("null".into(), |(row,column,normal,tighter,scale)| format!("{{\"row\":{row},\"column\":{column},\"normal\":{},\"tighter\":{},\"rowScale\":{}}}",finite(normal),finite(tighter),finite(scale)))
-        )
-    }
-}
-impl RawPairComparator {
-    fn new(model: &Evolution) -> Self {
-        Self {
-            families: pair_families(model),
-        }
-    }
-    fn compare(&self, model: &Evolution, a: &Sample, b: &Sample) -> Result<PairComparison, String> {
-        if b.time <= 0. {
-            return Err("Invalid paired observable time".into());
-        }
-        let mut result = PairComparison {
-            local: local_discrepancy(model, a, b)?,
-            family_ratio: 0.,
-            observable_ratio: 0.,
-            compared_families: 0,
-            negligible_families: 0,
-            raw_local_ratio: 0.,
-            raw_family_ratio: 0.,
-            nc_ratio: 0.,
-            nc_worst: None,
-        };
-        // Native M/F receive the existing coordinate checks above.
-        // Also retain the OLD physical capture C=M+F comparison and
-        // its unchanged local and SUMABS-family thresholds.
-        if a.captured_targets.len() != b.captured_targets.len()
-            || a.captured_targets.len() != model.mn_product_row(0) - model.target_row(0)
-        {
-            return Err("Wrong common-output capture-consumption dimension".into());
-        }
-        let mut capture_error = 0.;
-        let mut capture_signal = 0.;
-        for (&x, &y) in a.captured_targets.iter().zip(&b.captured_targets) {
-            capture_error += (x - y).abs();
-            capture_signal += y.abs();
-        }
-        let capture_resolution = 20. * COUNT_ATOL * b.captured_targets.len() as f64;
-        if !capture_error.is_finite()
-            || !capture_signal.is_finite()
-            || !capture_resolution.is_finite()
-        {
-            return Err("Nonfinite capture-consumption comparison".into());
-        }
-        if capture_signal > 100. * capture_resolution {
-            result.compared_families += 1;
-            result.family_ratio = result.family_ratio.max(ratio(
-                capture_error,
-                1e-3 * capture_signal + capture_resolution,
-            )?);
-        } else {
-            result.negligible_families += 1;
-        }
-        for rows in &self.families {
-            let error = rows.iter().map(|&i| (a.y[i] - b.y[i]).abs()).sum::<f64>();
-            let signal = rows.iter().map(|&i| b.y[i].abs()).sum::<f64>();
-            let resolution = rows
-                .iter()
-                .map(|&i| {
-                    20. * if model.is_energy_row(i) {
-                        ENERGY_ATOL
-                    } else {
-                        COUNT_ATOL
-                    }
-                })
-                .sum::<f64>();
-            if !signal.is_finite() || !resolution.is_finite() || !error.is_finite() {
-                return Err("Nonfinite family comparison operand".into());
-            }
-            if signal > 100. * resolution {
-                result.compared_families += 1;
-                result.family_ratio = result
-                    .family_ratio
-                    .max(ratio(error, 1e-3 * signal + resolution)?);
-            } else {
-                result.negligible_families += 1;
-            }
-        }
-        for (x, y, absolute_resolution) in [
-            (
-                a.d.induced_fission_events_s,
-                b.d.induced_fission_events_s,
-                COUNT_ATOL,
-            ),
-            (a.d.escape_neutrons_s, b.d.escape_neutrons_s, COUNT_ATOL),
-            (a.d.collected_events_s, b.d.collected_events_s, COUNT_ATOL),
-            (a.d.capture_events_s, b.d.capture_events_s, COUNT_ATOL),
-            (a.d.cf_release_w, b.d.cf_release_w, ENERGY_ATOL),
-            (a.d.fuel_release_w, b.d.fuel_release_w, ENERGY_ATOL),
-            (
-                a.d.mn_electron_release_w,
-                b.d.mn_electron_release_w,
-                ENERGY_ATOL,
-            ),
-            (
-                a.d.mn_photon_release_w,
-                b.d.mn_photon_release_w,
-                ENERGY_ATOL,
-            ),
-        ] {
-            result.observable_ratio = result.observable_ratio.max(ratio(
-                (x - y).abs(),
-                1e-3 * y.abs() + 20. * absolute_resolution / b.time,
-            )?);
-        }
-        Ok(result)
-    }
-}
-
-// The old atom-count comparison remains evidence, not an admission rule for
-// coordinates explicitly replaced by the fixed provisional consequence table.
-struct PairComparator<'a> {
-    raw: RawPairComparator,
-    accuracy: &'a Accuracy,
-    families: Vec<Vec<usize>>,
-}
-impl<'a> PairComparator<'a> {
-    fn new(model: &Evolution, accuracy: &'a Accuracy) -> Self {
-        Self {
-            raw: RawPairComparator::new(model),
-            accuracy,
-            families: pair_families(model)
-                .into_iter()
-                .map(|rows| {
-                    rows.into_iter()
-                        .filter(|&r| !accuracy.affected(r))
-                        .collect()
-                })
-                .collect(),
-        }
-    }
-    fn compare(&self, model: &Evolution, a: &Sample, b: &Sample) -> Result<PairComparison, String> {
-        let mut result = self.raw.compare(model, a, b)?;
-        result.raw_local_ratio = result.local.ratio;
-        result.raw_family_ratio = result.family_ratio;
-        let mut selected = None;
-        for (i, (&x, &y)) in
-            a.y.iter()
-                .zip(&b.y)
-                .enumerate()
-                .filter(|(i, _)| !self.accuracy.affected(*i))
-        {
-            let atol = if model.is_energy_row(i) {
-                ENERGY_ATOL
-            } else {
-                COUNT_ATOL
-            };
-            let difference = (x - y).abs();
-            let bound = 1e-3 * y.abs() + 20. * atol;
-            let r = ratio(difference, bound)?;
-            if selected
-                .as_ref()
-                .is_none_or(|w: &LocalDiscrepancy| r > w.ratio)
-            {
-                selected = Some(LocalDiscrepancy {
-                    time: b.time,
-                    source: "strict-unaffected-native-row",
-                    index: i,
-                    family: local_family(model, i),
-                    normal: x,
-                    tighter: y,
-                    difference,
-                    bound,
-                    atol,
-                    ratio: r,
-                });
-            }
-        }
-        for c in self.accuracy.consequences(&a.y, &b.y, b.time)? {
-            if selected.as_ref().is_none_or(|w| c.ratio > w.ratio) {
-                selected = Some(LocalDiscrepancy {
-                    time: b.time,
-                    source: "selected-local-consequence",
-                    index: c.row,
-                    family: c.family,
-                    normal: c.normal,
-                    tighter: c.tighter,
-                    difference: c.difference,
-                    bound: c.bound,
-                    atol: if c.family == "remaining-donor-count" {
-                        COUNT_ATOL
-                    } else {
-                        ENERGY_ATOL
-                    },
-                    ratio: c.ratio,
-                });
-            }
-        }
-        result.local = selected.ok_or("Empty selected comparison")?;
-        result.family_ratio = 0.;
-        result.compared_families = 0;
-        result.negligible_families = 0;
-        for rows in &self.families {
-            if rows.is_empty() {
-                continue;
-            }
-            let error = rows.iter().map(|&r| (a.y[r] - b.y[r]).abs()).sum::<f64>();
-            let signal = rows.iter().map(|&r| b.y[r].abs()).sum::<f64>();
-            let resolution = rows
-                .iter()
-                .map(|&r| {
-                    20. * if model.is_energy_row(r) {
-                        ENERGY_ATOL
-                    } else {
-                        COUNT_ATOL
-                    }
-                })
-                .sum::<f64>();
-            if !error.is_finite() || !signal.is_finite() || !resolution.is_finite() {
-                return Err("Nonfinite selected family".into());
-            }
-            if signal > 100. * resolution {
-                result.compared_families += 1;
-                result.family_ratio = result
-                    .family_ratio
-                    .max(ratio(error, 1e-3 * signal + resolution)?);
-            } else {
-                result.negligible_families += 1;
-            }
-        }
-        let pattern = model.nc_pattern();
-        if a.nc_coefficients.len() != pattern.len() || b.nc_coefficients.len() != pattern.len() {
-            return Err("Wrong current NC coefficient comparison shape".into());
-        }
-        let mut row_scale = vec![0f64; model.nc_dimension()];
-        for ((&(row, _), &x), &y) in pattern
-            .iter()
-            .zip(&a.nc_coefficients)
-            .zip(&b.nc_coefficients)
-        {
-            if !x.is_finite() || !y.is_finite() {
-                return Err("Nonfinite current NC coefficient".into());
-            }
-            row_scale[row] = row_scale[row].max(x.abs()).max(y.abs());
-        }
-        for ((&(row, column), &x), &y) in pattern
-            .iter()
-            .zip(&a.nc_coefficients)
-            .zip(&b.nc_coefficients)
-        {
-            if !x.is_finite() {
-                return Err("Nonfinite normal NC coefficient".into());
-            }
-            let difference = (x - y).abs();
-            let r = if row_scale[row] == 0. {
-                if difference != 0. {
-                    return Err("Nonzero comparison against exact-zero NC row".into());
-                }
-                0.
-            } else {
-                ratio(difference, 1e-3 * row_scale[row])?
-            };
-            if result.nc_worst.is_none() || r > result.nc_ratio {
-                result.nc_ratio = r;
-                result.nc_worst = Some((row, column, x, y, row_scale[row]));
-            }
-        }
-        Ok(result)
-    }
-}
-
 fn check_schedule(samples: &[Sample]) -> Result<(), String> {
     if samples.len() != OUTPUTS.len()
         || samples
@@ -1471,8 +1026,8 @@ fn run(
                 if let Some(reference) = reference_samples {
                     let comparison = pair_comparator.as_ref().unwrap().compare(
                         model,
-                        &reference[sample - 1],
-                        out.samples.last().unwrap(),
+                        &reference[sample - 1].view(),
+                        &out.samples.last().unwrap().view(),
                     )?;
                     println!(
                         "{{\"kind\":\"partial-pair-comparison\",\"stateChart\":\"LDSRC-MNF\",\"fullPairQualified\":false,\"comparison\":{}}}",
@@ -1602,7 +1157,7 @@ fn diagnose_local(path: &str, end: &str, allowance: &str, started: Instant) -> R
     let mut worst: Option<LocalDiscrepancy> = None;
     if let Some(tighter) = &tighter {
         for (a, b) in normal.samples.iter().zip(&tighter.samples) {
-            let local = local_discrepancy(&model, a, b)?;
+            let local = local_discrepancy(&model, &a.view(), &b.view())?;
             println!(
                 "{{\"kind\":\"local-pair-discrepancy\",\"stateChart\":\"LDSRC-MNF\",\"diagnosticOnly\":true,\"worst\":{}}}",
                 local.json()
@@ -1749,7 +1304,7 @@ fn main_result(started: Instant) -> Result<(), String> {
             check_schedule(&normal.samples)?;
             check_schedule(&t.samples)?;
             for (a, b) in normal.samples.iter().zip(&t.samples) {
-                let comparison = comparator.compare(&model, a, b)?;
+                let comparison = comparator.compare(&model, &a.view(), &b.view())?;
                 max_local_ratio = max_local_ratio.max(comparison.local.ratio);
                 max_family_ratio = max_family_ratio.max(comparison.family_ratio);
                 max_observable_ratio = max_observable_ratio.max(comparison.observable_ratio);
@@ -1962,22 +1517,22 @@ mod tests {
         a.y[model.mn_product_row(0)] = 0.1;
         a.captured_targets = captured_targets(&model, &a.y).unwrap();
         b.captured_targets = captured_targets(&model, &b.y).unwrap();
-        let worst = local_discrepancy(&model, &a, &b).unwrap();
+        let worst = local_discrepancy(&model, &a.view(), &b.view()).unwrap();
         assert_eq!(worst.source, "derived-capture-target");
         assert_eq!(worst.index, target);
         assert_eq!(worst.time, 0.01);
         assert_eq!(worst.bound, 20. * COUNT_ATOL);
         assert_eq!(worst.ratio, 10.);
         a.y[0] = 1.;
-        let worst = local_discrepancy(&model, &a, &b).unwrap();
+        let worst = local_discrepancy(&model, &a.view(), &b.view()).unwrap();
         assert_eq!(worst.source, "native-state-row");
         assert_eq!(worst.index, 0);
         assert_eq!(worst.family, "neutrons");
         assert_eq!(worst.ratio, 50.);
         a.y[0] = f64::NAN;
-        assert!(local_discrepancy(&model, &a, &b).is_err());
+        assert!(local_discrepancy(&model, &a.view(), &b.view()).is_err());
         a.time = 1.;
-        assert!(local_discrepancy(&model, &a, &b).is_err());
+        assert!(local_discrepancy(&model, &a.view(), &b.view()).is_err());
     }
     #[test]
     fn shared_pair_comparator_stops_each_hard_failure_without_prefix_qualification() {
@@ -1992,12 +1547,34 @@ mod tests {
         };
         let mut a = make();
         let mut b = make();
-        assert!(!comparator.compare(&model, &a, &b).unwrap().failed());
+        assert!(
+            !comparator
+                .compare(&model, &a.view(), &b.view())
+                .unwrap()
+                .failed()
+        );
         a.y[0] = 20. * COUNT_ATOL;
-        assert_eq!(comparator.compare(&model, &a, &b).unwrap().local.ratio, 1.);
-        assert!(!comparator.compare(&model, &a, &b).unwrap().failed());
+        assert_eq!(
+            comparator
+                .compare(&model, &a.view(), &b.view())
+                .unwrap()
+                .local
+                .ratio,
+            1.
+        );
+        assert!(
+            !comparator
+                .compare(&model, &a.view(), &b.view())
+                .unwrap()
+                .failed()
+        );
         a.y[0] *= 1.001;
-        assert!(comparator.compare(&model, &a, &b).unwrap().failed());
+        assert!(
+            comparator
+                .compare(&model, &a.view(), &b.view())
+                .unwrap()
+                .failed()
+        );
         // Aggregate and observable checks retain their independently chosen
         // thresholds. They do not establish any full-horizon completion.
         a = make();
@@ -2009,26 +1586,26 @@ mod tests {
             *x = 1002.;
             *y = 1000.;
         }
-        let comparison = comparator.compare(&model, &a, &b).unwrap();
+        let comparison = comparator.compare(&model, &a.view(), &b.view()).unwrap();
         assert!(comparison.family_ratio > 1.);
         assert!(comparison.failed());
         a = make();
         b = make();
         a.d.fuel_release_w = 20. * ENERGY_ATOL;
-        let comparison = comparator.compare(&model, &a, &b).unwrap();
+        let comparison = comparator.compare(&model, &a.view(), &b.view()).unwrap();
         assert_eq!(comparison.observable_ratio, 1.);
         assert!(!comparison.failed());
         a.d.fuel_release_w *= 1.001;
-        let comparison = comparator.compare(&model, &a, &b).unwrap();
+        let comparison = comparator.compare(&model, &a.view(), &b.view()).unwrap();
         assert_eq!(comparison.local.ratio, 0.);
         assert!(comparison.failed());
         assert!(comparison.json().contains("one-common-time;not-full-pair"));
         a.d.fuel_release_w = f64::NAN;
-        assert!(comparator.compare(&model, &a, &b).is_err());
+        assert!(comparator.compare(&model, &a.view(), &b.view()).is_err());
         a = make();
         b = make();
         b.time = 2.;
-        assert!(comparator.compare(&model, &a, &b).is_err());
+        assert!(comparator.compare(&model, &a.view(), &b.view()).is_err());
     }
     #[test]
     fn provisional_consequences_replace_only_selected_counts_and_tighten_all_atols() {
@@ -2070,31 +1647,61 @@ mod tests {
         a.y[model.target_row(1)] = 0.03;
         a.captured_targets = captured_targets(&model, &a.y).unwrap();
         let comparator = PairComparator::new(&model, &accuracy);
-        let result = comparator.compare(&model, &a, &b).unwrap();
+        let result = comparator.compare(&model, &a.view(), &b.view()).unwrap();
         assert!(result.raw_local_ratio > 1.);
         assert!(!result.failed());
         assert!(result.json().contains("\"admission\":false"));
         // Unaffected neutron, Fe product, and observable checks still refuse.
         a.y[0] = 0.021;
-        assert!(comparator.compare(&model, &a, &b).unwrap().failed());
+        assert!(
+            comparator
+                .compare(&model, &a.view(), &b.view())
+                .unwrap()
+                .failed()
+        );
         a = make();
         a.y[model.mn_product_row(0)] = 0.021;
         a.captured_targets = captured_targets(&model, &a.y).unwrap();
-        assert!(comparator.compare(&model, &a, &b).unwrap().failed());
+        assert!(
+            comparator
+                .compare(&model, &a.view(), &b.view())
+                .unwrap()
+                .failed()
+        );
         // Coefficient row normalization is explicit; an all-zero tight row
         // has no artificial relative denominator.
         a = make();
         b = make();
         a.nc_coefficients[0] += 10. * b.nc_coefficients[0].abs() + 1.;
-        assert!(comparator.compare(&model, &a, &b).unwrap().nc_ratio > 1.);
+        assert!(
+            comparator
+                .compare(&model, &a.view(), &b.view())
+                .unwrap()
+                .nc_ratio
+                > 1.
+        );
         a = make();
         b = make();
         b.nc_coefficients.fill(0.);
-        assert!((comparator.compare(&model, &a, &b).unwrap().nc_ratio - 1000.).abs() < 1e-10);
+        assert!(
+            (comparator
+                .compare(&model, &a.view(), &b.view())
+                .unwrap()
+                .nc_ratio
+                - 1000.)
+                .abs()
+                < 1e-10
+        );
         a.nc_coefficients.fill(0.);
-        assert_eq!(comparator.compare(&model, &a, &b).unwrap().nc_ratio, 0.);
+        assert_eq!(
+            comparator
+                .compare(&model, &a.view(), &b.view())
+                .unwrap()
+                .nc_ratio,
+            0.
+        );
         a.nc_coefficients[0] = f64::NAN;
-        assert!(comparator.compare(&model, &a, &b).is_err());
+        assert!(comparator.compare(&model, &a.view(), &b.view()).is_err());
     }
     #[test]
     fn persisted_common_states_are_distinct_y_only_interpolants() {

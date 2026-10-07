@@ -1,4 +1,7 @@
-//! Complete analytic fixed-geometry source Jacobian. Incidence compiles once;
+//! Analytic source-state Jacobian at held supplied thermal/carrier inputs.
+//! Coupled thermal/carrier columns are in Evolution's complete chain JVP;
+//! this matrix is not a claim of a complete joined-system Jacobian.
+//! Incidence compiles once;
 //! numeric assembly visits local laws, not global unit-vector probes. The
 //! independent event ledger is assembled before the solver-only basis change.
 use super::*;
@@ -33,6 +36,9 @@ impl Jacobian {
             .iter()
             .zip(&model.input.row_map)
         {
+            if model.closed_water[m.owner].is_none() {
+                continue;
+            }
             for g in 0..GROUPS {
                 if model.input.moderator.law().absorption[g] != 0. && m.h_fraction != 0. {
                     collision_terms.push((e.region, g, model.water_row(m.owner, false)));
@@ -339,28 +345,30 @@ impl Jacobian {
                 } else {
                     (0., 0., 0., 0., 0.)
                 };
-                for (col, change, active) in [
-                    (
-                        model.water_row(m.owner, false),
-                        dh,
-                        model.input.moderator.law().absorption[g] != 0. && m.h_fraction != 0.,
-                    ),
-                    (
-                        model.water_row(m.owner, true),
-                        db,
-                        model.input.moderator.law().boron_sigma[g] != 0. && m.b_fraction != 0.,
-                    ),
-                ] {
-                    if !active {
-                        continue;
+                if model.closed_water[m.owner].is_some() {
+                    for (col, change, active) in [
+                        (
+                            model.water_row(m.owner, false),
+                            dh,
+                            model.input.moderator.law().absorption[g] != 0. && m.h_fraction != 0.,
+                        ),
+                        (
+                            model.water_row(m.owner, true),
+                            db,
+                            model.input.moderator.law().boron_sigma[g] != 0. && m.b_fraction != 0.,
+                        ),
+                    ] {
+                        if !active {
+                            continue;
+                        }
+                        collision_add(change / speed[g]);
+                        emit(n, col, -change * population);
+                        emit(col, col, change * population);
+                        emit(model.ledger_row(), col, -change * population);
                     }
-                    collision_add(change / speed[g]);
-                    emit(n, col, -change * population);
-                    emit(col, col, change * population);
-                    emit(model.ledger_row(), col, -change * population);
+                    emit(model.water_row(m.owner, false), n, h);
+                    emit(model.water_row(m.owner, true), n, b);
                 }
-                emit(model.water_row(m.owner, false), n, h);
-                emit(model.water_row(m.owner, true), n, b);
                 emit(model.ledger_row(), n, -h - b);
             }
         }

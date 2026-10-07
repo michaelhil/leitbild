@@ -132,7 +132,11 @@ impl Accuracy {
                     "water-B-binding-emission",
                 ),
             ] {
-                let row = model.water_row(owner, boron);
+                // External primary products are owned and assessed by the
+                // coupled carrier, not duplicated in this source-only view.
+                let Some(row) = model.closed_water_row(owner, boron) else {
+                    continue;
+                };
                 let q = emission[0] + emission[1];
                 policy.replace(row, reference, q)?;
                 policy.channel(vec![row], q, family, false)?;
@@ -283,6 +287,9 @@ impl Accuracy {
 }
 
 #[cfg(test)]
+#[path = "../tests/source_evolution.rs"]
+mod source_fixture;
+#[cfg(test)]
 mod tests {
     use super::*;
     #[test]
@@ -372,7 +379,7 @@ mod tests {
         let result = policy.consequences(&[11., 9.], &[10., 10.], 1.).unwrap();
         assert_eq!(result.len(), 2);
         assert!(result.iter().all(|c| c.ratio > 1.));
-        let mut input = crate::source_stage::fixture::input();
+        let mut input = super::source_fixture::input();
         input.mn[0].electron_j = f64::from_bits(1);
         input.mn[0].photon_j = 0.;
         input.mn[0].decay_rate = 1e-100;

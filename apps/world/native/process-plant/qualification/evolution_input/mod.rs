@@ -121,6 +121,7 @@ pub(crate) fn parse(text: &str) -> Prepared {
         .map(|_| {
             let [hydrogen, hydrogen_product, boron, boron_product] = array(&mut w);
             source_evolution::WaterOwner {
+                authority: source_evolution::WaterAuthority::Closed,
                 hydrogen,
                 hydrogen_product,
                 boron,
@@ -135,6 +136,7 @@ pub(crate) fn parse(text: &str) -> Prepared {
             owner: count(&mut w),
             h_fraction: number(&mut w),
             b_fraction: number(&mut w),
+            volume_fraction: 0., // CLOSED boundary: amount fractions own projection.
         })
         .collect();
     assert!(w.next().is_none(), "Trailing water-owner frame");

@@ -130,6 +130,7 @@ pub(crate) fn input() -> Input {
             2
         ],
         water_owners: vec![WaterOwner {
+            authority: WaterAuthority::Closed,
             hydrogen: 100000.,
             hydrogen_product: 0.,
             boron: 1000.,
@@ -139,7 +140,8 @@ pub(crate) fn input() -> Input {
             WaterRow {
                 owner: 0,
                 h_fraction: 0.4,
-                b_fraction: 0.4
+                b_fraction: 0.4,
+                volume_fraction: 0.
             };
             2
         ],
@@ -282,6 +284,265 @@ fn immutable_physics_accounts_preserve_owned_refs_and_event_budgets() {
     empty
         .validate_accepted_state(&empty.initial_state())
         .unwrap();
+}
+
+fn coupled_input() -> Input {
+    let mut p = input();
+    let mut external = p.water_owners[0];
+    external.authority = WaterAuthority::External { index: 0 };
+    p.water_owners.push(external);
+    p.row_map[1].owner = 1;
+    p.row_map[1].h_fraction = 0.;
+    p.row_map[1].b_fraction = 0.;
+    p.row_map[1].volume_fraction = 0.4;
+    p
+}
+fn external_stock() -> ms::Stocks {
+    ms::Stocks {
+        water_mass: 1250.,
+        liquid_volume: 1.25,
+        hydrogen_target: 100000.,
+        hydrogen_product: 0.,
+        mobile_boron10: 1000.,
+    }
+}
+fn stock_add(s: ms::Stocks, d: ms::Stocks, h: f64) -> ms::Stocks {
+    ms::Stocks {
+        water_mass: s.water_mass + h * d.water_mass,
+        liquid_volume: s.liquid_volume + h * d.liquid_volume,
+        hydrogen_target: s.hydrogen_target + h * d.hydrogen_target,
+        hydrogen_product: s.hydrogen_product + h * d.hydrogen_product,
+        mobile_boron10: s.mobile_boron10 + h * d.mobile_boron10,
+    }
+}
+
+#[test]
+fn external_water_has_one_owner_and_exact_capture_receipts() {
+    let closed = Evolution::new(input()).unwrap();
+    let coupled = Evolution::new(coupled_input()).unwrap();
+    assert_eq!(closed.state_count(), coupled.state_count()); // one CLOSED owner in both
+    assert_eq!(coupled.closed_water_row(1, false), None);
+    let mut y = coupled.initial_state();
+    y[..coupled.nc_dimension()].fill(2.);
+    let mut w = coupled.workspace();
+    assert!(coupled.evaluate_into(&y, &mut w).is_err());
+    coupled
+        .evaluate_coupled_into(&y, &[400.], &[external_stock()], &mut w)
+        .unwrap();
+    let mut cw = closed.workspace();
+    closed.evaluate_into(&y, &mut cw).unwrap();
+    for i in 0..coupled.nc_dimension() {
+        close(w.rates().unwrap()[i], cw.rates().unwrap()[i]);
+    }
+    let external = w.external_water_events().unwrap()[0];
+    close(
+        w.rates().unwrap()[coupled.water_row(0, false)] + external.hydrogen,
+        cw.rates().unwrap()[closed.water_row(0, false)],
+    );
+    close(
+        w.rates().unwrap()[coupled.water_row(0, true)] + external.boron,
+        cw.rates().unwrap()[closed.water_row(0, true)],
+    );
+    close(external.emitted_charged, external.boron * 2.);
+    close(
+        external.emitted_photon,
+        external.hydrogen * 2. + external.boron * 0.4,
+    );
+    close(
+        w.fuel_deposition().unwrap().iter().sum(),
+        w.diagnostics().unwrap().fuel_release_w,
+    );
+    let mut all_external = input();
+    all_external.water_owners[0].authority = WaterAuthority::External { index: 0 };
+    for r in &mut all_external.row_map {
+        r.h_fraction = 0.;
+        r.b_fraction = 0.;
+        r.volume_fraction = 0.4;
+    }
+    let all_external = Evolution::new(all_external).unwrap();
+    assert_eq!(all_external.state_count() + 2, closed.state_count());
+    assert_eq!(all_external.target_row(0), all_external.history_dimension());
+}
+
+#[test]
+fn coupled_temperature_and_material_chain_jvp_matches_full_half_differences() {
+    let m = Evolution::new(coupled_input()).unwrap();
+    let mut y = state(&m);
+    // Keep positive resolved N/C and finite signed history directions.
+    y[..m.nc_dimension()].fill(3.);
+    let dy = (0..m.state_count())
+        .map(|i| 0.001 * ((i % 7) as f64 - 3.))
+        .collect::<Vec<_>>();
+    let t = [420.];
+    let dt = [0.7];
+    let water = [external_stock()];
+    let ds = [ms::Stocks {
+        water_mass: 0.3,
+        liquid_volume: 0.,
+        hydrogen_target: 2.,
+        hydrogen_product: 0.2,
+        mobile_boron10: 0.05,
+    }];
+    let mut w = m.workspace();
+    m.evaluate_coupled_into(&y, &t, &water, &mut w).unwrap();
+    m.jvp_coupled_into(&dy, &dt, &ds, &mut w).unwrap();
+    let analytic = w.rate_jvp().unwrap().to_vec();
+    let heat = w.fuel_deposition_jvp().unwrap().to_vec();
+    let e = w.external_water_event_jvp().unwrap()[0];
+    close(heat.iter().sum(), analytic[m.fuel_release_row()]);
+    for h in [1e-3, 5e-4] {
+        let yp = y
+            .iter()
+            .zip(&dy)
+            .map(|(v, d)| v + h * d)
+            .collect::<Vec<_>>();
+        let yn = y
+            .iter()
+            .zip(&dy)
+            .map(|(v, d)| v - h * d)
+            .collect::<Vec<_>>();
+        let mut p = m.workspace();
+        let mut n = m.workspace();
+        m.evaluate_coupled_into(
+            &yp,
+            &[t[0] + h * dt[0]],
+            &[stock_add(water[0], ds[0], h)],
+            &mut p,
+        )
+        .unwrap();
+        m.evaluate_coupled_into(
+            &yn,
+            &[t[0] - h * dt[0]],
+            &[stock_add(water[0], ds[0], -h)],
+            &mut n,
+        )
+        .unwrap();
+        let check = |a: f64, b: f64| {
+            assert!(
+                (a - b).abs() <= 2e-6 * a.abs().max(b.abs()).max(1e-5),
+                "{a:e} != {b:e}"
+            )
+        };
+        for (&a, (&up, &down)) in analytic
+            .iter()
+            .zip(p.rates().unwrap().iter().zip(n.rates().unwrap()))
+        {
+            check(a, (up - down) / (2. * h));
+        }
+        for (&a, (&up, &down)) in heat.iter().zip(
+            p.fuel_deposition()
+                .unwrap()
+                .iter()
+                .zip(n.fuel_deposition().unwrap()),
+        ) {
+            check(a, (up - down) / (2. * h));
+        }
+        let ep = p.external_water_events().unwrap()[0];
+        let en = n.external_water_events().unwrap()[0];
+        for (a, up, down) in [
+            (e.hydrogen, ep.hydrogen, en.hydrogen),
+            (e.boron, ep.boron, en.boron),
+            (e.emitted_charged, ep.emitted_charged, en.emitted_charged),
+            (e.emitted_photon, ep.emitted_photon, en.emitted_photon),
+        ] {
+            check(a, (up - down) / (2. * h));
+        }
+    }
+    // State-only sparse Jacobian is held at the SAME external inputs; omitted
+    // thermal/carrier columns belong to the coupled JVP, never a claimed full CSC.
+    m.jvp_coupled_into(&dy, &[0.], &[stock_add(ds[0], ds[0], -1.)], &mut w)
+        .unwrap();
+    let j = Jacobian::new(&m).unwrap();
+    let mut values = vec![0.; j.pattern().len()];
+    j.values(&m, &mut w, 1., &mut values).unwrap();
+    let mut product = vec![0.; m.state_count()];
+    for (&(r, c), a) in j.pattern().iter().zip(values) {
+        product[r] -= a * dy[c];
+    }
+    for (p, d) in product.iter_mut().zip(&dy) {
+        *p += d;
+    }
+    for (&a, &b) in product.iter().zip(w.rate_jvp().unwrap()) {
+        close(a, b);
+    }
+}
+
+#[test]
+fn coupled_cache_keys_all_consumed_inputs_and_failure_invalidates() {
+    let m = Evolution::new(coupled_input()).unwrap();
+    let mut y = m.initial_state();
+    y[..m.nc_dimension()].fill(1.);
+    let mut w = m.workspace();
+    let mut s = external_stock();
+    m.evaluate_coupled_into(&y, &[400.], &[s], &mut w).unwrap();
+    let first = w.rates().unwrap().to_vec();
+    s.water_mass *= 0.9;
+    m.evaluate_coupled_into(&y, &[400.], &[s], &mut w).unwrap();
+    assert_ne!(w.rates().unwrap()[7], first[7]);
+    let material = w.rates().unwrap().to_vec();
+    m.evaluate_coupled_into(&y, &[500.], &[s], &mut w).unwrap();
+    assert_ne!(w.rates().unwrap()[2], material[2]); // selected resonance groups 3/4
+    assert!(m.evaluate_coupled_into(&y, &[500.], &[], &mut w).is_err());
+    assert!(w.rates().is_err());
+    m.evaluate_coupled_into(&y, &[500.], &[s], &mut w).unwrap();
+    let foreign = Evolution::new(coupled_input()).unwrap();
+    assert!(
+        foreign
+            .evaluate_coupled_into(&y, &[500.], &[s], &mut w)
+            .is_err()
+    );
+    let mut bad = coupled_input();
+    bad.water_owners[1].authority = WaterAuthority::External { index: 1 };
+    assert!(Evolution::new(bad).is_err());
+    let mut bad = coupled_input();
+    bad.row_map[1].volume_fraction = 0.;
+    assert!(Evolution::new(bad).is_err());
+}
+
+#[test]
+fn water_preparation_uses_only_its_authoritative_projection() {
+    let mut prepared = coupled_input();
+    prepared.water_owners[1].hydrogen_product = 100.;
+    prepared.water_rows[1].hydrogen_product = 40.;
+    Evolution::new(prepared).unwrap();
+
+    for field in 0..3 {
+        let mut bad = coupled_input();
+        match field {
+            0 => bad.water_rows[1].hydrogen_target *= 0.9,
+            1 => bad.water_rows[1].hydrogen_product = 1.,
+            _ => bad.water_rows[1].mobile_boron10 *= 0.9,
+        }
+        assert!(Evolution::new(bad).is_err());
+    }
+    for hydrogen in [true, false] {
+        let mut ambiguous = coupled_input();
+        if hydrogen {
+            ambiguous.row_map[1].h_fraction = 0.4;
+        } else {
+            ambiguous.row_map[1].b_fraction = 0.4;
+        }
+        assert!(Evolution::new(ambiguous).is_err());
+    }
+    let mut closed_with_volume = input();
+    closed_with_volume.row_map[0].volume_fraction = 0.4;
+    assert!(Evolution::new(closed_with_volume).is_err());
+    let mut closed_mismatch = input();
+    closed_mismatch.row_map[0].h_fraction = 0.3;
+    assert!(Evolution::new(closed_mismatch).is_err());
+    for invalid in [f64::INFINITY, f64::NAN, -1.] {
+        for field in 0..5 {
+            let mut bad = coupled_input();
+            match field {
+                0 => bad.water_rows[1].water_mass = invalid,
+                1 => bad.water_rows[1].liquid_volume = invalid,
+                2 => bad.water_rows[1].hydrogen_target = invalid,
+                3 => bad.water_rows[1].hydrogen_product = invalid,
+                _ => bad.water_rows[1].mobile_boron10 = invalid,
+            }
+            assert!(Evolution::new(bad).is_err());
+        }
+    }
 }
 
 #[test]
@@ -436,10 +697,11 @@ fn full_jvp_and_nc_block_match_actual_forward_operator() {
 fn complete_sparse_jacobian_preserves_full_couplings_and_solver_basis() {
     let m = Evolution::new(input()).unwrap();
     let j = Jacobian::new(&m).unwrap();
-    assert!(j
-        .pattern()
-        .windows(2)
-        .all(|p| (p[0].1, p[0].0) < (p[1].1, p[1].0)));
+    assert!(
+        j.pattern()
+            .windows(2)
+            .all(|p| (p[0].1, p[0].0) < (p[1].1, p[1].0))
+    );
     let mut w = m.workspace();
     let mut values = vec![0.; j.pattern().len()];
     for y in [m.initial_state(), state(&m)] {

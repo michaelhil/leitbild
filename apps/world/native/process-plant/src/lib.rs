@@ -18,7 +18,11 @@ pub mod transport_source;
 pub mod original_water;
 pub mod primary_constraints;
 pub mod operating_network;
+pub mod operating_admission;
 pub mod heat_history;
+pub mod water_carrier;
+pub mod fuel_thermal;
+pub mod source_cooling;
 pub mod sg_secondary;
 
 pub const GRAVITY: f64 = 9.80665;

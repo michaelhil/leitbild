@@ -483,8 +483,8 @@ pub struct Workspace {
     queries: Vec<LiquidQuery>,
     probe_queries: Vec<LiquidQuery>,
     probes: Vec<Liquid>,
-    // mu_p,mu_T,k_p,k_T,a_p,a_T,b_p,b_T; bounded LOCAL property probes only.
-    local_derivatives: Vec<[f64; 8]>,
+    // mu_p,mu_T,k_p,k_T,a_p,a_T,b_p,b_T,cp_p,cp_T; bounded LOCAL probes.
+    local_derivatives: Vec<[f64; 10]>,
 }
 fn chart(w: Water, l: Liquid, p: f64, t: f64) -> Result<([f64; 4], [f64; 2]), String> {
     let m = w.geometry.volume * l.density;
@@ -541,8 +541,15 @@ impl Workspace {
                 4 * nw
             ],
             probes: vec![Liquid::default(); 4 * nw],
-            local_derivatives: vec![[0.; 8]; nw],
+            local_derivatives: vec![[0.; 10]; nw],
         }
+    }
+    /// Same retained local property probes used by the network Jacobian.
+    /// Caller must have evaluated this workspace with cj=Some at this trial.
+    /// Return viscosity, conductivity and cp directions; no second EOS call.
+    pub fn film_property_direction(&self, node: usize, dp: f64, dt: f64) -> [f64; 3] {
+        let d = self.local_derivatives[node];
+        [d[0]*dp+d[1]*dt,d[2]*dp+d[3]*dt,d[8]*dp+d[9]*dt]
     }
     fn add(&mut self, n: &Network, row: usize, col: usize, v: f64) {
         let start = n.column_pointers[col] as usize;
@@ -681,6 +688,8 @@ impl Workspace {
                     (ab[2][0] - ab[3][0]) / dt,
                     (ab[0][1] - ab[1][1]) / dp,
                     (ab[2][1] - ab[3][1]) / dt,
+                    (a.cp - b.cp) / dp,
+                    (c.cp - d.cp) / dt,
                 ];
             }
         }

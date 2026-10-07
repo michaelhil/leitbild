@@ -112,6 +112,14 @@ pub struct Workspace {
     direction_valid: bool,
 }
 impl Workspace {
+    pub fn achieved_events(&self) -> Result<&[[f64; 2]], &'static str> {
+        self.check()?;
+        Ok(&self.events)
+    }
+    pub fn achieved_event_jvp(&self) -> Result<&[[f64; 2]], &'static str> {
+        self.check_direction()?;
+        Ok(&self.event_direction)
+    }
     pub fn fuel_coefficients(&self) -> Result<&[f64], &'static str> {
         self.check()?;
         Ok(self.fuel.coefficients())
@@ -206,6 +214,9 @@ impl Assembly {
     pub fn fission_energy(&self) -> f64 {
         // The heat kernel owns this exact event budget.
         self.heat.fission_energy()
+    }
+    pub fn prompt_fission_energy(&self) -> f64 {
+        self.prompt_fission_energy
     }
     pub fn cf_decay_rate(&self) -> f64 {
         self.cf.decay_rate

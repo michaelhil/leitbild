@@ -1,6 +1,8 @@
-//! Birth-driven represented source at fixed ORIGINAL geometry/temperature.
-//! All represented finite targets and fuel histories evolve. No thermal bath,
-//! deposited-heat state, acquired detector, live plant or production-mesh claim.
+//! Birth-driven represented source at fixed ORIGINAL geometry. Closed callers
+//! supply the prepared temperature boundary; coupled callers supply actual
+//! same-trial fuel temperatures and externally owned primary-water stocks.
+//! No thermal bath, deposited-heat state, acquired detector, live plant or
+//! production-mesh claim. Achieved deposition receipts have explicit scope.
 //! IDA is external; this file owns reusable RHS/JVP and a sparse N/C
 //! preconditioning block, never a second time integrator.
 use crate::{
@@ -15,7 +17,13 @@ mod jacobian;
 pub use jacobian::Jacobian;
 
 #[derive(Clone, Copy, Debug)]
+pub enum WaterAuthority {
+    Closed,
+    External { index: usize },
+}
+#[derive(Clone, Copy, Debug)]
 pub struct WaterOwner {
+    pub authority: WaterAuthority,
     pub hydrogen: f64,
     pub hydrogen_product: f64,
     pub boron: f64,
@@ -24,8 +32,12 @@ pub struct WaterOwner {
 #[derive(Clone, Copy, Debug)]
 pub struct WaterRow {
     pub owner: usize,
+    /// Closed-owner amount fractions; both must be zero for external owners.
     pub h_fraction: f64,
     pub b_fraction: f64,
+    /// Geometric fraction of an external physical cell, not a renormalized
+    /// fraction of its source-represented material.
+    pub volume_fraction: f64,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct MnTarget {
@@ -36,6 +48,7 @@ pub struct MnTarget {
 }
 pub struct Input {
     pub history: fh::Assembly,
+    /// Prepared closed-boundary temperatures and coupled input shape.
     pub temperatures: Vec<f64>,
     pub moderator: ms::ModeratorModel,
     pub water_rows: Vec<ms::Stocks>,
@@ -79,6 +92,10 @@ pub struct Balances {
 }
 pub struct Evolution {
     input: Input,
+    closed_water: Vec<Option<usize>>,
+    closed_water_count: usize,
+    external_water_count: usize,
+    zero_temperature: Vec<f64>,
     // Fixed physical ownership: Mn targets use direct Mn56 + Fe inventories,
     // other targets retain cumulative capture progress.
     mn_owner: Vec<Option<usize>>,
@@ -101,7 +118,13 @@ pub struct Workspace {
     optical_inputs: Vec<ts::OpticalInput>,
     history_state: Vec<f64>,
     history_direction: Vec<f64>,
-    zero_temperature: Vec<f64>,
+    temperatures: Vec<f64>,
+    segment_release: Vec<f64>,
+    external_water: Vec<ms::Stocks>,
+    external_events: Vec<ms::Events>,
+    external_event_direction: Vec<ms::Events>,
+    fuel_deposition: Vec<f64>,
+    fuel_deposition_direction: Vec<f64>,
     state: Vec<f64>,
     rates: Vec<f64>,
     jvp: Vec<f64>,
@@ -124,6 +147,31 @@ pub struct Workspace {
     owner: Arc<()>,
 }
 impl Workspace {
+    /// Achieved captures debit the externally owned carrier exactly once.
+    pub fn external_water_events(&self) -> Result<&[ms::Events], &'static str> {
+        self.check()?;
+        Ok(&self.external_events)
+    }
+    pub fn external_water_event_jvp(&self) -> Result<&[ms::Events], &'static str> {
+        self.check()?;
+        if !self.jvp_valid {
+            return Err("Invalid source JVP candidate");
+        }
+        Ok(&self.external_event_direction)
+    }
+    /// Only the selected prompt-fission/E25 release path. Other binding,
+    /// activation and capsule emissions are NOT silently deposited here.
+    pub fn fuel_deposition(&self) -> Result<&[f64], &'static str> {
+        self.check()?;
+        Ok(&self.fuel_deposition)
+    }
+    pub fn fuel_deposition_jvp(&self) -> Result<&[f64], &'static str> {
+        self.check()?;
+        if !self.jvp_valid {
+            return Err("Invalid source JVP candidate");
+        }
+        Ok(&self.fuel_deposition_direction)
+    }
     pub fn rates(&self) -> Result<&[f64], &'static str> {
         self.check()?;
         Ok(&self.rates)
@@ -167,7 +215,10 @@ impl Workspace {
                 .sum::<usize>()
             + (self.history_state.len()
                 + self.history_direction.len()
-                + self.zero_temperature.len()
+                + self.temperatures.len()
+                + self.segment_release.len()
+                + self.fuel_deposition.len()
+                + self.fuel_deposition_direction.len()
                 + self.state.len()
                 + self.rates.len()
                 + self.jvp.len()
@@ -185,13 +236,34 @@ impl Workspace {
                 * std::mem::size_of::<[f64; GROUPS]>()
             + self.water.len() * std::mem::size_of::<ms::Stocks>()
             + self.water_events.len() * std::mem::size_of::<ms::Events>()
+            + (self.external_events.len() + self.external_event_direction.len())
+                * std::mem::size_of::<ms::Events>()
+            + self.external_water.len() * std::mem::size_of::<ms::Stocks>()
     }
 }
 fn nn(x: f64) -> bool {
     x.is_finite() && x >= 0.
 }
 fn close(a: f64, b: f64) -> bool {
-    (a - b).abs() <= 4e-11 * a.abs().max(b.abs()).max(1e-30)
+    a.is_finite() && b.is_finite() && (a - b).abs() <= 4e-11 * a.abs().max(b.abs()).max(1e-30)
+}
+fn stock_bits(s: &ms::Stocks) -> [u64; 5] {
+    [
+        s.water_mass.to_bits(),
+        s.liquid_volume.to_bits(),
+        s.hydrogen_target.to_bits(),
+        s.hydrogen_product.to_bits(),
+        s.mobile_boron10.to_bits(),
+    ]
+}
+fn scaled_stock(s: &ms::Stocks, f: f64) -> ms::Stocks {
+    ms::Stocks {
+        water_mass: f * s.water_mass,
+        liquid_volume: f * s.liquid_volume,
+        hydrogen_target: f * s.hydrogen_target,
+        hydrogen_product: f * s.hydrogen_product,
+        mobile_boron10: f * s.mobile_boron10,
+    }
 }
 impl Evolution {
     pub fn new(input: Input) -> Result<Self, &'static str> {
@@ -213,27 +285,80 @@ impl Evolution {
         }
         let mut hs = vec![0.; input.water_owners.len()];
         let mut bs = hs.clone();
+        let mut vs = hs.clone();
+        let mut external_indexes = BTreeSet::new();
+        let mut closed_water = vec![None; input.water_owners.len()];
+        let mut closed_water_count = 0;
+        for (i, o) in input.water_owners.iter().enumerate() {
+            if ![o.hydrogen, o.hydrogen_product, o.boron, o.boron_product]
+                .iter()
+                .all(|x| nn(*x))
+                || o.hydrogen <= 0.
+            {
+                return Err("Invalid physical water preparation");
+            }
+            match o.authority {
+                WaterAuthority::Closed => {
+                    closed_water[i] = Some(closed_water_count);
+                    closed_water_count += 1;
+                }
+                WaterAuthority::External { index } => {
+                    if !external_indexes.insert(index) {
+                        return Err("Duplicate external water owner");
+                    }
+                }
+            }
+        }
+        if external_indexes
+            .iter()
+            .copied()
+            .ne(0..external_indexes.len())
+        {
+            return Err("External water indexes must be complete and contiguous");
+        }
         for (r, m) in input.water_rows.iter().zip(&input.row_map) {
-            if m.owner >= hs.len() || !nn(m.h_fraction) || !nn(m.b_fraction) {
+            if m.owner >= hs.len()
+                || !nn(m.h_fraction)
+                || !nn(m.b_fraction)
+                || !nn(m.volume_fraction)
+                || ![
+                    r.water_mass,
+                    r.liquid_volume,
+                    r.hydrogen_target,
+                    r.hydrogen_product,
+                    r.mobile_boron10,
+                ]
+                .iter()
+                .all(|&x| nn(x))
+                || r.water_mass <= 0.
+                || r.liquid_volume <= 0.
+            {
                 return Err("Invalid water owner incidence");
             }
             let o = input.water_owners[m.owner];
-            if ![o.hydrogen, o.hydrogen_product, o.boron, o.boron_product]
-                .iter()
-                .all(|&x| nn(x))
-                || o.hydrogen <= 0.
-                || !close(r.hydrogen_target, m.h_fraction * o.hydrogen)
-                || !close(r.hydrogen_product, m.h_fraction * o.hydrogen_product)
-                || !close(r.mobile_boron10, m.b_fraction * o.boron)
+            let (h_fraction, b_fraction) = match o.authority {
+                WaterAuthority::Closed if m.volume_fraction == 0. => (m.h_fraction, m.b_fraction),
+                WaterAuthority::External { .. }
+                    if m.volume_fraction > 0. && m.h_fraction == 0. && m.b_fraction == 0. =>
+                {
+                    (m.volume_fraction, m.volume_fraction)
+                }
+                _ => return Err("Water row projection does not match its authority"),
+            };
+            if !close(r.hydrogen_target, h_fraction * o.hydrogen)
+                || !close(r.hydrogen_product, h_fraction * o.hydrogen_product)
+                || !close(r.mobile_boron10, b_fraction * o.boron)
             {
                 return Err("Water owner totals/fractions mismatch");
             }
             hs[m.owner] += m.h_fraction;
             bs[m.owner] += m.b_fraction;
+            vs[m.owner] += m.volume_fraction;
         }
         if hs
             .iter()
             .chain(&bs)
+            .chain(&vs)
             .any(|x| !x.is_finite() || *x > 1. + 4e-11)
         {
             return Err("Water source incidence exceeds full owner");
@@ -323,8 +448,13 @@ impl Evolution {
         for (i, m) in input.mn.iter().enumerate() {
             mn_owner[m.target] = Some(i);
         }
+        let zero_temperature = vec![0.; input.temperatures.len()];
         let result = Self {
             input,
+            closed_water,
+            closed_water_count,
+            external_water_count: external_indexes.len(),
+            zero_temperature,
             mn_owner,
             passive,
             cylinder,
@@ -339,9 +469,7 @@ impl Evolution {
             .history_dimension()
             .checked_add(
                 result
-                    .input
-                    .water_owners
-                    .len()
+                    .closed_water_count
                     .checked_mul(2)
                     .ok_or("Source size overflow")?,
             )
@@ -371,12 +499,26 @@ impl Evolution {
         &self.input.targets
     }
     pub fn water_row(&self, i: usize, boron: bool) -> usize {
-        self.history_dimension() + 2 * i + usize::from(boron)
+        self.closed_water_row(i, boron)
+            .expect("External water has no source-owned history coordinate")
+    }
+    pub fn closed_water_row(&self, owner: usize, boron: bool) -> Option<usize> {
+        self.closed_water
+            .get(owner)
+            .copied()
+            .flatten()
+            .map(|i| self.history_dimension() + 2 * i + usize::from(boron))
+    }
+    pub fn external_water_count(&self) -> usize {
+        self.external_water_count
+    }
+    pub fn prepared_temperatures(&self) -> &[f64] {
+        &self.input.temperatures
     }
     /// Mn targets store DIRECT Mn56 inventory; all other targets store capture
     /// progress. Use consumed_target for a target's cumulative consumption.
     pub fn target_row(&self, i: usize) -> usize {
-        self.history_dimension() + 2 * self.input.water_owners.len() + i
+        self.history_dimension() + 2 * self.closed_water_count + i
     }
     /// Direct Fe decay-product inventory, not cumulative Mn56 capture.
     pub fn mn_product_row(&self, i: usize) -> usize {
@@ -505,7 +647,22 @@ impl Evolution {
             optical_inputs,
             history_state: vec![0.; self.history_dimension()],
             history_direction: vec![0.; self.history_dimension()],
-            zero_temperature: vec![0.; self.input.temperatures.len()],
+            temperatures: self.input.temperatures.clone(),
+            segment_release: vec![0.; self.segment_count()],
+            external_water: vec![
+                ms::Stocks {
+                    water_mass: 0.,
+                    liquid_volume: 0.,
+                    hydrogen_target: 0.,
+                    hydrogen_product: 0.,
+                    mobile_boron10: 0.
+                };
+                self.external_water_count
+            ],
+            external_events: vec![ms::Events::default(); self.external_water_count],
+            external_event_direction: vec![ms::Events::default(); self.external_water_count],
+            fuel_deposition: vec![0.; self.input.temperatures.len()],
+            fuel_deposition_direction: vec![0.; self.input.temperatures.len()],
             state: vec![0.; self.state_count()],
             rates: vec![0.; self.state_count()],
             jvp: vec![0.; self.state_count()],
@@ -552,6 +709,9 @@ impl Evolution {
             .validate_accepted_state(&y[..self.history_dimension()])
             .map_err(|e| format!("Fuel-history accepted boundary: {e}"))?;
         for (i, o) in self.input.water_owners.iter().enumerate() {
+            if self.closed_water[i].is_none() {
+                continue;
+            }
             if y[self.water_row(i, false)] > o.hydrogen || y[self.water_row(i, true)] > o.boron {
                 return Err(format!(
                     "Exhausted accepted water owner={i},Hprogress={:e},Hreference={:e},Bprogress={:e},Breference={:e}",
@@ -575,9 +735,45 @@ impl Evolution {
         Ok(())
     }
     pub fn evaluate_into(&self, y: &[f64], w: &mut Workspace) -> Result<(), &'static str> {
+        if self.external_water_count != 0 {
+            w.valid = false;
+            w.jvp_valid = false;
+            return Err("Closed source boundary cannot supply external water");
+        }
+        self.evaluate_coupled_into(y, &self.input.temperatures, &[], w)
+    }
+    /// Same-trial thermal/material boundary. Externally owned water receives
+    /// capture events, never independently advanced duplicate source stocks.
+    pub fn evaluate_coupled_into(
+        &self,
+        y: &[f64],
+        temperatures: &[f64],
+        external_water: &[ms::Stocks],
+        w: &mut Workspace,
+    ) -> Result<(), &'static str> {
         if !Arc::ptr_eq(&self.owner, &w.owner)
             || y.len() != self.state_count()
             || y.iter().any(|x| !x.is_finite())
+            || temperatures.len() != self.input.temperatures.len()
+            || temperatures
+                .iter()
+                .any(|t| !t.is_finite() || !(290. ..=2000.).contains(t))
+            || external_water.len() != self.external_water_count
+            || external_water.iter().any(|s| {
+                ![
+                    s.water_mass,
+                    s.liquid_volume,
+                    s.hydrogen_target,
+                    s.mobile_boron10,
+                ]
+                .iter()
+                .all(|x| nn(*x))
+                    || !s.hydrogen_product.is_finite()
+                    || !(s.hydrogen_target + s.hydrogen_product).is_finite()
+                    || s.water_mass <= 0.
+                    || s.liquid_volume <= 0.
+                    || s.hydrogen_target + s.hydrogen_product <= 0.
+            })
         {
             w.valid = false;
             w.jvp_valid = false;
@@ -591,6 +787,14 @@ impl Evolution {
             && y.iter()
                 .zip(&w.state)
                 .all(|(a, b)| a.to_bits() == b.to_bits())
+            && temperatures
+                .iter()
+                .zip(&w.temperatures)
+                .all(|(a, b)| a.to_bits() == b.to_bits())
+            && external_water
+                .iter()
+                .zip(&w.external_water)
+                .all(|(a, b)| stock_bits(a) == stock_bits(b))
         {
             return Ok(());
         }
@@ -601,11 +805,9 @@ impl Evolution {
         w.history_state
             .copy_from_slice(&y[..self.history_dimension()]);
         w.history_state[self.cf_row()] = self.initial_cf - y[self.cf_row()];
-        self.input.history.evaluate_into(
-            &self.input.temperatures,
-            &w.history_state,
-            &mut w.history,
-        )?;
+        self.input
+            .history
+            .evaluate_into(temperatures, &w.history_state, &mut w.history)?;
         w.rates.fill(0.);
         w.rates[..self.history_dimension()].copy_from_slice(w.history.rates()?);
         w.rates[self.cf_row()] = -w.rates[self.cf_row()];
@@ -617,12 +819,20 @@ impl Evolution {
             .zip(&self.input.row_map)
             .enumerate()
         {
-            w.water[i].hydrogen_target =
-                r.hydrogen_target - m.h_fraction * y[self.water_row(m.owner, false)];
-            w.water[i].hydrogen_product =
-                r.hydrogen_product + m.h_fraction * y[self.water_row(m.owner, false)];
-            w.water[i].mobile_boron10 =
-                r.mobile_boron10 - m.b_fraction * y[self.water_row(m.owner, true)];
+            match self.input.water_owners[m.owner].authority {
+                WaterAuthority::Closed => {
+                    w.water[i] = *r;
+                    w.water[i].hydrogen_target =
+                        r.hydrogen_target - m.h_fraction * y[self.water_row(m.owner, false)];
+                    w.water[i].hydrogen_product =
+                        r.hydrogen_product + m.h_fraction * y[self.water_row(m.owner, false)];
+                    w.water[i].mobile_boron10 =
+                        r.mobile_boron10 - m.b_fraction * y[self.water_row(m.owner, true)];
+                }
+                WaterAuthority::External { index } => {
+                    w.water[i] = scaled_stock(&external_water[index], m.volume_fraction);
+                }
+            }
         }
         self.input.moderator.update(&w.water, &mut w.moderator)?;
         self.input
@@ -631,9 +841,22 @@ impl Evolution {
         for i in 0..n {
             w.rates[i] += w.scratch[i];
         }
+        w.external_events.fill(ms::Events::default());
         for (i, m) in self.input.row_map.iter().enumerate() {
-            w.rates[self.water_row(m.owner, false)] += w.water_events[i].hydrogen;
-            w.rates[self.water_row(m.owner, true)] += w.water_events[i].boron;
+            let e = w.water_events[i];
+            match self.input.water_owners[m.owner].authority {
+                WaterAuthority::Closed => {
+                    w.rates[self.water_row(m.owner, false)] += e.hydrogen;
+                    w.rates[self.water_row(m.owner, true)] += e.boron;
+                }
+                WaterAuthority::External { index } => {
+                    let out = &mut w.external_events[index];
+                    out.hydrogen += e.hydrogen;
+                    out.boron += e.boron;
+                    out.emitted_charged += e.emitted_charged;
+                    out.emitted_photon += e.emitted_photon;
+                }
+            }
         }
         self.input
             .moderator
@@ -786,10 +1009,28 @@ impl Evolution {
         w.rates[self.escape_row()] = d.escape_neutrons_s;
         w.rates[self.collected_row()] = d.collected_events_s;
         w.rates[self.fuel_release_row()] = d.fuel_release_w;
-        if w.rates.iter().any(|v| !v.is_finite()) {
+        for (out, s) in w.segment_release.iter_mut().zip(w.history.segments()?) {
+            *out = self.input.history.prompt_fission_energy() * (s.sf235 + s.sf238)
+                + s.delayed_release;
+        }
+        self.input.history.fuel().fuel_heat(
+            w.history.achieved_events()?,
+            self.input.history.prompt_fission_energy(),
+            &w.segment_release,
+            &mut w.fuel_deposition,
+        )?;
+        if w.rates.iter().any(|v| !v.is_finite())
+            || w.external_events.iter().any(|e| {
+                ![e.hydrogen, e.boron, e.emitted_charged, e.emitted_photon]
+                    .iter()
+                    .all(|x| x.is_finite())
+            })
+        {
             return Err("Nonfinite represented source candidate");
         }
         w.state.copy_from_slice(y);
+        w.temperatures.copy_from_slice(temperatures);
+        w.external_water.copy_from_slice(external_water);
         w.diagnostics = d;
         w.valid = true;
         Ok(())
@@ -797,11 +1038,38 @@ impl Evolution {
     /// Full analytic represented-source direction. Only preconditioning, not
     /// this derivative, omits N/C↔material and inter-target optical couplings.
     pub fn jvp_into(&self, dy: &[f64], w: &mut Workspace) -> Result<(), &'static str> {
+        if self.external_water_count != 0 {
+            w.jvp_valid = false;
+            return Err("Closed source direction cannot supply external water");
+        }
+        self.jvp_coupled_into(dy, &self.zero_temperature, &[], w)
+    }
+    pub fn jvp_coupled_into(
+        &self,
+        dy: &[f64],
+        dtemperatures: &[f64],
+        dexternal_water: &[ms::Stocks],
+        w: &mut Workspace,
+    ) -> Result<(), &'static str> {
         w.jvp_valid = false;
         if !Arc::ptr_eq(&self.owner, &w.owner)
             || !w.valid
             || dy.len() != self.state_count()
             || dy.iter().any(|x| !x.is_finite())
+            || dtemperatures.len() != self.input.temperatures.len()
+            || dtemperatures.iter().any(|x| !x.is_finite())
+            || dexternal_water.len() != self.external_water_count
+            || dexternal_water.iter().any(|s| {
+                [
+                    s.water_mass,
+                    s.liquid_volume,
+                    s.hydrogen_target,
+                    s.hydrogen_product,
+                    s.mobile_boron10,
+                ]
+                .iter()
+                .any(|x| !x.is_finite())
+            })
         {
             return Err("Invalid source JVP trial/workspace");
         }
@@ -812,7 +1080,7 @@ impl Evolution {
         w.history_direction[self.cf_row()] = -dy[self.cf_row()];
         self.input
             .history
-            .jvp_into(&w.zero_temperature, &w.history_direction, &mut w.history)?;
+            .jvp_into(dtemperatures, &w.history_direction, &mut w.history)?;
         w.jvp.fill(0.);
         w.jvp[..self.history_dimension()].copy_from_slice(w.history.rate_jvp()?);
         w.jvp[self.cf_row()] = -w.jvp[self.cf_row()];
@@ -829,6 +1097,7 @@ impl Evolution {
                 }
             }
         }
+        w.external_event_direction.fill(ms::Events::default());
         for (i, (e, m)) in self
             .input
             .moderator
@@ -838,13 +1107,28 @@ impl Evolution {
             .enumerate()
         {
             let c = w.moderator.rows()?[i];
-            let dh = dy[self.water_row(m.owner, false)] * m.h_fraction;
-            let db = dy[self.water_row(m.owner, true)] * m.b_fraction;
+            let ds = match self.input.water_owners[m.owner].authority {
+                WaterAuthority::Closed => {
+                    let dh = dy[self.water_row(m.owner, false)] * m.h_fraction;
+                    ms::Stocks {
+                        water_mass: 0.,
+                        liquid_volume: 0.,
+                        hydrogen_target: -dh,
+                        hydrogen_product: dh,
+                        mobile_boron10: -dy[self.water_row(m.owner, true)] * m.b_fraction,
+                    }
+                }
+                WaterAuthority::External { index } => {
+                    scaled_stock(&dexternal_water[index], m.volume_fraction)
+                }
+            };
             let mut eh = 0.;
             let mut eb = 0.;
             for g in 0..GROUPS {
-                let a = (c.d_hydrogen_d_product[g] - c.d_hydrogen_d_target[g]) * dh;
-                let b = -c.d_boron_d_atoms[g] * db;
+                let a = c.d_hydrogen_d_mass[g] * ds.water_mass
+                    + c.d_hydrogen_d_target[g] * ds.hydrogen_target
+                    + c.d_hydrogen_d_product[g] * ds.hydrogen_product;
+                let b = c.d_boron_d_atoms[g] * ds.mobile_boron10;
                 let pos = e.region * GROUPS + g;
                 let ch = a * w.state[pos] + c.hydrogen[g] * dy[pos];
                 let cb = b * w.state[pos] + c.boron[g] * dy[pos];
@@ -852,9 +1136,33 @@ impl Evolution {
                 eb += cb;
                 w.jvp[pos] -= (a + b) * w.state[pos];
                 w.collision_direction[e.region][g] += (a + b) / speed[g];
+                let dscale = c.d_scatter_scale_d_mass * ds.water_mass;
+                for h in 0..GROUPS {
+                    let scatter = self.input.moderator.law().scatter[g][h];
+                    w.collision_direction[e.region][g] += dscale * scatter;
+                    if h != g {
+                        let transfer = speed[g] * scatter * dscale * w.state[pos];
+                        w.jvp[e.region * GROUPS + h] += transfer;
+                        w.jvp[pos] -= transfer;
+                    }
+                }
             }
-            w.jvp[self.water_row(m.owner, false)] += eh;
-            w.jvp[self.water_row(m.owner, true)] += eb;
+            match self.input.water_owners[m.owner].authority {
+                WaterAuthority::Closed => {
+                    w.jvp[self.water_row(m.owner, false)] += eh;
+                    w.jvp[self.water_row(m.owner, true)] += eb;
+                }
+                WaterAuthority::External { index } => {
+                    let out = &mut w.external_event_direction[index];
+                    out.hydrogen += eh;
+                    out.boron += eb;
+                    let law = self.input.moderator.law();
+                    out.emitted_charged +=
+                        eh * law.hydrogen_emission[0] + eb * law.boron_emission[0];
+                    out.emitted_photon +=
+                        eh * law.hydrogen_emission[1] + eb * law.boron_emission[1];
+                }
+            }
             net -= eh + eb;
         }
         for i in 0..self.input.targets.len() {
@@ -983,7 +1291,23 @@ impl Evolution {
             .iter()
             .map(|r| r.prompt_release + r.delayed_release)
             .sum();
-        if w.jvp.iter().any(|x| !x.is_finite()) {
+        for (out, s) in w.segment_release.iter_mut().zip(w.history.segment_jvp()?) {
+            *out = self.input.history.prompt_fission_energy() * (s.sf235 + s.sf238)
+                + s.delayed_release;
+        }
+        self.input.history.fuel().fuel_heat(
+            w.history.achieved_event_jvp()?,
+            self.input.history.prompt_fission_energy(),
+            &w.segment_release,
+            &mut w.fuel_deposition_direction,
+        )?;
+        if w.jvp.iter().any(|x| !x.is_finite())
+            || w.external_event_direction.iter().any(|e| {
+                ![e.hydrogen, e.boron, e.emitted_charged, e.emitted_photon]
+                    .iter()
+                    .all(|x| x.is_finite())
+            })
+        {
             return Err("Nonfinite full source JVP");
         }
         w.jvp_valid = true;

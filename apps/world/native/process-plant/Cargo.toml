@@ -28,6 +28,11 @@ name = "source-evolution-ida"
 path = "qualification/source-evolution-ida.rs"
 required-features = ["offline-ida"]
 
+[[example]]
+name = "source-cooling-ida"
+path = "qualification/source-cooling-ida.rs"
+required-features = ["offline-ida"]
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

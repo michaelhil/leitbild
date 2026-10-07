@@ -94,6 +94,11 @@ fn endpoints(t: f64, p: f64) -> Result<(Liquid, Liquid, [f64; 2]), String> {
     }
     Ok((l, v, sat))
 }
+/// Same-pressure IF97 saturation boundary for a fully wet sensible contact.
+/// A physical domain check, not an imposed wall temperature or heat source.
+pub fn cold_saturation_temperature(t: f64, p: f64) -> Result<f64, String> {
+    Ok(endpoints(t,p)?.2[1])
+}
 impl Secondary {
     /// Bounded local forward chart probes: [U_T,U_p,G_T,G_p]. No chart solve.
     pub fn derivatives(self, i: Inventory, t: f64, p: f64) -> Result<[f64; 4], String> {

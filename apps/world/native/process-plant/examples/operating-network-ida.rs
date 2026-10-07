@@ -170,13 +170,7 @@ fn weighted_rate_norm(rates: &[f64], atol: &[f64]) -> f64 {
 // A diagonal, fixed-head proxy is useful telemetry, not a bound on a
 // correction in the coupled pressure/flow system. Never use its magnitude as
 // an independent admission criterion or alter physical weights to satisfy it.
-fn held_head_ratio(defect: f64, diagonal: f64, atol: f64) -> Result<f64, String> {
-    let band = diagonal * atol;
-    if !defect.is_finite() || !band.is_finite() || band <= 0. {
-        return Err("Unresolvable hydraulic diagnostic band".into());
-    }
-    Ok(defect.abs() / band)
-}
+use leitbild_plant_numerics::operating_admission::held_head_ratio;
 #[cfg(test)]
 mod predictor_tests {
     use super::*;
@@ -206,19 +200,7 @@ fn recipient_heat(normal: &[f64], tighter: &[f64]) -> (f64, f64) {
         normal.iter().map(|a| a.abs()).sum(),
     )
 }
-fn totals(n: &Network, y: &[f64]) -> [f64; 3] {
-    let nw = n.config().water.len();
-    [
-        y[n.total_mass_row()],
-        (0..nw + n.config().solids.len())
-            .map(|i| y[n.energy_row(i)])
-            .sum::<f64>()
-            + (0..n.config().secondaries.len())
-                .map(|k| y[n.secondary_energy_row(k)])
-                .sum::<f64>(),
-        (0..nw).map(|i| y[n.marker_row(i)]).sum(),
-    ]
-}
+use leitbild_plant_numerics::operating_admission::totals;
 #[derive(Clone)]
 struct Sample {
     time: f64,
@@ -264,168 +246,31 @@ struct Receipt {
     max_secondary_material_volume: [f64; 2],
 }
 fn screen(
-    work: &mut Work,
-    y: &[f64],
-    yp: &[f64],
-    _cj: f64,
-    initial: &[f64],
-    max_ledgers: &mut [f64; 3],
-    max_chart: &mut [f64; 2],
-    flow_atol: &[f64],
-    max_flow_law_residual: &mut f64,
-    max_held_head_ratio: &mut f64,
-    max_head_roundoff_to_flow_band: &mut f64,
-    speed: &mut f64,
-    kinetic_temperature: &mut f64,
-    dynamic_head: &mut f64,
-    omitted_kinetic_energy: &mut f64,
-) -> Result<(), String> {
-    // Admission needs the chart tangent, not a complete transport Jacobian.
-    // Reuse its analytic thermodynamic primitive and avoid extra film/property
-    // derivative probes at every accepted internal step.
-    work.evaluate(y, yp, None)?;
-    let total = totals(&work.network, y);
-    let total0 = totals(&work.network, initial);
+    work: &mut Work, y: &[f64], yp: &[f64], _cj:f64, initial:&[f64],
+    max_ledgers:&mut [f64;3], max_chart:&mut [f64;2], flow_atol:&[f64],
+    max_flow_law_residual:&mut f64, max_held_head_ratio:&mut f64,
+    max_head_roundoff_to_flow_band:&mut f64, speed:&mut f64,
+    kinetic_temperature:&mut f64, dynamic_head:&mut f64, omitted_kinetic_energy:&mut f64,
+)->Result<(),String> {
+    work.evaluate(y,yp,None)?;
+    let d=leitbild_plant_numerics::operating_admission::screen(
+        &work.network,&work.workspace,y,totals(&work.network,initial),flow_atol)?;
+    work.property_requests+=d.property_requests as u64;
     for i in 0..3 {
-        max_ledgers[i] = max_ledgers[i].max((total[i] - total0[i]).abs());
+        max_ledgers[i]=max_ledgers[i].max(d.ledgers[i]);
+        work.max_pressure_split[i]=work.max_pressure_split[i].max(d.pressure_split[i]);
     }
-    if max_ledgers[0] > 1e-6 || max_ledgers[1] > 1. || max_ledgers[2] > 1e-8 {
-        return Err(format!("Closed stock ledger refused: {max_ledgers:?}"));
+    for i in 0..2 {
+        max_chart[i]=max_chart[i].max(d.chart[i]);
+        work.max_secondary_chart[i]=work.max_secondary_chart[i].max(d.secondary_chart[i]);
+        work.max_secondary_material_volume[i]=work.max_secondary_material_volume[i].max(d.secondary_material_volume[i]);
     }
-    // The inventory chart is coupled through ONE pressure: independent cell
-    // corrections would misrepresent this selected sound-filtered operator.
-    let nw = work.network.config().water.len();
-    let mut compliance = 0.;
-    let mut dm = work.workspace.residual[work.network.pressure_row()];
-    for i in 0..nw {
-        let [mp, mt, ep, et] = work.workspace.chart_derivatives[i];
-        compliance += mp - mt * ep / et;
-        dm -= mt / et * work.workspace.residual[work.network.temperature_row(i)];
-    }
-    // Independent local 2x2 chart correction, not per-row residual norms.
-    // All species amounts are immutable finite closed inventories.
-    for (k, s) in work.network.config().secondaries.iter().enumerate() {
-        let tr = work.network.secondary_temperature_row(k);
-        let pr = work.network.secondary_pressure_row(k);
-        let d = s.derivatives(work.network.secondary_inventory(k), y[tr], y[pr])?;
-        work.property_requests += 8;
-        let ru = work.workspace.residual[tr];
-        let rg = work.workspace.residual[pr];
-        let dt = (ru + d[1] * rg / d[3]) / (d[0] - d[1] * d[2] / d[3]);
-        let dp = (-rg - d[2] * dt) / d[3];
-        max_chart[0] = max_chart[0].max(dp.abs());
-        max_chart[1] = max_chart[1].max(dt.abs());
-        work.max_secondary_chart[0] = work.max_secondary_chart[0].max(dp.abs());
-        work.max_secondary_chart[1] = work.max_secondary_chart[1].max(dt.abs());
-        if dp.abs() > 5. || dt.abs() > 1e-4 {
-            return Err(format!(
-                "Returned wet secondary chart {k}: dp={dp}, dT={dt}"
-            ));
-        }
-        let st = work.workspace.secondary_states[k];
-        let inv = work.network.secondary_inventory(k);
-        let dm = ((st.liquid_mass + st.vapor_mass) - inv.water).abs();
-        let dv = (st.liquid_volume + st.gas_volume - s.volume).abs();
-        work.max_secondary_material_volume[0] = work.max_secondary_material_volume[0].max(dm);
-        work.max_secondary_material_volume[1] = work.max_secondary_material_volume[1].max(dv);
-        if dm > 1e-6 || dv > 1e-10 {
-            return Err("Closed secondary water ledger refused".into());
-        }
-    }
-    if !compliance.is_finite() || compliance <= 0. {
-        return Err("Returned shared inventory chart rank".into());
-    }
-    let dp = dm / compliance;
-    max_chart[0] = max_chart[0].max(dp.abs());
-    for i in 0..nw {
-        let [_, _, ep, et] = work.workspace.chart_derivatives[i];
-        let dt = (work.workspace.residual[work.network.temperature_row(i)] - ep * dp) / et;
-        max_chart[1] = max_chart[1].max(dt.abs());
-        if dp.abs() > 5. || dt.abs() > 1e-4 {
-            return Err(format!(
-                "Returned shared chart correction node {i}: dp={dp}, dT={dt}"
-            ));
-        }
-        let liquid = work.workspace.liquids[i];
-        let pi = work.network.mechanical_pressure(i, y) - work.network.eos_pressure(i, y);
-        for (j, value) in [
-            pi.abs(),
-            (liquid.compressibility * pi).abs(),
-            pi.abs() / (liquid.density * liquid.cp),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            work.max_pressure_split[j] = work.max_pressure_split[j].max(value);
-        }
-        // Explicit cold pressure-split premises, not exact error guarantees.
-        // The thermodynamic hydrostatic preparation is retained. Only the
-        // mechanical departure is omitted from EOS, not from energy transport.
-        if (liquid.compressibility * pi).abs() > 1e-4
-            || pi.abs() / (liquid.density * liquid.cp) > 0.01
-        {
-            return Err(format!(
-                "Cold pressure-split approximation exceeded at node {i}: pi={pi}"
-            ));
-        }
-    }
-    let mut kinetic_estimate = 0.;
-    for (edge, (e, q)) in work
-        .network
-        .config()
-        .hydraulic
-        .iter()
-        .zip(&work.workspace.mass_flows)
-        .enumerate()
-    {
-        let rho =
-            (work.workspace.liquids[e.from].density + work.workspace.liquids[e.to].density) * 0.5;
-        let v = q.abs() / (rho * e.flow_area);
-        let mu = (work.workspace.liquids[e.from].viscosity
-            + work.workspace.liquids[e.to].viscosity)
-            * 0.5;
-        let re = q.abs() * e.diameter / (e.flow_area * mu);
-        let head = rho
-            * 9.80665
-            * (work.network.config().water[e.to].geometry.elevation
-                - work.network.config().water[e.from].geometry.elevation);
-        let pf = work.network.mechanical_pressure(e.from, y);
-        let pt = work.network.mechanical_pressure(e.to, y);
-        let drive = pf - pt - head;
-        // Explicit floating-point arithmetic allowance, NOT constitutive/model
-        // error or a floor in Pa. The receipt exposes arithmetic-limited bands.
-        let noise = 8. * f64::EPSILON * (pf.abs() + pt.abs() + head.abs());
-        let loss = e.pressure_loss(*q, rho, mu);
-        let inertance = e.length / e.flow_area;
-        let defect = -drive + loss[0];
-        // Diagnostic local, held-endpoint-head Newton-equivalent q correction
-        // at the accepted stage cj. NOT a coupled or temporal error bound.
-        // The old static loss(q +/- atol) bracket is invalid during acceleration.
-        let band = loss[1] * flow_atol[edge];
-        *max_held_head_ratio =
-            max_held_head_ratio.max(held_head_ratio(defect, loss[1], flow_atol[edge])?);
-        *max_head_roundoff_to_flow_band = max_head_roundoff_to_flow_band.max(noise / band);
-        *max_flow_law_residual = max_flow_law_residual.max(defect.abs());
-        if re > work.max_reynolds {
-            work.max_reynolds = re;
-            work.max_reynolds_edge = edge;
-        }
-        *speed = speed.max(v);
-        let cp = work.workspace.liquids[e.from]
-            .cp
-            .min(work.workspace.liquids[e.to].cp);
-        *kinetic_temperature = kinetic_temperature.max(v * v / (2. * cp));
-        *dynamic_head = dynamic_head.max(rho * v * v / 2.);
-        kinetic_estimate += inertance * q * q / (2. * rho);
-    }
-    *omitted_kinetic_energy = omitted_kinetic_energy.max(kinetic_estimate);
-    // Prospective cold-reduction premises, using existing internal thermal
-    // and pressure scales. These are not full-fluid mechanical fidelity claims.
-    if *kinetic_temperature > 1e-3 || *dynamic_head > 100. {
-        return Err(format!(
-            "Cold momentum/energy approximation exceeded: K/cp={kinetic_temperature}, dynamic head={dynamic_head}"
-        ));
-    }
+    if d.reynolds>work.max_reynolds {work.max_reynolds=d.reynolds;work.max_reynolds_edge=d.reynolds_edge;}
+    *max_flow_law_residual=max_flow_law_residual.max(d.flow_law_residual);
+    *max_held_head_ratio=max_held_head_ratio.max(d.held_head_ratio);
+    *max_head_roundoff_to_flow_band=max_head_roundoff_to_flow_band.max(d.head_roundoff_to_flow_band);
+    *speed=speed.max(d.speed);*kinetic_temperature=kinetic_temperature.max(d.kinetic_temperature);
+    *dynamic_head=dynamic_head.max(d.dynamic_head);*omitted_kinetic_energy=omitted_kinetic_energy.max(d.omitted_kinetic_energy);
     Ok(())
 }
 fn run(
@@ -475,92 +320,12 @@ fn run(
             }
         })
         .collect();
-    let mut atol = vec![0.; n];
-    for i in 0..nw {
-        let mass = work.network.mass(i, work.workspace.liquids[i]);
-        atol[work.network.energy_row(i)] = mass * work.workspace.liquids[i].cp * 1e-3 * factor;
-        atol[work.network.marker_row(i)] = 1e-8 * factor;
-        atol[work.network.temperature_row(i)] = 1e-3 * factor;
-        if let Some(row) = work.network.mechanical_row(i) {
-            atol[row] = 100. * factor;
-        }
-    }
-    atol[work.network.total_mass_row()] = 1e-5 * factor;
-    atol[work.network.pressure_row()] = 100. * factor;
-    for i in 0..ns {
-        atol[work.network.energy_row(nw + i)] =
-            work.network.config().solids[i].heat_capacity * 1e-3 * factor;
-    }
-    for (k, s) in work.network.config().secondaries.iter().enumerate() {
-        let t = work.network.secondary_temperature_row(k);
-        let p = work.network.secondary_pressure_row(k);
-        let d = s.derivatives(work.network.secondary_inventory(k), initial[t], initial[p])?;
-        work.property_requests += 8;
-        atol[work.network.secondary_energy_row(k)] = (d[0] - d[1] * d[2] / d[3]) * 1e-3 * factor;
-        atol[t] = 1e-3 * factor;
-        atol[p] = 100. * factor;
-    }
-    // Fixed prospective q weights, allocated across actual incident edges from
-    // the existing 1 mK internal thermal weight over the requested horizon.
-    // Relative enthalpy/elevation and finite metal/fluid contrasts avoid a
-    // dependence on the arbitrary energy datum. This is engineering weighting,
-    // not a rigorous propagated-error bound; actual paired gates remain decisive.
-    let temperatures: Vec<f64> = (0..nw + ns)
-        .map(|i| work.network.temperature(i, &initial))
-        .collect();
-    let tmin = temperatures.iter().copied().fold(f64::INFINITY, f64::min);
-    let tmax = temperatures
-        .iter()
-        .copied()
-        .fold(f64::NEG_INFINITY, f64::max);
-    let max_cp = work
-        .workspace
-        .liquids
-        .iter()
-        .map(|l| l.cp)
-        .fold(0_f64, f64::max);
-    let heads: Vec<f64> = (0..nw)
-        .map(|i| {
-            work.workspace.liquids[i].enthalpy
-                + 9.80665 * work.network.config().water[i].geometry.elevation
-        })
-        .collect();
-    let flow_contrast = max_cp * (tmax - tmin)
-        + heads.iter().copied().fold(f64::NEG_INFINITY, f64::max)
-        - heads.iter().copied().fold(f64::INFINITY, f64::min);
-    if !flow_contrast.is_finite() || flow_contrast <= 0. {
-        return Err("Flow weighting requires the declared finite thermal contrast".into());
-    }
-    let mut degrees = vec![0_usize; nw];
-    for edge in &work.network.config().hydraulic {
-        degrees[edge.from] += 1;
-        degrees[edge.to] += 1;
-    }
-    let flow_atol: Vec<f64> = work
-        .network
-        .config()
-        .hydraulic
-        .iter()
-        .map(|edge| {
-            [edge.from, edge.to]
-                .iter()
-                .map(|&i| {
-                    work.network.mass(i, work.workspace.liquids[i])
-                        * work.workspace.liquids[i].cp
-                        * 1e-3
-                        * factor
-                        / (horizon * degrees[i] as f64 * flow_contrast)
-                })
-                .fold(f64::INFINITY, f64::min)
-        })
-        .collect();
-    for (edge, &weight) in flow_atol.iter().enumerate() {
-        if !weight.is_finite() || weight <= 0. {
-            return Err("Invalid hydraulic error weight".into());
-        }
-        let row = work.network.flow_row(edge);
-        atol[row] = weight;
-    }
+    let weights=leitbild_plant_numerics::operating_admission::weights(
+        &work.network,&work.workspace,&initial,horizon,factor)?;
+    work.property_requests+=weights.property_requests as u64;
+    let atol=weights.absolute;
+    let flow_atol=weights.flow;
+    let flow_contrast=weights.flow_contrast;
     let mut resources = Resources::new()?;
     let y = resources.vector(&initial)?;
     let yp = resources.vector(&seed_slopes)?;
