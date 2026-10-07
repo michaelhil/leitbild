@@ -35,6 +35,9 @@ pub struct Workspace {
     owner: Arc<()>,
     valid: bool,
 }
+fn capture_coefficient(amount: f64, fraction: f64, sigma: f64, volume: f64, speed: f64) -> f64 {
+    (amount * fraction) * sigma / volume * speed
+}
 impl Workspace {
     pub fn collision(&self) -> Result<&[[f64; GROUPS]], &'static str> {
         if !self.valid {
@@ -47,6 +50,48 @@ impl Workspace {
     }
 }
 impl Model {
+    /// Fixed gross-capture support for named finite bulk targets. Coefficients
+    /// use the same per-amount primitive as the physical update, never a
+    /// prepared-state zero to select support.
+    pub fn capture_response(
+        &self,
+        targets: &[usize],
+    ) -> Result<Vec<(usize, usize, f64)>, &'static str> {
+        if targets.iter().any(|&t| t >= self.target_count)
+            || targets.iter().copied().collect::<HashSet<_>>().len() != targets.len()
+        {
+            return Err("Invalid passive capture response targets");
+        }
+        let mut out = Vec::new();
+        for e in &self.intersections {
+            let s = &self.stocks[e.stock];
+            for t in &s.targets {
+                if !targets.contains(&t.index) {
+                    continue;
+                }
+                for g in 0..GROUPS {
+                    if t.sigma_m2[g] == 0. {
+                        continue;
+                    }
+                    let gain = capture_coefficient(
+                        1.,
+                        e.volume / s.volume,
+                        t.sigma_m2[g],
+                        self.volumes[e.region],
+                        self.speed[g],
+                    );
+                    if !gain.is_finite() || gain <= 0. {
+                        return Err("Unrepresentable structural passive capture response");
+                    }
+                    out.push((t.index, e.region * GROUPS + g, gain));
+                }
+            }
+        }
+        if targets.iter().any(|t| !out.iter().any(|e| e.0 == *t)) {
+            return Err("Passive capture response target has no nonzero bulk law");
+        }
+        Ok(out)
+    }
     pub fn new(
         volumes: Vec<f64>,
         speed: [f64; GROUPS],
@@ -139,7 +184,13 @@ impl Model {
                 for g in 0..GROUPS {
                     let amount = amounts[t.index] * (e.volume / s.volume);
                     let coefficient = amount * t.sigma_m2[g] / self.volumes[e.region];
-                    work.capture[i][g] = coefficient * self.speed[g];
+                    work.capture[i][g] = capture_coefficient(
+                        amounts[t.index],
+                        e.volume / s.volume,
+                        t.sigma_m2[g],
+                        self.volumes[e.region],
+                        self.speed[g],
+                    );
                     work.collision[e.region][g] += coefficient;
                 }
                 i += 1;

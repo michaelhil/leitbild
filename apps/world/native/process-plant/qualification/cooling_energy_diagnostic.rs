@@ -1,4 +1,412 @@
 use super::*;
+
+// Saved-state diagnostic only. The callback bridge uses the SAME complete
+// current JVP and owned frozen P as production; it never invokes IDASolve.
+struct ChartLinear<'a> {
+    callbacks: *mut Callbacks<'a>,
+    y: Handle,
+    yp: Handle,
+    residual: Handle,
+    cj: f64,
+}
+unsafe extern "C" fn chart_atimes(user: Handle, v: Handle, out: Handle) -> c_int {
+    let a = unsafe { &mut *(user as *mut ChartLinear<'_>) };
+    unsafe {
+        jtimes(
+            0.,
+            a.y,
+            a.yp,
+            a.residual,
+            v,
+            out,
+            a.cj,
+            a.callbacks.cast(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+unsafe extern "C" fn chart_psolve(
+    user: Handle,
+    rhs: Handle,
+    out: Handle,
+    delta: f64,
+    side: c_int,
+) -> c_int {
+    if side != 1 {
+        return -1;
+    }
+    let a = unsafe { &mut *(user as *mut ChartLinear<'_>) };
+    unsafe {
+        psolve(
+            0.,
+            a.y,
+            a.yp,
+            a.residual,
+            rhs,
+            out,
+            a.cj,
+            delta,
+            a.callbacks.cast(),
+        )
+    }
+}
+fn shared_chart(
+    n: &operating_network::Network,
+    w: &operating_network::Workspace,
+) -> (f64, f64, f64, f64, Vec<f64>) {
+    let rm = w.residual[n.pressure_row()];
+    let mut compliance = 0.;
+    let mut projected = rm;
+    let mut contributions = Vec::new();
+    for (i, &[mp, mt, ep, et]) in w.chart_derivatives.iter().enumerate() {
+        compliance += mp - mt * ep / et;
+        let value = mt / et * w.residual[n.temperature_row(i)];
+        projected -= value;
+        contributions.push(value);
+    }
+    let dp = projected / compliance;
+    let dt = w
+        .chart_derivatives
+        .iter()
+        .enumerate()
+        .map(|(i, &[_, _, ep, et])| ((w.residual[n.temperature_row(i)] - ep * dp) / et).abs())
+        .fold(0f64, f64::max);
+    assert!(
+        [rm, compliance, projected, dp, dt]
+            .iter()
+            .all(|v| v.is_finite())
+    );
+    assert!(compliance > 0.);
+    (rm, compliance, dp, dt, contributions)
+}
+
+#[test]
+#[ignore = "Explicit two-frame barrel chart/linear diagnostic; no IDASolve"]
+fn archived_barrel_chart_and_linear_correction_without_advancement() {
+    barrel_chart_linear_diagnostic(false);
+}
+#[test]
+#[ignore = "Explicit prepared/admitted/failed old-new linear-budget proof; no IDASolve"]
+fn archived_barrel_closure_linear_budgets_without_advancement() {
+    barrel_chart_linear_diagnostic(true);
+}
+fn barrel_chart_linear_diagnostic(candidate_proof: bool) {
+    let started = Instant::now();
+    let directory = PathBuf::from(std::env::var("LEITBILD_COOLING_DIAGNOSTIC_ARTIFACTS").unwrap());
+    let report = PathBuf::from(std::env::var("LEITBILD_COOLING_CHART_REPORT").unwrap());
+    assert!(
+        !report.exists(),
+        "Diagnostic evidence must not be overwritten"
+    );
+    let prepared =
+        cooling_input::parse(&fs::read_to_string(directory.join("input.txt")).unwrap()).unwrap();
+    let model = &prepared.model;
+    let n = model.dimension();
+    let network = &model.network;
+    let l = model.layout;
+    let accuracy = cooling_accuracy::Accuracy::new(model, &prepared.target_emissions).unwrap();
+    let mut c = tests::callbacks(model);
+    c.start = started;
+    c.allowance = 30.;
+    c.absolute = accuracy.absolute(1.).unwrap();
+    c.absolute[c.energy.row] = EnergyCoordinates::absolute(n, 1.);
+    // No current cj is retained in the failed receipt. This is deliberately
+    // a held representative, NOT a replay of the unavailable FLC stage.
+    let cj = 1.;
+    let old_delta = 0.05 * 0.33 * (n as f64).sqrt();
+    let deltas = if candidate_proof {
+        vec![old_delta, cooling_convergence::LINEAR_L2_BUDGET]
+    } else {
+        vec![old_delta]
+    };
+    let mut resources = Resources::new().unwrap();
+    let zero = vec![0.; n];
+    let y = resources.vector(&zero).unwrap();
+    let yp = resources.vector(&zero).unwrap();
+    let r = resources.vector(&zero).unwrap();
+    let rhs = resources.vector(&zero).unwrap();
+    let x = resources.vector(&zero).unwrap();
+    let pr = resources.vector(&zero).unwrap();
+    let weights = resources.vector(&zero).unwrap();
+    resources.spgmr(x, 30, 0).unwrap();
+    let mut cases = Vec::new();
+    let mut proof_passed = true;
+    let mut names = vec!["input.normal.checkpoint", "input.normal.unadmitted-raw"];
+    if candidate_proof {
+        names.insert(0, "prepared-ORIGINAL");
+    }
+    for name in &names {
+        let (time, all) = if *name == "prepared-ORIGINAL" {
+            let physical = model.initial_state().unwrap();
+            let mut slopes = vec![0.; n];
+            let mut prepared_work = model.workspace();
+            model
+                .evaluate(&physical, &slopes, None, &mut prepared_work)
+                .unwrap();
+            for i in 0..n {
+                if model.is_differential(i) {
+                    slopes[i] = -prepared_work.residual[i];
+                }
+            }
+            (0., physical.into_iter().chain(slopes).collect::<Vec<_>>())
+        } else {
+            let bytes = fs::read(directory.join(name)).unwrap();
+            assert_eq!(&bytes[..8], b"LDCOOL01");
+            assert_eq!(
+                u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
+                n as u64
+            );
+            assert_eq!(bytes.len(), 24 + 16 * n);
+            let time = f64::from_le_bytes(bytes[16..24].try_into().unwrap());
+            let all = bytes[24..]
+                .chunks_exact(8)
+                .map(|b| f64::from_le_bytes(b.try_into().unwrap()))
+                .collect::<Vec<_>>();
+            (time, all)
+        };
+        assert!(all.iter().all(|v| v.is_finite()));
+        let physical = &all[..n];
+        let slopes = &all[n..];
+        let mut solver = physical.to_vec();
+        c.coordinates.transform(&mut solver);
+        c.energy.state_to_solver(&mut solver);
+        let mut solver_yp = slopes.to_vec();
+        c.coordinates.transform(&mut solver_yp);
+        c.energy.vector_to_solver(&mut solver_yp);
+        unsafe { output(y, n) }.unwrap().copy_from_slice(&solver);
+        unsafe { output(yp, n) }
+            .unwrap()
+            .copy_from_slice(&solver_yp);
+        let user = (&mut c as *mut Callbacks<'_>).cast();
+        assert_eq!(unsafe { residual(time, y, yp, r, user) }, 0);
+        let f = unsafe { values(r, n) }.unwrap().to_vec();
+        assert_eq!(unsafe { jtsetup(time, y, yp, r, cj, user) }, 0);
+        let (rm, compliance, dp, dt, contributions) = shared_chart(network, &c.work.network);
+        if name.ends_with("unadmitted-raw") {
+            assert!(
+                (dp - (-5.333785814256547)).abs() < 1e-9,
+                "Archived raw state does not reproduce actual screen dp: {dp:e}"
+            );
+        }
+        let chart_residuals = (0..network.config().water.len())
+            .map(|i| c.work.network.residual[network.temperature_row(i)])
+            .collect::<Vec<_>>();
+        // Independent exact chart-row formula versus the complete composed JVP.
+        let mut direction = vec![0.; n];
+        direction[l.network_start + network.pressure_row()] = 100.;
+        direction[l.network_start + network.total_mass_row()] = 1e-4;
+        for i in 0..network.config().water.len() {
+            direction[l.network_start + network.energy_row(i)] = 100. * (i % 3 + 1) as f64;
+            direction[l.network_start + network.temperature_row(i)] = 1e-3 * ((i % 3) as f64 - 1.);
+        }
+        model.jvp(&direction, cj, &mut c.work).unwrap();
+        let mut expected = vec![(
+            network.pressure_row(),
+            direction[l.network_start + network.total_mass_row()],
+            direction[l.network_start + network.total_mass_row()].abs(),
+        )];
+        for (i, &[mp, mt, ep, et]) in c.work.network.chart_derivatives.iter().enumerate() {
+            let p = direction[l.network_start + network.pressure_row()];
+            let t = direction[l.network_start + network.temperature_row(i)];
+            expected[0].1 -= mp * p + mt * t;
+            expected[0].2 += (mp * p).abs() + (mt * t).abs();
+            let e = direction[l.network_start + network.energy_row(i)];
+            expected.push((
+                network.temperature_row(i),
+                e - ep * p - et * t,
+                e.abs() + (ep * p).abs() + (et * t).abs(),
+            ));
+        }
+        let mut action_error = 0f64;
+        for &(row, expected, gross) in &expected {
+            let error = (c.work.jvp[l.network_start + row] - expected).abs();
+            action_error = action_error.max(error / gross.max(1e-30));
+            assert!(error <= 2048. * f64::EPSILON * gross);
+        }
+        let mut fd_errors = Vec::new();
+        let mut probe = model.workspace();
+        for h in [1., 0.5] {
+            let plus = physical
+                .iter()
+                .zip(&direction)
+                .map(|(&v, &d)| v + h * d)
+                .collect::<Vec<_>>();
+            let minus = physical
+                .iter()
+                .zip(&direction)
+                .map(|(&v, &d)| v - h * d)
+                .collect::<Vec<_>>();
+            model.evaluate(&plus, slopes, None, &mut probe).unwrap();
+            let fp = expected
+                .iter()
+                .map(|&(row, _, _)| probe.residual[l.network_start + row])
+                .collect::<Vec<_>>();
+            model.evaluate(&minus, slopes, None, &mut probe).unwrap();
+            let mut max = 0f64;
+            for (k, &(row, exact, gross)) in expected.iter().enumerate() {
+                let fm = probe.residual[l.network_start + row];
+                let error = ((fp[k] - fm) / (2. * h) - exact).abs();
+                max = max.max(error / gross.max(1e-30));
+                // Explicit state-subtraction roundoff plus directional
+                // truncation, not a new physical or solve admission screen.
+                let noise = 64.
+                    * f64::EPSILON
+                    * (fp[k].abs()
+                        + fm.abs()
+                        + if k == 0 {
+                            physical[l.network_start + network.total_mass_row()].abs()
+                        } else {
+                            physical[l.network_start + network.energy_row(k - 1)].abs()
+                        })
+                    / h;
+                assert!(
+                    error <= 2e-5 * gross + noise,
+                    "Chart FD row {row}: {error:e}"
+                );
+            }
+            fd_errors.push(max);
+        }
+        // Return to exactly this saved trial after FD; P has its own snapshot.
+        assert_eq!(unsafe { jtsetup(time, y, yp, r, cj, user) }, 0);
+        assert_eq!(unsafe { psetup(time, y, yp, r, cj, user) }, 0);
+        assert_eq!(unsafe { error_weights(y, weights, user) }, 0);
+        for &delta in &deltas {
+            unsafe { output(rhs, n) }
+                .unwrap()
+                .iter_mut()
+                .zip(&f)
+                .for_each(|(b, &f)| *b = -f);
+            assert_eq!(
+                unsafe { psolve(time, y, yp, r, rhs, pr, cj, delta, user) },
+                0
+            );
+            let w = unsafe { values(weights, n) }.unwrap().to_vec();
+            let pre = unsafe { values(pr, n) }.unwrap().to_vec();
+            let norm = pre.iter().zip(&w).fold(0f64, |s, (&v, &w)| s.hypot(v * w));
+            let pressure_correction = pre[l.network_start + network.pressure_row()];
+            let mut bridge = ChartLinear {
+                callbacks: &mut c,
+                y,
+                yp,
+                residual: r,
+                cj,
+            };
+            let linear_user = (&mut bridge as *mut ChartLinear<'_>).cast();
+            checked(
+                unsafe { SUNLinSolSetATimes(resources.solver, linear_user, chart_atimes) },
+                "Diagnostic current complete JVP",
+            )
+            .unwrap();
+            checked(
+                unsafe {
+                    SUNLinSolSetPreconditioner(resources.solver, linear_user, None, chart_psolve)
+                },
+                "Diagnostic frozen P",
+            )
+            .unwrap();
+            checked(
+                unsafe { SUNLinSolSetScalingVectors(resources.solver, weights, weights) },
+                "Diagnostic production scales",
+            )
+            .unwrap();
+            checked(
+                unsafe { SUNLinSolInitialize(resources.solver) },
+                "Diagnostic SPGMR init",
+            )
+            .unwrap();
+            unsafe { output(x, n) }.unwrap().fill(0.);
+            checked(
+                unsafe { SUNLinSolSetZeroGuess(resources.solver, 1) },
+                "Diagnostic zero guess",
+            )
+            .unwrap();
+            let began = Instant::now();
+            let status =
+                unsafe { SUNLinSolSolve(resources.solver, ptr::null_mut(), x, rhs, delta) };
+            let solve_seconds = began.elapsed().as_secs_f64();
+            assert!(c.fatal.is_none(), "{:?}", c.fatal);
+            let iterations = unsafe { SUNLinSolNumIters(resources.solver) };
+            let reported_norm = unsafe { SUNLinSolResNorm(resources.solver) };
+            assert_eq!(unsafe { chart_atimes(linear_user, x, r) }, 0);
+            let action = unsafe { values(r, n) }.unwrap().to_vec();
+            let b = unsafe { values(rhs, n) }.unwrap();
+            unsafe { output(r, n) }
+                .unwrap()
+                .iter_mut()
+                .zip(b.iter().zip(&action))
+                .for_each(|(r, (&b, &a))| *r = b - a);
+            assert_eq!(unsafe { chart_psolve(linear_user, r, pr, delta, 1) }, 0);
+            let true_norm = unsafe { values(pr, n) }
+                .unwrap()
+                .iter()
+                .zip(&w)
+                .fold(0f64, |s, (&v, &w)| s.hypot(v * w));
+            let mut correction = vec![0.; n];
+            c.coordinates
+                .physical(unsafe { values(x, n) }.unwrap(), &mut correction);
+            c.energy.vector_to_physical(&mut correction);
+            let candidate = physical
+                .iter()
+                .zip(&correction)
+                .map(|(&v, &d)| v + d)
+                .collect::<Vec<_>>();
+            let candidate_slopes = slopes
+                .iter()
+                .zip(&correction)
+                .map(|(&v, &d)| v + cj * d)
+                .collect::<Vec<_>>();
+            model
+                .evaluate(&candidate, &candidate_slopes, None, &mut probe)
+                .unwrap();
+            let (_, _, after_dp, after_dt, _) = shared_chart(network, &probe.network);
+            let charts = operating_admission::chart_corrections(
+                network,
+                &probe.network,
+                &candidate[l.network_start..l.products_start],
+            )
+            .unwrap();
+            let chart_passed = charts.check().is_ok();
+            let guard_started = Instant::now();
+            let guard_status = c
+                .convergence
+                .corrected_chart(&solver, &solver_yp, unsafe { values(x, n) }.unwrap(), cj)
+                .unwrap();
+            let guard_seconds = guard_started.elapsed().as_secs_f64();
+            assert_eq!(
+                guard_status == 0,
+                chart_passed,
+                "Actual current-candidate guard disagrees with independent full-model chart"
+            );
+            if candidate_proof && delta == cooling_convergence::LINEAR_L2_BUDGET {
+                proof_passed &= status == 0 && true_norm <= delta && chart_passed;
+            }
+            cases.push(format!("{{\"frame\":{},\"time\":{},\"linearDelta\":{},\"currentCandidateChartPassed\":{chart_passed},\"actualGuardStatus\":{guard_status},\"actualGuardSeconds\":{guard_seconds},\"stateProvenance\":{},\"massResidualKg\":{},\"complianceKgPerPa\":{},\"sharedPressureCorrectionPa\":{},\"maximumTemperatureCorrectionK\":{},\"energyChartResidualsJ\":{},\"energyProjectedMassContributionsKg\":{},\"exactJVPContributorRelativeError\":{},\"centralFDContributorRelativeErrors\":{},\"scaledPreconditionedNegativeFNorm\":{},\"PPressureCorrectionPa\":{},\"SPGMRStatus\":{status},\"SPGMRIterations\":{iterations},\"SPGMRReportedNorm\":{},\"independentScaledPreconditionedResidualNorm\":{},\"solveSeconds\":{},\"correctedCandidateChartPressurePa\":{},\"correctedCandidateChartTemperatureK\":{}}}",
+            quote(name),finite(time),finite(delta),quote(if *name=="prepared-ORIGINAL" {"fresh-prepared-no-IDACalcIC"} else if name.ends_with("checkpoint") {"admitted-retained-polynomial-yp"} else {"archived-unadmitted-raw-stage;dp-reproduced-not-a-retained-failed-endpoint-claim"}),finite(rm),finite(compliance),finite(dp),finite(dt),numbers(&chart_residuals),numbers(&contributions),finite(action_error),numbers(&fd_errors),finite(norm),finite(pressure_correction),finite(reported_norm),finite(true_norm),finite(solve_seconds),finite(after_dp),finite(after_dt)));
+            assert!(started.elapsed().as_secs_f64() < 28.57);
+        }
+    }
+    let json = format!(
+        "{{\"kind\":\"saved-barrel-shared-chart-linear-diagnostic\",\"passed\":{proof_passed},\"IDASolveCalls\":0,\"frames\":{},\"dimension\":{n},\"cj\":{cj},\"cjScope\":\"held-representative-not-actual;receipt-does-not-retain-current-cj\",\"linearDeltas\":{},\"linearSettings\":\"old-sqrt(n)-control-and-declared-factor1-candidate;maxl30;restart0;zero-guess;same-current-full-JVP-and-frozen-P\",\"seconds\":{},\"costs\":{},\"cases\":[{}]}}",
+        names.len(),
+        numbers(&deltas),
+        finite(started.elapsed().as_secs_f64()),
+        c.metrics(),
+        cases.join(",")
+    );
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(report)
+        .unwrap();
+    writeln!(file, "{json}").unwrap();
+    file.sync_all().unwrap();
+    println!("{json}");
+    assert!(
+        proof_passed,
+        "Held candidate linear/chart proof refused; receipt retained"
+    );
+}
 #[test]
 #[ignore = "Explicit saved-state closed-energy P completion gate; no IDASolve"]
 fn archived_energy_p_completion_without_advancement() {
@@ -494,6 +902,7 @@ fn archived_physical_energy_identity_without_advancement() {
     );
     let mut energy = network_energy.clone();
     energy.extend(l.energies_start..l.temperatures_start);
+    energy.push(l.barrel_energy);
     let release = model.source.fuel_release_row();
     let sum = |values: &[f64]| {
         let (mut s, mut c) = (0f64, 0f64);
@@ -530,16 +939,26 @@ fn archived_physical_energy_identity_without_advancement() {
         let walls = work.thermal.wall_rates().unwrap().to_vec();
         let thermal = work.thermal.heat_rates().unwrap().to_vec();
         let fuel = work.source.rates().unwrap()[release];
-        let rhs_identity = sum(&internal) + sum(&walls) + sum(&thermal) - fuel;
+        let rhs_identity = sum(&internal) + sum(&walls) + sum(&thermal) - fuel
+            + sum(work.barrel.water_heat().unwrap())
+            + work.barrel.heat_rate().unwrap()
+            - work.barrel.emitted_rate().unwrap()
+            + work.barrel.export_rate().unwrap();
         let mut drift = energy
             .iter()
             .map(|&r| y[r] - initial[r])
             .collect::<Vec<_>>();
         drift.push(-(y[release] - initial[release]));
+        drift.push(-(y[l.barrel_released] - initial[l.barrel_released]));
+        drift.push(y[l.barrel_exported] - initial[l.barrel_exported]);
         let mut yp_terms = energy.iter().map(|&r| yp[r]).collect::<Vec<_>>();
         yp_terms.push(-yp[release]);
+        yp_terms.push(-yp[l.barrel_released]);
+        yp_terms.push(yp[l.barrel_exported]);
         let mut residual_terms = energy.iter().map(|&r| work.residual[r]).collect::<Vec<_>>();
         residual_terms.push(-work.residual[release]);
+        residual_terms.push(-work.residual[l.barrel_released]);
+        residual_terms.push(work.residual[l.barrel_exported]);
         let coordinates = Coordinates {
             nc: model.source.nc_dimension(),
             ledger: model.source.ledger_row(),
@@ -567,8 +986,12 @@ fn archived_physical_energy_identity_without_advancement() {
         model.jvp(&direction, 1., &mut work).unwrap();
         let mut action_terms = energy.iter().map(|&r| work.jvp[r]).collect::<Vec<_>>();
         action_terms.push(-work.jvp[release]);
+        action_terms.push(-work.jvp[l.barrel_released]);
+        action_terms.push(work.jvp[l.barrel_exported]);
         let mut expected_terms = energy.iter().map(|&r| direction[r]).collect::<Vec<_>>();
         expected_terms.push(-direction[release]);
+        expected_terms.push(-direction[l.barrel_released]);
+        expected_terms.push(direction[l.barrel_exported]);
         let action_error = sum(&action_terms) - sum(&expected_terms);
         let mut worst = energy
             .iter()

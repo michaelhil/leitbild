@@ -15,6 +15,8 @@ use std::{
 };
 mod jacobian;
 pub use jacobian::Jacobian;
+mod barrel_response;
+pub use barrel_response::BarrelResponse;
 
 #[derive(Clone, Copy, Debug)]
 pub enum WaterAuthority {
@@ -136,6 +138,8 @@ pub struct Workspace {
     scratch: Vec<f64>,
     water_events: Vec<ms::Events>,
     passive_capture: Vec<f64>,
+    target_captures: Vec<f64>,
+    target_capture_direction: Vec<f64>,
     cylinder_capture: Vec<[f64; GROUPS]>,
     optical_capture: Vec<[f64; GROUPS]>,
     collected: Vec<[f64; GROUPS]>,
@@ -147,6 +151,19 @@ pub struct Workspace {
     owner: Arc<()>,
 }
 impl Workspace {
+    /// Actual target capture events before any Mn product decay. Retained
+    /// separately so a tiny capture is not recovered by cancelling decay.
+    pub fn target_captures(&self) -> Result<&[f64], &'static str> {
+        self.check()?;
+        Ok(&self.target_captures)
+    }
+    pub fn target_capture_jvp(&self) -> Result<&[f64], &'static str> {
+        self.check()?;
+        if !self.jvp_valid {
+            return Err("Invalid source JVP candidate");
+        }
+        Ok(&self.target_capture_direction)
+    }
     /// Achieved captures debit the externally owned carrier exactly once.
     pub fn external_water_events(&self) -> Result<&[ms::Events], &'static str> {
         self.check()?;
@@ -225,7 +242,9 @@ impl Workspace {
                 + self.amounts.len()
                 + self.amount_direction.len()
                 + self.scratch.len()
-                + self.passive_capture.len())
+                + self.passive_capture.len()
+                + self.target_captures.len()
+                + self.target_capture_direction.len())
                 * 8
             + (self.collision.len()
                 + self.collision_direction.len()
@@ -527,6 +546,9 @@ impl Evolution {
     pub fn mn_targets(&self) -> &[MnTarget] {
         &self.input.mn
     }
+    pub fn target_count(&self) -> usize {
+        self.input.targets.len()
+    }
     pub fn consumed_target(&self, y: &[f64], target: usize) -> Result<f64, &'static str> {
         if y.len() != self.state_count() || target >= self.input.targets.len() {
             return Err("Invalid target consumption state/index");
@@ -674,6 +696,8 @@ impl Evolution {
             scratch: vec![0.; n],
             water_events: vec![ms::Events::default(); self.input.water_rows.len()],
             passive_capture: vec![0.; nt],
+            target_captures: vec![0.; nt],
+            target_capture_direction: vec![0.; nt],
             cylinder_capture: vec![[0.; GROUPS]; nt],
             optical_capture: vec![[0.; GROUPS]; nt],
             collected: vec![[0.; GROUPS]; nt],
@@ -998,6 +1022,9 @@ impl Evolution {
                 .map(|v| v.abs())
                 .sum::<f64>()
             + w.escape.iter().map(|v| v.abs()).sum::<f64>();
+        for (i, c) in w.target_captures.iter_mut().enumerate() {
+            *c = w.rates[self.target_row(i)];
+        }
         for (i, m) in self.input.mn.iter().enumerate() {
             let decay = m.decay_rate * y[self.target_row(m.target)];
             w.rates[self.target_row(m.target)] -= decay;
@@ -1276,6 +1303,9 @@ impl Evolution {
             if optical {
                 oi += 1;
             }
+        }
+        for (i, c) in w.target_capture_direction.iter_mut().enumerate() {
+            *c = w.jvp[self.target_row(i)];
         }
         for (i, m) in self.input.mn.iter().enumerate() {
             let decay = m.decay_rate * dy[self.target_row(m.target)];

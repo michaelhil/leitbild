@@ -1,6 +1,6 @@
 import {expect,test} from 'bun:test'
 import {compileFuelCooling,compileFuelCoolingMaterial,compilePrimaryIncidence,parseOperatingFuelGap} from './reference-design-fuel-cooling'
-import {parsePrimaryWaterInputs,primaryWaterOwnerFiles} from './reference-design-source-water'
+import {compilePrimaryWaterGeometry,parsePrimaryWaterInputs,primaryWaterOwnerFiles} from './reference-design-source-water'
 import {join} from 'node:path'
 import {coolingStateHeader,fuelCoolingAdmission,fuelCoolingPriorSeconds,qualifyFuelCooling} from './reference-design-fuel-cooling-qualification'
 
@@ -25,39 +25,51 @@ test('retained coupled checkpoints and polynomial observations have distinct exa
 test('only a complete physically developed refined pair can receive admission',()=>{
  const outcome={kind:'source-cooling-pair',passed:true,lastAdmittedTime:300,dimension:7,differential:4,
   normal:{passed:true,lastAdmittedTime:300,commonSamples:14},tighter:{passed:true,lastAdmittedTime:300,commonSamples:14},
-  settings:{accuracyPolicy:'cold-source-cooling-4',provisional:true,horizon:300,referenceAllATOLandRTOLDivisor:10,
+  settings:{accuracyPolicy:'cold-source-cooling-5',provisional:true,horizon:300,referenceAllATOLandRTOLDivisor:10,
    fuelPowerErrorWeights:'sparse-current-response-proportional-budget-cap',fuelPowerResolutionW:1e-12,
+   barrelPowerErrorWeights:'sparse-current-bulk-capture-Mn-proportional-budget-cap',barrelPowerResolutionW:1e-12,
    costGuard:'aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic',
-   solverEnergyCoordinate:'G=sum-installed-energy-change-independent-fuel-release',energyDefectATOLJ:0.01/Math.sqrt(7),
-   perRowErrorWeights:'source-carrier-relative-consequences;network-thermal-absolute-only;energy-defect-absolute'},
+   nonlinearClosure:'stock-Newton-and-current-physical-network-chart',linearWeightedL2Budget:0.0165,algebraicLTE:'included',
+   solverEnergyCoordinate:'G=sum-installed-energy-change-independent-fuel-and-barrel-release-plus-barrel-export',energyDefectATOLJ:0.01/Math.sqrt(7),
+   perRowErrorWeights:'source-carrier-barrel-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute'},
   gates:{fullPairComparisonEvaluated:true,developedThermalResponse:true,developedSourceResponse:true,
+   developedBarrelResponse:true,barrelPairRatio:0,barrelPowerPairRatio:0,
    sourceLocalRatio:0,sourceFamilyRatio:0,sourceObservableRatio:0,sourceNCOperatorRatio:0,
    thermalPairRatio:0,networkPairRatio:0,depositionPairRatio:0,carrierPairRatio:0},
   pairedComparisons:Array.from({length:14},()=>({})),fuelTemperatureFeedbackDiagnostic:{}}
  expect(fuelCoolingAdmission.safeParse(outcome).success).toBe(true)
- for(const field of ['passed','fullPairComparisonEvaluated','developedThermalResponse','developedSourceResponse']){
+ for(const field of ['passed','fullPairComparisonEvaluated','developedThermalResponse','developedSourceResponse','developedBarrelResponse']){
   const changed=structuredClone(outcome)
   if(field==='passed')changed.passed=false
   else (changed.gates as Record<string,unknown>)[field]=false
   expect(fuelCoolingAdmission.safeParse(changed).success).toBe(false)
  }
  for(const field of ['sourceLocalRatio','sourceFamilyRatio','sourceObservableRatio','sourceNCOperatorRatio',
-  'thermalPairRatio','networkPairRatio','depositionPairRatio','carrierPairRatio'])for(const value of [1.01,NaN,Infinity,-1]){
+  'thermalPairRatio','networkPairRatio','depositionPairRatio','carrierPairRatio','barrelPairRatio','barrelPowerPairRatio'])for(const value of [1.01,NaN,Infinity,-1]){
    const changed=structuredClone(outcome);(changed.gates as Record<string,unknown>)[field]=value
    expect(fuelCoolingAdmission.safeParse(changed).success).toBe(false)
   }
  expect(fuelCoolingAdmission.safeParse({...outcome,tighter:null}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,pairedComparisons:outcome.pairedComparisons.slice(1)}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,referenceAllATOLandRTOLDivisor:1}}).success).toBe(false)
- for(const policy of ['cold-source-cooling-1','cold-source-cooling-2','cold-source-cooling-3'])
+ for(const policy of ['cold-source-cooling-1','cold-source-cooling-2','cold-source-cooling-3','cold-source-cooling-4'])
   expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,accuracyPolicy:policy}}).success).toBe(false)
  for(const energyDefectATOLJ of [0,NaN,Infinity,0.01,1])
   expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,energyDefectATOLJ}}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,solverEnergyCoordinate:'imposed-zero'}}).success).toBe(false)
  for(const fuelPowerResolutionW of [0,NaN,Infinity,1e-10])
   expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,fuelPowerResolutionW}}).success).toBe(false)
+ for(const barrelPowerResolutionW of [0,NaN,Infinity,1e-10])
+  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,barrelPowerResolutionW}}).success).toBe(false)
+ expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,barrelPowerErrorWeights:'fuel-only'}}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,fuelPowerErrorWeights:'stock-count-only'}}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,costGuard:'unlimited'}}).success).toBe(false)
+ for(const settings of [
+  {...outcome.settings,nonlinearClosure:undefined},
+  {...outcome.settings,nonlinearClosure:'stock-Newton-only'},
+  {...outcome.settings,linearWeightedL2Budget:0.0165*Math.sqrt(outcome.dimension)},
+  {...outcome.settings,algebraicLTE:'suppressed'},
+ ])expect(fuelCoolingAdmission.safeParse({...outcome,settings}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,
   perRowErrorWeights:'source-relative-consequences;network-thermal-carrier-absolute-only'}}).success).toBe(false)
 })
@@ -95,9 +107,10 @@ ownerTest('current owners close fuel/helium recipients and actual non-proportion
  expect(p.primary.rows.filter(r=>r.cellId==='GUIDE.THIMBLE').length).toBeLessThan(
   p.primary.rows.filter(r=>r.cellId==='GUIDE.EMPTY').length)
  for(const cell of p.primary.cells)expect(cell.representedVolume_m3+cell.outsideSourceVolume_m3).toBeCloseTo(cell.totalVolume_m3,11)
- const d=parsePrimaryWaterInputs(await Promise.all(primaryWaterOwnerFiles.map(n=>Bun.file(join(wiki!,n)).text())))
- expect(()=>compilePrimaryIncidence({...p.network,water:p.network.water.filter(w=>w.id!=='GUIDE.BODY')},p.material.partition,d)).toThrow('Missing')
- expect(()=>compilePrimaryIncidence({...p.network,water:p.network.water.map(w=>w.id==='DOWNCOMER'?{...w,volume_m3:1}:w)},p.material.partition,d)).toThrow('exceeds')
+ const d=parsePrimaryWaterInputs(await Promise.all(primaryWaterOwnerFiles.map(n=>Bun.file(join(wiki!,n)).text()))),
+  geometry=compilePrimaryWaterGeometry(p.material.partition,d)
+ expect(()=>compilePrimaryIncidence({...p.network,water:p.network.water.filter(w=>w.id!=='GUIDE.BODY')},p.material.partition,d,geometry)).toThrow('Missing')
+ expect(()=>compilePrimaryIncidence({...p.network,water:p.network.water.map(w=>w.id==='DOWNCOMER'?{...w,volume_m3:1}:w)},p.material.partition,d,geometry)).toThrow('exceeds')
  expect(()=>compileFuelCoolingMaterial(p.material,{...p.network,hydraulic:p.network.hydraulic.filter(e=>e.to!==2)},
   {fuelEmissivity:.7,cladEmissivity:.7})).toThrow('unique')
 },60_000)

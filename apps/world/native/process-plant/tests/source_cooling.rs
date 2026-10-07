@@ -5,23 +5,30 @@
 mod source_fixture;
 
 use leitbild_plant_numerics::{
-    CellGeometry, fuel_history as fh, fuel_source as fs, fuel_thermal as ft, heat_history as hh,
-    operating_network as on, source_cooling as sc, source_evolution as se, water_carrier as wc,
+    CellGeometry, barrel_thermal as bt, fuel_history as fh, fuel_source as fs, fuel_thermal as ft,
+    heat_history as hh, operating_network as on, source_cooling as sc, source_evolution as se,
+    water_carrier as wc,
 };
 
 pub(crate) fn fixture() -> sc::Model {
     fixture_with_fuel_mass(0.5).unwrap()
 }
+pub(crate) fn fixture_with_contrast() -> sc::Model {
+    fixture_with_preparation(0.5, 1.).unwrap()
+}
 fn fixture_with_fuel_mass(thermal_mass: f64) -> Result<sc::Model, String> {
+    fixture_with_preparation(thermal_mass, 0.)
+}
+fn fixture_with_preparation(thermal_mass: f64, contrast: f64) -> Result<sc::Model, String> {
     let network = on::Network::new(on::Config {
         water: (0..2)
-            .map(|_| on::Water {
+            .map(|i| on::Water {
                 geometry: CellGeometry {
                     volume: 1.,
                     elevation: 0.,
                 },
                 initial_pressure: 1e7,
-                initial_temperature: 300.,
+                initial_temperature: 300. + i as f64 * contrast,
                 initial_tracer_fraction: 0.002,
             })
             .collect(),
@@ -58,6 +65,15 @@ fn fixture_with_fuel_mass(thermal_mass: f64) -> Result<sc::Model, String> {
         .collect::<Vec<_>>();
     let carrier = wc::Carrier::new(&prep, vec![wc::Link { from: 0, to: 1 }]).unwrap();
     let mut input = source_fixture::input();
+    // The barrel owns four ordinary bulk targets. Keep the original optical
+    // and cylindrical targets separate so the joined chain still covers them.
+    input.targets.extend([100.; 3]);
+    input.passive_stocks[0].targets.extend((4..7).map(|index| {
+        leitbild_plant_numerics::passive_source::Target {
+            index,
+            sigma_m2: [0.005; 7],
+        }
+    }));
     let old = &input.history;
     let fuel = fs::FuelModel::new(
         old.fuel().law().clone(),
@@ -150,6 +166,39 @@ fn fixture_with_fuel_mass(thermal_mass: f64) -> Result<sc::Model, String> {
         network,
         thermal,
         carrier,
+        bt::Model::new(bt::Input {
+            mass_kg: 10.,
+            cp_constant_j_kg_k: 469.4448,
+            cp_linear_j_kg_k2: 0.13480848,
+            datum_k: 300.,
+            minimum_k: 290.,
+            maximum_k: 1600.,
+            initial_temperature_k: 300.,
+            steel_density_kg_m3: 7920.,
+            host_chord_m: 0.1,
+            steel_mu_en_m2_kg: 0.0026,
+            liquid_mu_en_m2_kg: 0.003103,
+            wet_h_w_m2_k: 250.,
+            targets: [0, 4, 5, 6],
+            capture_photon_j: [0.1, 0.2, 0.3, 0.4],
+            mn_owner: 0,
+            mn_electron_j: 2.,
+            mn_photon_j: 3.,
+            water_count: 2,
+            contacts: vec![
+                bt::Contact {
+                    water: 0,
+                    area_m2: 0.2,
+                    liquid_chord_m: 0.1,
+                },
+                bt::Contact {
+                    water: 1,
+                    area_m2: 0.3,
+                    liquid_chord_m: 0.2,
+                },
+            ],
+        })
+        .unwrap(),
         vec![0, 1, 4, 5],
         vec![None, Some(0)],
         vec![300.; 9],
@@ -167,10 +216,12 @@ fn resolved(m: &sc::Model) -> Vec<f64> {
     y[l.products_start + 1] = 0.2;
     y[l.products_start + 2] = 3.;
     y[l.products_start + 3] = 0.3;
+    y[l.barrel_temperature] = 320.;
     let mut w = m.workspace();
     m.evaluate(&y, &vec![0.; m.dimension()], None, &mut w)
         .unwrap();
     y[l.energies_start..l.temperatures_start].copy_from_slice(w.thermal.energies().unwrap());
+    y[l.barrel_energy] = w.barrel.energy().unwrap();
     y
 }
 fn close(a: f64, b: f64, relative: f64, absolute: f64) {
@@ -303,13 +354,16 @@ fn once_paid_fuel_wall_and_carrier_receipts_survive_shared_recipient_projection(
     close(
         nw.residual[m.network.energy_row(1)]
             - w.residual[l.network_start + m.network.energy_row(1)],
-        wall.iter().sum(),
+        wall.iter().sum::<f64>() + w.barrel.water_heat().unwrap()[1],
         2e-12,
         1e-8,
     );
-    assert_eq!(
-        nw.residual[m.network.energy_row(0)],
-        w.residual[l.network_start + m.network.energy_row(0)]
+    close(
+        nw.residual[m.network.energy_row(0)]
+            - w.residual[l.network_start + m.network.energy_row(0)],
+        w.barrel.water_heat().unwrap()[0],
+        2e-12,
+        1e-8,
     );
     let total_thermal_energy_residual = w.residual[l.energies_start..l.temperatures_start]
         .iter()
@@ -318,8 +372,8 @@ fn once_paid_fuel_wall_and_carrier_receipts_survive_shared_recipient_projection(
         .map(|i| w.residual[l.network_start + m.network.energy_row(i)])
         .sum::<f64>();
     close(
-        total_thermal_energy_residual + total_network_energy_residual,
-        -release,
+        total_thermal_energy_residual + total_network_energy_residual + w.residual[l.barrel_energy],
+        -release - w.barrel.emitted_rate().unwrap() + w.barrel.export_rate().unwrap(),
         2e-11,
         1e-8,
     );
@@ -382,6 +436,7 @@ fn composition_refuses_wrong_fuel_recipient_or_carrier_link_identity() {
             m.network,
             m.thermal,
             m.carrier,
+            m.barrel,
             vec![0, 2, 4, 5],
             vec![None, Some(0)],
             vec![300.; 9]
@@ -404,6 +459,7 @@ fn composition_refuses_wrong_fuel_recipient_or_carrier_link_identity() {
             m.network,
             m.thermal,
             wrong,
+            m.barrel,
             vec![0, 1, 4, 5],
             vec![None, Some(0)],
             vec![300.; 9]

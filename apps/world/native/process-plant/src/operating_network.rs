@@ -506,6 +506,8 @@ pub struct Workspace {
     energy_rate_partials: Vec<f64>,
     owner: Arc<()>,
     energy_rate_valid: bool,
+    chart_state: Vec<f64>,
+    chart_valid: bool,
 }
 fn chart(w: Water, l: Liquid, p: f64, t: f64) -> Result<([f64; 4], [f64; 2]), String> {
     let m = w.geometry.volume * l.density;
@@ -566,7 +568,26 @@ impl Workspace {
             energy_rate_partials: vec![0.; n.energy_rate_slots.len()],
             owner: n.owner.clone(),
             energy_rate_valid: false,
+            chart_state: vec![0.; n.dimension()],
+            chart_valid: false,
         }
+    }
+    /// Read-only physical chart consumers must use this owner's successful
+    /// preparation at the exact supplied current state, not a stale trial.
+    pub fn check_current_chart(&self, n: &Network, y: &[f64]) -> Result<(), String> {
+        if !Arc::ptr_eq(&self.owner, &n.owner)
+            || !self.chart_valid
+            || y.len() != n.dimension()
+            || self.chart_state.len() != y.len()
+            || self
+                .chart_state
+                .iter()
+                .zip(y)
+                .any(|(a, b)| a.to_bits() != b.to_bits())
+        {
+            return Err("Network chart requires current owned value preparation".into());
+        }
+        Ok(())
     }
     /// Same retained local property probes used by the network Jacobian.
     /// Caller must have evaluated this workspace with cj=Some at this trial.
@@ -636,6 +657,7 @@ impl Workspace {
         cj: Option<f64>,
     ) -> Result<(), String> {
         self.energy_rate_valid = false;
+        self.chart_valid = false;
         let nw = n.config.water.len();
         let dim = n.dimension();
         let pcol = n.pressure_row();
@@ -644,6 +666,7 @@ impl Workspace {
             || y.len() != dim
             || yp.len() != dim
             || self.residual.len() != dim
+            || self.chart_state.len() != dim
             || self.rates.len() != dim
             || self.jacobian_values.len() != n.row_indices.len()
             || self.liquids.len() != nw
@@ -1137,6 +1160,8 @@ impl Workspace {
             return Err("Nonfinite pressure-territory result".into());
         }
         self.energy_rate_valid = cj.is_some();
+        self.chart_state.copy_from_slice(y);
+        self.chart_valid = true;
         Ok(())
     }
 }

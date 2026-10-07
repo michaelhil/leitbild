@@ -1,7 +1,10 @@
 //! Qualification-only local-power error-scale allocation. This first-order
 //! BOX budget is not a WRMS-to-trajectory accuracy theorem. The independent
 //! local deposited-power refined-pair criterion remains unchanged.
-use leitbild_plant_numerics::{fuel_history::PowerResponse, source_evolution::Evolution};
+use leitbild_plant_numerics::{
+    fuel_history::PowerResponse,
+    source_evolution::{BarrelResponse, Evolution},
+};
 use std::sync::Arc;
 
 fn capped_scale(current: f64, gradient: f64, allocation: f64) -> Result<f64, String> {
@@ -80,48 +83,128 @@ impl PowerWeights {
         }
         self.response
             .evaluate(&y[..n], &mut w.powers, &mut w.gradients)?;
-        for q in 0..self.response.output_count() {
-            let range = self.response.offsets()[q]..self.response.offsets()[q + 1];
-            let columns = &self.response.columns()[range.clone()];
-            let gradients = &w.gradients[range];
-            if columns.is_empty() {
+        cap_response(
+            y,
+            relative,
+            resolution_w,
+            scales,
+            &w.powers,
+            &w.gradients,
+            self.response.columns(),
+            self.response.offsets(),
+        )?;
+        Ok(())
+    }
+}
+
+fn cap_response(
+    y: &[f64],
+    relative: f64,
+    resolution_w: f64,
+    scales: &mut [f64],
+    powers: &[f64],
+    all_gradients: &[f64],
+    all_columns: &[usize],
+    offsets: &[usize],
+) -> Result<(), String> {
+    for q in 0..powers.len() {
+        let range = offsets[q]..offsets[q + 1];
+        let columns = &all_columns[range.clone()];
+        let gradients = &all_gradients[range];
+        if columns.is_empty() {
+            continue;
+        }
+        let m = columns.len() as f64; // immutable structural support, including state zeros
+        let mut sum = 0.;
+        let mut correction = 0.;
+        for (&column, &gradient) in columns.iter().zip(gradients) {
+            let moment = (gradient * y[column]).abs();
+            let next = sum + moment;
+            correction += if sum.abs() >= moment {
+                (sum - next) + moment
+            } else {
+                (moment - next) + sum
+            };
+            sum = next;
+        }
+        let moment = sum + correction;
+        let relative_power = relative * powers[q].abs();
+        if !moment.is_finite() || !relative_power.is_finite() {
+            return Err("Nonfinite local-power response budget".into());
+        }
+        for (&column, &gradient) in columns.iter().zip(gradients) {
+            let scale = scales[column];
+            if !scale.is_finite() || scale <= 0. {
+                return Err("Invalid existing local-power scale".into());
+            }
+            if gradient == 0. {
                 continue;
             }
-            let m = columns.len() as f64; // immutable structural support, including state zeros
-            let mut sum = 0.;
-            let mut correction = 0.;
-            for (&column, &gradient) in columns.iter().zip(gradients) {
-                let moment = (gradient * y[column]).abs();
-                let next = sum + moment;
-                correction += if sum.abs() >= moment {
-                    (sum - next) + moment
-                } else {
-                    (moment - next) + sum
-                };
-                sum = next;
-            }
-            let moment = sum + correction;
-            let relative_power = relative * w.powers[q].abs();
-            if !moment.is_finite() || !relative_power.is_finite() {
-                return Err("Nonfinite local-power response budget".into());
-            }
-            for (&column, &gradient) in columns.iter().zip(gradients) {
-                let scale = scales[column];
-                if !scale.is_finite() || scale <= 0. {
-                    return Err("Invalid existing local-power scale".into());
-                }
-                if gradient == 0. {
-                    continue;
-                }
-                let share = if moment == 0. {
-                    1. / m
-                } else {
-                    (gradient * y[column]).abs() / moment
-                };
-                let budget = resolution_w / m + relative_power * share;
-                scales[column] = capped_scale(scale, gradient.abs(), budget)?;
-            }
+            let share = if moment == 0. {
+                1. / m
+            } else {
+                (gradient * y[column]).abs() / moment
+            };
+            let budget = resolution_w / m + relative_power * share;
+            scales[column] = capped_scale(scale, gradient.abs(), budget)?;
         }
+    }
+    Ok(())
+}
+
+pub(super) struct BarrelWeights {
+    response: BarrelResponse,
+    powers: Vec<f64>,
+    gradients: Vec<f64>,
+}
+impl BarrelWeights {
+    pub fn new(
+        source: &Evolution,
+        targets: [usize; 4],
+        emission: [f64; 4],
+    ) -> Result<Self, String> {
+        let response = source.barrel_response(targets, emission)?;
+        // Response columns never consume the independent signed D ledger.
+        if response.columns().contains(&source.ledger_row()) {
+            return Err("Barrel response overlaps source balance coordinate".into());
+        }
+        let powers = vec![0.; response.output_count()];
+        let gradients = vec![0.; response.columns().len()];
+        Ok(Self {
+            response,
+            powers,
+            gradients,
+        })
+    }
+    pub fn cap(
+        &mut self,
+        y: &[f64],
+        relative: f64,
+        resolution: f64,
+        scales: &mut [f64],
+    ) -> Result<(), String> {
+        let n = self.response.state_count();
+        if y.len() < n
+            || scales.len() < n
+            || !relative.is_finite()
+            || relative < 0.
+            || !resolution.is_finite()
+            || resolution <= 0.
+        {
+            return Err("Invalid barrel power scales".into());
+        }
+        self.response
+            .evaluate(&y[..n], &mut self.powers, &mut self.gradients)?;
+        cap_response(
+            y,
+            relative,
+            resolution,
+            scales,
+            &self.powers,
+            &self.gradients,
+            self.response.columns(),
+            self.response.offsets(),
+        )?;
         Ok(())
     }
 }
@@ -189,5 +272,41 @@ mod tests {
         assert_eq!(capped_scale(10., 2., 1.).unwrap(), 0.5);
         assert_eq!(capped_scale(0.001, 0., 1e-12).unwrap(), 0.001);
         assert!(capped_scale(1., f64::INFINITY, 1.).is_err());
+    }
+    #[test]
+    fn barrel_current_channels_coalesce_box_support_and_refine_tenfold() {
+        let model = super::super::cooling_fixture::fixture();
+        let source = &model.source;
+        let b = model.barrel.config();
+        let mut policy = BarrelWeights::new(source, b.targets, b.capture_photon_j).unwrap();
+        for magnitude in [0., -0.2, 2.] {
+            let mut y = source.initial_state();
+            for (i, n) in y[..source.nc_dimension()].iter_mut().enumerate() {
+                *n = magnitude * (1. + (i % 3) as f64);
+            }
+            for &t in &b.targets {
+                y[source.target_row(t)] = magnitude;
+            }
+            let mut scales = vec![0.001; y.len()];
+            policy.cap(&y, 1e-5, 1e-12, &mut scales).unwrap();
+            for q in 0..policy.response.output_count() {
+                let range = policy.response.offsets()[q]..policy.response.offsets()[q + 1];
+                let box_value = policy.response.columns()[range.clone()]
+                    .iter()
+                    .zip(&policy.gradients[range])
+                    .map(|(&c, &g)| g.abs() * scales[c])
+                    .sum::<f64>();
+                assert!(box_value <= (1e-12 + 1e-5 * policy.powers[q].abs()) * (1. + 1e-14));
+            }
+            let mut tight = vec![0.0001; y.len()];
+            policy.cap(&y, 1e-6, 1e-13, &mut tight).unwrap();
+            for (&a, &b) in scales.iter().zip(&tight) {
+                assert!((a / 10. - b).abs() <= 3e-14 * b);
+            }
+            y[source.ledger_row()] = 42.;
+            let mut same = vec![0.001; y.len()];
+            policy.cap(&y, 1e-5, 1e-12, &mut same).unwrap();
+            assert_eq!(scales, same);
+        }
     }
 }

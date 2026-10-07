@@ -1,8 +1,8 @@
-//! Strict four-frame cold source/cooling preparation. Primary chemistry is
+//! Strict five-frame cold source/cooling/barrel preparation. Primary chemistry is
 //! replaced by actual carrier intersections, never cloned as source histories.
 use super::{
-    evolution_input, fuel_thermal, moderator_source, operating_network, operating_network_input,
-    source_cooling, source_evolution, source_input, water_carrier,
+    barrel_thermal, evolution_input, fuel_thermal, moderator_source, operating_network,
+    operating_network_input, source_cooling, source_evolution, source_input, water_carrier,
 };
 use source_input::{count, framed, number};
 use std::collections::BTreeSet;
@@ -20,6 +20,7 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
     let network = framed(&mut words).join(" ");
     let thermal = framed(&mut words);
     let primary = framed(&mut words);
+    let barrel = framed(&mut words);
     if words.next().is_some() {
         return Err("Trailing coupled payload".into());
     }
@@ -225,11 +226,71 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
             .collect(),
     )?;
     let source = source_evolution::Evolution::new(prepared.input)?;
+    let mut b = barrel.iter().copied();
+    let mass_kg = number(&mut b);
+    let cp_constant_j_kg_k = number(&mut b);
+    let cp_linear_j_kg_k2 = number(&mut b);
+    let datum_k = number(&mut b);
+    let minimum_k = number(&mut b);
+    let maximum_k = number(&mut b);
+    let initial_temperature_k = number(&mut b);
+    let steel_density_kg_m3 = number(&mut b);
+    let host_chord_m = number(&mut b);
+    let steel_mu_en_m2_kg = number(&mut b);
+    let liquid_mu_en_m2_kg = number(&mut b);
+    let wet_h_w_m2_k = number(&mut b);
+    let mut targets = [0; 4];
+    let mut capture_photon_j = [0.; 4];
+    for i in 0..4 {
+        targets[i] = count(&mut b);
+        capture_photon_j[i] = number(&mut b);
+    }
+    let mn_owner = count(&mut b);
+    let mn = source
+        .mn_targets()
+        .get(mn_owner)
+        .ok_or("Missing barrel Mn owner")?;
+    let nc = count(&mut b);
+    if nc > b.len() / 3 {
+        return Err("Barrel contacts exceed frame".into());
+    }
+    let contacts = (0..nc)
+        .map(|_| barrel_thermal::Contact {
+            water: count(&mut b),
+            area_m2: number(&mut b),
+            liquid_chord_m: number(&mut b),
+        })
+        .collect();
+    if b.next().is_some() {
+        return Err("Trailing barrel frame".into());
+    }
+    let barrel = barrel_thermal::Model::new(barrel_thermal::Input {
+        mass_kg,
+        cp_constant_j_kg_k,
+        cp_linear_j_kg_k2,
+        datum_k,
+        minimum_k,
+        maximum_k,
+        initial_temperature_k,
+        steel_density_kg_m3,
+        host_chord_m,
+        steel_mu_en_m2_kg,
+        liquid_mu_en_m2_kg,
+        wet_h_w_m2_k,
+        targets,
+        capture_photon_j,
+        mn_owner,
+        mn_electron_j: mn.electron_j,
+        mn_photon_j: mn.photon_j,
+        water_count: cells,
+        contacts,
+    })?;
     let model = source_cooling::Model::new(
         source,
         network,
         thermal_model,
         carrier,
+        barrel,
         fuel_rows,
         water_flows,
         initial_t,
@@ -239,4 +300,13 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
         target_emissions: prepared.target_emissions,
         budget: network_input.budget,
     })
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn fifth_barrel_frame_is_required_and_extra_frames_refuse() {
+        assert!(std::panic::catch_unwind(|| parse("0 0 0 0")).is_err());
+        assert!(parse("0 0 0 0 0 0").is_err());
+    }
 }

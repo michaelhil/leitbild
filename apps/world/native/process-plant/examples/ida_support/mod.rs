@@ -14,6 +14,31 @@ unsafe extern "C" {
         label: *mut c_char,
         capacity: c_int,
     ) -> c_int;
+    fn leitbild_sunnewton_convergence(
+        solver: Handle,
+        test: *mut Option<ConvergenceTestFn>,
+        data: *mut Handle,
+    ) -> c_int;
+}
+pub(crate) type ConvergenceTestFn =
+    unsafe extern "C" fn(Handle, Handle, Handle, f64, Handle, Handle) -> c_int;
+#[derive(Clone, Copy)]
+pub(crate) struct StockConvergence {
+    pub test: ConvergenceTestFn,
+    pub data: Handle,
+}
+/// Capture after IDASetNonlinearSolver installs its own CTest, before wrapping.
+pub(crate) fn stock_convergence(solver: Handle) -> Result<StockConvergence, String> {
+    let mut test = None;
+    let mut data = ptr::null_mut();
+    checked(
+        unsafe { leitbild_sunnewton_convergence(solver, &mut test, &mut data) },
+        "Public Newton convergence accessor",
+    )?;
+    Ok(StockConvergence {
+        test: test.ok_or("Null stock Newton convergence test")?,
+        data,
+    })
 }
 
 fn checked_sundials_version(
@@ -91,6 +116,7 @@ pub(crate) type JacTimesFn = unsafe extern "C" fn(
 #[link(name = "sundials_sunmatrixsparse")]
 #[link(name = "sundials_sunlinsolklu")]
 #[link(name = "sundials_sunlinsolspgmr")]
+#[link(name = "sundials_sunnonlinsolnewton")]
 #[link(name = "sundials_ida")]
 unsafe extern "C" {
     pub(crate) fn SUNContext_Create(comm: c_int, out: *mut Handle) -> c_int;
@@ -151,6 +177,28 @@ unsafe extern "C" {
         yp: Handle,
     ) -> c_int;
     pub(crate) fn IDASetUserData(memory: Handle, user: Handle) -> c_int;
+    pub(crate) fn SUNNonlinSol_Newton(vector: Handle, context: Handle) -> Handle;
+    pub(crate) fn SUNNonlinSolFree(solver: Handle) -> c_int;
+    pub(crate) fn SUNNonlinSolSetConvTestFn(
+        solver: Handle,
+        test: ConvergenceTestFn,
+        data: Handle,
+    ) -> c_int;
+    pub(crate) fn IDASetNonlinearSolver(memory: Handle, solver: Handle) -> c_int;
+    pub(crate) fn IDAGetNonlinearSystemData(
+        memory: Handle,
+        time: *mut f64,
+        y_pred: *mut Handle,
+        yp_pred: *mut Handle,
+        y: *mut Handle,
+        yp: *mut Handle,
+        residual: *mut Handle,
+        cj: *mut f64,
+        user: *mut Handle,
+    ) -> c_int;
+    pub(crate) fn IDASetLSNormFactor(memory: Handle, factor: f64) -> c_int;
+    pub(crate) fn IDASetEpsLin(memory: Handle, factor: f64) -> c_int;
+    pub(crate) fn IDASetNonlinConvCoef(memory: Handle, coefficient: f64) -> c_int;
     pub(crate) fn IDASVtolerances(memory: Handle, relative: f64, absolute: Handle) -> c_int;
     pub(crate) fn IDASetId(memory: Handle, id: Handle) -> c_int;
     pub(crate) fn IDASetConstraints(memory: Handle, constraints: Handle) -> c_int;
@@ -427,6 +475,7 @@ pub(crate) struct Resources {
     pub(crate) matrix: Handle,
     pub(crate) solver: Handle,
     pub(crate) ida: Handle,
+    nonlinear: Handle,
 }
 impl Resources {
     pub(crate) fn new() -> Result<Self, String> {
@@ -437,6 +486,7 @@ impl Resources {
             matrix: ptr::null_mut(),
             solver: ptr::null_mut(),
             ida: ptr::null_mut(),
+            nonlinear: ptr::null_mut(),
         };
         checked(
             unsafe { SUNContext_Create(0, &mut out.context) },
@@ -464,6 +514,16 @@ impl Resources {
             ptr::copy_nonoverlapping(values.as_ptr(), data, values.len());
         }
         Ok(vector)
+    }
+    pub(crate) fn newton(&mut self, vector: Handle) -> Result<Handle, String> {
+        if vector.is_null() || !self.nonlinear.is_null() {
+            return Err("Invalid or repeated owned Newton allocation".into());
+        }
+        self.nonlinear = unsafe { SUNNonlinSol_Newton(vector, self.context) };
+        if self.nonlinear.is_null() {
+            return Err("SUNNonlinSol_Newton returned null".into());
+        }
+        Ok(self.nonlinear)
     }
     pub(crate) fn matrix(&mut self, n: i64, entries: i64) -> Result<Handle, String> {
         if n <= 0 || entries <= 0 || !self.matrix.is_null() {
@@ -513,6 +573,11 @@ impl Drop for Resources {
         unsafe {
             if !self.ida.is_null() {
                 IDAFree(&mut self.ida);
+            }
+            // IDASetNonlinearSolver marks this externally owned. Its callbacks
+            // reference IDA, so destroy IDA first, then Newton, then vectors.
+            if !self.nonlinear.is_null() {
+                SUNNonlinSolFree(self.nonlinear);
             }
             if !self.solver.is_null() {
                 SUNLinSolFree(self.solver);

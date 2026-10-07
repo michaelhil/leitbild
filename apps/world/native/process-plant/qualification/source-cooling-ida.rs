@@ -5,6 +5,8 @@
 mod cooling_accuracy;
 #[path = "cooling_block/mod.rs"]
 mod cooling_block;
+#[path = "cooling_convergence.rs"]
+mod cooling_convergence;
 #[path = "cooling_coordinates.rs"]
 mod cooling_coordinates;
 #[cfg(test)]
@@ -38,9 +40,9 @@ mod source_pair;
 use cooling_coordinates::EnergyCoordinates;
 use ida_support::*;
 use leitbild_plant_numerics::{
-    converter_heat, cylindrical_source, fuel_history, fuel_source, fuel_thermal, heat_history,
-    moderator_source, operating_admission, operating_network, optical_source, passive_source,
-    source_cooling, source_evolution, transport_source, water_carrier,
+    barrel_thermal, converter_heat, cylindrical_source, fuel_history, fuel_source, fuel_thermal,
+    heat_history, moderator_source, operating_admission, operating_network, optical_source,
+    passive_source, source_cooling, source_evolution, transport_source, water_carrier,
 };
 use source_coordinates::Coordinates;
 use source_evolution::Evolution;
@@ -111,6 +113,7 @@ unsafe fn output<'a>(v: Handle, n: usize) -> Result<&'a mut [f64], String> {
 }
 struct Callbacks<'a> {
     model: &'a source_cooling::Model,
+    convergence: cooling_convergence::Convergence<'a>,
     work: source_cooling::Workspace,
     p: cooling_block::Preconditioner,
     coordinates: Coordinates,
@@ -124,6 +127,7 @@ struct Callbacks<'a> {
     preconditioner_rhs: Vec<f64>,
     power_weights: cooling_power::PowerWeights,
     power_work: cooling_power::PowerWorkspace,
+    barrel_weights: cooling_power::BarrelWeights,
     power_resolution_w: f64,
     start: Instant,
     allowance: f64,
@@ -158,8 +162,28 @@ unsafe extern "C" {
 fn progress_relative(model: &source_cooling::Model, row: usize) -> bool {
     row < model.layout.source_end
         || (model.layout.products_start..model.layout.energies_start).contains(&row)
+        || row == model.layout.barrel_released
+        || row == model.layout.barrel_exported
 }
-const ERROR_FAMILIES: [&str; 7] = [
+fn developed_barrel(change: f64, difference: f64) -> bool {
+    change.is_finite()
+        && difference.is_finite()
+        && change > (10. * difference).max(cooling_accuracy::TEMPERATURE_ATOL)
+}
+fn physical_constraints(model: &source_cooling::Model, energy_row: usize) -> Vec<f64> {
+    let l = model.layout;
+    let mut out = vec![0.; model.dimension()];
+    out[..l.source_end].fill(1.);
+    out[model.source.ledger_row()] = 0.;
+    out[energy_row] = 0.;
+    out[l.products_start..l.energies_start].fill(1.);
+    out[l.temperatures_start..l.barrel_energy].fill(2.);
+    out[l.barrel_temperature] = 2.;
+    out[l.barrel_released] = 1.;
+    out[l.barrel_exported] = 1.;
+    out
+}
+const ERROR_FAMILIES: [&str; 8] = [
     "source-N",
     "source-C",
     "source-history-and-audits",
@@ -167,6 +191,7 @@ const ERROR_FAMILIES: [&str; 7] = [
     "carrier-products",
     "thermal-energy",
     "thermal-temperature",
+    "barrel-energy-temperature-emission-export",
 ];
 #[derive(Clone, Copy, Default)]
 struct ErrorFamily {
@@ -177,7 +202,7 @@ struct ErrorFamily {
     time: f64,
 }
 struct LocalErrors {
-    families: [ErrorFamily; 7],
+    families: [ErrorFamily; ERROR_FAMILIES.len()],
     labels: Vec<usize>,
     observations: u64,
     last_order: c_int,
@@ -203,12 +228,14 @@ impl LocalErrors {
                     4
                 } else if r < l.temperatures_start {
                     5
-                } else {
+                } else if r < l.barrel_energy {
                     6
+                } else {
+                    7
                 }
             })
             .collect::<Vec<_>>();
-        let mut families = [ErrorFamily::default(); 7];
+        let mut families = [ErrorFamily::default(); ERROR_FAMILIES.len()];
         for &label in &labels {
             families[label].rows += 1;
         }
@@ -238,7 +265,7 @@ impl LocalErrors {
         {
             return Err("Invalid local-error telemetry shape/time".into());
         }
-        let mut squares = [0.; 7];
+        let mut squares = [0.; ERROR_FAMILIES.len()];
         for (row, ((&error, &weight), &family)) in
             errors.iter().zip(weights).zip(&self.labels).enumerate()
         {
@@ -317,6 +344,12 @@ unsafe extern "C" fn error_weights(y: Handle, weights: Handle, user: Handle) -> 
                 out,
                 &mut c.power_work,
             )?;
+            c.barrel_weights.cap(
+                &y[..c.model.layout.source_end],
+                c.relative,
+                c.power_resolution_w,
+                out,
+            )?;
             for scale in out {
                 if !scale.is_finite() || *scale <= 0. {
                     return Err("Invalid power-capped error scale".into());
@@ -361,7 +394,7 @@ impl Callbacks<'_> {
             finite(self.energy_p_solve_seconds)
         );
         format!(
-            "{{\"residuals\":{},\"linearBases\":{},\"JVPs\":{},\"residualSeconds\":{},\"linearBaseSeconds\":{},\"JVPSeconds\":{},\"errorWeightCalls\":{},\"errorWeightSeconds\":{},\"errorWeightScope\":\"ordinary-scales-plus-current-sparse-power-cap-and-reciprocal;no-full-RHS-or-EOS\",\"acceptedAndCommonPreparationScreenSeconds\":{},\"retentionIOSeconds\":{},\"retentionIOScope\":\"checkpoint-common-and-terminal-file-write-flush-sync-rename;terminal-progress-flush-included\",\"localErrorTelemetrySeconds\":{},\"acceptedLocalErrorEstimates\":{},\"recoverableTrials\":{},\"energyPCompletion\":{completion},\"P\":{}}}",
+            "{{\"residuals\":{},\"linearBases\":{},\"JVPs\":{},\"residualSeconds\":{},\"linearBaseSeconds\":{},\"JVPSeconds\":{},\"errorWeightCalls\":{},\"errorWeightSeconds\":{},\"errorWeightScope\":\"ordinary-scales-plus-current-sparse-power-cap-and-reciprocal;no-full-RHS-or-EOS\",\"acceptedAndCommonPreparationScreenSeconds\":{},\"retentionIOSeconds\":{},\"retentionIOScope\":\"checkpoint-common-and-terminal-file-write-flush-sync-rename;terminal-progress-flush-included\",\"localErrorTelemetrySeconds\":{},\"acceptedLocalErrorEstimates\":{},\"recoverableTrials\":{},\"nonlinearClosure\":{},\"energyPCompletion\":{completion},\"P\":{}}}",
             self.residuals,
             self.bases,
             self.actions,
@@ -375,6 +408,7 @@ impl Callbacks<'_> {
             self.error_telemetry_seconds,
             self.local_errors.json(),
             self.recoverable,
+            self.convergence.json(),
             self.p.metrics_json()
         )
     }
@@ -732,6 +766,7 @@ fn run(
     let power_work = power_weights.workspace();
     let mut callbacks = Box::new(Callbacks {
         model,
+        convergence: cooling_convergence::Convergence::new(model)?,
         work,
         p,
         coordinates,
@@ -745,6 +780,11 @@ fn run(
         preconditioner_rhs: vec![0.; n],
         power_weights,
         power_work,
+        barrel_weights: cooling_power::BarrelWeights::new(
+            &model.source,
+            model.barrel.config().targets,
+            model.barrel.config().capture_photon_j,
+        )?,
         power_resolution_w: cooling_accuracy::DEPOSIT_RESOLUTION_W / refinement,
         start,
         allowance,
@@ -778,13 +818,7 @@ fn run(
             .map(|i| f64::from(model.is_differential(i)))
             .collect::<Vec<_>>(),
     )?;
-    let mut constraints = vec![0.; n];
-    constraints[..l.source_end].fill(1.);
-    constraints[model.source.ledger_row()] = 0.;
-    constraints[callbacks.energy.row] = 0.; // Signed aggregate defect, not a physical E stock.
-    constraints[l.products_start..l.energies_start].fill(1.);
-    constraints[l.temperatures_start..].fill(2.);
-    let constraints = owned.vector(&constraints)?;
+    let constraints = owned.vector(&physical_constraints(model, callbacks.energy.row))?;
     owned.spgmr(y, 30, 0)?;
     owned.ida = unsafe { IDACreate(owned.context) };
     if owned.ida.is_null() {
@@ -822,8 +856,30 @@ fn run(
         unsafe { IDASetPreconditioner(owned.ida, psetup, psolve) },
         "Fixed component P",
     )?;
+    // Linear convergence has its own dimension-independent weighted L2
+    // resolution. This is not a physical chart guarantee: CTest checks that
+    // separately on the actual corrected Newton candidate.
+    checked(
+        unsafe { IDASetEpsLin(owned.ida, cooling_convergence::EPS_LIN) },
+        "Explicit linear convergence coefficient",
+    )?;
+    checked(
+        unsafe { IDASetNonlinConvCoef(owned.ida, cooling_convergence::NONLINEAR_COEFFICIENT) },
+        "Explicit stock nonlinear convergence coefficient",
+    )?;
+    checked(
+        unsafe { IDASetLSNormFactor(owned.ida, 1.) },
+        "Dimension-independent linear L2 norm factor",
+    )?;
+    let nonlinear = owned.newton(y)?;
+    checked(
+        unsafe { IDASetNonlinearSolver(owned.ida, nonlinear) },
+        "Owned stock Newton",
+    )?;
+    callbacks.convergence.budget(start, allowance);
+    callbacks.convergence.install(owned.ida, nonlinear)?;
     let ic_status = unsafe { IDACalcIC(owned.ida, 1, 0.001) };
-    if ic_status != 0 || callbacks.fatal.is_some() {
+    if ic_status != 0 || callbacks.fatal.is_some() || callbacks.convergence.fatal.is_some() {
         let mut failed_y = vec![0.; n];
         let mut failed_yp = vec![0.; n];
         coordinates.physical(unsafe { values(y, n) }?, &mut failed_y);
@@ -834,7 +890,10 @@ fn run(
         checkpoint(&path, 0., &failed_y, &failed_yp)?;
         let reason = format!(
             "Held-stock consistent initialization status {ic_status}, fatal callback {:?}",
-            callbacks.fatal
+            callbacks
+                .fatal
+                .as_ref()
+                .or(callbacks.convergence.fatal.as_ref())
         );
         println!(
             "{{\"kind\":\"initialization-refusal\",\"passed\":false,\"lastAdmittedTime\":0,\"reason\":{},\"unadmittedRawStatePath\":{},\"costs\":{}}}",
@@ -891,7 +950,13 @@ fn run(
             callbacks.budget()?;
             if out.steps > 0 {
                 let status = unsafe { IDASolve(owned.ida, HORIZON, &mut out.returned, y, yp, 2) };
-                checked_ida_step(status, callbacks.fatal.as_deref())?;
+                checked_ida_step(
+                    status,
+                    callbacks
+                        .fatal
+                        .as_deref()
+                        .or(callbacks.convergence.fatal.as_deref()),
+                )?;
                 retained_endpoint(owned.ida, out.returned, y, yp, endpoint_y, endpoint_yp)?;
                 coordinates.physical(unsafe { values(endpoint_y, n) }?, &mut physical);
                 callbacks.energy.state_to_physical(&mut physical);
@@ -927,6 +992,12 @@ fn run(
                     }
                     out.max_thermal_chart = out.max_thermal_chart.max(dt);
                 }
+                let dt = callbacks.work.residual[l.barrel_temperature].abs()
+                    / callbacks.work.barrel.capacity()?;
+                if !dt.is_finite() || dt > 1e-4 {
+                    return Err(format!("Barrel caloric chart correction {dt} K"));
+                }
+                out.max_thermal_chart = out.max_thermal_chart.max(dt);
                 Ok(())
             })();
             callbacks.screen_seconds += screen_started.elapsed().as_secs_f64();
@@ -990,6 +1061,7 @@ fn run(
                     source_nc: nc,
                     deposition: callbacks.work.source.fuel_deposition()?.to_vec(),
                     water_mass: callbacks.work.network.chart_mass.clone(),
+                    barrel_power: cooling_accuracy::barrel_powers(&callbacks.work)?,
                 };
                 callbacks.screen_seconds += common_started.elapsed().as_secs_f64();
                 let io_started = Instant::now();
@@ -1235,6 +1307,8 @@ fn execute() -> Result<(), String> {
     let pair_evaluated = normal.passed && tight.as_ref().is_some_and(|r| r.passed);
     let mut thermal_developed = None;
     let mut source_developed = None;
+    let mut barrel_developed = None;
+    let mut barrel_details = "null".to_string();
     let mut thermal_details = "null".to_string();
     let mut comparisons = Vec::new();
     let mut max_source_local = 0f64;
@@ -1245,6 +1319,8 @@ fn execute() -> Result<(), String> {
     let mut max_network = 0f64;
     let mut max_deposit = 0f64;
     let mut max_carrier = 0f64;
+    let mut max_barrel = 0f64;
+    let mut max_barrel_power = 0f64;
     let mut feedback = "null".to_string();
     if let Some(t) = tight.as_ref().filter(|t| normal.passed && t.passed) {
         cooling_accuracy::check_schedule(&normal.samples)?;
@@ -1268,6 +1344,8 @@ fn execute() -> Result<(), String> {
                 .max(c.deposit_local_ratio)
                 .max(c.deposit_sumabs_ratio);
             max_carrier = max_carrier.max(c.carrier_ratio);
+            max_barrel = max_barrel.max(c.barrel_thermal_ratio);
+            max_barrel_power = max_barrel_power.max(c.barrel_power_ratio);
             comparisons.push(c.json());
         }
         let original_mean = mean_fuel(&prepared.model, &normal.initial)?;
@@ -1290,13 +1368,46 @@ fn execute() -> Result<(), String> {
             t.samples.last().ok_or("Missing tighter final sample")?,
         )?);
         feedback = final_feedback(&prepared.model, &t.final_y)?;
+        let row = prepared.model.layout.barrel_temperature;
+        let original = normal.initial[row];
+        let a = normal.final_y[row];
+        let b = t.final_y[row];
+        let change = (b - original).abs();
+        let difference = (a - b).abs();
+        barrel_developed = Some(developed_barrel(change, difference));
+        barrel_details = format!(
+            "{{\"initialK\":{},\"normalFinalK\":{},\"tighterFinalK\":{},\"absoluteChangeK\":{},\"pairedDifferenceK\":{},\"minimumChangeK\":{},\"minimumResponseToPairDifference\":10,\"scope\":\"resolved-finite-sensible-response;not-nuclear-heating-dominance\"}}",
+            finite(original),
+            finite(a),
+            finite(b),
+            finite(change),
+            finite(difference),
+            finite(cooling_accuracy::TEMPERATURE_ATOL)
+        );
     }
-    let passed =
-        pair_evaluated && thermal_developed == Some(true) && source_developed == Some(true);
+    let passed = pair_evaluated
+        && thermal_developed == Some(true)
+        && source_developed == Some(true)
+        && barrel_developed == Some(true);
     let tighter = tight.as_ref().map_or("null".into(), Run::json);
     let fuel_power_resolution = finite(cooling_accuracy::DEPOSIT_RESOLUTION_W);
+    let linear_budget = cooling_convergence::LINEAR_L2_BUDGET;
+    let barrel_gates = format!(
+        "\"barrelPairRatio\":{},\"barrelPowerPairRatio\":{},\"developedBarrelResponse\":{},\"barrelResponse\":{barrel_details}",
+        if pair_evaluated {
+            finite(max_barrel)
+        } else {
+            "null".into()
+        },
+        if pair_evaluated {
+            finite(max_barrel_power)
+        } else {
+            "null".into()
+        },
+        barrel_developed.map_or("null".into(), |v| v.to_string())
+    );
     println!(
-        "{{\"kind\":\"source-cooling-pair\",\"passed\":{passed},\"lastAdmittedTime\":{},\"scope\":\"same-trial-source-finite-fuel-He-primary-finite-SG;cold-fixed-prepared-geometry;no-fullplant-credit\",\"dimension\":{},\"differential\":{},\"settings\":{{\"accuracyPolicy\":\"cold-source-cooling-4\",\"provisional\":true,\"fuelPowerErrorWeights\":\"sparse-current-response-proportional-budget-cap\",\"fuelPowerResolutionW\":{fuel_power_resolution},\"fuelPowerWeightScope\":\"first-order-local-box-budget;not-WRMS-or-paired-error-guarantee\",\"perRowErrorWeights\":\"source-carrier-relative-consequences;network-thermal-absolute-only;energy-defect-absolute\",\"solverEnergyCoordinate\":\"G=sum-installed-energy-change-independent-fuel-release\",\"energyDefectATOLJ\":{},\"referenceAllATOLandRTOLDivisor\":10,\"horizon\":300,\"costGuard\":\"aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic\",\"maxl\":30,\"restarts\":0}},\"gates\":{{\"fullPairComparisonEvaluated\":{pair_evaluated},\"developedThermalResponse\":{},\"developedSourceResponse\":{},\"thermalResponse\":{thermal_details},\"sourceLocalRatio\":{},\"sourceFamilyRatio\":{},\"sourceObservableRatio\":{},\"sourceNCOperatorRatio\":{},\"thermalPairRatio\":{},\"networkPairRatio\":{},\"depositionPairRatio\":{},\"carrierPairRatio\":{}}},\"pairedComparisons\":[{}],\"fuelTemperatureFeedbackDiagnostic\":{feedback},\"normal\":{},\"tighter\":{tighter},\"aggregateWallSeconds\":{}}}",
+        "{{\"kind\":\"source-cooling-pair\",\"passed\":{passed},\"lastAdmittedTime\":{},\"scope\":\"same-trial-source-finite-fuel-He-primary-finite-SG-barrel;cold-fixed-prepared-geometry;no-fullplant-credit\",\"dimension\":{},\"differential\":{},\"settings\":{{\"accuracyPolicy\":\"cold-source-cooling-5\",\"provisional\":true,\"nonlinearClosure\":\"stock-Newton-and-current-physical-network-chart\",\"linearWeightedL2Budget\":{linear_budget},\"algebraicLTE\":\"included\",\"fuelPowerErrorWeights\":\"sparse-current-response-proportional-budget-cap\",\"fuelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerErrorWeights\":\"sparse-current-bulk-capture-Mn-proportional-budget-cap\",\"barrelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerWeightScope\":\"held-route-source-response-only;density-partition-independently-paired\",\"fuelPowerWeightScope\":\"first-order-local-box-budget;not-WRMS-or-paired-error-guarantee\",\"perRowErrorWeights\":\"source-carrier-barrel-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute\",\"solverEnergyCoordinate\":\"G=sum-installed-energy-change-independent-fuel-and-barrel-release-plus-barrel-export\",\"energyDefectATOLJ\":{},\"referenceAllATOLandRTOLDivisor\":10,\"horizon\":300,\"costGuard\":\"aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic\",\"maxl\":30,\"restarts\":0}},\"gates\":{{\"fullPairComparisonEvaluated\":{pair_evaluated},\"developedThermalResponse\":{},\"developedSourceResponse\":{},\"thermalResponse\":{thermal_details},\"sourceLocalRatio\":{},\"sourceFamilyRatio\":{},\"sourceObservableRatio\":{},\"sourceNCOperatorRatio\":{},\"thermalPairRatio\":{},\"networkPairRatio\":{},\"depositionPairRatio\":{},\"carrierPairRatio\":{},{barrel_gates}}},\"pairedComparisons\":[{}],\"fuelTemperatureFeedbackDiagnostic\":{feedback},\"normal\":{},\"tighter\":{tighter},\"aggregateWallSeconds\":{}}}",
         finite(
             tight
                 .as_ref()
@@ -1364,6 +1475,42 @@ fn execute() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn appended_barrel_rows_have_explicit_ids_constraints_and_resolved_development() {
+        let model = cooling_fixture::fixture();
+        let initial = model.initial_state().unwrap();
+        let l = model.layout;
+        let g = EnergyCoordinates::new(&model, &initial).unwrap();
+        let constraints = physical_constraints(&model, g.row);
+        assert_eq!(
+            l.barrel_energy,
+            l.temperatures_start + model.thermal.node_count()
+        );
+        assert_eq!(l.barrel_exported + 1, model.dimension());
+        assert!(model.is_differential(l.barrel_energy));
+        assert!(!model.is_differential(l.barrel_temperature));
+        assert!(model.is_differential(l.barrel_released));
+        assert!(model.is_differential(l.barrel_exported));
+        assert_eq!(
+            [
+                constraints[l.barrel_energy],
+                constraints[l.barrel_temperature],
+                constraints[l.barrel_released],
+                constraints[l.barrel_exported]
+            ],
+            [0., 2., 1., 1.]
+        );
+        assert_eq!(constraints[g.row], 0.);
+        assert!(!progress_relative(&model, l.barrel_energy));
+        assert!(!progress_relative(&model, l.barrel_temperature));
+        assert!(progress_relative(&model, l.barrel_released));
+        assert!(progress_relative(&model, l.barrel_exported));
+        let resolution = cooling_accuracy::TEMPERATURE_ATOL;
+        assert!(!developed_barrel(resolution, 0.));
+        assert!(developed_barrel(1.1 * resolution, 0.));
+        assert!(!developed_barrel(1.1 * resolution, 0.2 * resolution));
+        assert!(!developed_barrel(f64::NAN, 0.));
+    }
     pub(super) fn callbacks(model: &source_cooling::Model) -> Callbacks<'_> {
         let y = model.initial_state().unwrap();
         let yp = vec![0.; model.dimension()];
@@ -1371,6 +1518,7 @@ mod tests {
         let power_work = power_weights.workspace();
         Callbacks {
             model,
+            convergence: cooling_convergence::Convergence::new(model).unwrap(),
             work: model.workspace(),
             p: cooling_block::Preconditioner::new(model, &y, &yp).unwrap(),
             coordinates: Coordinates {
@@ -1391,6 +1539,12 @@ mod tests {
             preconditioner_rhs: vec![0.; model.dimension()],
             power_weights,
             power_work,
+            barrel_weights: cooling_power::BarrelWeights::new(
+                &model.source,
+                model.barrel.config().targets,
+                model.barrel.config().capture_photon_j,
+            )
+            .unwrap(),
             power_resolution_w: cooling_accuracy::DEPOSIT_RESOLUTION_W,
             start: Instant::now(),
             allowance: 120.,
@@ -1516,11 +1670,14 @@ mod tests {
         let mut physical = initial.clone();
         physical[g.row] += 2.;
         physical[model.source.fuel_release_row()] = 0.125;
+        physical[model.layout.barrel_energy] += 0.75;
+        physical[model.layout.barrel_released] = 0.5;
+        physical[model.layout.barrel_exported] = 0.125;
         physical[d.ledger] = 0.25;
         let mut solver = physical.clone();
         d.transform(&mut solver);
         g.state_to_solver(&mut solver);
-        assert_eq!(solver[g.row], 1.875);
+        assert_eq!(solver[g.row], 2.25);
         assert_eq!(solver[model.source.fuel_release_row()], 0.125);
         assert_eq!(solver[d.ledger], -0.25);
         let mut reverse_order = physical.clone();
@@ -1534,9 +1691,12 @@ mod tests {
         slope[g.row] = 3.;
         slope[model.layout.energies_start] = 2.;
         slope[model.source.fuel_release_row()] = 0.5;
+        slope[model.layout.barrel_energy] = 0.75;
+        slope[model.layout.barrel_released] = 0.5;
+        slope[model.layout.barrel_exported] = 0.125;
         let original = slope.clone();
         g.vector_to_solver(&mut slope);
-        assert_eq!(slope[g.row], 4.5);
+        assert_eq!(slope[g.row], 4.875);
         g.vector_to_physical(&mut slope);
         assert_eq!(slope, original);
         assert_eq!(
@@ -1713,12 +1873,11 @@ mod tests {
             assert_eq!(unsafe { error_weights(y, w, user) }, 0);
             let normal = unsafe { values(w, n) }.unwrap().to_vec();
             for &r in &boundaries {
-                let relative =
-                    if r < l.source_end || (r >= l.products_start && r < l.energies_start) {
-                        1e-5
-                    } else {
-                        0.
-                    };
+                let relative = if progress_relative(&model, r) {
+                    1e-5
+                } else {
+                    0.
+                };
                 assert_eq!(normal[r], 1. / (0.01 + relative * state[r].abs()));
             }
             c.absolute.fill(0.001);
@@ -1771,6 +1930,14 @@ mod tests {
                 &mut scratch,
             )
             .unwrap();
+        c.barrel_weights
+            .cap(
+                &physical[..model.layout.source_end],
+                c.relative,
+                c.power_resolution_w,
+                &mut expected,
+            )
+            .unwrap();
         for _ in 0..2 {
             assert_eq!(unsafe { error_weights(y, w, user) }, 0);
             assert_eq!(c.state, before);
@@ -1790,7 +1957,7 @@ mod tests {
         let mut t = LocalErrors::new(&model);
         let mut errors = vec![0.; n];
         let weights = vec![2.; n];
-        for family in 0..7 {
+        for family in 0..ERROR_FAMILIES.len() {
             let row = t.labels.iter().position(|&x| x == family).unwrap();
             errors[row] = (family + 1) as f64;
         }

@@ -123,6 +123,7 @@ pub(super) struct Preconditioner {
     thermal: Sparse,
     network: Sparse,
     carrier: Sparse,
+    barrel: Sparse,
     work: Workspace,
     valid: bool,
     setups: u64,
@@ -166,6 +167,7 @@ impl Preconditioner {
             }
         }
         let carrier = Sparse::new(2 * model.carrier.cells(), carrier_pattern)?;
+        let barrel = Sparse::new(4, [(0, 0), (0, 1), (1, 0), (1, 1), (2, 2), (3, 3)])?;
         Ok(Self {
             source,
             source_jac,
@@ -173,6 +175,7 @@ impl Preconditioner {
             thermal,
             network,
             carrier,
+            barrel,
             work,
             valid: false,
             setups: 0,
@@ -242,6 +245,19 @@ impl Preconditioner {
                 }
             }
             self.carrier.factor()?;
+            self.barrel.values.fill(0.);
+            self.barrel.add(0, 0, cj)?;
+            let b = model.barrel.config();
+            self.barrel.add(
+                0,
+                1,
+                b.wet_h_w_m2_k * b.contacts.iter().map(|c| c.area_m2).sum::<f64>(),
+            )?;
+            self.barrel.add(1, 0, 1.)?;
+            self.barrel.add(1, 1, -self.work.barrel.capacity()?)?;
+            self.barrel.add(2, 2, cj)?;
+            self.barrel.add(3, 3, cj)?;
+            self.barrel.factor()?;
             Ok(())
         })();
         self.setup_seconds += started.elapsed().as_secs_f64();
@@ -266,8 +282,12 @@ impl Preconditioner {
                 &rhs[l.products_start..l.energies_start],
                 &mut out[l.products_start..l.energies_start],
             )?;
-            self.thermal
-                .solve(&rhs[l.energies_start..], &mut out[l.energies_start..])?;
+            self.thermal.solve(
+                &rhs[l.energies_start..l.barrel_energy],
+                &mut out[l.energies_start..l.barrel_energy],
+            )?;
+            self.barrel
+                .solve(&rhs[l.barrel_energy..], &mut out[l.barrel_energy..])?;
             Ok(())
         })();
         self.solve_seconds += started.elapsed().as_secs_f64();
@@ -278,7 +298,7 @@ impl Preconditioner {
     }
     pub fn metrics_json(&self) -> String {
         format!(
-            "{{\"identity\":\"source9-thermalETKLU-networkKLU-carrierAdvectionKLU;cross-component-feedback-outer-only\",\"setups\":{},\"solves\":{},\"setupSeconds\":{},\"solveSeconds\":{},\"source\":{}}}",
+            "{{\"identity\":\"source9-thermalETKLU-networkKLU-carrierAdvectionKLU-barrelETauditsKLU;cross-component-feedback-outer-only\",\"setups\":{},\"solves\":{},\"setupSeconds\":{},\"solveSeconds\":{},\"source\":{}}}",
             self.setups,
             self.solves,
             self.setup_seconds,
@@ -364,5 +384,44 @@ mod tests {
         p.setup(&model, &y, &yp, 3.).unwrap();
         assert!(p.setup(&model, &y, &yp, 0.).is_err());
         assert!(p.solve(&model, &vec![0.; n], &mut vec![0.; n]).is_err());
+    }
+    #[test]
+    fn barrel_block_matches_independent_held_water_jvp_and_refresh() {
+        let model = fixture::fixture();
+        let y = model.initial_state().unwrap();
+        let yp = vec![0.; model.dimension()];
+        let mut p = Preconditioner::new(&model, &y, &yp).unwrap();
+        for cj in [0.1, 7., 1e12] {
+            p.setup(&model, &y, &yp, cj).unwrap();
+            let x = [0.3, 0.02, -0.4, 0.5];
+            model
+                .barrel
+                .jvp(
+                    x[1],
+                    &[0.; 4],
+                    0.,
+                    &vec![
+                        leitbild_plant_numerics::barrel_thermal::WaterDirection::default();
+                        model.carrier.cells()
+                    ],
+                    &mut p.work.barrel,
+                )
+                .unwrap();
+            let expected = [
+                cj * x[0] - p.work.barrel.heat_jvp().unwrap(),
+                x[0] - p.work.barrel.capacity().unwrap() * x[1],
+                cj * x[2],
+                cj * x[3],
+            ];
+            let actual = action(&p.barrel, &x);
+            for (&a, &b) in actual.iter().zip(&expected) {
+                assert!((a - b).abs() <= 1e-14 * (1. + a.abs() + b.abs()));
+            }
+            let mut solved = [0.; 4];
+            p.barrel.solve(&expected, &mut solved).unwrap();
+            for (&a, &b) in solved.iter().zip(&x) {
+                assert!((a - b).abs() <= 1e-11 * (1. + b.abs()));
+            }
+        }
     }
 }

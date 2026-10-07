@@ -1,18 +1,18 @@
 //! Fixed provisional cold-join qualification, not a plant safety or empirical
 //! error certificate. Reuses the SAME source-consequences-1 comparison. Local
 //! deposited powers are compared separately from SG-scale thermal redistribution.
-use super::{COUNT_ATOL, ENERGY_ATOL, finite, quote, ratio, source_accuracy, source_pair};
+use super::{finite, quote, ratio, source_accuracy, source_pair, COUNT_ATOL, ENERGY_ATOL};
 use leitbild_plant_numerics::{
     operating_admission,
     source_cooling::Model,
     source_evolution::{Diagnostics, Workspace as SourceWorkspace},
 };
 
-pub(super) const POLICY: &str = "cold-source-cooling-4";
+pub(super) const POLICY: &str = "cold-source-cooling-5";
 pub(super) const OUTPUTS: [f64; 14] = [
     0.001, 0.01, 0.1, 1., 2., 5., 10., 20., 30., 60., 120., 180., 240., 300.,
 ];
-const TEMPERATURE_ATOL: f64 = 1e-3;
+pub(super) const TEMPERATURE_ATOL: f64 = 1e-3;
 const TEMPERATURE_PAIR: f64 = 0.01;
 pub(super) const DEPOSIT_RESOLUTION_W: f64 = 1e-12;
 
@@ -24,6 +24,9 @@ pub(super) struct Sample {
     pub source_nc: Vec<f64>,
     pub deposition: Vec<f64>,
     pub water_mass: Vec<f64>,
+    /// Emitted, nuclear-only barrel self/electron heat, export, then
+    /// recipient-water photon heat. Sensible contact heat is NOT in this vector.
+    pub barrel_power: Vec<f64>,
 }
 impl Sample {
     fn source<'a>(&'a self, model: &Model) -> source_pair::SourceSample<'a> {
@@ -45,6 +48,7 @@ pub(super) struct Accuracy {
     thermal_capacity: Vec<f64>,
     energy_rows: Vec<(usize, f64)>,
     carrier_q: [f64; 2],
+    barrel_capacity: f64,
 }
 fn product_resolution(reference: f64, q: f64) -> Result<f64, String> {
     if !reference.is_finite() || reference < 0. || !q.is_finite() || q < 0. {
@@ -99,6 +103,11 @@ impl Accuracy {
             absolute[l.energies_start + i] = c * TEMPERATURE_ATOL;
             absolute[l.temperatures_start + i] = TEMPERATURE_ATOL;
         }
+        let barrel_capacity = model.barrel.heat_capacity(initial[l.barrel_temperature])?;
+        absolute[l.barrel_energy] = barrel_capacity * TEMPERATURE_ATOL;
+        absolute[l.barrel_temperature] = TEMPERATURE_ATOL;
+        absolute[l.barrel_released] = ENERGY_ATOL;
+        absolute[l.barrel_exported] = ENERGY_ATOL;
         if absolute.iter().any(|v| !v.is_finite() || *v <= 0.) {
             return Err("Invalid cold-join absolute weights".into());
         }
@@ -132,6 +141,7 @@ impl Accuracy {
             thermal_capacity,
             energy_rows,
             carrier_q,
+            barrel_capacity,
         })
     }
     pub fn absolute(&self, refinement: f64) -> Result<Vec<f64>, String> {
@@ -140,8 +150,9 @@ impl Accuracy {
     pub fn flow_absolute(&self, refinement: f64) -> Result<Vec<f64>, String> {
         refined(&self.flow_absolute, refinement)
     }
-    /// Installed thermal energy is fed ONLY by the independently integrated
-    /// actual fuel release. Source audit rows are not extra energy stores.
+    /// Installed energy receives independent fuel/barrel release less photon
+    /// export. Fuel/He and barrel energy changes leave the network expectation;
+    /// the release/export audit coordinates are not extra sensible stores.
     pub fn expected_network_totals(&self, model: &Model, y: &[f64]) -> Result<[f64; 3], String> {
         if y.len() != self.initial.len() {
             return Err("Wrong cold-join energy shape".into());
@@ -155,7 +166,11 @@ impl Accuracy {
         let released =
             y[model.source.fuel_release_row()] - self.initial[model.source.fuel_release_row()];
         let mut totals = self.initial_network_totals;
-        totals[1] += released - solid_change;
+        let barrel_paid = (y[l.barrel_released] - self.initial[l.barrel_released])
+            - (y[l.barrel_exported] - self.initial[l.barrel_exported]);
+        totals[1] += released + barrel_paid
+            - solid_change
+            - (y[l.barrel_energy] - self.initial[l.barrel_energy]);
         if totals.iter().any(|v| !v.is_finite()) {
             return Err("Nonfinite installed thermal expectation".into());
         }
@@ -197,9 +212,60 @@ impl Accuracy {
             deposit_sumabs_ratio: 0.,
             max_temperature_change: 0.,
             max_temperature_difference: 0.,
+            barrel_thermal_ratio: 0.,
+            barrel_power_ratio: 0.,
+            barrel_details: String::new(),
             worst: None,
         };
         let l = model.layout;
+        result.barrel_thermal_ratio = result.record(
+            "barrel-temperature",
+            l.barrel_temperature,
+            a.y[l.barrel_temperature],
+            b.y[l.barrel_temperature],
+            (a.y[l.barrel_temperature] - b.y[l.barrel_temperature]).abs(),
+            TEMPERATURE_PAIR,
+        )?;
+        for (family, row, resolution) in [
+            (
+                "barrel-energy-change",
+                l.barrel_energy,
+                self.barrel_capacity * TEMPERATURE_ATOL,
+            ),
+            ("barrel-released-energy", l.barrel_released, ENERGY_ATOL),
+            ("barrel-exported-energy", l.barrel_exported, ENERGY_ATOL),
+        ] {
+            let x = a.y[row] - self.initial[row];
+            let y = b.y[row] - self.initial[row];
+            result.barrel_thermal_ratio = result.barrel_thermal_ratio.max(result.record(
+                family,
+                row,
+                x,
+                y,
+                (x - y).abs(),
+                1e-3 * y.abs() + 20. * resolution,
+            )?);
+        }
+        if a.barrel_power.len() != 3 + model.carrier.cells()
+            || b.barrel_power.len() != a.barrel_power.len()
+        {
+            return Err("Wrong barrel power sample shape".into());
+        }
+        for (i, (&x, &y)) in a.barrel_power.iter().zip(&b.barrel_power).enumerate() {
+            result.barrel_power_ratio = result.barrel_power_ratio.max(result.record(
+                "barrel-emission-local-export-water-W",
+                i,
+                x,
+                y,
+                (x - y).abs(),
+                1e-3 * y.abs() + 20. * DEPOSIT_RESOLUTION_W,
+            )?);
+        }
+        result.barrel_details = format!(
+            "{{\"scope\":\"nuclear-only-powers-separated-from-sensible-contacts\",\"normal\":{},\"tighter\":{}}}",
+            barrel_details(model, a),
+            barrel_details(model, b)
+        );
         let mut thermal_error = 0.;
         let mut thermal_signal = 0.;
         let mut thermal_resolution = 0.;
@@ -413,6 +479,40 @@ fn refined(values: &[f64], refinement: f64) -> Result<Vec<f64>, String> {
     }
     Ok(result)
 }
+fn barrel_details(model: &Model, s: &Sample) -> String {
+    let l = model.layout;
+    let p = model.barrel.config();
+    let contacts = p
+        .contacts
+        .iter()
+        .map(|c| {
+            format!(
+                "{{\"water\":{},\"sensibleToWaterW\":{}}}",
+                c.water,
+                finite(
+                    p.wet_h_w_m2_k
+                        * c.area_m2
+                        * (s.y[l.barrel_temperature]
+                            - model
+                                .network
+                                .temperature(c.water, &s.y[l.network_start..l.products_start]))
+                )
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{{\"temperatureK\":{},\"sensibleEnergyJ\":{},\"emittedEnergyJ\":{},\"exportedEnergyJ\":{},\"emittedW\":{},\"nuclearLocalW\":{},\"exportW\":{},\"waterPhotonWByNativeCell\":{},\"sensibleContacts\":[{contacts}]}}",
+        finite(s.y[l.barrel_temperature]),
+        finite(s.y[l.barrel_energy]),
+        finite(s.y[l.barrel_released]),
+        finite(s.y[l.barrel_exported]),
+        finite(s.barrel_power[0]),
+        finite(s.barrel_power[1]),
+        finite(s.barrel_power[2]),
+        super::numbers(&s.barrel_power[3..])
+    )
+}
 fn carrier_comparison(
     x: f64,
     y: f64,
@@ -479,6 +579,9 @@ pub(super) struct Comparison {
     pub deposit_sumabs_ratio: f64,
     pub max_temperature_change: f64,
     pub max_temperature_difference: f64,
+    pub barrel_thermal_ratio: f64,
+    pub barrel_power_ratio: f64,
+    barrel_details: String,
     worst: Option<(&'static str, usize, f64, f64, f64, f64, f64)>,
 }
 impl Comparison {
@@ -513,6 +616,8 @@ impl Comparison {
                 self.carrier_ratio,
                 self.deposit_local_ratio,
                 self.deposit_sumabs_ratio,
+                self.barrel_thermal_ratio,
+                self.barrel_power_ratio,
             ]
             .iter()
             .any(|v| *v > 1.)
@@ -520,7 +625,7 @@ impl Comparison {
     pub fn json(&self) -> String {
         let worst=self.worst.map_or("null".into(),|(family,row,a,b,difference,bound,value)|format!("{{\"family\":{},\"row\":{row},\"normal\":{},\"tighter\":{},\"difference\":{},\"bound\":{},\"ratio\":{}}}",quote(family),finite(a),finite(b),finite(difference),finite(bound),finite(value)));
         format!(
-            "{{\"policy\":\"cold-source-cooling-4\",\"provisional\":true,\"fullPairQualified\":false,\"source\":{},\"thermalTemperatureRatio\":{},\"thermalEnergyRatio\":{},\"thermalSUMABSRatio\":{},\"networkTemperatureRatio\":{},\"networkPressureRatio\":{},\"secondaryMassRatio\":{},\"SGHeatRatio\":{},\"carrierConsequenceRatio\":{},\"depositionLocalRatio\":{},\"depositionSUMABSRatio\":{},\"thermalTemperatureChange\":{},\"thermalTemperaturePairDifference\":{},\"worstCooling\":{}}}",
+            "{{\"policy\":\"cold-source-cooling-5\",\"provisional\":true,\"fullPairQualified\":false,\"source\":{},\"thermalTemperatureRatio\":{},\"thermalEnergyRatio\":{},\"thermalSUMABSRatio\":{},\"networkTemperatureRatio\":{},\"networkPressureRatio\":{},\"secondaryMassRatio\":{},\"SGHeatRatio\":{},\"carrierConsequenceRatio\":{},\"depositionLocalRatio\":{},\"depositionSUMABSRatio\":{},\"thermalTemperatureChange\":{},\"thermalTemperaturePairDifference\":{},\"barrelPairRatio\":{},\"barrelPowerPairRatio\":{},\"barrelReceipts\":{},\"worstCooling\":{}}}",
             self.source.json(),
             finite(self.thermal_temperature_ratio),
             finite(self.thermal_energy_ratio),
@@ -534,6 +639,9 @@ impl Comparison {
             finite(self.deposit_sumabs_ratio),
             finite(self.max_temperature_change),
             finite(self.max_temperature_difference),
+            finite(self.barrel_thermal_ratio),
+            finite(self.barrel_power_ratio),
+            self.barrel_details,
             worst
         )
     }
@@ -556,6 +664,17 @@ pub(super) fn captured_targets(model: &Model, y: &[f64]) -> Result<Vec<f64>, Str
                 .map_err(str::to_owned)
         })
         .collect()
+}
+pub(super) fn barrel_powers(
+    w: &leitbild_plant_numerics::source_cooling::Workspace,
+) -> Result<Vec<f64>, String> {
+    let mut powers = vec![
+        w.barrel.emitted_rate()?,
+        w.barrel.nuclear_heat_rate()?,
+        w.barrel.export_rate()?,
+    ];
+    powers.extend_from_slice(w.barrel.water_photon_heat()?);
+    Ok(powers)
 }
 pub(super) fn nc_coefficients(model: &Model, work: &SourceWorkspace) -> Result<Vec<f64>, String> {
     let mut out = vec![0.; model.source.nc_pattern().len()];
@@ -655,6 +774,76 @@ pub(super) fn admit_source(
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn sample(model: &Model) -> Sample {
+        let y = model.initial_state().unwrap();
+        let mut w = model.workspace();
+        model
+            .evaluate(&y, &vec![0.; y.len()], None, &mut w)
+            .unwrap();
+        Sample {
+            time: 0.001,
+            source_d: w.source.diagnostics().unwrap(),
+            source_captures: captured_targets(model, &y).unwrap(),
+            source_nc: nc_coefficients(model, &w.source).unwrap(),
+            deposition: w.source.fuel_deposition().unwrap().to_vec(),
+            water_mass: w.network.chart_mass.clone(),
+            barrel_power: barrel_powers(&w).unwrap(),
+            y,
+        }
+    }
+    #[test]
+    fn barrel_owned_energy_expectation_and_nuclear_pair_cannot_hide_in_thermal_power() {
+        let model = super::super::cooling_fixture::fixture_with_contrast();
+        let emissions = vec![[0.01, 0.02]; model.source.target_reference_atoms().len()];
+        let accuracy = Accuracy::new(&model, &emissions).unwrap();
+        let l = model.layout;
+        let mut y = model.initial_state().unwrap();
+        let original = accuracy.expected_network_totals(&model, &y).unwrap();
+        y[l.barrel_energy] += 2.;
+        y[l.barrel_released] += 4.;
+        y[l.barrel_exported] += 1.;
+        let expected = accuracy.expected_network_totals(&model, &y).unwrap();
+        assert!((expected[1] - original[1] - 1.).abs() < 1e-6);
+        let a = sample(&model);
+        let mut b = sample(&model);
+        assert!(!accuracy.compare_one(&model, &a, &b).unwrap().failed());
+        b.barrel_power[1] = 1e-6;
+        assert!(
+            accuracy
+                .compare_one(&model, &a, &b)
+                .unwrap()
+                .barrel_power_ratio
+                > 1.
+        );
+        b = sample(&model);
+        b.barrel_power[3] = 1e-6;
+        assert!(
+            accuracy
+                .compare_one(&model, &a, &b)
+                .unwrap()
+                .barrel_power_ratio
+                > 1.
+        );
+        b = sample(&model);
+        b.y[l.barrel_released] = 1e-9;
+        assert!(
+            accuracy
+                .compare_one(&model, &a, &b)
+                .unwrap()
+                .barrel_thermal_ratio
+                > 1.
+        );
+        let normal = accuracy.absolute(1.).unwrap();
+        let tight = accuracy.absolute(10.).unwrap();
+        for row in [
+            l.barrel_energy,
+            l.barrel_temperature,
+            l.barrel_released,
+            l.barrel_exported,
+        ] {
+            assert_eq!(normal[row] / 10., tight[row]);
+        }
+    }
     #[test]
     fn all_absolute_weights_refine_and_refuse_invalid_values() {
         assert_eq!(refined(&[2., 3.], 10.).unwrap(), vec![0.2, 0.3]);
@@ -681,7 +870,7 @@ mod tests {
             carrier_comparison(1., 1., 100., 200., -100., 0.)
                 .unwrap()
                 .1
-                .0
+                 .0
                 > 1.
         );
         assert!(product_resolution(1., f64::INFINITY).is_err());
@@ -700,6 +889,7 @@ mod tests {
                 source_nc: vec![],
                 deposition: vec![],
                 water_mass: vec![],
+                barrel_power: vec![],
             })
             .collect::<Vec<_>>();
         assert!(check_schedule(&samples).is_ok());

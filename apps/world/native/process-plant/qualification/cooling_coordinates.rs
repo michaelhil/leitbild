@@ -1,13 +1,13 @@
 //! Solver-only affine energy chart. Physical owners retain every E and the
-//! independent fuel-release receipt. No balance is imposed or reset here.
+//! independent fuel/barrel-release and photon-export receipts. No balance is
+//! imposed or reset here.
 use leitbild_plant_numerics::source_cooling::Model;
 
 pub(super) struct EnergyCoordinates {
     pub row: usize,
     anchor_initial: f64,
-    release: usize,
+    receipts: Vec<(usize, f64, f64)>,
     energies: Vec<(usize, f64)>,
-    release_initial: f64,
 }
 fn sum(values: impl Iterator<Item = f64>) -> f64 {
     let (mut s, mut c) = (0f64, 0f64);
@@ -41,28 +41,32 @@ impl EnergyCoordinates {
             .max_by(|&&a, &&b| initial[a].abs().total_cmp(&initial[b].abs()))
             .ok_or("Energy chart needs installed network energy")?;
         rows.extend(l.energies_start..l.temperatures_start);
+        rows.push(l.barrel_energy);
         if !model.is_differential(row) {
             return Err("Energy-chart anchor is not differential".into());
         }
-        let release = model.source.fuel_release_row();
+        let receipts = [
+            (model.source.fuel_release_row(), -1.),
+            (l.barrel_released, -1.),
+            (l.barrel_exported, 1.),
+        ]
+        .into_iter()
+        .map(|(r, sign)| (r, sign, initial[r]))
+        .collect();
         Ok(Self {
             row,
             anchor_initial: initial[row],
-            release,
+            receipts,
             energies: rows.into_iter().map(|r| (r, initial[r])).collect(),
-            release_initial: initial[release],
         })
     }
-    /// Affine map for states only: G = sum(E-E0) - (R-R0).
+    /// Affine state map: G=sum(delta installed E)-delta fuel/barrel release+delta export.
     pub fn state_to_solver(&self, values: &mut [f64]) {
-        values[self.row] =
-            sum(self
-                .energies
+        values[self.row] = sum(self.energies.iter().map(|&(r, e0)| values[r] - e0).chain(
+            self.receipts
                 .iter()
-                .map(|&(r, e0)| values[r] - e0)
-                .chain(std::iter::once(
-                    -(values[self.release] - self.release_initial),
-                )));
+                .map(|&(r, sign, initial)| sign * (values[r] - initial)),
+        ));
     }
     pub fn state_to_physical(&self, values: &mut [f64]) {
         values[self.row] = self.anchor_initial
@@ -73,7 +77,11 @@ impl EnergyCoordinates {
                         .filter(|&&(r, _)| r != self.row)
                         .map(|&(r, b)| -(values[r] - b)),
                 )
-                .chain(std::iter::once(values[self.release] - self.release_initial)));
+                .chain(
+                    self.receipts
+                        .iter()
+                        .map(|&(r, sign, initial)| -sign * (values[r] - initial)),
+                ));
     }
     /// Linear map for rates, residuals, directions and corrections: T v.
     pub fn balance(&self, values: &[f64]) -> f64 {
@@ -81,7 +89,7 @@ impl EnergyCoordinates {
             .energies
             .iter()
             .map(|&(r, _)| values[r])
-            .chain(std::iter::once(-values[self.release])))
+            .chain(self.receipts.iter().map(|&(r, sign, _)| sign * values[r])))
     }
     pub fn vector_to_solver(&self, values: &mut [f64]) {
         values[self.row] = self.balance(values);
@@ -94,7 +102,7 @@ impl EnergyCoordinates {
                     .filter(|&&(r, _)| r != self.row)
                     .map(|&(r, _)| -values[r]),
             )
-            .chain(std::iter::once(values[self.release])));
+            .chain(self.receipts.iter().map(|&(r, sign, _)| -sign * values[r])));
     }
     pub fn absolute(dimension: usize, refinement: f64) -> f64 {
         // Prospective allocation: 1 J /100, remove single-row WRMS dilution.

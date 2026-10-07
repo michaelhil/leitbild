@@ -15,13 +15,17 @@ const admittedRatio=z.number().finite().nonnegative().max(1),arm=z.object({passe
  * incomplete pair. The physical/error policy is owned by the native qualifier. */
 export const fuelCoolingAdmission=z.object({kind:z.literal('source-cooling-pair'),passed:z.literal(true),lastAdmittedTime:z.literal(300),
  dimension:z.number().int().positive(),differential:z.number().int().positive(),normal:arm,tighter:arm,
- settings:z.object({accuracyPolicy:z.literal('cold-source-cooling-4'),provisional:z.literal(true),horizon:z.literal(300),
+ settings:z.object({accuracyPolicy:z.literal('cold-source-cooling-5'),provisional:z.literal(true),horizon:z.literal(300),
   fuelPowerErrorWeights:z.literal('sparse-current-response-proportional-budget-cap'),fuelPowerResolutionW:z.literal(1e-12),
+  barrelPowerErrorWeights:z.literal('sparse-current-bulk-capture-Mn-proportional-budget-cap'),barrelPowerResolutionW:z.literal(1e-12),
   costGuard:z.literal('aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic'),
-  solverEnergyCoordinate:z.literal('G=sum-installed-energy-change-independent-fuel-release'),
+  nonlinearClosure:z.literal('stock-Newton-and-current-physical-network-chart'),
+  linearWeightedL2Budget:z.literal(0.0165),algebraicLTE:z.literal('included'),
+  solverEnergyCoordinate:z.literal('G=sum-installed-energy-change-independent-fuel-and-barrel-release-plus-barrel-export'),
   energyDefectATOLJ:z.number().finite().positive(),
-  referenceAllATOLandRTOLDivisor:z.literal(10),perRowErrorWeights:z.literal('source-carrier-relative-consequences;network-thermal-absolute-only;energy-defect-absolute')}),
+  referenceAllATOLandRTOLDivisor:z.literal(10),perRowErrorWeights:z.literal('source-carrier-barrel-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute')}),
  gates:z.object({fullPairComparisonEvaluated:z.literal(true),developedThermalResponse:z.literal(true),developedSourceResponse:z.literal(true),
+  developedBarrelResponse:z.literal(true),barrelPairRatio:admittedRatio,barrelPowerPairRatio:admittedRatio,
   sourceLocalRatio:admittedRatio,sourceFamilyRatio:admittedRatio,sourceObservableRatio:admittedRatio,sourceNCOperatorRatio:admittedRatio,
   thermalPairRatio:admittedRatio,networkPairRatio:admittedRatio,depositionPairRatio:admittedRatio,carrierPairRatio:admittedRatio}),
  pairedComparisons:z.array(z.unknown()).length(14),fuelTemperatureFeedbackDiagnostic:z.object({})})
@@ -73,7 +77,7 @@ export async function qualifyFuelCooling(options:Options){
  await mkdir(directory)
  await Promise.all(paths.map((p,i)=>writeFile(join(directory,`${i}-${basename(p)}`),bytes[i]!,{flag:'wx'})))
  await writeFile(join(directory,'input.txt'),fixture,{flag:'wx'})
- await writeFile(join(directory,'composition.json'),JSON.stringify({thermal:prepared.thermal,primary:prepared.primary,
+ await writeFile(join(directory,'composition.json'),JSON.stringify({thermal:prepared.thermal,primary:prepared.primary,barrel:prepared.barrel,
   ownerIdentities:prepared.ownerIdentities,limitations:prepared.limitations},null,2)+'\n',{flag:'wx'})
  // All linked non-system libraries must be retained; the old receipt is not a
  // substitute for inspecting this newly built binary and its actual links.

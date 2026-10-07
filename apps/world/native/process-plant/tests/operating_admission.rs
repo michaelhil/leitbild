@@ -205,3 +205,113 @@ fn pressure_split_and_omitted_kinetic_energy_premises_remain_hard_screens() {
     let d = a::screen(&n, &w, &unresolved, expected, &flow).unwrap();
     assert!(d.held_head_ratio > 1.);
 }
+
+#[test]
+fn shared_chart_helper_reports_corrections_without_admitting_or_projecting() {
+    let n = fixture();
+    let y = n.initial_state().unwrap();
+    let mut w = evaluated(&n, &y);
+    let initial = a::chart_corrections(&n, &w, &y).unwrap();
+    initial.check().unwrap();
+    assert_eq!(initial.property_requests, 0);
+    let compliance = w
+        .chart_derivatives
+        .iter()
+        .map(|d| d[0] - d[1] * d[2] / d[3])
+        .sum::<f64>();
+    for (dp, passes) in [(2.5, true), (5., true), (6., false), (-6., false)] {
+        w.residual[n.pressure_row()] = dp * compliance;
+        let c = a::chart_corrections(&n, &w, &y).unwrap();
+        close(c.primary[0], dp.abs());
+        assert_eq!(c.check().is_ok(), passes);
+        assert_eq!(w.residual[n.pressure_row()], dp * compliance);
+        if !passes {
+            assert!(
+                c.check()
+                    .unwrap_err()
+                    .starts_with("Returned shared chart correction node 0:")
+            );
+        }
+    }
+    for (dt, passes) in [(0.5e-4, true), (1e-4, true), (2e-4, false)] {
+        let [_, mt, _, et] = w.chart_derivatives[0];
+        w.residual[n.pressure_row()] = mt * dt;
+        w.residual[n.temperature_row(0)] = et * dt;
+        let c = a::chart_corrections(&n, &w, &y).unwrap();
+        assert!(c.primary[0] < 1e-8);
+        close(c.primary[1], dt);
+        assert_eq!(c.check().is_ok(), passes);
+    }
+}
+
+#[test]
+fn chart_helper_requires_successful_exact_current_owned_value_preparation() {
+    let n = fixture();
+    let other = fixture();
+    let y = n.initial_state().unwrap();
+    let mut w = n::Workspace::new(&n);
+    assert!(a::chart_corrections(&n, &w, &y).is_err());
+    w.evaluate(&n, &y, &vec![0.; n.dimension()], None).unwrap();
+    assert!(a::chart_corrections(&other, &w, &y).is_err());
+    let mut changed = y.clone();
+    changed[n.pressure_row()] += 1.;
+    assert!(a::chart_corrections(&n, &w, &changed).is_err());
+    assert!(a::chart_corrections(&n, &w, &y).is_ok());
+    let mut bad = y.clone();
+    bad[n.pressure_row()] = f64::NAN;
+    assert!(
+        w.evaluate(&n, &bad, &vec![0.; n.dimension()], None)
+            .is_err()
+    );
+    assert!(a::chart_corrections(&n, &w, &y).is_err());
+    w.evaluate(&n, &y, &vec![0.; n.dimension()], None).unwrap();
+    assert!(
+        w.evaluate(&other, &y, &vec![0.; n.dimension()], None)
+            .is_err()
+    );
+    assert!(a::chart_corrections(&n, &w, &y).is_err());
+    w.evaluate(&n, &y, &vec![0.; n.dimension()], None).unwrap();
+    w.residual[n.pressure_row()] = f64::INFINITY;
+    assert!(a::chart_corrections(&n, &w, &y).is_err());
+}
+
+#[test]
+fn chart_helper_secondary_corrections_share_the_original_limits_and_accounting() {
+    let mut cfg = fixture().config().clone();
+    cfg.secondaries = vec![n::Secondary {
+        volume: 120.,
+        initial_temperature: 313.15,
+        initial_pressure: 101325.,
+        initial_liquid_volume: 72.,
+        initial_nitrogen_mass: 0.,
+        minimum_wetted_liquid_volume: 71.25,
+    }];
+    let n = n::Network::new(cfg).unwrap();
+    let y = n.initial_state().unwrap();
+    let mut w = evaluated(&n, &y);
+    let base = a::chart_corrections(&n, &w, &y).unwrap();
+    base.check().unwrap();
+    assert_eq!(base.property_requests, 8);
+    let d = n.config().secondaries[0]
+        .derivatives(
+            n.secondary_inventory(0),
+            y[n.secondary_temperature_row(0)],
+            y[n.secondary_pressure_row(0)],
+        )
+        .unwrap();
+    for (dp, dt, passes) in [(2., 0.5e-4, true), (6., 0., false), (0., 2e-4, false)] {
+        w.residual[n.secondary_temperature_row(0)] = d[0] * dt + d[1] * dp;
+        w.residual[n.secondary_pressure_row(0)] = -d[2] * dt - d[3] * dp;
+        let c = a::chart_corrections(&n, &w, &y).unwrap();
+        assert!((c.secondary[0] - dp).abs() < 1e-8);
+        assert!((c.secondary[1] - dt).abs() < 1e-12);
+        assert_eq!(c.check().is_ok(), passes);
+        if !passes {
+            assert!(
+                c.check()
+                    .unwrap_err()
+                    .starts_with("Returned wet secondary chart 0:")
+            );
+        }
+    }
+}

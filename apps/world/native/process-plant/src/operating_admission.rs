@@ -4,6 +4,122 @@
 //! supply the actual exchanged-energy expectation, never claim a closed bath.
 use crate::{operating_network::{Network,Workspace},GRAVITY};
 
+pub const CHART_PRESSURE_LIMIT_PA: f64 = 5.;
+pub const CHART_TEMPERATURE_LIMIT_K: f64 = 1e-4;
+
+/// Pointwise EOS consistency, distinct from integration error or conservation.
+/// The workspace must have been prepared at this exact current network state.
+#[derive(Debug)]
+pub struct ChartCorrections {
+    pub primary: [f64; 2],
+    pub secondary: [f64; 2],
+    pub property_requests: usize,
+    primary_context: (usize, f64, f64),
+    secondary_context: Option<(usize, f64, f64)>,
+}
+impl ChartCorrections {
+    /// Same physical limits for accepted endpoints and nonlinear convergence.
+    pub fn check(&self) -> Result<(), String> {
+        if self.primary.iter().chain(&self.secondary).any(|v|!v.is_finite()||*v<0.) {
+            return Err("Invalid current network chart corrections".into());
+        }
+        if self.secondary[0] > CHART_PRESSURE_LIMIT_PA
+            || self.secondary[1] > CHART_TEMPERATURE_LIMIT_K
+        {
+            let Some((k, dp, dt)) = self.secondary_context else {
+                return Err("Invalid current secondary chart corrections".into());
+            };
+            return Err(format!(
+                "Returned wet secondary chart {k}: dp={dp}, dT={dt}"
+            ));
+        }
+        if self.primary[0] > CHART_PRESSURE_LIMIT_PA || self.primary[1] > CHART_TEMPERATURE_LIMIT_K
+        {
+            let (i, dp, dt) = self.primary_context;
+            return Err(format!(
+                "Returned shared chart correction node {i}: dp={dp}, dT={dt}"
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Holding differential regional energies and total mass fixed, solve the
+/// current arrow chart for its pressure/temperature correction. This neither
+/// projects the state nor changes the EOS, residual or solver error weights.
+pub fn chart_corrections(
+    n: &Network,
+    w: &Workspace,
+    y: &[f64],
+) -> Result<ChartCorrections, String> {
+    if y.len() != n.dimension()
+        || y.iter().any(|v| !v.is_finite())
+        || w.residual.len() != n.dimension()
+        || w.chart_derivatives.len() != n.config().water.len()
+        || w.residual.iter().any(|v| !v.is_finite())
+        || w.chart_derivatives
+            .iter()
+            .any(|a| a.iter().any(|v| !v.is_finite()) || a[3] <= 0.)
+    {
+        return Err("Invalid current network chart input".into());
+    }
+    w.check_current_chart(n, y)?;
+    let mut result = ChartCorrections {
+        primary: [0.; 2],
+        secondary: [0.; 2],
+        property_requests: 0,
+        primary_context: (0, 0., 0.),
+        secondary_context: None,
+    };
+    let mut compliance = 0.;
+    let mut dm = w.residual[n.pressure_row()];
+    for (i, &[mp, mt, ep, et]) in w.chart_derivatives.iter().enumerate() {
+        compliance += mp - mt * ep / et;
+        dm -= mt / et * w.residual[n.temperature_row(i)];
+    }
+    if !compliance.is_finite() || compliance <= 0. {
+        return Err("Returned shared inventory chart rank".into());
+    }
+    let dp = dm / compliance;
+    for (i, &[_, _, ep, et]) in w.chart_derivatives.iter().enumerate() {
+        let dt = (w.residual[n.temperature_row(i)] - ep * dp) / et;
+        if !dp.is_finite() || !dt.is_finite() {
+            return Err(format!(
+                "Returned shared chart correction node {i}: dp={dp}, dT={dt}"
+            ));
+        }
+        if i == 0 || (dp.abs() <= CHART_PRESSURE_LIMIT_PA && dt.abs() > result.primary[1]) {
+            result.primary_context = (i, dp, dt);
+        }
+        result.primary[0] = result.primary[0].max(dp.abs());
+        result.primary[1] = result.primary[1].max(dt.abs());
+    }
+    let mut worst_secondary = 0.;
+    for (k, s) in n.config().secondaries.iter().enumerate() {
+        let tr = n.secondary_temperature_row(k);
+        let pr = n.secondary_pressure_row(k);
+        let a = s.derivatives(n.secondary_inventory(k), y[tr], y[pr])?;
+        result.property_requests += 8;
+        let ru = w.residual[tr];
+        let rg = w.residual[pr];
+        let dt = (ru + a[1] * rg / a[3]) / (a[0] - a[1] * a[2] / a[3]);
+        let dp = (-rg - a[2] * dt) / a[3];
+        if !dp.is_finite() || !dt.is_finite() {
+            return Err(format!(
+                "Returned wet secondary chart {k}: dp={dp}, dT={dt}"
+            ));
+        }
+        let ratio = (dp.abs() / CHART_PRESSURE_LIMIT_PA).max(dt.abs() / CHART_TEMPERATURE_LIMIT_K);
+        if result.secondary_context.is_none() || ratio > worst_secondary {
+            result.secondary_context = Some((k, dp, dt));
+            worst_secondary = ratio;
+        }
+        result.secondary[0] = result.secondary[0].max(dp.abs());
+        result.secondary[1] = result.secondary[1].max(dt.abs());
+    }
+    Ok(result)
+}
+
 #[derive(Default,Debug)]
 pub struct Diagnostics {
     pub ledgers:[f64;3], pub chart:[f64;2], pub secondary_chart:[f64;2],
@@ -86,28 +202,18 @@ pub fn screen(n:&Network,w:&Workspace,y:&[f64],expected_totals:[f64;3],flow_atol
     if d.ledgers.iter().any(|v|!v.is_finite())||d.ledgers[0]>1e-6||d.ledgers[1]>1.||d.ledgers[2]>1e-8 {
         return Err(format!("Closed stock ledger refused: {:?}",d.ledgers));
     }
-    let mut compliance=0.;let mut dm=w.residual[n.pressure_row()];
-    for i in 0..nw {let [mp,mt,ep,et]=w.chart_derivatives[i];
-        compliance+=mp-mt*ep/et;dm-=mt/et*w.residual[n.temperature_row(i)];}
+    let charts=chart_corrections(n,w,y)?;
+    charts.check()?;
+    d.secondary_chart=charts.secondary;
+    d.chart=[charts.primary[0].max(charts.secondary[0]),charts.primary[1].max(charts.secondary[1])];
+    d.property_requests+=charts.property_requests;
     for (k,s) in n.config().secondaries.iter().enumerate() {
-        let tr=n.secondary_temperature_row(k);let pr=n.secondary_pressure_row(k);
-        let a=s.derivatives(n.secondary_inventory(k),y[tr],y[pr])?;d.property_requests+=8;
-        let ru=w.residual[tr];let rg=w.residual[pr];
-        let dt=(ru+a[1]*rg/a[3])/(a[0]-a[1]*a[2]/a[3]);let dp=(-rg-a[2]*dt)/a[3];
-        d.secondary_chart[0]=d.secondary_chart[0].max(dp.abs());d.secondary_chart[1]=d.secondary_chart[1].max(dt.abs());
-        if !dp.is_finite()||!dt.is_finite()||dp.abs()>5.||dt.abs()>1e-4 {return Err(format!("Returned wet secondary chart {k}: dp={dp}, dT={dt}"));}
         let st=w.secondary_states[k];let inv=n.secondary_inventory(k);
         let dm=((st.liquid_mass+st.vapor_mass)-inv.water).abs();let dv=(st.liquid_volume+st.gas_volume-s.volume).abs();
         d.secondary_material_volume[0]=d.secondary_material_volume[0].max(dm);d.secondary_material_volume[1]=d.secondary_material_volume[1].max(dv);
         if !dm.is_finite()||!dv.is_finite()||dm>1e-6||dv>1e-10 {return Err("Closed secondary water ledger refused".into());}
     }
-    if !compliance.is_finite()||compliance<=0. {return Err("Returned shared inventory chart rank".into());}
-    let dp=dm/compliance;d.chart=d.secondary_chart;
-    d.chart[0]=d.chart[0].max(dp.abs());
     for i in 0..nw {
-        let [_,_,ep,et]=w.chart_derivatives[i];let dt=(w.residual[n.temperature_row(i)]-ep*dp)/et;
-        d.chart[1]=d.chart[1].max(dt.abs());
-        if !dp.is_finite()||!dt.is_finite()||dp.abs()>5.||dt.abs()>1e-4 {return Err(format!("Returned shared chart correction node {i}: dp={dp}, dT={dt}"));}
         let liquid=w.liquids[i];let pi=n.mechanical_pressure(i,y)-n.eos_pressure(i,y);
         for (j,value) in [pi.abs(),(liquid.compressibility*pi).abs(),pi.abs()/(liquid.density*liquid.cp)].into_iter().enumerate(){d.pressure_split[j]=d.pressure_split[j].max(value);}
         if (liquid.compressibility*pi).abs()>1e-4||pi.abs()/(liquid.density*liquid.cp)>0.01 {return Err(format!("Cold pressure-split approximation exceeded at node {i}: pi={pi}"));}

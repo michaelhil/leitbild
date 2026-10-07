@@ -22,6 +22,7 @@
 #include <sunmatrix/sunmatrix_sparse.h>
 #include <sundials/sundials_iterative.h>
 #include <sundials/sundials_version.h>
+#include <sunnonlinsol/sunnonlinsol_newton.h>
 
 #define SAME_TYPE(value, type) _Generic((value), type: 1, default: 0)
 _Static_assert(SAME_TYPE((sunrealtype)0, double), "Rust f64 / sunrealtype mismatch");
@@ -46,6 +47,10 @@ typedef int (*JacTimes)(double, N_Vector, N_Vector, N_Vector, N_Vector, N_Vector
 typedef int (*ATimes)(void*, N_Vector, N_Vector);
 typedef int (*LinearPrecSetup)(void*);
 typedef int (*LinearPrecSolve)(void*, N_Vector, N_Vector, double, int);
+typedef int (*ConvergenceTest)(SUNNonlinearSolver, N_Vector, N_Vector, double,
+                               N_Vector, void*);
+_Static_assert(SAME_TYPE((SUNNonlinSolConvTestFn)0, ConvergenceTest), "Newton convergence callback ABI mismatch");
+_Static_assert(SAME_TYPE(&IDAGetNonlinearSystemData, int (*)(void*, double*, N_Vector*, N_Vector*, N_Vector*, N_Vector*, N_Vector*, double*, void**)), "IDA nonlinear data ABI mismatch");
 _Static_assert(SAME_TYPE((IDAResFn)0, Residual), "IDA residual callback ABI mismatch");
 _Static_assert(SAME_TYPE((IDALsJacFn)0, Jacobian), "IDA Jacobian callback ABI mismatch");
 _Static_assert(SAME_TYPE((IDALsPrecSetupFn)0, PrecSetup), "IDA setup callback ABI mismatch");
@@ -67,4 +72,20 @@ int leitbild_sundials_versions(int* compiled, int* linked, char* label, int capa
     compiled[1] = SUNDIALS_VERSION_MINOR;
     compiled[2] = SUNDIALS_VERSION_PATCH;
     return (int)SUNDIALSGetVersionNumber(&linked[0], &linked[1], &linked[2], label, capacity);
+}
+
+/* The Newton content and its CTest/ctest_data fields are documented public
+ * SUNDIALS API. Read only; IDA owns the original callback's convergence state.
+ * Never cast another nonlinear-solver implementation's content. */
+int leitbild_sunnewton_convergence(SUNNonlinearSolver solver,
+                                  SUNNonlinSolConvTestFn* test, void** data)
+{
+    if (!solver || !solver->ops || !solver->content || !test || !data ||
+        solver->ops->solve != SUNNonlinSolSolve_Newton ||
+        solver->ops->gettype != SUNNonlinSolGetType_Newton) return -1;
+    SUNNonlinearSolverContent_Newton content = solver->content;
+    if (!content->CTest) return -1;
+    *test = content->CTest;
+    *data = content->ctest_data;
+    return 0;
 }
