@@ -111,17 +111,31 @@ fn finite_diagnostics(d: Diagnostics) -> Result<(), String> {
     }
     Ok(())
 }
-fn checkpoint(
-    relative: f64,
+/// Independent retained owner: working endpoint buffers may subsequently hold
+/// a refused state. Update only after the complete accepted-state screens.
+struct AdmittedEndpoint {
     time: f64,
     steps: u64,
-    elapsed: f64,
-    path: &Path,
-    y: &[f64],
-    yp: &[f64],
-    callbacks: &Callbacks<'_>,
-    memory: Handle,
-) -> Result<(), String> {
+    y: Vec<f64>,
+    yp: Vec<f64>,
+}
+impl AdmittedEndpoint {
+    fn new(y: &[f64], yp: &[f64]) -> Self {
+        Self {
+            time: 0.,
+            steps: 0,
+            y: y.to_vec(),
+            yp: yp.to_vec(),
+        }
+    }
+    fn update(&mut self, time: f64, steps: u64, y: &[f64], yp: &[f64]) {
+        self.y.copy_from_slice(y);
+        self.yp.copy_from_slice(yp);
+        self.time = time;
+        self.steps = steps;
+    }
+}
+fn write_checkpoint(relative: f64, path: &Path, admitted: &AdmittedEndpoint) -> Result<(), String> {
     let pending = path.with_extension("checkpoint-pending");
     let mut file = io::BufWriter::new(
         fs::OpenOptions::new()
@@ -131,11 +145,11 @@ fn checkpoint(
             .map_err(|e| format!("New checkpoint pending file: {e}"))?,
     );
     file.write_all(CHECKPOINT_MAGIC)
-        .and_then(|_| file.write_all(&(y.len() as u64).to_le_bytes()))
-        .and_then(|_| file.write_all(&time.to_le_bytes()))
+        .and_then(|_| file.write_all(&(admitted.y.len() as u64).to_le_bytes()))
+        .and_then(|_| file.write_all(&admitted.time.to_le_bytes()))
         .and_then(|_| file.write_all(&relative.to_le_bytes()))
         .map_err(|e| format!("Checkpoint header: {e}"))?;
-    for &v in y.iter().chain(yp) {
+    for &v in admitted.y.iter().chain(&admitted.yp) {
         file.write_all(&v.to_le_bytes())
             .map_err(|e| format!("Checkpoint state: {e}"))?;
     }
@@ -145,6 +159,18 @@ fn checkpoint(
         .map_err(|e| format!("Checkpoint sync: {e}"))?;
     drop(file);
     fs::rename(&pending, path).map_err(|e| format!("Atomic checkpoint replace: {e}"))?;
+    Ok(())
+}
+fn checkpoint(
+    relative: f64,
+    elapsed: f64,
+    path: &Path,
+    admitted: &AdmittedEndpoint,
+    callbacks: &Callbacks<'_>,
+    memory: Handle,
+) -> Result<(), String> {
+    write_checkpoint(relative, path, admitted)?;
+    let (time, steps) = (admitted.time, admitted.steps);
     let (stats, stats_error) = telemetry_stats(memory);
     println!(
         "{{\"kind\":\"admitted-progress\",\"stateChart\":\"LDSRC-MNF\",\"rtol\":{relative:e},\"lastAdmittedTime\":{time:e},\"lastRetainedStateTime\":{time:e},\"checkpointPath\":{},\"acceptedScreenedSteps\":{steps},\"aggregateElapsedSeconds\":{elapsed:e},\"stateSource\":\"initial-or-IDAGetDky-retained-endpoint\",\"derivativeSource\":\"initial-RHS-or-IDAGetDky-endpoint-polynomial;not-Newton-stage-derivative\",\"solverStats\":{stats},\"telemetryStatsError\":{stats_error},\"measuredKernelCosts\":{}}}",
@@ -573,11 +599,16 @@ fn retain_common(
     y: &[f64],
 ) -> Result<(), String> {
     let name = format!("{}.common-{sample}.state", path.display());
+    let name = Path::new(&name);
+    if name.exists() {
+        return Err("Refusing existing common observation file".into());
+    }
+    let pending = name.with_extension("common-pending");
     let mut file = io::BufWriter::new(
         fs::OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(&name)
+            .open(&pending)
             .map_err(|e| format!("New common observation file: {e}"))?,
     );
     file.write_all(b"LDSRC-CMN")
@@ -591,9 +622,16 @@ fn retain_common(
     }
     file.flush()
         .map_err(|e| format!("Common observation flush: {e}"))?;
+    file.get_ref()
+        .sync_all()
+        .map_err(|e| format!("Common observation sync: {e}"))?;
+    drop(file);
+    // Publish the complete inode without replacing concurrently created evidence.
+    fs::hard_link(&pending, name).map_err(|e| format!("Atomic common observation commit: {e}"))?;
+    fs::remove_file(&pending).map_err(|e| format!("Common observation pending cleanup: {e}"))?;
     println!(
         "{{\"kind\":\"common-state-retained\",\"stateChart\":\"LDSRC-MNF\",\"fileFormat\":\"LDSRC-CMN-y-only\",\"source\":\"IDAGetDky-common-time-interpolation;not-accepted-boundary-or-restart\",\"time\":{time:e},\"rtol\":{relative:e},\"path\":{}}}",
-        quote(&name)
+        quote(&name.display().to_string())
     );
     io::stdout()
         .flush()
@@ -896,17 +934,15 @@ fn run(
     let mut retained_endpoint_valid = false;
     coordinates.physical(&initial, &mut physical_state);
     coordinates.physical(&slopes, &mut physical_slopes);
+    let mut admitted = AdmittedEndpoint::new(&physical_state, &physical_slopes);
     if checkpoint_path.exists() {
         return Err("Refusing to replace an existing run checkpoint".into());
     }
     checkpoint(
         relative,
-        0.,
-        0,
         started.elapsed().as_secs_f64(),
         checkpoint_path,
-        &physical_state,
-        &physical_slopes,
+        &admitted,
         &callbacks,
         owned.ida,
     )?;
@@ -999,6 +1035,12 @@ fn run(
             }
             out.last_admitted = out.returned;
             admitted_steps += 1;
+            admitted.update(
+                out.last_admitted,
+                admitted_steps,
+                &physical_state,
+                &physical_slopes,
+            );
             let mut crossed_output = false;
             while common_output_due(sample, out.returned, diagnostic_end) {
                 checked(
@@ -1051,12 +1093,9 @@ fn run(
             if crossed_output || checkpoint_time.elapsed().as_secs_f64() >= 1. {
                 checkpoint(
                     relative,
-                    out.last_admitted,
-                    admitted_steps,
                     started.elapsed().as_secs_f64(),
                     checkpoint_path,
-                    &physical_state,
-                    &physical_slopes,
+                    &admitted,
                     &callbacks,
                     owned.ida,
                 )?;
@@ -1082,6 +1121,16 @@ fn run(
     if let Err(e) = advancement {
         out.reason = e;
     }
+    // A throttled write can lag the last admitted endpoint on any exit.
+    // This snapshot cannot be contaminated by later refused endpoint buffers.
+    checkpoint(
+        relative,
+        started.elapsed().as_secs_f64(),
+        checkpoint_path,
+        &admitted,
+        &callbacks,
+        owned.ida,
+    )?;
     match Stats::read(owned.ida) {
         Ok(stats) => out.stats = stats,
         Err(e) => {
@@ -1450,6 +1499,72 @@ fn main_result(started: Instant) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn artifact_path(label: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "ld01-source-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+    #[test]
+    fn terminal_checkpoint_uses_retained_owner_not_refused_working_buffers() {
+        let path = artifact_path("terminal-checkpoint");
+        let relative = 1e-5;
+        let mut y = vec![0., -0.];
+        let mut yp = vec![1., 2.];
+        let mut admitted = AdmittedEndpoint::new(&y, &yp);
+        write_checkpoint(relative, &path, &admitted).unwrap();
+        let initial = fs::read(&path).unwrap();
+        assert_eq!(&initial[17..25], &0f64.to_le_bytes());
+        // An exit with zero admitted steps retains the validated initial owner.
+        write_checkpoint(relative, &path, &admitted).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), initial);
+        y[0] = 3.;
+        yp[0] = 4.;
+        admitted.update(2., 5, &y, &yp);
+        // A subsequent refused endpoint overwrites the work vectors, not the
+        // independently admitted snapshot used on terminal error paths.
+        y.fill(-9.);
+        yp.fill(99.);
+        write_checkpoint(relative, &path, &admitted).unwrap();
+        let mut expected = CHECKPOINT_MAGIC.to_vec();
+        expected.extend_from_slice(&2u64.to_le_bytes());
+        expected.extend_from_slice(&2f64.to_le_bytes());
+        expected.extend_from_slice(&relative.to_le_bytes());
+        for value in [3., -0., 4., 2.] {
+            expected.extend_from_slice(&f64::to_le_bytes(value));
+        }
+        assert_eq!(fs::read(&path).unwrap(), expected);
+        let pending = path.with_extension("checkpoint-pending");
+        fs::write(&pending, b"occupied").unwrap();
+        assert!(write_checkpoint(relative, &path, &admitted).is_err());
+        assert_eq!(fs::read(&path).unwrap(), expected);
+        fs::remove_file(pending).unwrap();
+        fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn common_artifact_is_atomic_exact_and_never_replaces_existing_evidence() {
+        let path = artifact_path("common");
+        let relative = 1e-6;
+        let y = [-0., 1., f64::from_bits(0x7ff8_0000_0000_0001)];
+        retain_common(&path, 2, relative, 0.1, &y).unwrap();
+        let name = std::path::PathBuf::from(format!("{}.common-2.state", path.display()));
+        let mut expected = b"LDSRC-CMN".to_vec();
+        expected.extend_from_slice(&3u64.to_le_bytes());
+        expected.extend_from_slice(&0.1f64.to_le_bytes());
+        expected.extend_from_slice(&relative.to_le_bytes());
+        for value in y {
+            expected.extend_from_slice(&value.to_le_bytes());
+        }
+        assert_eq!(fs::read(&name).unwrap(), expected);
+        assert!(!name.with_extension("common-pending").exists());
+        assert!(retain_common(&path, 2, relative, 1., &[9.]).is_err());
+        assert_eq!(fs::read(&name).unwrap(), expected);
+        fs::remove_file(name).unwrap();
+    }
     #[test]
     fn null_callback_userdata_refuses_without_running_action() {
         let mut called = false;
@@ -1702,36 +1817,6 @@ mod tests {
         );
         a.nc_coefficients[0] = f64::NAN;
         assert!(comparator.compare(&model, &a.view(), &b.view()).is_err());
-    }
-    #[test]
-    fn persisted_common_states_are_distinct_y_only_interpolants() {
-        let nonce = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let base =
-            std::env::temp_dir().join(format!("leitbild-common-{}-{nonce}", std::process::id()));
-        let path = format!("{}.common-0.state", base.display());
-        retain_common(&base, 0, RTOL[0], 0.001, &[-0., 1e-300]).unwrap();
-        let bytes = fs::read(&path).unwrap();
-        assert_eq!(&bytes[..9], b"LDSRC-CMN");
-        assert_eq!(bytes.len(), 33 + 2 * 8);
-        assert_eq!(u64::from_le_bytes(bytes[9..17].try_into().unwrap()), 2);
-        assert_eq!(f64::from_le_bytes(bytes[17..25].try_into().unwrap()), 0.001);
-        assert_eq!(
-            f64::from_le_bytes(bytes[25..33].try_into().unwrap()),
-            RTOL[0]
-        );
-        assert_eq!(
-            f64::from_le_bytes(bytes[33..41].try_into().unwrap()).to_bits(),
-            (-0f64).to_bits()
-        );
-        assert_eq!(
-            f64::from_le_bytes(bytes[41..49].try_into().unwrap()),
-            1e-300
-        );
-        assert!(retain_common(&base, 0, RTOL[0], 0.001, &[0., 0.]).is_err());
-        fs::remove_file(path).unwrap();
     }
     #[test]
     fn sample_capture_view_sums_direct_intermediate_and_product() {
