@@ -113,7 +113,7 @@ impl GroupSweep {
         for (k, &(r, c)) in pattern
             .iter()
             .enumerate()
-            .filter(|entry| entry.1 .0 >= neutrons)
+            .filter(|entry| entry.1.0 >= neutrons)
         {
             let i = r - neutrons;
             if c < neutrons {
@@ -239,6 +239,7 @@ pub(super) struct Preconditioner {
     pub(super) factor_seconds: f64,
     pub(super) history_solve_seconds: f64,
     valid: bool,
+    cj: f64,
 }
 impl Preconditioner {
     pub(super) fn metrics_json(&self) -> String {
@@ -253,7 +254,21 @@ impl Preconditioner {
             .map(|b| b.slots.len().to_string())
             .collect::<Vec<_>>()
             .join(",");
-        format!("{{\"method\":\"spatial-KLU-fixed-forward-energy-GS-local-history\",\"energyGroupOrderZeroBased\":[{order}],\"groupCount\":{GROUPS},\"rowsPerGroup\":{},\"nonzerosPerGroup\":[{nnz}],\"setupAttempts\":{},\"factorAttempts\":{},\"spatialSolveAttempts\":{},\"preconditionerSolveAttempts\":{},\"assemblySeconds\":{},\"factorSeconds\":{},\"groupFactorSeconds\":{},\"spatialSolveSeconds\":{},\"historySolveSeconds\":{},\"setupSeconds\":{},\"solveSeconds\":{}}}",self.sweep.regions,self.setups,self.sweep.factors,self.sweep.spatial_solves,self.solves,finite(self.assembly_seconds),finite(self.factor_seconds),numbers(&self.sweep.group_factor_seconds),finite(self.sweep.spatial_solve_seconds),finite(self.history_solve_seconds),finite(self.setup_seconds),finite(self.solve_seconds))
+        format!(
+            "{{\"method\":\"spatial-KLU-fixed-forward-energy-GS-local-history\",\"energyGroupOrderZeroBased\":[{order}],\"groupCount\":{GROUPS},\"rowsPerGroup\":{},\"nonzerosPerGroup\":[{nnz}],\"setupAttempts\":{},\"factorAttempts\":{},\"spatialSolveAttempts\":{},\"preconditionerSolveAttempts\":{},\"assemblySeconds\":{},\"factorSeconds\":{},\"groupFactorSeconds\":{},\"spatialSolveSeconds\":{},\"historySolveSeconds\":{},\"setupSeconds\":{},\"solveSeconds\":{}}}",
+            self.sweep.regions,
+            self.setups,
+            self.sweep.factors,
+            self.sweep.spatial_solves,
+            self.solves,
+            finite(self.assembly_seconds),
+            finite(self.factor_seconds),
+            numbers(&self.sweep.group_factor_seconds),
+            finite(self.sweep.spatial_solve_seconds),
+            finite(self.history_solve_seconds),
+            finite(self.setup_seconds),
+            finite(self.solve_seconds)
+        )
     }
     pub(super) fn new(model: &Evolution) -> Result<Self, String> {
         Ok(Self {
@@ -275,6 +290,7 @@ impl Preconditioner {
             factor_seconds: 0.,
             history_solve_seconds: 0.,
             valid: false,
+            cj: 0.,
         })
     }
     pub(super) fn setup(
@@ -325,10 +341,28 @@ impl Preconditioner {
             checked(status, "Spatial-group numeric KLU setup")?;
         }
         self.valid = true;
+        self.cj = cj;
         self.setup_seconds += start.elapsed().as_secs_f64();
         self.phase("group-setup-exit", None, cj, memory, started, last, Some(0))
     }
     pub(super) fn solve(&mut self, model: &Evolution, r: Handle, z: Handle) -> Result<(), String> {
+        self.solve_selected(model, r, z, false)
+    }
+    pub(super) fn solve_solver_coordinates(
+        &mut self,
+        model: &Evolution,
+        r: Handle,
+        z: Handle,
+    ) -> Result<(), String> {
+        self.solve_selected(model, r, z, true)
+    }
+    fn solve_selected(
+        &mut self,
+        model: &Evolution,
+        r: Handle,
+        z: Handle,
+        solver_coordinates: bool,
+    ) -> Result<(), String> {
         let start = Instant::now();
         if !self.valid {
             return Err("Unprepared spatial/history preconditioner".into());
@@ -336,6 +370,11 @@ impl Preconditioner {
         self.solves += 1;
         let n = self.rhs.len();
         self.rhs.copy_from_slice(unsafe { values(r, n) }?);
+        let defect_rhs = self.rhs[model.ledger_row()];
+        if solver_coordinates {
+            self.rhs[model.ledger_row()] =
+                self.rhs[..model.nc_dimension()].iter().sum::<f64>() - defect_rhs;
+        }
         let xcf = self
             .history
             .prepare_nc_rhs(&self.rhs, &mut self.nc_rhs)
@@ -355,6 +394,11 @@ impl Preconditioner {
         self.history_solve_seconds += t.elapsed().as_secs_f64();
         self.solve_seconds += start.elapsed().as_secs_f64();
         history_result?;
+        if solver_coordinates {
+            // Algebraically T P^-1 T^-1, evaluated directly in this row to
+            // avoid subtracting two large nearly equal intermediate counts.
+            solution[model.ledger_row()] = defect_rhs / self.cj;
+        }
         if solution.iter().any(|v| !v.is_finite()) {
             return Err("Nonfinite preconditioner result".into());
         }
@@ -371,7 +415,26 @@ impl Preconditioner {
         status: Option<i32>,
     ) -> Result<(), String> {
         let (stats, error) = telemetry_stats(memory);
-        println!("{{\"kind\":\"solver-phase\",\"phase\":{},\"energyGroupIndex\":{},\"lastAdmittedTime\":{},\"aggregateElapsedSeconds\":{},\"cj\":{},\"setupAttempts\":{},\"completedSetupSeconds\":{},\"completedAssemblySeconds\":{},\"completedFactorSeconds\":{},\"spatialFactorAttempts\":{},\"spatialSolveAttempts\":{},\"spatialSolveSeconds\":{},\"historySolveSeconds\":{},\"preconditionerSolveAttempts\":{},\"completedPreconditionerSolveSeconds\":{},\"preconditionerMetrics\":{},\"status\":{},\"solverStats\":{stats},\"telemetryStatsError\":{error}}}",quote(phase),group.map_or("null".into(),|g|g.to_string()),finite(last),finite(started.elapsed().as_secs_f64()),finite(cj),self.setups,finite(self.setup_seconds),finite(self.assembly_seconds),finite(self.factor_seconds),self.sweep.factors,self.sweep.spatial_solves,finite(self.sweep.spatial_solve_seconds),finite(self.history_solve_seconds),self.solves,finite(self.solve_seconds),self.metrics_json(),status.map_or("null".into(),|s|s.to_string()));
+        println!(
+            "{{\"kind\":\"solver-phase\",\"phase\":{},\"energyGroupIndex\":{},\"lastAdmittedTime\":{},\"aggregateElapsedSeconds\":{},\"cj\":{},\"setupAttempts\":{},\"completedSetupSeconds\":{},\"completedAssemblySeconds\":{},\"completedFactorSeconds\":{},\"spatialFactorAttempts\":{},\"spatialSolveAttempts\":{},\"spatialSolveSeconds\":{},\"historySolveSeconds\":{},\"preconditionerSolveAttempts\":{},\"completedPreconditionerSolveSeconds\":{},\"preconditionerMetrics\":{},\"status\":{},\"solverStats\":{stats},\"telemetryStatsError\":{error}}}",
+            quote(phase),
+            group.map_or("null".into(), |g| g.to_string()),
+            finite(last),
+            finite(started.elapsed().as_secs_f64()),
+            finite(cj),
+            self.setups,
+            finite(self.setup_seconds),
+            finite(self.assembly_seconds),
+            finite(self.factor_seconds),
+            self.sweep.factors,
+            self.sweep.spatial_solves,
+            finite(self.sweep.spatial_solve_seconds),
+            finite(self.history_solve_seconds),
+            self.solves,
+            finite(self.solve_seconds),
+            self.metrics_json(),
+            status.map_or("null".into(), |s| s.to_string())
+        );
         io::stdout()
             .flush()
             .map_err(|e| format!("Solver phase flush: {e}"))
@@ -402,30 +465,28 @@ mod tests {
         p.solve(&model, r, z).unwrap();
         let x = unsafe { values(z, rhs.len()) }.unwrap().to_vec();
         // Independently apply the ORIGINAL exact Jacobian. At the zero-field
-        // fixture, off-target history capture sensitivities vanish. Only the
-        // explicitly omitted history->net-ledger audit term must be removed.
+        // fixture, off-target history capture sensitivities vanish. Number
+        // completion is an exact row combination, not the approximate ledger
+        // row previously inherited from the dropped history feedback.
         let mut work = model.workspace();
         model.evaluate_into(&state, &mut work).unwrap();
         model.jvp_into(&x, &mut work).unwrap();
         let tangent = work.rate_jvp().unwrap().to_vec();
-        let mut history_direction = x.clone();
-        history_direction[..model.nc_dimension()].fill(0.);
-        history_direction[model.cf_row()] = 0.;
-        model.jvp_into(&history_direction, &mut work).unwrap();
-        let omitted_ledger = work.rate_jvp().unwrap()[model.ledger_row()];
         for row in model.nc_dimension()..rhs.len() {
-            let applied = cj * x[row] - tangent[row]
-                + if row == model.ledger_row() {
-                    omitted_ledger
-                } else {
-                    0.
-                };
+            if row == model.ledger_row() {
+                continue;
+            }
+            let applied = cj * x[row] - tangent[row];
             assert!(
                 (applied - rhs[row]).abs() < 3e-13,
                 "history row{row}: {applied:e} != {:e}",
                 rhs[row]
             );
         }
+        let px = model.conservation(&x).unwrap();
+        let b = model.conservation(&rhs).unwrap();
+        assert!((cj * px.neutron_ledger_defect - b.neutron_ledger_defect).abs() < 3e-13);
+        assert!((cj * px.energy_ledger_defect_j - b.energy_ledger_defect_j).abs() < 3e-13);
         let mut only_cf = vec![0.; rhs.len()];
         only_cf[model.cf_row()] = x[model.cf_row()];
         model.jvp_into(&only_cf, &mut work).unwrap();

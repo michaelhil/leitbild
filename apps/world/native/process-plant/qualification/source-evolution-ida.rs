@@ -17,7 +17,7 @@ use std::{
     ffi::{c_int, c_long},
     fs,
     io::{self, Write},
-    panic::{catch_unwind, AssertUnwindSafe},
+    panic::{AssertUnwindSafe, catch_unwind},
     path::Path,
     ptr, slice,
     time::Instant,
@@ -53,6 +53,13 @@ fn quote(s: &str) -> String {
 fn finite(x: f64) -> String {
     if x.is_finite() {
         format!("{x:e}")
+    } else {
+        "null".into()
+    }
+}
+fn compared(evaluated: bool, value: impl ToString) -> String {
+    if evaluated {
+        value.to_string()
     } else {
         "null".into()
     }
@@ -167,10 +174,18 @@ unsafe fn output<'a>(v: Handle, n: usize) -> Result<&'a mut [f64], String> {
 #[path = "source_group_preconditioner/mod.rs"]
 mod source_group_preconditioner;
 use source_group_preconditioner::Preconditioner;
+#[path = "source_audit/mod.rs"]
+mod source_audit;
+#[path = "source_coordinates/mod.rs"]
+mod source_coordinates;
+use source_coordinates::Coordinates;
 
 struct Callbacks<'a> {
     model: &'a Evolution,
     work: Workspace,
+    coordinates: Coordinates,
+    physical_state: Vec<f64>,
+    physical_direction: Vec<f64>,
     preconditioner: Preconditioner,
     started: Instant,
     allowance: f64,
@@ -208,7 +223,39 @@ fn trial_failure(error: &'static str) -> CallbackFailure {
         _ => CallbackFailure::Fatal(error.into()),
     }
 }
-impl Callbacks<'_> {
+impl<'a> Callbacks<'a> {
+    fn new(
+        model: &'a Evolution,
+        work: Workspace,
+        started: Instant,
+        allowance: f64,
+    ) -> Result<Self, String> {
+        let n = model.state_count();
+        Ok(Self {
+            model,
+            work,
+            coordinates: Coordinates {
+                nc: model.nc_dimension(),
+                ledger: model.ledger_row(),
+            },
+            physical_state: vec![0.; n],
+            physical_direction: vec![0.; n],
+            preconditioner: Preconditioner::new(model)?,
+            started,
+            allowance,
+            error: None,
+            recoverable_errors: 0,
+            last_recoverable: None,
+            rhs_calls: 0,
+            jvp_calls: 0,
+            rhs_seconds: 0.,
+            jvp_seconds: 0.,
+            base_calls: 0,
+            base_seconds: 0.,
+            memory: ptr::null_mut(),
+            last_admitted: 0.,
+        })
+    }
     fn metrics_json(&self) -> String {
         format!(
             "{{\"RHSAttempts\":{},\"RHSSeconds\":{},\"linearBaseAttempts\":{},\"linearBaseSeconds\":{},\"JVPCalls\":{},\"JVPSeconds\":{},\"setupAttempts\":{},\"completedSetupSeconds\":{},\"completedAssemblySeconds\":{},\"completedFactorSeconds\":{},\"preconditionerSolveAttempts\":{},\"completedPreconditionerSolveSeconds\":{},\"preconditionerMetrics\":{},\"recoverableDomainErrors\":{}}}",
@@ -240,8 +287,9 @@ impl Callbacks<'_> {
         if state.iter().any(|x| !x.is_finite()) {
             return Err(CallbackFailure::Fatal("Nonfinite Newton trial".into()));
         }
+        self.coordinates.physical(state, &mut self.physical_state);
         self.model
-            .evaluate_into(state, &mut self.work)
+            .evaluate_into(&self.physical_state, &mut self.work)
             .map_err(trial_failure)
     }
     fn base(&mut self, y: Handle) -> Result<(), CallbackFailure> {
@@ -290,6 +338,11 @@ unsafe extern "C" fn residual(_: f64, y: Handle, yp: Handle, r: Handle, user: Ha
         for ((out, &s), &rate) in unsafe { output(r, n) }?.iter_mut().zip(slopes).zip(rates) {
             *out = s - rate;
         }
+        // Slopes are already solver coordinates; transform only the physical
+        // independently assembled RHS, not the complete residual a second time.
+        let ledger = c.coordinates.ledger;
+        unsafe { output(r, n) }?[ledger] =
+            slopes[ledger] - (rates[..c.coordinates.nc].iter().sum::<f64>() - rates[ledger]);
         c.budget().map_err(Into::into)
     })
 }
@@ -320,8 +373,9 @@ unsafe extern "C" fn jtimes(
         let start = Instant::now();
         let n = c.model.state_count();
         let direction = unsafe { values(v, n) }?;
+        c.coordinates.physical(direction, &mut c.physical_direction);
         c.model
-            .jvp_into(direction, &mut c.work)
+            .jvp_into(&c.physical_direction, &mut c.work)
             .map_err(str::to_owned)?;
         let tangent = c.work.rate_jvp().map_err(str::to_owned)?;
         for ((out, &d), &a) in unsafe { output(jv, n) }?
@@ -331,6 +385,9 @@ unsafe extern "C" fn jtimes(
         {
             *out = cj * d - a;
         }
+        let ledger = c.coordinates.ledger;
+        unsafe { output(jv, n) }?[ledger] = cj * direction[ledger]
+            - (tangent[..c.coordinates.nc].iter().sum::<f64>() - tangent[ledger]);
         c.jvp_calls += 1;
         c.jvp_seconds += start.elapsed().as_secs_f64();
         c.budget().map_err(Into::into)
@@ -346,9 +403,15 @@ unsafe extern "C" fn psetup(
 ) -> c_int {
     callback(user, |c| {
         c.budget()?;
-        let state = unsafe { values(y, c.model.state_count()) }?;
-        c.preconditioner
-            .setup(c.model, state, cj, c.memory, c.started, c.last_admitted)?;
+        c.evaluate_trial(y)?;
+        c.preconditioner.setup(
+            c.model,
+            &c.physical_state,
+            cj,
+            c.memory,
+            c.started,
+            c.last_admitted,
+        )?;
         c.budget().map_err(Into::into)
     })
 }
@@ -365,7 +428,7 @@ unsafe extern "C" fn psolve(
 ) -> c_int {
     callback(user, |c| {
         c.budget()?;
-        c.preconditioner.solve(c.model, r, z)?;
+        c.preconditioner.solve_solver_coordinates(c.model, r, z)?;
         c.budget().map_err(Into::into)
     })
 }
@@ -584,13 +647,19 @@ fn run(
 ) -> Result<Run, String> {
     let run_started = Instant::now();
     let n = model.state_count();
-    let initial = model.initial_state();
+    let mut initial = model.initial_state();
     model.validate_accepted_state(&initial)?;
     let mut work = model.workspace();
     model
         .evaluate_into(&initial, &mut work)
         .map_err(str::to_owned)?;
-    let slopes = work.rates().map_err(str::to_owned)?.to_vec();
+    let mut slopes = work.rates().map_err(str::to_owned)?.to_vec();
+    let coordinates = Coordinates {
+        nc: model.nc_dimension(),
+        ledger: model.ledger_row(),
+    };
+    coordinates.transform(&mut initial);
+    coordinates.transform(&mut slopes);
     let mut absolute = vec![COUNT_ATOL; n];
     for r in model.energy_rows() {
         absolute[r] = ENERGY_ATOL;
@@ -615,7 +684,7 @@ fn run(
     let top=ranked_derivatives.iter().take(8).map(|&(row,weighted)|format!("{{\"row\":{row},\"weightedDerivative\":{weighted:e},\"derivative\":{},\"absoluteTolerance\":{}}}",finite(slopes[row]),finite(absolute[row]))).collect::<Vec<_>>().join(",");
     let estimated_h = (0.001 * HORIZON).min(0.5 / initial_wrms);
     println!(
-        "{{\"kind\":\"initial-weights\",\"rtol\":{relative:e},\"coordinates\":{n},\"energyCoordinates\":{},\"countAtol\":{COUNT_ATOL:e},\"energyAtolJ\":{ENERGY_ATOL:e},\"initialWeightedDerivativeWRMS\":{initial_wrms:e},\"pinnedDefaultInitialStepEstimate\":{estimated_h:e},\"estimateIsNotAcceptedStep\":true,\"topWeightedDerivativeRows\":[{top}],\"aggregateElapsedSeconds\":{}}}",
+        "{{\"kind\":\"initial-weights\",\"rtol\":{relative:e},\"coordinates\":{n},\"energyCoordinates\":{},\"countAtol\":{COUNT_ATOL:e},\"energyAtolJ\":{ENERGY_ATOL:e},\"solverLedgerCoordinate\":\"D=sum(N,C)-independentEventLedger\",\"ledgerConstraint\":\"unconstrained\",\"ledgerErrorMetric\":\"same-count-atol;stricter-aggregate-WRMS\",\"retainedCoordinates\":\"physical-event-ledger-L\",\"initialWeightedDerivativeWRMS\":{initial_wrms:e},\"pinnedDefaultInitialStepEstimate\":{estimated_h:e},\"estimateIsNotAcceptedStep\":true,\"topWeightedDerivativeRows\":[{top}],\"aggregateElapsedSeconds\":{}}}",
         model.energy_rows().count(),
         finite(started.elapsed().as_secs_f64())
     );
@@ -623,25 +692,7 @@ fn run(
         .flush()
         .map_err(|e| format!("Initial weight telemetry flush: {e}"))?;
     let workspace_bytes = work.buffer_bytes();
-    let preconditioner = Preconditioner::new(model)?;
-    let mut callbacks = Box::new(Callbacks {
-        model,
-        work,
-        preconditioner,
-        started,
-        allowance,
-        error: None,
-        recoverable_errors: 0,
-        last_recoverable: None,
-        rhs_calls: 0,
-        jvp_calls: 0,
-        rhs_seconds: 0.,
-        jvp_seconds: 0.,
-        base_calls: 0,
-        base_seconds: 0.,
-        memory: ptr::null_mut(),
-        last_admitted: 0.,
-    });
+    let mut callbacks = Box::new(Callbacks::new(model, work, started, allowance)?);
     let mut owned = Resources::new()?;
     let y = owned.vector(&initial)?;
     let yp = owned.vector(&slopes)?;
@@ -726,6 +777,10 @@ fn run(
     let mut sample = 0;
     let mut admitted_steps = 0u64;
     let mut checkpoint_time = Instant::now();
+    let mut physical_state = vec![0.; n];
+    let mut physical_slopes = vec![0.; n];
+    coordinates.physical(&initial, &mut physical_state);
+    coordinates.physical(&slopes, &mut physical_slopes);
     if checkpoint_path.exists() {
         return Err("Refusing to replace an existing run checkpoint".into());
     }
@@ -735,8 +790,8 @@ fn run(
         0,
         started.elapsed().as_secs_f64(),
         checkpoint_path,
-        &initial,
-        &slopes,
+        &physical_state,
+        &physical_slopes,
         &callbacks,
         owned.ida,
     )?;
@@ -752,7 +807,8 @@ fn run(
                 break;
             }
             let screen_start = Instant::now();
-            let state = unsafe { values(y, n) }?;
+            coordinates.physical(unsafe { values(y, n) }?, &mut physical_state);
+            let state = &physical_state;
             if let Err(e) = model.validate_accepted_state(state) {
                 let negative = state
                     .iter()
@@ -828,7 +884,8 @@ fn run(
                     unsafe { IDAGetDky(owned.ida, OUTPUTS[sample], 0, dense) },
                     "IDAGetDky common output",
                 )?;
-                let common = unsafe { values(dense, n) }?.to_vec();
+                let mut common = unsafe { values(dense, n) }?.to_vec();
+                coordinates.transform(&mut common);
                 model
                     .evaluate_into(&common, &mut callbacks.work)
                     .map_err(str::to_owned)?;
@@ -846,14 +903,15 @@ fn run(
             out.screen_output_calls += 1;
             out.screen_output_seconds += screen_start.elapsed().as_secs_f64();
             if crossed_output || checkpoint_time.elapsed().as_secs_f64() >= 1. {
+                coordinates.physical(unsafe { values(yp, n) }?, &mut physical_slopes);
                 checkpoint(
                     relative,
                     out.last_admitted,
                     admitted_steps,
                     started.elapsed().as_secs_f64(),
                     checkpoint_path,
-                    unsafe { values(y, n) }?,
-                    unsafe { values(yp, n) }?,
+                    &physical_state,
+                    &physical_slopes,
                     &callbacks,
                     owned.ida,
                 )?;
@@ -880,6 +938,8 @@ fn run(
     if !out.passed {
         out.failure_y = unsafe { values(y, n) }?.to_vec();
         out.failure_yp = unsafe { values(yp, n) }?.to_vec();
+        coordinates.transform(&mut out.failure_y);
+        coordinates.transform(&mut out.failure_yp);
     }
     out.rhs_calls = callbacks.rhs_calls;
     out.recoverable_errors = callbacks.recoverable_errors;
@@ -911,6 +971,15 @@ fn main() {
 }
 fn main_result(started: Instant) -> Result<(), String> {
     let args = std::env::args().collect::<Vec<_>>();
+    if args.len() == 5 && args[2] == "--audit" {
+        let text = fs::read_to_string(&args[1]).map_err(|e| e.to_string())?;
+        let model = Evolution::new(evolution_input::parse(&text).input).map_err(str::to_owned)?;
+        return source_audit::audit(
+            &model,
+            &args[3],
+            args[4].parse().map_err(|_| "Invalid audit cj")?,
+        );
+    }
     if args.len() != 3 {
         return Err("Usage: source-evolution-ida FIXTURE_PATH AGGREGATE_ALLOWANCE_SECONDS".into());
     }
@@ -983,6 +1052,9 @@ fn main_result(started: Instant) -> Result<(), String> {
     families.push((model.mn_row(0)..model.ledger_row()).collect());
     families.push(vec![model.escape_row(), model.collected_row()]);
     families.push(vec![model.fuel_release_row()]);
+    // Pair-dependent gates do not exist until both complete arms exist. A
+    // failed/missing arm must never publish default zero ratios as evidence.
+    let pair_evaluated = passed;
     let mut developed = true;
     if let Some(t) = &tighter {
         if passed {
@@ -1102,6 +1174,7 @@ fn main_result(started: Instant) -> Result<(), String> {
         }
     }
     passed &= started.elapsed().as_secs_f64() <= allowance;
+    let developed_report = compared(pair_evaluated, developed);
     let last = if let Some(t) = &tighter {
         normal.last_admitted.min(t.last_admitted)
     } else if normal.passed {
@@ -1110,7 +1183,7 @@ fn main_result(started: Instant) -> Result<(), String> {
         normal.last_admitted
     };
     println!(
-        "{{\"passed\":{passed},\"scope\":\"Birth-driven represented ORIGINAL fixed-geometry/fixed-temperature source and finite target/history advancement; no thermal feedback, deposited heat, plant or live qualification\",\"coordinates\":{},\"physicalCoordinates\":{},\"auditIntegrals\":{},\"neutronCoordinates\":{},\"precursorCoordinates\":{},\"segments\":{},\"waterOwners\":{},\"targets\":{},\"MnTargets\":{},\"lastAdmittedTime\":{},\"constructionSeconds\":{},\"wallSeconds\":{},\"settings\":{{\"horizon\":300,\"rtol\":[1e-5,1e-6],\"countAtol\":1e-3,\"energyAtolJ\":1e-12,\"preconditioner\":\"spatial-KLU-fixed-forward-energy-GS-local-history\",\"SPGMRmaxl\":30,\"SPGMRrestarts\":0,\"nonnegativeConstraints\":true,\"allowanceSeconds\":{},\"reportReserveSeconds\":2,\"rateResolution\":\"chosen20atol/time;notderivedstockerrorbound\",\"outputs\":{:?}}},\"gates\":{{\"localPairRatio\":{},\"SUMABSFamilyPairRatio\":{},\"observablePairRatio\":{},\"comparedFamilyOutputs\":{compared_family_outputs},\"negligibleFamilyOutputs\":{negligible_family_outputs},\"developedSignal\":{developed},\"strictAcceptedBoundary\":true}},\"normal\":{},\"tighter\":{},\"tighterSetupFailure\":{}}}",
+        "{{\"passed\":{passed},\"scope\":\"Birth-driven represented ORIGINAL fixed-geometry/fixed-temperature source and finite target/history advancement; no thermal feedback, deposited heat, plant or live qualification\",\"coordinates\":{},\"physicalCoordinates\":{},\"auditIntegrals\":{},\"neutronCoordinates\":{},\"precursorCoordinates\":{},\"segments\":{},\"waterOwners\":{},\"targets\":{},\"MnTargets\":{},\"lastAdmittedTime\":{},\"constructionSeconds\":{},\"wallSeconds\":{},\"settings\":{{\"horizon\":300,\"rtol\":[1e-5,1e-6],\"countAtol\":1e-3,\"energyAtolJ\":1e-12,\"preconditioner\":\"spatial-KLU-fixed-forward-energy-GS-local-history\",\"SPGMRmaxl\":30,\"SPGMRrestarts\":0,\"physicalNonnegativeConstraints\":true,\"solverLedgerCoordinate\":\"D=sum(N,C)-independentEventLedger\",\"ledgerConstraint\":\"unconstrained\",\"ledgerErrorMetric\":\"same-count-atol;stricter-aggregate-WRMS\",\"retainedCoordinates\":\"physical-event-ledger-L\",\"allowanceSeconds\":{},\"reportReserveSeconds\":2,\"rateResolution\":\"chosen20atol/time;notderivedstockerrorbound\",\"outputs\":{:?}}},\"gates\":{{\"localPairRatio\":{},\"SUMABSFamilyPairRatio\":{},\"observablePairRatio\":{},\"comparedFamilyOutputs\":{compared_family_outputs},\"negligibleFamilyOutputs\":{negligible_family_outputs},\"developedSignal\":{developed_report},\"strictAcceptedBoundary\":true}},\"normal\":{},\"tighter\":{},\"tighterSetupFailure\":{}}}",
         model.state_count(),
         model.ledger_row(),
         model.state_count() - model.ledger_row(),
@@ -1125,9 +1198,21 @@ fn main_result(started: Instant) -> Result<(), String> {
         finite(started.elapsed().as_secs_f64()),
         finite(allowance),
         OUTPUTS,
-        finite(max_local_ratio),
-        finite(max_family_ratio),
-        finite(max_observable_ratio),
+        if pair_evaluated {
+            finite(max_local_ratio)
+        } else {
+            "null".into()
+        },
+        if pair_evaluated {
+            finite(max_family_ratio)
+        } else {
+            "null".into()
+        },
+        if pair_evaluated {
+            finite(max_observable_ratio)
+        } else {
+            "null".into()
+        },
         normal.json(),
         tighter.as_ref().map_or("null".into(), Run::json),
         tighter_setup_error
@@ -1147,6 +1232,10 @@ mod tests {
     fn diagnostic_strings_and_nonfinite_snapshots_remain_json() {
         assert_eq!(quote("x\n\"\\\u{0001}"), "\"x\\n\\\"\\\\\\u0001\"");
         assert_eq!(numbers(&[1., f64::NAN, f64::INFINITY]), "[1e0,null,null]");
+        assert_eq!(compared(false, true), "null");
+        assert_eq!(compared(false, 0.), "null");
+        assert_eq!(compared(true, false), "false");
+        assert_eq!(compared(true, finite(0.)), "0e0");
     }
     #[test]
     fn selected_spgmr_constructor_and_owned_cleanup() {

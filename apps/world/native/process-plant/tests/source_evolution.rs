@@ -384,35 +384,49 @@ fn local_history_stage_matches_independent_full_jvp_with_incoming_forcing() {
             m.jvp_into(&local, &mut w).unwrap();
             close(cj * x[row] - w.rate_jvp().unwrap()[row], rhs[row]);
         }
-        for row in [m.ledger_row(), m.escape_row(), m.collected_row()] {
+        for row in [m.escape_row(), m.collected_row()] {
             close(cj * x[row] - forcing[row], rhs[row]);
         }
+        close(
+            cj * (x[..m.nc_dimension()].iter().sum::<f64>() - x[m.ledger_row()]),
+            rhs[..m.nc_dimension()].iter().sum::<f64>() - rhs[m.ledger_row()],
+        );
     }
     let mut other_workspace = m.workspace();
     m.evaluate_into(&state(&m), &mut other_workspace).unwrap();
-    assert!(m
-        .solve_preconditioner_history(
+    assert!(
+        m.solve_preconditioner_history(
             &mut other_workspace,
             &p,
             &rhs,
             &mut vec![0.; m.state_count()]
         )
-        .is_err());
-    // Re-evaluation invalidates factors even when numerical state is equal.
+        .is_err()
+    );
+    // Exact state reuse preserves the frozen stage; a changed dependency
+    // invalidates it. Equal pointers are not evidence of equal dependencies.
     m.evaluate_into(&state(&m), &mut w).unwrap();
     let mut x = vec![0.; m.state_count()];
-    assert!(m
-        .solve_preconditioner_history(&mut w, &p, &rhs, &mut x)
-        .is_err());
+    m.solve_preconditioner_history(&mut w, &p, &rhs, &mut x)
+        .unwrap();
+    let mut changed = state(&m);
+    changed[0] += 0.01;
+    m.evaluate_into(&changed, &mut w).unwrap();
+    assert!(
+        m.solve_preconditioner_history(&mut w, &p, &rhs, &mut x)
+            .is_err()
+    );
     m.prepare_history_preconditioner(&w, 3., &mut p).unwrap();
     m.solve_preconditioner_history(&mut w, &p, &rhs, &mut x)
         .unwrap();
-    assert!(m
-        .prepare_history_preconditioner(&w, f64::NAN, &mut p)
-        .is_err());
-    assert!(p
-        .prepare_nc_rhs(&rhs, &mut vec![0.; m.nc_dimension()])
-        .is_err());
+    assert!(
+        m.prepare_history_preconditioner(&w, f64::NAN, &mut p)
+            .is_err()
+    );
+    assert!(
+        p.prepare_nc_rhs(&rhs, &mut vec![0.; m.nc_dimension()])
+            .is_err()
+    );
 }
 
 #[test]

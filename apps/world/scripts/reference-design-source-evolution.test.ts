@@ -1,6 +1,6 @@
 import {describe,expect,test} from 'bun:test'
 import {compileSharedWaterProjection,compileSourceEvolution,sourceEvolutionOwnerFiles} from './reference-design-source-evolution'
-import {qualifySourceEvolution,sourceDependencyPath,sourceEvolutionOutput} from './reference-design-source-evolution-qualification'
+import {qualifySourceEvolution,sourceDependencyPath,sourceEvolutionOutput,sourceProcessUsage} from './reference-design-source-evolution-qualification'
 import {readFileSync} from 'node:fs'
 import {join} from 'node:path'
 import {createHash} from 'node:crypto'
@@ -9,6 +9,19 @@ const amount=(H:number,B:number,V:number)=>({Htarget:H,mobileN10:B,volume_m3:V,H
 test('dependency retention resolves explicit and implicit TypeScript extensions once',()=>{
  expect(sourceDependencyPath('/tmp/source','./reference-design-fuel-materials.ts')).toBe('/tmp/source/reference-design-fuel-materials.ts')
  expect(sourceDependencyPath('/tmp/source','./reference-design-fuel-materials')).toBe('/tmp/source/reference-design-fuel-materials.ts')
+})
+test('native process cost getters become JSON-safe measurements, not an empty object',async()=>{
+ const child=Bun.spawn([process.execPath,'-e','0'],{stdout:'pipe',stderr:'pipe'})
+ await child.exited
+ const usage=sourceProcessUsage(child.resourceUsage()),json=JSON.parse(JSON.stringify(usage))
+ expect(child.exitCode).toBe(0)
+ expect(json.peakRSSBytes).toBeGreaterThan(0)
+ for(const key of ['user','system','total']){
+  expect(Number.isFinite(json.cpuSeconds[key])).toBe(true)
+  expect(json.cpuSeconds[key]).toBeGreaterThanOrEqual(0)
+ }
+ expect(json.cpuSeconds.total).toBeCloseTo(json.cpuSeconds.user+json.cpuSeconds.system,6)
+ expect(sourceProcessUsage(undefined)).toEqual({cpuSeconds:null,peakRSSBytes:null})
 })
 test('an external stop retains a checkpoint but cannot turn progress into a final result',()=>{
  const line=JSON.stringify({kind:'admitted-progress',lastAdmittedTime:7.4e-8}),partial=sourceEvolutionOutput(line+'\n')

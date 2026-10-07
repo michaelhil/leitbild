@@ -6,6 +6,12 @@ import {z} from 'zod'
 import {compileSourceEvolution,sourceEvolutionOwnerFiles} from './reference-design-source-evolution'
 const sha=(s:string|Uint8Array)=>createHash('sha256').update(s).digest('hex')
 export const sourceDependencyPath=(base:string,path:string)=>resolve(base,path.endsWith('.ts')?path:path+'.ts')
+/** Materialize native getters and normalize Bun's runtime bigint microseconds
+ * to JSON numbers. Missing measurements remain explicitly unevaluated. */
+export const sourceProcessUsage=(usage:Bun.ResourceUsage|undefined)=>usage?{
+ cpuSeconds:{user:Number(usage.cpuTime.user)/1e6,system:Number(usage.cpuTime.system)/1e6,total:Number(usage.cpuTime.total)/1e6},
+ peakRSSBytes:Number(usage.maxRSS)
+}:{cpuSeconds:null,peakRSSBytes:null}
 export function sourceEvolutionOutput(stdout:string){
  const records=stdout.trim()?stdout.trim().split('\n').map(line=>{try{return JSON.parse(line)}catch{return {unparsed:line}}}):[],latest=[...records].reverse()
  return {records,outcome:latest.find(row=>row&&typeof row.passed==='boolean'),
@@ -58,7 +64,8 @@ export async function qualifySourceEvolution(partition:string,material:string,wa
   const start=performance.now(),child=Bun.spawn(command,{stdout:'pipe',stderr:'pipe'});let timedOut=false
   const timer=setTimeout(()=>{timedOut=true;child.kill()},allowanceMs)
   const [stdout,stderr,exitCode]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited]).finally(()=>clearTimeout(timer))
-  return {command,stdout,stderr,exitCode,timedOut,elapsedSeconds:(performance.now()-start)/1000}
+  return {command,stdout,stderr,exitCode,timedOut,elapsedSeconds:(performance.now()-start)/1000,
+   ...sourceProcessUsage(child.resourceUsage())}
  }
  const compilationBegan=performance.now(),toolchain=await execute(['rustc','--version'],10_000),build=await execute([
   'cargo','build','--release','--features','offline-ida','--example','source-evolution-ida','--manifest-path',join(root,'Cargo.toml')],180_000)

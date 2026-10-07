@@ -591,14 +591,27 @@ impl Evolution {
         Ok(())
     }
     pub fn evaluate_into(&self, y: &[f64], w: &mut Workspace) -> Result<(), &'static str> {
-        w.valid = false;
-        w.jvp_valid = false;
         if !Arc::ptr_eq(&self.owner, &w.owner)
             || y.len() != self.state_count()
             || y.iter().any(|x| !x.is_finite())
         {
+            w.valid = false;
+            w.jvp_valid = false;
             return Err("Invalid source trial/workspace");
         }
+        // Reuse only the complete, bit-identical dependency vector of this
+        // valid workspace. IDA residual/JT setup commonly request that same
+        // state. Pointer identity, approximate equality and failed trials are
+        // not cache keys. Independent P-stage workspaces remain independent.
+        if w.valid
+            && y.iter()
+                .zip(&w.state)
+                .all(|(a, b)| a.to_bits() == b.to_bits())
+        {
+            return Ok(());
+        }
+        w.valid = false;
+        w.jvp_valid = false;
         let n = self.input.history.fuel().volumes().len() * GROUPS;
         let volumes = self.input.history.fuel().volumes();
         w.history_state
@@ -688,7 +701,7 @@ impl Evolution {
             }
         }
         for (i, m) in self.optical.iter().enumerate() {
-            m.update(&w.amounts, &mut w.optical[i])?;
+            m.update_dependencies(&w.amounts, &mut w.optical[i])?;
             let a = &w.optical[i].input;
             w.optical_inputs[i].transmission = a.transmission;
             w.optical_inputs[i].loss = a.loss;
@@ -803,6 +816,17 @@ impl Evolution {
     /// Full analytic represented-source direction. Only preconditioning, not
     /// this derivative, omits N/C↔material and inter-target optical couplings.
     pub fn jvp_into(&self, dy: &[f64], w: &mut Workspace) -> Result<(), &'static str> {
+        self.jvp_selected::<false>(dy, w)
+    }
+    /// INCOMING is private to P: its direction contains N/C and Cf only and
+    /// only history/escape/collection/release rows are consumed. Share the
+    /// actual event derivatives, but do not calculate a discarded spatial
+    /// transport field or zero material/optical partials on every P solve.
+    fn jvp_selected<const INCOMING: bool>(
+        &self,
+        dy: &[f64],
+        w: &mut Workspace,
+    ) -> Result<(), &'static str> {
         w.jvp_valid = false;
         if !Arc::ptr_eq(&self.owner, &w.owner)
             || !w.valid
@@ -827,7 +851,7 @@ impl Evolution {
         let mut net = w.jvp[..self.nc_dimension()].iter().sum::<f64>();
         let mut escape = 0.;
         let mut collected = 0.;
-        for r in 0..self.region_count() {
+        for r in 0..if INCOMING { 0 } else { self.region_count() } {
             for h in 0..GROUPS {
                 for g in 0..GROUPS {
                     w.jvp[r * GROUPS + h] +=
@@ -901,8 +925,10 @@ impl Evolution {
                     e.share / volumes[e.region] * c.d_capture_d_amount[g] * da;
             }
         }
-        for (i, m) in self.optical.iter().enumerate() {
-            m.jvp(&w.amount_direction, &mut w.optical[i])?;
+        if !INCOMING {
+            for (i, m) in self.optical.iter().enumerate() {
+                m.jvp_dependencies(&w.amount_direction, &mut w.optical[i])?;
+            }
         }
         let mut oi = 0;
         for (f, coeff) in self
@@ -911,11 +937,14 @@ impl Evolution {
             .iter()
             .zip(w.transport.face_coefficients()?)
         {
+            if INCOMING && f.right.is_some() && !matches!(f.law, ts::FaceLaw::Optical { .. }) {
+                continue;
+            }
             for g in 0..GROUPS {
                 let l = f.left * GROUPS + g;
                 let pl = speed[g] * w.state[l] / volumes[f.left];
                 let dpl = speed[g] * dy[l] / volumes[f.left];
-                let dt = if matches!(f.law, ts::FaceLaw::Optical { .. }) {
+                let dt = if !INCOMING && matches!(f.law, ts::FaceLaw::Optical { .. }) {
                     w.optical[oi].transmission_jvp[g]
                 } else {
                     0.
@@ -948,11 +977,15 @@ impl Evolution {
                         let rl = c.capture_per_loss_left;
                         let rr = c.capture_per_loss_right;
                         for (j, &target) in targets.iter().enumerate() {
-                            let value = (dc(rl) * pl + rl.value * dpl) * o.left_loss[j][g]
-                                + rl.value * pl * o.left_loss_jvp[j][g]
-                                + (dc(rr) * pr + rr.value * dpr) * o.right_loss[j][g]
-                                + rr.value * pr * o.right_loss_jvp[j][g];
-                            w.jvp[self.target_row(target)] += value;
+                            w.jvp[self.target_row(target)] += if INCOMING {
+                                rl.value * dpl * o.left_loss[j][g]
+                                    + rr.value * dpr * o.right_loss[j][g]
+                            } else {
+                                (dc(rl) * pl + rl.value * dpl) * o.left_loss[j][g]
+                                    + rl.value * pl * o.left_loss_jvp[j][g]
+                                    + (dc(rr) * pr + rr.value * dpr) * o.right_loss[j][g]
+                                    + rr.value * pr * o.right_loss_jvp[j][g]
+                            };
                         }
                     }
                 } else {
@@ -982,7 +1015,7 @@ impl Evolution {
         if w.jvp.iter().any(|x| !x.is_finite()) {
             return Err("Nonfinite full source JVP");
         }
-        w.jvp_valid = true;
+        w.jvp_valid = !INCOMING;
         Ok(())
     }
     pub fn nc_values(&self, w: &Workspace, cj: f64, out: &mut [f64]) -> Result<(), &'static str> {
@@ -1193,10 +1226,11 @@ impl Evolution {
                 let r = face
                     .right
                     .ok_or("Optical preconditioner exterior unsupported")?;
-                self.optical[oi].update(&w.amounts, &mut p.optical[oi])?;
+                self.optical[oi].update_dependencies(&w.amounts, &mut p.optical[oi])?;
                 for (j, &target) in targets.iter().enumerate() {
                     p.target_direction[target] = -1.;
-                    let result = self.optical[oi].jvp(&p.target_direction, &mut p.optical[oi]);
+                    let result =
+                        self.optical[oi].jvp_dependencies(&p.target_direction, &mut p.optical[oi]);
                     p.target_direction[target] = 0.;
                     result?;
                     let o = &p.optical[oi];
@@ -1257,9 +1291,9 @@ impl Evolution {
         p.valid = true;
         Ok(())
     }
-    /// One exact JVP supplies incoming N/C and Cf forcing; only local blocks
-    /// are inverted. Other history→audit feedback is an off-block P omission,
-    /// never a change to the independently assembled RHS/JVP/physical ledgers.
+    /// Contract the shared event derivatives with incoming N/C and Cf only.
+    /// The final number-ledger row completes the invariant of the full stage,
+    /// not the dropped history feedback of the approximate spatial blocks.
     pub fn solve_preconditioner_history(
         &self,
         w: &mut Workspace,
@@ -1286,10 +1320,10 @@ impl Evolution {
         direction.fill(0.);
         direction[..p.nc].copy_from_slice(&out[..p.nc]);
         direction[p.cf] = out[p.cf];
-        let result = self.jvp_into(&direction, w);
+        let result = self.jvp_selected::<true>(&direction, w);
         w.preconditioner_direction = direction;
         result?;
-        let force = w.rate_jvp()?;
+        let force = &w.jvp;
         let cj = p.cj;
         let poison = self.input.history.poison_law();
         let mut local_release = 0.;
@@ -1343,9 +1377,15 @@ impl Evolution {
             out[row] = (rhs[row] + force[row] + m.decay_rate * out[self.target_row(m.target)])
                 / (cj + m.decay_rate);
         }
-        for row in [self.ledger_row(), self.escape_row(), self.collected_row()] {
+        for row in [self.escape_row(), self.collected_row()] {
             out[row] = (rhs[row] + force[row]) / cj;
         }
+        // ℓ=(1 over N/C, -1 over the independently evolved event ledger),
+        // ℓ(cj I-R')=cj ℓ. This is an exact row combination in P, not a reset
+        // or projection of an accepted state/ledger. Inexact Newton and IDA
+        // constraint corrections still require independent admission checks.
+        out[self.ledger_row()] = out[..p.nc].iter().sum::<f64>()
+            + (rhs[self.ledger_row()] - rhs[..p.nc].iter().sum::<f64>()) / cj;
         out[self.fuel_release_row()] =
             (rhs[self.fuel_release_row()] + force[self.fuel_release_row()] + local_release) / cj;
         if out.iter().any(|x| !x.is_finite()) {
