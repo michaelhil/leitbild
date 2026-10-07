@@ -212,10 +212,10 @@ fn resolved(m: &sc::Model) -> Vec<f64> {
     for i in 0..m.thermal.node_count() {
         y[l.temperatures_start + i] = 330. + i as f64;
     }
-    y[l.products_start] = 1.;
-    y[l.products_start + 1] = 0.2;
-    y[l.products_start + 2] = 3.;
-    y[l.products_start + 3] = 0.3;
+    y[l.carrier_start] = 1.;
+    y[l.carrier_start + 2] = 0.2;
+    y[l.carrier_start + 3] = 3.;
+    y[l.carrier_start + 5] = 0.3;
     y[l.barrel_temperature] = 320.;
     let mut w = m.workspace();
     m.evaluate(&y, &vec![0.; m.dimension()], None, &mut w)
@@ -346,8 +346,8 @@ fn once_paid_fuel_wall_and_carrier_receipts_survive_shared_recipient_projection(
     let mut nw = on::Workspace::new(&m.network);
     nw.evaluate(
         &m.network,
-        &y[l.network_start..l.products_start],
-        &yp[l.network_start..l.products_start],
+        &y[l.network_start..l.carrier_start],
+        &yp[l.network_start..l.carrier_start],
         None,
     )
     .unwrap();
@@ -380,11 +380,12 @@ fn once_paid_fuel_wall_and_carrier_receipts_survive_shared_recipient_projection(
     let events = w.source.external_water_events().unwrap();
     for (component, capture) in [
         (0, events.iter().map(|e| e.hydrogen).sum::<f64>()),
-        (1, events.iter().map(|e| e.boron).sum::<f64>()),
+        (2, events.iter().map(|e| e.boron).sum::<f64>()),
     ] {
         close(
-            -(w.residual[l.products_start + component]
-                + w.residual[l.products_start + 2 + component]),
+            -(w.residual[l.carrier_start + component]
+                + w.residual
+                    [l.carrier_start + leitbild_plant_numerics::water_carrier::WIDTH + component]),
             capture,
             2e-13,
             1e-12,
@@ -411,7 +412,7 @@ fn matching_owned_successful_state_is_required_and_changed_inputs_are_not_stale(
     m.evaluate(&y, &yp, Some(2.), &mut w).unwrap();
     assert_ne!(held, w.source.rates().unwrap()); // Actual water chart changes moderator stocks.
     assert!(m.jvp(&vec![0.; m.dimension()], 3., &mut w).is_err());
-    y[m.layout.products_start] = -1.;
+    y[m.layout.carrier_start] = -1.;
     m.evaluate(&y, &yp, Some(2.), &mut w).unwrap();
     assert!(m.validate_accepted(&y, &w).is_err()); // Signed trials are not accepted stocks.
     y[m.layout.temperatures_start] = 289.;
@@ -466,4 +467,60 @@ fn composition_refuses_wrong_fuel_recipient_or_carrier_link_identity() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn direct_boron_target_and_product_preserve_closed_total_and_marker_packets() {
+    let m = fixture();
+    let l = m.layout;
+    let mut y = m.initial_state().unwrap();
+    y[..m.source.nc_dimension()].fill(3.);
+    let yp = vec![0.; m.dimension()];
+    // Convert some target to product without changing the original equivalent
+    // boron population or its independently retained liquid marker.
+    for (i, captured) in [2., 3.].into_iter().enumerate() {
+        y[l.carrier_start + wc::WIDTH * i + 1] -= captured;
+        y[l.carrier_start + wc::WIDTH * i + 2] += captured;
+    }
+    let conversion = (y[l.carrier_start + 1] + y[l.carrier_start + 2])
+        / y[l.network_start + m.network.marker_row(0)];
+    for flow in [-2., 0., 2.] {
+        y[l.network_start + m.network.flow_row(0)] = flow;
+        let mut w = m.workspace();
+        m.evaluate(&y, &yp, Some(3.), &mut w).unwrap();
+        let mut sum = 0.;
+        let mut dy = vec![0.; m.dimension()];
+        dy[..m.source.nc_dimension()].fill(0.01);
+        dy[l.network_start + m.network.pressure_row()] = 7.;
+        dy[l.network_start + m.network.temperature_row(0)] = 0.01;
+        dy[l.network_start + m.network.flow_row(0)] = 0.02;
+        for i in 0..m.carrier.cells() {
+            let r = l.carrier_start + wc::WIDTH * i;
+            let marker = l.network_start + m.network.marker_row(i);
+            close(y[r + 1] + y[r + 2], conversion * y[marker], 1e-13, 1e-12);
+            let rate = -w.residual[r + 1] - w.residual[r + 2];
+            close(
+                rate,
+                conversion * w.network.rates[m.network.marker_row(i)],
+                1e-12,
+                1e-11,
+            );
+            sum += rate;
+            dy[marker] = if i == 0 { 0.001 } else { -0.001 };
+            dy[r + 1] = conversion * dy[marker] - 0.03;
+            dy[r + 2] = 0.03;
+        }
+        close(sum, 0., 0., 1e-11);
+        m.jvp(&dy, 3., &mut w).unwrap();
+        let mut sum = 0.;
+        for i in 0..m.carrier.cells() {
+            let r = l.carrier_start + wc::WIDTH * i;
+            let marker = l.network_start + m.network.marker_row(i);
+            let rate = 3. * (dy[r + 1] + dy[r + 2]) - w.jvp[r + 1] - w.jvp[r + 2];
+            let marker_rate = 3. * dy[marker] - w.jvp[marker];
+            close(rate, conversion * marker_rate, 1e-11, 1e-10);
+            sum += rate;
+        }
+        close(sum, 0., 0., 1e-10);
+    }
 }

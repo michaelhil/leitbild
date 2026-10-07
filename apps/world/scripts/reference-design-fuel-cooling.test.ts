@@ -26,6 +26,7 @@ test('only a complete physically developed refined pair can receive admission',(
  const outcome={kind:'source-cooling-pair',passed:true,lastAdmittedTime:300,dimension:7,differential:4,
   normal:{passed:true,lastAdmittedTime:300,commonSamples:14},tighter:{passed:true,lastAdmittedTime:300,commonSamples:14},
   settings:{accuracyPolicy:'cold-source-cooling-5',provisional:true,horizon:300,referenceAllATOLandRTOLDivisor:10,
+   carrierCoordinates:'hydrogen-product,direct-boron10,boron-product',
    fuelPowerErrorWeights:'sparse-current-response-proportional-budget-cap',fuelPowerResolutionW:1e-12,
    barrelPowerErrorWeights:'sparse-current-bulk-capture-Mn-proportional-budget-cap',barrelPowerResolutionW:1e-12,
    costGuard:'aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic',
@@ -38,6 +39,7 @@ test('only a complete physically developed refined pair can receive admission',(
    thermalPairRatio:0,networkPairRatio:0,depositionPairRatio:0,carrierPairRatio:0},
   pairedComparisons:Array.from({length:14},()=>({})),fuelTemperatureFeedbackDiagnostic:{}}
  expect(fuelCoolingAdmission.safeParse(outcome).success).toBe(true)
+ expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,carrierCoordinates:undefined}}).success).toBe(false)
  for(const field of ['passed','fullPairComparisonEvaluated','developedThermalResponse','developedSourceResponse','developedBarrelResponse']){
   const changed=structuredClone(outcome)
   if(field==='passed')changed.passed=false

@@ -23,6 +23,16 @@ pub struct Water {
     /// Passive mobile kg-equivalent/kg; not additional physical mass.
     pub initial_tracer_fraction: f64,
 }
+/// One same-trial transaction, signed INTO the liquid territory at `cell`.
+/// The caller owns the finite neighbor and donor selection. Energy includes
+/// the caller's actual enthalpy/gravity/work convention; this layer adds none.
+#[derive(Clone, Copy, Debug)]
+pub struct LiquidPort {
+    pub cell: usize,
+    pub mass_rate: f64,
+    pub energy_rate: f64,
+    pub marker_rate: f64,
+}
 #[derive(Clone, Copy, Debug)]
 pub struct Solid {
     pub heat_capacity: f64,
@@ -356,6 +366,44 @@ impl Network {
     pub fn config(&self) -> &Config {
         &self.config
     }
+    fn check_ports(&self, ports: &[LiquidPort]) -> Result<(), String> {
+        if ports.iter().any(|p| {
+            p.cell >= self.config.water.len()
+                || ![p.mass_rate, p.energy_rate, p.marker_rate]
+                    .iter()
+                    .all(|x| x.is_finite())
+        }) {
+            return Err("Invalid liquid port cell/transaction".into());
+        }
+        Ok(())
+    }
+    /// Add the exact constant incidence of port-rate DIRECTIONS to a complete
+    /// residual tangent. The held-port CSC excludes the caller-owned response
+    /// derivatives: the coupled caller must supply them here exactly once.
+    /// `energy_rate_jvp` likewise needs the sum of these energy-rate directions
+    /// when forming the complete open-territory energy-rate tangent.
+    pub fn add_port_jvp(
+        &self,
+        directions: &[LiquidPort],
+        action: &mut [f64],
+    ) -> Result<(), String> {
+        self.check_ports(directions)?;
+        if action.len() != self.dimension() || action.iter().any(|x| !x.is_finite()) {
+            return Err("Invalid liquid port tangent shape/value".into());
+        }
+        for p in directions {
+            action[self.total_mass_row()] -= p.mass_rate;
+            action[self.energy_row(p.cell)] -= p.energy_rate;
+            action[self.marker_row(p.cell)] -= p.marker_rate;
+            if let Some(row) = self.mechanical_row(p.cell) {
+                action[row] -= p.mass_rate;
+            }
+        }
+        if action.iter().any(|x| !x.is_finite()) {
+            return Err("Nonfinite liquid port tangent".into());
+        }
+        Ok(())
+    }
     pub fn mass(&self, node: usize, liquid: Liquid) -> f64 {
         self.config.water[node].geometry.volume * liquid.density
     }
@@ -656,8 +704,22 @@ impl Workspace {
         yp: &[f64],
         cj: Option<f64>,
     ) -> Result<(), String> {
+        self.evaluate_with_ports(n, y, yp, cj, &[])
+    }
+    /// Forward chart and balances with explicitly supplied finite-neighbor
+    /// transactions. The sparse Jacobian differentiates the network at HELD
+    /// port rates; use `Network::add_port_jvp` for their coupled response.
+    pub fn evaluate_with_ports(
+        &mut self,
+        n: &Network,
+        y: &[f64],
+        yp: &[f64],
+        cj: Option<f64>,
+        ports: &[LiquidPort],
+    ) -> Result<(), String> {
         self.energy_rate_valid = false;
         self.chart_valid = false;
+        n.check_ports(ports)?;
         let nw = n.config.water.len();
         let dim = n.dimension();
         let pcol = n.pressure_row();
@@ -1005,6 +1067,15 @@ impl Workspace {
                 }
             }
         }
+        // A port changes both aggregate inventory and its actual local mass
+        // divergence. Apply BEFORE differential and reduced-continuity rows;
+        // adding energy alone after assembly would leave a false closed mass.
+        for p in ports {
+            self.mass_rates[p.cell] += p.mass_rate;
+            self.rates[n.total_mass_row()] += p.mass_rate;
+            self.rates[n.energy_row(p.cell)] += p.energy_rate;
+            self.rates[n.marker_row(p.cell)] += p.marker_rate;
+        }
         for row in 0..n.stock_dimension() {
             self.residual[row] = yp[row] - self.rates[row];
         }
@@ -1151,6 +1222,7 @@ impl Workspace {
             .chain(&self.rates)
             .chain(&self.jacobian_values)
             .chain(&self.mass_flows)
+            .chain(&self.mass_rates)
             .chain(&self.heat_flows)
             .chain(&self.chart_mass)
             .chain(&self.chart_energy)

@@ -48,6 +48,7 @@ pub(super) struct Accuracy {
     thermal_capacity: Vec<f64>,
     energy_rows: Vec<(usize, f64)>,
     carrier_q: [f64; 2],
+    carrier_atoms_per_marker: f64,
     barrel_capacity: f64,
 }
 fn product_resolution(reference: f64, q: f64) -> Result<f64, String> {
@@ -78,25 +79,25 @@ impl Accuracy {
         let network = operating_admission::weights(
             &model.network,
             &work.network,
-            &initial[model.layout.network_start..model.layout.products_start],
+            &initial[model.layout.network_start..model.layout.carrier_start],
             300.,
             1.,
         )?;
         let l = model.layout;
         let mut absolute = vec![0.; model.dimension()];
         absolute[..l.source_end].copy_from_slice(&source.absolute(1.)?);
-        absolute[l.network_start..l.products_start].copy_from_slice(&network.absolute);
+        absolute[l.network_start..l.carrier_start].copy_from_slice(&network.absolute);
         let law = model.source.moderator_law();
         let carrier_q = [
             law.hydrogen_emission.iter().sum(),
             law.boron_emission.iter().sum(),
         ];
-        let perkg = model.carrier.reference_per_kg();
+        let href = model.carrier.hydrogen_per_kg();
         for (i, &mass) in work.network.chart_mass.iter().enumerate() {
-            for species in 0..2 {
-                absolute[l.products_start + 2 * i + species] =
-                    product_resolution(perkg[species] * mass, carrier_q[species])?;
-            }
+            let start=l.carrier_start+leitbild_plant_numerics::water_carrier::WIDTH*i;
+            absolute[start]=product_resolution(href*mass,carrier_q[0])?;
+            absolute[start+1]=COUNT_ATOL;
+            absolute[start+2]=product_resolution(model.carrier.initial()[i].boron10,carrier_q[1])?;
         }
         let thermal_capacity = work.thermal.capacities()?.to_vec();
         for (i, &c) in thermal_capacity.iter().enumerate() {
@@ -131,7 +132,14 @@ impl Accuracy {
             )
         }));
         let initial_network_totals =
-            operating_admission::totals(n, &initial[l.network_start..l.products_start]);
+            operating_admission::totals(n, &initial[l.network_start..l.carrier_start]);
+        let total = model.carrier.initial().iter().map(|a| a.boron10 + a.boron).sum::<f64>();
+        let marker0 = (0..model.carrier.cells())
+            .map(|i| initial[l.network_start + n.marker_row(i)]).sum::<f64>();
+        let carrier_atoms_per_marker = total / marker0;
+        if !total.is_finite() || total <= 0. || !marker0.is_finite() || marker0 <= 0.
+            || !carrier_atoms_per_marker.is_finite() || carrier_atoms_per_marker <= 0.
+        { return Err("Closed carrier ledger requires actual positive B/marker preparation".into()); }
         Ok(Self {
             source,
             normal_absolute: absolute,
@@ -141,6 +149,7 @@ impl Accuracy {
             thermal_capacity,
             energy_rows,
             carrier_q,
+            carrier_atoms_per_marker,
             barrel_capacity,
         })
     }
@@ -149,6 +158,26 @@ impl Accuracy {
     }
     pub fn flow_absolute(&self, refinement: f64) -> Result<Vec<f64>, String> {
         refined(&self.flow_absolute, refinement)
+    }
+    /// Global closed-primary B-target-plus-product conservation in the existing
+    /// equivalent marker units. Local tracer agreement is not this global
+    /// conservation criterion; routing is tested independently at RHS/JVP level.
+    pub fn carrier_ledger(&self,model:&Model,y:&[f64])->Result<f64,String>{
+        if y.len()!=self.initial.len(){return Err("Wrong closed carrier ledger shape".into());}
+        let l=model.layout;
+        let conversion=self.carrier_atoms_per_marker;
+        let mut change=0f64;
+        for i in 0..model.carrier.cells(){
+            let start=l.carrier_start+leitbild_plant_numerics::water_carrier::WIDTH*i;
+            let delta=((y[start+1]-self.initial[start+1])+(y[start+2]-self.initial[start+2]))/conversion;
+            change+=delta;
+            if !delta.is_finite() || !change.is_finite() {
+                return Err("Nonfinite closed carrier ledger".into());
+            }
+        }
+        let defect=change.abs();
+        if !defect.is_finite()||defect>1e-8{return Err(format!("Global closed direct-boron ledger refused: {defect} kg-equivalent"));}
+        Ok(defect)
     }
     /// Installed energy receives independent fuel/barrel release less photon
     /// export. Fuel/He and barrel energy changes leave the network expectation;
@@ -304,8 +333,8 @@ impl Accuracy {
         result.thermal_family_ratio =
             ratio(thermal_error, 1e-3 * thermal_signal + thermal_resolution)?;
         let n = &model.network;
-        let an = &a.y[l.network_start..l.products_start];
-        let bn = &b.y[l.network_start..l.products_start];
+        let an = &a.y[l.network_start..l.carrier_start];
+        let bn = &b.y[l.network_start..l.carrier_start];
         let nw = n.config().water.len();
         let ns = n.config().solids.len();
         for i in 0..nw + ns {
@@ -417,18 +446,22 @@ impl Accuracy {
         // Exact existing SG recipient SUMABS criterion; unlike recipients
         // cannot cancel, and the 1 J signal floor is not an added error floor.
         result.sg_heat_ratio = ratio(sg_error, 0.005 * sg_signal.max(1.))?;
-        let perkg = model.carrier.reference_per_kg();
+        let href = model.carrier.hydrogen_per_kg();
         for i in 0..nw {
             for species in 0..2 {
-                let row = l.products_start + 2 * i + species;
+                let start=l.carrier_start+leitbild_plant_numerics::water_carrier::WIDTH*i;
+                let row=start+if species==0 {0} else {2};
                 let x = a.y[row];
                 let y = b.y[row];
                 let q = self.carrier_q[species];
-                let total_a = perkg[species] * a.water_mass[i];
-                let total_b = perkg[species] * b.water_mass[i];
-                let total_difference = perkg[species] * (a.water_mass[i] - b.water_mass[i]);
+                let (remaining_a,remaining_b,remaining_difference)=if species==0 {
+                    (href*a.water_mass[i]-x,href*b.water_mass[i]-y,
+                     href*(a.water_mass[i]-b.water_mass[i])-(x-y))
+                } else {
+                    (a.y[start+1],b.y[start+1],a.y[start+1]-b.y[start+1])
+                };
                 let (energy, remaining) =
-                    carrier_comparison(x, y, total_a, total_b, total_difference, q)?;
+                    carrier_comparison(x, y, remaining_a, remaining_b, remaining_difference, q)?;
                 result.carrier_ratio = result.carrier_ratio.max(result.record(
                     "mobile-product-paid-energy-equivalent",
                     row,
@@ -440,9 +473,9 @@ impl Accuracy {
                 result.carrier_ratio = result.carrier_ratio.max(result.record(
                     "mobile-remaining-target",
                     row,
-                    total_a - x,
-                    total_b - y,
-                    (total_difference - (x - y)).abs(),
+                    remaining_a,
+                    remaining_b,
+                    remaining_difference.abs(),
                     remaining.1,
                 )?);
             }
@@ -495,7 +528,7 @@ fn barrel_details(model: &Model, s: &Sample) -> String {
                         * (s.y[l.barrel_temperature]
                             - model
                                 .network
-                                .temperature(c.water, &s.y[l.network_start..l.products_start]))
+                                .temperature(c.water, &s.y[l.network_start..l.carrier_start]))
                 )
             )
         })
@@ -516,29 +549,24 @@ fn barrel_details(model: &Model, s: &Sample) -> String {
 fn carrier_comparison(
     x: f64,
     y: f64,
-    total_a: f64,
-    total_b: f64,
-    total_difference: f64,
+    remaining_a: f64,
+    remaining_b: f64,
+    remaining_difference: f64,
     q: f64,
 ) -> Result<((f64, f64), (f64, f64)), String> {
-    if [x, y, total_a, total_b, total_difference, q]
+    if [x, y, remaining_a, remaining_b, remaining_difference, q]
         .iter()
         .any(|v| !v.is_finite())
-        || total_a < 0.
-        || total_b < 0.
+        || remaining_a < 0.
+        || remaining_b < 0.
         || q < 0.
-        || x > total_a
-        || y > total_b
     {
         return Err("Invalid common carrier target/product".into());
     }
-    if (total_a == 0. && x != 0.) || (total_b == 0. && y != 0.) {
-        return Err("Nonzero structural-empty carrier product".into());
-    }
     let bound = 1e-3 * (q * y).abs() + 20. * ENERGY_ATOL;
     let energy = ratio(q * (x - y).abs(), bound)?;
-    let remaining_bound = 1e-3 * (total_b - y).abs() + 20. * COUNT_ATOL;
-    let remaining = ratio((total_difference - (x - y)).abs(), remaining_bound)?;
+    let remaining_bound = 1e-3 * remaining_b.abs() + 20. * COUNT_ATOL;
+    let remaining = ratio(remaining_difference.abs(), remaining_bound)?;
     Ok(((energy, bound), (remaining, remaining_bound)))
 }
 fn deposit_comparison(a: &[f64], b: &[f64]) -> Result<((f64, usize), f64), String> {
@@ -860,11 +888,16 @@ mod tests {
     }
     #[test]
     fn mobile_products_have_paid_energy_and_actual_remaining_target_checks() {
-        let (energy, remaining) = carrier_comparison(1., 2., 100., 100., 0., 1.).unwrap();
+        let (energy, remaining) = carrier_comparison(1., 2., 99., 98., 1., 1.).unwrap();
         assert!(energy.0 > 1.);
         assert!(remaining.0 > 1.);
-        assert!(carrier_comparison(1., 1., 0., 0., 0., 1.).is_err());
-        assert!(carrier_comparison(11., 1., 10., 10., 0., 1.).is_err());
+        assert!(carrier_comparison(1., 1., 0., 0., 0., 1.).is_ok());
+        assert!(carrier_comparison(11., 1., -1., 10., 0., 1.).is_err());
+        // Direct remaining inventory survives next to an enormous product;
+        // (remaining+product)-product would erase both 1 and 2 here.
+        let (_,r)=carrier_comparison(1e30,1e30,1.,2.,-1.,0.).unwrap();
+        assert_eq!(r.1,0.002+20.*COUNT_ATOL);
+        assert_eq!(r.0,1./r.1);
         // A changed total must be seen even with identical product counts.
         assert!(
             carrier_comparison(1., 1., 100., 200., -100., 0.)

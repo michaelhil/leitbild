@@ -13,7 +13,7 @@ use std::sync::Arc;
 pub struct Layout {
     pub source_end: usize,
     pub network_start: usize,
-    pub products_start: usize,
+    pub carrier_start: usize,
     pub energies_start: usize,
     pub temperatures_start: usize,
     pub barrel_energy: usize,
@@ -45,10 +45,10 @@ pub struct Workspace {
     pub jvp: Vec<f64>,
     mass: Vec<f64>,
     dmass: Vec<f64>,
-    products: Vec<wc::Products>,
-    dproducts: Vec<wc::Products>,
-    product_rates: Vec<wc::Products>,
-    product_jvp: Vec<wc::Products>,
+    products: Vec<wc::Amounts>,
+    dproducts: Vec<wc::Amounts>,
+    product_rates: Vec<wc::Amounts>,
+    product_jvp: Vec<wc::Amounts>,
     stocks: Vec<Stocks>,
     dstocks: Vec<Stocks>,
     fuel_temperature: Vec<f64>,
@@ -193,9 +193,9 @@ impl Model {
         }
         let ns = source.state_count();
         let nn = network.dimension();
-        let products_start = ns.checked_add(nn).ok_or("Coupled layout overflow")?;
-        let energies_start = products_start
-            .checked_add(2 * nw)
+        let carrier_start = ns.checked_add(nn).ok_or("Coupled layout overflow")?;
+        let energies_start = carrier_start
+            .checked_add(wc::WIDTH * nw)
             .ok_or("Coupled layout overflow")?;
         let temperatures_start = energies_start
             .checked_add(nt)
@@ -227,7 +227,7 @@ impl Model {
             layout: Layout {
                 source_end: ns,
                 network_start: ns,
-                products_start,
+                carrier_start,
                 energies_start,
                 temperatures_start,
                 barrel_energy,
@@ -248,8 +248,8 @@ impl Model {
     pub fn is_differential(&self, row: usize) -> bool {
         let l = self.layout;
         row < l.source_end
-            || (row < l.products_start && self.network.is_differential(row - l.network_start))
-            || (row >= l.products_start && row < l.temperatures_start)
+            || (row < l.carrier_start && self.network.is_differential(row - l.network_start))
+            || (row >= l.carrier_start && row < l.temperatures_start)
             || row == l.barrel_energy
             || row == l.barrel_released
             || row == l.barrel_exported
@@ -282,10 +282,10 @@ impl Model {
             jvp: vec![0.; self.dimension()],
             mass: vec![0.; nw],
             dmass: vec![0.; nw],
-            products: vec![wc::Products::default(); nw],
-            dproducts: vec![wc::Products::default(); nw],
-            product_rates: vec![wc::Products::default(); nw],
-            product_jvp: vec![wc::Products::default(); nw],
+            products: vec![wc::Amounts::default(); nw],
+            dproducts: vec![wc::Amounts::default(); nw],
+            product_rates: vec![wc::Amounts::default(); nw],
+            product_jvp: vec![wc::Amounts::default(); nw],
             stocks: vec![stock; nw],
             dstocks: vec![stock; nw],
             fuel_temperature: vec![0.; self.fuel_rows.len()],
@@ -318,9 +318,13 @@ impl Model {
         let l = self.layout;
         let mut y = vec![0.; self.dimension()];
         y[..l.source_end].copy_from_slice(&self.source.initial_state());
-        y[l.network_start..l.products_start].copy_from_slice(&self.network.initial_state()?);
+        y[l.network_start..l.carrier_start].copy_from_slice(&self.network.initial_state()?);
         y[l.temperatures_start..l.barrel_energy].copy_from_slice(&self.original_temperature);
         y[l.barrel_temperature] = self.barrel.initial_temperature();
+        for (i, a) in self.carrier.initial().iter().enumerate() {
+            y[l.carrier_start + wc::WIDTH * i..l.carrier_start + wc::WIDTH * (i + 1)]
+                .copy_from_slice(&a.values());
+        }
         let mut w = self.workspace();
         let yp = vec![0.; self.dimension()];
         self.evaluate(&y, &yp, None, &mut w)?;
@@ -347,18 +351,15 @@ impl Model {
             return Err("Invalid composed cold trial/workspace".into());
         }
         let l = self.layout;
-        let yn = &y[l.network_start..l.products_start];
-        w.network.evaluate(
-            &self.network,
-            yn,
-            &yp[l.network_start..l.products_start],
-            cj,
-        )?;
+        let yn = &y[l.network_start..l.carrier_start];
+        w.network
+            .evaluate(&self.network, yn, &yp[l.network_start..l.carrier_start], cj)?;
         for i in 0..self.carrier.cells() {
             w.mass[i] = w.network.chart_mass[i];
-            w.products[i] = wc::Products {
-                hydrogen: y[l.products_start + 2 * i],
-                boron: y[l.products_start + 2 * i + 1],
+            w.products[i] = wc::Amounts {
+                hydrogen: y[l.carrier_start + wc::WIDTH * i],
+                boron10: y[l.carrier_start + wc::WIDTH * i + 1],
+                boron: y[l.carrier_start + wc::WIDTH * i + 2],
             };
             let liquid = w.network.liquids[i];
             w.water[i] = ft::Water {
@@ -430,12 +431,12 @@ impl Model {
         for i in 0..l.source_end {
             w.residual[i] = yp[i] - w.source.rates()?[i];
         }
-        w.residual[l.network_start..l.products_start].copy_from_slice(&w.network.residual);
+        w.residual[l.network_start..l.carrier_start].copy_from_slice(&w.network.residual);
         for i in 0..self.carrier.cells() {
-            w.residual[l.products_start + 2 * i] =
-                yp[l.products_start + 2 * i] - w.product_rates[i].hydrogen;
-            w.residual[l.products_start + 2 * i + 1] =
-                yp[l.products_start + 2 * i + 1] - w.product_rates[i].boron;
+            for (k, rate) in w.product_rates[i].values().into_iter().enumerate() {
+                w.residual[l.carrier_start + wc::WIDTH * i + k] =
+                    yp[l.carrier_start + wc::WIDTH * i + k] - rate;
+            }
         }
         for b in 0..self.thermal.band_count() {
             w.residual[l.network_start + self.network.energy_row(self.thermal.band_water(b))] -=
@@ -497,15 +498,16 @@ impl Model {
             return Err("Composed JVP requires current evaluated trial and matching cj".into());
         }
         let l = self.layout;
-        let dn = &dy[l.network_start..l.products_start];
+        let dn = &dy[l.network_start..l.carrier_start];
         let dp = dn[self.network.pressure_row()];
         for i in 0..self.carrier.cells() {
             let dt = dn[self.network.temperature_row(i)];
             let d = w.network.chart_derivatives[i];
             w.dmass[i] = d[0] * dp + d[1] * dt;
-            w.dproducts[i] = wc::Products {
-                hydrogen: dy[l.products_start + 2 * i],
-                boron: dy[l.products_start + 2 * i + 1],
+            w.dproducts[i] = wc::Amounts {
+                hydrogen: dy[l.carrier_start + wc::WIDTH * i],
+                boron10: dy[l.carrier_start + wc::WIDTH * i + 1],
+                boron: dy[l.carrier_start + wc::WIDTH * i + 2],
             };
             let [mu, k, cp] = w.network.film_property_direction(i, dp, dt);
             w.dwater[i] = ft::WaterDirection {
@@ -580,10 +582,10 @@ impl Model {
             }
         }
         for i in 0..self.carrier.cells() {
-            w.jvp[l.products_start + 2 * i] =
-                cj * dy[l.products_start + 2 * i] - w.product_jvp[i].hydrogen;
-            w.jvp[l.products_start + 2 * i + 1] =
-                cj * dy[l.products_start + 2 * i + 1] - w.product_jvp[i].boron;
+            for (k, rate) in w.product_jvp[i].values().into_iter().enumerate() {
+                w.jvp[l.carrier_start + wc::WIDTH * i + k] =
+                    cj * dy[l.carrier_start + wc::WIDTH * i + k] - rate;
+            }
         }
         for b in 0..self.thermal.band_count() {
             w.jvp[l.network_start + self.network.energy_row(self.thermal.band_water(b))] -=

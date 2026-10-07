@@ -1,5 +1,85 @@
 use super::*;
 
+#[test]
+#[ignore = "Explicit saved carrier3 global/local balance diagnostic; no IDASolve"]
+fn archived_carrier_global_and_local_transport_without_advancement() {
+    let started = Instant::now();
+    let directory = PathBuf::from(std::env::var("LEITBILD_COOLING_DIAGNOSTIC_ARTIFACTS").unwrap());
+    let report = PathBuf::from(std::env::var("LEITBILD_COOLING_CARRIER_REPORT").unwrap());
+    let prepared = cooling_input::parse(&fs::read_to_string(directory.join("input.txt")).unwrap()).unwrap();
+    let m = &prepared.model;
+    let l = m.layout;
+    let n = m.dimension();
+    let nw = m.carrier.cells();
+    let initial = m.initial_state().unwrap();
+    let conversion = m.carrier.initial().iter().map(|p| p.boron10+p.boron).sum::<f64>()
+        / (0..nw).map(|i|initial[l.network_start+m.network.marker_row(i)]).sum::<f64>();
+    let mut cases = Vec::new();
+    for name in ["input.normal.checkpoint", "input.normal.unadmitted-raw"] {
+        let bytes = fs::read(directory.join(name)).unwrap();
+        assert_eq!(&bytes[..8], b"LDCOOL01");
+        assert_eq!(u64::from_le_bytes(bytes[8..16].try_into().unwrap()), n as u64);
+        assert_eq!(bytes.len(),24+16*n);
+        let time = f64::from_le_bytes(bytes[16..24].try_into().unwrap());
+        let all = bytes[24..].chunks_exact(8).map(|b|f64::from_le_bytes(b.try_into().unwrap())).collect::<Vec<_>>();
+        assert!(all.iter().all(|x|x.is_finite()));
+        let (y,yp) = all.split_at(n);
+        let mut w = m.workspace();
+        m.evaluate(y,yp,Some(1.),&mut w).unwrap();
+        let marker = |i|l.network_start+m.network.marker_row(i);
+        let b = |i|l.carrier_start+water_carrier::WIDTH*i+1;
+        let amounts = (0..nw).map(|i|water_carrier::Amounts {hydrogen:y[b(i)-1],boron10:y[b(i)],boron:y[b(i)+1]}).collect::<Vec<_>>();
+        let a = (0..nw).map(|i|(y[b(i)]+y[b(i)+1])/conversion-y[marker(i)]).collect::<Vec<_>>();
+        let mut rates = vec![water_carrier::Amounts::default();nw];
+        m.carrier.rates_into(&w.network.chart_mass,&amounts,&w.network.mass_flows,w.source.external_water_events().unwrap(),&mut rates).unwrap();
+        let mut expected = vec![0.;nw];
+        for (link,&q) in m.carrier.links().iter().zip(&w.network.mass_flows) {
+            let donor = if q>=0. {link.from} else {link.to};
+            let flux=q*a[donor]/w.network.chart_mass[donor];
+            expected[link.from]-=flux; expected[link.to]+=flux;
+        }
+        let actual=(0..nw).map(|i|(rates[i].boron10+rates[i].boron)/conversion-w.network.rates[m.network.marker_row(i)]).collect::<Vec<_>>();
+        let rhs_error=actual.iter().zip(&expected).map(|(a,b)|(a-b).abs()).fold(0f64,f64::max);
+        let mut d=vec![0.;n];
+        d[l.network_start+m.network.pressure_row()]=2.;
+        for i in 0..nw {
+            d[b(i)]=conversion*(i as f64+1.)*1e-4;
+            d[b(i)+1]=-conversion*(i as f64)*3e-5;
+            d[marker(i)]=(i as f64)*2e-5;
+            d[l.network_start+m.network.temperature_row(i)]=1e-3;
+        }
+        for e in 0..m.carrier.links().len(){d[l.network_start+m.network.flow_row(e)]=1e-3;}
+        m.jvp(&d,1.,&mut w).unwrap();
+        let da=(0..nw).map(|i|(d[b(i)]+d[b(i)+1])/conversion-d[marker(i)]).collect::<Vec<_>>();
+        let mut expected_j=da.clone();
+        for (e,(link,&q)) in m.carrier.links().iter().zip(&w.network.mass_flows).enumerate() {
+            let donor=if q>=0. {link.from}else{link.to};
+            let mass=w.network.chart_mass[donor];
+            let partial=w.network.chart_derivatives[donor];
+            let dm=partial[0]*2.+partial[1]*1e-3;
+            let dq=d[l.network_start+m.network.flow_row(e)];
+            let flux=dq*a[donor]/mass+q*(da[donor]/mass-a[donor]/mass*dm/mass);
+            expected_j[link.from]+=flux;expected_j[link.to]-=flux;
+        }
+        let j_error=(0..nw).map(|i|((w.jvp[b(i)]+w.jvp[b(i)+1])/conversion-w.jvp[marker(i)]-expected_j[i]).abs()).fold(0f64,f64::max);
+        let global_b=(0..nw).map(|i|((y[b(i)]-initial[b(i)])+(y[b(i)+1]-initial[b(i)+1]))/conversion).sum::<f64>();
+        let global_rhs=rates.iter().map(|p|(p.boron10+p.boron)/conversion).sum::<f64>();
+        let global_j=(0..nw).map(|i|(w.jvp[b(i)]+w.jvp[b(i)+1]-d[b(i)]-d[b(i)+1])/conversion).sum::<f64>();
+        let local=a.iter().map(|x|x.abs()).fold(0f64,f64::max);
+        let roundoff=(0..nw).map(|i|f64::EPSILON*((y[b(i)].abs()+y[b(i)+1].abs())/conversion+y[marker(i)].abs())).fold(0f64,f64::max);
+        assert!(global_b.abs()<1e-8 && global_rhs.abs()<1e-12 && global_j.abs()<1e-12);
+        assert!(rhs_error<1e-12 && j_error<1e-12,"{rhs_error:e} {j_error:e}");
+        cases.push(format!("{{\"frame\":{},\"time\":{time:e},\"globalBChangeKgEquivalent\":{global_b:e},\"maxLocalBMarkerDifferenceKg\":{local:e},\"singleOperationRoundoffScaleKg\":{roundoff:e},\"globalBRHSKgPerS\":{global_rhs:e},\"globalBJVPBalanceError\":{global_j:e},\"localUpwindRHSIdentityErrorKgPerS\":{rhs_error:e},\"localUpwindJVPIdentityError\":{j_error:e}}}",quote(name)));
+    }
+    let seconds=started.elapsed().as_secs_f64();
+    assert!(seconds<10.);
+    let json=format!("{{\"kind\":\"saved-carrier3-balance-no-advancement\",\"passed\":true,\"representativeCj\":1,\"actualStageCjAvailable\":false,\"elapsedSeconds\":{seconds},\"classification\":\"local-independent-tracer-disagreement-not-global-B-loss\",\"cases\":[{}]}}",cases.join(","));
+    let mut file=fs::OpenOptions::new().write(true).create_new(true).open(report).unwrap();
+    use std::io::Write;
+    file.write_all(json.as_bytes()).unwrap();file.sync_all().unwrap();
+    eprintln!("{json}");
+}
+
 // Saved-state diagnostic only. The callback bridge uses the SAME complete
 // current JVP and owned frozen P as production; it never invokes IDASolve.
 struct ChartLinear<'a> {
@@ -363,7 +443,7 @@ fn barrel_chart_linear_diagnostic(candidate_proof: bool) {
             let charts = operating_admission::chart_corrections(
                 network,
                 &probe.network,
-                &candidate[l.network_start..l.products_start],
+                &candidate[l.network_start..l.carrier_start],
             )
             .unwrap();
             let chart_passed = charts.check().is_ok();
@@ -484,7 +564,7 @@ fn archived_energy_p_completion_without_advancement() {
         let actual_j_before = unsafe { values(r, n) }.unwrap().to_vec();
         assert_eq!(unsafe { psetup(0., y, yp, r, 3., user) }, 0);
         assert!(c.energy_p.unit().iter().all(
-            |&(row, _)| row >= model.layout.network_start && row < model.layout.products_start
+            |&(row, _)| row >= model.layout.network_start && row < model.layout.carrier_start
         ));
         let mut physical_rhs = rhs.clone();
         c.energy.vector_to_physical(&mut physical_rhs);
@@ -498,7 +578,7 @@ fn archived_energy_p_completion_without_advancement() {
         let completed_g_defect = 3. * completed[c.energy.row] - rhs[c.energy.row];
         assert!(completed_g_defect.abs() <= 1e-12);
         for row in 0..n {
-            if row < model.layout.network_start || row >= model.layout.products_start {
+            if row < model.layout.network_start || row >= model.layout.carrier_start {
                 assert_eq!(completed[row], baseline[row]);
             }
         }

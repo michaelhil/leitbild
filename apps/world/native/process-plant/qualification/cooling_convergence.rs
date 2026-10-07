@@ -120,8 +120,8 @@ impl<'a> Convergence<'a> {
             return Err("Nonfinite corrected physical Newton candidate".into());
         }
         let l = self.model.layout;
-        let y = &self.state[l.network_start..l.products_start];
-        let yp = &self.slopes[l.network_start..l.products_start];
+        let y = &self.state[l.network_start..l.carrier_start];
+        let yp = &self.slopes[l.network_start..l.carrier_start];
         let prepared = self.network.evaluate(&self.model.network, y, yp, None);
         self.property_requests += self.network.property_requests as u64;
         if let Err(error) = prepared {

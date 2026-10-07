@@ -55,7 +55,7 @@ unsafe extern "C" {
         cap: usize,
     ) -> i32;
 }
-fn endpoints(t: f64, p: f64) -> Result<(Liquid, Liquid, [f64; 2]), String> {
+pub(crate) fn endpoints(t: f64, p: f64) -> Result<(Liquid, Liquid, [f64; 2]), String> {
     let mut l = Liquid::default();
     let mut v = Liquid::default();
     let mut sat = [0.; 2];

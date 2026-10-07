@@ -25,6 +25,8 @@ pub mod water_carrier;
 pub mod fuel_thermal;
 pub mod source_cooling;
 pub mod sg_secondary;
+pub mod cold_pressurizer;
+pub mod finite_surge;
 
 pub const GRAVITY: f64 = 9.80665;
 

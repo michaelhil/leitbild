@@ -465,3 +465,232 @@ fn malformed_disconnected_and_nonfinite_trials_refuse_explicitly() {
     w.chart_mass.pop();
     assert!(w.evaluate(&n, &y, &yp, None).is_err());
 }
+
+#[test]
+fn empty_and_zero_liquid_ports_preserve_closed_stage_bits() {
+    let n = fixture();
+    let y = n.initial_state().unwrap();
+    let yp = vec![0.; n.dimension()];
+    for cj in [None, Some(0.), Some(3.)] {
+        let closed = at(&n, &y, &yp, cj);
+        for ports in [
+            vec![],
+            vec![LiquidPort {
+                cell: 1,
+                mass_rate: 0.,
+                energy_rate: 0.,
+                marker_rate: 0.,
+            }],
+        ] {
+            let mut open = Workspace::new(&n);
+            open.evaluate_with_ports(&n, &y, &yp, cj, &ports).unwrap();
+            for (a, b) in closed
+                .residual
+                .iter()
+                .chain(&closed.rates)
+                .chain(&closed.mass_rates)
+                .chain(&closed.jacobian_values)
+                .zip(
+                    open.residual
+                        .iter()
+                        .chain(&open.rates)
+                        .chain(&open.mass_rates)
+                        .chain(&open.jacobian_values),
+                )
+            {
+                assert_eq!(a.to_bits(), b.to_bits());
+            }
+            assert_eq!(closed.pressure_rate.to_bits(), open.pressure_rate.to_bits());
+            assert_eq!(closed.property_requests, open.property_requests);
+        }
+    }
+}
+
+#[test]
+fn signed_liquid_ports_pay_local_and_aggregate_balances_once() {
+    let n = fixture();
+    let y = n.initial_state().unwrap();
+    let yp = vec![0.; n.dimension()];
+    let closed = at(&n, &y, &yp, Some(3.));
+    // Includes the omitted continuity root, withdrawal, and two transactions
+    // on one physical cell. The root is not a fabricated balancing source.
+    let ports = [
+        LiquidPort {
+            cell: 0,
+            mass_rate: 2.,
+            energy_rate: 7.,
+            marker_rate: 0.25,
+        },
+        LiquidPort {
+            cell: 1,
+            mass_rate: -3.,
+            energy_rate: -11.,
+            marker_rate: -0.5,
+        },
+        LiquidPort {
+            cell: 1,
+            mass_rate: 0.5,
+            energy_rate: 13.,
+            marker_rate: 0.125,
+        },
+    ];
+    let mut open = Workspace::new(&n);
+    open.evaluate_with_ports(&n, &y, &yp, Some(3.), &ports)
+        .unwrap();
+    let mut expected = vec![0.; n.dimension()];
+    for p in ports {
+        expected[n.total_mass_row()] -= p.mass_rate;
+        expected[n.energy_row(p.cell)] -= p.energy_rate;
+        expected[n.marker_row(p.cell)] -= p.marker_rate;
+        if let Some(row) = n.mechanical_row(p.cell) {
+            expected[row] -= p.mass_rate;
+        }
+    }
+    for row in 0..n.dimension() {
+        assert!((open.residual[row] - closed.residual[row] - expected[row]).abs() < 1e-8);
+    }
+    assert_eq!(open.rates[n.total_mass_row()], -0.5);
+    assert_eq!(open.pressure_rate.to_bits(), closed.pressure_rate.to_bits());
+    assert_eq!(open.jacobian_values, closed.jacobian_values); // held-port response
+    assert_eq!(open.mass_rates[0] - closed.mass_rates[0], 2.);
+    assert_eq!(open.mass_rates[1] - closed.mass_rates[1], -2.5);
+
+    let mut yp = yp;
+    yp[n.total_mass_row()] = -0.5;
+    open.evaluate_with_ports(&n, &y, &yp, Some(3.), &ports)
+        .unwrap();
+    assert_eq!(open.residual[n.total_mass_row()], 0.);
+    let mut summed_chart_mass_rate = 0.;
+    for [mp, mt, ep, et] in &open.chart_derivatives {
+        summed_chart_mass_rate += (mp - mt * ep / et) * open.pressure_rate;
+    }
+    assert!((summed_chart_mass_rate - yp[n.total_mass_row()]).abs() < 1e-14);
+}
+
+#[test]
+fn liquid_port_tangent_matches_independent_transaction_finite_difference() {
+    let n = fixture();
+    let y = n.initial_state().unwrap();
+    let yp = vec![0.; n.dimension()];
+    let ports = [
+        LiquidPort {
+            cell: 0,
+            mass_rate: -2.,
+            energy_rate: -17.,
+            marker_rate: -0.25,
+        },
+        LiquidPort {
+            cell: 2,
+            mass_rate: 3.,
+            energy_rate: 19.,
+            marker_rate: 0.5,
+        },
+    ];
+    let direction = [
+        LiquidPort {
+            cell: 0,
+            mass_rate: 0.25,
+            energy_rate: -7.,
+            marker_rate: 0.125,
+        },
+        LiquidPort {
+            cell: 2,
+            mass_rate: -0.5,
+            energy_rate: 11.,
+            marker_rate: -0.25,
+        },
+    ];
+    let mut action = vec![0.; n.dimension()];
+    n.add_port_jvp(&direction, &mut action).unwrap();
+    let evaluate = |sign: f64| {
+        let shifted: Vec<_> = ports
+            .iter()
+            .zip(direction)
+            .map(|(p, d)| LiquidPort {
+                cell: p.cell,
+                mass_rate: p.mass_rate + sign * 0.25 * d.mass_rate,
+                energy_rate: p.energy_rate + sign * 0.25 * d.energy_rate,
+                marker_rate: p.marker_rate + sign * 0.25 * d.marker_rate,
+            })
+            .collect();
+        let mut w = Workspace::new(&n);
+        w.evaluate_with_ports(&n, &y, &yp, Some(3.), &shifted)
+            .unwrap();
+        w
+    };
+    let plus = evaluate(1.);
+    let minus = evaluate(-1.);
+    for row in 0..n.dimension() {
+        let fd = (plus.residual[row] - minus.residual[row]) / 0.5;
+        assert!(
+            (fd - action[row]).abs() < 1e-8,
+            "row {row}: {fd} != {}",
+            action[row]
+        );
+    }
+    assert_eq!(action[n.total_mass_row()], 0.25);
+    assert_eq!(action[n.energy_row(0)], 7.);
+    assert_eq!(action[n.energy_row(2)], -11.);
+    assert_eq!(action[n.mechanical_row(2).unwrap()], 0.5);
+}
+
+#[test]
+fn malformed_or_overflowed_ports_invalidate_prepared_chart_and_tangent() {
+    let n = fixture();
+    let y = n.initial_state().unwrap();
+    let yp = vec![0.; n.dimension()];
+    let good = LiquidPort {
+        cell: 0,
+        mass_rate: 1.,
+        energy_rate: 2.,
+        marker_rate: 0.25,
+    };
+    let mut w = Workspace::new(&n);
+    for bad in [
+        LiquidPort {
+            cell: usize::MAX,
+            ..good
+        },
+        LiquidPort {
+            mass_rate: f64::NAN,
+            ..good
+        },
+        LiquidPort {
+            energy_rate: f64::INFINITY,
+            ..good
+        },
+        LiquidPort {
+            marker_rate: f64::NEG_INFINITY,
+            ..good
+        },
+    ] {
+        w.evaluate(&n, &y, &yp, Some(3.)).unwrap();
+        assert!(
+            w.evaluate_with_ports(&n, &y, &yp, Some(3.), &[bad])
+                .is_err()
+        );
+        assert!(w.check_current_chart(&n, &y).is_err());
+        assert!(w.energy_rate_jvp(&n, &yp).is_err());
+        assert!(
+            n.add_port_jvp(&[bad], &mut vec![0.; n.dimension()])
+                .is_err()
+        );
+    }
+    let huge = LiquidPort {
+        energy_rate: f64::MAX,
+        ..good
+    };
+    assert!(
+        w.evaluate_with_ports(&n, &y, &yp, Some(3.), &[huge, huge])
+            .is_err()
+    );
+    assert!(w.check_current_chart(&n, &y).is_err());
+    assert!(
+        n.add_port_jvp(&[huge, huge], &mut vec![0.; n.dimension()])
+            .is_err()
+    );
+    assert!(n.add_port_jvp(&[good], &mut []).is_err());
+    w.evaluate_with_ports(&n, &y, &yp, Some(3.), &[good])
+        .unwrap();
+    w.check_current_chart(&n, &y).unwrap();
+}

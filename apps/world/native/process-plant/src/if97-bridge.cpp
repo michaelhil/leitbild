@@ -49,7 +49,10 @@ int leitbild_cold_wet(double T, double p, LiquidTuple* liquid_out,
         require(std::isfinite(T)&&std::isfinite(p)&&T>=IF97::Tmin&&T<=IF97::T23min
             &&p>=IF97::Pmin&&p<=20e6, "Unsupported cold wet endpoint domain");
         const double pv=r4.p_T(T), ts=r4.T_p(p);
-        require(T<=ts, "Cold wet liquid above total-pressure saturation");
+        // p_T followed by T_p need not return the identical last bit. The
+        // exactly supplied forward saturation pressure is the SAME boundary,
+        // not a metastable-temperature extension or tolerance window.
+        require(T<=ts || p==pv, "Cold wet liquid above total-pressure saturation");
         const auto l=gibbs(r1,1,T,p), v=gibbs(r2,2,T,pv);
         *liquid_out={l.p,l.T,l.rho,l.u,l.h,l.s,l.cp,l.cv,l.w,l.alpha,l.kappa,l.mu,l.conductivity};
         *vapor_out={v.p,v.T,v.rho,v.u,v.h,v.s,v.cp,v.cv,v.w,v.alpha,v.kappa,v.mu,v.conductivity};

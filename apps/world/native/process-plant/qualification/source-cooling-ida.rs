@@ -161,7 +161,7 @@ unsafe extern "C" {
 }
 fn progress_relative(model: &source_cooling::Model, row: usize) -> bool {
     row < model.layout.source_end
-        || (model.layout.products_start..model.layout.energies_start).contains(&row)
+        || (model.layout.carrier_start..model.layout.energies_start).contains(&row)
         || row == model.layout.barrel_released
         || row == model.layout.barrel_exported
 }
@@ -176,7 +176,7 @@ fn physical_constraints(model: &source_cooling::Model, energy_row: usize) -> Vec
     out[..l.source_end].fill(1.);
     out[model.source.ledger_row()] = 0.;
     out[energy_row] = 0.;
-    out[l.products_start..l.energies_start].fill(1.);
+    out[l.carrier_start..l.energies_start].fill(1.);
     out[l.temperatures_start..l.barrel_energy].fill(2.);
     out[l.barrel_temperature] = 2.;
     out[l.barrel_released] = 1.;
@@ -188,7 +188,7 @@ const ERROR_FAMILIES: [&str; 8] = [
     "source-C",
     "source-history-and-audits",
     "network",
-    "carrier-products",
+    "carrier-target-and-products",
     "thermal-energy",
     "thermal-temperature",
     "barrel-energy-temperature-emission-export",
@@ -222,7 +222,7 @@ impl LocalErrors {
                     )
                 } else if r < l.source_end {
                     2
-                } else if r < l.products_start {
+                } else if r < l.carrier_start {
                     3
                 } else if r < l.energies_start {
                     4
@@ -969,6 +969,7 @@ fn run(
             let admitted = (|| -> Result<(), String> {
                 model.evaluate(&physical, &physical_yp, None, &mut callbacks.work)?;
                 model.validate_accepted(&physical, &callbacks.work)?;
+                accuracy.carrier_ledger(model,&physical)?;
                 let admission = cooling_accuracy::admit_source(
                     model,
                     &physical,
@@ -981,7 +982,7 @@ fn run(
                 operating_admission::screen(
                     &model.network,
                     &callbacks.work.network,
-                    &physical[l.network_start..l.products_start],
+                    &physical[l.network_start..l.carrier_start],
                     expected,
                     &flow_absolute,
                 )?;
@@ -1407,7 +1408,7 @@ fn execute() -> Result<(), String> {
         barrel_developed.map_or("null".into(), |v| v.to_string())
     );
     println!(
-        "{{\"kind\":\"source-cooling-pair\",\"passed\":{passed},\"lastAdmittedTime\":{},\"scope\":\"same-trial-source-finite-fuel-He-primary-finite-SG-barrel;cold-fixed-prepared-geometry;no-fullplant-credit\",\"dimension\":{},\"differential\":{},\"settings\":{{\"accuracyPolicy\":\"cold-source-cooling-5\",\"provisional\":true,\"nonlinearClosure\":\"stock-Newton-and-current-physical-network-chart\",\"linearWeightedL2Budget\":{linear_budget},\"algebraicLTE\":\"included\",\"fuelPowerErrorWeights\":\"sparse-current-response-proportional-budget-cap\",\"fuelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerErrorWeights\":\"sparse-current-bulk-capture-Mn-proportional-budget-cap\",\"barrelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerWeightScope\":\"held-route-source-response-only;density-partition-independently-paired\",\"fuelPowerWeightScope\":\"first-order-local-box-budget;not-WRMS-or-paired-error-guarantee\",\"perRowErrorWeights\":\"source-carrier-barrel-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute\",\"solverEnergyCoordinate\":\"G=sum-installed-energy-change-independent-fuel-and-barrel-release-plus-barrel-export\",\"energyDefectATOLJ\":{},\"referenceAllATOLandRTOLDivisor\":10,\"horizon\":300,\"costGuard\":\"aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic\",\"maxl\":30,\"restarts\":0}},\"gates\":{{\"fullPairComparisonEvaluated\":{pair_evaluated},\"developedThermalResponse\":{},\"developedSourceResponse\":{},\"thermalResponse\":{thermal_details},\"sourceLocalRatio\":{},\"sourceFamilyRatio\":{},\"sourceObservableRatio\":{},\"sourceNCOperatorRatio\":{},\"thermalPairRatio\":{},\"networkPairRatio\":{},\"depositionPairRatio\":{},\"carrierPairRatio\":{},{barrel_gates}}},\"pairedComparisons\":[{}],\"fuelTemperatureFeedbackDiagnostic\":{feedback},\"normal\":{},\"tighter\":{tighter},\"aggregateWallSeconds\":{}}}",
+        "{{\"kind\":\"source-cooling-pair\",\"passed\":{passed},\"lastAdmittedTime\":{},\"scope\":\"same-trial-source-finite-fuel-He-primary-finite-SG-barrel;cold-fixed-prepared-geometry;no-fullplant-credit\",\"dimension\":{},\"differential\":{},\"settings\":{{\"accuracyPolicy\":\"cold-source-cooling-5\",\"carrierCoordinates\":\"hydrogen-product,direct-boron10,boron-product\",\"provisional\":true,\"nonlinearClosure\":\"stock-Newton-and-current-physical-network-chart\",\"linearWeightedL2Budget\":{linear_budget},\"algebraicLTE\":\"included\",\"fuelPowerErrorWeights\":\"sparse-current-response-proportional-budget-cap\",\"fuelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerErrorWeights\":\"sparse-current-bulk-capture-Mn-proportional-budget-cap\",\"barrelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerWeightScope\":\"held-route-source-response-only;density-partition-independently-paired\",\"fuelPowerWeightScope\":\"first-order-local-box-budget;not-WRMS-or-paired-error-guarantee\",\"perRowErrorWeights\":\"source-carrier-barrel-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute\",\"solverEnergyCoordinate\":\"G=sum-installed-energy-change-independent-fuel-and-barrel-release-plus-barrel-export\",\"energyDefectATOLJ\":{},\"referenceAllATOLandRTOLDivisor\":10,\"horizon\":300,\"costGuard\":\"aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic\",\"maxl\":30,\"restarts\":0}},\"gates\":{{\"fullPairComparisonEvaluated\":{pair_evaluated},\"developedThermalResponse\":{},\"developedSourceResponse\":{},\"thermalResponse\":{thermal_details},\"sourceLocalRatio\":{},\"sourceFamilyRatio\":{},\"sourceObservableRatio\":{},\"sourceNCOperatorRatio\":{},\"thermalPairRatio\":{},\"networkPairRatio\":{},\"depositionPairRatio\":{},\"carrierPairRatio\":{},{barrel_gates}}},\"pairedComparisons\":[{}],\"fuelTemperatureFeedbackDiagnostic\":{feedback},\"normal\":{},\"tighter\":{tighter},\"aggregateWallSeconds\":{}}}",
         finite(
             tight
                 .as_ref()
@@ -1475,6 +1476,29 @@ fn execute() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn direct_boron_ledger_checks_global_conservation_not_local_tracer_accuracy(){
+        let model=cooling_fixture::fixture_with_contrast();let l=model.layout;
+        let accuracy=cooling_accuracy::Accuracy::new(&model,&vec![[0.;2];model.source.target_count()]).unwrap();
+        let mut y=model.initial_state().unwrap();
+        assert_eq!(accuracy.carrier_ledger(&model,&y).unwrap(),0.);
+        // Capture exchanges actual target/product; neither stock disappears.
+        y[l.carrier_start+1]-=0.5;y[l.carrier_start+2]+=0.5;
+        assert!(accuracy.carrier_ledger(&model,&y).is_ok());
+        y[l.carrier_start+2]+=0.5;
+        assert!(accuracy.carrier_ledger(&model,&y).is_err());
+        let mut y=model.initial_state().unwrap();
+        let conversion=model.carrier.initial()[0].boron10/y[l.network_start+model.network.marker_row(0)];
+        // This is a GLOBAL conservation check, not a local tracer-accuracy
+        // theorem. Actual packet incidence is covered by the coupled RHS/JVP test.
+        y[l.carrier_start+1]-=conversion*1e-5;
+        y[l.carrier_start+water_carrier::WIDTH+1]+=conversion*1e-5;
+        assert!(accuracy.carrier_ledger(&model,&y).is_ok());
+        y[l.carrier_start+1]=f64::NAN;
+        assert!(accuracy.carrier_ledger(&model,&y).is_err());
+        y[l.carrier_start+1]=f64::INFINITY;
+        assert!(accuracy.carrier_ledger(&model,&y).is_err());
+    }
     #[test]
     fn appended_barrel_rows_have_explicit_ids_constraints_and_resolved_development() {
         let model = cooling_fixture::fixture();
@@ -1662,7 +1686,7 @@ mod tests {
         let model = cooling_fixture::fixture();
         let initial = model.initial_state().unwrap();
         let g = EnergyCoordinates::new(&model, &initial).unwrap();
-        assert!(g.row >= model.layout.network_start && g.row < model.layout.products_start);
+        assert!(g.row >= model.layout.network_start && g.row < model.layout.carrier_start);
         let d = Coordinates {
             nc: model.source.nc_dimension(),
             ledger: model.source.ledger_row(),
@@ -1733,11 +1757,11 @@ mod tests {
         let completed = unsafe { values(z, n) }.unwrap().to_vec();
         assert!((completed[c.energy.row] - rhs[c.energy.row] / 3.).abs() < 1e-12);
         assert!(c.energy_p.unit().iter().all(
-            |&(row, _)| row >= model.layout.network_start && row < model.layout.products_start
+            |&(row, _)| row >= model.layout.network_start && row < model.layout.carrier_start
         ));
         // Other components have zero unit response and are unchanged exactly.
         for row in 0..n {
-            if row < model.layout.network_start || row >= model.layout.products_start {
+            if row < model.layout.network_start || row >= model.layout.carrier_start {
                 assert_eq!(completed[row], expected[row]);
             }
         }
@@ -1821,7 +1845,7 @@ mod tests {
         let mut resources = Resources::new().unwrap();
         let mut state = model.initial_state().unwrap();
         state[0] = 1e9;
-        state[model.layout.products_start] = 1e9;
+        state[model.layout.carrier_start] = 1e9;
         c.coordinates.transform(&mut state);
         c.energy.state_to_solver(&mut state);
         let y = resources.vector(&state).unwrap();
@@ -1831,7 +1855,7 @@ mod tests {
         assert!(weights[0] >= 1. / (0.01 + 1e4));
         assert_eq!(weights[model.layout.network_start], 100.);
         assert_eq!(weights[model.layout.energies_start], 100.);
-        assert!((weights[model.layout.products_start] - 1. / (0.01 + 1e4)).abs() < 1e-15);
+        assert!((weights[model.layout.carrier_start] - 1. / (0.01 + 1e4)).abs() < 1e-15);
         state[0] = f64::INFINITY;
         unsafe { output(y, n) }.unwrap().copy_from_slice(&state);
         assert_eq!(unsafe { error_weights(y, w, user) }, -1);
@@ -1852,8 +1876,8 @@ mod tests {
         let boundaries = [
             l.source_end - 1,
             l.network_start,
-            l.products_start - 1,
-            l.products_start,
+            l.carrier_start - 1,
+            l.carrier_start,
             l.energies_start - 1,
             l.energies_start,
             l.temperatures_start,

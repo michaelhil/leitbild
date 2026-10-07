@@ -155,18 +155,28 @@ impl Preconditioner {
             }
         }
         let network = Sparse::new(n.dimension(), network_pattern)?;
-        let mut carrier_pattern = (0..2 * model.carrier.cells())
+        let mut carrier_pattern = (0..leitbild_plant_numerics::water_carrier::WIDTH
+            * model.carrier.cells())
             .map(|i| (i, i))
             .collect::<Vec<_>>();
         for e in model.carrier.links() {
-            for s in 0..2 {
+            for s in 0..leitbild_plant_numerics::water_carrier::WIDTH {
                 carrier_pattern.extend([
-                    (2 * e.from + s, 2 * e.to + s),
-                    (2 * e.to + s, 2 * e.from + s),
+                    (
+                        leitbild_plant_numerics::water_carrier::WIDTH * e.from + s,
+                        leitbild_plant_numerics::water_carrier::WIDTH * e.to + s,
+                    ),
+                    (
+                        leitbild_plant_numerics::water_carrier::WIDTH * e.to + s,
+                        leitbild_plant_numerics::water_carrier::WIDTH * e.from + s,
+                    ),
                 ]);
             }
         }
-        let carrier = Sparse::new(2 * model.carrier.cells(), carrier_pattern)?;
+        let carrier = Sparse::new(
+            leitbild_plant_numerics::water_carrier::WIDTH * model.carrier.cells(),
+            carrier_pattern,
+        )?;
         let barrel = Sparse::new(4, [(0, 0), (0, 1), (1, 0), (1, 1), (2, 2), (3, 3)])?;
         Ok(Self {
             source,
@@ -224,7 +234,7 @@ impl Preconditioner {
             }
             self.thermal.factor()?;
             self.carrier.values.fill(0.);
-            for i in 0..2 * model.carrier.cells() {
+            for i in 0..leitbild_plant_numerics::water_carrier::WIDTH * model.carrier.cells() {
                 self.carrier.add(i, i, cj)?;
             }
             for (e, &q) in model
@@ -239,9 +249,17 @@ impl Preconditioner {
                     (e.to, e.from)
                 };
                 let a = q.abs() / self.work.network.chart_mass[donor];
-                for s in 0..2 {
-                    self.carrier.add(2 * donor + s, 2 * donor + s, a)?;
-                    self.carrier.add(2 * receiver + s, 2 * donor + s, -a)?;
+                for s in 0..leitbild_plant_numerics::water_carrier::WIDTH {
+                    self.carrier.add(
+                        leitbild_plant_numerics::water_carrier::WIDTH * donor + s,
+                        leitbild_plant_numerics::water_carrier::WIDTH * donor + s,
+                        a,
+                    )?;
+                    self.carrier.add(
+                        leitbild_plant_numerics::water_carrier::WIDTH * receiver + s,
+                        leitbild_plant_numerics::water_carrier::WIDTH * donor + s,
+                        -a,
+                    )?;
                 }
             }
             self.carrier.factor()?;
@@ -275,12 +293,12 @@ impl Preconditioner {
             self.source
                 .solve(&rhs[..l.source_end], &mut out[..l.source_end])?;
             self.network.solve(
-                &rhs[l.network_start..l.products_start],
-                &mut out[l.network_start..l.products_start],
+                &rhs[l.network_start..l.carrier_start],
+                &mut out[l.network_start..l.carrier_start],
             )?;
             self.carrier.solve(
-                &rhs[l.products_start..l.energies_start],
-                &mut out[l.products_start..l.energies_start],
+                &rhs[l.carrier_start..l.energies_start],
+                &mut out[l.carrier_start..l.energies_start],
             )?;
             self.thermal.solve(
                 &rhs[l.energies_start..l.barrel_energy],
@@ -359,7 +377,8 @@ mod tests {
             for (&a, &b) in solved.iter().zip(&x) {
                 assert!((a - b).abs() < 1e-10 * (1. + b.abs()), "{a} vs {b}");
             }
-            let x = vec![0.3; 2 * model.carrier.cells()];
+            let x =
+                vec![0.3; leitbild_plant_numerics::water_carrier::WIDTH * model.carrier.cells()];
             let rhs = action(&p.carrier, &x);
             let mut out = vec![0.; x.len()];
             p.carrier.solve(&rhs, &mut out).unwrap();
