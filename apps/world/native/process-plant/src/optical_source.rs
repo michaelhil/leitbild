@@ -396,9 +396,28 @@ impl LayerModel {
         }
     }
     pub fn update(&self, amounts: &[f64], w: &mut LayerWorkspace) -> Result<(), &'static str> {
+        // Public boundary checks the complete supplied physical vector. The
+        // composed owner may do this once before all its face-local updates.
+        if amounts.iter().any(|v| !v.is_finite() || *v < 0.) {
+            w.valid = false;
+            return Err("Invalid advancing optical target amounts");
+        }
+        self.update_dependencies(amounts, w)
+    }
+    /// Face-local path after the composed owner has validated the full vector.
+    /// Still checks length, workspace ownership and every consumed amount.
+    pub(crate) fn update_dependencies(
+        &self,
+        amounts: &[f64],
+        w: &mut LayerWorkspace,
+    ) -> Result<(), &'static str> {
         w.valid = false;
         self.check_workspace(w)?;
-        if amounts.len() != self.target_count || amounts.iter().any(|v| !v.is_finite() || *v < 0.) {
+        if amounts.len() != self.target_count
+            || self.columns.iter().any(|&(target, _)| {
+                !amounts[target].is_finite() || amounts[target] < 0.
+            })
+        {
             return Err("Invalid advancing optical target amounts");
         }
         w.sums.fill([0.; GROUPS]);
@@ -455,10 +474,21 @@ impl LayerModel {
         amount_direction: &[f64],
         w: &mut LayerWorkspace,
     ) -> Result<(), &'static str> {
+        if amount_direction.iter().any(|v| !v.is_finite()) {
+            return Err("Invalid optical amount direction");
+        }
+        self.jvp_dependencies(amount_direction, w)
+    }
+    /// Face-local direction path after one composed full-vector validation.
+    pub(crate) fn jvp_dependencies(
+        &self,
+        amount_direction: &[f64],
+        w: &mut LayerWorkspace,
+    ) -> Result<(), &'static str> {
         self.check_workspace(w)?;
         if !w.valid
             || amount_direction.len() != self.target_count
-            || amount_direction.iter().any(|v| !v.is_finite())
+            || self.columns.iter().any(|&(target, _)| !amount_direction[target].is_finite())
         {
             return Err("Invalid optical amount direction");
         }

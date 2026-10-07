@@ -1,5 +1,14 @@
 #[path = "../src/cylindrical_source.rs"]
 mod cylindrical_source;
+// Reuse the strict composed-input reader for the opt-in, non-advancing actual
+// workload timing below. No second fixture format or production parser.
+#[path = "../src/fuel_source.rs"] mod fuel_source;
+#[path = "../src/moderator_source.rs"] mod moderator_source;
+#[path = "../src/passive_source.rs"] mod passive_source;
+#[path = "../src/transport_source.rs"] mod transport_source;
+#[path = "../src/optical_source.rs"] mod optical_source;
+#[path = "../src/converter_heat.rs"] mod converter_heat;
+#[path = "../qualification/source_input/mod.rs"] mod source_input;
 use cylindrical_source::*;
 use std::f64::consts::PI;
 fn close(a: f64, b: f64, tol: f64) {
@@ -277,4 +286,158 @@ fn no_target_duplication_cut_caps_foreign_workspace_or_invalid_trial_outputs() {
     assert!(m.update(&[f64::NAN], &mut w).is_err());
     m.update(&[0.], &mut w).unwrap();
     assert!(w.collision().unwrap().iter().flatten().all(|v| *v == 0.));
+}
+
+fn response_bits(r: Response) -> Vec<u64> {
+    [r.capture_m2, r.d_capture_d_amount, r.energy_escape_m2,
+        r.d_energy_escape_d_amount, r.collected_m2, r.d_collected_d_amount]
+        .into_iter().flatten().map(f64::to_bits).collect()
+}
+
+#[test]
+fn exact_reuse_matches_fresh_responses_and_invalidates_after_failure() {
+    let t = target(0.002, 0.002260358, true);
+    let m = model(t.clone());
+    let fresh = model(t);
+    let mut cached = m.workspace();
+    for amount in [1., 1., f64::from_bits(1f64.to_bits() + 1), 0., 0., 0.4, 1.] {
+        m.update(&[amount], &mut cached).unwrap();
+        // A fresh workspace cannot reuse the previous response.
+        let mut direct = fresh.workspace();
+        fresh.update(&[amount], &mut direct).unwrap();
+        assert_eq!(response_bits(cached.responses().unwrap()[0]),
+            response_bits(direct.responses().unwrap()[0]));
+        assert_eq!(cached.collision().unwrap(), direct.collision().unwrap());
+    }
+    let mut direct = fresh.workspace();
+    for amount in [-1., f64::NAN, f64::INFINITY] {
+        assert!(m.update(&[amount], &mut cached).is_err());
+        assert!(cached.responses().is_err());
+        assert!(cached.collision().is_err());
+        m.update(&[1.], &mut cached).unwrap();
+        fresh.update(&[1.], &mut direct).unwrap();
+        assert_eq!(response_bits(cached.responses().unwrap()[0]),
+            response_bits(direct.responses().unwrap()[0]));
+    }
+    m.update(&[0.], &mut cached).unwrap();
+    let zero = cached.responses().unwrap()[0];
+    for g in 0..7 {
+        assert_eq!(zero.capture_m2[g], 0.);
+        assert_eq!(zero.energy_escape_m2[g], 0.);
+        if g >= 2 {
+            assert!(zero.d_capture_d_amount[g] > 0.);
+            assert!(zero.d_energy_escape_d_amount[g] > 0.);
+        } else {
+            assert_eq!(zero.d_capture_d_amount[g], 0.);
+            assert_eq!(zero.d_energy_escape_d_amount[g], 0.);
+        }
+    }
+}
+
+#[test]
+fn target_local_reuse_keeps_complete_public_vector_validation() {
+    let m = Model::new(vec![1.], [1.; 7], vec![target(0., 0.004, false)],
+        vec![Intersection { target: 0, region: 0, share: 1. }], 3).unwrap();
+    let mut w = m.workspace();
+    m.update(&[1., 2., 3.], &mut w).unwrap();
+    let before = response_bits(w.responses().unwrap()[0]);
+    m.update(&[1., 4., 5.], &mut w).unwrap();
+    assert_eq!(before, response_bits(w.responses().unwrap()[0]));
+    assert!(m.update(&[1., 4., f64::NAN], &mut w).is_err());
+    assert!(w.responses().is_err());
+    m.update(&[1., 4., 5.], &mut w).unwrap();
+    assert_eq!(before, response_bits(w.responses().unwrap()[0]));
+}
+
+#[test]
+fn partial_response_failure_cannot_reuse_partially_updated_keys() {
+    let first = target(0., 0.004, false);
+    let mut second = first.clone();
+    second.index = 1;
+    second.sigma_m2[6] = 1e100;
+    let m = Model::new(vec![1.], [1.; 7], vec![first, second],
+        vec![Intersection { target: 0, region: 0, share: 1. },
+             Intersection { target: 1, region: 0, share: 1. }], 2).unwrap();
+    let mut w = m.workspace();
+    m.update(&[1., 1.], &mut w).unwrap();
+    // The first response/key is changed before the second opacity overflows.
+    assert!(m.update(&[0.8, f64::MAX], &mut w).is_err());
+    assert!(w.responses().is_err());
+    m.update(&[0.8, 1.], &mut w).unwrap();
+    let mut fresh = m.workspace();
+    m.update(&[0.8, 1.], &mut fresh).unwrap();
+    assert_eq!(w.responses().unwrap().iter().copied().map(response_bits).collect::<Vec<_>>(),
+        fresh.responses().unwrap().iter().copied().map(response_bits).collect::<Vec<_>>());
+    assert_eq!(w.collision().unwrap(), fresh.collision().unwrap());
+}
+
+#[test]
+#[ignore = "Opt-in bounded fixed-state cost check; requires LEITBILD_SOURCE_FIXTURE"]
+fn actual_composed_optical_and_cylindrical_cost() {
+    use std::{hint::black_box, time::Instant};
+    let path = std::env::var("LEITBILD_SOURCE_FIXTURE").expect("Actual frozen fixture required");
+    let text = std::fs::read_to_string(path).unwrap();
+    let words: Vec<_> = text.split_whitespace().collect();
+    let mut cursor = words.iter().copied();
+    let composed = source_input::framed(&mut cursor);
+    let input = source_input::parse(&composed);
+    let models: Vec<_> = input.optical_layers.iter()
+        .map(|layers| optical_source::LayerModel::new(layers, &input.amounts).unwrap()).collect();
+    let mut work: Vec<_> = models.iter().map(|model| model.workspace()).collect();
+    let direction = vec![1e-5; input.nt];
+    for (model, w) in models.iter().zip(&mut work) {
+        model.update(&input.amounts, w).unwrap();
+        model.jvp(&direction, w).unwrap();
+    }
+    const OPTICAL_REPEATS: usize = 16;
+    let clock = Instant::now();
+    for _ in 0..OPTICAL_REPEATS {
+        for (model, w) in models.iter().zip(&mut work) {
+            model.update(black_box(&input.amounts), w).unwrap();
+            model.jvp(black_box(&direction), w).unwrap();
+        }
+    }
+    let public_seconds = clock.elapsed().as_secs_f64() / OPTICAL_REPEATS as f64;
+    let clock = Instant::now();
+    for _ in 0..OPTICAL_REPEATS {
+        // The composed owner validates complete vectors once, then calls the
+        // dependency-safe local paths. Include that validation in this timing.
+        assert!(black_box(&input.amounts).iter().all(|v| v.is_finite() && *v >= 0.));
+        assert!(black_box(&direction).iter().all(|v| v.is_finite()));
+        for (model, w) in models.iter().zip(&mut work) {
+            model.update_dependencies(black_box(&input.amounts), w).unwrap();
+            model.jvp_dependencies(black_box(&direction), w).unwrap();
+        }
+    }
+    let local_seconds = clock.elapsed().as_secs_f64() / OPTICAL_REPEATS as f64;
+
+    let mut cylinder = input.cylinder.workspace();
+    let clock = Instant::now();
+    input.cylinder.update(&input.amounts, &mut cylinder).unwrap();
+    let first_seconds = clock.elapsed().as_secs_f64();
+    let mut changed = input.amounts.clone();
+    for target in &input.cylinders {
+        let amount = changed[target.index];
+        assert!(amount > 0.);
+        changed[target.index] = f64::from_bits(amount.to_bits() + 1);
+    }
+    const CYLINDER_REPEATS: usize = 16;
+    let clock = Instant::now();
+    for i in 0..CYLINDER_REPEATS {
+        let amounts = if i % 2 == 0 { &changed } else { &input.amounts };
+        input.cylinder.update(black_box(amounts), &mut cylinder).unwrap();
+    }
+    let changed_seconds = clock.elapsed().as_secs_f64() / CYLINDER_REPEATS as f64;
+    let clock = Instant::now();
+    for _ in 0..CYLINDER_REPEATS {
+        input.cylinder.update(black_box(&input.amounts), &mut cylinder).unwrap();
+    }
+    let reused_seconds = clock.elapsed().as_secs_f64() / CYLINDER_REPEATS as f64;
+    let cached: Vec<_> = cylinder.responses().unwrap().iter().copied().map(response_bits).collect();
+    let mut fresh = input.cylinder.workspace();
+    input.cylinder.update(&input.amounts, &mut fresh).unwrap();
+    assert_eq!(cached, fresh.responses().unwrap().iter().copied().map(response_bits).collect::<Vec<_>>());
+    assert_eq!(cylinder.collision().unwrap(), fresh.collision().unwrap());
+    println!("{{\"kind\":\"fixed-component-cost\",\"regions\":{},\"targets\":{},\"opticalFaces\":{},\"cylinders\":{},\"opticalUpdateAndJvpPublicSeconds\":{public_seconds:e},\"opticalUpdateAndJvpOnceValidatedSeconds\":{local_seconds:e},\"cylinderFirstSeconds\":{first_seconds:e},\"cylinderAllAmountsChangedSeconds\":{changed_seconds:e},\"cylinderExactReuseSeconds\":{reused_seconds:e},\"noTimeAdvanced\":true}}",
+        input.nr, input.nt, models.len(), input.cylinders.len());
 }

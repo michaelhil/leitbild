@@ -62,6 +62,9 @@ pub struct Model {
 pub struct Workspace {
     responses: Vec<Response>,
     collision: Vec<[f64; GROUPS]>,
+    // Response AND its amount derivatives depend only on this target amount;
+    // geometry, cross sections and collection are immutable model-owned data.
+    amount_bits: Vec<u64>,
     owner: Arc<()>,
     valid: bool,
 }
@@ -81,6 +84,7 @@ impl Workspace {
     pub fn buffer_bytes(&self) -> usize {
         self.responses.len() * std::mem::size_of::<Response>()
             + self.collision.len() * std::mem::size_of::<[f64; GROUPS]>()
+            + self.amount_bits.len() * std::mem::size_of::<u64>()
     }
 }
 
@@ -311,6 +315,7 @@ impl Model {
         Workspace {
             responses: vec![Response::default(); self.targets.len()],
             collision: vec![[0.; GROUPS]; self.volumes.len()],
+            amount_bits: vec![0; self.targets.len()],
             owner: self.owner.clone(),
             valid: false,
         }
@@ -325,6 +330,7 @@ impl Model {
             .sum()
     }
     pub fn update(&self, amounts: &[f64], work: &mut Workspace) -> Result<(), &'static str> {
+        let reuse = work.valid;
         work.valid = false;
         if !Arc::ptr_eq(&work.owner, &self.owner)
             || amounts.len() != self.target_count
@@ -332,11 +338,29 @@ impl Model {
         {
             return Err("Invalid actual cylinder target/workspace");
         }
+        // Never reuse through a failed update. Exact bits, not an amount
+        // tolerance, control reuse; unrelated valid targets cannot affect us.
+        if reuse && self.targets.iter().zip(&work.amount_bits).all(|(p, bits)| {
+            amounts[p.target.index].to_bits() == *bits
+        }) {
+            work.valid = true;
+            return Ok(());
+        }
         work.collision.fill([0.; GROUPS]);
-        for (p, r) in self.targets.iter().zip(&mut work.responses) {
-            *r = Response::default();
+        for (j, (p, r)) in self.targets.iter().zip(&mut work.responses).enumerate() {
             let amount = amounts[p.target.index];
+            if reuse && amount.to_bits() == work.amount_bits[j] {
+                continue;
+            }
+            *r = Response::default();
             for g in 0..GROUPS {
+                // An exactly zero microscopic cross section has identically
+                // zero response and derivative at every amount. Do not confuse
+                // it with zero amount at positive sigma (nonzero derivative).
+                if p.target.sigma_m2[g] == 0. {
+                    r.d_capture_d_amount[g] = p.target.sigma_m2[g];
+                    continue;
+                }
                 let slope = p.target.sigma_m2[g] / p.volume;
                 let sigma = amount * slope;
                 if !slope.is_finite() || !sigma.is_finite() {
@@ -381,6 +405,7 @@ impl Model {
                     return Err("Cylinder response lost finite capture/escape bounds");
                 }
             }
+            work.amount_bits[j] = amount.to_bits();
         }
         for e in &self.intersections {
             for g in 0..GROUPS {
