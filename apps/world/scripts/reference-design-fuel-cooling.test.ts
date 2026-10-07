@@ -2,7 +2,7 @@ import {expect,test} from 'bun:test'
 import {compileFuelCooling,compileFuelCoolingMaterial,compilePrimaryIncidence,parseOperatingFuelGap} from './reference-design-fuel-cooling'
 import {compilePrimaryWaterGeometry,parsePrimaryWaterInputs,primaryWaterOwnerFiles} from './reference-design-source-water'
 import {join} from 'node:path'
-import {coolingStateHeader,fuelCoolingAdmission,fuelCoolingPriorSeconds,qualifyFuelCooling} from './reference-design-fuel-cooling-qualification'
+import {coolingCommonTimes,coolingStateHeader,coolingStatesComplete,fuelCoolingAdmission,fuelCoolingPriorSeconds,qualifyFuelCooling} from './reference-design-fuel-cooling-qualification'
 
 test('a corrected attempt must debit the unsuccessful prior work against the same allowance',()=>{
  const prior={passed:false,allowanceSeconds:180,elapsedSeconds:6.166466292,noWholePlantReadinessCredit:true}
@@ -91,6 +91,25 @@ test('only a complete physically developed refined pair can receive admission',(
  ])expect(fuelCoolingAdmission.safeParse({...outcome,settings}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,
   perRowErrorWeights:'source-relative-consequences;network-thermal-carrier-absolute-only'}}).success).toBe(false)
+})
+
+test('retention completeness is independent of admission and requires both distinct arm schedules',()=>{
+ const states=['normal','tighter'].flatMap(arm=>[
+  ...coolingCommonTimes.map((time,i)=>({path:`/evidence/input.${arm}.common-${i}.bin`,magic:'LDRCCM01',coordinates:7,time})),
+  {path:`/evidence/input.${arm}.checkpoint`,magic:'LDRCST01',coordinates:7,time:300},
+ ])
+ // No qualification verdict is an input to retention, so failed physical
+ // development cannot conceal otherwise complete diagnostic artifacts.
+ expect(coolingStatesComplete(states,7)).toBe(true)
+ expect(coolingStatesComplete(states,undefined)).toBe(false)
+ expect(coolingStatesComplete(states.slice(1),7)).toBe(false)
+ for(const change of [{path:states[1]!.path},{time:states[1]!.time},{time:.002},{time:NaN},{coordinates:8},
+  {magic:'LDCCOM01'},{frameError:'invalid'}]){
+  const changed=states.map(s=>({...s}));Object.assign(changed[0]!,change)
+  expect(coolingStatesComplete(changed,7)).toBe(false)
+ }
+ const changed=states.map(s=>({...s}));changed[14]!.time=299
+ expect(coolingStatesComplete(changed,7)).toBe(false)
 })
 
 test('cold gap selection is explicit, unique and physically bounded',()=>{

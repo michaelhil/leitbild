@@ -49,6 +49,20 @@ export function coolingStateHeader(bytes:Uint8Array){
   ||bytes.length!==24+width*coordinates)throw Error('Invalid coupled state frame')
  return {magic,coordinates,time}
 }
+/** Retention is independent of the physical/accuracy verdict. A failed pair
+ * can still leave every requested state available for a no-rerun diagnosis. */
+// Wire schedule of qualification/cooling_accuracy.rs::OUTPUTS, not a solver
+// step cap. State filenames carry the corresponding zero-based output index.
+export const coolingCommonTimes=[.001,.01,.1,1,2,5,10,20,30,60,120,180,240,300] as const
+export function coolingStatesComplete(states:readonly {path:string;magic?:string;coordinates?:number;time?:number;frameError?:string}[],coordinates:unknown){
+ if(!Number.isSafeInteger(coordinates)||Number(coordinates)<=0||states.length!==2*(coolingCommonTimes.length+1)
+  ||new Set(states.map(s=>s.path)).size!==states.length
+  ||states.some(s=>s.frameError||s.coordinates!==coordinates))return false
+ return ['normal','tighter'].every(arm=>coolingCommonTimes.every((time,index)=>states.some(s=>s.path.endsWith(`input.${arm}.common-${index}.bin`)
+   &&s.magic==='LDRCCM01'&&s.time===time))
+   &&states.filter(s=>s.path.endsWith(`input.${arm}.checkpoint`)&&s.magic==='LDRCST01'&&s.time===300).length===1
+ )
+}
 type Options={wiki:string;partition:string;material:string;water:string;materialEvidence:string;
  binary:string;selectedStackManifest:string;output:string;priorAttempt?:string}
 export function fuelCoolingPriorSeconds(value:unknown){
@@ -108,9 +122,7 @@ export async function qualifyFuelCooling(options:Options){
    catch(error){return {path,sha256:sha(bytes),bytes:bytes.length,frameError:String(error)}}
   })),
   parsed=sourceEvolutionOutput(stdout),outcome=parsed.outcome,admission=fuelCoolingAdmission.safeParse(outcome),
-  completeStates=admission.success&&states.filter(s=>'magic' in s&&s.magic==='LDRCCM01'&&s.coordinates===outcome.dimension).length===28
-   &&states.filter(s=>'magic' in s&&s.path.endsWith('.checkpoint')&&s.magic==='LDRCST01'&&s.coordinates===outcome.dimension&&s.time===300).length===2
-   &&states.every(s=>!s.frameError),
+  completeStates=coolingStatesComplete(states,outcome?.dimension),
   unchanged=(await Promise.all(paths.map(p=>readFile(p)))).every((b,i)=>b.equals(bytes[i]!))
    &&(await Promise.all(inputs.map(p=>Bun.file(p).text()))).every((s,i)=>s===texts[i])
    &&(await Promise.all(ownerPaths.map(p=>Bun.file(p).text()))).every((s,i)=>s===ownerTexts[i])
