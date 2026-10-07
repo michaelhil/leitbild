@@ -5,6 +5,7 @@ use source_input::{array, count, framed, near, number};
 
 pub(crate) struct Prepared {
     pub input: source_evolution::Input,
+    pub target_emissions: Vec<[f64; 2]>,
     pub cf_decay_rate: f64,
     pub neutron_coordinates: usize,
     pub segments: usize,
@@ -170,6 +171,7 @@ pub(crate) fn parse(text: &str) -> Prepared {
     };
     Prepared {
         input,
+        target_emissions: source.emissions,
         cf_decay_rate: cf.decay_rate,
         neutron_coordinates,
         segments: ns,

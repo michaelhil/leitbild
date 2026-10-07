@@ -22,6 +22,61 @@ const sha=(s:string|Uint8Array)=>createHash('sha256').update(s).digest('hex')
 export const materialSourceOwnerFiles=['systems/reactor/configuration-source-and-history.md','systems/reactor/heat-and-history.md',
  'systems/reactor/radial-energy-transient.md','systems/instrumentation/nuclear-observation-apparatus.md','systems/reactor/cold-source-and-startup.md']
 
+type MaterialInput=ReturnType<typeof compileMaterialSourceCheck>
+export type MaterialNativeInput=Omit<MaterialInput['nativeInputs'],'transport'>&{transport:Omit<MaterialInput['nativeInputs']['transport'],'faces'>&{
+ faces:(Omit<MaterialInput['nativeInputs']['transport']['faces'][number],'law'>&{
+  law:{kind:'transparent'|'escape'|'optical'|'internal-optical',targets?:number[]}})[]}}
+/** One serialization owner for physical material inputs at either selected
+ * resolution. -1 is exterior; -2 is an explicit two-sided internal panel. */
+export function nativeMaterialSourceFixture(input:MaterialNativeInput,payload:MaterialInput['materialPayload'],collision:number[][]):string{
+ const {fuel:f,moderator:m,transport:t,targets}=input,{passive,cylinder,converterHeat}=payload,
+  targetIndices=new Map(targets.map((q,i)=>[q.id,i])),index=(id:string)=>{
+   const n=targetIndices.get(id);if(n===undefined)throw Error('Unowned passive target '+id);return n},
+  optical=new Map(passive.opticalFaces.map(q=>[q.faceIndex,q])),
+  ff=nativeFuelFixture(f).trim().split(/\s+/),mf=nativeModeratorFixture(m).trim().split(/\s+/),
+  fields:(string|number)[]=[ff.length,...ff,mf.length,...mf,targets.length,...targets.map(q=>q.atoms),
+   ...targets.flatMap(q=>q.bindingEmission_J),passive.nativeBulk.stocks.length]
+ if(optical.size!==passive.opticalFaces.length||passive.opticalFaces.some(q=>!Number.isInteger(q.faceIndex)||q.faceIndex<0||q.faceIndex>=t.faces.length))throw Error('Duplicate or unconsumed optical support')
+ if(collision.length!==t.regionVolumes.length||collision.some(q=>q.length!==7||q.some(v=>!Number.isFinite(v)||v<0)))throw Error('Invalid supplied material collision')
+ for(const s of passive.nativeBulk.stocks){fields.push(s.volume,...s.scatter,s.targets.length)
+  for(const q of s.targets)fields.push(index(q.id),...q.sigma)}
+ fields.push(passive.nativeBulk.incidence.length,...passive.nativeBulk.incidence.flatMap(e=>[e.stock,e.region,e.volume]),
+  t.regionVolumes.length,t.faces.length,...t.speed,...t.regionVolumes,...t.envelopeLengths)
+ t.faces.forEach((face,i)=>{
+  const q=optical.get(i),internal=face.law.kind==='internal-optical'
+  if((face.law.kind==='optical'||internal)!==Boolean(q)||internal&&(face.right!==undefined||face.right_distance!==undefined||face.left_distance!==0))throw Error('Incomplete or inconsistent physical optical support')
+  fields.push(face.left,internal?-2:face.right??-1,face.area,face.left_distance,face.right_distance??0,q?.layers.length??0)
+  if(q)for(const layer of q.layers){fields.push(layer.columns.length)
+   for(const c of layer.columns)fields.push(index(c.targetId),c.atoms_per_m2,...c.sigma_m2)}
+ })
+ fields.push(...collision.flat(),cylinder.targets.length)
+ for(const q of cylinder.targets)fields.push(index(q.id),q.inner_radius,q.outer_radius,q.length,q.multiplicity,...q.sigma,q.escape_depth,q.collection)
+ fields.push(cylinder.intersections.length,...cylinder.intersections.flatMap(q=>[q.target,q.region,q.share]),index(cylinder.targets[cylinder.converterTarget]!.id),
+  ...Object.values(converterHeat.geometry),...converterHeat.emission,...Object.values(converterHeat.liquid))
+ return fields.join('\n')+'\n'
+}
+
+/** Independent ORIGINAL bulk subtotal; effective cylinder collision is added
+ * by the native consumer. Shared by preparation at either selected resolution. */
+export function originalMaterialCollision(input:MaterialNativeInput,payload:MaterialInput['materialPayload']):number[][]{
+ const {fuel:f,moderator:m,transport:t,targets}=input,collision=t.regionVolumes.map(()=>Array(7).fill(0) as number[]),
+  index=new Map(targets.map((q,i)=>[q.id,i]))
+ for(const e of f.intersections)for(let g=0;g<7;g++)collision[e.region]![g]!+=e.volume/f.regionVolumes[e.region]!
+  *(f.law.absorption[g]!+f.law.scatter[g]!.reduce((a,b)=>a+b,0))
+ for(const [i,e] of m.intersections.entries())for(let g=0;g<7;g++){
+  const s=m.stocks[i]!,V=m.regionVolumes[e.region]!,fill=s.water_mass/(m.law.reference_density*V),H=s.hydrogen_target/(s.hydrogen_target+s.hydrogen_product)
+  collision[e.region]![g]!+=fill*(m.law.absorption[g]!*H+m.law.scatter[g]!.reduce((a,b)=>a+b,0))+m.law.boron_sigma[g]!*s.mobile_boron10/V
+ }
+ for(const e of payload.passive.nativeBulk.incidence){const s=payload.passive.nativeBulk.stocks[e.stock]!,fraction=e.volume/t.regionVolumes[e.region]!
+  for(let g=0;g<7;g++)collision[e.region]![g]!+=fraction*s.scatter[g]!+s.targets.reduce((sum,q)=>{
+   const k=index.get(q.id);if(k===undefined)throw Error('Unowned passive collision target')
+   return sum+targets[k]!.atoms*e.volume/s.volume*q.sigma[g]!/t.regionVolumes[e.region]!
+  },0)
+ }
+ if(collision.flat().some(v=>!Number.isFinite(v)||v<0))throw Error('Nonfinite/negative material collision')
+ return collision
+}
+
 /** Receiving stock identities/property preparation stay separate from PRIMARY.
  * Sharing the moderator reaction law does not forge a primary water receipt. */
 function joinModerator(primary:ReturnType<typeof compileModeratorInputs>,receiving:ReturnType<typeof assembleReceivingWater>){
@@ -66,40 +121,12 @@ export function compileMaterialSourceCheck(partitionText:string,materialText:str
   converterHeat=compileConverterHeat(d,apparatus,primary,source,parseColdNuclear(docs[offset+4]!).source.birthEmission_neutrons_s),
   targetIndices=new Map(targets.map((q,i)=>[q.id,i])),index=(id:string)=>{
    const n=targetIndices.get(id);if(n===undefined)throw Error('Unowned passive target '+id);return n},
-  optical=new Map(passive.opticalFaces.map(q=>[q.faceIndex,q])),collision=t.regionVolumes.map(()=>Array(7).fill(0) as number[])
+  optical=new Map(passive.opticalFaces.map(q=>[q.faceIndex,q]))
  if(targetIndices.size!==targets.length||f.identities.regions.some((id,i)=>id!==m.identities.regions[i])
   ||f.law.speed.some((v,g)=>v!==m.law.speed[g]||v!==passive.speed[g]))throw Error('Inconsistent composed identities')
- for(const e of f.intersections)for(let g=0;g<7;g++)collision[e.region]![g]!+=e.volume/f.regionVolumes[e.region]!
-  *(f.law.absorption[g]!+f.law.scatter[g]!.reduce((a,b)=>a+b,0))
- for(let i=0;i<m.intersections.length;i++){
-  const e=m.intersections[i]!,s=m.stocks[i]!,V=m.regionVolumes[e.region]!,fill=s.water_mass/(m.law.reference_density*V),
-   H=s.hydrogen_target/(s.hydrogen_target+s.hydrogen_product)
-  for(let g=0;g<7;g++)collision[e.region]![g]!+=fill*(m.law.absorption[g]!*H+m.law.scatter[g]!.reduce((a,b)=>a+b,0))
-   +m.law.boron_sigma[g]!*s.mobile_boron10/V
- }
- for(const e of passive.nativeBulk.incidence){
-  const s=passive.nativeBulk.stocks[e.stock]!,fraction=e.volume/t.regionVolumes[e.region]!
-  for(let g=0;g<7;g++)collision[e.region]![g]!+=fraction*s.scatter[g]!
-   +s.targets.reduce((sum,q)=>sum+targets[index(q.id)]!.atoms*e.volume/s.volume*q.sigma[g]!/t.regionVolumes[e.region]!,0)
- }
- if(collision.flat().some(v=>!Number.isFinite(v)||v<0))throw Error('Nonfinite/negative material collision')
- const ff=nativeFuelFixture(f).trim().split(/\s+/),mf=nativeModeratorFixture(m).trim().split(/\s+/),
-  fields:(string|number)[]=[ff.length,...ff,mf.length,...mf,targets.length,...targets.map(q=>q.atoms),
-   ...targets.flatMap(q=>q.bindingEmission_J),passive.nativeBulk.stocks.length]
- for(const s of passive.nativeBulk.stocks){fields.push(s.volume,...s.scatter,s.targets.length)
-  for(const q of s.targets)fields.push(index(q.id),...q.sigma)}
- fields.push(passive.nativeBulk.incidence.length,...passive.nativeBulk.incidence.flatMap(e=>[e.stock,e.region,e.volume]),
-  t.regionVolumes.length,t.faces.length,...t.speed,...t.regionVolumes,...t.envelopeLengths)
- t.faces.forEach((face,i)=>{
-  const q=optical.get(i);fields.push(face.left,face.right??-1,face.area,face.left_distance,face.right_distance??0,q?.layers.length??0)
-  if(q)for(const layer of q.layers){fields.push(layer.columns.length)
-   for(const c of layer.columns)fields.push(index(c.targetId),c.atoms_per_m2,...c.sigma_m2)}
- })
- fields.push(...collision.flat(),cylinder.targets.length)
- for(const q of cylinder.targets)fields.push(index(q.id),q.inner_radius,q.outer_radius,q.length,q.multiplicity,...q.sigma,q.escape_depth,q.collection)
- fields.push(cylinder.intersections.length,...cylinder.intersections.flatMap(q=>[q.target,q.region,q.share]),index(converter.id),
-  ...Object.values(converterHeat.geometry),...converterHeat.emission,...Object.values(converterHeat.liquid))
- return {fixture:fields.join('\n')+'\n',faceReceipt,nativeInputs:{fuel:f,moderator:m,transport:t,targets},materialPayload:{passive,receiving,cylinder,converterHeat},input:{completeReactorOperator:false,advancedSeconds:0,
+ const nativeInputs={fuel:f,moderator:m,transport:t,targets},materialPayload={passive,receiving,cylinder,converterHeat},
+  collision=originalMaterialCollision(nativeInputs,materialPayload),fixture=nativeMaterialSourceFixture(nativeInputs,materialPayload,collision)
+ return {fixture,faceReceipt,nativeInputs,materialPayload,input:{completeReactorOperator:false,advancedSeconds:0,
   probe:'Actual cold material coefficients; zero and artificial positive/signed N/C algebra, NOT a reached trajectory',
   counts:{regions:t.regionVolumes.length,fuelSegments:f.counts.segments,fuelCohorts:f.counts.fuelCohorts,
    primaryWaterIntersections:primary.counts.intersections,receivingWaterIntersections:receiving.sourceIncidence.length,

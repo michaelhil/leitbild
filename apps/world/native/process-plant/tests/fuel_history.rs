@@ -1,20 +1,40 @@
 //! Mathematical component fixtures, not LD-01 preparations or time evolution.
 use leitbild_plant_numerics::{
+    fuel_history::Workspace as HistoryWorkspace,
     fuel_history::*,
     fuel_source::*,
     heat_history::{Feed, Group, Kernel},
 };
 
 fn model(reference: f64) -> Assembly {
+    model_options(reference, false)
+}
+fn model_options(reference: f64, sparse_law: bool) -> Assembly {
     let fuel = FuelModel::new(
         FuelLaw {
             absorption: [0.4; 7],
-            fission: [0.1; 7],
-            scatter: [[0.2; 7]; 7],
+            fission: if sparse_law {
+                [0.1, 0., 0., 0., 0., 0., 0.]
+            } else {
+                [0.1; 7]
+            },
+            scatter: if sparse_law {
+                [[0.; 7]; 7]
+            } else {
+                [[0.2; 7]; 7]
+            },
             nu: [2.; 7],
-            chi: [1. / 7.; 7],
+            chi: if sparse_law {
+                [1., 0., 0., 0., 0., 0., 0.]
+            } else {
+                [1. / 7.; 7]
+            },
             speed: [3.; 7],
-            beta: [0.001; 6],
+            beta: if sparse_law {
+                [0.001, 0., 0., 0., 0., 0.]
+            } else {
+                [0.001; 6]
+            },
             decay: [0.1; 6],
             f_d: 0.2,
         },
@@ -88,7 +108,13 @@ fn model(reference: f64) -> Assembly {
                 } else {
                     Feed::FertileCapture
                 },
-                energy_per_event: if i < 23 { 0.1 } else { 0.3 },
+                energy_per_event: if sparse_law && i != 0 {
+                    0.
+                } else if i < 23 {
+                    0.1
+                } else {
+                    0.3
+                },
                 decay_rate: 0.01 * (i + 1) as f64,
             })
             .collect(),
@@ -101,20 +127,20 @@ fn model(reference: f64) -> Assembly {
             SegmentPreparation {
                 reference_u235: reference,
                 reference_u238: 2. * reference,
-                sf235_neutrons_per_second: 2.,
-                sf238_neutrons_per_second: 3.
+                sf235_neutrons_per_second: if sparse_law { 0. } else { 2. },
+                sf238_neutrons_per_second: if sparse_law { 0. } else { 3. }
             };
             2
         ],
         PoisonLaw {
-            yield_i: 0.06,
-            yield_xe: 0.003,
-            yield_pm: 0.01,
+            yield_i: if sparse_law { 0. } else { 0.06 },
+            yield_xe: if sparse_law { 0. } else { 0.003 },
+            yield_pm: if sparse_law { 0. } else { 0.01 },
             lambda_i: 0.02,
             lambda_xe: 0.03,
             lambda_pm: 0.01,
-            xe_sigma_m2: 0.1,
-            sm_sigma_m2: 0.2,
+            xe_sigma_m2: if sparse_law { 0. } else { 0.1 },
+            sm_sigma_m2: if sparse_law { 0. } else { 0.2 },
         },
         heat,
         2.5,
@@ -315,4 +341,314 @@ fn signed_trials_are_not_accepted_or_clipped_and_failures_invalidate() {
     assert!(foreign
         .evaluate_into(&[300.; 3], &foreign.initial_state(), &mut w)
         .is_err());
+}
+
+fn sparse_action(
+    m: &Assembly,
+    w: &HistoryWorkspace,
+    dy: &[f64],
+) -> (Vec<f64>, Vec<[f64; 7]>, [f64; 2]) {
+    let p = m.sparse_patterns();
+    let mut a = vec![0.; p.rates.len()];
+    let mut c = vec![0.; p.collision.len()];
+    let mut d = vec![[0.; 2]; p.diagnostics.len()];
+    m.sparse_values(w, &mut a, &mut c, &mut d).unwrap();
+    let mut rates = vec![0.; m.state_count()];
+    let mut collision = vec![[0.; 7]; m.fuel().volumes().len()];
+    let mut diagnostics = [0.; 2];
+    for ((row, column), value) in p.rates.iter().zip(a) {
+        rates[*row] += value * dy[*column];
+    }
+    for ((region, group, column), value) in p.collision.iter().zip(c) {
+        collision[*region][*group] += value * dy[*column];
+    }
+    for (column, value) in p.diagnostics.iter().zip(d) {
+        for i in 0..2 {
+            diagnostics[i] += value[i] * dy[*column];
+        }
+    }
+    (rates, collision, diagnostics)
+}
+
+#[test]
+fn sparse_complete_state_action_matches_independent_jvp_at_zero_nonzero_and_signed_trials() {
+    let m = model(1000.);
+    let p = m.sparse_patterns();
+    assert!(p.rates.len() > m.state_count());
+    assert!(p
+        .rates
+        .iter()
+        .all(|&(r, c)| r < m.state_count() && c < m.state_count()));
+    assert!(p
+        .collision
+        .iter()
+        .all(|&(r, g, c)| r < 2 && g < 7 && c < m.state_count()));
+    let mut w = m.workspace();
+    for kind in 0..4 {
+        let mut y = m.initial_state();
+        if kind != 0 {
+            y[..m.fuel_dimension()].fill(if kind == 2 { -2. } else { 2. });
+            for s in 0..2 {
+                let row = m.history_row(s, 0);
+                y[row..row + HISTORY].fill(if kind == 2 { -3. } else { 3. });
+            }
+        }
+        if kind == 3 {
+            for s in 0..2 {
+                y[m.history_row(s, CONSUMED_235)] = 1000.;
+                y[m.history_row(s, CAPTURED_238)] = 1200.;
+                y[m.history_row(s, SF_238)] = 800.;
+            }
+            y[m.cf_row()] = 0.;
+        }
+        m.evaluate_into(&[420., 530., 610.], &y, &mut w).unwrap();
+        for phase in [0usize, 3] {
+            let dy = (0..y.len())
+                .map(|i| 0.1 * (((i + phase) % 9) as f64 - 4.))
+                .collect::<Vec<_>>();
+            m.jvp_into(&[0.; 3], &dy, &mut w).unwrap();
+            let (rates, collision, diagnostics) = sparse_action(&m, &w, &dy);
+            for (&a, &b) in rates.iter().zip(w.rate_jvp().unwrap()) {
+                close(a, b);
+            }
+            for (&a, &b) in collision
+                .iter()
+                .flatten()
+                .zip(w.collision_jvp().unwrap().iter().flatten())
+            {
+                close(a, b);
+            }
+            close(
+                diagnostics[0],
+                w.rate_jvp().unwrap()[..m.fuel_dimension()].iter().sum(),
+            );
+            close(
+                diagnostics[1],
+                w.segment_jvp()
+                    .unwrap()
+                    .iter()
+                    .map(|s| s.prompt_release + s.delayed_release)
+                    .sum(),
+            );
+        }
+        let current = m.sparse_patterns();
+        assert_eq!(p.rates, current.rates);
+        assert_eq!(p.collision, current.collision);
+        assert_eq!(p.diagnostics, current.diagnostics);
+    }
+}
+
+fn actual_event_diagnostics(m: &Assembly, y: &[f64], w: &HistoryWorkspace) -> [f64; 2] {
+    // Independently assemble physical events, not sums of source Jacobian rows.
+    let mut net = w.cf().unwrap().births;
+    for (intersection, event) in m
+        .fuel()
+        .intersections()
+        .iter()
+        .zip(w.fuel_events().unwrap())
+    {
+        for g in 0..7 {
+            net += (m.fuel().law().nu[g] - 1.) * event.fission[g] * y[intersection.region * 7 + g];
+        }
+    }
+    let mut release = 0.;
+    for segment in w.segments().unwrap() {
+        net += m.spontaneous_neutrons_per_event() * (segment.sf235 + segment.sf238)
+            - segment.fertile_capture
+            - segment.xe_capture
+            - segment.sm_capture;
+        release += segment.prompt_release + segment.delayed_release;
+    }
+    [net, release]
+}
+
+#[test]
+fn sparse_event_diagnostics_match_full_and_half_finite_differences() {
+    let m = model(1000.);
+    let mut y = m.initial_state();
+    y[..m.fuel_dimension()].fill(2.);
+    for s in 0..2 {
+        let row = m.history_row(s, 0);
+        y[row..row + HISTORY].fill(3.);
+    }
+    let dy = (0..y.len())
+        .map(|i| 0.1 * ((i % 9) as f64 - 4.))
+        .collect::<Vec<_>>();
+    let mut w = m.workspace();
+    m.evaluate_into(&[420., 530., 610.], &y, &mut w).unwrap();
+    let (_, _, diagnostic) = sparse_action(&m, &w, &dy);
+    for h in [1e-3, 5e-4] {
+        let mut plus = m.workspace();
+        let mut minus = m.workspace();
+        let yp = y
+            .iter()
+            .zip(&dy)
+            .map(|(a, d)| a + h * d)
+            .collect::<Vec<_>>();
+        let ym = y
+            .iter()
+            .zip(&dy)
+            .map(|(a, d)| a - h * d)
+            .collect::<Vec<_>>();
+        m.evaluate_into(&[420., 530., 610.], &yp, &mut plus)
+            .unwrap();
+        m.evaluate_into(&[420., 530., 610.], &ym, &mut minus)
+            .unwrap();
+        let p = actual_event_diagnostics(&m, &yp, &plus);
+        let n = actual_event_diagnostics(&m, &ym, &minus);
+        for i in 0..2 {
+            close(diagnostic[i], (p[i] - n[i]) / (2. * h));
+        }
+    }
+}
+
+#[test]
+fn sparse_values_refuse_invalid_foreign_or_wrong_shape_workspaces() {
+    let m = model(1000.);
+    let p = m.sparse_patterns();
+    let mut r = vec![0.; p.rates.len()];
+    let mut c = vec![0.; p.collision.len()];
+    let mut d = vec![[0.; 2]; p.diagnostics.len()];
+    let mut w = m.workspace();
+    assert!(m.sparse_values(&w, &mut r, &mut c, &mut d).is_err());
+    m.evaluate_into(&[300.; 3], &m.initial_state(), &mut w)
+        .unwrap();
+    assert!(model(1000.)
+        .sparse_values(&w, &mut r, &mut c, &mut d)
+        .is_err());
+    assert!(m.sparse_values(&w, &mut r[1..], &mut c, &mut d).is_err());
+    assert!(m.sparse_values(&w, &mut r, &mut c[1..], &mut d).is_err());
+    assert!(m.sparse_values(&w, &mut r, &mut c, &mut d[1..]).is_err());
+    m.sparse_values(&w, &mut r, &mut c, &mut d).unwrap();
+    assert!(m
+        .evaluate_into(&[300.; 3], &vec![f64::NAN; m.state_count()], &mut w)
+        .is_err());
+    assert!(m.sparse_values(&w, &mut r, &mut c, &mut d).is_err());
+}
+
+#[test]
+fn sparse_pattern_prunes_fixed_law_zeros_but_retains_state_vanishing_feedback() {
+    let m = model_options(1000., true);
+    let p = m.sparse_patterns();
+    let n = 14;
+    assert!(p.rates.iter().all(|&(r, c)| {
+        if r < n && c < n {
+            r == c
+        } else if r < n && c < m.fuel_dimension() {
+            r % 7 == 0
+        } else if r < m.fuel_dimension() && c < n {
+            (r - n) % 6 == 0
+        } else {
+            true
+        }
+    }));
+    for s in 0..2 {
+        let row = m.history_row(s, 0);
+        assert!(!p
+            .rates
+            .iter()
+            .any(|&(r, _)| r == row + XENON_PRODUCT || r == row + SAMARIUM_PRODUCT));
+        assert!(p.rates.contains(&(0, row + CONSUMED_235)) || s == 1);
+    }
+    assert!(p.rates.len() < model(1000.).sparse_patterns().rates.len());
+    let mut w = m.workspace();
+    for nonzero in [false, true] {
+        let mut y = m.initial_state();
+        if nonzero {
+            y[..m.cf_row()].fill(2.);
+        }
+        m.evaluate_into(&[420., 530., 610.], &y, &mut w).unwrap();
+        let dy = (0..y.len())
+            .map(|i| 0.1 * ((i % 9) as f64 - 4.))
+            .collect::<Vec<_>>();
+        m.jvp_into(&[0.; 3], &dy, &mut w).unwrap();
+        let (rates, collision, diagnostic) = sparse_action(&m, &w, &dy);
+        for (&a, &b) in rates.iter().zip(w.rate_jvp().unwrap()) {
+            close(a, b);
+        }
+        for (&a, &b) in collision
+            .iter()
+            .flatten()
+            .zip(w.collision_jvp().unwrap().iter().flatten())
+        {
+            close(a, b);
+        }
+        close(
+            diagnostic[0],
+            w.rate_jvp().unwrap()[..m.fuel_dimension()].iter().sum(),
+        );
+        close(
+            diagnostic[1],
+            w.segment_jvp()
+                .unwrap()
+                .iter()
+                .map(|s| s.prompt_release + s.delayed_release)
+                .sum(),
+        );
+        assert_eq!(p.rates, m.sparse_patterns().rates);
+    }
+}
+
+#[test]
+fn every_sparse_state_column_matches_the_existing_jvp() {
+    for sparse_law in [false, true] {
+        let m = model_options(1000., sparse_law);
+        let p = m.sparse_patterns();
+        let mut y = m.initial_state();
+        y[..m.cf_row()].fill(2.);
+        let mut w = m.workspace();
+        m.evaluate_into(&[420., 530., 610.], &y, &mut w).unwrap();
+        let mut values = vec![0.; p.rates.len()];
+        let mut collisions = vec![0.; p.collision.len()];
+        let mut diagnostics = vec![[0.; 2]; p.diagnostics.len()];
+        m.sparse_values(&w, &mut values, &mut collisions, &mut diagnostics)
+            .unwrap();
+        for column in 0..m.state_count() {
+            let mut direction = vec![0.; m.state_count()];
+            direction[column] = 1.;
+            m.jvp_into(&[0.; 3], &direction, &mut w).unwrap();
+            let mut rates = vec![0.; m.state_count()];
+            for (&(r, c), &v) in p.rates.iter().zip(&values) {
+                if c == column {
+                    rates[r] += v;
+                }
+            }
+            for (&a, &b) in rates.iter().zip(w.rate_jvp().unwrap()) {
+                close(a, b);
+            }
+            let mut collision = [[0.; 7]; 2];
+            for (&(r, g, c), &v) in p.collision.iter().zip(&collisions) {
+                if c == column {
+                    collision[r][g] += v;
+                }
+            }
+            for (&a, &b) in collision
+                .iter()
+                .flatten()
+                .zip(w.collision_jvp().unwrap().iter().flatten())
+            {
+                close(a, b);
+            }
+            let mut diagnostic = [0.; 2];
+            for (&c, v) in p.diagnostics.iter().zip(&diagnostics) {
+                if c == column {
+                    for i in 0..2 {
+                        diagnostic[i] += v[i];
+                    }
+                }
+            }
+            close(
+                diagnostic[0],
+                w.rate_jvp().unwrap()[..m.fuel_dimension()].iter().sum(),
+            );
+            close(
+                diagnostic[1],
+                w.segment_jvp()
+                    .unwrap()
+                    .iter()
+                    .map(|s| s.prompt_release + s.delayed_release)
+                    .sum(),
+            );
+        }
+    }
 }

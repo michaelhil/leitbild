@@ -7,7 +7,14 @@ pub const GROUPS: usize = 7;
 #[derive(Clone, Debug)]
 pub enum FaceLaw {
     Transparent,
-    Optical { targets: Vec<usize> },
+    Optical {
+        targets: Vec<usize>,
+    },
+    /// One physical panel wholly inside an isotropic region. It removes
+    /// neutrons from both incident sides; it is not a self-face or bulk collider.
+    InternalOptical {
+        targets: Vec<usize>,
+    },
     Escape,
 }
 #[derive(Clone, Debug)]
@@ -151,6 +158,24 @@ fn optical(area: f64, rl: f64, rr: f64, dl: f64, dr: f64, t: f64, loss: f64) -> 
         ),
     }
 }
+fn internal_optical(area: f64, loss: f64) -> FaceCoefficients {
+    let side = area / 4.;
+    let capture = Scalar {
+        value: side * loss,
+        derivatives: [0., 0., -side],
+    };
+    let per_loss = Scalar {
+        value: side,
+        derivatives: [0.; 3],
+    };
+    FaceCoefficients {
+        capture_left: capture,
+        capture_right: capture,
+        capture_per_loss_left: per_loss,
+        capture_per_loss_right: per_loss,
+        ..FaceCoefficients::default()
+    }
+}
 impl Model {
     pub fn new(
         volumes: Vec<f64>,
@@ -173,16 +198,20 @@ impl Model {
         }
         let mut coordinates = Vec::new();
         for f in &faces {
-            if f.left >= volumes.len() || !positive(f.area) || !positive(f.left_distance) {
+            if f.left >= volumes.len() || !positive(f.area) {
                 return Err("Invalid transport face geometry");
             }
             match (&f.law, f.right, f.right_distance) {
-                (FaceLaw::Escape, None, None) => {}
+                (FaceLaw::InternalOptical { .. }, None, None) if f.left_distance == 0. => {}
+                (FaceLaw::Escape, None, None) if positive(f.left_distance) => {}
                 (FaceLaw::Transparent | FaceLaw::Optical { .. }, Some(r), Some(d))
-                    if r < volumes.len() && r != f.left && positive(d) => {}
+                    if r < volumes.len()
+                        && r != f.left
+                        && positive(d)
+                        && positive(f.left_distance) => {}
                 _ => return Err("Inconsistent shared/escape face"),
             }
-            if let FaceLaw::Optical { targets } = &f.law {
+            if let FaceLaw::Optical { targets } | FaceLaw::InternalOptical { targets } = &f.law {
                 if targets.is_empty() || targets.iter().any(|t| *t >= target_count) {
                     return Err("Unowned optical capture layers");
                 }
@@ -233,12 +262,14 @@ impl Model {
                 .faces
                 .iter()
                 .filter_map(|f| match &f.law {
-                    FaceLaw::Optical { targets } => Some(OpticalInput {
-                        transmission: [0.; GROUPS],
-                        loss: [0.; GROUPS],
-                        from_left: vec![[0.; GROUPS]; targets.len()],
-                        from_right: vec![[0.; GROUPS]; targets.len()],
-                    }),
+                    FaceLaw::Optical { targets } | FaceLaw::InternalOptical { targets } => {
+                        Some(OpticalInput {
+                            transmission: [0.; GROUPS],
+                            loss: [0.; GROUPS],
+                            from_left: vec![[0.; GROUPS]; targets.len()],
+                            from_right: vec![[0.; GROUPS]; targets.len()],
+                        })
+                    }
                     _ => None,
                 })
                 .collect(),
@@ -265,7 +296,7 @@ impl Model {
         let mut oi = 0;
         let mut ci = 0;
         for (fi, f) in self.faces.iter().enumerate() {
-            if let FaceLaw::Optical { targets } = &f.law {
+            if let FaceLaw::Optical { targets } | FaceLaw::InternalOptical { targets } = &f.law {
                 let input = &optical_inputs[oi];
                 if input.from_left.len() != targets.len()
                     || input.from_right.len() != targets.len()
@@ -307,6 +338,15 @@ impl Model {
                     .copy_from_slice(&input.from_right);
             }
             for g in 0..GROUPS {
+                if matches!(f.law, FaceLaw::InternalOptical { .. }) {
+                    let c = internal_optical(f.area, optical_inputs[oi].loss[g]);
+                    work.face_coefficients[fi][g] = c;
+                    work.coefficients[ci] = -(c.capture_left.value + c.capture_right.value)
+                        * self.speed[g]
+                        / self.volumes[f.left];
+                    ci += 1;
+                    continue;
+                }
                 let cl = collision[f.left][g];
                 let cap = 1. / self.envelope_lengths[f.left];
                 let rl = 3. * f.left_distance * cl.max(cap);
@@ -340,7 +380,7 @@ impl Model {
                             optical_inputs[oi].transmission[g],
                             optical_inputs[oi].loss[g],
                         ),
-                        FaceLaw::Escape => unreachable!(),
+                        FaceLaw::Escape | FaceLaw::InternalOptical { .. } => unreachable!(),
                     }
                 } else {
                     FaceCoefficients {
@@ -367,7 +407,10 @@ impl Model {
                     ci += 3;
                 }
             }
-            if matches!(f.law, FaceLaw::Optical { .. }) {
+            if matches!(
+                f.law,
+                FaceLaw::Optical { .. } | FaceLaw::InternalOptical { .. }
+            ) {
                 oi += 1;
             }
         }
@@ -405,7 +448,14 @@ impl Model {
                 let l = f.left * GROUPS + g;
                 let pl = self.speed[g] * n[l] / self.volumes[f.left];
                 let c = cs[g];
-                if let Some(r) = f.right {
+                if let FaceLaw::InternalOptical { targets } = &f.law {
+                    rate[l] -= (c.capture_left.value + c.capture_right.value) * pl;
+                    for (j, target) in targets.iter().enumerate() {
+                        capture[*target][g] += pl
+                            * (c.capture_left.value * work.allocations[oi].from_left[j][g]
+                                + c.capture_right.value * work.allocations[oi].from_right[j][g]);
+                    }
+                } else if let Some(r) = f.right {
                     let r = r * GROUPS + g;
                     let pr = self.speed[g] * n[r] / self.volumes[r / GROUPS];
                     let transfer = c.exchange.value * (pr - pl);
@@ -426,7 +476,10 @@ impl Model {
                     escape[g] += loss;
                 }
             }
-            if matches!(f.law, FaceLaw::Optical { .. }) {
+            if matches!(
+                f.law,
+                FaceLaw::Optical { .. } | FaceLaw::InternalOptical { .. }
+            ) {
                 oi += 1;
             }
         }

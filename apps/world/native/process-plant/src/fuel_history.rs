@@ -67,12 +67,26 @@ pub struct CfRates {
     pub capsule_release: f64,
     pub birth_export: f64,
 }
+/// Ordered additive entries, compiled once by the consuming sparse assembler.
+/// Repeated coordinates are intentional; their values must be SUMMED. These
+/// are state partials at the supplied temperatures, not temperature partials.
+pub struct SparsePatterns {
+    pub rates: Vec<(usize, usize)>,
+    pub collision: Vec<(usize, usize, usize)>, // region, group, state column
+    pub diagnostics: Vec<usize>,
+}
+enum SparseEntry {
+    Rate(usize, usize, f64),
+    Collision(usize, usize, usize, f64),
+    Diagnostic(usize, [f64; 2]), // net neutron events/s, fuel release W
+}
 pub struct Assembly {
     fuel: FuelModel,
     segments: Vec<SegmentPreparation>,
     volumes: Vec<f64>,
     poison: PoisonLaw,
     heat: Kernel,
+    prompt_fission_energy: f64,
     spontaneous_neutrons_per_event: f64,
     cf: CfLaw,
     cf_support: Vec<(usize, f64)>,
@@ -173,6 +187,10 @@ fn nonnegative(v: f64) -> bool {
     v.is_finite() && v >= 0.
 }
 impl Assembly {
+    /// Immutable finite isotope references and their owned spontaneous laws.
+    pub fn segment_preparations(&self) -> &[SegmentPreparation] {
+        &self.segments
+    }
     pub fn poison_law(&self) -> PoisonLaw {
         self.poison
     }
@@ -281,12 +299,20 @@ impl Assembly {
             )
             .and_then(|v| v.checked_add(1))
             .ok_or("Fuel-history size overflow")?;
+        let prompt_fission_energy = heat.fission_energy()
+            - heat
+                .groups()
+                .iter()
+                .filter(|g| matches!(g.feed, crate::heat_history::Feed::Fission))
+                .map(|g| g.energy_per_event)
+                .sum::<f64>();
         Ok(Self {
             fuel,
             segments,
             volumes,
             poison,
             heat,
+            prompt_fission_energy,
             spontaneous_neutrons_per_event,
             cf,
             cf_support,
@@ -491,6 +517,372 @@ impl Assembly {
             capsule_release: paid_release - birth_export,
             birth_export,
         }
+    }
+    /// Sparse topology for THIS complete contribution. No transport/material
+    /// entries or time-discretization diagonal are included. The Cf coordinate
+    /// here is remaining energy; an external spent-energy chart must transform
+    /// its column and row, just as for the existing RHS/JVP.
+    pub fn sparse_patterns(&self) -> SparsePatterns {
+        let mut p = SparsePatterns {
+            rates: Vec::new(),
+            collision: Vec::new(),
+            diagnostics: Vec::new(),
+        };
+        self.visit_sparse_derivatives(None, |entry| match entry {
+            SparseEntry::Rate(r, c, _) => p.rates.push((r, c)),
+            SparseEntry::Collision(r, g, c, _) => p.collision.push((r, g, c)),
+            SparseEntry::Diagnostic(c, _) => p.diagnostics.push(c),
+        });
+        p
+    }
+    /// Fill the ordered additive arrays from one already evaluated trial.
+    /// diagnostics[k] is [net neutron events/s, fuel release W] per unit of
+    /// state column patterns.diagnostics[k]. It independently differentiates
+    /// physical events, NOT a sum of the returned N/C Jacobian rows.
+    /// No allocations, global finite differences, basis JVPs or state changes.
+    /// On error the caller must not consume partially filled output buffers.
+    pub fn sparse_values(
+        &self,
+        w: &Workspace,
+        rates: &mut [f64],
+        collision: &mut [f64],
+        diagnostics: &mut [[f64; 2]],
+    ) -> Result<(), &'static str> {
+        if !Arc::ptr_eq(&self.owner, &w.owner) || !w.valid {
+            return Err("Invalid fuel-history sparse derivative workspace");
+        }
+        let (mut nr, mut nc, mut nd) = (0, 0, 0);
+        let mut shape = true;
+        self.visit_sparse_derivatives(Some(w), |entry| match entry {
+            SparseEntry::Rate(_, _, value) => {
+                if let Some(out) = rates.get_mut(nr) {
+                    *out = value;
+                } else {
+                    shape = false;
+                }
+                nr += 1;
+            }
+            SparseEntry::Collision(_, _, _, value) => {
+                if let Some(out) = collision.get_mut(nc) {
+                    *out = value;
+                } else {
+                    shape = false;
+                }
+                nc += 1;
+            }
+            SparseEntry::Diagnostic(_, value) => {
+                if let Some(out) = diagnostics.get_mut(nd) {
+                    *out = value;
+                } else {
+                    shape = false;
+                }
+                nd += 1;
+            }
+        });
+        if !shape || nr != rates.len() || nc != collision.len() || nd != diagnostics.len() {
+            return Err("Wrong fuel-history sparse derivative buffer shape");
+        }
+        if rates
+            .iter()
+            .chain(collision.iter())
+            .chain(diagnostics.iter().flatten())
+            .any(|x| !x.is_finite())
+        {
+            return Err("Nonfinite fuel-history sparse derivative");
+        }
+        Ok(())
+    }
+    fn emit_fission_partial(
+        &self,
+        segment: usize,
+        column: usize,
+        progress_slot: usize,
+        total: f64,
+        net: f64,
+        emit: &mut impl FnMut(SparseEntry),
+    ) {
+        let row = self.history_row(segment, 0);
+        emit(SparseEntry::Rate(row + progress_slot, column, total));
+        for (slot, yield_) in [
+            (IODINE, self.poison.yield_i),
+            (XENON, self.poison.yield_xe),
+            (PROMETHIUM, self.poison.yield_pm),
+        ] {
+            if yield_ > 0. {
+                emit(SparseEntry::Rate(row + slot, column, yield_ * total));
+            }
+        }
+        for (i, group) in self.heat.groups().iter().enumerate() {
+            if matches!(group.feed, crate::heat_history::Feed::Fission) {
+                if group.energy_per_event > 0. {
+                    emit(SparseEntry::Rate(
+                        row + ENERGY + i,
+                        column,
+                        group.energy_per_event * total,
+                    ));
+                }
+            }
+        }
+        emit(SparseEntry::Diagnostic(
+            column,
+            [net, self.prompt_fission_energy * total],
+        ));
+    }
+    fn emit_fertile_partial(
+        &self,
+        segment: usize,
+        column: usize,
+        capture: f64,
+        emit: &mut impl FnMut(SparseEntry),
+    ) {
+        let row = self.history_row(segment, 0);
+        emit(SparseEntry::Rate(row + CAPTURED_238, column, capture));
+        for (i, group) in self.heat.groups().iter().enumerate() {
+            if matches!(group.feed, crate::heat_history::Feed::FertileCapture)
+                && group.energy_per_event > 0.
+            {
+                emit(SparseEntry::Rate(
+                    row + ENERGY + i,
+                    column,
+                    group.energy_per_event * capture,
+                ));
+            }
+        }
+        emit(SparseEntry::Diagnostic(column, [-capture, 0.]));
+    }
+    /// The same traversal defines topology and numeric entry order. None means
+    /// topology-only: all structural entries are emitted even at zero N/C or
+    /// exhausted donors, so a later trial cannot silently grow the pattern.
+    fn visit_sparse_derivatives(&self, w: Option<&Workspace>, mut emit: impl FnMut(SparseEntry)) {
+        let law = self.fuel.law();
+        let beta = law.beta.iter().sum::<f64>();
+        let neutrons = self.fuel.volumes().len() * GROUPS;
+        let state = |column: usize| w.map_or(0., |w| w.state[column]);
+        for (i, c) in self.fuel.coordinates().iter().enumerate() {
+            // FuelModel's legacy LOCAL buffer is dense. Remove only fixed-law
+            // zeros; a zero trial N, reserve, or precursor NEVER prunes a slot.
+            let structural = match (c.row < neutrons, c.column < neutrons) {
+                (true, true) => {
+                    let (h, g) = (c.row % GROUPS, c.column % GROUPS);
+                    if h == g {
+                        law.absorption[g] > 0.
+                            || law.scatter[g]
+                                .iter()
+                                .enumerate()
+                                .any(|(k, &v)| k != g && v > 0.)
+                    } else {
+                        law.scatter[g][h] > 0. || (law.chi[h] > 0. && law.fission[g] > 0.)
+                    }
+                }
+                (false, true) => {
+                    law.beta[(c.row - neutrons) % DELAYED] > 0.
+                        && law.fission[c.column % GROUPS] > 0.
+                }
+                (true, false) => law.chi[c.row % GROUPS] > 0.,
+                (false, false) => true, // positive precursor decay diagonal
+            };
+            if structural {
+                emit(SparseEntry::Rate(
+                    c.row,
+                    c.column,
+                    w.map_or(0., |w| w.fuel.coefficients()[i]),
+                ));
+            }
+        }
+        for (i, e) in self.fuel.intersections().iter().enumerate() {
+            let row = self.history_row(e.segment, 0);
+            let event = w.map_or_else(Default::default, |w| w.fuel.events()[i]);
+            for g in 0..GROUPS {
+                let nrow = e.region * GROUPS + g;
+                let n = state(nrow);
+                let df = -event.d_fission_d_reserve[g] * n;
+                if law.fission[g] > 0. {
+                    self.emit_fission_partial(
+                        e.segment,
+                        nrow,
+                        CONSUMED_235,
+                        event.fission[g],
+                        (law.nu[g] - 1.) * event.fission[g],
+                        &mut emit,
+                    );
+                    self.emit_fission_partial(
+                        e.segment,
+                        row + CONSUMED_235,
+                        CONSUMED_235,
+                        df,
+                        (law.nu[g] - 1.) * df,
+                        &mut emit,
+                    );
+                    emit(SparseEntry::Rate(nrow, row + CONSUMED_235, -df));
+                    for h in 0..GROUPS {
+                        if law.chi[h] > 0. {
+                            emit(SparseEntry::Rate(
+                                e.region * GROUPS + h,
+                                row + CONSUMED_235,
+                                law.chi[h] * (1. - beta) * law.nu[g] * df,
+                            ));
+                        }
+                    }
+                    let c0 = self.fuel.volumes().len() * GROUPS + e.segment * DELAYED;
+                    for j in 0..DELAYED {
+                        if law.beta[j] > 0. {
+                            emit(SparseEntry::Rate(
+                                c0 + j,
+                                row + CONSUMED_235,
+                                law.beta[j] * law.nu[g] * df,
+                            ));
+                        }
+                    }
+                    emit(SparseEntry::Collision(
+                        e.region,
+                        g,
+                        row + CONSUMED_235,
+                        -event.d_fission_d_reserve[g] / law.speed[g],
+                    ));
+                }
+                if law.absorption[g] > law.fission[g] {
+                    self.emit_fertile_partial(e.segment, nrow, event.capture[g], &mut emit);
+                    for slot in [CAPTURED_238, SF_238] {
+                        let dc = -event.d_capture_d_fertile[g] * n;
+                        self.emit_fertile_partial(e.segment, row + slot, dc, &mut emit);
+                        emit(SparseEntry::Rate(nrow, row + slot, -dc));
+                        emit(SparseEntry::Collision(
+                            e.region,
+                            g,
+                            row + slot,
+                            -event.d_capture_d_fertile[g] / law.speed[g],
+                        ));
+                    }
+                }
+            }
+            let weight = e.volume / self.volumes[e.segment];
+            let flux_scale = law.speed[6] * weight / self.fuel.volumes()[e.region];
+            let nrow = e.region * GROUPS + 6;
+            for (slot, product, sigma) in [
+                (XENON, XENON_PRODUCT, self.poison.xe_sigma_m2),
+                (SAMARIUM, SAMARIUM_PRODUCT, self.poison.sm_sigma_m2),
+            ] {
+                if sigma == 0. {
+                    continue;
+                }
+                for (column, capture) in [
+                    (nrow, flux_scale * sigma * state(row + slot)),
+                    (row + slot, flux_scale * sigma * state(nrow)),
+                ] {
+                    emit(SparseEntry::Rate(nrow, column, -capture));
+                    emit(SparseEntry::Rate(row + slot, column, -capture));
+                    emit(SparseEntry::Rate(row + product, column, capture));
+                    emit(SparseEntry::Diagnostic(column, [-capture, 0.]));
+                }
+                emit(SparseEntry::Collision(
+                    e.region,
+                    6,
+                    row + slot,
+                    weight * sigma / self.fuel.volumes()[e.region],
+                ));
+            }
+            let prep = self.segments[e.segment];
+            for (slot, sf) in [
+                (
+                    CONSUMED_235,
+                    prep.sf235_neutrons_per_second
+                        / self.spontaneous_neutrons_per_event
+                        / prep.reference_u235,
+                ),
+                (
+                    CAPTURED_238,
+                    prep.sf238_neutrons_per_second
+                        / self.spontaneous_neutrons_per_event
+                        / prep.reference_u238,
+                ),
+                (
+                    SF_238,
+                    prep.sf238_neutrons_per_second
+                        / self.spontaneous_neutrons_per_event
+                        / prep.reference_u238,
+                ),
+            ] {
+                if (slot == CONSUMED_235 && prep.sf235_neutrons_per_second == 0.)
+                    || (slot != CONSUMED_235 && prep.sf238_neutrons_per_second == 0.)
+                {
+                    continue;
+                }
+                for g in 0..GROUPS {
+                    if law.chi[g] > 0. {
+                        emit(SparseEntry::Rate(
+                            e.region * GROUPS + g,
+                            row + slot,
+                            -law.chi[g] * self.spontaneous_neutrons_per_event * sf * weight,
+                        ));
+                    }
+                }
+            }
+        }
+        for (s, prep) in self.segments.iter().enumerate() {
+            let row = self.history_row(s, 0);
+            let sf235 = -prep.sf235_neutrons_per_second
+                / self.spontaneous_neutrons_per_event
+                / prep.reference_u235;
+            let sf238 = -prep.sf238_neutrons_per_second
+                / self.spontaneous_neutrons_per_event
+                / prep.reference_u238;
+            if prep.sf235_neutrons_per_second > 0. {
+                self.emit_fission_partial(
+                    s,
+                    row + CONSUMED_235,
+                    CONSUMED_235,
+                    sf235,
+                    self.spontaneous_neutrons_per_event * sf235,
+                    &mut emit,
+                );
+            }
+            for slot in [CAPTURED_238, SF_238] {
+                if prep.sf238_neutrons_per_second > 0. {
+                    self.emit_fission_partial(
+                        s,
+                        row + slot,
+                        SF_238,
+                        sf238,
+                        self.spontaneous_neutrons_per_event * sf238,
+                        &mut emit,
+                    );
+                }
+            }
+            for (out, column, value) in [
+                (IODINE, IODINE, -self.poison.lambda_i),
+                (XENON, IODINE, self.poison.lambda_i),
+                (XENON, XENON, -self.poison.lambda_xe),
+                (PROMETHIUM, PROMETHIUM, -self.poison.lambda_pm),
+                (SAMARIUM, PROMETHIUM, self.poison.lambda_pm),
+            ] {
+                emit(SparseEntry::Rate(row + out, row + column, value));
+            }
+            for (i, group) in self.heat.groups().iter().enumerate() {
+                let column = row + ENERGY + i;
+                if group.decay_rate > 0. {
+                    emit(SparseEntry::Rate(column, column, -group.decay_rate));
+                    emit(SparseEntry::Diagnostic(column, [0., group.decay_rate]));
+                }
+            }
+        }
+        emit(SparseEntry::Rate(
+            self.cf_row(),
+            self.cf_row(),
+            -self.cf.decay_rate,
+        ));
+        let cf_birth = self.cf.initial_neutrons_per_second / self.cf.initial_energy_j;
+        for &(region, weight) in &self.cf_support {
+            for g in 0..GROUPS {
+                if law.chi[g] > 0. {
+                    emit(SparseEntry::Rate(
+                        region * GROUPS + g,
+                        self.cf_row(),
+                        law.chi[g] * weight * cf_birth,
+                    ));
+                }
+            }
+        }
+        emit(SparseEntry::Diagnostic(self.cf_row(), [cf_birth, 0.]));
     }
     /// Analytic directional derivative of THIS contribution and its collision
     /// sum. No transport derivative, global assembled Jacobian or stage solver.

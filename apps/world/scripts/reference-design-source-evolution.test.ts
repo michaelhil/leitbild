@@ -1,11 +1,41 @@
 import {describe,expect,test} from 'bun:test'
 import {compileSharedWaterProjection,compileSourceEvolution,sourceEvolutionOwnerFiles} from './reference-design-source-evolution'
-import {qualifySourceEvolution,sourceDependencyPath,sourceEvolutionOutput,sourceProcessUsage} from './reference-design-source-evolution-qualification'
+import {auditSourceStage,qualifySourceEvolution,sourceDependencyPath,sourceEvolutionOutput,sourceProcessUsage,priorSourceComputationSeconds,sourcePairAdmission} from './reference-design-source-evolution-qualification'
 import {readFileSync} from 'node:fs'
 import {join} from 'node:path'
 import {createHash} from 'node:crypto'
+import {projectSourceCheckpoint} from './reference-design-source-receiving-resolution'
 
 const amount=(H:number,B:number,V:number)=>({Htarget:H,mobileN10:B,volume_m3:V,HcaptureProduct:0})
+test('pair admission requires the prospectively selected policy, actual refinement and all complete gates',()=>{
+ const arm={passed:true,lastAdmittedTime:300},r={passed:true,lastAdmittedTime:300,physicalCoordinates:52962,
+  normal:arm,tighter:arm,settings:{horizon:300,accuracyPolicy:'source-consequences-1',provisional:true,absoluteToleranceRefinement:10,rtol:[1e-5,1e-6]},
+  gates:{fullPairComparisonEvaluated:true,localPairRatio:.1,SUMABSFamilyPairRatio:.2,observablePairRatio:.3,NCOperatorPairRatio:.4,
+   comparedFamilyOutputs:1,developedSignal:true,strictAcceptedBoundary:true},rawAtomCountDiagnostic:{localPairRatio:13.04}}
+ expect(sourcePairAdmission.safeParse(r).success).toBe(true)
+ for(const settings of [{...r.settings,accuracyPolicy:'old'},{...r.settings,absoluteToleranceRefinement:1},
+  {...r.settings,rtol:[1e-5,1e-5]},{...r.settings,provisional:false}])expect(sourcePairAdmission.safeParse({...r,settings}).success).toBe(false)
+ for(const key of ['localPairRatio','SUMABSFamilyPairRatio','observablePairRatio','NCOperatorPairRatio']){
+  for(const value of [undefined,null,NaN,Infinity,-1,1.01])expect(sourcePairAdmission.safeParse({...r,gates:{...r.gates,[key]:value}}).success).toBe(false)
+ }
+ expect(sourcePairAdmission.safeParse({...r,gates:{...r.gates,fullPairComparisonEvaluated:false}}).success).toBe(false)
+ expect(sourcePairAdmission.safeParse({...r,tighter:{...arm,lastAdmittedTime:.1}}).success).toBe(false)
+})
+test('checkpoint projection retains failed ledger and supplied slope, never repairs them',()=>{
+ const bytes=Buffer.alloc(33+16*18);bytes.write('LDSOURCE1');bytes.writeBigUInt64LE(18n,9);bytes.writeDoubleLE(.557,17);bytes.writeDoubleLE(1e-5,25)
+ const y=[...Array.from({length:14},(_,i)=>i+1),107,11,12,13],yp=y.map(x=>-2*x)
+ for(const [which,values] of [y,yp].entries())values.forEach((v,i)=>bytes.writeDoubleLE(v,33+8*(which*18+i)))
+ const coarse={mapping:[0,0],counts:{fineRegions:2,regions:1,neutronCoordinates:7,physicalCoordinates:7,
+  physicalWaterOwners:0,finiteTargets:0,internalPanels:0,faces:0}},q=projectSourceCheckpoint(bytes,coarse,0)
+ expect(q.drifts.map(d=>[d.before,d.after])).toEqual([[-2,-2],[4,4]])
+ expect(Array.from({length:7},(_,i)=>q.bytes.readDoubleLE(33+8*i))).toEqual([9,11,13,15,17,19,21])
+ expect(Array.from({length:4},(_,i)=>q.bytes.readDoubleLE(33+8*(7+i)))).toEqual([107,11,12,13])
+ expect(q.time).toBe(.557);expect(q.rtol).toBe(1e-5);expect(q.noConservationRepair).toBe(true)
+ expect(()=>projectSourceCheckpoint(bytes.subarray(1),coarse,0)).toThrow('format')
+ const bad=Buffer.from(bytes);bad.writeDoubleLE(NaN,33)
+ expect(()=>projectSourceCheckpoint(bad,coarse,0)).toThrow('Nonfinite')
+ expect(()=>projectSourceCheckpoint(bytes,{...coarse,mapping:[0,2]},0)).toThrow('map')
+})
 test('dependency retention resolves explicit and implicit TypeScript extensions once',()=>{
  expect(sourceDependencyPath('/tmp/source','./reference-design-fuel-materials.ts')).toBe('/tmp/source/reference-design-fuel-materials.ts')
  expect(sourceDependencyPath('/tmp/source','./reference-design-fuel-materials')).toBe('/tmp/source/reference-design-fuel-materials.ts')
@@ -34,6 +64,19 @@ test('an external stop retains a checkpoint but cannot turn progress into a fina
 test('qualification refuses overwriting evidence or unpinned dependencies before preparation',async()=>{
  await expect(qualifySourceEvolution('unused','unused','unused','unused','unused',import.meta.path,[])).rejects.toThrow('overwrite')
  await expect(qualifySourceEvolution('unused','unused','unused','unused','unused',import.meta.path+'.absent',[])).rejects.toThrow('dependency artifacts')
+})
+test('prior computation debits actual failed work without granting admission or falsifying its role',()=>{
+ const output='/tmp/next-pair.json',prior={elapsedSeconds:4.2,debitedTo:'next-pair.json',passed:false,simulationStarted:true,artifactsCreated:true}
+ expect(priorSourceComputationSeconds(prior,output)).toBe(4.2)
+ expect(priorSourceComputationSeconds({...prior,elapsedSeconds:0},output)).toBe(0)
+ expect(prior).toEqual({elapsedSeconds:4.2,debitedTo:'next-pair.json',passed:false,simulationStarted:true,artifactsCreated:true})
+ for(const elapsedSeconds of [-1,NaN,Infinity,120,121])expect(()=>priorSourceComputationSeconds({...prior,elapsedSeconds},output)).toThrow()
+ for(const bad of [null,[],{},''])expect(()=>priorSourceComputationSeconds(bad,output)).toThrow()
+ expect(()=>priorSourceComputationSeconds({...prior,debitedTo:'other.json'},output)).toThrow()
+})
+test('nonadvancing actual-stage audit refuses invalid stages and evidence overwrite',async()=>{
+ await expect(auditSourceStage('unused','unused','unused',NaN,import.meta.path+'.absent')).rejects.toThrow('finite')
+ await expect(auditSourceStage('unused','unused','unused',77,import.meta.path)).rejects.toThrow('overwrite')
 })
 function projectionFixture(){
  const primary={passed:true,inputs:{},geometry:{},result:{nativeOwners:[{owner:'DOWN',total:amount(30,3,3),

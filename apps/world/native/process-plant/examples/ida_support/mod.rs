@@ -7,6 +7,10 @@ use std::{
 };
 
 pub(crate) type Handle = *mut c_void;
+pub(crate) type ATimesFn = unsafe extern "C" fn(Handle, Handle, Handle) -> c_int;
+pub(crate) type LinearPrecSetupFn = unsafe extern "C" fn(Handle) -> c_int;
+pub(crate) type LinearPrecSolveFn =
+    unsafe extern "C" fn(Handle, Handle, Handle, f64, c_int) -> c_int;
 pub(crate) type ResidualFn = unsafe extern "C" fn(f64, Handle, Handle, Handle, Handle) -> c_int;
 pub(crate) type JacobianFn = unsafe extern "C" fn(
     f64,
@@ -73,6 +77,17 @@ unsafe extern "C" {
     ) -> Handle;
     pub(crate) fn SUNLinSol_SPGMRSetMaxRestarts(solver: Handle, restarts: c_int) -> c_int;
     pub(crate) fn SUNLinSolInitialize(solver: Handle) -> c_int;
+    pub(crate) fn SUNLinSolSetATimes(solver: Handle, data: Handle, atimes: ATimesFn) -> c_int;
+    pub(crate) fn SUNLinSolSetPreconditioner(
+        solver: Handle,
+        data: Handle,
+        setup: Option<LinearPrecSetupFn>,
+        solve: LinearPrecSolveFn,
+    ) -> c_int;
+    pub(crate) fn SUNLinSolSetScalingVectors(solver: Handle, left: Handle, right: Handle) -> c_int;
+    pub(crate) fn SUNLinSolSetZeroGuess(solver: Handle, zero: c_int) -> c_int;
+    pub(crate) fn SUNLinSolNumIters(solver: Handle) -> c_int;
+    pub(crate) fn SUNLinSolResNorm(solver: Handle) -> f64;
     pub(crate) fn SUNLinSolSetup(solver: Handle, matrix: Handle) -> c_int;
     pub(crate) fn SUNLinSolSolve(
         solver: Handle,
@@ -143,6 +158,207 @@ pub(crate) fn checked(status: c_int, operation: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("{operation} returned {status}"))
+    }
+}
+
+/// A nonnegative IDASolve return never overrides a sticky fatal callback.
+/// Pinned 7.5 idaLsSolve does not map every SUNLS_ATIMES failure status.
+/// https://github.com/LLNL/sundials/blob/v7.5.0/src/ida/ida_ls.c
+pub(crate) fn checked_ida_step(status: c_int, fatal_callback: Option<&str>) -> Result<(), String> {
+    if status < 0 || fatal_callback.is_some() {
+        Err(format!(
+            "IDASolve returned {status}; fatal callback={fatal_callback:?}"
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+/// Read IDA's retained endpoint polynomial, without overwriting its raw
+/// ONE_STEP output/work vectors. Pinned 7.5 IDANls can correct `ee` for a
+/// small inequality violation without updating raw `yy/yp`; IDACompleteStep
+/// then updates retained `phi`. k=1 is the polynomial derivative, NOT a
+/// promise of the Newton-stage/BDF residual derivative on variable steps.
+/// https://github.com/LLNL/sundials/blob/v7.5.0/src/ida/ida.c
+pub(crate) fn retained_endpoint(
+    memory: Handle,
+    time: f64,
+    raw_y: Handle,
+    raw_yp: Handle,
+    retained_y: Handle,
+    retained_yp: Handle,
+) -> Result<(), String> {
+    if memory.is_null()
+        || !time.is_finite()
+        || raw_y.is_null()
+        || raw_yp.is_null()
+        || raw_y == raw_yp
+        || retained_y.is_null()
+        || retained_yp.is_null()
+        || retained_y == retained_yp
+        || [raw_y, raw_yp].contains(&retained_y)
+        || [raw_y, raw_yp].contains(&retained_yp)
+    {
+        return Err("Invalid/aliased retained IDA endpoint buffers".into());
+    }
+    let length = unsafe { N_VGetLength_Serial(raw_y) };
+    if length <= 0
+        || [raw_yp, retained_y, retained_yp]
+            .iter()
+            .any(|&v| unsafe { N_VGetLength_Serial(v) } != length)
+    {
+        return Err("Mismatched retained IDA endpoint vector dimensions".into());
+    }
+    let mut current = f64::NAN;
+    checked(
+        unsafe { IDAGetCurrentTime(memory, &mut current) },
+        "IDAGetCurrentTime retained endpoint",
+    )?;
+    if time != current {
+        return Err(format!(
+            "Requested retained endpoint time {time:e} is not current IDA time {current:e}"
+        ));
+    }
+    checked(
+        unsafe { IDAGetDky(memory, time, 0, retained_y) },
+        "IDAGetDky retained endpoint state",
+    )?;
+    checked(
+        unsafe { IDAGetDky(memory, time, 1, retained_yp) },
+        "IDAGetDky retained endpoint polynomial derivative",
+    )?;
+    for vector in [retained_y, retained_yp] {
+        let data = unsafe { N_VGetArrayPointer_Serial(vector) };
+        if data.is_null()
+            || unsafe { std::slice::from_raw_parts(data, length as usize) }
+                .iter()
+                .any(|v| !v.is_finite())
+        {
+            return Err("Nonfinite retained IDA endpoint state/derivative".into());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod retained_endpoint_tests {
+    use super::*;
+    #[test]
+    fn fatal_callback_refuses_success_and_stop_time_before_endpoint_admission() {
+        for status in [0, 1] {
+            assert!(checked_ida_step(status, None).is_ok());
+            let error = checked_ida_step(status, Some("fatal JVP callback")).unwrap_err();
+            assert!(error.contains("fatal JVP callback"));
+            assert!(error.contains(&format!("returned {status}")));
+        }
+        assert!(checked_ida_step(-4, None).is_err());
+        assert!(checked_ida_step(-4, Some("fatal JVP callback")).is_err());
+    }
+
+    unsafe extern "C" fn boundary_residual(
+        _: f64,
+        _: Handle,
+        yp: Handle,
+        residual: Handle,
+        _: Handle,
+    ) -> c_int {
+        let slopes = unsafe { N_VGetArrayPointer_Serial(yp) };
+        let out = unsafe { N_VGetArrayPointer_Serial(residual) };
+        if slopes.is_null() || out.is_null() {
+            return -1;
+        }
+        // Deliberately inadmissible test-only x'=-tiny drives IDA's small
+        // constraint-correction path. The unconstrained clock fixes startup.
+        unsafe {
+            *out = *slopes + 1e-9;
+            *out.add(1) = *slopes.add(1) - 1.;
+        }
+        0
+    }
+    unsafe extern "C" fn boundary_jacobian(
+        _: f64,
+        cj: f64,
+        _: Handle,
+        _: Handle,
+        _: Handle,
+        matrix: Handle,
+        _: Handle,
+        _: Handle,
+        _: Handle,
+        _: Handle,
+    ) -> c_int {
+        if matrix_data(matrix, &[0, 1, 2], &[0, 1], &[cj, cj]).is_ok() {
+            0
+        } else {
+            -1
+        }
+    }
+    fn values(vector: Handle) -> Vec<f64> {
+        unsafe { std::slice::from_raw_parts(N_VGetArrayPointer_Serial(vector), 2).to_vec() }
+    }
+    #[test]
+    fn retained_endpoint_keeps_constraint_state_derivative_and_raw_buffers_separate() {
+        let mut owned = Resources::new().unwrap();
+        let y = owned.vector(&[0., 0.]).unwrap();
+        let yp = owned.vector(&[-1e-9, 1.]).unwrap();
+        let kept_y = owned.vector(&[0., 0.]).unwrap();
+        let kept_yp = owned.vector(&[0., 0.]).unwrap();
+        let atol = owned.vector(&[1e-3, 1e-3]).unwrap();
+        let constraint = owned.vector(&[1., 0.]).unwrap();
+        owned.matrix(2, 2).unwrap();
+        owned.solver(y).unwrap();
+        owned.ida = unsafe { IDACreate(owned.context) };
+        assert!(!owned.ida.is_null());
+        checked(
+            unsafe { IDAInit(owned.ida, boundary_residual, 0., y, yp) },
+            "test IDAInit",
+        )
+        .unwrap();
+        checked(
+            unsafe { IDASVtolerances(owned.ida, 1e-5, atol) },
+            "test tolerance",
+        )
+        .unwrap();
+        checked(
+            unsafe { IDASetConstraints(owned.ida, constraint) },
+            "test constraint",
+        )
+        .unwrap();
+        checked(
+            unsafe { IDASetLinearSolver(owned.ida, owned.solver, owned.matrix) },
+            "test linear solver",
+        )
+        .unwrap();
+        checked(
+            unsafe { IDASetJacFn(owned.ida, boundary_jacobian) },
+            "test Jacobian",
+        )
+        .unwrap();
+        let mut time = 0.;
+        checked(
+            unsafe { IDASolve(owned.ida, 1., &mut time, y, yp, 2) },
+            "test ONE_STEP",
+        )
+        .unwrap();
+        let raw_y = values(y);
+        let raw_yp = values(yp);
+        // Unchanged 7.5 exposes negative raw values here (the prior frozen
+        // witness records that defect); repaired dependencies may return 0.
+        // The reusable API contract concerns retained state and no mutation.
+        assert!(time > 0.);
+        retained_endpoint(owned.ida, time, y, yp, kept_y, kept_yp).unwrap();
+        assert_eq!(values(kept_y)[0], 0.);
+        assert_eq!(values(kept_yp)[0], 0.);
+        assert!((values(kept_y)[1] - time).abs() < 1e-14);
+        assert!((values(kept_yp)[1] - 1.).abs() < 1e-14);
+        assert_eq!(values(y), raw_y);
+        assert_eq!(values(yp), raw_yp);
+        assert!(retained_endpoint(owned.ida, time, y, yp, y, kept_yp).is_err());
+        assert!(retained_endpoint(owned.ida, time, y, yp, kept_y, kept_y).is_err());
+        assert!(retained_endpoint(owned.ida, time, y, y, kept_y, kept_yp).is_err());
+        assert!(retained_endpoint(owned.ida, time * 0.5, y, yp, kept_y, kept_yp).is_err());
+        let short = owned.vector(&[0.]).unwrap();
+        assert!(retained_endpoint(owned.ida, time, y, yp, short, kept_yp).is_err());
     }
 }
 

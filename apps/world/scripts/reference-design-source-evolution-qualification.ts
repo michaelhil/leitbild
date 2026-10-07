@@ -17,21 +17,75 @@ export function sourceEvolutionOutput(stdout:string){
  return {records,outcome:latest.find(row=>row&&typeof row.passed==='boolean'),
   retainedState:latest.find(row=>row?.kind==='admitted-progress')}
 }
-const admittedArm=z.object({passed:z.literal(true),lastAdmittedTime:z.literal(300)}),
- admittedPair=z.object({passed:z.literal(true),lastAdmittedTime:z.literal(300),physicalCoordinates:z.number().int().positive(),
-  normal:admittedArm,tighter:admittedArm,settings:z.object({horizon:z.literal(300)}),gates:z.object({
+/** Retain transitive local engineering helpers, not a manually maintained list. */
+export async function sourceHelperFiles(entries:string[]){
+ const helpers=new Map<string,Uint8Array>(),transpiler=new Bun.Transpiler({loader:'ts'})
+ async function retain(path:string){
+  if(helpers.has(path))return
+  const bytes=await readFile(path);helpers.set(path,bytes)
+  for(const entry of transpiler.scanImports(bytes))if(entry.path.startsWith('./reference-design-'))await retain(sourceDependencyPath(import.meta.dir,entry.path))
+ }
+ for(const path of entries)await retain(path)
+ return helpers
+}
+/** Frozen, nonadvancing complete-stage gate. The external deadline also covers
+ * native factorization, which cannot be interrupted by Rust phase checks. */
+export async function auditSourceStage(binary:string,fixture:string,state:string,cj:number,output:string){
+ if(!Number.isFinite(cj)||cj<=0)throw Error('Positive finite stage coefficient required')
+ return recordSourceCheck([resolve(binary),resolve(fixture),'--audit-block',resolve(state),String(cj)],
+  [resolve(binary),resolve(fixture),resolve(state)],output,'stage')
+}
+export async function inspectSourceStructure(binary:string,fixture:string,output:string){
+ return recordSourceCheck([resolve(binary),resolve(fixture),'--structure'],[resolve(binary),resolve(fixture)],output,'structure')
+}
+async function recordSourceCheck(command:string[],inputsPaths:string[],output:string,kind:'stage'|'structure'){
+ if(await Bun.file(output).exists())throw Error('Refusing to overwrite existing evidence')
+ const root=resolve(import.meta.dir,'../native/process-plant'),directory=resolve(output)+'.artifacts',
+  native=await Array.fromAsync(new Bun.Glob('{src,examples,qualification}/**/*.{rs,cpp}').scan({cwd:root})),
+  paths=[...inputsPaths,import.meta.path,
+   ...native.sort().map(p=>join(root,p)),...['Cargo.toml','Cargo.lock','build.rs'].map(p=>join(root,p))],
+  inputs=await Promise.all(paths.map(async path=>({path,bytes:await readFile(path)})))
+ await mkdir(directory)
+ await Promise.all(inputs.map((q,i)=>writeFile(join(directory,`${i}-${basename(q.path)}`),q.bytes,{flag:'wx'})))
+ const allowanceSeconds=30,start=performance.now(),child=Bun.spawn(command,{stdout:'pipe',stderr:'pipe'})
+ let timedOut=false
+ const timer=setTimeout(()=>{timedOut=true;child.kill('SIGKILL')},allowanceSeconds*1000)
+ const [stdout,stderr,exitCode]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited]).finally(()=>clearTimeout(timer)),
+  elapsedSeconds=(performance.now()-start)/1000,parsed=sourceEvolutionOutput(stdout),
+  unchanged=(await Promise.all(inputs.map(async q=>sha(await readFile(q.path))===sha(q.bytes)))).every(Boolean),
+  cases=parsed.records.filter(r=>r?.kind==='direct-stage-audit-case'),
+  passed=exitCode===0&&!timedOut&&elapsedSeconds<=allowanceSeconds&&unchanged&&parsed.outcome?.passed===true&&(kind==='structure'
+   ?parsed.outcome.kind==='source-structure-final':parsed.outcome.kind==='direct-stage-audit-final'
+    &&cases.length===2&&cases[0].case==='original'&&cases[1].case==='captured'),
+  receipt={recordedAt:new Date().toISOString(),passed,command,allowanceSeconds,elapsedSeconds,
+   exitCode,timedOut,stdout,stderr,...sourceProcessUsage(child.resourceUsage()),
+   ...parsed,unchanged,consumed:inputs.map(q=>({path:q.path,sha256:sha(q.bytes),bytes:q.bytes.length})),
+   artifacts:{directory},check:kind,compilationExcluded:true,noAdvancement:true,noWholePlantReadinessCredit:true}
+ await writeFile(output,JSON.stringify(receipt,null,2)+'\n',{flag:'wx'})
+ return receipt
+}
+const admittedArm=z.object({passed:z.literal(true),lastAdmittedTime:z.literal(300)})
+export const sourcePairAdmission=z.object({passed:z.literal(true),lastAdmittedTime:z.literal(300),physicalCoordinates:z.number().int().positive(),
+  normal:admittedArm,tighter:admittedArm,settings:z.object({horizon:z.literal(300),accuracyPolicy:z.literal('source-consequences-1'),
+   provisional:z.literal(true),absoluteToleranceRefinement:z.literal(10),rtol:z.tuple([z.literal(1e-5),z.literal(1e-6)])}),gates:z.object({
+   fullPairComparisonEvaluated:z.literal(true),NCOperatorPairRatio:z.number().finite().nonnegative().max(1),
    localPairRatio:z.number().finite().nonnegative().max(1),SUMABSFamilyPairRatio:z.number().finite().nonnegative().max(1),
    observablePairRatio:z.number().finite().nonnegative().max(1),comparedFamilyOutputs:z.number().int().positive(),
    developedSignal:z.literal(true),strictAcceptedBoundary:z.literal(true)})})
-export async function qualifySourceEvolution(partition:string,material:string,water:string,materialEvidence:string,wiki:string,output:string,artifactFiles:string[],priorControllerReceipt?:string){
+/** Prior work consumes time regardless of its result. It supplies no state,
+ * authority or admission; the receipt is frozen with the same local job. */
+export function priorSourceComputationSeconds(prior:unknown,output:string){
+ const r=z.object({elapsedSeconds:z.number().finite().nonnegative(),debitedTo:z.literal(basename(output))}).parse(prior)
+ if(r.elapsedSeconds>=120)throw Error('Source computation allowance already exhausted')
+ return r.elapsedSeconds
+}
+export async function qualifySourceEvolution(partition:string,material:string,water:string,materialEvidence:string,wiki:string,output:string,artifactFiles:string[],priorComputationReceipt?:string){
  const began=performance.now(),allowanceSeconds=120,
   root=resolve(import.meta.dir,'../native/process-plant'),directory=resolve(output)+'.artifacts',
   paths=[partition,material,water,materialEvidence,materialEvidence+'.artifacts/material.json'].map(p=>resolve(p))
  if(await Bun.file(output).exists())throw Error('Refusing to overwrite existing evidence')
- const priorText=priorControllerReceipt?await Bun.file(priorControllerReceipt).text():undefined,
-  prior=priorText?JSON.parse(priorText):undefined,priorControllerSeconds=prior?.elapsedSeconds??0
- if(priorText&&(!prior||typeof prior.elapsedSeconds!=='number'||prior.simulationStarted!==false||prior.artifactsCreated!==false||prior.debitedTo!==basename(output)))throw Error('Invalid prior controller receipt')
- if(!Number.isFinite(priorControllerSeconds)||priorControllerSeconds<0||priorControllerSeconds>=allowanceSeconds)throw Error('Invalid prior controller debit')
+ const priorText=priorComputationReceipt!==undefined?await Bun.file(priorComputationReceipt).text():undefined,
+  priorComputationSeconds=priorText!==undefined?priorSourceComputationSeconds(JSON.parse(priorText),output):0
  if(!artifactFiles.length||artifactFiles.some(p=>!p.trim()))throw Error('Explicit frozen native dependency artifacts required')
  const artifacts=await Promise.all(artifactFiles.map(async path=>({path:resolve(path),sha256:sha(await readFile(resolve(path)))}))),
   ownerPaths=sourceEvolutionOwnerFiles.map(p=>join(resolve(wiki),p)),consumed=[...paths,...ownerPaths],
@@ -46,13 +100,7 @@ export async function qualifySourceEvolution(partition:string,material:string,wa
  if(propertyRows.length!==1||JSON.stringify(JSON.parse(propertyRows[0]!))!==JSON.stringify(payload.receiving.property))
   throw Error('Retained native property evidence differs from preparation')
  consumed.push(propertyPath);texts.push(propertyText)
- const helpers=new Map<string,Uint8Array>(),transpiler=new Bun.Transpiler({loader:'ts'})
- async function retainHelper(path:string){
-  if(helpers.has(path))return
-  const bytes=await readFile(path);helpers.set(path,bytes)
-  for(const entry of transpiler.scanImports(bytes))if(entry.path.startsWith('./reference-design-'))await retainHelper(sourceDependencyPath(import.meta.dir,entry.path))
- }
- await retainHelper(import.meta.path)
+ const helpers=await sourceHelperFiles([import.meta.path])
  const native=await Array.fromAsync(new Bun.Glob('{src,examples,qualification}/**/*.{rs,cpp}').scan({cwd:root})),
   sourcePaths=[...helpers.keys()].sort().concat(
    ...native.sort().map(p=>join(root,p)),...['Cargo.toml','Cargo.lock','build.rs'].map(p=>join(root,p))),
@@ -79,20 +127,23 @@ export async function qualifySourceEvolution(partition:string,material:string,wa
   preparationSeconds=(performance.now()-preparationBegan)/1000,fixturePath=join(directory,'input.txt')
  if(sha(prepared.material.fixture)!==parent.fixtureSHA256)throw Error('Recompiled physical material differs from admitted parent')
  await writeFile(fixturePath,prepared.fixture,{flag:'wx'})
- const remaining=(allowanceSeconds-priorControllerSeconds)*1000-(performance.now()-began-compilationSeconds*1000),run=bytes?await execute([binary,fixturePath,String(remaining/1000)],remaining):undefined,
-  parsed=sourceEvolutionOutput(run?.stdout??''),{outcome,retainedState}=parsed,admission=admittedPair.safeParse(outcome),
+ const remaining=(allowanceSeconds-priorComputationSeconds)*1000-(performance.now()-began-compilationSeconds*1000),run=bytes?await execute([binary,fixturePath,String(remaining/1000)],remaining):undefined,
+  parsed=sourceEvolutionOutput(run?.stdout??''),{outcome,retainedState}=parsed,admission=sourcePairAdmission.safeParse(outcome),
   checkpoints=await Promise.all((await Array.fromAsync(new Bun.Glob('*.checkpoint').scan({cwd:directory}))).sort().map(async name=>{
    const path=join(directory,name),bytes=await readFile(path);return {path,sha256:sha(bytes),bytes:bytes.length}
+  })),commonStates=await Promise.all((await Array.fromAsync(new Bun.Glob('*.checkpoint.common-*.state').scan({cwd:directory}))).sort().map(async name=>{
+   const path=join(directory,name),bytes=await readFile(path);return {path,sha256:sha(bytes),bytes:bytes.length,
+    role:'LDSRC-CMN-y-only common-time interpolant;not admitted boundary or restart'}
   })),unchanged=(await Promise.all(consumed.map(p=>Bun.file(p).text()))).every((s,i)=>s===texts[i])
    &&(await Promise.all(sourcePaths.map(p=>readFile(p)))).every((s,i)=>s.equals(sources[i]!))
    &&(await Promise.all(artifacts.map(async q=>sha(await readFile(q.path))===q.sha256))).every(Boolean)
-   &&(!priorText||await Bun.file(priorControllerReceipt!).text()===priorText)
+   &&(priorText===undefined||await Bun.file(priorComputationReceipt!).text()===priorText)
    &&(!bytes||sha(await readFile(binary))===sha(bytes)),
-  elapsedSeconds=(performance.now()-began)/1000-compilationSeconds+priorControllerSeconds,
+  elapsedSeconds=(performance.now()-began)/1000-compilationSeconds+priorComputationSeconds,
   receipt={recordedAt:new Date().toISOString(),passed:toolchain.exitCode===0&&!toolchain.timedOut&&build.exitCode===0&&!build.timedOut&&run?.exitCode===0
    &&!run.timedOut&&admission.success&&admission.data.physicalCoordinates===prepared.counts.evolvedCoordinates&&unchanged&&elapsedSeconds<=allowanceSeconds,
-   allowanceSeconds,elapsedSeconds,priorControllerSeconds,
-   priorControllerReceipt:priorText?{path:resolve(priorControllerReceipt!),sha256:sha(priorText)}:undefined,
+   allowanceSeconds,elapsedSeconds,priorComputationSeconds,
+   priorComputationReceipt:priorText!==undefined?{path:resolve(priorComputationReceipt!),sha256:sha(priorText)}:undefined,
    preparationSeconds,buildSeconds:build.elapsedSeconds,compilationSeconds,
    compilationOutsideAdvancementAllowance:true,totalWallSeconds:(performance.now()-began)/1000,
    counts:prepared.counts,scope:prepared.scope,projectionScope:prepared.projection.scope,
@@ -101,16 +152,16 @@ export async function qualifySourceEvolution(partition:string,material:string,wa
    fixtureSHA256:sha(prepared.fixture),binarySHA256:bytes?sha(bytes):undefined,toolchain,build,run,outcome,retainedState,
    termination:run?.timedOut?'external-wall-deadline':outcome?'native-final-result':build.exitCode!==0?'build-failed':'native-final-result-missing',
    admissionError:admission.success?undefined:admission.error.issues,unchanged,
-   artifacts:{directory,nativeDependencies:artifacts,checkpoints},noWholePlantReadinessCredit:true}
+   artifacts:{directory,nativeDependencies:artifacts,checkpoints,commonStates},noWholePlantReadinessCredit:true}
  await writeFile(output,JSON.stringify(receipt,null,2)+'\n',{flag:'wx'})
  return receipt
 }
 if(import.meta.main){
  const [partition,material,water,property,wiki,output,...remaining]=Bun.argv.slice(2),
-  debit=remaining.filter(p=>p.startsWith('--prior-controller-receipt=')),artifacts=remaining.filter(p=>!p.startsWith('--prior-controller-receipt='))
- if(debit.length>1)throw Error('Duplicate prior controller debit')
+  debit=remaining.filter(p=>p.startsWith('--prior-computation-receipt=')),artifacts=remaining.filter(p=>!p.startsWith('--prior-computation-receipt='))
+ if(debit.length>1)throw Error('Duplicate prior computation debit')
  if(!partition||!material||!water||!property||!wiki||!output||!artifacts.length)throw Error('Expected partition/material/water/material-evidence receipts, LD-01 root, NEW result and frozen native dependency artifacts')
- const r=await qualifySourceEvolution(partition,material,water,property,wiki,output,artifacts,debit[0]?.slice('--prior-controller-receipt='.length))
+ const r=await qualifySourceEvolution(partition,material,water,property,wiki,output,artifacts,debit[0]?.slice('--prior-computation-receipt='.length))
  // The immutable receipt retains full states and solver evidence. Do not dump
  // those arrays into the console/context merely to report the run's verdict.
  console.log(JSON.stringify({passed:r.passed,elapsedSeconds:r.elapsedSeconds,buildSeconds:r.buildSeconds,
@@ -118,7 +169,7 @@ if(import.meta.main){
   normal:r.outcome?.normal?{passed:r.outcome.normal.passed,reason:r.outcome.normal.reason,
    lastAdmittedTime:r.outcome.normal.lastAdmittedTime,returnedTime:r.outcome.normal.returnedTime,
    wallSeconds:r.outcome.normal.wallSeconds,stats:r.outcome.normal.stats,
-   preconditionerMetrics:r.outcome.normal.preconditionerMetrics}:undefined,
+   directJacobian:r.outcome.normal.directJacobian}:undefined,
   tighter:r.outcome?.tighter?{passed:r.outcome.tighter.passed,reason:r.outcome.tighter.reason,
    lastAdmittedTime:r.outcome.tighter.lastAdmittedTime,wallSeconds:r.outcome.tighter.wallSeconds}:undefined,
   retainedCheckpoint:r.retainedState?{lastAdmittedTime:r.retainedState.lastAdmittedTime,

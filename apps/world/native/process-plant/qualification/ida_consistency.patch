@@ -1,0 +1,41 @@
+# Offline dependency qualification candidate only; not production adoption.
+# Applies only to official SUNDIALS 7.5.0 src/ida/ida.c (BSD-3-Clause).
+# Generic whole-state port of the previously inspected IDAS consistency repair.
+# No plant field, new target, tolerance, history clipping or alternate solver.
+--- a/src/ida/ida.c
++++ b/src/ida/ida.c
+@@ -2804,2 +2804,3 @@
+     N_VDiv(tmp, IDA_mem->ida_ewt, tmp);          /* a * c * wt              */
++    N_VScale(PT1, tmp, IDA_mem->ida_tempv3);
+     N_VLinearSum(ONE, IDA_mem->ida_yy, -PT1, tmp, tmp); /* y - 0.1 * a * c * wt    */
+@@ -2812,6 +2813,19 @@
+     if (vnorm <= IDA_mem->ida_epsNewt)
+     {
+-      N_VLinearSum(ONE, IDA_mem->ida_ee, -ONE, tmp,
+-                   IDA_mem->ida_ee); /* ee <- ee - v */
+-      return (IDA_SUCCESS);
++      /* Preserve the existing target using failed-mask predictor cancellation,
++         rather than subtracting a rounded raw endpoint sum. */
++      N_VProd(mm, IDA_mem->ida_ee, tmp);
++      N_VLinearSum(ONE, IDA_mem->ida_ee, -ONE, tmp, IDA_mem->ida_ee);
++      N_VProd(mm, IDA_mem->ida_yypredict, tmp);
++      N_VLinearSum(ONE, IDA_mem->ida_ee, -ONE, tmp, IDA_mem->ida_ee);
++      N_VProd(mm, IDA_mem->ida_tempv3, tmp);
++      N_VLinearSum(ONE, IDA_mem->ida_ee, ONE, tmp, IDA_mem->ida_ee);
++      /* Reconstruct the COMPLETE stage pair and recheck the same bounds. */
++      N_VLinearSum(ONE, IDA_mem->ida_yypredict, ONE, IDA_mem->ida_ee, IDA_mem->ida_yy);
++      N_VLinearSum(ONE, IDA_mem->ida_yppredict, IDA_mem->ida_cj,
++                   IDA_mem->ida_ee, IDA_mem->ida_yp);
++      if (N_VConstrMask(IDA_mem->ida_constraints, IDA_mem->ida_yy, mm))
++      {
++        return (IDA_SUCCESS);
++      }
+     }
+@@ -3335,3 +3349,7 @@
+   (void)N_VLinearSumVectorArray(IDA_mem->ida_kused + 1, ONE, IDA_mem->ida_Xvecs,
+                                 ONE, IDA_mem->ida_Zvecs, IDA_mem->ida_Xvecs);
++
++  /* Keep the complete accepted stage endpoint and history origin associated.
++     Higher divided differences remain unchanged; Dky1 is not stage yp. */
++  N_VScale(ONE, IDA_mem->ida_yy, IDA_mem->ida_phi[0]);
+ }

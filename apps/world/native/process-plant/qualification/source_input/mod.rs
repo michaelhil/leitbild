@@ -38,6 +38,38 @@ pub(crate) fn near(a: f64, b: f64, scale: f64) {
         "Independent number identity {a} != {b}, scale {scale}"
     );
 }
+/// Wire sentinels are distinct physical laws, never a missing-index fallback.
+fn face_boundary(
+    right: isize,
+    left_distance: f64,
+    right_distance: f64,
+    targets: Option<Vec<usize>>,
+) -> (Option<usize>, Option<f64>, transport_source::FaceLaw) {
+    use transport_source::FaceLaw;
+    match right {
+        -2 => {
+            assert_eq!(left_distance, 0., "Internal panel has no side resistance");
+            assert_eq!(right_distance, 0., "Internal panel has no right distance");
+            let targets = targets.expect("Internal panel requires optical layers");
+            (None, None, FaceLaw::InternalOptical { targets })
+        }
+        -1 => {
+            assert!(targets.is_none(), "Optical exterior unsupported");
+            assert!(left_distance > 0., "Escape requires positive side distance");
+            assert_eq!(right_distance, 0., "Escape has no right distance");
+            (None, None, FaceLaw::Escape)
+        }
+        r if r >= 0 => {
+            assert!(
+                left_distance > 0. && right_distance > 0.,
+                "Shared face requires positive distances"
+            );
+            let law = targets.map_or(FaceLaw::Transparent, |targets| FaceLaw::Optical { targets });
+            (Some(r as usize), Some(right_distance), law)
+        }
+        _ => panic!("Invalid face right sentinel"),
+    }
+}
 fn fuel(
     tokens: &[&str],
 ) -> (
@@ -266,7 +298,7 @@ pub(crate) fn parse(tokens: &[&str]) -> Input {
             let rd = number(&mut w);
             let nl = count(&mut w);
             let response = if nl > 0 {
-                assert!(right >= 0, "Optical exterior unsupported");
+                assert!(right >= 0 || right == -2, "Optical exterior unsupported");
                 let layers = (0..nl)
                     .map(|_| {
                         let nc = count(&mut w);
@@ -287,23 +319,15 @@ pub(crate) fn parse(tokens: &[&str]) -> Input {
             } else {
                 None
             };
-            assert!(right >= -1, "Invalid exterior index");
-            let (right, right_distance, law) = if right == -1 {
+            let targets = response.map(|response| {
+                optical_faces += 1;
+                optical_inputs.push(response.input);
+                response.targets
+            });
+            let (right, right_distance, law) = face_boundary(right, left_distance, rd, targets);
+            if matches!(law, transport_source::FaceLaw::Escape) {
                 escape_faces += 1;
-                assert_eq!(rd, 0.);
-                (None, None, transport_source::FaceLaw::Escape)
-            } else {
-                let law = if let Some(response) = response {
-                    optical_faces += 1;
-                    optical_inputs.push(response.input);
-                    transport_source::FaceLaw::Optical {
-                        targets: response.targets,
-                    }
-                } else {
-                    transport_source::FaceLaw::Transparent
-                };
-                (Some(right as usize), Some(rd), law)
-            };
+            }
             transport_source::Face {
                 left,
                 right,
@@ -441,5 +465,32 @@ mod tests {
     #[should_panic(expected = "Nonfinite")]
     fn nonfinite_number_is_not_admitted() {
         number(&mut ["NaN"].iter().copied());
+    }
+    #[test]
+    fn explicit_face_sentinels_are_not_escape_fallbacks() {
+        use transport_source::FaceLaw;
+        let (r, d, law) = face_boundary(-2, 0., 0., Some(vec![2, 2, 3]));
+        assert!(r.is_none() && d.is_none());
+        assert!(matches!(law, FaceLaw::InternalOptical { targets } if targets == [2,2,3]));
+        assert!(matches!(face_boundary(-1, 1., 0., None).2, FaceLaw::Escape));
+        assert!(matches!(
+            face_boundary(4, 1., 2., None).2,
+            FaceLaw::Transparent
+        ));
+        assert!(matches!(
+            face_boundary(4, 1., 2., Some(vec![1])).2,
+            FaceLaw::Optical { .. }
+        ));
+        for (r, l, d, targets) in [
+            (-3, 1., 0., None),
+            (-2, 1., 0., Some(vec![0])),
+            (-2, 0., 1., Some(vec![0])),
+            (-2, 0., 0., None),
+            (-1, 1., 0., Some(vec![0])),
+            (-1, 0., 0., None),
+            (0, 0., 1., None),
+        ] {
+            assert!(std::panic::catch_unwind(|| face_boundary(r, l, d, targets)).is_err());
+        }
     }
 }

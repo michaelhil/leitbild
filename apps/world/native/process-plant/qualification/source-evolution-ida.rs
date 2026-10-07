@@ -5,6 +5,8 @@
 mod evolution_input;
 #[path = "../examples/ida_support/mod.rs"]
 mod ida_support;
+#[path = "source_accuracy.rs"]
+mod source_accuracy;
 #[path = "source_input/mod.rs"]
 mod source_input;
 use ida_support::*;
@@ -12,6 +14,7 @@ use leitbild_plant_numerics::{
     converter_heat, cylindrical_source, fuel_history, fuel_source, heat_history, moderator_source,
     optical_source, passive_source, source_evolution, transport_source,
 };
+use source_accuracy::Accuracy;
 use source_evolution::{Diagnostics, Evolution, Workspace};
 use std::{
     ffi::{c_int, c_long},
@@ -27,9 +30,8 @@ const HORIZON: f64 = 300.;
 const RTOL: [f64; 2] = [1e-5, 1e-6];
 const COUNT_ATOL: f64 = 1e-3;
 const ENERGY_ATOL: f64 = 1e-12;
-const MAXL: c_int = 30;
-const RESTARTS: c_int = 0;
 const REPORT_RESERVE_SECONDS: f64 = 2.;
+const CHECKPOINT_MAGIC: &[u8; 9] = b"LDSRC-MNF";
 const OUTPUTS: [f64; 14] = [
     0.001, 0.01, 0.1, 1., 2., 5., 10., 20., 30., 60., 120., 180., 240., 300.,
 ];
@@ -125,7 +127,7 @@ fn checkpoint(
             .open(&pending)
             .map_err(|e| format!("New checkpoint pending file: {e}"))?,
     );
-    file.write_all(b"LDSOURCE1")
+    file.write_all(CHECKPOINT_MAGIC)
         .and_then(|_| file.write_all(&(y.len() as u64).to_le_bytes()))
         .and_then(|_| file.write_all(&time.to_le_bytes()))
         .and_then(|_| file.write_all(&relative.to_le_bytes()))
@@ -142,7 +144,7 @@ fn checkpoint(
     fs::rename(&pending, path).map_err(|e| format!("Atomic checkpoint replace: {e}"))?;
     let (stats, stats_error) = telemetry_stats(memory);
     println!(
-        "{{\"kind\":\"admitted-progress\",\"rtol\":{relative:e},\"lastAdmittedTime\":{time:e},\"lastRetainedStateTime\":{time:e},\"checkpointPath\":{},\"acceptedScreenedSteps\":{steps},\"aggregateElapsedSeconds\":{elapsed:e},\"solverStats\":{stats},\"telemetryStatsError\":{stats_error},\"measuredKernelCosts\":{}}}",
+        "{{\"kind\":\"admitted-progress\",\"stateChart\":\"LDSRC-MNF\",\"rtol\":{relative:e},\"lastAdmittedTime\":{time:e},\"lastRetainedStateTime\":{time:e},\"checkpointPath\":{},\"acceptedScreenedSteps\":{steps},\"aggregateElapsedSeconds\":{elapsed:e},\"stateSource\":\"initial-or-IDAGetDky-retained-endpoint\",\"derivativeSource\":\"initial-RHS-or-IDAGetDky-endpoint-polynomial;not-Newton-stage-derivative\",\"solverStats\":{stats},\"telemetryStatsError\":{stats_error},\"measuredKernelCosts\":{}}}",
         quote(&path.display().to_string()),
         callbacks.metrics_json()
     );
@@ -171,14 +173,13 @@ unsafe fn output<'a>(v: Handle, n: usize) -> Result<&'a mut [f64], String> {
     Ok(unsafe { slice::from_raw_parts_mut(p, n) })
 }
 
-#[path = "source_group_preconditioner/mod.rs"]
-mod source_group_preconditioner;
-use source_group_preconditioner::Preconditioner;
-#[path = "source_audit/mod.rs"]
-mod source_audit;
 #[path = "source_coordinates/mod.rs"]
 mod source_coordinates;
 use source_coordinates::Coordinates;
+#[path = "source_block/mod.rs"]
+mod source_block;
+#[path = "source_stage/mod.rs"]
+mod source_stage;
 
 struct Callbacks<'a> {
     model: &'a Evolution,
@@ -186,7 +187,7 @@ struct Callbacks<'a> {
     coordinates: Coordinates,
     physical_state: Vec<f64>,
     physical_direction: Vec<f64>,
-    preconditioner: Preconditioner,
+    stage: Option<source_stage::Stage>,
     started: Instant,
     allowance: f64,
     error: Option<String>,
@@ -198,9 +199,8 @@ struct Callbacks<'a> {
     jvp_seconds: f64,
     base_calls: u64,
     base_seconds: f64,
-    memory: Handle,
-    last_admitted: f64,
 }
+#[derive(Debug)]
 enum CallbackFailure {
     Domain(String),
     Fatal(String),
@@ -240,7 +240,7 @@ impl<'a> Callbacks<'a> {
             },
             physical_state: vec![0.; n],
             physical_direction: vec![0.; n],
-            preconditioner: Preconditioner::new(model)?,
+            stage: None,
             started,
             allowance,
             error: None,
@@ -252,26 +252,20 @@ impl<'a> Callbacks<'a> {
             jvp_seconds: 0.,
             base_calls: 0,
             base_seconds: 0.,
-            memory: ptr::null_mut(),
-            last_admitted: 0.,
         })
     }
     fn metrics_json(&self) -> String {
         format!(
-            "{{\"RHSAttempts\":{},\"RHSSeconds\":{},\"linearBaseAttempts\":{},\"linearBaseSeconds\":{},\"JVPCalls\":{},\"JVPSeconds\":{},\"setupAttempts\":{},\"completedSetupSeconds\":{},\"completedAssemblySeconds\":{},\"completedFactorSeconds\":{},\"preconditionerSolveAttempts\":{},\"completedPreconditionerSolveSeconds\":{},\"preconditionerMetrics\":{},\"recoverableDomainErrors\":{}}}",
+            "{{\"RHSAttempts\":{},\"RHSSeconds\":{},\"linearBaseAttempts\":{},\"linearBaseSeconds\":{},\"linearActionCalls\":{},\"linearActionSeconds\":{},\"linearStageAndPreconditioner\":{},\"recoverableDomainErrors\":{}}}",
             self.rhs_calls,
             finite(self.rhs_seconds),
             self.base_calls,
             finite(self.base_seconds),
             self.jvp_calls,
             finite(self.jvp_seconds),
-            self.preconditioner.setups,
-            finite(self.preconditioner.setup_seconds),
-            finite(self.preconditioner.assembly_seconds),
-            finite(self.preconditioner.factor_seconds),
-            self.preconditioner.solves,
-            finite(self.preconditioner.solve_seconds),
-            self.preconditioner.metrics_json(),
+            self.stage
+                .as_ref()
+                .map_or("null".into(), |d| d.metrics_json()),
             self.recoverable_errors
         )
     }
@@ -335,16 +329,33 @@ unsafe extern "C" fn residual(_: f64, y: Handle, yp: Handle, r: Handle, user: Ha
         evaluated?;
         let rates = c.work.rates().map_err(str::to_owned)?;
         let slopes = unsafe { values(yp, n) }?;
-        for ((out, &s), &rate) in unsafe { output(r, n) }?.iter_mut().zip(slopes).zip(rates) {
-            *out = s - rate;
-        }
-        // Slopes are already solver coordinates; transform only the physical
-        // independently assembled RHS, not the complete residual a second time.
-        let ledger = c.coordinates.ledger;
-        unsafe { output(r, n) }?[ledger] =
-            slopes[ledger] - (rates[..c.coordinates.nc].iter().sum::<f64>() - rates[ledger]);
+        fill_solver_residual(c.coordinates, rates, slopes, unsafe { output(r, n) }?)?;
         c.budget().map_err(Into::into)
     })
+}
+fn fill_solver_residual(
+    c: Coordinates,
+    physical_rates: &[f64],
+    solver_slopes: &[f64],
+    out: &mut [f64],
+) -> Result<(), String> {
+    if physical_rates.len() != solver_slopes.len()
+        || out.len() != physical_rates.len()
+        || c.ledger >= out.len()
+        || c.nc > out.len()
+    {
+        return Err("Wrong solver residual dimension".into());
+    }
+    for ((out, &s), &r) in out.iter_mut().zip(solver_slopes).zip(physical_rates) {
+        *out = s - r;
+    }
+    // Preserve this arithmetic order in the fixed-state actual -F audit.
+    out[c.ledger] = solver_slopes[c.ledger]
+        - (physical_rates[..c.nc].iter().sum::<f64>() - physical_rates[c.ledger]);
+    if out.iter().any(|v| !v.is_finite()) {
+        return Err("Nonfinite solver residual".into());
+    }
+    Ok(())
 }
 unsafe extern "C" fn jtsetup(
     _: f64,
@@ -393,7 +404,9 @@ unsafe extern "C" fn jtimes(
         c.budget().map_err(Into::into)
     })
 }
-unsafe extern "C" fn psetup(
+// The complete chain-rule JVP uses the fresh JTsetup workspace and current
+// cj. Psetup independently freezes its own full-CSC-derived snapshot.
+unsafe extern "C" fn block_setup(
     _: f64,
     y: Handle,
     _: Handle,
@@ -403,19 +416,17 @@ unsafe extern "C" fn psetup(
 ) -> c_int {
     callback(user, |c| {
         c.budget()?;
-        c.evaluate_trial(y)?;
-        c.preconditioner.setup(
-            c.model,
-            &c.physical_state,
-            cj,
-            c.memory,
-            c.started,
-            c.last_admitted,
-        )?;
+        let n = c.model.state_count();
+        c.coordinates
+            .physical(unsafe { values(y, n) }?, &mut c.physical_state);
+        c.stage
+            .as_mut()
+            .ok_or("Missing compiled stage owner".to_owned())?
+            .setup_preconditioner(c.model, &c.physical_state, cj)?;
         c.budget().map_err(Into::into)
     })
 }
-unsafe extern "C" fn psolve(
+unsafe extern "C" fn block_solve(
     _: f64,
     _: Handle,
     _: Handle,
@@ -428,7 +439,11 @@ unsafe extern "C" fn psolve(
 ) -> c_int {
     callback(user, |c| {
         c.budget()?;
-        c.preconditioner.solve_solver_coordinates(c.model, r, z)?;
+        let n = c.model.state_count();
+        c.stage
+            .as_mut()
+            .ok_or("Missing compiled stage owner".to_owned())?
+            .solve_preconditioner(unsafe { values(r, n) }?, unsafe { output(z, n) }?)?;
         c.budget().map_err(Into::into)
     })
 }
@@ -441,11 +456,11 @@ struct Stats {
     error_fails: c_long,
     nonlinear_iterations: c_long,
     nonlinear_fails: c_long,
+    jtimes: c_long,
+    preconditioner_setups: c_long,
+    preconditioner_solves: c_long,
     linear_iterations: c_long,
     linear_fails: c_long,
-    prec_evals: c_long,
-    prec_solves: c_long,
-    jtimes: c_long,
     initial_h: f64,
     last_h: f64,
     current_h: f64,
@@ -465,11 +480,11 @@ impl Stats {
         get!(IDAGetNumErrTestFails, error_fails);
         get!(IDAGetNumNonlinSolvIters, nonlinear_iterations);
         get!(IDAGetNumNonlinSolvConvFails, nonlinear_fails);
+        get!(IDAGetNumJtimesEvals, jtimes);
+        get!(IDAGetNumPrecEvals, preconditioner_setups);
+        get!(IDAGetNumPrecSolves, preconditioner_solves);
         get!(IDAGetNumLinIters, linear_iterations);
         get!(IDAGetNumLinConvFails, linear_fails);
-        get!(IDAGetNumPrecEvals, prec_evals);
-        get!(IDAGetNumPrecSolves, prec_solves);
-        get!(IDAGetNumJtimesEvals, jtimes);
         get!(IDAGetActualInitStep, initial_h);
         get!(IDAGetLastStep, last_h);
         get!(IDAGetCurrentStep, current_h);
@@ -478,18 +493,18 @@ impl Stats {
     }
     fn json(&self) -> String {
         format!(
-            "{{\"accepted_steps\":{},\"residuals\":{},\"linear_setups\":{},\"error_test_failures\":{},\"nonlinear_iterations\":{},\"nonlinear_failures\":{},\"linear_iterations\":{},\"linear_failures\":{},\"preconditioner_evals\":{},\"preconditioner_solves\":{},\"jtimes\":{},\"initial_h\":{},\"last_h\":{},\"current_h\":{},\"cj\":{}}}",
+            "{{\"accepted_steps\":{},\"residuals\":{},\"linear_setups\":{},\"error_test_failures\":{},\"nonlinear_iterations\":{},\"nonlinear_failures\":{},\"complete_chain_rule_actions\":{},\"preconditioner_setups\":{},\"preconditioner_solves\":{},\"linear_iterations\":{},\"linear_failures\":{},\"initial_h\":{},\"last_h\":{},\"current_h\":{},\"cj\":{}}}",
             self.steps,
             self.residuals,
             self.setups,
             self.error_fails,
             self.nonlinear_iterations,
             self.nonlinear_fails,
+            self.jtimes,
+            self.preconditioner_setups,
+            self.preconditioner_solves,
             self.linear_iterations,
             self.linear_fails,
-            self.prec_evals,
-            self.prec_solves,
-            self.jtimes,
             finite(self.initial_h),
             finite(self.last_h),
             finite(self.current_h),
@@ -513,7 +528,519 @@ struct Sample {
     time: f64,
     y: Vec<f64>,
     d: Diagnostics,
+    captured_targets: Vec<f64>,
+    nc_coefficients: Vec<f64>,
 }
+fn captured_targets(model: &Evolution, y: &[f64]) -> Result<Vec<f64>, String> {
+    (0..model.mn_product_row(0) - model.target_row(0))
+        .map(|i| model.consumed_target(y, i).map_err(str::to_owned))
+        .collect()
+}
+fn nc_coefficients(model: &Evolution, work: &Workspace) -> Result<Vec<f64>, String> {
+    let mut values = vec![0.; model.nc_pattern().len()];
+    model
+        .nc_values(work, 0., &mut values)
+        .map_err(str::to_owned)?;
+    if values.iter().any(|v| !v.is_finite()) {
+        return Err("Nonfinite common NC coefficients".into());
+    }
+    Ok(values)
+}
+// Retain dense common observations separately from accepted endpoint
+// checkpoints. These y-only files are not restart or admission records.
+fn retain_common(
+    path: &Path,
+    sample: usize,
+    relative: f64,
+    time: f64,
+    y: &[f64],
+) -> Result<(), String> {
+    let name = format!("{}.common-{sample}.state", path.display());
+    let mut file = io::BufWriter::new(
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&name)
+            .map_err(|e| format!("New common observation file: {e}"))?,
+    );
+    file.write_all(b"LDSRC-CMN")
+        .and_then(|_| file.write_all(&(y.len() as u64).to_le_bytes()))
+        .and_then(|_| file.write_all(&time.to_le_bytes()))
+        .and_then(|_| file.write_all(&relative.to_le_bytes()))
+        .map_err(|e| format!("Common observation header: {e}"))?;
+    for value in y {
+        file.write_all(&value.to_le_bytes())
+            .map_err(|e| format!("Common observation state: {e}"))?;
+    }
+    file.flush()
+        .map_err(|e| format!("Common observation flush: {e}"))?;
+    println!(
+        "{{\"kind\":\"common-state-retained\",\"stateChart\":\"LDSRC-MNF\",\"fileFormat\":\"LDSRC-CMN-y-only\",\"source\":\"IDAGetDky-common-time-interpolation;not-accepted-boundary-or-restart\",\"time\":{time:e},\"rtol\":{relative:e},\"path\":{}}}",
+        quote(&name)
+    );
+    io::stdout()
+        .flush()
+        .map_err(|e| format!("Common observation metadata flush: {e}"))
+}
+#[derive(Debug)]
+struct LocalDiscrepancy {
+    time: f64,
+    source: &'static str,
+    index: usize,
+    family: &'static str,
+    normal: f64,
+    tighter: f64,
+    difference: f64,
+    bound: f64,
+    atol: f64,
+    ratio: f64,
+}
+impl LocalDiscrepancy {
+    fn json(&self) -> String {
+        format!(
+            "{{\"time\":{},\"source\":{},\"index\":{},\"family\":{},\"normal\":{},\"tighter\":{},\"absoluteDifference\":{},\"bound\":{},\"atol\":{},\"ratio\":{}}}",
+            finite(self.time),
+            quote(self.source),
+            self.index,
+            quote(self.family),
+            finite(self.normal),
+            finite(self.tighter),
+            finite(self.difference),
+            finite(self.bound),
+            finite(self.atol),
+            finite(self.ratio)
+        )
+    }
+}
+fn local_family(model: &Evolution, row: usize) -> &'static str {
+    if row < model.region_count() * fuel_source::GROUPS {
+        "neutrons"
+    } else if row < model.nc_dimension() {
+        "precursors"
+    } else if row == model.cf_row() {
+        "Cf-spent"
+    } else if row < model.history_dimension() {
+        if model.is_energy_row(row) {
+            "E25"
+        } else {
+            "fuel-isotope-poison-products"
+        }
+    } else if row < model.target_row(0) {
+        "shared-water-HB"
+    } else if row < model.mn_product_row(0) {
+        if model
+            .mn_targets()
+            .iter()
+            .any(|m| model.target_row(m.target) == row)
+        {
+            "Mn56-inventory"
+        } else {
+            "target-capture-progress"
+        }
+    } else if row < model.ledger_row() {
+        "Fe56-product"
+    } else {
+        "independent-audit-integrals"
+    }
+}
+fn local_discrepancy(
+    model: &Evolution,
+    a: &Sample,
+    b: &Sample,
+) -> Result<LocalDiscrepancy, String> {
+    if a.time != b.time
+        || !a.time.is_finite()
+        || a.y.len() != model.state_count()
+        || b.y.len() != model.state_count()
+        || a.captured_targets.len() != b.captured_targets.len()
+        || a.captured_targets.len() != model.mn_product_row(0) - model.target_row(0)
+    {
+        return Err("Wrong local common-output comparison shape/time".into());
+    }
+    let mut worst = None;
+    for (source, index, x, y, atol) in
+        a.y.iter()
+            .zip(&b.y)
+            .enumerate()
+            .map(|(i, (&x, &y))| {
+                (
+                    "native-state-row",
+                    i,
+                    x,
+                    y,
+                    if model.is_energy_row(i) {
+                        ENERGY_ATOL
+                    } else {
+                        COUNT_ATOL
+                    },
+                )
+            })
+            .chain(
+                a.captured_targets
+                    .iter()
+                    .zip(&b.captured_targets)
+                    .enumerate()
+                    .map(|(i, (&x, &y))| ("derived-capture-target", i, x, y, COUNT_ATOL)),
+            )
+    {
+        let difference = (x - y).abs();
+        let bound = 1e-3 * y.abs() + 20. * atol;
+        let value = ratio(difference, bound)?;
+        if worst
+            .as_ref()
+            .is_none_or(|w: &LocalDiscrepancy| value > w.ratio)
+        {
+            worst = Some(LocalDiscrepancy {
+                time: a.time,
+                source,
+                index,
+                family: if source == "native-state-row" {
+                    local_family(model, index)
+                } else {
+                    "physical-target-capture-consumption"
+                },
+                normal: x,
+                tighter: y,
+                difference,
+                bound,
+                atol,
+                ratio: value,
+            });
+        }
+    }
+    worst.ok_or("Empty local comparison".into())
+}
+fn pair_families(model: &Evolution) -> Vec<Vec<usize>> {
+    // Never SUMABS unlike units (counts and joules) into one error family.
+    let mut families = vec![
+        (0..model.region_count() * fuel_source::GROUPS).collect::<Vec<_>>(),
+        (model.region_count() * fuel_source::GROUPS..model.nc_dimension()).collect(),
+    ];
+    for slot in 0..fuel_history::ENERGY {
+        families.push(
+            (0..model.segment_count())
+                .map(|s| model.nc_dimension() + s * fuel_history::HISTORY + slot)
+                .collect(),
+        );
+    }
+    families.push(
+        model
+            .energy_rows()
+            .filter(|&i| i < model.cf_row())
+            .collect(),
+    );
+    families.push(vec![model.cf_row()]);
+    families.push((model.history_dimension()..model.target_row(0)).collect());
+    families.push((model.target_row(0)..model.mn_product_row(0)).collect());
+    // Live Mn inventories must also stand alone: unrelated passive capture
+    // progress must not dilute their aggregate comparison.
+    families.push(
+        model
+            .mn_targets()
+            .iter()
+            .map(|target| model.target_row(target.target))
+            .collect(),
+    );
+    families.push((model.mn_product_row(0)..model.ledger_row()).collect());
+    families.push(vec![model.escape_row(), model.collected_row()]);
+    families.push(vec![model.fuel_release_row()]);
+    families
+}
+
+struct RawPairComparator {
+    families: Vec<Vec<usize>>,
+}
+struct PairComparison {
+    local: LocalDiscrepancy,
+    family_ratio: f64,
+    observable_ratio: f64,
+    compared_families: usize,
+    negligible_families: usize,
+    raw_local_ratio: f64,
+    raw_family_ratio: f64,
+    nc_ratio: f64,
+    nc_worst: Option<(usize, usize, f64, f64, f64)>,
+}
+impl PairComparison {
+    fn failed(&self) -> bool {
+        self.local.ratio > 1.
+            || self.family_ratio > 1.
+            || self.observable_ratio > 1.
+            || self.nc_ratio > 1.
+    }
+    fn json(&self) -> String {
+        format!(
+            "{{\"comparisonScope\":\"one-common-time;not-full-pair\",\"accuracyPolicy\":\"source-consequences-1\",\"time\":{},\"local\":{},\"SUMABSFamilyPairRatio\":{},\"observablePairRatio\":{},\"comparedFamilyOutputs\":{},\"negligibleFamilyOutputs\":{},\"rawAtomCountDiagnostic\":{{\"localPairRatio\":{},\"SUMABSFamilyPairRatio\":{},\"admission\":false}},\"NCOperatorPairRatio\":{},\"worstNCOperator\":{}}}",
+            finite(self.local.time),
+            self.local.json(),
+            finite(self.family_ratio),
+            finite(self.observable_ratio),
+            self.compared_families,
+            self.negligible_families,
+            finite(self.raw_local_ratio),finite(self.raw_family_ratio),finite(self.nc_ratio),
+            self.nc_worst.map_or("null".into(), |(row,column,normal,tighter,scale)| format!("{{\"row\":{row},\"column\":{column},\"normal\":{},\"tighter\":{},\"rowScale\":{}}}",finite(normal),finite(tighter),finite(scale)))
+        )
+    }
+}
+impl RawPairComparator {
+    fn new(model: &Evolution) -> Self {
+        Self {
+            families: pair_families(model),
+        }
+    }
+    fn compare(&self, model: &Evolution, a: &Sample, b: &Sample) -> Result<PairComparison, String> {
+        if b.time <= 0. {
+            return Err("Invalid paired observable time".into());
+        }
+        let mut result = PairComparison {
+            local: local_discrepancy(model, a, b)?,
+            family_ratio: 0.,
+            observable_ratio: 0.,
+            compared_families: 0,
+            negligible_families: 0,
+            raw_local_ratio: 0.,
+            raw_family_ratio: 0.,
+            nc_ratio: 0.,
+            nc_worst: None,
+        };
+        // Native M/F receive the existing coordinate checks above.
+        // Also retain the OLD physical capture C=M+F comparison and
+        // its unchanged local and SUMABS-family thresholds.
+        if a.captured_targets.len() != b.captured_targets.len()
+            || a.captured_targets.len() != model.mn_product_row(0) - model.target_row(0)
+        {
+            return Err("Wrong common-output capture-consumption dimension".into());
+        }
+        let mut capture_error = 0.;
+        let mut capture_signal = 0.;
+        for (&x, &y) in a.captured_targets.iter().zip(&b.captured_targets) {
+            capture_error += (x - y).abs();
+            capture_signal += y.abs();
+        }
+        let capture_resolution = 20. * COUNT_ATOL * b.captured_targets.len() as f64;
+        if !capture_error.is_finite()
+            || !capture_signal.is_finite()
+            || !capture_resolution.is_finite()
+        {
+            return Err("Nonfinite capture-consumption comparison".into());
+        }
+        if capture_signal > 100. * capture_resolution {
+            result.compared_families += 1;
+            result.family_ratio = result.family_ratio.max(ratio(
+                capture_error,
+                1e-3 * capture_signal + capture_resolution,
+            )?);
+        } else {
+            result.negligible_families += 1;
+        }
+        for rows in &self.families {
+            let error = rows.iter().map(|&i| (a.y[i] - b.y[i]).abs()).sum::<f64>();
+            let signal = rows.iter().map(|&i| b.y[i].abs()).sum::<f64>();
+            let resolution = rows
+                .iter()
+                .map(|&i| {
+                    20. * if model.is_energy_row(i) {
+                        ENERGY_ATOL
+                    } else {
+                        COUNT_ATOL
+                    }
+                })
+                .sum::<f64>();
+            if !signal.is_finite() || !resolution.is_finite() || !error.is_finite() {
+                return Err("Nonfinite family comparison operand".into());
+            }
+            if signal > 100. * resolution {
+                result.compared_families += 1;
+                result.family_ratio = result
+                    .family_ratio
+                    .max(ratio(error, 1e-3 * signal + resolution)?);
+            } else {
+                result.negligible_families += 1;
+            }
+        }
+        for (x, y, absolute_resolution) in [
+            (
+                a.d.induced_fission_events_s,
+                b.d.induced_fission_events_s,
+                COUNT_ATOL,
+            ),
+            (a.d.escape_neutrons_s, b.d.escape_neutrons_s, COUNT_ATOL),
+            (a.d.collected_events_s, b.d.collected_events_s, COUNT_ATOL),
+            (a.d.capture_events_s, b.d.capture_events_s, COUNT_ATOL),
+            (a.d.cf_release_w, b.d.cf_release_w, ENERGY_ATOL),
+            (a.d.fuel_release_w, b.d.fuel_release_w, ENERGY_ATOL),
+            (
+                a.d.mn_electron_release_w,
+                b.d.mn_electron_release_w,
+                ENERGY_ATOL,
+            ),
+            (
+                a.d.mn_photon_release_w,
+                b.d.mn_photon_release_w,
+                ENERGY_ATOL,
+            ),
+        ] {
+            result.observable_ratio = result.observable_ratio.max(ratio(
+                (x - y).abs(),
+                1e-3 * y.abs() + 20. * absolute_resolution / b.time,
+            )?);
+        }
+        Ok(result)
+    }
+}
+
+// The old atom-count comparison remains evidence, not an admission rule for
+// coordinates explicitly replaced by the fixed provisional consequence table.
+struct PairComparator<'a> {
+    raw: RawPairComparator,
+    accuracy: &'a Accuracy,
+    families: Vec<Vec<usize>>,
+}
+impl<'a> PairComparator<'a> {
+    fn new(model: &Evolution, accuracy: &'a Accuracy) -> Self {
+        Self {
+            raw: RawPairComparator::new(model),
+            accuracy,
+            families: pair_families(model)
+                .into_iter()
+                .map(|rows| {
+                    rows.into_iter()
+                        .filter(|&r| !accuracy.affected(r))
+                        .collect()
+                })
+                .collect(),
+        }
+    }
+    fn compare(&self, model: &Evolution, a: &Sample, b: &Sample) -> Result<PairComparison, String> {
+        let mut result = self.raw.compare(model, a, b)?;
+        result.raw_local_ratio = result.local.ratio;
+        result.raw_family_ratio = result.family_ratio;
+        let mut selected = None;
+        for (i, (&x, &y)) in
+            a.y.iter()
+                .zip(&b.y)
+                .enumerate()
+                .filter(|(i, _)| !self.accuracy.affected(*i))
+        {
+            let atol = if model.is_energy_row(i) {
+                ENERGY_ATOL
+            } else {
+                COUNT_ATOL
+            };
+            let difference = (x - y).abs();
+            let bound = 1e-3 * y.abs() + 20. * atol;
+            let r = ratio(difference, bound)?;
+            if selected
+                .as_ref()
+                .is_none_or(|w: &LocalDiscrepancy| r > w.ratio)
+            {
+                selected = Some(LocalDiscrepancy {
+                    time: b.time,
+                    source: "strict-unaffected-native-row",
+                    index: i,
+                    family: local_family(model, i),
+                    normal: x,
+                    tighter: y,
+                    difference,
+                    bound,
+                    atol,
+                    ratio: r,
+                });
+            }
+        }
+        for c in self.accuracy.consequences(&a.y, &b.y, b.time)? {
+            if selected.as_ref().is_none_or(|w| c.ratio > w.ratio) {
+                selected = Some(LocalDiscrepancy {
+                    time: b.time,
+                    source: "selected-local-consequence",
+                    index: c.row,
+                    family: c.family,
+                    normal: c.normal,
+                    tighter: c.tighter,
+                    difference: c.difference,
+                    bound: c.bound,
+                    atol: if c.family == "remaining-donor-count" {
+                        COUNT_ATOL
+                    } else {
+                        ENERGY_ATOL
+                    },
+                    ratio: c.ratio,
+                });
+            }
+        }
+        result.local = selected.ok_or("Empty selected comparison")?;
+        result.family_ratio = 0.;
+        result.compared_families = 0;
+        result.negligible_families = 0;
+        for rows in &self.families {
+            if rows.is_empty() {
+                continue;
+            }
+            let error = rows.iter().map(|&r| (a.y[r] - b.y[r]).abs()).sum::<f64>();
+            let signal = rows.iter().map(|&r| b.y[r].abs()).sum::<f64>();
+            let resolution = rows
+                .iter()
+                .map(|&r| {
+                    20. * if model.is_energy_row(r) {
+                        ENERGY_ATOL
+                    } else {
+                        COUNT_ATOL
+                    }
+                })
+                .sum::<f64>();
+            if !error.is_finite() || !signal.is_finite() || !resolution.is_finite() {
+                return Err("Nonfinite selected family".into());
+            }
+            if signal > 100. * resolution {
+                result.compared_families += 1;
+                result.family_ratio = result
+                    .family_ratio
+                    .max(ratio(error, 1e-3 * signal + resolution)?);
+            } else {
+                result.negligible_families += 1;
+            }
+        }
+        let pattern = model.nc_pattern();
+        if a.nc_coefficients.len() != pattern.len() || b.nc_coefficients.len() != pattern.len() {
+            return Err("Wrong current NC coefficient comparison shape".into());
+        }
+        let mut row_scale = vec![0f64; model.nc_dimension()];
+        for ((&(row, _), &x), &y) in pattern
+            .iter()
+            .zip(&a.nc_coefficients)
+            .zip(&b.nc_coefficients)
+        {
+            if !x.is_finite() || !y.is_finite() {
+                return Err("Nonfinite current NC coefficient".into());
+            }
+            row_scale[row] = row_scale[row].max(x.abs()).max(y.abs());
+        }
+        for ((&(row, column), &x), &y) in pattern
+            .iter()
+            .zip(&a.nc_coefficients)
+            .zip(&b.nc_coefficients)
+        {
+            if !x.is_finite() {
+                return Err("Nonfinite normal NC coefficient".into());
+            }
+            let difference = (x - y).abs();
+            let r = if row_scale[row] == 0. {
+                if difference != 0. {
+                    return Err("Nonzero comparison against exact-zero NC row".into());
+                }
+                0.
+            } else {
+                ratio(difference, 1e-3 * row_scale[row])?
+            };
+            if result.nc_worst.is_none() || r > result.nc_ratio {
+                result.nc_ratio = r;
+                result.nc_worst = Some((row, column, x, y, row_scale[row]));
+            }
+        }
+        Ok(result)
+    }
+}
+
 fn check_schedule(samples: &[Sample]) -> Result<(), String> {
     if samples.len() != OUTPUTS.len()
         || samples
@@ -525,8 +1052,27 @@ fn check_schedule(samples: &[Sample]) -> Result<(), String> {
     }
     Ok(())
 }
+fn common_output_due(sample: usize, returned: f64, diagnostic_end: Option<f64>) -> bool {
+    sample < OUTPUTS.len()
+        && OUTPUTS[sample] <= returned
+        && diagnostic_end.is_none_or(|end| OUTPUTS[sample] <= end)
+}
+fn diagnostic_prefix_complete(samples: &[Sample], end: f64) -> bool {
+    let expected = OUTPUTS
+        .iter()
+        .take_while(|&&time| time <= end)
+        .copied()
+        .collect::<Vec<_>>();
+    samples.len() == expected.len()
+        && samples
+            .iter()
+            .zip(expected)
+            .all(|(sample, time)| sample.time == time)
+}
 struct Run {
     passed: bool,
+    diagnostic_completed: bool,
+    partial_pair: Option<PairComparison>,
     reason: String,
     last_admitted: f64,
     returned: f64,
@@ -542,9 +1088,7 @@ struct Run {
     rhs_seconds: f64,
     jvp_seconds: f64,
     base_seconds: f64,
-    prec_setup_seconds: f64,
-    prec_solve_seconds: f64,
-    preconditioner_metrics: String,
+    stage_metrics: String,
     workspace_bytes: usize,
     max_rhs_number_defect: f64,
     max_integrated_number_defect: f64,
@@ -552,6 +1096,7 @@ struct Run {
     max_cf_error: f64,
     failure_y: Vec<f64>,
     failure_yp: Vec<f64>,
+    failure_snapshot_source: &'static str,
     recoverable_errors: u64,
     last_recoverable: Option<String>,
     step_trace: Vec<(f64, f64)>,
@@ -587,19 +1132,24 @@ impl Run {
             .map(|(t, h)| format!("[{t:e},{h:e}]"))
             .collect::<Vec<_>>()
             .join(",");
-        let trace=self.samples.iter().map(|s|format!("{{\"time\":{},\"kind\":\"IDAGetDky-common-time-interpolation\",\"observables\":{}}}",s.time,diagnostic_json(s.d))).collect::<Vec<_>>().join(",");
-        let failure = if self.passed {
+        let trace=self.samples.iter().map(|s|format!("{{\"time\":{},\"kind\":\"IDAGetDky-common-time-interpolation\",\"observables\":{},\"targetCaptureConsumption\":{}}}",s.time,diagnostic_json(s.d),finite(s.captured_targets.iter().sum()))).collect::<Vec<_>>().join(",");
+        let failure = if self.passed || self.diagnostic_completed {
             "null".into()
         } else {
             format!(
-                "{{\"y\":{},\"yp\":{},\"cj\":{}}}",
+                "{{\"y\":{},\"yp\":{},\"cj\":{},\"source\":{}}}",
                 numbers(&self.failure_y),
                 numbers(&self.failure_yp),
-                finite(self.stats.cj)
+                finite(self.stats.cj),
+                quote(self.failure_snapshot_source)
             )
         };
+        let partial_pair = self
+            .partial_pair
+            .as_ref()
+            .map_or("null".into(), PairComparison::json);
         format!(
-            "{{\"passed\":{},\"reason\":{},\"lastAdmittedTime\":{},\"returnedTime\":{},\"wallSeconds\":{},\"stats\":{},\"initialWeightedDerivativeWRMS\":{},\"initialDominantRow\":{},\"initialDominantWeightedDerivative\":{},\"RHSCalls\":{},\"JVPCalls\":{},\"linearBaseCalls\":{},\"RHSSeconds\":{},\"JVPSeconds\":{},\"linearBaseSeconds\":{},\"preconditionerSetupSeconds\":{},\"preconditionerSolveSeconds\":{},\"preconditionerMetrics\":{},\"workspacePayloadBytes\":{},\"recoverableDomainErrors\":{},\"lastRecoverableDomainError\":{},\"startupAcceptedStepsTimeH\":[{}],\"minAcceptedH\":{},\"maxAcceptedH\":{},\"screenOutputCalls\":{},\"screenOutputSeconds\":{},\"maxRHSNumberDefect\":{},\"maxIntegratedNumberDefect\":{},\"maxIntegratedEnergyDefectJ\":{},\"maxCfProgressErrorJ\":{},\"trace\":[{}],\"failureSnapshot\":{}}}",
+            "{{\"passed\":{},\"partialPairComparison\":{partial_pair},\"reason\":{},\"lastAdmittedTime\":{},\"returnedTime\":{},\"wallSeconds\":{},\"stats\":{},\"initialWeightedDerivativeWRMS\":{},\"initialDominantRow\":{},\"initialDominantWeightedDerivative\":{},\"RHSCalls\":{},\"JVPCalls\":{},\"linearBaseCalls\":{},\"RHSSeconds\":{},\"JVPSeconds\":{},\"linearBaseSeconds\":{},\"linearStage\":{},\"workspacePayloadBytes\":{},\"recoverableDomainErrors\":{},\"lastRecoverableDomainError\":{},\"startupAcceptedStepsTimeH\":[{}],\"minAcceptedH\":{},\"maxAcceptedH\":{},\"screenOutputCalls\":{},\"screenOutputSeconds\":{},\"maxRHSNumberDefect\":{},\"maxIntegratedNumberDefect\":{},\"maxIntegratedEnergyDefectJ\":{},\"maxCfProgressErrorJ\":{},\"trace\":[{}],\"failureSnapshot\":{}}}",
             self.passed,
             quote(&self.reason),
             finite(self.last_admitted),
@@ -615,9 +1165,7 @@ impl Run {
             finite(self.rhs_seconds),
             finite(self.jvp_seconds),
             finite(self.base_seconds),
-            finite(self.prec_setup_seconds),
-            finite(self.prec_solve_seconds),
-            self.preconditioner_metrics,
+            self.stage_metrics,
             self.workspace_bytes,
             self.recoverable_errors,
             self.last_recoverable
@@ -640,11 +1188,19 @@ impl Run {
 
 fn run(
     model: &Evolution,
+    accuracy: &Accuracy,
     relative: f64,
+    absolute_refinement: f64,
     started: Instant,
     allowance: f64,
     checkpoint_path: &Path,
+    diagnostic_end: Option<f64>,
+    reference_samples: Option<&[Sample]>,
 ) -> Result<Run, String> {
+    if let Some(reference) = reference_samples {
+        check_schedule(reference)?;
+    }
+    let pair_comparator = reference_samples.map(|_| PairComparator::new(model, accuracy));
     let run_started = Instant::now();
     let n = model.state_count();
     let mut initial = model.initial_state();
@@ -660,10 +1216,7 @@ fn run(
     };
     coordinates.transform(&mut initial);
     coordinates.transform(&mut slopes);
-    let mut absolute = vec![COUNT_ATOL; n];
-    for r in model.energy_rows() {
-        absolute[r] = ENERGY_ATOL;
-    }
+    let absolute = accuracy.absolute(absolute_refinement)?;
     let mut norm = 0.;
     let mut ranked_derivatives = Vec::with_capacity(n);
     let (mut dominant_row, mut dominant_weighted) = (0, 0.);
@@ -684,7 +1237,7 @@ fn run(
     let top=ranked_derivatives.iter().take(8).map(|&(row,weighted)|format!("{{\"row\":{row},\"weightedDerivative\":{weighted:e},\"derivative\":{},\"absoluteTolerance\":{}}}",finite(slopes[row]),finite(absolute[row]))).collect::<Vec<_>>().join(",");
     let estimated_h = (0.001 * HORIZON).min(0.5 / initial_wrms);
     println!(
-        "{{\"kind\":\"initial-weights\",\"rtol\":{relative:e},\"coordinates\":{n},\"energyCoordinates\":{},\"countAtol\":{COUNT_ATOL:e},\"energyAtolJ\":{ENERGY_ATOL:e},\"solverLedgerCoordinate\":\"D=sum(N,C)-independentEventLedger\",\"ledgerConstraint\":\"unconstrained\",\"ledgerErrorMetric\":\"same-count-atol;stricter-aggregate-WRMS\",\"retainedCoordinates\":\"physical-event-ledger-L\",\"initialWeightedDerivativeWRMS\":{initial_wrms:e},\"pinnedDefaultInitialStepEstimate\":{estimated_h:e},\"estimateIsNotAcceptedStep\":true,\"topWeightedDerivativeRows\":[{top}],\"aggregateElapsedSeconds\":{}}}",
+        "{{\"kind\":\"initial-weights\",\"rtol\":{relative:e},\"accuracyPolicy\":\"source-consequences-1\",\"provisional\":true,\"absoluteToleranceDivisor\":{absolute_refinement:e},\"coordinates\":{n},\"energyCoordinates\":{},\"countAtol\":{COUNT_ATOL:e},\"energyAtolJ\":{ENERGY_ATOL:e},\"solverLedgerCoordinate\":\"D=sum(N,C)-independentEventLedger\",\"ledgerConstraint\":\"unconstrained\",\"ledgerErrorMetric\":\"same-count-atol;stricter-aggregate-WRMS\",\"retainedCoordinates\":\"physical-event-ledger-L\",\"initialWeightedDerivativeWRMS\":{initial_wrms:e},\"pinnedDefaultInitialStepEstimate\":{estimated_h:e},\"estimateIsNotAcceptedStep\":true,\"topWeightedDerivativeRows\":[{top}],\"aggregateElapsedSeconds\":{}}}",
         model.energy_rows().count(),
         finite(started.elapsed().as_secs_f64())
     );
@@ -693,17 +1246,19 @@ fn run(
         .map_err(|e| format!("Initial weight telemetry flush: {e}"))?;
     let workspace_bytes = work.buffer_bytes();
     let mut callbacks = Box::new(Callbacks::new(model, work, started, allowance)?);
+    callbacks.stage = Some(source_stage::Stage::new(model)?);
     let mut owned = Resources::new()?;
     let y = owned.vector(&initial)?;
     let yp = owned.vector(&slopes)?;
+    let endpoint_y = owned.vector(&initial)?;
+    let endpoint_yp = owned.vector(&slopes)?;
     let atol = owned.vector(&absolute)?;
     let dense = owned.vector(&initial)?;
     let mut constraint = vec![1.; n];
     constraint[model.ledger_row()] = 0.;
     let constraint = owned.vector(&constraint)?;
-    owned.spgmr(y, MAXL, RESTARTS)?;
+    owned.spgmr(y, 30, 0)?;
     owned.ida = unsafe { IDACreate(owned.context) };
-    callbacks.memory = owned.ida;
     if owned.ida.is_null() {
         return Err("IDACreate returned null".into());
     }
@@ -725,15 +1280,15 @@ fn run(
     )?;
     checked(
         unsafe { IDASetLinearSolver(owned.ida, owned.solver, ptr::null_mut()) },
-        "IDASetLinearSolver(SPGMR)",
+        "IDASetLinearSolver(SPGMR left maxl30 restart0)",
     )?;
     checked(
         unsafe { IDASetJacTimes(owned.ida, Some(jtsetup), jtimes) },
-        "IDASetJacTimes",
+        "IDASetJacTimes(complete analytic chain-rule signed-D stage)",
     )?;
     checked(
-        unsafe { IDASetPreconditioner(owned.ida, psetup, psolve) },
-        "IDASetPreconditioner",
+        unsafe { IDASetPreconditioner(owned.ida, block_setup, block_solve) },
+        "IDASetPreconditioner(fixed seven energy + complete precursor + complete slow blocks)",
     )?;
     checked(
         unsafe { IDASetStopTime(owned.ida, HORIZON) },
@@ -741,6 +1296,8 @@ fn run(
     )?;
     let mut out = Run {
         passed: false,
+        diagnostic_completed: false,
+        partial_pair: None,
         reason: String::new(),
         last_admitted: 0.,
         returned: 0.,
@@ -756,9 +1313,7 @@ fn run(
         rhs_seconds: 0.,
         jvp_seconds: 0.,
         base_seconds: 0.,
-        prec_setup_seconds: 0.,
-        prec_solve_seconds: 0.,
-        preconditioner_metrics: String::from("null"),
+        stage_metrics: String::from("null"),
         workspace_bytes,
         max_rhs_number_defect: 0.,
         max_integrated_number_defect: 0.,
@@ -766,6 +1321,7 @@ fn run(
         max_cf_error: 0.,
         failure_y: Vec::new(),
         failure_yp: Vec::new(),
+        failure_snapshot_source: "unadmitted-raw-IDA-output;no-current-retained-endpoint-extracted",
         recoverable_errors: 0,
         last_recoverable: None,
         step_trace: Vec::new(),
@@ -779,6 +1335,7 @@ fn run(
     let mut checkpoint_time = Instant::now();
     let mut physical_state = vec![0.; n];
     let mut physical_slopes = vec![0.; n];
+    let mut retained_endpoint_valid = false;
     coordinates.physical(&initial, &mut physical_state);
     coordinates.physical(&slopes, &mut physical_slopes);
     if checkpoint_path.exists() {
@@ -801,13 +1358,20 @@ fn run(
                 out.reason = e;
                 break;
             }
+            retained_endpoint_valid = false;
             let status = unsafe { IDASolve(owned.ida, HORIZON, &mut out.returned, y, yp, 2) }; // IDA_ONE_STEP
-            if status < 0 {
-                out.reason = format!("IDASolve returned {status}; callback={:?}", callbacks.error);
+            if let Err(error) = checked_ida_step(status, callbacks.error.as_deref()) {
+                out.reason = error;
                 break;
             }
             let screen_start = Instant::now();
-            coordinates.physical(unsafe { values(y, n) }?, &mut physical_state);
+            retained_endpoint(owned.ida, out.returned, y, yp, endpoint_y, endpoint_yp)?;
+            coordinates.physical(unsafe { values(endpoint_y, n) }?, &mut physical_state);
+            coordinates.physical(unsafe { values(endpoint_yp, n) }?, &mut physical_slopes);
+            if physical_slopes.iter().any(|v| !v.is_finite()) {
+                return Err("Nonfinite retained physical endpoint polynomial derivative".into());
+            }
+            retained_endpoint_valid = true;
             let state = &physical_state;
             if let Err(e) = model.validate_accepted_state(state) {
                 let negative = state
@@ -876,10 +1440,9 @@ fn run(
                 out.step_trace.push((out.returned, h));
             }
             out.last_admitted = out.returned;
-            callbacks.last_admitted = out.last_admitted;
             admitted_steps += 1;
             let mut crossed_output = false;
-            while sample < OUTPUTS.len() && OUTPUTS[sample] <= out.returned {
+            while common_output_due(sample, out.returned, diagnostic_end) {
                 checked(
                     unsafe { IDAGetDky(owned.ida, OUTPUTS[sample], 0, dense) },
                     "IDAGetDky common output",
@@ -891,19 +1454,43 @@ fn run(
                     .map_err(str::to_owned)?;
                 let common_d = callbacks.work.diagnostics().map_err(str::to_owned)?;
                 finite_diagnostics(common_d)?;
+                retain_common(checkpoint_path, sample, relative, OUTPUTS[sample], &common)?;
                 out.samples.push(Sample {
                     time: OUTPUTS[sample],
+                    captured_targets: captured_targets(model, &common)?,
                     y: common,
                     d: common_d,
+                    nc_coefficients: nc_coefficients(model, &callbacks.work)?,
                 });
                 sample += 1;
                 crossed_output = true;
                 out.screen_output_calls += 1;
+                if let Some(reference) = reference_samples {
+                    let comparison = pair_comparator.as_ref().unwrap().compare(
+                        model,
+                        &reference[sample - 1],
+                        out.samples.last().unwrap(),
+                    )?;
+                    println!(
+                        "{{\"kind\":\"partial-pair-comparison\",\"stateChart\":\"LDSRC-MNF\",\"fullPairQualified\":false,\"comparison\":{}}}",
+                        comparison.json()
+                    );
+                    io::stdout()
+                        .flush()
+                        .map_err(|e| format!("Partial comparison flush: {e}"))?;
+                    if comparison.failed() {
+                        out.reason = format!(
+                            "Partial paired common-output hard failure at {:e}s; no full pair qualification",
+                            comparison.local.time
+                        );
+                        out.partial_pair = Some(comparison);
+                        break;
+                    }
+                }
             }
             out.screen_output_calls += 1;
             out.screen_output_seconds += screen_start.elapsed().as_secs_f64();
             if crossed_output || checkpoint_time.elapsed().as_secs_f64() >= 1. {
-                coordinates.physical(unsafe { values(yp, n) }?, &mut physical_slopes);
                 checkpoint(
                     relative,
                     out.last_admitted,
@@ -917,9 +1504,18 @@ fn run(
                 )?;
                 checkpoint_time = Instant::now();
             }
+            if out.partial_pair.is_some() {
+                break;
+            }
             if out.returned >= HORIZON {
                 out.passed = true;
                 out.reason = "300s reached with independent accepted-state screens".into();
+                break;
+            }
+            if diagnostic_end.is_some_and(|end| out.samples.last().is_some_and(|s| s.time == end)) {
+                out.diagnostic_completed = true;
+                out.reason =
+                    "Diagnostic common-output prefix collected; not a 300s qualification".into();
                 break;
             }
         }
@@ -932,12 +1528,20 @@ fn run(
         Ok(stats) => out.stats = stats,
         Err(e) => {
             out.passed = false;
+            out.diagnostic_completed = false;
             out.reason = format!("{}; final statistics: {e}", out.reason);
         }
     }
-    if !out.passed {
-        out.failure_y = unsafe { values(y, n) }?.to_vec();
-        out.failure_yp = unsafe { values(yp, n) }?.to_vec();
+    if !out.passed && !out.diagnostic_completed {
+        let (failure_y, failure_yp) = if retained_endpoint_valid {
+            out.failure_snapshot_source =
+                "IDAGetDky-retained-endpoint-y-and-polynomial-yp;not-Newton-stage-yp";
+            (endpoint_y, endpoint_yp)
+        } else {
+            (y, yp)
+        };
+        out.failure_y = unsafe { values(failure_y, n) }?.to_vec();
+        out.failure_yp = unsafe { values(failure_yp, n) }?.to_vec();
         coordinates.transform(&mut out.failure_y);
         coordinates.transform(&mut out.failure_yp);
     }
@@ -949,13 +1553,91 @@ fn run(
     out.rhs_seconds = callbacks.rhs_seconds;
     out.jvp_seconds = callbacks.jvp_seconds;
     out.base_seconds = callbacks.base_seconds;
-    out.prec_setup_seconds = callbacks.preconditioner.setup_seconds;
-    out.prec_solve_seconds = callbacks.preconditioner.solve_seconds;
-    out.preconditioner_metrics = callbacks.preconditioner.metrics_json();
+    out.stage_metrics = callbacks.stage.as_ref().unwrap().metrics_json();
     out.wall = run_started.elapsed().as_secs_f64();
     Ok(out)
 }
 
+fn diagnose_local(path: &str, end: &str, allowance: &str, started: Instant) -> Result<(), String> {
+    let end = diagnostic_end(end)?;
+    let allowance: f64 = allowance
+        .parse()
+        .map_err(|_| "Invalid diagnostic allowance")?;
+    if !allowance.is_finite() || allowance <= REPORT_RESERVE_SECONDS {
+        return Err("Invalid diagnostic allowance/report reserve".into());
+    }
+    let input = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let prepared = evolution_input::parse(&input);
+    let model = Evolution::new(prepared.input).map_err(str::to_owned)?;
+    let accuracy = Accuracy::new(&model, &prepared.target_emissions)?;
+    let normal = run(
+        &model,
+        &accuracy,
+        RTOL[0],
+        1.,
+        started,
+        allowance - REPORT_RESERVE_SECONDS,
+        Path::new(&format!("{path}.diagnostic-normal.checkpoint")),
+        Some(end),
+        None,
+    )?;
+    let tighter = if normal.diagnostic_completed {
+        Some(run(
+            &model,
+            &accuracy,
+            RTOL[1],
+            10.,
+            started,
+            allowance - REPORT_RESERVE_SECONDS,
+            Path::new(&format!("{path}.diagnostic-tighter.checkpoint")),
+            Some(end),
+            None,
+        )?)
+    } else {
+        None
+    };
+    let mut worst: Option<LocalDiscrepancy> = None;
+    if let Some(tighter) = &tighter {
+        for (a, b) in normal.samples.iter().zip(&tighter.samples) {
+            let local = local_discrepancy(&model, a, b)?;
+            println!(
+                "{{\"kind\":\"local-pair-discrepancy\",\"stateChart\":\"LDSRC-MNF\",\"diagnosticOnly\":true,\"worst\":{}}}",
+                local.json()
+            );
+            if worst.as_ref().is_none_or(|w| local.ratio > w.ratio) {
+                worst = Some(local);
+            }
+        }
+    }
+    let completed = normal.diagnostic_completed
+        && diagnostic_prefix_complete(&normal.samples, end)
+        && tighter.as_ref().is_some_and(|t| t.diagnostic_completed)
+        && tighter
+            .as_ref()
+            .is_some_and(|t| diagnostic_prefix_complete(&t.samples, end))
+        && started.elapsed().as_secs_f64() <= allowance;
+    println!(
+        "{{\"kind\":\"local-pair-diagnostic-final\",\"passed\":false,\"qualification\":false,\"diagnosticCompleted\":{completed},\"stateChart\":\"LDSRC-MNF\",\"requestedCommonEnd\":{end:e},\"IDAStopTime\":300,\"allowanceSeconds\":{allowance:e},\"elapsedSeconds\":{},\"worst\":{},\"normal\":{},\"tighter\":{}}}",
+        finite(started.elapsed().as_secs_f64()),
+        worst.as_ref().map_or("null".into(), LocalDiscrepancy::json),
+        normal.json(),
+        tighter.as_ref().map_or("null".into(), Run::json)
+    );
+    io::stdout()
+        .flush()
+        .map_err(|e| format!("Diagnostic final flush: {e}"))?;
+    if !completed {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+fn diagnostic_end(value: &str) -> Result<f64, String> {
+    let value: f64 = value.parse().map_err(|_| "Invalid diagnostic common end")?;
+    if value >= HORIZON || !OUTPUTS.contains(&value) {
+        return Err("Diagnostic end must be an existing common time below300s".into());
+    }
+    Ok(value)
+}
 fn main() {
     let started = Instant::now();
     let result = catch_unwind(AssertUnwindSafe(|| main_result(started)))
@@ -971,17 +1653,29 @@ fn main() {
 }
 fn main_result(started: Instant) -> Result<(), String> {
     let args = std::env::args().collect::<Vec<_>>();
-    if args.len() == 5 && args[2] == "--audit" {
+    if args.len() == 5 && args[2] == "--diagnose-local" {
+        return diagnose_local(&args[1], &args[3], &args[4], started);
+    }
+    if args.len() == 3 && args[2] == "--structure" {
         let text = fs::read_to_string(&args[1]).map_err(|e| e.to_string())?;
         let model = Evolution::new(evolution_input::parse(&text).input).map_err(str::to_owned)?;
-        return source_audit::audit(
+        return source_stage::structure(&model, started);
+    }
+    if args.len() == 5 && args[2] == "--audit-block" {
+        let text = fs::read_to_string(&args[1]).map_err(|e| e.to_string())?;
+        let prepared = evolution_input::parse(&text);
+        let model = Evolution::new(prepared.input).map_err(str::to_owned)?;
+        let accuracy = Accuracy::new(&model, &prepared.target_emissions)?;
+        return source_stage::audit(
             &model,
+            &accuracy,
             &args[3],
-            args[4].parse().map_err(|_| "Invalid audit cj")?,
+            args[4].parse().map_err(|_| "Invalid block audit cj")?,
+            started,
         );
     }
     if args.len() != 3 {
-        return Err("Usage: source-evolution-ida FIXTURE_PATH AGGREGATE_ALLOWANCE_SECONDS".into());
+        return Err("Usage: source-evolution-ida FIXTURE_PATH AGGREGATE_ALLOWANCE_SECONDS | FIXTURE_PATH --structure | FIXTURE_PATH --audit-block STATEFILE CJ | FIXTURE_PATH --diagnose-local END ALLOWANCE_SECONDS".into());
     }
     let allowance: f64 = args[2].parse().map_err(|_| "Invalid allowance")?;
     if !allowance.is_finite() || allowance <= 0. {
@@ -990,6 +1684,7 @@ fn main_result(started: Instant) -> Result<(), String> {
     let text = fs::read_to_string(&args[1]).map_err(|e| e.to_string())?;
     let prepared = evolution_input::parse(&text);
     let model = Evolution::new(prepared.input).map_err(str::to_owned)?;
+    let accuracy = Accuracy::new(&model, &prepared.target_emissions)?;
     let construction = started.elapsed().as_secs_f64();
     let work_allowance = allowance - REPORT_RESERVE_SECONDS;
     if work_allowance <= 0. {
@@ -999,19 +1694,27 @@ fn main_result(started: Instant) -> Result<(), String> {
     let tighter_path = format!("{}.tighter.checkpoint", args[1]);
     let normal = run(
         &model,
+        &accuracy,
         RTOL[0],
+        1.,
         started,
         work_allowance,
         Path::new(&normal_path),
+        None,
+        None,
     )?;
     let mut tighter_setup_error = None;
     let tighter = if normal.passed {
         match run(
             &model,
+            &accuracy,
             RTOL[1],
+            10.,
             started,
             work_allowance,
             Path::new(&tighter_path),
+            None,
+            Some(&normal.samples),
         ) {
             Ok(r) => Some(r),
             Err(e) => {
@@ -1024,34 +1727,16 @@ fn main_result(started: Instant) -> Result<(), String> {
     };
     let mut passed = normal.passed && tighter.as_ref().is_some_and(|r| r.passed);
     let mut max_local_ratio: f64 = 0.;
+    let mut worst_local: Option<LocalDiscrepancy> = None;
     let mut max_family_ratio: f64 = 0.;
     let mut max_observable_ratio: f64 = 0.;
+    let mut max_nc_ratio: f64 = 0.;
+    let mut max_raw_local: f64 = 0.;
+    let mut max_raw_family: f64 = 0.;
+    let mut worst_nc = None;
     let mut negligible_family_outputs = 0usize;
     let mut compared_family_outputs = 0usize;
-    // Never SUMABS unlike units (counts and joules) into one error family.
-    let mut families = vec![
-        (0..prepared.neutron_coordinates).collect::<Vec<_>>(),
-        (prepared.neutron_coordinates..model.nc_dimension()).collect(),
-    ];
-    for slot in 0..fuel_history::ENERGY {
-        families.push(
-            (0..prepared.segments)
-                .map(|s| model.nc_dimension() + s * fuel_history::HISTORY + slot)
-                .collect(),
-        );
-    }
-    families.push(
-        model
-            .energy_rows()
-            .filter(|&i| i < model.cf_row())
-            .collect(),
-    );
-    families.push(vec![model.cf_row()]);
-    families.push((model.history_dimension()..model.target_row(0)).collect());
-    families.push((model.target_row(0)..model.mn_row(0)).collect());
-    families.push((model.mn_row(0)..model.ledger_row()).collect());
-    families.push(vec![model.escape_row(), model.collected_row()]);
-    families.push(vec![model.fuel_release_row()]);
+    let comparator = PairComparator::new(&model, &accuracy);
     // Pair-dependent gates do not exist until both complete arms exist. A
     // failed/missing arm must never publish default zero ratios as evidence.
     let pair_evaluated = passed;
@@ -1061,68 +1746,23 @@ fn main_result(started: Instant) -> Result<(), String> {
             check_schedule(&normal.samples)?;
             check_schedule(&t.samples)?;
             for (a, b) in normal.samples.iter().zip(&t.samples) {
-                if a.time != b.time {
-                    return Err("Common output times differ".into());
+                let comparison = comparator.compare(&model, a, b)?;
+                max_local_ratio = max_local_ratio.max(comparison.local.ratio);
+                max_family_ratio = max_family_ratio.max(comparison.family_ratio);
+                max_observable_ratio = max_observable_ratio.max(comparison.observable_ratio);
+                max_raw_local = max_raw_local.max(comparison.raw_local_ratio);
+                max_raw_family = max_raw_family.max(comparison.raw_family_ratio);
+                if worst_nc.is_none() || comparison.nc_ratio > max_nc_ratio {
+                    worst_nc = comparison.nc_worst;
                 }
-                for i in 0..model.state_count() {
-                    let atol = if model.is_energy_row(i) {
-                        ENERGY_ATOL
-                    } else {
-                        COUNT_ATOL
-                    };
-                    let local = ratio((a.y[i] - b.y[i]).abs(), 1e-3 * b.y[i].abs() + 20. * atol)?;
-                    max_local_ratio = max_local_ratio.max(local);
-                }
-                for rows in &families {
-                    let error = rows.iter().map(|&i| (a.y[i] - b.y[i]).abs()).sum::<f64>();
-                    let signal = rows.iter().map(|&i| b.y[i].abs()).sum::<f64>();
-                    let resolution = rows
-                        .iter()
-                        .map(|&i| {
-                            20. * if model.is_energy_row(i) {
-                                ENERGY_ATOL
-                            } else {
-                                COUNT_ATOL
-                            }
-                        })
-                        .sum::<f64>();
-                    if !signal.is_finite() || !resolution.is_finite() || !error.is_finite() {
-                        return Err("Nonfinite family comparison operand".into());
-                    }
-                    if signal > 100. * resolution {
-                        compared_family_outputs += 1;
-                        max_family_ratio =
-                            max_family_ratio.max(ratio(error, 1e-3 * signal + resolution)?);
-                    } else {
-                        negligible_family_outputs += 1;
-                    }
-                }
-                for (x, y, absolute_resolution) in [
-                    (
-                        a.d.induced_fission_events_s,
-                        b.d.induced_fission_events_s,
-                        COUNT_ATOL,
-                    ),
-                    (a.d.escape_neutrons_s, b.d.escape_neutrons_s, COUNT_ATOL),
-                    (a.d.collected_events_s, b.d.collected_events_s, COUNT_ATOL),
-                    (a.d.capture_events_s, b.d.capture_events_s, COUNT_ATOL),
-                    (a.d.cf_release_w, b.d.cf_release_w, ENERGY_ATOL),
-                    (a.d.fuel_release_w, b.d.fuel_release_w, ENERGY_ATOL),
-                    (
-                        a.d.mn_electron_release_w,
-                        b.d.mn_electron_release_w,
-                        ENERGY_ATOL,
-                    ),
-                    (
-                        a.d.mn_photon_release_w,
-                        b.d.mn_photon_release_w,
-                        ENERGY_ATOL,
-                    ),
-                ] {
-                    max_observable_ratio = max_observable_ratio.max(ratio(
-                        (x - y).abs(),
-                        1e-3 * y.abs() + 20. * absolute_resolution / b.time,
-                    )?);
+                max_nc_ratio = max_nc_ratio.max(comparison.nc_ratio);
+                compared_family_outputs += comparison.compared_families;
+                negligible_family_outputs += comparison.negligible_families;
+                if worst_local
+                    .as_ref()
+                    .is_none_or(|worst| comparison.local.ratio > worst.ratio)
+                {
+                    worst_local = Some(comparison.local);
                 }
             }
             if let (Some(a), Some(b)) = (normal.samples.last(), t.samples.last()) {
@@ -1170,11 +1810,32 @@ fn main_result(started: Instant) -> Result<(), String> {
             passed &= max_local_ratio <= 1.
                 && max_family_ratio <= 1.
                 && max_observable_ratio <= 1.
+                && max_nc_ratio <= 1.
                 && developed;
         }
     }
     passed &= started.elapsed().as_secs_f64() <= allowance;
     let developed_report = compared(pair_evaluated, developed);
+    let worst_local_json = worst_local
+        .as_ref()
+        .map_or("null".into(), LocalDiscrepancy::json);
+    let nc_report = compared(pair_evaluated, finite(max_nc_ratio));
+    let raw_local_report = compared(pair_evaluated, finite(max_raw_local));
+    let raw_family_report = compared(pair_evaluated, finite(max_raw_family));
+    let nc_worst_json = worst_nc.map_or("null".into(), |(row, column, normal, tighter, scale)| {
+        format!(
+            "{{\"row\":{row},\"column\":{column},\"normal\":{},\"tighter\":{},\"rowScale\":{}}}",
+            finite(normal),
+            finite(tighter),
+            finite(scale)
+        )
+    });
+    println!(
+        "{{\"kind\":\"local-pair-worst\",\"stateChart\":\"LDSRC-MNF\",\"evaluated\":{pair_evaluated},\"worst\":{}}}",
+        worst_local
+            .as_ref()
+            .map_or("null".into(), LocalDiscrepancy::json)
+    );
     let last = if let Some(t) = &tighter {
         normal.last_admitted.min(t.last_admitted)
     } else if normal.passed {
@@ -1183,7 +1844,10 @@ fn main_result(started: Instant) -> Result<(), String> {
         normal.last_admitted
     };
     println!(
-        "{{\"passed\":{passed},\"scope\":\"Birth-driven represented ORIGINAL fixed-geometry/fixed-temperature source and finite target/history advancement; no thermal feedback, deposited heat, plant or live qualification\",\"coordinates\":{},\"physicalCoordinates\":{},\"auditIntegrals\":{},\"neutronCoordinates\":{},\"precursorCoordinates\":{},\"segments\":{},\"waterOwners\":{},\"targets\":{},\"MnTargets\":{},\"lastAdmittedTime\":{},\"constructionSeconds\":{},\"wallSeconds\":{},\"settings\":{{\"horizon\":300,\"rtol\":[1e-5,1e-6],\"countAtol\":1e-3,\"energyAtolJ\":1e-12,\"preconditioner\":\"spatial-KLU-fixed-forward-energy-GS-local-history\",\"SPGMRmaxl\":30,\"SPGMRrestarts\":0,\"physicalNonnegativeConstraints\":true,\"solverLedgerCoordinate\":\"D=sum(N,C)-independentEventLedger\",\"ledgerConstraint\":\"unconstrained\",\"ledgerErrorMetric\":\"same-count-atol;stricter-aggregate-WRMS\",\"retainedCoordinates\":\"physical-event-ledger-L\",\"allowanceSeconds\":{},\"reportReserveSeconds\":2,\"rateResolution\":\"chosen20atol/time;notderivedstockerrorbound\",\"outputs\":{:?}}},\"gates\":{{\"localPairRatio\":{},\"SUMABSFamilyPairRatio\":{},\"observablePairRatio\":{},\"comparedFamilyOutputs\":{compared_family_outputs},\"negligibleFamilyOutputs\":{negligible_family_outputs},\"developedSignal\":{developed_report},\"strictAcceptedBoundary\":true}},\"normal\":{},\"tighter\":{},\"tighterSetupFailure\":{}}}",
+        "{{\"kind\":\"source-state-chart\",\"stateChart\":\"LDSRC-MNF\",\"reactionCoordinates\":\"Mn56-inventory-and-Fe56-product\",\"derivedCaptureConsumption\":\"Mn56+Fe56\",\"errorBasisChange\":\"direct-Mn56/Fe56;same-state-dimension;source-consequence-derived-atol\",\"pairedCaptureCriteria\":\"source-consequences-1;old-raw-count-ratios-diagnostic;Fe-count-strict\"}}"
+    );
+    println!(
+        "{{\"passed\":{passed},\"stateChart\":\"LDSRC-MNF\",\"errorBasisChange\":\"direct-Mn56/Fe56;same-state-dimension;source-consequence-derived-atol\",\"scope\":\"Birth-driven represented ORIGINAL fixed-geometry/fixed-temperature source and finite target/history advancement; no thermal feedback, deposited heat, plant or live qualification\",\"coordinates\":{},\"physicalCoordinates\":{},\"auditIntegrals\":{},\"neutronCoordinates\":{},\"precursorCoordinates\":{},\"segments\":{},\"waterOwners\":{},\"targets\":{},\"MnTargets\":{},\"lastAdmittedTime\":{},\"constructionSeconds\":{},\"wallSeconds\":{},\"settings\":{{\"accuracyPolicy\":\"source-consequences-1\",\"provisional\":true,\"absoluteToleranceRefinement\":10,\"resolutionScope\":\"per-channel-source-consequences;not-aggregate-thermal-recipient-or-nearcritical-sensitivity-certificate\",\"horizon\":300,\"rtol\":[1e-5,1e-6],\"countAtol\":1e-3,\"energyAtolJ\":1e-12,\"linearSolver\":\"SPGMR-left-complete-chain-rule-JVP-signed-D-stage-seven-energy-ILU0-precursor-slow-KLU\",\"maxl\":30,\"restarts\":0,\"IDAlinearTolerance\":\"pinned-default-unchanged\",\"physicalNonnegativeConstraints\":true,\"solverLedgerCoordinate\":\"D=sum(N,C)-independentEventLedger\",\"ledgerConstraint\":\"unconstrained\",\"ledgerErrorMetric\":\"same-count-atol;stricter-aggregate-WRMS\",\"retainedCoordinates\":\"physical-event-ledger-L\",\"allowanceSeconds\":{},\"reportReserveSeconds\":2,\"rateResolution\":\"chosen20atol/time;notderivedstockerrorbound\",\"outputs\":{:?}}},\"gates\":{{\"fullPairComparisonEvaluated\":{pair_evaluated},\"localPairRatio\":{},\"worstLocalPair\":{worst_local_json},\"SUMABSFamilyPairRatio\":{},\"observablePairRatio\":{},\"NCOperatorPairRatio\":{nc_report},\"worstNCOperator\":{nc_worst_json},\"rawAtomCountDiagnostic\":{{\"localPairRatio\":{raw_local_report},\"SUMABSFamilyPairRatio\":{raw_family_report},\"admission\":false}},\"comparedFamilyOutputs\":{compared_family_outputs},\"negligibleFamilyOutputs\":{negligible_family_outputs},\"developedSignal\":{developed_report},\"strictAcceptedBoundary\":true}},\"normal\":{},\"tighter\":{},\"tighterSetupFailure\":{}}}",
         model.state_count(),
         model.ledger_row(),
         model.state_count() - model.ledger_row(),
@@ -1229,6 +1893,236 @@ fn main_result(started: Instant) -> Result<(), String> {
 mod tests {
     use super::*;
     #[test]
+    fn diagnostic_end_never_redefines_the_mission_horizon() {
+        assert_eq!(diagnostic_end("0.1").unwrap(), 0.1);
+        for value in ["0", "0.2", "300", "NaN", "inf"] {
+            assert!(diagnostic_end(value).is_err());
+        }
+        assert_eq!(HORIZON, 300.);
+        assert!(common_output_due(2, 1.5, Some(0.1)));
+        assert!(!common_output_due(3, 1.5, Some(0.1)));
+        assert!(common_output_due(3, 1.5, None));
+        assert!(!common_output_due(OUTPUTS.len(), 300., None));
+        let mut samples = OUTPUTS[..3]
+            .iter()
+            .map(|&time| Sample {
+                time,
+                y: Vec::new(),
+                captured_targets: Vec::new(),
+                nc_coefficients: Vec::new(),
+                d: Diagnostics::default(),
+            })
+            .collect::<Vec<_>>();
+        assert!(diagnostic_prefix_complete(&samples, 0.1));
+        samples.pop();
+        assert!(!diagnostic_prefix_complete(&samples, 0.1));
+        samples.push(Sample {
+            time: 1.,
+            y: Vec::new(),
+            captured_targets: Vec::new(),
+            nc_coefficients: Vec::new(),
+            d: Diagnostics::default(),
+        });
+        assert!(!diagnostic_prefix_complete(&samples, 0.1));
+    }
+    #[test]
+    fn local_locator_retains_existing_native_and_derived_capture_bounds() {
+        let model = Evolution::new(source_stage::fixture::input()).unwrap();
+        let mut a = Sample {
+            time: 0.01,
+            y: model.initial_state(),
+            captured_targets: Vec::new(),
+            nc_coefficients: Vec::new(),
+            d: Diagnostics::default(),
+        };
+        let mut b = Sample {
+            time: 0.01,
+            y: model.initial_state(),
+            captured_targets: Vec::new(),
+            nc_coefficients: Vec::new(),
+            d: Diagnostics::default(),
+        };
+        let target = model.mn_targets()[0].target;
+        a.y[model.target_row(target)] = 0.1;
+        a.y[model.mn_product_row(0)] = 0.1;
+        a.captured_targets = captured_targets(&model, &a.y).unwrap();
+        b.captured_targets = captured_targets(&model, &b.y).unwrap();
+        let worst = local_discrepancy(&model, &a, &b).unwrap();
+        assert_eq!(worst.source, "derived-capture-target");
+        assert_eq!(worst.index, target);
+        assert_eq!(worst.time, 0.01);
+        assert_eq!(worst.bound, 20. * COUNT_ATOL);
+        assert_eq!(worst.ratio, 10.);
+        a.y[0] = 1.;
+        let worst = local_discrepancy(&model, &a, &b).unwrap();
+        assert_eq!(worst.source, "native-state-row");
+        assert_eq!(worst.index, 0);
+        assert_eq!(worst.family, "neutrons");
+        assert_eq!(worst.ratio, 50.);
+        a.y[0] = f64::NAN;
+        assert!(local_discrepancy(&model, &a, &b).is_err());
+        a.time = 1.;
+        assert!(local_discrepancy(&model, &a, &b).is_err());
+    }
+    #[test]
+    fn shared_pair_comparator_stops_each_hard_failure_without_prefix_qualification() {
+        let model = Evolution::new(source_stage::fixture::input()).unwrap();
+        let comparator = RawPairComparator::new(&model);
+        let make = || Sample {
+            time: 1.,
+            y: model.initial_state(),
+            captured_targets: captured_targets(&model, &model.initial_state()).unwrap(),
+            nc_coefficients: Vec::new(),
+            d: Diagnostics::default(),
+        };
+        let mut a = make();
+        let mut b = make();
+        assert!(!comparator.compare(&model, &a, &b).unwrap().failed());
+        a.y[0] = 20. * COUNT_ATOL;
+        assert_eq!(comparator.compare(&model, &a, &b).unwrap().local.ratio, 1.);
+        assert!(!comparator.compare(&model, &a, &b).unwrap().failed());
+        a.y[0] *= 1.001;
+        assert!(comparator.compare(&model, &a, &b).unwrap().failed());
+        // Aggregate and observable checks retain their independently chosen
+        // thresholds. They do not establish any full-horizon completion.
+        a = make();
+        b = make();
+        for (x, y) in a.y[..model.region_count() * fuel_source::GROUPS]
+            .iter_mut()
+            .zip(&mut b.y[..model.region_count() * fuel_source::GROUPS])
+        {
+            *x = 1002.;
+            *y = 1000.;
+        }
+        let comparison = comparator.compare(&model, &a, &b).unwrap();
+        assert!(comparison.family_ratio > 1.);
+        assert!(comparison.failed());
+        a = make();
+        b = make();
+        a.d.fuel_release_w = 20. * ENERGY_ATOL;
+        let comparison = comparator.compare(&model, &a, &b).unwrap();
+        assert_eq!(comparison.observable_ratio, 1.);
+        assert!(!comparison.failed());
+        a.d.fuel_release_w *= 1.001;
+        let comparison = comparator.compare(&model, &a, &b).unwrap();
+        assert_eq!(comparison.local.ratio, 0.);
+        assert!(comparison.failed());
+        assert!(comparison.json().contains("one-common-time;not-full-pair"));
+        a.d.fuel_release_w = f64::NAN;
+        assert!(comparator.compare(&model, &a, &b).is_err());
+        a = make();
+        b = make();
+        b.time = 2.;
+        assert!(comparator.compare(&model, &a, &b).is_err());
+    }
+    #[test]
+    fn provisional_consequences_replace_only_selected_counts_and_tighten_all_atols() {
+        let model = Evolution::new(source_stage::fixture::input()).unwrap();
+        let accuracy = Accuracy::new(
+            &model,
+            &vec![[0., 1e-12]; model.target_reference_atoms().len()],
+        )
+        .unwrap();
+        let normal = accuracy.absolute(1.).unwrap();
+        let tighter = accuracy.absolute(10.).unwrap();
+        for (&a, &b) in normal.iter().zip(&tighter) {
+            assert_eq!(b, a / 10.);
+        }
+        assert_eq!(normal[0], COUNT_ATOL);
+        assert_eq!(normal[model.ledger_row()], COUNT_ATOL);
+        assert_eq!(normal[model.cf_row()], ENERGY_ATOL);
+        for slot in 3..9 {
+            assert!(!accuracy.affected(model.nc_dimension() + slot));
+        }
+        assert!(!accuracy.affected(model.mn_product_row(0)));
+        let make = || {
+            let y = model.initial_state();
+            let mut work = model.workspace();
+            model.evaluate_into(&y, &mut work).unwrap();
+            Sample {
+                time: 0.001,
+                captured_targets: captured_targets(&model, &y).unwrap(),
+                y,
+                d: Diagnostics::default(),
+                nc_coefficients: nc_coefficients(&model, &work).unwrap(),
+            }
+        };
+        let mut a = make();
+        let mut b = make();
+        // Ordinary target 1 is not the Mn target 0. This fails the old raw
+        // 0.02-atom floor but passes its declared energy/donor consequences.
+        assert!(!model.mn_targets().iter().any(|m| m.target == 1));
+        a.y[model.target_row(1)] = 0.03;
+        a.captured_targets = captured_targets(&model, &a.y).unwrap();
+        let comparator = PairComparator::new(&model, &accuracy);
+        let result = comparator.compare(&model, &a, &b).unwrap();
+        assert!(result.raw_local_ratio > 1.);
+        assert!(!result.failed());
+        assert!(result.json().contains("\"admission\":false"));
+        // Unaffected neutron, Fe product, and observable checks still refuse.
+        a.y[0] = 0.021;
+        assert!(comparator.compare(&model, &a, &b).unwrap().failed());
+        a = make();
+        a.y[model.mn_product_row(0)] = 0.021;
+        a.captured_targets = captured_targets(&model, &a.y).unwrap();
+        assert!(comparator.compare(&model, &a, &b).unwrap().failed());
+        // Coefficient row normalization is explicit; an all-zero tight row
+        // has no artificial relative denominator.
+        a = make();
+        b = make();
+        a.nc_coefficients[0] += 10. * b.nc_coefficients[0].abs() + 1.;
+        assert!(comparator.compare(&model, &a, &b).unwrap().nc_ratio > 1.);
+        a = make();
+        b = make();
+        b.nc_coefficients.fill(0.);
+        assert!((comparator.compare(&model, &a, &b).unwrap().nc_ratio - 1000.).abs() < 1e-10);
+        a.nc_coefficients.fill(0.);
+        assert_eq!(comparator.compare(&model, &a, &b).unwrap().nc_ratio, 0.);
+        a.nc_coefficients[0] = f64::NAN;
+        assert!(comparator.compare(&model, &a, &b).is_err());
+    }
+    #[test]
+    fn persisted_common_states_are_distinct_y_only_interpolants() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let base =
+            std::env::temp_dir().join(format!("leitbild-common-{}-{nonce}", std::process::id()));
+        let path = format!("{}.common-0.state", base.display());
+        retain_common(&base, 0, RTOL[0], 0.001, &[-0., 1e-300]).unwrap();
+        let bytes = fs::read(&path).unwrap();
+        assert_eq!(&bytes[..9], b"LDSRC-CMN");
+        assert_eq!(bytes.len(), 33 + 2 * 8);
+        assert_eq!(u64::from_le_bytes(bytes[9..17].try_into().unwrap()), 2);
+        assert_eq!(f64::from_le_bytes(bytes[17..25].try_into().unwrap()), 0.001);
+        assert_eq!(
+            f64::from_le_bytes(bytes[25..33].try_into().unwrap()),
+            RTOL[0]
+        );
+        assert_eq!(
+            f64::from_le_bytes(bytes[33..41].try_into().unwrap()).to_bits(),
+            (-0f64).to_bits()
+        );
+        assert_eq!(
+            f64::from_le_bytes(bytes[41..49].try_into().unwrap()),
+            1e-300
+        );
+        assert!(retain_common(&base, 0, RTOL[0], 0.001, &[0., 0.]).is_err());
+        fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn sample_capture_view_sums_direct_intermediate_and_product() {
+        let model = Evolution::new(source_stage::fixture::input()).unwrap();
+        let mut y = model.initial_state();
+        let target = model.mn_targets()[0].target;
+        y[model.target_row(target)] = 1e-100;
+        y[model.mn_product_row(0)] = 10.;
+        assert_eq!(captured_targets(&model, &y).unwrap()[target], 10.);
+        // The view must never be used to reconstruct its tiny authoritative M.
+        assert_eq!(y[model.target_row(target)], 1e-100);
+    }
+    #[test]
     fn diagnostic_strings_and_nonfinite_snapshots_remain_json() {
         assert_eq!(quote("x\n\"\\\u{0001}"), "\"x\\n\\\"\\\\\\u0001\"");
         assert_eq!(numbers(&[1., f64::NAN, f64::INFINITY]), "[1e0,null,null]");
@@ -1238,11 +2132,11 @@ mod tests {
         assert_eq!(compared(true, finite(0.)), "0e0");
     }
     #[test]
-    fn selected_spgmr_constructor_and_owned_cleanup() {
+    fn selected_iterative_constructor_and_owned_cleanup() {
         let mut resources = Resources::new().unwrap();
         let vector = resources.vector(&[0., 0.]).unwrap();
-        assert!(!resources.spgmr(vector, MAXL, RESTARTS).unwrap().is_null());
-        assert!(resources.spgmr(vector, MAXL, RESTARTS).is_err());
+        assert!(!resources.spgmr(vector, 30, 0).unwrap().is_null());
+        assert!(resources.spgmr(vector, 30, 0).is_err());
     }
     #[test]
     fn nonfinite_independent_metrics_never_pass_by_max_or_comparison() {
@@ -1269,6 +2163,8 @@ mod tests {
                 time,
                 y: Vec::new(),
                 d: Diagnostics::default(),
+                captured_targets: Vec::new(),
+                nc_coefficients: Vec::new(),
             })
             .collect::<Vec<_>>();
         assert!(check_schedule(&samples).is_ok());
@@ -1278,6 +2174,8 @@ mod tests {
             time: 300.001,
             y: Vec::new(),
             d: Diagnostics::default(),
+            captured_targets: Vec::new(),
+            nc_coefficients: Vec::new(),
         });
         assert!(check_schedule(&samples).is_err());
         samples.clear();

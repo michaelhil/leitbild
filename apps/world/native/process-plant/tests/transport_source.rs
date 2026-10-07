@@ -2,6 +2,8 @@
 mod fuel_source;
 #[path = "../src/moderator_source.rs"]
 mod moderator_source;
+#[path = "../src/optical_source.rs"]
+mod optical_source;
 #[path = "../src/transport_source.rs"]
 mod transport_source;
 use transport_source::*;
@@ -289,6 +291,197 @@ fn escape_collision_tangent_and_accepted_finite_boundary() {
     assert!(m.validate_accepted_state(&[f64::INFINITY; 7]).is_err());
     assert!(m.validate_accepted_state(&[0.; 6]).is_err());
     m.validate_accepted_state(&[0.; 7]).unwrap();
+}
+fn internal_face(targets: Vec<usize>, area: f64) -> Face {
+    Face {
+        left: 0,
+        right: None,
+        area,
+        left_distance: 0.,
+        right_distance: None,
+        law: FaceLaw::InternalOptical { targets },
+    }
+}
+#[test]
+fn internal_panel_two_sides_repeated_targets_signed_ledger_and_amount_matrix() {
+    let m = Model::new(
+        vec![2.],
+        vec![4.],
+        [3.; 7],
+        vec![internal_face(vec![0, 1, 0], 2.)],
+        2,
+    )
+    .unwrap();
+    let mut w = m.workspace();
+    let optical = OpticalInput {
+        transmission: [0.25; 7],
+        loss: [0.75; 7],
+        from_left: vec![[0.2; 7], [0.3; 7], [0.5; 7]],
+        from_right: vec![[0.1; 7], [0.6; 7], [0.3; 7]],
+    };
+    m.update(&[[2.; 7]], &[optical.clone()], &mut w).unwrap();
+    let before = w.face_coefficients().unwrap()[0][0];
+    m.update(&[[f64::MAX; 7]], &[optical], &mut w).unwrap();
+    let c = w.face_coefficients().unwrap()[0][0];
+    assert_eq!(before.capture_left.value, c.capture_left.value);
+    assert_eq!(c.capture_left.derivatives, [0., 0., -0.5]);
+    assert_eq!(c.capture_right.derivatives, [0., 0., -0.5]);
+    assert_eq!(c.capture_per_loss_left.value, 0.5);
+    assert_eq!(c.capture_per_loss_right.derivatives, [0.; 3]);
+    assert_eq!(c.escape.value, 0.);
+    assert_eq!(c.exchange.value, 0.);
+    let n = vec![2., -1., 0., 3., -4., 1., 0.5];
+    let mut rate = vec![0.; 7];
+    let mut capture = vec![[0.; 7]; 2];
+    let mut escape = [0.; 7];
+    m.apply(&w, &n, &mut rate, &mut capture, &mut escape)
+        .unwrap();
+    for g in 0..7 {
+        let phi = 3. * n[g] / 2.;
+        close(rate[g], -2. * phi * 0.75 / 2.);
+        close(capture[0][g], 2. * phi * 0.75 / 4. * 1.1);
+        close(capture[1][g], 2. * phi * 0.75 / 4. * 0.9);
+        assert!(
+            (rate[g] + capture[0][g] + capture[1][g]).abs() <= 8. * f64::EPSILON * rate[g].abs()
+        );
+        assert_eq!(escape[g], 0.);
+    }
+    let mut action = vec![0.; 7];
+    for (c, v) in m.coordinates().iter().zip(w.coefficients().unwrap()) {
+        action[c.row] += v * n[c.column];
+    }
+    for (a, b) in action.iter().zip(&rate) {
+        close(*a, *b);
+    }
+    assert!(m.validate_accepted_state(&n).is_err());
+}
+#[test]
+fn internal_panel_thin_black_transparent_and_area_split_limits() {
+    let m = Model::new(
+        vec![2.],
+        vec![4.],
+        [3.; 7],
+        vec![internal_face(vec![0, 1], 2.)],
+        2,
+    )
+    .unwrap();
+    let mut w = m.workspace();
+    for t in [0., 0.3, 1.] {
+        m.update(&[[0.; 7]], &[input(t)], &mut w).unwrap();
+        let c = w.face_coefficients().unwrap()[0][0];
+        close(
+            c.capture_left.value + c.capture_right.value,
+            2. * (1. - t) / 2.,
+        );
+        let split = Model::new(
+            vec![2.],
+            vec![4.],
+            [3.; 7],
+            vec![internal_face(vec![0, 1], 1.), internal_face(vec![0, 1], 1.)],
+            2,
+        )
+        .unwrap();
+        let mut sw = split.workspace();
+        split
+            .update(&[[0.; 7]], &[input(t), input(t)], &mut sw)
+            .unwrap();
+        close(
+            sw.coefficients().unwrap().iter().sum(),
+            w.coefficients().unwrap().iter().sum(),
+        );
+    }
+    // A single physical thin slab: 1-2E3(tau) ~ 2*tau, giving Sigma*V*phi.
+    let thin = optical_source::layer_response(&[optical_source::Layer {
+        columns: vec![optical_source::Column {
+            target: 0,
+            atoms_per_m2: 1.,
+            sigma_m2: [1e-9; 7],
+        }],
+    }])
+    .unwrap();
+    let one = Model::new(
+        vec![2.],
+        vec![4.],
+        [3.; 7],
+        vec![internal_face(vec![0], 2.)],
+        1,
+    )
+    .unwrap();
+    let mut ow = one.workspace();
+    one.update(&[[0.; 7]], &[thin.input], &mut ow).unwrap();
+    let coefficient = ow.face_coefficients().unwrap()[0][0];
+    assert!(
+        ((coefficient.capture_left.value + coefficient.capture_right.value) / (2. * 1e-9) - 1.)
+            .abs()
+            < 1e-7
+    );
+    for h in [1e-4, 5e-5] {
+        m.update(&[[0.; 7]], &[input(0.37 + h)], &mut w).unwrap();
+        let p = w.face_coefficients().unwrap()[0][0];
+        m.update(&[[0.; 7]], &[input(0.37 - h)], &mut w).unwrap();
+        let n = w.face_coefficients().unwrap()[0][0];
+        close(
+            (p.capture_left.value - n.capture_left.value) / (2. * h),
+            -0.5,
+        );
+        close(
+            (p.capture_right.value - n.capture_right.value) / (2. * h),
+            -0.5,
+        );
+    }
+}
+#[test]
+fn internal_panel_strict_geometry_and_failed_update_consumption() {
+    let good = internal_face(vec![0, 1], 2.);
+    for bad in [
+        Face {
+            left_distance: 1.,
+            ..good.clone()
+        },
+        Face {
+            right: Some(0),
+            right_distance: Some(1.),
+            ..good.clone()
+        },
+        Face {
+            right_distance: Some(0.),
+            ..good.clone()
+        },
+        Face {
+            law: FaceLaw::InternalOptical { targets: vec![] },
+            ..good.clone()
+        },
+        Face {
+            law: FaceLaw::InternalOptical { targets: vec![2] },
+            ..good.clone()
+        },
+        Face {
+            law: FaceLaw::Escape,
+            ..good.clone()
+        },
+    ] {
+        assert!(Model::new(vec![2.], vec![4.], [3.; 7], vec![bad], 2).is_err());
+    }
+    let m = Model::new(vec![2.], vec![4.], [3.; 7], vec![good], 2).unwrap();
+    let mut w = m.workspace();
+    m.update(&[[0.; 7]], &[input(0.4)], &mut w).unwrap();
+    let mut bad = input(0.4);
+    bad.from_right[0][0] = 0.7;
+    assert!(m.update(&[[0.; 7]], &[bad], &mut w).is_err());
+    assert!(w.face_coefficients().is_err());
+    assert!(m
+        .apply(&w, &[1.; 7], &mut [0.; 7], &mut [[0.; 7]; 2], &mut [0.; 7])
+        .is_err());
+    m.update(&[[0.; 7]], &[input(0.4)], &mut w).unwrap();
+    assert!(m
+        .apply(
+            &w,
+            &[f64::MAX; 7],
+            &mut [0.; 7],
+            &mut [[0.; 7]; 2],
+            &mut [0.; 7]
+        )
+        .is_err());
 }
 fn fuel() -> fuel_source::FuelModel {
     use fuel_source::*;
