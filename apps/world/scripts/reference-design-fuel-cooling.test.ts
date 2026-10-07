@@ -12,7 +12,7 @@ test('a corrected attempt must debit the unsuccessful prior work against the sam
 })
 
 test('retained coupled checkpoints and polynomial observations have distinct exact frames',()=>{
- for(const [magic,width]of [['LDRCST01',16],['LDRCCM01',8]] as const){
+ for(const [magic,width]of [['LDFBST01',16],['LDFBCM01',8]] as const){
   const bytes=new Uint8Array(24+width*3),view=new DataView(bytes.buffer)
   bytes.set(new TextEncoder().encode(magic));view.setBigUint64(8,3n,true);view.setFloat64(16,300,true)
   expect(coolingStateHeader(bytes)).toEqual({magic,coordinates:3,time:300})
@@ -20,7 +20,7 @@ test('retained coupled checkpoints and polynomial observations have distinct exa
   view.setFloat64(16,NaN,true);expect(()=>coolingStateHeader(bytes)).toThrow()
  }
  expect(()=>coolingStateHeader(new Uint8Array(0))).toThrow()
- for(const [magic,width]of [['LDCOOL01',16],['LDCCOM01',8]] as const){
+ for(const [magic,width]of [['LDCOOL01',16],['LDCCOM01',8],['LDRCST01',16],['LDRCCM01',8]] as const){
   const bytes=new Uint8Array(24+width*3),view=new DataView(bytes.buffer)
   bytes.set(new TextEncoder().encode(magic));view.setBigUint64(8,3n,true);view.setFloat64(16,300,true)
   expect(()=>coolingStateHeader(bytes)).toThrow('Invalid')
@@ -30,7 +30,7 @@ test('retained coupled checkpoints and polynomial observations have distinct exa
 test('only a complete physically developed refined pair can receive admission',()=>{
  const outcome={kind:'source-cooling-pair',passed:true,lastAdmittedTime:300,dimension:7,differential:4,
   normal:{passed:true,lastAdmittedTime:300,commonSamples:14},tighter:{passed:true,lastAdmittedTime:300,commonSamples:14},
-  settings:{accuracyPolicy:'cold-source-cooling-7',provisional:true,horizon:300,referenceAllATOLandRTOLDivisor:10,
+  settings:{accuracyPolicy:'cold-source-fuel-binding',provisional:true,horizon:300,referenceAllATOLandRTOLDivisor:10,
    carrierCoordinates:'hydrogen-product,direct-boron10,boron-product',
    pressureCoordinates:'finite-pool-cushion-and-surge-forward-DAE;direct-liquid-B10-and-phase-H-products',
    pressureResponseResolutionPa:1,pressureChangeRelativeBudget:0.005,surgeHydraulicModel:'finite-storage-two-algebraic-resistances',
@@ -39,12 +39,15 @@ test('only a complete physically developed refined pair can receive admission',(
    pressureChartHeightScope:'hydrostatic-equivalent-1Pa;P-T-coupled-correction-and-metal-caloric-admitted',
    fuelPowerErrorWeights:'sparse-current-response-proportional-budget-cap',fuelPowerResolutionW:1e-12,
    barrelPowerErrorWeights:'sparse-current-bulk-capture-Mn-proportional-budget-cap',barrelPowerResolutionW:1e-12,
+   capturePowerErrorWeights:'sparse-current-fuel-capture-and-temperature-proportional-budget-cap',capturePowerResolutionW:1e-12,
+   capturePowerWeightScope:'emitted-per-intersection;held-route-fractions-at-most-one;all-five-recipient-channels-independently-paired',
    costGuard:'aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic',
    nonlinearClosure:'stock-Newton-and-current-physical-network-pressure-charts',linearWeightedL2Budget:0.0165,algebraicLTE:'included',
-   solverEnergyCoordinate:'G=sum-installed-energy-change-independent-fuel-and-barrel-release-plus-barrel-export-and-ambient-export',energyDefectATOLJ:0.01/Math.sqrt(7),
-   perRowErrorWeights:'source-carrier-barrel-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute'},
+   solverEnergyCoordinate:'G=sum-installed-energy-change-minus-fission-barrel-binding-release-plus-barrel-binding-ambient-export',energyDefectATOLJ:0.01/Math.sqrt(7),
+   perRowErrorWeights:'source-carrier-barrel-binding-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute'},
   gates:{fullPairComparisonEvaluated:true,developedThermalResponse:true,developedSourceResponse:true,
    developedBarrelResponse:true,barrelPairRatio:0,barrelPowerPairRatio:0,
+   capturePowerLocalRatio:0,capturePowerSUMABSRatio:0,capturePaidEnergyRatio:0,
    developedPressureResponse:true,pressurePairRatio:0,pressureMaterialPairRatio:0,pressureChartRatio:0,pressureFlowClosureRatio:0,
    sourceLocalRatio:0,sourceFamilyRatio:0,sourceObservableRatio:0,sourceNCOperatorRatio:0,
    thermalPairRatio:0,networkPairRatio:0,depositionPairRatio:0,carrierPairRatio:0},
@@ -59,6 +62,7 @@ test('only a complete physically developed refined pair can receive admission',(
  }
  for(const field of ['sourceLocalRatio','sourceFamilyRatio','sourceObservableRatio','sourceNCOperatorRatio',
   'thermalPairRatio','networkPairRatio','depositionPairRatio','carrierPairRatio','barrelPairRatio','barrelPowerPairRatio',
+  'capturePowerLocalRatio','capturePowerSUMABSRatio','capturePaidEnergyRatio',
   'pressurePairRatio','pressureMaterialPairRatio','pressureChartRatio','pressureFlowClosureRatio'])for(const value of [1.01,NaN,Infinity,-1]){
    const changed=structuredClone(outcome);(changed.gates as Record<string,unknown>)[field]=value
    expect(fuelCoolingAdmission.safeParse(changed).success).toBe(false)
@@ -66,7 +70,7 @@ test('only a complete physically developed refined pair can receive admission',(
  expect(fuelCoolingAdmission.safeParse({...outcome,tighter:null}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,pairedComparisons:outcome.pairedComparisons.slice(1)}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,referenceAllATOLandRTOLDivisor:1}}).success).toBe(false)
- for(const policy of ['cold-source-cooling-1','cold-source-cooling-2','cold-source-cooling-3','cold-source-cooling-4','cold-source-cooling-5','cold-source-cooling-6'])
+ for(const policy of ['cold-source-cooling-1','cold-source-cooling-2','cold-source-cooling-3','cold-source-cooling-4','cold-source-cooling-5','cold-source-cooling-6','cold-source-cooling-7'])
   expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,accuracyPolicy:policy}}).success).toBe(false)
  for(const energyDefectATOLJ of [0,NaN,Infinity,0.01,1])
   expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,energyDefectATOLJ}}).success).toBe(false)
@@ -75,6 +79,15 @@ test('only a complete physically developed refined pair can receive admission',(
   expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,fuelPowerResolutionW}}).success).toBe(false)
  for(const barrelPowerResolutionW of [0,NaN,Infinity,1e-10])
   expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,barrelPowerResolutionW}}).success).toBe(false)
+ for(const capturePowerResolutionW of [0,NaN,Infinity,1e-10])
+  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,capturePowerResolutionW}}).success).toBe(false)
+ for(const capturePowerErrorWeights of [undefined,'fission-only'])
+  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,capturePowerErrorWeights}}).success).toBe(false)
+ expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,capturePowerWeightScope:undefined}}).success).toBe(false)
+ for(const field of ['capturePowerLocalRatio','capturePowerSUMABSRatio','capturePaidEnergyRatio']) {
+  const changed=structuredClone(outcome);delete (changed.gates as Record<string,unknown>)[field]
+  expect(fuelCoolingAdmission.safeParse(changed).success).toBe(false)
+ }
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,barrelPowerErrorWeights:'fuel-only'}}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,fuelPowerErrorWeights:'stock-count-only'}}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,costGuard:'unlimited'}}).success).toBe(false)
@@ -95,8 +108,8 @@ test('only a complete physically developed refined pair can receive admission',(
 
 test('retention completeness is independent of admission and requires both distinct arm schedules',()=>{
  const states=['normal','tighter'].flatMap(arm=>[
-  ...coolingCommonTimes.map((time,i)=>({path:`/evidence/input.${arm}.common-${i}.bin`,magic:'LDRCCM01',coordinates:7,time})),
-  {path:`/evidence/input.${arm}.checkpoint`,magic:'LDRCST01',coordinates:7,time:300},
+  ...coolingCommonTimes.map((time,i)=>({path:`/evidence/input.${arm}.common-${i}.bin`,magic:'LDFBCM01',coordinates:7,time})),
+  {path:`/evidence/input.${arm}.checkpoint`,magic:'LDFBST01',coordinates:7,time:300},
  ])
  // No qualification verdict is an input to retention, so failed physical
  // development cannot conceal otherwise complete diagnostic artifacts.

@@ -1,4 +1,4 @@
-//! Strict six-frame cold source/cooling/barrel/pressure preparation. Primary chemistry is
+//! Strict seven-frame cold source/cooling/barrel/pressure/capture preparation. Primary chemistry is
 //! replaced by actual carrier intersections, never cloned as source histories.
 use super::{
     barrel_thermal, evolution_input, fuel_thermal, moderator_source, operating_network,
@@ -6,6 +6,7 @@ use super::{
 };
 use source_input::{count, framed, number};
 use std::collections::BTreeSet;
+mod capture;
 mod pressure;
 
 pub(crate) struct Prepared {
@@ -22,6 +23,7 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
     let primary = framed(&mut words);
     let barrel = framed(&mut words);
     let pressure = framed(&mut words);
+    let capture = framed(&mut words);
     if words.next().is_some() {
         return Err("Trailing coupled payload".into());
     }
@@ -287,6 +289,7 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
         contacts,
     })?;
     let pressure = pressure::parse(&pressure, &network, &initial_network, &work, href, bref)?;
+    let capture = capture::parse(&capture)?;
     let model = source_cooling::Model::new(
         source,
         network,
@@ -294,6 +297,7 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
         carrier,
         barrel,
         pressure,
+        capture,
         fuel_rows,
         water_flows,
         initial_t,
@@ -307,9 +311,10 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
 mod tests {
     use super::*;
     #[test]
-    fn sixth_pressure_frame_is_required_and_extra_frames_refuse() {
+    fn seventh_capture_frame_is_required_and_extra_frames_refuse() {
         assert!(std::panic::catch_unwind(|| parse("0 0 0 0")).is_err());
         assert!(std::panic::catch_unwind(|| parse("0 0 0 0 0")).is_err());
-        assert!(parse("0 0 0 0 0 0 0").is_err());
+        assert!(std::panic::catch_unwind(|| parse("0 0 0 0 0 0")).is_err());
+        assert!(parse("0 0 0 0 0 0 0 0").is_err());
     }
 }

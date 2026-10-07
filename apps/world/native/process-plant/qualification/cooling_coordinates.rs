@@ -1,5 +1,6 @@
 //! Solver-only affine energy chart. Physical owners retain every E and the
-//! independent fuel/barrel-release, photon and ambient-export receipts. No balance is
+//! independent fission/barrel release, existing gross binding progress weighted
+//! by its event Q, photon exports and signed ambient receipts. No balance is
 //! imposed or reset here.
 use leitbild_plant_numerics::source_cooling::Model;
 
@@ -50,8 +51,10 @@ impl EnergyCoordinates {
             (l.barrel_released, -1.),
             (l.barrel_exported, 1.),
             (l.ambient_exported, 1.),
+            (l.fuel_capture_exported, 1.),
         ]
         .into_iter()
+        .chain(model.capture_paid_rows().map(|(row, q)| (row, -q)))
         .map(|(r, sign)| (r, sign, initial[r]))
         .collect();
         Ok(Self {

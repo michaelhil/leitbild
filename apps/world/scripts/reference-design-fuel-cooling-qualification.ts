@@ -15,7 +15,7 @@ const admittedRatio=z.number().finite().nonnegative().max(1),arm=z.object({passe
  * incomplete pair. The physical/error policy is owned by the native qualifier. */
 export const fuelCoolingAdmission=z.object({kind:z.literal('source-cooling-pair'),passed:z.literal(true),lastAdmittedTime:z.literal(300),
  dimension:z.number().int().positive(),differential:z.number().int().positive(),normal:arm,tighter:arm,
- settings:z.object({accuracyPolicy:z.literal('cold-source-cooling-7'),provisional:z.literal(true),horizon:z.literal(300),
+ settings:z.object({accuracyPolicy:z.literal('cold-source-fuel-binding'),provisional:z.literal(true),horizon:z.literal(300),
   carrierCoordinates:z.literal('hydrogen-product,direct-boron10,boron-product'),
   pressureCoordinates:z.literal('finite-pool-cushion-and-surge-forward-DAE;direct-liquid-B10-and-phase-H-products'),
   pressureResponseResolutionPa:z.literal(1),pressureChangeRelativeBudget:z.literal(0.005),
@@ -26,14 +26,17 @@ export const fuelCoolingAdmission=z.object({kind:z.literal('source-cooling-pair'
   pressureChartHeightScope:z.literal('hydrostatic-equivalent-1Pa;P-T-coupled-correction-and-metal-caloric-admitted'),
   fuelPowerErrorWeights:z.literal('sparse-current-response-proportional-budget-cap'),fuelPowerResolutionW:z.literal(1e-12),
   barrelPowerErrorWeights:z.literal('sparse-current-bulk-capture-Mn-proportional-budget-cap'),barrelPowerResolutionW:z.literal(1e-12),
+  capturePowerErrorWeights:z.literal('sparse-current-fuel-capture-and-temperature-proportional-budget-cap'),capturePowerResolutionW:z.literal(1e-12),
+  capturePowerWeightScope:z.literal('emitted-per-intersection;held-route-fractions-at-most-one;all-five-recipient-channels-independently-paired'),
   costGuard:z.literal('aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic'),
   nonlinearClosure:z.literal('stock-Newton-and-current-physical-network-pressure-charts'),
   linearWeightedL2Budget:z.literal(0.0165),algebraicLTE:z.literal('included'),
-  solverEnergyCoordinate:z.literal('G=sum-installed-energy-change-independent-fuel-and-barrel-release-plus-barrel-export-and-ambient-export'),
+  solverEnergyCoordinate:z.literal('G=sum-installed-energy-change-minus-fission-barrel-binding-release-plus-barrel-binding-ambient-export'),
   energyDefectATOLJ:z.number().finite().positive(),
-  referenceAllATOLandRTOLDivisor:z.literal(10),perRowErrorWeights:z.literal('source-carrier-barrel-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute')}),
+  referenceAllATOLandRTOLDivisor:z.literal(10),perRowErrorWeights:z.literal('source-carrier-barrel-binding-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute')}),
  gates:z.object({fullPairComparisonEvaluated:z.literal(true),developedThermalResponse:z.literal(true),developedSourceResponse:z.literal(true),
   developedBarrelResponse:z.literal(true),barrelPairRatio:admittedRatio,barrelPowerPairRatio:admittedRatio,
+  capturePowerLocalRatio:admittedRatio,capturePowerSUMABSRatio:admittedRatio,capturePaidEnergyRatio:admittedRatio,
   developedPressureResponse:z.literal(true),pressurePairRatio:admittedRatio,pressureMaterialPairRatio:admittedRatio,
   pressureChartRatio:admittedRatio,pressureFlowClosureRatio:admittedRatio,
   sourceLocalRatio:admittedRatio,sourceFamilyRatio:admittedRatio,sourceObservableRatio:admittedRatio,sourceNCOperatorRatio:admittedRatio,
@@ -44,7 +47,7 @@ export const fuelCoolingAdmission=z.object({kind:z.literal('source-cooling-pair'
 export function coolingStateHeader(bytes:Uint8Array){
  if(bytes.length<24)throw Error('Truncated coupled state header')
  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),magic=new TextDecoder().decode(bytes.subarray(0,8)),
-  coordinates=Number(view.getBigUint64(8,true)),time=view.getFloat64(16,true),width=magic==='LDRCST01'?16:magic==='LDRCCM01'?8:0
+  coordinates=Number(view.getBigUint64(8,true)),time=view.getFloat64(16,true),width=magic==='LDFBST01'?16:magic==='LDFBCM01'?8:0
  if(!width||!Number.isSafeInteger(coordinates)||coordinates<=0||!Number.isFinite(time)||time<0
   ||bytes.length!==24+width*coordinates)throw Error('Invalid coupled state frame')
  return {magic,coordinates,time}
@@ -59,8 +62,8 @@ export function coolingStatesComplete(states:readonly {path:string;magic?:string
   ||new Set(states.map(s=>s.path)).size!==states.length
   ||states.some(s=>s.frameError||s.coordinates!==coordinates))return false
  return ['normal','tighter'].every(arm=>coolingCommonTimes.every((time,index)=>states.some(s=>s.path.endsWith(`input.${arm}.common-${index}.bin`)
-   &&s.magic==='LDRCCM01'&&s.time===time))
-   &&states.filter(s=>s.path.endsWith(`input.${arm}.checkpoint`)&&s.magic==='LDRCST01'&&s.time===300).length===1
+   &&s.magic==='LDFBCM01'&&s.time===time))
+   &&states.filter(s=>s.path.endsWith(`input.${arm}.checkpoint`)&&s.magic==='LDFBST01'&&s.time===300).length===1
  )
 }
 type Options={wiki:string;partition:string;material:string;water:string;materialEvidence:string;
@@ -101,7 +104,7 @@ export async function qualifyFuelCooling(options:Options){
  await mkdir(directory)
  await Promise.all(paths.map((p,i)=>writeFile(join(directory,`${i}-${basename(p)}`),bytes[i]!,{flag:'wx'})))
  await writeFile(join(directory,'input.txt'),fixture,{flag:'wx'})
- await writeFile(join(directory,'composition.json'),JSON.stringify({conditioning:prepared.conditioning,thermal:prepared.thermal,primary:prepared.primary,barrel:prepared.barrel,pressure:prepared.pressure,
+ await writeFile(join(directory,'composition.json'),JSON.stringify({conditioning:prepared.conditioning,thermal:prepared.thermal,primary:prepared.primary,barrel:prepared.barrel,capture:prepared.capture,pressure:prepared.pressure,
   ownerIdentities:prepared.ownerIdentities,limitations:prepared.limitations},null,2)+'\n',{flag:'wx'})
  // All linked non-system libraries must be retained; the old receipt is not a
  // substitute for inspecting this newly built binary and its actual links.
@@ -140,7 +143,9 @@ export async function qualifyFuelCooling(options:Options){
    inputCounts:{bands:prepared.thermal.bands.length,thermalPhysicalStocks:prepared.thermal.thermalCoordinates,
     thermalSolverCoordinates:2*prepared.thermal.thermalCoordinates,primaryCells:prepared.network.water.length,
     primaryCarrierCoordinates:3*prepared.network.water.length,primarySourceIntersections:prepared.primary.rows.length,
-    pressureCoordinates:45,pressurizerMetalStocks:prepared.pressure.metals.length},
+    pressureCoordinates:45,pressurizerMetalStocks:prepared.pressure.metals.length,
+    captureBands:prepared.capture.bands.length,captureExportCoordinates:1,
+    captureEventKinds:['fertile','xenon','samarium'],capturePaidEnergy:'Q-times-existing-gross-progress-no-extra-emitted-integral'},
    consumed:[...inputs.map((path,i)=>({path,sha256:sha(texts[i]!)})),...ownerPaths.map((path,i)=>({path,sha256:sha(ownerTexts[i]!)}))],
    sources:paths.map((path,i)=>({path,sha256:sha(bytes[i]!)})),fixtureSHA256:sha(fixture),
    artifacts:{directory,nativeStack,nativeStackUnchanged:stackUnchanged,states,completeStates},noWholePlantReadinessCredit:true,

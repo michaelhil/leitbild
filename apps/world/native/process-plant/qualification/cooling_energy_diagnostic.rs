@@ -17,14 +17,20 @@ fn energy_vector_roundtrip_bound(
             l.barrel_released,
             l.barrel_exported,
             l.ambient_exported,
+            l.fuel_capture_exported,
         ])
+        .map(|r| (r, 1.))
+        .chain(model.capture_paid_rows())
         .collect::<Vec<_>>();
-    let forward = rows.iter().map(|&r| original[r].abs()).sum::<f64>();
+    let forward = rows
+        .iter()
+        .map(|&(r, q)| (q * original[r]).abs())
+        .sum::<f64>();
     let inverse = mapped_anchor.abs()
         + rows
             .iter()
-            .filter(|&&r| r != anchor)
-            .map(|&r| original[r].abs())
+            .filter(|&&(r, _)| r != anchor)
+            .map(|&(r, q)| (q * original[r]).abs())
             .sum::<f64>();
     let operations = 12. * rows.len() as f64 + 16.;
     let u = f64::EPSILON / 2.;
@@ -62,11 +68,20 @@ fn energy_vector_roundtrip_uses_all_operands_but_rejects_wrong_mapping() {
         original[r] = 0.01 * ((r % 7 + 1) as f64);
     }
     original[m.layout.ambient_exported] = -0.125;
+    original[m.layout.fuel_capture_exported] = 0.25;
+    for (r, q) in m.capture_paid_rows() {
+        original[r] = 0.03 / q;
+    }
     let mut mapped = original.clone();
     g.vector_to_solver(&mut mapped);
     let mapped_anchor = mapped[g.row];
     g.vector_to_physical(&mut mapped);
     energy_vector_roundtrip_bound(&m, g.row, &original, mapped_anchor, &mapped).unwrap();
+    mapped[g.row] -= original[m.layout.fuel_capture_exported];
+    assert!(energy_vector_roundtrip_bound(&m, g.row, &original, mapped_anchor, &mapped).is_err());
+    mapped = original.clone();
+    g.vector_to_solver(&mut mapped);
+    g.vector_to_physical(&mut mapped);
     mapped[g.row] -= original[m.layout.ambient_exported];
     assert!(energy_vector_roundtrip_bound(&m, g.row, &original, mapped_anchor, &mapped).is_err());
     mapped = original.clone();
@@ -76,7 +91,7 @@ fn energy_vector_roundtrip_uses_all_operands_but_rejects_wrong_mapping() {
 }
 
 #[test]
-#[ignore = "Explicit actual six-frame pressure entry proof; no IDASolve; 30 s maximum"]
+#[ignore = "Explicit actual seven-frame pressure and fuel-binding entry proof; no IDASolve; 30 s maximum"]
 fn actual_pressure_entry_without_advancement() {
     use leitbild_plant_numerics::cold_pressurizer as cp;
     let started = Instant::now();
@@ -195,6 +210,32 @@ fn actual_pressure_entry_without_advancement() {
             let independent = g.balance(&yp) - g.balance(&w.residual);
             let rate = w.complete_energy_rate()?;
             let energy_error = (independent - rate).abs();
+            let capture_totals = cooling_capture::power_totals(w.capture.power_channels()?)?;
+            if capture_totals.iter().any(|v| *v < 0.) {
+                return Err(
+                    "Actual fuel-binding entry cannot have negative accepted nuclear power"
+                        .into(),
+                );
+            }
+            let capture_closure = capture_totals[0] - capture_totals[1..].iter().sum::<f64>();
+            if capture_closure.abs() > 4096. * f64::EPSILON * capture_totals[0] {
+                return Err(format!(
+                    "Actual fuel-binding local allocation fails closure: {capture_closure:e}"
+                ));
+            }
+            let capture_paid_rate = m
+                .capture_paid_rows()
+                .map(|(r, q)| q * (yp[r] - w.residual[r]))
+                .sum::<f64>();
+            if (capture_paid_rate - capture_totals[0]).abs()
+                > 4096. * f64::EPSILON * capture_totals[0]
+            {
+                return Err(
+                    "Actual gross-capture progress does not pay emitted binding energy".into(),
+                );
+            }
+            let capture_json = format!("{{\"channelOrder\":[\"emitted\",\"self\",\"clad\",\"water\",\"export\"],\"actualPowerTotalsW\":{},\"existingProgressPaidRateW\":{},\"allocationDefectW\":{},\"scope\":\"same-current-workspace;fresh-zero-source-valid;nonzero-class-partitions-qualified-by-foundation-tests;no-extra-RHS-EOS-or-trajectory\"}}",
+                numbers(&capture_totals),finite(capture_paid_rate),finite(capture_closure));
             let scale = g.balance(&yp).abs() + g.balance(&w.residual).abs() + rate.abs();
             if energy_error > 1e-6 + 4096. * f64::EPSILON * scale {
                 return Err(format!(
@@ -210,6 +251,10 @@ fn actual_pressure_entry_without_advancement() {
             direction[l.surge_start + finite_surge::LEFT_FLOW] = 1e-3;
             direction[l.surge_start + finite_surge::RIGHT_FLOW] = -1e-3;
             direction[l.ambient_exported] = -0.1;
+            direction[l.fuel_capture_exported] = 0.03;
+            for (r, q) in m.capture_paid_rows() {
+                direction[r] = 0.01 / q;
+            }
             m.jvp(&direction, 0., &mut w)?;
             let unshifted_error = (g.balance(&w.jvp) + w.complete_energy_rate_jvp()?).abs();
             let gross = w.jvp.iter().map(|v| v.abs()).sum::<f64>();
@@ -246,6 +291,7 @@ fn actual_pressure_entry_without_advancement() {
             c.start = started;
             c.absolute = accuracy.absolute(refinement)?;
             c.relative = 1e-5 / refinement;
+            c.power_resolution_w = cooling_accuracy::DEPOSIT_RESOLUTION_W / refinement;
             let mut solver = y.clone();
             c.coordinates.transform(&mut solver);
             c.energy.state_to_solver(&mut solver);
@@ -279,6 +325,65 @@ fn actual_pressure_entry_without_advancement() {
             let mut physical_rhs = rhs.clone();
             c.energy.vector_to_physical(&mut physical_rhs);
             m.evaluate(&y, &yp, Some(3.), &mut w)?;
+            let mut previous_scales = (0..n)
+                .map(|r| state_error_scale(m, r, solver[r], c.absolute[r], c.relative))
+                .collect::<Vec<_>>();
+            c.power_weights.cap(
+                &solver[..m.source.history_dimension()],
+                c.relative,
+                c.power_resolution_w,
+                &mut previous_scales,
+                &mut c.power_work,
+            )?;
+            c.barrel_weights.cap(
+                &solver[..l.source_end],
+                c.relative,
+                c.power_resolution_w,
+                &mut previous_scales,
+            )?;
+            let mut current_scales = previous_scales.clone();
+            let weight_started = Instant::now();
+            c.capture_weights.cap(
+                &solver,
+                c.relative,
+                c.power_resolution_w,
+                &mut current_scales,
+            )?;
+            let capture_weight_seconds = weight_started.elapsed().as_secs_f64();
+            let changed_rows = previous_scales
+                .iter()
+                .zip(&current_scales)
+                .filter(|(a, b)| a > b)
+                .count();
+            let max_tightening = previous_scales
+                .iter()
+                .zip(&current_scales)
+                .map(|(a, b)| a / b)
+                .fold(1., f64::max);
+            let mut rates = yp
+                .iter()
+                .zip(&w.residual)
+                .map(|(a, b)| a - b)
+                .collect::<Vec<_>>();
+            c.coordinates.transform(&mut rates);
+            c.energy.vector_to_solver(&mut rates);
+            let weighted_rhs = |scales: &[f64]| {
+                (rates
+                    .iter()
+                    .zip(scales)
+                    .map(|(r, s)| (r / s).powi(2))
+                    .sum::<f64>()
+                    / n as f64)
+                    .sqrt()
+            };
+            let old_rhs = weighted_rhs(&previous_scales);
+            let new_rhs = weighted_rhs(&current_scales);
+            if !max_tightening.is_finite() || !old_rhs.is_finite() || !new_rhs.is_finite() {
+                return Err("Nonfinite fuel-binding weight entry diagnostic".into());
+            }
+            let (capture_outputs, capture_gradients, capture_nonzero_gradients) = c.capture_weights.structure();
+            if capture_nonzero_gradients == 0 { return Err("Fresh fuel-binding entry lost current source response support".into()); }
+            let capture_weights_json = format!("{{\"scope\":\"one-current-state-no-advance;old-fission-barrel-caps-retained;not-cost-certificate\",\"outputs\":{capture_outputs},\"gradientEntries\":{capture_gradients},\"nonzeroCurrentGradients\":{capture_nonzero_gradients},\"seconds\":{capture_weight_seconds},\"tightenedRows\":{changed_rows},\"maxScaleTightening\":{max_tightening},\"oldWeightedRHSNorm\":{old_rhs},\"newWeightedRHSNorm\":{new_rhs}}}");
             let mut action = vec![0.; n];
             let mut gross = vec![0.; n];
             m.visit_fluid_jacobian(&w, |r, col, a| {
@@ -376,7 +481,7 @@ fn actual_pressure_entry_without_advancement() {
             let hydraulic = w.surge.diagnostics()?;
             let flow = w.surge.receipts()?.mass;
             cases[case_index] = format!(
-                "{{\"refinement\":{refinement},\"passed\":true,\"preparation\":{preparation_json},\"initialization\":{},\"initializationTrace\":{},\"energyVectorRoundtrip\":{roundtrip_json},\"freshHydraulicResidualPa\":{head:?},\"jointActualFlowKgS\":[{},{}],\"heightRateMPerS\":{},\"closedWaterRateKgPerS\":{mass_rate:e},\"closedBRateKgEquivalentPerS\":{boron_rate:e},\"offInterfaceRHSIdentityErrorW\":{energy_error:e},\"unshiftedEnergyJVPIdentityError\":{unshifted_error:e},\"hugeCjEnergyActionError\":{huge_error:e},\"completedPNonGMaxError\":{p_error:e},\"onePSetupAndSolveSeconds\":{p_seconds},\"passiveHydraulicDissipationW\":{},\"kineticTemperatureEquivalentK\":{:?},\"currentCandidateFlowClosureRatio\":{}}}",
+                "{{\"refinement\":{refinement},\"passed\":true,\"preparation\":{preparation_json},\"initialization\":{},\"initializationTrace\":{},\"energyVectorRoundtrip\":{roundtrip_json},\"freshHydraulicResidualPa\":{head:?},\"jointActualFlowKgS\":[{},{}],\"heightRateMPerS\":{},\"closedWaterRateKgPerS\":{mass_rate:e},\"closedBRateKgEquivalentPerS\":{boron_rate:e},\"fuelBinding\":{capture_json},\"fuelBindingErrorWeights\":{capture_weights_json},\"offInterfaceRHSIdentityErrorW\":{energy_error:e},\"unshiftedEnergyJVPIdentityError\":{unshifted_error:e},\"hugeCjEnergyActionError\":{huge_error:e},\"completedPNonGMaxError\":{p_error:e},\"onePSetupAndSolveSeconds\":{p_seconds},\"passiveHydraulicDissipationW\":{},\"kineticTemperatureEquivalentK\":{:?},\"currentCandidateFlowClosureRatio\":{}}}",
                 ic.json(),
                 trace.json(),
                 flow[0],
@@ -443,7 +548,7 @@ fn archived_carrier_global_and_local_transport_without_advancement() {
     let mut cases = Vec::new();
     for name in ["input.normal.checkpoint", "input.normal.unadmitted-raw"] {
         let bytes = fs::read(directory.join(name)).unwrap();
-        assert_eq!(&bytes[..8], b"LDRCST01");
+        assert_eq!(&bytes[..8], b"LDFBST01");
         assert_eq!(
             u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
             n as u64
@@ -727,7 +832,7 @@ fn barrel_chart_linear_diagnostic(candidate_proof: bool) {
             (0., physical.into_iter().chain(slopes).collect::<Vec<_>>())
         } else {
             let bytes = fs::read(directory.join(name)).unwrap();
-            assert_eq!(&bytes[..8], b"LDRCST01");
+            assert_eq!(&bytes[..8], b"LDFBST01");
             assert_eq!(
                 u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
                 n as u64
@@ -1009,7 +1114,7 @@ fn archived_energy_p_completion_without_advancement() {
             (model.initial_state().unwrap(), vec![0.; n])
         } else {
             let bytes = fs::read(directory.join(name)).unwrap();
-            assert_eq!(&bytes[..8], b"LDRCST01");
+            assert_eq!(&bytes[..8], b"LDFBST01");
             assert_eq!(bytes.len(), 24 + 16 * n);
             let v = bytes[24..]
                 .chunks_exact(8)
@@ -1217,7 +1322,7 @@ fn archived_power_response_and_weights_without_advancement() {
             model.initial_state().unwrap()
         } else {
             let bytes = fs::read(directory.join(name)).unwrap();
-            assert_eq!(&bytes[..8], b"LDRCCM01");
+            assert_eq!(&bytes[..8], b"LDFBCM01");
             assert_eq!(bytes.len(), 24 + 8 * n);
             assert_eq!(f64::from_le_bytes(bytes[16..24].try_into().unwrap()), 0.001);
             bytes[24..]
@@ -1357,7 +1462,7 @@ fn archived_energy_chart_callbacks_without_advancement() {
             (original.clone(), vec![0.; n])
         } else {
             let bytes = fs::read(directory.join(name)).unwrap();
-            assert_eq!(&bytes[..8], b"LDRCST01");
+            assert_eq!(&bytes[..8], b"LDFBST01");
             assert_eq!(bytes.len(), 24 + 16 * n);
             let v = bytes[24..]
                 .chunks_exact(8)
@@ -1498,7 +1603,7 @@ fn archived_physical_energy_identity_without_advancement() {
     };
     for name in ["input.normal.checkpoint", "input.normal.unadmitted-raw"] {
         let bytes = fs::read(directory.join(name)).unwrap();
-        assert_eq!(&bytes[..8], b"LDRCST01");
+        assert_eq!(&bytes[..8], b"LDFBST01");
         let n = u64::from_le_bytes(bytes[8..16].try_into().unwrap()) as usize;
         assert_eq!(n, model.dimension());
         assert_eq!(bytes.len(), 24 + 16 * n);

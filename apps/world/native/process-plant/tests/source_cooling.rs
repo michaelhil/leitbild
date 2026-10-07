@@ -5,13 +5,33 @@
 mod source_fixture;
 
 use leitbild_plant_numerics::{
-    barrel_thermal as bt, cold_pressurizer as cp, finite_surge as surge, fuel_history as fh,
-    fuel_source as fs, fuel_thermal as ft, heat_history as hh, operating_network as on,
-    source_cooling as sc, source_evolution as se, water_carrier as wc, CellGeometry,
+    CellGeometry, barrel_thermal as bt, cold_pressurizer as cp, finite_surge as surge,
+    fuel_history as fh, fuel_source as fs, fuel_thermal as ft, heat_history as hh,
+    operating_network as on, source_cooling as sc, source_evolution as se, water_carrier as wc,
 };
 
 pub(crate) fn fixture() -> sc::Model {
     fixture_with_fuel_mass(0.5).unwrap()
+}
+pub(crate) fn capture_input() -> leitbild_plant_numerics::fuel_capture::Input {
+    use leitbild_plant_numerics::fuel_capture::{Band, Input};
+    Input {
+        capture_j: [0.3, 0.4, 0.5],
+        fuel_chord_m: 0.008,
+        fuel_density: 10970.,
+        fuel_mu: 0.005,
+        clad_density: 6506.,
+        clad_mu: 0.0026,
+        water_mu: 0.003103,
+        bands: (0..2)
+            .map(|i| Band {
+                thermal_band: i,
+                water: 1,
+                water_chord_m: 0.2,
+                clad_thickness_m: [0.000125, 0.00025, 0.000125],
+            })
+            .collect(),
+    }
 }
 pub(crate) fn fixture_with_contrast() -> sc::Model {
     fixture_with_preparation(0.5, 1.).unwrap()
@@ -302,7 +322,7 @@ fn fixture_with_preparation_at(
                 length_m: 1.,
                 rods: 1,
                 fuel_masses_kg: vec![thermal_mass; 2],
-                clad_masses_kg: vec![0.1; 2],
+                clad_masses_kg: vec![0.05, 0.1, 0.05],
                 helium: 0,
                 water: 1,
                 flow_area_m2: 0.1,
@@ -359,9 +379,10 @@ fn fixture_with_preparation_at(
         })
         .unwrap(),
         pressure,
-        vec![0, 1, 4, 5],
+        capture_input(),
+        vec![0, 1, 5, 6],
         vec![None, Some(0)],
-        vec![300.; 9],
+        vec![300.; 11],
     )
 }
 fn resolved(m: &sc::Model) -> Vec<f64> {
@@ -643,7 +664,9 @@ fn once_paid_fuel_wall_and_carrier_receipts_survive_shared_recipient_projection(
     assert!(wall.iter().all(|q| *q > 0.));
     close(
         w.thermal.heat_rates().unwrap().iter().sum::<f64>() + wall.iter().sum::<f64>(),
-        release,
+        release
+            + w.capture.fuel_heat().unwrap().iter().sum::<f64>()
+            + w.capture.clad_heat().unwrap().iter().sum::<f64>(),
         2e-12,
         1e-8,
     );
@@ -658,14 +681,16 @@ fn once_paid_fuel_wall_and_carrier_receipts_survive_shared_recipient_projection(
     close(
         nw.residual[m.network.energy_row(1)]
             - w.residual[l.network_start + m.network.energy_row(1)],
-        wall.iter().sum::<f64>() + w.barrel.water_heat().unwrap()[1],
+        wall.iter().sum::<f64>()
+            + w.barrel.water_heat().unwrap()[1]
+            + w.capture.water_heat().unwrap()[1],
         2e-12,
         1e-8,
     );
     close(
         nw.residual[m.network.energy_row(0)]
             - w.residual[l.network_start + m.network.energy_row(0)],
-        w.barrel.water_heat().unwrap()[0],
+        w.barrel.water_heat().unwrap()[0] + w.capture.water_heat().unwrap()[0],
         2e-12,
         1e-8,
     );
@@ -677,7 +702,9 @@ fn once_paid_fuel_wall_and_carrier_receipts_survive_shared_recipient_projection(
         .sum::<f64>();
     close(
         total_thermal_energy_residual + total_network_energy_residual + w.residual[l.barrel_energy],
-        -release - w.barrel.emitted_rate().unwrap() + w.barrel.export_rate().unwrap(),
+        -release - w.barrel.emitted_rate().unwrap() + w.barrel.export_rate().unwrap()
+            - w.capture.emitted_rate().unwrap()
+            + w.capture.export_rate().unwrap(),
         2e-11,
         1e-8,
     );
@@ -736,18 +763,21 @@ fn composition_refuses_wrong_fuel_recipient_or_carrier_link_identity() {
     let m = fixture();
     let pressure = pressure_fixture(&m.network);
     // Row2 is clad, not the source's second fuel temperature/deposition owner.
-    assert!(sc::Model::new(
-        m.source,
-        m.network,
-        m.thermal,
-        m.carrier,
-        m.barrel,
-        pressure,
-        vec![0, 2, 4, 5],
-        vec![None, Some(0)],
-        vec![300.; 9]
-    )
-    .is_err());
+    assert!(
+        sc::Model::new(
+            m.source,
+            m.network,
+            m.thermal,
+            m.carrier,
+            m.barrel,
+            pressure,
+            capture_input(),
+            vec![0, 2, 5, 6],
+            vec![None, Some(0)],
+            vec![300.; 11]
+        )
+        .is_err()
+    );
     let m = fixture();
     let pressure = pressure_fixture(&m.network);
     let prep = (0..2)
@@ -759,18 +789,21 @@ fn composition_refuses_wrong_fuel_recipient_or_carrier_link_identity() {
         })
         .collect::<Vec<_>>();
     let wrong = wc::Carrier::new(&prep, vec![wc::Link { from: 1, to: 0 }]).unwrap();
-    assert!(sc::Model::new(
-        m.source,
-        m.network,
-        m.thermal,
-        wrong,
-        m.barrel,
-        pressure,
-        vec![0, 1, 4, 5],
-        vec![None, Some(0)],
-        vec![300.; 9]
-    )
-    .is_err());
+    assert!(
+        sc::Model::new(
+            m.source,
+            m.network,
+            m.thermal,
+            wrong,
+            m.barrel,
+            pressure,
+            capture_input(),
+            vec![0, 1, 5, 6],
+            vec![None, Some(0)],
+            vec![300.; 11]
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -827,4 +860,225 @@ fn direct_boron_target_and_product_preserve_closed_total_and_marker_packets() {
         }
         close(sum, 0., 0., 1e-10);
     }
+}
+
+#[test]
+fn each_actual_gross_capture_channel_pays_one_partition_not_net_poison_rhs() {
+    use leitbild_plant_numerics::fuel_history as fh;
+    let m = fixture();
+    let l = m.layout;
+    let h = m.source.fuel_history();
+    let row = h.history_row(0, 0);
+    let reference = h.segment_preparations()[0].reference_u238;
+    for channel in 0..3 {
+        let mut y = m.initial_state().unwrap();
+        // Suppress fertile events when isolating each nonzero poison channel.
+        if channel > 0 {
+            y[row + fh::CAPTURED_238] = reference;
+        }
+        y[row + fh::XENON] = if channel == 1 { 5. } else { 0. };
+        y[row + fh::SAMARIUM] = if channel == 2 { 7. } else { 0. };
+        for e in h.fuel().intersections() {
+            y[e.region * 7 + if channel == 0 { 2 } else { 6 }] = 2.;
+        }
+        let mut w = m.workspace();
+        m.evaluate(&y, &vec![0.; m.dimension()], Some(3.), &mut w)
+            .unwrap();
+        let events = w.source.fuel_capture_events().unwrap();
+        for (i, e) in events.iter().enumerate() {
+            assert!(e[channel] > 0.);
+            for j in 0..3 {
+                if j != channel {
+                    assert_eq!(e[j], 0.);
+                }
+            }
+            let c = &w.capture.power_channels().unwrap()[5 * i..5 * i + 5];
+            close(
+                c[0],
+                e[channel] * m.capture.config().capture_j[channel],
+                2e-14,
+                1e-14,
+            );
+            close(c[0], c[1..].iter().sum(), 2e-14, 1e-14);
+            assert!(c[1..].iter().all(|v| *v > 0.));
+        }
+        let paid = m
+            .capture_paid_rows()
+            .map(|(r, q)| q * w.source.rates().unwrap()[r])
+            .sum::<f64>();
+        close(paid, w.capture.emitted_rate().unwrap(), 2e-14, 1e-13);
+        if channel == 1 {
+            assert_ne!(
+                w.source.rates().unwrap()[row + fh::XENON],
+                -events.iter().map(|e| e[1]).sum::<f64>()
+            );
+        }
+        assert!(w.complete_energy_rate().unwrap().abs() < 1e-7);
+        // Actual source JVP feeds the same partition, including current T and
+        // native liquid-density directions, not manually substituted events.
+        let mut dy = vec![0.; m.dimension()];
+        dy[..m.source.nc_dimension()].fill(0.01);
+        dy[row + fh::XENON] = 0.03;
+        dy[row + fh::SAMARIUM] = -0.02;
+        for &r in m.fuel_rows() {
+            dy[l.temperatures_start + r] = 0.2;
+        }
+        dy[l.network_start + m.network.temperature_row(1)] = 0.1;
+        m.jvp(&dy, 3., &mut w).unwrap();
+        close(
+            w.capture.emitted_jvp().unwrap(),
+            w.capture
+                .fuel_heat_jvp()
+                .unwrap()
+                .iter()
+                .chain(w.capture.clad_heat_jvp().unwrap())
+                .chain(w.capture.water_heat_jvp().unwrap())
+                .sum::<f64>()
+                + w.capture.export_jvp().unwrap(),
+            2e-13,
+            1e-13,
+        );
+        assert!(w.complete_energy_rate_jvp().unwrap().abs() < 1e-7);
+    }
+}
+
+#[test]
+fn current_capture_sparse_response_all_columns_match_actual_source_events_and_jvp() {
+    use leitbild_plant_numerics::fuel_history as fh;
+    let m = fixture();
+    let h = m.source.fuel_history();
+    let response = m.capture.power_response(&m.source).unwrap();
+    let mut y = h.initial_state();
+    y[..m.source.nc_dimension()].fill(3.);
+    let row = h.history_row(0, 0);
+    y[row + fh::XENON] = 5.;
+    y[row + fh::SAMARIUM] = 7.;
+    y[row + fh::CAPTURED_238] = 0.2 * h.segment_preparations()[0].reference_u238;
+    let t = vec![310., 315., 320., 325.];
+    let q = m.capture.config().capture_j;
+    let mut powers = vec![0.; response.output_count()];
+    let mut gradients = vec![0.; response.columns().len()];
+    let mut w = h.workspace();
+    for sign in [1., -1.] {
+        for n in &mut y[..m.source.nc_dimension()] {
+            *n = sign * n.abs();
+        }
+        h.evaluate_into(&t, &y, &mut w).unwrap();
+        response
+            .evaluate(&y, &t, &mut powers, &mut gradients)
+            .unwrap();
+        for (i, e) in w.capture_events().unwrap().iter().enumerate() {
+            close(
+                powers[i],
+                e.iter().zip(q).map(|(r, q)| r * q).sum(),
+                3e-14,
+                1e-13,
+            );
+        }
+        for &column in response.columns() {
+            let mut dy = vec![0.; y.len()];
+            let mut dt = vec![0.; t.len()];
+            if column < y.len() {
+                dy[column] = 1.;
+            } else {
+                dt[column - y.len()] = 1.;
+            }
+            h.jvp_into(&dt, &dy, &mut w).unwrap();
+            for i in 0..response.output_count() {
+                let exact = w.capture_event_jvp().unwrap()[i]
+                    .iter()
+                    .zip(q)
+                    .map(|(r, q)| r * q)
+                    .sum::<f64>();
+                let got = (response.offsets()[i]..response.offsets()[i + 1])
+                    .filter(|&k| response.columns()[k] == column)
+                    .map(|k| gradients[k])
+                    .sum::<f64>();
+                close(got, exact, 4e-14, 1e-13);
+            }
+        }
+    }
+    let other = fixture();
+    assert!(m.capture.power_response(&other.source).is_err());
+    assert!(
+        response
+            .evaluate(&y, &[f64::NAN; 4], &mut powers, &mut gradients)
+            .is_err()
+    );
+    y.fill(0.);
+    response
+        .evaluate(&y, &t, &mut powers, &mut gradients)
+        .unwrap();
+    assert!(powers.iter().all(|v| *v == 0.));
+    // Zero power does not prune the actual neutron derivative support.
+    assert!(gradients.iter().any(|v| *v != 0.));
+}
+
+#[test]
+fn capture_partition_current_density_signed_direction_and_failure_authority() {
+    let m = fixture();
+    let capture = &m.capture;
+    let n = m.source.fuel_history().fuel().intersections().len();
+    let events = vec![[2., 3., 4.]; n];
+    let de = vec![[-0.1, 0.2, -0.3]; n];
+    let rho = [990., 995.];
+    let dr = [0.4, -0.5];
+    let mut w = capture.workspace();
+    capture.evaluate(&events, &rho, &mut w).unwrap();
+    capture.jvp(&de, &dr, &mut w).unwrap();
+    let expected = (
+        w.fuel_heat_jvp().unwrap().to_vec(),
+        w.clad_heat_jvp().unwrap().to_vec(),
+        w.water_heat_jvp().unwrap().to_vec(),
+        w.export_jvp().unwrap(),
+    );
+    for eps in [1e-3, 5e-4] {
+        let eval = |sign: f64| {
+            let mut w = capture.workspace();
+            let e = events
+                .iter()
+                .zip(&de)
+                .map(|(e, d)| std::array::from_fn(|j| e[j] + sign * eps * d[j]))
+                .collect::<Vec<_>>();
+            let r: [f64; 2] = std::array::from_fn(|j| rho[j] + sign * eps * dr[j]);
+            capture.evaluate(&e, &r, &mut w).unwrap();
+            (
+                w.fuel_heat().unwrap().to_vec(),
+                w.clad_heat().unwrap().to_vec(),
+                w.water_heat().unwrap().to_vec(),
+                w.export_rate().unwrap(),
+            )
+        };
+        let plus = eval(1.);
+        let minus = eval(-1.);
+        for ((a, b), d) in plus
+            .0
+            .iter()
+            .chain(&plus.1)
+            .chain(&plus.2)
+            .zip(minus.0.iter().chain(&minus.1).chain(&minus.2))
+            .zip(expected.0.iter().chain(&expected.1).chain(&expected.2))
+        {
+            close((a - b) / (2. * eps), *d, 1e-7, 1e-10);
+        }
+        close((plus.3 - minus.3) / (2. * eps), expected.3, 1e-7, 1e-10);
+    }
+    let other = fixture();
+    assert!(other.capture.evaluate(&events, &rho, &mut w).is_err());
+    assert!(w.export_rate().is_err());
+    capture.evaluate(&events, &rho, &mut w).unwrap();
+    assert!(w.export_jvp().is_err());
+    assert!(capture.evaluate(&events, &[-1., 995.], &mut w).is_err());
+    assert!(w.fuel_heat().is_err());
+    let mut bad = capture_input();
+    bad.bands[0].clad_thickness_m[0] *= 2.;
+    assert!(
+        leitbild_plant_numerics::fuel_capture::Model::new(
+            &m.source,
+            &m.thermal,
+            m.fuel_rows(),
+            bad
+        )
+        .is_err()
+    );
 }

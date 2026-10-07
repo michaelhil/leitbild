@@ -495,6 +495,13 @@ impl Model {
         let b = &self.bands[b];
         b.clad_inner..b.clad_outer + 1
     }
+    /// Physical Voronoi thickness of each retained radial clad node.
+    pub fn clad_thicknesses(&self, b: usize) -> impl Iterator<Item = f64> + '_ {
+        let b = &self.bands[b].input;
+        let n = b.clad_masses_kg.len();
+        let dr = (b.clad_outer_radius_m - b.clad_inner_radius_m) / (n - 1) as f64;
+        (0..n).map(move |i| if i == 0 || i + 1 == n { dr / 2. } else { dr })
+    }
     pub fn workspace(&self) -> Workspace {
         let n = self.node_count();
         Workspace {
@@ -1339,9 +1346,10 @@ mod tests {
         assert!(w.heat_rates().is_ok());
         assert!(w.heat_jvp().is_err());
         assert!(m.visit_heat_derivatives(&w, |_, _, _| {}).is_err());
-        assert!(m
-            .jvp_into(&vec![1.; n], &dep, &[WaterDirection::default(); 2], &mut w)
-            .is_err());
+        assert!(
+            m.jvp_into(&vec![1.; n], &dep, &[WaterDirection::default(); 2], &mut w)
+                .is_err()
+        );
         m.evaluate_into(&t, &dep, &water, &mut w).unwrap();
         assert!(m.visit_heat_derivatives(&w, |_, _, _| {}).is_ok());
         t[0] = 289.;
@@ -1350,9 +1358,11 @@ mod tests {
         assert!(m.visit_heat_derivatives(&w, |_, _, _| {}).is_err());
         t[0] = 510.;
         m.evaluate_into(&t, &dep, &water, &mut w).unwrap();
-        assert!(other
-            .evaluate_values_into(&t, &dep, &water, &mut w)
-            .is_err());
+        assert!(
+            other
+                .evaluate_values_into(&t, &dep, &water, &mut w)
+                .is_err()
+        );
         assert!(w.heat_rates().is_err());
         assert!(m.visit_heat_derivatives(&w, |_, _, _| {}).is_err());
     }
@@ -1372,9 +1382,10 @@ mod tests {
         t[0] = 289.;
         assert!(m.evaluate_into(&t, &dep, &waters, &mut w).is_err());
         assert!(w.heat_rates().is_err());
-        assert!(m
-            .jvp_into(&vec![0.; n], &dep, &[WaterDirection::default(); 2], &mut w)
-            .is_err());
+        assert!(
+            m.jvp_into(&vec![0.; n], &dep, &[WaterDirection::default(); 2], &mut w)
+                .is_err()
+        );
         t[0] = 300.;
         m.evaluate_into(&t, &dep, &waters, &mut w).unwrap();
         assert!(other.evaluate_into(&t, &dep, &waters, &mut w).is_err());

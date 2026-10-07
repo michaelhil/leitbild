@@ -11,6 +11,8 @@ use crate::heat_history::{Kernel, Rates};
 use std::sync::Arc;
 mod power;
 pub use power::PowerResponse;
+mod capture_power;
+pub use capture_power::CapturePowerResponse;
 
 pub const HISTORY: usize = 34;
 pub const CONSUMED_235: usize = 0;
@@ -99,6 +101,8 @@ pub struct Workspace {
     stocks: Vec<Stocks>,
     events: Vec<[f64; 2]>,
     event_direction: Vec<[f64; 2]>,
+    capture_events: Vec<[f64; 3]>,
+    capture_direction: Vec<[f64; 3]>,
     state: Vec<f64>,
     temperatures: Vec<f64>,
     rates: Vec<f64>,
@@ -121,6 +125,16 @@ impl Workspace {
     pub fn achieved_event_jvp(&self) -> Result<&[[f64; 2]], &'static str> {
         self.check_direction()?;
         Ok(&self.event_direction)
+    }
+    /// Gross fertile, xenon and samarium captures at each actual material
+    /// intersection. Never reconstructed by cancelling isotope birth/decay.
+    pub fn capture_events(&self) -> Result<&[[f64; 3]], &'static str> {
+        self.check()?;
+        Ok(&self.capture_events)
+    }
+    pub fn capture_event_jvp(&self) -> Result<&[[f64; 3]], &'static str> {
+        self.check_direction()?;
+        Ok(&self.capture_direction)
     }
     pub fn fuel_coefficients(&self) -> Result<&[f64], &'static str> {
         self.check()?;
@@ -188,7 +202,13 @@ impl Workspace {
                 * std::mem::size_of::<[f64; GROUPS]>()
             + (self.segments.len() + self.segment_direction.len())
                 * std::mem::size_of::<SegmentRates>()
+            + (self.capture_events.len() + self.capture_direction.len())
+                * std::mem::size_of::<[f64; 3]>()
     }
+}
+/// Canonical gross poison event coefficient (no births or decay subtraction).
+fn poison_capture_coefficient(speed: f64, volume: f64, weight: f64, sigma: f64) -> f64 {
+    speed / volume * sigma * weight
 }
 fn positive(v: f64) -> bool {
     v.is_finite() && v > 0.
@@ -201,6 +221,12 @@ impl Assembly {
     /// stage workspaces or an evaluated-state cache.
     pub fn power_response(&self) -> Result<PowerResponse, &'static str> {
         PowerResponse::new(self)
+    }
+    pub fn capture_power_response(
+        &self,
+        event_j: [f64; 3],
+    ) -> Result<CapturePowerResponse, String> {
+        CapturePowerResponse::new(self, event_j)
     }
     /// Immutable finite isotope references and their owned spontaneous laws.
     pub fn segment_preparations(&self) -> &[SegmentPreparation] {
@@ -373,6 +399,8 @@ impl Assembly {
             ],
             events: vec![[0.; 2]; self.fuel.intersections().len()],
             event_direction: vec![[0.; 2]; self.fuel.intersections().len()],
+            capture_events: vec![[0.; 3]; self.fuel.intersections().len()],
+            capture_direction: vec![[0.; 3]; self.fuel.intersections().len()],
             state: vec![0.; self.state_count()],
             temperatures: vec![0.; self.fuel.cohorts().len()],
             rates: vec![0.; self.state_count()],
@@ -397,7 +425,8 @@ impl Assembly {
             .validate_accepted_state(&y[..self.fuel_dimension()])?;
         for (s, p) in self.segments.iter().enumerate() {
             let h = &y[self.history_row(s, 0)..self.history_row(s, 0) + HISTORY];
-            if h[CONSUMED_235] > p.reference_u235 || h[CAPTURED_238] + h[SF_238] > p.reference_u238
+            if h[CONSUMED_235] > p.reference_u235
+                || p.reference_u238 - h[CAPTURED_238] - h[SF_238] < 0.
             {
                 return Err("Exhausted accepted fuel isotope donor");
             }
@@ -440,7 +469,14 @@ impl Assembly {
         self.fuel.collision_into(&w.fuel, &mut w.collision)?;
         w.rates[self.fuel_dimension()..].fill(0.);
         w.segments.fill(SegmentRates::default());
-        for (e, event) in self.fuel.intersections().iter().zip(&w.events) {
+        for ((e, event), capture) in self
+            .fuel
+            .intersections()
+            .iter()
+            .zip(&w.events)
+            .zip(&mut w.capture_events)
+        {
+            *capture = [event[1], 0., 0.];
             w.segments[e.segment].induced_fission += event[0];
             w.segments[e.segment].fertile_capture += event[1];
         }
@@ -469,17 +505,29 @@ impl Assembly {
             r.prompt_release = heat.prompt;
             r.delayed_release = heat.delayed;
         }
-        for e in self.fuel.intersections() {
+        for (i, e) in self.fuel.intersections().iter().enumerate() {
             let row = self.history_row(e.segment, 0);
             let h = &y[row..row + HISTORY];
             let r = &mut w.segments[e.segment];
             let weight = e.volume / self.volumes[e.segment];
-            let flux =
-                self.fuel.law().speed[6] * y[e.region * GROUPS + 6] / self.fuel.volumes()[e.region];
             let xe = self.poison.xe_sigma_m2 * h[XENON] * weight / self.fuel.volumes()[e.region];
             let sm = self.poison.sm_sigma_m2 * h[SAMARIUM] * weight / self.fuel.volumes()[e.region];
-            let cx = flux * self.poison.xe_sigma_m2 * h[XENON] * weight;
-            let cs = flux * self.poison.sm_sigma_m2 * h[SAMARIUM] * weight;
+            let cx = poison_capture_coefficient(
+                self.fuel.law().speed[6],
+                self.fuel.volumes()[e.region],
+                weight,
+                self.poison.xe_sigma_m2,
+            ) * y[e.region * GROUPS + 6]
+                * h[XENON];
+            let cs = poison_capture_coefficient(
+                self.fuel.law().speed[6],
+                self.fuel.volumes()[e.region],
+                weight,
+                self.poison.sm_sigma_m2,
+            ) * y[e.region * GROUPS + 6]
+                * h[SAMARIUM];
+            w.capture_events[i][1] = cx;
+            w.capture_events[i][2] = cs;
             r.xe_capture += cx;
             r.sm_capture += cs;
             w.rates[e.region * GROUPS + 6] -= cx + cs;
@@ -961,7 +1009,14 @@ impl Assembly {
                 w.collision_direction[e.region][g] += dc / self.fuel.law().speed[g];
             }
         }
-        for (e, de) in self.fuel.intersections().iter().zip(&w.event_direction) {
+        for ((e, de), capture) in self
+            .fuel
+            .intersections()
+            .iter()
+            .zip(&w.event_direction)
+            .zip(&mut w.capture_direction)
+        {
+            *capture = [de[1], 0., 0.];
             w.segment_direction[e.segment].induced_fission += de[0];
             w.segment_direction[e.segment].fertile_capture += de[1];
         }
@@ -989,20 +1044,27 @@ impl Assembly {
             r.prompt_release = heat.prompt;
             r.delayed_release = heat.delayed;
         }
-        for e in self.fuel.intersections() {
+        for (i, e) in self.fuel.intersections().iter().enumerate() {
             let row = self.history_row(e.segment, 0);
             let h = &w.state[row..row + HISTORY];
             let dh = &dy[row..row + HISTORY];
             let weight = e.volume / self.volumes[e.segment];
-            let scale = self.fuel.law().speed[6] * weight / self.fuel.volumes()[e.region];
-            let cx = self.poison.xe_sigma_m2
-                * scale
-                * (h[XENON] * dy[e.region * GROUPS + 6]
-                    + dh[XENON] * w.state[e.region * GROUPS + 6]);
-            let cs = self.poison.sm_sigma_m2
-                * scale
-                * (h[SAMARIUM] * dy[e.region * GROUPS + 6]
-                    + dh[SAMARIUM] * w.state[e.region * GROUPS + 6]);
+            let cx = poison_capture_coefficient(
+                self.fuel.law().speed[6],
+                self.fuel.volumes()[e.region],
+                weight,
+                self.poison.xe_sigma_m2,
+            ) * (h[XENON] * dy[e.region * GROUPS + 6]
+                + dh[XENON] * w.state[e.region * GROUPS + 6]);
+            let cs = poison_capture_coefficient(
+                self.fuel.law().speed[6],
+                self.fuel.volumes()[e.region],
+                weight,
+                self.poison.sm_sigma_m2,
+            ) * (h[SAMARIUM] * dy[e.region * GROUPS + 6]
+                + dh[SAMARIUM] * w.state[e.region * GROUPS + 6]);
+            w.capture_direction[i][1] = cx;
+            w.capture_direction[i][2] = cs;
             let r = &mut w.segment_direction[e.segment];
             r.xe_capture += cx;
             r.sm_capture += cs;

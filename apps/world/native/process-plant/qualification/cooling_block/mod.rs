@@ -150,6 +150,7 @@ pub(super) struct Preconditioner {
     fluid_rhs: Vec<f64>,
     fluid_solution: Vec<f64>,
     barrel: Sparse,
+    receipt_cj: f64,
     work: Workspace,
     valid: bool,
     setups: u64,
@@ -208,6 +209,7 @@ impl Preconditioner {
             fluid_rhs,
             fluid_solution,
             barrel,
+            receipt_cj: 0.,
             work,
             valid: false,
             setups: 0,
@@ -218,6 +220,7 @@ impl Preconditioner {
     }
     pub fn setup(&mut self, model: &Model, y: &[f64], yp: &[f64], cj: f64) -> Result<(), String> {
         self.valid = false;
+        self.receipt_cj = cj;
         let started = Instant::now();
         self.setups += 1;
         let result = (|| {
@@ -310,6 +313,10 @@ impl Preconditioner {
                 &rhs[l.barrel_energy..l.pressurizer_start],
                 &mut out[l.barrel_energy..l.pressurizer_start],
             )?;
+            out[l.fuel_capture_exported] = rhs[l.fuel_capture_exported] / self.receipt_cj;
+            if !out[l.fuel_capture_exported].is_finite() {
+                return Err("Nonfinite fuel-binding export preconditioner solution".into());
+            }
             Ok(())
         })();
         self.solve_seconds += started.elapsed().as_secs_f64();
@@ -400,11 +407,19 @@ mod tests {
         let mut p = Preconditioner::new(&model, &y, &yp).unwrap();
         p.setup(&model, &y, &yp, 3.).unwrap();
         let n = model.dimension();
-        assert!(
-            p.solve(&model, &vec![f64::NAN; n], &mut vec![0.; n])
-                .is_err()
-        );
+        assert!(p
+            .solve(&model, &vec![f64::NAN; n], &mut vec![0.; n])
+            .is_err());
         assert!(p.solve(&model, &vec![0.; n], &mut vec![0.; n]).is_err());
+        p.setup(&model, &y, &yp, 3.).unwrap();
+        let mut receipt_rhs = vec![0.; n];
+        receipt_rhs[model.layout.fuel_capture_exported] = 12.;
+        let mut solved = vec![0.; n];
+        p.solve(&model, &receipt_rhs, &mut solved).unwrap();
+        assert_eq!(solved[model.layout.fuel_capture_exported], 4.);
+        receipt_rhs[model.layout.fuel_capture_exported] = f64::INFINITY;
+        assert!(p.solve(&model, &receipt_rhs, &mut solved).is_err());
+        assert!(p.solve(&model, &vec![0.; n], &mut solved).is_err());
         p.setup(&model, &y, &yp, 3.).unwrap();
         assert!(p.setup(&model, &y, &yp, 0.).is_err());
         assert!(p.solve(&model, &vec![0.; n], &mut vec![0.; n]).is_err());

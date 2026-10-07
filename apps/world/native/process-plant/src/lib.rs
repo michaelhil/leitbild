@@ -23,6 +23,7 @@ pub mod operating_admission;
 pub mod heat_history;
 pub mod water_carrier;
 pub mod fuel_thermal;
+pub mod fuel_capture;
 pub mod source_cooling;
 pub mod sg_secondary;
 pub mod cold_pressurizer;

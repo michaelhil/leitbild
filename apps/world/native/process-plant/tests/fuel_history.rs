@@ -161,6 +161,49 @@ fn close(a: f64, b: f64) {
     );
 }
 #[test]
+fn capture_response_preserves_canonical_near_exhaustion_subtraction() {
+    let m = model(2f64.powi(53));
+    let reference = m.segment_preparations()[0].reference_u238;
+    let response = m.capture_power_response([0.3, 0.4, 0.5]).unwrap();
+    let mut y = m.initial_state();
+    y[..m.fuel_dimension()].fill(2.);
+    for s in 0..m.segment_preparations().len() {
+        let r = m.history_row(s, 0);
+        y[r + CAPTURED_238] = reference - 8.;
+        y[r + SF_238] = 3.;
+        assert_ne!(
+            reference - y[r + CAPTURED_238] - y[r + SF_238],
+            reference - (y[r + CAPTURED_238] + y[r + SF_238])
+        );
+    }
+    let t = vec![310.; m.fuel().cohorts().len()];
+    let mut w = m.workspace();
+    m.evaluate_into(&t, &y, &mut w).unwrap();
+    let mut p = vec![0.; response.output_count()];
+    let mut g = vec![0.; response.columns().len()];
+    response.evaluate(&y, &t, &mut p, &mut g).unwrap();
+    for (i, e) in w.capture_events().unwrap().iter().enumerate() {
+        let expected = 0.3 * e[0] + 0.4 * e[1] + 0.5 * e[2];
+        assert!((p[i] - expected).abs() <= 32. * f64::EPSILON * expected.abs());
+        assert!(p[i] > 0.);
+    }
+}
+#[test]
+fn accepted_fertile_donor_uses_the_actual_ordered_remaining_stock() {
+    let m = model(2f64.powi(53));
+    let reference = m.segment_preparations()[0].reference_u238;
+    assert_eq!(reference, 2f64.powi(54));
+    let row = m.history_row(0, 0);
+    let mut y = m.initial_state();
+    y[row + CAPTURED_238] = reference;
+    assert!(m.validate_accepted_state(&y).is_ok());
+    y[row + SF_238] = 1.;
+    assert_eq!(y[row + CAPTURED_238] + y[row + SF_238], reference);
+    assert_eq!(reference - y[row + CAPTURED_238] - y[row + SF_238], -1.);
+    assert!(m.validate_accepted_state(&y).is_err());
+    assert!(m.evaluate_into(&[300.; 3], &y, &mut m.workspace()).is_err());
+}
+#[test]
 fn original_zero_field_has_real_births_and_histories_but_no_sf_precursors() {
     let m = model(1e28);
     let y = m.initial_state();
@@ -325,22 +368,26 @@ fn signed_trials_are_not_accepted_or_clipped_and_failures_invalidate() {
     m.evaluate_into(&[301.; 3], &m.initial_state(), &mut w)
         .unwrap();
     assert_eq!(ptr, w.rates().unwrap().as_ptr());
-    assert!(m
-        .jvp_into(&[0.; 2], &vec![0.; m.state_count()], &mut w)
-        .is_err());
+    assert!(
+        m.jvp_into(&[0.; 2], &vec![0.; m.state_count()], &mut w)
+            .is_err()
+    );
     assert!(w.rate_jvp().is_err());
     let mut exhausted = m.initial_state();
     exhausted[m.history_row(0, CAPTURED_238)] = 2001.;
     assert!(m.validate_accepted_state(&exhausted).is_err());
     assert!(m.evaluate_into(&[300.; 3], &exhausted, &mut w).is_err());
     assert!(w.rates().is_err());
-    assert!(m
-        .evaluate_into(&[300.; 3], &vec![f64::NAN; m.state_count()], &mut w)
-        .is_err());
+    assert!(
+        m.evaluate_into(&[300.; 3], &vec![f64::NAN; m.state_count()], &mut w)
+            .is_err()
+    );
     let foreign = model(1000.);
-    assert!(foreign
-        .evaluate_into(&[300.; 3], &foreign.initial_state(), &mut w)
-        .is_err());
+    assert!(
+        foreign
+            .evaluate_into(&[300.; 3], &foreign.initial_state(), &mut w)
+            .is_err()
+    );
 }
 
 fn sparse_action(
@@ -375,14 +422,16 @@ fn sparse_complete_state_action_matches_independent_jvp_at_zero_nonzero_and_sign
     let m = model(1000.);
     let p = m.sparse_patterns();
     assert!(p.rates.len() > m.state_count());
-    assert!(p
-        .rates
-        .iter()
-        .all(|&(r, c)| r < m.state_count() && c < m.state_count()));
-    assert!(p
-        .collision
-        .iter()
-        .all(|&(r, g, c)| r < 2 && g < 7 && c < m.state_count()));
+    assert!(
+        p.rates
+            .iter()
+            .all(|&(r, c)| r < m.state_count() && c < m.state_count())
+    );
+    assert!(
+        p.collision
+            .iter()
+            .all(|&(r, g, c)| r < 2 && g < 7 && c < m.state_count())
+    );
     let mut w = m.workspace();
     for kind in 0..4 {
         let mut y = m.initial_state();
@@ -513,16 +562,19 @@ fn sparse_values_refuse_invalid_foreign_or_wrong_shape_workspaces() {
     assert!(m.sparse_values(&w, &mut r, &mut c, &mut d).is_err());
     m.evaluate_into(&[300.; 3], &m.initial_state(), &mut w)
         .unwrap();
-    assert!(model(1000.)
-        .sparse_values(&w, &mut r, &mut c, &mut d)
-        .is_err());
+    assert!(
+        model(1000.)
+            .sparse_values(&w, &mut r, &mut c, &mut d)
+            .is_err()
+    );
     assert!(m.sparse_values(&w, &mut r[1..], &mut c, &mut d).is_err());
     assert!(m.sparse_values(&w, &mut r, &mut c[1..], &mut d).is_err());
     assert!(m.sparse_values(&w, &mut r, &mut c, &mut d[1..]).is_err());
     m.sparse_values(&w, &mut r, &mut c, &mut d).unwrap();
-    assert!(m
-        .evaluate_into(&[300.; 3], &vec![f64::NAN; m.state_count()], &mut w)
-        .is_err());
+    assert!(
+        m.evaluate_into(&[300.; 3], &vec![f64::NAN; m.state_count()], &mut w)
+            .is_err()
+    );
     assert!(m.sparse_values(&w, &mut r, &mut c, &mut d).is_err());
 }
 
@@ -544,10 +596,11 @@ fn sparse_pattern_prunes_fixed_law_zeros_but_retains_state_vanishing_feedback() 
     }));
     for s in 0..2 {
         let row = m.history_row(s, 0);
-        assert!(!p
-            .rates
-            .iter()
-            .any(|&(r, _)| r == row + XENON_PRODUCT || r == row + SAMARIUM_PRODUCT));
+        assert!(
+            !p.rates
+                .iter()
+                .any(|&(r, _)| r == row + XENON_PRODUCT || r == row + SAMARIUM_PRODUCT)
+        );
         assert!(p.rates.contains(&(0, row + CONSUMED_235)) || s == 1);
     }
     assert!(p.rates.len() < model(1000.).sparse_patterns().rates.len());

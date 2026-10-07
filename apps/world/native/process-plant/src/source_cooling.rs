@@ -1,14 +1,15 @@
 //! One offline cold source/fuel/primary/SG/barrel/pressure-support residual.
 //! Component owners retain
 //! their laws; this module owns ONLY their physical incidence and chain rule.
-//! Includes the selected finite-barrel capture/decay path and restricted cold
+//! Includes fertile/Xe/Sm prompt-binding photons into existing fuel/clad/water,
+//! the selected finite-barrel capture/decay path and restricted cold
 //! liquid/steam/air pressurizer with its finite mixed surge line.
 //! No time integrator, Pack installation, other unjoined binding recipients,
 //! all-passage acoustic mesh, hot geometry or primary phase continuation is implied.
 use crate::{
-    barrel_thermal as bt, cold_pressurizer as cp, finite_surge as fs, fuel_thermal as ft,
-    moderator_source::Stocks, operating_network as on, sg_secondary, source_evolution as se,
-    water_carrier as wc,
+    barrel_thermal as bt, cold_pressurizer as cp, finite_surge as fs, fuel_capture as fc,
+    fuel_thermal as ft, moderator_source::Stocks, operating_network as on, sg_secondary,
+    source_evolution as se, water_carrier as wc,
 };
 use std::sync::Arc;
 mod pressure;
@@ -31,6 +32,7 @@ pub struct Layout {
     pub pool_carrier_start: usize,
     pub gas_hydrogen_product: usize,
     pub ambient_exported: usize,
+    pub fuel_capture_exported: usize,
     pub dimension: usize,
 }
 pub struct Model {
@@ -39,6 +41,7 @@ pub struct Model {
     pub thermal: ft::Model,
     pub carrier: wc::Carrier,
     pub barrel: bt::Model,
+    pub capture: fc::Model,
     pub layout: Layout,
     pressure_connection: PressureConnection,
     /// SOURCE fuel-cohort ordering -> thermal node ordering.
@@ -53,12 +56,15 @@ pub struct Workspace {
     pub network: on::Workspace,
     pub thermal: ft::Workspace,
     pub barrel: bt::Workspace,
+    pub capture: fc::Workspace,
     pub pressurizer: cp::Workspace,
     pub surge: fs::Workspace,
     pub residual: Vec<f64>,
     pub jvp: Vec<f64>,
     mass: Vec<f64>,
     dmass: Vec<f64>,
+    density: Vec<f64>,
+    ddensity: Vec<f64>,
     products: Vec<wc::Amounts>,
     dproducts: Vec<wc::Amounts>,
     product_rates: Vec<wc::Amounts>,
@@ -110,8 +116,9 @@ impl Workspace {
         }
         Ok(&self.stocks)
     }
-    /// Actual independently assembled installed-energy rate minus paid fuel
-    /// and barrel release, plus barrel photon and signed ambient exports.
+    /// Actual independently assembled installed-energy rate minus paid fuel,
+    /// barrel and existing-product capture release, plus their photon and
+    /// signed ambient exports.
     /// Never replaced with the
     /// analytically expected zero.
     pub fn complete_energy_rate(&self) -> Result<f64, String> {
@@ -138,6 +145,7 @@ impl Model {
         carrier: wc::Carrier,
         barrel: bt::Model,
         pressure_connection: PressureConnection,
+        capture: fc::Input,
         fuel_rows: Vec<usize>,
         water_flows: Vec<Option<usize>>,
         original_temperature: Vec<f64>,
@@ -273,15 +281,20 @@ impl Model {
         let ambient_exported = gas_hydrogen_product
             .checked_add(1)
             .ok_or("Coupled layout overflow")?;
-        let dimension = ambient_exported
+        let fuel_capture_exported = ambient_exported
             .checked_add(1)
             .ok_or("Coupled layout overflow")?;
+        let dimension = fuel_capture_exported
+            .checked_add(1)
+            .ok_or("Coupled layout overflow")?;
+        let capture = fc::Model::new(&source, &thermal, &fuel_rows, capture)?;
         Ok(Self {
             source,
             network,
             thermal,
             carrier,
             barrel,
+            capture,
             pressure_connection,
             fuel_rows,
             water_flows,
@@ -302,6 +315,7 @@ impl Model {
                 pool_carrier_start,
                 gas_hydrogen_product,
                 ambient_exported,
+                fuel_capture_exported,
                 dimension,
             },
             owner: Arc::new(()),
@@ -309,6 +323,13 @@ impl Model {
     }
     pub fn fuel_rows(&self) -> &[usize] {
         &self.fuel_rows
+    }
+    /// Existing physical capture products are the independent paid receipt;
+    /// initial amounts must be subtracted BEFORE multiplying by event energy.
+    pub fn capture_paid_rows(&self) -> impl Iterator<Item = (usize, f64)> + '_ {
+        self.source
+            .capture_progress_rows()
+            .flat_map(|rows| rows.into_iter().zip(self.capture.config().capture_j))
     }
     pub fn dimension(&self) -> usize {
         self.layout.dimension
@@ -343,7 +364,7 @@ impl Model {
     }
     pub fn fluid_rows(&self) -> impl Iterator<Item = usize> + '_ {
         (self.layout.network_start..self.layout.energies_start)
-            .chain(self.layout.pressurizer_start..self.layout.dimension)
+            .chain(self.layout.pressurizer_start..=self.layout.ambient_exported)
     }
     pub fn is_differential(&self, row: usize) -> bool {
         let l = self.layout;
@@ -366,6 +387,7 @@ impl Model {
                     .surge
                     .is_differential(row - l.surge_start))
             || (row >= l.surge_carrier_start && row <= l.ambient_exported)
+            || row == l.fuel_capture_exported
     }
     pub fn workspace(&self) -> Workspace {
         let nw = self.carrier.cells();
@@ -391,12 +413,15 @@ impl Model {
             network: on::Workspace::new(&self.network),
             thermal: self.thermal.workspace(),
             barrel: self.barrel.workspace(),
+            capture: self.capture.workspace(),
             pressurizer: self.pressure_connection.pressurizer.workspace(),
             surge: self.pressure_connection.surge.workspace(),
             residual: vec![0.; self.dimension()],
             jvp: vec![0.; self.dimension()],
             mass: vec![0.; nw],
             dmass: vec![0.; nw],
+            density: vec![0.; nw],
+            ddensity: vec![0.; nw],
             products: vec![wc::Amounts::default(); nw],
             dproducts: vec![wc::Amounts::default(); nw],
             product_rates: vec![wc::Amounts::default(); nw],
@@ -548,6 +573,7 @@ impl Model {
                 boron: y[l.carrier_start + wc::WIDTH * i + 2],
             };
             let liquid = w.network.liquids[i];
+            w.density[i] = liquid.density;
             w.water[i] = ft::Water {
                 pressure_pa: liquid.pressure,
                 temperature_k: liquid.temperature,
@@ -580,6 +606,14 @@ impl Model {
         w.deposited.fill(0.);
         for (&r, &q) in self.fuel_rows.iter().zip(w.source.fuel_deposition()?) {
             w.deposited[r] = q;
+        }
+        self.capture
+            .evaluate(w.source.fuel_capture_events()?, &w.density, &mut w.capture)?;
+        for (&r, &q) in self.fuel_rows.iter().zip(w.capture.fuel_heat()?) {
+            w.deposited[r] += q;
+        }
+        for (q, &c) in w.deposited.iter_mut().zip(w.capture.clad_heat()?) {
+            *q += c;
         }
         if cj.is_some() {
             self.thermal.evaluate_into(
@@ -634,6 +668,9 @@ impl Model {
         for (i, &q) in w.barrel.water_heat()?.iter().enumerate() {
             w.residual[l.network_start + self.network.energy_row(i)] -= q;
         }
+        for (i, &q) in w.capture.water_heat()?.iter().enumerate() {
+            w.residual[l.network_start + self.network.energy_row(i)] -= q;
+        }
         for i in 0..self.thermal.node_count() {
             w.residual[l.energies_start + i] =
                 yp[l.energies_start + i] - w.thermal.heat_rates()?[i];
@@ -653,6 +690,8 @@ impl Model {
         w.residual[l.ambient_exported] = yp[l.ambient_exported]
             - w.pressurizer.diagnostics()?.ambient_heat
             - receipts.ambient_heat;
+        w.residual[l.fuel_capture_exported] =
+            yp[l.fuel_capture_exported] - w.capture.export_rate()?;
         if w.residual.iter().any(|x| !x.is_finite()) {
             return Err("Nonfinite composed residual".into());
         }
@@ -666,6 +705,12 @@ impl Model {
                 .chain(w.thermal.wall_rates()?.iter().copied())
                 .chain(w.thermal.heat_rates()?.iter().copied())
                 .chain(w.barrel.water_heat()?.iter().copied())
+                .chain(w.capture.water_heat()?.iter().copied())
+                .chain(
+                    self.capture_paid_rows()
+                        .map(|(r, q)| -q * w.source.rates().expect("successful source")[r]),
+                )
+                .chain([w.capture.export_rate()?])
                 .chain([
                     w.barrel.heat_rate()?,
                     -w.barrel.emitted_rate()?,
@@ -728,6 +773,7 @@ impl Model {
                     * (w.network.liquids[i].compressibility * dp
                         - w.network.liquids[i].expansion * dt),
             };
+            w.ddensity[i] = w.dbarrel_water[i].density_kg_m3;
         }
         for (e, dq) in w.dflows.iter_mut().enumerate() {
             *dq = dn[self.network.flow_row(e)];
@@ -746,6 +792,17 @@ impl Model {
         w.ddeposited.fill(0.);
         for (&r, &q) in self.fuel_rows.iter().zip(w.source.fuel_deposition_jvp()?) {
             w.ddeposited[r] = q;
+        }
+        self.capture.jvp(
+            w.source.fuel_capture_event_jvp()?,
+            &w.ddensity,
+            &mut w.capture,
+        )?;
+        for (&r, &q) in self.fuel_rows.iter().zip(w.capture.fuel_heat_jvp()?) {
+            w.ddeposited[r] += q;
+        }
+        for (q, &c) in w.ddeposited.iter_mut().zip(w.capture.clad_heat_jvp()?) {
+            *q += c;
         }
         self.thermal.jvp_into(
             &dy[l.temperatures_start..l.barrel_energy],
@@ -816,6 +873,9 @@ impl Model {
         for (i, &q) in w.barrel.water_heat_jvp()?.iter().enumerate() {
             w.jvp[l.network_start + self.network.energy_row(i)] -= q;
         }
+        for (i, &q) in w.capture.water_heat_jvp()?.iter().enumerate() {
+            w.jvp[l.network_start + self.network.energy_row(i)] -= q;
+        }
         for i in 0..self.thermal.node_count() {
             w.jvp[l.energies_start + i] = cj * dy[l.energies_start + i] - w.thermal.heat_jvp()?[i];
             w.jvp[l.temperatures_start + i] = dy[l.energies_start + i] - w.thermal.energy_jvp()?[i];
@@ -834,6 +894,8 @@ impl Model {
         w.jvp[l.ambient_exported] = cj * dy[l.ambient_exported]
             - phase_tangent[cp::DIAGNOSTIC_AMBIENT_HEAT]
             - line_tangent.ambient_heat;
+        w.jvp[l.fuel_capture_exported] =
+            cj * dy[l.fuel_capture_exported] - w.capture.export_jvp()?;
         if w.jvp.iter().any(|x| !x.is_finite()) {
             return Err("Nonfinite composed JVP".into());
         }
@@ -842,6 +904,12 @@ impl Model {
                 .chain(w.thermal.wall_jvp()?.iter().copied())
                 .chain(w.thermal.heat_jvp()?.iter().copied())
                 .chain(w.barrel.water_heat_jvp()?.iter().copied())
+                .chain(w.capture.water_heat_jvp()?.iter().copied())
+                .chain(
+                    self.capture_paid_rows()
+                        .map(|(r, q)| -q * w.source.rate_jvp().expect("successful source JVP")[r]),
+                )
+                .chain([w.capture.export_jvp()?])
                 .chain([
                     w.barrel.heat_jvp()?,
                     -w.barrel.emitted_jvp()?,
@@ -915,8 +983,11 @@ impl Model {
         {
             return Err("Invalid accepted pressure-support vapor hydrogen".into());
         }
-        if y[self.layout.barrel_released] < 0. || y[self.layout.barrel_exported] < 0. {
-            return Err("Negative accepted barrel release/export history".into());
+        if y[self.layout.barrel_released] < 0.
+            || y[self.layout.barrel_exported] < 0.
+            || y[l.fuel_capture_exported] < 0.
+        {
+            return Err("Negative accepted nuclear release/export history".into());
         }
         Ok(())
     }

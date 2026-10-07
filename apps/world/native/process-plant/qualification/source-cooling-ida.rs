@@ -5,6 +5,8 @@
 mod cooling_accuracy;
 #[path = "cooling_block/mod.rs"]
 mod cooling_block;
+#[path = "cooling_capture.rs"]
+mod cooling_capture;
 #[path = "cooling_convergence.rs"]
 mod cooling_convergence;
 #[path = "cooling_coordinates.rs"]
@@ -131,6 +133,7 @@ struct Callbacks<'a> {
     power_weights: cooling_power::PowerWeights,
     power_work: cooling_power::PowerWorkspace,
     barrel_weights: cooling_power::BarrelWeights,
+    capture_weights: cooling_power::CaptureWeights,
     power_resolution_w: f64,
     start: Instant,
     allowance: f64,
@@ -167,6 +170,7 @@ fn progress_relative(model: &source_cooling::Model, row: usize) -> bool {
         || (model.layout.carrier_start..model.layout.energies_start).contains(&row)
         || row == model.layout.barrel_released
         || row == model.layout.barrel_exported
+        || row == model.layout.fuel_capture_exported
         || (model.layout.surge_carrier_start..=model.layout.gas_hydrogen_product).contains(&row)
 }
 fn state_error_scale(
@@ -199,6 +203,7 @@ fn physical_constraints(model: &source_cooling::Model, energy_row: usize) -> Vec
     out[l.barrel_temperature] = 2.;
     out[l.barrel_released] = 1.;
     out[l.barrel_exported] = 1.;
+    out[l.fuel_capture_exported] = 1.;
     for row in [
         cold_pressurizer::LIQUID_MASS,
         cold_pressurizer::VAPOR_MASS,
@@ -225,7 +230,7 @@ fn physical_constraints(model: &source_cooling::Model, energy_row: usize) -> Vec
     // Ambient receipt and both signed endpoint flows remain unconstrained.
     out
 }
-const ERROR_FAMILIES: [&str; 12] = [
+const ERROR_FAMILIES: [&str; 13] = [
     "source-N",
     "source-C",
     "source-history-and-audits",
@@ -238,6 +243,7 @@ const ERROR_FAMILIES: [&str; 12] = [
     "finite-surge-fluid-steel-flows",
     "line-pool-gas-carrier",
     "signed-ambient-export",
+    "fuel-binding-photon-export",
 ];
 #[derive(Clone, Copy, Default)]
 struct ErrorFamily {
@@ -284,8 +290,10 @@ impl LocalErrors {
                     9
                 } else if r < l.ambient_exported {
                     10
-                } else {
+                } else if r == l.ambient_exported {
                     11
+                } else {
+                    12
                 }
             })
             .collect::<Vec<_>>();
@@ -399,6 +407,8 @@ unsafe extern "C" fn error_weights(y: Handle, weights: Handle, user: Handle) -> 
                 c.power_resolution_w,
                 out,
             )?;
+            c.capture_weights
+                .cap(y, c.relative, c.power_resolution_w, out)?;
             for scale in out {
                 if !scale.is_finite() || *scale <= 0. {
                     return Err("Invalid power-capped error scale".into());
@@ -733,7 +743,7 @@ fn checkpoint(path: &Path, time: f64, y: &[f64], yp: &[f64]) -> Result<(), Strin
             .open(&pending)
             .map_err(|e| e.to_string())?,
     );
-    f.write_all(b"LDRCST01")
+    f.write_all(b"LDFBST01")
         .and_then(|_| f.write_all(&(y.len() as u64).to_le_bytes()))
         .and_then(|_| f.write_all(&time.to_le_bytes()))
         .map_err(|e| e.to_string())?;
@@ -757,7 +767,7 @@ fn retain_common(path: &Path, time: f64, y: &[f64]) -> Result<(), String> {
             .open(&pending)
             .map_err(|e| e.to_string())?,
     );
-    f.write_all(b"LDRCCM01")
+    f.write_all(b"LDFBCM01")
         .and_then(|_| f.write_all(&(y.len() as u64).to_le_bytes()))
         .and_then(|_| f.write_all(&time.to_le_bytes()))
         .map_err(|e| e.to_string())?;
@@ -871,6 +881,7 @@ fn run(
             model.barrel.config().targets,
             model.barrel.config().capture_photon_j,
         )?,
+        capture_weights: cooling_power::CaptureWeights::new(model)?,
         power_resolution_w: cooling_accuracy::DEPOSIT_RESOLUTION_W / refinement,
         start,
         allowance,
@@ -1161,6 +1172,7 @@ fn run(
                     deposition: callbacks.work.source.fuel_deposition()?.to_vec(),
                     water_mass: callbacks.work.network.chart_mass.clone(),
                     barrel_power: cooling_accuracy::barrel_powers(&callbacks.work)?,
+                    capture_power: callbacks.work.capture.power_channels()?.to_vec(),
                     surge_flow: {
                         let r = callbacks.work.surge.receipts()?;
                         [r.mass[0], -r.mass[1]]
@@ -1431,6 +1443,9 @@ fn execute() -> Result<(), String> {
     let mut max_carrier = 0f64;
     let mut max_barrel = 0f64;
     let mut max_barrel_power = 0f64;
+    let mut max_capture_power_local = 0f64;
+    let mut max_capture_power_sumabs = 0f64;
+    let mut max_capture_paid_energy = 0f64;
     let mut max_pressure = 0f64;
     let mut max_pressure_material = 0f64;
     let mut feedback = "null".to_string();
@@ -1458,6 +1473,9 @@ fn execute() -> Result<(), String> {
             max_carrier = max_carrier.max(c.carrier_ratio);
             max_barrel = max_barrel.max(c.barrel_thermal_ratio);
             max_barrel_power = max_barrel_power.max(c.barrel_power_ratio);
+            max_capture_power_local = max_capture_power_local.max(c.capture_power_local_ratio);
+            max_capture_power_sumabs = max_capture_power_sumabs.max(c.capture_power_sumabs_ratio);
+            max_capture_paid_energy = max_capture_paid_energy.max(c.capture_paid_energy_ratio);
             max_pressure = max_pressure.max(c.pressure_pair_ratio);
             max_pressure_material = max_pressure_material.max(c.pressure_material_pair_ratio);
             comparisons.push(c.json());
@@ -1568,9 +1586,14 @@ fn execute() -> Result<(), String> {
         ),
         pressure_developed.map_or("null".into(), |v| v.to_string())
     );
+    let capture_gates = format!("\"capturePowerLocalRatio\":{},\"capturePowerSUMABSRatio\":{},\"capturePaidEnergyRatio\":{}",
+        if pair_evaluated { finite(max_capture_power_local) } else { "null".into() },
+        if pair_evaluated { finite(max_capture_power_sumabs) } else { "null".into() },
+        if pair_evaluated { finite(max_capture_paid_energy) } else { "null".into() });
+    let capture_settings = "\"capturePowerErrorWeights\":\"sparse-current-fuel-capture-and-temperature-proportional-budget-cap\",\"capturePowerResolutionW\":1e-12,\"capturePowerWeightScope\":\"emitted-per-intersection;held-route-fractions-at-most-one;all-five-recipient-channels-independently-paired\"";
     let pressure_settings = "\"pressureCoordinates\":\"finite-pool-cushion-and-surge-forward-DAE;direct-liquid-B10-and-phase-H-products\",\"pressureResponseResolutionPa\":1,\"pressureChangeRelativeBudget\":0.005,\"surgeHydraulicModel\":\"finite-storage-two-algebraic-resistances\",\"surgeGravityModel\":\"owned-bulk-density-hydrostatic-face-heads\",\"surgeReductionScope\":\"sound-filtered-slow-support;no-inertial-waveform-credit\",\"surgeFlowResolutionKgS\":1e-5,\"pressureChartHeightScope\":\"hydrostatic-equivalent-1Pa;P-T-coupled-correction-and-metal-caloric-admitted\"";
     println!(
-        "{{\"kind\":\"source-cooling-pair\",\"passed\":{passed},\"lastAdmittedTime\":{},\"scope\":\"same-trial-source-finite-fuel-He-primary-finite-SG-barrel-surge-cold-PZR;cold-fixed-prepared-geometry;no-fullplant-credit\",\"dimension\":{},\"differential\":{},\"settings\":{{\"accuracyPolicy\":\"cold-source-cooling-7\",\"carrierCoordinates\":\"hydrogen-product,direct-boron10,boron-product\",\"provisional\":true,\"nonlinearClosure\":\"stock-Newton-and-current-physical-network-pressure-charts\",\"linearWeightedL2Budget\":{linear_budget},\"algebraicLTE\":\"included\",\"fuelPowerErrorWeights\":\"sparse-current-response-proportional-budget-cap\",\"fuelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerErrorWeights\":\"sparse-current-bulk-capture-Mn-proportional-budget-cap\",\"barrelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerWeightScope\":\"held-route-source-response-only;density-partition-independently-paired\",\"fuelPowerWeightScope\":\"first-order-local-box-budget;not-WRMS-or-paired-error-guarantee\",\"perRowErrorWeights\":\"source-carrier-barrel-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute\",\"solverEnergyCoordinate\":\"G=sum-installed-energy-change-independent-fuel-and-barrel-release-plus-barrel-export-and-ambient-export\",\"energyDefectATOLJ\":{},\"referenceAllATOLandRTOLDivisor\":10,\"horizon\":300,\"costGuard\":\"aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic\",\"maxl\":30,\"restarts\":0,{pressure_settings}}},\"gates\":{{\"fullPairComparisonEvaluated\":{pair_evaluated},\"developedThermalResponse\":{},\"developedSourceResponse\":{},\"thermalResponse\":{thermal_details},\"sourceLocalRatio\":{},\"sourceFamilyRatio\":{},\"sourceObservableRatio\":{},\"sourceNCOperatorRatio\":{},\"thermalPairRatio\":{},\"networkPairRatio\":{},\"depositionPairRatio\":{},\"carrierPairRatio\":{},{barrel_gates},{pressure_gates}}},\"pairedComparisons\":[{}],\"fuelTemperatureFeedbackDiagnostic\":{feedback},\"normal\":{},\"tighter\":{tighter},\"aggregateWallSeconds\":{}}}",
+        "{{\"kind\":\"source-cooling-pair\",\"passed\":{passed},\"lastAdmittedTime\":{},\"scope\":\"same-trial-source-finite-fuel-He-primary-finite-SG-barrel-surge-cold-PZR;cold-fixed-prepared-geometry;no-fullplant-credit\",\"dimension\":{},\"differential\":{},\"settings\":{{\"accuracyPolicy\":\"cold-source-fuel-binding\",\"carrierCoordinates\":\"hydrogen-product,direct-boron10,boron-product\",\"provisional\":true,\"nonlinearClosure\":\"stock-Newton-and-current-physical-network-pressure-charts\",\"linearWeightedL2Budget\":{linear_budget},\"algebraicLTE\":\"included\",\"fuelPowerErrorWeights\":\"sparse-current-response-proportional-budget-cap\",\"fuelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerErrorWeights\":\"sparse-current-bulk-capture-Mn-proportional-budget-cap\",\"barrelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerWeightScope\":\"held-route-source-response-only;density-partition-independently-paired\",\"fuelPowerWeightScope\":\"first-order-local-box-budget;not-WRMS-or-paired-error-guarantee\",\"perRowErrorWeights\":\"source-carrier-barrel-binding-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute\",\"solverEnergyCoordinate\":\"G=sum-installed-energy-change-minus-fission-barrel-binding-release-plus-barrel-binding-ambient-export\",\"energyDefectATOLJ\":{},\"referenceAllATOLandRTOLDivisor\":10,\"horizon\":300,\"costGuard\":\"aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic\",\"maxl\":30,\"restarts\":0,{capture_settings},{pressure_settings}}},\"gates\":{{\"fullPairComparisonEvaluated\":{pair_evaluated},\"developedThermalResponse\":{},\"developedSourceResponse\":{},\"thermalResponse\":{thermal_details},\"sourceLocalRatio\":{},\"sourceFamilyRatio\":{},\"sourceObservableRatio\":{},\"sourceNCOperatorRatio\":{},\"thermalPairRatio\":{},\"networkPairRatio\":{},\"depositionPairRatio\":{},\"carrierPairRatio\":{},{barrel_gates},{capture_gates},{pressure_gates}}},\"pairedComparisons\":[{}],\"fuelTemperatureFeedbackDiagnostic\":{feedback},\"normal\":{},\"tighter\":{tighter},\"aggregateWallSeconds\":{}}}",
         finite(
             tight
                 .as_ref()
@@ -1687,7 +1710,11 @@ mod tests {
             l.temperatures_start + model.thermal.node_count()
         );
         assert_eq!(l.barrel_exported + 1, l.pressurizer_start);
-        assert_eq!(l.ambient_exported + 1, model.dimension());
+        assert_eq!(l.ambient_exported + 1, l.fuel_capture_exported);
+        assert_eq!(l.fuel_capture_exported + 1, model.dimension());
+        assert!(model.is_differential(l.fuel_capture_exported));
+        assert!(progress_relative(&model, l.fuel_capture_exported));
+        assert_eq!(constraints[l.fuel_capture_exported], 1.);
         assert_eq!(constraints[l.ambient_exported], 0.);
         assert_eq!(constraints[l.surge_start + finite_surge::LEFT_FLOW], 0.);
         assert_eq!(constraints[l.surge_start + finite_surge::RIGHT_FLOW], 0.);
@@ -1761,6 +1788,7 @@ mod tests {
                 model.barrel.config().capture_photon_j,
             )
             .unwrap(),
+            capture_weights: cooling_power::CaptureWeights::new(model).unwrap(),
             power_resolution_w: cooling_accuracy::DEPOSIT_RESOLUTION_W,
             start: Instant::now(),
             allowance: 120.,
@@ -2087,7 +2115,9 @@ mod tests {
         for progress in [0., 1e-12, 1e12] {
             let mut state = model.initial_state().unwrap();
             for &r in &boundaries {
-                state[r] = progress;
+                // The current capture response legitimately reads fuel T.
+                // Exercise progress boundaries without inventing 0/1e12 K.
+                if r != l.temperatures_start { state[r] = progress; }
             }
             c.coordinates.transform(&mut state);
             c.energy.state_to_solver(&mut state);
@@ -2162,6 +2192,9 @@ mod tests {
                 c.power_resolution_w,
                 &mut expected,
             )
+            .unwrap();
+        c.capture_weights
+            .cap(&physical, c.relative, c.power_resolution_w, &mut expected)
             .unwrap();
         for _ in 0..2 {
             assert_eq!(unsafe { error_weights(y, w, user) }, 0);
@@ -2259,7 +2292,7 @@ mod tests {
         run.steps = 2;
         retain_final_admitted(&path, &run, 0., "{}").unwrap();
         let bytes = fs::read(&path).unwrap();
-        let mut expected = b"LDRCST01".to_vec();
+        let mut expected = b"LDFBST01".to_vec();
         expected.extend_from_slice(&2u64.to_le_bytes());
         expected.extend_from_slice(&run.last.to_le_bytes());
         for value in run.final_y.iter().chain(&run.final_yp) {
@@ -2286,7 +2319,7 @@ mod tests {
         ));
         let y = [-0., 1., f64::from_bits(0x7ff8_0000_0000_0001)];
         retain_common(&path, 2., &y).unwrap();
-        let mut expected = b"LDRCCM01".to_vec();
+        let mut expected = b"LDFBCM01".to_vec();
         expected.extend_from_slice(&3u64.to_le_bytes());
         expected.extend_from_slice(&2f64.to_le_bytes());
         for x in y {

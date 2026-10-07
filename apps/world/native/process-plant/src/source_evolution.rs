@@ -151,6 +151,17 @@ pub struct Workspace {
     owner: Arc<()>,
 }
 impl Workspace {
+    pub fn fuel_capture_events(&self) -> Result<&[[f64; 3]], &'static str> {
+        self.check()?;
+        self.history.capture_events()
+    }
+    pub fn fuel_capture_event_jvp(&self) -> Result<&[[f64; 3]], &'static str> {
+        self.check()?;
+        if !self.jvp_valid {
+            return Err("No current source direction");
+        }
+        self.history.capture_event_jvp()
+    }
     /// Actual target capture events before any Mn product decay. Retained
     /// separately so a tiny capture is not recovered by cancelling decay.
     pub fn target_captures(&self) -> Result<&[f64], &'static str> {
@@ -507,6 +518,19 @@ impl Evolution {
     /// Immutable carried fuel/history laws and finite preparation accounts.
     pub fn fuel_history(&self) -> &fh::Assembly {
         &self.input.history
+    }
+    pub(crate) fn owner_token(&self) -> Arc<()> {
+        self.owner.clone()
+    }
+    pub fn capture_progress_rows(&self) -> impl Iterator<Item = [usize; 3]> + '_ {
+        (0..self.segment_count()).map(|s| {
+            let r = self.input.history.history_row(s, 0);
+            [
+                r + fh::CAPTURED_238,
+                r + fh::XENON_PRODUCT,
+                r + fh::SAMARIUM_PRODUCT,
+            ]
+        })
     }
     pub fn water_owners(&self) -> &[WaterOwner] {
         &self.input.water_owners

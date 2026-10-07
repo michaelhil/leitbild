@@ -380,7 +380,7 @@ impl Model {
         for r in [fs::MASS, fs::ENERGY, fs::STEEL_ENERGY] {
             emit(l.surge_start + r, l.surge_start + r, 1.);
         }
-        for r in l.surge_carrier_start..l.dimension {
+        for r in l.surge_carrier_start..=l.ambient_exported {
             emit(r, r, 1.);
         }
         Ok(())
@@ -500,7 +500,7 @@ impl Model {
                 -phase[cp::DIAGNOSTIC_AMBIENT_HEAT] - receipt.ambient_heat,
             );
         }
-        for r in l.surge_carrier_start..l.dimension {
+        for r in l.surge_carrier_start..=l.ambient_exported {
             emit(r, r, cj);
         }
         Ok(())

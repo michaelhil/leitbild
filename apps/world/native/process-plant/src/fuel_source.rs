@@ -96,7 +96,47 @@ pub struct FuelModel {
     intersections: Vec<Intersection>,
     coordinates: Vec<Coordinate>,
     weight_total: Vec<f64>,
+    capture_recipes: Vec<CaptureRecipe>,
     owner: Arc<()>,
+}
+/// The canonical current fertile-capture constitutive recipe, shared by the
+/// actual source operator and the narrow qualification power response.
+#[derive(Clone)]
+pub(crate) struct CaptureRecipe {
+    pub base: [f64; GROUPS],
+    pub weights: Vec<(usize, f64)>,
+    mass: f64,
+    f_d: f64,
+}
+impl CaptureRecipe {
+    pub fn current_and_unit(
+        &self,
+        root: impl Fn(usize) -> f64,
+        ratio: f64,
+    ) -> ([f64; GROUPS], [f64; GROUPS]) {
+        let mean = self.weights.iter().map(|&(q, m)| m * root(q)).sum::<f64>() / self.mass;
+        let response: [f64; GROUPS] = std::array::from_fn(|g| {
+            if g == 2 || g == 3 {
+                1. + self.f_d * (mean - 1.)
+            } else {
+                1.
+            }
+        });
+        (
+            std::array::from_fn(|g| self.base[g] * ratio * response[g]),
+            std::array::from_fn(|g| self.base[g] * response[g]),
+        )
+    }
+    pub fn thermal_partial(&self, g: usize, q: usize, mass: f64, roots: &[f64], ratio: f64) -> f64 {
+        self.thermal_partial_root(g, mass, roots[q], ratio)
+    }
+    pub fn thermal_partial_root(&self, g: usize, mass: f64, root: f64, ratio: f64) -> f64 {
+        if g == 2 || g == 3 {
+            self.base[g] * ratio * self.f_d * mass / self.mass / (600. * root)
+        } else {
+            0.
+        }
+    }
 }
 fn positive(v: f64) -> bool {
     v.is_finite() && v > 0.
@@ -233,9 +273,22 @@ impl FuelModel {
                 });
             }
         }
-        let weight_total = intersections
+        let weight_total: Vec<f64> = intersections
             .iter()
             .map(|e| e.weights.iter().map(|w| w.mass).sum())
+            .collect();
+        let capture_recipes = intersections
+            .iter()
+            .zip(&weight_total)
+            .map(|(e, &mass)| CaptureRecipe {
+                base: std::array::from_fn(|g| {
+                    (law.speed[g] * (e.volume / region_volumes[e.region]))
+                        * (law.absorption[g] - law.fission[g])
+                }),
+                weights: e.weights.iter().map(|w| (w.cohort, w.mass)).collect(),
+                mass,
+                f_d: law.f_d,
+            })
             .collect();
         Ok(Self {
             law,
@@ -245,6 +298,7 @@ impl FuelModel {
             intersections,
             coordinates,
             weight_total,
+            capture_recipes,
             owner: Arc::new(()),
         })
     }
@@ -301,6 +355,9 @@ impl FuelModel {
     }
     pub fn segment_count(&self) -> usize {
         self.segment_volumes.len()
+    }
+    pub(crate) fn capture_recipe(&self, i: usize) -> &CaptureRecipe {
+        &self.capture_recipes[i]
     }
     /// Reference induced-event coefficient shared by the rate and paid-power
     /// consumers. Temperature does not modify the selected fission law.
@@ -386,29 +443,18 @@ impl FuelModel {
         let mut thermal_index = 0;
         for (i, e) in self.intersections.iter().enumerate() {
             let stock = stocks[e.segment];
-            let mass = self.weight_total[i];
-            let d = e
-                .weights
-                .iter()
-                .map(|w| w.mass * work.root_temperature[w.cohort])
-                .sum::<f64>()
-                / mass;
-            let multiplier = 1. + self.law.f_d * (d - 1.);
             let f = stock.reserve / stock.reference_reserve;
             let t = stock.fertile / stock.reference_fertile;
+            let (capture, capture_unit) =
+                self.capture_recipes[i].current_and_unit(|q| work.root_temperature[q], t);
             let fraction = e.volume / self.region_volumes[e.region];
             let mut events = EventCoefficients::default();
             for g in 0..GROUPS {
-                let response = if g == 2 || g == 3 { multiplier } else { 1. };
-                let factor = self.law.speed[g] * fraction;
                 events.fission[g] = self.reference_fission(i, g) * f;
-                events.capture[g] =
-                    factor * (self.law.absorption[g] - self.law.fission[g]) * t * response;
+                events.capture[g] = capture[g];
                 events.d_fission_d_reserve[g] =
                     self.reference_fission(i, g) / stock.reference_reserve;
-                events.d_capture_d_fertile[g] =
-                    factor * (self.law.absorption[g] - self.law.fission[g]) * response
-                        / stock.reference_fertile;
+                events.d_capture_d_fertile[g] = capture_unit[g] / stock.reference_fertile;
             }
             work.events[i] = events;
             for h in 0..GROUPS {
@@ -454,14 +500,13 @@ impl FuelModel {
                 deriv.cohort = w.cohort;
                 deriv.d_capture_d_temperature.fill(0.);
                 for g in [2, 3] {
-                    deriv.d_capture_d_temperature[g] = fraction
-                        * self.law.speed[g]
-                        * (self.law.absorption[g] - self.law.fission[g])
-                        * t
-                        * self.law.f_d
-                        * w.mass
-                        / mass
-                        / (600. * work.root_temperature[w.cohort]);
+                    deriv.d_capture_d_temperature[g] = self.capture_recipes[i].thermal_partial(
+                        g,
+                        w.cohort,
+                        w.mass,
+                        &work.root_temperature,
+                        t,
+                    );
                 }
                 thermal_index += 1;
             }

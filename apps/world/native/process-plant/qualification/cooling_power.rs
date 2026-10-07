@@ -92,6 +92,7 @@ impl PowerWeights {
             &w.gradients,
             self.response.columns(),
             self.response.offsets(),
+            |c| c,
         )?;
         Ok(())
     }
@@ -106,6 +107,7 @@ fn cap_response(
     all_gradients: &[f64],
     all_columns: &[usize],
     offsets: &[usize],
+    map_column: impl Fn(usize) -> usize,
 ) -> Result<(), String> {
     for q in 0..powers.len() {
         let range = offsets[q]..offsets[q + 1];
@@ -118,6 +120,7 @@ fn cap_response(
         let mut sum = 0.;
         let mut correction = 0.;
         for (&column, &gradient) in columns.iter().zip(gradients) {
+            let column = map_column(column);
             let moment = (gradient * y[column]).abs();
             let next = sum + moment;
             correction += if sum.abs() >= moment {
@@ -133,6 +136,7 @@ fn cap_response(
             return Err("Nonfinite local-power response budget".into());
         }
         for (&column, &gradient) in columns.iter().zip(gradients) {
+            let column = map_column(column);
             let scale = scales[column];
             if !scale.is_finite() || scale <= 0. {
                 return Err("Invalid existing local-power scale".into());
@@ -204,8 +208,91 @@ impl BarrelWeights {
             &self.gradients,
             self.response.columns(),
             self.response.offsets(),
+            |c| c,
         )?;
         Ok(())
+    }
+}
+
+/// Current nuclear binding emission response. The only gathered values are
+/// the actual, non-contiguous fuel temperatures; source history stays in place.
+/// Does not evaluate EOS/RHS or replace the prepared current JVP workspace.
+pub(super) struct CaptureWeights {
+    response: leitbild_plant_numerics::fuel_capture::PowerResponse,
+    temperatures: Vec<f64>,
+    temperature_rows: Vec<usize>,
+    powers: Vec<f64>,
+    gradients: Vec<f64>,
+}
+impl CaptureWeights {
+    pub fn structure(&self) -> (usize, usize, usize) {
+        (self.response.output_count(), self.response.columns().len(), self.gradients.iter().filter(|g| **g != 0.).count())
+    }
+    pub fn new(model: &leitbild_plant_numerics::source_cooling::Model) -> Result<Self, String> {
+        let response = model.capture.power_response(&model.source)?;
+        let temperature_rows = model
+            .fuel_rows()
+            .iter()
+            .map(|&r| model.layout.temperatures_start + r)
+            .collect::<Vec<_>>();
+        if response.history_state_count() != model.source.history_dimension()
+            || response.state_count() != response.history_state_count() + temperature_rows.len()
+            || response.history_state_count() > model.source.ledger_row()
+        {
+            return Err("Fuel binding response overlaps transformed solver coordinates".into());
+        }
+        Ok(Self {
+            temperatures: vec![0.; temperature_rows.len()],
+            powers: vec![0.; response.output_count()],
+            gradients: vec![0.; response.columns().len()],
+            temperature_rows,
+            response,
+        })
+    }
+    pub fn cap(
+        &mut self,
+        y: &[f64],
+        relative: f64,
+        resolution: f64,
+        scales: &mut [f64],
+    ) -> Result<(), String> {
+        let n = self.response.history_state_count();
+        if y.len() != scales.len()
+            || y.len() < n
+            || self.temperature_rows.iter().any(|&r| r >= y.len())
+            || !relative.is_finite()
+            || relative < 0.
+            || !resolution.is_finite()
+            || resolution <= 0.
+        {
+            return Err("Invalid fuel binding error weights".into());
+        }
+        for (t, &r) in self.temperatures.iter_mut().zip(&self.temperature_rows) {
+            *t = y[r];
+        }
+        self.response.evaluate(
+            &y[..n],
+            &self.temperatures,
+            &mut self.powers,
+            &mut self.gradients,
+        )?;
+        cap_response(
+            y,
+            relative,
+            resolution,
+            scales,
+            &self.powers,
+            &self.gradients,
+            self.response.columns(),
+            self.response.offsets(),
+            |c| {
+                if c < n {
+                    c
+                } else {
+                    self.temperature_rows[c - n]
+                }
+            },
+        )
     }
 }
 
@@ -308,5 +395,49 @@ mod tests {
             policy.cap(&y, 1e-5, 1e-12, &mut same).unwrap();
             assert_eq!(scales, same);
         }
+    }
+    #[test]
+    fn binding_current_source_temperature_support_and_tenfold_refinement() {
+        let model = super::super::cooling_fixture::fixture_with_contrast();
+        let mut policy = CaptureWeights::new(&model).unwrap();
+        let mut y = model.initial_state().unwrap();
+        for n in &mut y[..model.source.nc_dimension()] {
+            *n = 2.;
+        }
+        let original = y.clone();
+        let mut scales = vec![1e12; y.len()];
+        policy.cap(&y, 1e-5, 1e-12, &mut scales).unwrap();
+        let n = policy.response.history_state_count();
+        for i in 0..policy.response.output_count() {
+            let range = policy.response.offsets()[i]..policy.response.offsets()[i + 1];
+            let bound: f64 = policy.response.columns()[range.clone()]
+                .iter()
+                .zip(&policy.gradients[range])
+                .map(|(&c, &g)| {
+                    let r = if c < n {
+                        c
+                    } else {
+                        policy.temperature_rows[c - n]
+                    };
+                    g.abs() * scales[r]
+                })
+                .sum();
+            assert!(bound <= (1e-12 + 1e-5 * policy.powers[i].abs()) * (1. + 2e-14));
+        }
+        let mut tight = vec![1e11; y.len()];
+        policy.cap(&y, 1e-6, 1e-13, &mut tight).unwrap();
+        for (&a, &b) in scales.iter().zip(&tight) {
+            assert!((a / 10. - b).abs() <= 5e-14 * b);
+        }
+        assert_eq!(y, original);
+        let before = policy.powers.clone();
+        for &r in &policy.temperature_rows {
+            y[r] += 1.;
+        }
+        policy.cap(&y, 1e-5, 1e-12, &mut scales).unwrap();
+        assert_ne!(policy.powers, before);
+        y[policy.temperature_rows[0]] = f64::NAN;
+        assert!(policy.cap(&y, 1e-5, 1e-12, &mut scales).is_err());
+        assert!(policy.cap(&original, f64::NAN, 1e-12, &mut scales).is_err());
     }
 }
