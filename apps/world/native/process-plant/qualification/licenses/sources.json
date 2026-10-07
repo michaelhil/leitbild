@@ -1,0 +1,60 @@
+{
+  "acquired": "2026-10-07",
+  "scope": "Selected offline numerical dependency notices; not corresponding-source or binary redistribution certification.",
+  "files": [
+    {
+      "path": "../SUNDIALS-LICENSE",
+      "url": "https://raw.githubusercontent.com/llnl/sundials/v7.5.0/LICENSE",
+      "sha256": "82e5e9cca9bd75cfb9fa5bdc39a8bc35622a3e76445be542b36fd57e9ba8c30b"
+    },
+    {
+      "path": "../SUNDIALS-NOTICE",
+      "url": "https://raw.githubusercontent.com/llnl/sundials/v7.5.0/NOTICE",
+      "sha256": "f4247dde07952a5ff866b24e45b5cdd1fce410cdb2e038255a1635867f59c10c",
+      "upstreamSHA256": "5cb9c6b0ca7c09b26fe2d1f9ef45231086c9ea2cdb32eb5f9dce7012e2364bc2",
+      "change": "One terminal newline added; notice text unchanged."
+    },
+    {
+      "path": "KLU.txt",
+      "url": "https://raw.githubusercontent.com/DrTimothyAldenDavis/SuiteSparse/v7.12.3/KLU/Doc/License.txt",
+      "sha256": "10cac083b3e0dea2a2e1eacbbd4c8ebc989ce6855903db633239840cd7a33482"
+    },
+    {
+      "path": "BTF.txt",
+      "url": "https://raw.githubusercontent.com/DrTimothyAldenDavis/SuiteSparse/v7.12.3/BTF/Doc/License.txt",
+      "sha256": "56ba8d575568e117c26a525dc0b7ccd99950cf8d9a4fe27d21e90616d9e046e7"
+    },
+    {
+      "path": "AMD.txt",
+      "url": "https://raw.githubusercontent.com/DrTimothyAldenDavis/SuiteSparse/v7.12.3/AMD/Doc/License.txt",
+      "sha256": "e50fdd9a587f4860ce1d503b94576bfff47bccc421f758d1bdc8706c8cd36108"
+    },
+    {
+      "path": "COLAMD.txt",
+      "url": "https://raw.githubusercontent.com/DrTimothyAldenDavis/SuiteSparse/v7.12.3/COLAMD/Doc/License.txt",
+      "sha256": "0e92b7bb3e216b8a4d1357b3d828043a4f758f762b2abc30b3440cf78063f80f"
+    },
+    {
+      "path": "SuiteSparse-config.txt",
+      "url": "https://raw.githubusercontent.com/DrTimothyAldenDavis/SuiteSparse/v7.12.3/SuiteSparse_config/README.txt",
+      "sha256": "bfe8a66f69de46209d3be7d8e5019eaa7651de56c6ed3770e17f887dc37e56fc"
+    },
+    {
+      "path": "IF97.txt",
+      "url": "https://raw.githubusercontent.com/CoolProp/IF97/0be7b51f35c47e59e6f91f4f0f47108bf997e50c/LICENSE",
+      "sha256": "49ae7892aa64119f235acb7541730f955f2cf9df41f39d01672320314a8a9e2c",
+      "upstreamSHA256": "e22c3d30ef8d88ab468d9ea20392ca1df22fa3fd0a92dc3e996d89cf3cfdbd03",
+      "change": "One terminal newline added; licence text unchanged."
+    },
+    {
+      "path": "LGPL-2.1.txt",
+      "url": "https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt",
+      "sha256": "20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95"
+    },
+    {
+      "path": "BSD-3-Clause.txt",
+      "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/BSD-3-Clause.txt",
+      "sha256": "5a93d5831e1297ab10fe643e1a631e83be392896da14ee2951285a79012df69d"
+    }
+  ]
+}

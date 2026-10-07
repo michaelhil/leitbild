@@ -1,0 +1,7 @@
+# Selected native dependency notices
+
+These are retained notices for the inspected offline SUNDIALS/IF97/SuiteSparse stack, not vendored numerical implementations. Acquisition URLs and SHA-256 hashes are in [sources.json](sources.json). Text is unchanged; IF97 and SUNDIALS NOTICE each have one explicitly recorded added terminal newline. SUNDIALS's [LICENSE](../SUNDIALS-LICENSE) and [NOTICE](../SUNDIALS-NOTICE) are retained beside the patches.
+
+KLU and BTF use LGPL-2.1-or-later; [LGPL-2.1.txt](LGPL-2.1.txt) supplies the complete licence, not just their short component notices. AMD and COLAMD have their own complete BSD terms. SuiteSparse_config has its own upstream copyright and BSD-3-Clause identifier in the exact retained [README](SuiteSparse-config.txt); [BSD-3-Clause.txt](BSD-3-Clause.txt) supplies the canonical terms from SPDX, not a purported config-specific upstream licence file. The SPDX copyright placeholder is not a replacement for the actual config copyright. IF97's MIT notice applies to the separately acquired pinned property header.
+
+This directory does not establish which native library an executable loads or which source built it. Before distributing binaries, retain their actual corresponding source, build configuration and modifications, identify the linked dependency closure, and satisfy all applicable redistribution/relinking conditions. A version label, a downloaded source archive or this notice bundle alone does not establish source correspondence. Ordinary Leitbild application deployment does not ship the offline solver binaries.
