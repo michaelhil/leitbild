@@ -79,40 +79,25 @@ impl Model {
             array(&y[l.surge_start..l.surge_carrier_start]),
             array(&yp[l.surge_start..l.surge_carrier_start]),
             &ports,
-            Some(0.),
+            None,
             line,
         )?;
         let receipt = line.receipts()?;
-        p.pressurizer.evaluate(
+        p.pressurizer.evaluate_charts(
             array(&y[l.pressurizer_start..l.surge_start]),
             array(&yp[l.pressurizer_start..l.surge_start]),
             cp::Balance {
                 mass: -receipt.mass[1],
                 energy: -receipt.energy[1],
             },
-            Some(0.),
             pool,
         )?;
         let correction = p
             .pressurizer
             .chart_corrections(pool, array(&y[l.pressurizer_start..l.surge_start]))?;
-        let j = line.jacobian()?;
-        let f = line.residual()?;
-        let a = j[fs::PRESSURE][fs::PRESSURE];
-        let b = j[fs::PRESSURE][fs::TEMPERATURE];
-        let c = j[fs::TEMPERATURE][fs::PRESSURE];
-        let d = j[fs::TEMPERATURE][fs::TEMPERATURE];
-        let determinant = a * d - b * c;
-        let line_correction = [
-            (-f[fs::PRESSURE] * d + b * f[fs::TEMPERATURE]) / determinant,
-            (-a * f[fs::TEMPERATURE] + c * f[fs::PRESSURE]) / determinant,
-        ];
-        if !determinant.is_finite()
-            || determinant == 0.
-            || line_correction.iter().any(|v| !v.is_finite())
-        {
-            return Err("Singular/nonfinite surge chart correction".into());
-        }
+        let line_correction = p
+            .surge
+            .chart_corrections(line, array(&y[l.surge_start..l.surge_carrier_start]))?;
         Ok((correction, line_correction))
     }
     /// Actual phase-carried chemistry: two liquid faces, an independently
@@ -392,13 +377,7 @@ impl Model {
                 emit(l.pressurizer_start + r, l.pressurizer_start + c, v);
             }
         }
-        for r in [
-            fs::MASS,
-            fs::ENERGY,
-            fs::LEFT_MOMENTUM,
-            fs::RIGHT_MOMENTUM,
-            fs::STEEL_ENERGY,
-        ] {
+        for r in [fs::MASS, fs::ENERGY, fs::STEEL_ENERGY] {
             emit(l.surge_start + r, l.surge_start + r, 1.);
         }
         for r in l.surge_carrier_start..l.dimension {

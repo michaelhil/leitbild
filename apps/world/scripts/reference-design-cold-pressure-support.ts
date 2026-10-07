@@ -64,9 +64,9 @@ export function nativeColdPressureFrame(p:ReturnType<typeof compileColdPressure>
   rods=heaterBankGeometry(s.initialLevel_m).banks,
   fields=[p.primary,
    r.liquidVolume_m3,r.volumeMeanElevation_m,r.developedLength_m,r.internalDiameter_m,r.roughness_m,
-   // Outflow kinetic energy is received by the actual finite neighbor.
-   // Its thermalization must not also appear as an extra exit-loss heater.
-   r.entryLoss,r.elbowLoss,r.steelMass_kg,c.cp0_j_kg_k,c.cp1_j_kg_k2,c.datum_k,
+   // Sound-filtered resistance-node convention: actual route entry + discharge
+   // minor resistance is charged once on the incoming half. No KE flux/heater.
+   r.entryLoss+r.exitLoss,r.elbowLoss,r.steelMass_kg,c.cp0_j_kg_k,c.cp1_j_kg_k2,c.datum_k,
    s.minimumTemperature_K,s.maximumTemperature_K,s.wetContact_W_m2_K*r.innerContactArea_m2,
    p.lineAmbientConductance,s.ambientTemperature_K,
    b.vesselArea_m2,b.vesselHeight_m,b.bottom_m,

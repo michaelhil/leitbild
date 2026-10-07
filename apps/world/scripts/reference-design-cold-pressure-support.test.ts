@@ -23,6 +23,10 @@ ownerTest('actual cold pressure selection preserves finite hardware and route ow
  expect(frame.every(Number.isFinite)).toBe(true)
  expect(frame[0]).toBe(d.primary)
  expect(frame[1]).toBe(d.route.liquidVolume_m3)
+ expect(frame[6]).toBe(d.route.entryLoss+d.route.exitLoss)
+ const changed=nativeColdPressureFrame({...d,route:{...d.route,exitLoss:2}})
+ expect(changed[6]).toBe(frame[6]!+1)
+ expect(changed.filter((v,i)=>v!==frame[i])).toHaveLength(1)
  expect(frame.at(-1)).toBe(d.selection.initialTemperature_K)
  // Native PZR metal applicability must remain cold even when the shared
  // 304 coefficients are valid up to 1600 K (or a broader future domain).

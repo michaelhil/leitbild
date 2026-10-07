@@ -15,13 +15,14 @@ const admittedRatio=z.number().finite().nonnegative().max(1),arm=z.object({passe
  * incomplete pair. The physical/error policy is owned by the native qualifier. */
 export const fuelCoolingAdmission=z.object({kind:z.literal('source-cooling-pair'),passed:z.literal(true),lastAdmittedTime:z.literal(300),
  dimension:z.number().int().positive(),differential:z.number().int().positive(),normal:arm,tighter:arm,
- settings:z.object({accuracyPolicy:z.literal('cold-source-cooling-6'),provisional:z.literal(true),horizon:z.literal(300),
+ settings:z.object({accuracyPolicy:z.literal('cold-source-cooling-7'),provisional:z.literal(true),horizon:z.literal(300),
   carrierCoordinates:z.literal('hydrogen-product,direct-boron10,boron-product'),
   pressureCoordinates:z.literal('finite-pool-cushion-and-surge-forward-DAE;direct-liquid-B10-and-phase-H-products'),
   pressureResponseResolutionPa:z.literal(1),pressureChangeRelativeBudget:z.literal(0.005),
-  surgeMomentumModel:z.literal('conjugate-linear-velocity-mass-metric'),
-  surgeGravityModel:z.literal('owned-bulk-density-Galerkin'),
-  surgeReductionScope:z.literal('observed-candidate-and-endpoint-envelope;current-chart-consequence-allocation;not-coupled-trajectory-bound'),
+  surgeHydraulicModel:z.literal('finite-storage-two-algebraic-resistances'),
+  surgeGravityModel:z.literal('owned-bulk-density-hydrostatic-face-heads'),
+  surgeReductionScope:z.literal('sound-filtered-slow-support;no-inertial-waveform-credit'),
+  surgeFlowResolutionKgS:z.literal(1e-5),
   pressureChartHeightScope:z.literal('hydrostatic-equivalent-1Pa;P-T-coupled-correction-and-metal-caloric-admitted'),
   fuelPowerErrorWeights:z.literal('sparse-current-response-proportional-budget-cap'),fuelPowerResolutionW:z.literal(1e-12),
   barrelPowerErrorWeights:z.literal('sparse-current-bulk-capture-Mn-proportional-budget-cap'),barrelPowerResolutionW:z.literal(1e-12),
@@ -34,8 +35,7 @@ export const fuelCoolingAdmission=z.object({kind:z.literal('source-cooling-pair'
  gates:z.object({fullPairComparisonEvaluated:z.literal(true),developedThermalResponse:z.literal(true),developedSourceResponse:z.literal(true),
   developedBarrelResponse:z.literal(true),barrelPairRatio:admittedRatio,barrelPowerPairRatio:admittedRatio,
   developedPressureResponse:z.literal(true),pressurePairRatio:admittedRatio,pressureMaterialPairRatio:admittedRatio,
-  pressureChartRatio:admittedRatio,pressureMomentumRatio:admittedRatio,
-  surgeReductionRatio:admittedRatio,
+  pressureChartRatio:admittedRatio,pressureFlowClosureRatio:admittedRatio,
   sourceLocalRatio:admittedRatio,sourceFamilyRatio:admittedRatio,sourceObservableRatio:admittedRatio,sourceNCOperatorRatio:admittedRatio,
   thermalPairRatio:admittedRatio,networkPairRatio:admittedRatio,depositionPairRatio:admittedRatio,carrierPairRatio:admittedRatio}),
  pairedComparisons:z.array(z.unknown()).length(14),fuelTemperatureFeedbackDiagnostic:z.object({})})
@@ -44,7 +44,7 @@ export const fuelCoolingAdmission=z.object({kind:z.literal('source-cooling-pair'
 export function coolingStateHeader(bytes:Uint8Array){
  if(bytes.length<24)throw Error('Truncated coupled state header')
  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),magic=new TextDecoder().decode(bytes.subarray(0,8)),
-  coordinates=Number(view.getBigUint64(8,true)),time=view.getFloat64(16,true),width=magic==='LDCOOL01'?16:magic==='LDCCOM01'?8:0
+  coordinates=Number(view.getBigUint64(8,true)),time=view.getFloat64(16,true),width=magic==='LDRCST01'?16:magic==='LDRCCM01'?8:0
  if(!width||!Number.isSafeInteger(coordinates)||coordinates<=0||!Number.isFinite(time)||time<0
   ||bytes.length!==24+width*coordinates)throw Error('Invalid coupled state frame')
  return {magic,coordinates,time}
@@ -108,8 +108,8 @@ export async function qualifyFuelCooling(options:Options){
    catch(error){return {path,sha256:sha(bytes),bytes:bytes.length,frameError:String(error)}}
   })),
   parsed=sourceEvolutionOutput(stdout),outcome=parsed.outcome,admission=fuelCoolingAdmission.safeParse(outcome),
-  completeStates=admission.success&&states.filter(s=>'magic' in s&&s.magic==='LDCCOM01'&&s.coordinates===outcome.dimension).length===28
-   &&states.filter(s=>'magic' in s&&s.path.endsWith('.checkpoint')&&s.magic==='LDCOOL01'&&s.coordinates===outcome.dimension&&s.time===300).length===2
+  completeStates=admission.success&&states.filter(s=>'magic' in s&&s.magic==='LDRCCM01'&&s.coordinates===outcome.dimension).length===28
+   &&states.filter(s=>'magic' in s&&s.path.endsWith('.checkpoint')&&s.magic==='LDRCST01'&&s.coordinates===outcome.dimension&&s.time===300).length===2
    &&states.every(s=>!s.frameError),
   unchanged=(await Promise.all(paths.map(p=>readFile(p)))).every((b,i)=>b.equals(bytes[i]!))
    &&(await Promise.all(inputs.map(p=>Bun.file(p).text()))).every((s,i)=>s===texts[i])

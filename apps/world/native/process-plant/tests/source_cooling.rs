@@ -131,7 +131,7 @@ fn pressure_fixture_at(network: &on::Network, cell: usize) -> sc::PressureConnec
         length,
         diameter,
         roughness: 1.5e-6,
-        entry_loss: 0.5,
+        terminal_loss: 1.5,
         bend_loss_each: 0.2,
         steel_mass: 100.,
         cp0: 469.4448,
@@ -441,8 +441,8 @@ fn full_composed_residual_direction_matches_same_trial_full_half_differences() {
     let mut y = resolved(&m);
     // Unequal donor compositions at q=0 have only a fixed-upwind generalized
     // derivative, not a two-sided derivative. Exercise central FD off the corner.
-    y[m.layout.surge_start + surge::LEFT_MOMENTUM] = 0.2;
-    y[m.layout.surge_start + surge::RIGHT_MOMENTUM] = -0.1;
+    y[m.layout.surge_start + surge::LEFT_FLOW] = 0.2;
+    y[m.layout.surge_start + surge::RIGHT_FLOW] = -0.1;
     for k in 0..cp::METALS {
         y[m.layout.pressurizer_start + cp::METAL_TEMPERATURE_START + k] = 299.;
     }
@@ -537,7 +537,7 @@ fn coupled_fluid_rate_matrix_preserves_phase_work_and_reduced_continuity() {
     );
     let charts = m.forward_chart_rows();
     assert!(!charts.contains(&(l.network_start + m.network.flow_row(0))));
-    assert!(!charts.contains(&(l.surge_start + surge::LEFT_MOMENTUM)));
+    assert!(!charts.contains(&(l.surge_start + surge::LEFT_FLOW)));
     assert!(charts.contains(&(l.pressurizer_start + cp::HEIGHT)));
     let foreign = fixture();
     assert!(foreign.visit_fluid_rate_matrix(&w, |_, _, _| {}).is_err());
@@ -551,8 +551,8 @@ fn pressure_material_is_reciprocal_in_both_flow_directions_and_phase_channels() 
     let l = m.layout;
     for sign in [-1., 1.] {
         let mut y = resolved(&m);
-        y[l.surge_start + surge::LEFT_MOMENTUM] = sign * 0.2;
-        y[l.surge_start + surge::RIGHT_MOMENTUM] = -sign * 0.1;
+        y[l.surge_start + surge::LEFT_FLOW] = sign * 0.2;
+        y[l.surge_start + surge::RIGHT_FLOW] = -sign * 0.1;
         y[l.surge_carrier_start] = 2.;
         y[l.pool_carrier_start] = 4.;
         y[l.gas_hydrogen_product] = 0.01;
@@ -582,7 +582,7 @@ fn pressure_material_is_reciprocal_in_both_flow_directions_and_phase_channels() 
         }
         assert!(w.complete_energy_rate().unwrap().abs() < 1e-7);
         let mut dy = vec![0.; m.dimension()];
-        dy[l.surge_start + surge::LEFT_MOMENTUM] = 0.3;
+        dy[l.surge_start + surge::LEFT_FLOW] = 0.3;
         dy[l.pool_carrier_start] = 0.1;
         dy[l.gas_hydrogen_product] = 0.001;
         dy[l.pressurizer_start + cp::INTERFACE_TEMPERATURE] = 0.02;
@@ -592,7 +592,7 @@ fn pressure_material_is_reciprocal_in_both_flow_directions_and_phase_channels() 
 }
 
 #[test]
-fn current_primary_multiplier_and_hydrostatic_pool_ports_preserve_cold_entropy() {
+fn current_primary_multiplier_and_hydrostatic_pool_ports_share_reduced_energy_packets() {
     // Actual native port construction, not a reservoir whose EOS pressure is
     // silently identified with the distinct mechanical/bottom pressure.
     let m = fixture_with_preparation_at(0.5, 0., 1).unwrap();
@@ -601,25 +601,24 @@ fn current_primary_multiplier_and_hydrostatic_pool_ports_preserve_cold_entropy()
         for sign in [-1., 1.] {
             let mut y = resolved(&m);
             y[l.network_start + m.network.mechanical_row(1).unwrap()] = pi;
-            y[l.surge_start + surge::LEFT_MOMENTUM] = sign;
-            y[l.surge_start + surge::RIGHT_MOMENTUM] = sign;
+            y[l.surge_start + surge::LEFT_FLOW] = sign;
+            y[l.surge_start + surge::RIGHT_FLOW] = sign;
             let mut w = m.workspace();
             m.evaluate(&y, &vec![0.; m.dimension()], Some(0.), &mut w)
                 .unwrap();
-            let d = w.surge.mechanics().unwrap();
-            assert!(d.entropy_production >= 0., "pi={pi},sign={sign},{d:?}");
-            close(
-                d.entropy_identity_defect,
-                0.,
-                0.,
-                128. * f64::EPSILON * d.entropy_identity_scale,
-            );
-            close(
-                d.kinetic_work_defect,
-                0.,
-                0.,
-                128. * f64::EPSILON * d.kinetic_work_scale,
-            );
+            let d = w.surge.diagnostics().unwrap();
+            assert!(d.passive_dissipation_w >= 0., "pi={pi},sign={sign},{d:?}");
+            let receipts = w.surge.receipts().unwrap();
+            assert_eq!(receipts.mass, [sign, -sign]);
+            // Actual primary mechanical and pool hydrostatic ports enter the
+            // SAME shared energy account. No inherited kinetic/entropy proof
+            // is claimed for this selected sound-filtered resistance law.
+            assert!(w.complete_energy_rate().unwrap().abs() < 1e-7);
+            let mut direction = vec![0.; m.dimension()];
+            direction[l.surge_start + surge::LEFT_FLOW] = 0.3;
+            direction[l.surge_start + surge::RIGHT_FLOW] = -0.2;
+            m.jvp(&direction, 0., &mut w).unwrap();
+            assert!(w.complete_energy_rate_jvp().unwrap().abs() < 1e-7);
         }
     }
 }

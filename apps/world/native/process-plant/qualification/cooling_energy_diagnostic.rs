@@ -1,5 +1,7 @@
 use super::*;
 
+// These diagnostics use the current kernel. Historical snapshot identities are
+// intentionally refused; old forensics require the sources retained with that receipt.
 fn energy_vector_roundtrip_bound(
     model: &source_cooling::Model,
     anchor: usize,
@@ -99,21 +101,19 @@ fn actual_pressure_entry_without_advancement() {
         let accuracy = cooling_accuracy::Accuracy::new(m, &prepared.target_emissions)?;
         let mut w = m.workspace();
         m.evaluate(&initial, &vec![0.; n], Some(0.), &mut w)?;
-        let force = [
-            -w.residual[l.surge_start + finite_surge::LEFT_MOMENTUM],
-            -w.residual[l.surge_start + finite_surge::RIGHT_MOMENTUM],
+        let head = [
+            -w.residual[l.surge_start + finite_surge::LEFT_FLOW],
+            -w.residual[l.surge_start + finite_surge::RIGHT_FLOW],
         ];
-        let area = m.pressure_connection().surge.input().geometry.volume
-            / m.pressure_connection().surge.input().length;
         let pressure_scale = initial[l.surge_start + finite_surge::PRESSURE].abs()
             + initial[l.network_start + m.network.pressure_row()].abs()
             + w.pressurizer.diagnostics()?.bottom_pressure.abs();
-        if force
+        if head
             .iter()
-            .any(|f| f.abs() > 1024. * f64::EPSILON * area * pressure_scale)
+            .any(|f| f.abs() > 1024. * f64::EPSILON * pressure_scale)
         {
             return Err(format!(
-                "Fresh selected hydrostatic force is not roundoff-zero: {force:?}"
+                "Fresh selected hydrostatic head is not roundoff-zero: {head:?}"
             ));
         }
         deadline()?;
@@ -180,8 +180,8 @@ fn actual_pressure_entry_without_advancement() {
             }
             direction[l.pressurizer_start + cp::HEIGHT] = 1e-3;
             direction[l.pressurizer_start + cp::INTERFACE_TEMPERATURE] = 1e-3;
-            direction[l.surge_start + finite_surge::LEFT_MOMENTUM] = 1e-3;
-            direction[l.surge_start + finite_surge::RIGHT_MOMENTUM] = -1e-3;
+            direction[l.surge_start + finite_surge::LEFT_FLOW] = 1e-3;
+            direction[l.surge_start + finite_surge::RIGHT_FLOW] = -1e-3;
             direction[l.ambient_exported] = -0.1;
             m.jvp(&direction, 0., &mut w)?;
             let unshifted_error = (g.balance(&w.jvp) + w.complete_energy_rate_jvp()?).abs();
@@ -346,19 +346,18 @@ fn actual_pressure_entry_without_advancement() {
                     "Actual closed fluid/material RHS leak: {mass_rate:e}/{boron_rate:e}"
                 ));
             }
-            let mechanical = w.surge.mechanics()?;
+            let hydraulic = w.surge.diagnostics()?;
+            let flow = w.surge.receipts()?.mass;
             cases[case_index] = format!(
-                "{{\"refinement\":{refinement},\"passed\":true,\"initialization\":{},\"initializationTrace\":{},\"energyVectorRoundtrip\":{roundtrip_json},\"freshMomentumForcesN\":{force:?},\"jointMomentumRatesN\":[{},{}],\"heightRateMPerS\":{},\"closedWaterRateKgPerS\":{mass_rate:e},\"closedBRateKgEquivalentPerS\":{boron_rate:e},\"offInterfaceRHSIdentityErrorW\":{energy_error:e},\"unshiftedEnergyJVPIdentityError\":{unshifted_error:e},\"hugeCjEnergyActionError\":{huge_error:e},\"completedPNonGMaxError\":{p_error:e},\"onePSetupAndSolveSeconds\":{p_seconds},\"kineticWorkDefectW\":{},\"signedGravityMixingPowerW\":{},\"signedMechanicalAvailabilityPowerW\":{},\"reductionRatio\":{},\"currentCandidateMomentumRatio\":{}}}",
+                "{{\"refinement\":{refinement},\"passed\":true,\"initialization\":{},\"initializationTrace\":{},\"energyVectorRoundtrip\":{roundtrip_json},\"freshHydraulicResidualPa\":{head:?},\"jointActualFlowKgS\":[{},{}],\"heightRateMPerS\":{},\"closedWaterRateKgPerS\":{mass_rate:e},\"closedBRateKgEquivalentPerS\":{boron_rate:e},\"offInterfaceRHSIdentityErrorW\":{energy_error:e},\"unshiftedEnergyJVPIdentityError\":{unshifted_error:e},\"hugeCjEnergyActionError\":{huge_error:e},\"completedPNonGMaxError\":{p_error:e},\"onePSetupAndSolveSeconds\":{p_seconds},\"passiveHydraulicDissipationW\":{},\"kineticTemperatureEquivalentK\":{:?},\"currentCandidateFlowClosureRatio\":{}}}",
                 ic.json(),
                 trace.json(),
-                yp[l.surge_start + finite_surge::LEFT_MOMENTUM],
-                yp[l.surge_start + finite_surge::RIGHT_MOMENTUM],
+                flow[0],
+                -flow[1],
                 yp[l.pressurizer_start + cp::HEIGHT],
-                mechanical.kinetic_work_defect,
-                mechanical.gravity_mixing_power,
-                mechanical.mechanical_availability_power,
-                c.convergence.reduction_envelope().ratio()?,
-                c.convergence.max_converged_momentum()
+                hydraulic.passive_dissipation_w,
+                hydraulic.kinetic_temperature_equivalent_k,
+                c.convergence.max_converged_flow()
             );
             deadline()?;
         }
@@ -417,7 +416,7 @@ fn archived_carrier_global_and_local_transport_without_advancement() {
     let mut cases = Vec::new();
     for name in ["input.normal.checkpoint", "input.normal.unadmitted-raw"] {
         let bytes = fs::read(directory.join(name)).unwrap();
-        assert_eq!(&bytes[..8], b"LDCOOL01");
+        assert_eq!(&bytes[..8], b"LDRCST01");
         assert_eq!(
             u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
             n as u64
@@ -623,11 +622,9 @@ fn shared_chart(
         .enumerate()
         .map(|(i, &[_, _, ep, et])| ((w.residual[n.temperature_row(i)] - ep * dp) / et).abs())
         .fold(0f64, f64::max);
-    assert!(
-        [rm, compliance, projected, dp, dt]
-            .iter()
-            .all(|v| v.is_finite())
-    );
+    assert!([rm, compliance, projected, dp, dt]
+        .iter()
+        .all(|v| v.is_finite()));
     assert!(compliance > 0.);
     (rm, compliance, dp, dt, contributions)
 }
@@ -703,7 +700,7 @@ fn barrel_chart_linear_diagnostic(candidate_proof: bool) {
             (0., physical.into_iter().chain(slopes).collect::<Vec<_>>())
         } else {
             let bytes = fs::read(directory.join(name)).unwrap();
-            assert_eq!(&bytes[..8], b"LDCOOL01");
+            assert_eq!(&bytes[..8], b"LDRCST01");
             assert_eq!(
                 u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
                 n as u64
@@ -985,7 +982,7 @@ fn archived_energy_p_completion_without_advancement() {
             (model.initial_state().unwrap(), vec![0.; n])
         } else {
             let bytes = fs::read(directory.join(name)).unwrap();
-            assert_eq!(&bytes[..8], b"LDCOOL01");
+            assert_eq!(&bytes[..8], b"LDRCST01");
             assert_eq!(bytes.len(), 24 + 16 * n);
             let v = bytes[24..]
                 .chunks_exact(8)
@@ -1193,7 +1190,7 @@ fn archived_power_response_and_weights_without_advancement() {
             model.initial_state().unwrap()
         } else {
             let bytes = fs::read(directory.join(name)).unwrap();
-            assert_eq!(&bytes[..8], b"LDCCOM01");
+            assert_eq!(&bytes[..8], b"LDRCCM01");
             assert_eq!(bytes.len(), 24 + 8 * n);
             assert_eq!(f64::from_le_bytes(bytes[16..24].try_into().unwrap()), 0.001);
             bytes[24..]
@@ -1333,7 +1330,7 @@ fn archived_energy_chart_callbacks_without_advancement() {
             (original.clone(), vec![0.; n])
         } else {
             let bytes = fs::read(directory.join(name)).unwrap();
-            assert_eq!(&bytes[..8], b"LDCOOL01");
+            assert_eq!(&bytes[..8], b"LDRCST01");
             assert_eq!(bytes.len(), 24 + 16 * n);
             let v = bytes[24..]
                 .chunks_exact(8)
@@ -1474,7 +1471,7 @@ fn archived_physical_energy_identity_without_advancement() {
     };
     for name in ["input.normal.checkpoint", "input.normal.unadmitted-raw"] {
         let bytes = fs::read(directory.join(name)).unwrap();
-        assert_eq!(&bytes[..8], b"LDCOOL01");
+        assert_eq!(&bytes[..8], b"LDRCST01");
         let n = u64::from_le_bytes(bytes[8..16].try_into().unwrap()) as usize;
         assert_eq!(n, model.dimension());
         assert_eq!(bytes.len(), 24 + 16 * n);

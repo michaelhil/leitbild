@@ -2,7 +2,7 @@
 //! Separate finite water/NC energies, finite-rate supersaturated dilute steam,
 //! exact pool geometry and reciprocal interface work. No electrical heater,
 //! gas port, dryout/flooding, slip, stratified withdrawal or stable-fog claim.
-use crate::{liquid_batch, Liquid, LiquidQuery, GRAVITY};
+use crate::{GRAVITY, Liquid, LiquidQuery, liquid_batch};
 use std::sync::Arc;
 
 pub const METALS: usize = 9;
@@ -200,6 +200,7 @@ pub struct Workspace {
     energy_rate_jacobian: [[f64; STATES]; 11],
     state: [f64; STATES],
     derivative: [f64; STATES],
+    chart_jacobian: Option<[[f64; 7]; 7]>,
 }
 fn finite(xs: &[f64]) -> bool {
     xs.iter().all(|v| v.is_finite())
@@ -531,6 +532,7 @@ impl Model {
             energy_rate_jacobian: [[0.; STATES]; 11],
             state: [0.; STATES],
             derivative: [0.; STATES],
+            chart_jacobian: None,
         }
     }
     /// Only consumed current port quantities are evaluated, once before the
@@ -663,17 +665,90 @@ impl Model {
     pub fn equilibrium_vapor_pressure(&self, p_liquid: f64, t: f64) -> Result<f64, String> {
         self.steam.equilibrium_vapor_pressure(p_liquid, t)
     }
-    fn values(
+    /// Canonical interface transaction shared by the physical balances and
+    /// chart-only partials. No wall/condensation or metal Jacobian is consumed.
+    fn interface(&self, y: &[f64; STATES], liquid: Liquid, vg: f64) -> Result<[f64; 5], String> {
+        let i = &self.input;
+        let (tl, tg, ti, ps) = (
+            y[LIQUID_TEMPERATURE],
+            y[GAS_TEMPERATURE],
+            y[INTERFACE_TEMPERATURE],
+            y[SURFACE_PRESSURE],
+        );
+        let li = water(ps, ti)?;
+        let pvi = self.equilibrium_vapor_pressure(ps, ti)?;
+        let nc = i.air_mass + i.nitrogen_mass;
+        let mg = y[VAPOR_MASS] + i.air_mass + i.nitrogen_mass;
+        let rnc =
+            (i.air_mass * crate::sg_secondary::RA + i.nitrogen_mass * crate::sg_secondary::RN) / nc;
+        let nc_i = (ps - pvi) / (rnc * ti);
+        let steam_i = pvi / (self.steam.gas_constant * ti);
+        let ync_i = nc_i / (nc_i + steam_i);
+        let diffusivity = i.diffusivity_reference
+            * (((tg + ti) / 2.) / i.diffusivity_reference_temperature).powf(i.diffusivity_exponent)
+            * i.diffusivity_reference_pressure
+            / ps;
+        let gamma =
+            i.area * (mg / vg) * diffusivity / (i.interface_length / 2.) * ((nc / mg) / ync_i).ln();
+        let ql = i.area * (2. * liquid.conductivity / i.interface_length) * (tl - ti);
+        let qg = i.area * (2. * i.gas_conductivity / i.interface_length) * (tg - ti);
+        let out = [gamma, ql, qg, li.enthalpy, self.steam.enthalpy(ti)];
+        if !finite(&out) {
+            return Err("Nonfinite cold PZR interface chart".into());
+        }
+        Ok(out)
+    }
+    /// One authority for the seven forward fluid equations. Held-stock chart
+    /// derivatives use this directly instead of probing all physical balances.
+    fn fluid_charts(&self, y: &[f64; STATES]) -> Result<[f64; 7], String> {
+        self.validate_fluid(y)?;
+        let [vl, vg, zl, zg] = self.geometry(y[HEIGHT])?;
+        let liquid = water(y[LIQUID_PRESSURE], y[LIQUID_TEMPERATURE])?;
+        let interface = self.interface(y, liquid, vg)?;
+        Ok(self.fluid_charts_from(y, liquid, [vl, vg, zl, zg], interface))
+    }
+    fn fluid_charts_from(
         &self,
         y: &[f64; STATES],
-        yp: &[f64; STATES],
-        b: Balance,
-        condensing: Option<[bool; METALS]>,
-    ) -> Result<([f64; STATES], Diagnostics, [bool; METALS]), String> {
+        liquid: Liquid,
+        geometry: [f64; 4],
+        interface: [f64; 5],
+    ) -> [f64; 7] {
+        let i = &self.input;
+        let [vl, vg, zl, zg] = geometry;
+        let [gamma, ql, qg, hli, hvi] = interface;
+        let (tg, ps, pv, mv) = (
+            y[GAS_TEMPERATURE],
+            y[SURFACE_PRESSURE],
+            y[VAPOR_PRESSURE],
+            y[VAPOR_MASS],
+        );
+        let mg = mv + i.air_mass + i.nitrogen_mass;
+        let gas_mean = pv
+            + (i.air_mass * crate::sg_secondary::RA + i.nitrogen_mass * crate::sg_secondary::RN)
+                * tg
+                / vg;
+        [
+            y[LIQUID_MASS] - liquid.density * vl,
+            mv - pv * vg / (self.steam.gas_constant * tg),
+            ps - gas_mean - (mg / vg) * GRAVITY * (zg - y[HEIGHT]),
+            y[LIQUID_ENERGY]
+                - liquid.density
+                    * vl
+                    * (liquid.internal_energy + GRAVITY * (i.bottom_elevation + zl)),
+            y[GAS_ENERGY]
+                - (mv * self.steam.internal_energy(tg)
+                    + (i.air_mass * crate::sg_secondary::CVA
+                        + i.nitrogen_mass * crate::sg_secondary::CVN)
+                        * (tg - crate::sg_secondary::GAS_DATUM)
+                    + mg * GRAVITY * (i.bottom_elevation + zg)),
+            ql + qg - gamma * (hvi - hli),
+            y[LIQUID_PRESSURE] - ps - liquid.density * GRAVITY * (y[HEIGHT] - zl),
+        ]
+    }
+    fn validate_fluid(&self, y: &[f64; STATES]) -> Result<(), String> {
         let i = &self.input;
         if !finite(y)
-            || !finite(yp)
-            || !finite(&[b.mass, b.energy])
             || y[LIQUID_MASS] <= 0.
             || y[VAPOR_MASS] <= 0.
             || y[SURFACE_PRESSURE] <= 0.
@@ -692,37 +767,32 @@ impl Model {
         {
             return Err("PZR left positive cold dilute pool/cushion domain".into());
         }
+        Ok(())
+    }
+    fn values(
+        &self,
+        y: &[f64; STATES],
+        yp: &[f64; STATES],
+        b: Balance,
+        condensing: Option<[bool; METALS]>,
+    ) -> Result<([f64; STATES], Diagnostics, [bool; METALS]), String> {
+        self.validate_fluid(y)?;
+        if !finite(yp) || !finite(&[b.mass, b.energy]) {
+            return Err("PZR left positive cold dilute pool/cushion domain".into());
+        }
+        let i = &self.input;
         let [vl, vg, zl, zg] = self.geometry(y[LEVEL])?;
         let tl = y[LIQUID_TEMPERATURE];
         let tg = y[GAS_TEMPERATURE];
-        let ti = y[INTERFACE_TEMPERATURE];
         let ps = y[SURFACE_PRESSURE];
         let pv = y[VAPOR_PRESSURE];
         let pl = y[LIQUID_PRESSURE];
-        let ml = y[LIQUID_MASS];
         let mv = y[VAPOR_MASS];
         let ma = i.air_mass;
         let mn = i.nitrogen_mass;
-        let mg = mv + ma + mn;
         let liquid = water(pl, tl)?;
-        let li = water(ps, ti)?;
-        let pvi = self.equilibrium_vapor_pressure(ps, ti)?;
-        let rnc = (ma * crate::sg_secondary::RA + mn * crate::sg_secondary::RN) / (ma + mn);
-        let nc_i = (ps - pvi) / (rnc * ti);
-        let steam_i = pvi / (self.steam.gas_constant * ti);
-        let ync_i = nc_i / (nc_i + steam_i);
-        let ync = (ma + mn) / mg;
-        let film = (tg + ti) / 2.;
-        let diffusivity = i.diffusivity_reference
-            * (film / i.diffusivity_reference_temperature).powf(i.diffusivity_exponent)
-            * i.diffusivity_reference_pressure
-            / ps;
-        let gamma =
-            i.area * (mg / vg) * diffusivity / (i.interface_length / 2.) * (ync / ync_i).ln();
-        let ql = i.area * (2. * liquid.conductivity / i.interface_length) * (tl - ti);
-        let qg = i.area * (2. * i.gas_conductivity / i.interface_length) * (tg - ti);
-        let hli = li.enthalpy;
-        let hvi = self.steam.enthalpy(ti);
+        let interface = self.interface(y, liquid, vg)?;
+        let [gamma, ql, qg, hli, hvi] = interface;
         let zi = i.bottom_elevation + y[LEVEL];
         let sl = -gamma * (hli + GRAVITY * zi) - ql;
         let sg_native = gamma * (hvi + GRAVITY * zi) - qg;
@@ -794,18 +864,12 @@ impl Model {
         f[VAPOR_MASS] = yp[VAPOR_MASS] - (gamma - condensates);
         f[LIQUID_ENERGY] = yp[LIQUID_ENERGY] - rl;
         f[GAS_ENERGY] = yp[GAS_ENERGY] - rg;
-        f[LIQUID_TEMPERATURE] = ml - liquid.density * vl;
-        f[GAS_TEMPERATURE] = mv - pv * vg / (self.steam.gas_constant * tg);
-        f[SURFACE_PRESSURE] = ps - gas_mean - (mg / vg) * GRAVITY * (zg - y[LEVEL]);
-        f[VAPOR_PRESSURE] = y[LIQUID_ENERGY]
-            - liquid.density * vl * (liquid.internal_energy + GRAVITY * (i.bottom_elevation + zl));
-        f[LEVEL] = y[GAS_ENERGY]
-            - (mv * self.steam.internal_energy(tg)
-                + (ma * crate::sg_secondary::CVA + mn * crate::sg_secondary::CVN)
-                    * (tg - crate::sg_secondary::GAS_DATUM)
-                + mg * GRAVITY * (i.bottom_elevation + zg));
-        f[INTERFACE_TEMPERATURE] = interface_balance;
-        f[LIQUID_PRESSURE] = pl - ps - liquid.density * GRAVITY * (y[LEVEL] - zl);
+        f[LIQUID_TEMPERATURE..=LIQUID_PRESSURE].copy_from_slice(&self.fluid_charts_from(
+            y,
+            liquid,
+            [vl, vg, zl, zg],
+            interface,
+        ));
         for k in 0..METALS {
             f[METAL_ENERGIES + k] = yp[METAL_ENERGIES + k] - heat[k];
             f[METAL_TEMPERATURES + k] =
@@ -853,6 +917,7 @@ impl Model {
     ) -> Result<(), String> {
         w.valid = false;
         w.linearized = false;
+        w.chart_jacobian = None;
         if !Arc::ptr_eq(&self.owner, &w.owner) || cj.is_some_and(|c| !c.is_finite() || c < 0.) {
             return Err("Foreign/invalid PZR workspace".into());
         }
@@ -933,6 +998,45 @@ impl Model {
         }
         w.state = *y;
         w.derivative = *yp;
+        w.valid = true;
+        Ok(())
+    }
+    /// Current physical values plus ONLY the seven held-stock fluid-chart
+    /// partials. Admission does not consume the full balance/metal/source
+    /// Jacobians. Failed refresh invalidates both derivative authorities.
+    pub fn evaluate_charts(
+        &self,
+        y: &[f64; STATES],
+        yp: &[f64; STATES],
+        balance: Balance,
+        w: &mut Workspace,
+    ) -> Result<(), String> {
+        self.evaluate(y, yp, balance, None, w)?;
+        w.valid = false;
+        let mut matrix = [[0.; 7]; 7];
+        for col in 0..7 {
+            let index = LIQUID_TEMPERATURE + col;
+            let step = (y[index].abs() * 1e-6).max(
+                if matches!(index, SURFACE_PRESSURE | VAPOR_PRESSURE | LIQUID_PRESSURE) {
+                    0.01
+                } else {
+                    1e-7
+                },
+            );
+            let mut a = *y;
+            let mut b = *y;
+            a[index] -= step;
+            b[index] += step;
+            let a = self.fluid_charts(&a)?;
+            let b = self.fluid_charts(&b)?;
+            for row in 0..7 {
+                matrix[row][col] = (b[row] - a[row]) / (2. * step);
+            }
+        }
+        if matrix.iter().flatten().any(|v| !v.is_finite()) {
+            return Err("Nonfinite PZR chart-only partial".into());
+        }
+        w.chart_jacobian = Some(matrix);
         w.valid = true;
         Ok(())
     }
@@ -1055,17 +1159,20 @@ impl Model {
     pub fn chart_corrections(&self, w: &Workspace, y: &[f64; STATES]) -> Result<[f64; 7], String> {
         if !Arc::ptr_eq(&self.owner, &w.owner)
             || !w.valid
-            || !w.linearized
+            || (!w.linearized && w.chart_jacobian.is_none())
             || y.iter()
                 .zip(w.state)
                 .any(|(a, b)| a.to_bits() != b.to_bits())
         {
-            return Err("PZR chart correction requires its current owned linear stage".into());
+            return Err("PZR chart correction requires its current owned chart stage".into());
         }
         let mut a = [[0.; 8]; 7];
         for row in 0..7 {
             for col in 0..7 {
-                a[row][col] = w.jacobian[4 + row][4 + col];
+                a[row][col] = w
+                    .chart_jacobian
+                    .as_ref()
+                    .map_or(w.jacobian[4 + row][4 + col], |j| j[row][col]);
             }
             a[row][7] = -w.residual[4 + row];
         }
@@ -1275,6 +1382,78 @@ mod tests {
             .unwrap()
     }
     #[test]
+    fn chart_only_stage_matches_full_chart_and_invalidates_other_derivatives() {
+        let (m, mut y) = prepared();
+        y[LIQUID_TEMPERATURE] += 0.2;
+        y[GAS_TEMPERATURE] += 0.1;
+        y[INTERFACE_TEMPERATURE] -= 0.05;
+        y[LIQUID_ENERGY] += 12.; // Deliberately off the caloric manifold.
+        let z = [0.; STATES];
+        let mut full = m.workspace();
+        let mut charts = m.workspace();
+        m.evaluate(&y, &z, Balance::default(), Some(0.), &mut full)
+            .unwrap();
+        m.evaluate_charts(&y, &z, Balance::default(), &mut charts)
+            .unwrap();
+        assert_eq!(full.residual().unwrap(), charts.residual().unwrap());
+        let j = full.jacobian().unwrap();
+        for row in 0..7 {
+            for col in 0..7 {
+                assert_eq!(
+                    charts.chart_jacobian.unwrap()[row][col],
+                    j[4 + row][4 + col]
+                );
+            }
+        }
+        assert_eq!(
+            m.chart_corrections(&full, &y).unwrap(),
+            m.chart_corrections(&charts, &y).unwrap()
+        );
+        assert!(charts.jacobian().is_err());
+        assert!(charts.rate_matrix().is_err());
+        assert!(m.jvp(&charts, &z, Balance::default(), 0.).is_err());
+        let mut changed = y;
+        changed[HEIGHT] += 0.01;
+        assert!(m.chart_corrections(&charts, &changed).is_err());
+        m.evaluate(&y, &z, Balance::default(), None, &mut charts)
+            .unwrap();
+        assert!(m.chart_corrections(&charts, &y).is_err());
+        m.evaluate_charts(&y, &z, Balance::default(), &mut charts)
+            .unwrap();
+        let (foreign, _) = prepared();
+        assert!(
+            foreign
+                .evaluate_charts(&y, &z, Balance::default(), &mut charts)
+                .is_err()
+        );
+        assert!(charts.residual().is_err());
+        m.evaluate_charts(&y, &z, Balance::default(), &mut charts)
+            .unwrap();
+        changed[HEIGHT] = -1.;
+        assert!(
+            m.evaluate_charts(&changed, &z, Balance::default(), &mut charts)
+                .is_err()
+        );
+        assert!(m.chart_corrections(&charts, &y).is_err());
+        // Chart-only finite probes retain the physical preparation's cold
+        // domain refusal instead of extending its selected interval.
+        changed = y;
+        changed[LIQUID_TEMPERATURE] = m.input().maximum_fluid_temperature;
+        assert!(
+            m.evaluate(&changed, &z, Balance::default(), None, &mut charts)
+                .is_ok()
+        );
+        assert!(
+            m.evaluate(&changed, &z, Balance::default(), Some(0.), &mut charts)
+                .is_err()
+        );
+        assert!(
+            m.evaluate_charts(&changed, &z, Balance::default(), &mut charts)
+                .is_err()
+        );
+        assert!(m.chart_corrections(&charts, &y).is_err());
+    }
+    #[test]
     fn fresh_native_anchored_chart_retains_bottom_pressure_and_actual_space() {
         let (m, y) = prepared();
         assert!((m.volume() - 59.74867258771282).abs() < 1e-10);
@@ -1375,11 +1554,7 @@ mod tests {
         let yp = [0.01; STATES];
         let d = std::array::from_fn(|k| {
             if m.is_differential(k) {
-                if k < 2 {
-                    0.001
-                } else {
-                    13.
-                }
+                if k < 2 { 0.001 } else { 13. }
             } else {
                 match k {
                     SURFACE_PRESSURE | VAPOR_PRESSURE | LIQUID_PRESSURE => 7.,
@@ -1453,23 +1628,27 @@ mod tests {
             .unwrap();
         assert!(w.diagnostics().unwrap().supersaturation_ratio > 1.);
         let (foreign, _) = prepared();
-        assert!(foreign
-            .evaluate(&y, &z, Balance::default(), None, &mut w)
-            .is_err());
+        assert!(
+            foreign
+                .evaluate(&y, &z, Balance::default(), None, &mut w)
+                .is_err()
+        );
         assert!(w.diagnostics().is_err());
         m.evaluate(&y, &z, Balance::default(), Some(1.), &mut w)
             .unwrap();
         let mut bad = y;
         bad[HEIGHT] = 3.;
-        assert!(m
-            .evaluate(&bad, &z, Balance::default(), None, &mut w)
-            .is_err());
+        assert!(
+            m.evaluate(&bad, &z, Balance::default(), None, &mut w)
+                .is_err()
+        );
         assert!(w.residual().is_err());
         bad = y;
         bad[LIQUID_TEMPERATURE] = f64::NAN;
-        assert!(m
-            .evaluate(&bad, &z, Balance::default(), Some(1.), &mut w)
-            .is_err());
+        assert!(
+            m.evaluate(&bad, &z, Balance::default(), Some(1.), &mut w)
+                .is_err()
+        );
     }
     #[test]
     fn local_probe_domain_is_explicit_not_a_hidden_one_sided_fallback() {
@@ -1479,9 +1658,10 @@ mod tests {
         y[METAL_TEMPERATURES] = m.input().minimum_metal_temperature;
         m.evaluate(&y, &z, Balance::default(), None, &mut w)
             .unwrap();
-        assert!(m
-            .evaluate(&y, &z, Balance::default(), Some(1.), &mut w)
-            .is_err());
+        assert!(
+            m.evaluate(&y, &z, Balance::default(), Some(1.), &mut w)
+                .is_err()
+        );
         assert!(w.residual().is_err());
         assert!(w.jacobian().is_err());
     }

@@ -59,7 +59,7 @@ pub(super) fn parse(
         length: number(&mut w),
         diameter: number(&mut w),
         roughness: number(&mut w),
-        entry_loss: number(&mut w),
+        terminal_loss: number(&mut w),
         bend_loss_each: number(&mut w),
         steel_mass: number(&mut w),
         cp0: number(&mut w),

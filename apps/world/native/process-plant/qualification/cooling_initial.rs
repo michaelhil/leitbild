@@ -255,14 +255,8 @@ pub(super) fn initialize(
             if cooling_convergence::pressure_caloric_ratio(model, y, &pool, &line)? > 1. {
                 return Err("Initial pressure metal caloric chart refused".into());
             }
-            if cooling_convergence::pressure_momentum_ratio(model, &line)? > 1. {
-                return Err("Initial pressure momentum closure refused".into());
-            }
-            cooling_convergence::surge_mechanics_check(line.mechanics()?)?;
-            let mut reduction = cooling_convergence::ReductionEnvelope::default();
-            reduction.observe(&line)?;
-            if reduction.ratio()? > 1. {
-                return Err("Initial surge reduction consequence exceeds allocation".into());
+            if cooling_convergence::pressure_flow_ratio(model, &line)? > 1. {
+                return Err("Initial pressure hydraulic closure refused".into());
             }
             model.validate_accepted(y, work)?;
             for r in 0..n {

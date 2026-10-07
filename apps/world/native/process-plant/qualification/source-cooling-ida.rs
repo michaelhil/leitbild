@@ -53,7 +53,7 @@ use std::{
     ffi::{c_int, c_long},
     fs,
     io::{self, Write},
-    panic::{AssertUnwindSafe, catch_unwind},
+    panic::{catch_unwind, AssertUnwindSafe},
     path::{Path, PathBuf},
     ptr, slice,
     time::Instant,
@@ -481,7 +481,6 @@ fn recoverable(error: &str) -> bool {
             | "PZR pool left selected covered cold envelope"
             | "PZR metal caloric domain"
             | "Cold PZR interface left dilute separated-water branch"
-            | "Nonpositive surge acceleration traction"
     ) || error.starts_with("Invalid water trial ")
 }
 fn callback(user: Handle, f: impl FnOnce(&mut Callbacks<'_>) -> Result<(), String>) -> c_int {
@@ -663,9 +662,7 @@ struct Run {
     max_energy: f64,
     max_thermal_chart: f64,
     max_pressure_chart: f64,
-    max_pressure_momentum: f64,
-    max_polynomial_momentum: f64,
-    reduction: cooling_convergence::ReductionEnvelope,
+    max_pressure_flow: f64,
     surge_flow_extrema: [[f64; 2]; 2],
     initialization: String,
     stats: String,
@@ -673,7 +670,7 @@ struct Run {
 impl Run {
     fn json(&self) -> String {
         format!(
-            "{{\"passed\":{},\"reason\":{},\"lastAdmittedTime\":{},\"returnedTime\":{},\"wallSeconds\":{},\"screenedStatesIncludingInitial\":{},\"commonSamples\":{},\"maxSourceNumberDefect\":{},\"maxSourceEnergyDefectJ\":{},\"maxThermalChartK\":{},\"maxPressureChartRatio\":{},\"maxPressureMomentumRatio\":{},\"momentumResidualDerivativeScope\":\"joint-initial-physical-rates-and-converged-current-Newton-candidates-only\",\"maxRetainedPolynomialMomentumRatioDiagnostic\":{},\"retainedMomentumScope\":\"Dky1-polynomial-not-BDF-stage;diagnostic-only;canonical-RHS-work-admitted-separately\",\"surgeReductionEnvelope\":{{\"maxPowerW\":{},\"maxPressureGainPaPerJ\":{},\"maxTemperatureGainKPerJ\":{},\"ratio\":{}}},\"actualSurgeFlowExtremaKgPerS\":{:?},\"initialization\":{},\"stats\":{},\"costs\":{}}}",
+            "{{\"passed\":{},\"reason\":{},\"lastAdmittedTime\":{},\"returnedTime\":{},\"wallSeconds\":{},\"screenedStatesIncludingInitial\":{},\"commonSamples\":{},\"maxSourceNumberDefect\":{},\"maxSourceEnergyDefectJ\":{},\"maxThermalChartK\":{},\"maxPressureChartRatio\":{},\"maxPressureFlowClosureRatio\":{},\"hydraulicResidualScope\":\"algebraic-current-state;independent-of-Dky1-polynomial-slopes\",\"actualSurgeFlowExtremaKgPerS\":{:?},\"initialization\":{},\"stats\":{},\"costs\":{}}}",
             self.passed,
             quote(&self.reason),
             finite(self.last),
@@ -685,12 +682,7 @@ impl Run {
             finite(self.max_energy),
             finite(self.max_thermal_chart),
             finite(self.max_pressure_chart),
-            finite(self.max_pressure_momentum),
-            finite(self.max_polynomial_momentum),
-            finite(self.reduction.power),
-            finite(self.reduction.pressure_gain),
-            finite(self.reduction.temperature_gain),
-            finite(self.reduction.ratio().unwrap_or(f64::NAN)),
+            finite(self.max_pressure_flow),
             self.surge_flow_extrema,
             self.initialization,
             self.stats,
@@ -741,7 +733,7 @@ fn checkpoint(path: &Path, time: f64, y: &[f64], yp: &[f64]) -> Result<(), Strin
             .open(&pending)
             .map_err(|e| e.to_string())?,
     );
-    f.write_all(b"LDCOOL01")
+    f.write_all(b"LDRCST01")
         .and_then(|_| f.write_all(&(y.len() as u64).to_le_bytes()))
         .and_then(|_| f.write_all(&time.to_le_bytes()))
         .map_err(|e| e.to_string())?;
@@ -765,7 +757,7 @@ fn retain_common(path: &Path, time: f64, y: &[f64]) -> Result<(), String> {
             .open(&pending)
             .map_err(|e| e.to_string())?,
     );
-    f.write_all(b"LDCCOM01")
+    f.write_all(b"LDRCCM01")
         .and_then(|_| f.write_all(&(y.len() as u64).to_le_bytes()))
         .and_then(|_| f.write_all(&time.to_le_bytes()))
         .map_err(|e| e.to_string())?;
@@ -1002,9 +994,7 @@ fn run(
         max_energy: 0.,
         max_thermal_chart: 0.,
         max_pressure_chart: 0.,
-        max_pressure_momentum: 0.,
-        max_polynomial_momentum: 0.,
-        reduction: cooling_convergence::ReductionEnvelope::default(),
+        max_pressure_flow: 0.,
         surge_flow_extrema: [[0.; 2]; 2],
         initialization,
         stats: "null".into(),
@@ -1092,30 +1082,21 @@ fn run(
                     ));
                 }
                 out.max_pressure_chart = out.max_pressure_chart.max(chart_ratio.max(caloric_ratio));
-                let momentum_ratio =
-                    cooling_convergence::pressure_momentum_ratio(model, &surge_chart_work)?;
-                // Initial slopes are jointly completed physical rates. After
-                // advancement Dky1 is a polynomial derivative, not stage yp;
-                // its residual is descriptive, never this stage hard gate.
-                if out.steps == 0 && momentum_ratio > 1. {
+                let flow_ratio =
+                    cooling_convergence::pressure_flow_ratio(model, &surge_chart_work)?;
+                // These two hydraulic equations are algebraic and consume no
+                // yp. The same physical closure applies at every endpoint.
+                if flow_ratio > 1. {
                     return Err(format!(
-                        "Current surge momentum force correction exceeds1Pa: ratio={momentum_ratio}"
+                        "Current surge hydraulic closure exceeds1Pa: ratio={flow_ratio}"
                     ));
                 }
-                if out.steps == 0 {
-                    out.max_pressure_momentum = momentum_ratio;
-                } else {
-                    out.max_polynomial_momentum = out.max_polynomial_momentum.max(momentum_ratio);
-                }
-                cooling_convergence::surge_mechanics_check(surge_chart_work.mechanics()?)?;
+                out.max_pressure_flow = out.max_pressure_flow.max(flow_ratio);
                 let q = callbacks.work.surge.receipts()?.mass;
                 for (k, value) in [q[0], -q[1]].into_iter().enumerate() {
                     out.surge_flow_extrema[k][0] = out.surge_flow_extrema[k][0].min(value);
                     out.surge_flow_extrema[k][1] = out.surge_flow_extrema[k][1].max(value);
                 }
-                out.reduction = callbacks
-                    .convergence
-                    .admit_retained_reduction(&surge_chart_work)?;
                 Ok(())
             })();
             callbacks.screen_seconds += screen_started.elapsed().as_secs_f64();
@@ -1265,10 +1246,9 @@ fn run(
         callbacks.io_seconds += io_started.elapsed().as_secs_f64();
     }
     out.wall = began.elapsed().as_secs_f64();
-    out.max_pressure_momentum = out
-        .max_pressure_momentum
-        .max(callbacks.convergence.max_converged_momentum());
-    out.reduction = callbacks.convergence.reduction_envelope();
+    out.max_pressure_flow = out
+        .max_pressure_flow
+        .max(callbacks.convergence.max_converged_flow());
     out.metrics = callbacks.metrics();
     out.stats = solver_stats(owned.ida)?;
     Ok(out)
@@ -1565,7 +1545,7 @@ fn execute() -> Result<(), String> {
         barrel_developed.map_or("null".into(), |v| v.to_string())
     );
     let pressure_gates = format!(
-        "\"pressurePairRatio\":{},\"pressureMaterialPairRatio\":{},\"pressureChartRatio\":{},\"pressureMomentumRatio\":{},\"surgeReductionRatio\":{},\"developedPressureResponse\":{},\"pressureResponse\":{pressure_details}",
+        "\"pressurePairRatio\":{},\"pressureMaterialPairRatio\":{},\"pressureChartRatio\":{},\"pressureFlowClosureRatio\":{},\"developedPressureResponse\":{},\"pressureResponse\":{pressure_details}",
         if pair_evaluated {
             finite(max_pressure)
         } else {
@@ -1583,20 +1563,14 @@ fn execute() -> Result<(), String> {
         ),
         finite(
             normal
-                .max_pressure_momentum
-                .max(tight.as_ref().map_or(0., |r| r.max_pressure_momentum))
-        ),
-        finite(
-            normal
-                .reduction
-                .ratio()?
-                .max(tight.as_ref().map_or(Ok(0.), |r| r.reduction.ratio())?)
+                .max_pressure_flow
+                .max(tight.as_ref().map_or(0., |r| r.max_pressure_flow))
         ),
         pressure_developed.map_or("null".into(), |v| v.to_string())
     );
-    let pressure_settings = "\"pressureCoordinates\":\"finite-pool-cushion-and-surge-forward-DAE;direct-liquid-B10-and-phase-H-products\",\"pressureResponseResolutionPa\":1,\"pressureChangeRelativeBudget\":0.005,\"surgeMomentumModel\":\"conjugate-linear-velocity-mass-metric\",\"surgeGravityModel\":\"owned-bulk-density-Galerkin\",\"surgeReductionScope\":\"observed-candidate-and-endpoint-envelope;current-chart-consequence-allocation;not-coupled-trajectory-bound\",\"pressureChartHeightScope\":\"hydrostatic-equivalent-1Pa;P-T-coupled-correction-and-metal-caloric-admitted\"";
+    let pressure_settings = "\"pressureCoordinates\":\"finite-pool-cushion-and-surge-forward-DAE;direct-liquid-B10-and-phase-H-products\",\"pressureResponseResolutionPa\":1,\"pressureChangeRelativeBudget\":0.005,\"surgeHydraulicModel\":\"finite-storage-two-algebraic-resistances\",\"surgeGravityModel\":\"owned-bulk-density-hydrostatic-face-heads\",\"surgeReductionScope\":\"sound-filtered-slow-support;no-inertial-waveform-credit\",\"surgeFlowResolutionKgS\":1e-5,\"pressureChartHeightScope\":\"hydrostatic-equivalent-1Pa;P-T-coupled-correction-and-metal-caloric-admitted\"";
     println!(
-        "{{\"kind\":\"source-cooling-pair\",\"passed\":{passed},\"lastAdmittedTime\":{},\"scope\":\"same-trial-source-finite-fuel-He-primary-finite-SG-barrel-surge-cold-PZR;cold-fixed-prepared-geometry;no-fullplant-credit\",\"dimension\":{},\"differential\":{},\"settings\":{{\"accuracyPolicy\":\"cold-source-cooling-6\",\"carrierCoordinates\":\"hydrogen-product,direct-boron10,boron-product\",\"provisional\":true,\"nonlinearClosure\":\"stock-Newton-and-current-physical-network-pressure-charts\",\"linearWeightedL2Budget\":{linear_budget},\"algebraicLTE\":\"included\",\"fuelPowerErrorWeights\":\"sparse-current-response-proportional-budget-cap\",\"fuelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerErrorWeights\":\"sparse-current-bulk-capture-Mn-proportional-budget-cap\",\"barrelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerWeightScope\":\"held-route-source-response-only;density-partition-independently-paired\",\"fuelPowerWeightScope\":\"first-order-local-box-budget;not-WRMS-or-paired-error-guarantee\",\"perRowErrorWeights\":\"source-carrier-barrel-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute\",\"solverEnergyCoordinate\":\"G=sum-installed-energy-change-independent-fuel-and-barrel-release-plus-barrel-export-and-ambient-export\",\"energyDefectATOLJ\":{},\"referenceAllATOLandRTOLDivisor\":10,\"horizon\":300,\"costGuard\":\"aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic\",\"maxl\":30,\"restarts\":0,{pressure_settings}}},\"gates\":{{\"fullPairComparisonEvaluated\":{pair_evaluated},\"developedThermalResponse\":{},\"developedSourceResponse\":{},\"thermalResponse\":{thermal_details},\"sourceLocalRatio\":{},\"sourceFamilyRatio\":{},\"sourceObservableRatio\":{},\"sourceNCOperatorRatio\":{},\"thermalPairRatio\":{},\"networkPairRatio\":{},\"depositionPairRatio\":{},\"carrierPairRatio\":{},{barrel_gates},{pressure_gates}}},\"pairedComparisons\":[{}],\"fuelTemperatureFeedbackDiagnostic\":{feedback},\"normal\":{},\"tighter\":{tighter},\"aggregateWallSeconds\":{}}}",
+        "{{\"kind\":\"source-cooling-pair\",\"passed\":{passed},\"lastAdmittedTime\":{},\"scope\":\"same-trial-source-finite-fuel-He-primary-finite-SG-barrel-surge-cold-PZR;cold-fixed-prepared-geometry;no-fullplant-credit\",\"dimension\":{},\"differential\":{},\"settings\":{{\"accuracyPolicy\":\"cold-source-cooling-7\",\"carrierCoordinates\":\"hydrogen-product,direct-boron10,boron-product\",\"provisional\":true,\"nonlinearClosure\":\"stock-Newton-and-current-physical-network-pressure-charts\",\"linearWeightedL2Budget\":{linear_budget},\"algebraicLTE\":\"included\",\"fuelPowerErrorWeights\":\"sparse-current-response-proportional-budget-cap\",\"fuelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerErrorWeights\":\"sparse-current-bulk-capture-Mn-proportional-budget-cap\",\"barrelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerWeightScope\":\"held-route-source-response-only;density-partition-independently-paired\",\"fuelPowerWeightScope\":\"first-order-local-box-budget;not-WRMS-or-paired-error-guarantee\",\"perRowErrorWeights\":\"source-carrier-barrel-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute\",\"solverEnergyCoordinate\":\"G=sum-installed-energy-change-independent-fuel-and-barrel-release-plus-barrel-export-and-ambient-export\",\"energyDefectATOLJ\":{},\"referenceAllATOLandRTOLDivisor\":10,\"horizon\":300,\"costGuard\":\"aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic\",\"maxl\":30,\"restarts\":0,{pressure_settings}}},\"gates\":{{\"fullPairComparisonEvaluated\":{pair_evaluated},\"developedThermalResponse\":{},\"developedSourceResponse\":{},\"thermalResponse\":{thermal_details},\"sourceLocalRatio\":{},\"sourceFamilyRatio\":{},\"sourceObservableRatio\":{},\"sourceNCOperatorRatio\":{},\"thermalPairRatio\":{},\"networkPairRatio\":{},\"depositionPairRatio\":{},\"carrierPairRatio\":{},{barrel_gates},{pressure_gates}}},\"pairedComparisons\":[{}],\"fuelTemperatureFeedbackDiagnostic\":{feedback},\"normal\":{},\"tighter\":{tighter},\"aggregateWallSeconds\":{}}}",
         finite(
             tight
                 .as_ref()
@@ -1703,7 +1677,7 @@ mod tests {
     }
     #[test]
     fn appended_barrel_rows_have_explicit_ids_constraints_and_resolved_development() {
-        let model = cooling_fixture::fixture();
+        let model = cooling_fixture::fixture_with_contrast();
         let initial = model.initial_state().unwrap();
         let l = model.layout;
         let g = EnergyCoordinates::new(&model, &initial).unwrap();
@@ -1715,11 +1689,20 @@ mod tests {
         assert_eq!(l.barrel_exported + 1, l.pressurizer_start);
         assert_eq!(l.ambient_exported + 1, model.dimension());
         assert_eq!(constraints[l.ambient_exported], 0.);
-        assert_eq!(constraints[l.surge_start + finite_surge::LEFT_MOMENTUM], 0.);
-        assert_eq!(
-            constraints[l.surge_start + finite_surge::RIGHT_MOMENTUM],
-            0.
-        );
+        assert_eq!(constraints[l.surge_start + finite_surge::LEFT_FLOW], 0.);
+        assert_eq!(constraints[l.surge_start + finite_surge::RIGHT_FLOW], 0.);
+        let accuracy =
+            cooling_accuracy::Accuracy::new(&model, &vec![[0.; 2]; model.source.target_count()])
+                .unwrap();
+        let normal = accuracy.absolute(1.).unwrap();
+        let tighter = accuracy.absolute(10.).unwrap();
+        for row in [finite_surge::LEFT_FLOW, finite_surge::RIGHT_FLOW] {
+            let row = l.surge_start + row;
+            assert!(!model.is_differential(row));
+            assert!(!progress_relative(&model, row));
+            assert_eq!(normal[row], cooling_accuracy::SURGE_FLOW_RESOLUTION);
+            assert_eq!(tighter[row], normal[row] / 10.);
+        }
         assert!(model.is_differential(l.barrel_energy));
         assert!(!model.is_differential(l.barrel_temperature));
         assert!(model.is_differential(l.barrel_released));
@@ -1980,12 +1963,11 @@ mod tests {
         let fluid = model
             .fluid_rows()
             .collect::<std::collections::BTreeSet<_>>();
-        assert!(
-            c.energy_p
-                .unit()
-                .iter()
-                .all(|&(row, _)| fluid.contains(&row))
-        );
+        assert!(c
+            .energy_p
+            .unit()
+            .iter()
+            .all(|&(row, _)| fluid.contains(&row)));
         // Other components have zero unit response and are unchanged exactly.
         for row in 0..n {
             if !fluid.contains(&row) {
@@ -2217,10 +2199,9 @@ mod tests {
         t.observe(&errors, &weights, 4., 3, 3, 0.2).unwrap();
         assert_eq!(t.last_wrms, 0.);
         assert_eq!(t.families[4].maximum, 10.);
-        assert!(
-            t.json()
-                .contains("not-global-error-bound-or-rejected-step-attribution")
-        );
+        assert!(t
+            .json()
+            .contains("not-global-error-bound-or-rejected-step-attribution"));
         errors[0] = f64::INFINITY;
         assert!(t.observe(&errors, &weights, 5., 3, 3, 0.2).is_err());
     }
@@ -2267,9 +2248,7 @@ mod tests {
             max_energy: 0.,
             max_thermal_chart: 0.,
             max_pressure_chart: 0.,
-            max_pressure_momentum: 0.,
-            max_polynomial_momentum: 0.,
-            reduction: cooling_convergence::ReductionEnvelope::default(),
+            max_pressure_flow: 0.,
             surge_flow_extrema: [[0.; 2]; 2],
             initialization: "null".into(),
             stats: "null".into(),
@@ -2280,7 +2259,7 @@ mod tests {
         run.steps = 2;
         retain_final_admitted(&path, &run, 0., "{}").unwrap();
         let bytes = fs::read(&path).unwrap();
-        let mut expected = b"LDCOOL01".to_vec();
+        let mut expected = b"LDRCST01".to_vec();
         expected.extend_from_slice(&2u64.to_le_bytes());
         expected.extend_from_slice(&run.last.to_le_bytes());
         for value in run.final_y.iter().chain(&run.final_yp) {
@@ -2307,7 +2286,7 @@ mod tests {
         ));
         let y = [-0., 1., f64::from_bits(0x7ff8_0000_0000_0001)];
         retain_common(&path, 2., &y).unwrap();
-        let mut expected = b"LDCCOM01".to_vec();
+        let mut expected = b"LDRCCM01".to_vec();
         expected.extend_from_slice(&3u64.to_le_bytes());
         expected.extend_from_slice(&2f64.to_le_bytes());
         for x in y {
@@ -2325,12 +2304,10 @@ mod tests {
             std::os::unix::fs::symlink("absent-common-target", &path).unwrap();
             assert!(!path.exists());
             assert!(retain_common(&path, 3., &[9.]).is_err());
-            assert!(
-                fs::symlink_metadata(&path)
-                    .unwrap()
-                    .file_type()
-                    .is_symlink()
-            );
+            assert!(fs::symlink_metadata(&path)
+                .unwrap()
+                .file_type()
+                .is_symlink());
             fs::remove_file(path.with_extension("common-pending")).unwrap();
             fs::remove_file(path).unwrap();
         }

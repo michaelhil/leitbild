@@ -51,94 +51,15 @@ pub(super) fn pressure_caloric_ratio(
     )?);
     Ok(maximum)
 }
-pub(super) fn pressure_momentum_ratio(
-    model: &source_cooling::Model,
+pub(super) fn pressure_flow_ratio(
+    _model: &source_cooling::Model,
     line: &finite_surge::Workspace,
 ) -> Result<f64, String> {
-    let input = model.pressure_connection().surge.input();
-    let area = input.geometry.volume / input.length;
     let f = line.residual()?;
     super::ratio(
-        f[finite_surge::LEFT_MOMENTUM].abs() + f[finite_surge::RIGHT_MOMENTUM].abs(),
-        area * super::cooling_accuracy::PRESSURE_RESOLUTION_PA,
+        f[finite_surge::LEFT_FLOW].abs() + f[finite_surge::RIGHT_FLOW].abs(),
+        super::cooling_accuracy::PRESSURE_RESOLUTION_PA,
     )
-}
-
-/// Canonical momentum/energy and convex-availability identities. Roundoff is
-/// scaled only by the actual pre-subtraction operands; no absolute allowance
-/// or repaired negative production is introduced.
-pub(super) fn surge_mechanics_check(m: finite_surge::Mechanics) -> Result<(), String> {
-    let values = [
-        m.kinetic_work_defect,
-        m.kinetic_work_scale,
-        m.entropy_identity_defect,
-        m.entropy_identity_scale,
-        m.entropy_production,
-        m.coupled_entropy_rate,
-        m.passive_dissipation,
-    ];
-    if values.iter().any(|v| !v.is_finite())
-        || m.kinetic_work_scale < 0.
-        || m.entropy_identity_scale < 0.
-    {
-        return Err("Nonfinite or invalid surge work/passivity operands".into());
-    }
-    let kinetic = 128. * f64::EPSILON * m.kinetic_work_scale;
-    let entropy = 128. * f64::EPSILON * m.entropy_identity_scale;
-    if m.kinetic_work_defect.abs() > kinetic
-        || m.entropy_identity_defect.abs() > entropy
-        || m.entropy_production < -entropy
-        || m.passive_dissipation < -kinetic
-    {
-        return Err(format!("Cold surge work/passivity identity refused: {m:?}"));
-    }
-    Ok(())
-}
-
-/// Three independent observed maxima, not a pointwise-product maximum or a
-/// bound on unobserved/coupled trajectory states. The signed remainder is
-/// diagnostic model reduction, never an extra heat payment.
-#[derive(Clone, Copy, Debug, Default)]
-pub(super) struct ReductionEnvelope {
-    pub power: f64,
-    pub pressure_gain: f64,
-    pub temperature_gain: f64,
-}
-impl ReductionEnvelope {
-    pub fn merge(&mut self, other: Self) {
-        self.power = self.power.max(other.power);
-        self.pressure_gain = self.pressure_gain.max(other.pressure_gain);
-        self.temperature_gain = self.temperature_gain.max(other.temperature_gain);
-    }
-    pub fn observe(&mut self, line: &finite_surge::Workspace) -> Result<(), String> {
-        let j = line.jacobian()?;
-        let p = finite_surge::PRESSURE;
-        let t = finite_surge::TEMPERATURE;
-        let det = j[p][p] * j[t][t] - j[p][t] * j[t][p];
-        let value = Self {
-            power: line.mechanics()?.reduction_power_bound,
-            pressure_gain: (j[p][t] / det).abs(),
-            temperature_gain: (j[p][p] / det).abs(),
-        };
-        if !det.is_finite()
-            || det == 0.
-            || [value.power, value.pressure_gain, value.temperature_gain]
-                .iter()
-                .any(|v| !v.is_finite() || *v < 0.)
-        {
-            return Err("Singular/nonfinite surge reduction chart operands".into());
-        }
-        self.merge(value);
-        Ok(())
-    }
-    pub fn ratio(self) -> Result<f64, String> {
-        let energy = super::HORIZON * self.power;
-        Ok(super::ratio(
-            energy * self.pressure_gain,
-            super::cooling_accuracy::PRESSURE_RESOLUTION_PA,
-        )?
-        .max(super::ratio(energy * self.temperature_gain, 1e-4)?))
-    }
 }
 
 pub(super) struct Convergence<'a> {
@@ -166,8 +87,7 @@ pub(super) struct Convergence<'a> {
     last_secondary: [f64; 2],
     last_pressurizer: [f64; 7],
     last_surge: [f64; 2],
-    max_converged_momentum: f64,
-    reduction: ReductionEnvelope,
+    max_converged_flow: f64,
 }
 impl<'a> Convergence<'a> {
     pub fn new(model: &'a source_cooling::Model) -> Result<Self, String> {
@@ -195,8 +115,7 @@ impl<'a> Convergence<'a> {
             last_secondary: [0.; 2],
             last_pressurizer: [0.; 7],
             last_surge: [0.; 2],
-            max_converged_momentum: 0.,
-            reduction: ReductionEnvelope::default(),
+            max_converged_flow: 0.,
             start: Instant::now(),
             allowance: 180.,
         })
@@ -205,27 +124,10 @@ impl<'a> Convergence<'a> {
         self.start = start;
         self.allowance = allowance;
     }
-    /// Only actual predictor+correction candidates accepted by BOTH stock
-    /// Newton and the physical checks, never retained Dky polynomial slopes.
-    pub fn max_converged_momentum(&self) -> f64 {
-        self.max_converged_momentum
-    }
-    pub fn reduction_envelope(&self) -> ReductionEnvelope {
-        self.reduction
-    }
-    pub fn admit_retained_reduction(
-        &mut self,
-        line: &finite_surge::Workspace,
-    ) -> Result<ReductionEnvelope, String> {
-        let mut observed = self.reduction;
-        observed.observe(line)?;
-        if observed.ratio()? > 1. {
-            return Err(format!(
-                "Observed surge reduction consequence exceeds allocation: {observed:?}"
-            ));
-        }
-        self.reduction = observed;
-        Ok(observed)
+    /// Actual algebraic hydraulic residuals on stock+physical-successful
+    /// candidates. The two flow equations do not depend on polynomial slopes.
+    pub fn max_converged_flow(&self) -> f64 {
+        self.max_converged_flow
     }
     pub(super) fn corrected_chart(
         &mut self,
@@ -323,23 +225,18 @@ impl<'a> Convergence<'a> {
             &self.state,
             &self.pressurizer,
         )?;
-        let momentum = pressure_momentum_ratio(self.model, &self.surge)?;
-        let mut reduction = self.reduction;
-        reduction.observe(&self.surge)?;
+        let flow = pressure_flow_ratio(self.model, &self.surge)?;
         if charts.check().is_err()
             || super::cooling_accuracy::check_pressure_chart(self.model, &pzr, &line, head).is_err()
             || caloric > 1.
-            || momentum > 1.
-            || surge_mechanics_check(self.surge.mechanics()?).is_err()
-            || reduction.ratio()? > 1.
+            || flow > 1.
         {
             self.refusals += 1;
             // Stock Newton's own iteration limit handles stagnation. Do not
             // reset its rate/history or force success for a zero update.
             Ok(CONTINUE)
         } else {
-            self.max_converged_momentum = self.max_converged_momentum.max(momentum);
-            self.reduction = reduction;
+            self.max_converged_flow = self.max_converged_flow.max(flow);
             Ok(0)
         }
     }
@@ -365,82 +262,26 @@ impl<'a> Convergence<'a> {
 mod tests {
     use super::*;
     #[test]
-    fn momentum_budget_records_only_converged_current_stage_candidates() {
+    fn flow_closure_checks_state_not_polynomial_derivative() {
         let model = super::super::cooling_fixture::fixture();
         let mut c = Convergence::new(&model).unwrap();
         let physical = model.initial_state().unwrap();
         let pred = solver_state(&c, &physical);
         let zero = vec![0.; model.dimension()];
         assert_eq!(c.corrected_chart(&pred, &zero, &zero, 1.).unwrap(), 0);
-        let admitted = c.max_converged_momentum();
-        let reduction = c.reduction_envelope();
+        let admitted = c.max_converged_flow();
         let mut bad_stage = zero.clone();
-        let i = model.pressure_connection().surge.input();
-        bad_stage[model.layout.surge_start + finite_surge::LEFT_MOMENTUM] =
-            2. * i.geometry.volume / i.length;
+        bad_stage[model.layout.surge_start + finite_surge::LEFT_FLOW] = 1e6;
+        // Algebraic q has no yp term: a large polynomial qdot is irrelevant.
+        assert_eq!(c.corrected_chart(&pred, &bad_stage, &zero, 1.).unwrap(), 0);
+        let mut bad_state = pred.clone();
+        bad_state[model.layout.surge_start + finite_surge::LEFT_FLOW] = 100.;
         assert_eq!(
-            c.corrected_chart(&pred, &bad_stage, &zero, 1.).unwrap(),
+            c.corrected_chart(&bad_state, &zero, &zero, 1.).unwrap(),
             CONTINUE
         );
-        assert_eq!(c.max_converged_momentum(), admitted);
-        assert_eq!(c.reduction_envelope().power, reduction.power);
-        assert_eq!(
-            c.reduction_envelope().pressure_gain,
-            reduction.pressure_gain
-        );
-        assert_eq!(
-            c.reduction_envelope().temperature_gain,
-            reduction.temperature_gain
-        );
+        assert_eq!(c.max_converged_flow(), admitted);
         assert!(admitted <= 1.);
-    }
-    #[test]
-    fn surge_work_passivity_has_only_operand_scaled_roundoff() {
-        let mut m = finite_surge::Mechanics::default();
-        assert!(surge_mechanics_check(m).is_ok());
-        m.entropy_production = -f64::MIN_POSITIVE;
-        assert!(surge_mechanics_check(m).is_err()); // zero operands give no floor
-        m.entropy_identity_scale = 1.;
-        assert!(surge_mechanics_check(m).is_ok());
-        m.entropy_production = -256. * f64::EPSILON;
-        assert!(surge_mechanics_check(m).is_err());
-        m.entropy_production = 0.;
-        m.kinetic_work_scale = 2.;
-        m.kinetic_work_defect = 128. * f64::EPSILON * 2.;
-        assert!(surge_mechanics_check(m).is_ok());
-        m.kinetic_work_defect *= 2.;
-        assert!(surge_mechanics_check(m).is_err());
-        m.kinetic_work_defect = 0.;
-        m.coupled_entropy_rate = -1.;
-        m.gravity_mixing_power = -300.;
-        assert!(surge_mechanics_check(m).is_ok()); // signed reduction, not clipped or universal positivity
-        m.entropy_identity_scale = f64::NAN;
-        assert!(surge_mechanics_check(m).is_err());
-    }
-    #[test]
-    fn reduction_envelope_crosses_independent_observed_maxima_not_pointwise_products() {
-        let mut first = ReductionEnvelope {
-            power: 1.,
-            pressure_gain: 0.4 / super::super::HORIZON,
-            temperature_gain: 0.,
-        };
-        let second = ReductionEnvelope {
-            power: 0.5,
-            pressure_gain: 1.5 / super::super::HORIZON,
-            temperature_gain: 0.,
-        };
-        assert!(first.ratio().unwrap() < 1. && second.ratio().unwrap() < 1.);
-        first.merge(second);
-        assert!(first.ratio().unwrap() > 1.);
-        assert!(
-            ReductionEnvelope {
-                power: f64::MAX,
-                pressure_gain: 1.,
-                temperature_gain: 1.
-            }
-            .ratio()
-            .is_err()
-        );
     }
     #[test]
     fn stock_result_is_called_once_and_forwarded_without_chart_work() {

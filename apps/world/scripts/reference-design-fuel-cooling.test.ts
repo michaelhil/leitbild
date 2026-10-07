@@ -12,7 +12,7 @@ test('a corrected attempt must debit the unsuccessful prior work against the sam
 })
 
 test('retained coupled checkpoints and polynomial observations have distinct exact frames',()=>{
- for(const [magic,width]of [['LDCOOL01',16],['LDCCOM01',8]] as const){
+ for(const [magic,width]of [['LDRCST01',16],['LDRCCM01',8]] as const){
   const bytes=new Uint8Array(24+width*3),view=new DataView(bytes.buffer)
   bytes.set(new TextEncoder().encode(magic));view.setBigUint64(8,3n,true);view.setFloat64(16,300,true)
   expect(coolingStateHeader(bytes)).toEqual({magic,coordinates:3,time:300})
@@ -20,17 +20,22 @@ test('retained coupled checkpoints and polynomial observations have distinct exa
   view.setFloat64(16,NaN,true);expect(()=>coolingStateHeader(bytes)).toThrow()
  }
  expect(()=>coolingStateHeader(new Uint8Array(0))).toThrow()
+ for(const [magic,width]of [['LDCOOL01',16],['LDCCOM01',8]] as const){
+  const bytes=new Uint8Array(24+width*3),view=new DataView(bytes.buffer)
+  bytes.set(new TextEncoder().encode(magic));view.setBigUint64(8,3n,true);view.setFloat64(16,300,true)
+  expect(()=>coolingStateHeader(bytes)).toThrow('Invalid')
+ }
 })
 
 test('only a complete physically developed refined pair can receive admission',()=>{
  const outcome={kind:'source-cooling-pair',passed:true,lastAdmittedTime:300,dimension:7,differential:4,
   normal:{passed:true,lastAdmittedTime:300,commonSamples:14},tighter:{passed:true,lastAdmittedTime:300,commonSamples:14},
-  settings:{accuracyPolicy:'cold-source-cooling-6',provisional:true,horizon:300,referenceAllATOLandRTOLDivisor:10,
+  settings:{accuracyPolicy:'cold-source-cooling-7',provisional:true,horizon:300,referenceAllATOLandRTOLDivisor:10,
    carrierCoordinates:'hydrogen-product,direct-boron10,boron-product',
    pressureCoordinates:'finite-pool-cushion-and-surge-forward-DAE;direct-liquid-B10-and-phase-H-products',
-   pressureResponseResolutionPa:1,pressureChangeRelativeBudget:0.005,surgeMomentumModel:'conjugate-linear-velocity-mass-metric',
-   surgeGravityModel:'owned-bulk-density-Galerkin',
-   surgeReductionScope:'observed-candidate-and-endpoint-envelope;current-chart-consequence-allocation;not-coupled-trajectory-bound',
+   pressureResponseResolutionPa:1,pressureChangeRelativeBudget:0.005,surgeHydraulicModel:'finite-storage-two-algebraic-resistances',
+   surgeGravityModel:'owned-bulk-density-hydrostatic-face-heads',
+   surgeReductionScope:'sound-filtered-slow-support;no-inertial-waveform-credit',surgeFlowResolutionKgS:1e-5,
    pressureChartHeightScope:'hydrostatic-equivalent-1Pa;P-T-coupled-correction-and-metal-caloric-admitted',
    fuelPowerErrorWeights:'sparse-current-response-proportional-budget-cap',fuelPowerResolutionW:1e-12,
    barrelPowerErrorWeights:'sparse-current-bulk-capture-Mn-proportional-budget-cap',barrelPowerResolutionW:1e-12,
@@ -40,8 +45,7 @@ test('only a complete physically developed refined pair can receive admission',(
    perRowErrorWeights:'source-carrier-barrel-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute'},
   gates:{fullPairComparisonEvaluated:true,developedThermalResponse:true,developedSourceResponse:true,
    developedBarrelResponse:true,barrelPairRatio:0,barrelPowerPairRatio:0,
-   developedPressureResponse:true,pressurePairRatio:0,pressureMaterialPairRatio:0,pressureChartRatio:0,pressureMomentumRatio:0,
-   surgeReductionRatio:0,
+   developedPressureResponse:true,pressurePairRatio:0,pressureMaterialPairRatio:0,pressureChartRatio:0,pressureFlowClosureRatio:0,
    sourceLocalRatio:0,sourceFamilyRatio:0,sourceObservableRatio:0,sourceNCOperatorRatio:0,
    thermalPairRatio:0,networkPairRatio:0,depositionPairRatio:0,carrierPairRatio:0},
   pairedComparisons:Array.from({length:14},()=>({})),fuelTemperatureFeedbackDiagnostic:{}}
@@ -55,14 +59,14 @@ test('only a complete physically developed refined pair can receive admission',(
  }
  for(const field of ['sourceLocalRatio','sourceFamilyRatio','sourceObservableRatio','sourceNCOperatorRatio',
   'thermalPairRatio','networkPairRatio','depositionPairRatio','carrierPairRatio','barrelPairRatio','barrelPowerPairRatio',
-  'pressurePairRatio','pressureMaterialPairRatio','pressureChartRatio','pressureMomentumRatio','surgeReductionRatio'])for(const value of [1.01,NaN,Infinity,-1]){
+  'pressurePairRatio','pressureMaterialPairRatio','pressureChartRatio','pressureFlowClosureRatio'])for(const value of [1.01,NaN,Infinity,-1]){
    const changed=structuredClone(outcome);(changed.gates as Record<string,unknown>)[field]=value
    expect(fuelCoolingAdmission.safeParse(changed).success).toBe(false)
   }
  expect(fuelCoolingAdmission.safeParse({...outcome,tighter:null}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,pairedComparisons:outcome.pairedComparisons.slice(1)}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,referenceAllATOLandRTOLDivisor:1}}).success).toBe(false)
- for(const policy of ['cold-source-cooling-1','cold-source-cooling-2','cold-source-cooling-3','cold-source-cooling-4','cold-source-cooling-5'])
+ for(const policy of ['cold-source-cooling-1','cold-source-cooling-2','cold-source-cooling-3','cold-source-cooling-4','cold-source-cooling-5','cold-source-cooling-6'])
   expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,accuracyPolicy:policy}}).success).toBe(false)
  for(const energyDefectATOLJ of [0,NaN,Infinity,0.01,1])
   expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,energyDefectATOLJ}}).success).toBe(false)
@@ -82,6 +86,8 @@ test('only a complete physically developed refined pair can receive admission',(
   {...outcome.settings,surgeGravityModel:undefined},
   {...outcome.settings,surgeGravityModel:'upwind-donor-gravity'},
   {...outcome.settings,surgeReductionScope:undefined},
+  {...outcome.settings,surgeHydraulicModel:'conjugate-linear-velocity-mass-metric'},
+  {...outcome.settings,surgeFlowResolutionKgS:1},
  ])expect(fuelCoolingAdmission.safeParse({...outcome,settings}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,
   perRowErrorWeights:'source-relative-consequences;network-thermal-carrier-absolute-only'}}).success).toBe(false)

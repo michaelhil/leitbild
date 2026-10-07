@@ -9,7 +9,7 @@ use leitbild_plant_numerics::{
     source_evolution::{Diagnostics, Workspace as SourceWorkspace},
 };
 
-pub(super) const POLICY: &str = "cold-source-cooling-6";
+pub(super) const POLICY: &str = "cold-source-cooling-7";
 pub(super) const OUTPUTS: [f64; 14] = [
     0.001, 0.01, 0.1, 1., 2., 5., 10., 20., 30., 60., 120., 180., 240., 300.,
 ];
@@ -17,6 +17,9 @@ pub(super) const TEMPERATURE_ATOL: f64 = 1e-3;
 const TEMPERATURE_PAIR: f64 = 0.01;
 pub(super) const DEPOSIT_RESOLUTION_W: f64 = 1e-12;
 pub(super) const PRESSURE_RESOLUTION_PA: f64 = 1.;
+/// Prospective absolute resolution of the actual algebraic mass flows, kg/s.
+/// This is not the discarded momentum impulse or an inertia-error theorem.
+pub(super) const SURGE_FLOW_RESOLUTION: f64 = 1e-5;
 
 /// Current coupled chart correction, not F_i/J_ii or a projected state.
 /// PZR order: Tl,Tg,ps,pv,H,Ti,pL; surge order: P,T.
@@ -52,7 +55,7 @@ pub(super) struct Sample {
     /// Emitted, nuclear-only barrel self/electron heat, export, then
     /// recipient-water photon heat. Sensible contact heat is NOT in this vector.
     pub barrel_power: Vec<f64>,
-    /// Actual signed mass flows; conjugate momentum coordinates are not q.
+    /// Actual signed algebraic mass flows, independently retained at both ends.
     pub surge_flow: [f64;2],
 }
 impl Sample {
@@ -181,11 +184,8 @@ impl Accuracy {
             /(pressure.pressurizer.steam().gas_constant*initial[ps+cp::GAS_TEMPERATURE])).min(1e-5);
         absolute[ps+cp::HEIGHT]=1./(liquids[0].density*leitbild_plant_numerics::GRAVITY);
         absolute[ss+fs::MASS]=1e-5;
-        // Prospective pressure-impulse allocation over the first observation
-        // interval, in kg*m/s. Not a trajectory or flow-error theorem.
-        let area=std::f64::consts::PI*pressure.surge.input().diameter.powi(2)/4.;
-        absolute[ss+fs::LEFT_MOMENTUM]=PRESSURE_RESOLUTION_PA*area*OUTPUTS[0];
-        absolute[ss+fs::RIGHT_MOMENTUM]=PRESSURE_RESOLUTION_PA*area*OUTPUTS[0];
+        absolute[ss+fs::LEFT_FLOW]=SURGE_FLOW_RESOLUTION;
+        absolute[ss+fs::RIGHT_FLOW]=SURGE_FLOW_RESOLUTION;
         for (start,mass,amounts) in [
             (l.surge_carrier_start,initial[ss+fs::MASS],pressure.initial_line),
             (l.pool_carrier_start,initial[ps+cp::LIQUID_MASS],pressure.initial_pool),
@@ -641,16 +641,15 @@ impl Accuracy {
             result.pressure_pair_ratio=result.pressure_pair_ratio.max(result.record(
                 "pressure-support-energy-change-J",row,x,y,(x-y).abs(),0.005*y.abs()+20.*c*TEMPERATURE_ATOL)?);
         }
-        for row in [ss+fs::MASS,ps+cp::LIQUID_MASS,ps+cp::VAPOR_MASS,ps+cp::HEIGHT,
-            ss+fs::LEFT_MOMENTUM,ss+fs::RIGHT_MOMENTUM,l.ambient_exported] {
+        for row in [ss+fs::MASS,ps+cp::LIQUID_MASS,ps+cp::VAPOR_MASS,ps+cp::HEIGHT,l.ambient_exported] {
             let x=a.y[row]-self.initial[row];let y=b.y[row]-self.initial[row];
             result.pressure_pair_ratio=result.pressure_pair_ratio.max(result.record(
-                "pressure-support-mass-level-momentum-ambient-change",row,x,y,(x-y).abs(),0.005*y.abs()+20.*self.normal_absolute[row])?);
+                "pressure-support-mass-level-ambient-change",row,x,y,(x-y).abs(),0.005*y.abs()+20.*self.normal_absolute[row])?);
         }
         for k in 0..2 {
             let x=a.surge_flow[k];let y=b.surge_flow[k];
             result.pressure_pair_ratio=result.pressure_pair_ratio.max(result.record(
-                "surge-actual-mass-flow-kg-s",k,x,y,(x-y).abs(),0.005*y.abs()+1e-5)?);
+                "surge-actual-mass-flow-kg-s",k,x,y,(x-y).abs(),0.005*y.abs()+SURGE_FLOW_RESOLUTION)?);
         }
         let href=model.carrier.hydrogen_per_kg();
         for (start,mass_row) in [(l.surge_carrier_start,ss+fs::MASS),(l.pool_carrier_start,ps+cp::LIQUID_MASS)] {
@@ -836,7 +835,7 @@ impl Comparison {
     pub fn json(&self) -> String {
         let worst=self.worst.map_or("null".into(),|(family,row,a,b,difference,bound,value)|format!("{{\"family\":{},\"row\":{row},\"normal\":{},\"tighter\":{},\"difference\":{},\"bound\":{},\"ratio\":{}}}",quote(family),finite(a),finite(b),finite(difference),finite(bound),finite(value)));
         format!(
-            "{{\"policy\":\"cold-source-cooling-6\",\"provisional\":true,\"fullPairQualified\":false,\"source\":{},\"thermalTemperatureRatio\":{},\"thermalEnergyRatio\":{},\"thermalSUMABSRatio\":{},\"networkTemperatureRatio\":{},\"networkPressureRatio\":{},\"secondaryMassRatio\":{},\"SGHeatRatio\":{},\"carrierConsequenceRatio\":{},\"depositionLocalRatio\":{},\"depositionSUMABSRatio\":{},\"thermalTemperatureChange\":{},\"thermalTemperaturePairDifference\":{},\"barrelPairRatio\":{},\"barrelPowerPairRatio\":{},\"barrelReceipts\":{},\"pressurePairRatio\":{},\"pressureMaterialPairRatio\":{},\"pressureChangePa\":{},\"pressurePairDifferencePa\":{},\"worstCooling\":{}}}",
+            "{{\"policy\":\"{POLICY}\",\"provisional\":true,\"fullPairQualified\":false,\"source\":{},\"thermalTemperatureRatio\":{},\"thermalEnergyRatio\":{},\"thermalSUMABSRatio\":{},\"networkTemperatureRatio\":{},\"networkPressureRatio\":{},\"secondaryMassRatio\":{},\"SGHeatRatio\":{},\"carrierConsequenceRatio\":{},\"depositionLocalRatio\":{},\"depositionSUMABSRatio\":{},\"thermalTemperatureChange\":{},\"thermalTemperaturePairDifference\":{},\"barrelPairRatio\":{},\"barrelPowerPairRatio\":{},\"barrelReceipts\":{},\"pressurePairRatio\":{},\"pressureMaterialPairRatio\":{},\"pressureChangePa\":{},\"pressurePairDifferencePa\":{},\"worstCooling\":{}}}",
             self.source.json(),
             finite(self.thermal_temperature_ratio),
             finite(self.thermal_energy_ratio),
