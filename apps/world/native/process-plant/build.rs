@@ -56,4 +56,35 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", out.display());
     println!("cargo:rustc-link-lib=static=leitbild_if97");
     println!("cargo:rustc-link-lib={runtime}");
+
+    // This checks the selected headers, not library provenance. Bun separately
+    // verifies the actually linked closure (including the private IDA patch).
+    println!("cargo:rerun-if-env-changed=LEITBILD_SUNDIALS_PREFIX");
+    if env::var_os("CARGO_FEATURE_OFFLINE_IDA").is_some() {
+        let prefix = PathBuf::from(
+            env::var_os("LEITBILD_SUNDIALS_PREFIX")
+                .expect("offline-ida requires the explicit inspected LEITBILD_SUNDIALS_PREFIX"),
+        );
+        let include = prefix.join("include");
+        assert!(
+            include.is_dir(),
+            "Missing selected SUNDIALS include directory"
+        );
+        println!("cargo:rerun-if-changed=src/sundials-abi.c");
+        println!("cargo:rerun-if-changed={}", include.display());
+        let object = out.join("sundials-abi.o");
+        run(Command::new("cc")
+            .args(["-std=c11", "-Werror", "-O2", "-fPIC", "-c"])
+            .arg("src/sundials-abi.c")
+            .arg("-I")
+            .arg(include)
+            .arg("-o")
+            .arg(&object));
+        run(Command::new("ar")
+            .arg("crs")
+            .arg(out.join("libleitbild_sundials_abi.a"))
+            .arg(object));
+        println!("cargo:rustc-link-lib=static=leitbild_sundials_abi");
+        // Deliberately no prefix/lib search: that could shadow patched IDA.
+    }
 }

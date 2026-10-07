@@ -300,6 +300,9 @@ fn callback(
     user: Handle,
     f: impl FnOnce(&mut Callbacks<'_>) -> Result<(), CallbackFailure>,
 ) -> c_int {
+    if user.is_null() {
+        return -1;
+    }
     let state = unsafe { &mut *(user as *mut Callbacks<'_>) };
     match catch_unwind(AssertUnwindSafe(|| f(state))) {
         Ok(Ok(())) => 0,
@@ -1892,6 +1895,18 @@ fn main_result(started: Instant) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn null_callback_userdata_refuses_without_running_action() {
+        let mut called = false;
+        assert_eq!(
+            callback(ptr::null_mut(), |_| {
+                called = true;
+                Ok(())
+            }),
+            -1
+        );
+        assert!(!called);
+    }
     #[test]
     fn diagnostic_end_never_redefines_the_mission_horizon() {
         assert_eq!(diagnostic_end("0.1").unwrap(), 0.1);

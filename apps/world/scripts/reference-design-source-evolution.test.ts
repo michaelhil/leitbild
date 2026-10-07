@@ -64,6 +64,18 @@ test('an external stop retains a checkpoint but cannot turn progress into a fina
 test('qualification refuses overwriting evidence or unpinned dependencies before preparation',async()=>{
  await expect(qualifySourceEvolution('unused','unused','unused','unused','unused',import.meta.path,[])).rejects.toThrow('overwrite')
  await expect(qualifySourceEvolution('unused','unused','unused','unused','unused',import.meta.path+'.absent',[])).rejects.toThrow('dependency artifacts')
+ await expect(qualifySourceEvolution('unused','unused','unused','unused','unused',import.meta.path+'.absent',[import.meta.path])).rejects.toThrow('Explicit selected IDA')
+})
+test('qualification refuses an implicit Cargo target before compilation or input preparation',async()=>{
+ const prefix=process.env.LEITBILD_SUNDIALS_PREFIX,target=process.env.CARGO_TARGET_DIR
+ process.env.LEITBILD_SUNDIALS_PREFIX='/not-used-test-prefix';delete process.env.CARGO_TARGET_DIR
+ try{
+  await expect(qualifySourceEvolution('unused','unused','unused','unused','unused',import.meta.path+'.absent',
+   [import.meta.path],undefined,'/not-used-test-ida')).rejects.toThrow('target directory required before compilation')
+ }finally{
+  if(prefix===undefined)delete process.env.LEITBILD_SUNDIALS_PREFIX;else process.env.LEITBILD_SUNDIALS_PREFIX=prefix
+  if(target===undefined)delete process.env.CARGO_TARGET_DIR;else process.env.CARGO_TARGET_DIR=target
+ }
 })
 test('prior computation debits actual failed work without granting admission or falsifying its role',()=>{
  const output='/tmp/next-pair.json',prior={elapsedSeconds:4.2,debitedTo:'next-pair.json',passed:false,simulationStarted:true,artifactsCreated:true}

@@ -7,6 +7,7 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { nativeIf97HeaderSha256, nativeIf97LicenseSha256, nativeIf97Source } from './reference-design-if97-primitives';
+import {verifySelectedNativeStack,selectedNativeStackUnchanged,requireControlledLoaderEnvironment,type SelectedNativeStack} from './reference-design-native-stack';
 
 const sha = (bytes: string | Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 const pins = {
@@ -28,19 +29,21 @@ export async function runFixedVolumeAdmission(if97Directory: string, suiteArchiv
   }
   const root = resolve(import.meta.dir, '../native/process-plant');
   async function fingerprint() {
-    const files = [...new Bun.Glob('**/*.{rs,cpp,toml,lock}').scanSync({ cwd: root })]
+    const files = [...new Bun.Glob('**/*.{rs,cpp,c,h,toml,lock}').scanSync({ cwd: root })]
       .filter(file => !file.startsWith('target/')).sort();
     return Promise.all(files.map(async file => ({ file, sha256: sha(await readFile(join(root, file))) })));
   }
   const artifacts = await fingerprint();
   const wrapperSha256 = sha(await readFile(import.meta.path));
   const primitiveSha256 = sha(await readFile(new URL('./reference-design-if97-primitives.ts', import.meta.url)));
+  const stackHelperSha256 = sha(await readFile(new URL('./reference-design-native-stack.ts', import.meta.url)));
   const scratch = await mkdtemp(join(tmpdir(), 'ld01-forward-ida-'));
   const prefix = join(scratch, 'prefix'), cmake = resolve(cmakePath);
   const bridge = `${nativeIf97Source(true)}\n${await readFile(join(root, 'src/if97-bridge.cpp'), 'utf8')}`;
   await writeFile(join(scratch, 'if97-bridge.cpp'), bridge, { flag: 'wx' });
   const libraries = ['sundials_ida', 'sundials_core', 'sundials_nvecserial', 'sundials_sunmatrixsparse', 'sundials_sunlinsolklu'];
   const environment = { ...process.env, LEITBILD_IF97_DIR: input, LEITBILD_IF97_BRIDGE_DIR: scratch,
+    LEITBILD_SUNDIALS_PREFIX: prefix,
     CARGO_TARGET_DIR: join(scratch, 'target'),
     RUSTFLAGS: [`-L native=${join(prefix, 'lib')}`, ...libraries.map(name => `-l ${name}`),
       `-C link-arg=-Wl,-rpath,${join(prefix, 'lib')}`].join(' ') };
@@ -58,6 +61,7 @@ export async function runFixedVolumeAdmission(if97Directory: string, suiteArchiv
     used.build = prior.used.build; used.numerical = prior.used.numerical;
   }
   async function execute(command: string[], stage: keyof typeof used) {
+    requireControlledLoaderEnvironment(environment);
     const began = performance.now(), remaining = (allowance[stage] - used[stage]) * 1000;
     if (remaining <= 0) throw Error(`${stage} aggregate allowance exhausted`);
     const child = Bun.spawn(command, { stdout: 'pipe', stderr: 'pipe', env: environment, detached: true });
@@ -77,7 +81,7 @@ export async function runFixedVolumeAdmission(if97Directory: string, suiteArchiv
     return result;
   }
   const suite = join(scratch, 'SuiteSparse-7.12.3'), sundials = join(scratch, 'sundials-7.5.0');
-  let failure: string | undefined, witness: unknown;
+  let failure: string | undefined, witness: unknown, nativeStack:SelectedNativeStack|undefined;
   const dependencyArtifacts: { file: string; sha256: string }[] = [];
   try {
     await execute(['tar', '-xzf', resolve(suiteArchive), '-C', scratch, ...['CMakeLists.txt',
@@ -115,23 +119,37 @@ export async function runFixedVolumeAdmission(if97Directory: string, suiteArchiv
     await execute(['cargo', 'test', '--release', '--lib', '--tests', '--no-run', '--manifest-path', join(root, 'Cargo.toml')], 'build');
     await execute(['cargo', 'build', '--release', '--features', 'offline-ida', '--example', 'fixed-volume-ida',
       '--manifest-path', join(root, 'Cargo.toml')], 'build');
+    const inspectionBegan=performance.now();
+    try{
+      const nativeLibraries=await Array.fromAsync(new Bun.Glob(process.platform==='darwin'?'lib*.dylib':'lib*.so*').scan({cwd:join(prefix,'lib')}));
+      nativeStack=await verifySelectedNativeStack({binary:join(scratch,'target/release/examples/fixed-volume-ida'),prefix,
+        idaLibrary:join(prefix,`lib/libsundials_ida.${extension}`),directory:join(scratch,'selected-stack'),
+        artifacts:[resolve(suiteArchive),resolve(sundialsArchive),join(input,'IF97.h'),join(input,'LICENSE'),join(scratch,'if97-bridge.cpp'),
+          ...nativeLibraries.map(p=>join(prefix,'lib',p)),join(sundials,'LICENSE'),join(sundials,'NOTICE'),
+          ...['KLU','BTF','AMD','COLAMD'].map(p=>join(suite,p,'Doc/License.txt')),join(suite,'SuiteSparse_config/SuiteSparse_config.h')]});
+    }finally{used.build+=(performance.now()-inspectionBegan)/1000;}
+    if(used.build>allowance.build)throw Error('Build/inspection aggregate allowance exhausted');
     await execute(['cargo', 'test', '--release', '--lib', '--tests', '--manifest-path', join(root, 'Cargo.toml')], 'numerical');
     const result = await execute([join(scratch, 'target/release/examples/fixed-volume-ida'),
       '4', '1', '15500000', '300', '100000', '300', String(allowance.numerical - used.numerical)], 'numerical');
     witness = JSON.parse(result.stdout);
     if (!(witness && typeof witness === 'object' && 'passed' in witness && witness.passed === true
       && 'status' in witness && witness.status === 'completed')) throw Error('Native witness did not pass physical component admission');
+    if(!await selectedNativeStackUnchanged(nativeStack))throw Error('Selected native stack changed during admission');
   } catch (error) { failure = String(error); }
   const artifactsAfter = await fingerprint();
   const sourcesUnchanged = JSON.stringify(artifacts) === JSON.stringify(artifactsAfter)
     && wrapperSha256 === sha(await readFile(import.meta.path))
-    && primitiveSha256 === sha(await readFile(new URL('./reference-design-if97-primitives.ts', import.meta.url)));
+    && primitiveSha256 === sha(await readFile(new URL('./reference-design-if97-primitives.ts', import.meta.url)))
+    && stackHelperSha256 === sha(await readFile(new URL('./reference-design-native-stack.ts', import.meta.url)));
   if (!sourcesUnchanged) failure = `${failure ? `${failure}; ` : ''}Source changed during qualification`;
   const receipt = { schema: 'ld01-offline-forward-ida-admission', recordedAt: new Date().toISOString(),
     passed: !failure, failure, allowance, used, previousReceipt: previousReceipt && resolve(previousReceipt), scratch, upstream: pins,
     if97: { headerSha256: nativeIf97HeaderSha256, licenseSha256: nativeIf97LicenseSha256 },
     licenses: 'KLU/BTF LGPL-2.1-or-later; AMD/COLAMD/SuiteSparse_config BSD-3-Clause; SUNDIALS BSD-3-Clause; IF97 MIT. Shared native libraries, private offline build only.',
-    generatedBridgeSha256: sha(bridge), artifacts, artifactsAfter, sourcesUnchanged, dependencyArtifacts, wrapperSha256, primitiveSha256,
+    generatedBridgeSha256: sha(bridge), artifacts, artifactsAfter, sourcesUnchanged, dependencyArtifacts, nativeStack,
+    sourceBuild:{method:'built from the exact validated source archives in upstream;not independently reproduced',
+      suiteArchive:resolve(suiteArchive),sundialsArchive:resolve(sundialsArchive)},wrapperSha256, primitiveSha256,stackHelperSha256,
     fixture: { volumeM3: 4, elevationM: 1, pressurePa: 15500000, temperatureK: 300,
       energyReceiptWatts: 100000, horizonSeconds: 300,
       provenance: 'Declared sealed-liquid component qualification witness. Prescribed external heat receipt, zero mass receipt; not plant/CMT forcing or connected-source evidence.' },

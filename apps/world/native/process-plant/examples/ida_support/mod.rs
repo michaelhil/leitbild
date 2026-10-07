@@ -2,11 +2,56 @@
 //! Shared to avoid duplicating unsafe ABI/resource cleanup between witnesses.
 //! No integrator policy, physics, fallback backend or production registration.
 use std::{
-    ffi::{c_int, c_long, c_void},
+    ffi::{CStr, c_char, c_int, c_long, c_void},
     ptr,
 };
 
 pub(crate) type Handle = *mut c_void;
+unsafe extern "C" {
+    fn leitbild_sundials_versions(
+        compiled: *mut c_int,
+        linked: *mut c_int,
+        label: *mut c_char,
+        capacity: c_int,
+    ) -> c_int;
+}
+
+fn checked_sundials_version(
+    status: c_int,
+    compiled: [c_int; 3],
+    linked: [c_int; 3],
+    label: &[u8],
+) -> Result<(), String> {
+    if status != 0 || compiled != [7, 5, 0] || linked != compiled || !label.is_empty() {
+        return Err(format!(
+            "SUNDIALS ABI/version refusal: status={status}, compiled={compiled:?}, linked={linked:?}, label={label:?}"
+        ));
+    }
+    Ok(())
+}
+
+/// Header ABI facts are compiled in C; runtime core version is checked before
+/// any solver allocation. Same-version library/patch identity belongs to Bun's
+/// actual linked-closure admission, not this version check.
+fn check_sundials_runtime() -> Result<(), String> {
+    let mut compiled = [0; 3];
+    let mut linked = [0; 3];
+    let mut label = [0 as c_char; 64];
+    let status = unsafe {
+        leitbild_sundials_versions(
+            compiled.as_mut_ptr(),
+            linked.as_mut_ptr(),
+            label.as_mut_ptr(),
+            label.len() as c_int,
+        )
+    };
+    // Do not trust an unterminated native version label.
+    if !label.contains(&0) {
+        return Err("Unterminated SUNDIALS runtime version label".into());
+    }
+    let label = unsafe { CStr::from_ptr(label.as_ptr()) }.to_bytes();
+    checked_sundials_version(status, compiled, linked, label)
+}
 pub(crate) type ATimesFn = unsafe extern "C" fn(Handle, Handle, Handle) -> c_int;
 pub(crate) type LinearPrecSetupFn = unsafe extern "C" fn(Handle) -> c_int;
 pub(crate) type LinearPrecSolveFn =
@@ -244,6 +289,19 @@ pub(crate) fn retained_endpoint(
 mod retained_endpoint_tests {
     use super::*;
     #[test]
+    fn selected_header_and_linked_runtime_versions_match() {
+        check_sundials_runtime().unwrap();
+        assert!(checked_sundials_version(0, [7, 5, 0], [7, 5, 0], b"").is_ok());
+        for (status, compiled, linked, label) in [
+            (1, [7, 5, 0], [7, 5, 0], b"".as_slice()),
+            (0, [7, 9, 0], [7, 9, 0], b"".as_slice()),
+            (0, [7, 5, 0], [7, 9, 0], b"".as_slice()),
+            (0, [7, 5, 0], [7, 5, 0], b"dev".as_slice()),
+        ] {
+            assert!(checked_sundials_version(status, compiled, linked, label).is_err());
+        }
+    }
+    #[test]
     fn fatal_callback_refuses_success_and_stop_time_before_endpoint_admission() {
         for status in [0, 1] {
             assert!(checked_ida_step(status, None).is_ok());
@@ -372,6 +430,7 @@ pub(crate) struct Resources {
 }
 impl Resources {
     pub(crate) fn new() -> Result<Self, String> {
+        check_sundials_runtime()?;
         let mut out = Self {
             context: ptr::null_mut(),
             vectors: Vec::new(),
