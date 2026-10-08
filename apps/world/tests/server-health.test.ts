@@ -102,6 +102,23 @@ describe('server health', () => {
       expect(new Uint8Array(await glyph.arrayBuffer())).toEqual(new Uint8Array([10, 0]))
     } finally { await server.stop(); await workspaces.shutdown(); await rm(dataDir, { recursive: true, force: true }) }
   })
+  test('serves the light embed page for embedded views and the app page for other Workspace routes', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-embed-route-'))
+    const uiDistPath = join(dataDir, 'ui')
+    await mkdir(uiDistPath)
+    await Bun.write(join(uiDistPath, 'index.html'), 'app page')
+    await Bun.write(join(uiDistPath, 'embed.html'), 'embed page')
+    const workspaces = createWorldWorkspaceRuntimeRegistry({ dataDir, moduleState: createWorldModuleState({ dataDir }), scenarioRuntimeResolver: createTestScenarioRuntimeResolver(), ...testScenarioAuthoring(), runtimeAdapters: [] })
+    const server = createServer({ workspaces, port: 0, bindHost: '127.0.0.1', uiDistPath, mapArtifacts: { rootDir: dataDir } })
+    try {
+      const workspaceId = newWorkspaceId()
+      const embed = await fetch(`http://127.0.0.1:${server.port}/workspaces/${workspaceId}/world/embed/process-plant.display`)
+      expect(await embed.text()).toBe('embed page')
+      const app = await fetch(`http://127.0.0.1:${server.port}/workspaces/${workspaceId}/world/runs/run-1`)
+      expect(await app.text()).toBe('app page')
+    } finally { await server.stop(); await workspaces.shutdown(); await rm(dataDir, { recursive: true, force: true }) }
+  })
+
   test('serves module worker assets with a JavaScript MIME type', () => {
     expect(staticContentTypeForPath('/assets/maplibre-gl-worker-hash.mjs')).toBe('application/javascript')
     expect(staticContentTypeForPath('/assets/OperationalMap-hash.js')).toBe('application/javascript')

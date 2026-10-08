@@ -190,6 +190,7 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
   }).strict(),
   'world.process-plant.display.view': z.object({
     plantId: plantIdSchema,
+    plantLabel: z.string().nullable(),
     issuedAt: z.string(),
     simulationTime: z.string(),
     modelChanged: z.boolean(),

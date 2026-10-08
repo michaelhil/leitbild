@@ -1,0 +1,95 @@
+import type { SimulationRunId } from '../../../core/model/index.ts'
+import type { CompiledComposedDisplay } from '../../../packs/process-plant/displays/compose.ts'
+import { querySimulationRunCapability } from '../../simulation-run-client.ts'
+import { workspaceApiPath } from '../../workspace-context.ts'
+import type { TrendPoint } from './trend-geometry.ts'
+
+export interface RunPresence {
+  readonly loaded: boolean
+  readonly playback: 'playing' | 'paused'
+  readonly currentSimulationTime: string
+}
+
+export interface ComposedDisplayViewResult {
+  readonly plantId: string
+  readonly plantLabel: string | null
+  readonly issuedAt: string
+  readonly simulationTime: string
+  readonly modelChanged: boolean
+  readonly display: CompiledComposedDisplay
+}
+
+export interface ComposedDisplaySample {
+  readonly simulationTime: string
+  readonly values: ReadonlyArray<{
+    readonly path: string
+    readonly value: number | boolean
+    readonly quality: 'good' | 'outside-hard-range'
+  }>
+}
+
+export interface ComposedDisplayClient {
+  /** null when the Run no longer exists. Never loads the Run. */
+  readonly presence: (runId: SimulationRunId) => Promise<RunPresence | null>
+  /** Explicitly loads a Run at the reader's request. */
+  readonly loadRun: (runId: SimulationRunId) => Promise<void>
+  readonly view: (runId: SimulationRunId, plantId: string, state: string) => Promise<ComposedDisplayViewResult>
+  readonly history: (runId: SimulationRunId, seriesId: string, window: { readonly from: number; readonly to: number }) => Promise<ReadonlyArray<TrendPoint>>
+  readonly sample: (runId: SimulationRunId, plantId: string, paths: ReadonlyArray<string>) => Promise<ComposedDisplaySample>
+}
+
+const runPath = (runId: SimulationRunId, suffix = ''): string =>
+  workspaceApiPath(`/simulation-runs/${encodeURIComponent(runId)}${suffix}` as `/${string}`)
+
+const failureMessage = async (response: Response, action: string): Promise<string> => {
+  const text = await response.text()
+  try {
+    const body = JSON.parse(text) as { error?: { message?: unknown } }
+    if (typeof body.error?.message === 'string') return `${action} failed: ${body.error.message}`
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error
+  }
+  return `${action} failed with HTTP ${response.status}`
+}
+
+// One window of a 30 minute horizon at the operations interval is 1 800
+// samples; the page size leaves room for faster recording profiles.
+const HISTORY_PAGE_LIMIT = 4_000
+
+interface RecordedSamplePage {
+  readonly samples?: ReadonlyArray<{ readonly simulationTime?: string; readonly value: unknown }>
+}
+
+export const composedDisplayClient: ComposedDisplayClient = {
+  presence: async runId => {
+    const response = await fetch(runPath(runId, '/presence'))
+    if (response.status === 404) return null
+    if (!response.ok) throw new Error(await failureMessage(response, 'Run status'))
+    const body = await response.json() as { loaded: boolean; execution: { playback: 'playing' | 'paused'; currentSimulationTime: string } }
+    return { loaded: body.loaded, playback: body.execution.playback, currentSimulationTime: body.execution.currentSimulationTime }
+  },
+  loadRun: async runId => {
+    const response = await fetch(runPath(runId))
+    if (!response.ok) throw new Error(await failureMessage(response, 'Loading the Run'))
+  },
+  view: (runId, plantId, state) => querySimulationRunCapability<ComposedDisplayViewResult>(runId, 'world.process-plant.display.view', { plantId, state }),
+  history: async (runId, seriesId, window) => {
+    const query = new URLSearchParams({
+      mode: 'raw',
+      seriesId,
+      timeAxis: 'simulation',
+      from: new Date(window.from).toISOString(),
+      to: new Date(window.to).toISOString(),
+      limit: String(HISTORY_PAGE_LIMIT),
+    })
+    const response = await fetch(`${runPath(runId, '/history/samples')}?${query}`)
+    if (!response.ok) throw new Error(await failureMessage(response, 'Reading history'))
+    const page = await response.json() as RecordedSamplePage
+    return (page.samples ?? [])
+      .flatMap(sample => typeof sample.value === 'number' && sample.simulationTime !== undefined
+        ? [{ t: Date.parse(sample.simulationTime), v: sample.value }]
+        : [])
+      .sort((left, right) => left.t - right.t)
+  },
+  sample: (runId, plantId, paths) => querySimulationRunCapability<ComposedDisplaySample>(runId, 'world.process-plant.display.sample', { plantId, paths }),
+}

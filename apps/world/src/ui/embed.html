@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Leitbild view</title>
+    <script>
+      (() => {
+        try {
+          const stored = localStorage.getItem('leitbild.theme')
+          const dark = stored === 'dark' || (!stored && matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.classList.toggle('dark', dark)
+          document.documentElement.dataset.obcTheme = dark ? 'night' : 'day'
+        } catch (error) {
+          console.warn('Unable to apply Leitbild theme before startup', error)
+        }
+      })()
+    </script>
+  </head>
+  <body class="obc-component-size-regular">
+    <div id="view"></div>
+    <script type="module" src="/embed/main.ts"></script>
+  </body>
+</html>

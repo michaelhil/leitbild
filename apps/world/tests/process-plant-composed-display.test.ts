@@ -137,7 +137,7 @@ describe('world.process-plant.display.view and sample', () => {
       modelChanged: boolean
       display: { panels: ReadonlyArray<{ horizonMs: number; unit: string; pens: ReadonlyArray<{ path: string; seriesId: string; thresholds: ReadonlyArray<unknown> }> }> }
     }
-    expect(view).toMatchObject({ issuedAt: simulationTime, simulationTime: later, modelChanged: false })
+    expect(view).toMatchObject({ plantLabel: null, issuedAt: simulationTime, simulationTime: later, modelChanged: false })
     expect(view.display.panels[0]).toMatchObject({ horizonMs: 120_000, unit: 'MPa' })
     expect(view.display.panels[0]!.pens[0]!.seriesId).toStartWith('series:')
     expect(view.display.panels[0]!.pens[0]!.thresholds.length).toBe(8)

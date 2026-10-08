@@ -1,0 +1,31 @@
+/* Embedded views sit inside another Module's page. They draw on the OpenBridge
+   palettes (data-obc-theme) and keep the ISA-101 rule that colour is reserved
+   for abnormal states. */
+:root {
+  /* OpenBridge names Noto Sans without a fallback; use system faces rather than
+     shipping a 600 KB font into every chat view. */
+  --font-family-main: "Noto Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+:root.dark { color-scheme: dark; }
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--container-background-color);
+  color: var(--element-active-color);
+  font-family: var(--font-family-main);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.embed-failure {
+  margin: 0;
+  padding: 12px 14px;
+  color: var(--element-active-color);
+  background: var(--container-section-color);
+  border: 1px solid var(--border-divider-color);
+}

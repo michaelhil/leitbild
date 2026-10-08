@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { embeddedViewPublicationSchema } from '@leitbild/contracts'
-import { idSchema, type IsoTimestamp } from '../../../core/model/index.ts'
+import { idSchema, type IsoTimestamp, type ObjectId, type OperationalObject } from '../../../core/model/index.ts'
 import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import { rejectCapabilityInput, rejectCapabilityTarget } from '../../../simulation/capability-rejection.ts'
 import { variablePathSchema } from '../graph/index.ts'
@@ -49,6 +49,7 @@ const compiledOrRejected = (system: ProcessPlantRuntimeInstance, composition: un
 export const answerProcessPlantComposedDisplayQuery = (config: {
   readonly request: PackRuntimeQuery
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
+  readonly objects: ReadonlyMap<ObjectId, Pick<OperationalObject, 'id' | 'label'>>
   readonly simulationTime?: IsoTimestamp
 }): unknown | undefined => {
   if (!processPlantComposedDisplayQueryKinds.some(kind => kind === config.request.capabilityId)) return undefined
@@ -88,6 +89,8 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
     const display = compiledOrRejected(system, state.composition)
     return {
       plantId: display.plantId,
+      // The asset label distinguishes identical units; null when the Plant has no projected asset.
+      plantLabel: config.objects.get(display.plantId as ObjectId)?.label ?? null,
       issuedAt: state.issuedAt,
       simulationTime,
       modelChanged: state.modelDigest !== display.modelDigest,

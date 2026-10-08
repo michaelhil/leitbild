@@ -147,7 +147,9 @@ export const staticContentTypeForPath = (filePath: string): string => {
 }
 
 const serveStatic = async (pathname: string, uiDistPath: string): Promise<Response | null> => {
-  const normalizedPath = pathname.startsWith('/workspaces/') ? '/index.html' : pathname
+  const normalizedPath = /^\/workspaces\/[^/]+\/world\/embed\//.test(pathname)
+    ? '/embed.html'
+    : pathname.startsWith('/workspaces/') ? '/index.html' : pathname
   const filePath = normalize(`${uiDistPath}${normalizedPath}`)
   if (!filePath.startsWith(uiDistPath)) return new Response('Forbidden', { status: 403 })
   const file = Bun.file(filePath)
