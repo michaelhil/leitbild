@@ -48,11 +48,12 @@
     <text class="head" x="0" y="13">Compared now · {unitLabel(panel.unit)}</text>
     {#if center !== null && domain !== null}
       <line class="median" x1={x(center)} x2={x(center)} y1={top - 4} y2={height} />
-      <text class="head" x={x(center)} y="13" text-anchor="middle">median</text>
+      <text class="head" x={x(center) + 3} y={height - 3}>median</text>
     {/if}
     {#if domain !== null}
       {#each panel.thresholds.filter(threshold => threshold.kind !== 'control') as threshold (threshold.ruleId)}
         <line class="threshold" class:qualified={threshold.modeLabel !== undefined} x1={x(threshold.value)} x2={x(threshold.value)} y1={top - 4} y2={height}><title>{threshold.label}: {threshold.value} {unitLabel(panel.unit)}</title></line>
+        <text class="head" x={x(threshold.value)} y="13" text-anchor="middle">{threshold.kind === 'trip' ? 'TRIP' : 'ALM'} {threshold.value}</text>
       {/each}
     {/if}
     {#each panel.pens as pen, index (pen.path)}

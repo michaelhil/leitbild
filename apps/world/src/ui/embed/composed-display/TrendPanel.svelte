@@ -30,7 +30,7 @@
   } = $props()
 
   let width = $state(520)
-  const pad = { left: 44, right: 64, top: 12, bottom: 22 }
+  const pad = { left: 44, right: 64, top: 18, bottom: 22 }
 
   // Trip and alarm thresholds always fit the scale; control set points are
   // marked on the axis only when they fall inside it, to keep the trend quiet.
@@ -90,7 +90,7 @@
         <line class="grid" x1={pad.left} x2={pad.left + plotWidth} y1={y(tick)} y2={y(tick)} />
         <text class="axis" x={pad.left - 6} y={y(tick)} text-anchor="end" dominant-baseline="middle">{formatValue(tick)}</text>
       {/each}
-      <text class="axis unit" x={pad.left - 6} y={pad.top - 2} text-anchor="end">{unitLabel(panel.unit)}</text>
+      <text class="axis unit" x={pad.left - 6} y={pad.top - 9} text-anchor="end">{unitLabel(panel.unit)}</text>
       {#each timeTicks(now, panel.horizonMs) as tick (tick.t)}
         <text class="axis" x={x(tick.t)} y={height - 6} text-anchor="middle">{tick.label}</text>
       {/each}
