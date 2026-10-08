@@ -14,6 +14,7 @@ import {
 import {
   compileComposedDisplay,
   composedDisplayShows,
+  composedDisplaySignals,
   composedDisplayWarnings,
   formatComposedDisplayIssues,
   formatComposedViewIssues,
@@ -75,6 +76,7 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
         height: display.height,
         state: JSON.stringify(state),
       }),
+      signals: composedDisplaySignals(display),
       shows: composedDisplayShows(display),
       warnings: composedDisplayWarnings(display),
     }

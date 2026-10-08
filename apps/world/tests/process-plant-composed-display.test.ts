@@ -87,6 +87,10 @@ describe('world.process-plant.display.compose', () => {
     const state = composedDisplayStateSchema.parse(JSON.parse(view.state))
     expect(state).toMatchObject({ issuedAt: simulationTime, modelDigest: compiled.modelDigest })
     expect(result.shows.join('\n')).toContain('Steam generator B level low, below 30 percent')
+    expect((result as unknown as { signals: unknown }).signals).toEqual([
+      { ref: 'SG-B-LVL-NR', tagId: 'SG-B-LVL-NR', path: 'sgB.levelPercent', label: 'Steam generator level', unit: 'percent' },
+      { ref: 'SG-A-LVL-NR', tagId: 'SG-A-LVL-NR', path: 'sgA.levelPercent', label: 'Steam generator level', unit: 'percent' },
+    ])
     expect(result.shows.join('\n')).toContain('Steam generator B low-low level, below 20 percent')
     expect(runtime.checkpoint()).toEqual(before)
   })
@@ -109,7 +113,7 @@ describe('world.process-plant.display.compose', () => {
     expect(rejectionOf(() => ask('world.process-plant.display.compose', composition([
       { ref: 'PT-455', role: 'primary' },
       { ref: 'PZR-LVL', role: 'context' },
-    ])))).toContain('keep one unit per trend')
+    ])))).toContain('these signals use 2 units: [MPa] PT-455; [percent] PZR-LVL')
   })
 
   test('rejects fields outside the composition vocabulary', () => {
@@ -207,7 +211,7 @@ describe('composed display panels', () => {
     expect(panel.thresholds.map(threshold => [threshold.value, threshold.signals])).toEqual([[2500, ['RCP-B-FLOW']]])
     expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
       { kind: 'comparison', signals: [{ ref: 'RCP-A-FLOW', role: 'primary' }, { ref: 'PT-455', role: 'context' }] },
-    ])))).toContain('keep one unit per comparison')
+    ])))).toContain('a comparison shares one value axis')
   })
 
   test('show on/off states as readouts but never as trends', () => {

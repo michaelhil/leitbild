@@ -231,9 +231,10 @@ const sharedUnit = (
 ): ProcessUnit | undefined => {
   const units = [...new Set(pens.map(pen => pen.unit))]
   if (units.length === 1) return units[0]
+  const groups = units.map(unit => `[${unit}] ${pens.filter(pen => pen.unit === unit).map(pen => pen.ref).join(', ')}`).join('; ')
   issues.push({
     path: `${panelPath}.signals`,
-    message: `a ${panelName} shares one value axis, but these signals use ${units.join(', ')}; keep one unit per ${panelName} (add a second trend panel for another unit)`,
+    message: `a ${panelName} shares one value axis, but these signals use ${units.length} units: ${groups}; keep the primary signal's unit here and move or drop the others (at most two stacked trends per display)`,
   })
   return undefined
 }
@@ -263,7 +264,7 @@ const compositionIssues = (composition: ComposedDisplayComposition): ReadonlyArr
   const issues: ComposedDisplayIssue[] = []
   const kinds = composition.panels.map(panel => panel.kind)
   const trends = composition.panels.filter(panel => panel.kind === 'trend')
-  if (trends.length > COMPOSED_DISPLAY_MAX_TRENDS) issues.push({ path: 'panels', message: `use at most ${COMPOSED_DISPLAY_MAX_TRENDS} trend panels` })
+  if (trends.length > COMPOSED_DISPLAY_MAX_TRENDS) issues.push({ path: 'panels', message: `use at most ${COMPOSED_DISPLAY_MAX_TRENDS} trend panels; keep the signals that answer the question and drop the rest` })
   if (new Set(trends.map(trend => trend.horizon)).size > 1) issues.push({ path: 'panels', message: 'stacked trend panels share one time axis; give them the same horizon' })
   for (const kind of ['comparison', 'readouts', 'alarms'] as const) {
     if (kinds.filter(candidate => candidate === kind).length > 1) issues.push({ path: 'panels', message: `use at most one ${kind} panel` })
@@ -339,6 +340,21 @@ const signalName = (pen: ComposedDisplayPen): string => `${pen.tagId ?? pen.path
 
 const thresholdText = (threshold: ComposedTrendThreshold, unit: ProcessUnit): string =>
   `${threshold.kind === 'control' ? 'I&C control set point marked on the axis' : `I&C ${threshold.kind} line`} for ${threshold.signals.join(', ')}: ${threshold.label}, ${operatorText[threshold.operator]} ${threshold.value} ${unit}${threshold.modeLabel === undefined ? '' : ` (only in ${threshold.modeLabel})`}`
+
+/** How each requested reference resolved, so the agent learns exact tags, paths and units. */
+export const composedDisplaySignals = (display: CompiledComposedDisplay): ReadonlyArray<{
+  readonly ref: string
+  readonly tagId?: string
+  readonly path: string
+  readonly label: string
+  readonly unit: string
+}> => display.panels.flatMap(panel => panel.kind === 'alarms' ? [] : panel.pens.map(pen => ({
+  ref: pen.ref,
+  ...(pen.tagId === undefined ? {} : { tagId: pen.tagId }),
+  path: String(pen.path),
+  label: pen.label,
+  unit: pen.unit,
+})))
 
 /** Plain statements of what the view shows, so the agent's text need not repeat it. */
 export const composedDisplayShows = (display: CompiledComposedDisplay): ReadonlyArray<string> => display.panels.flatMap(panel => {
