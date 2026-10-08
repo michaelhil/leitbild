@@ -111,6 +111,11 @@ const advance = async (resource: Record<string, string>, minutes: number): Promi
 
 interface ComposeOutcome { readonly accepted: boolean; readonly panels: ReadonlyArray<string>; readonly signals: ReadonlyArray<string>; readonly error?: string }
 
+// An accepted result names each signal's resolved tag and path, so a key
+// signal counts whether the agent referred to it by tag or by path.
+const resolvedNames = (result: any): ReadonlyArray<string> =>
+  (result?.data?.signals ?? []).flatMap((signal: { ref: string; tagId?: string; path: string }) => [signal.ref, signal.path, ...(signal.tagId === undefined ? [] : [signal.tagId])])
+
 // Exact compose inputs and outcomes from the answer's own execution evidence.
 const composeOutcomes = async (roomId: string, turnId: string): Promise<ReadonlyArray<ComposeOutcome>> => {
   const turn = await request(`/api/workspaces/${workspaceId}/agents/rooms/${roomId}/executions/${turnId}`)
@@ -127,7 +132,7 @@ const composeOutcomes = async (roomId: string, turnId: string): Promise<Readonly
       outcomes.push({
         accepted: result?.success === true && typeof result.viewRef === 'string',
         panels: panels.map(panel => panel.kind),
-        signals: panels.flatMap(panel => (panel.signals ?? []).map(signal => signal.ref)),
+        signals: result?.success === true ? resolvedNames(result) : panels.flatMap(panel => (panel.signals ?? []).map(signal => signal.ref)),
         ...(result?.success === true ? {} : { error: String(result?.error ?? 'no result').slice(0, 400) }),
       })
     }

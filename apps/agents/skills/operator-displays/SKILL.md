@@ -29,7 +29,7 @@ Never supply numbers, limits, setpoints, forecasts, colours or positions; there 
 
 ## Compose
 
-1. Call `world.process-plant.display.compose` through `workspace_call` with the exact Run target and `plantId` you analysed. It is a read, so it can be batched with your other reads.
+1. Call `world.process-plant.display.compose` through `workspace_call` with the exact Run target and `plantId` you analysed. It is a read, so it can be batched with your other reads. A typical input is one trend: `{"plantId":"plant:halden-2","title":"SG B level","question":"Is SG B level recovering?","need":"Decide on manual feed","panels":[{"kind":"trend","horizon":"10m","signals":[{"ref":"SG-B-LVL-NR","role":"primary"},{"ref":"SG-A-LVL-NR","role":"context"}]}]}`.
 2. A rejection stores nothing and lists every issue with `Did you mean` suggestions. Fix all of them and call again. After two rejections, answer in text and say in one sentence that no display could be produced.
 
 ## Present
