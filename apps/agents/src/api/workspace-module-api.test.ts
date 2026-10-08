@@ -41,6 +41,10 @@ beforeEach(async () => {
     name: 'leitbild-assistance', description: 'Test assistance Skill', body: 'Use Workspace evidence.',
     tools: [], allowedToolNames: ['workspace_explore', 'workspace_call'], dirPath: home,
   })
+  deployment.sharedSkillStore.register({
+    name: 'operator-displays', description: 'Test display Skill', body: 'Compose displays when useful.',
+    tools: [], allowedToolNames: ['workspace_explore', 'workspace_call'], dirPath: home,
+  })
   for (const name of ['product_search', 'product_read', 'place_resolve', 'get_time']) {
     deployment.sharedToolRegistry.register({
       name,
@@ -103,6 +107,10 @@ describe('Agents Workspace Module API', () => {
       name: 'leitbild-assistance', description: 'Test Assistant Skill', body: 'Use Workspace discovery.',
       tools: [], allowedToolNames: [], dirPath: home,
     })
+    runtime.skillStore.register({
+      name: 'operator-displays', description: 'Test display Skill', body: 'Compose displays when useful.',
+      tools: [], allowedToolNames: [], dirPath: home,
+    })
     const focusedResource = workspaceResourceReferenceSchema.parse({
       workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-one',
     })
@@ -132,7 +140,7 @@ describe('Agents Workspace Module API', () => {
     expect(room.getRecent(10).some(message => message.content === 'What can I change?')).toBe(true)
     const assistant = asAIAgent(runtime.team.listByKind('ai')[0]!)!
     expect(assistant.getConfig().maxToolIterations).toBeUndefined()
-    expect(assistant.getSkills()).toEqual(['leitbild-assistance'])
+    expect(assistant.getSkills()).toEqual(['leitbild-assistance', 'operator-displays'])
 
     const reused = await open('Now create a scenario.')
     expect(reused.status).toBe(200)
