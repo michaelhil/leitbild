@@ -26,11 +26,14 @@ const view: ComposedDisplayViewResult = {
       kind: 'trend',
       horizon: '2m',
       horizonMs: 120_000,
-      unit: 'MPa',
-      pens: [
-        { ref: 'PT-455', role: 'primary', path: 'pressurizer.pressureMPa', tagId: 'PT-455', label: 'Pressure', unit: 'MPa', quantity: 'pressure', seriesId: 'series:pressure', thresholds: [], combinedRules: [] },
-        { ref: 'X', role: 'context', path: 'x.value', label: 'X', unit: 'MPa', quantity: 'pressure', seriesId: 'series:x', thresholds: [], combinedRules: [] },
-      ],
+      strips: [{
+        unit: 'MPa',
+        thresholds: [],
+        pens: [
+          { ref: 'PT-455', role: 'primary', path: 'pressurizer.pressureMPa', tagId: 'PT-455', label: 'Pressure', unit: 'MPa', quantity: 'pressure', seriesId: 'series:pressure', thresholds: [], combinedRules: [] },
+          { ref: 'X', role: 'context', path: 'x.value', label: 'X', unit: 'MPa', quantity: 'pressure', seriesId: 'series:x', thresholds: [], combinedRules: [] },
+        ],
+      }],
     }],
   } as unknown as ComposedDisplayViewResult['display'],
 }

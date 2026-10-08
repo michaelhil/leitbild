@@ -6,8 +6,8 @@ import {
   paddedDomain,
   rawDomain,
   stepPath,
+  tickLabels,
   timeTicks,
-  unitLabel,
   valueTicks,
 } from '../src/ui/embed/composed-display/trend-geometry.ts'
 
@@ -47,7 +47,7 @@ describe('composed display trend geometry', () => {
     expect(formatValue(15.512)).toBe('15.5')
     expect(formatValue(3412.4)).toBe('3412')
     expect(formatValue(0.0123)).toBe('0.012')
-    expect(unitLabel('percent')).toBe('%')
-    expect(unitLabel('MPa')).toBe('MPa')
+    expect(tickLabels([5, 10, 15])).toEqual(['5', '10', '15'])
+    expect(tickLabels([0.5, 1, 1.5])).toEqual(['0.5', '1.0', '1.5'])
   })
 })

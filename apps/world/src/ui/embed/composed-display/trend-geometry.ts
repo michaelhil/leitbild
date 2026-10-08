@@ -52,6 +52,14 @@ export const valueTicks = (domain: ValueDomain, count = 3): ReadonlyArray<number
   return ticks
 }
 
+/** Tick labels share the precision of the step, so an axis never reads "5.00" beside "10.0". */
+export const tickLabels = (ticks: ReadonlyArray<number>): ReadonlyArray<string> => {
+  if (ticks.length < 2) return ticks.map(formatValue)
+  const step = Math.abs(ticks[1]! - ticks[0]!)
+  const digits = Math.min(4, Math.max(0, Math.ceil(-Math.log10(step) - 1e-9)))
+  return ticks.map(tick => tick.toFixed(digits))
+}
+
 export interface TimeTick {
   readonly t: number
   readonly label: string
@@ -107,14 +115,6 @@ export const stepPath = (
   })
   return commands.join(' ')
 }
-
-const unitLabels: Readonly<Record<string, string>> = {
-  percent: '%',
-  degC: '°C',
-  fraction: '',
-}
-
-export const unitLabel = (unit: string): string => unitLabels[unit] ?? unit
 
 /** Precision follows magnitude; trend readers compare, they do not audit digits. */
 export const valueDigits = (value: number): number => {

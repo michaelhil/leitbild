@@ -4,7 +4,8 @@
   import type { ComposedDisplaySample } from './composed-display-client.ts'
   import { activeThreshold, marginText, nearestThresholdMargin } from './panel-presenters.ts'
   import { displayName } from './pen-style.ts'
-  import { unitLabel, valueDigits } from './trend-geometry.ts'
+  import { unitLabel } from '../../../packs/process-plant/displays/display-text.ts'
+  import { valueDigits } from './trend-geometry.ts'
   import AlarmChip from './AlarmChip.svelte'
   import './openbridge.ts'
 

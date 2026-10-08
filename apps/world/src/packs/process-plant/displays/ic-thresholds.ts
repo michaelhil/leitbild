@@ -1,7 +1,7 @@
-import type { VariablePath } from '../graph/index.ts'
+import type { ProcessSignalBinding, VariablePath } from '../graph/index.ts'
 import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import type { ProcessPlantIcCondition, ProcessPlantIcRule } from '../runtime/index.ts'
-import { resolveProcessPlantSignalPath } from '../signals.ts'
+import { resolveProcessPlantSignalBinding, resolveProcessPlantSignalPath } from '../signals.ts'
 
 // Thresholds drawn on composed displays come only from the Plant's configured
 // I&C rules. They are named I&C thresholds, not variable limits: they state
@@ -93,4 +93,39 @@ export const icThresholdsForSignal = (
     thresholds: thresholds.sort((left, right) => left.value - right.value || left.ruleId.localeCompare(right.ruleId)),
     combinedRules: combinedRules.sort((left, right) => left.ruleId.localeCompare(right.ruleId)),
   }
+}
+
+// A signal belongs to its bound equipment and to the node that owns its path
+// (a relief flow modelled on the pressurizer node belongs to the pressurizer).
+const equipmentKeys = (binding: ProcessSignalBinding): ReadonlyArray<string> => [
+  String(binding.path).split('.')[0]!,
+  ...(binding.equipmentId === undefined ? [] : [String(binding.equipmentId)]),
+]
+
+const conditionBindings = (
+  plant: CompiledProcessPlant,
+  condition: ProcessPlantIcCondition,
+): ReadonlyArray<ProcessSignalBinding> => {
+  if (condition.type === 'comparison') return [resolveProcessPlantSignalBinding(plant.graph, condition.signal)]
+  if (condition.type === 'not') return conditionBindings(plant, condition.condition)
+  return condition.conditions.flatMap(child => conditionBindings(plant, child))
+}
+
+/**
+ * Alarm and trip rules acting on any signal of the displayed signals'
+ * equipment: beside a pressurizer pressure trend an operator expects the
+ * pressurizer's other alarms (relief flow, level), not only the pressure ones.
+ */
+export const icAlarmRuleIdsForEquipment = (
+  plant: CompiledProcessPlant,
+  paths: ReadonlyArray<VariablePath>,
+): ReadonlyArray<string> => {
+  const equipment = new Set(paths.flatMap(path => {
+    const binding = plant.graph.signalBindingByPath.get(path)
+    return binding === undefined ? [] : equipmentKeys(binding)
+  }))
+  return plant.automation.rules
+    .filter(rule => rule.enabled && kindFor(rule) !== 'control')
+    .filter(rule => conditionBindings(plant, rule.condition).some(binding => equipmentKeys(binding).some(key => equipment.has(key))))
+    .map(rule => rule.id)
 }

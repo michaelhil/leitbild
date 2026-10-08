@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { activeThreshold, agoText, alarmAge, marginText, median, minutesToThreshold, nearestThresholdMargin, ratePerMinute, rateText, thresholdName, visibleAlarms } from '../src/ui/embed/composed-display/panel-presenters.ts'
+import { activeThreshold, agoText, alarmAge, marginText, median, minutesToThreshold, nearestThresholdMargin, rateChange, ratePerMinute, rateText, rateWindowMs, simulationClock, visibleAlarms } from '../src/ui/embed/composed-display/panel-presenters.ts'
+import { thresholdName, unitLabel } from '../src/packs/process-plant/displays/display-text.ts'
 import type { ComposedDisplayThreshold } from '../src/packs/process-plant/displays/ic-thresholds.ts'
 import type { ComposedDisplayAlarm } from '../src/ui/embed/composed-display/composed-display-client.ts'
 
@@ -50,13 +51,30 @@ describe('composed display panel presenters', () => {
 
   test('rate, direction and time to threshold at the current rate', () => {
     const falling = Array.from({ length: 61 }, (_, index) => ({ t: index * 1000, v: 40 - index * 0.03 }))
-    const rate = ratePerMinute(falling)!
+    const rate = ratePerMinute(falling, 60_000)!
     expect(rate).toBeCloseTo(-1.8, 6)
     expect(rateText(rate, 38.2, '%')).toBe('▼ −1.80 %/min')
+    expect(rateText(rate, 38.2, '%', { windowMs: 15_000, change: 'slowing' })).toBe('▼ −1.80 %/min · 15 s · slowing')
     expect(rateText(0.0001, 38.2, '%')).toBe('► steady')
-    expect(ratePerMinute([{ t: 0, v: 1 }, { t: 5_000, v: 2 }])).toBeNull()
+    expect(rateText(0.0001, 38.2, '%', { windowMs: 15_000 })).toBe('► steady · 15 s')
+    expect(ratePerMinute([{ t: 0, v: 1 }, { t: 5_000, v: 2 }], 60_000)).toBeNull()
+    // A window the data covers only partly gives no rate rather than a short-span guess.
+    expect(ratePerMinute(falling.slice(0, 31), 60_000)).toBeNull()
     expect(minutesToThreshold(38.2, rate, thresholds[1]!)).toBeCloseTo(4.56, 2)
     expect(minutesToThreshold(38.2, 1.8, thresholds[1]!)).toBeNull()
+  })
+
+  test('rates follow the curve on screen and say when it is slowing', () => {
+    expect([120_000, 600_000, 1_800_000].map(rateWindowMs)).toEqual([15_000, 60_000, 60_000])
+    // Falling fast for a minute, then nearly flat for the last 15 s.
+    const flattening = Array.from({ length: 76 }, (_, index) => ({ t: index * 1000, v: index <= 60 ? 15 - index * 0.05 : 12 - (index - 60) * 0.002 }))
+    const window = rateWindowMs(120_000)
+    expect(Math.abs(ratePerMinute(flattening, window)!)).toBeLessThan(0.3)
+    expect(rateChange(flattening, window, 12)).toBe('slowing')
+    const steadyFall = Array.from({ length: 76 }, (_, index) => ({ t: index * 1000, v: 15 - index * 0.05 }))
+    expect(rateChange(steadyFall, window, 12)).toBeNull()
+    expect(simulationClock(Date.parse('2026-01-01T10:01:00.049Z'))).toBe('10:01:00')
+    expect(unitLabel('degC')).toBe('°C')
   })
 
   test('the most severe active threshold marks the value', () => {

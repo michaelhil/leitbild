@@ -134,7 +134,7 @@ describe('live operator display chain with real Modules', () => {
     }, { callerId: assistant.id, callerName: assistant.name, roomId: room.profile.id, executionCallId: 'call_0_0' })
     expect(composed).toMatchObject({ success: true, data: { results: [{ key: 'display', success: true, viewRef: 'call_0_0/display' }] } })
     const entry = (composed.data as { results: Array<{ embeddedView: unknown; data: { shows: string[] } }> }).results[0]!
-    expect(entry.data.shows.join('\n')).toContain('Low pressurizer pressure reactor trip, below 13.8 MPa')
+    expect(entry.data.shows.join('\n')).toContain('"LO TRIP 13.8 MPa" trip line: Low pressurizer pressure reactor trip, acts below 13.8 MPa')
 
     // The evaluation loop accepts exactly this reference for this turn.
     const viewRefs = new Set<string>()
@@ -160,10 +160,10 @@ describe('live operator display chain with real Modules', () => {
     const invoke = async <T>(capabilityId: string, input: unknown): Promise<T> => (await json<{ result: T }>(await fetch(`${runPath}/capabilities/${capabilityId}/invoke`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ input }),
     }))).result
-    const view = await invoke<{ display: { panels: Array<{ pens: Array<{ path: string; thresholds: unknown[] }> }> }; modelChanged: boolean }>(
+    const view = await invoke<{ display: { panels: Array<{ strips: Array<{ pens: Array<{ path: string; thresholds: unknown[] }> }> }> }; modelChanged: boolean }>(
       'world.process-plant.display.view', { plantId: 'plant:halden-a1', state: resolution.envelope.state })
     expect(view.modelChanged).toBe(false)
-    const pen = view.display.panels[0]!.pens[0]!
+    const pen = view.display.panels[0]!.strips[0]!.pens[0]!
     expect(pen.thresholds.length).toBeGreaterThan(0)
     const sample = await invoke<{ values: Array<{ path: string; value: unknown }> }>('world.process-plant.display.sample', { plantId: 'plant:halden-a1', paths: [pen.path] })
     expect(typeof sample.values[0]!.value).toBe('number')

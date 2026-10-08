@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { EmbeddedViewEnvelope } from '@leitbild/contracts'
   import { simulationRunIdSchema } from '../../../core/model/index.ts'
-  import { composedDisplayLayout, composedDisplayStateSchema } from '../../../packs/process-plant/displays/composition.ts'
+  import { composedDisplayLayout, composedDisplayStateSchema, composedTrendStripHeights } from '../../../packs/process-plant/displays/composition.ts'
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
   import { composedDisplayClient } from './composed-display-client.ts'
   import { createComposedDisplaySession, type ComposedDisplaySnapshot } from './composed-display-session.ts'
@@ -10,7 +10,7 @@
   import PenLegend from './PenLegend.svelte'
   import ReadoutsPanel from './ReadoutsPanel.svelte'
   import TrendPanel from './TrendPanel.svelte'
-  import { agoText, alarmAge } from './panel-presenters.ts'
+  import { agoText, alarmAge, simulationClock } from './panel-presenters.ts'
 
   let { envelope }: { envelope: EmbeddedViewEnvelope } = $props()
 
@@ -69,7 +69,8 @@
     return { text: 'Connecting', tone: 'quiet' }
   })
 
-  const simulationClock = (ms: number): string => new Date(ms).toISOString().slice(11, 19)
+  // Recorded history cannot reach before the Run started; trends say so.
+  const runStartedAt = $derived(snapshot?.latest === undefined ? null : Date.parse(snapshot.latest.simulationTime) - snapshot.latest.plantElapsedMs)
   const activeRuleIds = $derived(new Set((snapshot?.latest?.alarms ?? []).map(alarm => alarm.ruleId)))
   // A protection trip changes the plant state; it leads the notice line.
   const activeTrip = $derived((snapshot?.latest?.alarms ?? []).filter(alarm => alarm.kind === 'trip')
@@ -120,12 +121,28 @@
     <div class="panels" style={`gap:${composedDisplayLayout.panelGap}px`}>
       {#each view.display.panels as panel, index (index)}
         {#if panel.kind === 'trend'}
-          <div style={`height:${composedDisplayLayout.trend}px`}>
-            <TrendPanel {panel} series={snapshot.series} range={snapshot.ranges[index] ?? null} {now} {issuedAt} {activeRuleIds} height={composedDisplayLayout.trendChart} />
-            <PenLegend pens={panel.pens} latest={snapshot.latest} series={snapshot.series} historyMissing={snapshot.historyMissing} {activeRuleIds} />
+          {@const charts = composedTrendStripHeights(panel.strips.length)}
+          <div>
+            {#each panel.strips as strip, stripIndex (strip.unit)}
+              <TrendPanel
+                {strip}
+                horizon={panel.horizon}
+                horizonMs={panel.horizonMs}
+                series={snapshot.series}
+                range={snapshot.ranges[index]?.[stripIndex] ?? null}
+                {now}
+                {issuedAt}
+                {runStartedAt}
+                height={charts[stripIndex]!}
+                timeAxis={stripIndex === panel.strips.length - 1}
+                adviceLabel={stripIndex === 0}
+                {activeRuleIds}
+              />
+              <PenLegend pens={strip.pens} horizonMs={panel.horizonMs} latest={snapshot.latest} series={snapshot.series} historyMissing={snapshot.historyMissing} {activeRuleIds} />
+            {/each}
           </div>
         {:else if panel.kind === 'comparison'}
-          <ComparisonPanel {panel} latest={snapshot.latest} series={snapshot.series} range={snapshot.ranges[index] ?? null} {activeRuleIds} />
+          <ComparisonPanel {panel} latest={snapshot.latest} series={snapshot.series} range={snapshot.ranges[index]?.[0] ?? null} {activeRuleIds} />
         {:else if panel.kind === 'readouts'}
           <ReadoutsPanel {panel} latest={snapshot.latest} {activeRuleIds} />
         {:else}

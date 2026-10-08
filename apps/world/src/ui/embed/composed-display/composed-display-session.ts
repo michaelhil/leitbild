@@ -1,4 +1,5 @@
 import type { SimulationRunId } from '../../../core/model/index.ts'
+import type { CompiledComposedPanel, ComposedDisplayPen } from '../../../packs/process-plant/displays/compose.ts'
 import type { ComposedDisplayClient, ComposedDisplaySample, ComposedDisplayViewResult } from './composed-display-client.ts'
 import { appendPoint, type TrendPoint, type ValueDomain } from './trend-geometry.ts'
 
@@ -17,8 +18,11 @@ export interface ComposedDisplaySnapshot {
   readonly series: ReadonlyMap<string, ReadonlyArray<TrendPoint>>
   /** Signals without recorded history in the window; their trend starts when the view opened. */
   readonly historyMissing: ReadonlySet<string>
-  /** Value range seen per panel since the view opened; it only grows, so scales never jump inward. */
-  readonly ranges: ReadonlyArray<ValueDomain | null>
+  /**
+   * Value range seen per panel scale (one per trend strip, one for a
+   * comparison) since the view opened; it only grows, so scales never jump inward.
+   */
+  readonly ranges: ReadonlyArray<ReadonlyArray<ValueDomain | null>>
   readonly latest?: ComposedDisplaySample
   readonly playback?: 'playing' | 'paused'
   readonly lastSampleWallMs?: number
@@ -38,6 +42,11 @@ export const IDLE_SUSPEND_MS = 15 * 60_000
 const COMPARISON_SERIES_MS = 600_000
 // Alarm state marks values in alarm on every panel, not only the alarms strip.
 const WITH_ALARMS = true
+
+const pensOf = (panel: CompiledComposedPanel): ReadonlyArray<ComposedDisplayPen> => {
+  if (panel.kind === 'alarms') return []
+  return panel.kind === 'trend' ? panel.strips.flatMap(strip => strip.pens) : panel.pens
+}
 
 export const createComposedDisplaySession = (config: {
   readonly runId: SimulationRunId
@@ -68,31 +77,38 @@ export const createComposedDisplaySession = (config: {
   const panels = () => snapshot.view?.display.panels ?? []
 
   /** Every displayed signal is sampled once, however many panels show it. */
-  const sampledPaths = (): ReadonlyArray<string> => [...new Set(panels().flatMap(panel => panel.kind === 'alarms' ? [] : panel.pens.map(pen => String(pen.path))))]
+  const sampledPaths = (): ReadonlyArray<string> => [...new Set(panels().flatMap(panel => pensOf(panel).map(pen => String(pen.path))))]
 
   /** Trends keep their horizon; comparisons keep ten minutes for rates. Readouts use the latest sample. */
   const trendPens = (): ReadonlyArray<{ readonly path: string; readonly seriesId: string; readonly horizonMs: number }> =>
     panels().flatMap(panel => panel.kind === 'trend' || panel.kind === 'comparison'
-      ? panel.pens.map(pen => ({ path: String(pen.path), seriesId: pen.seriesId, horizonMs: panel.kind === 'trend' ? panel.horizonMs : COMPARISON_SERIES_MS }))
+      ? pensOf(panel).map(pen => ({ path: String(pen.path), seriesId: pen.seriesId, horizonMs: panel.kind === 'trend' ? panel.horizonMs : COMPARISON_SERIES_MS }))
       : [])
 
+  /** Values on each scale of a panel: trends their history per strip, comparisons the latest sample. */
+  const scaleValues = (
+    panel: CompiledComposedPanel,
+    series: ReadonlyMap<string, ReadonlyArray<TrendPoint>>,
+    latest: ComposedDisplaySample | undefined,
+  ): ReadonlyArray<ReadonlyArray<number>> => {
+    if (panel.kind === 'trend') return panel.strips.map(strip => strip.pens.flatMap(pen => (series.get(String(pen.path)) ?? []).map(point => point.v)))
+    if (panel.kind !== 'comparison') return []
+    const paths = new Set(panel.pens.map(pen => String(pen.path)))
+    return [(latest?.values ?? []).flatMap(entry => paths.has(entry.path) && typeof entry.value === 'number' ? [entry.value] : [])]
+  }
 
   const grownRanges = (
     series: ReadonlyMap<string, ReadonlyArray<TrendPoint>>,
     latest: ComposedDisplaySample | undefined,
-  ): ReadonlyArray<ValueDomain | null> => panels().map((panel, index) => {
-    const previous = snapshot.ranges[index] ?? null
-    if (panel.kind !== 'trend' && panel.kind !== 'comparison') return previous
-    const paths = new Set(panel.pens.map(pen => String(pen.path)))
-    const values = panel.kind === 'trend'
-      ? panel.pens.flatMap(pen => (series.get(String(pen.path)) ?? []).map(point => point.v))
-      : (latest?.values ?? []).flatMap(entry => paths.has(entry.path) && typeof entry.value === 'number' ? [entry.value] : [])
-    if (values.length === 0) return previous
-    return {
-      min: Math.min(...values, ...(previous === null ? [] : [previous.min])),
-      max: Math.max(...values, ...(previous === null ? [] : [previous.max])),
-    }
-  })
+  ): ReadonlyArray<ReadonlyArray<ValueDomain | null>> => panels().map((panel, index) =>
+    scaleValues(panel, series, latest).map((values, scale) => {
+      const previous = snapshot.ranges[index]?.[scale] ?? null
+      if (values.length === 0) return previous
+      return {
+        min: Math.min(...values, ...(previous === null ? [] : [previous.min])),
+        max: Math.max(...values, ...(previous === null ? [] : [previous.max])),
+      }
+    }))
 
   const applySample = (sample: ComposedDisplaySample): void => {
     const at = Date.parse(sample.simulationTime)

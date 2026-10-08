@@ -86,12 +86,12 @@ describe('world.process-plant.display.compose', () => {
     expect(result.issuedAt).toBe(simulationTime)
     const state = composedDisplayStateSchema.parse(JSON.parse(view.state))
     expect(state).toMatchObject({ issuedAt: simulationTime, modelDigest: compiled.modelDigest })
-    expect(result.shows.join('\n')).toContain('I&C alarm line for SG-B-LVL-NR, SG-A-LVL-NR: Steam generator B level low · Steam generator A level low, below 30 percent')
+    expect(result.shows.join('\n')).toContain('"LO ALM 30 %" alarm line: Steam generator B level low · Steam generator A level low, acts below 30 percent for SG-B-LVL-NR, SG-A-LVL-NR')
     expect((result as unknown as { signals: unknown }).signals).toEqual([
       { ref: 'SG-B-LVL-NR', tagId: 'SG-B-LVL-NR', path: 'sgB.levelPercent', label: 'Steam generator level', unit: 'percent' },
       { ref: 'SG-A-LVL-NR', tagId: 'SG-A-LVL-NR', path: 'sgA.levelPercent', label: 'Steam generator level', unit: 'percent' },
     ])
-    expect(result.shows.join('\n')).toContain('I&C trip line for SG-B-LVL-NR, SG-A-LVL-NR: Steam generator B low-low level · Steam generator A low-low level, below 20 percent')
+    expect(result.shows.join('\n')).toContain('"LO TRIP 20 %" trip line: Steam generator B low-low level · Steam generator A low-low level, acts below 20 percent for SG-B-LVL-NR, SG-A-LVL-NR')
     expect(runtime.checkpoint()).toEqual(before)
   })
 
@@ -106,14 +106,10 @@ describe('world.process-plant.display.compose', () => {
     expect(message).toContain('at least one signal with role "primary"')
   })
 
-  test('rejects state signals and mixed units on one axis', () => {
+  test('rejects state signals on a trend', () => {
     expect(rejectionOf(() => ask('world.process-plant.display.compose', composition([
       { ref: 'RCP-A-RUN', role: 'primary' },
     ])))).toContain('is a boolean state signal')
-    expect(rejectionOf(() => ask('world.process-plant.display.compose', composition([
-      { ref: 'PT-455', role: 'primary' },
-      { ref: 'PZR-LVL', role: 'context' },
-    ])))).toContain('these signals use 2 units: [MPa] PT-455; [percent] PZR-LVL')
   })
 
   test('rejects fields outside the composition vocabulary', () => {
@@ -134,9 +130,9 @@ describe('thresholds drawn on composed trends', () => {
   const panelOf = (signals: ReadonlyArray<{ readonly ref: string; readonly role: string }>) => {
     const composed = ask('world.process-plant.display.compose', composition(signals)) as { view: { state: string } }
     const view = ask('world.process-plant.display.view', { plantId: compiled.id, state: composed.view.state }) as {
-      display: { panels: ReadonlyArray<{ thresholds: ReadonlyArray<{ value: number; kind: string; signals: ReadonlyArray<string>; label: string }> }> }
+      display: { panels: ReadonlyArray<{ strips: ReadonlyArray<{ thresholds: ReadonlyArray<{ value: number; kind: string; signals: ReadonlyArray<string>; label: string }> }> }> }
     }
-    return view.display.panels[0]!
+    return view.display.panels[0]!.strips[0]!
   }
 
   test('cover every displayed signal once per rule action', () => {
@@ -168,29 +164,39 @@ describe('composed display panels', () => {
     return { composed, view }
   }
 
-  test('stack trends of different units on one time axis and size the card for them', () => {
+  test('stack one strip per unit on the trend time axis, the primary signal on top, and size the card for them', () => {
     const { composed, view } = composeView([
-      { kind: 'trend', horizon: '10m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },
-      { kind: 'trend', horizon: '10m', signals: [{ ref: 'sgB.feedwaterFlowKgPerS', role: 'counter-evidence' }] },
+      { kind: 'trend', horizon: '10m', signals: [{ ref: 'sgB.feedwaterFlowKgPerS', role: 'counter-evidence' }, { ref: 'SG-B-LVL-NR', role: 'primary' }, { ref: 'SG-A-LVL-NR', role: 'context' }] },
     ])
-    expect(view.display.panels.map(panel => [panel.kind, panel.unit])).toEqual([['trend', 'percent'], ['trend', 'kg/s']])
-    expect(composed.view.height).toBe(124 + 192 + 6 + 192)
+    const trend = view.display.panels[0] as { strips: ReadonlyArray<{ unit: string; pens: ReadonlyArray<{ ref: string }> }> }
+    expect(trend.strips.map(strip => [strip.unit, strip.pens.map(pen => pen.ref)])).toEqual([
+      ['percent', ['SG-B-LVL-NR', 'SG-A-LVL-NR']],
+      ['kg/s', ['sgB.feedwaterFlowKgPerS']],
+    ])
+    // Top strip: labels and plot; bottom strip also the time axis; a legend row per pen.
+    expect(composed.view.height).toBe(124 + (18 + 72 + 4 + 16 * 2) + (18 + 72 + 22 + 4 + 16))
+    expect(composed.shows[0]).toContain('in 2 stacked strips (one per unit)')
   })
 
-  test('fit two stacked trends with related alarms in one chat view', () => {
+  test('fit a three-strip trend with related alarms in one chat view', () => {
     const { composed } = composeView([
-      { kind: 'trend', horizon: '30m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }, { ref: 'SG-A-LVL-NR', role: 'context' }] },
-      { kind: 'trend', horizon: '30m', signals: [{ ref: 'sgB.feedwaterFlowKgPerS', role: 'counter-evidence' }] },
+      { kind: 'trend', horizon: '2m', signals: [{ ref: 'PT-455', role: 'primary' }, { ref: 'PZR-LVL', role: 'context' }, { ref: 'GEN-MW', role: 'context' }] },
       { kind: 'alarms', scope: 'related' },
     ])
     expect(composed.view.height).toBeLessThanOrEqual(640)
   })
 
-  test('reject stacked trends with different horizons, a lone alarms panel and oversized displays', () => {
+  test('reject a second trend panel, too many strips or pens, a lone alarms panel and oversized displays', () => {
     expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
       { kind: 'trend', horizon: '10m', signals: [{ ref: 'PT-455', role: 'primary' }] },
-      { kind: 'trend', horizon: '2m', signals: [{ ref: 'PZR-LVL', role: 'context' }] },
-    ])))).toContain('same horizon')
+      { kind: 'trend', horizon: '10m', signals: [{ ref: 'PZR-LVL', role: 'context' }] },
+    ])))).toContain('use one trend panel and list every signal whose history matters in it')
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
+      { kind: 'trend', horizon: '10m', signals: ['PT-455', 'PZR-LVL', 'GEN-MW', 'TAVG'].map((ref, index) => ({ ref, role: index === 0 ? 'primary' : 'context' })) },
+    ])))).toContain('a trend stacks at most 3 strips, one per unit, but these signals use 4 units')
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
+      { kind: 'trend', horizon: '10m', signals: ['A', 'B', 'C', 'D'].map(loop => ({ ref: `SG-${loop}-LVL-NR`, role: loop === 'B' ? 'primary' : 'context' })) },
+    ])))).toContain('a trend strip shows at most 3 signals of one unit, but [percent] has 4')
     expect(rejectionOf(() => ask('world.process-plant.display.compose', display([{ kind: 'alarms', scope: 'plant' }]))))
       .toContain('an alarms panel accompanies signal panels')
     const six = ['A', 'B', 'C', 'D'].map(loop => ({ ref: `RCP-${loop}-FLOW`, role: 'context' }))
@@ -201,10 +207,10 @@ describe('composed display panels', () => {
       { kind: 'readouts', signals: [...six, { ref: 'TAVG', role: 'context' }, { ref: 'SUB-MARGIN', role: 'context' }] },
     ])))).toContain('panels: Too big')
     expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
-      { kind: 'trend', horizon: '10m', signals: [{ ref: 'PT-455', role: 'primary' }] },
-      { kind: 'trend', horizon: '10m', signals: [{ ref: 'PZR-LVL', role: 'context' }] },
-      { kind: 'readouts', signals: ['TAVG', 'SUB-MARGIN', 'RCP-A-FLOW', 'RCP-B-FLOW', 'RCP-C-FLOW', 'RCP-D-FLOW'].map(ref => ({ ref, role: 'context' })) },
-    ])))).toContain('chat views allow 640 (panels.0 trend 192 px')
+      { kind: 'trend', horizon: '10m', signals: [{ ref: 'PT-455', role: 'primary' }, { ref: 'PZR-LVL', role: 'context' }] },
+      { kind: 'comparison', signals: six },
+      { kind: 'readouts', signals: ['TAVG', 'SUB-MARGIN', 'CET-AVG', 'SG-A-PRESS', 'SG-B-PRESS', 'SG-C-PRESS'].map(ref => ({ ref, role: 'context' })) },
+    ])))).toContain('chat views allow 640 (panels.0 trend (2 strips) 242 px')
     expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
       { kind: 'trend', horizon: '10m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },
       { kind: 'readouts', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },
@@ -235,14 +241,20 @@ describe('composed display panels', () => {
     ])))).toContain('use a readouts panel for states')
   })
 
-  test('relate an alarms panel to the I&C rules acting on the displayed signals', () => {
+  test('relate an alarms panel to the I&C rules acting on the displayed signals and their equipment', () => {
     const { composed, view } = composeView([
       { kind: 'trend', horizon: '10m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },
       { kind: 'alarms', scope: 'related' },
     ])
     const alarms = view.display.panels[1] as { kind: string; ruleIds: string[] }
-    expect(alarms.ruleIds).toEqual(['sg-b-feedwater-low', 'sg-b-level-low', 'sg-b-level-low-low-afw-actuation'])
-    expect(composed.shows.at(-1)).toContain('3 I&C rules acting on the displayed signals')
+    expect(alarms.ruleIds).toEqual(expect.arrayContaining(['sg-b-feedwater-low', 'sg-b-level-low', 'sg-b-level-low-low-afw-actuation']))
+    expect(alarms.ruleIds.every(ruleId => !ruleId.startsWith('sg-a-'))).toBe(true)
+    expect(composed.shows.at(-1)).toContain(`${alarms.ruleIds.length} I&C rules acting on the displayed signals and their equipment`)
+    const pressurizer = composeView([
+      { kind: 'trend', horizon: '2m', signals: [{ ref: 'PT-455', role: 'primary' }] },
+      { kind: 'alarms', scope: 'related' },
+    ]).view.display.panels[1] as { ruleIds: string[] }
+    expect(pressurizer.ruleIds.some(ruleId => ruleId.includes('relief'))).toBe(true)
   })
 })
 
@@ -257,12 +269,14 @@ describe('world.process-plant.display.view and sample', () => {
       issuedAt: string
       simulationTime: string
       modelChanged: boolean
-      display: { panels: ReadonlyArray<{ horizonMs: number; unit: string; pens: ReadonlyArray<{ path: string; seriesId: string; thresholds: ReadonlyArray<unknown> }> }> }
+      display: { panels: ReadonlyArray<{ horizonMs: number; strips: ReadonlyArray<{ unit: string; pens: ReadonlyArray<{ path: string; seriesId: string; thresholds: ReadonlyArray<unknown> }> }> }> }
     }
     expect(view).toMatchObject({ plantLabel: null, issuedAt: simulationTime, simulationTime: later, modelChanged: false })
-    expect(view.display.panels[0]).toMatchObject({ horizonMs: 120_000, unit: 'MPa' })
-    expect(view.display.panels[0]!.pens[0]!.seriesId).toStartWith('series:')
-    expect(view.display.panels[0]!.pens[0]!.thresholds.length).toBe(8)
+    expect(view.display.panels[0]).toMatchObject({ horizonMs: 120_000 })
+    const strip = view.display.panels[0]!.strips[0]!
+    expect(strip.unit).toBe('MPa')
+    expect(strip.pens[0]!.seriesId).toStartWith('series:')
+    expect(strip.pens[0]!.thresholds.length).toBe(8)
   })
 
   test('view keeps rendering displays that later authoring rules would reject', () => {
@@ -277,6 +291,13 @@ describe('world.process-plant.display.view and sample', () => {
     const state = JSON.stringify({ composition: repeated, issuedAt: simulationTime, modelDigest: compiled.modelDigest })
     const view = ask('world.process-plant.display.view', { plantId: compiled.id, state }) as { display: { panels: unknown[] } }
     expect(view.display.panels).toHaveLength(2)
+    // Displays composed before trends stacked their own strips keep rendering.
+    const twoTrends = { ...repeated, panels: [
+      { kind: 'trend', horizon: '10m', signals: [{ ref: 'PT-455', role: 'primary' }] },
+      { kind: 'trend', horizon: '10m', signals: [{ ref: 'PZR-LVL', role: 'context' }] },
+    ] }
+    const earlier = ask('world.process-plant.display.view', { plantId: compiled.id, state: JSON.stringify({ composition: twoTrends, issuedAt: simulationTime, modelDigest: compiled.modelDigest }) }) as { display: { panels: unknown[] } }
+    expect(earlier.display.panels).toHaveLength(2)
     const missing = JSON.stringify({ composition: { ...repeated, panels: [{ kind: 'trend', horizon: '10m', signals: [{ ref: 'NO-SUCH-TAG', role: 'primary' }] }] }, issuedAt: simulationTime, modelDigest: compiled.modelDigest })
     const message = rejectionOf(() => ask('world.process-plant.display.view', { plantId: compiled.id, state: missing }))
     expect(message).toStartWith('This display can no longer be shown for the current Plant model')

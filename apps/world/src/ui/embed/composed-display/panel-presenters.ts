@@ -1,5 +1,6 @@
 // Pure derivations for composed-display panels. Thresholds come from World;
 // these functions only relate them to the latest sampled values.
+import { thresholdName } from '../../../packs/process-plant/displays/display-text.ts'
 import type { ComposedDisplayThreshold } from '../../../packs/process-plant/displays/ic-thresholds.ts'
 import type { ComposedDisplayAlarm } from './composed-display-client.ts'
 import { formatValue, type TrendPoint } from './trend-geometry.ts'
@@ -25,12 +26,6 @@ export const nearestThresholdMargin = (
   return margins.reduce((nearest, candidate) => candidate.margin < nearest.margin ? candidate : nearest)
 }
 
-const kindAbbreviation = { trip: 'TRIP', alarm: 'ALM', control: 'CTL' } as const
-
-/** Operator name of a threshold, with direction, kind, exact value and unit: "LO ALM 30 %". */
-export const thresholdName = (threshold: ComposedDisplayThreshold, unit: string): string =>
-  `${threshold.direction === 'low' ? 'LO' : 'HI'} ${kindAbbreviation[threshold.kind]} ${threshold.value}${unit === '' ? '' : ` ${unit}`}`
-
 export const marginText = (margin: ThresholdMargin, unit: string): string => {
   const name = thresholdName(margin.threshold, unit)
   const qualified = margin.threshold.modeLabel === undefined ? '' : ` (${margin.threshold.modeLabel})`
@@ -41,12 +36,20 @@ export const marginText = (margin: ThresholdMargin, unit: string): string => {
 // A rate needs some history: two points at least this far apart.
 const RATE_MIN_SPAN_MS = 10_000
 
-/** Least-squares slope over the last minute, per minute; null without enough data. */
-export const ratePerMinute = (points: ReadonlyArray<TrendPoint>, windowMs = 60_000): number | null => {
+/**
+ * The window a rate is measured over: an eighth of the trend horizon, so the
+ * number follows the curve the operator sees (2 min horizon: 15 s), between
+ * 10 s for 1 s samples and one minute.
+ */
+export const rateWindowMs = (horizonMs: number): number =>
+  Math.min(60_000, Math.max(RATE_MIN_SPAN_MS, Math.round(horizonMs / 8 / 5_000) * 5_000))
+
+/** Least-squares slope over the window, per minute; null unless the data spans most of it. */
+export const ratePerMinute = (points: ReadonlyArray<TrendPoint>, windowMs: number): number | null => {
   const last = points.at(-1)
   if (last === undefined) return null
   const recent = points.filter(point => point.t >= last.t - windowMs)
-  if (recent.length < 2 || last.t - recent[0]!.t < RATE_MIN_SPAN_MS) return null
+  if (recent.length < 2 || last.t - recent[0]!.t < Math.max(RATE_MIN_SPAN_MS, windowMs * 0.75)) return null
   const meanT = recent.reduce((sum, point) => sum + point.t, 0) / recent.length
   const meanV = recent.reduce((sum, point) => sum + point.v, 0) / recent.length
   const covariance = recent.reduce((sum, point) => sum + (point.t - meanT) * (point.v - meanV), 0)
@@ -54,11 +57,39 @@ export const ratePerMinute = (points: ReadonlyArray<TrendPoint>, windowMs = 60_0
   return variance === 0 ? null : (covariance / variance) * 60_000
 }
 
-/** "▲ +1.80 %/min"; steady when the minute's change is below 0.1 % of the value. */
-export const rateText = (rate: number | null, value: number, unit: string): string => {
+// A change below 0.1 % of the value per minute reads as steady.
+const isSteady = (rate: number, value: number): boolean => Math.abs(rate) <= Math.abs(value) * 0.001
+
+export type RateChange = 'accelerating' | 'slowing' | 'reversing'
+
+/**
+ * How the rate over the window compares with the rate over four windows, so a
+ * curve that has flattened is not reported only by its older, steeper slope.
+ */
+export const rateChange = (points: ReadonlyArray<TrendPoint>, windowMs: number, value: number): RateChange | null => {
+  const recent = ratePerMinute(points, windowMs)
+  const longer = ratePerMinute(points, windowMs * 4)
+  if (recent === null || longer === null || isSteady(longer, value)) return null
+  if (!isSteady(recent, value) && Math.sign(recent) !== Math.sign(longer)) return 'reversing'
+  if (Math.abs(recent) < Math.abs(longer) * 0.5) return 'slowing'
+  if (Math.abs(recent) > Math.abs(longer) * 1.5) return 'accelerating'
+  return null
+}
+
+export const windowText = (windowMs: number): string => `${Math.round(windowMs / 1000)} s`
+
+/** "▼ −1.80 %/min · 15 s · slowing"; the window and change only when given. */
+export const rateText = (
+  rate: number | null,
+  value: number,
+  unit: string,
+  detail: { readonly windowMs?: number; readonly change?: RateChange | null } = {},
+): string => {
   if (rate === null) return ''
-  if (Math.abs(rate) <= Math.abs(value) * 0.001) return '► steady'
-  return `${rate > 0 ? '▲ +' : '▼ −'}${formatValue(Math.abs(rate))} ${unit}/min`
+  const window = detail.windowMs === undefined ? '' : ` · ${windowText(detail.windowMs)}`
+  if (isSteady(rate, value)) return `► steady${window}`
+  const change = detail.change === undefined || detail.change === null ? '' : ` · ${detail.change}`
+  return `${rate > 0 ? '▲ +' : '▼ −'}${formatValue(Math.abs(rate))} ${unit}/min${window}${change}`
 }
 
 /** Minutes until the value reaches the threshold at the current rate, if moving toward it. */
@@ -120,3 +151,6 @@ export const alarmAge = (plantElapsedMs: number, firstActiveElapsedMs: number | 
   if (seconds < 3600) return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
   return `${Math.floor(seconds / 3600)} h ${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}`
 }
+
+/** Simulation time of day as the display header shows it: "10:01:00". */
+export const simulationClock = (ms: number): string => new Date(ms).toISOString().slice(11, 19)

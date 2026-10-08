@@ -2,9 +2,10 @@
   import type { ComposedComparisonPanel } from '../../../packs/process-plant/displays/compose.ts'
   import { composedDisplayLayout } from '../../../packs/process-plant/displays/composition.ts'
   import type { ComposedDisplaySample } from './composed-display-client.ts'
-  import { activeThreshold, median, ratePerMinute, rateText, thresholdName } from './panel-presenters.ts'
+  import { thresholdName, unitLabel } from '../../../packs/process-plant/displays/display-text.ts'
+  import { activeThreshold, median, ratePerMinute, rateText, windowText } from './panel-presenters.ts'
   import { displayName } from './pen-style.ts'
-  import { formatValue, paddedDomain, rawDomain, unitLabel, type TrendPoint, type ValueDomain } from './trend-geometry.ts'
+  import { formatValue, paddedDomain, rawDomain, type TrendPoint, type ValueDomain } from './trend-geometry.ts'
 
   let { panel, latest, series, range, activeRuleIds }: {
     panel: ComposedComparisonPanel
@@ -47,6 +48,8 @@
     return Math.abs(difference) < 1e-9 ? '' : `${difference > 0 ? '+' : '−'}${formatValue(Math.abs(difference))} vs median`
   }
   const lines = $derived(panel.thresholds.filter(threshold => threshold.kind !== 'control'))
+  // Comparisons read the present; a one-minute rate says which loop is moving.
+  const RATE_WINDOW_MS = 60_000
 </script>
 
 <div class="comparison" bind:clientWidth={width}>
@@ -69,13 +72,13 @@
       <line class="track" x1={scaleStart} x2={scaleStart + scaleWidth} y1={y + row / 2} y2={y + row / 2} />
       {#if value !== undefined && domain !== null}
         <path class="pointer" class:primary={pen.role === 'primary'} class:alarm={inAlarm !== null} d={`M${x(value)} ${y + 4} l5 ${row / 2 - 4} l-5 ${row / 2 - 4} l-5 ${-(row / 2 - 4)} z`} />
-        <text class="value" x={scaleStart + scaleWidth + 10} y={y + row / 2} dominant-baseline="middle">{formatValue(value)} {unit}{#if inAlarm !== null}<tspan class={`state ${inAlarm.kind}`} dx="6">{inAlarm.direction === 'low' ? 'LO' : 'HI'} {inAlarm.kind === 'trip' ? 'TRIP' : 'ALM'}</tspan>{/if}<tspan class="sub" dx="6">{deviation(value)} {rateText(ratePerMinute(series.get(String(pen.path)) ?? []), value, unit)}</tspan></text>
+        <text class="value" x={scaleStart + scaleWidth + 10} y={y + row / 2} dominant-baseline="middle">{formatValue(value)} {unit}{#if inAlarm !== null}<tspan class={`state ${inAlarm.kind}`} dx="6">{inAlarm.direction === 'low' ? 'LO' : 'HI'} {inAlarm.kind === 'trip' ? 'TRIP' : 'ALM'}</tspan>{/if}<tspan class="sub" dx="6">{deviation(value)} {rateText(ratePerMinute(series.get(String(pen.path)) ?? [], RATE_WINDOW_MS), value, unit)}</tspan></text>
       {:else}
         <text class="value" x={scaleStart + scaleWidth + 10} y={y + row / 2} dominant-baseline="middle">—</text>
       {/if}
     {/each}
   </svg>
-  {#if center !== null}<p class="caption">Dotted line: median of the {panel.pens.length} signals now.</p>{/if}
+  {#if center !== null && domain !== null}<p class="caption">Scale {formatValue(domain.min)}–{formatValue(domain.max)} {unit} · dotted line: median of the {panel.pens.length} signals now · rates over {windowText(RATE_WINDOW_MS)}</p>{/if}
 </div>
 
 <style>

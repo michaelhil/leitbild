@@ -28,18 +28,22 @@ export type ComposedDisplaySignal = z.infer<typeof composedDisplaySignalSchema>
 
 // Size limits keep a chat display glanceable; larger questions belong to the
 // Plant's own displays.
-export const COMPOSED_TREND_MAX_PENS = 3
+export const COMPOSED_TREND_MAX_SIGNALS = 6
+/** A trend stacks one strip per unit on its time axis; each strip holds a few pens. */
+export const COMPOSED_TREND_MAX_STRIPS = 3
+export const COMPOSED_TREND_STRIP_MAX_PENS = 3
 export const COMPOSED_COMPARISON_MAX_SIGNALS = 6
 export const COMPOSED_READOUTS_MAX_SIGNALS = 6
-// One primary trend plus up to two supporting panels (HMI review); with the
-// 640 px cap nearly every three-panel combination fits by construction.
+// One trend plus up to two supporting panels (HMI review); with the 640 px cap
+// nearly every three-panel combination fits by construction.
 export const COMPOSED_DISPLAY_MAX_PANELS = 3
-export const COMPOSED_DISPLAY_MAX_TRENDS = 2
+export const COMPOSED_DISPLAY_MAX_TRENDS = 1
 
+/** History of numeric signals; the Pack groups them into one strip per unit. */
 export const composedDisplayTrendPanelSchema = z.object({
   kind: z.literal('trend'),
   horizon: composedDisplayHorizonSchema,
-  signals: z.array(composedDisplaySignalSchema).min(1).max(COMPOSED_TREND_MAX_PENS),
+  signals: z.array(composedDisplaySignalSchema).min(1).max(COMPOSED_TREND_MAX_SIGNALS),
 }).strict()
 export type ComposedDisplayTrendPanel = z.infer<typeof composedDisplayTrendPanelSchema>
 
@@ -92,9 +96,16 @@ export type ComposedDisplayState = z.infer<typeof composedDisplayStateSchema>
 export const composedDisplayLayout = {
   /** Header, two-line caption, one reserved notice line, footer, gaps and padding. */
   frame: 124,
-  /** Chart plus its legend row. */
-  trend: 192,
-  trendChart: 156,
+  /** Above each trend strip: unit and advice labels. */
+  trendStripTop: 18,
+  /** Plot area of a trend with one strip, and of each strip when several stack. */
+  trendPlot: 116,
+  trendStackedPlot: 72,
+  /** Time labels, once under the bottom strip. */
+  trendTimeAxis: 22,
+  /** Legend under each strip: one row per pen with value, alarm state or margin, and rate. */
+  trendLegendRow: 16,
+  trendLegendPad: 4,
   comparisonHeader: 22,
   comparisonRow: 24,
   comparisonCaption: 14,
@@ -110,15 +121,36 @@ export const composedDisplayLayout = {
 // about 600 px pushes its own lower panels below the fold (HMI review).
 export const COMPOSED_DISPLAY_MAX_HEIGHT_PX = 640
 
-export const composedPanelHeight = (panel: ComposedDisplayPanel): number => {
+/** What a panel's height depends on, known once its signals are resolved. */
+export type ComposedPanelSize =
+  /** Pens per strip, top to bottom. */
+  | { readonly kind: 'trend'; readonly strips: ReadonlyArray<number> }
+  | { readonly kind: 'comparison'; readonly rows: number }
+  | { readonly kind: 'readouts'; readonly values: number }
+  | { readonly kind: 'alarms' }
+
+/** Chart height of each strip of a trend, top to bottom; the last carries the time axis. */
+export const composedTrendStripHeights = (strips: number): ReadonlyArray<number> => {
   const layout = composedDisplayLayout
-  if (panel.kind === 'trend') return layout.trend
-  if (panel.kind === 'comparison') return layout.comparisonHeader + layout.comparisonRow * panel.signals.length + layout.comparisonCaption
-  if (panel.kind === 'readouts') return layout.readoutsRow * Math.ceil(panel.signals.length / layout.readoutsPerRow)
+  const plot = strips === 1 ? layout.trendPlot : layout.trendStackedPlot
+  return Array.from({ length: strips }, (_, index) => layout.trendStripTop + plot + (index === strips - 1 ? layout.trendTimeAxis : 0))
+}
+
+export const composedTrendLegendHeight = (pens: number): number =>
+  composedDisplayLayout.trendLegendPad + composedDisplayLayout.trendLegendRow * pens
+
+export const composedPanelHeight = (panel: ComposedPanelSize): number => {
+  const layout = composedDisplayLayout
+  if (panel.kind === 'trend') {
+    const charts = composedTrendStripHeights(panel.strips.length)
+    return panel.strips.reduce((sum, pens, index) => sum + charts[index]! + composedTrendLegendHeight(pens), 0)
+  }
+  if (panel.kind === 'comparison') return layout.comparisonHeader + layout.comparisonRow * panel.rows + layout.comparisonCaption
+  if (panel.kind === 'readouts') return layout.readoutsRow * Math.ceil(panel.values / layout.readoutsPerRow)
   return layout.alarms
 }
 
-export const composedDisplayHeight = (composition: ComposedDisplayComposition): number =>
+export const composedDisplayHeight = (panels: ReadonlyArray<ComposedPanelSize>): number =>
   composedDisplayLayout.frame
-  + composition.panels.reduce((sum, panel) => sum + composedPanelHeight(panel), 0)
-  + composedDisplayLayout.panelGap * (composition.panels.length - 1)
+  + panels.reduce((sum, panel) => sum + composedPanelHeight(panel), 0)
+  + composedDisplayLayout.panelGap * (panels.length - 1)
