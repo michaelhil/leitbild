@@ -201,7 +201,12 @@ describe('composed display panels', () => {
     expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
       { kind: 'trend', horizon: '10m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },
       { kind: 'readouts', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },
-    ])))).toContain('"SG-B-LVL-NR" is already shown in panels.0; show each signal in one panel only')
+    ])))).toContain('"SG-B-LVL-NR" is already shown in panels.0 (trend); a readouts adds nothing for it')
+    const { view } = composeView([
+      { kind: 'comparison', signals: ['A', 'B', 'C', 'D'].map(loop => ({ ref: `SG-${loop}-LVL-NR`, role: loop === 'B' ? 'primary' : 'context' })) },
+      { kind: 'trend', horizon: '10m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },
+    ])
+    expect(view.display.panels.map(panel => panel.kind)).toEqual(['comparison', 'trend'])
   })
 
   test('compare parallel loops of one unit with primary thresholds', () => {
@@ -261,7 +266,7 @@ describe('world.process-plant.display.view and sample', () => {
         { kind: 'readouts', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },
       ],
     }
-    expect(rejectionOf(() => ask('world.process-plant.display.compose', repeated))).toContain('show each signal in one panel only')
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', repeated))).toContain('a readouts adds nothing for it')
     const state = JSON.stringify({ composition: repeated, issuedAt: simulationTime, modelDigest: compiled.modelDigest })
     const view = ask('world.process-plant.display.view', { plantId: compiled.id, state }) as { display: { panels: unknown[] } }
     expect(view.display.panels).toHaveLength(2)

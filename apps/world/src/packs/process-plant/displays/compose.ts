@@ -272,16 +272,22 @@ const compositionIssues = (composition: ComposedDisplayComposition): ReadonlyArr
   if (kinds.every(kind => kind === 'alarms')) issues.push({ path: 'panels', message: 'an alarms panel accompanies signal panels; add a trend, comparison or readouts panel' })
   const signals = composition.panels.flatMap(panel => panel.kind === 'alarms' ? [] : panel.signals)
   if (!signals.some(signal => signal.role === 'primary')) issues.push({ path: 'panels', message: 'mark at least one signal with role "primary": the signal the operator question is about' })
-  // Each signal appears once: a second panel showing it adds height, not evidence.
-  const firstPanelBySignal = new Map<string, number>()
+  // A signal repeated in a second panel of the same kind, or as a readout of a
+  // trended signal (whose legend already carries its value), adds height but
+  // no evidence. A comparison (now, across loops) and a trend (history) of the
+  // same signal answer different questions and may both show it.
+  const redundantPair = (first: ComposedDisplayPanel['kind'], second: ComposedDisplayPanel['kind']): boolean =>
+    first === second || (first === 'trend' && second === 'readouts') || (first === 'readouts' && second === 'trend')
+  const shownIn = new Map<string, Array<{ readonly index: number; readonly kind: ComposedDisplayPanel['kind'] }>>()
   composition.panels.forEach((panel, panelIndex) => {
     if (panel.kind === 'alarms') return
     for (const signal of panel.signals) {
-      const first = firstPanelBySignal.get(signal.ref)
-      if (first !== undefined && first !== panelIndex) {
-        issues.push({ path: `panels.${panelIndex}.signals`, message: `"${signal.ref}" is already shown in panels.${first}; show each signal in one panel only` })
+      const earlier = shownIn.get(signal.ref) ?? []
+      const clash = earlier.find(entry => entry.index !== panelIndex && redundantPair(entry.kind, panel.kind))
+      if (clash !== undefined) {
+        issues.push({ path: `panels.${panelIndex}.signals`, message: `"${signal.ref}" is already shown in panels.${clash.index} (${clash.kind}); a ${panel.kind} adds nothing for it, so remove it here` })
       }
-      if (first === undefined) firstPanelBySignal.set(signal.ref, panelIndex)
+      shownIn.set(signal.ref, [...earlier, { index: panelIndex, kind: panel.kind }])
     }
   })
   const height = composedDisplayHeight(composition)
