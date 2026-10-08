@@ -34,8 +34,9 @@
 
   // Trip and alarm thresholds always fit the scale; control set points are
   // marked on the axis only when they fall inside it, to keep the trend quiet.
-  const drawnThresholds = $derived(panel.pens.flatMap(pen => pen.thresholds.filter(threshold => threshold.kind !== 'control')))
-  const controlThresholds = $derived(panel.pens.flatMap(pen => pen.thresholds.filter(threshold => threshold.kind === 'control')))
+  // World decides which thresholds are drawn (primary signals, one per action).
+  const drawnThresholds = $derived(panel.thresholds.filter(threshold => threshold.kind !== 'control'))
+  const controlThresholds = $derived(panel.thresholds.filter(threshold => threshold.kind === 'control'))
 
   // Fixed scale: the grow-only range seen since the view opened plus the drawn
   // thresholds. Control set points never widen it.

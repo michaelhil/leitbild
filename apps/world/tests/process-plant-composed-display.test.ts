@@ -124,6 +124,33 @@ describe('world.process-plant.display.compose', () => {
   })
 })
 
+describe('thresholds drawn on composed trends', () => {
+  const panelOf = (signals: ReadonlyArray<{ readonly ref: string; readonly role: string }>) => {
+    const composed = ask('world.process-plant.display.compose', composition(signals)) as { view: { state: string } }
+    const view = ask('world.process-plant.display.view', { plantId: compiled.id, state: composed.view.state }) as {
+      display: { panels: ReadonlyArray<{ thresholds: ReadonlyArray<{ value: number; kind: string; signals: ReadonlyArray<string>; label: string }> }> }
+    }
+    return view.display.panels[0]!
+  }
+
+  test('come from primary signals only', () => {
+    const panel = panelOf([{ ref: 'SG-B-LVL-NR', role: 'primary' }, { ref: 'SG-A-LVL-NR', role: 'context' }, { ref: 'SG-C-LVL-NR', role: 'context' }])
+    expect(panel.thresholds.map(threshold => [threshold.value, threshold.kind, threshold.signals])).toEqual([
+      [20, 'trip', ['SG-B-LVL-NR']],
+      [30, 'alarm', ['SG-B-LVL-NR']],
+    ])
+  })
+
+  test('draw one line per shared set point of several primary signals', () => {
+    const panel = panelOf([{ ref: 'SG-A-LVL-NR', role: 'primary' }, { ref: 'SG-B-LVL-NR', role: 'primary' }])
+    expect(panel.thresholds.map(threshold => [threshold.value, threshold.signals])).toEqual([
+      [20, ['SG-A-LVL-NR', 'SG-B-LVL-NR']],
+      [30, ['SG-A-LVL-NR', 'SG-B-LVL-NR']],
+    ])
+    expect(panel.thresholds[1]!.label).toBe('Steam generator A level low · Steam generator B level low')
+  })
+})
+
 describe('world.process-plant.display.view and sample', () => {
   const composed = ask('world.process-plant.display.compose', composition([
     { ref: 'PT-455', role: 'primary' },

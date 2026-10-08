@@ -37,12 +37,19 @@ export interface ComposedDisplayPen {
   readonly combinedRules: ReadonlyArray<ComposedDisplayCombinedRule>
 }
 
+/** A threshold drawn on a trend: one line per distinct rule action of the primary signals. */
+export interface ComposedTrendThreshold extends ComposedDisplayThreshold {
+  /** Tags or paths of the primary signals this rule acts on. */
+  readonly signals: ReadonlyArray<string>
+}
+
 export interface ComposedTrendPanel {
   readonly kind: 'trend'
   readonly horizon: ComposedDisplayHorizon
   readonly horizonMs: number
   readonly unit: ProcessUnit
   readonly pens: ReadonlyArray<ComposedDisplayPen>
+  readonly thresholds: ReadonlyArray<ComposedTrendThreshold>
 }
 
 export interface CompiledComposedDisplay {
@@ -118,6 +125,25 @@ const zodIssues = (error: z.ZodError): ReadonlyArray<ComposedDisplayIssue> => er
   message: issue.message,
 }))
 
+// Context and counter-evidence pens are compared with the primary signal, not
+// judged against their own limits, so only primary thresholds are drawn.
+// Parallel loops share set points; one line per distinct rule action keeps the
+// trend readable.
+const drawnThresholds = (pens: ReadonlyArray<ComposedDisplayPen>): ReadonlyArray<ComposedTrendThreshold> => {
+  const byAction = new Map<string, ComposedTrendThreshold>()
+  for (const pen of pens.filter(candidate => candidate.role === 'primary')) {
+    for (const threshold of pen.thresholds) {
+      const key = `${threshold.kind}|${threshold.operator}|${threshold.value}|${threshold.modeLabel ?? ''}`
+      const signal = pen.tagId ?? String(pen.path)
+      const existing = byAction.get(key)
+      byAction.set(key, existing === undefined
+        ? { ...threshold, signals: [signal] }
+        : { ...existing, label: existing.label === threshold.label ? existing.label : `${existing.label} · ${threshold.label}`, signals: [...existing.signals, signal] })
+    }
+  }
+  return [...byAction.values()].sort((left, right) => left.value - right.value || left.ruleId.localeCompare(right.ruleId))
+}
+
 const compileTrendPanel = (
   system: ProcessPlantRuntimeInstance,
   panel: ComposedDisplayComposition['panels'][number],
@@ -174,7 +200,7 @@ const compileTrendPanel = (
     })
   }
   if (pens.length !== panel.signals.length || units.length !== 1) return undefined
-  return { kind: 'trend', horizon: panel.horizon, horizonMs: composedDisplayHorizonMs[panel.horizon], unit: units[0]!, pens }
+  return { kind: 'trend', horizon: panel.horizon, horizonMs: composedDisplayHorizonMs[panel.horizon], unit: units[0]!, pens, thresholds: drawnThresholds(pens) }
 }
 
 export const compileComposedDisplay = (
@@ -208,12 +234,12 @@ const operatorText = { '<': 'below', '<=': 'at or below', '>': 'above', '>=': 'a
 /** Plain statements of what the view shows, so the agent's text need not repeat it. */
 export const composedDisplayShows = (display: CompiledComposedDisplay): ReadonlyArray<string> => display.panels.flatMap(panel => [
   `Live trend of the last ${panel.horizon}: ${panel.pens.map(pen => `${pen.tagId ?? pen.path} (${pen.label}, ${pen.unit}, ${pen.role})`).join('; ')}`,
-  ...panel.pens.flatMap(pen => pen.thresholds.map(threshold =>
-    `${threshold.kind === 'control' ? 'I&C control set point marked on the axis' : `I&C ${threshold.kind} line`} for ${pen.tagId ?? pen.path}: ${threshold.label}, ${operatorText[threshold.operator]} ${threshold.value} ${pen.unit}${threshold.modeLabel === undefined ? '' : ` (only in ${threshold.modeLabel})`}`)),
+  ...panel.thresholds.map(threshold =>
+    `${threshold.kind === 'control' ? 'I&C control set point marked on the axis' : `I&C ${threshold.kind} line`} for ${threshold.signals.join(', ')}: ${threshold.label}, ${operatorText[threshold.operator]} ${threshold.value} ${panel.unit}${threshold.modeLabel === undefined ? '' : ` (only in ${threshold.modeLabel})`}`),
 ])
 
 export const composedDisplayWarnings = (display: CompiledComposedDisplay): ReadonlyArray<string> => display.panels.flatMap(panel => panel.pens.flatMap(pen => [
-  ...(pen.thresholds.length === 0 ? [`No single-signal I&C threshold acts on ${pen.tagId ?? pen.path}; its trend shows values without threshold lines.`] : []),
+  ...(pen.role === 'primary' && pen.thresholds.length === 0 ? [`No single-signal I&C threshold acts on ${pen.tagId ?? pen.path}; its trend shows values without threshold lines.`] : []),
   ...pen.combinedRules.map(rule => `${pen.tagId ?? pen.path} also feeds the combined rule "${rule.label}" (${rule.kind}); it is listed, not drawn.`),
 ]))
 

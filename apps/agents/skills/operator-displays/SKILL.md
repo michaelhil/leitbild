@@ -35,4 +35,4 @@ Write the answer first, then end it with this block, copying `viewRef` from the 
 view <viewRef>
 ```
 
-Keep the text to the assessment, the decisive values with their simulation time, and the recommended action or what to watch next. Do not restate what the result's `shows` lists; the display carries it.
+Keep the text to the assessment, the decisive values with their simulation time, and the recommended action or what to watch next. The display already shows the trend, current values and threshold lines listed in the result's `shows`; refer to it ("see the trend below") instead of listing them again.
