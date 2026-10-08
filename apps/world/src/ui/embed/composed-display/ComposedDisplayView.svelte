@@ -10,6 +10,7 @@
   import PenLegend from './PenLegend.svelte'
   import ReadoutsPanel from './ReadoutsPanel.svelte'
   import TrendPanel from './TrendPanel.svelte'
+  import { agoText, alarmAge } from './panel-presenters.ts'
 
   let { envelope }: { envelope: EmbeddedViewEnvelope } = $props()
 
@@ -69,6 +70,10 @@
   })
 
   const simulationClock = (ms: number): string => new Date(ms).toISOString().slice(11, 19)
+  const activeRuleIds = $derived(new Set((snapshot?.latest?.alarms ?? []).map(alarm => alarm.ruleId)))
+  // A protection trip changes the plant state; it leads the notice line.
+  const activeTrip = $derived((snapshot?.latest?.alarms ?? []).filter(alarm => alarm.kind === 'trip')
+    .sort((left, right) => (left.firstActiveElapsedMs ?? 0) - (right.firstActiveElapsedMs ?? 0))[0])
 </script>
 
 <article class="card" aria-label={`AI-composed view: ${composition.title}`}>
@@ -83,17 +88,19 @@
   </p>
 
   <!-- One reserved notice line; the most consequential notice wins. -->
-  <p class="banner" class:quiet={!snapshot?.resetSinceAdvice && !view?.modelChanged}>
+  <p class="banner" class:quiet={!snapshot?.resetSinceAdvice && !view?.modelChanged && activeTrip === undefined} class:trip={activeTrip !== undefined && !snapshot?.resetSinceAdvice && !view?.modelChanged}>
     {#if snapshot?.resetSinceAdvice}
       The Run was reset after this advice. The advice may no longer apply.
     {:else if view?.modelChanged}
       The Plant model changed after this advice was composed.
+    {:else if activeTrip !== undefined && snapshot?.latest !== undefined}
+      TRIP · {activeTrip.title} · {alarmAge(snapshot.latest.plantElapsedMs, activeTrip.firstActiveElapsedMs)} ago
     {:else if snapshot?.phase.kind === 'suspended'}
       Updates paused after 15 minutes without interaction. <button type="button" onclick={() => session?.resume()}>Resume</button>
     {:else if snapshot?.phase.kind === 'live' && snapshot.sampleError !== null}
       Showing the last received values. {snapshot.sampleError}
     {:else if snapshot?.phase.kind === 'live'}
-      Advice issued at sim {simulationClock(issuedAt)} · {Math.max(0, Math.round((now - issuedAt) / 60_000))} min ago
+      Advice issued at sim {simulationClock(issuedAt)} · {agoText(now - issuedAt)}
     {/if}
   </p>
 
@@ -114,13 +121,13 @@
       {#each view.display.panels as panel, index (index)}
         {#if panel.kind === 'trend'}
           <div style={`height:${composedDisplayLayout.trend}px`}>
-            <TrendPanel {panel} series={snapshot.series} range={snapshot.ranges[index] ?? null} {now} {issuedAt} height={composedDisplayLayout.trendChart} />
-            <PenLegend pens={panel.pens} latest={snapshot.latest} historyMissing={snapshot.historyMissing} />
+            <TrendPanel {panel} series={snapshot.series} range={snapshot.ranges[index] ?? null} {now} {issuedAt} {activeRuleIds} height={composedDisplayLayout.trendChart} />
+            <PenLegend pens={panel.pens} latest={snapshot.latest} series={snapshot.series} historyMissing={snapshot.historyMissing} {activeRuleIds} />
           </div>
         {:else if panel.kind === 'comparison'}
-          <ComparisonPanel {panel} latest={snapshot.latest} range={snapshot.ranges[index] ?? null} />
+          <ComparisonPanel {panel} latest={snapshot.latest} series={snapshot.series} range={snapshot.ranges[index] ?? null} {activeRuleIds} />
         {:else if panel.kind === 'readouts'}
-          <ReadoutsPanel {panel} latest={snapshot.latest} />
+          <ReadoutsPanel {panel} latest={snapshot.latest} {activeRuleIds} />
         {:else}
           <AlarmsPanel {panel} latest={snapshot.latest} />
         {/if}
@@ -144,6 +151,7 @@
   .need { color: var(--element-neutral-color); }
   .banner { margin: 0; height: 22px; padding: 0 8px; display: flex; align-items: center; gap: 8px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--container-section-color); border-left: 3px solid var(--alert-caution-color); }
   .banner.quiet { background: none; border-left-color: transparent; color: var(--element-neutral-color); padding-left: 0; }
+  .banner.trip { border-left-color: var(--alert-alarm-color); font-weight: 600; }
   .status { margin: 8px 0; color: var(--element-neutral-color); }
   .status p { margin: 4px 0; }
   .hint { font-size: 11.5px; }

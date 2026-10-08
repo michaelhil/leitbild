@@ -35,6 +35,9 @@ const PRESENCE_EVERY_SAMPLES = 5
 // After this long without interaction the view stops polling, so a forgotten
 // open chat cannot keep a Run simulating indefinitely.
 export const IDLE_SUSPEND_MS = 15 * 60_000
+const COMPARISON_SERIES_MS = 600_000
+// Alarm state marks values in alarm on every panel, not only the alarms strip.
+const WITH_ALARMS = true
 
 export const createComposedDisplaySession = (config: {
   readonly runId: SimulationRunId
@@ -67,11 +70,12 @@ export const createComposedDisplaySession = (config: {
   /** Every displayed signal is sampled once, however many panels show it. */
   const sampledPaths = (): ReadonlyArray<string> => [...new Set(panels().flatMap(panel => panel.kind === 'alarms' ? [] : panel.pens.map(pen => String(pen.path))))]
 
-  /** Trend pens keep a time series; other panels only need the latest sample. */
+  /** Trends keep their horizon; comparisons keep ten minutes for rates. Readouts use the latest sample. */
   const trendPens = (): ReadonlyArray<{ readonly path: string; readonly seriesId: string; readonly horizonMs: number }> =>
-    panels().flatMap(panel => panel.kind === 'trend' ? panel.pens.map(pen => ({ path: String(pen.path), seriesId: pen.seriesId, horizonMs: panel.horizonMs })) : [])
+    panels().flatMap(panel => panel.kind === 'trend' || panel.kind === 'comparison'
+      ? panel.pens.map(pen => ({ path: String(pen.path), seriesId: pen.seriesId, horizonMs: panel.kind === 'trend' ? panel.horizonMs : COMPARISON_SERIES_MS }))
+      : [])
 
-  const wantsAlarms = (): boolean => panels().some(panel => panel.kind === 'alarms')
 
   const grownRanges = (
     series: ReadonlyMap<string, ReadonlyArray<TrendPoint>>,
@@ -117,7 +121,7 @@ export const createComposedDisplaySession = (config: {
     polls += 1
     try {
       if (polls % PRESENCE_EVERY_SAMPLES === 0 && !await checkPresence()) return
-      applySample(await config.client.sample(config.runId, config.plantId, sampledPaths(), wantsAlarms()))
+      applySample(await config.client.sample(config.runId, config.plantId, sampledPaths(), WITH_ALARMS))
     } catch (error) {
       // Keep the last values on screen; the stale marker and this message say they are old.
       update({ sampleError: error instanceof Error ? error.message : String(error) })
@@ -143,7 +147,7 @@ export const createComposedDisplaySession = (config: {
     }))
     lastSimulationMs = now
     // The first sample fills readouts, comparisons and alarms before polling starts.
-    const first = await config.client.sample(config.runId, config.plantId, sampledPaths(), wantsAlarms())
+    const first = await config.client.sample(config.runId, config.plantId, sampledPaths(), WITH_ALARMS)
     update({ series, historyMissing, latest: first, lastSampleWallMs: wallNow(), ranges: grownRanges(series, first), phase: { kind: 'live' } })
   }
 

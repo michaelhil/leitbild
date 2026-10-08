@@ -15,5 +15,9 @@ export const penStroke = (role: ComposedDisplaySignalRole, index: number): strin
 export const roleLabel: Readonly<Record<ComposedDisplaySignalRole, string>> = {
   primary: 'primary',
   context: 'context',
-  'counter-evidence': 'counter-evidence',
+  'counter-evidence': 'cross-check',
 }
+
+/** Tags identify instruments; untagged model signals show their label and owner. */
+export const displayName = (pen: { readonly tagId?: string; readonly label: string; readonly path: string }): string =>
+  pen.tagId ?? `${pen.label} (${String(pen.path).split('.')[0]})`
