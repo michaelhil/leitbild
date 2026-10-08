@@ -87,6 +87,21 @@ pub struct Response {
     pub electrical_loss_to_jack_w: f64,
     pub holding_to_jack_w: f64,
 }
+/// Exact local action on the retained force/contact graph. Delivered input is
+/// fixed during a Newton solve; an electrical or command jump is an event.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ResponseDirection {
+    pub reference_rate_m_s: f64,
+    pub grip_force_n: f64,
+    pub joint_force_n: f64,
+    pub body_acceleration_m_s2: f64,
+    pub stem_acceleration_m_s2: f64,
+    pub motive_mechanical_w: f64,
+    pub grip_to_stem_w: f64,
+    pub joint_to_body_w: f64,
+    pub slip_to_jack_w: f64,
+    pub electrical_loss_to_jack_w: f64,
+}
 impl Config {
     pub fn validate(self) -> Result<(), &'static str> {
         if [
@@ -361,6 +376,91 @@ impl Config {
             holding_to_jack_w: input.holding_power_w,
         })
     }
+    pub fn evaluate_trial_direction(
+        self,
+        s: State,
+        input: Input,
+        forces: Forces,
+        branch: TrialBranch,
+        ds: State,
+        df: Forces,
+    ) -> Result<ResponseDirection, &'static str> {
+        let r = self.evaluate_trial(s, input, forces, branch)?;
+        if [ds.body_y_m, ds.body_v_m_s, ds.stem_y_m, ds.stem_v_m_s,
+            ds.reference_y_m, df.body_n, df.stem_n].iter().any(|v| !v.is_finite()) {
+            return Err("Invalid absorber force/contact direction");
+        }
+        let cap = self.grip_closed_force_n * (1. - input.gap_m / self.gap_stroke_m);
+        let required = if branch.joint == JointMode::Contact {
+            -(forces.body_n + forces.stem_n)
+        } else { -forces.stem_n };
+        let drequired = if branch.joint == JointMode::Contact {
+            -(df.body_n + df.stem_n)
+        } else { -df.stem_n };
+        let (du, dg) = if r.grip_mode == GripMode::Open {
+            (0., 0.)
+        } else if input.requested_rate_m_s == 0. {
+            let dg = if branch.regulator == RegulatorBranch::HoldRest
+                && required > -cap && required < cap { drequired } else { 0. };
+            (0., dg)
+        } else if r.grip_mode == GripMode::Slip {
+            // Fixed gap and delivered motive budget fix the friction plateau
+            // and its inverted reference speed on this selected branch.
+            (0., 0.)
+        } else {
+            let v = s.stem_v_m_s;
+            let dv = ds.stem_v_m_s;
+            let power = self.efficiency * input.motive_power_w;
+            let positive = if v > 0. { self.force_limit_n.min(power / v) }
+                else { self.force_limit_n };
+            let negative = if v < 0. { self.force_limit_n.min(-power / v) }
+                else { self.force_limit_n };
+            let dp = if v > 0. && power / v < self.force_limit_n {
+                -power * dv / (v * v)
+            } else { 0. };
+            let dn = if v < 0. && -power / v < self.force_limit_n {
+                power * dv / (v * v)
+            } else { 0. };
+            let dg = match branch.regulator {
+                RegulatorBranch::ApproachPositive => dp,
+                RegulatorBranch::ApproachNegative => -dn,
+                _ if required <= -negative => -dn,
+                _ if required >= positive => dp,
+                _ => drequired,
+            };
+            (dv, dg)
+        };
+        let (dab, das, dj) = if branch.joint == JointMode::Contact {
+            let a = (df.body_n + df.stem_n + dg)
+                / (self.body_mass_kg + self.stem_mass_kg);
+            (a, a, self.body_mass_kg * a - df.body_n)
+        } else {
+            (df.body_n / self.body_mass_kg,
+                (df.stem_n + dg) / self.stem_mass_kg, 0.)
+        };
+        let motive = dg * r.reference_rate_m_s + r.grip_force_n * du;
+        let grip = dg * s.stem_v_m_s + r.grip_force_n * ds.stem_v_m_s;
+        let out = ResponseDirection {
+            reference_rate_m_s: du,
+            grip_force_n: dg,
+            joint_force_n: dj,
+            body_acceleration_m_s2: dab,
+            stem_acceleration_m_s2: das,
+            motive_mechanical_w: motive,
+            grip_to_stem_w: grip,
+            joint_to_body_w: dj * s.body_v_m_s + r.joint_force_n * ds.body_v_m_s,
+            slip_to_jack_w: motive - grip,
+            electrical_loss_to_jack_w: -motive,
+        };
+        if [out.reference_rate_m_s, out.grip_force_n, out.joint_force_n,
+            out.body_acceleration_m_s2, out.stem_acceleration_m_s2,
+            out.motive_mechanical_w, out.grip_to_stem_w, out.joint_to_body_w,
+            out.slip_to_jack_w, out.electrical_loss_to_jack_w]
+            .iter().any(|v| !v.is_finite()) {
+            return Err("Unrepresentable absorber force/contact direction");
+        }
+        Ok(out)
+    }
     pub fn mechanical_energy_j(self, s: State, gravity: f64) -> Result<f64, &'static str> {
         self.validate()?;
         if !gravity.is_finite()
@@ -623,5 +723,49 @@ mod tests {
         );
         s.body_v_m_s = -f64::MAX;
         assert!(c.recontact(s).is_err());
+    }
+    #[test]
+    fn retained_force_graph_tangent_matches_shrinking_independent_trials_and_work() {
+        let c=config();
+        let cases=[
+            (0.,0.008,JointMode::Contact,RegulatorBranch::ApproachPositive),
+            (0.0079,0.008,JointMode::Contact,RegulatorBranch::ApproachPositive),
+            (0.008,0.008,JointMode::Contact,RegulatorBranch::Track),
+            (-0.0079,-0.008,JointMode::Separated,RegulatorBranch::ApproachNegative),
+            (0.004,0.,JointMode::Separated,RegulatorBranch::HoldPositive),
+            (-0.004,0.,JointMode::Separated,RegulatorBranch::HoldNegative),
+            (0.,0.,JointMode::Contact,RegulatorBranch::HoldRest),
+        ];
+        for (v,request,joint,regulator) in cases {
+            let mut s=state(v);if joint==JointMode::Separated {s.body_y_m+=0.01;}
+            let mut i=input(request);if request==0. {i.motive_power_w=0.;}
+            let f=forces();let b=TrialBranch{joint,regulator};
+            let ds=State{body_y_m:0.02,body_v_m_s:0.0003,stem_y_m:-0.01,
+                stem_v_m_s:-0.0002,reference_y_m:0.04};
+            let df=Forces{body_n:0.7,stem_n:-0.4};
+            let d=c.evaluate_trial_direction(s,i,f,b,ds,df).unwrap();
+            for h in [1e-3,1e-4] {
+                let a=[-1.,1.].map(|sign|c.evaluate_trial(State{
+                    body_y_m:s.body_y_m+sign*h*ds.body_y_m,
+                    body_v_m_s:s.body_v_m_s+sign*h*ds.body_v_m_s,
+                    stem_y_m:s.stem_y_m+sign*h*ds.stem_y_m,
+                    stem_v_m_s:s.stem_v_m_s+sign*h*ds.stem_v_m_s,
+                    reference_y_m:s.reference_y_m+sign*h*ds.reference_y_m},i,
+                    Forces{body_n:f.body_n+sign*h*df.body_n,stem_n:f.stem_n+sign*h*df.stem_n},b).unwrap());
+                let fields=|r:Response|[r.reference_rate_m_s,r.grip_force_n,r.joint_force_n,
+                    r.body_acceleration_m_s2,r.stem_acceleration_m_s2,r.motive_mechanical_w,
+                    r.grip_to_stem_w,r.joint_to_body_w,r.slip_to_jack_w,r.electrical_loss_to_jack_w];
+                let exact=[d.reference_rate_m_s,d.grip_force_n,d.joint_force_n,
+                    d.body_acceleration_m_s2,d.stem_acceleration_m_s2,d.motive_mechanical_w,
+                    d.grip_to_stem_w,d.joint_to_body_w,d.slip_to_jack_w,d.electrical_loss_to_jack_w];
+                for ((lo,hi),direction) in fields(a[0]).into_iter().zip(fields(a[1])).zip(exact) {
+                    let fd=(hi-lo)/(2.*h);
+                    assert!((fd-direction).abs()<2e-7*(1.+direction.abs()),
+                        "{b:?} h={h}: {fd} != {direction}");
+                }
+            }
+            near(d.motive_mechanical_w,d.grip_to_stem_w+d.slip_to_jack_w);
+            near(0.,d.motive_mechanical_w+d.electrical_loss_to_jack_w);
+        }
     }
 }

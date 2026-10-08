@@ -1006,6 +1006,14 @@ impl Model {
     }
     /// Complete residual Jacobian action, including externally owned source
     /// columns. Same selected upwind/heat branches throughout one linear solve.
+    pub fn check_linearization(&self, cj: f64, w: &Workspace) -> Result<(), String> {
+        if !cj.is_finite() || cj <= 0. || !Arc::ptr_eq(&self.owner, &w.owner)
+            || !w.valid || w.jacobian_cj != Some(cj)
+        {
+            return Err("Composed linearization requires its current owner and matching cj".into());
+        }
+        Ok(())
+    }
     pub fn jvp(&self, dy: &[f64], cj: f64, w: &mut Workspace) -> Result<(), String> {
         self.jvp_current(dy, cj, w, None)
     }

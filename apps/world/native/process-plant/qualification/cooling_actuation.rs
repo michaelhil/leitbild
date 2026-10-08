@@ -180,8 +180,11 @@ impl Schedule {
         Ok(s)
     }
 
-    fn other_requested_w(&self) -> f64 {
+    pub fn other_requested_w(&self) -> f64 {
         self.plan.config.normal_group_w - self.motion.snapshot().config.hold_power_w
+    }
+    pub fn supply_snapshot(&self) -> dc::Snapshot {
+        self.supply.snapshot()
     }
     fn support(&self) -> pa::Support {
         let s = &self.supply;
@@ -719,9 +722,26 @@ pub fn pair(normal: &Receipt, tight: &Receipt) -> Result<(bool, String), String>
 }
 
 #[cfg(test)]
+pub(super) fn nominal_support_fixture() -> Schedule {
+    let mut s = tests::schedule();
+    s.plan.initial_energy_j = s.plan.config.capacity_j;
+    s.plan.events.truncate(1);
+    s.plan.events[0].time = 120.;
+    s.supply = dc::Supply::new(
+        s.plan.config,
+        s.plan.initial_energy_j,
+        s.plan.paths,
+        s.plan.output_closed,
+        s.plan.config.normal_group_w,
+    )
+    .unwrap();
+    s
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
-    fn schedule() -> Schedule {
+    pub(super) fn schedule() -> Schedule {
         let config = pa::Config {
             stroke_s: 5.,
             spring_energy_j: 2500.,

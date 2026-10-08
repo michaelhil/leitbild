@@ -13,6 +13,8 @@ mod cooling_bundle;
 mod cooling_capture;
 #[path = "cooling_convergence.rs"]
 mod cooling_convergence;
+#[path = "cooling_constraints.rs"]
+mod cooling_constraints;
 #[path = "cooling_coordinates.rs"]
 mod cooling_coordinates;
 #[cfg(test)]
@@ -53,9 +55,10 @@ mod source_input;
 #[path = "source_pair.rs"]
 mod source_pair;
 use cooling_coordinates::EnergyCoordinates;
+use cooling_constraints::physical_constraints;
 use ida_support::*;
 use leitbild_plant_numerics::{
-    barrel_thermal, cold_pressurizer, converter_heat, cylindrical_source, finite_surge,
+    barrel_thermal, converter_heat, cylindrical_source, finite_surge,
     fuel_history, fuel_source, fuel_thermal, heat_history, moderator_source, operating_admission,
     operating_network, optical_source, passive_source, prhr, source_cooling, source_evolution,
     transport_source, water_carrier,
@@ -490,48 +493,6 @@ fn developed_barrel(change: f64, difference: f64) -> bool {
     change.is_finite()
         && difference.is_finite()
         && change > (10. * difference).max(cooling_accuracy::TEMPERATURE_ATOL)
-}
-fn physical_constraints(model: &source_cooling::Model, energy_row: usize) -> Vec<f64> {
-    let l = model.layout;
-    let mut out = vec![0.; model.dimension()];
-    out[..l.source_end].fill(1.);
-    out[model.source.ledger_row()] = 0.;
-    out[energy_row] = 0.;
-    out[l.carrier_start..l.energies_start].fill(1.);
-    out[l.temperatures_start..l.barrel_energy].fill(2.);
-    out[l.barrel_temperature] = 2.;
-    out[l.barrel_released] = 1.;
-    out[l.barrel_exported] = 1.;
-    out[l.fuel_capture_exported] = 1.;
-    out[l.mobile_capture_exported] = 1.;
-    out[l.mobile_capture_boundary_exported] = 1.;
-    out[l.absorber_guide_temperatures_start..l.absorber_guide_exported].fill(2.);
-    out[l.absorber_guide_exported] = 1.;
-    for row in [
-        cold_pressurizer::LIQUID_MASS,
-        cold_pressurizer::VAPOR_MASS,
-        cold_pressurizer::LIQUID_TEMPERATURE,
-        cold_pressurizer::GAS_TEMPERATURE,
-        cold_pressurizer::SURFACE_PRESSURE,
-        cold_pressurizer::VAPOR_PRESSURE,
-        cold_pressurizer::HEIGHT,
-        cold_pressurizer::INTERFACE_TEMPERATURE,
-        cold_pressurizer::LIQUID_PRESSURE,
-    ] {
-        out[l.pressurizer_start + row] = 2.;
-    }
-    out[l.pressurizer_start + cold_pressurizer::METAL_TEMPERATURE_START..l.surge_start].fill(2.);
-    for row in [
-        finite_surge::MASS,
-        finite_surge::PRESSURE,
-        finite_surge::TEMPERATURE,
-        finite_surge::STEEL_TEMPERATURE,
-    ] {
-        out[l.surge_start + row] = 2.;
-    }
-    out[l.surge_carrier_start..=l.gas_hydrogen_product].fill(1.);
-    // Ambient receipt and both signed endpoint flows remain unconstrained.
-    out
 }
 const ERROR_FAMILIES: [&str; 18] = [
     "source-N",

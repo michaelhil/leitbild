@@ -8,6 +8,83 @@ use std::f64::consts::PI;
 /// [mass current, density, viscosity, inner-wall speed, physical length].
 pub const PARTIALS: usize = 5;
 
+/// Closed-cap shaft passage partial ordering: density, viscosity, shaft
+/// velocity, actual occupied length. This local quasisteady reduction has no
+/// separate pressure, momentum, water or energy state.
+pub const STEM_PARTIALS: usize = 4;
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct StemResponse {
+    /// Excess-pressure end traction plus wall shear, fluid on shaft.
+    /// Hydrostatic buoyancy belongs to the current-volume/first-moment owner.
+    pub force_n: f64,
+    pub force_partials: [f64; STEM_PARTIALS],
+    /// The single reciprocal credit to the real enclosing liquid territory.
+    pub fluid_work_w: f64,
+    pub fluid_work_partials: [f64; STEM_PARTIALS],
+    /// Independently retained positive annular dissipation, not another heat.
+    pub dissipation_w: f64,
+    pub dissipation_partials: [f64; STEM_PARTIALS],
+}
+
+/// Same enhanced annular law at Q=-Ashaft*v for a locally incompressible,
+/// closed-cap shaft passage. Compressible UPPER storage remains in its real
+/// owner; internal neck compression and momentum modes are omitted.
+pub fn closed_stem(
+    geometry: moving_guide::Geometry,
+    speed_m_s: f64,
+    roughness_m: f64,
+    rho: f64,
+    mu: f64,
+) -> Result<StemResponse, String> {
+    if !geometry.length_m.is_finite() || geometry.length_m < 0. {
+        return Err("Invalid closed-stem occupied length".into());
+    }
+    let length = geometry.length_m;
+    let area = geometry.multiplicity as f64 * PI * geometry.inner_radius_m.powi(2);
+    // Resistance, shear and dissipation are exactly linear in occupied
+    // length. Evaluate their physical per-metre coefficients to retain the
+    // entering derivative even at a genuinely empty overlap; no length floor.
+    let unit = Law::Annulus {
+        geometry: moving_guide::Geometry { length_m: 1., ..geometry },
+        speed_m_s,
+        roughness_m,
+        mouth_loss: 0.,
+    }.evaluate(-rho * area * speed_m_s, rho, mu)?;
+    let force = area * unit.loss_pa + unit.wall_force_n;
+    let mut out = StemResponse {
+        force_n: length * force,
+        fluid_work_w: -length * force * speed_m_s,
+        dissipation_w: length * unit.dissipation_w,
+        ..StemResponse::default()
+    };
+    for j in 0..STEM_PARTIALS {
+        if j == 3 {
+            out.force_partials[j] = force;
+            out.fluid_work_partials[j] = -force * speed_m_s;
+            out.dissipation_partials[j] = unit.dissipation_w;
+        } else {
+            let d = match j {
+                0 => [-area * speed_m_s, 1., 0., 0., 0.],
+                1 => [0., 0., 1., 0., 0.],
+                _ => [-rho * area, 0., 0., 1., 0.],
+            };
+            let a = unit.direction(d)?;
+            out.force_partials[j] = length * (area * a.loss_pa + a.wall_force_n);
+            out.fluid_work_partials[j] = -speed_m_s * out.force_partials[j]
+                - if j == 2 { out.force_n } else { 0. };
+            out.dissipation_partials[j] = length * a.dissipation_w;
+        }
+    }
+    if [out.force_n, out.fluid_work_w, out.dissipation_w].iter()
+        .chain(&out.force_partials).chain(&out.fluid_work_partials)
+        .chain(&out.dissipation_partials).any(|v| !v.is_finite())
+    {
+        return Err("Nonfinite closed-stem force/work".into());
+    }
+    Ok(out)
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum Law {
     Clear {
@@ -362,5 +439,56 @@ mod tests {
         assert_eq!(rest.loss_partials[0], 0.);
         assert_eq!(rest.wall_force_n, 0.);
         assert!(law.evaluate(0.1, 997., 0.001).unwrap().dissipation_w > 0.);
+    }
+    #[test]
+    fn closed_cap_stem_pays_one_positive_liquid_credit_with_complete_partials() {
+        for outer in [0.00625, 0.025, 0.125] {
+            for speed in [-0.008, 0., 0.008, 0.4] {
+                let g = moving_guide::Geometry {
+                    outer_radius_m: outer, inner_radius_m: 0.006,
+                    length_m: 0.1, multiplicity: 1,
+                };
+                let (rho, mu) = (997., 0.001);
+                let a = closed_stem(g, speed, 2e-6, rho, mu).unwrap();
+                let scale = 1. + a.dissipation_w;
+                assert!(a.fluid_work_w >= 0.);
+                assert!((a.fluid_work_w - a.dissipation_w).abs() < 1e-11 * scale);
+                assert!((a.fluid_work_w + a.force_n * speed).abs() < 1e-13 * scale);
+                if speed == 0. {
+                    assert_eq!(a.force_n, 0.);
+                    assert_eq!(a.fluid_work_w, 0.);
+                    assert!(a.force_partials[2] < 0.);
+                } else { assert!(a.force_n * speed < 0.); }
+                let d = [0.2, 0.00002, 0.003, -0.02];
+                let h = 1e-5;
+                let arms = [-1., 1.].map(|sign| closed_stem(
+                    moving_guide::Geometry { length_m: g.length_m + sign*h*d[3], ..g },
+                    speed + sign*h*d[2], 2e-6, rho + sign*h*d[0], mu + sign*h*d[1],
+                ).unwrap());
+                for (p, lo, hi) in [
+                    (a.force_partials, arms[0].force_n, arms[1].force_n),
+                    (a.fluid_work_partials, arms[0].fluid_work_w, arms[1].fluid_work_w),
+                    (a.dissipation_partials, arms[0].dissipation_w, arms[1].dissipation_w),
+                ] {
+                    let exact: f64 = p.into_iter().zip(d).map(|(x,y)| x*y).sum();
+                    let fd = (hi-lo)/(2.*h);
+                    assert!((exact-fd).abs() < 2e-6*(1.+exact.abs()), "{outer} {speed}: {exact} {fd}");
+                }
+            }
+        }
+    }
+    #[test]
+    fn empty_stem_overlap_keeps_its_entering_length_derivative() {
+        let g = moving_guide::Geometry {
+            outer_radius_m: 0.00625, inner_radius_m: 0.006,
+            length_m: 0., multiplicity: 1,
+        };
+        let a = closed_stem(g, 0.008, 2e-6, 997., 0.001).unwrap();
+        let b = closed_stem(moving_guide::Geometry { length_m: 1e-6, ..g }, 0.008, 2e-6, 997., 0.001).unwrap();
+        assert_eq!(a.force_n, 0.);
+        assert_eq!(a.fluid_work_w, 0.);
+        assert!(a.force_partials[3] < 0.);
+        assert_eq!(b.force_n / 1e-6, a.force_partials[3]);
+        assert_eq!(b.fluid_work_w / 1e-6, a.fluid_work_partials[3]);
     }
 }

@@ -16,6 +16,9 @@ pub(super) const NONLINEAR_COEFFICIENT: f64 = 0.33;
 pub(super) const LINEAR_L2_BUDGET: f64 = EPS_LIN * NONLINEAR_COEFFICIENT;
 const CONTINUE: c_int = 901;
 const RECOVERABLE: c_int = 902;
+type CandidatePreparer<'a> = Box<
+    dyn FnMut(f64, &[f64], &[f64], &mut operating_network::Workspace) -> Result<(), String> + 'a,
+>;
 
 /// Independent monotone metal caloric charts accompanying the coupled fluid
 /// chart. Both current-candidate convergence and retained-endpoint admission
@@ -90,6 +93,7 @@ pub(super) struct Convergence<'a> {
     max_converged_flow: f64,
     seat_flow_atol: Option<f64>,
     pub prhr_schedule: Option<super::cooling_actuation::Schedule>,
+    candidate_preparer: Option<CandidatePreparer<'a>>,
 }
 impl<'a> Convergence<'a> {
     pub fn new(
@@ -125,7 +129,31 @@ impl<'a> Convergence<'a> {
             start: Instant::now(),
             allowance: 180.,
             prhr_schedule: None,
+            candidate_preparer: None,
         })
+    }
+    /// Install the same current-motion network preparation on the actual
+    /// corrected candidate. The closure owns separate geometry scratch; it
+    /// receives full physical state/rates and the solver's nonlinear time.
+    /// It must prepare this network workspace, without a full SOURCE RHS.
+    pub fn current_candidate_preparer(
+        &mut self,
+        dimension: usize,
+        energy: EnergyCoordinates,
+        prepare: impl FnMut(f64, &[f64], &[f64], &mut operating_network::Workspace) -> Result<(), String>
+            + 'a,
+    ) -> Result<(), String> {
+        if dimension < self.model.dimension()
+            || self.stock.is_some()
+            || self.candidate_preparer.is_some()
+        {
+            return Err("Invalid/repeated current-motion convergence preparation".into());
+        }
+        self.state.resize(dimension, 0.);
+        self.slopes.resize(dimension, 0.);
+        self.energy = energy;
+        self.candidate_preparer = Some(Box::new(prepare));
+        Ok(())
     }
     pub fn budget(&mut self, start: Instant, allowance: f64) {
         self.start = start;
@@ -134,7 +162,7 @@ impl<'a> Convergence<'a> {
     /// Use the SAME per-arm physical flow allocation as returned-state
     /// admission; no new tolerance or error-weight calculation in CTest.
     pub fn seat_flow_allocation(&mut self, absolute: &[f64]) -> Result<(), String> {
-        if absolute.len() != self.model.dimension() {
+        if absolute.len() != self.state.len() {
             return Err("Restriction convergence allocation shape".into());
         }
         self.seat_flow_atol = self.model.network.config().seat.map(|seat| {
@@ -170,6 +198,24 @@ impl<'a> Convergence<'a> {
         )?;
         self.chart()
     }
+    pub(super) fn corrected_chart_at(
+        &mut self,
+        pred: &[f64],
+        pred_yp: &[f64],
+        correction: &[f64],
+        cj: f64,
+        time: f64,
+    ) -> Result<c_int, String> {
+        corrected_candidate(
+            pred,
+            pred_yp,
+            correction,
+            cj,
+            &mut self.state,
+            &mut self.slopes,
+        )?;
+        self.chart_at(time)
+    }
     /// The owner is a field of a stable Box<Callbacks> and outlives Resources.
     /// IDASetNonlinearSolver must precede this: it installs the original CTest.
     pub fn install(&mut self, ida: Handle, solver: Handle) -> Result<(), String> {
@@ -195,6 +241,19 @@ impl<'a> Convergence<'a> {
     // workspace/P are never read or modified here. Trial EOS/domain failure is
     // recoverable, just as a failed residual trial; malformed vectors are fatal.
     fn chart(&mut self) -> Result<c_int, String> {
+        let mut time = 0.;
+        if self.prhr_schedule.is_some() || self.candidate_preparer.is_some() {
+            checked(
+                unsafe { IDAGetCurrentTime(self.ida, &mut time) },
+                "Current physical Newton time",
+            )?;
+        }
+        self.chart_at(time)
+    }
+    fn chart_at(&mut self, time: f64) -> Result<c_int, String> {
+        if !time.is_finite() {
+            return Err("Nonfinite current physical Newton time".into());
+        }
         // Only the network slice is consumed. G's inverse needs the energy
         // and release receipts, never the unrelated source L/D coordinate.
         self.energy.state_to_physical(&mut self.state);
@@ -211,18 +270,16 @@ impl<'a> Convergence<'a> {
         let y = &self.state[l.network_start..l.carrier_start];
         let yp = &self.slopes[l.network_start..l.carrier_start];
         let input = if let Some(schedule) = &self.prhr_schedule {
-            let mut time = 0.;
-            checked(
-                unsafe { IDAGetCurrentTime(self.ida, &mut time) },
-                "Current physical Newton time",
-            )?;
             Some(schedule.input(time, self.state[schedule.room_row])?)
         } else {
             None
         };
-        let prepared =
+        let prepared = if let Some(prepare) = &mut self.candidate_preparer {
+            prepare(time, &self.state, &self.slopes, &mut self.network)
+        } else {
             self.network
-                .evaluate_with_inputs(&self.model.network, y, yp, None, &[], input);
+                .evaluate_with_inputs(&self.model.network, y, yp, None, &[], input)
+        };
         self.property_requests += self.network.property_requests as u64;
         if let Err(error) = prepared {
             if super::recoverable(&error) {
@@ -239,8 +296,8 @@ impl<'a> Convergence<'a> {
         self.pressure_preparations += 1;
         let pressure = self.model.pressure_chart_corrections(
             &self.network,
-            &self.state,
-            &self.slopes,
+            &self.state[..self.model.dimension()],
+            &self.slopes[..self.model.dimension()],
             &mut self.pressurizer,
             &mut self.surge,
         );
@@ -254,11 +311,15 @@ impl<'a> Convergence<'a> {
         };
         self.last_pressurizer = pzr;
         self.last_surge = line;
-        let caloric =
-            pressure_caloric_ratio(self.model, &self.state, &self.pressurizer, &self.surge)?;
+        let caloric = pressure_caloric_ratio(
+            self.model,
+            &self.state[..self.model.dimension()],
+            &self.pressurizer,
+            &self.surge,
+        )?;
         let head = super::cooling_accuracy::pressure_level_head_scale(
             self.model,
-            &self.state,
+            &self.state[..self.model.dimension()],
             &self.pressurizer,
         )?;
         let flow = pressure_flow_ratio(self.model, &self.surge)?;
@@ -309,6 +370,54 @@ impl<'a> Convergence<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn current_preparer_receives_corrected_full_physical_candidate_and_stage_time() {
+        use std::{cell::RefCell, rc::Rc};
+        let model = super::super::cooling_fixture::fixture();
+        let mut c = Convergence::new(&model, None).unwrap();
+        let captured = Rc::new(RefCell::new(Vec::new()));
+        let seen = captured.clone();
+        let n = model.dimension();
+        let l = model.layout;
+        let network = &model.network;
+        c.current_candidate_preparer(n + 2, c.energy.clone(), move |time, state, rates, work| {
+            seen.borrow_mut()
+                .push((time, state[n], rates[n], state.len()));
+            work.evaluate_with_inputs(
+                network,
+                &state[l.network_start..l.carrier_start],
+                &rates[l.network_start..l.carrier_start],
+                None,
+                &[],
+                None,
+            )
+        })
+        .unwrap();
+        let physical = model.initial_state().unwrap();
+        let mut pred = physical.clone();
+        pred.resize(n + 2, 0.);
+        pred[n] = 3.;
+        c.energy.state_to_solver(&mut pred);
+        let mut slopes = vec![0.; n + 2];
+        slopes[n] = 7.;
+        let mut correction = vec![0.; n + 2];
+        correction[n] = 2.;
+        assert_eq!(
+            c.corrected_chart_at(&pred, &slopes, &correction, 2., 1.25)
+                .unwrap(),
+            0
+        );
+        assert_eq!(&*captured.borrow(), &[(1.25, 5., 11., n + 2)]);
+        assert_eq!(&c.state[..n], &physical);
+        assert!(c
+            .current_candidate_preparer(n + 2, c.energy.clone(), |_, _, _, _| Ok(()))
+            .is_err());
+        assert!(c.seat_flow_allocation(&vec![1.; n]).is_err());
+        c.seat_flow_allocation(&vec![1.; n + 2]).unwrap();
+        assert!(c
+            .corrected_chart_at(&pred, &slopes, &correction, 2., f64::NAN)
+            .is_err());
+    }
     #[test]
     fn flow_closure_checks_state_not_polynomial_derivative() {
         let model = super::super::cooling_fixture::fixture();
@@ -639,11 +748,12 @@ unsafe extern "C" fn convergence_test(
             return Err("Nonfinite current Newton time".into());
         }
         let n = c.state.len();
-        let status = c.corrected_chart(
+        let status = c.corrected_chart_at(
             unsafe { super::values(pred, n) }?,
             unsafe { super::values(pred_yp, n) }?,
             unsafe { super::values(correction, n) }?,
             cj,
+            time,
         )?;
         if c.start.elapsed().as_secs_f64() > c.allowance {
             return Err("Aggregate coupled pair wall allowance exhausted".into());

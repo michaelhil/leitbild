@@ -27,6 +27,21 @@ export async function prepareMovingFuelCooling(wiki:string,evidence:string,water
  return {...geometry,source,cooling}
 }
 
+/** Single native wire owner for both current-stage and advancing compositions.
+ * The caller appends only its experiment/command frame, never another plant. */
+export function movingFuelCoolingNativeInput(p:Awaited<ReturnType<typeof prepareMovingFuelCooling>>){
+ const {plan,cooling}=p,fields:(number|string)[]=[],frame=(s:string)=>{
+  const words=s.trim().split(/\s+/);fields.push(words.length,...words)
+ }
+ frame(cooling.fixture);frame(nativeControlSourcePlan(plan).join('\n'))
+ fields.push(cooling.passive.length,...cooling.passive.flatMap(q=>[q.stock,q.region,q.volume]),
+  cooling.cylinder.length,...cooling.cylinder.flatMap(q=>[q.target,q.region,q.share]),
+  plan.lower,plan.upper,plan.bottom,plan.top,plan.d.handling.guideInnerDiameter_m/2,plan.d.control.bodyDiameter_m/2,
+  plan.d.control.rodletsPerCluster,plan.d.control.guideRoughness_m,plan.d.control.endLossEach,
+  plan.guideBindings.length,...plan.guideBindings.flatMap(q=>[q.cluster,q.cell,q.lowerEdge,q.upperEdge]))
+ return fields
+}
+
 export async function prepareNativeControlGeometry(wiki:string){
  const read=(path:string)=>readFile(join(wiki,path),'utf8'),p=await compileFuelCooling(wiki,{prhr:true}),
   d=parsePrimaryWaterInputs(await Promise.all(primaryWaterOwnerFiles.map(read))),

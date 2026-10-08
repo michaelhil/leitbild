@@ -42,6 +42,8 @@ pub mod moving_guide;
 pub mod absorber_fleet;
 pub mod guide_motion_water;
 pub mod control_source_geometry;
+pub mod control_motion_forces;
+pub mod source_motion;
 
 pub const GRAVITY: f64 = 9.80665;
 

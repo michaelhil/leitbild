@@ -4,9 +4,9 @@ import {createHash} from 'node:crypto'
 import {access,mkdir,readFile,writeFile} from 'node:fs/promises'
 import {join,resolve} from 'node:path'
 import {z} from 'zod'
-import {prepareMovingFuelCooling} from './reference-design-control-geometry'
+import {prepareMovingFuelCooling,movingFuelCoolingNativeInput} from './reference-design-control-geometry'
 import {sourceEvolutionOwnerFiles} from './reference-design-source-evolution'
-import {nativeControlSourcePlan,type ControlSourcePose} from './reference-design-control-source-motion'
+import {type ControlSourcePose} from './reference-design-control-source-motion'
 import {controlSourceNativeIdentities} from './reference-design-control-source-stage'
 import {helperIdentities} from './reference-design-operating-network'
 
@@ -84,13 +84,8 @@ export async function prepareControlCoolingStage(wiki:string,evidence:string,wat
    {name:'Actual attained mechanical checkpoint (not a coupled trajectory)',poses:actual,direction:zero,velocity:zero,velocityDirection:zero},
    {name:'Nonuniform current-pose/rate trial',poses:trial,direction,velocity,velocityDirection},
    {name:'Restore ORIGINAL seated',poses:original,direction:zero,velocity:zero,velocityDirection:zero}],
-  fields:(number|string)[]=[],frame=(s:string)=>{const words=s.trim().split(/\s+/);fields.push(words.length,...words)}
- frame(remapped.fixture);frame(nativeControlSourcePlan(plan).join('\n'))
- fields.push(remapped.passive.length,...remapped.passive.flatMap(q=>[q.stock,q.region,q.volume]),
-  remapped.cylinder.length,...remapped.cylinder.flatMap(q=>[q.target,q.region,q.share]),
-  plan.lower,plan.upper,plan.bottom,plan.top,plan.d.handling.guideInnerDiameter_m/2,plan.d.control.bodyDiameter_m/2,
-  plan.d.control.rodletsPerCluster,plan.d.control.guideRoughness_m,plan.d.control.endLossEach,
-  plan.guideBindings.length,...plan.guideBindings.flatMap(q=>[q.cluster,q.cell,q.lowerEdge,q.upperEdge]),cases.length)
+  fields=movingFuelCoolingNativeInput(prepared)
+ fields.push(cases.length)
  for(const c of cases)fields.push(...c.poses.flatMap(q=>[q.body_y_m,q.stem_y_m,q.side==='increasing'?1:0,
   q.stem_side==='increasing'?1:0,q.contact==='seated'?1:0]),...c.direction.flatMap(q=>[q.body,q.stem]),
   ...c.velocity.flatMap(q=>[q.body,q.stem]),...c.velocityDirection.flatMap(q=>[q.body,q.stem]))

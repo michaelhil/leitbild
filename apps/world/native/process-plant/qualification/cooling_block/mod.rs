@@ -175,6 +175,11 @@ impl Preconditioner {
     ) -> Result<Self, String> {
         let mut work = model.workspace();
         model.evaluate_with_prhr_input(initial, yp, Some(1.), &mut work, prhr)?;
+        Self::new_prepared(model, work)
+    }
+    /// Build only the existing component patterns from an already consumed
+    /// current geometry stage. This performs no ORIGINAL reevaluation.
+    pub fn new_prepared(model: &Model, work: Workspace) -> Result<Self, String> {
         let source_jac = Jacobian::new(&model.source)?;
         let source = source_block::BlockPreconditioner::new(&model.source, source_jac.pattern())?;
         let source_values = vec![0.; source_jac.pattern().len()];
@@ -256,6 +261,29 @@ impl Preconditioner {
         cj: f64,
         prhr: Option<leitbild_plant_numerics::prhr::Input>,
     ) -> Result<(), String> {
+        self.setup_current(model, cj, |work| {
+            model.evaluate_with_prhr_input(y, yp, Some(cj), work, prhr)
+        })
+    }
+    /// Factor the supplied successful current SOURCE/cooling linearization.
+    /// Swap ownership only for this call, restoring both workspaces on failure.
+    pub fn setup_prepared(
+        &mut self,
+        model: &Model,
+        work: &mut Workspace,
+        cj: f64,
+    ) -> Result<(), String> {
+        std::mem::swap(&mut self.work, work);
+        let result = self.setup_current(model, cj, |_| Ok(()));
+        std::mem::swap(&mut self.work, work);
+        result
+    }
+    fn setup_current(
+        &mut self,
+        model: &Model,
+        cj: f64,
+        prepare: impl FnOnce(&mut Workspace) -> Result<(), String>,
+    ) -> Result<(), String> {
         self.valid = false;
         self.receipt_cj = cj;
         let started = Instant::now();
@@ -264,7 +292,8 @@ impl Preconditioner {
             if !cj.is_finite() || cj <= 0. {
                 return Err("Nonpositive coupled P cj".into());
             }
-            model.evaluate_with_prhr_input(y, yp, Some(cj), &mut self.work, prhr)?;
+            prepare(&mut self.work)?;
+            model.check_linearization(cj, &self.work)?;
             self.source_jac.solver_values(
                 &model.source,
                 &mut self.work.source,
@@ -418,6 +447,37 @@ mod tests {
             b[r] += matrix.values[k] * x[c];
         }
         b
+    }
+    #[test]
+    fn supplied_preparation_is_consumed_without_refresh_and_wrong_cj_refuses() {
+        let model = fixture::fixture();
+        let mut y = model.initial_state().unwrap();
+        let yp = vec![0.; model.dimension()];
+        let mut initial = model.workspace();
+        model
+            .evaluate_with_prhr_input(&y, &yp, Some(1.), &mut initial, None)
+            .unwrap();
+        let initial_residual = initial.residual.clone();
+        let mut p = Preconditioner::new_prepared(&model, initial).unwrap();
+        y[model.layout.network_start + model.network.temperature_row(0)] += 0.1;
+        let mut current = model.workspace();
+        model
+            .evaluate_with_prhr_input(&y, &yp, Some(7.), &mut current, None)
+            .unwrap();
+        let residual = current.residual.clone();
+        let queries = current.network.property_requests;
+        p.setup_prepared(&model, &mut current, 7.).unwrap();
+        assert_eq!(current.residual, residual);
+        assert_eq!(current.network.property_requests, queries);
+        assert_eq!(p.work.residual, initial_residual);
+        let n = model.dimension();
+        p.solve(&model, &vec![0.; n], &mut vec![0.; n]).unwrap();
+        assert!(p.setup_prepared(&model, &mut current, 8.).is_err());
+        assert_eq!(current.residual, residual);
+        assert_eq!(p.work.residual, initial_residual);
+        assert!(p.solve(&model, &vec![0.; n], &mut vec![0.; n]).is_err());
+        // The supplied stage is still valid and can be reused at its actual cj.
+        p.setup_prepared(&model, &mut current, 7.).unwrap();
     }
     #[test]
     fn cached_pivots_can_fail_on_a_nonsingular_same_pattern_matrix() {

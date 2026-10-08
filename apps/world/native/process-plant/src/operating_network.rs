@@ -1274,6 +1274,14 @@ impl Workspace {
         }
         Ok(self.moving_by_edge[edge].map(|i| self.moving_connections[i]))
     }
+    /// Current prepared response identity, resolved by physical edge rather
+    /// than assuming the caller's connection-array ordering.
+    pub fn moving_response_index(&self, edge: usize) -> Result<Option<usize>, String> {
+        if !self.chart_valid || edge >= self.moving_by_edge.len() {
+            return Err("Current moving response index needs owned chart".into());
+        }
+        Ok(self.moving_by_edge[edge])
+    }
     /// At positive slope retain the existing linear held-head diagnostic.
     /// A real mouth at exact rest instead uses its actual finite +/- flow
     /// allocation loss increments. Neither is a coupled Newton-error bound.

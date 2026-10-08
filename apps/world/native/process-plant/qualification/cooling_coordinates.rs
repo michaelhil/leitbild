@@ -4,6 +4,7 @@
 //! imposed or reset here.
 use leitbild_plant_numerics::source_cooling::Model;
 
+#[derive(Clone)]
 pub(super) struct EnergyCoordinates {
     pub row: usize,
     anchor_initial: f64,
@@ -24,6 +25,21 @@ fn sum(values: impl Iterator<Item = f64>) -> f64 {
     s + c
 }
 impl EnergyCoordinates {
+    /// A composition may close an additional *linear, independently integrated*
+    /// external work port. Nonlinear kinetic/potential energies are not a chart.
+    pub fn add_receipt(&mut self, row: usize, sign: f64, initial: f64) -> Result<(), String> {
+        if row == self.row
+            || !sign.is_finite()
+            || sign == 0.
+            || !initial.is_finite()
+            || self.energies.iter().any(|&(r, _)| r == row)
+            || self.receipts.iter().any(|&(r, _, _)| r == row)
+        {
+            return Err("Duplicate or invalid affine external work receipt".into());
+        }
+        self.receipts.push((row, sign, initial));
+        Ok(())
+    }
     pub fn new(model: &Model, initial: &[f64]) -> Result<Self, String> {
         if initial.len() != model.dimension() || initial.iter().any(|v| !v.is_finite()) {
             return Err("Invalid energy-chart preparation".into());

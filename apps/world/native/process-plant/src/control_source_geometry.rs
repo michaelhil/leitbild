@@ -229,6 +229,19 @@ pub struct Workspace {
     valid: bool,
     owner: Arc<()>,
 }
+impl Workspace {
+    /// A force/heat consumer must use the actual current preparation,
+    /// including its retained one-sided and contact branches.
+    pub fn check_current_poses(&self, poses: &[Pose]) -> Result<(), &'static str> {
+        if !self.valid || self.poses.len() != poses.len() || self.poses.iter().zip(poses).any(|(a,b)| {
+            a.body.to_bits() != b.body.to_bits() || a.stem.to_bits() != b.stem.to_bits()
+                || a.body_right != b.body_right || a.stem_right != b.stem_right || a.seated != b.seated
+        }) {
+            return Err("Control geometry requires the exact current pose and branch");
+        }
+        Ok(())
+    }
+}
 type D = [f64; 2];
 fn c(x: f64) -> D {
     [x, 0.]
