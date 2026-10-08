@@ -159,7 +159,9 @@ export function compileMobileCapture(material:Material,thermal:Thermal,primary:P
   envelopes:[...envelopes].map(([origin,e])=>({origin,...e})),
   scope:'PRIMARY H/B birth-site charged/liquid heat and diffuse physical-origin serial clad/barrel/guide/BODY photons; separately retained unrepresented-contact thermal boundary. No local photon field, complete material closure or free-space escape claim.'}
 }
-export function nativeMobileCaptureFrame(input:ReturnType<typeof compileMobileCapture>){
+export function nativeMobileCaptureFrame(input:Pick<ReturnType<typeof compileMobileCapture>,'water_mu'> & {
+ wall_origins:{unrepresented_wall_share:number;paths:{share:number;stages:Stage[]}[]}[];
+ routes:{region:number;water:number;birth_share:number;liquid_chord_m:number;wall_origin:number}[]}){
  return [...input.water_mu,input.wall_origins.length,...input.wall_origins.flatMap(o=>[
   o.unrepresented_wall_share,o.paths.length,...o.paths.flatMap(p=>[p.share,p.stages.length,
    ...p.stages.flatMap(s=>[s.kind,s.recipient_index,s.thickness_m,s.density_kg_m3,...s.mu])])]),

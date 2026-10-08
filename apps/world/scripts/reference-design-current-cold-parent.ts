@@ -25,6 +25,8 @@ export function parseCurrentColdParent(document:string){
  return schema.parse(JSON.parse(a[0]![1]!))
 }
 type Area={name:string,lo:number,hi:number,area:number}
+type Intruder=Area&{motion:'body'|'stem'|'fixed'}&({shape:'rodlet'|'distributed'}|
+ {shape:'annulus',inner_m:number,outer_m:number})
 export function currentColdGeometry(c:ReturnType<typeof parseControlAbsorber>,a:ReturnType<typeof parseTransferAttachment>,
  f:ReturnType<typeof parseFuelConstruction>,h:ReturnType<typeof parseFuelHandling>,gates:ReturnType<typeof parseTransferGates>,
  head:ReturnType<typeof parseHeadPool>,s:ReturnType<typeof parseCurrentColdParent>){
@@ -42,17 +44,17 @@ export function currentColdGeometry(c:ReturnType<typeof parseControlAbsorber>,a:
   throw Error('Declared seated FA top and spider-seat plane disagree')
  const faTop_m=c.spiderBottom_m
  if(!(half<rb&&extraSlots>0&&hubA>0&&frameV>0))throw Error('Actual hub/key/frame partition invalid')
- const intruders:Area[]=[
-  {name:'1248 actual bodies',lo:c.insertedBodyBottom_m,hi:c.insertedBodyBottom_m+c.bodyLength_m,area:bodyA},
-  {name:'redistributed porous spider remainder',lo:c.spiderBottom_m,hi:c.spiderBottom_m+c.spiderHeight_m,area:frameV/c.spiderHeight_m},
-  {name:'actual hub land minus bore/key slots',lo:a.hubLandBottom_m,hi:c.spiderBottom_m+c.spiderHeight_m,area:hubA},
-  {name:'52 stem plus lower stubs',lo:stubBottom,hi:c.spiderBottom_m+c.spiderHeight_m+c.stemLength_m,area:stemA},
-  {name:'two opposed lugs per stem',lo:a.lugBottom_m,hi:a.lugBottom_m+a.lugHeight_m,area:N*2*a.lugWidth_m*(a.lugOuterRadius_m-c.stemDiameter_m/2)},
-  {name:'annular shoulders',lo:a.shoulderBottom_m,hi:a.shoulderBottom_m+a.shoulderHeight_m,area:N*Math.PI*((a.shoulderDiameter_m/2)**2-(c.stemDiameter_m/2)**2)},
+ const intruders:Intruder[]=[
+  {name:'1248 actual bodies',motion:'body',shape:'rodlet',lo:c.insertedBodyBottom_m,hi:c.insertedBodyBottom_m+c.bodyLength_m,area:bodyA},
+  {name:'redistributed porous spider remainder',motion:'body',shape:'distributed',lo:c.spiderBottom_m,hi:c.spiderBottom_m+c.spiderHeight_m,area:frameV/c.spiderHeight_m},
+  {name:'actual hub land minus bore/key slots',motion:'body',shape:'distributed',lo:a.hubLandBottom_m,hi:c.spiderBottom_m+c.spiderHeight_m,area:hubA},
+  {name:'52 stem plus lower stubs',motion:'stem',shape:'annulus',inner_m:0,outer_m:c.stemDiameter_m/2,lo:stubBottom,hi:c.spiderBottom_m+c.spiderHeight_m+c.stemLength_m,area:stemA},
+  {name:'two opposed lugs per stem',motion:'stem',shape:'distributed',lo:a.lugBottom_m,hi:a.lugBottom_m+a.lugHeight_m,area:N*2*a.lugWidth_m*(a.lugOuterRadius_m-c.stemDiameter_m/2)},
+  {name:'annular shoulders',motion:'stem',shape:'annulus',inner_m:c.stemDiameter_m/2,outer_m:a.shoulderDiameter_m/2,lo:a.shoulderBottom_m,hi:a.shoulderBottom_m+a.shoulderHeight_m,area:N*Math.PI*((a.shoulderDiameter_m/2)**2-(c.stemDiameter_m/2)**2)},
   // HJT pads lie outside the actual FA external-water support. Their literal
   // material/contact remains owned, but no unowned peripheral water is added
   // and no Core.2 water is removed to emulate that omitted space.
-  {name:'two CET pads',lo:2.015-a.padHeight_m/2,hi:2.015+a.padHeight_m/2,area:2*ag.padEach_m3/a.padHeight_m}]
+  {name:'two CET pads',motion:'fixed',shape:'distributed',lo:2.015-a.padHeight_m/2,hi:2.015+a.padHeight_m/2,area:2*ag.padEach_m3/a.padHeight_m}]
  const gateRows=gates.sills_m.map((lo,i)=>({name:i===0?'WELL':'POOL',lo,hi:gates.top_m,area:gates.width_m*gates.thickness_m,
   mass_kg:gates.width_m*gates.thickness_m*(gates.top_m-lo)*gates.steelDensity_kg_m3}))
  const envelope:Area[]=[
@@ -116,7 +118,7 @@ def native(name,lo,hi,base,objects,field=mainField,ratio=None):
  return out
 def summed(records):return {k:sum(q[k] for q in records) for k in ['volume_m3','water_kg','U_J','PE_J','tracer_kg_eq']}
 # Material ownership, rather than a global identical moderator coupon.
-external=[q for q in intruders if 'pads' in q['name']];bore=[q for q in intruders if q['name']=='1248 actual bodies']
+external=[q for q in intruders if q['motion']=='fixed'];bore=[q for q in intruders if q['shape']=='rodlet']
 Aext=fg['active']['externalFreeVolume_m3']/4;Abore=fg['active']['boreVolume_m3']/4
 cores={}
 for name,lo,hi in [('Core.1',-2,0),('Core.2',0,2)]:

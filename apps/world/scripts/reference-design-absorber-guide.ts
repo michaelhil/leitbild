@@ -170,13 +170,14 @@ export function compileAbsorberGuide(d:Water,material:Material,network:Network,s
 }
 
 export function nativeAbsorberGuideFrame(p:ReturnType<typeof compileAbsorberGuide>,source:ReturnType<typeof compileSourceEvolution>,
- mobile:ReturnType<typeof compileMobileCapture>){
+ mobile:ReturnType<typeof compileMobileCapture>,currentContacts?:readonly {host:number;water:number;area_m2:number;
+ solid_geometry_m_inv:number;liquid_chord_m:number}[]){
  const {caloric:c,photon:g}=p,stocks=source.material.materialPayload.passive.stocks,
   stockById=new Map(stocks.map(q=>[q.id,q])),targets=source.material.nativeInputs.targets,
   targetIndex=new Map(targets.map((t,i)=>[t.id,i])),
   requireStock=(id:string)=>{const s=stockById.get(id);if(!s)throw Error('Missing absorber/guide source stock '+id);return s},
   target=(id:string)=>{const i=targetIndex.get(id);if(i===undefined)throw Error('Missing absorber/guide source target '+id);return i},
-  contacts=p.hosts.flatMap((h,host)=>h.contacts.map(q=>{
+  contacts=currentContacts?[...currentContacts]:p.hosts.flatMap((h,host)=>h.contacts.map(q=>{
    const e=mobile.envelopes.find(e=>e.origin===q.origin)
    if(!e||!(e.chord_m>0))throw Error('Missing absorber/guide photon liquid envelope '+q.origin)
    return {host,...q,liquid_chord_m:e.chord_m}

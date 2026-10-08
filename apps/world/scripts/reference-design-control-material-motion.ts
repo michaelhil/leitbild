@@ -84,13 +84,26 @@ export function compileControlMaterialMotion(regions:readonly SourceRegion[],d:I
   scope:'BODY B4C/steel geometry only. Not coupled moderator, stem/spider, contact/heat, source response or attained motion.'}
 }
 
+/** Exact selected-branch overlap of a translated and a stationary interval.
+ * A contained rigid span keeps its immutable length, rather than subtracting
+ * two translated endpoints and introducing artificial material-volume jitter.
+ * Touching planes retain the explicitly selected one-sided derivative. */
+export function axialIntervalOverlap(lo:number,hi:number,bottom:number,top:number,y:number,right:boolean){
+ const lowerGap=y-(bottom-lo),upperGap=y-(top-hi),
+  movingLower=lowerGap>=0,movingUpper=upperGap<=0,
+  L=movingLower?lo+y:bottom,U=movingUpper?hi+y:top,
+  length=movingLower?(movingUpper?hi-lo:(top-lo)-y):(movingUpper?(hi-bottom)+y:top-bottom)
+ if(length<0)return [0,0,0,0] as const
+ const dl=lowerGap>0?1:lowerGap<0?0:right?1:0,du=upperGap<0?1:upperGap>0?0:right?0:1,
+  raw=du-dl,dlength=length>0?raw:right?Math.max(0,raw):Math.min(0,raw),
+  mean=movingLower?(movingUpper?(lo+hi)/2+y:top-length/2):(movingUpper?bottom+length/2:(bottom+top)/2),
+  dmoment=length>0?(du===dl?(du===1?length:0):(du===1?U:-L)):L*dlength
+ return [length,dlength,length*mean,dmoment] as const
+}
+
 function clip(s:Span,r:{lo:number,hi:number},y:number,right:boolean){
- const a=s.lo+y,b=s.hi+y,L=Math.max(a,r.lo),U=Math.min(b,r.hi)
- if(U<L)return [0,0,0,0] as const
- const dl=a>r.lo?1:a<r.lo?0:right?1:0,du=b<r.hi?1:b>r.hi?0:right?0:1,
-  length=U-L,raw=du-dl,dlength=length>0?raw:right?Math.max(0,raw):Math.min(0,raw)
- return [s.area*length,s.area*dlength,s.area*length*(U+L)/2,
-  s.area*(length>0?U*du-L*dl:L*dlength)] as const
+ const v=axialIntervalOverlap(s.lo,s.hi,r.lo,r.hi,y,right)
+ return [s.area*v[0],s.area*v[1],s.area*v[2],s.area*v[3]] as const
 }
 
 /** Fixed branch partials of clipped moving intervals. At a physical plane,

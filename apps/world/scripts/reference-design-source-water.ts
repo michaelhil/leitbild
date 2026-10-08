@@ -104,7 +104,7 @@ export function compilePrimaryWaterGeometry(partition:ReturnType<typeof compileS
  const upper=[{lo:2,hi:2+f.plenumLength_m,area:i.volumes_m3[4]!/2-fg.guideOuterArea_m2-fg.upper.sealedRodPlenumDisplacement_m3/f.plenumLength_m},
   {lo:2+f.plenumLength_m,hi:current.faTop_m,area:i.volumes_m3[4]!/2-fg.guideOuterArea_m2-fg.upper.fittingDisplacement_m3/(current.faTop_m-2-f.plenumLength_m)},
   {lo:current.faTop_m,hi:h.sourceThimbleTop_m,area:i.volumes_m3[4]!/2-fg.sourceArea_m2},
-  {lo:h.sourceThimbleTop_m,hi:4,area:i.volumes_m3[4]!/2}],intruders=current.intruders.filter(q=>q.name!=='1248 actual bodies')
+  {lo:h.sourceThimbleTop_m,hi:4,area:i.volumes_m3[4]!/2}],intruders=current.intruders.filter(q=>q.shape!=='rodlet')
  for(const q of upper){const zs=cuts(q.lo,q.hi,intruders.flatMap(x=>[x.lo,x.hi]));for(let n=1;n<zs.length;n++){
   const a=zs[n-1]!,b=zs[n]!,mid=(a+b)/2,A=q.area-sum(intruders.filter(x=>mid>x.lo&&mid<x.hi).map(x=>x.area))
   add({owner:'UPPER.EXTERNAL',kind:'HS',lo_m:a,hi_m:b,volume_m3:A*(b-a),sourceRegionId:'UPPER'})
@@ -123,11 +123,9 @@ export function compilePrimaryWaterGeometry(partition:ReturnType<typeof compileS
     for(const r of partition.regions.filter(r=>r.compartment==='WELL'&&r.z0_m!<=a&&r.z1_m!>=b)){
      // All admitted housing intruders here are centered stems or concentric collars.
      const base=circle(r.box!,site.x_m,site.y_m,radius),
-      stemPresent=stem.some(q=>'name' in q&&q.name==='52 stem plus lower stubs'),
-      shoulderPresent=stem.some(q=>'name' in q&&q.name==='annular shoulders'),
       collarPresent=name==='NECK'&&collarRows.some(q=>mid>q.lo&&mid<q.hi),
-      removed=(stemPresent?circle(r.box!,site.x_m,site.y_m,c.stemDiameter_m/2):0)
-       +(shoulderPresent?circle(r.box!,site.x_m,site.y_m,d.attachment.shoulderDiameter_m/2)-circle(r.box!,site.x_m,site.y_m,c.stemDiameter_m/2):0)
+      removed=sum(current.intruders.map(q=>q.shape==='annulus'&&mid>q.lo&&mid<q.hi
+       ?circle(r.box!,site.x_m,site.y_m,q.outer_m)-(q.inner_m===0?0:circle(r.box!,site.x_m,site.y_m,q.inner_m)):0))
        +(collarPresent?circle(r.box!,site.x_m,site.y_m,c.collarOD_m/2)-circle(r.box!,site.x_m,site.y_m,c.collarID_m/2):0),
       area=base-removed
      if(area< -1e-15)throw Error('Housing intersection lost positivity')

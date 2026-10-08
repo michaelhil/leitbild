@@ -1,5 +1,5 @@
 import {describe,expect,test} from 'bun:test'
-import {controlMaterialMotionAt,type ControlMaterialMotion} from './reference-design-control-material-motion'
+import {axialIntervalOverlap,controlMaterialMotionAt,type ControlMaterialMotion} from './reference-design-control-material-motion'
 
 // Deliberately small numerical clipping fixture, not plant preparation.
 const plan:ControlMaterialMotion={clusters:[{id:'test-cluster',prefix:'test-stock'}],maximumTravel_m:4,
@@ -10,6 +10,24 @@ const at=(y:number,side:'increasing'|'decreasing'='increasing')=>
  controlMaterialMotionAt(plan,[{clusterId:'test-cluster',body_y_m:y,side}])
 
 describe('moving physical material interval branches',()=>{
+ test('contained translations preserve exact immutable length and moment derivative',()=>{
+  const lo=-1.997,hi=2.003
+  for(const y of [.003,.003567,.0048,.0018]){
+   const v=axialIntervalOverlap(lo,hi,-3,3,y,true)
+   expect(v[0]).toBe(hi-lo);expect(v[1]).toBe(0);expect(v[3]).toBe(hi-lo)
+   expect(v[2]).toBe((hi-lo)*((lo+hi)/2+y))
+   expect(axialIntervalOverlap(-3,3,-1.997,2.003,y,true)).toEqual([hi-lo,0,(hi-lo)*(lo+hi)/2,0])
+  }
+ })
+ test('touching and coincident planes preserve both selected one-sided branches',()=>{
+  expect(axialIntervalOverlap(-2,2,2,6,0,true)).toEqual([0,1,0,2])
+  expect(axialIntervalOverlap(-2,2,2,6,0,false)).toEqual([0,0,0,0])
+  expect(axialIntervalOverlap(-2,2,-6,-2,0,true)).toEqual([0,0,-0,-0])
+  expect(axialIntervalOverlap(-2,2,-6,-2,0,false)).toEqual([0,-1,-0,2])
+  expect(axialIntervalOverlap(-2,2,-2,2,0,true)).toEqual([4,-1,0,2])
+  expect(axialIntervalOverlap(-2,2,-2,2,0,false)).toEqual([4,1,0,2])
+  expect(axialIntervalOverlap(-2,2,2,6,-.1,true)).toEqual([0,0,0,0])
+ })
  test('an initially empty neighbor receives material without new physical end surfaces',()=>{
   expect([...at(0)]).toEqual([12,-3,0,6,0,3,0,6])
   expect([...at(1)]).toEqual([9,-3,4.5,3,3,3,7.5,9])
