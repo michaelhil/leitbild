@@ -3,7 +3,7 @@ import type { ComposedDisplaySignalRole } from '../../../packs/process-plant/dis
 // Pens are told apart by weight and dash, not hue: colour stays reserved for
 // alarm states (ISA-101). The role decides emphasis; the index separates two
 // pens of the same role.
-const dashes = ['', '6 3', '2 3'] as const
+const dashes = ['', '6 3', '2 3', '8 3 2 3'] as const
 
 export const penStroke = (role: ComposedDisplaySignalRole, index: number): string => {
   const width = role === 'primary' ? 2.25 : 1.5

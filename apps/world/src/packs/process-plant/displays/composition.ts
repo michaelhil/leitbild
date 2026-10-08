@@ -29,9 +29,9 @@ export type ComposedDisplaySignal = z.infer<typeof composedDisplaySignalSchema>
 // Size limits keep a chat display glanceable; larger questions belong to the
 // Plant's own displays.
 export const COMPOSED_TREND_MAX_SIGNALS = 6
-/** A trend stacks one strip per unit on its time axis; each strip holds a few pens. */
+/** A trend stacks one strip per unit on its time axis; a strip holds the loops of a 4-loop plant. */
 export const COMPOSED_TREND_MAX_STRIPS = 3
-export const COMPOSED_TREND_STRIP_MAX_PENS = 3
+export const COMPOSED_TREND_STRIP_MAX_PENS = 4
 export const COMPOSED_COMPARISON_MAX_SIGNALS = 6
 export const COMPOSED_READOUTS_MAX_SIGNALS = 6
 // One trend plus up to two supporting panels (HMI review); with the 640 px cap

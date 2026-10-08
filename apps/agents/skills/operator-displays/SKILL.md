@@ -20,10 +20,12 @@ Fill the plan fields of `world.process-plant.display.compose` before choosing si
 
 Start from one trend of the signals the question is about, using exact tagIds or paths from the evidence you analysed. Add another panel only for a part of the question that trend cannot answer, and do not repeat a trended signal as a readout. Most answers need one or two panels. Panels (at most three):
 
-- `trend`: how up to six numeric signals are changing. Put every signal whose history matters into this one trend, whatever its unit: the module stacks one strip per unit on a shared time axis (at most three units, three signals per unit), such as feed flow under a level. Choose the horizon by how fast they move: `2m` for fast pressure or power transients, `10m` for most levels and temperatures, `30m` for slow drifts.
+- `trend`: how the signals the question is about are changing, usually two to four. A signal in another unit goes into the same trend; the module stacks one strip per unit on a shared time axis, such as feed flow under a level. Limits: at most six signals, three units and four signals per unit. Choose the horizon by how fast they move: `2m` for fast pressure or power transients, `10m` for most levels and temperatures, `30m` for slow drifts.
 - `comparison`: which of two to six parallel signals of one unit differs, such as the loops.
 - `readouts`: current values or on/off states with margin to alarm and trip thresholds, such as pumps running or valve positions.
 - `alarms`: active alarms of the displayed signals and their equipment (`related`) or of the whole unit (`plant`); add it only next to signal panels.
+
+Each unit makes the trend taller: next to a trend with three units, add only `alarms`; next to two units, at most three readouts.
 
 Never supply numbers, limits, setpoints, forecasts, colours or positions; there are no fields for them. Never draw plant state as a Mermaid or other hand-written diagram: it would be neither live nor validated.
 

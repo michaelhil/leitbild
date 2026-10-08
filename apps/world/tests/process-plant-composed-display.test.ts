@@ -178,12 +178,20 @@ describe('composed display panels', () => {
     expect(composed.shows[0]).toContain('in 2 stacked strips (one per unit)')
   })
 
-  test('fit a three-strip trend with related alarms in one chat view', () => {
-    const { composed } = composeView([
-      { kind: 'trend', horizon: '2m', signals: [{ ref: 'PT-455', role: 'primary' }, { ref: 'PZR-LVL', role: 'context' }, { ref: 'GEN-MW', role: 'context' }] },
+  // The skill's size rule: three units leave room for alarms; two units for alarms and three readouts.
+  test('fit the largest trends the skill allows beside their companion panels', () => {
+    const levels = ['A', 'B', 'C', 'D'].map(loop => ({ ref: `SG-${loop}-LVL-NR`, role: loop === 'B' ? 'primary' : 'context' }))
+    const threeUnits = composeView([
+      { kind: 'trend', horizon: '2m', signals: [...levels, { ref: 'PT-455', role: 'context' }, { ref: 'GEN-MW', role: 'context' }] },
       { kind: 'alarms', scope: 'related' },
     ])
-    expect(composed.view.height).toBeLessThanOrEqual(640)
+    expect(threeUnits.composed.view.height).toBeLessThanOrEqual(640)
+    const twoUnits = composeView([
+      { kind: 'trend', horizon: '10m', signals: [...levels, { ref: 'PT-455', role: 'context' }, { ref: 'SG-A-PRESS', role: 'context' }] },
+      { kind: 'readouts', signals: ['TAVG', 'SUB-MARGIN', 'CET-AVG'].map(ref => ({ ref, role: 'context' })) },
+      { kind: 'alarms', scope: 'related' },
+    ])
+    expect(twoUnits.composed.view.height).toBeLessThanOrEqual(640)
   })
 
   test('reject a second trend panel, too many strips or pens, a lone alarms panel and oversized displays', () => {
@@ -195,8 +203,8 @@ describe('composed display panels', () => {
       { kind: 'trend', horizon: '10m', signals: ['PT-455', 'PZR-LVL', 'GEN-MW', 'TAVG'].map((ref, index) => ({ ref, role: index === 0 ? 'primary' : 'context' })) },
     ])))).toContain('a trend stacks at most 3 strips, one per unit, but these signals use 4 units')
     expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
-      { kind: 'trend', horizon: '10m', signals: ['A', 'B', 'C', 'D'].map(loop => ({ ref: `SG-${loop}-LVL-NR`, role: loop === 'B' ? 'primary' : 'context' })) },
-    ])))).toContain('a trend strip shows at most 3 signals of one unit, but [percent] has 4')
+      { kind: 'trend', horizon: '10m', signals: [...['A', 'B', 'C', 'D'].map(loop => ({ ref: `SG-${loop}-LVL-NR`, role: loop === 'B' ? 'primary' : 'context' })), { ref: 'PZR-LVL', role: 'context' }] },
+    ])))).toContain('a trend strip shows at most 4 signals of one unit, but [percent] has 5')
     expect(rejectionOf(() => ask('world.process-plant.display.compose', display([{ kind: 'alarms', scope: 'plant' }]))))
       .toContain('an alarms panel accompanies signal panels')
     const six = ['A', 'B', 'C', 'D'].map(loop => ({ ref: `RCP-${loop}-FLOW`, role: 'context' }))
