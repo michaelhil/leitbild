@@ -80,7 +80,7 @@ describe('world.process-plant.display.compose', () => {
       { ref: 'SG-A-LVL-NR', role: 'context' },
     ])) as { view: unknown; shows: ReadonlyArray<string>; warnings: ReadonlyArray<string>; issuedAt: string }
     const view = embeddedViewPublicationSchema.parse(result.view)
-    expect(view.viewType).toBe('process-plant.display')
+    expect(String(view.viewType)).toBe('process-plant.display')
     expect(result.issuedAt).toBe(simulationTime)
     const state = composedDisplayStateSchema.parse(JSON.parse(view.state))
     expect(state).toMatchObject({ issuedAt: simulationTime, modelDigest: compiled.modelDigest })
