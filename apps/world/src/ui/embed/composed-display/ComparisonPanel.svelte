@@ -5,7 +5,6 @@
   import { activeThreshold, median, ratePerMinute, rateText, thresholdName } from './panel-presenters.ts'
   import { displayName } from './pen-style.ts'
   import { formatValue, paddedDomain, rawDomain, unitLabel, type TrendPoint, type ValueDomain } from './trend-geometry.ts'
-  import AlarmChip from './AlarmChip.svelte'
 
   let { panel, latest, series, range, activeRuleIds }: {
     panel: ComposedComparisonPanel
@@ -17,7 +16,7 @@
 
   let width = $state(520)
   const labelWidth = 120
-  const valueWidth = 190
+  const valueWidth = 220
   const scaleStart = labelWidth
   const scaleWidth = $derived(Math.max(60, width - labelWidth - valueWidth))
   const unit = $derived(unitLabel(panel.unit))
@@ -70,12 +69,9 @@
       <line class="track" x1={scaleStart} x2={scaleStart + scaleWidth} y1={y + row / 2} y2={y + row / 2} />
       {#if value !== undefined && domain !== null}
         <path class="pointer" class:primary={pen.role === 'primary'} class:alarm={inAlarm !== null} d={`M${x(value)} ${y + 4} l5 ${row / 2 - 4} l-5 ${row / 2 - 4} l-5 ${-(row / 2 - 4)} z`} />
-        <text class="value" x={scaleStart + scaleWidth + 10} y={y + row / 2} dominant-baseline="middle">{formatValue(value)} {unit}<tspan class="sub" dx="6">{deviation(value)} {rateText(ratePerMinute(series.get(String(pen.path)) ?? []), value, unit)}</tspan></text>
+        <text class="value" x={scaleStart + scaleWidth + 10} y={y + row / 2} dominant-baseline="middle">{formatValue(value)} {unit}{#if inAlarm !== null}<tspan class={`state ${inAlarm.kind}`} dx="6">{inAlarm.direction === 'low' ? 'LO' : 'HI'} {inAlarm.kind === 'trip' ? 'TRIP' : 'ALM'}</tspan>{/if}<tspan class="sub" dx="6">{deviation(value)} {rateText(ratePerMinute(series.get(String(pen.path)) ?? []), value, unit)}</tspan></text>
       {:else}
         <text class="value" x={scaleStart + scaleWidth + 10} y={y + row / 2} dominant-baseline="middle">—</text>
-      {/if}
-      {#if inAlarm !== null}
-        <foreignObject x={labelWidth - 52} y={y + 3} width="50" height={row - 6}><AlarmChip threshold={inAlarm} /></foreignObject>
       {/if}
     {/each}
   </svg>
@@ -97,6 +93,10 @@
   .pointer.alarm { stroke: var(--alert-warning-color); stroke-width: 2; }
   .value { fill: var(--element-active-color); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .sub { fill: var(--element-neutral-color); font-size: 11px; font-weight: 400; }
+  /* Same meaning as the alarm chip elsewhere: shown only while the rule is active. */
+  .state { font-size: 10.5px; font-weight: 700; }
+  .state.trip { fill: var(--alert-alarm-color); }
+  .state.alarm { fill: var(--alert-warning-color); }
   .median { stroke: var(--element-neutral-color); stroke-dasharray: 2 3; }
   .threshold { stroke: var(--element-neutral-color); stroke-width: 1.5; }
   .threshold.qualified { stroke-dasharray: 5 3; }
