@@ -12,6 +12,7 @@ import DOMPurify from 'dompurify'
 // layer (../extensions/registry.ts), not via static import.
 import '../mermaid/index.ts'
 import '../map/index.ts'
+import '../live-view/index.ts'
 import { getPostRenderProcessors } from '../extensions/post-render-registry.ts'
 import { icon } from '../icon.ts'
 import { appendWhisperBadge } from '../whisper-badge.ts'
@@ -306,6 +307,12 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
 
     const content = document.createElement('div')
     content.className = 'text-text'
+    // Generated answers name their turn so ```leitbild-view fences can be
+    // resolved against that turn's own execution evidence.
+    if (msg.generationTraceId && msg.roomId && msg.type === 'chat') {
+      content.dataset.viewRoom = msg.roomId
+      content.dataset.viewTurn = msg.generationTraceId
+    }
     renderMarkdownContent(content, msg.content)
 
     div.appendChild(header)

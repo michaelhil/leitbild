@@ -7,6 +7,15 @@ import './embed.css'
 const target = document.getElementById('view')
 if (!target) throw new Error('missing #view mount point')
 
+// The embedding page stores the reader's theme choice; follow it live.
+// OpenBridge "night" is a dark-adaptation palette; dusk suits a dark screen.
+window.addEventListener('storage', event => {
+  if (event.key !== 'leitbild.theme') return
+  const dark = event.newValue === 'dark' || (event.newValue === null && matchMedia('(prefers-color-scheme: dark)').matches)
+  document.documentElement.classList.toggle('dark', dark)
+  document.documentElement.dataset.obcTheme = dark ? 'dusk' : 'day'
+})
+
 const workspaceFromPath = (): string => {
   const match = location.pathname.match(/^\/workspaces\/([^/]+)\/world\/embed\//)
   if (!match) throw new Error(`Embedded view route is malformed: ${location.pathname}`)
