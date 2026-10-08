@@ -15,6 +15,7 @@ import type { ContextResult, FlushInfo } from './context-builder.ts'
 import { classifyLLMError } from './error-classify.ts'
 import { extractFences } from './fence-extract.ts'
 import { parseMapBody, formatMapErrors } from '../core/render-validators/map-schema.ts'
+import { parseViewFenceBody, viewRefFor, VIEW_FENCE_LANGUAGE } from '../core/render-validators/view-fence.ts'
 
 // Max times the eval loop will ask the LLM to fix an invalid map/geojson
 // fence before giving up and posting the broken response (the UI banner
@@ -250,37 +251,61 @@ const callLLMOnce = async (
   }
 }
 
-// === Map-fence validation + retry ===
+// === Fence validation + retry ===
 //
-// Validate every ```map and ```geojson fence in the response content. If
-// any are invalid, append a synthetic correction prompt to the conversation
-// context and re-call the LLM. Repeat up to MAX_FENCE_RETRIES times. Returns
-// the final response content (corrected if a retry succeeded; the last
-// attempt's content if all retries failed — the UI banner then shows the
-// errors below the fence).
+// Validate every ```map / ```geojson fence schema and every ```leitbild-view
+// reference in the response content. If any are invalid, append a synthetic
+// correction prompt to the conversation context and re-call the LLM. Repeat
+// up to MAX_FENCE_RETRIES times. Returns the final response content
+// (corrected if a retry succeeded; the last attempt's content if all retries
+// failed — the UI then shows the error in place of the block).
 //
-// Map-only by design: mermaid's parser is browser-only; a server-side
+// Mermaid is excluded by design: its parser is browser-only; a server-side
 // validator would only catch trivial cases (oversized, completely wrong
 // keyword) and miss real syntax errors. Honest scoping > pretend-bulletproof.
-const validateAllMapFences = (content: string): { ok: boolean; errors: string } => {
-  const fences = extractFences(content, ['map', 'geojson'])
-  if (fences.length === 0) return { ok: true, errors: '' }
-  const errorParts: string[] = []
-  for (const fence of fences) {
+const mapFenceErrors = (content: string): ReadonlyArray<string> =>
+  extractFences(content, ['map', 'geojson']).flatMap(fence => {
     const result = parseMapBody(fence.body)
-    if (!result.ok) {
-      errorParts.push(
-        `\`\`\`${fence.language}\` block at content line ${fence.startLine}:\n${formatMapErrors(result.errors)}`,
-      )
+    return result.ok ? [] : [`\`\`\`${fence.language}\` block at content line ${fence.startLine} (see the rendering skill for the schema):\n${formatMapErrors(result.errors)}`]
+  })
+
+// A view fence must name a display this turn actually composed. Evidence of
+// earlier turns is not accepted: the answer must present what it just built.
+const viewFenceErrors = (content: string, viewRefs: ReadonlySet<string>): ReadonlyArray<string> => {
+  const fences = extractFences(content, [VIEW_FENCE_LANGUAGE])
+  if (fences.length === 0) return []
+  const errors: string[] = []
+  if (fences.length > 1) errors.push(`Show at most one display per answer; the response has ${fences.length} \`${VIEW_FENCE_LANGUAGE}\` blocks.`)
+  for (const fence of fences) {
+    const parsed = parseViewFenceBody(fence.body)
+    if (!parsed.ok) { errors.push(`\`${VIEW_FENCE_LANGUAGE}\` block at content line ${fence.startLine}: ${parsed.error}`); continue }
+    const ref = viewRefFor(parsed.ref.callId, parsed.ref.key)
+    if (!viewRefs.has(ref)) {
+      errors.push(`\`${VIEW_FENCE_LANGUAGE}\` block at content line ${fence.startLine}: ${ref} is not a display composed in this turn. Paste the viewRef returned by world.process-plant.display.compose, or remove the block if no display was composed.`)
     }
   }
-  return errorParts.length === 0
-    ? { ok: true, errors: '' }
-    : { ok: false, errors: errorParts.join('\n\n') }
+  return errors
 }
 
-const retryInvalidMapFences = async (
+const validateResponseFences = (content: string, viewRefs: ReadonlySet<string>): { ok: boolean; errors: string } => {
+  const errors = [...mapFenceErrors(content), ...viewFenceErrors(content, viewRefs)]
+  return { ok: errors.length === 0, errors: errors.join('\n\n') }
+}
+
+/** viewRefs that successful workspace_call results in this turn made presentable. */
+export const collectViewRefs = (into: Set<string>, tool: string, result: ToolResult): void => {
+  if (tool !== 'workspace_call' || !result.success) return
+  const entries = (result.data as { results?: unknown } | undefined)?.results
+  if (!Array.isArray(entries)) return
+  for (const entry of entries) {
+    const viewRef = (entry as { viewRef?: unknown } | null)?.viewRef
+    if (typeof viewRef === 'string') into.add(viewRef)
+  }
+}
+
+const retryInvalidFences = async (
   initialContent: string,
+  viewRefs: ReadonlySet<string>,
   context: Array<ChatRequest['messages'][number]>,
   config: AIAgentConfig,
   llmProvider: LLMProvider,
@@ -296,7 +321,7 @@ const retryInvalidMapFences = async (
   let content = initialContent
   let continuation = initialContinuation
   for (let attempt = 0; attempt < MAX_FENCE_RETRIES; attempt++) {
-    const validation = validateAllMapFences(content)
+    const validation = validateResponseFences(content, viewRefs)
     if (validation.ok) return content
     // Append the invalid response + a precise correction prompt. The next
     // LLM call will see (a) what it just emitted, (b) why it failed,
@@ -305,9 +330,8 @@ const retryInvalidMapFences = async (
     context.push({
       role: 'user' as const,
       content:
-        `Your previous response contained one or more invalid map fences:\n\n${validation.errors}\n\n` +
-        `Re-emit the FULL corrected response (keep the surrounding prose, fix the fence schema). ` +
-        `Refer to the rendering skill for the canonical schema.`,
+        `Your previous response contained one or more invalid fenced blocks:\n\n${validation.errors}\n\n` +
+        `Re-emit the FULL corrected response (keep the surrounding prose, fix or remove the listed blocks).`,
     })
     if (signal?.aborted) return content
     const request: ChatRequest = {
@@ -378,6 +402,7 @@ export const evaluate = async (
   // to the final Decision — lets downstream consumers (export_room, UI)
   // reconstruct what the agent actually did before answering.
   const toolTrace: Array<ToolTraceEntry> = []
+  const viewRefs = new Set<string>()
   let lastGenerationQuery: GenerationQuery | undefined
   const captureRequest = (request: ChatRequest): void => {
     // ChatRequest is JSON-shaped. Clone at the call boundary so subsequent
@@ -505,6 +530,7 @@ export const evaluate = async (
           const call = calls[i]
           const result = results[i]
           if (!call || !result) continue
+          collectViewRefs(viewRefs, call.tool, result)
           const operationOutcomes = operationOutcomesFor(call.tool, result)
           const traceSuccess = result.success && (operationOutcomes?.every(outcome => outcome.success) ?? true)
           onEvent?.({ kind: 'tool_result', tool: call.tool, callId: call.callId ?? String(i), success: traceSuccess, preview: traceSuccess ? undefined : result.error ?? 'One or more requested operations failed' })
@@ -564,18 +590,19 @@ export const evaluate = async (
           triggerRoomId,
         })
       }
-      // Map-fence retry loop: validate any ```map / ```geojson fences in
-      // the response. If invalid, append a synthetic correction prompt to
-      // context and re-call the LLM up to MAX_FENCE_RETRIES times. Each
-      // retry streams live (the user sees the rewrite); only the final
-      // response is committed via makeResult. Retry budget is independent
-      // of toolRound — fence retries don't consume tool-iteration budget.
+      // Fence retry loop: validate ```map / ```geojson schemas and that every
+      // ```leitbild-view names a display composed in this turn. If invalid,
+      // append a synthetic correction prompt to context and re-call the LLM
+      // up to MAX_FENCE_RETRIES times. Each retry streams live (the user sees
+      // the rewrite); only the final response is committed via makeResult.
+      // Retry budget is independent of toolRound — fence retries don't
+      // consume tool-iteration budget.
       //
-      // Map-only on purpose: mermaid's parser is browser-only and a
-      // server-side validator would be a smell-test, not a real check.
-      // Honest scoping > pretending to bulletproof.
-      const finalContent = await retryInvalidMapFences(
+      // Mermaid is not validated here on purpose: its parser is browser-only
+      // and a server-side validator would be a smell-test, not a real check.
+      const finalContent = await retryInvalidFences(
         content,
+        viewRefs,
         context,
         config,
         llmProvider,

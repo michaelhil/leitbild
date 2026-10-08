@@ -334,6 +334,24 @@ describe('Workspace progressive-discovery tools', () => {
       .toMatchObject({ success: true, data: { results: [{ success: false, error: expect.stringContaining('target_required') }] } })
   })
 
+  test('completes a published view with the invoked Resource and offers it by reference only', async () => {
+    const view = { viewType: 'process-plant.display', title: 'Pressure', height: 340, state: '{"composition":{}}' }
+    const viewFetch = (async (input: Request | string | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? new Request(input, init) : new Request(String(input), init)
+      if (new URL(request.url).pathname.endsWith('/invoke')) return Response.json({ result: { view, shows: ['trend'] } })
+      return catalogFetch([])(input, init)
+    }) as typeof fetch
+    const [, call] = createWorkspaceCapabilityTools({ workspaceId, hostBaseUrl: 'https://host.test', getRoomScope: () => ({ kind: 'resource', resource: run }), fetchImpl: viewFetch })
+    const recorded = await call!.execute({ calls: [{ key: 'pressure display', operationId: readId, input: {} }] }, { ...context, executionCallId: 'call_2_0' })
+    expect(recorded).toMatchObject({ success: true, data: { results: [{
+      key: 'pressure display',
+      viewRef: 'call_2_0/pressure%20display',
+      embeddedView: { ...view, moduleId: 'world', subject: run },
+    }] } })
+    const standalone = await call!.execute({ calls: [{ key: 'p', operationId: readId, input: {} }] }, context)
+    expect(standalone).toMatchObject({ success: true, data: { results: [{ viewError: expect.stringContaining('no execution evidence') }] } })
+  })
+
   test('batches independent reads but rejects a batch containing a change', async () => {
     const requests: Request[] = []
     const [, call] = makeTools({ kind: 'resource', resource: run }, requests)

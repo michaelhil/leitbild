@@ -33,6 +33,8 @@ export interface ToolContext {
     readonly turnIds: ReadonlyArray<string>
   }
   readonly signal?: AbortSignal
+  /** Execution-evidence id of this call within the current turn; absent for standalone executors. */
+  readonly executionCallId?: string
   readonly callerId: string
   readonly callerName: string
   readonly roomId?: string          // current trigger room ID — available when tool is called from a room context

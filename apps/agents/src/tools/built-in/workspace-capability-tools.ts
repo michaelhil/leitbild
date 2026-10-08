@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { embeddedViewFor, viewRefFor } from '../../core/render-validators/view-fence.ts'
 import {
   capabilityIdSchema,
   definitionTypeSchema,
@@ -522,7 +523,23 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
             }
             const body = await response.json() as { result?: unknown }
             if (!Object.hasOwn(body, 'result')) return { key: entry.key, operationId: entry.operationId, success: false, error: 'workspace_host_contract_invalid: Workspace Host response omitted result' }
-            return { key: entry.key, operationId: entry.operationId, success: true, data: body.result }
+            // A Module may publish a view of its result. The envelope is
+            // completed with the exact Resource this call targeted and kept as
+            // execution evidence; the model presents it by reference only.
+            const view = entry.target?.kind === 'resource' ? embeddedViewFor(body.result, entry.target.ref) : { kind: 'none' as const }
+            return {
+              key: entry.key,
+              operationId: entry.operationId,
+              success: true,
+              data: body.result,
+              ...(view.kind === 'invalid' ? { viewError: view.error } : {}),
+              ...(view.kind === 'view' ? {
+                embeddedView: view.envelope,
+                ...(context.executionCallId === undefined
+                  ? { viewError: 'this executor keeps no execution evidence, so the view cannot be shown' }
+                  : { viewRef: viewRefFor(context.executionCallId, entry.key) }),
+              } : {}),
+            }
           } catch (error) {
             return { key: entry.key, operationId: entry.operationId, success: false, error: `workspace_outcome_unknown: ${error instanceof Error ? error.message : String(error)}` }
           }

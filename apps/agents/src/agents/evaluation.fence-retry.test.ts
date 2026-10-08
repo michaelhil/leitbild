@@ -94,7 +94,8 @@ describe('evaluation map-fence retry loop', () => {
     // Second call's context must include the synthetic correction prompt.
     const retryRequest = callLog[1]!.request
     const lastUser = [...retryRequest.messages].reverse().find(m => m.role === 'user')
-    expect(lastUser?.content).toMatch(/invalid map fences/)
+    expect(lastUser?.content).toMatch(/invalid fenced blocks/)
+    expect(lastUser?.content).toMatch(/rendering skill for the schema/)
     expect(lastUser?.content).toMatch(/marker\.lat/)
   })
 
@@ -173,5 +174,47 @@ describe('evaluation map-fence retry loop', () => {
     if (result.decision.response.action === 'respond') {
       expect(result.decision.response.content).toBe(broken)
     }
+  })
+})
+
+describe('evaluation view-fence guard', () => {
+  const viewFence = (ref: string): string => `Pressure is holding in its control band.\n\n\`\`\`leitbild-view\nview ${ref}\n\`\`\``
+
+  test('a view fence without a display composed in this turn is corrected, never posted as-is', async () => {
+    const { provider, callLog } = mkProvider([viewFence('call_0_0/compose'), 'Pressure is holding in its control band.'])
+    const result = await evaluate(mkContext(), mkConfig(), provider, undefined, 5, 'room-1')
+    expect(callLog.length).toBe(2)
+    const correction = callLog[1]!.request.messages.at(-1)!.content
+    expect(correction).toContain('call_0_0/compose is not a display composed in this turn')
+    expect(result.decision.response).toEqual({ action: 'respond', content: 'Pressure is holding in its control band.' })
+  })
+
+  test('a view fence naming a display composed by workspace_call in this turn is accepted', async () => {
+    const answers = [
+      { content: '', toolCalls: [{ id: 'w1', function: { name: 'workspace_call', arguments: { calls: [] } } }] },
+      { content: viewFence('call_0_0/compose') },
+    ]
+    let index = 0
+    const calls: ChatRequest[] = []
+    const provider: LLMProvider = {
+      models: async () => [],
+      chat: async request => { calls.push(request); return { ...mkResponse(''), ...answers[index++]! } },
+    }
+    const executor = async () => [{
+      success: true,
+      data: { results: [{ key: 'compose', operationId: 'world.process-plant.display.compose', success: true, data: {}, viewRef: 'call_0_0/compose' }] },
+    }]
+    const result = await evaluate(mkContext(), mkConfig(), provider, executor, 5, 'room-1', {
+      toolDefinitions: [{ type: 'function', function: { name: 'workspace_call', description: 'call', parameters: {} } }],
+    })
+    expect(calls).toHaveLength(2)
+    expect(result.decision.response).toEqual({ action: 'respond', content: viewFence('call_0_0/compose') })
+  })
+
+  test('more than one display per answer is corrected', async () => {
+    const twice = `${viewFence('call_0_0/a')}\n\n\`\`\`leitbild-view\nview call_0_0/b\n\`\`\``
+    const { provider, callLog } = mkProvider([twice, 'text only'])
+    await evaluate(mkContext(), mkConfig(), provider, undefined, 5, 'room-1')
+    expect(callLog[1]!.request.messages.at(-1)!.content).toContain('at most one display per answer')
   })
 })

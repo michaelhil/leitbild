@@ -130,7 +130,7 @@ export const createToolExecutor = (
           callSignal.throwIfAborted()
           let result: ToolResult
           dispatched = true
-          try { result = await entry.tool.execute(call.arguments, { ...callContext, signal: callSignal }) }
+          try { result = await entry.tool.execute(call.arguments, { ...callContext, signal: callSignal, ...(call.callId === undefined ? {} : { executionCallId: call.callId }) }) }
           catch (err) {
             console.error(`[tool] "${call.tool}" execution failed:`, err)
             result = { success: false, error: err instanceof Error ? err.message : 'Tool execution failed' }
