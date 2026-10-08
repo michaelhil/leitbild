@@ -28,6 +28,12 @@ import {
   credibilityReadPayloadSchema,
 } from './queries/credibility-query.ts'
 import { displayQuerySchema, graphLensQuerySchema } from './queries/display-query.ts'
+import { embeddedViewPublicationSchema } from '@leitbild/contracts'
+import {
+  displayComposeQuerySchema,
+  displaySampleQuerySchema,
+  displayViewQuerySchema,
+} from './queries/composed-display-query.ts'
 import { artifactReadQuerySchema, componentsSearchQuerySchema, displayProfileReadQuerySchema } from './queries/graph-query.ts'
 import { plantQuerySchema } from './queries/common.ts'
 import {
@@ -175,6 +181,29 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
     graphProjection: recordSchema,
     displayProjection: recordSchema,
   }).strict(),
+  'world.process-plant.display.compose': z.object({
+    plantId: plantIdSchema,
+    issuedAt: z.string(),
+    view: embeddedViewPublicationSchema,
+    shows: z.array(z.string()),
+    warnings: z.array(z.string()),
+  }).strict(),
+  'world.process-plant.display.view': z.object({
+    plantId: plantIdSchema,
+    issuedAt: z.string(),
+    simulationTime: z.string(),
+    modelChanged: z.boolean(),
+    display: recordSchema,
+  }).strict(),
+  'world.process-plant.display.sample': z.object({
+    plantId: plantIdSchema,
+    simulationTime: z.string(),
+    values: z.array(z.object({
+      path: z.string(),
+      value: z.union([z.number(), z.boolean()]),
+      quality: z.enum(['good', 'outside-hard-range']),
+    }).strict()),
+  }).strict(),
 }
 
 const queryInputById: Readonly<Record<string, z.ZodType>> = {
@@ -204,6 +233,9 @@ const queryInputById: Readonly<Record<string, z.ZodType>> = {
   'world.process-plant.display.read': displayQuerySchema,
   'world.process-plant.display.snapshot': displayQuerySchema,
   'world.process-plant.display.project': graphLensQuerySchema,
+  'world.process-plant.display.compose': displayComposeQuerySchema,
+  'world.process-plant.display.view': displayViewQuerySchema,
+  'world.process-plant.display.sample': displaySampleQuerySchema,
 }
 
 const titleFor = (id: string): string => id
@@ -243,6 +275,9 @@ const queryDescriptionById: Readonly<Record<string, string>> = {
   'world.process-plant.display.read': 'Read one operator display definition and its available lenses.',
   'world.process-plant.display.snapshot': 'Read the current values and alarms projected onto one operator display.',
   'world.process-plant.display.project': 'Project one Plant graph and operator display through a selected display lens.',
+  'world.process-plant.display.compose': 'Compose a small live operator display for one Plant, shown below your answer. State the operator question and need, then choose a trend horizon and 1-3 numeric signals of one unit with roles (primary, context, counter-evidence) using exact tagIds or paths from your evidence. The Pack resolves the signals, draws I&C thresholds from configured rules, and keeps values live. Read-only: it stores nothing and changes no Plant, Run or scenario state. Returns the view to present, what it shows and warnings, or rejects with every issue and did-you-mean suggestions.',
+  'world.process-plant.display.view': 'Compile a previously composed display state for a live display view. Display views use this; to create a display, use display.compose.',
+  'world.process-plant.display.sample': 'Read current values and hard-range quality for up to 12 exact signal paths at the current Simulation Run time. Live display views use this for polling.',
 }
 
 const processPlantQueryCapabilities = processPlantQueryKinds.map(id => {

@@ -1,5 +1,5 @@
 import type { PackRuntimeQuery } from '../../simulation/protocol.ts'
-import type { ObjectId, OperationalObject } from '../../core/model/index.ts'
+import type { IsoTimestamp, ObjectId, OperationalObject } from '../../core/model/index.ts'
 import { answerProcessPlantIcQuery, processPlantIcQueryKinds } from './ic-query.ts'
 import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
 import { failure } from './queries/common.ts'
@@ -10,6 +10,7 @@ import { answerProcessPlantGraphQuery, processPlantGraphQueryKinds } from './que
 import { answerProcessPlantRuntimeQuery, processPlantRuntimeQueryKinds } from './queries/runtime-query.ts'
 import { answerProcessPlantSignalQuery, processPlantSignalQueryKinds } from './queries/signal-query.ts'
 import { answerProcessPlantDisplayQuery, processPlantDisplayQueryKinds } from './queries/display-query.ts'
+import { answerProcessPlantComposedDisplayQuery, processPlantComposedDisplayQueryKinds } from './queries/composed-display-query.ts'
 import { answerProcessPlantVariableQuery, processPlantVariableQueryKinds } from './queries/variable-query.ts'
 
 export { processPlantCredibilityEvidenceForGraph } from './queries/credibility-query.ts'
@@ -24,12 +25,15 @@ export const processPlantQueryKinds = [
   ...processPlantRuntimeQueryKinds,
   ...processPlantIcQueryKinds,
   ...processPlantDisplayQueryKinds,
+  ...processPlantComposedDisplayQueryKinds,
 ] as const
 
 export const answerProcessPlantQuery = (config: {
   readonly request: PackRuntimeQuery
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
   readonly objects: ReadonlyMap<ObjectId, Pick<OperationalObject, 'id' | 'label'>>
+  /** Simulation Run time the Plants have been advanced to; required by time-stamped views. */
+  readonly simulationTime?: IsoTimestamp
 }): unknown => answerProcessPlantCatalogQuery(config)
   ?? answerProcessPlantCredibilityQuery(config)
   ?? answerProcessPlantIcQuery(config)
@@ -39,4 +43,5 @@ export const answerProcessPlantQuery = (config: {
   ?? answerProcessPlantControlQuery(config)
   ?? answerProcessPlantRuntimeQuery(config)
   ?? answerProcessPlantDisplayQuery(config)
+  ?? answerProcessPlantComposedDisplayQuery(config)
   ?? failure(`Process Plant does not support query Capability: ${config.request.capabilityId}`)

@@ -439,6 +439,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
           request,
           plants,
           objects: objectsById,
+          simulationTime: new Date(lastSimulationMs).toISOString() as IsoTimestamp,
         })
       },
       observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {
