@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { moduleIdSchema } from './ids.ts'
 import { workspaceResourceReferenceSchema } from './resources.ts'
+import { EMBEDDED_VIEW_FRAGMENT_KEY } from './embedded-view-route.ts'
 
 // A view that its owning Module publishes for another Module to embed, e.g. a
 // World display shown below an Agents message. The owning Module defines,
@@ -40,17 +41,10 @@ export const embeddedViewEnvelopeSchema = z.object({
 })
 export type EmbeddedViewEnvelope = z.infer<typeof embeddedViewEnvelopeSchema>
 
-/** Same-origin route of an embedded view; the envelope itself goes in the fragment. */
-export const embeddedViewPath = (envelope: EmbeddedViewEnvelope): string =>
-  `/workspaces/${envelope.subject.workspaceId}/${envelope.moduleId}/embed/${envelope.viewType}`
-
-const FRAGMENT_KEY = 'view='
-
-export const embeddedViewFragment = (envelope: EmbeddedViewEnvelope): string =>
-  `#${FRAGMENT_KEY}${encodeURIComponent(JSON.stringify(embeddedViewEnvelopeSchema.parse(envelope)))}`
-
 export const parseEmbeddedViewFragment = (hash: string): EmbeddedViewEnvelope => {
   const body = hash.startsWith('#') ? hash.slice(1) : hash
-  if (!body.startsWith(FRAGMENT_KEY)) throw new Error('Embedded view fragment must start with view=')
-  return embeddedViewEnvelopeSchema.parse(JSON.parse(decodeURIComponent(body.slice(FRAGMENT_KEY.length))))
+  if (!body.startsWith(EMBEDDED_VIEW_FRAGMENT_KEY)) throw new Error('Embedded view fragment must start with view=')
+  return embeddedViewEnvelopeSchema.parse(JSON.parse(decodeURIComponent(body.slice(EMBEDDED_VIEW_FRAGMENT_KEY.length))))
 }
+
+export { embeddedViewFragment, embeddedViewPath } from './embedded-view-route.ts'

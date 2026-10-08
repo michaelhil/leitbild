@@ -13,7 +13,8 @@
     "./workspaces": "./src/workspaces.ts",
     "./modules": "./src/modules.ts",
     "./resources": "./src/resources.ts",
-    "./procedure-sources": "./src/procedure-sources.ts"
+    "./procedure-sources": "./src/procedure-sources.ts",
+    "./embedded-view-route": "./src/embedded-view-route.ts"
   },
   "scripts": {
     "check": "tsc --noEmit",

@@ -278,7 +278,7 @@ const viewFenceErrors = (content: string, viewRefs: ReadonlySet<string>): Readon
   if (fences.length > 1) errors.push(`Show at most one display per answer; the response has ${fences.length} \`${VIEW_FENCE_LANGUAGE}\` blocks.`)
   for (const fence of fences) {
     const parsed = parseViewFenceBody(fence.body)
-    if (!parsed.ok) { errors.push(`\`${VIEW_FENCE_LANGUAGE}\` block at content line ${fence.startLine}: ${parsed.error}`); continue }
+    if (parsed.kind === 'invalid') { errors.push(`\`${VIEW_FENCE_LANGUAGE}\` block at content line ${fence.startLine}: ${parsed.error}`); continue }
     const ref = viewRefFor(parsed.ref.callId, parsed.ref.key)
     if (!viewRefs.has(ref)) {
       errors.push(`\`${VIEW_FENCE_LANGUAGE}\` block at content line ${fence.startLine}: ${ref} is not a display composed in this turn. Paste the viewRef returned by world.process-plant.display.compose, or remove the block if no display was composed.`)

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { newWorkspaceId } from '@leitbild/contracts'
-import { checkViewEnvelope, embeddedViewFor, parseViewFenceBody, viewRefFor } from './view-fence.ts'
+import { embeddedViewEnvelopeSchema, newWorkspaceId } from '@leitbild/contracts'
+import { checkViewEnvelope, parseViewFenceBody, viewRefFor } from './view-fence.ts'
+import { embeddedViewFor } from './view-envelope.ts'
 
 const workspaceId = newWorkspaceId()
 const run = { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-1' }
@@ -10,12 +11,12 @@ describe('leitbild-view fences', () => {
   test('round-trip a viewRef through the fence body', () => {
     const ref = viewRefFor('call_3_1', 'sg b/level')
     expect(ref).toBe('call_3_1/sg%20b%2Flevel')
-    expect(parseViewFenceBody(`view ${ref}\n`)).toEqual({ ok: true, ref: { callId: 'call_3_1', key: 'sg b/level' } })
+    expect(parseViewFenceBody(`view ${ref}\n`)).toEqual({ kind: 'reference', ref: { callId: 'call_3_1', key: 'sg b/level' } })
   })
 
   test('reject bodies that are not a single view reference', () => {
     for (const body of ['https://evil.example', 'view /workspaces/x/world/embed/a', '{"view":"x"}', 'view call_1_0/a\nview call_1_0/b', 'view call_1_0/%E0%A4%A']) {
-      expect(parseViewFenceBody(body).ok).toBe(false)
+      expect(parseViewFenceBody(body).kind).toBe('invalid')
     }
   })
 
@@ -28,10 +29,31 @@ describe('leitbild-view fences', () => {
 
   test('name the rule that refuses an envelope', () => {
     const envelope = { ...publication, moduleId: 'world', subject: run }
-    expect(checkViewEnvelope(envelope, workspaceId).ok).toBe(true)
-    expect(checkViewEnvelope(envelope, newWorkspaceId())).toMatchObject({ ok: false, code: 'view_workspace_mismatch' })
+    expect(checkViewEnvelope(envelope, workspaceId).kind).toBe('view')
+    expect(checkViewEnvelope(envelope, newWorkspaceId())).toMatchObject({ kind: 'refused', code: 'view_workspace_mismatch' })
     const agentsSubject = { ...run, moduleId: 'agents', type: 'agents.room' }
-    expect(checkViewEnvelope({ ...envelope, moduleId: 'agents', subject: agentsSubject }, workspaceId)).toMatchObject({ ok: false, code: 'view_module_not_embeddable' })
-    expect(checkViewEnvelope({ ...envelope, url: 'https://evil.example' }, workspaceId)).toMatchObject({ ok: false, code: 'view_envelope_invalid' })
+    expect(checkViewEnvelope({ ...envelope, moduleId: 'agents', subject: agentsSubject }, workspaceId)).toMatchObject({ kind: 'refused', code: 'view_module_not_embeddable' })
+    expect(checkViewEnvelope({ ...envelope, url: 'https://evil.example' }, workspaceId)).toMatchObject({ kind: 'refused', code: 'view_envelope_invalid' })
+  })
+
+  test('the browser structural check agrees with the contract schema', () => {
+    const envelope = { ...publication, moduleId: 'world', subject: run }
+    const variants: ReadonlyArray<Record<string, unknown>> = [
+      envelope,
+      { ...envelope, viewType: '../agents' },
+      { ...envelope, viewType: 'display' },
+      { ...envelope, height: 119 },
+      { ...envelope, height: 340.5 },
+      { ...envelope, title: '' },
+      { ...envelope, state: 'x'.repeat(4097) },
+      { ...envelope, extra: true },
+      { ...envelope, subject: { ...run, id: '../run' } },
+      { ...envelope, subject: { ...run, type: 'agents.room' } },
+      { ...envelope, subject: { ...run, workspaceId: 'not-a-uuid' } },
+      { ...envelope, moduleId: 'World' },
+    ]
+    for (const variant of variants) {
+      expect([variant, checkViewEnvelope(variant, workspaceId).kind === 'view']).toEqual([variant, embeddedViewEnvelopeSchema.safeParse(variant).success])
+    }
   })
 })

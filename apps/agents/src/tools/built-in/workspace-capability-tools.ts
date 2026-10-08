@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { embeddedViewFor, viewRefFor } from '../../core/render-validators/view-fence.ts'
+import { viewRefFor } from '../../core/render-validators/view-fence.ts'
+import { embeddedViewFor } from '../../core/render-validators/view-envelope.ts'
 import {
   capabilityIdSchema,
   definitionTypeSchema,
