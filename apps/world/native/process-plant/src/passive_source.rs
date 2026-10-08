@@ -31,6 +31,8 @@ pub struct Model {
     owner: Arc<()>,
 }
 pub struct Workspace {
+    volumes: Vec<f64>,
+    represented: Vec<f64>,
     capture: Vec<[f64; GROUPS]>,
     collision: Vec<[f64; GROUPS]>,
     owner: Arc<()>,
@@ -48,6 +50,7 @@ impl Workspace {
     }
     pub fn buffer_bytes(&self) -> usize {
         (self.capture.len() + self.collision.len()) * std::mem::size_of::<[f64; GROUPS]>()
+            + (self.volumes.len() + self.represented.len()) * 8
     }
 }
 impl Model {
@@ -84,8 +87,11 @@ impl Model {
                         self.volumes[e.region],
                         self.speed[g],
                     );
-                    if !gain.is_finite() || gain <= 0. {
+                    if !gain.is_finite() || gain < 0. {
                         return Err("Unrepresentable structural passive capture response");
+                    }
+                    if gain == 0. {
+                        continue;
                     }
                     out.push((t.index, e.region * GROUPS + g, gain));
                 }
@@ -134,7 +140,7 @@ impl Model {
             if e.stock >= stocks.len()
                 || e.region >= volumes.len()
                 || !e.volume.is_finite()
-                || e.volume <= 0.
+                || e.volume < 0.
                 || !seen.insert((e.stock, e.region))
             {
                 return Err("Invalid/duplicated passive material intersection");
@@ -162,6 +168,8 @@ impl Model {
     }
     pub fn workspace(&self) -> Workspace {
         Workspace {
+            volumes: self.intersections.iter().map(|e| e.volume).collect(),
+            represented: vec![0.; self.stocks.len()],
             capture: vec![
                 [0.; GROUPS];
                 self.intersections
@@ -175,27 +183,62 @@ impl Model {
         }
     }
     pub fn update(&self, amounts: &[f64], work: &mut Workspace) -> Result<(), &'static str> {
+        self.update_geometry(amounts, None, work)
+    }
+    /// Current volumes on the immutable reachable incidence union. A zero
+    /// intersection removes this contribution, not its target/history identity.
+    pub fn update_with_volumes(
+        &self,
+        amounts: &[f64],
+        volumes: &[f64],
+        work: &mut Workspace,
+    ) -> Result<(), &'static str> {
+        self.update_geometry(amounts, Some(volumes), work)
+    }
+    fn update_geometry(
+        &self,
+        amounts: &[f64],
+        volumes: Option<&[f64]>,
+        work: &mut Workspace,
+    ) -> Result<(), &'static str> {
         work.valid = false;
         if !Arc::ptr_eq(&work.owner, &self.owner)
             || amounts.len() != self.target_count
             || amounts.iter().any(|v| !v.is_finite() || *v < 0.)
+            || volumes.is_some_and(|v| {
+                v.len() != self.intersections.len() || v.iter().any(|x| !x.is_finite() || *x < 0.)
+            })
         {
             return Err("Invalid actual passive target stocks/workspace");
         }
+        work.represented.fill(0.);
+        for (i, e) in self.intersections.iter().enumerate() {
+            let v = volumes.map_or(e.volume, |v| v[i]);
+            work.volumes[i] = v;
+            work.represented[e.stock] += v;
+        }
+        if self
+            .stocks
+            .iter()
+            .zip(&work.represented)
+            .any(|(s, v)| !v.is_finite() || *v > s.volume * (1. + 3e-11))
+        {
+            return Err("Current passive incidence creates material");
+        }
         work.collision.fill([0.; GROUPS]);
         let mut i = 0;
-        for e in &self.intersections {
+        for (e, &volume) in self.intersections.iter().zip(&work.volumes) {
             let s = &self.stocks[e.stock];
             for g in 0..GROUPS {
-                work.collision[e.region][g] += s.scatter_m1[g] * e.volume / self.volumes[e.region];
+                work.collision[e.region][g] += s.scatter_m1[g] * volume / self.volumes[e.region];
             }
             for t in &s.targets {
                 for g in 0..GROUPS {
-                    let amount = amounts[t.index] * (e.volume / s.volume);
+                    let amount = amounts[t.index] * (volume / s.volume);
                     let coefficient = amount * t.sigma_m2[g] / self.volumes[e.region];
                     work.capture[i][g] = capture_coefficient(
                         amounts[t.index],
-                        e.volume / s.volume,
+                        volume / s.volume,
                         t.sigma_m2[g],
                         self.volumes[e.region],
                         self.speed[g],

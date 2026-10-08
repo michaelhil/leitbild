@@ -1,4 +1,5 @@
-//! Birth-driven represented source at fixed ORIGINAL geometry. Closed callers
+//! Birth-driven represented source on a fixed source mesh and reachable
+//! incidence union, with current material and water geometry. Closed callers
 //! supply the prepared temperature boundary; coupled callers supply actual
 //! same-trial fuel temperatures and externally owned primary-water stocks.
 //! No thermal bath, deposited-heat state, acquired detector, live plant or
@@ -37,9 +38,6 @@ pub struct WaterRow {
     /// Closed-owner amount fractions; both must be zero for external owners.
     pub h_fraction: f64,
     pub b_fraction: f64,
-    /// Geometric fraction of an external physical cell, not a renormalized
-    /// fraction of its source-represented material.
-    pub volume_fraction: f64,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct MnTarget {
@@ -55,6 +53,9 @@ pub struct Input {
     pub moderator: ms::ModeratorModel,
     pub water_rows: Vec<ms::Stocks>,
     pub water_owners: Vec<WaterOwner>,
+    /// Actual prepared bulk cavity volume, by external index. Liquid
+    /// occupation is a separate stock; closed owners need no entry here.
+    pub external_water_volumes: Vec<f64>,
     pub row_map: Vec<WaterRow>,
     pub targets: Vec<f64>,
     pub passive_stocks: Vec<ps::Stock>,
@@ -92,11 +93,58 @@ pub struct Balances {
     pub energy_ledger_defect_j: f64,
     pub energy_ledger_scale_j: f64,
 }
+/// Stage geometry on one immutable reachable incidence union. These arrays
+/// contain no targets, material inventories, fuel history, or time state.
+/// A caller must derive all of them from the same actual physical pose.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Geometry {
+    pub passive_volumes: Vec<f64>,
+    pub cylinder_shares: Vec<f64>,
+    pub moderator_volumes: Vec<f64>,
+    pub external_water_volumes: Vec<f64>,
+}
+impl Geometry {
+    pub fn zero_direction(&self) -> Self {
+        Self {
+            passive_volumes: vec![0.; self.passive_volumes.len()],
+            cylinder_shares: vec![0.; self.cylinder_shares.len()],
+            moderator_volumes: vec![0.; self.moderator_volumes.len()],
+            external_water_volumes: vec![0.; self.external_water_volumes.len()],
+        }
+    }
+    fn arrays(&self) -> [&[f64]; 4] {
+        [
+            &self.passive_volumes,
+            &self.cylinder_shares,
+            &self.moderator_volumes,
+            &self.external_water_volumes,
+        ]
+    }
+    fn same_bits(&self, other: &Self) -> bool {
+        self.arrays().into_iter().zip(other.arrays()).all(|(a, b)| {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| a.to_bits() == b.to_bits())
+        })
+    }
+    fn copy_from(&mut self, other: &Self) {
+        self.passive_volumes.copy_from_slice(&other.passive_volumes);
+        self.cylinder_shares.copy_from_slice(&other.cylinder_shares);
+        self.moderator_volumes
+            .copy_from_slice(&other.moderator_volumes);
+        self.external_water_volumes
+            .copy_from_slice(&other.external_water_volumes);
+    }
+    fn buffer_bytes(&self) -> usize {
+        self.arrays().iter().map(|a| a.len() * 8).sum()
+    }
+}
 pub struct Evolution {
     input: Input,
+    geometry: Geometry,
+    zero_geometry: Geometry,
     closed_water: Vec<Option<usize>>,
     closed_water_count: usize,
     external_water_count: usize,
+    external_row_owners: Vec<Option<usize>>,
     zero_temperature: Vec<f64>,
     // Fixed physical ownership: Mn targets use direct Mn56 + Fe inventories,
     // other targets retain cumulative capture progress.
@@ -111,6 +159,9 @@ pub struct Evolution {
     owner: Arc<()>,
 }
 pub struct Workspace {
+    geometry: Geometry,
+    geometry_sums: Vec<f64>,
+    cylinder_direction_sums: Vec<[f64; 2]>,
     history: fh::Workspace,
     moderator: ms::Workspace,
     passive: ps::Workspace,
@@ -123,6 +174,7 @@ pub struct Workspace {
     temperatures: Vec<f64>,
     segment_release: Vec<f64>,
     external_water: Vec<ms::Stocks>,
+    external_bulk: Vec<ms::Bulk>,
     external_events: Vec<ms::Events>,
     external_event_direction: Vec<ms::Events>,
     fuel_deposition: Vec<f64>,
@@ -255,6 +307,9 @@ impl Workspace {
     /// Explicit retained payload estimate only; excludes model/factors/allocator.
     pub fn buffer_bytes(&self) -> usize {
         self.history.buffer_bytes()
+            + self.geometry.buffer_bytes()
+            + self.geometry_sums.len() * 8
+            + self.cylinder_direction_sums.len() * 16
             + self.moderator.buffer_bytes()
             + self.passive.buffer_bytes()
             + self.cylinder.buffer_bytes()
@@ -302,6 +357,7 @@ impl Workspace {
             + (self.external_events.len() + self.external_event_direction.len())
                 * std::mem::size_of::<ms::Events>()
             + self.external_water.len() * std::mem::size_of::<ms::Stocks>()
+            + self.external_bulk.len() * std::mem::size_of::<ms::Bulk>()
     }
 }
 fn nn(x: f64) -> bool {
@@ -318,15 +374,6 @@ fn stock_bits(s: &ms::Stocks) -> [u64; 5] {
         s.hydrogen_product.to_bits(),
         s.mobile_boron10.to_bits(),
     ]
-}
-fn scaled_stock(s: &ms::Stocks, f: f64) -> ms::Stocks {
-    ms::Stocks {
-        water_mass: f * s.water_mass,
-        liquid_volume: f * s.liquid_volume,
-        hydrogen_target: f * s.hydrogen_target,
-        hydrogen_product: f * s.hydrogen_product,
-        mobile_boron10: f * s.mobile_boron10,
-    }
 }
 impl Evolution {
     /// Existing volume-material application order, retained before target aggregation.
@@ -408,11 +455,32 @@ impl Evolution {
         {
             return Err("External water indexes must be complete and contiguous");
         }
-        for (r, m) in input.water_rows.iter().zip(&input.row_map) {
+        if input.external_water_volumes.len() != external_indexes.len()
+            || input
+                .external_water_volumes
+                .iter()
+                .any(|v| !v.is_finite() || *v <= 0.)
+        {
+            return Err("Invalid prepared external bulk water volumes");
+        }
+        let external_row_owners = input
+            .row_map
+            .iter()
+            .map(|m| {
+                input
+                    .water_owners
+                    .get(m.owner)
+                    .and_then(|o| match o.authority {
+                        WaterAuthority::Closed => None,
+                        WaterAuthority::External { index } => Some(index),
+                    })
+            })
+            .collect();
+        for (i, (r, m)) in input.water_rows.iter().zip(&input.row_map).enumerate() {
             if m.owner >= hs.len()
                 || !nn(m.h_fraction)
                 || !nn(m.b_fraction)
-                || !nn(m.volume_fraction)
+                || ms::Bulk::new(*r, input.moderator.intersections()[i].volume).is_err()
                 || ![
                     r.water_mass,
                     r.liquid_volume,
@@ -422,18 +490,18 @@ impl Evolution {
                 ]
                 .iter()
                 .all(|&x| nn(x))
-                || r.water_mass <= 0.
-                || r.liquid_volume <= 0.
+                || (r.water_mass == 0.) != (r.liquid_volume == 0.)
             {
                 return Err("Invalid water owner incidence");
             }
             let o = input.water_owners[m.owner];
             let (h_fraction, b_fraction) = match o.authority {
-                WaterAuthority::Closed if m.volume_fraction == 0. => (m.h_fraction, m.b_fraction),
-                WaterAuthority::External { .. }
-                    if m.volume_fraction > 0. && m.h_fraction == 0. && m.b_fraction == 0. =>
-                {
-                    (m.volume_fraction, m.volume_fraction)
+                WaterAuthority::Closed => (m.h_fraction, m.b_fraction),
+                WaterAuthority::External { index } if m.h_fraction == 0. && m.b_fraction == 0. => {
+                    let fraction = input.moderator.intersections()[i].volume
+                        / input.external_water_volumes[index];
+                    vs[m.owner] += fraction;
+                    (fraction, fraction)
                 }
                 _ => return Err("Water row projection does not match its authority"),
             };
@@ -445,7 +513,6 @@ impl Evolution {
             }
             hs[m.owner] += m.h_fraction;
             bs[m.owner] += m.b_fraction;
-            vs[m.owner] += m.volume_fraction;
         }
         if hs
             .iter()
@@ -541,11 +608,26 @@ impl Evolution {
             mn_owner[m.target] = Some(i);
         }
         let zero_temperature = vec![0.; input.temperatures.len()];
+        let geometry = Geometry {
+            passive_volumes: input.passive_incidence.iter().map(|e| e.volume).collect(),
+            cylinder_shares: input.cylinder_incidence.iter().map(|e| e.share).collect(),
+            moderator_volumes: input
+                .moderator
+                .intersections()
+                .iter()
+                .map(|e| e.volume)
+                .collect(),
+            external_water_volumes: input.external_water_volumes.clone(),
+        };
+        let zero_geometry = geometry.zero_direction();
         let result = Self {
             input,
+            geometry,
+            zero_geometry,
             closed_water,
             closed_water_count,
             external_water_count: external_indexes.len(),
+            external_row_owners,
             zero_temperature,
             mn_owner,
             passive,
@@ -619,6 +701,9 @@ impl Evolution {
     }
     pub fn prepared_temperatures(&self) -> &[f64] {
         &self.input.temperatures
+    }
+    pub fn prepared_geometry(&self) -> &Geometry {
+        &self.geometry
     }
     /// Mn targets store DIRECT Mn56 inventory; all other targets store capture
     /// progress. Use consumed_target for a target's cumulative consumption.
@@ -746,6 +831,9 @@ impl Evolution {
             .collect::<Vec<_>>();
         let optical_inputs = optical.iter().map(|w| w.input.clone()).collect();
         Workspace {
+            geometry: self.geometry.clone(),
+            geometry_sums: vec![0.; self.input.water_owners.len()],
+            cylinder_direction_sums: vec![[0.; 2]; self.input.cylinder_targets.len()],
             history: self.input.history.workspace(),
             moderator: self.input.moderator.workspace(),
             passive: self.passive.workspace(),
@@ -767,6 +855,7 @@ impl Evolution {
                 };
                 self.external_water_count
             ],
+            external_bulk: vec![ms::Bulk::default(); self.external_water_count],
             external_events: vec![ms::Events::default(); self.external_water_count],
             external_event_direction: vec![ms::Events::default(); self.external_water_count],
             fuel_deposition: vec![0.; self.input.temperatures.len()],
@@ -864,6 +953,18 @@ impl Evolution {
         external_water: &[ms::Stocks],
         w: &mut Workspace,
     ) -> Result<(), &'static str> {
+        self.evaluate_with_geometry_into(y, temperatures, external_water, &self.geometry, w)
+    }
+    /// Same trial source/material/water geometry. Models and target histories
+    /// are never reconstructed when a BODY crosses a source-region plane.
+    pub fn evaluate_with_geometry_into(
+        &self,
+        y: &[f64],
+        temperatures: &[f64],
+        external_water: &[ms::Stocks],
+        geometry: &Geometry,
+        w: &mut Workspace,
+    ) -> Result<(), &'static str> {
         if !Arc::ptr_eq(&self.owner, &w.owner)
             || y.len() != self.state_count()
             || y.iter().any(|x| !x.is_finite())
@@ -892,11 +993,53 @@ impl Evolution {
             w.jvp_valid = false;
             return Err("Invalid source trial/workspace");
         }
+        if geometry
+            .arrays()
+            .into_iter()
+            .zip(self.geometry.arrays())
+            .any(|(a, b)| a.len() != b.len() || a.iter().any(|x| !nn(*x)))
+        {
+            w.valid = false;
+            w.jvp_valid = false;
+            return Err("Invalid current source geometry");
+        }
+        if geometry.external_water_volumes.iter().any(|v| *v <= 0.) {
+            w.valid = false;
+            w.jvp_valid = false;
+            return Err("Nonpositive current physical water bulk volume");
+        }
+        w.geometry_sums.fill(0.);
+        for (i, m) in self.input.row_map.iter().enumerate() {
+            match self.input.water_owners[m.owner].authority {
+                WaterAuthority::Closed
+                    if geometry.moderator_volumes[i].to_bits()
+                        != self.geometry.moderator_volumes[i].to_bits() =>
+                {
+                    w.valid = false;
+                    w.jvp_valid = false;
+                    return Err("Closed prepared water cannot change geometry without its owner");
+                }
+                WaterAuthority::External { index } => {
+                    w.geometry_sums[m.owner] +=
+                        geometry.moderator_volumes[i] / geometry.external_water_volumes[index];
+                }
+                _ => {}
+            }
+        }
+        if w.geometry_sums
+            .iter()
+            .any(|s| !s.is_finite() || *s > 1. + 4e-11)
+        {
+            w.valid = false;
+            w.jvp_valid = false;
+            return Err("Current water source incidence exceeds owner");
+        }
         // Reuse only the complete, bit-identical dependency vector of this
         // valid workspace. IDA residual/JT setup commonly request that same
         // state. Pointer identity, approximate equality and failed trials are
         // not cache keys. Independent P-stage workspaces remain independent.
         if w.valid
+            && geometry.same_bits(&w.geometry)
             && y.iter()
                 .zip(&w.state)
                 .all(|(a, b)| a.to_bits() == b.to_bits())
@@ -925,6 +1068,9 @@ impl Evolution {
         w.rates[..self.history_dimension()].copy_from_slice(w.history.rates()?);
         w.rates[self.cf_row()] = -w.rates[self.cf_row()];
         w.collision.copy_from_slice(w.history.collision()?);
+        for (index, s) in external_water.iter().enumerate() {
+            w.external_bulk[index] = ms::Bulk::new(*s, geometry.external_water_volumes[index])?;
+        }
         for (i, (r, m)) in self
             .input
             .water_rows
@@ -942,12 +1088,18 @@ impl Evolution {
                     w.water[i].mobile_boron10 =
                         r.mobile_boron10 - m.b_fraction * y[self.water_row(m.owner, true)];
                 }
-                WaterAuthority::External { index } => {
-                    w.water[i] = scaled_stock(&external_water[index], m.volume_fraction);
-                }
+                // External rows are views of the prepared physical bulk below,
+                // not multiplied stock copies. Only closed rows read w.water.
+                WaterAuthority::External { .. } => {}
             }
         }
-        self.input.moderator.update(&w.water, &mut w.moderator)?;
+        self.input.moderator.update_projected(
+            &w.water,
+            &geometry.moderator_volumes,
+            &w.external_bulk,
+            &self.external_row_owners,
+            &mut w.moderator,
+        )?;
         self.input
             .moderator
             .apply(&w.moderator, &y[..n], &mut w.scratch, &mut w.water_events)?;
@@ -982,7 +1134,8 @@ impl Evolution {
         for (i, &a) in self.input.targets.iter().enumerate() {
             w.amounts[i] = a - self.consumed_target(y, i)?;
         }
-        self.passive.update(&w.amounts, &mut w.passive)?;
+        self.passive
+            .update_with_volumes(&w.amounts, &geometry.passive_volumes, &mut w.passive)?;
         w.passive_capture.fill(0.);
         w.scratch.fill(0.);
         self.passive.apply(
@@ -1004,7 +1157,8 @@ impl Evolution {
                 w.collision[r][g] += pc[r][g];
             }
         }
-        self.cylinder.update(&w.amounts, &mut w.cylinder)?;
+        self.cylinder
+            .update_with_shares(&w.amounts, &geometry.cylinder_shares, &mut w.cylinder)?;
         self.cylinder.apply(
             &w.cylinder,
             &y[..n],
@@ -1152,6 +1306,7 @@ impl Evolution {
         w.state.copy_from_slice(y);
         w.temperatures.copy_from_slice(temperatures);
         w.external_water.copy_from_slice(external_water);
+        w.geometry.copy_from(geometry);
         w.diagnostics = d;
         w.valid = true;
         Ok(())
@@ -1170,6 +1325,19 @@ impl Evolution {
         dy: &[f64],
         dtemperatures: &[f64],
         dexternal_water: &[ms::Stocks],
+        w: &mut Workspace,
+    ) -> Result<(), &'static str> {
+        self.jvp_with_geometry_into(dy, dtemperatures, dexternal_water, &self.zero_geometry, w)
+    }
+    /// Geometry direction is on the branch selected by the caller's current
+    /// physical pose. It is not a second material/time state or a numerical
+    /// perturbation of model preparation.
+    pub fn jvp_with_geometry_into(
+        &self,
+        dy: &[f64],
+        dtemperatures: &[f64],
+        dexternal_water: &[ms::Stocks],
+        dgeometry: &Geometry,
         w: &mut Workspace,
     ) -> Result<(), &'static str> {
         w.jvp_valid = false;
@@ -1191,8 +1359,39 @@ impl Evolution {
                 .iter()
                 .any(|x| !x.is_finite())
             })
+            || dgeometry
+                .arrays()
+                .into_iter()
+                .zip(self.geometry.arrays())
+                .any(|(a, b)| a.len() != b.len() || a.iter().any(|x| !x.is_finite()))
         {
             return Err("Invalid source JVP trial/workspace");
+        }
+        w.cylinder_direction_sums.fill([0.; 2]);
+        for (e, &d) in self
+            .input
+            .cylinder_incidence
+            .iter()
+            .zip(&dgeometry.cylinder_shares)
+        {
+            let s = &mut w.cylinder_direction_sums[e.target];
+            s[0] += d;
+            s[1] += d.abs();
+        }
+        if w.cylinder_direction_sums
+            .iter()
+            .any(|s| s[0].abs() > 4e-11 * s[1])
+        {
+            return Err("Cylinder geometry direction creates target share");
+        }
+        for (i, m) in self.input.row_map.iter().enumerate() {
+            if matches!(
+                self.input.water_owners[m.owner].authority,
+                WaterAuthority::Closed
+            ) && dgeometry.moderator_volumes[i] != 0.
+            {
+                return Err("Closed water geometry direction lacks an owner");
+            }
         }
         let volumes = self.input.history.fuel().volumes();
         let speed = self.input.history.fuel().law().speed;
@@ -1228,28 +1427,43 @@ impl Evolution {
             .enumerate()
         {
             let c = w.moderator.rows()?[i];
-            let ds = match self.input.water_owners[m.owner].authority {
-                WaterAuthority::Closed => {
-                    let dh = dy[self.water_row(m.owner, false)] * m.h_fraction;
-                    ms::Stocks {
-                        water_mass: 0.,
-                        liquid_volume: 0.,
-                        hydrogen_target: -dh,
-                        hydrogen_product: dh,
-                        mobile_boron10: -dy[self.water_row(m.owner, true)] * m.b_fraction,
+            let (ds, downer_volume, dpatch_volume) =
+                match self.input.water_owners[m.owner].authority {
+                    WaterAuthority::Closed => {
+                        let dh = dy[self.water_row(m.owner, false)] * m.h_fraction;
+                        (
+                            ms::Stocks {
+                                water_mass: 0.,
+                                liquid_volume: 0.,
+                                hydrogen_target: -dh,
+                                hydrogen_product: dh,
+                                mobile_boron10: -dy[self.water_row(m.owner, true)] * m.b_fraction,
+                            },
+                            0.,
+                            0.,
+                        )
                     }
-                }
-                WaterAuthority::External { index } => {
-                    scaled_stock(&dexternal_water[index], m.volume_fraction)
-                }
-            };
+                    WaterAuthority::External { index } => (
+                        dexternal_water[index],
+                        dgeometry.external_water_volumes[index],
+                        dgeometry.moderator_volumes[i],
+                    ),
+                };
+            // One owner-first law supplies value, material/shape direction and
+            // held-geometry CSC partials. An empty union patch still has its
+            // physical owner's concentration, so its entering limit is finite.
+            let direction = self.input.moderator.row_direction(
+                i,
+                ds,
+                downer_volume,
+                dpatch_volume,
+                &w.moderator,
+            )?;
             let mut eh = 0.;
             let mut eb = 0.;
             for g in 0..GROUPS {
-                let a = c.d_hydrogen_d_mass[g] * ds.water_mass
-                    + c.d_hydrogen_d_target[g] * ds.hydrogen_target
-                    + c.d_hydrogen_d_product[g] * ds.hydrogen_product;
-                let b = c.d_boron_d_atoms[g] * ds.mobile_boron10;
+                let a = direction.hydrogen[g];
+                let b = direction.boron[g];
                 let pos = e.region * GROUPS + g;
                 let ch = a * w.state[pos] + c.hydrogen[g] * dy[pos];
                 let cb = b * w.state[pos] + c.boron[g] * dy[pos];
@@ -1257,7 +1471,7 @@ impl Evolution {
                 eb += cb;
                 w.jvp[pos] -= (a + b) * w.state[pos];
                 w.collision_direction[e.region][g] += (a + b) / speed[g];
-                let dscale = c.d_scatter_scale_d_mass * ds.water_mass;
+                let dscale = direction.scatter_scale;
                 for h in 0..GROUPS {
                     let scatter = self.input.moderator.law().scatter[g][h];
                     w.collision_direction[e.region][g] += dscale * scatter;
@@ -1298,41 +1512,55 @@ impl Evolution {
         }
         let mut passive_birth = 0;
         w.passive_birth_direction.fill(0.);
-        for e in &self.input.passive_incidence {
+        for (i, e) in self.input.passive_incidence.iter().enumerate() {
             let s = &self.input.passive_stocks[e.stock];
+            let volume = w.geometry.passive_volumes[i];
+            let dvolume = dgeometry.passive_volumes[i];
+            for g in 0..GROUPS {
+                w.collision_direction[e.region][g] += s.scatter_m1[g] * dvolume / volumes[e.region];
+            }
             for t in &s.targets {
                 for g in 0..GROUPS {
-                    let factor = t.sigma_m2[g] * e.volume / s.volume / volumes[e.region];
+                    let factor = t.sigma_m2[g] / s.volume / volumes[e.region];
                     let pos = e.region * GROUPS + g;
                     let dcap = speed[g]
                         * factor
-                        * (w.amounts[t.index] * dy[pos]
-                            + w.amount_direction[t.index] * w.state[pos]);
+                        * (volume
+                            * (w.amounts[t.index] * dy[pos]
+                                + w.amount_direction[t.index] * w.state[pos])
+                            + dvolume * w.amounts[t.index] * w.state[pos]);
                     w.jvp[pos] -= dcap;
                     w.jvp[self.target_row(t.index)] += dcap;
                     w.passive_birth_direction[passive_birth] += dcap;
                     net -= dcap;
-                    w.collision_direction[e.region][g] += factor * w.amount_direction[t.index];
+                    w.collision_direction[e.region][g] += factor
+                        * (volume * w.amount_direction[t.index] + dvolume * w.amounts[t.index]);
                 }
                 passive_birth += 1;
             }
         }
-        for e in &self.input.cylinder_incidence {
+        for (i, e) in self.input.cylinder_incidence.iter().enumerate() {
             let t = &self.input.cylinder_targets[e.target];
             let c = w.cylinder.responses()?[e.target];
             for g in 0..GROUPS {
                 let pos = e.region * GROUPS + g;
-                let factor = e.share * speed[g] / volumes[e.region];
+                let share = w.geometry.cylinder_shares[i];
+                let dshare = dgeometry.cylinder_shares[i];
+                let factor = share * speed[g] / volumes[e.region];
+                let dfactor = dshare * speed[g] / volumes[e.region];
                 let da = w.amount_direction[t.index];
                 let dcap = factor
-                    * (c.capture_m2[g] * dy[pos] + c.d_capture_d_amount[g] * da * w.state[pos]);
+                    * (c.capture_m2[g] * dy[pos] + c.d_capture_d_amount[g] * da * w.state[pos])
+                    + dfactor * c.capture_m2[g] * w.state[pos];
                 w.jvp[pos] -= dcap;
                 w.jvp[self.target_row(t.index)] += dcap;
                 net -= dcap;
                 collected += factor
-                    * (c.collected_m2[g] * dy[pos] + c.d_collected_d_amount[g] * da * w.state[pos]);
-                w.collision_direction[e.region][g] +=
-                    e.share / volumes[e.region] * c.d_capture_d_amount[g] * da;
+                    * (c.collected_m2[g] * dy[pos] + c.d_collected_d_amount[g] * da * w.state[pos])
+                    + dfactor * c.collected_m2[g] * w.state[pos];
+                w.collision_direction[e.region][g] += (share * c.d_capture_d_amount[g] * da
+                    + dshare * c.capture_m2[g])
+                    / volumes[e.region];
             }
         }
         for (i, m) in self.optical.iter().enumerate() {
@@ -1498,20 +1726,25 @@ impl Evolution {
                 }
             }
         }
-        for e in &self.input.passive_incidence {
+        for (i, e) in self.input.passive_incidence.iter().enumerate() {
             let s = &self.input.passive_stocks[e.stock];
             for t in &s.targets {
                 for g in 0..GROUPS {
-                    let k = speed[g] * t.sigma_m2[g] * w.amounts[t.index] * e.volume
+                    let k = speed[g]
+                        * t.sigma_m2[g]
+                        * w.amounts[t.index]
+                        * w.geometry.passive_volumes[i]
                         / s.volume
                         / volumes[e.region];
                     out[self.lookup[&(e.region * GROUPS + g, e.region * GROUPS + g)]] += k;
                 }
             }
         }
-        for e in &self.input.cylinder_incidence {
+        for (i, e) in self.input.cylinder_incidence.iter().enumerate() {
             for g in 0..GROUPS {
-                let k = speed[g] * w.cylinder.responses()?[e.target].capture_m2[g] * e.share
+                let k = speed[g]
+                    * w.cylinder.responses()?[e.target].capture_m2[g]
+                    * w.geometry.cylinder_shares[i]
                     / volumes[e.region];
                 out[self.lookup[&(e.region * GROUPS + g, e.region * GROUPS + g)]] += k;
             }

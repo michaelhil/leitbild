@@ -142,7 +142,6 @@ export async function qualifyFuelCooling(options:Options){
   selected=JSON.parse(texts[5]!)
  const prior=options.priorAttempt?JSON.parse(texts[6]!):undefined,priorComputationSeconds=prior?fuelCoolingPriorSeconds(prior):0
  if(parent.passed!==true||parent.artifacts?.directory!==resolve(options.materialEvidence)+'.artifacts')throw Error('Unadmitted receiving property parent')
- if(!parent.consumed?.some((r:{path:string;sha256:string})=>r.path===inputs[2]&&r.sha256===sha(texts[2]!)))throw Error('Wrong original primary parent')
  if(!selected?.idaLibrary||!selected?.prefix||!Array.isArray(selected.inputs))throw Error('Explicit previously inspected native stack required')
  if(!(await Promise.all(selected.inputs.map(async (r:{path:string;sha256:string})=>sha(await readFile(r.path))===r.sha256))).every(Boolean))
   throw Error('Previously selected native inputs changed')
@@ -153,6 +152,11 @@ export async function qualifyFuelCooling(options:Options){
  const ownerPaths=sourceEvolutionOwnerFiles.map(p=>join(resolve(options.wiki),p)),
   ownerTexts=await Promise.all(ownerPaths.map(p=>Bun.file(p).text())),
   source=compileSourceEvolution(texts[0]!,texts[1]!,texts[2]!,new Map(sourceEvolutionOwnerFiles.map((p,i)=>[p,ownerTexts[i]!])),payload.receiving.property)
+ // Bind the qualified MATERIAL to the exact consumed native physics, not the
+ // pathname/metadata of an older primary-water receipt. The material fixture
+ // includes receiving stocks/property/laws. PRIMARY owners (including stock
+ // outside the source mesh) are replaced below from the current network; their
+ // coherence is checked by the current water compiler, never inherited here.
  if(sha(source.material.fixture)!==parent.fixtureSHA256)throw Error('Recompiled material differs from admitted parent')
  const prepared=await compileFuelCooling(resolve(options.wiki),options.features??{prhr:false}),fixture=nativeFuelCoolingFixture(prepared,source),
   helpers=await sourceHelperFiles([import.meta.path]),

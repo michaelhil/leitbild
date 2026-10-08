@@ -137,8 +137,7 @@ export function compilePrimaryIncidence(network:Pick<Network,'water'>,partition:
  const represented=network.water.map(()=>0),rows=[...mapped].map(([key,volume_m3])=>{
   const [region,cell]=key.split('/').map(Number) as [number,number]
   represented[cell]!+=volume_m3
-  return {region,sourceRegionId:partition.regions[region]!.id,cell,cellId:network.water[cell]!.id,volume_m3,
-   volume_fraction:volume_m3/network.water[cell]!.volume_m3}
+  return {region,sourceRegionId:partition.regions[region]!.id,cell,cellId:network.water[cell]!.id,volume_m3}
  }).sort((a,b)=>a.region-b.region||a.cell-b.cell)
  const cells=network.water.map((w,i)=>{
   const outside=w.volume_m3-represented[i]!
@@ -185,7 +184,7 @@ export function nativeFuelCoolingFixture(p:Awaited<ReturnType<typeof compileFuel
  fields.push(...t.originalTemperatures,...t.fuelRows,...flows)
  const primary=[p.network.water.length,p.primary.hydrogenAtomsPerKg,p.primary.boronAtomsPerKg,
   closed.length,...closed,p.primary.rows.length,
-  ...p.primary.rows.flatMap(r=>[r.region,r.cell,r.volume_m3,r.volume_fraction])]
+  ...p.primary.rows.flatMap(r=>[r.region,r.cell,r.volume_m3])]
  const frame=(s:string)=>{const tokens=s.trim().split(/\s+/);return [tokens.length,...tokens].join('\n')}
  const barrel=nativeColdBarrelFrame(p.barrel,source)
  return [source.fixture,p.network.nativeInput,fields.join('\n'),primary.join('\n'),barrel.fields.join('\n'),

@@ -73,27 +73,39 @@ impl Carrier {
     /// Signed product trials are permitted, but remaining targets cannot be
     /// negative in the constitutive source law. Physical commit is stricter.
     pub fn stocks_into(&self, mass: &[f64], products: &[Amounts], out: &mut [Stocks]) -> Result<(), &'static str> {
+        self.stocks_with_volumes_into(mass,products,&self.volumes,out)
+    }
+    /// Actual current liquid occupation, supplied by the same physical chart
+    /// as mass. No re-preparation or repartition of retained carrier products.
+    pub fn stocks_with_volumes_into(&self, mass:&[f64], products:&[Amounts], volumes:&[f64], out:&mut [Stocks]) -> Result<(), &'static str> {
         self.inputs(mass,products)?;
-        if out.len()!=self.cells() { return Err("Water carrier output shape"); }
+        if out.len()!=self.cells() || volumes.len()!=self.cells() || volumes.iter().any(|v|!positive(*v)) { return Err("Water carrier current volume/output shape"); }
         for i in 0..self.cells() {
             let h = self.hydrogen_per_kg*mass[i]-products[i].hydrogen;
             let b = products[i].boron10;
             if !h.is_finite() || !b.is_finite() || h<0. || b<0. {
                 return Err("Water carrier trial exhausted a target");
             }
-            out[i]=Stocks { water_mass: mass[i], liquid_volume: self.volumes[i],
+            out[i]=Stocks { water_mass: mass[i], liquid_volume: volumes[i],
                 hydrogen_target:h, hydrogen_product:products[i].hydrogen, mobile_boron10:b };
         }
         Ok(())
     }
     /// Directions of the SAME stocks, including mass-dependent total carriers.
     pub fn stock_jvp_into(&self, dmass: &[f64], dproducts: &[Amounts], out: &mut [Stocks]) -> Result<(), &'static str> {
+        self.stock_direction(dmass,dproducts,None,out)
+    }
+    pub fn stock_jvp_with_volumes_into(&self, dmass:&[f64], dproducts:&[Amounts], dvolumes:&[f64], out:&mut [Stocks]) -> Result<(), &'static str> {
+        self.stock_direction(dmass,dproducts,Some(dvolumes),out)
+    }
+    fn stock_direction(&self, dmass:&[f64], dproducts:&[Amounts], dvolumes:Option<&[f64]>, out:&mut [Stocks]) -> Result<(), &'static str> {
         if dmass.len()!=self.cells() || dproducts.len()!=self.cells() || out.len()!=self.cells()
-            || dmass.iter().any(|v| !v.is_finite()) || dproducts.iter().any(|&p| !finite(p)) {
+            || dmass.iter().any(|v| !v.is_finite()) || dproducts.iter().any(|&p| !finite(p))
+            || dvolumes.is_some_and(|v| v.len()!=self.cells() || v.iter().any(|x|!x.is_finite())) {
             return Err("Invalid water carrier stock direction");
         }
         for i in 0..self.cells() {
-            out[i]=Stocks { water_mass:dmass[i], liquid_volume:0.,
+            out[i]=Stocks { water_mass:dmass[i], liquid_volume:dvolumes.map_or(0.,|v|v[i]),
                 hydrogen_target:self.hydrogen_per_kg*dmass[i]-dproducts[i].hydrogen,
                 hydrogen_product:dproducts[i].hydrogen,
                 mobile_boron10:dproducts[i].boron10 };
@@ -168,6 +180,20 @@ impl Carrier {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn current_volume_changes_occupation_not_owned_products_and_has_exact_direction() {
+        let c=carrier();let p=c.initial().to_vec();let mut s=[empty();2];
+        c.stocks_with_volumes_into(&[2.,3.],&p,&[0.9,2.1],&mut s).unwrap();
+        assert_eq!([s[0].liquid_volume,s[1].liquid_volume],[0.9,2.1]);
+        assert_eq!([s[0].mobile_boron10,s[1].mobile_boron10],[4.,9.]);
+        assert_eq!(c.initial()[0].boron10,4.);assert_eq!(c.volumes(),&[1.,2.]);
+        let mut d=[empty();2];c.stock_jvp_with_volumes_into(&[0.2,-0.2],&[Amounts::default();2],&[-0.1,0.1],&mut d).unwrap();
+        assert_eq!([d[0].liquid_volume,d[1].liquid_volume],[-0.1,0.1]);
+        assert_eq!([d[0].hydrogen_target,d[1].hydrogen_target],[2.,-2.]);
+        assert!(c.stocks_with_volumes_into(&[2.,3.],&p,&[0.,3.],&mut s).is_err());
+        assert!(c.stock_jvp_with_volumes_into(&[0.,0.],&[Amounts::default();2],&[f64::NAN,0.],&mut d).is_err());
+        c.stocks_into(&[2.,3.],&p,&mut s).unwrap();assert_eq!(s[0].liquid_volume,1.);
+    }
     fn carrier()->Carrier { Carrier::new(&[Preparation {mass:2.,volume:1.,hydrogen_atoms:20.,boron_atoms:4.},
         Preparation {mass:3.,volume:2.,hydrogen_atoms:30.,boron_atoms:9.}],vec![Link {from:0,to:1}]).unwrap() }
     fn empty()->Stocks { Stocks {water_mass:0.,liquid_volume:0.,hydrogen_target:0.,hydrogen_product:0.,mobile_boron10:0.} }

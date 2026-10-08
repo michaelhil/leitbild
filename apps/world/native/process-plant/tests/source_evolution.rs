@@ -1,222 +1,260 @@
 //! Small mathematical fixtures; no fabricated LD-01 preparation or trajectory.
 use leitbild_plant_numerics::{
-    cylindrical_source as cs, fuel_history as fh, fuel_source as fs, heat_history as hh,
-    moderator_source as ms, optical_source as os, passive_source as ps, source_evolution::*,
-    transport_source as ts,
+    cylindrical_source as cs, fuel_history as fh, heat_history as hh, moderator_source as ms,
+    optical_source as os, passive_source as ps, source_evolution::*, transport_source as ts,
 };
-pub(crate) fn input() -> Input {
-    let volumes = vec![2., 3.];
-    let speed = [3.; 7];
-    let fuel = fs::FuelModel::new(
-        fs::FuelLaw {
-            absorption: [0.4; 7],
-            fission: [0.1; 7],
-            scatter: [[0.2; 7]; 7],
-            nu: [2.; 7],
-            chi: [1. / 7.; 7],
-            speed,
-            beta: [0.001; 6],
-            decay: [0.1; 6],
-            f_d: 0.2,
-        },
-        volumes.clone(),
-        vec![1.],
-        vec![fs::Cohort {
-            segment: 0,
-            mass: 2.,
-            mu: 1.,
-        }],
-        vec![
-            fs::Intersection {
-                region: 0,
-                segment: 0,
-                volume: 0.5,
-                weights: vec![fs::Weight {
-                    cohort: 0,
-                    mass: 1.,
-                }],
-            },
-            fs::Intersection {
-                region: 1,
-                segment: 0,
-                volume: 0.5,
-                weights: vec![fs::Weight {
-                    cohort: 0,
-                    mass: 1.,
-                }],
-            },
-        ],
-    )
-    .unwrap();
-    let heat = hh::Kernel::new(
-        (0..25)
-            .map(|i| hh::Group {
-                feed: if i < 23 {
-                    hh::Feed::Fission
-                } else {
-                    hh::Feed::FertileCapture
-                },
-                energy_per_event: if i < 23 { 0.1 } else { 0.3 },
-                decay_rate: 0.01 * (i + 1) as f64,
-            })
-            .collect(),
-        10.,
-    )
-    .unwrap();
-    let history = fh::Assembly::new(
-        fuel,
-        vec![fh::SegmentPreparation {
-            reference_u235: 1000.,
-            reference_u238: 2000.,
-            sf235_neutrons_per_second: 2.,
-            sf238_neutrons_per_second: 3.,
-        }],
-        fh::PoisonLaw {
-            yield_i: 0.06,
-            yield_xe: 0.003,
-            yield_pm: 0.01,
-            lambda_i: 0.02,
-            lambda_xe: 0.03,
-            lambda_pm: 0.01,
-            xe_sigma_m2: 0.1,
-            sm_sigma_m2: 0.2,
-        },
-        heat,
-        2.5,
-        fh::CfLaw {
-            initial_energy_j: 1000.,
-            initial_neutrons_per_second: 4.,
-            decay_rate: 0.01,
-            birth_export_j_per_neutron: 0.5,
-        },
-        vec![(0, 0.25), (1, 0.75)],
-    )
-    .unwrap();
-    let moderator = ms::ModeratorModel::new(
-        ms::ModeratorLaw {
-            absorption: [0.02; 7],
-            scatter: [[0.01; 7]; 7],
-            speed,
-            boron_sigma: [0.001; 7],
-            reference_density: 1000.,
-            hydrogen_emission: [0., 2.],
-            boron_emission: [2., 0.4],
-        },
-        volumes.clone(),
-        vec![
-            ms::Intersection {
-                region: 0,
-                volume: 0.5,
-            },
-            ms::Intersection {
-                region: 1,
-                volume: 0.5,
-            },
-        ],
-    )
-    .unwrap();
-    Input {
-        history,
-        temperatures: vec![400.],
-        moderator,
-        water_rows: vec![
-            ms::Stocks {
-                water_mass: 500.,
-                liquid_volume: 0.5,
-                hydrogen_target: 40000.,
+#[path = "common/source_input.rs"]
+mod fixture;
+pub(crate) use fixture::input;
+
+fn moving_union_fixture() -> (Evolution, Vec<ms::Stocks>, Vec<f64>) {
+    let mut i = input();
+    i.water_owners[0].authority = WaterAuthority::External { index: 0 };
+    i.external_water_volumes = vec![1.25];
+    for row in &mut i.row_map {
+        row.h_fraction = 0.;
+        row.b_fraction = 0.;
+    }
+    i.passive_incidence.push(ps::Intersection {
+        stock: 0,
+        region: 1,
+        volume: 0.,
+    });
+    i.cylinder_incidence.push(cs::Intersection {
+        target: 0,
+        region: 0,
+        share: 0.,
+    });
+    let m = Evolution::new(i).unwrap();
+    let water = vec![ms::Stocks {
+        water_mass: 1250.,
+        liquid_volume: 1.25,
+        hydrogen_target: 100000.,
+        hydrogen_product: 0.,
+        mobile_boron10: 1000.,
+    }];
+    let mut y = m.initial_state();
+    for (i, n) in y[..m.nc_dimension()].iter_mut().enumerate() {
+        *n = 1. + (i as f64) * 0.13;
+    }
+    y[m.target_row(2)] = 7.;
+    (m, water, y)
+}
+fn moved_geometry(m: &Evolution) -> Geometry {
+    Geometry {
+        passive_volumes: vec![0.03, 0.07],
+        cylinder_shares: vec![0.25, 0.75],
+        moderator_volumes: vec![0.25, 0.75],
+        external_water_volumes: vec![1.25],
+        ..m.prepared_geometry().clone()
+    }
+}
+fn shift_geometry(g: &Geometry, d: &Geometry, h: f64) -> Geometry {
+    let shift = |a: &[f64], b: &[f64]| a.iter().zip(b).map(|(a, b)| a + h * b).collect();
+    Geometry {
+        passive_volumes: shift(&g.passive_volumes, &d.passive_volumes),
+        cylinder_shares: shift(&g.cylinder_shares, &d.cylinder_shares),
+        moderator_volumes: shift(&g.moderator_volumes, &d.moderator_volumes),
+        external_water_volumes: shift(&g.external_water_volumes, &d.external_water_volumes),
+    }
+}
+#[test]
+fn current_geometry_invalidates_only_stage_cache_preserves_history_and_restores_exactly() {
+    let (m, water, y) = moving_union_fixture();
+    let before = y.clone();
+    let mut w = m.workspace();
+    m.evaluate_coupled_into(&y, m.prepared_temperatures(), &water, &mut w)
+        .unwrap();
+    let original = w.rates().unwrap().to_vec();
+    let g = moved_geometry(&m);
+    m.evaluate_with_geometry_into(&y, m.prepared_temperatures(), &water, &g, &mut w)
+        .unwrap();
+    assert!(
+        w.rates()
+            .unwrap()
+            .iter()
+            .zip(&original)
+            .any(|(a, b)| (a - b).abs() > 1e-4)
+    );
+    assert_eq!(y, before);
+    assert_eq!(m.prepared_geometry().passive_volumes, vec![0.1, 0.]);
+    let changed = w.rates().unwrap().to_vec();
+    m.evaluate_with_geometry_into(&y, m.prepared_temperatures(), &water, &g, &mut w)
+        .unwrap();
+    assert_eq!(w.rates().unwrap(), changed);
+    m.evaluate_coupled_into(&y, m.prepared_temperatures(), &water, &mut w)
+        .unwrap();
+    assert_eq!(w.rates().unwrap(), original);
+    let mut invalid = g.clone();
+    invalid.cylinder_shares[0] = 0.9;
+    assert!(
+        m.evaluate_with_geometry_into(&y, m.prepared_temperatures(), &water, &invalid, &mut w)
+            .is_err()
+    );
+    assert!(w.rates().is_err());
+    m.evaluate_with_geometry_into(&y, m.prepared_temperatures(), &water, &g, &mut w)
+        .unwrap();
+    assert_eq!(w.rates().unwrap(), changed);
+}
+#[test]
+fn current_geometry_source_full_chain_rule_and_nc_operator_agree() {
+    let (m, mut water, y) = moving_union_fixture();
+    water[0].liquid_volume = 0.8; // Owner bulk V is not its liquid occupation.
+    let g = moved_geometry(&m);
+    let mut w = m.workspace();
+    let mut dg = g.zero_direction();
+    dg.passive_volumes = vec![0.01, -0.01];
+    dg.cylinder_shares = vec![-0.03, 0.03];
+    dg.moderator_volumes = vec![0.025, -0.025];
+    dg.external_water_volumes = vec![0.04];
+    let mut dy = vec![0.; y.len()];
+    for (i, a) in dy[..m.nc_dimension()].iter_mut().enumerate() {
+        *a = 0.01 * (i + 1) as f64;
+    }
+    dy[m.target_row(0)] = 0.2;
+    dy[m.target_row(2)] = 0.1;
+    let dw = vec![ms::Stocks {
+        water_mass: 0.1,
+        liquid_volume: 0.,
+        hydrogen_target: 0.2,
+        hydrogen_product: -0.1,
+        mobile_boron10: 0.01,
+    }];
+    m.evaluate_with_geometry_into(&y, m.prepared_temperatures(), &water, &g, &mut w)
+        .unwrap();
+    m.jvp_with_geometry_into(&dy, &[0.03], &dw, &dg, &mut w)
+        .unwrap();
+    let exact = w.rate_jvp().unwrap().to_vec();
+    let h = 1e-5;
+    let mut responses = Vec::new();
+    for sign in [-1., 1.] {
+        let yy: Vec<_> = y.iter().zip(&dy).map(|(a, b)| a + sign * h * b).collect();
+        let s = water[0];
+        let d = dw[0];
+        let ss = ms::Stocks {
+            water_mass: s.water_mass + sign * h * d.water_mass,
+            liquid_volume: s.liquid_volume,
+            hydrogen_target: s.hydrogen_target + sign * h * d.hydrogen_target,
+            hydrogen_product: s.hydrogen_product + sign * h * d.hydrogen_product,
+            mobile_boron10: s.mobile_boron10 + sign * h * d.mobile_boron10,
+        };
+        let gg = shift_geometry(&g, &dg, sign * h);
+        m.evaluate_with_geometry_into(
+            &yy,
+            &[m.prepared_temperatures()[0] + sign * h * 0.03],
+            &[ss],
+            &gg,
+            &mut w,
+        )
+        .unwrap();
+        responses.push(w.rates().unwrap().to_vec());
+    }
+    for (i, &a) in exact.iter().enumerate() {
+        close(a, (responses[1][i] - responses[0][i]) / (2. * h));
+    }
+    m.evaluate_with_geometry_into(&y, m.prepared_temperatures(), &water, &g, &mut w)
+        .unwrap();
+    let mut matrix = vec![0.; m.nc_pattern().len()];
+    m.nc_values(&w, 0., &mut matrix).unwrap();
+    for column in 0..m.nc_dimension() {
+        let mut v = vec![0.; y.len()];
+        v[column] = 1.;
+        m.jvp_coupled_into(
+            &v,
+            &[0.],
+            &[ms::Stocks {
+                water_mass: 0.,
+                liquid_volume: 0.,
+                hydrogen_target: 0.,
                 hydrogen_product: 0.,
-                mobile_boron10: 400.
-            };
-            2
-        ],
-        water_owners: vec![WaterOwner {
-            authority: WaterAuthority::Closed,
-            hydrogen: 100000.,
-            hydrogen_product: 0.,
-            boron: 1000.,
-            boron_product: 0.,
-        }],
-        row_map: vec![
-            WaterRow {
-                owner: 0,
-                h_fraction: 0.4,
-                b_fraction: 0.4,
-                volume_fraction: 0.
-            };
-            2
-        ],
-        targets: vec![100.; 4],
-        passive_stocks: vec![ps::Stock {
-            volume: 0.1,
-            scatter_m1: [0.1; 7],
-            targets: vec![ps::Target {
-                index: 0,
-                sigma_m2: [0.005; 7],
+                mobile_boron10: 0.,
             }],
+            &mut w,
+        )
+        .unwrap();
+        for (k, &(row, c)) in m
+            .nc_pattern()
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, c))| *c == column)
+        {
+            assert_eq!(c, column);
+            close(matrix[k], -w.rate_jvp().unwrap()[row]);
+        }
+    }
+}
+#[test]
+fn empty_water_union_row_has_finite_owner_based_entering_geometry_derivative() {
+    let (m, water, y) = moving_union_fixture();
+    let mut g = m.prepared_geometry().clone();
+    g.moderator_volumes = vec![0., 1.];
+    let mut dg = g.zero_direction();
+    dg.moderator_volumes = vec![0.125, -0.125];
+    let mut w = m.workspace();
+    m.evaluate_with_geometry_into(&y, m.prepared_temperatures(), &water, &g, &mut w)
+        .unwrap();
+    let baseline = w.rates().unwrap().to_vec();
+    m.jvp_with_geometry_into(
+        &vec![0.; y.len()],
+        &[0.],
+        &[ms::Stocks {
+            water_mass: 0.,
+            liquid_volume: 0.,
+            hydrogen_target: 0.,
+            hydrogen_product: 0.,
+            mobile_boron10: 0.,
         }],
-        passive_incidence: vec![ps::Intersection {
-            stock: 0,
-            region: 0,
-            volume: 0.1,
-        }],
-        cylinder_targets: vec![cs::Target {
-            index: 2,
-            inner_radius: 0.,
-            outer_radius: 0.1,
-            length: 1.,
-            multiplicity: 1,
-            sigma_m2: [0.001; 7],
-            escape_depth: 0.01,
-            collection: 0.5,
-        }],
-        cylinder_incidence: vec![cs::Intersection {
-            target: 0,
-            region: 1,
-            share: 1.,
-        }],
-        envelope_lengths: vec![1., 1.],
-        faces: vec![
-            ts::Face {
-                left: 0,
-                right: Some(1),
-                area: 0.5,
-                left_distance: 0.5,
-                right_distance: Some(0.5),
-                law: ts::FaceLaw::Optical {
-                    targets: vec![1, 3],
-                },
-            },
-            ts::Face {
-                left: 0,
-                right: None,
-                area: 0.2,
-                left_distance: 0.5,
-                right_distance: None,
-                law: ts::FaceLaw::Escape,
-            },
-        ],
-        optical_layers: vec![vec![
-            os::Layer {
-                columns: vec![os::Column {
-                    target: 1,
-                    atoms_per_m2: 100.,
-                    sigma_m2: [0.001; 7],
-                }],
-            },
-            os::Layer {
-                columns: vec![os::Column {
-                    target: 3,
-                    atoms_per_m2: 20.,
-                    sigma_m2: [0.002; 7],
-                }],
-            },
-        ]],
-        mn: vec![MnTarget {
-            target: 0,
-            decay_rate: 0.01,
-            electron_j: 2.,
-            photon_j: 3.,
-        }],
+        &dg,
+        &mut w,
+    )
+    .unwrap();
+    let exact = w.rate_jvp().unwrap().to_vec();
+    let h = 1e-5;
+    m.evaluate_with_geometry_into(
+        &y,
+        m.prepared_temperatures(),
+        &water,
+        &shift_geometry(&g, &dg, h),
+        &mut w,
+    )
+    .unwrap();
+    for (i, &a) in exact.iter().enumerate() {
+        close(a, (w.rates().unwrap()[i] - baseline[i]) / h);
+    }
+    assert!(exact[..m.nc_dimension()].iter().any(|a| a.abs() > 1e-4));
+}
+#[test]
+fn moved_geometry_complete_sparse_jacobian_retains_union_support_and_matches_every_state_column() {
+    let (m, water, y) = moving_union_fixture();
+    let j = Jacobian::new(&m).unwrap();
+    let mut w = m.workspace();
+    let zero = ms::Stocks {
+        water_mass: 0.,
+        liquid_volume: 0.,
+        hydrogen_target: 0.,
+        hydrogen_product: 0.,
+        mobile_boron10: 0.,
+    };
+    let mut values = vec![0.; j.pattern().len()];
+    for g in [m.prepared_geometry().clone(), moved_geometry(&m)] {
+        m.evaluate_with_geometry_into(&y, m.prepared_temperatures(), &water, &g, &mut w)
+            .unwrap();
+        j.values(&m, &mut w, 1., &mut values).unwrap();
+        for column in 0..m.state_count() {
+            let mut dy = vec![0.; y.len()];
+            dy[column] = 1.;
+            m.jvp_coupled_into(&dy, &[0.], &[zero], &mut w).unwrap();
+            let mut product = vec![0.; y.len()];
+            for (&(r, c), &a) in j.pattern().iter().zip(&values) {
+                product[r] -= a * dy[c];
+            }
+            for (p, d) in product.iter_mut().zip(&dy) {
+                *p += d;
+            }
+            for (a, b) in product.iter().zip(w.rate_jvp().unwrap()) {
+                close(*a, *b);
+            }
+        }
     }
 }
 fn state(m: &Evolution) -> Vec<f64> {
@@ -291,10 +329,10 @@ fn coupled_input() -> Input {
     let mut external = p.water_owners[0];
     external.authority = WaterAuthority::External { index: 0 };
     p.water_owners.push(external);
+    p.external_water_volumes = vec![1.25];
     p.row_map[1].owner = 1;
     p.row_map[1].h_fraction = 0.;
     p.row_map[1].b_fraction = 0.;
-    p.row_map[1].volume_fraction = 0.4;
     p
 }
 fn external_stock() -> ms::Stocks {
@@ -354,10 +392,10 @@ fn external_water_has_one_owner_and_exact_capture_receipts() {
     );
     let mut all_external = input();
     all_external.water_owners[0].authority = WaterAuthority::External { index: 0 };
+    all_external.external_water_volumes = vec![1.25];
     for r in &mut all_external.row_map {
         r.h_fraction = 0.;
         r.b_fraction = 0.;
-        r.volume_fraction = 0.4;
     }
     let all_external = Evolution::new(all_external).unwrap();
     assert_eq!(all_external.state_count() + 2, closed.state_count());
@@ -486,14 +524,16 @@ fn coupled_cache_keys_all_consumed_inputs_and_failure_invalidates() {
     assert!(w.rates().is_err());
     m.evaluate_coupled_into(&y, &[500.], &[s], &mut w).unwrap();
     let foreign = Evolution::new(coupled_input()).unwrap();
-    assert!(foreign
-        .evaluate_coupled_into(&y, &[500.], &[s], &mut w)
-        .is_err());
+    assert!(
+        foreign
+            .evaluate_coupled_into(&y, &[500.], &[s], &mut w)
+            .is_err()
+    );
     let mut bad = coupled_input();
     bad.water_owners[1].authority = WaterAuthority::External { index: 1 };
     assert!(Evolution::new(bad).is_err());
     let mut bad = coupled_input();
-    bad.row_map[1].volume_fraction = 0.;
+    bad.external_water_volumes[0] = 0.;
     assert!(Evolution::new(bad).is_err());
 }
 
@@ -523,11 +563,14 @@ fn water_preparation_uses_only_its_authoritative_projection() {
         assert!(Evolution::new(ambiguous).is_err());
     }
     let mut closed_with_volume = input();
-    closed_with_volume.row_map[0].volume_fraction = 0.4;
+    closed_with_volume.external_water_volumes = vec![1.25];
     assert!(Evolution::new(closed_with_volume).is_err());
     let mut closed_mismatch = input();
     closed_mismatch.row_map[0].h_fraction = 0.3;
     assert!(Evolution::new(closed_mismatch).is_err());
+    let mut vapor_preparation = input();
+    vapor_preparation.water_rows[0].liquid_volume = 0.;
+    assert!(Evolution::new(vapor_preparation).is_err()); // SOURCE preparation remains on its wet domain.
     for invalid in [f64::INFINITY, f64::NAN, -1.] {
         for field in 0..5 {
             let mut bad = coupled_input();
@@ -695,10 +738,11 @@ fn full_jvp_and_nc_block_match_actual_forward_operator() {
 fn complete_sparse_jacobian_preserves_full_couplings_and_solver_basis() {
     let m = Evolution::new(input()).unwrap();
     let j = Jacobian::new(&m).unwrap();
-    assert!(j
-        .pattern()
-        .windows(2)
-        .all(|p| (p[0].1, p[0].0) < (p[1].1, p[1].0)));
+    assert!(
+        j.pattern()
+            .windows(2)
+            .all(|p| (p[0].1, p[0].0) < (p[1].1, p[1].0))
+    );
     let mut w = m.workspace();
     let mut values = vec![0.; j.pattern().len()];
     for y in [m.initial_state(), state(&m)] {

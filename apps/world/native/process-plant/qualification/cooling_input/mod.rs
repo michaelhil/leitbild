@@ -214,7 +214,7 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
         })
         .collect::<Vec<_>>();
     let nr = count(&mut p);
-    if nr > p.len() / 4 {
+    if nr > p.len() / 3 {
         return Err("External intersections exceed frame".into());
     }
     let mut unique = BTreeSet::new();
@@ -222,15 +222,12 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
         let region = count(&mut p);
         let cell = count(&mut p);
         let volume = number(&mut p);
-        let fraction = number(&mut p);
         if cell >= cells
             || region >= prepared.input.moderator.volumes().len()
             || !unique.insert((region, cell))
             || !volume.is_finite()
             || volume <= 0.
-            || !fraction.is_finite()
-            || fraction <= 0.
-            || (fraction * preparation[cell].volume - volume).abs() > 3e-11 * volume
+            || volume > preparation[cell].volume * (1. + 3e-11)
         {
             return Err("Invalid exact external water intersection".into());
         }
@@ -239,14 +236,13 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
             owner: nclosed + cell,
             h_fraction: 0.,
             b_fraction: 0.,
-            volume_fraction: fraction,
         });
         stocks.push(moderator_source::Stocks {
-            water_mass: preparation[cell].mass * fraction,
+            water_mass: (preparation[cell].mass / preparation[cell].volume) * volume,
             liquid_volume: volume,
-            hydrogen_target: preparation[cell].hydrogen_atoms * fraction,
+            hydrogen_target: (preparation[cell].hydrogen_atoms / preparation[cell].volume) * volume,
             hydrogen_product: 0.,
-            mobile_boron10: preparation[cell].boron_atoms * fraction,
+            mobile_boron10: (preparation[cell].boron_atoms / preparation[cell].volume) * volume,
         });
     }
     if p.next().is_some() {
@@ -260,6 +256,7 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
     prepared.input.water_owners = owners;
     prepared.input.row_map = row_map;
     prepared.input.water_rows = stocks;
+    prepared.input.external_water_volumes = preparation.iter().map(|p| p.volume).collect();
     let carrier = water_carrier::Carrier::new(
         &preparation,
         network

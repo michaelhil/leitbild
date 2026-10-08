@@ -60,6 +60,8 @@ pub struct Model {
     owner: Arc<()>,
 }
 pub struct Workspace {
+    shares: Vec<f64>,
+    share_sums: Vec<f64>,
     responses: Vec<Response>,
     collision: Vec<[f64; GROUPS]>,
     // Response AND its amount derivatives depend only on this target amount;
@@ -85,6 +87,7 @@ impl Workspace {
         self.responses.len() * std::mem::size_of::<Response>()
             + self.collision.len() * std::mem::size_of::<[f64; GROUPS]>()
             + self.amount_bits.len() * std::mem::size_of::<u64>()
+            + (self.shares.len() + self.share_sums.len()) * 8
     }
 }
 
@@ -289,7 +292,7 @@ impl Model {
             if e.target >= prepared.len()
                 || e.region >= volumes.len()
                 || !e.share.is_finite()
-                || e.share <= 0.
+                || e.share < 0.
                 || !seen.insert((e.target, e.region))
             {
                 return Err("Invalid cylinder source incidence");
@@ -313,6 +316,8 @@ impl Model {
     }
     pub fn workspace(&self) -> Workspace {
         Workspace {
+            shares: self.intersections.iter().map(|e| e.share).collect(),
+            share_sums: vec![0.; self.targets.len()],
             responses: vec![Response::default(); self.targets.len()],
             collision: vec![[0.; GROUPS]; self.volumes.len()],
             amount_bits: vec![0; self.targets.len()],
@@ -330,19 +335,58 @@ impl Model {
             .sum()
     }
     pub fn update(&self, amounts: &[f64], work: &mut Workspace) -> Result<(), &'static str> {
+        self.update_geometry(amounts, None, work)
+    }
+    pub fn update_with_shares(
+        &self,
+        amounts: &[f64],
+        shares: &[f64],
+        work: &mut Workspace,
+    ) -> Result<(), &'static str> {
+        self.update_geometry(amounts, Some(shares), work)
+    }
+    fn update_geometry(
+        &self,
+        amounts: &[f64],
+        shares: Option<&[f64]>,
+        work: &mut Workspace,
+    ) -> Result<(), &'static str> {
         let reuse = work.valid;
         work.valid = false;
         if !Arc::ptr_eq(&work.owner, &self.owner)
             || amounts.len() != self.target_count
             || amounts.iter().any(|v| !v.is_finite() || *v < 0.)
+            || shares.is_some_and(|v| {
+                v.len() != self.intersections.len() || v.iter().any(|x| !x.is_finite() || *x < 0.)
+            })
         {
             return Err("Invalid actual cylinder target/workspace");
         }
+        work.share_sums.fill(0.);
+        let mut same_geometry = true;
+        for (i, e) in self.intersections.iter().enumerate() {
+            let value = shares.map_or(e.share, |v| v[i]);
+            same_geometry &= value.to_bits() == work.shares[i].to_bits();
+            work.shares[i] = value;
+            work.share_sums[e.target] += value;
+        }
+        if work
+            .share_sums
+            .iter()
+            .any(|s| !s.is_finite() || (*s - 1.).abs() > 3e-11)
+        {
+            return Err("Current cylinder incidence does not cover target");
+        }
         // Never reuse through a failed update. Exact bits, not an amount
         // tolerance, control reuse; unrelated valid targets cannot affect us.
-        if reuse && self.targets.iter().zip(&work.amount_bits).all(|(p, bits)| {
-            amounts[p.target.index].to_bits() == *bits
-        }) {
+        if reuse
+            && same_geometry
+            && self
+                .targets
+                .iter()
+                .zip(&work.amount_bits)
+                .all(|(p, bits)| amounts[p.target.index].to_bits() == *bits)
+        {
             work.valid = true;
             return Ok(());
         }
@@ -407,10 +451,10 @@ impl Model {
             }
             work.amount_bits[j] = amount.to_bits();
         }
-        for e in &self.intersections {
+        for (e, &share) in self.intersections.iter().zip(&work.shares) {
             for g in 0..GROUPS {
                 work.collision[e.region][g] +=
-                    work.responses[e.target].capture_m2[g] * e.share / self.volumes[e.region];
+                    work.responses[e.target].capture_m2[g] * share / self.volumes[e.region];
             }
         }
         if work.collision.iter().flatten().any(|v| !v.is_finite()) {
@@ -445,12 +489,12 @@ impl Model {
         captures.fill([0.; GROUPS]);
         collected.fill([0.; GROUPS]);
         energy_escape.fill([0.; GROUPS]);
-        for e in &self.intersections {
+        for (e, &share) in self.intersections.iter().zip(&work.shares) {
             let t = &self.targets[e.target].target;
             let r = &work.responses[e.target];
             for g in 0..GROUPS {
                 let flux =
-                    e.share * self.speed[g] * n[e.region * GROUPS + g] / self.volumes[e.region];
+                    share * self.speed[g] * n[e.region * GROUPS + g] / self.volumes[e.region];
                 let c = r.capture_m2[g] * flux;
                 rates[e.region * GROUPS + g] -= c;
                 captures[t.index][g] += c;

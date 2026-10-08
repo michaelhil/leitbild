@@ -1,5 +1,5 @@
 //! Reduced law-only fixture. No LD-01 preparation or advancing solve.
-#[path = "source_evolution.rs"]
+#[path = "common/source_input.rs"]
 mod source_fixture;
 use leitbild_plant_numerics::{
     passive_source as ps, source_evolution::Evolution, transport_source as ts,

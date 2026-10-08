@@ -1,13 +1,13 @@
 //! Reduced mathematical join apparatus, not an LD-01 operating preparation.
 //! Reuse the existing source fixture's owned laws; split only its heat cohort
 //! so two radial bands can share one finite gas and one physical water cell.
-#[path = "source_evolution.rs"]
+#[path = "common/source_input.rs"]
 mod source_fixture;
 
 use leitbild_plant_numerics::{
-    barrel_thermal as bt, cold_pressurizer as cp, finite_surge as surge, fuel_history as fh,
-    fuel_source as fs, fuel_thermal as ft, heat_history as hh, operating_network as on,
-    source_cooling as sc, source_evolution as se, water_carrier as wc, CellGeometry,
+    CellGeometry, barrel_thermal as bt, cold_pressurizer as cp, finite_surge as surge,
+    fuel_history as fh, fuel_source as fs, fuel_thermal as ft, heat_history as hh,
+    operating_network as on, source_cooling as sc, source_evolution as se, water_carrier as wc,
 };
 pub(crate) fn mobile_input(
     source: &se::Evolution,
@@ -44,6 +44,16 @@ pub(crate) fn mobile_input(
 
 pub(crate) fn fixture() -> sc::Model {
     fixture_with_fuel_mass(0.5).unwrap()
+}
+fn mobile_clad_recipients(
+    thermal: &ft::Model,
+) -> leitbild_plant_numerics::mobile_capture::CladRecipients {
+    leitbild_plant_numerics::mobile_capture::CladRecipients {
+        node_count: thermal.node_count(),
+        rows: (0..thermal.band_count())
+            .flat_map(|band| thermal.clad_rows(band))
+            .collect(),
+    }
 }
 pub(crate) fn absorber_input(
     source: &se::Evolution,
@@ -214,7 +224,7 @@ fn mobile_binding_serial_wall_paths_and_thermal_cut_close_by_species() {
     }
     let capture = Model::new(
         &m.source,
-        &m.thermal,
+        mobile_clad_recipients(&m.thermal),
         2,
         m.absorber_guide.host_count(),
         input,
@@ -322,12 +332,36 @@ fn mobile_binding_refuses_incomplete_false_wall_or_foreign_birth_ownership() {
     let build = |input| {
         Model::new(
             &m.source,
-            &m.thermal,
+            mobile_clad_recipients(&m.thermal),
             2,
             m.absorber_guide.host_count(),
             input,
         )
     };
+    let mut clad = mobile_clad_recipients(&m.thermal);
+    clad.rows.push(clad.rows[0]);
+    assert!(
+        Model::new(
+            &m.source,
+            clad,
+            2,
+            m.absorber_guide.host_count(),
+            mobile_input(&m.source)
+        )
+        .is_err()
+    );
+    let mut clad = mobile_clad_recipients(&m.thermal);
+    clad.rows[0] = clad.node_count;
+    assert!(
+        Model::new(
+            &m.source,
+            clad,
+            2,
+            m.absorber_guide.host_count(),
+            mobile_input(&m.source)
+        )
+        .is_err()
+    );
     let mut input = mobile_input(&m.source);
     input.routes.pop();
     assert!(build(input).is_err());
@@ -345,10 +379,11 @@ fn mobile_binding_refuses_incomplete_false_wall_or_foreign_birth_ownership() {
     assert!(build(input).is_err());
     let mut w = m.mobile_capture.workspace();
     let other = fixture();
-    assert!(m
-        .mobile_capture
-        .evaluate(&other.source, &[], &[997., 995.], &mut w)
-        .is_err());
+    assert!(
+        m.mobile_capture
+            .evaluate(&other.source, &[], &[997., 995.], &mut w)
+            .is_err()
+    );
     assert!(w.value().is_err());
 }
 
@@ -364,7 +399,7 @@ fn mobile_physical_wall_and_liquid_receipts_are_invariant_to_birth_partition() {
     split.routes.push(extra);
     let a = Model::new(
         &m.source,
-        &m.thermal,
+        mobile_clad_recipients(&m.thermal),
         2,
         m.absorber_guide.host_count(),
         input,
@@ -372,7 +407,7 @@ fn mobile_physical_wall_and_liquid_receipts_are_invariant_to_birth_partition() {
     .unwrap();
     let b = Model::new(
         &m.source,
-        &m.thermal,
+        mobile_clad_recipients(&m.thermal),
         2,
         m.absorber_guide.host_count(),
         split,
@@ -712,12 +747,12 @@ fn fixture_with_preparation_at(
             boron_product: 0.,
         })
         .collect();
+    input.external_water_volumes = prep.iter().map(|p| p.volume).collect();
     for i in 0..2 {
         input.row_map[i] = se::WaterRow {
             owner: i,
             h_fraction: 0.,
             b_fraction: 0.,
-            volume_fraction: 0.5,
         };
         input.water_rows[i].water_mass = prep[i].mass * 0.5;
         input.water_rows[i].hydrogen_target = prep[i].hydrogen_atoms * 0.5;
@@ -951,20 +986,22 @@ fn guide_actual_birth_partition_refuses_omission_duplicate_and_foreign_source() 
         };
         2
     ];
-    assert!(m
-        .absorber_guide
-        .evaluate(
-            &[300.; 3],
-            &ow.source,
-            &y[..other.layout.source_end],
-            &water,
-            &mut w
-        )
-        .is_err());
-    assert!(m
-        .absorber_guide
-        .evaluate(&[300.; 3], &ow.source, &[], &water, &mut w)
-        .is_err());
+    assert!(
+        m.absorber_guide
+            .evaluate(
+                &[300.; 3],
+                &ow.source,
+                &y[..other.layout.source_end],
+                &water,
+                &mut w
+            )
+            .is_err()
+    );
+    assert!(
+        m.absorber_guide
+            .evaluate(&[300.; 3], &ow.source, &[], &water, &mut w)
+            .is_err()
+    );
 }
 
 #[test]
@@ -1031,16 +1068,17 @@ fn finite_guide_cooling_is_reciprocal_and_real_half_wall_limits_the_contact() {
     // Neither invalid phase classification nor missing finite caloric scope is accepted.
     let mut bad = water.clone();
     bad[0].saturation_temperature_k = f64::NAN;
-    assert!(m
-        .absorber_guide
-        .evaluate(
-            &[300.; 3],
-            &w.source,
-            &y[..m.layout.source_end],
-            &bad,
-            &mut own
-        )
-        .is_err());
+    assert!(
+        m.absorber_guide
+            .evaluate(
+                &[300.; 3],
+                &w.source,
+                &y[..m.layout.source_end],
+                &bad,
+                &mut own
+            )
+            .is_err()
+    );
 }
 
 #[test]
@@ -1064,7 +1102,7 @@ fn mobile_true_body_and_guide_stages_join_owned_finite_hosts_without_alias() {
     ];
     let mobile = Model::new(
         &m.source,
-        &m.thermal,
+        mobile_clad_recipients(&m.thermal),
         2,
         m.absorber_guide.host_count(),
         input.clone(),
@@ -1095,20 +1133,524 @@ fn mobile_true_body_and_guide_stages_join_owned_finite_hosts_without_alias() {
         1e-12,
     );
     input.wall_origins[0].paths[0].stages[0].recipient = Recipient::Host(3);
-    assert!(Model::new(
-        &m.source,
-        &m.thermal,
-        2,
-        m.absorber_guide.host_count(),
-        input
-    )
-    .is_err());
+    assert!(
+        Model::new(
+            &m.source,
+            mobile_clad_recipients(&m.thermal),
+            2,
+            m.absorber_guide.host_count(),
+            input
+        )
+        .is_err()
+    );
 }
 fn close(a: f64, b: f64, relative: f64, absolute: f64) {
     assert!(
         (a - b).abs() <= absolute + relative * a.abs().max(b.abs()),
         "{a:e} != {b:e}"
     );
+}
+
+fn absorber_geometry_delivery(v: &leitbild_plant_numerics::absorber_guide::Delivery) -> Vec<f64> {
+    v.host
+        .iter()
+        .chain(&v.water)
+        .chain(&v.nuclear_host)
+        .chain(&v.nuclear_water)
+        .copied()
+        .chain([v.exported, v.emitted])
+        .chain(v.family_emitted)
+        .collect()
+}
+
+#[test]
+fn current_absorber_contacts_restore_original_and_have_exact_geometry_tangent() {
+    use leitbild_plant_numerics::absorber_guide::{Contact, ContactGeometry, Model};
+    let m = fixture();
+    let mut input = absorber_input(&m.source);
+    // Fixed union: this real second BODY recipient is inactive when seated.
+    input.contacts.push(Contact {
+        host: 0,
+        water: 1,
+        area_m2: 0.,
+        solid_geometry_m_inv: 0.,
+        liquid_chord_m: 0.15,
+    });
+    let model = Model::new(&m.source, 2, input).unwrap();
+    let mut source = m.workspace();
+    let mut y = resolved(&m);
+    y[m.source.mn_product_row(1)] = 0.1;
+    m.evaluate(&y, &vec![0.; m.dimension()], Some(0.), &mut source)
+        .unwrap();
+    m.jvp(&vec![0.; m.dimension()], 0., &mut source).unwrap();
+    let water = [
+        bt::Water {
+            temperature_k: 300.,
+            density_kg_m3: 997.,
+            saturation_temperature_k: 373.15,
+        },
+        bt::Water {
+            temperature_k: 303.,
+            density_kg_m3: 995.,
+            saturation_temperature_k: 373.15,
+        },
+    ];
+    let dwater = [bt::WaterDirection {
+        temperature_k: 0.,
+        density_kg_m3: 0.,
+    }; 2];
+    let temps = [312., 318., 299.];
+    let mut w = model.workspace();
+    model
+        .evaluate(
+            &temps,
+            &source.source,
+            &y[..m.layout.source_end],
+            &water,
+            &mut w,
+        )
+        .unwrap();
+    let original = absorber_geometry_delivery(&w.value);
+    let mut geometry = model.geometry().to_vec();
+    geometry[0].area_m2 = 0.08;
+    geometry[1].area_m2 = 0.16;
+    geometry[1].solid_geometry_m_inv = 0.0013;
+    geometry[2].area_m2 = 0.14;
+    geometry[2].liquid_chord_m = 0.17;
+    geometry[4].area_m2 = 0.02;
+    model
+        .evaluate_with_geometry(
+            &temps,
+            &source.source,
+            &y[..m.layout.source_end],
+            &water,
+            &geometry,
+            &mut w,
+        )
+        .unwrap();
+    assert_ne!(original, absorber_geometry_delivery(&w.value));
+    let direction = vec![
+        ContactGeometry {
+            area_m2: -0.01,
+            solid_geometry_m_inv: 0.,
+            liquid_chord_m: 0.03,
+        },
+        ContactGeometry {
+            area_m2: 0.02,
+            solid_geometry_m_inv: 0.0002,
+            liquid_chord_m: -0.01,
+        },
+        ContactGeometry {
+            area_m2: -0.01,
+            solid_geometry_m_inv: -0.0001,
+            liquid_chord_m: 0.02,
+        },
+        ContactGeometry {
+            area_m2: 0.03,
+            solid_geometry_m_inv: 0.0001,
+            liquid_chord_m: -0.01,
+        },
+        ContactGeometry {
+            area_m2: 0.01,
+            solid_geometry_m_inv: 0.,
+            liquid_chord_m: -0.02,
+        },
+    ];
+    model
+        .jvp_with_geometry_direction(
+            &[0.; 3],
+            &source.source,
+            &vec![0.; m.layout.source_end],
+            &dwater,
+            &direction,
+            &mut w,
+        )
+        .unwrap();
+    let analytic = absorber_geometry_delivery(&w.direction);
+    close(
+        w.direction
+            .host
+            .iter()
+            .chain(&w.direction.water)
+            .sum::<f64>()
+            + w.direction.exported,
+        0.,
+        0.,
+        1e-11,
+    );
+    let h = 1e-5;
+    let values = [-h, h].map(|s| {
+        let shifted = geometry
+            .iter()
+            .zip(&direction)
+            .map(|(g, d)| ContactGeometry {
+                area_m2: g.area_m2 + s * d.area_m2,
+                solid_geometry_m_inv: g.solid_geometry_m_inv + s * d.solid_geometry_m_inv,
+                liquid_chord_m: g.liquid_chord_m + s * d.liquid_chord_m,
+            })
+            .collect::<Vec<_>>();
+        let mut v = model.workspace();
+        model
+            .evaluate_with_geometry(
+                &temps,
+                &source.source,
+                &y[..m.layout.source_end],
+                &water,
+                &shifted,
+                &mut v,
+            )
+            .unwrap();
+        absorber_geometry_delivery(&v.value)
+    });
+    for (i, a) in analytic.iter().enumerate() {
+        close(*a, (values[1][i] - values[0][i]) / (2. * h), 3e-7, 1e-8);
+    }
+    model
+        .evaluate(
+            &temps,
+            &source.source,
+            &y[..m.layout.source_end],
+            &water,
+            &mut w,
+        )
+        .unwrap();
+    assert_eq!(original, absorber_geometry_delivery(&w.value));
+    // Opening a zero-area union contact has a finite, nonzero one-sided derivative.
+    let mut opening = vec![ContactGeometry::default(); geometry.len()];
+    opening[0].area_m2 = -0.01;
+    opening[4].area_m2 = 0.01;
+    model
+        .jvp_with_geometry_direction(
+            &[0.; 3],
+            &source.source,
+            &vec![0.; m.layout.source_end],
+            &dwater,
+            &opening,
+            &mut w,
+        )
+        .unwrap();
+    let analytic = absorber_geometry_delivery(&w.direction);
+    assert!(w.direction.water[1].abs() > 0.);
+    let mut opened = model.geometry().to_vec();
+    for (g, d) in opened.iter_mut().zip(&opening) {
+        g.area_m2 += h * d.area_m2;
+    }
+    model
+        .evaluate_with_geometry(
+            &temps,
+            &source.source,
+            &y[..m.layout.source_end],
+            &water,
+            &opened,
+            &mut w,
+        )
+        .unwrap();
+    for (i, a) in analytic.iter().enumerate() {
+        close(
+            *a,
+            (absorber_geometry_delivery(&w.value)[i] - original[i]) / h,
+            3e-6,
+            1e-8,
+        );
+    }
+    let mut bad = geometry;
+    bad[0].area_m2 = -0.01;
+    assert!(
+        model
+            .evaluate_with_geometry(
+                &temps,
+                &source.source,
+                &y[..m.layout.source_end],
+                &water,
+                &bad,
+                &mut w
+            )
+            .is_err()
+    );
+    assert!(
+        model
+            .jvp(
+                &[0.; 3],
+                &source.source,
+                &vec![0.; m.layout.source_end],
+                &dwater,
+                &mut w
+            )
+            .is_err()
+    );
+}
+
+fn mobile_geometry_delivery(v: &leitbild_plant_numerics::mobile_capture::Delivery) -> Vec<f64> {
+    v.recipient_power()
+        .chain(v.channels.iter().copied())
+        .chain([v.exported, v.boundary_exported])
+        .collect()
+}
+
+#[test]
+fn current_mobile_birth_liquid_serial_wall_geometry_has_full_conservative_tangent() {
+    use leitbild_plant_numerics::{
+        mobile_capture::{Model, Path, Recipient, Wall},
+        moderator_source::Events,
+    };
+    let m = fixture();
+    let mut input = mobile_input(&m.source);
+    let routes = input.routes.clone();
+    input.routes = routes
+        .iter()
+        .flat_map(|r| {
+            let mut a = *r;
+            a.birth_share = 0.4;
+            let mut b = *r;
+            b.birth_share = 0.6;
+            b.liquid_chord_m = 0.13;
+            [a, b]
+        })
+        .collect();
+    input.wall_origins[0].paths = vec![
+        Path {
+            share: 0.5,
+            stages: vec![
+                Wall {
+                    recipient: Recipient::Host(0),
+                    thickness_m: 0.0002,
+                    density_kg_m3: 7920.,
+                    mu: [0.003, 0.0026],
+                },
+                Wall {
+                    recipient: Recipient::Clad(4),
+                    thickness_m: 0.001,
+                    density_kg_m3: 6551.,
+                    mu: [0.003, 0.0026],
+                },
+            ],
+        },
+        Path {
+            share: 0.25,
+            stages: vec![Wall {
+                recipient: Recipient::Barrel,
+                thickness_m: 0.03,
+                density_kg_m3: 7920.,
+                mu: [0.0029, 0.0026],
+            }],
+        },
+    ];
+    let model = Model::new(
+        &m.source,
+        mobile_clad_recipients(&m.thermal),
+        2,
+        m.absorber_guide.host_count(),
+        input,
+    )
+    .unwrap();
+    let mut source = m.workspace();
+    let y = resolved(&m);
+    m.evaluate(&y, &vec![0.; m.dimension()], Some(0.), &mut source)
+        .unwrap();
+    let events = source.source.water_birth_events().unwrap().to_vec();
+    let de = events
+        .iter()
+        .enumerate()
+        .map(|(i, e)| Events {
+            hydrogen: e.hydrogen * 0.1 * (i + 1) as f64,
+            boron: e.boron * -0.2,
+            ..Events::default()
+        })
+        .collect::<Vec<_>>();
+    let density = [997., 995.];
+    let drho = [-1., 2.];
+    let mut w = model.workspace();
+    model
+        .evaluate(&m.source, &events, &density, &mut w)
+        .unwrap();
+    let original = mobile_geometry_delivery(w.value().unwrap());
+    let mut geometry = model.geometry().clone();
+    let mut direction = geometry.zero_direction();
+    for (i, (v, d)) in geometry
+        .birth_shares
+        .iter_mut()
+        .zip(&mut direction.birth_shares)
+        .enumerate()
+    {
+        *v = if i % 2 == 0 { 0.35 } else { 0.65 };
+        *d = if i % 2 == 0 { 0.03 } else { -0.03 };
+    }
+    for (i, (v, d)) in geometry
+        .liquid_chords_m
+        .iter_mut()
+        .zip(&mut direction.liquid_chords_m)
+        .enumerate()
+    {
+        *v += 0.02 * (i + 1) as f64;
+        *d = 0.01 * (i + 1) as f64;
+    }
+    geometry.path_shares = vec![0.6, 0.2];
+    geometry.boundary_shares = vec![0.2];
+    direction.path_shares = vec![0.01, -0.03];
+    direction.boundary_shares = vec![0.02];
+    direction.wall_thicknesses_m = vec![0.00003, -0.0002, 0.001];
+    model
+        .evaluate_with_geometry(&m.source, &events, &density, &geometry, &mut w)
+        .unwrap();
+    assert_ne!(original, mobile_geometry_delivery(w.value().unwrap()));
+    model
+        .jvp_with_geometry_direction(&de, &drho, &direction, &mut w)
+        .unwrap();
+    let analytic = mobile_geometry_delivery(w.direction().unwrap());
+    let v = w.direction().unwrap();
+    close(
+        v.channels.chunks_exact(6).map(|c| c[0]).sum(),
+        v.recipient_power().sum::<f64>() + v.exported + v.boundary_exported,
+        3e-14,
+        1e-11,
+    );
+    let h = 1e-5;
+    let values = [-h, h].map(|s| {
+        let mut g = geometry.clone();
+        for (a, d) in g.birth_shares.iter_mut().zip(&direction.birth_shares) {
+            *a += s * d;
+        }
+        for (a, d) in g.liquid_chords_m.iter_mut().zip(&direction.liquid_chords_m) {
+            *a += s * d;
+        }
+        for (a, d) in g.path_shares.iter_mut().zip(&direction.path_shares) {
+            *a += s * d;
+        }
+        for (a, d) in g
+            .wall_thicknesses_m
+            .iter_mut()
+            .zip(&direction.wall_thicknesses_m)
+        {
+            *a += s * d;
+        }
+        for (a, d) in g.boundary_shares.iter_mut().zip(&direction.boundary_shares) {
+            *a += s * d;
+        }
+        let mut e = events.clone();
+        for (a, d) in e.iter_mut().zip(&de) {
+            a.hydrogen += s * d.hydrogen;
+            a.boron += s * d.boron;
+        }
+        let rho = [density[0] + s * drho[0], density[1] + s * drho[1]];
+        let mut v = model.workspace();
+        model
+            .evaluate_with_geometry(&m.source, &e, &rho, &g, &mut v)
+            .unwrap();
+        mobile_geometry_delivery(v.value().unwrap())
+    });
+    for (i, a) in analytic.iter().enumerate() {
+        close(*a, (values[1][i] - values[0][i]) / (2. * h), 3e-7, 1e-9);
+    }
+    // Shares-only reuse retains the same stable wall absorption. Returning to
+    // ORIGINAL must not retain any current birth/chord/serial-wall geometry.
+    model
+        .evaluate(&m.source, &events, &density, &mut w)
+        .unwrap();
+    assert_eq!(original, mobile_geometry_delivery(w.value().unwrap()));
+    let mut bad = geometry.clone();
+    bad.path_shares[0] += 0.1;
+    assert!(
+        model
+            .evaluate_with_geometry(&m.source, &events, &density, &bad, &mut w)
+            .is_err()
+    );
+    assert!(w.value().is_err());
+    assert!(model.jvp(&de, &drho, &mut w).is_err());
+    model
+        .evaluate_with_geometry(&m.source, &events, &density, &geometry, &mut w)
+        .unwrap();
+    let mut bad = direction;
+    bad.birth_shares[0] += 0.01;
+    assert!(
+        model
+            .jvp_with_geometry_direction(&de, &drho, &bad, &mut w)
+            .is_err()
+    );
+    assert!(w.direction().is_err());
+}
+
+#[test]
+fn mobile_zero_thickness_and_zero_share_union_open_without_optical_floors() {
+    use leitbild_plant_numerics::mobile_capture::{Model, Path, Recipient, Wall};
+    let m = fixture();
+    let mut input = mobile_input(&m.source);
+    input.wall_origins[0].paths = vec![
+        Path {
+            share: 0.75,
+            stages: vec![Wall {
+                recipient: Recipient::Host(0),
+                thickness_m: 0.,
+                density_kg_m3: 7920.,
+                mu: [0.0029, 0.0026],
+            }],
+        },
+        Path {
+            share: 0.,
+            stages: vec![Wall {
+                recipient: Recipient::Host(1),
+                thickness_m: 0.001,
+                density_kg_m3: 6551.,
+                mu: [0.0029, 0.0026],
+            }],
+        },
+    ];
+    let model = Model::new(
+        &m.source,
+        mobile_clad_recipients(&m.thermal),
+        2,
+        m.absorber_guide.host_count(),
+        input,
+    )
+    .unwrap();
+    let mut source = m.workspace();
+    let y = resolved(&m);
+    m.evaluate(&y, &vec![0.; m.dimension()], Some(0.), &mut source)
+        .unwrap();
+    let events = source.source.water_birth_events().unwrap();
+    let zero_events = events
+        .iter()
+        .map(|_| leitbild_plant_numerics::moderator_source::Events::default())
+        .collect::<Vec<_>>();
+    let mut w = model.workspace();
+    model
+        .evaluate(&m.source, events, &[997., 995.], &mut w)
+        .unwrap();
+    let original = mobile_geometry_delivery(w.value().unwrap());
+    let mut d = model.geometry().zero_direction();
+    d.path_shares = vec![-0.01, 0.01];
+    d.wall_thicknesses_m[0] = 0.0001;
+    model
+        .jvp_with_geometry_direction(&zero_events, &[0.; 2], &d, &mut w)
+        .unwrap();
+    let analytic = mobile_geometry_delivery(w.direction().unwrap());
+    assert!(w.direction().unwrap().host[0] > 0.);
+    assert!(w.direction().unwrap().host[1] > 0.);
+    let h = 1e-6;
+    let mut g = model.geometry().clone();
+    for (a, d) in g.path_shares.iter_mut().zip(&d.path_shares) {
+        *a += h * d;
+    }
+    g.wall_thicknesses_m[0] += h * d.wall_thicknesses_m[0];
+    model
+        .evaluate_with_geometry(&m.source, events, &[997., 995.], &g, &mut w)
+        .unwrap();
+    let forward = mobile_geometry_delivery(w.value().unwrap());
+    for (i, a) in analytic.iter().enumerate() {
+        close(*a, (forward[i] - original[i]) / h, 3e-6, 1e-9);
+    }
+    // A real but extremely thin wall must retain positive absorbed energy;
+    // exp(-tau) rounds to 1 here, so 1-transmission would erase it.
+    g = model.geometry().clone();
+    g.wall_thicknesses_m[0] = 1e-18;
+    model
+        .evaluate_with_geometry(&m.source, events, &[997., 995.], &g, &mut w)
+        .unwrap();
+    assert!(w.value().unwrap().host[0] > 0.);
+    let thin = mobile_geometry_delivery(w.value().unwrap());
+    model
+        .evaluate_with_geometry(&m.source, events, &[997., 995.], &g, &mut w)
+        .unwrap();
+    assert_eq!(thin, mobile_geometry_delivery(w.value().unwrap()));
 }
 
 #[test]
@@ -1517,21 +2059,23 @@ fn composition_refuses_wrong_fuel_recipient_or_carrier_link_identity() {
     let mobile = mobile_input(&m.source);
     let absorber = absorber_input(&m.source);
     // Row2 is clad, not the source's second fuel temperature/deposition owner.
-    assert!(sc::Model::new(
-        m.source,
-        m.network,
-        m.thermal,
-        m.carrier,
-        m.barrel,
-        pressure,
-        capture_input(),
-        mobile,
-        absorber,
-        vec![0, 2, 5, 6],
-        vec![None, Some(0)],
-        vec![300.; 11]
-    )
-    .is_err());
+    assert!(
+        sc::Model::new(
+            m.source,
+            m.network,
+            m.thermal,
+            m.carrier,
+            m.barrel,
+            pressure,
+            capture_input(),
+            mobile,
+            absorber,
+            vec![0, 2, 5, 6],
+            vec![None, Some(0)],
+            vec![300.; 11]
+        )
+        .is_err()
+    );
     let m = fixture();
     let pressure = pressure_fixture(&m.network);
     let mobile = mobile_input(&m.source);
@@ -1545,21 +2089,23 @@ fn composition_refuses_wrong_fuel_recipient_or_carrier_link_identity() {
         })
         .collect::<Vec<_>>();
     let wrong = wc::Carrier::new(&prep, vec![wc::Link { from: 1, to: 0 }]).unwrap();
-    assert!(sc::Model::new(
-        m.source,
-        m.network,
-        m.thermal,
-        wrong,
-        m.barrel,
-        pressure,
-        capture_input(),
-        mobile,
-        absorber,
-        vec![0, 1, 5, 6],
-        vec![None, Some(0)],
-        vec![300.; 11]
-    )
-    .is_err());
+    assert!(
+        sc::Model::new(
+            m.source,
+            m.network,
+            m.thermal,
+            wrong,
+            m.barrel,
+            pressure,
+            capture_input(),
+            mobile,
+            absorber,
+            vec![0, 1, 5, 6],
+            vec![None, Some(0)],
+            vec![300.; 11]
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -1756,9 +2302,11 @@ fn current_capture_sparse_response_all_columns_match_actual_source_events_and_jv
     }
     let other = fixture();
     assert!(m.capture.power_response(&other.source).is_err());
-    assert!(response
-        .evaluate(&y, &[f64::NAN; 4], &mut powers, &mut gradients)
-        .is_err());
+    assert!(
+        response
+            .evaluate(&y, &[f64::NAN; 4], &mut powers, &mut gradients)
+            .is_err()
+    );
     y.fill(0.);
     response
         .evaluate(&y, &t, &mut powers, &mut gradients)
@@ -1826,11 +2374,13 @@ fn capture_partition_current_density_signed_direction_and_failure_authority() {
     assert!(w.fuel_heat().is_err());
     let mut bad = capture_input();
     bad.bands[0].clad_thickness_m[0] *= 2.;
-    assert!(leitbild_plant_numerics::fuel_capture::Model::new(
-        &m.source,
-        &m.thermal,
-        m.fuel_rows(),
-        bad
-    )
-    .is_err());
+    assert!(
+        leitbild_plant_numerics::fuel_capture::Model::new(
+            &m.source,
+            &m.thermal,
+            m.fuel_rows(),
+            bad
+        )
+        .is_err()
+    );
 }

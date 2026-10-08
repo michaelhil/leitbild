@@ -1,6 +1,6 @@
 //! Independent static output/gradient checks using the existing mathematical
 //! source apparatus, not another operating preparation or trajectory.
-#[path = "source_evolution.rs"]
+#[path = "common/source_input.rs"]
 mod source_fixture;
 use leitbild_plant_numerics::{
     fuel_history as fh, fuel_source as fs, heat_history as hh,

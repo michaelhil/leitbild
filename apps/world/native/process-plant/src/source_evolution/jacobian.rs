@@ -373,7 +373,7 @@ impl Jacobian {
             }
         }
         // Bulk captures: target stocks remain their actual shared owners.
-        for e in &model.input.passive_incidence {
+        for (i, e) in model.input.passive_incidence.iter().enumerate() {
             let s = &model.input.passive_stocks[e.stock];
             for t in &s.targets {
                 for g in 0..GROUPS {
@@ -382,7 +382,10 @@ impl Jacobian {
                     }
                     let n = e.region * GROUPS + g;
                     let target = model.target_row(t.index);
-                    let factor = t.sigma_m2[g] * e.volume / s.volume / volumes[e.region];
+                    let volume = work
+                        .as_ref()
+                        .map_or(e.volume, |w| w.geometry.passive_volumes[i]);
+                    let factor = t.sigma_m2[g] * volume / s.volume / volumes[e.region];
                     let (coefficient, partial) = if let Some(w) = work.as_ref() {
                         (
                             speed[g] * factor * w.amounts[t.index],
@@ -400,14 +403,17 @@ impl Jacobian {
                 }
             }
         }
-        for e in &model.input.cylinder_incidence {
+        for (i, e) in model.input.cylinder_incidence.iter().enumerate() {
             for g in 0..GROUPS {
                 if model.input.cylinder_targets[e.target].sigma_m2[g] == 0. {
                     continue;
                 }
                 let n = e.region * GROUPS + g;
                 let target = model.target_row(model.input.cylinder_targets[e.target].index);
-                let factor = e.share * speed[g] / volumes[e.region];
+                let share = work
+                    .as_ref()
+                    .map_or(e.share, |w| w.geometry.cylinder_shares[i]);
+                let factor = share * speed[g] / volumes[e.region];
                 let (cap, dcap, collect, dcollect, dc) = if let Some(w) = work.as_ref() {
                     let c = w.cylinder.responses()?[e.target];
                     (
@@ -415,7 +421,7 @@ impl Jacobian {
                         -factor * c.d_capture_d_amount[g] * w.state[n],
                         factor * c.collected_m2[g],
                         -factor * c.d_collected_d_amount[g] * w.state[n],
-                        -e.share / volumes[e.region] * c.d_capture_d_amount[g],
+                        -share / volumes[e.region] * c.d_capture_d_amount[g],
                     )
                 } else {
                     (0., 0., 0., 0., 0.)

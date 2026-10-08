@@ -136,7 +136,6 @@ pub(crate) fn parse(text: &str) -> Prepared {
             owner: count(&mut w),
             h_fraction: number(&mut w),
             b_fraction: number(&mut w),
-            volume_fraction: 0., // CLOSED boundary: amount fractions own projection.
         })
         .collect();
     assert!(w.next().is_none(), "Trailing water-owner frame");
@@ -160,6 +159,7 @@ pub(crate) fn parse(text: &str) -> Prepared {
         moderator: source.moderator,
         water_rows: source.water,
         water_owners,
+        external_water_volumes: Vec::new(),
         row_map,
         targets: source.amounts,
         passive_stocks: source.passive_stocks,

@@ -317,7 +317,7 @@ impl Model {
         let absorber_guide = ag::Model::new(&source, nw, absorber_guide)?;
         let mobile_capture = mc::Model::new(
             &source,
-            &thermal,
+            mc::CladRecipients {node_count:thermal.node_count(),rows:(0..thermal.band_count()).flat_map(|b|thermal.clad_rows(b)).collect()},
             nw,
             absorber_guide.host_count(),
             mobile_capture,

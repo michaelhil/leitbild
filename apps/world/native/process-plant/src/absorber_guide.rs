@@ -1,7 +1,9 @@
-//! Fixed-original, fully wet BODY/guide thermal connection. Physical host
+//! Fully wet BODY/guide thermal connection. Physical host
 //! resolution is independent of neutron boxes: one composite BODY per cluster,
 //! one radial guide mean per actual FA/cohort/axial span. This is not motion,
-//! peak-temperature, dry-contact or gamma-transport qualification.
+//! peak-temperature, dry-contact or gamma-transport qualification. Material
+//! and recipient identities stay fixed; current contact geometry is an
+//! explicit same-stage input, not a replacement material/history model.
 use crate::{barrel_thermal as bt, fuel_thermal as ft, source_evolution as se};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -34,6 +36,24 @@ pub struct Contact {
     /// Rsolid=geometry/k: cylindrical radial half-wall or true-end axial half-span.
     pub solid_geometry_m_inv: f64,
     pub liquid_chord_m: f64,
+}
+/// Same fixed-union contact order as `Input::contacts`. Zero area is a
+/// currently inactive physical contact, not permission to omit its recipient.
+/// The same record carries a signed, selected-branch geometry direction.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ContactGeometry {
+    pub area_m2: f64,
+    pub solid_geometry_m_inv: f64,
+    pub liquid_chord_m: f64,
+}
+impl From<Contact> for ContactGeometry {
+    fn from(c: Contact) -> Self {
+        Self {
+            area_m2: c.area_m2,
+            solid_geometry_m_inv: c.solid_geometry_m_inv,
+            liquid_chord_m: c.liquid_chord_m,
+        }
+    }
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Axial {
@@ -121,6 +141,10 @@ pub struct Workspace {
     conductance: Vec<f64>,
     dconductance_d_host: Vec<f64>,
     liquid_transmission: Vec<[f64; 2]>,
+    geometry: Vec<ContactGeometry>,
+    fractions: Vec<f64>,
+    areas: Vec<f64>,
+    direction_areas: Vec<f64>,
     temperatures: Vec<f64>,
     water: Vec<bt::Water>,
     owner: Arc<()>,
@@ -130,7 +154,7 @@ pub struct Model {
     input: Input,
     emissions: Vec<Emission>,
     paid: Vec<(usize, f64)>,
-    fractions: Vec<f64>,
+    geometry: Vec<ContactGeometry>,
     water_count: usize,
     source_dimension: usize,
     source_owner: Arc<()>,
@@ -231,9 +255,10 @@ impl Model {
         for v in &input.contacts {
             if v.host >= n
                 || v.water >= water_count
-                || !positive(v.area_m2)
+                || !nn(v.area_m2)
                 || !nn(v.solid_geometry_m_inv)
-                || !positive(v.liquid_chord_m)
+                || !nn(v.liquid_chord_m)
+                || (v.area_m2 > 0. && v.liquid_chord_m == 0.)
                 || (input.hosts[v.host].zr_mass_kg == 0. && v.solid_geometry_m_inv != 0.)
             {
                 return Err("Invalid actual BODY/guide wet contact".into());
@@ -256,11 +281,7 @@ impl Model {
                 return Err("Invalid guide axial metal link".into());
             }
         }
-        let fractions = input
-            .contacts
-            .iter()
-            .map(|v| v.area_m2 / areas[v.host])
-            .collect();
+        let geometry = input.contacts.iter().copied().map(Into::into).collect();
         let mut emissions = Vec::new();
         let mut paid = BTreeMap::<usize, f64>::new();
         let mut targets = BTreeSet::new();
@@ -384,7 +405,7 @@ impl Model {
             input,
             emissions,
             paid: paid.into_iter().collect(),
-            fractions,
+            geometry,
             water_count,
             source_dimension: source.state_count(),
             source_owner: source.owner_token(),
@@ -393,6 +414,9 @@ impl Model {
     }
     pub fn config(&self) -> &Input {
         &self.input
+    }
+    pub fn geometry(&self) -> &[ContactGeometry] {
+        &self.geometry
     }
     pub fn host_count(&self) -> usize {
         self.input.hosts.len()
@@ -465,6 +489,10 @@ impl Model {
             conductance: vec![0.; self.input.contacts.len()],
             dconductance_d_host: vec![0.; self.input.contacts.len()],
             liquid_transmission: vec![[0.; 2]; self.input.contacts.len()],
+            geometry: self.geometry.clone(),
+            fractions: vec![0.; self.input.contacts.len()],
+            areas: vec![0.; n],
+            direction_areas: vec![0.; n],
             temperatures: vec![0.; n],
             water: vec![
                 bt::Water {
@@ -486,15 +514,52 @@ impl Model {
         water: &[bt::Water],
         w: &mut Workspace,
     ) -> Result<(), String> {
+        self.evaluate_with_geometry(temps, sw, source_y, water, &self.geometry, w)
+    }
+    pub fn evaluate_with_geometry(
+        &self,
+        temps: &[f64],
+        sw: &se::Workspace,
+        source_y: &[f64],
+        water: &[bt::Water],
+        geometry: &[ContactGeometry],
+        w: &mut Workspace,
+    ) -> Result<(), String> {
         w.valid = false;
         if !Arc::ptr_eq(&w.owner, &self.owner)
             || !Arc::ptr_eq(&self.source_owner, sw.owner_token())
             || source_y.len() != self.source_dimension
             || temps.len() != self.host_count()
             || water.len() != self.water_count
+            || geometry.len() != self.input.contacts.len()
         {
             return Err("Invalid BODY/guide workspace shape or source owner".into());
         }
+        w.areas.fill(0.);
+        for (c, g) in self.input.contacts.iter().zip(geometry) {
+            if !nn(g.area_m2)
+                || !nn(g.solid_geometry_m_inv)
+                || !nn(g.liquid_chord_m)
+                || (g.area_m2 > 0. && g.liquid_chord_m == 0.)
+                || (self.input.hosts[c.host].zr_mass_kg == 0. && g.solid_geometry_m_inv != 0.)
+            {
+                return Err("Invalid current BODY/guide contact geometry".into());
+            }
+            w.areas[c.host] += g.area_m2;
+        }
+        if w.areas.iter().any(|a| !positive(*a)) {
+            return Err("Current finite BODY/guide host lacks wet contacts".into());
+        }
+        for ((c, g), fraction) in self
+            .input
+            .contacts
+            .iter()
+            .zip(geometry)
+            .zip(&mut w.fractions)
+        {
+            *fraction = g.area_m2 / w.areas[c.host];
+        }
+        w.geometry.copy_from_slice(geometry);
         w.value.clear();
         w.escaped.fill([0.; 2]);
         for (i, &t) in temps.iter().enumerate() {
@@ -519,6 +584,7 @@ impl Model {
         }
         w.value.host.copy_from_slice(&w.value.nuclear_host);
         for (i, c) in self.input.contacts.iter().enumerate() {
+            let geometry = geometry[i];
             let t = temps[c.host];
             let v = water[c.water];
             if !positive(v.density_kg_m3)
@@ -530,11 +596,14 @@ impl Model {
                 return Err("BODY/guide contact left cold fully-liquid scope".into());
             }
             let k = ft::clad_k(t);
-            let g = 1. / (1. / (self.input.wet_h * c.area_m2) + c.solid_geometry_m_inv / k);
+            // This form retains the finite one-sided area derivative at a
+            // currently zero-area union contact; no division by zero/floor.
+            let ha = self.input.wet_h * geometry.area_m2;
+            let g = ha / (1. + ha * geometry.solid_geometry_m_inv / k);
             let q = g * (t - v.temperature_k);
             w.conductance[i] = g;
             w.dconductance_d_host[i] =
-                g * g * c.solid_geometry_m_inv * ft::clad_k_derivative(t) / (k * k);
+                g * g * geometry.solid_geometry_m_inv * ft::clad_k_derivative(t) / (k * k);
             w.value.host[c.host] -= q;
             w.value.water[c.water] += q;
             for (s, mu) in [
@@ -544,9 +613,9 @@ impl Model {
             .into_iter()
             .enumerate()
             {
-                let tr = (-v.density_kg_m3 * mu * c.liquid_chord_m).exp();
+                let tr = (-v.density_kg_m3 * mu * geometry.liquid_chord_m).exp();
                 w.liquid_transmission[i][s] = tr;
-                let incoming = w.escaped[c.host][s] * self.fractions[i];
+                let incoming = w.escaped[c.host][s] * w.fractions[i];
                 let q = incoming * (1. - tr);
                 w.value.water[c.water] += q;
                 w.value.nuclear_water[c.water] += q;
@@ -582,14 +651,50 @@ impl Model {
         water: &[bt::WaterDirection],
         w: &mut Workspace,
     ) -> Result<(), String> {
+        self.jvp_inner(dt, sw, dsource_y, water, None, w)
+    }
+    pub fn jvp_with_geometry_direction(
+        &self,
+        dt: &[f64],
+        sw: &se::Workspace,
+        dsource_y: &[f64],
+        water: &[bt::WaterDirection],
+        geometry: &[ContactGeometry],
+        w: &mut Workspace,
+    ) -> Result<(), String> {
+        self.jvp_inner(dt, sw, dsource_y, water, Some(geometry), w)
+    }
+    fn jvp_inner(
+        &self,
+        dt: &[f64],
+        sw: &se::Workspace,
+        dsource_y: &[f64],
+        water: &[bt::WaterDirection],
+        geometry: Option<&[ContactGeometry]>,
+        w: &mut Workspace,
+    ) -> Result<(), String> {
         if !w.valid
             || !Arc::ptr_eq(&w.owner, &self.owner)
             || !Arc::ptr_eq(&self.source_owner, sw.owner_token())
             || dsource_y.len() != self.source_dimension
             || dt.len() != self.host_count()
             || water.len() != self.water_count
+            || geometry.is_some_and(|g| g.len() != self.input.contacts.len())
         {
             return Err("No current BODY/guide linearization".into());
+        }
+        w.direction_areas.fill(0.);
+        if let Some(direction) = geometry {
+            for (c, g) in self.input.contacts.iter().zip(direction) {
+                if ![g.area_m2, g.solid_geometry_m_inv, g.liquid_chord_m]
+                    .iter()
+                    .all(|v| v.is_finite())
+                    || (self.input.hosts[c.host].zr_mass_kg == 0. && g.solid_geometry_m_inv != 0.)
+                {
+                    return Err("Invalid BODY/guide geometry direction".into());
+                }
+                w.direction_areas[c.host] += g.area_m2;
+            }
         }
         w.direction.clear();
         w.descaped.fill([0.; 2]);
@@ -612,9 +717,14 @@ impl Model {
         w.direction.host.copy_from_slice(&w.direction.nuclear_host);
         for (i, c) in self.input.contacts.iter().enumerate() {
             let v = water[c.water];
+            let g = w.geometry[i];
+            let dg = geometry.map_or(ContactGeometry::default(), |d| d[i]);
+            let k = ft::clad_k(w.temperatures[c.host]);
+            let denominator = 1. + self.input.wet_h * g.area_m2 * g.solid_geometry_m_inv / k;
+            let dconductance = self.input.wet_h / denominator.powi(2) * dg.area_m2
+                - w.conductance[i].powi(2) / k * dg.solid_geometry_m_inv;
             let q = w.conductance[i] * (dt[c.host] - v.temperature_k)
-                + w.dconductance_d_host[i]
-                    * dt[c.host]
+                + (w.dconductance_d_host[i] * dt[c.host] + dconductance)
                     * (w.temperatures[c.host] - w.water[c.water].temperature_k);
             w.direction.host[c.host] -= q;
             w.direction.water[c.water] += q;
@@ -626,9 +736,15 @@ impl Model {
             .enumerate()
             {
                 let tr = w.liquid_transmission[i][s];
-                let dtr = -tr * mu * c.liquid_chord_m * v.density_kg_m3;
-                let incoming = w.escaped[c.host][s] * self.fractions[i];
-                let dincoming = w.descaped[c.host][s] * self.fractions[i];
+                let dtr = -tr
+                    * mu
+                    * (g.liquid_chord_m * v.density_kg_m3
+                        + w.water[c.water].density_kg_m3 * dg.liquid_chord_m);
+                let dfraction =
+                    (dg.area_m2 - w.fractions[i] * w.direction_areas[c.host]) / w.areas[c.host];
+                let incoming = w.escaped[c.host][s] * w.fractions[i];
+                let dincoming =
+                    w.descaped[c.host][s] * w.fractions[i] + w.escaped[c.host][s] * dfraction;
                 let q = dincoming * (1. - tr) - incoming * dtr;
                 w.direction.water[c.water] += q;
                 w.direction.nuclear_water[c.water] += q;
