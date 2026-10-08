@@ -91,14 +91,14 @@ export const composedDisplayLayout = {
   /** Header, two-line caption, one reserved notice line, footer, gaps and padding. */
   frame: 124,
   /** Chart plus its legend row. */
-  trend: 200,
-  trendChart: 160,
+  trend: 192,
+  trendChart: 156,
   comparisonHeader: 22,
   comparisonRow: 24,
   readoutsPerRow: 3,
   readoutsRow: 58,
   /** Title row plus four alarm rows; more are summarised as a count. */
-  alarms: 122,
+  alarms: 110,
   alarmRows: 4,
   panelGap: 6,
 } as const

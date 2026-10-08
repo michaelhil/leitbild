@@ -167,7 +167,17 @@ describe('composed display panels', () => {
       { kind: 'trend', horizon: '10m', signals: [{ ref: 'sgB.feedwaterFlowKgPerS', role: 'counter-evidence' }] },
     ])
     expect(view.display.panels.map(panel => [panel.kind, panel.unit])).toEqual([['trend', 'percent'], ['trend', 'kg/s']])
-    expect(composed.view.height).toBe(124 + 200 + 6 + 200)
+    expect(composed.view.height).toBe(124 + 192 + 6 + 192)
+  })
+
+  test('fit two stacked trends with readouts and related alarms in one chat view', () => {
+    const { composed } = composeView([
+      { kind: 'trend', horizon: '30m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }, { ref: 'SG-A-LVL-NR', role: 'context' }] },
+      { kind: 'trend', horizon: '30m', signals: [{ ref: 'sgB.feedwaterFlowKgPerS', role: 'counter-evidence' }] },
+      { kind: 'readouts', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }, { ref: 'SG-B-PRESS', role: 'context' }, { ref: 'RCP-B-RUN', role: 'context' }] },
+      { kind: 'alarms', scope: 'related' },
+    ])
+    expect(composed.view.height).toBeLessThanOrEqual(720)
   })
 
   test('reject stacked trends with different horizons, a lone alarms panel and oversized displays', () => {
