@@ -5,7 +5,7 @@ Rules for working in this repo. Architecture overview is in [README.md](README.m
 ## Workflow and commands
 
 - **Version**: the root `package.json` is the platform version. Module descriptor versions describe their own runtime contracts; do not present them as separate product releases.
-- **Workflow**: commit each logical change as its own commit. Production deploys from the root worktree through the platform deployer.
+- **Workflow**: commit each logical change as its own commit. Production deploys from a clean checkout of `main` through the platform deployer (see "Concurrent agents" in the root `AGENTS.md`).
 - **Commands**:
   - `bun run check` — typecheck (always run after non-trivial edits)
   - `bun test` — full suite; `bun test -t '^(?!.*Ollama)'` skips Ollama integration (= `bun run test:unit`)

@@ -20,3 +20,11 @@ These rules apply across the repository. Module-local `AGENTS.md` files may add 
 - The owner-authorized offline Process Plant numerical kernel in `apps/world/native/process-plant` is a narrow Rust/native exception. Bun owns its admission/provenance tooling. It is not registered or installed as the live LD-01 runtime; construction remains separately gated.
 - Do not add silent fallbacks, mocks in production, compatibility behavior, API versions, migrations, aliases, or legacy parsing. The explicitly requested wiki Archive is retained documentation, not a runtime compatibility layer.
 - Commit each logical phase separately. Deploy only after standalone and combined validation passes.
+
+## Concurrent agents
+
+- OpenAI Codex and Anthropic Claude Code work in this repository concurrently and commit as the same Git user. Mark authorship with a `Co-Authored-By` trailer.
+- Path ownership: Codex owns `apps/world/native/**`, `apps/world/scripts/**` and the process-plant reference-design wiki pages. Claude owns the live operator display work: `apps/agents/**`, `apps/world/src/packs/process-plant/displays/**`, process-plant display queries, `apps/world/src/ui/embed/**` and `packages/contracts/src/embedded-views.ts`. Keep edits to shared files minimal and name them in the commit message: `bun.lock`, any `package.json`, `NOTICE.md`, `AGENTS.md` files, `apps/world/src/packs/process-plant/capabilities.ts`, `apps/world/vite.config.ts`, `apps/leitbild/deploy/**`.
+- Claude develops in a separate worktree (`../Leitbild-claude`) and fast-forwards `main` only with checked commits. Expect `main` to advance with the other agent's commits; never revert or rewrite them. In a shared worktree commit explicit paths only; never use `git add -A`, `git commit -a`, `stash`, `reset --hard` or `clean`.
+- The deployer packages working-tree files, including untracked ones. Never leave unfinished files in production paths of a worktree you deploy from.
+- Before deploying: no other deploy may be running (`pgrep -f scripts/deploy.ts`), and production `DEPLOYMENT.json` must report `dirty: false` with a `baseCommit` that is an ancestor of the deployed commit, so a deploy never reverts the other agent's live work. Claude deploys from its clean worktree with `LEITBILD_KNOWLEDGE_REPOSITORY` pointing at a clean checkout of the wiki's committed `HEAD`.
