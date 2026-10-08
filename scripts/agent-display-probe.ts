@@ -149,11 +149,14 @@ for (const scenario of chosen) {
   const members = await request(roomPath + '/members')
   const human = members.find((member: { kind: string }) => member.kind === 'human')
   const agent = members.find((member: { kind: string }) => member.kind === 'ai')
+  // The Room already holds the Assistant's join notice; only a new chat reply counts.
+  const prior = new Set((await request(roomPath + '?limit=100')).messages.map((message: { id: string }) => message.id))
   const startedAt = Date.now()
   await request(`/api/workspaces/${workspaceId}/agents/messages`, { senderId: human.id, senderName: human.name, content: scenario.prompt, target: { rooms: [roomId] } })
   let answer: any
   while (Date.now() - startedAt < 300_000) { // Probe deadline, not a product limit.
-    answer = (await request(roomPath + '?limit=100')).messages.find((message: { senderId: string }) => message.senderId === agent.id)
+    answer = (await request(roomPath + '?limit=100')).messages.find((message: { id: string; senderId: string; type: string }) =>
+      !prior.has(message.id) && message.senderId === agent.id && message.type === 'chat')
     if (answer) break
     await Bun.sleep(2_000)
   }
