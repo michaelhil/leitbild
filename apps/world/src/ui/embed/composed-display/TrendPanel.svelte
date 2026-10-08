@@ -52,7 +52,8 @@
   // Several strips share the page; each hatch pattern needs its own id.
   const uid = $props.id()
   const patternId = `no-data-${uid}`
-  const pad = $derived({ left: 44, right: 78, top: 18, bottom: timeAxis ? 22 : 0 })
+  // The right gutter fits the longest threshold label, such as "LO TRIP 13.8 +1".
+  const pad = $derived({ left: 44, right: 100, top: 18, bottom: timeAxis ? 22 : 0 })
 
   // Trip and alarm thresholds always fit the scale; control set points are
   // marked on the axis only when they fall inside it, to keep the trend quiet.
