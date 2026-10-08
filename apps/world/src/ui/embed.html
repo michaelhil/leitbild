@@ -10,7 +10,8 @@
           const stored = localStorage.getItem('leitbild.theme')
           const dark = stored === 'dark' || (!stored && matchMedia('(prefers-color-scheme: dark)').matches)
           document.documentElement.classList.toggle('dark', dark)
-          document.documentElement.dataset.obcTheme = dark ? 'night' : 'day'
+          // OpenBridge "night" is a dark-adaptation palette; dusk suits a dark office screen.
+          document.documentElement.dataset.obcTheme = dark ? 'dusk' : 'day'
         } catch (error) {
           console.warn('Unable to apply Leitbild theme before startup', error)
         }

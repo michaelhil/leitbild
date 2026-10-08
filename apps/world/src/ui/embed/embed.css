@@ -2,10 +2,13 @@
    palettes (data-obc-theme) and keep the ISA-101 rule that colour is reserved
    for abnormal states. */
 :root {
-  /* OpenBridge names Noto Sans without a fallback; use system faces rather than
-     shipping a 600 KB font into every chat view. */
-  --font-family-main: "Noto Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: light;
+}
+/* OpenBridge declares Noto Sans, without a fallback, on every element (*).
+   These selectors outrank * wherever the stylesheets load. System faces stand
+   in rather than shipping a 600 KB font into every chat view. */
+:root, :root * {
+  --font-family-main: "Noto Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 :root.dark { color-scheme: dark; }
 

@@ -66,7 +66,8 @@
       placed.push({
         key: `${threshold.ruleId}`,
         y: previous === undefined ? lineY : Math.max(lineY, previous.y + LABEL_SPACING),
-        text: `${kindLabel[threshold.kind]} ${formatValue(threshold.value)}`,
+        // Thresholds are configured numbers; show them exactly, never rounded.
+        text: `${kindLabel[threshold.kind]} ${threshold.value}`,
         title: `${threshold.label}${threshold.modeLabel === undefined ? '' : ` (only in ${threshold.modeLabel})`}`,
       })
     }
@@ -107,14 +108,14 @@
         <text class="threshold-label" x={pad.left + plotWidth + 4} y={label.y} dominant-baseline="middle"><title>{label.title}</title>{label.text}</text>
       {/each}
       {#each controlThresholds.filter(threshold => threshold.value >= domain!.min && threshold.value <= domain!.max) as threshold (threshold.ruleId)}
-        <line class="control-mark" x1={pad.left + plotWidth} x2={pad.left + plotWidth + 3} y1={y(threshold.value)} y2={y(threshold.value)}><title>{threshold.label} at {formatValue(threshold.value)} {unitLabel(panel.unit)}</title></line>
+        <line class="control-mark" x1={pad.left + plotWidth} x2={pad.left + plotWidth + 3} y1={y(threshold.value)} y2={y(threshold.value)}><title>{threshold.label} at {threshold.value} {unitLabel(panel.unit)}</title></line>
       {/each}
 
       {#if issuedAt >= windowStart}
         <line class="advice" x1={x(issuedAt)} x2={x(issuedAt)} y1={pad.top} y2={pad.top + plotHeight} />
-        <text class="advice-label" x={x(issuedAt) + 3} y={pad.top + 8}>advice</text>
+        <text class="advice-label" x={x(issuedAt) - 3} y={pad.top + plotHeight - 4} text-anchor="end">advice</text>
       {:else}
-        <text class="advice-label" x={pad.left + 3} y={pad.top + 8}>advice issued {Math.round((now - issuedAt) / 60_000)} min ago ←</text>
+        <text class="advice-label" x={pad.left + 3} y={pad.top + plotHeight - 4}>← advice issued {Math.round((now - issuedAt) / 60_000)} min ago</text>
       {/if}
       <line class="now" x1={pad.left + plotWidth} x2={pad.left + plotWidth} y1={pad.top} y2={pad.top + plotHeight} />
 
@@ -136,9 +137,9 @@
   .grid { stroke: var(--border-divider-color); stroke-width: 1; }
   .axis { fill: var(--element-neutral-color); font-size: 11px; font-variant-numeric: tabular-nums; }
   .unit { font-weight: 600; }
-  .threshold { stroke-width: 1.25; }
-  .threshold.trip { stroke: var(--alert-limit-primary-color); }
-  .threshold.alarm { stroke: var(--alert-limit-secondary-color); }
+  .threshold { stroke-width: 1; }
+  .threshold.trip { stroke: var(--element-neutral-color); stroke-width: 1.5; }
+  .threshold.alarm { stroke: var(--element-neutral-color); stroke-opacity: 0.7; }
   .threshold.qualified { stroke-dasharray: 5 3; }
   .threshold-label { fill: var(--element-neutral-color); font-size: 10.5px; font-variant-numeric: tabular-nums; }
   .control-mark { stroke: var(--element-neutral-color); stroke-width: 2; }

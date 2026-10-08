@@ -209,7 +209,7 @@ const operatorText = { '<': 'below', '<=': 'at or below', '>': 'above', '>=': 'a
 export const composedDisplayShows = (display: CompiledComposedDisplay): ReadonlyArray<string> => display.panels.flatMap(panel => [
   `Live trend of the last ${panel.horizon}: ${panel.pens.map(pen => `${pen.tagId ?? pen.path} (${pen.label}, ${pen.unit}, ${pen.role})`).join('; ')}`,
   ...panel.pens.flatMap(pen => pen.thresholds.map(threshold =>
-    `I&C ${threshold.kind} line for ${pen.tagId ?? pen.path}: ${threshold.label}, ${operatorText[threshold.operator]} ${threshold.value} ${pen.unit}${threshold.modeLabel === undefined ? '' : ` (only in ${threshold.modeLabel})`}`)),
+    `${threshold.kind === 'control' ? 'I&C control set point marked on the axis' : `I&C ${threshold.kind} line`} for ${pen.tagId ?? pen.path}: ${threshold.label}, ${operatorText[threshold.operator]} ${threshold.value} ${pen.unit}${threshold.modeLabel === undefined ? '' : ` (only in ${threshold.modeLabel})`}`)),
 ])
 
 export const composedDisplayWarnings = (display: CompiledComposedDisplay): ReadonlyArray<string> => display.panels.flatMap(panel => panel.pens.flatMap(pen => [
