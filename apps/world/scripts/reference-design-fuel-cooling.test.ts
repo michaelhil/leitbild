@@ -2,7 +2,22 @@ import {expect,test} from 'bun:test'
 import {compileFuelCooling,compileFuelCoolingMaterial,compilePrimaryIncidence,parseOperatingFuelGap,parseColdConditioningPreparation} from './reference-design-fuel-cooling'
 import {compilePrimaryWaterGeometry,parsePrimaryWaterInputs,primaryWaterOwnerFiles} from './reference-design-source-water'
 import {join} from 'node:path'
-import {coolingCommonTimes,coolingStateHeader,coolingStatesComplete,coolingEnergyCoordinates,coolingMobileCapturePolicy,coolingMobileDevelopmentPolicy,fuelCoolingAdmission,fuelCoolingPriorSeconds,qualifyFuelCooling} from './reference-design-fuel-cooling-qualification'
+import {coolingCommonTimes,coolingStateHeader,coolingStatesComplete,coolingEnergyCoordinates,coolingMobileCapturePolicy,coolingMobileDevelopmentPolicy,coolingAbsorberGuidePolicy,absorberGuideAdmission,fuelCoolingAdmission,fuelCoolingPriorSeconds,qualifyFuelCooling} from './reference-design-fuel-cooling-qualification'
+
+test('finite BODY/guide evidence rejects wrong-zero, unresolved cooling and malformed receipts',()=>{
+ const receipt={kind:'absorber-guide-pair',passed:true,policy:coolingAbsorberGuidePolicy,hosts:1036,
+  powerLocalRatio:0,powerSUMABSRatio:0,paidEnergyRatio:0,developedAllCaptureFamilies:true,
+  familyOrder:['BODY-B10','BODY-304-and-Mn','GUIDE-Zr'],normalFamilyPowerW:[1,2,3],tighterFamilyPowerW:[1,2,3],
+  normalPaidJ:2,tighterPaidJ:2,normalExportJ:0,tighterExportJ:0,
+  normalFiniteRecipientPowerW:1,tighterFiniteRecipientPowerW:1,
+  guideThermalWitness:{host:52,normalChangeK:6,tighterChangeK:6,resolved:true}}
+ expect(absorberGuideAdmission.safeParse(receipt).success).toBe(true)
+ for(const changed of [undefined,{}, {...receipt,passed:false},{...receipt,policy:'old'},
+  {...receipt,developedAllCaptureFamilies:false},{...receipt,normalFamilyPowerW:[1,0,3]},
+  {...receipt,normalFiniteRecipientPowerW:0},{...receipt,paidEnergyRatio:1.01},
+  {...receipt,guideThermalWitness:{...receipt.guideThermalWitness,resolved:false}}])
+  expect(absorberGuideAdmission.safeParse(changed).success).toBe(false)
+})
 
 test('a corrected attempt must debit the unsuccessful prior work against the same allowance',()=>{
  const prior={passed:false,allowanceSeconds:180,elapsedSeconds:6.166466292,noWholePlantReadinessCredit:true}

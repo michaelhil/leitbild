@@ -17,6 +17,7 @@ import {compileColdBarrel,nativeColdBarrelFrame} from './reference-design-source
 import {compileColdPressure,nativeColdPressureFrame} from './reference-design-cold-pressure-support'
 import {compileFuelCapture,nativeFuelCaptureFrame} from './reference-design-fuel-capture'
 import {compileMobileCapture,nativeMobileCaptureFrame} from './reference-design-mobile-capture'
+import {compileAbsorberGuide,nativeAbsorberGuideFrame} from './reference-design-absorber-guide'
 import {parsePressureChannel,nativePressureChannelFields,parsePressureProtection,nativePressureProtectionFields} from './reference-design-pressure-observation'
 import {compilePrhrCooling,nativePrhrCoolingFrame,parsePrhrColdPreparation} from './reference-design-prhr-cooling'
 
@@ -189,7 +190,8 @@ export function nativeFuelCoolingFixture(p:Awaited<ReturnType<typeof compileFuel
  return [source.fixture,p.network.nativeInput,fields.join('\n'),primary.join('\n'),barrel.fields.join('\n'),
   nativeColdPressureFrame(p.pressure).join('\n'),nativeFuelCaptureFrame(p.capture).join('\n'),
   [...nativePressureChannelFields(p.pressureChannel),...nativePressureProtectionFields(p.pressureProtection)].join('\n'),
-  nativePrhrCoolingFrame(p.prhr).join('\n'),nativeMobileCaptureFrame(p.mobileCapture).join('\n')].map(frame).join('\n')+'\n'
+  nativePrhrCoolingFrame(p.prhr).join('\n'),nativeMobileCaptureFrame(p.mobileCapture).join('\n'),
+  nativeAbsorberGuideFrame(p.absorberGuide,source,p.mobileCapture).fields.join('\n')].map(frame).join('\n')+'\n'
 }
 
 export async function compileFuelCooling(wiki:string,features:{prhr:boolean}={prhr:false}){
@@ -212,7 +214,9 @@ export async function compileFuelCooling(wiki:string,features:{prhr:boolean}={pr
   pressure=compileColdPressure(read('model/operating-pressure-support.md'),read('systems/primary-coolant/surge-route.md'),
    network.water,barrel,primary.boronAtomsPerKg/primary.markerRatio,conditioning.liquidTemperature_K),
   capture=compileFuelCapture(material,thermal,network,barrel,read('systems/reactor/configuration-source-and-history.md')),
-  mobileCapture=compileMobileCapture(material,thermal,primary,d,geometry,barrel,read('systems/reactor/configuration-source-and-history.md')),
+  absorberGuide=compileAbsorberGuide(d,material,network,read('systems/reactor/control-absorber-and-guide-water.md'),
+   read('systems/reactor/fuel-handling-and-pool.md'),read('systems/reactor/configuration-source-and-history.md'),barrel),
+  mobileCapture=compileMobileCapture(material,thermal,primary,d,geometry,barrel,absorberGuide,read('systems/reactor/configuration-source-and-history.md')),
   pressureChannel=parsePressureChannel(read('systems/instrumentation/operational-observations.md')),
   pressureProtection=parsePressureProtection(read('safety/source-and-primary-protection.md')),
   identities=names.map((name,i)=>({name,sha256:sha(texts[i]!)})),
@@ -223,14 +227,15 @@ export async function compileFuelCooling(wiki:string,features:{prhr:boolean}={pr
  for(const identity of network.ownerIdentities){const same=identities.find(x=>x.name===identity.name)
   if(same&&same.sha256!==identity.sha256)throw Error('Owner changed across current coupling compilers')}
  if((await Promise.all(names.map(p=>Bun.file(join(wiki,p)).text()))).some((s,i)=>s!==texts[i]))throw Error('Owner changed during cold coupling compilation')
- return {thermal,primary,network,material,barrel,pressure,capture,mobileCapture,pressureChannel,pressureProtection,conditioning,prhr,ownerIdentities:identities,
+ return {thermal,primary,network,material,barrel,pressure,capture,mobileCapture,absorberGuide,pressureChannel,pressureProtection,conditioning,prhr,ownerIdentities:identities,
   limitations:['Compilation is not an advancing coupled plant or empirical qualification',
    'Cold fully wet primary, fixed prepared fuel/guide geometry; no primary phase continuation, fuel/absorber motion or pump coastdown',
    ...(prhr ? ['Selected cold PRHR valve stroke, signed liquid circulation and finite steel/WST/ROOM are joined; supplied CNV gas and delivered electrical support are explicit boundaries, not containment/endurance or achieved automatic protection'] : []),
    'Finite mixed surge and cold separated liquid/steam/air PZR; no hot pressure regulation, resolved thermal fronts or dryout',
    'BARREL prompt/Mn emissions join its finite 304 owner and five actual primary recipients, with explicit photon export',
    'Fertile/Xe/Sm prompt binding routes to existing fuel/clad/current external core water with explicit export; E25 remains separate',
-   'PRIMARY mobile H/B birth heat joins actual liquid and installed clad/barrel; unrepresented wall contacts have a separately retained thermal-domain-boundary export, not free-space escape or complete wall closure',
+   'PRIMARY mobile H/B birth heat joins actual liquid and installed clad/barrel/guide/BODY; unrepresented wall contacts have a separately retained thermal-domain-boundary export, not free-space escape or complete wall closure',
+   '52 finite composite BODY and984 disjoint FA/bore/axial guide stocks join actual captures/Mn and reciprocal liquid contacts; no local BODY peaks, resolved gamma field, motion, spider/stem/head/jack heat closure or dry/hot qualification',
    'Closed receiving-bay mobile heat, other nonfuel, Cf and apparatus heat recipients remain separately unjoined, not invented exports',
    'Old hydrostatic source-stock receipt does not define the new point-lumped coupled preparation']}
 }

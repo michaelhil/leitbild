@@ -12,6 +12,7 @@ import type {compileFuelCoolingMaterial,compilePrimaryIncidence} from './referen
 import type {compileColdSourceMaterialOwners} from './reference-design-source-material'
 import type {compileColdBarrel} from './reference-design-source-barrel'
 import type {compilePrimaryWaterGeometry,parsePrimaryWaterInputs} from './reference-design-source-water'
+import type {compileAbsorberGuide} from './reference-design-absorber-guide'
 
 const selectionSchema=z.object({
  liquidProjection:z.literal('full-physical-origin-mean-chord'),
@@ -29,7 +30,7 @@ type Primary=ReturnType<typeof compilePrimaryIncidence>
 type Water=ReturnType<typeof parsePrimaryWaterInputs>
 type Geometry=ReturnType<typeof compilePrimaryWaterGeometry>
 type Barrel=ReturnType<typeof compileColdBarrel>
-type Stage={kind:0|1;recipient_index:number;thickness_m:number;density_kg_m3:number;mu:[number,number]}
+type Stage={kind:0|1|2;recipient_index:number;thickness_m:number;density_kg_m3:number;mu:[number,number]}
 type Path={share:number;stages:Stage[]}
 const close=(a:number,b:number,label:string)=>{
  if(!Number.isFinite(a+b)||Math.abs(a-b)>4e-10*Math.max(Math.abs(a),Math.abs(b),1e-15))
@@ -37,7 +38,7 @@ const close=(a:number,b:number,label:string)=>{
 }
 
 export function compileMobileCapture(material:Material,thermal:Thermal,primary:Primary,
- d:Water,geometry:Geometry,barrel:Barrel,text:string){
+ d:Water,geometry:Geometry,barrel:Barrel,bundle:ReturnType<typeof compileAbsorberGuide>,text:string){
  const selection=parseMobileCaptureSelection(text),photon=parseCapturePhotonAbsorption(text),law=parsePassiveMaterialLaw(text),
   f=d.fuel,h=d.handling,c=d.control,current=currentColdGeometry(c,d.attachment,f,h,d.gates,d.head,d.cold),
   fg=fuelGeometry(f),cg=controlAbsorberGeometry(c,f,h),
@@ -82,15 +83,57 @@ export function compileMobileCapture(material:Material,thermal:Thermal,primary:P
  addWall('ACTIVE.EXTERNAL',[...cladPaths,{share:coreBarrelArea/coreA,stages:[barrelStage]}])
  for(const origin of ['Core.1.EXTERNAL','Core.2.EXTERNAL'])envelopes.set(origin,{
   volume_m3:coreV,boundary_m2:coreA,chord_m:4*coreV/coreA,projection:'whole-active-core-external-water-including-barrel'})
+ const guideHosts=bundle.hosts.map((h,i)=>({h,i})).filter(q=>q.h.kind==='guide'),
+  guideStage=(q:typeof guideHosts[number]):Stage=>({kind:2,recipient_index:q.i,
+   thickness_m:q.h.outer_m-q.h.inner_m,density_kg_m3:bundle.photon.density_zr,
+   mu:[...photon.mu_en_m2_kg.Zr]}),
+  bodyStage=(i:number,L:number,material:'steel'|'B4C'):Stage=>({kind:2,recipient_index:i,thickness_m:L,
+   density_kg_m3:material==='steel'?bundle.photon.density_steel:bundle.photon.density_b4c,
+   mu:material==='steel'?muSteel:[bundle.photon.mu_b4c_05,bundle.photon.mu_b4c_1]}),
+  extraPaths=(origin:string,A:number):Path[]=>bundle.hosts.flatMap((h,i)=>h.contacts
+   // Axial guide ends remain in the physical optical envelope, but have no
+   // selected ray traversal. Never substitute a radial wall path for them.
+   .filter(q=>q.origin===origin&&(h.kind==='body'||q.surface==='side')).map(q=>{
+    const capLength=origin==='LOWER.EXTERNAL'?c.insertedActiveBottom_m-c.insertedBodyBottom_m:
+     c.insertedBodyBottom_m+c.bodyLength_m-c.insertedActiveBottom_m-c.activeLength_m
+    return {share:q.area_m2/A,stages:[h.kind==='guide'?guideStage({h,i}):
+     bodyStage(i,2*h.outer_m*capLength/(capLength+h.outer_m),'steel')]}
+   }))
+ // External core already includes guide exteriors in its selected perimeter.
+ // Plenum cylinders did not: add actual intruder surfaces prospectively,
+ // retaining the old free liquid volume rather than renormalizing recipients.
+ const active=wall_origins[wallIndex.get('ACTIVE.EXTERNAL')!]!
+ active.paths.push(...extraPaths('Core.1.EXTERNAL',coreA),...extraPaths('Core.2.EXTERNAL',coreA))
+ active.unrepresented_wall_share=1-active.paths.reduce((sum,q)=>sum+q.share,0)
+ if(active.unrepresented_wall_share<0)throw Error('Active guide wall incidence exceeds full physical envelope')
  for(const contact of barrel.contacts.filter(q=>!q.owner.startsWith('Core.'))){
-  const e=envelopes.get(contact.owner)!
-  addWall(contact.owner,[{share:contact.area_m2/e.boundary_m2,stages:[barrelStage]}])
+  const e=envelopes.get(contact.owner)!,added=bundle.hosts.flatMap(h=>h.contacts.filter(q=>q.origin===contact.owner))
+   .reduce((sum,q)=>sum+q.area_m2,0)
+  e.boundary_m2+=added;e.chord_m=4*e.volume_m3/e.boundary_m2
+  addWall(contact.owner,[{share:contact.area_m2/e.boundary_m2,stages:[barrelStage]},...extraPaths(contact.owner,e.boundary_m2)])
  }
  for(const [kind,ri,N]of [['EMPTY',0,f.assemblies*f.guidesPerAssembly-cg.rodlets-1],
   ['BODY',c.bodyDiameter_m/2,cg.rodlets],['THIMBLE',h.sourceThimbleDiameter_m/2,1]] as const){
   const cell=primary.cells.find(q=>q.id==='GUIDE.'+kind)
   if(!cell)throw Error('Missing dynamic guide recipient '+kind)
   annulus('GUIDE.'+kind,N,h.guideInnerDiameter_m/2,ri,guideLength,cell.totalVolume_m3,'actual-full-span-guide-annulus')
+  const A=envelopes.get('GUIDE.'+kind)!.boundary_m2,o=wall_origins[wallIndex.get('GUIDE.'+kind)!]!
+  o.paths.push(...guideHosts.flatMap(q=>q.h.contacts.filter(c=>c.origin==='GUIDE.'+kind)
+   .map(c=>({share:c.area_m2/A,stages:[guideStage(q)]}))))
+  if(kind==='BODY')for(const [i,body]of bundle.hosts.entries())if(body.kind==='body'){
+   const side=body.contacts.find(q=>q.origin==='GUIDE.BODY')!.area_m2,
+    activeLength=c.activeLength_m,b4cChord=2*body.inner_m*activeLength/(activeLength+body.inner_m),
+    shell=body.outer_m-body.inner_m
+   o.paths.push({share:side*(activeLength/guideLength)/A,
+    stages:[bodyStage(i,shell,'steel'),bodyStage(i,b4cChord,'B4C'),bodyStage(i,shell,'steel')]})
+   for(const length of [c.insertedActiveBottom_m-c.insertedBodyBottom_m,
+    c.insertedBodyBottom_m+c.bodyLength_m-c.insertedActiveBottom_m-c.activeLength_m]){
+    if(length>0)o.paths.push({share:side*(length/guideLength)/A,
+     stages:[bodyStage(i,2*body.outer_m*length/(length+body.outer_m),'steel')]})
+   }
+  }
+  o.unrepresented_wall_share=1-o.paths.reduce((sum,q)=>sum+q.share,0)
+  if(o.unrepresented_wall_share<0)throw Error('Guide wall incidence exceeds physical envelope '+kind)
  }
  for(const [kind,ro,lo,hi]of [['MAIN',c.housingID_m/2,current.housing.mainLo,current.housing.mainHi],
   ['NECK',c.neckID_m/2,current.housing.mainHi,current.housing.neckHi]] as const){
@@ -114,7 +157,7 @@ export function compileMobileCapture(material:Material,thermal:Thermal,primary:P
   .reduce((s,r)=>s+r.birth_share,0),1,'complete region/native-water birth ownership')
  return {selection,water_mu:[...photon.mu_en_m2_kg.H2O] as [number,number],routes,wall_origins,
   envelopes:[...envelopes].map(([origin,e])=>({origin,...e})),
-  scope:'PRIMARY H/B birth-site charged/liquid heat and diffuse physical-origin serial clad/barrel photons; separately retained unrepresented-contact thermal boundary. No local photon field, complete material closure or free-space escape claim.'}
+  scope:'PRIMARY H/B birth-site charged/liquid heat and diffuse physical-origin serial clad/barrel/guide/BODY photons; separately retained unrepresented-contact thermal boundary. No local photon field, complete material closure or free-space escape claim.'}
 }
 export function nativeMobileCaptureFrame(input:ReturnType<typeof compileMobileCapture>){
  return [...input.water_mu,input.wall_origins.length,...input.wall_origins.flatMap(o=>[

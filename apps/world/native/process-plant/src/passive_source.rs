@@ -27,6 +27,7 @@ pub struct Model {
     stocks: Vec<Stock>,
     intersections: Vec<Intersection>,
     target_count: usize,
+    births: usize,
     owner: Arc<()>,
 }
 pub struct Workspace {
@@ -50,6 +51,9 @@ impl Workspace {
     }
 }
 impl Model {
+    pub fn birth_count(&self) -> usize {
+        self.births
+    }
     /// Fixed gross-capture support for named finite bulk targets. Coefficients
     /// use the same per-amount primitive as the physical update, never a
     /// prepared-state zero to select support.
@@ -142,12 +146,17 @@ impl Model {
                 return Err("Passive incidence creates material");
             }
         }
+        let births = intersections
+            .iter()
+            .map(|e| stocks[e.stock].targets.len())
+            .sum();
         Ok(Self {
             volumes,
             speed,
             stocks,
             intersections,
             target_count,
+            births,
             owner: Arc::new(()),
         })
     }
@@ -216,12 +225,14 @@ impl Model {
         n: &[f64],
         rates: &mut [f64],
         captures: &mut [f64],
+        births: &mut [f64],
     ) -> Result<(), &'static str> {
         if !work.valid
             || !Arc::ptr_eq(&work.owner, &self.owner)
             || n.len() != self.volumes.len() * GROUPS
             || rates.len() != n.len()
             || captures.len() != self.target_count
+            || births.len() != self.birth_count()
             || n.iter()
                 .chain(rates.iter())
                 .chain(captures.iter())
@@ -239,6 +250,7 @@ impl Model {
                     event += r;
                 }
                 captures[t.index] += event;
+                births[i] = event;
                 i += 1;
             }
         }

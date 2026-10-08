@@ -1,7 +1,7 @@
 //! Nuclear-only mobile birth heat accounting, independent of sensible cooling
 //! and the later position of transported capture products.
 use leitbild_plant_numerics::source_cooling::Model;
-pub(super) const POLICY: &str = "birth-site-primary-H-B;physical-liquid-self;physical-origin-diffuse-serial-clad-barrel;explicit-unrepresented-wall-boundary";
+pub(super) const POLICY: &str = "birth-site-primary-H-B;physical-liquid-self;physical-origin-diffuse-serial-clad-barrel-guide-BODY;explicit-unrepresented-wall-boundary";
 pub(super) const DEVELOPMENT_POLICY: &str = "separate-positive-H-B-paid-and-finite-recipient-power;min-normal-tighter>10-pair-difference+20-existing-resolution";
 pub(super) fn developed(
     paid_a: [f64; 2],

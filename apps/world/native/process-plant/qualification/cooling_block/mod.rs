@@ -150,6 +150,7 @@ pub(super) struct Preconditioner {
     fluid_rhs: Vec<f64>,
     fluid_solution: Vec<f64>,
     barrel: Sparse,
+    absorber_guide: Sparse,
     receipt_cj: f64,
     work: Workspace,
     valid: bool,
@@ -203,6 +204,17 @@ impl Preconditioner {
         let fluid_rhs = vec![0.; fluid_rows.len()];
         let fluid_solution = vec![0.; fluid_rows.len()];
         let barrel = Sparse::new(4, [(0, 0), (0, 1), (1, 0), (1, 1), (2, 2), (3, 3)])?;
+        let nh = model.absorber_guide.host_count();
+        let mut host_pattern = Vec::new();
+        for i in 0..nh {
+            host_pattern.extend([(i, i), (nh + i, i), (nh + i, nh + i)]);
+        }
+        model
+            .absorber_guide
+            .visit_host_jacobian(&work.absorber_guide, |r, c, _| {
+                host_pattern.push((r, nh + c))
+            })?;
+        let absorber_guide = Sparse::new(2 * nh, host_pattern)?;
         Ok(Self {
             source,
             source_jac,
@@ -214,6 +226,7 @@ impl Preconditioner {
             fluid_rhs,
             fluid_solution,
             barrel,
+            absorber_guide,
             receipt_cj: 0.,
             work,
             valid: false,
@@ -293,6 +306,25 @@ impl Preconditioner {
             self.barrel.add(2, 2, cj)?;
             self.barrel.add(3, 3, cj)?;
             self.barrel.factor()?;
+            self.absorber_guide.clear();
+            let nh = model.absorber_guide.host_count();
+            for (i, &capacity) in self.work.absorber_guide.capacity.iter().enumerate() {
+                self.absorber_guide.add(i, i, cj)?;
+                self.absorber_guide.add(nh + i, i, 1.)?;
+                self.absorber_guide.add(nh + i, nh + i, -capacity)?;
+            }
+            let mut error = None;
+            model
+                .absorber_guide
+                .visit_host_jacobian(&self.work.absorber_guide, |r, c, v| {
+                    if error.is_none() {
+                        error = self.absorber_guide.add(r, nh + c, -v).err();
+                    }
+                })?;
+            if let Some(e) = error {
+                return Err(e);
+            }
+            self.absorber_guide.factor()?;
             Ok(())
         })();
         self.setup_seconds += started.elapsed().as_secs_f64();
@@ -325,10 +357,15 @@ impl Preconditioner {
                 &rhs[l.barrel_energy..l.pressurizer_start],
                 &mut out[l.barrel_energy..l.pressurizer_start],
             )?;
+            self.absorber_guide.solve(
+                &rhs[l.absorber_guide_energies_start..l.absorber_guide_exported],
+                &mut out[l.absorber_guide_energies_start..l.absorber_guide_exported],
+            )?;
             for r in [
                 l.fuel_capture_exported,
                 l.mobile_capture_exported,
                 l.mobile_capture_boundary_exported,
+                l.absorber_guide_exported,
             ] {
                 out[r] = rhs[r] / self.receipt_cj;
                 if !out[r].is_finite() {
@@ -345,7 +382,7 @@ impl Preconditioner {
     }
     pub fn metrics_json(&self) -> String {
         format!(
-            "{{\"identity\":\"source9-thermalETKLU-coupledPrimarySurgePZRMaterialKLU-barrelETauditsKLU;remaining-cross-component-feedback-outer-only\",\"setups\":{},\"solves\":{},\"setupSeconds\":{},\"solveSeconds\":{},\"source\":{}}}",
+            "{{\"identity\":\"source9-thermalETKLU-coupledPrimarySurgePZRMaterialKLU-barrelETauditsKLU-absorberGuideETKLU;remaining-cross-component-feedback-outer-only\",\"setups\":{},\"solves\":{},\"setupSeconds\":{},\"solveSeconds\":{},\"source\":{}}}",
             self.setups,
             self.solves,
             self.setup_seconds,
@@ -478,6 +515,38 @@ mod tests {
             p.barrel.solve(&expected, &mut solved).unwrap();
             for (&a, &b) in solved.iter().zip(&x) {
                 assert!((a - b).abs() <= 1e-11 * (1. + b.abs()));
+            }
+        }
+    }
+    #[test]
+    fn finite_body_guide_block_matches_current_host_action_and_sparse_solve() {
+        let model = fixture::fixture();
+        let l = model.layout;
+        let mut y = model.initial_state().unwrap();
+        y[l.absorber_guide_temperatures_start + 1] = 310.;
+        y[l.absorber_guide_temperatures_start + 2] = 295.;
+        let yp = vec![0.; model.dimension()];
+        let mut p = Preconditioner::new(&model, &y, &yp, None).unwrap();
+        let nh = model.absorber_guide.host_count();
+        for cj in [0.1, 7., 1e12] {
+            p.setup(&model, &y, &yp, cj, None).unwrap();
+            let x = (0..2 * nh)
+                .map(|i| 0.02 * (i + 1) as f64)
+                .collect::<Vec<_>>();
+            let mut direction = vec![0.; model.dimension()];
+            direction[l.absorber_guide_energies_start..l.absorber_guide_exported]
+                .copy_from_slice(&x);
+            model.jvp(&direction, cj, &mut p.work).unwrap();
+            let expected =
+                p.work.jvp[l.absorber_guide_energies_start..l.absorber_guide_exported].to_vec();
+            let actual = action(&p.absorber_guide, &x);
+            for (&a, &b) in actual.iter().zip(&expected) {
+                assert!((a - b).abs() < 1e-11 * (1. + a.abs() + b.abs()));
+            }
+            let mut solved = vec![0.; 2 * nh];
+            p.absorber_guide.solve(&expected, &mut solved).unwrap();
+            for (&a, &b) in solved.iter().zip(&x) {
+                assert!((a - b).abs() < 1e-10 * (1. + b.abs()));
             }
         }
     }

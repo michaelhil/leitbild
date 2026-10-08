@@ -29,6 +29,8 @@ mod cooling_mobile;
 mod cooling_observation;
 #[path = "cooling_power.rs"]
 mod cooling_power;
+#[path = "cooling_bundle.rs"]
+mod cooling_bundle;
 #[path = "evolution_input/mod.rs"]
 mod evolution_input;
 #[path = "../examples/ida_support/mod.rs"]
@@ -574,6 +576,7 @@ fn progress_relative(model: &source_cooling::Model, row: usize) -> bool {
         || row == model.layout.fuel_capture_exported
         || row == model.layout.mobile_capture_exported
         || row == model.layout.mobile_capture_boundary_exported
+        || row == model.layout.absorber_guide_exported
         || (model.layout.surge_carrier_start..=model.layout.gas_hydrogen_product).contains(&row)
 }
 fn state_error_scale(
@@ -609,6 +612,8 @@ fn physical_constraints(model: &source_cooling::Model, energy_row: usize) -> Vec
     out[l.fuel_capture_exported] = 1.;
     out[l.mobile_capture_exported] = 1.;
     out[l.mobile_capture_boundary_exported] = 1.;
+    out[l.absorber_guide_temperatures_start..l.absorber_guide_exported].fill(2.);
+    out[l.absorber_guide_exported]=1.;
     for row in [
         cold_pressurizer::LIQUID_MASS,
         cold_pressurizer::VAPOR_MASS,
@@ -1445,6 +1450,13 @@ fn run(
                     return Err(format!("Barrel caloric chart correction {dt} K"));
                 }
                 out.max_thermal_chart = out.max_thermal_chart.max(dt);
+                for (i, &cp) in callbacks.work.absorber_guide.capacity.iter().enumerate() {
+                    let dt = callbacks.work.residual[l.absorber_guide_temperatures_start + i].abs() / cp;
+                    if !dt.is_finite() || dt > 1e-4 {
+                        return Err(format!("BODY/guide caloric chart {i} correction {dt} K"));
+                    }
+                    out.max_thermal_chart = out.max_thermal_chart.max(dt);
+                }
                 let (pool, line) = model.pressure_chart_corrections(
                     &callbacks.work.network,
                     &physical,
@@ -1619,6 +1631,7 @@ fn run(
                     barrel_power: cooling_accuracy::barrel_powers(&callbacks.work)?,
                     capture_power: callbacks.work.capture.power_channels()?.to_vec(),
                     mobile_power: callbacks.work.mobile_capture.value()?.channels.clone(),
+                    bundle_power: cooling_bundle::powers(&callbacks.work),
                     mobile_recipient_power: callbacks
                         .work
                         .mobile_capture
@@ -1969,6 +1982,8 @@ fn execute() -> Result<(), String> {
     let mut barrel_developed = None;
     let mut pressure_developed = None;
     let mut mobile_developed = None;
+    let mut bundle_qualified=false;
+    let mut bundle_ratios=[0f64;3];
     let mut mobile_receipts = "null".to_string();
     let mut pressure_details = "null".to_string();
     let mut barrel_details = "null".to_string();
@@ -1997,6 +2012,8 @@ fn execute() -> Result<(), String> {
         cooling_accuracy::check_schedule(&normal.samples)?;
         cooling_accuracy::check_schedule(&t.samples)?;
         for (a, b) in normal.samples.iter().zip(&t.samples) {
+            let (local,sumabs,paid)=cooling_bundle::compare(&prepared.model,a,b,&normal.initial,None)?;
+            for (r,q) in bundle_ratios.iter_mut().zip([local,sumabs,paid]){*r=r.max(q);}
             let c = accuracy.compare_one(&prepared.model, a, b)?;
             max_source_local = max_source_local.max(c.source.local.ratio);
             max_source_family = max_source_family.max(c.source.family_ratio);
@@ -2028,6 +2045,11 @@ fn execute() -> Result<(), String> {
             max_pressure_material = max_pressure_material.max(c.pressure_material_pair_ratio);
             comparisons.push(c.json());
         }
+        let a=normal.samples.last().ok_or("Missing normal BODY/guide sample")?;
+        let b=t.samples.last().ok_or("Missing tighter BODY/guide sample")?;
+        bundle_qualified=bundle_ratios.iter().all(|q|*q<=1.)&&cooling_bundle::developed(&a.bundle_power,&b.bundle_power)
+            &&cooling_bundle::thermal_witness(&prepared.model,a,b,&normal.initial).3;
+        println!("{}",cooling_bundle::report(&prepared.model,a,b,&normal.initial,bundle_ratios)?);
         let original_mean = mean_fuel(&prepared.model, &normal.initial)?;
         let normal_mean = mean_fuel(&prepared.model, &normal.final_y)?;
         let tighter_mean = mean_fuel(&prepared.model, &t.final_y)?;
@@ -2152,6 +2174,7 @@ fn execute() -> Result<(), String> {
         true
     };
     let passed = pair_evaluated
+        && bundle_qualified
         && prhr_qualified
         && evidence.is_ok()
         && thermal_developed == Some(true)
@@ -2222,9 +2245,9 @@ fn execute() -> Result<(), String> {
     };
     let carrier_policy = cooling_accuracy::CARRIER_POLICY;
     let energy_coordinate = if prepared.model.network.prhr().is_some() {
-        "G=sum-installed-energy-change-including-finite-WST-and-ROOM-minus-fission-barrel-fuel-binding-mobile-binding-release-minus-signed-spring-release-and-electrical-receipts-plus-barrel-fuel-binding-mobile-binding-ambient-WST-surface-work-connector-and-ROOM-ambient-export"
+        "G=sum-installed-energy-change-including-finite-WST-and-ROOM-minus-fission-barrel-fuel-binding-mobile-binding-BODY-guide-release-minus-signed-spring-release-and-electrical-receipts-plus-barrel-fuel-binding-mobile-binding-BODY-guide-ambient-WST-surface-work-connector-and-ROOM-ambient-export"
     } else {
-        "G=sum-installed-energy-change-minus-fission-barrel-fuel-binding-mobile-binding-release-plus-barrel-fuel-binding-mobile-binding-ambient-export"
+        "G=sum-installed-energy-change-minus-fission-barrel-fuel-binding-mobile-binding-BODY-guide-release-plus-barrel-fuel-binding-mobile-binding-BODY-guide-ambient-export"
     };
     println!(
         "{{\"kind\":\"source-cooling-pair\",\"passed\":{passed},\"lastAdmittedTime\":{},\"scope\":\"{scope}\",\"dimension\":{},\"differential\":{},\"settings\":{{\"accuracyPolicy\":\"cold-source-nuclear-heat\",\"carrierCoordinates\":\"hydrogen-product,direct-boron10,boron-product\",\"carrierComparisonPolicy\":\"{carrier_policy}\",\"provisional\":true,\"nonlinearClosure\":\"stock-Newton-and-current-physical-network-pressure-charts\",\"linearWeightedL2Budget\":{linear_budget},\"algebraicLTE\":\"excluded-from-temporal-control;retained-in-Newton-physical-closure-and-output-pair\",\"fuelPowerErrorWeights\":\"sparse-current-response-proportional-budget-cap\",\"fuelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerErrorWeights\":\"sparse-current-bulk-capture-Mn-proportional-budget-cap\",\"barrelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerWeightScope\":\"held-route-source-response-only;density-partition-independently-paired\",\"fuelPowerWeightScope\":\"first-order-local-box-budget;not-WRMS-or-paired-error-guarantee\",\"perRowErrorWeights\":\"source-carrier-barrel-binding-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute\",\"solverEnergyCoordinate\":\"{energy_coordinate}\",\"energyDefectATOLJ\":{},\"referenceAllATOLandRTOLDivisor\":10,\"horizon\":300,\"costGuard\":\"aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic\",\"maxl\":30,\"restarts\":0,{capture_settings},{pressure_settings}}},\"gates\":{{\"fullPairComparisonEvaluated\":{pair_evaluated},\"developedThermalResponse\":{},\"developedSourceResponse\":{},\"thermalResponse\":{thermal_details},\"sourceLocalRatio\":{},\"sourceFamilyRatio\":{},\"sourceObservableRatio\":{},\"sourceNCOperatorRatio\":{},\"thermalPairRatio\":{},\"networkPairRatio\":{},\"depositionPairRatio\":{},\"carrierPairRatio\":{},{barrel_gates},{capture_gates},{pressure_gates}}},\"mobileCaptureReceipts\":{mobile_receipts},\"pairedComparisons\":[{}],\"fuelTemperatureFeedbackDiagnostic\":{feedback},\"normal\":{},\"tighter\":{tighter},\"aggregateWallSeconds\":{}}}",
@@ -2446,7 +2469,8 @@ mod tests {
             l.mobile_capture_exported + 1,
             l.mobile_capture_boundary_exported
         );
-        assert_eq!(l.mobile_capture_boundary_exported + 1, model.dimension());
+        assert_eq!(l.mobile_capture_boundary_exported + 1, l.absorber_guide_energies_start);
+        assert_eq!(l.absorber_guide_exported + 1, model.dimension());
         assert!(model.is_differential(l.fuel_capture_exported));
         assert!(progress_relative(&model, l.fuel_capture_exported));
         assert_eq!(constraints[l.fuel_capture_exported], 1.);

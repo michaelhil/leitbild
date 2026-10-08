@@ -45,6 +45,122 @@ pub(crate) fn mobile_input(
 pub(crate) fn fixture() -> sc::Model {
     fixture_with_fuel_mass(0.5).unwrap()
 }
+pub(crate) fn absorber_input(
+    source: &se::Evolution,
+) -> leitbild_plant_numerics::absorber_guide::Input {
+    use leitbild_plant_numerics::absorber_guide::*;
+    Input {
+        caloric: Caloric {
+            steel_cp0: 469.4448,
+            steel_cp1: 0.13480848,
+            datum_k: 300.,
+            body_min_k: 290.,
+            body_max_k: 1600.,
+            guide_min_k: 290.,
+            guide_max_k: 1800.,
+            b4c_cp_points: vec![[290., 900.], [300., 930.], [1600., 1600.]],
+        },
+        wet_h: 250.,
+        photons: Photons {
+            density_b4c: 2520.,
+            density_steel: 7920.,
+            density_zr: 6551.,
+            mu_b4c_05: 0.003,
+            mu_steel_05: 0.003,
+            mu_steel_1: 0.0026,
+            mu_zr_1: 0.0026,
+            mu_water_05: 0.003299,
+            mu_water_1: 0.003103,
+            guide_chord_m: 0.0012,
+            guide_capture_j: 0.7,
+        },
+        hosts: vec![
+            Host {
+                b4c_mass_kg: 0.5,
+                steel_mass_kg: 0.5,
+                zr_mass_kg: 0.,
+                initial_k: 300.,
+            },
+            Host {
+                b4c_mass_kg: 0.,
+                steel_mass_kg: 0.,
+                zr_mass_kg: 1.,
+                initial_k: 300.,
+            },
+            Host {
+                b4c_mass_kg: 0.,
+                steel_mass_kg: 0.,
+                zr_mass_kg: 1.,
+                initial_k: 300.,
+            },
+        ],
+        contacts: vec![
+            Contact {
+                host: 0,
+                water: 0,
+                area_m2: 0.1,
+                solid_geometry_m_inv: 0.,
+                liquid_chord_m: 0.1,
+            },
+            Contact {
+                host: 1,
+                water: 0,
+                area_m2: 0.2,
+                solid_geometry_m_inv: 0.001,
+                liquid_chord_m: 0.1,
+            },
+            Contact {
+                host: 1,
+                water: 1,
+                area_m2: 0.1,
+                solid_geometry_m_inv: 0.002,
+                liquid_chord_m: 0.2,
+            },
+            Contact {
+                host: 2,
+                water: 1,
+                area_m2: 0.2,
+                solid_geometry_m_inv: 0.001,
+                liquid_chord_m: 0.2,
+            },
+        ],
+        axial: vec![Axial {
+            a: 1,
+            b: 2,
+            area_over_distance_m: 0.0001,
+        }],
+        bodies: vec![Body {
+            host: 0,
+            targets: [7, 8, 9, 10, 11],
+            capture_j: [0.3, 0.4, 0.5, 0.6, 0.7],
+            b_photon_j: 0.05,
+            mn_owner: 1,
+            b4c_chord_m: 0.008,
+            steel_chord_m: 0.001,
+            steel_shell_m: 0.00035,
+        }],
+        guide_births: source
+            .passive_birth_rows()
+            .filter(|(_, t, _)| *t == 12)
+            .flat_map(|(_, target, region)| {
+                [
+                    GuideBirth {
+                        target,
+                        region,
+                        host: 1,
+                        share: 0.4,
+                    },
+                    GuideBirth {
+                        target,
+                        region,
+                        host: 2,
+                        share: 0.6,
+                    },
+                ]
+            })
+            .collect(),
+    }
+}
 pub(crate) fn capture_input() -> leitbild_plant_numerics::fuel_capture::Input {
     use leitbild_plant_numerics::fuel_capture::{Band, Input};
     Input {
@@ -96,7 +212,14 @@ fn mobile_binding_serial_wall_paths_and_thermal_cut_close_by_species() {
             ],
         }];
     }
-    let capture = Model::new(&m.source, &m.thermal, 2, input).unwrap();
+    let capture = Model::new(
+        &m.source,
+        &m.thermal,
+        2,
+        m.absorber_guide.host_count(),
+        input,
+    )
+    .unwrap();
     let mut work = capture.workspace();
     let mut source = m.workspace();
     let y = resolved(&m);
@@ -196,7 +319,15 @@ fn mobile_binding_current_birth_and_density_jvp_match_independent_differences() 
 fn mobile_binding_refuses_incomplete_false_wall_or_foreign_birth_ownership() {
     use leitbild_plant_numerics::mobile_capture::{Model, Recipient};
     let m = fixture();
-    let build = |input| Model::new(&m.source, &m.thermal, 2, input);
+    let build = |input| {
+        Model::new(
+            &m.source,
+            &m.thermal,
+            2,
+            m.absorber_guide.host_count(),
+            input,
+        )
+    };
     let mut input = mobile_input(&m.source);
     input.routes.pop();
     assert!(build(input).is_err());
@@ -224,26 +355,56 @@ fn mobile_binding_refuses_incomplete_false_wall_or_foreign_birth_ownership() {
 #[test]
 fn mobile_physical_wall_and_liquid_receipts_are_invariant_to_birth_partition() {
     use leitbild_plant_numerics::mobile_capture::Model;
-    let m=fixture();
-    let input=mobile_input(&m.source);
-    let mut split=input.clone();
-    let mut extra=split.routes[0];
-    split.routes[0].birth_share=0.25;extra.birth_share=0.75;
+    let m = fixture();
+    let input = mobile_input(&m.source);
+    let mut split = input.clone();
+    let mut extra = split.routes[0];
+    split.routes[0].birth_share = 0.25;
+    extra.birth_share = 0.75;
     split.routes.push(extra);
-    let a=Model::new(&m.source,&m.thermal,2,input).unwrap();
-    let b=Model::new(&m.source,&m.thermal,2,split).unwrap();
-    let mut physical=m.workspace();
-    m.evaluate(&resolved(&m),&vec![0.;m.dimension()],Some(0.),&mut physical).unwrap();
-    let events=physical.source.water_birth_events().unwrap();
-    let mut aw=a.workspace();let mut bw=b.workspace();
-    a.evaluate(&m.source,events,&[997.,995.],&mut aw).unwrap();
-    b.evaluate(&m.source,events,&[997.,995.],&mut bw).unwrap();
-    let x=aw.value().unwrap();let y=bw.value().unwrap();
-    for (x,y) in x.recipient_power().chain([x.exported,x.boundary_exported])
-        .zip(y.recipient_power().chain([y.exported,y.boundary_exported])) {close(x,y,4e-15,1e-12);}
+    let a = Model::new(
+        &m.source,
+        &m.thermal,
+        2,
+        m.absorber_guide.host_count(),
+        input,
+    )
+    .unwrap();
+    let b = Model::new(
+        &m.source,
+        &m.thermal,
+        2,
+        m.absorber_guide.host_count(),
+        split,
+    )
+    .unwrap();
+    let mut physical = m.workspace();
+    m.evaluate(
+        &resolved(&m),
+        &vec![0.; m.dimension()],
+        Some(0.),
+        &mut physical,
+    )
+    .unwrap();
+    let events = physical.source.water_birth_events().unwrap();
+    let mut aw = a.workspace();
+    let mut bw = b.workspace();
+    a.evaluate(&m.source, events, &[997., 995.], &mut aw)
+        .unwrap();
+    b.evaluate(&m.source, events, &[997., 995.], &mut bw)
+        .unwrap();
+    let x = aw.value().unwrap();
+    let y = bw.value().unwrap();
+    for (x, y) in x
+        .recipient_power()
+        .chain([x.exported, x.boundary_exported])
+        .zip(y.recipient_power().chain([y.exported, y.boundary_exported]))
+    {
+        close(x, y, 4e-15, 1e-12);
+    }
     // Splitting a numerical birth does not invent physical wall contact or
     // turn interior source cells into unrepresented-wall escape.
-    assert_eq!(a.origin_count(),b.origin_count());
+    assert_eq!(a.origin_count(), b.origin_count());
 }
 
 #[test]
@@ -488,6 +649,20 @@ fn fixture_with_preparation_at(
             sigma_m2: [0.005; 7],
         }
     }));
+    // Distinct thermal hosts must never rebill the barrel's actual targets.
+    input.targets.extend([100.; 6]);
+    input.passive_stocks[0].targets.extend((7..13).map(|index| {
+        leitbild_plant_numerics::passive_source::Target {
+            index,
+            sigma_m2: [0.005; 7],
+        }
+    }));
+    input.mn.push(se::MnTarget {
+        target: 11,
+        decay_rate: 0.01,
+        electron_j: 0.2,
+        photon_j: 0.3,
+    });
     let old = &input.history;
     let fuel = fs::FuelModel::new(
         old.fuel().law().clone(),
@@ -577,6 +752,7 @@ fn fixture_with_preparation_at(
     // Both bands heat cell1, while source captures occur in BOTH physical cells.
     let source = se::Evolution::new(input).unwrap();
     let mobile = mobile_input(&source);
+    let absorber = absorber_input(&source);
     sc::Model::new(
         source,
         network,
@@ -618,6 +794,7 @@ fn fixture_with_preparation_at(
         pressure,
         capture_input(),
         mobile,
+        absorber,
         vec![0, 1, 5, 6],
         vec![None, Some(0)],
         vec![300.; 11],
@@ -642,6 +819,290 @@ fn resolved(m: &sc::Model) -> Vec<f64> {
     y[l.energies_start..l.temperatures_start].copy_from_slice(w.thermal.energies().unwrap());
     y[l.barrel_energy] = w.barrel.energy().unwrap();
     y
+}
+
+#[test]
+fn body_guide_caloric_and_conductivity_primitives_are_finite_and_exact() {
+    let m = fixture();
+    let b = &m.absorber_guide;
+    for host in 0..b.host_count() {
+        assert_eq!(b.energy_capacity(host, 300.).unwrap().0, 0.);
+        assert!(b.energy_capacity(host, 290.).unwrap().0 < 0.);
+        for t in [290.1, 299., 300.1, 345., 1599.] {
+            let h = 0.0001;
+            let fd = (b.energy_capacity(host, t + h).unwrap().0
+                - b.energy_capacity(host, t - h).unwrap().0)
+                / (2. * h);
+            close(fd, b.energy_capacity(host, t).unwrap().1, 3e-9, 1e-7);
+        }
+        assert!(b.energy_capacity(host, 289.).is_err());
+    }
+    assert!(b.energy_capacity(0, 1601.).is_err());
+    assert!(b.energy_capacity(1, 1801.).is_err());
+}
+
+#[test]
+fn body_guide_births_pay_once_to_finite_hosts_current_water_and_one_export() {
+    let m = fixture();
+    let l = m.layout;
+    let mut y = resolved(&m);
+    // Existing retained Mn, rather than a second decay source or integral.
+    y[m.source.target_row(11)] = 0.2;
+    y[m.source.mn_product_row(1)] = 0.1;
+    y[l.absorber_guide_temperatures_start] = 312.;
+    y[l.absorber_guide_temperatures_start + 1] = 318.;
+    y[l.absorber_guide_temperatures_start + 2] = 299.;
+    let yp = vec![0.; m.dimension()];
+    let mut w = m.workspace();
+    m.evaluate(&y, &yp, Some(3.), &mut w).unwrap();
+    let b = &w.absorber_guide.value;
+    assert!(b.family_emitted.iter().all(|p| *p > 0.));
+    assert!(b.nuclear_host.iter().all(|p| *p > 0.));
+    assert!(b.nuclear_water.iter().all(|p| *p > 0.));
+    assert!(b.exported > 0.);
+    close(
+        b.host.iter().sum::<f64>() + b.water.iter().sum::<f64>() + b.exported,
+        b.emitted,
+        1e-11,
+        1e-8,
+    );
+    let paid = m
+        .absorber_guide
+        .paid_rows()
+        .map(|(r, q)| q * w.source.rates().unwrap()[r])
+        .sum::<f64>();
+    close(paid, b.emitted, 2e-14, 1e-12);
+    let guide_rate = w
+        .source
+        .passive_birth_events()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| {
+            m.source
+                .passive_birth_rows()
+                .any(|(j, t, _)| j == *i && t == 12)
+        })
+        .map(|(_, v)| *v)
+        .sum::<f64>();
+    close(
+        b.family_emitted[2],
+        guide_rate * m.absorber_guide.config().photons.guide_capture_j,
+        2e-14,
+        1e-12,
+    );
+    assert!(w.complete_energy_rate().unwrap().abs() < 1e-7);
+    let mut d = vec![0.; m.dimension()];
+    d[l.absorber_guide_temperatures_start + 1] = 0.1;
+    d[l.absorber_guide_temperatures_start + 2] = -0.2;
+    d[m.source.target_row(11)] = 0.03;
+    d[0] = 0.4;
+    d[l.network_start + m.network.temperature_row(1)] = 0.3;
+    m.jvp(&d, 3., &mut w).unwrap();
+    let v = &w.absorber_guide.direction;
+    close(
+        v.host.iter().sum::<f64>() + v.water.iter().sum::<f64>() + v.exported,
+        v.emitted,
+        1e-11,
+        1e-8,
+    );
+    assert!(w.complete_energy_rate_jvp().unwrap().abs() < 1e-7);
+}
+
+#[test]
+fn guide_actual_birth_partition_refuses_omission_duplicate_and_foreign_source() {
+    use leitbild_plant_numerics::absorber_guide::Model;
+    let m = fixture();
+    let a = m.absorber_guide.config().clone();
+    let mut omitted = a.clone();
+    omitted.guide_births.pop();
+    assert!(Model::new(&m.source, 2, omitted).is_err());
+    let mut duplicate = a.clone();
+    duplicate.guide_births.push(duplicate.guide_births[0]);
+    assert!(Model::new(&m.source, 2, duplicate).is_err());
+    let mut rounded = a.clone();
+    rounded.guide_births[0].share = 1. + 2. * f64::EPSILON;
+    rounded.guide_births[1].share = 2. * f64::EPSILON;
+    let admitted = Model::new(&m.source, 2, rounded.clone()).unwrap();
+    assert_eq!(
+        admitted.config().guide_births[0].share.to_bits(),
+        rounded.guide_births[0].share.to_bits()
+    );
+    rounded.guide_births[0].share = 1. + 128. * f64::EPSILON;
+    assert!(Model::new(&m.source, 2, rounded).is_err());
+    let mut wrong = a.clone();
+    wrong.bodies[0].mn_owner = 0;
+    assert!(Model::new(&m.source, 2, wrong).is_err());
+    let mut wrong = a.clone();
+    wrong.contacts[0].water = 2;
+    assert!(Model::new(&m.source, 2, wrong).is_err());
+    let other = fixture();
+    let y = resolved(&other);
+    let mut ow = other.workspace();
+    other
+        .evaluate(&y, &vec![0.; other.dimension()], None, &mut ow)
+        .unwrap();
+    let mut w = m.absorber_guide.workspace();
+    let water = vec![
+        bt::Water {
+            temperature_k: 300.,
+            density_kg_m3: 1000.,
+            saturation_temperature_k: 450.
+        };
+        2
+    ];
+    assert!(m
+        .absorber_guide
+        .evaluate(
+            &[300.; 3],
+            &ow.source,
+            &y[..other.layout.source_end],
+            &water,
+            &mut w
+        )
+        .is_err());
+    assert!(m
+        .absorber_guide
+        .evaluate(&[300.; 3], &ow.source, &[], &water, &mut w)
+        .is_err());
+}
+
+#[test]
+fn finite_guide_cooling_is_reciprocal_and_real_half_wall_limits_the_contact() {
+    use leitbild_plant_numerics::absorber_guide::Model;
+    let m = fixture();
+    let y = m.initial_state().unwrap();
+    let mut w = m.workspace();
+    m.evaluate(&y, &vec![0.; m.dimension()], None, &mut w)
+        .unwrap();
+    let water = vec![
+        bt::Water {
+            temperature_k: 300.,
+            density_kg_m3: 1000.,
+            saturation_temperature_k: 450.
+        };
+        2
+    ];
+    let mut own = m.absorber_guide.workspace();
+    m.absorber_guide
+        .evaluate(
+            &[300., 310., 320.],
+            &w.source,
+            &y[..m.layout.source_end],
+            &water,
+            &mut own,
+        )
+        .unwrap();
+    assert_eq!(own.value.emitted, 0.);
+    assert_eq!(own.value.exported, 0.);
+    assert!(own.value.water.iter().all(|q| *q > 0.));
+    close(
+        own.value.host.iter().sum::<f64>() + own.value.water.iter().sum::<f64>(),
+        0.,
+        0.,
+        1e-10,
+    );
+    let input = m.absorber_guide.config();
+    let q_to_water = input
+        .contacts
+        .iter()
+        .map(|c| {
+            let t = [300., 310., 320.][c.host];
+            c.area_m2 * input.wet_h * (t - water[c.water].temperature_k)
+        })
+        .sum::<f64>();
+    assert!(own.value.water.iter().sum::<f64>() < q_to_water);
+    let mut no_wall = input.clone();
+    for c in &mut no_wall.contacts {
+        c.solid_geometry_m_inv = 0.;
+    }
+    let no_wall = Model::new(&m.source, 2, no_wall).unwrap();
+    let mut nw = no_wall.workspace();
+    no_wall
+        .evaluate(
+            &[300., 310., 320.],
+            &w.source,
+            &y[..m.layout.source_end],
+            &water,
+            &mut nw,
+        )
+        .unwrap();
+    close(nw.value.water.iter().sum::<f64>(), q_to_water, 2e-14, 1e-12);
+    // Neither invalid phase classification nor missing finite caloric scope is accepted.
+    let mut bad = water.clone();
+    bad[0].saturation_temperature_k = f64::NAN;
+    assert!(m
+        .absorber_guide
+        .evaluate(
+            &[300.; 3],
+            &w.source,
+            &y[..m.layout.source_end],
+            &bad,
+            &mut own
+        )
+        .is_err());
+}
+
+#[test]
+fn mobile_true_body_and_guide_stages_join_owned_finite_hosts_without_alias() {
+    use leitbild_plant_numerics::mobile_capture::{Model, Recipient, Wall};
+    let m = fixture();
+    let mut input = mobile_input(&m.source);
+    input.wall_origins[0].paths[0].stages = vec![
+        Wall {
+            recipient: Recipient::Host(0),
+            thickness_m: 0.00035,
+            density_kg_m3: 7920.,
+            mu: [0.0029, 0.0026],
+        },
+        Wall {
+            recipient: Recipient::Host(1),
+            thickness_m: 0.0006,
+            density_kg_m3: 6551.,
+            mu: [0.0029, 0.0026],
+        },
+    ];
+    let mobile = Model::new(
+        &m.source,
+        &m.thermal,
+        2,
+        m.absorber_guide.host_count(),
+        input.clone(),
+    )
+    .unwrap();
+    let y = resolved(&m);
+    let mut w = m.workspace();
+    m.evaluate(&y, &vec![0.; m.dimension()], None, &mut w)
+        .unwrap();
+    let mut mw = mobile.workspace();
+    mobile
+        .evaluate(
+            &m.source,
+            w.source.water_birth_events().unwrap(),
+            &[1000.; 2],
+            &mut mw,
+        )
+        .unwrap();
+    let p = mw.value().unwrap();
+    assert!(p.host[0] > 0. && p.host[1] > 0.);
+    assert_eq!(p.host[2], 0.);
+    assert_eq!(p.barrel, 0.);
+    let emitted = p.channels.chunks_exact(6).map(|x| x[0]).sum::<f64>();
+    close(
+        p.recipient_power().sum::<f64>() + p.exported + p.boundary_exported,
+        emitted,
+        2e-14,
+        1e-12,
+    );
+    input.wall_origins[0].paths[0].stages[0].recipient = Recipient::Host(3);
+    assert!(Model::new(
+        &m.source,
+        &m.thermal,
+        2,
+        m.absorber_guide.host_count(),
+        input
+    )
+    .is_err());
 }
 fn close(a: f64, b: f64, relative: f64, absolute: f64) {
     assert!(
@@ -954,7 +1415,8 @@ fn once_paid_fuel_wall_and_carrier_receipts_survive_shared_recipient_projection(
         wall.iter().sum::<f64>()
             + w.barrel.water_heat().unwrap()[1]
             + w.capture.water_heat().unwrap()[1]
-            + w.mobile_capture.value().unwrap().water[1],
+            + w.mobile_capture.value().unwrap().water[1]
+            + w.absorber_guide.value.water[1],
         2e-12,
         1e-8,
     );
@@ -963,7 +1425,8 @@ fn once_paid_fuel_wall_and_carrier_receipts_survive_shared_recipient_projection(
             - w.residual[l.network_start + m.network.energy_row(0)],
         w.barrel.water_heat().unwrap()[0]
             + w.capture.water_heat().unwrap()[0]
-            + w.mobile_capture.value().unwrap().water[0],
+            + w.mobile_capture.value().unwrap().water[0]
+            + w.absorber_guide.value.water[0],
         2e-12,
         1e-8,
     );
@@ -974,7 +1437,12 @@ fn once_paid_fuel_wall_and_carrier_receipts_survive_shared_recipient_projection(
         .map(|i| w.residual[l.network_start + m.network.energy_row(i)])
         .sum::<f64>();
     close(
-        total_thermal_energy_residual + total_network_energy_residual + w.residual[l.barrel_energy],
+        total_thermal_energy_residual
+            + total_network_energy_residual
+            + w.residual[l.barrel_energy]
+            + w.residual[l.absorber_guide_energies_start..l.absorber_guide_temperatures_start]
+                .iter()
+                .sum::<f64>(),
         -release - w.barrel.emitted_rate().unwrap() + w.barrel.export_rate().unwrap()
             - w.capture.emitted_rate().unwrap()
             + w.capture.export_rate().unwrap()
@@ -986,7 +1454,9 @@ fn once_paid_fuel_wall_and_carrier_receipts_survive_shared_recipient_projection(
                 .map(|c| c[0])
                 .sum::<f64>()
             + w.mobile_capture.value().unwrap().exported
-            + w.mobile_capture.value().unwrap().boundary_exported,
+            + w.mobile_capture.value().unwrap().boundary_exported
+            - w.absorber_guide.value.emitted
+            + w.absorber_guide.value.exported,
         2e-11,
         1e-8,
     );
@@ -1045,6 +1515,7 @@ fn composition_refuses_wrong_fuel_recipient_or_carrier_link_identity() {
     let m = fixture();
     let pressure = pressure_fixture(&m.network);
     let mobile = mobile_input(&m.source);
+    let absorber = absorber_input(&m.source);
     // Row2 is clad, not the source's second fuel temperature/deposition owner.
     assert!(sc::Model::new(
         m.source,
@@ -1055,6 +1526,7 @@ fn composition_refuses_wrong_fuel_recipient_or_carrier_link_identity() {
         pressure,
         capture_input(),
         mobile,
+        absorber,
         vec![0, 2, 5, 6],
         vec![None, Some(0)],
         vec![300.; 11]
@@ -1063,6 +1535,7 @@ fn composition_refuses_wrong_fuel_recipient_or_carrier_link_identity() {
     let m = fixture();
     let pressure = pressure_fixture(&m.network);
     let mobile = mobile_input(&m.source);
+    let absorber = absorber_input(&m.source);
     let prep = (0..2)
         .map(|_| wc::Preparation {
             mass: 1000.,
@@ -1081,6 +1554,7 @@ fn composition_refuses_wrong_fuel_recipient_or_carrier_link_identity() {
         pressure,
         capture_input(),
         mobile,
+        absorber,
         vec![0, 1, 5, 6],
         vec![None, Some(0)],
         vec![300.; 11]

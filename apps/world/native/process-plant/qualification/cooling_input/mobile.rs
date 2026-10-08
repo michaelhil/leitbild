@@ -53,6 +53,7 @@ pub(super) fn parse(words: &[&str]) -> Result<Input, String> {
                 let recipient = match (kind, index) {
                     (0, i) => Recipient::Clad(i),
                     (1, 0) => Recipient::Barrel,
+                    (2, i) => Recipient::Host(i),
                     _ => return Err("Unknown mobile-capture finite wall recipient".into()),
                 };
                 stages.push(Wall {

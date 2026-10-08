@@ -139,6 +139,8 @@ pub struct Workspace {
     water_events: Vec<ms::Events>,
     water_event_direction: Vec<ms::Events>,
     passive_capture: Vec<f64>,
+    passive_births: Vec<f64>,
+    passive_birth_direction: Vec<f64>,
     target_captures: Vec<f64>,
     target_capture_direction: Vec<f64>,
     cylinder_capture: Vec<[f64; GROUPS]>,
@@ -152,6 +154,20 @@ pub struct Workspace {
     owner: Arc<()>,
 }
 impl Workspace {
+    pub(crate) fn owner_token(&self) -> &Arc<()> {
+        &self.owner
+    }
+    pub fn passive_birth_events(&self) -> Result<&[f64], &'static str> {
+        self.check()?;
+        Ok(&self.passive_births)
+    }
+    pub fn passive_birth_event_jvp(&self) -> Result<&[f64], &'static str> {
+        self.check()?;
+        if !self.jvp_valid {
+            return Err("No current passive birth direction");
+        }
+        Ok(&self.passive_birth_direction)
+    }
     pub fn fuel_capture_events(&self) -> Result<&[[f64; 3]], &'static str> {
         self.check()?;
         self.history.capture_events()
@@ -259,6 +275,8 @@ impl Workspace {
                 + self.history_direction.len()
                 + self.temperatures.len()
                 + self.segment_release.len()
+                + self.passive_births.len()
+                + self.passive_birth_direction.len()
                 + self.fuel_deposition.len()
                 + self.fuel_deposition_direction.len()
                 + self.state.len()
@@ -311,6 +329,20 @@ fn scaled_stock(s: &ms::Stocks, f: f64) -> ms::Stocks {
     }
 }
 impl Evolution {
+    /// Existing volume-material application order, retained before target aggregation.
+    pub fn passive_birth_rows(&self) -> impl Iterator<Item = (usize, usize, usize)> + '_ {
+        self.input
+            .passive_incidence
+            .iter()
+            .flat_map(|e| {
+                self.input.passive_stocks[e.stock]
+                    .targets
+                    .iter()
+                    .map(move |t| (t.index, e.region))
+            })
+            .enumerate()
+            .map(|(i, (t, r))| (i, t, r))
+    }
     /// Actual represented external-water birth rows, not closed bay inventories.
     pub fn external_water_birth_rows(&self) -> impl Iterator<Item = (usize, usize, usize)> + '_ {
         self.input.row_map.iter().enumerate().filter_map(|(i, m)| {
@@ -751,6 +783,8 @@ impl Evolution {
             water_events: vec![ms::Events::default(); self.input.water_rows.len()],
             water_event_direction: vec![ms::Events::default(); self.input.water_rows.len()],
             passive_capture: vec![0.; nt],
+            passive_births: vec![0.; self.passive.birth_count()],
+            passive_birth_direction: vec![0.; self.passive.birth_count()],
             target_captures: vec![0.; nt],
             target_capture_direction: vec![0.; nt],
             cylinder_capture: vec![[0.; GROUPS]; nt],
@@ -951,8 +985,13 @@ impl Evolution {
         self.passive.update(&w.amounts, &mut w.passive)?;
         w.passive_capture.fill(0.);
         w.scratch.fill(0.);
-        self.passive
-            .apply(&w.passive, &y[..n], &mut w.scratch, &mut w.passive_capture)?;
+        self.passive.apply(
+            &w.passive,
+            &y[..n],
+            &mut w.scratch,
+            &mut w.passive_capture,
+            &mut w.passive_births,
+        )?;
         for i in 0..n {
             w.rates[i] += w.scratch[i];
         }
@@ -1257,6 +1296,8 @@ impl Evolution {
         for i in 0..self.input.targets.len() {
             w.amount_direction[i] = -self.target_consumption(dy, i);
         }
+        let mut passive_birth = 0;
+        w.passive_birth_direction.fill(0.);
         for e in &self.input.passive_incidence {
             let s = &self.input.passive_stocks[e.stock];
             for t in &s.targets {
@@ -1269,9 +1310,11 @@ impl Evolution {
                             + w.amount_direction[t.index] * w.state[pos]);
                     w.jvp[pos] -= dcap;
                     w.jvp[self.target_row(t.index)] += dcap;
+                    w.passive_birth_direction[passive_birth] += dcap;
                     net -= dcap;
                     w.collision_direction[e.region][g] += factor * w.amount_direction[t.index];
                 }
+                passive_birth += 1;
             }
         }
         for e in &self.input.cylinder_incidence {

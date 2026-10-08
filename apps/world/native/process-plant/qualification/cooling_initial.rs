@@ -60,6 +60,9 @@ fn prepare(
         yp[l.temperatures_start + i] = yp[l.energies_start + i] / c;
     }
     yp[l.barrel_temperature] = yp[l.barrel_energy] / work.barrel.capacity()?;
+    for (i,&capacity) in work.absorber_guide.capacity.iter().enumerate(){
+        yp[l.absorber_guide_temperatures_start+i]=yp[l.absorber_guide_energies_start+i]/capacity;
+    }
     model.evaluate_with_prhr_input(y, yp, Some(0.), work, prhr_input)
 }
 fn correction_norm(

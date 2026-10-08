@@ -12,12 +12,25 @@ import {z} from 'zod'
 const sha=(s:string|Uint8Array)=>createHash('sha256').update(s).digest('hex')
 const admittedRatio=z.number().finite().nonnegative().max(1),arm=z.object({passed:z.literal(true),lastAdmittedTime:z.literal(300),commonSamples:z.literal(14)})
 export const coolingEnergyCoordinates={
- base:'G=sum-installed-energy-change-minus-fission-barrel-fuel-binding-mobile-binding-release-plus-barrel-fuel-binding-mobile-binding-ambient-export',
- prhr:'G=sum-installed-energy-change-including-finite-WST-and-ROOM-minus-fission-barrel-fuel-binding-mobile-binding-release-minus-signed-spring-release-and-electrical-receipts-plus-barrel-fuel-binding-mobile-binding-ambient-WST-surface-work-connector-and-ROOM-ambient-export',
+ base:'G=sum-installed-energy-change-minus-fission-barrel-fuel-binding-mobile-binding-BODY-guide-release-plus-barrel-fuel-binding-mobile-binding-BODY-guide-ambient-export',
+ prhr:'G=sum-installed-energy-change-including-finite-WST-and-ROOM-minus-fission-barrel-fuel-binding-mobile-binding-BODY-guide-release-minus-signed-spring-release-and-electrical-receipts-plus-barrel-fuel-binding-mobile-binding-BODY-guide-ambient-WST-surface-work-connector-and-ROOM-ambient-export',
 } as const
 export const coolingCarrierComparisonPolicy='closed-mobile-generated-products-separate-H-B;local-remaining-targets;local-product-distribution-diagnostic' as const
-export const coolingMobileCapturePolicy='birth-site-primary-H-B;physical-liquid-self;physical-origin-diffuse-serial-clad-barrel;explicit-unrepresented-wall-boundary' as const
+export const coolingMobileCapturePolicy='birth-site-primary-H-B;physical-liquid-self;physical-origin-diffuse-serial-clad-barrel-guide-BODY;explicit-unrepresented-wall-boundary' as const
 export const coolingMobileDevelopmentPolicy='separate-positive-H-B-paid-and-finite-recipient-power;min-normal-tighter>10-pair-difference+20-existing-resolution' as const
+export const coolingAbsorberGuidePolicy='fixed-original-finite-BODY-guide;actual-birth-region-cohort;canonical-products;full-physical-host-photons' as const
+export const absorberGuideAdmission=z.object({kind:z.literal('absorber-guide-pair'),passed:z.literal(true),
+ policy:z.literal(coolingAbsorberGuidePolicy),hosts:z.number().int().positive(),
+ powerLocalRatio:admittedRatio,powerSUMABSRatio:admittedRatio,paidEnergyRatio:admittedRatio,
+ developedAllCaptureFamilies:z.literal(true),
+ familyOrder:z.tuple([z.literal('BODY-B10'),z.literal('BODY-304-and-Mn'),z.literal('GUIDE-Zr')]),
+ normalFamilyPowerW:z.tuple([z.number().finite().positive(),z.number().finite().positive(),z.number().finite().positive()]),
+ tighterFamilyPowerW:z.tuple([z.number().finite().positive(),z.number().finite().positive(),z.number().finite().positive()]),
+ normalPaidJ:z.number().finite().positive(),tighterPaidJ:z.number().finite().positive(),
+ normalExportJ:z.number().finite().nonnegative(),tighterExportJ:z.number().finite().nonnegative(),
+ normalFiniteRecipientPowerW:z.number().finite().positive(),tighterFiniteRecipientPowerW:z.number().finite().positive(),
+ guideThermalWitness:z.object({host:z.number().int().nonnegative(),normalChangeK:z.number().finite().positive(),
+  tighterChangeK:z.number().finite().positive(),resolved:z.literal(true)})})
 const energyPair=z.tuple([z.number().finite().nonnegative(),z.number().finite().nonnegative()])
 export const mobileCaptureReceipts=z.object({policy:z.literal(coolingMobileCapturePolicy),routeCount:z.number().int().positive(),
  wallOriginCount:z.number().int().positive(),speciesOrder:z.tuple([z.literal('H'),z.literal('B')]),
@@ -125,7 +138,7 @@ export async function qualifyFuelCooling(options:Options){
  await mkdir(directory)
  await Promise.all(paths.map((p,i)=>writeFile(join(directory,`${i}-${basename(p)}`),bytes[i]!,{flag:'wx'})))
  await writeFile(join(directory,'input.txt'),fixture,{flag:'wx'})
- await writeFile(join(directory,'composition.json'),JSON.stringify({conditioning:prepared.conditioning,thermal:prepared.thermal,primary:prepared.primary,barrel:prepared.barrel,capture:prepared.capture,mobileCapture:prepared.mobileCapture,pressure:prepared.pressure,
+ await writeFile(join(directory,'composition.json'),JSON.stringify({conditioning:prepared.conditioning,thermal:prepared.thermal,primary:prepared.primary,barrel:prepared.barrel,capture:prepared.capture,mobileCapture:prepared.mobileCapture,absorberGuide:prepared.absorberGuide,pressure:prepared.pressure,
   prhr:prepared.prhr,ownerIdentities:prepared.ownerIdentities,limitations:prepared.limitations},null,2)+'\n',{flag:'wx'})
  // All linked non-system libraries must be retained; the old receipt is not a
  // substitute for inspecting this newly built binary and its actual links.
@@ -149,6 +162,11 @@ export async function qualifyFuelCooling(options:Options){
   selectedEnergyCoordinate=outcome?.settings?.solverEnergyCoordinate===coolingEnergyCoordinates[prepared.prhr?'prhr':'base'],
   pressureEvidence=[...parsed.records].reverse().find(row=>row?.kind==='pressure-evidence-pair')?.report,
   prhrEvidence=[...parsed.records].reverse().find(row=>row?.kind==='prhr-connected-receiver'),
+  bundleRecords=parsed.records.filter(row=>row?.kind==='absorber-guide-pair'),
+  bundleAdmission=absorberGuideAdmission.safeParse(bundleRecords.length===1?bundleRecords[0]:undefined),
+  bundleAdmitted=bundleAdmission.success&&bundleAdmission.data.hosts===prepared.absorberGuide.hosts.length
+   &&bundleAdmission.data.guideThermalWitness.host<prepared.absorberGuide.hosts.length
+   &&prepared.absorberGuide.hosts[bundleAdmission.data.guideThermalWitness.host]!.kind==='guide',
   observations=await Promise.all(['normal','tighter'].map(async arm=>{
    const path=join(directory,`input.${arm}.pressure-evidence.json`)
    if(!await Bun.file(path).exists())return {path,missing:true}
@@ -161,7 +179,7 @@ export async function qualifyFuelCooling(options:Options){
    &&(await Promise.all(prepared.ownerIdentities.map(async r=>sha(await Bun.file(join(options.wiki,r.name)).text())===r.sha256))).every(Boolean),
   stackUnchanged=await selectedNativeStackUnchanged(nativeStack),currentAttemptSeconds=(performance.now()-began)/1000,
   elapsedSeconds=priorComputationSeconds+currentAttemptSeconds,
-  receipt={recordedAt:new Date().toISOString(),passed:exitCode===0&&!timedOut&&admission.success&&selectedEnergyCoordinate&&completeStates
+  receipt={recordedAt:new Date().toISOString(),passed:exitCode===0&&!timedOut&&admission.success&&bundleAdmitted&&selectedEnergyCoordinate&&completeStates
     &&pressureEvidence?.passed===true&&observations.every(r=>!('missing' in r))
     &&(!prepared.prhr||prhrEvidence?.passed===true)
     &&unchanged&&stackUnchanged&&elapsedSeconds<=allowanceSeconds,
@@ -170,7 +188,8 @@ export async function qualifyFuelCooling(options:Options){
    termination:timedOut?'external-wall-deadline':outcome?'native-final-result':'native-final-result-missing',
    stdout,stderr,processUsageScope:'current native process; prior attempt usage retained separately',
    ...sourceProcessUsage(child.resourceUsage()),...parsed,unchanged,pressureEvidence,prhrEvidence,selectedEnergyCoordinate,
-   admissionError:!admission.success?admission.error.message:!selectedEnergyCoordinate?'Native energy coordinate does not match the selected physical composition':undefined,
+   absorberGuideEvidence:bundleRecords[0],absorberGuideAdmitted:bundleAdmitted,
+   admissionError:!admission.success?admission.error.message:!bundleAdmitted?'Missing, failed or mismatched finite BODY/guide pair receipt':!selectedEnergyCoordinate?'Native energy coordinate does not match the selected physical composition':undefined,
    inputCounts:{bands:prepared.thermal.bands.length,thermalPhysicalStocks:prepared.thermal.thermalCoordinates,
     thermalSolverCoordinates:2*prepared.thermal.thermalCoordinates,primaryCells:prepared.network.water.length,
     primaryCarrierCoordinates:3*prepared.network.water.length,primarySourceIntersections:prepared.primary.rows.length,
@@ -178,6 +197,7 @@ export async function qualifyFuelCooling(options:Options){
     captureBands:prepared.capture.bands.length,captureExportCoordinates:1,
     mobileCaptureBirthRoutes:prepared.mobileCapture.routes.length,mobileCaptureWallOrigins:prepared.mobileCapture.wall_origins.length,
     mobileCaptureExportCoordinates:2,mobileCapturePaidEnergy:'existing-complete-closed-H-B-products-no-extra-emitted-integral',
+    absorberGuideHosts:prepared.absorberGuide.hosts.length,absorberGuideThermalCoordinates:2*prepared.absorberGuide.hosts.length,
     captureEventKinds:['fertile','xenon','samarium'],capturePaidEnergy:'Q-times-existing-gross-progress-no-extra-emitted-integral'},
    consumed:[...inputs.map((path,i)=>({path,sha256:sha(texts[i]!)})),...ownerPaths.map((path,i)=>({path,sha256:sha(ownerTexts[i]!)}))],
    sources:paths.map((path,i)=>({path,sha256:sha(bytes[i]!)})),fixtureSHA256:sha(fixture),

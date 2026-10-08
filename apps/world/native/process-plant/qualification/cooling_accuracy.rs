@@ -95,6 +95,7 @@ pub(super) struct Sample {
     pub capture_power: Vec<f64>,
     pub mobile_power: Vec<f64>,
     pub mobile_recipient_power: Vec<f64>,
+    pub bundle_power: Vec<f64>,
     /// Actual signed algebraic mass flows, independently retained at both ends.
     pub surge_flow: [f64; 2],
 }
@@ -299,6 +300,14 @@ impl Accuracy {
         absolute[l.fuel_capture_exported] = ENERGY_ATOL;
         absolute[l.mobile_capture_exported] = ENERGY_ATOL;
         absolute[l.mobile_capture_boundary_exported] = ENERGY_ATOL;
+        for (i,&capacity) in work.absorber_guide.capacity.iter().enumerate(){
+            absolute[l.absorber_guide_energies_start+i]=capacity*TEMPERATURE_ATOL;
+            absolute[l.absorber_guide_temperatures_start+i]=TEMPERATURE_ATOL;
+        }
+        absolute[l.absorber_guide_exported]=ENERGY_ATOL;
+        for (row,q) in model.absorber_guide.paid_rows(){
+            absolute[row]=absolute[row].min(ENERGY_ATOL/q);
+        }
         for (row, q) in model.capture_paid_rows() {
             absolute[row] = absolute[row].min(ENERGY_ATOL / q);
         }
@@ -538,7 +547,12 @@ impl Accuracy {
             - (y[l.mobile_capture_exported] - self.initial[l.mobile_capture_exported])
             - (y[l.mobile_capture_boundary_exported]
                 - self.initial[l.mobile_capture_boundary_exported]);
-        totals[1] += released + barrel_paid + binding_paid + mobile_paid
+        let bundle_paid=super::cooling_bundle::paid(model,y,&self.initial)?
+            -(y[l.absorber_guide_exported]-self.initial[l.absorber_guide_exported]);
+        let bundle_change=y[l.absorber_guide_energies_start..l.absorber_guide_temperatures_start].iter()
+            .zip(&self.initial[l.absorber_guide_energies_start..l.absorber_guide_temperatures_start])
+            .map(|(a,b)|a-b).sum::<f64>();
+        totals[1] += released + barrel_paid + binding_paid + mobile_paid +bundle_paid-bundle_change
             - solid_change
             - (y[l.barrel_energy] - self.initial[l.barrel_energy])
             - self
@@ -627,6 +641,19 @@ impl Accuracy {
             worst: None,
         };
         let l = model.layout;
+        let bundle=super::cooling_bundle::compare(model,a,b,&self.initial,Some(&mut result))?;
+        result.deposit_local_ratio=result.deposit_local_ratio.max(bundle.0);
+        result.deposit_sumabs_ratio=result.deposit_sumabs_ratio.max(bundle.1);
+        result.capture_paid_energy_ratio=result.capture_paid_energy_ratio.max(bundle.2);
+        for (i,host) in model.absorber_guide.config().hosts.iter().enumerate(){
+            let row=l.absorber_guide_temperatures_start+i;
+            result.thermal_temperature_ratio=result.thermal_temperature_ratio.max(result.record(
+                "finite-BODY-guide-temperature",row,a.y[row],b.y[row],(a.y[row]-b.y[row]).abs(),0.01)?);
+            let row=l.absorber_guide_energies_start+i;
+            let capacity=model.absorber_guide.energy_capacity(i,host.initial_k)?.1;
+            result.thermal_energy_ratio=result.thermal_energy_ratio.max(result.record(
+                "finite-BODY-guide-energy",row,a.y[row],b.y[row],(a.y[row]-b.y[row]).abs(),20.*capacity*TEMPERATURE_ATOL)?);
+        }
         self.compare_pressure(model, a, b, &mut result)?;
         let mobile_channels = 12 * model.mobile_capture.route_count();
         if mobile_channels == 0
@@ -647,7 +674,7 @@ impl Accuracy {
             (a.mobile_power[i] - b.mobile_power[i]).abs(),
             1e-3 * b.mobile_power[i].abs() + 20. * DEPOSIT_RESOLUTION_W,
         )?;
-        let recipients = model.carrier.cells() + model.thermal.node_count() + 1;
+        let recipients = model.carrier.cells() + model.thermal.node_count() + 1 + model.absorber_guide.host_count();
         if a.mobile_recipient_power.len() != recipients
             || b.mobile_recipient_power.len() != recipients
         {
@@ -659,7 +686,7 @@ impl Accuracy {
         result.mobile_power_sumabs_ratio = result.mobile_power_sumabs_ratio.max(sumabs);
         let i = local.1;
         result.record(
-            "mobile-binding-finite-water-clad-barrel-power-W",
+            "mobile-binding-finite-water-clad-barrel-BODY-guide-power-W",
             i,
             a.mobile_recipient_power[i],
             b.mobile_recipient_power[i],
@@ -1133,8 +1160,8 @@ impl Accuracy {
             return Err("Wrong actual fuel-deposition dimension".into());
         }
         let (local, sumabs) = deposit_comparison(&a.deposition, &b.deposition)?;
-        result.deposit_local_ratio = local.0;
-        result.deposit_sumabs_ratio = sumabs;
+        result.deposit_local_ratio = result.deposit_local_ratio.max(local.0);
+        result.deposit_sumabs_ratio = result.deposit_sumabs_ratio.max(sumabs);
         if !a.deposition.is_empty() {
             let i = local.1;
             result.record(
@@ -1413,7 +1440,7 @@ fn carrier_comparison(
     let remaining = ratio(remaining_difference.abs(), remaining_bound)?;
     Ok(((energy, bound), (remaining, remaining_bound)))
 }
-fn deposit_comparison(a: &[f64], b: &[f64]) -> Result<((f64, usize), f64), String> {
+pub(super) fn deposit_comparison(a: &[f64], b: &[f64]) -> Result<((f64, usize), f64), String> {
     if a.len() != b.len() || a.is_empty() {
         return Err("Wrong fuel-deposition comparison shape".into());
     }
@@ -1501,7 +1528,7 @@ impl Comparison {
             self.carrier_product_distribution_ratio.max(value);
         Ok(())
     }
-    fn record(
+    pub(super) fn record(
         &mut self,
         family: &'static str,
         row: usize,
@@ -1728,6 +1755,7 @@ mod tests {
             barrel_power: barrel_powers(&w).unwrap(),
             capture_power: w.capture.power_channels().unwrap().to_vec(),
             mobile_power: w.mobile_capture.value().unwrap().channels.clone(),
+            bundle_power: super::super::cooling_bundle::powers(&w),
             mobile_recipient_power: w
                 .mobile_capture
                 .value()
@@ -2071,6 +2099,7 @@ mod tests {
                 capture_power: vec![],
                 mobile_power: vec![],
                 mobile_recipient_power: vec![],
+                bundle_power: vec![],
                 surge_flow: [0.; 2],
             })
             .collect::<Vec<_>>();

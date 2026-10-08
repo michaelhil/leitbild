@@ -26,6 +26,7 @@ pub mod fuel_thermal;
 pub mod fuel_capture;
 pub mod mobile_capture;
 pub mod source_cooling;
+pub mod absorber_guide;
 pub mod sg_secondary;
 pub mod cold_pressurizer;
 pub mod finite_surge;

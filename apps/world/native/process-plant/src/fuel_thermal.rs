@@ -180,7 +180,7 @@ fn fuel_energy(t: f64) -> f64 {
         + 0.0243 * (t - DATUM) * (t + DATUM) / 2.
         + 8.745e7 * (-c / DATUM).exp() * (c * (t - DATUM) / (t * DATUM)).exp_m1()
 }
-fn clad_cp(t: f64) -> f64 {
+pub(crate) fn clad_cp(t: f64) -> f64 {
     if t < DATUM {
         return 281. + 0.21 * (t - DATUM);
     }
@@ -190,7 +190,7 @@ fn clad_cp(t: f64) -> f64 {
         .unwrap_or(CP_T.len() - 2);
     CP_C[i] + (CP_C[i + 1] - CP_C[i]) / (CP_T[i + 1] - CP_T[i]) * (t - CP_T[i])
 }
-fn clad_energy(t: f64) -> f64 {
+pub(crate) fn clad_energy(t: f64) -> f64 {
     if t < DATUM {
         return 281. * (t - DATUM) + 0.105 * (t - DATUM).powi(2);
     }
@@ -217,8 +217,18 @@ fn fuel_k(t: f64) -> f64 {
         hot_k(t)
     }
 }
-fn clad_k(t: f64) -> f64 {
+pub(crate) fn clad_k(t: f64) -> f64 {
     7.51 + 0.0209 * t - 1.45e-5 * t * t + 7.67e-9 * t * t * t
+}
+pub(crate) fn clad_k_derivative(t: f64) -> f64 {
+    0.0209 - 2.9e-5 * t + 2.301e-8 * t * t
+}
+/// Stable exact integral of the selected cubic conductivity, not subtraction of large primitives.
+pub(crate) fn clad_k_increment(a: f64, b: f64) -> f64 {
+    let d = b - a;
+    d * (clad_k(a)
+        + d * (0.5 * clad_k_derivative(a)
+            + d * ((-1.45e-5 + 3. * 7.67e-9 * a) / 3. + d * 7.67e-9 / 4.)))
 }
 fn cold_increment(a: f64, b: f64) -> f64 {
     let dz = (b - a) / 1000.;
@@ -1346,10 +1356,9 @@ mod tests {
         assert!(w.heat_rates().is_ok());
         assert!(w.heat_jvp().is_err());
         assert!(m.visit_heat_derivatives(&w, |_, _, _| {}).is_err());
-        assert!(
-            m.jvp_into(&vec![1.; n], &dep, &[WaterDirection::default(); 2], &mut w)
-                .is_err()
-        );
+        assert!(m
+            .jvp_into(&vec![1.; n], &dep, &[WaterDirection::default(); 2], &mut w)
+            .is_err());
         m.evaluate_into(&t, &dep, &water, &mut w).unwrap();
         assert!(m.visit_heat_derivatives(&w, |_, _, _| {}).is_ok());
         t[0] = 289.;
@@ -1358,11 +1367,9 @@ mod tests {
         assert!(m.visit_heat_derivatives(&w, |_, _, _| {}).is_err());
         t[0] = 510.;
         m.evaluate_into(&t, &dep, &water, &mut w).unwrap();
-        assert!(
-            other
-                .evaluate_values_into(&t, &dep, &water, &mut w)
-                .is_err()
-        );
+        assert!(other
+            .evaluate_values_into(&t, &dep, &water, &mut w)
+            .is_err());
         assert!(w.heat_rates().is_err());
         assert!(m.visit_heat_derivatives(&w, |_, _, _| {}).is_err());
     }
@@ -1382,10 +1389,9 @@ mod tests {
         t[0] = 289.;
         assert!(m.evaluate_into(&t, &dep, &waters, &mut w).is_err());
         assert!(w.heat_rates().is_err());
-        assert!(
-            m.jvp_into(&vec![0.; n], &dep, &[WaterDirection::default(); 2], &mut w)
-                .is_err()
-        );
+        assert!(m
+            .jvp_into(&vec![0.; n], &dep, &[WaterDirection::default(); 2], &mut w)
+            .is_err());
         t[0] = 300.;
         m.evaluate_into(&t, &dep, &waters, &mut w).unwrap();
         assert!(other.evaluate_into(&t, &dep, &waters, &mut w).is_err());

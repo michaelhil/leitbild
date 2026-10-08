@@ -98,7 +98,7 @@ fn actual_prhr_rate_event_without_advancement() {
 }
 
 #[test]
-#[ignore = "Explicit actual ten-frame PRHR and mobile binding entry proof; no IDASolve; 30 s total"]
+#[ignore = "Explicit actual eleven-frame PRHR and mobile binding entry proof; no IDASolve; 30 s total"]
 fn actual_prhr_entry_without_advancement() {
     let started = Instant::now();
     let directory = PathBuf::from(std::env::var("LEITBILD_COOLING_DIAGNOSTIC_ARTIFACTS").unwrap());
@@ -503,7 +503,7 @@ fn energy_vector_roundtrip_uses_all_operands_but_rejects_wrong_mapping() {
 }
 
 #[test]
-#[ignore = "Explicit actual ten-frame pressure and nuclear-binding entry proof, PRHR disabled; no IDASolve; 30 s maximum"]
+#[ignore = "Explicit actual eleven-frame pressure and nuclear-binding entry proof, PRHR disabled; no IDASolve; 30 s maximum"]
 fn actual_pressure_entry_without_advancement() {
     use leitbild_plant_numerics::cold_pressurizer as cp;
     let started = Instant::now();

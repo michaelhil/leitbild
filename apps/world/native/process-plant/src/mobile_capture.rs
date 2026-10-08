@@ -9,6 +9,7 @@ use std::{collections::BTreeMap, sync::Arc};
 pub enum Recipient {
     Clad(usize),
     Barrel,
+    Host(usize),
 }
 #[derive(Clone, Debug)]
 pub struct Wall {
@@ -61,6 +62,7 @@ pub struct Model {
     water_mu: [f64; 2],
     waters: usize,
     clad_nodes: usize,
+    hosts: usize,
     event_count: usize,
     source_owner: Arc<()>,
     owner: Arc<()>,
@@ -70,6 +72,7 @@ pub struct Delivery {
     pub water: Vec<f64>,
     pub clad: Vec<f64>,
     pub barrel: f64,
+    pub host: Vec<f64>,
     pub exported: f64,
     pub boundary_exported: f64,
     /// Per birth then H/B: emitted, charged, liquid photon, installed wall,
@@ -95,6 +98,7 @@ impl Delivery {
             .chain(&self.clad)
             .copied()
             .chain([self.barrel])
+            .chain(self.host.iter().copied())
     }
 }
 fn positive(v: f64) -> bool {
@@ -116,6 +120,7 @@ impl Model {
         source: &source_evolution::Evolution,
         thermal: &fuel_thermal::Model,
         waters: usize,
+        hosts: usize,
         input: Input,
     ) -> Result<Self, String> {
         if waters != source.external_water_count() || input.water_mu.iter().any(|&v| !positive(v)) {
@@ -156,6 +161,7 @@ impl Model {
                         || !positive(w.density_kg_m3)
                         || w.mu.iter().any(|&v| !positive(v))
                         || matches!(w.recipient, Recipient::Clad(i) if !clad.contains(&i))
+                        || matches!(w.recipient, Recipient::Host(i) if i>=hosts)
                     {
                         return Err("Invalid actual installed mobile-capture wall".into());
                     }
@@ -228,6 +234,7 @@ impl Model {
             water_mu: input.water_mu,
             waters,
             clad_nodes: thermal.node_count(),
+            hosts,
             event_count,
             source_owner: source.owner_token(),
             owner: Arc::new(()),
@@ -252,6 +259,7 @@ impl Model {
         let delivery = || Delivery {
             water: vec![0.; self.waters],
             clad: vec![0.; self.clad_nodes],
+            host: vec![0.; self.hosts],
             channels: vec![0.; 12 * self.routes.len()],
             ..Delivery::default()
         };
@@ -341,6 +349,7 @@ impl Model {
         out.channels.fill(0.);
         outgoing.fill([0.; 2]);
         out.barrel = 0.;
+        out.host.fill(0.);
         out.exported = 0.;
         out.boundary_exported = 0.;
         for (i, b) in self.routes.iter().enumerate() {
@@ -384,6 +393,7 @@ impl Model {
                     match wall.recipient {
                         Recipient::Clad(n) => out.clad[n] += heat,
                         Recipient::Barrel => out.barrel += heat,
+                        Recipient::Host(n) => out.host[n] += heat,
                     }
                 }
             }
@@ -392,6 +402,7 @@ impl Model {
             .water
             .iter()
             .chain(&out.clad)
+            .chain(&out.host)
             .chain(&out.channels)
             .chain([&out.barrel, &out.exported, &out.boundary_exported])
             .any(|v| !v.is_finite())

@@ -47,7 +47,7 @@ ownerTest('whole-core photon envelope ignores the numerical half-plane and wall 
  expect(core).toHaveLength(2);expect(origins.size).toBe(1)
  for(const e of core){expect(e.volume_m3).toBeCloseTo(fg.flowArea_m2*L,12);expect(e.boundary_m2).toBeCloseTo(A,12)
   expect(e.chord_m).toBeCloseTo(4*fg.flowArea_m2*L/A,14)}
- expect(wall.paths).toHaveLength(p.thermal.bands.length+1)
+ expect(wall.paths).toHaveLength(p.thermal.bands.length+1+p.absorberGuide.hosts.filter(q=>q.kind==='guide'&&q.z0_m>=-2&&q.z1_m<=2).length)
  expect(wall.unrepresented_wall_share).toBeGreaterThan(0)
  const clad=wall.paths.filter(path=>path.stages[0]!.kind===0)
  for(const path of clad){
@@ -59,18 +59,22 @@ ownerTest('whole-core photon envelope ignores the numerical half-plane and wall 
  expect(c.routes.every(r=>!('paths' in r))).toBe(true)
 },60_000)
 
-ownerTest('guide/housing missing walls remain explicit and all chords use whole physical spans',async()=>{
+ownerTest('finite guide/BODY walls replace only matching boundary shares; housing remains explicit',async()=>{
  const {p}=await actual(),c=p.mobileCapture
  for(const e of c.envelopes){expect(e.chord_m).toBeCloseTo(4*e.volume_m3/e.boundary_m2,14)
   if(e.origin.startsWith('GUIDE.')||e.origin.startsWith('HOUSING.')){
    const route=c.routes.find(r=>r.origin===e.origin)!,o=c.wall_origins[route.wall_origin]!
-   expect(o.paths).toHaveLength(0);expect(o.unrepresented_wall_share).toBe(1)
+   if(e.origin.startsWith('HOUSING.')){expect(o.paths).toHaveLength(0);expect(o.unrepresented_wall_share).toBe(1)}
+   else {expect(o.paths.length).toBeGreaterThan(0);expect(o.unrepresented_wall_share).toBeGreaterThan(0)
+    expect(o.unrepresented_wall_share).toBeLessThan(1)
+    for(const path of o.paths)for(const stage of path.stages){expect(stage.kind).toBe(2)
+     expect(stage.recipient_index).toBeLessThan(p.absorberGuide.hosts.length)}}
   }}
 },60_000)
 
 ownerTest('compiler rejects missing births, aliased owners and broken serial materials',async()=>{
  const {p,d,geometry,text}=await actual(),run=(primary=p.primary,thermal=p.thermal,material=p.material)=>
-  compileMobileCapture(material,thermal,primary,d,geometry,p.barrel,text)
+  compileMobileCapture(material,thermal,primary,d,geometry,p.barrel,p.absorberGuide,text)
  for(const birthPatches of [p.primary.birthPatches.slice(1),[...p.primary.birthPatches,p.primary.birthPatches[0]!],
   p.primary.birthPatches.map((r,i)=>i===0?{...r,origin:'unknown'}:r),
   p.primary.birthPatches.map((r,i)=>i===0?{...r,birth_share:r.birth_share/2}:r),

@@ -7,9 +7,9 @@
 //! No time integrator, Pack installation, other unjoined binding recipients,
 //! all-passage acoustic mesh, hot geometry or primary phase continuation is implied.
 use crate::{
-    barrel_thermal as bt, cold_pressurizer as cp, finite_surge as fs, fuel_capture as fc,
-    fuel_thermal as ft, mobile_capture as mc, moderator_source::Stocks, operating_network as on,
-    sg_secondary, source_evolution as se, water_carrier as wc,
+    absorber_guide as ag, barrel_thermal as bt, cold_pressurizer as cp, finite_surge as fs,
+    fuel_capture as fc, fuel_thermal as ft, mobile_capture as mc, moderator_source::Stocks,
+    operating_network as on, sg_secondary, source_evolution as se, water_carrier as wc,
 };
 use std::sync::Arc;
 mod pressure;
@@ -35,6 +35,9 @@ pub struct Layout {
     pub fuel_capture_exported: usize,
     pub mobile_capture_exported: usize,
     pub mobile_capture_boundary_exported: usize,
+    pub absorber_guide_energies_start: usize,
+    pub absorber_guide_temperatures_start: usize,
+    pub absorber_guide_exported: usize,
     pub dimension: usize,
 }
 pub struct Model {
@@ -45,6 +48,7 @@ pub struct Model {
     pub barrel: bt::Model,
     pub capture: fc::Model,
     pub mobile_capture: mc::Model,
+    pub absorber_guide: ag::Model,
     pub layout: Layout,
     pressure_connection: PressureConnection,
     /// SOURCE fuel-cohort ordering -> thermal node ordering.
@@ -61,6 +65,7 @@ pub struct Workspace {
     pub barrel: bt::Workspace,
     pub capture: fc::Workspace,
     pub mobile_capture: mc::Workspace,
+    pub absorber_guide: ag::Workspace,
     pub pressurizer: cp::Workspace,
     pub surge: fs::Workspace,
     pub residual: Vec<f64>,
@@ -151,6 +156,7 @@ impl Model {
         pressure_connection: PressureConnection,
         capture: fc::Input,
         mobile_capture: mc::Input,
+        absorber_guide: ag::Input,
         fuel_rows: Vec<usize>,
         water_flows: Vec<Option<usize>>,
         original_temperature: Vec<f64>,
@@ -295,11 +301,27 @@ impl Model {
         let mobile_capture_boundary_exported = mobile_capture_exported
             .checked_add(1)
             .ok_or("Coupled layout overflow")?;
-        let dimension = mobile_capture_boundary_exported
+        let absorber_guide_energies_start = mobile_capture_boundary_exported
+            .checked_add(1)
+            .ok_or("Coupled layout overflow")?;
+        let absorber_guide_temperatures_start = absorber_guide_energies_start
+            .checked_add(absorber_guide.hosts.len())
+            .ok_or("Coupled layout overflow")?;
+        let absorber_guide_exported = absorber_guide_temperatures_start
+            .checked_add(absorber_guide.hosts.len())
+            .ok_or("Coupled layout overflow")?;
+        let dimension = absorber_guide_exported
             .checked_add(1)
             .ok_or("Coupled layout overflow")?;
         let capture = fc::Model::new(&source, &thermal, &fuel_rows, capture)?;
-        let mobile_capture = mc::Model::new(&source, &thermal, nw, mobile_capture)?;
+        let absorber_guide = ag::Model::new(&source, nw, absorber_guide)?;
+        let mobile_capture = mc::Model::new(
+            &source,
+            &thermal,
+            nw,
+            absorber_guide.host_count(),
+            mobile_capture,
+        )?;
         Ok(Self {
             source,
             network,
@@ -308,6 +330,7 @@ impl Model {
             barrel,
             capture,
             mobile_capture,
+            absorber_guide,
             pressure_connection,
             fuel_rows,
             water_flows,
@@ -331,6 +354,9 @@ impl Model {
                 fuel_capture_exported,
                 mobile_capture_exported,
                 mobile_capture_boundary_exported,
+                absorber_guide_energies_start,
+                absorber_guide_temperatures_start,
+                absorber_guide_exported,
                 dimension,
             },
             owner: Arc::new(()),
@@ -385,6 +411,7 @@ impl Model {
             .map(move |r| l.network_start + r)
             .chain(l.energies_start..l.temperatures_start)
             .chain(std::iter::once(l.barrel_energy))
+            .chain(l.absorber_guide_energies_start..l.absorber_guide_temperatures_start)
             .chain(
                 self.pressure_connection
                     .pressurizer
@@ -426,6 +453,8 @@ impl Model {
             || row == l.fuel_capture_exported
             || row == l.mobile_capture_exported
             || row == l.mobile_capture_boundary_exported
+            || (row >= l.absorber_guide_energies_start && row < l.absorber_guide_temperatures_start)
+            || row == l.absorber_guide_exported
     }
     pub fn workspace(&self) -> Workspace {
         let nw = self.carrier.cells();
@@ -453,6 +482,7 @@ impl Model {
             barrel: self.barrel.workspace(),
             capture: self.capture.workspace(),
             mobile_capture: self.mobile_capture.workspace(),
+            absorber_guide: self.absorber_guide.workspace(),
             pressurizer: self.pressure_connection.pressurizer.workspace(),
             surge: self.pressure_connection.surge.workspace(),
             residual: vec![0.; self.dimension()],
@@ -510,6 +540,11 @@ impl Model {
         y[l.network_start..l.carrier_start].copy_from_slice(&self.network.initial_state()?);
         y[l.temperatures_start..l.barrel_energy].copy_from_slice(&self.original_temperature);
         y[l.barrel_temperature] = self.barrel.initial_temperature();
+        for (i, h) in self.absorber_guide.config().hosts.iter().enumerate() {
+            y[l.absorber_guide_temperatures_start + i] = h.initial_k;
+            y[l.absorber_guide_energies_start + i] =
+                self.absorber_guide.energy_capacity(i, h.initial_k)?.0;
+        }
         let p = &self.pressure_connection;
         y[l.pressurizer_start..l.surge_start].copy_from_slice(&p.initial_pressurizer);
         y[l.surge_start..l.surge_carrier_start].copy_from_slice(&p.initial_surge);
@@ -706,6 +741,13 @@ impl Model {
             &w.barrel_water,
             &mut w.barrel,
         )?;
+        self.absorber_guide.evaluate(
+            &y[l.absorber_guide_temperatures_start..l.absorber_guide_exported],
+            &w.source,
+            &y[..l.source_end],
+            &w.barrel_water,
+            &mut w.absorber_guide,
+        )?;
         self.carrier.rates_into(
             &w.mass,
             &w.products,
@@ -754,6 +796,19 @@ impl Model {
         for (i, &q) in w.mobile_capture.value()?.water.iter().enumerate() {
             w.residual[l.network_start + self.network.energy_row(i)] -= q;
         }
+        for (i, &q) in w.absorber_guide.value.water.iter().enumerate() {
+            w.residual[l.network_start + self.network.energy_row(i)] -= q;
+        }
+        for i in 0..self.absorber_guide.host_count() {
+            w.residual[l.absorber_guide_energies_start + i] = yp
+                [l.absorber_guide_energies_start + i]
+                - w.absorber_guide.value.host[i]
+                - w.mobile_capture.value()?.host[i];
+            w.residual[l.absorber_guide_temperatures_start + i] =
+                y[l.absorber_guide_energies_start + i] - w.absorber_guide.energy[i];
+        }
+        w.residual[l.absorber_guide_exported] =
+            yp[l.absorber_guide_exported] - w.absorber_guide.value.exported;
         for i in 0..self.thermal.node_count() {
             w.residual[l.energies_start + i] =
                 yp[l.energies_start + i] - w.thermal.heat_rates()?[i];
@@ -799,6 +854,15 @@ impl Model {
                 .chain(w.barrel.water_heat()?.iter().copied())
                 .chain(w.capture.water_heat()?.iter().copied())
                 .chain(w.mobile_capture.value()?.water.iter().copied())
+                .chain(w.mobile_capture.value()?.host.iter().copied())
+                .chain(w.absorber_guide.value.host.iter().copied())
+                .chain(w.absorber_guide.value.water.iter().copied())
+                .chain([w.absorber_guide.value.exported])
+                .chain(
+                    self.absorber_guide
+                        .paid_rows()
+                        .map(|(r, q)| -q * w.source.rates().expect("successful source")[r]),
+                )
                 .chain([
                     w.mobile_capture.value()?.barrel,
                     w.mobile_capture.value()?.exported,
@@ -947,6 +1011,13 @@ impl Model {
             &w.dbarrel_water,
             &mut w.barrel,
         )?;
+        self.absorber_guide.jvp(
+            &dy[l.absorber_guide_temperatures_start..l.absorber_guide_exported],
+            &w.source,
+            &dy[..l.source_end],
+            &w.dbarrel_water,
+            &mut w.absorber_guide,
+        )?;
         self.carrier.jvp_into(
             &w.mass,
             &w.products,
@@ -1039,6 +1110,20 @@ impl Model {
         for (i, &q) in w.mobile_capture.direction()?.water.iter().enumerate() {
             w.jvp[l.network_start + self.network.energy_row(i)] -= q;
         }
+        for (i, &q) in w.absorber_guide.direction.water.iter().enumerate() {
+            w.jvp[l.network_start + self.network.energy_row(i)] -= q;
+        }
+        for i in 0..self.absorber_guide.host_count() {
+            w.jvp[l.absorber_guide_energies_start + i] = cj
+                * dy[l.absorber_guide_energies_start + i]
+                - w.absorber_guide.direction.host[i]
+                - w.mobile_capture.direction()?.host[i];
+            w.jvp[l.absorber_guide_temperatures_start + i] = dy
+                [l.absorber_guide_energies_start + i]
+                - w.absorber_guide.capacity[i] * dy[l.absorber_guide_temperatures_start + i];
+        }
+        w.jvp[l.absorber_guide_exported] =
+            cj * dy[l.absorber_guide_exported] - w.absorber_guide.direction.exported;
         for i in 0..self.thermal.node_count() {
             w.jvp[l.energies_start + i] = cj * dy[l.energies_start + i] - w.thermal.heat_jvp()?[i];
             w.jvp[l.temperatures_start + i] = dy[l.energies_start + i] - w.thermal.energy_jvp()?[i];
@@ -1081,6 +1166,15 @@ impl Model {
                 .chain(w.barrel.water_heat_jvp()?.iter().copied())
                 .chain(w.capture.water_heat_jvp()?.iter().copied())
                 .chain(w.mobile_capture.direction()?.water.iter().copied())
+                .chain(w.mobile_capture.direction()?.host.iter().copied())
+                .chain(w.absorber_guide.direction.host.iter().copied())
+                .chain(w.absorber_guide.direction.water.iter().copied())
+                .chain([w.absorber_guide.direction.exported])
+                .chain(
+                    self.absorber_guide
+                        .paid_rows()
+                        .map(|(r, q)| -q * w.source.rate_jvp().expect("successful source JVP")[r]),
+                )
                 .chain([
                     w.mobile_capture.direction()?.barrel,
                     w.mobile_capture.direction()?.exported,
@@ -1188,6 +1282,7 @@ impl Model {
             || y[l.fuel_capture_exported] < 0.
             || y[l.mobile_capture_exported] < 0.
             || y[l.mobile_capture_boundary_exported] < 0.
+            || y[l.absorber_guide_exported] < 0.
         {
             return Err("Negative accepted nuclear release/export history".into());
         }
