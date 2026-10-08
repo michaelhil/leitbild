@@ -154,7 +154,10 @@ const serveStatic = async (pathname: string, uiDistPath: string): Promise<Respon
   if (!filePath.startsWith(uiDistPath)) return new Response('Forbidden', { status: 403 })
   const file = Bun.file(filePath)
   if (!await file.exists()) return null
-  return new Response(file, { headers: { 'Content-Type': staticContentTypeForPath(filePath) } })
+  // HTML pages name the current hashed bundles; revalidate them so an open
+  // chat view never starts an older bundle after a deploy.
+  const revalidate = filePath.endsWith('.html') ? { 'Cache-Control': 'no-cache' } : {}
+  return new Response(file, { headers: { 'Content-Type': staticContentTypeForPath(filePath), ...revalidate } })
 }
 
 const withSecurityHeaders = (response: Response): Response => {

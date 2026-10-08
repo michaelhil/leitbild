@@ -114,6 +114,7 @@ describe('server health', () => {
       const workspaceId = newWorkspaceId()
       const embed = await fetch(`http://127.0.0.1:${server.port}/workspaces/${workspaceId}/world/embed/process-plant.display`)
       expect(await embed.text()).toBe('embed page')
+      expect(embed.headers.get('cache-control')).toBe('no-cache')
       const app = await fetch(`http://127.0.0.1:${server.port}/workspaces/${workspaceId}/world/runs/run-1`)
       expect(await app.text()).toBe('app page')
     } finally { await server.stop(); await workspaces.shutdown(); await rm(dataDir, { recursive: true, force: true }) }
