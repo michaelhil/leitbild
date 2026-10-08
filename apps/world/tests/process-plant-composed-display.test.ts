@@ -174,7 +174,7 @@ describe('composed display panels', () => {
     const { composed } = composeView([
       { kind: 'trend', horizon: '30m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }, { ref: 'SG-A-LVL-NR', role: 'context' }] },
       { kind: 'trend', horizon: '30m', signals: [{ ref: 'sgB.feedwaterFlowKgPerS', role: 'counter-evidence' }] },
-      { kind: 'readouts', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }, { ref: 'SG-B-PRESS', role: 'context' }, { ref: 'RCP-B-RUN', role: 'context' }] },
+      { kind: 'readouts', signals: [{ ref: 'SG-B-PRESS', role: 'context' }, { ref: 'RCP-B-RUN', role: 'context' }, { ref: 'SG-B-N16', role: 'context' }] },
       { kind: 'alarms', scope: 'related' },
     ])
     expect(composed.view.height).toBeLessThanOrEqual(720)
@@ -193,7 +193,11 @@ describe('composed display panels', () => {
       { kind: 'trend', horizon: '10m', signals: [{ ref: 'PZR-LVL', role: 'context' }] },
       { kind: 'comparison', signals: six },
       { kind: 'readouts', signals: [...six, { ref: 'TAVG', role: 'context' }, { ref: 'SUB-MARGIN', role: 'context' }] },
-    ])))).toContain('chat views allow 720')
+    ])))).toContain('chat views allow 720 (panels.0 trend 192 px')
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
+      { kind: 'trend', horizon: '10m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },
+      { kind: 'readouts', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },
+    ])))).toContain('"SG-B-LVL-NR" is already shown in panels.0; show each signal in one panel only')
   })
 
   test('compare parallel loops of one unit with primary thresholds', () => {

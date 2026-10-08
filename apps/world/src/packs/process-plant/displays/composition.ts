@@ -96,7 +96,7 @@ export const composedDisplayLayout = {
   comparisonHeader: 22,
   comparisonRow: 24,
   readoutsPerRow: 3,
-  readoutsRow: 58,
+  readoutsRow: 74,
   /** Title row plus four alarm rows; more are summarised as a count. */
   alarms: 110,
   alarmRows: 4,

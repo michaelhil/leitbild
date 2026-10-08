@@ -3,7 +3,6 @@
   import type { ComposedDisplaySample } from './composed-display-client.ts'
   import { penStroke, roleLabel } from './pen-style.ts'
   import { unitLabel, valueDigits } from './trend-geometry.ts'
-  import './openbridge.ts'
 
   let { pens, latest, historyMissing }: {
     pens: ReadonlyArray<ComposedDisplayPen>
@@ -23,25 +22,18 @@
       <svg class="swatch" width="22" height="8" aria-hidden="true"><line x1="0" x2="22" y1="4" y2="4" style={penStroke(pen.role, index)} /></svg>
       <span class="tag">{pen.tagId ?? pen.path}</span>
       <span class="role">{roleLabel[pen.role]}{liveOnly ? ' · live only' : ''}</span>
-      <obc-readout
-        value={typeof value === 'number' ? value : null}
-        off={typeof value !== 'number'}
-        offText="—"
-        unit={unitLabel(pen.unit)}
-        fractionDigits={typeof value === 'number' ? valueDigits(value) : 0}
-        direction="horizontal"
-        size="small"
-      ></obc-readout>
+      <span class="value">{typeof value === 'number' ? `${value.toFixed(valueDigits(value))} ${unitLabel(pen.unit)}` : '—'}</span>
       {#if entry?.quality === 'outside-hard-range'}<span class="quality">outside range</span>{/if}
     </li>
   {/each}
 </ul>
 
 <style>
-  .legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 14px; height: 34px; overflow: hidden; }
+  .legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 14px; height: 34px; align-content: center; overflow: hidden; }
   li { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .swatch { flex: none; }
   .tag { font-weight: 600; font-variant-numeric: tabular-nums; }
   .role { font-size: 11px; color: var(--element-neutral-color); }
+  .value { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
   .quality { font-size: 11px; color: var(--alert-caution-color); }
 </style>

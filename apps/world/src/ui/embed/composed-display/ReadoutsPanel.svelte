@@ -20,7 +20,7 @@
     <li class:primary={pen.role === 'primary'} title={`${pen.label} · ${pen.role}`}>
       <span class="tag">{pen.tagId ?? pen.path}</span>
       {#if typeof value === 'boolean'}
-        <span class="state"><obc-readout value={value ? 'yes' : 'no'} valueType="text" direction="horizontal" size="small"></obc-readout><span class="label">{pen.label.toLowerCase()}</span></span>
+        <span class="state"><obc-readout value={value ? 'yes' : 'no'} valueType="text" size="small"></obc-readout><span class="label">{pen.label.toLowerCase()}</span></span>
       {:else}
         <obc-readout
           value={typeof value === 'number' ? value : null}
@@ -28,7 +28,6 @@
           offText="—"
           unit={unitLabel(pen.unit)}
           fractionDigits={typeof value === 'number' ? valueDigits(value) : 0}
-          direction="horizontal"
           size="small"
         ></obc-readout>
       {/if}

@@ -15,6 +15,7 @@ import {
   COMPOSED_DISPLAY_MAX_TRENDS,
   composedDisplayCompositionSchema,
   composedDisplayHeight,
+  composedPanelHeight,
   composedDisplayHorizonMs,
   type ComposedDisplayComposition,
   type ComposedDisplayHorizon,
@@ -270,8 +271,23 @@ const compositionIssues = (composition: ComposedDisplayComposition): ReadonlyArr
   if (kinds.every(kind => kind === 'alarms')) issues.push({ path: 'panels', message: 'an alarms panel accompanies signal panels; add a trend, comparison or readouts panel' })
   const signals = composition.panels.flatMap(panel => panel.kind === 'alarms' ? [] : panel.signals)
   if (!signals.some(signal => signal.role === 'primary')) issues.push({ path: 'panels', message: 'mark at least one signal with role "primary": the signal the operator question is about' })
+  // Each signal appears once: a second panel showing it adds height, not evidence.
+  const firstPanelBySignal = new Map<string, number>()
+  composition.panels.forEach((panel, panelIndex) => {
+    if (panel.kind === 'alarms') return
+    for (const signal of panel.signals) {
+      const first = firstPanelBySignal.get(signal.ref)
+      if (first !== undefined && first !== panelIndex) {
+        issues.push({ path: `panels.${panelIndex}.signals`, message: `"${signal.ref}" is already shown in panels.${first}; show each signal in one panel only` })
+      }
+      if (first === undefined) firstPanelBySignal.set(signal.ref, panelIndex)
+    }
+  })
   const height = composedDisplayHeight(composition)
-  if (height > COMPOSED_DISPLAY_MAX_HEIGHT_PX) issues.push({ path: 'panels', message: `the display needs ${height} px but chat views allow ${COMPOSED_DISPLAY_MAX_HEIGHT_PX}; use fewer panels or signals` })
+  if (height > COMPOSED_DISPLAY_MAX_HEIGHT_PX) {
+    const parts = composition.panels.map((panel, index) => `panels.${index} ${panel.kind} ${composedPanelHeight(panel)} px`).join(', ')
+    issues.push({ path: 'panels', message: `the display needs ${height} px but chat views allow ${COMPOSED_DISPLAY_MAX_HEIGHT_PX} (${parts}); drop the panel that answers least of the question` })
+  }
   return issues
 }
 
