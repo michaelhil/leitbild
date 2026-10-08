@@ -126,6 +126,19 @@ const handleSimulationRunApiInner = async (
     })
   }
 
+  // Presence never loads a Run or extends its lease. Embedded views poll it to
+  // decide whether a Run is live without keeping an unattended Run alive.
+  const presenceMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/presence$/)
+  if (presenceMatch && req.method === 'GET') {
+    const simulationRunId = simulationRunIdSchema.parse(decodeURIComponent(presenceMatch[1] ?? ''))
+    const summary = await config.registry.summary(simulationRunId)
+    if (summary.scenarioId === null) {
+      return apiError(404, 'simulation_run_not_found', summary.loadError ?? 'simulation run not found')
+    }
+    const execution = await config.registry.executionOverview(simulationRunId)
+    return json({ simulationRunId, loaded: config.registry.get(simulationRunId) !== undefined, execution })
+  }
+
   const simulationRunMatch = pathname.match(/^\/simulation-runs\/([^/]+)$/)
   if (simulationRunMatch && req.method === 'GET') {
     const simulationRunId = simulationRunIdSchema.parse(decodeURIComponent(simulationRunMatch[1] ?? ''))
@@ -332,7 +345,7 @@ export const handleSimulationRunApi = async (
   let release: (() => void) | undefined
   try {
     const match = url.pathname.match(/\/world\/simulation-runs\/([^/]+)(?:\/|$)/)
-    if (match && req.method !== 'DELETE' && !url.pathname.endsWith('/reset')) release = config.registry.acquireLease(simulationRunIdSchema.parse(decodeURIComponent(match[1]!)), 'api')
+    if (match && req.method !== 'DELETE' && !url.pathname.endsWith('/reset') && !url.pathname.endsWith('/presence')) release = config.registry.acquireLease(simulationRunIdSchema.parse(decodeURIComponent(match[1]!)), 'api')
     return await handleSimulationRunApiInner(req, url, config)
   } catch (err) {
     if (err instanceof Error && err.message.startsWith('Simulation Run not found:')) return apiError(404, 'simulation_run_not_found', 'simulation run not found')

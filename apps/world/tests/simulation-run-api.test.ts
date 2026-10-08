@@ -187,6 +187,25 @@ test('procedure HTTP reads independently restore a cold Run and keep missing Run
   } finally { await registry.shutdown() }
 })
 
+test('presence reports a cold Run without loading it or holding a lease', async () => {
+  const registry = await createTestRegistry()
+  try {
+    const created = await createRun(registry)
+    const unleased: SimulationRunRegistry = { ...registry, acquireLease: () => { throw new Error('presence must not lease a Run') } }
+    const warm = await callRoute<{ loaded: boolean; execution: { playback: string } }>(unleased, runPath(created.id, '/presence'))
+    expect(warm.status).toBe(200)
+    expect(warm.body.loaded).toBe(true)
+    await registry.close(created.id)
+    const cold = await callRoute<{ simulationRunId: string; loaded: boolean; execution: { playback: string; currentSimulationTime: string } }>(unleased, runPath(created.id, '/presence'))
+    expect(cold.status).toBe(200)
+    expect(cold.body).toMatchObject({ simulationRunId: created.id, loaded: false })
+    expect(typeof cold.body.execution.currentSimulationTime).toBe('string')
+    expect(registry.get(created.id)).toBeUndefined()
+    await registry.delete(created.id)
+    expect((await callRoute(unleased, runPath(created.id, '/presence'))).status).toBe(404)
+  } finally { await registry.shutdown() }
+})
+
 const capabilityPath = (id: SimulationRunId, capabilityId: string): string =>
   runPath(id, `/capabilities/${encodeURIComponent(capabilityId)}/invoke`)
 
