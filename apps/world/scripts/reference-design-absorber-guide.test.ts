@@ -42,6 +42,7 @@ test('B4C caloric boundary refuses incomplete or inconsistent arrays and unsuppo
 })
 
 const wiki=process.env.LEITBILD_REFERENCE_WIKI,evidence=process.env.LEITBILD_REFERENCE_EVIDENCE,
+ waterReceipt=process.env.LEITBILD_REFERENCE_ORIGINAL_WATER_RECEIPT,
  ownerTest=wiki?test:test.skip,frameTest=wiki&&evidence?test:test.skip
 let prepared:Promise<Awaited<ReturnType<typeof load>>>|undefined
 async function load(){
@@ -139,11 +140,12 @@ ownerTest('consumed B4C Cp and primitive match the frozen helper throughout its 
 },60_000)
 
 frameTest('actual source-native frame retains every region birth exactly once and all fields are finite',async()=>{
+ if(!waterReceipt)throw Error('Set LEITBILD_REFERENCE_ORIGINAL_WATER_RECEIPT to the current admitted ORIGINAL preparation')
  const {p}=await actual(),read=(name:string)=>Bun.file(join(evidence!,name)).text(),
   documents=new Map(await Promise.all(sourceEvolutionOwnerFiles.map(async name=>[name,await Bun.file(join(wiki!,name)).text()] as const))),
   source=compileSourceEvolution(await read('2026-10-05/operating-source-fixed-partition.json'),
    await read('2026-10-05/operating-source-cold-material-incidence.json'),
-   await read('2026-10-06/source-primary-original-water-coordinate-corrected.json'),documents,
+   await Bun.file(waterReceipt).text(),documents,
    JSON.parse(await read('2026-10-06/source-composed-cylinder-converter-1.json.artifacts/material.json')).receiving.property),
   frame=nativeAbsorberGuideFrame(p.absorberGuide,source,p.mobileCapture),sums=new Map<string,number>()
  expect(frame.fields.every(Number.isFinite)).toBe(true);expect(frame.bodies).toHaveLength(52)

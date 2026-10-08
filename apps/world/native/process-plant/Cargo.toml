@@ -33,6 +33,11 @@ name = "source-cooling-ida"
 path = "qualification/source-cooling-ida.rs"
 required-features = ["offline-ida"]
 
+[[example]]
+name = "control-cooling-stage"
+path = "qualification/control-cooling-stage.rs"
+required-features = ["offline-ida"]
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

@@ -199,16 +199,15 @@ mod tests {
         dry[0].density_kg_m3 = 0.;
         assert!(m.evaluate(300., &[1.; 4], 1., &dry, &mut w).is_err());
         assert!(w.heat_rate().is_err());
-        assert!(
-            m.jvp(
+        assert!(m
+            .jvp(
                 0.,
                 &[0.; 4],
                 0.,
                 &vec![WaterDirection::default(); 3],
                 &mut w
             )
-            .is_err()
-        );
+            .is_err());
         m.evaluate(300., &[1.; 4], 1., &water, &mut w).unwrap();
         let other = fixture();
         assert!(other.evaluate(300., &[1.; 4], 1., &water, &mut w).is_err());
@@ -227,6 +226,152 @@ mod tests {
                     + aw.export_rate().unwrap(),
                 aw.emitted_rate().unwrap(),
             );
+        }
+    }
+    #[test]
+    fn current_chords_preserve_wrappers_and_give_conservative_signed_direction() {
+        let m = fixture();
+        let water = waters();
+        let captures = [2., 3., 4., 5.];
+        let mut w = m.workspace();
+        let mut old = m.workspace();
+        m.evaluate(320., &captures, 2., &water, &mut old).unwrap();
+        m.evaluate_with_chords(320., &captures, 2., &water, m.chords(), &mut w)
+            .unwrap();
+        assert_eq!(
+            old.water_heat()
+                .unwrap()
+                .iter()
+                .map(|x| x.to_bits())
+                .collect::<Vec<_>>(),
+            w.water_heat()
+                .unwrap()
+                .iter()
+                .map(|x| x.to_bits())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            old.export_rate().unwrap().to_bits(),
+            w.export_rate().unwrap().to_bits()
+        );
+        let held_dw = vec![
+            WaterDirection {
+                temperature_k: 0.2,
+                density_kg_m3: 0.4,
+            };
+            water.len()
+        ];
+        m.jvp(0.1, &[0.1, -0.2, 0.3, -0.4], -0.2, &held_dw, &mut old)
+            .unwrap();
+        m.jvp_with_chord_direction(
+            0.1,
+            &[0.1, -0.2, 0.3, -0.4],
+            -0.2,
+            &held_dw,
+            &vec![0.; m.chords().len()],
+            &mut w,
+        )
+        .unwrap();
+        assert_eq!(
+            old.water_heat_jvp()
+                .unwrap()
+                .iter()
+                .map(|x| x.to_bits())
+                .collect::<Vec<_>>(),
+            w.water_heat_jvp()
+                .unwrap()
+                .iter()
+                .map(|x| x.to_bits())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            old.export_jvp().unwrap().to_bits(),
+            w.export_jvp().unwrap().to_bits()
+        );
+        let chords: Vec<_> = m
+            .chords()
+            .iter()
+            .enumerate()
+            .map(|(i, c)| c * (1.1 + 0.1 * i as f64))
+            .collect();
+        let dc = vec![0.03, -0.02];
+        let de = [0.1, -0.2, 0.3, -0.4];
+        let dm = -0.2;
+        let dt = 0.1;
+        let dw = vec![
+            WaterDirection {
+                temperature_k: 0.2,
+                density_kg_m3: 0.4
+            };
+            water.len()
+        ];
+        m.evaluate_with_chords(320., &captures, 2., &water, &chords, &mut w)
+            .unwrap();
+        assert_ne!(
+            old.water_photon_heat().unwrap(),
+            w.water_photon_heat().unwrap()
+        );
+        m.jvp_with_chord_direction(dt, &de, dm, &dw, &dc, &mut w)
+            .unwrap();
+        close(
+            w.heat_jvp().unwrap()
+                + w.water_heat_jvp().unwrap().iter().sum::<f64>()
+                + w.export_jvp().unwrap(),
+            w.emitted_jvp().unwrap(),
+        );
+        let h = 1e-4;
+        let mut plus = m.workspace();
+        let mut minus = m.workspace();
+        for (sign, s) in [(1., &mut plus), (-1., &mut minus)] {
+            let ca = std::array::from_fn(|i| captures[i] + sign * h * de[i]);
+            let wa = water
+                .iter()
+                .zip(&dw)
+                .map(|(a, d)| Water {
+                    temperature_k: a.temperature_k + sign * h * d.temperature_k,
+                    density_kg_m3: a.density_kg_m3 + sign * h * d.density_kg_m3,
+                    ..*a
+                })
+                .collect::<Vec<_>>();
+            let ch = chords
+                .iter()
+                .zip(&dc)
+                .map(|(c, d)| c + sign * h * d)
+                .collect::<Vec<_>>();
+            m.evaluate_with_chords(320. + sign * h * dt, &ca, 2. + sign * h * dm, &wa, &ch, s)
+                .unwrap();
+        }
+        for ((a, p), q) in w
+            .water_heat_jvp()
+            .unwrap()
+            .iter()
+            .zip(plus.water_heat().unwrap())
+            .zip(minus.water_heat().unwrap())
+        {
+            assert!((a - (p - q) / (2. * h)).abs() < 1e-7 + 1e-6 * a.abs());
+        }
+        assert!(
+            (w.export_jvp().unwrap()
+                - (plus.export_rate().unwrap() - minus.export_rate().unwrap()) / (2. * h))
+                .abs()
+                < 1e-7
+        );
+        m.evaluate(320., &captures, 2., &water, &mut w).unwrap();
+        assert_eq!(
+            old.export_rate().unwrap().to_bits(),
+            w.export_rate().unwrap().to_bits()
+        );
+        assert!(m
+            .jvp_with_chord_direction(dt, &de, dm, &dw, &[], &mut w)
+            .is_err());
+        assert!(w.export_jvp().is_err());
+        for bad in [0., -1., f64::NAN] {
+            let mut ch = chords.clone();
+            ch[0] = bad;
+            assert!(m
+                .evaluate_with_chords(320., &captures, 2., &water, &ch, &mut w)
+                .is_err());
+            assert!(w.export_rate().is_err());
         }
     }
 }
@@ -266,6 +411,7 @@ pub struct WaterDirection {
 pub struct Model {
     input: Input,
     weights: Vec<f64>,
+    original_chords: Vec<f64>,
     self_absorption: f64,
     self_transmission: f64,
     owner: Arc<()>,
@@ -282,6 +428,8 @@ pub struct Workspace {
     water_tangent: Vec<f64>,
     absorption: Vec<f64>,
     transmission: Vec<f64>,
+    chords: Vec<f64>,
+    contact_density: Vec<f64>,
     photon: f64,
     heat_tangent: f64,
     nuclear_heat_tangent: f64,
@@ -437,9 +585,11 @@ impl Model {
         if weights.iter().any(|x| !x.is_finite() || *x <= 0.) {
             return Err("Unrepresentable barrel contact weights");
         }
+        let original_chords = input.contacts.iter().map(|c| c.liquid_chord_m).collect();
         let model = Self {
             input,
             weights,
+            original_chords,
             self_absorption: -(-tau).exp_m1(),
             self_transmission: (-tau).exp(),
             owner: Arc::new(()),
@@ -451,6 +601,9 @@ impl Model {
     }
     pub fn config(&self) -> &Input {
         &self.input
+    }
+    pub fn chords(&self) -> &[f64] {
+        &self.original_chords
     }
     pub fn initial_temperature(&self) -> f64 {
         self.input.initial_temperature_k
@@ -497,6 +650,8 @@ impl Model {
             water_tangent: vec![0.; self.input.water_count],
             absorption: vec![0.; self.input.contacts.len()],
             transmission: vec![0.; self.input.contacts.len()],
+            chords: vec![0.; self.input.contacts.len()],
+            contact_density: vec![0.; self.input.contacts.len()],
             photon: 0.,
             heat_tangent: 0.,
             emitted_tangent: 0.,
@@ -516,10 +671,25 @@ impl Model {
         water: &[Water],
         w: &mut Workspace,
     ) -> Result<(), &'static str> {
+        self.evaluate_with_chords(t, captures, mn_decay, water, &self.original_chords, w)
+    }
+    /// Same finite barrel and fixed receiving contacts, with current physical
+    /// liquid path chords. Geometry owns no source, heat or liquid history.
+    pub fn evaluate_with_chords(
+        &self,
+        t: f64,
+        captures: &[f64; 4],
+        mn_decay: f64,
+        water: &[Water],
+        chords: &[f64],
+        w: &mut Workspace,
+    ) -> Result<(), &'static str> {
         w.valid = false;
         w.direction_valid = false;
         if !Arc::ptr_eq(&self.owner, &w.owner)
             || water.len() != self.input.water_count
+            || chords.len() != self.input.contacts.len()
+            || chords.iter().any(|c| !c.is_finite() || *c <= 0.)
             || captures
                 .iter()
                 .chain(std::iter::once(&mn_decay))
@@ -555,7 +725,9 @@ impl Model {
             {
                 return Err("Barrel contact outside cold fully-liquid scope");
             }
-            let tau = a.density_kg_m3 * self.input.liquid_mu_en_m2_kg * c.liquid_chord_m;
+            w.chords[j] = chords[j];
+            w.contact_density[j] = a.density_kg_m3;
+            let tau = a.density_kg_m3 * self.input.liquid_mu_en_m2_kg * chords[j];
             if !tau.is_finite() {
                 return Err("Unrepresentable barrel liquid opacity");
             }
@@ -586,10 +758,35 @@ impl Model {
         dwater: &[WaterDirection],
         w: &mut Workspace,
     ) -> Result<(), &'static str> {
+        self.jvp_current(dt, dcaptures, dmn_decay, dwater, None, w)
+    }
+    pub fn jvp_with_chord_direction(
+        &self,
+        dt: f64,
+        dcaptures: &[f64; 4],
+        dmn_decay: f64,
+        dwater: &[WaterDirection],
+        chords: &[f64],
+        w: &mut Workspace,
+    ) -> Result<(), &'static str> {
+        self.jvp_current(dt, dcaptures, dmn_decay, dwater, Some(chords), w)
+    }
+    fn jvp_current(
+        &self,
+        dt: f64,
+        dcaptures: &[f64; 4],
+        dmn_decay: f64,
+        dwater: &[WaterDirection],
+        chords: Option<&[f64]>,
+        w: &mut Workspace,
+    ) -> Result<(), &'static str> {
         w.direction_valid = false;
         if !Arc::ptr_eq(&self.owner, &w.owner)
             || !w.valid
             || dwater.len() != self.input.water_count
+            || chords.is_some_and(|c| {
+                c.len() != self.input.contacts.len() || c.iter().any(|c| !c.is_finite())
+            })
             || dcaptures
                 .iter()
                 .chain([&dt, &dmn_decay])
@@ -617,10 +814,16 @@ impl Model {
             let d = dwater[c.water];
             let base = w.photon * self.self_transmission * self.weights[j];
             let direction = photon * self.self_transmission * self.weights[j];
-            let da = w.transmission[j]
-                * self.input.liquid_mu_en_m2_kg
-                * c.liquid_chord_m
-                * d.density_kg_m3;
+            let mut da =
+                w.transmission[j] * self.input.liquid_mu_en_m2_kg * w.chords[j] * d.density_kg_m3;
+            if let Some(chords) = chords {
+                // Keep the held-input derivative's original multiplication
+                // order; the independent current-path contribution is additive.
+                da += w.transmission[j]
+                    * self.input.liquid_mu_en_m2_kg
+                    * w.contact_density[j]
+                    * chords[j];
+            }
             let q = c.area_m2 * self.input.wet_h_w_m2_k * (dt - d.temperature_k);
             w.water_photon_tangent[c.water] = direction * w.absorption[j] + base * da;
             w.heat_tangent -= q;

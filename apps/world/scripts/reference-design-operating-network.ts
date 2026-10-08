@@ -30,6 +30,30 @@ type Secondary = { id: string; volume_m3: number; temperature_K: number; pressur
   liquidVolume_m3: number; gasVolume_m3: number; nitrogenMass_kg: number; minimumWettedVolume_m3: number }
 type SecondaryHeat = { solid: number; secondary: number; area_m2: number; diameter_m: number }
 
+/** One internal network wire writer for stationary and reachable-union
+ * preparation. Both consume the same physical records; neither parses and
+ * patches opaque numeric offsets from another compiler's output. */
+export function nativeOperatingNetworkFrame(p:{water:readonly Water[];solids:readonly Solid[];
+ hydraulic:readonly Hydraulic[];heat:readonly Heat[];secondaries:readonly Secondary[];
+ secondaryHeat:readonly SecondaryHeat[];controls:{horizon_s:number;remainingBudget_s:number};
+ anchor:{pressure_Pa:number;temperature_K:number;elevation_m:number};
+ originalPreparation:{minimumSpan_m:number;relativeMassScreen:number}}){
+ const {water,solids,hydraulic,heat,secondaries,secondaryHeat,controls:run,anchor:a,originalPreparation:o}=p
+ return [[water.length,solids.length,hydraulic.length,heat.length,run.horizon_s,run.remainingBudget_s,
+  a.pressure_Pa,a.temperature_K,a.elevation_m,o.minimumSpan_m,o.relativeMassScreen].join(' '),
+  ...water.map(w=>[w.volume_m3,w.elevation_m,w.markerRatio,w.temperature_K].join(' ')),
+  ...solids.map(s=>[s.capacity_J_K,s.temperature_K].join(' ')),
+  ...hydraulic.map(e=>[e.from,e.to,e.from_elevation_m,e.to_elevation_m,e.segments.length,
+   ...e.segments.flatMap(s=>[s.kind,s.length_m,s.area_m2,s.diameter_m,s.roughness_m,s.fixedLoss,
+    s.gridMultiplierOrAnnularDarcyCoefficient])].join(' ')),
+  ...heat.map(h=>h.kind===0?[h.kind,h.from,h.to,h.conductance_W_K].join(' '):
+   [h.kind,h.from,h.to,h.area_m2,h.thermalDiameter_m,h.flowArea_m2,h.hydraulicEdge].join(' ')),
+  [secondaries.length,secondaryHeat.length].join(' '),
+  ...secondaries.map(s=>[s.volume_m3,s.temperature_K,s.pressure_Pa,s.liquidVolume_m3,
+   s.nitrogenMass_kg,s.minimumWettedVolume_m3].join(' ')),
+  ...secondaryHeat.map(h=>[h.solid,h.secondary,h.area_m2,h.diameter_m].join(' '))].join('\n')+'\n'
+}
+
 /** Read the CURRENT selected noncore table; old pressure calibration is not run. */
 export function parseOperatingNoncoreLosses(document: string) {
   const selected = document.split('## Current nonnegative physical loss allocation')[1]?.split('## Retained prescribed-temperature reference')[0]
@@ -319,20 +343,9 @@ export async function compileOperatingNetwork(wikiDirectory: string, controls: z
   const V = water.reduce((s, w) => s + w.volume_m3, 0), omittedV = g.PZR.volume_m3 + physical.input.surge.liquidVolume_m3
   if (Math.abs(V + omittedV - (prhr?.totals.waterVolume_m3 ?? 0) - physical.expectedTotalVolume_m3) > 1e-10 * physical.expectedTotalVolume_m3)
     throw Error('Operating partial/omitted physical inventory does not partition current primary')
-  const nativeInput = [ [water.length, solids.length, hydraulic.length, heat.length, run.horizon_s, run.remainingBudget_s,
-    currentAnchor.pressure_Pa, currentAnchor.temperature_K, currentAnchor.elevation_m,
-    originalPreparation.minimumHSSpan_m, originalWaterMassRelativeScreen].join(' '),
-    ...water.map(w => [w.volume_m3, w.elevation_m, w.markerRatio, w.temperature_K].join(' ')),
-    ...solids.map(s => [s.capacity_J_K, s.temperature_K].join(' ')),
-    ...hydraulic.map(e => [e.from, e.to, e.from_elevation_m, e.to_elevation_m, e.segments.length,
-      ...e.segments.flatMap(s => [s.kind, s.length_m, s.area_m2, s.diameter_m, s.roughness_m, s.fixedLoss,
-        s.gridMultiplierOrAnnularDarcyCoefficient])].join(' ')),
-    ...heat.map(h => h.kind === 0 ? [h.kind, h.from, h.to, h.conductance_W_K].join(' ')
-      : [h.kind, h.from, h.to, h.area_m2, h.thermalDiameter_m, h.flowArea_m2, h.hydraulicEdge].join(' ')),
-    [secondaries.length, secondaryHeat.length].join(' '),
-    ...secondaries.map(s => [s.volume_m3, s.temperature_K, s.pressure_Pa, s.liquidVolume_m3,
-      s.nitrogenMass_kg, s.minimumWettedVolume_m3].join(' ')),
-    ...secondaryHeat.map(h => [h.solid, h.secondary, h.area_m2, h.diameter_m].join(' ')) ].join('\n') + '\n'
+  const nativeInput = nativeOperatingNetworkFrame({water,solids,hydraulic,heat,secondaries,secondaryHeat,
+    controls:run,anchor:currentAnchor,originalPreparation:{minimumSpan_m:originalPreparation.minimumHSSpan_m,
+      relativeMassScreen:originalWaterMassRelativeScreen}})
   const identities = [...physical.identity, ...extras.map((name, i) => ({ name, sha256: sha(docs[i]!) }))]
   const observed = new Map<string, string>()
   for (const identity of identities) {

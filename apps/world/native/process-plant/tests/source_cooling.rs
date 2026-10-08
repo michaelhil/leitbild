@@ -45,6 +45,308 @@ pub(crate) fn mobile_input(
 pub(crate) fn fixture() -> sc::Model {
     fixture_with_fuel_mass(0.5).unwrap()
 }
+
+#[test]
+fn current_geometry_uses_one_water_authority_and_restores_stationary_bits() {
+    use leitbild_plant_numerics::absorber_guide::ContactGeometry;
+    let model = fixture();
+    let y = model.initial_state().unwrap();
+    let yp = vec![0.; y.len()];
+    let mut work = model.workspace();
+    model.evaluate(&y, &yp, Some(2.), &mut work).unwrap();
+    let original = work.residual.clone();
+    let source = model.source.prepared_geometry().clone();
+    let mobile = model.mobile_capture.geometry().clone();
+    let contacts = model.absorber_guide.geometry().to_vec();
+    let water = model
+        .network
+        .config()
+        .water
+        .iter()
+        .map(|w| on::WaterShape {
+            volume_m3: w.geometry.volume,
+            first_moment_m4: w.geometry.volume * w.geometry.elevation,
+            volume_rate_m3_s: 0.,
+            first_moment_rate_m4_s: 0.,
+        })
+        .collect::<Vec<_>>();
+    model
+        .evaluate_with_current_geometry(
+            &y,
+            &yp,
+            Some(2.),
+            &mut work,
+            None,
+            sc::CurrentGeometry {
+                source: &source,
+                contacts: &contacts,
+                mobile: &mobile,
+                barrel_chords_m: model.barrel.chords(),
+                network: on::MotionGeometry {
+                    water: &water,
+                    connections: &[],
+                },
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        original.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+        work.residual
+            .iter()
+            .map(|v| v.to_bits())
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        model.jvp(&vec![0.; y.len()], 2., &mut work).is_err(),
+        "A moving-stage linear solve cannot silently omit the geometry direction"
+    );
+    let zero_source = source.zero_direction();
+    let zero_mobile = mobile.zero_direction();
+    let zero_contacts = contacts
+        .iter()
+        .map(|_| ContactGeometry {
+            area_m2: 0.,
+            solid_geometry_m_inv: 0.,
+            liquid_chord_m: 0.,
+        })
+        .collect::<Vec<_>>();
+    let zero_water = water
+        .iter()
+        .map(|_| on::WaterShape {
+            volume_m3: 0.,
+            first_moment_m4: 0.,
+            volume_rate_m3_s: 0.,
+            first_moment_rate_m4_s: 0.,
+        })
+        .collect::<Vec<_>>();
+    model
+        .jvp_with_current_geometry(
+            &vec![0.; y.len()],
+            2.,
+            &mut work,
+            sc::GeometryDirection {
+                source: &zero_source,
+                contacts: &zero_contacts,
+                mobile: &zero_mobile,
+                barrel_chords_m: &vec![0.; model.barrel.chords().len()],
+                water: &zero_water,
+                connections: &[],
+            },
+        )
+        .unwrap();
+    assert!(work.jvp.iter().all(|v| *v == 0.));
+    let mut wrong_source = source.clone();
+    wrong_source.external_water_volumes[0] *= 1.0001;
+    assert!(
+        model
+            .evaluate_with_current_geometry(
+                &y,
+                &yp,
+                Some(2.),
+                &mut work,
+                None,
+                sc::CurrentGeometry {
+                    source: &wrong_source,
+                    contacts: &contacts,
+                    mobile: &mobile,
+                    barrel_chords_m: model.barrel.chords(),
+                    network: on::MotionGeometry {
+                        water: &water,
+                        connections: &[]
+                    }
+                }
+            )
+            .is_err()
+    );
+    assert!(model.validate_accepted(&y, &work).is_err());
+    model.evaluate(&y, &yp, Some(2.), &mut work).unwrap();
+    assert_eq!(
+        original.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+        work.residual
+            .iter()
+            .map(|v| v.to_bits())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn composed_shape_action_reaches_source_carrier_heat_and_pressure_donor() {
+    use leitbild_plant_numerics::absorber_guide::ContactGeometry;
+    let model = fixture();
+    let mut y = model.initial_state().unwrap();
+    y[..model.source.nc_dimension()].fill(3.);
+    // Exercise actual finite composition and heat contrast, not only rest.
+    y[model.layout.temperatures_start] += 0.3;
+    y[model.layout.absorber_guide_temperatures_start] += 0.2;
+    y[model.layout.carrier_start] = 1e-5 * model.carrier.hydrogen_per_kg();
+    let yp = vec![0.; y.len()];
+    let source = model.source.prepared_geometry().clone();
+    let mobile = model.mobile_capture.geometry().clone();
+    let contacts = model.absorber_guide.geometry().to_vec();
+    let water = model
+        .network
+        .config()
+        .water
+        .iter()
+        .map(|w| on::WaterShape {
+            volume_m3: w.geometry.volume,
+            first_moment_m4: w.geometry.volume * w.geometry.elevation,
+            volume_rate_m3_s: 0.,
+            first_moment_rate_m4_s: 0.,
+        })
+        .collect::<Vec<_>>();
+    let mut ds = source.zero_direction();
+    // This reduced fixture gives each material only one spatial intersection.
+    // Its material volume cannot move between regions without first compiling
+    // a reachable union. Vary the already connected water/heat geometry here;
+    // the full-union geometry tests exercise actual material redistribution.
+    let dc = contacts
+        .iter()
+        .enumerate()
+        .map(|(i, c)| ContactGeometry {
+            area_m2: c.area_m2 * 0.02 * (i as f64 + 1.).cos(),
+            solid_geometry_m_inv: 0.,
+            liquid_chord_m: c.liquid_chord_m * 0.01,
+        })
+        .collect::<Vec<_>>();
+    let mut dm = mobile.zero_direction();
+    for (d, v) in dm.liquid_chords_m.iter_mut().zip(&mobile.liquid_chords_m) {
+        *d = 0.01 * v;
+    }
+    let barrel_chords = model.barrel.chords();
+    let db = barrel_chords.iter().map(|v| 0.01 * v).collect::<Vec<_>>();
+    let dw = water
+        .iter()
+        .enumerate()
+        .map(|(i, w)| on::WaterShape {
+            volume_m3: w.volume_m3 * 0.01 * if i == 0 { 1. } else { -1. },
+            first_moment_m4: w.first_moment_m4 * 0.01 * if i == 0 { 1. } else { -1. },
+            volume_rate_m3_s: 1e-5 * if i == 0 { 1. } else { -1. },
+            first_moment_rate_m4_s: 2e-5 * if i == 0 { 1. } else { -1. },
+        })
+        .collect::<Vec<_>>();
+    for (v, w) in ds.external_water_volumes.iter_mut().zip(&dw) {
+        *v = w.volume_m3;
+    }
+    let mut w = model.workspace();
+    model
+        .evaluate_with_current_geometry(
+            &y,
+            &yp,
+            Some(0.),
+            &mut w,
+            None,
+            sc::CurrentGeometry {
+                source: &source,
+                contacts: &contacts,
+                mobile: &mobile,
+                barrel_chords_m: barrel_chords,
+                network: on::MotionGeometry {
+                    water: &water,
+                    connections: &[],
+                },
+            },
+        )
+        .unwrap();
+    model
+        .jvp_with_current_geometry(
+            &vec![0.; y.len()],
+            0.,
+            &mut w,
+            sc::GeometryDirection {
+                source: &ds,
+                contacts: &dc,
+                mobile: &dm,
+                barrel_chords_m: &db,
+                water: &dw,
+                connections: &[],
+            },
+        )
+        .unwrap();
+    let analytic = w.jvp.clone();
+    let energy_action = w.complete_energy_rate_jvp().unwrap();
+    let evaluate = |scale: f64| {
+        let mut s = source.clone();
+        for (a, d) in s.passive_volumes.iter_mut().zip(&ds.passive_volumes) {
+            *a += scale * d;
+        }
+        for (a, d) in s
+            .external_water_volumes
+            .iter_mut()
+            .zip(&ds.external_water_volumes)
+        {
+            *a += scale * d;
+        }
+        let c = contacts
+            .iter()
+            .zip(&dc)
+            .map(|(a, d)| ContactGeometry {
+                area_m2: a.area_m2 + scale * d.area_m2,
+                solid_geometry_m_inv: a.solid_geometry_m_inv,
+                liquid_chord_m: a.liquid_chord_m + scale * d.liquid_chord_m,
+            })
+            .collect::<Vec<_>>();
+        let mut m = mobile.clone();
+        for (a, d) in m.liquid_chords_m.iter_mut().zip(&dm.liquid_chords_m) {
+            *a += scale * d;
+        }
+        let water = water
+            .iter()
+            .zip(&dw)
+            .map(|(a, d)| on::WaterShape {
+                volume_m3: a.volume_m3 + scale * d.volume_m3,
+                first_moment_m4: a.first_moment_m4 + scale * d.first_moment_m4,
+                volume_rate_m3_s: scale * d.volume_rate_m3_s,
+                first_moment_rate_m4_s: scale * d.first_moment_rate_m4_s,
+            })
+            .collect::<Vec<_>>();
+        let mut w = model.workspace();
+        let barrel = barrel_chords.iter().zip(&db).map(|(v, d)| v + scale * d).collect::<Vec<_>>();
+        model
+            .evaluate_with_current_geometry(
+                &y,
+                &yp,
+                None,
+                &mut w,
+                None,
+                sc::CurrentGeometry {
+                    source: &s,
+                    contacts: &c,
+                    mobile: &m,
+                    barrel_chords_m: &barrel,
+                    network: on::MotionGeometry {
+                        water: &water,
+                        connections: &[],
+                    },
+                },
+            )
+            .unwrap();
+        (w.residual.clone(), w.complete_energy_rate().unwrap())
+    };
+    let h = 1e-4;
+    let (plus, ep) = evaluate(h);
+    let (minus, em) = evaluate(-h);
+    for (i, ((a, b), j)) in plus.iter().zip(&minus).zip(&analytic).enumerate() {
+        let fd = (a - b) / (2. * h);
+        let roundoff = 32. * f64::EPSILON * (a.abs() + b.abs()) / (2. * h);
+        assert!(
+            (fd - j).abs() <= roundoff + 2e-6 * j.abs() + 1e-8,
+            "composed geometry row {i}: fd={fd} analytic={j} arithmetic={roundoff}"
+        );
+    }
+    let fd = (ep - em) / (2. * h);
+    assert!((fd - energy_action).abs() < 1e-7 + 2e-6 * energy_action.abs());
+    assert!(
+        analytic[..model.layout.source_end]
+            .iter()
+            .any(|v| v.abs() > 1e-10)
+    );
+    assert!(
+        analytic[model.layout.network_start..model.layout.carrier_start]
+            .iter()
+            .any(|v| v.abs() > 1e-10)
+    );
+}
 fn mobile_clad_recipients(
     thermal: &ft::Model,
 ) -> leitbild_plant_numerics::mobile_capture::CladRecipients {

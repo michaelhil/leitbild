@@ -30,6 +30,26 @@ pub(crate) struct Prepared {
 }
 
 pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
+    parse_source_incidence(text, None)
+}
+
+/// The same physical twelve-frame composition, prepared on a reachable
+/// material union. Only incidence changes: target and history identities are
+/// never reinitialized from a reached pose. This is not a second wire reader.
+pub(crate) fn parse_with_source_incidence(
+    text: &str,
+    passive: &[leitbild_plant_numerics::passive_source::Intersection],
+    cylinder: &[leitbild_plant_numerics::cylindrical_source::Intersection],
+) -> Result<Prepared, String> {
+    parse_source_incidence(text, Some((passive, cylinder)))
+}
+fn parse_source_incidence(
+    text: &str,
+    incidence: Option<(
+        &[leitbild_plant_numerics::passive_source::Intersection],
+        &[leitbild_plant_numerics::cylindrical_source::Intersection],
+    )>,
+) -> Result<Prepared, String> {
     let words = text.split_whitespace().collect::<Vec<_>>();
     let mut offset = 0;
     let mut frames = Vec::with_capacity(12);
@@ -49,11 +69,27 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
     if offset != words.len() {
         return Err("Trailing coupled payload".into());
     }
-    let [source, network, thermal, primary, barrel, pressure, capture, observation, prhr_frame, mobile_frame, absorber_guide_frame, actuation_frame]: [Vec<&str>; 12] =
-        frames.try_into().map_err(|_| "Wrong coupled frame count")?;
+    let [
+        source,
+        network,
+        thermal,
+        primary,
+        barrel,
+        pressure,
+        capture,
+        observation,
+        prhr_frame,
+        mobile_frame,
+        absorber_guide_frame,
+        actuation_frame,
+    ]: [Vec<&str>; 12] = frames.try_into().map_err(|_| "Wrong coupled frame count")?;
     let source = source.join(" ");
     let network = network.join(" ");
     let mut prepared = evolution_input::parse(&source);
+    if let Some((passive, cylinder)) = incidence {
+        prepared.input.passive_incidence = passive.to_vec();
+        prepared.input.cylinder_incidence = cylinder.to_vec();
+    }
     let mut nw = network.split_whitespace();
     let mut network_input = operating_network_input::parse(&mut nw)?;
     if nw.next().is_some() || network_input.horizon != 300. {

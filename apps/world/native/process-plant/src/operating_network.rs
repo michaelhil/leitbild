@@ -6,15 +6,38 @@
 //! EOS excludes that mechanical correction: this is an explicit cold pressure
 //! approximation, not exact compressible entropy, phase or coastdown physics.
 //! No pump, rotor, maintained boundary, nested chart inverse or acoustic mode.
-use crate::{liquid_batch, CellGeometry, Liquid, LiquidQuery, GRAVITY};
+use crate::{CellGeometry, GRAVITY, Liquid, LiquidQuery, liquid_batch};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 mod hydraulic;
 pub mod moving_chart;
+pub mod moving_hydraulic;
 use crate::sg_secondary::{Inventory as SecondaryInventory, State as SecondaryState};
 pub use crate::sg_secondary::{Secondary, SecondaryHeat};
 pub use hydraulic::{Hydraulic, HydraulicSegment, LossLaw, Seat};
+pub use moving_hydraulic::{
+    Connection as MovingConnection, Direction as MovingConnectionDirection,
+};
 pub const SOLID_DATUM_K: f64 = 300.;
+
+/// Keep the signed inventory defect, rather than first rounding a large
+/// positive inventory sum and then subtracting it. Small mass-chart defects
+/// drive the shared pressure and therefore low-resistance connected flows.
+/// This is the same physical chart for fixed and moving territories.
+fn mass_chart_residual(total: f64, masses: &[f64]) -> f64 {
+    let (mut sum, mut correction) = (total, 0.);
+    for &mass in masses {
+        let value = -mass;
+        let next = sum + value;
+        correction += if sum.abs() >= value.abs() {
+            (sum - next) + value
+        } else {
+            (value - next) + sum
+        };
+        sum = next;
+    }
+    sum + correction
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Water {
@@ -33,6 +56,20 @@ pub struct LiquidPort {
     pub mass_rate: f64,
     pub energy_rate: f64,
     pub marker_rate: f64,
+}
+/// Actual finite water geometry and its same-stage time contraction. EOS and
+/// pressure-port datums remain the ORIGINAL fixed physical elevations.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct WaterShape {
+    pub volume_m3: f64,
+    pub first_moment_m4: f64,
+    pub volume_rate_m3_s: f64,
+    pub first_moment_rate_m4_s: f64,
+}
+#[derive(Clone, Copy)]
+pub struct MotionGeometry<'a> {
+    pub water: &'a [WaterShape],
+    pub connections: &'a [moving_hydraulic::Connection],
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Solid {
@@ -140,7 +177,8 @@ impl Network {
             }
             for e in &edge.segments {
                 if !e.length.is_finite()
-                    || e.length <= 0.
+                    || e.length < 0.
+                    || (e.length == 0. && e.fixed_loss <= 0.)
                     || !e.diameter.is_finite()
                     || e.diameter <= 0.
                     || !e.flow_area.is_finite()
@@ -630,6 +668,21 @@ impl Network {
         y: &[f64],
         liquids: &[Liquid],
     ) -> Result<(f64, f64), String> {
+        let e = self
+            .config
+            .hydraulic
+            .get(edge)
+            .ok_or("Hydraulic drive edge")?;
+        self.hydraulic_drive_at(edge, e.from_elevation, e.to_elevation, y, liquids)
+    }
+    fn hydraulic_drive_at(
+        &self,
+        edge: usize,
+        from_elevation: f64,
+        to_elevation: f64,
+        y: &[f64],
+        liquids: &[Liquid],
+    ) -> Result<(f64, f64), String> {
         if y.len() != self.dimension() || liquids.len() != self.config.water.len() {
             return Err("Hydraulic drive state/property shape".into());
         }
@@ -638,10 +691,10 @@ impl Network {
             .hydraulic
             .get(edge)
             .ok_or("Hydraulic drive edge")?;
-        let dz = e.to_elevation - e.from_elevation;
+        let dz = to_elevation - from_elevation;
         let ga =
-            GRAVITY * (self.config.water[e.from].geometry.elevation - e.from_elevation - 0.5 * dz);
-        let gb = GRAVITY * (e.to_elevation - self.config.water[e.to].geometry.elevation - 0.5 * dz);
+            GRAVITY * (self.config.water[e.from].geometry.elevation - from_elevation - 0.5 * dz);
+        let gb = GRAVITY * (to_elevation - self.config.water[e.to].geometry.elevation - 0.5 * dz);
         let (pa, pb) = (
             self.relative_pressure(e.from, y),
             self.relative_pressure(e.to, y),
@@ -743,6 +796,10 @@ pub struct Workspace {
     pub chart_derivatives: Vec<[f64; 4]>,
     /// a=M_p-M_T E_p/E_T; b=M_T/E_T.
     pub redistribution: Vec<[f64; 2]>,
+    /// Current geometry, with actual time contractions; no new stock owner.
+    pub water_shapes: Vec<WaterShape>,
+    /// Pressure traction work into each finite water owner, before wall work.
+    pub shape_pressure_work_w: Vec<f64>,
     pub pressure_rate: f64,
     pub mass_rates: Vec<f64>,
     pub heat_entropy_production: f64,
@@ -761,6 +818,13 @@ pub struct Workspace {
     owner: Arc<()>,
     energy_rate_valid: bool,
     chart_state: Vec<f64>,
+    chart_rates: Vec<f64>,
+    shape_mass_rates: Vec<f64>,
+    shape_rate_partials: Vec<[f64; 2]>,
+    moving_connections: Vec<moving_hydraulic::Connection>,
+    moving_responses: Vec<moving_hydraulic::Response>,
+    moving_by_edge: Vec<Option<usize>>,
+    shape_chart_directions: Vec<[f64; 3]>,
     chart_valid: bool,
 }
 fn chart(w: Water, l: Liquid, p: f64, t: f64) -> Result<([f64; 4], [f64; 2]), String> {
@@ -1082,6 +1146,17 @@ impl Workspace {
             chart_energy: vec![0.; nw],
             chart_derivatives: vec![[0.; 4]; nw],
             redistribution: vec![[0.; 2]; nw],
+            water_shapes: n
+                .config
+                .water
+                .iter()
+                .map(|w| WaterShape {
+                    volume_m3: w.geometry.volume,
+                    first_moment_m4: w.geometry.volume * w.geometry.elevation,
+                    ..WaterShape::default()
+                })
+                .collect(),
+            shape_pressure_work_w: vec![0.; nw],
             pressure_rate: 0.,
             mass_rates: vec![0.; nw],
             heat_entropy_production: 0.,
@@ -1111,6 +1186,13 @@ impl Workspace {
             owner: n.owner.clone(),
             energy_rate_valid: false,
             chart_state: vec![0.; n.dimension()],
+            chart_rates: vec![0.; n.dimension()],
+            shape_mass_rates: vec![0.; nw],
+            shape_rate_partials: vec![[0.; 2]; nw],
+            moving_connections: vec![],
+            moving_responses: vec![],
+            moving_by_edge: vec![None; n.config.hydraulic.len()],
+            shape_chart_directions: vec![[0.; 3]; nw],
             chart_valid: false,
         }
     }
@@ -1141,6 +1223,241 @@ impl Workspace {
             d[2] * dp + d[3] * dt,
             d[8] * dp + d[9] * dt,
         ]
+    }
+    pub fn moving_responses(&self) -> Result<&[moving_hydraulic::Response], String> {
+        if !self.chart_valid {
+            return Err("Moving traction requires current network preparation".into());
+        }
+        Ok(&self.moving_responses)
+    }
+    /// Actual endpoint head, including current moving ports. Admission must
+    /// use this view rather than reconstructing a fixed-geometry connection.
+    pub fn current_hydraulic_drive(&self, n: &Network, edge: usize) -> Result<(f64, f64), String> {
+        self.check_current_chart(n, &self.chart_state)?;
+        if edge >= n.config.hydraulic.len() {
+            return Err("Current hydraulic edge".into());
+        }
+        let e = &n.config.hydraulic[edge];
+        let (from, to) =
+            self.moving_by_edge[edge].map_or((e.from_elevation, e.to_elevation), |i| {
+                let c = self.moving_connections[i];
+                (c.from_elevation_m, c.to_elevation_m)
+            });
+        n.hydraulic_drive_at(edge, from, to, &self.chart_state, &self.liquids)
+    }
+    pub fn current_hydraulic_loss(&self, n: &Network, edge: usize) -> Result<[f64; 4], String> {
+        self.check_current_chart(n, &self.chart_state)?;
+        let e = n
+            .config
+            .hydraulic
+            .get(edge)
+            .ok_or("Current hydraulic loss edge")?;
+        if let Some(i) = self.moving_by_edge[edge] {
+            let r = self.moving_responses[i];
+            Ok([
+                r.loss_pa,
+                r.loss_partials[0],
+                r.loss_partials[2],
+                r.loss_partials[1],
+            ])
+        } else {
+            Ok(e.pressure_loss(
+                self.chart_state[n.flow_row(edge)],
+                0.5 * (self.liquids[e.from].density + self.liquids[e.to].density),
+                0.5 * (self.liquids[e.from].viscosity + self.liquids[e.to].viscosity),
+            ))
+        }
+    }
+    pub fn moving_connection(&self, edge: usize) -> Result<Option<MovingConnection>, String> {
+        if !self.chart_valid || edge >= self.moving_by_edge.len() {
+            return Err("Current moving connection needs owned chart".into());
+        }
+        Ok(self.moving_by_edge[edge].map(|i| self.moving_connections[i]))
+    }
+    /// At positive slope retain the existing linear held-head diagnostic.
+    /// A real mouth at exact rest instead uses its actual finite +/- flow
+    /// allocation loss increments. Neither is a coupled Newton-error bound.
+    pub fn hydraulic_diagnostic_band(
+        &self,
+        n: &Network,
+        edge: usize,
+        flow_atol: f64,
+    ) -> Result<f64, String> {
+        if !flow_atol.is_finite() || flow_atol <= 0. {
+            return Err("Invalid current flow diagnostic allocation".into());
+        }
+        let loss = self.current_hydraulic_loss(n, edge)?;
+        if loss[1] > 0. {
+            return Ok(loss[1] * flow_atol);
+        }
+        let e = &n.config.hydraulic[edge];
+        let q = self.chart_state[n.flow_row(edge)];
+        let rho = 0.5 * (self.liquids[e.from].density + self.liquids[e.to].density);
+        let mu = 0.5 * (self.liquids[e.from].viscosity + self.liquids[e.to].viscosity);
+        let value = |q| -> Result<f64, String> {
+            if let Some(i) = self.moving_by_edge[edge] {
+                Ok(self.moving_connections[i].law.evaluate(q, rho, mu)?.loss_pa)
+            } else {
+                Ok(e.pressure_loss(q, rho, mu)[0])
+            }
+        };
+        let band = (value(q + flow_atol)? - loss[0]).min(loss[0] - value(q - flow_atol)?);
+        if !band.is_finite() || band <= 0. {
+            return Err("Unresolvable actual mouth diagnostic band".into());
+        }
+        Ok(band)
+    }
+    /// Inner-wall traction/work direction from the SAME prepared local
+    /// response; no repeated constitutive law or EOS call during a Krylov JVP.
+    pub fn moving_response_direction(
+        &self,
+        n: &Network,
+        index: usize,
+        dstate: &[f64],
+        geometry: moving_hydraulic::Direction,
+    ) -> Result<moving_hydraulic::ResponseDirection, String> {
+        if !Arc::ptr_eq(&self.owner, &n.owner)
+            || !self.energy_rate_valid
+            || dstate.len() != n.dimension()
+            || dstate.iter().any(|v| !v.is_finite())
+        {
+            return Err("Moving traction direction needs current Jacobian/state".into());
+        }
+        let c = self
+            .moving_connections
+            .get(index)
+            .ok_or("Moving traction index")?;
+        let e = &n.config.hydraulic[c.edge];
+        let dp = dstate[n.pressure_row()];
+        let mut drho = 0.;
+        let mut dmu = 0.;
+        for node in [e.from, e.to] {
+            let l = self.liquids[node];
+            let dt = dstate[n.temperature_row(node)];
+            drho += 0.5 * l.density * (l.compressibility * dp - l.expansion * dt);
+            dmu +=
+                0.5 * (self.local_derivatives[node][0] * dp + self.local_derivatives[node][1] * dt);
+        }
+        self.moving_responses[index].direction([
+            dstate[n.flow_row(c.edge)],
+            drho,
+            dmu,
+            geometry.speed_m_s,
+            geometry.length_m,
+        ])
+    }
+    /// Add only the current-geometry/time-contraction chain to a held-geometry
+    /// network Jacobian action. State/property chains are already in its CSC.
+    /// The returned scalar is the independently formed installed-energy RATE
+    /// direction, before any cj shift; it is not assumed to be zero.
+    pub fn add_motion_jvp(
+        &mut self,
+        n: &Network,
+        water: &[WaterShape],
+        connections: &[moving_hydraulic::Direction],
+        action: &mut [f64],
+    ) -> Result<f64, String> {
+        let nw = n.config.water.len();
+        if !Arc::ptr_eq(&self.owner, &n.owner)
+            || !self.energy_rate_valid
+            || !self.chart_valid
+            || water.len() != nw
+            || connections.len() != self.moving_connections.len()
+            || action.len() != n.dimension()
+            || action.iter().any(|v| !v.is_finite())
+            || water.iter().any(|s| {
+                [
+                    s.volume_m3,
+                    s.first_moment_m4,
+                    s.volume_rate_m3_s,
+                    s.first_moment_rate_m4_s,
+                ]
+                .iter()
+                .any(|v| !v.is_finite())
+            })
+            || connections.iter().any(|s| {
+                [
+                    s.from_elevation_m,
+                    s.to_elevation_m,
+                    s.length_m,
+                    s.speed_m_s,
+                ]
+                .iter()
+                .any(|v| !v.is_finite())
+            })
+        {
+            return Err("Invalid current moving network direction".into());
+        }
+        let y = &self.chart_state;
+        let yp = &self.chart_rates;
+        let mut energy_rate = 0.;
+        let mut pressure_numerator = 0.;
+        let sum_a = self.redistribution.iter().map(|x| x[0]).sum::<f64>();
+        for i in 0..nw {
+            let l = self.liquids[i];
+            let q = self.queries[i];
+            let s = self.water_shapes[i];
+            let d = water[i];
+            let [_, _, ep, et] = self.chart_derivatives[i];
+            let b = self.redistribution[i][1];
+            let dum = l.internal_energy * d.volume_m3 + GRAVITY * d.first_moment_m4;
+            let dmp = l.density * l.compressibility * d.volume_m3;
+            let dmt = -l.density * l.expansion * d.volume_m3;
+            let dep = l.density * l.compressibility * dum
+                + d.volume_m3 * (q.pressure * l.compressibility - q.temperature * l.expansion);
+            let det = -l.density * l.expansion * dum
+                + d.volume_m3 * (l.density * l.cp - q.pressure * l.expansion);
+            let db = (dmt - b * det) / et;
+            let da = dmp - b * dep - ep * db;
+            let eyrate = l.density
+                * (l.internal_energy * s.volume_rate_m3_s + GRAVITY * s.first_moment_rate_m4_s);
+            let deyrate = l.density
+                * (l.internal_energy * d.volume_rate_m3_s + GRAVITY * d.first_moment_rate_m4_s);
+            let dc = l.density * d.volume_rate_m3_s - db * eyrate - b * deyrate;
+            self.shape_chart_directions[i] = [da, db, dc];
+            pressure_numerator -= db * yp[i] + dc + da * self.pressure_rate;
+            action[n.pressure_row()] -= l.density * d.volume_m3;
+            action[n.temperature_row(i)] -= l.density * dum;
+            let phead = q.pressure
+                + n.relative_pressure(i, y)
+                + l.density * GRAVITY * n.config.water[i].geometry.elevation;
+            let dw = -phead * d.volume_rate_m3_s + l.density * GRAVITY * d.first_moment_rate_m4_s;
+            action[i] -= dw;
+            energy_rate += dw;
+        }
+        let dp_rate = pressure_numerator / sum_a;
+        for i in 1..nw {
+            let [da, db, dc] = self.shape_chart_directions[i];
+            action[n.mechanical_row(i).unwrap()] +=
+                da * self.pressure_rate + self.redistribution[i][0] * dp_rate + db * yp[i] + dc;
+        }
+        for (edge, e) in n.config.hydraulic.iter().enumerate() {
+            let q = y[n.flow_row(edge)];
+            let donor = if q >= 0. { e.from } else { e.to };
+            let dm = self.liquids[donor].density * water[donor].volume_m3;
+            let dc = -y[n.marker_row(donor)] / self.chart_mass[donor] * dm / self.chart_mass[donor];
+            action[n.marker_row(e.from)] += q * dc;
+            action[n.marker_row(e.to)] -= q * dc;
+        }
+        for ((c, r), d) in self
+            .moving_connections
+            .iter()
+            .zip(&self.moving_responses)
+            .zip(connections)
+        {
+            let e = &n.config.hydraulic[c.edge];
+            let rho_a = self.liquids[e.from].density;
+            let rho_b = self.liquids[e.to].density;
+            let ddrive = 0.5 * GRAVITY * (rho_b - rho_a) * (d.from_elevation_m + d.to_elevation_m);
+            let dr = r.direction([0., 0., 0., d.speed_m_s, d.length_m])?;
+            action[n.flow_row(c.edge)] += ddrive - dr.loss_pa;
+            action[c.fluid_work_cell] -= dr.fluid_wall_work_w;
+            energy_rate += dr.fluid_wall_work_w;
+        }
+        if action.iter().any(|v| !v.is_finite()) || !energy_rate.is_finite() {
+            return Err("Nonfinite moving network chain".into());
+        }
+        Ok(energy_rate)
     }
     /// Aggregate installed-energy RATE tangent, saved before any cj shift.
     /// Uses the existing independently assembled sparse energy rows, not an
@@ -1223,6 +1540,20 @@ impl Workspace {
         ports: &[LiquidPort],
         prhr_input: Option<crate::prhr::Input>,
     ) -> Result<(), String> {
+        self.evaluate_with_motion(n, y, yp, cj, ports, prhr_input, None)
+    }
+    /// One current network evaluation. Motion changes the existing finite
+    /// inventory chart and physical connection laws, never EOS pressure datums.
+    pub fn evaluate_with_motion(
+        &mut self,
+        n: &Network,
+        y: &[f64],
+        yp: &[f64],
+        cj: Option<f64>,
+        ports: &[LiquidPort],
+        prhr_input: Option<crate::prhr::Input>,
+        motion: Option<MotionGeometry<'_>>,
+    ) -> Result<(), String> {
         self.energy_rate_valid = false;
         self.chart_valid = false;
         match (&n.prhr, prhr_input) {
@@ -1270,6 +1601,59 @@ impl Workspace {
         self.residual.fill(0.);
         self.jacobian_values.fill(0.);
         self.mass_rates.fill(0.);
+        self.shape_mass_rates.fill(0.);
+        self.shape_pressure_work_w.fill(0.);
+        self.shape_rate_partials.fill([0.; 2]);
+        self.moving_by_edge.fill(None);
+        self.moving_connections.clear();
+        self.moving_responses.clear();
+        if let Some(m) = motion {
+            if m.water.len() != nw
+                || m.water.iter().any(|s| {
+                    s.volume_m3 <= 0.
+                        || [
+                            s.volume_m3,
+                            s.first_moment_m4,
+                            s.volume_rate_m3_s,
+                            s.first_moment_rate_m4_s,
+                        ]
+                        .iter()
+                        .any(|v| !v.is_finite())
+                })
+            {
+                return Err("Invalid current moving water shape".into());
+            }
+            self.water_shapes.copy_from_slice(m.water);
+            for (i, c) in m.connections.iter().enumerate() {
+                if c.edge >= n.config.hydraulic.len()
+                    || self.moving_by_edge[c.edge].is_some()
+                    || c.fluid_work_cell >= nw
+                    || ![
+                        n.config.hydraulic[c.edge].from,
+                        n.config.hydraulic[c.edge].to,
+                    ]
+                    .contains(&c.fluid_work_cell)
+                    || [c.from_elevation_m, c.to_elevation_m]
+                        .iter()
+                        .any(|v| !v.is_finite())
+                    || n.config.seat.is_some_and(|s| s.edge == c.edge)
+                {
+                    return Err("Invalid or duplicate moving hydraulic incidence".into());
+                }
+                self.moving_by_edge[c.edge] = Some(i);
+                self.moving_connections.push(*c);
+                self.moving_responses
+                    .push(moving_hydraulic::Response::default());
+            }
+        } else {
+            for (s, w) in self.water_shapes.iter_mut().zip(&n.config.water) {
+                *s = WaterShape {
+                    volume_m3: w.geometry.volume,
+                    first_moment_m4: w.geometry.volume * w.geometry.elevation,
+                    ..WaterShape::default()
+                };
+            }
+        }
         self.heat_entropy_production = 0.;
         self.film_nusselt.fill(0.);
         self.film_raw_prandtl_ratio.fill(0.);
@@ -1295,11 +1679,40 @@ impl Workspace {
         for i in 0..nw {
             let l = self.liquids[i];
             let q = self.queries[i];
-            self.chart_mass[i] = n.config.water[i].geometry.volume * l.density;
-            self.chart_energy[i] = self.chart_mass[i]
-                * (l.internal_energy + GRAVITY * n.config.water[i].geometry.elevation);
-            (self.chart_derivatives[i], self.redistribution[i]) =
-                chart(n.config.water[i], l, q.pressure, q.temperature)?;
+            if motion.is_some() {
+                let s = self.water_shapes[i];
+                let c = moving_chart::inventory_chart(
+                    CellGeometry {
+                        volume: s.volume_m3,
+                        elevation: s.first_moment_m4 / s.volume_m3,
+                    },
+                    moving_chart::ShapeDirection {
+                        volume_m2: s.volume_rate_m3_s,
+                        first_moment_m3: s.first_moment_rate_m4_s,
+                    },
+                    l,
+                    q.pressure,
+                    q.temperature,
+                )?;
+                self.chart_mass[i] = c.mass_kg;
+                self.chart_energy[i] = c.energy_j;
+                self.chart_derivatives[i] = c.thermal_partials;
+                self.redistribution[i] = [c.redistribution[0], c.redistribution[1]];
+                self.shape_mass_rates[i] = c.redistribution[2];
+                let phead = q.pressure
+                    + n.relative_pressure(i, y)
+                    + GRAVITY * l.density * n.config.water[i].geometry.elevation;
+                let work =
+                    -phead * s.volume_rate_m3_s + GRAVITY * l.density * s.first_moment_rate_m4_s;
+                self.shape_pressure_work_w[i] = work;
+                self.rates[i] += work;
+            } else {
+                self.chart_mass[i] = n.config.water[i].geometry.volume * l.density;
+                self.chart_energy[i] = self.chart_mass[i]
+                    * (l.internal_energy + GRAVITY * n.config.water[i].geometry.elevation);
+                (self.chart_derivatives[i], self.redistribution[i]) =
+                    chart(n.config.water[i], l, q.pressure, q.temperature)?;
+            }
         }
         if cj.is_some() {
             for i in 0..nw {
@@ -1327,6 +1740,7 @@ impl Workspace {
             liquid_batch(&self.probe_queries, &mut self.probes)
                 .map_err(|e| format!("Local coefficient probe {}: {}", e.index, e.message))?;
             for i in 0..nw {
+                let l = self.liquids[i];
                 let dp =
                     self.probe_queries[4 * i].pressure - self.probe_queries[4 * i + 1].pressure;
                 let dt = self.probe_queries[4 * i + 2].temperature
@@ -1334,13 +1748,19 @@ impl Workspace {
                 let mut ab = [[0.; 2]; 4];
                 for (k, out) in ab.iter_mut().enumerate() {
                     let q = self.probe_queries[4 * i + k];
-                    *out = chart(
-                        n.config.water[i],
-                        self.probes[4 * i + k],
-                        q.pressure,
-                        q.temperature,
-                    )?
-                    .1;
+                    let s = self.water_shapes[i];
+                    let water = Water {
+                        geometry: CellGeometry {
+                            volume: s.volume_m3,
+                            elevation: if motion.is_some() {
+                                s.first_moment_m4 / s.volume_m3
+                            } else {
+                                n.config.water[i].geometry.elevation
+                            },
+                        },
+                        ..n.config.water[i]
+                    };
+                    *out = chart(water, self.probes[4 * i + k], q.pressure, q.temperature)?.1;
                 }
                 let [a, b, c, d] = [
                     self.probes[4 * i],
@@ -1360,6 +1780,39 @@ impl Workspace {
                     (a.cp - b.cp) / dp,
                     (c.cp - d.cp) / dt,
                 ];
+                if motion.is_some() {
+                    let s = self.water_shapes[i];
+                    let shape_rate = |liquid: Liquid, b: f64| {
+                        liquid.density * s.volume_rate_m3_s
+                            - b * liquid.density
+                                * (liquid.internal_energy * s.volume_rate_m3_s
+                                    + GRAVITY * s.first_moment_rate_m4_s)
+                    };
+                    self.shape_rate_partials[i] = [
+                        (shape_rate(a, ab[0][1]) - shape_rate(b, ab[1][1])) / dp,
+                        (shape_rate(c, ab[2][1]) - shape_rate(d, ab[3][1])) / dt,
+                    ];
+                    let v = s.volume_rate_m3_s;
+                    let j = s.first_moment_rate_m4_s;
+                    let pressure_work_partial = |drho: f64, dp: f64| {
+                        -v * dp + GRAVITY * drho * (j - n.config.water[i].geometry.elevation * v)
+                    };
+                    self.add(
+                        n,
+                        i,
+                        pcol,
+                        -pressure_work_partial(l.density * l.compressibility, 1.),
+                    );
+                    self.add(
+                        n,
+                        i,
+                        n.temperature_row(i),
+                        -pressure_work_partial(-l.density * l.expansion, 0.),
+                    );
+                    if let Some(col) = n.mechanical_row(i) {
+                        self.add(n, i, col, v);
+                    }
+                }
             }
         }
         for (edge, e) in n.config.hydraulic.iter().enumerate() {
@@ -1372,9 +1825,50 @@ impl Workspace {
             let mu = (self.liquids[e.from].viscosity + self.liquids[e.to].viscosity) * 0.5;
             // P cancels exactly: do not subtract two large total pressures to
             // obtain a near-rest mechanical head.
-            let (drive, _) = n.hydraulic_drive(edge, y, &self.liquids)?;
-            let loss = e.pressure_loss(q, rho, mu);
-            if !loss.iter().all(|x| x.is_finite()) || loss[1] <= 0. {
+            let moving = self.moving_by_edge[edge].map(|i| (i, self.moving_connections[i]));
+            let (from_z, to_z) = moving.map_or((e.from_elevation, e.to_elevation), |(_, c)| {
+                (c.from_elevation_m, c.to_elevation_m)
+            });
+            if moving.is_some()
+                && [(e.from, from_z), (e.to, to_z)]
+                    .into_iter()
+                    .any(|(node, z)| {
+                        let p = n.mechanical_pressure(node, y)
+                            + self.liquids[node].density
+                                * GRAVITY
+                                * (n.config.water[node].geometry.elevation - z);
+                        !p.is_finite() || p <= 0.
+                    })
+            {
+                return Err(format!(
+                    "Moving connection lost positive actual port pressure {edge}"
+                ));
+            }
+            let (drive, _) = n.hydraulic_drive_at(edge, from_z, to_z, y, &self.liquids)?;
+            let loss = if let Some((i, c)) = moving {
+                let response = c.law.evaluate(q, rho, mu)?;
+                self.moving_responses[i] = response;
+                self.rates[c.fluid_work_cell] += response.fluid_wall_work_w;
+                [
+                    response.loss_pa,
+                    response.loss_partials[0],
+                    response.loss_partials[2],
+                    response.loss_partials[1],
+                ]
+            } else {
+                e.pressure_loss(q, rho, mu)
+            };
+            let actual_mouth_only = e
+                .segments
+                .iter()
+                .all(|s| s.length == 0. && s.fixed_loss > 0.);
+            if !loss.iter().all(|x| x.is_finite())
+                || loss[1] < 0.
+                || (loss[1] == 0.
+                    && !actual_mouth_only
+                    && !moving
+                        .is_some_and(|(_, c)| matches!(c.law, moving_hydraulic::Law::Clear { .. })))
+            {
                 return Err(format!("Invalid forward hydraulic loss {edge}"));
             }
             let inverse = seat.map(|s| s.flow(e, drive, a, rho, mu)).transpose()?;
@@ -1393,11 +1887,9 @@ impl Workspace {
                 self.rates[n.marker_row(recipient)] += s * q * c;
             }
             if cj.is_some() {
-                let dz = e.to_elevation - e.from_elevation;
-                let ga = GRAVITY
-                    * (n.config.water[e.from].geometry.elevation - e.from_elevation - 0.5 * dz);
-                let gb =
-                    GRAVITY * (e.to_elevation - n.config.water[e.to].geometry.elevation - 0.5 * dz);
+                let dz = to_z - from_z;
+                let ga = GRAVITY * (n.config.water[e.from].geometry.elevation - from_z - 0.5 * dz);
+                let gb = GRAVITY * (to_z - n.config.water[e.to].geometry.elevation - 0.5 * dz);
                 self.add(n, row, row, if inverse.is_some() { 1. } else { -loss[1] });
                 let mut gp = 0.;
                 for (node, s, gravity) in [(e.from, 1., ga), (e.to, -1., gb)] {
@@ -1418,12 +1910,35 @@ impl Workspace {
                     };
                     gp += property_partial(rp, d[0]);
                     self.add(n, row, n.temperature_row(node), property_partial(rt, d[1]));
+                    if let Some((i, c)) = moving {
+                        let partial = self.moving_responses[i].fluid_wall_work_partials;
+                        self.add(
+                            n,
+                            c.fluid_work_cell,
+                            pcol,
+                            -partial[1] * rp - partial[2] * d[0] * 0.5,
+                        );
+                        self.add(
+                            n,
+                            c.fluid_work_cell,
+                            n.temperature_row(node),
+                            -partial[1] * rt - partial[2] * d[1] * 0.5,
+                        );
+                    }
                     if let Some(col) = n.mechanical_row(node) {
                         self.add(n, row, col, s * inverse.map_or(1., |v| -v[1]));
                     }
                     if let Some(r) = n.mechanical_row(node) {
                         self.add(n, r, row, s);
                     }
+                }
+                if let Some((i, c)) = moving {
+                    self.add(
+                        n,
+                        c.fluid_work_cell,
+                        row,
+                        -self.moving_responses[i].fluid_wall_work_partials[0],
+                    );
                 }
                 self.add(n, row, pcol, gp);
                 for (recipient, s) in [(e.from, 1.), (e.to, -1.)] {
@@ -1619,21 +2134,22 @@ impl Workspace {
         if let Some(input) = prhr_input {
             self.evaluate_prhr(n, y, yp, cj, input)?;
         }
-        self.residual[pcol] = y[n.total_mass_row()] - self.chart_mass.iter().sum::<f64>();
+        self.residual[pcol] = mass_chart_residual(y[n.total_mass_row()], &self.chart_mass);
         let sum_a: f64 = self.redistribution.iter().map(|x| x[0]).sum();
         if !sum_a.is_finite() || sum_a <= 0. {
             return Err("Singular aggregate pressure chart".into());
         }
         self.pressure_rate = (yp[n.total_mass_row()]
             - (0..nw)
-                .map(|i| self.redistribution[i][1] * yp[i])
+                .map(|i| self.redistribution[i][1] * yp[i] + self.shape_mass_rates[i])
                 .sum::<f64>())
             / sum_a;
         for i in 0..nw {
             self.residual[n.temperature_row(i)] = y[i] - self.chart_energy[i];
             if let Some(row) = n.mechanical_row(i) {
                 let [a, b] = self.redistribution[i];
-                self.residual[row] = a * self.pressure_rate + b * yp[i] - self.mass_rates[i];
+                self.residual[row] = a * self.pressure_rate + b * yp[i] + self.shape_mass_rates[i]
+                    - self.mass_rates[i];
             }
             if cj.is_some() {
                 let [mp, mt, ep, et] = self.chart_derivatives[i];
@@ -1650,6 +2166,7 @@ impl Workspace {
                 .map(|j| {
                     self.local_derivatives[j][6] * yp[j]
                         + self.pressure_rate * self.local_derivatives[j][4]
+                        + self.shape_rate_partials[j][0]
                 })
                 .sum::<f64>()
                 / sum_a;
@@ -1661,14 +2178,20 @@ impl Workspace {
                     n,
                     row,
                     pcol,
-                    d[4] * self.pressure_rate + d[6] * yp[i] + a * dp_rate,
+                    d[4] * self.pressure_rate
+                        + d[6] * yp[i]
+                        + self.shape_rate_partials[i][0]
+                        + a * dp_rate,
                 );
                 self.add(n, row, n.total_mass_row(), cj * a / sum_a);
                 for j in 0..nw {
                     let dj = self.local_derivatives[j];
-                    let dt_rate = -(dj[7] * yp[j] + self.pressure_rate * dj[5]) / sum_a;
+                    let dt_rate = -(dj[7] * yp[j]
+                        + self.pressure_rate * dj[5]
+                        + self.shape_rate_partials[j][1])
+                        / sum_a;
                     let local = if i == j {
-                        d[5] * self.pressure_rate + d[7] * yp[i]
+                        d[5] * self.pressure_rate + d[7] * yp[i] + self.shape_rate_partials[i][1]
                     } else {
                         0.
                     };
@@ -1726,6 +2249,7 @@ impl Workspace {
         }
         self.energy_rate_valid = cj.is_some();
         self.chart_state.copy_from_slice(y);
+        self.chart_rates.copy_from_slice(yp);
         self.chart_valid = true;
         Ok(())
     }
@@ -1870,6 +2394,30 @@ mod sensible_tests {
     use super::*;
 
     #[test]
+    fn aggregate_mass_chart_retains_signed_multi_owner_defect() {
+        // Exact integer reference: all terms and their true sum are f64
+        // representable, but summing the positive owners first loses 96 kg.
+        // The physical chart has one total owner in both fixed and moving
+        // networks; neither owner ordering nor a large common stock may hide
+        // the actual small signed defect.
+        let base = 2_f64.powi(53);
+        let mut owners = vec![1.; 97];
+        owners[0] = base;
+        let total = base + 96.;
+        assert_eq!(total - owners.iter().sum::<f64>(), 96.);
+        assert_eq!(mass_chart_residual(total, &owners), 0.);
+        assert_eq!(mass_chart_residual(total + 2., &owners), 2.);
+        owners.reverse();
+        assert_eq!(mass_chart_residual(total, &owners), 0.);
+        assert_eq!(mass_chart_residual(total - 2., &owners), -2.);
+        // A moving boundary transfers material between finite owners without
+        // changing their aggregate. Keep that same small chart defect.
+        owners[0] += 0.25;
+        owners[1] -= 0.25;
+        assert_eq!(mass_chart_residual(total + 2., &owners), 2.);
+    }
+
+    #[test]
     fn zero_contrast_has_exact_selected_floor_tangent_not_a_cross_branch_secant() {
         let mut requests = 0;
         let ((q, nu, _), d) = sensible_with_partials(
@@ -1940,7 +2488,7 @@ mod sensible_tests {
                     )
                     .unwrap()
                     .0
-                     .0;
+                    .0;
                     let lo = sensible_with_partials(
                         300000.,
                         t,
@@ -1954,7 +2502,7 @@ mod sensible_tests {
                     )
                     .unwrap()
                     .0
-                     .0;
+                    .0;
                     let fd = (hi - lo) / (hi_wall - lo_wall);
                     assert!(
                         (fd - d[2]).abs() <= 1e-5 * fd.abs().max(d[2].abs()),

@@ -3,8 +3,8 @@
 //! Inputs are an already evaluated CURRENT network workspace; composed callers
 //! supply the actual exchanged-energy expectation, never claim a closed bath.
 use crate::{
-    operating_network::{Network, Workspace},
     GRAVITY,
+    operating_network::{Network, Workspace},
 };
 
 pub const CHART_PRESSURE_LIMIT_PA: f64 = 5.;
@@ -175,7 +175,11 @@ pub struct Diagnostics {
     pub head_roundoff_to_flow_band: f64,
     pub reynolds: f64,
     pub reynolds_edge: usize,
+    /// Net-current bulk speed. This is not a moving-wall profile bound.
     pub speed: f64,
+    pub moving_wall_speed: f64,
+    /// Conservative peak for the selected concentric moving annulus only.
+    pub moving_profile_speed_bound: f64,
     pub kinetic_temperature: f64,
     pub dynamic_head: f64,
     pub omitted_kinetic_energy: f64,
@@ -237,6 +241,7 @@ pub fn weights(
     horizon: f64,
     factor: f64,
 ) -> Result<Weights, String> {
+    w.check_current_chart(n, y)?;
     if y.len() != n.dimension()
         || y.iter().any(|v| !v.is_finite())
         || w.liquids.len() != n.config().water.len()
@@ -254,7 +259,7 @@ pub fn weights(
     let ns = n.config().solids.len();
     let mut absolute = vec![0.; n.dimension()];
     for i in 0..nw {
-        absolute[n.energy_row(i)] = n.mass(i, w.liquids[i]) * w.liquids[i].cp * 1e-3 * factor;
+        absolute[n.energy_row(i)] = w.chart_mass[i] * w.liquids[i].cp * 1e-3 * factor;
         absolute[n.marker_row(i)] = 1e-8 * factor;
         absolute[n.temperature_row(i)] = 1e-3 * factor;
         if let Some(row) = n.mechanical_row(i) {
@@ -318,7 +323,7 @@ pub fn weights(
             [e.from, e.to]
                 .iter()
                 .map(|&i| {
-                    n.mass(i, w.liquids[i]) * w.liquids[i].cp * 1e-3 * factor
+                    w.chart_mass[i] * w.liquids[i].cp * 1e-3 * factor
                         / (horizon * degrees[i] as f64 * flow_contrast)
                 })
                 .fold(f64::INFINITY, f64::min)
@@ -440,9 +445,8 @@ pub fn screen(
     for (edge, (e, &q)) in n.config().hydraulic.iter().zip(&w.mass_flows).enumerate() {
         let rho = (w.liquids[e.from].density + w.liquids[e.to].density) * 0.5;
         let mu = (w.liquids[e.from].viscosity + w.liquids[e.to].viscosity) * 0.5;
-        let (_, arithmetic_scale) = n.hydraulic_drive(edge, y, &w.liquids)?;
+        let (_, arithmetic_scale) = w.current_hydraulic_drive(n, edge)?;
         let noise = 8. * f64::EPSILON * arithmetic_scale;
-        let loss = e.pressure_loss(q, rho, mu);
         let seat = n.config().seat.filter(|s| s.edge == edge);
         if seat.is_some() {
             let ratio = seat_flow_ratio(n, w, y, flow_atol[edge])?;
@@ -455,25 +459,73 @@ pub fn screen(
             // Pressure-law diagnostics retain pressure units. The selected
             // restriction's inverse equation above instead has flow units.
             let defect = -w.residual[n.flow_row(edge)];
-            let band = loss[1] * flow_atol[edge];
-            d.held_head_ratio =
-                d.held_head_ratio
-                    .max(held_head_ratio(defect, loss[1], flow_atol[edge])?);
+            let band = w.hydraulic_diagnostic_band(n, edge, flow_atol[edge])?;
+            d.held_head_ratio = d.held_head_ratio.max(defect.abs() / band);
             d.head_roundoff_to_flow_band = d.head_roundoff_to_flow_band.max(noise / band);
             d.flow_law_residual = d.flow_law_residual.max(defect.abs());
         }
-        for segment in &e.segments {
-            let v = q.abs() / (rho * segment.flow_area);
-            let re = q.abs() * segment.diameter / (segment.flow_area * mu);
+        let moving = w.moving_connection(edge)?;
+        let current_geometry = moving.map(|c| match c.law {
+            crate::operating_network::moving_hydraulic::Law::Clear {
+                outer_radius_m: r,
+                length_m: l,
+                multiplicity: k,
+                ..
+            } => (l, k as f64 * std::f64::consts::PI * r * r, 2. * r),
+            crate::operating_network::moving_hydraulic::Law::Annulus { geometry: g, .. } => (
+                g.length_m,
+                g.multiplicity as f64
+                    * std::f64::consts::PI
+                    * (g.outer_radius_m - g.inner_radius_m)
+                    * (g.outer_radius_m + g.inner_radius_m),
+                2. * (g.outer_radius_m - g.inner_radius_m),
+            ),
+        });
+        let static_geometry = e
+            .segments
+            .iter()
+            .map(|s| (s.length, s.flow_area, s.diameter));
+        for (length, area, diameter) in static_geometry
+            .take(if moving.is_some() { 0 } else { usize::MAX })
+            .chain(current_geometry)
+        {
+            let v = q.abs() / (rho * area);
+            let re = q.abs() * diameter / (area * mu);
             if re > d.reynolds {
                 d.reynolds = re;
                 d.reynolds_edge = edge;
             }
             d.speed = d.speed.max(v);
+            let peak = match moving.map(|c| c.law) {
+                Some(crate::operating_network::moving_hydraulic::Law::Annulus {
+                    speed_m_s,
+                    ..
+                }) => {
+                    // Couette speed and its mean are bounded by |wall v|.
+                    // Concentric pressure-driven annular peak/mean is <=2.
+                    // Decomposing the actual net mean therefore bounds the
+                    // whole profile by 2*|mean|+3*|wall v|, including q=0
+                    // counterflow. This is NOT a bound for other geometries.
+                    let bound = 2. * v + 3. * speed_m_s.abs();
+                    d.moving_wall_speed = d.moving_wall_speed.max(speed_m_s.abs());
+                    d.moving_profile_speed_bound = d.moving_profile_speed_bound.max(bound);
+                    bound
+                }
+                _ => v,
+            };
             let cp = w.liquids[e.from].cp.min(w.liquids[e.to].cp);
-            d.kinetic_temperature = d.kinetic_temperature.max(v * v / (2. * cp));
-            d.dynamic_head = d.dynamic_head.max(rho * v * v / 2.);
-            d.omitted_kinetic_energy += segment.length / segment.flow_area * q * q / (2. * rho);
+            d.kinetic_temperature = d.kinetic_temperature.max(peak * peak / (2. * cp));
+            d.dynamic_head = d.dynamic_head.max(rho * peak * peak / 2.);
+            d.omitted_kinetic_energy += if moving.is_some_and(|c| {
+                matches!(
+                    c.law,
+                    crate::operating_network::moving_hydraulic::Law::Annulus { .. }
+                )
+            }) {
+                0.5 * rho * area * length * peak * peak
+            } else {
+                length / area * q * q / (2. * rho)
+            };
         }
     }
     if d.kinetic_temperature > 1e-3 || d.dynamic_head > 100. {

@@ -58,6 +58,26 @@ pub struct Model {
     original_temperature: Vec<f64>,
     owner: Arc<()>,
 }
+/// Borrowed, same-trial geometry. This introduces no second water, material,
+/// energy or time owner. The caller prepares it from the actual mechanical
+/// coordinates on the model's immutable reachable incidence union.
+pub struct CurrentGeometry<'a> {
+    pub source: &'a se::Geometry,
+    pub contacts: &'a [ag::ContactGeometry],
+    pub mobile: &'a mc::Geometry,
+    pub barrel_chords_m: &'a [f64],
+    pub network: on::MotionGeometry<'a>,
+}
+/// Signed geometry action on the selected physical branches. Shape-rate
+/// directions include both position and velocity contributions.
+pub struct GeometryDirection<'a> {
+    pub source: &'a se::Geometry,
+    pub contacts: &'a [ag::ContactGeometry],
+    pub mobile: &'a mc::Geometry,
+    pub barrel_chords_m: &'a [f64],
+    pub water: &'a [on::WaterShape],
+    pub connections: &'a [on::MovingConnectionDirection],
+}
 pub struct Workspace {
     pub source: se::Workspace,
     pub network: on::Workspace,
@@ -93,6 +113,7 @@ pub struct Workspace {
     jacobian_cj: Option<f64>,
     owner: Arc<()>,
     valid: bool,
+    current_geometry: bool,
     energy_rate_balance: f64,
     energy_rate_tangent: Option<f64>,
     hot_liquid: crate::Liquid,
@@ -317,7 +338,12 @@ impl Model {
         let absorber_guide = ag::Model::new(&source, nw, absorber_guide)?;
         let mobile_capture = mc::Model::new(
             &source,
-            mc::CladRecipients {node_count:thermal.node_count(),rows:(0..thermal.band_count()).flat_map(|b|thermal.clad_rows(b)).collect()},
+            mc::CladRecipients {
+                node_count: thermal.node_count(),
+                rows: (0..thermal.band_count())
+                    .flat_map(|b| thermal.clad_rows(b))
+                    .collect(),
+            },
             nw,
             absorber_guide.host_count(),
             mobile_capture,
@@ -517,6 +543,7 @@ impl Model {
             jacobian_cj: None,
             owner: self.owner.clone(),
             valid: false,
+            current_geometry: false,
             energy_rate_balance: 0.,
             energy_rate_tangent: None,
             hot_liquid: crate::Liquid::default(),
@@ -579,7 +606,30 @@ impl Model {
         w: &mut Workspace,
         input: Option<crate::prhr::Input>,
     ) -> Result<(), String> {
+        self.evaluate_current(y, yp, cj, w, input, None)
+    }
+    pub fn evaluate_with_current_geometry(
+        &self,
+        y: &[f64],
+        yp: &[f64],
+        cj: Option<f64>,
+        w: &mut Workspace,
+        input: Option<crate::prhr::Input>,
+        geometry: CurrentGeometry<'_>,
+    ) -> Result<(), String> {
+        self.evaluate_current(y, yp, cj, w, input, Some(geometry))
+    }
+    fn evaluate_current(
+        &self,
+        y: &[f64],
+        yp: &[f64],
+        cj: Option<f64>,
+        w: &mut Workspace,
+        input: Option<crate::prhr::Input>,
+        geometry: Option<CurrentGeometry<'_>>,
+    ) -> Result<(), String> {
         w.valid = false;
+        w.current_geometry = false;
         w.jacobian_cj = None;
         w.energy_rate_tangent = None;
         w.pool_port = None;
@@ -590,6 +640,21 @@ impl Model {
             || cj.is_some_and(|c| !c.is_finite() || c < 0.)
         {
             return Err("Invalid composed cold trial/workspace".into());
+        }
+        if let Some(g) = &geometry {
+            if g.network.water.len() != self.carrier.cells()
+                || g.source.external_water_volumes.len() != self.carrier.cells()
+                || g.network
+                    .water
+                    .iter()
+                    .zip(&g.source.external_water_volumes)
+                    .any(|(a, b)| a.volume_m3.to_bits() != b.to_bits())
+            {
+                return Err(
+                    "Current SOURCE and coolant must share exactly the same water owners/volumes"
+                        .into(),
+                );
+            }
         }
         let l = self.layout;
         let yn = &y[l.network_start..l.carrier_start];
@@ -632,7 +697,12 @@ impl Model {
             cj,
             &mut w.pressurizer,
         )?;
-        let mass = self.network.mass(primary, w.hot_liquid);
+        // The surge port keeps its fixed physical pressure datum. Its donor
+        // concentration uses the current owned inventory, not ORIGINAL V.
+        let mass = geometry.as_ref().map_or_else(
+            || self.network.mass(primary, w.hot_liquid),
+            |g| g.network.water[primary].volume_m3 * w.hot_liquid.density,
+        );
         let (material, _) = self.pressure_material(
             y,
             None,
@@ -643,7 +713,7 @@ impl Model {
             [receipts.mass[0], -receipts.mass[1]],
         )?;
         w.pressure_material_rates = material;
-        w.network.evaluate_with_inputs(
+        w.network.evaluate_with_motion(
             &self.network,
             yn,
             &yp[l.network_start..l.carrier_start],
@@ -655,6 +725,7 @@ impl Model {
                 marker_rate: (material[1] + material[2]) / p.atoms_per_marker,
             }],
             input,
+            geometry.as_ref().map(|g| g.network),
         )?;
         for i in 0..self.carrier.cells() {
             w.mass[i] = w.network.chart_mass[i];
@@ -683,15 +754,27 @@ impl Model {
                 saturation_temperature_k: w.water[i].saturation_temperature_k,
             };
         }
-        self.carrier
-            .stocks_into(&w.mass, &w.products, &mut w.stocks)?;
+        if let Some(g) = &geometry {
+            self.carrier.stocks_with_volumes_into(
+                &w.mass,
+                &w.products,
+                &g.source.external_water_volumes,
+                &mut w.stocks,
+            )?;
+        } else {
+            self.carrier
+                .stocks_into(&w.mass, &w.products, &mut w.stocks)?;
+        }
         for (t, &r) in w.fuel_temperature.iter_mut().zip(&self.fuel_rows) {
             *t = y[l.temperatures_start + r];
         }
-        self.source.evaluate_coupled_into(
+        self.source.evaluate_with_geometry_into(
             &y[..l.source_end],
             &w.fuel_temperature,
             &w.stocks,
+            geometry
+                .as_ref()
+                .map_or(self.source.prepared_geometry(), |g| g.source),
             &mut w.source,
         )?;
         w.deposited.fill(0.);
@@ -700,10 +783,13 @@ impl Model {
         }
         self.capture
             .evaluate(w.source.fuel_capture_events()?, &w.density, &mut w.capture)?;
-        self.mobile_capture.evaluate(
+        self.mobile_capture.evaluate_with_geometry(
             &self.source,
             w.source.water_birth_events()?,
             &w.density,
+            geometry
+                .as_ref()
+                .map_or(self.mobile_capture.geometry(), |g| g.mobile),
             &mut w.mobile_capture,
         )?;
         for (&r, &q) in self.fuel_rows.iter().zip(w.capture.fuel_heat()?) {
@@ -734,18 +820,22 @@ impl Model {
         let mn = self.source.mn_targets()[b.mn_owner];
         let target_captures = w.source.target_captures()?;
         let captures = b.targets.map(|t| target_captures[t]);
-        self.barrel.evaluate(
+        self.barrel.evaluate_with_chords(
             y[l.barrel_temperature],
             &captures,
             mn.decay_rate * y[self.source.target_row(mn.target)],
             &w.barrel_water,
+            geometry.as_ref().map_or(self.barrel.chords(), |g| g.barrel_chords_m),
             &mut w.barrel,
         )?;
-        self.absorber_guide.evaluate(
+        self.absorber_guide.evaluate_with_geometry(
             &y[l.absorber_guide_temperatures_start..l.absorber_guide_exported],
             &w.source,
             &y[..l.source_end],
             &w.barrel_water,
+            geometry
+                .as_ref()
+                .map_or(self.absorber_guide.geometry(), |g| g.contacts),
             &mut w.absorber_guide,
         )?;
         self.carrier.rates_into(
@@ -910,20 +1000,51 @@ impl Model {
         }
         w.state.copy_from_slice(y);
         w.jacobian_cj = cj;
+        w.current_geometry = geometry.is_some();
         w.valid = true;
         Ok(())
     }
     /// Complete residual Jacobian action, including externally owned source
     /// columns. Same selected upwind/heat branches throughout one linear solve.
     pub fn jvp(&self, dy: &[f64], cj: f64, w: &mut Workspace) -> Result<(), String> {
+        self.jvp_current(dy, cj, w, None)
+    }
+    pub fn jvp_with_current_geometry(
+        &self,
+        dy: &[f64],
+        cj: f64,
+        w: &mut Workspace,
+        geometry: GeometryDirection<'_>,
+    ) -> Result<(), String> {
+        self.jvp_current(dy, cj, w, Some(geometry))
+    }
+    fn jvp_current(
+        &self,
+        dy: &[f64],
+        cj: f64,
+        w: &mut Workspace,
+        geometry: Option<GeometryDirection<'_>>,
+    ) -> Result<(), String> {
         w.energy_rate_tangent = None;
         if !Arc::ptr_eq(&self.owner, &w.owner)
             || !w.valid
             || w.jacobian_cj != Some(cj)
             || dy.len() != self.dimension()
             || dy.iter().any(|v| !v.is_finite())
+            || w.current_geometry != geometry.is_some()
         {
             return Err("Composed JVP requires current evaluated trial and matching cj".into());
+        }
+        if let Some(g) = &geometry {
+            if g.water.len() != self.carrier.cells()
+                || g.source.external_water_volumes.len() != self.carrier.cells()
+                || g.water
+                    .iter()
+                    .zip(&g.source.external_water_volumes)
+                    .any(|(a, b)| a.volume_m3.to_bits() != b.to_bits())
+            {
+                return Err("Current SOURCE and coolant directions must share the same water owners/volumes".into());
+            }
         }
         let l = self.layout;
         let dn = &dy[l.network_start..l.carrier_start];
@@ -932,6 +1053,9 @@ impl Model {
             let dt = dn[self.network.temperature_row(i)];
             let d = w.network.chart_derivatives[i];
             w.dmass[i] = d[0] * dp + d[1] * dt;
+            if let Some(g) = &geometry {
+                w.dmass[i] += w.network.liquids[i].density * g.water[i].volume_m3;
+            }
             w.dproducts[i] = wc::Amounts {
                 hydrogen: dy[l.carrier_start + wc::WIDTH * i],
                 boron10: dy[l.carrier_start + wc::WIDTH * i + 1],
@@ -956,17 +1080,36 @@ impl Model {
         for (e, dq) in w.dflows.iter_mut().enumerate() {
             *dq = dn[self.network.flow_row(e)];
         }
-        self.carrier
-            .stock_jvp_into(&w.dmass, &w.dproducts, &mut w.dstocks)?;
+        if let Some(g) = &geometry {
+            self.carrier.stock_jvp_with_volumes_into(
+                &w.dmass,
+                &w.dproducts,
+                &g.source.external_water_volumes,
+                &mut w.dstocks,
+            )?;
+        } else {
+            self.carrier
+                .stock_jvp_into(&w.dmass, &w.dproducts, &mut w.dstocks)?;
+        }
         for (t, &r) in w.dfuel_temperature.iter_mut().zip(&self.fuel_rows) {
             *t = dy[l.temperatures_start + r];
         }
-        self.source.jvp_coupled_into(
-            &dy[..l.source_end],
-            &w.dfuel_temperature,
-            &w.dstocks,
-            &mut w.source,
-        )?;
+        if let Some(g) = &geometry {
+            self.source.jvp_with_geometry_into(
+                &dy[..l.source_end],
+                &w.dfuel_temperature,
+                &w.dstocks,
+                g.source,
+                &mut w.source,
+            )?;
+        } else {
+            self.source.jvp_coupled_into(
+                &dy[..l.source_end],
+                &w.dfuel_temperature,
+                &w.dstocks,
+                &mut w.source,
+            )?;
+        }
         w.ddeposited.fill(0.);
         for (&r, &q) in self.fuel_rows.iter().zip(w.source.fuel_deposition_jvp()?) {
             w.ddeposited[r] = q;
@@ -976,11 +1119,20 @@ impl Model {
             &w.ddensity,
             &mut w.capture,
         )?;
-        self.mobile_capture.jvp(
-            w.source.water_birth_event_jvp()?,
-            &w.ddensity,
-            &mut w.mobile_capture,
-        )?;
+        if let Some(g) = &geometry {
+            self.mobile_capture.jvp_with_geometry_direction(
+                w.source.water_birth_event_jvp()?,
+                &w.ddensity,
+                g.mobile,
+                &mut w.mobile_capture,
+            )?;
+        } else {
+            self.mobile_capture.jvp(
+                w.source.water_birth_event_jvp()?,
+                &w.ddensity,
+                &mut w.mobile_capture,
+            )?;
+        }
         for (&r, &q) in self.fuel_rows.iter().zip(w.capture.fuel_heat_jvp()?) {
             w.ddeposited[r] += q;
         }
@@ -1004,6 +1156,16 @@ impl Model {
         let mn = self.source.mn_targets()[b.mn_owner];
         let target_captures = w.source.target_capture_jvp()?;
         let captures = b.targets.map(|t| target_captures[t]);
+        if let Some(g) = &geometry {
+            self.barrel.jvp_with_chord_direction(
+                dy[l.barrel_temperature],
+                &captures,
+                mn.decay_rate * dy[self.source.target_row(mn.target)],
+                &w.dbarrel_water,
+                g.barrel_chords_m,
+                &mut w.barrel,
+            )?;
+        } else {
         self.barrel.jvp(
             dy[l.barrel_temperature],
             &captures,
@@ -1011,13 +1173,25 @@ impl Model {
             &w.dbarrel_water,
             &mut w.barrel,
         )?;
-        self.absorber_guide.jvp(
-            &dy[l.absorber_guide_temperatures_start..l.absorber_guide_exported],
-            &w.source,
-            &dy[..l.source_end],
-            &w.dbarrel_water,
-            &mut w.absorber_guide,
-        )?;
+        }
+        if let Some(g) = &geometry {
+            self.absorber_guide.jvp_with_geometry_direction(
+                &dy[l.absorber_guide_temperatures_start..l.absorber_guide_exported],
+                &w.source,
+                &dy[..l.source_end],
+                &w.dbarrel_water,
+                g.contacts,
+                &mut w.absorber_guide,
+            )?;
+        } else {
+            self.absorber_guide.jvp(
+                &dy[l.absorber_guide_temperatures_start..l.absorber_guide_exported],
+                &w.source,
+                &dy[..l.source_end],
+                &w.dbarrel_water,
+                &mut w.absorber_guide,
+            )?;
+        }
         self.carrier.jvp_into(
             &w.mass,
             &w.products,
@@ -1081,6 +1255,16 @@ impl Model {
                     w.network.jacobian_values[k] * direction;
             }
         }
+        let geometry_energy_tangent = if let Some(g) = &geometry {
+            w.network.add_motion_jvp(
+                &self.network,
+                g.water,
+                g.connections,
+                &mut w.jvp[l.network_start..l.carrier_start],
+            )?
+        } else {
+            0.
+        };
         self.network.add_port_jvp(
             &[on::LiquidPort {
                 cell: primary,
@@ -1153,85 +1337,87 @@ impl Model {
             return Err("Nonfinite composed JVP".into());
         }
         let balance = compensated(
-            std::iter::once(w.network.energy_rate_jvp(&self.network, dn)?)
-                .chain(
-                    self.network
-                        .prhr()
-                        .into_iter()
-                        .flat_map(|p| p.receipt_rows())
-                        .map(|(r, s)| s * (cj * dn[r] - w.jvp[l.network_start + r])),
-                )
-                .chain(w.thermal.wall_jvp()?.iter().copied())
-                .chain(w.thermal.heat_jvp()?.iter().copied())
-                .chain(w.barrel.water_heat_jvp()?.iter().copied())
-                .chain(w.capture.water_heat_jvp()?.iter().copied())
-                .chain(w.mobile_capture.direction()?.water.iter().copied())
-                .chain(w.mobile_capture.direction()?.host.iter().copied())
-                .chain(w.absorber_guide.direction.host.iter().copied())
-                .chain(w.absorber_guide.direction.water.iter().copied())
-                .chain([w.absorber_guide.direction.exported])
-                .chain(
-                    self.absorber_guide
-                        .paid_rows()
-                        .map(|(r, q)| -q * w.source.rate_jvp().expect("successful source JVP")[r]),
-                )
-                .chain([
-                    w.mobile_capture.direction()?.barrel,
-                    w.mobile_capture.direction()?.exported,
-                    w.mobile_capture.direction()?.boundary_exported,
-                ])
-                .chain(
-                    self.mobile_capture
-                        .paid_energy()
-                        .into_iter()
-                        .enumerate()
-                        .map(|(species, q)| {
-                            let product = if species == 0 { 0 } else { 2 };
-                            -q * compensated(
-                                w.product_jvp
-                                    .iter()
-                                    .map(|r| r.values()[product])
-                                    .chain([
-                                        material_tangent[3 + product],
-                                        material_tangent[6 + product],
-                                    ])
-                                    .chain((species == 0).then_some(material_tangent[9])),
-                            )
-                        }),
-                )
-                .chain(
-                    self.capture_paid_rows()
-                        .map(|(r, q)| -q * w.source.rate_jvp().expect("successful source JVP")[r]),
-                )
-                .chain([w.capture.export_jvp()?])
-                .chain([
-                    w.barrel.heat_jvp()?,
-                    -w.barrel.emitted_jvp()?,
-                    w.barrel.export_jvp()?,
-                ])
-                .chain(std::iter::once(
-                    -w.source.rate_jvp()?[self.source.fuel_release_row()],
-                ))
-                .chain([
-                    -line_tangent.energy[0],
-                    line_tangent.energy[0],
-                    line_tangent.energy[1],
-                    line_tangent.wall_heat,
-                    -line_tangent.wall_heat - line_tangent.ambient_heat,
-                ])
-                .chain(std::iter::once(
-                    self.pressure_connection
-                        .pressurizer
-                        .complete_energy_rate_jvp(
-                            &w.pressurizer,
-                            array(&dy[l.pressurizer_start..l.surge_start]),
-                            cp::Balance {
-                                mass: -line_tangent.mass[1],
-                                energy: -line_tangent.energy[1],
-                            },
-                        )?,
-                ))
-                .chain([phase_tangent[cp::DIAGNOSTIC_AMBIENT_HEAT] + line_tangent.ambient_heat]),
+            std::iter::once(
+                w.network.energy_rate_jvp(&self.network, dn)? + geometry_energy_tangent,
+            )
+            .chain(
+                self.network
+                    .prhr()
+                    .into_iter()
+                    .flat_map(|p| p.receipt_rows())
+                    .map(|(r, s)| s * (cj * dn[r] - w.jvp[l.network_start + r])),
+            )
+            .chain(w.thermal.wall_jvp()?.iter().copied())
+            .chain(w.thermal.heat_jvp()?.iter().copied())
+            .chain(w.barrel.water_heat_jvp()?.iter().copied())
+            .chain(w.capture.water_heat_jvp()?.iter().copied())
+            .chain(w.mobile_capture.direction()?.water.iter().copied())
+            .chain(w.mobile_capture.direction()?.host.iter().copied())
+            .chain(w.absorber_guide.direction.host.iter().copied())
+            .chain(w.absorber_guide.direction.water.iter().copied())
+            .chain([w.absorber_guide.direction.exported])
+            .chain(
+                self.absorber_guide
+                    .paid_rows()
+                    .map(|(r, q)| -q * w.source.rate_jvp().expect("successful source JVP")[r]),
+            )
+            .chain([
+                w.mobile_capture.direction()?.barrel,
+                w.mobile_capture.direction()?.exported,
+                w.mobile_capture.direction()?.boundary_exported,
+            ])
+            .chain(
+                self.mobile_capture
+                    .paid_energy()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(species, q)| {
+                        let product = if species == 0 { 0 } else { 2 };
+                        -q * compensated(
+                            w.product_jvp
+                                .iter()
+                                .map(|r| r.values()[product])
+                                .chain([
+                                    material_tangent[3 + product],
+                                    material_tangent[6 + product],
+                                ])
+                                .chain((species == 0).then_some(material_tangent[9])),
+                        )
+                    }),
+            )
+            .chain(
+                self.capture_paid_rows()
+                    .map(|(r, q)| -q * w.source.rate_jvp().expect("successful source JVP")[r]),
+            )
+            .chain([w.capture.export_jvp()?])
+            .chain([
+                w.barrel.heat_jvp()?,
+                -w.barrel.emitted_jvp()?,
+                w.barrel.export_jvp()?,
+            ])
+            .chain(std::iter::once(
+                -w.source.rate_jvp()?[self.source.fuel_release_row()],
+            ))
+            .chain([
+                -line_tangent.energy[0],
+                line_tangent.energy[0],
+                line_tangent.energy[1],
+                line_tangent.wall_heat,
+                -line_tangent.wall_heat - line_tangent.ambient_heat,
+            ])
+            .chain(std::iter::once(
+                self.pressure_connection
+                    .pressurizer
+                    .complete_energy_rate_jvp(
+                        &w.pressurizer,
+                        array(&dy[l.pressurizer_start..l.surge_start]),
+                        cp::Balance {
+                            mass: -line_tangent.mass[1],
+                            energy: -line_tangent.energy[1],
+                        },
+                    )?,
+            ))
+            .chain([phase_tangent[cp::DIAGNOSTIC_AMBIENT_HEAT] + line_tangent.ambient_heat]),
         );
         if !balance.is_finite() {
             return Err("Nonfinite composed energy-rate tangent".into());

@@ -8,6 +8,7 @@ import {compileSourceFaces} from './reference-design-source-faces'
 import {compileOriginalPassiveGeometry} from './reference-design-source-passive'
 import {compileCylinderInputs} from './reference-design-source-cylinder'
 import {parseNuclearObservation} from './reference-design-nuclear-observation'
+import {parseColdBarrelSelection} from './reference-design-source-barrel'
 
 const wiki=process.env.LEITBILD_REFERENCE_WIKI
 describe.skipIf(!wiki)('one actual current control/source geometry view',()=>{
@@ -17,7 +18,7 @@ describe.skipIf(!wiki)('one actual current control/source geometry view',()=>{
  beforeAll(async()=>{
   const read=(path:string)=>readFileSync(join(wiki!,path),'utf8'),d=parsePrimaryWaterInputs(primaryWaterOwnerFiles.map(read)),
    text=read('systems/reactor/configuration-source-and-history.md')
-  p=await compileFuelCooling(wiki!)
+  p=await compileFuelCooling(wiki!,{prhr:true})
   passive=compileOriginalPassiveGeometry(p.material.partition,d,p.material.result,
    compileSourceFaces(p.material.partition,d.gates,[0,0]).faces,text)
   cylinder=compileCylinderInputs(p.material.partition,d,p.material.result,passive,
@@ -27,6 +28,8 @@ describe.skipIf(!wiki)('one actual current control/source geometry view',()=>{
   original=controlSourceMotionAt(plan,poses)
  },30_000)
  test('ORIGINAL split preserves all geometry, material identities and physical stocks once',()=>{
+  expect(p.network.water).toHaveLength(47)
+  expect(plan.water).toHaveLength(98)
   expect(plan.guideCells).toHaveLength(52)
   expect(plan.water).toHaveLength(p.network.water.length+51)
   expect(plan.oldWaterToNew[plan.oldPooledBody]).toBeNull()
@@ -38,10 +41,23 @@ describe.skipIf(!wiki)('one actual current control/source geometry view',()=>{
   for(const r of cylinder.intersections)expect(cylinderActual.get(r.target+'/'+r.region)).toBeCloseTo(r.share,11)
   expect(plan.immutable.stockIds).toEqual(passive.stocks.map(s=>s.id))
   expect(plan.immutable.targetIds).toEqual(cylinder.targets.map(t=>t.id))
+  expect(original.barrelChords_m).toEqual(p.barrel.contacts.map(c=>c.liquid_chord_m))
   for(const cell of plan.guideCells){
    const rows=plan.waterRows.map((r,i)=>({r,i})).filter(q=>q.r.cell===cell)
    expect(rows.reduce((s,q)=>s+original.source.moderatorVolumes[q.i]!,0)).toBeCloseTo(original.water[cell]!.volume_m3,12)
    expect(rows.reduce((s,q)=>s+original.source.moderatorVolumes[q.i]!/original.source.externalWaterVolumes[cell]!,0)).toBeCloseTo(1,12)
+  }
+  for(const [i,w]of p.network.water.entries())if(i!==plan.oldPooledBody){
+   const current=plan.oldWaterToNew[i]!
+   expect(plan.water[current!]).toEqual(w)
+   expect(original.water[current!]).toEqual({volume_m3:w.volume_m3,moment_m4:w.volume_m3*w.elevation_m})
+  }
+  expect(plan.guideBindings).toHaveLength(52)
+  for(const b of plan.guideBindings){
+   expect(plan.hydraulic[b.lowerEdge]!.from).toBe(plan.lower)
+   expect(plan.hydraulic[b.lowerEdge]!.to).toBe(b.cell)
+   expect(plan.hydraulic[b.upperEdge]!.from).toBe(b.cell)
+   expect(plan.hydraulic[b.upperEdge]!.to).toBe(plan.upper)
   }
  })
  test('synthetic nonuniform current consumers change without touching any physical history',()=>{
@@ -54,6 +70,7 @@ describe.skipIf(!wiki)('one actual current control/source geometry view',()=>{
   expect(current.mobile.path_shares).not.toEqual(original.mobile.path_shares)
   expect(current.mobile.liquid_chords_m).not.toEqual(original.mobile.liquid_chords_m)
   expect(current.water).not.toEqual(original.water)
+  expect(current.barrelChords_m).not.toEqual(original.barrelChords_m)
   expect(JSON.stringify([passive.stocks,p.material.result,cylinder.targets,p.absorberGuide.hosts])).toBe(before)
   expect(controlSourceMotionAt(plan,poses)).toEqual(original)
   expect(current.water.reduce((s,w)=>s+w.volume_m3,0)).toBeCloseTo(original.water.reduce((s,w)=>s+w.volume_m3,0),10)
@@ -91,6 +108,28 @@ describe.skipIf(!wiki)('one actual current control/source geometry view',()=>{
    compare(plus.contacts.map(q=>q[field]),minus.contacts.map(q=>q[field]),value.contactDirection.map(q=>q[field]))
   for(const field of ['volume_m3','moment_m4'] as const)
    compare(plus.water.map(q=>q[field]),minus.water.map(q=>q[field]),value.waterDirection.map(q=>q[field]))
+  compare(plus.barrelChords_m,minus.barrelChords_m,value.barrelChordDirection_m)
+ })
+ test('barrel retains its selected reduced-cylinder path with an independently derived moving upper chord',()=>{
+  const read=(path:string)=>readFileSync(join(wiki!,path),'utf8'),
+   selected=parseColdBarrelSelection(read('systems/reactor/configuration-source-and-history.md'),
+    read('systems/primary-coolant/heater-equipment.md')).selection.liquidEnvelopes['UPPER.EXTERNAL'],
+   index=p.barrel.contacts.findIndex(c=>c.owner==='UPPER.EXTERNAL'),upper=p.barrel.contacts[index]!,
+   displacement=.004,speedDirection=.02,
+   current=controlSourceMotionAt(plan,poses.map(p=>({...p,body_y_m:displacement,contact:'offseat'})),
+    poses.map(()=>({body:speedDirection,stem:0}))),
+   V=upper.photonVolume_m3-plan.d.control.clusters*plan.bodyA*displacement,
+   crossSection=selected.crossSection_m2,radius=Math.sqrt(crossSection/Math.PI),
+   A=2*Math.PI*radius*(V/crossSection)+2*crossSection,
+   dV=-plan.d.control.clusters*plan.bodyA*speedDirection,
+   expectedDerivative=4*(A-V*2/radius)/(A*A)*dV
+  expect(current.barrelChords_m[index]!).toBeCloseTo(4*V/A,13)
+  expect(current.barrelChordDirection_m[index]!).toBeCloseTo(expectedDerivative,13)
+  for(const i of [0,1,2,4]){
+   expect(Object.is(current.barrelChords_m[i],original.barrelChords_m[i])).toBe(true)
+   expect(current.barrelChordDirection_m[i]).toBe(0)
+  }
+  expect(current.barrelChords_m[index]).not.toBe(current.envelope.find(e=>e.id==='UPPER.EXTERNAL')!.chord_m)
  })
  test('seated and offseat boundary are explicit and preserve identical volume while changing real contact topology',()=>{
   const off=controlSourceMotionAt(plan,poses.map(p=>({...p,contact:'offseat'}))),

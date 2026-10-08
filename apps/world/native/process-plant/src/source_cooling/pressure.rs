@@ -229,13 +229,19 @@ impl Model {
         ),
         String,
     > {
-        self.pressure_tangent_by(|r| dy[r], cj, w)
+        self.pressure_tangent_by(
+            |r| dy[r],
+            cj,
+            w,
+            Some(w.dmass[self.pressure_connection.primary_cell]),
+        )
     }
     fn pressure_tangent_by(
         &self,
         at: impl Fn(usize) -> f64,
         cj: f64,
         w: &Workspace,
+        primary_mass_direction: Option<f64>,
     ) -> Result<
         (
             [f64; cp::STATES],
@@ -303,7 +309,7 @@ impl Model {
             &w.state,
             &at,
             w.mass[cell],
-            d[0] * dp + d[1] * dt,
+            primary_mass_direction.unwrap_or(d[0] * dp + d[1] * dt),
             w.pressurizer.diagnostics()?,
             Some(&phase),
             [w.surge.receipts()?.mass[0], -w.surge.receipts()?.mass[1]],
@@ -537,7 +543,7 @@ impl Model {
         // no whole-state direction vector, EOS call or source JVP is formed.
         for col in columns {
             let (pool, line, receipt, phase, material) =
-                self.pressure_tangent_by(|r| if r == col { 1. } else { 0. }, cj, w)?;
+                self.pressure_tangent_by(|r| if r == col { 1. } else { 0. }, cj, w, None)?;
             for (r, &v) in pool.iter().enumerate() {
                 emit(l.pressurizer_start + r, col, v);
             }

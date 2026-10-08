@@ -9,12 +9,14 @@ import type {SourceRegion} from './reference-design-source-partition'
 
 // Actual-owner evidence is optional in a standalone checkout. Nothing reads a
 // sibling repository at import time, and skipped tests invent no physical input.
-const wiki=process.env.LEITBILD_REFERENCE_WIKI,evidence=process.env.LEITBILD_REFERENCE_EVIDENCE
+const wiki=process.env.LEITBILD_REFERENCE_WIKI,evidence=process.env.LEITBILD_REFERENCE_EVIDENCE,
+ waterReceipt=process.env.LEITBILD_REFERENCE_ORIGINAL_WATER_RECEIPT
 function actual(){
+ if(!waterReceipt)throw Error('Set LEITBILD_REFERENCE_ORIGINAL_WATER_RECEIPT to the current admitted ORIGINAL preparation')
  const read=(p:string)=>readFileSync(p,'utf8'),partitionText=read(join(evidence!,'2026-10-05/operating-source-fixed-partition.json')),partition=JSON.parse(partitionText),
   fine=compileSourceEvolution(partitionText,
    read(join(evidence!,'2026-10-05/operating-source-cold-material-incidence.json')),
-   read(join(evidence!,'2026-10-06/source-primary-original-water-coordinate-corrected.json')),
+   read(waterReceipt),
    new Map(sourceEvolutionOwnerFiles.map(p=>[p,read(join(wiki!,p))])),
    JSON.parse(read(join(evidence!,'2026-10-06/source-composed-cylinder-converter-1.json.artifacts/material.json'))).receiving.property)
  return {partitionText,partition:partition as {result:{regions:SourceRegion[]}},fine,coarse:compileReceivingResolution(fine,partitionText)}

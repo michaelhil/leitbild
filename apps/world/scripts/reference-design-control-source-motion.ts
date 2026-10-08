@@ -9,12 +9,14 @@ import {axialIntervalOverlap,compileControlMaterialMotion,controlMaterialMotionA
 import {circleRectangleArcs} from './reference-design-source-faces'
 import {diskRectangleArea,type SourceRegion} from './reference-design-source-partition'
 import type {parsePrimaryWaterInputs} from './reference-design-source-water'
-import type {compileFuelCooling} from './reference-design-fuel-cooling'
+import {nativeFuelCoolingFixture,type compileFuelCooling} from './reference-design-fuel-cooling'
+import {nativeOperatingNetworkFrame} from './reference-design-operating-network'
 import type {compileOriginalPassiveGeometry} from './reference-design-source-passive'
 import type {compileCylinderInputs} from './reference-design-source-cylinder'
 import type {compileSourceEvolution} from './reference-design-source-evolution'
 import {nativeAbsorberGuideFrame} from './reference-design-absorber-guide'
 import {nativeMobileCaptureFrame} from './reference-design-mobile-capture'
+import {createHash} from 'node:crypto'
 
 type Input=ReturnType<typeof parsePrimaryWaterInputs>
 type Cooling=Awaited<ReturnType<typeof compileFuelCooling>>
@@ -221,14 +223,74 @@ export function compileControlSourceMotion(d:Input,p:Cooling,passive:Passive,cyl
  const originIndexes=new Map(origins.map((o,i)=>[o.id,i])),routes=patches.map((q,i)=>({region:q.region,water:q.cell,
   wall_origin:originIndexes.get(q.origin.startsWith('Core.')?'ACTIVE.EXTERNAL':q.origin)!,patch:i,row:rowIndex.get(q.region+'/'+q.cell)!}))
  if(routes.some(q=>q.wall_origin===undefined))throw Error('Current birth route has no physical photon origin')
+ const guideBindings=guideCells.map((cell,cluster)=>{
+  const incoming=hydraulic.map((e,edge)=>({e,edge})).filter(q=>q.e.to===cell),
+   outgoing=hydraulic.map((e,edge)=>({e,edge})).filter(q=>q.e.from===cell)
+  if(incoming.length!==1||outgoing.length!==1||incoming[0]!.e.from!==lower||outgoing[0]!.e.to!==upper)
+   throw Error('Current guide does not have one actual LOWER/UPPER pair')
+  return {cluster,cell,lowerEdge:incoming[0]!.edge,upperEdge:outgoing[0]!.edge,
+   originalLowerEdge:incoming[0]!.e.original,originalUpperEdge:outgoing[0]!.e.original}
+ })
  return {d,partition,motion,water,oldWaterToNew,oldPooledBody:oldBody,guideCells,guideIds,clusterFA,
-  hydraulic,upper,lower,passiveRows,cylinderRows,patches,waterRows,contactPlans,origins,routes,intruders,
+  hydraulic,guideBindings,upper,lower,passiveRows,cylinderRows,patches,waterRows,contactPlans,origins,routes,intruders,
+  barrelPaths:p.barrel.contacts.map(c=>{const i=originIndexes.get(c.owner.startsWith('Core.')?'ACTIVE.EXTERNAL':c.owner)
+   if(i===undefined)throw Error('Current barrel contact lost physical photon origin')
+   return {origin:i,originalVolume:c.photonVolume_m3,originalBoundary:c.photonBoundary_m2,
+    boundaryVolumeSlope:c.photonBoundaryVolumeSlope_m_inv}}),
   maximumBodyPose_m,maximumStemPose_m,bottom,top,activeTop:h.seatedBottom_m+h.bottomFittingLength_m+f.activeLength_m,guideA,bodyA,annulus,
   immutable:{stockIds:passive.stocks.map(s=>s.id),targetIds:cylinder.targets.map(t=>t.id),
    hostIds:p.absorberGuide.hosts.map(h=>h.id),regionIds:partition.regions.map(r=>r.id)},
   scope:'Current cold fullywet control geometry/source and thermal coefficients only. No source or coolant advancement, accepted trajectory, neutronic stem/spider/apparatus material closure, hot/phase motion or live installation.'}
 }
 export type ControlSourceMotion=ReturnType<typeof compileControlSourceMotion>
+
+/** Replace the one pooled ORIGINAL owner before preparing the SAME connected
+ * cooling model. Every other water/solid/flow identity is remapped explicitly;
+ * in particular PRHR cells with no SOURCE overlap are still physical stocks. */
+export function nativeMovingFuelCoolingFixture(plan:ControlSourceMotion,p:Cooling,source:ReturnType<typeof compileSourceEvolution>){
+ requireControlSourceIdentity(plan,source,p)
+ if(p.network.water.length!==plan.oldWaterToNew.length||p.network.water[plan.oldPooledBody]?.id!=='GUIDE.BODY'
+  ||p.network.water.some((w,i)=>i!==plan.oldPooledBody&&plan.water[plan.oldWaterToNew[i]!]!.id!==w.id))
+  throw Error('Current cooling network identity/order mismatch')
+ const original=controlSourceMotionAt(plan,plan.motion.clusters.map(c=>({clusterId:c.id,body_y_m:0,stem_y_m:0,
+  side:'increasing',stem_side:'increasing',contact:'seated'}))),oldWaterCount=p.network.water.length,
+  water=(index:number)=>{const n=plan.oldWaterToNew[index];if(n===null||n===undefined)
+   throw Error('Current cooling recipient still refers to pooled guide BODY');return n},
+  node=(index:number)=>index<oldWaterCount?water(index):index-oldWaterCount+plan.water.length,
+  edge=(index:number)=>{const candidates=plan.hydraulic.map((e,i)=>({e,i})).filter(q=>q.e.original===index)
+   if(candidates.length!==1)throw Error('Current cooling recipient needs an explicit split hydraulic binding');return candidates[0]!.i},
+  network={...p.network,water:plan.water,hydraulic:plan.hydraulic,heat:p.network.heat.map(h=>h.kind===0?
+   {...h,from:node(h.from),to:node(h.to)}:{...h,from:node(h.from),to:node(h.to),hydraulicEdge:edge(h.hydraulicEdge)})},
+  represented=plan.water.map(()=>0),rows=plan.waterRows.map((r,i)=>{
+   const volume_m3=original.source.moderatorVolumes[i]!;represented[r.cell]!+=volume_m3
+   return {...r,volume_m3,sourceRegionId:plan.partition.regions[r.region]!.id,cellId:plan.water[r.cell]!.id}
+  }),primary={...p.primary,rows,cells:plan.water.map((w,i)=>({id:w.id,totalVolume_m3:w.volume_m3,
+   representedVolume_m3:represented[i]!,outsideSourceVolume_m3:w.volume_m3-represented[i]!})),
+   birthPatches:plan.patches.map((r,i)=>({...r,volume_m3:original.patchVolumes[i]!,
+    sourceRegionId:plan.partition.regions[r.region]!.id,cellId:plan.water[r.cell]!.id,birth_share:original.mobile.birth_shares[i]!}))},
+  prhr=p.prhr?{...p.prhr,seat:{...p.prhr.seat,edge:edge(p.prhr.seat.edge)},
+   liquid:p.prhr.liquid.map(c=>({...c,water:water(c.water),flow_edge:edge(c.flow_edge)})),
+   axial:p.prhr.axial.map(c=>({...c,from:water(c.from),to:water(c.to)})),
+   mixing:p.prhr.mixing.map(c=>({...c,from:water(c.from),to:water(c.to),sg_water:water(c.sg_water),sg_flow_edge:edge(c.sg_flow_edge)}))}:undefined,
+  nativeInput=nativeOperatingNetworkFrame(network),
+  remapped={...p,network:{...network,nativeInput,nativeInputSha256:createHash('sha256').update(nativeInput).digest('hex')},primary,prhr,
+   thermal:{...p.thermal,bands:p.thermal.bands.map(b=>({...b,water:water(b.water),flowEdge:edge(b.flowEdge)}))},
+   pressure:{...p.pressure,primary:water(p.pressure.primary)},
+   barrel:{...p.barrel,contacts:p.barrel.contacts.map(c=>({...c,water_index:water(c.water_index)}))},
+   capture:{...p.capture,bands:p.capture.bands.map(b=>({...b,water_index:water(b.water_index)}))}},
+  contacts=plan.contactPlans.map((c,i)=>({host:c.host,water:c.water,...original.contacts[i]!})),
+  wall_origins=plan.origins.map((o,i)=>({unrepresented_wall_share:original.mobile.boundary_shares[i]!,
+   paths:o.paths.map(path=>({share:0,stages:path.stages.map(s=>({...s,mu:[...s.mu] as [number,number]}))}))}))
+ let path=0,wall=0
+ for(const origin of wall_origins)for(const p of origin.paths){p.share=original.mobile.path_shares[path++]!
+  for(const s of p.stages)s.thickness_m=original.mobile.wall_thicknesses_m[wall++]!}
+ const mobile={water_mu:p.mobileCapture.water_mu,wall_origins,routes:plan.routes.map((r,i)=>({region:r.region,water:r.water,
+  wall_origin:r.wall_origin,birth_share:original.mobile.birth_shares[i]!,liquid_chord_m:original.mobile.liquid_chords_m[i]!}))}
+ return {fixture:nativeFuelCoolingFixture(remapped,source,{contacts,mobile}),prepared:remapped,original,
+  passive:plan.passiveRows.map((r,i)=>({stock:r.stock,region:r.region,volume:original.source.passiveVolumes[i]!})),
+  cylinder:plan.cylinderRows.map((r,i)=>({target:r.target,region:r.region,share:original.source.cylinderShares[i]!})),
+  guideBindings:plan.guideBindings,oldWaterToNew:plan.oldWaterToNew}
+}
 
 /** Evaluate once at an explicit attained pose/physical contact branch. Signed
  * derivatives use exactly that branch and immutable row/recipient identities.
@@ -326,12 +388,17 @@ export function controlSourceMotionAt(plan:ControlSourceMotion,poses:readonly Co
    return {area,solid:C(q.solid),chord:envelope[index]!.chord}
   }),birthShares=plan.routes.map((q,i)=>div(patchValues[i]!,rowVolumes[q.row]!)),
   liquidChords=plan.routes.map(q=>envelope[q.wall_origin]!.chord),
-  wallThickness=plan.origins.flatMap(o=>o.paths.flatMap(path=>path.stages.map(w=>C(w.thickness_m))))
+  wallThickness=plan.origins.flatMap(o=>o.paths.flatMap(path=>path.stages.map(w=>C(w.thickness_m)))),
+  barrelChords=plan.barrelPaths.map(p=>{
+   const delta=originChanges.get(plan.origins[p.origin]!.id)?.V??C(0),
+    V=add(C(p.originalVolume),delta),A=add(C(p.originalBoundary),scale(delta,p.boundaryVolumeSlope))
+   return div(scale(V,4),A)
+  })
  if([...water.flatMap(q=>[q.V,q.J]),...material,...cylinders,...rowVolumes,...birthShares,
-  ...liquidChords,...pathShares,...boundaryShares,...contacts.flatMap(q=>[q.area,q.solid,q.chord])].some(q=>!q.every(Number.isFinite))
+  ...liquidChords,...pathShares,...boundaryShares,...barrelChords,...contacts.flatMap(q=>[q.area,q.solid,q.chord])].some(q=>!q.every(Number.isFinite))
   ||water.some(q=>q.V[0]<=0)||rowVolumes.some(q=>q[0]<=0)
   ||rowVolumes.some((q,i)=>q[0]>water[plan.waterRows[i]!.cell]!.V[0])
-  ||[...pathShares,...birthShares,...boundaryShares].some(q=>q[0]<0||q[0]>1))
+  ||barrelChords.some(q=>q[0]<=0)||[...pathShares,...birthShares,...boundaryShares].some(q=>q[0]<0||q[0]>1))
   throw Error('Current control/source geometric admission failed')
  const values=(a:readonly D[])=>a.map(q=>q[0]),derivatives=(a:readonly D[])=>a.map(q=>q[1]),
   source={passiveVolumes:values(material),cylinderShares:values(cylinders),moderatorVolumes:values(rowVolumes),externalWaterVolumes:water.map(q=>q.V[0])},
@@ -343,6 +410,7 @@ export function controlSourceMotionAt(plan:ControlSourceMotion,poses:readonly Co
  return {source,sourceDirection,mobile:mobile(false),mobileDirection:mobile(true),
   contacts:contacts.map(q=>({area_m2:q.area[0],solid_geometry_m_inv:q.solid[0],liquid_chord_m:q.chord[0]})),
   contactDirection:contacts.map(q=>({area_m2:q.area[1],solid_geometry_m_inv:q.solid[1],liquid_chord_m:q.chord[1]})),
+  barrelChords_m:values(barrelChords),barrelChordDirection_m:derivatives(barrelChords),
   water:water.map(q=>({volume_m3:q.V[0],moment_m4:q.J[0]})),
   waterDirection:water.map(q=>({volume_m3:q.V[1],moment_m4:q.J[1]})),
   envelope:envelope.map((e,i)=>({id:plan.origins[i]!.id,volume_m3:e.V[0],boundary_m2:e.A[0],chord_m:e.chord[0]})),
@@ -351,6 +419,62 @@ export function controlSourceMotionAt(plan:ControlSourceMotion,poses:readonly Co
 }
 
 export type ControlSourceStage=ReturnType<typeof controlSourceMotionAt>
+
+/** Immutable physical support for the native evaluator. All expensive planar
+ * intersections are already prepared; native stages only clip axial supports
+ * and contract the selected physical formulas. No evaluated pose or history is
+ * serialized here. Enum tags are a strict internal wire, not an expression DSL. */
+export function nativeControlSourcePlan(plan:ControlSourceMotion){
+ const {d}=plan,c=d.control,fields:number[]=[],count=(n:number)=>fields.push(n),
+  array=(a:readonly number[])=>fields.push(a.length,...a)
+ fields.push(c.clusters,plan.maximumBodyPose_m,plan.maximumStemPose_m,plan.bottom,plan.top,
+  c.insertedActiveBottom_m,c.activeLength_m,plan.activeTop,c.headBottom_m,c.housingTop_m,c.neckTop_m,
+  c.rodletsPerCluster,d.handling.guideInnerDiameter_m/2,c.bodyDiameter_m/2,plan.guideA,plan.bodyA)
+ count(plan.water.length);fields.push(...plan.water.flatMap(w=>[w.volume_m3,w.volume_m3*w.elevation_m]),plan.upper)
+ array(plan.guideCells)
+ count(plan.passiveRows.length)
+ for(const r of plan.passiveRows){fields.push(r.volume,r.geometryRow<0?0:1)
+  if(r.geometryRow>=0){const m=plan.motion.rows[r.geometryRow]!;fields.push(m.cluster,0,m.lo,m.hi,m.spans.length,
+   ...m.spans.flatMap(s=>[s.lo,s.hi,s.area]))}}
+ count(plan.cylinderRows.length)
+ for(const r of plan.cylinderRows){fields.push(r.original,r.cluster<0?0:1)
+  if(r.cluster>=0)fields.push(r.cluster,r.lo,r.hi,r.arc/(c.rodletsPerCluster*2*Math.PI*(c.absorberDiameter_m/2)*c.activeLength_m))}
+ count(plan.intruders.length);fields.push(...plan.intruders.flatMap(q=>[q.cluster,q.motion==='body'?0:1,q.lo,q.hi,q.area]))
+ count(plan.patches.length)
+ for(const p of plan.patches){fields.push(p.original)
+  if(p.guide)fields.push(2,p.guide.cluster,p.guide.outerArea,p.guide.bodyArea,p.guide.lo,p.guide.hi)
+  else if(p.origin==='UPPER.EXTERNAL')fields.push(1)
+  else if(p.housing){fields.push(3,p.housing.length,...p.housing.flatMap(q=>[q.intruder,q.area,q.lo,q.hi]))}
+  else fields.push(0)
+ }
+ array(plan.waterRows.map(r=>r.cell))
+ count(plan.routes.length);fields.push(...plan.routes.flatMap(r=>[r.patch,r.row,r.wall_origin]))
+ count(plan.origins.length)
+ for(const o of plan.origins){
+  const kind={fixed:0,lower:1,upper:2,guide:3,housing:4}[o.kind]
+  fields.push(kind,o.originalVolume,o.originalBoundary)
+  if(o.kind==='guide')fields.push(o.cluster!)
+  if(o.kind==='housing')fields.push(o.id==='HOUSING.MAIN'?1:2,o.radius!,o.length!)
+  count(o.paths.length)
+  for(const p of o.paths){const r=p.role
+   if(r.kind==='fixed')fields.push(0,r.area)
+   else if(r.kind==='side')fields.push(1,r.cluster,{active:0,lower:1,upper:2}[r.material],r.inside?1:0)
+   else fields.push(2,r.cluster,r.end==='top'?1:0,{LOWER:0,GUIDE:1,UPPER:2}[r.recipient])
+   array(p.stages.map(s=>s.thickness_m))
+  }
+ }
+ const originIndexes=new Map(plan.origins.map((o,i)=>[o.id,i]))
+ count(plan.contactPlans.length)
+ for(const q of plan.contactPlans){const origin=originIndexes.get(q.origin.startsWith('Core.')?'ACTIVE.EXTERNAL':q.origin)
+  if(origin===undefined)throw Error('Native geometry contact lost physical origin')
+  fields.push({fixed:0,'guide-side':1,'upper-side':2,'bottom-lower':3,'bottom-guide':4,'top-upper':5}[q.role],
+   q.cluster<0?0:q.cluster,origin,q.area,q.solid)
+ }
+ count(plan.barrelPaths.length)
+ fields.push(...plan.barrelPaths.flatMap(p=>[p.origin,p.originalVolume,p.originalBoundary,p.boundaryVolumeSlope]))
+ if(fields.some(v=>!Number.isFinite(v)))throw Error('Nonfinite native current-geometry support plan')
+ return fields
+}
 /** One strict internal numeric stage: source, finite BODY/guide contacts,
  * mobile-photon geometry and native-liquid V/J; then the same signed shape.
  * This supplies coefficients only, never an initialized/rebuilt SOURCE. */
@@ -380,8 +504,7 @@ export function nativeControlSourceStage(stage:ControlSourceStage){
  * and the once-only ORIGINAL guide-water split. Cases are unaccepted numeric
  * stage evaluations with unchanged SOURCE history, not trajectory admission.
  * The native probe retains one Model across all frames, including restoration. */
-export function nativeControlSourceFixture(plan:ControlSourceMotion,source:ReturnType<typeof compileSourceEvolution>,
- p:Cooling,cases:readonly ControlSourceStage[]){
+function requireControlSourceIdentity(plan:ControlSourceMotion,source:ReturnType<typeof compileSourceEvolution>,p:Cooling){
  const same=(a:readonly string[],b:readonly string[])=>a.length===b.length&&a.every((id,i)=>id===b[i]),
   original=source.material.materialPayload,
   identities=source.material.nativeInputs.fuel.identities
@@ -390,6 +513,10 @@ export function nativeControlSourceFixture(plan:ControlSourceMotion,source:Retur
   ||!same(original.cylinder.targets.map(t=>t.id),plan.immutable.targetIds)
   ||!same(identities.cohorts,p.material.result.cohorts.filter(c=>c.material==='fuel').map(c=>c.id)))
   throw Error('Current SOURCE fixture physical identity/order mismatch')
+}
+export function nativeControlSourceFixture(plan:ControlSourceMotion,source:ReturnType<typeof compileSourceEvolution>,
+ p:Cooling,cases:readonly ControlSourceStage[]){
+ requireControlSourceIdentity(plan,source,p)
  const poses:ControlSourcePose[]=plan.motion.clusters.map(c=>({clusterId:c.id,body_y_m:0,stem_y_m:0,
   side:'increasing',stem_side:'increasing',contact:'seated'})),originalStage=controlSourceMotionAt(plan,poses),
   closed=source.material.materialPayload.receiving.nativeOwners.map(o=>{

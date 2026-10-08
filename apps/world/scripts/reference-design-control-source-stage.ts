@@ -21,8 +21,8 @@ async function refuseOverwrite(path:string){
  throw Error('Refusing to overwrite current SOURCE evidence '+path)
 }
 export async function controlSourceNativeIdentities(){
- const root=resolve(import.meta.dir,'../native/process-plant'),paths=['Cargo.toml','Cargo.lock','build.rs','examples/control-source-stage.rs']
- for(const pattern of ['src/**/*.{rs,cpp,c,h}','qualification/**/*.rs'])for await(const path of new Bun.Glob(pattern).scan({cwd:root}))paths.push(path)
+ const root=resolve(import.meta.dir,'../native/process-plant'),paths=['Cargo.toml','Cargo.lock','build.rs']
+ for(const pattern of ['src/**/*.{rs,cpp,c,h}','qualification/**/*.rs','examples/**/*.rs'])for await(const path of new Bun.Glob(pattern).scan({cwd:root}))paths.push(path)
  return Promise.all(paths.sort().map(async path=>({path,sha256:sha(await Bun.file(join(root,path)).bytes())})))
 }
 

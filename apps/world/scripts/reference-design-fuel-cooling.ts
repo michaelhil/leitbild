@@ -159,7 +159,9 @@ export function compilePrimaryIncidence(network:Pick<Network,'water'>,partition:
  * description. The old source frame supplies unchanged non-water laws/history;
  * the reader REPLACES primary ownership/incidence, never retains its old rows. */
 export function nativeFuelCoolingFixture(p:Awaited<ReturnType<typeof compileFuelCooling>>,
- source:ReturnType<typeof compileSourceEvolution>){
+ source:ReturnType<typeof compileSourceEvolution>,currentRecipients?:{
+  contacts:NonNullable<Parameters<typeof nativeAbsorberGuideFrame>[3]>;
+  mobile:Parameters<typeof nativeMobileCaptureFrame>[0]}){
  const t=p.thermal,expected=p.material.result.cohorts.filter(c=>c.material==='fuel').map(c=>c.id),
   actual=source.material.nativeInputs.fuel.identities.cohorts
  if(expected.length!==actual.length||expected.some((id,i)=>id!==actual[i]))throw Error('Source/thermal cohort order differs')
@@ -190,8 +192,8 @@ export function nativeFuelCoolingFixture(p:Awaited<ReturnType<typeof compileFuel
  return [source.fixture,p.network.nativeInput,fields.join('\n'),primary.join('\n'),barrel.fields.join('\n'),
   nativeColdPressureFrame(p.pressure).join('\n'),nativeFuelCaptureFrame(p.capture).join('\n'),
   [...nativePressureChannelFields(p.pressureChannel),...nativePressureProtectionFields(p.pressureProtection)].join('\n'),
-  nativePrhrCoolingFrame(p.prhr).join('\n'),nativeMobileCaptureFrame(p.mobileCapture).join('\n'),
-  nativeAbsorberGuideFrame(p.absorberGuide,source,p.mobileCapture).fields.join('\n'),
+  nativePrhrCoolingFrame(p.prhr).join('\n'),nativeMobileCaptureFrame(currentRecipients?.mobile??p.mobileCapture).join('\n'),
+  nativeAbsorberGuideFrame(p.absorberGuide,source,p.mobileCapture,currentRecipients?.contacts).fields.join('\n'),
   nativeActuationSupplyFrame(p.actuation).join('\n')].map(frame).join('\n')+'\n'
 }
 

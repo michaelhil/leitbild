@@ -63,16 +63,18 @@ export function compileColdBarrel(d:WaterInput,network:Network,geometry:ReturnTy
   const V=volumeOf(owner),L=s.liquidEnvelopes[owner].length_m
   close(L,d.fuel.activeLength_m/2,owner+' physical half length')
   close(V,fg.flowArea_m2*L,owner+' free water')
-  return {V,A:fg.wettedPerimeter_m*L+2*fg.flowArea_m2}
+  return {V,A:fg.wettedPerimeter_m*L+2*fg.flowArea_m2,boundaryVolumeSlope:0}
  }
  const lowerV=volumeOf('LOWER.EXTERNAL'),upperV=volumeOf('UPPER.EXTERNAL'),downV=volumeOf('DOWN'),
   downOuter=Math.sqrt(ro*ro+downV/(Math.PI*length)),
   envelope={
-   'LOWER.EXTERNAL':{V:lowerV,A:cylinderBoundary(lowerV,Math.PI*s.liquidEnvelopes['LOWER.EXTERNAL'].radius_m**2)},
+   'LOWER.EXTERNAL':{V:lowerV,A:cylinderBoundary(lowerV,Math.PI*s.liquidEnvelopes['LOWER.EXTERNAL'].radius_m**2),
+    boundaryVolumeSlope:2/s.liquidEnvelopes['LOWER.EXTERNAL'].radius_m},
    'Core.1.EXTERNAL':coreEnvelope('Core.1.EXTERNAL'),
    'Core.2.EXTERNAL':coreEnvelope('Core.2.EXTERNAL'),
-   'UPPER.EXTERNAL':{V:upperV,A:cylinderBoundary(upperV,s.liquidEnvelopes['UPPER.EXTERNAL'].crossSection_m2)},
-   DOWN:{V:downV,A:2*Math.PI*(ro+downOuter)*length+2*downV/length},
+   'UPPER.EXTERNAL':{V:upperV,A:cylinderBoundary(upperV,s.liquidEnvelopes['UPPER.EXTERNAL'].crossSection_m2),
+    boundaryVolumeSlope:2*Math.sqrt(Math.PI/s.liquidEnvelopes['UPPER.EXTERNAL'].crossSection_m2)},
+   DOWN:{V:downV,A:2*Math.PI*(ro+downOuter)*length+2*downV/length,boundaryVolumeSlope:0},
   }
  const patches=[
   {owner:'LOWER.EXTERNAL',cell:'LOWER',area:2*Math.PI*ri*(coreBottom-bottom)},
@@ -86,7 +88,11 @@ export function compileColdBarrel(d:WaterInput,network:Network,geometry:ReturnTy
   if(cell<0||!(p.area>0&&e.A>0&&Number.isFinite(e.A+e.V)))throw Error('Unresolved barrel receiving contact '+p.owner)
   if(e.V>network.water[cell]!.volume_m3*(1+4e-10))throw Error('Barrel photon envelope exceeds thermal recipient '+p.owner)
   return {owner:p.owner,cellId:p.cell,water_index:cell,area_m2:p.area,
-   liquid_chord_m:4*e.V/e.A,photonVolume_m3:e.V,photonBoundary_m2:e.A}
+   liquid_chord_m:4*e.V/e.A,photonVolume_m3:e.V,photonBoundary_m2:e.A,
+   // The selected reduced cylinder has a fixed cross-section and inferred
+   // axial height V/A. Preserve that optical reduction during control motion;
+   // the mobile-capture full-contact envelope is a different selected model.
+   photonBoundaryVolumeSlope_m_inv:e.boundaryVolumeSlope}
  })
  const muSteel=law.steel304.massFractions.reduce((sum,f,i)=>sum+f*photon.mu_en_m2_kg[
   law.steel304.elements[i] as 'Fe'|'Cr'|'Ni'|'Mn'][1],0)

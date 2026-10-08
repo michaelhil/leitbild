@@ -115,13 +115,15 @@ test('stale, duplicate, missing and overrepresented donor projections refuse',()
  expect(()=>compileSharedWaterProjection({...f.primary,result:{...f.primary.result,sourceIncidence:f.primary.result.sourceIncidence.slice(1)}},f.receiving,f.moderator)).toThrow('coverage')
 })
 
-const wiki=process.env.LEITBILD_REFERENCE_WIKI,evidence=process.env.LEITBILD_REFERENCE_EVIDENCE
+const wiki=process.env.LEITBILD_REFERENCE_WIKI,evidence=process.env.LEITBILD_REFERENCE_EVIDENCE,
+ waterReceipt=process.env.LEITBILD_REFERENCE_ORIGINAL_WATER_RECEIPT
 describe.skipIf(!wiki||!evidence)('actual source advancement compilation',()=>{
  test('all current physical source owners join and outside DOWN remains retained',()=>{
+  if(!waterReceipt)throw Error('Set LEITBILD_REFERENCE_ORIGINAL_WATER_RECEIPT to the current admitted ORIGINAL preparation')
   const r=(p:string)=>readFileSync(p,'utf8'),prepared=compileSourceEvolution(
    r(join(evidence!,'2026-10-05/operating-source-fixed-partition.json')),
    r(join(evidence!,'2026-10-05/operating-source-cold-material-incidence.json')),
-   r(join(evidence!,'2026-10-06/source-primary-original-water-coordinate-corrected.json')),
+   r(waterReceipt),
    new Map(sourceEvolutionOwnerFiles.map(p=>[p,r(join(wiki!,p))])),
    JSON.parse(r(join(evidence!,'2026-10-06/source-composed-cylinder-converter-1.json.artifacts/material.json'))).receiving.property)
   expect(prepared.counts.evolvedCoordinates).toBe(52962);expect(prepared.manganese).toHaveLength(258)
