@@ -1,14 +1,15 @@
 <script lang="ts">
   import type { EmbeddedViewEnvelope } from '@leitbild/contracts'
   import { simulationRunIdSchema } from '../../../core/model/index.ts'
-  import { composedDisplayStateSchema } from '../../../packs/process-plant/displays/composition.ts'
+  import { composedDisplayLayout, composedDisplayStateSchema } from '../../../packs/process-plant/displays/composition.ts'
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
   import { composedDisplayClient } from './composed-display-client.ts'
   import { createComposedDisplaySession, type ComposedDisplaySnapshot } from './composed-display-session.ts'
-  import { unitLabel, valueDigits } from './trend-geometry.ts'
-  import { penStroke, roleLabel } from './pen-style.ts'
+  import AlarmsPanel from './AlarmsPanel.svelte'
+  import ComparisonPanel from './ComparisonPanel.svelte'
+  import PenLegend from './PenLegend.svelte'
+  import ReadoutsPanel from './ReadoutsPanel.svelte'
   import TrendPanel from './TrendPanel.svelte'
-  import './openbridge.ts'
 
   let { envelope }: { envelope: EmbeddedViewEnvelope } = $props()
 
@@ -17,7 +18,6 @@
 
   // A sample older than this marks the view stale (polling is 1 Hz).
   const STALE_AFTER_MS = 5_000
-  const TREND_HEIGHT = 176
 
   let snapshot = $state<ComposedDisplaySnapshot | null>(null)
   let wallNow = $state(Date.now())
@@ -69,9 +69,6 @@
   })
 
   const simulationClock = (ms: number): string => new Date(ms).toISOString().slice(11, 19)
-  const latestValue = (path: string): number | boolean | undefined => snapshot?.latest?.values.find(entry => entry.path === path)?.value
-  const latestQuality = (path: string): string | undefined => snapshot?.latest?.values.find(entry => entry.path === path)?.quality
-  const pens = $derived(view?.display.panels.flatMap(panel => panel.pens) ?? [])
 </script>
 
 <article class="card" aria-label={`AI-composed view: ${composition.title}`}>
@@ -85,11 +82,20 @@
     <strong>Why this view:</strong> {composition.question} <span class="need">{composition.need}</span>
   </p>
 
-  {#if snapshot?.resetSinceAdvice}
-    <p class="banner">The Run was reset after this advice. The advice may no longer apply.</p>
-  {:else if view?.modelChanged}
-    <p class="banner">The Plant model changed after this advice was composed.</p>
-  {/if}
+  <!-- One reserved notice line; the most consequential notice wins. -->
+  <p class="banner" class:quiet={!snapshot?.resetSinceAdvice && !view?.modelChanged}>
+    {#if snapshot?.resetSinceAdvice}
+      The Run was reset after this advice. The advice may no longer apply.
+    {:else if view?.modelChanged}
+      The Plant model changed after this advice was composed.
+    {:else if snapshot?.phase.kind === 'suspended'}
+      Updates paused after 15 minutes without interaction. <button type="button" onclick={() => session?.resume()}>Resume</button>
+    {:else if snapshot?.phase.kind === 'live' && snapshot.sampleError !== null}
+      Showing the last received values. {snapshot.sampleError}
+    {:else if snapshot?.phase.kind === 'live'}
+      Advice issued at sim {simulationClock(issuedAt)} · {Math.max(0, Math.round((now - issuedAt) / 60_000))} min ago
+    {/if}
+  </p>
 
   {#if snapshot === null || snapshot.phase.kind === 'checking' || snapshot.phase.kind === 'starting'}
     <p class="status">Connecting to the Run…</p>
@@ -104,36 +110,22 @@
   {:else if snapshot.phase.kind === 'failed'}
     <p class="status">This view cannot be shown: {snapshot.phase.message}</p>
   {:else if view}
-    {#each view.display.panels as panel, index (index)}
-      <TrendPanel {panel} series={snapshot.series} range={snapshot.ranges[index] ?? null} {now} {issuedAt} height={TREND_HEIGHT} />
-    {/each}
-    <ul class="legend">
-      {#each pens as pen, index (pen.path)}
-        {@const value = latestValue(String(pen.path))}
-        <li title={`${pen.label} · ${roleLabel[pen.role]}${snapshot.historyMissing.has(String(pen.path)) ? ' · no recorded history; live since this view opened' : ''}`}>
-          <svg class="swatch" width="22" height="8" aria-hidden="true"><line x1="0" x2="22" y1="4" y2="4" style={penStroke(pen.role, index)} /></svg>
-          <span class="tag">{pen.tagId ?? pen.path}</span>
-          <span class="role">{roleLabel[pen.role]}{snapshot.historyMissing.has(String(pen.path)) ? ' · live only' : ''}</span>
-          <obc-readout
-            value={typeof value === 'number' ? value : null}
-            off={typeof value !== 'number'}
-            offText="—"
-            unit={unitLabel(pen.unit)}
-            fractionDigits={typeof value === 'number' ? valueDigits(value) : 0}
-            size="small"
-          ></obc-readout>
-          {#if latestQuality(String(pen.path)) === 'outside-hard-range'}<span class="quality">outside range</span>{/if}
-        </li>
+    <div class="panels" style={`gap:${composedDisplayLayout.panelGap}px`}>
+      {#each view.display.panels as panel, index (index)}
+        {#if panel.kind === 'trend'}
+          <div style={`height:${composedDisplayLayout.trend}px`}>
+            <TrendPanel {panel} series={snapshot.series} range={snapshot.ranges[index] ?? null} {now} {issuedAt} height={composedDisplayLayout.trendChart} />
+            <PenLegend pens={panel.pens} latest={snapshot.latest} historyMissing={snapshot.historyMissing} />
+          </div>
+        {:else if panel.kind === 'comparison'}
+          <ComparisonPanel {panel} latest={snapshot.latest} range={snapshot.ranges[index] ?? null} />
+        {:else if panel.kind === 'readouts'}
+          <ReadoutsPanel {panel} latest={snapshot.latest} />
+        {:else}
+          <AlarmsPanel {panel} latest={snapshot.latest} />
+        {/if}
       {/each}
-    </ul>
-    {#if snapshot.phase.kind === 'suspended'}
-      <p class="status inline">
-        Updates paused after 15 minutes without interaction.
-        <button type="button" onclick={() => session?.resume()}>Resume</button>
-      </p>
-    {:else if snapshot.sampleError !== null}
-      <p class="status inline">Showing the last received values. {snapshot.sampleError}</p>
-    {/if}
+    </div>
   {/if}
 
   <footer>AI-composed view · thresholds from the Plant's I&amp;C rules · not an operating display</footer>
@@ -150,18 +142,13 @@
   .chip.warn { color: var(--alert-caution-color); border-color: var(--alert-caution-color); }
   .caption { margin: 0; font-size: 12px; color: var(--element-active-color); display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .need { color: var(--element-neutral-color); }
-  .banner { margin: 0; padding: 3px 8px; font-size: 12px; background: var(--container-section-color); border-left: 3px solid var(--alert-caution-color); }
+  .banner { margin: 0; height: 22px; padding: 0 8px; display: flex; align-items: center; gap: 8px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--container-section-color); border-left: 3px solid var(--alert-caution-color); }
+  .banner.quiet { background: none; border-left-color: transparent; color: var(--element-neutral-color); padding-left: 0; }
   .status { margin: 8px 0; color: var(--element-neutral-color); }
   .status p { margin: 4px 0; }
-  .status.inline { margin: 2px 0; font-size: 12px; }
   .hint { font-size: 11.5px; }
-  button { font: inherit; font-size: 12px; padding: 3px 10px; border: 1px solid var(--border-outline-color); border-radius: 4px; background: var(--container-section-color); color: var(--element-active-color); cursor: pointer; }
+  button { font: inherit; font-size: 12px; padding: 1px 10px; border: 1px solid var(--border-outline-color); border-radius: 4px; background: var(--container-section-color); color: var(--element-active-color); cursor: pointer; }
   button:focus-visible { outline: 2px solid var(--border-focus-color); outline-offset: 1px; }
-  .legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; }
-  .legend li { display: flex; align-items: center; gap: 6px; min-width: 0; }
-  .swatch { flex: none; }
-  .tag { font-weight: 600; font-variant-numeric: tabular-nums; }
-  .role { font-size: 11px; color: var(--element-neutral-color); }
-  .quality { font-size: 11px; color: var(--alert-caution-color); }
+  .panels { display: flex; flex-direction: column; }
   footer { margin-top: auto; font-size: 10.5px; color: var(--element-neutral-color); }
 </style>

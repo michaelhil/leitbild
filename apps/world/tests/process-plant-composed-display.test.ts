@@ -4,6 +4,7 @@ import type { IsoTimestamp } from '../src/core/model/index.ts'
 import {
   answerProcessPlantQuery,
   compileProcessPlant,
+  createProcessPlantProtectionRunner,
   createProcessPlantRampRunner,
   createProcessPlantRuntime,
   createPwrReferencePlantDefinition,
@@ -20,6 +21,7 @@ const plant: ProcessPlantRuntimeInstance = {
   plant: compiled,
   runtime,
   ramps: createProcessPlantRampRunner({ runtime }),
+  protection: createProcessPlantProtectionRunner({ system: compiled, protection: compiled.automation }),
   performance: createProcessPlantRuntimePerformance(),
 }
 const plants = new Map([[compiled.id, plant]])
@@ -107,7 +109,7 @@ describe('world.process-plant.display.compose', () => {
     expect(rejectionOf(() => ask('world.process-plant.display.compose', composition([
       { ref: 'PT-455', role: 'primary' },
       { ref: 'PZR-LVL', role: 'context' },
-    ])))).toContain('keep signals of one unit in the trend')
+    ])))).toContain('keep one unit per trend')
   })
 
   test('rejects fields outside the composition vocabulary', () => {
@@ -151,6 +153,69 @@ describe('thresholds drawn on composed trends', () => {
   })
 })
 
+describe('composed display panels', () => {
+  const display = (panels: ReadonlyArray<unknown>) => ({ ...composition([]), panels })
+  const composeView = (panels: ReadonlyArray<unknown>) => {
+    const composed = ask('world.process-plant.display.compose', display(panels)) as { view: { state: string; height: number }; shows: ReadonlyArray<string> }
+    const view = ask('world.process-plant.display.view', { plantId: compiled.id, state: composed.view.state }) as { display: { height: number; panels: ReadonlyArray<Record<string, unknown>> } }
+    return { composed, view }
+  }
+
+  test('stack trends of different units on one time axis and size the card for them', () => {
+    const { composed, view } = composeView([
+      { kind: 'trend', horizon: '10m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },
+      { kind: 'trend', horizon: '10m', signals: [{ ref: 'sgB.feedwaterFlowKgPerS', role: 'counter-evidence' }] },
+    ])
+    expect(view.display.panels.map(panel => [panel.kind, panel.unit])).toEqual([['trend', 'percent'], ['trend', 'kg/s']])
+    expect(composed.view.height).toBe(124 + 200 + 6 + 200)
+  })
+
+  test('reject stacked trends with different horizons, a lone alarms panel and oversized displays', () => {
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
+      { kind: 'trend', horizon: '10m', signals: [{ ref: 'PT-455', role: 'primary' }] },
+      { kind: 'trend', horizon: '2m', signals: [{ ref: 'PZR-LVL', role: 'context' }] },
+    ])))).toContain('same horizon')
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', display([{ kind: 'alarms', scope: 'plant' }]))))
+      .toContain('an alarms panel accompanies signal panels')
+    const six = ['A', 'B', 'C', 'D'].map(loop => ({ ref: `RCP-${loop}-FLOW`, role: 'context' }))
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
+      { kind: 'trend', horizon: '10m', signals: [{ ref: 'PT-455', role: 'primary' }] },
+      { kind: 'trend', horizon: '10m', signals: [{ ref: 'PZR-LVL', role: 'context' }] },
+      { kind: 'comparison', signals: six },
+      { kind: 'readouts', signals: [...six, { ref: 'TAVG', role: 'context' }, { ref: 'SUB-MARGIN', role: 'context' }] },
+    ])))).toContain('chat views allow 720')
+  })
+
+  test('compare parallel loops of one unit with primary thresholds', () => {
+    const { view } = composeView([{ kind: 'comparison', signals: ['A', 'B', 'C', 'D'].map(loop => ({ ref: `RCP-${loop}-FLOW`, role: loop === 'B' ? 'primary' : 'context' })) }])
+    const panel = view.display.panels[0] as { kind: string; unit: string; pens: unknown[]; thresholds: Array<{ value: number; signals: string[] }> }
+    expect([panel.kind, panel.unit, panel.pens.length]).toEqual(['comparison', 'kg/s', 4])
+    expect(panel.thresholds.map(threshold => [threshold.value, threshold.signals])).toEqual([[2500, ['RCP-B-FLOW']]])
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
+      { kind: 'comparison', signals: [{ ref: 'RCP-A-FLOW', role: 'primary' }, { ref: 'PT-455', role: 'context' }] },
+    ])))).toContain('keep one unit per comparison')
+  })
+
+  test('show on/off states as readouts but never as trends', () => {
+    const { view } = composeView([{ kind: 'readouts', signals: [{ ref: 'RCP-A-RUN', role: 'primary' }, { ref: 'PT-455', role: 'context' }] }])
+    const panel = view.display.panels[0] as { pens: Array<{ valueKind: string }> }
+    expect(panel.pens.map(pen => pen.valueKind)).toEqual(['boolean', 'number'])
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
+      { kind: 'trend', horizon: '2m', signals: [{ ref: 'RCP-A-RUN', role: 'primary' }] },
+    ])))).toContain('use a readouts panel for states')
+  })
+
+  test('relate an alarms panel to the I&C rules acting on the displayed signals', () => {
+    const { composed, view } = composeView([
+      { kind: 'trend', horizon: '10m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },
+      { kind: 'alarms', scope: 'related' },
+    ])
+    const alarms = view.display.panels[1] as { kind: string; ruleIds: string[] }
+    expect(alarms.ruleIds).toEqual(['sg-b-feedwater-low', 'sg-b-level-low', 'sg-b-level-low-low-afw-actuation'])
+    expect(composed.shows.at(-1)).toContain('3 I&C rules acting on the displayed signals')
+  })
+})
+
 describe('world.process-plant.display.view and sample', () => {
   const composed = ask('world.process-plant.display.compose', composition([
     { ref: 'PT-455', role: 'primary' },
@@ -184,6 +249,8 @@ describe('world.process-plant.display.view and sample', () => {
     }
     expect(sample.simulationTime).toBe(simulationTime)
     expect(sample.values[0]).toMatchObject({ path: pressure, quality: 'good' })
+    const withAlarms = ask('world.process-plant.display.sample', { plantId: compiled.id, paths: [pressure], alarms: true })
+    expect(withAlarms).toMatchObject({ alarms: [], plantElapsedMs: 0 })
     expect(typeof sample.values[0]!.value).toBe('number')
     expect(rejectionOf(() => ask('world.process-plant.display.sample', { plantId: compiled.id, paths: ['nowhere.value' as VariablePath] }))).toContain('signal path not found')
   })

@@ -199,6 +199,17 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
   'world.process-plant.display.sample': z.object({
     plantId: plantIdSchema,
     simulationTime: z.string(),
+    plantElapsedMs: z.number(),
+    alarms: z.array(z.object({
+      id: z.string(),
+      ruleId: z.string(),
+      kind: z.enum(['alarm', 'trip']),
+      title: z.string(),
+      severity: z.enum(['info', 'notice', 'warning', 'critical']),
+      acknowledged: z.boolean(),
+      firstOut: z.boolean(),
+      firstActiveElapsedMs: z.number().optional(),
+    }).strict()).optional(),
     values: z.array(z.object({
       path: z.string(),
       value: z.union([z.number(), z.boolean()]),
@@ -276,9 +287,9 @@ const queryDescriptionById: Readonly<Record<string, string>> = {
   'world.process-plant.display.read': 'Read one operator display definition and its available lenses.',
   'world.process-plant.display.snapshot': 'Read the current values and alarms projected onto one operator display.',
   'world.process-plant.display.project': 'Project one Plant graph and operator display through a selected display lens.',
-  'world.process-plant.display.compose': 'Compose a small live operator display for one Plant, shown below your answer. State the operator question and need, then choose a trend horizon and 1-3 numeric signals of one unit with roles (primary, context, counter-evidence) using exact tagIds or paths from your evidence. The Pack resolves the signals, draws I&C thresholds from configured rules, and keeps values live. Read-only: it stores nothing and changes no Plant, Run or scenario state. Returns the view to present, what it shows and warnings, or rejects with every issue and did-you-mean suggestions.',
+  'world.process-plant.display.compose': 'Compose a small live operator display for one Plant, shown below your answer. State the operator question and need, then choose 1-4 panels: trend (1-3 numeric signals of one unit; a second trend stacks another unit on the same time axis), comparison (2-6 parallel signals of one unit, e.g. the loops), readouts (1-6 current values or on/off states with margin to thresholds) and alarms (active alarms related to the displayed signals, or the whole Plant). Give every signal a role (primary, context, counter-evidence) and use exact tagIds or paths from your evidence. The Pack resolves signals, draws I&C thresholds from configured rules, lays out the display and keeps it live. Read-only: it stores nothing and changes no Plant, Run or scenario state. Returns the view to present, what it shows and warnings, or rejects with every issue and did-you-mean suggestions.',
   'world.process-plant.display.view': 'Compile a previously composed display state for a live display view. Display views use this; to create a display, use display.compose.',
-  'world.process-plant.display.sample': 'Read current values and hard-range quality for up to 12 exact signal paths at the current Simulation Run time. Live display views use this for polling.',
+  'world.process-plant.display.sample': 'Read current values and hard-range quality for up to 12 exact signal paths, and optionally the active alarms and trips, at the current Simulation Run time. Live display views use this for polling.',
 }
 
 const processPlantQueryCapabilities = processPlantQueryKinds.map(id => {

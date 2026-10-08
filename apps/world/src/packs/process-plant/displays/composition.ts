@@ -7,10 +7,6 @@ import { idSchema, isoTimestampSchema } from '../../../core/model/index.ts'
 // positions or forecasts.
 export const COMPOSED_DISPLAY_VIEW_TYPE = 'process-plant.display'
 
-// Card height reserved by embedders before the view loads (header, caption,
-// one trend panel and its legend at chat width).
-export const COMPOSED_DISPLAY_HEIGHT_PX = 340
-
 export const composedDisplayHorizonMs = {
   '2m': 120_000,
   '10m': 600_000,
@@ -30,7 +26,13 @@ export const composedDisplaySignalSchema = z.object({
 }).strict()
 export type ComposedDisplaySignal = z.infer<typeof composedDisplaySignalSchema>
 
+// Size limits keep a chat display glanceable; larger questions belong to the
+// Plant's own displays.
 export const COMPOSED_TREND_MAX_PENS = 3
+export const COMPOSED_COMPARISON_MAX_SIGNALS = 6
+export const COMPOSED_READOUTS_MAX_SIGNALS = 6
+export const COMPOSED_DISPLAY_MAX_PANELS = 4
+export const COMPOSED_DISPLAY_MAX_TRENDS = 2
 
 export const composedDisplayTrendPanelSchema = z.object({
   kind: z.literal('trend'),
@@ -39,7 +41,30 @@ export const composedDisplayTrendPanelSchema = z.object({
 }).strict()
 export type ComposedDisplayTrendPanel = z.infer<typeof composedDisplayTrendPanelSchema>
 
-export const composedDisplayPanelSchema = z.discriminatedUnion('kind', [composedDisplayTrendPanelSchema])
+/** Parallel signals of one unit side by side, e.g. the four loops. */
+export const composedDisplayComparisonPanelSchema = z.object({
+  kind: z.literal('comparison'),
+  signals: z.array(composedDisplaySignalSchema).min(2).max(COMPOSED_COMPARISON_MAX_SIGNALS),
+}).strict()
+
+/** Current values, including on/off states, with margin to I&C thresholds. */
+export const composedDisplayReadoutsPanelSchema = z.object({
+  kind: z.literal('readouts'),
+  signals: z.array(composedDisplaySignalSchema).min(1).max(COMPOSED_READOUTS_MAX_SIGNALS),
+}).strict()
+
+/** Active alarms and trips: those acting on the displayed signals, or the whole Plant. */
+export const composedDisplayAlarmsPanelSchema = z.object({
+  kind: z.literal('alarms'),
+  scope: z.enum(['related', 'plant']),
+}).strict()
+
+export const composedDisplayPanelSchema = z.discriminatedUnion('kind', [
+  composedDisplayTrendPanelSchema,
+  composedDisplayComparisonPanelSchema,
+  composedDisplayReadoutsPanelSchema,
+  composedDisplayAlarmsPanelSchema,
+])
 export type ComposedDisplayPanel = z.infer<typeof composedDisplayPanelSchema>
 
 export const composedDisplayCompositionSchema = z.object({
@@ -47,7 +72,7 @@ export const composedDisplayCompositionSchema = z.object({
   title: text(3, 60),
   question: text(8, 160),
   need: text(8, 160),
-  panels: z.array(composedDisplayPanelSchema).length(1),
+  panels: z.array(composedDisplayPanelSchema).min(1).max(COMPOSED_DISPLAY_MAX_PANELS),
 }).strict()
 export type ComposedDisplayComposition = z.infer<typeof composedDisplayCompositionSchema>
 
@@ -59,3 +84,37 @@ export const composedDisplayStateSchema = z.object({
   modelDigest: z.string().regex(/^[0-9a-f]{64}$/),
 }).strict()
 export type ComposedDisplayState = z.infer<typeof composedDisplayStateSchema>
+
+// One layout used by the compiler (to size the embedded card) and by the view
+// (to size each panel), so the reserved frame always fits what is drawn.
+export const composedDisplayLayout = {
+  /** Header, two-line caption, one reserved notice line, footer, gaps and padding. */
+  frame: 124,
+  /** Chart plus its legend row. */
+  trend: 200,
+  trendChart: 160,
+  comparisonHeader: 22,
+  comparisonRow: 24,
+  readoutsPerRow: 3,
+  readoutsRow: 58,
+  /** Title row plus four alarm rows; more are summarised as a count. */
+  alarms: 122,
+  alarmRows: 4,
+  panelGap: 6,
+} as const
+
+// Embedders accept view heights up to 720 px; a composition must fit.
+export const COMPOSED_DISPLAY_MAX_HEIGHT_PX = 720
+
+export const composedPanelHeight = (panel: ComposedDisplayPanel): number => {
+  const layout = composedDisplayLayout
+  if (panel.kind === 'trend') return layout.trend
+  if (panel.kind === 'comparison') return layout.comparisonHeader + layout.comparisonRow * panel.signals.length
+  if (panel.kind === 'readouts') return layout.readoutsRow * Math.ceil(panel.signals.length / layout.readoutsPerRow)
+  return layout.alarms
+}
+
+export const composedDisplayHeight = (composition: ComposedDisplayComposition): number =>
+  composedDisplayLayout.frame
+  + composition.panels.reduce((sum, panel) => sum + composedPanelHeight(panel), 0)
+  + composedDisplayLayout.panelGap * (composition.panels.length - 1)

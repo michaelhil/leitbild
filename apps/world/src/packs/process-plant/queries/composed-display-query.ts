@@ -7,7 +7,6 @@ import { variablePathSchema } from '../graph/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { processPlantSignalQuality } from '../signals.ts'
 import {
-  COMPOSED_DISPLAY_HEIGHT_PX,
   COMPOSED_DISPLAY_VIEW_TYPE,
   composedDisplayCompositionSchema,
   composedDisplayStateSchema,
@@ -38,6 +37,7 @@ const SAMPLE_MAX_PATHS = 12
 export const displaySampleQuerySchema = z.object({
   plantId: idSchema,
   paths: z.array(variablePathSchema).min(1).max(SAMPLE_MAX_PATHS),
+  alarms: z.boolean().default(false),
 }).strict()
 
 const compiledOrRejected = (system: ProcessPlantRuntimeInstance, composition: unknown) => {
@@ -71,7 +71,7 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
       view: embeddedViewPublicationSchema.parse({
         viewType: COMPOSED_DISPLAY_VIEW_TYPE,
         title: display.title,
-        height: COMPOSED_DISPLAY_HEIGHT_PX,
+        height: display.height,
         state: JSON.stringify(state),
       }),
       shows: composedDisplayShows(display),
@@ -100,9 +100,26 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
 
   const payload = displaySampleQuerySchema.parse(config.request.input)
   const system = requirePlant(config.plants, payload.plantId)
+  const protection = payload.alarms ? system.protection?.snapshot() : undefined
+  if (payload.alarms && protection === undefined) return rejectCapabilityTarget(`Process Plant ${payload.plantId} has no configured alarms`)
   return {
     plantId: payload.plantId,
     simulationTime,
+    plantElapsedMs: system.runtime.elapsedMs(),
+    ...(protection === undefined ? {} : {
+      alarms: [...protection.alarms, ...protection.trips]
+        .filter(lifecycle => lifecycle.active)
+        .map(lifecycle => ({
+          id: lifecycle.id,
+          ruleId: lifecycle.ruleId,
+          kind: lifecycle.kind,
+          title: lifecycle.title,
+          severity: lifecycle.severity,
+          acknowledged: lifecycle.acknowledged,
+          firstOut: lifecycle.firstOut,
+          ...(lifecycle.firstActiveElapsedMs === undefined ? {} : { firstActiveElapsedMs: lifecycle.firstActiveElapsedMs }),
+        })),
+    }),
     values: payload.paths.map(path => {
       if (!system.plant.graph.signalBindingByPath.has(path)) return rejectCapabilityTarget(`Process Plant signal path not found: ${path}`)
       const variable = system.runtime.readVariableSnapshot(path)

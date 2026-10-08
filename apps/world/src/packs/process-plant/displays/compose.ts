@@ -11,10 +11,15 @@ import { processSignalTagIdSchema, variablePathSchema } from '../graph/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { findProcessPlantSignalBinding } from '../signals.ts'
 import {
+  COMPOSED_DISPLAY_MAX_HEIGHT_PX,
+  COMPOSED_DISPLAY_MAX_TRENDS,
   composedDisplayCompositionSchema,
+  composedDisplayHeight,
   composedDisplayHorizonMs,
   type ComposedDisplayComposition,
   type ComposedDisplayHorizon,
+  type ComposedDisplayPanel,
+  type ComposedDisplaySignal,
   type ComposedDisplaySignalRole,
 } from './composition.ts'
 import {
@@ -31,13 +36,14 @@ export interface ComposedDisplayPen {
   readonly label: string
   readonly unit: ProcessUnit
   readonly quantity: ProcessQuantity
+  readonly valueKind: 'number' | 'boolean'
   readonly seriesId: string
   readonly limits?: ProcessVariableLimits
   readonly thresholds: ReadonlyArray<ComposedDisplayThreshold>
   readonly combinedRules: ReadonlyArray<ComposedDisplayCombinedRule>
 }
 
-/** A threshold drawn on a trend: one line per distinct rule action of the primary signals. */
+/** A threshold drawn on a panel: one per distinct rule action of the primary signals. */
 export interface ComposedTrendThreshold extends ComposedDisplayThreshold {
   /** Tags or paths of the primary signals this rule acts on. */
   readonly signals: ReadonlyArray<string>
@@ -52,13 +58,35 @@ export interface ComposedTrendPanel {
   readonly thresholds: ReadonlyArray<ComposedTrendThreshold>
 }
 
+export interface ComposedComparisonPanel {
+  readonly kind: 'comparison'
+  readonly unit: ProcessUnit
+  readonly pens: ReadonlyArray<ComposedDisplayPen>
+  readonly thresholds: ReadonlyArray<ComposedTrendThreshold>
+}
+
+export interface ComposedReadoutsPanel {
+  readonly kind: 'readouts'
+  readonly pens: ReadonlyArray<ComposedDisplayPen>
+}
+
+export interface ComposedAlarmsPanel {
+  readonly kind: 'alarms'
+  readonly scope: 'related' | 'plant'
+  /** I&C rules acting on the displayed signals; used when scope is related. */
+  readonly ruleIds: ReadonlyArray<string>
+}
+
+export type CompiledComposedPanel = ComposedTrendPanel | ComposedComparisonPanel | ComposedReadoutsPanel | ComposedAlarmsPanel
+
 export interface CompiledComposedDisplay {
   readonly plantId: string
   readonly title: string
   readonly question: string
   readonly need: string
   readonly modelDigest: string
-  readonly panels: ReadonlyArray<ComposedTrendPanel>
+  readonly height: number
+  readonly panels: ReadonlyArray<CompiledComposedPanel>
 }
 
 export interface ComposedDisplayIssue {
@@ -125,10 +153,10 @@ const zodIssues = (error: z.ZodError): ReadonlyArray<ComposedDisplayIssue> => er
   message: issue.message,
 }))
 
-// Context and counter-evidence pens are compared with the primary signal, not
-// judged against their own limits, so only primary thresholds are drawn.
-// Parallel loops share set points; one line per distinct rule action keeps the
-// trend readable.
+// Context and counter-evidence signals are compared with the primary signal,
+// not judged against their own limits, so only primary thresholds are drawn.
+// Parallel loops share set points; one per distinct rule action keeps the
+// panel readable.
 const drawnThresholds = (pens: ReadonlyArray<ComposedDisplayPen>): ReadonlyArray<ComposedTrendThreshold> => {
   const byAction = new Map<string, ComposedTrendThreshold>()
   for (const pen of pens.filter(candidate => candidate.role === 'primary')) {
@@ -144,16 +172,17 @@ const drawnThresholds = (pens: ReadonlyArray<ComposedDisplayPen>): ReadonlyArray
   return [...byAction.values()].sort((left, right) => left.value - right.value || left.ruleId.localeCompare(right.ruleId))
 }
 
-const compileTrendPanel = (
+const resolvePens = (
   system: ProcessPlantRuntimeInstance,
-  panel: ComposedDisplayComposition['panels'][number],
-  panelIndex: number,
+  signals: ReadonlyArray<ComposedDisplaySignal>,
+  panelPath: string,
+  options: { readonly numericOnly: boolean; readonly panelName: string },
   issues: ComposedDisplayIssue[],
-): ComposedTrendPanel | undefined => {
+): ReadonlyArray<ComposedDisplayPen> | undefined => {
   const pens: ComposedDisplayPen[] = []
   const seen = new Set<VariablePath>()
-  panel.signals.forEach((signal, signalIndex) => {
-    const path = `panels.${panelIndex}.signals.${signalIndex}.ref`
+  signals.forEach((signal, signalIndex) => {
+    const path = `${panelPath}.signals.${signalIndex}.ref`
     const binding = resolveRef(system, signal.ref)
     if (!binding) {
       const didYouMean = suggestionsFor(signal.ref, system.plant.graph.signalBindings)
@@ -165,13 +194,13 @@ const compileTrendPanel = (
       return
     }
     if (seen.has(binding.path)) {
-      issues.push({ path, message: `"${signal.ref}" repeats a signal already in this trend` })
+      issues.push({ path, message: `"${signal.ref}" repeats a signal already in this ${options.panelName}` })
       return
     }
     seen.add(binding.path)
     const value = system.runtime.readVariableSnapshot(binding.path).value
-    if (typeof value !== 'number') {
-      issues.push({ path, message: `"${signal.ref}" is a ${typeof value} state signal; trend panels show numeric signals only` })
+    if (typeof value !== 'number' && (options.numericOnly || typeof value !== 'boolean')) {
+      issues.push({ path, message: `"${signal.ref}" is a ${typeof value} state signal; ${options.panelName} panels show numeric signals only (use a readouts panel for states)` })
       return
     }
     const { thresholds, combinedRules } = icThresholdsForSignal(system.plant, binding.path)
@@ -183,25 +212,75 @@ const compileTrendPanel = (
       label: binding.label,
       unit: binding.unit,
       quantity: binding.quantity,
+      valueKind: typeof value === 'number' ? 'number' : 'boolean',
       seriesId: recordingSeriesIdFor(system.plant.id, binding.path),
       ...(binding.limits === undefined ? {} : { limits: binding.limits }),
       thresholds,
       combinedRules,
     })
   })
-  if (!panel.signals.some(signal => signal.role === 'primary')) {
-    issues.push({ path: `panels.${panelIndex}.signals`, message: 'a trend needs at least one signal with role "primary"' })
-  }
-  const units = [...new Set(pens.map(pen => pen.unit))]
-  if (units.length > 1) {
-    issues.push({
-      path: `panels.${panelIndex}.signals`,
-      message: `one trend shares one value axis, but these signals use ${units.join(', ')}; keep signals of one unit in the trend`,
-    })
-  }
-  if (pens.length !== panel.signals.length || units.length !== 1) return undefined
-  return { kind: 'trend', horizon: panel.horizon, horizonMs: composedDisplayHorizonMs[panel.horizon], unit: units[0]!, pens, thresholds: drawnThresholds(pens) }
+  return pens.length === signals.length ? pens : undefined
 }
+
+const sharedUnit = (
+  pens: ReadonlyArray<ComposedDisplayPen>,
+  panelPath: string,
+  panelName: string,
+  issues: ComposedDisplayIssue[],
+): ProcessUnit | undefined => {
+  const units = [...new Set(pens.map(pen => pen.unit))]
+  if (units.length === 1) return units[0]
+  issues.push({
+    path: `${panelPath}.signals`,
+    message: `a ${panelName} shares one value axis, but these signals use ${units.join(', ')}; keep one unit per ${panelName} (add a second trend panel for another unit)`,
+  })
+  return undefined
+}
+
+const compilePanel = (
+  system: ProcessPlantRuntimeInstance,
+  panel: ComposedDisplayPanel,
+  panelIndex: number,
+  issues: ComposedDisplayIssue[],
+): CompiledComposedPanel | undefined => {
+  const panelPath = `panels.${panelIndex}`
+  if (panel.kind === 'alarms') return { kind: 'alarms', scope: panel.scope, ruleIds: [] }
+  if (panel.kind === 'readouts') {
+    const pens = resolvePens(system, panel.signals, panelPath, { numericOnly: false, panelName: 'readouts' }, issues)
+    return pens === undefined ? undefined : { kind: 'readouts', pens }
+  }
+  const panelName = panel.kind === 'trend' ? 'trend' : 'comparison'
+  const pens = resolvePens(system, panel.signals, panelPath, { numericOnly: true, panelName }, issues)
+  if (pens === undefined) return undefined
+  const unit = sharedUnit(pens, panelPath, panelName, issues)
+  if (unit === undefined) return undefined
+  if (panel.kind === 'comparison') return { kind: 'comparison', unit, pens, thresholds: drawnThresholds(pens) }
+  return { kind: 'trend', horizon: panel.horizon, horizonMs: composedDisplayHorizonMs[panel.horizon], unit, pens, thresholds: drawnThresholds(pens) }
+}
+
+const compositionIssues = (composition: ComposedDisplayComposition): ReadonlyArray<ComposedDisplayIssue> => {
+  const issues: ComposedDisplayIssue[] = []
+  const kinds = composition.panels.map(panel => panel.kind)
+  const trends = composition.panels.filter(panel => panel.kind === 'trend')
+  if (trends.length > COMPOSED_DISPLAY_MAX_TRENDS) issues.push({ path: 'panels', message: `use at most ${COMPOSED_DISPLAY_MAX_TRENDS} trend panels` })
+  if (new Set(trends.map(trend => trend.horizon)).size > 1) issues.push({ path: 'panels', message: 'stacked trend panels share one time axis; give them the same horizon' })
+  for (const kind of ['comparison', 'readouts', 'alarms'] as const) {
+    if (kinds.filter(candidate => candidate === kind).length > 1) issues.push({ path: 'panels', message: `use at most one ${kind} panel` })
+  }
+  if (kinds.every(kind => kind === 'alarms')) issues.push({ path: 'panels', message: 'an alarms panel accompanies signal panels; add a trend, comparison or readouts panel' })
+  const signals = composition.panels.flatMap(panel => panel.kind === 'alarms' ? [] : panel.signals)
+  if (!signals.some(signal => signal.role === 'primary')) issues.push({ path: 'panels', message: 'mark at least one signal with role "primary": the signal the operator question is about' })
+  const height = composedDisplayHeight(composition)
+  if (height > COMPOSED_DISPLAY_MAX_HEIGHT_PX) issues.push({ path: 'panels', message: `the display needs ${height} px but chat views allow ${COMPOSED_DISPLAY_MAX_HEIGHT_PX}; use fewer panels or signals` })
+  return issues
+}
+
+// Alarms "related" to a display are those whose rules act on its signals.
+const relatedRuleIds = (panels: ReadonlyArray<CompiledComposedPanel>): ReadonlyArray<string> => [...new Set(panels.flatMap(panel =>
+  panel.kind === 'alarms' ? [] : panel.pens.flatMap(pen => [
+    ...pen.thresholds.filter(threshold => threshold.kind !== 'control').map(threshold => threshold.ruleId),
+    ...pen.combinedRules.filter(rule => rule.kind !== 'control').map(rule => rule.ruleId),
+  ])))].sort()
 
 export const compileComposedDisplay = (
   system: ProcessPlantRuntimeInstance,
@@ -210,12 +289,14 @@ export const compileComposedDisplay = (
   const parsed = composedDisplayCompositionSchema.safeParse(input)
   if (!parsed.success) return { ok: false, issues: zodIssues(parsed.error) }
   const composition = parsed.data
-  const issues: ComposedDisplayIssue[] = []
+  const issues: ComposedDisplayIssue[] = [...compositionIssues(composition)]
   if (composition.plantId !== system.plant.id) {
     issues.push({ path: 'plantId', message: `composition targets ${composition.plantId}, not ${system.plant.id}` })
   }
-  const panels = composition.panels.map((panel, index) => compileTrendPanel(system, panel, index, issues))
+  const panels = composition.panels.map((panel, index) => compilePanel(system, panel, index, issues))
   if (issues.length > 0) return { ok: false, issues }
+  const compiled = panels.filter((panel): panel is CompiledComposedPanel => panel !== undefined)
+  const ruleIds = relatedRuleIds(compiled)
   return {
     ok: true,
     display: {
@@ -224,24 +305,33 @@ export const compileComposedDisplay = (
       question: composition.question,
       need: composition.need,
       modelDigest: system.plant.modelDigest,
-      panels: panels.filter((panel): panel is ComposedTrendPanel => panel !== undefined),
+      height: composedDisplayHeight(composition),
+      panels: compiled.map(panel => panel.kind === 'alarms' ? { ...panel, ruleIds } : panel),
     },
   }
 }
 
 const operatorText = { '<': 'below', '<=': 'at or below', '>': 'above', '>=': 'at or above' } as const
+const signalName = (pen: ComposedDisplayPen): string => `${pen.tagId ?? pen.path} (${pen.label}, ${pen.unit}, ${pen.role})`
+
+const thresholdText = (threshold: ComposedTrendThreshold, unit: ProcessUnit): string =>
+  `${threshold.kind === 'control' ? 'I&C control set point marked on the axis' : `I&C ${threshold.kind} line`} for ${threshold.signals.join(', ')}: ${threshold.label}, ${operatorText[threshold.operator]} ${threshold.value} ${unit}${threshold.modeLabel === undefined ? '' : ` (only in ${threshold.modeLabel})`}`
 
 /** Plain statements of what the view shows, so the agent's text need not repeat it. */
-export const composedDisplayShows = (display: CompiledComposedDisplay): ReadonlyArray<string> => display.panels.flatMap(panel => [
-  `Live trend of the last ${panel.horizon}: ${panel.pens.map(pen => `${pen.tagId ?? pen.path} (${pen.label}, ${pen.unit}, ${pen.role})`).join('; ')}`,
-  ...panel.thresholds.map(threshold =>
-    `${threshold.kind === 'control' ? 'I&C control set point marked on the axis' : `I&C ${threshold.kind} line`} for ${threshold.signals.join(', ')}: ${threshold.label}, ${operatorText[threshold.operator]} ${threshold.value} ${panel.unit}${threshold.modeLabel === undefined ? '' : ` (only in ${threshold.modeLabel})`}`),
-])
+export const composedDisplayShows = (display: CompiledComposedDisplay): ReadonlyArray<string> => display.panels.flatMap(panel => {
+  if (panel.kind === 'trend') return [`Live trend of the last ${panel.horizon}: ${panel.pens.map(signalName).join('; ')}`, ...panel.thresholds.map(threshold => thresholdText(threshold, panel.unit))]
+  if (panel.kind === 'comparison') return [`Live side-by-side comparison with the median: ${panel.pens.map(signalName).join('; ')}`, ...panel.thresholds.map(threshold => thresholdText(threshold, panel.unit))]
+  if (panel.kind === 'readouts') return [`Live readouts with margin to the nearest I&C alarm or trip threshold: ${panel.pens.map(signalName).join('; ')}`]
+  return [panel.scope === 'related' ? `Active alarms and trips of the ${panel.ruleIds.length} I&C rules acting on the displayed signals` : 'All active alarms and trips of the Plant']
+})
 
-export const composedDisplayWarnings = (display: CompiledComposedDisplay): ReadonlyArray<string> => display.panels.flatMap(panel => panel.pens.flatMap(pen => [
-  ...(pen.role === 'primary' && pen.thresholds.length === 0 ? [`No single-signal I&C threshold acts on ${pen.tagId ?? pen.path}; its trend shows values without threshold lines.`] : []),
-  ...pen.combinedRules.map(rule => `${pen.tagId ?? pen.path} also feeds the combined rule "${rule.label}" (${rule.kind}); it is listed, not drawn.`),
-]))
+export const composedDisplayWarnings = (display: CompiledComposedDisplay): ReadonlyArray<string> => display.panels.flatMap(panel => {
+  if (panel.kind === 'alarms') return panel.scope === 'related' && panel.ruleIds.length === 0 ? ['No alarm or trip rule acts on the displayed signals; the related alarms panel will stay empty.'] : []
+  return panel.pens.flatMap(pen => [
+    ...(panel.kind === 'trend' && pen.role === 'primary' && pen.thresholds.length === 0 ? [`No single-signal I&C threshold acts on ${pen.tagId ?? pen.path}; its trend shows values without threshold lines.`] : []),
+    ...pen.combinedRules.map(rule => `${pen.tagId ?? pen.path} also feeds the combined rule "${rule.label}" (${rule.kind}); it is listed, not drawn.`),
+  ])
+})
 
 export const formatComposedDisplayIssues = (issues: ReadonlyArray<ComposedDisplayIssue>): string => [
   `Display composition rejected (${issues.length} issue${issues.length === 1 ? '' : 's'}); nothing will be shown. Fix every issue and call world.process-plant.display.compose again:`,

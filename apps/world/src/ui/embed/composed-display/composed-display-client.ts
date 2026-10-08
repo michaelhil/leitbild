@@ -19,8 +19,22 @@ export interface ComposedDisplayViewResult {
   readonly display: CompiledComposedDisplay
 }
 
+export interface ComposedDisplayAlarm {
+  readonly id: string
+  readonly ruleId: string
+  readonly kind: 'alarm' | 'trip'
+  readonly title: string
+  readonly severity: 'info' | 'notice' | 'warning' | 'critical'
+  readonly acknowledged: boolean
+  readonly firstOut: boolean
+  readonly firstActiveElapsedMs?: number
+}
+
 export interface ComposedDisplaySample {
   readonly simulationTime: string
+  readonly plantElapsedMs: number
+  /** Present when the sample asked for alarms. */
+  readonly alarms?: ReadonlyArray<ComposedDisplayAlarm>
   readonly values: ReadonlyArray<{
     readonly path: string
     readonly value: number | boolean
@@ -35,7 +49,7 @@ export interface ComposedDisplayClient {
   readonly loadRun: (runId: SimulationRunId) => Promise<void>
   readonly view: (runId: SimulationRunId, plantId: string, state: string) => Promise<ComposedDisplayViewResult>
   readonly history: (runId: SimulationRunId, seriesId: string, window: { readonly from: number; readonly to: number }) => Promise<ReadonlyArray<TrendPoint>>
-  readonly sample: (runId: SimulationRunId, plantId: string, paths: ReadonlyArray<string>) => Promise<ComposedDisplaySample>
+  readonly sample: (runId: SimulationRunId, plantId: string, paths: ReadonlyArray<string>, alarms: boolean) => Promise<ComposedDisplaySample>
 }
 
 const runPath = (runId: SimulationRunId, suffix = ''): string =>
@@ -91,5 +105,5 @@ export const composedDisplayClient: ComposedDisplayClient = {
         : [])
       .sort((left, right) => left.t - right.t)
   },
-  sample: (runId, plantId, paths) => querySimulationRunCapability<ComposedDisplaySample>(runId, 'world.process-plant.display.sample', { plantId, paths }),
+  sample: (runId, plantId, paths, alarms) => querySimulationRunCapability<ComposedDisplaySample>(runId, 'world.process-plant.display.sample', { plantId, paths, alarms }),
 }

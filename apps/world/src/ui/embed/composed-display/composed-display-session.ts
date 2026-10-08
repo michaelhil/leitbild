@@ -62,30 +62,45 @@ export const createComposedDisplaySession = (config: {
 
   const stopPolling = (): void => { clearInterval(timer); timer = undefined }
 
-  const pens = (): ReadonlyArray<{ readonly path: string; readonly seriesId: string; readonly horizonMs: number }> =>
-    snapshot.view?.display.panels.flatMap(panel => panel.pens.map(pen => ({ path: String(pen.path), seriesId: pen.seriesId, horizonMs: panel.horizonMs }))) ?? []
+  const panels = () => snapshot.view?.display.panels ?? []
 
-  const grownRanges = (series: ReadonlyMap<string, ReadonlyArray<TrendPoint>>): ReadonlyArray<ValueDomain | null> =>
-    (snapshot.view?.display.panels ?? []).map((panel, index) => {
-      const values = panel.pens.flatMap(pen => (series.get(String(pen.path)) ?? []).map(point => point.v))
-      const previous = snapshot.ranges[index] ?? null
-      if (values.length === 0) return previous
-      const min = Math.min(...values, ...(previous === null ? [] : [previous.min]))
-      const max = Math.max(...values, ...(previous === null ? [] : [previous.max]))
-      return { min, max }
-    })
+  /** Every displayed signal is sampled once, however many panels show it. */
+  const sampledPaths = (): ReadonlyArray<string> => [...new Set(panels().flatMap(panel => panel.kind === 'alarms' ? [] : panel.pens.map(pen => String(pen.path))))]
+
+  /** Trend pens keep a time series; other panels only need the latest sample. */
+  const trendPens = (): ReadonlyArray<{ readonly path: string; readonly seriesId: string; readonly horizonMs: number }> =>
+    panels().flatMap(panel => panel.kind === 'trend' ? panel.pens.map(pen => ({ path: String(pen.path), seriesId: pen.seriesId, horizonMs: panel.horizonMs })) : [])
+
+  const wantsAlarms = (): boolean => panels().some(panel => panel.kind === 'alarms')
+
+  const grownRanges = (
+    series: ReadonlyMap<string, ReadonlyArray<TrendPoint>>,
+    latest: ComposedDisplaySample | undefined,
+  ): ReadonlyArray<ValueDomain | null> => panels().map((panel, index) => {
+    const previous = snapshot.ranges[index] ?? null
+    if (panel.kind !== 'trend' && panel.kind !== 'comparison') return previous
+    const paths = new Set(panel.pens.map(pen => String(pen.path)))
+    const values = panel.kind === 'trend'
+      ? panel.pens.flatMap(pen => (series.get(String(pen.path)) ?? []).map(point => point.v))
+      : (latest?.values ?? []).flatMap(entry => paths.has(entry.path) && typeof entry.value === 'number' ? [entry.value] : [])
+    if (values.length === 0) return previous
+    return {
+      min: Math.min(...values, ...(previous === null ? [] : [previous.min])),
+      max: Math.max(...values, ...(previous === null ? [] : [previous.max])),
+    }
+  })
 
   const applySample = (sample: ComposedDisplaySample): void => {
     const at = Date.parse(sample.simulationTime)
     const reset = lastSimulationMs !== undefined && at < lastSimulationMs
     lastSimulationMs = at
     const series = new Map(reset ? [] : snapshot.series)
-    for (const pen of pens()) {
+    for (const pen of trendPens()) {
       const value = sample.values.find(entry => entry.path === pen.path)?.value
       if (typeof value !== 'number') continue
       series.set(pen.path, appendPoint(series.get(pen.path) ?? [], { t: at, v: value }, at - pen.horizonMs))
     }
-    update({ series, ranges: grownRanges(series), latest: sample, lastSampleWallMs: wallNow(), sampleError: null, resetSinceAdvice: snapshot.resetSinceAdvice || reset })
+    update({ series, ranges: grownRanges(series, sample), latest: sample, lastSampleWallMs: wallNow(), sampleError: null, resetSinceAdvice: snapshot.resetSinceAdvice || reset })
   }
 
   const checkPresence = async (): Promise<boolean> => {
@@ -102,7 +117,7 @@ export const createComposedDisplaySession = (config: {
     polls += 1
     try {
       if (polls % PRESENCE_EVERY_SAMPLES === 0 && !await checkPresence()) return
-      applySample(await config.client.sample(config.runId, config.plantId, pens().map(pen => pen.path)))
+      applySample(await config.client.sample(config.runId, config.plantId, sampledPaths(), wantsAlarms()))
     } catch (error) {
       // Keep the last values on screen; the stale marker and this message say they are old.
       update({ sampleError: error instanceof Error ? error.message : String(error) })
@@ -121,13 +136,15 @@ export const createComposedDisplaySession = (config: {
     const now = Date.parse(view.simulationTime)
     const series = new Map<string, ReadonlyArray<TrendPoint>>()
     const historyMissing = new Set<string>()
-    await Promise.all(pens().map(async pen => {
+    await Promise.all(trendPens().map(async pen => {
       const points = await config.client.history(config.runId, pen.seriesId, { from: now - pen.horizonMs, to: now })
       if (points.length === 0) historyMissing.add(pen.path)
       series.set(pen.path, points)
     }))
     lastSimulationMs = now
-    update({ series, ranges: grownRanges(series), historyMissing, phase: { kind: 'live' } })
+    // The first sample fills readouts, comparisons and alarms before polling starts.
+    const first = await config.client.sample(config.runId, config.plantId, sampledPaths(), wantsAlarms())
+    update({ series, historyMissing, latest: first, lastSampleWallMs: wallNow(), ranges: grownRanges(series, first), phase: { kind: 'live' } })
   }
 
   return {
