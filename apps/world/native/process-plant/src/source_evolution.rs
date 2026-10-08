@@ -137,6 +137,7 @@ pub struct Workspace {
     collision_direction: Vec<[f64; GROUPS]>,
     scratch: Vec<f64>,
     water_events: Vec<ms::Events>,
+    water_event_direction: Vec<ms::Events>,
     passive_capture: Vec<f64>,
     target_captures: Vec<f64>,
     target_capture_direction: Vec<f64>,
@@ -186,6 +187,19 @@ impl Workspace {
             return Err("Invalid source JVP candidate");
         }
         Ok(&self.external_event_direction)
+    }
+    /// Birth-site events before native-cell aggregation. Thermal routing must
+    /// retain this region/material identity instead of heating advected products.
+    pub fn water_birth_events(&self) -> Result<&[ms::Events], &'static str> {
+        self.check()?;
+        Ok(&self.water_events)
+    }
+    pub fn water_birth_event_jvp(&self) -> Result<&[ms::Events], &'static str> {
+        self.check()?;
+        if !self.jvp_valid {
+            return Err("Invalid source birth-event direction");
+        }
+        Ok(&self.water_event_direction)
     }
     /// Only the selected prompt-fission/E25 release path. Other binding,
     /// activation and capsule emissions are NOT silently deposited here.
@@ -265,7 +279,8 @@ impl Workspace {
                 + self.charged_escape.len())
                 * std::mem::size_of::<[f64; GROUPS]>()
             + self.water.len() * std::mem::size_of::<ms::Stocks>()
-            + self.water_events.len() * std::mem::size_of::<ms::Events>()
+            + (self.water_events.len() + self.water_event_direction.len())
+                * std::mem::size_of::<ms::Events>()
             + (self.external_events.len() + self.external_event_direction.len())
                 * std::mem::size_of::<ms::Events>()
             + self.external_water.len() * std::mem::size_of::<ms::Stocks>()
@@ -296,6 +311,21 @@ fn scaled_stock(s: &ms::Stocks, f: f64) -> ms::Stocks {
     }
 }
 impl Evolution {
+    /// Actual represented external-water birth rows, not closed bay inventories.
+    pub fn external_water_birth_rows(&self) -> impl Iterator<Item = (usize, usize, usize)> + '_ {
+        self.input.row_map.iter().enumerate().filter_map(|(i, m)| {
+            match self.input.water_owners[m.owner].authority {
+                WaterAuthority::External { index } => {
+                    Some((i, self.input.moderator.intersections()[i].region, index))
+                }
+                WaterAuthority::Closed => None,
+            }
+        })
+    }
+    pub fn mobile_capture_emissions(&self) -> [[f64; 2]; 2] {
+        let law = self.input.moderator.law();
+        [law.hydrogen_emission, law.boron_emission]
+    }
     pub fn new(input: Input) -> Result<Self, &'static str> {
         let v = input.history.fuel().volumes();
         let speed = input.history.fuel().law().speed;
@@ -719,6 +749,7 @@ impl Evolution {
             collision_direction: vec![[0.; GROUPS]; n / GROUPS],
             scratch: vec![0.; n],
             water_events: vec![ms::Events::default(); self.input.water_rows.len()],
+            water_event_direction: vec![ms::Events::default(); self.input.water_rows.len()],
             passive_capture: vec![0.; nt],
             target_captures: vec![0.; nt],
             target_capture_direction: vec![0.; nt],
@@ -1214,6 +1245,13 @@ impl Evolution {
                         eh * law.hydrogen_emission[1] + eb * law.boron_emission[1];
                 }
             }
+            let law = self.input.moderator.law();
+            w.water_event_direction[i] = ms::Events {
+                hydrogen: eh,
+                boron: eb,
+                emitted_charged: eh * law.hydrogen_emission[0] + eb * law.boron_emission[0],
+                emitted_photon: eh * law.hydrogen_emission[1] + eb * law.boron_emission[1],
+            };
             net -= eh + eb;
         }
         for i in 0..self.input.targets.len() {

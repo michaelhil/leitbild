@@ -98,7 +98,7 @@ fn actual_prhr_rate_event_without_advancement() {
 }
 
 #[test]
-#[ignore = "Explicit actual nine-frame PRHR entry proof; no IDASolve; 30 s total"]
+#[ignore = "Explicit actual ten-frame PRHR and mobile binding entry proof; no IDASolve; 30 s total"]
 fn actual_prhr_entry_without_advancement() {
     let started = Instant::now();
     let directory = PathBuf::from(std::env::var("LEITBILD_COOLING_DIAGNOSTIC_ARTIFACTS").unwrap());
@@ -196,8 +196,11 @@ fn actual_prhr_entry_without_advancement() {
                 (m.layout.barrel_exported, 1.),
                 (m.layout.ambient_exported, 1.),
                 (m.layout.fuel_capture_exported, 1.),
+                (m.layout.mobile_capture_exported, 1.),
+                (m.layout.mobile_capture_boundary_exported, 1.),
             ]);
             weighted.extend(m.capture_paid_rows().map(|(r, q)| (r, -q)));
+            weighted.extend(m.mobile_capture_paid_rows().map(|(r, q)| (r, -q)));
             weighted.extend(p.receipt_rows().map(|(r, s)| (base + r, s)));
             let gross = weighted
                 .iter()
@@ -209,6 +212,7 @@ fn actual_prhr_entry_without_advancement() {
                     "Actual PRHR independent energy RHS mismatch {balance_error}"
                 ));
             }
+            let mobile_json = cooling_mobile::entry_receipt(m, &w, &yp)?;
             let q = p.layout;
             // Exercise the actual reciprocal volume-work Fyp, not an identity
             // differential mask substituted for the composed finite pool.
@@ -377,7 +381,7 @@ fn actual_prhr_entry_without_advancement() {
                     "Actual finite ROOM.A rate first law leak {room_rate_defect} W"
                 ));
             }
-            cases[case]=format!("{{\"refinement\":{refinement},\"passed\":true,\"allDifferentialStockBitsPreserved\":true,\"initialization\":{},\"initializationTrace\":{},\"actualOpening\":{},\"springReleaseRateW\":{},\"finiteRoomEnergyJ\":{},\"finitePoolMassKg\":{},\"finitePoolEnergyJ\":{},\"poolHeatReceiptW\":{},\"surfaceWorkExportW\":{},\"connectorExportW\":{},\"poolChartCorrections\":{:?},\"filmChartCorrectionK\":{},\"forwardRateResidualMixedUnits\":{},\"independentEnergyRHSIdentityErrorW\":{},\"reciprocalVolumeWorkFypErrorW\":{},\"sameTrialJVPFiniteDifferenceRatio\":{},\"jvpProbeRatios\":{:?},\"jvpProbeScopes\":[\"initialized finite-pool ROOM receipts; all liquid surfaces unperturbed\",\"each actual liquid surface at its bulk minus0.1K; differential stocks unchanged; unaccepted trial only\"],\"approximatePScaledFluidResidualDiagnostic\":{},\"approximatePScope\":\"finite-same-trial-preconditioner-response;not-exact-inverse-or-convergence-certificate\"}}",
+            cases[case]=format!("{{\"refinement\":{refinement},\"passed\":true,\"mobileBinding\":{mobile_json},\"allDifferentialStockBitsPreserved\":true,\"initialization\":{},\"initializationTrace\":{},\"actualOpening\":{},\"springReleaseRateW\":{},\"finiteRoomEnergyJ\":{},\"finitePoolMassKg\":{},\"finitePoolEnergyJ\":{},\"poolHeatReceiptW\":{},\"surfaceWorkExportW\":{},\"connectorExportW\":{},\"poolChartCorrections\":{:?},\"filmChartCorrectionK\":{},\"forwardRateResidualMixedUnits\":{},\"independentEnergyRHSIdentityErrorW\":{},\"reciprocalVolumeWorkFypErrorW\":{},\"sameTrialJVPFiniteDifferenceRatio\":{},\"jvpProbeRatios\":{:?},\"jvpProbeScopes\":[\"initialized finite-pool ROOM receipts; all liquid surfaces unperturbed\",\"each actual liquid surface at its bulk minus0.1K; differential stocks unchanged; unaccepted trial only\"],\"approximatePScaledFluidResidualDiagnostic\":{},\"approximatePScope\":\"finite-same-trial-preconditioner-response;not-exact-inverse-or-convergence-certificate\"}}",
                 init.json(),trace.json(),finite(input.opening),finite(current.spring_release_w),finite(y[base+q.room_energy]),
                 finite(y[base+q.wst_start]),finite(y[base+q.wst_start+1]),finite(current.pool_heat_w),finite(current.wst.gas_export_rate_w),
                 finite(current.connector_export_w),charts.pool,finite(charts.surface_temperature),finite(max_forward),finite(balance_error),
@@ -423,9 +427,12 @@ fn energy_vector_roundtrip_bound(
             l.barrel_exported,
             l.ambient_exported,
             l.fuel_capture_exported,
+            l.mobile_capture_exported,
+            l.mobile_capture_boundary_exported,
         ])
         .map(|r| (r, 1.))
         .chain(model.capture_paid_rows())
+        .chain(model.mobile_capture_paid_rows())
         .collect::<Vec<_>>();
     let forward = rows
         .iter()
@@ -496,7 +503,7 @@ fn energy_vector_roundtrip_uses_all_operands_but_rejects_wrong_mapping() {
 }
 
 #[test]
-#[ignore = "Explicit actual nine-frame pressure and fuel-binding entry proof, PRHR disabled; no IDASolve; 30 s maximum"]
+#[ignore = "Explicit actual ten-frame pressure and nuclear-binding entry proof, PRHR disabled; no IDASolve; 30 s maximum"]
 fn actual_pressure_entry_without_advancement() {
     use leitbild_plant_numerics::cold_pressurizer as cp;
     let started = Instant::now();
@@ -888,8 +895,9 @@ fn actual_pressure_entry_without_advancement() {
             }
             let hydraulic = w.surge.diagnostics()?;
             let flow = w.surge.receipts()?.mass;
+            let mobile_json = cooling_mobile::entry_receipt(m, &w, &yp)?;
             cases[case_index] = format!(
-                "{{\"refinement\":{refinement},\"passed\":true,\"preparation\":{preparation_json},\"initialization\":{},\"initializationTrace\":{},\"energyVectorRoundtrip\":{roundtrip_json},\"freshHydraulicResidualPa\":{head:?},\"jointActualFlowKgS\":[{},{}],\"heightRateMPerS\":{},\"closedWaterRateKgPerS\":{mass_rate:e},\"closedBRateKgEquivalentPerS\":{boron_rate:e},\"fuelBinding\":{capture_json},\"fuelBindingErrorWeights\":{capture_weights_json},\"offInterfaceRHSIdentityErrorW\":{energy_error:e},\"unshiftedEnergyJVPIdentityError\":{unshifted_error:e},\"hugeCjEnergyActionError\":{huge_error:e},\"completedPNonGMaxError\":{p_error:e},\"onePSetupAndSolveSeconds\":{p_seconds},\"passiveHydraulicDissipationW\":{},\"kineticTemperatureEquivalentK\":{:?},\"currentCandidateFlowClosureRatio\":{}}}",
+                "{{\"refinement\":{refinement},\"passed\":true,\"mobileBinding\":{mobile_json},\"preparation\":{preparation_json},\"initialization\":{},\"initializationTrace\":{},\"energyVectorRoundtrip\":{roundtrip_json},\"freshHydraulicResidualPa\":{head:?},\"jointActualFlowKgS\":[{},{}],\"heightRateMPerS\":{},\"closedWaterRateKgPerS\":{mass_rate:e},\"closedBRateKgEquivalentPerS\":{boron_rate:e},\"fuelBinding\":{capture_json},\"fuelBindingErrorWeights\":{capture_weights_json},\"offInterfaceRHSIdentityErrorW\":{energy_error:e},\"unshiftedEnergyJVPIdentityError\":{unshifted_error:e},\"hugeCjEnergyActionError\":{huge_error:e},\"completedPNonGMaxError\":{p_error:e},\"onePSetupAndSolveSeconds\":{p_seconds},\"passiveHydraulicDissipationW\":{},\"kineticTemperatureEquivalentK\":{:?},\"currentCandidateFlowClosureRatio\":{}}}",
                 ic.json(),
                 trace.json(),
                 flow[0],

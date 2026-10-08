@@ -1,4 +1,4 @@
-//! Strict nine-frame cold source/cooling/barrel/pressure/capture/PRHR preparation. Primary chemistry is
+//! Strict ten-frame cold source/cooling/barrel/pressure/capture/PRHR preparation. Primary chemistry is
 //! replaced by actual carrier intersections, never cloned as source histories.
 use super::{
     barrel_thermal, evolution_input, fuel_thermal, moderator_source, operating_network,
@@ -7,6 +7,7 @@ use super::{
 use source_input::{count, number};
 use std::collections::BTreeSet;
 mod capture;
+mod mobile;
 mod observation;
 mod pressure;
 mod prhr;
@@ -31,8 +32,8 @@ pub(crate) struct Prepared {
 pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
     let words = text.split_whitespace().collect::<Vec<_>>();
     let mut offset = 0;
-    let mut frames = Vec::with_capacity(9);
-    for _ in 0..9 {
+    let mut frames = Vec::with_capacity(10);
+    for _ in 0..10 {
         let size = words
             .get(offset)
             .ok_or("Missing coupled frame length")?
@@ -48,7 +49,7 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
     if offset != words.len() {
         return Err("Trailing coupled payload".into());
     }
-    let [source, network, thermal, primary, barrel, pressure, capture, observation, prhr_frame]: [Vec<&str>; 9] =
+    let [source, network, thermal, primary, barrel, pressure, capture, observation, prhr_frame, mobile_frame]: [Vec<&str>; 10] =
         frames.try_into().map_err(|_| "Wrong coupled frame count")?;
     let source = source.join(" ");
     let network = network.join(" ");
@@ -336,6 +337,7 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
         barrel,
         pressure,
         capture,
+        mobile::parse(&mobile_frame)?,
         fuel_rows,
         water_flows,
         initial_t,
@@ -352,7 +354,7 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
 mod tests {
     use super::*;
     #[test]
-    fn nine_explicit_frames_are_required_and_extra_frames_refuse() {
+    fn ten_explicit_frames_are_required_and_extra_frames_refuse() {
         assert!(parse("0 0 0 0").is_err());
         assert!(parse("0 0 0 0 0").is_err());
         assert!(parse("0 0 0 0 0 0").is_err());

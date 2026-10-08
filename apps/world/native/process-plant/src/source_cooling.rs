@@ -8,8 +8,8 @@
 //! all-passage acoustic mesh, hot geometry or primary phase continuation is implied.
 use crate::{
     barrel_thermal as bt, cold_pressurizer as cp, finite_surge as fs, fuel_capture as fc,
-    fuel_thermal as ft, moderator_source::Stocks, operating_network as on, sg_secondary,
-    source_evolution as se, water_carrier as wc,
+    fuel_thermal as ft, mobile_capture as mc, moderator_source::Stocks, operating_network as on,
+    sg_secondary, source_evolution as se, water_carrier as wc,
 };
 use std::sync::Arc;
 mod pressure;
@@ -33,6 +33,8 @@ pub struct Layout {
     pub gas_hydrogen_product: usize,
     pub ambient_exported: usize,
     pub fuel_capture_exported: usize,
+    pub mobile_capture_exported: usize,
+    pub mobile_capture_boundary_exported: usize,
     pub dimension: usize,
 }
 pub struct Model {
@@ -42,6 +44,7 @@ pub struct Model {
     pub carrier: wc::Carrier,
     pub barrel: bt::Model,
     pub capture: fc::Model,
+    pub mobile_capture: mc::Model,
     pub layout: Layout,
     pressure_connection: PressureConnection,
     /// SOURCE fuel-cohort ordering -> thermal node ordering.
@@ -57,6 +60,7 @@ pub struct Workspace {
     pub thermal: ft::Workspace,
     pub barrel: bt::Workspace,
     pub capture: fc::Workspace,
+    pub mobile_capture: mc::Workspace,
     pub pressurizer: cp::Workspace,
     pub surge: fs::Workspace,
     pub residual: Vec<f64>,
@@ -146,6 +150,7 @@ impl Model {
         barrel: bt::Model,
         pressure_connection: PressureConnection,
         capture: fc::Input,
+        mobile_capture: mc::Input,
         fuel_rows: Vec<usize>,
         water_flows: Vec<Option<usize>>,
         original_temperature: Vec<f64>,
@@ -284,10 +289,17 @@ impl Model {
         let fuel_capture_exported = ambient_exported
             .checked_add(1)
             .ok_or("Coupled layout overflow")?;
-        let dimension = fuel_capture_exported
+        let mobile_capture_exported = fuel_capture_exported
+            .checked_add(1)
+            .ok_or("Coupled layout overflow")?;
+        let mobile_capture_boundary_exported = mobile_capture_exported
+            .checked_add(1)
+            .ok_or("Coupled layout overflow")?;
+        let dimension = mobile_capture_boundary_exported
             .checked_add(1)
             .ok_or("Coupled layout overflow")?;
         let capture = fc::Model::new(&source, &thermal, &fuel_rows, capture)?;
+        let mobile_capture = mc::Model::new(&source, &thermal, nw, mobile_capture)?;
         Ok(Self {
             source,
             network,
@@ -295,6 +307,7 @@ impl Model {
             carrier,
             barrel,
             capture,
+            mobile_capture,
             pressure_connection,
             fuel_rows,
             water_flows,
@@ -316,6 +329,8 @@ impl Model {
                 gas_hydrogen_product,
                 ambient_exported,
                 fuel_capture_exported,
+                mobile_capture_exported,
+                mobile_capture_boundary_exported,
                 dimension,
             },
             owner: Arc::new(()),
@@ -345,6 +360,15 @@ impl Model {
                 l.pool_carrier_start + offset,
             ])
             .chain((species == 0).then_some(l.gas_hydrogen_product))
+    }
+    /// Complete closed-compartment birth receipt. Products may subsequently
+    /// move; their local distribution is NEVER used to deposit binding heat.
+    pub fn mobile_capture_paid_rows(&self) -> impl Iterator<Item = (usize, f64)> + '_ {
+        self.mobile_capture
+            .paid_energy()
+            .into_iter()
+            .enumerate()
+            .flat_map(move |(species, q)| self.mobile_product_rows(species).map(move |r| (r, q)))
     }
     pub fn dimension(&self) -> usize {
         self.layout.dimension
@@ -400,6 +424,8 @@ impl Model {
                     .is_differential(row - l.surge_start))
             || (row >= l.surge_carrier_start && row <= l.ambient_exported)
             || row == l.fuel_capture_exported
+            || row == l.mobile_capture_exported
+            || row == l.mobile_capture_boundary_exported
     }
     pub fn workspace(&self) -> Workspace {
         let nw = self.carrier.cells();
@@ -426,6 +452,7 @@ impl Model {
             thermal: self.thermal.workspace(),
             barrel: self.barrel.workspace(),
             capture: self.capture.workspace(),
+            mobile_capture: self.mobile_capture.workspace(),
             pressurizer: self.pressure_connection.pressurizer.workspace(),
             surge: self.pressure_connection.surge.workspace(),
             residual: vec![0.; self.dimension()],
@@ -638,10 +665,19 @@ impl Model {
         }
         self.capture
             .evaluate(w.source.fuel_capture_events()?, &w.density, &mut w.capture)?;
+        self.mobile_capture.evaluate(
+            &self.source,
+            w.source.water_birth_events()?,
+            &w.density,
+            &mut w.mobile_capture,
+        )?;
         for (&r, &q) in self.fuel_rows.iter().zip(w.capture.fuel_heat()?) {
             w.deposited[r] += q;
         }
         for (q, &c) in w.deposited.iter_mut().zip(w.capture.clad_heat()?) {
+            *q += c;
+        }
+        for (q, &c) in w.deposited.iter_mut().zip(&w.mobile_capture.value()?.clad) {
             *q += c;
         }
         if cj.is_some() {
@@ -715,13 +751,17 @@ impl Model {
         for (i, &q) in w.capture.water_heat()?.iter().enumerate() {
             w.residual[l.network_start + self.network.energy_row(i)] -= q;
         }
+        for (i, &q) in w.mobile_capture.value()?.water.iter().enumerate() {
+            w.residual[l.network_start + self.network.energy_row(i)] -= q;
+        }
         for i in 0..self.thermal.node_count() {
             w.residual[l.energies_start + i] =
                 yp[l.energies_start + i] - w.thermal.heat_rates()?[i];
             w.residual[l.temperatures_start + i] =
                 y[l.energies_start + i] - w.thermal.energies()?[i];
         }
-        w.residual[l.barrel_energy] = yp[l.barrel_energy] - w.barrel.heat_rate()?;
+        w.residual[l.barrel_energy] =
+            yp[l.barrel_energy] - w.barrel.heat_rate()? - w.mobile_capture.value()?.barrel;
         w.residual[l.barrel_temperature] = y[l.barrel_energy] - w.barrel.energy()?;
         w.residual[l.barrel_released] = yp[l.barrel_released] - w.barrel.emitted_rate()?;
         w.residual[l.barrel_exported] = yp[l.barrel_exported] - w.barrel.export_rate()?;
@@ -736,6 +776,10 @@ impl Model {
             - receipts.ambient_heat;
         w.residual[l.fuel_capture_exported] =
             yp[l.fuel_capture_exported] - w.capture.export_rate()?;
+        w.residual[l.mobile_capture_exported] =
+            yp[l.mobile_capture_exported] - w.mobile_capture.value()?.exported;
+        w.residual[l.mobile_capture_boundary_exported] =
+            yp[l.mobile_capture_boundary_exported] - w.mobile_capture.value()?.boundary_exported;
         if w.residual.iter().any(|x| !x.is_finite()) {
             return Err("Nonfinite composed residual".into());
         }
@@ -754,6 +798,28 @@ impl Model {
                 .chain(w.thermal.heat_rates()?.iter().copied())
                 .chain(w.barrel.water_heat()?.iter().copied())
                 .chain(w.capture.water_heat()?.iter().copied())
+                .chain(w.mobile_capture.value()?.water.iter().copied())
+                .chain([
+                    w.mobile_capture.value()?.barrel,
+                    w.mobile_capture.value()?.exported,
+                    w.mobile_capture.value()?.boundary_exported,
+                ])
+                .chain(
+                    self.mobile_capture
+                        .paid_energy()
+                        .into_iter()
+                        .enumerate()
+                        .map(|(species, q)| {
+                            let product = if species == 0 { 0 } else { 2 };
+                            -q * compensated(
+                                w.product_rates
+                                    .iter()
+                                    .map(|r| r.values()[product])
+                                    .chain([material[3 + product], material[6 + product]])
+                                    .chain((species == 0).then_some(material[9])),
+                            )
+                        }),
+                )
                 .chain(
                     self.capture_paid_rows()
                         .map(|(r, q)| -q * w.source.rates().expect("successful source")[r]),
@@ -846,10 +912,22 @@ impl Model {
             &w.ddensity,
             &mut w.capture,
         )?;
+        self.mobile_capture.jvp(
+            w.source.water_birth_event_jvp()?,
+            &w.ddensity,
+            &mut w.mobile_capture,
+        )?;
         for (&r, &q) in self.fuel_rows.iter().zip(w.capture.fuel_heat_jvp()?) {
             w.ddeposited[r] += q;
         }
         for (q, &c) in w.ddeposited.iter_mut().zip(w.capture.clad_heat_jvp()?) {
+            *q += c;
+        }
+        for (q, &c) in w
+            .ddeposited
+            .iter_mut()
+            .zip(&w.mobile_capture.direction()?.clad)
+        {
             *q += c;
         }
         self.thermal.jvp_into(
@@ -958,11 +1036,15 @@ impl Model {
         for (i, &q) in w.capture.water_heat_jvp()?.iter().enumerate() {
             w.jvp[l.network_start + self.network.energy_row(i)] -= q;
         }
+        for (i, &q) in w.mobile_capture.direction()?.water.iter().enumerate() {
+            w.jvp[l.network_start + self.network.energy_row(i)] -= q;
+        }
         for i in 0..self.thermal.node_count() {
             w.jvp[l.energies_start + i] = cj * dy[l.energies_start + i] - w.thermal.heat_jvp()?[i];
             w.jvp[l.temperatures_start + i] = dy[l.energies_start + i] - w.thermal.energy_jvp()?[i];
         }
-        w.jvp[l.barrel_energy] = cj * dy[l.barrel_energy] - w.barrel.heat_jvp()?;
+        w.jvp[l.barrel_energy] =
+            cj * dy[l.barrel_energy] - w.barrel.heat_jvp()? - w.mobile_capture.direction()?.barrel;
         w.jvp[l.barrel_temperature] =
             dy[l.barrel_energy] - w.barrel.capacity()? * dy[l.barrel_temperature];
         w.jvp[l.barrel_released] = cj * dy[l.barrel_released] - w.barrel.emitted_jvp()?;
@@ -978,6 +1060,10 @@ impl Model {
             - line_tangent.ambient_heat;
         w.jvp[l.fuel_capture_exported] =
             cj * dy[l.fuel_capture_exported] - w.capture.export_jvp()?;
+        w.jvp[l.mobile_capture_exported] =
+            cj * dy[l.mobile_capture_exported] - w.mobile_capture.direction()?.exported;
+        w.jvp[l.mobile_capture_boundary_exported] = cj * dy[l.mobile_capture_boundary_exported]
+            - w.mobile_capture.direction()?.boundary_exported;
         if w.jvp.iter().any(|x| !x.is_finite()) {
             return Err("Nonfinite composed JVP".into());
         }
@@ -994,6 +1080,31 @@ impl Model {
                 .chain(w.thermal.heat_jvp()?.iter().copied())
                 .chain(w.barrel.water_heat_jvp()?.iter().copied())
                 .chain(w.capture.water_heat_jvp()?.iter().copied())
+                .chain(w.mobile_capture.direction()?.water.iter().copied())
+                .chain([
+                    w.mobile_capture.direction()?.barrel,
+                    w.mobile_capture.direction()?.exported,
+                    w.mobile_capture.direction()?.boundary_exported,
+                ])
+                .chain(
+                    self.mobile_capture
+                        .paid_energy()
+                        .into_iter()
+                        .enumerate()
+                        .map(|(species, q)| {
+                            let product = if species == 0 { 0 } else { 2 };
+                            -q * compensated(
+                                w.product_jvp
+                                    .iter()
+                                    .map(|r| r.values()[product])
+                                    .chain([
+                                        material_tangent[3 + product],
+                                        material_tangent[6 + product],
+                                    ])
+                                    .chain((species == 0).then_some(material_tangent[9])),
+                            )
+                        }),
+                )
                 .chain(
                     self.capture_paid_rows()
                         .map(|(r, q)| -q * w.source.rate_jvp().expect("successful source JVP")[r]),
@@ -1075,6 +1186,8 @@ impl Model {
         if y[self.layout.barrel_released] < 0.
             || y[self.layout.barrel_exported] < 0.
             || y[l.fuel_capture_exported] < 0.
+            || y[l.mobile_capture_exported] < 0.
+            || y[l.mobile_capture_boundary_exported] < 0.
         {
             return Err("Negative accepted nuclear release/export history".into());
         }

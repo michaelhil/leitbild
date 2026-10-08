@@ -16,6 +16,7 @@ import type {compileSourceEvolution} from './reference-design-source-evolution'
 import {compileColdBarrel,nativeColdBarrelFrame} from './reference-design-source-barrel'
 import {compileColdPressure,nativeColdPressureFrame} from './reference-design-cold-pressure-support'
 import {compileFuelCapture,nativeFuelCaptureFrame} from './reference-design-fuel-capture'
+import {compileMobileCapture,nativeMobileCaptureFrame} from './reference-design-mobile-capture'
 import {parsePressureChannel,nativePressureChannelFields,parsePressureProtection,nativePressureProtectionFields} from './reference-design-pressure-observation'
 import {compilePrhrCooling,nativePrhrCoolingFrame,parsePrhrColdPreparation} from './reference-design-prhr-cooling'
 
@@ -83,12 +84,13 @@ export function compilePrimaryIncidence(network:Pick<Network,'water'>,partition:
  geometry:ReturnType<typeof compilePrimaryWaterGeometry>){
  const indexes=new Map(network.water.map((w,i)=>[w.id,i])),
   regionIndexes=new Map(partition.regions.map((r,i)=>[r.id,i])),sums=new Map<string,number>(),expected=new Map<string,number>(),
-  mapped=new Map<string,number>()
- const add=(region:string,cell:string,volume:number)=>{
+  mapped=new Map<string,number>(),patches=new Map<string,number>()
+ const add=(region:string,cell:string,origin:string,volume:number)=>{
   if(!Number.isFinite(volume)||volume<0)throw Error('Invalid primary source geometric support')
   if(volume===0)return
   const i=requireIndex(indexes,cell),r=requireIndex(regionIndexes,region),key=`${r}/${i}`
   mapped.set(key,(mapped.get(key)??0)+volume);sums.set(region,(sums.get(region)??0)+volume)
+  const patch=key+'/'+origin;patches.set(patch,(patches.get(patch)??0)+volume)
  }
  const external=new Map([['DOWN','DOWNCOMER'],['LOWER.EXTERNAL','LOWER'],['UPPER.EXTERNAL','UPPER'],
   ['Core.1.EXTERNAL','CORE.1'],['Core.2.EXTERNAL','CORE.2'],['HOUSING.MAIN','UPPER'],['HOUSING.NECK','UPPER']])
@@ -97,7 +99,7 @@ export function compilePrimaryIncidence(network:Pick<Network,'water'>,partition:
   expected.set(p.sourceRegionId,(expected.get(p.sourceRegionId)??0)+p.volume_m3)
   if(p.owner.endsWith('.GUIDE'))continue
   const cell=external.get(p.owner);if(!cell)throw Error('Unmapped physical primary support '+p.owner)
-  add(p.sourceRegionId,cell,p.volume_m3)
+  add(p.sourceRegionId,cell,p.owner,p.volume_m3)
  }
  const {fuel:f,handling:h,control:c}=d,cg=controlAbsorberGeometry(c,f,h),
   clusters=new Set(cg.sites.map(s=>`${s.x_m}/${s.y_m}`)),guides=fuelLatticeSites(f).filter(p=>p.guide),
@@ -127,7 +129,7 @@ export function compilePrimaryIncidence(network:Pick<Network,'water'>,partition:
   }
   const a=new Map<string,number>()
   for(const s of sites)a.set(s.kind,(a.get(s.kind)??0)+area(s,gi)-area(s,s.inner))
-  for(const [kind,value]of a)add(r.id,'GUIDE.'+kind,value*length)
+  for(const [kind,value]of a)add(r.id,'GUIDE.'+kind,'GUIDE.'+kind,value*length)
  }
  for(const [region,V]of expected)close(sums.get(region)??0,V,region+' source support')
  const represented=network.water.map(()=>0),rows=[...mapped].map(([key,volume_m3])=>{
@@ -141,7 +143,12 @@ export function compilePrimaryIncidence(network:Pick<Network,'water'>,partition:
   if(outside< -4e-10*w.volume_m3)throw Error('Source support exceeds native physical cell '+w.id)
   return {id:w.id,representedVolume_m3:represented[i]!,outsideSourceVolume_m3:outside,totalVolume_m3:w.volume_m3}
  })
- return {rows,cells,hydrogenAtomsPerKg:2*geometry.avogadro/.01801528,
+ const birthPatches=[...patches].map(([key,volume_m3])=>{
+  const [region,cell,...origin]=key.split('/'),r=Number(region),w=Number(cell)
+  return {region:r,cell:w,sourceRegionId:partition.regions[r]!.id,cellId:network.water[w]!.id,
+   origin:origin.join('/'),volume_m3,birth_share:volume_m3/mapped.get(region+'/'+cell)!}
+ }).sort((a,b)=>a.region-b.region||a.cell-b.cell||a.origin.localeCompare(b.origin))
+ return {rows,cells,birthPatches,hydrogenAtomsPerKg:2*geometry.avogadro/.01801528,
   boronAtomsPerKg:geometry.markerRatio*geometry.atomsPerMarker,markerRatio:geometry.markerRatio,
   preparation:'Fresh point-lumped native liquid stocks seed homogeneous reference carriers; NOT the separately qualified hydrostatic quadrature stocks',
   scope:'Exact original stationary geometric primary/source incidence; current mass/products are owned by native cells, closed receiving bays remain separate'}
@@ -182,7 +189,7 @@ export function nativeFuelCoolingFixture(p:Awaited<ReturnType<typeof compileFuel
  return [source.fixture,p.network.nativeInput,fields.join('\n'),primary.join('\n'),barrel.fields.join('\n'),
   nativeColdPressureFrame(p.pressure).join('\n'),nativeFuelCaptureFrame(p.capture).join('\n'),
   [...nativePressureChannelFields(p.pressureChannel),...nativePressureProtectionFields(p.pressureProtection)].join('\n'),
-  nativePrhrCoolingFrame(p.prhr).join('\n')].map(frame).join('\n')+'\n'
+  nativePrhrCoolingFrame(p.prhr).join('\n'),nativeMobileCaptureFrame(p.mobileCapture).join('\n')].map(frame).join('\n')+'\n'
 }
 
 export async function compileFuelCooling(wiki:string,features:{prhr:boolean}={prhr:false}){
@@ -205,6 +212,7 @@ export async function compileFuelCooling(wiki:string,features:{prhr:boolean}={pr
   pressure=compileColdPressure(read('model/operating-pressure-support.md'),read('systems/primary-coolant/surge-route.md'),
    network.water,barrel,primary.boronAtomsPerKg/primary.markerRatio,conditioning.liquidTemperature_K),
   capture=compileFuelCapture(material,thermal,network,barrel,read('systems/reactor/configuration-source-and-history.md')),
+  mobileCapture=compileMobileCapture(material,thermal,primary,d,geometry,barrel,read('systems/reactor/configuration-source-and-history.md')),
   pressureChannel=parsePressureChannel(read('systems/instrumentation/operational-observations.md')),
   pressureProtection=parsePressureProtection(read('safety/source-and-primary-protection.md')),
   identities=names.map((name,i)=>({name,sha256:sha(texts[i]!)})),
@@ -215,13 +223,14 @@ export async function compileFuelCooling(wiki:string,features:{prhr:boolean}={pr
  for(const identity of network.ownerIdentities){const same=identities.find(x=>x.name===identity.name)
   if(same&&same.sha256!==identity.sha256)throw Error('Owner changed across current coupling compilers')}
  if((await Promise.all(names.map(p=>Bun.file(join(wiki,p)).text()))).some((s,i)=>s!==texts[i]))throw Error('Owner changed during cold coupling compilation')
- return {thermal,primary,network,material,barrel,pressure,capture,pressureChannel,pressureProtection,conditioning,prhr,ownerIdentities:identities,
+ return {thermal,primary,network,material,barrel,pressure,capture,mobileCapture,pressureChannel,pressureProtection,conditioning,prhr,ownerIdentities:identities,
   limitations:['Compilation is not an advancing coupled plant or empirical qualification',
    'Cold fully wet primary, fixed prepared fuel/guide geometry; no primary phase continuation, fuel/absorber motion or pump coastdown',
    ...(prhr ? ['Selected cold PRHR valve stroke, signed liquid circulation and finite steel/WST/ROOM are joined; supplied CNV gas and delivered electrical support are explicit boundaries, not containment/endurance or achieved automatic protection'] : []),
    'Finite mixed surge and cold separated liquid/steam/air PZR; no hot pressure regulation, resolved thermal fronts or dryout',
    'BARREL prompt/Mn emissions join its finite 304 owner and five actual primary recipients, with explicit photon export',
    'Fertile/Xe/Sm prompt binding routes to existing fuel/clad/current external core water with explicit export; E25 remains separate',
-   'Mobile-water, other nonfuel, Cf and apparatus heat recipients remain separately unjoined, not invented exports',
+   'PRIMARY mobile H/B birth heat joins actual liquid and installed clad/barrel; unrepresented wall contacts have a separately retained thermal-domain-boundary export, not free-space escape or complete wall closure',
+   'Closed receiving-bay mobile heat, other nonfuel, Cf and apparatus heat recipients remain separately unjoined, not invented exports',
    'Old hydrostatic source-stock receipt does not define the new point-lumped coupled preparation']}
 }

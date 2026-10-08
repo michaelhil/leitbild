@@ -9,7 +9,7 @@ use leitbild_plant_numerics::{
     water_carrier as wc,
 };
 
-pub(super) const POLICY: &str = "cold-source-fuel-binding";
+pub(super) const POLICY: &str = "cold-source-nuclear-heat";
 pub(super) const CARRIER_POLICY: &str = "closed-mobile-generated-products-separate-H-B;local-remaining-targets;local-product-distribution-diagnostic";
 pub(super) const OUTPUTS: [f64; 14] = [
     0.001, 0.01, 0.1, 1., 2., 5., 10., 20., 30., 60., 120., 180., 240., 300.,
@@ -93,6 +93,8 @@ pub(super) struct Sample {
     /// Nuclear-only emitted/self/clad/water/export powers, per actual source
     /// intersection; sensible heat cannot conceal a missing binding path.
     pub capture_power: Vec<f64>,
+    pub mobile_power: Vec<f64>,
+    pub mobile_recipient_power: Vec<f64>,
     /// Actual signed algebraic mass flows, independently retained at both ends.
     pub surge_flow: [f64; 2],
 }
@@ -295,6 +297,8 @@ impl Accuracy {
         absolute[l.barrel_released] = ENERGY_ATOL;
         absolute[l.barrel_exported] = ENERGY_ATOL;
         absolute[l.fuel_capture_exported] = ENERGY_ATOL;
+        absolute[l.mobile_capture_exported] = ENERGY_ATOL;
+        absolute[l.mobile_capture_boundary_exported] = ENERGY_ATOL;
         for (row, q) in model.capture_paid_rows() {
             absolute[row] = absolute[row].min(ENERGY_ATOL / q);
         }
@@ -530,7 +534,11 @@ impl Accuracy {
             - (y[l.barrel_exported] - self.initial[l.barrel_exported]);
         let binding_paid = super::cooling_capture::paid_energy(model, y, &self.initial)?
             - (y[l.fuel_capture_exported] - self.initial[l.fuel_capture_exported]);
-        totals[1] += released + barrel_paid + binding_paid
+        let mobile_paid = super::cooling_mobile::paid_energy(model, y, &self.initial)?
+            - (y[l.mobile_capture_exported] - self.initial[l.mobile_capture_exported])
+            - (y[l.mobile_capture_boundary_exported]
+                - self.initial[l.mobile_capture_boundary_exported]);
+        totals[1] += released + barrel_paid + binding_paid + mobile_paid
             - solid_change
             - (y[l.barrel_energy] - self.initial[l.barrel_energy])
             - self
@@ -605,6 +613,10 @@ impl Accuracy {
             capture_power_local_ratio: 0.,
             capture_power_sumabs_ratio: 0.,
             capture_paid_energy_ratio: 0.,
+            mobile_power_local_ratio: 0.,
+            mobile_power_sumabs_ratio: 0.,
+            mobile_paid_energy_ratio: 0.,
+            mobile_details: String::new(),
             capture_details: String::new(),
             prhr_details: "null".into(),
             barrel_details: String::new(),
@@ -616,6 +628,86 @@ impl Accuracy {
         };
         let l = model.layout;
         self.compare_pressure(model, a, b, &mut result)?;
+        let mobile_channels = 12 * model.mobile_capture.route_count();
+        if mobile_channels == 0
+            || a.mobile_power.len() != mobile_channels
+            || b.mobile_power.len() != mobile_channels
+        {
+            return Err("Wrong birth-site mobile-capture power sample shape".into());
+        }
+        let (local, sumabs) = deposit_comparison(&a.mobile_power, &b.mobile_power)?;
+        result.mobile_power_local_ratio = local.0;
+        result.mobile_power_sumabs_ratio = sumabs;
+        let i = local.1;
+        result.record(
+            "mobile-binding-birth-route-species-power-W",
+            i,
+            a.mobile_power[i],
+            b.mobile_power[i],
+            (a.mobile_power[i] - b.mobile_power[i]).abs(),
+            1e-3 * b.mobile_power[i].abs() + 20. * DEPOSIT_RESOLUTION_W,
+        )?;
+        let recipients = model.carrier.cells() + model.thermal.node_count() + 1;
+        if a.mobile_recipient_power.len() != recipients
+            || b.mobile_recipient_power.len() != recipients
+        {
+            return Err("Wrong finite mobile-binding recipient sample shape".into());
+        }
+        let (local, sumabs) =
+            deposit_comparison(&a.mobile_recipient_power, &b.mobile_recipient_power)?;
+        result.mobile_power_local_ratio = result.mobile_power_local_ratio.max(local.0);
+        result.mobile_power_sumabs_ratio = result.mobile_power_sumabs_ratio.max(sumabs);
+        let i = local.1;
+        result.record(
+            "mobile-binding-finite-water-clad-barrel-power-W",
+            i,
+            a.mobile_recipient_power[i],
+            b.mobile_recipient_power[i],
+            (a.mobile_recipient_power[i] - b.mobile_recipient_power[i]).abs(),
+            1e-3 * b.mobile_recipient_power[i].abs() + 20. * DEPOSIT_RESOLUTION_W,
+        )?;
+        let paid_a = super::cooling_mobile::paid_species(model, &a.y, &self.initial)?;
+        let paid_b = super::cooling_mobile::paid_species(model, &b.y, &self.initial)?;
+        for species in 0..2 {
+            result.mobile_paid_energy_ratio = result.mobile_paid_energy_ratio.max(result.record(
+                if species == 0 {
+                    "mobile-H-binding-total-paid-J"
+                } else {
+                    "mobile-B-binding-total-paid-J"
+                },
+                species,
+                paid_a[species],
+                paid_b[species],
+                (paid_a[species] - paid_b[species]).abs(),
+                1e-3 * paid_b[species].abs() + 20. * ENERGY_ATOL,
+            )?);
+        }
+        let exports = [
+            l.mobile_capture_exported,
+            l.mobile_capture_boundary_exported,
+        ];
+        let export_a = exports.map(|r| a.y[r] - self.initial[r]);
+        let export_b = exports.map(|r| b.y[r] - self.initial[r]);
+        for (k, row) in exports.into_iter().enumerate() {
+            result.mobile_paid_energy_ratio = result.mobile_paid_energy_ratio.max(result.record(
+                if k == 0 {
+                    "mobile-binding-installed-wall-exit-J"
+                } else {
+                    "mobile-binding-unrepresented-wall-boundary-J"
+                },
+                row,
+                export_a[k],
+                export_b[k],
+                (export_a[k] - export_b[k]).abs(),
+                1e-3 * export_b[k].abs() + 20. * ENERGY_ATOL,
+            )?);
+        }
+        result.mobile_details = format!("{{\"policy\":{},\"routeCount\":{},\"wallOriginCount\":{},\"speciesOrder\":[\"H\",\"B\"],\"channelOrder\":[\"emitted\",\"charged-liquid\",\"liquid-photon\",\"installed-wall\",\"beyond-installed-wall-export\",\"unrepresented-wall-boundary-export\"],\"normalPaidSpeciesJ\":{},\"tighterPaidSpeciesJ\":{},\"normalExclusiveExportsJ\":{},\"tighterExclusiveExportsJ\":{},\"normalSpeciesPowerTotalsW\":{},\"tighterSpeciesPowerTotalsW\":{},\"normalFiniteRecipientPowerW\":{},\"tighterFiniteRecipientPowerW\":{}}}",
+            super::quote(super::cooling_mobile::POLICY), model.mobile_capture.route_count(), model.mobile_capture.origin_count(),
+            super::numbers(&paid_a), super::numbers(&paid_b), super::numbers(&export_a), super::numbers(&export_b),
+            super::numbers(&super::cooling_mobile::power_totals(&a.mobile_power)?),
+            super::numbers(&super::cooling_mobile::power_totals(&b.mobile_power)?),
+            finite(a.mobile_recipient_power.iter().sum()),finite(b.mobile_recipient_power.iter().sum()));
         let channels = 5 * model.source.fuel_history().fuel().intersections().len();
         if a.capture_power.len() != channels || b.capture_power.len() != channels {
             return Err("Wrong fuel-binding power sample shape".into());
@@ -1368,6 +1460,10 @@ pub(super) struct Comparison {
     pub capture_power_local_ratio: f64,
     pub capture_power_sumabs_ratio: f64,
     pub capture_paid_energy_ratio: f64,
+    pub mobile_power_local_ratio: f64,
+    pub mobile_power_sumabs_ratio: f64,
+    pub mobile_paid_energy_ratio: f64,
+    mobile_details: String,
     pub pressure_pair_ratio: f64,
     pub pressure_material_pair_ratio: f64,
     pub max_pressure_change: f64,
@@ -1378,6 +1474,9 @@ pub(super) struct Comparison {
     worst: Option<(&'static str, usize, f64, f64, f64, f64, f64)>,
 }
 impl Comparison {
+    pub fn mobile_receipts(&self) -> &str {
+        &self.mobile_details
+    }
     fn record_product_distribution(
         &mut self,
         family: &'static str,
@@ -1439,6 +1538,9 @@ impl Comparison {
                 self.capture_power_local_ratio,
                 self.capture_power_sumabs_ratio,
                 self.capture_paid_energy_ratio,
+                self.mobile_power_local_ratio,
+                self.mobile_power_sumabs_ratio,
+                self.mobile_paid_energy_ratio,
                 self.pressure_pair_ratio,
                 self.pressure_material_pair_ratio,
             ]
@@ -1450,9 +1552,10 @@ impl Comparison {
         let prhr_ratio = finite(self.prhr_pair_ratio);
         let prhr_details = &self.prhr_details;
         let generated_totals = &self.carrier_generated_totals;
+        let mobile = format!("\"mobileCapturePowerLocalRatio\":{},\"mobileCapturePowerSUMABSRatio\":{},\"mobileCapturePaidEnergyRatio\":{},\"mobileCaptureReceipts\":{}",finite(self.mobile_power_local_ratio),finite(self.mobile_power_sumabs_ratio),finite(self.mobile_paid_energy_ratio),self.mobile_details);
         let product_distribution = self.carrier_product_distribution_worst.map_or("null".into(), |(family,row,a,b,difference,bound,value)| format!("{{\"admission\":false,\"family\":{},\"row\":{row},\"normal\":{},\"tighter\":{},\"difference\":{},\"bound\":{},\"ratio\":{}}}",quote(family),finite(a),finite(b),finite(difference),finite(bound),finite(value)));
         format!(
-            "{{\"policy\":\"{POLICY}\",\"provisional\":true,\"fullPairQualified\":false,\"prhrPairRatio\":{prhr_ratio},\"prhrReceipts\":{prhr_details},\"source\":{},\"thermalTemperatureRatio\":{},\"thermalEnergyRatio\":{},\"thermalSUMABSRatio\":{},\"networkTemperatureRatio\":{},\"networkPressureRatio\":{},\"secondaryMassRatio\":{},\"SGHeatRatio\":{},\"carrierConsequenceRatio\":{},\"carrierComparisonPolicy\":\"{CARRIER_POLICY}\",\"carrierGeneratedTotals\":{generated_totals},\"carrierProductDistributionDiagnostic\":{product_distribution},\"depositionLocalRatio\":{},\"depositionSUMABSRatio\":{},\"thermalTemperatureChange\":{},\"thermalTemperaturePairDifference\":{},\"barrelPairRatio\":{},\"barrelPowerPairRatio\":{},\"barrelReceipts\":{},\"capturePowerLocalRatio\":{},\"capturePowerSUMABSRatio\":{},\"capturePaidEnergyRatio\":{},\"captureReceipts\":{},\"pressurePairRatio\":{},\"pressureMaterialPairRatio\":{},\"pressureChangePa\":{},\"pressurePairDifferencePa\":{},\"worstCooling\":{}}}",
+            "{{{mobile},\"policy\":\"{POLICY}\",\"provisional\":true,\"fullPairQualified\":false,\"prhrPairRatio\":{prhr_ratio},\"prhrReceipts\":{prhr_details},\"source\":{},\"thermalTemperatureRatio\":{},\"thermalEnergyRatio\":{},\"thermalSUMABSRatio\":{},\"networkTemperatureRatio\":{},\"networkPressureRatio\":{},\"secondaryMassRatio\":{},\"SGHeatRatio\":{},\"carrierConsequenceRatio\":{},\"carrierComparisonPolicy\":\"{CARRIER_POLICY}\",\"carrierGeneratedTotals\":{generated_totals},\"carrierProductDistributionDiagnostic\":{product_distribution},\"depositionLocalRatio\":{},\"depositionSUMABSRatio\":{},\"thermalTemperatureChange\":{},\"thermalTemperaturePairDifference\":{},\"barrelPairRatio\":{},\"barrelPowerPairRatio\":{},\"barrelReceipts\":{},\"capturePowerLocalRatio\":{},\"capturePowerSUMABSRatio\":{},\"capturePaidEnergyRatio\":{},\"captureReceipts\":{},\"pressurePairRatio\":{},\"pressureMaterialPairRatio\":{},\"pressureChangePa\":{},\"pressurePairDifferencePa\":{},\"worstCooling\":{}}}",
             self.source.json(),
             finite(self.thermal_temperature_ratio),
             finite(self.thermal_energy_ratio),
@@ -1624,12 +1727,80 @@ mod tests {
             water_mass: w.network.chart_mass.clone(),
             barrel_power: barrel_powers(&w).unwrap(),
             capture_power: w.capture.power_channels().unwrap().to_vec(),
+            mobile_power: w.mobile_capture.value().unwrap().channels.clone(),
+            mobile_recipient_power: w
+                .mobile_capture
+                .value()
+                .unwrap()
+                .recipient_power()
+                .collect(),
             surge_flow: {
                 let q = w.surge.receipts().unwrap().mass;
                 [q[0], -q[1]]
             },
             y,
         }
+    }
+    #[test]
+    fn mobile_birth_recipients_and_exclusive_exports_cannot_hide_wrong_zero_or_cancel() {
+        let model = super::super::cooling_fixture::fixture_with_contrast();
+        let emissions = vec![[0.01, 0.02]; model.source.target_reference_atoms().len()];
+        let accuracy = Accuracy::new(&model, &emissions, None).unwrap();
+        let a = sample(&model);
+        assert!(!accuracy.compare_one(&model, &a, &a).unwrap().failed());
+        for channel in 0..12 {
+            let mut b = sample(&model);
+            b.mobile_power[channel] += 1e-6;
+            let c = accuracy.compare_one(&model, &a, &b).unwrap();
+            assert!(c.mobile_power_local_ratio > 1. && c.failed());
+        }
+        for recipient in [0, model.carrier.cells(), a.mobile_recipient_power.len() - 1] {
+            let mut b = sample(&model);
+            b.mobile_recipient_power[recipient] += 1e-6;
+            let c = accuracy.compare_one(&model, &a, &b).unwrap();
+            assert!(c.mobile_power_local_ratio > 1. && c.failed());
+        }
+        for row in [
+            model.layout.mobile_capture_exported,
+            model.layout.mobile_capture_boundary_exported,
+        ] {
+            let mut b = sample(&model);
+            b.y[row] += 1e-9;
+            let c = accuracy.compare_one(&model, &a, &b).unwrap();
+            assert!(c.mobile_paid_energy_ratio > 1. && c.failed());
+            assert_eq!(
+                accuracy.absolute(1.).unwrap()[row] / 10.,
+                accuracy.absolute(10.).unwrap()[row]
+            );
+        }
+        // Equal-and-opposite species paid energy is not one cancelling budget.
+        let q = model.mobile_capture.paid_energy();
+        let mut b = sample(&model);
+        b.y[model.mobile_product_rows(0).next().unwrap()] += 1e-9 / q[0];
+        b.y[model.mobile_product_rows(1).next().unwrap()] -= 1e-9 / q[1];
+        assert!(
+            accuracy
+                .compare_one(&model, &a, &b)
+                .unwrap()
+                .mobile_paid_energy_ratio
+                > 1.
+        );
+        let mut malformed = sample(&model);
+        malformed.mobile_power.pop();
+        assert!(accuracy.compare_one(&model, &a, &malformed).is_err());
+        malformed = sample(&model);
+        malformed.mobile_recipient_power.pop();
+        assert!(accuracy.compare_one(&model, &a, &malformed).is_err());
+        // The network receives paid heat less BOTH exclusive exports, once.
+        let mut y = model.initial_state().unwrap();
+        let original = accuracy.expected_network_totals(&model, &y).unwrap()[1];
+        y[model.mobile_product_rows(0).next().unwrap()] += 4. / q[0];
+        y[model.layout.mobile_capture_exported] += 1.;
+        y[model.layout.mobile_capture_boundary_exported] += 0.5;
+        assert!(
+            (accuracy.expected_network_totals(&model, &y).unwrap()[1] - original - 2.5).abs()
+                < 1e-6
+        );
     }
     #[test]
     fn mobile_products_compare_closed_generation_not_local_heat_redistribution() {
@@ -1898,6 +2069,8 @@ mod tests {
                 water_mass: vec![],
                 barrel_power: vec![],
                 capture_power: vec![],
+                mobile_power: vec![],
+                mobile_recipient_power: vec![],
                 surge_flow: [0.; 2],
             })
             .collect::<Vec<_>>();

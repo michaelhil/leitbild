@@ -12,15 +12,28 @@ import {z} from 'zod'
 const sha=(s:string|Uint8Array)=>createHash('sha256').update(s).digest('hex')
 const admittedRatio=z.number().finite().nonnegative().max(1),arm=z.object({passed:z.literal(true),lastAdmittedTime:z.literal(300),commonSamples:z.literal(14)})
 export const coolingEnergyCoordinates={
- base:'G=sum-installed-energy-change-minus-fission-barrel-binding-release-plus-barrel-binding-ambient-export',
- prhr:'G=sum-installed-energy-change-including-finite-WST-and-ROOM-minus-fission-barrel-binding-release-minus-signed-spring-release-and-electrical-receipts-plus-barrel-binding-ambient-WST-surface-work-connector-and-ROOM-ambient-export',
+ base:'G=sum-installed-energy-change-minus-fission-barrel-fuel-binding-mobile-binding-release-plus-barrel-fuel-binding-mobile-binding-ambient-export',
+ prhr:'G=sum-installed-energy-change-including-finite-WST-and-ROOM-minus-fission-barrel-fuel-binding-mobile-binding-release-minus-signed-spring-release-and-electrical-receipts-plus-barrel-fuel-binding-mobile-binding-ambient-WST-surface-work-connector-and-ROOM-ambient-export',
 } as const
 export const coolingCarrierComparisonPolicy='closed-mobile-generated-products-separate-H-B;local-remaining-targets;local-product-distribution-diagnostic' as const
+export const coolingMobileCapturePolicy='birth-site-primary-H-B;physical-liquid-self;physical-origin-diffuse-serial-clad-barrel;explicit-unrepresented-wall-boundary' as const
+export const coolingMobileDevelopmentPolicy='separate-positive-H-B-paid-and-finite-recipient-power;min-normal-tighter>10-pair-difference+20-existing-resolution' as const
+const energyPair=z.tuple([z.number().finite().nonnegative(),z.number().finite().nonnegative()])
+export const mobileCaptureReceipts=z.object({policy:z.literal(coolingMobileCapturePolicy),routeCount:z.number().int().positive(),
+ wallOriginCount:z.number().int().positive(),speciesOrder:z.tuple([z.literal('H'),z.literal('B')]),
+ channelOrder:z.tuple([z.literal('emitted'),z.literal('charged-liquid'),z.literal('liquid-photon'),z.literal('installed-wall'),
+  z.literal('beyond-installed-wall-export'),z.literal('unrepresented-wall-boundary-export')]),
+ normalPaidSpeciesJ:energyPair,tighterPaidSpeciesJ:energyPair,normalExclusiveExportsJ:energyPair,tighterExclusiveExportsJ:energyPair,
+ normalSpeciesPowerTotalsW:z.array(z.number().finite().nonnegative()).length(12),
+ tighterSpeciesPowerTotalsW:z.array(z.number().finite().nonnegative()).length(12),
+ normalFiniteRecipientPowerW:z.number().finite().positive(),tighterFiniteRecipientPowerW:z.number().finite().positive()})
 /** A native success flag alone cannot credit a truncated or diagnostically
  * incomplete pair. The physical/error policy is owned by the native qualifier. */
 export const fuelCoolingAdmission=z.object({kind:z.literal('source-cooling-pair'),passed:z.literal(true),lastAdmittedTime:z.literal(300),
  dimension:z.number().int().positive(),differential:z.number().int().positive(),normal:arm,tighter:arm,
- settings:z.object({accuracyPolicy:z.literal('cold-source-fuel-binding'),carrierComparisonPolicy:z.literal(coolingCarrierComparisonPolicy),provisional:z.literal(true),horizon:z.literal(300),
+ settings:z.object({accuracyPolicy:z.literal('cold-source-nuclear-heat'),carrierComparisonPolicy:z.literal(coolingCarrierComparisonPolicy),provisional:z.literal(true),horizon:z.literal(300),
+  mobileCapturePolicy:z.literal(coolingMobileCapturePolicy),
+  mobileCaptureDevelopmentPolicy:z.literal(coolingMobileDevelopmentPolicy),
   carrierCoordinates:z.literal('hydrogen-product,direct-boron10,boron-product'),
   pressureCoordinates:z.literal('finite-pool-cushion-and-surge-forward-DAE;direct-liquid-B10-and-phase-H-products'),
   pressureResponseResolutionPa:z.literal(1),pressureChangeRelativeBudget:z.literal(0.005),
@@ -41,13 +54,15 @@ export const fuelCoolingAdmission=z.object({kind:z.literal('source-cooling-pair'
   energyDefectATOLJ:z.number().finite().positive(),
   referenceAllATOLandRTOLDivisor:z.literal(10),perRowErrorWeights:z.literal('source-carrier-barrel-binding-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute')}),
  gates:z.object({fullPairComparisonEvaluated:z.literal(true),developedThermalResponse:z.literal(true),developedSourceResponse:z.literal(true),
+  developedMobileCaptureResponse:z.literal(true),
   developedBarrelResponse:z.literal(true),barrelPairRatio:admittedRatio,barrelPowerPairRatio:admittedRatio,
   capturePowerLocalRatio:admittedRatio,capturePowerSUMABSRatio:admittedRatio,capturePaidEnergyRatio:admittedRatio,
+  mobileCapturePowerLocalRatio:admittedRatio,mobileCapturePowerSUMABSRatio:admittedRatio,mobileCapturePaidEnergyRatio:admittedRatio,
   developedPressureResponse:z.literal(true),pressurePairRatio:admittedRatio,pressureMaterialPairRatio:admittedRatio,
   pressureChartRatio:admittedRatio,pressureFlowClosureRatio:admittedRatio,
   sourceLocalRatio:admittedRatio,sourceFamilyRatio:admittedRatio,sourceObservableRatio:admittedRatio,sourceNCOperatorRatio:admittedRatio,
   thermalPairRatio:admittedRatio,networkPairRatio:admittedRatio,depositionPairRatio:admittedRatio,carrierPairRatio:admittedRatio}),
- pairedComparisons:z.array(z.unknown()).length(14),fuelTemperatureFeedbackDiagnostic:z.object({})})
+ pairedComparisons:z.array(z.unknown()).length(14),fuelTemperatureFeedbackDiagnostic:z.object({}),mobileCaptureReceipts})
  .refine(value=>Math.abs(value.settings.energyDefectATOLJ/(0.01/Math.sqrt(value.dimension))-1)<=4*Number.EPSILON,
   'Energy-defect coordinate must retain its declared normal absolute scale')
 export function coolingStateHeader(bytes:Uint8Array){
@@ -110,7 +125,7 @@ export async function qualifyFuelCooling(options:Options){
  await mkdir(directory)
  await Promise.all(paths.map((p,i)=>writeFile(join(directory,`${i}-${basename(p)}`),bytes[i]!,{flag:'wx'})))
  await writeFile(join(directory,'input.txt'),fixture,{flag:'wx'})
- await writeFile(join(directory,'composition.json'),JSON.stringify({conditioning:prepared.conditioning,thermal:prepared.thermal,primary:prepared.primary,barrel:prepared.barrel,capture:prepared.capture,pressure:prepared.pressure,
+ await writeFile(join(directory,'composition.json'),JSON.stringify({conditioning:prepared.conditioning,thermal:prepared.thermal,primary:prepared.primary,barrel:prepared.barrel,capture:prepared.capture,mobileCapture:prepared.mobileCapture,pressure:prepared.pressure,
   prhr:prepared.prhr,ownerIdentities:prepared.ownerIdentities,limitations:prepared.limitations},null,2)+'\n',{flag:'wx'})
  // All linked non-system libraries must be retained; the old receipt is not a
  // substitute for inspecting this newly built binary and its actual links.
@@ -161,6 +176,8 @@ export async function qualifyFuelCooling(options:Options){
     primaryCarrierCoordinates:3*prepared.network.water.length,primarySourceIntersections:prepared.primary.rows.length,
     pressureCoordinates:45,pressurizerMetalStocks:prepared.pressure.metals.length,
     captureBands:prepared.capture.bands.length,captureExportCoordinates:1,
+    mobileCaptureBirthRoutes:prepared.mobileCapture.routes.length,mobileCaptureWallOrigins:prepared.mobileCapture.wall_origins.length,
+    mobileCaptureExportCoordinates:2,mobileCapturePaidEnergy:'existing-complete-closed-H-B-products-no-extra-emitted-integral',
     captureEventKinds:['fertile','xenon','samarium'],capturePaidEnergy:'Q-times-existing-gross-progress-no-extra-emitted-integral'},
    consumed:[...inputs.map((path,i)=>({path,sha256:sha(texts[i]!)})),...ownerPaths.map((path,i)=>({path,sha256:sha(ownerTexts[i]!)}))],
    sources:paths.map((path,i)=>({path,sha256:sha(bytes[i]!)})),fixtureSHA256:sha(fixture),

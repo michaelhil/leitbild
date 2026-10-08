@@ -52,6 +52,8 @@ impl EnergyCoordinates {
             (l.barrel_exported, 1.),
             (l.ambient_exported, 1.),
             (l.fuel_capture_exported, 1.),
+            (l.mobile_capture_exported, 1.),
+            (l.mobile_capture_boundary_exported, 1.),
         ]
         .into_iter()
         .chain(
@@ -61,6 +63,7 @@ impl EnergyCoordinates {
                 .map(|(r, s)| (l.network_start + r, s)),
         )
         .chain(model.capture_paid_rows().map(|(row, q)| (row, -q)))
+        .chain(model.mobile_capture_paid_rows().map(|(row, q)| (row, -q)))
         .map(|(r, sign)| (r, sign, initial[r]))
         .collect();
         // The solver differential mask is unchanged by this affine chart.

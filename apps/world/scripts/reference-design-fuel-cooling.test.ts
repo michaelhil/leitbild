@@ -2,7 +2,7 @@ import {expect,test} from 'bun:test'
 import {compileFuelCooling,compileFuelCoolingMaterial,compilePrimaryIncidence,parseOperatingFuelGap,parseColdConditioningPreparation} from './reference-design-fuel-cooling'
 import {compilePrimaryWaterGeometry,parsePrimaryWaterInputs,primaryWaterOwnerFiles} from './reference-design-source-water'
 import {join} from 'node:path'
-import {coolingCommonTimes,coolingStateHeader,coolingStatesComplete,coolingEnergyCoordinates,fuelCoolingAdmission,fuelCoolingPriorSeconds,qualifyFuelCooling} from './reference-design-fuel-cooling-qualification'
+import {coolingCommonTimes,coolingStateHeader,coolingStatesComplete,coolingEnergyCoordinates,coolingMobileCapturePolicy,coolingMobileDevelopmentPolicy,fuelCoolingAdmission,fuelCoolingPriorSeconds,qualifyFuelCooling} from './reference-design-fuel-cooling-qualification'
 
 test('a corrected attempt must debit the unsuccessful prior work against the same allowance',()=>{
  const prior={passed:false,allowanceSeconds:180,elapsedSeconds:6.166466292,noWholePlantReadinessCredit:true}
@@ -30,7 +30,7 @@ test('retained coupled checkpoints and polynomial observations have distinct exa
 test('only a complete physically developed refined pair can receive admission',()=>{
  const outcome={kind:'source-cooling-pair',passed:true,lastAdmittedTime:300,dimension:7,differential:4,
   normal:{passed:true,lastAdmittedTime:300,commonSamples:14},tighter:{passed:true,lastAdmittedTime:300,commonSamples:14},
-  settings:{accuracyPolicy:'cold-source-fuel-binding',provisional:true,horizon:300,referenceAllATOLandRTOLDivisor:10,
+  settings:{accuracyPolicy:'cold-source-nuclear-heat',mobileCapturePolicy:coolingMobileCapturePolicy,mobileCaptureDevelopmentPolicy:coolingMobileDevelopmentPolicy,provisional:true,horizon:300,referenceAllATOLandRTOLDivisor:10,
    carrierCoordinates:'hydrogen-product,direct-boron10,boron-product',
    carrierComparisonPolicy:'closed-mobile-generated-products-separate-H-B;local-remaining-targets;local-product-distribution-diagnostic',
    pressureCoordinates:'finite-pool-cushion-and-surge-forward-DAE;direct-liquid-B10-and-phase-H-products',
@@ -45,19 +45,25 @@ test('only a complete physically developed refined pair can receive admission',(
    costGuard:'aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic',
    nonlinearClosure:'stock-Newton-and-current-physical-network-pressure-charts',linearWeightedL2Budget:0.0165,
    algebraicLTE:'excluded-from-temporal-control;retained-in-Newton-physical-closure-and-output-pair',
-   solverEnergyCoordinate:'G=sum-installed-energy-change-minus-fission-barrel-binding-release-plus-barrel-binding-ambient-export',energyDefectATOLJ:0.01/Math.sqrt(7),
+   solverEnergyCoordinate:coolingEnergyCoordinates.base,energyDefectATOLJ:0.01/Math.sqrt(7),
    perRowErrorWeights:'source-carrier-barrel-binding-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute'},
-  gates:{fullPairComparisonEvaluated:true,developedThermalResponse:true,developedSourceResponse:true,
+  gates:{fullPairComparisonEvaluated:true,developedThermalResponse:true,developedSourceResponse:true,developedMobileCaptureResponse:true,
    developedBarrelResponse:true,barrelPairRatio:0,barrelPowerPairRatio:0,
    capturePowerLocalRatio:0,capturePowerSUMABSRatio:0,capturePaidEnergyRatio:0,
+   mobileCapturePowerLocalRatio:0,mobileCapturePowerSUMABSRatio:0,mobileCapturePaidEnergyRatio:0,
    developedPressureResponse:true,pressurePairRatio:0,pressureMaterialPairRatio:0,pressureChartRatio:0,pressureFlowClosureRatio:0,
    sourceLocalRatio:0,sourceFamilyRatio:0,sourceObservableRatio:0,sourceNCOperatorRatio:0,
    thermalPairRatio:0,networkPairRatio:0,depositionPairRatio:0,carrierPairRatio:0},
-  pairedComparisons:Array.from({length:14},()=>({})),fuelTemperatureFeedbackDiagnostic:{}}
+  pairedComparisons:Array.from({length:14},()=>({})),fuelTemperatureFeedbackDiagnostic:{},
+  mobileCaptureReceipts:{policy:coolingMobileCapturePolicy,routeCount:3,wallOriginCount:2,speciesOrder:['H','B'],
+   channelOrder:['emitted','charged-liquid','liquid-photon','installed-wall','beyond-installed-wall-export','unrepresented-wall-boundary-export'],
+   normalPaidSpeciesJ:[1,2],tighterPaidSpeciesJ:[1,2],normalExclusiveExportsJ:[.1,.2],tighterExclusiveExportsJ:[.1,.2],
+   normalSpeciesPowerTotalsW:Array(12).fill(1),tighterSpeciesPowerTotalsW:Array(12).fill(1),
+   normalFiniteRecipientPowerW:1,tighterFiniteRecipientPowerW:1}}
  expect(fuelCoolingAdmission.safeParse(outcome).success).toBe(true)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,solverEnergyCoordinate:coolingEnergyCoordinates.prhr}}).success).toBe(true)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,carrierCoordinates:undefined}}).success).toBe(false)
- for(const field of ['passed','fullPairComparisonEvaluated','developedThermalResponse','developedSourceResponse','developedBarrelResponse','developedPressureResponse']){
+ for(const field of ['passed','fullPairComparisonEvaluated','developedThermalResponse','developedSourceResponse','developedBarrelResponse','developedPressureResponse','developedMobileCaptureResponse']){
   const changed=structuredClone(outcome)
   if(field==='passed')changed.passed=false
   else (changed.gates as Record<string,unknown>)[field]=false
@@ -66,6 +72,7 @@ test('only a complete physically developed refined pair can receive admission',(
  for(const field of ['sourceLocalRatio','sourceFamilyRatio','sourceObservableRatio','sourceNCOperatorRatio',
   'thermalPairRatio','networkPairRatio','depositionPairRatio','carrierPairRatio','barrelPairRatio','barrelPowerPairRatio',
   'capturePowerLocalRatio','capturePowerSUMABSRatio','capturePaidEnergyRatio',
+  'mobileCapturePowerLocalRatio','mobileCapturePowerSUMABSRatio','mobileCapturePaidEnergyRatio',
   'pressurePairRatio','pressureMaterialPairRatio','pressureChartRatio','pressureFlowClosureRatio'])for(const value of [1.01,NaN,Infinity,-1]){
    const changed=structuredClone(outcome);(changed.gates as Record<string,unknown>)[field]=value
    expect(fuelCoolingAdmission.safeParse(changed).success).toBe(false)
@@ -75,7 +82,7 @@ test('only a complete physically developed refined pair can receive admission',(
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,referenceAllATOLandRTOLDivisor:1}}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,carrierComparisonPolicy:undefined}}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,carrierComparisonPolicy:'local-product-paid-energy'}}).success).toBe(false)
- for(const policy of ['cold-source-cooling-1','cold-source-cooling-2','cold-source-cooling-3','cold-source-cooling-4','cold-source-cooling-5','cold-source-cooling-6','cold-source-cooling-7'])
+ for(const policy of ['cold-source-fuel-binding','cold-source-cooling-1','cold-source-cooling-2','cold-source-cooling-3','cold-source-cooling-4','cold-source-cooling-5','cold-source-cooling-6','cold-source-cooling-7'])
   expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,accuracyPolicy:policy}}).success).toBe(false)
  for(const energyDefectATOLJ of [0,NaN,Infinity,0.01,1])
   expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,energyDefectATOLJ}}).success).toBe(false)
@@ -93,6 +100,18 @@ test('only a complete physically developed refined pair can receive admission',(
   const changed=structuredClone(outcome);delete (changed.gates as Record<string,unknown>)[field]
   expect(fuelCoolingAdmission.safeParse(changed).success).toBe(false)
  }
+ for(const field of ['mobileCapturePowerLocalRatio','mobileCapturePowerSUMABSRatio','mobileCapturePaidEnergyRatio','developedMobileCaptureResponse']){
+  const changed=structuredClone(outcome);delete (changed.gates as Record<string,unknown>)[field]
+  expect(fuelCoolingAdmission.safeParse(changed).success).toBe(false)
+ }
+ for(const mobileCaptureReceipts of [undefined,{}, {...outcome.mobileCaptureReceipts,normalPaidSpeciesJ:[NaN,1]},
+  {...outcome.mobileCaptureReceipts,normalFiniteRecipientPowerW:0},
+  {...outcome.mobileCaptureReceipts,tighterFiniteRecipientPowerW:undefined},
+  {...outcome.mobileCaptureReceipts,normalExclusiveExportsJ:[-1,0]},
+  {...outcome.mobileCaptureReceipts,normalSpeciesPowerTotalsW:[1]},
+  {...outcome.mobileCaptureReceipts,speciesOrder:['B','H']}])
+  expect(fuelCoolingAdmission.safeParse({...outcome,mobileCaptureReceipts}).success).toBe(false)
+ expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,mobileCapturePolicy:undefined}}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,barrelPowerErrorWeights:'fuel-only'}}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,fuelPowerErrorWeights:'stock-count-only'}}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,costGuard:'unlimited'}}).success).toBe(false)

@@ -325,9 +325,15 @@ impl Preconditioner {
                 &rhs[l.barrel_energy..l.pressurizer_start],
                 &mut out[l.barrel_energy..l.pressurizer_start],
             )?;
-            out[l.fuel_capture_exported] = rhs[l.fuel_capture_exported] / self.receipt_cj;
-            if !out[l.fuel_capture_exported].is_finite() {
-                return Err("Nonfinite fuel-binding export preconditioner solution".into());
+            for r in [
+                l.fuel_capture_exported,
+                l.mobile_capture_exported,
+                l.mobile_capture_boundary_exported,
+            ] {
+                out[r] = rhs[r] / self.receipt_cj;
+                if !out[r].is_finite() {
+                    return Err("Nonfinite binding export preconditioner solution".into());
+                }
             }
             Ok(())
         })();
