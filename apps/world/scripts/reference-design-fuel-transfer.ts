@@ -15,7 +15,7 @@ const gateSchema=z.object({width_m:positive,thickness_m:positive,steelDensity_kg
 export type TransferGates= z.infer<typeof gateSchema>
 const attachmentSchema=z.object({stubLength_m:positive,lugBottom_m:finite,lugHeight_m:positive,lugInnerRadius_m:positive,lugOuterRadius_m:positive,
  lugWidth_m:positive,keyWidth_m:positive,keyEnvelopeDiameter_m:positive,hubBore_m:positive,hubLandBottom_m:finite,
- shoulderBottom_m:finite,shoulderDiameter_m:positive,shoulderHeight_m:positive,toolLength_m:positive,toolDiameter_m:positive,
+ shoulderBottom_m:finite,shoulderDiameter_m:positive,shoulderHeight_m:positive,jointCapacity_N:positive,toolLength_m:positive,toolDiameter_m:positive,
  toolLower_m:finite,shearModulus_Pa:positive,torsionDamping_N_m_s:positive,handTorque_N_m:positive,
  handRate_rad_s:positive,handPower_W:positive,keyBaseTorque_N_m:positive,keyFriction:positive,keyRadius_m:positive,
  magneticTorqueRadius_m:positive,guideContactTorque_N_m:positive,toolHead_kg:positive,toolHeadWidth_m:positive,toolCentralClearance_m:positive,toolHeadHeight_m:positive,
@@ -201,7 +201,7 @@ export function transferAttachmentChecks(b:TransferAttachment,c:ControlAbsorber,
  require('real aligned joint removes body lift authority',opened.aligned&&opened.axialForce_N===0)
  require('relative key friction has one positive physical recipient',Math.abs(trial.keyHeat_W-trial.keyResistance_N_m*.039)<1e-12)
  const bodyWeight=shortCluster*c.gravity_m_s2,stemMass=attachedStemMass/c.clusters,stemWeight=stemMass*c.gravity_m_s2,
-  axialBase={bodyMass_kg:shortCluster,stemMass_kg:stemMass,gap_m:0,jointForce_N:bodyWeight,jointCapacity_N:c.forceLimitPerCluster_N,gripForce_N:bodyWeight+stemWeight,
+  axialBase={bodyMass_kg:shortCluster,stemMass_kg:stemMass,gap_m:0,jointForce_N:bodyWeight,jointCapacity_N:b.jointCapacity_N,gripForce_N:bodyWeight+stemWeight,
    bodyOtherForce_N:-bodyWeight,stemOtherForce_N:-stemWeight,bodyVelocity_m_s:0,stemVelocity_m_s:0,jointFailed:false},
   axial=[...([['raise',.008],['governed lower',-.008],['hold',0]] as const).map(([name,v])=>({name,result:transferAxialTrial({...axialBase,bodyVelocity_m_s:v,stemVelocity_m_s:v})})),
    {name:'released grip, dry gravity limit',result:transferAxialTrial({...axialBase,jointForce_N:0,gripForce_N:0})},

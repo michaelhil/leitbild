@@ -117,7 +117,7 @@ export function parseOperatingGuideDrag(document: string) {
 }
 
 /** Hash transitive local TypeScript consumers, not only this coordinator. */
-async function helperIdentities(entry: string) {
+export async function helperIdentities(entry: string) {
   const seen = new Set<string>(), rows: Array<{ path: string; sha256: string }> = []
   async function visit(path: string) {
     if (seen.has(path)) return

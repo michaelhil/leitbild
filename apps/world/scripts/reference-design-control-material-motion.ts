@@ -10,7 +10,8 @@ export type ControlMaterialPose={clusterId:string,body_y_m:number,side:'increasi
 type Span={lo:number,hi:number,area:number}
 export type ControlMaterialMotion=ReturnType<typeof compileControlMaterialMotion>
 
-export function compileControlMaterialMotion(regions:readonly SourceRegion[],d:Inputs,stocks:readonly PassiveStock[]){
+export function compileControlMaterialMotion(regions:readonly SourceRegion[],d:Inputs,
+ stocks:readonly Pick<PassiveStock,'id'|'material'|'volume_m3'>[]){
  const {geometry,rows:primitives}=controlBodyPrimitives(d),maximumTravel_m=d.control.normalTravel_m,
   activeBottom=d.handling.seatedBottom_m+d.handling.bottomFittingLength_m,activeTop=activeBottom+d.fuel.activeLength_m,
   regionIds=new Set(regions.map(r=>r.id)),stockIndexes=new Map(stocks.map((s,i)=>[s.id,i]))

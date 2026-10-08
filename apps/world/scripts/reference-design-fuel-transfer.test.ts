@@ -54,7 +54,7 @@ describe('bounded actual horizontal transfer gate',()=>{
 })
 const attachment={stubLength_m:.055,lugBottom_m:2.45,lugHeight_m:.01,lugInnerRadius_m:.006,lugOuterRadius_m:.008,
  lugWidth_m:.003,keyWidth_m:.0035,keyEnvelopeDiameter_m:.0165,hubBore_m:.0125,hubLandBottom_m:2.46,
- shoulderBottom_m:8.49,shoulderDiameter_m:.02,shoulderHeight_m:.01,toolLength_m:8,toolDiameter_m:.016,toolLower_m:8.1,
+ shoulderBottom_m:8.49,shoulderDiameter_m:.02,shoulderHeight_m:.01,jointCapacity_N:2000,toolLength_m:8,toolDiameter_m:.016,toolLower_m:8.1,
  shearModulus_Pa:77e9,torsionDamping_N_m_s:.5,handTorque_N_m:8,handRate_rad_s:.05,handPower_W:1,
  keyBaseTorque_N_m:.5,keyFriction:.2,keyRadius_m:.008,magneticTorqueRadius_m:.006,guideContactTorque_N_m:8,toolHead_kg:15,toolHeadWidth_m:.26,toolCentralClearance_m:.04,
  toolHeadHeight_m:.2,toolHeadBottomAboveFA_m:.1,jawStroke_m:.006,jawForce_N:2000,jawRate_m_s:.002,jawDuty_W:100,

@@ -16,7 +16,7 @@ const schema=z.object({clusters:z.literal(52),rodletsPerCluster:z.literal(24),bo
  housingCapHeight_m:positive,neckID_m:positive,neckOD_m:positive,neckTop_m:finite,
  neckCapHeight_m:positive,collarID_m:positive,collarOD_m:positive,collarHeight_m:positive,
  collarBottoms_m:z.array(finite).length(2),guideRoughness_m:positive,endLossEach:positive,
- ordinarySpeedLimit_m_s:positive,driveEfficiency:positive.max(1),deliveredMotiveLimit_W:positive,
+ ordinarySpeedLimit_m_s:positive,driveEfficiency:positive.max(1),deliveredMotiveLimit_W:positive,holdingDuty_W:positive,controllerDuty_W:positive,
  forceLimitPerCluster_N:positive,attachedJackMassPerCluster_kg:positive,jackID_m:positive,jackOD_m:positive,jackBottom_m:finite,
  gapStroke_m:positive,gapArmature_kg:positive,gapSpring_N_m:positive,gapDamping_N_s_m:positive,
  manualGapSpeed_m_s:positive,manualGapForce_N:positive,manualGapPower_W:positive,gravity_m_s2:positive}).strict()

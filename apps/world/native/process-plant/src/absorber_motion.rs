@@ -53,6 +53,24 @@ pub enum JointMode {
     Contact,
     Separated,
 }
+/// An accepted one-sided force graph, retained during an implicit stage or
+/// root search. A trial continuation is not an admissible physical state.
+/// The caller stops at the first speed/contact boundary before changing it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RegulatorBranch {
+    ApproachPositive,
+    ApproachNegative,
+    Track,
+    HoldPositive,
+    HoldNegative,
+    HoldRest,
+    Open,
+}
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TrialBranch {
+    pub regulator: RegulatorBranch,
+    pub joint: JointMode,
+}
 #[derive(Clone, Copy, Debug)]
 pub struct Response {
     pub reference_rate_m_s: f64,
@@ -95,16 +113,19 @@ impl Config {
         s: State,
         f: Forces,
         grip: f64,
+        branch: Option<JointMode>,
     ) -> Result<(f64, f64, f64, JointMode), &'static str> {
         let gap = s.body_y_m - s.stem_y_m;
-        if gap == 0. && s.body_v_m_s == s.stem_v_m_s {
+        if branch == Some(JointMode::Contact)
+            || (branch.is_none() && gap == 0. && s.body_v_m_s == s.stem_v_m_s)
+        {
             let acceleration =
                 (f.body_n + f.stem_n + grip) / (self.body_mass_kg + self.stem_mass_kg);
             let joint = self.body_mass_kg * acceleration - f.body_n;
             if joint > self.joint_capacity_n {
                 return Err("Absorber uplift joint strength exceeded");
             }
-            if joint >= 0. {
+            if joint >= 0. || branch == Some(JointMode::Contact) {
                 return Ok((acceleration, acceleration, joint, JointMode::Contact));
             }
         }
@@ -130,6 +151,73 @@ impl Config {
         input: Input,
         forces: Forces,
     ) -> Result<Response, &'static str> {
+        self.evaluate_inner(s, input, forces, None)
+    }
+    /// Extend ONLY the retained branch for same-stage Newton/root probes.
+    /// In particular, a negative joint reaction or signed contact gap can
+    /// locate the boundary; neither may be admitted by the physical caller.
+    pub fn evaluate_trial(
+        self,
+        s: State,
+        input: Input,
+        forces: Forces,
+        branch: TrialBranch,
+    ) -> Result<Response, &'static str> {
+        let hold = matches!(
+            branch.regulator,
+            RegulatorBranch::HoldPositive
+                | RegulatorBranch::HoldNegative
+                | RegulatorBranch::HoldRest
+        );
+        if (hold && input.requested_rate_m_s != 0.)
+            || (matches!(
+                branch.regulator,
+                RegulatorBranch::ApproachPositive
+                    | RegulatorBranch::ApproachNegative
+                    | RegulatorBranch::Track
+            ) && input.requested_rate_m_s == 0.)
+            || (branch.regulator == RegulatorBranch::Open && input.gap_m != self.gap_stroke_m)
+        {
+            return Err("Retained absorber branch does not match delivered request");
+        }
+        self.evaluate_inner(s, input, forces, Some(branch))
+    }
+    pub fn branch(
+        self,
+        s: State,
+        input: Input,
+        forces: Forces,
+    ) -> Result<TrialBranch, &'static str> {
+        let r = self.evaluate(s, input, forces)?;
+        let regulator = if r.grip_mode == GripMode::Open {
+            RegulatorBranch::Open
+        } else if input.requested_rate_m_s == 0. {
+            if s.stem_v_m_s > 0. {
+                RegulatorBranch::HoldPositive
+            } else if s.stem_v_m_s < 0. {
+                RegulatorBranch::HoldNegative
+            } else {
+                RegulatorBranch::HoldRest
+            }
+        } else if s.stem_v_m_s < input.requested_rate_m_s {
+            RegulatorBranch::ApproachPositive
+        } else if s.stem_v_m_s > input.requested_rate_m_s {
+            RegulatorBranch::ApproachNegative
+        } else {
+            RegulatorBranch::Track
+        };
+        Ok(TrialBranch {
+            regulator,
+            joint: r.joint_mode,
+        })
+    }
+    fn evaluate_inner(
+        self,
+        s: State,
+        input: Input,
+        forces: Forces,
+        branch: Option<TrialBranch>,
+    ) -> Result<Response, &'static str> {
         self.validate()?;
         if [
             s.body_y_m,
@@ -146,7 +234,7 @@ impl Config {
         ]
         .iter()
         .any(|v| !v.is_finite())
-            || s.body_y_m < s.stem_y_m
+            || (branch.is_none() && s.body_y_m < s.stem_y_m)
             || input.motive_power_w < 0.
             || input.holding_power_w < 0.
             || !(0. ..=self.gap_stroke_m).contains(&input.gap_m)
@@ -154,7 +242,7 @@ impl Config {
         {
             return Err("Invalid absorber stage or penetrating uplift joint");
         }
-        if s.body_y_m == s.stem_y_m && s.body_v_m_s < s.stem_v_m_s {
+        if branch.is_none() && s.body_y_m == s.stem_y_m && s.body_v_m_s < s.stem_v_m_s {
             return Err("Closing uplift joint requires an accepted contact impulse");
         }
         let cap = self.grip_closed_force_n * (1. - input.gap_m / self.gap_stroke_m);
@@ -164,7 +252,13 @@ impl Config {
         }
         let v = s.stem_v_m_s;
         let power = self.efficiency * input.motive_power_w;
-        let required = self.tracking_force(s, forces);
+        let required = if branch.map(|b| b.joint) == Some(JointMode::Contact) {
+            -(forces.body_n + forces.stem_n)
+        } else if branch.map(|b| b.joint) == Some(JointMode::Separated) {
+            -forces.stem_n
+        } else {
+            self.tracking_force(s, forces)
+        };
         let (u, grip, mode) = if cap == 0. {
             if request != 0. {
                 return Err("Ordinary motion requested through an open grip");
@@ -173,10 +267,16 @@ impl Config {
         } else if request == 0. {
             // A retained HOLD anchors only the massless reference. Its finite
             // friction cannot pin a moving finite stem or supply an impulse.
-            if v == 0. {
+            let regulator = branch.map(|b| b.regulator);
+            if regulator == Some(RegulatorBranch::HoldRest) || (regulator.is_none() && v == 0.) {
                 (0., required.clamp(-cap, cap), GripMode::Stick)
             } else {
-                (0., -cap * v.signum(), GripMode::Slip)
+                let sign = match regulator {
+                    Some(RegulatorBranch::HoldPositive) => 1.,
+                    Some(RegulatorBranch::HoldNegative) => -1.,
+                    _ => v.signum(),
+                };
+                (0., -cap * sign, GripMode::Slip)
             }
         } else {
             if input.motive_power_w == 0. {
@@ -192,9 +292,14 @@ impl Config {
             } else {
                 self.force_limit_n
             };
-            let effort = if v < request {
+            let regulator = branch.map(|b| b.regulator);
+            let effort = if regulator == Some(RegulatorBranch::ApproachPositive)
+                || (regulator.is_none() && v < request)
+            {
                 positive
-            } else if v > request {
+            } else if regulator == Some(RegulatorBranch::ApproachNegative)
+                || (regulator.is_none() && v > request)
+            {
                 -negative
             } else {
                 required.clamp(-negative, positive)
@@ -219,13 +324,14 @@ impl Config {
                 } else {
                     request.max(-power / (-grip))
                 };
-                if (u - v) * grip <= 0. {
+                if branch.is_none() && (u - v) * grip <= 0. {
                     return Err("Unresolved force-speed/friction branch");
                 }
                 (u, grip, GripMode::Slip)
             }
         };
-        let (ab, as_, joint, joint_mode) = self.accelerations(s, forces, grip)?;
+        let (ab, as_, joint, joint_mode) =
+            self.accelerations(s, forces, grip, branch.map(|b| b.joint))?;
         let motive = grip * u;
         let slip = grip * (u - v);
         let loss = input.motive_power_w - motive;
@@ -234,7 +340,7 @@ impl Config {
         if ![ab, as_, joint, motive, slip, loss, grip_work, joint_work]
             .iter()
             .all(|x| x.is_finite())
-            || slip < 0.
+            || (branch.is_none() && slip < 0.)
             || loss < 0.
         {
             return Err("Unpaid or nonpassive absorber stage");
@@ -419,8 +525,8 @@ mod tests {
             assert!(r.electrical_loss_to_jack_w >= 0.);
             assert!(r.motive_mechanical_w <= 0.8 * 1000. / 52. + 1e-12);
         }
-        assert!(c
-            .evaluate(
+        assert!(
+            c.evaluate(
                 state(0.),
                 input(0.008),
                 Forces {
@@ -428,7 +534,8 @@ mod tests {
                     stem_n: 0.
                 }
             )
-            .is_err());
+            .is_err()
+        );
         let mut i = input(0.008);
         i.motive_power_w = 0.;
         assert!(c.evaluate(state(0.), i, forces()).is_err());
@@ -503,8 +610,8 @@ mod tests {
         let mut i = input(0.);
         i.motive_power_w = 0.;
         i.gap_m = c.gap_stroke_m;
-        assert!(c
-            .evaluate(
+        assert!(
+            c.evaluate(
                 s,
                 i,
                 Forces {
@@ -512,7 +619,8 @@ mod tests {
                     stem_n: -5.
                 }
             )
-            .is_err());
+            .is_err()
+        );
         s.body_v_m_s = -f64::MAX;
         assert!(c.recontact(s).is_err());
     }

@@ -22,9 +22,13 @@ const selectionSchema=z.object({wetContact_W_m2_K:positive,
   'UPPER.EXTERNAL':z.object({kind:z.literal('reduced-cylinder'),crossSection_m2:positive}).strict(),
   DOWN:z.object({kind:z.literal('owned-annulus'),innerRadius_m:positive,length_m:positive}).strict(),
  }).strict()}).strict()
+/** One current typed 304 caloric owner, shared by all finite recipients. */
+export function parse304Caloric(document:string){
+ return caloricSchema.parse(configurationBlock(document,'reference-304-caloric'))
+}
 export function parseColdBarrelSelection(source:string,caloric:string){
  return {selection:selectionSchema.parse(configurationBlock(source,'reference-cold-barrel-connection')),
-  caloric:caloricSchema.parse(configurationBlock(caloric,'reference-304-caloric'))}
+  caloric:parse304Caloric(caloric)}
 }
 type Network=Pick<Awaited<ReturnType<typeof compileOperatingNetwork>>,'water'>
 type WaterInput=ReturnType<typeof parsePrimaryWaterInputs>

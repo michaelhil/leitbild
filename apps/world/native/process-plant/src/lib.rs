@@ -39,6 +39,8 @@ pub mod prhr_mixing;
 pub mod dc_supply;
 pub mod absorber_motion;
 pub mod moving_guide;
+pub mod absorber_fleet;
+pub mod guide_motion_water;
 
 pub const GRAVITY: f64 = 9.80665;
 

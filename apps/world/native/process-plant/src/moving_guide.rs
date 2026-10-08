@@ -126,32 +126,39 @@ impl Geometry {
     /// gradient, body wall traction and dissipation. The graph's current
     /// property/Churchill evaluator owns chi and its partials, not this helper.
     pub fn enhanced(self, q: f64, v: f64, mu: f64, chi: f64) -> Result<Laminar, &'static str> {
+        self.laminar(q, v, mu)?.enhanced(chi)
+    }
+}
+impl Laminar {
+    /// Scale an already evaluated SAME-stage primitive without repeating its
+    /// immutable-radius logarithms/mobility. This is value reuse, not a cache;
+    /// the caller still owns the current chi and its chained derivatives.
+    pub fn enhanced(mut self, chi: f64) -> Result<Self, &'static str> {
         if !chi.is_finite() || chi < 1. {
             return Err("Invalid moving guide excess-resistance selection");
         }
-        let mut r = self.laminar(q, v, mu)?;
-        r.gradient_pa_m *= chi;
-        r.body_wall_force_n *= chi;
-        r.dissipation_w *= chi;
-        r.pressure_and_wall_work_w *= chi;
+        self.gradient_pa_m *= chi;
+        self.body_wall_force_n *= chi;
+        self.dissipation_w *= chi;
+        self.pressure_and_wall_work_w *= chi;
         // These are the partials at HELD chi; the caller chains its actual
         // Reynolds/property/geometry derivative, not a fabricated constant chi.
-        r.gradient_partials.iter_mut().for_each(|x| *x *= chi);
-        r.wall_force_partials.iter_mut().for_each(|x| *x *= chi);
+        self.gradient_partials.iter_mut().for_each(|x| *x *= chi);
+        self.wall_force_partials.iter_mut().for_each(|x| *x *= chi);
         if ![
-            r.gradient_pa_m,
-            r.body_wall_force_n,
-            r.dissipation_w,
-            r.pressure_and_wall_work_w,
+            self.gradient_pa_m,
+            self.body_wall_force_n,
+            self.dissipation_w,
+            self.pressure_and_wall_work_w,
         ]
         .iter()
-        .chain(r.gradient_partials.iter())
-        .chain(r.wall_force_partials.iter())
+        .chain(self.gradient_partials.iter())
+        .chain(self.wall_force_partials.iter())
         .all(|x| x.is_finite())
         {
             return Err("Unrepresentable enhanced moving guide constitutive state");
         }
-        Ok(r)
+        Ok(self)
     }
 }
 #[derive(Clone, Copy, Debug)]
@@ -240,6 +247,60 @@ pub fn free_shape(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn evaluated_enhancement_reuse_preserves_every_original_output_bit() {
+        for q in [-1e-6, 0., 1e-6] {
+            for v in [-0.008, 0., 0.008] {
+                for chi in [1., 1.5, 12.] {
+                    let base = g().laminar(q, v, 0.000854).unwrap();
+                    let reused = base.enhanced(chi).unwrap();
+                    let direct = g().enhanced(q, v, 0.000854, chi).unwrap();
+                    for (actual, expected) in [
+                        (reused.gradient_pa_m, base.gradient_pa_m * chi),
+                        (reused.body_wall_force_n, base.body_wall_force_n * chi),
+                        (reused.dissipation_w, base.dissipation_w * chi),
+                        (
+                            reused.pressure_and_wall_work_w,
+                            base.pressure_and_wall_work_w * chi,
+                        ),
+                        (reused.current_m3_s, base.current_m3_s),
+                        (reused.area_m2, base.area_m2),
+                        (reused.hydraulic_diameter_m, base.hydraulic_diameter_m),
+                        (reused.laminar_darcy_shape, base.laminar_darcy_shape),
+                        (direct.gradient_pa_m, reused.gradient_pa_m),
+                        (direct.body_wall_force_n, reused.body_wall_force_n),
+                    ] {
+                        assert_eq!(actual.to_bits(), expected.to_bits());
+                    }
+                    for (actual, expected) in reused
+                        .gradient_partials
+                        .into_iter()
+                        .chain(reused.wall_force_partials)
+                        .zip(
+                            base.gradient_partials
+                                .into_iter()
+                                .chain(base.wall_force_partials)
+                                .map(|x| x * chi),
+                        )
+                    {
+                        assert_eq!(actual.to_bits(), expected.to_bits());
+                    }
+                }
+            }
+        }
+        assert!(
+            g().laminar(0., 0., 0.000854)
+                .unwrap()
+                .enhanced(0.9)
+                .is_err()
+        );
+        assert!(
+            g().laminar(0., 0., 0.000854)
+                .unwrap()
+                .enhanced(f64::NAN)
+                .is_err()
+        );
+    }
     fn g() -> Geometry {
         Geometry {
             outer_radius_m: 0.0055,
