@@ -114,6 +114,10 @@ describe('Workspace Host with real Modules', () => {
       name: 'leitbild-assistance', description: 'Test Assistant Skill', body: 'Use Workspace discovery.',
       tools: [], allowedToolNames: [], dirPath: leitbildHome,
     })
+    deployment.sharedSkillStore.register({
+      name: 'operator-displays', description: 'Test display Skill', body: 'Compose displays when useful.',
+      tools: [], allowedToolNames: [], dirPath: leitbildHome,
+    })
     deployment.sharedToolRegistry.registerAll(createProductKnowledgeTools())
     deployment.sharedToolRegistry.register(createPlaceResolveTool())
     deployment.sharedToolRegistry.register(createGetTimeTool())
