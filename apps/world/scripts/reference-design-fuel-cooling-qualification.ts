@@ -19,6 +19,24 @@ export const coolingCarrierComparisonPolicy='closed-mobile-generated-products-se
 export const coolingMobileCapturePolicy='birth-site-primary-H-B;physical-liquid-self;physical-origin-diffuse-serial-clad-barrel-guide-BODY;explicit-unrepresented-wall-boundary' as const
 export const coolingMobileDevelopmentPolicy='separate-positive-H-B-paid-and-finite-recipient-power;min-normal-tighter>10-pair-difference+20-existing-resolution' as const
 export const coolingAbsorberGuidePolicy='fixed-original-finite-BODY-guide;actual-birth-region-cohort;canonical-products;full-physical-host-photons' as const
+export const coolingActuationSupplyPolicy='exact-finite-ACT.A;actual-PRHR-hold-close;remaining-consumer-work-export;losses-to-finite-ROOM;retained-no-replay' as const
+const nonnegative=z.number().finite().nonnegative()
+const supportPoint=z.object({timeS:nonnegative,energyJ:nonnegative,sourceJ:nonnegative,deliveredJ:nonnegative,
+ prhrDeliveredJ:nonnegative,otherDeliveredJ:nonnegative,lossJ:nonnegative,thermalReceivedJ:nonnegative,
+ outputClosed:z.boolean(),cause:z.enum(['overload','insufficient_supply','output_failure']).nullable(),
+ chargerAvailable:z.boolean(),batteryAvailable:z.boolean(),outputHealthy:z.boolean(),
+ opening:z.number().finite().min(0).max(1),springEnergyJ:nonnegative,holding:z.boolean(),closing:z.boolean(),
+ nextEventS:nonnegative.nullable(),eventCursor:z.number().int().nonnegative()})
+const supplyArm=z.object({final:supportPoint,events:z.array(supportPoint).min(1),
+ copyChecks:z.object({passed:z.literal(true),checks:z.number().int().positive(),maximumDifference:z.literal(0)}),
+ maximumEnergyDefectJ:nonnegative,maximumThermalReceiptDefectJ:nonnegative})
+export const actuationSupplyAdmission=z.object({kind:z.literal('finite-actuation-supply-pair'),passed:z.literal(true),
+ policy:z.literal(coolingActuationSupplyPolicy),finiteSupplyEnergyConserved:z.literal(true),thermalReceiptMatched:z.literal(true),
+ actualSupportLossReleased:z.literal(true),restorationDidNotReplay:z.literal(true),poweredCloseRecharged:z.literal(true),
+ commandedReopenAchieved:z.literal(true),retainedCopiesMatched:z.literal(true),
+ normal:supplyArm,tighter:supplyArm,maximumPairedEnergyDifferenceJ:nonnegative})
+ .refine(r=>[r.normal,r.tighter].every(a=>a.final.timeS===300&&(a.final.nextEventS===null||a.final.nextEventS>300)),
+  'Finite support must reach the complete horizon with no unconsumed boundary inside it')
 export const absorberGuideAdmission=z.object({kind:z.literal('absorber-guide-pair'),passed:z.literal(true),
  policy:z.literal(coolingAbsorberGuidePolicy),hosts:z.number().int().positive(),
  powerLocalRatio:admittedRatio,powerSUMABSRatio:admittedRatio,paidEnergyRatio:admittedRatio,
@@ -100,6 +118,13 @@ export function coolingStatesComplete(states:readonly {path:string;magic?:string
    &&states.filter(s=>s.path.endsWith(`input.${arm}.checkpoint`)&&s.magic==='LDPTST01'&&s.time===300).length===1
  )
 }
+export function coolingEventStatesComplete(states:readonly {path:string;magic?:string;coordinates?:number;time?:number;frameError?:string}[],
+ coordinates:number,events:{normal:{events:{timeS:number}[]},tighter:{events:{timeS:number}[]}}){
+ if(states.length!==events.normal.events.length+events.tighter.events.length||new Set(states.map(s=>s.path)).size!==states.length)return false
+ return (['normal','tighter'] as const).every(arm=>events[arm].events.every((e,i)=>
+  states.some(s=>s.path.endsWith(`input.${arm}.event-${i}.bin`)&&!s.frameError&&s.magic==='LDPTCM01'
+   &&s.coordinates===coordinates&&s.time===e.timeS)))
+}
 type Options={wiki:string;partition:string;material:string;water:string;materialEvidence:string;
  binary:string;selectedStackManifest:string;output:string;priorAttempt?:string;features?:{prhr:boolean}}
 export function fuelCoolingPriorSeconds(value:unknown){
@@ -139,7 +164,7 @@ export async function qualifyFuelCooling(options:Options){
  await Promise.all(paths.map((p,i)=>writeFile(join(directory,`${i}-${basename(p)}`),bytes[i]!,{flag:'wx'})))
  await writeFile(join(directory,'input.txt'),fixture,{flag:'wx'})
  await writeFile(join(directory,'composition.json'),JSON.stringify({conditioning:prepared.conditioning,thermal:prepared.thermal,primary:prepared.primary,barrel:prepared.barrel,capture:prepared.capture,mobileCapture:prepared.mobileCapture,absorberGuide:prepared.absorberGuide,pressure:prepared.pressure,
-  prhr:prepared.prhr,ownerIdentities:prepared.ownerIdentities,limitations:prepared.limitations},null,2)+'\n',{flag:'wx'})
+  prhr:prepared.prhr,actuation:prepared.actuation,ownerIdentities:prepared.ownerIdentities,limitations:prepared.limitations},null,2)+'\n',{flag:'wx'})
  // All linked non-system libraries must be retained; the old receipt is not a
  // substitute for inspecting this newly built binary and its actual links.
  const nativeStack=await verifySelectedNativeStack({binary:resolve(options.binary),prefix:selected.prefix,
@@ -152,12 +177,14 @@ export async function qualifyFuelCooling(options:Options){
  const timer=setTimeout(()=>{timedOut=true;child.kill('SIGKILL')},remaining*1000)
  const [stdout,stderr,exitCode]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited]).finally(()=>clearTimeout(timer))
  const executionWallSeconds=(performance.now()-began)/1000-preparationSeconds
- const states=await Promise.all((await Array.fromAsync(new Bun.Glob('input.*').scan({cwd:directory}))).sort()
-  .filter(name=>name!=='input.txt'&&!name.endsWith('.pressure-evidence.json')).map(async name=>{
+ const retainedStates=await Promise.all((await Array.fromAsync(new Bun.Glob('input.*').scan({cwd:directory}))).sort()
+  .filter(name=>name!=='input.txt'&&!name.endsWith('.pressure-evidence.json')&&!name.endsWith('.actuation-support.txt')).map(async name=>{
    const path=join(directory,name),bytes=await readFile(path)
    try{return {path,sha256:sha(bytes),bytes:bytes.length,...coolingStateHeader(bytes)}}
    catch(error){return {path,sha256:sha(bytes),bytes:bytes.length,frameError:String(error)}}
   })),
+  states=retainedStates.filter(s=>!/[.]event-\d+[.]bin$/.test(s.path)),
+  eventStates=retainedStates.filter(s=>/[.]event-\d+[.]bin$/.test(s.path)),
   parsed=sourceEvolutionOutput(stdout),outcome=parsed.outcome,admission=fuelCoolingAdmission.safeParse(outcome),
   selectedEnergyCoordinate=outcome?.settings?.solverEnergyCoordinate===coolingEnergyCoordinates[prepared.prhr?'prhr':'base'],
   pressureEvidence=[...parsed.records].reverse().find(row=>row?.kind==='pressure-evidence-pair')?.report,
@@ -173,13 +200,27 @@ export async function qualifyFuelCooling(options:Options){
    const bytes=await readFile(path);return {path,sha256:sha(bytes),bytes:bytes.length}
   })),
   completeStates=coolingStatesComplete(states,outcome?.dimension),
+  supportStates=prepared.actuation?await Promise.all(retainedStates.map(async s=>{
+   const path=s.path+'.actuation-support.txt'
+   if(!await Bun.file(path).exists())return {path,missing:true}
+   const bytes=await readFile(path);return {path,sha256:sha(bytes),bytes:bytes.length}
+  })):[],
+  supportAdmission=actuationSupplyAdmission.safeParse(outcome?.actuationSupplyReceipts),
+  supportAdmitted=prepared.actuation? supportAdmission.success
+   &&outcome?.settings?.actuationSupplyPolicy===coolingActuationSupplyPolicy
+   &&outcome?.gates?.actuationSupplyQualified===true
+   &&[supportAdmission.data.normal,supportAdmission.data.tighter].every(a=>a.final.energyJ<=prepared.actuation!.capacity_J
+    &&a.final.eventCursor===prepared.actuation!.prep.events.length)
+   &&coolingEventStatesComplete(eventStates,outcome.dimension,supportAdmission.data)
+   &&supportStates.length===retainedStates.length&&supportStates.every(s=>!('missing' in s)&&s.bytes>0)
+   :outcome?.actuationSupplyReceipts===null&&eventStates.length===0,
   unchanged=(await Promise.all(paths.map(p=>readFile(p)))).every((b,i)=>b.equals(bytes[i]!))
    &&(await Promise.all(inputs.map(p=>Bun.file(p).text()))).every((s,i)=>s===texts[i])
    &&(await Promise.all(ownerPaths.map(p=>Bun.file(p).text()))).every((s,i)=>s===ownerTexts[i])
    &&(await Promise.all(prepared.ownerIdentities.map(async r=>sha(await Bun.file(join(options.wiki,r.name)).text())===r.sha256))).every(Boolean),
   stackUnchanged=await selectedNativeStackUnchanged(nativeStack),currentAttemptSeconds=(performance.now()-began)/1000,
   elapsedSeconds=priorComputationSeconds+currentAttemptSeconds,
-  receipt={recordedAt:new Date().toISOString(),passed:exitCode===0&&!timedOut&&admission.success&&bundleAdmitted&&selectedEnergyCoordinate&&completeStates
+  receipt={recordedAt:new Date().toISOString(),passed:exitCode===0&&!timedOut&&admission.success&&bundleAdmitted&&supportAdmitted&&selectedEnergyCoordinate&&completeStates
     &&pressureEvidence?.passed===true&&observations.every(r=>!('missing' in r))
     &&(!prepared.prhr||prhrEvidence?.passed===true)
     &&unchanged&&stackUnchanged&&elapsedSeconds<=allowanceSeconds,
@@ -189,7 +230,8 @@ export async function qualifyFuelCooling(options:Options){
    stdout,stderr,processUsageScope:'current native process; prior attempt usage retained separately',
    ...sourceProcessUsage(child.resourceUsage()),...parsed,unchanged,pressureEvidence,prhrEvidence,selectedEnergyCoordinate,
    absorberGuideEvidence:bundleRecords[0],absorberGuideAdmitted:bundleAdmitted,
-   admissionError:!admission.success?admission.error.message:!bundleAdmitted?'Missing, failed or mismatched finite BODY/guide pair receipt':!selectedEnergyCoordinate?'Native energy coordinate does not match the selected physical composition':undefined,
+   actuationSupplyEvidence:outcome?.actuationSupplyReceipts,actuationSupplyAdmitted:supportAdmitted,
+   admissionError:!admission.success?admission.error.message:!bundleAdmitted?'Missing, failed or mismatched finite BODY/guide pair receipt':!supportAdmitted?'Missing, failed or mismatched finite ACT support receipt/state retention':!selectedEnergyCoordinate?'Native energy coordinate does not match the selected physical composition':undefined,
    inputCounts:{bands:prepared.thermal.bands.length,thermalPhysicalStocks:prepared.thermal.thermalCoordinates,
     thermalSolverCoordinates:2*prepared.thermal.thermalCoordinates,primaryCells:prepared.network.water.length,
     primaryCarrierCoordinates:3*prepared.network.water.length,primarySourceIntersections:prepared.primary.rows.length,
@@ -201,7 +243,7 @@ export async function qualifyFuelCooling(options:Options){
     captureEventKinds:['fertile','xenon','samarium'],capturePaidEnergy:'Q-times-existing-gross-progress-no-extra-emitted-integral'},
    consumed:[...inputs.map((path,i)=>({path,sha256:sha(texts[i]!)})),...ownerPaths.map((path,i)=>({path,sha256:sha(ownerTexts[i]!)}))],
    sources:paths.map((path,i)=>({path,sha256:sha(bytes[i]!)})),fixtureSHA256:sha(fixture),
-   artifacts:{directory,nativeStack,nativeStackUnchanged:stackUnchanged,states,completeStates,observations},noWholePlantReadinessCredit:true,
+   artifacts:{directory,nativeStack,nativeStackUnchanged:stackUnchanged,states,completeStates,eventStates,supportStates,observations},noWholePlantReadinessCredit:true,
    limitations:prepared.limitations}
  await writeFile(output,JSON.stringify(receipt,null,2)+'\n',{flag:'wx'})
  return receipt

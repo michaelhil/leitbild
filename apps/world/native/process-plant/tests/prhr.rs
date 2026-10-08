@@ -150,6 +150,81 @@ fn entry(n: &n::Network, w: &n::Workspace, row: usize, col: usize) -> f64 {
         .unwrap_or(0.)
 }
 #[test]
+fn restriction_admission_uses_current_inverse_flow_equation_at_every_opening() {
+    use leitbild_plant_numerics::operating_admission as admission;
+    let mut config = fixture().config().clone();
+    // Equal actual contact temperatures make the film charts exact without
+    // an initialization solve; another finite solid supplies weighting span.
+    for water in &mut config.water {
+        water.initial_temperature = 300.;
+    }
+    for solid in &mut config.solids {
+        solid.initial_temperature = 300.;
+    }
+    config.prhr.as_mut().unwrap().wst.initial_temperature_k = 300.;
+    config.solids.push(n::Solid {
+        heat_capacity: 10000.,
+        initial_temperature: 310.,
+    });
+    config.heat.push(n::Heat {
+        from: 2,
+        to: 4,
+        law: n::HeatLaw::Conductance(1.),
+    });
+    let n = n::Network::new(config).unwrap();
+    let row = n.flow_row(0);
+    let seat = n.config().seat.unwrap();
+    let mut y = n.initial_state().unwrap();
+    let yp = vec![0.; n.dimension()];
+    let mut w = n::Workspace::new(&n);
+    w.evaluate_with_inputs(&n, &y, &yp, None, &[], Some(input(0.)))
+        .unwrap();
+    let allocation = admission::weights(&n, &w, &y, 300., 1.).unwrap().flow;
+    // The actual refused ACT state carried this arithmetic-scale residual,
+    // not a physical leakage law. Keep the numerical state unprojected.
+    y[row] = -3.240871356803887e-27;
+    w.evaluate_with_inputs(&n, &y, &yp, None, &[], Some(input(0.)))
+        .unwrap();
+    assert_eq!(w.residual[row], y[row]);
+    assert!(admission::seat_flow_ratio(&n, &w, &y, allocation[0]).unwrap() < 1e-18);
+    let before = y.clone();
+    admission::screen(&n, &w, &y, admission::totals(&n, &y), &allocation).unwrap();
+    assert_eq!(before, y);
+    // The same inverse-coordinate criterion applies to opening, reclosing,
+    // reversed drive, and arbitrarily small positive achieved travel.
+    for opening in [0., 1e-10, 0.5, 1., 0.5, 0.] {
+        for drive_sign in [-1., 1.] {
+            y[n.mechanical_row(1).unwrap()] = 3. * drive_sign;
+            y[row] = 0.;
+            w.evaluate_with_inputs(&n, &y, &yp, None, &[], Some(input(opening)))
+                .unwrap();
+            let e = &n.config().hydraulic[0];
+            let rho = (w.liquids[0].density + w.liquids[1].density) * 0.5;
+            let mu = (w.liquids[0].viscosity + w.liquids[1].viscosity) * 0.5;
+            let drive = n.hydraulic_drive(0, &y, &w.liquids).unwrap().0;
+            let actual = seat.flow(e, drive, opening, rho, mu).unwrap()[0];
+            for refinement in [1., 10.] {
+                let flow = vec![allocation[0] / refinement];
+                for (fraction, passes) in [(0.5, true), (2., false), (-2., false)] {
+                    y[row] = actual + fraction * flow[0];
+                    w.evaluate_with_inputs(&n, &y, &yp, None, &[], Some(input(opening)))
+                        .unwrap();
+                    let ratio = admission::seat_flow_ratio(&n, &w, &y, flow[0]).unwrap();
+                    assert_eq!(ratio <= 1., passes);
+                    assert_eq!(
+                        admission::screen(&n, &w, &y, admission::totals(&n, &y), &flow).is_ok(),
+                        passes
+                    );
+                }
+            }
+        }
+    }
+    assert!(admission::seat_flow_ratio(&n, &w, &y, 0.).is_err());
+    let mut stale = y.clone();
+    stale[row] += allocation[0];
+    assert!(admission::seat_flow_ratio(&n, &w, &stale, allocation[0]).is_err());
+}
+#[test]
 fn continuous_position_event_changes_only_owned_identity_rates_and_preserves_residual() {
     let n = fixture();
     let y = n.initial_state().unwrap();
@@ -209,6 +284,69 @@ fn continuous_position_event_changes_only_owned_identity_rates_and_preserves_res
             }
         )
         .is_err());
+}
+#[test]
+fn finite_supply_loss_restore_and_closing_changes_preserve_actual_network_residual_support() {
+    let n = fixture();
+    let y = n.initial_state().unwrap();
+    let yp = vec![0.; n.dimension()];
+    // Actual selected duty/loss changes: empty battery release, converter
+    // restoration behind a latched-open output, and powered closing endstop.
+    let cases = [
+        (
+            0.,
+            0.,
+            0.2,
+            125.26315789473688,
+            0.,
+            125.26315789473688,
+            500.,
+        ),
+        (1., 0., 0., 0., 1369.5652173913043, 0., 1369.5652173913043),
+        (
+            0.,
+            -0.2,
+            0.,
+            2239.5652173913045,
+            1289.5652173913045,
+            1739.5652173913045,
+            1289.5652173913045,
+        ),
+    ];
+    for (a, dl, dr, el, er, ql, qr) in cases {
+        let left = prhr::Input {
+            opening: a,
+            opening_rate: dl,
+            electrical_receipt_w: el,
+            room_heat_w: ql,
+            ambient_temperature_k: 298.15,
+        };
+        let right = prhr::Input {
+            opening: a,
+            opening_rate: dr,
+            electrical_receipt_w: er,
+            room_heat_w: qr,
+            ambient_temperature_k: 298.15,
+        };
+        let changes = n.prhr().unwrap().rate_event_changes(left, right).unwrap();
+        let mut w = n::Workspace::new(&n);
+        w.evaluate_with_inputs(&n, &y, &yp, None, &[], Some(left))
+            .unwrap();
+        let original = w.residual.clone();
+        let mut rates = yp.clone();
+        for (r, d) in changes {
+            rates[r] += d;
+        }
+        w.evaluate_with_inputs(&n, &y, &rates, None, &[], Some(right))
+            .unwrap();
+        for (r, (&old, &new)) in original.iter().zip(&w.residual).enumerate() {
+            assert!(
+                (old - new).abs()
+                    <= 16. * f64::EPSILON * (old.abs() + new.abs() + el + er + ql + qr).max(1.),
+                "row{r}"
+            );
+        }
+    }
 }
 #[test]
 fn viscous_scalar_onset_has_finite_generalized_tangent_with_resolved_contrast() {

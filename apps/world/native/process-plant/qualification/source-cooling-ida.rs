@@ -3,8 +3,12 @@
 #![allow(dead_code)]
 #[path = "cooling_accuracy.rs"]
 mod cooling_accuracy;
+#[path = "cooling_actuation.rs"]
+mod cooling_actuation;
 #[path = "cooling_block/mod.rs"]
 mod cooling_block;
+#[path = "cooling_bundle.rs"]
+mod cooling_bundle;
 #[path = "cooling_capture.rs"]
 mod cooling_capture;
 #[path = "cooling_convergence.rs"]
@@ -29,8 +33,6 @@ mod cooling_mobile;
 mod cooling_observation;
 #[path = "cooling_power.rs"]
 mod cooling_power;
-#[path = "cooling_bundle.rs"]
-mod cooling_bundle;
 #[path = "evolution_input/mod.rs"]
 mod evolution_input;
 #[path = "../examples/ida_support/mod.rs"]
@@ -52,8 +54,8 @@ use ida_support::*;
 use leitbild_plant_numerics::{
     barrel_thermal, cold_pressurizer, converter_heat, cylindrical_source, finite_surge,
     fuel_history, fuel_source, fuel_thermal, heat_history, moderator_source, operating_admission,
-    operating_network, optical_source, passive_source, prhr, prhr_actuator, source_cooling,
-    source_evolution, transport_source, water_carrier,
+    operating_network, optical_source, passive_source, prhr, source_cooling, source_evolution,
+    transport_source, water_carrier,
 };
 use source_coordinates::Coordinates;
 use source_evolution::Evolution;
@@ -122,96 +124,7 @@ unsafe fn output<'a>(v: Handle, n: usize) -> Result<&'a mut [f64], String> {
     }
     Ok(unsafe { slice::from_raw_parts_mut(p, n) })
 }
-/// Exact achieved mechanism between authored support/command events. The plant
-/// solver stops at each contact; no command is applied retrospectively.
-#[derive(Clone)]
-struct PrhrSchedule {
-    motion: prhr_actuator::Motion,
-    inputs: prhr_actuator::Inputs,
-    pending_start: Option<f64>,
-    room_row: usize,
-    spring_row: usize,
-    spring_j: f64,
-}
-impl PrhrSchedule {
-    fn new(
-        model: &source_cooling::Model,
-        action: Option<cooling_input::PrhrAction>,
-    ) -> Result<Option<Self>, String> {
-        let Some(p) = model.network.prhr() else {
-            if action.is_some() {
-                return Err("PRHR action without physical apparatus".into());
-            }
-            return Ok(None);
-        };
-        let a = action.ok_or("Missing authored PRHR action/support boundary")?;
-        if !a.start_s.is_finite() || a.start_s < 0. || a.start_s >= HORIZON {
-            return Err("PRHR command outside qualification horizon".into());
-        }
-        let inputs = prhr_actuator::Inputs {
-            support: prhr_actuator::Support {
-                hold_supported: a.hold_supported,
-                closing_supported: a.closing_supported,
-            },
-            blocked: a.blocked,
-            ambient_temperature_k: a.ambient_temperature_k,
-        };
-        let motion = a.motion(p)?;
-        let pending_start = if a.start_s == 0. {
-            None
-        } else {
-            Some(a.start_s)
-        };
-        Ok(Some(Self {
-            motion,
-            inputs,
-            pending_start,
-            room_row: model.layout.network_start + p.layout.room_energy,
-            spring_row: model.layout.network_start + p.layout.spring_released,
-            spring_j: p.config.actuator.spring_energy_j,
-        }))
-    }
-    fn next_event(&self) -> Result<Option<f64>, String> {
-        Ok(match (self.pending_start, self.motion.next_contact_s()?) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        })
-    }
-    fn input(&self, time: f64, room_energy: f64) -> Result<prhr::Input, String> {
-        let (opening, r) = self.motion.at_left(time, room_energy)?;
-        Ok(prhr::Input {
-            opening,
-            opening_rate: r.opening_rate_s,
-            electrical_receipt_w: r.electrical_receipt_w,
-            room_heat_w: r.room_heat_w,
-            ambient_temperature_k: self.inputs.ambient_temperature_k,
-        })
-    }
-    fn accept_event(&mut self, time: f64) -> Result<(), String> {
-        if self.next_event()? != Some(time) {
-            return Err("Wrong PRHR physical event time".into());
-        }
-        let command = if self.pending_start == Some(time) {
-            self.pending_start = None;
-            Some(prhr_actuator::Command::Open)
-        } else {
-            None
-        };
-        self.motion.transition(time, command, self.inputs)?;
-        Ok(())
-    }
-    fn audit(&self, time: f64, y: &[f64]) -> Result<(), String> {
-        let (a, _) = self.motion.at_left(time, y[self.room_row])?;
-        let released = self.motion.initial_spring_energy_j() - self.spring_j * (1. - a);
-        if (y[self.spring_row] - released).abs() > 1e-5 {
-            return Err(format!(
-                "Finite PRHR spring receipt mismatch: {} versus {released}",
-                y[self.spring_row]
-            ));
-        }
-        Ok(())
-    }
-}
+use cooling_actuation::Schedule as PrhrSchedule;
 fn prhr_input(
     schedule: Option<&PrhrSchedule>,
     time: f64,
@@ -416,9 +329,11 @@ impl<'a> Callbacks<'a> {
         absolute[energy.row] = EnergyCoordinates::absolute(n, refinement);
         let power_weights = cooling_power::PowerWeights::new(&model.source)?;
         let power_work = power_weights.workspace();
+        let mut convergence = cooling_convergence::Convergence::new(model, input)?;
+        convergence.seat_flow_allocation(&absolute)?;
         Ok(Box::new(Self {
             model,
-            convergence: cooling_convergence::Convergence::new(model, input)?,
+            convergence,
             work,
             p: cooling_block::Preconditioner::new(model, physical, physical_slopes, input)?,
             coordinates: Coordinates {
@@ -546,7 +461,7 @@ fn install_solver(
     callbacks
         .convergence
         .budget(callbacks.start, callbacks.allowance);
-    callbacks.convergence.prhr_motion = callbacks.prhr.as_ref().map(|s| s.motion.clone());
+    callbacks.convergence.prhr_schedule = callbacks.prhr.clone();
     callbacks.convergence.install(owned.ida, nonlinear)?;
     checked(
         unsafe { IDASetStopTime(owned.ida, next_physical_event(callbacks.prhr.as_ref())?) },
@@ -613,7 +528,7 @@ fn physical_constraints(model: &source_cooling::Model, energy_row: usize) -> Vec
     out[l.mobile_capture_exported] = 1.;
     out[l.mobile_capture_boundary_exported] = 1.;
     out[l.absorber_guide_temperatures_start..l.absorber_guide_exported].fill(2.);
-    out[l.absorber_guide_exported]=1.;
+    out[l.absorber_guide_exported] = 1.;
     for row in [
         cold_pressurizer::LIQUID_MASS,
         cold_pressurizer::VAPOR_MASS,
@@ -640,7 +555,7 @@ fn physical_constraints(model: &source_cooling::Model, energy_row: usize) -> Vec
     // Ambient receipt and both signed endpoint flows remain unconstrained.
     out
 }
-const ERROR_FAMILIES: [&str; 15] = [
+const ERROR_FAMILIES: [&str; 18] = [
     "source-N",
     "source-C",
     "source-history-and-audits",
@@ -656,6 +571,9 @@ const ERROR_FAMILIES: [&str; 15] = [
     "fuel-binding-photon-export",
     "mobile-binding-installed-wall-exit",
     "mobile-binding-unrepresented-wall-boundary",
+    "absorber-guide-energy",
+    "absorber-guide-temperature",
+    "absorber-guide-photon-export",
 ];
 #[derive(Clone, Copy, Default)]
 struct ErrorFamily {
@@ -710,8 +628,14 @@ impl LocalErrors {
                     12
                 } else if r == l.mobile_capture_exported {
                     13
-                } else {
+                } else if r == l.mobile_capture_boundary_exported {
                     14
+                } else if r < l.absorber_guide_temperatures_start {
+                    15
+                } else if r < l.absorber_guide_exported {
+                    16
+                } else {
+                    17
                 }
             })
             .collect::<Vec<_>>();
@@ -1045,7 +969,8 @@ unsafe extern "C" fn psetup(
             .physical(unsafe { values(yp, n) }?, &mut c.slopes);
         c.energy.vector_to_physical(&mut c.slopes);
         let input = prhr_input(c.prhr.as_ref(), time, &c.state)?;
-        c.p.setup(c.model, &c.state, &c.slopes, cj, input)?;
+        c.p.setup(c.model, &c.state, &c.slopes, cj, input)
+            .map_err(|e| format!("{e}; actual P setup time={time}"))?;
         let began = Instant::now();
         let result = (|| {
             c.preconditioner_rhs.fill(0.);
@@ -1116,6 +1041,7 @@ struct Run {
     initialization: String,
     stats: String,
     pressure_evidence: Option<cooling_observation::Trace>,
+    actuation: cooling_actuation::Receipt,
 }
 impl Run {
     fn json(&self) -> String {
@@ -1240,6 +1166,7 @@ fn run(
     pressure_channel: leitbild_plant_numerics::pressure_channel::Config,
     pressure_protection: leitbild_plant_numerics::pressure_protection::Settings,
     prhr_action: Option<cooling_input::PrhrAction>,
+    actuation: Option<&cooling_actuation::Plan>,
     refinement: f64,
     start: Instant,
     allowance: f64,
@@ -1255,7 +1182,7 @@ fn run(
     let began = Instant::now();
     let n = model.dimension();
     let l = model.layout;
-    let schedule = PrhrSchedule::new(model, prhr_action)?;
+    let schedule = PrhrSchedule::new(model, prhr_action, actuation)?;
     let initial_input = schedule.as_ref().map(|s| s.input(0., 0.)).transpose()?;
     let mut initial = model.initial_state_with_prhr_input(initial_input)?;
     let mut slopes = vec![0.; n];
@@ -1267,7 +1194,7 @@ fn run(
             slopes[i] = -work.residual[i];
         }
     }
-    let mut absolute = accuracy.absolute(refinement)?;
+    let absolute = accuracy.absolute(refinement)?;
     let initialization = match cooling_initial::initialize(
         model,
         &mut initial,
@@ -1345,6 +1272,7 @@ fn run(
         initialization,
         stats: "null".into(),
         pressure_evidence: None,
+        actuation: cooling_actuation::Receipt::default(),
     };
     // These are actual native q coordinates, including the compiled seat's
     // achieved flow (not a conductance proxy). Reuse every existing Dky
@@ -1416,7 +1344,9 @@ fn run(
                     input,
                 )?;
                 if let Some(s) = callbacks.prhr.as_ref() {
-                    s.audit(out.returned, &physical)?;
+                    let (energy, thermal) = s.audit(out.returned, &physical)?;
+                    out.actuation.maximum_energy = out.actuation.maximum_energy.max(energy);
+                    out.actuation.maximum_thermal = out.actuation.maximum_thermal.max(thermal);
                 }
                 model.validate_accepted(&physical, &callbacks.work)?;
                 accuracy.carrier_ledger(model, &physical)?;
@@ -1451,7 +1381,8 @@ fn run(
                 }
                 out.max_thermal_chart = out.max_thermal_chart.max(dt);
                 for (i, &cp) in callbacks.work.absorber_guide.capacity.iter().enumerate() {
-                    let dt = callbacks.work.residual[l.absorber_guide_temperatures_start + i].abs() / cp;
+                    let dt =
+                        callbacks.work.residual[l.absorber_guide_temperatures_start + i].abs() / cp;
                     if !dt.is_finite() || dt > 1e-4 {
                         return Err(format!("BODY/guide caloric chart {i} correction {dt} K"));
                     }
@@ -1645,11 +1576,13 @@ fn run(
                 };
                 callbacks.screen_seconds += common_started.elapsed().as_secs_f64();
                 let io_started = Instant::now();
-                retain_common(
-                    &checkpoint_path.with_extension(format!("common-{}.bin", out.samples.len())),
-                    time,
-                    &sample.y,
-                )?;
+                let common_path =
+                    checkpoint_path.with_extension(format!("common-{}.bin", out.samples.len()));
+                retain_common(&common_path, time, &sample.y)?;
+                if let Some(s) = &callbacks.prhr {
+                    s.retain(&common_path, time)?;
+                    out.actuation.record(s, time, &sample.y, false)?;
+                }
                 callbacks.io_seconds += io_started.elapsed().as_secs_f64();
                 if let Some(reference) = reference {
                     let comparison = accuracy.compare_one(
@@ -1675,6 +1608,9 @@ fn run(
             if crossed || last_checkpoint.elapsed().as_secs_f64() >= 1. || out.steps == 1 {
                 let io_started = Instant::now();
                 checkpoint(checkpoint_path, out.last, &out.final_y, &out.final_yp)?;
+                if let Some(s) = &callbacks.prhr {
+                    s.retain(checkpoint_path, out.last)?;
+                }
                 callbacks.io_seconds += io_started.elapsed().as_secs_f64();
                 println!(
                     "{{\"kind\":\"admitted-progress\",\"lastAdmittedTime\":{},\"screenedSteps\":{},\"aggregateWallSeconds\":{},\"costs\":{}}}",
@@ -1733,8 +1669,7 @@ fn run(
                     solver_stats(owned.ida)?
                 ));
                 callbacks.prhr = next_schedule;
-                callbacks.convergence.prhr_motion =
-                    callbacks.prhr.as_ref().map(|s| s.motion.clone());
+                callbacks.convergence.prhr_schedule = callbacks.prhr.clone();
                 unsafe { output(y, n)? }.copy_from_slice(&accepted_solver);
                 unsafe { output(yp, n)? }.copy_from_slice(&syp);
                 checked(
@@ -1750,7 +1685,22 @@ fn run(
                 callbacks.energy_p.invalidate();
                 out.final_y = physical.clone();
                 out.final_yp = physical_yp.clone();
-                println!("{{\"kind\":\"physical-prhr-event\",\"time\":{},\"rateOnlyTransaction\":{},\"allAcceptedSolverStateBitsPreserved\":true,\"encodedRateIncrement\":{{\"GJPerS\":{},\"DPerS\":{}}},\"rateScope\":\"owned-identity-Fyp-forcing-jump;all-unrelated-fluid-and-source-rates-retained;not-generalized-hydraulic-or-film-derivative-completion\"}}",finite(out.returned),event_proof,finite(delta_g),finite(delta_d));
+                if let Some(s) = &callbacks.prhr {
+                    let io_started = Instant::now();
+                    let path = checkpoint_path
+                        .with_extension(format!("event-{}.bin", out.actuation.events.len()));
+                    retain_common(&path, out.returned, &physical)?;
+                    s.retain(&path, out.returned)?;
+                    callbacks.io_seconds += io_started.elapsed().as_secs_f64();
+                    out.actuation.record(s, out.returned, &physical, true)?;
+                }
+                let support = callbacks
+                    .prhr
+                    .as_ref()
+                    .map(|s| s.point(out.returned).map(|p| p.json()))
+                    .transpose()?
+                    .unwrap_or("null".into());
+                println!("{{\"kind\":\"physical-prhr-event\",\"time\":{},\"actuationSupport\":{support},\"rateOnlyTransaction\":{},\"allAcceptedSolverStateBitsPreserved\":true,\"encodedRateIncrement\":{{\"GJPerS\":{},\"DPerS\":{}}},\"rateScope\":\"owned-identity-Fyp-forcing-jump;all-unrelated-fluid-and-source-rates-retained;not-generalized-hydraulic-or-film-derivative-completion\"}}",finite(out.returned),event_proof,finite(delta_g),finite(delta_d));
             }
         }
         Ok(())
@@ -1772,6 +1722,10 @@ fn run(
         start.elapsed().as_secs_f64(),
         &callbacks.metrics(),
     )?;
+    if let Some(s) = &callbacks.prhr {
+        s.retain(checkpoint_path, out.last)?;
+        out.actuation.record(s, out.last, &out.final_y, false)?;
+    }
     callbacks.io_seconds += io_started.elapsed().as_secs_f64();
     if !out.passed {
         coordinates.physical(unsafe { values(y, n) }?, &mut physical);
@@ -1941,7 +1895,11 @@ fn execute() -> Result<(), String> {
     let text = fs::read_to_string(&input).map_err(|e| e.to_string())?;
     let prepared = catch_unwind(AssertUnwindSafe(|| cooling_input::parse(&text)))
         .map_err(|_| "Malformed coupled numeric payload".to_string())??;
-    let initial_schedule = PrhrSchedule::new(&prepared.model, prepared.prhr_action)?;
+    let initial_schedule = PrhrSchedule::new(
+        &prepared.model,
+        prepared.prhr_action,
+        prepared.actuation.as_ref(),
+    )?;
     let initial_prhr = initial_schedule
         .as_ref()
         .map(|s| s.input(0., 0.))
@@ -1954,6 +1912,7 @@ fn execute() -> Result<(), String> {
         prepared.pressure_channel,
         prepared.pressure_protection,
         prepared.prhr_action,
+        prepared.actuation.as_ref(),
         1.,
         started,
         allowance,
@@ -1967,6 +1926,7 @@ fn execute() -> Result<(), String> {
             prepared.pressure_channel,
             prepared.pressure_protection,
             prepared.prhr_action,
+            prepared.actuation.as_ref(),
             10.,
             started,
             allowance,
@@ -1982,8 +1942,8 @@ fn execute() -> Result<(), String> {
     let mut barrel_developed = None;
     let mut pressure_developed = None;
     let mut mobile_developed = None;
-    let mut bundle_qualified=false;
-    let mut bundle_ratios=[0f64;3];
+    let mut bundle_qualified = false;
+    let mut bundle_ratios = [0f64; 3];
     let mut mobile_receipts = "null".to_string();
     let mut pressure_details = "null".to_string();
     let mut barrel_details = "null".to_string();
@@ -2012,8 +1972,11 @@ fn execute() -> Result<(), String> {
         cooling_accuracy::check_schedule(&normal.samples)?;
         cooling_accuracy::check_schedule(&t.samples)?;
         for (a, b) in normal.samples.iter().zip(&t.samples) {
-            let (local,sumabs,paid)=cooling_bundle::compare(&prepared.model,a,b,&normal.initial,None)?;
-            for (r,q) in bundle_ratios.iter_mut().zip([local,sumabs,paid]){*r=r.max(q);}
+            let (local, sumabs, paid) =
+                cooling_bundle::compare(&prepared.model, a, b, &normal.initial, None)?;
+            for (r, q) in bundle_ratios.iter_mut().zip([local, sumabs, paid]) {
+                *r = r.max(q);
+            }
             let c = accuracy.compare_one(&prepared.model, a, b)?;
             max_source_local = max_source_local.max(c.source.local.ratio);
             max_source_family = max_source_family.max(c.source.family_ratio);
@@ -2045,11 +2008,21 @@ fn execute() -> Result<(), String> {
             max_pressure_material = max_pressure_material.max(c.pressure_material_pair_ratio);
             comparisons.push(c.json());
         }
-        let a=normal.samples.last().ok_or("Missing normal BODY/guide sample")?;
-        let b=t.samples.last().ok_or("Missing tighter BODY/guide sample")?;
-        bundle_qualified=bundle_ratios.iter().all(|q|*q<=1.)&&cooling_bundle::developed(&a.bundle_power,&b.bundle_power)
-            &&cooling_bundle::thermal_witness(&prepared.model,a,b,&normal.initial).3;
-        println!("{}",cooling_bundle::report(&prepared.model,a,b,&normal.initial,bundle_ratios)?);
+        let a = normal
+            .samples
+            .last()
+            .ok_or("Missing normal BODY/guide sample")?;
+        let b = t
+            .samples
+            .last()
+            .ok_or("Missing tighter BODY/guide sample")?;
+        bundle_qualified = bundle_ratios.iter().all(|q| *q <= 1.)
+            && cooling_bundle::developed(&a.bundle_power, &b.bundle_power)
+            && cooling_bundle::thermal_witness(&prepared.model, a, b, &normal.initial).3;
+        println!(
+            "{}",
+            cooling_bundle::report(&prepared.model, a, b, &normal.initial, bundle_ratios)?
+        );
         let original_mean = mean_fuel(&prepared.model, &normal.initial)?;
         let normal_mean = mean_fuel(&prepared.model, &normal.final_y)?;
         let tighter_mean = mean_fuel(&prepared.model, &t.final_y)?;
@@ -2173,7 +2146,17 @@ fn execute() -> Result<(), String> {
     } else {
         true
     };
+    let (actuation_qualified, actuation_receipts) = if prepared.actuation.is_some() {
+        if let Some(t) = tight.as_ref().filter(|_| pair_evaluated) {
+            cooling_actuation::pair(&normal.actuation, &t.actuation)?
+        } else {
+            (false, "null".into())
+        }
+    } else {
+        (true, "null".into())
+    };
     let passed = pair_evaluated
+        && actuation_qualified
         && bundle_qualified
         && prhr_qualified
         && evidence.is_ok()
@@ -2232,14 +2215,24 @@ fn execute() -> Result<(), String> {
     let mobile_development_policy = cooling_mobile::DEVELOPMENT_POLICY;
     let capture_settings =
         format!("{capture_settings},\"mobileCapturePolicy\":\"{mobile_policy}\",\"mobileCaptureDevelopmentPolicy\":\"{mobile_development_policy}\"");
+    let capture_settings = format!(
+        "{capture_settings},\"actuationSupplyPolicy\":{}",
+        if prepared.actuation.is_some() {
+            quote(cooling_actuation::POLICY)
+        } else {
+            "null".into()
+        }
+    );
     let mobile_gates = format!("\"mobileCapturePowerLocalRatio\":{},\"mobileCapturePowerSUMABSRatio\":{},\"mobileCapturePaidEnergyRatio\":{}", if pair_evaluated {finite(max_mobile_power_local)} else {"null".into()}, if pair_evaluated {finite(max_mobile_power_sumabs)} else {"null".into()}, if pair_evaluated {finite(max_mobile_paid_energy)} else {"null".into()});
     let mobile_developed = mobile_developed.map_or("null".into(), |v| v.to_string());
     let capture_gates = format!(
         "{capture_gates},{mobile_gates},\"developedMobileCaptureResponse\":{mobile_developed}"
     );
+    let capture_gates =
+        format!("{capture_gates},\"actuationSupplyQualified\":{actuation_qualified}");
     let pressure_settings = "\"pressureCoordinates\":\"finite-pool-cushion-and-surge-forward-DAE;direct-liquid-B10-and-phase-H-products\",\"pressureResponseResolutionPa\":1,\"pressureChangeRelativeBudget\":0.005,\"surgeHydraulicModel\":\"finite-storage-two-algebraic-resistances\",\"surgeGravityModel\":\"owned-bulk-density-hydrostatic-face-heads\",\"surgeReductionScope\":\"sound-filtered-slow-support;no-inertial-waveform-credit\",\"surgeFlowResolutionKgS\":1e-5,\"pressureChartHeightScope\":\"hydrostatic-equivalent-1Pa;P-T-coupled-correction-and-metal-caloric-admitted\"";
     let scope = if prepared.model.network.prhr().is_some() {
-        "same-trial-source-finite-fuel-He-primary-finite-SG-barrel-surge-cold-PZR-PRHR-finite-WST-ROOM;exact-retained-spring-motion;signed-supplied-CNV-and-electrical-boundary-receipts;cold-fixed-prepared-source-geometry;no-hot-phase-decay-duty-containment-endurance-or-fullplant-credit"
+        "same-trial-source-finite-fuel-He-primary-finite-SG-barrel-surge-cold-PZR-PRHR-finite-WST-ROOM;exact-retained-spring-motion-and-finite-ACT.A;signed-supplied-CNV-and-AC-source-receipts;remaining-consumer-work-boundary;cold-fixed-prepared-source-geometry;no-hot-phase-decay-duty-containment-endurance-or-fullplant-credit"
     } else {
         "same-trial-source-finite-fuel-He-primary-finite-SG-barrel-surge-cold-PZR;cold-fixed-prepared-geometry;no-fullplant-credit"
     };
@@ -2250,7 +2243,7 @@ fn execute() -> Result<(), String> {
         "G=sum-installed-energy-change-minus-fission-barrel-fuel-binding-mobile-binding-BODY-guide-release-plus-barrel-fuel-binding-mobile-binding-BODY-guide-ambient-export"
     };
     println!(
-        "{{\"kind\":\"source-cooling-pair\",\"passed\":{passed},\"lastAdmittedTime\":{},\"scope\":\"{scope}\",\"dimension\":{},\"differential\":{},\"settings\":{{\"accuracyPolicy\":\"cold-source-nuclear-heat\",\"carrierCoordinates\":\"hydrogen-product,direct-boron10,boron-product\",\"carrierComparisonPolicy\":\"{carrier_policy}\",\"provisional\":true,\"nonlinearClosure\":\"stock-Newton-and-current-physical-network-pressure-charts\",\"linearWeightedL2Budget\":{linear_budget},\"algebraicLTE\":\"excluded-from-temporal-control;retained-in-Newton-physical-closure-and-output-pair\",\"fuelPowerErrorWeights\":\"sparse-current-response-proportional-budget-cap\",\"fuelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerErrorWeights\":\"sparse-current-bulk-capture-Mn-proportional-budget-cap\",\"barrelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerWeightScope\":\"held-route-source-response-only;density-partition-independently-paired\",\"fuelPowerWeightScope\":\"first-order-local-box-budget;not-WRMS-or-paired-error-guarantee\",\"perRowErrorWeights\":\"source-carrier-barrel-binding-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute\",\"solverEnergyCoordinate\":\"{energy_coordinate}\",\"energyDefectATOLJ\":{},\"referenceAllATOLandRTOLDivisor\":10,\"horizon\":300,\"costGuard\":\"aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic\",\"maxl\":30,\"restarts\":0,{capture_settings},{pressure_settings}}},\"gates\":{{\"fullPairComparisonEvaluated\":{pair_evaluated},\"developedThermalResponse\":{},\"developedSourceResponse\":{},\"thermalResponse\":{thermal_details},\"sourceLocalRatio\":{},\"sourceFamilyRatio\":{},\"sourceObservableRatio\":{},\"sourceNCOperatorRatio\":{},\"thermalPairRatio\":{},\"networkPairRatio\":{},\"depositionPairRatio\":{},\"carrierPairRatio\":{},{barrel_gates},{capture_gates},{pressure_gates}}},\"mobileCaptureReceipts\":{mobile_receipts},\"pairedComparisons\":[{}],\"fuelTemperatureFeedbackDiagnostic\":{feedback},\"normal\":{},\"tighter\":{tighter},\"aggregateWallSeconds\":{}}}",
+        "{{\"kind\":\"source-cooling-pair\",\"passed\":{passed},\"lastAdmittedTime\":{},\"scope\":\"{scope}\",\"dimension\":{},\"differential\":{},\"settings\":{{\"accuracyPolicy\":\"cold-source-nuclear-heat\",\"carrierCoordinates\":\"hydrogen-product,direct-boron10,boron-product\",\"carrierComparisonPolicy\":\"{carrier_policy}\",\"provisional\":true,\"nonlinearClosure\":\"stock-Newton-and-current-physical-network-pressure-charts\",\"linearWeightedL2Budget\":{linear_budget},\"algebraicLTE\":\"excluded-from-temporal-control;retained-in-Newton-physical-closure-and-output-pair\",\"fuelPowerErrorWeights\":\"sparse-current-response-proportional-budget-cap\",\"fuelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerErrorWeights\":\"sparse-current-bulk-capture-Mn-proportional-budget-cap\",\"barrelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerWeightScope\":\"held-route-source-response-only;density-partition-independently-paired\",\"fuelPowerWeightScope\":\"first-order-local-box-budget;not-WRMS-or-paired-error-guarantee\",\"perRowErrorWeights\":\"source-carrier-barrel-binding-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute\",\"solverEnergyCoordinate\":\"{energy_coordinate}\",\"energyDefectATOLJ\":{},\"referenceAllATOLandRTOLDivisor\":10,\"horizon\":300,\"costGuard\":\"aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic\",\"maxl\":30,\"restarts\":0,{capture_settings},{pressure_settings}}},\"gates\":{{\"fullPairComparisonEvaluated\":{pair_evaluated},\"developedThermalResponse\":{},\"developedSourceResponse\":{},\"thermalResponse\":{thermal_details},\"sourceLocalRatio\":{},\"sourceFamilyRatio\":{},\"sourceObservableRatio\":{},\"sourceNCOperatorRatio\":{},\"thermalPairRatio\":{},\"networkPairRatio\":{},\"depositionPairRatio\":{},\"carrierPairRatio\":{},{barrel_gates},{capture_gates},{pressure_gates}}},\"mobileCaptureReceipts\":{mobile_receipts},\"actuationSupplyReceipts\":{actuation_receipts},\"pairedComparisons\":[{}],\"fuelTemperatureFeedbackDiagnostic\":{feedback},\"normal\":{},\"tighter\":{tighter},\"aggregateWallSeconds\":{}}}",
         finite(
             tight
                 .as_ref()
@@ -2355,63 +2348,6 @@ mod tests {
         );
     }
     #[test]
-    fn retained_mechanism_schedule_stops_at_real_events_and_copies_history() {
-        let config = prhr_actuator::Config {
-            stroke_s: 5.,
-            spring_energy_j: 2500.,
-            closing_power_w: 1000.,
-            hold_power_w: 20.,
-            room_capacity_j_k: 200e6,
-            room_wall_w_k: 20000.,
-            room_reference_temperature_k: 298.15,
-            initial_opening: 0.,
-            initial_room_temperature_k: 298.15,
-        };
-        let input = prhr_actuator::Inputs {
-            support: prhr_actuator::Support {
-                hold_supported: true,
-                closing_supported: true,
-            },
-            blocked: false,
-            ambient_temperature_k: 298.15,
-        };
-        let motion = prhr_actuator::Motion::new(
-            prhr_actuator::Model::new(config).unwrap(),
-            0.,
-            0.,
-            prhr_actuator::Control::new(true),
-            input,
-        )
-        .unwrap();
-        let mut s = PrhrSchedule {
-            motion,
-            inputs: input,
-            pending_start: Some(10.),
-            room_row: 0,
-            spring_row: 1,
-            spring_j: 2500.,
-        };
-        assert_eq!(s.next_event().unwrap(), Some(10.));
-        assert_eq!(s.input(9., 0.).unwrap().opening, 0.);
-        assert!(s.accept_event(9.).is_err());
-        s.accept_event(10.).unwrap();
-        assert_eq!(s.next_event().unwrap(), Some(15.));
-        let mut copy = s.clone();
-        assert_eq!(
-            copy.input(12., 0.).unwrap().opening,
-            s.input(12., 0.).unwrap().opening
-        );
-        s.audit(12., &[0., 1000.]).unwrap();
-        assert!(s.audit(12., &[0., 0.]).is_err());
-        assert_eq!(s.input(15., 0.).unwrap().opening_rate, 0.2);
-        assert!(s.input(15.001, 0.).is_err());
-        copy.accept_event(15.).unwrap();
-        assert_eq!(copy.input(15., 0.).unwrap().opening_rate, 0.);
-        assert_eq!(copy.next_event().unwrap(), None);
-        // Copy event acceptance cannot mutate its parent's pending contact.
-        assert_eq!(s.next_event().unwrap(), Some(15.));
-    }
-    #[test]
     fn joined_remaining_budget_has_one_cli_authority_and_report_reserve() {
         assert_eq!(numerical_allowance(140.93).unwrap(), 138.93);
         assert_eq!(numerical_allowance(180.).unwrap(), 178.);
@@ -2469,7 +2405,10 @@ mod tests {
             l.mobile_capture_exported + 1,
             l.mobile_capture_boundary_exported
         );
-        assert_eq!(l.mobile_capture_boundary_exported + 1, l.absorber_guide_energies_start);
+        assert_eq!(
+            l.mobile_capture_boundary_exported + 1,
+            l.absorber_guide_energies_start
+        );
         assert_eq!(l.absorber_guide_exported + 1, model.dimension());
         assert!(model.is_differential(l.fuel_capture_exported));
         assert!(progress_relative(&model, l.fuel_capture_exported));
@@ -2978,6 +2917,11 @@ mod tests {
         let model = cooling_fixture::fixture();
         let n = model.dimension();
         let mut t = LocalErrors::new(&model);
+        assert_eq!(t.families[14].rows, 1);
+        assert_eq!(t.families[15].rows, model.absorber_guide.host_count());
+        assert_eq!(t.families[16].rows, model.absorber_guide.host_count());
+        assert_eq!(t.families[17].rows, 1);
+        assert_eq!(t.families.iter().map(|f| f.rows).sum::<usize>(), n);
         let mut errors = vec![0.; n];
         let weights = vec![2.; n];
         for family in 0..ERROR_FAMILIES.len() {
@@ -3075,6 +3019,7 @@ mod tests {
             initialization: "null".into(),
             stats: "null".into(),
             pressure_evidence: None,
+            actuation: cooling_actuation::Receipt::default(),
         };
         retain_final_admitted(&path, &run, 0., "{}").unwrap();
         assert!(!path.exists());

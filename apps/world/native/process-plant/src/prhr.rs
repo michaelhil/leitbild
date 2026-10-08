@@ -78,7 +78,7 @@ pub struct Layout {
     pub gas_mass_exported: usize,
     pub dimension: usize,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Input {
     pub opening: f64,
     pub opening_rate: f64,

@@ -60,8 +60,9 @@ fn prepare(
         yp[l.temperatures_start + i] = yp[l.energies_start + i] / c;
     }
     yp[l.barrel_temperature] = yp[l.barrel_energy] / work.barrel.capacity()?;
-    for (i,&capacity) in work.absorber_guide.capacity.iter().enumerate(){
-        yp[l.absorber_guide_temperatures_start+i]=yp[l.absorber_guide_energies_start+i]/capacity;
+    for (i, &capacity) in work.absorber_guide.capacity.iter().enumerate() {
+        yp[l.absorber_guide_temperatures_start + i] =
+            yp[l.absorber_guide_energies_start + i] / capacity;
     }
     model.evaluate_with_prhr_input(y, yp, Some(0.), work, prhr_input)
 }
@@ -173,7 +174,7 @@ pub(super) fn initialize(
             pattern.push((i, j));
         }
     })?;
-    let mut matrix = Sparse::new(unknown.len(), pattern)?;
+    let mut matrix = Sparse::new("Factor consistent cold entry KLU", unknown.len(), pattern)?;
     let mut rhs = vec![0.; unknown.len()];
     let mut delta = rhs.clone();
     let mut trial_y = y.to_vec();

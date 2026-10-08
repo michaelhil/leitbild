@@ -1,4 +1,4 @@
-//! Strict eleven-frame cold source/cooling/barrel/pressure/capture/PRHR preparation. Primary chemistry is
+//! Strict twelve-frame cold source/cooling/barrel/pressure/capture/PRHR/ACT preparation. Primary chemistry is
 //! replaced by actual carrier intersections, never cloned as source histories.
 use super::{
     barrel_thermal, evolution_input, fuel_thermal, moderator_source, operating_network,
@@ -7,6 +7,7 @@ use super::{
 use source_input::{count, number};
 use std::collections::BTreeSet;
 mod absorber_guide;
+mod actuation;
 mod capture;
 mod mobile;
 mod observation;
@@ -15,9 +16,6 @@ mod prhr;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct PrhrAction {
-    pub start_s: f64,
-    pub hold_supported: bool,
-    pub closing_supported: bool,
     pub blocked: bool,
     pub ambient_temperature_k: f64,
 }
@@ -28,13 +26,14 @@ pub(crate) struct Prepared {
     pub pressure_channel: leitbild_plant_numerics::pressure_channel::Config,
     pub pressure_protection: leitbild_plant_numerics::pressure_protection::Settings,
     pub prhr_action: Option<PrhrAction>,
+    pub actuation: Option<super::cooling_actuation::Plan>,
 }
 
 pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
     let words = text.split_whitespace().collect::<Vec<_>>();
     let mut offset = 0;
-    let mut frames = Vec::with_capacity(11);
-    for _ in 0..11 {
+    let mut frames = Vec::with_capacity(12);
+    for _ in 0..12 {
         let size = words
             .get(offset)
             .ok_or("Missing coupled frame length")?
@@ -50,7 +49,7 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
     if offset != words.len() {
         return Err("Trailing coupled payload".into());
     }
-    let [source, network, thermal, primary, barrel, pressure, capture, observation, prhr_frame, mobile_frame, absorber_guide_frame]: [Vec<&str>; 11] =
+    let [source, network, thermal, primary, barrel, pressure, capture, observation, prhr_frame, mobile_frame, absorber_guide_frame, actuation_frame]: [Vec<&str>; 12] =
         frames.try_into().map_err(|_| "Wrong coupled frame count")?;
     let source = source.join(" ");
     let network = network.join(" ");
@@ -61,6 +60,10 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
         return Err("Expected complete 300 s network frame".into());
     }
     let prhr_action = prhr::parse(&prhr_frame, &mut network_input.config)?;
+    let actuation = actuation::parse(&actuation_frame)?;
+    if prhr_action.is_some() != actuation.is_some() {
+        return Err("Current PRHR and ACT frames must be enabled together".into());
+    }
     let network = operating_network::Network::new(network_input.config)?;
     let cells = network.config().water.len();
     let mut t = thermal.iter().copied();
@@ -175,10 +178,12 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
     let initial_prhr = network
         .prhr()
         .map(|p| {
-            prhr_action
-                .as_ref()
-                .ok_or("Missing PRHR action")?
-                .initial_input(p)
+            super::cooling_actuation::Schedule::apparatus(
+                p,
+                prhr_action.ok_or("Missing PRHR action")?,
+                actuation.as_ref(),
+            )?
+            .input(0., 0.)
         })
         .transpose()?;
     let mut work = operating_network::Workspace::new(&network);
@@ -350,13 +355,14 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
         pressure_channel,
         pressure_protection,
         prhr_action,
+        actuation,
     })
 }
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn eleven_explicit_frames_are_required_and_extra_frames_refuse() {
+    fn twelve_explicit_frames_are_required_and_extra_frames_refuse() {
         assert!(parse("0 0 0 0").is_err());
         assert!(parse("0 0 0 0 0").is_err());
         assert!(parse("0 0 0 0 0 0").is_err());

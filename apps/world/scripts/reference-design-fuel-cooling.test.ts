@@ -2,7 +2,42 @@ import {expect,test} from 'bun:test'
 import {compileFuelCooling,compileFuelCoolingMaterial,compilePrimaryIncidence,parseOperatingFuelGap,parseColdConditioningPreparation} from './reference-design-fuel-cooling'
 import {compilePrimaryWaterGeometry,parsePrimaryWaterInputs,primaryWaterOwnerFiles} from './reference-design-source-water'
 import {join} from 'node:path'
-import {coolingCommonTimes,coolingStateHeader,coolingStatesComplete,coolingEnergyCoordinates,coolingMobileCapturePolicy,coolingMobileDevelopmentPolicy,coolingAbsorberGuidePolicy,absorberGuideAdmission,fuelCoolingAdmission,fuelCoolingPriorSeconds,qualifyFuelCooling} from './reference-design-fuel-cooling-qualification'
+import {coolingCommonTimes,coolingStateHeader,coolingStatesComplete,coolingEventStatesComplete,coolingEnergyCoordinates,coolingMobileCapturePolicy,coolingMobileDevelopmentPolicy,coolingAbsorberGuidePolicy,absorberGuideAdmission,coolingActuationSupplyPolicy,actuationSupplyAdmission,fuelCoolingAdmission,fuelCoolingPriorSeconds,qualifyFuelCooling} from './reference-design-fuel-cooling-qualification'
+
+test('event retention requires each arm and exact post-transaction time/coordinate inventory',()=>{
+ const events={normal:{events:[{timeS:42.75},{timeS:47.75}]},tighter:{events:[{timeS:42.75},{timeS:47.75}]}},
+  states=(['normal','tighter'] as const).flatMap(arm=>events[arm].events.map((e,i)=>({
+   path:`/artifacts/input.${arm}.event-${i}.bin`,magic:'LDPTCM01',coordinates:7,time:e.timeS})))
+ expect(coolingEventStatesComplete(states,7,events)).toBe(true)
+ expect(coolingEventStatesComplete(states.slice(1),7,events)).toBe(false)
+ expect(coolingEventStatesComplete([...states,states[0]!],7,events)).toBe(false)
+ expect(coolingEventStatesComplete(states.map((s,i)=>i===0?{...s,time:42.74}:s),7,events)).toBe(false)
+ expect(coolingEventStatesComplete(states,8,events)).toBe(false)
+})
+
+test('finite ACT evidence requires complete continued state, actual work and exact copied history',()=>{
+ const point={timeS:300,energyJ:1832835,sourceJ:2608695.652174,deliveredJ:556200,prhrDeliveredJ:6255,
+  otherDeliveredJ:549945,lossJ:309660.652174,thermalReceivedJ:315915.652174,
+  outputClosed:true,cause:null,chargerAvailable:true,batteryAvailable:true,outputHealthy:true,
+  opening:1,springEnergyJ:0,holding:false,closing:false,nextEventS:7700,eventCursor:4},
+  arm={final:point,events:[{...point,timeS:90}],copyChecks:{passed:true,checks:1,maximumDifference:0},
+   maximumEnergyDefectJ:0,maximumThermalReceiptDefectJ:0},
+  receipt={kind:'finite-actuation-supply-pair',passed:true,policy:coolingActuationSupplyPolicy,
+   finiteSupplyEnergyConserved:true,thermalReceiptMatched:true,actualSupportLossReleased:true,
+   restorationDidNotReplay:true,poweredCloseRecharged:true,commandedReopenAchieved:true,retainedCopiesMatched:true,
+   normal:arm,tighter:arm,maximumPairedEnergyDifferenceJ:0}
+ expect(actuationSupplyAdmission.safeParse(receipt).success).toBe(true)
+ for(const changed of [undefined,{...receipt,passed:false},{...receipt,policy:'supplied-healthy-support'},
+  {...receipt,restorationDidNotReplay:false},{...receipt,poweredCloseRecharged:undefined},
+  {...receipt,normal:{...arm,final:{...point,timeS:299}}},
+  {...receipt,normal:{...arm,final:{...point,nextEventS:299}}},
+  {...receipt,normal:{...arm,final:{...point,energyJ:-1}}},
+  {...receipt,normal:{...arm,copyChecks:{passed:true,checks:0,maximumDifference:0}}},
+  {...receipt,normal:{...arm,copyChecks:{passed:true,checks:1,maximumDifference:1}}},
+  {...receipt,normal:{...arm,maximumThermalReceiptDefectJ:NaN}},
+  {...receipt,normal:{...arm,final:{...point,prhrDeliveredJ:undefined}}}])
+  expect(actuationSupplyAdmission.safeParse(changed).success).toBe(false)
+})
 
 test('finite BODY/guide evidence rejects wrong-zero, unresolved cooling and malformed receipts',()=>{
  const receipt={kind:'absorber-guide-pair',passed:true,policy:coolingAbsorberGuidePolicy,hosts:1036,

@@ -36,6 +36,7 @@ pub mod finite_wst;
 pub mod prhr_actuator;
 pub mod prhr;
 pub mod prhr_mixing;
+pub mod dc_supply;
 
 pub const GRAVITY: f64 = 9.80665;
 

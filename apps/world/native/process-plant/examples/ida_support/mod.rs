@@ -254,6 +254,51 @@ pub(crate) fn checked(status: c_int, operation: &str) -> Result<(), String> {
     }
 }
 
+/// Retained KLU numerical pivots may cease to work although the current CSC
+/// matrix is nonsingular. Pinned SUNDIALS 7.5 returns this recoverable package
+/// status before its normal condition-estimate/re-pivot path. Rebuild once on
+/// the identical matrix through the public solver API; genuine fresh failure
+/// remains a failure. This is factor lifecycle management, not time retry.
+#[derive(Default)]
+pub(crate) struct KluRepivots {
+    pub attempts: u64,
+    pub successes: u64,
+    pub seconds: f64,
+}
+impl KluRepivots {
+    pub fn json(&self) -> String {
+        format!(
+            "{{\"attempts\":{},\"successes\":{},\"seconds\":{}}}",
+            self.attempts, self.successes, self.seconds
+        )
+    }
+}
+pub(crate) fn setup_retained_klu(
+    solver: Handle,
+    matrix: Handle,
+    operation: &str,
+    repivots: &mut KluRepivots,
+) -> Result<(), String> {
+    const SUNLS_PACKAGE_FAIL_REC: c_int = 806;
+    let status = unsafe { SUNLinSolSetup(solver, matrix) };
+    if status != SUNLS_PACKAGE_FAIL_REC {
+        return checked(status, operation);
+    }
+    repivots.attempts += 1;
+    let began = std::time::Instant::now();
+    let result = (|| {
+        checked(unsafe { SUNLinSolInitialize(solver) }, operation)?;
+        checked(unsafe { SUNLinSolSetup(solver, matrix) }, operation)
+    })();
+    repivots.seconds += began.elapsed().as_secs_f64();
+    if result.is_ok() {
+        repivots.successes += 1;
+    }
+    result.map_err(|error| {
+        format!("{error}; cached KLU status={status}, one fresh factorization also failed")
+    })
+}
+
 /// A nonnegative IDASolve return never overrides a sticky fatal callback.
 /// Pinned 7.5 idaLsSolve does not map every SUNLS_ATIMES failure status.
 /// https://github.com/LLNL/sundials/blob/v7.5.0/src/ida/ida_ls.c

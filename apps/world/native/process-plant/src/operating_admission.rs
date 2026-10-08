@@ -204,6 +204,26 @@ pub fn held_head_ratio(defect: f64, diagonal: f64, atol: f64) -> Result<f64, Str
     }
     Ok(defect.abs() / band)
 }
+/// The variable restriction's actual equation is Fq=q-Q(head,a,rho,mu),
+/// in kg/s at every achieved opening, including exactly closed. Assess that
+/// prepared equation in its existing physical flow allocation, not a bitwise
+/// zero or a reconstructed q/a pressure defect. This does not project q.
+pub fn seat_flow_ratio(
+    n: &Network,
+    w: &Workspace,
+    y: &[f64],
+    flow_atol: f64,
+) -> Result<f64, String> {
+    let Some(seat) = n.config().seat else {
+        return Ok(0.);
+    };
+    w.check_current_chart(n, y)?;
+    let defect = w.residual[n.flow_row(seat.edge)];
+    if !defect.is_finite() || !flow_atol.is_finite() || flow_atol <= 0. {
+        return Err("Invalid current restriction flow allocation".into());
+    }
+    Ok(defect.abs() / flow_atol)
+}
 pub struct Weights {
     pub absolute: Vec<f64>,
     pub flow: Vec<f64>,
@@ -420,31 +440,28 @@ pub fn screen(
     for (edge, (e, &q)) in n.config().hydraulic.iter().zip(&w.mass_flows).enumerate() {
         let rho = (w.liquids[e.from].density + w.liquids[e.to].density) * 0.5;
         let mu = (w.liquids[e.from].viscosity + w.liquids[e.to].viscosity) * 0.5;
-        let (drive, arithmetic_scale) = n.hydraulic_drive(edge, y, &w.liquids)?;
+        let (_, arithmetic_scale) = n.hydraulic_drive(edge, y, &w.liquids)?;
         let noise = 8. * f64::EPSILON * arithmetic_scale;
         let loss = e.pressure_loss(q, rho, mu);
         let seat = n.config().seat.filter(|s| s.edge == edge);
-        let opening = w.prhr.as_ref().and_then(|p| p.input).map(|i| i.opening);
-        let (defect, diagonal) = if let Some(s) = seat {
-            let a = opening.ok_or("Missing achieved seat admission input")?;
-            if a == 0. {
-                if q != 0. {
-                    return Err("Closed PRHR seat carries actual flow".into());
-                }
-                (0., loss[1])
-            } else {
-                let valve = s.loss(q / a, rho);
-                (-drive + loss[0] + valve[0], loss[1] + valve[1] / a)
+        if seat.is_some() {
+            let ratio = seat_flow_ratio(n, w, y, flow_atol[edge])?;
+            if ratio > 1. {
+                return Err(format!(
+                    "Current restriction flow correction exceeds allocation: {ratio}"
+                ));
             }
         } else {
-            (-w.residual[n.flow_row(edge)], loss[1])
-        };
-        let band = diagonal * flow_atol[edge];
-        d.held_head_ratio =
-            d.held_head_ratio
-                .max(held_head_ratio(defect, diagonal, flow_atol[edge])?);
-        d.head_roundoff_to_flow_band = d.head_roundoff_to_flow_band.max(noise / band);
-        d.flow_law_residual = d.flow_law_residual.max(defect.abs());
+            // Pressure-law diagnostics retain pressure units. The selected
+            // restriction's inverse equation above instead has flow units.
+            let defect = -w.residual[n.flow_row(edge)];
+            let band = loss[1] * flow_atol[edge];
+            d.held_head_ratio =
+                d.held_head_ratio
+                    .max(held_head_ratio(defect, loss[1], flow_atol[edge])?);
+            d.head_roundoff_to_flow_band = d.head_roundoff_to_flow_band.max(noise / band);
+            d.flow_law_residual = d.flow_law_residual.max(defect.abs());
+        }
         for segment in &e.segments {
             let v = q.abs() / (rho * segment.flow_area);
             let re = q.abs() * segment.diameter / (segment.flow_area * mu);

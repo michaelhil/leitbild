@@ -10,43 +10,6 @@ fn boolean<'a>(words: &mut impl Iterator<Item = &'a str>) -> Result<bool, String
         _ => Err("Expected explicit PRHR boolean 0/1".into()),
     }
 }
-impl PrhrAction {
-    pub fn motion(&self, p: &prhr::Model) -> Result<prhr_actuator::Motion, String> {
-        let inputs = prhr_actuator::Inputs {
-            support: prhr_actuator::Support {
-                hold_supported: self.hold_supported,
-                closing_supported: self.closing_supported,
-            },
-            blocked: self.blocked,
-            ambient_temperature_k: self.ambient_temperature_k,
-        };
-        let mut motion = prhr_actuator::Motion::new(
-            p.actuator.clone(),
-            0.,
-            p.config.actuator.initial_opening,
-            prhr_actuator::Control::new(true),
-            inputs,
-        )?;
-        if self.start_s == 0. {
-            motion.transition(0., Some(prhr_actuator::Command::Open), inputs)?;
-        }
-        Ok(motion)
-    }
-    pub fn initial_input(&self, p: &prhr::Model) -> Result<prhr::Input, String> {
-        let m = self.motion(p)?;
-        let room = p.config.actuator.room_capacity_j_k
-            * (p.config.actuator.initial_room_temperature_k
-                - p.config.actuator.room_reference_temperature_k);
-        let (opening, r) = m.at_left(0., room)?;
-        Ok(prhr::Input {
-            opening,
-            opening_rate: r.opening_rate_s,
-            electrical_receipt_w: r.electrical_receipt_w,
-            room_heat_w: r.room_heat_w,
-            ambient_temperature_k: self.ambient_temperature_k,
-        })
-    }
-}
 
 pub(super) fn parse(
     frame: &[&str],
@@ -92,17 +55,10 @@ pub(super) fn parse(
         initial_room_temperature_k: number(&mut words),
     };
     let action = PrhrAction {
-        start_s: number(&mut words),
-        hold_supported: boolean(&mut words)?,
-        closing_supported: boolean(&mut words)?,
         blocked: boolean(&mut words)?,
         ambient_temperature_k: number(&mut words),
     };
-    if !action.start_s.is_finite()
-        || !(0.0..300.0).contains(&action.start_s)
-        || !action.ambient_temperature_k.is_finite()
-        || action.ambient_temperature_k <= 0.
-    {
+    if !action.ambient_temperature_k.is_finite() || action.ambient_temperature_k <= 0. {
         return Err("Invalid PRHR qualification action/boundary".into());
     }
     let n = count(&mut words);

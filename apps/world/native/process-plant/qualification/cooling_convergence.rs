@@ -88,7 +88,8 @@ pub(super) struct Convergence<'a> {
     last_pressurizer: [f64; 7],
     last_surge: [f64; 2],
     max_converged_flow: f64,
-    pub prhr_motion: Option<leitbild_plant_numerics::prhr_actuator::Motion>,
+    seat_flow_atol: Option<f64>,
+    pub prhr_schedule: Option<super::cooling_actuation::Schedule>,
 }
 impl<'a> Convergence<'a> {
     pub fn new(
@@ -120,14 +121,32 @@ impl<'a> Convergence<'a> {
             last_pressurizer: [0.; 7],
             last_surge: [0.; 2],
             max_converged_flow: 0.,
+            seat_flow_atol: None,
             start: Instant::now(),
             allowance: 180.,
-            prhr_motion: None,
+            prhr_schedule: None,
         })
     }
     pub fn budget(&mut self, start: Instant, allowance: f64) {
         self.start = start;
         self.allowance = allowance;
+    }
+    /// Use the SAME per-arm physical flow allocation as returned-state
+    /// admission; no new tolerance or error-weight calculation in CTest.
+    pub fn seat_flow_allocation(&mut self, absolute: &[f64]) -> Result<(), String> {
+        if absolute.len() != self.model.dimension() {
+            return Err("Restriction convergence allocation shape".into());
+        }
+        self.seat_flow_atol = self.model.network.config().seat.map(|seat| {
+            absolute[self.model.layout.network_start + self.model.network.flow_row(seat.edge)]
+        });
+        if self
+            .seat_flow_atol
+            .is_some_and(|v| !v.is_finite() || v <= 0.)
+        {
+            return Err("Invalid restriction convergence allocation".into());
+        }
+        Ok(())
     }
     /// Actual algebraic hydraulic residuals on stock+physical-successful
     /// candidates. The two flow equations do not depend on polynomial slopes.
@@ -191,25 +210,13 @@ impl<'a> Convergence<'a> {
         let l = self.model.layout;
         let y = &self.state[l.network_start..l.carrier_start];
         let yp = &self.slopes[l.network_start..l.carrier_start];
-        let input = if let Some(motion) = &self.prhr_motion {
+        let input = if let Some(schedule) = &self.prhr_schedule {
             let mut time = 0.;
             checked(
                 unsafe { IDAGetCurrentTime(self.ida, &mut time) },
                 "Current physical Newton time",
             )?;
-            let p = self
-                .model
-                .network
-                .prhr()
-                .ok_or("PRHR motion without network owner")?;
-            let (opening, r) = motion.at_left(time, y[p.layout.room_energy])?;
-            Some(leitbild_plant_numerics::prhr::Input {
-                opening,
-                opening_rate: r.opening_rate_s,
-                electrical_receipt_w: r.electrical_receipt_w,
-                room_heat_w: r.room_heat_w,
-                ambient_temperature_k: motion.ambient_temperature_k(),
-            })
+            Some(schedule.input(time, self.state[schedule.room_row])?)
         } else {
             None
         };
@@ -255,10 +262,22 @@ impl<'a> Convergence<'a> {
             &self.pressurizer,
         )?;
         let flow = pressure_flow_ratio(self.model, &self.surge)?;
+        let seat_flow = if self.model.network.config().seat.is_some() {
+            operating_admission::seat_flow_ratio(
+                &self.model.network,
+                &self.network,
+                y,
+                self.seat_flow_atol
+                    .ok_or("Missing restriction convergence allocation")?,
+            )?
+        } else {
+            0.
+        };
         if charts.check().is_err()
             || super::cooling_accuracy::check_pressure_chart(self.model, &pzr, &line, head).is_err()
             || caloric > 1.
             || flow > 1.
+            || seat_flow > 1.
         {
             self.refusals += 1;
             // Stock Newton's own iteration limit handles stagnation. Do not

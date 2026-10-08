@@ -22,6 +22,7 @@ enum Factor {
         x: Handle,
         pointers: Vec<i64>,
         indices: Vec<i64>,
+        repivots: KluRepivots,
     },
 }
 impl Factor {
@@ -96,6 +97,7 @@ impl Block {
                 x,
                 pointers,
                 indices,
+                repivots: KluRepivots::default(),
             }
         };
         Ok(Self {
@@ -137,13 +139,10 @@ impl Block {
                 owned,
                 pointers,
                 indices,
+                repivots,
                 ..
-            } => matrix_data(owned.matrix, pointers, indices, &self.coefficients).and_then(|()| {
-                checked(
-                    unsafe { SUNLinSolSetup(owned.solver, owned.matrix) },
-                    "Retained KLU factor",
-                )
-            }),
+            } => matrix_data(owned.matrix, pointers, indices, &self.coefficients)
+                .and_then(|()| setup_retained_klu(owned.solver, owned.matrix, name, repivots)),
         };
         let status = if result.is_ok() { 0 } else { -1 };
         let seconds = start.elapsed().as_secs_f64();
@@ -351,14 +350,18 @@ impl BlockPreconditioner {
     pub(super) fn metrics_json(&self) -> String {
         let block = |b: &Block| {
             format!(
-                "{{\"factor\":\"{}\",\"rows\":{},\"nonzeros\":{},\"factorAttempts\":{},\"factorSeconds\":{:e},\"solveAttempts\":{},\"solveSeconds\":{:e}}}",
+                "{{\"factor\":\"{}\",\"rows\":{},\"nonzeros\":{},\"factorAttempts\":{},\"factorSeconds\":{:e},\"solveAttempts\":{},\"solveSeconds\":{:e},\"kluRepivots\":{}}}",
                 b.factor.name(),
                 b.size,
                 b.slots.len(),
                 b.factor_attempts,
                 b.factor_seconds,
                 b.solve_attempts,
-                b.solve_seconds
+                b.solve_seconds,
+                match &b.factor {
+                    Factor::RetainedKlu { repivots, .. } => repivots.json(),
+                    Factor::SpatialIlu0(_) => "null".into(),
+                },
             )
         };
         let blocks = self.blocks.iter().map(block).collect::<Vec<_>>().join(",");

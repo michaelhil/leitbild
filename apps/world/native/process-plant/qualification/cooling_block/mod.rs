@@ -20,9 +20,12 @@ pub(super) struct Sparse {
     lookup: HashMap<(usize, usize), usize>,
     values: Vec<f64>,
     size: usize,
+    label: &'static str,
+    repivots: KluRepivots,
 }
 impl Sparse {
     pub(super) fn new(
+        label: &'static str,
         size: usize,
         coordinates: impl IntoIterator<Item = (usize, usize)>,
     ) -> Result<Self, String> {
@@ -67,6 +70,8 @@ impl Sparse {
             lookup,
             values: vec![0.; p.len()],
             size,
+            label,
+            repivots: KluRepivots::default(),
         })
     }
     pub(super) fn add(&mut self, r: usize, c: usize, v: f64) -> Result<(), String> {
@@ -90,9 +95,11 @@ impl Sparse {
             &self.rows,
             &self.values,
         )?;
-        checked(
-            unsafe { SUNLinSolSetup(self.resources.solver, self.resources.matrix) },
-            "Factor coupled KLU",
+        setup_retained_klu(
+            self.resources.solver,
+            self.resources.matrix,
+            self.label,
+            &mut self.repivots,
         )
     }
     pub(super) fn solve(&mut self, rhs: &[f64], out: &mut [f64]) -> Result<(), String> {
@@ -179,7 +186,7 @@ impl Preconditioner {
         model
             .thermal
             .visit_heat_derivatives(&work.thermal, |r, c, _| thermal_pattern.push((r, nt + c)))?;
-        let thermal = Sparse::new(2 * nt, thermal_pattern)?;
+        let thermal = Sparse::new("Factor coupled thermal KLU", 2 * nt, thermal_pattern)?;
         let fluid_rows = model.fluid_rows().collect::<Vec<_>>();
         let fluid_indices = fluid_rows
             .iter()
@@ -200,10 +207,14 @@ impl Preconditioner {
         if invalid {
             return Err("Fluid P emission outside owned border".into());
         }
-        let fluid = Sparse::new(fluid_rows.len(), fluid_pattern)?;
+        let fluid = Sparse::new("Factor coupled fluid KLU", fluid_rows.len(), fluid_pattern)?;
         let fluid_rhs = vec![0.; fluid_rows.len()];
         let fluid_solution = vec![0.; fluid_rows.len()];
-        let barrel = Sparse::new(4, [(0, 0), (0, 1), (1, 0), (1, 1), (2, 2), (3, 3)])?;
+        let barrel = Sparse::new(
+            "Factor coupled barrel KLU",
+            4,
+            [(0, 0), (0, 1), (1, 0), (1, 1), (2, 2), (3, 3)],
+        )?;
         let nh = model.absorber_guide.host_count();
         let mut host_pattern = Vec::new();
         for i in 0..nh {
@@ -214,7 +225,8 @@ impl Preconditioner {
             .visit_host_jacobian(&work.absorber_guide, |r, c, _| {
                 host_pattern.push((r, nh + c))
             })?;
-        let absorber_guide = Sparse::new(2 * nh, host_pattern)?;
+        let absorber_guide =
+            Sparse::new("Factor coupled absorber-guide KLU", 2 * nh, host_pattern)?;
         Ok(Self {
             source,
             source_jac,
@@ -329,7 +341,7 @@ impl Preconditioner {
         })();
         self.setup_seconds += started.elapsed().as_secs_f64();
         self.valid = result.is_ok();
-        result
+        result.map_err(|e| format!("{e}; coupled P cj={cj}"))
     }
     pub fn solve(&mut self, model: &Model, rhs: &[f64], out: &mut [f64]) -> Result<(), String> {
         let started = Instant::now();
@@ -382,11 +394,15 @@ impl Preconditioner {
     }
     pub fn metrics_json(&self) -> String {
         format!(
-            "{{\"identity\":\"source9-thermalETKLU-coupledPrimarySurgePZRMaterialKLU-barrelETauditsKLU-absorberGuideETKLU;remaining-cross-component-feedback-outer-only\",\"setups\":{},\"solves\":{},\"setupSeconds\":{},\"solveSeconds\":{},\"source\":{}}}",
+            "{{\"identity\":\"source9-thermalETKLU-coupledPrimarySurgePZRMaterialKLU-barrelETauditsKLU-absorberGuideETKLU;remaining-cross-component-feedback-outer-only\",\"setups\":{},\"solves\":{},\"setupSeconds\":{},\"solveSeconds\":{},\"kluRepivots\":{{\"fluid\":{},\"thermal\":{},\"barrel\":{},\"absorberGuide\":{}}},\"source\":{}}}",
             self.setups,
             self.solves,
             self.setup_seconds,
             self.solve_seconds,
+            self.fluid.repivots.json(),
+            self.thermal.repivots.json(),
+            self.barrel.repivots.json(),
+            self.absorber_guide.repivots.json(),
             self.source.metrics_json()
         )
     }
@@ -402,6 +418,39 @@ mod tests {
             b[r] += matrix.values[k] * x[c];
         }
         b
+    }
+    #[test]
+    fn cached_pivots_can_fail_on_a_nonsingular_same_pattern_matrix() {
+        let mut a = Sparse::new("Test KLU", 2, [(0, 0), (1, 0), (0, 1), (1, 1)]).unwrap();
+        for (r, c, value) in [(0, 0, 1.), (1, 0, 1.), (0, 1, 1.), (1, 1, 2.)] {
+            a.add(r, c, value).unwrap();
+        }
+        a.factor().unwrap();
+        // The new determinant is -1, but the previously selected first
+        // numerical pivot is zero. No physical or matrix regularization.
+        a.clear();
+        for (r, c, value) in [(1, 0, 1.), (0, 1, 1.), (1, 1, 2.)] {
+            a.add(r, c, value).unwrap();
+        }
+        matrix_data(a.resources.matrix, &a.pointers, &a.rows, &a.values).unwrap();
+        assert_eq!(
+            unsafe { SUNLinSolSetup(a.resources.solver, a.resources.matrix) },
+            806
+        );
+        a.factor().unwrap();
+        assert_eq!(a.repivots.attempts, 1);
+        assert_eq!(a.repivots.successes, 1);
+        assert!(a.repivots.seconds.is_finite() && a.repivots.seconds >= 0.);
+        let mut x = [0.; 2];
+        a.solve(&[3., 8.], &mut x).unwrap();
+        assert!((x[0] - 2.).abs() < 1e-14 && (x[1] - 3.).abs() < 1e-14);
+        // Genuine rank loss remains a failure with fresh pivot selection.
+        a.clear();
+        a.add(0, 0, 1.).unwrap();
+        a.add(0, 1, 1.).unwrap();
+        assert!(a.factor().is_err());
+        assert_eq!(a.repivots.attempts, 2);
+        assert_eq!(a.repivots.successes, 1);
     }
     #[test]
     fn independent_thermal_action_exact_block_solve_and_refresh() {

@@ -1,104 +1,7 @@
 use super::*;
 
 #[test]
-#[ignore = "Actual retained PRHR continuous-position event; no IC or IDASolve; 7.8 s maximum"]
-fn actual_prhr_rate_event_without_advancement() {
-    let started = Instant::now();
-    let report = PathBuf::from(std::env::var("LEITBILD_COOLING_PRESSURE_REPORT").unwrap());
-    let mut detail = "null".to_string();
-    let result = (|| -> Result<(), String> {
-        let directory = PathBuf::from(
-            std::env::var("LEITBILD_COOLING_DIAGNOSTIC_ARTIFACTS").map_err(|e| e.to_string())?,
-        );
-        let prepared = cooling_input::parse(
-            &fs::read_to_string(directory.join("input.txt")).map_err(|e| e.to_string())?,
-        )?;
-        let m = &prepared.model;
-        let bytes =
-            fs::read(directory.join("input.tighter.checkpoint")).map_err(|e| e.to_string())?;
-        let n = m.dimension();
-        if bytes.len() != 24 + 16 * n
-            || &bytes[..8] != b"LDPTST01"
-            || u64::from_le_bytes(bytes[8..16].try_into().unwrap()) != n as u64
-        {
-            return Err("Malformed actual retained event checkpoint".into());
-        }
-        let time = f64::from_le_bytes(bytes[16..24].try_into().unwrap());
-        if time != 5. {
-            return Err("Actual retained event must be original five-second endstop".into());
-        }
-        let values = bytes[24..]
-            .chunks_exact(8)
-            .map(|b| f64::from_le_bytes(b.try_into().unwrap()))
-            .collect::<Vec<_>>();
-        let (y, yp) = values.split_at(n);
-        let p = m.network.prhr().ok_or("Actual event requires PRHR")?;
-        let initial_input = prepared
-            .prhr_action
-            .ok_or("Missing actual action")?
-            .initial_input(p)?;
-        let initial = m.initial_state_with_prhr_input(Some(initial_input))?;
-        let energy = EnergyCoordinates::new(m, &initial)?;
-        let coordinates = Coordinates {
-            nc: m.source.nc_dimension(),
-            ledger: m.source.ledger_row(),
-        };
-        let mut schedule =
-            PrhrSchedule::new(m, prepared.prhr_action)?.ok_or("Missing actual schedule")?;
-        let before = schedule.input(time, y[schedule.room_row])?;
-        schedule.accept_event(time)?;
-        let after = schedule.input(time, y[schedule.room_row])?;
-        let mut work = m.workspace();
-        let (delta, proof) = rate_only_prhr_event(m, y, yp, before, after, &mut work)?;
-        let mut constructed_solver_y = y.to_vec();
-        coordinates.transform(&mut constructed_solver_y);
-        energy.state_to_solver(&mut constructed_solver_y);
-        let saved_state = constructed_solver_y.clone();
-        let mut constructed_solver_yp = yp.to_vec();
-        coordinates.transform(&mut constructed_solver_yp);
-        energy.vector_to_solver(&mut constructed_solver_yp);
-        let (updated, encoded_delta) =
-            solver_rate_jump(&coordinates, &energy, &constructed_solver_yp, &delta)?;
-        for r in 0..n {
-            if saved_state[r].to_bits() != constructed_solver_y[r].to_bits()
-                || (encoded_delta[r] == 0.
-                    && updated[r].to_bits() != constructed_solver_yp[r].to_bits())
-            {
-                return Err(format!(
-                    "Actual event changed unrelated encoded coordinate{r}"
-                ));
-            }
-        }
-        if encoded_delta[energy.row] != 0. || encoded_delta[coordinates.ledger] != 0. {
-            return Err("Balanced actuator endstop unexpectedly changed G/D forcing".into());
-        }
-        detail=format!("{{\"time\":{time},\"dimension\":{n},\"proof\":{proof},\"constructedSolverStateBitsPreserved\":true,\"unrelatedConstructedSolverRateBitsPreserved\":true,\"originalAcceptedEncodedHistoryUnavailable\":true,\"encodedHistoryScope\":\"physical-checkpoint-plus-constructed-affine-coordinates;not-recovered-original-IDA-G-D\",\"encodedRateIncrement\":{{\"GJPerS\":{},\"DPerS\":{}}}}}",finite(encoded_delta[energy.row]),finite(encoded_delta[coordinates.ledger]));
-        if started.elapsed().as_secs_f64() >= 7.8 {
-            return Err("Actual rate-only event proof exceeded 7.8 s allowance".into());
-        }
-        Ok(())
-    })();
-    let reason = result.as_ref().err().map_or(
-        "Actual continuous-position event proof passed; no advancement",
-        String::as_str,
-    );
-    let json=format!("{{\"kind\":\"actual-prhr-rate-event-no-advancement\",\"passed\":{},\"elapsedSeconds\":{},\"allowanceSeconds\":7.8,\"IDASolveCalls\":0,\"fluidICCalls\":0,\"reason\":{},\"detail\":{detail}}}",result.is_ok(),finite(started.elapsed().as_secs_f64()),quote(reason));
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(report)
-        .unwrap();
-    writeln!(file, "{json}").unwrap();
-    file.sync_all().unwrap();
-    println!("{json}");
-    assert!(
-        result.is_ok(),
-        "Rate-only actual event proof refused: {reason}"
-    );
-}
-
-#[test]
-#[ignore = "Explicit actual eleven-frame PRHR and mobile binding entry proof; no IDASolve; 30 s total"]
+#[ignore = "Explicit actual twelve-frame finite ACT/PRHR nuclear heat entry proof; no IDASolve; 30 s total"]
 fn actual_prhr_entry_without_advancement() {
     let started = Instant::now();
     let directory = PathBuf::from(std::env::var("LEITBILD_COOLING_DIAGNOSTIC_ARTIFACTS").unwrap());
@@ -122,12 +25,9 @@ fn actual_prhr_entry_without_advancement() {
             .network
             .prhr()
             .ok_or("Actual entry requires selected PRHR apparatus")?;
-        let schedule =
-            PrhrSchedule::new(m, prepared.prhr_action)?.ok_or("Missing retained PRHR mechanism")?;
-        let input = prepared
-            .prhr_action
-            .ok_or("Missing actual support/action")?
-            .initial_input(p)?;
+        let schedule = PrhrSchedule::new(m, prepared.prhr_action, prepared.actuation.as_ref())?
+            .ok_or("Missing retained PRHR mechanism")?;
+        let input = schedule.input(0., 0.)?;
         let initial = m.initial_state_with_prhr_input(Some(input))?;
         let accuracy = cooling_accuracy::Accuracy::new(m, &prepared.target_emissions, Some(input))?;
         let g = EnergyCoordinates::new(m, &initial)?;

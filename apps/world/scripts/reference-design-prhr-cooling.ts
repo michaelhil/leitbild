@@ -7,8 +7,8 @@ import type {compileOperatingNetwork} from './reference-design-operating-network
 const positive=z.number().finite().positive()
 const preparation=z.object({bankTemperature_K:positive,wstTemperature_K:positive,gasTemperature_K:positive,gasPressure_Pa:positive,
  gasRelativeHumidity:z.number().finite().min(0).max(1),ambientTemperature_K:positive,roomTemperature_K:positive,
- initialOpening:z.number().finite().min(0).max(1),start_s:z.number().finite().min(0).max(299),
- holdSupported:z.boolean(),closingSupported:z.boolean(),blocked:z.boolean()}).strict()
+ initialOpening:z.number().finite().min(0).max(1),
+ blocked:z.boolean()}).strict()
 export function parsePrhrColdPreparation(text:string){return preparation.parse(configurationBlock(text,'reference-prhr-cold-preparation'))}
 type Network=Awaited<ReturnType<typeof compileOperatingNetwork>>
 const capture=(text:string,pattern:RegExp,label:string)=>{
@@ -111,7 +111,7 @@ export function nativePrhrCoolingFrame(p:ReturnType<typeof compilePrhrCooling>|u
    g.pressure_pa,g.temperature_k,g.humidity,
    a.stroke_s,a.spring_energy_j,a.closing_power_w,a.hold_power_w,a.room_capacity_j_k,a.room_wall_w_k,
    a.room_reference_temperature_k,a.initial_opening,a.initial_room_temperature_k,
-   s.start_s,+s.holdSupported,+s.closingSupported,+s.blocked,s.ambientTemperature_K,
+   +s.blocked,s.ambientTemperature_K,
    p.liquid.length,...p.liquid.flatMap(c=>[c.water,c.solid,c.area,c.diameter,c.flow_area,c.flow_edge,c.half_resistance,c.weight]),
    p.pool.length,...p.pool.flatMap(c=>[c.solid,c.area,c.diameter,c.elevation,c.half_resistance,c.bank_factor]),
    p.gas.length,...p.gas.flatMap(c=>[c.solid,c.conductance]),

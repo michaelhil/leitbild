@@ -5,7 +5,7 @@ pub const STATES: usize = 2;
 pub const OPENING: usize = 0;
 pub const ROOM_ENERGY: usize = 1;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Config {
     pub stroke_s: f64,
     pub spring_energy_j: f64,
@@ -22,12 +22,12 @@ pub enum Command {
     Open,
     Close,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Support {
     pub hold_supported: bool,
     pub closing_supported: bool,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Inputs {
     pub support: Support,
     pub blocked: bool,
@@ -89,7 +89,63 @@ pub struct Motion {
     control: Control,
     inputs: Inputs,
 }
+/// Complete mechanical history for durable run copies; config is supplied by
+/// the same retained plant definition, never re-prepared from actual position.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MotionSnapshot {
+    pub config: Config,
+    pub anchor_s: f64,
+    pub anchor_opening: f64,
+    pub initial_spring_energy_j: f64,
+    pub holding: bool,
+    pub closing: bool,
+    pub inputs: Inputs,
+}
 impl Motion {
+    pub fn snapshot(&self) -> MotionSnapshot {
+        MotionSnapshot {
+            config: self.model.config,
+            anchor_s: self.anchor_s,
+            anchor_opening: self.anchor_opening,
+            initial_spring_energy_j: self.initial_spring_energy_j,
+            holding: self.control.holding,
+            closing: self.control.closing,
+            inputs: self.inputs,
+        }
+    }
+    pub fn restore(s: MotionSnapshot) -> Result<Self, String> {
+        let model = Model::new(s.config)?;
+        if !s.initial_spring_energy_j.is_finite()
+            || s.initial_spring_energy_j < 0.
+            || s.initial_spring_energy_j > s.config.spring_energy_j
+            || (s.closing && !s.holding)
+            || (!s.inputs.support.hold_supported && (s.holding || s.closing))
+            || (!s.inputs.support.closing_supported && s.closing)
+        {
+            return Err("Invalid retained PRHR mechanical history".into());
+        }
+        let control = Control {
+            holding: s.holding,
+            closing: s.closing,
+        };
+        let mut out = Self::new(model, s.anchor_s, s.anchor_opening, control, s.inputs)?;
+        out.initial_spring_energy_j = s.initial_spring_energy_j;
+        Ok(out)
+    }
+    /// Connected requests before supply is decided. An obstructed energized
+    /// CLOSE still draws its owned rated motive duty; a reached contact does not.
+    pub fn requested_power_w(&self, time_s: f64) -> Result<f64, String> {
+        let (opening, _) = self.at(time_s, 0.)?;
+        Ok(if self.control.holding {
+            self.model.config.hold_power_w
+        } else {
+            0.
+        } + if self.control.closing && opening > 0. {
+            self.model.config.closing_power_w
+        } else {
+            0.
+        })
+    }
     pub fn new(
         model: Model,
         epoch_s: f64,
@@ -140,7 +196,7 @@ impl Motion {
         )?;
         let target = if initial.opening_rate_s > 0. { 1. } else { 0. };
         let opening = if let Some(contact) = self.next_contact_s()? {
-            if time_s >= contact {
+            if time_s >= contact || crate::dc_supply::coincident(time_s, contact) {
                 target
             } else {
                 self.anchor_opening + (time_s - self.anchor_s) * initial.opening_rate_s
@@ -161,10 +217,10 @@ impl Motion {
     pub fn at_left(&self, time_s: f64, room_energy_j: f64) -> Result<(f64, Response), String> {
         let (opening, mut response) = self.at(time_s, room_energy_j)?;
         if let Some(contact) = self.next_contact_s()? {
-            if time_s > contact {
+            if time_s > contact && !crate::dc_supply::coincident(time_s, contact) {
                 return Err("PRHR pending contact was crossed".into());
             }
-            if time_s == contact {
+            if crate::dc_supply::coincident(time_s, contact) {
                 let left = self.model.evaluate(
                     &[self.anchor_opening, room_energy_j],
                     &self.control,
@@ -188,6 +244,11 @@ impl Motion {
         let (opening, _) = self.at(time_s, 0.)?;
         let mut control = self.control.clone();
         let accepted = control.update(command, inputs.support);
+        // Reached closing contact ends motive intent; the separately retained
+        // holding circuit remains energized. Restoration cannot replay motion.
+        if opening == 0. {
+            control.closing = false;
+        }
         self.model.evaluate(&[opening, 0.], &control, inputs)?;
         self.anchor_s = time_s;
         self.anchor_opening = opening;
