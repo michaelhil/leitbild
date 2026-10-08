@@ -52,11 +52,12 @@ pub fn parse(tokens: &mut std::str::SplitWhitespace<'_>) -> Result<Input, String
         let volume = value(tokens)?;
         let elevation = value(tokens)?;
         let initial_tracer_fraction = value(tokens)?;
+        let initial_temperature = value(tokens)?;
         let liquid = original.at(elevation)?;
         water.push(Water {
             geometry: leitbild_plant_numerics::CellGeometry { volume, elevation },
             initial_pressure: liquid.pressure,
-            initial_temperature: liquid.temperature,
+            initial_temperature,
             initial_tracer_fraction,
         });
     }
@@ -69,36 +70,50 @@ pub fn parse(tokens: &mut std::str::SplitWhitespace<'_>) -> Result<Input, String
     }
     let mut hydraulic = vec![];
     for _ in 0..ne {
-        let kind: u32 = value(tokens)?;
         let from = value(tokens)?;
         let to = value(tokens)?;
-        let length = value(tokens)?;
-        let flow_area = value(tokens)?;
-        let diameter = value(tokens)?;
-        let roughness = value(tokens)?;
-        let fixed_loss = value(tokens)?;
-        let grid_value: f64 = value(tokens)?;
-        let law = match kind {
-            0 => LossLaw::EffectiveTotal,
-            1 => LossLaw::ChurchillPipe,
-            2 => LossLaw::ChurchillAnnulus,
-            3 => LossLaw::CoreBundle,
-            4 => LossLaw::GuideAnnulus {
-                laminar_darcy: grid_value,
-            },
-            5 => LossLaw::SmoothColebrook,
-            _ => return Err("Unknown explicitly supported hydraulic law".into()),
-        };
+        let from_elevation = value(tokens)?;
+        let to_elevation = value(tokens)?;
+        let nsegments: usize = value(tokens)?;
+        if nsegments == 0 || nsegments > tokens.clone().count() / 7 {
+            return Err("Invalid hydraulic serial segment count".into());
+        }
+        let mut segments = Vec::with_capacity(nsegments);
+        for _ in 0..nsegments {
+            let kind: u32 = value(tokens)?;
+            let length = value(tokens)?;
+            let flow_area = value(tokens)?;
+            let diameter = value(tokens)?;
+            let roughness = value(tokens)?;
+            let fixed_loss = value(tokens)?;
+            let grid_value: f64 = value(tokens)?;
+            let law = match kind {
+                0 => LossLaw::EffectiveTotal,
+                1 => LossLaw::ChurchillPipe,
+                2 => LossLaw::ChurchillAnnulus,
+                3 => LossLaw::CoreBundle,
+                4 => LossLaw::GuideAnnulus {
+                    laminar_darcy: grid_value,
+                },
+                5 => LossLaw::SmoothColebrook,
+                _ => return Err("Unknown explicitly supported hydraulic law".into()),
+            };
+            segments.push(HydraulicSegment {
+                law,
+                length,
+                flow_area,
+                diameter,
+                roughness,
+                fixed_loss,
+                grid_multiplier: if kind == 4 { 0. } else { grid_value },
+            });
+        }
         hydraulic.push(Hydraulic {
             from,
             to,
-            law,
-            length,
-            flow_area,
-            diameter,
-            roughness,
-            fixed_loss,
-            grid_multiplier: if kind == 4 { 0. } else { grid_value },
+            from_elevation,
+            to_elevation,
+            segments,
         });
     }
     let mut heat = vec![];
@@ -150,6 +165,8 @@ pub fn parse(tokens: &mut std::str::SplitWhitespace<'_>) -> Result<Input, String
         heat,
         secondaries,
         secondary_heat,
+        seat: None,
+        prhr: None,
     };
     Network::new(config.clone())?;
     Ok(Input {
@@ -163,11 +180,11 @@ pub fn parse(tokens: &mut std::str::SplitWhitespace<'_>) -> Result<Input, String
 mod tests {
     use super::*;
     const INPUT: &str = "2 1 1 1 300 120 300000 300 2.5 0.5 2e-8
-        1 2.5 0.002 2 2.5 0.002 1000 313
-        0 0 1 1 0.1 0.356 0 1 0
+        1 2.5 0.002 300 2 2.5 0.002 300 1000 313
+        0 1 2.5 2.5 1 0 1 0.1 0.356 0 1 0
         0 0 2 10 0 0";
     #[test]
-    fn unchanged_network_format_stops_exactly_before_diagnostic_suffix() {
+    fn current_network_format_stops_exactly_before_diagnostic_suffix() {
         let with_suffix = format!("{INPUT} 7");
         let mut tokens = with_suffix.split_whitespace();
         let input = parse(&mut tokens).unwrap();
@@ -184,7 +201,7 @@ mod tests {
     #[test]
     fn malformed_numeric_input_is_not_skipped() {
         assert!(parse(&mut "2 1".split_whitespace()).is_err());
-        let invalid = INPUT.replace("0 0 1 1 0.1", "99 0 1 1 0.1");
+        let invalid = INPUT.replace("0 1 2.5 2.5 1 0 1", "0 1 2.5 2.5 1 99 1");
         assert!(parse(&mut invalid.split_whitespace()).is_err());
     }
 }

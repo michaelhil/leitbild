@@ -5,7 +5,7 @@
 //! authored entrance/discharge budget to the incoming half, not a transient
 //! center-pressure reconstruction. Static donor enthalpy/PE receipts are shared
 //! exactly with finite neighbors; no separate friction heater is added.
-use crate::operating_network::{Hydraulic, LossLaw};
+use crate::operating_network::{HydraulicSegment, LossLaw};
 use crate::{liquid_batch, CellGeometry, Liquid, LiquidQuery, GRAVITY};
 use std::sync::Arc;
 
@@ -79,7 +79,7 @@ pub struct Receipts {
 }
 pub struct Model {
     input: Input,
-    halves: [Hydraulic; 2],
+    halves: [HydraulicSegment; 2],
     owner: Arc<()>,
 }
 pub struct Workspace {
@@ -228,9 +228,7 @@ impl Model {
         if (area * input.length - input.geometry.volume).abs() > 3e-11 * input.geometry.volume {
             return Err("Surge bore volume does not match its actual route".into());
         }
-        let half = Hydraulic {
-            from: 0,
-            to: 1,
+        let half = HydraulicSegment {
             law: LossLaw::ChurchillPipe,
             length: input.length / 2.,
             flow_area: area,
@@ -644,13 +642,6 @@ impl Workspace {
             Ok(&self.jacobian)
         } else {
             Err("Unprepared surge Jacobian".into())
-        }
-    }
-    pub fn port_jacobian(&self) -> Result<&[[f64; 6]; STATES], String> {
-        if self.valid && self.linearized {
-            Ok(&self.port_jacobian)
-        } else {
-            Err("Unprepared surge port Jacobian".into())
         }
     }
     pub fn receipt_jacobian(&self) -> Result<&[[f64; STATES]; 6], String> {

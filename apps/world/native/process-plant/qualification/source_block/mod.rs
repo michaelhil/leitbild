@@ -491,27 +491,21 @@ mod tests {
                         "slow row{r}"
                     );
                 }
-                assert!(
-                    full[..m.nc_dimension()]
-                        .iter()
-                        .zip(&b)
-                        .any(|(&a, &b)| (a - b).abs() > 1e-7)
-                );
+                assert!(full[..m.nc_dimension()]
+                    .iter()
+                    .zip(&b)
+                    .any(|(&a, &b)| (a - b).abs() > 1e-7));
             }
         }
         assert_eq!(p.setups, 6);
         assert_eq!(p.blocks.len(), GROUPS + 2);
         assert_eq!(p.blocks[0].rows, vec![0, GROUPS]);
-        assert!(
-            p.blocks[..GROUPS]
-                .iter()
-                .all(|b| matches!(b.factor, Factor::SpatialIlu0(_)))
-        );
-        assert!(
-            p.blocks[GROUPS..]
-                .iter()
-                .all(|b| matches!(b.factor, Factor::RetainedKlu { .. }))
-        );
+        assert!(p.blocks[..GROUPS]
+            .iter()
+            .all(|b| matches!(b.factor, Factor::SpatialIlu0(_))));
+        assert!(p.blocks[GROUPS..]
+            .iter()
+            .all(|b| matches!(b.factor, Factor::RetainedKlu { .. })));
         assert!(p.blocks.iter().all(|b| b.factor_attempts == 6));
         assert!(p.setup(&entries).is_err());
         assert!(p.solve(&x, &mut out).is_err());

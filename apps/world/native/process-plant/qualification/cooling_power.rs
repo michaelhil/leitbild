@@ -226,7 +226,11 @@ pub(super) struct CaptureWeights {
 }
 impl CaptureWeights {
     pub fn structure(&self) -> (usize, usize, usize) {
-        (self.response.output_count(), self.response.columns().len(), self.gradients.iter().filter(|g| **g != 0.).count())
+        (
+            self.response.output_count(),
+            self.response.columns().len(),
+            self.gradients.iter().filter(|g| **g != 0.).count(),
+        )
     }
     pub fn new(model: &leitbild_plant_numerics::source_cooling::Model) -> Result<Self, String> {
         let response = model.capture.power_response(&model.source)?;

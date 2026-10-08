@@ -30,6 +30,10 @@ pub mod cold_pressurizer;
 pub mod finite_surge;
 pub mod pressure_channel;
 pub mod pressure_protection;
+pub mod finite_wst;
+pub mod prhr_actuator;
+pub mod prhr;
+pub mod prhr_mixing;
 
 pub const GRAVITY: f64 = 9.80665;
 

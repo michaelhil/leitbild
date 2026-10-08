@@ -312,8 +312,9 @@ impl Model {
         Ok((pool, line, receipts, phase, material))
     }
     /// Thermodynamic forward-chart residual rows. Mechanical continuity and
-    /// hydraulic force rows are deliberately absent: differentiating those
-    /// requires accelerations, not just the initial coordinate rates.
+    /// hydraulic force rows are deliberately absent: their continuation needs
+    /// coupled flow and pressure-multiplier rates, not only thermodynamic chart
+    /// rates. The selected quasi-steady hydraulics have no inertial acceleration.
     pub fn forward_chart_rows(&self) -> Vec<usize> {
         let l = self.layout;
         let n = &self.network;
@@ -323,6 +324,12 @@ impl Model {
                 [
                     l.network_start + n.secondary_temperature_row(i),
                     l.network_start + n.secondary_pressure_row(i),
+                ]
+            }))
+            .chain(n.prhr_layout().into_iter().flat_map(|p| {
+                [
+                    l.network_start + p.wst_start + 2,
+                    l.network_start + p.wst_start + 3,
                 ]
             }))
             .chain((cp::LIQUID_TEMPERATURE..=cp::LIQUID_PRESSURE).map(|r| l.pressurizer_start + r))
@@ -352,6 +359,19 @@ impl Model {
             if n.is_differential(r) {
                 emit(l.network_start + r, l.network_start + r, 1.);
             }
+        }
+        if let Some(p) = n.prhr() {
+            let row = l.network_start + p.layout.wst_start;
+            emit(
+                row + crate::finite_wst::ENERGY,
+                row + crate::finite_wst::VOLUME,
+                p.config.gas.pressure_pa,
+            );
+            emit(
+                l.network_start + p.layout.gas_exported,
+                row + crate::finite_wst::VOLUME,
+                -p.config.gas.pressure_pa,
+            );
         }
         let sum_a: f64 = w.network.redistribution.iter().map(|a| a[0]).sum();
         if !sum_a.is_finite() || sum_a <= 0. {
@@ -454,6 +474,53 @@ impl Model {
                     let value = dq * amount / m + q * (da / m - (amount / m) * (dm / m));
                     emit(from, col, value);
                     emit(to, col, -value);
+                }
+            }
+        }
+        if let (Some(p), Some(pw)) = (n.prhr(), &w.network.prhr) {
+            for (c, response) in p.config.mixing.iter().zip(&pw.mixing) {
+                let columns = [
+                    n.pressure_row(),
+                    n.temperature_row(c.from),
+                    n.temperature_row(c.to),
+                    n.temperature_row(c.sg_water),
+                    n.flow_row(c.sg_flow_edge),
+                ];
+                for k in 0..wc::WIDTH {
+                    let ra = l.carrier_start + wc::WIDTH * c.from + k;
+                    let rb = l.carrier_start + wc::WIDTH * c.to + k;
+                    let ca = w.products[c.from].values()[k] / w.mass[c.from];
+                    let cb = w.products[c.to].values()[k] / w.mass[c.to];
+                    for j in 0..5 {
+                        let value = response.partials[j] * (ca - cb);
+                        emit(ra, l.network_start + columns[j], value);
+                        emit(rb, l.network_start + columns[j], -value);
+                    }
+                    for (node, sign, conc) in [(c.from, 1., ca), (c.to, -1., cb)] {
+                        for (col, value) in [
+                            (
+                                l.carrier_start + wc::WIDTH * node + k,
+                                response.coefficient * sign / w.mass[node],
+                            ),
+                            (
+                                l.network_start + n.pressure_row(),
+                                -response.coefficient
+                                    * sign
+                                    * conc
+                                    * w.network.liquids[node].compressibility,
+                            ),
+                            (
+                                l.network_start + n.temperature_row(node),
+                                response.coefficient
+                                    * sign
+                                    * conc
+                                    * w.network.liquids[node].expansion,
+                            ),
+                        ] {
+                            emit(ra, col, value);
+                            emit(rb, col, -value);
+                        }
+                    }
                 }
             }
         }

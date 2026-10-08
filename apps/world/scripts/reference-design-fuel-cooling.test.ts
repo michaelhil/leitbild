@@ -2,7 +2,7 @@ import {expect,test} from 'bun:test'
 import {compileFuelCooling,compileFuelCoolingMaterial,compilePrimaryIncidence,parseOperatingFuelGap,parseColdConditioningPreparation} from './reference-design-fuel-cooling'
 import {compilePrimaryWaterGeometry,parsePrimaryWaterInputs,primaryWaterOwnerFiles} from './reference-design-source-water'
 import {join} from 'node:path'
-import {coolingCommonTimes,coolingStateHeader,coolingStatesComplete,fuelCoolingAdmission,fuelCoolingPriorSeconds,qualifyFuelCooling} from './reference-design-fuel-cooling-qualification'
+import {coolingCommonTimes,coolingStateHeader,coolingStatesComplete,coolingEnergyCoordinates,fuelCoolingAdmission,fuelCoolingPriorSeconds,qualifyFuelCooling} from './reference-design-fuel-cooling-qualification'
 
 test('a corrected attempt must debit the unsuccessful prior work against the same allowance',()=>{
  const prior={passed:false,allowanceSeconds:180,elapsedSeconds:6.166466292,noWholePlantReadinessCredit:true}
@@ -32,6 +32,7 @@ test('only a complete physically developed refined pair can receive admission',(
   normal:{passed:true,lastAdmittedTime:300,commonSamples:14},tighter:{passed:true,lastAdmittedTime:300,commonSamples:14},
   settings:{accuracyPolicy:'cold-source-fuel-binding',provisional:true,horizon:300,referenceAllATOLandRTOLDivisor:10,
    carrierCoordinates:'hydrogen-product,direct-boron10,boron-product',
+   carrierComparisonPolicy:'closed-mobile-generated-products-separate-H-B;local-remaining-targets;local-product-distribution-diagnostic',
    pressureCoordinates:'finite-pool-cushion-and-surge-forward-DAE;direct-liquid-B10-and-phase-H-products',
    pressureResponseResolutionPa:1,pressureChangeRelativeBudget:0.005,surgeHydraulicModel:'finite-storage-two-algebraic-resistances',
    surgeGravityModel:'owned-bulk-density-hydrostatic-face-heads',
@@ -42,7 +43,8 @@ test('only a complete physically developed refined pair can receive admission',(
    capturePowerErrorWeights:'sparse-current-fuel-capture-and-temperature-proportional-budget-cap',capturePowerResolutionW:1e-12,
    capturePowerWeightScope:'emitted-per-intersection;held-route-fractions-at-most-one;all-five-recipient-channels-independently-paired',
    costGuard:'aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic',
-   nonlinearClosure:'stock-Newton-and-current-physical-network-pressure-charts',linearWeightedL2Budget:0.0165,algebraicLTE:'included',
+   nonlinearClosure:'stock-Newton-and-current-physical-network-pressure-charts',linearWeightedL2Budget:0.0165,
+   algebraicLTE:'excluded-from-temporal-control;retained-in-Newton-physical-closure-and-output-pair',
    solverEnergyCoordinate:'G=sum-installed-energy-change-minus-fission-barrel-binding-release-plus-barrel-binding-ambient-export',energyDefectATOLJ:0.01/Math.sqrt(7),
    perRowErrorWeights:'source-carrier-barrel-binding-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute'},
   gates:{fullPairComparisonEvaluated:true,developedThermalResponse:true,developedSourceResponse:true,
@@ -53,6 +55,7 @@ test('only a complete physically developed refined pair can receive admission',(
    thermalPairRatio:0,networkPairRatio:0,depositionPairRatio:0,carrierPairRatio:0},
   pairedComparisons:Array.from({length:14},()=>({})),fuelTemperatureFeedbackDiagnostic:{}}
  expect(fuelCoolingAdmission.safeParse(outcome).success).toBe(true)
+ expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,solverEnergyCoordinate:coolingEnergyCoordinates.prhr}}).success).toBe(true)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,carrierCoordinates:undefined}}).success).toBe(false)
  for(const field of ['passed','fullPairComparisonEvaluated','developedThermalResponse','developedSourceResponse','developedBarrelResponse','developedPressureResponse']){
   const changed=structuredClone(outcome)
@@ -70,6 +73,8 @@ test('only a complete physically developed refined pair can receive admission',(
  expect(fuelCoolingAdmission.safeParse({...outcome,tighter:null}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,pairedComparisons:outcome.pairedComparisons.slice(1)}).success).toBe(false)
  expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,referenceAllATOLandRTOLDivisor:1}}).success).toBe(false)
+ expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,carrierComparisonPolicy:undefined}}).success).toBe(false)
+ expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,carrierComparisonPolicy:'local-product-paid-energy'}}).success).toBe(false)
  for(const policy of ['cold-source-cooling-1','cold-source-cooling-2','cold-source-cooling-3','cold-source-cooling-4','cold-source-cooling-5','cold-source-cooling-6','cold-source-cooling-7'])
   expect(fuelCoolingAdmission.safeParse({...outcome,settings:{...outcome.settings,accuracyPolicy:policy}}).success).toBe(false)
  for(const energyDefectATOLJ of [0,NaN,Infinity,0.01,1])
@@ -96,6 +101,7 @@ test('only a complete physically developed refined pair can receive admission',(
   {...outcome.settings,nonlinearClosure:'stock-Newton-only'},
   {...outcome.settings,linearWeightedL2Budget:0.0165*Math.sqrt(outcome.dimension)},
   {...outcome.settings,algebraicLTE:'suppressed'},
+  {...outcome.settings,algebraicLTE:'included'},
   {...outcome.settings,surgeGravityModel:undefined},
   {...outcome.settings,surgeGravityModel:'upwind-donor-gravity'},
   {...outcome.settings,surgeReductionScope:undefined},
@@ -162,8 +168,8 @@ ownerTest('current owners close fuel/helium recipients and actual non-proportion
   const edge=p.network.hydraulic[b.flowEdge]!
   expect(edge.to).toBe(b.water)
   // Both q and area are the full MAIN core bundle, never one-FA area with total q.
-  expect(b.flow_area_m2).toBe(edge.area_m2)
-  expect(b.hydraulic_diameter_m).toBe(edge.diameter_m)
+  expect(b.flow_area_m2).toBe(edge.segments[0]!.area_m2)
+  expect(b.hydraulic_diameter_m).toBe(edge.segments[0]!.diameter_m)
  }
  const down=p.primary.cells.find(c=>c.id==='DOWNCOMER')!
  expect(down.representedVolume_m3/down.totalVolume_m3).toBeCloseTo(2/3,12)

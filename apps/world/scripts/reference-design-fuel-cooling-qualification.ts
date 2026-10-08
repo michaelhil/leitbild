@@ -11,11 +11,16 @@ import {requireControlledLoaderEnvironment,verifySelectedNativeStack,selectedNat
 import {z} from 'zod'
 const sha=(s:string|Uint8Array)=>createHash('sha256').update(s).digest('hex')
 const admittedRatio=z.number().finite().nonnegative().max(1),arm=z.object({passed:z.literal(true),lastAdmittedTime:z.literal(300),commonSamples:z.literal(14)})
+export const coolingEnergyCoordinates={
+ base:'G=sum-installed-energy-change-minus-fission-barrel-binding-release-plus-barrel-binding-ambient-export',
+ prhr:'G=sum-installed-energy-change-including-finite-WST-and-ROOM-minus-fission-barrel-binding-release-minus-signed-spring-release-and-electrical-receipts-plus-barrel-binding-ambient-WST-surface-work-connector-and-ROOM-ambient-export',
+} as const
+export const coolingCarrierComparisonPolicy='closed-mobile-generated-products-separate-H-B;local-remaining-targets;local-product-distribution-diagnostic' as const
 /** A native success flag alone cannot credit a truncated or diagnostically
  * incomplete pair. The physical/error policy is owned by the native qualifier. */
 export const fuelCoolingAdmission=z.object({kind:z.literal('source-cooling-pair'),passed:z.literal(true),lastAdmittedTime:z.literal(300),
  dimension:z.number().int().positive(),differential:z.number().int().positive(),normal:arm,tighter:arm,
- settings:z.object({accuracyPolicy:z.literal('cold-source-fuel-binding'),provisional:z.literal(true),horizon:z.literal(300),
+ settings:z.object({accuracyPolicy:z.literal('cold-source-fuel-binding'),carrierComparisonPolicy:z.literal(coolingCarrierComparisonPolicy),provisional:z.literal(true),horizon:z.literal(300),
   carrierCoordinates:z.literal('hydrogen-product,direct-boron10,boron-product'),
   pressureCoordinates:z.literal('finite-pool-cushion-and-surge-forward-DAE;direct-liquid-B10-and-phase-H-products'),
   pressureResponseResolutionPa:z.literal(1),pressureChangeRelativeBudget:z.literal(0.005),
@@ -30,8 +35,9 @@ export const fuelCoolingAdmission=z.object({kind:z.literal('source-cooling-pair'
   capturePowerWeightScope:z.literal('emitted-per-intersection;held-route-fractions-at-most-one;all-five-recipient-channels-independently-paired'),
   costGuard:z.literal('aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic'),
   nonlinearClosure:z.literal('stock-Newton-and-current-physical-network-pressure-charts'),
-  linearWeightedL2Budget:z.literal(0.0165),algebraicLTE:z.literal('included'),
-  solverEnergyCoordinate:z.literal('G=sum-installed-energy-change-minus-fission-barrel-binding-release-plus-barrel-binding-ambient-export'),
+  linearWeightedL2Budget:z.literal(0.0165),
+  algebraicLTE:z.literal('excluded-from-temporal-control;retained-in-Newton-physical-closure-and-output-pair'),
+  solverEnergyCoordinate:z.enum([coolingEnergyCoordinates.base,coolingEnergyCoordinates.prhr]),
   energyDefectATOLJ:z.number().finite().positive(),
   referenceAllATOLandRTOLDivisor:z.literal(10),perRowErrorWeights:z.literal('source-carrier-barrel-binding-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute')}),
  gates:z.object({fullPairComparisonEvaluated:z.literal(true),developedThermalResponse:z.literal(true),developedSourceResponse:z.literal(true),
@@ -67,7 +73,7 @@ export function coolingStatesComplete(states:readonly {path:string;magic?:string
  )
 }
 type Options={wiki:string;partition:string;material:string;water:string;materialEvidence:string;
- binary:string;selectedStackManifest:string;output:string;priorAttempt?:string}
+ binary:string;selectedStackManifest:string;output:string;priorAttempt?:string;features?:{prhr:boolean}}
 export function fuelCoolingPriorSeconds(value:unknown){
  return z.object({passed:z.literal(false),allowanceSeconds:z.literal(180),elapsedSeconds:z.number().finite().nonnegative().lt(180),
   noWholePlantReadinessCredit:z.literal(true)}).parse(value).elapsedSeconds
@@ -95,7 +101,7 @@ export async function qualifyFuelCooling(options:Options){
   ownerTexts=await Promise.all(ownerPaths.map(p=>Bun.file(p).text())),
   source=compileSourceEvolution(texts[0]!,texts[1]!,texts[2]!,new Map(sourceEvolutionOwnerFiles.map((p,i)=>[p,ownerTexts[i]!])),payload.receiving.property)
  if(sha(source.material.fixture)!==parent.fixtureSHA256)throw Error('Recompiled material differs from admitted parent')
- const prepared=await compileFuelCooling(resolve(options.wiki)),fixture=nativeFuelCoolingFixture(prepared,source),
+ const prepared=await compileFuelCooling(resolve(options.wiki),options.features??{prhr:false}),fixture=nativeFuelCoolingFixture(prepared,source),
   helpers=await sourceHelperFiles([import.meta.path]),
   native=await Array.fromAsync(new Bun.Glob('{src,examples,qualification,tests}/**/*.{rs,cpp,c,h}').scan({cwd:root})),
   paths=[...helpers.keys(),...native.sort().map(p=>join(root,p)),...['Cargo.toml','Cargo.lock','build.rs'].map(p=>join(root,p)),resolve(options.binary)],
@@ -105,7 +111,7 @@ export async function qualifyFuelCooling(options:Options){
  await Promise.all(paths.map((p,i)=>writeFile(join(directory,`${i}-${basename(p)}`),bytes[i]!,{flag:'wx'})))
  await writeFile(join(directory,'input.txt'),fixture,{flag:'wx'})
  await writeFile(join(directory,'composition.json'),JSON.stringify({conditioning:prepared.conditioning,thermal:prepared.thermal,primary:prepared.primary,barrel:prepared.barrel,capture:prepared.capture,pressure:prepared.pressure,
-  ownerIdentities:prepared.ownerIdentities,limitations:prepared.limitations},null,2)+'\n',{flag:'wx'})
+  prhr:prepared.prhr,ownerIdentities:prepared.ownerIdentities,limitations:prepared.limitations},null,2)+'\n',{flag:'wx'})
  // All linked non-system libraries must be retained; the old receipt is not a
  // substitute for inspecting this newly built binary and its actual links.
  const nativeStack=await verifySelectedNativeStack({binary:resolve(options.binary),prefix:selected.prefix,
@@ -125,7 +131,9 @@ export async function qualifyFuelCooling(options:Options){
    catch(error){return {path,sha256:sha(bytes),bytes:bytes.length,frameError:String(error)}}
   })),
   parsed=sourceEvolutionOutput(stdout),outcome=parsed.outcome,admission=fuelCoolingAdmission.safeParse(outcome),
+  selectedEnergyCoordinate=outcome?.settings?.solverEnergyCoordinate===coolingEnergyCoordinates[prepared.prhr?'prhr':'base'],
   pressureEvidence=[...parsed.records].reverse().find(row=>row?.kind==='pressure-evidence-pair')?.report,
+  prhrEvidence=[...parsed.records].reverse().find(row=>row?.kind==='prhr-connected-receiver'),
   observations=await Promise.all(['normal','tighter'].map(async arm=>{
    const path=join(directory,`input.${arm}.pressure-evidence.json`)
    if(!await Bun.file(path).exists())return {path,missing:true}
@@ -138,15 +146,16 @@ export async function qualifyFuelCooling(options:Options){
    &&(await Promise.all(prepared.ownerIdentities.map(async r=>sha(await Bun.file(join(options.wiki,r.name)).text())===r.sha256))).every(Boolean),
   stackUnchanged=await selectedNativeStackUnchanged(nativeStack),currentAttemptSeconds=(performance.now()-began)/1000,
   elapsedSeconds=priorComputationSeconds+currentAttemptSeconds,
-  receipt={recordedAt:new Date().toISOString(),passed:exitCode===0&&!timedOut&&admission.success&&completeStates
+  receipt={recordedAt:new Date().toISOString(),passed:exitCode===0&&!timedOut&&admission.success&&selectedEnergyCoordinate&&completeStates
     &&pressureEvidence?.passed===true&&observations.every(r=>!('missing' in r))
+    &&(!prepared.prhr||prhrEvidence?.passed===true)
     &&unchanged&&stackUnchanged&&elapsedSeconds<=allowanceSeconds,
    allowanceSeconds,elapsedSeconds,currentAttemptSeconds,priorComputationSeconds,priorAttempt:options.priorAttempt?resolve(options.priorAttempt):null,
    preparationSeconds,executionWallSeconds,compilationOutsideAdvancementAllowance:true,command,exitCode,timedOut,
    termination:timedOut?'external-wall-deadline':outcome?'native-final-result':'native-final-result-missing',
    stdout,stderr,processUsageScope:'current native process; prior attempt usage retained separately',
-   ...sourceProcessUsage(child.resourceUsage()),...parsed,unchanged,pressureEvidence,
-   admissionError:admission.success?undefined:admission.error.message,
+   ...sourceProcessUsage(child.resourceUsage()),...parsed,unchanged,pressureEvidence,prhrEvidence,selectedEnergyCoordinate,
+   admissionError:!admission.success?admission.error.message:!selectedEnergyCoordinate?'Native energy coordinate does not match the selected physical composition':undefined,
    inputCounts:{bands:prepared.thermal.bands.length,thermalPhysicalStocks:prepared.thermal.thermalCoordinates,
     thermalSolverCoordinates:2*prepared.thermal.thermalCoordinates,primaryCells:prepared.network.water.length,
     primaryCarrierCoordinates:3*prepared.network.water.length,primarySourceIntersections:prepared.primary.rows.length,

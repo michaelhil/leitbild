@@ -1,6 +1,6 @@
 //! Shared source-consequences-1 common-time comparison. No integrator or
 //! physical law; source-only and joined cooling qualifiers use this same policy.
-use super::{COUNT_ATOL, ENERGY_ATOL, finite, quote, ratio, source_accuracy::Accuracy};
+use super::{finite, quote, ratio, source_accuracy::Accuracy, COUNT_ATOL, ENERGY_ATOL};
 use leitbild_plant_numerics::{
     fuel_history, fuel_source,
     source_evolution::{Diagnostics, Evolution},

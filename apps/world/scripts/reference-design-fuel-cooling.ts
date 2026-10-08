@@ -17,6 +17,7 @@ import {compileColdBarrel,nativeColdBarrelFrame} from './reference-design-source
 import {compileColdPressure,nativeColdPressureFrame} from './reference-design-cold-pressure-support'
 import {compileFuelCapture,nativeFuelCaptureFrame} from './reference-design-fuel-capture'
 import {parsePressureChannel,nativePressureChannelFields,parsePressureProtection,nativePressureProtectionFields} from './reference-design-pressure-observation'
+import {compilePrhrCooling,nativePrhrCoolingFrame,parsePrhrColdPreparation} from './reference-design-prhr-cooling'
 
 type Network=Awaited<ReturnType<typeof compileOperatingNetwork>>
 type Material=ReturnType<typeof compileColdSourceMaterialOwners>
@@ -55,7 +56,7 @@ export function compileFuelCoolingMaterial(material:Material,network:Pick<Networ
   // Refuse a band crossing it instead of choosing a recipient by its centroid.
   const core=hi<=0?'CORE.1':lo>=0?'CORE.2':undefined
   if(!core)throw Error('Thermal band crosses the native core-water boundary')
-  const water=requireIndex(waterIndexes,core),incoming=network.hydraulic.map((e,i)=>({e,i})).filter(q=>q.e.to===water&&q.e.kind===3)
+  const water=requireIndex(waterIndexes,core),incoming=network.hydraulic.map((e,i)=>({e,i})).filter(q=>q.e.to===water&&q.e.segments.length===1&&q.e.segments[0]!.kind===3)
   if(incoming.length!==1)throw Error('Missing unique actual core sensible-film flow')
   const ids=[...fuel,...clad].map(c=>c.id)
   for(const id of ids){if(cohortRows.has(id))throw Error('Duplicated thermal energy owner');cohortRows.set(id,next++)}
@@ -180,19 +181,23 @@ export function nativeFuelCoolingFixture(p:Awaited<ReturnType<typeof compileFuel
  const barrel=nativeColdBarrelFrame(p.barrel,source)
  return [source.fixture,p.network.nativeInput,fields.join('\n'),primary.join('\n'),barrel.fields.join('\n'),
   nativeColdPressureFrame(p.pressure).join('\n'),nativeFuelCaptureFrame(p.capture).join('\n'),
-  [...nativePressureChannelFields(p.pressureChannel),...nativePressureProtectionFields(p.pressureProtection)].join('\n')].map(frame).join('\n')+'\n'
+  [...nativePressureChannelFields(p.pressureChannel),...nativePressureProtectionFields(p.pressureProtection)].join('\n'),
+  nativePrhrCoolingFrame(p.prhr).join('\n')].map(frame).join('\n')+'\n'
 }
 
-export async function compileFuelCooling(wiki:string){
+export async function compileFuelCooling(wiki:string,features:{prhr:boolean}={prhr:false}){
  const extra=['systems/reactor/phase-dependent-heat-transfer.md','systems/primary-coolant/heater-equipment.md',
   'systems/reactor/configuration-source-and-history.md','model/operating-pressure-support.md',
   'systems/primary-coolant/surge-route.md','model/operating-source-model.md',
-  'systems/instrumentation/operational-observations.md','safety/source-and-primary-protection.md'],names=[...new Set([...coldSourceMaterialOwnerFiles,...primaryWaterOwnerFiles,...extra])],
+  'systems/instrumentation/operational-observations.md','safety/source-and-primary-protection.md',
+  ...(features.prhr?['systems/passive-cooling/residual-heat-exchanger.md','systems/passive-cooling/reservoir-and-containment.md',
+    'systems/support-services/thermal-water-and-air.md','model/operating-fluid-model.md']:[])],names=[...new Set([...coldSourceMaterialOwnerFiles,...primaryWaterOwnerFiles,...extra])],
   texts=await Promise.all(names.map(p=>Bun.file(join(wiki,p)).text())),docs=new Map(names.map((p,i)=>[p,texts[i]!])),
   read=(p:string)=>{const s=docs.get(p);if(s===undefined)throw Error('Missing cold coupling owner '+p);return s},
   material=compileColdSourceMaterialOwners(coldSourceMaterialOwnerFiles.map(read)),
   conditioning=parseColdConditioningPreparation(read('model/operating-source-model.md')),
-  network=await compileOperatingNetwork(wiki,{horizon_s:300,remainingBudget_s:120},{temperature_K:conditioning.liquidTemperature_K}),
+  network=await compileOperatingNetwork(wiki,{horizon_s:300,remainingBudget_s:120},{temperature_K:conditioning.liquidTemperature_K},
+   features.prhr?{prhr:true,bankTemperature_K:parsePrhrColdPreparation(read('model/operating-fluid-model.md')).bankTemperature_K}:{prhr:false}),
   d=parsePrimaryWaterInputs(primaryWaterOwnerFiles.map(read)),thermal=compileFuelCoolingMaterial(material,network,parseOperatingFuelGap(read(extra[0]!))),
   geometry=compilePrimaryWaterGeometry(material.partition,d),
   primary=compilePrimaryIncidence(network,material.partition,d,geometry),
@@ -202,14 +207,18 @@ export async function compileFuelCooling(wiki:string){
   capture=compileFuelCapture(material,thermal,network,barrel,read('systems/reactor/configuration-source-and-history.md')),
   pressureChannel=parsePressureChannel(read('systems/instrumentation/operational-observations.md')),
   pressureProtection=parsePressureProtection(read('safety/source-and-primary-protection.md')),
-  identities=names.map((name,i)=>({name,sha256:sha(texts[i]!)}))
+  identities=names.map((name,i)=>({name,sha256:sha(texts[i]!)})),
+  prhr=features.prhr?compilePrhrCooling(network,read('systems/passive-cooling/residual-heat-exchanger.md'),
+    read('systems/passive-cooling/reservoir-and-containment.md'),read('systems/support-services/thermal-water-and-air.md'),
+    read('model/operating-fluid-model.md')):undefined
  if(network.water.some(w=>w.markerRatio!==primary.markerRatio))throw Error('Connected primary preparation is not homogeneous')
  for(const identity of network.ownerIdentities){const same=identities.find(x=>x.name===identity.name)
   if(same&&same.sha256!==identity.sha256)throw Error('Owner changed across current coupling compilers')}
  if((await Promise.all(names.map(p=>Bun.file(join(wiki,p)).text()))).some((s,i)=>s!==texts[i]))throw Error('Owner changed during cold coupling compilation')
- return {thermal,primary,network,material,barrel,pressure,capture,pressureChannel,pressureProtection,conditioning,ownerIdentities:identities,
+ return {thermal,primary,network,material,barrel,pressure,capture,pressureChannel,pressureProtection,conditioning,prhr,ownerIdentities:identities,
   limitations:['Compilation is not an advancing coupled plant or empirical qualification',
-   'Cold fully wet primary, fixed prepared fuel/guide geometry; no primary phase continuation, motion or coastdown',
+   'Cold fully wet primary, fixed prepared fuel/guide geometry; no primary phase continuation, fuel/absorber motion or pump coastdown',
+   ...(prhr ? ['Selected cold PRHR valve stroke, signed liquid circulation and finite steel/WST/ROOM are joined; supplied CNV gas and delivered electrical support are explicit boundaries, not containment/endurance or achieved automatic protection'] : []),
    'Finite mixed surge and cold separated liquid/steam/air PZR; no hot pressure regulation, resolved thermal fronts or dryout',
    'BARREL prompt/Mn emissions join its finite 304 owner and five actual primary recipients, with explicit photon export',
    'Fertile/Xe/Sm prompt binding routes to existing fuel/clad/current external core water with explicit export; E25 remains separate',

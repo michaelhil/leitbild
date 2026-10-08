@@ -13,10 +13,10 @@ export function parsePrhrMixing(text:string):MixingBasis {
   if(blocks.length!==1)throw Error('Exactly one PRHR scalar-mixing basis required')
   return basisSchema.parse(JSON.parse(blocks[0]![1]!))
 }
-export type MixingWater={temperature_K:number;density_kg_m3:number;potentialDensity_kg_m3:number;cp_J_kgK:number;conductivity_W_mK:number;concentration:number}
+export type MixingWater={temperature_K:number;density_kg_m3:number;potentialDensity_kg_m3:number;viscosity_Pas:number;cp_J_kgK:number;conductivity_W_mK:number;concentration:number}
 export function prhrScalarMixing(b:MixingBasis,a:MixingWater,c:MixingWater,g:{diameter_m:number;rise_m:number;length_m:number;start_m:number;end_m:number},mainVelocity:number) {
   basisSchema.parse(b)
-  for(const w of[a,c])if(!Object.values(w).every(Number.isFinite)||w.temperature_K<=0||w.density_kg_m3<=0||w.potentialDensity_kg_m3<=0||w.cp_J_kgK<=0||w.conductivity_W_mK<=0||w.concentration<0||w.concentration>1)throw Error('Admissible water/scalar state required')
+  for(const w of[a,c])if(!Object.values(w).every(Number.isFinite)||w.temperature_K<=0||w.density_kg_m3<=0||w.potentialDensity_kg_m3<=0||!Number.isFinite(w.viscosity_Pas)||w.viscosity_Pas<=0||w.cp_J_kgK<=0||w.conductivity_W_mK<=0||w.concentration<0||w.concentration>1)throw Error('Admissible water/scalar state required')
   if(!Object.values(g).every(Number.isFinite)||!Number.isFinite(mainVelocity)||g.diameter_m<=0||g.length_m<=0||Math.abs(g.rise_m)>g.length_m||g.start_m<0||g.end_m>g.length_m||g.end_m<=g.start_m)throw Error('Physical return interval required')
   const dx=g.end_m-g.start_m,A=Math.PI*g.diameter_m**2/4,l=b.penetrationBores*g.diameter_m
   const penetration=l/dx*(Math.exp(-g.start_m/l)-Math.exp(-g.end_m/l))
@@ -24,7 +24,12 @@ export function prhrScalarMixing(b:MixingBasis,a:MixingWater,c:MixingWater,g:{di
   // Potential densities are recovered at one common pressure, not compared at different hydrostatic p.
   const unstable=Math.max(0,(c.potentialDensity_kg_m3-a.potentialDensity_kg_m3)*g.rise_m/g.length_m)
   const rho=(a.density_kg_m3+c.density_kg_m3)/2,cp=(a.cp_J_kgK+c.cp_J_kgK)/2
-  const buoyantVelocity=Math.sqrt(9.80665*g.diameter_m*unstable/((a.potentialDensity_kg_m3+c.potentialDensity_kg_m3)/2))
+  const potentialRho=(a.potentialDensity_kg_m3+c.potentialDensity_kg_m3)/2
+  const nu=(a.viscosity_Pas+c.viscosity_Pas)/(2*potentialRho),lambda=32*nu/g.diameter_m
+  const drive=9.80665*g.diameter_m*unstable/potentialRho
+  // Fictional effective circular-cell drag: v² + (32ν/D)v = drive.
+  // Rationalized root retains the finite viscous limit without a mixing floor.
+  const buoyantVelocity=2*drive/(lambda+Math.hypot(lambda,2*Math.sqrt(drive)))
   const eddy=b.coefficient*g.diameter_m*(Math.abs(mainVelocity)*penetration+buoyantVelocity)
   const molecular=2*a.conductivity_W_mK*c.conductivity_W_mK/(a.conductivity_W_mK+c.conductivity_W_mK)
   const conductance=(molecular+rho*cp*eddy/b.turbulentPrandtl)*A/dx
@@ -80,7 +85,7 @@ sg=next(f for f in faces if f['owner']=='SG.A.PRIMARY'); hot=next(f for f in fac
 water=AbstractState('HEOS','Water'); g=9.80665; t=b['tubes']; zsg=sg['z_m']
 def prop(p,T):
  water.update(PT_INPUTS,p,T)
- return dict(rho=water.rhomass(),u=water.umass(),cp=water.cpmass(),k=water.conductivity(),s=water.smass())
+ return dict(rho=water.rhomass(),u=water.umass(),cp=water.cpmass(),mu=water.viscosity(),k=water.conductivity(),s=water.smass())
 def filmprop(p,T):
  water.update(PT_INPUTS,p,T)
  return dict(density_kg_m3=water.rhomass(),viscosity_Pas=water.viscosity(),conductivity_W_mK=water.conductivity(),cp_J_kgK=water.cpmass(),expansion_K_1=water.isobaric_expansion_coefficient())
@@ -139,11 +144,15 @@ def evaluate(y,coefficient):
   states[i].update(DmassUmass_INPUTS,M[i]/V,(U0[i]+y[i])/M[i])
   w.append(dict(T=states[i].T(),p=states[i].p(),rho=M[i]/V,cp=states[i].cpmass(),k=states[i].conductivity()))
  meanp=(w[0]['p']+w[1]['p'])/2
- for v in w:v['rhop']=prop(meanp,v['T'])['rho']
+ for v in w:
+  potential=prop(meanp,v['T']);v['rhop']=potential['rho'];v['mu']=potential['mu']
  D=b['coldConnector']['id_m'];dx=.25;A=math.pi*D*D/4;l=mix['penetrationBores']*D
  forced=l/dx*(1-math.exp(-dx/l))*abs(sg['velocity_m_s'])
  unstable=max(0,(w[1]['rhop']-w[0]['rhop'])*(t['bottom_m']-zsg)/b['coldConnector']['length_m'])
- eddy=coefficient*D*(forced+math.sqrt(g*D*unstable/((w[0]['rhop']+w[1]['rhop'])/2)))
+ potentialRho=(w[0]['rhop']+w[1]['rhop'])/2
+ nu=(w[0]['mu']+w[1]['mu'])/(2*potentialRho);lam=32*nu/D;drive=g*D*unstable/potentialRho
+ buoyant=2*drive/(lam+math.hypot(lam,2*math.sqrt(drive)))
+ eddy=coefficient*D*(forced+buoyant)
  rho=sum(v['rho'] for v in w)/2;cp=sum(v['cp'] for v in w)/2
  G=(2*w[0]['k']*w[1]['k']/(w[0]['k']+w[1]['k'])+rho*cp*eddy/mix['turbulentPrandtl'])*A/dx
  q=G*(w[0]['T']-w[1]['T']);km=rho*eddy*A/dx/mix['turbulentSchmidt']

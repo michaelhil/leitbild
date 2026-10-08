@@ -1,6 +1,6 @@
 //! Joint fixed-stock initialization of the current fluid DAE and its forward
 //! thermodynamic chart rates. No alternating integrator IC calls or flash.
-use super::{OUTPUTS, cooling_accuracy, cooling_block::Sparse, cooling_convergence, recoverable};
+use super::{cooling_accuracy, cooling_block::Sparse, cooling_convergence, recoverable, OUTPUTS};
 use leitbild_plant_numerics::{
     operating_admission,
     source_cooling::{Model, Workspace},
@@ -39,8 +39,14 @@ impl Report {
         )
     }
 }
-fn prepare(model: &Model, y: &[f64], yp: &mut [f64], work: &mut Workspace) -> Result<(), String> {
-    model.evaluate(y, yp, None, work)?;
+fn prepare(
+    model: &Model,
+    y: &[f64],
+    yp: &mut [f64],
+    work: &mut Workspace,
+    prhr_input: Option<leitbild_plant_numerics::prhr::Input>,
+) -> Result<(), String> {
+    model.evaluate_with_prhr_input(y, yp, None, work, prhr_input)?;
     let fluid = model.fluid_rows().collect::<std::collections::HashSet<_>>();
     // Other ODEs have identity Fyp. Their actual current receipts are inputs
     // to the fluid solve, not frozen powers from a different trial.
@@ -54,7 +60,7 @@ fn prepare(model: &Model, y: &[f64], yp: &mut [f64], work: &mut Workspace) -> Re
         yp[l.temperatures_start + i] = yp[l.energies_start + i] / c;
     }
     yp[l.barrel_temperature] = yp[l.barrel_energy] / work.barrel.capacity()?;
-    model.evaluate(y, yp, Some(0.), work)
+    model.evaluate_with_prhr_input(y, yp, Some(0.), work, prhr_input)
 }
 fn correction_norm(
     model: &Model,
@@ -93,6 +99,7 @@ pub(super) fn initialize(
     allowance: f64,
     relative: f64,
     trace: &mut Trace,
+    prhr_input: Option<leitbild_plant_numerics::prhr::Input>,
 ) -> Result<Report, String> {
     trace.0.clear();
     let began = Instant::now();
@@ -148,7 +155,7 @@ pub(super) fn initialize(
     {
         return Err("Duplicate initialization coordinate".into());
     }
-    prepare(model, y, yp, work)?;
+    prepare(model, y, yp, work, prhr_input)?;
     let mut pattern = Vec::new();
     model.visit_fluid_jacobian(work, |r, c, _| {
         if let (Some(&i), Some(&j)) = (physical.get(&r), states.get(&c)) {
@@ -172,7 +179,7 @@ pub(super) fn initialize(
         if start.elapsed().as_secs_f64() >= allowance {
             return Err("Joint initialization wall allowance exhausted".into());
         }
-        prepare(model, y, yp, work)?;
+        prepare(model, y, yp, work, prhr_input)?;
         matrix.clear();
         rhs.fill(0.);
         for (i, &r) in rows.iter().enumerate() {
@@ -287,7 +294,7 @@ pub(super) fn initialize(
                     trial_y[r] += scale * d;
                 }
             }
-            match model.evaluate(&trial_y, &trial_yp, None, work) {
+            match model.evaluate_with_prhr_input(&trial_y, &trial_yp, None, work, prhr_input) {
                 Ok(()) => {
                     y.copy_from_slice(&trial_y);
                     yp.copy_from_slice(&trial_yp);
@@ -347,7 +354,8 @@ mod tests {
     fn joint_initialization_closes_both_refinements_without_changing_stocks() {
         let m = super::super::cooling_fixture::fixture_with_contrast();
         let accuracy =
-            cooling_accuracy::Accuracy::new(&m, &vec![[0.; 2]; m.source.target_count()]).unwrap();
+            cooling_accuracy::Accuracy::new(&m, &vec![[0.; 2]; m.source.target_count()], None)
+                .unwrap();
         let initial = m.initial_state().unwrap();
         for refinement in [1., 10.] {
             let mut y = initial.clone();
@@ -364,6 +372,7 @@ mod tests {
                 10.,
                 1e-5 / refinement,
                 &mut trace,
+                None,
             )
             .unwrap();
             assert!(
@@ -382,7 +391,8 @@ mod tests {
     fn joint_initial_rates_preserve_stocks_and_close_owned_forward_charts() {
         let m = super::super::cooling_fixture::fixture_with_contrast();
         let accuracy =
-            cooling_accuracy::Accuracy::new(&m, &vec![[0.; 2]; m.source.target_count()]).unwrap();
+            cooling_accuracy::Accuracy::new(&m, &vec![[0.; 2]; m.source.target_count()], None)
+                .unwrap();
         let mut y = m.initial_state().unwrap();
         let initial = y.clone();
         let mut yp = vec![0.; m.dimension()];
@@ -397,6 +407,7 @@ mod tests {
             10.,
             1e-5,
             &mut Trace::default(),
+            None,
         )
         .unwrap();
         assert!(
@@ -439,6 +450,7 @@ mod tests {
             10.,
             1e-5,
             &mut Trace::default(),
+            None,
         )
         .unwrap();
         assert_eq!(again.iterations, 1);
@@ -449,33 +461,31 @@ mod tests {
         let mut y = m.initial_state().unwrap();
         let mut yp = vec![0.; m.dimension()];
         let mut w = m.workspace();
-        assert!(
-            initialize(
-                &m,
-                &mut y,
-                &mut yp,
-                &[],
-                &mut w,
-                Instant::now(),
-                10.,
-                1e-5,
-                &mut Trace::default()
-            )
-            .is_err()
-        );
-        assert!(
-            initialize(
-                &m,
-                &mut y,
-                &mut yp,
-                &vec![1.; m.dimension()],
-                &mut w,
-                Instant::now(),
-                0.,
-                1e-5,
-                &mut Trace::default()
-            )
-            .is_err()
-        );
+        assert!(initialize(
+            &m,
+            &mut y,
+            &mut yp,
+            &[],
+            &mut w,
+            Instant::now(),
+            10.,
+            1e-5,
+            &mut Trace::default(),
+            None
+        )
+        .is_err());
+        assert!(initialize(
+            &m,
+            &mut y,
+            &mut yp,
+            &vec![1.; m.dimension()],
+            &mut w,
+            Instant::now(),
+            0.,
+            1e-5,
+            &mut Trace::default(),
+            None
+        )
+        .is_err());
     }
 }

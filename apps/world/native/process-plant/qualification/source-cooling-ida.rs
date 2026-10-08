@@ -48,8 +48,8 @@ use ida_support::*;
 use leitbild_plant_numerics::{
     barrel_thermal, cold_pressurizer, converter_heat, cylindrical_source, finite_surge,
     fuel_history, fuel_source, fuel_thermal, heat_history, moderator_source, operating_admission,
-    operating_network, optical_source, passive_source, source_cooling, source_evolution,
-    transport_source, water_carrier,
+    operating_network, optical_source, passive_source, prhr, prhr_actuator, source_cooling,
+    source_evolution, transport_source, water_carrier,
 };
 use source_coordinates::Coordinates;
 use source_evolution::Evolution;
@@ -118,6 +118,240 @@ unsafe fn output<'a>(v: Handle, n: usize) -> Result<&'a mut [f64], String> {
     }
     Ok(unsafe { slice::from_raw_parts_mut(p, n) })
 }
+/// Exact achieved mechanism between authored support/command events. The plant
+/// solver stops at each contact; no command is applied retrospectively.
+#[derive(Clone)]
+struct PrhrSchedule {
+    motion: prhr_actuator::Motion,
+    inputs: prhr_actuator::Inputs,
+    pending_start: Option<f64>,
+    room_row: usize,
+    spring_row: usize,
+    spring_j: f64,
+}
+impl PrhrSchedule {
+    fn new(
+        model: &source_cooling::Model,
+        action: Option<cooling_input::PrhrAction>,
+    ) -> Result<Option<Self>, String> {
+        let Some(p) = model.network.prhr() else {
+            if action.is_some() {
+                return Err("PRHR action without physical apparatus".into());
+            }
+            return Ok(None);
+        };
+        let a = action.ok_or("Missing authored PRHR action/support boundary")?;
+        if !a.start_s.is_finite() || a.start_s < 0. || a.start_s >= HORIZON {
+            return Err("PRHR command outside qualification horizon".into());
+        }
+        let inputs = prhr_actuator::Inputs {
+            support: prhr_actuator::Support {
+                hold_supported: a.hold_supported,
+                closing_supported: a.closing_supported,
+            },
+            blocked: a.blocked,
+            ambient_temperature_k: a.ambient_temperature_k,
+        };
+        let motion = a.motion(p)?;
+        let pending_start = if a.start_s == 0. {
+            None
+        } else {
+            Some(a.start_s)
+        };
+        Ok(Some(Self {
+            motion,
+            inputs,
+            pending_start,
+            room_row: model.layout.network_start + p.layout.room_energy,
+            spring_row: model.layout.network_start + p.layout.spring_released,
+            spring_j: p.config.actuator.spring_energy_j,
+        }))
+    }
+    fn next_event(&self) -> Result<Option<f64>, String> {
+        Ok(match (self.pending_start, self.motion.next_contact_s()?) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        })
+    }
+    fn input(&self, time: f64, room_energy: f64) -> Result<prhr::Input, String> {
+        let (opening, r) = self.motion.at_left(time, room_energy)?;
+        Ok(prhr::Input {
+            opening,
+            opening_rate: r.opening_rate_s,
+            electrical_receipt_w: r.electrical_receipt_w,
+            room_heat_w: r.room_heat_w,
+            ambient_temperature_k: self.inputs.ambient_temperature_k,
+        })
+    }
+    fn accept_event(&mut self, time: f64) -> Result<(), String> {
+        if self.next_event()? != Some(time) {
+            return Err("Wrong PRHR physical event time".into());
+        }
+        let command = if self.pending_start == Some(time) {
+            self.pending_start = None;
+            Some(prhr_actuator::Command::Open)
+        } else {
+            None
+        };
+        self.motion.transition(time, command, self.inputs)?;
+        Ok(())
+    }
+    fn audit(&self, time: f64, y: &[f64]) -> Result<(), String> {
+        let (a, _) = self.motion.at_left(time, y[self.room_row])?;
+        let released = self.motion.initial_spring_energy_j() - self.spring_j * (1. - a);
+        if (y[self.spring_row] - released).abs() > 1e-5 {
+            return Err(format!(
+                "Finite PRHR spring receipt mismatch: {} versus {released}",
+                y[self.spring_row]
+            ));
+        }
+        Ok(())
+    }
+}
+fn prhr_input(
+    schedule: Option<&PrhrSchedule>,
+    time: f64,
+    state: &[f64],
+) -> Result<Option<prhr::Input>, String> {
+    schedule
+        .map(|s| s.input(time, state[s.room_row]))
+        .transpose()
+}
+fn next_physical_event(schedule: Option<&PrhrSchedule>) -> Result<f64, String> {
+    Ok(schedule
+        .map(PrhrSchedule::next_event)
+        .transpose()?
+        .flatten()
+        .unwrap_or(HORIZON)
+        .min(HORIZON))
+}
+/// Continuous-position actuator events change owned forcing, not fluid IC.
+/// Prove the exact residual support and identity-Fyp columns against the same
+/// composed kernel before applying a sparse rate jump. No stock/algebraic
+/// alignment or residual-zeroing projection is performed.
+fn rate_only_prhr_event(
+    model: &source_cooling::Model,
+    y: &[f64],
+    yp: &[f64],
+    before: prhr::Input,
+    after: prhr::Input,
+    work: &mut source_cooling::Workspace,
+) -> Result<(Vec<f64>, String), String> {
+    let n = model.dimension();
+    if y.len() != n || yp.len() != n || y.iter().chain(yp).any(|v| !v.is_finite()) {
+        return Err("Invalid rate-only event state/rate shape".into());
+    }
+    let p = model
+        .network
+        .prhr()
+        .ok_or("Rate-only event requires PRHR")?;
+    let changes = p
+        .rate_event_changes(before, after)?
+        .map(|(r, d)| (model.layout.network_start + r, d));
+    let mut delta = vec![0.; n];
+    for &(r, d) in &changes {
+        if !model.is_differential(r) {
+            return Err("PRHR rate event owner is not differential".into());
+        }
+        delta[r] = d;
+    }
+    model.evaluate_with_prhr_input(y, yp, Some(0.), work, Some(before))?;
+    let left = work.residual.clone();
+    let mut diagonals = [0; 3];
+    let mut invalid_rate_support = false;
+    model.visit_fluid_rate_matrix(work, |r, c, v| {
+        for (i, &(owner, _)) in changes.iter().enumerate() {
+            if (r == owner || c == owner) && v != 0. {
+                if r == owner && c == owner && v == 1. {
+                    diagonals[i] += 1;
+                } else {
+                    invalid_rate_support = true;
+                }
+            }
+        }
+    })?;
+    if invalid_rate_support || diagonals != [1; 3] {
+        return Err("PRHR rate event lacks isolated identity-Fyp owners".into());
+    }
+    model.evaluate_with_prhr_input(y, yp, None, work, Some(after))?;
+    let mut maximum_roundoff_ratio = 0_f64;
+    let check = |right: &[f64], expected: &[f64], maximum: &mut f64| -> Result<(), String> {
+        for r in 0..n {
+            if !changes.iter().any(|&(owner, _)| owner == r) {
+                if right[r].to_bits() != left[r].to_bits() {
+                    return Err(format!("Rate-only event altered unrelated residual row{r}"));
+                }
+            } else {
+                let error = (right[r] - left[r] - expected[r]).abs();
+                let bound = 32.
+                    * f64::EPSILON
+                    * (right[r].abs() + left[r].abs() + yp[r].abs() + delta[r].abs());
+                let ratio = if bound == 0. {
+                    if error == 0. {
+                        0.
+                    } else {
+                        f64::INFINITY
+                    }
+                } else {
+                    error / bound
+                };
+                *maximum = maximum.max(ratio);
+                if !ratio.is_finite() || ratio > 1. {
+                    return Err(format!("Rate-only event residual proof row{r} error={error} arithmeticBound={bound}"));
+                }
+            }
+        }
+        Ok(())
+    };
+    let negative_delta = delta.iter().map(|v| -v).collect::<Vec<_>>();
+    check(&work.residual, &negative_delta, &mut maximum_roundoff_ratio)?;
+    let mut updated = yp.to_vec();
+    for &(r, d) in &changes {
+        if d != 0. {
+            updated[r] += d;
+        }
+    }
+    model.evaluate_with_prhr_input(y, &updated, None, work, Some(after))?;
+    check(&work.residual, &vec![0.; n], &mut maximum_roundoff_ratio)?;
+    let owners = changes
+        .iter()
+        .map(|&(r, d)| format!("{{\"row\":{r},\"rateDelta\":{}}}", finite(d)))
+        .collect::<Vec<_>>()
+        .join(",");
+    Ok((delta, format!("{{\"scope\":\"continuous-position-and-ambient;owned-isolated-identity-Fyp-rate-jump;full-composed-residual-support-proof\",\"affectedOwners\":[{owners}],\"allStateBitsPreserved\":true,\"unrelatedRateBitsPreserved\":true,\"maximumArithmeticResidualProofRatio\":{},\"fluidICCalls\":0}}",finite(maximum_roundoff_ratio))))
+}
+fn solver_rate_jump(
+    coordinates: &Coordinates,
+    energy: &EnergyCoordinates,
+    accepted: &[f64],
+    physical_delta: &[f64],
+) -> Result<(Vec<f64>, Vec<f64>), String> {
+    if accepted.len() != physical_delta.len()
+        || accepted.is_empty()
+        || energy.row >= accepted.len()
+        || coordinates.ledger >= accepted.len()
+        || coordinates.nc > accepted.len()
+        || accepted
+            .iter()
+            .chain(physical_delta)
+            .any(|v| !v.is_finite())
+    {
+        return Err("Invalid sparse event rate shape/value".into());
+    }
+    let mut delta = physical_delta.to_vec();
+    coordinates.transform(&mut delta);
+    energy.vector_to_solver(&mut delta);
+    let mut updated = accepted.to_vec();
+    for (rate, &change) in updated.iter_mut().zip(&delta) {
+        if change != 0. {
+            *rate += change;
+        }
+    }
+    if updated.iter().any(|v| !v.is_finite()) {
+        return Err("Nonfinite event rate jump".into());
+    }
+    Ok((updated, delta))
+}
 struct Callbacks<'a> {
     model: &'a source_cooling::Model,
     convergence: cooling_convergence::Convergence<'a>,
@@ -155,6 +389,166 @@ struct Callbacks<'a> {
     local_errors: LocalErrors,
     absolute: Vec<f64>,
     relative: f64,
+    prhr: Option<PrhrSchedule>,
+}
+impl<'a> Callbacks<'a> {
+    /// One callback/preconditioner owner for normal advancement and bounded
+    /// retained-state diagnostics. Inputs are physical; no initialization occurs.
+    fn new(
+        model: &'a source_cooling::Model,
+        physical: &[f64],
+        physical_slopes: &[f64],
+        work: source_cooling::Workspace,
+        energy: EnergyCoordinates,
+        mut absolute: Vec<f64>,
+        prhr: Option<PrhrSchedule>,
+        time: f64,
+        refinement: f64,
+        start: Instant,
+        allowance: f64,
+    ) -> Result<Box<Self>, String> {
+        let n = model.dimension();
+        let input = prhr_input(prhr.as_ref(), time, physical)?;
+        absolute[energy.row] = EnergyCoordinates::absolute(n, refinement);
+        let power_weights = cooling_power::PowerWeights::new(&model.source)?;
+        let power_work = power_weights.workspace();
+        Ok(Box::new(Self {
+            model,
+            convergence: cooling_convergence::Convergence::new(model, input)?,
+            work,
+            p: cooling_block::Preconditioner::new(model, physical, physical_slopes, input)?,
+            coordinates: Coordinates {
+                nc: model.source.nc_dimension(),
+                ledger: model.source.ledger_row(),
+            },
+            energy_p: cooling_energy_preconditioner::EnergyRow::new(n, energy.row)?,
+            energy_p_setup_seconds: 0.,
+            energy_p_solve_seconds: 0.,
+            energy,
+            state: vec![0.; n],
+            slopes: vec![0.; n],
+            direction: vec![0.; n],
+            preconditioner_rhs: vec![0.; n],
+            power_weights,
+            power_work,
+            barrel_weights: cooling_power::BarrelWeights::new(
+                &model.source,
+                model.barrel.config().targets,
+                model.barrel.config().capture_photon_j,
+            )?,
+            capture_weights: cooling_power::CaptureWeights::new(model)?,
+            power_resolution_w: cooling_accuracy::DEPOSIT_RESOLUTION_W / refinement,
+            start,
+            allowance,
+            fatal: None,
+            recoverable: 0,
+            residuals: 0,
+            bases: 0,
+            actions: 0,
+            residual_seconds: 0.,
+            base_seconds: 0.,
+            action_seconds: 0.,
+            screen_seconds: 0.,
+            io_seconds: 0.,
+            error_telemetry_seconds: 0.,
+            weight_calls: 0,
+            weight_seconds: 0.,
+            local_errors: LocalErrors::new(model),
+            absolute,
+            relative: 1e-5 / refinement,
+            prhr,
+        }))
+    }
+}
+
+/// Shared production IDA policy. A retained restart changes only the initial
+/// time/state, never solver tolerances, P, nonlinear tests or physical models.
+fn install_solver(
+    owned: &mut Resources,
+    callbacks: &mut Callbacks<'_>,
+    time: f64,
+    y: Handle,
+    yp: Handle,
+) -> Result<(), String> {
+    let model = callbacks.model;
+    let n = model.dimension();
+    let ids = owned.vector(
+        &(0..n)
+            .map(|i| f64::from(model.is_differential(i)))
+            .collect::<Vec<_>>(),
+    )?;
+    let constraints = owned.vector(&physical_constraints(model, callbacks.energy.row))?;
+    owned.spgmr(y, 30, 0)?;
+    owned.ida = unsafe { IDACreate(owned.context) };
+    if owned.ida.is_null() {
+        return Err("Null coupled IDA".into());
+    }
+    checked(
+        unsafe { IDAInit(owned.ida, residual, time, y, yp) },
+        "Coupled IDA init",
+    )?;
+    checked(
+        unsafe { IDASetUserData(owned.ida, (callbacks as *mut Callbacks<'_>).cast()) },
+        "Coupled callback owner",
+    )?;
+    checked(
+        unsafe { IDASetId(owned.ida, ids) },
+        "Coupled differential mask",
+    )?;
+    // Only independent physical stocks control temporal truncation. Algebraic
+    // outputs remain in Newton's norm and current physical-chart admission;
+    // their accuracy is independently checked in the refined output pair.
+    checked(
+        unsafe { IDASetSuppressAlg(owned.ida, 1) },
+        "Differential-stock temporal LTE control",
+    )?;
+    checked(
+        unsafe { IDAWFtolerances(owned.ida, error_weights) },
+        "Source/carrier progress relative / network-thermal absolute weights",
+    )?;
+    checked(
+        unsafe { IDASetConstraints(owned.ida, constraints) },
+        "Strict source/carrier constraints",
+    )?;
+    checked(
+        unsafe { IDASetLinearSolver(owned.ida, owned.solver, ptr::null_mut()) },
+        "Coupled SPGMR30 restart0",
+    )?;
+    checked(
+        unsafe { IDASetJacTimes(owned.ida, Some(jtsetup), jtimes) },
+        "Complete coupled analytic JVP",
+    )?;
+    checked(
+        unsafe { IDASetPreconditioner(owned.ida, psetup, psolve) },
+        "Fixed component P",
+    )?;
+    checked(
+        unsafe { IDASetEpsLin(owned.ida, cooling_convergence::EPS_LIN) },
+        "Explicit linear convergence coefficient",
+    )?;
+    checked(
+        unsafe { IDASetNonlinConvCoef(owned.ida, cooling_convergence::NONLINEAR_COEFFICIENT) },
+        "Explicit stock nonlinear convergence coefficient",
+    )?;
+    checked(
+        unsafe { IDASetLSNormFactor(owned.ida, 1.) },
+        "Dimension-independent linear L2 norm factor",
+    )?;
+    let nonlinear = owned.newton(y)?;
+    checked(
+        unsafe { IDASetNonlinearSolver(owned.ida, nonlinear) },
+        "Owned stock Newton",
+    )?;
+    callbacks
+        .convergence
+        .budget(callbacks.start, callbacks.allowance);
+    callbacks.convergence.prhr_motion = callbacks.prhr.as_ref().map(|s| s.motion.clone());
+    callbacks.convergence.install(owned.ida, nonlinear)?;
+    checked(
+        unsafe { IDASetStopTime(owned.ida, next_physical_event(callbacks.prhr.as_ref())?) },
+        "Actual next mechanism contact or 300 s horizon",
+    )?;
+    Ok(())
 }
 #[link(name = "sundials_ida")]
 unsafe extern "C" {
@@ -166,6 +560,9 @@ unsafe extern "C" {
     fn IDAGetErrWeights(memory: Handle, weights: Handle) -> c_int;
     fn IDAGetLastOrder(memory: Handle, order: *mut c_int) -> c_int;
     fn IDAGetCurrentOrder(memory: Handle, order: *mut c_int) -> c_int;
+    fn IDAReInit(memory: Handle, time: f64, y: Handle, yp: Handle) -> c_int;
+    fn IDASetInitStep(memory: Handle, step: f64) -> c_int;
+    fn IDASetSuppressAlg(memory: Handle, suppress: c_int) -> c_int;
 }
 fn progress_relative(model: &source_cooling::Model, row: usize) -> bool {
     row < model.layout.source_end
@@ -258,11 +655,13 @@ struct ErrorFamily {
 struct LocalErrors {
     families: [ErrorFamily; ERROR_FAMILIES.len()],
     labels: Vec<usize>,
+    differential: Vec<bool>,
     observations: u64,
     last_order: c_int,
     current_order: c_int,
     last_h: f64,
     last_wrms: f64,
+    last_controller_wrms: f64,
 }
 impl LocalErrors {
     fn new(model: &source_cooling::Model) -> Self {
@@ -306,11 +705,15 @@ impl LocalErrors {
         Self {
             families,
             labels,
+            differential: (0..model.dimension())
+                .map(|row| model.is_differential(row))
+                .collect(),
             observations: 0,
             last_order: 0,
             current_order: 0,
             last_h: 0.,
             last_wrms: 0.,
+            last_controller_wrms: 0.,
         }
     }
     fn observe(
@@ -330,6 +733,7 @@ impl LocalErrors {
             return Err("Invalid local-error telemetry shape/time".into());
         }
         let mut squares = [0.; ERROR_FAMILIES.len()];
+        let mut controlled_sum = 0.;
         for (row, ((&error, &weight), &family)) in
             errors.iter().zip(weights).zip(&self.labels).enumerate()
         {
@@ -338,6 +742,9 @@ impl LocalErrors {
                 return Err("Nonfinite local-error telemetry".into());
             }
             squares[family] += value * value;
+            if self.differential[row] {
+                controlled_sum += value * value;
+            }
             if value > self.families[family].maximum {
                 self.families[family].maximum = value;
                 self.families[family].row = row;
@@ -356,6 +763,9 @@ impl LocalErrors {
             };
         }
         self.last_wrms = (sum / errors.len() as f64).sqrt();
+        // N_VWrmsNormMask divides by the FULL vector length, not the number
+        // of selected rows. Match the installed IDA policy exactly.
+        self.last_controller_wrms = (controlled_sum / errors.len() as f64).sqrt();
         self.observations += 1;
         self.last_order = last_order;
         self.current_order = current_order;
@@ -367,12 +777,13 @@ impl LocalErrors {
             "{{\"family\":{},\"rows\":{},\"lastFamilyWRMS\":{},\"maximumWeightedCoordinateEstimate\":{},\"maximumRow\":{},\"maximumTime\":{}}}",
             quote(name),f.rows,finite(f.last_wrms),finite(f.maximum),f.row,finite(f.time))).collect::<Vec<_>>().join(",");
         format!(
-            "{{\"scope\":\"solver-coordinate-IDAGetEstLocalErrors-times-current-IDAGetErrWeights;D-ledger-and-G-energy-transforms-included;accepted-steps-only;not-global-error-bound-or-rejected-step-attribution\",\"observations\":{},\"lastOrder\":{},\"currentOrder\":{},\"lastH\":{},\"lastGlobalWRMS\":{},\"families\":[{}]}}",
+            "{{\"scope\":\"solver-coordinate-IDAGetEstLocalErrors-times-current-IDAGetErrWeights;D-ledger-and-G-energy-transforms-included;accepted-steps-only;not-global-error-bound-or-rejected-step-attribution\",\"controllerNormScope\":\"differential-stock-mask;sum-selected-squares-divided-by-full-vector-length;matches-N_VWrmsNormMask\",\"familyNormScope\":\"all-coordinates-including-algebraic;diagnostic-not-controller\",\"observations\":{},\"lastOrder\":{},\"currentOrder\":{},\"lastH\":{},\"lastAllCoordinateWRMS\":{},\"lastControllerWRMS\":{},\"families\":[{}]}}",
             self.observations,
             self.last_order,
             self.current_order,
             finite(self.last_h),
             finite(self.last_wrms),
+            finite(self.last_controller_wrms),
             families
         )
     }
@@ -434,7 +845,13 @@ impl Callbacks<'_> {
             Ok(())
         }
     }
-    fn evaluate(&mut self, y: Handle, yp: Handle, cj: Option<f64>) -> Result<(), String> {
+    fn evaluate(
+        &mut self,
+        time: f64,
+        y: Handle,
+        yp: Handle,
+        cj: Option<f64>,
+    ) -> Result<(), String> {
         let n = self.model.dimension();
         self.coordinates
             .physical(unsafe { values(y, n) }?, &mut self.state);
@@ -442,8 +859,9 @@ impl Callbacks<'_> {
         self.coordinates
             .physical(unsafe { values(yp, n) }?, &mut self.slopes);
         self.energy.vector_to_physical(&mut self.slopes);
+        let input = prhr_input(self.prhr.as_ref(), time, &self.state)?;
         self.model
-            .evaluate(&self.state, &self.slopes, cj, &mut self.work)
+            .evaluate_with_prhr_input(&self.state, &self.slopes, cj, &mut self.work, input)
     }
     fn metrics(&self) -> String {
         let completion = format!(
@@ -520,11 +938,11 @@ fn callback(user: Handle, f: impl FnOnce(&mut Callbacks<'_>) -> Result<(), Strin
         }
     }
 }
-unsafe extern "C" fn residual(_: f64, y: Handle, yp: Handle, r: Handle, user: Handle) -> c_int {
+unsafe extern "C" fn residual(time: f64, y: Handle, yp: Handle, r: Handle, user: Handle) -> c_int {
     callback(user, |c| {
         let t = Instant::now();
         c.residuals += 1;
-        let evaluated = c.evaluate(y, yp, None);
+        let evaluated = c.evaluate(time, y, yp, None);
         c.residual_seconds += t.elapsed().as_secs_f64();
         evaluated?;
         let out = unsafe { output(r, c.model.dimension()) }?;
@@ -543,7 +961,7 @@ unsafe extern "C" fn residual(_: f64, y: Handle, yp: Handle, r: Handle, user: Ha
     })
 }
 unsafe extern "C" fn jtsetup(
-    _: f64,
+    time: f64,
     y: Handle,
     yp: Handle,
     _: Handle,
@@ -553,7 +971,7 @@ unsafe extern "C" fn jtsetup(
     callback(user, |c| {
         let t = Instant::now();
         c.bases += 1;
-        let r = c.evaluate(y, yp, Some(cj));
+        let r = c.evaluate(time, y, yp, Some(cj));
         c.base_seconds += t.elapsed().as_secs_f64();
         r
     })
@@ -593,7 +1011,7 @@ unsafe extern "C" fn jtimes(
     })
 }
 unsafe extern "C" fn psetup(
-    _: f64,
+    time: f64,
     y: Handle,
     yp: Handle,
     _: Handle,
@@ -609,7 +1027,8 @@ unsafe extern "C" fn psetup(
         c.coordinates
             .physical(unsafe { values(yp, n) }?, &mut c.slopes);
         c.energy.vector_to_physical(&mut c.slopes);
-        c.p.setup(c.model, &c.state, &c.slopes, cj)?;
+        let input = prhr_input(c.prhr.as_ref(), time, &c.state)?;
+        c.p.setup(c.model, &c.state, &c.slopes, cj, input)?;
         let began = Instant::now();
         let result = (|| {
             c.preconditioner_rhs.fill(0.);
@@ -670,6 +1089,7 @@ struct Run {
     initial: Vec<f64>,
     final_y: Vec<f64>,
     final_yp: Vec<f64>,
+    final_prhr: Option<prhr::Input>,
     max_number: f64,
     max_energy: f64,
     max_thermal_chart: f64,
@@ -802,6 +1222,7 @@ fn run(
     accuracy: &cooling_accuracy::Accuracy,
     pressure_channel: leitbild_plant_numerics::pressure_channel::Config,
     pressure_protection: leitbild_plant_numerics::pressure_protection::Settings,
+    prhr_action: Option<cooling_input::PrhrAction>,
     refinement: f64,
     start: Instant,
     allowance: f64,
@@ -817,10 +1238,13 @@ fn run(
     let began = Instant::now();
     let n = model.dimension();
     let l = model.layout;
-    let mut initial = model.initial_state()?;
+    let schedule = PrhrSchedule::new(model, prhr_action)?;
+    let initial_input = schedule.as_ref().map(|s| s.input(0., 0.)).transpose()?;
+    let mut initial = model.initial_state_with_prhr_input(initial_input)?;
     let mut slopes = vec![0.; n];
     let mut work = model.workspace();
-    model.evaluate(&initial, &slopes, None, &mut work)?;
+    let initial_input = prhr_input(schedule.as_ref(), 0., &initial)?;
+    model.evaluate_with_prhr_input(&initial, &slopes, None, &mut work, initial_input)?;
     for i in 0..n {
         if model.is_differential(i) {
             slopes[i] = -work.residual[i];
@@ -837,6 +1261,7 @@ fn run(
         allowance,
         1e-5 / refinement,
         &mut cooling_initial::Trace::default(),
+        initial_input,
     ) {
         Ok(report) => report.json(),
         Err(reason) => {
@@ -852,61 +1277,19 @@ fn run(
         }
     };
     let energy = EnergyCoordinates::new(model, &initial)?;
-    absolute[energy.row] = EnergyCoordinates::absolute(n, refinement);
     let flow_absolute = accuracy.flow_absolute(refinement)?;
-    let p = cooling_block::Preconditioner::new(model, &initial, &slopes)?;
     let coordinates = Coordinates {
         nc: model.source.nc_dimension(),
         ledger: model.source.ledger_row(),
     };
-    coordinates.transform(&mut initial);
-    energy.state_to_solver(&mut initial);
-    coordinates.transform(&mut slopes);
-    energy.vector_to_solver(&mut slopes);
-    let power_weights = cooling_power::PowerWeights::new(&model.source)?;
-    let power_work = power_weights.workspace();
-    let mut callbacks = Box::new(Callbacks {
-        model,
-        convergence: cooling_convergence::Convergence::new(model)?,
-        work,
-        p,
-        coordinates,
-        energy_p: cooling_energy_preconditioner::EnergyRow::new(n, energy.row)?,
-        energy_p_setup_seconds: 0.,
-        energy_p_solve_seconds: 0.,
-        energy,
-        state: vec![0.; n],
-        slopes: vec![0.; n],
-        direction: vec![0.; n],
-        preconditioner_rhs: vec![0.; n],
-        power_weights,
-        power_work,
-        barrel_weights: cooling_power::BarrelWeights::new(
-            &model.source,
-            model.barrel.config().targets,
-            model.barrel.config().capture_photon_j,
-        )?,
-        capture_weights: cooling_power::CaptureWeights::new(model)?,
-        power_resolution_w: cooling_accuracy::DEPOSIT_RESOLUTION_W / refinement,
-        start,
+    let mut callbacks = Callbacks::new(
+        model, &initial, &slopes, work, energy, absolute, schedule, 0., refinement, start,
         allowance,
-        fatal: None,
-        recoverable: 0,
-        residuals: 0,
-        bases: 0,
-        actions: 0,
-        residual_seconds: 0.,
-        base_seconds: 0.,
-        action_seconds: 0.,
-        screen_seconds: 0.,
-        io_seconds: 0.,
-        error_telemetry_seconds: 0.,
-        weight_calls: 0,
-        weight_seconds: 0.,
-        local_errors: LocalErrors::new(model),
-        absolute,
-        relative: 1e-5 / refinement,
-    });
+    )?;
+    coordinates.transform(&mut initial);
+    callbacks.energy.state_to_solver(&mut initial);
+    coordinates.transform(&mut slopes);
+    callbacks.energy.vector_to_solver(&mut slopes);
     let mut owned = Resources::new()?;
     let y = owned.vector(&initial)?;
     let yp = owned.vector(&slopes)?;
@@ -915,78 +1298,7 @@ fn run(
     let common = owned.vector(&initial)?;
     let local_error = owned.vector(&vec![0.; n])?;
     let error_weight = owned.vector(&vec![0.; n])?;
-    let ids = owned.vector(
-        &(0..n)
-            .map(|i| f64::from(model.is_differential(i)))
-            .collect::<Vec<_>>(),
-    )?;
-    let constraints = owned.vector(&physical_constraints(model, callbacks.energy.row))?;
-    owned.spgmr(y, 30, 0)?;
-    owned.ida = unsafe { IDACreate(owned.context) };
-    if owned.ida.is_null() {
-        return Err("Null coupled IDA".into());
-    }
-    checked(
-        unsafe { IDAInit(owned.ida, residual, 0., y, yp) },
-        "Coupled IDA init",
-    )?;
-    checked(
-        unsafe { IDASetUserData(owned.ida, (&mut *callbacks as *mut Callbacks<'_>).cast()) },
-        "Coupled callback owner",
-    )?;
-    checked(
-        unsafe { IDASetId(owned.ida, ids) },
-        "Coupled differential mask",
-    )?;
-    checked(
-        unsafe { IDAWFtolerances(owned.ida, error_weights) },
-        "Source/carrier progress relative / network-thermal absolute weights",
-    )?;
-    checked(
-        unsafe { IDASetConstraints(owned.ida, constraints) },
-        "Strict source/carrier constraints",
-    )?;
-    checked(
-        unsafe { IDASetLinearSolver(owned.ida, owned.solver, ptr::null_mut()) },
-        "Coupled SPGMR30 restart0",
-    )?;
-    checked(
-        unsafe { IDASetJacTimes(owned.ida, Some(jtsetup), jtimes) },
-        "Complete coupled analytic JVP",
-    )?;
-    checked(
-        unsafe { IDASetPreconditioner(owned.ida, psetup, psolve) },
-        "Fixed component P",
-    )?;
-    // Linear convergence has its own dimension-independent weighted L2
-    // resolution. This is not a physical chart guarantee: CTest checks that
-    // separately on the actual corrected Newton candidate.
-    checked(
-        unsafe { IDASetEpsLin(owned.ida, cooling_convergence::EPS_LIN) },
-        "Explicit linear convergence coefficient",
-    )?;
-    checked(
-        unsafe { IDASetNonlinConvCoef(owned.ida, cooling_convergence::NONLINEAR_COEFFICIENT) },
-        "Explicit stock nonlinear convergence coefficient",
-    )?;
-    checked(
-        unsafe { IDASetLSNormFactor(owned.ida, 1.) },
-        "Dimension-independent linear L2 norm factor",
-    )?;
-    let nonlinear = owned.newton(y)?;
-    checked(
-        unsafe { IDASetNonlinearSolver(owned.ida, nonlinear) },
-        "Owned stock Newton",
-    )?;
-    callbacks.convergence.budget(start, allowance);
-    callbacks.convergence.install(owned.ida, nonlinear)?;
-    // The joint fixed-stock initializer already owns Fyp volume-work and
-    // forward chart slopes. YA_YDP_INIT would hold algebraic Hdot supplied
-    // and is not an equivalent completion of this composed pressure DAE.
-    checked(
-        unsafe { IDASetStopTime(owned.ida, HORIZON) },
-        "One persistent 300 s horizon",
-    )?;
+    install_solver(&mut owned, &mut callbacks, 0., y, yp)?;
     let mut physical = vec![0.; n];
     let mut physical_yp = vec![0.; n];
     coordinates.physical(&initial, &mut physical);
@@ -1006,6 +1318,7 @@ fn run(
         initial,
         final_y: physical.clone(),
         final_yp: physical_yp.clone(),
+        final_prhr: initial_input,
         max_number: 0.,
         max_energy: 0.,
         max_thermal_chart: 0.,
@@ -1016,6 +1329,22 @@ fn run(
         stats: "null".into(),
         pressure_evidence: None,
     };
+    // These are actual native q coordinates, including the compiled seat's
+    // achieved flow (not a conductance proxy). Reuse every existing Dky
+    // vector below; no extra plant solve or per-tick full-state capture.
+    let mut dense_flow_rows = vec![
+        l.surge_start + finite_surge::LEFT_FLOW,
+        l.surge_start + finite_surge::RIGHT_FLOW,
+    ];
+    let mut normal_dense_flow_absolute = vec![1e-5; 2];
+    if let Some(seat) = model.network.config().seat {
+        dense_flow_rows.push(l.network_start + model.network.flow_row(seat.edge));
+        normal_dense_flow_absolute.push(accuracy.flow_absolute(1.)?[seat.edge]);
+    }
+    let dense_pressure_rows = [
+        l.surge_start + finite_surge::PRESSURE,
+        l.network_start + model.network.pressure_row(),
+    ];
     let mut observation = cooling_observation::Trace::new(
         pressure_channel,
         pressure_protection,
@@ -1029,10 +1358,16 @@ fn run(
                 .try_into()
                 .unwrap(),
         )?,
+        cooling_observation::DenseAudit {
+            flows: dense_flow_rows.iter().map(|&r| out.initial[r]).collect(),
+            pressure_changes: [0.; 2],
+        },
+        normal_dense_flow_absolute,
     )?;
     let mut last_checkpoint = Instant::now();
     let mut pressure_chart_work = model.pressure_connection().pressurizer.workspace();
     let mut surge_chart_work = model.pressure_connection().surge.workspace();
+    let mut completed_segments = Vec::new();
     let advance = (|| -> Result<(), String> {
         loop {
             callbacks.budget()?;
@@ -1055,9 +1390,20 @@ fn run(
             // full network Jacobian. JTsetup prepares its own next stage.
             let screen_started = Instant::now();
             let admitted = (|| -> Result<(), String> {
-                model.evaluate(&physical, &physical_yp, None, &mut callbacks.work)?;
+                let input = prhr_input(callbacks.prhr.as_ref(), out.returned, &physical)?;
+                model.evaluate_with_prhr_input(
+                    &physical,
+                    &physical_yp,
+                    None,
+                    &mut callbacks.work,
+                    input,
+                )?;
+                if let Some(s) = callbacks.prhr.as_ref() {
+                    s.audit(out.returned, &physical)?;
+                }
                 model.validate_accepted(&physical, &callbacks.work)?;
                 accuracy.carrier_ledger(model, &physical)?;
+                accuracy.prhr_ledgers(model, &physical)?;
                 let admission = cooling_accuracy::admit_source(
                     model,
                     &physical,
@@ -1188,12 +1534,27 @@ fn run(
                     .try_into()
                     .unwrap();
                 let mut derivatives = vec![pzr.top_pressure(state)?];
+                let mut dense = cooling_observation::DensePolynomial {
+                    flows: dense_flow_rows
+                        .iter()
+                        .map(|&r| vec![out.final_y[r]])
+                        .collect(),
+                    pressure_changes: dense_pressure_rows
+                        .map(|r| vec![out.final_y[r] - out.initial[r]]),
+                };
                 for k in 1..=order {
                     checked(
                         unsafe { IDAGetDky(owned.ida, out.returned, k, common) },
                         "Accepted roof-pressure polynomial derivative",
                     )?;
                     let v = unsafe { values(common, n) }?;
+                    for (values, &row) in dense.flows.iter_mut().zip(&dense_flow_rows) {
+                        values.push(v[row]);
+                    }
+                    for (values, row) in dense.pressure_changes.iter_mut().zip(dense_pressure_rows)
+                    {
+                        values.push(v[row]);
+                    }
                     derivatives.push(pzr.top_pressure_direction(
                         state,
                         v[l.pressurizer_start..l.surge_start].try_into().unwrap(),
@@ -1206,7 +1567,13 @@ fn run(
                             .ok_or("Missing normal pressure evidence")
                     })
                     .transpose()?;
-                observation.continue_dense(segment_start, out.returned, &derivatives, reference)?;
+                observation.continue_dense(
+                    segment_start,
+                    out.returned,
+                    &derivatives,
+                    &dense,
+                    reference,
+                )?;
                 observation.seconds = prior + observed.elapsed().as_secs_f64();
             }
             while out.samples.len() < OUTPUTS.len() && OUTPUTS[out.samples.len()] <= out.returned {
@@ -1219,7 +1586,14 @@ fn run(
                 callbacks.energy.state_to_physical(&mut callbacks.state);
                 // Dense observations are explicitly not positivity-constrained endpoints.
                 let common_started = Instant::now();
-                model.evaluate(&callbacks.state, &vec![0.; n], None, &mut callbacks.work)?;
+                let input = prhr_input(callbacks.prhr.as_ref(), time, &callbacks.state)?;
+                model.evaluate_with_prhr_input(
+                    &callbacks.state,
+                    &vec![0.; n],
+                    None,
+                    &mut callbacks.work,
+                    input,
+                )?;
                 let captures = cooling_accuracy::captured_targets(model, &callbacks.state)?;
                 let nc = cooling_accuracy::nc_coefficients(model, &callbacks.work.source)?;
                 let sample = Sample {
@@ -1285,6 +1659,67 @@ fn run(
                 out.passed = true;
                 break;
             }
+            if callbacks.prhr.is_some()
+                && next_physical_event(callbacks.prhr.as_ref())? == out.returned
+            {
+                // All dense observations of the old smooth interval are complete.
+                // Position and every stock/algebraic alignment are continuous.
+                // Change only native actuator forcing rates, not fluid IC.
+                let accepted_solver = unsafe { values(endpoint_y, n)? }.to_vec();
+                let accepted_solver_yp = unsafe { values(endpoint_yp, n)? }.to_vec();
+                if !model.is_differential(coordinates.ledger)
+                    || (0..coordinates.nc).any(|row| !model.is_differential(row))
+                {
+                    return Err("Source D transform has non-differential event dependency".into());
+                }
+                let mut next_schedule = callbacks.prhr.clone();
+                let before_input = prhr_input(callbacks.prhr.as_ref(), out.returned, &physical)?
+                    .ok_or("Missing pre-event PRHR input")?;
+                next_schedule.as_mut().unwrap().accept_event(out.returned)?;
+                let input = prhr_input(next_schedule.as_ref(), out.returned, &physical)?
+                    .ok_or("Missing post-event PRHR input")?;
+                let (delta, event_proof) = rate_only_prhr_event(
+                    model,
+                    &physical,
+                    &physical_yp,
+                    before_input,
+                    input,
+                    &mut callbacks.work,
+                )?;
+                for (rate, &change) in physical_yp.iter_mut().zip(&delta) {
+                    if change != 0. {
+                        *rate += change;
+                    }
+                }
+                let (syp, solver_delta) =
+                    solver_rate_jump(&coordinates, &callbacks.energy, &accepted_solver_yp, &delta)?;
+                let delta_g = solver_delta[callbacks.energy.row];
+                let delta_d = solver_delta[coordinates.ledger];
+                completed_segments.push(format!(
+                    "{{\"endTime\":{},\"solverStats\":{}}}",
+                    finite(out.returned),
+                    solver_stats(owned.ida)?
+                ));
+                callbacks.prhr = next_schedule;
+                callbacks.convergence.prhr_motion =
+                    callbacks.prhr.as_ref().map(|s| s.motion.clone());
+                unsafe { output(y, n)? }.copy_from_slice(&accepted_solver);
+                unsafe { output(yp, n)? }.copy_from_slice(&syp);
+                checked(
+                    unsafe { IDAReInit(owned.ida, out.returned, y, yp) },
+                    "Actual PRHR contact reinitialization",
+                )?;
+                checked(
+                    unsafe {
+                        IDASetStopTime(owned.ida, next_physical_event(callbacks.prhr.as_ref())?)
+                    },
+                    "Next actual PRHR contact",
+                )?;
+                callbacks.energy_p.invalidate();
+                out.final_y = physical.clone();
+                out.final_yp = physical_yp.clone();
+                println!("{{\"kind\":\"physical-prhr-event\",\"time\":{},\"rateOnlyTransaction\":{},\"allAcceptedSolverStateBitsPreserved\":true,\"encodedRateIncrement\":{{\"GJPerS\":{},\"DPerS\":{}}},\"rateScope\":\"owned-identity-Fyp-forcing-jump;all-unrelated-fluid-and-source-rates-retained;not-generalized-hydraulic-or-film-derivative-completion\"}}",finite(out.returned),event_proof,finite(delta_g),finite(delta_d));
+            }
         }
         Ok(())
     })();
@@ -1322,11 +1757,16 @@ fn run(
         callbacks.io_seconds += io_started.elapsed().as_secs_f64();
     }
     out.wall = began.elapsed().as_secs_f64();
+    out.final_prhr = prhr_input(callbacks.prhr.as_ref(), out.last, &out.final_y)?;
     out.max_pressure_flow = out
         .max_pressure_flow
         .max(callbacks.convergence.max_converged_flow());
     out.metrics = callbacks.metrics();
-    out.stats = solver_stats(owned.ida)?;
+    out.stats = format!(
+        "{{\"completedPhysicalSegments\":[{}],\"lastPhysicalSegment\":{}}}",
+        completed_segments.join(","),
+        solver_stats(owned.ida)?
+    );
     Ok(out)
 }
 fn main() {
@@ -1354,9 +1794,13 @@ fn mean_fuel(model: &source_cooling::Model, y: &[f64]) -> Result<f64, String> {
     }
     Ok(temperature / mass)
 }
-fn final_feedback(model: &source_cooling::Model, y: &[f64]) -> Result<String, String> {
+fn final_feedback(
+    model: &source_cooling::Model,
+    y: &[f64],
+    input: Option<prhr::Input>,
+) -> Result<String, String> {
     let mut actual = model.workspace();
-    model.evaluate(y, &vec![0.; model.dimension()], None, &mut actual)?;
+    model.evaluate_with_prhr_input(y, &vec![0.; model.dimension()], None, &mut actual, input)?;
     let mut held = model.source.workspace();
     model.source.evaluate_coupled_into(
         &y[..model.layout.source_end],
@@ -1465,12 +1909,19 @@ fn execute() -> Result<(), String> {
     let text = fs::read_to_string(&input).map_err(|e| e.to_string())?;
     let prepared = catch_unwind(AssertUnwindSafe(|| cooling_input::parse(&text)))
         .map_err(|_| "Malformed coupled numeric payload".to_string())??;
-    let accuracy = cooling_accuracy::Accuracy::new(&prepared.model, &prepared.target_emissions)?;
+    let initial_schedule = PrhrSchedule::new(&prepared.model, prepared.prhr_action)?;
+    let initial_prhr = initial_schedule
+        .as_ref()
+        .map(|s| s.input(0., 0.))
+        .transpose()?;
+    let accuracy =
+        cooling_accuracy::Accuracy::new(&prepared.model, &prepared.target_emissions, initial_prhr)?;
     let normal = run(
         &prepared.model,
         &accuracy,
         prepared.pressure_channel,
         prepared.pressure_protection,
+        prepared.prhr_action,
         1.,
         started,
         allowance,
@@ -1483,6 +1934,7 @@ fn execute() -> Result<(), String> {
             &accuracy,
             prepared.pressure_channel,
             prepared.pressure_protection,
+            prepared.prhr_action,
             10.,
             started,
             allowance,
@@ -1567,7 +2019,7 @@ fn execute() -> Result<(), String> {
             normal.samples.last().ok_or("Missing normal final sample")?,
             t.samples.last().ok_or("Missing tighter final sample")?,
         )?);
-        feedback = final_feedback(&prepared.model, &t.final_y)?;
+        feedback = final_feedback(&prepared.model, &t.final_y, t.final_prhr)?;
         let row = prepared.model.layout.barrel_temperature;
         let original = normal.initial[row];
         let a = normal.final_y[row];
@@ -1624,7 +2076,41 @@ fn execute() -> Result<(), String> {
             |r| r.clone()
         )
     );
+    let prhr_qualified = if let Some(p) = prepared.model.network.prhr() {
+        if let Some(t) = tight.as_ref().filter(|_| pair_evaluated) {
+            let base = prepared.model.layout.network_start;
+            let e = base + p.layout.wst_start + leitbild_plant_numerics::finite_wst::ENERGY;
+            let gas = base + p.layout.gas_exported;
+            let bank_heat =
+                |r: &Run| (r.final_y[e] - r.initial[e]) + (r.final_y[gas] - r.initial[gas]);
+            let normal_heat = bank_heat(&normal);
+            let tighter_heat = bank_heat(t);
+            let difference = (normal_heat - tighter_heat).abs();
+            let receipt_resolution = accuracy.absolute(1.)?[gas];
+            let bank_developed = tighter_heat > 10. * difference + 20. * receipt_resolution;
+            let (_, normal_primary, primary_resolution, water_owners, steel_owners) =
+                accuracy.prhr_heat_receipts(&prepared.model, &normal.final_y)?;
+            let (_, tighter_primary, tighter_resolution, _, _) =
+                accuracy.prhr_heat_receipts(&prepared.model, &t.final_y)?;
+            let primary_resolution = primary_resolution.max(tighter_resolution);
+            let primary_difference = (normal_primary - tighter_primary).abs();
+            let developed =
+                tighter_primary.min(normal_primary) > 10. * primary_difference + primary_resolution;
+            let actual_open = normal
+                .final_prhr
+                .zip(t.final_prhr)
+                .is_some_and(|(a, b)| a.opening == 1. && b.opening == 1.);
+            println!("{{\"kind\":\"prhr-connected-receiver\",\"passed\":{},\"normalActualBankToPoolHeatJ\":{},\"tighterActualBankToPoolHeatJ\":{},\"pairedDifferenceJ\":{},\"receiptResolutionJ\":{},\"resolvedPositiveBankToPoolHeatReceipt\":{bank_developed},\"normalNetPrimaryToPrhrHeatJ\":{},\"tighterNetPrimaryToPrhrHeatJ\":{},\"primaryPairedDifferenceJ\":{},\"primaryOperandResolutionJ\":{},\"bankWaterOwners\":{water_owners},\"bankSteelOwners\":{steel_owners},\"resolvedPositivePrimaryHeatReceipt\":{developed},\"actualAchievedFullOpen\":{actual_open},\"scope\":\"disjoint-bank-water-steel-plus-finite-pool-first-laws;initial-bank-discharge-not-primary-credit;CNV-surface-and-connector-receipts-separated;no-decay-duty-or-endurance-credit\"}}",
+                developed&&bank_developed&&actual_open,finite(normal_heat),finite(tighter_heat),finite(difference),finite(receipt_resolution),finite(normal_primary),finite(tighter_primary),finite(primary_difference),finite(primary_resolution));
+            developed && bank_developed && actual_open
+        } else {
+            false
+        }
+    } else {
+        true
+    };
     let passed = pair_evaluated
+        && prhr_qualified
         && evidence.is_ok()
         && thermal_developed == Some(true)
         && source_developed == Some(true)
@@ -1677,8 +2163,19 @@ fn execute() -> Result<(), String> {
         if pair_evaluated { finite(max_capture_paid_energy) } else { "null".into() });
     let capture_settings = "\"capturePowerErrorWeights\":\"sparse-current-fuel-capture-and-temperature-proportional-budget-cap\",\"capturePowerResolutionW\":1e-12,\"capturePowerWeightScope\":\"emitted-per-intersection;held-route-fractions-at-most-one;all-five-recipient-channels-independently-paired\"";
     let pressure_settings = "\"pressureCoordinates\":\"finite-pool-cushion-and-surge-forward-DAE;direct-liquid-B10-and-phase-H-products\",\"pressureResponseResolutionPa\":1,\"pressureChangeRelativeBudget\":0.005,\"surgeHydraulicModel\":\"finite-storage-two-algebraic-resistances\",\"surgeGravityModel\":\"owned-bulk-density-hydrostatic-face-heads\",\"surgeReductionScope\":\"sound-filtered-slow-support;no-inertial-waveform-credit\",\"surgeFlowResolutionKgS\":1e-5,\"pressureChartHeightScope\":\"hydrostatic-equivalent-1Pa;P-T-coupled-correction-and-metal-caloric-admitted\"";
+    let scope = if prepared.model.network.prhr().is_some() {
+        "same-trial-source-finite-fuel-He-primary-finite-SG-barrel-surge-cold-PZR-PRHR-finite-WST-ROOM;exact-retained-spring-motion;signed-supplied-CNV-and-electrical-boundary-receipts;cold-fixed-prepared-source-geometry;no-hot-phase-decay-duty-containment-endurance-or-fullplant-credit"
+    } else {
+        "same-trial-source-finite-fuel-He-primary-finite-SG-barrel-surge-cold-PZR;cold-fixed-prepared-geometry;no-fullplant-credit"
+    };
+    let carrier_policy = cooling_accuracy::CARRIER_POLICY;
+    let energy_coordinate = if prepared.model.network.prhr().is_some() {
+        "G=sum-installed-energy-change-including-finite-WST-and-ROOM-minus-fission-barrel-binding-release-minus-signed-spring-release-and-electrical-receipts-plus-barrel-binding-ambient-WST-surface-work-connector-and-ROOM-ambient-export"
+    } else {
+        "G=sum-installed-energy-change-minus-fission-barrel-binding-release-plus-barrel-binding-ambient-export"
+    };
     println!(
-        "{{\"kind\":\"source-cooling-pair\",\"passed\":{passed},\"lastAdmittedTime\":{},\"scope\":\"same-trial-source-finite-fuel-He-primary-finite-SG-barrel-surge-cold-PZR;cold-fixed-prepared-geometry;no-fullplant-credit\",\"dimension\":{},\"differential\":{},\"settings\":{{\"accuracyPolicy\":\"cold-source-fuel-binding\",\"carrierCoordinates\":\"hydrogen-product,direct-boron10,boron-product\",\"provisional\":true,\"nonlinearClosure\":\"stock-Newton-and-current-physical-network-pressure-charts\",\"linearWeightedL2Budget\":{linear_budget},\"algebraicLTE\":\"included\",\"fuelPowerErrorWeights\":\"sparse-current-response-proportional-budget-cap\",\"fuelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerErrorWeights\":\"sparse-current-bulk-capture-Mn-proportional-budget-cap\",\"barrelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerWeightScope\":\"held-route-source-response-only;density-partition-independently-paired\",\"fuelPowerWeightScope\":\"first-order-local-box-budget;not-WRMS-or-paired-error-guarantee\",\"perRowErrorWeights\":\"source-carrier-barrel-binding-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute\",\"solverEnergyCoordinate\":\"G=sum-installed-energy-change-minus-fission-barrel-binding-release-plus-barrel-binding-ambient-export\",\"energyDefectATOLJ\":{},\"referenceAllATOLandRTOLDivisor\":10,\"horizon\":300,\"costGuard\":\"aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic\",\"maxl\":30,\"restarts\":0,{capture_settings},{pressure_settings}}},\"gates\":{{\"fullPairComparisonEvaluated\":{pair_evaluated},\"developedThermalResponse\":{},\"developedSourceResponse\":{},\"thermalResponse\":{thermal_details},\"sourceLocalRatio\":{},\"sourceFamilyRatio\":{},\"sourceObservableRatio\":{},\"sourceNCOperatorRatio\":{},\"thermalPairRatio\":{},\"networkPairRatio\":{},\"depositionPairRatio\":{},\"carrierPairRatio\":{},{barrel_gates},{capture_gates},{pressure_gates}}},\"pairedComparisons\":[{}],\"fuelTemperatureFeedbackDiagnostic\":{feedback},\"normal\":{},\"tighter\":{tighter},\"aggregateWallSeconds\":{}}}",
+        "{{\"kind\":\"source-cooling-pair\",\"passed\":{passed},\"lastAdmittedTime\":{},\"scope\":\"{scope}\",\"dimension\":{},\"differential\":{},\"settings\":{{\"accuracyPolicy\":\"cold-source-fuel-binding\",\"carrierCoordinates\":\"hydrogen-product,direct-boron10,boron-product\",\"carrierComparisonPolicy\":\"{carrier_policy}\",\"provisional\":true,\"nonlinearClosure\":\"stock-Newton-and-current-physical-network-pressure-charts\",\"linearWeightedL2Budget\":{linear_budget},\"algebraicLTE\":\"excluded-from-temporal-control;retained-in-Newton-physical-closure-and-output-pair\",\"fuelPowerErrorWeights\":\"sparse-current-response-proportional-budget-cap\",\"fuelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerErrorWeights\":\"sparse-current-bulk-capture-Mn-proportional-budget-cap\",\"barrelPowerResolutionW\":{fuel_power_resolution},\"barrelPowerWeightScope\":\"held-route-source-response-only;density-partition-independently-paired\",\"fuelPowerWeightScope\":\"first-order-local-box-budget;not-WRMS-or-paired-error-guarantee\",\"perRowErrorWeights\":\"source-carrier-barrel-binding-receipts-relative-consequences;network-thermal-absolute-only;energy-defect-absolute\",\"solverEnergyCoordinate\":\"{energy_coordinate}\",\"energyDefectATOLJ\":{},\"referenceAllATOLandRTOLDivisor\":10,\"horizon\":300,\"costGuard\":\"aggregate-native-and-external-wall-deadlines;accepted-step-count-diagnostic\",\"maxl\":30,\"restarts\":0,{capture_settings},{pressure_settings}}},\"gates\":{{\"fullPairComparisonEvaluated\":{pair_evaluated},\"developedThermalResponse\":{},\"developedSourceResponse\":{},\"thermalResponse\":{thermal_details},\"sourceLocalRatio\":{},\"sourceFamilyRatio\":{},\"sourceObservableRatio\":{},\"sourceNCOperatorRatio\":{},\"thermalPairRatio\":{},\"networkPairRatio\":{},\"depositionPairRatio\":{},\"carrierPairRatio\":{},{barrel_gates},{capture_gates},{pressure_gates}}},\"pairedComparisons\":[{}],\"fuelTemperatureFeedbackDiagnostic\":{feedback},\"normal\":{},\"tighter\":{tighter},\"aggregateWallSeconds\":{}}}",
         finite(
             tight
                 .as_ref()
@@ -1747,6 +2244,99 @@ fn execute() -> Result<(), String> {
 mod tests {
     use super::*;
     #[test]
+    fn event_sparse_linear_rate_jump_preserves_small_encoded_history_and_unrelated_bits() {
+        let m = cooling_fixture::fixture();
+        let initial = m.initial_state().unwrap();
+        let energy = EnergyCoordinates::new(&m, &initial).unwrap();
+        let coordinates = Coordinates {
+            nc: m.source.nc_dimension(),
+            ledger: m.source.ledger_row(),
+        };
+        assert!(m.is_differential(energy.row) && m.is_differential(coordinates.ledger));
+        let mut accepted = initial.clone();
+        coordinates.transform(&mut accepted);
+        energy.state_to_solver(&mut accepted);
+        accepted[energy.row] = 0.000000123456789;
+        accepted[coordinates.ledger] = -0.000000987654321;
+        let mut delta = vec![0.; m.dimension()];
+        delta[m.layout.barrel_energy] = 500.;
+        delta[m.layout.barrel_exported] = -500.;
+        let (updated, encoded_delta) =
+            solver_rate_jump(&coordinates, &energy, &accepted, &delta).unwrap();
+        assert_eq!(encoded_delta[energy.row], 0.);
+        assert_eq!(encoded_delta[coordinates.ledger], 0.);
+        for row in 0..m.dimension() {
+            assert_eq!(
+                updated[row].to_bits(),
+                if encoded_delta[row] == 0. {
+                    accepted[row].to_bits()
+                } else {
+                    (accepted[row] + encoded_delta[row]).to_bits()
+                }
+            );
+        }
+        assert!(
+            solver_rate_jump(&coordinates, &energy, &accepted, &delta[..delta.len() - 1]).is_err()
+        );
+    }
+    #[test]
+    fn retained_mechanism_schedule_stops_at_real_events_and_copies_history() {
+        let config = prhr_actuator::Config {
+            stroke_s: 5.,
+            spring_energy_j: 2500.,
+            closing_power_w: 1000.,
+            hold_power_w: 20.,
+            room_capacity_j_k: 200e6,
+            room_wall_w_k: 20000.,
+            room_reference_temperature_k: 298.15,
+            initial_opening: 0.,
+            initial_room_temperature_k: 298.15,
+        };
+        let input = prhr_actuator::Inputs {
+            support: prhr_actuator::Support {
+                hold_supported: true,
+                closing_supported: true,
+            },
+            blocked: false,
+            ambient_temperature_k: 298.15,
+        };
+        let motion = prhr_actuator::Motion::new(
+            prhr_actuator::Model::new(config).unwrap(),
+            0.,
+            0.,
+            prhr_actuator::Control::new(true),
+            input,
+        )
+        .unwrap();
+        let mut s = PrhrSchedule {
+            motion,
+            inputs: input,
+            pending_start: Some(10.),
+            room_row: 0,
+            spring_row: 1,
+            spring_j: 2500.,
+        };
+        assert_eq!(s.next_event().unwrap(), Some(10.));
+        assert_eq!(s.input(9., 0.).unwrap().opening, 0.);
+        assert!(s.accept_event(9.).is_err());
+        s.accept_event(10.).unwrap();
+        assert_eq!(s.next_event().unwrap(), Some(15.));
+        let mut copy = s.clone();
+        assert_eq!(
+            copy.input(12., 0.).unwrap().opening,
+            s.input(12., 0.).unwrap().opening
+        );
+        s.audit(12., &[0., 1000.]).unwrap();
+        assert!(s.audit(12., &[0., 0.]).is_err());
+        assert_eq!(s.input(15., 0.).unwrap().opening_rate, 0.2);
+        assert!(s.input(15.001, 0.).is_err());
+        copy.accept_event(15.).unwrap();
+        assert_eq!(copy.input(15., 0.).unwrap().opening_rate, 0.);
+        assert_eq!(copy.next_event().unwrap(), None);
+        // Copy event acceptance cannot mutate its parent's pending contact.
+        assert_eq!(s.next_event().unwrap(), Some(15.));
+    }
+    #[test]
     fn joined_remaining_budget_has_one_cli_authority_and_report_reserve() {
         assert_eq!(numerical_allowance(140.93).unwrap(), 138.93);
         assert_eq!(numerical_allowance(180.).unwrap(), 178.);
@@ -1759,9 +2349,12 @@ mod tests {
     fn direct_boron_ledger_checks_global_conservation_not_local_tracer_accuracy() {
         let model = cooling_fixture::fixture_with_contrast();
         let l = model.layout;
-        let accuracy =
-            cooling_accuracy::Accuracy::new(&model, &vec![[0.; 2]; model.source.target_count()])
-                .unwrap();
+        let accuracy = cooling_accuracy::Accuracy::new(
+            &model,
+            &vec![[0.; 2]; model.source.target_count()],
+            None,
+        )
+        .unwrap();
         let mut y = model.initial_state().unwrap();
         assert_eq!(accuracy.carrier_ledger(&model, &y).unwrap(), 0.);
         // Capture exchanges actual target/product; neither stock disappears.
@@ -1803,9 +2396,12 @@ mod tests {
         assert_eq!(constraints[l.ambient_exported], 0.);
         assert_eq!(constraints[l.surge_start + finite_surge::LEFT_FLOW], 0.);
         assert_eq!(constraints[l.surge_start + finite_surge::RIGHT_FLOW], 0.);
-        let accuracy =
-            cooling_accuracy::Accuracy::new(&model, &vec![[0.; 2]; model.source.target_count()])
-                .unwrap();
+        let accuracy = cooling_accuracy::Accuracy::new(
+            &model,
+            &vec![[0.; 2]; model.source.target_count()],
+            None,
+        )
+        .unwrap();
         let normal = accuracy.absolute(1.).unwrap();
         let tighter = accuracy.absolute(10.).unwrap();
         for row in [finite_surge::LEFT_FLOW, finite_surge::RIGHT_FLOW] {
@@ -1846,9 +2442,9 @@ mod tests {
         let power_work = power_weights.workspace();
         Callbacks {
             model,
-            convergence: cooling_convergence::Convergence::new(model).unwrap(),
+            convergence: cooling_convergence::Convergence::new(model, None).unwrap(),
             work: model.workspace(),
-            p: cooling_block::Preconditioner::new(model, &y, &yp).unwrap(),
+            p: cooling_block::Preconditioner::new(model, &y, &yp, None).unwrap(),
             coordinates: Coordinates {
                 nc: model.source.nc_dimension(),
                 ledger: model.source.ledger_row(),
@@ -1893,6 +2489,7 @@ mod tests {
             local_errors: LocalErrors::new(model),
             absolute: vec![0.01; model.dimension()],
             relative: 1e-5,
+            prhr: None,
         }
     }
     #[test]
@@ -2326,6 +2923,29 @@ mod tests {
         assert!(t.observe(&errors, &weights, 5., 3, 3, 0.2).is_err());
     }
     #[test]
+    fn temporal_controller_telemetry_masks_only_algebraic_rows_with_full_dimension_denominator() {
+        let model = cooling_fixture::fixture();
+        let mut t = LocalErrors::new(&model);
+        let n = model.dimension();
+        let differential = (0..n).find(|&r| model.is_differential(r)).unwrap();
+        let algebraic = (0..n).find(|&r| !model.is_differential(r)).unwrap();
+        let mut errors = vec![0.; n];
+        let weights = vec![2.; n];
+        errors[differential] = 3.;
+        errors[algebraic] = 4.;
+        t.observe(&errors, &weights, 1., 1, 1, 0.1).unwrap();
+        assert_eq!(t.last_controller_wrms, (36. / n as f64).sqrt());
+        assert_eq!(t.last_wrms, (100. / n as f64).sqrt());
+        assert!(t.json().contains("lastAllCoordinateWRMS"));
+        assert!(t.json().contains("lastControllerWRMS"));
+        // A large algebraic estimate remains inspectable, but does not change
+        // the selected stock-controller norm or any physical admission gate.
+        errors[algebraic] = 4e6;
+        t.observe(&errors, &weights, 2., 1, 1, 0.1).unwrap();
+        assert_eq!(t.last_controller_wrms, (36. / n as f64).sqrt());
+        assert_eq!(t.families[t.labels[algebraic]].maximum, 8e6);
+    }
+    #[test]
     fn callback_nulls_and_nonfinite_ratio_fail_closed() {
         assert_eq!(
             unsafe {
@@ -2364,6 +2984,7 @@ mod tests {
             initial: vec![],
             final_y: vec![4., -0.],
             final_yp: vec![5., 6.],
+            final_prhr: None,
             max_number: 0.,
             max_energy: 0.,
             max_thermal_chart: 0.,

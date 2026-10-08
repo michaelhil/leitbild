@@ -214,16 +214,22 @@ fn fixture_with_preparation_at(
         heat: vec![],
         secondaries: vec![],
         secondary_heat: vec![],
+        seat: None,
+        prhr: None,
         hydraulic: vec![on::Hydraulic {
             from: 0,
             to: 1,
-            law: on::LossLaw::EffectiveTotal,
-            length: 1.,
-            diameter: 0.1,
-            roughness: 0.,
-            fixed_loss: 2.,
-            grid_multiplier: 0.,
-            flow_area: 0.1,
+            from_elevation: 0.,
+            to_elevation: 0.,
+            segments: vec![on::HydraulicSegment {
+                law: on::LossLaw::EffectiveTotal,
+                length: 1.,
+                diameter: 0.1,
+                roughness: 0.,
+                fixed_loss: 2.,
+                grid_multiplier: 0.,
+                flow_area: 0.1,
+            }],
         }],
     })
     .unwrap();
@@ -576,6 +582,8 @@ fn pressure_material_is_reciprocal_in_both_flow_directions_and_phase_channels() 
         y[l.surge_start + surge::RIGHT_FLOW] = -sign * 0.1;
         y[l.surge_carrier_start] = 2.;
         y[l.pool_carrier_start] = 4.;
+        y[l.surge_carrier_start + 2] = 3.;
+        y[l.pool_carrier_start + 2] = 5.;
         y[l.gas_hydrogen_product] = 0.01;
         y[l.pressurizer_start + cp::INTERFACE_TEMPERATURE] += sign * 0.01;
         y[l.pressurizer_start + cp::METAL_TEMPERATURE_START + 8] -= 1.;
@@ -583,6 +591,35 @@ fn pressure_material_is_reciprocal_in_both_flow_directions_and_phase_channels() 
         m.evaluate(&y, &vec![0.; m.dimension()], Some(2.), &mut w)
             .unwrap();
         let events = w.source.external_water_events().unwrap();
+        // The same canonical owner list used for closed-product qualification
+        // includes every liquid packet plus vapor H, without species overlap.
+        for (species, births) in [
+            events.iter().map(|e| e.hydrogen).sum::<f64>(),
+            events.iter().map(|e| e.boron).sum::<f64>(),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let rows = m.mobile_product_rows(species).collect::<Vec<_>>();
+            assert_eq!(
+                rows.len(),
+                m.carrier.cells() + 2 + usize::from(species == 0)
+            );
+            let mut unique = rows.clone();
+            unique.sort_unstable();
+            unique.dedup();
+            assert_eq!(unique.len(), rows.len());
+            assert!(rows.contains(&(l.surge_carrier_start + 2 * species)));
+            assert!(rows.contains(&(l.pool_carrier_start + 2 * species)));
+            assert_eq!(rows.contains(&l.gas_hydrogen_product), species == 0);
+            assert!(rows.iter().all(|&row| m.is_differential(row)));
+            close(
+                -rows.iter().map(|&r| w.residual[r]).sum::<f64>(),
+                births,
+                1e-11,
+                1e-11,
+            );
+        }
         for (k, source) in [
             (0, events.iter().map(|e| e.hydrogen).sum::<f64>()),
             (1, -events.iter().map(|e| e.boron).sum::<f64>()),

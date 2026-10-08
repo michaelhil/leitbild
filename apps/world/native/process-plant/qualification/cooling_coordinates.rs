@@ -46,7 +46,7 @@ impl EnergyCoordinates {
         if !model.is_differential(row) {
             return Err("Energy-chart anchor is not differential".into());
         }
-        let receipts = [
+        let receipts: Vec<_> = [
             (model.source.fuel_release_row(), -1.),
             (l.barrel_released, -1.),
             (l.barrel_exported, 1.),
@@ -54,9 +54,23 @@ impl EnergyCoordinates {
             (l.fuel_capture_exported, 1.),
         ]
         .into_iter()
+        .chain(
+            n.prhr()
+                .into_iter()
+                .flat_map(|p| p.receipt_rows())
+                .map(|(r, s)| (l.network_start + r, s)),
+        )
         .chain(model.capture_paid_rows().map(|(row, q)| (row, -q)))
         .map(|(r, sign)| (r, sign, initial[r]))
         .collect();
+        // The solver differential mask is unchanged by this affine chart.
+        // Event transactions can therefore retain encoded stocks verbatim;
+        // refuse a future chart dependency that would invalidate that claim.
+        if rows.iter().any(|&r| !model.is_differential(r))
+            || receipts.iter().any(|&(r, _, _)| !model.is_differential(r))
+        {
+            return Err("Energy-chart dependencies must be differential stocks".into());
+        }
         Ok(Self {
             row,
             anchor_initial: initial[row],

@@ -22,12 +22,13 @@ const schema=z.object({primaryCell:z.string().min(1),initialLevel_m:positive,ini
   c.addIssue({code:'custom',message:'Cold preparation is outside the selected envelope'})
 })
 export function parseColdPressureSelection(text:string){return schema.parse(configurationBlock(text,'reference-cold-pressure-support'))}
-type Water={id:string;elevation_m:number}
+type Water={id:string;elevation_m:number;owners:string[]}
 type Caloric={cp0_j_kg_k:number;cp1_j_kg_k2:number;datum_k:number;minimum_k:number;maximum_k:number}
 export function compileColdPressure(selectionText:string,routeText:string,water:Water[],caloric:Caloric,atomsPerMarker:number,
  surgeLiquidTemperature_K:number){
  const s=parseColdPressureSelection(selectionText),r=resolveSurgeRoute(parseSurgeRoute(routeText)),
-  primary=water.findIndex(w=>w.id===s.primaryCell),b=heaterBankBasis,
+  matches=water.map((w,i)=>({w,i})).filter(q=>q.w.owners.includes(s.primaryCell)),
+  primary=matches.length===1?matches[0]!.i:-1,b=heaterBankBasis,
   rods=heaterBankGeometry(s.initialLevel_m).banks,g=shellContactGeometry()
  if(!Number.isFinite(surgeLiquidTemperature_K)||surgeLiquidTemperature_K<s.minimumTemperature_K
   ||surgeLiquidTemperature_K>s.maximumTemperature_K)throw Error('Current surge preparation is outside the cold domain')

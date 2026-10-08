@@ -159,9 +159,14 @@ pub(super) struct Preconditioner {
     solve_seconds: f64,
 }
 impl Preconditioner {
-    pub fn new(model: &Model, initial: &[f64], yp: &[f64]) -> Result<Self, String> {
+    pub fn new(
+        model: &Model,
+        initial: &[f64],
+        yp: &[f64],
+        prhr: Option<leitbild_plant_numerics::prhr::Input>,
+    ) -> Result<Self, String> {
         let mut work = model.workspace();
-        model.evaluate(initial, yp, Some(1.), &mut work)?;
+        model.evaluate_with_prhr_input(initial, yp, Some(1.), &mut work, prhr)?;
         let source_jac = Jacobian::new(&model.source)?;
         let source = source_block::BlockPreconditioner::new(&model.source, source_jac.pattern())?;
         let source_values = vec![0.; source_jac.pattern().len()];
@@ -218,7 +223,14 @@ impl Preconditioner {
             solve_seconds: 0.,
         })
     }
-    pub fn setup(&mut self, model: &Model, y: &[f64], yp: &[f64], cj: f64) -> Result<(), String> {
+    pub fn setup(
+        &mut self,
+        model: &Model,
+        y: &[f64],
+        yp: &[f64],
+        cj: f64,
+        prhr: Option<leitbild_plant_numerics::prhr::Input>,
+    ) -> Result<(), String> {
         self.valid = false;
         self.receipt_cj = cj;
         let started = Instant::now();
@@ -227,7 +239,7 @@ impl Preconditioner {
             if !cj.is_finite() || cj <= 0. {
                 return Err("Nonpositive coupled P cj".into());
             }
-            model.evaluate(y, yp, Some(cj), &mut self.work)?;
+            model.evaluate_with_prhr_input(y, yp, Some(cj), &mut self.work, prhr)?;
             self.source_jac.solver_values(
                 &model.source,
                 &mut self.work.source,
@@ -353,10 +365,10 @@ mod tests {
         let model = fixture::fixture();
         let y = model.initial_state().unwrap();
         let yp = vec![0.; model.dimension()];
-        let mut p = Preconditioner::new(&model, &y, &yp).unwrap();
+        let mut p = Preconditioner::new(&model, &y, &yp, None).unwrap();
         let nt = model.thermal.node_count();
         for cj in [3., 19.] {
-            p.setup(&model, &y, &yp, cj).unwrap();
+            p.setup(&model, &y, &yp, cj, None).unwrap();
             let x = (0..2 * nt)
                 .map(|i| 0.01 * (i + 1) as f64)
                 .collect::<Vec<_>>();
@@ -404,14 +416,14 @@ mod tests {
         let model = fixture::fixture();
         let y = model.initial_state().unwrap();
         let yp = vec![0.; model.dimension()];
-        let mut p = Preconditioner::new(&model, &y, &yp).unwrap();
-        p.setup(&model, &y, &yp, 3.).unwrap();
+        let mut p = Preconditioner::new(&model, &y, &yp, None).unwrap();
+        p.setup(&model, &y, &yp, 3., None).unwrap();
         let n = model.dimension();
         assert!(p
             .solve(&model, &vec![f64::NAN; n], &mut vec![0.; n])
             .is_err());
         assert!(p.solve(&model, &vec![0.; n], &mut vec![0.; n]).is_err());
-        p.setup(&model, &y, &yp, 3.).unwrap();
+        p.setup(&model, &y, &yp, 3., None).unwrap();
         let mut receipt_rhs = vec![0.; n];
         receipt_rhs[model.layout.fuel_capture_exported] = 12.;
         let mut solved = vec![0.; n];
@@ -420,8 +432,8 @@ mod tests {
         receipt_rhs[model.layout.fuel_capture_exported] = f64::INFINITY;
         assert!(p.solve(&model, &receipt_rhs, &mut solved).is_err());
         assert!(p.solve(&model, &vec![0.; n], &mut solved).is_err());
-        p.setup(&model, &y, &yp, 3.).unwrap();
-        assert!(p.setup(&model, &y, &yp, 0.).is_err());
+        p.setup(&model, &y, &yp, 3., None).unwrap();
+        assert!(p.setup(&model, &y, &yp, 0., None).is_err());
         assert!(p.solve(&model, &vec![0.; n], &mut vec![0.; n]).is_err());
     }
     #[test]
@@ -429,9 +441,9 @@ mod tests {
         let model = fixture::fixture();
         let y = model.initial_state().unwrap();
         let yp = vec![0.; model.dimension()];
-        let mut p = Preconditioner::new(&model, &y, &yp).unwrap();
+        let mut p = Preconditioner::new(&model, &y, &yp, None).unwrap();
         for cj in [0.1, 7., 1e12] {
-            p.setup(&model, &y, &yp, cj).unwrap();
+            p.setup(&model, &y, &yp, cj, None).unwrap();
             let x = [0.3, 0.02, -0.4, 0.5];
             model
                 .barrel

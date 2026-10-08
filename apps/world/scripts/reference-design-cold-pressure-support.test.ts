@@ -45,7 +45,7 @@ ownerTest('actual cold pressure selection preserves finite hardware and route ow
  expect(()=>parseColdPressureSelection(text+text)).toThrow()
  expect(()=>parseColdPressureSelection(text.replace('"initialLevel_m": 4','"initialLevel_m": 7'))).toThrow()
  expect(()=>parseColdPressureSelection(text.replace('"initialLevel_m": 4','"initialLevel_m": 4, "undeclared": 1'))).toThrow()
- expect(()=>compileColdPressure(text,route,p.network.water.filter(w=>w.id!==selection.primaryCell),p.barrel,1,293.15)).toThrow()
+ expect(()=>compileColdPressure(text,route,p.network.water.filter(w=>!w.owners.includes(selection.primaryCell)),p.barrel,1,293.15)).toThrow()
  expect(()=>compileColdPressure(text,route,p.network.water,p.barrel,0,293.15)).toThrow()
  for(const temperature of [NaN,selection.minimumTemperature_K-1,selection.maximumTemperature_K+1])
   expect(()=>compileColdPressure(text,route,p.network.water,p.barrel,1,temperature)).toThrow('domain')

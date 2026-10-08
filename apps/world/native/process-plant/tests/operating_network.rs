@@ -5,6 +5,8 @@ fn fixture() -> Network {
     Network::new(Config {
         secondaries: vec![],
         secondary_heat: vec![],
+        seat: None,
+        prhr: None,
         water: (0..3)
             .map(|i| Water {
                 geometry: CellGeometry {
@@ -30,24 +32,32 @@ fn fixture() -> Network {
             Hydraulic {
                 from: 0,
                 to: 1,
-                law: LossLaw::EffectiveTotal,
-                length: 4.,
-                diameter: 0.1264911064,
-                roughness: 0.,
-                fixed_loss: 37.5,
-                grid_multiplier: 0.,
-                flow_area: 1.25,
+                from_elevation: 3.,
+                to_elevation: 3.,
+                segments: vec![HydraulicSegment {
+                    law: LossLaw::EffectiveTotal,
+                    length: 4.,
+                    diameter: 0.1264911064,
+                    roughness: 0.,
+                    fixed_loss: 37.5,
+                    grid_multiplier: 0.,
+                    flow_area: 1.25,
+                }],
             },
             Hydraulic {
                 from: 1,
                 to: 2,
-                law: LossLaw::EffectiveTotal,
-                length: 2.,
-                diameter: 0.1561440117,
-                roughness: 0.,
-                fixed_loss: 25.,
-                grid_multiplier: 0.,
-                flow_area: 1.25,
+                from_elevation: 3.,
+                to_elevation: 3.,
+                segments: vec![HydraulicSegment {
+                    law: LossLaw::EffectiveTotal,
+                    length: 2.,
+                    diameter: 0.1561440117,
+                    roughness: 0.,
+                    fixed_loss: 25.,
+                    grid_multiplier: 0.,
+                    flow_area: 1.25,
+                }],
             },
         ],
         heat: vec![
@@ -665,30 +675,26 @@ fn malformed_or_overflowed_ports_invalidate_prepared_chart_and_tangent() {
         },
     ] {
         w.evaluate(&n, &y, &yp, Some(3.)).unwrap();
-        assert!(
-            w.evaluate_with_ports(&n, &y, &yp, Some(3.), &[bad])
-                .is_err()
-        );
+        assert!(w
+            .evaluate_with_ports(&n, &y, &yp, Some(3.), &[bad])
+            .is_err());
         assert!(w.check_current_chart(&n, &y).is_err());
         assert!(w.energy_rate_jvp(&n, &yp).is_err());
-        assert!(
-            n.add_port_jvp(&[bad], &mut vec![0.; n.dimension()])
-                .is_err()
-        );
+        assert!(n
+            .add_port_jvp(&[bad], &mut vec![0.; n.dimension()])
+            .is_err());
     }
     let huge = LiquidPort {
         energy_rate: f64::MAX,
         ..good
     };
-    assert!(
-        w.evaluate_with_ports(&n, &y, &yp, Some(3.), &[huge, huge])
-            .is_err()
-    );
+    assert!(w
+        .evaluate_with_ports(&n, &y, &yp, Some(3.), &[huge, huge])
+        .is_err());
     assert!(w.check_current_chart(&n, &y).is_err());
-    assert!(
-        n.add_port_jvp(&[huge, huge], &mut vec![0.; n.dimension()])
-            .is_err()
-    );
+    assert!(n
+        .add_port_jvp(&[huge, huge], &mut vec![0.; n.dimension()])
+        .is_err());
     assert!(n.add_port_jvp(&[good], &mut []).is_err());
     w.evaluate_with_ports(&n, &y, &yp, Some(3.), &[good])
         .unwrap();

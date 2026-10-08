@@ -1,6 +1,6 @@
 //! Shared admission counterexamples on a reduced finite native apparatus.
 //! Geometry below is test-only; IF97/chart/hydraulic laws remain component-owned.
-use leitbild_plant_numerics::{CellGeometry, operating_admission as a, operating_network as n};
+use leitbild_plant_numerics::{operating_admission as a, operating_network as n, CellGeometry};
 
 fn fixture() -> n::Network {
     n::Network::new(n::Config {
@@ -22,13 +22,17 @@ fn fixture() -> n::Network {
         hydraulic: vec![n::Hydraulic {
             from: 0,
             to: 1,
-            law: n::LossLaw::EffectiveTotal,
-            length: 1.,
-            diameter: 0.1,
-            roughness: 0.,
-            fixed_loss: 2.,
-            grid_multiplier: 0.,
-            flow_area: 0.1,
+            from_elevation: 0.,
+            to_elevation: 0.,
+            segments: vec![n::HydraulicSegment {
+                law: n::LossLaw::EffectiveTotal,
+                length: 1.,
+                diameter: 0.1,
+                roughness: 0.,
+                fixed_loss: 2.,
+                grid_multiplier: 0.,
+                flow_area: 0.1,
+            }],
         }],
         heat: vec![n::Heat {
             from: 0,
@@ -37,6 +41,8 @@ fn fixture() -> n::Network {
         }],
         secondaries: vec![],
         secondary_heat: vec![],
+        seat: None,
+        prhr: None,
     })
     .unwrap()
 }
@@ -49,6 +55,63 @@ fn close(a: f64, b: f64) {
     assert!(
         (a - b).abs() <= 2e-15 * a.abs().max(b.abs()),
         "{a:e} != {b:e}"
+    );
+}
+
+#[test]
+fn hydraulic_diagnostics_share_prepared_drive_without_absolute_pressure_cancellation() {
+    let n = fixture();
+    let mut y = n.initial_state().unwrap();
+    let tiny = 2_f64.powi(-31);
+    y[n.mechanical_row(1).unwrap()] = tiny;
+    let w = evaluated(&n, &y);
+    let (drive, scale) = n.hydraulic_drive(0, &y, &w.liquids).unwrap();
+    assert_eq!(drive.to_bits(), (-tiny).to_bits());
+    assert_eq!(scale, tiny);
+    assert_eq!(drive.to_bits(), w.residual[n.flow_row(0)].to_bits());
+    // Reconstructing two absolute pressures loses this real numerical head.
+    assert_eq!(
+        n.mechanical_pressure(0, &y) - n.mechanical_pressure(1, &y),
+        0.
+    );
+    let flow = a::weights(&n, &w, &y, 300., 1.).unwrap().flow;
+    let d = a::screen(&n, &w, &y, a::totals(&n, &y), &flow).unwrap();
+    assert_eq!(d.flow_law_residual.to_bits(), drive.abs().to_bits());
+    assert_eq!(
+        a::chart_corrections(&n, &w, &y).unwrap().property_requests,
+        0
+    );
+    assert!(n.hydraulic_drive(1, &y, &w.liquids).is_err());
+    assert!(n.hydraulic_drive(0, &y[..y.len() - 1], &w.liquids).is_err());
+}
+
+#[test]
+fn hydraulic_drive_uses_actual_ports_and_is_vertical_datum_covariant() {
+    let mut config = fixture().config().clone();
+    config.water[0].geometry.elevation = 2.;
+    config.water[1].geometry.elevation = 4.;
+    config.hydraulic[0].from_elevation = 2.25;
+    config.hydraulic[0].to_elevation = 3.5;
+    let n = n::Network::new(config.clone()).unwrap();
+    let y = n.initial_state().unwrap();
+    let w = evaluated(&n, &y);
+    let (drive, scale) = n.hydraulic_drive(0, &y, &w.liquids).unwrap();
+    let rho = (w.liquids[0].density + w.liquids[1].density) * 0.5;
+    let head = leitbild_plant_numerics::GRAVITY
+        * (rho * 1.25 - w.liquids[0].density * -0.25 + w.liquids[1].density * 0.5);
+    close(drive, -head);
+    for water in &mut config.water {
+        water.geometry.elevation += 16.;
+    }
+    config.hydraulic[0].from_elevation += 16.;
+    config.hydraulic[0].to_elevation += 16.;
+    let shifted = n::Network::new(config).unwrap();
+    let sy = shifted.initial_state().unwrap();
+    let sw = evaluated(&shifted, &sy);
+    let actual = shifted.hydraulic_drive(0, &sy, &sw.liquids).unwrap();
+    assert_eq!(
+        (drive.to_bits(), scale.to_bits()),
+        (actual.0.to_bits(), actual.1.to_bits())
     );
 }
 
@@ -226,11 +289,10 @@ fn shared_chart_helper_reports_corrections_without_admitting_or_projecting() {
         assert_eq!(c.check().is_ok(), passes);
         assert_eq!(w.residual[n.pressure_row()], dp * compliance);
         if !passes {
-            assert!(
-                c.check()
-                    .unwrap_err()
-                    .starts_with("Returned shared chart correction node 0:")
-            );
+            assert!(c
+                .check()
+                .unwrap_err()
+                .starts_with("Returned shared chart correction node 0:"));
         }
     }
     for (dt, passes) in [(0.5e-4, true), (1e-4, true), (2e-4, false)] {
@@ -259,16 +321,14 @@ fn chart_helper_requires_successful_exact_current_owned_value_preparation() {
     assert!(a::chart_corrections(&n, &w, &y).is_ok());
     let mut bad = y.clone();
     bad[n.pressure_row()] = f64::NAN;
-    assert!(
-        w.evaluate(&n, &bad, &vec![0.; n.dimension()], None)
-            .is_err()
-    );
+    assert!(w
+        .evaluate(&n, &bad, &vec![0.; n.dimension()], None)
+        .is_err());
     assert!(a::chart_corrections(&n, &w, &y).is_err());
     w.evaluate(&n, &y, &vec![0.; n.dimension()], None).unwrap();
-    assert!(
-        w.evaluate(&other, &y, &vec![0.; n.dimension()], None)
-            .is_err()
-    );
+    assert!(w
+        .evaluate(&other, &y, &vec![0.; n.dimension()], None)
+        .is_err());
     assert!(a::chart_corrections(&n, &w, &y).is_err());
     w.evaluate(&n, &y, &vec![0.; n.dimension()], None).unwrap();
     w.residual[n.pressure_row()] = f64::INFINITY;
@@ -307,11 +367,10 @@ fn chart_helper_secondary_corrections_share_the_original_limits_and_accounting()
         assert!((c.secondary[1] - dt).abs() < 1e-12);
         assert_eq!(c.check().is_ok(), passes);
         if !passes {
-            assert!(
-                c.check()
-                    .unwrap_err()
-                    .starts_with("Returned wet secondary chart 0:")
-            );
+            assert!(c
+                .check()
+                .unwrap_err()
+                .starts_with("Returned wet secondary chart 0:"));
         }
     }
 }

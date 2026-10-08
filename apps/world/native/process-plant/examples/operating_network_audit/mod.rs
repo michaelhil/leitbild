@@ -348,6 +348,8 @@ mod layout_tests {
         let n = Network::new(Config {
             secondaries: vec![],
             secondary_heat: vec![],
+            seat: None,
+            prhr: None,
             water: vec![water, water],
             solids: vec![Solid {
                 heat_capacity: 1000.,
@@ -356,13 +358,17 @@ mod layout_tests {
             hydraulic: vec![Hydraulic {
                 from: 0,
                 to: 1,
-                law: LossLaw::EffectiveTotal,
-                length: 1.,
-                flow_area: 0.1,
-                diameter: 0.356,
-                roughness: 0.,
-                fixed_loss: 1.,
-                grid_multiplier: 0.,
+                from_elevation: 0.,
+                to_elevation: 0.,
+                segments: vec![HydraulicSegment {
+                    law: LossLaw::EffectiveTotal,
+                    length: 1.,
+                    flow_area: 0.1,
+                    diameter: 0.356,
+                    roughness: 0.,
+                    fixed_loss: 1.,
+                    grid_multiplier: 0.,
+                }],
             }],
             heat: vec![],
         })

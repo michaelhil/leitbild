@@ -1,6 +1,6 @@
 //! Provisional qualification-only consequences, not deposited recipient heat
 //! or a guarantee of near-critical sensitivity. No source law is changed.
-use super::{COUNT_ATOL, ENERGY_ATOL, Evolution, fuel_history, heat_history, ratio};
+use super::{fuel_history, heat_history, ratio, Evolution, COUNT_ATOL, ENERGY_ATOL};
 
 pub(super) const POLICY: &str = "source-consequences-1";
 const RELATIVE: f64 = 1e-3;
@@ -338,10 +338,9 @@ mod tests {
             20. * COUNT_ATOL
         );
         assert!(near.consequences(&[6., 5.], &[5., 5.], 1.).is_err());
-        assert!(
-            near.consequences(&[f64::INFINITY, 0.], &[0., 0.], 1.)
-                .is_err()
-        );
+        assert!(near
+            .consequences(&[f64::INFINITY, 0.], &[0., 0.], 1.)
+            .is_err());
         let zero = Accuracy {
             normal_absolute: vec![COUNT_ATOL],
             affected: vec![true],

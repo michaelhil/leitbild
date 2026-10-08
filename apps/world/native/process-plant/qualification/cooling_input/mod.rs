@@ -1,42 +1,64 @@
-//! Strict eight-frame cold source/cooling/barrel/pressure/capture/evidence preparation. Primary chemistry is
+//! Strict nine-frame cold source/cooling/barrel/pressure/capture/PRHR preparation. Primary chemistry is
 //! replaced by actual carrier intersections, never cloned as source histories.
 use super::{
     barrel_thermal, evolution_input, fuel_thermal, moderator_source, operating_network,
     operating_network_input, source_cooling, source_evolution, source_input, water_carrier,
 };
-use source_input::{count, framed, number};
+use source_input::{count, number};
 use std::collections::BTreeSet;
 mod capture;
 mod observation;
 mod pressure;
+mod prhr;
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct PrhrAction {
+    pub start_s: f64,
+    pub hold_supported: bool,
+    pub closing_supported: bool,
+    pub blocked: bool,
+    pub ambient_temperature_k: f64,
+}
 
 pub(crate) struct Prepared {
     pub model: source_cooling::Model,
     pub target_emissions: Vec<[f64; 2]>,
     pub pressure_channel: leitbild_plant_numerics::pressure_channel::Config,
     pub pressure_protection: leitbild_plant_numerics::pressure_protection::Settings,
+    pub prhr_action: Option<PrhrAction>,
 }
 
 pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
     let words = text.split_whitespace().collect::<Vec<_>>();
-    let mut words = words.iter().copied();
-    let source = framed(&mut words).join(" ");
-    let network = framed(&mut words).join(" ");
-    let thermal = framed(&mut words);
-    let primary = framed(&mut words);
-    let barrel = framed(&mut words);
-    let pressure = framed(&mut words);
-    let capture = framed(&mut words);
-    let observation = framed(&mut words);
-    if words.next().is_some() {
+    let mut offset = 0;
+    let mut frames = Vec::with_capacity(9);
+    for _ in 0..9 {
+        let size = words
+            .get(offset)
+            .ok_or("Missing coupled frame length")?
+            .parse::<usize>()
+            .map_err(|_| "Invalid coupled frame length")?;
+        offset += 1;
+        if size == 0 || size > words.len() - offset {
+            return Err("Empty or truncated coupled frame".into());
+        }
+        frames.push(words[offset..offset + size].to_vec());
+        offset += size;
+    }
+    if offset != words.len() {
         return Err("Trailing coupled payload".into());
     }
+    let [source, network, thermal, primary, barrel, pressure, capture, observation, prhr_frame]: [Vec<&str>; 9] =
+        frames.try_into().map_err(|_| "Wrong coupled frame count")?;
+    let source = source.join(" ");
+    let network = network.join(" ");
     let mut prepared = evolution_input::parse(&source);
     let mut nw = network.split_whitespace();
-    let network_input = operating_network_input::parse(&mut nw)?;
+    let mut network_input = operating_network_input::parse(&mut nw)?;
     if nw.next().is_some() || network_input.horizon != 300. {
         return Err("Expected complete 300 s network frame".into());
     }
+    let prhr_action = prhr::parse(&prhr_frame, &mut network_input.config)?;
     let network = operating_network::Network::new(network_input.config)?;
     let cells = network.config().water.len();
     let mut t = thermal.iter().copied();
@@ -148,12 +170,23 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
         }
     }
     let initial_network = network.initial_state()?;
+    let initial_prhr = network
+        .prhr()
+        .map(|p| {
+            prhr_action
+                .as_ref()
+                .ok_or("Missing PRHR action")?
+                .initial_input(p)
+        })
+        .transpose()?;
     let mut work = operating_network::Workspace::new(&network);
-    work.evaluate(
+    work.evaluate_with_inputs(
         &network,
         &initial_network,
         &vec![0.; network.dimension()],
         None,
+        &[],
+        initial_prhr,
     )?;
     let preparation = (0..cells)
         .map(|i| {
@@ -312,17 +345,21 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
         target_emissions: prepared.target_emissions,
         pressure_channel,
         pressure_protection,
+        prhr_action,
     })
 }
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn eighth_evidence_frame_is_required_and_extra_frames_refuse() {
-        assert!(std::panic::catch_unwind(|| parse("0 0 0 0")).is_err());
-        assert!(std::panic::catch_unwind(|| parse("0 0 0 0 0")).is_err());
-        assert!(std::panic::catch_unwind(|| parse("0 0 0 0 0 0")).is_err());
-        assert!(std::panic::catch_unwind(|| parse("0 0 0 0 0 0 0")).is_err());
+    fn nine_explicit_frames_are_required_and_extra_frames_refuse() {
+        assert!(parse("0 0 0 0").is_err());
+        assert!(parse("0 0 0 0 0").is_err());
+        assert!(parse("0 0 0 0 0 0").is_err());
+        assert!(parse("0 0 0 0 0 0 0").is_err());
         assert!(parse("0 0 0 0 0 0 0 0 0").is_err());
+        assert!(parse("18446744073709551615 1").is_err());
+        assert!(parse("NaN").is_err());
+        assert!(parse("1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 7").is_err());
     }
 }

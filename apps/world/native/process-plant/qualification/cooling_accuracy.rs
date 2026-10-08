@@ -10,6 +10,7 @@ use leitbild_plant_numerics::{
 };
 
 pub(super) const POLICY: &str = "cold-source-fuel-binding";
+pub(super) const CARRIER_POLICY: &str = "closed-mobile-generated-products-separate-H-B;local-remaining-targets;local-product-distribution-diagnostic";
 pub(super) const OUTPUTS: [f64; 14] = [
     0.001, 0.01, 0.1, 1., 2., 5., 10., 20., 30., 60., 120., 180., 240., 300.,
 ];
@@ -139,10 +140,125 @@ fn product_resolution(reference: f64, q: f64) -> Result<f64, String> {
     Ok(result)
 }
 impl Accuracy {
-    pub fn new(model: &Model, emissions: &[[f64; 2]]) -> Result<Self, String> {
-        let initial = model.initial_state()?;
+    /// Disjoint PRHR bank first law. Unlike bank-to-pool heat, this cannot
+    /// credit cooling of initially warm installed bank water/steel as primary
+    /// heat removal. WST/ROOM/spring are deliberately not bank stocks.
+    pub fn prhr_heat_receipts(
+        &self,
+        model: &Model,
+        y: &[f64],
+    ) -> Result<(f64, f64, f64, usize, usize), String> {
+        if y.len() != self.initial.len() {
+            return Err("Wrong PRHR heat receipt shape".into());
+        }
+        let p = model
+            .network
+            .prhr()
+            .ok_or("Missing PRHR heat receipt owner")?;
+        let base = model.layout.network_start;
+        let waters = p
+            .config
+            .liquid_contacts
+            .iter()
+            .map(|c| c.water)
+            .collect::<std::collections::BTreeSet<_>>();
+        let steels = p
+            .config
+            .liquid_contacts
+            .iter()
+            .map(|c| c.solid)
+            .chain(p.config.pool_contacts.iter().map(|c| c.solid))
+            .chain(p.config.gas_contacts.iter().map(|c| c.solid))
+            .collect::<std::collections::BTreeSet<_>>();
+        let nw = model.network.config().water.len();
+        let bank_rows = waters
+            .iter()
+            .map(|&i| base + model.network.energy_row(i))
+            .chain(
+                steels
+                    .iter()
+                    .map(|&i| base + model.network.energy_row(nw + i)),
+            )
+            .collect::<Vec<_>>();
+        let pool = base + p.layout.wst_start + leitbild_plant_numerics::finite_wst::ENERGY;
+        let gas = base + p.layout.gas_exported;
+        let connector = base + p.layout.connector_exported;
+        let delta = |row| y[row] - self.initial[row];
+        let bank_to_pool = delta(pool) + delta(gas);
+        let bank_change = bank_rows.iter().map(|&r| delta(r)).sum::<f64>();
+        let net_primary = bank_change + bank_to_pool + delta(connector);
+        let operand_magnitude = bank_rows
+            .iter()
+            .chain([pool, gas, connector].iter())
+            .map(|&r| y[r].abs() + self.initial[r].abs())
+            .sum::<f64>();
+        // Solver stock weights are not an integrated-output error bound. Use
+        // the existing receipt resolution plus explicit cancellation scale;
+        // independent normal/tighter signal comparison remains compulsory.
+        let resolution = 20. * (self.normal_absolute[gas] + self.normal_absolute[connector])
+            + 4096. * f64::EPSILON * operand_magnitude;
+        if [bank_to_pool, net_primary, resolution]
+            .iter()
+            .any(|x| !x.is_finite())
+            || resolution <= 0.
+        {
+            return Err("Nonfinite actual PRHR subset heat receipt".into());
+        }
+        Ok((
+            bank_to_pool,
+            net_primary,
+            resolution,
+            waters.len(),
+            steels.len(),
+        ))
+    }
+    pub fn prhr_ledgers(&self, model: &Model, y: &[f64]) -> Result<(), String> {
+        if y.len() != self.initial.len() {
+            return Err("Wrong finite WST mass audit shape".into());
+        }
+        if let Some(p) = model.network.prhr() {
+            let mass = model.layout.network_start + p.layout.wst_start;
+            let export = model.layout.network_start + p.layout.gas_mass_exported;
+            let defect = (y[mass] - self.initial[mass]) + (y[export] - self.initial[export]);
+            if !defect.is_finite() || defect.abs() > 1e-4 {
+                return Err(format!(
+                    "Finite WST/supplied gas mass ledger defect {defect} kg"
+                ));
+            }
+            let rows = [
+                (p.layout.room_energy, 1.),
+                (p.layout.room_ambient_exported, 1.),
+                (p.layout.electrical_received, -1.),
+                (p.layout.spring_released, -1.),
+            ];
+            let mut room_defect = 0.;
+            let mut operands = 0.;
+            for (row, sign) in rows {
+                let row = model.layout.network_start + row;
+                room_defect += sign * (y[row] - self.initial[row]);
+                operands += y[row].abs() + self.initial[row].abs();
+            }
+            let bound = 0.01 + 4096. * f64::EPSILON * operands;
+            if !room_defect.is_finite() || room_defect.abs() > bound {
+                return Err(format!("Finite PRHR ROOM.A/spring/support first-law defect {room_defect} J (bound{bound})"));
+            }
+        }
+        Ok(())
+    }
+    pub fn new(
+        model: &Model,
+        emissions: &[[f64; 2]],
+        input: Option<leitbild_plant_numerics::prhr::Input>,
+    ) -> Result<Self, String> {
+        let initial = model.initial_state_with_prhr_input(input)?;
         let mut work = model.workspace();
-        model.evaluate(&initial, &vec![0.; model.dimension()], None, &mut work)?;
+        model.evaluate_with_prhr_input(
+            &initial,
+            &vec![0.; model.dimension()],
+            None,
+            &mut work,
+            input,
+        )?;
         let source = source_accuracy::Accuracy::new(&model.source, emissions)?;
         let network = operating_admission::weights(
             &model.network,
@@ -309,6 +425,14 @@ impl Accuracy {
                 network.absolute[row] / TEMPERATURE_ATOL,
             )
         }));
+        if let Some(p) = n.prhr() {
+            energy_rows.extend(p.energy_rows().map(|row| {
+                (
+                    l.network_start + row,
+                    network.absolute[row] / TEMPERATURE_ATOL,
+                )
+            }));
+        }
         let initial_network_totals =
             operating_admission::totals(n, &initial[l.network_start..l.carrier_start]);
         let total = model
@@ -467,7 +591,11 @@ impl Accuracy {
             network_pressure_ratio: 0.,
             secondary_mass_ratio: 0.,
             sg_heat_ratio: 0.,
+            prhr_pair_ratio: 0.,
             carrier_ratio: 0.,
+            carrier_product_distribution_ratio: 0.,
+            carrier_product_distribution_worst: None,
+            carrier_generated_totals: String::new(),
             deposit_local_ratio: 0.,
             deposit_sumabs_ratio: 0.,
             max_temperature_change: 0.,
@@ -478,6 +606,7 @@ impl Accuracy {
             capture_power_sumabs_ratio: 0.,
             capture_paid_energy_ratio: 0.,
             capture_details: String::new(),
+            prhr_details: "null".into(),
             barrel_details: String::new(),
             pressure_pair_ratio: 0.,
             pressure_material_pair_ratio: 0.,
@@ -744,6 +873,99 @@ impl Accuracy {
             sg_error += (a.y[row] - b.y[row]).abs();
             sg_signal += (b.y[row] - self.initial[row]).abs();
         }
+        if let Some(p) = n.prhr() {
+            use leitbild_plant_numerics::finite_wst as fw;
+            let q = p.layout;
+            for (family, row, bound) in [
+                ("prhr-pool-mass", q.wst_start + fw::MASS, 0.01),
+                (
+                    "prhr-pool-temperature",
+                    q.wst_start + fw::TEMPERATURE,
+                    TEMPERATURE_PAIR,
+                ),
+                ("prhr-pool-volume", q.wst_start + fw::VOLUME, 1e-5),
+                ("prhr-signed-surface-mass-export", q.gas_mass_exported, 1e-4),
+            ] {
+                let r = result.record(
+                    family,
+                    row,
+                    an[row],
+                    bn[row],
+                    (an[row] - bn[row]).abs(),
+                    bound,
+                )?;
+                result.prhr_pair_ratio = result.prhr_pair_ratio.max(r);
+            }
+            for row in q.surface_start..q.spring_released {
+                let r = result.record(
+                    "prhr-film-surface-temperature",
+                    row,
+                    an[row],
+                    bn[row],
+                    (an[row] - bn[row]).abs(),
+                    TEMPERATURE_PAIR,
+                )?;
+                result.prhr_pair_ratio = result.prhr_pair_ratio.max(r);
+            }
+            let room = p.config.actuator;
+            let row = q.room_energy;
+            let r = result.record(
+                "prhr-room-temperature",
+                row,
+                an[row] / room.room_capacity_j_k,
+                bn[row] / room.room_capacity_j_k,
+                (an[row] - bn[row]).abs() / room.room_capacity_j_k,
+                TEMPERATURE_PAIR,
+            )?;
+            result.prhr_pair_ratio = result.prhr_pair_ratio.max(r);
+            for (row, _) in p.receipt_rows() {
+                let global = l.network_start + row;
+                let signal = (bn[row] - self.initial[global]).abs();
+                let r = result.record(
+                    "prhr-boundary-energy-receipt",
+                    row,
+                    an[row],
+                    bn[row],
+                    (an[row] - bn[row]).abs(),
+                    1e-3 * signal + 20. * self.normal_absolute[global],
+                )?;
+                result.prhr_pair_ratio = result.prhr_pair_ratio.max(r);
+            }
+            // Actual bank heat excludes CNV condensation and connector export:
+            // the pool energy equation gives Qbank=ΔEpool+surface/work export.
+            // A capacity-sized temperature tolerance cannot hide this signal.
+            let energy = l.network_start + q.wst_start + fw::ENERGY;
+            let gas = l.network_start + q.gas_exported;
+            let qa = (a.y[energy] - self.initial[energy]) + (a.y[gas] - self.initial[gas]);
+            let qb = (b.y[energy] - self.initial[energy]) + (b.y[gas] - self.initial[gas]);
+            let bound = 1e-3 * qb.abs() + 20. * self.normal_absolute[gas];
+            let r = result.record(
+                "prhr-actual-bank-to-pool-heat",
+                energy,
+                qa,
+                qb,
+                (qa - qb).abs(),
+                bound,
+            )?;
+            result.prhr_pair_ratio = result.prhr_pair_ratio.max(r);
+            let (_, na, resolution, water_owners, steel_owners) =
+                self.prhr_heat_receipts(model, &a.y)?;
+            let (_, nb, reference_resolution, _, _) = self.prhr_heat_receipts(model, &b.y)?;
+            let resolution = resolution.max(reference_resolution);
+            let net_bound = 1e-3 * nb.abs().max(na.abs()) + resolution;
+            let net_ratio = result.record(
+                "prhr-net-primary-to-bank-heat",
+                energy,
+                na,
+                nb,
+                (na - nb).abs(),
+                net_bound,
+            )?;
+            result.prhr_pair_ratio = result.prhr_pair_ratio.max(net_ratio);
+            result.prhr_details=format!("{{\"normalBankToPoolHeatJ\":{},\"tighterBankToPoolHeatJ\":{},\"pairedDifferenceJ\":{},\"pairedBoundJ\":{},\"normalNetPrimaryToPrhrHeatJ\":{},\"tighterNetPrimaryToPrhrHeatJ\":{},\"netPrimaryPairedDifferenceJ\":{},\"netPrimaryPairedBoundJ\":{},\"netPrimaryOperandResolutionJ\":{},\"bankWaterOwners\":{water_owners},\"bankSteelOwners\":{steel_owners},\"normalPoolEnergyChangeJ\":{},\"tighterPoolEnergyChangeJ\":{},\"normalSurfaceWorkExportJ\":{},\"tighterSurfaceWorkExportJ\":{},\"scope\":\"pool-first-law-plus-disjoint-bank-water-steel-first-law;CNV-surface-and-connector-receipts-separated;ROOM-spring-excluded\"}}",
+                finite(qa),finite(qb),finite((qa-qb).abs()),finite(bound),finite(na),finite(nb),finite((na-nb).abs()),finite(net_bound),finite(resolution),finite(a.y[energy]-self.initial[energy]),
+                finite(b.y[energy]-self.initial[energy]),finite(a.y[gas]-self.initial[gas]),finite(b.y[gas]-self.initial[gas]));
+        }
         // Exact existing SG recipient SUMABS criterion; unlike recipients
         // cannot cancel, and the 1 J signal floor is not an added error floor.
         result.sg_heat_ratio = ratio(sg_error, 0.005 * sg_signal.max(1.))?;
@@ -770,14 +992,14 @@ impl Accuracy {
                 };
                 let (energy, remaining) =
                     carrier_comparison(x, y, remaining_a, remaining_b, remaining_difference, q)?;
-                result.carrier_ratio = result.carrier_ratio.max(result.record(
-                    "mobile-product-paid-energy-equivalent",
+                result.record_product_distribution(
+                    "mobile-capture-product-energy-equivalent-distribution",
                     row,
                     q * x,
                     q * y,
                     q * (x - y).abs(),
                     energy.1,
-                )?);
+                )?;
                 result.carrier_ratio = result.carrier_ratio.max(result.record(
                     "mobile-remaining-target",
                     row,
@@ -788,6 +1010,31 @@ impl Accuracy {
                 )?);
             }
         }
+        // Transport cannot create another capture or repay its binding heat.
+        // Compare generated products once over the CLOSED connected inventory,
+        // separately by species; local depletion/current responses stay hard.
+        let mut generated_details = Vec::with_capacity(2);
+        for species in 0..2 {
+            let q = self.carrier_q[species];
+            let x = mobile_generated_energy(model, species, &a.y, &self.initial, q)?;
+            let y = mobile_generated_energy(model, species, &b.y, &self.initial, q)?;
+            let bound = 1e-3 * y.abs() + 20. * ENERGY_ATOL;
+            let product_ratio = result.record(
+                if species == 0 {
+                    "closed-mobile-H-generated-product-energy"
+                } else {
+                    "closed-mobile-B-generated-product-energy"
+                },
+                species,
+                x,
+                y,
+                (x - y).abs(),
+                bound,
+            )?;
+            result.carrier_ratio = result.carrier_ratio.max(product_ratio);
+            generated_details.push(format!("{{\"species\":\"{}\",\"owners\":{},\"normalJ\":{},\"tighterJ\":{},\"differenceJ\":{},\"boundJ\":{},\"ratio\":{}}}",if species == 0 { "H" } else { "B" },model.mobile_product_rows(species).count(),finite(x),finite(y),finite((x-y).abs()),finite(bound),finite(product_ratio)));
+        }
+        result.carrier_generated_totals = format!("[{}]", generated_details.join(","));
         if a.deposition.len() != model.fuel_rows().len()
             || b.deposition.len() != model.fuel_rows().len()
         {
@@ -931,15 +1178,14 @@ impl Accuracy {
                 };
                 let q = self.carrier_q[species];
                 let (energy, remaining) = carrier_comparison(x, y, ra, rb, dr, q)?;
-                result.pressure_material_pair_ratio =
-                    result.pressure_material_pair_ratio.max(result.record(
-                        "pressure-support-product-paid-energy",
-                        row,
-                        q * x,
-                        q * y,
-                        q * (x - y).abs(),
-                        energy.1,
-                    )?);
+                result.record_product_distribution(
+                    "pressure-liquid-capture-product-energy-equivalent-distribution",
+                    row,
+                    q * x,
+                    q * y,
+                    q * (x - y).abs(),
+                    energy.1,
+                )?;
                 result.pressure_material_pair_ratio =
                     result.pressure_material_pair_ratio.max(result.record(
                         "pressure-support-remaining-target",
@@ -959,15 +1205,14 @@ impl Accuracy {
         let rb = href * b.y[ps + cp::VAPOR_MASS] - y;
         let dr = href * (a.y[ps + cp::VAPOR_MASS] - b.y[ps + cp::VAPOR_MASS]) - (x - y);
         let (energy, remaining) = carrier_comparison(x, y, ra, rb, dr, q)?;
-        result.pressure_material_pair_ratio =
-            result.pressure_material_pair_ratio.max(result.record(
-                "pressure-vapor-product-paid-energy",
-                row,
-                q * x,
-                q * y,
-                q * (x - y).abs(),
-                energy.1,
-            )?);
+        result.record_product_distribution(
+            "pressure-vapor-capture-product-energy-equivalent-distribution",
+            row,
+            q * x,
+            q * y,
+            q * (x - y).abs(),
+            energy.1,
+        )?;
         result.pressure_material_pair_ratio =
             result.pressure_material_pair_ratio.max(result.record(
                 "pressure-vapor-remaining-target",
@@ -979,6 +1224,35 @@ impl Accuracy {
             )?);
         Ok(())
     }
+}
+/// Sum per-owner generated increments before applying Q, with compensated
+/// addition. Initial products are retained inventory, not newly paid captures.
+fn mobile_generated_energy(
+    model: &Model,
+    species: usize,
+    y: &[f64],
+    initial: &[f64],
+    q: f64,
+) -> Result<f64, String> {
+    if y.len() != model.dimension() || initial.len() != y.len() || !q.is_finite() || q < 0. {
+        return Err("Invalid closed mobile product accounting shape/Q".into());
+    }
+    let (mut sum, mut compensation) = (0f64, 0f64);
+    for row in model.mobile_product_rows(species) {
+        let value = y[row] - initial[row];
+        let next = sum + value;
+        compensation += if sum.abs() >= value.abs() {
+            (sum - next) + value
+        } else {
+            (value - next) + sum
+        };
+        sum = next;
+    }
+    let result = q * (sum + compensation);
+    if !result.is_finite() {
+        return Err("Nonfinite closed mobile product accounting".into());
+    }
+    Ok(result)
 }
 fn refined(values: &[f64], refinement: f64) -> Result<Vec<f64>, String> {
     if !refinement.is_finite() || refinement <= 0. {
@@ -1080,7 +1354,11 @@ pub(super) struct Comparison {
     pub network_pressure_ratio: f64,
     pub secondary_mass_ratio: f64,
     pub sg_heat_ratio: f64,
+    pub prhr_pair_ratio: f64,
     pub carrier_ratio: f64,
+    pub carrier_product_distribution_ratio: f64,
+    carrier_product_distribution_worst: Option<(&'static str, usize, f64, f64, f64, f64, f64)>,
+    carrier_generated_totals: String,
     pub deposit_local_ratio: f64,
     pub deposit_sumabs_ratio: f64,
     pub max_temperature_change: f64,
@@ -1096,9 +1374,34 @@ pub(super) struct Comparison {
     pub max_pressure_difference: f64,
     barrel_details: String,
     capture_details: String,
+    prhr_details: String,
     worst: Option<(&'static str, usize, f64, f64, f64, f64, f64)>,
 }
 impl Comparison {
+    fn record_product_distribution(
+        &mut self,
+        family: &'static str,
+        row: usize,
+        x: f64,
+        y: f64,
+        difference: f64,
+        bound: f64,
+    ) -> Result<(), String> {
+        if !x.is_finite() || !y.is_finite() {
+            return Err("Nonfinite mobile product distribution".into());
+        }
+        let value = ratio(difference, bound)?;
+        if self
+            .carrier_product_distribution_worst
+            .is_none_or(|w| value > w.6)
+        {
+            self.carrier_product_distribution_worst =
+                Some((family, row, x, y, difference, bound, value));
+        }
+        self.carrier_product_distribution_ratio =
+            self.carrier_product_distribution_ratio.max(value);
+        Ok(())
+    }
     fn record(
         &mut self,
         family: &'static str,
@@ -1127,6 +1430,7 @@ impl Comparison {
                 self.network_pressure_ratio,
                 self.secondary_mass_ratio,
                 self.sg_heat_ratio,
+                self.prhr_pair_ratio,
                 self.carrier_ratio,
                 self.deposit_local_ratio,
                 self.deposit_sumabs_ratio,
@@ -1143,8 +1447,12 @@ impl Comparison {
     }
     pub fn json(&self) -> String {
         let worst=self.worst.map_or("null".into(),|(family,row,a,b,difference,bound,value)|format!("{{\"family\":{},\"row\":{row},\"normal\":{},\"tighter\":{},\"difference\":{},\"bound\":{},\"ratio\":{}}}",quote(family),finite(a),finite(b),finite(difference),finite(bound),finite(value)));
+        let prhr_ratio = finite(self.prhr_pair_ratio);
+        let prhr_details = &self.prhr_details;
+        let generated_totals = &self.carrier_generated_totals;
+        let product_distribution = self.carrier_product_distribution_worst.map_or("null".into(), |(family,row,a,b,difference,bound,value)| format!("{{\"admission\":false,\"family\":{},\"row\":{row},\"normal\":{},\"tighter\":{},\"difference\":{},\"bound\":{},\"ratio\":{}}}",quote(family),finite(a),finite(b),finite(difference),finite(bound),finite(value)));
         format!(
-            "{{\"policy\":\"{POLICY}\",\"provisional\":true,\"fullPairQualified\":false,\"source\":{},\"thermalTemperatureRatio\":{},\"thermalEnergyRatio\":{},\"thermalSUMABSRatio\":{},\"networkTemperatureRatio\":{},\"networkPressureRatio\":{},\"secondaryMassRatio\":{},\"SGHeatRatio\":{},\"carrierConsequenceRatio\":{},\"depositionLocalRatio\":{},\"depositionSUMABSRatio\":{},\"thermalTemperatureChange\":{},\"thermalTemperaturePairDifference\":{},\"barrelPairRatio\":{},\"barrelPowerPairRatio\":{},\"barrelReceipts\":{},\"capturePowerLocalRatio\":{},\"capturePowerSUMABSRatio\":{},\"capturePaidEnergyRatio\":{},\"captureReceipts\":{},\"pressurePairRatio\":{},\"pressureMaterialPairRatio\":{},\"pressureChangePa\":{},\"pressurePairDifferencePa\":{},\"worstCooling\":{}}}",
+            "{{\"policy\":\"{POLICY}\",\"provisional\":true,\"fullPairQualified\":false,\"prhrPairRatio\":{prhr_ratio},\"prhrReceipts\":{prhr_details},\"source\":{},\"thermalTemperatureRatio\":{},\"thermalEnergyRatio\":{},\"thermalSUMABSRatio\":{},\"networkTemperatureRatio\":{},\"networkPressureRatio\":{},\"secondaryMassRatio\":{},\"SGHeatRatio\":{},\"carrierConsequenceRatio\":{},\"carrierComparisonPolicy\":\"{CARRIER_POLICY}\",\"carrierGeneratedTotals\":{generated_totals},\"carrierProductDistributionDiagnostic\":{product_distribution},\"depositionLocalRatio\":{},\"depositionSUMABSRatio\":{},\"thermalTemperatureChange\":{},\"thermalTemperaturePairDifference\":{},\"barrelPairRatio\":{},\"barrelPowerPairRatio\":{},\"barrelReceipts\":{},\"capturePowerLocalRatio\":{},\"capturePowerSUMABSRatio\":{},\"capturePaidEnergyRatio\":{},\"captureReceipts\":{},\"pressurePairRatio\":{},\"pressureMaterialPairRatio\":{},\"pressureChangePa\":{},\"pressurePairDifferencePa\":{},\"worstCooling\":{}}}",
             self.source.json(),
             finite(self.thermal_temperature_ratio),
             finite(self.thermal_energy_ratio),
@@ -1324,10 +1632,74 @@ mod tests {
         }
     }
     #[test]
+    fn mobile_products_compare_closed_generation_not_local_heat_redistribution() {
+        let model = super::super::cooling_fixture::fixture_with_contrast();
+        let accuracy = Accuracy::new(
+            &model,
+            &vec![[0.01, 0.02]; model.source.target_reference_atoms().len()],
+            None,
+        )
+        .unwrap();
+        let l = model.layout;
+        let mut a = sample(&model);
+        let mut b = sample(&model);
+        let q = accuracy.carrier_q[1];
+        assert!(q > 0.);
+        // A transported stable product does not deposit its binding Q again.
+        a.y[l.carrier_start + 2] += 1e-7 / q;
+        b.y[l.pool_carrier_start + 2] += 1e-7 / q;
+        let comparison = accuracy.compare_one(&model, &a, &b).unwrap();
+        assert!(comparison.carrier_product_distribution_ratio > 1.);
+        assert_eq!(comparison.carrier_ratio, 0.);
+        assert!(!comparison.failed());
+        // Omitting the receiving compartment or accepting a wrong-zero total
+        // would hide this mismatch; the complete generated-total gate refuses.
+        b.y[l.pool_carrier_start + 2] = accuracy.initial[l.pool_carrier_start + 2];
+        let comparison = accuracy.compare_one(&model, &a, &b).unwrap();
+        assert!(comparison.carrier_ratio > 1. && comparison.failed());
+        // H/B have separate budgets, not a cancelling combined-energy sum.
+        b.y[l.gas_hydrogen_product] += 1e-7 / accuracy.carrier_q[0];
+        assert!(accuracy.compare_one(&model, &a, &b).unwrap().carrier_ratio > 1.);
+        // Remaining B10 is a current source consumer and remains a local gate.
+        a = sample(&model);
+        b = sample(&model);
+        b.y[l.carrier_start + 1] *= 1.01;
+        assert!(accuracy.compare_one(&model, &a, &b).unwrap().carrier_ratio > 1.);
+    }
+    #[test]
+    fn generated_mobile_product_sums_use_every_owner_and_prepared_offsets() {
+        let model = super::super::cooling_fixture::fixture_with_contrast();
+        for species in 0..2 {
+            let mut initial = model.initial_state().unwrap();
+            let mut y = initial.clone();
+            let rows = model.mobile_product_rows(species).collect::<Vec<_>>();
+            for (i, &row) in rows.iter().enumerate() {
+                initial[row] = 1000. + i as f64;
+                y[row] = initial[row] + 0.125;
+            }
+            assert_eq!(
+                mobile_generated_energy(&model, species, &initial, &initial, 0.5).unwrap(),
+                0.
+            );
+            assert_eq!(
+                mobile_generated_energy(&model, species, &y, &initial, 0.5).unwrap(),
+                rows.len() as f64 * 0.0625
+            );
+            for &row in &rows {
+                y[row] += 0.25;
+                assert_eq!(
+                    mobile_generated_energy(&model, species, &y, &initial, 0.5).unwrap(),
+                    rows.len() as f64 * 0.0625 + 0.125
+                );
+                y[row] -= 0.25;
+            }
+        }
+    }
+    #[test]
     fn barrel_owned_energy_expectation_and_nuclear_pair_cannot_hide_in_thermal_power() {
         let model = super::super::cooling_fixture::fixture_with_contrast();
         let emissions = vec![[0.01, 0.02]; model.source.target_reference_atoms().len()];
-        let accuracy = Accuracy::new(&model, &emissions).unwrap();
+        let accuracy = Accuracy::new(&model, &emissions, None).unwrap();
         let l = model.layout;
         let mut y = model.initial_state().unwrap();
         let original = accuracy.expected_network_totals(&model, &y).unwrap();
@@ -1380,7 +1752,7 @@ mod tests {
     fn binding_channels_and_paid_exported_energy_are_independently_qualified() {
         let model = super::super::cooling_fixture::fixture_with_contrast();
         let emissions = vec![[0.01, 0.02]; model.source.target_reference_atoms().len()];
-        let accuracy = Accuracy::new(&model, &emissions).unwrap();
+        let accuracy = Accuracy::new(&model, &emissions, None).unwrap();
         let a = sample(&model);
         assert!(!accuracy.compare_one(&model, &a, &a).unwrap().failed());
         for channel in 0..5 {
@@ -1435,7 +1807,7 @@ mod tests {
     fn pressure_support_is_in_closed_ledgers_and_refined_comparison() {
         let model = super::super::cooling_fixture::fixture_with_contrast();
         let emissions = vec![[0.01, 0.02]; model.source.target_reference_atoms().len()];
-        let accuracy = Accuracy::new(&model, &emissions).unwrap();
+        let accuracy = Accuracy::new(&model, &emissions, None).unwrap();
         let l = model.layout;
         let normal = accuracy.absolute(1.).unwrap();
         let tight = accuracy.absolute(10.).unwrap();
@@ -1489,7 +1861,7 @@ mod tests {
         assert!(deposit_comparison(&[], &[]).is_err());
     }
     #[test]
-    fn mobile_products_have_paid_energy_and_actual_remaining_target_checks() {
+    fn product_distribution_diagnostic_keeps_actual_remaining_target_checks() {
         let (energy, remaining) = carrier_comparison(1., 2., 99., 98., 1., 1.).unwrap();
         assert!(energy.0 > 1.);
         assert!(remaining.0 > 1.);

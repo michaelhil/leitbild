@@ -6,13 +6,13 @@
 //! EOS excludes that mechanical correction: this is an explicit cold pressure
 //! approximation, not exact compressible entropy, phase or coastdown physics.
 //! No pump, rotor, maintained boundary, nested chart inverse or acoustic mode.
-use crate::{CellGeometry, GRAVITY, Liquid, LiquidQuery, liquid_batch};
+use crate::{liquid_batch, CellGeometry, Liquid, LiquidQuery, GRAVITY};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 mod hydraulic;
 use crate::sg_secondary::{Inventory as SecondaryInventory, State as SecondaryState};
 pub use crate::sg_secondary::{Secondary, SecondaryHeat};
-pub use hydraulic::{Hydraulic, LossLaw};
+pub use hydraulic::{Hydraulic, HydraulicSegment, LossLaw, Seat};
 pub const SOLID_DATUM_K: f64 = 300.;
 
 #[derive(Clone, Copy, Debug)]
@@ -65,6 +65,8 @@ pub struct Config {
     pub heat: Vec<Heat>,
     pub secondaries: Vec<Secondary>,
     pub secondary_heat: Vec<SecondaryHeat>,
+    pub seat: Option<Seat>,
+    pub prhr: Option<crate::prhr::Config>,
 }
 
 pub struct Network {
@@ -76,6 +78,7 @@ pub struct Network {
     pub row_indices: Vec<i64>,
     energy_rate_slots: Vec<(usize, usize)>,
     owner: Arc<()>,
+    prhr: Option<crate::prhr::Model>,
 }
 impl Network {
     pub fn new(config: Config) -> Result<Self, String> {
@@ -124,28 +127,45 @@ impl Network {
                 return Err("Invalid finite solid input".into());
             }
         }
-        for e in &config.hydraulic {
-            if e.from >= nw
-                || e.to >= nw
-                || e.from == e.to
-                || !e.length.is_finite()
-                || e.length <= 0.
-                || !e.diameter.is_finite()
-                || e.diameter <= 0.
-                || !e.flow_area.is_finite()
-                || e.flow_area <= 0.
-                || !e.roughness.is_finite()
-                || e.roughness < 0.
-                || e.roughness / e.diameter > 0.1
-                || !e.fixed_loss.is_finite()
-                || e.fixed_loss < 0.
-                || !e.grid_multiplier.is_finite()
-                || e.grid_multiplier < 0.
-                || matches!(e.law,LossLaw::GuideAnnulus{laminar_darcy}
-                    if !laminar_darcy.is_finite() || laminar_darcy<=0.)
+        for edge in &config.hydraulic {
+            if edge.from >= nw
+                || edge.to >= nw
+                || edge.from == edge.to
+                || edge.segments.is_empty()
+                || !edge.from_elevation.is_finite()
+                || !edge.to_elevation.is_finite()
             {
-                return Err("Invalid hydraulic contact".into());
+                return Err("Invalid hydraulic incidence/serial geometry".into());
             }
+            for e in &edge.segments {
+                if !e.length.is_finite()
+                    || e.length <= 0.
+                    || !e.diameter.is_finite()
+                    || e.diameter <= 0.
+                    || !e.flow_area.is_finite()
+                    || e.flow_area <= 0.
+                    || !e.roughness.is_finite()
+                    || e.roughness < 0.
+                    || e.roughness / e.diameter > 0.1
+                    || !e.fixed_loss.is_finite()
+                    || e.fixed_loss < 0.
+                    || !e.grid_multiplier.is_finite()
+                    || e.grid_multiplier < 0.
+                    || matches!(e.law,LossLaw::GuideAnnulus{laminar_darcy}
+                    if !laminar_darcy.is_finite() || laminar_darcy<=0.)
+                {
+                    return Err("Invalid hydraulic contact".into());
+                }
+            }
+        }
+        if config.seat.is_some_and(|s| {
+            s.edge >= config.hydraulic.len()
+                || !s.area.is_finite()
+                || s.area <= 0.
+                || !s.full_open_loss.is_finite()
+                || s.full_open_loss <= 0.
+        }) {
+            return Err("Invalid selected variable seat".into());
         }
         // One pressure territory and one mechanical gauge require a connected
         // incidence. This is topology rank, not a general phase/index proof.
@@ -233,6 +253,28 @@ impl Network {
             .iter()
             .map(|w| w.initial_pressure - anchor)
             .collect();
+        let prhr = config
+            .prhr
+            .clone()
+            .map(|p| {
+                crate::prhr::Model::new(
+                    p,
+                    4 * nw
+                        + 1
+                        + config.solids.len()
+                        + config.hydraulic.len()
+                        + 3 * config.secondaries.len(),
+                    nw,
+                    config.solids.len(),
+                    config.hydraulic.len(),
+                )
+            })
+            .transpose()?;
+        if config.seat.is_some() != prhr.is_some() {
+            return Err(
+                "Selected PRHR requires its physical seat and finite receiver together".into(),
+            );
+        }
         let mut network = Self {
             config,
             pressure_offsets,
@@ -241,6 +283,7 @@ impl Network {
             row_indices: vec![],
             energy_rate_slots: vec![],
             owner: Arc::new(()),
+            prhr,
         };
         let n = network.dimension();
         let mut pattern = vec![BTreeSet::new(); n];
@@ -339,6 +382,84 @@ impl Network {
                 }
             }
         }
+        if let Some(prhr) = &network.prhr {
+            let l = prhr.layout;
+            for row in l.wst_start..l.dimension {
+                pattern[row].insert(row);
+            }
+            for col in l.wst_start..l.wst_start + 4 {
+                for row in l.wst_start..l.wst_start + 4 {
+                    pattern[col].insert(row);
+                }
+                pattern[col].insert(l.gas_exported);
+                pattern[col].insert(l.gas_mass_exported);
+            }
+            pattern[l.room_energy].insert(l.room_ambient_exported);
+            for (i, c) in prhr.config.liquid_contacts.iter().enumerate() {
+                let surface = l.surface_start + i;
+                for col in [
+                    p,
+                    network.temperature_row(c.water),
+                    network.flow_row(c.flow_edge),
+                    network.energy_row(nw + c.solid),
+                    surface,
+                ] {
+                    for row in [
+                        network.energy_row(c.water),
+                        network.energy_row(nw + c.solid),
+                        surface,
+                    ] {
+                        pattern[col].insert(row);
+                    }
+                }
+            }
+            for (i, c) in prhr.config.pool_contacts.iter().enumerate() {
+                let surface = l.surface_start + prhr.config.liquid_contacts.len() + i;
+                for col in [
+                    l.wst_start + 2,
+                    l.wst_start + 3,
+                    network.energy_row(nw + c.solid),
+                    surface,
+                ] {
+                    for row in [l.wst_start + 1, network.energy_row(nw + c.solid), surface] {
+                        pattern[col].insert(row);
+                    }
+                }
+            }
+            for c in &prhr.config.gas_contacts {
+                pattern[network.energy_row(nw + c.solid)].insert(l.connector_exported);
+            }
+            for c in &prhr.config.mixing {
+                for col in [
+                    p,
+                    network.temperature_row(c.from),
+                    network.temperature_row(c.to),
+                    network.temperature_row(c.sg_water),
+                    network.flow_row(c.sg_flow_edge),
+                    network.marker_row(c.from),
+                    network.marker_row(c.to),
+                ] {
+                    for row in [
+                        c.from,
+                        c.to,
+                        network.marker_row(c.from),
+                        network.marker_row(c.to),
+                    ] {
+                        pattern[col].insert(row);
+                    }
+                }
+            }
+            for c in &prhr.config.axial {
+                for col in [
+                    p,
+                    network.temperature_row(c.from),
+                    network.temperature_row(c.to),
+                ] {
+                    pattern[col].insert(c.from);
+                    pattern[col].insert(c.to);
+                }
+            }
+        }
         network.column_pointers.push(0);
         for column in pattern {
             network
@@ -351,6 +472,7 @@ impl Network {
         let energy_rows = (0..network.config.water.len() + network.config.solids.len())
             .map(|i| network.energy_row(i))
             .chain((0..network.config.secondaries.len()).map(|i| network.secondary_energy_row(i)))
+            .chain(network.prhr.iter().flat_map(|p| p.energy_rows()))
             .collect::<BTreeSet<_>>();
         for col in 0..network.dimension() {
             for slot in
@@ -365,6 +487,18 @@ impl Network {
     }
     pub fn config(&self) -> &Config {
         &self.config
+    }
+    pub fn prhr(&self) -> Option<&crate::prhr::Model> {
+        self.prhr.as_ref()
+    }
+    pub fn prhr_layout(&self) -> Option<crate::prhr::Layout> {
+        self.prhr.as_ref().map(|p| p.layout)
+    }
+    pub fn installed_energy_rows(&self) -> impl Iterator<Item = usize> + '_ {
+        (0..self.config.water.len() + self.config.solids.len())
+            .map(|i| self.energy_row(i))
+            .chain((0..self.config.secondaries.len()).map(|i| self.secondary_energy_row(i)))
+            .chain(self.prhr.iter().flat_map(|p| p.energy_rows()))
     }
     fn check_ports(&self, ports: &[LiquidPort]) -> Result<(), String> {
         if ports.iter().any(|p| {
@@ -423,7 +557,10 @@ impl Network {
         (node > 0).then(|| self.flow_row(self.config.hydraulic.len()) + node - 1)
     }
     pub fn dimension(&self) -> usize {
-        self.base_dimension() + 3 * self.config.secondaries.len()
+        self.prhr.as_ref().map_or(
+            self.base_dimension() + 3 * self.config.secondaries.len(),
+            |p| p.layout.dimension,
+        )
     }
     pub fn base_dimension(&self) -> usize {
         self.flow_row(self.config.hydraulic.len()) + self.config.water.len() - 1
@@ -457,7 +594,16 @@ impl Network {
     pub fn is_differential(&self, row: usize) -> bool {
         assert!(row < self.dimension());
         row < self.stock_dimension()
-            || (row >= self.base_dimension() && (row - self.base_dimension()) % 3 == 0)
+            || (row >= self.base_dimension()
+                && row < self.base_dimension() + 3 * self.config.secondaries.len()
+                && (row - self.base_dimension()) % 3 == 0)
+            || self.prhr.as_ref().is_some_and(|p| {
+                let l = p.layout;
+                row == l.wst_start
+                    || row == l.wst_start + 1
+                    || row == l.room_energy
+                    || row >= l.spring_released
+            })
     }
     pub fn pressure_offset(&self, node: usize) -> f64 {
         self.pressure_offsets[node]
@@ -470,6 +616,52 @@ impl Network {
     }
     pub fn mechanical_pressure(&self, node: usize, y: &[f64]) -> f64 {
         self.eos_pressure(node, y) + self.relative_pressure(node, y)
+    }
+    /// Signed force head at the actual hydraulic ports. The shared absolute
+    /// EOS pressure cancels analytically; diagnostics must not reconstruct it
+    /// by subtracting two large total pressures. The second result is the sum
+    /// of absolute arithmetic operands, not an additional physical head.
+    /// Liquids are the caller's already prepared current EOS values: no query
+    /// or stock recovery is performed here.
+    pub fn hydraulic_drive(
+        &self,
+        edge: usize,
+        y: &[f64],
+        liquids: &[Liquid],
+    ) -> Result<(f64, f64), String> {
+        if y.len() != self.dimension() || liquids.len() != self.config.water.len() {
+            return Err("Hydraulic drive state/property shape".into());
+        }
+        let e = self
+            .config
+            .hydraulic
+            .get(edge)
+            .ok_or("Hydraulic drive edge")?;
+        let dz = e.to_elevation - e.from_elevation;
+        let ga =
+            GRAVITY * (self.config.water[e.from].geometry.elevation - e.from_elevation - 0.5 * dz);
+        let gb = GRAVITY * (e.to_elevation - self.config.water[e.to].geometry.elevation - 0.5 * dz);
+        let (pa, pb) = (
+            self.relative_pressure(e.from, y),
+            self.relative_pressure(e.to, y),
+        );
+        let (ha, hb) = (ga * liquids[e.from].density, gb * liquids[e.to].density);
+        let drive = self.pressure_offsets[e.from] - self.pressure_offsets[e.to] + pa - pb + ha + hb;
+        let scale = self.pressure_offsets[e.from].abs()
+            + self.pressure_offsets[e.to].abs()
+            + pa.abs()
+            + pb.abs()
+            + ha.abs()
+            + hb.abs();
+        if !drive.is_finite()
+            || !scale.is_finite()
+            || ![liquids[e.from].density, liquids[e.to].density]
+                .iter()
+                .all(|v| v.is_finite() && *v > 0.)
+        {
+            return Err("Nonfinite hydraulic drive/property".into());
+        }
+        Ok((drive, scale))
     }
     pub fn temperature(&self, thermal: usize, y: &[f64]) -> f64 {
         let nw = self.config.water.len();
@@ -516,6 +708,18 @@ impl Network {
             y[self.secondary_temperature_row(k)] = s.initial_temperature;
             y[self.secondary_pressure_row(k)] = s.initial_pressure;
         }
+        if let Some(p) = &self.prhr {
+            let l = p.layout;
+            y[l.wst_start..l.wst_start + 4].copy_from_slice(&p.wst.prepare(p.config.gas)?);
+            y[l.room_energy] = p.actuator.prepare()[crate::prhr_actuator::ROOM_ENERGY];
+            for (i, c) in p.config.liquid_contacts.iter().enumerate() {
+                y[l.surface_start + i] = self.temperature(self.config.water.len() + c.solid, &y);
+            }
+            for (i, c) in p.config.pool_contacts.iter().enumerate() {
+                y[l.surface_start + p.config.liquid_contacts.len() + i] =
+                    self.temperature(self.config.water.len() + c.solid, &y);
+            }
+        }
         if y.iter().any(|x| !x.is_finite()) {
             return Err("Nonfinite original stock".into());
         }
@@ -546,6 +750,7 @@ pub struct Workspace {
     pub film_raw_prandtl_ratio: Vec<f64>,
     pub secondary_states: Vec<SecondaryState>,
     pub secondary_heat_flows: Vec<f64>,
+    pub prhr: Option<crate::prhr::Workspace>,
     queries: Vec<LiquidQuery>,
     probe_queries: Vec<LiquidQuery>,
     probes: Vec<Liquid>,
@@ -575,6 +780,294 @@ fn chart(w: Water, l: Liquid, p: f64, t: f64) -> Result<([f64; 4], [f64; 2]), St
     Ok(([mp, mt, ep, et], [a, b]))
 }
 impl Workspace {
+    fn evaluate_prhr(
+        &mut self,
+        n: &Network,
+        y: &[f64],
+        yp: &[f64],
+        cj: Option<f64>,
+        input: crate::prhr::Input,
+    ) -> Result<(), String> {
+        use crate::finite_wst as pool;
+        let p = n.prhr.as_ref().ok_or("Missing selected PRHR owner")?;
+        let l = p.layout;
+        let nw = n.config.water.len();
+        let mut w = self.prhr.take().ok_or("Missing selected PRHR workspace")?;
+        let result = (|| {
+            w.pool_heat_w = 0.;
+            w.connector_export_w = 0.;
+            w.property_requests = 0;
+            w.input = Some(input);
+            let wy: [f64; 4] = y[l.wst_start..l.wst_start + 4].try_into().unwrap();
+            let wyp: [f64; 4] = yp[l.wst_start..l.wst_start + 4].try_into().unwrap();
+            p.wst.evaluate(&wy, &wyp, 0., p.config.gas, &mut w.wst)?;
+            w.mixing
+                .resize(p.config.mixing.len(), crate::prhr::MixingState::default());
+            for (i, c) in p.config.mixing.iter().enumerate() {
+                let sg = self.liquids[c.sg_water];
+                let velocity = self.mass_flows[c.sg_flow_edge] / (sg.density * c.sg_flow_area);
+                let pressure = 0.5 * (n.eos_pressure(c.from, y) + n.eos_pressure(c.to, y));
+                let r = crate::prhr_mixing::evaluate(
+                    c,
+                    pressure,
+                    n.temperature(c.from, y),
+                    n.temperature(c.to, y),
+                    velocity,
+                    cj.is_some(),
+                    &mut w.property_requests,
+                )?;
+                let chain = |d: [f64; 4]| {
+                    [
+                        d[0] - d[3] * velocity * sg.compressibility,
+                        d[1],
+                        d[2],
+                        d[3] * velocity * sg.expansion,
+                        d[3] / (sg.density * c.sg_flow_area),
+                    ]
+                };
+                let heat = chain(r.heat_partials);
+                let scalar = chain(r.scalar_partials);
+                w.mixing[i] = crate::prhr::MixingState {
+                    coefficient: r.scalar_kg_s,
+                    partials: scalar,
+                };
+                self.rates[c.from] -= r.heat_w;
+                self.rates[c.to] += r.heat_w;
+                self.residual[c.from] += r.heat_w;
+                self.residual[c.to] -= r.heat_w;
+                let concentrations = [
+                    y[n.marker_row(c.from)] / self.chart_mass[c.from],
+                    y[n.marker_row(c.to)] / self.chart_mass[c.to],
+                ];
+                let contrast = concentrations[0] - concentrations[1];
+                let flux = r.scalar_kg_s * contrast;
+                self.rates[n.marker_row(c.from)] -= flux;
+                self.rates[n.marker_row(c.to)] += flux;
+                self.residual[n.marker_row(c.from)] += flux;
+                self.residual[n.marker_row(c.to)] -= flux;
+                if cj.is_some() {
+                    let cols = [
+                        n.pressure_row(),
+                        n.temperature_row(c.from),
+                        n.temperature_row(c.to),
+                        n.temperature_row(c.sg_water),
+                        n.flow_row(c.sg_flow_edge),
+                    ];
+                    for j in 0..5 {
+                        self.add(n, c.from, cols[j], heat[j]);
+                        self.add(n, c.to, cols[j], -heat[j]);
+                        self.add(n, n.marker_row(c.from), cols[j], scalar[j] * contrast);
+                        self.add(n, n.marker_row(c.to), cols[j], -scalar[j] * contrast);
+                    }
+                    for (index, (node, sign)) in [(c.from, 1.), (c.to, -1.)].into_iter().enumerate()
+                    {
+                        let l = self.liquids[node];
+                        let conc = concentrations[index];
+                        for (col, dconc) in [
+                            (n.marker_row(node), 1. / self.chart_mass[node]),
+                            (n.pressure_row(), -conc * l.compressibility),
+                            (n.temperature_row(node), conc * l.expansion),
+                        ] {
+                            let value = r.scalar_kg_s * sign * dconc;
+                            self.add(n, n.marker_row(c.from), col, value);
+                            self.add(n, n.marker_row(c.to), col, -value);
+                        }
+                    }
+                }
+            }
+            for c in &p.config.axial {
+                let a = self.liquids[c.from];
+                let b = self.liquids[c.to];
+                let sum = a.conductivity + b.conductivity;
+                let harmonic = 2. * a.conductivity * b.conductivity / sum;
+                let contrast = n.temperature(c.from, y) - n.temperature(c.to, y);
+                let area = c.area * if c.seat { input.opening } else { 1. };
+                let g = harmonic * area / c.separation;
+                let q = g * contrast;
+                self.rates[c.from] -= q;
+                self.rates[c.to] += q;
+                self.residual[c.from] += q;
+                self.residual[c.to] -= q;
+                if cj.is_some() {
+                    let da =
+                        2. * b.conductivity * b.conductivity / (sum * sum) * area / c.separation;
+                    let db =
+                        2. * a.conductivity * a.conductivity / (sum * sum) * area / c.separation;
+                    for (col, dq) in [
+                        (
+                            n.pressure_row(),
+                            contrast
+                                * (da * self.local_derivatives[c.from][2]
+                                    + db * self.local_derivatives[c.to][2]),
+                        ),
+                        (
+                            n.temperature_row(c.from),
+                            g + contrast * da * self.local_derivatives[c.from][3],
+                        ),
+                        (
+                            n.temperature_row(c.to),
+                            -g + contrast * db * self.local_derivatives[c.to][3],
+                        ),
+                    ] {
+                        self.add(n, c.from, col, dq);
+                        self.add(n, c.to, col, -dq);
+                    }
+                }
+            }
+            for (i, c) in p.config.liquid_contacts.iter().enumerate() {
+                let surface = l.surface_start + i;
+                let metal = n.energy_row(nw + c.solid);
+                let cap = n.config.solids[c.solid].heat_capacity;
+                let temperature = n.temperature(nw + c.solid, y);
+                let (v, d) = sensible_with_partials(
+                    n.eos_pressure(c.water, y),
+                    n.temperature(c.water, y),
+                    y[surface],
+                    self.mass_flows[c.flow_edge],
+                    c.area,
+                    c.diameter,
+                    c.flow_area,
+                    cj.is_some(),
+                    &mut w.property_requests,
+                )?;
+                let fraction = c.weight.fraction(input.opening);
+                let q = fraction * v.0;
+                self.rates[c.water] -= q;
+                self.rates[metal] += q;
+                self.residual[c.water] += q;
+                self.residual[metal] -= q;
+                self.residual[surface] = y[surface] - temperature - c.half_resistance * v.0;
+                if cj.is_some() {
+                    for (col, partial) in [
+                        (n.pressure_row(), d[0]),
+                        (n.temperature_row(c.water), d[1]),
+                        (surface, d[2]),
+                        (n.flow_row(c.flow_edge), d[3]),
+                    ] {
+                        self.add(n, c.water, col, fraction * partial);
+                        self.add(n, metal, col, -fraction * partial);
+                        self.add(n, surface, col, -c.half_resistance * partial);
+                    }
+                    self.add(n, surface, surface, 1.);
+                    self.add(n, surface, metal, -1. / cap);
+                }
+            }
+            for (i, c) in p.config.pool_contacts.iter().enumerate() {
+                let surface = l.surface_start + p.config.liquid_contacts.len() + i;
+                let metal = n.energy_row(nw + c.solid);
+                let cap = n.config.solids[c.solid].heat_capacity;
+                let temperature = n.temperature(nw + c.solid, y);
+                let pressure = w.wst.local_pressure_pa(c.elevation)?;
+                let (q, d) = crate::sg_secondary::heat_with_partials(
+                    wy[pool::TEMPERATURE],
+                    pressure,
+                    y[surface],
+                    c.area * c.bank_factor,
+                    c.diameter,
+                    cj.is_some(),
+                    &mut w.property_requests,
+                )?;
+                w.pool_heat_w += q;
+                self.rates[metal] -= q;
+                self.residual[metal] += q;
+                self.residual[surface] = y[surface] - temperature + c.half_resistance * q;
+                if cj.is_some() {
+                    let depth = w.wst.surface_height_m - c.elevation;
+                    let dpdt = -w.wst.liquid.density * w.wst.liquid.expansion * GRAVITY * depth;
+                    let dpdv = w.wst.liquid.density * GRAVITY / p.config.wst.area_m2;
+                    for (col, partial) in [
+                        (l.wst_start + pool::TEMPERATURE, d[0] + d[1] * dpdt),
+                        (l.wst_start + pool::VOLUME, d[1] * dpdv),
+                        (surface, d[2]),
+                    ] {
+                        self.add(n, metal, col, partial);
+                        self.add(n, l.wst_start + pool::ENERGY, col, -partial);
+                        self.add(n, surface, col, c.half_resistance * partial);
+                    }
+                    self.add(n, surface, surface, 1.);
+                    self.add(n, surface, metal, -1. / cap);
+                }
+            }
+            for c in &p.config.gas_contacts {
+                let metal = n.energy_row(nw + c.solid);
+                let q =
+                    c.conductance * (n.temperature(nw + c.solid, y) - p.config.gas.temperature_k);
+                w.connector_export_w += q;
+                self.rates[metal] -= q;
+                self.residual[metal] += q;
+                if cj.is_some() {
+                    let partial = c.conductance / n.config.solids[c.solid].heat_capacity;
+                    self.add(n, metal, metal, partial);
+                    self.add(n, l.connector_exported, metal, -partial);
+                }
+            }
+            w.wst.add_heat(w.pool_heat_w)?;
+            for i in 0..4 {
+                self.residual[l.wst_start + i] = w.wst.residual[i];
+            }
+            self.rates[l.wst_start + pool::MASS] = -w.wst.surface_mass_rate_kg_s;
+            self.rates[l.wst_start + pool::ENERGY] = w.pool_heat_w - w.wst.gas_export_rate_w;
+            if let Some(cj) = cj {
+                let matrix = w.wst.jacobian(cj)?;
+                for (i, row) in matrix.iter().enumerate() {
+                    for (j, &value) in row.iter().enumerate() {
+                        self.add(n, l.wst_start + i, l.wst_start + j, value);
+                    }
+                }
+                for j in 0..4 {
+                    let mut direction = [0.; 4];
+                    direction[j] = 1.;
+                    self.add(
+                        n,
+                        l.gas_exported,
+                        l.wst_start + j,
+                        -w.wst.gas_export_jvp(&direction, cj)?,
+                    );
+                    self.add(
+                        n,
+                        l.gas_mass_exported,
+                        l.wst_start + j,
+                        -matrix[pool::MASS][j] + if j == pool::MASS { cj } else { 0. },
+                    );
+                }
+            }
+            w.room_temperature_k = p.config.actuator.room_reference_temperature_k
+                + y[l.room_energy] / p.config.actuator.room_capacity_j_k;
+            if !w.room_temperature_k.is_finite() || w.room_temperature_k <= 0. {
+                return Err("Invalid finite PRHR ROOM.A temperature".into());
+            }
+            w.room_ambient_export_w = p.config.actuator.room_wall_w_k
+                * (w.room_temperature_k - input.ambient_temperature_k);
+            w.spring_release_w = p.config.actuator.spring_energy_j * input.opening_rate;
+            w.electrical_receipt_w = input.electrical_receipt_w;
+            w.room_heat_w = input.room_heat_w;
+            self.rates[l.room_energy] = input.room_heat_w - w.room_ambient_export_w;
+            self.residual[l.room_energy] = yp[l.room_energy] - self.rates[l.room_energy];
+            for (row, rate) in [
+                (l.spring_released, w.spring_release_w),
+                (l.gas_exported, w.wst.gas_export_rate_w),
+                (l.connector_exported, w.connector_export_w),
+                (l.gas_mass_exported, w.wst.surface_mass_rate_kg_s),
+                (l.electrical_received, input.electrical_receipt_w),
+                (l.room_ambient_exported, w.room_ambient_export_w),
+            ] {
+                self.rates[row] = rate;
+                self.residual[row] = yp[row] - rate;
+                if let Some(cj) = cj {
+                    self.add(n, row, row, cj);
+                }
+            }
+            if let Some(cj) = cj {
+                let partial = p.config.actuator.room_wall_w_k / p.config.actuator.room_capacity_j_k;
+                self.add(n, l.room_energy, l.room_energy, cj + partial);
+                self.add(n, l.room_ambient_exported, l.room_energy, -partial);
+            }
+            self.property_requests += w.property_requests;
+            Ok(())
+        })();
+        self.prhr = Some(w);
+        result
+    }
     pub fn new(n: &Network) -> Self {
         let nw = n.config.water.len();
         let nh = n.config.heat.len();
@@ -597,6 +1090,7 @@ impl Workspace {
             film_raw_prandtl_ratio: vec![0.; nh],
             secondary_states: vec![SecondaryState::default(); n.config.secondaries.len()],
             secondary_heat_flows: vec![0.; n.config.secondary_heat.len()],
+            prhr: n.prhr.as_ref().map(|_| crate::prhr::Workspace::default()),
             queries: vec![
                 LiquidQuery {
                     pressure: 0.,
@@ -717,8 +1211,26 @@ impl Workspace {
         cj: Option<f64>,
         ports: &[LiquidPort],
     ) -> Result<(), String> {
+        self.evaluate_with_inputs(n, y, yp, cj, ports, None)
+    }
+    /// Actual variable-seat position is a held input at this exact stage time.
+    pub fn evaluate_with_inputs(
+        &mut self,
+        n: &Network,
+        y: &[f64],
+        yp: &[f64],
+        cj: Option<f64>,
+        ports: &[LiquidPort],
+        prhr_input: Option<crate::prhr::Input>,
+    ) -> Result<(), String> {
         self.energy_rate_valid = false;
         self.chart_valid = false;
+        match (&n.prhr, prhr_input) {
+            (Some(p), Some(input)) => p.validate_input(input)?,
+            (None, None) => (),
+            _ => return Err("Selected seat requires one actual achieved opening".into()),
+        }
+        let opening = prhr_input.map(|i| i.opening);
         n.check_ports(ports)?;
         let nw = n.config.water.len();
         let dim = n.dimension();
@@ -852,23 +1364,21 @@ impl Workspace {
         }
         for (edge, e) in n.config.hydraulic.iter().enumerate() {
             let row = n.flow_row(edge);
+            let seat = n.config.seat.filter(|s| s.edge == edge);
+            let a = seat.map_or(1., |_| opening.expect("validated seat opening"));
             let q = y[row];
             self.mass_flows[edge] = q;
             let rho = (self.liquids[e.from].density + self.liquids[e.to].density) * 0.5;
             let mu = (self.liquids[e.from].viscosity + self.liquids[e.to].viscosity) * 0.5;
-            let dz =
-                n.config.water[e.to].geometry.elevation - n.config.water[e.from].geometry.elevation;
             // P cancels exactly: do not subtract two large total pressures to
             // obtain a near-rest mechanical head.
-            let drive = n.pressure_offsets[e.from] - n.pressure_offsets[e.to]
-                + n.relative_pressure(e.from, y)
-                - n.relative_pressure(e.to, y)
-                - rho * GRAVITY * dz;
+            let (drive, _) = n.hydraulic_drive(edge, y, &self.liquids)?;
             let loss = e.pressure_loss(q, rho, mu);
             if !loss.iter().all(|x| x.is_finite()) || loss[1] <= 0. {
                 return Err(format!("Invalid forward hydraulic loss {edge}"));
             }
-            self.residual[row] = drive - loss[0];
+            let inverse = seat.map(|s| s.flow(e, drive, a, rho, mu)).transpose()?;
+            self.residual[row] = inverse.map_or(drive - loss[0], |value| q - value[0]);
             let donor = if q >= 0. { e.from } else { e.to };
             let l = self.liquids[donor];
             let pi = n.relative_pressure(donor, y);
@@ -883,22 +1393,33 @@ impl Workspace {
                 self.rates[n.marker_row(recipient)] += s * q * c;
             }
             if cj.is_some() {
-                self.add(n, row, row, -loss[1]);
+                let dz = e.to_elevation - e.from_elevation;
+                let ga = GRAVITY
+                    * (n.config.water[e.from].geometry.elevation - e.from_elevation - 0.5 * dz);
+                let gb =
+                    GRAVITY * (e.to_elevation - n.config.water[e.to].geometry.elevation - 0.5 * dz);
+                self.add(n, row, row, if inverse.is_some() { 1. } else { -loss[1] });
                 let mut gp = 0.;
-                for (node, s) in [(e.from, 1.), (e.to, -1.)] {
+                for (node, s, gravity) in [(e.from, 1., ga), (e.to, -1., gb)] {
                     let lnode = self.liquids[node];
                     let d = self.local_derivatives[node];
                     let rp = lnode.density * lnode.compressibility * 0.5;
                     let rt = -lnode.density * lnode.expansion * 0.5;
-                    gp += -GRAVITY * dz * rp - loss[2] * d[0] * 0.5 - loss[3] * rp;
-                    self.add(
-                        n,
-                        row,
-                        n.temperature_row(node),
-                        -GRAVITY * dz * rt - loss[2] * d[1] * 0.5 - loss[3] * rt,
-                    );
+                    let property_partial = |density_direction: f64, mu_direction: f64| {
+                        if let Some(inv) = inverse {
+                            -inv[1] * gravity * (2. * density_direction)
+                                - inv[2] * mu_direction * 0.5
+                                - inv[3] * density_direction
+                        } else {
+                            gravity * (2. * density_direction)
+                                - loss[2] * mu_direction * 0.5
+                                - loss[3] * density_direction
+                        }
+                    };
+                    gp += property_partial(rp, d[0]);
+                    self.add(n, row, n.temperature_row(node), property_partial(rt, d[1]));
                     if let Some(col) = n.mechanical_row(node) {
-                        self.add(n, row, col, s);
+                        self.add(n, row, col, s * inverse.map_or(1., |v| -v[1]));
                     }
                     if let Some(r) = n.mechanical_row(node) {
                         self.add(n, r, row, s);
@@ -961,7 +1482,7 @@ impl Workspace {
                 } => {
                     let p = n.eos_pressure(e.from, y);
                     let flow = self.mass_flows[hydraulic_edge];
-                    let result = sg_sensible(
+                    let (result, partials) = sensible_with_partials(
                         p,
                         ta,
                         tb,
@@ -969,53 +1490,12 @@ impl Workspace {
                         area,
                         diameter,
                         flow_area,
+                        cj.is_some(),
                         &mut self.property_requests,
                     )?;
                     self.film_nusselt[edge] = result.1;
                     self.film_raw_prandtl_ratio[edge] = result.2;
-                    let partials = if cj.is_some() {
-                        let values = [p, ta, tb, flow];
-                        let steps = [
-                            (p * 1e-5).max(0.1).min(p * 0.01),
-                            1e-3,
-                            1e-3,
-                            (flow.abs() * 1e-5).max(1e-5),
-                        ];
-                        let mut d = [0.; 4];
-                        for j in 0..4 {
-                            let mut a = values;
-                            let mut b = values;
-                            a[j] += steps[j];
-                            b[j] -= steps[j];
-                            let plus = sg_sensible(
-                                a[0],
-                                a[1],
-                                a[2],
-                                a[3],
-                                area,
-                                diameter,
-                                flow_area,
-                                &mut self.property_requests,
-                            )?
-                            .0;
-                            let minus = sg_sensible(
-                                b[0],
-                                b[1],
-                                b[2],
-                                b[3],
-                                area,
-                                diameter,
-                                flow_area,
-                                &mut self.property_requests,
-                            )?
-                            .0;
-                            d[j] = (plus - minus) / (2. * steps[j]);
-                        }
-                        Some(d)
-                    } else {
-                        None
-                    };
-                    (0., result.0, partials)
+                    (0., result.0, cj.map(|_| partials))
                 }
             };
             self.heat_flows[edge] = q;
@@ -1136,6 +1616,9 @@ impl Workspace {
             let u = n.secondary_energy_row(k);
             self.residual[u] = yp[u] - self.rates[u];
         }
+        if let Some(input) = prhr_input {
+            self.evaluate_prhr(n, y, yp, cj, input)?;
+        }
         self.residual[pcol] = y[n.total_mass_row()] - self.chart_mass.iter().sum::<f64>();
         let sum_a: f64 = self.redistribution.iter().map(|x| x[0]).sum();
         if !sum_a.is_finite() || sum_a <= 0. {
@@ -1201,12 +1684,22 @@ impl Workspace {
             }
         }
         if let Some(cj) = cj {
-            for (value, &(_, slot)) in self
+            for (value, &(col, slot)) in self
                 .energy_rate_partials
                 .iter_mut()
                 .zip(&n.energy_rate_slots)
             {
-                *value = -self.jacobian_values[slot];
+                let row = n.row_indices[slot] as usize;
+                let already_shifted = n
+                    .prhr
+                    .as_ref()
+                    .is_some_and(|p| p.energy_rows().contains(&row));
+                *value = -self.jacobian_values[slot]
+                    + if already_shifted && col == row {
+                        cj
+                    } else {
+                        0.
+                    };
             }
             for row in 0..n.stock_dimension() {
                 self.add(n, row, row, cj);
@@ -1238,8 +1731,76 @@ impl Workspace {
     }
 }
 
-/// Current-owner stable sensible-film law; no phase/NC continuation.
-fn sg_sensible(
+const SENSIBLE_CONTRAST_POWERS: [f64; 4] = [0., 0.25, 1. / 3., 0.];
+
+/// Current-owner stable sensible-film law; no phase/NC continuation. The
+/// signed contrast and active Nusselt branch are differentiated analytically.
+/// Local property probes never traverse the |contrast| power or max branches.
+pub(crate) fn sensible_with_partials(
+    p: f64,
+    t: f64,
+    wall: f64,
+    flow: f64,
+    area: f64,
+    diameter: f64,
+    flow_area: f64,
+    tangent: bool,
+    requests: &mut usize,
+) -> Result<((f64, f64, f64), [f64; 4]), String> {
+    let (coefficients, scale, ratio) =
+        sensible_coefficients(p, t, wall, flow, area, diameter, flow_area, requests)?;
+    let delta = t - wall;
+    let mut branch = 0;
+    let mut conductance = coefficients[0];
+    for j in 1..4 {
+        let candidate = coefficients[j] * delta.abs().powf(SENSIBLE_CONTRAST_POWERS[j]);
+        if candidate > conductance {
+            conductance = candidate;
+            branch = j;
+        }
+    }
+    let value = (conductance * delta, conductance / scale, ratio);
+    let mut d = [0.; 4];
+    if tangent {
+        let values = [p, t, wall, flow];
+        let steps = [
+            (p * 1e-5).max(0.1).min(p * 0.01),
+            1e-3,
+            1e-3,
+            (flow.abs() * 1e-5).max(1e-5),
+        ];
+        for j in 0..4 {
+            let mut a = values;
+            let mut b = values;
+            a[j] += steps[j];
+            b[j] -= steps[j];
+            let hi =
+                sensible_coefficients(a[0], a[1], a[2], a[3], area, diameter, flow_area, requests)?
+                    .0;
+            let lo =
+                sensible_coefficients(b[0], b[1], b[2], b[3], area, diameter, flow_area, requests)?
+                    .0;
+            d[j] = delta
+                * delta.abs().powf(SENSIBLE_CONTRAST_POWERS[branch])
+                * (hi[branch] - lo[branch])
+                / (2. * steps[j]);
+        }
+        let contrast = conductance * (1. + SENSIBLE_CONTRAST_POWERS[branch]);
+        d[1] += contrast;
+        d[2] -= contrast;
+    }
+    if ![value.0, value.1, value.2]
+        .iter()
+        .chain(&d)
+        .all(|x| x.is_finite())
+    {
+        return Err("Nonfinite SG sensible-film result/tangent".into());
+    }
+    Ok((value, d))
+}
+/// Smooth conductance factors for the constant, quarter-power, one-third-
+/// power and forced branches. The explicit temperature powers live above.
+fn sensible_coefficients(
     p: f64,
     t: f64,
     wall: f64,
@@ -1248,7 +1809,7 @@ fn sg_sensible(
     d: f64,
     a: f64,
     requests: &mut usize,
-) -> Result<(f64, f64, f64), String> {
+) -> Result<([f64; 4], f64, f64), String> {
     let queries = [
         LiquidQuery {
             pressure: p,
@@ -1276,23 +1837,132 @@ fn sg_sensible(
     let pr = bulk.viscosity * bulk.cp / bulk.conductivity;
     let pr_wall = w.viscosity * w.cp / w.conductivity;
     let ratio = pr / pr_wall;
-    let ra = GRAVITY * bulk.expansion * (wall - t).abs() * d.powi(3) * pr
-        / (bulk.viscosity / film.density).powi(2);
-    if !ra.is_finite() || ra < 0. {
+    if !ratio.is_finite() || !(0.05..=20.).contains(&ratio) {
+        return Err("Unsupported sensible-film Pr/Prwall source range".into());
+    }
+    let rayleigh_per_k =
+        GRAVITY * bulk.expansion * d.powi(3) * pr / (bulk.viscosity / film.density).powi(2);
+    if !rayleigh_per_k.is_finite() || rayleigh_per_k < 0. {
         return Err("Unsupported SG natural-film expansion branch".into());
     }
-    let natural = (0.59 * ra.powf(0.25)).max(0.13 * ra.powf(1. / 3.));
     let turbulent = if re > 1000. {
         let f = (1.58 * re.ln() - 3.28).powi(-2);
         (f / 2.) * (re - 1000.) * pr / (1. + 12.7 * (f / 2.).sqrt() * (pr.powf(2. / 3.) - 1.))
-            * ratio.clamp(0.05, 20.).powf(0.11)
+            * ratio.powf(0.11)
     } else {
         0.
     };
-    let nu = 3.66_f64.max(natural).max(turbulent);
-    let q = area * nu * bulk.conductivity / d * (t - wall);
-    if !q.is_finite() || !nu.is_finite() || !ratio.is_finite() || ratio <= 0. {
-        return Err("Nonfinite SG sensible-film result".into());
+    let scale = area * bulk.conductivity / d;
+    let factors = [
+        3.66 * scale,
+        0.59 * rayleigh_per_k.powf(0.25) * scale,
+        0.13 * rayleigh_per_k.powf(1. / 3.) * scale,
+        turbulent * scale,
+    ];
+    if !scale.is_finite() || scale <= 0. || factors.iter().any(|v| !v.is_finite() || *v < 0.) {
+        return Err("Nonfinite SG sensible-film coefficients".into());
     }
-    Ok((q, nu, ratio))
+    Ok((factors, scale, ratio))
+}
+
+#[cfg(test)]
+mod sensible_tests {
+    use super::*;
+
+    #[test]
+    fn zero_contrast_has_exact_selected_floor_tangent_not_a_cross_branch_secant() {
+        let mut requests = 0;
+        let ((q, nu, _), d) = sensible_with_partials(
+            300000.,
+            293.15,
+            293.15,
+            0.,
+            1.,
+            0.5,
+            0.2,
+            true,
+            &mut requests,
+        )
+        .unwrap();
+        let (_, scale, _) =
+            sensible_coefficients(300000., 293.15, 293.15, 0., 1., 0.5, 0.2, &mut requests)
+                .unwrap();
+        assert_eq!(q, 0.);
+        assert!((nu - 3.66).abs() <= f64::EPSILON * 3.66);
+        assert_eq!(d, [0., 3.66 * scale, -3.66 * scale, 0.]);
+    }
+
+    #[test]
+    fn active_signed_flux_tangents_cover_natural_crossover_and_forced_branches() {
+        let mut requests = 0;
+        let (c, _, _) =
+            sensible_coefficients(300000., 293.15, 293.15, 0., 1., 0.5, 0.2, &mut requests)
+                .unwrap();
+        let crossover = (c[0] / c[1]).powi(4);
+        for delta in [0., crossover * 0.5, crossover * 2., 1e-4, 0.1, 5.] {
+            for sign in [-1., 1.] {
+                for flow in [0., 100.] {
+                    let t = 293.15;
+                    let wall = t + sign * delta;
+                    let (_, d) = sensible_with_partials(
+                        300000.,
+                        t,
+                        wall,
+                        flow,
+                        1.,
+                        0.5,
+                        0.2,
+                        true,
+                        &mut requests,
+                    )
+                    .unwrap();
+                    // Stay within the selected contrast branch. The zero
+                    // case uses the derived physical plateau scale, not an
+                    // arbitrary temperature floor in the constitutive law.
+                    let h = if delta == 0. {
+                        crossover * 0.01
+                    } else {
+                        delta * 1e-3
+                    };
+                    let hi_wall = wall + h;
+                    let lo_wall = wall - h;
+                    assert!(hi_wall > lo_wall);
+                    let hi = sensible_with_partials(
+                        300000.,
+                        t,
+                        hi_wall,
+                        flow,
+                        1.,
+                        0.5,
+                        0.2,
+                        false,
+                        &mut requests,
+                    )
+                    .unwrap()
+                    .0
+                     .0;
+                    let lo = sensible_with_partials(
+                        300000.,
+                        t,
+                        lo_wall,
+                        flow,
+                        1.,
+                        0.5,
+                        0.2,
+                        false,
+                        &mut requests,
+                    )
+                    .unwrap()
+                    .0
+                     .0;
+                    let fd = (hi - lo) / (hi_wall - lo_wall);
+                    assert!(
+                        (fd - d[2]).abs() <= 1e-5 * fd.abs().max(d[2].abs()),
+                        "delta={delta} sign={sign} flow={flow} fd={fd} tangent={}",
+                        d[2]
+                    );
+                }
+            }
+        }
+    }
 }

@@ -6,7 +6,7 @@ use leitbild_plant_numerics::{
 };
 use std::{
     ffi::c_int,
-    panic::{AssertUnwindSafe, catch_unwind},
+    panic::{catch_unwind, AssertUnwindSafe},
     ptr,
     time::Instant,
 };
@@ -88,10 +88,14 @@ pub(super) struct Convergence<'a> {
     last_pressurizer: [f64; 7],
     last_surge: [f64; 2],
     max_converged_flow: f64,
+    pub prhr_motion: Option<leitbild_plant_numerics::prhr_actuator::Motion>,
 }
 impl<'a> Convergence<'a> {
-    pub fn new(model: &'a source_cooling::Model) -> Result<Self, String> {
-        let initial = model.initial_state()?;
+    pub fn new(
+        model: &'a source_cooling::Model,
+        input: Option<leitbild_plant_numerics::prhr::Input>,
+    ) -> Result<Self, String> {
+        let initial = model.initial_state_with_prhr_input(input)?;
         Ok(Self {
             model,
             network: operating_network::Workspace::new(&model.network),
@@ -118,6 +122,7 @@ impl<'a> Convergence<'a> {
             max_converged_flow: 0.,
             start: Instant::now(),
             allowance: 180.,
+            prhr_motion: None,
         })
     }
     pub fn budget(&mut self, start: Instant, allowance: f64) {
@@ -186,7 +191,31 @@ impl<'a> Convergence<'a> {
         let l = self.model.layout;
         let y = &self.state[l.network_start..l.carrier_start];
         let yp = &self.slopes[l.network_start..l.carrier_start];
-        let prepared = self.network.evaluate(&self.model.network, y, yp, None);
+        let input = if let Some(motion) = &self.prhr_motion {
+            let mut time = 0.;
+            checked(
+                unsafe { IDAGetCurrentTime(self.ida, &mut time) },
+                "Current physical Newton time",
+            )?;
+            let p = self
+                .model
+                .network
+                .prhr()
+                .ok_or("PRHR motion without network owner")?;
+            let (opening, r) = motion.at_left(time, y[p.layout.room_energy])?;
+            Some(leitbild_plant_numerics::prhr::Input {
+                opening,
+                opening_rate: r.opening_rate_s,
+                electrical_receipt_w: r.electrical_receipt_w,
+                room_heat_w: r.room_heat_w,
+                ambient_temperature_k: motion.ambient_temperature_k(),
+            })
+        } else {
+            None
+        };
+        let prepared =
+            self.network
+                .evaluate_with_inputs(&self.model.network, y, yp, None, &[], input);
         self.property_requests += self.network.property_requests as u64;
         if let Err(error) = prepared {
             if super::recoverable(&error) {
@@ -242,7 +271,7 @@ impl<'a> Convergence<'a> {
     }
     pub fn json(&self) -> String {
         format!(
-            "{{\"scope\":\"stock-CTest-first;current-predictor-plus-correction;dedicated-network-pressure-EOS-workspaces;algebraic-LTE-included\",\"calls\":{},\"chartChecks\":{},\"chartRefusals\":{},\"recoverableTrialPreparations\":{},\"extraPropertyRequests\":{},\"propertyRequestCountScope\":\"network-and-secondary-chart-queries-only;pressure-component-preparation-in-total-seconds\",\"pressurePreparationAttempts\":{},\"seconds\":{},\"lastPrimaryCorrection\":{:?},\"lastSecondaryCorrection\":{:?},\"lastPressurizerCorrection\":{:?},\"lastSurgeCorrection\":{:?}}}",
+            "{{\"scope\":\"stock-CTest-first;current-predictor-plus-correction;dedicated-network-pressure-EOS-workspaces;differential-stock-temporal-LTE;all-coordinate-stock-Newton-and-physical-charts-unchanged\",\"calls\":{},\"chartChecks\":{},\"chartRefusals\":{},\"recoverableTrialPreparations\":{},\"extraPropertyRequests\":{},\"propertyRequestCountScope\":\"network-and-secondary-chart-queries-only;pressure-component-preparation-in-total-seconds\",\"pressurePreparationAttempts\":{},\"seconds\":{},\"lastPrimaryCorrection\":{:?},\"lastSecondaryCorrection\":{:?},\"lastPressurizerCorrection\":{:?},\"lastSurgeCorrection\":{:?}}}",
             self.calls,
             self.checks,
             self.refusals,
@@ -264,7 +293,7 @@ mod tests {
     #[test]
     fn flow_closure_checks_state_not_polynomial_derivative() {
         let model = super::super::cooling_fixture::fixture();
-        let mut c = Convergence::new(&model).unwrap();
+        let mut c = Convergence::new(&model, None).unwrap();
         let physical = model.initial_state().unwrap();
         let pred = solver_state(&c, &physical);
         let zero = vec![0.; model.dimension()];
@@ -302,7 +331,7 @@ mod tests {
             s.status
         }
         let model = super::super::cooling_fixture::fixture();
-        let mut c = Convergence::new(&model).unwrap();
+        let mut c = Convergence::new(&model, None).unwrap();
         let mut resources = Resources::new().unwrap();
         let y = resources.vector(&vec![0.; model.dimension()]).unwrap();
         let mut stock = Stock {
@@ -336,7 +365,7 @@ mod tests {
     #[test]
     fn corrected_candidate_not_stale_predictor_and_padding_do_not_change_chart() {
         let model = super::super::cooling_fixture::fixture();
-        let mut c = Convergence::new(&model).unwrap();
+        let mut c = Convergence::new(&model, None).unwrap();
         let initial = model.initial_state().unwrap();
         let mut physical = initial.clone();
         let p = model.layout.network_start + model.network.pressure_row();
@@ -383,7 +412,7 @@ mod tests {
     #[test]
     fn finite_lifecycle_and_trial_domain_fail_closed() {
         let model = super::super::cooling_fixture::fixture();
-        let mut c = Convergence::new(&model).unwrap();
+        let mut c = Convergence::new(&model, None).unwrap();
         assert!(c.install(ptr::null_mut(), ptr::null_mut()).is_err());
         let physical = model.initial_state().unwrap();
         c.state = solver_state(&c, &physical);
@@ -472,7 +501,7 @@ mod tests {
         let original = stock_convergence(nls).unwrap();
         assert_eq!(original.data, owned.ida);
         let model = super::super::cooling_fixture::fixture();
-        let mut guard = Box::new(Convergence::new(&model).unwrap());
+        let mut guard = Box::new(Convergence::new(&model, None).unwrap());
         assert!(guard.install(y, nls).is_err()); // a different IDA owner
         guard.install(owned.ida, nls).unwrap();
         assert!(guard.install(owned.ida, nls).is_err());

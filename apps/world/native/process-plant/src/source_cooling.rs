@@ -331,6 +331,21 @@ impl Model {
             .capture_progress_rows()
             .flat_map(|rows| rows.into_iter().zip(self.capture.config().capture_j))
     }
+    /// Canonical transported capture products in the closed connected water
+    /// inventory. Species0 is hydrogen product, species1 boron product. These
+    /// are not heat deposited at the product's current recipient location.
+    pub fn mobile_product_rows(&self, species: usize) -> impl Iterator<Item = usize> + '_ {
+        assert!(species < 2, "Invalid mobile product species");
+        let l = self.layout;
+        let offset = if species == 0 { 0 } else { 2 };
+        (0..self.carrier.cells())
+            .map(move |i| l.carrier_start + wc::WIDTH * i + offset)
+            .chain([
+                l.surge_carrier_start + offset,
+                l.pool_carrier_start + offset,
+            ])
+            .chain((species == 0).then_some(l.gas_hydrogen_product))
+    }
     pub fn dimension(&self) -> usize {
         self.layout.dimension
     }
@@ -341,12 +356,9 @@ impl Model {
     /// are independent audits, never installed stores.
     pub fn installed_energy_rows(&self) -> impl Iterator<Item = usize> + '_ {
         let l = self.layout;
-        (0..self.network.config().water.len() + self.network.config().solids.len())
-            .map(move |i| l.network_start + self.network.energy_row(i))
-            .chain(
-                (0..self.network.config().secondaries.len())
-                    .map(move |i| l.network_start + self.network.secondary_energy_row(i)),
-            )
+        self.network
+            .installed_energy_rows()
+            .map(move |r| l.network_start + r)
             .chain(l.energies_start..l.temperatures_start)
             .chain(std::iter::once(l.barrel_energy))
             .chain(
@@ -459,6 +471,12 @@ impl Model {
     /// Fresh physical preparation. Caller still solves network algebraic
     /// consistency; a zero-filled derivative is NOT a solved initial state.
     pub fn initial_state(&self) -> Result<Vec<f64>, String> {
+        self.initial_state_with_prhr_input(None)
+    }
+    pub fn initial_state_with_prhr_input(
+        &self,
+        input: Option<crate::prhr::Input>,
+    ) -> Result<Vec<f64>, String> {
         let l = self.layout;
         let mut y = vec![0.; self.dimension()];
         y[..l.source_end].copy_from_slice(&self.source.initial_state());
@@ -477,7 +495,7 @@ impl Model {
         }
         let mut w = self.workspace();
         let yp = vec![0.; self.dimension()];
-        self.evaluate(&y, &yp, None, &mut w)?;
+        self.evaluate_with_prhr_input(&y, &yp, None, &mut w, input)?;
         y[l.energies_start..l.temperatures_start].copy_from_slice(w.thermal.energies()?);
         y[l.barrel_energy] = w.barrel.energy()?;
         Ok(y)
@@ -488,6 +506,16 @@ impl Model {
         yp: &[f64],
         cj: Option<f64>,
         w: &mut Workspace,
+    ) -> Result<(), String> {
+        self.evaluate_with_prhr_input(y, yp, cj, w, None)
+    }
+    pub fn evaluate_with_prhr_input(
+        &self,
+        y: &[f64],
+        yp: &[f64],
+        cj: Option<f64>,
+        w: &mut Workspace,
+        input: Option<crate::prhr::Input>,
     ) -> Result<(), String> {
         w.valid = false;
         w.jacobian_cj = None;
@@ -553,7 +581,7 @@ impl Model {
             [receipts.mass[0], -receipts.mass[1]],
         )?;
         w.pressure_material_rates = material;
-        w.network.evaluate_with_ports(
+        w.network.evaluate_with_inputs(
             &self.network,
             yn,
             &yp[l.network_start..l.carrier_start],
@@ -564,6 +592,7 @@ impl Model {
                 energy_rate: -receipts.energy[0],
                 marker_rate: (material[1] + material[2]) / p.atoms_per_marker,
             }],
+            input,
         )?;
         for i in 0..self.carrier.cells() {
             w.mass[i] = w.network.chart_mass[i];
@@ -648,6 +677,21 @@ impl Model {
             w.source.external_water_events()?,
             &mut w.product_rates,
         )?;
+        if let (Some(p), Some(pw)) = (self.network.prhr(), &w.network.prhr) {
+            for (c, response) in p.config.mixing.iter().zip(&pw.mixing) {
+                let a = w.products[c.from].values();
+                let b = w.products[c.to].values();
+                let flux = std::array::from_fn::<_, 3, _>(|k| {
+                    response.coefficient * (a[k] / w.mass[c.from] - b[k] / w.mass[c.to])
+                });
+                let ar = w.product_rates[c.from].values();
+                let br = w.product_rates[c.to].values();
+                w.product_rates[c.from] =
+                    wc::Amounts::from_values(std::array::from_fn(|k| ar[k] - flux[k]));
+                w.product_rates[c.to] =
+                    wc::Amounts::from_values(std::array::from_fn(|k| br[k] + flux[k]));
+            }
+        }
         let primary_values = w.product_rates[primary].values();
         w.product_rates[primary] =
             wc::Amounts::from_values(std::array::from_fn(|k| primary_values[k] + material[k]));
@@ -696,11 +740,15 @@ impl Model {
             return Err("Nonfinite composed residual".into());
         }
         w.energy_rate_balance = compensated(
-            (0..self.network.config().water.len() + self.network.config().solids.len())
-                .map(|i| w.network.rates[self.network.energy_row(i)])
+            self.network
+                .installed_energy_rows()
+                .map(|r| w.network.rates[r])
                 .chain(
-                    (0..self.network.config().secondaries.len())
-                        .map(|i| w.network.rates[self.network.secondary_energy_row(i)]),
+                    self.network
+                        .prhr()
+                        .into_iter()
+                        .flat_map(|p| p.receipt_rows())
+                        .map(|(r, s)| s * w.network.rates[r]),
                 )
                 .chain(w.thermal.wall_rates()?.iter().copied())
                 .chain(w.thermal.heat_rates()?.iter().copied())
@@ -831,6 +879,40 @@ impl Model {
             w.source.external_water_event_jvp()?,
             &mut w.product_jvp,
         )?;
+        if let (Some(p), Some(pw)) = (self.network.prhr(), &w.network.prhr) {
+            for (c, response) in p.config.mixing.iter().zip(&pw.mixing) {
+                let cols = [
+                    self.network.pressure_row(),
+                    self.network.temperature_row(c.from),
+                    self.network.temperature_row(c.to),
+                    self.network.temperature_row(c.sg_water),
+                    self.network.flow_row(c.sg_flow_edge),
+                ];
+                let dk = (0..5)
+                    .map(|j| response.partials[j] * dn[cols[j]])
+                    .sum::<f64>();
+                let a = w.products[c.from].values();
+                let b = w.products[c.to].values();
+                let da = w.dproducts[c.from].values();
+                let db = w.dproducts[c.to].values();
+                let flux = std::array::from_fn::<_, 3, _>(|k| {
+                    let ca = a[k] / w.mass[c.from];
+                    let cb = b[k] / w.mass[c.to];
+                    dk * (ca - cb)
+                        + response.coefficient
+                            * (da[k] / w.mass[c.from]
+                                - ca * w.dmass[c.from] / w.mass[c.from]
+                                - db[k] / w.mass[c.to]
+                                + cb * w.dmass[c.to] / w.mass[c.to])
+                });
+                let ar = w.product_jvp[c.from].values();
+                let br = w.product_jvp[c.to].values();
+                w.product_jvp[c.from] =
+                    wc::Amounts::from_values(std::array::from_fn(|k| ar[k] - flux[k]));
+                w.product_jvp[c.to] =
+                    wc::Amounts::from_values(std::array::from_fn(|k| br[k] + flux[k]));
+            }
+        }
         let (pool_action, line_action, line_tangent, phase_tangent, material_tangent) =
             self.pressure_tangent(dy, cj, w)?;
         let primary = self.pressure_connection.primary_cell;
@@ -901,6 +983,13 @@ impl Model {
         }
         let balance = compensated(
             std::iter::once(w.network.energy_rate_jvp(&self.network, dn)?)
+                .chain(
+                    self.network
+                        .prhr()
+                        .into_iter()
+                        .flat_map(|p| p.receipt_rows())
+                        .map(|(r, s)| s * (cj * dn[r] - w.jvp[l.network_start + r])),
+                )
                 .chain(w.thermal.wall_jvp()?.iter().copied())
                 .chain(w.thermal.heat_jvp()?.iter().copied())
                 .chain(w.barrel.water_heat_jvp()?.iter().copied())

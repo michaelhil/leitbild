@@ -2,7 +2,7 @@
 //! Shared to avoid duplicating unsafe ABI/resource cleanup between witnesses.
 //! No integrator policy, physics, fallback backend or production registration.
 use std::{
-    ffi::{CStr, c_char, c_int, c_long, c_void},
+    ffi::{c_char, c_int, c_long, c_void, CStr},
     ptr,
 };
 
