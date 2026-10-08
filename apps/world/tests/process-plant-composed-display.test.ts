@@ -86,12 +86,12 @@ describe('world.process-plant.display.compose', () => {
     expect(result.issuedAt).toBe(simulationTime)
     const state = composedDisplayStateSchema.parse(JSON.parse(view.state))
     expect(state).toMatchObject({ issuedAt: simulationTime, modelDigest: compiled.modelDigest })
-    expect(result.shows.join('\n')).toContain('Steam generator B level low, below 30 percent')
+    expect(result.shows.join('\n')).toContain('I&C alarm line for SG-B-LVL-NR, SG-A-LVL-NR: Steam generator B level low · Steam generator A level low, below 30 percent')
     expect((result as unknown as { signals: unknown }).signals).toEqual([
       { ref: 'SG-B-LVL-NR', tagId: 'SG-B-LVL-NR', path: 'sgB.levelPercent', label: 'Steam generator level', unit: 'percent' },
       { ref: 'SG-A-LVL-NR', tagId: 'SG-A-LVL-NR', path: 'sgA.levelPercent', label: 'Steam generator level', unit: 'percent' },
     ])
-    expect(result.shows.join('\n')).toContain('Steam generator B low-low level, below 20 percent')
+    expect(result.shows.join('\n')).toContain('I&C trip line for SG-B-LVL-NR, SG-A-LVL-NR: Steam generator B low-low level · Steam generator A low-low level, below 20 percent')
     expect(runtime.checkpoint()).toEqual(before)
   })
 
@@ -139,12 +139,15 @@ describe('thresholds drawn on composed trends', () => {
     return view.display.panels[0]!
   }
 
-  test('come from primary signals only', () => {
+  test('cover every displayed signal once per rule action', () => {
     const panel = panelOf([{ ref: 'SG-B-LVL-NR', role: 'primary' }, { ref: 'SG-A-LVL-NR', role: 'context' }, { ref: 'SG-C-LVL-NR', role: 'context' }])
     expect(panel.thresholds.map(threshold => [threshold.value, threshold.kind, threshold.signals])).toEqual([
-      [20, 'trip', ['SG-B-LVL-NR']],
-      [30, 'alarm', ['SG-B-LVL-NR']],
+      [20, 'trip', ['SG-B-LVL-NR', 'SG-A-LVL-NR', 'SG-C-LVL-NR']],
+      [30, 'alarm', ['SG-B-LVL-NR', 'SG-A-LVL-NR', 'SG-C-LVL-NR']],
     ])
+    expect((panel.thresholds[1] as unknown as { ruleIds: string[]; direction: string })).toMatchObject({
+      direction: 'low', ruleIds: ['sg-b-level-low', 'sg-a-level-low', 'sg-c-level-low'],
+    })
   })
 
   test('draw one line per shared set point of several primary signals', () => {
@@ -174,14 +177,13 @@ describe('composed display panels', () => {
     expect(composed.view.height).toBe(124 + 192 + 6 + 192)
   })
 
-  test('fit two stacked trends with readouts and related alarms in one chat view', () => {
+  test('fit two stacked trends with related alarms in one chat view', () => {
     const { composed } = composeView([
       { kind: 'trend', horizon: '30m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }, { ref: 'SG-A-LVL-NR', role: 'context' }] },
       { kind: 'trend', horizon: '30m', signals: [{ ref: 'sgB.feedwaterFlowKgPerS', role: 'counter-evidence' }] },
-      { kind: 'readouts', signals: [{ ref: 'SG-B-PRESS', role: 'context' }, { ref: 'RCP-B-RUN', role: 'context' }, { ref: 'SG-B-N16', role: 'context' }] },
       { kind: 'alarms', scope: 'related' },
     ])
-    expect(composed.view.height).toBeLessThanOrEqual(720)
+    expect(composed.view.height).toBeLessThanOrEqual(640)
   })
 
   test('reject stacked trends with different horizons, a lone alarms panel and oversized displays', () => {
@@ -197,7 +199,12 @@ describe('composed display panels', () => {
       { kind: 'trend', horizon: '10m', signals: [{ ref: 'PZR-LVL', role: 'context' }] },
       { kind: 'comparison', signals: six },
       { kind: 'readouts', signals: [...six, { ref: 'TAVG', role: 'context' }, { ref: 'SUB-MARGIN', role: 'context' }] },
-    ])))).toContain('chat views allow 720 (panels.0 trend 192 px')
+    ])))).toContain('panels: Too big')
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
+      { kind: 'trend', horizon: '10m', signals: [{ ref: 'PT-455', role: 'primary' }] },
+      { kind: 'trend', horizon: '10m', signals: [{ ref: 'PZR-LVL', role: 'context' }] },
+      { kind: 'readouts', signals: ['TAVG', 'SUB-MARGIN', 'RCP-A-FLOW', 'RCP-B-FLOW', 'RCP-C-FLOW', 'RCP-D-FLOW'].map(ref => ({ ref, role: 'context' })) },
+    ])))).toContain('chat views allow 640 (panels.0 trend 192 px')
     expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
       { kind: 'trend', horizon: '10m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },
       { kind: 'readouts', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },
@@ -213,7 +220,7 @@ describe('composed display panels', () => {
     const { view } = composeView([{ kind: 'comparison', signals: ['A', 'B', 'C', 'D'].map(loop => ({ ref: `RCP-${loop}-FLOW`, role: loop === 'B' ? 'primary' : 'context' })) }])
     const panel = view.display.panels[0] as { kind: string; unit: string; pens: unknown[]; thresholds: Array<{ value: number; signals: string[] }> }
     expect([panel.kind, panel.unit, panel.pens.length]).toEqual(['comparison', 'kg/s', 4])
-    expect(panel.thresholds.map(threshold => [threshold.value, threshold.signals])).toEqual([[2500, ['RCP-B-FLOW']]])
+    expect(panel.thresholds.map(threshold => [threshold.value, threshold.signals])).toEqual([[2500, ['RCP-A-FLOW', 'RCP-B-FLOW', 'RCP-C-FLOW', 'RCP-D-FLOW']]])
     expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
       { kind: 'comparison', signals: [{ ref: 'RCP-A-FLOW', role: 'primary' }, { ref: 'PT-455', role: 'context' }] },
     ])))).toContain('a comparison shares one value axis')

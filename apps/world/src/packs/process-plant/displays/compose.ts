@@ -46,7 +46,9 @@ export interface ComposedDisplayPen {
 
 /** A threshold drawn on a panel: one per distinct rule action of the primary signals. */
 export interface ComposedTrendThreshold extends ComposedDisplayThreshold {
-  /** Tags or paths of the primary signals this rule acts on. */
+  /** Every rule merged into this line, so an active alarm on any of them marks it. */
+  readonly ruleIds: ReadonlyArray<string>
+  /** Tags or paths of the signals these rules act on. */
   readonly signals: ReadonlyArray<string>
 }
 
@@ -154,20 +156,25 @@ const zodIssues = (error: z.ZodError): ReadonlyArray<ComposedDisplayIssue> => er
   message: issue.message,
 }))
 
-// Context and counter-evidence signals are compared with the primary signal,
-// not judged against their own limits, so only primary thresholds are drawn.
-// Parallel loops share set points; one per distinct rule action keeps the
-// panel readable.
+// Every displayed signal's thresholds are drawn: an operator must see when any
+// of them nears or crosses a limit. Parallel loops share set points, so one
+// line per distinct rule action (kind, direction, value, mode) keeps the panel
+// readable and names every signal it covers.
 const drawnThresholds = (pens: ReadonlyArray<ComposedDisplayPen>): ReadonlyArray<ComposedTrendThreshold> => {
   const byAction = new Map<string, ComposedTrendThreshold>()
-  for (const pen of pens.filter(candidate => candidate.role === 'primary')) {
+  for (const pen of pens) {
     for (const threshold of pen.thresholds) {
-      const key = `${threshold.kind}|${threshold.operator}|${threshold.value}|${threshold.modeLabel ?? ''}`
+      const key = `${threshold.kind}|${threshold.direction}|${threshold.value}|${threshold.modeLabel ?? ''}`
       const signal = pen.tagId ?? String(pen.path)
       const existing = byAction.get(key)
       byAction.set(key, existing === undefined
-        ? { ...threshold, signals: [signal] }
-        : { ...existing, label: existing.label === threshold.label ? existing.label : `${existing.label} · ${threshold.label}`, signals: [...existing.signals, signal] })
+        ? { ...threshold, ruleIds: [threshold.ruleId], signals: [signal] }
+        : {
+            ...existing,
+            label: existing.label === threshold.label ? existing.label : `${existing.label} · ${threshold.label}`,
+            ruleIds: [...existing.ruleIds, threshold.ruleId],
+            signals: [...existing.signals, signal],
+          })
     }
   }
   return [...byAction.values()].sort((left, right) => left.value - right.value || left.ruleId.localeCompare(right.ruleId))

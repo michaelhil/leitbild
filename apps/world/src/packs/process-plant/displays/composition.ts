@@ -31,7 +31,9 @@ export type ComposedDisplaySignal = z.infer<typeof composedDisplaySignalSchema>
 export const COMPOSED_TREND_MAX_PENS = 3
 export const COMPOSED_COMPARISON_MAX_SIGNALS = 6
 export const COMPOSED_READOUTS_MAX_SIGNALS = 6
-export const COMPOSED_DISPLAY_MAX_PANELS = 4
+// One primary trend plus up to two supporting panels (HMI review); with the
+// 640 px cap nearly every three-panel combination fits by construction.
+export const COMPOSED_DISPLAY_MAX_PANELS = 3
 export const COMPOSED_DISPLAY_MAX_TRENDS = 2
 
 export const composedDisplayTrendPanelSchema = z.object({
@@ -95,6 +97,7 @@ export const composedDisplayLayout = {
   trendChart: 156,
   comparisonHeader: 22,
   comparisonRow: 24,
+  comparisonCaption: 14,
   readoutsPerRow: 3,
   readoutsRow: 74,
   /** Title row plus four alarm rows; more are summarised as a count. */
@@ -103,13 +106,14 @@ export const composedDisplayLayout = {
   panelGap: 6,
 } as const
 
-// Embedders accept view heights up to 720 px; a composition must fit.
-export const COMPOSED_DISPLAY_MAX_HEIGHT_PX = 720
+// Embedders accept view heights up to 720 px, but a chat display taller than
+// about 600 px pushes its own lower panels below the fold (HMI review).
+export const COMPOSED_DISPLAY_MAX_HEIGHT_PX = 640
 
 export const composedPanelHeight = (panel: ComposedDisplayPanel): number => {
   const layout = composedDisplayLayout
   if (panel.kind === 'trend') return layout.trend
-  if (panel.kind === 'comparison') return layout.comparisonHeader + layout.comparisonRow * panel.signals.length
+  if (panel.kind === 'comparison') return layout.comparisonHeader + layout.comparisonRow * panel.signals.length + layout.comparisonCaption
   if (panel.kind === 'readouts') return layout.readoutsRow * Math.ceil(panel.signals.length / layout.readoutsPerRow)
   return layout.alarms
 }

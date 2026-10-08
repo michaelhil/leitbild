@@ -13,6 +13,8 @@ export interface ComposedDisplayThreshold {
   readonly label: string
   readonly kind: ComposedDisplayThresholdKind
   readonly operator: '<' | '<=' | '>' | '>='
+  /** Low thresholds act when the value falls; high ones when it rises. */
+  readonly direction: 'low' | 'high'
   readonly value: number
   /** Present when the rule only acts in a qualified mode; drawn dashed. */
   readonly modeLabel?: string
@@ -77,6 +79,7 @@ export const icThresholdsForSignal = (
         label: labelFor(rule),
         kind: kindFor(rule),
         operator: condition.operator,
+        direction: condition.operator === '<' || condition.operator === '<=' ? 'low' : 'high',
         value: condition.value,
         ...(modeLabel === undefined ? {} : { modeLabel }),
       })
