@@ -1,4 +1,4 @@
-//! Strict seven-frame cold source/cooling/barrel/pressure/capture preparation. Primary chemistry is
+//! Strict eight-frame cold source/cooling/barrel/pressure/capture/evidence preparation. Primary chemistry is
 //! replaced by actual carrier intersections, never cloned as source histories.
 use super::{
     barrel_thermal, evolution_input, fuel_thermal, moderator_source, operating_network,
@@ -7,11 +7,14 @@ use super::{
 use source_input::{count, framed, number};
 use std::collections::BTreeSet;
 mod capture;
+mod observation;
 mod pressure;
 
 pub(crate) struct Prepared {
     pub model: source_cooling::Model,
     pub target_emissions: Vec<[f64; 2]>,
+    pub pressure_channel: leitbild_plant_numerics::pressure_channel::Config,
+    pub pressure_protection: leitbild_plant_numerics::pressure_protection::Settings,
 }
 
 pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
@@ -24,6 +27,7 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
     let barrel = framed(&mut words);
     let pressure = framed(&mut words);
     let capture = framed(&mut words);
+    let observation = framed(&mut words);
     if words.next().is_some() {
         return Err("Trailing coupled payload".into());
     }
@@ -290,6 +294,7 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
     })?;
     let pressure = pressure::parse(&pressure, &network, &initial_network, &work, href, bref)?;
     let capture = capture::parse(&capture)?;
+    let (pressure_channel, pressure_protection) = observation::parse(&observation)?;
     let model = source_cooling::Model::new(
         source,
         network,
@@ -305,16 +310,19 @@ pub(crate) fn parse(text: &str) -> Result<Prepared, String> {
     Ok(Prepared {
         model,
         target_emissions: prepared.target_emissions,
+        pressure_channel,
+        pressure_protection,
     })
 }
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn seventh_capture_frame_is_required_and_extra_frames_refuse() {
+    fn eighth_evidence_frame_is_required_and_extra_frames_refuse() {
         assert!(std::panic::catch_unwind(|| parse("0 0 0 0")).is_err());
         assert!(std::panic::catch_unwind(|| parse("0 0 0 0 0")).is_err());
         assert!(std::panic::catch_unwind(|| parse("0 0 0 0 0 0")).is_err());
-        assert!(parse("0 0 0 0 0 0 0 0").is_err());
+        assert!(std::panic::catch_unwind(|| parse("0 0 0 0 0 0 0")).is_err());
+        assert!(parse("0 0 0 0 0 0 0 0 0").is_err());
     }
 }

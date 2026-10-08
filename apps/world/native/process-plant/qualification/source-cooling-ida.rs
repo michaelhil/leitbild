@@ -23,6 +23,8 @@ mod cooling_fixture;
 mod cooling_initial;
 #[path = "cooling_input/mod.rs"]
 mod cooling_input;
+#[path = "cooling_observation.rs"]
+mod cooling_observation;
 #[path = "cooling_power.rs"]
 mod cooling_power;
 #[path = "evolution_input/mod.rs"]
@@ -676,6 +678,7 @@ struct Run {
     surge_flow_extrema: [[f64; 2]; 2],
     initialization: String,
     stats: String,
+    pressure_evidence: Option<cooling_observation::Trace>,
 }
 impl Run {
     fn json(&self) -> String {
@@ -743,7 +746,7 @@ fn checkpoint(path: &Path, time: f64, y: &[f64], yp: &[f64]) -> Result<(), Strin
             .open(&pending)
             .map_err(|e| e.to_string())?,
     );
-    f.write_all(b"LDFBST01")
+    f.write_all(b"LDPTST01")
         .and_then(|_| f.write_all(&(y.len() as u64).to_le_bytes()))
         .and_then(|_| f.write_all(&time.to_le_bytes()))
         .map_err(|e| e.to_string())?;
@@ -767,7 +770,7 @@ fn retain_common(path: &Path, time: f64, y: &[f64]) -> Result<(), String> {
             .open(&pending)
             .map_err(|e| e.to_string())?,
     );
-    f.write_all(b"LDFBCM01")
+    f.write_all(b"LDPTCM01")
         .and_then(|_| f.write_all(&(y.len() as u64).to_le_bytes()))
         .and_then(|_| f.write_all(&time.to_le_bytes()))
         .map_err(|e| e.to_string())?;
@@ -797,17 +800,19 @@ fn retain_final_admitted(path: &Path, run: &Run, elapsed: f64, costs: &str) -> R
 fn run(
     model: &source_cooling::Model,
     accuracy: &cooling_accuracy::Accuracy,
+    pressure_channel: leitbild_plant_numerics::pressure_channel::Config,
+    pressure_protection: leitbild_plant_numerics::pressure_protection::Settings,
     refinement: f64,
     start: Instant,
     allowance: f64,
     checkpoint_path: &Path,
-    reference: Option<&[Sample]>,
+    reference: Option<&Run>,
 ) -> Result<Run, String> {
     if checkpoint_path.exists() {
         return Err("Refusing existing coupled checkpoint".into());
     }
-    if let Some(samples) = reference {
-        cooling_accuracy::check_schedule(samples)?;
+    if let Some(r) = reference {
+        cooling_accuracy::check_schedule(&r.samples)?;
     }
     let began = Instant::now();
     let n = model.dimension();
@@ -1009,7 +1014,22 @@ fn run(
         surge_flow_extrema: [[0.; 2]; 2],
         initialization,
         stats: "null".into(),
+        pressure_evidence: None,
     };
+    let mut observation = cooling_observation::Trace::new(
+        pressure_channel,
+        pressure_protection,
+        [model.pressure_connection().pressurizer.top_pressure(
+            out.initial[l.pressurizer_start..l.surge_start]
+                .try_into()
+                .unwrap(),
+        )?; 3],
+        model.pressure_connection().pressurizer.top_pressure(
+            out.initial[l.pressurizer_start..l.surge_start]
+                .try_into()
+                .unwrap(),
+        )?,
+    )?;
     let mut last_checkpoint = Instant::now();
     let mut pressure_chart_work = model.pressure_connection().pressurizer.workspace();
     let mut surge_chart_work = model.pressure_connection().surge.workspace();
@@ -1112,6 +1132,7 @@ fn run(
             })();
             callbacks.screen_seconds += screen_started.elapsed().as_secs_f64();
             admitted?;
+            let segment_start = out.last;
             out.last = out.returned;
             out.steps += 1;
             out.final_y.copy_from_slice(&physical);
@@ -1150,6 +1171,44 @@ fn run(
                 callbacks.error_telemetry_seconds += observed.elapsed().as_secs_f64();
             }
             let mut crossed = false;
+            // The roof tap is a linear combination of native PZR coordinates.
+            // Read the LAST used polynomial order (not next proposed order),
+            // then exactly continue downstream electronic lag independently.
+            // No instrument deadline changes the physical solver or its norms.
+            if out.returned > 0. {
+                let observed = Instant::now();
+                let prior = observation.seconds;
+                let order = callbacks.local_errors.last_order;
+                if !(1..=5).contains(&order) {
+                    return Err("Unsupported accepted pressure dense order".into());
+                }
+                let pzr = &model.pressure_connection().pressurizer;
+                let state: &[f64; leitbild_plant_numerics::cold_pressurizer::STATES] = out.final_y
+                    [l.pressurizer_start..l.surge_start]
+                    .try_into()
+                    .unwrap();
+                let mut derivatives = vec![pzr.top_pressure(state)?];
+                for k in 1..=order {
+                    checked(
+                        unsafe { IDAGetDky(owned.ida, out.returned, k, common) },
+                        "Accepted roof-pressure polynomial derivative",
+                    )?;
+                    let v = unsafe { values(common, n) }?;
+                    derivatives.push(pzr.top_pressure_direction(
+                        state,
+                        v[l.pressurizer_start..l.surge_start].try_into().unwrap(),
+                    )?);
+                }
+                let reference = reference
+                    .map(|r| {
+                        r.pressure_evidence
+                            .as_ref()
+                            .ok_or("Missing normal pressure evidence")
+                    })
+                    .transpose()?;
+                observation.continue_dense(segment_start, out.returned, &derivatives, reference)?;
+                observation.seconds = prior + observed.elapsed().as_secs_f64();
+            }
             while out.samples.len() < OUTPUTS.len() && OUTPUTS[out.samples.len()] <= out.returned {
                 let time = OUTPUTS[out.samples.len()];
                 checked(
@@ -1187,8 +1246,11 @@ fn run(
                 )?;
                 callbacks.io_seconds += io_started.elapsed().as_secs_f64();
                 if let Some(reference) = reference {
-                    let comparison =
-                        accuracy.compare_one(model, &reference[out.samples.len()], &sample)?;
+                    let comparison = accuracy.compare_one(
+                        model,
+                        &reference.samples[out.samples.len()],
+                        &sample,
+                    )?;
                     println!(
                         "{{\"kind\":\"paired-common-comparison\",\"time\":{time},\"comparison\":{}}}",
                         comparison.json()
@@ -1235,6 +1297,8 @@ fn run(
     // a later callback or output comparison refuses. Retain ONLY the admitted
     // in-memory owner here, before inspecting any unadmitted solver buffers.
     let io_started = Instant::now();
+    observation.retain(&checkpoint_path.with_extension("pressure-evidence.json"))?;
+    out.pressure_evidence = Some(observation);
     retain_final_admitted(
         checkpoint_path,
         &out,
@@ -1405,6 +1469,8 @@ fn execute() -> Result<(), String> {
     let normal = run(
         &prepared.model,
         &accuracy,
+        prepared.pressure_channel,
+        prepared.pressure_protection,
         1.,
         started,
         allowance,
@@ -1415,11 +1481,13 @@ fn execute() -> Result<(), String> {
         Some(run(
             &prepared.model,
             &accuracy,
+            prepared.pressure_channel,
+            prepared.pressure_protection,
             10.,
             started,
             allowance,
             &input.with_extension("tighter.checkpoint"),
-            Some(&normal.samples),
+            Some(&normal),
         )?)
     } else {
         None
@@ -1540,7 +1608,24 @@ fn execute() -> Result<(), String> {
             finite(t.final_y[l.ambient_exported])
         );
     }
+    let evidence = match (
+        normal.pressure_evidence.as_ref(),
+        tight.as_ref().and_then(|t| t.pressure_evidence.as_ref()),
+    ) {
+        (Some(a), Some(b)) if pair_evaluated => {
+            cooling_observation::compare(a, b, prepared.pressure_channel.quantum_pa)
+        }
+        _ => Err("Pressure evidence pair incomplete".into()),
+    };
+    println!(
+        "{{\"kind\":\"pressure-evidence-pair\",\"report\":{}}}",
+        evidence.as_ref().map_or_else(
+            |e| format!("{{\"passed\":false,\"reason\":{}}}", quote(e)),
+            |r| r.clone()
+        )
+    );
     let passed = pair_evaluated
+        && evidence.is_ok()
         && thermal_developed == Some(true)
         && source_developed == Some(true)
         && barrel_developed == Some(true)
@@ -2117,7 +2202,9 @@ mod tests {
             for &r in &boundaries {
                 // The current capture response legitimately reads fuel T.
                 // Exercise progress boundaries without inventing 0/1e12 K.
-                if r != l.temperatures_start { state[r] = progress; }
+                if r != l.temperatures_start {
+                    state[r] = progress;
+                }
             }
             c.coordinates.transform(&mut state);
             c.energy.state_to_solver(&mut state);
@@ -2285,6 +2372,7 @@ mod tests {
             surge_flow_extrema: [[0.; 2]; 2],
             initialization: "null".into(),
             stats: "null".into(),
+            pressure_evidence: None,
         };
         retain_final_admitted(&path, &run, 0., "{}").unwrap();
         assert!(!path.exists());
@@ -2292,7 +2380,7 @@ mod tests {
         run.steps = 2;
         retain_final_admitted(&path, &run, 0., "{}").unwrap();
         let bytes = fs::read(&path).unwrap();
-        let mut expected = b"LDFBST01".to_vec();
+        let mut expected = b"LDPTST01".to_vec();
         expected.extend_from_slice(&2u64.to_le_bytes());
         expected.extend_from_slice(&run.last.to_le_bytes());
         for value in run.final_y.iter().chain(&run.final_yp) {
@@ -2319,7 +2407,7 @@ mod tests {
         ));
         let y = [-0., 1., f64::from_bits(0x7ff8_0000_0000_0001)];
         retain_common(&path, 2., &y).unwrap();
-        let mut expected = b"LDFBCM01".to_vec();
+        let mut expected = b"LDPTCM01".to_vec();
         expected.extend_from_slice(&3u64.to_le_bytes());
         expected.extend_from_slice(&2f64.to_le_bytes());
         for x in y {

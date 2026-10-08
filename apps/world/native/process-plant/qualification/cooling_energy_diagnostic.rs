@@ -548,7 +548,7 @@ fn archived_carrier_global_and_local_transport_without_advancement() {
     let mut cases = Vec::new();
     for name in ["input.normal.checkpoint", "input.normal.unadmitted-raw"] {
         let bytes = fs::read(directory.join(name)).unwrap();
-        assert_eq!(&bytes[..8], b"LDFBST01");
+        assert_eq!(&bytes[..8], b"LDPTST01");
         assert_eq!(
             u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
             n as u64
@@ -832,7 +832,7 @@ fn barrel_chart_linear_diagnostic(candidate_proof: bool) {
             (0., physical.into_iter().chain(slopes).collect::<Vec<_>>())
         } else {
             let bytes = fs::read(directory.join(name)).unwrap();
-            assert_eq!(&bytes[..8], b"LDFBST01");
+            assert_eq!(&bytes[..8], b"LDPTST01");
             assert_eq!(
                 u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
                 n as u64
@@ -1114,7 +1114,7 @@ fn archived_energy_p_completion_without_advancement() {
             (model.initial_state().unwrap(), vec![0.; n])
         } else {
             let bytes = fs::read(directory.join(name)).unwrap();
-            assert_eq!(&bytes[..8], b"LDFBST01");
+            assert_eq!(&bytes[..8], b"LDPTST01");
             assert_eq!(bytes.len(), 24 + 16 * n);
             let v = bytes[24..]
                 .chunks_exact(8)
@@ -1322,7 +1322,7 @@ fn archived_power_response_and_weights_without_advancement() {
             model.initial_state().unwrap()
         } else {
             let bytes = fs::read(directory.join(name)).unwrap();
-            assert_eq!(&bytes[..8], b"LDFBCM01");
+            assert_eq!(&bytes[..8], b"LDPTCM01");
             assert_eq!(bytes.len(), 24 + 8 * n);
             assert_eq!(f64::from_le_bytes(bytes[16..24].try_into().unwrap()), 0.001);
             bytes[24..]
@@ -1462,7 +1462,7 @@ fn archived_energy_chart_callbacks_without_advancement() {
             (original.clone(), vec![0.; n])
         } else {
             let bytes = fs::read(directory.join(name)).unwrap();
-            assert_eq!(&bytes[..8], b"LDFBST01");
+            assert_eq!(&bytes[..8], b"LDPTST01");
             assert_eq!(bytes.len(), 24 + 16 * n);
             let v = bytes[24..]
                 .chunks_exact(8)
@@ -1603,7 +1603,7 @@ fn archived_physical_energy_identity_without_advancement() {
     };
     for name in ["input.normal.checkpoint", "input.normal.unadmitted-raw"] {
         let bytes = fs::read(directory.join(name)).unwrap();
-        assert_eq!(&bytes[..8], b"LDFBST01");
+        assert_eq!(&bytes[..8], b"LDPTST01");
         let n = u64::from_le_bytes(bytes[8..16].try_into().unwrap()) as usize;
         assert_eq!(n, model.dimension());
         assert_eq!(bytes.len(), 24 + 16 * n);

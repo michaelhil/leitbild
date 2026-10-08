@@ -535,6 +535,41 @@ impl Model {
             chart_jacobian: None,
         }
     }
+    /// Actual direct roof tap in the selected uniform-density cold gas head.
+    /// SURFACE_PRESSURE is the liquid/gas interface, not the +18.5 m PT tap.
+    /// This uses the same retained gas stock and hydrostatic reduction as the
+    /// gas chart; it does not run another EOS or add a nominal pressure offset.
+    pub fn top_pressure(&self, y: &[f64; STATES]) -> Result<f64, String> {
+        self.geometry(y[HEIGHT])?;
+        let mg = y[VAPOR_MASS] + self.input.air_mass + self.input.nitrogen_mass;
+        if !finite(&[y[SURFACE_PRESSURE], mg]) || y[VAPOR_MASS] < 0. || mg <= 0. {
+            return Err("Invalid current cold PZR roof-tap stocks".into());
+        }
+        // All rods are below the admitted interface and the gas head has the
+        // unchanged constant area: Vg=A*(H-h). Cancel that geometric identity
+        // exactly rather than retain a spurious roundoff-dependent h response.
+        let p = y[SURFACE_PRESSURE] - mg * GRAVITY / self.input.area;
+        if !p.is_finite() || p <= 0. || p > self.input.maximum_total_pressure {
+            return Err("Cold PZR roof tap left selected pressure envelope".into());
+        }
+        Ok(p)
+    }
+    /// Current exact directional derivative of the same roof-tap law.
+    pub fn top_pressure_direction(
+        &self,
+        y: &[f64; STATES],
+        dy: &[f64; STATES],
+    ) -> Result<f64, String> {
+        self.top_pressure(y)?;
+        if !finite(&[dy[SURFACE_PRESSURE], dy[VAPOR_MASS], dy[HEIGHT]]) {
+            return Err("Nonfinite cold PZR roof-tap direction".into());
+        }
+        let result = dy[SURFACE_PRESSURE] - dy[VAPOR_MASS] * GRAVITY / self.input.area;
+        if !result.is_finite() {
+            return Err("Unrepresentable cold PZR roof-tap direction".into());
+        }
+        Ok(result)
+    }
     /// Only consumed current port quantities are evaluated, once before the
     /// actual line transaction. No full PZR heat/phase calculation is repeated.
     pub fn port(&self, y: &[f64; STATES]) -> Result<PortResponse, String> {
@@ -1380,6 +1415,50 @@ mod tests {
     fn prepared() -> (Model, [f64; STATES]) {
         Model::prepare_at_bottom_pressure(definition(), 0.3e6, 300., 300., 4., [300.; METALS])
             .unwrap()
+    }
+    #[test]
+    fn roof_tap_uses_actual_gas_head_not_surface_or_liquid_pressure() {
+        let (m, y) = prepared();
+        let mg = y[VAPOR_MASS] + m.input.air_mass + m.input.nitrogen_mass;
+        let top = m.top_pressure(&y).unwrap();
+        // Independent uncontracted density/head reconstruction at varied level.
+        for h in [3.1, 4., 5.9] {
+            let mut moved = y;
+            moved[HEIGHT] = h;
+            let [_, vg, _, _] = m.geometry(h).unwrap();
+            let reconstructed = moved[SURFACE_PRESSURE] - mg / vg * GRAVITY * (m.input.height - h);
+            assert!((m.top_pressure(&moved).unwrap() - reconstructed).abs() < 1e-10);
+        }
+        assert!(top < y[SURFACE_PRESSURE]);
+        assert!(y[SURFACE_PRESSURE] < y[LIQUID_PRESSURE]);
+        assert!(y[SURFACE_PRESSURE] - top > 10.);
+        assert_eq!(m.input.bottom_elevation + m.input.height, 18.5);
+    }
+    #[test]
+    fn roof_tap_direction_matches_each_current_consumed_coordinate() {
+        let (m, y) = prepared();
+        for row in [SURFACE_PRESSURE, VAPOR_MASS, HEIGHT] {
+            let mut d = [0.; STATES];
+            d[row] = 1.;
+            let analytic = m.top_pressure_direction(&y, &d).unwrap();
+            let epsilon = if row == SURFACE_PRESSURE { 1. } else { 1e-3 };
+            let mut plus = y;
+            let mut minus = y;
+            plus[row] += epsilon;
+            minus[row] -= epsilon;
+            let finite =
+                (m.top_pressure(&plus).unwrap() - m.top_pressure(&minus).unwrap()) / (2. * epsilon);
+            assert!(
+                (finite - analytic).abs() < 2e-7,
+                "row={row}: {finite} vs {analytic}"
+            );
+        }
+        let mut bad = y;
+        bad[VAPOR_MASS] = -1.;
+        assert!(m.top_pressure(&bad).is_err());
+        bad = y;
+        bad[HEIGHT] = m.input.height;
+        assert!(m.top_pressure(&bad).is_err());
     }
     #[test]
     fn chart_only_stage_matches_full_chart_and_invalidates_other_derivatives() {

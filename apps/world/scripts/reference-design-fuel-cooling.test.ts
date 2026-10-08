@@ -12,7 +12,7 @@ test('a corrected attempt must debit the unsuccessful prior work against the sam
 })
 
 test('retained coupled checkpoints and polynomial observations have distinct exact frames',()=>{
- for(const [magic,width]of [['LDFBST01',16],['LDFBCM01',8]] as const){
+ for(const [magic,width]of [['LDPTST01',16],['LDPTCM01',8]] as const){
   const bytes=new Uint8Array(24+width*3),view=new DataView(bytes.buffer)
   bytes.set(new TextEncoder().encode(magic));view.setBigUint64(8,3n,true);view.setFloat64(16,300,true)
   expect(coolingStateHeader(bytes)).toEqual({magic,coordinates:3,time:300})
@@ -108,8 +108,8 @@ test('only a complete physically developed refined pair can receive admission',(
 
 test('retention completeness is independent of admission and requires both distinct arm schedules',()=>{
  const states=['normal','tighter'].flatMap(arm=>[
-  ...coolingCommonTimes.map((time,i)=>({path:`/evidence/input.${arm}.common-${i}.bin`,magic:'LDFBCM01',coordinates:7,time})),
-  {path:`/evidence/input.${arm}.checkpoint`,magic:'LDFBST01',coordinates:7,time:300},
+  ...coolingCommonTimes.map((time,i)=>({path:`/evidence/input.${arm}.common-${i}.bin`,magic:'LDPTCM01',coordinates:7,time})),
+  {path:`/evidence/input.${arm}.checkpoint`,magic:'LDPTST01',coordinates:7,time:300},
  ])
  // No qualification verdict is an input to retention, so failed physical
  // development cannot conceal otherwise complete diagnostic artifacts.

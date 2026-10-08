@@ -5,9 +5,9 @@
 mod source_fixture;
 
 use leitbild_plant_numerics::{
-    CellGeometry, barrel_thermal as bt, cold_pressurizer as cp, finite_surge as surge,
-    fuel_history as fh, fuel_source as fs, fuel_thermal as ft, heat_history as hh,
-    operating_network as on, source_cooling as sc, source_evolution as se, water_carrier as wc,
+    barrel_thermal as bt, cold_pressurizer as cp, finite_surge as surge, fuel_history as fh,
+    fuel_source as fs, fuel_thermal as ft, heat_history as hh, operating_network as on,
+    source_cooling as sc, source_evolution as se, water_carrier as wc, CellGeometry,
 };
 
 pub(crate) fn fixture() -> sc::Model {
@@ -763,21 +763,19 @@ fn composition_refuses_wrong_fuel_recipient_or_carrier_link_identity() {
     let m = fixture();
     let pressure = pressure_fixture(&m.network);
     // Row2 is clad, not the source's second fuel temperature/deposition owner.
-    assert!(
-        sc::Model::new(
-            m.source,
-            m.network,
-            m.thermal,
-            m.carrier,
-            m.barrel,
-            pressure,
-            capture_input(),
-            vec![0, 2, 5, 6],
-            vec![None, Some(0)],
-            vec![300.; 11]
-        )
-        .is_err()
-    );
+    assert!(sc::Model::new(
+        m.source,
+        m.network,
+        m.thermal,
+        m.carrier,
+        m.barrel,
+        pressure,
+        capture_input(),
+        vec![0, 2, 5, 6],
+        vec![None, Some(0)],
+        vec![300.; 11]
+    )
+    .is_err());
     let m = fixture();
     let pressure = pressure_fixture(&m.network);
     let prep = (0..2)
@@ -789,21 +787,19 @@ fn composition_refuses_wrong_fuel_recipient_or_carrier_link_identity() {
         })
         .collect::<Vec<_>>();
     let wrong = wc::Carrier::new(&prep, vec![wc::Link { from: 1, to: 0 }]).unwrap();
-    assert!(
-        sc::Model::new(
-            m.source,
-            m.network,
-            m.thermal,
-            wrong,
-            m.barrel,
-            pressure,
-            capture_input(),
-            vec![0, 1, 5, 6],
-            vec![None, Some(0)],
-            vec![300.; 11]
-        )
-        .is_err()
-    );
+    assert!(sc::Model::new(
+        m.source,
+        m.network,
+        m.thermal,
+        wrong,
+        m.barrel,
+        pressure,
+        capture_input(),
+        vec![0, 1, 5, 6],
+        vec![None, Some(0)],
+        vec![300.; 11]
+    )
+    .is_err());
 }
 
 #[test]
@@ -1000,11 +996,9 @@ fn current_capture_sparse_response_all_columns_match_actual_source_events_and_jv
     }
     let other = fixture();
     assert!(m.capture.power_response(&other.source).is_err());
-    assert!(
-        response
-            .evaluate(&y, &[f64::NAN; 4], &mut powers, &mut gradients)
-            .is_err()
-    );
+    assert!(response
+        .evaluate(&y, &[f64::NAN; 4], &mut powers, &mut gradients)
+        .is_err());
     y.fill(0.);
     response
         .evaluate(&y, &t, &mut powers, &mut gradients)
@@ -1072,13 +1066,11 @@ fn capture_partition_current_density_signed_direction_and_failure_authority() {
     assert!(w.fuel_heat().is_err());
     let mut bad = capture_input();
     bad.bands[0].clad_thickness_m[0] *= 2.;
-    assert!(
-        leitbild_plant_numerics::fuel_capture::Model::new(
-            &m.source,
-            &m.thermal,
-            m.fuel_rows(),
-            bad
-        )
-        .is_err()
-    );
+    assert!(leitbild_plant_numerics::fuel_capture::Model::new(
+        &m.source,
+        &m.thermal,
+        m.fuel_rows(),
+        bad
+    )
+    .is_err());
 }

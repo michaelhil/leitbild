@@ -47,7 +47,7 @@ export const fuelCoolingAdmission=z.object({kind:z.literal('source-cooling-pair'
 export function coolingStateHeader(bytes:Uint8Array){
  if(bytes.length<24)throw Error('Truncated coupled state header')
  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),magic=new TextDecoder().decode(bytes.subarray(0,8)),
-  coordinates=Number(view.getBigUint64(8,true)),time=view.getFloat64(16,true),width=magic==='LDFBST01'?16:magic==='LDFBCM01'?8:0
+  coordinates=Number(view.getBigUint64(8,true)),time=view.getFloat64(16,true),width=magic==='LDPTST01'?16:magic==='LDPTCM01'?8:0
  if(!width||!Number.isSafeInteger(coordinates)||coordinates<=0||!Number.isFinite(time)||time<0
   ||bytes.length!==24+width*coordinates)throw Error('Invalid coupled state frame')
  return {magic,coordinates,time}
@@ -62,8 +62,8 @@ export function coolingStatesComplete(states:readonly {path:string;magic?:string
   ||new Set(states.map(s=>s.path)).size!==states.length
   ||states.some(s=>s.frameError||s.coordinates!==coordinates))return false
  return ['normal','tighter'].every(arm=>coolingCommonTimes.every((time,index)=>states.some(s=>s.path.endsWith(`input.${arm}.common-${index}.bin`)
-   &&s.magic==='LDFBCM01'&&s.time===time))
-   &&states.filter(s=>s.path.endsWith(`input.${arm}.checkpoint`)&&s.magic==='LDFBST01'&&s.time===300).length===1
+   &&s.magic==='LDPTCM01'&&s.time===time))
+   &&states.filter(s=>s.path.endsWith(`input.${arm}.checkpoint`)&&s.magic==='LDPTST01'&&s.time===300).length===1
  )
 }
 type Options={wiki:string;partition:string;material:string;water:string;materialEvidence:string;
@@ -119,12 +119,18 @@ export async function qualifyFuelCooling(options:Options){
  const [stdout,stderr,exitCode]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited]).finally(()=>clearTimeout(timer))
  const executionWallSeconds=(performance.now()-began)/1000-preparationSeconds
  const states=await Promise.all((await Array.fromAsync(new Bun.Glob('input.*').scan({cwd:directory}))).sort()
-  .filter(name=>name!=='input.txt').map(async name=>{
+  .filter(name=>name!=='input.txt'&&!name.endsWith('.pressure-evidence.json')).map(async name=>{
    const path=join(directory,name),bytes=await readFile(path)
    try{return {path,sha256:sha(bytes),bytes:bytes.length,...coolingStateHeader(bytes)}}
    catch(error){return {path,sha256:sha(bytes),bytes:bytes.length,frameError:String(error)}}
   })),
   parsed=sourceEvolutionOutput(stdout),outcome=parsed.outcome,admission=fuelCoolingAdmission.safeParse(outcome),
+  pressureEvidence=[...parsed.records].reverse().find(row=>row?.kind==='pressure-evidence-pair')?.report,
+  observations=await Promise.all(['normal','tighter'].map(async arm=>{
+   const path=join(directory,`input.${arm}.pressure-evidence.json`)
+   if(!await Bun.file(path).exists())return {path,missing:true}
+   const bytes=await readFile(path);return {path,sha256:sha(bytes),bytes:bytes.length}
+  })),
   completeStates=coolingStatesComplete(states,outcome?.dimension),
   unchanged=(await Promise.all(paths.map(p=>readFile(p)))).every((b,i)=>b.equals(bytes[i]!))
    &&(await Promise.all(inputs.map(p=>Bun.file(p).text()))).every((s,i)=>s===texts[i])
@@ -133,12 +139,13 @@ export async function qualifyFuelCooling(options:Options){
   stackUnchanged=await selectedNativeStackUnchanged(nativeStack),currentAttemptSeconds=(performance.now()-began)/1000,
   elapsedSeconds=priorComputationSeconds+currentAttemptSeconds,
   receipt={recordedAt:new Date().toISOString(),passed:exitCode===0&&!timedOut&&admission.success&&completeStates
+    &&pressureEvidence?.passed===true&&observations.every(r=>!('missing' in r))
     &&unchanged&&stackUnchanged&&elapsedSeconds<=allowanceSeconds,
    allowanceSeconds,elapsedSeconds,currentAttemptSeconds,priorComputationSeconds,priorAttempt:options.priorAttempt?resolve(options.priorAttempt):null,
    preparationSeconds,executionWallSeconds,compilationOutsideAdvancementAllowance:true,command,exitCode,timedOut,
    termination:timedOut?'external-wall-deadline':outcome?'native-final-result':'native-final-result-missing',
    stdout,stderr,processUsageScope:'current native process; prior attempt usage retained separately',
-   ...sourceProcessUsage(child.resourceUsage()),...parsed,unchanged,
+   ...sourceProcessUsage(child.resourceUsage()),...parsed,unchanged,pressureEvidence,
    admissionError:admission.success?undefined:admission.error.message,
    inputCounts:{bands:prepared.thermal.bands.length,thermalPhysicalStocks:prepared.thermal.thermalCoordinates,
     thermalSolverCoordinates:2*prepared.thermal.thermalCoordinates,primaryCells:prepared.network.water.length,
@@ -148,7 +155,7 @@ export async function qualifyFuelCooling(options:Options){
     captureEventKinds:['fertile','xenon','samarium'],capturePaidEnergy:'Q-times-existing-gross-progress-no-extra-emitted-integral'},
    consumed:[...inputs.map((path,i)=>({path,sha256:sha(texts[i]!)})),...ownerPaths.map((path,i)=>({path,sha256:sha(ownerTexts[i]!)}))],
    sources:paths.map((path,i)=>({path,sha256:sha(bytes[i]!)})),fixtureSHA256:sha(fixture),
-   artifacts:{directory,nativeStack,nativeStackUnchanged:stackUnchanged,states,completeStates},noWholePlantReadinessCredit:true,
+   artifacts:{directory,nativeStack,nativeStackUnchanged:stackUnchanged,states,completeStates,observations},noWholePlantReadinessCredit:true,
    limitations:prepared.limitations}
  await writeFile(output,JSON.stringify(receipt,null,2)+'\n',{flag:'wx'})
  return receipt
