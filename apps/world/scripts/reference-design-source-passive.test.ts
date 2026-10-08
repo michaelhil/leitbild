@@ -8,6 +8,7 @@ import {compileSourceFaces} from './reference-design-source-faces'
 import {compileColdSourceMaterial,parseOperatingFuelCohorts} from './reference-design-source-material'
 import {parseNuclearObservation} from './reference-design-nuclear-observation'
 import {parseColdNuclear} from './reference-design-cold-nuclear'
+import {compileControlMaterialMotion,controlMaterialMotionAt,type ControlMaterialPose} from './reference-design-control-material-motion'
 
 // Actual owners are opt-in, never replaced by synthetic production inputs.
 // A standalone checkout must import and skip this suite without loading files.
@@ -15,7 +16,8 @@ const wiki=process.env.LEITBILD_REFERENCE_WIKI,
  sum=(xs:number[])=>xs.reduce((s,x)=>s+x,0)
 let d:ReturnType<typeof parsePrimaryWaterInputs>,partition:ReturnType<typeof compileSourcePartition>,
  sourceOwner:string,material:ReturnType<typeof compileColdSourceMaterial>,
- faces:ReturnType<typeof compileSourceFaces>['faces'],actual:ReturnType<typeof compileOriginalPassiveGeometry>
+ faces:ReturnType<typeof compileSourceFaces>['faces'],actual:ReturnType<typeof compileOriginalPassiveGeometry>,
+ moving:ReturnType<typeof compileControlMaterialMotion>
 describe.skipIf(!wiki)('actual ORIGINAL passive source payload',()=>{
  beforeAll(()=>{
   const read=(name:string)=>readFileSync(join(wiki!,name),'utf8')
@@ -27,6 +29,7 @@ describe.skipIf(!wiki)('actual ORIGINAL passive source payload',()=>{
    source:{birthEmission_neutrons_s:parseColdNuclear(read('systems/reactor/cold-source-and-startup.md')).source.birthEmission_neutrons_s}})
   faces=compileSourceFaces(partition,d.gates,[0,0]).faces
   actual=compileOriginalPassiveGeometry(partition,d,material,faces,sourceOwner)
+  moving=compileControlMaterialMotion(partition.regions,d,actual.stocks)
  },20_000) // Actual-owner geometry setup, not the numerical qualification allowance.
  test('receiving free water and exact moments close actual occupied envelopes once',()=>{
   expect(actual.receivingPieces.every(p=>p.volume_m3>0&&Number.isFinite(p.momentZ_m4))).toBe(true)
@@ -94,4 +97,49 @@ describe.skipIf(!wiki)('actual ORIGINAL passive source payload',()=>{
   expect(()=>parsePassiveMaterialLaw(sourceOwner.replace('"scatterMapping":"within-group elastic in all seven groups"','"scatterMapping":"unselected"'))).toThrow()
   expect(()=>parsePassiveMaterialLaw(sourceOwner.replace('7.6461716 / 7.9394277 / 8.9992797 / 7.2704420','7.6461716'))).toThrow()
  },20_000) // Several deliberate full-input rejection builds; physical checks are unchanged.
+ test('moving BODY union reproduces every ORIGINAL B4C and steel volume and immutable identity',()=>{
+  expect(moving.clusters).toHaveLength(52)
+  expect(moving.stockIds).toEqual(actual.stocks.map(s=>s.id))
+  expect(moving.regionIds).toEqual(partition.regions.map(r=>r.id))
+  const poses=moving.clusters.map(c=>({clusterId:c.id,body_y_m:0,side:'increasing' as const})),
+   v=controlMaterialMotionAt(moving,poses),original=new Map(actual.volumeMaterial.map(r=>[r.stock+'|'+r.region,r.volume_m3]))
+  for(const [i,r] of moving.rows.entries())expect(v[4*i]!).toBeCloseTo(original.get(r.stock+'|'+r.region)??0,12)
+  expect(moving.rows.some((r,i)=>partition.regions[r.region]!.compartment==='UPPER'
+   &&actual.stocks[r.stock]!.material==='B4C'&&v[4*i]===0&&v[4*i+1]!>0)).toBeTrue()
+ })
+ test('all 52 clusters have independent material incidence without mutating owned histories',()=>{
+  const history=JSON.stringify(actual.stocks),poses:ControlMaterialPose[]=moving.clusters.map((c,i)=>
+   ({clusterId:c.id,body_y_m:4*i/51,side:i===51?'decreasing':'increasing'})),
+   v=controlMaterialMotionAt(moving,poses),originalPoses:ControlMaterialPose[]=poses.map(p=>({...p,body_y_m:0,side:'increasing'})),
+   zero=controlMaterialMotionAt(moving,originalPoses)
+  for(const [cluster,p] of poses.entries())for(const material of ['B4C','STEEL']){
+   const stock=moving.stockIds.indexOf(moving.clusters[cluster]!.prefix+'/'+material),s=actual.stocks[stock]!
+   let V=0,J=0,J0=0,dV=0,dJ=0
+   for(const [i,r] of moving.rows.entries())if(r.stock===stock){V+=v[4*i]!;dV+=v[4*i+1]!;J+=v[4*i+2]!;dJ+=v[4*i+3]!;J0+=zero[4*i+2]!}
+   expect(V).toBeCloseTo(s.volume_m3,11);expect(J-J0).toBeCloseTo(s.volume_m3*p.body_y_m,11)
+   expect(dV).toBeCloseTo(0,11);expect(dJ).toBeCloseTo(s.volume_m3,11)
+  }
+  expect(JSON.stringify(actual.stocks)).toBe(history)
+  expect(controlMaterialMotionAt(moving,originalPoses)).toEqual(zero)
+ })
+ test('actual interior volume and moment partials match independent finite translation',()=>{
+  const poses=moving.clusters.map(c=>({clusterId:c.id,body_y_m:.123,side:'increasing' as const})),
+   current=controlMaterialMotionAt(moving,poses),epsilon=1e-5,
+   a=controlMaterialMotionAt(moving,poses.map(p=>({...p,body_y_m:p.body_y_m-epsilon}))),
+   b=controlMaterialMotionAt(moving,poses.map(p=>({...p,body_y_m:p.body_y_m+epsilon})))
+  for(const [i] of moving.rows.entries()){
+   expect((b[4*i]!-a[4*i]!)/(2*epsilon)).toBeCloseTo(current[4*i+1]!,9)
+   expect((b[4*i+2]!-a[4*i+2]!)/(2*epsilon)).toBeCloseTo(current[4*i+3]!,9)
+  }
+ })
+ test('incomplete axial support and mismatched material cannot silently normalize',()=>{
+  expect(()=>compileControlMaterialMotion(partition.regions.filter(r=>r.compartment!=='UPPER'),d,actual.stocks)).toThrow('coverage')
+  expect(()=>compileControlMaterialMotion([...partition.regions,partition.regions[0]!],d,actual.stocks)).toThrow('Duplicate')
+  const stock=actual.stocks.findIndex(s=>s.id.endsWith('/B4C')&&s.id.startsWith('CONTROL/'))
+  expect(()=>compileControlMaterialMotion(partition.regions,d,actual.stocks.map((s,i)=>i===stock?{...s,volume_m3:s.volume_m3*2}:s))).toThrow('volume mismatch')
+  for(const volume_m3 of [NaN,Infinity,0,-1])
+   expect(()=>compileControlMaterialMotion(partition.regions,d,actual.stocks.map((s,i)=>i===stock?{...s,volume_m3}:s))).toThrow('volume mismatch')
+  const poses=moving.clusters.map(c=>({clusterId:c.id,body_y_m:0,side:'increasing' as const}))
+  expect(()=>controlMaterialMotionAt(moving,[poses[1]!,poses[0]!,...poses.slice(2)])).toThrow('reordered')
+ },20_000)
 })

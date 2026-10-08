@@ -10,6 +10,7 @@ use crate::{liquid_batch, CellGeometry, Liquid, LiquidQuery, GRAVITY};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 mod hydraulic;
+pub mod moving_chart;
 use crate::sg_secondary::{Inventory as SecondaryInventory, State as SecondaryState};
 pub use crate::sg_secondary::{Secondary, SecondaryHeat};
 pub use hydraulic::{Hydraulic, HydraulicSegment, LossLaw, Seat};
@@ -763,21 +764,20 @@ pub struct Workspace {
     chart_valid: bool,
 }
 fn chart(w: Water, l: Liquid, p: f64, t: f64) -> Result<([f64; 4], [f64; 2]), String> {
-    let m = w.geometry.volume * l.density;
-    let u = l.internal_energy + GRAVITY * w.geometry.elevation;
-    let mp = m * l.compressibility;
-    let mt = -m * l.expansion;
-    let ep = u * mp + w.geometry.volume * (p * l.compressibility - t * l.expansion);
-    let et = u * mt + m * (l.cp - p * l.expansion / l.density);
-    if ![mp, mt, ep, et].iter().all(|x| x.is_finite()) || et <= 0. {
-        return Err("Singular local energy chart".into());
-    }
-    let a = mp - mt * ep / et;
-    let b = mt / et;
-    if !a.is_finite() || !b.is_finite() || a <= 0. {
-        return Err("Unsupported local pressure/energy chart".into());
-    }
-    Ok(([mp, mt, ep, et], [a, b]))
+    let c = moving_chart::inventory_chart(
+        w.geometry,
+        moving_chart::ShapeDirection {
+            volume_m2: 0.,
+            first_moment_m3: 0.,
+        },
+        l,
+        p,
+        t,
+    )?;
+    Ok((
+        c.thermal_partials,
+        [c.redistribution[0], c.redistribution[1]],
+    ))
 }
 impl Workspace {
     fn evaluate_prhr(

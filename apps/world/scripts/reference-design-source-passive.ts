@@ -60,6 +60,26 @@ function area(p:Primitive,box:Rectangle){
  return a*p.scale
 }
 
+/** One physical BODY material decomposition, shared by original preparation
+ * and the moving-incidence compiler. No stem/spider material is hidden here. */
+export function controlBodyPrimitives(d:Pick<Inputs,'control'|'fuel'|'handling'>){
+ const c=d.control,g=controlAbsorberGeometry(c,d.fuel,d.handling),rows:Primitive[]=[]
+ for(const site of g.sites){const prefix=`CONTROL/${site.x}/${site.y}`
+  for(const pin of g.bodySites){const x=site.x_m+pin.x_m,y=site.y_m+pin.y_m,
+   lo=c.insertedBodyBottom_m,hi=lo+c.bodyLength_m,activeLo=c.insertedActiveBottom_m,activeHi=activeLo+c.activeLength_m
+   const add=(stockId:string,inner:number,outer:number,lo:number,hi:number)=>{
+    if(!(outer>inner&&inner>=0&&hi>lo))throw Error('Invalid BODY material primitive')
+    rows.push({stockId,lo,hi,shape:{kind:'annulus',x,y,inner,outer},scale:1})
+   }
+   add(prefix+'/B4C',0,c.absorberDiameter_m/2,activeLo,activeHi)
+   add(prefix+'/STEEL',c.absorberDiameter_m/2,c.bodyDiameter_m/2,activeLo,activeHi)
+   if(activeLo>lo)add(prefix+'/STEEL',0,c.bodyDiameter_m/2,lo,activeLo)
+   if(hi>activeHi)add(prefix+'/STEEL',0,c.bodyDiameter_m/2,activeHi,hi)
+  }
+ }
+ return {geometry:g,rows}
+}
+
 /** Exact ORIGINAL geometry. A changed achieved pose is not parsed as ORIGINAL.
  * Closed head is bulk 304 plus real water holes, never a thin optical heater. */
 export function compileOriginalPassiveGeometry(partition:ReturnType<typeof compileSourcePartition>,d:Inputs,material:Material,faces:SourceFace[],sourceOwnerText:string){
@@ -67,7 +87,8 @@ export function compileOriginalPassiveGeometry(partition:ReturnType<typeof compi
  if(sha(JSON.stringify(partition))!==sha(JSON.stringify(expected)))throw Error('Passive/source partition lineage mismatch')
  const {control:c,handling:h,fuel:f,attachment:a,head,barrel:b}=d,
   law=parsePassiveMaterialLaw(sourceOwnerText),NA=d.chemistry.avogadro_mol,
-  cg=controlAbsorberGeometry(c,f,h),current=currentColdGeometry(c,a,f,h,d.gates,head,d.cold),fg=fuelHandlingChecks(h,f),
+  {geometry:cg,rows:bodyPrimitives}=controlBodyPrimitives(d),current=currentColdGeometry(c,a,f,h,d.gates,head,d.cold),fg=fuelHandlingChecks(h,f),
+  activeBottom=h.seatedBottom_m+h.bottomFittingLength_m,activeTop=activeBottom+f.activeLength_m,
   stockMap=new Map<string,PassiveStock>(),primitives:Primitive[]=[],incidence:Incidence[]=[],regions=new Map(partition.regions.map(r=>[r.id,r]))
  if(law.steel304.density!==c.steelDensity_kg_m3||law.guideZr.density!==f.cladDensity_kg_m3
   ||law.B4C.density!==h.b4cDensity_kg_m3||law.B4C.B10AtomFraction!==h.b10AtomFraction||law.B4C.molarMass!==h.b4cMolarMass_kg_mol)
@@ -143,14 +164,8 @@ export function compileOriginalPassiveGeometry(partition:ReturnType<typeof compi
   vs=cg.moving.bodySteel_kg/c.clusters/c.steelDensity_kg_m3
   stock(prefix+'/B4C','B4C',vb,d.cold.primaryMetalTemperature_K,'cylinder',prefix+'/BODY')
   stock(prefix+'/STEEL','steel304',vs,d.cold.primaryMetalTemperature_K,'volume',prefix+'/BODY')
-  for(const pin of cg.bodySites){const x=s.x_m+pin.x_m,y=s.y_m+pin.y_m,
-   lo=c.insertedBodyBottom_m,hi=lo+c.bodyLength_m,activeLo=c.insertedActiveBottom_m,activeHi=activeLo+c.activeLength_m
-   annulus(prefix+'/B4C',x,y,0,c.absorberDiameter_m/2,activeLo,activeHi)
-   annulus(prefix+'/STEEL',x,y,c.absorberDiameter_m/2,c.bodyDiameter_m/2,activeLo,activeHi)
-   if(activeLo>lo)annulus(prefix+'/STEEL',x,y,0,c.bodyDiameter_m/2,lo,activeLo)
-   if(hi>activeHi)annulus(prefix+'/STEEL',x,y,0,c.bodyDiameter_m/2,activeHi,hi)
-  }
  }
+ primitives.push(...bodyPrimitives)
  const rackBottom=partition.panelSupport_m.bottom,rackTop=partition.panelSupport_m.top,
   outer=h.rackSleeveSide_m/2,skin=h.rackSkin_m,thickness=fg.rack.matrixThickness_m,inner=outer-2*skin-thickness,
   mid=outer-skin-thickness/2,rackMatrices=new Map<string,PassiveStock>(),rackSkins=new Map<string,PassiveStock>()
@@ -176,7 +191,7 @@ export function compileOriginalPassiveGeometry(partition:ReturnType<typeof compi
   const local=new Map<string,number>()
   if(r.box){for(const p of primitives){const dz=overlap(p.lo,p.hi,r.z0_m!,r.z1_m!);if(dz===0)continue;const V=area(p,r.box)*dz;if(V!==0)local.set(p.stockId,(local.get(p.stockId)??0)+V)}}
   else if(r.id==='LOWER'||r.id==='UPPER'){
-   const lo=r.id==='LOWER'?d.primary.downcomerBottom_m:2,hi=r.id==='LOWER'?-2:c.headBottom_m
+   const lo=r.id==='LOWER'?d.primary.downcomerBottom_m:activeTop,hi=r.id==='LOWER'?activeBottom:c.headBottom_m
    for(const p of primitives){if(!p.stockId.startsWith('CONTROL/'))continue;const dz=overlap(p.lo,p.hi,lo,hi);if(dz===0)continue
     const shape=p.shape,V=(shape.kind==='annulus'?Math.PI*(shape.outer**2-shape.inner**2):(shape.box.x1-shape.box.x0)*(shape.box.y1-shape.box.y0))*p.scale*dz
     local.set(p.stockId,(local.get(p.stockId)??0)+V)

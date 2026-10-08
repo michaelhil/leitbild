@@ -37,6 +37,8 @@ pub mod prhr_actuator;
 pub mod prhr;
 pub mod prhr_mixing;
 pub mod dc_supply;
+pub mod absorber_motion;
+pub mod moving_guide;
 
 pub const GRAVITY: f64 = 9.80665;
 
