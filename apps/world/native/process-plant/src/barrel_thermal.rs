@@ -78,6 +78,38 @@ mod tests {
         assert!(m.energy(1601.).is_err());
     }
     #[test]
+    fn other_finite_304_stock_recovers_its_own_increment_without_wet_or_b4c_domain() {
+        let m = fixture();
+        for mass in [4., 5.44052508854818] {
+            for initial in [300., 325.] {
+                assert_eq!(m.temperature_from_energy_increment(mass, initial, 0.).unwrap().to_bits(), initial.to_bits());
+                for t in [290., 300., 600., 1599., 1600.] {
+                    let p=m.config();
+                    let energy=mass*(t-initial)*(p.cp_constant_j_kg_k+0.5*p.cp_linear_j_kg_k2*(t+initial));
+                    close(m.temperature_from_energy_increment(mass,initial,energy).unwrap(),t);
+                }
+            }
+        }
+        // Above the fixture liquid's 450 K saturation is still within the
+        // adiabatic structural 304 caloric domain; no liquid contact is added.
+        let energy=4.*(600.-300.)*(469.4448+0.5*0.13480848*(600.+300.));
+        assert_eq!(m.temperature_from_energy_increment(4.,300.,energy).unwrap(),600.);
+        let p=m.config();
+        let maximum=4.*(p.maximum_k-300.)*(p.cp_constant_j_kg_k+0.5*p.cp_linear_j_kg_k2*(p.maximum_k+300.));
+        assert!(m.temperature_from_energy_increment(4.,300.,maximum+1.).is_err());
+        for (mass,initial,e) in [(0.,300.,0.),(-1.,300.,0.),(f64::NAN,300.,0.),
+            (4.,289.,0.),(4.,1601.,0.),(4.,300.,f64::INFINITY)] {
+            assert!(m.temperature_from_energy_increment(mass,initial,e).is_err());
+        }
+        let mut law=m.config().clone();law.cp_linear_j_kg_k2=0.;let linear=Model::new(law).unwrap();
+        assert_eq!(linear.temperature_from_energy_increment(4.,300.,4.*469.4448*20.).unwrap(),320.);
+        let small=0.01;
+        let t=m.temperature_from_energy_increment(4.,300.,small).unwrap();
+        assert!(t>300.);
+        let recovered=4.*(t-300.)*(469.4448+0.5*0.13480848*(t+300.));
+        assert!((recovered-small).abs()<4.*f64::EPSILON*4.*(469.4448+0.13480848*300.)*300.);
+    }
+    #[test]
     fn independent_serial_paths_reciprocity_and_direct_nuclear_receipts() {
         let m = fixture();
         let mut w = m.workspace();
@@ -634,6 +666,40 @@ impl Model {
             return Err("Unrepresentable barrel sensible energy");
         }
         Ok(e)
+    }
+    /// Recover another finite 304 stock's temperature from its retained
+    /// sensible-energy increment. This reuses only the owned 304 caloric law
+    /// and domain; it does not impose this barrel's wet-contact/saturation
+    /// condition or give the other stock a second thermal state.
+    pub fn temperature_from_energy_increment(
+        &self, mass_kg: f64, initial_k: f64, increment_j: f64,
+    ) -> Result<f64, &'static str> {
+        if !mass_kg.is_finite() || mass_kg <= 0. || !increment_j.is_finite() {
+            return Err("Invalid finite 304 mass or sensible increment");
+        }
+        self.heat_capacity(initial_k)?;
+        let p = &self.input;
+        let increment = |t: f64| mass_kg * (t - initial_k)
+            * (p.cp_constant_j_kg_k + 0.5 * p.cp_linear_j_kg_k2 * (t + initial_k));
+        let minimum = increment(p.minimum_k);
+        let maximum = increment(p.maximum_k);
+        if !minimum.is_finite() || !maximum.is_finite() || increment_j < minimum || increment_j > maximum {
+            return Err("Finite 304 sensible increment outside owned thermal domain");
+        }
+        if increment_j == 0. { return Ok(initial_k); }
+        // These are exact inverse endpoint identities, not a clamp of an
+        // out-of-domain energy to an admissible temperature.
+        if increment_j == minimum { return Ok(p.minimum_k); }
+        if increment_j == maximum { return Ok(p.maximum_k); }
+        let e = increment_j / mass_kg;
+        let c0 = p.cp_constant_j_kg_k + p.cp_linear_j_kg_k2 * initial_k;
+        let discriminant = c0 * c0 + 2. * p.cp_linear_j_kg_k2 * e;
+        let delta = 2. * e / (c0 + discriminant.sqrt());
+        let t = initial_k + delta;
+        if !t.is_finite() || discriminant < 0. || t < p.minimum_k || t > p.maximum_k {
+            return Err("Unrepresentable finite 304 caloric recovery");
+        }
+        Ok(t)
     }
     pub fn workspace(&self) -> Workspace {
         Workspace {

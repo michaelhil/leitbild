@@ -193,6 +193,9 @@ pub struct Workspace {
     passive_capture: Vec<f64>,
     passive_births: Vec<f64>,
     passive_birth_direction: Vec<f64>,
+    passive_birth_density: Vec<f64>,
+    passive_birth_density_direction: Vec<f64>,
+    passive_volume_direction: Vec<f64>,
     target_captures: Vec<f64>,
     target_capture_direction: Vec<f64>,
     cylinder_capture: Vec<[f64; GROUPS]>,
@@ -209,6 +212,18 @@ impl Workspace {
     pub(crate) fn owner_token(&self) -> &Arc<()> {
         &self.owner
     }
+    /// A downstream consumer combining current reaction events with retained
+    /// isotope amounts must use this exact prepared state, not a same-sized
+    /// vector from another trial. This check owns neither state nor a cache.
+    pub fn check_current_state(&self, y: &[f64]) -> Result<(), &'static str> {
+        self.check()?;
+        if y.len() != self.state.len()
+            || y.iter().zip(&self.state).any(|(a, b)| a.to_bits() != b.to_bits())
+        {
+            return Err("SOURCE consumer state differs from its prepared reaction stage");
+        }
+        Ok(())
+    }
     pub fn passive_birth_events(&self) -> Result<&[f64], &'static str> {
         self.check()?;
         Ok(&self.passive_births)
@@ -219,6 +234,31 @@ impl Workspace {
             return Err("No current passive birth direction");
         }
         Ok(&self.passive_birth_direction)
+    }
+    /// Events per material volume, in `passive_birth_rows` order. This is the
+    /// same ordinary-volume capture law before contraction with incidence;
+    /// unlike events/volume it remains defined at an empty reachable row.
+    pub fn passive_birth_density(&self) -> Result<&[f64], &'static str> {
+        self.check()?;
+        Ok(&self.passive_birth_density)
+    }
+    pub fn passive_birth_density_jvp(&self) -> Result<&[f64], &'static str> {
+        self.check()?;
+        if !self.jvp_valid {
+            return Err("No current passive birth-density direction");
+        }
+        Ok(&self.passive_birth_density_direction)
+    }
+    pub fn passive_volumes(&self) -> Result<&[f64], &'static str> {
+        self.check()?;
+        Ok(&self.geometry.passive_volumes)
+    }
+    pub fn passive_volume_jvp(&self) -> Result<&[f64], &'static str> {
+        self.check()?;
+        if !self.jvp_valid {
+            return Err("No current passive volume direction");
+        }
+        Ok(&self.passive_volume_direction)
     }
     pub fn fuel_capture_events(&self) -> Result<&[[f64; 3]], &'static str> {
         self.check()?;
@@ -332,6 +372,9 @@ impl Workspace {
                 + self.segment_release.len()
                 + self.passive_births.len()
                 + self.passive_birth_direction.len()
+                + self.passive_birth_density.len()
+                + self.passive_birth_density_direction.len()
+                + self.passive_volume_direction.len()
                 + self.fuel_deposition.len()
                 + self.fuel_deposition_direction.len()
                 + self.state.len()
@@ -389,6 +432,17 @@ impl Evolution {
             })
             .enumerate()
             .map(|(i, (t, r))| (i, t, r))
+    }
+    /// Birth index, target, region, and immutable passive-incidence index.
+    /// Physical heat paths can split one SOURCE row without dividing by its
+    /// current (possibly zero) material volume.
+    pub fn passive_birth_geometry_rows(
+        &self,
+    ) -> impl Iterator<Item = (usize, usize, usize, usize)> + '_ {
+        self.input.passive_incidence.iter().enumerate().flat_map(|(j, e)| {
+            self.input.passive_stocks[e.stock].targets.iter()
+                .map(move |t| (t.index, e.region, j))
+        }).enumerate().map(|(i, (t, r, j))| (i, t, r, j))
     }
     /// Actual represented external-water birth rows, not closed bay inventories.
     pub fn external_water_birth_rows(&self) -> impl Iterator<Item = (usize, usize, usize)> + '_ {
@@ -874,6 +928,9 @@ impl Evolution {
             passive_capture: vec![0.; nt],
             passive_births: vec![0.; self.passive.birth_count()],
             passive_birth_direction: vec![0.; self.passive.birth_count()],
+            passive_birth_density: vec![0.; self.passive.birth_count()],
+            passive_birth_density_direction: vec![0.; self.passive.birth_count()],
+            passive_volume_direction: vec![0.; self.input.passive_incidence.len()],
             target_captures: vec![0.; nt],
             target_capture_direction: vec![0.; nt],
             cylinder_capture: vec![[0.; GROUPS]; nt],
@@ -1138,12 +1195,14 @@ impl Evolution {
             .update_with_volumes(&w.amounts, &geometry.passive_volumes, &mut w.passive)?;
         w.passive_capture.fill(0.);
         w.scratch.fill(0.);
-        self.passive.apply(
+        self.passive.apply_with_birth_density(
             &w.passive,
+            &w.amounts,
             &y[..n],
             &mut w.scratch,
             &mut w.passive_capture,
             &mut w.passive_births,
+            &mut w.passive_birth_density,
         )?;
         for i in 0..n {
             w.rates[i] += w.scratch[i];
@@ -1512,6 +1571,8 @@ impl Evolution {
         }
         let mut passive_birth = 0;
         w.passive_birth_direction.fill(0.);
+        w.passive_birth_density_direction.fill(0.);
+        w.passive_volume_direction.copy_from_slice(&dgeometry.passive_volumes);
         for (i, e) in self.input.passive_incidence.iter().enumerate() {
             let s = &self.input.passive_stocks[e.stock];
             let volume = w.geometry.passive_volumes[i];
@@ -1523,6 +1584,9 @@ impl Evolution {
                 for g in 0..GROUPS {
                     let factor = t.sigma_m2[g] / s.volume / volumes[e.region];
                     let pos = e.region * GROUPS + g;
+                    w.passive_birth_density_direction[passive_birth] += speed[g] * factor
+                        * (w.amounts[t.index] * dy[pos]
+                            + w.amount_direction[t.index] * w.state[pos]);
                     let dcap = speed[g]
                         * factor
                         * (volume

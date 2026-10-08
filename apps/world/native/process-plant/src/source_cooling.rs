@@ -138,6 +138,18 @@ fn compensated(values: impl Iterator<Item = f64>) -> f64 {
     s + c
 }
 impl Workspace {
+    /// Same-stage primary properties already prepared for nuclear recipients.
+    /// A composing recipient must not repeat water-property evaluations.
+    pub(crate) fn nuclear_water(&self) -> Result<&[bt::Water], String> {
+        if !self.valid { return Err("No current nuclear-water view".into()); }
+        Ok(&self.barrel_water)
+    }
+    pub(crate) fn nuclear_water_direction(&self) -> Result<&[bt::WaterDirection], String> {
+        if !self.valid || self.energy_rate_tangent.is_none() {
+            return Err("No current nuclear-water direction".into());
+        }
+        Ok(&self.dbarrel_water)
+    }
     /// Read-only current primary view for a separately retained coefficient
     /// diagnostic. Never a second state owner or a frozen integration input.
     pub fn external_stocks(&self) -> Result<&[Stocks], String> {

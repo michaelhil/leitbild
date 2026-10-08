@@ -38,7 +38,8 @@ type Kind='steel304'|'Zr'|'B4C'
 type Target={id:string,referenceAtoms:number,atoms:number,productAtoms:number,sigma_m2:number[],bindingEmission_J:[number,number]}
 export type PassiveStock={id:string,material:Kind,volume_m3:number,mass_kg:number,thermalRecipientId:string,
  referenceScatter_m1:number[],targets:Target[],captureMode:'volume'|'optical'|'cylinder',original_K:number}
-type Primitive={stockId:string,lo:number,hi:number,shape:{kind:'annulus',x:number,y:number,inner:number,outer:number}|{kind:'box',box:Rectangle},scale:number}
+type Primitive={stockId:string,lo:number,hi:number,shape:{kind:'annulus',x:number,y:number,inner:number,outer:number}|{kind:'box',box:Rectangle}|{kind:'distributed',x:number,y:number,envelope:number,area:number},scale:number}
+export type MovingControlSteelSelection={controlSteel?:boolean}
 type Incidence={stockId:string,sourceRegionId:string,volume_m3:number}
 const overlap=(a:number,b:number,c:number,d:number)=>Math.max(0,Math.min(b,d)-Math.max(a,c))
 const sum=(xs:readonly number[])=>xs.reduce((a,b)=>a+b,0)
@@ -54,6 +55,10 @@ function circle(box:Rectangle,x:number,y:number,r:number){
 }
 function area(p:Primitive,box:Rectangle){
  const s=p.shape
+ if(s.kind==='distributed'){
+  if(circle(box,s.x,s.y,s.envelope)===0)return 0
+  throw Error('Distributed control steel has no selected transverse source footprint')
+ }
  const a=s.kind==='box'?overlap(box.x0,box.x1,s.box.x0,s.box.x1)*overlap(box.y0,box.y1,s.box.y0,s.box.y1):
   circle(box,s.x,s.y,s.outer)-circle(box,s.x,s.y,s.inner)
  if(a<0||!Number.isFinite(a))throw Error('Invalid positive primitive intersection')
@@ -80,9 +85,29 @@ export function controlBodyPrimitives(d:Pick<Inputs,'control'|'fuel'|'handling'>
  return {geometry:g,rows}
 }
 
+/** Existing mechanical/displaced-water material, not additional mass. The
+ * porous frame/hub and lugs have only their selected axial-volume reduction:
+ * they may be embedded in lumped UPPER, never clipped as fictitious solid disks.
+ * Shaft, lower stub and shoulder retain their actual annular cross-sections. */
+export function controlSteelPrimitives(d:Inputs){
+ const geometry=controlAbsorberGeometry(d.control,d.fuel,d.handling),
+  current=currentColdGeometry(d.control,d.attachment,d.fuel,d.handling,d.gates,d.head,d.cold),
+  rows:(Primitive&{motion:'body'|'stem'})[]=[]
+ for(const site of geometry.sites)for(const q of current.intruders){
+  if(q.motion==='fixed'||q.shape==='rodlet')continue
+  rows.push({stockId:`CONTROL/${site.x}/${site.y}/`+(q.motion==='body'?'SPIDER':'STEM'),motion:q.motion,
+   lo:q.lo,hi:q.hi,scale:1,shape:q.shape==='annulus'
+    ?{kind:'annulus',x:site.x_m,y:site.y_m,inner:q.inner_m,outer:q.outer_m}
+    :{kind:'distributed',x:site.x_m,y:site.y_m,envelope:q.motion==='body'?d.control.spiderRadius_m:
+     Math.hypot(d.attachment.lugOuterRadius_m,d.attachment.lugWidth_m/2),area:q.area/d.control.clusters}})
+ }
+ return {geometry,current,rows}
+}
+
 /** Exact ORIGINAL geometry. A changed achieved pose is not parsed as ORIGINAL.
  * Closed head is bulk 304 plus real water holes, never a thin optical heater. */
-export function compileOriginalPassiveGeometry(partition:ReturnType<typeof compileSourcePartition>,d:Inputs,material:Material,faces:SourceFace[],sourceOwnerText:string){
+export function compileOriginalPassiveGeometry(partition:ReturnType<typeof compileSourcePartition>,d:Inputs,material:Material,faces:SourceFace[],sourceOwnerText:string,
+ selection:MovingControlSteelSelection={}){
  const expected=compileSourcePartition(d)
  if(sha(JSON.stringify(partition))!==sha(JSON.stringify(expected)))throw Error('Passive/source partition lineage mismatch')
  const {control:c,handling:h,fuel:f,attachment:a,head,barrel:b}=d,
@@ -185,6 +210,19 @@ export function compileOriginalPassiveGeometry(partition:ReturnType<typeof compi
   const lo=d.gates.sills_m[n],hi=d.gates.top_m,V=d.gates.width_m*d.gates.thickness_m*(hi-lo),row=stock(id,'steel304',V,head.cnvTemperature_K,'optical')
   gateStocks.set(id,row);box(id,{x0,x1,y0:-d.gates.width_m/2,y1:d.gates.width_m/2},lo,hi)
  }
+ // Explicit prospective moving-structural selection. Earlier scoped builders
+ // keep their exact stocks/order; no historical state is copied or re-split.
+ if(selection.controlSteel){const steel=controlSteelPrimitives(d)
+  for(const site of steel.geometry.sites)for(const family of ['SPIDER','STEM'] as const){
+   const id=`CONTROL/${site.x}/${site.y}/${family}`,pieces=steel.rows.filter(p=>p.stockId===id),
+    V=sum(pieces.map(p=>{const s=p.shape
+     if(s.kind==='box')throw Error('Unselected structural control shape')
+     return (s.kind==='distributed'?s.area:Math.PI*(s.outer**2-s.inner**2))*(p.hi-p.lo)
+    }))
+   stock(id,'steel304',V,d.cold.primaryMetalTemperature_K,'volume',id)
+  }
+  primitives.push(...steel.rows)
+ }
  // Compile each primitive once. Equipment-node embeddings remain explicit,
  // rather than inventing rectangular LOWER/UPPER solids from gross water V.
  for(const r of partition.regions){
@@ -193,7 +231,7 @@ export function compileOriginalPassiveGeometry(partition:ReturnType<typeof compi
   else if(r.id==='LOWER'||r.id==='UPPER'){
    const lo=r.id==='LOWER'?d.primary.downcomerBottom_m:activeTop,hi=r.id==='LOWER'?activeBottom:c.headBottom_m
    for(const p of primitives){if(!p.stockId.startsWith('CONTROL/'))continue;const dz=overlap(p.lo,p.hi,lo,hi);if(dz===0)continue
-    const shape=p.shape,V=(shape.kind==='annulus'?Math.PI*(shape.outer**2-shape.inner**2):(shape.box.x1-shape.box.x0)*(shape.box.y1-shape.box.y0))*p.scale*dz
+    const shape=p.shape,V=(shape.kind==='annulus'?Math.PI*(shape.outer**2-shape.inner**2):shape.kind==='distributed'?shape.area:(shape.box.x1-shape.box.x0)*(shape.box.y1-shape.box.y0))*p.scale*dz
     local.set(p.stockId,(local.get(p.stockId)??0)+V)
    }
   }
@@ -201,10 +239,13 @@ export function compileOriginalPassiveGeometry(partition:ReturnType<typeof compi
  }
  // Receiving water excludes the entire enclosed primary passage envelope,
  // not just the wall, then excludes external jacks/rack/gate material once.
- const receivingPieces:{owner:string,sourceRegionId:string,volume_m3:number,momentZ_m4:number}[]=[],bayClosure:{owner:string,grossVolume_m3:number,excludedVolume_m3:number,freeVolume_m3:number,momentZ_m4:number}[]=[]
+ const receivingPieces:{owner:string,sourceRegionId:string,volume_m3:number,momentZ_m4:number}[]=[],bayClosure:{owner:string,grossVolume_m3:number,excludedVolume_m3:number,freeVolume_m3:number,momentZ_m4:number}[]=[],
+  // Added internal primary metal cannot add cuts to unrelated outer receiving
+  // water. Its enclosing pressure boundary already excludes that volume once.
+  receivingPrimitives=primitives.filter(p=>!/^CONTROL\/[^/]+\/[^/]+\/(SPIDER|STEM)$/.test(p.stockId))
  for(const compartment of ['WELL','CANAL','POOL'] as const){let gross=0,free=0,moment=0
   for(const r of partition.regions.filter(r=>r.compartment===compartment)){
-   const cuts=[...new Set([r.z0_m!,r.z1_m!,...primitives.flatMap(p=>[p.lo,p.hi]).filter(z=>z>r.z0_m!&&z<r.z1_m!),...current.envelope.flatMap(p=>[p.lo,p.hi]).filter(z=>z>r.z0_m!&&z<r.z1_m!)])].sort((a,b)=>a-b)
+   const cuts=[...new Set([r.z0_m!,r.z1_m!,...receivingPrimitives.flatMap(p=>[p.lo,p.hi]).filter(z=>z>r.z0_m!&&z<r.z1_m!),...current.envelope.flatMap(p=>[p.lo,p.hi]).filter(z=>z>r.z0_m!&&z<r.z1_m!)])].sort((a,b)=>a-b)
    let V=0,J=0;const grossArea=(r.box!.x1-r.box!.x0)*(r.box!.y1-r.box!.y0)
    for(let k=1;k<cuts.length;k++){const lo=cuts[k-1]!,hi=cuts[k]!,z=(lo+hi)/2;let excluded=0
     if(compartment==='WELL'){
@@ -259,7 +300,7 @@ export function compileOriginalPassiveGeometry(partition:ReturnType<typeof compi
   nativeBulk:{stocks:stocks.map(s=>({id:s.id,volume:s.volume_m3,scatter:s.id.startsWith('GATE.')?Array(7).fill(0):s.referenceScatter_m1,
    targets:s.captureMode==='volume'?s.targets.map(t=>({id:t.id,reference_atoms:t.referenceAtoms,sigma:t.sigma_m2,binding_emission:t.bindingEmission_J})):[]})),incidence:volumeMaterial.map(e=>({stock:e.stock,region:e.region,volume:e.volume_m3})),targets:stocks.filter(s=>s.captureMode==='volume').flatMap(s=>s.targets.map(t=>({id:t.id,atoms:t.atoms,products:t.productAtoms})))},
   captureRecipientLinks:stocks.flatMap(s=>s.targets.map(t=>({targetId:t.id,thermalRecipientId:s.thermalRecipientId,chargedLocal:s.material==='B4C',photonProjection:'selected serial physical path NOT yet consumed',bindingEmission_J:t.bindingEmission_J}))),
-  missingPhysicalConsumers:['B4C body lateral-cylinder capture and converter film/collection response','retained deposit and isotope/history advancement','paid binding/Mn56 photon/contact deposition and finite thermal recipient advancement','frame/stem/attachment/apparatus reaction projection outside this selected passive payload','external births, Xe/Sm and complete source/fuel/thermal integration'],
+  missingPhysicalConsumers:['B4C body lateral-cylinder capture and converter film/collection response','retained deposit and isotope/history advancement','paid binding/Mn56 photon/contact deposition and finite thermal recipient advancement',selection.controlSteel?'remaining attachment/apparatus reaction projection outside this selected passive payload':'frame/stem/attachment/apparatus reaction projection outside this selected passive payload','external births, Xe/Sm and complete source/fuel/thermal integration'],
   reactionOmissions:['packing/baffle and outer vessel/civil reflection','barrel neutron end response outside active four metres','gate optical-slab scattering/return'],
   completeReactorOperator:false,productionSourceSelected:false,emissionIsDepositedHeat:false,
   scope:'Actual original passive material + receiving free-volume/moment payload for the seven-group comparator. Head bulk/hole admission, ordinary finite target captures, rack/gate layers and fixed within-group scattering; no invented all-export photon map or planar body/converter capture. Stocks/recipients are geometry/preparation identities, not integrated states.'}

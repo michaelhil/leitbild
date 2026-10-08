@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto'
 import {mkdtemp,mkdir,rm,writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
-import {inspectMotionCoolingState,inspectMotionCoolingSupport,inspectMotionCoolingMode,parseMotionCoolingResult,parseMotionCoolingStdout,validateMotionCoolingArtifacts} from './reference-design-control-motion-result'
+import {inspectMotionCoolingState,inspectMotionCoolingSupport,inspectMotionCoolingMode,parseMotionCoolingResult,parseMotionCoolingStdout,validateMotionCoolingArtifacts,compareControlMaterialSamples} from './reference-design-control-motion-result'
 
 // Small inspection fixtures are not trajectories or substitutes for physics.
 const expected={unknowns:20,waterOwners:3,clusters:2,commonTimes:[0,.5,60.5]}
@@ -23,23 +23,64 @@ function comparison(time:number){return {policy:'cold-source-nuclear-heat',provi
  'capturePaidEnergyRatio','mobileCapturePowerLocalRatio','mobileCapturePowerSUMABSRatio','mobileCapturePaidEnergyRatio',
  'pressurePairRatio','pressureMaterialPairRatio'].map(key=>[key,0])),
  worstCooling:{family:'guide-temperature',row:1,normal:1,tighter:1,difference:0,bound:.1,ratio:0}}}
+function materialSample(time:number){
+ // Constant prompt emission and linearly growing Mn emission, each split
+ // metal/water/export = 3/2/1. The one synthetic paid row includes both.
+ return {time,powersW:[6e-6,3e-6,2e-6,1e-6,6e-10*time,3e-10*time,2e-10*time,1e-10*time],
+  paidJ:[6e-6*time+3e-10*time*time],
+  receiptsJ:[3e-6*time+1.5e-10*time*time,1e-6*time+.5e-10*time*time] as [number,number]}
+}
+function motionState(time:number){
+ const motion=Array(19).fill(0) as number[],sample=materialSample(time)
+ motion[6]=sample.receiptsJ[0];motion[17]=sample.receiptsJ[0];motion[18]=sample.receiptsJ[1]
+ return motion
+}
+function sensitivity(sample:ReturnType<typeof materialSample>){
+ const totals=Array(8).fill(0) as number[]
+ for(let i=0;i<sample.powersW.length;i++)totals[i%8]!+=sample.powersW[i]!
+ const emittedW=totals[0]!+totals[4]!,metal=totals[1]!+totals[5]!,water=totals[2]!+totals[6]!,exported=totals[3]!+totals[7]!
+ return [.5,1,2].map(scale=>{
+  const metalW=scale===1?metal:emittedW*scale/(scale+1),waterW=scale===1?water:(emittedW-metalW)*2/3,
+   exportW=scale===1?exported:emittedW-metalW-waterW
+  return {scale,emittedW,metalW,waterW,exportW,familyEmittedW:[totals[0]!,totals[4]!]}
+ })
+}
 function report(){
  const arm=()=>({passed:true,lastAdmittedTime:60.5,solverReturnedTime:60.5,reason:null,seconds:.1,steps:2,
   initialization:{iterations:4,chartIterations:2,hydraulicRateIterations:2,lastAppliedChartCorrectionL2:.01,
    lastWeightedCorrectionScope:'remaining-hydraulic-state-and-all-rates',seconds:.01,lastWeightedCorrectionL2:.02,maxForwardRateResidualMixedUnits:1e-9},
-  eventICCalls:1,eventICSeconds:.01,maxMechanicalDefectJ:0,maxThermalWorkDefectJ:0,
-  finalMotion:Array(17).fill(0),events:[{time:.5,commandOrSupport:true,requestedRate:0}],comparisons:[] as ReturnType<typeof comparison>[],
+  startupICSeconds:.002,eventICCalls:1,eventICSeconds:.01,maxMechanicalDefectJ:0,maxThermalWorkDefectJ:0,
+  structuralTemperaturesK:[300,300+2*(materialSample(60.5).receiptsJ[0]/6)
+   /(469.4448+.13480848*300+Math.sqrt((469.4448+.13480848*300)**2+2*.13480848*materialSample(60.5).receiptsJ[0]/6)),300,300],
+  finalMotion:motionState(60.5),events:[{time:.5,commandOrSupport:true,requestedRate:0}],comparisons:[] as ReturnType<typeof comparison>[],
   eventSnapshots:[{time:.5,index:0}],
   motionComparisons:[] as {time:number,suffixRow:number,normal:number,tighter:number,difference:number,bound:number,ratio:number}[],
+  controlMaterialSamples:expected.commonTimes.map(materialSample),
+  controlMaterialComparisons:[] as ReturnType<typeof compareControlMaterialSamples>[],
+  controlChordSensitivity:sensitivity(materialSample(60.5)),
   costs:{residuals:5,bases:2,actions:10,recoverable:0,residualSeconds:.01,baseSeconds:.01,actionSeconds:.01,PSeconds:.01,convergence:{},P:{}},
   support:support(60.5)})
  const normal=arm(),tighter=arm()
  tighter.comparisons=expected.commonTimes.filter(t=>t>0).map(comparison)
  tighter.motionComparisons=expected.commonTimes.map(time=>({time,suffixRow:0,normal:0,tighter:0,difference:0,bound:1e-7,ratio:0}))
+ tighter.controlMaterialComparisons=tighter.controlMaterialSamples.map((s,i)=>compareControlMaterialSamples(normal.controlMaterialSamples[i]!,s))
  return {status:'PASS',scope:'cold-all52-accepted-motion-full98-SOURCE-water-thermal-single-clock',trajectoryAdmitted:true,
-  liveModelInstalled:false,unknowns:20,waterOwners:3,clusters:2,elapsedS:.2,normal,tighter}
+  liveModelInstalled:false,unknowns:20,waterOwners:3,clusters:2,controlSteelHosts:4,controlSteelRoutes:1,controlPaidRows:[[0,1]],elapsedS:.2,normal,tighter}
 }
-function state(time:number){const bytes=new Uint8Array(8*(1+2*expected.unknowns));new DataView(bytes.buffer).setFloat64(0,time,true);return bytes}
+function refreshMaterial(raw:ReturnType<typeof report>){
+ for(const arm of ['normal','tighter'] as const)raw[arm].controlChordSensitivity=sensitivity(raw[arm].controlMaterialSamples.at(-1)!)
+ raw.tighter.controlMaterialComparisons=raw.tighter.controlMaterialSamples.map((s,i)=>compareControlMaterialSamples(raw.normal.controlMaterialSamples[i]!,s))
+ return raw
+}
+function state(time:number){
+ const bytes=new Uint8Array(8*(1+2*expected.unknowns)),view=new DataView(bytes.buffer)
+ view.setFloat64(0,time,true);view.setFloat64(8,materialSample(time).paidJ[0]!,true)
+ for(const [j,value]of motionState(time).entries())view.setFloat64(8*(2+j),value,true)
+ view.setFloat64(8*(1+expected.unknowns),6e-6+6e-10*time,true)
+ for(const [j,value]of [[6,3e-6+3e-10*time],[17,3e-6+3e-10*time],[18,1e-6+1e-10*time]] as const)
+  view.setFloat64(8*(2+expected.unknowns+j),value,true)
+ return bytes
+}
 function continuation(time:number){
  const a=Array(34).fill(0);a[0]=time
  const motive=time<.5?1:0,rate=time<.5?.008:0,
@@ -95,6 +136,70 @@ describe('joined cold motion native report boundary',()=>{
   expect(parsed.tighter.comparisons).toHaveLength(2)
   expect(parsed.tighter.comparisons[0]!.source.rawAtomCountDiagnostic.localPairRatio).toBe(12)
   expect(parsed.tighter.comparisons[0]!.fullPairQualified).toBe(false)
+ })
+ test('checks every saved route/family split even when both arms carry the same defect',()=>{
+  for(let plane=0;plane<expected.commonTimes.length;plane++)for(const family of [0,1])for(let channel=0;channel<4;channel++){
+   const raw=report()
+   for(const arm of ['normal','tighter'] as const)raw[arm].controlMaterialSamples[plane]!.powersW[4*family+channel]!+=1e-9
+   expect(()=>parseMotionCoolingResult(refreshMaterial(raw),expected)).toThrow('route/family nuclear energy closure')
+  }
+ })
+ test('opposite route or family energy defects cannot cancel into a valid aggregate',()=>{
+  for(const oppositeFamily of [false,true]){
+   const raw=report();raw.controlSteelRoutes=2
+   for(const arm of ['normal','tighter'] as const){
+    for(const sample of raw[arm].controlMaterialSamples){const half=sample.powersW.map(v=>v/2);sample.powersW=[...half,...half]}
+    const channels=raw[arm].controlMaterialSamples.at(-1)!.powersW
+    channels[1]!+=1e-9;channels[oppositeFamily?5:9]!-=1e-9
+   }
+   expect(()=>parseMotionCoolingResult(refreshMaterial(raw),expected)).toThrow('route/family nuclear energy closure')
+  }
+ })
+ test('requires independently meaningful prompt and Mn metal delivery, not an all-zero PASS',()=>{
+  for(const family of [0,1]){
+   const raw=report()
+   for(const arm of ['normal','tighter'] as const)for(const sample of raw[arm].controlMaterialSamples)
+    sample.powersW.fill(0,4*family,4*family+4)
+   expect(()=>parseMotionCoolingResult(refreshMaterial(raw),expected)).toThrow('not resolved above paired uncertainty')
+  }
+  const raw=report()
+  for(const arm of ['normal','tighter'] as const){
+   const channels=raw[arm].controlMaterialSamples.at(-1)!.powersW
+   channels.splice(4,4,...(arm==='normal'?[2e-10,1e-10,6e-11,4e-11]:[2e-10,1.1e-10,5e-11,4e-11]))
+  }
+  refreshMaterial(raw)
+  expect(raw.tighter.controlMaterialComparisons.at(-1)!.ratio).toBeLessThan(1)
+  expect(()=>parseMotionCoolingResult(raw,expected)).toThrow('not resolved above paired uncertainty')
+ })
+ test('binds prompt and Mn emission independently at every held optical sensitivity',()=>{
+  for(const arm of ['normal','tighter'] as const)for(let chord=0;chord<3;chord++){
+   const raw=report(),families=raw[arm].controlChordSensitivity[chord]!.familyEmittedW
+   families[0]!+=1e-9;families[1]!-=1e-9
+   expect(()=>parseMotionCoolingResult(raw,expected)).toThrow('family emission differs')
+  }
+  const raw=report(),nominal=raw.normal.controlChordSensitivity[1]!
+  nominal.metalW+=1e-9;nominal.waterW-=1e-9
+  expect(()=>parseMotionCoolingResult(raw,expected)).toThrow('Nominal sensitivity differs')
+ })
+ test('requires explicit startup IC timing and all finite in-domain structural temperatures',()=>{
+  for(const arm of ['normal','tighter'] as const){
+   const raw=report(),{startupICSeconds,...missing}=raw[arm]
+   expect(startupICSeconds).toBeGreaterThanOrEqual(0)
+   expect(()=>parseMotionCoolingResult({...raw,[arm]:missing},expected)).toThrow()
+   for(const invalid of [-1,Infinity,NaN]){
+    const changed=report();changed[arm].startupICSeconds=invalid
+    expect(()=>parseMotionCoolingResult(changed,expected)).toThrow()
+   }
+   const absent=report(),{structuralTemperaturesK,...missingTemperature}=absent[arm]
+   expect(structuralTemperaturesK).toHaveLength(2*expected.clusters)
+   expect(()=>parseMotionCoolingResult({...absent,[arm]:missingTemperature},expected)).toThrow()
+   const short=report();short[arm].structuralTemperaturesK.pop()
+   expect(()=>parseMotionCoolingResult(short,expected)).toThrow()
+   for(const invalid of [289,1601,Infinity,NaN]){
+    const changed=report();changed[arm].structuralTemperaturesK[0]=invalid
+    expect(()=>parseMotionCoolingResult(changed,expected)).toThrow()
+   }
+  }
  })
  test('rejects invented PASS, failed output, changed identities and scope inflation',()=>{
   expect(()=>parseMotionCoolingResult({pass:true},expected)).toThrow()
@@ -201,5 +306,23 @@ describe('complete physical motion retention',()=>{
   const {directory,identities}=await artifacts(),raw=report(),receipt=raw.tighter.motionComparisons[1]!
   receipt.normal=1e-8;receipt.difference=1e-8;receipt.ratio=receipt.difference/receipt.bound
   await expect(validateMotionCoolingArtifacts(identities,directory,expected,parseMotionCoolingResult(raw,expected))).rejects.toThrow()
+ })
+ test('binds independent paid progress and both nuclear receipts to their retained stocks',async()=>{
+  const {directory,identities}=await artifacts()
+  for(const arm of ['normal','tighter'] as const)for(const field of ['paid','transfer','export'] as const){
+   const parsed=parseMotionCoolingResult(report(),expected),sample=parsed[arm].controlMaterialSamples[1]!
+   if(field==='paid')sample.paidJ[0]!+=1e-12
+   else sample.receiptsJ[field==='transfer'?0:1]+=1e-12
+   await expect(validateMotionCoolingArtifacts(identities,directory,expected,parsed)).rejects.toThrow('Control paid progress/transfer/export differs')
+  }
+  const raw=report();raw.controlPaidRows[0]![1]=2
+  await expect(validateMotionCoolingArtifacts(identities,directory,expected,parseMotionCoolingResult(raw,expected))).rejects.toThrow('Control paid progress/transfer/export differs')
+ })
+ test('a rehashed physical paid-stock tamper cannot be covered by unchanged material summaries',async()=>{
+  const {directory,identities}=await artifacts(),identity=identities.find(a=>a.path.endsWith('/normal/common-1.bin'))!,bytes=state(.5),
+   view=new DataView(bytes.buffer)
+  view.setFloat64(8,view.getFloat64(8,true)+1e-12,true)
+  await writeFile(identity.path,bytes);identity.sha256=createHash('sha256').update(bytes).digest('hex')
+  await expect(validateMotionCoolingArtifacts(identities,directory,expected,parseMotionCoolingResult(report(),expected))).rejects.toThrow('Control paid progress/transfer/export differs')
  })
 })

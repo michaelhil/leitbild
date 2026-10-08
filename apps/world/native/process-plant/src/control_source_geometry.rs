@@ -230,6 +230,7 @@ pub struct Workspace {
     owner: Arc<()>,
 }
 impl Workspace {
+    pub(crate) fn owner_token(&self) -> &Arc<()> { &self.owner }
     /// A force/heat consumer must use the actual current preparation,
     /// including its retained one-sided and contact branches.
     pub fn check_current_poses(&self, poses: &[Pose]) -> Result<(), &'static str> {
@@ -240,6 +241,25 @@ impl Workspace {
             return Err("Control geometry requires the exact current pose and branch");
         }
         Ok(())
+    }
+    pub fn check_current_direction(&self, direction: &[Direction]) -> Result<(), &'static str> {
+        if !self.valid || self.pose_direction.len() != direction.len()
+            || self.pose_direction.iter().zip(direction).any(|(a, b)| {
+                a.body.to_bits() != b.body.to_bits() || a.stem.to_bits() != b.stem.to_bits()
+            })
+        {
+            return Err("Control geometry requires its exact current pose direction");
+        }
+        Ok(())
+    }
+    /// Physical liquid-origin envelope, never the containing thermal aggregate.
+    pub fn origin_chord_m(&self, origin: usize) -> Result<f64, &'static str> {
+        if !self.valid { return Err("Unprepared control photon origin"); }
+        self.envelopes.get(origin).map(|e| e.1[0]).ok_or("Foreign control photon origin")
+    }
+    pub fn origin_chord_direction_m(&self, origin: usize) -> Result<f64, &'static str> {
+        if !self.valid { return Err("Unprepared control photon origin direction"); }
+        self.envelopes.get(origin).map(|e| e.1[1]).ok_or("Foreign control photon origin")
     }
 }
 type D = [f64; 2];
@@ -364,6 +384,7 @@ fn positive(x: f64) -> bool {
     x.is_finite() && x > 0.
 }
 impl Prepared {
+    pub(crate) fn owner_token(&self) -> Arc<()> { self.owner.clone() }
     pub fn new(input: Input, original: &se::Geometry) -> Result<Self, &'static str> {
         let i = &input;
         let n = i.clusters;

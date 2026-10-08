@@ -7,6 +7,7 @@ import {compileMaterialSourceCheck,materialSourceOwnerFiles} from './reference-d
 import {compileFuelHistoryInputs,nativeFuelHistoryFixture} from './reference-design-fuel-history'
 import {compilePrimaryWaterGeometry,parsePrimaryWaterInputs,primaryWaterOwnerFiles} from './reference-design-source-water'
 import type {ReceivingLiquid} from './reference-design-source-receiving-water'
+import type {MovingControlSteelSelection} from './reference-design-source-passive'
 
 const nonnegative=z.number().finite().nonnegative(),positive=nonnegative.positive(),sha=(s:string)=>createHash('sha256').update(s).digest('hex'),
  amount=z.object({volume_m3:nonnegative,Htarget:nonnegative,HcaptureProduct:nonnegative,mobileN10:nonnegative}),
@@ -65,7 +66,8 @@ export function compileSharedWaterProjection(primaryInput:unknown,receiving:Retu
  return {owners,rows,scope:'Uniform composition per total physical owner at fixed ORIGINAL mass/volume/temperature. Original row fractions are not renormalized; source-outside inventory is retained without invented capture. No advection or thermal advancement.'}
 }
 
-export function compileSourceEvolution(partitionText:string,materialText:string,waterText:string,documents:ReadonlyMap<string,string>,liquid:ReceivingLiquid){
+export function compileSourceEvolution(partitionText:string,materialText:string,waterText:string,documents:ReadonlyMap<string,string>,liquid:ReceivingLiquid,
+ selection:MovingControlSteelSelection={}){
  const read=(p:string)=>{const s=documents.get(p);if(s===undefined)throw Error('Missing source owner '+p);return s},
   water=primarySchema.parse(JSON.parse(waterText)),partition=JSON.parse(partitionText),
   waterInputs=parsePrimaryWaterInputs(primaryWaterOwnerFiles.map(read)),geometry=compilePrimaryWaterGeometry(partition.result,waterInputs)
@@ -73,7 +75,7 @@ export function compileSourceEvolution(partitionText:string,materialText:string,
  // reuse a qualified property field after its physical owner inputs changed.
  if(sha(JSON.stringify(waterInputs))!==sha(JSON.stringify(water.inputs))||sha(JSON.stringify(geometry))!==sha(JSON.stringify(water.geometry)))
   throw Error('Current ORIGINAL water preparation differs from admitted receipt')
- const material=compileMaterialSourceCheck(partitionText,materialText,waterText,[...primaryWaterOwnerFiles,...materialSourceOwnerFiles].map(read),liquid),
+ const material=compileMaterialSourceCheck(partitionText,materialText,waterText,[...primaryWaterOwnerFiles,...materialSourceOwnerFiles].map(read),liquid,selection),
   history=compileFuelHistoryInputs(partition,JSON.parse(materialText),[
    'systems/reactor/configuration-source-and-history.md','systems/reactor/heat-and-history.md','systems/reactor/cold-source-and-startup.md',
    'systems/reactor/fuel-handling-and-pool.md','systems/instrumentation/nuclear-observation-apparatus.md'].map(read)),

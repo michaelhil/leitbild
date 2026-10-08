@@ -19,7 +19,8 @@ export const fixture:Parameters<typeof compileSourcePartition>[0]={
   collarHeight_m:.02,collarBottoms_m:[6,7],guideRoughness_m:.000001,endLossEach:1,ordinarySpeedLimit_m_s:.01,
   driveEfficiency:.8,deliveredMotiveLimit_W:1000,holdingDuty_W:20,controllerDuty_W:20,forceLimitPerCluster_N:10000,attachedJackMassPerCluster_kg:100,
   jackID_m:.08,jackOD_m:.1,jackBottom_m:7,gapStroke_m:.01,gapArmature_kg:10,gapSpring_N_m:1000,gapDamping_N_s_m:10,
-  manualGapSpeed_m_s:.01,manualGapForce_N:100,manualGapPower_W:100,gravity_m_s2:9.80665},
+  // Upward reclosing of the downward-opening armature pays spring + gravity + damping (<109 N).
+  manualGapSpeed_m_s:.01,manualGapForce_N:125,manualGapPower_W:100,gravity_m_s2:9.80665},
  primary:{design:'LD-01',hotInsideDiameter_m:1,pumpPassageInsideDiameter_m:.7,pumpPassageVolume_m3:8,coldHeaderVolume_m3:4,
   coldHeaderHeight_m:1,coldReturnLength_m:.5,sgDevelopedLength_m:20,downcomerBottom_m:-3,downcomerTop_m:3},
  barrel:{innerRadius_m:1.9,outerRadius_m:2},

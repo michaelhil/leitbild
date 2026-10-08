@@ -5,7 +5,7 @@
 //! support schedule and the one accepted integration clock.
 use crate::{
     GRAVITY, absorber_motion as am, control_motion_forces as cf, control_source_geometry as cg,
-    operating_network as on, source_cooling as sc,
+    operating_network as on, source_cooling as sc, control_material_heat as cm,
 };
 use std::sync::Arc;
 
@@ -161,13 +161,15 @@ mod tests {
             cooling_end: 17,
             mechanics_start: 17,
             fluid_mechanical_work: 33,
-            dimension: 34,
+            nuclear_to_apparatus: 34,
+            control_photon_export: 35,
+            dimension: 36,
         };
         let chart = MechanicalCoordinates {
             layout,
             clusters: 2,
         };
-        let physical = (0..34).map(|i| i as f64 * 0.125).collect::<Vec<_>>();
+        let physical = (0..36).map(|i| i as f64 * 0.125).collect::<Vec<_>>();
         let mut encoded = physical.clone();
         chart.to_solver(&mut encoded).unwrap();
         assert_eq!(&encoded[..17], &physical[..17]);
@@ -257,7 +259,9 @@ mod tests {
                 cooling_end: 0,
                 mechanics_start: 0,
                 fluid_mechanical_work: WIDTH,
-                dimension: WIDTH + 1,
+                nuclear_to_apparatus: WIDTH + 1,
+                control_photon_export: WIDTH + 2,
+                dimension: WIDTH + 3,
             },
             clusters: 1,
         };
@@ -268,6 +272,8 @@ mod tests {
             q.stem_acceleration_m_s2,
             q.reference_rate_m_s,
             1.,
+            0.,
+            0.,
             0.,
             0.,
             0.,
@@ -637,6 +643,10 @@ pub struct Layout {
     pub cooling_end: usize,
     pub mechanics_start: usize,
     pub fluid_mechanical_work: usize,
+    /// Diagnostic internal transfer into the existing STEM/SPIDER heat stocks;
+    /// not a second heat capacity or a second material history.
+    pub nuclear_to_apparatus: usize,
+    pub control_photon_export: usize,
     pub dimension: usize,
 }
 /// Branch-independent linear numerical coordinates. The first body pair is
@@ -701,6 +711,7 @@ pub struct Model {
     pub cooling: sc::Model,
     pub geometry: cg::Prepared,
     pub hydraulics: cf::Plan,
+    pub control_material: cm::Model,
     config: Vec<am::Config>,
     pub layout: Layout,
     owner: Arc<()>,
@@ -709,6 +720,7 @@ pub struct Workspace {
     pub cooling: sc::Workspace,
     pub geometry: cg::Workspace,
     pub fluid: cf::Workspace,
+    pub control_material: cm::Workspace,
     pub water: Vec<on::WaterShape>,
     pub dwater: Vec<on::WaterShape>,
     pub connections: Vec<on::MovingConnection>,
@@ -771,7 +783,7 @@ impl MechanicalPreconditioner {
             work_row: vec![0.; WIDTH * model.clusters()],
             work_diagonal: 0.,
             contact: vec![false; model.clusters()],
-            scratch: vec![0.; WIDTH * model.clusters() + 1],
+            scratch: vec![0.; model.dimension() - model.layout.cooling_end],
             valid: false,
             owner: model.owner.clone(),
         }
@@ -861,7 +873,7 @@ impl MechanicalPreconditioner {
     /// Suffix coordinates only, in the model's declared mechanics/work order.
     pub fn solve(&self, rhs: &[f64], out: &mut [f64]) -> Result<(), String> {
         if !self.valid
-            || rhs.len() != self.work_row.len() + 1
+            || rhs.len() != self.scratch.len()
             || out.len() != rhs.len()
             || rhs.iter().any(|v| !v.is_finite())
         {
@@ -899,6 +911,11 @@ impl MechanicalPreconditioner {
                 .map(|(a, x)| a * x)
                 .sum::<f64>())
             / self.work_diagonal;
+        // Held-source/material transfer and export are downstream receipts.
+        // Their physical source/geometry feedback remains in the complete JVP.
+        for row in end + 1..out.len() {
+            out[row] = rhs[row] / self.work_diagonal;
+        }
         if out.iter().any(|v| !v.is_finite()) {
             return Err("Nonfinite mechanical P solution".into());
         }
@@ -1039,6 +1056,7 @@ impl Model {
         geometry: cg::Prepared,
         hydraulics: cf::Plan,
         config: Vec<am::Config>,
+        control_material: cm::Model,
     ) -> Result<Self, String> {
         if config.is_empty()
             || config.len() != geometry.input().clusters
@@ -1048,6 +1066,63 @@ impl Model {
         }
         for c in &config {
             c.validate()?;
+        }
+        let hosts = &control_material.config().hosts;
+        if hosts.len() != 2 * config.len()
+            || (0..config.len()).any(|cluster| [cm::Kind::Spider, cm::Kind::Stem].into_iter()
+                .any(|kind| hosts.iter().filter(|h| h.cluster == cluster && h.kind == kind).count() != 1))
+        {
+            return Err("Connected control material lacks actual STEM/SPIDER owner coverage".into());
+        }
+        let steel = cooling.barrel.config();
+        let body_thermal = cooling.absorber_guide.config();
+        if steel.cp_constant_j_kg_k.to_bits() != body_thermal.caloric.steel_cp0.to_bits()
+            || steel.cp_linear_j_kg_k2.to_bits() != body_thermal.caloric.steel_cp1.to_bits()
+            || steel.datum_k.to_bits() != body_thermal.caloric.datum_k.to_bits()
+            || steel.steel_density_kg_m3.to_bits() != body_thermal.photons.density_steel.to_bits()
+            || steel.steel_density_kg_m3.to_bits() != control_material.config().density_steel.to_bits()
+            || steel.initial_temperature_k.to_bits() != steel.datum_k.to_bits()
+            || geometry.input().contacts.len() != body_thermal.contacts.len()
+        {
+            return Err("Connected structural 304 caloric/density/original datum differs from its owner".into());
+        }
+        let mut body_hosts = Vec::with_capacity(config.len());
+        for (k, c) in config.iter().enumerate() {
+            let mut body_host = None;
+            for (i, contact) in geometry.input().contacts.iter().enumerate() {
+                if matches!(contact.role, cg::ContactRole::GuideSide) && contact.cluster == k {
+                    let host = body_thermal.contacts[i].host;
+                    if body_host.is_some_and(|h| h != host) {
+                        return Err(format!("Cluster {k} has ambiguous actual BODY thermal owner"));
+                    }
+                    body_host = Some(host);
+                }
+            }
+            let host = body_host.ok_or_else(|| format!("Cluster {k} lacks its GuideSide BODY thermal owner"))?;
+            if body_hosts.contains(&host) { return Err("Clusters duplicate a BODY caloric owner".into()); }
+            body_hosts.push(host);
+            let body = body_thermal.hosts.get(host).ok_or("Foreign connected BODY caloric owner")?;
+            if body.zr_mass_kg != 0. || body.b4c_mass_kg <= 0. || body.steel_mass_kg <= 0.
+                || !body_thermal.bodies.iter().any(|b| b.host == host)
+                || body.initial_k.to_bits() != steel.initial_temperature_k.to_bits()
+            {
+                return Err(format!("Cluster {k} BODY material or original temperature differs"));
+            }
+            let stem = hosts.iter().find(|h| h.cluster == k && h.kind == cm::Kind::Stem).unwrap();
+            let spider = hosts.iter().find(|h| h.cluster == k && h.kind == cm::Kind::Spider).unwrap();
+            let stem_mass = steel.steel_density_kg_m3 * stem.volume_m3;
+            let spider_mass = steel.steel_density_kg_m3 * spider.volume_m3;
+            let body_mass = body.b4c_mass_kg + body.steel_mass_kg + spider_mass;
+            // Independent geometric sums can differ by their final floating-
+            // point assembly rounding, not by a tunable physical mass tolerance.
+            let assembled = |a: f64, b: f64| a.is_finite() && b.is_finite() && a > 0. && b > 0.
+                && (a - b).abs() <= 8. * f64::EPSILON * (a.abs() + b.abs());
+            if !assembled(c.stem_mass_kg, stem_mass) || !assembled(c.body_mass_kg, body_mass) {
+                return Err(format!("Cluster {k} SOURCE/thermal/mechanical mass mismatch: stem={} vs {stem_mass}, body={} vs {body_mass}",
+                    c.stem_mass_kg, c.body_mass_kg));
+            }
+            cooling.barrel.temperature_from_energy_increment(stem_mass, steel.initial_temperature_k, 0.)?;
+            cooling.barrel.temperature_from_energy_increment(spider_mass, steel.initial_temperature_k, 0.)?;
         }
         hydraulics.check(&cooling.network, config.len())?;
         for b in &hydraulics.bindings {
@@ -1067,12 +1142,15 @@ impl Model {
             cooling,
             geometry,
             hydraulics,
+            control_material,
             config,
             layout: Layout {
                 cooling_end: end,
                 mechanics_start: end,
                 fluid_mechanical_work: work,
-                dimension: work + 1,
+                nuclear_to_apparatus: work + 1,
+                control_photon_export: work + 2,
+                dimension: work + 3,
             },
             owner: Arc::new(()),
         })
@@ -1109,6 +1187,20 @@ impl Model {
     pub fn root_count(&self) -> usize {
         ROOTS_PER_CLUSTER * self.clusters()
     }
+    /// Held-state uncertainty inspection only. Reuses the actual prepared
+    /// SOURCE and primary properties; no second trajectory or property solve.
+    pub fn control_chord_sensitivity(&self, w: &Workspace) -> Result<Vec<cm::Delivery>, String> {
+        self.require_current(&w.state, w)?;
+        [0.5, 1., 2.].into_iter().map(|scale| {
+            let mut input = self.control_material.config().clone();
+            for host in &mut input.hosts { host.self_chord_m *= scale; }
+            let model = cm::Model::new(&self.cooling.source, &self.geometry, w.water.len(), input)?;
+            let mut work = model.workspace();
+            model.evaluate(&w.state[..self.cooling.layout.source_end], &w.cooling.source,
+                &w.poses, &w.geometry, w.cooling.nuclear_water()?, &mut work)?;
+            Ok(work.value()?.clone())
+        }).collect()
+    }
     pub fn initial_state(&self, input: Option<crate::prhr::Input>) -> Result<Vec<f64>, String> {
         let mut y = self.cooling.initial_state_with_prhr_input(input)?;
         y.resize(self.dimension(), 0.);
@@ -1122,6 +1214,7 @@ impl Model {
             cooling: self.cooling.workspace(),
             geometry: self.geometry.workspace(),
             fluid: cf::Workspace::new(&self.hydraulics),
+            control_material: self.control_material.workspace(),
             water: vec![on::WaterShape::default(); nw],
             dwater: vec![on::WaterShape::default(); nw],
             connections: Vec::with_capacity(2 * n),
@@ -1414,6 +1507,10 @@ impl Model {
                 },
             },
         )?;
+        self.control_material.evaluate(
+            &y[..l.source_end], &w.cooling.source, &w.poses, &w.geometry,
+            w.cooling.nuclear_water()?, &mut w.control_material,
+        )?;
         self.hydraulics.evaluate(
             &self.cooling.network,
             &y[l.network_start..l.carrier_start],
@@ -1426,6 +1523,10 @@ impl Model {
         w.residual[..end].copy_from_slice(&w.cooling.residual);
         let upper_energy = l.network_start + self.cooling.network.energy_row(self.hydraulics.upper);
         w.residual[upper_energy] -= w.fluid.stem_fluid_work_w;
+        let nuclear = w.control_material.value()?;
+        for (water, &power) in nuclear.water.iter().enumerate() {
+            w.residual[l.network_start + self.cooling.network.energy_row(water)] -= power;
+        }
         w.responses.clear();
         let input = self.per_cluster_input(mode.input);
         let mut water_power = 0.;
@@ -1464,19 +1565,29 @@ impl Model {
             apparatus_heat += heat;
             w.responses.push(q);
         }
+        for (host, &power) in self.control_material.config().hosts.iter().zip(&nuclear.metal) {
+            let field = match host.kind { cm::Kind::Spider => SPIDER_HEAT, cm::Kind::Stem => STEM_HEAT };
+            w.residual[self.motion_row(host.cluster, field)] -= power;
+        }
+        w.residual[self.layout.nuclear_to_apparatus] = yp[self.layout.nuclear_to_apparatus] - nuclear.metal_total();
+        w.residual[self.layout.control_photon_export] = yp[self.layout.control_photon_export] - nuclear.exported;
+        let source_rates = w.cooling.source.rates()?;
+        let nuclear_paid = self.control_material.paid_rows().map(|(row, q)| source_rates[row] * q).sum::<f64>();
+        let nuclear_balance = nuclear.water.iter().sum::<f64>() + nuclear.metal_total() + nuclear.exported - nuclear_paid;
         w.residual[self.layout.fluid_mechanical_work] =
             yp[self.layout.fluid_mechanical_work] - water_power;
         for r in 0..self.dimension() {
             w.rates[r] = yp[r] - w.residual[r];
         }
         w.thermal_work_rate =
-            w.cooling.complete_energy_rate()? + w.fluid.stem_fluid_work_w + water_power;
+            w.cooling.complete_energy_rate()? + w.fluid.stem_fluid_work_w + water_power + nuclear_balance;
         w.energy_rate = w.cooling.complete_energy_rate()?
             + w.fluid.stem_fluid_work_w
             + mechanical_power
             + apparatus_heat
             - mode.input.motive_power_w
-            - mode.input.holding_power_w;
+            - mode.input.holding_power_w
+            + nuclear_balance;
         if w.residual.iter().any(|v| !v.is_finite()) || !w.energy_rate.is_finite() {
             return Err("Nonfinite connected mechanical residual/work".into());
         }
@@ -1608,6 +1719,10 @@ impl Model {
                 connections: &w.dconnections,
             },
         )?;
+        self.control_material.jvp(
+            &w.cooling.source, &w.dposes, &w.geometry,
+            w.cooling.nuclear_water_direction()?, &mut w.control_material,
+        )?;
         let dwork = self.hydraulics.direction(
             &self.cooling.network,
             &w.state[l.network_start..l.carrier_start],
@@ -1622,6 +1737,10 @@ impl Model {
         w.jvp[..end].copy_from_slice(&w.cooling.jvp);
         let upper = l.network_start + self.cooling.network.energy_row(self.hydraulics.upper);
         w.jvp[upper] -= dwork;
+        let nuclear = w.control_material.direction()?;
+        for (water, &power) in nuclear.water.iter().enumerate() {
+            w.jvp[l.network_start + self.cooling.network.energy_row(water)] -= power;
+        }
         let mode = w.mode.as_ref().unwrap();
         let input = self.per_cluster_input(mode.input);
         let mut water_tangent = 0.;
@@ -1664,12 +1783,21 @@ impl Model {
                         + GRAVITY * ds.stem_v_m_s);
             heat_tangent += heat;
         }
+        for (host, &power) in self.control_material.config().hosts.iter().zip(&nuclear.metal) {
+            let field = match host.kind { cm::Kind::Spider => SPIDER_HEAT, cm::Kind::Stem => STEM_HEAT };
+            w.jvp[self.motion_row(host.cluster, field)] -= power;
+        }
+        w.jvp[self.layout.nuclear_to_apparatus] = cj * dy[self.layout.nuclear_to_apparatus] - nuclear.metal_total();
+        w.jvp[self.layout.control_photon_export] = cj * dy[self.layout.control_photon_export] - nuclear.exported;
+        let source_rates = w.cooling.source.rate_jvp()?;
+        let nuclear_paid = self.control_material.paid_rows().map(|(row, q)| source_rates[row] * q).sum::<f64>();
+        let nuclear_balance = nuclear.water.iter().sum::<f64>() + nuclear.metal_total() + nuclear.exported - nuclear_paid;
         w.jvp[self.layout.fluid_mechanical_work] =
             cj * dy[self.layout.fluid_mechanical_work] - water_tangent;
         w.thermal_work_tangent =
-            Some(w.cooling.complete_energy_rate_jvp()? + dwork + water_tangent);
+            Some(w.cooling.complete_energy_rate_jvp()? + dwork + water_tangent + nuclear_balance);
         w.energy_tangent =
-            Some(w.cooling.complete_energy_rate_jvp()? + dwork + mechanical_tangent + heat_tangent);
+            Some(w.cooling.complete_energy_rate_jvp()? + dwork + mechanical_tangent + heat_tangent + nuclear_balance);
         if w.jvp.iter().any(|v| !v.is_finite()) || !w.energy_tangent.unwrap().is_finite() {
             return Err("Nonfinite connected mechanical Jacobian/work action".into());
         }
@@ -1974,6 +2102,12 @@ impl Model {
         self.require_current(y, w)?;
         self.cooling
             .validate_accepted(&y[..self.layout.cooling_end], &w.cooling)?;
+        if [self.layout.nuclear_to_apparatus, self.layout.control_photon_export]
+            .into_iter().any(|r| !y[r].is_finite() || y[r] < 0.)
+        {
+            return Err("Invalid accepted control nuclear-apparatus or photon-export receipt".into());
+        }
+        self.structural_temperatures(y)?;
         let input = self.per_cluster_input(w.mode.as_ref().unwrap().input);
         for k in 0..self.clusters() {
             let r = self.motion_row(k, 0);
@@ -2039,5 +2173,19 @@ impl Model {
             self.config[k].evaluate(s, input, w.forces[k])?;
         }
         Ok(())
+    }
+    /// Recover the existing finite apparatus stocks in control-material host
+    /// order. This is an adiabatic 304 caloric view/domain check, not a new
+    /// temperature state, wet-contact condition, or local survival criterion.
+    pub fn structural_temperatures(&self, y: &[f64]) -> Result<Vec<f64>, String> {
+        if y.len() != self.dimension() { return Err("Wrong structural caloric state shape".into()); }
+        let steel = self.cooling.barrel.config();
+        self.control_material.config().hosts.iter().map(|h| {
+            let field = match h.kind { cm::Kind::Stem => STEM_HEAT, cm::Kind::Spider => SPIDER_HEAT };
+            self.cooling.barrel.temperature_from_energy_increment(
+                steel.steel_density_kg_m3 * h.volume_m3, steel.initial_temperature_k,
+                y[self.motion_row(h.cluster, field)],
+            ).map_err(|e| format!("Cluster {} {:?} finite 304 caloric domain: {e}", h.cluster, h.kind))
+        }).collect()
     }
 }

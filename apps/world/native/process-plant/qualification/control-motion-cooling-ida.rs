@@ -40,6 +40,8 @@ mod geometry_input;
 mod ida_support;
 #[path = "motion_support.rs"]
 mod motion_support;
+#[path = "control_material_accuracy.rs"]
+mod control_material_accuracy;
 #[path = "../examples/operating_network_input/mod.rs"]
 mod operating_network_input;
 #[path = "source_accuracy.rs"]
@@ -60,7 +62,7 @@ use leitbild_plant_numerics::{
     control_source_geometry as cg, converter_heat, cylindrical_source, dc_supply as dc,
     fuel_history, fuel_source, fuel_thermal, heat_history, moderator_source, operating_admission,
     operating_network, optical_source, passive_source, prhr, source_cooling, source_evolution,
-    source_motion as sm, transport_source, water_carrier,
+    source_motion as sm, control_material_heat as cm, transport_source, water_carrier,
 };
 use source_evolution::Evolution;
 use std::{
@@ -268,6 +270,22 @@ fn parse(text: &str) -> Result<Prepared, String> {
     {
         return Err("Invalid connected motion case".into());
     }
+    let density_steel = r.number()?;
+    let mu_steel_1 = r.number()?;
+    let mu_water_1 = r.number()?;
+    let hosts = r.many(|r| {
+        let cluster = r.count()?;
+        let kind = match r.count()? { 0 => cm::Kind::Stem, 1 => cm::Kind::Spider,
+            _ => return Err("Invalid control steel host kind".into()) };
+        Ok(cm::Host { cluster, kind,
+            targets: [r.count()?,r.count()?,r.count()?,r.count()?],
+            capture_photon_j: [r.number()?,r.number()?,r.number()?,r.number()?],
+            mn_owner:r.count()?,volume_m3:r.number()?,self_chord_m:r.number()? })
+    })?;
+    let routes = r.many(|r| Ok(cm::Route {
+        host:r.count()?,source_region:r.count()?,water:r.count()?,origin:r.count()?,
+        lo:r.number()?,hi:r.number()?,spans:r.many(|r| Ok(cg::Span {lo:r.number()?,hi:r.number()?,area:r.number()?}))?
+    }))?;
     reader.end()?;
     let p = cooling_input::parse_with_source_incidence(&fixture.join(" "), &passive, &cylinder)?;
     let a = cooling_actuation::Schedule::new(&p.model, p.prhr_action, p.actuation.as_ref())?
@@ -297,7 +315,9 @@ fn parse(text: &str) -> Result<Prepared, String> {
             n
         ],
     };
-    let model = sm::Model::new(p.model, geometry, hydraulic, vec![cfg; n])?;
+    let material = cm::Model::new(&p.model.source,&geometry,p.model.network.config().water.len(),
+        cm::Input {density_steel,mu_steel_1,mu_water_1,hosts,routes})?;
+    let model = sm::Model::new(p.model, geometry, hydraulic, vec![cfg; n], material)?;
     let b = dc::Supply::new(bconfig, energy, paths, closed, base_b + motive)?;
     Ok(Prepared {
         model,
@@ -698,6 +718,7 @@ fn retain_mode(path: &Path, mode: &sm::Mode) -> Result<(), String> {
 struct Arm {
     samples: Vec<Sample>,
     motion: Vec<Vec<f64>>,
+    material: Vec<control_material_accuracy::Sample>,
     final_y: Vec<f64>,
     summary: String,
 }
@@ -710,6 +731,7 @@ fn audit(
     initial_mechanical: f64,
     adjustment: f64,
     initial_balance: f64,
+    initial: &[f64],
     flow: &[f64],
 ) -> Result<(f64, f64), String> {
     let m = c.model;
@@ -731,6 +753,9 @@ fn audit(
     // Its fresh signed receipt starts at zero: positive work is water→mechanics.
     // The generic fixed-boundary cooling expectation must not know this owner.
     expected[1] -= y[m.layout.fluid_mechanical_work];
+    expected[1] += m.control_material.paid_rows().map(|(row,q)| q*(y[row]-initial[row])).sum::<f64>()
+        - (y[m.layout.nuclear_to_apparatus]-initial[m.layout.nuclear_to_apparatus])
+        - (y[m.layout.control_photon_export]-initial[m.layout.control_photon_export]);
     operating_admission::screen(
         &b.network,
         &c.work.cooling.network,
@@ -774,6 +799,7 @@ fn audit(
     let mech = m.mechanical_energy_j(y)? + m.apparatus_heat_j(y)?
         - initial_mechanical
         - y[m.layout.fluid_mechanical_work]
+        - (y[m.layout.nuclear_to_apparatus]-initial[m.layout.nuclear_to_apparatus])
         - c.support.borrow().holding_j(time)?
         - c.support.borrow().motive_j(time)?
         - adjustment;
@@ -784,6 +810,7 @@ fn audit(
                 + m.apparatus_heat_j(y)?.abs()
                 + initial_mechanical.abs()
                 + y[m.layout.fluid_mechanical_work].abs()
+                + (y[m.layout.nuclear_to_apparatus]-initial[m.layout.nuclear_to_apparatus]).abs()
                 + c.support.borrow().holding_j(time)?
                 + c.support.borrow().motive_j(time)?
                 + adjustment.abs());
@@ -810,6 +837,9 @@ fn check_root_workspace(
     input: prhr::Input,
     mode: &sm::Mode,
 ) -> Result<(), String> {
+    // Own the exact linearization being tested. Admission/value-only evaluation
+    // intentionally invalidates cj; never borrow a preceding solver stage.
+    model.evaluate(y, yp, Some(1.), work, Some(input), mode)?;
     let mut direction = vec![0.; model.dimension()];
     let base = &model.cooling;
     direction[base.layout.network_start + base.network.pressure_row()] = 17.;
@@ -932,7 +962,6 @@ fn run(
     )?;
     m.evaluate(&y, &yp, Some(1.), &mut w, Some(input), &mode.borrow())?;
     m.set_mechanical_rates(&y, &mut yp, &w)?;
-    check_root_workspace(m, &y, &yp, &mut w, input, &mode.borrow())?;
     let initial_mechanical = m.mechanical_energy_j(&y)? + m.apparatus_heat_j(&y)?;
     let mut energy = cooling_coordinates::EnergyCoordinates::new(b, &y[..end])?;
     energy.add_receipt(
@@ -940,6 +969,12 @@ fn run(
         1.,
         y[m.layout.fluid_mechanical_work],
     )?;
+    for row in [m.layout.nuclear_to_apparatus,m.layout.control_photon_export] {
+        energy.add_receipt(row,1.,y[row])?;
+    }
+    for (row,q) in m.control_material.paid_rows() {
+        energy.add_receipt(row,-q,y[row])?;
+    }
     absolute.resize(n, 0.);
     for k in 0..m.clusters() {
         for field in 0..sm::WIDTH {
@@ -951,6 +986,9 @@ fn run(
         }
     }
     absolute[m.layout.fluid_mechanical_work] = p.case.heat / refinement;
+    for row in [m.layout.nuclear_to_apparatus,m.layout.control_photon_export] {
+        absolute[row] = control_material_accuracy::RESOLUTION / refinement;
+    }
     absolute[energy.row] = cooling_coordinates::EnergyCoordinates::absolute(n, refinement);
     let mut convergence = cooling_convergence::Convergence::new(b, Some(input))?;
     convergence.seat_flow_allocation(&absolute[..end])?;
@@ -1056,6 +1094,9 @@ fn run(
             cs[m.motion_row(k, f)] = 1.;
         }
     }
+    for row in [m.layout.nuclear_to_apparatus, m.layout.control_photon_export] {
+        cs[row] = 1.;
+    }
     let cs = owned.vector(&cs)?;
     owned.spgmr(yy, 30, 0)?;
     owned.ida = unsafe { IDACreate(owned.context) };
@@ -1140,16 +1181,22 @@ fn run(
     ];
     let mut samples = Vec::new();
     let mut motions = Vec::new();
+    let mut material_samples = Vec::new();
+    let mut material_comparisons = Vec::new();
+    let mut chord_sensitivity = String::from("null");
+    let mut structural_temperatures = String::from("null");
     let mut comparisons = Vec::new();
     let mut motion_comparisons = Vec::new();
     let mut events = Vec::new();
     let mut event_snapshots = Vec::new();
     let mut time = 0.;
     let mut last_admitted = 0.;
+    let mut initial_admitted = false;
     let mut steps = 0;
     let mut root_adjustment = 0.;
     let mut ics = 0;
     let mut ic_seconds = 0.;
+    let mut startup_ic_seconds = 0.;
     let mut max_mech = 0_f64;
     let mut max_energy = 0_f64;
     let mut admitted_y = initial_physical.clone();
@@ -1159,6 +1206,42 @@ fn run(
     let mut next_output = 0;
     let mut last_checkpoint = Instant::now();
     let result = (|| -> Result<(), String> {
+        // The prefix initializer is only a warm guess: the complete residual
+        // now includes structural nuclear delivery. Solve all algebraic states
+        // and differential rates once, without advancing any physical stock.
+        let fixed = unsafe { values(yy, n) }?.to_vec();
+        let began = Instant::now();
+        let status = unsafe { IDACalcIC(owned.ida, 1, outputs[1]) };
+        startup_ic_seconds = began.elapsed().as_secs_f64();
+        checked(status, "Actual whole-composition startup IC")?;
+        checked(
+            unsafe { IDAGetConsistentIC(owned.ida, yy, yypp) },
+            "Actual whole-composition startup IC vectors",
+        )?;
+        startup_ic_seconds = began.elapsed().as_secs_f64();
+        if let Some(e) = c.fatal.clone().or(c.convergence.fatal.clone()) {
+            return Err(e);
+        }
+        let actual = unsafe { values(yy, n) }?;
+        if (0..n).any(|r| m.is_differential(r)
+            && fixed[r].to_bits() != actual[r].to_bits()) {
+            return Err("Startup IC changed differential stocks".into());
+        }
+        admitted_y = c.decode(unsafe { values(yy, n) }?, false);
+        admitted_yp = c.decode(unsafe { values(yypp, n) }?, true);
+        if (0..n).any(|r| m.is_differential(r)
+            && admitted_y[r].to_bits() != initial_physical[r].to_bits()) {
+            return Err("Startup IC changed decoded physical stocks".into());
+        }
+        audit(&mut c, accuracy, 0., &admitted_y, &admitted_yp,
+            initial_mechanical, 0., initial_balance, &initial_physical,
+            &network_weights.flow)?;
+        // YA_YDP_INIT solves differential rates, not auxiliary algebraic
+        // derivatives. Governing continuity derives its pressure rate from
+        // actual mass/energy rates; algebraic yp is not a new chart-rate proof.
+        check_root_workspace(m, &admitted_y, &admitted_yp, &mut c.work,
+            input, &c.mode.borrow())?;
+        initial_admitted = true;
         loop {
             let physical_stop = c.support.borrow().next(horizon)?;
             // This bounded mechanical exercise has sparse explicit observation planes.
@@ -1281,6 +1364,7 @@ fn run(
                         initial_mechanical,
                         next_adjustment,
                         initial_balance,
+                        &initial_physical,
                         &network_weights.flow,
                     )?;
                     Ok(())
@@ -1303,6 +1387,7 @@ fn run(
                 initial_mechanical,
                 root_adjustment,
                 initial_balance,
+                &initial_physical,
                 &network_weights.flow,
             )?;
             max_mech = max_mech.max(me);
@@ -1344,7 +1429,17 @@ fn run(
                 m.evaluate(&oy, &op, None, &mut c.work, Some(pi), &c.mode.borrow())?;
                 let s = sample(b, &oy[..end], &c.work.cooling, t)?;
                 let motion = oy[end..].to_vec();
+                let material = control_material_accuracy::Sample {
+                    time:t,
+                    powers:c.work.control_material.value()?.channels.iter().flatten().copied().collect(),
+                    paid:m.control_material.paid_rows().map(|(row,q)|q*(oy[row]-initial_physical[row])).collect(),
+                    receipts:[oy[m.layout.nuclear_to_apparatus]-initial_physical[m.layout.nuclear_to_apparatus],
+                        oy[m.layout.control_photon_export]-initial_physical[m.layout.control_photon_export]],
+                };
                 if let Some(reference) = reference {
+                    let comparison=control_material_accuracy::compare(&reference.material[next_output],&material)?;
+                    if comparison.failed() { return Err(format!("Control material refined pair failed: {}",comparison.json())); }
+                    material_comparisons.push(comparison.json());
                     if t > 0. {
                         let comparison =
                             accuracy.compare_one(b, &reference.samples[next_output], &s)?;
@@ -1376,7 +1471,7 @@ fn run(
                         .zip(&motion)
                         .enumerate()
                     {
-                        let scale = if j == motion.len() - 1 {
+                        let scale = if j >= sm::WIDTH*m.clusters() {
                             1e-5
                         } else {
                             match j % sm::WIDTH {
@@ -1399,7 +1494,7 @@ fn run(
                     let row = worst.1;
                     let a = reference.motion[next_output][row];
                     let bb = motion[row];
-                    let bound = if row == motion.len() - 1 {
+                    let bound = if row >= sm::WIDTH*m.clusters() {
                         1e-5
                     } else {
                         match row % sm::WIDTH {
@@ -1425,6 +1520,14 @@ fn run(
                 )
                 .map_err(|e| e.to_string())?;
                 samples.push(s);
+                material_samples.push(material);
+                if t == horizon {
+                    structural_temperatures = numbers(&m.structural_temperatures(&oy)?);
+                    let sensitivity=m.control_chord_sensitivity(&c.work)?;
+                    chord_sensitivity=format!("[{}]",sensitivity.iter().zip([0.5,1.,2.]).map(|(d,scale)|format!(
+                        "{{\"scale\":{scale},\"emittedW\":{},\"metalW\":{},\"waterW\":{},\"exportW\":{},\"familyEmittedW\":{}}}",
+                        finite(d.emitted),finite(d.metal_total()),finite(d.water.iter().sum()),finite(d.exported),numbers(&d.family_emitted))).collect::<Vec<_>>().join(","));
+                }
                 motions.push(motion);
                 next_output += 1;
             }
@@ -1451,6 +1554,16 @@ fn run(
             return Err("All52 actual motion did not settle in resolved Contact/HoldRest".into());
         }
         if let Some(reference) = reference {
+            let a=&reference.material.last().ok_or("Missing control material normal sample")?.powers;
+            let bb=&material_samples.last().ok_or("Missing control material tighter sample")?.powers;
+            for family in 0..2 {
+                // Resolve both actual prompt and Mn metal delivery separately.
+                let x=a.chunks_exact(8).map(|c|c[4*family+1]).sum::<f64>();
+                let z=bb.chunks_exact(8).map(|c|c[4*family+1]).sum::<f64>();
+                if x.min(z) <= 10.*(x-z).abs()+20.*control_material_accuracy::RESOLUTION {
+                    return Err(format!("Control material family{family} metal delivery not resolved above paired uncertainty: {x:e}/{z:e} W"));
+                }
+            }
             if !cooling_bundle::developed(
                 &reference.samples.last().unwrap().bundle_power,
                 &samples.last().unwrap().bundle_power,
@@ -1477,16 +1590,21 @@ fn run(
             &returned_yp,
         )?;
     }
+    let terminal_path = dir.join(if initial_admitted {
+        "terminal-admitted.bin"
+    } else {
+        "initial-fixed-stocks-NOT-ADMITTED.bin"
+    });
     retain(
-        &dir.join("terminal-admitted.bin"),
+        &terminal_path,
         last_admitted,
         &admitted_y,
         &admitted_yp,
     )?;
-    admitted_support.retain(&dir.join("terminal-admitted.bin"), last_admitted)?;
-    retain_mode(&dir.join("terminal-admitted.bin"), &admitted_mode)?;
+    admitted_support.retain(&terminal_path, last_admitted)?;
+    retain_mode(&terminal_path, &admitted_mode)?;
     let terminal = format!(
-        "{{\"passed\":{},\"lastAdmittedTime\":{},\"solverReturnedTime\":{},\"reason\":{},\"seconds\":{},\"steps\":{},\"initialization\":{},\"eventICCalls\":{},\"eventICSeconds\":{},\"maxMechanicalDefectJ\":{},\"maxThermalWorkDefectJ\":{},\"events\":[{}],\"eventSnapshots\":[{}],\"comparisons\":[{}],\"motionComparisons\":[{}],\"costs\":{},\"support\":{},\"finalMotion\":{}}}",
+        "{{\"passed\":{},\"lastAdmittedTime\":{},\"solverReturnedTime\":{},\"reason\":{},\"seconds\":{},\"steps\":{},\"initialization\":{},\"startupICSeconds\":{},\"eventICCalls\":{},\"eventICSeconds\":{},\"maxMechanicalDefectJ\":{},\"maxThermalWorkDefectJ\":{},\"events\":[{}],\"eventSnapshots\":[{}],\"comparisons\":[{}],\"motionComparisons\":[{}],\"controlMaterialSamples\":[{}],\"controlMaterialComparisons\":[{}],\"controlChordSensitivity\":{},\"structuralTemperaturesK\":{},\"costs\":{},\"support\":{},\"finalMotion\":{}}}",
         result.is_ok(),
         finite(last_admitted),
         finite(time),
@@ -1494,6 +1612,7 @@ fn run(
         begin.elapsed().as_secs_f64(),
         steps,
         init.json(),
+        finite(startup_ic_seconds),
         ics,
         ic_seconds,
         finite(max_mech),
@@ -1502,6 +1621,10 @@ fn run(
         event_snapshots.join(","),
         comparisons.join(","),
         motion_comparisons.join(","),
+        material_samples.iter().map(|s|s.json()).collect::<Vec<_>>().join(","),
+        material_comparisons.join(","),
+        chord_sensitivity,
+        structural_temperatures,
         c.metrics(),
         admitted_support
             .json(last_admitted)
@@ -1513,6 +1636,7 @@ fn run(
     Ok(Arm {
         samples,
         motion: motions,
+        material: material_samples,
         final_y: admitted_y,
         summary: terminal,
     })
@@ -1562,15 +1686,29 @@ fn execute() -> Result<(), String> {
         return Err("Actual all-cluster motion not developed".into());
     }
     println!(
-        "{{\"status\":\"PASS\",\"scope\":\"cold-all52-accepted-motion-full98-SOURCE-water-thermal-single-clock\",\"trajectoryAdmitted\":true,\"liveModelInstalled\":false,\"unknowns\":{},\"waterOwners\":{},\"clusters\":{},\"elapsedS\":{},\"normal\":{},\"tighter\":{}}}",
+        "{{\"status\":\"PASS\",\"scope\":\"cold-all52-accepted-motion-full98-SOURCE-water-thermal-single-clock\",\"trajectoryAdmitted\":true,\"liveModelInstalled\":false,\"unknowns\":{},\"waterOwners\":{},\"clusters\":{},\"controlSteelHosts\":{},\"controlSteelRoutes\":{},\"controlPaidRows\":[{}],\"elapsedS\":{},\"normal\":{},\"tighter\":{}}}",
         p.model.dimension(),
         p.model.cooling.carrier.cells(),
         p.model.clusters(),
+        p.model.control_material.host_count(),
+        p.model.control_material.config().routes.len(),
+        p.model.control_material.paid_rows().map(|(row,q)|format!("[{row},{}]",finite(q))).collect::<Vec<_>>().join(","),
         start.elapsed().as_secs_f64(),
         normal.summary,
         tighter.summary
     );
     Ok(())
+}
+
+#[cfg(test)]
+#[test]
+#[ignore = "requires explicit LEITBILD_MOTION_INPUT frozen physical frame; no advancement"]
+fn retained_current_material_frame_constructs_without_advancement() {
+    let path = std::env::var("LEITBILD_MOTION_INPUT").expect("explicit retained physical frame");
+    let p = parse(&fs::read_to_string(path).unwrap()).unwrap();
+    assert_eq!(p.model.dimension(), 75866);
+    assert_eq!(p.model.control_material.host_count(), 104);
+    assert_eq!(p.model.control_material.config().routes.len(), 360);
 }
 fn main() {
     if let Err(e) = execute() {

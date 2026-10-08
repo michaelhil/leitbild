@@ -44,6 +44,7 @@ pub mod guide_motion_water;
 pub mod control_source_geometry;
 pub mod control_motion_forces;
 pub mod source_motion;
+pub mod control_material_heat;
 
 pub const GRAVITY: f64 = 9.80665;
 

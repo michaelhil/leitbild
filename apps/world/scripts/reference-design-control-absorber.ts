@@ -92,15 +92,36 @@ export function absorberForceScreen(b:ControlAbsorber,h:ReturnType<typeof parseF
  return {density_kg_m3:rho,viscosity_Pa_s:mu,weight_N:weight,uniformWaterBuoyancy_N:buoyancy,cases,
   scope:'Steady uniform-property moving-annulus force limits with two expressly different held return boundaries; not fluid history, transient drop time, dashpot/end-stop qualification or guaranteed force bounds.'}
 }
-/** Exact underdamped spring-armature first-entry and conservative energy split.
- * No body drop or contact lifetime prediction. */
-export function gapReleaseLimit(q:Pick<ControlAbsorber,'gapArmature_kg'|'gapSpring_N_m'|'gapDamping_N_s_m'|'gapStroke_m'>){
- const mass=q.gapArmature_kg,k=q.gapSpring_N_m,damping=q.gapDamping_N_s_m,stroke=q.gapStroke_m,alpha=damping/(2*mass),omega=Math.sqrt(k/mass-alpha*alpha),
-  time=(Math.PI-Math.atan(omega/alpha))/omega,
-  velocity=stroke*Math.exp(-alpha*time)*(omega+alpha*alpha/omega)*Math.sin(omega*time),
-  initial=.5*k*stroke*stroke,contactHeat=.5*mass*velocity*velocity
- return {gapFirstEntry_s:time,arrivalSpeed_m_s:velocity,initialSpring_J:initial,dampingHeat_J:initial-contactHeat,stopHeat_J:contactHeat,
-  scope:'Unobstructed selected1kg gap armature only. Failed release/obstruction retains actual spring/contact energy; this is not a rod insertion time.'}
+/** Exact underdamped Newton solution, located at its first open-stop entry.
+ * The armature opens axially downward: h(d)=-d and gravity assists the spring.
+ * This isolated limit has no body drop, obstruction or contact-life prediction. */
+export function gapReleaseLimit(q:Pick<ControlAbsorber,'gapArmature_kg'|'gapSpring_N_m'|'gapDamping_N_s_m'|'gapStroke_m'|'gravity_m_s2'>){
+ const mass=q.gapArmature_kg,k=q.gapSpring_N_m,damping=q.gapDamping_N_s_m,stroke=q.gapStroke_m,g=q.gravity_m_s2
+ if(![mass,k,damping,stroke,g].every(Number.isFinite)||mass<=0||k<=0||damping<=0||stroke<=0||g<0
+  ||damping*damping>=4*mass*k)throw Error('Unadmitted underdamped downward gap-armature limit')
+ const alpha=damping/(2*mass),omega=Math.sqrt(k/mass-alpha*alpha),equilibrium=stroke+mass*g/k,
+  gravityFreeTime=(Math.PI/2+Math.atan(alpha/omega))/omega,
+  fraction=mass*g/(k*stroke+mass*g),
+  entryResidual=(t:number)=>Math.exp(-alpha*t)*(Math.cos(omega*t)+alpha/omega*Math.sin(omega*t))-fraction
+ let time=gravityFreeTime
+ if(g>0){
+  let lo=0,hi=gravityFreeTime
+  for(let i=0;i<64;i++){
+   const mid=(lo+hi)/2
+   if(mid===lo||mid===hi)break
+   if(entryResidual(mid)>0)lo=mid;else hi=mid
+  }
+  time=(lo+hi)/2
+ }
+ const velocity=equilibrium*Math.exp(-alpha*time)*(omega+alpha*alpha/omega)*Math.sin(omega*time),
+  initial=.5*k*stroke*stroke,gravityChange=-mass*g*stroke,contactHeat=.5*mass*velocity*velocity,
+  dampingHeat=initial-gravityChange-contactHeat
+ if(![time,velocity,initial,gravityChange,contactHeat,dampingHeat].every(Number.isFinite)
+  ||time<=0||velocity<=0||dampingHeat<0)throw Error('Unrepresentable downward gap-armature energy split')
+ return {openingDirection:'axial-downward' as const,gapFirstEntry_s:time,arrivalSpeed_m_s:velocity,
+  gapElevationChange_m:-stroke,initialSpring_J:initial,gravitationalPotentialChange_J:gravityChange,
+  dampingHeat_J:dampingHeat,stopHeat_J:contactHeat,minimumClosureWork_J:initial-gravityChange,
+  scope:'Unobstructed downward gap-armature first entry only. Failed release/obstruction retains actual spring, gravity and contact energy; this is not a rod insertion time or a joined release model.'}
 }
 /** Passive finite-friction grip accounting, without a compliance energy stock. */
 export function gripWork(q:{traction_N:number,referenceSpeed_m_s:number,bodySpeed_m_s:number,headSpeed_m_s:number,deliveredPower_W:number}){
@@ -201,7 +222,7 @@ export function controlAbsorberGeometry(b:ControlAbsorber,f:ReturnType<typeof pa
   availableMechanical=b.deliveredMotiveLimit_W*b.driveEfficiency
  require('ordinary dry gravity duty fits paid motive cap',gravityPower<availableMechanical,gravityPower)
  require('ordinary dry gravity force fits finite jack authority',movingMass*b.gravity_m_s2<b.clusters*b.forceLimitPerCluster_N)
- require('manual spring closure fits actual force and power',b.manualGapForce_N>b.gapSpring_N_m*b.gapStroke_m+b.gapDamping_N_s_m*b.manualGapSpeed_m_s&&b.manualGapForce_N*b.manualGapSpeed_m_s<b.manualGapPower_W)
+ require('manual spring/gravity closure fits actual force and power',b.manualGapForce_N>b.gapSpring_N_m*b.gapStroke_m+b.gapDamping_N_s_m*b.manualGapSpeed_m_s+b.gapArmature_kg*b.gravity_m_s2&&b.manualGapForce_N*b.manualGapSpeed_m_s<b.manualGapPower_W)
  require('gap armature is part of actual jack and underdamped fixture',b.gapArmature_kg<b.attachedJackMassPerCluster_kg&&b.gapDamping_N_s_m**2<4*b.gapArmature_kg*b.gapSpring_N_m)
  require('actual gravity store is not old50kJ effective store',Math.abs(poses[1]!.movingGravityRelative_J-50000)>1000)
  const annulus=laminarAnnulus({outerRadius_m:h.guideInnerDiameter_m/2,innerRadius_m:b.bodyDiameter_m/2,length_m:b.bodyLength_m,viscosity_Pa_s:.000855,gradient_Pa_m:100,bodySpeed_m_s:.008})

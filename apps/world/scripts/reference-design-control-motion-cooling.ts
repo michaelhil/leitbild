@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto'
 import {access,mkdir,realpath,writeFile} from 'node:fs/promises'
 import {isAbsolute,join,resolve} from 'node:path'
 import {prepareMovingFuelCooling,movingFuelCoolingNativeInput} from './reference-design-control-geometry'
-import {nativeMovingFuelCoolingFixture} from './reference-design-control-source-motion'
+import {nativeMovingFuelCoolingFixture,controlSteelHeatNativeInput} from './reference-design-control-source-motion'
 import {compileConnectedControlMotion} from './reference-design-connected-control-motion'
 import {controlSourceNativeIdentities} from './reference-design-control-source-stage'
 import {helperIdentities} from './reference-design-operating-network'
@@ -49,7 +49,7 @@ export async function retainMotionCoolingInputs(binary:string,evidence:string,di
 export const motionCoolingAccuracy={burst_s:.5,hold_s:60,maximum_step_s:.1,relative:1e-6,
  position_m:1e-9,velocity_m_s:1e-9,heat_J:1e-7,water_energy_J:1e-7,marker_kg:1e-11}
 export async function prepareControlMotionCooling(wiki:string,evidence:string,waterReceipt:string){
- const [prepared,motion]=await Promise.all([prepareMovingFuelCooling(wiki,evidence,waterReceipt),compileConnectedControlMotion(wiki,motionCoolingAccuracy)]),
+ const [prepared,motion]=await Promise.all([prepareMovingFuelCooling(wiki,evidence,waterReceipt,{controlSteel:true}),compileConnectedControlMotion(wiki,motionCoolingAccuracy)]),
   {p,plan,source}=prepared,act=p.actuation
  if(!act)throw Error('Moving composition requires one existing ACT.A/PRHR owner')
  // This ordinary motion case uses nominal finite full-charge support, NOT the
@@ -64,6 +64,8 @@ export async function prepareControlMotionCooling(wiki:string,evidence:string,wa
   d.capacity_j,d.normal_group_w,d.charger_limit_w,d.output_limit_w,d.charge_efficiency,d.discharge_efficiency,d.converter_efficiency,
   s.initialEnergy_J,+s.charger,+s.battery,+s.output,1,motion.duty.holding_w,motion.duty.motive_w,motion.duty.base_b_w,m.maximum_rate_m_s,
   a.burst_s,a.hold_s,a.position_m,a.velocity_m_s,a.heat_J,a.relative)
+ const steel=controlSteelHeatNativeInput(plan,source)
+ for(const field of steel.fields)fields.push(field)
  if(motion.count!==plan.motion.clusters.length||motion.clusterIds.some((q,i)=>q.id!==plan.motion.clusters[i]?.id))
   throw Error('Mechanical/geometry owner order differs')
  const owners=new Map<string,{name:string,sha256:string}>()
@@ -81,10 +83,11 @@ export async function prepareControlMotionCooling(wiki:string,evidence:string,wa
    mechanicalHeat_J:a.heat_J,refinement:10,maximumStep_s:null,observationTimes:[...motionCoolingExpected.commonTimes]},
   pairPolicy:{position_m:1e-7,speed_m_s:1e-7,local_heat_J:1e-5,fluid_work_J:1e-5},
   supportPreparation:{A:{...actual.actuation.prep,capacity_J:act.capacity_J},B:{...s,capacity_J:d.capacity_j}},
-  counts:{clusters:motion.count,waterOwners:plan.water.length,hydraulicEdges:plan.hydraulic.length},
-  scope:'Cold0.5sRATE+60sHOLD;actual all52 mechanics+full98 SOURCE/cooling/pressure;single finite A including PRHR and single finite B. Adiabatic apparatus heat. Neck quasi-steady local incompressible circulation; B controller/loss exports outside ROOM.A. BODY neutron incidence only. No released insertion, hot equipment/neck or live installation.'}
+  counts:{clusters:motion.count,waterOwners:plan.water.length,hydraulicEdges:plan.hydraulic.length,controlSteelHosts:steel.hosts.length,controlSteelRoutes:steel.routes.length},
+  controlSteel:steel.metadata,
+  scope:'Cold0.5sRATE+60sHOLD;actual all52 mechanics+full98 SOURCE/cooling/pressure;single finite A including PRHR and single finite B. BODY+STEM+SPIDER immutable neutron material, capture/Mn histories and finite nuclear heat recipients; explicit optical mean-chord allocation. Adiabatic apparatus sensible contacts. Neck quasi-steady local incompressible circulation; B controller/loss exports outside ROOM.A. No released insertion, hot equipment/neck or live installation.'}
 }
-export const motionCoolingExpected={unknowns:75344,waterOwners:98,clusters:52,
+export const motionCoolingExpected={unknowns:75866,waterOwners:98,clusters:52,
  commonTimes:[0,.00001,.0001,.001,.01,.1,.25,.5,.75,1,2,5,10,30,60.5]}
 export function parseControlMotionCoolingResult(raw:unknown){return parseMotionCoolingResult(raw,motionCoolingExpected)}
 async function refuse(path:string){try{await access(path)}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return;throw e}throw Error('Refusing existing evidence '+path)}
@@ -96,8 +99,15 @@ if(import.meta.main){
   directory=target+'.artifacts',inputPath=target+'.input'
  await refuse(target);await refuse(inputPath);await mkdir(directory)
  const [nativeSourceIdentities,compilerIdentities,binarySha256]=await Promise.all([
-  controlSourceNativeIdentities(),helperIdentities(import.meta.path),Bun.file(binary).bytes().then(sha)]),
-  prepared=await prepareControlMotionCooling(wiki,evidence,water),inspect=async()=>{
+  controlSourceNativeIdentities(),helperIdentities(import.meta.path),Bun.file(binary).bytes().then(sha)])
+ let prepared:Awaited<ReturnType<typeof prepareControlMotionCooling>>
+ try{prepared=await prepareControlMotionCooling(wiki,evidence,water)}catch(e){
+  await writeFile(target,JSON.stringify({stage:'preparation',status:'FAIL',trajectoryAdmitted:false,
+   nativeExit:null,inspectionError:String(e),elapsedSeconds:(performance.now()-start)/1000,
+   nativeBinaryPath:binary,binarySha256,nativeSourceIdentities,compilerIdentities},null,2)+'\n',{flag:'wx'})
+  throw e
+ }
+ const inspect=async()=>{
    if(binarySha256!==sha(await Bun.file(binary).bytes()))throw Error('Native binary changed')
    if(JSON.stringify(nativeSourceIdentities)!==JSON.stringify(await controlSourceNativeIdentities()))throw Error('Native sources changed')
    if(JSON.stringify(compilerIdentities)!==JSON.stringify(await helperIdentities(import.meta.path)))throw Error('Compiler changed')

@@ -5,7 +5,7 @@
  */
 import {controlAbsorberGeometry} from './reference-design-control-absorber'
 import {currentColdGeometry} from './reference-design-current-cold-parent'
-import {axialIntervalOverlap,compileControlMaterialMotion,controlMaterialMotionAt,type ControlMaterialPose} from './reference-design-control-material-motion'
+import {axialIntervalOverlap,compileControlMaterialMotion,controlMaterialMotionAt,compileControlSteelMotion,controlSteelMotionAt,type ControlMaterialPose} from './reference-design-control-material-motion'
 import {circleRectangleArcs} from './reference-design-source-faces'
 import {diskRectangleArea,type SourceRegion} from './reference-design-source-partition'
 import type {parsePrimaryWaterInputs} from './reference-design-source-water'
@@ -17,6 +17,8 @@ import type {compileSourceEvolution} from './reference-design-source-evolution'
 import {nativeAbsorberGuideFrame} from './reference-design-absorber-guide'
 import {nativeMobileCaptureFrame} from './reference-design-mobile-capture'
 import {createHash} from 'node:crypto'
+import {z} from 'zod'
+import {configurationBlock} from './reference-design-source-laws'
 
 type Input=ReturnType<typeof parsePrimaryWaterInputs>
 type Cooling=Awaited<ReturnType<typeof compileFuelCooling>>
@@ -25,6 +27,11 @@ type Cylinder=ReturnType<typeof compileCylinderInputs>
 type Side=ControlMaterialPose['side']
 export type ControlSourcePose=ControlMaterialPose&{stem_y_m:number;stem_side:Side;contact:'seated'|'offseat'}
 export type ControlSourceDirection={body:number;stem:number}
+const steelNuclearSchema=z.object({stemSelfChord_m:z.number().finite().positive(),spiderSelfChord_m:z.number().finite().positive(),
+ opticalModel:z.literal('homogenized-round-member-mean-chord'),sensibleContact:z.literal('adiabatic-bounded-cold-motion')}).strict()
+export function parseControlSteelNuclear(text:string){
+ return steelNuclearSchema.parse(configurationBlock(text,'reference-control-steel-nuclear'))
+}
 // A local directional scalar, not another physical or differentiation model.
 // The physical clipping branch is selected by the pose, never by its JVP.
 type D=readonly[number,number]
@@ -64,12 +71,12 @@ type Intruder={cluster:number;motion:'body'|'stem';lo:number;hi:number;area:numb
 /** Prepare a fixed union and a single ORIGINAL owner split. All other native
  * liquid rows keep their relative order. `oldWaterToNew` never maps the old
  * pooled BODY to one of its children: callers must explicitly consume split. */
-export function compileControlSourceMotion(d:Input,p:Cooling,passive:Passive,cylinder:Cylinder){
+export function compileControlSourceMotion(d:Input,p:Cooling,passive:Passive,cylinder:Cylinder,steelSelection?:z.infer<typeof steelNuclearSchema>){
  const partition=p.material.partition,c=d.control,h=d.handling,f=d.fuel,
   cg=controlAbsorberGeometry(c,f,h),current=currentColdGeometry(c,d.attachment,f,h,d.gates,d.head,d.cold),
   motion=compileControlMaterialMotion(partition.regions,d,passive.stocks),
   oldBody=p.network.water.findIndex(w=>w.id==='GUIDE.BODY'),upperOld=p.network.water.findIndex(w=>w.id==='UPPER'),
-  bottom=h.seatedBottom_m,top=current.faTop_m,L=top-bottom,N=c.rodletsPerCluster,
+  bottom=h.seatedBottom_m,top=current.faTop_m,activeTop=bottom+h.bottomFittingLength_m+f.activeLength_m,L=top-bottom,N=c.rodletsPerCluster,
   ro=h.guideInnerDiameter_m/2,rb=c.bodyDiameter_m/2,ra=c.absorberDiameter_m/2,
   bodyA=N*Math.PI*rb*rb,guideA=N*Math.PI*ro*ro,annulus=guideA-bodyA,
   clusterFA=cg.sites.map(s=>partition.assemblies.find(fa=>fa.x_m===s.x_m&&fa.y_m===s.y_m)?.id),
@@ -95,7 +102,9 @@ export function compileControlSourceMotion(d:Input,p:Cooling,passive:Passive,cyl
    segments:e.segments.map(s=>({...s,area_m2:s.area_m2/c.clusters})),
    basis:e.basis+'; ORIGINAL one-cluster split, actual moving hydraulics remain current-network-owned'}))
  })
- const originalBodyStocks=new Set(motion.rows.map(r=>r.stock)),passiveRows=[
+ const structuralStocks=new Set(passive.stocks.flatMap((s,i)=>/^CONTROL\/[^/]+\/[^/]+\/(SPIDER|STEM)$/.test(s.id)?[i]:[])),
+  originalBodyStocks=new Set([...motion.rows.map(r=>r.stock),...structuralStocks]),
+  passiveRows:{stock:number;region:number;volume:number;geometryRow:number;steelRow?:number}[]=[
   ...passive.nativeBulk.incidence.filter(r=>!originalBodyStocks.has(r.stock)).map(r=>({...r,geometryRow:-1})),
   ...motion.rows.map((r,geometryRow)=>({stock:r.stock,region:r.region,volume:0,geometryRow})),
  ],cylinderRows:{target:number;region:number;original:number;cluster:number;lo:number;hi:number;arc:number}[]=[]
@@ -142,6 +151,10 @@ export function compileControlSourceMotion(d:Input,p:Cooling,passive:Passive,cyl
    Math.max(...intruders.filter(q=>q.motion==='stem').map(q=>q.hi)),
    ...intruders.filter(q=>q.motion==='stem'&&q.upperOnly).map(q=>c.headBottom_m-q.hi))
  if(!(maximumBodyPose_m>0&&maximumStemPose_m>0))throw Error('No fully described cold motion domain')
+ if(structuralStocks.size!==0&&structuralStocks.size!==2*c.clusters)throw Error('Incomplete moving structural source selection')
+ const steelMotion=structuralStocks.size?compileControlSteelMotion(partition.regions,d,passive.stocks,
+  {body:maximumBodyPose_m,stem:maximumStemPose_m}):null
+ if(steelMotion)passiveRows.push(...steelMotion.rows.map((r,steelRow)=>({stock:r.stock,region:r.region,volume:0,geometryRow:-1,steelRow})))
  for(const patch of patches)if(patch.origin.startsWith('HOUSING.')){
   const r=partition.regions[patch.region]!,lo=Math.max(r.z0_m!,patch.origin==='HOUSING.MAIN'?c.headBottom_m:c.housingTop_m),
    hi=Math.min(r.z1_m!,patch.origin==='HOUSING.MAIN'?c.housingTop_m:c.neckTop_m)
@@ -223,6 +236,42 @@ export function compileControlSourceMotion(d:Input,p:Cooling,passive:Passive,cyl
  const originIndexes=new Map(origins.map((o,i)=>[o.id,i])),routes=patches.map((q,i)=>({region:q.region,water:q.cell,
   wall_origin:originIndexes.get(q.origin.startsWith('Core.')?'ACTIVE.EXTERNAL':q.origin)!,patch:i,row:rowIndex.get(q.region+'/'+q.cell)!}))
  if(routes.some(q=>q.wall_origin===undefined))throw Error('Current birth route has no physical photon origin')
+ const steelHosts=steelMotion?steelMotion.clusters.flatMap((q,cluster)=>['SPIDER','STEM'].map(family=>{
+  const stock=passive.stocks.findIndex(s=>s.id===q.prefix+'/'+family),s=passive.stocks[stock]!
+  return {id:s.id,kind:family==='STEM'?'stem' as const:'spider' as const,cluster,stock,
+   volume_m3:s.volume_m3,mass_kg:s.mass_kg,original_K:s.original_K}
+ })):[],steelRoutes:{host:number;source_region:number;water:number;origin:number;lo:number;hi:number;
+  spans:{lo:number;hi:number;area:number}[]}[]=[]
+ if(steelMotion)for(const r of steelMotion.rows)for(const [id,bottom,top]of [
+  ['UPPER.EXTERNAL',activeTop,c.headBottom_m],['HOUSING.MAIN',c.headBottom_m,c.housingTop_m],['HOUSING.NECK',c.housingTop_m,c.neckTop_m],
+ ] as const){
+  const lo=Math.max(r.lo,bottom),hi=Math.min(r.hi,top),host=steelHosts.findIndex(h=>h.stock===r.stock),
+   spans=r.spans.filter(s=>s.hi+steelMotion.maximum[r.motion]>lo&&s.lo<hi)
+  if(hi<=lo||!spans.length)continue
+  const origin=originIndexes.get(id)
+  if(host<0||origin===undefined)throw Error('Moving steel route lost material or primary origin')
+  steelRoutes.push({host,source_region:r.region,water:upper,origin,lo,hi,spans})
+ }
+ // Decay follows the whole current rigid stock, not the capture location. This
+ // coverage proof also forbids losing emission outside represented source boxes.
+ for(const [host,h]of steelHosts.entries()){
+  const local=steelRoutes.filter(r=>r.host===host),maximum=steelMotion!.maximum[h.kind==='stem'?'stem':'body'],cuts=new Set([0,maximum])
+  for(const r of local)for(const s of r.spans)for(const y of [r.lo-s.lo,r.lo-s.hi,r.hi-s.lo,r.hi-s.hi])if(y>0&&y<maximum)cuts.add(y)
+  const sorted=[...cuts].sort((a,b)=>a-b),probes=[...sorted,...sorted.slice(1).map((y,i)=>(y+sorted[i]!)/2)]
+  let originalMoment=0
+  for(const r of local)for(const s of r.spans)originalMoment+=s.area*axialIntervalOverlap(s.lo,s.hi,r.lo,r.hi,0,true)[2]
+  for(const y of probes)for(const right of [false,true]){
+   if(y===0&&!right||y===maximum&&right)continue
+   let V=0,J=0,dV=0,dJ=0
+   for(const r of local)for(const s of r.spans){const a=axialIntervalOverlap(s.lo,s.hi,r.lo,r.hi,y,right)
+    V+=s.area*a[0];dV+=s.area*a[1];J+=s.area*a[2];dJ+=s.area*a[3]
+   }
+   close(V,h.volume_m3,'whole moving steel photon route volume '+h.id,h.volume_m3)
+   close(J,originalMoment+h.volume_m3*y,'whole moving steel photon route first moment '+h.id,h.volume_m3*16)
+   close(dV,0,'moving steel route volume derivative '+h.id,h.volume_m3)
+   close(dJ,h.volume_m3,'moving steel route moment derivative '+h.id,h.volume_m3)
+  }
+ }
  const guideBindings=guideCells.map((cell,cluster)=>{
   const incoming=hydraulic.map((e,edge)=>({e,edge})).filter(q=>q.e.to===cell),
    outgoing=hydraulic.map((e,edge)=>({e,edge})).filter(q=>q.e.from===cell)
@@ -231,7 +280,10 @@ export function compileControlSourceMotion(d:Input,p:Cooling,passive:Passive,cyl
   return {cluster,cell,lowerEdge:incoming[0]!.edge,upperEdge:outgoing[0]!.edge,
    originalLowerEdge:incoming[0]!.e.original,originalUpperEdge:outgoing[0]!.e.original}
  })
- return {d,partition,motion,water,oldWaterToNew,oldPooledBody:oldBody,guideCells,guideIds,clusterFA,
+ return {d,partition,motion,steelMotion,steelHosts,steelRoutes,steelNuclear:steelMotion&&steelSelection?{
+  selection:steelNuclearSchema.parse(steelSelection),density:p.absorberGuide.photon.density_steel,
+  mu_steel:p.absorberGuide.photon.mu_steel_1,mu_water:p.absorberGuide.photon.mu_water_1}:null,
+  water,oldWaterToNew,oldPooledBody:oldBody,guideCells,guideIds,clusterFA,
   hydraulic,guideBindings,upper,lower,passiveRows,cylinderRows,patches,waterRows,contactPlans,origins,routes,intruders,
   barrelPaths:p.barrel.contacts.map(c=>{const i=originIndexes.get(c.owner.startsWith('Core.')?'ACTIVE.EXTERNAL':c.owner)
    if(i===undefined)throw Error('Current barrel contact lost physical photon origin')
@@ -240,15 +292,56 @@ export function compileControlSourceMotion(d:Input,p:Cooling,passive:Passive,cyl
   maximumBodyPose_m,maximumStemPose_m,bottom,top,activeTop:h.seatedBottom_m+h.bottomFittingLength_m+f.activeLength_m,guideA,bodyA,annulus,
   immutable:{stockIds:passive.stocks.map(s=>s.id),targetIds:cylinder.targets.map(t=>t.id),
    hostIds:p.absorberGuide.hosts.map(h=>h.id),regionIds:partition.regions.map(r=>r.id)},
-  scope:'Current cold fullywet control geometry/source and thermal coefficients only. No source or coolant advancement, accepted trajectory, neutronic stem/spider/apparatus material closure, hot/phase motion or live installation.'}
+  scope:'Current cold fullywet control geometry/source and thermal coefficients only. No source or coolant advancement, accepted trajectory, '+(steelMotion?'remaining apparatus material closure':'neutronic stem/spider/apparatus material closure')+', hot/phase motion or live installation.'}
 }
 export type ControlSourceMotion=ReturnType<typeof compileControlSourceMotion>
+
+/** One appended constitutive frame; it names the existing SOURCE histories and
+ * existing STEM/SPIDER heat recipients. It owns no initialized state or clock.
+ * Kind tags are explicit: 0 STEM, 1 SPIDER. The native reader consumes spans
+ * directly and gets each current liquid chord from the same geometry workspace. */
+export function controlSteelHeatNativeInput(plan:ControlSourceMotion,source:ReturnType<typeof compileSourceEvolution>){
+ const nuclear=plan.steelNuclear,stocks=source.material.materialPayload.passive.stocks,
+  targets=source.material.nativeInputs.targets,index=new Map(targets.map((t,i)=>[t.id,i]))
+ if(!plan.steelMotion||!nuclear||plan.steelHosts.length!==2*plan.motion.clusters.length)
+  throw Error('Moving structural nuclear heat selection is missing')
+ if(stocks.length!==plan.immutable.stockIds.length||stocks.some((s,i)=>s.id!==plan.immutable.stockIds[i])||index.size!==targets.length)
+  throw Error('Moving structural heat SOURCE identity/order mismatch')
+ const hosts=plan.steelHosts.map(h=>{
+  const stock=stocks[h.stock]!
+  if(stock.id!==h.id||stock.material!=='steel304'||stock.thermalRecipientId!==h.id||stock.targets.length!==4)
+   throw Error('Missing finite moving structural heat owner '+h.id)
+  close(stock.volume_m3,h.volume_m3,'structural heat/source stock volume '+h.id,h.volume_m3)
+  close(stock.mass_kg,h.mass_kg,'structural heat/source stock mass '+h.id,h.mass_kg)
+  const owned=['Fe','Cr','Ni','Mn'].map(element=>{
+   const target=index.get(h.id+'/'+element)
+   if(target===undefined||stock.targets.filter(t=>t.id===h.id+'/'+element).length!==1
+    ||targets[target]!.bindingEmission_J[0]!==0)throw Error('Missing moving304 photon capture owner '+h.id+'/'+element)
+   return target
+  }),manganese=source.manganese.map((m,i)=>({m,i})).filter(q=>q.m.target===owned[3])
+  if(manganese.length!==1)throw Error('Missing/duplicated moving Mn history '+h.id)
+  return {...h,targets:owned,capture_photon_j:owned.map(i=>targets[i]!.bindingEmission_J[1]),mn_owner:manganese[0]!.i,
+   self_chord_m:h.kind==='stem'?nuclear.selection.stemSelfChord_m:nuclear.selection.spiderSelfChord_m}
+ }),fields=[nuclear.density,nuclear.mu_steel,nuclear.mu_water,hosts.length,
+  ...hosts.flatMap(h=>[h.cluster,h.kind==='stem'?0:1,...h.targets,...h.capture_photon_j,h.mn_owner,h.volume_m3,h.self_chord_m]),
+  plan.steelRoutes.length,...plan.steelRoutes.flatMap(r=>[r.host,r.source_region,r.water,r.origin,r.lo,r.hi,r.spans.length,
+   ...r.spans.flatMap(s=>[s.lo,s.hi,s.area])])]
+ if(fields.some(v=>!Number.isFinite(v)))throw Error('Nonfinite moving structural heat frame')
+ return {fields,hosts,routes:plan.steelRoutes,selection:nuclear.selection,
+  metadata:{materialStocks:hosts.map(h=>({id:h.id,stock:h.stock,clusterId:plan.motion.clusters[h.cluster]!.id,
+   kind:h.kind,mass_kg:h.mass_kg,volume_m3:h.volume_m3,targets:h.targets,mn_owner:h.mn_owner,self_chord_m:h.self_chord_m})),
+   routes:plan.steelRoutes.map(r=>({host:hosts[r.host]!.id,sourceRegion:plan.partition.regions[r.source_region]!.id,
+    water:plan.water[r.water]!.id,physicalOrigin:plan.origins[r.origin]!.id,lo_m:r.lo,hi_m:r.hi})),
+   scope:'Selected cold moving structural304 capture/Mn heat only; existing finite mechanics heat recipients, actual primary-origin liquid attenuation, explicit thermal-domain export. Optical chord surrogate is not transverse geometry; distributed frame/lugs remain lumpedUPPER.'}}
+}
 
 /** Replace the one pooled ORIGINAL owner before preparing the SAME connected
  * cooling model. Every other water/solid/flow identity is remapped explicitly;
  * in particular PRHR cells with no SOURCE overlap are still physical stocks. */
 export function nativeMovingFuelCoolingFixture(plan:ControlSourceMotion,p:Cooling,source:ReturnType<typeof compileSourceEvolution>){
  requireControlSourceIdentity(plan,source,p)
+ if(plan.steelHosts.some(h=>h.original_K!==p.barrel.initial_temperature_k))
+  throw Error('Moving structural SOURCE and finite 304 heat preparation differ')
  if(p.network.water.length!==plan.oldWaterToNew.length||p.network.water[plan.oldPooledBody]?.id!=='GUIDE.BODY'
   ||p.network.water.some((w,i)=>i!==plan.oldPooledBody&&plan.water[plan.oldWaterToNew[i]!]!.id!==w.id))
   throw Error('Current cooling network identity/order mismatch')
@@ -298,14 +391,15 @@ export function nativeMovingFuelCoolingFixture(plan:ControlSourceMotion,p:Coolin
 export function controlSourceMotionAt(plan:ControlSourceMotion,poses:readonly ControlSourcePose[],
  directions:readonly ControlSourceDirection[]=poses.map(()=>({body:0,stem:0}))){
  const {d}=plan,c=d.control,N=c.rodletsPerCluster,ro=d.handling.guideInnerDiameter_m/2,rb=c.bodyDiameter_m/2,
-  L=plan.top-plan.bottom,bodyV=controlMaterialMotionAt(plan.motion,poses),
+  L=plan.top-plan.bottom,bodyV=controlMaterialMotionAt(plan.motion,poses),steelV=plan.steelMotion?controlSteelMotionAt(plan.steelMotion,poses):null,
   body=poses.map((p,i):D=>[p.body_y_m,directions[i]?.body??NaN]),stem=poses.map((p,i):D=>[p.stem_y_m,directions[i]?.stem??NaN])
  if(directions.length!==poses.length||poses.some((p,i)=>!Number.isFinite(p.stem_y_m+body[i]![1]+stem[i]![1])
   ||p.body_y_m>plan.maximumBodyPose_m||p.stem_y_m<0||p.stem_y_m>plan.maximumStemPose_m
   ||!['increasing','decreasing'].includes(p.stem_side)||(p.stem_y_m===0&&p.stem_side==='decreasing')
   ||!['seated','offseat'].includes(p.contact)||(p.contact==='seated'&&p.body_y_m!==0)))
   throw Error('Current control/source pose outside described cold contact/passage domain')
- const material=plan.passiveRows.map(r=>r.geometryRow<0?C(r.volume):[
+ const material=plan.passiveRows.map(r=>r.steelRow!==undefined?[
+  steelV![4*r.steelRow]!,steelV![4*r.steelRow+1]!*directions[plan.steelMotion!.rows[r.steelRow]!.cluster]![plan.steelMotion!.rows[r.steelRow]!.motion]] as D:r.geometryRow<0?C(r.volume):[
   bodyV[4*r.geometryRow]!,bodyV[4*r.geometryRow+1]!*directions[plan.motion.rows[r.geometryRow]!.cluster]!.body] as D),
   cylinders=plan.cylinderRows.map(r=>r.cluster<0?C(r.original):scale(interval(c.insertedActiveBottom_m,
    c.insertedActiveBottom_m+c.activeLength_m,r.lo,r.hi,body[r.cluster]!,poses[r.cluster]!.side).length,
@@ -433,8 +527,9 @@ export function nativeControlSourcePlan(plan:ControlSourceMotion){
  count(plan.water.length);fields.push(...plan.water.flatMap(w=>[w.volume_m3,w.volume_m3*w.elevation_m]),plan.upper)
  array(plan.guideCells)
  count(plan.passiveRows.length)
- for(const r of plan.passiveRows){fields.push(r.volume,r.geometryRow<0?0:1)
-  if(r.geometryRow>=0){const m=plan.motion.rows[r.geometryRow]!;fields.push(m.cluster,0,m.lo,m.hi,m.spans.length,
+ for(const r of plan.passiveRows){const m=r.steelRow!==undefined?plan.steelMotion!.rows[r.steelRow]:r.geometryRow>=0?{...plan.motion.rows[r.geometryRow]!,motion:'body' as const}:undefined
+  fields.push(r.volume,m?1:0)
+  if(m){fields.push(m.cluster,m.motion==='body'?0:1,m.lo,m.hi,m.spans.length,
    ...m.spans.flatMap(s=>[s.lo,s.hi,s.area]))}}
  count(plan.cylinderRows.length)
  for(const r of plan.cylinderRows){fields.push(r.original,r.cluster<0?0:1)

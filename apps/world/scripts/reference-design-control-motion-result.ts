@@ -53,7 +53,7 @@ export function parseMotionCoolingStdout(stdout:string){
 function checkExpected(expected:MotionCoolingExpected){
  for(const key of ['unknowns','waterOwners','clusters'] as const)
   if(!Number.isSafeInteger(expected[key])||expected[key]<=0)throw Error('Invalid expected motion '+key)
- if(expected.unknowns<=8*expected.clusters+1||expected.commonTimes.length<2||expected.commonTimes[0]!==0
+ if(expected.unknowns<=8*expected.clusters+3||expected.commonTimes.length<2||expected.commonTimes[0]!==0
   ||expected.commonTimes.at(-1)!==60.5||expected.commonTimes.some((t,i)=>!Number.isFinite(t)||(i>0&&t<=expected.commonTimes[i-1]!)))
   throw Error('Invalid expected cold motion shape/schedule')
 }
@@ -91,6 +91,42 @@ const costs=z.object({residuals:integer,bases:integer,actions:integer,recoverabl
  residualSeconds:nonnegative,baseSeconds:nonnegative,actionSeconds:nonnegative,PSeconds:nonnegative,
  convergence:z.object({}).passthrough(),P:z.object({}).passthrough()}).passthrough()
 const motionComparison=discrepancy.extend({time:nonnegative,suffixRow:integer,difference:nonnegative})
+const materialSample=z.object({time:nonnegative,powersW:z.array(nonnegative).min(8),paidJ:z.array(nonnegative).min(1),receiptsJ:z.tuple([nonnegative,nonnegative])}).strict()
+const materialComparison=z.object({time:nonnegative,family:z.enum(['power-W','paid-J','transfer-export-J']),row:integer,
+ normal:nonnegative,tighter:nonnegative,bound:nonnegative,ratio,sumabsRatio:ratio}).strict()
+/** The retained channel order is prompt [emitted,metal,water,export], then Mn.
+ * Check the same emitted-energy roundoff identity used by the optical summary
+ * at each physical route; opposite local defects must not cancel globally. */
+function controlMaterialTotals(sample:z.infer<typeof materialSample>){
+ const totals=Array(8).fill(0) as number[]
+ for(let route=0;route<sample.powersW.length;route+=8)for(const family of [0,4]){
+  const emitted=sample.powersW[route+family]!,metal=sample.powersW[route+family+1]!,
+   water=sample.powersW[route+family+2]!,exported=sample.powersW[route+family+3]!
+  if(Math.abs(emitted-metal-water-exported)>128*Number.EPSILON*emitted)
+   throw Error('Control material route/family nuclear energy closure differs')
+  for(let j=0;j<4;j++)totals[family+j]!+=sample.powersW[route+family+j]!
+ }
+ if(totals.some(v=>!Number.isFinite(v)))throw Error('Nonfinite control material family totals')
+ return totals
+}
+/** Reconstruct the complete local/SUMABS nuclear-only policy independently of
+ * the native scalar verdict. No large sensible-heat scale enters this check. */
+export function compareControlMaterialSamples(a:z.infer<typeof materialSample>,b:z.infer<typeof materialSample>){
+ materialSample.parse(a);materialSample.parse(b)
+ if(a.time!==b.time)throw Error('Control material common times differ')
+ let result={time:a.time,family:'power-W' as 'power-W'|'paid-J'|'transfer-export-J',row:0,normal:0,tighter:0,bound:20e-12,ratio:0,sumabsRatio:0}
+ for(const [family,x,y]of [['power-W',a.powersW,b.powersW],['paid-J',a.paidJ,b.paidJ],['transfer-export-J',a.receiptsJ,b.receiptsJ]] as const){
+  if(x.length!==y.length)throw Error('Control material channel shapes differ')
+  let difference=0,signal=0
+  for(let row=0;row<x.length;row++){
+   const normal=x[row]!,tighter=y[row]!,bound=1e-3*Math.abs(tighter)+20e-12,d=Math.abs(normal-tighter),ratio=d/bound
+   if(ratio>result.ratio)result={...result,family,row,normal,tighter,bound,ratio}
+   difference+=d;signal+=Math.abs(tighter)
+  }
+  result.sumabsRatio=Math.max(result.sumabsRatio,difference/(1e-3*signal+20e-12*x.length))
+ }
+ return result
+}
 function finiteTree(value:unknown):void{
  if(typeof value==='number'&&!Number.isFinite(value))throw Error('Nonfinite retained motion report number')
  if(Array.isArray(value)){for(const item of value)finiteTree(item)}
@@ -98,15 +134,22 @@ function finiteTree(value:unknown):void{
 }
 export function parseMotionCoolingResult(raw:unknown,expected:MotionCoolingExpected){
  checkExpected(expected);finiteTree(raw)
- const suffix=8*expected.clusters+1,arm=z.object({passed:z.literal(true),lastAdmittedTime:z.literal(60.5),
+ const suffix=8*expected.clusters+3,arm=z.object({passed:z.literal(true),lastAdmittedTime:z.literal(60.5),
   solverReturnedTime:z.literal(60.5),reason:z.null(),seconds:nonnegative,steps:integer.positive(),initialization,
-  eventICCalls:integer,eventICSeconds:nonnegative,maxMechanicalDefectJ:nonnegative,maxThermalWorkDefectJ:nonnegative,
+  startupICSeconds:nonnegative,eventICCalls:integer,eventICSeconds:nonnegative,maxMechanicalDefectJ:nonnegative,maxThermalWorkDefectJ:nonnegative,
+  structuralTemperaturesK:z.array(finite.min(290).max(1600)).length(2*expected.clusters),
   finalMotion:z.array(finite).length(suffix),events:z.array(event).min(1),comparisons:z.array(coolingComparison),
   eventSnapshots:z.array(z.object({time:finite.positive().max(60.5),index:integer})),
-  motionComparisons:z.array(motionComparison),costs,support}).passthrough()
+  motionComparisons:z.array(motionComparison),controlMaterialSamples:z.array(materialSample),
+  controlMaterialComparisons:z.array(materialComparison),controlChordSensitivity:z.array(z.object({scale:finite.positive(),
+   emittedW:nonnegative,metalW:nonnegative,waterW:nonnegative,exportW:nonnegative,familyEmittedW:z.tuple([nonnegative,nonnegative])}).strict()).length(3),costs,support}).passthrough()
  const result=z.object({status:z.literal('PASS'),scope:z.literal('cold-all52-accepted-motion-full98-SOURCE-water-thermal-single-clock'),
   trajectoryAdmitted:z.literal(true),liveModelInstalled:z.literal(false),unknowns:z.literal(expected.unknowns),
-  waterOwners:z.literal(expected.waterOwners),clusters:z.literal(expected.clusters),elapsedS:nonnegative,normal:arm,tighter:arm}).passthrough().parse(raw)
+  waterOwners:z.literal(expected.waterOwners),clusters:z.literal(expected.clusters),controlSteelHosts:z.literal(2*expected.clusters),
+  controlSteelRoutes:integer.positive(),controlPaidRows:z.array(z.tuple([integer,finite.positive()])).min(1),
+  elapsedS:nonnegative,normal:arm,tighter:arm}).passthrough().parse(raw)
+ if(new Set(result.controlPaidRows.map(r=>r[0])).size!==result.controlPaidRows.length
+  ||result.controlPaidRows.some(r=>r[0]>=expected.unknowns-suffix))throw Error('Invalid independent control paid-progress rows')
  const positiveTimes=expected.commonTimes.filter(t=>t>0)
  for(const [name,a]of [['normal',result.normal],['tighter',result.tighter]] as const){
   if(a.initialization.chartIterations+a.initialization.hydraulicRateIterations!==a.initialization.iterations)
@@ -123,10 +166,39 @@ export function parseMotionCoolingResult(raw:unknown,expected:MotionCoolingExpec
   if(a.motionComparisons.length!==motionTimes.length||a.motionComparisons.some((c,i)=>c.time!==motionTimes[i]||c.suffixRow>=suffix))
    throw Error('Missing or reordered local mechanical comparison locators')
   for(const c of a.motionComparisons){
-   const field=c.suffixRow%8,bound=c.suffixRow===suffix-1||field>=5?1e-5:1e-7
+   const field=c.suffixRow%8,bound=c.suffixRow>=8*expected.clusters||field>=5?1e-5:1e-7
    if(c.bound!==bound||c.difference!==Math.abs(c.normal-c.tighter)||c.ratio!==c.difference/c.bound)
     throw Error('Mechanical comparison differs from the inherited absolute local policy')
   }
+  if(a.controlMaterialSamples.length!==expected.commonTimes.length||a.controlMaterialSamples.some((s,i)=>s.time!==expected.commonTimes[i]
+   ||s.powersW.length!==8*result.controlSteelRoutes||s.paidJ.length!==result.controlPaidRows.length))
+   throw Error('Missing/reordered control material common-time channels')
+  const totals=a.controlMaterialSamples.map(controlMaterialTotals).at(-1)!
+  if(a.controlMaterialComparisons.length!==motionTimes.length)throw Error('Missing control material comparisons')
+  if(a.controlChordSensitivity.some((s,i)=>s.scale!==[.5,1,2][i]
+   ||Math.abs(s.emittedW-s.metalW-s.waterW-s.exportW)>128*Number.EPSILON*s.emittedW))
+   throw Error('Invalid optical-chord sensitivity or nuclear energy closure')
+  for(const sensitivity of a.controlChordSensitivity)for(const family of [0,1]){
+   const actual=sensitivity.familyEmittedW[family]!,wanted=totals[4*family]!
+   if(Math.abs(actual-wanted)>128*Number.EPSILON*Math.max(actual,wanted))
+    throw Error('Optical sensitivity family emission differs from current nuclear channels')
+  }
+  const nominal=a.controlChordSensitivity[1]!
+  for(const [actual,wanted]of [[nominal.emittedW,totals[0]!+totals[4]!],[nominal.metalW,totals[1]!+totals[5]!],
+   [nominal.waterW,totals[2]!+totals[6]!],[nominal.exportW,totals[3]!+totals[7]!]] as const)
+   if(Math.abs(actual-wanted)>128*Number.EPSILON*Math.max(actual,wanted))throw Error('Nominal sensitivity differs from current nuclear channels')
+ }
+ for(let i=0;i<expected.commonTimes.length;i++){
+  const compared=compareControlMaterialSamples(result.normal.controlMaterialSamples[i]!,result.tighter.controlMaterialSamples[i]!)
+  if(compared.ratio>1||compared.sumabsRatio>1||!isDeepStrictEqual(compared,result.tighter.controlMaterialComparisons[i]))
+   throw Error('Control material comparison differs from retained channels')
+ }
+ const normal=controlMaterialTotals(result.normal.controlMaterialSamples.at(-1)!),
+  tighter=controlMaterialTotals(result.tighter.controlMaterialSamples.at(-1)!)
+ for(const family of [0,1]){
+  const a=normal[4*family+1]!,b=tighter[4*family+1]!
+  if(Math.min(a,b)<=10*Math.abs(a-b)+20e-12)
+   throw Error('Control material prompt/Mn metal delivery is not resolved above paired uncertainty')
  }
  return result
 }
@@ -204,18 +276,24 @@ export async function validateMotionCoolingArtifacts(raw:unknown,directory:strin
  const normalMotion:number[][]=[]
  for(const arm of ['normal','tighter'] as const){
   let finalCommon:Uint8Array|undefined,finalContinuation:Awaited<ReturnType<typeof continuation>>|undefined
+  let initialView:DataView|undefined
   for(const [i,time]of expected.commonTimes.entries()){
    const base=`${arm}/common-${i}`
    const state=await required(base+'.bin')
    inspectMotionCoolingState(state,expected.unknowns,time)
-   const view=new DataView(state.buffer,state.byteOffset,state.byteLength),suffixLength=8*expected.clusters+1,
+   const view=new DataView(state.buffer,state.byteOffset,state.byteLength),suffixLength=8*expected.clusters+3,
     motion=Array.from({length:suffixLength},(_,j)=>view.getFloat64(8*(1+expected.unknowns-suffixLength+j),true))
+   if(i===0)initialView=view
+   const material=result[arm].controlMaterialSamples[i]!
+   if(!initialView||result.controlPaidRows.some(([row,q],j)=>material.paidJ[j]!==q*(view.getFloat64(8*(1+row),true)-initialView!.getFloat64(8*(1+row),true)))
+    ||material.receiptsJ.some((v,j)=>v!==view.getFloat64(8*(1+expected.unknowns-2+j),true)-initialView!.getFloat64(8*(1+expected.unknowns-2+j),true)))
+    throw Error('Control paid progress/transfer/export differs from retained physical stocks')
    if(arm==='normal')normalMotion.push(motion)
    else{
     const normal=normalMotion[i]!,receipt=result.tighter.motionComparisons[i]!
     let maximum=0,worst=0
     for(let j=0;j<suffixLength;j++){
-     const bound=j===suffixLength-1||j%8>=5?1e-5:1e-7,q=Math.abs(normal[j]!-motion[j]!)/bound
+     const bound=j>=8*expected.clusters||j%8>=5?1e-5:1e-7,q=Math.abs(normal[j]!-motion[j]!)/bound
      if(q>maximum){maximum=q;worst=j}
     }
     if(maximum>1||receipt.suffixRow!==worst||receipt.normal!==normal[worst]||receipt.tighter!==motion[worst]||receipt.ratio!==maximum)

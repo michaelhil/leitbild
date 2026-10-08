@@ -12,7 +12,7 @@ import {compileColdSourceMaterial,parseOperatingFuelCohorts} from './reference-d
 import {parseNuclearObservation} from './reference-design-nuclear-observation'
 import {parseColdNuclear} from './reference-design-cold-nuclear'
 import {parsePrimaryWaterInputs,primaryWaterOwnerFiles} from './reference-design-source-water'
-import {compileOriginalPassiveGeometry} from './reference-design-source-passive'
+import {compileOriginalPassiveGeometry,type MovingControlSteelSelection} from './reference-design-source-passive'
 import {compileCylinderInputs} from './reference-design-source-cylinder'
 import {compileConverterHeat} from './reference-design-converter-heat'
 import {assembleReceivingWater,sampleReceivingLiquid} from './reference-design-source-receiving-water'
@@ -95,7 +95,8 @@ function joinModerator(primary:ReturnType<typeof compileModeratorInputs>,receivi
   nativeOwners:primary.counts.nativeOwners+receiving.nativeOwners.length,intersections:intersections.length}}
 }
 
-export function compileMaterialSourceCheck(partitionText:string,materialText:string,waterText:string,docs:readonly string[],liquid:Parameters<typeof assembleReceivingWater>[1]){
+export function compileMaterialSourceCheck(partitionText:string,materialText:string,waterText:string,docs:readonly string[],liquid:Parameters<typeof assembleReceivingWater>[1],
+ selection:MovingControlSteelSelection={}){
  const d=parsePrimaryWaterInputs(docs.slice(0,primaryWaterOwnerFiles.length)),offset=primaryWaterOwnerFiles.length,
   source=docs[offset]!,heat=docs[offset+1]!,partition=compileSourcePartition(d),
   material=compileColdSourceMaterial(partition,{fuel:d.fuel,handling:d.handling,grid:parseOperatingFuelCohorts(docs[offset+2]!),
@@ -106,7 +107,7 @@ export function compileMaterialSourceCheck(partitionText:string,materialText:str
  const f=compileFuelInputs(JSON.parse(partitionText),JSON.parse(materialText),parseConfigurationFuel(source),
    compileDecayHistory(parseDecayHistory(heat)).promptFissionEnergy_J),
   primary=compileModeratorInputs(JSON.parse(partitionText),JSON.parse(waterText),parseConfigurationModerator(source)),
-  faces=compileSourceFaces(partition,d.gates,[0,0]),passive=compileOriginalPassiveGeometry(partition,d,material,faces.faces,source),
+  faces=compileSourceFaces(partition,d.gates,[0,0]),passive=compileOriginalPassiveGeometry(partition,d,material,faces.faces,source,selection),
   molar=d.chemistry.isotopeFraction*d.chemistry.isotope10MolarMass_kg_mol+(1-d.chemistry.isotopeFraction)*d.chemistry.isotope11MolarMass_kg_mol,
   receiving=assembleReceivingWater(passive.receivingPieces,liquid,{markerRatio:d.head.poolTracerRatio,
    atomsPerMarker:d.chemistry.avogadro_mol*d.chemistry.isotopeFraction/molar,avogadro:d.chemistry.avogadro_mol}),

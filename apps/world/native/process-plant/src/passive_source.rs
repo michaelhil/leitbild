@@ -270,6 +270,25 @@ impl Model {
         captures: &mut [f64],
         births: &mut [f64],
     ) -> Result<(), &'static str> {
+        self.apply_inner(work, n, rates, captures, births, None)
+    }
+    /// Preserve the ordinary paid events, exposing their per-material-volume
+    /// density to physical sub-incidence consumers. Empty reachable rows use
+    /// the same coefficient primitive at unit material volume; no 0/0, floor,
+    /// or extra full capture traversal is introduced.
+    pub(crate) fn apply_with_birth_density(
+        &self, work: &Workspace, amounts: &[f64], n: &[f64], rates: &mut [f64],
+        captures: &mut [f64], births: &mut [f64], density: &mut [f64],
+    ) -> Result<(), &'static str> {
+        if amounts.len() != self.target_count || amounts.iter().any(|x| !x.is_finite() || *x < 0.)
+            || density.len() != self.birth_count()
+        { return Err("Invalid passive birth-density application"); }
+        self.apply_inner(work, n, rates, captures, births, Some((amounts, density)))
+    }
+    fn apply_inner(
+        &self, work: &Workspace, n: &[f64], rates: &mut [f64], captures: &mut [f64],
+        births: &mut [f64], mut density: Option<(&[f64], &mut [f64])>,
+    ) -> Result<(), &'static str> {
         if !work.valid
             || !Arc::ptr_eq(&work.owner, &self.owner)
             || n.len() != self.volumes.len() * GROUPS
@@ -284,16 +303,28 @@ impl Model {
             return Err("Invalid passive source application");
         }
         let mut i = 0;
-        for e in &self.intersections {
+        for (j, e) in self.intersections.iter().enumerate() {
             for t in &self.stocks[e.stock].targets {
                 let mut event = 0.;
+                let mut empty_density = 0.;
                 for g in 0..GROUPS {
                     let r = work.capture[i][g] * n[e.region * GROUPS + g];
                     rates[e.region * GROUPS + g] -= r;
                     event += r;
+                    if work.volumes[j] == 0. {
+                        if let Some((amounts, _)) = &density {
+                            empty_density += capture_coefficient(amounts[t.index],
+                                1. / self.stocks[e.stock].volume, t.sigma_m2[g],
+                                self.volumes[e.region], self.speed[g]) * n[e.region * GROUPS + g];
+                        }
+                    }
                 }
                 captures[t.index] += event;
                 births[i] = event;
+                if let Some((_, d)) = &mut density {
+                    d[i] = if work.volumes[j] > 0. { event / work.volumes[j] } else { empty_density };
+                    if !d[i].is_finite() { return Err("Invalid passive birth density"); }
+                }
                 i += 1;
             }
         }

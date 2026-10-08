@@ -2,13 +2,15 @@
  * Immutable transverse clips are prepared once. Actual per-cluster axial poses
  * change only intersections; no target, product, thermal or neutron state is
  * prepared, normalized or copied here. */
-import {controlBodyPrimitives, type PassiveStock} from './reference-design-source-passive'
+import {controlBodyPrimitives,controlSteelPrimitives,type PassiveStock} from './reference-design-source-passive'
 import {diskRectangleArea, type SourceRegion} from './reference-design-source-partition'
 
 type Inputs=Parameters<typeof controlBodyPrimitives>[0]&{primary:{downcomerBottom_m:number}}
 export type ControlMaterialPose={clusterId:string,body_y_m:number,side:'increasing'|'decreasing'}
 type Span={lo:number,hi:number,area:number}
 export type ControlMaterialMotion=ReturnType<typeof compileControlMaterialMotion>
+export type ControlSteelPose=ControlMaterialPose&{stem_y_m:number;stem_side:ControlMaterialPose['side']}
+export type ControlSteelMotion=ReturnType<typeof compileControlSteelMotion>
 
 export function compileControlMaterialMotion(regions:readonly SourceRegion[],d:Inputs,
  stocks:readonly Pick<PassiveStock,'id'|'material'|'volume_m3'>[]){
@@ -124,5 +126,96 @@ export function controlMaterialMotionAt(plan:ControlMaterialMotion,poses:readonl
   }
  }
  if(values.some(v=>!Number.isFinite(v)))throw Error('Unrepresentable moving BODY incidence')
+ return values
+}
+
+/** Same immutable material/history identities, now for the already mechanical
+ * stem/spider steel. The selected cold domain keeps every distributed piece
+ * inside lumped UPPER. Only real annuli may enter resolved WELL boxes. */
+export function compileControlSteelMotion(regions:readonly SourceRegion[],d:Parameters<typeof controlSteelPrimitives>[0],
+ stocks:readonly Pick<PassiveStock,'id'|'material'|'volume_m3'>[],maximum:{body:number;stem:number}){
+ const {geometry,rows:primitives}=controlSteelPrimitives(d),
+  clusters=geometry.sites.map((s,i)=>({id:`LD01.CR.${String(i+1).padStart(3,'0')}`,prefix:`CONTROL/${s.x}/${s.y}`})),
+  indexes=new Map(stocks.map((s,i)=>[s.id,i])),rows:{cluster:number;stock:number;region:number;motion:'body'|'stem';lo:number;hi:number;spans:Span[]}[]=[],
+  activeBottom=d.handling.seatedBottom_m+d.handling.bottomFittingLength_m,activeTop=activeBottom+d.fuel.activeLength_m,
+  volumes=new Map<number,{volume:number;moment:number;maximum:number}>()
+ if(indexes.size!==stocks.length||new Set(regions.map(r=>r.id)).size!==regions.length)
+  throw Error('Duplicate structural source/material identity')
+ if([maximum.body,maximum.stem].some(v=>!Number.isFinite(v)||v<=0||v>d.control.normalTravel_m))
+  throw Error('Invalid moving structural source domain')
+ for(const [cluster,c]of clusters.entries())for(const family of ['SPIDER','STEM'] as const){
+  const id=c.prefix+'/'+family,stock=indexes.get(id),pieces=primitives.filter(p=>p.stockId===id),motion=family==='SPIDER'?'body':'stem',limit=maximum[motion]
+  if(stock===undefined||pieces.length===0||stocks[stock]!.material!=='steel304')throw Error('Missing moving structural stock '+id)
+  const cross=(p:typeof pieces[number])=>{const s=p.shape
+   if(s.kind==='box'||p.scale!==1)throw Error('Unselected moving structural shape')
+   return s.kind==='distributed'?s.area:Math.PI*(s.outer**2-s.inner**2)
+  },volume=pieces.reduce((v,p)=>v+cross(p)*(p.hi-p.lo),0),moment=pieces.reduce((v,p)=>v+cross(p)*(p.hi-p.lo)*(p.hi+p.lo)/2,0),
+   original=stocks[stock]!.volume_m3
+  if(!(original>0&&Number.isFinite(original))||Math.abs(volume-original)>4e-10*original)
+   throw Error('Structural original volume mismatch '+id)
+  volumes.set(stock,{volume,moment,maximum:limit})
+  for(const p of pieces)if(p.shape.kind==='distributed'&&(p.lo<activeTop||p.hi+limit>d.control.headBottom_m))
+   throw Error('Distributed control steel leaves selected lumped UPPER domain '+id)
+  for(const [region,r]of regions.entries()){
+   if(!['ACTIVE','LOWER','UPPER','WELL'].includes(r.compartment))continue
+   const lo=r.id==='LOWER'?d.primary.downcomerBottom_m:r.id==='UPPER'?activeTop:r.z0_m,
+    hi=r.id==='LOWER'?activeBottom:r.id==='UPPER'?d.control.headBottom_m:r.z1_m
+   if(lo===undefined||hi===undefined||!Number.isFinite(lo+hi)||hi<=lo)throw Error('Missing structural source axial support '+r.id)
+   const spans:Span[]=[]
+   for(const p of pieces){
+    if(p.hi+limit<=lo||p.lo>=hi)continue
+    const s=p.shape
+    if(s.kind==='box')throw Error('Unselected moving structural shape')
+    if(s.kind==='distributed'&&r.box){
+     const x=Math.max(r.box.x0,Math.min(s.x,r.box.x1)),y=Math.max(r.box.y0,Math.min(s.y,r.box.y1))
+     if(Math.hypot(x-s.x,y-s.y)>=s.envelope)continue
+     throw Error('Distributed control steel has no selected transverse source footprint')
+    }
+    const disk=(radius:number)=>{
+     if(s.kind!=='annulus')throw Error('Unselected transverse structural clip')
+     return !r.box?Math.PI*radius**2:radius===0?0:
+      r.box.x1<=s.x-radius||r.box.x0>=s.x+radius||r.box.y1<=s.y-radius||r.box.y0>=s.y+radius?0:
+       diskRectangleArea(radius,{x0:r.box.x0-s.x,x1:r.box.x1-s.x,y0:r.box.y0-s.y,y1:r.box.y1-s.y})
+    }
+    const area=s.kind==='distributed'?s.area:disk(s.outer)-disk(s.inner)
+    if(!Number.isFinite(area)||area<0)throw Error('Invalid moving structural clip '+id)
+    if(area>0)spans.push({lo:p.lo,hi:p.hi,area})
+   }
+   if(spans.length)rows.push({cluster,stock,region,motion,lo,hi,spans})
+  }
+ }
+ // V and J are linear/quadratic between cuts; evaluate every cut and interval,
+ // including both legal one-sided derivatives. Missing support never rescales.
+ for(const [stock,expected]of volumes){const local=rows.filter(r=>r.stock===stock),cuts=new Set([0,expected.maximum])
+  for(const r of local)for(const s of r.spans)for(const y of [r.lo-s.lo,r.lo-s.hi,r.hi-s.lo,r.hi-s.hi])
+   if(y>0&&y<expected.maximum)cuts.add(y)
+  const sorted=[...cuts].sort((a,b)=>a-b),probes=[...sorted,...sorted.slice(1).map((y,i)=>(y+sorted[i]!)/2)]
+  for(const y of probes)for(const right of [false,true]){
+   if((y===0&&!right)||(y===expected.maximum&&right))continue
+   let V=0,J=0,dV=0,dJ=0
+   for(const r of local)for(const s of r.spans){const v=clip(s,r,y,right);V+=v[0];dV+=v[1];J+=v[2];dJ+=v[3]}
+   const tolerance=4e-10*expected.volume,lengthScale=Math.max(1,Math.abs(expected.moment/expected.volume)+expected.maximum)
+   if(Math.abs(V-expected.volume)>tolerance||Math.abs(J-expected.moment-expected.volume*y)>tolerance*lengthScale
+    ||Math.abs(dV)>tolerance||Math.abs(dJ-expected.volume)>tolerance)
+    throw Error('Incomplete moving structural source coverage '+stocks[stock]!.id+' at '+y)
+  }
+ }
+ return {clusters,rows,maximum,stockIds:stocks.map(s=>s.id),regionIds:regions.map(r=>r.id)}
+}
+
+export function controlSteelMotionAt(plan:ControlSteelMotion,poses:readonly ControlSteelPose[]){
+ if(poses.length!==plan.clusters.length)throw Error('Structural cluster pose coverage')
+ for(const [i,p]of poses.entries())for(const motion of ['body','stem'] as const){
+  const y=motion==='body'?p.body_y_m:p.stem_y_m,side=motion==='body'?p.side:p.stem_side
+  if(p.clusterId!==plan.clusters[i]!.id||!Number.isFinite(y)||y<0||y>plan.maximum[motion]
+   ||!['increasing','decreasing'].includes(side)||(y===0&&side==='decreasing')||(y===plan.maximum[motion]&&side==='increasing'))
+   throw Error('Invalid or reordered moving structural pose')
+ }
+ const values=new Float64Array(plan.rows.length*4)
+ for(const [i,r]of plan.rows.entries()){const p=poses[r.cluster]!,y=r.motion==='body'?p.body_y_m:p.stem_y_m,
+  right=(r.motion==='body'?p.side:p.stem_side)==='increasing'
+  for(const s of r.spans){const v=clip(s,r,y,right);for(let k=0;k<4;k++)values[4*i+k]!+=v[k]!}
+ }
+ if(values.some(v=>!Number.isFinite(v)))throw Error('Unrepresentable moving structural incidence')
  return values
 }

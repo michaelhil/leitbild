@@ -54,13 +54,46 @@ describe('actual open annular guide limits',()=>{
   expect(()=>parseControlAbsorber('')).toThrow('one')
   expect(()=>parseControlAbsorber('```reference-control-absorber\n{}\n```\n')).toThrow()
  })
- test('gap spring stores one finitejoule, not a new rod release store',()=>{
-  const r=gapReleaseLimit({gapArmature_kg:1,gapSpring_N_m:20000,gapDamping_N_s_m:20,gapStroke_m:.01})
+ test('downward armature pays gravity, damping and stop heat from its finite stores',()=>{
+  const q={gapArmature_kg:1,gapSpring_N_m:20000,gapDamping_N_s_m:20,gapStroke_m:.01,gravity_m_s2:9.80665},r=gapReleaseLimit(q),
+   old=gapReleaseLimit({...q,gravity_m_s2:0})
   expect(r.initialSpring_J).toBe(1)
+  expect(r.openingDirection).toBe('axial-downward')
+  expect(r.gapElevationChange_m).toBe(-.01)
+  expect(r.gravitationalPotentialChange_J).toBe(-.0980665)
   expect(r.dampingHeat_J).toBeGreaterThan(0)
   expect(r.stopHeat_J).toBeGreaterThan(0)
-  expect(r.dampingHeat_J+r.stopHeat_J).toBeCloseTo(r.initialSpring_J,14)
+  expect(r.dampingHeat_J+r.stopHeat_J+r.gravitationalPotentialChange_J).toBeCloseTo(r.initialSpring_J,14)
+  expect(r.minimumClosureWork_J).toBeCloseTo(1.0980665,14)
+  expect(r.gapFirstEntry_s).toBeLessThan(old.gapFirstEntry_s)
+  expect(r.arrivalSpeed_m_s).toBeGreaterThan(old.arrivalSpeed_m_s)
   expect(r.gapFirstEntry_s).toBeGreaterThan(0)
+  const alpha=q.gapDamping_N_s_m/(2*q.gapArmature_kg),omega=Math.sqrt(q.gapSpring_N_m/q.gapArmature_kg-alpha*alpha)
+  expect(old.gapFirstEntry_s).toBeCloseTo((Math.PI-Math.atan(omega/alpha))/omega,15)
+  expect(old.dampingHeat_J+old.stopHeat_J).toBeCloseTo(1,14)
+ })
+ test('independent Newton integration locates the downward armature and damping receipt',()=>{
+  const q={gapArmature_kg:1,gapSpring_N_m:20000,gapDamping_N_s_m:20,gapStroke_m:.01,gravity_m_s2:9.80665},r=gapReleaseLimit(q),
+   steps=2000,dt=r.gapFirstEntry_s/steps,
+   rhs=(s:readonly number[])=>[s[1]!,
+    (q.gapSpring_N_m*(q.gapStroke_m-s[0]!)-q.gapDamping_N_s_m*s[1]!)/q.gapArmature_kg+q.gravity_m_s2,
+    q.gapDamping_N_s_m*s[1]!**2],
+   shifted=(s:readonly number[],v:readonly number[],factor:number)=>s.map((x,i)=>x+factor*v[i]!)
+  let s=[0,0,0]
+  for(let i=0;i<steps;i++){
+   const a=rhs(s),b=rhs(shifted(s,a,dt/2)),c=rhs(shifted(s,b,dt/2)),d=rhs(shifted(s,c,dt))
+   s=s.map((x,j)=>x+dt*(a[j]!+2*b[j]!+2*c[j]!+d[j]!)/6)
+  }
+  expect(s[0]!).toBeCloseTo(q.gapStroke_m,13)
+  expect(s[1]!).toBeCloseTo(r.arrivalSpeed_m_s,11)
+  expect(s[2]!).toBeCloseTo(r.dampingHeat_J,11)
+  expect(s[2]!+.5*q.gapArmature_kg*s[1]!**2-q.gapArmature_kg*q.gravity_m_s2*s[0]!).toBeCloseTo(r.initialSpring_J,11)
+ })
+ test('unselected or nonfinite armature limits refuse rather than fabricate a stop result',()=>{
+  const q={gapArmature_kg:1,gapSpring_N_m:20000,gapDamping_N_s_m:20,gapStroke_m:.01,gravity_m_s2:9.80665}
+  for(const patch of [{gapArmature_kg:0},{gapSpring_N_m:0},{gapDamping_N_s_m:0},
+   {gapDamping_N_s_m:2*Math.sqrt(q.gapArmature_kg*q.gapSpring_N_m)},{gapStroke_m:0},
+   {gravity_m_s2:-1},{gravity_m_s2:NaN}])expect(()=>gapReleaseLimit({...q,...patch})).toThrow('Unadmitted')
  })
  test('reference, body, failed-head coupling and slip pay the same ledger',()=>{
   const cases=[{traction_N:400,referenceSpeed_m_s:.008,bodySpeed_m_s:.008,headSpeed_m_s:0,deliveredPower_W:10},
