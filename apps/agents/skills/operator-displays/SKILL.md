@@ -18,7 +18,7 @@ Fill the plan fields of `world.process-plant.display.compose` before choosing si
 - `need`: the decision or watch the display supports.
 - each signal's `role`: `primary` for what the question is about, `context` for comparison (for example the healthy loop), `counter-evidence` for a signal that would look different if your diagnosis were wrong. Include one whenever you state a diagnosis.
 
-Prefer the smallest display that answers the question, usually one trend, using exact tagIds or paths from the evidence you analysed. Panels (at most four):
+Start from one trend of the signals the question is about, using exact tagIds or paths from the evidence you analysed. Add another panel only for a part of the question that trend cannot answer, and show each signal in one panel only; most answers need one or two panels. Panels (at most four):
 
 - `trend`: how one to three numeric signals of one unit are changing. Choose the horizon by how fast they move: `2m` for fast pressure or power transients, `10m` for most levels and temperatures, `30m` for slow drifts. A second trend with the same horizon stacks a related signal in another unit, such as feed flow under a level.
 - `comparison`: which of two to six parallel signals of one unit differs, such as the loops.
@@ -40,4 +40,4 @@ Write the answer first, then end it with this block, copying `viewRef` from the 
 view <viewRef>
 ```
 
-Keep the text to the assessment, the decisive values with their simulation time, and the recommended action or what to watch next. The display already shows the trends, current values, thresholds and alarms listed in the result's `shows`; refer to it ("see the trend below") instead of listing them again.
+With a display, keep the text to at most five short lines: the assessment, the one or two decisive values with their simulation time, and the recommended action or what to watch next. The display already shows the trends, current values, thresholds and alarms listed in the result's `shows`; refer to it ("see the trend below") instead of listing them again.
