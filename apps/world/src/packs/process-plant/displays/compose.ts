@@ -298,14 +298,21 @@ const relatedRuleIds = (panels: ReadonlyArray<CompiledComposedPanel>): ReadonlyA
     ...pen.combinedRules.filter(rule => rule.kind !== 'control').map(rule => rule.ruleId),
   ])))].sort()
 
+/**
+ * `compose` applies the authoring rules (panel counts, size budget, one panel
+ * per signal, a primary signal) that keep new displays lean. `view` re-opens a
+ * display already shown in a conversation: it checks only what rendering
+ * needs, so a later authoring rule never breaks earlier advice.
+ */
 export const compileComposedDisplay = (
   system: ProcessPlantRuntimeInstance,
   input: unknown,
+  purpose: 'compose' | 'view',
 ): ComposedDisplayCompileResult => {
   const parsed = composedDisplayCompositionSchema.safeParse(input)
   if (!parsed.success) return { ok: false, issues: zodIssues(parsed.error) }
   const composition = parsed.data
-  const issues: ComposedDisplayIssue[] = [...compositionIssues(composition)]
+  const issues: ComposedDisplayIssue[] = purpose === 'compose' ? [...compositionIssues(composition)] : []
   if (composition.plantId !== system.plant.id) {
     issues.push({ path: 'plantId', message: `composition targets ${composition.plantId}, not ${system.plant.id}` })
   }
@@ -348,6 +355,10 @@ export const composedDisplayWarnings = (display: CompiledComposedDisplay): Reado
     ...pen.combinedRules.map(rule => `${pen.tagId ?? pen.path} also feeds the combined rule "${rule.label}" (${rule.kind}); it is listed, not drawn.`),
   ])
 })
+
+/** Why a display already shown in a conversation can no longer be drawn. */
+export const formatComposedViewIssues = (issues: ReadonlyArray<ComposedDisplayIssue>): string =>
+  `This display can no longer be shown for the current Plant model: ${issues.map(issue => `${issue.path}: ${issue.message}`).join('; ')}`
 
 export const formatComposedDisplayIssues = (issues: ReadonlyArray<ComposedDisplayIssue>): string => [
   `Display composition rejected (${issues.length} issue${issues.length === 1 ? '' : 's'}); nothing will be shown. Fix every issue and call world.process-plant.display.compose again:`,

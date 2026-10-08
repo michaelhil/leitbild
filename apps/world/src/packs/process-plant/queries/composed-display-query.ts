@@ -16,6 +16,7 @@ import {
   composedDisplayShows,
   composedDisplayWarnings,
   formatComposedDisplayIssues,
+  formatComposedViewIssues,
 } from '../displays/compose.ts'
 import { requirePlant } from './common.ts'
 
@@ -40,9 +41,9 @@ export const displaySampleQuerySchema = z.object({
   alarms: z.boolean().default(false),
 }).strict()
 
-const compiledOrRejected = (system: ProcessPlantRuntimeInstance, composition: unknown) => {
-  const result = compileComposedDisplay(system, composition)
-  if (!result.ok) return rejectCapabilityInput(formatComposedDisplayIssues(result.issues))
+const compiledOrRejected = (system: ProcessPlantRuntimeInstance, composition: unknown, purpose: 'compose' | 'view') => {
+  const result = compileComposedDisplay(system, composition, purpose)
+  if (!result.ok) return rejectCapabilityInput(purpose === 'compose' ? formatComposedDisplayIssues(result.issues) : formatComposedViewIssues(result.issues))
   return result.display
 }
 
@@ -59,7 +60,7 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
   if (config.request.capabilityId === 'world.process-plant.display.compose') {
     const plantId = idSchema.parse((config.request.input as { plantId?: unknown } | null)?.plantId)
     const system = requirePlant(config.plants, plantId)
-    const display = compiledOrRejected(system, config.request.input)
+    const display = compiledOrRejected(system, config.request.input, 'compose')
     const state = composedDisplayStateSchema.parse({
       composition: composedDisplayCompositionSchema.parse(config.request.input),
       issuedAt: simulationTime,
@@ -86,7 +87,7 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
     if (!parsedState.success) return rejectCapabilityInput(`Unsupported display format: ${parsedState.error.message}`)
     const state = parsedState.data
     if (state.composition.plantId !== payload.plantId) return rejectCapabilityInput(`Display state targets ${state.composition.plantId}, not ${payload.plantId}`)
-    const display = compiledOrRejected(system, state.composition)
+    const display = compiledOrRejected(system, state.composition, 'view')
     return {
       plantId: display.plantId,
       // The asset label distinguishes identical units; null when the Plant has no projected asset.

@@ -249,6 +249,24 @@ describe('world.process-plant.display.view and sample', () => {
     expect(view.display.panels[0]!.pens[0]!.thresholds.length).toBe(8)
   })
 
+  test('view keeps rendering displays that later authoring rules would reject', () => {
+    const repeated = {
+      ...composition([]),
+      panels: [
+        { kind: 'trend', horizon: '10m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },
+        { kind: 'readouts', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },
+      ],
+    }
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', repeated))).toContain('show each signal in one panel only')
+    const state = JSON.stringify({ composition: repeated, issuedAt: simulationTime, modelDigest: compiled.modelDigest })
+    const view = ask('world.process-plant.display.view', { plantId: compiled.id, state }) as { display: { panels: unknown[] } }
+    expect(view.display.panels).toHaveLength(2)
+    const missing = JSON.stringify({ composition: { ...repeated, panels: [{ kind: 'trend', horizon: '10m', signals: [{ ref: 'NO-SUCH-TAG', role: 'primary' }] }] }, issuedAt: simulationTime, modelDigest: compiled.modelDigest })
+    const message = rejectionOf(() => ask('world.process-plant.display.view', { plantId: compiled.id, state: missing }))
+    expect(message).toStartWith('This display can no longer be shown for the current Plant model')
+    expect(message).not.toContain('call world.process-plant.display.compose')
+  })
+
   test('view refuses unsupported formats and another Plant', () => {
     expect(rejectionOf(() => ask('world.process-plant.display.view', { plantId: compiled.id, state: '{"composition":{}}' }))).toContain('Unsupported display format')
     const foreign = JSON.stringify({ ...JSON.parse(composed.view.state), composition: { ...JSON.parse(composed.view.state).composition, plantId: 'plant:other' } })
