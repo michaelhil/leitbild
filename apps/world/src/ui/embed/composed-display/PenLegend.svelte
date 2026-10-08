@@ -29,6 +29,7 @@
         offText="—"
         unit={unitLabel(pen.unit)}
         fractionDigits={typeof value === 'number' ? valueDigits(value) : 0}
+        direction="horizontal"
         size="small"
       ></obc-readout>
       {#if entry?.quality === 'outside-hard-range'}<span class="quality">outside range</span>{/if}

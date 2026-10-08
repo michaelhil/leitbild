@@ -20,7 +20,7 @@
     <li class:primary={pen.role === 'primary'} title={`${pen.label} · ${pen.role}`}>
       <span class="tag">{pen.tagId ?? pen.path}</span>
       {#if typeof value === 'boolean'}
-        <obc-readout value={value ? 'yes' : 'no'} valueType="text" label={pen.label} size="small"></obc-readout>
+        <span class="state"><obc-readout value={value ? 'yes' : 'no'} valueType="text" direction="horizontal" size="small"></obc-readout><span class="label">{pen.label.toLowerCase()}</span></span>
       {:else}
         <obc-readout
           value={typeof value === 'number' ? value : null}
@@ -28,6 +28,7 @@
           offText="—"
           unit={unitLabel(pen.unit)}
           fractionDigits={typeof value === 'number' ? valueDigits(value) : 0}
+          direction="horizontal"
           size="small"
         ></obc-readout>
       {/if}
@@ -45,6 +46,8 @@
   li { display: flex; flex-direction: column; justify-content: center; min-width: 0; padding: 2px 8px; border-left: 2px solid var(--border-divider-color); }
   li.primary { border-left-color: var(--element-active-color); }
   .tag { font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .state { display: flex; align-items: baseline; gap: 6px; }
+  .label { font-size: 11px; color: var(--element-neutral-color); }
   .margin { font-size: 11px; color: var(--element-neutral-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .margin.beyond { color: var(--alert-caution-color); font-weight: 600; }
 </style>
