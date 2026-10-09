@@ -1,6 +1,6 @@
 //! Shared existing cold qualification trial-domain and error-scale policy.
 //! The advancing and fixed-stage entries must not maintain different lists.
-use leitbild_plant_numerics::source_cooling;
+use leitbild_plant_numerics::{control_source_geometry, source_cooling};
 pub(super) fn progress_relative(model: &source_cooling::Model, row: usize) -> bool {
     row < model.layout.source_end
         || (model.layout.carrier_start..model.layout.energies_start).contains(&row)
@@ -45,5 +45,20 @@ pub(super) fn recoverable(error: &str) -> bool {
             | "PZR pool left selected covered cold envelope"
             | "PZR metal caloric domain"
             | "Cold PZR interface left dilute separated-water branch"
-    ) || error.starts_with("Invalid water trial ")
+    ) || error == control_source_geometry::OUTSIDE_TRIAL_DOMAIN
+        || error.starts_with("Invalid water trial ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn only_the_finite_control_trial_domain_is_retryable() {
+        assert!(recoverable(control_source_geometry::OUTSIDE_TRIAL_DOMAIN));
+        for e in ["Nonfinite current control geometry pose/direction",
+            "Current control pose inconsistent with retained branch",
+            "Wrong current cluster geometry/workspace shape"] {
+            assert!(!recoverable(e));
+        }
+    }
 }

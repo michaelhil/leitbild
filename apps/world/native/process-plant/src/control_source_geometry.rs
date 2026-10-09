@@ -4,6 +4,11 @@
 use crate::{absorber_guide as ag, mobile_capture as mc, source_evolution as se};
 use std::sync::Arc;
 
+/// A finite nonlinear solver prediction may leave this selected numerical
+/// domain. The solver may reject that prediction; an accepted state may not.
+/// Workspace, nonfinite-input and retained-branch errors are distinct and fatal.
+pub const OUTSIDE_TRIAL_DOMAIN: &str = "Finite current pose outside selected cold support domain";
+
 #[derive(Clone, Copy, Debug)]
 pub struct Pose {
     pub body: f64,
@@ -676,15 +681,21 @@ impl Prepared {
             if ![p.body, p.stem, d.body, d.stem]
                 .into_iter()
                 .all(f64::is_finite)
-                || p.body < 0.
+            {
+                return Err("Nonfinite current control geometry pose/direction");
+            }
+            if p.body < 0.
                 || p.body > i.maximum_body
                 || p.stem < i.minimum_stem
                 || p.stem > i.maximum_stem
-                || (p.body == 0. && !p.body_right)
+            {
+                return Err(OUTSIDE_TRIAL_DOMAIN);
+            }
+            if (p.body == 0. && !p.body_right)
                 || (p.stem == i.minimum_stem && !p.stem_right)
                 || (p.seated && p.body != 0.)
             {
-                return Err("Current pose outside selected cold support branch");
+                return Err("Current control pose inconsistent with retained branch");
             }
         }
         let y = |k: usize, m: Motion| match m {
@@ -1245,6 +1256,21 @@ mod tests {
             stem_right: true,
             seated: false,
         }
+    }
+    #[test]
+    fn finite_trial_domain_refusal_does_not_hide_bad_input_or_retained_branch() {
+        let p=model();let mut w=p.workspace();let zero=[Direction::default()];
+        for s in [pose(-1e-9,0.1),pose(0.500001,0.1),pose(0.1,-1e-9),pose(0.1,0.500001)] {
+            assert_eq!(p.evaluate_into(&[s],&zero,&mut w),Err(OUTSIDE_TRIAL_DOMAIN));
+            assert!(!w.valid());
+        }
+        for s in [pose(f64::NAN,0.1),Pose{body_right:false,..pose(0.,0.1)},
+            Pose{seated:true,..pose(0.1,0.1)}] {
+            let e=p.evaluate_into(&[s],&zero,&mut w).unwrap_err();
+            assert_ne!(e,OUTSIDE_TRIAL_DOMAIN);assert!(!w.valid());
+        }
+        let e=p.evaluate_into(&[],&zero,&mut w).unwrap_err();
+        assert_ne!(e,OUTSIDE_TRIAL_DOMAIN);
     }
     #[test]
     fn selected_signed_stem_crosses_original_plane_and_stops_at_actual_minimum() {
