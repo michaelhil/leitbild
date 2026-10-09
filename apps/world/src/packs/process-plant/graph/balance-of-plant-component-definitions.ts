@@ -1,14 +1,15 @@
 import { z } from 'zod'
 import type { ComponentDefinition, ComponentKind } from './model.ts'
 import { defineComponent, normalized, variable } from './component-definition-helpers.ts'
+import { aspect, fixedSemantics } from './semantics.ts'
 
 export const balanceOfPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
   defineComponent({
     kind: 'processTank' as ComponentKind,
     label: 'Process Tank',
     ports: {
-      inlet: { kind: 'hydraulicThermal', direction: 'in' },
-      outlet: { kind: 'hydraulicThermal', direction: 'out' },
+      inlet: { kind: 'hydraulicThermal', direction: 'in', circuit: 'flow' },
+      outlet: { kind: 'hydraulicThermal', direction: 'out', circuit: 'flow' },
     },
     parametersSchema: z.object({
       nominalInventoryKg: z.number().finite().positive(),
@@ -20,12 +21,13 @@ export const balanceOfPlantComponentDefinitions: ReadonlyArray<ComponentDefiniti
       maxOutletFlowKgPerS: z.number().finite().nonnegative(),
       thermalTimeConstantS: z.number().finite().positive().optional(),
     }).strict(),
+    semantics: fixedSemantics({ aspects: [aspect('level', { variable: 'levelPercent', reading: 'value' })], ratedOutflow: [{ port: 'outlet', parameter: 'maxOutletFlowKgPerS' }] }),
     variables: [
       variable({ path: 'inventoryKg', label: 'Tank inventory', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg' }),
-      variable({ path: 'levelPercent', label: 'Tank level', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'percent' }),
+      variable({ path: 'levelPercent', label: 'Tank level', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', measurand: 'level', quantity: 'ratio', unit: 'percent' }),
       variable({ path: 'temperatureC', label: 'Tank temperature', kind: 'state', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
       variable({ path: 'soluteConcentrationPpm', label: 'Tank solute concentration', kind: 'state', discipline: 'chemical', writable: false, publish: 'telemetry', quantity: 'concentration', unit: 'ppm' }),
-      variable({ path: 'makeupFlowKgPerS', label: 'Tank makeup flow', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+      variable({ path: 'makeupFlowKgPerS', label: 'Tank makeup flow', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'boundary', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'availableOutletFlowKgPerS', label: 'Available outlet flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
     ],
   }),
@@ -33,8 +35,8 @@ export const balanceOfPlantComponentDefinitions: ReadonlyArray<ComponentDefiniti
     kind: 'turbineLoadSink' as ComponentKind,
     label: 'Turbine Load Sink',
     ports: {
-      steamInlet: { kind: 'steam', direction: 'in' },
-      exhaustSteamOutlet: { kind: 'steam', direction: 'out' },
+      steamInlet: { kind: 'steam', direction: 'in', circuit: 'steam' },
+      exhaustSteamOutlet: { kind: 'steam', direction: 'out', circuit: 'steam' },
       loadDemand: { kind: 'controlSignal', direction: 'in' },
       generatorOutput: { kind: 'electricalAc', direction: 'out' },
     },
@@ -48,12 +50,13 @@ export const balanceOfPlantComponentDefinitions: ReadonlyArray<ComponentDefiniti
       exhaustTemperatureAtFullLoadC: z.number().finite().optional(),
       exhaustTemperatureAtNoLoadC: z.number().finite().optional(),
     }),
+    semantics: fixedSemantics({ aspects: [aspect('running', { variable: 'electricMw', reading: 'aboveZero' })], ratedOutflow: [{ port: 'exhaustSteamOutlet', parameter: 'nominalSteamFlowKgPerS' }] }),
     variables: [
       variable({ path: 'electricMw', label: 'Electrical output', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
-      variable({ path: 'loadFraction', label: 'Load demand', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
+      variable({ path: 'loadFraction', label: 'Load demand', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'command', measurand: 'load', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
       variable({ path: 'steamFlowKgPerS', label: 'Turbine steam flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'steamDemandKgPerS', label: 'Turbine steam demand', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
-      variable({ path: 'steamAvailabilityFraction', label: 'Turbine steam availability', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
+      variable({ path: 'steamAvailabilityFraction', label: 'Turbine steam availability', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', measurand: 'availability', quantity: 'ratio', unit: 'fraction' }),
       variable({ path: 'exhaustTemperatureC', label: 'Turbine exhaust temperature', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
     ],
   }),
@@ -61,10 +64,10 @@ export const balanceOfPlantComponentDefinitions: ReadonlyArray<ComponentDefiniti
     kind: 'condenserSink' as ComponentKind,
     label: 'Condenser Sink',
     ports: {
-      steamInlet: { kind: 'steam', direction: 'in' },
-      condensateOutlet: { kind: 'hydraulicThermal', direction: 'out' },
-      coolingWater: { kind: 'hydraulicThermal', direction: 'in' },
-      coolingWaterOutlet: { kind: 'hydraulicThermal', direction: 'out' },
+      steamInlet: { kind: 'steam', direction: 'in', circuit: 'condensing' },
+      condensateOutlet: { kind: 'hydraulicThermal', direction: 'out', circuit: 'condensing' },
+      coolingWater: { kind: 'hydraulicThermal', direction: 'in', circuit: 'cooling' },
+      coolingWaterOutlet: { kind: 'hydraulicThermal', direction: 'out', circuit: 'cooling' },
     },
     parametersSchema: z.object({
       coolingWaterTemperatureC: z.number().finite(),
@@ -80,12 +83,13 @@ export const balanceOfPlantComponentDefinitions: ReadonlyArray<ComponentDefiniti
       condenserThermalTimeConstantS: z.number().finite().positive().optional(),
       exhaustCondensationTemperatureC: z.number().finite().optional(),
     }),
+    semantics: fixedSemantics({ aspects: [aspect('level', { variable: 'condensateLevelPercent', reading: 'value' })], ratedOutflow: [{ port: 'condensateOutlet', parameter: 'maxCondensateOutletFlowKgPerS' }, { port: 'coolingWaterOutlet', parameter: 'nominalCoolingWaterFlowKgPerS' }] }),
     variables: [
       variable({ path: 'steamFlowKgPerS', label: 'Condenser steam flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'condensateProductionKgPerS', label: 'Condensate production', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'heatRejectedMw', label: 'Condenser heat rejected', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
       variable({ path: 'condensateInventoryKg', label: 'Condensate inventory', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg' }),
-      variable({ path: 'condensateLevelPercent', label: 'Condensate level', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'percent' }),
+      variable({ path: 'condensateLevelPercent', label: 'Condensate level', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', measurand: 'level', quantity: 'ratio', unit: 'percent' }),
       variable({ path: 'availableCondensateOutletFlowKgPerS', label: 'Available condensate outlet flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'condensateTemperatureC', label: 'Condensate temperature', kind: 'state', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
       variable({ path: 'backPressurePa', label: 'Condenser back pressure', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'pressure', unit: 'Pa' }),
@@ -93,7 +97,7 @@ export const balanceOfPlantComponentDefinitions: ReadonlyArray<ComponentDefiniti
       variable({ path: 'coolingWaterInletTemperatureC', label: 'Condenser cooling-water inlet temperature', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
       variable({ path: 'coolingWaterOutletTemperatureC', label: 'Condenser cooling-water outlet temperature', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
       variable({ path: 'coolingWaterHeatCapacityMw', label: 'Condenser cooling-water heat capacity', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
-      variable({ path: 'coolingWaterAvailabilityFraction', label: 'Condenser cooling-water availability', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
+      variable({ path: 'coolingWaterAvailabilityFraction', label: 'Condenser cooling-water availability', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', measurand: 'availability', quantity: 'ratio', unit: 'fraction' }),
     ],
   }),
 ]

@@ -1,4 +1,5 @@
 import type { CompiledProcessLink, DesignPhase, FluidKind, FluidSolverModel, LocalVariablePath } from './model.ts'
+import type { RatioMeasurand, VariableActuation } from './semantics.ts'
 
 interface FluidLinkContract {
   readonly solverModel: FluidSolverModel
@@ -64,6 +65,16 @@ const fluidLinkContracts: Readonly<Record<FluidSolverModel, FluidLinkContract>> 
     ]),
   },
 }
+
+// What link variables are, declared once with the contracts rather than per link.
+const linkVariableSemantics: Readonly<Record<string, { readonly actuation?: VariableActuation; readonly measurand?: RatioMeasurand }>> = {
+  'leak.areaFraction': { actuation: 'faultInjection', measurand: 'leak' },
+  qualityFraction: { measurand: 'quality' },
+  voidFraction: { measurand: 'void' },
+}
+
+export const linkVariableSemanticsFor = (path: LocalVariablePath | string): { readonly actuation?: VariableActuation; readonly measurand?: RatioMeasurand } =>
+  linkVariableSemantics[String(path)] ?? {}
 
 const localVariablePathsFor = (link: CompiledProcessLink): ReadonlySet<string> =>
   new Set(link.variables.map(variable => String(variable.path).slice(String(link.id).length + 1)))

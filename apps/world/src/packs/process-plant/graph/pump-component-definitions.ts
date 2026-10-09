@@ -1,14 +1,15 @@
 import { z } from 'zod'
 import type { ComponentDefinition, ComponentKind } from './model.ts'
 import { defineComponent, variable } from './component-definition-helpers.ts'
+import { aspect, fixedSemantics } from './semantics.ts'
 
 export const pumpComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
   defineComponent({
     kind: 'centrifugalPump' as ComponentKind,
     label: 'Centrifugal Pump',
     ports: {
-      inlet: { kind: 'hydraulicThermal', direction: 'in' },
-      outlet: { kind: 'hydraulicThermal', direction: 'out' },
+      inlet: { kind: 'hydraulicThermal', direction: 'in', circuit: 'flow' },
+      outlet: { kind: 'hydraulicThermal', direction: 'out', circuit: 'flow' },
       speedDemand: { kind: 'controlSignal', direction: 'in' },
       power: { kind: 'electricalAc', direction: 'in' },
     },
@@ -27,9 +28,10 @@ export const pumpComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       hydraulicEfficiencyFraction: z.number().finite().positive().max(1).optional(),
       fluidDensityKgPerM3: z.number().finite().positive().optional(),
     }),
+    semantics: fixedSemantics({ aspects: [aspect('running', { variable: 'speedRpm', reading: 'aboveZero' }, 'running')], ratedOutflow: [{ port: 'outlet', parameter: 'nominalFlowKgPerS' }] }),
     variables: [
-      variable({ path: 'running', label: 'Running', kind: 'discrete', discipline: 'control', writable: true, publish: 'telemetry', quantity: 'boolean', unit: 'boolean' }),
-      variable({ path: 'speedFraction', label: 'Speed', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
+      variable({ path: 'running', label: 'Running', kind: 'discrete', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'command', quantity: 'boolean', unit: 'boolean' }),
+      variable({ path: 'speedFraction', label: 'Speed', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'command', measurand: 'speed', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
       variable({ path: 'speedRpm', label: 'Rotational speed', kind: 'derived', discipline: 'control', writable: false, publish: 'telemetry', quantity: 'rotationalSpeed', unit: 'rpm' }),
       variable({ path: 'flowKgPerS', label: 'Flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'developedHeadPa', label: 'Developed head', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'head', unit: 'Pa' }),

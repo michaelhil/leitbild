@@ -86,7 +86,12 @@
             "rcs.core_exit.thermocouple.avg"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Core"
+        }
+      }
     },
     {
       "id": "vessel",
@@ -168,7 +173,12 @@
             "rcs.subcooling_margin"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RV"
+        }
+      }
     },
     {
       "id": "pressurizer",
@@ -219,13 +229,26 @@
           "equipmentId": "pressurizerReliefValve",
           "description": "Pressurizer relief valve position"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "PZR",
+          "embedded": {
+            "reliefValve": "PORV"
+          }
+        }
+      }
     },
     {
       "id": "pressurizerReliefValve",
       "kind": "processValve",
       "label": "Pressurizer Relief Valve",
-      "parameters": {}
+      "parameters": {},
+      "metadata": {
+        "presentation": {
+          "shortLabel": "PZR relief valve"
+        }
+      }
     },
     {
       "id": "pressurizerReliefTank",
@@ -239,6 +262,11 @@
         "maxOutletFlowKgPerS": 0,
         "thermalTimeConstantS": 120,
         "initialSoluteConcentrationPpm": 1200
+      },
+      "metadata": {
+        "presentation": {
+          "shortLabel": "PRT"
+        }
       }
     },
     {
@@ -302,7 +330,12 @@
           "equipmentId": "sgA",
           "description": "Steam generator A tube leak fraction"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "SG A"
+        }
+      }
     },
     {
       "id": "sgB",
@@ -365,7 +398,12 @@
           "equipmentId": "sgB",
           "description": "Steam generator B tube leak fraction"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "SG B"
+        }
+      }
     },
     {
       "id": "sgC",
@@ -428,7 +466,12 @@
           "equipmentId": "sgC",
           "description": "Steam generator C tube leak fraction"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "SG C"
+        }
+      }
     },
     {
       "id": "sgD",
@@ -491,7 +534,12 @@
           "equipmentId": "sgD",
           "description": "Steam generator D tube leak fraction"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "SG D"
+        }
+      }
     },
     {
       "id": "sgE",
@@ -554,7 +602,12 @@
           "equipmentId": "sgE",
           "description": "Steam generator E tube leak fraction"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "SG E"
+        }
+      }
     },
     {
       "id": "sgF",
@@ -617,7 +670,12 @@
           "equipmentId": "sgF",
           "description": "Steam generator F tube leak fraction"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "SG F"
+        }
+      }
     },
     {
       "id": "rcpA",
@@ -655,7 +713,12 @@
           "equipmentId": "rcpA",
           "description": "Reactor coolant pump A loop flow"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RCP A"
+        }
+      }
     },
     {
       "id": "rcpB",
@@ -693,7 +756,12 @@
           "equipmentId": "rcpB",
           "description": "Reactor coolant pump B loop flow"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RCP B"
+        }
+      }
     },
     {
       "id": "rcpC",
@@ -731,7 +799,12 @@
           "equipmentId": "rcpC",
           "description": "Reactor coolant pump C loop flow"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RCP C"
+        }
+      }
     },
     {
       "id": "rcpD",
@@ -769,7 +842,12 @@
           "equipmentId": "rcpD",
           "description": "Reactor coolant pump D loop flow"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RCP D"
+        }
+      }
     },
     {
       "id": "rcpE",
@@ -807,7 +885,12 @@
           "equipmentId": "rcpE",
           "description": "Reactor coolant pump E loop flow"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RCP E"
+        }
+      }
     },
     {
       "id": "rcpF",
@@ -845,7 +928,12 @@
           "equipmentId": "rcpF",
           "description": "Reactor coolant pump F loop flow"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RCP F"
+        }
+      }
     },
     {
       "id": "mainFeedwaterPumpA",
@@ -864,7 +952,12 @@
           "equipmentId": "mainFeedwaterPumpA",
           "description": "Main feedwater pump A running command/status"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "MFW A"
+        }
+      }
     },
     {
       "id": "mainFeedwaterPumpB",
@@ -883,7 +976,12 @@
           "equipmentId": "mainFeedwaterPumpB",
           "description": "Main feedwater pump B running command/status"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "MFW B"
+        }
+      }
     },
     {
       "id": "feedwaterTank",
@@ -897,13 +995,23 @@
         "maxOutletFlowKgPerS": 1500,
         "thermalTimeConstantS": 90,
         "initialSoluteConcentrationPpm": 0
+      },
+      "metadata": {
+        "presentation": {
+          "shortLabel": "FW tank"
+        }
       }
     },
     {
       "id": "feedwaterHeader",
       "kind": "processHeader",
       "label": "Main Feedwater Header",
-      "parameters": {}
+      "parameters": {},
+      "metadata": {
+        "presentation": {
+          "shortLabel": "MFW header"
+        }
+      }
     },
     {
       "id": "feedwaterControlValveA",
@@ -934,7 +1042,12 @@
             "secondary.mfw.a.cv_position"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "FCV A"
+        }
+      }
     },
     {
       "id": "feedwaterControlValveB",
@@ -953,6 +1066,11 @@
           "minPositionFraction": 0.05,
           "maxPositionFraction": 1,
           "timeConstantS": 6
+        }
+      },
+      "metadata": {
+        "presentation": {
+          "shortLabel": "FCV B"
         }
       }
     },
@@ -974,6 +1092,11 @@
           "maxPositionFraction": 1,
           "timeConstantS": 6
         }
+      },
+      "metadata": {
+        "presentation": {
+          "shortLabel": "FCV C"
+        }
       }
     },
     {
@@ -993,6 +1116,11 @@
           "minPositionFraction": 0.05,
           "maxPositionFraction": 1,
           "timeConstantS": 6
+        }
+      },
+      "metadata": {
+        "presentation": {
+          "shortLabel": "FCV D"
         }
       }
     },
@@ -1014,6 +1142,11 @@
           "maxPositionFraction": 1,
           "timeConstantS": 6
         }
+      },
+      "metadata": {
+        "presentation": {
+          "shortLabel": "FCV E"
+        }
       }
     },
     {
@@ -1033,6 +1166,11 @@
           "minPositionFraction": 0.05,
           "maxPositionFraction": 1,
           "timeConstantS": 6
+        }
+      },
+      "metadata": {
+        "presentation": {
+          "shortLabel": "FCV F"
         }
       }
     },
@@ -1059,7 +1197,12 @@
             "secondary.cst.level"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "AFW tank"
+        }
+      }
     },
     {
       "id": "auxFeedwaterPumpMotor",
@@ -1083,7 +1226,12 @@
             "afw.pump.a.status"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "MD AFW A"
+        }
+      }
     },
     {
       "id": "auxFeedwaterPumpMotorB",
@@ -1106,7 +1254,12 @@
             "afw.pump.b.status"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "MD AFW B"
+        }
+      }
     },
     {
       "id": "auxFeedwaterPumpTurbine",
@@ -1138,7 +1291,12 @@
             "afw.tdafw.turbine_speed"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "TD AFW"
+        }
+      }
     },
     {
       "id": "auxFeedwaterHeader",
@@ -1155,7 +1313,12 @@
             "afw.header.flow"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "AFW header"
+        }
+      }
     },
     {
       "id": "auxFeedwaterValveA",
@@ -1174,7 +1337,12 @@
             "afw.a.cv_position"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "AFW valve A"
+        }
+      }
     },
     {
       "id": "auxFeedwaterValveB",
@@ -1193,7 +1361,12 @@
             "afw.b.cv_position"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "AFW valve B"
+        }
+      }
     },
     {
       "id": "auxFeedwaterValveC",
@@ -1212,7 +1385,12 @@
             "afw.c.cv_position"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "AFW valve C"
+        }
+      }
     },
     {
       "id": "auxFeedwaterValveD",
@@ -1231,7 +1409,12 @@
             "afw.d.cv_position"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "AFW valve D"
+        }
+      }
     },
     {
       "id": "auxFeedwaterValveE",
@@ -1250,7 +1433,12 @@
             "afw.e.cv_position"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "AFW valve E"
+        }
+      }
     },
     {
       "id": "auxFeedwaterValveF",
@@ -1269,7 +1457,12 @@
             "afw.f.cv_position"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "AFW valve F"
+        }
+      }
     },
     {
       "id": "mainSteamIsolationValveA",
@@ -1288,7 +1481,12 @@
             "secondary.msiv.a.position"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "MSIV A"
+        }
+      }
     },
     {
       "id": "mainSteamIsolationValveB",
@@ -1307,7 +1505,12 @@
             "secondary.msiv.b.position"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "MSIV B"
+        }
+      }
     },
     {
       "id": "mainSteamIsolationValveC",
@@ -1326,7 +1529,12 @@
             "secondary.msiv.c.position"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "MSIV C"
+        }
+      }
     },
     {
       "id": "mainSteamIsolationValveD",
@@ -1345,7 +1553,12 @@
             "secondary.msiv.d.position"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "MSIV D"
+        }
+      }
     },
     {
       "id": "mainSteamIsolationValveE",
@@ -1364,7 +1577,12 @@
             "secondary.msiv.e.position"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "MSIV E"
+        }
+      }
     },
     {
       "id": "mainSteamIsolationValveF",
@@ -1383,7 +1601,12 @@
             "secondary.msiv.f.position"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "MSIV F"
+        }
+      }
     },
     {
       "id": "mainSteamHeader",
@@ -1400,7 +1623,12 @@
             "secondary.ms_header.pressure"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Steam header"
+        }
+      }
     },
     {
       "id": "turbineStopValve",
@@ -1408,6 +1636,11 @@
       "label": "Turbine Stop Valve",
       "parameters": {
         "initialPositionFraction": 1
+      },
+      "metadata": {
+        "presentation": {
+          "shortLabel": "TSV"
+        }
       }
     },
     {
@@ -1439,7 +1672,12 @@
           "equipmentId": "turbineBypassValve",
           "description": "Turbine bypass valve position"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Turbine bypass"
+        }
+      }
     },
     {
       "id": "turbine",
@@ -1464,7 +1702,12 @@
           "equipmentId": "turbine",
           "description": "Generator electrical output"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Turbine"
+        }
+      }
     },
     {
       "id": "condenser",
@@ -1491,7 +1734,12 @@
             "secondary.condenser.vacuum"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Condenser"
+        }
+      }
     },
     {
       "id": "ultimateHeatSink",
@@ -1505,6 +1753,11 @@
         "maxOutletFlowKgPerS": 50000,
         "thermalTimeConstantS": 600,
         "initialSoluteConcentrationPpm": 0
+      },
+      "metadata": {
+        "presentation": {
+          "shortLabel": "UHS"
+        }
       }
     },
     {
@@ -1516,6 +1769,11 @@
         "nominalHeadPa": 250000,
         "flowTimeConstantS": 10,
         "maxFlowRampKgPerS2": 6000
+      },
+      "metadata": {
+        "presentation": {
+          "shortLabel": "CW pump"
+        }
       }
     },
     {
@@ -1530,6 +1788,11 @@
         "maxOutletFlowKgPerS": 0,
         "thermalTimeConstantS": 600,
         "initialSoluteConcentrationPpm": 0
+      },
+      "metadata": {
+        "presentation": {
+          "shortLabel": "CW discharge"
+        }
       }
     },
     {
@@ -1541,6 +1804,11 @@
         "nominalHeadPa": 700000,
         "flowTimeConstantS": 8,
         "maxFlowRampKgPerS2": 180
+      },
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Cond pump A"
+        }
       }
     },
     {
@@ -1552,6 +1820,11 @@
         "nominalHeadPa": 700000,
         "flowTimeConstantS": 8,
         "maxFlowRampKgPerS2": 180
+      },
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Cond pump B"
+        }
       }
     },
     {
@@ -1566,6 +1839,11 @@
         "maxOutletFlowKgPerS": 160,
         "thermalTimeConstantS": 120,
         "initialSoluteConcentrationPpm": 1200
+      },
+      "metadata": {
+        "presentation": {
+          "shortLabel": "VCT"
+        }
       }
     },
     {
@@ -1591,7 +1869,12 @@
             "cvcs.bat.level"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "BAT"
+        }
+      }
     },
     {
       "id": "chargingPump",
@@ -1611,7 +1894,12 @@
             "cvcs.charging_pump.a.status"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "CHG A"
+        }
+      }
     },
     {
       "id": "chargingPumpB",
@@ -1632,7 +1920,12 @@
             "cvcs.charging_pump.b.status"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "CHG B"
+        }
+      }
     },
     {
       "id": "letdownValve",
@@ -1651,7 +1944,12 @@
             "cvcs.letdown.isolation"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Letdown"
+        }
+      }
     },
     {
       "id": "boricAcidInjectionValve",
@@ -1664,6 +1962,11 @@
         "strokeCloseTimeS": 3,
         "cvKgPerSPerSqrtMPa": 220,
         "reverseFlowAllowed": false
+      },
+      "metadata": {
+        "presentation": {
+          "shortLabel": "BA valve"
+        }
       }
     },
     {
@@ -1689,7 +1992,12 @@
             "rwst.level"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RWST"
+        }
+      }
     },
     {
       "id": "containmentSprayAdditiveTank",
@@ -1714,7 +2022,12 @@
             "ess.cspray.additive_tank.level"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Spray additive"
+        }
+      }
     },
     {
       "id": "safetyInjectionPumpA",
@@ -1737,7 +2050,12 @@
             "ess.si_pump.a.status"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "HHSI A"
+        }
+      }
     },
     {
       "id": "safetyInjectionPumpB",
@@ -1760,7 +2078,12 @@
             "ess.si_pump.b.status"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "HHSI B"
+        }
+      }
     },
     {
       "id": "safetyInjectionHeader",
@@ -1771,6 +2094,11 @@
         "initialPressureMPa": 1.2,
         "headerVolumeM3": 8,
         "distributionMode": "pressureWeighted"
+      },
+      "metadata": {
+        "presentation": {
+          "shortLabel": "SI header"
+        }
       }
     },
     {
@@ -1794,7 +2122,12 @@
             "ess.cspray_pump.a.status"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "CS A"
+        }
+      }
     },
     {
       "id": "containmentSprayPumpB",
@@ -1817,7 +2150,12 @@
             "ess.cspray_pump.b.status"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "CS B"
+        }
+      }
     },
     {
       "id": "containmentSprayHeader",
@@ -1828,6 +2166,11 @@
         "initialPressureMPa": 0.9,
         "headerVolumeM3": 6,
         "distributionMode": "pressureWeighted"
+      },
+      "metadata": {
+        "presentation": {
+          "shortLabel": "CS header"
+        }
       }
     },
     {
@@ -1851,7 +2194,12 @@
             "ess.rhr_pump.a.status"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RHR A"
+        }
+      }
     },
     {
       "id": "rhrPumpB",
@@ -1874,7 +2222,12 @@
             "ess.rhr_pump.b.status"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RHR B"
+        }
+      }
     },
     {
       "id": "rhrHeader",
@@ -1896,7 +2249,12 @@
             "ess.lo_head.header_flow"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RHR header"
+        }
+      }
     },
     {
       "id": "rhrIsolationValve",
@@ -1918,7 +2276,12 @@
             "ess.rhr.isolation_valve"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RHR iso"
+        }
+      }
     },
     {
       "id": "containment",
@@ -1983,7 +2346,12 @@
             "ess.cspray.header_flow"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "CTMT"
+        }
+      }
     },
     {
       "id": "safetyAccumulatorA",
@@ -2011,7 +2379,12 @@
             "ess.accumulator.1.discharge_valve"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "ACC A"
+        }
+      }
     },
     {
       "id": "safetyAccumulatorB",
@@ -2039,7 +2412,12 @@
             "ess.accumulator.2.discharge_valve"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "ACC B"
+        }
+      }
     },
     {
       "id": "safetyAccumulatorC",
@@ -2067,7 +2445,12 @@
             "ess.accumulator.3.discharge_valve"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "ACC C"
+        }
+      }
     },
     {
       "id": "safetyAccumulatorD",
@@ -2095,7 +2478,12 @@
             "ess.accumulator.4.discharge_valve"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "ACC D"
+        }
+      }
     },
     {
       "id": "safetyAccumulatorE",
@@ -2123,7 +2511,12 @@
             "ess.accumulator.5.discharge_valve"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "ACC E"
+        }
+      }
     },
     {
       "id": "safetyAccumulatorF",
@@ -2151,7 +2544,12 @@
             "ess.accumulator.6.discharge_valve"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "ACC F"
+        }
+      }
     },
     {
       "id": "mainSteamSafetyValve",
@@ -2166,6 +2564,11 @@
         "strokeOpenTimeS": 0.25,
         "strokeCloseTimeS": 1.5,
         "reverseFlowAllowed": false
+      },
+      "metadata": {
+        "presentation": {
+          "shortLabel": "MSSV"
+        }
       }
     },
     {
@@ -2202,7 +2605,12 @@
           "equipmentId": "offsiteGrid",
           "description": "Offsite grid voltage fraction"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Grid"
+        }
+      }
     },
     {
       "id": "unitAuxTransformer",
@@ -2212,7 +2620,12 @@
         "nominalPowerMw": 950,
         "efficiencyFraction": 0.99
       },
-      "variables": []
+      "variables": [],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "UAT"
+        }
+      }
     },
     {
       "id": "safetyBusA",
@@ -2251,7 +2664,12 @@
           "equipmentId": "safetyBusA",
           "description": "Safety bus A degraded-voltage status"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Bus A"
+        }
+      }
     },
     {
       "id": "safetyBusB",
@@ -2290,7 +2708,12 @@
           "equipmentId": "safetyBusB",
           "description": "Safety bus B degraded-voltage status"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Bus B"
+        }
+      }
     },
     {
       "id": "offsiteBreakerA",
@@ -2307,7 +2730,12 @@
           "equipmentId": "offsiteBreakerA",
           "description": "Offsite breaker A closed status"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Offsite BKR A"
+        }
+      }
     },
     {
       "id": "offsiteBreakerB",
@@ -2324,7 +2752,12 @@
           "equipmentId": "offsiteBreakerB",
           "description": "Offsite breaker B closed status"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Offsite BKR B"
+        }
+      }
     },
     {
       "id": "dieselGeneratorA",
@@ -2353,7 +2786,12 @@
             "electrical.dg.a.status"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "EDG A"
+        }
+      }
     },
     {
       "id": "dieselGeneratorB",
@@ -2382,7 +2820,12 @@
             "electrical.dg.b.status"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "EDG B"
+        }
+      }
     },
     {
       "id": "dieselBreakerA",
@@ -2392,7 +2835,12 @@
         "nominalPowerMw": 45,
         "initialClosed": true
       },
-      "variables": []
+      "variables": [],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "EDG BKR A"
+        }
+      }
     },
     {
       "id": "dieselBreakerB",
@@ -2402,7 +2850,12 @@
         "nominalPowerMw": 45,
         "initialClosed": true
       },
-      "variables": []
+      "variables": [],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "EDG BKR B"
+        }
+      }
     },
     {
       "id": "vitalBatteryA",
@@ -2424,7 +2877,12 @@
             "electrical.dc_bus.voltage"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Battery A"
+        }
+      }
     },
     {
       "id": "vitalBatteryB",
@@ -2436,7 +2894,12 @@
         "dischargeTimeS": 14400,
         "initialStateOfChargeFraction": 1
       },
-      "variables": []
+      "variables": [],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Battery B"
+        }
+      }
     },
     {
       "id": "dcInverterA",
@@ -2446,7 +2909,12 @@
         "nominalPowerMw": 1.5,
         "efficiencyFraction": 0.95
       },
-      "variables": []
+      "variables": [],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Inverter A"
+        }
+      }
     },
     {
       "id": "dcInverterB",
@@ -2456,7 +2924,12 @@
         "nominalPowerMw": 1.5,
         "efficiencyFraction": 0.95
       },
-      "variables": []
+      "variables": [],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Inverter B"
+        }
+      }
     },
     {
       "id": "plantControlsLoadA",
@@ -2472,7 +2945,12 @@
           "equipmentId": "plantControlsLoadA",
           "description": "Plant controls load A energized status"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Controls A"
+        }
+      }
     },
     {
       "id": "plantControlsLoadB",
@@ -2488,7 +2966,12 @@
           "equipmentId": "plantControlsLoadB",
           "description": "Plant controls load B energized status"
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "Controls B"
+        }
+      }
     },
     {
       "id": "reactorTripBreakerA",
@@ -2508,7 +2991,12 @@
             "rps.trip_breaker.a.position"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RTB A"
+        }
+      }
     },
     {
       "id": "reactorTripBreakerB",
@@ -2528,7 +3016,12 @@
             "rps.trip_breaker.b.position"
           ]
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RTB B"
+        }
+      }
     }
   ],
   "connections": [

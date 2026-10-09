@@ -1,6 +1,14 @@
 import { z } from 'zod'
 import type { Brand } from '../../../core/model/index.ts'
 import { idSchema } from '../../../core/model/index.ts'
+import {
+  ratioMeasurandSchema,
+  variableActuationSchema,
+  type CompiledComponentSemantics,
+  type ComponentSemantics,
+  type RatioMeasurand,
+  type VariableActuation,
+} from './semantics.ts'
 
 export type PlantGraphId = Brand<string, 'PlantGraphId'>
 export type ComponentId = Brand<string, 'ProcessPlantComponentId'>
@@ -239,8 +247,26 @@ export const processVariableValueSchema = z.union([z.number().finite(), z.boolea
 export const portDefinitionSchema = z.object({
   kind: portKindSchema,
   direction: portDirectionSchema,
+  /**
+   * Ports in the same circuit connect inside the component: flow or power
+   * entering one can leave by another. A port in no circuit is a terminal
+   * (a pump's power supply, a valve's demand signal).
+   */
+  circuit: z.string().min(1).optional(),
 })
 export type PortDefinition = z.infer<typeof portDefinitionSchema>
+
+/**
+ * How operators name equipment. Presentation only: it is not part of a Plant's
+ * identity, so its digest (and every persisted Run checkpoint) ignores it.
+ */
+export const processGraphPresentationSchema = z.object({
+  /** The operator's short name ("FCV B"). */
+  shortLabel: z.string().min(1).max(24).optional(),
+  /** Short names of devices the component bundles, by device id ("PORV"). */
+  embedded: z.record(idSchema, z.string().min(1).max(24)).optional(),
+}).strict()
+export type ProcessGraphPresentation = z.infer<typeof processGraphPresentationSchema>
 
 export const processGraphMetadataSchema = z.object({
   role: idSchema.optional(),
@@ -249,6 +275,7 @@ export const processGraphMetadataSchema = z.object({
   trainId: idSchema.optional(),
   ordinal: z.number().int().nonnegative().optional(),
   equipmentClass: idSchema.optional(),
+  presentation: processGraphPresentationSchema.optional(),
 }).strict()
 export type ProcessGraphMetadata = z.infer<typeof processGraphMetadataSchema>
 
@@ -344,6 +371,10 @@ const variableDescriptorBaseSchema = z.object({
   externalRefs: z.array(z.string().min(1)).optional(),
   capabilities: processVariableCapabilitySchema.optional(),
   limits: processVariableLimitsSchema.optional(),
+  /** What writing it does; every writable variable declares one. */
+  actuation: variableActuationSchema.optional(),
+  /** What a ratio measures; every ratio declares one. */
+  measurand: ratioMeasurandSchema.optional(),
 })
 export const variableDescriptorSchema = variableDescriptorBaseSchema.superRefine(validateQuantityUnit)
 export type VariableDescriptor = z.infer<typeof variableDescriptorSchema>
@@ -495,6 +526,8 @@ export interface ComponentDefinition {
   }) => Readonly<Record<string, PortDefinition>>
   readonly parametersSchema: z.ZodType<unknown>
   readonly variables: ReadonlyArray<ComponentVariableDescriptor>
+  /** What the kind is and does, from its parsed parameters. */
+  readonly semantics: (parameters: unknown) => ComponentSemantics
 }
 
 export interface CompiledPort {
@@ -502,6 +535,7 @@ export interface CompiledPort {
   readonly name: PortName
   readonly kind: PortKind
   readonly direction: PortDirection
+  readonly circuit?: string
 }
 
 export interface CompiledComponent {
@@ -513,6 +547,7 @@ export interface CompiledComponent {
   readonly metadata?: ProcessGraphMetadata
   readonly ports: Readonly<Record<string, CompiledPort>>
   readonly variables: ReadonlyArray<VariableDescriptor>
+  readonly semantics: CompiledComponentSemantics
 }
 
 export interface CompiledProcessLink {
@@ -558,6 +593,8 @@ export interface ProcessSignalBinding {
   readonly quantity: ProcessQuantity
   readonly unit: ProcessUnit
   readonly writable: boolean
+  readonly actuation?: VariableActuation
+  readonly measurand?: RatioMeasurand
   readonly published: boolean
   readonly owner:
     | { readonly type: 'component'; readonly componentIndex: number }

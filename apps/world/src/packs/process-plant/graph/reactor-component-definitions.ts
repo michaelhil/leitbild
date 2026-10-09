@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { idSchema } from '../../../core/model/index.ts'
 import type { ComponentDefinition, ComponentKind } from './model.ts'
 import { defineComponent, normalized, variable } from './component-definition-helpers.ts'
+import { aspect, fixedSemantics } from './semantics.ts'
 
 const primaryLoopIdsFrom = (parameters: unknown): ReadonlyArray<string> => {
   const parsed = z.object({
@@ -15,26 +16,26 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
     kind: 'reactorCore' as ComponentKind,
     label: 'Reactor Core',
     ports: {
-      hotLegA: { kind: 'hydraulicThermal', direction: 'out' },
-      hotLegB: { kind: 'hydraulicThermal', direction: 'out' },
-      hotLegC: { kind: 'hydraulicThermal', direction: 'out' },
-      hotLegD: { kind: 'hydraulicThermal', direction: 'out' },
-      hotLegE: { kind: 'hydraulicThermal', direction: 'out' },
-      hotLegF: { kind: 'hydraulicThermal', direction: 'out' },
-      coldLegA: { kind: 'hydraulicThermal', direction: 'in' },
-      coldLegB: { kind: 'hydraulicThermal', direction: 'in' },
-      coldLegC: { kind: 'hydraulicThermal', direction: 'in' },
-      coldLegD: { kind: 'hydraulicThermal', direction: 'in' },
-      coldLegE: { kind: 'hydraulicThermal', direction: 'in' },
-      coldLegF: { kind: 'hydraulicThermal', direction: 'in' },
+      hotLegA: { kind: 'hydraulicThermal', direction: 'out', circuit: 'coolant' },
+      hotLegB: { kind: 'hydraulicThermal', direction: 'out', circuit: 'coolant' },
+      hotLegC: { kind: 'hydraulicThermal', direction: 'out', circuit: 'coolant' },
+      hotLegD: { kind: 'hydraulicThermal', direction: 'out', circuit: 'coolant' },
+      hotLegE: { kind: 'hydraulicThermal', direction: 'out', circuit: 'coolant' },
+      hotLegF: { kind: 'hydraulicThermal', direction: 'out', circuit: 'coolant' },
+      coldLegA: { kind: 'hydraulicThermal', direction: 'in', circuit: 'coolant' },
+      coldLegB: { kind: 'hydraulicThermal', direction: 'in', circuit: 'coolant' },
+      coldLegC: { kind: 'hydraulicThermal', direction: 'in', circuit: 'coolant' },
+      coldLegD: { kind: 'hydraulicThermal', direction: 'in', circuit: 'coolant' },
+      coldLegE: { kind: 'hydraulicThermal', direction: 'in', circuit: 'coolant' },
+      coldLegF: { kind: 'hydraulicThermal', direction: 'in', circuit: 'coolant' },
       vesselThermal: { kind: 'thermal', direction: 'out' },
       rodDemand: { kind: 'controlSignal', direction: 'in' },
       tripSignal: { kind: 'logicSignal', direction: 'in' },
     },
     resolveAdditionalPorts: ({ parameters }) =>
       Object.fromEntries(primaryLoopIdsFrom(parameters).flatMap(loopId => [
-        [`hotLeg${loopId}`, { kind: 'hydraulicThermal' as const, direction: 'out' as const }],
-        [`coldLeg${loopId}`, { kind: 'hydraulicThermal' as const, direction: 'in' as const }],
+        [`hotLeg${loopId}`, { kind: 'hydraulicThermal' as const, direction: 'out' as const, circuit: 'coolant' }],
+        [`coldLeg${loopId}`, { kind: 'hydraulicThermal' as const, direction: 'in' as const, circuit: 'coolant' }],
       ])),
     parametersSchema: z.object({
       ratedPowerMw: z.number().finite().positive(),
@@ -62,6 +63,7 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       nominalIntermediateRangeCurrentAmps: z.number().finite().positive().optional(),
       minimumNaturalCirculationCoolingFraction: normalized.optional(),
     }),
+    semantics: fixedSemantics({}),
     variables: [
       variable({ path: 'powerMw', label: 'Core fission power', kind: 'state', discipline: 'nuclear', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
       variable({ path: 'fissionPowerMw', label: 'Core fission power diagnostic', kind: 'derived', discipline: 'nuclear', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
@@ -71,7 +73,7 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       variable({ path: 'temperatureFeedbackPcm', label: 'Temperature feedback reactivity', kind: 'derived', discipline: 'nuclear', writable: false, publish: 'telemetry', quantity: 'reactivity', unit: 'pcm' }),
       variable({ path: 'boronFeedbackPcm', label: 'Boron feedback reactivity', kind: 'derived', discipline: 'nuclear', writable: false, publish: 'telemetry', quantity: 'reactivity', unit: 'pcm' }),
       variable({ path: 'effectiveReactivityPcm', label: 'Effective core reactivity', kind: 'derived', discipline: 'nuclear', writable: false, publish: 'telemetry', quantity: 'reactivity', unit: 'pcm' }),
-      variable({ path: 'rodInsertionFraction', label: 'Rod insertion', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
+      variable({ path: 'rodInsertionFraction', label: 'Rod insertion', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'command', measurand: 'insertion', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
       variable({ path: 'sourceRangeCountRateCps', label: 'Source-range neutron count rate', kind: 'derived', discipline: 'nuclear', writable: false, publish: 'telemetry', quantity: 'countRate', unit: 'cps' }),
       variable({ path: 'intermediateRangeCurrentAmps', label: 'Intermediate-range neutron current', kind: 'derived', discipline: 'nuclear', writable: false, publish: 'telemetry', quantity: 'electricalCurrent', unit: 'amps' }),
       variable({ path: 'coolantInletTemperatureC', label: 'Core coolant inlet temperature', kind: 'state', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
@@ -82,7 +84,7 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       variable({ path: 'fuelMidTemperatureC', label: 'Mid-core fuel temperature', kind: 'state', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
       variable({ path: 'fuelUpperTemperatureC', label: 'Upper fuel temperature', kind: 'state', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
       variable({ path: 'fuelStoredEnergyMj', label: 'Fuel stored heat energy', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'energy', unit: 'MJ' }),
-      variable({ path: 'coreCoolingAvailabilityFraction', label: 'Core cooling availability', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
+      variable({ path: 'coreCoolingAvailabilityFraction', label: 'Core cooling availability', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', measurand: 'availability', quantity: 'ratio', unit: 'fraction' }),
       variable({ path: 'coreHeatRemovalDeficitMw', label: 'Core heat removal deficit', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'powerDelta', unit: 'MW' }),
       variable({ path: 'fuelHeatupRateCPerS', label: 'Fuel heatup rate', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperatureRate', unit: 'degC/s' }),
       variable({ path: 'decayHeatMw', label: 'Decay heat', kind: 'state', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
@@ -94,10 +96,10 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
     label: 'Reactor Vessel',
     ports: {
       coreThermal: { kind: 'thermal', direction: 'in' },
-      lowerPlenum: { kind: 'hydraulicThermal', direction: 'out' },
-      upperPlenum: { kind: 'hydraulicThermal', direction: 'in' },
-      pressurizerSurge: { kind: 'hydraulicThermal', direction: 'bidirectional' },
-      releaseOutlet: { kind: 'hydraulicThermal', direction: 'out' },
+      lowerPlenum: { kind: 'hydraulicThermal', direction: 'out', circuit: 'coolant' },
+      upperPlenum: { kind: 'hydraulicThermal', direction: 'in', circuit: 'coolant' },
+      pressurizerSurge: { kind: 'hydraulicThermal', direction: 'bidirectional', circuit: 'coolant' },
+      releaseOutlet: { kind: 'hydraulicThermal', direction: 'out', circuit: 'coolant' },
     },
     parametersSchema: z.object({
       nominalPrimaryCoolantInventoryKg: z.number().finite().positive(),
@@ -112,10 +114,11 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       initialBoronConcentrationPpm: z.number().finite().nonnegative().optional(),
       collapsedLevelReferenceInventoryFraction: normalized.optional(),
     }),
+    semantics: fixedSemantics({ aspects: [aspect('level', { variable: 'collapsedLiquidLevelPercent', reading: 'value' })] }),
     variables: [
       variable({ path: 'primaryCoolantInventoryKg', label: 'Primary coolant inventory', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg' }),
       variable({ path: 'primaryCoolantInventoryDeviationKg', label: 'Primary coolant inventory deviation', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'massDelta', unit: 'kg' }),
-      variable({ path: 'collapsedLiquidLevelPercent', label: 'Reactor vessel collapsed liquid level', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'percent' }),
+      variable({ path: 'collapsedLiquidLevelPercent', label: 'Reactor vessel collapsed liquid level', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', measurand: 'level', quantity: 'ratio', unit: 'percent' }),
       variable({ path: 'meanPrimaryCoolantTemperatureC', label: 'Mean primary coolant temperature', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
       variable({ path: 'subcoolingMarginC', label: 'RCS subcooling margin', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperatureDelta', unit: 'degC' }),
       variable({ path: 'compressibilityPressureBiasMPa', label: 'Primary compressibility pressure bias', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'pressureDelta', unit: 'MPa' }),

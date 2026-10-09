@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { idSchema } from '../../../core/model/index.ts'
 import { defineComponent, headerVariables, valveVariables } from './component-definition-helpers.ts'
 import { type ComponentDefinition, type ComponentKind, type PortDefinition, variablePathSchema } from './model.ts'
+import { aspect, fixedSemantics, type ComponentSemantics, type EquipmentFunction } from './semantics.ts'
 
 const headerPortIdsSchema = z.array(idSchema).min(1).max(128)
 
@@ -12,11 +13,35 @@ const headerPortIdsFrom = (parameters: unknown): ReadonlyArray<string> => {
   return parsed.portIds ?? []
 }
 
+// Every port of a header joins the same manifold.
 const headerPortsFor = (portIds: ReadonlyArray<string>, kind: PortDefinition['kind']): Readonly<Record<string, PortDefinition>> =>
   Object.fromEntries(portIds.flatMap(portId => [
-    [`inlet${portId}`, { kind, direction: 'in' as const }],
-    [`outlet${portId}`, { kind, direction: 'out' as const }],
+    [`inlet${portId}`, { kind, direction: 'in' as const, circuit: 'flow' }],
+    [`outlet${portId}`, { kind, direction: 'out' as const, circuit: 'flow' }],
   ]))
+
+// The valve behaviour treats a valve without a mode as a control valve.
+const valveFunctions: Readonly<Record<string, EquipmentFunction>> = {
+  control: 'modulating',
+  throttle: 'modulating',
+  bypass: 'modulating',
+  isolation: 'isolating',
+  check: 'nonReturn',
+  relief: 'relieving',
+  safety: 'relieving',
+}
+
+const valveSemantics = (parameters: unknown): ComponentSemantics => {
+  const mode = z.object({ valveMode: z.string().default('control') }).passthrough().parse(parameters).valveMode
+  const valveFunction = valveFunctions[mode]
+  if (valveFunction === undefined) throw new Error(`valve mode ${mode} has no declared function`)
+  return {
+    function: valveFunction,
+    aspects: [aspect('position', { variable: 'effectivePositionFraction', reading: 'value' }, 'positionFraction')],
+    embedded: [],
+    ratedOutflow: [],
+  }
+}
 
 const valvePositionControllerSchema = z.object({
   kind: z.literal('proportionalPosition'),
@@ -48,18 +73,18 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
     kind: 'processHeader' as ComponentKind,
     label: 'Process Header',
     ports: {
-      inletA: { kind: 'hydraulicThermal', direction: 'in' },
-      inletB: { kind: 'hydraulicThermal', direction: 'in' },
-      inletC: { kind: 'hydraulicThermal', direction: 'in' },
-      inletD: { kind: 'hydraulicThermal', direction: 'in' },
-      inletE: { kind: 'hydraulicThermal', direction: 'in' },
-      inletF: { kind: 'hydraulicThermal', direction: 'in' },
-      outletA: { kind: 'hydraulicThermal', direction: 'out' },
-      outletB: { kind: 'hydraulicThermal', direction: 'out' },
-      outletC: { kind: 'hydraulicThermal', direction: 'out' },
-      outletD: { kind: 'hydraulicThermal', direction: 'out' },
-      outletE: { kind: 'hydraulicThermal', direction: 'out' },
-      outletF: { kind: 'hydraulicThermal', direction: 'out' },
+      inletA: { kind: 'hydraulicThermal', direction: 'in', circuit: 'flow' },
+      inletB: { kind: 'hydraulicThermal', direction: 'in', circuit: 'flow' },
+      inletC: { kind: 'hydraulicThermal', direction: 'in', circuit: 'flow' },
+      inletD: { kind: 'hydraulicThermal', direction: 'in', circuit: 'flow' },
+      inletE: { kind: 'hydraulicThermal', direction: 'in', circuit: 'flow' },
+      inletF: { kind: 'hydraulicThermal', direction: 'in', circuit: 'flow' },
+      outletA: { kind: 'hydraulicThermal', direction: 'out', circuit: 'flow' },
+      outletB: { kind: 'hydraulicThermal', direction: 'out', circuit: 'flow' },
+      outletC: { kind: 'hydraulicThermal', direction: 'out', circuit: 'flow' },
+      outletD: { kind: 'hydraulicThermal', direction: 'out', circuit: 'flow' },
+      outletE: { kind: 'hydraulicThermal', direction: 'out', circuit: 'flow' },
+      outletF: { kind: 'hydraulicThermal', direction: 'out', circuit: 'flow' },
     },
     parametersSchema: z.object({
       initialTemperatureC: z.number().finite().optional(),
@@ -72,14 +97,15 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
       portIds: headerPortIdsSchema.optional(),
     }).strict(),
     resolveAdditionalPorts: ({ parameters }) => headerPortsFor(headerPortIdsFrom(parameters), 'hydraulicThermal'),
+    semantics: fixedSemantics({ aspects: [aspect('throughput', { variable: 'outletFlowKgPerS', reading: 'flow' })] }),
     variables: headerVariables('Process header'),
   }),
   defineComponent({
     kind: 'processValve' as ComponentKind,
     label: 'Process Valve',
     ports: {
-      inlet: { kind: 'hydraulicThermal', direction: 'in' },
-      outlet: { kind: 'hydraulicThermal', direction: 'out' },
+      inlet: { kind: 'hydraulicThermal', direction: 'in', circuit: 'flow' },
+      outlet: { kind: 'hydraulicThermal', direction: 'out', circuit: 'flow' },
       demand: { kind: 'controlSignal', direction: 'in' },
     },
     parametersSchema: z.object({
@@ -96,24 +122,25 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
       reseatMPa: z.number().finite().positive().optional(),
       controller: valvePositionControllerSchema.optional(),
     }).strict(),
+    semantics: valveSemantics,
     variables: valveVariables('Process valve'),
   }),
   defineComponent({
     kind: 'steamHeader' as ComponentKind,
     label: 'Steam Header',
     ports: {
-      inletA: { kind: 'steam', direction: 'in' },
-      inletB: { kind: 'steam', direction: 'in' },
-      inletC: { kind: 'steam', direction: 'in' },
-      inletD: { kind: 'steam', direction: 'in' },
-      inletE: { kind: 'steam', direction: 'in' },
-      inletF: { kind: 'steam', direction: 'in' },
-      outletA: { kind: 'steam', direction: 'out' },
-      outletB: { kind: 'steam', direction: 'out' },
-      outletC: { kind: 'steam', direction: 'out' },
-      outletD: { kind: 'steam', direction: 'out' },
-      outletE: { kind: 'steam', direction: 'out' },
-      outletF: { kind: 'steam', direction: 'out' },
+      inletA: { kind: 'steam', direction: 'in', circuit: 'flow' },
+      inletB: { kind: 'steam', direction: 'in', circuit: 'flow' },
+      inletC: { kind: 'steam', direction: 'in', circuit: 'flow' },
+      inletD: { kind: 'steam', direction: 'in', circuit: 'flow' },
+      inletE: { kind: 'steam', direction: 'in', circuit: 'flow' },
+      inletF: { kind: 'steam', direction: 'in', circuit: 'flow' },
+      outletA: { kind: 'steam', direction: 'out', circuit: 'flow' },
+      outletB: { kind: 'steam', direction: 'out', circuit: 'flow' },
+      outletC: { kind: 'steam', direction: 'out', circuit: 'flow' },
+      outletD: { kind: 'steam', direction: 'out', circuit: 'flow' },
+      outletE: { kind: 'steam', direction: 'out', circuit: 'flow' },
+      outletF: { kind: 'steam', direction: 'out', circuit: 'flow' },
     },
     parametersSchema: z.object({
       initialTemperatureC: z.number().finite().optional(),
@@ -126,14 +153,15 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
       portIds: headerPortIdsSchema.optional(),
     }).strict(),
     resolveAdditionalPorts: ({ parameters }) => headerPortsFor(headerPortIdsFrom(parameters), 'steam'),
+    semantics: fixedSemantics({ aspects: [aspect('throughput', { variable: 'outletFlowKgPerS', reading: 'flow' })] }),
     variables: headerVariables('Steam header'),
   }),
   defineComponent({
     kind: 'steamValve' as ComponentKind,
     label: 'Steam Valve',
     ports: {
-      inlet: { kind: 'steam', direction: 'in' },
-      outlet: { kind: 'steam', direction: 'out' },
+      inlet: { kind: 'steam', direction: 'in', circuit: 'flow' },
+      outlet: { kind: 'steam', direction: 'out', circuit: 'flow' },
       demand: { kind: 'controlSignal', direction: 'in' },
     },
     parametersSchema: z.object({
@@ -150,6 +178,7 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
       reseatMPa: z.number().finite().positive().optional(),
       controller: valvePositionControllerSchema.optional(),
     }).strict(),
+    semantics: valveSemantics,
     variables: valveVariables('Steam valve'),
   }),
 ]

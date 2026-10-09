@@ -1,15 +1,16 @@
 import { z } from 'zod'
 import type { ComponentDefinition, ComponentKind } from './model.ts'
 import { defineComponent, normalized, variable } from './component-definition-helpers.ts'
+import { aspect, fixedSemantics } from './semantics.ts'
 
 export const pressurizerComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
   defineComponent({
     kind: 'pressurizer' as ComponentKind,
     label: 'Pressurizer',
     ports: {
-      surgeLine: { kind: 'hydraulicThermal', direction: 'bidirectional' },
-      sprayInlet: { kind: 'hydraulicThermal', direction: 'in' },
-      reliefOutlet: { kind: 'hydraulicThermal', direction: 'out' },
+      surgeLine: { kind: 'hydraulicThermal', direction: 'bidirectional', circuit: 'coolant' },
+      sprayInlet: { kind: 'hydraulicThermal', direction: 'in', circuit: 'coolant' },
+      reliefOutlet: { kind: 'hydraulicThermal', direction: 'out', circuit: 'coolant' },
       heaterPower: { kind: 'electricalAc', direction: 'in' },
     },
     parametersSchema: z.object({
@@ -26,9 +27,23 @@ export const pressurizerComponentDefinitions: ReadonlyArray<ComponentDefinition>
       sprayCondensationKgPerKg: z.number().finite().nonnegative().optional(),
       nominalWaterDensityKgPerM3: z.number().finite().positive().optional(),
     }),
+    semantics: fixedSemantics({
+      aspects: [aspect('level', { variable: 'levelPercent', reading: 'value' })],
+      // The PORV is modelled inside the pressurizer, on its relief outlet. The model solves the relief flow but not the
+      // valve's position, so the position reads "not measured" and the valve is judged by what passes it.
+      embedded: [{
+        id: 'reliefValve',
+        label: 'relief valve',
+        function: 'relieving',
+        port: 'reliefOutlet',
+        aspects: [aspect('position', undefined, 'reliefValvePositionFraction'), aspect('throughput', { variable: 'reliefFlowKgPerS', reading: 'flow' })],
+        variables: ['reliefFlowKgPerS', 'reliefValvePositionFraction', 'reliefValveFailureActive', 'reliefValveFailedPositionFraction'],
+      }],
+      ratedOutflow: [{ port: 'reliefOutlet', parameter: 'reliefCapacityKgPerS' }],
+    }),
     variables: [
       variable({ path: 'pressureMPa', label: 'Pressurizer pressure', kind: 'state', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'pressure', unit: 'MPa' }),
-      variable({ path: 'levelPercent', label: 'Pressurizer level', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'percent' }),
+      variable({ path: 'levelPercent', label: 'Pressurizer level', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', measurand: 'level', quantity: 'ratio', unit: 'percent' }),
       variable({ path: 'waterInventoryKg', label: 'Pressurizer water inventory', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg' }),
       variable({ path: 'steamMassKg', label: 'Pressurizer steam mass', kind: 'state', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg' }),
       variable({ path: 'steamMassFlowKgPerS', label: 'Pressurizer steam net mass flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRateDelta', unit: 'kg/s' }),
@@ -39,12 +54,12 @@ export const pressurizerComponentDefinitions: ReadonlyArray<ComponentDefinition>
       variable({ path: 'steamMassBalanceResidualKg', label: 'Pressurizer steam mass balance residual', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'massDelta', unit: 'kg' }),
       variable({ path: 'waterTemperatureC', label: 'Pressurizer water temperature', kind: 'state', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
       variable({ path: 'steamTemperatureC', label: 'Pressurizer steam temperature', kind: 'state', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
-      variable({ path: 'heaterPowerMw', label: 'Pressurizer heater power', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', quantity: 'power', unit: 'MW', limits: { hardRange: { min: 0, max: 30 } } }),
+      variable({ path: 'heaterPowerMw', label: 'Pressurizer heater power', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'command', quantity: 'power', unit: 'MW', limits: { hardRange: { min: 0, max: 30 } } }),
       variable({ path: 'demandMw', label: 'Pressurizer electrical demand', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
-      variable({ path: 'sprayFlowKgPerS', label: 'Pressurizer spray flow', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s', limits: { hardRange: { min: 0, max: 250 } } }),
-      variable({ path: 'reliefValvePositionFraction', label: 'Pressurizer relief valve position', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
-      variable({ path: 'reliefValveFailureActive', label: 'Pressurizer relief valve failure active', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', quantity: 'boolean', unit: 'boolean' }),
-      variable({ path: 'reliefValveFailedPositionFraction', label: 'Pressurizer relief valve failed position', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
+      variable({ path: 'sprayFlowKgPerS', label: 'Pressurizer spray flow', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'command', quantity: 'flowRate', unit: 'kg/s', limits: { hardRange: { min: 0, max: 250 } } }),
+      variable({ path: 'reliefValvePositionFraction', label: 'Pressurizer relief valve position', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'command', measurand: 'position', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
+      variable({ path: 'reliefValveFailureActive', label: 'Pressurizer relief valve failure active', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'faultInjection', quantity: 'boolean', unit: 'boolean' }),
+      variable({ path: 'reliefValveFailedPositionFraction', label: 'Pressurizer relief valve failed position', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'faultInjection', measurand: 'position', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
       variable({ path: 'reliefFlowKgPerS', label: 'Pressurizer relief flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
     ],
   }),

@@ -22,8 +22,9 @@ import type {
   VariableDescriptor,
   VariablePath,
 } from './model.ts'
-import { validateProcessLinkContracts } from './link-contracts.ts'
+import { linkVariableSemanticsFor, validateProcessLinkContracts } from './link-contracts.ts'
 import { connectionKindSchema, deriveProcessVariableCapabilities, plantGraphSpecSchema } from './model.ts'
+import { readingAccepts, type CompiledComponentSemantics, type CompiledStateAspect, type ComponentSemantics, type StateAspectDeclaration } from './semantics.ts'
 
 interface ResolvedPortRef {
   readonly componentId: ComponentId
@@ -79,6 +80,7 @@ const compilePorts = (definition: ComponentDefinition): Readonly<Record<string, 
       name: name as PortName,
       kind: port.kind,
       direction: port.direction,
+      ...(port.circuit === undefined ? {} : { circuit: port.circuit }),
     },
   ]))
 
@@ -167,6 +169,91 @@ const applyComponentVariableOverride = (
   }
 }
 
+// A kind's semantics name its own variables and ports; every name must exist,
+// a state must be solved (or an outside boundary), and a command must be one.
+const compileComponentSemantics = (
+  componentId: ComponentId,
+  semantics: ComponentSemantics,
+  variables: ReadonlyArray<VariableDescriptor>,
+  ports: Readonly<Record<string, PortDefinition>>,
+  parameters: unknown,
+): CompiledComponentSemantics => {
+  const context = `component ${componentId} semantics`
+  const byPath = new Map(variables.map(variable => [String(variable.path), variable]))
+  const resolve = (local: LocalVariablePath): VariableDescriptor => {
+    const variable = byPath.get(variablePathFor(componentId, local))
+    if (variable === undefined) throw new Error(`${context} names unknown variable ${local}`)
+    return variable
+  }
+  const compileAspect = (declaration: StateAspectDeclaration): CompiledStateAspect => {
+    const state = declaration.state
+    if (state !== undefined) {
+      const variable = resolve(state.variable)
+      if (variable.writable && variable.actuation !== 'boundary') throw new Error(`${context}: ${declaration.aspect} state ${state.variable} is writable, so it would draw a demand as the state`)
+      if (!readingAccepts(state.reading, variable)) throw new Error(`${context}: ${declaration.aspect} state ${state.variable} (${variable.quantity}) cannot be read as ${state.reading}`)
+    }
+    if (declaration.command !== undefined) {
+      const command = resolve(declaration.command)
+      if (!command.writable || command.actuation !== 'command') throw new Error(`${context}: ${declaration.aspect} command ${declaration.command} is not a writable command`)
+    }
+    return {
+      aspect: declaration.aspect,
+      ...(state === undefined ? {} : { state: { path: variablePathFor(componentId, state.variable), reading: state.reading } }),
+      ...(declaration.command === undefined ? {} : { command: variablePathFor(componentId, declaration.command) }),
+    }
+  }
+  const portName = (name: string): PortName => {
+    if (ports[name] === undefined) throw new Error(`${context} names unknown port ${name}`)
+    return name as PortName
+  }
+  const record = parameters !== null && typeof parameters === 'object' && !Array.isArray(parameters) ? parameters as Record<string, unknown> : {}
+  return {
+    ...(semantics.function === undefined ? {} : { function: semantics.function }),
+    aspects: semantics.aspects.map(compileAspect),
+    embedded: semantics.embedded.map(device => ({
+      id: device.id,
+      label: device.label,
+      function: device.function,
+      port: portName(device.port),
+      aspects: device.aspects.map(compileAspect),
+      variables: device.variables.map(local => {
+        resolve(local as LocalVariablePath)
+        return variablePathFor(componentId, local as LocalVariablePath)
+      }),
+    })),
+    // An outlet whose rating the instance leaves out, or sets to zero, is unrated; readers then cannot judge "no flow" there.
+    ratedOutflow: semantics.ratedOutflow.flatMap(rating => {
+      const port = ports[rating.port]
+      if (port === undefined || port.direction === 'in') throw new Error(`${context}: rated outflow names ${rating.port}, which is not an outlet`)
+      const flow = record[rating.parameter]
+      if (flow === undefined || flow === 0) return []
+      if (typeof flow !== 'number' || !(flow > 0)) throw new Error(`${context}: rated outflow parameter ${rating.parameter} must be a non-negative number`)
+      return [{ port: rating.port as PortName, flowKgPerS: flow }]
+    }),
+  }
+}
+
+// Names readers resolve must be unambiguous: an operator's short label names
+// one component, and a signal tag never reads as a component id.
+const assertNamesUnambiguous = (components: ReadonlyArray<CompiledComponent>, variables: ReadonlyArray<CompiledVariable>): void => {
+  assertUniqueDefined(components, component => component.metadata?.presentation?.shortLabel, 'component short label')
+  const componentIds = new Set(components.map(component => String(component.id)))
+  for (const variable of variables) {
+    const tag = variable.descriptor.tagId
+    if (tag !== undefined && componentIds.has(String(tag))) throw new Error(`signal tag ${tag} equals a component id`)
+  }
+}
+
+// What writing a variable does, and what a ratio measures, are declared for
+// every variable, so no reader has to guess a command from a name.
+const assertVariableSemantics = (variables: ReadonlyArray<CompiledVariable>): void => {
+  for (const variable of variables) {
+    if (variable.descriptor.writable && variable.descriptor.actuation === undefined) throw new Error(`writable variable ${variable.path} must declare its actuation`)
+    if (!variable.descriptor.writable && variable.descriptor.actuation !== undefined) throw new Error(`read-only variable ${variable.path} cannot declare an actuation`)
+    if (variable.descriptor.quantity === 'ratio' && variable.descriptor.measurand === undefined) throw new Error(`ratio variable ${variable.path} must declare its measurand`)
+  }
+}
+
 const signalBindingFor = (variable: CompiledVariable): ProcessSignalBinding => ({
   path: variable.path,
   ...(variable.descriptor.tagId === undefined ? {} : { tagId: variable.descriptor.tagId }),
@@ -181,6 +268,8 @@ const signalBindingFor = (variable: CompiledVariable): ProcessSignalBinding => (
   quantity: variable.descriptor.quantity,
   unit: variable.descriptor.unit,
   writable: variable.descriptor.writable,
+  ...(variable.descriptor.actuation === undefined ? {} : { actuation: variable.descriptor.actuation }),
+  ...(variable.descriptor.measurand === undefined ? {} : { measurand: variable.descriptor.measurand }),
   published: variable.published,
   owner: variable.owner,
 })
@@ -321,6 +410,10 @@ export const compilePlantGraph = (
     componentIndexById.set(component.id, index)
     definitions.set(component.id, definition)
     portDefinitions.set(component.id, ports)
+    const variables = definition.variables.map(variable => applyComponentVariableOverride({
+      ...variable,
+      path: variablePathFor(component.id, variable.path),
+    }, overrideByPath.get(variable.path)))
     const compiled: CompiledComponent = {
       index,
       id: component.id,
@@ -329,10 +422,8 @@ export const compilePlantGraph = (
       parameters,
       ...(component.metadata === undefined ? {} : { metadata: component.metadata }),
       ports: compilePorts({ ...definition, ports }),
-      variables: definition.variables.map(variable => applyComponentVariableOverride({
-        ...variable,
-        path: variablePathFor(component.id, variable.path),
-      }, overrideByPath.get(variable.path))),
+      variables,
+      semantics: compileComponentSemantics(component.id, definition.semantics(parameters), variables, ports, parameters),
     }
     return compiled
   })
@@ -383,6 +474,7 @@ export const compilePlantGraph = (
       ...(connection.metadata === undefined ? {} : { metadata: connection.metadata }),
       variables: connection.variables.map(variable => ({
         ...variable,
+        ...linkVariableSemanticsFor(variable.path),
         path: processLinkVariablePathFor(connection.id, variable.path),
       })),
     }
@@ -422,6 +514,8 @@ export const compilePlantGraph = (
   assertUnique(variables, variable => variable.path, 'variable path')
   assertUniqueDefined(variables, variable => variable.descriptor.tagId, 'process signal tag id')
   validateSignalMetadata(variables)
+  assertVariableSemantics(variables)
+  assertNamesUnambiguous(components, variables)
   validateValveControllerBindings(components, variables)
   validateProcessLinkContracts(links)
   validateStrongComponentContracts(components, links)

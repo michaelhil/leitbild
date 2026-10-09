@@ -38,8 +38,23 @@ export interface CompiledProcessPlant {
   readonly automation: ProcessPlantProtectionConfig
 }
 
+// A Plant's identity is everything that can change its simulation. How
+// operators name equipment (metadata.presentation) cannot, so renaming never
+// orphans a persisted Run checkpoint.
+const withoutPresentation = <T extends { readonly metadata?: { readonly presentation?: unknown } | undefined }>(item: T): T => {
+  if (item.metadata?.presentation === undefined) return item
+  const { presentation: _presentation, ...metadata } = item.metadata
+  if (Object.keys(metadata).length > 0) return { ...item, metadata }
+  const { metadata: _metadata, ...rest } = item
+  return rest as T
+}
+
 const modelDigestFor = (graph: PlantGraphSpec): string =>
-  createHash('sha256').update(JSON.stringify(graph)).digest('hex')
+  createHash('sha256').update(JSON.stringify({
+    ...graph,
+    components: graph.components.map(withoutPresentation),
+    connections: graph.connections.map(withoutPresentation),
+  })).digest('hex')
 
 const compiledModelCache = new Map<string, CompiledPlantGraph>()
 const maxCompiledModelCacheEntries = 32

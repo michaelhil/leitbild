@@ -1,16 +1,17 @@
 import { z } from 'zod'
 import type { ComponentDefinition, ComponentKind } from './model.ts'
 import { defineComponent, normalized, variable } from './component-definition-helpers.ts'
+import { aspect, fixedSemantics } from './semantics.ts'
 
 export const steamGeneratorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
   defineComponent({
     kind: 'steamGenerator' as ComponentKind,
     label: 'Steam Generator',
     ports: {
-      primaryInlet: { kind: 'hydraulicThermal', direction: 'in' },
-      primaryOutlet: { kind: 'hydraulicThermal', direction: 'out' },
-      feedwaterInlet: { kind: 'hydraulicThermal', direction: 'in' },
-      steamOutlet: { kind: 'steam', direction: 'out' },
+      primaryInlet: { kind: 'hydraulicThermal', direction: 'in', circuit: 'primary' },
+      primaryOutlet: { kind: 'hydraulicThermal', direction: 'out', circuit: 'primary' },
+      feedwaterInlet: { kind: 'hydraulicThermal', direction: 'in', circuit: 'secondary' },
+      steamOutlet: { kind: 'steam', direction: 'out', circuit: 'secondary' },
       isolationSignal: { kind: 'logicSignal', direction: 'in' },
     },
     parametersSchema: z.object({
@@ -44,8 +45,9 @@ export const steamGeneratorComponentDefinitions: ReadonlyArray<ComponentDefiniti
       tubeLeakRadiationGainMSvPerHPerKgS: z.number().finite().nonnegative().optional(),
       tubeLeakRadiationTimeConstantS: z.number().finite().positive().optional(),
     }),
+    semantics: fixedSemantics({ aspects: [aspect('level', { variable: 'levelPercent', reading: 'value' })], ratedOutflow: [{ port: 'steamOutlet', parameter: 'nominalSteamFlowKgPerS' }] }),
     variables: [
-      variable({ path: 'levelPercent', label: 'Steam generator level', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'percent' }),
+      variable({ path: 'levelPercent', label: 'Steam generator level', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', measurand: 'level', quantity: 'ratio', unit: 'percent' }),
       variable({ path: 'pressureMPa', label: 'Steam generator pressure', kind: 'state', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'pressure', unit: 'MPa' }),
       variable({ path: 'heatTransferMw', label: 'Heat transfer', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
       variable({ path: 'primaryInletTemperatureC', label: 'Primary inlet temperature', kind: 'state', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
@@ -56,14 +58,14 @@ export const steamGeneratorComponentDefinitions: ReadonlyArray<ComponentDefiniti
       variable({ path: 'boilingRateKgPerS', label: 'Secondary boiling rate', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'feedwaterFlowKgPerS', label: 'Feedwater inflow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'steamOutflowKgPerS', label: 'Steam outlet flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
-      variable({ path: 'steamQualityFraction', label: 'Steam quality', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
+      variable({ path: 'steamQualityFraction', label: 'Steam quality', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', measurand: 'quality', quantity: 'ratio', unit: 'fraction' }),
       variable({ path: 'secondaryInventoryKg', label: 'Secondary inventory', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg' }),
-      variable({ path: 'collapsedLevelPercent', label: 'Collapsed water level', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'percent' }),
-      variable({ path: 'voidFraction', label: 'Secondary void fraction', kind: 'state', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
-      variable({ path: 'swellLevelPercent', label: 'Void swell level contribution', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'percent' }),
-      variable({ path: 'tubeCoverageFraction', label: 'Steam generator tube coverage', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
-      variable({ path: 'tubeUncoveredFraction', label: 'Steam generator uncovered tube fraction', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
-      variable({ path: 'availableHeatTransferFraction', label: 'Available steam generator heat transfer fraction', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
+      variable({ path: 'collapsedLevelPercent', label: 'Collapsed water level', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', measurand: 'level', quantity: 'ratio', unit: 'percent' }),
+      variable({ path: 'voidFraction', label: 'Secondary void fraction', kind: 'state', discipline: 'thermal', writable: false, publish: 'telemetry', measurand: 'void', quantity: 'ratio', unit: 'fraction' }),
+      variable({ path: 'swellLevelPercent', label: 'Void swell level contribution', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', measurand: 'level', quantity: 'ratio', unit: 'percent' }),
+      variable({ path: 'tubeCoverageFraction', label: 'Steam generator tube coverage', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', measurand: 'coverage', quantity: 'ratio', unit: 'fraction' }),
+      variable({ path: 'tubeUncoveredFraction', label: 'Steam generator uncovered tube fraction', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', measurand: 'coverage', quantity: 'ratio', unit: 'fraction' }),
+      variable({ path: 'availableHeatTransferFraction', label: 'Available steam generator heat transfer fraction', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', measurand: 'availability', quantity: 'ratio', unit: 'fraction' }),
       variable({ path: 'steamMassKg', label: 'Steam space mass proxy', kind: 'state', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg' }),
       variable({ path: 'pressureTargetMPa', label: 'Steam generator pressure target', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'pressure', unit: 'MPa' }),
       variable({ path: 'steamMassPressureBiasMPa', label: 'Steam mass pressure contribution', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'pressureDelta', unit: 'MPa' }),
@@ -72,7 +74,7 @@ export const steamGeneratorComponentDefinitions: ReadonlyArray<ComponentDefiniti
       variable({ path: 'secondaryInventoryBalanceResidualKg', label: 'Secondary inventory balance residual', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'massDelta', unit: 'kg' }),
       variable({ path: 'steamMassBalanceResidualKg', label: 'Steam mass balance residual', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'massDelta', unit: 'kg' }),
       variable({ path: 'boilingEnergyResidualMw', label: 'Boiling energy balance residual', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'powerDelta', unit: 'MW' }),
-      variable({ path: 'tubeLeakFraction', label: 'Tube leak fraction', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
+      variable({ path: 'tubeLeakFraction', label: 'Tube leak fraction', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'faultInjection', measurand: 'leak', quantity: 'ratio', unit: 'fraction' }),
       variable({ path: 'primaryToSecondaryLeakKgPerS', label: 'Primary-to-secondary leak flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'secondaryRadiationMSvPerH', label: 'Secondary radiation', kind: 'derived', discipline: 'radiological', writable: false, publish: 'telemetry', quantity: 'radiationDoseRate', unit: 'mSv/h' }),
     ],
