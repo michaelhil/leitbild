@@ -6,6 +6,7 @@ import { framingRules, itemBinding, linkFlowBinding, linkPowerBinding, type Mimi
 import { layoutDiagram, type DiagramEdge, type DiagramGraph, type DiagramLayoutResult, type DiagramNode, type DiagramProfile, type PlacedNode } from './layout/index.ts'
 import { MIMIC_LAYOUT_VERSION, type CompiledMimic, type MimicDrawnItem, type MimicPipeState } from './mimic-model.ts'
 import { embeddedPresentation, presentationFor, type MimicPresentation } from './presentation.ts'
+import type { MimicProfile } from './profiles.ts'
 import { itemRows, type MimicRow } from './rows.ts'
 import { resolveMimicScope, stubText, plantLoops, type MimicIntent, type MimicScope, type MimicStub } from './scope.ts'
 import { openBridgeDevice, readoutBlockWidth, smallStateRowWidth, smallValueRowWidth, textWidth, unmeasurable, type OpenBridgeTextStyle } from './text-metrics.ts'
@@ -14,7 +15,9 @@ import { openBridgeDevice, readoutBlockWidth, smallStateRowWidth, smallValueRowW
 // px → the layout engine → a compiled mimic. Every step reads the Plant's
 // declared semantics; no step knows the reference model.
 
+/** The profile a display draws by, and the room it leaves the drawing. */
 export interface MimicBudget {
+  readonly profile: MimicProfile
   readonly maxWidth: number
   readonly maxHeight: number
 }
@@ -29,21 +32,11 @@ export type MimicCompileResult =
   | { readonly ok: true; readonly mimic: CompiledMimic }
   | { readonly ok: false; readonly issues: ReadonlyArray<MimicIssue> }
 
-/** The HMI standard the layout enforces (OpenBridge grid, alarm frames, density). */
-const profileFor = (budget: MimicBudget): DiagramProfile => ({
-  grid: 24,
-  cell: 24,
-  pipe: { outline: 6, cornerRadius: 8, crossingHalfGap: 5 },
-  textClearance: 9,
-  frameMargin: 1,
-  flapHeight: openBridgeDevice.flapHeight,
-  flapLabelPadding: openBridgeDevice.flapLabelInset,
-  maxWidth: budget.maxWidth,
-  maxHeight: budget.maxHeight,
-  // About three symbols per loop and eight shared: what an operator takes in at
-  // a glance, and enough for one service to all four loops or a diesel to its pump.
-  limits: { symbols: 20, symbolsPerLane: 3, sharedSymbols: 8, lanes: 4, crossings: 6, bendsPerEdge: 3 },
-})
+/** The HMI rules the layout enforces: the display's profile in the room it leaves. */
+const profileFor = (budget: MimicBudget): DiagramProfile => {
+  const { id: _id, ...rules } = budget.profile
+  return { ...rules, maxWidth: budget.maxWidth, maxHeight: budget.maxHeight }
+}
 
 interface PlannedItem {
   readonly id: string

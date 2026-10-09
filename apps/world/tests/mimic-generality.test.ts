@@ -9,6 +9,7 @@ import {
 } from '../src/packs/process-plant/index.ts'
 import { compileMimic } from '../src/packs/process-plant/displays/mimic/compile-mimic.ts'
 import { MIMIC_MAX_WIDTH, type CompiledMimic } from '../src/packs/process-plant/displays/mimic/mimic-model.ts'
+import { chatMimicProfile } from '../src/packs/process-plant/displays/mimic/profiles.ts'
 import type { MimicIntent } from '../src/packs/process-plant/displays/mimic/scope.ts'
 
 // Nothing in a mimic may depend on what the reference PWR happens to call its
@@ -41,7 +42,7 @@ const anonymous: CompiledProcessPlant = {
   automation: renamed(plant.automation),
 }
 
-const budget = { maxWidth: MIMIC_MAX_WIDTH, maxHeight: 624 }
+const budget = { profile: chatMimicProfile, maxWidth: MIMIC_MAX_WIDTH, maxHeight: 624 }
 const drawn = (system: CompiledProcessPlant, intent: MimicIntent): CompiledMimic => {
   const result = compileMimic(system, intent, budget)
   if (!result.ok) throw new Error(result.issues.map(issue => issue.message).join('; '))

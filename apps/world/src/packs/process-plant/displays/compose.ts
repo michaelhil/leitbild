@@ -37,6 +37,7 @@ import {
 import { formatQuantity, marginText, nearestThresholdMargin, thresholdName } from './display-text.ts'
 import { compileMimic } from './mimic/compile-mimic.ts'
 import { MIMIC_MAX_WIDTH } from './mimic/mimic-model.ts'
+import { chatMimicProfile } from './mimic/profiles.ts'
 import type { CompiledMimic } from './mimic/mimic-model.ts'
 import {
   icAlarmRuleIdsForEquipment,
@@ -522,6 +523,7 @@ export const compileComposedDisplay = (
   // The mimic draws in the room the other panels leave at their smallest.
   const heights = others.map(panel => panel === undefined ? 0 : composedPanelMinimumHeight(panelShape(panel)) + composedDisplayLayout.panelGap)
   const mimicBudget = (left: ReadonlyArray<number>) => ({
+    profile: chatMimicProfile,
     maxWidth: MIMIC_MAX_WIDTH,
     maxHeight: COMPOSED_MIMIC_DISPLAY_MAX_HEIGHT_PX - composedDisplayLayout.frame - composedDisplayLayout.mimicLegend - left.reduce((sum, index) => sum + heights[index]!, 0),
   })

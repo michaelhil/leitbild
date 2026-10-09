@@ -13,6 +13,7 @@ import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance 
 import { recordedPlantVariables } from '../src/packs/process-plant/recording.ts'
 import { compileMimic, type MimicBudget } from '../src/packs/process-plant/displays/mimic/compile-mimic.ts'
 import { MIMIC_MAX_WIDTH, type CompiledMimic } from '../src/packs/process-plant/displays/mimic/mimic-model.ts'
+import { chatMimicProfile } from '../src/packs/process-plant/displays/mimic/profiles.ts'
 import { plantCarriers, plantLoops, type MimicIntent } from '../src/packs/process-plant/displays/mimic/scope.ts'
 import { carriersAt } from '../src/packs/process-plant/graph/index.ts'
 
@@ -29,7 +30,7 @@ const plantWithLoops = (loopCount: number): ProcessPlantRuntimeInstance => {
 }
 
 // The room a mimic-led display leaves beside alarms: 800 px wide, about 620 px tall.
-const roomy: MimicBudget = { maxWidth: MIMIC_MAX_WIDTH, maxHeight: 624 }
+const roomy: MimicBudget = { profile: chatMimicProfile, maxWidth: MIMIC_MAX_WIDTH, maxHeight: 624 }
 
 const generated = (system: ProcessPlantRuntimeInstance, intent: MimicIntent, budget = roomy): CompiledMimic => {
   const result = compileMimic(system.plant, intent, budget)
@@ -98,7 +99,7 @@ describe('generated equipment mimics', () => {
   })
 
   test('a scope too large to read at a glance is refused with narrower intents that fit', () => {
-    const result = compileMimic(system.plant, { services: ['primaryInjection'] }, { maxWidth: 600, maxHeight: 400 })
+    const result = compileMimic(system.plant, { services: ['primaryInjection'] }, { profile: chatMimicProfile, maxWidth: 600, maxHeight: 400 })
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.issues[0]!.message).toMatch(/it fits with "loops":\["A"/)
@@ -179,7 +180,7 @@ describe('every intent over the reference Plant draws or is refused with a reaso
   test('one loop returns to the vessel it leaves, drawn beside it', () => {
     const mimic = generated(system, { services: ['primaryCoolant'], loops: ['A'] })
     expect(mimic.items.map(item => item.binding.label)).toEqual(expect.arrayContaining(['Core', 'SG A', 'RCP A']))
-    expect(generated(system, { from: ['sgA'], services: ['primaryCoolant'] }, { maxWidth: 800, maxHeight: 812 }).items.length).toBeGreaterThan(3)
+    expect(generated(system, { from: ['sgA'], services: ['primaryCoolant'] }, { profile: chatMimicProfile, maxWidth: 800, maxHeight: 812 }).items.length).toBeGreaterThan(3)
   })
 
   test('charging joins a cold leg at the reactor in one place, as the cold leg does', () => {
