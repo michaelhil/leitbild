@@ -1,41 +1,35 @@
 <script lang="ts">
   import { untrack } from 'svelte'
-  import { ClipboardList, Eye, Play, X, Zap } from 'lucide-svelte'
+  import { ClipboardList, Play, X, Zap } from 'lucide-svelte'
+  import { embeddedViewFragment, embeddedViewPath, type EmbeddedViewEnvelope } from '@leitbild/contracts'
   import type { SimulationRunId, OperationalObject } from '../../core/model/index.ts'
   import { processPlantActionInvokeCommandKind } from '../../packs/process-plant/command-kinds.ts'
-  import type { CompiledProcessDisplay, ProcessDisplayValue } from '../../packs/process-plant/displays/index.ts'
   import { statusToneColor } from '../status-presentation.ts'
   import { invokeSimulationRunCapability } from '../simulation-run-client.ts'
   import ProcedureRunBadges from '../procedures/ProcedureRunBadges.svelte'
   import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from '../procedures/procedure-run-selectors.ts'
-  import ProcessDisplayRenderer from './ProcessDisplayRenderer.svelte'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
-  import { createProcessDisplaySession } from './process-display-session.ts'
   import {
-    emptyProcessDisplayAlarmSnapshot,
     readProcessPlantCatalog,
-    readProcessDisplayProjection,
+    readUnitOverviewView,
     processPlantIdForObject,
-    type ProcessDisplayProjection,
-    type ProcessDisplayLensOption,
     type ProcessPlantActionCatalogEntry,
-    type ProcessDisplaySnapshot,
   } from './process-display-client.ts'
-  import type { ProcessDisplayAlarmSnapshot } from '../../packs/process-plant/displays/index.ts'
   import {
-    readProcessDisplayLayout,
     readProcessDisplayWindowBounds,
-    storeProcessDisplayLayout,
     storeProcessDisplayWindowBounds,
-    type ProcessDisplayLayout,
     type ProcessDisplayWindowBounds,
-    type ProcessDisplayWidgetPosition,
   } from './process-display-layout.ts'
   import {
     floatingWindowBoundsForDrag,
     normalizeFloatingWindowBounds,
     type FloatingWindowDragMode,
   } from '../window-bounds.ts'
+
+  // A Plant's process display window: the unit overview World generates from
+  // the Plant model, shown by the same embedded view that shows displays
+  // below an agent's answer, so both draw with OpenBridge and one renderer.
+  // The window around it moves and resizes; what it draws is not moved.
 
   interface Props {
     readonly simulationRunId: SimulationRunId
@@ -71,25 +65,16 @@
 
   let loading = $state(true)
   let error = $state<string | null>(null)
-  let refreshError = $state<string | null>(null)
-  let display = $state<CompiledProcessDisplay | null>(null)
-  let values = $state<ReadonlyMap<string, ProcessDisplayValue>>(new Map())
-  let alarms = $state<ProcessDisplayAlarmSnapshot>(emptyProcessDisplayAlarmSnapshot)
-  let projection = $state<ProcessDisplayProjection | null>(null)
-  let activeLensId = $state<string>('all')
-  let lensMenuOpen = $state(false)
+  let overview = $state<EmbeddedViewEnvelope | null>(null)
   let transientModalOpen = $state(false)
   let transientRunningId = $state<string | null>(null)
   let availableActions = $state<ReadonlyArray<ProcessPlantActionCatalogEntry> | null>(null)
   let actionsLoading = $state(false)
   let actionsError = $state<string | null>(null)
   let transientInputs = $state<Record<string, Record<string, number>>>({})
-  let widgetPositions = $state<ProcessDisplayLayout>({})
-  let loadedPlantId = $state<string | null>(null)
   let windowBounds = $state<ProcessDisplayWindowBounds>({ x: 72, y: 72, width: 1120, height: 720 })
   let windowDragState = $state<WindowDragState | null>(null)
   let disposed = false
-  let lensRequest = 0
 
   const defaultWindowBounds = (): ProcessDisplayWindowBounds => {
     if (typeof window === 'undefined') return windowBounds
@@ -124,16 +109,7 @@
   const processDisplayPlantId = untrack(() => plantIdFor(object))
   const processDisplayRunId = untrack(() => simulationRunId)
 
-  const applySnapshot = (snapshot: ProcessDisplaySnapshot): void => {
-    values = new Map(snapshot.values.map(value => [value.path, value]))
-    alarms = snapshot.alarms
-  }
-  const session = createProcessDisplaySession({
-    runId: processDisplayRunId,
-    plantId: processDisplayPlantId,
-    onSnapshot: applySnapshot,
-    onRefreshError: (message) => { refreshError = message },
-  })
+  const overviewSource = $derived(overview === null ? null : `${embeddedViewPath(overview)}${embeddedViewFragment(overview)}`)
 
   const loadActions = async (): Promise<void> => {
     if (disposed || actionsLoading || availableActions !== null) return
@@ -153,16 +129,6 @@
       if (!disposed) actionsLoading = false
     }
   }
-
-  const visibleWidgetIds = $derived(projection
-    ? new Set<string>(projection.displayProjection.visibleWidgetIds)
-    : null)
-
-  const visiblePathIds = $derived(projection
-    ? new Set<string>(projection.displayProjection.visiblePathIds)
-    : null)
-
-  const lensOptions = $derived<ReadonlyArray<ProcessDisplayLensOption>>(display?.lenses ?? [])
 
   const assetStatusColor = $derived(statusToneColor(
     object.operational.priority === 'critical'
@@ -190,9 +156,9 @@
     }
   }
 
+  // The overview samples the Plant every second, so an action shows there without a reload.
   const runDemoTransient = async (transient: ProcessPlantActionCatalogEntry): Promise<void> => {
     if (transientRunningId !== null) return
-    const plantId = loadedPlantId ?? plantIdFor(object)
     transientModalOpen = false
     transientRunningId = transient.id
     error = null
@@ -200,7 +166,7 @@
       const response = await invokeSimulationRunCapability(simulationRunId, {
         capabilityId: processPlantActionInvokeCommandKind,
         input: {
-          plantId,
+          plantId: processDisplayPlantId,
           actionId: transient.id,
           parameters: transientInputs[transient.id] ?? {},
         },
@@ -209,7 +175,6 @@
       if (!response.result.ok) {
         throw new Error(response.result.reason ?? `process plant rejected ${transient.id}`)
       }
-      await session.refresh()
     } catch (err) {
       if (!disposed) error = `${transient.title} failed: ${err instanceof Error ? err.message : String(err)}`
     } finally {
@@ -218,15 +183,7 @@
   }
 
   const commitWindowBounds = (bounds: ProcessDisplayWindowBounds): void => {
-    const currentDisplay = display
-    const plantId = loadedPlantId
-    if (!currentDisplay || !plantId) return
-    storeProcessDisplayWindowBounds({
-      simulationRunId,
-      plantId,
-      displayId: currentDisplay.id,
-      bounds,
-    })
+    storeProcessDisplayWindowBounds({ simulationRunId: processDisplayRunId, plantId: processDisplayPlantId, bounds })
   }
 
   const nextBoundsForDrag = (
@@ -254,7 +211,7 @@
   const startWindowDrag = (event: PointerEvent, mode: FloatingWindowDragMode): void => {
     if (event.button !== 0) return
     const target = event.target
-    if (target instanceof Element && target.closest('button, .process-display-lens-menu')) return
+    if (target instanceof Element && target.closest('button')) return
     event.preventDefault()
     const element = event.currentTarget as Element
     element.setPointerCapture(event.pointerId)
@@ -281,72 +238,14 @@
     commitWindowBounds(next)
   }
 
-  const updateWidgetPosition = (
-    widgetId: string,
-    position: ProcessDisplayWidgetPosition,
-    commit: boolean,
-  ): void => {
-    const currentDisplay = display
-    const plantId = loadedPlantId
-    if (!currentDisplay || !plantId) return
-    const next = { ...widgetPositions, [widgetId]: position }
-    widgetPositions = next
-    if (commit) {
-      storeProcessDisplayLayout({
-        simulationRunId,
-        plantId,
-        displayId: currentDisplay.id,
-        layout: next,
-      })
-    }
-  }
-
-  const applyLens = async (
-    lens: ProcessDisplayLensOption,
-    plantId: string,
-    displayId: string,
-  ): Promise<void> => {
-    const request = ++lensRequest
-    error = null
-    if (lens.lens === undefined) {
-      activeLensId = lens.id
-      projection = null
-      return
-    }
-    try {
-      const next = await readProcessDisplayProjection(processDisplayRunId, plantId, displayId, lens.lens)
-      if (!disposed && request === lensRequest) {
-        projection = next
-        activeLensId = lens.id
-      }
-    } catch (err) {
-      if (!disposed && request === lensRequest) error = err instanceof Error ? err.message : String(err)
-    }
-  }
-
-  const loadDisplay = async (): Promise<void> => {
+  const loadOverview = async (): Promise<void> => {
     loading = true
     error = null
     try {
-      const loaded = await session.load()
-      if (disposed || !loaded) return
-      const address = {
-        simulationRunId: processDisplayRunId,
-        plantId: processDisplayPlantId,
-        displayId: loaded.display.id,
-      }
-      const layout = readProcessDisplayLayout(address)
-      const bounds = clampWindowBounds(readProcessDisplayWindowBounds(address) ?? windowBounds)
-      const firstLens = loaded.display.lenses[0]
-      if (firstLens) await applyLens(firstLens, processDisplayPlantId, loaded.display.id)
+      const view = await readUnitOverviewView(processDisplayRunId, processDisplayPlantId)
       if (disposed) return
-      // Reveal the renderer only after its data and final geometry are ready.
-      widgetPositions = layout
-      windowBounds = bounds
-      loadedPlantId = processDisplayPlantId
-      display = loaded.display
-      applySnapshot(loaded.snapshot)
-      session.startRefreshing()
+      windowBounds = clampWindowBounds(readProcessDisplayWindowBounds({ simulationRunId: processDisplayRunId, plantId: processDisplayPlantId }) ?? windowBounds)
+      overview = view
     } catch (err) {
       if (!disposed) error = err instanceof Error ? err.message : String(err)
     } finally {
@@ -356,10 +255,9 @@
 
   runOnMount(() => {
     windowBounds = clampWindowBounds(defaultWindowBounds())
-    void loadDisplay()
+    void loadOverview()
     return () => {
       disposed = true
-      session.close()
     }
   })
 </script>
@@ -395,48 +293,12 @@
         />
       </div>
       <div class="process-display-window-actions">
-        <div class="process-display-lens-control">
-          <button
-            type="button"
-            class="process-display-icon-button"
-            aria-label="Choose process display layer"
-            aria-expanded={lensMenuOpen}
-            onclick={() => { lensMenuOpen = !lensMenuOpen }}
-          >
-            <Eye size={18} aria-hidden="true" />
-          </button>
-          {#if lensMenuOpen && display && loadedPlantId}
-            <div class="process-display-lens-menu">
-              {#each lensOptions as option (option.id)}
-                <button
-                  type="button"
-                  class:active={activeLensId === option.id}
-                  onclick={async () => {
-                    lensMenuOpen = false
-                    try {
-                      const currentDisplay = display
-                      const plantId = loadedPlantId
-                      if (!currentDisplay || !plantId) throw new Error('process display is not ready')
-                      await applyLens(option, plantId, currentDisplay.id)
-                    } catch (err) {
-                      error = err instanceof Error ? err.message : String(err)
-                    }
-                  }}
-                >
-                  <strong>{option.label}</strong>
-                  <span>{option.description}</span>
-                </button>
-              {/each}
-            </div>
-          {/if}
-        </div>
         <button
           type="button"
           class="process-display-icon-button"
           aria-label="Open Plant actions"
           title="Plant actions"
           onclick={() => {
-            lensMenuOpen = false
             transientModalOpen = true
             void loadActions()
           }}
@@ -464,26 +326,19 @@
       </div>
     </header>
     <div class="process-display-window-body">
-      {#if display}
-        <ProcessDisplayRenderer
-          {display}
-          {values}
-          {alarms}
-          {widgetPositions}
-          {visibleWidgetIds}
-          {visiblePathIds}
-          onWidgetPositionChange={updateWidgetPosition}
-        />
-        {#if error || refreshError}
+      {#if overviewSource !== null}
+        <!-- Its own page, so OpenBridge's styles stay with the drawing; it samples the Plant itself. -->
+        <iframe class="process-display-view" src={overviewSource} title="{object.label} unit overview"></iframe>
+        {#if error}
           <div class="process-display-notice" role="status">
-            {error ?? `Live refresh unavailable; showing last received values. ${refreshError}`}
-            {#if error}<button type="button" aria-label="Dismiss display error" onclick={() => { error = null }}><X size={16} /></button>{/if}
+            {error}
+            <button type="button" aria-label="Dismiss display error" onclick={() => { error = null }}><X size={16} /></button>
           </div>
         {/if}
       {:else}
         <div class="process-display-error" role="alert">
           <span>{error ?? 'Process display did not load.'}</span>
-          <button type="button" onclick={() => { void loadDisplay() }}>Retry</button>
+          <button type="button" onclick={() => { void loadOverview() }}>Retry</button>
         </div>
       {/if}
     </div>
@@ -641,3 +496,7 @@
     </div>
   {/if}
 </div>
+
+<style>
+  .process-display-view { display: block; width: 100%; height: 100%; border: 0; }
+</style>

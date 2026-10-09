@@ -9,7 +9,9 @@ import type {
   ProcessDisplayGraphLens,
   ProcessDisplayValue,
 } from '../../packs/process-plant/displays/index.ts'
+import { embeddedViewEnvelopeSchema, type EmbeddedViewEnvelope, type EmbeddedViewPublication } from '@leitbild/contracts'
 import { querySimulationRunCapability } from '../simulation-run-client.ts'
+import { activeWorkspaceId } from '../workspace-context.ts'
 
 export interface ProcessDisplayLensOption {
   readonly id: string
@@ -617,4 +619,21 @@ export const readProcessPlantArtifact = async (
       overviewComponentCount: assertNumber(metadata.overviewComponentCount, 'process plant artifact metadata requires overviewComponentCount'),
     },
   }
+}
+
+/**
+ * The unit overview World generates for a Plant, as the embedded view the
+ * process display window frames. The Run is the view's subject, as for a
+ * display shown below an agent's answer.
+ */
+export const readUnitOverviewView = async (
+  simulationRunId: SimulationRunId,
+  plantId: string,
+): Promise<EmbeddedViewEnvelope> => {
+  const result = await querySimulationRunCapability<{ readonly view: EmbeddedViewPublication }>(simulationRunId, 'world.process-plant.display.overview', { plantId })
+  return embeddedViewEnvelopeSchema.parse({
+    moduleId: 'world',
+    subject: { workspaceId: activeWorkspaceId(), moduleId: 'world', type: 'world.simulation-run', id: simulationRunId },
+    ...result.view,
+  })
 }
