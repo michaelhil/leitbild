@@ -5,7 +5,8 @@
 // lanes, then below every symbol. Each rung is laid out in both orientations,
 // and the first rung with an attempt that verifies, keeps within the crossing
 // limit and fits the box wins; within it, fewer crossings, then the better
-// fit. Without one, the result says why: density, the smallest size per
+// fit. Without one, the result says why: density (crossings, when every
+// attempt crosses too often, verified or not), the smallest size per
 // orientation, or the verifier's findings. Nothing is truncated silently.
 import { runAttempt, prepare, type AttemptGeometry, type Detail, type TextPolicy } from './attempt.ts'
 import { breakCycles } from './cycles.ts'
@@ -89,15 +90,18 @@ export const layoutDiagram = (graph: DiagramGraph, profile: DiagramProfile): Dia
     }
   }
 
+  // Too many crossings in every attempt, verified or not, is the reason to
+  // give: no drawing of this graph would be accepted whatever else is wrong.
   const verified = attempts.filter(judged => judged.violations.length === 0)
+  const fewestCrossings = Math.min(...(verified.length > 0 ? verified : attempts).map(judged => judged.crossings))
+  if (fewestCrossings > profile.limits.crossings) {
+    return { ok: false, reasons: [{ kind: 'density', limit: 'crossings', count: fewestCrossings, max: profile.limits.crossings }] }
+  }
   if (verified.length === 0) {
     const fewest = [...attempts].sort((a, b) => a.violations.length - b.violations.length)[0]!
     return { ok: false, reasons: [{ kind: 'unverifiable', violations: fewest.violations }] }
   }
   const withinCrossings = verified.filter(judged => judged.crossings <= profile.limits.crossings)
-  if (withinCrossings.length === 0) {
-    return { ok: false, reasons: [{ kind: 'density', limit: 'crossings', count: Math.min(...verified.map(judged => judged.crossings)), max: profile.limits.crossings }] }
-  }
   // Per orientation, the drawing that comes closest to the box.
   const reasons: Reason[] = ORIENTATIONS.flatMap(orientation => {
     const smallest = withinCrossings

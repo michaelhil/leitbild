@@ -92,15 +92,18 @@ const aspectFor = (presentation: MimicPresentation) =>
     : presentation.element === 'tank' || presentation.element === 'heat-exchanger' ? presentation.aspect
       : null
 
-// A vessel loops return to (the reactor) is a hub: it takes links from two or more drawn loops on both sides.
+// A vessel loops return to (the reactor) is a hub: it takes links from two or
+// more drawn loops on both sides, or a drawn loop leaves it and returns to it.
+// Drawn beside the lanes, each loop's return run reaches its side face.
 const isHub = (graph: CompiledPlantGraph, component: CompiledComponent, drawnLinks: ReadonlySet<number>): boolean => {
   const loopsOf = (indexes: ReadonlyArray<number> | undefined, side: 'from' | 'to') => new Set((indexes ?? [])
     .filter(index => drawnLinks.has(index))
     .map(index => graph.components[side === 'from' ? graph.links[index]!.fromComponentIndex : graph.links[index]!.toComponentIndex]!.metadata?.loopId)
     .filter((loop): loop is string => loop !== undefined))
+  const returning = loopsOf(graph.incomingLinksByComponent[component.index], 'from')
+  const leaving = loopsOf(graph.outgoingLinksByComponent[component.index], 'to')
   return component.metadata?.loopId === undefined
-    && loopsOf(graph.incomingLinksByComponent[component.index], 'from').size >= 2
-    && loopsOf(graph.outgoingLinksByComponent[component.index], 'to').size >= 2
+    && ((returning.size >= 2 && leaving.size >= 2) || [...returning].some(loop => leaving.has(loop)))
 }
 
 const portDirection = (component: CompiledComponent, port: string): 'in' | 'out' | 'both' => {
@@ -370,6 +373,11 @@ const compileWithin = (plant: CompiledProcessPlant, intent: MimicIntent, budget:
   if (!resolved.ok) return { ok: false, issues: resolved.issues }
   const planned = plan(plant, resolved.scope)
   if (planned.issues.length > 0) return { ok: false, issues: planned.issues }
+  // A scope of equipment the mimic has no symbol for draws nothing; the engine is never handed an empty diagram.
+  if (planned.graph.nodes.length === 0) {
+    const reasons = resolved.scope.components.map(index => presentationFor(plant.graph.components[index]!)).flatMap(presentation => presentation.element === 'not-drawn' ? [presentation.reason] : [])
+    return { ok: false, issues: [{ field: '(mimic)', message: `nothing in this scope has a mimic symbol (${[...new Set(reasons)].join('; ')}); name other equipment or services` }] }
+  }
   const layout = layoutDiagram(planned.graph, profileFor(budget))
   if (!layout.ok) return { ok: false, layout }
   return { ok: true, mimic: assemble(plant, intent, resolved.scope, planned, layout) }

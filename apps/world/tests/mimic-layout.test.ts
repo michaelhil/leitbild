@@ -405,3 +405,114 @@ const dense = (): DiagramGraph => {
     ],
   }
 }
+
+// Structures the reference Plant's fuzz found drawn with four bends, or not at all.
+
+const stub = (id: string, rank: string, direction: 'in' | 'out'): DiagramNode => node(id, 'stub', rank, { end: direction }, { cells: [2, 1], lines: [tag(64)] })
+
+/** A pump drawn with its suction and its supply: two sources feed the bus through longer chains than the suction's. */
+const pumpWithSupply = (): DiagramGraph => {
+  const box = (id: string, rank: string, ports: Record<string, 'in' | 'out'>): DiagramNode => node(id, 'device', rank, ports, { lines: [tag(56), row(40)], frameable: true, flapWidth: 40 })
+  return {
+    nodes: [
+      box('turbine', 'a.turbine', { out: 'out' }),
+      box('grid', 'b.grid', { out: 'out' }),
+      box('transformer', 'c.transformer', { in: 'in', out: 'out' }),
+      box('breaker', 'd.breaker', { in: 'in', out: 'out' }),
+      box('generator', 'e.generator', { out: 'out' }),
+      box('generator-breaker', 'f.generator-breaker', { in: 'in', out: 'out' }),
+      node('bus', 'bar', 'g.bus', { in: 'in', out: 'out' }, { lines: [tag(40)] }),
+      node('pump', 'device', 'h.pump', { suction: 'in', power: 'in', out: 'out' }, { lines: [tag(44), row(40)], frameable: true, flapWidth: 52 }),
+      vessel('tank', 'i.tank', { out: 'out' }),
+      stub('other-pumps', 'j.other-pumps', 'in'),
+      stub('onward', 'k.onward', 'in'),
+      stub('other-loads', 'l.other-loads', 'in'),
+      stub('other-buses', 'm.other-buses', 'in'),
+    ],
+    edges: [
+      edge('p1', 'power', 'turbine:out', 'transformer:in'),
+      edge('p2', 'power', 'grid:out', 'transformer:in'),
+      edge('p3', 'power', 'transformer:out', 'breaker:in'),
+      edge('p4', 'power', 'transformer:out', 'other-buses:end'),
+      edge('p5', 'power', 'breaker:out', 'bus:in'),
+      edge('p6', 'power', 'generator:out', 'generator-breaker:in'),
+      edge('p7', 'power', 'generator-breaker:out', 'bus:in'),
+      edge('p8', 'power', 'bus:out', 'pump:power'),
+      edge('p9', 'power', 'bus:out', 'other-loads:end'),
+      edge('f1', 'fluid', 'tank:out', 'pump:suction'),
+      edge('f2', 'fluid', 'tank:out', 'other-pumps:end'),
+      edge('f3', 'fluid', 'pump:out', 'onward:end'),
+    ],
+  }
+}
+
+/** Two supplies into one pump past a valve, and two pumps into one vessel: edges between symbols that skip a layer. */
+const skippingEdges = (): DiagramGraph => ({
+  nodes: [
+    vessel('additive', 'a.additive', { out: 'out' }),
+    vessel('supply', 'b.supply', { out: 'out' }),
+    valve('valve', 'c.valve'),
+    pump('pump-a', 'd.pump-a'),
+    pump('pump-b', 'e.pump-b'),
+    vessel('vessel', 'f.vessel', { a: 'in', b: 'in' }),
+  ],
+  edges: [
+    edge('k1', 'line', 'additive:out', 'valve:in'),
+    edge('k2', 'line', 'valve:out', 'pump-a:in'),
+    edge('k3', 'line', 'supply:out', 'pump-a:in'),
+    edge('k4', 'line', 'supply:out', 'pump-b:in'),
+    edge('k5', 'line', 'pump-a:out', 'vessel:a'),
+    edge('k6', 'line', 'pump-b:out', 'vessel:b'),
+  ],
+})
+
+/** The loop drawing with a makeup pump that joins lane A's return at the hub's port. */
+const hubWithMakeup = (lanes: number): DiagramGraph => {
+  const loops = hubLoops(lanes)
+  return {
+    nodes: [...loops.nodes, vessel('makeup-tank', 'makeup.tank', { out: 'out' }), pump('makeup', 'makeup.pump')],
+    edges: [...loops.edges, edge('m1', 'makeup', 'makeup-tank:out', 'makeup:in'), edge('m2', 'makeup', 'makeup:out', 'hub:in-A')],
+  }
+}
+
+const bendsOf = (points: ReadonlyArray<readonly [number, number]>): number =>
+  points.slice(1, -1).filter((b, i) => {
+    const [a, c] = [points[i]!, points[i + 2]!]
+    return !((a[0] === b[0] && b[0] === c[0]) || (a[1] === b[1] && b[1] === c[1]))
+  }).length
+
+describe('long edges, stubs and shared hub ports', () => {
+  const cases: ReadonlyArray<readonly [string, DiagramGraph]> = [
+    ['a pump with its suction and its supply', pumpWithSupply()],
+    ['edges that skip a layer between symbols', skippingEdges()],
+    ['a makeup line joining a loop at the hub, 2 lanes', hubWithMakeup(2)],
+    ['a makeup line joining a loop at the hub, 4 lanes', hubWithMakeup(4)],
+  ]
+  for (const [name, graph] of cases) {
+    test(`${name}: accepted, verified, at most three bends a pipe, deterministic and id-free`, () => {
+      const result = accepted(graph)
+      expect(verifyDiagram(graph, profile, result)).toEqual([])
+      for (const routed of result.edges) expect(bendsOf(routed.points)).toBeLessThanOrEqual(3)
+      expect(layoutDiagram(graph, profile)).toMatchObject({ ok: true, hash: result.hash })
+      for (const seed of [1, 2]) expect(accepted(scramble(graph, seed)).hash).toBe(result.hash)
+    })
+  }
+
+  test('a source is drawn next to what it feeds: its stub does not hold it back, so its suction runs short', () => {
+    const result = accepted(pumpWithSupply())
+    expect(bendsOf(result.edges.find(e => e.id === 'f1')!.points)).toBeLessThanOrEqual(2)
+  })
+
+  test('an edge that skips a layer runs straight from one of its ends and jogs once', () => {
+    const result = accepted(skippingEdges())
+    for (const id of ['k3', 'k5', 'k6']) expect(bendsOf(result.edges.find(e => e.id === id)!.points)).toBeLessThanOrEqual(2)
+  })
+
+  test('edges reaching one hub port from both sides meet it in one place', () => {
+    for (const lanes of [2, 4]) {
+      const result = accepted(hubWithMakeup(lanes))
+      const place = result.nodes.find(n => n.id === 'hub')!.ports['in-A']!
+      for (const id of ['cold-0', 'm2']) expect(result.edges.find(e => e.id === id)!.points.at(-1)).toEqual([place.x, place.y])
+    }
+  })
+})

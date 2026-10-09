@@ -121,9 +121,17 @@ export const runAttempt = (prepared: Prepared, profile: DiagramProfile, orientat
   const rightSolid = items.map((_, item) => reachOf(item, 'c1', false))
 
   const across = placeAcross({ model, profile, layering, ordering, left, right, leftSolid, rightSolid })
-  const c = across.c
-  const crossBox = model.nodes.map(node => (shape[node.index] === null ? { f0: 0, f1: 0, c0: 0, c1: 0 } : shiftBox(shape[node.index]!, 0, c[node.index]!)))
-  const attached = attach({ model, profile, layering, ordering, c, box: crossBox, entries })
+  const attachAt = (anchors: ReadonlyArray<number>) => attach({
+    model, profile, layering, ordering, c: anchors, entries,
+    box: model.nodes.map(node => (shape[node.index] === null ? { f0: 0, f1: 0, c0: 0, c1: 0 } : shiftBox(shape[node.index]!, 0, anchors[node.index]!))),
+  })
+  // Strands line up with the ports their ends were given, until none can move.
+  let c = across.c
+  let attached = attachAt(c)
+  for (let next = across.align(attached.pin); next !== null; next = across.align(attached.pin)) {
+    c = next
+    attached = attachAt(c)
+  }
   const plan = planChannels({ model, profile, layering, structure, pin: attached.pin })
 
   // Bars: a line `outline` thick, rows a grid apart.

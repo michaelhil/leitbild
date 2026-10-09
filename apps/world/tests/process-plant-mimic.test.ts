@@ -13,7 +13,8 @@ import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance 
 import { recordedPlantVariables } from '../src/packs/process-plant/recording.ts'
 import { compileMimic, type MimicBudget } from '../src/packs/process-plant/displays/mimic/compile-mimic.ts'
 import { MIMIC_MAX_WIDTH, type CompiledMimic } from '../src/packs/process-plant/displays/mimic/mimic-model.ts'
-import type { MimicIntent } from '../src/packs/process-plant/displays/mimic/scope.ts'
+import { plantCarriers, plantLoops, type MimicIntent } from '../src/packs/process-plant/displays/mimic/scope.ts'
+import { carriersAt } from '../src/packs/process-plant/graph/index.ts'
 
 const plantWithLoops = (loopCount: number): ProcessPlantRuntimeInstance => {
   const compiled = compileProcessPlant(createPwrReferencePlantDefinition({ id: `plant:mimic-${loopCount}`, loopCount }))
@@ -115,6 +116,85 @@ describe('generated equipment mimics', () => {
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.issues[0]!.message.match(/the drawing needs/g)).toHaveLength(1)
+  })
+})
+
+// Bends of a drawn pipe: where its polyline turns.
+const bendsOf = (points: ReadonlyArray<readonly [number, number]>): number =>
+  points.slice(1, -1).filter((b, i) => {
+    const [a, c] = [points[i]!, points[i + 2]!]
+    return !((a[0] === b[0] && b[0] === c[0]) || (a[1] === b[1] && b[1] === c[1]))
+  }).length
+
+describe('every intent over the reference Plant draws or is refused with a reason', () => {
+  const system = plantWithLoops(4)
+  const graph = system.plant.graph
+  // One-ended intents from and to every component per service it carries (and all of them together),
+  // every service alone and per loop, and every pair of services.
+  const carriers = plantCarriers(graph)
+  const sweep: MimicIntent[] = [
+    ...graph.components.flatMap(component => (['in', 'out'] as const).flatMap(side => {
+      const end = side === 'in' ? 'to' : 'from'
+      const carried = carriersAt(graph, component.index, side).filter(carrier => carriers.includes(carrier))
+      return [...carried.map(service => ({ [end]: [String(component.id)], services: [service] })), ...(carried.length > 1 ? [{ [end]: [String(component.id)], services: carried }] : [])]
+    })),
+    ...carriers.flatMap(service => [{ services: [service] }, ...plantLoops(graph).map(loop => ({ services: [service], loops: [loop] }))]),
+    ...carriers.flatMap((a, index) => carriers.slice(index + 1).map(b => ({ services: [a, b] }))),
+  ]
+
+  test('no intent throws, and no drawing fails its own verification', () => {
+    expect(sweep.length).toBeGreaterThan(350)
+    const failures = sweep.flatMap(intent => {
+      try {
+        const result = compileMimic(system.plant, intent, roomy)
+        if (result.ok) {
+          const bent = result.mimic.pipes.filter(pipe => bendsOf(pipe.points) > 3)
+          return bent.length === 0 ? [] : [`${JSON.stringify(intent)}: ${bent.map(pipe => pipe.id).join(', ')} bend more than three times`]
+        }
+        return result.issues.some(issue => /could not be verified/.test(issue.message)) ? [`${JSON.stringify(intent)}: ${result.issues[0]!.message}`] : []
+      } catch (error) {
+        return [`${JSON.stringify(intent)} threw ${(error as Error).message}`]
+      }
+    })
+    expect(failures).toEqual([])
+  })
+
+  test('is the diesel feeding the motor-driven AFW pump: the pump with its suction and its supply', () => {
+    const mimic = generated(system, { to: ['auxFeedwaterPumpMotor'], services: ['auxFeedwater', 'electricalPower'] })
+    expect(mimic.items.map(item => item.binding.label)).toEqual(expect.arrayContaining(['MD AFW A', 'AFW tank', 'Bus A', 'EDG A', 'EDG BKR A']))
+    for (const pipe of mimic.pipes) expect(bendsOf(pipe.points)).toBeLessThanOrEqual(3)
+    for (const to of ['mainFeedwaterPumpA', 'safetyInjectionPumpA']) {
+      const services = to === 'mainFeedwaterPumpA' ? ['electricalPower', 'feedwater'] : ['electricalPower', 'safetyInjection']
+      expect(compileMimic(system.plant, { to: [to], services }, roomy).ok).toBe(true)
+    }
+  })
+
+  test('a system whose lines skip a layer draws them with one jog: charging', () => {
+    for (const intent of [{ services: ['charging'] }, { to: ['core'], services: ['charging'] }]) {
+      const mimic = generated(system, intent)
+      for (const pipe of mimic.pipes) expect(bendsOf(pipe.points)).toBeLessThanOrEqual(2)
+    }
+  })
+
+  test('one loop returns to the vessel it leaves, drawn beside it', () => {
+    const mimic = generated(system, { services: ['primaryCoolant'], loops: ['A'] })
+    expect(mimic.items.map(item => item.binding.label)).toEqual(expect.arrayContaining(['Core', 'SG A', 'RCP A']))
+    expect(generated(system, { from: ['sgA'], services: ['primaryCoolant'] }, { maxWidth: 800, maxHeight: 812 }).items.length).toBeGreaterThan(3)
+  })
+
+  test('charging joins a cold leg at the reactor in one place, as the cold leg does', () => {
+    const mimic = generated(system, { services: ['charging', 'primaryCoolant'], loops: ['A'] })
+    const end = (linkId: string) => mimic.pipes.find(pipe => pipe.linkId === linkId)!.points.at(-1)
+    expect(end('charging-pump-to-cold-leg-a')).toEqual(end('rcp-a-to-core'))
+    // All four loops at once cross too often to read, and say so instead of failing.
+    const all = compileMimic(system.plant, { services: ['charging', 'primaryCoolant'] }, roomy)
+    expect(all.ok).toBe(false)
+    if (!all.ok) expect(all.issues[0]!.message).toMatch(/crossing pipes|symbols|the drawing needs/)
+  })
+
+  test('a service with nothing in the loops named is refused with what to name instead', () => {
+    const result = compileMimic(system.plant, { services: ['charging'], loops: ['D'] }, roomy)
+    expect(result).toEqual({ ok: false, issues: [{ field: 'loops', message: 'charging has no equipment in loop D and no route into or out of it; it reaches loops A, B: name those, or drop "loops"' }] })
   })
 })
 

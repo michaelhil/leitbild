@@ -62,7 +62,8 @@ export const planChannels = (input: {
       const p = chain.items[k]!
       const q = chain.items[k + 1]!
       const layer = items[p]!.layer
-      const channel = step === 'next' ? layer + 1 : step === 'turnAbove' ? layer + 1 : layer
+      // A hub sits beside the layers: its step runs in the channel before the item it reaches.
+      const channel = step === 'next' ? (isHub(p) ? items[q]!.layer : layer + 1) : step === 'turnAbove' ? layer + 1 : layer
       const sideOf = (item: number, own: PinSide): PinSide => (isHub(item) ? 'side' : own)
       const a = { c: pin[index]![k]!, side: sideOf(p, step === 'turnBelow' ? 'high' : 'low') }
       const b = { c: pin[index]![k + 1]!, side: sideOf(q, step === 'turnAbove' ? 'low' : 'high') }

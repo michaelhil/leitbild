@@ -79,6 +79,33 @@ describe('mimic scope from the agent\'s intent', () => {
     expect(drawn(graph, { services: ['primaryCoolant'], loops: ['A', 'B'] }).labels).toEqual(['Core', 'PZR', 'RCP A', 'RCP B', 'SG A', 'SG B'])
   })
 
+  test('loops that hold none of a service, and no route into or out of them, are refused with what to name instead', () => {
+    expect(rejection(graph, { services: ['charging'], loops: ['D'] })).toEqual([{ field: 'loops', message: 'charging has no equipment in loop D and no route into or out of it; it reaches loops A, B: name those, or drop "loops"' }])
+    expect(rejection(graph, { services: ['charging'], loops: ['C', 'D'] })[0]!.message).toBe('charging has no equipment in loops C, D and no route into or out of them; it reaches loops A, B: name those, or drop "loops"')
+    expect(rejection(graph, { services: ['condensate'], loops: ['A'] })[0]!.message).toBe('condensate has no equipment in loop A and no route into or out of it; it draws only shared equipment, so drop "loops"')
+    expect(rejection(graph, { to: ['chargingPumpB'], services: ['charging'], loops: ['A'] })[0]!.message).toBe('the charging upstream of chargingPumpB has no equipment in loop A and no route into or out of it; it draws only shared equipment, so drop "loops"')
+  })
+
+  test('equipment the model connects to nothing is refused as such', () => {
+    for (const id of ['pressurizerReliefValve', 'reactorTripBreakerA', 'containmentSprayAdditiveTank']) {
+      expect(rejection(graph, { from: [id], services: ['primaryRelief'] })).toEqual([{ field: 'from.0', message: `${id} is not connected to any equipment in the Plant model, so it cannot be drawn` }])
+      expect(rejection(graph, { from: ['pressurizer'], to: [id] })[0]).toEqual({ field: 'to.0', message: `${id} is not connected to any equipment in the Plant model, so it cannot be drawn` })
+    }
+  })
+
+  test('a device the model bundles inside a component is named by its host, with the line it sits on', () => {
+    for (const name of ['PORV', 'porv']) {
+      expect(rejection(graph, { to: [name] })).toEqual([{
+        field: 'to.0',
+        message: `"${name}" is the reliefValve the model bundles in pressurizer, drawn on its reliefOutlet line; name pressurizer instead (from pressurizer to pressurizerReliefTank draws that line with it)`,
+        didYouMean: ['pressurizer (Pressurizer, PZR)'],
+      }])
+    }
+    expect(rejection(graph, { from: ['pressurizer'], to: ['PRT'], exclude: ['PORV'] })[0]!.message).toBe('"PORV" is the reliefValve the model bundles in pressurizer, drawn on its reliefOutlet line; it cannot be excluded on its own')
+    // Named as the hint says, the line draws with the device on it.
+    expect(drawn(graph, { from: ['pressurizer'], to: ['pressurizerReliefTank'] }).labels).toEqual(['PRT', 'PZR'])
+  })
+
   test('the same intent always draws the same equipment', () => {
     const intent = { to: ['sgB'], services: ['feedwater', 'auxFeedwater'] }
     expect(JSON.stringify(resolveMimicScope(graph, intent))).toBe(JSON.stringify(resolveMimicScope(graph, intent)))

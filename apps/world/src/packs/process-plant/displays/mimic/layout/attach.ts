@@ -69,15 +69,19 @@ export const attach = (input: {
   }
   const hubFace = (node: number): number => box[node]!.c1 - model.nodes[node]!.portInset
 
-  // Port slots on symbol faces.
+  // Port slots on symbol faces. A port carrying a long edge to another
+  // symbol aims at that edge's strand, so the strand runs straight from it
+  // (its short edges jog anyway, and a strand from a bar or hub meets that
+  // end straight already).
   const slot = model.nodes.map(node => node.ports.map(() => Number.NaN))
-  const wants = model.nodes.map(node => node.ports.map(() => [] as number[]))
+  const wants = model.nodes.map(node => node.ports.map(() => [] as Array<{ readonly at: number; readonly strand: boolean }>))
   layering.chains.forEach((chain, index) => {
     for (const [position, adjacent] of [[0, 1], [chain.items.length - 1, chain.items.length - 2]] as const) {
       const node = items[chain.items[position]!]!.node!
       const other = chain.items[adjacent]!
       const target = role(other) === 'bar' ? c[node]! : role(other) === 'hub' ? hubFace(items[other]!.node!) : c[other]!
-      wants[node]![portAt(index, position)]!.push(target)
+      const far = role(chain.items[position === 0 ? chain.items.length - 1 : 0]!)
+      wants[node]![portAt(index, position)]!.push({ at: target, strand: role(other) === null && far !== 'bar' && far !== 'hub' })
     }
   })
   for (const node of model.nodes) {
@@ -90,8 +94,10 @@ export const attach = (input: {
         .filter(entry => entry.port.use === use && wants[node.index]![entry.index]!.length > 0 && sideEntry(node.index, entry.index) === undefined)
       if (ports.length === 0) continue
       const target = (index: number): number => {
-        const list = wants[node.index]![index]!
-        return list.reduce((sum, value) => sum + value, 0) / list.length
+        const all = wants[node.index]![index]!
+        const strands = all.filter(want => want.strand)
+        const list = strands.length > 0 ? strands : all
+        return list.reduce((sum, want) => sum + want.at, 0) / list.length
       }
       ports.sort((a, b) => (target(a.index) - target(b.index)) || (a.index - b.index))
       if (ports.length > slots.length) throw new Error(`node ${node.id} needs ${ports.length} slots on one face and has ${slots.length}`)

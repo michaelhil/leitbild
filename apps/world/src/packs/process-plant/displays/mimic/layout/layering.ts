@@ -22,7 +22,11 @@ export type Step = 'next' | 'turnAbove' | 'turnBelow'
 
 export interface Chain {
   readonly edge: number
-  /** Items from the lower layer to the higher one (reversed edges run against the flow here). */
+  /**
+   * Items from the lower layer to the higher one (reversed edges run against
+   * the flow here). A hub sits beside the layers: its neighbour in a chain may
+   * share its layer, when the edge meets the hub in the channel past it.
+   */
   readonly items: ReadonlyArray<number>
   readonly steps: ReadonlyArray<Step>
   readonly reversed: boolean
@@ -61,10 +65,17 @@ export const assignLayers = (model: Model, structure: Structure, reversed: Reado
     }
   }
   if (topological.length !== count) throw new Error('cycle breaking left a cycle')
+  // A stub is an off-sheet end on one edge: it goes wherever its neighbour is,
+  // so it never holds a source back from the equipment it feeds.
+  const isStub = (node: number): boolean => model.nodes[node]!.role === 'stub'
   for (const node of topological) {
     if (predecessors[node]!.length === 0 && successors[node]!.length > 0) {
-      layer[node] = Math.min(...successors[node]!.map(next => layer[next]!)) - 1
+      const firm = successors[node]!.filter(next => !isStub(next))
+      layer[node] = Math.min(...(firm.length > 0 ? firm : successors[node]!).map(next => layer[next]!)) - 1
     }
+  }
+  for (const node of topological) {
+    if (isStub(node) && successors[node]!.length === 0 && predecessors[node]!.length === 1) layer[node] = layer[predecessors[node]![0]!]! + 1
   }
 
   // A bar spans what it connects; it never shares a layer with a symbol.
@@ -99,6 +110,32 @@ export const assignLayers = (model: Model, structure: Structure, reversed: Reado
     }
     return { edge: edge.index, items: chain, steps, reversed: isReversed }
   })
+  // A hub port is one place on the hub's side face, on one track. Edges reach
+  // a hub in the channel before its layer (from upstream) or after it (to
+  // downstream); where one port has both, the side with fewer edges (on a
+  // tie, the upstream one) runs on through the hub's layer to the other
+  // side's channel and meets the rest there, in a tee.
+  model.nodes.filter(node => node.role === 'hub').forEach(hub => hub.ports.forEach((_, port) => {
+    const at = (chain: Chain): 'start' | 'end' | null => {
+      const edge = model.edges[chain.edge]!
+      const own = (node: number, p: number): boolean => node === hub.index && p === port
+      const touches = own(edge.from, edge.fromPort) || own(edge.to, edge.toPort)
+      if (!touches) return null
+      return chain.items[0] === hub.index ? 'start' : 'end'
+    }
+    const starting = chains.filter(chain => at(chain) === 'start')
+    const ending = chains.filter(chain => at(chain) === 'end')
+    if (starting.length === 0 || ending.length === 0) return
+    const moved = starting.length >= ending.length ? ending : starting
+    for (const chain of moved) {
+      const dummy = items.length
+      items.push({ node: null, edge: chain.edge, layer: layer[hub.index]!, lane: structure.edgeLane[chain.edge]! })
+      const index = chains.indexOf(chain)
+      chains[index] = at(chain) === 'end'
+        ? { ...chain, items: [...chain.items.slice(0, -1), dummy, hub.index], steps: [...chain.steps, 'next'] }
+        : { ...chain, items: [hub.index, dummy, ...chain.items.slice(1)], steps: ['next', ...chain.steps] }
+    }
+  }))
   const layerCount = Math.max(0, ...items.map(item => item.layer)) + 1
   return { items, layerCount, chains }
 }

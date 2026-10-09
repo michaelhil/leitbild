@@ -81,7 +81,48 @@ const resolveName = (
     .some(label => label !== undefined && normalized(label) === wanted))
   if (byLabel.length === 1) return { component: byLabel[0]!.index, via: 'label' }
   if (byLabel.length > 1) return { error: `"${name}" names ${byLabel.length} components; name one by its id`, didYouMean: byLabel.slice(0, SUGGESTION_COUNT).map(component => componentDescription(graph, component.index)) }
+  const bundled = bundledDevices(graph, wanted)
+  if (bundled.length > 0) return { error: bundledDeviceMessage(graph, name, bundled, role), didYouMean: [...new Set(bundled.map(entry => componentDescription(graph, entry.host)))].slice(0, SUGGESTION_COUNT) }
   return { error: `unknown equipment "${name}"; name one component per entry: its id, a tag measured on it, its label or its short label`, didYouMean: equipmentSuggestions(graph, name) }
+}
+
+// A device the model bundles inside a component (a pressurizer's relief valve)
+// has a label of its own but is not a component: it is drawn on its host's
+// line, so a name for it is answered with the host and that line's ends.
+const bundledDevices = (graph: CompiledPlantGraph, wanted: string): ReadonlyArray<{ readonly host: number; readonly device: string }> =>
+  graph.components.flatMap(component => Object.entries(component.metadata?.presentation?.embedded ?? {})
+    .filter(([, label]) => normalized(label) === wanted)
+    .map(([device]) => ({ host: component.index, device })))
+
+const bundledDeviceMessage = (graph: CompiledPlantGraph, name: string, bundled: ReadonlyArray<{ readonly host: number; readonly device: string }>, role: 'from' | 'to' | 'exclude'): string => {
+  if (new Set(bundled.map(entry => entry.host)).size > 1) {
+    return `"${name}" names devices the model bundles in ${[...new Set(bundled.map(entry => String(graph.components[entry.host]!.id)))].join(', ')}; name the component that holds the one you mean`
+  }
+  const { host, device } = bundled[0]!
+  const component = graph.components[host]!
+  const port = component.semantics.embedded.find(candidate => candidate.id === device)?.port
+  const hostId = String(component.id)
+  const what = `"${name}" is the ${device} the model bundles in ${hostId}${port === undefined ? '' : `, drawn on its ${String(port)} line`}`
+  if (role === 'exclude') return `${what}; it cannot be excluded on its own`
+  if (port === undefined) return `${what}; name ${hostId} instead`
+  const farIds = (indexes: ReadonlyArray<number> | undefined, side: 'from' | 'to') => [...new Set((indexes ?? [])
+    .map(index => graph.links[index]!)
+    .filter(link => String(side === 'to' ? link.fromPortName : link.toPortName) === String(port))
+    .map(link => String(graph.components[side === 'to' ? link.toComponentIndex : link.fromComponentIndex]!.id)))].sort()
+  const downstream = farIds(graph.outgoingLinksByComponent[host], 'to')
+  const upstream = farIds(graph.incomingLinksByComponent[host], 'from')
+  const line = downstream.length > 0 ? `from ${hostId} to ${downstream.join(', ')}` : upstream.length > 0 ? `from ${upstream.join(', ')} to ${hostId}` : undefined
+  return `${what}; name ${hostId} instead${line === undefined ? '' : ` (${line} draws that line with it)`}`
+}
+
+// Links a mimic can draw: pipes and power. Equipment with none (a spare valve,
+// a breaker the model leaves unwired) has nothing to draw.
+const unconnectedReason = (graph: CompiledPlantGraph, index: number, carriers: ReadonlyArray<string>): string | undefined => {
+  const linked = [...(graph.incomingLinksByComponent[index] ?? []), ...(graph.outgoingLinksByComponent[index] ?? [])].map(link => graph.links[link]!)
+  if (linked.some(link => carriers.includes(linkCarrier(link)))) return undefined
+  const id = String(graph.components[index]!.id)
+  if (linked.length === 0) return `${id} is not connected to any equipment in the Plant model, so it cannot be drawn`
+  return `${id} is connected to other equipment only by ${[...new Set(linked.map(link => link.kind))].sort().join(', ')} links, which a mimic does not draw`
 }
 
 /** Components whose id, label, short label or tags match the guessed words best. */
@@ -133,10 +174,16 @@ const sorted = (indexes: Iterable<number>): ReadonlyArray<number> => [...new Set
 export const resolveMimicScope = (graph: CompiledPlantGraph, intent: MimicIntent): MimicScopeResult => {
   const issues: Array<{ readonly field: string; readonly message: string; readonly didYouMean?: ReadonlyArray<string> }> = []
   const names: Array<MimicScope['names'][number]> = []
+  const known = plantCarriers(graph)
   const resolveAll = (field: 'from' | 'to' | 'exclude', list: ReadonlyArray<string> | undefined): ReadonlyArray<number> => (list ?? []).flatMap((name, index) => {
     const resolved = resolveName(graph, name, field)
     if ('error' in resolved) {
       issues.push({ field: `${field}.${index}`, message: resolved.error, ...(resolved.didYouMean.length === 0 ? {} : { didYouMean: resolved.didYouMean }) })
+      return []
+    }
+    const unconnected = field === 'exclude' ? undefined : unconnectedReason(graph, resolved.component, known)
+    if (unconnected !== undefined) {
+      issues.push({ field: `${field}.${index}`, message: unconnected })
       return []
     }
     names.push({ name, component: resolved.component, via: resolved.via })
@@ -146,7 +193,6 @@ export const resolveMimicScope = (graph: CompiledPlantGraph, intent: MimicIntent
   const to = resolveAll('to', intent.to)
   const excluded = new Set(resolveAll('exclude', intent.exclude))
 
-  const known = plantCarriers(graph)
   for (const [index, service] of (intent.services ?? []).entries()) {
     if (known.includes(service)) continue
     const close = known.filter(candidate => serviceResembles(service, candidate))
@@ -236,6 +282,22 @@ export const resolveMimicScope = (graph: CompiledPlantGraph, intent: MimicIntent
     ].filter(index => sharedSubset.has(index)))
     return new Set([...own, ...[...shared].filter(index => reachable.has(index))])
   })()
+  if (inLoops.size === 0) {
+    const asked = intent.loops ?? []
+    const reachedLoops = loops.filter(loop => [...selected].some(index => loopOf(graph, graph.links[index]!) === loop))
+    const service = [...carriers].sort().join(' and ')
+    const subject = from.length > 0 && to.length > 0 ? `the ${service} route from ${ends(from)} to ${ends(to)}`
+      : from.length > 0 ? `the ${service} downstream of ${ends(from)}` : to.length > 0 ? `the ${service} upstream of ${ends(to)}` : service
+    return {
+      ok: false,
+      issues: [{
+        field: 'loops',
+        message: `${subject} has no equipment in ${asked.length === 1 ? 'loop' : 'loops'} ${asked.join(', ')} and no route into or out of ${asked.length === 1 ? 'it' : 'them'}; ${reachedLoops.length > 0
+          ? `it reaches ${reachedLoops.length === 1 ? 'loop' : 'loops'} ${reachedLoops.join(', ')}: name ${reachedLoops.length === 1 ? 'that loop' : 'those'}, or drop "loops"`
+          : 'it draws only shared equipment, so drop "loops"'}`,
+      }],
+    }
+  }
 
   const components = sorted([...inLoops].flatMap(index => [graph.links[index]!.fromComponentIndex, graph.links[index]!.toComponentIndex]))
   const drawn = new Set(components)
