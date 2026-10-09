@@ -5,7 +5,6 @@ import {
   type ConnectionSpec,
   type PlantGraphSpec,
   type ProcessGraphMetadata,
-  type ProcessPlantDisplayProfile,
   type VariablePath,
 } from '../graph/index.ts'
 import { pwrReferenceTemplate } from '../specs/pwr-reference-template.ts'
@@ -128,22 +127,6 @@ const loopIdForVariablePath = (
   return loopByComponentId.get(ownerId) ?? loopByConnectionId.get(ownerId) ?? null
 }
 
-const displayProfilesFor = (config: {
-  readonly profiles: ReadonlyArray<ProcessPlantDisplayProfile>
-  readonly displayedLoopIds: ReadonlySet<LoopId>
-  readonly loopByComponentId: ReadonlyMap<string, LoopId>
-  readonly loopByConnectionId: ReadonlyMap<string, LoopId>
-}): ReadonlyArray<ProcessPlantDisplayProfile> => config.profiles.map(profile => ({
-  ...profile,
-  groups: profile.groups.map(group => ({
-    ...group,
-    fields: group.fields.filter(field => {
-      const loopId = loopIdForVariablePath(field.path, config.loopByComponentId, config.loopByConnectionId)
-      return loopId === null || config.displayedLoopIds.has(loopId)
-    }),
-  })).filter(group => group.fields.length > 0),
-})).filter(profile => profile.groups.length > 0)
-
 export const assemblePwrReferencePlantGraph = (input: unknown): PlantGraphSpec => {
   const parameters = pwrReferenceParametersSchema.parse(input)
   const selectedLoopIds = availableLoopIds.slice(0, parameters.loopCount)
@@ -201,11 +184,5 @@ export const assemblePwrReferencePlantGraph = (input: unknown): PlantGraphSpec =
     components,
     connections,
     publishedVariables,
-    displayProfiles: displayProfilesFor({
-      profiles: source.displayProfiles,
-      displayedLoopIds: new Set(selectedLoopIds.slice(0, 2)),
-      loopByComponentId,
-      loopByConnectionId,
-    }),
   })
 }

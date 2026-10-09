@@ -87,9 +87,11 @@ export interface EmbeddedDeviceDeclaration {
  * follow the energy from source to sink without knowing any kind.
  */
 export type EnergyRole =
-  | { readonly role: 'source'; readonly circuit: string }
+  /** `rate`: the variable that measures the energy it puts in (a core's thermal power). */
+  | { readonly role: 'source'; readonly circuit: string; readonly rate: string }
   | { readonly role: 'transfer'; readonly from: string; readonly to: string }
-  | { readonly role: 'sink'; readonly circuit: string }
+  /** `rate`: the variable that measures the energy it takes out (a generator's electrical output). */
+  | { readonly role: 'sink'; readonly circuit: string; readonly rate: string }
 
 export interface ComponentSemantics {
   readonly function?: EquipmentFunction
@@ -141,8 +143,14 @@ export interface CompiledComponentSemantics {
   readonly embedded: ReadonlyArray<CompiledEmbeddedDevice>
   readonly ratedOutflow: ReadonlyArray<{ readonly port: PortName; readonly flowKgPerS: number }>
   readonly keyValues: ReadonlyArray<VariablePath>
-  readonly energy: ReadonlyArray<EnergyRole>
+  readonly energy: ReadonlyArray<CompiledEnergyRole>
 }
+
+/** An energy role with its rate as the full variable path. */
+export type CompiledEnergyRole =
+  | { readonly role: 'source'; readonly circuit: string; readonly rate: VariablePath }
+  | { readonly role: 'transfer'; readonly from: string; readonly to: string }
+  | { readonly role: 'sink'; readonly circuit: string; readonly rate: VariablePath }
 
 /** Which quantities and units each reading accepts. */
 export const readingAccepts = (reading: AspectReading, descriptor: { readonly quantity: ProcessQuantity; readonly unit: ProcessUnit }): boolean => {

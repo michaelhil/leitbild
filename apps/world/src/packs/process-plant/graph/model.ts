@@ -438,28 +438,6 @@ export const timestepSpecSchema = z.object({
 })
 export type TimestepSpec = z.infer<typeof timestepSpecSchema>
 
-export const processPlantDisplayFieldSchema = z.object({
-  key: idSchema,
-  label: z.string().min(1).optional(),
-  path: variablePathSchema,
-  digits: z.number().int().nonnegative().max(6).optional(),
-}).strict()
-export type ProcessPlantDisplayField = z.infer<typeof processPlantDisplayFieldSchema>
-
-export const processPlantDisplayGroupSchema = z.object({
-  id: idSchema,
-  label: z.string().min(1),
-  fields: z.array(processPlantDisplayFieldSchema).min(1),
-}).strict()
-export type ProcessPlantDisplayGroup = z.infer<typeof processPlantDisplayGroupSchema>
-
-export const processPlantDisplayProfileSchema = z.object({
-  id: idSchema,
-  label: z.string().min(1),
-  groups: z.array(processPlantDisplayGroupSchema).min(1),
-}).strict()
-export type ProcessPlantDisplayProfile = z.infer<typeof processPlantDisplayProfileSchema>
-
 export const componentInstanceSpecSchema = z.object({
   id: componentIdSchema,
   kind: componentKindSchema,
@@ -512,7 +490,6 @@ export const plantGraphSpecSchema = z.object({
   components: z.array(componentInstanceSpecSchema).min(1),
   connections: z.array(connectionSpecSchema),
   publishedVariables: z.array(variablePathSchema).default([]),
-  displayProfiles: z.array(processPlantDisplayProfileSchema).default([]),
 }).strict()
 export type PlantGraphSpec = z.infer<typeof plantGraphSpecSchema>
 
@@ -617,5 +594,4 @@ export interface CompiledPlantGraph {
   readonly signalBindingByPath: ReadonlyMap<VariablePath, ProcessSignalBinding>
   readonly signalBindingByTagId: ReadonlyMap<ProcessSignalTagId, ProcessSignalBinding>
   readonly signalBindingByExternalRef: ReadonlyMap<string, ProcessSignalBinding>
-  readonly displayProfiles: ReadonlyArray<ProcessPlantDisplayProfile>
 }

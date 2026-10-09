@@ -1,7 +1,9 @@
 import type { IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
 import { processPlantElectricalPortsAt } from './electrical-ports.ts'
 import type { PackObjectStatusTone } from '../../core/packs/protocol.ts'
-import type { ProcessPlantDisplayField } from './graph/index.ts'
+import type { VariablePath } from './graph/index.ts'
+import { formatQuantity } from './displays/display-text.ts'
+import { overviewKeyValues } from './displays/overview-key-values.ts'
 import {
   emptyProcessPlantProjection,
   processPlantField,
@@ -13,8 +15,6 @@ import type { ProcessPlantIcLifecycleState } from './runtime/index.ts'
 import type { ProcessPlantVariableHandle } from './runtime/variable-table.ts'
 import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
 
-const railDisplayProfileId = 'leitbild-rail'
-
 const severityRank: Readonly<Record<ProcessPlantIcLifecycleState['severity'], number>> = {
   info: 1,
   notice: 2,
@@ -22,9 +22,9 @@ const severityRank: Readonly<Record<ProcessPlantIcLifecycleState['severity'], nu
   critical: 4,
 }
 
-const formatValue = (value: unknown, unit: string, digits = 1): string => {
+const formatValue = (value: unknown, unit: string): string => {
   if (typeof value === 'boolean') return value ? 'yes' : 'no'
-  if (typeof value === 'number') return `${value.toFixed(digits)} ${unit}`
+  if (typeof value === 'number') return formatQuantity(value, unit)
   return `${String(value)} ${unit}`.trim()
 }
 
@@ -34,36 +34,41 @@ const formatRuntimePerformance = (plant: ProcessPlantRuntimeInstance): string =>
   return `RT x${sample.realtimeFactor.toFixed(0)} (${sample.wallMs.toFixed(1)} ms)`
 }
 
-interface RailDisplayFieldPlan {
-  readonly field: ProcessPlantDisplayField
+// A Plant's panel leads with what its unit overview leads with: the values
+// its protection trips on and the key values of its energy source and sink
+// (overview-key-values.ts). Its summary states the energy its sources put in
+// and its sinks take out. Nothing is picked per model.
+interface RailFieldPlan {
+  readonly path: VariablePath
   readonly handle: ProcessPlantVariableHandle
 }
 
-const railDisplayFieldPlanCache = new WeakMap<ProcessPlantRuntimeInstance, ReadonlyArray<RailDisplayFieldPlan>>()
+interface RailPlan {
+  readonly fields: ReadonlyArray<RailFieldPlan>
+  /** The energy sources' and sinks' rates, for the summary line. */
+  readonly headline: ReadonlyArray<RailFieldPlan>
+}
 
-const railDisplayFieldPlansFor = (
-  plant: ProcessPlantRuntimeInstance,
-): ReadonlyArray<RailDisplayFieldPlan> => {
-  const existing = railDisplayFieldPlanCache.get(plant)
+const railPlanCache = new WeakMap<ProcessPlantRuntimeInstance, RailPlan>()
+
+const railPlanFor = (plant: ProcessPlantRuntimeInstance): RailPlan => {
+  const existing = railPlanCache.get(plant)
   if (existing) return existing
-  const profile = plant.plant.graph.displayProfiles.find(candidate => candidate.id === railDisplayProfileId)
-  const plans = profile === undefined
-    ? []
-    : profile.groups.flatMap(group => group.fields.map(field => ({
-        field,
-        handle: plant.runtime.resolveVariableHandle(field.path),
-      })))
-  railDisplayFieldPlanCache.set(plant, plans)
-  return plans
+  const planOf = (path: VariablePath): RailFieldPlan => ({ path, handle: plant.runtime.resolveVariableHandle(path) })
+  // The energy the Plant takes in and gives out, as its sources' and sinks' declared rates.
+  const ends = plant.plant.graph.components
+    .flatMap(component => component.semantics.energy.flatMap(role => (role.role === 'transfer' ? [] : [role.rate])))
+  const plan = { fields: overviewKeyValues(plant.plant).map(planOf), headline: ends.map(planOf) }
+  railPlanCache.set(plant, plan)
+  return plan
 }
 
 const readField = (
   plant: ProcessPlantRuntimeInstance,
-  plan: RailDisplayFieldPlan,
+  plan: RailFieldPlan,
 ): ReturnType<typeof processPlantField> => {
   const variable = plant.runtime.readVariableSnapshotHandle(plan.handle)
-  const label = plan.field.label ?? variable.label
-  return processPlantField(plan.field.key, label, formatValue(variable.value, variable.unit, plan.field.digits))
+  return processPlantField(String(plan.path), variable.label, formatValue(variable.value, variable.unit))
 }
 
 const activeLifecycles = (
@@ -111,17 +116,17 @@ export const projectedProcessPlantUnit = (config: {
   const lifecycles = activeLifecycles(plant)
   const status = statusFor(lifecycles)
   const activeTripCount = lifecycles.filter(lifecycle => lifecycle.kind === 'trip').length
+  const rail = railPlanFor(plant)
   const fields = [
-    ...railDisplayFieldPlansFor(plant).map(plan => readField(plant, plan)),
+    ...rail.fields.map(plan => readField(plant, plan)),
     processPlantField('active-alarms', 'Active alarms', String(lifecycles.filter(lifecycle => lifecycle.kind === 'alarm').length)),
     processPlantField('active-trips', 'Active trips', String(activeTripCount)),
     processPlantField('runtime-performance', 'Runtime', formatRuntimePerformance(plant)),
   ]
-  const power = fields.find(field => field.key === 'thermal-power')?.value ?? 'unknown'
-  const electric = fields.find(field => field.key === 'electric-output')?.value ?? 'unknown'
+  const headline = rail.headline.map(plan => readField(plant, plan))
   const projection: ProcessPlantUnitProjection = {
     schemaVersion: 1,
-    summary: `${power} thermal · ${electric} electric`,
+    summary: headline.length === 0 ? status.label : headline.map(field => `${field.label} ${field.value}`).join(' · '),
     statusTone: status.tone,
     statusLabel: status.label,
     ...(status.highestSeverity === undefined ? {} : { highestSeverity: status.highestSeverity }),

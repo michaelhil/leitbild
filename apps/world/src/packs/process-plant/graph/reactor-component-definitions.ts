@@ -63,7 +63,7 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       nominalIntermediateRangeCurrentAmps: z.number().finite().positive().optional(),
       minimumNaturalCirculationCoolingFraction: normalized.optional(),
     }),
-    semantics: fixedSemantics({ keyValues: ['coolantOutletTemperatureC'], energy: [{ role: 'source', circuit: 'coolant' }] }),
+    semantics: fixedSemantics({ keyValues: ['coolantOutletTemperatureC'], energy: [{ role: 'source', circuit: 'coolant', rate: 'totalThermalPowerMw' }] }),
     variables: [
       variable({ path: 'powerMw', label: 'Core fission power', kind: 'state', discipline: 'nuclear', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
       variable({ path: 'fissionPowerMw', label: 'Core fission power diagnostic', kind: 'derived', discipline: 'nuclear', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),

@@ -117,6 +117,22 @@ describe('model semantics declared per component kind', () => {
     expect(() => compilePlantGraph(spec, registry)).toThrow('component pump semantics: energy transfer names circuit shell, which no port has')
   })
 
+  test('a source or sink states its energy rate as a solved power', () => {
+    const faulty: ComponentDefinition = {
+      ...processPlantComponentRegistry.get('turbineLoadSink' as ComponentKind)!,
+      semantics: fixedSemantics({ energy: [{ role: 'sink', circuit: 'steam', rate: 'steamFlowKgPerS' }] }),
+    }
+    const registry = new Map([...processPlantComponentRegistry, ['turbineLoadSink' as ComponentKind, faulty]])
+    const spec = plantGraph({
+      id: 'semantics.rate',
+      title: 'Rate',
+      fixedStepMs: 100,
+      components: [component('engine', 'turbineLoadSink', 'Engine', { nominalElectricMw: 10, initialLoadFraction: 1, nominalSteamFlowKgPerS: 10, electricalTimeConstantS: 5 })],
+      connections: [],
+    })
+    expect(() => compilePlantGraph(spec, registry)).toThrow('component engine semantics: energy sink rate steamFlowKgPerS must be a solved power')
+  })
+
   test('a writable variable without an actuation is rejected', () => {
     const base = processPlantComponentRegistry.get('processTank' as ComponentKind)!
     const undeclared: ComponentDefinition = {

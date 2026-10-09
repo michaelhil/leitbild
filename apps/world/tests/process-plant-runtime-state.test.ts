@@ -70,7 +70,9 @@ describe('process plant Pack runtime lifecycle', () => {
       expect(snapshot.objects.map(object => object.id)).toEqual([basePlant.id])
       const data = processPlantUnitPackDataSchema.parse(snapshot.objects[0]?.packData)
       expect(data.model.ref).toBe(processPlantPwrReferenceModelRef)
-      expect(data.projection?.fields.map(field => field.key)).toContain('thermal-power')
+      // The panel leads with the values protection trips on and the energy source's and sink's, generated from the model.
+      expect(data.projection?.fields.map(field => field.key)).toEqual(expect.arrayContaining(['core.powerMw', 'pressurizer.pressureMPa', 'turbine.electricMw']))
+      expect(data.projection?.summary).toMatch(/^Core total thermal power [0-9]+ MW · Electrical output [0-9]+ MW$/)
 
       const read = await connection.invokeQuery(query('world.process-plant.variables.read', {
         plantId: basePlant.id,

@@ -27,11 +27,14 @@ import { capabilityJsonSchema } from '../src/simulation/capabilities.ts'
 
 
 describe('process plant model composition', () => {
-  test('Agent foundation changes preserve the deployed PWR checkpoint identity', () => {
+  test('the deployed PWR checkpoint identity changes only by decision', () => {
     const system = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:checkpoint', loopCount: 4 }))
-    // Frozen at 827c5690: this upgrade changes discovery/presentation, not Plant physics.
-    // Even descriptive graph edits affect the existing full-graph checkpoint digest.
-    expect(system.modelDigest).toBe('e8e0564206ea3b2d2bf16f44951f4f4e1ceb62aaeffcc281426bf5cdeeddee01')
+    // Even descriptive graph edits affect the full-graph checkpoint digest, so
+    // any change here must be an owner's decision. Frozen at 827c5690 through
+    // the Agent upgrade; changed on 2026-10-10 when the owner chose to delete
+    // the spec's hand-picked display profiles, accepting that PWR Runs
+    // checkpointed before then cannot be restored and must be restarted.
+    expect(system.modelDigest).toBe('207c0c7f2c2603700b29f2e70b2fb657a0259e0591960e471fff350b1e527093')
     const running = createProcessPlantRuntime({ system })
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))
@@ -119,7 +122,6 @@ describe('process plant discovery', () => {
     expect(descriptions.get('world.process-plant.catalog.list')).toContain('configuration, not a list of live Plant instances')
     expect(descriptions.get('world.process-plant.actions.search')).toContain('exact actionId values')
     expect(descriptions.get('world.process-plant.plants.list')).toContain('exact plantId values')
-    expect(descriptions.get('world.process-plant.display-profile.read')).toContain('profileId returned by plants.list')
     expect(descriptions.get('world.process-plant.variables.read')).toContain('do not guess paths')
     expect(descriptions.get('world.process-plant.artifact.read')).toContain('complete authored Plant configuration')
     expect(descriptions.get('world.process-plant.components.search')).toContain('compact summaries')
@@ -157,17 +159,16 @@ describe('process plant discovery', () => {
         performance: createProcessPlantRuntimePerformance(),
       }]]),
       objects: new Map([[plantId, { id: plantId, label: 'Profile Plant' }]]),
-    }) as { plants: Array<{ id: string; displayProfiles: Array<{ id: string; label: string }> }> }
+    }) as { plants: Array<Record<string, unknown>> }
     expect(response.plants[0]).toMatchObject({ id: plant.id, label: 'Profile Plant', modelRef: plant.modelRef, modelDigest: plant.modelDigest })
-    expect(response.plants[0]!.displayProfiles).toEqual(expect.arrayContaining([
-      { id: 'leitbild-rail', label: 'Leitbild rail summary' },
-    ]))
+    // Displays are generated from the model; a Plant lists no hand-picked display profiles.
+    expect(response.plants[0]).not.toHaveProperty('displayProfiles')
     const capability = processPlantCapabilities.find(candidate => candidate.id === 'world.process-plant.plants.list')
     expect(capability).toBeDefined()
     expect(capability!.output.parse(response)).toEqual(response)
   })
 
-  test('makes unknown variable and display-profile identities discoverable caller errors', () => {
+  test('makes unknown variable identities discoverable caller errors', () => {
     const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:missing-targets' }))
     const runtime = createProcessPlantRuntime({ system: plant })
     const plants = new Map([[plant.id, {
@@ -178,7 +179,6 @@ describe('process plant discovery', () => {
     }]])
     for (const request of [
       { capabilityId: 'world.process-plant.variables.read', input: { plantId: plant.id, paths: ['missing.value'] } },
-      { capabilityId: 'world.process-plant.display-profile.read', input: { plantId: plant.id, profileId: 'missing-profile' } },
     ]) {
       try {
         answerProcessPlantQuery({ request, plants, objects: new Map() })

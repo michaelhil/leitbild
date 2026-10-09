@@ -3,9 +3,8 @@ import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { idSchema, matchesLiteralSearch, objectIdSchema, type ObjectId, type OperationalObject } from '../../../core/model/index.ts'
 import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
-import type { CompiledPlantGraph, ComponentId, ProcessPlantDisplayField } from '../graph/index.ts'
+import type { CompiledPlantGraph, ComponentId } from '../graph/index.ts'
 import { plantGraphToMermaid } from '../graph/index.ts'
-import type { ProcessPlantVariableHandle } from '../runtime/variable-table.ts'
 import { processPlantComponentBehaviorSourcePathByKind } from '../runtime/behaviors/index.ts'
 import { principalCircuits } from '../displays/mimic/principal.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
@@ -143,17 +142,11 @@ const componentSourceImportsFor = (sourcePath: string): ReadonlyArray<ComponentS
   return imports
 }
 
-export const displayProfileReadQuerySchema = z.object({
-  plantId: idSchema,
-  profileId: idSchema,
-}).strict()
-
 export const processPlantGraphQueryKinds = [
   'world.process-plant.plants.list',
   'world.process-plant.components.search',
   'world.process-plant.graph.read',
   'world.process-plant.artifact.read',
-  'world.process-plant.display-profile.read',
 ] as const
 
 const componentSearchView = (
@@ -199,7 +192,6 @@ const graphView = (graph: CompiledPlantGraph): unknown => ({
   links: graph.links,
   linksByKind: graph.linksByKind,
   variables: graph.variables,
-  displayProfiles: graph.displayProfiles,
 })
 
 const overviewComponentIdsCache = new WeakMap<ProcessPlantRuntimeInstance, ReadonlySet<ComponentId>>()
@@ -342,73 +334,6 @@ const artifactView = (system: ProcessPlantRuntimeInstance, input: z.infer<typeof
   }
 }
 
-interface DisplayProfileRuntimePlan {
-  readonly profile: CompiledPlantGraph['displayProfiles'][number]
-  readonly groups: ReadonlyArray<{
-    readonly id: string
-    readonly label: string
-    readonly fields: ReadonlyArray<{
-      readonly field: ProcessPlantDisplayField
-      readonly handle: ProcessPlantVariableHandle
-    }>
-  }>
-}
-
-const displayProfileCache = new WeakMap<ProcessPlantRuntimeInstance, Map<string, DisplayProfileRuntimePlan>>()
-
-const displayProfilePlanFor = (
-  system: ProcessPlantRuntimeInstance,
-  profileId: string,
-): DisplayProfileRuntimePlan => {
-  const existingCache = displayProfileCache.get(system)
-  const existingPlan = existingCache?.get(profileId)
-  if (existingPlan) return existingPlan
-  const profile = system.plant.graph.displayProfiles.find(candidate => candidate.id === profileId)
-  if (!profile) return capabilityTargetNotFound(
-    `Process Plant display profile not found: ${profileId}. Discover exact profile ids with world.process-plant.plants.list.`,
-  )
-  const plan = {
-    profile,
-    groups: profile.groups.map(group => ({
-      id: group.id,
-      label: group.label,
-      fields: group.fields.map(field => ({
-        field,
-        handle: system.runtime.resolveVariableHandle(field.path),
-      })),
-    })),
-  } satisfies DisplayProfileRuntimePlan
-  const cache = existingCache ?? new Map<string, DisplayProfileRuntimePlan>()
-  cache.set(profileId, plan)
-  if (!existingCache) displayProfileCache.set(system, cache)
-  return plan
-}
-
-const displayProfileView = (
-  system: ProcessPlantRuntimeInstance,
-  profileId: string,
-): unknown => {
-  const plan = displayProfilePlanFor(system, profileId)
-  return {
-    plantId: system.plant.id,
-    profile: plan.profile,
-    groups: plan.groups.map(group => ({
-      id: group.id,
-      label: group.label,
-      fields: group.fields.map(field => {
-        const variable = system.runtime.readVariableSnapshotHandle(field.handle)
-        return {
-          key: field.field.key,
-          label: field.field.label ?? variable.label,
-          path: field.field.path,
-          ...(field.field.digits === undefined ? {} : { digits: field.field.digits }),
-          variable,
-        }
-      }),
-    })),
-  }
-}
-
 export const answerProcessPlantGraphQuery = (config: {
   readonly request: PackRuntimeQuery
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
@@ -430,7 +355,6 @@ export const answerProcessPlantGraphQuery = (config: {
           linkCount: plant.graph.links.length,
           variableCount: plant.graph.variables.length,
           elapsedMs: runtime.elapsedMs(),
-          displayProfiles: plant.graph.displayProfiles.map(profile => ({ id: profile.id, label: profile.label })),
         }
       }),
     }
@@ -445,12 +369,7 @@ export const answerProcessPlantGraphQuery = (config: {
     const system = requirePlant(config.plants, payload.plantId)
     return componentSearchView(system, payload)
   }
-  if (config.request.capabilityId === 'world.process-plant.artifact.read') {
-    const payload = artifactReadQuerySchema.parse(config.request.input)
-    const system = requirePlant(config.plants, payload.plantId)
-    return artifactView(system, payload)
-  }
-  const payload = displayProfileReadQuerySchema.parse(config.request.input)
+  const payload = artifactReadQuerySchema.parse(config.request.input)
   const system = requirePlant(config.plants, payload.plantId)
-  return displayProfileView(system, payload.profileId)
+  return artifactView(system, payload)
 }

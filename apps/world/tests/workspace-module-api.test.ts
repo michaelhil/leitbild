@@ -287,17 +287,11 @@ Action: Test-only handover.
         body: JSON.stringify({ workspaceId, capabilityId, resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }, input, access }),
       })
     const plantId = 'plant:halden-a1'
-    const guessedProfile = await read('world.process-plant.display-profile.read', { plantId, profileId: 'guessed-overview' })
-    expect(guessedProfile.status).toBe(404)
-    expect(guessedProfile.body!.error).toMatchObject({ code: 'capability_target_not_found', message: expect.stringContaining('Discover exact') })
-    expect(run.health().every(health => health.state === 'ready' && health.failureCount === 0 && health.lastFailure === undefined)).toBe(true)
-    const profile = await read('world.process-plant.display-profile.read', { plantId, profileId: 'leitbild-rail' })
-    expect(profile.status).toBe(200)
-    expect(profile.body!.result).toHaveProperty('plantId', plantId)
     // The unit overview is generated from the Plant, so the only selector is the Plant itself.
     const guessedPlant = await read('world.process-plant.display.overview', { plantId: 'plant:guessed' })
     expect(guessedPlant.status).toBe(404)
     expect(guessedPlant.body!.error).toMatchObject({ code: 'capability_target_not_found', message: expect.stringContaining(`Live Plants: ${plantId}`) })
+    expect(run.health().every(health => health.state === 'ready' && health.failureCount === 0 && health.lastFailure === undefined)).toBe(true)
     expect((await read('world.process-plant.display.overview', { plantId, unexpected: true })).status).toBe(400)
     const overview = await read('world.process-plant.display.overview', { plantId })
     expect(overview.status).toBe(200)

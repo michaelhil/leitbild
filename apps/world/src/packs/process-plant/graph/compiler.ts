@@ -24,7 +24,7 @@ import type {
 } from './model.ts'
 import { linkVariableSemanticsFor, validateProcessLinkContracts } from './link-contracts.ts'
 import { connectionKindSchema, deriveProcessVariableCapabilities, plantGraphSpecSchema } from './model.ts'
-import { readingAccepts, type CompiledComponentSemantics, type CompiledStateAspect, type ComponentSemantics, type StateAspectDeclaration } from './semantics.ts'
+import { readingAccepts, type CompiledComponentSemantics, type CompiledEnergyRole, type CompiledStateAspect, type ComponentSemantics, type StateAspectDeclaration } from './semantics.ts'
 
 interface ResolvedPortRef {
   readonly componentId: ComponentId
@@ -235,12 +235,17 @@ const compileComponentSemantics = (
       if (variable.writable) throw new Error(`${context}: key value ${local} is writable`)
       return variablePathFor(componentId, local as LocalVariablePath)
     }),
-    energy: semantics.energy.map(role => {
+    energy: semantics.energy.map((role): CompiledEnergyRole => {
       const circuits = new Set(Object.values(ports).map(port => port.circuit))
       const named = role.role === 'transfer' ? [role.from, role.to] : [role.circuit]
       for (const circuit of named) if (!circuits.has(circuit)) throw new Error(`${context}: energy ${role.role} names circuit ${circuit}, which no port has`)
-      if (role.role === 'transfer' && role.from === role.to) throw new Error(`${context}: energy transfer within circuit ${role.from}`)
-      return role
+      if (role.role === 'transfer') {
+        if (role.from === role.to) throw new Error(`${context}: energy transfer within circuit ${role.from}`)
+        return role
+      }
+      const rate = resolve(role.rate as LocalVariablePath)
+      if (rate.quantity !== 'power' || rate.writable) throw new Error(`${context}: energy ${role.role} rate ${role.rate} must be a solved power`)
+      return { ...role, rate: variablePathFor(componentId, role.rate as LocalVariablePath) }
     }),
   }
 }
@@ -402,13 +407,6 @@ export const compilePlantGraph = (
   assertUnique(spec.components, component => component.id, 'component id')
   assertUnique(spec.connections, connection => connection.id, 'connection id')
   assertUnique(spec.publishedVariables, path => path, 'published variable')
-  assertUnique(spec.displayProfiles, profile => profile.id, 'display profile id')
-  for (const profile of spec.displayProfiles) {
-    assertUnique(profile.groups, group => group.id, `display profile ${profile.id} group id`)
-    for (const group of profile.groups) {
-      assertUnique(group.fields, field => field.key, `display profile ${profile.id}/${group.id} field key`)
-    }
-  }
 
   const componentIndexById = new Map<ComponentId, number>()
   const definitions = new Map<ComponentId, ComponentDefinition>()
@@ -535,15 +533,6 @@ export const compilePlantGraph = (
   for (const path of published) {
     if (!availableVariablePaths.has(path)) throw new Error(`published variable does not exist: ${path}`)
   }
-  for (const profile of spec.displayProfiles) {
-    for (const group of profile.groups) {
-      for (const field of group.fields) {
-        if (!availableVariablePaths.has(field.path)) {
-          throw new Error(`display profile ${profile.id}/${group.id} references unknown variable: ${field.path}`)
-        }
-      }
-    }
-  }
 
   const signalBindings = variables.map(signalBindingFor)
   const signalBindingByPath = new Map(signalBindings.map(binding => [binding.path, binding]))
@@ -574,6 +563,5 @@ export const compilePlantGraph = (
     signalBindingByPath,
     signalBindingByTagId,
     signalBindingByExternalRef,
-    displayProfiles: spec.displayProfiles,
   }
 }
