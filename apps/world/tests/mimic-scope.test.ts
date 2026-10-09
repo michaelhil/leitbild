@@ -43,10 +43,15 @@ describe('mimic scope from the agent\'s intent', () => {
       const [resolved] = drawn(graph, { to: [name], services: ['electricalPower', 'auxFeedwater', 'feedwater'] }).names
       expect(graph.components[resolved!.component]!.id).toBe(id as never)
     }
-    // A class of equipment is not one component: the suggestions name each.
-    const [unknown] = rejection(graph, { to: ['steam generators'], services: ['feedwater'] })
-    expect(unknown!.message).toBe('unknown equipment "steam generators"; name one component per entry: its id, a tag measured on it, its label or its short label')
-    expect(unknown!.didYouMean!.map(suggestion => suggestion.split(' ')[0])).toEqual(['sgA', 'sgB', 'sgC'])
+    // The plural of what alike items' labels share names them all; the singular is ambiguous.
+    expect(drawn(graph, { to: ['steam generators'], services: ['feedwater'] }).names.map(name => graph.components[name.component]!.id)).toEqual(['sgA', 'sgB', 'sgC', 'sgD'] as never)
+    expect(drawn(graph, { from: ['safety buses'], services: ['electricalPower'] }).names.map(name => name.via)).toEqual(['group', 'group'])
+    expect(drawn(graph, { to: ['AFW valves'], services: ['auxFeedwater'] }).names).toHaveLength(4)
+    const [ambiguous] = rejection(graph, { to: ['steam generator'], services: ['feedwater'] })
+    expect(ambiguous!.message).toBe('"steam generator" fits 4 components; name one, or all of them in the plural')
+    const [unknown] = rejection(graph, { to: ['steam gen B'], services: ['feedwater'] })
+    expect(unknown!.message).toBe('unknown equipment "steam gen B"; name one component per entry: its id, a tag measured on it, its label or its short label')
+    expect(unknown!.didYouMean![0]).toStartWith('sgB (Steam Generator B, SG B)')
   })
 
   test('a service the equipment does not carry is refused with what it carries', () => {

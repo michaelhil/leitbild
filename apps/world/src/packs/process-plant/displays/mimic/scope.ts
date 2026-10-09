@@ -31,7 +31,7 @@ export interface MimicScope {
   readonly stubs: ReadonlyArray<MimicStub>
   readonly carriers: ReadonlyArray<string>
   /** How each name resolved, for the compose result. */
-  readonly names: ReadonlyArray<{ readonly name: string; readonly component: number; readonly via: 'id' | 'tag' | 'label' }>
+  readonly names: ReadonlyArray<{ readonly name: string; readonly component: number; readonly via: 'id' | 'tag' | 'label' | 'group' }>
 }
 
 export type MimicScopeResult =
@@ -58,29 +58,49 @@ const loopOf = (graph: CompiledPlantGraph, link: CompiledProcessLink): string | 
     ?? graph.components[link.fromComponentIndex]!.metadata?.loopId
     ?? graph.components[link.toComponentIndex]!.metadata?.loopId
 
+// The label of one of several alike items, without the letter or number that
+// tells them apart: "Safety Bus A" → "Safety Bus".
+const groupStem = (label: string): string | undefined => {
+  const parts = label.trim().split(/\s+/)
+  return parts.length > 1 && /^([A-Za-z]|\d+)$/.test(parts.at(-1)!) ? parts.slice(0, -1).join(' ') : undefined
+}
+
+/** Components whose label or short label, without its designator, normalizes to one of these. */
+const groupMembers = (graph: CompiledPlantGraph, stems: ReadonlyArray<string>): ReadonlyArray<number> => graph.components
+  .filter(component => [component.label, component.metadata?.presentation?.shortLabel]
+    .some(label => label !== undefined && stems.includes(normalized(groupStem(label) ?? ''))))
+  .map(component => component.index)
+
+type ResolvedName = { readonly components: ReadonlyArray<number>; readonly via: 'id' | 'tag' | 'label' | 'group' }
+
 // A name is a component id, a tag measured on equipment (its owner), or its
 // label or short label, ignoring case, spaces and hyphens ("safety bus A",
-// "SG-B"). A tag on a pipe names the pipe's end that the role points at: what
-// a route starts from, or what it reaches.
+// "SG-B"). The plural of what alike items' labels share names all of them
+// ("safety buses", "steam generators"). A tag on a pipe names the pipe's end
+// that the role points at: what a route starts from, or what it reaches.
 const resolveName = (
   graph: CompiledPlantGraph,
   name: string,
   role: 'from' | 'to' | 'exclude',
-): { readonly component: number; readonly via: 'id' | 'tag' | 'label' } | { readonly error: string; readonly didYouMean: ReadonlyArray<string> } => {
+): ResolvedName | { readonly error: string; readonly didYouMean: ReadonlyArray<string> } => {
   const byId = graph.componentIndexById.get(name as never)
-  if (byId !== undefined) return { component: byId, via: 'id' }
+  if (byId !== undefined) return { components: [byId], via: 'id' }
   const binding = graph.signalBindingByTagId.get(name as never)
   if (binding !== undefined) {
-    if (binding.owner.type === 'component') return { component: binding.owner.componentIndex, via: 'tag' }
+    if (binding.owner.type === 'component') return { components: [binding.owner.componentIndex], via: 'tag' }
     const link = graph.links[binding.owner.linkIndex]!
     if (role === 'exclude') return { error: `${name} is measured on the pipe ${link.id}; exclude equipment, not a pipe`, didYouMean: [] }
-    return { component: role === 'from' ? link.fromComponentIndex : link.toComponentIndex, via: 'tag' }
+    return { components: [role === 'from' ? link.fromComponentIndex : link.toComponentIndex], via: 'tag' }
   }
   const wanted = normalized(name)
   const byLabel = graph.components.filter(component => [component.label, component.metadata?.presentation?.shortLabel]
     .some(label => label !== undefined && normalized(label) === wanted))
-  if (byLabel.length === 1) return { component: byLabel[0]!.index, via: 'label' }
+  if (byLabel.length === 1) return { components: [byLabel[0]!.index], via: 'label' }
   if (byLabel.length > 1) return { error: `"${name}" names ${byLabel.length} components; name one by its id`, didYouMean: byLabel.slice(0, SUGGESTION_COUNT).map(component => componentDescription(graph, component.index)) }
+  const plural = groupMembers(graph, [wanted.replace(/ES$/, ''), wanted.replace(/S$/, '')].filter(stem => stem !== wanted))
+  if (plural.length > 1) return { components: plural, via: 'group' }
+  const singular = groupMembers(graph, [wanted])
+  if (singular.length > 1) return { error: `"${name}" fits ${singular.length} components; name one, or all of them in the plural`, didYouMean: singular.slice(0, SUGGESTION_COUNT).map(index => componentDescription(graph, index)) }
   const bundled = bundledDevices(graph, wanted)
   if (bundled.length > 0) return { error: bundledDeviceMessage(graph, name, bundled, role), didYouMean: [...new Set(bundled.map(entry => componentDescription(graph, entry.host)))].slice(0, SUGGESTION_COUNT) }
   return { error: `unknown equipment "${name}"; name one component per entry: its id, a tag measured on it, its label or its short label`, didYouMean: equipmentSuggestions(graph, name) }
@@ -181,13 +201,13 @@ export const resolveMimicScope = (graph: CompiledPlantGraph, intent: MimicIntent
       issues.push({ field: `${field}.${index}`, message: resolved.error, ...(resolved.didYouMean.length === 0 ? {} : { didYouMean: resolved.didYouMean }) })
       return []
     }
-    const unconnected = field === 'exclude' ? undefined : unconnectedReason(graph, resolved.component, known)
-    if (unconnected !== undefined) {
-      issues.push({ field: `${field}.${index}`, message: unconnected })
+    const unconnected = field === 'exclude' ? [] : resolved.components.flatMap(component => unconnectedReason(graph, component, known) ?? [])
+    if (unconnected.length > 0) {
+      issues.push({ field: `${field}.${index}`, message: unconnected.join('; ') })
       return []
     }
-    names.push({ name, component: resolved.component, via: resolved.via })
-    return [resolved.component]
+    for (const component of resolved.components) names.push({ name, component, via: resolved.via })
+    return resolved.components
   })
   const from = resolveAll('from', intent.from)
   const to = resolveAll('to', intent.to)
