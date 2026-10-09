@@ -188,6 +188,51 @@ mod tests {
         assert!(mode.snapshot_words().is_err());
     }
     #[test]
+    fn exact_value_stage_key_includes_retained_release_history_and_support_bits() {
+        let mut mode=Mode::new(Input {requested_rate_m_s:0.,motive_power_w:0.,holding_power_w:20.},1).unwrap();
+        mode.enable_cold_release().unwrap();
+        let retained=mode.release.as_mut().unwrap();
+        retained.initial_density=Some(997.);
+        retained.armatures[0]=ca::Mode::Opening;
+        retained.openings[0]=Some(ca::Opening {epoch_time_s:32.,state:ca::State {gap_m:0.,velocity_m_s:0.}});
+        assert!(same_mode_bits(&mode,&mode.clone()));
+        let mut changes=Vec::new();
+        let mut changed=mode.clone();changed.input.requested_rate_m_s=-0.;changes.push(changed);
+        let mut changed=mode.clone();changed.input.motive_power_w=-0.;changes.push(changed);
+        let mut changed=mode.clone();changed.input.holding_power_w=f64::from_bits(20f64.to_bits()+1);changes.push(changed);
+        let mut changed=mode.clone();changed.branches[0].joint=am::JointMode::Separated;changes.push(changed);
+        let mut changed=mode.clone();changed.geometry[0].body_right=!changed.geometry[0].body_right;changes.push(changed);
+        let mut changed=mode.clone();changed.release=None;changes.push(changed);
+        let mut changed=mode.clone();changed.release.as_mut().unwrap().initial_density=Some(f64::from_bits(997f64.to_bits()+1));changes.push(changed);
+        let mut changed=mode.clone();changed.release.as_mut().unwrap().armatures[0]=ca::Mode::Open;changes.push(changed);
+        let mut changed=mode.clone();changed.release.as_mut().unwrap().body_seated[0]=true;changes.push(changed);
+        let mut changed=mode.clone();changed.release.as_mut().unwrap().stem_stopped[0]=true;changes.push(changed);
+        for field in 0..3 {
+            let mut changed=mode.clone();
+            let opening=changed.release.as_mut().unwrap().openings[0].as_mut().unwrap();
+            match field {
+                0=>opening.epoch_time_s=f64::from_bits(32f64.to_bits()+1),
+                1=>opening.state.gap_m=-0.,
+                _=>opening.state.velocity_m_s=-0.,
+            }
+            changes.push(changed);
+        }
+        for changed in changes {
+            assert!(!same_mode_bits(&mode,&changed));
+            assert!(!same_mode_bits(&changed,&mode));
+        }
+        let input=crate::prhr::Input {opening:0.,opening_rate:0.,electrical_receipt_w:0.,room_heat_w:0.,ambient_temperature_k:293.15};
+        assert!(same_prhr_bits(Some(input),Some(input)));
+        for changed in [
+            crate::prhr::Input {opening:-0.,..input},
+            crate::prhr::Input {opening_rate:-0.,..input},
+            crate::prhr::Input {electrical_receipt_w:-0.,..input},
+            crate::prhr::Input {room_heat_w:-0.,..input},
+            crate::prhr::Input {ambient_temperature_k:294.,..input},
+        ] {assert!(!same_prhr_bits(Some(input),Some(changed)));}
+        assert!(!same_prhr_bits(Some(input),None));
+    }
+    #[test]
     fn coincident_stops_consume_only_active_incoming_graph_roots() {
         let incoming=am::TrialBranch {regulator:am::RegulatorBranch::HoldNegative,joint:am::JointMode::Contact};
         // A BODY fitting stop makes the old contact-force equality obsolete;
@@ -784,10 +829,27 @@ fn validate_input(i: Input) -> Result<(), String> {
     Ok(())
 }
 fn same_mode_bits(a:&Mode,b:&Mode)->bool {
-    a.branches==b.branches && a.geometry==b.geometry && a.release==b.release
+    a.branches==b.branches && a.geometry==b.geometry && same_release_bits(a.release.as_ref(),b.release.as_ref())
         && a.input.requested_rate_m_s.to_bits()==b.input.requested_rate_m_s.to_bits()
         && a.input.motive_power_w.to_bits()==b.input.motive_power_w.to_bits()
         && a.input.holding_power_w.to_bits()==b.input.holding_power_w.to_bits()
+}
+fn same_release_bits(a:Option<&cr::Mode>,b:Option<&cr::Mode>)->bool {
+    match (a,b) {
+        (None,None)=>true,
+        (Some(a),Some(b))=>a.armatures==b.armatures && a.body_seated==b.body_seated
+            && a.stem_stopped==b.stem_stopped
+            && a.initial_density.map(f64::to_bits)==b.initial_density.map(f64::to_bits)
+            && a.openings.len()==b.openings.len()
+            && a.openings.iter().zip(&b.openings).all(|(a,b)|match (a,b) {
+                (None,None)=>true,
+                (Some(a),Some(b))=>a.epoch_time_s.to_bits()==b.epoch_time_s.to_bits()
+                    && a.state.gap_m.to_bits()==b.state.gap_m.to_bits()
+                    && a.state.velocity_m_s.to_bits()==b.state.velocity_m_s.to_bits(),
+                _=>false,
+            }),
+        _=>false,
+    }
 }
 fn same_prhr_bits(a:Option<crate::prhr::Input>,b:Option<crate::prhr::Input>)->bool {
     match (a,b) {
@@ -960,7 +1022,6 @@ pub struct Workspace {
     state: Vec<f64>,
     stage_rates:Vec<f64>,
     stage_prhr:Option<crate::prhr::Input>,
-    direction_prepared:bool,
     mode: Option<Mode>,
     cj: Option<f64>,
     owner: Arc<()>,
@@ -1547,7 +1608,6 @@ impl Model {
             state: vec![0.; self.dimension()],
             stage_rates:vec![0.;self.dimension()],
             stage_prhr:None,
-            direction_prepared:false,
             mode: None,
             cj: None,
             owner: self.owner.clone(),
@@ -1866,9 +1926,13 @@ impl Model {
         prhr: Option<crate::prhr::Input>,
         mode: &Mode,
     ) -> Result<(), String> {
-        // Reuse only this untouched, owned value preparation. An audit,
-        // direction use/failure or changed dependency always prepares afresh.
-        if cj.is_some() && w.valid && !w.direction_prepared && Arc::ptr_eq(&self.owner,&w.owner)
+        // Reuse only this exact, owned value preparation, never an audit.
+        // A successful analytic direction leaves the physical value stage and
+        // all its prepared constitutive coefficients intact. Direction scratch
+        // is separate; only its energy-tangent receipts are cleared here. A
+        // failed action invalidates `w.valid` before touching any scratch and
+        // therefore cannot make this exact-stage path admissible.
+        if cj.is_some() && w.valid && Arc::ptr_eq(&self.owner,&w.owner)
             && y.len()==self.dimension() && yp.len()==self.dimension()
             && w.cj.zip(cj).is_some_and(|(a,b)|a.to_bits()==b.to_bits())
             && y.iter().zip(&w.state).all(|(a,b)|a.to_bits()==b.to_bits())
@@ -1881,7 +1945,6 @@ impl Model {
             return Ok(());
         }
         w.valid = false;
-        w.direction_prepared=false;
         w.full_evaluations+=1;
         w.energy_tangent = None;
         w.thermal_work_tangent = None;
@@ -2117,7 +2180,6 @@ impl Model {
     /// initialization/events. It consumes this stage's actual velocities and
     /// accelerations and introduces no second motion or integration clock.
     pub fn prepare_time_direction(&self, w: &mut Workspace) -> Result<(), String> {
-        w.direction_prepared=true;
         let prepared=w.valid;
         w.valid=false;
         if !prepared || !Arc::ptr_eq(&self.owner, &w.owner) {
@@ -2169,7 +2231,6 @@ impl Model {
         w.thermal_work_tangent = None;
         let prepared=w.valid;
         w.valid=false;
-        w.direction_prepared=true;
         if !Arc::ptr_eq(&self.owner, &w.owner)
             || !prepared
             || w.cj != Some(cj)

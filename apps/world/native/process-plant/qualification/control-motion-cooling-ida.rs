@@ -42,6 +42,8 @@ mod ida_support;
 mod motion_support;
 #[path = "control_material_accuracy.rs"]
 mod control_material_accuracy;
+#[path = "control_work_accuracy.rs"]
+mod control_work_accuracy;
 #[path = "control_release_input.rs"]
 mod control_release_input;
 #[path = "control_armature_coordinates.rs"]
@@ -85,6 +87,13 @@ use std::{
 const COUNT_ATOL: f64 = 1e-3;
 const ENERGY_ATOL: f64 = 1e-12;
 const HORIZON: f64 = 300.; // Existing physical compiler validation ceiling, not this case's horizon.
+// Component heat and the signed fluid-work receipt have different owners.
+// One receipt accounts for the entire bank; its additive allocation is also
+// the unchanged independent bank mechanical-energy defect allowance below.
+const COMPONENT_HEAT_PAIR_J: f64 = 1e-5;
+fn bank_heat_allocation(clusters: usize, component: f64) -> f64 {
+    clusters as f64 * component
+}
 fn finite(x: f64) -> String {
     if x.is_finite() {
         format!("{x:e}")
@@ -190,6 +199,16 @@ struct Prepared {
     release: Option<ReleaseCase>,
 }
 struct ReleaseCase { at: f64, restore: Option<f64>, failed_cluster: usize }
+fn prepared_support(p:&Prepared)->Result<motion_support::Support,String> {
+    let mut support=motion_support::Support::new(
+        p.a.clone(),p.b.clone(),p.holding,p.motive,p.base_b,p.rate,p.case.burst,
+    )?;
+    if let Some(release)=&p.release {
+        support.enable_release_at(release.at)?;
+        if let Some(t)=release.restore {support.enable_holding_restore_at(t)?;}
+    }
+    Ok(support)
+}
 fn parse(text: &str) -> Result<Prepared, String> {
     parse_with_release(text,None)
 }
@@ -694,6 +713,25 @@ fn standalone_receipt_local_error_is_not_diluted_by_unrelated_plant_rows() {
         }
     }
 }
+#[cfg(test)]
+#[test]
+fn bank_work_and_component_heat_have_distinct_additive_owners() {
+    for clusters in [1, 2, 52] {
+        let local = bank_heat_allocation(clusters, 1e-7);
+        let pair = bank_heat_allocation(clusters, COMPONENT_HEAT_PAIR_J);
+        assert_eq!(local, clusters as f64 * 1e-7);
+        assert_eq!(pair, clusters as f64 * 1e-5);
+        for dimension in [clusters, 76074] {
+            let scale = scalar_receipt_scale(local, dimension);
+            let wrms = (local / scale) / (dimension as f64).sqrt();
+            assert!((wrms - 1.).abs() < 4. * f64::EPSILON);
+        }
+        // The tighter arm refines the same bank allocation, not another
+        // physical model or a return to a single-component allowance.
+        let refined = bank_heat_allocation(clusters, 1e-7 / 10.);
+        assert!((refined - local / 10.).abs() <= 2. * f64::EPSILON * refined);
+    }
+}
 unsafe extern "C" fn weights(y: Handle, w: Handle, u: Handle) -> c_int {
     callback(u, |c| {
         let began = Instant::now();
@@ -726,10 +764,11 @@ unsafe extern "C" fn weights(y: Handle, w: Handle, u: Handle) -> c_int {
             c.resolution,
             &mut out[..c.model.layout.cooling_end],
         )?;
-        // This standalone signed-work receipt owns a scalar local-error
-        // budget, unlike a regional stock sharing a group RMS budget. IDA's
-        // masked WRMS still divides by the FULL vector length. Remove that
-        // dilution; keep the independent accumulated 10-microjoule pair gate.
+        // This standalone BANK signed-work receipt owns an additive bank
+        // allocation, unlike one component heat or a regional stock sharing
+        // a group RMS budget. IDA's masked WRMS still divides by the FULL
+        // vector length. Remove that dilution; the independently checked
+        // accumulated bank pair and mechanical balance remain separate gates.
         let work=c.model.layout.fluid_mechanical_work;
         out[work]=scalar_receipt_scale(out[work],n);
         for v in out {
@@ -908,11 +947,13 @@ struct Arm {
     summary: String,
 }
 fn motion_pair_scale(m:&sm::Model,row:usize)->f64 {
-    if m.release.is_some() && row>m.layout.control_photon_export {
-        match (row-m.layout.control_photon_export-1)%cr::WIDTH {cr::GAP|cr::GAP_V=>1e-7,_=>1e-5}
-    } else if row>=m.layout.mechanics_start+sm::WIDTH*m.clusters() {1e-5}
+    if row==m.layout.fluid_mechanical_work {
+        bank_heat_allocation(m.clusters(),COMPONENT_HEAT_PAIR_J)
+    } else if m.release.is_some() && row>m.layout.control_photon_export {
+        match (row-m.layout.control_photon_export-1)%cr::WIDTH {cr::GAP|cr::GAP_V=>1e-7,_=>COMPONENT_HEAT_PAIR_J}
+    } else if row>=m.layout.mechanics_start+sm::WIDTH*m.clusters() {COMPONENT_HEAT_PAIR_J}
     else {match (row-m.layout.mechanics_start)%sm::WIDTH {
-        sm::BODY_Y|sm::STEM_Y|sm::REFERENCE_Y|sm::BODY_V|sm::STEM_V=>1e-7,_=>1e-5,
+        sm::BODY_Y|sm::STEM_Y|sm::REFERENCE_Y|sm::BODY_V|sm::STEM_V=>1e-7,_=>COMPONENT_HEAT_PAIR_J,
     }}
 }
 fn audit(
@@ -999,7 +1040,7 @@ fn audit(
         - c.support.borrow().holding_j(time)?
         - c.support.borrow().motive_j(time)?
         - adjustment;
-    let mechanical_bound = m.clusters() as f64 * 1e-5
+    let mechanical_bound = bank_heat_allocation(m.clusters(), COMPONENT_HEAT_PAIR_J)
         + 128.
             * f64::EPSILON
             * (mechanical.abs()
@@ -1099,19 +1140,7 @@ fn run(
     let end = m.layout.cooling_end;
     let n = m.dimension();
     let begin = Instant::now();
-    let support = Rc::new(RefCell::new(motion_support::Support::new(
-        p.a.clone(),
-        p.b.clone(),
-        p.holding,
-        p.motive,
-        p.base_b,
-        p.rate,
-        p.case.burst,
-    )?));
-    if let Some(release)=&p.release {
-        support.borrow_mut().enable_release_at(release.at)?;
-        if let Some(t)=release.restore {support.borrow_mut().enable_holding_restore_at(t)?;}
-    }
+    let support = Rc::new(RefCell::new(prepared_support(p)?));
     let mode = Rc::new(RefCell::new(sm::Mode::new(
         support.borrow().motion_input(0.)?,
         m.clusters(),
@@ -1198,7 +1227,8 @@ fn run(
             }
         }
     }
-    absolute[m.layout.fluid_mechanical_work] = p.case.heat / refinement;
+    absolute[m.layout.fluid_mechanical_work] =
+        bank_heat_allocation(m.clusters(), p.case.heat) / refinement;
     for row in [m.layout.nuclear_to_apparatus,m.layout.control_photon_export] {
         absolute[row] = control_material_accuracy::RESOLUTION / refinement;
     }
@@ -1239,6 +1269,9 @@ fn run(
         std::mem::replace(&mut w.cooling, b.workspace()),
     )?;
     m.evaluate(&y, &yp, Some(1.), &mut w, Some(input), &mode.borrow())?;
+    let work_consequence = control_work_accuracy::selected_report(
+        m, &w, &y, energy.row, motion_pair_scale(m,m.layout.fluid_mechanical_work),
+    )?;
     let mut c = Box::new(Callbacks {
         ida: ptr::null_mut(),
         model: m,
@@ -1951,13 +1984,18 @@ fn run(
     retain_mode(&terminal_path, &admitted_mode)?;
     c.retention_seconds += retention_began.elapsed().as_secs_f64();
     let terminal = format!(
-        "{{\"passed\":{},\"lastAdmittedTime\":{},\"solverReturnedTime\":{},\"reason\":{},\"seconds\":{},\"steps\":{},\"initialization\":{},\"startupICSeconds\":{},\"initialWeightedRates\":{},\"eventICCalls\":{},\"eventICSeconds\":{},\"maxMechanicalDefectJ\":{},\"maxThermalWorkDefectJ\":{},\"events\":[{}],\"eventSnapshots\":[{}],\"comparisons\":[{}],\"motionComparisons\":[{}],\"controlMaterialSamples\":[{}],\"controlMaterialComparisons\":[{}],\"controlChordSensitivity\":{},\"structuralTemperaturesK\":{},\"costs\":{},\"performancePlanes\":[{}],\"support\":{},\"finalMotion\":{}}}",
+        "{{\"passed\":{},\"lastAdmittedTime\":{},\"solverReturnedTime\":{},\"reason\":{},\"seconds\":{},\"steps\":{},\"workAccuracy\":{{\"owner\":\"whole-bank-signed-fluid-work\",\"localAllocationJ\":{},\"pairBoundJ\":{},\"independentBankDefectJ\":{},\"refinement\":{},\"initialConsequence\":{}}},\"initialization\":{},\"startupICSeconds\":{},\"initialWeightedRates\":{},\"eventICCalls\":{},\"eventICSeconds\":{},\"maxMechanicalDefectJ\":{},\"maxThermalWorkDefectJ\":{},\"events\":[{}],\"eventSnapshots\":[{}],\"comparisons\":[{}],\"motionComparisons\":[{}],\"controlMaterialSamples\":[{}],\"controlMaterialComparisons\":[{}],\"controlChordSensitivity\":{},\"structuralTemperaturesK\":{},\"costs\":{},\"performancePlanes\":[{}],\"support\":{},\"finalMotion\":{}}}",
         result.is_ok(),
         finite(last_admitted),
         finite(time),
         result.as_ref().err().map_or("null".into(), |e| quote(e)),
         begin.elapsed().as_secs_f64(),
         steps,
+        finite(bank_heat_allocation(m.clusters(),p.case.heat)/refinement),
+        finite(motion_pair_scale(m,m.layout.fluid_mechanical_work)),
+        finite(bank_heat_allocation(m.clusters(),COMPONENT_HEAT_PAIR_J)),
+        finite(refinement),
+        work_consequence,
         init.json(),
         finite(startup_ic_seconds),
         initial_weighted_rates,
@@ -2184,6 +2222,8 @@ fn actual_release_frame_current_owner_and_dimensional_rows() {
     let release=fs::read_to_string(std::env::var("LEITBILD_RELEASE_INPUT").unwrap()).unwrap();
     let p=parse_with_release(&text,Some(&release)).unwrap();let m=&p.model;
     assert_eq!(m.dimension(),76074);assert_eq!(m.root_count(),416);
+    assert_eq!(motion_pair_scale(m,m.layout.fluid_mechanical_work),52.*COMPONENT_HEAT_PAIR_J);
+    assert_eq!(motion_pair_scale(m,m.motion_row(0,sm::JACK_HEAT)),COMPONENT_HEAT_PAIR_J);
     let support=motion_support::Support::new(p.a.clone(),p.b.clone(),p.holding,p.motive,p.base_b,p.rate,p.case.burst).unwrap();
     let mut mode=sm::Mode::new(support.motion_input(0.).unwrap(),m.clusters()).unwrap();
     mode.enable_cold_release().unwrap();
@@ -2408,7 +2448,38 @@ fn retained_geometry_direction_and_native_work_pattern() {
 #[test]
 #[ignore = "explicit frozen input/admitted initial frame; exact owned-stage reuse, no advancement"]
 fn retained_owned_stage_reuse_keys_and_failure_invalidation() {
-    let p=parse(&fs::read_to_string(std::env::var("LEITBILD_MOTION_INPUT").unwrap()).unwrap()).unwrap();
+    fn same(a:&[f64],b:&[f64]) {
+        assert_eq!(a.len(),b.len());
+        for (row,(a,b)) in a.iter().zip(b).enumerate() {
+            assert_eq!(a.to_bits(),b.to_bits(),"retained packet row {row}");
+        }
+    }
+    fn packet(m:&sm::Model,y:&[f64],yp:&[f64],mode:&sm::Mode,
+        pi:prhr::Input,w:&mut sm::Workspace,rhs:&[f64])->Vec<f64> {
+        let cj=3.;
+        let mut result=w.residual.iter().chain(&w.rates).copied().collect::<Vec<_>>();
+        result.extend([w.complete_energy_rate().unwrap(),w.thermal_work_energy_rate().unwrap()]);
+        let jac=source_evolution::Jacobian::new(&m.cooling.source).unwrap();
+        let mut coefficients=vec![0.;jac.pattern().len()];
+        jac.solver_values(&m.cooling.source,&mut w.cooling.source,cj,&mut coefficients).unwrap();
+        result.extend(coefficients);
+        m.visit_mechanical_jacobian(w,cj,|r,c,v|result.extend([r as f64,c as f64,v])).unwrap();
+        m.cooling.visit_fluid_jacobian(&w.cooling,|r,c,v|result.extend([r as f64,c as f64,v])).unwrap();
+        // The actual complete source/cooling and mechanics preconditioners,
+        // not only a local matrix or a no-op direction.
+        let mut seed=m.workspace();
+        m.evaluate(y,yp,Some(cj),&mut seed,Some(pi),mode).unwrap();
+        let mut bp=cooling_block::Preconditioner::new_prepared(&m.cooling,seed.cooling).unwrap();
+        bp.setup_prepared(&m.cooling,&mut w.cooling,cj).unwrap();
+        let mut mp=sm::MechanicalPreconditioner::new(m);mp.setup(m,w,cj).unwrap();
+        let mut solved=vec![0.;m.dimension()];let end=m.layout.cooling_end;
+        bp.solve(&m.cooling,&rhs[..end],&mut solved[..end]).unwrap();
+        mp.solve_solver(&rhs[end..],&mut solved[end..]).unwrap();
+        result.extend(solved);
+        result
+    }
+    let release=std::env::var("LEITBILD_RELEASE_INPUT").ok().map(fs::read_to_string).transpose().unwrap();
+    let p=parse_with_release(&fs::read_to_string(std::env::var("LEITBILD_MOTION_INPUT").unwrap()).unwrap(),release.as_deref()).unwrap();
     let path=PathBuf::from(std::env::var("LEITBILD_MOTION_INITIAL_FRAME").unwrap());
     let bytes=fs::read(&path).unwrap();
     let m=&p.model;
@@ -2416,6 +2487,7 @@ fn retained_owned_stage_reuse_keys_and_failure_invalidation() {
     let frame=bytes.chunks_exact(8).map(|b|f64::from_le_bytes(b.try_into().unwrap())).collect::<Vec<_>>();
     assert_eq!(frame[0],0.);
     let y=&frame[1..1+m.dimension()];let yp=&frame[1+m.dimension()..];
+    let original_anchor=cooling_coordinates::EnergyCoordinates::new(&m.cooling,&y[..m.layout.cooling_end]).unwrap().row;
     let mode=sm::Mode::restore_words(&fs::read_to_string(path.with_extension("bin.mode.txt")).unwrap()).unwrap();
     let pi=p.a.input(0.,y[p.a.room_row]).unwrap();
     let mut w=m.workspace();
@@ -2467,7 +2539,9 @@ fn retained_owned_stage_reuse_keys_and_failure_invalidation() {
     let zero=vec![0.;m.dimension()];
     m.jvp(&zero,1.,&mut w).unwrap();
     assert!(w.complete_energy_rate_jvp().is_ok());
-    m.evaluate(y,yp,Some(1.),&mut w,Some(pi),&mode).unwrap();misses+=1;
+    let before_direction_reuse=w.reused_evaluations;
+    m.evaluate(y,yp,Some(1.),&mut w,Some(pi),&mode).unwrap();
+    assert_eq!(w.reused_evaluations,before_direction_reuse+1);
     assert!(w.complete_energy_rate_jvp().is_err());
     assert!(w.geometry.direction.source.passive_volumes.iter().all(|q|*q==0.));
     assert!(m.jvp(&zero,2.,&mut w).is_err());
@@ -2475,15 +2549,17 @@ fn retained_owned_stage_reuse_keys_and_failure_invalidation() {
     m.evaluate(y,yp,Some(1.),&mut w,Some(pi),&mode).unwrap();misses+=1;
     m.evaluate(y,yp,None,&mut w,Some(pi),&mode).unwrap();misses+=1;
     m.evaluate(y,yp,None,&mut w,Some(pi),&mode).unwrap();misses+=1;
-    assert_eq!(w.full_evaluations,misses);assert_eq!(w.reused_evaluations,1);
+    assert_eq!(w.full_evaluations,misses);assert_eq!(w.reused_evaluations,2);
+    m.evaluate(y,yp,Some(1.),&mut w,Some(pi),&mode).unwrap();misses+=1;
     let mut invalid=zero;invalid[0]=f64::NAN;
     assert!(m.jvp(&invalid,1.,&mut w).is_err());
     assert!(w.complete_energy_rate().is_err());
     m.evaluate(y,yp,Some(1.),&mut w,Some(pi),&mode).unwrap();misses+=1;
     assert_eq!(w.full_evaluations,misses);
     m.validate_accepted(y,&w).unwrap();
-    let support=motion_support::Support::new(p.a.clone(),p.b.clone(),p.holding,p.motive,p.base_b,p.rate,p.case.burst).unwrap();
-    for name in ["common-1.bin","terminal-admitted.bin"] {
+    let support=prepared_support(&p).unwrap();
+    for name in ["common-1.bin","release-parent.bin","terminal-admitted.bin"] {
+        if name=="release-parent.bin" && p.release.is_none() {continue;}
         let stage=path.parent().unwrap().join(name);
         let bytes=fs::read(&stage).unwrap();
         assert_eq!(bytes.len(),8*(1+2*m.dimension()));
@@ -2510,6 +2586,24 @@ fn retained_owned_stage_reuse_keys_and_failure_invalidation() {
             d[m.motion_row(k,sm::BODY_V)]=-0.003;
             d[m.motion_row(k,sm::STEM_V)]=0.004;
         }
+        // A mixed nonzero first action changes direction scratch. The next
+        // identical value request must reuse only the still-current VALUE.
+        let mut first=d.iter().enumerate().map(|(r,v)|if r%2==0 {-*v}else{2.*v}).collect::<Vec<_>>();
+        first[0]=1e-7;
+        first[m.cooling.source.cf_row()]=1e-8;
+        first[m.cooling.source.nc_dimension()]=1e-6;
+        first[m.cooling.layout.network_start+m.cooling.network.pressure_row()]=1e-3;
+        first[m.cooling.layout.network_start+m.cooling.network.temperature_row(0)]=1e-4;
+        first[m.cooling.layout.energies_start]=1e-4;
+        first[m.cooling.layout.temperatures_start]=1e-5;
+        m.jvp(&first,3.,&mut reused).unwrap();
+        m.prepare_time_direction(&mut reused).unwrap();
+        let full=reused.full_evaluations;
+        m.evaluate(y,yp,Some(3.),&mut reused,Some(pi),&mode).unwrap();
+        assert_eq!(reused.full_evaluations,full);
+        assert_eq!(reused.reused_evaluations,2);
+        same(&reused.residual,&fresh.residual);same(&reused.rates,&fresh.rates);
+        same(&packet(m,y,yp,&mode,pi,&mut reused,&d),&packet(m,y,yp,&mode,pi,&mut fresh,&d));
         m.jvp(&d,3.,&mut reused).unwrap();m.jvp(&d,3.,&mut fresh).unwrap();
         for (a,b) in reused.jvp.iter().zip(&fresh.jvp) {assert_eq!(a.to_bits(),b.to_bits());}
         for (a,b) in reused.cooling.source.rate_jvp().unwrap().iter().zip(fresh.cooling.source.rate_jvp().unwrap()) {
@@ -2518,10 +2612,17 @@ fn retained_owned_stage_reuse_keys_and_failure_invalidation() {
         assert_eq!(reused.complete_energy_rate_jvp().unwrap().to_bits(),fresh.complete_energy_rate_jvp().unwrap().to_bits());
         assert_eq!(reused.thermal_work_energy_rate_jvp().unwrap().to_bits(),fresh.thermal_work_energy_rate_jvp().unwrap().to_bits());
         if name=="common-1.bin" {assert!((0..m.clusters()).any(|k|y[m.motion_row(k,sm::STEM_V)]!=0.));}
-        else {assert!(mode.branches.iter().all(|b|b.regulator==am::RegulatorBranch::HoldRest));}
+        else if name=="terminal-admitted.bin" && p.release.is_some() {
+            assert_eq!(mode.branches[0].regulator,am::RegulatorBranch::HoldRest);
+            assert!(mode.branches[1..].iter().all(|b|b.regulator==am::RegulatorBranch::Open));
+        } else {assert!(mode.branches.iter().all(|b|b.regulator==am::RegulatorBranch::HoldRest));}
         m.validate_accepted(y,&reused).unwrap();m.validate_accepted(y,&fresh).unwrap();
+        if p.release.is_some() {
+            eprintln!("BANK_WORK_CONSEQUENCE {name} {}",control_work_accuracy::selected_report(
+                m,&reused,y,original_anchor,motion_pair_scale(m,m.layout.fluid_mechanical_work)).unwrap());
+        }
     }
-    eprintln!("OWNED_STAGE_REUSE_PROOF full={} reused={} sameSomeNoneBits=true allKeysAndDirectionInvalidation=true",w.full_evaluations,w.reused_evaluations);
+    eprintln!("OWNED_STAGE_REUSE_PROOF full={} reused={} completePAndMixedDirectionsAndEnergyBits=true allKeysAndFailureInvalidation=true",w.full_evaluations,w.reused_evaluations);
 }
 fn main() {
     if let Err(e) = execute() {
