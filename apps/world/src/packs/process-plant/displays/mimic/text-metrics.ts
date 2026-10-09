@@ -1,18 +1,26 @@
 import metrics from './openbridge-text-metrics.json'
 
 // Widths of OpenBridge text as its components render it, so the server can
-// reserve text boxes without a DOM. The table was measured in the real
-// components with OpenBridge's Noto Sans, which the embed loads for mimics;
-// it is part of the drawing's identity (MIMIC_LAYOUT_VERSION).
+// reserve text boxes without a DOM. The table is generated from the installed
+// OpenBridge package (generate-text-metrics.ts): each style's typography from
+// its component styles, advances and kerning shaped with HarfBuzz from its
+// Noto Sans, which the embed loads for mimics. It is part of the drawing's
+// identity (MIMIC_LAYOUT_VERSION).
 
 /** The text styles of an OpenBridge device's readout stack and alarm flap. */
 export type OpenBridgeTextStyle = 'tag' | 'value' | 'unit' | 'stateRow' | 'alertLabel'
 
 interface StyleTable {
+  /** px per em: the font size after font-size-adjust. */
+  readonly em: number
+  readonly css: { readonly letterSpacing: number }
+  /** In font units. */
   readonly advance: Readonly<Record<string, number>>
+  /** In font units. */
   readonly kern: Readonly<Record<string, number>>
 }
 
+const unitsPerEm = metrics.font.unitsPerEm
 const styles = metrics.styles as Readonly<Record<OpenBridgeTextStyle, StyleTable>>
 
 /** Characters the table does not cover; text containing them cannot be measured and is rejected. */
@@ -22,15 +30,18 @@ export const unmeasurable = (style: OpenBridgeTextStyle, text: string): Readonly
 /** Rendered width in px, rounded up; throws for characters the table lacks (check `unmeasurable` first). */
 export const textWidth = (style: OpenBridgeTextStyle, text: string): number => {
   const table = styles[style]
-  let width = 0
+  let units = 0
+  let characters = 0
   let previous = ''
   for (const character of text) {
     const advance = table.advance[character]
     if (advance === undefined) throw new Error(`no ${style} advance for "${character}"`)
-    width += advance + (table.kern[previous + character] ?? 0)
+    units += advance + (table.kern[previous + character] ?? 0)
     previous = character
+    characters++
   }
-  return Math.ceil(width)
+  // Letter-spacing follows every character, the last included.
+  return Math.ceil((units * table.em) / unitsPerEm + characters * table.css.letterSpacing)
 }
 
 /** OpenBridge device geometry at the regular size, in px. */
