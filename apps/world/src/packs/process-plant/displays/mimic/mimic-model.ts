@@ -7,14 +7,14 @@ import type { VariablePath } from '../../graph/index.ts'
 // layout. Symbol states come only from measured or derived variables, never
 // from writable commands: a pump's run command stays true without power and a
 // valve's demand can read closed while the valve is stuck open.
-export const composedMimicViewSchema = z.enum(['feed-to-sg'])
+export const composedMimicViewSchema = z.enum(['feed-to-sg', 'pressurizer-relief', 'rcs-loops'])
 export type ComposedMimicView = z.infer<typeof composedMimicViewSchema>
 
 export const mimicLoopSchema = z.string().regex(/^[A-F]$/)
 
 export const MIMIC_WIDTH = 600
 
-export type MimicSymbol = 'pump' | 'valve' | 'steam-generator' | 'header'
+export type MimicSymbol = 'pump' | 'valve' | 'relief-valve' | 'steam-generator' | 'pressurizer' | 'tank' | 'reactor' | 'header' | 'stub'
 
 /** How a symbol shows its state, and from which variables. */
 export type MimicState =
@@ -26,12 +26,20 @@ export type MimicState =
    */
   | { readonly kind: 'valve'; readonly positionPath: VariablePath; readonly commandPath: VariablePath }
   | { readonly kind: 'level'; readonly levelPath: VariablePath; readonly unit: string }
+  /**
+   * A relief valve whose position the model does not measure: judged by the
+   * flow through it, so a stuck-open valve reads as passing whatever its
+   * command says. The command only annotates a mismatch.
+   */
+  | { readonly kind: 'relief'; readonly flowPath: VariablePath; readonly commandPath: VariablePath; readonly noFlowBelow: number }
   | { readonly kind: 'none' }
 
 /** A value printed beside its symbol, chosen by World. */
 export interface MimicValue {
   readonly path: VariablePath
   readonly unit: string
+  /** Short name printed before the value when a symbol shows several ("CET"). */
+  readonly name?: string
   /** Where the tag sits relative to the symbol. */
   readonly side: 'left' | 'right'
 }

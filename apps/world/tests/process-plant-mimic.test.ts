@@ -12,7 +12,7 @@ import {
 import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
 import { recordedPlantVariables } from '../src/packs/process-plant/recording.ts'
 import { compileMimic } from '../src/packs/process-plant/displays/mimic/compile-mimic.ts'
-import type { CompiledMimic } from '../src/packs/process-plant/displays/mimic/mimic-model.ts'
+import type { CompiledMimic, ComposedMimicView } from '../src/packs/process-plant/displays/mimic/mimic-model.ts'
 
 const plantWithLoops = (loopCount: number): ProcessPlantRuntimeInstance => {
   const compiled = compileProcessPlant(createPwrReferencePlantDefinition({ id: `plant:mimic-${loopCount}`, loopCount }))
@@ -26,8 +26,8 @@ const plantWithLoops = (loopCount: number): ProcessPlantRuntimeInstance => {
   }
 }
 
-const compiled = (system: ProcessPlantRuntimeInstance, loops?: ReadonlyArray<string>): CompiledMimic => {
-  const result = compileMimic(system, { view: 'feed-to-sg', ...(loops === undefined ? {} : { loops }) })
+const compiled = (system: ProcessPlantRuntimeInstance, loops?: ReadonlyArray<string>, view: ComposedMimicView = 'feed-to-sg'): CompiledMimic => {
+  const result = compileMimic(system, { view, ...(loops === undefined ? {} : { loops }) })
   if (!result.ok) throw new Error(result.issues.join('; '))
   return result.mimic
 }
@@ -55,22 +55,40 @@ const layoutProblems = (mimic: CompiledMimic): ReadonlyArray<string> => {
   return problems
 }
 
-describe('feed-to-SG mimic view', () => {
-  for (const loopCount of [2, 4, 6]) {
-    test(`draws every loop of a ${loopCount}-loop plant within its box, on the grid, without overlaps or diagonal pipes`, () => {
-      const system = plantWithLoops(loopCount)
-      const mimic = compiled(system)
-      expect(mimic.loops).toHaveLength(loopCount)
-      expect(mimic.nodes.filter(node => node.symbol === 'steam-generator')).toHaveLength(loopCount)
-      expect(layoutProblems(mimic)).toEqual([])
-    })
+const views: ReadonlyArray<ComposedMimicView> = ['feed-to-sg', 'pressurizer-relief', 'rcs-loops']
+
+describe('reviewed mimic views', () => {
+  for (const view of views) {
+    for (const loopCount of [2, 4, 6]) {
+      test(`${view} draws a ${loopCount}-loop plant within its box, on the grid, without overlaps or diagonal pipes`, () => {
+        const system = plantWithLoops(loopCount)
+        const mimic = compiled(system, undefined, view)
+        if (view !== 'pressurizer-relief') expect(mimic.nodes.filter(node => node.symbol === 'steam-generator')).toHaveLength(loopCount)
+        expect(layoutProblems(mimic)).toEqual([])
+      })
+    }
   }
 
-  test('never draws a writable command as equipment state', () => {
+  test('the pressurizer relief view is not drawn per loop', () => {
+    expect(compileMimic(plantWithLoops(4), { view: 'pressurizer-relief', loops: ['A'] })).toEqual({ ok: false, issues: ['view pressurizer-relief is not drawn per loop; remove loops'] })
+  })
+
+  test('the PORV is judged by relief flow and framed only by relief alarms', () => {
+    const mimic = compiled(plantWithLoops(4), undefined, 'pressurizer-relief')
+    const porv = mimic.nodes.find(node => node.id === 'porv')!
+    expect(porv.state).toMatchObject({ kind: 'relief', flowPath: 'pressurizer.reliefFlowKgPerS', commandPath: 'pressurizer.reliefValvePositionFraction' })
+    expect(porv.ruleIds).toEqual(['pzr-relief-flow-high'])
+  })
+
+  for (const view of views) test(`${view} never draws a writable command as equipment state`, () => {
     const system = plantWithLoops(4)
-    const mimic = compiled(system)
+    const mimic = compiled(system, undefined, view)
     const writable = (path: string): boolean => system.plant.graph.signalBindingByPath.get(path as never)!.writable
     for (const node of mimic.nodes) {
+      if (node.state.kind === 'relief') {
+        expect(writable(node.state.flowPath)).toBe(false)
+        expect(writable(node.state.commandPath)).toBe(true)
+      }
       if (node.state.kind === 'pump') {
         expect(writable(node.state.speedPath)).toBe(false)
         // The run command only annotates a mismatch; it is the writable one.

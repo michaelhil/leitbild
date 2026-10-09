@@ -4,11 +4,11 @@ description: Composes a small live operator display (trends, loop comparisons, r
 allowed-tools: [workspace_explore, workspace_call]
 ---
 
-A display is a small live panel set that the Process Plant module validates, lays out and keeps current below your answer. You decide what the operator must see and why; the module takes units, scales, thresholds, colours and layout from the plant model. Composing a display is read-only: it changes no Plant, Run or scenario state and needs no confirmation.
+A display is a small live panel set that the Process Plant module validates, lays out and keeps current below your answer. You decide what the operator must see and why; the module takes units, scales, thresholds, colours and layout from the plant model. Composing is read-only and needs no confirmation.
 
 ## Decide
 
-Show at most one display per answer, and only when change over time or margin to a threshold matters for the operator's next action. A display complements a short answer; it never replaces your analysis. If a display earlier in this conversation still answers the question, refer to it instead of composing another.
+Show at most one display per answer, and only when change over time, margin to a threshold or which equipment runs matters for the operator's next action. A display complements a short answer; it never replaces your analysis. If an earlier display still answers the question, refer to it.
 
 ## Plan
 
@@ -23,7 +23,7 @@ Start from one trend of the signals the question is about, using exact tagIds or
 - `trend`: how the signals the question is about are changing, usually two to four. Put them all in one trend: the module gives each measurement its own strip on a shared time axis (the same measurement on parallel equipment, such as the four SG levels, shares one), at most four strips of four signals. Signals the Run does not record appear as current values beside the trend. Choose the horizon by how fast they move: `2m` for fast pressure or power transients, `10m` for most levels and temperatures, `30m` for slow drifts.
 - `comparison`: which of two to six parallel signals of one unit differs, such as the loops.
 - `readouts`: current values or on/off states with margin to alarm and trip thresholds.
-- `mimic`: which equipment runs, is open or carries flow, when the answer depends on that (a pump trip, a stuck valve, whether feed reaches a steam generator). View `feed-to-sg` draws main and auxiliary feedwater pumps, headers and valves into the steam generators; `"loops":["B"]` limits it. It draws actual states and any disagreeing command, so add no readout of its pumps or valves. Never use it to illustrate a trended value.
+- `mimic`: which equipment runs, is open or carries flow, when the answer depends on that (a pump trip, a stuck valve, whether feed reaches an SG). Views: `feed-to-sg` (feedwater and AFW pumps and valves into the SGs), `rcs-loops` (vessel, legs, SGs, RCPs), `pressurizer-relief` (surge line, pressurizer, PORV, relief tank); `"loops":["B"]` limits the first two. It draws actual states and any disagreeing command, so add no readout of its pumps or valves, and never use it to illustrate a trended value.
 - `alarms`: active alarms of the displayed signals and their equipment (`related`) or of the whole unit (`plant`); add it only next to signal or mimic panels.
 
 Each measurement makes the trend taller: next to three or four measurements add only `alarms`; next to two, at most `alarms` and three readouts. A mimic is tall: next to it, add a one-measurement trend and `alarms`, or a two-measurement trend.

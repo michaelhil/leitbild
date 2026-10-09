@@ -1,6 +1,6 @@
 import type { ProcessSignalBinding, VariablePath } from '../../graph/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../../runtime-instance.ts'
-import { icAlarmRuleIdsForComponent } from '../ic-thresholds.ts'
+import { icAlarmRuleIdsForComponent, icAlarmRuleIdsForPaths } from '../ic-thresholds.ts'
 import {
   MIMIC_WIDTH,
   type CompiledMimic,
@@ -9,7 +9,7 @@ import {
   type MimicPipe,
   type MimicState,
 } from './mimic-model.ts'
-import { pwrReferenceMimicViews, type MimicStateSpec } from './pwr-reference-views.ts'
+import { loopedMimicViews, pwrReferenceMimicViews, type MimicStateSpec } from './pwr-reference-views.ts'
 
 // Mimic views exist per Plant model; a model without reviewed views has none.
 const viewsByModel = { 'process-plant.pwr.reference': pwrReferenceMimicViews } as const
@@ -42,6 +42,7 @@ export const compileMimic = (
   const views = (viewsByModel as Readonly<Record<string, typeof pwrReferenceMimicViews | undefined>>)[system.plant.modelRef]
   if (views === undefined) return { ok: false, issues: [`mimic panels are not available for Plant model ${system.plant.modelRef}`] }
   const available = plantLoops(system)
+  if (request.loops !== undefined && !loopedMimicViews.has(request.view)) return { ok: false, issues: [`view ${request.view} is not drawn per loop; remove loops`] }
   const loops = request.loops ?? available
   const unknown = loops.filter(loop => !available.includes(loop))
   if (unknown.length > 0) return { ok: false, issues: [`loops ${unknown.join(', ')} do not exist in ${system.plant.id}; it has loops ${available.join(', ')}`] }
@@ -63,6 +64,7 @@ export const compileMimic = (
     if (state.kind === 'pump') return { kind: 'pump', speedPath: readPath(`${state.component}.speedRpm`, 'state'), commandPath: readPath(`${state.component}.running`, 'annotation') }
     if (state.kind === 'valve') return { kind: 'valve', positionPath: readPath(`${state.component}.effectivePositionFraction`, 'state'), commandPath: readPath(`${state.component}.positionFraction`, 'annotation') }
     if (state.kind === 'level') return { kind: 'level', levelPath: readPath(state.path, 'state'), unit: state.unit }
+    if (state.kind === 'relief') return { kind: 'relief', flowPath: readPath(state.flow, 'state'), commandPath: readPath(state.command, 'annotation'), noFlowBelow: noFlowBelowByService.primaryRelief! }
     return { kind: 'none' }
   }
 
@@ -79,8 +81,10 @@ export const compileMimic = (
       height: node.height,
       orientation: node.orientation,
       state: stateFor(node.state),
-      values: node.values.map(value => ({ path: readPath(value.path, 'state'), unit: value.unit, side: value.side })),
-      ruleIds: icAlarmRuleIdsForComponent(system.plant, node.componentId),
+      values: node.values.map(value => ({ path: readPath(value.path, 'state'), unit: value.unit, side: value.side, ...(value.name === undefined ? {} : { name: value.name }) })),
+      ruleIds: node.alarmPaths === undefined
+        ? icAlarmRuleIdsForComponent(system.plant, node.componentId)
+        : icAlarmRuleIdsForPaths(system.plant, node.alarmPaths.map(path => readPath(path, 'annotation'))),
     }
   })
   const pipes: MimicPipe[] = spec.pipes.map(pipe => {
@@ -103,6 +107,7 @@ export const compileMimic = (
       ...(node.state.kind === 'pump' ? [node.state.speedPath, node.state.commandPath] : []),
       ...(node.state.kind === 'valve' ? [node.state.positionPath, node.state.commandPath] : []),
       ...(node.state.kind === 'level' ? [node.state.levelPath] : []),
+      ...(node.state.kind === 'relief' ? [node.state.flowPath, node.state.commandPath] : []),
       ...node.values.map(value => value.path),
     ]),
     ...pipes.map(pipe => pipe.flowPath),

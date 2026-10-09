@@ -71,6 +71,26 @@ export const valveLook = (node: MimicNode, index: SampleIndex): ValveLook => {
   return { icon: valveIcon(position), position, mismatch, tagged: mismatch !== null || (position > 0.05 && position < 0.95) }
 }
 
+export interface ReliefLook {
+  readonly icon: OpenBridgeIcon
+  readonly passing: boolean | null
+  /** The command disagrees with the flow: "CMD SHUT · PASSING" (stuck open) or "CMD OPEN · NO FLOW". */
+  readonly mismatch: string | null
+}
+
+export const reliefLook = (node: MimicNode, index: SampleIndex): ReliefLook => {
+  if (node.state.kind !== 'relief') return { icon: 'twoway-digital-static', passing: null, mismatch: null }
+  const flow = numberAt(index, node.state.flowPath)
+  if (flow === null) return { icon: 'twoway-digital-static', passing: null, mismatch: null }
+  const passing = Math.abs(flow) >= node.state.noFlowBelow
+  const command = numberAt(index, node.state.commandPath)
+  const mismatch = command === null ? null
+    : passing && command < 0.05 ? 'CMD SHUT · PASSING'
+      : !passing && command > 0.5 ? 'CMD OPEN · NO FLOW'
+        : null
+  return { icon: passing ? 'twoway-analog-open' : 'twoway-analog-closed', passing, mismatch }
+}
+
 export interface FlowLook {
   readonly look: 'forward' | 'reverse' | 'none' | 'unknown'
   readonly value: number | null

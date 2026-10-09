@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import type { MimicNode, MimicPipe } from '../src/packs/process-plant/displays/mimic/mimic-model.ts'
 import type { ComposedDisplayAlarm, ComposedDisplaySample } from '../src/ui/embed/composed-display/composed-display-client.ts'
 import { openBridgeIcons } from '../src/ui/embed/composed-display/mimic/openbridge-icons.ts'
-import { chevrons, crossings, flowLook, indexSample, levelLook, nodeAlarm, pumpLook, valveLook } from '../src/ui/embed/composed-display/mimic/mimic-state.ts'
+import { chevrons, crossings, flowLook, indexSample, levelLook, nodeAlarm, pumpLook, reliefLook, valveLook } from '../src/ui/embed/composed-display/mimic/mimic-state.ts'
 
 const sample = (values: Record<string, number | boolean>, quality: Record<string, string> = {}): ComposedDisplaySample => ({
   simulationTime: '2026-10-09T10:00:00.000Z',
@@ -35,6 +35,14 @@ describe('mimic symbol states', () => {
     expect(valveLook(valve, indexSample(sample({ 'v.effectivePositionFraction': 0, 'v.positionFraction': 0 }))).icon).toBe('twoway-analog-closed')
     // An unknown or out-of-range position is never drawn as a position.
     expect(valveLook(valve, indexSample(sample({ 'v.effectivePositionFraction': 2 }, { 'v.effectivePositionFraction': 'outside-hard-range' })))).toEqual({ icon: 'twoway-digital-static', position: null, mismatch: null, tagged: true })
+  })
+
+  test('a relief valve the model does not measure reads by its flow, and a stuck-open one says so', () => {
+    const porv = node({ symbol: 'relief-valve', state: { kind: 'relief', flowPath: 'r.flow', commandPath: 'r.command', noFlowBelow: 0.2 } as never })
+    // PORV stuck open (run 7): commanded shut, passing 7.7 kg/s.
+    expect(reliefLook(porv, indexSample(sample({ 'r.flow': 7.69, 'r.command': 0 })))).toEqual({ icon: 'twoway-analog-open', passing: true, mismatch: 'CMD SHUT · PASSING' })
+    expect(reliefLook(porv, indexSample(sample({ 'r.flow': 0, 'r.command': 0 })))).toEqual({ icon: 'twoway-analog-closed', passing: false, mismatch: null })
+    expect(reliefLook(porv, indexSample(sample({ 'r.flow': 0, 'r.command': 1 }))).mismatch).toBe('CMD OPEN · NO FLOW')
   })
 
   test('pipes show flow, reverse flow, no flow below their band, or unknown', () => {

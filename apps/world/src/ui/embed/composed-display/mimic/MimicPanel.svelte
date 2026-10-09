@@ -3,7 +3,7 @@
   import { formatQuantity } from '../../../../packs/process-plant/displays/display-text.ts'
   import type { ComposedDisplaySample } from '../composed-display-client.ts'
   import { openBridgeIcons } from './openbridge-icons.ts'
-  import { chevrons, crossings, flowLook, indexSample, levelLook, nodeAlarm, pumpLook, valveLook } from './mimic-state.ts'
+  import { chevrons, crossings, flowLook, indexSample, levelLook, nodeAlarm, pumpLook, reliefLook, valveLook } from './mimic-state.ts'
 
   // One SVG in World's fixed geometry, drawn with OpenBridge's symbols and
   // colour tokens. Nothing moves between samples: a sample changes classes,
@@ -78,7 +78,13 @@
             {@html openBridgeIcons[node.orientation === 'vertical' ? `pump-${pump.look}-vertical` : `pump-${pump.look}-horizontal`]}
           </svg>
         {/if}
-        {#if node.orientation === 'horizontal'}
+        {#if node.values.length > 0}
+          <text class="label" x={node.x + node.width + 5} y={centerY(node) - 1}>{node.label}</text>
+          {#each node.values as value (value.path)}
+            <text class="value" x={node.x + node.width + 5} y={centerY(node) + 11}>{valueText(value.path, value.unit)}</text>
+          {/each}
+          {#if pump.mismatch !== null}<text class="mismatch" x={node.x + node.width + 5} y={centerY(node) + 22}>{pump.mismatch}</text>{/if}
+        {:else if node.orientation === 'horizontal'}
           <text class="label" x={node.x - 5} y={centerY(node) + 3.5} text-anchor="end">{node.label}</text>
           {#if pump.mismatch !== null}<text class="mismatch" x={node.x - 5} y={centerY(node) + 14} text-anchor="end">{pump.mismatch}</text>{/if}
         {:else}
@@ -98,21 +104,48 @@
           <text class="value" x={left ? node.x - 4 : node.x + node.width + 4} y={centerY(node) + 9} text-anchor={left ? 'end' : 'start'}>{valve.position === null ? '—' : valueText(value.path, value.unit)}</text>
           {#if valve.mismatch !== null}<text class="mismatch" x={left ? node.x - 4 : node.x + node.width + 4} y={centerY(node) + 20} text-anchor={left ? 'end' : 'start'}>{valve.mismatch}</text>{/if}
         {/each}
-      {:else if node.symbol === 'steam-generator'}
+      {:else if node.symbol === 'relief-valve'}
+        {@const relief = reliefLook(node, index)}
+        <svg x={node.x - 2} y={node.y - 2} width={node.width + 4} height={node.height + 4} viewBox="0 0 24 24">
+          {@html openBridgeIcons[relief.icon]}
+        </svg>
+        <!-- Below the line it sits on, so the text never hides the pipe. -->
+        <text class="label" x={node.x} y={node.y + node.height + 11}>{node.label} {relief.passing === null ? '' : relief.passing ? 'passing' : 'no flow'}</text>
+        {#each node.values as value (value.path)}
+          <text class="value" x={node.x} y={node.y + node.height + 24}>{valueText(value.path, value.unit)}</text>
+        {/each}
+        {#if relief.mismatch !== null}<text class="mismatch" x={node.x} y={node.y + node.height + 35}>{relief.mismatch}</text>{/if}
+      {:else if node.symbol === 'steam-generator' || node.symbol === 'pressurizer' || node.symbol === 'tank'}
         {@const level = levelLook(node, index)}
-        <rect class="vessel" x={node.x} y={node.y} width={node.width} height={node.height} rx={node.width / 2} />
+        {@const radius = Math.min(node.width, node.height) / 2}
+        {@const left = node.values[0]?.side === 'left'}
+        {@const textX = left ? node.x - 5 : node.x + node.width + 5}
+        <rect class="vessel" x={node.x} y={node.y} width={node.width} height={node.height} rx={radius} />
         {#if level.fraction !== null}
-          <clipPath id={`level-${node.id}`}><rect x={node.x} y={node.y} width={node.width} height={node.height} rx={node.width / 2} /></clipPath>
+          <clipPath id={`level-${node.id}`}><rect x={node.x} y={node.y} width={node.width} height={node.height} rx={radius} /></clipPath>
           <rect class="level" clip-path={`url(#level-${node.id})`} x={node.x} y={node.y + node.height * (1 - level.fraction)} width={node.width} height={node.height * level.fraction} />
         {:else}
-          <rect class="unknown" x={node.x} y={node.y} width={node.width} height={node.height} rx={node.width / 2} />
+          <rect class="unknown" x={node.x} y={node.y} width={node.width} height={node.height} rx={radius} />
         {/if}
-        <rect class="vessel-outline" x={node.x} y={node.y} width={node.width} height={node.height} rx={node.width / 2} />
-        {#each node.values as value (value.path)}
-          <text class="label" x={node.x + node.width + 4} y={node.y + 14}>{node.label}</text>
-          <text class="value" x={node.x + node.width + 4} y={node.y + 27}>{valueText(value.path, value.unit)}</text>
-          {#if level.offScale !== null}<text class="mismatch" x={node.x + node.width + 4} y={node.y + 38}>{level.offScale === 'high' ? '▲ above span' : '▼ below span'}</text>{/if}
+        <rect class="vessel-outline" x={node.x} y={node.y} width={node.width} height={node.height} rx={radius} />
+        <text class="label" x={textX} y={node.y + 12} text-anchor={left ? 'end' : 'start'}>{node.label}</text>
+        {#each node.values as value, at (value.path)}
+          <text class="value" x={textX} y={node.y + 25 + at * 13} text-anchor={left ? 'end' : 'start'}>{valueText(value.path, value.unit)}</text>
         {/each}
+        {#if level.offScale !== null}<text class="mismatch" x={textX} y={node.y + 25 + node.values.length * 13} text-anchor={left ? 'end' : 'start'}>{level.offScale === 'high' ? '▲ above span' : '▼ below span'}</text>{/if}
+      {:else if node.symbol === 'reactor'}
+        <!-- The reactor vessel carries its values inside, so its plena can leave from its side. -->
+        <rect class="vessel" x={node.x} y={node.y} width={node.width} height={node.height} rx={node.width / 2} />
+        <rect class="vessel-outline" x={node.x} y={node.y} width={node.width} height={node.height} rx={node.width / 2} />
+        <text class="label" x={centerX(node)} y={node.y + 34} text-anchor="middle">{node.label}</text>
+        {#each node.values as value, at (value.path)}
+          <text class="label" x={centerX(node)} y={node.y + 54 + at * 28} text-anchor="middle">{value.name ?? ''}</text>
+          <text class="value" x={centerX(node)} y={node.y + 67 + at * 28} text-anchor="middle">{valueText(value.path, value.unit)}</text>
+        {/each}
+      {:else if node.symbol === 'stub'}
+        <!-- Where a drawn pipe leaves the view: named, never drawn as equipment. -->
+        <text class="label" x={node.x} y={node.y - 3}>{node.label}</text>
+        <line class="stub" x1={node.x} x2={node.x} y1={node.y} y2={node.y + node.height} />
       {/if}
       {#if alarm !== null}
         <rect class={`alarm-frame ${alarm.severity}`} x={node.x - 4} y={node.y - 4} width={node.width + 8} height={node.height + 8} rx="3" />
@@ -143,6 +176,7 @@
   .value { fill: var(--element-active-color); font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
   /* A command that disagrees with the equipment is stated in words, never by colour alone. */
   .mismatch { fill: var(--element-active-color); font-size: 9.5px; font-weight: 600; }
+  .stub { stroke: var(--automation-device-tertiary-color); stroke-width: 2; }
   .alarm-frame { fill: none; stroke-width: 2; }
   .alarm-frame.critical { stroke: var(--alert-alarm-color); }
   .alarm-frame.warning { stroke: var(--alert-warning-color); }

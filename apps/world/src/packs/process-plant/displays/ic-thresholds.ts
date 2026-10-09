@@ -153,3 +153,15 @@ export const icAlarmRuleIdsForComponent = (
   .filter(rule => rule.enabled && kindFor(rule) !== 'control')
   .filter(rule => conditionBindings(plant, rule.condition).some(binding => equipmentKeys(binding).includes(componentId)))
   .map(rule => rule.id)
+
+/** Alarm and trip rules acting on exactly these signals, for a symbol that is one item of a larger component. */
+export const icAlarmRuleIdsForPaths = (
+  plant: CompiledProcessPlant,
+  paths: ReadonlyArray<VariablePath>,
+): ReadonlyArray<string> => {
+  const watched = new Set(paths.map(String))
+  return plant.automation.rules
+    .filter(rule => rule.enabled && kindFor(rule) !== 'control')
+    .filter(rule => conditionBindings(plant, rule.condition).some(binding => watched.has(String(binding.path))))
+    .map(rule => rule.id)
+}

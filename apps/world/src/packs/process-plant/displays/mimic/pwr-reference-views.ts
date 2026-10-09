@@ -7,6 +7,7 @@ import type { ComposedMimicView, MimicSymbol } from './mimic-model.ts'
 
 export type MimicStateSpec =
   | { readonly kind: 'pump'; readonly component: string }
+  | { readonly kind: 'relief'; readonly flow: string; readonly command: string }
   | { readonly kind: 'valve'; readonly component: string }
   | { readonly kind: 'level'; readonly path: string; readonly unit: string }
   | { readonly kind: 'none' }
@@ -22,7 +23,9 @@ export interface MimicNodeSpec {
   readonly height: number
   readonly orientation: 'horizontal' | 'vertical'
   readonly state: MimicStateSpec
-  readonly values: ReadonlyArray<{ readonly path: string; readonly unit: string; readonly side: 'left' | 'right' }>
+  readonly values: ReadonlyArray<{ readonly path: string; readonly unit: string; readonly side: 'left' | 'right'; readonly name?: string }>
+  /** Signals whose alarm rules frame this symbol, when its component bundles several items (the PORV sits in the pressurizer). */
+  readonly alarmPaths?: ReadonlyArray<string>
 }
 
 export interface MimicPipeSpec {
@@ -143,6 +146,104 @@ const feedToSg = (loops: ReadonlyArray<string>): MimicViewSpec => {
   return { height: 216, nodes, pipes }
 }
 
+/**
+ * The pressurizer and its relief path: the surge line from its hot leg, the
+ * pressurizer, the PORV inline on the relief line, and the relief tank. The
+ * model keeps the PORV inside the pressurizer, so its symbol is judged by the
+ * relief flow. Loops do not apply.
+ */
+const pressurizerRelief = (): MimicViewSpec => {
+  const pzr = { x: 236, y: 24, width: 40, height: 100 }
+  const tank = { x: 420, y: 84, width: 96, height: 40 }
+  const reliefY = 10
+  const porvX = 348
+  const surgeY = 144
+  return {
+    height: 156,
+    nodes: [
+      {
+        id: 'pressurizer', componentId: 'pressurizer', symbol: 'pressurizer', label: 'PZR', ...pzr, orientation: 'vertical',
+        state: { kind: 'level', path: 'pressurizer.levelPercent', unit: 'percent' },
+        values: [{ path: 'pressurizer.pressureMPa', unit: 'MPa', side: 'left' }, { path: 'pressurizer.levelPercent', unit: 'percent', side: 'left' }],
+        alarmPaths: ['pressurizer.pressureMPa', 'pressurizer.levelPercent'],
+      },
+      {
+        id: 'porv', componentId: 'pressurizer', symbol: 'relief-valve', label: 'PORV', x: porvX - 10, y: reliefY - 10, width: 20, height: 20, orientation: 'horizontal',
+        state: { kind: 'relief', flow: 'pressurizer.reliefFlowKgPerS', command: 'pressurizer.reliefValvePositionFraction' },
+        values: [{ path: 'pressurizer.reliefFlowKgPerS', unit: 'kg/s', side: 'right' }],
+        alarmPaths: ['pressurizer.reliefFlowKgPerS', 'pressurizer.reliefValvePositionFraction'],
+      },
+      {
+        id: 'relief-tank', componentId: 'pressurizerReliefTank', symbol: 'tank', label: 'PRT', ...tank, orientation: 'horizontal',
+        state: { kind: 'level', path: 'pressurizerReliefTank.levelPercent', unit: 'percent' },
+        values: [{ path: 'pressurizerReliefTank.levelPercent', unit: 'percent', side: 'right' }],
+      },
+      { id: 'hot-leg', componentId: 'core', symbol: 'stub', label: 'Hot leg A', x: 40, y: surgeY - 6, width: 12, height: 12, orientation: 'horizontal', state: { kind: 'none' }, values: [], alarmPaths: [] },
+    ],
+    pipes: [
+      { id: 'surge-line', linkId: 'pressurizer-surge-line', points: [[52, surgeY], [pzr.x + pzr.width / 2, surgeY], [pzr.x + pzr.width / 2, pzr.y + pzr.height]] },
+      { id: 'relief-line', linkId: 'pressurizer-relief-to-tank', points: [[pzr.x + pzr.width / 2, pzr.y], [pzr.x + pzr.width / 2, reliefY], [tank.x + tank.width / 2, reliefY], [tank.x + tank.width / 2, tank.y]] },
+    ],
+  }
+}
+
+/**
+ * The reactor coolant loops: the vessel with its hot and cold plena, and per
+ * loop the hot leg up to the SG, the SG outlet down to the RCP and the RCP back
+ * to the vessel. Loop flow with or without the pumps (natural circulation)
+ * shows on every leg.
+ */
+const rcsLoops = (loops: ReadonlyArray<string>): MimicViewSpec => {
+  const centers = loopCenters(loops.length)
+  const lastCenter = centers.at(-1)!
+  const vessel = { x: 24, y: 20, width: 64, height: 172 }
+  const sgTop = 20
+  const sgHeight = 60
+  const rcpY = 124
+  const hotPlenum = 156
+  const coldPlenum = 180
+  const nodes: MimicNodeSpec[] = [
+    {
+      id: 'reactor', componentId: 'core', symbol: 'reactor', label: 'RV', ...vessel, orientation: 'vertical', state: { kind: 'none' },
+      values: [
+        { path: 'core.coolantOutletTemperatureC', unit: 'degC', side: 'right', name: 'CET' },
+        { path: 'vessel.subcoolingMarginC', unit: 'degC', side: 'right', name: 'SM' },
+      ],
+      alarmPaths: ['core.coolantOutletTemperatureC', 'vessel.subcoolingMarginC', 'core.totalThermalPowerMw'],
+    },
+    { id: 'hot-plenum', componentId: 'core', symbol: 'header', label: 'hot legs', x: vessel.x + vessel.width, y: hotPlenum - 2, width: lastCenter - 10 - (vessel.x + vessel.width), height: 4, orientation: 'horizontal', state: { kind: 'none' }, values: [], alarmPaths: [] },
+    { id: 'cold-plenum', componentId: 'core', symbol: 'header', label: 'cold legs', x: vessel.x + vessel.width, y: coldPlenum - 2, width: lastCenter + 10 - (vessel.x + vessel.width), height: 4, orientation: 'horizontal', state: { kind: 'none' }, values: [], alarmPaths: [] },
+  ]
+  const pipes: MimicPipeSpec[] = []
+  loops.forEach((loop, index) => {
+    const cx = centers[index]!
+    const l = lower(loop)
+    nodes.push(
+      {
+        id: `sg-${l}`, componentId: `sg${loop}`, symbol: 'steam-generator', label: `SG ${loop}`, x: cx - 18, y: sgTop, width: 36, height: sgHeight, orientation: 'vertical',
+        state: { kind: 'level', path: `sg${loop}.levelPercent`, unit: 'percent' },
+        values: [{ path: `sg${loop}.levelPercent`, unit: 'percent', side: 'right' }],
+      },
+      {
+        id: `rcp-${l}`, componentId: `rcp${loop}`, symbol: 'pump', label: `RCP ${loop}`, x: cx + 10 - PUMP / 2, y: rcpY - PUMP / 2, width: PUMP, height: PUMP, orientation: 'vertical',
+        state: { kind: 'pump', component: `rcp${loop}` },
+        values: [{ path: `rcp${loop}.loopFlowKgPerS`, unit: 'kg/s', side: 'right' }],
+      },
+    )
+    pipes.push(
+      { id: `hot-leg-${l}`, linkId: `rcs-hot-leg-${l}`, points: [[cx - 10, hotPlenum], [cx - 10, sgTop + sgHeight]] },
+      { id: `cold-leg-${l}`, linkId: `rcs-cold-leg-${l}`, points: [[cx + 10, sgTop + sgHeight], [cx + 10, rcpY - PUMP / 2]] },
+      { id: `rcp-${l}-to-vessel`, linkId: `rcp-${l}-to-core`, points: [[cx + 10, rcpY + PUMP / 2], [cx + 10, coldPlenum]] },
+    )
+  })
+  return { height: 200, nodes, pipes }
+}
+
 export const pwrReferenceMimicViews: Readonly<Record<ComposedMimicView, (loops: ReadonlyArray<string>) => MimicViewSpec>> = {
   'feed-to-sg': feedToSg,
+  'pressurizer-relief': pressurizerRelief,
+  'rcs-loops': rcsLoops,
 }
+
+/** Views drawn per loop; the others ignore loops. */
+export const loopedMimicViews: ReadonlySet<ComposedMimicView> = new Set(['feed-to-sg', 'rcs-loops'])

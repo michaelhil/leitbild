@@ -621,10 +621,12 @@ export const composedDisplaySignals = (display: CompiledComposedDisplay): Readon
 
 const mimicViewText: Readonly<Record<string, string>> = {
   'feed-to-sg': 'main feedwater (MFW pumps, MFW header, feedwater control valves FCV) and auxiliary feedwater (AFW pumps, AFW header, AFW valves) to the steam generators',
+  'rcs-loops': 'the reactor coolant loops (reactor vessel with core outlet temperature and subcooling margin, hot legs, steam generators, RCPs with loop flow, cold legs)',
+  'pressurizer-relief': 'the pressurizer relief path (surge line from hot leg A, pressurizer pressure and level, the PORV judged by its relief flow, the relief tank level)',
 }
 
 const mimicShows = (mimic: CompiledMimic): string =>
-  `Live equipment mimic of ${mimicViewText[mimic.view] ?? mimic.view}, loops ${mimic.loops.join(', ')}: pumps drawn running or stopped from their actual speed, valves from their actual position (a command that disagrees is stated as "CMD … · POS …"), SG levels, flow or no flow ("empty" pipes) on every branch, and alarm frames on equipment with active alarms`
+  `Live equipment mimic of ${mimicViewText[mimic.view] ?? mimic.view}${mimic.view === 'pressurizer-relief' ? '' : `, loops ${mimic.loops.join(', ')}`}: pumps drawn running or stopped from their actual speed, valves from their actual position (a command that disagrees is stated as "CMD … · POS …"), SG levels, flow or no flow ("empty" pipes) on every branch, and alarm frames on equipment with active alarms`
 
 /** Plain statements of what the view shows, so the agent's text need not repeat it. */
 export const composedDisplayShows = (display: CompiledComposedDisplay): ReadonlyArray<string> => display.panels.flatMap(panel => {
