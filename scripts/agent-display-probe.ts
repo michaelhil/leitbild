@@ -21,7 +21,9 @@ interface Scenario {
   readonly advanceMinutes?: number
   /** Any of these tags or paths in an accepted composition counts as on-topic. */
   readonly keySignals?: ReadonlyArray<string>
-  readonly keyPanel?: 'trend' | 'comparison' | 'readouts' | 'alarms'
+  readonly keyPanel?: 'trend' | 'comparison' | 'readouts' | 'alarms' | 'mimic'
+  /** Whether an equipment mimic is expected, to be avoided, or either is fine. */
+  readonly mimic?: 'expected' | 'avoid'
 }
 
 const scenarios: ReadonlyArray<Scenario> = [
@@ -39,11 +41,18 @@ const scenarios: ReadonlyArray<Scenario> = [
     prompt: 'Unit 2 turbine tripped. What do I need to watch over the next minutes?', keySignals: ['SG-A-PRESS', 'SG-B-PRESS', 'PT-455', 'TAVG', 'GEN-MW'] },
   { id: 'loss-offsite-power', fault: { actionId: 'loss-offsite-power' }, advanceMinutes: 1, expect: 'display',
     prompt: 'Unit 2 lost offsite power. What is the state of its electrical supply and what should I watch?', keySignals: ['BUS-A-VOLTAGE', 'EDG-A-RUN', 'BUS-B-VOLTAGE', 'EDG-B-RUN'] },
-  { id: 'power-stable', advanceMinutes: 1, expect: 'display',
+  { id: 'feed-path-b', fault: { actionId: 'steam-generator-b-feedwater-runback', parameters: { positionPercent: 35 } }, advanceMinutes: 3, expect: 'display', keyPanel: 'mimic', mimic: 'expected',
+    prompt: 'Is the problem on Unit 2 in the feedwater path to SG B? Show me where.', keySignals: ['SG-B-LVL-NR'] },
+  { id: 'afw-reach', fault: { actionId: 'loss-main-feedwater' }, advanceMinutes: 2, expect: 'display', keyPanel: 'mimic', mimic: 'expected',
+    prompt: 'Unit 2 lost main feedwater. Is auxiliary feedwater reaching all four steam generators?', keySignals: ['SG-A-LVL-NR', 'AFW-FLOW'] },
+  { id: 'show-feed-lineup', advanceMinutes: 1, expect: 'display', keyPanel: 'mimic', mimic: 'expected',
+    prompt: 'Show me the Unit 2 feedwater line-up to the steam generators.' },
+  { id: 'single-state', advanceMinutes: 1, expect: 'none', mimic: 'avoid', prompt: 'Is main feedwater pump A on Unit 2 running?' },
+  { id: 'power-stable', advanceMinutes: 1, expect: 'display', mimic: 'avoid',
     prompt: 'Is reactor power on Unit 2 stable over the last few minutes?', keySignals: ['core.powerMw', 'NIS-PR', 'GEN-MW'] },
-  { id: 'compare-sg-levels', advanceMinutes: 1, expect: 'display', keyPanel: 'comparison',
+  { id: 'compare-sg-levels', advanceMinutes: 1, expect: 'display', keyPanel: 'comparison', mimic: 'avoid',
     prompt: 'Compare the four steam generator levels on Unit 2.', keySignals: ['SG-A-LVL-NR', 'SG-B-LVL-NR'] },
-  { id: 'show-tavg', advanceMinutes: 1, expect: 'display',
+  { id: 'show-tavg', advanceMinutes: 1, expect: 'display', mimic: 'avoid',
     prompt: 'Show me Unit 2 average coolant temperature over the last 10 minutes.', keySignals: ['TAVG'] },
   { id: 'single-value', advanceMinutes: 1, expect: 'none', prompt: 'What is the current pressurizer pressure on Unit 2?' },
   { id: 'explanation', expect: 'none', prompt: 'Briefly explain what the pressurizer spray does in this model.' },
@@ -182,6 +191,8 @@ for (const scenario of chosen) {
     signals: [...usedSignals],
     keySignalHit: scenario.keySignals === undefined || fence === null ? null : scenario.keySignals.some(signal => usedSignals.has(signal)),
     keyPanelHit: scenario.keyPanel === undefined || fence === null ? null : (accepted.at(-1)?.panels ?? []).includes(scenario.keyPanel),
+    mimic: scenario.mimic ?? null,
+    mimicShown: fence !== null && (accepted.at(-1)?.panels ?? []).includes('mimic'),
     rejections: composes.filter(outcome => !outcome.accepted).map(outcome => outcome.error),
     wallMs,
     modelCalls: answer.modelCalls,
@@ -210,6 +221,8 @@ const summary = {
   falsePositiveRate: ratio(expectNone.filter(row => row.displayed).length, expectNone.length),
   firstComposeValid: ratio(composed.filter(row => row.firstComposeAccepted).length, composed.length),
   keySignalRecall: ratio(keyed.filter(row => row.keySignalHit).length, keyed.length),
+  mimicRecall: ratio(rows.filter(row => row.mimic === 'expected' && row.mimicShown).length, rows.filter(row => row.mimic === 'expected').length),
+  mimicFalsePositives: ratio(rows.filter(row => row.mimic === 'avoid' && row.mimicShown).length, rows.filter(row => row.mimic === 'avoid').length),
   medianWallMs: latencies[Math.floor(latencies.length / 2)] ?? null,
   meanPromptTokens: rows.length === 0 ? null : Math.round(rows.reduce((sum, row) => sum + (row.promptTokens as number), 0) / rows.length),
   rows,
