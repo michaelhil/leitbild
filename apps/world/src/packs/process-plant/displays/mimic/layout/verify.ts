@@ -119,29 +119,45 @@ export const verifyLayout = (input: VerifyInput): DiagramViolation[] => {
     for (const text of texts) if (rectsOverlap(buffered, text.rect)) push('overlap', name(owner), `pipe overlaps text of ${text.id}`)
   }
   const spacing = outline + 4
+  // Each segment as its axis (0: horizontal, 1: vertical, -1: neither), the coordinate it lies at, and its extent along it.
+  const shapes = segments.map(segment => {
+    const axis = isHorizontal(segment) ? 0 : isVertical(segment) ? 1 : -1
+    const along = axis === 1 ? 1 : 0
+    return { axis, at: segment.a[1 - along]!, low: Math.min(segment.a[along]!, segment.b[along]!), high: Math.max(segment.a[along]!, segment.b[along]!) }
+  })
   for (let i = 0; i < segments.length; i++) {
+    const p = shapes[i]!
+    if (p.axis < 0) continue
     for (let j = i + 1; j < segments.length; j++) {
+      const q = shapes[j]!
+      if (q.axis !== p.axis) continue
+      const across = Math.abs(p.at - q.at)
+      if (across >= spacing - EPSILON) continue
+      const overlap = Math.min(p.high, q.high) - Math.max(p.low, q.low)
+      if (overlap <= EPSILON) continue
       const s = segments[i]!
       const t = segments[j]!
       if (sameOwner(s.owner, t.owner) || (s.owner.kind === 'bar' && t.owner.kind === 'bar')) continue
-      const bothH = isHorizontal(s) && isHorizontal(t)
-      const bothV = isVertical(s) && isVertical(t)
-      if (!bothH && !bothV) continue
-      const axis = bothH ? 0 : 1
-      const across = Math.abs(s.a[1 - axis]! - t.a[1 - axis]!)
-      const overlap = Math.min(Math.max(s.a[axis]!, s.b[axis]!), Math.max(t.a[axis]!, t.b[axis]!)) - Math.max(Math.min(s.a[axis]!, s.b[axis]!), Math.min(t.a[axis]!, t.b[axis]!))
-      if (overlap <= EPSILON) continue
       if (across < EPSILON) push('overlap', name(s.owner), `runs along ${name(t.owner)}`)
-      else if (across < spacing - EPSILON) push('pipeSpacing', name(s.owner), `${across} px from ${name(t.owner)}, at least ${spacing}`)
+      else push('pipeSpacing', name(s.owner), `${across} px from ${name(t.owner)}, at least ${spacing}`)
     }
   }
 
   // Crossings stay clear of bends, ends and junctions on both pipes.
+  const known = new Map<string, Array<readonly [number, number]>>()
   const vertices = (owner: Owner): Array<readonly [number, number]> => {
-    if (owner.kind === 'edge') return edges.flatMap((edge, e) => (net[e] === owner.net ? edge.points : []))
-    const bar = segments.find(segment => segment.owner.kind === 'bar' && segment.owner.node === owner.node)!
-    const tees = model.edges.flatMap((edge, e) => (edge.from === owner.node ? [edges[e]!.points[0]!] : edge.to === owner.node ? [edges[e]!.points.at(-1)!] : []))
-    return [bar.a, bar.b, ...tees]
+    const key = owner.kind === 'edge' ? `n${owner.net}` : `b${owner.node}`
+    const cached = known.get(key)
+    if (cached !== undefined) return cached
+    let found: Array<readonly [number, number]>
+    if (owner.kind === 'edge') found = edges.flatMap((edge, e) => (net[e] === owner.net ? edge.points : []))
+    else {
+      const bar = segments.find(segment => segment.owner.kind === 'bar' && segment.owner.node === owner.node)!
+      const tees = model.edges.flatMap((edge, e) => (edge.from === owner.node ? [edges[e]!.points[0]!] : edge.to === owner.node ? [edges[e]!.points.at(-1)!] : []))
+      found = [bar.a, bar.b, ...tees]
+    }
+    known.set(key, found)
+    return found
   }
   const keepOff = profile.pipe.cornerRadius + profile.pipe.crossingHalfGap
   for (const crossing of findCrossings(segments)) {

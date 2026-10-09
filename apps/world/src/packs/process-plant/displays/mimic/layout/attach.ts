@@ -58,7 +58,7 @@ export const attach = (input: {
   /** Nodes whose in-ports enter from the side. */
   readonly entries: ReadonlyArray<SideEntry | null>
 }): Attachments => {
-  const { model, profile, layering, c, box, entries } = input
+  const { model, profile, layering, ordering, c, box, entries } = input
   const sideEntry = (node: number, port: number): { riser: number; slot: number } | undefined => entries[node]?.ports.get(port)
   const grid = profile.grid
   const items = layering.items
@@ -67,7 +67,8 @@ export const attach = (input: {
     const edge = model.edges[layering.chains[chain]!.edge]!
     return items[layering.chains[chain]!.items[position]!]!.node === edge.from ? edge.fromPort : edge.toPort
   }
-  const hubFace = (node: number): number => box[node]!.c1 - model.nodes[node]!.portInset
+  // A hub's ports face the lanes: its high face beside lane 0, its low face after the last lane.
+  const hubFace = (node: number): number => ordering.hubSide === 'low' ? box[node]!.c1 - model.nodes[node]!.portInset : box[node]!.c0 + model.nodes[node]!.portInset
 
   // Port slots on symbol faces. A port carrying a long edge to another
   // symbol aims at that edge's strand, so the strand runs straight from it

@@ -38,7 +38,7 @@ export const placeAlong = (profile: DiagramProfile, extents: ReadonlyArray<Layer
   const firstAfter = (channel: number, base: number, extent: LayerExtent): number =>
     ceilTo(Math.max(base + extent.highFace + faceClear(channel), base + extent.highReserve + reserveClear(channel)), trackStep(channel))
   const axisAfter = (channel: number, extent: LayerExtent): number => {
-    const last = firstTrack[channel]! + (plan.tracks[channel]! - 1) * plan.pitch[channel]!
+    const last = firstTrack[channel]! + (plan.offset[channel]!.at(-1) ?? 0)
     return ceilTo(Math.max(last + faceClear(channel) + extent.lowFace, last + reserveClear(channel) + extent.lowReserve), grid)
   }
   extents.forEach((extent, layer) => {

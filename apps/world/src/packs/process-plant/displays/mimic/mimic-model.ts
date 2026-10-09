@@ -21,7 +21,7 @@ export const MIMIC_LAYOUT_VERSION = `diagram-${DIAGRAM_ENGINE_VERSION}/openbridg
  * only as far as its smallest text stays 11 px; beyond that it scrolls.
  */
 export const MIMIC_MAX_WIDTH = 800
-/** The smallest text in a mimic is OpenBridge's 11.5 px readout row; it may shrink to 11 px. */
+/** The smallest text in a chat mimic is OpenBridge's 11.5 px readout row; it may shrink to 11 px (chatMimicProfile.minScale). */
 export const MIMIC_MIN_SCALE = 11 / 11.5
 
 export interface MimicDrawnItem {
@@ -36,10 +36,20 @@ export interface MimicDrawnItem {
   readonly frame: PlacedNode['frame']
   /** The rows of its text stack that fit, below its label. */
   readonly rows: ReadonlyArray<MimicRow>
+  /**
+   * A compact marker: the valve's icon on its pipe without a tag; its one row
+   * is empty unless the valve says something (rows.ts).
+   */
+  readonly marker: boolean
 }
 
 export type MimicPipeState =
-  | { readonly kind: 'fluid'; readonly flow: MimicFlowBinding }
+  /**
+   * A pipe; where it stands for parallel pipes of grouped equipment (both
+   * pumps' suctions), `parallel` holds the others' flows and the drawn pipe
+   * carries flow while any of them does.
+   */
+  | { readonly kind: 'fluid'; readonly flow: MimicFlowBinding; readonly parallel: ReadonlyArray<MimicFlowBinding> }
   | { readonly kind: 'power'; readonly energizedPath: VariablePath | null }
 
 export interface MimicDrawnPipe {
@@ -64,10 +74,19 @@ export interface MimicDrawnStub {
 }
 
 export interface CompiledMimic {
-  readonly intent: MimicIntent
+  /** The agent's intent; null for a drawing of a scope World resolved itself (the unit overview's principal circuits). */
+  readonly intent: MimicIntent | null
+  /** The profile it is drawn by (profiles.ts). */
+  readonly profile: string
   readonly layoutVersion: string
   readonly width: number
   readonly height: number
+  /** OpenBridge readout stack size of device symbols; the renderer sets the same size. */
+  readonly readoutSize: 'small' | 'regular'
+  /** The smallest scale the renderer may show the drawing at; below it the view scrolls. */
+  readonly minScale: number
+  /** Pipes crossing pipes or headers (each drawn with a gap), and the fewest the Plant's structure forces. */
+  readonly crossings: { readonly count: number; readonly forced: number }
   readonly items: ReadonlyArray<MimicDrawnItem>
   readonly pipes: ReadonlyArray<MimicDrawnPipe>
   readonly stubs: ReadonlyArray<MimicDrawnStub>

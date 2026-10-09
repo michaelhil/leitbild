@@ -12,13 +12,14 @@ import type { Ordering } from './ordering.ts'
 import { chooseTextSide, dress, footprint, keptLines, planSideEntry, shiftBox, type Dressed, type SideEntry, type TextSide } from './shapes.ts'
 import type { Structure } from './structure.ts'
 
-export type Detail = 'full' | 'required'
+export type Detail = DiagramProfile['fit'][number]['detail']
 /**
  * Where symbols' text stacks go: right of each symbol where its pipes allow;
- * below the symbols of lanes; or below every symbol. Below is narrower and
- * taller, and right is the richer drawing.
+ * the same with stub labels below their ends; below the symbols of lanes; or
+ * below every symbol. Below is narrower and taller, and right is the richer
+ * drawing.
  */
-export type TextPolicy = 'right' | 'lanesBelow' | 'allBelow'
+export type TextPolicy = DiagramProfile['fit'][number]['text']
 
 /** Everything that does not depend on orientation or detail. */
 export interface Prepared {
@@ -26,6 +27,14 @@ export interface Prepared {
   readonly structure: Structure
   readonly layering: Layering
   readonly ordering: Ordering
+  /** Per node: drawn mirrored, its in-ports downstream and out-ports upstream (a folded return leg). */
+  readonly flipped: ReadonlyArray<boolean>
+  /**
+   * A refined arrangement: long edges run before the symbols they are ordered
+   * before (across.ts), and a channel's tracks pack at half a grid except
+   * between nets that cross there (channels.ts).
+   */
+  readonly refine: boolean
   readonly pipeFaces: ReadonlyArray<ReadonlySet<AxisFace>>
 }
 
@@ -40,18 +49,18 @@ export interface AttemptGeometry {
   readonly zones: ReadonlyArray<DiagramZone>
 }
 
-export const prepare = (model: Model, structure: Structure, layering: Layering, ordering: Ordering): Prepared => {
+export const prepare = (model: Model, structure: Structure, layering: Layering, ordering: Ordering, flipped: ReadonlyArray<boolean>, refine: boolean): Prepared => {
   const pipeFaces = model.nodes.map(node => {
     const faces = new Set<AxisFace>()
     if (node.role === 'hub') {
-      if (node.ports.some(port => port.use !== 'unused')) faces.add('+c')
+      if (node.ports.some(port => port.use !== 'unused')) faces.add(ordering.hubSide === 'low' ? '+c' : '-c')
       return faces
     }
-    if (node.ports.some(port => port.use === 'target')) faces.add('-f')
-    if (node.ports.some(port => port.use === 'source')) faces.add('+f')
+    if (node.ports.some(port => port.use === 'target')) faces.add(flipped[node.index] ? '+f' : '-f')
+    if (node.ports.some(port => port.use === 'source')) faces.add(flipped[node.index] ? '-f' : '+f')
     return faces
   })
-  return { model, structure, layering, ordering, pipeFaces }
+  return { model, structure, layering, ordering, flipped, refine, pipeFaces }
 }
 
 export const runAttempt = (prepared: Prepared, profile: DiagramProfile, orientation: Orientation, detail: Detail, policy: TextPolicy): AttemptGeometry => {
@@ -86,8 +95,15 @@ export const runAttempt = (prepared: Prepared, profile: DiagramProfile, orientat
       continue
     }
     const fallback = chooseTextSide(orientation, prepared.pipeFaces[node.index]!)
-    const below = (node.role === 'device' || node.role === 'stub') && (policy === 'allBelow' || (policy === 'lanesBelow' && node.lane !== null))
     const bottom = axisFace(orientation, 'bottom')
+    // A stub's label goes below its end where no pipe leaves that way: narrower, and only a line taller.
+    if (policy === 'stubsBelow' && node.role === 'stub' && !prepared.pipeFaces[node.index]!.has(bottom)) {
+      side.push('bottom')
+      entries.push(null)
+      shape.push(footprintOf(node, false))
+      continue
+    }
+    const below = (node.role === 'device' || node.role === 'stub') && (policy === 'allBelow' || (policy === 'lanesBelow' && node.lane !== null))
     if (!below || !prepared.pipeFaces[node.index]!.has(bottom)) {
       side.push(below ? 'bottom' : fallback)
       entries.push(null)
@@ -95,7 +111,7 @@ export const runAttempt = (prepared: Prepared, profile: DiagramProfile, orientat
       continue
     }
     const box = footprintOf(node, true)
-    const entry = bottom === '-f' ? planSideEntry(node, box, dressAt(node.index, box, 'bottom').text?.box ?? null, profile) : null
+    const entry = bottom === '-f' && !prepared.flipped[node.index] ? planSideEntry(node, box, dressAt(node.index, box, 'bottom').text?.box ?? null, profile) : null
     side.push(entry === null ? fallback : 'bottom')
     entries.push(entry)
     shape.push(entry === null ? footprintOf(node, false) : box)
@@ -120,7 +136,7 @@ export const runAttempt = (prepared: Prepared, profile: DiagramProfile, orientat
   const leftSolid = items.map((_, item) => reachOf(item, 'c0', false))
   const rightSolid = items.map((_, item) => reachOf(item, 'c1', false))
 
-  const across = placeAcross({ model, profile, layering, ordering, left, right, leftSolid, rightSolid })
+  const across = placeAcross({ model, profile, layering, ordering, left, right, leftSolid, rightSolid, refine: prepared.refine })
   const attachAt = (anchors: ReadonlyArray<number>) => attach({
     model, profile, layering, ordering, c: anchors, entries,
     box: model.nodes.map(node => (shape[node.index] === null ? { f0: 0, f1: 0, c0: 0, c1: 0 } : shiftBox(shape[node.index]!, 0, anchors[node.index]!))),
@@ -132,7 +148,7 @@ export const runAttempt = (prepared: Prepared, profile: DiagramProfile, orientat
     c = next
     attached = attachAt(c)
   }
-  const plan = planChannels({ model, profile, layering, structure, pin: attached.pin })
+  const plan = planChannels({ model, profile, layering, structure, pin: attached.pin, tighten: prepared.refine })
 
   // Bars: a line `outline` thick, rows a grid apart.
   const barLine = (node: number): AxisBox => ({ f0: -outline / 2, f1: outline / 2, c0: attached.span[node]![0], c1: attached.span[node]![1] })
@@ -190,7 +206,7 @@ export const runAttempt = (prepared: Prepared, profile: DiagramProfile, orientat
     }
   }
   const along = placeAlong(profile, extents, plan)
-  const trackF = (channel: number, net: number): number => along.firstTrack[channel]! + plan.track.get(trackKey(channel, net))! * plan.pitch[channel]!
+  const trackF = (channel: number, net: number): number => along.firstTrack[channel]! + plan.offset[channel]![plan.track.get(trackKey(channel, net))!]!
   const stepTrack = (chain: number, step: number): number => {
     const jog = plan.jog[chain]![step]!
     return trackF(jog.channel, jog.net)
@@ -275,7 +291,8 @@ export const runAttempt = (prepared: Prepared, profile: DiagramProfile, orientat
       if (port.use === 'unused') return
       if (node.role === 'hub') {
         const tracks = hubPorts[node.index]!.get(index)
-        if (tracks !== undefined) list.push({ id: port.id, point: [[...tracks][0]!, box[node.index]!.c1 - node.portInset], face: '+c' })
+        const low = ordering.hubSide === 'low'
+        if (tracks !== undefined) list.push({ id: port.id, point: [[...tracks][0]!, low ? box[node.index]!.c1 - node.portInset : box[node.index]!.c0 + node.portInset], face: low ? '+c' : '-c' })
         return
       }
       if (node.role === 'bar') {
@@ -289,7 +306,7 @@ export const runAttempt = (prepared: Prepared, profile: DiagramProfile, orientat
         return
       }
       const slot = attached.slot[node.index]![index]!
-      list.push(port.use === 'target'
+      list.push((port.use === 'target') !== prepared.flipped[node.index]
         ? { id: port.id, point: [box[node.index]!.f0 + node.portInset, slot], face: '-f' }
         : { id: port.id, point: [box[node.index]!.f1 - node.portInset, slot], face: '+f' })
     })

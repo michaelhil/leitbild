@@ -1,4 +1,6 @@
-// Cross-axis placement. Bands run hubs | shared | lane 0 … lane n | stubs.
+// Cross-axis placement. Bands run hubs | shared | lane 0 … lane n | stubs, or
+// with hubs on the high side shared | lanes | stubs | hubs, the hubs after
+// everything the layers hold.
 // Every lane has the same pitch, and a lane's drawing depends only on its own
 // content and the bands before lane 0: adding lanes after it moves nothing in
 // it. In a lane, the first symbol of every layer sits on the lane's main axis
@@ -16,7 +18,7 @@ import type { DiagramProfile } from './diagram.ts'
 import { ceilTo, roundTo } from './geometry.ts'
 import type { Layering } from './layering.ts'
 import type { Model } from './model.ts'
-import { HUB_BLOCK, SHARED_BLOCK, laneBlock, stubBlock, type Ordering } from './ordering.ts'
+import type { Ordering } from './ordering.ts'
 
 export interface AcrossInput {
   readonly model: Model
@@ -29,6 +31,8 @@ export interface AcrossInput {
   /** Solid reach (symbol, text, frame); −Infinity for a pipe. */
   readonly leftSolid: ReadonlyArray<number>
   readonly rightSolid: ReadonlyArray<number>
+  /** Refined: a lane's long edge ordered before every symbol of its layers runs before the lane's axis, and strands keep their order. */
+  readonly refine: boolean
 }
 
 /** Where a band of items ends: everything, and the solids. */
@@ -54,11 +58,13 @@ export interface AcrossPlacement {
 const MEDIAN_SWEEPS = 4
 
 export const placeAcross = (input: AcrossInput): AcrossPlacement => {
-  const { model, profile, layering, ordering, left, right, leftSolid, rightSolid } = input
+  const { model, profile, layering, ordering, left, right, leftSolid, rightSolid, refine } = input
   const grid = profile.grid
   const laneCount = model.lanes.length
   const items = layering.items
   const c = new Array<number>(items.length).fill(Number.NaN)
+  const { hub: HUB_BLOCK, shared: SHARED_BLOCK, lane: laneBlock, stub: STUB_BLOCK } = ordering.blocks
+  const high = ordering.hubSide === 'high'
   const isDummy = (item: number): boolean => items[item]!.node === null
   const isBar = (item: number): boolean => items[item]!.node !== null && model.nodes[items[item]!.node!]!.role === 'bar'
   /** A symbol or stub: what a strand must line up with to jog only once. */
@@ -82,10 +88,10 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
   const origin: Edge = { full: 0, solid: -Infinity }
 
   const inBlock = (layer: ReadonlyArray<number>, block: number): number[] => layer.filter(item => ordering.block[item] === block && !isBar(item))
-  const hasLaneContent = (layer: ReadonlyArray<number>): boolean => layer.some(item => ordering.block[item]! >= laneBlock(0) && ordering.block[item]! < stubBlock(laneCount))
+  const hasLaneContent = (layer: ReadonlyArray<number>): boolean => layer.some(item => ordering.block[item]! >= laneBlock(0) && ordering.block[item]! < STUB_BLOCK)
 
   const hubs = ordering.layers.flatMap(layer => inBlock(layer, HUB_BLOCK)).sort((a, b) => items[a]!.node! - items[b]!.node!)
-  const hubBandEnd = pack(hubs, origin)
+  const hubBandEnd = high ? origin : pack(hubs, origin)
   const laneLayers = ordering.layers.filter(hasLaneContent)
   // Shared items of lane layers pack after the hub band; then each shared
   // strand (a long lane-less edge's dummies) takes one column through all its
@@ -94,7 +100,6 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
   // when that column lies past what its layers hold, so the edge jogs only at
   // its other end.
   const sharedRuns = ordering.layers.map(layer => (hasLaneContent(layer) ? inBlock(layer, SHARED_BLOCK).filter(item => !isDummy(item)) : []))
-  sharedRuns.forEach(run => pack(run, hubBandEnd))
   const strandsOf = (block: number): Map<number, number[]> => {
     const strands = new Map<number, number[]>()
     items.forEach((item, index) => {
@@ -105,8 +110,36 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
   const sharedStrands = strandsOf(SHARED_BLOCK)
   // Shared strands a lane layer places are fixed: free layers keep their column.
   const fixedColumn = new Map<number, number>()
+  // Refined: a strand ordered before every shared symbol of its lane layers runs before them, nearest the hubs' side first.
+  const runStart = ordering.layers.map(() => hubBandEnd)
+  if (refine) {
+    const inLane = (edge: number): number[] => sharedStrands.get(edge)!.filter(item => hasLaneContent(ordering.layers[items[item]!.layer]!))
+    const indexIn = (item: number): number => ordering.layers[items[item]!.layer]!.indexOf(item)
+    const leads = (item: number): boolean => sharedRuns[items[item]!.layer]!.every(symbol => indexIn(item) < indexIn(symbol))
+    const meanIndex = (edge: number): number => inLane(edge).reduce((sum, item) => sum + indexIn(item), 0) / inLane(edge).length
+    const ahead = [...sharedStrands.keys()].filter(edge => inLane(edge).length > 0 && inLane(edge).every(leads)).sort((a, b) => (meanIndex(a) - meanIndex(b)) || (a - b))
+    const lastAhead = new Map<number, number>()
+    for (const edge of ahead) {
+      const strand = sharedStrands.get(edge)!
+      const at = Math.max(...inLane(edge).map(item => {
+        const previous = lastAhead.get(items[item]!.layer)
+        return previous === undefined ? ceilTo(need(hubBandEnd.full, hubBandEnd.solid, left[item]!, leftSolid[item]!), grid) : c[previous]! + separation(previous, item)
+      }))
+      for (const item of strand) {
+        c[item] = at
+        fixedColumn.set(item, at)
+      }
+      for (const item of inLane(edge)) lastAhead.set(items[item]!.layer, item)
+    }
+    for (const [layer, item] of lastAhead) {
+      runStart[layer] = edgeOf([item], hubBandEnd)
+      sharedRuns[layer]!.unshift(item)
+    }
+  }
+  sharedRuns.forEach((run, layer) => pack(run.filter(item => !fixedColumn.has(item)), runStart[layer]!))
   for (const edge of [...sharedStrands.keys()].sort((a, b) => a - b)) {
     const strand = sharedStrands.get(edge)!
+    if (strand.some(item => fixedColumn.has(item))) continue
     const inLaneLayers = strand.filter(item => hasLaneContent(ordering.layers[items[item]!.layer]!))
     if (inLaneLayers.length === 0) continue
     const chain = layering.chains[edge]!
@@ -148,7 +181,19 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
       const edge = items[item]!.edge!
       strands.set(edge, [...(strands.get(edge) ?? []), item])
     }))
-    for (const edge of [...strands.keys()].sort((a, b) => a - b)) {
+    // Refined: a strand ordered before every symbol of the layers it shares with them runs before the axis.
+    const rank = (item: number): number => cells[items[item]!.layer]!.indexOf(item)
+    const leads = (item: number): boolean => {
+      const cell = cells[items[item]!.layer]!
+      const first = cell.findIndex(member => !isDummy(member))
+      return first < 0 || cell.indexOf(item) < first
+    }
+    const strandKeys = [...strands.keys()].sort((a, b) => a - b)
+    const ahead = refine ? strandKeys.filter(edge => strands.get(edge)!.some(item => cells[items[item]!.layer]!.some(member => !isDummy(member))) && strands.get(edge)!.every(leads)) : []
+    const behind = strandKeys.filter(edge => !ahead.includes(edge))
+    const meanRank = (edge: number): number => strands.get(edge)!.reduce((sum, item) => sum + rank(item), 0) / strands.get(edge)!.length
+    if (refine) behind.sort((a, b) => (meanRank(a) - meanRank(b)) || (a - b))
+    for (const edge of behind) {
       const strand = strands.get(edge)!
       const onAxis = strand.every(item => !axisTaken[items[item]!.layer])
       const wanted = Math.max(...strand.map(item => after(items[item]!.layer, item)))
@@ -156,6 +201,19 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
       for (const item of strand) {
         relative[item] = at
         if (at === 0) axisTaken[items[item]!.layer] = true
+        placed[items[item]!.layer]!.push(item)
+      }
+    }
+    // Before the axis, nearest strand first: each clears what its layers already hold on that side.
+    const lowest = (layer: number): number | undefined => placed[layer]!.reduce<number | undefined>((low, item) => (low === undefined || relative[item]! < relative[low]! ? item : low), undefined)
+    for (const edge of [...ahead].sort((a, b) => (meanRank(b) - meanRank(a)) || (a - b))) {
+      const strand = strands.get(edge)!
+      const at = Math.min(...strand.map(item => {
+        const low = lowest(items[item]!.layer)
+        return low === undefined ? 0 : relative[low]! - separation(item, low)
+      }))
+      for (const item of strand) {
+        relative[item] = at
         placed[items[item]!.layer]!.push(item)
       }
     }
@@ -188,7 +246,7 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
   const bandLow = Math.min(0, ...model.lanes.map((_, lane) => reach(lane, 'low')))
   const lastAxis = firstAxis + (laneCount - 1) * pitch
   const lanesEnd: Edge = laneCount === 0 ? sharedEnd : { full: lastAxis + reach(laneCount - 1, 'high'), solid: lastAxis + reach(laneCount - 1, 'highSolid') }
-  for (const layer of laneLayers) pack(inBlock(layer, stubBlock(laneCount)), lanesEnd)
+  for (const layer of laneLayers) pack(inBlock(layer, STUB_BLOCK), lanesEnd)
 
   // Layers without lane content: medians of neighbours, order kept. A long
   // edge's dummies there form a strand that runs in one column. Between two
@@ -197,7 +255,7 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
   // its track, so a strand from or to either needs only its one column.
   const free = ordering.layers.map(layer => (hasLaneContent(layer) ? [] : layer.filter(item => ordering.block[item] !== HUB_BLOCK && !isBar(item))))
     .filter(run => run.length > 0)
-  const lowerBound = hubs.length > 0 ? hubBandEnd : null
+  const lowerBound = hubs.length > 0 && !high ? hubBandEnd : null
   for (const run of free) pack(run, lowerBound ?? origin)
   for (const [item, at] of fixedColumn) c[item] = at
   const neighbours = items.map(() => [] as number[])
@@ -209,14 +267,25 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
     })
   }
   // Free strands: shared dummies of a chain that runs layer to layer, none of them fixed by a lane layer.
-  const strands = [...sharedStrands].filter(([edge, strand]) => strand.every(item => !fixedColumn.has(item)) && layering.chains[edge]!.steps.every(step => step === 'next'))
+  // Refined, a return run that turns at one end counts too: it runs straight from its other end.
+  const turnsAt = (edge: number): 'start' | 'end' | null => {
+    const steps = layering.chains[edge]!.steps
+    if (!refine || steps.length < 2) return null
+    if (steps.at(-1) === 'turnAbove' && steps.slice(0, -1).every(step => step === 'next')) return 'end'
+    if (steps[0] === 'turnBelow' && steps.slice(1).every(step => step === 'next')) return 'start'
+    return null
+  }
+  const strands = [...sharedStrands].filter(([edge, strand]) => strand.every(item => !fixedColumn.has(item)) && (layering.chains[edge]!.steps.every(step => step === 'next') || turnsAt(edge) !== null))
     .map(([edge, strand]) => {
       const chain = layering.chains[edge]!
       const [start, end] = [chain.items[0]!, chain.items.at(-1)!]
       // It follows the end that stays put (one a lane layer placed) or, both free, its source.
       const settled = (item: number): boolean => !free.some(run => run.includes(item))
-      const leader = !isPlain(start) || !isPlain(end) ? null : settled(end) && !settled(start) ? end : start
-      return { edge, strand, start, end, leader }
+      const turn = turnsAt(edge)
+      const leader = turn === 'end' ? (isPlain(start) ? start : null)
+        : turn === 'start' ? (isPlain(end) ? end : null)
+          : !isPlain(start) || !isPlain(end) ? null : settled(end) && !settled(start) ? end : start
+      return { edge, strand, start, end, leader, turn }
     })
   const leaderOf = new Map(strands.flatMap(entry => entry.strand.map(item => [item, entry.leader] as const)))
   const neighbourPositions = (item: number): number[] => {
@@ -329,11 +398,23 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
     }
     return moves
   }
+  // Hubs on the high side go after everything else, in every layer.
+  const placeHighHubs = (): void => {
+    if (!high || hubs.length === 0) return
+    const others = items.map((_, index) => index).filter(index => ordering.block[index] !== HUB_BLOCK && !isBar(index) && Number.isFinite(c[index]!))
+    pack(hubs, {
+      full: Math.max(0, ...others.map(index => c[index]! + right[index]!)),
+      solid: Math.max(-Infinity, ...others.map(index => c[index]! + rightSolid[index]!)),
+    })
+  }
+  placeHighHubs()
+
   let budget = 2 * strands.length
   const align = (pins: ReadonlyArray<ReadonlyArray<number>>): ReadonlyArray<number> | null => {
     if (budget <= 0) return null
-    for (const { strand, start, end, edge } of strands) {
-      const positions = [0, layering.chains[edge]!.items.length - 1].filter(position => isPlain(position === 0 ? start : end))
+    for (const { strand, start, end, edge, turn } of strands) {
+      // A turning end is met from beside, not in its column.
+      const positions = [0, layering.chains[edge]!.items.length - 1].filter(position => isPlain(position === 0 ? start : end) && !(turn === 'end' && position > 0) && !(turn === 'start' && position === 0))
       const endPins = positions.map(position => pins[edge]![position]!)
       const columns = [...new Set(strand.map(item => c[item]!))]
       if (columns.length === 1 && (positions.length < 2 || endPins.includes(columns[0]!))) continue
@@ -347,6 +428,7 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
       if (best === null) continue
       for (const [item, value] of best.moves) c[item] = value
       budget--
+      placeHighHubs()
       return [...c]
     }
     return null

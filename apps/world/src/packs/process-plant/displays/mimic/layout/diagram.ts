@@ -11,7 +11,7 @@
 // keys (`rank`, lane `order`), never on ids, so renaming ids changes no
 // geometry. Input the engine cannot order that way is rejected (it throws).
 
-export const DIAGRAM_ENGINE_VERSION = 2
+export const DIAGRAM_ENGINE_VERSION = 3
 
 export type Face = 'top' | 'right' | 'bottom' | 'left'
 
@@ -110,13 +110,25 @@ export interface DiagramProfile {
   /** Largest drawing the caller can show. */
   readonly maxWidth: number
   readonly maxHeight: number
+  /**
+   * The fit ladder, richest first: which text a drawing keeps (`full`, or
+   * only each stack's required lines) and where stacks go (right of their
+   * symbols, the same with stub labels below their ends, below lane
+   * symbols, below every symbol). The first rung with a
+   * drawing that fits wins; text never shrinks. Rungs a graph cannot use
+   * (no optional lines, no lanes) are skipped.
+   */
+  readonly fit: ReadonlyArray<{ readonly detail: 'full' | 'required'; readonly text: 'right' | 'stubsBelow' | 'lanesBelow' | 'allBelow' }>
   /** Density the HMI standard allows. */
   readonly limits: {
     readonly symbols: number
     readonly symbolsPerLane: number
     readonly sharedSymbols: number
     readonly lanes: number
+    /** Crossings in any drawing. */
     readonly crossings: number
+    /** Crossings beyond those the graph's structure forces (bound.ts). */
+    readonly crossingsOverBound: number
     readonly bendsPerEdge: number
   }
 }
@@ -192,6 +204,9 @@ export type DiagramLayoutResult =
     readonly zones: ReadonlyArray<DiagramZone>
     /** A stable hash of the geometry, independent of ids. */
     readonly hash: string
+    /** Crossings drawn (each a gap), and the fewest the graph's structure forces on a lane drawing. */
+    readonly crossings: number
+    readonly forcedCrossings: number
   }
   | {
     readonly ok: false

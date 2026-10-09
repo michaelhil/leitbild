@@ -31,6 +31,12 @@ export interface ChannelPlan {
   readonly tracks: ReadonlyArray<number>
   readonly pitch: ReadonlyArray<number>
   /**
+   * Per channel and track, its distance from track 0: `track × pitch`, or,
+   * tightened, half a grid between tracks except a grid between two whose
+   * nets cross there, so the crossing keeps clear of the bend beside it.
+   */
+  readonly offset: ReadonlyArray<ReadonlyArray<number>>
+  /**
    * Per channel: no crossing lies in it, so its tracks may sit half a grid
    * apart and half a grid from the symbol faces: no crossing gap needs room
    * beside a bend there.
@@ -46,8 +52,10 @@ export const planChannels = (input: {
   readonly layering: Layering
   readonly structure: Structure
   readonly pin: ReadonlyArray<ReadonlyArray<number>>
+  /** Pack tracks of a channel whose only crossings are between two of its nets at half a grid elsewhere. */
+  readonly tighten: boolean
 }): ChannelPlan => {
-  const { model, profile, layering, structure, pin } = input
+  const { model, profile, layering, structure, pin, tighten } = input
   const items = layering.items
   const isHub = (item: number): boolean => items[item]!.node !== null && model.nodes[items[item]!.node!]!.role === 'hub'
   const channelCount = layering.layerCount + 1
@@ -85,6 +93,7 @@ export const planChannels = (input: {
   const tracks: number[] = []
   const pitch: number[] = []
   const fine: boolean[] = []
+  const offset: number[][] = []
   const halfAllowed = profile.grid / 2 >= profile.pipe.outline + 4 && profile.grid / 2 >= profile.pipe.cornerRadius
   jogs.forEach((list, channel) => {
     const nets = [...new Set(list.map(entry => entry.net))].sort((a, b) => a - b)
@@ -129,10 +138,13 @@ export const planChannels = (input: {
       return false
     }
     let crossings = 0
+    const crossed: Array<readonly [number, number]> = []
     const ordered = [...constraints.values()].sort((a, b) => (Number(b.hard) - Number(a.hard)) || (a.above - b.above) || (a.below - b.below))
     for (const constraint of ordered) {
-      if (reaches(constraint.below, constraint.above)) crossings++
-      else below.get(constraint.above)!.add(constraint.below)
+      if (reaches(constraint.below, constraint.above)) {
+        crossings++
+        crossed.push([constraint.above, constraint.below])
+      } else below.get(constraint.above)!.add(constraint.below)
     }
     // Left-edge packing: lowest track above everything that must run under.
     const occupied: Array<Array<readonly [number, number]>> = []
@@ -151,7 +163,17 @@ export const planChannels = (input: {
     const passing = passes[channel]!.some(c => nets.some(net => c > spanOf.get(net)![0] && c < spanOf.get(net)![1]))
     const crossingFree = halfAllowed && crossings === 0 && !passing
     fine.push(crossingFree)
-    pitch.push(crossingFree ? profile.grid / 2 : profile.grid)
+    const step = crossingFree ? profile.grid / 2 : profile.grid
+    pitch.push(step)
+    const offsets = Array.from({ length: occupied.length }, (_, at) => at * step)
+    if (tighten && halfAllowed && !crossingFree && !passing) {
+      // Tracks whose nets cross keep a grid apart; the rest half a grid.
+      const apart = crossed.map(([a, b]) => [track.get(trackKey(channel, a))!, track.get(trackKey(channel, b))!].sort((x, y) => x - y) as [number, number])
+      for (let at = 1; at < offsets.length; at++) {
+        offsets[at] = Math.max(offsets[at - 1]! + profile.grid / 2, ...apart.filter(([, high]) => high === at).map(([low]) => offsets[low]! + profile.grid))
+      }
+    }
+    offset.push(offsets)
   })
-  return { jog, channelOf, track, tracks, pitch, fine }
+  return { jog, channelOf, track, tracks, pitch, fine, offset }
 }

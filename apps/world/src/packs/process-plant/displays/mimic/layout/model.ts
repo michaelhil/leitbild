@@ -64,6 +64,9 @@ export const validateProfile = (profile: DiagramProfile): void => {
   for (const key of ['textClearance', 'frameMargin', 'flapHeight', 'flapLabelPadding'] as const) if (!isSize(profile[key])) issues.push(`${key} must be a size`)
   for (const key of ['maxWidth', 'maxHeight'] as const) if (!(profile[key] > 0) || !Number.isFinite(profile[key])) issues.push(`${key} must be positive`)
   for (const [key, value] of Object.entries(profile.limits)) if (!isCount(value)) issues.push(`limits.${key} must be a count`)
+  if (profile.fit.length === 0) issues.push('fit needs at least one rung')
+  const rungs = profile.fit.map(rung => `${rung.detail}/${rung.text}`)
+  if (new Set(rungs).size !== rungs.length) issues.push('fit repeats a rung')
   if (issues.length > 0) throw new Error(`invalid diagram profile: ${issues.join('; ')}`)
 }
 

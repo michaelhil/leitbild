@@ -138,7 +138,11 @@ const profile: DiagramProfile = {
   flapLabelPadding: 28,
   maxWidth: 1600,
   maxHeight: 1000,
-  limits: { symbols: 40, symbolsPerLane: 4, sharedSymbols: 8, lanes: 6, crossings: 12, bendsPerEdge: 3 },
+  limits: { symbols: 40, symbolsPerLane: 4, sharedSymbols: 8, lanes: 6, crossings: 12, crossingsOverBound: 12, bendsPerEdge: 3 },
+  fit: [
+    { detail: 'full', text: 'right' }, { detail: 'full', text: 'lanesBelow' }, { detail: 'full', text: 'allBelow' },
+    { detail: 'required', text: 'right' }, { detail: 'required', text: 'lanesBelow' }, { detail: 'required', text: 'allBelow' },
+  ],
 }
 
 const accepted = (graph: DiagramGraph, using: DiagramProfile = profile): Extract<DiagramLayoutResult, { ok: true }> => {
@@ -514,5 +518,102 @@ describe('long edges, stubs and shared hub ports', () => {
       const place = result.nodes.find(n => n.id === 'hub')!.ports['in-A']!
       for (const id of ['cold-0', 'm2']) expect(result.edges.find(e => e.id === id)!.points.at(-1)).toEqual([place.x, place.y])
     }
+  })
+})
+
+// Crossings the structure forces, and drawings that keep within two of them.
+
+/** Three shared symbols each joined to every lane's vessel: K(3, n). */
+const threeSources = (lanes: number): DiagramGraph => ({
+  nodes: [
+    pump('source-1', 'source.1'),
+    pump('source-2', 'source.2'),
+    pump('source-3', 'source.3'),
+    ...Array.from({ length: lanes }, (_, lane) => vessel(`vessel-${lane}`, 'vessel', { a: 'in', b: 'in', c: 'in' }, lane)),
+  ],
+  edges: Array.from({ length: lanes }, (_, lane) => [
+    edge(`a-${lane}`, 'a', 'source-1:out', `vessel-${lane}:a`),
+    edge(`b-${lane}`, 'b', 'source-2:out', `vessel-${lane}:b`),
+    edge(`c-${lane}`, 'c', 'source-3:out', `vessel-${lane}:c`),
+  ]).flat(),
+})
+
+/**
+ * Loops through a hub, each loop's exchanger also on a feed header and a
+ * steam header (a ladder the hub must reach across), with or without a train
+ * of shared symbols that returns from the steam header to the feed header.
+ */
+const ladder = (lanes: number, closed: boolean): DiagramGraph => ({
+  nodes: [
+    node('hub', 'hub', 'hub', Object.fromEntries(Array.from({ length: lanes }, (_, lane) => [[`out-${LANES[lane]}`, 'out'], [`in-${LANES[lane]}`, 'in']]).flat()), { cells: [2, 4], inset: 5, lines: [tag(36)] }),
+    node('feed', 'bar', 'feed', { in: 'in', out: 'out' }, { lines: [tag(40)] }),
+    node('steam', 'bar', 'steam', { in: 'in', out: 'out' }, { lines: [tag(48)] }),
+    ...(closed ? [pump('engine', 'train.1'), vessel('cooler', 'train.2', { in: 'in', out: 'out' }), pump('feed-pump', 'train.3')] : []),
+    ...Array.from({ length: lanes }, (_, lane) => [
+      valve(`feed-valve-${lane}`, 'feed.valve', lane),
+      vessel(`exchanger-${lane}`, 'exchanger', { hot: 'in', cold: 'out', feed: 'in', steam: 'out' }, lane),
+      pump(`pump-${lane}`, 'pump', lane),
+      valve(`steam-valve-${lane}`, 'steam.valve', lane),
+    ]).flat(),
+  ],
+  edges: [
+    ...(closed ? [
+      edge('t1', 'train', 'steam:out', 'engine:in'),
+      edge('t2', 'train', 'engine:out', 'cooler:in'),
+      edge('t3', 'train', 'cooler:out', 'feed-pump:in'),
+      edge('t4', 'train', 'feed-pump:out', 'feed:in'),
+    ] : []),
+    ...Array.from({ length: lanes }, (_, lane) => [
+      edge(`hot-${lane}`, 'hot', `hub:out-${LANES[lane]}`, `exchanger-${lane}:hot`),
+      edge(`cold-${lane}`, 'cold', `exchanger-${lane}:cold`, `pump-${lane}:in`),
+      edge(`return-${lane}`, 'return', `pump-${lane}:out`, `hub:in-${LANES[lane]}`),
+      edge(`fb-${lane}`, 'feed', 'feed:out', `feed-valve-${lane}:in`),
+      edge(`fl-${lane}`, 'feed.line', `feed-valve-${lane}:out`, `exchanger-${lane}:feed`),
+      edge(`sl-${lane}`, 'steam.line', `exchanger-${lane}:steam`, `steam-valve-${lane}:in`),
+      edge(`sb-${lane}`, 'steam', `steam-valve-${lane}:out`, 'steam:in'),
+    ]).flat(),
+  ],
+})
+
+describe('crossings the structure forces', () => {
+  const roomy = { ...profile, maxWidth: 4000, maxHeight: 4000, limits: { ...profile.limits, symbols: 60, symbolsPerLane: 6, crossings: 40, crossingsOverBound: 2 } }
+
+  test('three shared symbols reaching every lane force Zarankiewicz\'s ⌊n/2⌋⌊(n−1)/2⌋', () => {
+    // A lane drawing keeps shared symbols on one side of the lanes, so it crosses more than the bound here.
+    const lenient = { ...roomy, limits: { ...roomy.limits, crossingsOverBound: 40 } }
+    for (const [lanes, forced] of [[3, 1], [4, 2], [6, 6]] as const) {
+      const result = layoutDiagram(threeSources(lanes), lenient)
+      if (!result.ok) throw new Error(JSON.stringify(result.reasons))
+      expect(result.forcedCrossings).toBe(forced)
+      expect(result.crossings).toBeGreaterThanOrEqual(forced)
+    }
+  })
+
+  test('a hub reaching every lane across a ladder of two headers is forced across it 2n − 4 times; a train closing the ladder adds one', () => {
+    for (const lanes of [3, 4, 6]) {
+      const open = layoutDiagram(ladder(lanes, false), roomy)
+      const closed = layoutDiagram(ladder(lanes, true), roomy)
+      if (!open.ok || !closed.ok) throw new Error('refused')
+      expect(open.forcedCrossings).toBe(2 * lanes - 4)
+      expect(closed.forcedCrossings).toBe(2 * lanes - 3)
+    }
+  })
+
+  test('the closed ladder draws within two crossings of the bound, verified, deterministic and id-free', () => {
+    for (const lanes of [4, 6]) {
+      const graph = ladder(lanes, true)
+      const result = accepted(graph, roomy)
+      expect(result.crossings).toBeLessThanOrEqual(result.forcedCrossings + 2)
+      expect(crossings(result)).toBe(result.crossings)
+      expect(verifyDiagram(graph, roomy, result)).toEqual([])
+      for (const seed of [1, 2]) expect(accepted(scramble(graph, seed), roomy).hash).toBe(result.hash)
+    }
+  })
+
+  test('a limit relative to the bound refuses a drawing that crosses more than it allows, naming the limit', () => {
+    const strict = { ...profile, maxWidth: 4000, maxHeight: 4000, limits: { ...profile.limits, symbols: 60, symbolsPerLane: 6, crossings: 40, crossingsOverBound: 0 } }
+    const result = layoutDiagram(threeSources(6), strict)
+    if (result.ok) expect(result.crossings).toBe(result.forcedCrossings)
+    else expect(result.reasons).toEqual([expect.objectContaining({ kind: 'density', limit: 'crossingsOverBound', max: 6 })])
   })
 })

@@ -5,7 +5,13 @@
 // A reversed edge (a return run) attaches to its physical ends by their flow
 // faces: its source leaves downstream and its target is entered from
 // upstream, so the run turns back beside the lane. A hub's side face is
-// reachable from any channel and needs no turn.
+// reachable from any channel and needs no turn; neither does a mirrored
+// symbol of a folded return leg (its faces swap), nor a bar a fold reaches.
+//
+// A hub's pipes reach their items through the channel just before each
+// (`near`), or all through the first channel (`outer`), from where they run
+// in their items' lanes: across the bars between, instead of along the
+// lanes' own pipes.
 import type { Model } from './model.ts'
 import type { Structure } from './structure.ts'
 
@@ -32,6 +38,20 @@ export interface Chain {
   readonly reversed: boolean
 }
 
+export interface LayeringOptions {
+  /** Per node: drawn mirrored (a folded return leg). */
+  readonly flipped: ReadonlyArray<boolean>
+  /** Per edge: part of a fold. */
+  readonly folded: ReadonlyArray<boolean>
+  readonly hubReach: 'near' | 'outer'
+}
+
+export const plainLayering = (model: Model): LayeringOptions => ({
+  flipped: model.nodes.map(() => false),
+  folded: model.edges.map(() => false),
+  hubReach: 'near',
+})
+
 export interface Layering {
   /** Item i < nodes.length is node i; dummies follow. */
   readonly items: ReadonlyArray<Item>
@@ -39,7 +59,8 @@ export interface Layering {
   readonly chains: ReadonlyArray<Chain>
 }
 
-export const assignLayers = (model: Model, structure: Structure, reversed: ReadonlyArray<boolean>): Layering => {
+/** Layer per node: longest path, sources beside what they feed, stubs beside their node, bars on layers of their own. */
+export const layerNodes = (model: Model, reversed: ReadonlyArray<boolean>, stubsIntoHubsFirst = false): number[] => {
   const count = model.nodes.length
   const dagFrom = (e: number): number => (reversed[e] ? model.edges[e]!.to : model.edges[e]!.from)
   const dagTo = (e: number): number => (reversed[e] ? model.edges[e]!.from : model.edges[e]!.to)
@@ -87,16 +108,49 @@ export const assignLayers = (model: Model, structure: Structure, reversed: Reado
       if (layer[node.index]! >= at && !(layer[node.index] === at && node.role === 'bar')) layer[node.index]!++
     }
   }
+  // In outer hub reach, a stub that feeds a hub comes in through the first channel, with the hub's other pipes.
+  if (stubsIntoHubsFirst) {
+    const feeding = topological.filter(node => isStub(node) && predecessors[node]!.length === 0 && successors[node]!.some(next => model.nodes[next]!.role === 'hub'))
+    const firm = model.nodes.filter(node => node.role !== 'stub' && node.role !== 'hub').map(node => layer[node.index]!)
+    if (feeding.length > 0 && firm.length > 0) {
+      const first = Math.min(...firm)
+      for (const node of feeding) layer[node] = first - 1
+      const lowest = Math.min(...layer)
+      if (lowest < 0) for (let node = 0; node < count; node++) layer[node]! -= lowest
+    }
+  }
+  return layer
+}
+
+export const assignLayers = (model: Model, structure: Structure, reversed: ReadonlyArray<boolean>, options: LayeringOptions): Layering => {
+  const layer = layerNodes(model, reversed, options.hubReach === 'outer')
+  const firstLayer = options.hubReach === 'outer' ? Math.min(...model.nodes.filter(node => node.role !== 'stub' && node.role !== 'hub').map(node => layer[node.index]!), Infinity) : Infinity
+  const dagFrom = (e: number): number => (reversed[e] ? model.edges[e]!.to : model.edges[e]!.from)
+  const dagTo = (e: number): number => (reversed[e] ? model.edges[e]!.from : model.edges[e]!.to)
+  const role = (node: number) => model.nodes[node]!.role
+  // Which flow face of a node an edge's port is on, in layering terms: +f downstream, -f upstream.
+  const portFace = (node: number, e: number): '-f' | '+f' => {
+    const source = model.edges[e]!.from === node
+    return source !== options.flipped[node] ? '+f' : '-f'
+  }
+  const turnless = (node: number, e: number): boolean => role(node) === 'hub' || (role(node) === 'bar' && options.folded[e]!)
 
   const items: Item[] = model.nodes.map(node => ({ node: node.index, edge: null, layer: layer[node.index]!, lane: node.lane }))
+  // Outer reach: a hub's pipes leave it, and pipes from upstream of everything reach it, through the first channel.
+  // A hub port that something else reaches from its layer's side (a makeup line) keeps near reach, so its pipes meet in one place.
+  const hubPort = (edge: Model['edges'][number], node: number): string => `${node}:${edge.from === node ? edge.fromPort : edge.toPort}`
+  const reachesFirst = (edge: Model['edges'][number]): boolean => Number.isFinite(firstLayer) && layer[dagFrom(edge.index)]! < firstLayer
+  const nearPorts = new Set(model.edges.filter(edge => role(dagTo(edge.index)) === 'hub' && !reachesFirst(edge)).map(edge => hubPort(edge, dagTo(edge.index))))
   const chains: Chain[] = model.edges.map(edge => {
     const start = dagFrom(edge.index)
     const end = dagTo(edge.index)
     const isReversed = reversed[edge.index]!
-    const turnBelow = isReversed && model.nodes[start]!.role !== 'hub'
-    const turnAbove = isReversed && model.nodes[end]!.role !== 'hub'
-    const first = turnBelow ? layer[start]! : layer[start]! + 1
-    const last = turnAbove ? layer[end]! : layer[end]! - 1
+    const turnBelow = !turnless(start, edge.index) && portFace(start, edge.index) === '-f'
+    const turnAbove = !turnless(end, edge.index) && portFace(end, edge.index) === '+f'
+    const outer = role(start) === 'hub' && Number.isFinite(firstLayer) && firstLayer < layer[start]! + 1 && !nearPorts.has(hubPort(edge, start))
+    const outerEnd = role(end) === 'hub' && reachesFirst(edge)
+    const first = turnBelow ? layer[start]! : outer ? firstLayer : layer[start]! + 1
+    const last = turnAbove ? layer[end]! : outerEnd ? firstLayer - 1 : layer[end]! - 1
     const chain = [start]
     for (let at = first; at <= last; at++) {
       chain.push(items.length)
@@ -126,6 +180,9 @@ export const assignLayers = (model: Model, structure: Structure, reversed: Reado
     const starting = chains.filter(chain => at(chain) === 'start')
     const ending = chains.filter(chain => at(chain) === 'end')
     if (starting.length === 0 || ending.length === 0) return
+    // Already in one channel (outer reach, where a feeding stub comes in through the first channel too).
+    const channelOf = (chain: Chain): number => at(chain) === 'start' ? items[chain.items[1]!]!.layer : items[chain.items.at(-2)!]!.layer + 1
+    if (new Set([...starting, ...ending].map(channelOf)).size === 1) return
     const moved = starting.length >= ending.length ? ending : starting
     for (const chain of moved) {
       const dummy = items.length
