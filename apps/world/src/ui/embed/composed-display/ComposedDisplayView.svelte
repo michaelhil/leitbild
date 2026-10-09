@@ -2,6 +2,7 @@
   import type { EmbeddedViewEnvelope } from '@leitbild/contracts'
   import { simulationRunIdSchema } from '../../../core/model/index.ts'
   import { composedDisplayLayout, composedDisplayStateSchema, composedTrendStripHeights } from '../../../packs/process-plant/displays/composition.ts'
+  import { simulationClock } from '../../../packs/process-plant/displays/display-text.ts'
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
   import { composedDisplayClient } from './composed-display-client.ts'
   import { createComposedDisplaySession, type ComposedDisplaySnapshot } from './composed-display-session.ts'
@@ -10,7 +11,8 @@
   import PenLegend from './PenLegend.svelte'
   import ReadoutsPanel from './ReadoutsPanel.svelte'
   import TrendPanel from './TrendPanel.svelte'
-  import { agoText, alarmAge, simulationClock } from './panel-presenters.ts'
+  import { agoText, alarmAge } from './panel-presenters.ts'
+  import { trendWindowMs } from './trend-geometry.ts'
 
   let { envelope }: { envelope: EmbeddedViewEnvelope } = $props()
 
@@ -122,12 +124,13 @@
       {#each view.display.panels as panel, index (index)}
         {#if panel.kind === 'trend'}
           {@const charts = composedTrendStripHeights(panel.strips.length, panel.plot)}
+          {@const windowMs = trendWindowMs(panel.horizonMs, now, runStartedAt)}
           <div>
-            {#each panel.strips as strip, stripIndex (strip.unit)}
+            {#each panel.strips as strip, stripIndex (strip.pens[0]!.measurement)}
               <TrendPanel
                 {strip}
                 horizon={panel.horizon}
-                horizonMs={panel.horizonMs}
+                {windowMs}
                 series={snapshot.series}
                 range={snapshot.ranges[index]?.[stripIndex] ?? null}
                 {now}
@@ -140,6 +143,9 @@
               />
               <PenLegend pens={strip.pens} horizonMs={panel.horizonMs} latest={snapshot.latest} series={snapshot.series} historyMissing={snapshot.historyMissing} {activeRuleIds} />
             {/each}
+            {#if panel.live.length > 0}
+              <PenLegend pens={panel.live} horizonMs={panel.horizonMs} live latest={snapshot.latest} series={snapshot.series} historyMissing={snapshot.historyMissing} {activeRuleIds} />
+            {/if}
           </div>
         {:else if panel.kind === 'comparison'}
           <ComparisonPanel {panel} latest={snapshot.latest} series={snapshot.series} range={snapshot.ranges[index]?.[0] ?? null} {activeRuleIds} />

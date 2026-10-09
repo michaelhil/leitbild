@@ -1,21 +1,35 @@
 import { describe, expect, test } from 'bun:test'
+import { formatValue } from '../src/packs/process-plant/displays/display-text.ts'
 import {
   appendPoint,
-  formatValue,
   HOLD_GAP_MS,
   paddedDomain,
   rawDomain,
   stepPath,
   tickLabels,
   timeTicks,
+  trendWindowMs,
   valueTicks,
 } from '../src/ui/embed/composed-display/trend-geometry.ts'
 
 describe('composed display trend geometry', () => {
-  test('pads a fixed domain and never collapses a flat signal', () => {
+  test('pads a fixed domain, never collapses a flat signal, and never magnifies small swings', () => {
     expect(rawDomain([])).toBeNull()
     expect(paddedDomain({ min: 20, max: 70 })).toEqual({ min: 16, max: 74 })
-    expect(paddedDomain({ min: 15.5, max: 15.5 })).toEqual({ min: 14.5, max: 16.5 })
+    const flat = paddedDomain({ min: 15.5, max: 15.5 })
+    expect([flat.min, flat.max].map(value => Number(value.toFixed(2)))).toEqual([15.19, 15.81])
+    // A 0.6 °C wobble of Tavg at 291 °C spans at least 4 % of the value, not the whole strip.
+    const steady = paddedDomain({ min: 291.2, max: 291.8 })
+    expect(Number((steady.max - steady.min).toFixed(2))).toBe(11.67)
+    expect(paddedDomain({ min: 0, max: 0 })).toEqual({ min: -1, max: 1 })
+  })
+
+  test('spans a young Run\'s history, rounded up to 30 s, until it reaches the horizon', () => {
+    expect(trendWindowMs(600_000, 1_000_000, null)).toBe(600_000)
+    expect(trendWindowMs(600_000, 1_000_000, 1_000_000 - 20_000)).toBe(60_000)
+    expect(trendWindowMs(600_000, 1_000_000, 1_000_000 - 95_000)).toBe(120_000)
+    expect(trendWindowMs(600_000, 1_000_000, 0)).toBe(600_000)
+    expect(timeTicks(1_000_000, 120_000).map(tick => tick.label)).toEqual(['−2 min', '−90 s', '−1 min', '−30 s', 'now'])
   })
 
   test('chooses readable value ticks', () => {

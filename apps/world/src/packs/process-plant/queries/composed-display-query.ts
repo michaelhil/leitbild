@@ -14,12 +14,14 @@ import {
 import {
   compileComposedDisplay,
   composedDisplayShows,
+  composedDisplayMargins,
   composedDisplaySignals,
   composedDisplayWarnings,
   formatComposedDisplayIssues,
   formatComposedViewIssues,
 } from '../displays/compose.ts'
 import { requirePlant } from './common.ts'
+import { simulationClock } from '../displays/display-text.ts'
 
 export const processPlantComposedDisplayQueryKinds = [
   'world.process-plant.display.compose',
@@ -42,8 +44,13 @@ export const displaySampleQuerySchema = z.object({
   alarms: z.boolean().default(false),
 }).strict()
 
-const compiledOrRejected = (system: ProcessPlantRuntimeInstance, composition: unknown, purpose: 'compose' | 'view') => {
-  const result = compileComposedDisplay(system, composition, purpose)
+const compiledOrRejected = (
+  system: ProcessPlantRuntimeInstance,
+  composition: unknown,
+  purpose: 'compose' | 'view',
+  recordedSeriesIds: ReadonlySet<string>,
+) => {
+  const result = compileComposedDisplay(system, composition, purpose, recordedSeriesIds)
   if (!result.ok) return rejectCapabilityInput(purpose === 'compose' ? formatComposedDisplayIssues(result.issues) : formatComposedViewIssues(result.issues))
   return result.display
 }
@@ -53,15 +60,18 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
   readonly objects: ReadonlyMap<ObjectId, Pick<OperationalObject, 'id' | 'label'>>
   readonly simulationTime?: IsoTimestamp
+  readonly recordedSeriesIds?: ReadonlySet<string>
 }): unknown | undefined => {
   if (!processPlantComposedDisplayQueryKinds.some(kind => kind === config.request.capabilityId)) return undefined
   const simulationTime = config.simulationTime
   if (simulationTime === undefined) throw new Error(`${config.request.capabilityId} requires the Simulation Run time of the answering runtime`)
+  const recordedSeriesIds = config.recordedSeriesIds
+  if (recordedSeriesIds === undefined) throw new Error(`${config.request.capabilityId} requires the series recorded by the answering runtime`)
 
   if (config.request.capabilityId === 'world.process-plant.display.compose') {
     const plantId = idSchema.parse((config.request.input as { plantId?: unknown } | null)?.plantId)
     const system = requirePlant(config.plants, plantId)
-    const display = compiledOrRejected(system, config.request.input, 'compose')
+    const display = compiledOrRejected(system, config.request.input, 'compose', recordedSeriesIds)
     const state = composedDisplayStateSchema.parse({
       composition: composedDisplayCompositionSchema.parse(config.request.input),
       issuedAt: simulationTime,
@@ -76,8 +86,11 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
         height: display.height,
         state: JSON.stringify(state),
       }),
+      // The display header's clock, so the answer gives times as the display does.
+      simulationClock: simulationClock(Date.parse(simulationTime)),
       signals: composedDisplaySignals(display),
       shows: composedDisplayShows(display),
+      margins: composedDisplayMargins(display, path => system.runtime.readVariableSnapshot(path).value),
       warnings: composedDisplayWarnings(display),
     }
   }
@@ -89,7 +102,7 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
     if (!parsedState.success) return rejectCapabilityInput(`Unsupported display format: ${parsedState.error.message}`)
     const state = parsedState.data
     if (state.composition.plantId !== payload.plantId) return rejectCapabilityInput(`Display state targets ${state.composition.plantId}, not ${payload.plantId}`)
-    const display = compiledOrRejected(system, state.composition, 'view')
+    const display = compiledOrRejected(system, state.composition, 'view', recordedSeriesIds)
     return {
       plantId: display.plantId,
       // The asset label distinguishes identical units; null when the Plant has no projected asset.

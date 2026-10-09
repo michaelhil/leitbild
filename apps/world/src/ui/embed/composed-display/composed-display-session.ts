@@ -45,7 +45,13 @@ const WITH_ALARMS = true
 
 const pensOf = (panel: CompiledComposedPanel): ReadonlyArray<ComposedDisplayPen> => {
   if (panel.kind === 'alarms') return []
-  return panel.kind === 'trend' ? panel.strips.flatMap(strip => strip.pens) : panel.pens
+  return panel.kind === 'trend' ? [...panel.strips.flatMap(strip => strip.pens), ...panel.live] : panel.pens
+}
+
+/** Pens drawn over time: trend strips (not their live-only rows) and comparisons, which show rates. */
+const plottedPensOf = (panel: CompiledComposedPanel): ReadonlyArray<ComposedDisplayPen> => {
+  if (panel.kind === 'trend') return panel.strips.flatMap(strip => strip.pens)
+  return panel.kind === 'comparison' ? panel.pens : []
 }
 
 export const createComposedDisplaySession = (config: {
@@ -81,9 +87,11 @@ export const createComposedDisplaySession = (config: {
 
   /** Trends keep their horizon; comparisons keep ten minutes for rates. Readouts use the latest sample. */
   const trendPens = (): ReadonlyArray<{ readonly path: string; readonly seriesId: string; readonly horizonMs: number }> =>
-    panels().flatMap(panel => panel.kind === 'trend' || panel.kind === 'comparison'
-      ? pensOf(panel).map(pen => ({ path: String(pen.path), seriesId: pen.seriesId, horizonMs: panel.kind === 'trend' ? panel.horizonMs : COMPARISON_SERIES_MS }))
-      : [])
+    panels().flatMap(panel => plottedPensOf(panel).map(pen => ({
+      path: String(pen.path),
+      seriesId: pen.seriesId,
+      horizonMs: panel.kind === 'trend' ? panel.horizonMs : COMPARISON_SERIES_MS,
+    })))
 
   /** Values on each scale of a panel: trends their history per strip, comparisons the latest sample. */
   const scaleValues = (

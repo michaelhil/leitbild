@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { activeThreshold, agoText, alarmAge, marginText, median, minutesToThreshold, nearestThresholdMargin, rateChange, ratePerMinute, rateText, rateWindowMs, simulationClock, visibleAlarms } from '../src/ui/embed/composed-display/panel-presenters.ts'
-import { thresholdName, unitLabel } from '../src/packs/process-plant/displays/display-text.ts'
+import { activeThreshold, agoText, alarmAge, median, minutesToThreshold, rateChange, ratePerMinute, rateText, rateWindowMs, timeToThresholdText, visibleAlarms } from '../src/ui/embed/composed-display/panel-presenters.ts'
+import { formatQuantity, marginText, nearestThresholdMargin, simulationClock, thresholdName, unitLabel } from '../src/packs/process-plant/displays/display-text.ts'
 import type { ComposedDisplayThreshold } from '../src/packs/process-plant/displays/ic-thresholds.ts'
 import type { ComposedDisplayAlarm } from '../src/ui/embed/composed-display/composed-display-client.ts'
 
@@ -20,7 +20,18 @@ describe('composed display panel presenters', () => {
     expect(marginText(beyond, '%')).toBe('past LO ALM 30 %')
     expect(marginText(nearestThresholdMargin(70, thresholds)!, '%')).toBe('HI ALM 75 % (power operation) · 5.00 below')
     expect(thresholdName(thresholds[0]!, 'MPa')).toBe('LO TRIP 20 MPa')
+    expect(thresholdName(thresholds[0]!, 'MPa', { withUnit: false })).toBe('LO TRIP 20')
     expect(nearestThresholdMargin(10, [thresholds[2]!])).toBeNull()
+  })
+
+  test('fractions read as percent wherever the display or the answer names them', () => {
+    const busLow = { ruleId: 'bus-low', label: 'Bus voltage low', kind: 'alarm', operator: '<', direction: 'low', value: 0.9 } as const
+    expect(formatQuantity(1, 'fraction')).toBe('100 %')
+    expect(formatQuantity(0.955, 'fraction')).toBe('95.5 %')
+    expect(thresholdName(busLow, 'fraction')).toBe('LO ALM 90 %')
+    expect(marginText(nearestThresholdMargin(0.955, [busLow])!, 'fraction')).toBe('LO ALM 90 % · 5.50 above')
+    expect(rateText(-0.012, 0.955, 'fraction')).toBe('▼ −1.20 %/min')
+    expect(unitLabel('fraction')).toBe('%')
   })
 
   test('median of parallel signals', () => {
@@ -29,7 +40,7 @@ describe('composed display panel presenters', () => {
     expect(median([])).toBeNull()
   })
 
-  test('alarms read trips first, then severity, unacknowledged and newest', () => {
+  test('alarms read first-out first, then by onset so the initiating alarm leads its consequences', () => {
     const alarms: ReadonlyArray<ComposedDisplayAlarm> = [
       { id: 'a', ruleId: 'sg-b-level-low', kind: 'alarm', title: 'SG B level low', severity: 'warning', acknowledged: true, firstOut: false, firstActiveElapsedMs: 100_000 },
       { id: 'b', ruleId: 'sg-b-level-low-low', kind: 'trip', title: 'SG B low-low', severity: 'critical', acknowledged: false, firstOut: true, firstActiveElapsedMs: 200_000 },
@@ -37,7 +48,7 @@ describe('composed display panel presenters', () => {
       { id: 'd', ruleId: 'sg-b-feedwater-low', kind: 'alarm', title: 'SG B feed low', severity: 'warning', acknowledged: false, firstOut: false, firstActiveElapsedMs: 50_000 },
     ]
     expect(visibleAlarms(alarms, 'related', ['sg-b-level-low', 'sg-b-level-low-low', 'sg-b-feedwater-low']).map(alarm => alarm.id)).toEqual(['b', 'd', 'a'])
-    expect(visibleAlarms(alarms, 'plant', []).map(alarm => alarm.id)).toEqual(['b', 'c', 'd', 'a'])
+    expect(visibleAlarms(alarms, 'plant', []).map(alarm => alarm.id)).toEqual(['b', 'd', 'a', 'c'])
   })
 
   test('alarm age in Plant time', () => {
@@ -65,7 +76,7 @@ describe('composed display panel presenters', () => {
   })
 
   test('rates follow the curve on screen and say when it is slowing', () => {
-    expect([120_000, 600_000, 1_800_000].map(rateWindowMs)).toEqual([15_000, 60_000, 60_000])
+    expect([120_000, 600_000, 1_800_000].map(rateWindowMs)).toEqual([10_000, 30_000, 30_000])
     // Falling fast for a minute, then nearly flat for the last 15 s.
     const flattening = Array.from({ length: 76 }, (_, index) => ({ t: index * 1000, v: index <= 60 ? 15 - index * 0.05 : 12 - (index - 60) * 0.002 }))
     const window = rateWindowMs(120_000)
@@ -74,6 +85,11 @@ describe('composed display panel presenters', () => {
     const steadyFall = Array.from({ length: 76 }, (_, index) => ({ t: index * 1000, v: 15 - index * 0.05 }))
     expect(rateChange(steadyFall, window, 12)).toBeNull()
     expect(simulationClock(Date.parse('2026-01-01T10:01:00.049Z'))).toBe('10:01:00')
+    // Rising 0.31 MPa/min with 0.285 MPa left to HI ALM 16 (turbine trip, run 6).
+    const highAlarm = { ruleId: 'pzr-high', label: 'Pressurizer pressure high', kind: 'alarm', operator: '>', direction: 'high', value: 16 } as const
+    expect(timeToThresholdText(15.715, 0.31, highAlarm)).toBe('≈55 s')
+    expect(timeToThresholdText(15.715, -0.31, highAlarm)).toBe('')
+    expect(timeToThresholdText(10, 0.1, highAlarm)).toBe('')
     expect(unitLabel('degC')).toBe('°C')
   })
 

@@ -2,10 +2,9 @@
   import type { ComposedReadoutsPanel } from '../../../packs/process-plant/displays/compose.ts'
   import { composedDisplayLayout } from '../../../packs/process-plant/displays/composition.ts'
   import type { ComposedDisplaySample } from './composed-display-client.ts'
-  import { activeThreshold, marginText, nearestThresholdMargin } from './panel-presenters.ts'
+  import { displayValue, marginText, nearestThresholdMargin, unitLabel, valueDigits } from '../../../packs/process-plant/displays/display-text.ts'
+  import { activeThreshold } from './panel-presenters.ts'
   import { displayName } from './pen-style.ts'
-  import { unitLabel } from '../../../packs/process-plant/displays/display-text.ts'
-  import { valueDigits } from './trend-geometry.ts'
   import AlarmChip from './AlarmChip.svelte'
   import './openbridge.ts'
 
@@ -31,16 +30,16 @@
         <span class="state">{value ? pen.label.toUpperCase() : `NOT ${pen.label.toUpperCase()}`}</span>
       {:else}
         <obc-readout
-          value={typeof value === 'number' ? value : null}
+          value={typeof value === 'number' ? displayValue(value, pen.unit) : null}
           off={typeof value !== 'number'}
           offText="—"
           unit={unitLabel(pen.unit)}
-          fractionDigits={typeof value === 'number' ? valueDigits(value) : 0}
+          fractionDigits={typeof value === 'number' ? valueDigits(displayValue(value, pen.unit)) : 0}
           size="small"
         ></obc-readout>
       {/if}
       {#if margin !== null}
-        <span class="margin" class:beyond={margin.margin < 0}>{marginText(margin, unitLabel(pen.unit))}</span>
+        <span class="margin" class:beyond={margin.margin < 0}>{marginText(margin, pen.unit)}</span>
       {:else if entry?.quality === 'outside-hard-range'}
         <span class="margin beyond">outside range</span>
       {/if}

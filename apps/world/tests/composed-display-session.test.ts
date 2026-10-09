@@ -26,6 +26,7 @@ const view: ComposedDisplayViewResult = {
       kind: 'trend',
       horizon: '2m',
       horizonMs: 120_000,
+      live: [],
       strips: [{
         unit: 'MPa',
         thresholds: [],

@@ -29,8 +29,8 @@ export type ComposedDisplaySignal = z.infer<typeof composedDisplaySignalSchema>
 // Size limits keep a chat display glanceable; larger questions belong to the
 // Plant's own displays.
 export const COMPOSED_TREND_MAX_SIGNALS = 6
-/** A trend stacks one strip per unit on its time axis; a strip holds the loops of a 4-loop plant. */
-export const COMPOSED_TREND_MAX_STRIPS = 3
+/** A trend stacks one strip per measurement on its time axis; a strip holds the loops of a 4-loop plant. */
+export const COMPOSED_TREND_MAX_STRIPS = 4
 export const COMPOSED_TREND_STRIP_MAX_PENS = 4
 export const COMPOSED_COMPARISON_MAX_SIGNALS = 6
 export const COMPOSED_READOUTS_MAX_SIGNALS = 6
@@ -39,7 +39,7 @@ export const COMPOSED_READOUTS_MAX_SIGNALS = 6
 export const COMPOSED_DISPLAY_MAX_PANELS = 3
 export const COMPOSED_DISPLAY_MAX_TRENDS = 1
 
-/** History of numeric signals; the Pack groups them into one strip per unit. */
+/** History of numeric signals; the Pack groups them into one strip per measurement. */
 export const composedDisplayTrendPanelSchema = z.object({
   kind: z.literal('trend'),
   horizon: composedDisplayHorizonSchema,
@@ -128,8 +128,8 @@ export const COMPOSED_DISPLAY_MAX_HEIGHT_PX = 640
 
 /** What a panel's height depends on, known once its signals are resolved. */
 export type ComposedPanelShape =
-  /** Pens per strip, top to bottom. */
-  | { readonly kind: 'trend'; readonly strips: ReadonlyArray<number> }
+  /** Pens per strip, top to bottom, and live-only rows under the strips. */
+  | { readonly kind: 'trend'; readonly strips: ReadonlyArray<number>; readonly live: number }
   | { readonly kind: 'comparison'; readonly rows: number }
   | { readonly kind: 'readouts'; readonly values: number }
   | { readonly kind: 'alarms' }
@@ -137,7 +137,7 @@ export type ComposedPanelShape =
 /** A panel shape with its trend plot height decided. */
 export type ComposedPanelSize =
   | Exclude<ComposedPanelShape, { readonly kind: 'trend' }>
-  | { readonly kind: 'trend'; readonly strips: ReadonlyArray<number>; readonly plot: number }
+  | { readonly kind: 'trend'; readonly strips: ReadonlyArray<number>; readonly live: number; readonly plot: number }
 
 const trendPlotRange = (strips: number): { readonly preferred: number; readonly minimum: number } => strips === 1
   ? { preferred: composedDisplayLayout.trendPlot, minimum: composedDisplayLayout.trendMinPlot }
@@ -156,7 +156,8 @@ export const composedPanelHeight = (panel: ComposedPanelSize): number => {
   const layout = composedDisplayLayout
   if (panel.kind === 'trend') {
     const charts = composedTrendStripHeights(panel.strips.length, panel.plot)
-    return panel.strips.reduce((sum, pens, index) => sum + charts[index]! + composedTrendLegendHeight(pens), 0)
+    const live = panel.live === 0 ? 0 : composedTrendLegendHeight(panel.live)
+    return panel.strips.reduce((sum, pens, index) => sum + charts[index]! + composedTrendLegendHeight(pens), 0) + live
   }
   if (panel.kind === 'comparison') return layout.comparisonHeader + layout.comparisonRow * panel.rows + layout.comparisonCaption
   if (panel.kind === 'readouts') return layout.readoutsRow * Math.ceil(panel.values / layout.readoutsPerRow)

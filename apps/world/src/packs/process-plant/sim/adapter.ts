@@ -183,6 +183,9 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       : createProcessPlantRecordingPlan({ selection: config.recording, plants })
     let recordingDescriptorsPending = recordingPlan !== null
     let nextRecordingElapsedMs = recordingPlan?.intervalMs ?? Number.POSITIVE_INFINITY
+    // Composed displays say which trended signals have history in this Run.
+    const recordedSeriesFor = (plan: typeof recordingPlan): ReadonlySet<string> => new Set(plan?.descriptors.map(descriptor => descriptor.id) ?? [])
+    let recordedSeriesIds = recordedSeriesFor(recordingPlan)
     let clock: SimulationClockState = {
       currentTime: config.scenario.world.startsAt,
       updatedAt: nowIso(),
@@ -212,6 +215,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         : createProcessPlantRecordingPlan({ selection: config.recording, plants })
       recordingDescriptorsPending = recordingPlan !== null
       nextRecordingElapsedMs = recordingPlan?.intervalMs ?? Number.POSITIVE_INFINITY
+      recordedSeriesIds = recordedSeriesFor(recordingPlan)
     }
 
     const advance = async (targetSimulationMs = Date.parse(runClock.read().currentTime)): Promise<void> => {
@@ -440,6 +444,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
           plants,
           objects: objectsById,
           simulationTime: new Date(lastSimulationMs).toISOString() as IsoTimestamp,
+          recordedSeriesIds,
         })
       },
       observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {

@@ -10,6 +10,8 @@ import {
   createPwrReferencePlantDefinition,
 } from '../src/packs/process-plant/index.ts'
 import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
+import { recordedPlantVariables } from '../src/packs/process-plant/recording.ts'
+import { recordingSeriesIdFor } from '../src/core/model/index.ts'
 import { processPlantCapabilities } from '../src/packs/process-plant/capabilities.ts'
 import { icThresholdsForSignal } from '../src/packs/process-plant/displays/ic-thresholds.ts'
 import { composedDisplayStateSchema } from '../src/packs/process-plant/displays/composition.ts'
@@ -26,10 +28,13 @@ const plant: ProcessPlantRuntimeInstance = {
 }
 const plants = new Map([[compiled.id, plant]])
 const simulationTime = '2026-10-08T21:00:00.000Z' as IsoTimestamp
+// The Run records the operations profile: tagged instruments, states, controls and power.
+const recordedSeriesIds = new Set(recordedPlantVariables(compiled, 'operations').map(variable => recordingSeriesIdFor(compiled.id, variable.path)))
 const ask = (capabilityId: string, input: unknown, at: IsoTimestamp | null = simulationTime) => answerProcessPlantQuery({
   request: { capabilityId, input },
   plants,
   objects: new Map(),
+  recordedSeriesIds,
   ...(at === null ? {} : { simulationTime: at }),
 })
 
@@ -88,10 +93,14 @@ describe('world.process-plant.display.compose', () => {
     expect(state).toMatchObject({ issuedAt: simulationTime, modelDigest: compiled.modelDigest })
     expect(result.shows.join('\n')).toContain('"LO ALM 30 %" alarm line: Steam generator B level low · Steam generator A level low, acts below 30 percent for SG-B-LVL-NR, SG-A-LVL-NR')
     expect((result as unknown as { signals: unknown }).signals).toEqual([
-      { ref: 'SG-B-LVL-NR', tagId: 'SG-B-LVL-NR', path: 'sgB.levelPercent', label: 'Steam generator level', unit: 'percent' },
-      { ref: 'SG-A-LVL-NR', tagId: 'SG-A-LVL-NR', path: 'sgA.levelPercent', label: 'Steam generator level', unit: 'percent' },
+      { ref: 'SG-B-LVL-NR', tagId: 'SG-B-LVL-NR', path: 'sgB.levelPercent', label: 'Steam generator level', name: 'SG-B-LVL-NR', unit: 'percent' },
+      { ref: 'SG-A-LVL-NR', tagId: 'SG-A-LVL-NR', path: 'sgA.levelPercent', label: 'Steam generator level', name: 'SG-A-LVL-NR', unit: 'percent' },
     ])
     expect(result.shows.join('\n')).toContain('"LO TRIP 20 %" trip line: Steam generator B low-low level · Steam generator A low-low level, acts below 20 percent for SG-B-LVL-NR, SG-A-LVL-NR')
+    expect((result as unknown as { simulationClock: string }).simulationClock).toBe('21:00:00')
+    const margins = (result as unknown as { margins: ReadonlyArray<string> }).margins
+    expect(margins).toHaveLength(2)
+    expect(margins[0]).toMatch(/^SG-[AB]-LVL-NR: [0-9.]+ %, LO ALM 30 % · [0-9.]+ above$/)
     expect(runtime.checkpoint()).toEqual(before)
   })
 
@@ -113,6 +122,15 @@ describe('world.process-plant.display.compose', () => {
     expect(suggestions('dieselGenA.running')).toStartWith('EDG-A-RUN (Diesel running, boolean)')
     expect(suggestions('SG1-LVL')).toStartWith('SG-A-LVL-NR (Steam generator level, percent)')
     expect(suggestions('RCS-TAVG')).toStartWith('TAVG (Mean primary coolant temperature, degC)')
+  })
+
+  test('says which trended signals the Run does not record', () => {
+    const result = ask('world.process-plant.display.compose', composition([
+      { ref: 'SG-B-LVL-NR', role: 'primary' },
+      { ref: 'sgB.feedwaterFlowKgPerS', role: 'context' },
+    ])) as { warnings: ReadonlyArray<string> }
+    expect(result.warnings).toContain("sgB.feedwaterFlowKgPerS is not recorded by this Run's historian; its trend starts when the view opens. Do not describe its history from the display.")
+    expect(result.warnings.some(warning => warning.startsWith('SG-B-LVL-NR is not recorded'))).toBe(false)
   })
 
   test('rejects state signals on a trend', () => {
@@ -173,26 +191,48 @@ describe('composed display panels', () => {
     return { composed, view }
   }
 
-  test('stack one strip per unit on the trend time axis, the primary signal on top, and size the card for them', () => {
+  test('stack one strip per measurement, primary on top, with unrecorded signals as live rows', () => {
     const { composed, view } = composeView([
-      { kind: 'trend', horizon: '10m', signals: [{ ref: 'sgB.feedwaterFlowKgPerS', role: 'counter-evidence' }, { ref: 'SG-B-LVL-NR', role: 'primary' }, { ref: 'SG-A-LVL-NR', role: 'context' }] },
+      { kind: 'trend', horizon: '10m', signals: [
+        { ref: 'PT-455', role: 'counter-evidence' },
+        { ref: 'SG-B-LVL-NR', role: 'primary' },
+        { ref: 'SG-A-LVL-NR', role: 'context' },
+        { ref: 'sgB.feedwaterFlowKgPerS', role: 'context' },
+      ] },
     ])
-    const trend = view.display.panels[0] as { strips: ReadonlyArray<{ unit: string; pens: ReadonlyArray<{ ref: string }> }> }
+    const trend = view.display.panels[0] as {
+      strips: ReadonlyArray<{ unit: string; pens: ReadonlyArray<{ ref: string; name: string }> }>
+      live: ReadonlyArray<{ ref: string; name: string }>
+    }
     expect(trend.strips.map(strip => [strip.unit, strip.pens.map(pen => pen.ref)])).toEqual([
       ['percent', ['SG-B-LVL-NR', 'SG-A-LVL-NR']],
-      ['kg/s', ['sgB.feedwaterFlowKgPerS']],
+      ['MPa', ['PT-455']],
     ])
-    // Top strip: labels and plot; bottom strip also the time axis; a legend row per pen.
-    expect(composed.view.height).toBe(124 + (18 + 72 + 4 + 16 * 2) + (18 + 72 + 22 + 4 + 16))
-    expect(composed.shows[0]).toContain('in 2 stacked strips (one per unit)')
+    expect(trend.live.map(pen => pen.name)).toEqual(['Feedwater inflow · Steam Generator B'])
+    // Each strip: labels and plot (the last also the time axis) and a legend row per pen; then the live rows.
+    expect(composed.view.height).toBe(124 + (18 + 72 + 4 + 16 * 2) + (18 + 72 + 22 + 4 + 16) + (4 + 16))
+    expect(composed.shows[0]).toContain('in 2 stacked strips (one per measurement)')
+    expect(composed.shows[1]).toStartWith('Current values only, not recorded by this Run (no history to describe): Feedwater inflow · Steam Generator B')
   })
 
-  // The skill's size rule: three units leave room for alarms; two units for alarms and three readouts.
-  test('shrink trend plots, not other panels, so a display fits the chat view', () => {
-    // Evaluation run 5: two units beside six readouts and the alarms needed 668 px at preferred size.
-    const { composed, view } = composeView([
+  test('never share an axis between different measurements of one unit', () => {
+    const { view } = composeView([
       { kind: 'trend', horizon: '2m', signals: ['CET-AVG', 'SUB-MARGIN', 'PT-455', 'SG-A-PRESS'].map((ref, index) => ({ ref, role: index === 0 ? 'primary' : 'context' })) },
-      { kind: 'readouts', signals: ['TAVG', 'PZR-LVL', 'SG-B-PRESS', 'SG-C-PRESS', 'SG-D-PRESS', 'CTMT-PR'].map(ref => ({ ref, role: 'context' })) },
+    ])
+    const trend = view.display.panels[0] as { strips: ReadonlyArray<{ pens: ReadonlyArray<{ ref: string }> }> }
+    expect(trend.strips.map(strip => strip.pens.map(pen => pen.ref))).toEqual([['CET-AVG'], ['SUB-MARGIN'], ['PT-455'], ['SG-A-PRESS']])
+  })
+
+  test('reject a trend with no recorded signal', () => {
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', composition([{ ref: 'sgB.feedwaterFlowKgPerS', role: 'primary' }]))))
+      .toContain("is recorded by this Run's historian, so the trend would have no history; show them in a readouts panel")
+  })
+
+  test('shrink trend plots, not other panels, so a display fits the chat view', () => {
+    // Two measurements beside six readouts and the alarms need 668 px at preferred size.
+    const { composed, view } = composeView([
+      { kind: 'trend', horizon: '2m', signals: ['SG-A-LVL-NR', 'SG-B-LVL-NR', 'SG-A-PRESS', 'SG-B-PRESS'].map((ref, index) => ({ ref, role: index === 0 ? 'primary' : 'context' })) },
+      { kind: 'readouts', signals: ['TAVG', 'PZR-LVL', 'PT-455', 'CTMT-PR', 'CET-AVG', 'SUB-MARGIN'].map(ref => ({ ref, role: 'context' })) },
       { kind: 'alarms', scope: 'related' },
     ])
     const trend = view.display.panels[0] as { plot: number }
@@ -201,32 +241,35 @@ describe('composed display panels', () => {
     expect(composed.view.height).toBeLessThanOrEqual(640)
   })
 
+  // The skill's size rule: three or four measurements leave room for alarms; two for alarms and three readouts.
   test('fit the largest trends the skill allows beside their companion panels', () => {
     const levels = ['A', 'B', 'C', 'D'].map(loop => ({ ref: `SG-${loop}-LVL-NR`, role: loop === 'B' ? 'primary' : 'context' }))
-    const threeUnits = composeView([
+    const threeMeasurements = composeView([
       { kind: 'trend', horizon: '2m', signals: [...levels, { ref: 'PT-455', role: 'context' }, { ref: 'GEN-MW', role: 'context' }] },
       { kind: 'alarms', scope: 'related' },
     ])
-    expect(threeUnits.composed.view.height).toBeLessThanOrEqual(640)
-    const twoUnits = composeView([
-      { kind: 'trend', horizon: '10m', signals: [...levels, { ref: 'PT-455', role: 'context' }, { ref: 'SG-A-PRESS', role: 'context' }] },
+    expect(threeMeasurements.composed.view.height).toBeLessThanOrEqual(640)
+    const fourMeasurements = composeView([
+      { kind: 'trend', horizon: '2m', signals: ['SG-B-LVL-NR', 'PT-455', 'GEN-MW', 'TAVG'].map((ref, index) => ({ ref, role: index === 0 ? 'primary' : 'context' })) },
+      { kind: 'alarms', scope: 'related' },
+    ])
+    expect(fourMeasurements.composed.view.height).toBeLessThanOrEqual(640)
+    const twoMeasurements = composeView([
+      { kind: 'trend', horizon: '10m', signals: [...levels, { ref: 'SG-A-PRESS', role: 'context' }, { ref: 'SG-B-PRESS', role: 'context' }] },
       { kind: 'readouts', signals: ['TAVG', 'SUB-MARGIN', 'CET-AVG'].map(ref => ({ ref, role: 'context' })) },
       { kind: 'alarms', scope: 'related' },
     ])
-    expect(twoUnits.composed.view.height).toBeLessThanOrEqual(640)
+    expect(twoMeasurements.composed.view.height).toBeLessThanOrEqual(640)
   })
 
-  test('reject a second trend panel, too many strips or pens, a lone alarms panel and oversized displays', () => {
+  test('reject a second trend panel, too many strips, a lone alarms panel and oversized displays', () => {
     expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
       { kind: 'trend', horizon: '10m', signals: [{ ref: 'PT-455', role: 'primary' }] },
       { kind: 'trend', horizon: '10m', signals: [{ ref: 'PZR-LVL', role: 'context' }] },
     ])))).toContain('use one trend panel and list every signal whose history matters in it')
     expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
-      { kind: 'trend', horizon: '10m', signals: ['PT-455', 'PZR-LVL', 'GEN-MW', 'TAVG'].map((ref, index) => ({ ref, role: index === 0 ? 'primary' : 'context' })) },
-    ])))).toContain('a trend stacks at most 3 strips, one per unit, but these signals use 4 units')
-    expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
-      { kind: 'trend', horizon: '10m', signals: [...['A', 'B', 'C', 'D'].map(loop => ({ ref: `SG-${loop}-LVL-NR`, role: loop === 'B' ? 'primary' : 'context' })), { ref: 'PZR-LVL', role: 'context' }] },
-    ])))).toContain('a trend strip shows at most 4 signals of one unit, but [percent] has 5')
+      { kind: 'trend', horizon: '10m', signals: ['PT-455', 'PZR-LVL', 'GEN-MW', 'TAVG', 'SG-A-PRESS'].map((ref, index) => ({ ref, role: index === 0 ? 'primary' : 'context' })) },
+    ])))).toContain('a trend stacks at most 4 strips, one per measurement (parallel equipment shares one), but these signals are 5 measurements: [Pressurizer pressure, MPa] PT-455')
     expect(rejectionOf(() => ask('world.process-plant.display.compose', display([{ kind: 'alarms', scope: 'plant' }]))))
       .toContain('an alarms panel accompanies signal panels')
     const six = ['A', 'B', 'C', 'D'].map(loop => ({ ref: `RCP-${loop}-FLOW`, role: 'context' }))

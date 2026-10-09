@@ -1,5 +1,6 @@
 // Pure geometry for composed-display trends. Time is Simulation Run time in
 // epoch milliseconds; values are the signal's native unit.
+import { formatValue } from '../../../packs/process-plant/displays/display-text.ts'
 
 export interface TrendPoint {
   readonly t: number
@@ -25,12 +26,18 @@ export const rawDomain = (values: ReadonlyArray<number>): ValueDomain | null => 
   return { min: Math.min(...finite), max: Math.max(...finite) }
 }
 
-/** Fixed display scale: padded, never zero-height. */
+// A scale spans at least this share of the value, so a nearly steady signal
+// does not fill its strip with noise-sized swings.
+const MIN_SPAN_FRACTION = 0.04
+
+/** Fixed display scale: padded, never zero-height, never narrower than 4 % of the value. */
 export const paddedDomain = (raw: ValueDomain): ValueDomain => {
   const span = raw.max - raw.min
-  if (span === 0) {
-    const half = Math.max(Math.abs(raw.max) * 0.05, 1)
-    return { min: raw.min - half, max: raw.max + half }
+  const minimum = Math.max(Math.abs(raw.max), Math.abs(raw.min)) * MIN_SPAN_FRACTION
+  if (span === 0 && minimum === 0) return { min: raw.min - 1, max: raw.max + 1 }
+  if (span < minimum) {
+    const middle = (raw.max + raw.min) / 2
+    return { min: middle - minimum / 2, max: middle + minimum / 2 }
   }
   return { min: raw.min - span * PAD_FRACTION, max: raw.max + span * PAD_FRACTION }
 }
@@ -70,14 +77,32 @@ const relativeLabel = (backMs: number): string => {
   return backMs % 60_000 === 0 ? `−${backMs / 60_000} min` : `−${Math.round(backMs / 1000)} s`
 }
 
-/** Ticks relative to "now" so the trend reads the same at any Simulation Run date. */
-export const timeTicks = (now: number, horizonMs: number): ReadonlyArray<TimeTick> => {
-  const stepMs = horizonMs <= 120_000 ? 30_000 : horizonMs <= 600_000 ? 120_000 : 600_000
+const tickStepMs = (windowMs: number): number =>
+  windowMs <= 150_000 ? 30_000 : windowMs <= 300_000 ? 60_000 : windowMs <= 600_000 ? 120_000 : windowMs <= 1_200_000 ? 300_000 : 600_000
+
+/**
+ * Ticks counted back from "now" in round steps, so the trend reads the same at
+ * any Simulation Run date and while a short window grows toward its horizon.
+ */
+export const timeTicks = (now: number, windowMs: number): ReadonlyArray<TimeTick> => {
+  const stepMs = tickStepMs(windowMs)
   const ticks: TimeTick[] = []
-  for (let back = horizonMs; back >= 0; back -= stepMs) {
-    ticks.push({ t: now - back, label: relativeLabel(back) })
-  }
+  for (let back = 0; back <= windowMs; back += stepMs) ticks.unshift({ t: now - back, label: relativeLabel(back) })
   return ticks
+}
+
+// A trend never spans less than this, so a Run's first minute still reads as a curve.
+const MIN_WINDOW_MS = 60_000
+const WINDOW_STEP_MS = 30_000
+
+/**
+ * The time a trend spans: its horizon, or the Run's history rounded up to 30 s
+ * while that is shorter, so a young Run is not drawn as a mostly hatched plot.
+ */
+export const trendWindowMs = (horizonMs: number, now: number, runStartedAt: number | null): number => {
+  if (runStartedAt === null) return horizonMs
+  const history = Math.ceil(Math.max(0, now - runStartedAt) / WINDOW_STEP_MS) * WINDOW_STEP_MS
+  return Math.min(horizonMs, Math.max(MIN_WINDOW_MS, history))
 }
 
 /** Keeps points ordered and drops those that can no longer influence the window. */
@@ -116,10 +141,3 @@ export const stepPath = (
   return commands.join(' ')
 }
 
-/** Precision follows magnitude; trend readers compare, they do not audit digits. */
-export const valueDigits = (value: number): number => {
-  const magnitude = Math.abs(value)
-  return magnitude >= 100 ? 0 : magnitude >= 10 ? 1 : magnitude >= 1 ? 2 : 3
-}
-
-export const formatValue = (value: number): string => value.toFixed(valueDigits(value))

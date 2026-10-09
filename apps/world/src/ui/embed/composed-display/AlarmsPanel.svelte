@@ -7,7 +7,9 @@
   let { panel, latest }: { panel: ComposedAlarmsPanel; latest: ComposedDisplaySample | undefined } = $props()
 
   const alarms = $derived(visibleAlarms(latest?.alarms ?? [], panel.scope, panel.ruleIds))
-  const shown = $derived(alarms.slice(0, composedDisplayLayout.alarmRows))
+  // When some do not fit, the last row says how many and how many are unacknowledged.
+  const shown = $derived(alarms.length > composedDisplayLayout.alarmRows ? alarms.slice(0, composedDisplayLayout.alarmRows - 1) : alarms)
+  const hidden = $derived(alarms.slice(shown.length))
 </script>
 
 <section class="alarms" style={`height:${composedDisplayLayout.alarms}px`} aria-label="Active alarms">
@@ -28,7 +30,7 @@
         </li>
       {/each}
     </ul>
-    {#if alarms.length > shown.length}<p class="more">+{alarms.length - shown.length} more active</p>{/if}
+    {#if hidden.length > 0}<p class="more">+{hidden.length} more active{#if hidden.some(alarm => !alarm.acknowledged)} ({hidden.filter(alarm => !alarm.acknowledged).length} unacknowledged){/if}</p>{/if}
   {/if}
 </section>
 
@@ -40,7 +42,7 @@
   /* Alarm colour appears only for real, active alarms, keyed by severity. */
   li.severity-critical { border-left-color: var(--alert-alarm-color); }
   li.severity-warning { border-left-color: var(--alert-warning-color); }
-  li.severity-notice { border-left-color: var(--alert-caution-color); }
+  li.severity-notice, li.severity-info { border-left-color: var(--alert-caution-color); }
   li.unacknowledged .title { font-weight: 600; }
   .kind { font-size: 10.5px; font-weight: 700; width: 32px; flex: none; }
   .title { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -27,7 +27,7 @@ import {
   type ComposedPanelShape,
   type ComposedPanelSize,
 } from './composition.ts'
-import { thresholdName } from './display-text.ts'
+import { formatQuantity, marginText, nearestThresholdMargin, thresholdName } from './display-text.ts'
 import {
   icAlarmRuleIdsForEquipment,
   icThresholdsForSignal,
@@ -41,10 +41,16 @@ export interface ComposedDisplayPen {
   readonly path: VariablePath
   readonly tagId?: string
   readonly label: string
+  /** What operators call it: the tag, or the label with its equipment ("Feedwater inflow · Steam Generator B"). */
+  readonly name: string
+  /** One measurement across parallel equipment ("steam-generator.levelPercent|percent"); pens sharing it share an axis. */
+  readonly measurement: string
   readonly unit: ProcessUnit
   readonly quantity: ProcessQuantity
   readonly valueKind: 'number' | 'boolean'
   readonly seriesId: string
+  /** Recorded by this Run's historian, so a trend has history from before the view opened. */
+  readonly recorded: boolean
   readonly limits?: ProcessVariableLimits
   readonly thresholds: ReadonlyArray<ComposedDisplayThreshold>
   readonly combinedRules: ReadonlyArray<ComposedDisplayCombinedRule>
@@ -58,7 +64,7 @@ export interface ComposedTrendThreshold extends ComposedDisplayThreshold {
   readonly signals: ReadonlyArray<string>
 }
 
-/** One value axis of a trend: the pens of one unit and their thresholds. */
+/** One value axis of a trend: one measurement of parallel equipment, and its thresholds. */
 export interface ComposedTrendStrip {
   readonly unit: ProcessUnit
   readonly pens: ReadonlyArray<ComposedDisplayPen>
@@ -71,6 +77,8 @@ export interface ComposedTrendPanel {
   readonly horizon: ComposedDisplayHorizon
   readonly horizonMs: number
   readonly strips: ReadonlyArray<ComposedTrendStrip>
+  /** Signals this Run does not record: shown as live values beside the trend, never as empty plots. */
+  readonly live: ReadonlyArray<ComposedDisplayPen>
   /** Plot height of each strip, fitted to the display. */
   readonly plot: number
 }
@@ -99,7 +107,7 @@ export type CompiledComposedPanel = ComposedTrendPanel | ComposedComparisonPanel
 /** Every signal a compiled panel shows, in display order. */
 export const composedPanelPens = (panel: CompiledComposedPanel): ReadonlyArray<ComposedDisplayPen> => {
   if (panel.kind === 'alarms') return []
-  return panel.kind === 'trend' ? panel.strips.flatMap(strip => strip.pens) : panel.pens
+  return panel.kind === 'trend' ? [...panel.strips.flatMap(strip => strip.pens), ...panel.live] : panel.pens
 }
 
 export interface CompiledComposedDisplay {
@@ -251,11 +259,30 @@ const drawnThresholds = (pens: ReadonlyArray<ComposedDisplayPen>): ReadonlyArray
   return [...byAction.values()].sort((left, right) => left.value - right.value || left.ruleId.localeCompare(right.ruleId))
 }
 
+// Parallel equipment shares an equipment class (the four steam generators);
+// a pipe's measurements belong to its service (main steam).
+const signalIdentity = (
+  system: ProcessPlantRuntimeInstance,
+  binding: ProcessSignalBinding,
+): { readonly name: string; readonly measurement: string } => {
+  const variable = String(binding.path).slice(String(binding.path).indexOf('.') + 1)
+  if (binding.owner.type === 'link') {
+    const link = system.plant.graph.links[binding.owner.linkIndex]!
+    return { name: binding.tagId ?? binding.label, measurement: `link:${link.service ?? link.kind}.${variable}|${binding.unit}` }
+  }
+  const component = system.plant.graph.components[binding.owner.componentIndex]!
+  const named = binding.label.toLowerCase().includes(component.label.toLowerCase()) ? binding.label : `${binding.label} · ${component.label}`
+  return {
+    name: binding.tagId ?? named,
+    measurement: `${component.metadata?.equipmentClass ?? component.kind}.${variable}|${binding.unit}`,
+  }
+}
+
 const resolvePens = (
   system: ProcessPlantRuntimeInstance,
   signals: ReadonlyArray<ComposedDisplaySignal>,
   panelPath: string,
-  options: { readonly numericOnly: boolean; readonly panelName: string },
+  options: { readonly numericOnly: boolean; readonly panelName: string; readonly recordedSeriesIds: ReadonlySet<string> },
   issues: ComposedDisplayIssue[],
 ): ReadonlyArray<ComposedDisplayPen> | undefined => {
   const pens: ComposedDisplayPen[] = []
@@ -283,16 +310,21 @@ const resolvePens = (
       return
     }
     const { thresholds, combinedRules } = icThresholdsForSignal(system.plant, binding.path)
+    const seriesId = recordingSeriesIdFor(system.plant.id, binding.path)
+    const identity = signalIdentity(system, binding)
     pens.push({
       ref: signal.ref,
       role: signal.role,
       path: binding.path,
       ...(binding.tagId === undefined ? {} : { tagId: binding.tagId }),
       label: binding.label,
+      name: identity.name,
+      measurement: identity.measurement,
       unit: binding.unit,
       quantity: binding.quantity,
       valueKind: typeof value === 'number' ? 'number' : 'boolean',
-      seriesId: recordingSeriesIdFor(system.plant.id, binding.path),
+      seriesId,
+      recorded: options.recordedSeriesIds.has(seriesId),
       ...(binding.limits === undefined ? {} : { limits: binding.limits }),
       thresholds,
       combinedRules,
@@ -303,6 +335,9 @@ const resolvePens = (
 
 const unitGroups = (pens: ReadonlyArray<ComposedDisplayPen>): string => [...new Set(pens.map(pen => pen.unit))]
   .map(unit => `[${unit}] ${pens.filter(pen => pen.unit === unit).map(pen => pen.ref).join(', ')}`).join('; ')
+
+const stripGroups = (strips: ReadonlyArray<ComposedTrendStrip>): string => strips
+  .map(strip => `[${strip.pens[0]!.label}, ${strip.unit}] ${strip.pens.map(pen => pen.ref).join(', ')}`).join('; ')
 
 const sharedUnit = (
   pens: ReadonlyArray<ComposedDisplayPen>,
@@ -318,14 +353,18 @@ const sharedUnit = (
   return undefined
 }
 
-// The Pack, not the author, decides how trended signals share axes: one strip
-// per unit, the strip holding a primary signal first, then in request order.
+// The Pack, not the author, decides how trended signals share axes. Only the
+// same measurement of parallel equipment shares one (the four SG levels);
+// pressurizer and SG pressure, or core outlet temperature and subcooling
+// margin, get their own strips so neither is flattened by the other's range
+// and no strip shows another signal's limits. The strip holding a primary
+// signal comes first, then request order.
 const trendStrips = (pens: ReadonlyArray<ComposedDisplayPen>): ReadonlyArray<ComposedTrendStrip> => {
-  const units = [...new Set(pens.map(pen => pen.unit))]
-  const hasPrimary = (unit: ProcessUnit): boolean => pens.some(pen => pen.unit === unit && pen.role === 'primary')
-  return [...units.filter(hasPrimary), ...units.filter(unit => !hasPrimary(unit))].map(unit => {
-    const stripPens = pens.filter(pen => pen.unit === unit)
-    return { unit, pens: stripPens, thresholds: drawnThresholds(stripPens) }
+  const measurements = [...new Set(pens.map(pen => pen.measurement))]
+  const hasPrimary = (measurement: string): boolean => pens.some(pen => pen.measurement === measurement && pen.role === 'primary')
+  return [...measurements.filter(hasPrimary), ...measurements.filter(measurement => !hasPrimary(measurement))].map(measurement => {
+    const stripPens = pens.filter(pen => pen.measurement === measurement)
+    return { unit: stripPens[0]!.unit, pens: stripPens, thresholds: drawnThresholds(stripPens) }
   })
 }
 
@@ -336,24 +375,33 @@ const compilePanel = (
   system: ProcessPlantRuntimeInstance,
   panel: ComposedDisplayPanel,
   panelIndex: number,
+  recordedSeriesIds: ReadonlySet<string>,
   issues: ComposedDisplayIssue[],
 ): UnsizedPanel | undefined => {
   const panelPath = `panels.${panelIndex}`
   if (panel.kind === 'alarms') return { kind: 'alarms', scope: panel.scope, ruleIds: [] }
   if (panel.kind === 'readouts') {
-    const pens = resolvePens(system, panel.signals, panelPath, { numericOnly: false, panelName: 'readouts' }, issues)
+    const pens = resolvePens(system, panel.signals, panelPath, { numericOnly: false, panelName: 'readouts', recordedSeriesIds }, issues)
     return pens === undefined ? undefined : { kind: 'readouts', pens }
   }
-  const pens = resolvePens(system, panel.signals, panelPath, { numericOnly: true, panelName: panel.kind }, issues)
+  const pens = resolvePens(system, panel.signals, panelPath, { numericOnly: true, panelName: panel.kind, recordedSeriesIds }, issues)
   if (pens === undefined) return undefined
-  if (panel.kind === 'trend') return { kind: 'trend', horizon: panel.horizon, horizonMs: composedDisplayHorizonMs[panel.horizon], strips: trendStrips(pens) }
+  if (panel.kind === 'trend') {
+    return {
+      kind: 'trend',
+      horizon: panel.horizon,
+      horizonMs: composedDisplayHorizonMs[panel.horizon],
+      strips: trendStrips(pens.filter(pen => pen.recorded)),
+      live: pens.filter(pen => !pen.recorded),
+    }
+  }
   const unit = sharedUnit(pens, panelPath, issues)
   if (unit === undefined) return undefined
   return { kind: 'comparison', unit, pens, thresholds: drawnThresholds(pens) }
 }
 
 const panelShape = (panel: UnsizedPanel): ComposedPanelShape => {
-  if (panel.kind === 'trend') return { kind: 'trend', strips: panel.strips.map(strip => strip.pens.length) }
+  if (panel.kind === 'trend') return { kind: 'trend', strips: panel.strips.map(strip => strip.pens.length), live: panel.live.length }
   if (panel.kind === 'comparison') return { kind: 'comparison', rows: panel.pens.length }
   if (panel.kind === 'readouts') return { kind: 'readouts', values: panel.pens.length }
   return { kind: 'alarms' }
@@ -401,11 +449,14 @@ const layoutIssues = (
   panels.forEach((panel, index) => {
     if (panel.kind !== 'trend') return
     const pens = composedPanelPens(panel)
+    if (panel.strips.length === 0) {
+      issues.push({ path: `panels.${index}.signals`, message: `none of ${pens.map(pen => pen.ref).join(', ')} is recorded by this Run's historian, so the trend would have no history; show them in a readouts panel, or trend tagged instruments` })
+    }
     if (panel.strips.length > COMPOSED_TREND_MAX_STRIPS) {
-      issues.push({ path: `panels.${index}.signals`, message: `a trend stacks at most ${COMPOSED_TREND_MAX_STRIPS} strips, one per unit, but these signals use ${panel.strips.length} units: ${unitGroups(pens)}; drop the signals of the unit that answers least of the question` })
+      issues.push({ path: `panels.${index}.signals`, message: `a trend stacks at most ${COMPOSED_TREND_MAX_STRIPS} strips, one per measurement (parallel equipment shares one), but these signals are ${panel.strips.length} measurements: ${stripGroups(panel.strips)}; drop the measurement that answers least of the question` })
     }
     for (const strip of panel.strips.filter(candidate => candidate.pens.length > COMPOSED_TREND_STRIP_MAX_PENS)) {
-      issues.push({ path: `panels.${index}.signals`, message: `a trend strip shows at most ${COMPOSED_TREND_STRIP_MAX_PENS} signals of one unit, but [${strip.unit}] has ${strip.pens.length}: ${strip.pens.map(pen => pen.ref).join(', ')}; keep the most telling ones, or compare parallel loops in a comparison panel` })
+      issues.push({ path: `panels.${index}.signals`, message: `a trend strip shows at most ${COMPOSED_TREND_STRIP_MAX_PENS} parallel signals, but [${strip.pens[0]!.label}, ${strip.unit}] has ${strip.pens.length}: ${strip.pens.map(pen => pen.ref).join(', ')}; keep the most telling ones, or compare the loops in a comparison panel` })
     }
   })
   if (fit.height > COMPOSED_DISPLAY_MAX_HEIGHT_PX) {
@@ -439,6 +490,8 @@ export const compileComposedDisplay = (
   system: ProcessPlantRuntimeInstance,
   input: unknown,
   purpose: 'compose' | 'view',
+  /** Series this Run's historian records; trends of other signals start when the view opens. */
+  recordedSeriesIds: ReadonlySet<string>,
 ): ComposedDisplayCompileResult => {
   const parsed = composedDisplayCompositionSchema.safeParse(input)
   if (!parsed.success) return { ok: false, issues: zodIssues(parsed.error) }
@@ -447,7 +500,7 @@ export const compileComposedDisplay = (
   if (composition.plantId !== system.plant.id) {
     issues.push({ path: 'plantId', message: `composition targets ${composition.plantId}, not ${system.plant.id}` })
   }
-  const panels = composition.panels.map((panel, index) => compilePanel(system, panel, index, issues))
+  const panels = composition.panels.map((panel, index) => compilePanel(system, panel, index, recordedSeriesIds, issues))
   if (issues.length > 0) return { ok: false, issues }
   const unsized = panels.filter((panel): panel is UnsizedPanel => panel !== undefined)
   const fit = fitComposedDisplay(unsized.map(panelShape))
@@ -475,7 +528,7 @@ export const compileComposedDisplay = (
 }
 
 const operatorText = { '<': 'below', '<=': 'at or below', '>': 'above', '>=': 'at or above' } as const
-const signalName = (pen: ComposedDisplayPen): string => `${pen.tagId ?? pen.path} (${pen.label}, ${pen.unit}, ${pen.role})`
+const signalName = (pen: ComposedDisplayPen): string => `${pen.name} (${pen.tagId === undefined ? `${pen.path}, ` : `${pen.label}, `}${pen.unit}, ${pen.role})`
 
 // Lines are named as the display labels them ("LO ALM 30 %"), so an answer
 // can refer to them by the same name.
@@ -488,21 +541,24 @@ export const composedDisplaySignals = (display: CompiledComposedDisplay): Readon
   readonly tagId?: string
   readonly path: string
   readonly label: string
+  readonly name: string
   readonly unit: string
 }> => display.panels.flatMap(panel => composedPanelPens(panel).map(pen => ({
   ref: pen.ref,
   ...(pen.tagId === undefined ? {} : { tagId: pen.tagId }),
   path: String(pen.path),
   label: pen.label,
+  name: pen.name,
   unit: pen.unit,
 })))
 
 /** Plain statements of what the view shows, so the agent's text need not repeat it. */
 export const composedDisplayShows = (display: CompiledComposedDisplay): ReadonlyArray<string> => display.panels.flatMap(panel => {
   if (panel.kind === 'trend') {
-    const strips = panel.strips.length === 1 ? '' : ` in ${panel.strips.length} stacked strips (one per unit)`
+    const strips = panel.strips.length === 1 ? '' : ` in ${panel.strips.length} stacked strips (one per measurement)`
     return [
-      `Live trend of the last ${panel.horizon}${strips}: ${composedPanelPens(panel).map(signalName).join('; ')}`,
+      ...(panel.strips.length === 0 ? [] : [`Live trend of the last ${panel.horizon}${strips}: ${panel.strips.flatMap(strip => strip.pens).map(signalName).join('; ')}`]),
+      ...(panel.live.length === 0 ? [] : [`Current values only, not recorded by this Run (no history to describe): ${panel.live.map(signalName).join('; ')}`]),
       ...panel.strips.flatMap(strip => strip.thresholds.map(threshold => thresholdText(threshold, strip.unit))),
     ]
   }
@@ -511,10 +567,35 @@ export const composedDisplayShows = (display: CompiledComposedDisplay): Readonly
   return [panel.scope === 'related' ? `Active alarms and trips of the ${panel.ruleIds.length} I&C rules acting on the displayed signals and their equipment` : 'All active alarms and trips of the Plant']
 })
 
+/**
+ * Each displayed numeric signal's nearest alarm or trip limit now, worded as
+ * the display words it, nearest first relative to the limit. The answer's
+ * "what to watch" should start from these, not from a limit the signal is
+ * moving away from.
+ */
+export const composedDisplayMargins = (
+  display: CompiledComposedDisplay,
+  read: (path: VariablePath) => unknown,
+): ReadonlyArray<string> => {
+  const pens = [...new Map(display.panels.flatMap(composedPanelPens).map(pen => [pen.path, pen])).values()]
+  return pens
+    .flatMap(pen => {
+      const value = read(pen.path)
+      if (typeof value !== 'number') return []
+      const margin = nearestThresholdMargin(value, pen.thresholds)
+      if (margin === null) return []
+      const relative = margin.margin / Math.max(Math.abs(margin.threshold.value), Number.EPSILON)
+      return [{ relative, text: `${pen.name}: ${formatQuantity(value, pen.unit)}, ${marginText(margin, pen.unit)}` }]
+    })
+    .sort((left, right) => left.relative - right.relative)
+    .map(entry => entry.text)
+}
+
 export const composedDisplayWarnings = (display: CompiledComposedDisplay): ReadonlyArray<string> => display.panels.flatMap(panel => {
   if (panel.kind === 'alarms') return panel.scope === 'related' && panel.ruleIds.length === 0 ? ['No alarm or trip rule acts on the displayed signals; the related alarms panel will stay empty.'] : []
   return composedPanelPens(panel).flatMap(pen => [
     ...(panel.kind === 'trend' && pen.role === 'primary' && pen.thresholds.length === 0 ? [`No single-signal I&C threshold acts on ${pen.tagId ?? pen.path}; its trend shows values without threshold lines.`] : []),
+    ...(panel.kind === 'trend' && !pen.recorded ? [`${pen.tagId ?? pen.path} is not recorded by this Run's historian; its trend starts when the view opens. Do not describe its history from the display.`] : []),
     ...pen.combinedRules.map(rule => `${pen.tagId ?? pen.path} also feeds the combined rule "${rule.label}" (${rule.kind}); it is listed, not drawn.`),
   ])
 })

@@ -7,11 +7,15 @@ import { resolveProcessPlantSignalBinding, resolveProcessPlantSignalPath } from 
 // I&C rules. They are named I&C thresholds, not variable limits: they state
 // where a rule acts, not a qualified operating envelope.
 export type ComposedDisplayThresholdKind = 'trip' | 'alarm' | 'control'
+/** Alarm priority of the rule's alarm or trip effect; it alone picks the alarm colour everywhere. */
+export type ComposedDisplaySeverity = 'info' | 'notice' | 'warning' | 'critical'
 
 export interface ComposedDisplayThreshold {
   readonly ruleId: string
   readonly label: string
   readonly kind: ComposedDisplayThresholdKind
+  /** Present for alarm and trip rules. */
+  readonly severity?: ComposedDisplaySeverity
   readonly operator: '<' | '<=' | '>' | '>='
   /** Low thresholds act when the value falls; high ones when it rises. */
   readonly direction: 'low' | 'high'
@@ -38,6 +42,15 @@ const kindFor = (rule: ProcessPlantIcRule): ComposedDisplayThresholdKind => {
   if (rule.effects.some(effect => effect.type === 'trip.enter')) return 'trip'
   if (rule.effects.some(effect => effect.type === 'alarm.enter')) return 'alarm'
   return 'control'
+}
+
+// Same defaults as the alarm lifecycle, so a threshold and its alarm row agree.
+const severityFor = (rule: ProcessPlantIcRule): ComposedDisplaySeverity | undefined => {
+  for (const effect of rule.effects) {
+    if (effect.type === 'trip.enter') return effect.severity ?? 'critical'
+    if (effect.type === 'alarm.enter') return effect.severity ?? 'warning'
+  }
+  return undefined
 }
 
 const labelFor = (rule: ProcessPlantIcRule): string => {
@@ -74,10 +87,12 @@ export const icThresholdsForSignal = (
       // Equality rules act on discrete states; they have no position on a value axis.
       if (typeof condition.value !== 'number' || condition.operator === '==' || condition.operator === '!=') continue
       const modeLabel = modeLabelFor(rule)
+      const severity = severityFor(rule)
       thresholds.push({
         ruleId: rule.id,
         label: labelFor(rule),
         kind: kindFor(rule),
+        ...(severity === undefined ? {} : { severity }),
         operator: condition.operator,
         direction: condition.operator === '<' || condition.operator === '<=' ? 'low' : 'high',
         value: condition.value,

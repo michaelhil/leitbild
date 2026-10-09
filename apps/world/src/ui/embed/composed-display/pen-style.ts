@@ -18,6 +18,5 @@ export const roleLabel: Readonly<Record<ComposedDisplaySignalRole, string>> = {
   'counter-evidence': 'cross-check',
 }
 
-/** Tags identify instruments; untagged model signals show their label and owner. */
-export const displayName = (pen: { readonly tagId?: string; readonly label: string; readonly path: string }): string =>
-  pen.tagId ?? `${pen.label} (${String(pen.path).split('.')[0]})`
+/** What operators call the signal, decided by World: its tag, or its label with its equipment. */
+export const displayName = (pen: { readonly name: string }): string => pen.name

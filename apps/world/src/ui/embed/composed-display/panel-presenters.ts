@@ -1,48 +1,21 @@
 // Pure derivations for composed-display panels. Thresholds come from World;
 // these functions only relate them to the latest sampled values.
-import { thresholdName } from '../../../packs/process-plant/displays/display-text.ts'
+import { displayValue, formatValue, unitLabel } from '../../../packs/process-plant/displays/display-text.ts'
 import type { ComposedDisplayThreshold } from '../../../packs/process-plant/displays/ic-thresholds.ts'
 import type { ComposedDisplayAlarm } from './composed-display-client.ts'
-import { formatValue, type TrendPoint } from './trend-geometry.ts'
-
-export interface ThresholdMargin {
-  readonly threshold: ComposedDisplayThreshold
-  /** Distance before the rule acts; negative once the value is beyond it. */
-  readonly margin: number
-}
-
-/** The alarm or trip threshold the value is closest to acting on. */
-export const nearestThresholdMargin = (
-  value: number,
-  thresholds: ReadonlyArray<ComposedDisplayThreshold>,
-): ThresholdMargin | null => {
-  const margins = thresholds
-    .filter(threshold => threshold.kind !== 'control')
-    .map(threshold => ({
-      threshold,
-      margin: threshold.operator === '<' || threshold.operator === '<=' ? value - threshold.value : threshold.value - value,
-    }))
-  if (margins.length === 0) return null
-  return margins.reduce((nearest, candidate) => candidate.margin < nearest.margin ? candidate : nearest)
-}
-
-export const marginText = (margin: ThresholdMargin, unit: string): string => {
-  const name = thresholdName(margin.threshold, unit)
-  const qualified = margin.threshold.modeLabel === undefined ? '' : ` (${margin.threshold.modeLabel})`
-  if (margin.margin < 0) return `past ${name}${qualified}`
-  return `${name}${qualified} · ${formatValue(margin.margin)} ${margin.threshold.direction === 'low' ? 'above' : 'below'}`
-}
+import type { TrendPoint } from './trend-geometry.ts'
 
 // A rate needs some history: two points at least this far apart.
 const RATE_MIN_SPAN_MS = 10_000
 
 /**
- * The window a rate is measured over: an eighth of the trend horizon, so the
- * number follows the curve the operator sees (2 min horizon: 15 s), between
- * 10 s for 1 s samples and one minute.
+ * The window a rate is measured over: short enough that the number states the
+ * present tendency of the curve the operator sees (a minute-long window still
+ * reported a fall after the curve had flattened), between 10 s for 1 s samples
+ * and 30 s. The change qualifier compares it with three windows.
  */
 export const rateWindowMs = (horizonMs: number): number =>
-  Math.min(60_000, Math.max(RATE_MIN_SPAN_MS, Math.round(horizonMs / 8 / 5_000) * 5_000))
+  Math.min(30_000, Math.max(RATE_MIN_SPAN_MS, Math.round(horizonMs / 16 / 5_000) * 5_000))
 
 /** Least-squares slope over the window, per minute; null unless the data spans most of it. */
 export const ratePerMinute = (points: ReadonlyArray<TrendPoint>, windowMs: number): number | null => {
@@ -63,12 +36,12 @@ const isSteady = (rate: number, value: number): boolean => Math.abs(rate) <= Mat
 export type RateChange = 'accelerating' | 'slowing' | 'reversing'
 
 /**
- * How the rate over the window compares with the rate over four windows, so a
- * curve that has flattened is not reported only by its older, steeper slope.
+ * How the rate over the window compares with the rate over three windows, so
+ * a curve that has flattened is not reported only by its older, steeper slope.
  */
 export const rateChange = (points: ReadonlyArray<TrendPoint>, windowMs: number, value: number): RateChange | null => {
   const recent = ratePerMinute(points, windowMs)
-  const longer = ratePerMinute(points, windowMs * 4)
+  const longer = ratePerMinute(points, windowMs * 3)
   if (recent === null || longer === null || isSteady(longer, value)) return null
   if (!isSteady(recent, value) && Math.sign(recent) !== Math.sign(longer)) return 'reversing'
   if (Math.abs(recent) < Math.abs(longer) * 0.5) return 'slowing'
@@ -78,7 +51,7 @@ export const rateChange = (points: ReadonlyArray<TrendPoint>, windowMs: number, 
 
 export const windowText = (windowMs: number): string => `${Math.round(windowMs / 1000)} s`
 
-/** "▼ −1.80 %/min · 15 s · slowing"; the window and change only when given. */
+/** "▼ −1.80 %/min · 15 s · slowing" in display units; the window and change only when given. */
 export const rateText = (
   rate: number | null,
   value: number,
@@ -89,7 +62,8 @@ export const rateText = (
   const window = detail.windowMs === undefined ? '' : ` · ${windowText(detail.windowMs)}`
   if (isSteady(rate, value)) return `► steady${window}`
   const change = detail.change === undefined || detail.change === null ? '' : ` · ${detail.change}`
-  return `${rate > 0 ? '▲ +' : '▼ −'}${formatValue(Math.abs(rate))} ${unit}/min${window}${change}`
+  const label = unitLabel(unit)
+  return `${rate > 0 ? '▲ +' : '▼ −'}${formatValue(displayValue(Math.abs(rate), unit))}${label === '' ? '' : ` ${label}`}/min${window}${change}`
 }
 
 /** Minutes until the value reaches the threshold at the current rate, if moving toward it. */
@@ -99,6 +73,13 @@ export const minutesToThreshold = (value: number, rate: number | null, threshold
   if (Math.sign(distance) !== Math.sign(rate)) return null
   const already = threshold.direction === 'low' ? value <= threshold.value : value >= threshold.value
   return already ? null : distance / rate
+}
+
+/** "≈45 s" or "≈4 min" to the threshold at the current rate; empty when not approaching it within half an hour. */
+export const timeToThresholdText = (value: number, rate: number | null, threshold: ComposedDisplayThreshold): string => {
+  const minutes = minutesToThreshold(value, rate, threshold)
+  if (minutes === null || minutes > 30) return ''
+  return minutes < 2 ? `≈${Math.max(1, Math.round(minutes * 60))} s` : `≈${Math.round(minutes)} min`
 }
 
 export const agoText = (ms: number): string => {
@@ -126,8 +107,9 @@ export const median = (values: ReadonlyArray<number>): number | null => {
 const severityRank = { critical: 0, warning: 1, notice: 2, info: 3 } as const
 
 /**
- * Alarms in reading order: trips before alarms, then severity, unacknowledged
- * first, newest first. "related" keeps only the rules acting on the display.
+ * Alarms in reading order: the first-out alarm, then by onset so the
+ * initiating alarm leads its consequences, then severity. "related" keeps only
+ * the rules acting on the display.
  */
 export const visibleAlarms = (
   alarms: ReadonlyArray<ComposedDisplayAlarm>,
@@ -138,10 +120,10 @@ export const visibleAlarms = (
   return alarms
     .filter(alarm => scope === 'plant' || related.has(alarm.ruleId))
     .sort((left, right) =>
-      Number(left.kind !== 'trip') - Number(right.kind !== 'trip')
+      Number(right.firstOut) - Number(left.firstOut)
+      || (left.firstActiveElapsedMs ?? Number.POSITIVE_INFINITY) - (right.firstActiveElapsedMs ?? Number.POSITIVE_INFINITY)
       || severityRank[left.severity] - severityRank[right.severity]
-      || Number(left.acknowledged) - Number(right.acknowledged)
-      || (right.firstActiveElapsedMs ?? 0) - (left.firstActiveElapsedMs ?? 0))
+      || left.title.localeCompare(right.title))
 }
 
 /** Age as m:ss under an hour, otherwise h:mm, so onset order is readable at a glance. */
@@ -151,6 +133,3 @@ export const alarmAge = (plantElapsedMs: number, firstActiveElapsedMs: number | 
   if (seconds < 3600) return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
   return `${Math.floor(seconds / 3600)} h ${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}`
 }
-
-/** Simulation time of day as the display header shows it: "10:01:00". */
-export const simulationClock = (ms: number): string => new Date(ms).toISOString().slice(11, 19)

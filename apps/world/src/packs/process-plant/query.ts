@@ -34,6 +34,8 @@ export const answerProcessPlantQuery = (config: {
   readonly objects: ReadonlyMap<ObjectId, Pick<OperationalObject, 'id' | 'label'>>
   /** Simulation Run time the Plants have been advanced to; required by time-stamped views. */
   readonly simulationTime?: IsoTimestamp
+  /** Series the Run's historian records (empty when it records none); required by composed displays. */
+  readonly recordedSeriesIds?: ReadonlySet<string>
 }): unknown => answerProcessPlantCatalogQuery(config)
   ?? answerProcessPlantCredibilityQuery(config)
   ?? answerProcessPlantIcQuery(config)
