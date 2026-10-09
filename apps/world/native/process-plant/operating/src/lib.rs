@@ -6,5 +6,8 @@
 
 pub mod capture;
 pub mod heat_history;
+pub mod hydraulics;
 pub mod kinetics;
+pub mod phase;
 pub mod poisons;
+pub mod thermal;

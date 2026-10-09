@@ -24,6 +24,15 @@ requirement of this operating kernel.
 - Additive fixed-input sparse kinetics Jacobian assembly in linear work, without
   evaluating the whole block once per column. Sum repeated diagonal entries;
   apply constitutive chain rules and the solver's mass shift separately.
+- Nonlinear fuel/clad calorics, two-node fuel conduction, one finite helium
+  store per assembly, three algebraic surfaces per material half and reciprocal
+  core/guide/fitting/plenum/SG heat laws with current property directions.
+- Pure-water separated liquid/steam and equilibrium SG charts, exact absence,
+  Stefan conversion and opposite phase-volume work. These local equations do
+  not implement a PZR mixture, connected phase event or full pressure closure.
+- Current-material pump, friction and gravity force/work ports on the actual
+  circulation graph. The selected bounded low-Mach thermal convention does not
+  claim exact coolant kinetic/gravitational feedback into thermal stocks.
 
 Compile immutable coefficients/topology once; evaluate into caller-owned
 buffers without stage allocation. Signed finite Newton trials are distinct
@@ -48,7 +57,7 @@ not the first module's replaced `7R` regional inventory. It also records the
 uniform two-metre emission approximation and unqualified physical domains.
 
 There are no default plant coefficients, prescribed successful outcomes,
-water-property approximation, solver wrapper or live Pack installation here.
+replacement water-property formulation, solver wrapper or live Pack installation here.
 Core tests use explicit synthetic equation fixtures; separate opt-in checks
 consume the actual owner-generated package. Neither qualifies a connected LD-01.
 
@@ -77,12 +86,60 @@ receipts. The source-off stationary comparator is separate from actual finite
 precursor history and external source. A partial pressure check receives only
 direct coolant deposition; it does not bypass fuel/clad energy storage.
 
-This binary advances **no simulated time**. Loop mechanics/work, five split
-resistances, reciprocal heat laws, PZR/phase transitions, full feedback Jacobian,
-stock IDA/KLU integration, real actuation/acquisition and Grid remain joins—not
-hidden fixtures, imposed successful outcomes or measured whole-plant throughput.
+This binary advances **no simulated time**. Actual mechanical/thermal law blocks
+now exist separately; their connected momentum/inventory/PZR chart, initialized
+surfaces, phase events, full feedback Jacobian, stock IDA/KLU integration, real
+actuation/acquisition and Grid remain joins—not hidden fixtures, imposed
+successful outcomes or measured whole-plant throughput.
 SG fluid charts are checked by the preparation helper/tests; the native package
 currently consumes SG metal, not connected SG fluid evolution.
+
+## Actual water and thermal equations (opt-in)
+
+The separate `water-ffi` package links one narrow C ABI to the same pinned,
+maintained IF97 source. The core remains unsafe-forbidden and does not depend on
+this package or the parent research crate. Build in a trusted local artifact
+directory; Cargo requires the archive and receipt but does not cryptographically
+attest an independently substituted binary.
+
+From the app root, then the package directory respectively:
+
+```sh
+bun apps/world/scripts/reference-design-operating-water.ts /path/to/pinned-IF97 /path/to/water-artifact
+```
+
+```sh
+LD01_OPERATING_WATER_LIB_DIR=/path/to/water-artifact cargo test --locked
+LD01_OPERATING_WATER_LIB_DIR=/path/to/water-artifact cargo test --locked --no-run --test actual_thermal
+```
+
+The latter prints the exact test executable. Supply that executable to the
+actual owner-package test from the app root:
+
+```sh
+LD01_WIKI_ROOT=/path/to/Leitbild-wiki LD01_IF97_DIRECTORY=/path/to/pinned-IF97 LD01_OPERATING_THERMAL_TEST=/path/to/actual_thermal-executable bun test apps/world/scripts/reference-design-operating-thermal.test.ts
+```
+
+The harness compiles actual current owners, writes a temporary package, runs
+the native real-property test and removes that temporary artifact. It checks
+all 2,710 finite solid/helium/metal calorics, actual contact incidence, reciprocal
+heat and an actual SG correlation/property direction. The initial zero-flow
+surface seeds are **not** solved constraints: their measured defects and the
+nonsteady finite-metal discharge are reported, not silently initialized away.
+This is no elapsed-time result or production allocation benchmark.
+
+The package's source/heat/temperature values describe one prepared point, not
+mission forcing. A composed residual must recompute event/history heat and its
+directions from the same current nuclear/material trial, recover temperatures
+from owned energies and call these same thermal laws. Prepared cp cannot become
+a constant mission capacity. Actual IF97 thermodynamic first partials are exact;
+transport/cp/expansion coefficient directions use disclosed local inexact probes.
+
+The owner-approved [energy reduction](https://leitbild.app/wiki?path=world%2Fpacks%2Fprocess-plant%2Freference-designs%2Fengineering%2Fdevelopment%2Fdecisions%2F0012-bounded-low-mach-energy.md)
+pays delivered shaft power once into finite pump water, without a second friction
+heater. Diagnostic fluid K and omitted mechanical feedback require local output
+budgets before A3. This approval does not admit the two-main/five-split dynamics
+or guarantee precise PZR regulation. No acoustic research campaign is required.
 
 Native property/package tests are opt-in through `LD01_WIKI_ROOT`,
 `LD01_IF97_DIRECTORY` and `LD01_OPERATING_PREPARATION`. Ordinary Bun/application

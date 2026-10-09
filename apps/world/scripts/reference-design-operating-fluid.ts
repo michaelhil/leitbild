@@ -394,7 +394,7 @@ export async function prepareOperatingFluid(directory:string,if97Directory:strin
         simultaneousProjection:pressureContinuityProjection(regions,geometry.edges,regions.map(()=>0),regions.map(()=>0),Array(geometry.cycleCount).fill(0),geometry.edges.map(e=>e.from)),
         sourceBandToCoolant:Array.from({length:24},(_,i)=>2*Math.floor(i/6)+(i%6<3?0:1)),
         hydrostaticRule:'Current face integral g*sum(rho_segment*dz_segment); pi has one gauge, not frozen EOS offsets',
-        energyRule:'Fixed Eulerian Vi: signed shared enthalpy flux once; no extra -P*Vdot. Loop K/PE and hydraulic multiplier work must be joined reciprocally.'},
+        energyRule:'Decision0012 operating low-Mach: fixed Eulerian Vi, shared thermal enthalpy once; paid shaft work once to pumpwater. Fluid K/PE feedback is diagnosed/bounded, not an exact additional thermal stock. Local budgets and joined momentum/pressure chart remain unadmitted.'},
       materials:{fuelMass_kg:geometry.fuelMass_kg,activeCladMass_kg:geometry.activeCladMass_kg,fullGuideMass_kg:geometry.fullGuideMass_kg,
         plenumCladMass_kg:geometry.plenumCladMass_kg,fittingMass_kg:geometry.fittingMass_kg,coreWetArea_m2:geometry.coreWetArea_m2,
         fuelTemperature_K:reference.fuelTemperature_K,cladTemperature_K:reference.cladTemperature_K,heliumTemperature_K:reference.heliumTemperature_K,

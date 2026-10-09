@@ -1,0 +1,17 @@
+[package]
+name = "leitbild-operating-water"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Opt-in narrow maintained IF97 C ABI, not another property backend"
+
+[workspace]
+
+[dependencies]
+leitbild-operating-plant = { path = ".." }
+
+[dev-dependencies]
+serde_json = "=1.0.151"
+
+[lints.clippy]
+all = "warn"
