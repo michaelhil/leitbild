@@ -144,3 +144,12 @@ export const icAlarmRuleIdsForEquipment = (
     .filter(rule => conditionBindings(plant, rule.condition).some(binding => equipmentKeys(binding).some(key => equipment.has(key))))
     .map(rule => rule.id)
 }
+
+/** Alarm and trip rules acting on any signal of one component: they frame its mimic symbol. */
+export const icAlarmRuleIdsForComponent = (
+  plant: CompiledProcessPlant,
+  componentId: string,
+): ReadonlyArray<string> => plant.automation.rules
+  .filter(rule => rule.enabled && kindFor(rule) !== 'control')
+  .filter(rule => conditionBindings(plant, rule.condition).some(binding => equipmentKeys(binding).includes(componentId)))
+  .map(rule => rule.id)
