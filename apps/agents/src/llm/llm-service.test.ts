@@ -10,6 +10,7 @@ import type { MonitorState } from './provider-monitor.ts'
 import type { ProviderAttemptRecord, ProviderRouter } from './router.ts'
 import { createCloudProviderError } from './errors.ts'
 import { createLLMService } from './llm-service.ts'
+import { classifyLLMError } from '../agents/error-classify.ts'
 
 interface FakeRouterOpts {
   readonly chat?: (req: ChatRequest) => Promise<ChatResponse>
@@ -255,5 +256,20 @@ describe('LLMService — provider auth isolation', () => {
     const response = await provider.chat({ model: 'primary', messages: [] })
     expect(response.content).toContain('fallback-1')
     expect(calls).toEqual(['primary', 'fallback-1'])
+  })
+})
+
+describe('LLMService — failure reported to the agent', () => {
+  // ProviderRouter errors carry cause and remedy in their message and no
+  // attempts[]; the service must neither hide their classification nor add
+  // a remedy it has no evidence for.
+  for (const streaming of [false, true]) test(`${streaming ? 'stream' : 'chat'} keeps a router failure's classification and adds no invented remedy`, async () => {
+    const routed = createCloudProviderError({ code: 'provider_down', provider: 'router', message: 'gpt-5.4 could not be served. openrouter: shed.' })
+    const router = fakeRouter({ chat: async () => { throw routed }, stream: async function*() { throw routed } })
+    const provider = createLLMService({ router, getSystemChain: () => [] }).bound({ source: 'agent', fallbackChain: [] })
+    const request = { model: 'gpt-5.4', messages: [] }
+    const err = await (streaming ? Array.fromAsync(provider.stream!(request)) : provider.chat(request)).then(() => null, (error: unknown) => error)
+    expect(classifyLLMError(err)).toEqual({ code: 'provider_down', message: routed.message, providerHint: 'router' })
+    expect((err as { remediation?: string }).remediation).toBe('')
   })
 })

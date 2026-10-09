@@ -220,7 +220,10 @@ const buildRemediation = (
   hasChain: boolean,
   modelRef: string,
 ): string => {
-  if (attempts.length === 0) return `No eligible provider for ${modelRef}.`
+  // ProviderRouter errors carry cause and remedy in their message and no
+  // attempts[]. Without attempt evidence there is no honest remedy to add;
+  // "No eligible provider" here contradicted every router failure.
+  if (attempts.length === 0) return ''
   const codes = new Set(attempts.map(a => a.code))
   if (codes.has('no_key') || codes.has('disabled')) {
     const blocked = attempts.filter(a => a.code === 'no_key' || a.code === 'disabled').map(a => a.provider).join(', ')
@@ -315,10 +318,10 @@ export const createLLMService = (deps: LLMServiceDeps): LLMService => {
     }
     const message = lastError instanceof Error ? lastError.message : String(lastError)
     const out = new Error(message)
+    // Keep the original classification (kind, code, provider, status), or
+    // classifyLLMError reports every routed failure as "unknown".
+    if (lastError && typeof lastError === 'object') Object.assign(out, lastError)
     Object.assign(out, failure)
-    if (lastError && typeof lastError === 'object' && 'code' in lastError) {
-      Object.assign(out, { code: (lastError as { code?: string }).code })
-    }
     throw out
   }
 
