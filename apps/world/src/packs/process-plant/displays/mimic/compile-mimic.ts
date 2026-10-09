@@ -146,14 +146,8 @@ const plan = (plant: CompiledProcessPlant, scope: MimicScope, profile: MimicProf
     if (notDrawn.has(link.fromComponentIndex) && !notDrawn.has(link.toComponentIndex)) return [{ component: link.toComponentIndex, port: String(link.toPortName), direction: 'in' as const, links: [index], others: [{ component: link.fromComponentIndex, port: String(link.fromPortName) }] }]
     return []
   })
-  // A stub names its far ends in an order of their own (labels, then ports), and one stopping several alike
-  // ports (a vessel's cold legs) sits at the first of them by name: never what the order the Plant lists them in gives.
   const farLabel = (component: number): string => graph.components[component]!.metadata?.presentation?.shortLabel ?? graph.components[component]!.label
-  const scopeStubs = [...scope.stubs, ...extraStubs].map(stub => ({
-    ...stub,
-    port: stub.links.map(index => String(stub.direction === 'out' ? graph.links[index]!.fromPortName : graph.links[index]!.toPortName)).sort()[0]!,
-    others: [...stub.others].sort((a, b) => farLabel(a.component).localeCompare(farLabel(b.component)) || a.port.localeCompare(b.port)),
-  }))
+  const scopeStubs = [...scope.stubs, ...extraStubs]
 
   const items = new Map<string, PlannedItem>()
   const nodes: DiagramNode[] = []
@@ -284,7 +278,7 @@ const plan = (plant: CompiledProcessPlant, scope: MimicScope, profile: MimicProf
     for (const member of group) componentRank.set(member, rank)
     const lane = laneOf(component, loopOrder)
     addItem(
-      { id: nodeOf(index), item: { kind: 'component', component: index }, binding, presentation, rows: itemRows(group.length === 1 ? binding : bindings[0]!, presentation, { marker, members: group.length === 1 ? [] : bindings }), marker, role, rank, ...(lane === undefined ? {} : { lane }) },
+      { id: nodeOf(index), item: { kind: 'component', component: index }, binding, presentation, rows: itemRows(group.length === 1 ? binding : bindings[0]!, presentation, { marker, members: group.length === 1 ? [] : bindings, commands: profile.commands }), marker, role, rank, ...(lane === undefined ? {} : { lane }) },
       ports.map(port => ({ id: port, direction: portDirection(component, port), rank: port })),
     )
   }
@@ -322,7 +316,7 @@ const plan = (plant: CompiledProcessPlant, scope: MimicScope, profile: MimicProf
           const lane = laneOf(host, loopOrder)
           const marker = profile.valves === 'markers' && isValve(presentation)
           addItem(
-            { id, item: { kind: 'device', component: host.index, device: device.id }, binding, presentation, rows: itemRows(binding, presentation, { marker, members: [] }), marker, role: 'device', rank: `${componentRank.get(host.index)}|${device.id}`, ...(lane === undefined ? {} : { lane }) },
+            { id, item: { kind: 'device', component: host.index, device: device.id }, binding, presentation, rows: itemRows(binding, presentation, { marker, members: [], commands: profile.commands }), marker, role: 'device', rank: `${componentRank.get(host.index)}|${device.id}`, ...(lane === undefined ? {} : { lane }) },
             [{ id: 'in', direction: 'in', rank: 'in' }, { id: 'out', direction: 'out', rank: 'out' }],
           )
         }
@@ -350,7 +344,7 @@ const plan = (plant: CompiledProcessPlant, scope: MimicScope, profile: MimicProf
     const id = `s${at}`
     const component = graph.components[stub.component]!
     stubs.set(id, stub)
-    const text = stubText(graph, stub)
+    const text = stubText(graph, stub, profile.stubLabels)
     const lane = laneOf(component, loopOrder)
     nodes.push({
       id,
@@ -431,7 +425,7 @@ const assemble = (plant: CompiledProcessPlant, intent: MimicIntent | null, profi
       id,
       direction: stub.direction,
       end: { x: end.x, y: end.y, face: end.face },
-      text: stubText(graph, stub),
+      text: stubText(graph, stub, profile.stubLabels),
       textBox: node.text,
       states: stub.links.map(index => pipeState(graph, graph.links[index]!, [])),
       edge,

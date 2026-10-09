@@ -26,7 +26,7 @@ const plants = new Map([4, 6].map(loops => [loops, compileProcessPlant(createPwr
 const plantOf = (loops: number): CompiledProcessPlant => plants.get(loops)!
 
 /** The room each Plant's overview is drawn in here: what the engine reaches today at full text (see the fit ladder test for less). */
-const ROOM: Readonly<Record<number, Omit<MimicBudget, 'profile'>>> = { 4: { maxWidth: 1920, maxHeight: 1080 }, 6: { maxWidth: 2640, maxHeight: 1080 } }
+const ROOM: Readonly<Record<number, Omit<MimicBudget, 'profile'>>> = { 4: { maxWidth: 1600, maxHeight: 1040 }, 6: { maxWidth: 2160, maxHeight: 1080 } }
 const budgetFor = (loops: number): MimicBudget => ({ profile: overviewMimicProfile, ...ROOM[loops]! })
 
 const scopeOf = (plant: CompiledProcessPlant) => {
@@ -193,19 +193,29 @@ describe('the unit overview of the principal circuits', () => {
     expect(valves.length).toBeGreaterThanOrEqual(10)
     for (const valve of valves) {
       expect(valve.marker).toBe(true)
-      expect(valve.rows.map(row => row.kind)).toEqual(['marker'])
-      // No tag: the marker's stack is its one row.
-      expect(valve.text?.height).toBe(openBridgeDevice.row)
+      // A commanded valve: CMD over the command where it disagrees; no tag.
+      expect(valve.rows.map(row => row.kind === 'marker' ? row.part : row.kind)).toEqual(['word', 'value'])
+      expect(valve.text?.height).toBe(2 * openBridgeDevice.row)
     }
     const fcv = valves.find(item => item.binding.label === 'FCV A')!
     const state = fcv.binding.state!
     const at = (position: number, command: number) => indexSample([{ path: state.state!.path, value: position, quality: 'good' }, { path: state.command!, value: command, quality: 'good' }])
-    const text = (position: number, command: number) => rowText(fcv.rows[0]!, drawnLook(fcv.binding, fcv.rows, at(position, command)), at(position, command), String)
-    expect(text(1, 1)).toBe('')
-    expect(text(0, 0)).toBe('')
-    expect(text(0.4, 0.4)).toBe('40 %')
-    expect(text(1, 0)).toBe('CMD SHUT')
-    expect(rowText(fcv.rows[0]!, drawnLook(fcv.binding, fcv.rows, indexSample([])), indexSample([]), String)).toBe('POS ?')
+    const texts = (index: ReturnType<typeof indexSample>) => fcv.rows.map(row => rowText(row, drawnLook(fcv.binding, fcv.rows, index), index, String))
+    expect(texts(at(1, 1))).toEqual(['', ''])
+    expect(texts(at(0, 0))).toEqual(['', ''])
+    expect(texts(at(0.4, 0.4))).toEqual(['', '40 %'])
+    expect(texts(at(1, 0))).toEqual(['CMD', 'SHUT'])
+    expect(texts(at(0.2, 1))).toEqual(['CMD', '100 %'])
+    expect(texts(indexSample([]))).toEqual(['POS ?', ''])
+  })
+
+  test('stubs name alike far ends once with a count, and a lone far end in full', () => {
+    for (const loops of [4, 6]) {
+      const texts = overview(plantOf(loops), budgetFor(loops)).stubs.map(stub => stub.text)
+      expect(texts).toContain(`from ACC ×${loops}, CHG ×2, RHR iso, SI header`)
+      expect(texts).toContain('from AFW valve A')
+      expect(texts.every(text => !/ and \d+ more$/.test(text))).toBe(true)
+    }
   })
 
   test('parallel equipment with the same neighbours is one symbol that counts its running members', () => {

@@ -32,6 +32,18 @@ export interface MimicProfile {
    */
   readonly parallel: 'each' | 'grouped'
   /**
+   * Where the drawing stops, how a stub names its far ends: each by name
+   * (grouped only when the list would be cut short), or alike ones once by
+   * their shared label with a count ("from ACC ×4, CHG ×2, SI header").
+   */
+  readonly stubLabels: 'names' | 'groups'
+  /**
+   * A command an item does not follow: one row (CMD RUN), or CMD over the
+   * command (narrower; each row then reserves only what the item's bindings
+   * let it say).
+   */
+  readonly commands: 'inline' | 'stacked'
+  /**
    * The smallest scale a viewer may show the drawing at. Below it the view
    * scrolls; the drawing itself only ever loses optional rows to fit.
    */
@@ -88,6 +100,8 @@ export const chatMimicProfile: MimicProfile = {
   readoutSize: 'small',
   valves: 'symbols',
   parallel: 'each',
+  stubLabels: 'names',
+  commands: 'inline',
   minScale: MIMIC_MIN_SCALE,
 }
 
@@ -110,5 +124,7 @@ export const overviewMimicProfile: MimicProfile = {
   readoutSize: 'regular',
   valves: 'markers',
   parallel: 'grouped',
+  stubLabels: 'groups',
+  commands: 'stacked',
   minScale: 1,
 }

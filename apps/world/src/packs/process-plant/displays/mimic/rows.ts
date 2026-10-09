@@ -18,17 +18,23 @@ export type MimicRow =
   | { readonly kind: 'throughput'; readonly texts: ReadonlyArray<string>; readonly required: true }
   /** A command the item does not follow: CMD 100 %, CMD RUN, CMD SHUT. */
   | { readonly kind: 'mismatch'; readonly texts: ReadonlyArray<string>; readonly required: true }
+  /** Stacked commands: the row above says CMD where the item disagrees, and this row the command (RUN, STOP). */
+  | { readonly kind: 'commandValue'; readonly texts: ReadonlyArray<string>; readonly required: true }
   /**
-   * A valve marker's one row, empty while the valve is quiet. It says, first
-   * that applies: a command it does not follow (CMD SHUT), that its position
-   * is not known (POS ?), or its opening while it stands between shut and
-   * open (40 %).
+   * A valve marker's text, empty while the valve is quiet. It says, first
+   * that applies: a command it does not follow (CMD over 100 %), that its
+   * position is not known (POS ?), or its opening while it stands between
+   * shut and open (40 %). A valve with a command says it in two short rows,
+   * the word (`word`) over the value (`value`); one without says only what
+   * its position allows (`whole`).
    */
-  | { readonly kind: 'marker'; readonly texts: ReadonlyArray<string>; readonly required: true }
+  | { readonly kind: 'marker'; readonly part: 'word' | 'value' | 'whole'; readonly texts: ReadonlyArray<string>; readonly required: true }
   /** Grouped parallel equipment: how many members are in the state the group is drawn by ("1/2 RUN"). */
   | { readonly kind: 'count'; readonly members: ReadonlyArray<MimicItemBinding>; readonly word: string; readonly texts: ReadonlyArray<string>; readonly required: true }
 
 const POSITION_COMMANDS = ['CMD SHUT', 'CMD OPEN', 'CMD 100 %', 'CMD 10 %']
+/** What a position command can be, without its CMD (evaluate.ts commandText). */
+const COMMANDED_POSITIONS = POSITION_COMMANDS.map(text => text.slice('CMD '.length))
 const RUNNING_COMMANDS = ['CMD RUN', 'CMD STOP']
 /** A digital valve reads shut below and open above these positions (evaluate.ts); between, a marker shows its opening. */
 const SHUT_BELOW = 0.05
@@ -42,25 +48,50 @@ export const COUNT_WORDS: Readonly<Partial<Record<string, string>>> = { running:
 const countTexts = (members: number, word: string): ReadonlyArray<string> => [`${members}/${members} ${word}`, `${members}/${members} ${word} ?`]
 
 /**
- * The rows beside an item. A valve drawn as a marker has one row; a group of
- * parallel members has its count, and a disagreeing command of any member.
+ * The rows beside an item. A valve drawn as a marker has the one or two short
+ * rows its bindings let it fill; a group of parallel members has its count,
+ * and a disagreeing command of any member.
  */
-export const itemRows = (binding: MimicItemBinding, presentation: MimicPresentation, options: { readonly marker: boolean; readonly members: ReadonlyArray<MimicItemBinding> }): ReadonlyArray<MimicRow> => {
+export const itemRows = (
+  binding: MimicItemBinding,
+  presentation: MimicPresentation,
+  options: { readonly marker: boolean; readonly members: ReadonlyArray<MimicItemBinding>; readonly commands: 'inline' | 'stacked' },
+): ReadonlyArray<MimicRow> => {
+  const stacked = options.commands === 'stacked'
+  const valuesOf = (commands: ReadonlyArray<string>): ReadonlyArray<string> => commands.map(text => text.slice('CMD '.length))
   if (options.members.length > 1) {
     const aspect = binding.state?.aspect
     const word = aspect === undefined ? undefined : COUNT_WORDS[aspect]
     if (word === undefined) throw new Error(`a group of ${binding.label} has no state to count its members by`)
     const commanded = options.members.some(member => member.state?.command !== undefined)
+    const commands = aspect === 'running' ? RUNNING_COMMANDS : POSITION_COMMANDS
     return [
       { kind: 'count', members: options.members, word, texts: countTexts(options.members.length, word), required: true },
-      ...(commanded ? [{ kind: 'mismatch' as const, texts: aspect === 'running' ? RUNNING_COMMANDS : POSITION_COMMANDS, required: true as const }] : []),
+      ...(!commanded ? [] : stacked
+        ? [{ kind: 'state' as const, texts: ['CMD'], required: true as const }, { kind: 'commandValue' as const, texts: valuesOf(commands), required: true as const }]
+        : [{ kind: 'mismatch' as const, texts: commands, required: true as const }]),
     ]
   }
-  if (options.marker) return [{ kind: 'marker', texts: [...POSITION_COMMANDS, 'POS ?', WIDEST_OPENING], required: true }]
+  if (options.marker) {
+    // A marker reserves only what its bindings let it say.
+    const state = binding.state
+    if (state === null || state.aspect !== 'position') return []
+    const computed = state.state !== undefined
+    if (state.command === undefined) return [{ kind: 'marker', part: 'whole', texts: computed ? ['POS ?', WIDEST_OPENING] : ['POS ?'], required: true }]
+    return [
+      { kind: 'marker', part: 'word', texts: ['CMD', 'POS ?'], required: true },
+      { kind: 'marker', part: 'value', texts: [...COMMANDED_POSITIONS, ...(computed ? [WIDEST_OPENING] : [])], required: true },
+    ]
+  }
   const state = binding.state
   const values: ReadonlyArray<MimicRow> = binding.values.map((value, index) => ({ kind: 'value', path: value.path, unit: value.unit, required: index === 0 }))
   if (presentation.element !== 'device' || state === null) return values
-  if (state.aspect === 'running') return [{ kind: 'state', texts: ['STOP', '?', ...RUNNING_COMMANDS], required: true }]
+  if (state.aspect === 'running') {
+    if (!stacked) return [{ kind: 'state', texts: ['STOP', '?', ...RUNNING_COMMANDS], required: true }]
+    // Stacked rows reserve only what the item's bindings let it say: no command, no CMD.
+    if (state.command === undefined) return [{ kind: 'state', texts: ['STOP', '?'], required: true }]
+    return [{ kind: 'state', texts: ['STOP', '?', 'CMD'], required: true }, { kind: 'commandValue', texts: valuesOf(RUNNING_COMMANDS), required: true }]
+  }
   if (state.aspect === 'energized') return [{ kind: 'state', texts: ['DEAD', '?'], required: true }]
   if (state.aspect === 'position' && state.state === undefined) {
     // The model does not compute the position: say so, and what passes.
@@ -82,11 +113,11 @@ export const itemRows = (binding: MimicItemBinding, presentation: MimicPresentat
 /** What a row shows for one sample; empty when there is nothing to say (a fully open valve). */
 export const rowText = (row: MimicRow, look: ItemLook, index: SampleIndex, format: (value: number, unit: string) => string): string => {
   if (row.kind === 'marker') {
-    if (look.mismatch !== null) return look.mismatch
-    if (look.state.kind === 'unknown' || look.notMeasured) return 'POS ?'
-    if (look.state.kind !== 'position') return ''
-    const fraction = look.state.fraction
-    return fraction >= SHUT_BELOW && fraction <= OPEN_ABOVE ? `${Math.round(fraction * 100)} %` : ''
+    const opening = look.state.kind === 'position' && look.state.fraction >= SHUT_BELOW && look.state.fraction <= OPEN_ABOVE ? `${Math.round(look.state.fraction * 100)} %` : ''
+    const unknown = look.state.kind === 'unknown' || look.notMeasured
+    if (row.part === 'word') return look.mismatch !== null ? 'CMD' : unknown ? 'POS ?' : ''
+    if (row.part === 'value') return look.mismatch !== null ? look.mismatch.slice('CMD '.length) : unknown ? '' : opening
+    return unknown ? 'POS ?' : opening
   }
   if (row.kind === 'count') {
     const looks = row.members.map(member => itemLook(member, index))
@@ -105,11 +136,14 @@ export const rowText = (row: MimicRow, look: ItemLook, index: SampleIndex, forma
     return fraction >= 0.05 && fraction <= 0.95 ? format(fraction, 'fraction') : ''
   }
   if (row.kind === 'mismatch') return look.mismatch ?? ''
+  if (row.kind === 'commandValue') return look.mismatch === null ? '' : look.mismatch.slice('CMD '.length)
   if (row.kind === 'throughput') return look.state.kind === 'passing' ? 'PASSING' : look.state.kind === 'notPassing' ? 'NO FLOW' : '?'
   if (row.texts.includes('POS ?')) return 'POS ?'
-  // The state word, unless the command row already says the symbol disagrees.
+  // The state word, unless the symbol disagrees with its command: then the command, or CMD over it.
   if (look.mismatch !== null && row.texts.includes(look.mismatch)) return look.mismatch
-  return look.state.kind === 'stopped' ? 'STOP' : look.state.kind === 'dead' ? 'DEAD' : look.state.kind === 'unknown' ? '?' : ''
+  if (look.mismatch !== null && row.texts.includes('CMD')) return 'CMD'
+  const word = look.state.kind === 'stopped' ? 'STOP' : look.state.kind === 'dead' ? 'DEAD' : look.state.kind === 'unknown' ? '?' : ''
+  return row.texts.includes(word) ? word : ''
 }
 
 /** Whether a member's look is in the state its group counts by. */

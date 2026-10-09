@@ -11,7 +11,7 @@
 // keys (`rank`, lane `order`), never on ids, so renaming ids changes no
 // geometry. Input the engine cannot order that way is rejected (it throws).
 
-export const DIAGRAM_ENGINE_VERSION = 3
+export const DIAGRAM_ENGINE_VERSION = 4
 
 export type Face = 'top' | 'right' | 'bottom' | 'left'
 

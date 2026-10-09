@@ -398,14 +398,28 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
     }
     return moves
   }
-  // Hubs on the high side go after everything else, in every layer.
+  // Hubs on the high side go after everything else, in every layer; what
+  // connects only to them, alone in its layer (a stub feeding the core), sits
+  // just before them, beside the hub it ends at.
+  const freeItems = new Set(free.flat())
+  const satellites = high ? items.map((_, index) => index).filter(index => !isDummy(index) && freeItems.has(index)
+    && neighbours[index]!.length > 0 && neighbours[index]!.every(other => ordering.block[other] === HUB_BLOCK)
+    && ordering.layers[items[index]!.layer]!.every(other => other === index || ordering.block[other] === HUB_BLOCK)) : []
   const placeHighHubs = (): void => {
     if (!high || hubs.length === 0) return
-    const others = items.map((_, index) => index).filter(index => ordering.block[index] !== HUB_BLOCK && !isBar(index) && Number.isFinite(c[index]!))
+    const others = items.map((_, index) => index).filter(index => ordering.block[index] !== HUB_BLOCK && !isBar(index) && !satellites.includes(index) && Number.isFinite(c[index]!))
+    // Outside the last lane's band too, which is drawn as its zone.
+    const lanesBand = laneCount === 0 ? -Infinity : firstAxis + bandLow + laneCount * pitch
     pack(hubs, {
-      full: Math.max(0, ...others.map(index => c[index]! + right[index]!)),
+      full: Math.max(0, lanesBand, ...others.map(index => c[index]! + right[index]!)),
       solid: Math.max(-Infinity, ...others.map(index => c[index]! + rightSolid[index]!)),
     })
+    // A satellite's layer holds nothing else, so it needs room only beside its hub.
+    let next = hubs[0]!
+    for (const satellite of [...satellites].reverse()) {
+      c[satellite] = c[next]! - separation(satellite, next)
+      next = satellite
+    }
   }
   placeHighHubs()
 

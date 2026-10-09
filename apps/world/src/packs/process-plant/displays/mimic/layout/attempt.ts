@@ -94,8 +94,15 @@ export const runAttempt = (prepared: Prepared, profile: DiagramProfile, orientat
       shape.push(null)
       continue
     }
-    const fallback = chooseTextSide(orientation, prepared.pipeFaces[node.index]!)
     const bottom = axisFace(orientation, 'bottom')
+    // Refined, a hub's label goes on its downstream end, which no pipe reaches: beside the hub it would widen the lanes' band.
+    if (prepared.refine && node.role === 'hub') {
+      side.push(screenFace(orientation, '+f'))
+      entries.push(null)
+      shape.push(footprintOf(node, false))
+      continue
+    }
+    const fallback = chooseTextSide(orientation, prepared.pipeFaces[node.index]!)
     // A stub's label goes below its end where no pipe leaves that way: narrower, and only a line taller.
     if (policy === 'stubsBelow' && node.role === 'stub' && !prepared.pipeFaces[node.index]!.has(bottom)) {
       side.push('bottom')

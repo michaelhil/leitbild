@@ -52,7 +52,7 @@ export const planChannels = (input: {
   readonly layering: Layering
   readonly structure: Structure
   readonly pin: ReadonlyArray<ReadonlyArray<number>>
-  /** Pack tracks of a channel whose only crossings are between two of its nets at half a grid elsewhere. */
+  /** Pack a channel's tracks at half a grid, except a grid between two whose nets cross there. */
   readonly tighten: boolean
 }): ChannelPlan => {
   const { model, profile, layering, structure, pin, tighten } = input
@@ -138,13 +138,10 @@ export const planChannels = (input: {
       return false
     }
     let crossings = 0
-    const crossed: Array<readonly [number, number]> = []
     const ordered = [...constraints.values()].sort((a, b) => (Number(b.hard) - Number(a.hard)) || (a.above - b.above) || (a.below - b.below))
     for (const constraint of ordered) {
-      if (reaches(constraint.below, constraint.above)) {
-        crossings++
-        crossed.push([constraint.above, constraint.below])
-      } else below.get(constraint.above)!.add(constraint.below)
+      if (reaches(constraint.below, constraint.above)) crossings++
+      else below.get(constraint.above)!.add(constraint.below)
     }
     // Left-edge packing: lowest track above everything that must run under.
     const occupied: Array<Array<readonly [number, number]>> = []
@@ -166,9 +163,23 @@ export const planChannels = (input: {
     const step = crossingFree ? profile.grid / 2 : profile.grid
     pitch.push(step)
     const offsets = Array.from({ length: occupied.length }, (_, at) => at * step)
-    if (tighten && halfAllowed && !crossingFree && !passing) {
-      // Tracks whose nets cross keep a grid apart; the rest half a grid.
-      const apart = crossed.map(([a, b]) => [track.get(trackKey(channel, a))!, track.get(trackKey(channel, b))!].sort((x, y) => x - y) as [number, number])
+    if (tighten && halfAllowed && !crossingFree) {
+      // Tracks whose nets cross keep a grid apart, so the gap clears the bend beside it; the rest half a grid.
+      // A net's riser crosses another's track where it leaves inside that track's span towards the layer
+      // beyond it. A straight run passing the channel crosses tracks away from their ends: no more room.
+      const trackOf = (net: number): number => track.get(trackKey(channel, net))!
+      // Each jog is its own run along the track, between its two pins.
+      const runsOf = (net: number): ReadonlyArray<readonly [number, number]> => list.filter(entry => entry.net === net)
+        .map(entry => [Math.min(entry.pins[0].c, entry.pins[1].c), Math.max(entry.pins[0].c, entry.pins[1].c)] as const)
+      const apart: Array<[number, number]> = []
+      for (const x of nets) {
+        for (const y of nets) {
+          if (x === y) continue
+          const crosses = pinsOf.get(x)!.some(p => p.side !== 'side' && runsOf(y).some(([low, high]) => p.c > low && p.c < high)
+            && (p.side === 'low' ? trackOf(y) < trackOf(x) : trackOf(y) > trackOf(x)))
+          if (crosses) apart.push([Math.min(trackOf(x), trackOf(y)), Math.max(trackOf(x), trackOf(y))])
+        }
+      }
       for (let at = 1; at < offsets.length; at++) {
         offsets[at] = Math.max(offsets[at - 1]! + profile.grid / 2, ...apart.filter(([, high]) => high === at).map(([low]) => offsets[low]! + profile.grid))
       }

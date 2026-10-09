@@ -370,8 +370,16 @@ export const drawingStops = (
       }
     }
   }
+  // A stop over alike ports sits at the first of them by name and names its far ends by label, then port:
+  // never by the order the Plant happens to list its equipment in.
+  const farLabel = (other: { readonly component: number }): string => shortLabelOf(graph, other.component)
   return [...stubsByKey.values()]
-    .map(stub => ({ ...stub, links: sorted(stub.links), others: [...stub.others].sort((left, right) => left.component - right.component || left.port.localeCompare(right.port)) }))
+    .map(stub => ({
+      ...stub,
+      port: stub.links.map(index => String(stub.direction === 'out' ? graph.links[index]!.fromPortName : graph.links[index]!.toPortName)).sort()[0]!,
+      links: sorted(stub.links),
+      others: [...stub.others].sort((left, right) => farLabel(left).localeCompare(farLabel(right)) || left.port.localeCompare(right.port) || left.component - right.component),
+    }))
     .sort((left, right) => left.component - right.component || left.port.localeCompare(right.port) || left.direction.localeCompare(right.direction))
 }
 
@@ -381,10 +389,14 @@ const STUB_NAMES = 3
 const portName = (port: string): string => words(port).map(word => word.length === 1 ? word.toUpperCase() : word).join(' ')
 
 /**
- * "to SG A, SG C, SG D", "to Core cold leg A, cold leg B" where one far
- * component has several such ports, or "to PZR, RCP A, RCP C and 8 more".
+ * What a stub says of its far ends. `names` lists them: "to SG A, SG C, SG D",
+ * "to Core cold leg A, cold leg B" where one far component has several such
+ * ports. `groups` names alike far ends once by the label they share without
+ * their designator, with how many: "from ACC ×4, CHG ×2, SI header"; a lone
+ * far end keeps its full name ("from AFW valve A"). A list of names too long
+ * to read is grouped too, and what still does not fit is counted ("and 2 more").
  */
-export const stubText = (graph: CompiledPlantGraph, stub: MimicStub): string => {
+export const stubText = (graph: CompiledPlantGraph, stub: MimicStub, style: 'names' | 'groups' = 'names'): string => {
   const byComponent = new Map<number, string[]>()
   for (const other of stub.others) byComponent.set(other.component, [...(byComponent.get(other.component) ?? []), other.port])
   const parts = [...byComponent].map(([component, ports]) => {
@@ -392,9 +404,21 @@ export const stubText = (graph: CompiledPlantGraph, stub: MimicStub): string => 
     const far = graph.components[component]!
     const first = far.ports[ports[0]!]
     const alike = Object.values(far.ports).filter(port => port.circuit !== undefined && port.circuit === first?.circuit && port.direction === first.direction)
-    return alike.length > 1 ? `${shortLabelOf(graph, component)} ${ports.map(portName).join(', ')}` : shortLabelOf(graph, component)
+    const label = shortLabelOf(graph, component)
+    return { label, named: alike.length > 1 ? `${label} ${ports.map(portName).join(', ')}` : label }
   })
-  const named = parts.slice(0, parts.length > STUB_NAMES + 1 ? STUB_NAMES : STUB_NAMES + 1)
-  const more = parts.length - named.length
-  return `${stub.direction === 'out' ? 'to' : 'from'} ${named.join(', ')}${more > 0 ? ` and ${more} more` : ''}`
+  const verb = stub.direction === 'out' ? 'to' : 'from'
+  const listed = (names: ReadonlyArray<string>): string => {
+    const named = names.slice(0, names.length > STUB_NAMES + 1 ? STUB_NAMES : STUB_NAMES + 1)
+    const more = names.length - named.length
+    return `${verb} ${named.join(', ')}${more > 0 ? ` and ${more} more` : ''}`
+  }
+  if (parts.length === 1) return `${verb} ${parts[0]!.named}`
+  if (style === 'names' && parts.length <= STUB_NAMES + 1) return listed(parts.map(part => part.named))
+  const groups = new Map<string, number>()
+  for (const part of parts) {
+    const key = groupStem(part.label) ?? part.label
+    groups.set(key, (groups.get(key) ?? 0) + 1)
+  }
+  return listed([...groups].map(([key, count]) => (count > 1 ? `${key} ×${count}` : parts.find(part => (groupStem(part.label) ?? part.label) === key)!.label)))
 }

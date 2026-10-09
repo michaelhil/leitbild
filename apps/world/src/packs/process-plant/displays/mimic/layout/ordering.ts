@@ -255,12 +255,20 @@ const transpose = (model: Model, layering: Layering, layers: number[][], block: 
     layer.splice(to, 0, item)
     layer.forEach((member, index) => (position[member] = index))
   }
-  // A long edge's dummies move together: to the front or the back of their block in every layer they pass.
+  // A long edge's dummies move together, and so does a symbol with the stubs where its pipes leave the
+  // drawing: to the front or the back of their block in every layer they are in.
+  const stubsOf = (item: number): number[] => (items[item]!.node === null ? [] : layering.chains
+    .filter(chain => chain.items[0] === item || chain.items.at(-1) === item)
+    .map(chain => (chain.items[0] === item ? chain.items.at(-1)! : chain.items[0]!))
+    .filter(other => role(other) === 'stub'))
+  const units = [
+    ...layering.chains.map(chain => chain.items.filter(item => items[item]!.node === null)).filter(dummies => dummies.length >= 2),
+    ...layering.items.map((_, item) => item).filter(item => role(item) !== null && role(item) !== 'stub' && role(item) !== 'hub' && role(item) !== 'bar' && stubsOf(item).length > 0)
+      .map(item => [item, ...stubsOf(item)]),
+  ]
   const strandMoves = (): boolean => {
     let improved = false
-    for (const chain of layering.chains) {
-      const dummies = chain.items.filter(item => items[item]!.node === null)
-      if (dummies.length < 2) continue
+    for (const dummies of units) {
       const before = dummies.map(item => layers[items[item]!.layer]!.indexOf(item))
       let best = total()
       let kept: 'front' | 'back' | null = null

@@ -115,8 +115,9 @@ export const layerNodes = (model: Model, reversed: ReadonlyArray<boolean>, stubs
     if (feeding.length > 0 && firm.length > 0) {
       const first = Math.min(...firm)
       for (const node of feeding) layer[node] = first - 1
-      const lowest = Math.min(...layer)
-      if (lowest < 0) for (let node = 0; node < count; node++) layer[node]! -= lowest
+      // Moving them may leave a layer empty; layers close up again.
+      const used = [...new Set(layer)].sort((a, b) => a - b)
+      for (let node = 0; node < count; node++) layer[node] = used.indexOf(layer[node]!)
     }
   }
   return layer
