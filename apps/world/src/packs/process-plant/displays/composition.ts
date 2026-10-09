@@ -29,6 +29,9 @@ export type ComposedDisplaySignal = z.infer<typeof composedDisplaySignalSchema>
 // Size limits keep a chat display glanceable; larger questions belong to the
 // Plant's own displays.
 export const COMPOSED_TREND_MAX_SIGNALS = 6
+// The schema bounds the payload; the authoring limit above is checked with the
+// other issues, so one rejection names every fix.
+const COMPOSED_TREND_SCHEMA_MAX_SIGNALS = 12
 /** A trend stacks one strip per measurement on its time axis; a strip holds the loops of a 4-loop plant. */
 export const COMPOSED_TREND_MAX_STRIPS = 4
 export const COMPOSED_TREND_STRIP_MAX_PENS = 4
@@ -43,7 +46,7 @@ export const COMPOSED_DISPLAY_MAX_TRENDS = 1
 export const composedDisplayTrendPanelSchema = z.object({
   kind: z.literal('trend'),
   horizon: composedDisplayHorizonSchema,
-  signals: z.array(composedDisplaySignalSchema).min(1).max(COMPOSED_TREND_MAX_SIGNALS),
+  signals: z.array(composedDisplaySignalSchema).min(1).max(COMPOSED_TREND_SCHEMA_MAX_SIGNALS),
 }).strict()
 export type ComposedDisplayTrendPanel = z.infer<typeof composedDisplayTrendPanelSchema>
 

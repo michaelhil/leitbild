@@ -13,6 +13,7 @@ import { findProcessPlantSignalBinding } from '../signals.ts'
 import {
   COMPOSED_DISPLAY_MAX_HEIGHT_PX,
   COMPOSED_DISPLAY_MAX_TRENDS,
+  COMPOSED_TREND_MAX_SIGNALS,
   COMPOSED_TREND_MAX_STRIPS,
   COMPOSED_TREND_STRIP_MAX_PENS,
   composedDisplayCompositionSchema,
@@ -411,8 +412,13 @@ const compositionIssues = (composition: ComposedDisplayComposition): ReadonlyArr
   const issues: ComposedDisplayIssue[] = []
   const kinds = composition.panels.map(panel => panel.kind)
   if (kinds.filter(kind => kind === 'trend').length > COMPOSED_DISPLAY_MAX_TRENDS) {
-    issues.push({ path: 'panels', message: 'use one trend panel and list every signal whose history matters in it; the display stacks one strip per unit on a shared time axis' })
+    issues.push({ path: 'panels', message: 'use one trend panel and list every signal whose history matters in it; the display stacks one strip per measurement on a shared time axis' })
   }
+  composition.panels.forEach((panel, index) => {
+    if (panel.kind === 'trend' && panel.signals.length > COMPOSED_TREND_MAX_SIGNALS) {
+      issues.push({ path: `panels.${index}.signals`, message: `a trend shows at most ${COMPOSED_TREND_MAX_SIGNALS} signals, but this one lists ${panel.signals.length}; keep the ones the question is about` })
+    }
+  })
   for (const kind of ['comparison', 'readouts', 'alarms'] as const) {
     if (kinds.filter(candidate => candidate === kind).length > 1) issues.push({ path: 'panels', message: `use at most one ${kind} panel` })
   }
@@ -462,9 +468,36 @@ const layoutIssues = (
   if (fit.height > COMPOSED_DISPLAY_MAX_HEIGHT_PX) {
     const parts = fit.panels.map((size, index) => `panels.${index} ${size.kind}${size.kind === 'trend' && size.strips.length > 1 ? ` (${size.strips.length} strips)` : ''} ${composedPanelHeight(size)} px`).join(', ')
     const shrunk = fit.panels.some(size => size.kind === 'trend') ? ' even with its trend at the smallest height' : ''
-    issues.push({ path: 'panels', message: `the display needs ${fit.height} px${shrunk}, but chat views allow ${COMPOSED_DISPLAY_MAX_HEIGHT_PX} (${parts}); drop the panel or trend unit that answers least of the question` })
+    const fixes = sizeFixes(panels)
+    issues.push({
+      path: 'panels',
+      message: `the display needs ${fit.height} px${shrunk}, but chat views allow ${COMPOSED_DISPLAY_MAX_HEIGHT_PX} (${parts}); ${fixes.length === 0 ? 'drop the panel or trend measurement that answers least of the question' : `it fits ${fixes.join(', or ')}`}`,
+    })
   }
   return issues
+}
+
+const fits = (panels: ReadonlyArray<UnsizedPanel>): boolean =>
+  panels.length > 0 && fitComposedDisplay(panels.map(panelShape)).height <= COMPOSED_DISPLAY_MAX_HEIGHT_PX
+
+// Concrete ways to fit, so the next compose succeeds: dropping one supporting
+// panel, keeping fewer readouts, or trending fewer measurements.
+const sizeFixes = (panels: ReadonlyArray<CompiledComposedPanel>): ReadonlyArray<string> => {
+  const fixes: string[] = []
+  panels.forEach((panel, index) => {
+    if (panel.kind === 'readouts') {
+      const kept = [6, 5, 4, 3, 2, 1].filter(count => count < panel.pens.length)
+        .find(count => fits(panels.map((candidate, at) => at === index ? { ...panel, pens: panel.pens.slice(0, count) } : candidate)))
+      if (kept !== undefined) fixes.push(`with at most ${kept} readouts in panels.${index}`)
+    }
+    if (panel.kind === 'trend' && panel.strips.length > 1) {
+      const kept = [3, 2, 1].filter(count => count < panel.strips.length)
+        .find(count => fits(panels.map((candidate, at) => at === index ? { ...panel, strips: panel.strips.slice(0, count) } : candidate)))
+      if (kept !== undefined) fixes.push(`with at most ${kept} trend measurements (strips)`)
+    }
+    if (panel.kind !== 'trend' && fits(panels.filter((_, at) => at !== index))) fixes.push(`without panels.${index} (${panel.kind})`)
+  })
+  return fixes
 }
 
 // Alarms "related" to a display are those whose rules act on its signals or
@@ -496,12 +529,16 @@ export const compileComposedDisplay = (
   const parsed = composedDisplayCompositionSchema.safeParse(input)
   if (!parsed.success) return { ok: false, issues: zodIssues(parsed.error) }
   const composition = parsed.data
-  const issues: ComposedDisplayIssue[] = purpose === 'compose' ? [...compositionIssues(composition)] : []
+  // Authoring issues are reported with the resolution and layout issues, so a
+  // single rejection lists every fix; layout needs resolved signals, so it is
+  // checked only once every reference resolves.
+  const authoring = purpose === 'compose' ? compositionIssues(composition) : []
+  const issues: ComposedDisplayIssue[] = []
   if (composition.plantId !== system.plant.id) {
     issues.push({ path: 'plantId', message: `composition targets ${composition.plantId}, not ${system.plant.id}` })
   }
   const panels = composition.panels.map((panel, index) => compilePanel(system, panel, index, recordedSeriesIds, issues))
-  if (issues.length > 0) return { ok: false, issues }
+  if (issues.length > 0) return { ok: false, issues: [...authoring, ...issues] }
   const unsized = panels.filter((panel): panel is UnsizedPanel => panel !== undefined)
   const fit = fitComposedDisplay(unsized.map(panelShape))
   const compiled = unsized.map((panel, index): CompiledComposedPanel => {
@@ -511,7 +548,7 @@ export const compileComposedDisplay = (
     return { ...panel, plot: size.plot }
   })
   const layout = purpose === 'compose' ? layoutIssues(compiled, fit) : []
-  if (layout.length > 0) return { ok: false, issues: layout }
+  if (authoring.length > 0 || layout.length > 0) return { ok: false, issues: [...authoring, ...layout] }
   const ruleIds = relatedRuleIds(system, compiled)
   return {
     ok: true,

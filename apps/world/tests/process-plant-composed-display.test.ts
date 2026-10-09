@@ -223,6 +223,26 @@ describe('composed display panels', () => {
     expect(trend.strips.map(strip => strip.pens.map(pen => pen.ref))).toEqual([['CET-AVG'], ['SUB-MARGIN'], ['PT-455'], ['SG-A-PRESS']])
   })
 
+  test('name every fix in one rejection, with ways to fit the chat view', () => {
+    // Evaluation run 7, turbine trip: three measurements beside six readouts and the alarms.
+    const message = rejectionOf(() => ask('world.process-plant.display.compose', display([
+      { kind: 'trend', horizon: '2m', signals: ['PT-455', 'SG-A-PRESS', 'SG-A-LVL-NR', 'SG-B-LVL-NR', 'GEN-MW'].map((ref, index) => ({ ref, role: index === 0 ? 'primary' : 'context' })) },
+      { kind: 'readouts', signals: ['TAVG', 'PZR-LVL', 'CET-AVG', 'SUB-MARGIN', 'CTMT-PR', 'SG-C-PRESS'].map(ref => ({ ref, role: 'context' })) },
+      { kind: 'alarms', scope: 'related' },
+    ])))
+    expect(message).toContain('but chat views allow 640')
+    expect(message).toContain('(panels.0 trend (4 strips) 382 px, panels.1 readouts 148 px, panels.2 alarms 110 px); it fits with at most 2 trend measurements (strips), or without panels.1 (readouts)')
+    // Evaluation run 7, RCP trip: seven trended signals were rejected alone, then the size; now both at once.
+    const both = rejectionOf(() => ask('world.process-plant.display.compose', display([
+      { kind: 'trend', horizon: '2m', signals: ['CET-AVG', 'SUB-MARGIN', 'PT-455', 'PZR-LVL', 'SG-A-LVL-NR', 'SG-B-LVL-NR', 'TAVG'].map((ref, index) => ({ ref, role: index === 0 ? 'primary' : 'context' })) },
+      { kind: 'comparison', signals: ['A', 'B', 'C', 'D'].map(loop => ({ ref: `RCP-${loop}-FLOW`, role: 'context' })) },
+      { kind: 'alarms', scope: 'related' },
+    ])))
+    expect(both).toContain('a trend shows at most 6 signals, but this one lists 7')
+    expect(both).toContain('a trend stacks at most 4 strips')
+    expect(both).toContain('but chat views allow 640')
+  })
+
   test('reject a trend with no recorded signal', () => {
     expect(rejectionOf(() => ask('world.process-plant.display.compose', composition([{ ref: 'sgB.feedwaterFlowKgPerS', role: 'primary' }]))))
       .toContain("is recorded by this Run's historian, so the trend would have no history; show them in a readouts panel")
