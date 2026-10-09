@@ -1,6 +1,7 @@
 import type { ProcessSignalBinding, VariablePath } from '../../graph/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../../runtime-instance.ts'
-import { icAlarmRuleIdsForComponent, icAlarmRuleIdsForPaths } from '../ic-thresholds.ts'
+import { icAlarmRuleIdsForComponent, icAlarmRuleIdsForPaths, icThresholdsForSignal } from '../ic-thresholds.ts'
+import { thresholdName } from '../display-text.ts'
 import {
   MIMIC_WIDTH,
   type CompiledMimic,
@@ -64,6 +65,10 @@ export const compileMimic = (
     if (state.kind === 'pump') return { kind: 'pump', speedPath: readPath(`${state.component}.speedRpm`, 'state'), commandPath: readPath(`${state.component}.running`, 'annotation') }
     if (state.kind === 'valve') return { kind: 'valve', positionPath: readPath(`${state.component}.effectivePositionFraction`, 'state'), commandPath: readPath(`${state.component}.positionFraction`, 'annotation') }
     if (state.kind === 'level') return { kind: 'level', levelPath: readPath(state.path, 'state'), unit: state.unit }
+    if (state.kind === 'header') {
+      const services = state.links.map(linkId => graph.links.find(candidate => String(candidate.id) === linkId)?.service ?? 'unknown')
+      return { kind: 'header', flowPaths: state.links.map(linkId => readPath(`${linkId}.flowKgPerS`, 'state')), noFlowBelow: noFlowBelowByService[services[0]!] ?? 1 }
+    }
     if (state.kind === 'relief') return { kind: 'relief', flowPath: readPath(state.flow, 'state'), commandPath: readPath(state.command, 'annotation'), noFlowBelow: noFlowBelowByService.primaryRelief! }
     return { kind: 'none' }
   }
@@ -85,6 +90,9 @@ export const compileMimic = (
       ruleIds: node.alarmPaths === undefined
         ? icAlarmRuleIdsForComponent(system.plant, node.componentId)
         : icAlarmRuleIdsForPaths(system.plant, node.alarmPaths.map(path => readPath(path, 'annotation'))),
+      limits: node.limitsOf === undefined ? [] : icThresholdsForSignal(system.plant, readPath(node.limitsOf, 'state')).thresholds
+        .filter((threshold): threshold is typeof threshold & { kind: 'alarm' | 'trip' } => threshold.kind !== 'control')
+        .map(threshold => ({ value: threshold.value, kind: threshold.kind, name: thresholdName(threshold, 'percent') })),
     }
   })
   const pipes: MimicPipe[] = spec.pipes.map(pipe => {
@@ -98,6 +106,7 @@ export const compileMimic = (
       points: pipe.points,
       flowPath: readPath(`${pipe.linkId}.flowKgPerS`, 'state'),
       noFlowBelow: noFlowBelowByService[service] ?? 1,
+      unverified: pipe.unverified === true,
     }
   })
   if (issues.length > 0) return { ok: false, issues }
@@ -108,6 +117,7 @@ export const compileMimic = (
       ...(node.state.kind === 'valve' ? [node.state.positionPath, node.state.commandPath] : []),
       ...(node.state.kind === 'level' ? [node.state.levelPath] : []),
       ...(node.state.kind === 'relief' ? [node.state.flowPath, node.state.commandPath] : []),
+      ...(node.state.kind === 'header' ? node.state.flowPaths : []),
       ...node.values.map(value => value.path),
     ]),
     ...pipes.map(pipe => pipe.flowPath),

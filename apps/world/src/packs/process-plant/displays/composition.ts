@@ -38,7 +38,7 @@ export const COMPOSED_TREND_MAX_STRIPS = 4
 export const COMPOSED_TREND_STRIP_MAX_PENS = 4
 export const COMPOSED_COMPARISON_MAX_SIGNALS = 6
 export const COMPOSED_READOUTS_MAX_SIGNALS = 6
-// One trend plus up to two supporting panels (HMI review); with the 640 px cap
+// One trend plus up to two supporting panels (HMI review); with the 660 px cap
 // nearly every three-panel combination fits by construction.
 export const COMPOSED_DISPLAY_MAX_PANELS = 3
 /** Live values one display samples each second, across its panels (a six-loop feed mimic reads 75). */
@@ -137,11 +137,14 @@ export const composedDisplayLayout = {
   alarms: 110,
   alarmRows: 4,
   panelGap: 6,
+  /** The mimic's legend line under its drawing. */
+  mimicLegend: 16,
 } as const
 
 // Embedders accept view heights up to 720 px, but a chat display taller than
-// about 600 px pushes its own lower panels below the fold (HMI review).
-export const COMPOSED_DISPLAY_MAX_HEIGHT_PX = 640
+// about 600 px pushes its own lower panels below the fold (HMI review). A
+// mimic beside a trend and alarms needs a little more than that.
+export const COMPOSED_DISPLAY_MAX_HEIGHT_PX = 660
 
 /** What a panel's height depends on, known once its signals are resolved. */
 export type ComposedPanelShape =
@@ -180,7 +183,7 @@ export const composedPanelHeight = (panel: ComposedPanelSize): number => {
   }
   if (panel.kind === 'comparison') return layout.comparisonHeader + layout.comparisonRow * panel.rows + layout.comparisonCaption
   if (panel.kind === 'readouts') return layout.readoutsRow * Math.ceil(panel.values / layout.readoutsPerRow)
-  if (panel.kind === 'mimic') return panel.height
+  if (panel.kind === 'mimic') return panel.height + layout.mimicLegend
   return layout.alarms
 }
 

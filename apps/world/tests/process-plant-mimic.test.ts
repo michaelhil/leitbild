@@ -154,7 +154,7 @@ describe('mimic panels in composed displays', () => {
     const result = ask('world.process-plant.display.compose', display([{ kind: 'mimic', view: 'feed-to-sg', loops: ['B'] }])) as { shows: ReadonlyArray<string>; view: { height: number } }
     expect(result.shows[0]).toStartWith('Live equipment mimic of main feedwater')
     expect(result.shows[0]).toContain('loops B')
-    expect(result.view.height).toBeLessThanOrEqual(640)
+    expect(result.view.height).toBeLessThanOrEqual(660)
   })
 
   // The skill's size rule: next to a mimic, a one-measurement trend and alarms, or a two-measurement trend.
@@ -163,14 +163,14 @@ describe('mimic panels in composed displays', () => {
     const oneMeasurement = { kind: 'trend', horizon: '10m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }, { ref: 'SG-A-LVL-NR', role: 'context' }] }
     const twoMeasurements = { kind: 'trend', horizon: '10m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }, { ref: 'SG-B-PRESS', role: 'context' }] }
     const withAlarms = ask('world.process-plant.display.compose', display([mimic, oneMeasurement, { kind: 'alarms', scope: 'related' }])) as { view: { height: number } }
-    expect(withAlarms.view.height).toBeLessThanOrEqual(640)
+    expect(withAlarms.view.height).toBeLessThanOrEqual(660)
     const twoStrips = ask('world.process-plant.display.compose', display([mimic, twoMeasurements])) as { view: { height: number } }
-    expect(twoStrips.view.height).toBeLessThanOrEqual(640)
+    expect(twoStrips.view.height).toBeLessThanOrEqual(660)
     expect(rejection(display([mimic, twoMeasurements, { kind: 'alarms', scope: 'related' }]))).toContain('without panels.2 (alarms)')
     // Evaluation run 8, AFW reach: the four SG levels beside the mimic and the alarms.
     const fourLevels = { kind: 'trend', horizon: '10m', signals: ['A', 'B', 'C', 'D'].map(loop => ({ ref: `SG-${loop}-LVL-NR`, role: loop === 'A' ? 'primary' : 'context' })) }
     const afw = ask('world.process-plant.display.compose', display([mimic, fourLevels, { kind: 'alarms', scope: 'related' }])) as { view: { height: number } }
-    expect(afw.view.height).toBeLessThanOrEqual(640)
+    expect(afw.view.height).toBeLessThanOrEqual(660)
   })
 
   test('relate the alarms panel to the drawn equipment, and allow one mimic', () => {

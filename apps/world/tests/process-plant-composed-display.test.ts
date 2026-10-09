@@ -239,7 +239,7 @@ describe('composed display panels', () => {
       { kind: 'readouts', signals: ['TAVG', 'PZR-LVL', 'CET-AVG', 'SUB-MARGIN', 'CTMT-PR', 'SG-C-PRESS'].map(ref => ({ ref, role: 'context' })) },
       { kind: 'alarms', scope: 'related' },
     ])))
-    expect(message).toContain('but chat views allow 640')
+    expect(message).toContain('but chat views allow 660')
     expect(message).toContain('(panels.0 trend (4 strips) 382 px, panels.1 readouts 148 px, panels.2 alarms 110 px); it fits with at most 2 trend measurements (strips), or without panels.1 (readouts)')
     // Evaluation run 7, RCP trip: seven trended signals were rejected alone, then the size; now both at once.
     const both = rejectionOf(() => ask('world.process-plant.display.compose', display([
@@ -249,7 +249,7 @@ describe('composed display panels', () => {
     ])))
     expect(both).toContain('a trend shows at most 6 signals, but this one lists 7')
     expect(both).toContain('a trend stacks at most 4 strips')
-    expect(both).toContain('but chat views allow 640')
+    expect(both).toContain('but chat views allow 660')
   })
 
   test('reject a trend with no recorded signal', () => {
@@ -267,7 +267,7 @@ describe('composed display panels', () => {
     const trend = view.display.panels[0] as { plot: number }
     expect(trend.plot).toBeLessThan(72)
     expect(trend.plot).toBeGreaterThanOrEqual(48)
-    expect(composed.view.height).toBeLessThanOrEqual(640)
+    expect(composed.view.height).toBeLessThanOrEqual(660)
   })
 
   // The skill's size rule: three or four measurements leave room for alarms; two for alarms and three readouts.
@@ -277,18 +277,18 @@ describe('composed display panels', () => {
       { kind: 'trend', horizon: '2m', signals: [...levels, { ref: 'PT-455', role: 'context' }, { ref: 'GEN-MW', role: 'context' }] },
       { kind: 'alarms', scope: 'related' },
     ])
-    expect(threeMeasurements.composed.view.height).toBeLessThanOrEqual(640)
+    expect(threeMeasurements.composed.view.height).toBeLessThanOrEqual(660)
     const fourMeasurements = composeView([
       { kind: 'trend', horizon: '2m', signals: ['SG-B-LVL-NR', 'PT-455', 'GEN-MW', 'TAVG'].map((ref, index) => ({ ref, role: index === 0 ? 'primary' : 'context' })) },
       { kind: 'alarms', scope: 'related' },
     ])
-    expect(fourMeasurements.composed.view.height).toBeLessThanOrEqual(640)
+    expect(fourMeasurements.composed.view.height).toBeLessThanOrEqual(660)
     const twoMeasurements = composeView([
       { kind: 'trend', horizon: '10m', signals: [...levels, { ref: 'SG-A-PRESS', role: 'context' }, { ref: 'SG-B-PRESS', role: 'context' }] },
       { kind: 'readouts', signals: ['TAVG', 'SUB-MARGIN', 'CET-AVG'].map(ref => ({ ref, role: 'context' })) },
       { kind: 'alarms', scope: 'related' },
     ])
-    expect(twoMeasurements.composed.view.height).toBeLessThanOrEqual(640)
+    expect(twoMeasurements.composed.view.height).toBeLessThanOrEqual(660)
   })
 
   test('reject a second trend panel, too many strips, a lone alarms panel and oversized displays', () => {
@@ -313,7 +313,7 @@ describe('composed display panels', () => {
       { kind: 'comparison', signals: six },
       { kind: 'readouts', signals: ['TAVG', 'SUB-MARGIN', 'CET-AVG', 'SG-A-PRESS', 'SG-B-PRESS', 'SG-C-PRESS'].map(ref => ({ ref, role: 'context' })) },
     ])))
-    expect(oversized).toContain('even with its trend at the smallest height, but chat views allow 640 (panels.0 trend (3 strips)')
+    expect(oversized).toContain('even with its trend at the smallest height, but chat views allow 660 (panels.0 trend (3 strips)')
     expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
       { kind: 'trend', horizon: '10m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },
       { kind: 'readouts', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },

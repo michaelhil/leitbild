@@ -32,6 +32,8 @@ export type MimicState =
    * command says. The command only annotates a mismatch.
    */
   | { readonly kind: 'relief'; readonly flowPath: VariablePath; readonly commandPath: VariablePath; readonly noFlowBelow: number }
+  /** A header is full while any of its branches carries flow, so it never contradicts them. */
+  | { readonly kind: 'header'; readonly flowPaths: ReadonlyArray<VariablePath>; readonly noFlowBelow: number }
   | { readonly kind: 'none' }
 
 /** A value printed beside its symbol, chosen by World. */
@@ -58,8 +60,14 @@ export interface MimicNode {
   readonly orientation: 'horizontal' | 'vertical'
   readonly state: MimicState
   readonly values: ReadonlyArray<MimicValue>
-  /** I&C alarm and trip rules acting on this equipment; an active one frames the symbol. */
+  /**
+   * Single-signal I&C alarm and trip rules on this equipment's own signals; an
+   * active one frames the symbol. Voted trips across equipment (the reactor's
+   * 2-of-4 low flow) never frame one pump: they lead the display's banner.
+   */
   readonly ruleIds: ReadonlyArray<string>
+  /** I&C alarm and trip limits of the symbol's level, marked as bands on it. */
+  readonly limits: ReadonlyArray<{ readonly value: number; readonly kind: 'alarm' | 'trip'; readonly name: string }>
 }
 
 export interface MimicPipe {
@@ -72,6 +80,8 @@ export interface MimicPipe {
   readonly flowPath: VariablePath
   /** Below this magnitude the pipe is drawn without flow ("≈0"). */
   readonly noFlowBelow: number
+  /** The model's flow on this link is not verified; it is drawn as unknown, never as flow. */
+  readonly unverified: boolean
 }
 
 export interface CompiledMimic {

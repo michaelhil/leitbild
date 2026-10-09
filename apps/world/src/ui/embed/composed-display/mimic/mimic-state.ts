@@ -72,6 +72,7 @@ export const valveLook = (node: MimicNode, index: SampleIndex): ValveLook => {
 }
 
 export interface ReliefLook {
+  /** The model gives no position, so the symbol is always the unknown-position valve. */
   readonly icon: OpenBridgeIcon
   readonly passing: boolean | null
   /** The command disagrees with the flow: "CMD SHUT · PASSING" (stuck open) or "CMD OPEN · NO FLOW". */
@@ -88,7 +89,7 @@ export const reliefLook = (node: MimicNode, index: SampleIndex): ReliefLook => {
     : passing && command < 0.05 ? 'CMD SHUT · PASSING'
       : !passing && command > 0.5 ? 'CMD OPEN · NO FLOW'
         : null
-  return { icon: passing ? 'twoway-analog-open' : 'twoway-analog-closed', passing, mismatch }
+  return { icon: 'twoway-digital-static', passing, mismatch }
 }
 
 export interface FlowLook {
@@ -97,10 +98,20 @@ export interface FlowLook {
 }
 
 export const flowLook = (pipe: MimicPipe, index: SampleIndex): FlowLook => {
+  if (pipe.unverified) return { look: 'unknown', value: null }
   const value = numberAt(index, pipe.flowPath)
   if (value === null) return { look: 'unknown', value: null }
   if (Math.abs(value) < pipe.noFlowBelow) return { look: 'none', value }
   return { look: value > 0 ? 'forward' : 'reverse', value }
+}
+
+/** A header is full while any branch carries flow, empty when none does, unknown otherwise. */
+export const headerLook = (node: MimicNode, index: SampleIndex): 'full' | 'empty' | 'unknown' => {
+  if (node.state.kind !== 'header') return 'unknown'
+  const flows = node.state.flowPaths.map(path => numberAt(index, path))
+  const noFlowBelow = node.state.noFlowBelow
+  if (flows.some(flow => flow !== null && Math.abs(flow) >= noFlowBelow)) return 'full'
+  return flows.every(flow => flow !== null) ? 'empty' : 'unknown'
 }
 
 /** Fill fraction of a level symbol, clamped to its frame with an explicit off-scale flag. */

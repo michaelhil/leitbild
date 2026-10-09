@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import type { MimicNode, MimicPipe } from '../src/packs/process-plant/displays/mimic/mimic-model.ts'
 import type { ComposedDisplayAlarm, ComposedDisplaySample } from '../src/ui/embed/composed-display/composed-display-client.ts'
 import { openBridgeIcons } from '../src/ui/embed/composed-display/mimic/openbridge-icons.ts'
-import { chevrons, crossings, flowLook, indexSample, levelLook, nodeAlarm, pumpLook, reliefLook, valveLook } from '../src/ui/embed/composed-display/mimic/mimic-state.ts'
+import { chevrons, crossings, flowLook, headerLook, indexSample, levelLook, nodeAlarm, pumpLook, reliefLook, valveLook } from '../src/ui/embed/composed-display/mimic/mimic-state.ts'
 
 const sample = (values: Record<string, number | boolean>, quality: Record<string, string> = {}): ComposedDisplaySample => ({
   simulationTime: '2026-10-09T10:00:00.000Z',
@@ -13,12 +13,12 @@ const sample = (values: Record<string, number | boolean>, quality: Record<string
 
 const node = (overrides: Partial<MimicNode>): MimicNode => ({
   id: 'n', componentId: 'c', symbol: 'pump', label: 'P', x: 0, y: 0, width: 16, height: 16, orientation: 'horizontal',
-  state: { kind: 'none' }, values: [], ruleIds: [], ...overrides,
+  state: { kind: 'none' }, values: [], ruleIds: [], limits: [], ...overrides,
 } as MimicNode)
 
 const pump = node({ state: { kind: 'pump', speedPath: 'p.speedRpm', commandPath: 'p.running' } as never })
 const valve = node({ symbol: 'valve', state: { kind: 'valve', positionPath: 'v.effectivePositionFraction', commandPath: 'v.positionFraction' } as never })
-const pipe: MimicPipe = { id: 'pipe', linkId: 'l', service: 'feedwater', points: [[0, 0], [0, 30], [40, 30]], flowPath: 'l.flowKgPerS' as never, noFlowBelow: 2 }
+const pipe: MimicPipe = { id: 'pipe', linkId: 'l', service: 'feedwater', points: [[0, 0], [0, 30], [40, 30]], flowPath: 'l.flowKgPerS' as never, noFlowBelow: 2, unverified: false }
 
 describe('mimic symbol states', () => {
   test('a pump runs only when it turns, and says when its command disagrees', () => {
@@ -40,8 +40,9 @@ describe('mimic symbol states', () => {
   test('a relief valve the model does not measure reads by its flow, and a stuck-open one says so', () => {
     const porv = node({ symbol: 'relief-valve', state: { kind: 'relief', flowPath: 'r.flow', commandPath: 'r.command', noFlowBelow: 0.2 } as never })
     // PORV stuck open (run 7): commanded shut, passing 7.7 kg/s.
-    expect(reliefLook(porv, indexSample(sample({ 'r.flow': 7.69, 'r.command': 0 })))).toEqual({ icon: 'twoway-analog-open', passing: true, mismatch: 'CMD SHUT · PASSING' })
-    expect(reliefLook(porv, indexSample(sample({ 'r.flow': 0, 'r.command': 0 })))).toEqual({ icon: 'twoway-analog-closed', passing: false, mismatch: null })
+    // No position signal exists, so the symbol never claims one.
+    expect(reliefLook(porv, indexSample(sample({ 'r.flow': 7.69, 'r.command': 0 })))).toEqual({ icon: 'twoway-digital-static', passing: true, mismatch: 'CMD SHUT · PASSING' })
+    expect(reliefLook(porv, indexSample(sample({ 'r.flow': 0, 'r.command': 0 })))).toEqual({ icon: 'twoway-digital-static', passing: false, mismatch: null })
     expect(reliefLook(porv, indexSample(sample({ 'r.flow': 0, 'r.command': 1 }))).mismatch).toBe('CMD OPEN · NO FLOW')
   })
 
@@ -50,6 +51,15 @@ describe('mimic symbol states', () => {
     expect(flowLook(pipe, indexSample(sample({ 'l.flowKgPerS': -12 }))).look).toBe('reverse')
     expect(flowLook(pipe, indexSample(sample({ 'l.flowKgPerS': 6.9e-7 }))).look).toBe('none')
     expect(flowLook(pipe, indexSample(sample({}))).look).toBe('unknown')
+    // An unverified model flow is never drawn as flow.
+    expect(flowLook({ ...pipe, unverified: true }, indexSample(sample({ 'l.flowKgPerS': 3400 })))).toEqual({ look: 'unknown', value: null })
+  })
+
+  test('a header is full while any branch flows, so it never contradicts them', () => {
+    const header = node({ symbol: 'header', state: { kind: 'header', flowPaths: ['a.flow', 'b.flow'], noFlowBelow: 2 } as never })
+    expect(headerLook(header, indexSample(sample({ 'a.flow': 0, 'b.flow': 0.000001 })))).toBe('empty')
+    expect(headerLook(header, indexSample(sample({ 'a.flow': 0, 'b.flow': 83 })))).toBe('full')
+    expect(headerLook(header, indexSample(sample({ 'a.flow': 0 })))).toBe('unknown')
   })
 
   test('levels fill their vessel and flag values beyond its span', () => {
