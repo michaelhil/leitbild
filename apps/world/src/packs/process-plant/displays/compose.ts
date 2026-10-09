@@ -572,15 +572,63 @@ export const compileComposedDisplay = (
 }
 
 /**
- * The screens a unit overview is drawn for at 1:1, smallest first: the
- * overview takes the first its Plant fits (four loops fit Full HD, six need
- * QHD), so it never draws taller or wider than the screen it needs. A Plant
- * that fits none is refused with the size it needs.
+ * The screens a unit overview is drawn for at 1:1, smallest first, as the
+ * view its window shows on each: on a Full HD screen as measured on
+ * production, on a QHD screen with the same browser and window around it.
+ * The overview takes the first screen and arrangement its Plant fits (four
+ * loops fit Full HD, six need QHD), so it never draws larger than the screen
+ * it needs and never scrolls there. A Plant that fits none is refused with
+ * the size it needs.
  */
 export const UNIT_OVERVIEW_SCREENS = [
-  { maxWidth: 1920, maxHeight: 1080 },
-  { maxWidth: 2560, maxHeight: 1440 },
+  { name: 'Full HD', width: 1896, height: 972 },
+  { name: 'QHD', width: 2536, height: 1332 },
 ] as const
+
+/**
+ * How an overview's panels share its window: the drawing beside a column of
+ * lead values over the alarms, or lead values, drawing and alarms stacked.
+ * The view takes the column wherever the drawing leaves room for it.
+ */
+export type OverviewArrangement = 'column' | 'stacked'
+
+/**
+ * The room a window leaves an overview's drawing in an arrangement, from the
+ * declared panel sizes (composition.ts); null when the column does not fit
+ * its height.
+ */
+export const overviewDrawingRoom = (
+  screen: { readonly width: number; readonly height: number },
+  arrangement: OverviewArrangement,
+  readouts: number,
+): { readonly maxWidth: number; readonly maxHeight: number } | null => {
+  const layout = composedDisplayLayout
+  const width = screen.width - 2 * layout.overviewPadding
+  const height = screen.height - layout.overviewFrame
+  const alarms = layout.alarms
+  if (arrangement === 'column') {
+    const column = overviewColumnHeight(readouts)
+    if (column > height) return null
+    return { maxWidth: width - layout.overviewColumnGap - layout.overviewColumn, maxHeight: height - layout.mimicLegend }
+  }
+  const others = (readouts === 0 ? 0 : composedPanelHeight({ kind: 'readouts', values: readouts }) + layout.panelGap) + layout.panelGap + alarms
+  return { maxWidth: width, maxHeight: height - layout.overviewFooter - others - layout.mimicLegend }
+}
+
+/** The column's least height: its lead values, the alarms and the footer. */
+const overviewColumnHeight = (readouts: number): number => {
+  const layout = composedDisplayLayout
+  return (readouts === 0 ? 0 : readouts * layout.overviewReadoutRow + layout.panelGap) + layout.alarms + layout.overviewFooter
+}
+
+/** An overview's whole height in an arrangement: what a window shows without scrolling. */
+const overviewHeight = (arrangement: OverviewArrangement, readouts: number, mimic: CompiledMimic): number => {
+  const layout = composedDisplayLayout
+  const drawing = mimic.height + layout.mimicLegend
+  if (arrangement === 'column') return layout.overviewFrame + Math.max(drawing, overviewColumnHeight(readouts))
+  const others = (readouts === 0 ? 0 : composedPanelHeight({ kind: 'readouts', values: readouts }) + layout.panelGap) + layout.panelGap + layout.alarms
+  return layout.overviewFrame + drawing + others + layout.overviewFooter
+}
 
 /**
  * The unit overview World generates for a Plant: its lead values (protection
@@ -595,14 +643,28 @@ export const compileOverviewDisplay = (system: ProcessPlantRuntimeInstance, reco
     : compilePanel(system, { kind: 'readouts', signals: keyValues.map(path => ({ ref: path, role: 'primary' as const })) }, 0, recordedSeriesIds, issues)
   const circuits = principalCircuits(system.plant.graph)
   if (!circuits.ok) return { ok: false, issues: [{ path: 'overview', message: circuits.reason }] }
-  const attempts = UNIT_OVERVIEW_SCREENS.map(screen => () => compileMimicScope(system.plant, circuits.scope, { profile: overviewMimicProfile, ...screen }))
-  let drawn = attempts[0]!()
-  for (const attempt of attempts.slice(1)) if (!drawn.ok) drawn = attempt()
-  if (!drawn.ok) return { ok: false, issues: drawn.issues.map(issue => ({ path: 'overview', message: issue.message })) }
   if (issues.length > 0) return { ok: false, issues }
+  const values = readouts?.kind === 'readouts' ? readouts.pens.length : 0
+  // Per screen, smallest first: beside the column (the drawing gets the window's height), then stacked (its width).
+  const rooms = UNIT_OVERVIEW_SCREENS.flatMap(screen => (['column', 'stacked'] as const).flatMap(arrangement => {
+    const room = overviewDrawingRoom(screen, arrangement, values)
+    return room === null ? [] : [{ arrangement, room }]
+  }))
+  // Stacked always leaves some room, so the last refusal (the largest screen) says what the Plant needs.
+  let fitted: { readonly arrangement: OverviewArrangement; readonly mimic: CompiledMimic } | null = null
+  let refusal: ReadonlyArray<ComposedDisplayIssue> = []
+  for (const { arrangement, room } of rooms) {
+    const drawn = compileMimicScope(system.plant, circuits.scope, { profile: overviewMimicProfile, ...room })
+    if (drawn.ok) {
+      fitted = { arrangement, mimic: drawn.mimic }
+      break
+    }
+    refusal = drawn.issues.map(issue => ({ path: 'overview', message: issue.message }))
+  }
+  if (fitted === null) return { ok: false, issues: refusal }
   const unsized: ReadonlyArray<UnsizedPanel> = [
     ...(readouts === undefined ? [] : [readouts]),
-    { kind: 'mimic', mimic: drawn.mimic },
+    { kind: 'mimic', mimic: fitted.mimic },
     { kind: 'alarms', scope: 'plant', ruleIds: [] },
   ]
   // Nothing in an overview is a trend, so every panel has its natural height.
@@ -617,7 +679,7 @@ export const compileOverviewDisplay = (system: ProcessPlantRuntimeInstance, reco
       title: 'Unit overview',
       advice: null,
       modelDigest: system.plant.modelDigest,
-      height: fitComposedDisplay(unsized.map(panelShape)).height,
+      height: overviewHeight(fitted.arrangement, values, fitted.mimic),
       panels,
     },
   }

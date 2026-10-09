@@ -168,6 +168,20 @@ export const composedDisplayLayout = {
   panelGap: 6,
   /** The mimic's legend line under its drawing. */
   mimicLegend: 16,
+  /**
+   * A unit overview's window: its side padding, and its frame (top and
+   * bottom padding and one header row with title, Run, notice line, state and
+   * clock, with the gap under it).
+   */
+  overviewPadding: 10,
+  overviewFrame: 40,
+  /** The footer line and its gap, under an overview whose panels stack. */
+  overviewFooter: 18,
+  /** On a window wide enough, the column of lead values and alarms beside the drawing, and the gap before it. */
+  overviewColumn: 280,
+  overviewColumnGap: 12,
+  /** A lead value in that column, one per row: its name, readout and margin lines (78 px) and the gap under it. */
+  overviewReadoutRow: 82,
 } as const
 
 // A chat display taller than about 600 px pushes its own lower panels below

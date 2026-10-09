@@ -84,22 +84,23 @@
   // A protection trip changes the plant state; it leads the notice line.
   const activeTrip = $derived((snapshot?.latest?.alarms ?? []).filter(alarm => alarm.kind === 'trip')
     .sort((left, right) => (left.firstActiveElapsedMs ?? 0) - (right.firstActiveElapsedMs ?? 0))[0])
+
+  // A unit overview fills its window. Where the window is wide enough its
+  // drawing takes the window's height, beside a column of lead values over
+  // the alarms; otherwise the three stack and scroll. The compiler sizes the
+  // drawing for the same layout (compose.ts, overviewDrawingRoom).
+  const layout = composedDisplayLayout
+  const overview = $derived(advice === null)
+  let cardWidth = $state(document.documentElement.clientWidth)
+  const overviewMimic = $derived(view?.display.panels.find(panel => panel.kind === 'mimic'))
+  const beside = $derived(overview && overviewMimic?.kind === 'mimic'
+    && cardWidth - 2 * layout.overviewPadding >= overviewMimic.mimic.width + layout.overviewColumnGap + layout.overviewColumn)
+  const statusShown = $derived(snapshot === null || ['checking', 'starting', 'missing', 'inactive', 'failed'].includes(snapshot.phase.kind))
+  // Beside the drawing, the footer closes the column.
+  const columnShown = $derived(beside && !statusShown && view !== undefined)
 </script>
 
-<article class="card" class:overview={advice === null} aria-label={advice === null ? title : `AI-composed view: ${title}`}>
-  <header>
-    <h1 {title}>{title}</h1>
-    <span class={`chip ${stateChip.tone}`}>{stateChip.text}</span>
-    {#if Number.isFinite(now)}<span class="clock">sim {simulationClock(now)}</span>{/if}
-  </header>
-  <!-- Provenance: which unit and which Run the view is about. -->
-  <p class="unit" title={`${view?.plantLabel ?? plantId}${snapshot?.runTitle === undefined ? '' : ` · Run: ${snapshot.runTitle}`}`}>{view?.plantLabel ?? plantId}{#if snapshot?.runTitle !== undefined}{' · '}Run: {snapshot.runTitle}{/if}</p>
-  {#if advice !== null}
-    <p class="caption" title={`${advice.composition.question} — ${advice.composition.need}`}>
-      <strong>Why this view:</strong> {advice.composition.question} <span class="need">{advice.composition.need}</span>
-    </p>
-  {/if}
-
+{#snippet notice()}
   <!-- One reserved notice line; the most consequential notice wins. Advice can go stale; an overview cannot. -->
   <p class="banner" class:quiet={!adviceStale && activeTrip === undefined} class:trip={activeTrip !== undefined && !adviceStale}>
     {#if advice !== null && snapshot?.resetSinceAdvice}
@@ -118,6 +119,31 @@
       Advice issued at sim {simulationClock(issuedAt)} · {agoText(now - issuedAt)}
     {/if}
   </p>
+{/snippet}
+
+{#snippet footerLine()}
+  <footer>{advice === null ? 'Generated from the Plant model' : 'AI-composed view'} · thresholds from the Plant's I&amp;C rules · not an operating display</footer>
+{/snippet}
+
+<article class="card" class:overview aria-label={advice === null ? title : `AI-composed view: ${title}`} bind:clientWidth={cardWidth}>
+  <header>
+    <h1 {title}>{title}</h1>
+    {#if overview}
+      <!-- An overview's title names its unit; its Run and its notice line share this row, so the panels keep the window's height. -->
+      {#if snapshot?.runTitle !== undefined}<span class="run" title={`Run: ${snapshot.runTitle}`}>Run: {snapshot.runTitle}</span>{/if}
+      {@render notice()}
+    {/if}
+    <span class={`chip ${stateChip.tone}`}>{stateChip.text}</span>
+    {#if Number.isFinite(now)}<span class="clock">sim {simulationClock(now)}</span>{/if}
+  </header>
+  {#if advice !== null}
+    <!-- Provenance: which unit and which Run the view is about. -->
+    <p class="unit" title={`${view?.plantLabel ?? plantId}${snapshot?.runTitle === undefined ? '' : ` · Run: ${snapshot.runTitle}`}`}>{view?.plantLabel ?? plantId}{#if snapshot?.runTitle !== undefined}{' · '}Run: {snapshot.runTitle}{/if}</p>
+    <p class="caption" title={`${advice.composition.question} — ${advice.composition.need}`}>
+      <strong>Why this view:</strong> {advice.composition.question} <span class="need">{advice.composition.need}</span>
+    </p>
+    {@render notice()}
+  {/if}
 
   {#if snapshot === null || snapshot.phase.kind === 'checking' || snapshot.phase.kind === 'starting'}
     <p class="status">Connecting to the Run…</p>
@@ -131,6 +157,24 @@
     </div>
   {:else if snapshot.phase.kind === 'failed'}
     <p class="status">This view cannot be shown: {snapshot.phase.message}</p>
+  {:else if view && columnShown}
+    <div class="panels beside" style={`gap:${layout.overviewColumnGap}px`}>
+      <div class="drawing">
+        {#each view.display.panels as panel, index (index)}
+          {#if panel.kind === 'mimic'}<MimicPanel mimic={panel.mimic} latest={snapshot.latest} {stale} />{/if}
+        {/each}
+      </div>
+      <div class="column" style={`width:${layout.overviewColumn}px;gap:${layout.panelGap}px`}>
+        {#each view.display.panels as panel, index (index)}
+          {#if panel.kind === 'readouts'}
+            <ReadoutsPanel {panel} latest={snapshot.latest} {activeRuleIds} column />
+          {:else if panel.kind === 'alarms'}
+            <AlarmsPanel {panel} latest={snapshot.latest} fill />
+          {/if}
+        {/each}
+        {@render footerLine()}
+      </div>
+    </div>
   {:else if view}
     <div class="panels" style={`gap:${composedDisplayLayout.panelGap}px`}>
       {#each view.display.panels as panel, index (index)}
@@ -172,7 +216,7 @@
     </div>
   {/if}
 
-  <footer>{advice === null ? 'Generated from the Plant model' : 'AI-composed view'} · thresholds from the Plant's I&amp;C rules · not an operating display</footer>
+  {#if !columnShown}{@render footerLine()}{/if}
 </article>
 
 <style>
@@ -196,8 +240,17 @@
   button { font: inherit; font-size: 12px; padding: 1px 10px; border: 1px solid var(--border-outline-color); border-radius: 4px; background: var(--container-section-color); color: var(--element-active-color); cursor: pointer; }
   button:focus-visible { outline: 2px solid var(--border-focus-color); outline-offset: 1px; }
   .panels { display: flex; flex-direction: column; }
-  /* A unit overview fills a window and is larger than it: its panels scroll, and nothing is shrunk. */
+  /* A unit overview fills its window: one header row (composedDisplayLayout.overviewFrame), then its panels. Nothing is shrunk; stacked, they scroll when the window is smaller. */
+  .overview header { flex: none; height: 22px; }
+  .overview h1 { flex: 0 1 auto; }
+  .overview .banner { flex: 1 1 0; min-width: 0; }
+  .run { flex: 0 1 auto; min-width: 0; font-size: 11.5px; color: var(--element-neutral-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .overview .panels { flex: 1 1 auto; min-height: 0; overflow: auto; }
   .overview .panels > :global(*) { flex-shrink: 0; }
+  .panels.beside { flex-direction: row; }
+  .drawing { flex: 1 1 auto; min-width: 0; }
+  .column { flex: none; display: flex; flex-direction: column; min-height: 0; }
+  .column > :global(*) { flex-shrink: 0; }
   footer { margin-top: auto; font-size: 10.5px; color: var(--element-neutral-color); }
+  .overview footer { flex: none; line-height: 14px; }
 </style>

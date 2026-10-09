@@ -8,24 +8,31 @@
   import AlarmChip from './AlarmChip.svelte'
   import './openbridge.ts'
 
-  let { panel, latest, activeRuleIds }: {
+  // A unit overview's column lists its lead values one per row, each row as tall as its three lines, with room for whole names.
+  let { panel, latest, activeRuleIds, column = false }: {
     panel: ComposedReadoutsPanel
     latest: ComposedDisplaySample | undefined
     activeRuleIds: ReadonlySet<string>
+    column?: boolean
   } = $props()
 
+  /** The row gap (the CSS below). */
+  const ROW_GAP = 4
   const sampled = (path: string) => latest?.values.find(entry => entry.path === path)
-  const rows = $derived(Math.ceil(panel.pens.length / composedDisplayLayout.readoutsPerRow))
+  const rows = $derived(Math.ceil(panel.pens.length / (column ? 1 : composedDisplayLayout.readoutsPerRow)))
+  const size = $derived(column
+    ? `height:${rows * composedDisplayLayout.overviewReadoutRow}px;grid-template-columns:minmax(0, 1fr);grid-auto-rows:${composedDisplayLayout.overviewReadoutRow - ROW_GAP}px;`
+    : `height:${rows * composedDisplayLayout.readoutsRow}px;grid-template-columns:repeat(${composedDisplayLayout.readoutsPerRow}, minmax(0, 1fr));`)
 </script>
 
-<ul class="readouts" style={`height:${rows * composedDisplayLayout.readoutsRow}px;grid-template-columns:repeat(${composedDisplayLayout.readoutsPerRow}, minmax(0, 1fr));`}>
+<ul class="readouts" style={size}>
   {#each panel.pens as pen (pen.path)}
     {@const entry = sampled(String(pen.path))}
     {@const value = entry?.value}
     {@const margin = typeof value === 'number' ? nearestThresholdMargin(value, pen.thresholds) : null}
     {@const inAlarm = activeThreshold(pen.thresholds, activeRuleIds)}
     <li class:primary={pen.role === 'primary'} title={`${pen.label} · ${pen.role}`}>
-      <span class="head" title={`${displayName(pen)}${pen.command ? ' · operator or automation demand, not a measured state' : ` · ${pen.label}`}`}><span class="name">{shortName(displayName(pen), pen.command ? 16 : 24)}</span>{#if pen.command}<span class="demand">demand</span>{/if}{#if inAlarm !== null}<AlarmChip threshold={inAlarm} />{/if}</span>
+      <span class="head" title={`${displayName(pen)}${pen.command ? ' · operator or automation demand, not a measured state' : ` · ${pen.label}`}`}><span class="name">{shortName(displayName(pen), (column ? 44 : 24) - (pen.command ? 8 : 0))}</span>{#if pen.command}<span class="demand">demand</span>{/if}{#if inAlarm !== null}<AlarmChip threshold={inAlarm} />{/if}</span>
       {#if typeof value === 'boolean'}
         <span class="state">{value ? pen.label : `Not ${pen.label.charAt(0).toLowerCase()}${pen.label.slice(1)}`}</span>
       {:else}

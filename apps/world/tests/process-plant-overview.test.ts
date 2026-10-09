@@ -11,7 +11,7 @@ import {
 } from '../src/packs/process-plant/index.ts'
 import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
 import { recordedPlantVariables } from '../src/packs/process-plant/recording.ts'
-import { compileOverviewDisplay, UNIT_OVERVIEW_SCREENS, type CompiledComposedDisplay } from '../src/packs/process-plant/displays/compose.ts'
+import { compileOverviewDisplay, overviewDrawingRoom, UNIT_OVERVIEW_SCREENS, type CompiledComposedDisplay } from '../src/packs/process-plant/displays/compose.ts'
 
 const plant = (loopCount = 4): ProcessPlantRuntimeInstance => {
   const compiled = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:overview', loopCount }))
@@ -82,16 +82,38 @@ describe('the unit overview World generates for a Plant', () => {
     expect(result.display.advice).toEqual({ question: 'Is pressurizer pressure holding?', need: 'Decide on spray' })
   })
 
-  test('is drawn for the smallest screen its Plant fits at 1:1: four loops on Full HD, six on QHD', () => {
+  test('is drawn for the smallest screen its Plant fits whole at 1:1: four loops on Full HD, six on QHD', () => {
     const fitted = (system: ProcessPlantRuntimeInstance) => {
       const result = compileOverviewDisplay(system, new Set())
       if (!result.ok) throw new Error(result.issues.map(issue => issue.message).join('; '))
       const panel = result.display.panels.find(candidate => candidate.kind === 'mimic')!
       if (panel.kind !== 'mimic') throw new Error('expected the mimic')
-      return UNIT_OVERVIEW_SCREENS.findIndex(screen => panel.mimic.width <= screen.maxWidth && panel.mimic.height <= screen.maxHeight)
+      const readouts = result.display.panels.find(candidate => candidate.kind === 'readouts')
+      const values = readouts?.kind === 'readouts' ? readouts.pens.length : 0
+      const screen = UNIT_OVERVIEW_SCREENS.findIndex(candidate => (['column', 'stacked'] as const).some(arrangement => {
+        const room = overviewDrawingRoom(candidate, arrangement, values)
+        return room !== null && panel.mimic.width <= room.maxWidth && panel.mimic.height <= room.maxHeight
+      }))
+      // Lead values, drawing and alarms all show on that screen without scrolling.
+      expect(result.display.height).toBeLessThanOrEqual(UNIT_OVERVIEW_SCREENS[screen]!.height)
+      return screen
     }
     expect(fitted(system)).toBe(0)
     expect(fitted(plant(6))).toBe(1)
+  })
+
+  test('on a Full HD screen four loops draw beside the column of lead values and alarms, the window\'s whole height theirs', () => {
+    const fullHd = UNIT_OVERVIEW_SCREENS[0]
+    const column = overviewDrawingRoom(fullHd, 'column', 6)!
+    const stacked = overviewDrawingRoom(fullHd, 'stacked', 6)!
+    expect(column.maxHeight).toBeGreaterThan(stacked.maxHeight + 200)
+    const result = compileOverviewDisplay(system, new Set())
+    if (!result.ok) throw new Error(result.issues.map(issue => issue.message).join('; '))
+    const panel = result.display.panels.find(candidate => candidate.kind === 'mimic')!
+    if (panel.kind !== 'mimic') throw new Error('expected the mimic')
+    expect(panel.mimic.width).toBeLessThanOrEqual(column.maxWidth)
+    expect(panel.mimic.height).toBeLessThanOrEqual(column.maxHeight)
+    expect(panel.mimic.readoutSize).toBe('regular')
   })
 
   test('an overview state for another Plant is refused', () => {
