@@ -203,6 +203,47 @@ pub(crate) fn clad_energy(t: f64) -> f64 {
     }
     out
 }
+/// Recover a finite Zry stock's temperature from its actual sensible-energy
+/// increment using the existing clad caloric law and 290..1800 K domain.
+/// This introduces no new cp curve, wet saturation gate or temperature feedback.
+pub fn clad_temperature_from_energy_increment(
+    mass: f64,
+    initial: f64,
+    increment: f64,
+) -> Result<f64, String> {
+    if !mass.is_finite() || mass <= 0. || !initial.is_finite() || !(290. ..=1800.).contains(&initial)
+        || !increment.is_finite()
+    {
+        return Err("Invalid finite Zry caloric input".into());
+    }
+    let target = clad_energy(initial) + increment / mass;
+    if target < clad_energy(290.) || target > clad_energy(1800.) {
+        return Err("Finite Zry stock leaves existing clad sensible domain".into());
+    }
+    if increment == 0. {
+        return Ok(initial);
+    }
+    let (mut lo, mut hi) = (290., 1800.);
+    let mut t = initial;
+    for _ in 0..64 {
+        let e = clad_energy(t);
+        if e == target {
+            return Ok(t);
+        }
+        if e < target {
+            lo = t;
+        } else {
+            hi = t;
+        }
+        let newton = t - (e - target) / clad_cp(t);
+        let next = if newton > lo && newton < hi { newton } else { 0.5 * (lo + hi) };
+        if next == t || next == lo || next == hi {
+            return Ok(next);
+        }
+        t = next;
+    }
+    Err("Finite Zry caloric inverse did not converge".into())
+}
 fn hot_k(t: f64) -> f64 {
     BTU * ((2335. / (t + 190.85)).max(1.1038) + 0.007027 * (0.001867 * (t - 273.15)).exp())
 }
@@ -913,6 +954,20 @@ mod tests {
     }
     fn model() -> Model {
         Model::new(vec![band(0, 0, 3, 3), band(0, 1, 3, 3)], vec![helium()], 2).unwrap()
+    }
+    #[test]
+    fn existing_zry_energy_recovers_finite_stock_increments_without_clipping() {
+        for mass in [0.5, 10.] {
+            for t in [290., 299., 300., 400., 640., 1093., 1248., 1600., 1800.] {
+                let e = mass * clad_energy(t);
+                let actual = clad_temperature_from_energy_increment(mass, 300., e).unwrap();
+                assert!((actual - t).abs() <= 8. * f64::EPSILON * t);
+            }
+        }
+        assert_eq!(clad_temperature_from_energy_increment(10., 300., 0.).unwrap().to_bits(), 300_f64.to_bits());
+        assert!(clad_temperature_from_energy_increment(10., 300., 10. * clad_energy(1800.) + 1.).is_err());
+        assert!(clad_temperature_from_energy_increment(10., 300., 10. * clad_energy(290.) - 1.).is_err());
+        assert!(clad_temperature_from_energy_increment(0., 300., 0.).is_err());
     }
     #[test]
     fn material_primitives_and_stable_adjacent_temperature_increments() {

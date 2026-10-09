@@ -6,6 +6,9 @@ use leitbild_plant_numerics::{barrel_thermal as bt, control_material_heat as cm,
 #[path = "../src/passive_source.rs"] mod owning_passive;
 
 fn fixture() -> (se::Evolution, cg::Prepared, cm::Model) {
+    fixture_with_minimum(0.)
+}
+fn fixture_with_minimum(minimum_stem:f64) -> (se::Evolution,cg::Prepared,cm::Model) {
     let mut input = source_fixture::input();
     input.targets.extend([100.; 8]);
     for targets in [[4,5,6,7], [8,9,10,11]] {
@@ -41,7 +44,7 @@ fn fixture() -> (se::Evolution, cg::Prepared, cm::Model) {
             lo:4.,hi:8.,spans:stem_spans()})},
     ];
     let geometry=cg::Prepared::new(cg::Input {
-        clusters:1,maximum_body:0.25,maximum_stem:0.5,bottom:0.,top:2.,active_bottom:0.3,
+        clusters:1,maximum_body:0.25,minimum_stem,maximum_stem:0.5,bottom:0.,top:2.,active_bottom:0.3,
         active_length:1.,active_top:1.3,head:3.25,housing_top:3.75,neck_top:8.,
         rodlets:1.,guide_radius:0.0055,body_radius:0.00475,
         guide_area:std::f64::consts::PI*0.0055f64.powi(2),body_area:std::f64::consts::PI*0.00475f64.powi(2),
@@ -98,6 +101,25 @@ fn stage(s:&se::Evolution,g:&cg::Prepared,m:&cm::Model,y:&[f64],p:cg::Pose,d:cg:
     (sw,gw,hw)
 }
 fn close(a:f64,b:f64) {assert!((a-b).abs()<=3e-10*a.abs().max(b.abs()).max(1e-10),"{a:.17e} != {b:.17e}");}
+#[test]
+fn signed_stem_crossing_and_inward_stop_preserve_whole_material_and_heat() {
+    let (s,g,m)=fixture_with_minimum(-0.04);let y=state(&s);
+    for stem in [-0.04,-0.02,0.,0.02] {
+        let (sw,gw,hw)=stage(&s,&g,&m,&y,pose(0.1,stem),cg::Direction{body:0.,stem:-0.01});
+        close(gw.value.source.passive_volumes[2]+gw.value.source.passive_volumes[3],0.102);
+        let q=hw.value().unwrap();
+        close(q.emitted,q.metal_total()+q.water.iter().sum::<f64>()+q.exported);
+        sw.check_current_state(&y).unwrap();
+    }
+    let mut p=pose(0.1,0.);p.stem_right=false;
+    let mut gw=g.workspace();g.evaluate_into(&[p],&[cg::Direction{body:0.,stem:-0.01}],&mut gw).unwrap();
+    let mut sw=s.workspace();s.evaluate_with_geometry_into(&y,s.prepared_temperatures(),&source_water(&gw),&gw.value.source,&mut sw).unwrap();
+    let mut hw=m.workspace();m.evaluate(&y,&sw,&[p],&gw,&water(),&mut hw).unwrap();
+    p.stem=-0.04;
+    assert!(g.evaluate_into(&[p],&[cg::Direction::default()],&mut gw).is_err());
+    assert!(m.evaluate(&y,&sw,&[p],&gw,&water(),&mut hw).is_err());
+    assert!(hw.value().is_err());
+}
 fn closure(v:&cm::Delivery) {
     close(v.emitted,v.metal_total()+v.water.iter().sum::<f64>()+v.exported);
     for row in &v.channels {for base in [0,4] {close(row[base],row[base+1]+row[base+2]+row[base+3]);}}

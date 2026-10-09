@@ -5,6 +5,7 @@
 use crate::{absorber_motion as am, control_source_geometry as cg, moving_guide,
     operating_network as on, GRAVITY};
 use on::moving_hydraulic::{self as mh, Law, StemResponse};
+use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Binding {
@@ -44,6 +45,14 @@ pub struct Plan {
     /// Immutable cluster order, independent of hydraulic binding order.
     pub stems: Vec<Stem>,
 }
+#[derive(Clone, Copy, Debug, Default)]
+pub struct StemPassageStage {
+    pub length_m: f64,
+    pub length_pose_partial: f64,
+    pub loss_pa: f64,
+    /// Current density, viscosity, actual STEM speed and actual STEM pose.
+    pub loss_partials: [f64; mh::STEM_PARTIALS],
+}
 pub struct Workspace {
     pub forces: Vec<am::Forces>,
     /// The sole neck excess-pressure/shear energy credit into UPPER.
@@ -51,10 +60,12 @@ pub struct Workspace {
     /// Independent positive constitutive identity; do not add as more heat.
     pub stem_dissipation_w: f64,
     stem: Vec<StemResponse>,
+    stem_passages: Vec<Vec<StemPassageStage>>,
     plan: Plan,
     poses: Vec<cg::Pose>,
     velocity: Vec<cg::Direction>,
     network_state: Vec<f64>,
+    network_owner: Option<Arc<()>>,
     valid: bool,
 }
 impl Workspace {
@@ -63,8 +74,31 @@ impl Workspace {
             forces: vec![am::Forces { body_n: 0., stem_n: 0. }; plan.bindings.len()],
             stem_fluid_work_w: 0., stem_dissipation_w: 0.,
             stem: vec![StemResponse::default(); plan.stems.len()],
-            plan: plan.clone(), poses: vec![], velocity: vec![], network_state: vec![], valid: false,
+            stem_passages: plan.stems.iter().map(|s| vec![StemPassageStage::default();s.passages.len()]).collect(),
+            plan: plan.clone(), poses: vec![], velocity: vec![], network_state: vec![],
+            network_owner: None, valid: false,
         }
+    }
+    /// The release pressure/inertance helper consumes the actual force owner's
+    /// prepared overlaps and distributed losses; it owns no parallel topology
+    /// or repeated annular constitutive preparation.
+    pub fn stem_passage_stage(&self, plan:&Plan, cluster:usize, pose:cg::Pose,
+        speed:f64) -> Result<&[StemPassageStage],String>
+    {
+        let old=self.poses.get(cluster).ok_or("Absent current stem force stage")?;
+        if !self.valid || self.plan!=*plan || old.stem.to_bits()!=pose.stem.to_bits()
+            || old.stem_right!=pose.stem_right
+            || self.velocity[cluster].stem.to_bits()!=speed.to_bits()
+        { return Err("Release hydraulics requires the exact current stem force stage".into()); }
+        Ok(&self.stem_passages[cluster])
+    }
+    pub fn check_current_network_state(&self,plan:&Plan,n:&on::Network,y:&[f64])->Result<(),String> {
+        if !self.valid || self.plan!=*plan
+            || !self.network_owner.as_ref().is_some_and(|owner|Arc::ptr_eq(owner,n.owner_token()))
+            || y.len()!=self.network_state.len()
+            || y.iter().zip(&self.network_state).any(|(a,b)|a.to_bits()!=b.to_bits())
+        {return Err("Release hydraulics requires the exact current force/network stage".into());}
+        Ok(())
     }
 }
 fn finite_direction(d: &[cg::Direction], n: usize) -> bool {
@@ -192,6 +226,7 @@ impl Plan {
         poses:&[cg::Pose], velocity:&[cg::Direction], out:&mut Workspace) -> Result<(),String>
     {
         out.valid=false;
+        out.network_owner=None;
         self.check(n,self.bindings.len())?;
         nw.check_current_chart(n,y)?;
         geometry.check_current_poses(poses).map_err(String::from)?;
@@ -232,12 +267,16 @@ impl Plan {
             }
             let v=velocity[b.cluster].stem;
             let mut sr=StemResponse::default();
-            for passage in &stem.passages {
+            for (pi,passage) in stem.passages.iter().enumerate() {
                 let shape=cg::overlap(stem.bottom_m,stem.top_m,passage.bottom_m,passage.top_m,
                     pose.stem,pose.stem_right);
                 let a=mh::closed_stem(moving_guide::Geometry { outer_radius_m:passage.outer_radius_m,
                     inner_radius_m:stem.radius_m,length_m:shape[0],multiplicity:1 },v,self.roughness,
                     lu.density,lu.viscosity)?;
+                let mut loss_partials=a.loss_partials;
+                loss_partials[3]*=shape[1];
+                out.stem_passages[b.cluster][pi]=StemPassageStage {length_m:shape[0],
+                    length_pose_partial:shape[1],loss_pa:a.loss_pa,loss_partials};
                 sr.force_n+=a.force_n;
                 sr.fluid_work_w+=a.fluid_work_w;
                 sr.dissipation_w+=a.dissipation_w;
@@ -264,6 +303,7 @@ impl Plan {
         out.poses.clear();out.poses.extend_from_slice(poses);
         out.velocity.clear();out.velocity.extend_from_slice(velocity);
         out.network_state.clear();out.network_state.extend_from_slice(y);
+        out.network_owner=Some(n.owner_token().clone());
         out.valid=true;
         Ok(())
     }
@@ -273,12 +313,12 @@ impl Plan {
         dstate:&[f64],dpose:&[cg::Direction],dvelocity:&[cg::Direction],w:&Workspace,
         out:&mut Vec<am::Forces>) -> Result<f64,String>
     {
+        w.check_current_network_state(self,n,y)?;
         nw.check_current_chart(n,y)?;
         geometry.check_current_poses(&w.poses).map_err(String::from)?;
         if !w.valid || w.plan!=*self || dstate.len()!=n.dimension()
             || dstate.iter().any(|x|!x.is_finite()) || !finite_direction(dpose,self.bindings.len())
-            || !finite_direction(dvelocity,self.bindings.len()) || w.network_state.len()!=y.len()
-            || w.network_state.iter().zip(y).any(|(a,b)|a.to_bits()!=b.to_bits())
+            || !finite_direction(dvelocity,self.bindings.len())
         { return Err("Control fluid-force direction requires its exact value stage".into()); }
         self.check_shape_stage(nw,geometry,&w.velocity)?;
         out.resize(self.bindings.len(),am::Forces {body_n:0.,stem_n:0.});

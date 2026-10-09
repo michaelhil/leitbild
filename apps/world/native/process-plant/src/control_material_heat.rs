@@ -90,6 +90,7 @@ pub struct Model {
     source_owner: Arc<()>,
     geometry_owner: Arc<()>,
     maximum_body: f64,
+    minimum_stem: f64,
     maximum_stem: f64,
     owner: Arc<()>,
 }
@@ -215,7 +216,8 @@ impl Model {
             // enclosure over the selected travel, not arbitrary contributors
             // and not pieces that only touch at an excluded outward endpoint.
             let maximum = match h.kind { Kind::Spider => plan.maximum_body, Kind::Stem => plan.maximum_stem };
-            let reachable = || moving.spans.iter().filter(|s| s.hi + maximum > r.lo && s.lo < r.hi);
+            let minimum = match h.kind { Kind::Spider => 0., Kind::Stem => plan.minimum_stem };
+            let reachable = || moving.spans.iter().filter(|s| s.hi + maximum > r.lo && s.lo + minimum < r.hi);
             let expected_count = reachable().count();
             if r.spans.len() != expected_count {
                 return Err(format!("Moving-steel route {i} host {} {:?} cluster {} region {} origin {} incidence {} differs from its actual moving SOURCE support: reachable span count {} vs expected {expected_count}, route=[{},{}], maximum={maximum}",
@@ -240,7 +242,8 @@ impl Model {
         Ok(Self { input, births, groups: groups.into_values().collect(), mn_rows, mn_products,
             mn_law, self_transmission, paid: paid.into_iter().collect(), source_dimension: source.state_count(),
             water_count, source_owner: source.owner_token(), geometry_owner: geometry.owner_token(),
-            maximum_body: plan.maximum_body, maximum_stem: plan.maximum_stem, owner: Arc::new(()) })
+            maximum_body: plan.maximum_body, minimum_stem: plan.minimum_stem,
+            maximum_stem: plan.maximum_stem, owner: Arc::new(()) })
     }
     pub fn config(&self) -> &Input { &self.input }
     pub fn host_count(&self) -> usize { self.input.hosts.len() }
@@ -273,7 +276,11 @@ impl Model {
             let p = poses.get(h.cluster).ok_or("Foreign moving-steel cluster pose")?;
             let (y, right) = match h.kind { Kind::Spider => (p.body, p.body_right), Kind::Stem => (p.stem, p.stem_right) };
             let maximum = match h.kind { Kind::Spider => self.maximum_body, Kind::Stem => self.maximum_stem };
+            let minimum = match h.kind { Kind::Spider => 0., Kind::Stem => self.minimum_stem };
             if y == maximum && right { return Err("Moving-steel maximum travel requires its inward one-sided branch".into()); }
+            if h.kind == Kind::Stem && minimum < 0. && y == minimum && !right {
+                return Err("Moving-steel minimum travel requires its inward one-sided branch".into());
+            }
             let mut v = 0.; let mut dv = 0.;
             for s in &r.spans { let a = cg::overlap(s.lo, s.hi, r.lo, r.hi, y, right);
                 v += s.area * a[0]; dv += s.area * a[1]; }

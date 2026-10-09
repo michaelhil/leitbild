@@ -251,6 +251,7 @@ pub fn parse(words: &[&str]) -> Result<g::Input, String> {
     Ok(g::Input {
         clusters,
         maximum_body,
+        minimum_stem: 0.,
         maximum_stem,
         bottom,
         top,

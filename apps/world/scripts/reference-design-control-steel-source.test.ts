@@ -2,7 +2,8 @@ import {beforeAll,describe,expect,test} from 'bun:test'
 import {readFileSync} from 'node:fs'
 import {join} from 'node:path'
 import {prepareMovingFuelCooling,movingFuelCoolingNativeInput} from './reference-design-control-geometry'
-import {controlSteelHeatNativeInput,controlSourceMotionAt,parseControlSteelNuclear} from './reference-design-control-source-motion'
+import {compileControlSourceMotion,controlSteelHeatNativeInput,controlSourceMotionAt,parseControlSteelNuclear,nativeControlSourcePlan} from './reference-design-control-source-motion'
+import {parseColdControlRelease,controlReleasePhysicalInput} from './reference-design-control-release'
 import {compileSourceEvolution,sourceEvolutionOwnerFiles} from './reference-design-source-evolution'
 import {axialIntervalOverlap} from './reference-design-control-material-motion'
 
@@ -108,5 +109,30 @@ describe.skipIf(!wiki||!evidence||!water)('actual joined moving structural SOURC
   expect(()=>parseControlSteelNuclear(owner.replace('"stemSelfChord_m":0.012','"stemSelfChord_m":0'))).toThrow()
   expect(()=>parseControlSteelNuclear(owner.replace('homogenized-round-member-mean-chord','literal-cylinder'))).toThrow()
   expect(()=>parseControlSteelNuclear(owner+'\n```reference-control-steel-nuclear\n{}\n```\n')).toThrow()
+ })
+ test('explicit release selection prepares signed SOURCE/heat support without changing ordinary wire or history',()=>{
+  const {plan,p,passive,cylinder,source}=prepared,
+   selection=parseColdControlRelease(readFileSync(join(wiki!,'systems/reactor/control-absorber-and-guide-water.md'),'utf8')),
+   ordinaryWords=nativeControlSourcePlan(plan),ordinaryHistory=JSON.stringify([source.material.nativeInputs.targets,source.manganese]),
+   signed=compileControlSourceMotion(plan.d,p,passive,cylinder,heat.selection,selection),
+   physical=controlReleasePhysicalInput(signed,source,selection),signedHeat=controlSteelHeatNativeInput(signed,source),
+   poses=signed.motion.clusters.map(c=>({clusterId:c.id,body_y_m:0,stem_y_m:0,side:'increasing' as const,
+    stem_side:'increasing' as const,contact:'seated' as const})),original=controlSourceMotionAt(signed,poses)
+  expect(plan.minimumStemPose_m).toBe(0)
+  expect(signed.minimumStemPose_m).toBe(physical.minimumStemPose_m)
+  expect(signedHeat.hosts).toEqual(heat.hosts)
+  expect(physical.fields).toHaveLength(691)
+  for(const y of [physical.minimumStemPose_m,physical.minimumStemPose_m/2,0]){
+   const stage=controlSourceMotionAt(signed,poses.map((p,i)=>({...p,stem_y_m:y*(52-i)/52,
+    stem_side:y===0?'decreasing' as const:'increasing' as const})))
+   expect(stage.water).toHaveLength(98)
+   expect(stage.water.reduce((s,w)=>s+w.volume_m3,0)).toBeCloseTo(original.water.reduce((s,w)=>s+w.volume_m3,0),10)
+   expect(stage.mobile.liquid_chords_m.every(v=>v>0)).toBe(true)
+   expect(stage.source.passiveVolumes.every(v=>v>=0)).toBe(true)
+  }
+  expect(()=>controlSourceMotionAt(plan,poses.map(q=>({...q,stem_y_m:physical.minimumStemPose_m})))).toThrow('pose')
+  expect(controlSourceMotionAt(signed,poses)).toEqual(original)
+  expect(nativeControlSourcePlan(plan)).toEqual(ordinaryWords)
+  expect(JSON.stringify([source.material.nativeInputs.targets,source.manganese])).toBe(ordinaryHistory)
  })
 })

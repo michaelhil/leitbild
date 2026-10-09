@@ -19,6 +19,7 @@ import {nativeMobileCaptureFrame} from './reference-design-mobile-capture'
 import {createHash} from 'node:crypto'
 import {z} from 'zod'
 import {configurationBlock} from './reference-design-source-laws'
+import {coldControlReleaseMinimumStem,type ColdControlRelease} from './reference-design-control-release'
 
 type Input=ReturnType<typeof parsePrimaryWaterInputs>
 type Cooling=Awaited<ReturnType<typeof compileFuelCooling>>
@@ -71,7 +72,7 @@ type Intruder={cluster:number;motion:'body'|'stem';lo:number;hi:number;area:numb
 /** Prepare a fixed union and a single ORIGINAL owner split. All other native
  * liquid rows keep their relative order. `oldWaterToNew` never maps the old
  * pooled BODY to one of its children: callers must explicitly consume split. */
-export function compileControlSourceMotion(d:Input,p:Cooling,passive:Passive,cylinder:Cylinder,steelSelection?:z.infer<typeof steelNuclearSchema>){
+export function compileControlSourceMotion(d:Input,p:Cooling,passive:Passive,cylinder:Cylinder,steelSelection?:z.infer<typeof steelNuclearSchema>,releaseSelection?:ColdControlRelease){
  const partition=p.material.partition,c=d.control,h=d.handling,f=d.fuel,
   cg=controlAbsorberGeometry(c,f,h),current=currentColdGeometry(c,d.attachment,f,h,d.gates,d.head,d.cold),
   motion=compileControlMaterialMotion(partition.regions,d,passive.stocks),
@@ -145,7 +146,8 @@ export function compileControlSourceMotion(d:Input,p:Cooling,passive:Passive,cyl
  }
  // This boundary refuses new passage/collision physics; it is not an accuracy
  // clamp. The current short burst is far inside it. No material is clipped to it.
- const maximumBodyPose_m=Math.min(c.normalTravel_m,c.headBottom_m-top,
+ const minimumStemPose_m=releaseSelection?coldControlReleaseMinimumStem(releaseSelection,c,d.attachment):0,
+  maximumBodyPose_m=Math.min(c.normalTravel_m,c.headBottom_m-top,
   ...intruders.filter(q=>q.motion==='body'&&q.upperOnly).map(q=>c.headBottom_m-q.hi)),
   maximumStemPose_m=Math.min(c.normalTravel_m,c.neckTop_m-
    Math.max(...intruders.filter(q=>q.motion==='stem').map(q=>q.hi)),
@@ -153,7 +155,7 @@ export function compileControlSourceMotion(d:Input,p:Cooling,passive:Passive,cyl
  if(!(maximumBodyPose_m>0&&maximumStemPose_m>0))throw Error('No fully described cold motion domain')
  if(structuralStocks.size!==0&&structuralStocks.size!==2*c.clusters)throw Error('Incomplete moving structural source selection')
  const steelMotion=structuralStocks.size?compileControlSteelMotion(partition.regions,d,passive.stocks,
-  {body:maximumBodyPose_m,stem:maximumStemPose_m}):null
+  {body:maximumBodyPose_m,stem:maximumStemPose_m},minimumStemPose_m):null
  if(steelMotion)passiveRows.push(...steelMotion.rows.map((r,steelRow)=>({stock:r.stock,region:r.region,volume:0,geometryRow:-1,steelRow})))
  for(const patch of patches)if(patch.origin.startsWith('HOUSING.')){
   const r=partition.regions[patch.region]!,lo=Math.max(r.z0_m!,patch.origin==='HOUSING.MAIN'?c.headBottom_m:c.housingTop_m),
@@ -246,7 +248,7 @@ export function compileControlSourceMotion(d:Input,p:Cooling,passive:Passive,cyl
   ['UPPER.EXTERNAL',activeTop,c.headBottom_m],['HOUSING.MAIN',c.headBottom_m,c.housingTop_m],['HOUSING.NECK',c.housingTop_m,c.neckTop_m],
  ] as const){
   const lo=Math.max(r.lo,bottom),hi=Math.min(r.hi,top),host=steelHosts.findIndex(h=>h.stock===r.stock),
-   spans=r.spans.filter(s=>s.hi+steelMotion.maximum[r.motion]>lo&&s.lo<hi)
+   spans=r.spans.filter(s=>s.hi+steelMotion.maximum[r.motion]>lo&&s.lo+steelMotion.minimum[r.motion]<hi)
   if(hi<=lo||!spans.length)continue
   const origin=originIndexes.get(id)
   if(host<0||origin===undefined)throw Error('Moving steel route lost material or primary origin')
@@ -255,13 +257,14 @@ export function compileControlSourceMotion(d:Input,p:Cooling,passive:Passive,cyl
  // Decay follows the whole current rigid stock, not the capture location. This
  // coverage proof also forbids losing emission outside represented source boxes.
  for(const [host,h]of steelHosts.entries()){
-  const local=steelRoutes.filter(r=>r.host===host),maximum=steelMotion!.maximum[h.kind==='stem'?'stem':'body'],cuts=new Set([0,maximum])
-  for(const r of local)for(const s of r.spans)for(const y of [r.lo-s.lo,r.lo-s.hi,r.hi-s.lo,r.hi-s.hi])if(y>0&&y<maximum)cuts.add(y)
+  const local=steelRoutes.filter(r=>r.host===host),motion=h.kind==='stem'?'stem':'body',
+   minimum=steelMotion!.minimum[motion],maximum=steelMotion!.maximum[motion],cuts=new Set([minimum,0,maximum])
+  for(const r of local)for(const s of r.spans)for(const y of [r.lo-s.lo,r.lo-s.hi,r.hi-s.lo,r.hi-s.hi])if(y>minimum&&y<maximum)cuts.add(y)
   const sorted=[...cuts].sort((a,b)=>a-b),probes=[...sorted,...sorted.slice(1).map((y,i)=>(y+sorted[i]!)/2)]
   let originalMoment=0
   for(const r of local)for(const s of r.spans)originalMoment+=s.area*axialIntervalOverlap(s.lo,s.hi,r.lo,r.hi,0,true)[2]
   for(const y of probes)for(const right of [false,true]){
-   if(y===0&&!right||y===maximum&&right)continue
+   if(y===minimum&&!right||y===maximum&&right)continue
    let V=0,J=0,dV=0,dJ=0
    for(const r of local)for(const s of r.spans){const a=axialIntervalOverlap(s.lo,s.hi,r.lo,r.hi,y,right)
     V+=s.area*a[0];dV+=s.area*a[1];J+=s.area*a[2];dJ+=s.area*a[3]
@@ -289,7 +292,7 @@ export function compileControlSourceMotion(d:Input,p:Cooling,passive:Passive,cyl
    if(i===undefined)throw Error('Current barrel contact lost physical photon origin')
    return {origin:i,originalVolume:c.photonVolume_m3,originalBoundary:c.photonBoundary_m2,
     boundaryVolumeSlope:c.photonBoundaryVolumeSlope_m_inv}}),
-  maximumBodyPose_m,maximumStemPose_m,bottom,top,activeTop:h.seatedBottom_m+h.bottomFittingLength_m+f.activeLength_m,guideA,bodyA,annulus,
+  maximumBodyPose_m,minimumStemPose_m,maximumStemPose_m,bottom,top,activeTop:h.seatedBottom_m+h.bottomFittingLength_m+f.activeLength_m,guideA,bodyA,annulus,
   immutable:{stockIds:passive.stocks.map(s=>s.id),targetIds:cylinder.targets.map(t=>t.id),
    hostIds:p.absorberGuide.hosts.map(h=>h.id),regionIds:partition.regions.map(r=>r.id)},
   scope:'Current cold fullywet control geometry/source and thermal coefficients only. No source or coolant advancement, accepted trajectory, '+(steelMotion?'remaining apparatus material closure':'neutronic stem/spider/apparatus material closure')+', hot/phase motion or live installation.'}
@@ -394,8 +397,8 @@ export function controlSourceMotionAt(plan:ControlSourceMotion,poses:readonly Co
   L=plan.top-plan.bottom,bodyV=controlMaterialMotionAt(plan.motion,poses),steelV=plan.steelMotion?controlSteelMotionAt(plan.steelMotion,poses):null,
   body=poses.map((p,i):D=>[p.body_y_m,directions[i]?.body??NaN]),stem=poses.map((p,i):D=>[p.stem_y_m,directions[i]?.stem??NaN])
  if(directions.length!==poses.length||poses.some((p,i)=>!Number.isFinite(p.stem_y_m+body[i]![1]+stem[i]![1])
-  ||p.body_y_m>plan.maximumBodyPose_m||p.stem_y_m<0||p.stem_y_m>plan.maximumStemPose_m
-  ||!['increasing','decreasing'].includes(p.stem_side)||(p.stem_y_m===0&&p.stem_side==='decreasing')
+  ||p.body_y_m>plan.maximumBodyPose_m||p.stem_y_m<plan.minimumStemPose_m||p.stem_y_m>plan.maximumStemPose_m
+  ||!['increasing','decreasing'].includes(p.stem_side)||(p.stem_y_m===plan.minimumStemPose_m&&p.stem_side==='decreasing')
   ||!['seated','offseat'].includes(p.contact)||(p.contact==='seated'&&p.body_y_m!==0)))
   throw Error('Current control/source pose outside described cold contact/passage domain')
  const material=plan.passiveRows.map(r=>r.steelRow!==undefined?[
@@ -519,6 +522,9 @@ export type ControlSourceStage=ReturnType<typeof controlSourceMotionAt>
  * and contract the selected physical formulas. No evaluated pose or history is
  * serialized here. Enum tags are a strict internal wire, not an expression DSL. */
 export function nativeControlSourcePlan(plan:ControlSourceMotion){
+ // Signed minimum is carried by the mandatory opt-in release frame, which the
+ // native release constructor consumes before constructing geometry/heat. The
+ // ordinary locked-grip numerical frame and its zero minimum stay unchanged.
  const {d}=plan,c=d.control,fields:number[]=[],count=(n:number)=>fields.push(n),
   array=(a:readonly number[])=>fields.push(a.length,...a)
  fields.push(c.clusters,plan.maximumBodyPose_m,plan.maximumStemPose_m,plan.bottom,plan.top,

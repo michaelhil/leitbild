@@ -161,6 +161,8 @@ pub struct BarrelPath {
 pub struct Input {
     pub clusters: usize,
     pub maximum_body: f64,
+    /// Selected physical shoulder/collar stop. Zero in the locked-grip case.
+    pub minimum_stem: f64,
     pub maximum_stem: f64,
     pub bottom: f64,
     pub top: f64,
@@ -421,6 +423,7 @@ impl Prepared {
             ]
             .into_iter()
             .all(positive)
+            || !i.minimum_stem.is_finite() || i.minimum_stem > 0.
             || !(i.guide_radius > i.body_radius && i.guide_area > i.body_area)
             || !valid_span(i.bottom, i.top)
             || !valid_span(i.active_bottom, i.active_bottom + i.active_length)
@@ -675,10 +678,10 @@ impl Prepared {
                 .all(f64::is_finite)
                 || p.body < 0.
                 || p.body > i.maximum_body
-                || p.stem < 0.
+                || p.stem < i.minimum_stem
                 || p.stem > i.maximum_stem
                 || (p.body == 0. && !p.body_right)
-                || (p.stem == 0. && !p.stem_right)
+                || (p.stem == i.minimum_stem && !p.stem_right)
                 || (p.seated && p.body != 0.)
             {
                 return Err("Current pose outside selected cold support branch");
@@ -1169,6 +1172,7 @@ mod tests {
             Input {
                 clusters: 1,
                 maximum_body: 0.5,
+                minimum_stem: 0.,
                 maximum_stem: 0.5,
                 bottom: 0.,
                 top: 2.,
@@ -1241,6 +1245,22 @@ mod tests {
             stem_right: true,
             seated: false,
         }
+    }
+    #[test]
+    fn selected_signed_stem_crosses_original_plane_and_stops_at_actual_minimum() {
+        let original=model();let mut ow=original.workspace();
+        original.evaluate_into(&[pose(0.,0.)],&[Direction::default()],&mut ow).unwrap();
+        let mut input=original.input;input.minimum_stem=-0.04;
+        let p=Prepared::new(input,&ow.value.source).unwrap();let mut w=p.workspace();
+        for stem in [-0.04,-0.02,0.,0.1] {
+            for right in [false,true] {
+                let mut s=pose(0.1,stem);s.stem_right=right;
+                let result=p.evaluate_into(&[s],&[Direction{body:0.01,stem:-0.02}],&mut w);
+                assert_eq!(result.is_ok(),stem!=-0.04 || right);
+            }
+        }
+        assert!(p.evaluate_into(&[pose(0.1,-0.040001)],&[Direction::default()],&mut w).is_err());
+        assert!(!w.valid());
     }
     #[test]
     fn overlap_preserves_exact_contained_length_and_one_sided_touching() {

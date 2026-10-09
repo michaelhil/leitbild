@@ -15,6 +15,10 @@ pub const STEM_PARTIALS: usize = 4;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct StemResponse {
+    /// Signed distributed pressure loss, retained for the same-stage serial
+    /// static-pressure admission. This is not a second constitutive evaluation.
+    pub loss_pa: f64,
+    pub loss_partials: [f64; STEM_PARTIALS],
     /// Excess-pressure end traction plus wall shear, fluid on shaft.
     /// Hydrostatic buoyancy belongs to the current-volume/first-moment owner.
     pub force_n: f64,
@@ -53,6 +57,7 @@ pub fn closed_stem(
     }.evaluate(-rho * area * speed_m_s, rho, mu)?;
     let force = area * unit.loss_pa + unit.wall_force_n;
     let mut out = StemResponse {
+        loss_pa: length * unit.loss_pa,
         force_n: length * force,
         fluid_work_w: -length * force * speed_m_s,
         dissipation_w: length * unit.dissipation_w,
@@ -60,6 +65,7 @@ pub fn closed_stem(
     };
     for j in 0..STEM_PARTIALS {
         if j == 3 {
+            out.loss_partials[j] = unit.loss_pa;
             out.force_partials[j] = force;
             out.fluid_work_partials[j] = -force * speed_m_s;
             out.dissipation_partials[j] = unit.dissipation_w;
@@ -70,13 +76,15 @@ pub fn closed_stem(
                 _ => [-rho * area, 0., 0., 1., 0.],
             };
             let a = unit.direction(d)?;
+            out.loss_partials[j] = length * a.loss_pa;
             out.force_partials[j] = length * (area * a.loss_pa + a.wall_force_n);
             out.fluid_work_partials[j] = -speed_m_s * out.force_partials[j]
                 - if j == 2 { out.force_n } else { 0. };
             out.dissipation_partials[j] = length * a.dissipation_w;
         }
     }
-    if [out.force_n, out.fluid_work_w, out.dissipation_w].iter()
+    if [out.loss_pa, out.force_n, out.fluid_work_w, out.dissipation_w].iter()
+        .chain(&out.loss_partials)
         .chain(&out.force_partials).chain(&out.fluid_work_partials)
         .chain(&out.dissipation_partials).any(|v| !v.is_finite())
     {

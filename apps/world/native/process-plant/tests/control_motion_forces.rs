@@ -8,7 +8,7 @@ pub fn fixture() -> (on::Network,cg::Prepared,cf::Plan) {
     let water=vec![cg::Water{volume:1.,moment:-1.},
         cg::Water{volume:(outer-body)*2.,moment:(outer-body)*2.},cg::Water{volume:2.,moment:6.}];
     let geometry=cg::Prepared::new(cg::Input {
-        clusters:1,maximum_body:0.5,maximum_stem:0.5,bottom:0.,top:2.,
+        clusters:1,maximum_body:0.5,minimum_stem:0.,maximum_stem:0.5,bottom:0.,top:2.,
         active_bottom:0.3,active_length:1.,active_top:1.3,head:4.,housing_top:6.,neck_top:8.,
         rodlets:1.,guide_radius:ro,body_radius:ri,guide_area:outer,body_area:body,
         water:water.clone(),upper:2,guides:vec![1],passive:vec![],cylinders:vec![],
@@ -128,4 +128,47 @@ fn stale_network_geometry_rates_and_force_stage_refuse() {
         &[cg::Direction::default()],&fw,&mut vec![]).is_err());
     nw.water_shapes[p.upper].first_moment_rate_m4_s+=1e-7;
     assert!(p.evaluate(&n,&y,&nw,&gw,&[pose()],&[velocity()],&mut fw).is_err());
+}
+#[test]
+fn release_absolute_pressure_binds_shared_pressure_offset_and_mechanical_correction_once() {
+    use leitbild_plant_numerics::control_release_hydraulics::Upper;
+    let (n,g,p)=fixture();let mut y=n.initial_state().unwrap();
+    y[n.mechanical_row(p.upper).unwrap()]=-37.;
+    let (nw,_,fw)=stage(&n,&g,&p,&y,pose(),velocity(),false);
+    let a=Upper::from_current(&n,&y,&nw,p.upper,3536.).unwrap();
+    assert_eq!(a.pressure_pa,n.mechanical_pressure(p.upper,&y));
+    assert_eq!(a.pressure_pa,y[n.pressure_row()]+n.pressure_offset(p.upper)-37.);
+    assert_eq!(a.datum_m,n.config().water[p.upper].geometry.elevation);
+    assert_eq!(a.density,nw.liquids[p.upper].density);
+    assert_eq!(a.viscosity,nw.liquids[p.upper].viscosity);
+    let mut next=y.clone();next[n.pressure_row()]+=1234.;
+    next[n.mechanical_row(p.upper).unwrap()]+=19.;
+    assert!(Upper::from_current(&n,&next,&nw,p.upper,3536.).is_err());
+    assert!(fw.check_current_network_state(&p,&n,&next).is_err());
+    let (next_work,_,_)=stage(&n,&g,&p,&next,pose(),velocity(),false);
+    let b=Upper::from_current(&n,&next,&next_work,p.upper,3536.).unwrap();
+    assert_eq!(b.pressure_pa-a.pressure_pa,1234.+19.);
+}
+#[test]
+fn equal_config_and_state_cannot_rebind_prepared_forces_to_a_foreign_network() {
+    use leitbild_plant_numerics::control_release_hydraulics::Selection;
+    let (n,g,p)=fixture();let y=n.initial_state().unwrap();
+    let (nw,gw,mut fw)=stage(&n,&g,&p,&y,pose(),velocity(),false);
+    let foreign=on::Network::new(n.config().clone()).unwrap();
+    let (foreign_work,foreign_geometry,_)=stage(&foreign,&g,&p,&y,pose(),velocity(),false);
+    fw.check_current_network_state(&p,&n,&y).unwrap();
+    assert!(fw.check_current_network_state(&p,&foreign,&y).is_err());
+    let zero=vec![0.;y.len()];let dp=[cg::Direction::default()];let mut df=vec![];
+    p.direction(&n,&y,&nw,&gw,&zero,&dp,&dp,&fw,&mut df).unwrap();
+    assert!(p.direction(&foreign,&y,&foreign_work,&foreign_geometry,&zero,&dp,&dp,&fw,&mut df).is_err());
+    let selection=Selection{initial_density:nw.liquids[p.upper].density,
+        minimum_stem:0.,maximum_stem:0.5,maximum_density_departure:0.01};
+    let error=selection.prepare_current(&p,&fw,&foreign,&y,&foreign_work,0,pose(),velocity().stem,3536.).unwrap_err();
+    assert!(error.contains("exact current force/network stage"),"{error}");
+    // A refused foreign preparation cannot leave the original force stage live.
+    assert!(p.evaluate(&foreign,&y,&nw,&gw,&[pose()],&[velocity()],&mut fw).is_err());
+    assert!(fw.check_current_network_state(&p,&n,&y).is_err());
+    assert!(p.direction(&n,&y,&nw,&gw,&zero,&dp,&dp,&fw,&mut df).is_err());
+    p.evaluate(&n,&y,&nw,&gw,&[pose()],&[velocity()],&mut fw).unwrap();
+    fw.check_current_network_state(&p,&n,&y).unwrap();
 }

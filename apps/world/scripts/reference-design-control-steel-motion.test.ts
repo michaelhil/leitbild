@@ -110,4 +110,23 @@ describe.skipIf(!wiki)('selected moving structural steel uses the actual materia
   expect(()=>controlSteelMotionAt(plan,poses.map(p=>({...p,stem_y_m:1.500001})))).toThrow('pose')
   expect(()=>controlSteelMotionAt(plan,[poses[1]!,poses[0]!,...poses.slice(2)])).toThrow('pose')
  })
+ test('selected shoulder/collar signed reach preserves actual104stocks across all cuts and restores ORIGINAL',()=>{
+  const minimum=d.control.collarBottoms_m[1]!+d.control.collarHeight_m-d.attachment.shoulderBottom_m,
+   signed=compileControlSteelMotion(partition.regions,d,augmented.stocks,{body:1.5,stem:1.54},minimum),
+   original=controlSteelMotionAt(signed,poses),before=JSON.stringify(augmented.stocks)
+  expect(signed.minimum).toEqual({body:0,stem:minimum})
+  expect(new Set(signed.rows.map(r=>r.stock)).size).toBe(104)
+  for(const y of [minimum,minimum/2,0,.25]){
+   const current=controlSteelMotionAt(signed,poses.map((p,i)=>({...p,stem_y_m:y+(0-y)*i/51,
+    stem_side:y===0?'decreasing' as const:'increasing' as const})))
+   for(const [stock,s]of augmented.stocks.entries())if(stock>=old.stocks.length){
+    const local=signed.rows.map((r,i)=>({r,i})).filter(q=>q.r.stock===stock),sum=(k:number)=>local.reduce((a,q)=>a+current[4*q.i+k]!,0)
+    expect(sum(0)).toBeCloseTo(s.volume_m3,12);expect(sum(1)).toBeCloseTo(0,12)
+    expect(sum(3)).toBeCloseTo(s.volume_m3,12)
+   }
+  }
+  expect(controlSteelMotionAt(signed,poses)).toEqual(original)
+  expect(JSON.stringify(augmented.stocks)).toBe(before)
+  expect(()=>compileControlSteelMotion(partition.regions,d,augmented.stocks,{body:1.5,stem:1.54},-1)).toThrow('lumped UPPER')
+ })
 })

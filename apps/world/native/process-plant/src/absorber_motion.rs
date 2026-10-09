@@ -42,6 +42,14 @@ pub struct Forces {
     pub body_n: f64,
     pub stem_n: f64,
 }
+/// Explicit local fluid inertia and actual hard-stop constraints. This never
+/// changes the metal mass in Config or its retained metal energy definition.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Loading {
+    pub stem_added_mass_kg: f64,
+    pub body_seated: bool,
+    pub stem_stopped: bool,
+}
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GripMode {
     Stick,
@@ -385,12 +393,21 @@ impl Config {
         ds: State,
         df: Forces,
     ) -> Result<ResponseDirection, &'static str> {
+        self.evaluate_trial_gap_direction(s,input,forces,branch,ds,df,0.)
+    }
+    /// Actual moving grip-gap chain; delivered electrical inputs remain fixed
+    /// on this Newton branch. No force plateau is frozen when its gap moves.
+    pub fn evaluate_trial_gap_direction(
+        self, s: State, input: Input, forces: Forces, branch: TrialBranch,
+        ds: State, df: Forces, dgap_m: f64,
+    ) -> Result<ResponseDirection, &'static str> {
         let r = self.evaluate_trial(s, input, forces, branch)?;
         if [ds.body_y_m, ds.body_v_m_s, ds.stem_y_m, ds.stem_v_m_s,
-            ds.reference_y_m, df.body_n, df.stem_n].iter().any(|v| !v.is_finite()) {
+            ds.reference_y_m, df.body_n, df.stem_n,dgap_m].iter().any(|v| !v.is_finite()) {
             return Err("Invalid absorber force/contact direction");
         }
         let cap = self.grip_closed_force_n * (1. - input.gap_m / self.gap_stroke_m);
+        let dcap = -self.grip_closed_force_n / self.gap_stroke_m * dgap_m;
         let required = if branch.joint == JointMode::Contact {
             -(forces.body_n + forces.stem_n)
         } else { -forces.stem_n };
@@ -400,13 +417,21 @@ impl Config {
         let (du, dg) = if r.grip_mode == GripMode::Open {
             (0., 0.)
         } else if input.requested_rate_m_s == 0. {
-            let dg = if branch.regulator == RegulatorBranch::HoldRest
-                && required > -cap && required < cap { drequired } else { 0. };
+            let dg = match branch.regulator {
+                RegulatorBranch::HoldRest if required > -cap && required < cap => drequired,
+                RegulatorBranch::HoldRest if required <= -cap => -dcap,
+                RegulatorBranch::HoldRest => dcap,
+                RegulatorBranch::HoldPositive => -dcap,
+                RegulatorBranch::HoldNegative => dcap,
+                _ => return Err("Wrong moving-gap HOLD branch"),
+            };
             (0., dg)
         } else if r.grip_mode == GripMode::Slip {
-            // Fixed gap and delivered motive budget fix the friction plateau
-            // and its inverted reference speed on this selected branch.
-            (0., 0.)
+            let power = self.efficiency * input.motive_power_w;
+            let limited = if r.grip_force_n > 0. { power/cap < input.requested_rate_m_s }
+                else { -power/cap > input.requested_rate_m_s };
+            let du = if limited { -r.reference_rate_m_s*dcap/cap } else { 0. };
+            (du,r.grip_force_n.signum()*dcap)
         } else {
             let v = s.stem_v_m_s;
             let dv = ds.stem_v_m_s;
@@ -460,6 +485,39 @@ impl Config {
             return Err("Unrepresentable absorber force/contact direction");
         }
         Ok(out)
+    }
+    pub fn evaluate_loaded_trial(self,s:State,input:Input,forces:Forces,branch:TrialBranch,
+        loading:Loading) -> Result<Response,&'static str>
+    {
+        if !loading.stem_added_mass_kg.is_finite() || loading.stem_added_mass_kg<0.
+            || ((loading.body_seated || loading.stem_stopped) && branch.joint==JointMode::Contact)
+        { return Err("Invalid explicit absorber fluid inertia/stop branch"); }
+        let effective=Self {stem_mass_kg:self.stem_mass_kg+loading.stem_added_mass_kg,..self};
+        let mut q=effective.evaluate_trial(s,input,forces,branch)?;
+        if loading.body_seated {q.body_acceleration_m_s2=0.;}
+        if loading.stem_stopped {q.stem_acceleration_m_s2=0.;}
+        Ok(q)
+    }
+    pub fn evaluate_loaded_trial_direction(self,s:State,input:Input,forces:Forces,branch:TrialBranch,
+        loading:Loading,ds:State,df:Forces,dgap_m:f64,dadded_mass_kg:f64)
+        -> Result<ResponseDirection,&'static str>
+    {
+        let q=self.evaluate_loaded_trial(s,input,forces,branch,loading)?;
+        if !dadded_mass_kg.is_finite() {return Err("Nonfinite added-inertia direction");}
+        let effective=Self {stem_mass_kg:self.stem_mass_kg+loading.stem_added_mass_kg,..self};
+        let mut dq=effective.evaluate_trial_gap_direction(s,input,forces,branch,ds,df,dgap_m)?;
+        if branch.joint==JointMode::Contact {
+            let da=dq.body_acceleration_m_s2-q.body_acceleration_m_s2*dadded_mass_kg
+                /(self.body_mass_kg+effective.stem_mass_kg);
+            dq.body_acceleration_m_s2=da;dq.stem_acceleration_m_s2=da;
+            dq.joint_force_n=self.body_mass_kg*da-df.body_n;
+            dq.joint_to_body_w=dq.joint_force_n*s.body_v_m_s+q.joint_force_n*ds.body_v_m_s;
+        } else {
+            dq.stem_acceleration_m_s2-=q.stem_acceleration_m_s2*dadded_mass_kg/effective.stem_mass_kg;
+        }
+        if loading.body_seated {dq.body_acceleration_m_s2=0.;}
+        if loading.stem_stopped {dq.stem_acceleration_m_s2=0.;}
+        Ok(dq)
     }
     pub fn mechanical_energy_j(self, s: State, gravity: f64) -> Result<f64, &'static str> {
         self.validate()?;
@@ -568,6 +626,52 @@ mod tests {
             (a - b).abs() < 1e-11 * (1. + a.abs() + b.abs()),
             "{a} != {b}"
         );
+    }
+    #[test]
+    fn explicit_fluid_loading_gap_and_contact_directions_preserve_metal_owners() {
+        let c=config();let metal=c.stem_mass_kg;
+        for joint in [JointMode::Contact,JointMode::Separated] {
+            let mut s=state(-0.3);if joint==JointMode::Separated {s.body_y_m+=0.02;}
+            let mut i=input(0.);i.motive_power_w=0.;i.gap_m=0.007;
+            let f=forces();let b=TrialBranch{joint,regulator:RegulatorBranch::HoldNegative};
+            let loading=Loading{stem_added_mass_kg:0.27,..Loading::default()};
+            let q=c.evaluate_loaded_trial(s,i,f,b,loading).unwrap();
+            let ds=State{body_y_m:0.01,stem_y_m:-0.02,body_v_m_s:0.02,stem_v_m_s:-0.03,reference_y_m:0.};
+            let df=Forces{body_n:0.4,stem_n:-0.7};let dg=0.0002;let dm=-0.04;
+            let dq=c.evaluate_loaded_trial_direction(s,i,f,b,loading,ds,df,dg,dm).unwrap();
+            if joint==JointMode::Contact {
+                assert_eq!(q.body_acceleration_m_s2.to_bits(),q.stem_acceleration_m_s2.to_bits());
+                assert_eq!(dq.body_acceleration_m_s2.to_bits(),dq.stem_acceleration_m_s2.to_bits());
+                near((c.body_mass_kg+c.stem_mass_kg+0.27)*q.stem_acceleration_m_s2,
+                    f.body_n+f.stem_n+q.grip_force_n);
+            } else {near((c.stem_mass_kg+0.27)*q.stem_acceleration_m_s2,f.stem_n+q.grip_force_n);}
+            let h=1e-5;
+            let arms=[-1.,1.].map(|sign|c.evaluate_loaded_trial(State{
+                body_y_m:s.body_y_m+sign*h*ds.body_y_m,stem_y_m:s.stem_y_m+sign*h*ds.stem_y_m,
+                body_v_m_s:s.body_v_m_s+sign*h*ds.body_v_m_s,stem_v_m_s:s.stem_v_m_s+sign*h*ds.stem_v_m_s,
+                reference_y_m:0.},Input{gap_m:i.gap_m+sign*h*dg,..i},
+                Forces{body_n:f.body_n+sign*h*df.body_n,stem_n:f.stem_n+sign*h*df.stem_n},b,
+                Loading{stem_added_mass_kg:loading.stem_added_mass_kg+sign*h*dm,..loading}).unwrap());
+            for (a,z,exact) in [(arms[0].body_acceleration_m_s2,arms[1].body_acceleration_m_s2,dq.body_acceleration_m_s2),
+                (arms[0].stem_acceleration_m_s2,arms[1].stem_acceleration_m_s2,dq.stem_acceleration_m_s2),
+                (arms[0].grip_force_n,arms[1].grip_force_n,dq.grip_force_n),
+                (arms[0].slip_to_jack_w,arms[1].slip_to_jack_w,dq.slip_to_jack_w)]
+            {assert!(((z-a)/(2.*h)-exact).abs()<2e-7*(1.+exact.abs()));}
+            assert_eq!(c.stem_mass_kg,metal);
+            near(c.mechanical_energy_j(s,9.8).unwrap(),
+                0.5*c.body_mass_kg*s.body_v_m_s.powi(2)+0.5*metal*s.stem_v_m_s.powi(2)
+                    +9.8*(c.body_mass_kg*s.body_y_m+metal*s.stem_y_m));
+        }
+        let mut i=input(0.);i.motive_power_w=0.;i.gap_m=c.gap_stroke_m;
+        let s=State{body_y_m:0.,body_v_m_s:0.,stem_y_m:-0.04,stem_v_m_s:0.,reference_y_m:0.};
+        let b=TrialBranch{joint:JointMode::Separated,regulator:RegulatorBranch::Open};
+        let loading=Loading{stem_added_mass_kg:0.27,body_seated:true,stem_stopped:true};
+        let q=c.evaluate_loaded_trial(s,i,forces(),b,loading).unwrap();
+        assert_eq!(q.body_acceleration_m_s2,0.);assert_eq!(q.stem_acceleration_m_s2,0.);
+        let dq=c.evaluate_loaded_trial_direction(s,i,forces(),b,loading,s,forces(),0.,0.1).unwrap();
+        assert_eq!(dq.body_acceleration_m_s2,0.);assert_eq!(dq.stem_acceleration_m_s2,0.);
+        assert!(c.evaluate_loaded_trial(s,i,forces(),TrialBranch{joint:JointMode::Contact,..b},loading).is_err());
+        assert!(c.evaluate_loaded_trial(s,i,forces(),b,Loading{stem_added_mass_kg:-1.,..loading}).is_err());
     }
     #[test]
     fn finite_startup_power_catch_and_tracking() {

@@ -133,15 +133,16 @@ export function controlMaterialMotionAt(plan:ControlMaterialMotion,poses:readonl
  * stem/spider steel. The selected cold domain keeps every distributed piece
  * inside lumped UPPER. Only real annuli may enter resolved WELL boxes. */
 export function compileControlSteelMotion(regions:readonly SourceRegion[],d:Parameters<typeof controlSteelPrimitives>[0],
- stocks:readonly Pick<PassiveStock,'id'|'material'|'volume_m3'>[],maximum:{body:number;stem:number}){
+ stocks:readonly Pick<PassiveStock,'id'|'material'|'volume_m3'>[],maximum:{body:number;stem:number},minimumStem=0){
  const {geometry,rows:primitives}=controlSteelPrimitives(d),
   clusters=geometry.sites.map((s,i)=>({id:`LD01.CR.${String(i+1).padStart(3,'0')}`,prefix:`CONTROL/${s.x}/${s.y}`})),
   indexes=new Map(stocks.map((s,i)=>[s.id,i])),rows:{cluster:number;stock:number;region:number;motion:'body'|'stem';lo:number;hi:number;spans:Span[]}[]=[],
   activeBottom=d.handling.seatedBottom_m+d.handling.bottomFittingLength_m,activeTop=activeBottom+d.fuel.activeLength_m,
-  volumes=new Map<number,{volume:number;moment:number;maximum:number}>()
+  minimum={body:0,stem:minimumStem},volumes=new Map<number,{volume:number;moment:number;minimum:number;maximum:number}>()
  if(indexes.size!==stocks.length||new Set(regions.map(r=>r.id)).size!==regions.length)
   throw Error('Duplicate structural source/material identity')
- if([maximum.body,maximum.stem].some(v=>!Number.isFinite(v)||v<=0||v>d.control.normalTravel_m))
+ if(!Number.isFinite(minimumStem)||minimumStem>0
+  ||[maximum.body,maximum.stem].some(v=>!Number.isFinite(v)||v<=0||v>d.control.normalTravel_m))
   throw Error('Invalid moving structural source domain')
  for(const [cluster,c]of clusters.entries())for(const family of ['SPIDER','STEM'] as const){
   const id=c.prefix+'/'+family,stock=indexes.get(id),pieces=primitives.filter(p=>p.stockId===id),motion=family==='SPIDER'?'body':'stem',limit=maximum[motion]
@@ -153,8 +154,8 @@ export function compileControlSteelMotion(regions:readonly SourceRegion[],d:Para
    original=stocks[stock]!.volume_m3
   if(!(original>0&&Number.isFinite(original))||Math.abs(volume-original)>4e-10*original)
    throw Error('Structural original volume mismatch '+id)
-  volumes.set(stock,{volume,moment,maximum:limit})
-  for(const p of pieces)if(p.shape.kind==='distributed'&&(p.lo<activeTop||p.hi+limit>d.control.headBottom_m))
+  volumes.set(stock,{volume,moment,minimum:minimum[motion],maximum:limit})
+  for(const p of pieces)if(p.shape.kind==='distributed'&&(p.lo+minimum[motion]<activeTop||p.hi+limit>d.control.headBottom_m))
    throw Error('Distributed control steel leaves selected lumped UPPER domain '+id)
   for(const [region,r]of regions.entries()){
    if(!['ACTIVE','LOWER','UPPER','WELL'].includes(r.compartment))continue
@@ -163,7 +164,7 @@ export function compileControlSteelMotion(regions:readonly SourceRegion[],d:Para
    if(lo===undefined||hi===undefined||!Number.isFinite(lo+hi)||hi<=lo)throw Error('Missing structural source axial support '+r.id)
    const spans:Span[]=[]
    for(const p of pieces){
-    if(p.hi+limit<=lo||p.lo>=hi)continue
+    if(p.hi+limit<=lo||p.lo+minimum[motion]>=hi)continue
     const s=p.shape
     if(s.kind==='box')throw Error('Unselected moving structural shape')
     if(s.kind==='distributed'&&r.box){
@@ -186,12 +187,12 @@ export function compileControlSteelMotion(regions:readonly SourceRegion[],d:Para
  }
  // V and J are linear/quadratic between cuts; evaluate every cut and interval,
  // including both legal one-sided derivatives. Missing support never rescales.
- for(const [stock,expected]of volumes){const local=rows.filter(r=>r.stock===stock),cuts=new Set([0,expected.maximum])
+ for(const [stock,expected]of volumes){const local=rows.filter(r=>r.stock===stock),cuts=new Set([expected.minimum,0,expected.maximum])
   for(const r of local)for(const s of r.spans)for(const y of [r.lo-s.lo,r.lo-s.hi,r.hi-s.lo,r.hi-s.hi])
-   if(y>0&&y<expected.maximum)cuts.add(y)
+   if(y>expected.minimum&&y<expected.maximum)cuts.add(y)
   const sorted=[...cuts].sort((a,b)=>a-b),probes=[...sorted,...sorted.slice(1).map((y,i)=>(y+sorted[i]!)/2)]
   for(const y of probes)for(const right of [false,true]){
-   if((y===0&&!right)||(y===expected.maximum&&right))continue
+   if((y===expected.minimum&&!right)||(y===expected.maximum&&right))continue
    let V=0,J=0,dV=0,dJ=0
    for(const r of local)for(const s of r.spans){const v=clip(s,r,y,right);V+=v[0];dV+=v[1];J+=v[2];dJ+=v[3]}
    const tolerance=4e-10*expected.volume,lengthScale=Math.max(1,Math.abs(expected.moment/expected.volume)+expected.maximum)
@@ -200,15 +201,15 @@ export function compileControlSteelMotion(regions:readonly SourceRegion[],d:Para
     throw Error('Incomplete moving structural source coverage '+stocks[stock]!.id+' at '+y)
   }
  }
- return {clusters,rows,maximum,stockIds:stocks.map(s=>s.id),regionIds:regions.map(r=>r.id)}
+ return {clusters,rows,minimum,maximum,stockIds:stocks.map(s=>s.id),regionIds:regions.map(r=>r.id)}
 }
 
 export function controlSteelMotionAt(plan:ControlSteelMotion,poses:readonly ControlSteelPose[]){
  if(poses.length!==plan.clusters.length)throw Error('Structural cluster pose coverage')
  for(const [i,p]of poses.entries())for(const motion of ['body','stem'] as const){
   const y=motion==='body'?p.body_y_m:p.stem_y_m,side=motion==='body'?p.side:p.stem_side
-  if(p.clusterId!==plan.clusters[i]!.id||!Number.isFinite(y)||y<0||y>plan.maximum[motion]
-   ||!['increasing','decreasing'].includes(side)||(y===0&&side==='decreasing')||(y===plan.maximum[motion]&&side==='increasing'))
+  if(p.clusterId!==plan.clusters[i]!.id||!Number.isFinite(y)||y<plan.minimum[motion]||y>plan.maximum[motion]
+   ||!['increasing','decreasing'].includes(side)||(y===plan.minimum[motion]&&side==='decreasing')||(y===plan.maximum[motion]&&side==='increasing'))
    throw Error('Invalid or reordered moving structural pose')
  }
  const values=new Float64Array(plan.rows.length*4)

@@ -12,12 +12,13 @@ import {parseNuclearObservation} from './reference-design-nuclear-observation'
 import {compileControlSourceMotion,controlSourceMotionAt,nativeControlSourcePlan,nativeControlSourceStage,
  nativeMovingFuelCoolingFixture,parseControlSteelNuclear,type ControlSourcePose} from './reference-design-control-source-motion'
 import {compileSourceEvolution,sourceEvolutionOwnerFiles} from './reference-design-source-evolution'
+import type {ColdControlRelease} from './reference-design-control-release'
 
 /** Fresh ORIGINAL preparation only. Native keeps all histories after this one
  * construction; this helper is never called at an attained stage/checkpoint. */
-export async function prepareMovingFuelCooling(wiki:string,evidence:string,waterReceipt:string,selection:MovingControlSteelSelection={}){
+export async function prepareMovingFuelCooling(wiki:string,evidence:string,waterReceipt:string,selection:MovingControlSteelSelection={},releaseSelection?:ColdControlRelease){
  const [geometry,documents,partition,material,water,receiving]=await Promise.all([
-  prepareNativeControlGeometry(wiki,selection),
+  prepareNativeControlGeometry(wiki,selection,releaseSelection),
   Promise.all(sourceEvolutionOwnerFiles.map(async p=>[p,await readFile(join(wiki,p),'utf8')] as const)).then(a=>new Map(a)),
   readFile(join(evidence,'2026-10-05/operating-source-fixed-partition.json'),'utf8'),
   readFile(join(evidence,'2026-10-05/operating-source-cold-material-incidence.json'),'utf8'),readFile(waterReceipt,'utf8'),
@@ -46,7 +47,8 @@ export function movingFuelCoolingNativeInput(p:Awaited<ReturnType<typeof prepare
  return fields
 }
 
-export async function prepareNativeControlGeometry(wiki:string,selection:MovingControlSteelSelection={}){
+export async function prepareNativeControlGeometry(wiki:string,selection:MovingControlSteelSelection={},releaseSelection?:ColdControlRelease){
+ if(releaseSelection&&!selection.controlSteel)throw Error('Selected cold release requires the joined moving structural SOURCE material')
  const read=(path:string)=>readFile(join(wiki,path),'utf8'),p=await compileFuelCooling(wiki,{prhr:true}),
   d=parsePrimaryWaterInputs(await Promise.all(primaryWaterOwnerFiles.map(read))),
   text=await read('systems/reactor/configuration-source-and-history.md'),
@@ -54,7 +56,7 @@ export async function prepareNativeControlGeometry(wiki:string,selection:MovingC
    compileSourceFaces(p.material.partition,d.gates,[0,0]).faces,text,selection),
   cylinder=compileCylinderInputs(p.material.partition,d,p.material.result,passive,
    parseNuclearObservation(await read('systems/instrumentation/nuclear-observation-apparatus.md')),text),
-  plan=compileControlSourceMotion(d,p,passive,cylinder,selection.controlSteel?parseControlSteelNuclear(await read('systems/reactor/control-absorber-and-guide-water.md')):undefined),original:ControlSourcePose[]=plan.motion.clusters.map(c=>({clusterId:c.id,
+  plan=compileControlSourceMotion(d,p,passive,cylinder,selection.controlSteel?parseControlSteelNuclear(await read('systems/reactor/control-absorber-and-guide-water.md')):undefined,releaseSelection),original:ControlSourcePose[]=plan.motion.clusters.map(c=>({clusterId:c.id,
    body_y_m:0,stem_y_m:0,side:'increasing',stem_side:'increasing',contact:'seated'})),
   synthetic=original.map((p,i):ControlSourcePose=>({...p,body_y_m:.003+.00001*i,stem_y_m:.0034+.000005*i,contact:'offseat'})),
   direction=original.map((_,i)=>({body:.3*Math.sin(i+1),stem:.2*Math.cos(i+1)})),

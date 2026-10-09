@@ -527,6 +527,9 @@ impl Network {
     pub fn config(&self) -> &Config {
         &self.config
     }
+    pub(crate) fn owner_token(&self) -> &Arc<()> {
+        &self.owner
+    }
     pub fn prhr(&self) -> Option<&crate::prhr::Model> {
         self.prhr.as_ref()
     }

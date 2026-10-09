@@ -1,5 +1,5 @@
 import {describe,expect,test} from 'bun:test'
-import {axialIntervalOverlap,controlMaterialMotionAt,type ControlMaterialMotion} from './reference-design-control-material-motion'
+import {axialIntervalOverlap,controlMaterialMotionAt,controlSteelMotionAt,type ControlMaterialMotion,type ControlSteelMotion} from './reference-design-control-material-motion'
 
 // Deliberately small numerical clipping fixture, not plant preparation.
 const plan:ControlMaterialMotion={clusters:[{id:'test-cluster',prefix:'test-stock'}],maximumTravel_m:4,
@@ -57,5 +57,33 @@ describe('moving physical material interval branches',()=>{
   for(const y of [-.001,4.001,NaN,Infinity])expect(()=>at(y)).toThrow('pose')
   expect(()=>at(0,'decreasing')).toThrow('pose')
   expect(()=>at(4,'increasing')).toThrow('pose')
+ })
+})
+
+describe('explicit signed STEM material domain',()=>{
+ const signed:ControlSteelMotion={clusters:[{id:'test-cluster',prefix:'test-stock'}],minimum:{body:0,stem:-.5},
+  maximum:{body:4,stem:4},stockIds:['test-stock'],regionIds:['lower','center','upper'],rows:[
+   {cluster:0,stock:0,region:0,motion:'stem',lo:-6,hi:-2,spans:[{lo:-2,hi:2,area:3}]},
+   {cluster:0,stock:0,region:1,motion:'stem',lo:-2,hi:2,spans:[{lo:-2,hi:2,area:3}]},
+   {cluster:0,stock:0,region:2,motion:'stem',lo:2,hi:6,spans:[{lo:-2,hi:2,area:3}]},
+  ]},at=(y:number,side:'increasing'|'decreasing')=>controlSteelMotionAt(signed,[
+   {clusterId:'test-cluster',body_y_m:0,side:'increasing',stem_y_m:y,stem_side:side}])
+ test('negative entering rows retain identity and all legal cut derivatives close V/J',()=>{
+  for(const y of [-.5,0,.3,4])for(const side of ['increasing','decreasing'] as const){
+   if(y===-.5&&side==='decreasing'||y===4&&side==='increasing')continue
+   const v=at(y,side),sum=(k:number)=>[0,1,2].reduce((s,i)=>s+v[4*i+k]!,0)
+   expect(sum(0)).toBeCloseTo(12,13);expect(sum(1)).toBeCloseTo(0,13)
+   expect(sum(2)).toBeCloseTo(12*y,13);expect(sum(3)).toBeCloseTo(12,13)
+  }
+  expect(at(0,'decreasing')[0]).toBe(0);expect(at(0,'decreasing')[1]).toBe(-3)
+  expect(at(-.5,'increasing')[0]).toBe(1.5)
+  expect(at(0,'increasing')).toEqual(at(0,'increasing'))
+ })
+ test('STEM zero may decrease, actual lower endpoint may not; BODY remains nonnegative',()=>{
+  expect(()=>at(0,'decreasing')).not.toThrow()
+  expect(()=>at(-.5,'decreasing')).toThrow('pose')
+  expect(()=>at(-.500001,'increasing')).toThrow('pose')
+  expect(()=>controlSteelMotionAt(signed,[{clusterId:'test-cluster',body_y_m:-.01,side:'increasing',
+   stem_y_m:0,stem_side:'increasing'}])).toThrow('pose')
  })
 })
