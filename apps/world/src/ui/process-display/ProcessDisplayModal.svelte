@@ -76,10 +76,11 @@
   let windowDragState = $state<WindowDragState | null>(null)
   let disposed = false
 
+  // The overview is drawn at 1:1 and never shrunk, so its window opens as large as the screen allows.
   const defaultWindowBounds = (): ProcessDisplayWindowBounds => {
     if (typeof window === 'undefined') return windowBounds
-    const width = Math.max(minWindowWidth, Math.min(1180, window.innerWidth - 2 * viewportMargin))
-    const height = Math.max(minWindowHeight, Math.min(760, window.innerHeight - 2 * viewportMargin))
+    const width = Math.max(minWindowWidth, window.innerWidth - 2 * viewportMargin)
+    const height = Math.max(minWindowHeight, window.innerHeight - 2 * viewportMargin)
     const offset = windowOffsetIndex * windowOffsetStepPx
     return {
       x: Math.max(viewportMargin, Math.round((window.innerWidth - width) / 2) + offset),
