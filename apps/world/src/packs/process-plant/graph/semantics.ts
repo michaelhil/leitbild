@@ -79,6 +79,18 @@ export interface EmbeddedDeviceDeclaration {
   readonly variables: ReadonlyArray<string>
 }
 
+/**
+ * Where equipment puts energy into, moves it between, or takes it out of the
+ * fluid of its port circuits: a reactor core heats its coolant (`source`), a
+ * steam generator moves heat from its primary circuit to its secondary
+ * (`transfer`), a turbine takes work out of its steam (`sink`). Readers
+ * follow the energy from source to sink without knowing any kind.
+ */
+export type EnergyRole =
+  | { readonly role: 'source'; readonly circuit: string }
+  | { readonly role: 'transfer'; readonly from: string; readonly to: string }
+  | { readonly role: 'sink'; readonly circuit: string }
+
 export interface ComponentSemantics {
   readonly function?: EquipmentFunction
   readonly aspects: ReadonlyArray<StateAspectDeclaration>
@@ -87,11 +99,13 @@ export interface ComponentSemantics {
   readonly ratedOutflow: ReadonlyArray<{ readonly port: string; readonly parameter: string }>
   /** The values an operator reads first on this equipment (a pressurizer's pressure and level), most important first. */
   readonly keyValues: ReadonlyArray<string>
+  /** What the equipment does with energy, by port circuit. */
+  readonly energy: ReadonlyArray<EnergyRole>
 }
 
 /** Declares semantics that do not depend on a component's parameters. */
 export const fixedSemantics = (semantics: Partial<ComponentSemantics>): ((parameters: unknown) => ComponentSemantics) => {
-  const resolved: ComponentSemantics = { aspects: [], embedded: [], ratedOutflow: [], keyValues: [], ...semantics }
+  const resolved: ComponentSemantics = { aspects: [], embedded: [], ratedOutflow: [], keyValues: [], energy: [], ...semantics }
   return () => resolved
 }
 
@@ -127,6 +141,7 @@ export interface CompiledComponentSemantics {
   readonly embedded: ReadonlyArray<CompiledEmbeddedDevice>
   readonly ratedOutflow: ReadonlyArray<{ readonly port: PortName; readonly flowKgPerS: number }>
   readonly keyValues: ReadonlyArray<VariablePath>
+  readonly energy: ReadonlyArray<EnergyRole>
 }
 
 /** Which quantities and units each reading accepts. */

@@ -41,6 +41,7 @@ const valveSemantics = (parameters: unknown): ComponentSemantics => {
     embedded: [],
     ratedOutflow: [],
     keyValues: [],
+    energy: [],
   }
 }
 

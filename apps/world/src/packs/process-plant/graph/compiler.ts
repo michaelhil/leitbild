@@ -235,6 +235,13 @@ const compileComponentSemantics = (
       if (variable.writable) throw new Error(`${context}: key value ${local} is writable`)
       return variablePathFor(componentId, local as LocalVariablePath)
     }),
+    energy: semantics.energy.map(role => {
+      const circuits = new Set(Object.values(ports).map(port => port.circuit))
+      const named = role.role === 'transfer' ? [role.from, role.to] : [role.circuit]
+      for (const circuit of named) if (!circuits.has(circuit)) throw new Error(`${context}: energy ${role.role} names circuit ${circuit}, which no port has`)
+      if (role.role === 'transfer' && role.from === role.to) throw new Error(`${context}: energy transfer within circuit ${role.from}`)
+      return role
+    }),
   }
 }
 

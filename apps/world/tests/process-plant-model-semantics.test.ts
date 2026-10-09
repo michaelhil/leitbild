@@ -101,6 +101,22 @@ describe('model semantics declared per component kind', () => {
     expect(() => compilePlantGraph(spec, registry)).toThrow('component pump semantics: running state running is writable, so it would draw a demand as the state')
   })
 
+  test('an energy role must name circuits the kind\'s ports have', () => {
+    const faulty: ComponentDefinition = {
+      ...processPlantComponentRegistry.get('centrifugalPump' as ComponentKind)!,
+      semantics: fixedSemantics({ energy: [{ role: 'transfer', from: 'flow', to: 'shell' }] }),
+    }
+    const registry = new Map([...processPlantComponentRegistry, ['centrifugalPump' as ComponentKind, faulty]])
+    const spec = plantGraph({
+      id: 'semantics.energy',
+      title: 'Energy',
+      fixedStepMs: 100,
+      components: [component('pump', 'centrifugalPump', 'Pump', { nominalFlowKgPerS: 10, nominalHeadPa: 1e5 })],
+      connections: [],
+    })
+    expect(() => compilePlantGraph(spec, registry)).toThrow('component pump semantics: energy transfer names circuit shell, which no port has')
+  })
+
   test('a writable variable without an actuation is rejected', () => {
     const base = processPlantComponentRegistry.get('processTank' as ComponentKind)!
     const undeclared: ComponentDefinition = {

@@ -31,7 +31,7 @@ export const heatExchangerComponentDefinitions: ReadonlyArray<ComponentDefinitio
       initialHotTemperatureC: z.number().finite().optional(),
       initialColdTemperatureC: z.number().finite().optional(),
     }).strict(),
-    semantics: fixedSemantics({}),
+    semantics: fixedSemantics({ energy: [{ role: 'transfer', from: 'hot', to: 'cold' }] }),
     variables: [
       variable({ path: 'hotInletTemperatureC', label: 'Heat exchanger hot inlet temperature', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
       variable({ path: 'hotOutletTemperatureC', label: 'Heat exchanger hot outlet temperature', kind: 'state', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
