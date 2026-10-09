@@ -138,21 +138,69 @@ const editDistance = (left: string, right: string): number => {
 // Suggestions help the model correct a near miss; they never select a signal.
 const SUGGESTION_COUNT = 3
 
+/** Words of a tag, path or label: "sgA.feedwaterFlowKgPerS" → sg, a, feedwater, flow, kg, per, s. */
+const words = (value: string): ReadonlyArray<string> => value
+  .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+  .toLowerCase()
+  .split(/[^a-z0-9]+/)
+  .filter(word => word.length > 0)
+
+const isSubsequence = (short: string, long: string): boolean => {
+  let index = 0
+  for (const letter of long) if (letter === short[index]) index += 1
+  return index === short.length
+}
+
+// A guessed word matches a signal word when it is the same, a prefix of it, or
+// an abbreviation of it with the same first letter ("fw" for "feedwater", and
+// a tag's "lvl" for a guessed "level").
+const wordMatches = (guess: string, word: string): boolean => {
+  if (guess === word) return true
+  if (guess.length < 2 || word.length < 2 || guess[0] !== word[0]) return false
+  return word.startsWith(guess) || isSubsequence(guess, word) || isSubsequence(word, guess)
+}
+
+/** Guessed words matched one-to-one to signal words (augmenting paths), so "fw" and "flow" cannot both claim "flow". */
+const matchedWords = (guessed: ReadonlyArray<string>, signalWords: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const owner = new Map<number, number>()
+  const assign = (guess: number, visited: Set<number>): boolean => signalWords.some((word, index) => {
+    if (visited.has(index) || !wordMatches(guessed[guess]!, word)) return false
+    visited.add(index)
+    const current = owner.get(index)
+    if (current !== undefined && !assign(current, visited)) return false
+    owner.set(index, guess)
+    return true
+  })
+  guessed.forEach((_, guess) => { assign(guess, new Set()) })
+  return [...owner.values()].map(guess => guessed[guess]!)
+}
+
 const suggestionsFor = (ref: string, bindings: ReadonlyArray<ProcessSignalBinding>): ReadonlyArray<string> => {
+  const guessed = words(ref)
   const target = normalized(ref)
-  if (target.length === 0) return []
+  if (guessed.length === 0) return []
   return bindings
     .map(binding => {
       const keys = [binding.tagId, binding.path].filter((key): key is NonNullable<typeof key> => key !== undefined).map(String)
-      const distance = Math.min(...keys.map(key => {
-        const candidate = normalized(key)
-        if (candidate.includes(target) || target.includes(candidate)) return Math.abs(candidate.length - target.length) / 2
-        return editDistance(candidate, target)
-      }))
-      return { binding, distance }
+      const matched = matchedWords(guessed, [...new Set([...keys, binding.label].flatMap(words))])
+      const label = words(binding.label)
+      const distance = Math.min(...keys.map(key => editDistance(normalized(key), target)))
+      return {
+        binding,
+        score: matched.length / guessed.length,
+        substantive: matched.some(guess => guess.length >= 2),
+        // How much of what the signal is (its label) the guess names: PZR-PRESS is pressurizer pressure, not spray.
+        labelCover: label.length === 0 ? 0 : matchedWords(label, guessed).length / label.length,
+        distance,
+      }
     })
-    .filter(entry => entry.distance <= Math.max(2, Math.floor(target.length / 3)))
-    .sort((left, right) => left.distance - right.distance || String(left.binding.path).localeCompare(String(right.binding.path)))
+    .filter(entry => entry.substantive && entry.score >= 0.5)
+    // Operators name instruments by tag, so tagged signals lead among equal matches.
+    .sort((left, right) => right.score - left.score
+      || Number(left.binding.tagId === undefined) - Number(right.binding.tagId === undefined)
+      || right.labelCover - left.labelCover
+      || left.distance - right.distance
+      || String(left.binding.path).localeCompare(String(right.binding.path)))
     .slice(0, SUGGESTION_COUNT)
     .map(({ binding }) => `${binding.tagId ?? binding.path} (${binding.label}, ${binding.unit})`)
 }

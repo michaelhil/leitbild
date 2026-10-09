@@ -106,6 +106,14 @@ describe('world.process-plant.display.compose', () => {
     expect(message).toContain('at least one signal with role "primary"')
   })
 
+  test('suggests signals by the words of a guessed name, tagged instruments first', () => {
+    const suggestions = (ref: string): string => rejectionOf(() => ask('world.process-plant.display.compose', composition([{ ref, role: 'primary' }]))).split('Did you mean: ')[1] ?? ''
+    expect(suggestions('FW-A-FLOW')).toContain('sgA.feedwaterFlowKgPerS (Feedwater inflow, kg/s)')
+    expect(suggestions('PZR-PRESS')).toStartWith('PT-455 (Pressurizer pressure, MPa)')
+    expect(suggestions('dieselGenA.running')).toStartWith('EDG-A-RUN (Diesel running, boolean)')
+    expect(suggestions('SG1-LVL')).toStartWith('SG-A-LVL-NR (Steam generator level, percent)')
+  })
+
   test('rejects state signals on a trend', () => {
     expect(rejectionOf(() => ask('world.process-plant.display.compose', composition([
       { ref: 'RCP-A-RUN', role: 'primary' },
