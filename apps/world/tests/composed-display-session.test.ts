@@ -148,6 +148,36 @@ describe('composed display session', () => {
     controller.close()
   })
 
+  test('a generated display opens equipment in place, samples it at once and keeps drawing it for the window', async () => {
+    const overview: ComposedDisplayViewResult = { kind: 'overview', plantId: 'plant:1', plantLabel: 'Unit 1', simulationTime: at(0), display: view.display }
+    const detail: ComposedDisplayViewResult = { ...overview, kind: 'detail', display: { ...view.display, title: 'Steam Generator B' } }
+    const window = { width: 1896, height: 972 }
+    const { client: base, calls } = fakeClient({ presence: { title: 'Run', loaded: true, playback: 'playing', currentSimulationTime: at(0) }, samples: [{ time: at(0), value: 15.4 }, { time: at(1_000), value: 15.5 }] })
+    const states: string[] = []
+    const client: ComposedDisplayClient = {
+      ...base,
+      view: async (run, plant, state, size) => {
+        states.push(state)
+        if (state === 'unknown') throw new Error('cannot be opened')
+        await base.view(run, plant, state, size)
+        return state === 'detail' ? detail : overview
+      },
+    }
+    const { controller, last } = session(client, { now: 0 }, false, () => window)
+    await controller.start({ poll: false })
+    // A display that cannot be drawn rejects and leaves the overview shown.
+    await expect(controller.open('unknown')).rejects.toThrow('cannot be opened')
+    expect(last().view?.kind).toBe('overview')
+    await controller.open('detail')
+    expect(last().view?.display.title).toBe('Steam Generator B')
+    expect(calls.filter(call => call === 'sample')).toHaveLength(2)
+    window.width = 1440
+    await controller.relayout()
+    expect(states).toEqual(['{}', 'unknown', 'detail', 'detail'])
+    expect(calls.filter(call => call.startsWith('view'))).toEqual(['view:1896x972', 'view:1896x972', 'view:1440x972'])
+    controller.close()
+  })
+
   test('advice keeps the size it was composed with', async () => {
     const { client, calls } = fakeClient({ presence: { title: 'Run', loaded: true, playback: 'playing', currentSimulationTime: at(0) }, samples: [{ time: at(0), value: 15.4 }] })
     const { controller } = session(client)

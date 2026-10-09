@@ -15,10 +15,12 @@
   // connector-diagram, equipment as positioned OpenBridge elements. The
   // geometry is fixed by the server; a sample restyles it and never moves it.
   // A stale view draws every state as unknown and says so.
-  let { mimic, latest, stale }: {
+  // A generated display opens what an item stands for; an agent's advice is read-only.
+  let { mimic, latest, stale, open }: {
     mimic: CompiledMimic
     latest: ComposedDisplaySample | undefined
     stale: boolean
+    open?: ((item: MimicDrawnItem) => void) | undefined
   } = $props()
 
   let openBridge = $state<typeof OpenBridgeMimic | null>(null)
@@ -188,9 +190,17 @@
     .map(item => `${item.binding.label}: ${looks.get(item.id)?.words || 'no state drawn'}`)
     .join('; '))
   const drawsRelief = $derived(mimic.items.some(item => item.binding.state?.aspect === 'position' && item.binding.state.state === undefined))
+
+  // What a click on an item covers: its symbol and its text stack, which the layout keeps clear of every other item.
+  const target = (item: MimicDrawnItem): { x: number; y: number; width: number; height: number } => {
+    const boxes = [item.box, ...(item.text === null ? [] : [item.text])]
+    const x = Math.min(...boxes.map(box => box.x))
+    const y = Math.min(...boxes.map(box => box.y))
+    return { x, y, width: Math.max(...boxes.map(box => box.x + box.width)) - x, height: Math.max(...boxes.map(box => box.y + box.height)) - y }
+  }
 </script>
 
-<div class="mimic-panel" role="img" aria-label={`Equipment mimic${stale ? ' (stale: states not current)' : ''}. ${equipmentWords}`}>
+<div class="mimic-panel" role={open === undefined ? 'img' : 'group'} aria-label={`Equipment mimic${stale ? ' (stale: states not current)' : ''}. ${equipmentWords}`}>
   <div class="viewport" bind:clientWidth={columnWidth} style={`height:${Math.ceil(mimic.height * scale)}px`}>
   <div class="drawing" style={`width:${mimic.width}px;height:${mimic.height}px;transform:scale(${scale})`}>
     {#each mimic.zones as zone (zone.lane)}
@@ -235,6 +245,15 @@
           {/if}
         {/each}
       </div>
+      {#if open !== undefined}
+        {@const opens = open}
+        <div class="targets">
+          {#each mimic.items as item (item.id)}
+            {@const area = target(item)}
+            <button type="button" class="target" style={`left:${area.x}px;top:${area.y}px;width:${area.width}px;height:${area.height}px`} title={`Open ${item.binding.label}`} aria-label={`Open ${item.binding.label}: ${looks.get(item.id)?.words || 'no state drawn'}`} onclick={() => opens(item)}></button>
+          {/each}
+        </div>
+      {/if}
     {/if}
   </div>
   </div>
@@ -272,5 +291,9 @@
   .state-row.emphasis { color: var(--element-active-color); }
   .legend { margin: 0; display: flex; align-items: center; gap: 10px; height: 14px; font: 400 11px/14px "Noto Sans", system-ui, sans-serif; color: var(--element-neutral-color); white-space: nowrap; overflow: hidden; }
   .key { display: inline-flex; align-items: center; gap: 4px; }
+  .targets { position: absolute; inset: 0; pointer-events: none; }
+  .target { position: absolute; padding: 0; border: none; border-radius: 4px; background: none; cursor: pointer; pointer-events: auto; }
+  .target:hover { outline: 1px solid var(--border-outline-color); outline-offset: 2px; }
+  .target:focus-visible { outline: 2px solid var(--border-focus-color); outline-offset: 2px; }
   .stale-tag { padding: 0 4px; border: 1px solid var(--element-neutral-color); border-radius: 2px; color: var(--element-active-color); font-weight: 700; line-height: 12px; }
 </style>

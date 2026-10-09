@@ -63,7 +63,7 @@ export const createComposedDisplaySession = (config: {
   readonly onChange: (snapshot: ComposedDisplaySnapshot) => void
   /** Advice stops updating after a quarter of an hour unattended; an operating overview keeps updating. */
   readonly suspendWhenIdle: boolean
-  /** The view's current size, which a unit overview is drawn for; null for advice. */
+  /** The view's current size, which a generated display is drawn for; null for advice. */
   readonly size: () => ViewSize | null
   readonly wallNow?: () => number
 }) => {
@@ -74,6 +74,8 @@ export const createComposedDisplaySession = (config: {
   let lastInteractionWallMs = wallNow()
   let lastSimulationMs: number | undefined
   let snapshot: ComposedDisplaySnapshot = { phase: { kind: 'checking' }, series: new Map(), historyMissing: new Set(), ranges: [], sampleError: null, resetSinceAdvice: false }
+  // What the view shows: the state it was embedded with, or equipment opened from a generated display.
+  let state = config.state
 
   const update = (patch: Partial<ComposedDisplaySnapshot>): void => {
     if (closed) return
@@ -166,7 +168,7 @@ export const createComposedDisplaySession = (config: {
 
   const begin = async (): Promise<void> => {
     update({ phase: { kind: 'starting' } })
-    const view = await config.client.view(config.runId, config.plantId, config.state, config.size())
+    const view = await config.client.view(config.runId, config.plantId, state, config.size())
     update({ view })
     const now = Date.parse(view.simulationTime)
     const series = new Map<string, ReadonlyArray<TrendPoint>>()
@@ -206,14 +208,30 @@ export const createComposedDisplaySession = (config: {
       startPolling()
     },
     interacted: (): void => { lastInteractionWallMs = wallNow() },
-    /** A unit overview is drawn again for the view's new size; its samples carry on. */
+    /** A generated display is drawn again for the view's new size; its samples carry on. */
     relayout: async (): Promise<void> => {
-      if (closed || snapshot.view?.kind !== 'overview') return
+      if (closed || (snapshot.view?.kind !== 'overview' && snapshot.view?.kind !== 'detail')) return
+      const drawn = state
       try {
-        update({ view: await config.client.view(config.runId, config.plantId, config.state, config.size()) })
+        const view = await config.client.view(config.runId, config.plantId, drawn, config.size())
+        if (drawn === state) update({ view })
       } catch (error) {
         update({ sampleError: error instanceof Error ? error.message : String(error) })
       }
+    },
+    /**
+     * Shows another generated display of the same Plant in place (equipment
+     * opened from an overview, or back). Generated displays have no trends,
+     * so only the latest sample carries over until the next one arrives. A
+     * display that cannot be drawn leaves the current one and rejects.
+     */
+    open: async (next: string): Promise<void> => {
+      if (closed) return
+      const view = await config.client.view(config.runId, config.plantId, next, config.size())
+      if (closed) return
+      state = next
+      update({ view, series: new Map(), historyMissing: new Set(), ranges: [] })
+      if (snapshot.phase.kind === 'live') await poll()
     },
     poll,
     setVisible: (visible: boolean): void => {

@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { EmbeddedViewEnvelope } from '@leitbild/contracts'
   import { simulationRunIdSchema } from '../../../core/model/index.ts'
-  import { composedDisplayLayout, composedTrendStripHeights, processDisplayStatePlantId, processDisplayStateSchema } from '../../../packs/process-plant/displays/composition.ts'
+  import { composedDisplayLayout, composedTrendStripHeights, detailDisplayStateSchema, processDisplayStatePlantId, processDisplayStateSchema } from '../../../packs/process-plant/displays/composition.ts'
+  import type { MimicDrawnItem } from '../../../packs/process-plant/displays/mimic/mimic-model.ts'
   import { simulationClock } from '../../../packs/process-plant/displays/display-text.ts'
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
   import { composedDisplayClient } from './composed-display-client.ts'
@@ -21,7 +22,7 @@
   const parsed = $derived(processDisplayStateSchema.parse(JSON.parse(envelope.state)))
   const advice = $derived('overview' in parsed ? null : parsed)
   const plantId = $derived(processDisplayStatePlantId(parsed))
-  const title = $derived(advice?.composition.title ?? envelope.title)
+  const title = $derived(advice?.composition.title ?? (snapshot?.view?.kind === 'detail' ? snapshot.view.display.title : envelope.title))
 
   // A sample older than this marks the view stale (polling is 1 Hz).
   const STALE_AFTER_MS = 5_000
@@ -59,6 +60,8 @@
     document.addEventListener('pointerdown', interacted)
     document.addEventListener('pointermove', interacted)
     document.addEventListener('keydown', interacted)
+    const escape = (event: KeyboardEvent): void => { if (event.key === 'Escape') back() }
+    document.addEventListener('keydown', escape)
     document.addEventListener('visibilitychange', visibility)
     return () => {
       active.close()
@@ -66,6 +69,7 @@
       document.removeEventListener('pointerdown', interacted)
       document.removeEventListener('pointermove', interacted)
       document.removeEventListener('keydown', interacted)
+      document.removeEventListener('keydown', escape)
       document.removeEventListener('visibilitychange', visibility)
       window.removeEventListener('resize', resized)
       clearTimeout(resizing)
@@ -73,6 +77,42 @@
   })
 
   const view = $derived(snapshot?.view)
+
+  // A generated display opens what a drawn item stands for in place; Back
+  // returns along the displays opened before it. A display that cannot be
+  // drawn leaves the current one and says why.
+  let trail = $state<ReadonlyArray<{ readonly state: string; readonly title: string }>>([])
+  let shownState = envelope.state
+  let opening = $state(false)
+  let openError = $state<string | null>(null)
+
+  const show = async (next: string, nextTrail: typeof trail, name: string): Promise<void> => {
+    if (session === undefined || opening) return
+    opening = true
+    openError = null
+    try {
+      await session.open(next)
+      shownState = next
+      trail = nextTrail
+    } catch (error) {
+      openError = `${name} cannot be opened: ${error instanceof Error ? error.message : String(error)}`
+    } finally {
+      opening = false
+    }
+  }
+
+  const openItem = (item: MimicDrawnItem): void => {
+    if (view === undefined) return
+    const next = JSON.stringify(detailDisplayStateSchema.parse({ detail: { plantId, components: item.components } }))
+    if (next === shownState) return
+    void show(next, [...trail, { state: shownState, title: view.display.title }], item.binding.label)
+  }
+
+  const back = (): void => {
+    const previous = trail.at(-1)
+    if (previous !== undefined) void show(previous.state, trail.slice(0, -1), previous.title)
+  }
+  const opens = $derived(advice === null ? openItem : undefined)
   const adviceView = $derived(view?.kind === 'advice' ? view : undefined)
   const issuedAt = $derived(advice === null ? null : Date.parse(advice.issuedAt))
   const adviceStale = $derived(advice !== null && (snapshot?.resetSinceAdvice === true || adviceView?.modelChanged === true || adviceView?.drawingChanged === true))
@@ -115,13 +155,15 @@
 
 {#snippet notice()}
   <!-- One reserved notice line; the most consequential notice wins. Advice can go stale; an overview cannot. -->
-  <p class="banner" class:quiet={!adviceStale && activeTrip === undefined} class:trip={activeTrip !== undefined && !adviceStale}>
+  <p class="banner" class:quiet={!adviceStale && activeTrip === undefined && openError === null} class:trip={activeTrip !== undefined && !adviceStale && openError === null} title={openError ?? undefined}>
     {#if advice !== null && snapshot?.resetSinceAdvice}
       The Run was reset after this advice. The advice may no longer apply.
     {:else if adviceView?.modelChanged}
       The Plant model changed after this advice was composed.
     {:else if adviceView?.drawingChanged}
       The equipment drawing changed after this advice was composed.
+    {:else if openError !== null}
+      {openError}
     {:else if activeTrip !== undefined && snapshot?.latest !== undefined}
       TRIP · {activeTrip.title} · {alarmAge(snapshot.latest.plantElapsedMs, activeTrip.firstActiveElapsedMs)} ago
     {:else if snapshot?.phase.kind === 'suspended'}
@@ -138,8 +180,11 @@
   <footer>{advice === null ? 'Generated from the Plant model' : 'AI-composed view'} · thresholds from the Plant's I&amp;C rules · not an operating display</footer>
 {/snippet}
 
-<article class="card" class:overview aria-label={advice === null ? title : `AI-composed view: ${title}`} bind:clientWidth={cardWidth}>
+<article class="card" class:overview class:opening aria-busy={opening} aria-label={advice === null ? title : `AI-composed view: ${title}`} bind:clientWidth={cardWidth}>
   <header>
+    {#if trail.length > 0}
+      <button type="button" class="back" onclick={back} disabled={opening} title={`Back to ${trail.at(-1)!.title} (Esc)`}>‹ {trail.at(-1)!.title}</button>
+    {/if}
     <h1 {title}>{title}</h1>
     {#if overview}
       <!-- An overview's title names its unit; its Run and its notice line share this row, so the panels keep the window's height. -->
@@ -174,7 +219,7 @@
     <div class="panels beside" style={`gap:${layout.overviewColumnGap}px`}>
       <div class="drawing">
         {#each view.display.panels as panel, index (index)}
-          {#if panel.kind === 'mimic'}<MimicPanel mimic={panel.mimic} latest={snapshot.latest} {stale} />{/if}
+          {#if panel.kind === 'mimic'}<MimicPanel mimic={panel.mimic} latest={snapshot.latest} {stale} open={opens} />{/if}
         {/each}
       </div>
       <div class="column" style={`width:${layout.overviewColumn}px;gap:${layout.panelGap}px`}>
@@ -221,7 +266,7 @@
         {:else if panel.kind === 'readouts'}
           <ReadoutsPanel {panel} latest={snapshot.latest} {activeRuleIds} />
         {:else if panel.kind === 'mimic'}
-          <MimicPanel mimic={panel.mimic} latest={snapshot.latest} {stale} />
+          <MimicPanel mimic={panel.mimic} latest={snapshot.latest} {stale} open={opens} />
         {:else}
           <AlarmsPanel {panel} latest={snapshot.latest} />
         {/if}
@@ -252,6 +297,8 @@
   .hint { font-size: 11.5px; }
   button { font: inherit; font-size: 12px; padding: 1px 10px; border: 1px solid var(--border-outline-color); border-radius: 4px; background: var(--container-section-color); color: var(--element-active-color); cursor: pointer; }
   button:focus-visible { outline: 2px solid var(--border-focus-color); outline-offset: 1px; }
+  .back { flex: none; padding: 0 8px; height: 22px; white-space: nowrap; }
+  .back:disabled, .opening :global(.target) { cursor: progress; }
   .panels { display: flex; flex-direction: column; }
   /* A unit overview fills its window: one header row (composedDisplayLayout.overviewFrame), then its panels. Nothing is shrunk; stacked, they scroll when the window is smaller. */
   .overview header { flex: none; height: 22px; }

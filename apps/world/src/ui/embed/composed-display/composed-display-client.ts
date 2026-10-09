@@ -24,9 +24,9 @@ export type ComposedDisplayViewResult =
     readonly drawingChanged: boolean
     readonly display: CompiledComposedDisplay
   }
-  /** A unit overview World generates for the Plant: no advice, so nothing about it goes stale. */
+  /** A unit overview World generates for the Plant, or equipment opened from it: no advice, so nothing about it goes stale. */
   | {
-    readonly kind: 'overview'
+    readonly kind: 'overview' | 'detail'
     readonly plantId: string
     readonly plantLabel: string | null
     readonly simulationTime: string
@@ -66,7 +66,7 @@ export interface ComposedDisplayClient {
   readonly presence: (runId: SimulationRunId) => Promise<RunPresence | null>
   /** Explicitly loads a Run at the reader's request. */
   readonly loadRun: (runId: SimulationRunId) => Promise<void>
-  /** `size`: the view's inner size, which a unit overview is drawn for; null for advice, sized when composed. */
+  /** `size`: the view's inner size, which a generated display is drawn for; null for advice, sized when composed. */
   readonly view: (runId: SimulationRunId, plantId: string, state: string, size: ViewSize | null) => Promise<ComposedDisplayViewResult>
   readonly history: (runId: SimulationRunId, seriesId: string, window: { readonly from: number; readonly to: number }) => Promise<ReadonlyArray<TrendPoint>>
   readonly sample: (runId: SimulationRunId, plantId: string, paths: ReadonlyArray<string>, alarms: boolean) => Promise<ComposedDisplaySample>
