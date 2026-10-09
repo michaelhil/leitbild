@@ -1,44 +1,34 @@
-//! Conventional coupled regional neutron kinetics with six delayed groups.
+//! Regional neutron-equivalent populations with ONE material-owned precursor bank.
 //!
-//! Each region owns N and six C inventories, ordered [N, C1, ..., C6]. All
-//! regions use the SAME extensive neutron-equivalent population normalization;
-//! C is an effective delayed-neutron source inventory, not an isotope or heat
-//! inventory. A density or independently normalized regional power amplitude
-//! must first be converted by its physical mapping owner.
+//! State: [N_region..., C_material,group...], six groups per material carrier.
+//! At each region/material support, achieved fissions F_ai = G_ai * N_i
+//! create B_ai,g = nu_delayed_a,g * F_ai. The SAME birth is withheld from the
+//! regional prompt equation and added to its material precursor stock:
+//!   N'_i = rho_i/Lambda_i*N_i - sum_a,g B_ai,g + S_i + transfers
+//!          + sum_a,g W_ia*lambda_a,g*C_a,g
+//!   C'_a,g = sum_i B_ai,g - lambda_a,g*C_a,g.
 //!
-//! For region i, with beta_i = sum_g beta_ig:
-//!   N'_i = (rho_i - beta_i) / Lambda_i * N_i
-//!          + sum_g lambda_ig * C_ig + S_i + incoming - outgoing
-//!   C'_ig = beta_ig / Lambda_i * N_i - lambda_ig * C_ig.
-//! Each directed edge contributes k_ij*N_i once negatively at i and once
-//! positively at j. Thus internal transfers cancel in sum_i(N_i + sum_g C_ig).
-//! Local rho owns local net generation/loss, including separately declared
-//! external leakage; it must not also subtract an edge's internal transfer.
-//! This regional rho is a local gain/loss parameter, not an independently
-//! predicted local k_eff. The coefficient owner must justify the GLOBAL
-//! coupled critical/period/rod/feedback response; generation time Lambda is
-//! not interchangeable with neutron lifetime.
+//! G is production, NOT geometric overlap. W is current emission projection;
+//! its explicit outside-domain share retains a paid export. Movement changes
+//! G/W, never C. Identity mapping with nu_delayed_g*G=beta_g/Lambda recovers
+//! conventional kinetics. Other projected operators need their OWN
+//! critical/period/shape admission; conservation does not establish fidelity.
 //!
-//! Lambda is seconds; lambda and edge k are 1/s; rho and beta are dimensionless;
-//! S is population/s. No coefficients, topology, thermal power conversion or
-//! feedback law are supplied by default. Their physical applicability remains
-//! the engineering/mapping owner's responsibility. Lambda, beta and lambda
-//! are immutable within this compiled coefficient configuration. If the
-//! selected physics needs their state dependence, the constitutive-input and
-//! tangent interface must explicitly include it; it is not hidden here.
+//! N/C share one extensive equivalent-neutron normalization. C is neither
+//! decay heat nor a resolved isotope assay. Lambda/rho/G must share the net
+//! generation convention. There are no default coefficients, shapes, feedback
+//! laws, equilibrium resets, solver or integration. Lambda, nu_delayed and
+//! lambda are fixed within a compiled coefficient configuration; required
+//! state dependence needs explicit input ports and derivatives.
 //!
-//! Evaluation admits finite signed Newton states AND constitutive inputs.
-//! validate_accepted_state and validate_accepted_inputs separately admit
-//! nonnegative physical inventories/rates and the declared reactivity domain,
-//! without clipping. The full tangent includes constitutive input directions;
-//! its frozen-input state partial must
-//! not be mistaken for the complete coupled plant Jacobian.
+//! Finite signed Newton trials/directions are evaluated without clipping.
+//! Admit accepted physical states AND inputs separately. Errors invalidate
+//! caller output buffers. Stage evaluation performs no allocation.
 
 use std::collections::BTreeSet;
 use std::fmt;
 
 pub const DELAYED_GROUPS: usize = 6;
-pub const STATES_PER_REGION: usize = 1 + DELAYED_GROUPS;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ReactivityDomain {
@@ -49,16 +39,27 @@ pub struct ReactivityDomain {
 #[derive(Clone, Copy, Debug)]
 pub struct RegionParameters {
     pub generation_time_s: f64,
-    pub delayed_fractions: [f64; DELAYED_GROUPS],
-    pub decay_constants_per_s: [f64; DELAYED_GROUPS],
     pub reactivity_domain: ReactivityDomain,
 }
 
-/// Topology only. The corresponding current rate is supplied in Inputs.
+#[derive(Clone, Copy, Debug)]
+pub struct MaterialParameters {
+    /// Equivalent delayed-neutron births per achieved fission, NOT beta alone.
+    pub delayed_yields_per_fission: [f64; DELAYED_GROUPS],
+    pub decay_constants_per_s: [f64; DELAYED_GROUPS],
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Transfer {
     pub donor: usize,
     pub receiver: usize,
+}
+
+/// Reachable support; currently zero overlap retains its identity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Support {
+    pub region: usize,
+    pub material: usize,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -67,23 +68,22 @@ pub struct RegionInput {
     pub external_source_per_s: f64,
 }
 
+/// Current constitutive values, or signed directions with the same dimensions.
 #[derive(Clone, Copy, Debug)]
 pub struct Inputs<'a> {
     pub regions: &'a [RegionInput],
     pub transfer_rates_per_s: &'a [f64],
+    /// G_ai per Support, fissions/(equivalent population * s).
+    pub fissions_per_population_s: &'a [f64],
+    /// W_ia per Support. Geometry may justify uniform emission, not G_ai.
+    pub emission_fractions: &'a [f64],
+    /// Explicit outside-domain emission fraction per material carrier.
+    pub outside_fractions: &'a [f64],
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct RegionInputDirection {
-    pub reactivity: f64,
-    pub external_source_per_s: f64,
-}
-
-/// Directions may have either sign, unlike physical source/transfer rates.
-#[derive(Clone, Copy, Debug)]
-pub struct InputDirection<'a> {
-    pub regions: &'a [RegionInputDirection],
-    pub transfer_rates_per_s: &'a [f64],
+pub struct Balance {
+    pub delayed_export_per_s: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -91,17 +91,12 @@ pub enum Error {
     EmptyModel,
     DimensionOverflow,
     InvalidParameter {
-        region: usize,
+        owner: usize,
         name: &'static str,
     },
-    InvalidReactivityDomain {
-        region: usize,
-    },
-    InvalidTransfer {
-        edge: usize,
-    },
-    DuplicateTransfer {
-        edge: usize,
+    InvalidTopology {
+        name: &'static str,
+        index: usize,
     },
     Length {
         field: &'static str,
@@ -115,173 +110,410 @@ pub enum Error {
     ReactivityOutsideDomain {
         region: usize,
     },
+    EmissionNotPartitioned {
+        material: usize,
+        sum: f64,
+    },
     NegativeAcceptedInventory {
         index: usize,
     },
-    NonfiniteResult {
-        index: usize,
-    },
+    NonfiniteResult,
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "regional kinetics: {self:?}")
+        write!(f, "material/regional kinetics: {self:?}")
     }
 }
-
 impl std::error::Error for Error {}
 
 #[derive(Debug)]
-struct CompiledRegion {
-    inverse_generation_time: f64,
-    total_delayed_fraction: f64,
-    delayed_production_per_s: [f64; DELAYED_GROUPS],
-    decay_constants_per_s: [f64; DELAYED_GROUPS],
-    domain: ReactivityDomain,
-}
-
-#[derive(Debug)]
 pub struct Model {
-    regions: Vec<CompiledRegion>,
+    regions: Vec<RegionParameters>,
+    materials: Vec<MaterialParameters>,
     transfers: Vec<Transfer>,
+    supports: Vec<Support>,
+    material_supports: Vec<Vec<usize>>,
     dimension: usize,
-    structural_state_jacobian_nonzeros: usize,
+    structural_nonzeros: usize,
 }
 
 impl Model {
-    /// Validate and compile immutable coefficients/topology once.
-    pub fn new(regions: Vec<RegionParameters>, transfers: Vec<Transfer>) -> Result<Self, Error> {
-        if regions.is_empty() {
+    pub fn new(
+        regions: Vec<RegionParameters>,
+        materials: Vec<MaterialParameters>,
+        transfers: Vec<Transfer>,
+        supports: Vec<Support>,
+    ) -> Result<Self, Error> {
+        if regions.is_empty() || materials.is_empty() {
             return Err(Error::EmptyModel);
         }
-        let dimension = regions
+        let dimension = materials
             .len()
-            .checked_mul(STATES_PER_REGION)
+            .checked_mul(DELAYED_GROUPS)
+            .and_then(|n| n.checked_add(regions.len()))
             .ok_or(Error::DimensionOverflow)?;
-        // Seven diagonals, six N->C and six C->N entries per region, plus
-        // one unique off-diagonal N->N entry per directed non-self edge.
-        let structural_state_jacobian_nonzeros = regions
-            .len()
-            .checked_mul(19)
-            .and_then(|n| n.checked_add(transfers.len()))
-            .ok_or(Error::DimensionOverflow)?;
-        let mut compiled = Vec::with_capacity(regions.len());
-        for (i, p) in regions.iter().enumerate() {
+        for (owner, p) in regions.iter().enumerate() {
             if !p.generation_time_s.is_finite()
                 || p.generation_time_s <= 0.
                 || !p.generation_time_s.recip().is_finite()
             {
                 return Err(Error::InvalidParameter {
-                    region: i,
+                    owner,
                     name: "generation_time_s",
                 });
             }
-            let mut beta = 0.;
-            for g in 0..DELAYED_GROUPS {
-                if !p.delayed_fractions[g].is_finite() || p.delayed_fractions[g] < 0. {
-                    return Err(Error::InvalidParameter {
-                        region: i,
-                        name: "delayed_fractions",
-                    });
-                }
-                if !p.decay_constants_per_s[g].is_finite() || p.decay_constants_per_s[g] <= 0. {
-                    return Err(Error::InvalidParameter {
-                        region: i,
-                        name: "decay_constants_per_s",
-                    });
-                }
-                beta += p.delayed_fractions[g];
-            }
-            if !beta.is_finite() || beta >= 1. {
+            let d = p.reactivity_domain;
+            if !d.minimum.is_finite() || !d.maximum.is_finite() || d.minimum > d.maximum {
                 return Err(Error::InvalidParameter {
-                    region: i,
-                    name: "total_delayed_fraction",
+                    owner,
+                    name: "reactivity_domain",
                 });
             }
-            let domain = p.reactivity_domain;
-            if !domain.minimum.is_finite()
-                || !domain.maximum.is_finite()
-                || domain.minimum > domain.maximum
+        }
+        for (owner, p) in materials.iter().enumerate() {
+            if p.delayed_yields_per_fission
+                .iter()
+                .any(|x| !x.is_finite() || *x < 0.)
+                || !p.delayed_yields_per_fission.iter().sum::<f64>().is_finite()
             {
-                return Err(Error::InvalidReactivityDomain { region: i });
-            }
-            let inverse_generation_time = p.generation_time_s.recip();
-            let delayed_production_per_s = p.delayed_fractions.map(|b| b * inverse_generation_time);
-            if delayed_production_per_s.iter().any(|x| !x.is_finite()) {
                 return Err(Error::InvalidParameter {
-                    region: i,
-                    name: "delayed_production_per_s",
+                    owner,
+                    name: "delayed_yields_per_fission",
                 });
             }
-            compiled.push(CompiledRegion {
-                inverse_generation_time,
-                total_delayed_fraction: beta,
-                delayed_production_per_s,
-                decay_constants_per_s: p.decay_constants_per_s,
-                domain,
-            });
+            if p.decay_constants_per_s
+                .iter()
+                .any(|x| !x.is_finite() || *x <= 0.)
+            {
+                return Err(Error::InvalidParameter {
+                    owner,
+                    name: "decay_constants_per_s",
+                });
+            }
         }
         let mut seen = BTreeSet::new();
-        for (edge, t) in transfers.iter().enumerate() {
-            if t.donor >= regions.len() || t.receiver >= regions.len() || t.donor == t.receiver {
-                return Err(Error::InvalidTransfer { edge });
-            }
-            if !seen.insert((t.donor, t.receiver)) {
-                return Err(Error::DuplicateTransfer { edge });
+        for (index, e) in transfers.iter().enumerate() {
+            if e.donor >= regions.len()
+                || e.receiver >= regions.len()
+                || e.donor == e.receiver
+                || !seen.insert((e.donor, e.receiver))
+            {
+                return Err(Error::InvalidTopology {
+                    name: "transfer",
+                    index,
+                });
             }
         }
+        seen.clear();
+        let mut material_supports = vec![Vec::new(); materials.len()];
+        for (index, s) in supports.iter().enumerate() {
+            if s.region >= regions.len()
+                || s.material >= materials.len()
+                || !seen.insert((s.region, s.material))
+            {
+                return Err(Error::InvalidTopology {
+                    name: "material support",
+                    index,
+                });
+            }
+            material_supports[s.material].push(index);
+        }
+        let structural_nonzeros = supports
+            .len()
+            .checked_mul(2 * DELAYED_GROUPS)
+            .and_then(|n| n.checked_add(dimension))
+            .and_then(|n| n.checked_add(transfers.len()))
+            .ok_or(Error::DimensionOverflow)?;
         Ok(Self {
-            regions: compiled,
+            regions,
+            materials,
             transfers,
+            supports,
+            material_supports,
             dimension,
-            structural_state_jacobian_nonzeros,
+            structural_nonzeros,
         })
     }
 
     pub fn region_count(&self) -> usize {
         self.regions.len()
     }
+    pub fn material_count(&self) -> usize {
+        self.materials.len()
+    }
     pub fn state_dimension(&self) -> usize {
         self.dimension
+    }
+    pub fn support_count(&self) -> usize {
+        self.supports.len()
     }
     pub fn transfer_count(&self) -> usize {
         self.transfers.len()
     }
-
-    /// Structural state-state entries, not a count for the future full plant
-    /// Jacobian. All 7R states are differential; this block has no constraints.
+    /// Fixed-input block only: R+6A+E+12L, not the coupled plant census.
     pub fn structural_state_jacobian_nonzeros(&self) -> usize {
-        self.structural_state_jacobian_nonzeros
+        self.structural_nonzeros
+    }
+
+    /// Visit additive fixed-input RHS Jacobian entries in O(R+6A+E+6L).
+    /// Duplicate diagonal contributions MUST be summed, not overwritten.
+    /// Zero entries retain the compiled support. This is not the complete
+    /// plant Jacobian: current rho/G/W/k input dependencies add their chain
+    /// rule contributions, and IDA assembles cj*dF/dy' + dF/dy separately.
+    /// On error discard the assembly, including already visited entries.
+    pub fn state_jacobian_entries(
+        &self,
+        inputs: Inputs<'_>,
+        mut add: impl FnMut(usize, usize, f64),
+    ) -> Result<(), Error> {
+        self.validate_trial_inputs(inputs)?;
+        let mut emit = |row, column, value: f64| {
+            if !value.is_finite() {
+                return Err(Error::NonfiniteResult);
+            }
+            add(row, column, value);
+            Ok(())
+        };
+        for (i, (p, input)) in self.regions.iter().zip(inputs.regions).enumerate() {
+            emit(i, i, input.reactivity / p.generation_time_s)?;
+        }
+        for (a, material) in self.materials.iter().enumerate() {
+            for g in 0..DELAYED_GROUPS {
+                let row = self.regions.len() + a * DELAYED_GROUPS + g;
+                emit(row, row, -material.decay_constants_per_s[g])?;
+            }
+        }
+        for (index, s) in self.supports.iter().enumerate() {
+            let material = &self.materials[s.material];
+            for g in 0..DELAYED_GROUPS {
+                let row = self.regions.len() + s.material * DELAYED_GROUPS + g;
+                let production = material.delayed_yields_per_fission[g]
+                    * inputs.fissions_per_population_s[index];
+                emit(s.region, s.region, -production)?;
+                emit(row, s.region, production)?;
+                emit(
+                    s.region,
+                    row,
+                    inputs.emission_fractions[index] * material.decay_constants_per_s[g],
+                )?;
+            }
+        }
+        for (edge, &rate) in self.transfers.iter().zip(inputs.transfer_rates_per_s) {
+            emit(edge.donor, edge.donor, -rate)?;
+            emit(edge.receiver, edge.donor, rate)?;
+        }
+        Ok(())
     }
 
     pub fn validate_accepted_state(&self, state: &[f64]) -> Result<(), Error> {
-        finite_slice("state", state, self.dimension)?;
-        for (index, &v) in state.iter().enumerate() {
-            if v < 0. {
+        finite("state", state, self.dimension)?;
+        for (index, &value) in state.iter().enumerate() {
+            if value < 0. {
                 return Err(Error::NegativeAcceptedInventory { index });
             }
         }
         Ok(())
     }
 
-    /// Admit physical forcing separately from finite signed Newton continuation.
     pub fn validate_accepted_inputs(&self, inputs: Inputs<'_>) -> Result<(), Error> {
         self.validate_trial_inputs(inputs)?;
-        for (i, (r, input)) in self.regions.iter().zip(inputs.regions).enumerate() {
-            if input.external_source_per_s < 0. {
+        for (region, (p, value)) in self.regions.iter().zip(inputs.regions).enumerate() {
+            if value.external_source_per_s < 0. {
                 return Err(Error::InvalidValue {
                     field: "accepted source",
-                    index: i,
+                    index: region,
                 });
             }
-            if input.reactivity < r.domain.minimum || input.reactivity > r.domain.maximum {
-                return Err(Error::ReactivityOutsideDomain { region: i });
+            if value.reactivity < p.reactivity_domain.minimum
+                || value.reactivity > p.reactivity_domain.maximum
+            {
+                return Err(Error::ReactivityOutsideDomain { region });
             }
         }
-        for (index, &rate) in inputs.transfer_rates_per_s.iter().enumerate() {
-            if rate < 0. {
+        for (field, values) in [
+            ("accepted transfer", inputs.transfer_rates_per_s),
+            (
+                "accepted fission coefficient",
+                inputs.fissions_per_population_s,
+            ),
+            ("accepted emission fraction", inputs.emission_fractions),
+            ("accepted outside fraction", inputs.outside_fractions),
+        ] {
+            for (index, &v) in values.iter().enumerate() {
+                if v < 0. {
+                    return Err(Error::InvalidValue { field, index });
+                }
+            }
+        }
+        for (material, edges) in self.material_supports.iter().enumerate() {
+            let sum = edges
+                .iter()
+                .fold(inputs.outside_fractions[material], |sum, &edge| {
+                    sum + inputs.emission_fractions[edge]
+                });
+            // Arithmetic accumulation allowance, not a physical leakage floor.
+            let roundoff = 16. * f64::EPSILON * (edges.len() + 1) as f64;
+            if !sum.is_finite() || (sum - 1.).abs() > roundoff {
+                return Err(Error::EmissionNotPartitioned { material, sum });
+            }
+        }
+        Ok(())
+    }
+
+    /// The SAME achieved material fissions feed the heat and poison blocks.
+    pub fn rates(
+        &self,
+        state: &[f64],
+        inputs: Inputs<'_>,
+        out: &mut [f64],
+        material_fissions_per_s: &mut [f64],
+    ) -> Result<Balance, Error> {
+        finite("state", state, self.dimension)?;
+        self.validate_trial_inputs(inputs)?;
+        length("rates", out.len(), self.dimension)?;
+        length(
+            "material fissions",
+            material_fissions_per_s.len(),
+            self.materials.len(),
+        )?;
+        let balance = self.action(inputs, state, out, material_fissions_per_s);
+        for (i, input) in inputs.regions.iter().enumerate() {
+            out[i] += input.external_source_per_s;
+        }
+        self.validate_result(out, material_fissions_per_s, balance)
+    }
+
+    /// Exact state AND constitutive-input derivative, including changing G/W.
+    /// Constrained projection directions need sum(dW)+dOutside=0 from their
+    /// actual geometry/constitutive owner; arbitrary finite directions are valid.
+    pub fn directional_derivative(
+        &self,
+        state: &[f64],
+        inputs: Inputs<'_>,
+        state_direction: &[f64],
+        input_direction: Inputs<'_>,
+        out: &mut [f64],
+        material_fission_direction: &mut [f64],
+    ) -> Result<Balance, Error> {
+        finite("state", state, self.dimension)?;
+        finite("state direction", state_direction, self.dimension)?;
+        self.validate_trial_inputs(inputs)?;
+        self.validate_trial_inputs(input_direction)?;
+        length("tangent", out.len(), self.dimension)?;
+        length(
+            "material fission direction",
+            material_fission_direction.len(),
+            self.materials.len(),
+        )?;
+        let mut balance = self.action(inputs, state_direction, out, material_fission_direction);
+        for (i, (p, d)) in self.regions.iter().zip(input_direction.regions).enumerate() {
+            out[i] += d.reactivity / p.generation_time_s * state[i] + d.external_source_per_s;
+        }
+        for (edge, &rate) in self
+            .transfers
+            .iter()
+            .zip(input_direction.transfer_rates_per_s)
+        {
+            let flow = rate * state[edge.donor];
+            out[edge.donor] -= flow;
+            out[edge.receiver] += flow;
+        }
+        for (index, s) in self.supports.iter().enumerate() {
+            let fission = input_direction.fissions_per_population_s[index] * state[s.region];
+            material_fission_direction[s.material] += fission;
+            let material = &self.materials[s.material];
+            for g in 0..DELAYED_GROUPS {
+                let row = self.regions.len() + s.material * DELAYED_GROUPS + g;
+                let birth = material.delayed_yields_per_fission[g] * fission;
+                out[s.region] -= birth;
+                out[row] += birth;
+                out[s.region] += input_direction.emission_fractions[index]
+                    * material.decay_constants_per_s[g]
+                    * state[row];
+            }
+        }
+        for (a, material) in self.materials.iter().enumerate() {
+            for g in 0..DELAYED_GROUPS {
+                balance.delayed_export_per_s += input_direction.outside_fractions[a]
+                    * material.decay_constants_per_s[g]
+                    * state[self.regions.len() + a * DELAYED_GROUPS + g];
+            }
+        }
+        self.validate_result(out, material_fission_direction, balance)
+    }
+
+    fn action(
+        &self,
+        inputs: Inputs<'_>,
+        values: &[f64],
+        out: &mut [f64],
+        fissions: &mut [f64],
+    ) -> Balance {
+        out.fill(0.);
+        fissions.fill(0.);
+        let mut exported = 0.;
+        for (i, (p, input)) in self.regions.iter().zip(inputs.regions).enumerate() {
+            out[i] = input.reactivity / p.generation_time_s * values[i];
+        }
+        for (a, material) in self.materials.iter().enumerate() {
+            for g in 0..DELAYED_GROUPS {
+                let row = self.regions.len() + a * DELAYED_GROUPS + g;
+                let decay = material.decay_constants_per_s[g] * values[row];
+                out[row] = -decay;
+                exported += inputs.outside_fractions[a] * decay;
+            }
+        }
+        for (index, s) in self.supports.iter().enumerate() {
+            let fission = inputs.fissions_per_population_s[index] * values[s.region];
+            fissions[s.material] += fission;
+            let material = &self.materials[s.material];
+            for g in 0..DELAYED_GROUPS {
+                let row = self.regions.len() + s.material * DELAYED_GROUPS + g;
+                let birth = material.delayed_yields_per_fission[g] * fission;
+                out[s.region] -= birth;
+                out[row] += birth;
+                out[s.region] += inputs.emission_fractions[index]
+                    * material.decay_constants_per_s[g]
+                    * values[row];
+            }
+        }
+        for (edge, &rate) in self.transfers.iter().zip(inputs.transfer_rates_per_s) {
+            let flow = rate * values[edge.donor];
+            out[edge.donor] -= flow;
+            out[edge.receiver] += flow;
+        }
+        Balance {
+            delayed_export_per_s: exported,
+        }
+    }
+
+    fn validate_trial_inputs(&self, inputs: Inputs<'_>) -> Result<(), Error> {
+        length("region inputs", inputs.regions.len(), self.regions.len())?;
+        finite(
+            "transfer rates",
+            inputs.transfer_rates_per_s,
+            self.transfers.len(),
+        )?;
+        finite(
+            "fission coefficients",
+            inputs.fissions_per_population_s,
+            self.supports.len(),
+        )?;
+        finite(
+            "emission fractions",
+            inputs.emission_fractions,
+            self.supports.len(),
+        )?;
+        finite(
+            "outside fractions",
+            inputs.outside_fractions,
+            self.materials.len(),
+        )?;
+        for (index, p) in inputs.regions.iter().enumerate() {
+            if !p.reactivity.is_finite() || !p.external_source_per_s.is_finite() {
                 return Err(Error::InvalidValue {
-                    field: "accepted transfer rate",
+                    field: "region input",
                     index,
                 });
             }
@@ -289,124 +521,18 @@ impl Model {
         Ok(())
     }
 
-    /// RHS at a finite physical state or signed numerical trial. No allocation.
-    pub fn rates(&self, state: &[f64], inputs: Inputs<'_>, out: &mut [f64]) -> Result<(), Error> {
-        finite_slice("state", state, self.dimension)?;
-        self.validate_trial_inputs(inputs)?;
-        length("rates", out.len(), self.dimension)?;
-        self.state_action_unchecked(inputs, state, out);
-        for (i, input) in inputs.regions.iter().enumerate() {
-            out[i * STATES_PER_REGION] += input.external_source_per_s;
-        }
-        finite_results(out)
-    }
-
-    /// Exact partial J_state*v with constitutive inputs frozen. The full joined
-    /// thermal/rod/chemistry Jacobian must ALSO use their input sensitivities.
-    pub fn state_jacobian_action(
+    fn validate_result(
         &self,
-        inputs: Inputs<'_>,
-        direction: &[f64],
-        out: &mut [f64],
-    ) -> Result<(), Error> {
-        self.validate_trial_inputs(inputs)?;
-        finite_slice("state direction", direction, self.dimension)?;
-        length("Jacobian action", out.len(), self.dimension)?;
-        self.state_action_unchecked(inputs, direction, out);
-        finite_results(out)
-    }
-
-    /// Exact total directional derivative of rates with respect to state,
-    /// reactivity, external source AND current transfer rates. This is the
-    /// assembly port for state-dependent feedback/coupling, not a frozen-rho
-    /// surrogate for the complete implicit plant Jacobian.
-    pub fn directional_derivative(
-        &self,
-        state: &[f64],
-        inputs: Inputs<'_>,
-        state_direction: &[f64],
-        input_direction: InputDirection<'_>,
-        out: &mut [f64],
-    ) -> Result<(), Error> {
-        finite_slice("state", state, self.dimension)?;
-        finite_slice("state direction", state_direction, self.dimension)?;
-        self.validate_trial_inputs(inputs)?;
-        length(
-            "input direction",
-            input_direction.regions.len(),
-            self.regions.len(),
-        )?;
-        finite_slice(
-            "transfer direction",
-            input_direction.transfer_rates_per_s,
-            self.transfers.len(),
-        )?;
-        for (i, d) in input_direction.regions.iter().enumerate() {
-            if !d.reactivity.is_finite() || !d.external_source_per_s.is_finite() {
-                return Err(Error::InvalidValue {
-                    field: "input direction",
-                    index: i,
-                });
-            }
-        }
-        length("directional derivative", out.len(), self.dimension)?;
-        self.state_action_unchecked(inputs, state_direction, out);
-        for (i, (r, d)) in self.regions.iter().zip(input_direction.regions).enumerate() {
-            let row = i * STATES_PER_REGION;
-            out[row] +=
-                state[row] * r.inverse_generation_time * d.reactivity + d.external_source_per_s;
-        }
-        for (edge, d_rate) in self
-            .transfers
-            .iter()
-            .zip(input_direction.transfer_rates_per_s)
+        out: &[f64],
+        fissions: &[f64],
+        balance: Balance,
+    ) -> Result<Balance, Error> {
+        if out.iter().chain(fissions).any(|x| !x.is_finite())
+            || !balance.delayed_export_per_s.is_finite()
         {
-            let donor = edge.donor * STATES_PER_REGION;
-            let receiver = edge.receiver * STATES_PER_REGION;
-            let transfer = d_rate * state[donor];
-            out[donor] -= transfer;
-            out[receiver] += transfer;
+            return Err(Error::NonfiniteResult);
         }
-        finite_results(out)
-    }
-
-    fn validate_trial_inputs(&self, inputs: Inputs<'_>) -> Result<(), Error> {
-        length("region inputs", inputs.regions.len(), self.regions.len())?;
-        finite_slice(
-            "transfer rates",
-            inputs.transfer_rates_per_s,
-            self.transfers.len(),
-        )?;
-        for (i, input) in inputs.regions.iter().enumerate() {
-            if !input.reactivity.is_finite() || !input.external_source_per_s.is_finite() {
-                return Err(Error::InvalidValue {
-                    field: "region input",
-                    index: i,
-                });
-            }
-        }
-        Ok(())
-    }
-
-    fn state_action_unchecked(&self, inputs: Inputs<'_>, values: &[f64], out: &mut [f64]) {
-        for (i, (r, input)) in self.regions.iter().zip(inputs.regions).enumerate() {
-            let row = i * STATES_PER_REGION;
-            let n = values[row];
-            out[row] =
-                (input.reactivity - r.total_delayed_fraction) * r.inverse_generation_time * n;
-            for g in 0..DELAYED_GROUPS {
-                let delayed = r.decay_constants_per_s[g] * values[row + 1 + g];
-                out[row] += delayed;
-                out[row + 1 + g] = r.delayed_production_per_s[g] * n - delayed;
-            }
-        }
-        for (edge, rate) in self.transfers.iter().zip(inputs.transfer_rates_per_s) {
-            let donor = edge.donor * STATES_PER_REGION;
-            let receiver = edge.receiver * STATES_PER_REGION;
-            let transfer = rate * values[donor];
-            out[donor] -= transfer;
-            out[receiver] += transfer;
-        }
+        Ok(balance)
     }
 }
 
@@ -421,21 +547,11 @@ fn length(field: &'static str, actual: usize, expected: usize) -> Result<(), Err
         Ok(())
     }
 }
-
-fn finite_slice(field: &'static str, values: &[f64], expected: usize) -> Result<(), Error> {
+fn finite(field: &'static str, values: &[f64], expected: usize) -> Result<(), Error> {
     length(field, values.len(), expected)?;
-    for (index, v) in values.iter().enumerate() {
+    for (index, &v) in values.iter().enumerate() {
         if !v.is_finite() {
             return Err(Error::InvalidValue { field, index });
-        }
-    }
-    Ok(())
-}
-
-fn finite_results(values: &[f64]) -> Result<(), Error> {
-    for (index, v) in values.iter().enumerate() {
-        if !v.is_finite() {
-            return Err(Error::NonfiniteResult { index });
         }
     }
     Ok(())
