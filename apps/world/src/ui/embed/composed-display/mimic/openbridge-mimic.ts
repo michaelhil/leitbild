@@ -111,13 +111,16 @@ export interface DeviceRows {
   readonly rows: ReadonlyArray<{ readonly type: 'value'; readonly value: number; readonly unit: string } | { readonly type: 'state'; readonly text: string; readonly emphasis: boolean }>
 }
 
-/** An `obc-automation-button` positioned by its symbol centre, with its text stack beside or below it. */
-export const createDevice = (): HTMLElement & Props => {
+/**
+ * An `obc-automation-button` positioned by its symbol centre, with its text
+ * stack beside or below it, in the readout size the drawing was laid out for
+ * (chat: small 11.5 px rows; the unit overview: regular 16 px rows).
+ */
+export const createDevice = (readoutSize: 'small' | 'regular'): HTMLElement & Props => {
   const device = element('obc-automation-button')
   device.variant = 'regular'
   device.positioning = 'point'
-  // OpenBridge's small readout stack: 11.5 px rows, legible and about a quarter narrower than regular.
-  device.readoutSize = 'small'
+  device.readoutSize = readoutSize
   device.showReadoutStack = true
   device.activated = false
   device.progress = false

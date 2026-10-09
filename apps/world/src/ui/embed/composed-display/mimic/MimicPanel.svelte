@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import type { Segment } from '@oicl/connector-diagram'
-  import { MIMIC_MIN_SCALE, type CompiledMimic, type MimicDrawnItem, type MimicPipeState } from '../../../../packs/process-plant/displays/mimic/mimic-model.ts'
-  import { flowLook, indexSample, itemLook, powerLook, type ItemLook, type SampleIndex } from '../../../../packs/process-plant/displays/mimic/evaluate.ts'
-  import { rowText, type MimicRow } from '../../../../packs/process-plant/displays/mimic/rows.ts'
+  import type { CompiledMimic, MimicDrawnItem, MimicPipeState } from '../../../../packs/process-plant/displays/mimic/mimic-model.ts'
+  import { indexSample, powerLook, type ItemLook, type SampleIndex } from '../../../../packs/process-plant/displays/mimic/evaluate.ts'
+  import { bundleFlowLook, drawnLook, rowText, type MimicRow } from '../../../../packs/process-plant/displays/mimic/rows.ts'
   import { displayValue, formatQuantity, unitLabel, valueDigits } from '../../../../packs/process-plant/displays/display-text.ts'
   import type { ComposedDisplayAlarm, ComposedDisplaySample } from '../composed-display-client.ts'
   import { chevronSegment, pipeSegments, pipeValue, stubEndSegment } from './pipe-segments.ts'
@@ -23,8 +23,8 @@
 
   let openBridge = $state<typeof OpenBridgeMimic | null>(null)
   let columnWidth = $state(0)
-  // A chat column narrower than the drawing shrinks it while its smallest text stays 11 px; then it scrolls.
-  const scale = $derived(columnWidth === 0 ? 1 : Math.min(1, Math.max(MIMIC_MIN_SCALE, columnWidth / mimic.width)))
+  // A column narrower than the drawing shrinks it down to the scale its profile allows (chat: smallest text 11 px; the overview: none); then it scrolls.
+  const scale = $derived(columnWidth === 0 ? 1 : Math.min(1, Math.max(mimic.minScale, columnWidth / mimic.width)))
   let theme = $state(document.documentElement.dataset.obcTheme ?? '')
   let canvas = $state<HTMLCanvasElement | undefined>(undefined)
 
@@ -45,7 +45,8 @@
 
   const index = $derived<SampleIndex>(indexSample(stale ? undefined : latest?.values))
   const alarms = $derived<ReadonlyArray<ComposedDisplayAlarm>>(stale ? [] : latest?.alarms ?? [])
-  const looks = $derived(new Map(mimic.items.map(item => [item.id, itemLook(item.binding, index)])))
+  // A grouped symbol reads as its members together ("1/2 RUN").
+  const looks = $derived(new Map(mimic.items.map(item => [item.id, drawnLook(item.binding, item.rows, index)])))
 
   const severityRank = { critical: 0, warning: 1, notice: 2, info: 3 } as const
   const alertStatus = { critical: 'alarm', warning: 'warning', notice: 'caution', info: 'caution' } as const
@@ -65,7 +66,7 @@
   const flapHeight = openBridgeDevice.flapHeight
 
   // Device rows as OpenBridge readout rows: integers with units (a valve's opening) and state words.
-  const deviceRows = (item: MimicDrawnItem, look: ItemLook) => item.rows.flatMap(row => {
+  const deviceRows = (item: MimicDrawnItem, look: ItemLook): OpenBridgeMimic.DeviceRows['rows'] => item.rows.flatMap((row): OpenBridgeMimic.DeviceRows['rows'] => {
     if (row.kind === 'position' && look.state.kind === 'position') {
       const fraction = look.state.fraction
       return fraction >= 0.05 && fraction <= 0.95 ? [{ type: 'value' as const, value: Math.round(fraction * 100), unit: '%' }] : []
@@ -80,7 +81,8 @@
     return entry !== undefined && typeof entry.value === 'number' && entry.quality !== 'outside-hard-range' ? displayValue(entry.value, row.unit) : null
   }
 
-  const pipeLook = (state: MimicPipeState) => state.kind === 'fluid' ? flowLook(state.flow, index).look : powerLook(state.energizedPath, index)
+  // A pipe drawn for grouped equipment's parallel pipes carries flow while any of them does.
+  const pipeLook = (state: MimicPipeState) => state.kind === 'fluid' ? bundleFlowLook([state.flow, ...state.parallel], index).look : powerLook(state.energizedPath, index)
 
   // Headers carry flow while any pipe that tees into them does, so a header never contradicts its branches.
   const barValue = (item: MimicDrawnItem) => {
@@ -123,12 +125,13 @@
 
   // Each OpenBridge element is created once and restyled by every sample.
   const device = (host: HTMLElement, params: { ob: Ob; item: MimicDrawnItem; look: ItemLook; rows: ReturnType<typeof deviceRows>; alert: ReturnType<typeof alertOf> }) => {
-    const element = params.ob.createDevice()
+    const element = params.ob.createDevice(mimic.readoutSize)
     host.append(element)
     const apply = (next: typeof params) => {
       if (next.item.presentation.element !== 'device') return
       next.ob.updateDevice(element, next.item.presentation.icon, next.look, {
-        tag: next.item.binding.label,
+        // A valve marker carries no tag: the line it sits on names it.
+        tag: next.item.marker ? '' : next.item.binding.label,
         orientation: next.item.orientation,
         textSide: next.item.text?.side === 'bottom' ? 'bottom' : 'right',
         rows: next.rows,
