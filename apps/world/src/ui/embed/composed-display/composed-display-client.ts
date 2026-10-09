@@ -18,6 +18,8 @@ export interface ComposedDisplayViewResult {
   readonly issuedAt: string
   readonly simulationTime: string
   readonly modelChanged: boolean
+  /** A mimic draws differently now than when the advice was composed (a newer layout or model semantics). */
+  readonly drawingChanged: boolean
   readonly display: CompiledComposedDisplay
 }
 

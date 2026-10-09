@@ -1,218 +1,263 @@
 <script lang="ts">
-  import type { CompiledMimic, MimicNode } from '../../../../packs/process-plant/displays/mimic/mimic-model.ts'
-  import { formatQuantity } from '../../../../packs/process-plant/displays/display-text.ts'
-  import type { ComposedDisplaySample } from '../composed-display-client.ts'
-  import { openBridgeIcons } from './openbridge-icons.ts'
-  import { chevrons, crossings, flowLook, headerLook, indexSample, levelLook, nodeAlarm, pumpLook, reliefLook, valveLook } from './mimic-state.ts'
+  import { onMount } from 'svelte'
+  import type { Segment } from '@oicl/connector-diagram'
+  import type { CompiledMimic, MimicDrawnItem, MimicPipeState } from '../../../../packs/process-plant/displays/mimic/mimic-model.ts'
+  import { flowLook, indexSample, itemLook, powerLook, type ItemLook, type SampleIndex } from '../../../../packs/process-plant/displays/mimic/evaluate.ts'
+  import { rowText, type MimicRow } from '../../../../packs/process-plant/displays/mimic/rows.ts'
+  import { displayValue, formatQuantity, unitLabel, valueDigits } from '../../../../packs/process-plant/displays/display-text.ts'
+  import type { ComposedDisplayAlarm, ComposedDisplaySample } from '../composed-display-client.ts'
+  import { chevronSegment, pipeSegments, pipeValue, stubEndSegment } from './pipe-segments.ts'
+  import { openBridgeDevice } from '../../../../packs/process-plant/displays/mimic/text-metrics.ts'
+  import type * as OpenBridgeMimic from './openbridge-mimic.ts'
 
-  // One SVG in World's fixed geometry, drawn with OpenBridge's symbols and
-  // colour tokens. Nothing moves between samples: a sample changes classes,
-  // fills and text only. A stale view draws every state as unknown and says so.
+  // A generated equipment mimic drawn with OpenBridge: pipes on a canvas by
+  // connector-diagram, equipment as positioned OpenBridge elements. The
+  // geometry is fixed by the server; a sample restyles it and never moves it.
+  // A stale view draws every state as unknown and says so.
   let { mimic, latest, stale }: {
     mimic: CompiledMimic
     latest: ComposedDisplaySample | undefined
     stale: boolean
   } = $props()
 
-  const index = $derived(indexSample(stale ? undefined : latest))
-  const alarms = $derived(stale ? [] : latest?.alarms ?? [])
-  const headers = $derived(mimic.nodes.filter(node => node.symbol === 'header'))
-  const symbols = $derived(mimic.nodes.filter(node => node.symbol !== 'header'))
-  const bridges = $derived(crossings(mimic.pipes, headers.map(node => ({ id: node.id, x: node.x, y: node.y + node.height / 2, width: node.width }))))
+  let openBridge = $state<typeof OpenBridgeMimic | null>(null)
+  let theme = $state(document.documentElement.dataset.obcTheme ?? '')
+  let canvas = $state<HTMLCanvasElement | undefined>(undefined)
 
-  const valueText = (path: string, unit: string): string => {
-    const value = index.get(path)?.value
-    return typeof value === 'number' ? formatQuantity(value, unit) : '—'
+  onMount(() => {
+    let alive = true
+    void import('./openbridge-mimic.ts').then(async loaded => {
+      await loaded.loadMimicFont()
+      if (alive) openBridge = loaded
+    })
+    // The pipe palette follows the OpenBridge theme.
+    const observer = new MutationObserver(() => { theme = document.documentElement.dataset.obcTheme ?? '' })
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-obc-theme'] })
+    return () => {
+      alive = false
+      observer.disconnect()
+    }
+  })
+
+  const index = $derived<SampleIndex>(indexSample(stale ? undefined : latest?.values))
+  const alarms = $derived<ReadonlyArray<ComposedDisplayAlarm>>(stale ? [] : latest?.alarms ?? [])
+  const looks = $derived(new Map(mimic.items.map(item => [item.id, itemLook(item.binding, index)])))
+
+  const severityRank = { critical: 0, warning: 1, notice: 2, info: 3 } as const
+  const alertStatus = { critical: 'alarm', warning: 'warning', notice: 'caution', info: 'caution' } as const
+
+  /** The most severe active alarm framing an item, trips first, with the flap text that says what it watches. */
+  const alertOf = (item: MimicDrawnItem): { readonly status: 'alarm' | 'warning' | 'caution'; readonly label: string } | null => {
+    const flaps = new Map(item.binding.frames.map(frame => [frame.ruleId, frame.flap]))
+    const active = alarms
+      .filter(alarm => flaps.has(alarm.ruleId))
+      .sort((left, right) => Number(right.kind === 'trip') - Number(left.kind === 'trip') || severityRank[left.severity] - severityRank[right.severity])[0]
+    return active === undefined ? null : { status: alertStatus[active.severity], label: flaps.get(active.ruleId)! }
   }
-  const named = (value: { readonly path: string; readonly unit: string; readonly name?: string }): string =>
-    `${value.name === undefined ? '' : `${value.name} `}${valueText(value.path, value.unit)}`
-  const points = (list: ReadonlyArray<readonly [number, number]>): string => list.map(([x, y]) => `${x},${y}`).join(' ')
-  const centerX = (node: MimicNode): number => node.x + node.width / 2
-  const centerY = (node: MimicNode): number => node.y + node.height / 2
-  const flapWidth = (kind: string): number => kind === 'trip' ? 30 : 26
+
+  const format = (value: number, unit: string): string => formatQuantity(value, unit)
+  const flapHeight = openBridgeDevice.flapHeight
+
+  // Device rows as OpenBridge readout rows: integers with units (a valve's opening) and state words.
+  const deviceRows = (item: MimicDrawnItem, look: ItemLook) => item.rows.flatMap(row => {
+    if (row.kind === 'position' && look.state.kind === 'position') {
+      const fraction = look.state.fraction
+      return fraction >= 0.05 && fraction <= 0.95 ? [{ type: 'value' as const, value: Math.round(fraction * 100), unit: '%' }] : []
+    }
+    const text = rowText(row, look, index, format)
+    return text === '' ? [] : [{ type: 'state' as const, text, emphasis: row.kind === 'mismatch' || text === 'POS ?' || text === '?' }]
+  })
+
+  const valueOf = (row: Extract<MimicRow, { kind: 'value' }>): number | null => {
+    const entry = index.get(row.path)
+    return entry !== undefined && typeof entry.value === 'number' && entry.quality !== 'outside-hard-range' ? displayValue(entry.value, row.unit) : null
+  }
+
+  const pipeLook = (state: MimicPipeState) => state.kind === 'fluid' ? flowLook(state.flow, index).look : powerLook(state.energizedPath, index)
+
+  // Headers carry flow while any pipe that tees into them does, so a header never contradicts its branches.
+  const barValue = (item: MimicDrawnItem) => {
+    const touching = mimic.pipes.filter(pipe => pipe.points.some(([x, y]) => x >= item.box.x && x <= item.box.x + item.box.width && y >= item.box.y && y <= item.box.y + item.box.height))
+    const values = touching.map(pipe => pipeValue(pipeLook(pipe.state)))
+    return values.includes('open-flow') ? 'open-flow' : values.length > 0 && values.every(value => value === 'empty') ? 'empty' : 'closed-dash'
+  }
+
+  const segments = $derived.by((): Segment[] => {
+    const pipes = mimic.pipes.flatMap(pipe => {
+      const look = pipeLook(pipe.state)
+      const value = pipeValue(look)
+      const size = pipe.carrier === 'electricalPower' ? 'small' : 'medium'
+      const chevron = look === 'forward' || look === 'reverse' ? chevronSegment(pipe.id, pipe.points, pipe.gaps, value, size, look === 'reverse') : null
+      return [...pipeSegments(pipe.id, pipe.points, pipe.gaps, value, size), ...(chevron === null ? [] : [chevron])]
+    })
+    const bars = mimic.items.filter(item => item.presentation.element === 'bar').map((item): Segment => {
+      const horizontal = item.box.width >= item.box.height
+      const x = item.box.x + item.box.width / 2
+      const y = item.box.y + item.box.height / 2
+      return horizontal
+        ? { kind: 'straight', connectionId: item.id, value: barValue(item), size: 'large', x1: item.box.x, y1: y, x2: item.box.x + item.box.width, y2: y }
+        : { kind: 'straight', connectionId: item.id, value: barValue(item), size: 'large', x1: x, y1: item.box.y, x2: x, y2: item.box.y + item.box.height }
+    })
+    const ends = mimic.stubs.map(stub => {
+      const pipe = mimic.pipes.find(candidate => candidate.id.startsWith(`${stub.id}.`))!
+      const look = pipeLook(stub.states[0]!)
+      return stubEndSegment(pipe.id, pipe.points, stub.direction, pipeValue(look), pipe.carrier === 'electricalPower' ? 'small' : 'medium', look === 'forward')
+    })
+    return [...pipes, ...bars, ...ends]
+  })
+
+  $effect(() => {
+    void theme
+    if (openBridge !== null && canvas !== undefined) openBridge.drawPipes(canvas, mimic.width, mimic.height, segments)
+  })
+
+  type Ob = typeof OpenBridgeMimic
+  type Element = HTMLElement & Record<string, unknown>
+
+  // Each OpenBridge element is created once and restyled by every sample.
+  const device = (host: HTMLElement, params: { ob: Ob; item: MimicDrawnItem; look: ItemLook; rows: ReturnType<typeof deviceRows>; alert: ReturnType<typeof alertOf> }) => {
+    const element = params.ob.createDevice()
+    host.append(element)
+    const apply = (next: typeof params) => {
+      if (next.item.presentation.element !== 'device') return
+      next.ob.updateDevice(element, next.item.presentation.icon, next.look, {
+        tag: next.item.binding.label,
+        orientation: next.item.orientation,
+        textSide: next.item.text?.side === 'bottom' ? 'bottom' : 'right',
+        rows: next.rows,
+        // The frame is drawn around the room the server reserved, so a long flap label is never cut.
+        alert: null,
+      })
+    }
+    apply(params)
+    return { update: apply, destroy: () => element.remove() }
+  }
+
+  const vessel = (host: HTMLElement, params: { ob: Ob; item: MimicDrawnItem; look: ItemLook }) => {
+    const presentation = params.item.presentation
+    const element: Element = presentation.element === 'heat-exchanger' ? params.ob.createHeatExchanger() : params.ob.createTank(presentation.element === 'tank' ? presentation.tank : 'pressurized')
+    element.style.width = '100%'
+    element.style.height = '100%'
+    host.append(element)
+    const apply = (next: typeof params) => {
+      if (next.item.presentation.element === 'tank') next.ob.updateTank(element, next.look.state.kind === 'level' ? next.look.state.percent : null)
+    }
+    apply(params)
+    return { update: apply, destroy: () => element.remove() }
+  }
+
+  const readout = (host: HTMLElement, params: { ob: Ob; value: number | null; unit: string }) => {
+    const element = params.ob.createReadoutBlock()
+    host.prepend(element)
+    const apply = (next: typeof params) => next.ob.updateReadoutBlock(element, next.value, next.value === null ? 1 : valueDigits(next.value), 3)
+    apply(params)
+    return { update: apply, destroy: () => element.remove() }
+  }
+
+  const frame = (host: HTMLElement, params: { ob: Ob; alert: NonNullable<ReturnType<typeof alertOf>> }) => {
+    const element = params.ob.createAlertFrame()
+    element.style.width = '100%'
+    element.style.height = '100%'
+    host.append(element)
+    const apply = (next: typeof params) => next.ob.updateAlertFrame(element, next.alert.status, next.alert.label)
+    apply(params)
+    return { update: apply, destroy: () => element.remove() }
+  }
+
+  const keyGlyph = (host: HTMLCanvasElement, params: { ob: Ob; value: 'open-flow' | 'empty' | 'closed-dash'; chevron: boolean; theme: string }) => {
+    const draw = (next: typeof params) => next.ob.drawPipes(host, 24, 10, [
+      ...pipeSegments('key', [[0, 5], [24, 5]], [], next.value, 'medium'),
+      ...(next.chevron ? [chevronSegment('key', [[0, 5], [24, 5]], [], next.value, 'medium', false)!] : []),
+    ])
+    draw(params)
+    return { update: draw }
+  }
+
+  const equipmentWords = $derived(mimic.items
+    .filter(item => item.presentation.element !== 'bar')
+    .map(item => `${item.binding.label}: ${looks.get(item.id)?.words || 'no state drawn'}`)
+    .join('; '))
+  const drawsRelief = $derived(mimic.items.some(item => item.binding.state?.aspect === 'position' && item.binding.state.state === undefined))
 </script>
 
-<div class="mimic-panel">
-  <svg
-    class="mimic"
-    viewBox={`0 0 ${mimic.width} ${mimic.height}`}
-    width="100%"
-    height={mimic.height}
-    preserveAspectRatio="xMidYMid meet"
-    role="group"
-    aria-label={`Equipment mimic: ${mimic.view}, loops ${mimic.loops.join(', ')}`}
-  >
-    <!-- Pipes: an OpenBridge casing with an inner line; hollow below the no-flow band, dashed when unknown. -->
-    {#each mimic.pipes as pipe (pipe.id)}
-      {@const flow = flowLook(pipe, index)}
-      <g>
-        <title>{pipe.linkId}: {pipe.unverified ? 'model flow not verified, not drawn' : flow.value === null ? 'no value' : formatQuantity(flow.value, 'kg/s')}</title>
-        <polyline class="casing" points={points(pipe.points)} />
-        <polyline class={`inner ${flow.look}`} points={points(pipe.points)} />
-        {#if flow.look === 'forward' || flow.look === 'reverse'}
-          {#each chevrons(pipe.points) as chevron, at (at)}
-            <path class="chevron" d="M-4,-5 L4,0 L-4,5 Z" transform={`translate(${chevron.x} ${chevron.y}) rotate(${chevron.angle + (flow.look === 'reverse' ? 180 : 0)})`} />
-          {/each}
-        {/if}
-      </g>
+<div class="mimic-panel" role="img" aria-label={`Equipment mimic${stale ? ' (stale: states not current)' : ''}. ${equipmentWords}`}>
+  <div class="drawing" style={`width:${mimic.width}px;height:${mimic.height}px`}>
+    {#each mimic.zones as zone (zone.lane)}
+      <div class="zone" style={`left:${zone.x}px;top:${zone.y}px;width:${zone.width}px;height:${zone.height}px`} title={zone.label}></div>
     {/each}
-
-    {#each headers as node (node.id)}
-      {@const look = headerLook(node, index)}
-      <rect class="header-casing" x={node.x} y={node.y - 1} width={node.width} height={node.height + 2} />
-      <rect class={`header-inner ${look}`} x={node.x} y={node.y} width={node.width} height={node.height} />
-      <text class="label" x={node.x + 4} y={node.y - 4}>{node.label}</text>
-    {/each}
-
-    <!-- A horizontal run bridges a vertical pipe it crosses, so the crossing never reads as a junction. -->
-    {#each bridges as bridge, at (at)}
-      <line class="bridge-gap" x1={bridge.x - 5} x2={bridge.x + 5} y1={bridge.y} y2={bridge.y} />
-      <line class="bridge" x1={bridge.x - 6} x2={bridge.x + 6} y1={bridge.y} y2={bridge.y} />
-    {/each}
-
-    {#each symbols as node (node.id)}
-      {@const alarm = nodeAlarm(node, alarms)}
-      <g class="node" role="img" aria-label={`${node.label}${alarm === null ? '' : `, ${alarm.kind === 'trip' ? 'trip' : 'alarm'}: ${alarm.title}`}`}>
-        {#if node.symbol === 'pump'}
-          {@const pump = pumpLook(node, index)}
-          {#if pump.look === 'unknown'}
-            <rect class="unknown" x={node.x} y={node.y} width={node.width} height={node.height} rx="3" />
-            <text class="unknown-mark" x={centerX(node)} y={centerY(node) + 4} text-anchor="middle">?</text>
+    <canvas class="pipes" bind:this={canvas}></canvas>
+    {#if openBridge !== null}
+      {@const ob = openBridge}
+      <!-- A read-only advisory drawing: nothing in it can be focused or clicked. -->
+      <div class="symbols" inert>
+        {#each mimic.items as item (item.id)}
+          {@const look = looks.get(item.id)!}
+          {@const alert = alertOf(item)}
+          {#if alert !== null && item.frame !== null}
+            <!-- OpenBridge draws the flap below the framed region; the server reserved both. -->
+            <div class="box" style={`left:${item.frame.x}px;top:${item.frame.y}px;width:${item.frame.width}px;height:${item.frame.height - flapHeight}px`} use:frame={{ ob, alert }}></div>
+          {/if}
+          {#if item.presentation.element === 'device'}
+            <div class="anchor" style={`left:${item.box.x + item.box.width / 2}px;top:${item.box.y + item.box.height / 2}px`} use:device={{ ob, item, look, rows: deviceRows(item, look), alert }}></div>
           {:else}
-            <svg x={node.x} y={node.y} width={node.width} height={node.height} viewBox="0 0 24 24">
-              {@html openBridgeIcons[node.orientation === 'vertical' ? `pump-${pump.look}-vertical` : `pump-${pump.look}-horizontal`]}
-            </svg>
+            {#if item.presentation.element === 'tank' || item.presentation.element === 'heat-exchanger'}
+              <div class="box" style={`left:${item.box.x}px;top:${item.box.y}px;width:${item.box.width}px;height:${item.box.height}px`} use:vessel={{ ob, item, look }}></div>
+            {/if}
+            {#if item.text !== null}
+              <div class="stack" class:below={item.text.side === 'bottom'} style={`left:${item.text.x}px;top:${item.text.y}px;width:${item.text.width}px`}>
+                <span class="tag">{item.binding.label}</span>
+                {#each item.rows as row, at (at)}
+                  {#if row.kind === 'value'}
+                    <span class="value-row" use:readout={{ ob, value: valueOf(row), unit: row.unit }}><span class="unit">{unitLabel(row.unit)}</span></span>
+                  {:else}
+                    {@const text = rowText(row, look, index, format)}
+                    {#if text !== ''}<span class="state-row" class:emphasis={row.kind === 'mismatch'}>{text}</span>{/if}
+                  {/if}
+                {/each}
+              </div>
+            {/if}
           {/if}
-          {#if node.values.length > 0}
-            <text class="label" x={node.x + node.width + 5} y={centerY(node) - 2}>{node.label}</text>
-            {#each node.values as value (value.path)}
-              <text class="value" x={node.x + node.width + 5} y={centerY(node) + 11}>{named(value)}</text>
-            {/each}
-            {#if pump.mismatch !== null}<text class="mismatch" x={node.x + node.width + 5} y={centerY(node) + 23}>{pump.mismatch}</text>{/if}
-          {:else if node.orientation === 'horizontal'}
-            <text class="label" x={node.x - 5} y={centerY(node) + 4} text-anchor="end">{node.label}</text>
-            {#if pump.mismatch !== null}<text class="mismatch" x={node.x - 5} y={centerY(node) + 16} text-anchor="end">{pump.mismatch}</text>{/if}
-          {:else}
-            <text class="label" x={centerX(node)} y={node.y + node.height + 12} text-anchor="middle">{node.label}</text>
-            {#if pump.mismatch !== null}<text class="mismatch" x={centerX(node)} y={node.y + node.height + 24} text-anchor="middle">{pump.mismatch}</text>{/if}
+        {/each}
+        {#each mimic.stubs as stub (stub.id)}
+          {#if stub.textBox !== null}
+            <span class="stub tag" style={`left:${stub.textBox.x}px;top:${stub.textBox.y}px`}>{stub.text}</span>
           {/if}
-        {:else if node.symbol === 'valve'}
-          {@const valve = valveLook(node, index)}
-          <g transform={node.orientation === 'vertical' ? `rotate(90 ${centerX(node)} ${centerY(node)})` : undefined}>
-            <svg x={node.x} y={node.y} width={node.width} height={node.height} viewBox="0 0 24 24">
-              {@html openBridgeIcons[valve.icon]}
-            </svg>
-          </g>
-          {#each node.values as value (value.path)}
-            {@const left = value.side === 'left'}
-            {@const textX = left ? node.x - 4 : node.x + node.width + 4}
-            {#if node.label !== ''}<text class="label" x={textX} y={centerY(node) - 4} text-anchor={left ? 'end' : 'start'}>{node.label}</text>{/if}
-            {#if valve.tagged}<text class="value" x={textX} y={centerY(node) + 9} text-anchor={left ? 'end' : 'start'}>{valve.position === null ? '—' : valueText(value.path, value.unit)}</text>{/if}
-            {#if valve.mismatch !== null}<text class="mismatch" x={textX} y={centerY(node) + 21} text-anchor={left ? 'end' : 'start'}>{valve.mismatch.split(' · ')[0]}</text>{/if}
-          {/each}
-        {:else if node.symbol === 'relief-valve'}
-          {@const relief = reliefLook(node, index)}
-          <svg x={node.x} y={node.y} width={node.width} height={node.height} viewBox="0 0 24 24">
-            {@html openBridgeIcons[relief.icon]}
-          </svg>
-          <!-- Below the line it sits on, so the text never hides the pipe. -->
-          <text class="label" x={node.x} y={node.y + node.height + 12}>{node.label} · POS ?</text>
-          {#each node.values as value (value.path)}
-            <text class="value" x={node.x} y={node.y + node.height + 25}>{relief.passing === null ? '—' : relief.passing ? `passing ${valueText(value.path, value.unit)}` : 'no flow'}</text>
-          {/each}
-          {#if relief.mismatch !== null}<text class="mismatch" x={node.x} y={node.y + node.height + 37}>{relief.mismatch}</text>{/if}
-        {:else if node.symbol === 'steam-generator' || node.symbol === 'pressurizer' || node.symbol === 'tank'}
-          {@const level = levelLook(node, index)}
-          {@const radius = Math.min(node.width, node.height) / 2}
-          {@const left = node.values[0]?.side === 'left'}
-          {@const textX = left ? node.x - 6 : node.x + node.width + 6}
-          <rect class="vessel" x={node.x} y={node.y} width={node.width} height={node.height} rx={radius} />
-          {#if level.fraction !== null}
-            <clipPath id={`level-${node.id}`}><rect x={node.x} y={node.y} width={node.width} height={node.height} rx={radius} /></clipPath>
-            <rect class="level" clip-path={`url(#level-${node.id})`} x={node.x} y={node.y + node.height * (1 - level.fraction)} width={node.width} height={node.height * level.fraction} />
-          {:else}
-            <rect class="unknown" x={node.x} y={node.y} width={node.width} height={node.height} rx={radius} />
-          {/if}
-          <rect class="vessel-outline" x={node.x} y={node.y} width={node.width} height={node.height} rx={radius} />
-          <!-- I&C level limits as short bands on the vessel, named in their titles. -->
-          {#each node.limits as limit (limit.name)}
-            {@const limitY = node.y + node.height * (1 - limit.value / 100)}
-            <line class={`limit ${limit.kind}`} x1={node.x - 3} x2={node.x + 6} y1={limitY} y2={limitY}><title>{limit.name}</title></line>
-          {/each}
-          {#if node.values.length > 0}
-            <text class="label" x={textX} y={node.y + 12} text-anchor={left ? 'end' : 'start'}>{node.label}</text>
-            {#each node.values as value, at (value.path)}
-              <text class="value" x={textX} y={node.y + 26 + at * 13} text-anchor={left ? 'end' : 'start'}>{named(value)}</text>
-            {/each}
-            {#if level.offScale !== null}<text class="mismatch" x={textX} y={node.y + 26 + node.values.length * 13} text-anchor={left ? 'end' : 'start'}>{level.offScale === 'high' ? '▲ above span' : '▼ below span'}</text>{/if}
-          {/if}
-        {:else if node.symbol === 'reactor'}
-          <!-- The vessel with a core band; its values sit beside it. -->
-          <rect class="vessel" x={node.x} y={node.y} width={node.width} height={node.height} rx="18" />
-          <rect class="core" x={node.x + 10} y={node.y + node.height * 0.45} width={node.width - 20} height={node.height * 0.35} rx="3" />
-          <rect class="vessel-outline" x={node.x} y={node.y} width={node.width} height={node.height} rx="18" />
-          <text class="label" x={centerX(node)} y={node.y + 18} text-anchor="middle">{node.label}</text>
-          {#each node.values as value, at (value.path)}
-            <text class="label" x={node.x - 8} y={node.y + 14 + at * 30} text-anchor="end">{value.name ?? ''}</text>
-            <text class="value" x={node.x - 8} y={node.y + 27 + at * 30} text-anchor="end">{valueText(value.path, value.unit)}</text>
-          {/each}
-        {:else if node.symbol === 'stub'}
-          <!-- Where a drawn pipe leaves the view: named, never drawn as equipment. -->
-          <text class="label" x={node.x} y={node.y - 3}>{node.label}</text>
-          <line class="stub" x1={node.x} x2={node.x} y1={node.y} y2={node.y + node.height} />
-        {/if}
-        {#if alarm !== null}
-          <rect class={`alarm-frame ${alarm.severity}`} x={node.x - 4} y={node.y - 4} width={node.width + 8} height={node.height + 8} rx="3" />
-          <rect class={`alarm-flap ${alarm.severity}`} x={node.x - 4} y={node.y - 18} width={flapWidth(alarm.kind)} height={13} rx="2" />
-          <text class="alarm-flap-text" x={node.x - 4 + flapWidth(alarm.kind) / 2} y={node.y - 8} text-anchor="middle">{alarm.kind === 'trip' ? 'TRIP' : 'ALM'}</text>
-        {/if}
-      </g>
-    {/each}
-    {#if stale}
-      <text class="stale" x={mimic.width - 4} y="12" text-anchor="end">STALE · states not current</text>
+        {/each}
+      </div>
     {/if}
-  </svg>
-  <p class="legend">Simulator values · hollow pipe: no flow · ▸ flow · CMD: command differs from state · POS ?: not measured</p>
+  </div>
+  <!-- The key names only what this drawing can show; a stale view says so first. -->
+  <p class="legend">
+    {#if stale}<span class="stale-tag">STALE</span><span>states not current</span>{/if}
+    {#if openBridge !== null}
+      <span class="key"><canvas use:keyGlyph={{ ob: openBridge, value: 'open-flow', chevron: true, theme }}></canvas>flow</span>
+      <span class="key"><canvas use:keyGlyph={{ ob: openBridge, value: 'empty', chevron: false, theme }}></canvas>no flow</span>
+      <span class="key"><canvas use:keyGlyph={{ ob: openBridge, value: 'closed-dash', chevron: false, theme }}></canvas>not known</span>
+    {/if}
+    <span>CMD: command ≠ state</span>
+    {#if drawsRelief}<span>POS ?: position not computed</span>{/if}
+    <span>simulator values</span>
+  </p>
 </div>
 
 <style>
   .mimic-panel { display: flex; flex-direction: column; gap: 2px; }
-  .mimic { display: block; overflow: visible; }
-  .legend { margin: 0; font-size: 10.5px; color: var(--element-neutral-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .casing { fill: none; stroke: var(--automation-pipe-tertiary-color); stroke-width: 6; stroke-linejoin: miter; }
-  .inner { fill: none; stroke: var(--automation-pipe-primary-color); stroke-width: 4; stroke-linejoin: miter; }
-  /* Below the no-flow band the pipe reads empty; an unknown flow is dashed. */
-  .inner.none { stroke: var(--automation-pipe-primary-inverted-color); }
-  .inner.unknown { stroke: var(--automation-pipe-primary-inverted-color); stroke-dasharray: 3 3; }
-  /* Chevrons contrast with the pipe they sit on. */
-  .chevron { fill: var(--container-background-color); }
-  .header-casing { fill: var(--automation-pipe-tertiary-color); }
-  .header-inner { fill: var(--automation-pipe-primary-color); }
-  .header-inner.empty { fill: var(--automation-pipe-primary-inverted-color); }
-  .header-inner.unknown { fill: var(--automation-pipe-primary-inverted-color); opacity: 0.6; }
-  .bridge-gap { stroke: var(--container-background-color); stroke-width: 10; }
-  .bridge { stroke: var(--automation-pipe-tertiary-color); stroke-width: 6; }
-  .vessel { fill: var(--container-section-color); }
-  .vessel-outline { fill: none; stroke: var(--element-neutral-color); stroke-width: 1.5; }
-  .core { fill: var(--container-background-color); stroke: var(--element-neutral-color); stroke-width: 1; }
-  .level { fill: var(--automation-pipe-primary-color); }
-  .limit { stroke-width: 2; }
-  .limit.alarm { stroke: var(--element-neutral-color); }
-  .limit.trip { stroke: var(--element-active-color); }
-  .unknown { fill: none; stroke: var(--element-neutral-color); stroke-dasharray: 3 2; }
-  .unknown-mark { fill: var(--element-neutral-color); font-size: 12px; }
-  .stub { stroke: var(--element-neutral-color); stroke-width: 2; }
-  .label { fill: var(--element-neutral-color); font-size: 11px; }
-  .value { fill: var(--element-active-color); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  /* A command that disagrees with the equipment is stated in words, never by colour alone. */
-  .mismatch { fill: var(--element-active-color); font-size: 11px; font-weight: 700; }
-  .stale { fill: var(--alert-caution-color); font-size: 11px; font-weight: 700; }
-  .alarm-frame { fill: none; stroke-width: 2; }
-  .alarm-frame.critical { stroke: var(--alert-alarm-color); }
-  .alarm-frame.warning { stroke: var(--alert-warning-color); }
-  .alarm-frame.notice, .alarm-frame.info { stroke: var(--alert-caution-color); }
-  .alarm-flap.critical { fill: var(--alert-alarm-color); }
-  .alarm-flap.warning { fill: var(--alert-warning-color); }
-  .alarm-flap.notice, .alarm-flap.info { fill: var(--alert-caution-color); }
-  .alarm-flap-text { fill: var(--container-background-color); font-size: 10px; font-weight: 700; }
+  .drawing { position: relative; }
+  .zone { position: absolute; box-sizing: border-box; border: 1px solid var(--border-divider-color, var(--element-neutral-color)); border-radius: 4px; }
+  .pipes { position: absolute; left: 0; top: 0; }
+  /* OpenBridge positions a point device at its symbol centre; its stack must not wrap. */
+  .symbols { position: absolute; inset: 0; white-space: nowrap; --obc-can-hover: 0; }
+  .anchor { position: absolute; width: 0; height: 0; }
+  .box { position: absolute; }
+  .stack { position: absolute; display: flex; flex-direction: column; align-items: flex-start; }
+  .stack.below { align-items: center; }
+  .tag { font: 370 12px/16px "Noto Sans", system-ui, sans-serif; color: var(--element-neutral-color); }
+  .stub { position: absolute; }
+  .value-row { display: inline-flex; align-items: baseline; gap: 4px; height: 20px; }
+  .unit { font: 370 16px/20px "Noto Sans", system-ui, sans-serif; color: var(--element-neutral-color); }
+  .state-row { font: 400 16px/20px "Noto Sans", system-ui, sans-serif; color: var(--element-neutral-color); }
+  .state-row.emphasis { color: var(--element-active-color); }
+  .legend { margin: 0; display: flex; align-items: center; gap: 10px; height: 14px; font: 400 11px/14px "Noto Sans", system-ui, sans-serif; color: var(--element-neutral-color); white-space: nowrap; overflow: hidden; }
+  .key { display: inline-flex; align-items: center; gap: 4px; }
+  .stale-tag { padding: 0 4px; border: 1px solid var(--element-neutral-color); border-radius: 2px; color: var(--element-active-color); font-weight: 700; line-height: 12px; }
 </style>

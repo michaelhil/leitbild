@@ -66,6 +66,7 @@
         "@leitbild/procmd": "workspace:*",
         "@mapbox/vector-tile": "^2.0.4",
         "@maplibre/maplibre-gl-style-spec": "^24.8.5",
+        "@oicl/connector-diagram": "1.0.0",
         "@sveltejs/vite-plugin-svelte": "^7.1.2",
         "earcut": "^3.0.2",
         "fast-xml-parser": "^5.11.1",
@@ -265,6 +266,8 @@
     "@nodelib/fs.stat": ["@nodelib/fs.stat@2.0.5", "", {}, "sha512-RkhPPp2zrqDAQA/2jNhnztcPAlv64XdhIp7a7454A5ovI7Bukxgt7MX7udwAu3zg1DcpPU0rz3VV1SeaqvY4+A=="],
 
     "@nodelib/fs.walk": ["@nodelib/fs.walk@1.2.8", "", { "dependencies": { "@nodelib/fs.scandir": "2.1.5", "fastq": "^1.6.0" } }, "sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg=="],
+
+    "@oicl/connector-diagram": ["@oicl/connector-diagram@1.0.0", "", {}, "sha512-/nKCPNE+dWmJs3bZkqIjbkswsHO389P+alZBW12r4QGaarfAmDkQ7f2VUFXBFnP8r9rZtlRkMMyYMEgXika/gw=="],
 
     "@oicl/openbridge-webcomponents": ["@oicl/openbridge-webcomponents@2.0.0", "", { "dependencies": { "@lit-labs/observers": "^2.1.0", "@lit/localize": "^0.12.2", "chart.js": "^4.5.1", "lit": "^3.3.3", "uplot": "^1.6.32" } }, "sha512-Mf1PdjgAdvS3JA850/3JlIxRA41MrM13PEgGKwG91wZHenpzha7mH8FxvmzxT/mXCztpLcSfQNjXv5kbV+kazg=="],
 

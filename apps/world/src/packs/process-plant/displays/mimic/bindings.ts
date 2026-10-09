@@ -26,6 +26,10 @@ export type MimicItem =
   | { readonly kind: 'component'; readonly component: number }
   | { readonly kind: 'device'; readonly component: number; readonly device: string }
 
+/** The id an agent names an item by: its component, or its component and the bundled device ("pressurizer.reliefValve"). */
+export const mimicItemId = (graph: CompiledPlantGraph, item: MimicItem): string =>
+  item.kind === 'component' ? String(graph.components[item.component]!.id) : `${graph.components[item.component]!.id}.${item.device}`
+
 export const mimicItemKey = (item: MimicItem): string =>
   item.kind === 'component' ? `c${item.component}` : `c${item.component}:${item.device}`
 

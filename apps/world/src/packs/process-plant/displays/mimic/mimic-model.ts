@@ -1,96 +1,82 @@
-import { z } from 'zod'
 import type { VariablePath } from '../../graph/index.ts'
+import type { MimicFlowBinding, MimicItemBinding } from './bindings.ts'
+import type { DiagramZone, Face, PlacedNode } from './layout/index.ts'
+import { DIAGRAM_ENGINE_VERSION } from './layout/index.ts'
+import type { MimicPresentation } from './presentation.ts'
+import type { MimicRow } from './rows.ts'
+import type { MimicIntent } from './scope.ts'
 
-// An equipment mimic is a Pack-owned, reviewed drawing of one part of a Plant
-// model ("view"), parameterised by loop. The agent chooses the view and loops;
-// World owns the drawing, which signal shows each symbol's state, and the
-// layout. Symbol states come only from measured or derived variables, never
-// from writable commands: a pump's run command stays true without power and a
-// valve's demand can read closed while the valve is stuck open.
-export const composedMimicViewSchema = z.enum(['feed-to-sg', 'pressurizer-relief', 'rcs-loops'])
-export type ComposedMimicView = z.infer<typeof composedMimicViewSchema>
+// A generated equipment mimic: World resolves the agent's intent to part of
+// the Plant graph, draws each component with the OpenBridge component its kind
+// presents as, and lays the drawing out automatically. Nothing in it is drawn
+// by hand. Geometry is fixed when the display is composed; samples only
+// restyle it.
 
-export const mimicLoopSchema = z.string().regex(/^[A-F]$/)
+/** Changes whenever the same intent on the same model could draw differently. */
+export const MIMIC_LAYOUT_VERSION = `diagram-${DIAGRAM_ENGINE_VERSION}/openbridge-2.0.0/mimic-1`
 
-export const MIMIC_WIDTH = 600
+/** The drawing is 600 design px wide, the width of a chat display. */
+export const MIMIC_MAX_WIDTH = 600
 
-export type MimicSymbol = 'pump' | 'valve' | 'relief-valve' | 'steam-generator' | 'pressurizer' | 'tank' | 'reactor' | 'header' | 'stub'
-
-/** How a symbol shows its state, and from which variables. */
-export type MimicState =
-  /** Running when its speed is above zero: commanded and powered. The command only annotates a mismatch. */
-  | { readonly kind: 'pump'; readonly speedPath: VariablePath; readonly commandPath: VariablePath }
-  /**
-   * Drawn from its actual (effective) position. The operator or controller
-   * command only annotates a mismatch, which is how a stuck valve shows.
-   */
-  | { readonly kind: 'valve'; readonly positionPath: VariablePath; readonly commandPath: VariablePath }
-  | { readonly kind: 'level'; readonly levelPath: VariablePath; readonly unit: string }
-  /**
-   * A relief valve whose position the model does not measure: judged by the
-   * flow through it, so a stuck-open valve reads as passing whatever its
-   * command says. The command only annotates a mismatch.
-   */
-  | { readonly kind: 'relief'; readonly flowPath: VariablePath; readonly commandPath: VariablePath; readonly noFlowBelow: number }
-  /** A header is full while any of its branches carries flow, so it never contradicts them. */
-  | { readonly kind: 'header'; readonly flowPaths: ReadonlyArray<VariablePath>; readonly noFlowBelow: number }
-  | { readonly kind: 'none' }
-
-/** A value printed beside its symbol, chosen by World. */
-export interface MimicValue {
-  readonly path: VariablePath
-  readonly unit: string
-  /** Short name printed before the value when a symbol shows several ("CET"). */
-  readonly name?: string
-  /** Where the tag sits relative to the symbol. */
-  readonly side: 'left' | 'right'
-}
-
-export interface MimicNode {
+export interface MimicDrawnItem {
   readonly id: string
-  readonly componentId: string
-  readonly symbol: MimicSymbol
-  /** Short operator label, e.g. "FCV B". */
-  readonly label: string
-  readonly x: number
-  readonly y: number
-  readonly width: number
-  readonly height: number
-  /** Flow through the symbol runs left to right (horizontal) or bottom to top (vertical). */
+  readonly binding: MimicItemBinding
+  readonly presentation: MimicPresentation
+  /** The symbol's box (devices: the 48 px symbol; tanks: the 48×96 box; bars: the bar). */
+  readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+  /** Inside a drawn loop, its pipes run horizontally or vertically through it; the icon follows. */
   readonly orientation: 'horizontal' | 'vertical'
-  readonly state: MimicState
-  readonly values: ReadonlyArray<MimicValue>
-  /**
-   * Single-signal I&C alarm and trip rules on this equipment's own signals; an
-   * active one frames the symbol. Voted trips across equipment (the reactor's
-   * 2-of-4 low flow) never frame one pump: they lead the display's banner.
-   */
-  readonly ruleIds: ReadonlyArray<string>
-  /** I&C alarm and trip limits of the symbol's level, marked as bands on it. */
-  readonly limits: ReadonlyArray<{ readonly value: number; readonly kind: 'alarm' | 'trip'; readonly name: string }>
+  readonly text: PlacedNode['text']
+  readonly frame: PlacedNode['frame']
+  /** The rows of its text stack that fit, below its label. */
+  readonly rows: ReadonlyArray<MimicRow>
 }
 
-export interface MimicPipe {
+export type MimicPipeState =
+  | { readonly kind: 'fluid'; readonly flow: MimicFlowBinding }
+  | { readonly kind: 'power'; readonly energizedPath: VariablePath | null }
+
+export interface MimicDrawnPipe {
   readonly id: string
-  /** The Plant link this pipe draws. */
+  /** The Plant links this pipe draws (one link, split where a bundled device sits on it). */
   readonly linkId: string
-  readonly service: string
-  /** Orthogonal polyline in flow direction. */
+  readonly carrier: string
   readonly points: ReadonlyArray<readonly [number, number]>
-  readonly flowPath: VariablePath
-  /** Below this magnitude the pipe is drawn without flow ("≈0"). */
-  readonly noFlowBelow: number
-  /** The model's flow on this link is not verified; it is drawn as unknown, never as flow. */
-  readonly unverified: boolean
+  readonly gaps: ReadonlyArray<readonly [number, number]>
+  readonly state: MimicPipeState
+}
+
+/** Where the drawing stops: the pipe leaves for, or comes from, equipment not drawn. */
+export interface MimicDrawnStub {
+  readonly id: string
+  readonly direction: 'in' | 'out'
+  /** The end point, and the face it points out of. */
+  readonly end: { readonly x: number; readonly y: number; readonly face: Face }
+  readonly text: string
+  readonly textBox: PlacedNode['text']
+  readonly states: ReadonlyArray<MimicPipeState>
 }
 
 export interface CompiledMimic {
-  readonly view: ComposedMimicView
-  readonly loops: ReadonlyArray<string>
+  readonly intent: MimicIntent
+  readonly layoutVersion: string
   readonly width: number
   readonly height: number
-  readonly nodes: ReadonlyArray<MimicNode>
-  readonly pipes: ReadonlyArray<MimicPipe>
+  readonly items: ReadonlyArray<MimicDrawnItem>
+  readonly pipes: ReadonlyArray<MimicDrawnPipe>
+  readonly stubs: ReadonlyArray<MimicDrawnStub>
+  /** One zone per drawn loop, named as operators name it ("Loop B"). */
+  readonly zones: ReadonlyArray<DiagramZone & { readonly label: string }>
   /** Every variable the mimic reads, for sampling. */
   readonly paths: ReadonlyArray<VariablePath>
+  /** What the mimic draws, for the compose result. */
+  readonly summary: {
+    readonly equipment: ReadonlyArray<{ readonly id: string; readonly label: string }>
+    readonly stops: ReadonlyArray<string>
+    readonly carriers: ReadonlyArray<string>
+    readonly unverifiedFlows: ReadonlyArray<string>
+    readonly unmeasuredStates: ReadonlyArray<string>
+  }
+  /** Geometry hash, independent of ids: a stored display whose drawing changed says so. */
+  readonly hash: string
 }

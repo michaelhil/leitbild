@@ -13,6 +13,10 @@ import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { findProcessPlantSignalBinding } from '../signals.ts'
 import {
   COMPOSED_DISPLAY_MAX_HEIGHT_PX,
+  COMPOSED_MIMIC_DISPLAY_MAX_HEIGHT_PX,
+  composedDisplayLayout,
+  composedDisplayMaxHeight,
+  composedPanelMinimumHeight,
   COMPOSED_DISPLAY_MAX_SAMPLE_PATHS,
   COMPOSED_DISPLAY_MAX_TRENDS,
   COMPOSED_TREND_MAX_SIGNALS,
@@ -32,6 +36,7 @@ import {
 } from './composition.ts'
 import { formatQuantity, marginText, nearestThresholdMargin, thresholdName } from './display-text.ts'
 import { compileMimic } from './mimic/compile-mimic.ts'
+import { MIMIC_MAX_WIDTH } from './mimic/mimic-model.ts'
 import type { CompiledMimic } from './mimic/mimic-model.ts'
 import {
   icAlarmRuleIdsForEquipment,
@@ -340,14 +345,7 @@ const compilePanel = (
 ): UnsizedPanel | undefined => {
   const panelPath = `panels.${panelIndex}`
   if (panel.kind === 'alarms') return { kind: 'alarms', scope: panel.scope, ruleIds: [] }
-  if (panel.kind === 'mimic') {
-    const compiled = compileMimic(system, { view: panel.view, ...(panel.loops === undefined ? {} : { loops: panel.loops }) })
-    if (!compiled.ok) {
-      for (const message of compiled.issues) issues.push({ path: panelPath, message })
-      return undefined
-    }
-    return { kind: 'mimic', mimic: compiled.mimic }
-  }
+  if (panel.kind === 'mimic') throw new Error('a mimic is compiled once the other panels are known')
   if (panel.kind === 'readouts') {
     const pens = resolvePens(system, panel.signals, panelPath, { numericOnly: false, panelName: 'readouts', recordedSeriesIds }, issues)
     return pens === undefined ? undefined : { kind: 'readouts', pens }
@@ -438,20 +436,21 @@ const layoutIssues = (
   if (sampled.size > COMPOSED_DISPLAY_MAX_SAMPLE_PATHS) {
     issues.push({ path: 'panels', message: `the display would read ${sampled.size} live values, more than the ${COMPOSED_DISPLAY_MAX_SAMPLE_PATHS} a chat view samples; draw fewer loops in the mimic or show fewer signals` })
   }
-  if (fit.height > COMPOSED_DISPLAY_MAX_HEIGHT_PX) {
+  const maxHeight = composedDisplayMaxHeight(panels)
+  if (fit.height > maxHeight) {
     const parts = fit.panels.map((size, index) => `panels.${index} ${size.kind}${size.kind === 'trend' && size.strips.length > 1 ? ` (${size.strips.length} strips)` : ''} ${composedPanelHeight(size)} px`).join(', ')
     const shrunk = fit.panels.some(size => size.kind === 'trend') ? ' even with its trend at the smallest height' : ''
     const fixes = sizeFixes(panels)
     issues.push({
       path: 'panels',
-      message: `the display needs ${fit.height} px${shrunk}, but chat views allow ${COMPOSED_DISPLAY_MAX_HEIGHT_PX} (${parts}); ${fixes.length === 0 ? 'drop the panel or trend measurement that answers least of the question' : `it fits ${fixes.join(', or ')}`}`,
+      message: `the display needs ${fit.height} px${shrunk}, but chat views allow ${maxHeight} (${parts}); ${fixes.length === 0 ? 'drop the panel or trend measurement that answers least of the question' : `it fits ${fixes.join(', or ')}`}`,
     })
   }
   return issues
 }
 
 const fits = (panels: ReadonlyArray<UnsizedPanel>): boolean =>
-  panels.length > 0 && fitComposedDisplay(panels.map(panelShape)).height <= COMPOSED_DISPLAY_MAX_HEIGHT_PX
+  panels.length > 0 && fitComposedDisplay(panels.map(panelShape)).height <= composedDisplayMaxHeight(panels)
 
 // Concrete ways to fit, so the next compose succeeds: dropping one supporting
 // panel, keeping fewer readouts, or trending fewer measurements.
@@ -483,7 +482,7 @@ const relatedRuleIds = (system: ProcessPlantRuntimeInstance, panels: ReadonlyArr
       ...pen.combinedRules.filter(rule => rule.kind !== 'control').map(rule => rule.ruleId),
     ]),
     ...icAlarmRuleIdsForEquipment(system.plant, pens.map(pen => pen.path)),
-    ...panels.flatMap(panel => panel.kind === 'mimic' ? panel.mimic.nodes.flatMap(node => node.ruleIds) : []),
+    ...panels.flatMap(panel => panel.kind === 'mimic' ? panel.mimic.items.flatMap(item => item.binding.frames.map(frame => frame.ruleId)) : []),
   ])].sort()
 }
 
@@ -511,7 +510,20 @@ export const compileComposedDisplay = (
   if (composition.plantId !== system.plant.id) {
     issues.push({ path: 'plantId', message: `composition targets ${composition.plantId}, not ${system.plant.id}` })
   }
-  const panels = composition.panels.map((panel, index) => compilePanel(system, panel, index, recordedSeriesIds, issues))
+  const others = composition.panels.map((panel, index) => panel.kind === 'mimic' ? undefined : compilePanel(system, panel, index, recordedSeriesIds, issues))
+  // The mimic draws in the room the other panels leave at their smallest.
+  const othersHeight = others.reduce((sum, panel) => panel === undefined ? sum : sum + composedPanelMinimumHeight(panelShape(panel)) + composedDisplayLayout.panelGap, 0)
+  const panels = composition.panels.map((panel, index): UnsizedPanel | undefined => {
+    if (panel.kind !== 'mimic') return others[index]
+    const { kind: _kind, ...intent } = panel
+    const budget = { maxWidth: MIMIC_MAX_WIDTH, maxHeight: COMPOSED_MIMIC_DISPLAY_MAX_HEIGHT_PX - composedDisplayLayout.frame - composedDisplayLayout.mimicLegend - othersHeight }
+    const compiled = compileMimic(system.plant, intent, budget)
+    if (!compiled.ok) {
+      for (const issue of compiled.issues) issues.push({ path: `panels.${index}${issue.field === '(mimic)' ? '' : `.${issue.field}`}`, message: issue.message, ...(issue.didYouMean === undefined ? {} : { didYouMean: issue.didYouMean }) })
+      return undefined
+    }
+    return { kind: 'mimic', mimic: compiled.mimic }
+  })
   if (issues.length > 0) return { ok: false, issues: [...authoring, ...issues] }
   const unsized = panels.filter((panel): panel is UnsizedPanel => panel !== undefined)
   const fit = fitComposedDisplay(unsized.map(panelShape))
@@ -563,14 +575,10 @@ export const composedDisplaySignals = (display: CompiledComposedDisplay): Readon
   unit: pen.unit,
 })))
 
-const mimicViewText: Readonly<Record<string, string>> = {
-  'feed-to-sg': 'main feedwater (MFW pumps, MFW header, feedwater control valves FCV) and auxiliary feedwater (AFW pumps, AFW header, AFW valves) to the steam generators',
-  'rcs-loops': 'the reactor coolant loops (reactor vessel with core outlet temperature and subcooling margin, hot legs, steam generators, RCPs with loop flow, cold legs)',
-  'pressurizer-relief': 'the pressurizer relief path (surge line from hot leg A, pressurizer pressure and level, the PORV judged by its relief flow, the relief tank level)',
-}
-
-const mimicShows = (mimic: CompiledMimic): string =>
-  `Live equipment mimic of ${mimicViewText[mimic.view] ?? mimic.view}${mimic.view === 'pressurizer-relief' ? '' : `, loops ${mimic.loops.join(', ')}`}: pumps drawn running or stopped from their actual speed, valves from their actual position (a command that disagrees is stated as "CMD … · POS …"), SG levels, flow or no flow ("empty" pipes) on every branch, and alarm frames on equipment with active alarms`
+const mimicShows = (mimic: CompiledMimic): ReadonlyArray<string> => [
+  `Live equipment mimic generated from the Plant model (${mimic.summary.carriers.join(', ')}): ${mimic.summary.equipment.map(item => `${item.label} (${item.id})`).join(', ')}. Pumps are drawn running or stopped from their actual speed, valves from their actual position, levels as vessel fills; pipes show flow, no flow (hollow) or unknown (dashed), with a direction arrow only where the model computes the direction; a command that disagrees with the equipment is stated as "CMD …"; equipment with an active alarm is framed with what the alarm watches ("P LO-LO")`,
+  ...(mimic.summary.stops.length === 0 ? [] : [`The drawing stops at: ${mimic.summary.stops.join('; ')}`]),
+]
 
 /** Plain statements of what the view shows, so the agent's text need not repeat it. */
 export const composedDisplayShows = (display: CompiledComposedDisplay): ReadonlyArray<string> => display.panels.flatMap(panel => {
@@ -584,7 +592,7 @@ export const composedDisplayShows = (display: CompiledComposedDisplay): Readonly
   }
   if (panel.kind === 'comparison') return [`Live side-by-side comparison with the median: ${panel.pens.map(signalName).join('; ')}`, ...panel.thresholds.map(threshold => thresholdText(threshold, panel.unit))]
   if (panel.kind === 'readouts') return [`Live readouts with margin to the nearest I&C alarm or trip threshold: ${panel.pens.map(signalName).join('; ')}`]
-  if (panel.kind === 'mimic') return [mimicShows(panel.mimic)]
+  if (panel.kind === 'mimic') return mimicShows(panel.mimic)
   return [panel.scope === 'related' ? `Active alarms and trips of the ${panel.ruleIds.length} I&C rules acting on the displayed signals and their equipment` : 'All active alarms and trips of the Plant']
 })
 
@@ -614,6 +622,12 @@ export const composedDisplayMargins = (
 
 export const composedDisplayWarnings = (display: CompiledComposedDisplay): ReadonlyArray<string> => display.panels.flatMap(panel => {
   if (panel.kind === 'alarms') return panel.scope === 'related' && panel.ruleIds.length === 0 ? ['No alarm or trip rule acts on the displayed signals; the related alarms panel will stay empty.'] : []
+  if (panel.kind === 'mimic') {
+    return [
+      ...panel.mimic.summary.unverifiedFlows.map(link => `The Plant model does not verify the flow in ${link}; the mimic draws it as unknown, so say nothing about that flow.`),
+      ...panel.mimic.summary.unmeasuredStates.map(label => `The Plant model does not compute the position of ${label}; the mimic judges it by the flow through it ("POS ?").`),
+    ]
+  }
   return composedPanelPens(panel).flatMap(pen => [
     ...(pen.command ? [`${pen.name} is a writable command (a demand), not a measured state; never present it as the equipment's actual state or position.`] : []),
     ...(panel.kind === 'trend' && pen.role === 'primary' && pen.thresholds.length === 0 ? [`No single-signal I&C threshold acts on ${pen.tagId ?? pen.path}; its trend shows values without threshold lines.`] : []),

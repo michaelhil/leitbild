@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import { idSchema, isoTimestampSchema } from '../../../core/model/index.ts'
-import { composedMimicViewSchema, mimicLoopSchema } from './mimic/mimic-model.ts'
 
 // An AI-composed display states WHAT the operator should see and WHY. The
 // Pack owns HOW: resolution, units, I&C thresholds, scales, layout and live
@@ -41,7 +40,7 @@ export const COMPOSED_READOUTS_MAX_SIGNALS = 6
 // One trend plus up to two supporting panels (HMI review); with the 660 px cap
 // nearly every three-panel combination fits by construction.
 export const COMPOSED_DISPLAY_MAX_PANELS = 3
-/** Live values one display samples each second, across its panels (a six-loop feed mimic reads 75). */
+/** Live values one display samples each second, across its panels. */
 export const COMPOSED_DISPLAY_MAX_SAMPLE_PATHS = 96
 export const COMPOSED_DISPLAY_MAX_TRENDS = 1
 
@@ -71,14 +70,23 @@ export const composedDisplayAlarmsPanelSchema = z.object({
   scope: z.enum(['related', 'plant']),
 }).strict()
 
+const equipmentName = text(1, 120)
+
 /**
- * A reviewed equipment drawing of one part of the Plant (a view), for the
- * chosen loops (default all). World picks every symbol's state signal.
+ * A generated equipment drawing of the part of the Plant the question is
+ * about, stated in plant terms: a route from equipment to equipment, what is
+ * upstream of (`to` alone) or downstream of (`from` alone) one item, or whole
+ * services, narrowed to loops. Equipment is named by component id, by a tag
+ * measured on it, or by its short label. World draws every symbol and picks
+ * every state signal; there is no catalogue of views.
  */
 export const composedDisplayMimicPanelSchema = z.object({
   kind: z.literal('mimic'),
-  view: composedMimicViewSchema,
-  loops: z.array(mimicLoopSchema).min(1).max(6).optional(),
+  from: z.array(equipmentName).min(1).max(4).optional(),
+  to: z.array(equipmentName).min(1).max(4).optional(),
+  services: z.array(text(1, 64)).min(1).max(4).optional(),
+  loops: z.array(text(1, 16)).min(1).max(6).optional(),
+  exclude: z.array(equipmentName).min(1).max(6).optional(),
 }).strict()
 
 export const composedDisplayPanelSchema = z.discriminatedUnion('kind', [
@@ -105,7 +113,12 @@ export const composedDisplayStateSchema = z.object({
   composition: composedDisplayCompositionSchema,
   issuedAt: isoTimestampSchema,
   modelDigest: z.string().regex(/^[0-9a-f]{64}$/),
-}).strict()
+  /** Each mimic panel's drawing as the advice saw it, so a later view can say the drawing changed. */
+  drawings: z.array(z.string().min(1).max(160)).max(COMPOSED_DISPLAY_MAX_PANELS).optional(),
+}).strict().superRefine((state, ctx) => {
+  const mimics = state.composition.panels.filter(panel => panel.kind === 'mimic').length
+  if ((state.drawings?.length ?? 0) !== mimics) ctx.addIssue({ code: 'custom', path: ['drawings'], message: `a display with ${mimics} mimic panels stores ${mimics} drawing hashes` })
+})
 export type ComposedDisplayState = z.infer<typeof composedDisplayStateSchema>
 
 // One layout used by the compiler (to size the embedded card) and by the view
@@ -141,10 +154,15 @@ export const composedDisplayLayout = {
   mimicLegend: 16,
 } as const
 
-// Embedders accept view heights up to 720 px, but a chat display taller than
-// about 600 px pushes its own lower panels below the fold (HMI review). A
-// mimic beside a trend and alarms needs a little more than that.
+// A chat display taller than about 600 px pushes its own lower panels below
+// the fold (HMI review). A display led by an equipment mimic, drawn with
+// OpenBridge's full-size symbols, may take up to 900 px (owner decision).
 export const COMPOSED_DISPLAY_MAX_HEIGHT_PX = 660
+export const COMPOSED_MIMIC_DISPLAY_MAX_HEIGHT_PX = 900
+
+/** The height a display may take: taller when an equipment mimic leads it. */
+export const composedDisplayMaxHeight = (panels: ReadonlyArray<{ readonly kind: string }>): number =>
+  panels.some(panel => panel.kind === 'mimic') ? COMPOSED_MIMIC_DISPLAY_MAX_HEIGHT_PX : COMPOSED_DISPLAY_MAX_HEIGHT_PX
 
 /** What a panel's height depends on, known once its signals are resolved. */
 export type ComposedPanelShape =
@@ -153,7 +171,7 @@ export type ComposedPanelShape =
   | { readonly kind: 'comparison'; readonly rows: number }
   | { readonly kind: 'readouts'; readonly values: number }
   | { readonly kind: 'alarms' }
-  /** A mimic has the fixed height of its view. */
+  /** A mimic has the height its generated drawing takes. */
   | { readonly kind: 'mimic'; readonly height: number }
 
 /** A panel shape with its trend plot height decided. */
@@ -187,6 +205,10 @@ export const composedPanelHeight = (panel: ComposedPanelSize): number => {
   return layout.alarms
 }
 
+/** The least height a panel can take: trends at their smallest plots. */
+export const composedPanelMinimumHeight = (panel: ComposedPanelShape): number =>
+  composedPanelHeight(panel.kind === 'trend' ? { ...panel, plot: trendPlotRange(panel.strips.length).minimum } : panel)
+
 export const composedDisplayHeight = (panels: ReadonlyArray<ComposedPanelSize>): number =>
   composedDisplayLayout.frame
   + panels.reduce((sum, panel) => sum + composedPanelHeight(panel), 0)
@@ -209,8 +231,9 @@ export const fitComposedDisplay = (panels: ReadonlyArray<ComposedPanelShape>): {
   })
   const preferred = sized(1)
   const natural = composedDisplayHeight(preferred)
+  const maxHeight = composedDisplayMaxHeight(panels)
   const plotTotal = panels.reduce((sum, panel) => panel.kind === 'trend' ? sum + trendPlotRange(panel.strips.length).preferred * panel.strips.length : sum, 0)
-  if (natural <= COMPOSED_DISPLAY_MAX_HEIGHT_PX || plotTotal === 0) return { height: natural, panels: preferred }
-  const fitted = sized(Math.max(0, (plotTotal - (natural - COMPOSED_DISPLAY_MAX_HEIGHT_PX)) / plotTotal))
+  if (natural <= maxHeight || plotTotal === 0) return { height: natural, panels: preferred }
+  const fitted = sized(Math.max(0, (plotTotal - (natural - maxHeight)) / plotTotal))
   return { height: composedDisplayHeight(fitted), panels: fitted }
 }

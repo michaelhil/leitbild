@@ -7,11 +7,11 @@ import { SUGGESTION_COUNT, letters, matchedWords, words } from '../name-matching
 // the same intent on the same model always draws the same equipment.
 
 export interface MimicIntent {
-  readonly from?: ReadonlyArray<string>
-  readonly to?: ReadonlyArray<string>
-  readonly services?: ReadonlyArray<string>
-  readonly loops?: ReadonlyArray<string>
-  readonly exclude?: ReadonlyArray<string>
+  readonly from?: ReadonlyArray<string> | undefined
+  readonly to?: ReadonlyArray<string> | undefined
+  readonly services?: ReadonlyArray<string> | undefined
+  readonly loops?: ReadonlyArray<string> | undefined
+  readonly exclude?: ReadonlyArray<string> | undefined
 }
 
 /** Where the drawing stops: links that leave a drawn component for equipment not drawn, grouped by port. */
@@ -177,12 +177,25 @@ export const resolveMimicScope = (graph: CompiledPlantGraph, intent: MimicIntent
   const passable = (link: CompiledProcessLink): boolean => !excluded.has(link.fromComponentIndex) && !excluded.has(link.toComponentIndex)
   const allowed = new Set(graph.links.filter(link => carriers.has(linkCarrier(link)) && passable(link)).map(link => link.index))
   const subgraph = (indexes: ReadonlySet<number>): ReadonlySet<number> => new Set([...indexes].filter(index => allowed.has(index)))
-  const selected = subgraph(
+  const reached = subgraph(
     from.length > 0 && to.length > 0 ? routeLinks(graph, from, to, carriers)
       : from.length > 0 ? downstreamLinks(graph, from, carriers, MIMIC_REACH_LINKS)
         : to.length > 0 ? upstreamLinks(graph, to, carriers, MIMIC_REACH_LINKS)
           : allowed,
   )
+  // A reach that stops one step short of where the flow starts or ends (a
+  // tank feeding the pumps) draws that end too: one symbol says more than a
+  // stub at every pump it feeds.
+  const terminalSteps = (from.length > 0) === (to.length > 0) ? [] : [...allowed].filter(index => {
+    if (reached.has(index)) return false
+    const link = graph.links[index]!
+    const ends = new Set([...reached].flatMap(drawn => [graph.links[drawn]!.fromComponentIndex, graph.links[drawn]!.toComponentIndex]))
+    const carried = (indexes: ReadonlyArray<number> | undefined) => (indexes ?? []).filter(other => allowed.has(other))
+    return to.length > 0
+      ? ends.has(link.toComponentIndex) && !ends.has(link.fromComponentIndex) && carried(graph.incomingLinksByComponent[link.fromComponentIndex]).length === 0
+      : ends.has(link.fromComponentIndex) && !ends.has(link.toComponentIndex) && carried(graph.outgoingLinksByComponent[link.toComponentIndex]).length === 0
+  })
+  const selected = new Set([...reached, ...terminalSteps])
   if (selected.size === 0) {
     const reverseCarriers = intent.services !== undefined ? carriers : shared(delivered(to), received(from))
     const reverse = from.length > 0 && to.length > 0 && routeLinks(graph, to, from, reverseCarriers).size > 0
@@ -242,7 +255,9 @@ export const resolveMimicScope = (graph: CompiledPlantGraph, intent: MimicIntent
         // A link with both ends drawn but left out stops where it leaves, not where it arrives.
         if (direction === 'in' && drawn.has(link.fromComponentIndex)) continue
         const port = String(direction === 'out' ? link.fromPortName : link.toPortName)
-        const key = `${component}|${port}|${direction}`
+        // Alike ports of one circuit (a header's outlets) stop the drawing once, naming every far end.
+        const circuit = graph.components[component]!.ports[port]?.circuit
+        const key = `${component}|${circuit ?? port}|${direction}`
         const stub = stubsByKey.get(key) ?? { component, port, direction, links: [], others: [] }
         stub.links.push(index)
         stub.others.push(direction === 'out' ? { component: link.toComponentIndex, port: String(link.toPortName) } : { component: link.fromComponentIndex, port: String(link.fromPortName) })

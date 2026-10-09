@@ -16,6 +16,7 @@ const view: ComposedDisplayViewResult = {
   issuedAt: at(0),
   simulationTime: at(0),
   modelChanged: false,
+  drawingChanged: false,
   display: {
     plantId: 'plant:1',
     title: 'Pressure',

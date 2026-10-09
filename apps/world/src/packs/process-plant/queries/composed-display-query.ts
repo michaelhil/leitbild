@@ -23,6 +23,8 @@ import {
 } from '../displays/compose.ts'
 import { requirePlant } from './common.ts'
 import { simulationClock } from '../displays/display-text.ts'
+import { indexSample, itemLook } from '../displays/mimic/evaluate.ts'
+import { mimicItemId } from '../displays/mimic/bindings.ts'
 
 export const processPlantComposedDisplayQueryKinds = [
   'world.process-plant.display.compose',
@@ -73,11 +75,17 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
     const plantId = idSchema.parse((config.request.input as { plantId?: unknown } | null)?.plantId)
     const system = requirePlant(config.plants, plantId)
     const display = compiledOrRejected(system, config.request.input, 'compose', recordedSeriesIds)
+    const mimics = display.panels.flatMap(panel => panel.kind === 'mimic' ? [panel.mimic] : [])
     const state = composedDisplayStateSchema.parse({
       composition: composedDisplayCompositionSchema.parse(config.request.input),
       issuedAt: simulationTime,
       modelDigest: display.modelDigest,
+      ...(mimics.length === 0 ? {} : { drawings: mimics.map(mimic => mimic.hash) }),
     })
+    const now = indexSample(mimics.flatMap(mimic => mimic.paths).map(path => {
+      const snapshot = system.runtime.readVariableSnapshot(path)
+      return { path, value: snapshot.value, quality: processPlantSignalQuality(snapshot).status }
+    }))
     return {
       plantId: display.plantId,
       issuedAt: simulationTime,
@@ -93,6 +101,9 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
       shows: composedDisplayShows(display),
       margins: composedDisplayMargins(display, path => system.runtime.readVariableSnapshot(path).value),
       warnings: composedDisplayWarnings(display),
+      // What the mimic draws now, so the answer states equipment exactly as the operator sees it.
+      equipment: mimics.flatMap(mimic => mimic.items
+        .map(item => ({ id: mimicItemId(system.plant.graph, item.binding.item), label: item.binding.label, state: itemLook(item.binding, now).words || 'no state drawn' }))),
     }
   }
 
@@ -111,6 +122,7 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
       issuedAt: state.issuedAt,
       simulationTime,
       modelChanged: state.modelDigest !== display.modelDigest,
+      drawingChanged: display.panels.flatMap(panel => panel.kind === 'mimic' ? [panel.mimic.hash] : []).some((hash, at) => hash !== state.drawings?.[at]),
       display,
     }
   }

@@ -49,19 +49,22 @@ describe('mimic scope from the agent\'s intent', () => {
     expect(rejection(graph, { services: ['AFW'] })[0]!.didYouMean).toEqual(['auxFeedwater'])
   })
 
-  test('a one-ended intent reaches three links and stubs what lies beyond', () => {
+  test('a one-ended intent reaches three links, draws the source just beyond, and stubs the rest', () => {
     const scope = drawn(graph, { to: ['sgB'], services: ['feedwater', 'auxFeedwater'] })
-    expect(scope.labels).toEqual(['AFW header', 'AFW valve B', 'FCV B', 'MD AFW A', 'MD AFW B', 'MFW A', 'MFW B', 'MFW header', 'SG B', 'TD AFW'])
-    const stubs = scope.stubs.map(stub => `${label(graph, stub.component)}: ${stubText(graph, stub)}`)
-    expect(stubs).toContain('MFW A: from FW tank')
-    expect(stubs).toContain('MFW header: to FCV A')
+    // The tanks are one step past the reach and feed nothing else: drawn, not stubbed at every pump.
+    expect(scope.labels).toEqual(['AFW header', 'AFW tank', 'AFW valve B', 'FCV B', 'FW tank', 'MD AFW A', 'MD AFW B', 'MFW A', 'MFW B', 'MFW header', 'SG B', 'TD AFW'])
+    // A header's outlets to the other loops stop the drawing once.
+    expect(scope.stubs.map(stub => `${label(graph, stub.component)}: ${stubText(graph, stub)}`)).toEqual([
+      'MFW header: to FCV A, FCV C, FCV D',
+      'AFW header: to AFW valve A, AFW valve C, AFW valve D',
+    ])
   })
 
   test('loops narrow a system to their own links and the shared equipment on routes into them', () => {
     const scope = drawn(graph, { services: ['safetyInjection'], loops: ['C'] })
     expect(scope.labels).toEqual(['Core', 'HHSI A', 'HHSI B', 'RWST', 'SI header'])
     // Flow toward the other loops leaves the drawing at the header, named by port where the core has several alike.
-    expect(scope.stubs.map(stub => stubText(graph, stub))).toEqual(['to Core cold leg A', 'to Core cold leg B', 'to Core cold leg D'])
+    expect(scope.stubs.map(stub => stubText(graph, stub))).toEqual(['to Core cold leg A, cold leg B, cold leg D'])
     expect(drawn(graph, { services: ['primaryCoolant'], loops: ['A', 'B'] }).labels).toEqual(['Core', 'PZR', 'RCP A', 'RCP B', 'SG A', 'SG B'])
   })
 

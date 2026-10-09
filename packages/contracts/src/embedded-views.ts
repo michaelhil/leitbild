@@ -21,10 +21,11 @@ export const EMBEDDED_VIEW_STATE_MAX_LENGTH = 4096
 // What a Module operation returns when its result can be shown as a view. The
 // caller completes the envelope with the exact Resource it invoked, so the
 // publishing runtime need not know its own Workspace identity.
+// Views up to 960 px tall: a live equipment mimic with its trend and alarms needs about 900.
 const embeddedViewPublicationShape = {
   viewType: embeddedViewTypeSchema,
   title: z.string().min(1).max(120),
-  height: z.number().int().min(120).max(720),
+  height: z.number().int().min(120).max(960),
   state: z.string().min(2).max(EMBEDDED_VIEW_STATE_MAX_LENGTH),
 }
 export const embeddedViewPublicationSchema = z.object(embeddedViewPublicationShape).strict()

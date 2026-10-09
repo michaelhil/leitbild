@@ -93,11 +93,13 @@
   </p>
 
   <!-- One reserved notice line; the most consequential notice wins. -->
-  <p class="banner" class:quiet={!snapshot?.resetSinceAdvice && !view?.modelChanged && activeTrip === undefined} class:trip={activeTrip !== undefined && !snapshot?.resetSinceAdvice && !view?.modelChanged}>
+  <p class="banner" class:quiet={!snapshot?.resetSinceAdvice && !view?.modelChanged && !view?.drawingChanged && activeTrip === undefined} class:trip={activeTrip !== undefined && !snapshot?.resetSinceAdvice && !view?.modelChanged && !view?.drawingChanged}>
     {#if snapshot?.resetSinceAdvice}
       The Run was reset after this advice. The advice may no longer apply.
     {:else if view?.modelChanged}
       The Plant model changed after this advice was composed.
+    {:else if view?.drawingChanged}
+      The equipment drawing changed after this advice was composed.
     {:else if activeTrip !== undefined && snapshot?.latest !== undefined}
       TRIP · {activeTrip.title} · {alarmAge(snapshot.latest.plantElapsedMs, activeTrip.firstActiveElapsedMs)} ago
     {:else if snapshot?.phase.kind === 'suspended'}

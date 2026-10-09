@@ -29,7 +29,8 @@ export const accumulatorComponentDefinitions: ReadonlyArray<ComponentDefinition>
       aspects: [aspect('throughput', { variable: 'outletFlowKgPerS', reading: 'flow' })],
       // The discharge isolation valve and the check valve are modelled inside the accumulator, on its outlet.
       embedded: [
-        { id: 'dischargeIsolationValve', label: 'discharge isolation valve', function: 'isolating', port: 'outlet', aspects: [aspect('position', undefined, 'dischargeIsolationOpen')], variables: ['dischargeIsolationOpen'] },
+        // Its position is not solved: what leaves the accumulator judges it.
+        { id: 'dischargeIsolationValve', label: 'discharge isolation valve', function: 'isolating', port: 'outlet', aspects: [aspect('position', undefined, 'dischargeIsolationOpen'), aspect('throughput', { variable: 'outletFlowKgPerS', reading: 'flow' })], variables: ['dischargeIsolationOpen'] },
         { id: 'checkValve', label: 'check valve', function: 'nonReturn', port: 'outlet', aspects: [aspect('position', { variable: 'checkValveOpenFraction', reading: 'value' })], variables: ['checkValveOpenFraction'] },
       ],
     }),
