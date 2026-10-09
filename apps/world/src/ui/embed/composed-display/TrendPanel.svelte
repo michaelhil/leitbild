@@ -75,7 +75,8 @@
   const plotHeight = $derived(Math.max(24, height - pad.top - pad.bottom))
   const x = (t: number): number => pad.left + ((t - windowStart) / horizonMs) * plotWidth
   const y = (v: number): number => domain === null ? pad.top : pad.top + (1 - (v - domain.min) / (domain.max - domain.min)) * plotHeight
-  const ticks = $derived(domain === null ? [] : valueTicks(domain))
+  // A plot shrunk to fit the display keeps its tick labels apart with fewer gridlines.
+  const ticks = $derived(domain === null ? [] : valueTicks(domain, plotHeight < 60 ? 2 : 3))
   const labels = $derived(tickLabels(ticks))
 
   const isActive = (threshold: { readonly ruleIds: ReadonlyArray<string> }): boolean => threshold.ruleIds.some(ruleId => activeRuleIds.has(ruleId))

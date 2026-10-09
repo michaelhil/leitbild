@@ -121,7 +121,7 @@
     <div class="panels" style={`gap:${composedDisplayLayout.panelGap}px`}>
       {#each view.display.panels as panel, index (index)}
         {#if panel.kind === 'trend'}
-          {@const charts = composedTrendStripHeights(panel.strips.length)}
+          {@const charts = composedTrendStripHeights(panel.strips.length, panel.plot)}
           <div>
             {#each panel.strips as strip, stripIndex (strip.unit)}
               <TrendPanel

@@ -187,6 +187,19 @@ describe('composed display panels', () => {
   })
 
   // The skill's size rule: three units leave room for alarms; two units for alarms and three readouts.
+  test('shrink trend plots, not other panels, so a display fits the chat view', () => {
+    // Evaluation run 5: two units beside six readouts and the alarms needed 668 px at preferred size.
+    const { composed, view } = composeView([
+      { kind: 'trend', horizon: '2m', signals: ['CET-AVG', 'SUB-MARGIN', 'PT-455', 'SG-A-PRESS'].map((ref, index) => ({ ref, role: index === 0 ? 'primary' : 'context' })) },
+      { kind: 'readouts', signals: ['TAVG', 'PZR-LVL', 'SG-B-PRESS', 'SG-C-PRESS', 'SG-D-PRESS', 'CTMT-PR'].map(ref => ({ ref, role: 'context' })) },
+      { kind: 'alarms', scope: 'related' },
+    ])
+    const trend = view.display.panels[0] as { plot: number }
+    expect(trend.plot).toBeLessThan(72)
+    expect(trend.plot).toBeGreaterThanOrEqual(48)
+    expect(composed.view.height).toBeLessThanOrEqual(640)
+  })
+
   test('fit the largest trends the skill allows beside their companion panels', () => {
     const levels = ['A', 'B', 'C', 'D'].map(loop => ({ ref: `SG-${loop}-LVL-NR`, role: loop === 'B' ? 'primary' : 'context' }))
     const threeUnits = composeView([
@@ -222,11 +235,12 @@ describe('composed display panels', () => {
       { kind: 'comparison', signals: six },
       { kind: 'readouts', signals: [...six, { ref: 'TAVG', role: 'context' }, { ref: 'SUB-MARGIN', role: 'context' }] },
     ])))).toContain('panels: Too big')
-    expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
-      { kind: 'trend', horizon: '10m', signals: [{ ref: 'PT-455', role: 'primary' }, { ref: 'PZR-LVL', role: 'context' }] },
+    const oversized = rejectionOf(() => ask('world.process-plant.display.compose', display([
+      { kind: 'trend', horizon: '10m', signals: [{ ref: 'PT-455', role: 'primary' }, { ref: 'PZR-LVL', role: 'context' }, { ref: 'GEN-MW', role: 'context' }] },
       { kind: 'comparison', signals: six },
       { kind: 'readouts', signals: ['TAVG', 'SUB-MARGIN', 'CET-AVG', 'SG-A-PRESS', 'SG-B-PRESS', 'SG-C-PRESS'].map(ref => ({ ref, role: 'context' })) },
-    ])))).toContain('chat views allow 640 (panels.0 trend (2 strips) 242 px')
+    ])))
+    expect(oversized).toContain('even with its trend at the smallest height, but chat views allow 640 (panels.0 trend (3 strips)')
     expect(rejectionOf(() => ask('world.process-plant.display.compose', display([
       { kind: 'trend', horizon: '10m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },
       { kind: 'readouts', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }] },

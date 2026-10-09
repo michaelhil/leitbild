@@ -16,14 +16,15 @@ import {
   COMPOSED_TREND_MAX_STRIPS,
   COMPOSED_TREND_STRIP_MAX_PENS,
   composedDisplayCompositionSchema,
-  composedDisplayHeight,
   composedPanelHeight,
+  fitComposedDisplay,
   composedDisplayHorizonMs,
   type ComposedDisplayComposition,
   type ComposedDisplayHorizon,
   type ComposedDisplayPanel,
   type ComposedDisplaySignal,
   type ComposedDisplaySignalRole,
+  type ComposedPanelShape,
   type ComposedPanelSize,
 } from './composition.ts'
 import { thresholdName } from './display-text.ts'
@@ -70,6 +71,8 @@ export interface ComposedTrendPanel {
   readonly horizon: ComposedDisplayHorizon
   readonly horizonMs: number
   readonly strips: ReadonlyArray<ComposedTrendStrip>
+  /** Plot height of each strip, fitted to the display. */
+  readonly plot: number
 }
 
 export interface ComposedComparisonPanel {
@@ -323,12 +326,15 @@ const trendStrips = (pens: ReadonlyArray<ComposedDisplayPen>): ReadonlyArray<Com
   })
 }
 
+/** A compiled panel before the display is fitted: trends have no plot height yet. */
+type UnsizedPanel = Exclude<CompiledComposedPanel, ComposedTrendPanel> | Omit<ComposedTrendPanel, 'plot'>
+
 const compilePanel = (
   system: ProcessPlantRuntimeInstance,
   panel: ComposedDisplayPanel,
   panelIndex: number,
   issues: ComposedDisplayIssue[],
-): CompiledComposedPanel | undefined => {
+): UnsizedPanel | undefined => {
   const panelPath = `panels.${panelIndex}`
   if (panel.kind === 'alarms') return { kind: 'alarms', scope: panel.scope, ruleIds: [] }
   if (panel.kind === 'readouts') {
@@ -343,7 +349,7 @@ const compilePanel = (
   return { kind: 'comparison', unit, pens, thresholds: drawnThresholds(pens) }
 }
 
-const panelSize = (panel: CompiledComposedPanel): ComposedPanelSize => {
+const panelShape = (panel: UnsizedPanel): ComposedPanelShape => {
   if (panel.kind === 'trend') return { kind: 'trend', strips: panel.strips.map(strip => strip.pens.length) }
   if (panel.kind === 'comparison') return { kind: 'comparison', rows: panel.pens.length }
   if (panel.kind === 'readouts') return { kind: 'readouts', values: panel.pens.length }
@@ -384,7 +390,10 @@ const compositionIssues = (composition: ComposedDisplayComposition): ReadonlyArr
 }
 
 // Strip and size limits need resolved units, so they are checked after compiling.
-const layoutIssues = (panels: ReadonlyArray<CompiledComposedPanel>): ReadonlyArray<ComposedDisplayIssue> => {
+const layoutIssues = (
+  panels: ReadonlyArray<CompiledComposedPanel>,
+  fit: { readonly height: number; readonly panels: ReadonlyArray<ComposedPanelSize> },
+): ReadonlyArray<ComposedDisplayIssue> => {
   const issues: ComposedDisplayIssue[] = []
   panels.forEach((panel, index) => {
     if (panel.kind !== 'trend') return
@@ -396,11 +405,10 @@ const layoutIssues = (panels: ReadonlyArray<CompiledComposedPanel>): ReadonlyArr
       issues.push({ path: `panels.${index}.signals`, message: `a trend strip shows at most ${COMPOSED_TREND_STRIP_MAX_PENS} signals of one unit, but [${strip.unit}] has ${strip.pens.length}: ${strip.pens.map(pen => pen.ref).join(', ')}; keep the most telling ones, or compare parallel loops in a comparison panel` })
     }
   })
-  const sizes = panels.map(panelSize)
-  const height = composedDisplayHeight(sizes)
-  if (height > COMPOSED_DISPLAY_MAX_HEIGHT_PX) {
-    const parts = sizes.map((size, index) => `panels.${index} ${size.kind}${size.kind === 'trend' && size.strips.length > 1 ? ` (${size.strips.length} strips)` : ''} ${composedPanelHeight(size)} px`).join(', ')
-    issues.push({ path: 'panels', message: `the display needs ${height} px but chat views allow ${COMPOSED_DISPLAY_MAX_HEIGHT_PX} (${parts}); drop the panel or trend unit that answers least of the question` })
+  if (fit.height > COMPOSED_DISPLAY_MAX_HEIGHT_PX) {
+    const parts = fit.panels.map((size, index) => `panels.${index} ${size.kind}${size.kind === 'trend' && size.strips.length > 1 ? ` (${size.strips.length} strips)` : ''} ${composedPanelHeight(size)} px`).join(', ')
+    const shrunk = fit.panels.some(size => size.kind === 'trend') ? ' even with its trend at the smallest height' : ''
+    issues.push({ path: 'panels', message: `the display needs ${fit.height} px${shrunk}, but chat views allow ${COMPOSED_DISPLAY_MAX_HEIGHT_PX} (${parts}); drop the panel or trend unit that answers least of the question` })
   }
   return issues
 }
@@ -438,8 +446,15 @@ export const compileComposedDisplay = (
   }
   const panels = composition.panels.map((panel, index) => compilePanel(system, panel, index, issues))
   if (issues.length > 0) return { ok: false, issues }
-  const compiled = panels.filter((panel): panel is CompiledComposedPanel => panel !== undefined)
-  const layout = purpose === 'compose' ? layoutIssues(compiled) : []
+  const unsized = panels.filter((panel): panel is UnsizedPanel => panel !== undefined)
+  const fit = fitComposedDisplay(unsized.map(panelShape))
+  const compiled = unsized.map((panel, index): CompiledComposedPanel => {
+    if (panel.kind !== 'trend') return panel
+    const size = fit.panels[index]
+    if (size?.kind !== 'trend') throw new Error('fitted panels follow the compiled panels')
+    return { ...panel, plot: size.plot }
+  })
+  const layout = purpose === 'compose' ? layoutIssues(compiled, fit) : []
   if (layout.length > 0) return { ok: false, issues: layout }
   const ruleIds = relatedRuleIds(system, compiled)
   return {
@@ -450,7 +465,7 @@ export const compileComposedDisplay = (
       question: composition.question,
       need: composition.need,
       modelDigest: system.plant.modelDigest,
-      height: composedDisplayHeight(compiled.map(panelSize)),
+      height: fit.height,
       panels: compiled.map(panel => panel.kind === 'alarms' ? { ...panel, ruleIds } : panel),
     },
   }

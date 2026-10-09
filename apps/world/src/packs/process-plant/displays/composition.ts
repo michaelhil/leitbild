@@ -98,9 +98,14 @@ export const composedDisplayLayout = {
   frame: 124,
   /** Above each trend strip: unit and advice labels. */
   trendStripTop: 18,
-  /** Plot area of a trend with one strip, and of each strip when several stack. */
+  /**
+   * Plot height of a trend with one strip, and of each strip when several
+   * stack; shrunk toward the minimum when the other panels need the room.
+   */
   trendPlot: 116,
   trendStackedPlot: 72,
+  trendMinPlot: 72,
+  trendMinStackedPlot: 48,
   /** Time labels, once under the bottom strip. */
   trendTimeAxis: 22,
   /** Legend under each strip: one row per pen with value, alarm state or margin, and rate. */
@@ -122,17 +127,25 @@ export const composedDisplayLayout = {
 export const COMPOSED_DISPLAY_MAX_HEIGHT_PX = 640
 
 /** What a panel's height depends on, known once its signals are resolved. */
-export type ComposedPanelSize =
+export type ComposedPanelShape =
   /** Pens per strip, top to bottom. */
   | { readonly kind: 'trend'; readonly strips: ReadonlyArray<number> }
   | { readonly kind: 'comparison'; readonly rows: number }
   | { readonly kind: 'readouts'; readonly values: number }
   | { readonly kind: 'alarms' }
 
+/** A panel shape with its trend plot height decided. */
+export type ComposedPanelSize =
+  | Exclude<ComposedPanelShape, { readonly kind: 'trend' }>
+  | { readonly kind: 'trend'; readonly strips: ReadonlyArray<number>; readonly plot: number }
+
+const trendPlotRange = (strips: number): { readonly preferred: number; readonly minimum: number } => strips === 1
+  ? { preferred: composedDisplayLayout.trendPlot, minimum: composedDisplayLayout.trendMinPlot }
+  : { preferred: composedDisplayLayout.trendStackedPlot, minimum: composedDisplayLayout.trendMinStackedPlot }
+
 /** Chart height of each strip of a trend, top to bottom; the last carries the time axis. */
-export const composedTrendStripHeights = (strips: number): ReadonlyArray<number> => {
+export const composedTrendStripHeights = (strips: number, plot: number): ReadonlyArray<number> => {
   const layout = composedDisplayLayout
-  const plot = strips === 1 ? layout.trendPlot : layout.trendStackedPlot
   return Array.from({ length: strips }, (_, index) => layout.trendStripTop + plot + (index === strips - 1 ? layout.trendTimeAxis : 0))
 }
 
@@ -142,7 +155,7 @@ export const composedTrendLegendHeight = (pens: number): number =>
 export const composedPanelHeight = (panel: ComposedPanelSize): number => {
   const layout = composedDisplayLayout
   if (panel.kind === 'trend') {
-    const charts = composedTrendStripHeights(panel.strips.length)
+    const charts = composedTrendStripHeights(panel.strips.length, panel.plot)
     return panel.strips.reduce((sum, pens, index) => sum + charts[index]! + composedTrendLegendHeight(pens), 0)
   }
   if (panel.kind === 'comparison') return layout.comparisonHeader + layout.comparisonRow * panel.rows + layout.comparisonCaption
@@ -154,3 +167,26 @@ export const composedDisplayHeight = (panels: ReadonlyArray<ComposedPanelSize>):
   composedDisplayLayout.frame
   + panels.reduce((sum, panel) => sum + composedPanelHeight(panel), 0)
   + composedDisplayLayout.panelGap * (panels.length - 1)
+
+/**
+ * Sizes a display. Trends are the panels that can give: their plots take the
+ * preferred height and shrink evenly toward their minimum when the other
+ * panels need the room, so a display is too tall only when even its smallest
+ * trend does not fit.
+ */
+export const fitComposedDisplay = (panels: ReadonlyArray<ComposedPanelShape>): {
+  readonly height: number
+  readonly panels: ReadonlyArray<ComposedPanelSize>
+} => {
+  const sized = (scale: number): ReadonlyArray<ComposedPanelSize> => panels.map(panel => {
+    if (panel.kind !== 'trend') return panel
+    const range = trendPlotRange(panel.strips.length)
+    return { ...panel, plot: Math.max(range.minimum, Math.floor(range.preferred * scale)) }
+  })
+  const preferred = sized(1)
+  const natural = composedDisplayHeight(preferred)
+  const plotTotal = panels.reduce((sum, panel) => panel.kind === 'trend' ? sum + trendPlotRange(panel.strips.length).preferred * panel.strips.length : sum, 0)
+  if (natural <= COMPOSED_DISPLAY_MAX_HEIGHT_PX || plotTotal === 0) return { height: natural, panels: preferred }
+  const fitted = sized(Math.max(0, (plotTotal - (natural - COMPOSED_DISPLAY_MAX_HEIGHT_PX)) / plotTotal))
+  return { height: composedDisplayHeight(fitted), panels: fitted }
+}
