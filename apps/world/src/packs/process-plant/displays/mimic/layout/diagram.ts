@@ -113,7 +113,7 @@ export interface DiagramProfile {
   /**
    * The fit ladder, richest first: which text a drawing keeps (`full`, or
    * only each stack's required lines) and where stacks go (right of their
-   * symbols, the same with stub labels below their ends, below lane
+   * symbols, the same with lane stubs' labels below their ends, below lane
    * symbols, below every symbol). The first rung with a
    * drawing that fits wins; text never shrinks. Rungs a graph cannot use
    * (no optional lines, no lanes) are skipped.

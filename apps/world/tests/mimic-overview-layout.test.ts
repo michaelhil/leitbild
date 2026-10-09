@@ -7,12 +7,14 @@ import {
   type CompiledProcessPlant,
   type PlantGraphSpec,
 } from '../src/packs/process-plant/index.ts'
+import { overviewDrawingRoom, UNIT_OVERVIEW_SCREENS } from '../src/packs/process-plant/displays/compose.ts'
 import { compileMimicScope, planMimicDiagram, type MimicBudget } from '../src/packs/process-plant/displays/mimic/compile-mimic.ts'
 import { indexSample } from '../src/packs/process-plant/displays/mimic/evaluate.ts'
 import { layoutDiagram, verifyDiagram } from '../src/packs/process-plant/displays/mimic/layout/index.ts'
 import type { CompiledMimic } from '../src/packs/process-plant/displays/mimic/mimic-model.ts'
 import { principalCircuits } from '../src/packs/process-plant/displays/mimic/principal.ts'
 import { overviewMimicProfile } from '../src/packs/process-plant/displays/mimic/profiles.ts'
+import { overviewKeyValues } from '../src/packs/process-plant/displays/overview-key-values.ts'
 import { drawnLook, rowText } from '../src/packs/process-plant/displays/mimic/rows.ts'
 import { openBridgeDevice } from '../src/packs/process-plant/displays/mimic/text-metrics.ts'
 
@@ -25,8 +27,14 @@ import { openBridgeDevice } from '../src/packs/process-plant/displays/mimic/text
 const plants = new Map([4, 6].map(loops => [loops, compileProcessPlant(createPwrReferencePlantDefinition({ id: `plant:overview-${loops}`, loopCount: loops }))]))
 const plantOf = (loops: number): CompiledProcessPlant => plants.get(loops)!
 
-/** The room each Plant's overview is drawn in here: what the engine reaches today at full text (see the fit ladder test for less). */
-const ROOM: Readonly<Record<number, Omit<MimicBudget, 'profile'>>> = { 4: { maxWidth: 1600, maxHeight: 1040 }, 6: { maxWidth: 2160, maxHeight: 1080 } }
+/**
+ * The room each Plant's overview is drawn in here: for four loops what a Full
+ * HD window leaves the drawing beside the column of lead values and alarms
+ * (compose.ts); for six what the engine reaches today at full text (see the
+ * fit ladder test for less).
+ */
+const fullHdColumn = overviewDrawingRoom(UNIT_OVERVIEW_SCREENS[0], 'column', overviewKeyValues(plantOf(4)).length)!
+const ROOM: Readonly<Record<number, Omit<MimicBudget, 'profile'>>> = { 4: fullHdColumn, 6: { maxWidth: 2160, maxHeight: 1080 } }
 const budgetFor = (loops: number): MimicBudget => ({ profile: overviewMimicProfile, ...ROOM[loops]! })
 
 const scopeOf = (plant: CompiledProcessPlant) => {

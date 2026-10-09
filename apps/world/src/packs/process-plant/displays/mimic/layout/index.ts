@@ -1,6 +1,6 @@
 // The diagram engine's entry point. Density limits are checked first, from
 // the graph alone. Then the profile's fit ladder runs from richest to leanest
-// (which text the stacks keep, and where they go: right of symbols, stub
+// (which text the stacks keep, and where they go: right of symbols, lane stub
 // labels below, below the symbols of lanes, below every symbol). Each rung is
 // laid out in both orientations and in each arrangement the graph allows
 // (hubs on either side of the lanes, reaching their items near or from the
@@ -13,7 +13,7 @@
 // when every attempt crosses too often, verified or not), the smallest size
 // per orientation, or the verifier's findings. Nothing is truncated silently.
 import { runAttempt, prepare, type AttemptGeometry } from './attempt.ts'
-import { breakCycles, foldReturns } from './cycles.ts'
+import { breakCycles, foldReturns, type Fold } from './cycles.ts'
 import { findCrossings, drawingSegments, gapsByEdge } from './crossings.ts'
 import type { DiagramGraph, DiagramLayoutResult, DiagramProfile, DiagramViolation, RoutedEdge } from './diagram.ts'
 import { ORIENTATIONS } from './geometry.ts'
@@ -88,12 +88,18 @@ interface Arrangement {
  * reaching each item through the channel before it, no fold, no refinement.
  * Then refined ones: with hubs, beside lane 0 or after the last lane, reaching
  * near or from the outer channel; with a return leg through shared symbols,
- * each also folded.
+ * each also folded, and folded beside its turn where that cuts the leg
+ * elsewhere.
  */
 const arrangements = (model: Model): ReadonlyArray<Arrangement> => {
   const reversed = breakCycles(model)
   const plain = plainLayering(model)
-  const fold = foldReturns(model, reversed, layerNodes(model, reversed))
+  const layered = layerNodes(model, reversed)
+  const fold = foldReturns(model, reversed, layered)
+  const beside = foldReturns(model, reversed, layered, 'beside')
+  // Beside its turn only where that draws the cycle shorter than folding it at its turn (or than not folding it).
+  const length = (entry: Fold | null): number => Math.max(0, ...layerNodes(model, entry?.reversed ?? reversed, false, entry?.flat))
+  const folds = [fold, beside !== null && length(beside) < length(fold) ? beside : null].filter((entry): entry is Fold => entry !== null)
   const hubs = model.nodes.some(node => node.role === 'hub') && model.lanes.length > 0
   const placements: ReadonlyArray<{ readonly hubSide: HubSide; readonly hubReach: LayeringOptions['hubReach'] }> = hubs
     ? [{ hubSide: 'low', hubReach: 'near' }, { hubSide: 'low', hubReach: 'outer' }, { hubSide: 'high', hubReach: 'near' }, { hubSide: 'high', hubReach: 'outer' }]
@@ -101,7 +107,7 @@ const arrangements = (model: Model): ReadonlyArray<Arrangement> => {
   return [
     { reversed, layering: plain, hubSide: 'low', refine: false },
     ...placements.map(({ hubSide, hubReach }) => ({ reversed, layering: { ...plain, hubReach }, hubSide, refine: true })),
-    ...(fold === null ? [] : placements.map(({ hubSide, hubReach }) => ({ reversed: fold.reversed, layering: { flipped: fold.flipped, folded: fold.folded, hubReach }, hubSide, refine: true }))),
+    ...folds.flatMap(fold => placements.map(({ hubSide, hubReach }) => ({ reversed: fold.reversed, layering: { flipped: fold.flipped, folded: fold.folded, flat: fold.flat, hubReach }, hubSide, refine: true }))),
   ]
 }
 

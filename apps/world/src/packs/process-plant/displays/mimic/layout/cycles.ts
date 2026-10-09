@@ -2,6 +2,7 @@
 // against the resulting node sequence are reversed for layering and drawn as
 // return runs. When no source or sink is left, a hub goes first: loops are
 // drawn leaving the hub and returning to it, which is the classic loop drawing.
+import { layerNodes } from './layering.ts'
 import type { Model } from './model.ts'
 
 /** Per edge, whether it is reversed (a return run). */
@@ -84,6 +85,13 @@ export const breakCycles = (model: Model): ReadonlyArray<boolean> => {
  * downstream of a cut layer; of the cuts whose leg fits between the cycle's
  * start and the turn, the one with the fewest turning edges (then the
  * shortest drawing) wins.
+ *
+ * Folded beside its turn, the leg's head (a leg symbol the rest of the cycle
+ * feeds) is drawn in the layer of what feeds it, beside it: the pipe turns
+ * over into the head's mirrored upstream face, so the cycle is only as long
+ * as its forward part. A leg symbol's stubs are mirrored with it. Of the
+ * cuts, the one whose layers come out fewest (then the fewest turning
+ * edges) wins: a leg deeper than the layers below its turn lifts its head.
  */
 export interface Fold {
   /** Per edge: reversed for layering (the leg's edges, its turns and its return). */
@@ -92,9 +100,14 @@ export interface Fold {
   readonly flipped: ReadonlyArray<boolean>
   /** Per edge: part of a fold, so a bar at its end takes it from either side without turning. */
   readonly folded: ReadonlyArray<boolean>
+  /** Per edge: its ends may share a layer, joined by a turn over both (an edge into a head drawn beside its turn). */
+  readonly flat: ReadonlyArray<boolean>
 }
 
-export const foldReturns = (model: Model, reversed: ReadonlyArray<boolean>, layer: ReadonlyArray<number>): Fold | null => {
+/** Where a folded leg turns: at the end of the cycle's forward part, or beside it. */
+export type FoldPlace = 'turn' | 'beside'
+
+export const foldReturns = (model: Model, reversed: ReadonlyArray<boolean>, layer: ReadonlyArray<number>, place: FoldPlace = 'turn'): Fold | null => {
   const outgoing = model.nodes.map(() => [] as number[])
   const incoming = model.nodes.map(() => [] as number[])
   for (const edge of model.edges) {
@@ -106,6 +119,8 @@ export const foldReturns = (model: Model, reversed: ReadonlyArray<boolean>, laye
   const nextReversed = [...reversed]
   const flipped = model.nodes.map(() => false)
   const folded = model.edges.map(() => false)
+  const flat = model.edges.map(() => false)
+  const beside = place === 'beside'
   let any = false
   for (const back of model.edges) {
     if (!reversed[back.index] || !sharedDevice(back.from) || flipped[back.from]) continue
@@ -139,30 +154,46 @@ export const foldReturns = (model: Model, reversed: ReadonlyArray<boolean>, laye
         depth.set(node, value)
         return value
       }
-      const fits = turns.every(edge => layer[edge.from]! >= layer[start]! + depthOf(edge.to, new Set()) + 1)
+      const fits = beside || turns.every(edge => layer[edge.from]! >= layer[start]! + depthOf(edge.to, new Set()) + 1)
       if (!fits) return []
       const turnNets = new Set(turns.map(edge => `${edge.from}:${edge.fromPort}`)).size
-      return [{ kept, turns, turnNets, span: Math.max(...turns.map(edge => layer[edge.from]!)) }]
+      // Beside its turn, what enters a head (its turns and stubs) runs on with the flow and turns over into it.
+      const heads = new Set(turns.map(edge => edge.to))
+      const besideHead = (edge: Model['edges'][number]): boolean => beside && heads.has(edge.to) && !kept.has(edge.from)
+      const folding = model.edges.filter(edge => {
+        const inside = kept.has(edge.from) && (kept.has(edge.to) || edge.to === start || isStub(edge.to))
+        const stubbed = kept.has(edge.to) && isStub(edge.from)
+        return inside || stubbed || turns.includes(edge)
+      })
+      const trialReversed = [...nextReversed]
+      const trialFlat = [...flat]
+      for (const edge of folding) {
+        trialReversed[edge.index] = !besideHead(edge)
+        trialFlat[edge.index] = besideHead(edge)
+      }
+      const closes = !acyclic(model, trialReversed)
+      if (beside && closes) return []
+      const length = beside ? Math.max(0, ...layerNodes(model, trialReversed, false, trialFlat)) : 0
+      return [{ kept, folding, turnNets, span: Math.max(...turns.map(edge => layer[edge.from]!)), length, closes, reversed: trialReversed, flat: trialFlat }]
     })
-    const best = candidates.sort((a, b) => (a.turnNets - b.turnNets) || (a.span - b.span))[0]
-    if (best === undefined) continue
-    const folding = model.edges.filter(edge => {
-      const inside = best.kept.has(edge.from) && (best.kept.has(edge.to) || edge.to === start || isStub(edge.to))
-      const stubbed = best.kept.has(edge.to) && isStub(edge.from)
-      return inside || stubbed || best.turns.includes(edge)
-    }).map(edge => edge.index)
+    const best = candidates.sort((a, b) => beside ? (a.length - b.length) || (a.turnNets - b.turnNets) || (a.span - b.span) : (a.turnNets - b.turnNets) || (a.span - b.span))[0]
     // A turn that reaches the cycle's start again by another way would close a cycle: that leg is not folded.
-    const trial = [...nextReversed]
-    for (const edge of folding) trial[edge] = true
-    if (!acyclic(model, trial)) continue
+    if (best === undefined || best.closes) continue
     any = true
     for (const node of best.kept) flipped[node] = true
-    for (const edge of folding) {
-      nextReversed[edge] = true
-      folded[edge] = true
+    // Beside its turn, a leg symbol's stubs are mirrored with it, so their pipes run straight (stubs feeding a head turn over into it).
+    if (beside) for (const edge of best.folding) {
+      if (best.flat[edge.index]) continue
+      if (isStub(edge.from)) flipped[edge.from] = true
+      if (isStub(edge.to)) flipped[edge.to] = true
+    }
+    for (const edge of best.folding) {
+      nextReversed[edge.index] = best.reversed[edge.index]!
+      folded[edge.index] = true
+      flat[edge.index] = best.flat[edge.index]!
     }
   }
-  return any ? { reversed: nextReversed, flipped, folded } : null
+  return any ? { reversed: nextReversed, flipped, folded, flat } : null
 }
 
 const acyclic = (model: Model, reversed: ReadonlyArray<boolean>): boolean => {

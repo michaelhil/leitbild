@@ -575,6 +575,40 @@ const ladder = (lanes: number, closed: boolean): DiagramGraph => ({
   ],
 })
 
+/**
+ * The open ladder closed by a long train from the steam header back to the
+ * feed header: a throttle, an engine, a cooler (which a bypass from the
+ * header also reaches), a lift pump, a tank and a feed pump. Its return leg
+ * is deeper than the lanes are tall.
+ */
+const longTrain = (lanes: number): DiagramGraph => {
+  const base = ladder(lanes, false)
+  return {
+    nodes: [
+      ...base.nodes,
+      valve('throttle', 'train.0'),
+      valve('bypass', 'train.b'),
+      pump('engine', 'train.1'),
+      vessel('cooler', 'train.2', { in: 'in', out: 'out' }),
+      pump('lift-pump', 'train.3'),
+      vessel('tank', 'train.4', { in: 'in', out: 'out' }),
+      pump('feed-pump', 'train.5'),
+    ],
+    edges: [
+      ...base.edges,
+      edge('t0', 'train.0', 'steam:out', 'throttle:in'),
+      edge('b0', 'train.b', 'steam:out', 'bypass:in'),
+      edge('b1', 'train.b1', 'bypass:out', 'cooler:in'),
+      edge('t1', 'train.1', 'throttle:out', 'engine:in'),
+      edge('t2', 'train.2', 'engine:out', 'cooler:in'),
+      edge('t3', 'train.3', 'cooler:out', 'lift-pump:in'),
+      edge('t4', 'train.4', 'lift-pump:out', 'tank:in'),
+      edge('t5', 'train.5', 'tank:out', 'feed-pump:in'),
+      edge('t6', 'train.6', 'feed-pump:out', 'feed:in'),
+    ],
+  }
+}
+
 describe('crossings the structure forces', () => {
   const roomy = { ...profile, maxWidth: 4000, maxHeight: 4000, limits: { ...profile.limits, symbols: 60, symbolsPerLane: 6, crossings: 40, crossingsOverBound: 2 } }
 
@@ -607,6 +641,28 @@ describe('crossings the structure forces', () => {
       expect(crossings(result)).toBe(result.crossings)
       expect(verifyDiagram(graph, roomy, result)).toEqual([])
       for (const seed of [1, 2]) expect(accepted(scramble(graph, seed), roomy).hash).toBe(result.hash)
+    }
+  })
+
+  test('ever shorter of height, a return leg folds at its turn, then beside it: its head shares the layer of what feeds it', () => {
+    for (const lanes of [4, 6]) {
+      const graph = longTrain(lanes)
+      const tall = accepted(graph, roomy)
+      const folded = accepted(graph, { ...roomy, maxHeight: tall.height - 1 })
+      const short = { ...roomy, maxHeight: folded.height - 1 }
+      const result = accepted(graph, short)
+      const centre = (id: string): number => {
+        const placed = result.nodes.find(candidate => candidate.id === id)!
+        return placed.y + placed.height / 2
+      }
+      expect(result.height).toBeLessThan(folded.height)
+      // The leg (engine to feed pump) is drawn mirrored; the cooler, which the bypass feeds, sits in the bypass's layer, and the train runs down from there.
+      expect(centre('cooler')).toBe(centre('bypass'))
+      expect(centre('feed-pump')).toBeGreaterThan(centre('cooler'))
+      expect(result.crossings).toBeLessThanOrEqual(result.forcedCrossings + 2)
+      expect(verifyDiagram(graph, short, result)).toEqual([])
+      for (const routed of result.edges) expect(bendsOf(routed.points)).toBeLessThanOrEqual(3)
+      for (const seed of [1, 2]) expect(accepted(scramble(graph, seed), short).hash).toBe(result.hash)
     }
   })
 

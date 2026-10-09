@@ -33,6 +33,8 @@ export interface AcrossInput {
   readonly rightSolid: ReadonlyArray<number>
   /** Refined: a lane's long edge ordered before every symbol of its layers runs before the lane's axis, and strands keep their order. */
   readonly refine: boolean
+  /** Per node: drawn mirrored (a folded return leg). */
+  readonly flipped: ReadonlyArray<boolean>
 }
 
 /** Where a band of items ends: everything, and the solids. */
@@ -58,7 +60,7 @@ export interface AcrossPlacement {
 const MEDIAN_SWEEPS = 4
 
 export const placeAcross = (input: AcrossInput): AcrossPlacement => {
-  const { model, profile, layering, ordering, left, right, leftSolid, rightSolid, refine } = input
+  const { model, profile, layering, ordering, left, right, leftSolid, rightSolid, refine, flipped } = input
   const grid = profile.grid
   const laneCount = model.lanes.length
   const items = layering.items
@@ -323,7 +325,12 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
     }
     return result
   }
-  const floorOf = (item: number): number => (lowerBound === null ? -Infinity : ceilTo(need(lowerBound.full, lowerBound.solid, left[item]!, leftSolid[item]!), grid))
+  // Refined, a folded leg's symbols and stubs, drawn where no lane reaches, keep within the edge the lanes' layers start at: a leg never widens the drawing.
+  const legItem = (item: number): boolean => refine && items[item]!.node !== null && flipped[items[item]!.node!]!
+  const floorOf = (item: number): number => {
+    const bound = lowerBound ?? (legItem(item) ? origin : null)
+    return bound === null ? -Infinity : ceilTo(need(bound.full, bound.solid, left[item]!, leftSolid[item]!), grid)
+  }
   // Who decides where a pool of touching items sits: fixed strands, then free strands, then the rest.
   const priority = (item: number): number => (fixedColumn.has(item) ? 2 : (leaderOf.get(item) ?? null) !== null ? 1 : 0)
   const placeMedian = (run: ReadonlyArray<number>): void => {
@@ -353,7 +360,9 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
     const floor = floorOf(run[0]!)
     let i = 0
     for (const pool of pools) {
-      const value = Math.max(roundTo(pool.sum / pool.count, grid), floor)
+      // A leg member anywhere in the pool holds the pool off the edge.
+      const legs = run.slice(i, i + pool.size).flatMap((item, k) => (legItem(item) ? [floorOf(item) - offsets[i + k]!] : []))
+      const value = Math.max(roundTo(pool.sum / pool.count, grid), floor, ...legs)
       for (let k = 0; k < pool.size; k++, i++) c[run[i]!] = value + offsets[i]!
     }
     for (let k = 0; k < run.length; k++) {
@@ -423,9 +432,42 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
   }
   placeHighHubs()
 
-  let budget = 2 * strands.length
+  // A folded leg's symbol whose pipe to a strand or to a symbol a lane layer
+  // placed jogs moves once into line with it, when its layer has room: the
+  // nearest such line wins. Stubs follow their symbol, not the other way.
+  const symbols = [...freeItems].filter(item => legItem(item) && isPlain(item) && model.nodes[items[item]!.node!]!.role !== 'stub' && !fixedColumn.has(item)).sort((a, b) => a - b)
+  const lined = new Set<number>()
+  const lineUp = (pins: ReadonlyArray<ReadonlyArray<number>>): boolean => {
+    for (const symbol of symbols) {
+      if (lined.has(symbol)) continue
+      const offsets = layering.chains.flatMap((chain, index) => {
+        const ends = [[0, 1], [chain.items.length - 1, chain.items.length - 2]] as const
+        return ends.flatMap(([position, adjacent]) => {
+          if (chain.items[position] !== symbol || chain.steps[position === 0 ? 0 : chain.steps.length - 1] !== 'next') return []
+          const other = chain.items[adjacent]!
+          const steady = isDummy(other) ? fixedColumn.has(other) || (leaderOf.get(other) ?? null) !== null : isPlain(other) && !freeItems.has(other)
+          const delta = pins[index]![adjacent]! - pins[index]![position]!
+          return steady && delta !== 0 && Number.isFinite(delta) ? [delta] : []
+        })
+      }).sort((a, b) => (Math.abs(a) - Math.abs(b)) || (a - b))
+      lined.add(symbol)
+      for (const delta of offsets) {
+        const moves = makeRoom([symbol], c[symbol]! + delta)
+        if (moves === null) continue
+        for (const [item, value] of moves) c[item] = value
+        return true
+      }
+    }
+    return false
+  }
+  let budget = 2 * strands.length + symbols.length
   const align = (pins: ReadonlyArray<ReadonlyArray<number>>): ReadonlyArray<number> | null => {
     if (budget <= 0) return null
+    if (lineUp(pins)) {
+      budget--
+      placeHighHubs()
+      return [...c]
+    }
     for (const { strand, start, end, edge, turn } of strands) {
       // A turning end is met from beside, not in its column.
       const positions = [0, layering.chains[edge]!.items.length - 1].filter(position => isPlain(position === 0 ? start : end) && !(turn === 'end' && position > 0) && !(turn === 'start' && position === 0))

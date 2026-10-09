@@ -43,12 +43,15 @@ export interface LayeringOptions {
   readonly flipped: ReadonlyArray<boolean>
   /** Per edge: part of a fold. */
   readonly folded: ReadonlyArray<boolean>
+  /** Per edge: its ends may share a layer, joined by a turn over both. */
+  readonly flat: ReadonlyArray<boolean>
   readonly hubReach: 'near' | 'outer'
 }
 
 export const plainLayering = (model: Model): LayeringOptions => ({
   flipped: model.nodes.map(() => false),
   folded: model.edges.map(() => false),
+  flat: model.edges.map(() => false),
   hubReach: 'near',
 })
 
@@ -59,15 +62,22 @@ export interface Layering {
   readonly chains: ReadonlyArray<Chain>
 }
 
-/** Layer per node: longest path, sources beside what they feed, stubs beside their node, bars on layers of their own. */
-export const layerNodes = (model: Model, reversed: ReadonlyArray<boolean>, stubsIntoHubsFirst = false): number[] => {
+/**
+ * Layer per node: longest path, sources beside what they feed, stubs beside
+ * their node, bars on layers of their own. A flat edge may keep its ends in
+ * one layer.
+ */
+export const layerNodes = (model: Model, reversed: ReadonlyArray<boolean>, stubsIntoHubsFirst = false, flat: ReadonlyArray<boolean> = model.edges.map(() => false)): number[] => {
   const count = model.nodes.length
   const dagFrom = (e: number): number => (reversed[e] ? model.edges[e]!.to : model.edges[e]!.from)
   const dagTo = (e: number): number => (reversed[e] ? model.edges[e]!.from : model.edges[e]!.to)
   const successors = model.nodes.map(() => [] as number[])
   const predecessors = model.nodes.map(() => [] as number[])
+  /** Per node, the least layer step to each successor. */
+  const steps = model.nodes.map(() => [] as number[])
   for (const edge of model.edges) {
     successors[dagFrom(edge.index)]!.push(dagTo(edge.index))
+    steps[dagFrom(edge.index)]!.push(flat[edge.index] ? 0 : 1)
     predecessors[dagTo(edge.index)]!.push(dagFrom(edge.index))
   }
 
@@ -80,10 +90,10 @@ export const layerNodes = (model: Model, reversed: ReadonlyArray<boolean>, stubs
     ready.sort((a, b) => a - b)
     const node = ready.shift()!
     topological.push(node)
-    for (const next of successors[node]!) {
-      layer[next] = Math.max(layer[next]!, layer[node]! + 1)
+    successors[node]!.forEach((next, k) => {
+      layer[next] = Math.max(layer[next]!, layer[node]! + steps[node]![k]!)
       if (--waiting[next]! === 0) ready.push(next)
-    }
+    })
   }
   if (topological.length !== count) throw new Error('cycle breaking left a cycle')
   // A stub is an off-sheet end on one edge: it goes wherever its neighbour is,
@@ -91,8 +101,9 @@ export const layerNodes = (model: Model, reversed: ReadonlyArray<boolean>, stubs
   const isStub = (node: number): boolean => model.nodes[node]!.role === 'stub'
   for (const node of topological) {
     if (predecessors[node]!.length === 0 && successors[node]!.length > 0) {
-      const firm = successors[node]!.filter(next => !isStub(next))
-      layer[node] = Math.min(...(firm.length > 0 ? firm : successors[node]!).map(next => layer[next]!)) - 1
+      const all = successors[node]!.map((next, k) => ({ next, step: steps[node]![k]! }))
+      const firm = all.filter(({ next }) => !isStub(next))
+      layer[node] = Math.min(...(firm.length > 0 ? firm : all).map(({ next, step }) => layer[next]! - step))
     }
   }
   for (const node of topological) {
@@ -124,7 +135,7 @@ export const layerNodes = (model: Model, reversed: ReadonlyArray<boolean>, stubs
 }
 
 export const assignLayers = (model: Model, structure: Structure, reversed: ReadonlyArray<boolean>, options: LayeringOptions): Layering => {
-  const layer = layerNodes(model, reversed, options.hubReach === 'outer')
+  const layer = layerNodes(model, reversed, options.hubReach === 'outer', options.flat)
   const firstLayer = options.hubReach === 'outer' ? Math.min(...model.nodes.filter(node => node.role !== 'stub' && node.role !== 'hub').map(node => layer[node.index]!), Infinity) : Infinity
   const dagFrom = (e: number): number => (reversed[e] ? model.edges[e]!.to : model.edges[e]!.from)
   const dagTo = (e: number): number => (reversed[e] ? model.edges[e]!.from : model.edges[e]!.to)

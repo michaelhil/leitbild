@@ -15,9 +15,9 @@ import type { Structure } from './structure.ts'
 export type Detail = DiagramProfile['fit'][number]['detail']
 /**
  * Where symbols' text stacks go: right of each symbol where its pipes allow;
- * the same with stub labels below their ends; below the symbols of lanes; or
- * below every symbol. Below is narrower and taller, and right is the richer
- * drawing.
+ * the same with the labels of lanes' stubs below their ends; below the
+ * symbols of lanes; or below every symbol. Below is narrower and taller, and
+ * right is the richer drawing.
  */
 export type TextPolicy = DiagramProfile['fit'][number]['text']
 
@@ -103,8 +103,9 @@ export const runAttempt = (prepared: Prepared, profile: DiagramProfile, orientat
       continue
     }
     const fallback = chooseTextSide(orientation, prepared.pipeFaces[node.index]!)
-    // A stub's label goes below its end where no pipe leaves that way: narrower, and only a line taller.
-    if (policy === 'stubsBelow' && node.role === 'stub' && !prepared.pipeFaces[node.index]!.has(bottom)) {
+    // A lane's stub's label goes below its end where no pipe leaves that way: the lanes narrower, and only a line taller.
+    // Stubs beside the lanes keep theirs at the right, where it widens nothing a lane repeats.
+    if (policy === 'stubsBelow' && node.role === 'stub' && node.lane !== null && !prepared.pipeFaces[node.index]!.has(bottom)) {
       side.push('bottom')
       entries.push(null)
       shape.push(footprintOf(node, false))
@@ -143,7 +144,7 @@ export const runAttempt = (prepared: Prepared, profile: DiagramProfile, orientat
   const leftSolid = items.map((_, item) => reachOf(item, 'c0', false))
   const rightSolid = items.map((_, item) => reachOf(item, 'c1', false))
 
-  const across = placeAcross({ model, profile, layering, ordering, left, right, leftSolid, rightSolid, refine: prepared.refine })
+  const across = placeAcross({ model, profile, layering, ordering, left, right, leftSolid, rightSolid, refine: prepared.refine, flipped: prepared.flipped })
   const attachAt = (anchors: ReadonlyArray<number>) => attach({
     model, profile, layering, ordering, c: anchors, entries,
     box: model.nodes.map(node => (shape[node.index] === null ? { f0: 0, f1: 0, c0: 0, c1: 0 } : shiftBox(shape[node.index]!, 0, anchors[node.index]!))),
@@ -272,7 +273,8 @@ export const runAttempt = (prepared: Prepared, profile: DiagramProfile, orientat
     chain.steps.forEach((step, k) => {
       const jog = plan.jog[index]![k]!
       const track = jog === null ? Number.NaN : trackF(jog.channel, jog.net)
-      const a = approach(index, k, step === 'turnBelow' ? 'in' : step === 'turnAbove' ? 'pass' : 'out', track)
+      // A turn over two items of one layer leaves the first from its downstream face (a flat edge).
+      const a = approach(index, k, step === 'turnBelow' ? 'in' : step === 'turnAbove' && k > 0 ? 'pass' : 'out', track)
       const b = approach(index, k + 1, step === 'turnAbove' ? 'out' : step === 'turnBelow' ? 'pass' : 'in', track).reverse()
       points.push(...a)
       if (jog !== null) points.push([track, a.at(-1)![1]], [track, b[0]![1]])

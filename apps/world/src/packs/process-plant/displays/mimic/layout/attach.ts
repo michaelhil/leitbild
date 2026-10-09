@@ -75,16 +75,23 @@ export const attach = (input: {
   // (its short edges jog anyway, and a strand from a bar or hub meets that
   // end straight already).
   const slot = model.nodes.map(node => node.ports.map(() => Number.NaN))
-  const wants = model.nodes.map(node => node.ports.map(() => [] as Array<{ readonly at: number; readonly strand: boolean }>))
+  const wants = model.nodes.map(node => node.ports.map(() => [] as Array<{ readonly at: number; readonly strand: boolean; readonly turn: boolean }>))
   layering.chains.forEach((chain, index) => {
     for (const [position, adjacent] of [[0, 1], [chain.items.length - 1, chain.items.length - 2]] as const) {
       const node = items[chain.items[position]!]!.node!
       const other = chain.items[adjacent]!
       const target = role(other) === 'bar' ? c[node]! : role(other) === 'hub' ? hubFace(items[other]!.node!) : c[other]!
       const far = role(chain.items[position === 0 ? chain.items.length - 1 : 0]!)
-      wants[node]![portAt(index, position)]!.push({ at: target, strand: role(other) === null && far !== 'bar' && far !== 'hub' })
+      const step = chain.steps[position === 0 ? 0 : chain.steps.length - 1]!
+      wants[node]![portAt(index, position)]!.push({ at: target, strand: role(other) === null && far !== 'bar' && far !== 'hub', turn: step !== 'next' && role(other) !== 'hub' })
     }
   })
+  // Pipes that turn over a face nest: from each side, the farther one turns
+  // higher and lands nearer the middle, so its descent stays clear of the
+  // nearer one's run. Those from the left take the face's left end, those
+  // from the right its right end, and straight pipes the middle.
+  const NEST = 1e6
+  const nestKey = (node: number, at: number): number => (at < c[node]! ? -NEST + (c[node]! - at) : NEST - (at - c[node]!))
   for (const node of model.nodes) {
     if (node.role === 'bar' || node.role === 'hub') continue
     const footprint = box[node.index]!
@@ -100,9 +107,13 @@ export const attach = (input: {
         const list = strands.length > 0 ? strands : all
         return list.reduce((sum, want) => sum + want.at, 0) / list.length
       }
-      ports.sort((a, b) => (target(a.index) - target(b.index)) || (a.index - b.index))
+      const turning = (index: number): boolean => wants[node.index]![index]!.every(want => want.turn)
+      const key = (index: number): number => (turning(index) ? nestKey(node.index, target(index)) : target(index))
+      ports.sort((a, b) => (key(a.index) - key(b.index)) || (a.index - b.index))
       if (ports.length > slots.length) throw new Error(`node ${node.id} needs ${ports.length} slots on one face and has ${slots.length}`)
-      assignSlots(ports.map(entry => target(entry.index)), slots).forEach((value, i) => (slot[node.index]![ports[i]!.index] = value))
+      // Turning pipes keep their nested order at the face's ends; straight ones aim at what they connect.
+      const aims = ports.map(entry => (turning(entry.index) ? (key(entry.index) < 0 ? footprint.c0 : footprint.c1) : target(entry.index)))
+      assignSlots(aims, slots).forEach((value, i) => (slot[node.index]![ports[i]!.index] = value))
     }
   }
 

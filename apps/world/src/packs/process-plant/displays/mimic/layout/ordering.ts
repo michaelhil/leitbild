@@ -269,26 +269,33 @@ const transpose = (model: Model, layering: Layering, layers: number[][], block: 
   const strandMoves = (): boolean => {
     let improved = false
     for (const dummies of units) {
-      const before = dummies.map(item => layers[items[item]!.layer]!.indexOf(item))
+      // Restored whole: moving a unit's items back one by one does not undo moves within one layer.
+      const touched = [...new Set(dummies.map(item => items[item]!.layer))]
+      const before = touched.map(layer => [...layers[layer]!])
+      const restore = (): void => touched.forEach((layer, k) => {
+        layers[layer]!.splice(0, layers[layer]!.length, ...before[k]!)
+        layers[layer]!.forEach((member, index) => (position[member] = index))
+      })
       let best = total()
       let kept: 'front' | 'back' | null = null
-      for (const end of ['front', 'back'] as const) {
-        for (const item of dummies) {
+      // A unit keeps its own order at either end: to the front, its last item moves first.
+      const move = (end: 'front' | 'back'): void => {
+        for (const item of end === 'front' ? [...dummies].reverse() : dummies) {
           const [low, high] = runOf(layers[items[item]!.layer]!, item)
           moveTo(item, end === 'front' ? low : high)
         }
+      }
+      for (const end of ['front', 'back'] as const) {
+        move(end)
         const cost = total()
         if (cost < best) {
           best = cost
           kept = end
         }
-        dummies.forEach((item, k) => moveTo(item, before[k]!))
+        restore()
       }
       if (kept === null) continue
-      for (const item of dummies) {
-        const [low, high] = runOf(layers[items[item]!.layer]!, item)
-        moveTo(item, kept === 'front' ? low : high)
-      }
+      move(kept)
       improved = true
     }
     return improved
