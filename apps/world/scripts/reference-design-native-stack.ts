@@ -27,6 +27,10 @@ export function sundialsConfiguration(config:string){
 /** Declared load paths. Tokens are resolved only by the inspected Darwin
  * image/executable LC_RPATH contract below, never by basename guessing. */
 export function nativeLinkPaths(stdout:string,platform:'darwin'|'linux'){
+ // glibc ldd reports a dependency-free shared object this way too. This is
+ // an empty dependency list, not an unresolved library. The stack verifier
+ // independently requires the executable to actually reach selected IDA.
+ if(platform==='linux'&&stdout.trim()==='statically linked')return []
  const paths:string[]=[]
  for(const line of stdout.split('\n').slice(platform==='darwin'?1:0)){
   const text=line.trim();if(!text)continue

@@ -38,7 +38,7 @@ Run from this directory to use the pinned Rust toolchain:
 cargo test --locked
 cargo clippy --locked --all-targets -- -D warnings
 cargo fmt --all -- --check
-bun test tests/architecture.test.ts
+bun run tests/build-boundary.ts
 ```
 
 The build-boundary check examines Cargo's actual dependency graph. Core tests

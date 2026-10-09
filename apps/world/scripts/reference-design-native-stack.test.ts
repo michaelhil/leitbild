@@ -35,6 +35,12 @@ test('Darwin runpaths use declared loader/executable roots and leave $ORIGIN lit
  expect(darwinRunpath('$ORIGIN','/selected/bin/image','/run/bin/main','/cwd')).toBe('/cwd/$ORIGIN')
  expect(()=>darwinRunpath('@rpath/nested','/image','/main','/cwd')).toThrow('nested')
 })
+test('Linux dependency-free shared objects have an empty closure, not a missing library',()=>{
+ expect(nativeLinkPaths('\tstatically linked\n','linux')).toEqual([])
+ // Only the complete terminal result means empty: never ignore mixed errors.
+ expect(()=>nativeLinkPaths('statically linked\nlibx.so => not found\n','linux')).toThrow('Unresolved')
+ expect(()=>nativeLinkPaths('not a dynamic executable\n','linux')).toThrow('Unresolved')
+})
 test('Linux runtime exemption does not hide system-installed numerical libraries',()=>{
  for(const name of ['libc.so.6','libm.so.6','libstdc++.so.6','libgcc_s.so.1','ld-linux-x86-64.so.2'])
   expect(nativeSystemLibrary('/usr/lib/x86_64-linux-gnu/'+name,'linux')).toBe(true)

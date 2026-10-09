@@ -30,7 +30,7 @@ jobs:
       - run: cargo test --locked
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo fmt --all -- --check
-      - run: bun test tests/architecture.test.ts
+      - run: bun run tests/build-boundary.ts
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 20
