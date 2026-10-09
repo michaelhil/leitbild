@@ -426,6 +426,11 @@ describe('world.process-plant.display.view and sample', () => {
     expect(typeof sample.values[0]!.value).toBe('number')
     expect(rejectionOf(() => ask('world.process-plant.display.sample', { plantId: compiled.id, paths: ['nowhere.value' as VariablePath] }))).toContain('signal path not found')
   })
+
+  test('a guessed Plant id is refused with the live ids, so one call corrects it', () => {
+    expect(rejectionOf(() => ask('world.process-plant.display.sample', { plantId: 'plant:unit-2', paths: ['core.powerMw'] })))
+      .toContain('Process Plant not found: plant:unit-2. Live Plants: plant:composed-display.')
+  })
 })
 
 test('composed display operations are published read-only Capabilities', () => {

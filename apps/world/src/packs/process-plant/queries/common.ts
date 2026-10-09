@@ -43,13 +43,20 @@ export const capabilityTargetNotFound = (message: string): never => {
   return rejectCapabilityTarget(message)
 }
 
+/** How many live Plant ids a not-found rejection names before pointing to the catalogue. */
+const NAMED_PLANT_COUNT = 8
+
 export const requirePlant = (
   plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>,
   plantId: string,
 ): ProcessPlantRuntimeInstance => {
   const plant = plants.get(plantId)
-  if (!plant) return capabilityTargetNotFound(
-    `Process Plant not found: ${plantId}. Discover live Plant identities with world.process-plant.plants.list.`,
-  )
+  if (!plant) {
+    // Naming the live ids lets a guessed id be corrected without another call.
+    const ids = [...plants.keys()].sort()
+    const named = ids.length === 0 ? 'No Process Plant is live.'
+      : `Live Plants: ${ids.slice(0, NAMED_PLANT_COUNT).join(', ')}${ids.length > NAMED_PLANT_COUNT ? ` and ${ids.length - NAMED_PLANT_COUNT} more` : ''}.`
+    return capabilityTargetNotFound(`Process Plant not found: ${plantId}. ${named} Their labels are in world.process-plant.plants.list.`)
+  }
   return plant
 }
