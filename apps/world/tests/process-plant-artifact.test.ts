@@ -60,6 +60,14 @@ describe('selective Plant artifact evidence', () => {
     expect(mermaid).toEqual({ ...full, artifact: 'compiled-graph-mermaid', title: `${plant.graph.title} full component graph`, language: 'mermaid', content: plantGraphToMermaid(plant.graph, { highlightedComponentIds: new Set(plant.graph.components.filter(component => full.components.find(item => item.id === component.id)?.shownOnOverview).map(component => component.id)) }) })
   })
 
+  test('marks as shown on the overview the equipment of the principal circuits the generated overview draws', () => {
+    const full = read({ mode: 'full' }) as ProcessPlantArtifact
+    const shown = new Set(full.components.filter(component => component.shownOnOverview).map(component => String(component.id)))
+    for (const id of ['core', 'pressurizer', 'sgA', 'rcpD', 'turbine', 'condenser', 'mainFeedwaterPumpB']) expect(shown.has(id)).toBe(true)
+    for (const id of ['safetyInjectionPumpA', 'dieselGeneratorA', 'auxFeedwaterPumpMotor', 'containment']) expect(shown.has(id)).toBe(false)
+    expect((full.metadata as { overviewComponentCount: number }).overviewComponentCount).toBe(shown.size)
+  })
+
   test('selects the exact authored component and existing source links without sibling data', () => {
     const full = read({ mode: 'full' }) as ProcessPlantArtifact
     const selected = read({ mode: 'component', componentId: 'core' })

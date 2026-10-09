@@ -7,8 +7,7 @@ import type { CompiledPlantGraph, ComponentId, ProcessPlantDisplayField } from '
 import { plantGraphToMermaid } from '../graph/index.ts'
 import type { ProcessPlantVariableHandle } from '../runtime/variable-table.ts'
 import { processPlantComponentBehaviorSourcePathByKind } from '../runtime/behaviors/index.ts'
-import { compileProcessDisplay } from '../displays/compiler.ts'
-import { resolveProcessPlantDisplayDefinitionForGraph } from '../displays/catalog.ts'
+import { principalCircuits } from '../displays/mimic/principal.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { rejectCapabilityInput } from '../../../simulation/capability-rejection.ts'
 import { capabilityTargetNotFound, requirePlant, plantQuerySchema, processPlantSearchPaginationShape, paginateProcessPlantSearch } from './common.ts'
@@ -205,15 +204,14 @@ const graphView = (graph: CompiledPlantGraph): unknown => ({
 
 const overviewComponentIdsCache = new WeakMap<ProcessPlantRuntimeInstance, ReadonlySet<ComponentId>>()
 
+// The equipment the generated unit overview draws: its principal circuits.
+// A Plant whose energy has no closed circuit has no overview, so nothing is on one.
 const overviewComponentIdsFor = (system: ProcessPlantRuntimeInstance): ReadonlySet<ComponentId> => {
   const existing = overviewComponentIdsCache.get(system)
   if (existing) return existing
-  const ids = new Set<ComponentId>()
-  const display = resolveProcessPlantDisplayDefinitionForGraph('unit-overview', system.plant.graph)
-  const compiled = compileProcessDisplay({ definition: display, graph: system.plant.graph })
-  for (const widget of compiled.widgets) {
-    for (const componentId of widget.source?.componentIds ?? []) ids.add(componentId)
-  }
+  const graph = system.plant.graph
+  const circuits = principalCircuits(graph)
+  const ids = new Set<ComponentId>(circuits.ok ? circuits.scope.components.map(index => graph.components[index]!.id) : [])
   overviewComponentIdsCache.set(system, ids)
   return ids
 }
