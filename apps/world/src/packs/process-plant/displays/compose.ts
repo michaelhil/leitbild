@@ -178,6 +178,8 @@ const matchedWords = (guessed: ReadonlyArray<string>, signalWords: ReadonlyArray
   return [...owner.values()].map(guess => guessed[guess]!)
 }
 
+const letters = (list: ReadonlyArray<string>): number => list.reduce((sum, word) => sum + word.length, 0)
+
 const suggestionsFor = (ref: string, bindings: ReadonlyArray<ProcessSignalBinding>): ReadonlyArray<string> => {
   const guessed = words(ref)
   const target = normalized(ref)
@@ -190,7 +192,8 @@ const suggestionsFor = (ref: string, bindings: ReadonlyArray<ProcessSignalBindin
       const distance = Math.min(...keys.map(key => editDistance(normalized(key), target)))
       return {
         binding,
-        score: matched.length / guessed.length,
+        // Longer guessed words carry more meaning: in RCS-TAVG, tavg outweighs rcs.
+        score: letters(matched) / letters(guessed),
         substantive: matched.some(guess => guess.length >= 2),
         // How much of what the signal is (its label) the guess names: PZR-PRESS is pressurizer pressure, not spray.
         labelCover: label.length === 0 ? 0 : matchedWords(label, guessed).length / label.length,

@@ -112,6 +112,7 @@ describe('world.process-plant.display.compose', () => {
     expect(suggestions('PZR-PRESS')).toStartWith('PT-455 (Pressurizer pressure, MPa)')
     expect(suggestions('dieselGenA.running')).toStartWith('EDG-A-RUN (Diesel running, boolean)')
     expect(suggestions('SG1-LVL')).toStartWith('SG-A-LVL-NR (Steam generator level, percent)')
+    expect(suggestions('RCS-TAVG')).toStartWith('TAVG (Mean primary coolant temperature, degC)')
   })
 
   test('rejects state signals on a trend', () => {
