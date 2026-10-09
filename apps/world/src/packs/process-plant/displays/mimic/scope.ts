@@ -333,13 +333,30 @@ export const resolveMimicScope = (graph: CompiledPlantGraph, intent: MimicIntent
   // stops. Narrowed to loops, flow into a shared hub from the other loops is not
   // part of the question; flow leaving the drawing toward them still is.
   const otherLoop = (link: CompiledProcessLink): boolean => intent.loops !== undefined && loopOf(graph, link) !== undefined && !intent.loops.includes(loopOf(graph, link)!)
+  const stubs = drawingStops(graph, components, drawnLinks, carriers, otherLoop)
+  return { ok: true, scope: { components, links, stubs, carriers: [...carriers].sort(), names } }
+}
+
+/**
+ * Where a drawing of these components and links stops: every other link of
+ * the given carriers at a drawn component, one stub per port circuit and
+ * direction. Flow into the drawing that `ignoreIncoming` names is left out.
+ */
+export const drawingStops = (
+  graph: CompiledPlantGraph,
+  components: ReadonlyArray<number>,
+  drawnLinks: ReadonlySet<number>,
+  carriers: ReadonlySet<string>,
+  ignoreIncoming: (link: CompiledProcessLink) => boolean,
+): ReadonlyArray<MimicStub> => {
+  const drawn = new Set(components)
   const stubsByKey = new Map<string, { component: number; port: string; direction: 'in' | 'out'; links: number[]; others: Array<{ component: number; port: string }> }>()
   for (const component of components) {
     for (const [direction, indexes] of [['out', graph.outgoingLinksByComponent[component]], ['in', graph.incomingLinksByComponent[component]]] as const) {
       for (const index of indexes ?? []) {
         const link = graph.links[index]!
         if (drawnLinks.has(index) || !carriers.has(linkCarrier(link))) continue
-        if (direction === 'in' && otherLoop(link)) continue
+        if (direction === 'in' && ignoreIncoming(link)) continue
         // A link with both ends drawn but left out stops where it leaves, not where it arrives.
         if (direction === 'in' && drawn.has(link.fromComponentIndex)) continue
         const port = String(direction === 'out' ? link.fromPortName : link.toPortName)
@@ -353,10 +370,9 @@ export const resolveMimicScope = (graph: CompiledPlantGraph, intent: MimicIntent
       }
     }
   }
-  const stubs = [...stubsByKey.values()]
+  return [...stubsByKey.values()]
     .map(stub => ({ ...stub, links: sorted(stub.links), others: [...stub.others].sort((left, right) => left.component - right.component || left.port.localeCompare(right.port)) }))
     .sort((left, right) => left.component - right.component || left.port.localeCompare(right.port) || left.direction.localeCompare(right.direction))
-  return { ok: true, scope: { components, links, stubs, carriers: [...carriers].sort(), names } }
 }
 
 const STUB_NAMES = 3
