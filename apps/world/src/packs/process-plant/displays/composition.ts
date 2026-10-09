@@ -42,6 +42,8 @@ export const COMPOSED_READOUTS_MAX_SIGNALS = 6
 export const COMPOSED_DISPLAY_MAX_PANELS = 3
 /** Live values one display samples each second, across its panels. */
 export const COMPOSED_DISPLAY_MAX_SAMPLE_PATHS = 96
+/** The most live values one sample reads: a unit overview's drawing, lead values and alarms. */
+export const PROCESS_DISPLAY_SAMPLE_MAX_PATHS = 256
 export const COMPOSED_DISPLAY_MAX_TRENDS = 1
 
 /** History of numeric signals; the Pack groups them into one strip per measurement. */
@@ -120,6 +122,20 @@ export const composedDisplayStateSchema = z.object({
   if ((state.drawings?.length ?? 0) !== mimics) ctx.addIssue({ code: 'custom', path: ['drawings'], message: `a display with ${mimics} mimic panels stores ${mimics} drawing hashes` })
 })
 export type ComposedDisplayState = z.infer<typeof composedDisplayStateSchema>
+
+/** A unit overview World generates for a Plant; it holds no advice, so it never goes stale against one. */
+export const overviewDisplayStateSchema = z.object({
+  overview: z.object({ plantId: idSchema }).strict(),
+}).strict()
+export type OverviewDisplayState = z.infer<typeof overviewDisplayStateSchema>
+
+/** What an embedded Process Plant display re-opens: an agent's advice, or a Plant's unit overview. */
+export const processDisplayStateSchema = z.union([composedDisplayStateSchema, overviewDisplayStateSchema])
+export type ProcessDisplayState = z.infer<typeof processDisplayStateSchema>
+
+/** The Plant a display state is about. */
+export const processDisplayStatePlantId = (state: ProcessDisplayState): string =>
+  'overview' in state ? state.overview.plantId : state.composition.plantId
 
 // One layout used by the compiler (to size the embedded card) and by the view
 // (to size each panel), so the reserved frame always fits what is drawn.

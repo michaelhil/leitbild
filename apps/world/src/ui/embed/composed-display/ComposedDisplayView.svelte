@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { EmbeddedViewEnvelope } from '@leitbild/contracts'
   import { simulationRunIdSchema } from '../../../core/model/index.ts'
-  import { composedDisplayLayout, composedDisplayStateSchema, composedTrendStripHeights } from '../../../packs/process-plant/displays/composition.ts'
+  import { composedDisplayLayout, composedTrendStripHeights, processDisplayStatePlantId, processDisplayStateSchema } from '../../../packs/process-plant/displays/composition.ts'
   import { simulationClock } from '../../../packs/process-plant/displays/display-text.ts'
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
   import { composedDisplayClient } from './composed-display-client.ts'
@@ -17,8 +17,11 @@
 
   let { envelope }: { envelope: EmbeddedViewEnvelope } = $props()
 
-  const parsed = $derived(composedDisplayStateSchema.parse(JSON.parse(envelope.state)))
-  const composition = $derived(parsed.composition)
+  // An agent's advice, or a unit overview World generates; only advice has a question, a need and an issue time.
+  const parsed = $derived(processDisplayStateSchema.parse(JSON.parse(envelope.state)))
+  const advice = $derived('overview' in parsed ? null : parsed)
+  const plantId = $derived(processDisplayStatePlantId(parsed))
+  const title = $derived(advice?.composition.title ?? envelope.title)
 
   // A sample older than this marks the view stale (polling is 1 Hz).
   const STALE_AFTER_MS = 5_000
@@ -31,10 +34,11 @@
   runOnMount(() => {
     const active = createComposedDisplaySession({
       runId: simulationRunIdSchema.parse(envelope.subject.id),
-      plantId: parsed.composition.plantId,
+      plantId,
       state: envelope.state,
       client: composedDisplayClient,
       onChange: next => { snapshot = next },
+      suspendWhenIdle: advice !== null,
     })
     session = active
     void active.start()
@@ -56,8 +60,10 @@
   })
 
   const view = $derived(snapshot?.view)
-  const now = $derived(Date.parse(snapshot?.latest?.simulationTime ?? view?.simulationTime ?? parsed.issuedAt))
-  const issuedAt = $derived(Date.parse(parsed.issuedAt))
+  const adviceView = $derived(view?.kind === 'advice' ? view : undefined)
+  const issuedAt = $derived(advice === null ? null : Date.parse(advice.issuedAt))
+  const adviceStale = $derived(advice !== null && (snapshot?.resetSinceAdvice === true || adviceView?.modelChanged === true || adviceView?.drawingChanged === true))
+  const now = $derived(Date.parse(snapshot?.latest?.simulationTime ?? view?.simulationTime ?? advice?.issuedAt ?? ''))
   const stale = $derived(snapshot?.phase.kind === 'live'
     && (snapshot.sampleError !== null || (snapshot.lastSampleWallMs !== undefined && wallNow - snapshot.lastSampleWallMs > STALE_AFTER_MS)))
 
@@ -80,25 +86,27 @@
     .sort((left, right) => (left.firstActiveElapsedMs ?? 0) - (right.firstActiveElapsedMs ?? 0))[0])
 </script>
 
-<article class="card" aria-label={`AI-composed view: ${composition.title}`}>
+<article class="card" class:overview={advice === null} aria-label={advice === null ? title : `AI-composed view: ${title}`}>
   <header>
-    <h1 title={composition.title}>{composition.title}</h1>
+    <h1 {title}>{title}</h1>
     <span class={`chip ${stateChip.tone}`}>{stateChip.text}</span>
-    <span class="clock">sim {simulationClock(now)}</span>
+    {#if Number.isFinite(now)}<span class="clock">sim {simulationClock(now)}</span>{/if}
   </header>
-  <!-- Provenance: which unit and which Run the advice is about. -->
-  <p class="unit" title={`${view?.plantLabel ?? composition.plantId}${snapshot?.runTitle === undefined ? '' : ` · Run: ${snapshot.runTitle}`}`}>{view?.plantLabel ?? composition.plantId}{#if snapshot?.runTitle !== undefined}{' · '}Run: {snapshot.runTitle}{/if}</p>
-  <p class="caption" title={`${composition.question} — ${composition.need}`}>
-    <strong>Why this view:</strong> {composition.question} <span class="need">{composition.need}</span>
-  </p>
+  <!-- Provenance: which unit and which Run the view is about. -->
+  <p class="unit" title={`${view?.plantLabel ?? plantId}${snapshot?.runTitle === undefined ? '' : ` · Run: ${snapshot.runTitle}`}`}>{view?.plantLabel ?? plantId}{#if snapshot?.runTitle !== undefined}{' · '}Run: {snapshot.runTitle}{/if}</p>
+  {#if advice !== null}
+    <p class="caption" title={`${advice.composition.question} — ${advice.composition.need}`}>
+      <strong>Why this view:</strong> {advice.composition.question} <span class="need">{advice.composition.need}</span>
+    </p>
+  {/if}
 
-  <!-- One reserved notice line; the most consequential notice wins. -->
-  <p class="banner" class:quiet={!snapshot?.resetSinceAdvice && !view?.modelChanged && !view?.drawingChanged && activeTrip === undefined} class:trip={activeTrip !== undefined && !snapshot?.resetSinceAdvice && !view?.modelChanged && !view?.drawingChanged}>
-    {#if snapshot?.resetSinceAdvice}
+  <!-- One reserved notice line; the most consequential notice wins. Advice can go stale; an overview cannot. -->
+  <p class="banner" class:quiet={!adviceStale && activeTrip === undefined} class:trip={activeTrip !== undefined && !adviceStale}>
+    {#if advice !== null && snapshot?.resetSinceAdvice}
       The Run was reset after this advice. The advice may no longer apply.
-    {:else if view?.modelChanged}
+    {:else if adviceView?.modelChanged}
       The Plant model changed after this advice was composed.
-    {:else if view?.drawingChanged}
+    {:else if adviceView?.drawingChanged}
       The equipment drawing changed after this advice was composed.
     {:else if activeTrip !== undefined && snapshot?.latest !== undefined}
       TRIP · {activeTrip.title} · {alarmAge(snapshot.latest.plantElapsedMs, activeTrip.firstActiveElapsedMs)} ago
@@ -106,7 +114,7 @@
       Updates paused after 15 minutes without interaction. <button type="button" onclick={() => session?.resume()}>Resume</button>
     {:else if snapshot?.phase.kind === 'live' && snapshot.sampleError !== null}
       Showing the last received values. {snapshot.sampleError}
-    {:else if snapshot?.phase.kind === 'live'}
+    {:else if snapshot?.phase.kind === 'live' && issuedAt !== null}
       Advice issued at sim {simulationClock(issuedAt)} · {agoText(now - issuedAt)}
     {/if}
   </p>
@@ -114,7 +122,7 @@
   {#if snapshot === null || snapshot.phase.kind === 'checking' || snapshot.phase.kind === 'starting'}
     <p class="status">Connecting to the Run…</p>
   {:else if snapshot.phase.kind === 'missing'}
-    <p class="status">This Run no longer exists. The advice above referred to it.</p>
+    <p class="status">This Run no longer exists.{advice === null ? '' : ' The advice above referred to it.'}</p>
   {:else if snapshot.phase.kind === 'inactive'}
     <div class="status">
       <p>The Run is not active, so nothing is updating.</p>
@@ -164,7 +172,7 @@
     </div>
   {/if}
 
-  <footer>AI-composed view · thresholds from the Plant's I&amp;C rules · not an operating display</footer>
+  <footer>{advice === null ? 'Generated from the Plant model' : 'AI-composed view'} · thresholds from the Plant's I&amp;C rules · not an operating display</footer>
 </article>
 
 <style>
@@ -188,5 +196,7 @@
   button { font: inherit; font-size: 12px; padding: 1px 10px; border: 1px solid var(--border-outline-color); border-radius: 4px; background: var(--container-section-color); color: var(--element-active-color); cursor: pointer; }
   button:focus-visible { outline: 2px solid var(--border-focus-color); outline-offset: 1px; }
   .panels { display: flex; flex-direction: column; }
+  /* A unit overview fills a window and is larger than it: its panels scroll, and nothing is shrunk. */
+  .overview .panels { flex: 1 1 auto; min-height: 0; overflow: auto; }
   footer { margin-top: auto; font-size: 10.5px; color: var(--element-neutral-color); }
 </style>

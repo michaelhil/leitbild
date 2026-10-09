@@ -12,16 +12,26 @@ export interface RunPresence {
   readonly currentSimulationTime: string
 }
 
-export interface ComposedDisplayViewResult {
-  readonly plantId: string
-  readonly plantLabel: string | null
-  readonly issuedAt: string
-  readonly simulationTime: string
-  readonly modelChanged: boolean
-  /** A mimic draws differently now than when the advice was composed (a newer layout or model semantics). */
-  readonly drawingChanged: boolean
-  readonly display: CompiledComposedDisplay
-}
+export type ComposedDisplayViewResult =
+  | {
+    readonly kind: 'advice'
+    readonly plantId: string
+    readonly plantLabel: string | null
+    readonly issuedAt: string
+    readonly simulationTime: string
+    readonly modelChanged: boolean
+    /** A mimic draws differently now than when the advice was composed (a newer layout or model semantics). */
+    readonly drawingChanged: boolean
+    readonly display: CompiledComposedDisplay
+  }
+  /** A unit overview World generates for the Plant: no advice, so nothing about it goes stale. */
+  | {
+    readonly kind: 'overview'
+    readonly plantId: string
+    readonly plantLabel: string | null
+    readonly simulationTime: string
+    readonly display: CompiledComposedDisplay
+  }
 
 export interface ComposedDisplayAlarm {
   readonly id: string

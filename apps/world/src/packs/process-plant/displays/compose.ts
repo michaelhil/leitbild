@@ -35,9 +35,11 @@ import {
   type ComposedPanelSize,
 } from './composition.ts'
 import { formatQuantity, marginText, nearestThresholdMargin, thresholdName } from './display-text.ts'
-import { compileMimic } from './mimic/compile-mimic.ts'
+import { compileMimic, compileMimicScope } from './mimic/compile-mimic.ts'
 import { MIMIC_MAX_WIDTH } from './mimic/mimic-model.ts'
-import { chatMimicProfile } from './mimic/profiles.ts'
+import { chatMimicProfile, overviewMimicProfile } from './mimic/profiles.ts'
+import { principalCircuits } from './mimic/principal.ts'
+import { overviewKeyValues } from './overview-key-values.ts'
 import type { CompiledMimic } from './mimic/mimic-model.ts'
 import {
   icAlarmRuleIdsForEquipment,
@@ -135,8 +137,8 @@ export const composedPanelPens = (panel: CompiledComposedPanel): ReadonlyArray<C
 export interface CompiledComposedDisplay {
   readonly plantId: string
   readonly title: string
-  readonly question: string
-  readonly need: string
+  /** What an agent composed the display to answer; null for a display World generates itself (the unit overview). */
+  readonly advice: { readonly question: string; readonly need: string } | null
   readonly modelDigest: string
   readonly height: number
   readonly panels: ReadonlyArray<CompiledComposedPanel>
@@ -561,11 +563,52 @@ export const compileComposedDisplay = (
     display: {
       plantId: system.plant.id,
       title: composition.title,
-      question: composition.question,
-      need: composition.need,
+      advice: { question: composition.question, need: composition.need },
       modelDigest: system.plant.modelDigest,
       height: fit.height,
       panels: compiled.map(panel => panel.kind === 'alarms' ? { ...panel, ruleIds } : panel),
+    },
+  }
+}
+
+/** The largest screen a unit overview is drawn for at 1:1; a larger drawing is refused with the size it needs. */
+export const UNIT_OVERVIEW_CANVAS = { maxWidth: 2560, maxHeight: 1440 } as const
+
+/**
+ * The unit overview World generates for a Plant: its lead values (protection
+ * and energy, overview-key-values.ts), its principal circuits drawn by the
+ * overview profile (principal.ts), and the whole Plant's active alarms. Every
+ * part comes from the model; nothing names equipment.
+ */
+export const compileOverviewDisplay = (system: ProcessPlantRuntimeInstance, recordedSeriesIds: ReadonlySet<string>): ComposedDisplayCompileResult => {
+  const issues: ComposedDisplayIssue[] = []
+  const keyValues = overviewKeyValues(system.plant)
+  const readouts = keyValues.length === 0 ? undefined
+    : compilePanel(system, { kind: 'readouts', signals: keyValues.map(path => ({ ref: path, role: 'primary' as const })) }, 0, recordedSeriesIds, issues)
+  const circuits = principalCircuits(system.plant.graph)
+  if (!circuits.ok) return { ok: false, issues: [{ path: 'overview', message: circuits.reason }] }
+  const drawn = compileMimicScope(system.plant, circuits.scope, { profile: overviewMimicProfile, ...UNIT_OVERVIEW_CANVAS })
+  if (!drawn.ok) return { ok: false, issues: drawn.issues.map(issue => ({ path: 'overview', message: issue.message })) }
+  if (issues.length > 0) return { ok: false, issues }
+  const unsized: ReadonlyArray<UnsizedPanel> = [
+    ...(readouts === undefined ? [] : [readouts]),
+    { kind: 'mimic', mimic: drawn.mimic },
+    { kind: 'alarms', scope: 'plant', ruleIds: [] },
+  ]
+  // Nothing in an overview is a trend, so every panel has its natural height.
+  const panels = unsized.map((panel): CompiledComposedPanel => {
+    if (panel.kind === 'trend') throw new Error('a unit overview has no trend')
+    return panel
+  })
+  return {
+    ok: true,
+    display: {
+      plantId: system.plant.id,
+      title: 'Unit overview',
+      advice: null,
+      modelDigest: system.plant.modelDigest,
+      height: fitComposedDisplay(unsized.map(panelShape)).height,
+      panels,
     },
   }
 }

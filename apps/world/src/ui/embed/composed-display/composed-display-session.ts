@@ -61,6 +61,8 @@ export const createComposedDisplaySession = (config: {
   readonly state: string
   readonly client: ComposedDisplayClient
   readonly onChange: (snapshot: ComposedDisplaySnapshot) => void
+  /** Advice stops updating after a quarter of an hour unattended; an operating overview keeps updating. */
+  readonly suspendWhenIdle: boolean
   readonly wallNow?: () => number
 }) => {
   const wallNow = config.wallNow ?? (() => Date.now())
@@ -144,7 +146,7 @@ export const createComposedDisplaySession = (config: {
 
   const poll = async (): Promise<void> => {
     if (closed || snapshot.phase.kind !== 'live') return
-    if (wallNow() - lastInteractionWallMs > IDLE_SUSPEND_MS) { stopPolling(); update({ phase: { kind: 'suspended' } }); return }
+    if (config.suspendWhenIdle && wallNow() - lastInteractionWallMs > IDLE_SUSPEND_MS) { stopPolling(); update({ phase: { kind: 'suspended' } }); return }
     polls += 1
     try {
       if (polls % PRESENCE_EVERY_SAMPLES === 0 && !await checkPresence()) return

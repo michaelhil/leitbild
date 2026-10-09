@@ -11,6 +11,7 @@ const runId = 'run-1' as SimulationRunId
 const at = (offsetMs: number): string => new Date(Date.parse('2026-01-01T09:00:00.000Z') + offsetMs).toISOString()
 
 const view: ComposedDisplayViewResult = {
+  kind: 'advice',
   plantId: 'plant:1',
   plantLabel: 'Unit 1',
   issuedAt: at(0),
@@ -20,8 +21,7 @@ const view: ComposedDisplayViewResult = {
   display: {
     plantId: 'plant:1',
     title: 'Pressure',
-    question: 'Is pressure recovering?',
-    need: 'Decide on spray',
+    advice: { question: 'Is pressure recovering?', need: 'Decide on spray' },
     modelDigest: 'a'.repeat(64),
     panels: [{
       kind: 'trend',
@@ -65,11 +65,12 @@ const fakeClient = (config: {
   return { client, calls }
 }
 
-const session = (client: ComposedDisplayClient, wall = { now: 0 }) => {
+const session = (client: ComposedDisplayClient, wall = { now: 0 }, suspendWhenIdle = true) => {
   const snapshots: ComposedDisplaySnapshot[] = []
   const controller = createComposedDisplaySession({
     runId, plantId: 'plant:1', state: '{}', client,
     onChange: snapshot => { snapshots.push(snapshot) },
+    suspendWhenIdle,
     wallNow: () => wall.now,
   })
   return { controller, last: () => snapshots[snapshots.length - 1]! }
@@ -130,6 +131,18 @@ describe('composed display session', () => {
     expect(calls.filter(call => call === 'sample')).toHaveLength(1)
     controller.resume()
     expect(last().phase.kind).toBe('live')
+    controller.close()
+  })
+
+  test('an operating overview keeps updating however long it is left unattended', async () => {
+    const wall = { now: 0 }
+    const { client, calls } = fakeClient({ presence: { title: 'Run', loaded: true, playback: 'playing', currentSimulationTime: at(0) }, samples: [{ time: at(0), value: 15.4 }, { time: at(1_000), value: 15.5 }] })
+    const { controller, last } = session(client, wall, false)
+    await controller.start({ poll: false })
+    wall.now = IDLE_SUSPEND_MS + 1
+    await controller.poll()
+    expect(last().phase.kind).toBe('live')
+    expect(calls.filter(call => call === 'sample')).toHaveLength(2)
     controller.close()
   })
 })

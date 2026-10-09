@@ -38,7 +38,8 @@
     series: ReadonlyMap<string, ReadonlyArray<TrendPoint>>
     range: ValueDomain | null
     now: number
-    issuedAt: number
+    /** When the advice was given; null for a display World generates itself, which marks no advice. */
+    issuedAt: number | null
     /** Simulation time the Run started, when known; history cannot reach before it. */
     runStartedAt: number | null
     height: number
@@ -144,9 +145,9 @@
 
   // The advice marker's label is hidden when the advice was given just now:
   // the notice line already says so, and the label would sit on the data.
-  const adviceVisible = $derived(issuedAt >= windowStart)
-  const adviceRecent = $derived(now - issuedAt < windowMs * 0.04)
-  const adviceNearLeft = $derived(x(issuedAt) - pad.left < 56)
+  const adviceVisible = $derived(issuedAt !== null && issuedAt >= windowStart)
+  const adviceRecent = $derived(issuedAt !== null && now - issuedAt < windowMs * 0.04)
+  const adviceNearLeft = $derived(issuedAt !== null && x(issuedAt) - pad.left < 56)
 
   const summary = $derived(strip.pens.map(pen => {
     const latest = series.get(String(pen.path))?.at(-1)
@@ -209,12 +210,12 @@
         <line class="control-mark" x1={pad.left + plotWidth} x2={pad.left + plotWidth + 3} y1={y(threshold.value)} y2={y(threshold.value)}><title>{threshold.label} at {formatQuantity(threshold.value, strip.unit)} (control set point)</title></line>
       {/each}
 
-      {#if adviceVisible}
+      {#if adviceVisible && issuedAt !== null}
         <line class="advice" x1={x(issuedAt)} x2={x(issuedAt)} y1={pad.top} y2={pad.top + plotHeight} />
         {#if adviceLabel && !adviceRecent}
           <text class="advice-label" x={adviceNearLeft ? x(issuedAt) + 3 : x(issuedAt) - 3} y={pad.top - 7} text-anchor={adviceNearLeft ? 'start' : 'end'}>{adviceNearLeft ? '◂ advice' : 'advice ▸'}</text>
         {/if}
-      {:else if adviceLabel}
+      {:else if adviceLabel && issuedAt !== null}
         <text class="advice-label" x={pad.left + 3} y={pad.top - 7}>◂ advice given before this window</text>
       {/if}
       <line class="now" x1={pad.left + plotWidth} x2={pad.left + plotWidth} y1={pad.top} y2={pad.top + plotHeight} />

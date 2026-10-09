@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { embeddedViewPublicationSchema } from '@leitbild/contracts'
+import { EMBEDDED_VIEW_MAX_HEIGHT, embeddedViewPublicationSchema } from '@leitbild/contracts'
 import { idSchema, type IsoTimestamp, type ObjectId, type OperationalObject } from '../../../core/model/index.ts'
 import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import { rejectCapabilityInput, rejectCapabilityTarget } from '../../../simulation/capability-rejection.ts'
@@ -8,12 +8,16 @@ import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { processPlantSignalQuality } from '../signals.ts'
 import {
   COMPOSED_DISPLAY_VIEW_TYPE,
-  COMPOSED_DISPLAY_MAX_SAMPLE_PATHS,
+  PROCESS_DISPLAY_SAMPLE_MAX_PATHS,
   composedDisplayCompositionSchema,
   composedDisplayStateSchema,
+  overviewDisplayStateSchema,
+  processDisplayStatePlantId,
+  processDisplayStateSchema,
 } from '../displays/composition.ts'
 import {
   compileComposedDisplay,
+  compileOverviewDisplay,
   composedDisplayShows,
   composedDisplayMargins,
   composedDisplaySignals,
@@ -28,6 +32,7 @@ import { mimicItemId } from '../displays/mimic/bindings.ts'
 
 export const processPlantComposedDisplayQueryKinds = [
   'world.process-plant.display.compose',
+  'world.process-plant.display.overview',
   'world.process-plant.display.view',
   'world.process-plant.display.sample',
 ] as const
@@ -35,15 +40,17 @@ export const processPlantComposedDisplayQueryKinds = [
 // The compose input is validated by the compiler so every issue is reported
 // at once; the capability schema only requires the target Plant.
 export const displayComposeQuerySchema = composedDisplayCompositionSchema
+export const displayOverviewQuerySchema = z.object({
+  plantId: idSchema,
+}).strict()
 export const displayViewQuerySchema = z.object({
   plantId: idSchema,
   state: z.string().min(2),
 }).strict()
-// One sample serves one view; a trend never has more pens than this.
-const SAMPLE_MAX_PATHS = COMPOSED_DISPLAY_MAX_SAMPLE_PATHS
+// One sample serves one view: a unit overview reads the most.
 export const displaySampleQuerySchema = z.object({
   plantId: idSchema,
-  paths: z.array(variablePathSchema).min(1).max(SAMPLE_MAX_PATHS),
+  paths: z.array(variablePathSchema).min(1).max(PROCESS_DISPLAY_SAMPLE_MAX_PATHS),
   alarms: z.boolean().default(false),
 }).strict()
 
@@ -107,18 +114,57 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
     }
   }
 
+  // The asset label distinguishes identical units; null when the Plant has no projected asset.
+  const plantLabelOf = (plantId: string): string | null => config.objects.get(plantId as ObjectId)?.label ?? null
+  const overviewOrRejected = (system: ProcessPlantRuntimeInstance) => {
+    const result = compileOverviewDisplay(system, recordedSeriesIds)
+    if (!result.ok) return rejectCapabilityTarget(`Process Plant ${system.plant.id} has no unit overview: ${result.issues.map(issue => issue.message).join('; ')}`)
+    return result.display
+  }
+
+  if (config.request.capabilityId === 'world.process-plant.display.overview') {
+    const payload = displayOverviewQuerySchema.parse(config.request.input)
+    const system = requirePlant(config.plants, payload.plantId)
+    const display = overviewOrRejected(system)
+    const mimics = display.panels.flatMap(panel => panel.kind === 'mimic' ? [panel.mimic] : [])
+    const now = indexSample(mimics.flatMap(mimic => mimic.paths).map(path => {
+      const snapshot = system.runtime.readVariableSnapshot(path)
+      return { path, value: snapshot.value, quality: processPlantSignalQuality(snapshot).status }
+    }))
+    const label = plantLabelOf(display.plantId)
+    return {
+      plantId: display.plantId,
+      view: embeddedViewPublicationSchema.parse({
+        viewType: COMPOSED_DISPLAY_VIEW_TYPE,
+        title: `${label ?? display.plantId} unit overview`,
+        // A chat card reserves at most this; a window shows the whole overview.
+        height: Math.min(display.height, EMBEDDED_VIEW_MAX_HEIGHT),
+        state: JSON.stringify(overviewDisplayStateSchema.parse({ overview: { plantId: display.plantId } })),
+      }),
+      simulationClock: simulationClock(Date.parse(simulationTime)),
+      shows: composedDisplayShows(display),
+      equipment: mimics.flatMap(mimic => mimic.items
+        .map(item => ({ id: mimicItemId(system.plant.graph, item.binding.item), label: item.binding.label, state: itemLook(item.binding, now).words || 'no state drawn' }))),
+    }
+  }
+
   if (config.request.capabilityId === 'world.process-plant.display.view') {
     const payload = displayViewQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
-    const parsedState = composedDisplayStateSchema.safeParse(JSON.parse(payload.state))
+    const parsedState = processDisplayStateSchema.safeParse(JSON.parse(payload.state))
     if (!parsedState.success) return rejectCapabilityInput(`Unsupported display format: ${parsedState.error.message}`)
     const state = parsedState.data
-    if (state.composition.plantId !== payload.plantId) return rejectCapabilityInput(`Display state targets ${state.composition.plantId}, not ${payload.plantId}`)
+    const statePlantId = processDisplayStatePlantId(state)
+    if (statePlantId !== payload.plantId) return rejectCapabilityInput(`Display state targets ${statePlantId}, not ${payload.plantId}`)
+    if ('overview' in state) {
+      const display = overviewOrRejected(system)
+      return { kind: 'overview', plantId: display.plantId, plantLabel: plantLabelOf(display.plantId), simulationTime, display }
+    }
     const display = compiledOrRejected(system, state.composition, 'view', recordedSeriesIds)
     return {
+      kind: 'advice',
       plantId: display.plantId,
-      // The asset label distinguishes identical units; null when the Plant has no projected asset.
-      plantLabel: config.objects.get(display.plantId as ObjectId)?.label ?? null,
+      plantLabel: plantLabelOf(display.plantId),
       issuedAt: state.issuedAt,
       simulationTime,
       modelChanged: state.modelDigest !== display.modelDigest,
