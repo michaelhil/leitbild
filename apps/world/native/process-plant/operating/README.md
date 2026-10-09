@@ -87,10 +87,13 @@ precursor history and external source. A partial pressure check receives only
 direct coolant deposition; it does not bypass fuel/clad energy storage.
 
 This binary advances **no simulated time**. Actual mechanical/thermal law blocks
-now exist separately; their connected momentum/inventory/PZR chart, initialized
-surfaces, phase events, full feedback Jacobian, stock IDA/KLU integration, real
-actuation/acquisition and Grid remain joins—not hidden fixtures, imposed
-successful outcomes or measured whole-plant throughput.
+now exist. The [connected current-state subset](https://leitbild.app/wiki?path=world%2Fpacks%2Fprocess-plant%2Freference-designs%2Fld-01%2Fmodel%2Foperating-hot-spine.md)
+composes current source, material/history, finite thermal and primary continuity
+equations, with fixed-stock surface initialization and current input directions.
+It is not complete unit `F(t,y,ydot)`: momentum/inventory/PZR composition, phase
+events, stock IDA/KLU integration, real actuation/acquisition and Grid remain
+joins—not hidden fixtures, imposed successful outcomes or measured whole-plant
+throughput.
 SG fluid charts are checked by the preparation helper/tests; the native package
 currently consumes SG metal, not connected SG fluid evolution.
 
@@ -123,16 +126,17 @@ LD01_WIKI_ROOT=/path/to/Leitbild-wiki LD01_IF97_DIRECTORY=/path/to/pinned-IF97 L
 The harness compiles actual current owners, writes a temporary package, runs
 the native real-property test and removes that temporary artifact. It checks
 all 2,710 finite solid/helium/metal calorics, actual contact incidence, reciprocal
-heat and an actual SG correlation/property direction. The initial zero-flow
-surface seeds are **not** solved constraints: their measured defects and the
-nonsteady finite-metal discharge are reported, not silently initialized away.
+heat and an actual SG correlation/property direction. It reports the initial
+zero-flow surface-seed defects and checks the separate fixed-stock surface
+initializer; neither solving massless surfaces nor preserving the nonsteady
+finite-metal discharge establishes a consistent whole-unit initial condition.
 This is no elapsed-time result or production allocation benchmark.
 
 The package's source/heat/temperature values describe one prepared point, not
-mission forcing. A composed residual must recompute event/history heat and its
-directions from the same current nuclear/material trial, recover temperatures
-from owned energies and call these same thermal laws. Prepared cp cannot become
-a constant mission capacity. Actual IF97 thermodynamic first partials are exact;
+mission forcing. `hot_spine` recomputes event/history heat and its directions
+from the same current nuclear/material trial and exposes finite-energy caloric
+constraints using these same thermal laws. Prepared cp cannot become a constant
+mission capacity. Actual IF97 thermodynamic first partials are exact;
 transport/cp/expansion coefficient directions use disclosed local inexact probes.
 
 The owner-approved [energy reduction](https://leitbild.app/wiki?path=world%2Fpacks%2Fprocess-plant%2Freference-designs%2Fengineering%2Fdevelopment%2Fdecisions%2F0012-bounded-low-mach-energy.md)

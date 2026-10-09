@@ -670,6 +670,23 @@ fn film_heat<P: WaterProperties>(
         + s(law.emissivity * SB) * (wall_t.pow(4.) - sat.temperature.pow(4.)))
 }
 
+fn liquid_wall_inputs(
+    pressure: Scalar,
+    bulk_t: Scalar,
+    wall_t: Scalar,
+    mass_flux: Scalar,
+    law: WallLaw,
+) -> Result<()> {
+    positive(pressure)?;
+    positive(bulk_t)?;
+    positive(wall_t)?;
+    mass_flux.finite()?;
+    if !(1e5..=16e6).contains(&pressure.value) || !(0. ..=1.).contains(&law.emissivity) {
+        return Err("hot thermal wet-contact domain");
+    }
+    Ok(())
+}
+
 /// Full selected wet contact. Constitutive endpoint localization is bounded;
 /// it is not a material-surface solve or an integration method. The endpoint
 /// tangent follows the implicit law, not the bisection's iteration history.
@@ -681,15 +698,36 @@ pub fn liquid_wall<P: WaterProperties>(
     mass_flux: Scalar,
     law: WallLaw,
 ) -> Result<WallFlux> {
-    positive(pressure)?;
-    positive(bulk_t)?;
-    positive(wall_t)?;
-    mass_flux.finite()?;
-    if !(1e5..=16e6).contains(&pressure.value) || !(0. ..=1.).contains(&law.emissivity) {
-        return Err("hot thermal wet-contact domain");
-    }
+    liquid_wall_inputs(pressure, bulk_t, wall_t, mass_flux, law)?;
     let sat = props.saturation(pressure)?;
     let bulk = liquid_point(props, pressure, bulk_t, sat)?;
+    liquid_wall_current(props, pressure, bulk_t, wall_t, mass_flux, law, sat, bulk)
+}
+
+/// Sibling composition may supply the SAME current saturation and bulk tuple
+/// already recovered by its fluid chart. This is exact same-call reuse, not a
+/// cache or a constant-property interface. The public wrapper remains the
+/// standalone entry; both consume this one physical law and all its checks.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn liquid_wall_current<P: WaterProperties>(
+    props: &P,
+    pressure: Scalar,
+    bulk_t: Scalar,
+    wall_t: Scalar,
+    mass_flux: Scalar,
+    law: WallLaw,
+    sat: Saturation,
+    bulk: WaterPoint,
+) -> Result<WallFlux> {
+    liquid_wall_inputs(pressure, bulk_t, wall_t, mass_flux, law)?;
+    // Preserve the standalone endpoint identity, including its seed: an exact
+    // saturated bulk consumes that actual endpoint, not a nearby branch call.
+    let bulk =
+        if bulk_t.value == sat.temperature.value && bulk_t.direction == sat.temperature.direction {
+            sat.liquid
+        } else {
+            bulk
+        };
     check_water(bulk)?;
     if bulk_t.value > sat.temperature.value {
         return Err("stable liquid wall recipient required");
@@ -1053,4 +1091,125 @@ pub fn secondary_wall<P: WaterProperties>(
         s(0.)
     };
     (s(area) * (wet * liquid + (s(1.) - wet) * gas)).finite()
+}
+
+#[cfg(test)]
+mod current_port_regression {
+    use super::*;
+    use std::cell::Cell;
+
+    // Synthetic endpoint fixture only; no production property fallback.
+    #[derive(Default)]
+    struct Properties {
+        queries: Cell<usize>,
+    }
+    fn point(p: Scalar, t: Scalar, vapor: bool) -> WaterPoint {
+        WaterPoint {
+            density: s(if vapor { 30. } else { 700. }) + s(1e-7) * p - s(0.5) * (t - s(600.)),
+            viscosity: s(if vapor { 2e-5 } else { 1e-4 }),
+            conductivity: s(if vapor { 0.05 } else { 0.6 }) + s(1e-10) * p,
+            cp: s(if vapor { 2500. } else { 5000. }) + s(1e-6) * p,
+            expansion: s(0.002),
+            enthalpy: s(if vapor { 2.8e6 } else { 1.4e6 })
+                + s(5000.) * (t - s(600.))
+                + s(0.001) * p,
+        }
+    }
+    impl WaterProperties for Properties {
+        fn liquid(&self, p: Scalar, t: Scalar) -> Result<WaterPoint> {
+            self.queries.set(self.queries.get() + 1);
+            Ok(point(p, t, false))
+        }
+        fn vapor(&self, p: Scalar, t: Scalar) -> Result<WaterPoint> {
+            self.queries.set(self.queries.get() + 1);
+            Ok(point(p, t, true))
+        }
+        fn saturation(&self, p: Scalar) -> Result<Saturation> {
+            self.queries.set(self.queries.get() + 1);
+            let temperature = s(600.) + s(1e-6) * (p - s(1e7));
+            Ok(Saturation {
+                temperature,
+                liquid: point(p, temperature, false),
+                vapor: point(p, temperature, true),
+                surface_tension: s(0.025),
+            })
+        }
+        fn saturated_vapor_density(&self, _: Scalar) -> Result<Scalar> {
+            self.queries.set(self.queries.get() + 1);
+            Ok(s(30.))
+        }
+    }
+    fn law() -> WallLaw {
+        WallLaw {
+            diameter_m: 0.02,
+            film: Film::Core,
+            emissivity: 0.3,
+            material: WallMaterial {
+                conductivity: s(15.),
+                density: 8000.,
+                cp: s(500.),
+            },
+        }
+    }
+
+    #[test]
+    fn supplied_current_endpoint_preserves_wrapper_value_and_direction() {
+        let props = Properties::default();
+        let p = Scalar::new(1e7, 1000.);
+        let sat = props.saturation(p).unwrap();
+        let wall = Scalar::new(590., 0.3);
+        let flux = Scalar::new(500., 2.);
+        let expected = liquid_wall(&props, p, sat.temperature, wall, flux, law()).unwrap();
+        // The exact saturated temperature AND seed must replace this deliberately
+        // different tuple with sat.liquid, just as the standalone wrapper does.
+        let different = WaterPoint {
+            density: s(1400.),
+            conductivity: Scalar::new(2., -0.1),
+            cp: s(9000.),
+            ..sat.liquid
+        };
+        let actual = liquid_wall_current(
+            &props,
+            p,
+            sat.temperature,
+            wall,
+            flux,
+            law(),
+            sat,
+            different,
+        )
+        .unwrap();
+        assert_ne!(expected.heat.value, 0.);
+        assert_ne!(expected.heat.direction, 0.);
+        assert_eq!(actual.mode, expected.mode);
+        for (a, b) in [
+            (actual.heat, expected.heat),
+            (actual.vapor_mass, expected.vapor_mass),
+            (actual.liquid_energy, expected.liquid_energy),
+            (actual.vapor_energy, expected.vapor_energy),
+        ] {
+            assert_eq!(
+                [a.value.to_bits(), a.direction.to_bits()],
+                [b.value.to_bits(), b.direction.to_bits()]
+            );
+        }
+    }
+
+    #[test]
+    fn wet_contact_input_refusal_precedes_property_queries() {
+        for (p, bulk, wall, flux, emissivity) in [
+            (-1., 590., 580., 500., 0.3),
+            (2e4, 590., 580., 500., 0.3),
+            (1e7, 0., 580., 500., 0.3),
+            (1e7, 590., 0., 500., 0.3),
+            (1e7, 590., 580., f64::NAN, 0.3),
+            (1e7, 590., 580., 500., 1.1),
+        ] {
+            let props = Properties::default();
+            let mut contact = law();
+            contact.emissivity = emissivity;
+            assert!(liquid_wall(&props, s(p), s(bulk), s(wall), s(flux), contact).is_err());
+            assert_eq!(props.queries.get(), 0);
+        }
+    }
 }

@@ -121,7 +121,7 @@ export async function prepareOperatingHot(wiki: string, if97: string) {
     nativeInput, mapping: mapping.totals, source: { identity: sourceCoefficients.identity,
       neutronReference: source.reference.neutrons, stationaryPrecursors: source.reference.precursors,
       referenceLeakage_per_s: source.referenceLeakage_per_s },
-    energy, fluid, directCoolantPressurePreparation, totalCurrentHeat_W: energy.totalDeposited_W,
+    compiledSource: source, energy, fluid, directCoolantPressurePreparation, totalCurrentHeat_W: energy.totalDeposited_W,
     actualCapturePerFission: energy.referenceFertileCaptures_per_s / energy.referenceFissions_per_s,
     preparedFissileSpentFraction: sum(energy.carriers.map(c => c.spentFissions)) / sum(energy.carriers.map(c => c.originalFissileAtoms)),
     scope: 'Actual current-owner quantitative preparation consumed by native equations, not a stationary hot plant or connected trajectory.' }
@@ -134,7 +134,8 @@ if (import.meta.main) {
     child = Bun.spawn([native], { stdin: new Blob([bytes]), stdout: 'pipe', stderr: 'pipe' }),
     [output, error, status] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
   if (status !== 0) throw Error('Native hot preparation failed: ' + error)
-  const report = { inputSha256: hash(bytes), native: JSON.parse(output), package: packageData }
+  const {compiledSource: _compiledSource, ...reportedPackage}=packageData
+  const report = { inputSha256: hash(bytes), native: JSON.parse(output), package: reportedPackage }
   if (receipt) {
     await Bun.write(receipt, JSON.stringify(report))
     console.log(JSON.stringify({ inputSha256: report.inputSha256, receipt, native: report.native,

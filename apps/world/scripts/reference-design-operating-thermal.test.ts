@@ -58,7 +58,7 @@ test.skipIf(!wiki || !if97)('actual thermal recipients/calorics compile once; co
         env: { ...process.env, LD01_OPERATING_THERMAL_PACKET: path }, stdout: 'pipe', stderr: 'pipe' }),
         [output, error, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
       if (code !== 0) throw Error(error + output)
-      expect(output).toContain('1 passed'); console.log(error.trim())
+      expect(output).toContain('2 passed'); console.log(error.trim())
     } finally { await rm(temporary, { recursive: true, force: true }) }
   }
 }, 20000)

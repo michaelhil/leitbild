@@ -3,7 +3,11 @@ import { fuelAssemblyPositions } from './reference-design-fuel-handling'
 import { compileOperatingMapping, type OperatingMappingInput } from './reference-design-operating-mapping'
 import { prepareOperatingEnergy, type OperatingEnergyCoefficients } from './reference-design-operating-energy'
 import type { DecayHistoryRecord } from './reference-design-decay-history'
-import { compileOperatingSource, evaluateOperatingSource, operatingReferenceFissions, operatingSourceDirection,
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { prepareOperatingHot } from './reference-design-operating-hot'
+import { compileOperatingSource, evaluateOperatingSource, operatingReferenceFissions, operatingSourceDirection, operatingSourceNativeMetadata,
   operatingSourceFreshFuelAtoms, parseOperatingSource, validateOperatingSourceAccepted,
   type OperatingSourceCoefficients, type OperatingSourceConditions, type OperatingSourceConstruction, type OperatingSourceDirection } from './reference-design-operating-source'
 
@@ -60,6 +64,57 @@ const referenceThermo = {
   pressure_Pa: Array(24).fill(15.2e6), boron_ppmEq: Array(24).fill(1000),
 }
 const model = compileOperatingSource(mapping, p, construction, referenceThermo)
+
+test('native metadata exports the existing immutable source, not a recalibration',()=>{
+  const m=operatingSourceNativeMetadata(model)
+  expect(m.regions).toHaveLength(24);expect(m.materials).toHaveLength(386)
+  expect(m.supports).toHaveLength(model.supports.length)
+  expect(m.regions.map(r=>r.rho_base)).toEqual(model.rhoBase)
+  expect(m.supports.map(s=>s.production_reference_per_s)).toEqual(model.productionReference)
+  expect(m.regions.every(r=>Math.abs(sum(r.rod_weights)-1)<1e-14)).toBe(true)
+})
+
+const actualWiki=process.env.LD01_WIKI_ROOT,actualIf97=process.env.LD01_IF97_DIRECTORY,
+  nativeSourceTest=process.env.LD01_OPERATING_SOURCE_TEST
+test.skipIf(!actualWiki||!actualIf97||!nativeSourceTest)('actual current-source native value and direction match the consumed TS owner',async()=>{
+  const hot=await prepareOperatingHot(actualWiki!,actualIf97!),m=hot.compiledSource,
+    current=structuredClone(m.reference.conditions) as MutableConditions,
+    d=Object.fromEntries(Object.entries(current).map(([k,v])=>[k,Array.isArray(v)?v.map(()=>0):0])) as MutableConditions,
+    names={fuelTemperature_K:'fuel_temperature_k',waterDensity_kg_m3:'water_density_kg_m3',boron_ppmEq:'boron_ppm_eq',
+      pressure_Pa:'pressure_pa',moderatorTemperature_K:'moderator_temperature_k',fissileAtoms:'fissile_atoms',
+      xenonAtoms:'xenon_atoms',samariumAtoms:'samarium_atoms',captureLossChange_m2:'capture_loss_change_m2',
+      achievedRodTravel_m:'achieved_rod_travel_m',capsuleAge_s:'capsule_age_s'},
+    snake=(c:OperatingSourceConditions)=>Object.fromEntries(Object.entries(c).map(([k,v])=>[names[k as keyof typeof names],v])),
+    zeroN=m.reference.neutrons.map(()=>0),
+    make=(name:string,c:MutableConditions,direction:MutableConditions,neutrons:number[],dn:number[])=>({name,
+      neutrons,d_neutrons:dn,conditions:snake(c),d_conditions:snake(direction),
+      expected:evaluateOperatingSource(m,neutrons,c),expected_direction:operatingSourceDirection(m,neutrons,c,dn,direction)})
+  const cases=[make('actual prepared reference',structuredClone(current),structuredClone(d),[...m.reference.neutrons],zeroN)]
+  // Finite, nonuniform perturbations exercise every feedback owner together.
+  // These are test excitations, not new plant coefficients or forcing tables.
+  current.fuelTemperature_K.forEach((_,a)=>{current.fuelTemperature_K[a]!+=10+a%7;d.fuelTemperature_K[a]=.3+(a%3)*.1
+    current.fissileAtoms[a]!*=.999;d.fissileAtoms[a]=current.fissileAtoms[a]!*.0001
+    current.xenonAtoms[a]!*=1.03;d.xenonAtoms[a]=current.xenonAtoms[a]!*.001
+    current.samariumAtoms[a]!*=1.02;d.samariumAtoms[a]=current.samariumAtoms[a]!*.002
+    current.captureLossChange_m2[a]=m.construction.referenceNonpoisonCaptureOpacity_m2[a]!*.0002
+    d.captureLossChange_m2[a]=m.construction.referenceNonpoisonCaptureOpacity_m2[a]!*.00001})
+  current.waterDensity_kg_m3.forEach((_,i)=>{current.waterDensity_kg_m3[i]!*=.998;d.waterDensity_kg_m3[i]=.05
+    // Fixed local boron amount at fixed volume: ppm changes inversely withrho.
+    current.boron_ppmEq[i]!/= .998;d.boron_ppmEq[i]=-current.boron_ppmEq[i]!*.05/current.waterDensity_kg_m3[i]!
+    current.pressure_Pa[i]!+=1000;d.pressure_Pa[i]=100
+    current.moderatorTemperature_K[i]!+=.2;d.moderatorTemperature_K[i]=.01})
+  current.achievedRodTravel_m.forEach((_,i)=>{current.achievedRodTravel_m[i]!+=.015+(i%3)*.001;d.achievedRodTravel_m[i]=.0002})
+  current.capsuleAge_s=60;d.capsuleAge_s=1
+  cases.push(make('current coupled feedback and fixed-amount boron',current,d,
+    m.reference.neutrons.map((n,i)=>n*(1+(i%3)*.002)),m.reference.neutrons.map(n=>n*.0001)))
+  const work=await mkdtemp(join(tmpdir(),'ld01-current-source-'))
+  try {
+    const path=join(work,'packet.json');await Bun.write(path,JSON.stringify({metadata:operatingSourceNativeMetadata(m),cases}))
+    const child=Bun.spawn([nativeSourceTest!,'--ignored','--nocapture'],{env:{...process.env,LD01_OPERATING_SOURCE_PACKET:path},stdout:'pipe',stderr:'pipe'}),
+      [out,err,code]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited])
+    if(code!==0)throw Error(err+out);expect(out).toContain('1 passed');console.log(err.trim())
+  } finally {await rm(work,{recursive:true,force:true})}
+},20000)
 type MutableConditions = { [K in keyof OperatingSourceConditions]: OperatingSourceConditions[K] extends readonly number[] ? number[] : number }
 const conditions = (): MutableConditions => structuredClone(model.reference.conditions) as MutableConditions
 const zeroDirection = (): MutableConditions => ({

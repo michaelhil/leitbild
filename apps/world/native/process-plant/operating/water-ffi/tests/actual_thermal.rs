@@ -1,6 +1,7 @@
 //! Opt-in actual owner-package consumption. JSON navigation belongs ONLY to
 //! this test harness; stage equations remain typed, allocation-free native laws.
 //! This evaluates uninitialized surface seeds, not a trajectory or steady plant.
+use leitbild_operating_plant::initialization::{SurfacePolicy, initialize_fuel_surfaces};
 use leitbild_operating_plant::thermal::*;
 use leitbild_operating_water::If97;
 use serde_json::Value;
@@ -337,5 +338,199 @@ fn actual_finite_thermal_package_consumes_maintained_water_and_closes_reciprocal
         "reciprocal_defect_w":total-n(&packet,"source_total_w"),"max_surface_seed_residual_w":max_surface_defect,
         "max_fuel_caloric_relative_defect":max_caloric_relative_defect,"sg_to_secondary_w":sg_to_secondary,
         "evaluation_seconds_including_test_navigation":started.elapsed().as_secs_f64()})
+    );
+}
+
+#[test]
+#[ignore = "requires actual owner-generated LD01_OPERATING_THERMAL_PACKET"]
+fn actual_fixed_stock_surfaces_initialize_with_current_maintained_wall_laws() {
+    let path = std::env::var_os("LD01_OPERATING_THERMAL_PACKET")
+        .expect("actual thermal package is required");
+    let packet: Value = serde_json::from_reader(std::fs::File::open(path).unwrap()).unwrap();
+    let immutable = packet.clone();
+    let bands = a(&packet, "fuel_bands");
+    let water = a(&packet, "water");
+    let helium = a(&packet, "helium");
+    let contacts = a(&packet, "core_contacts");
+    let policy = SurfacePolicy {
+        maximum_residual_w: 1e-3,
+        maximum_correction_k: 1e-6,
+        maximum_iterations: 16,
+        maximum_backtracks: 12,
+    };
+    let props = If97;
+    // These are explicitly CONDITIONAL current-flow boundaries, not a solved
+    // primary expansion/momentum field. The joined operator supplies its own
+    // actual half-face flow mapping. No preparation circulation claim implies
+    // zero expansion flux, and neither test writes this boundary into stocks.
+    for mass_flux in [0., 500.] {
+        let started = std::time::Instant::now();
+        let mut maximum_residual_w = 0_f64;
+        let mut maximum_correction_k = 0_f64;
+        let mut maximum_iterations = 0;
+        let mut wall_evaluations = 0;
+        let mut maximum_seed_temperature_difference_k = 0_f64;
+        let mut helium_rate = 0.;
+        let mut helium_rates = vec![0.; helium.len()];
+        let mut fuel_rate = 0.;
+        let mut water_rate = 0.;
+        for (i, b) in bands.iter().enumerate() {
+            let g = geometry(&b["geometry"]);
+            let temperatures = a(b, "fuel_temperatures_k");
+            let seed = a(b, "surface_seed_k")
+                .iter()
+                .map(|v| v.as_f64().unwrap())
+                .collect::<Vec<_>>();
+            let fixed = FuelTemperatures {
+                inner_mean: s(temperatures[0].as_f64().unwrap()),
+                outer_mean: s(temperatures[1].as_f64().unwrap()),
+                fuel_surface: s(seed[0]),
+                helium: s(n(&helium[idx(b, "helium")], "temperature_k")),
+                clad_inner: s(seed[1]),
+                clad_mean: s(n(b, "clad_temperature_k")),
+                clad_outer: s(seed[2]),
+            };
+            let density = n(b, "clad_mass_kg")
+                / (std::f64::consts::PI
+                    * (g.clad_outer_radius_m.powi(2) - g.clad_inner_radius_m.powi(2))
+                    * g.rod_length_m
+                    * g.rods);
+            let incident = contacts
+                .iter()
+                .filter(|contact| idx(contact, "band") == i)
+                .collect::<Vec<_>>();
+            assert!(!incident.is_empty());
+            let wall = |outer: Scalar| -> Result<Scalar> {
+                let mut heat = s(0.);
+                for contact in &incident {
+                    let w = idx(contact, "water");
+                    let law = WallLaw {
+                        diameter_m: n(contact, "hydraulic_diameter_m"),
+                        film: Film::Core,
+                        emissivity: g.clad_emissivity,
+                        material: core_wall_material(fixed.clad_mean, density)?,
+                    };
+                    let q = liquid_wall(
+                        &props,
+                        s(n(&water[w], "pressure_pa")),
+                        s(n(&water[w], "temperature_k")),
+                        outer,
+                        s(mass_flux),
+                        law,
+                    )?;
+                    assert_eq!(
+                        q.vapor_mass.value, 0.,
+                        "conditional hot initialization must not conceal phase birth"
+                    );
+                    heat = heat + s(n(contact, "area_m2")) * q.heat;
+                }
+                Ok(heat)
+            };
+            let solved =
+                initialize_fuel_surfaces(&g, fixed, [seed[0], seed[1], seed[2]], policy, wall)
+                    .unwrap();
+            let other =
+                initialize_fuel_surfaces(&g, fixed, [750., 630., 590.], policy, wall).unwrap();
+            for (left, right) in [
+                (
+                    solved.temperatures.fuel_surface,
+                    other.temperatures.fuel_surface,
+                ),
+                (
+                    solved.temperatures.clad_inner,
+                    other.temperatures.clad_inner,
+                ),
+                (
+                    solved.temperatures.clad_outer,
+                    other.temperatures.clad_outer,
+                ),
+            ] {
+                maximum_seed_temperature_difference_k =
+                    maximum_seed_temperature_difference_k.max((left.value - right.value).abs());
+            }
+            for (left, right) in [
+                (solved.temperatures.inner_mean, fixed.inner_mean),
+                (solved.temperatures.outer_mean, fixed.outer_mean),
+                (solved.temperatures.helium, fixed.helium),
+                (solved.temperatures.clad_mean, fixed.clad_mean),
+            ] {
+                assert_eq!(left.value.to_bits(), right.value.to_bits());
+                assert_eq!(left.direction, right.direction);
+            }
+            maximum_residual_w = maximum_residual_w.max(
+                solved
+                    .residual_w
+                    .into_iter()
+                    .map(f64::abs)
+                    .fold(0., f64::max),
+            );
+            maximum_correction_k = maximum_correction_k.max(solved.maximum_correction_k);
+            maximum_iterations = maximum_iterations.max(solved.iterations);
+            wall_evaluations += solved.wall_evaluations + other.wall_evaluations;
+            let source = a(b, "source_w");
+            let rates = fuel_heat_rates(
+                &g,
+                solved.temperatures,
+                [
+                    s(source[0].as_f64().unwrap()),
+                    s(source[1].as_f64().unwrap()),
+                ],
+                s(solved.water_heat_w),
+            )
+            .unwrap();
+            near(
+                (rates.fuel_inner + rates.fuel_outer + rates.helium + rates.clad + rates.water)
+                    .value,
+                source[0].as_f64().unwrap() + source[1].as_f64().unwrap(),
+            );
+            helium_rate += rates.helium.value;
+            helium_rates[idx(b, "helium")] += rates.helium.value;
+            fuel_rate += rates.fuel_inner.value + rates.fuel_outer.value;
+            water_rate += rates.water.value;
+        }
+        assert!(maximum_residual_w <= policy.maximum_residual_w);
+        assert!(maximum_correction_k <= policy.maximum_correction_k);
+        assert!(maximum_seed_temperature_difference_k < 1e-7);
+        assert!(
+            helium_rate.abs() > 1.,
+            "consistent massless surfaces are not steady finite helium"
+        );
+        // The common helium owner also pays its existing finite plenum contact.
+        let passive = a(&packet, "passive_stores");
+        for contact in a(&packet, "plenum_contacts") {
+            let he = idx(contact, "helium");
+            let plenum = passive
+                .iter()
+                .find(|p| id(p) == contact["store_id"].as_str().unwrap())
+                .unwrap();
+            helium_rates[he] -= helium_to_plenum(
+                s(n(&helium[he], "temperature_k")),
+                s(n(plenum, "temperature_k")),
+                n(contact, "area_m2"),
+                n(contact, "inner_radius_m"),
+                n(contact, "conduction_factor"),
+            )
+            .unwrap()
+            .value;
+        }
+        let maximum_helium_temperature_rate_k_s = helium_rates
+            .iter()
+            .zip(helium)
+            .map(|(rate, he)| (rate / (1.5 * n(he, "nr_j_k"))).abs())
+            .fold(0., f64::max);
+        eprintln!(
+            "{}",
+            serde_json::json!({"scope":"actual386 fixed-stock massless-surface initialization; conditional current wall flow, not a solved momentum field or trajectory",
+            "conditional_mass_flux_kg_m2_s":mass_flux,"surface_count":3*bands.len(),"maximum_residual_w":maximum_residual_w,
+            "maximum_undamped_correction_k":maximum_correction_k,"maximum_newton_updates":maximum_iterations,
+            "maximum_two_seed_temperature_difference_k":maximum_seed_temperature_difference_k,
+            "wall_evaluations_for_two_seeds":wall_evaluations,"helium_rate_w":helium_rate,"fuel_rate_w":fuel_rate,"water_rate_w":water_rate,
+            "maximum_helium_temperature_rate_k_s_including_plenum":maximum_helium_temperature_rate_k_s,
+            "initialization_seconds_including_two_seeds_and_test_navigation":started.elapsed().as_secs_f64()})
+        );
+    }
+    assert_eq!(
+        packet, immutable,
+        "all finite thermal packet fields and source receipts remain byte-identical"
     );
 }

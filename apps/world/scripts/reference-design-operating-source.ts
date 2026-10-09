@@ -278,6 +278,40 @@ export function evaluateOperatingSource(model: CompiledOperatingSource, neutrons
   return { inputs, carrierFissions_per_s: carrierFissions, exposure_per_m2_s: exposure, poisonCapture_per_s: poisonCapture, rodOverlap: rodNow }
 }
 
+/** Immutable native input boundary for the SAME already-compiled reference.
+ * This does not calibrate a second source or retain a second plant state. */
+export function operatingSourceNativeMetadata(model: CompiledOperatingSource) {
+  const {coefficients:p,reference,construction:c}=model,
+    bounds=(pair:readonly [number,number])=>({minimum:pair[0],maximum:pair[1]}),
+    rodReference=rodResponse(model,reference.conditions.achievedRodTravel_m)
+  return {
+    parameters:{generation_time_s:p.generationTime_s,nu_effective:p.nuEffective,
+      doppler_per_sqrt_k:p.doppler_pcm_sqrtK*1e-5,water_worth:p.waterWorth,
+      boron_per_ppm_eq:p.boron_pcm_ppmEq*1e-5,rod_worth:p.rodWorth,
+      sigma_xe_m2:model.sigmaXe_m2,sigma_sm_m2:model.sigmaSm_m2,
+      capsule_births_per_s:p.capsuleBirths_per_s*p.sourceEquivalentPerNeutron,
+      capsule_decay_per_s:Math.LN2/p.capsuleHalfLife_s,
+      inserted_active_bottom_m:c.absorber.insertedActiveBottom_m,
+      rod_active_length_m:c.absorber.activeLength_m,rod_maximum_travel_m:c.absorber.normalTravel_m,
+      domains:{fuel_temperature_k:bounds(p.fuelDomain_K),moderator_temperature_k:bounds(p.moderatorDomain_K),
+        pressure_pa:bounds(p.pressureDomain_Pa),density_ratio:bounds(p.densityRatioDomain),
+        boron_ppm_eq:bounds(p.boronDomain_ppmEq),fissile_ratio:bounds(p.fissileRatioDomain),
+        reactivity:bounds(p.reactivityDomain),maximum_additional_reference_exposure_s:p.maximumReferenceFissionExposure_s}},
+    regions:model.mapping.regions.map((r,i)=>({rho_base:model.rhoBase[i]!,
+      reference_density_kg_m3:reference.conditions.waterDensity_kg_m3[i]!,
+      reference_boron_ppm_eq:reference.conditions.boron_ppmEq[i]!,reference_rod_overlap:rodReference[i]!,
+      source_weight:model.sourceWeights[i]!,z0_m:r.z0_m,z1_m:r.z1_m,
+      rod_weights:model.rodSectorWeights[r.sector]!.map(w=>w/sum(model.rodSectorWeights[r.sector]!))})),
+    materials:model.mapping.carriers.map((_,a)=>({reference_fissile_atoms:model.fissileReferenceAtoms[a]!,
+      reference_fuel_temperature_k:reference.conditions.fuelTemperature_K[a]!,
+      reference_xenon_atoms:reference.xenonAtoms[a]!,reference_samarium_atoms:reference.samariumAtoms[a]!,
+      reference_nonpoison_capture_opacity_m2:c.referenceNonpoisonCaptureOpacity_m2[a]!})),
+    supports:model.mapping.intersections.map((e,k)=>({region:e.region,material:e.carrier,
+      production_reference_per_s:model.productionReference[k]!,exposure_per_population_s_m2:model.exposurePerPopulation_s_m2[k]!,
+      fuel_importance:e.fuelVolume_m3/model.mapping.regions[e.region]!.fuelVolume_m3})),
+  }
+}
+
 export function operatingSourceDirection(model: CompiledOperatingSource, neutrons: readonly number[], c: OperatingSourceConditions,
   dNeutrons: readonly number[], d: OperatingSourceDirection) {
   const { coefficients: p, mapping, reference } = model, R = mapping.regions.length, A = mapping.carriers.length
