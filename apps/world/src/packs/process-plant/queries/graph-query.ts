@@ -7,6 +7,7 @@ import type { CompiledPlantGraph, ComponentId } from '../graph/index.ts'
 import { plantGraphToMermaid } from '../graph/index.ts'
 import { processPlantComponentBehaviorSourcePathByKind } from '../runtime/behaviors/index.ts'
 import { principalCircuits } from '../displays/mimic/principal.ts'
+import { plantCarriers, plantLoops } from '../displays/mimic/scope.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { rejectCapabilityInput } from '../../../simulation/capability-rejection.ts'
 import { capabilityTargetNotFound, requirePlant, plantQuerySchema, processPlantSearchPaginationShape, paginateProcessPlantSearch } from './common.ts'
@@ -354,6 +355,9 @@ export const answerProcessPlantGraphQuery = (config: {
           componentCount: plant.graph.components.length,
           linkCount: plant.graph.links.length,
           variableCount: plant.graph.variables.length,
+          // What a display can name: the Plant's fluid services and power, and its loops.
+          services: plantCarriers(plant.graph),
+          loops: plantLoops(plant.graph),
           elapsedMs: runtime.elapsedMs(),
         }
       }),

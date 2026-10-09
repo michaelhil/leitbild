@@ -161,11 +161,27 @@ describe('process plant discovery', () => {
       objects: new Map([[plantId, { id: plantId, label: 'Profile Plant' }]]),
     }) as { plants: Array<Record<string, unknown>> }
     expect(response.plants[0]).toMatchObject({ id: plant.id, label: 'Profile Plant', modelRef: plant.modelRef, modelDigest: plant.modelDigest })
-    // Displays are generated from the model; a Plant lists no hand-picked display profiles.
+    // Displays are generated from the model; a Plant lists no hand-picked display profiles,
+    // and says which services and loops a display can name.
     expect(response.plants[0]).not.toHaveProperty('displayProfiles')
+    expect(response.plants[0]!.loops).toEqual(['A', 'B', 'C', 'D'])
+    expect(response.plants[0]!.services).toEqual(expect.arrayContaining(['primaryCoolant', 'feedwater', 'electricalPower']))
     const capability = processPlantCapabilities.find(candidate => candidate.id === 'world.process-plant.plants.list')
     expect(capability).toBeDefined()
     expect(capability!.output.parse(response)).toEqual(response)
+  })
+
+  test('capability descriptions name no equipment, tag or service of a particular Plant', () => {
+    const graph = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:descriptions', loopCount: 6 })).graph
+    const names = new Set([
+      ...graph.components.map(component => String(component.id)),
+      ...graph.signalBindings.flatMap(binding => (binding.tagId === undefined ? [] : [String(binding.tagId)])),
+      ...graph.links.flatMap(link => (link.service === undefined ? [] : [String(link.service)])),
+    ].filter(name => name.length > 3))
+    for (const capability of processPlantCapabilities) {
+      const words = new Set(capability.description.split(/[^A-Za-z0-9-]+/))
+      expect([...names].filter(name => words.has(name)), capability.id).toEqual([])
+    }
   })
 
   test('makes unknown variable identities discoverable caller errors', () => {
