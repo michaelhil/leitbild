@@ -85,11 +85,13 @@ export interface ComponentSemantics {
   readonly embedded: ReadonlyArray<EmbeddedDeviceDeclaration>
   /** Rated flow out of a port, named by the parameter that holds it: the reference for "no flow" on the links it feeds. */
   readonly ratedOutflow: ReadonlyArray<{ readonly port: string; readonly parameter: string }>
+  /** The values an operator reads first on this equipment (a pressurizer's pressure and level), most important first. */
+  readonly keyValues: ReadonlyArray<string>
 }
 
 /** Declares semantics that do not depend on a component's parameters. */
 export const fixedSemantics = (semantics: Partial<ComponentSemantics>): ((parameters: unknown) => ComponentSemantics) => {
-  const resolved: ComponentSemantics = { aspects: [], embedded: [], ratedOutflow: [], ...semantics }
+  const resolved: ComponentSemantics = { aspects: [], embedded: [], ratedOutflow: [], keyValues: [], ...semantics }
   return () => resolved
 }
 
@@ -124,6 +126,7 @@ export interface CompiledComponentSemantics {
   readonly aspects: ReadonlyArray<CompiledStateAspect>
   readonly embedded: ReadonlyArray<CompiledEmbeddedDevice>
   readonly ratedOutflow: ReadonlyArray<{ readonly port: PortName; readonly flowKgPerS: number }>
+  readonly keyValues: ReadonlyArray<VariablePath>
 }
 
 /** Which quantities and units each reading accepts. */

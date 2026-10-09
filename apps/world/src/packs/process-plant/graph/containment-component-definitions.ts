@@ -27,7 +27,7 @@ export const containmentComponentDefinitions: ReadonlyArray<ComponentDefinition>
       ventSetpointMPa: z.number().finite().positive().optional(),
       ventCapacityKgPerS: z.number().finite().nonnegative().optional(),
     }).strict(),
-    semantics: fixedSemantics({ aspects: [aspect('level', { variable: 'sumpLevelPercent', reading: 'value' })], ratedOutflow: [{ port: 'sumpOut', parameter: 'maxSumpOutflowKgPerS' }, { port: 'ventOut', parameter: 'ventCapacityKgPerS' }] }),
+    semantics: fixedSemantics({ keyValues: ['pressureMPa', 'sumpLevelPercent'], aspects: [aspect('level', { variable: 'sumpLevelPercent', reading: 'value' })], ratedOutflow: [{ port: 'sumpOut', parameter: 'maxSumpOutflowKgPerS' }, { port: 'ventOut', parameter: 'ventCapacityKgPerS' }] }),
     variables: [
       variable({ path: 'atmosphereMassKg', label: 'Containment atmosphere mass', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg' }),
       variable({ path: 'airMassKg', label: 'Containment air mass', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg' }),

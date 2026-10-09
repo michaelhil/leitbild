@@ -63,7 +63,7 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       nominalIntermediateRangeCurrentAmps: z.number().finite().positive().optional(),
       minimumNaturalCirculationCoolingFraction: normalized.optional(),
     }),
-    semantics: fixedSemantics({}),
+    semantics: fixedSemantics({ keyValues: ['coolantOutletTemperatureC'] }),
     variables: [
       variable({ path: 'powerMw', label: 'Core fission power', kind: 'state', discipline: 'nuclear', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
       variable({ path: 'fissionPowerMw', label: 'Core fission power diagnostic', kind: 'derived', discipline: 'nuclear', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
@@ -114,7 +114,7 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       initialBoronConcentrationPpm: z.number().finite().nonnegative().optional(),
       collapsedLevelReferenceInventoryFraction: normalized.optional(),
     }),
-    semantics: fixedSemantics({ aspects: [aspect('level', { variable: 'collapsedLiquidLevelPercent', reading: 'value' })] }),
+    semantics: fixedSemantics({ keyValues: ['subcoolingMarginC', 'collapsedLiquidLevelPercent'], aspects: [aspect('level', { variable: 'collapsedLiquidLevelPercent', reading: 'value' })] }),
     variables: [
       variable({ path: 'primaryCoolantInventoryKg', label: 'Primary coolant inventory', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg' }),
       variable({ path: 'primaryCoolantInventoryDeviationKg', label: 'Primary coolant inventory deviation', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'massDelta', unit: 'kg' }),

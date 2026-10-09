@@ -27,7 +27,7 @@ export const pressurizerComponentDefinitions: ReadonlyArray<ComponentDefinition>
       sprayCondensationKgPerKg: z.number().finite().nonnegative().optional(),
       nominalWaterDensityKgPerM3: z.number().finite().positive().optional(),
     }),
-    semantics: fixedSemantics({
+    semantics: fixedSemantics({ keyValues: ['pressureMPa', 'levelPercent'],
       aspects: [aspect('level', { variable: 'levelPercent', reading: 'value' })],
       // The PORV is modelled inside the pressurizer, on its relief outlet. The model solves the relief flow but not the
       // valve's position, so the position reads "not measured" and the valve is judged by what passes it.

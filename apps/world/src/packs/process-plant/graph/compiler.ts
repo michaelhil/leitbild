@@ -230,6 +230,11 @@ const compileComponentSemantics = (
       if (typeof flow !== 'number' || !(flow > 0)) throw new Error(`${context}: rated outflow parameter ${rating.parameter} must be a non-negative number`)
       return [{ port: rating.port as PortName, flowKgPerS: flow }]
     }),
+    keyValues: semantics.keyValues.map(local => {
+      const variable = resolve(local as LocalVariablePath)
+      if (variable.writable) throw new Error(`${context}: key value ${local} is writable`)
+      return variablePathFor(componentId, local as LocalVariablePath)
+    }),
   }
 }
 

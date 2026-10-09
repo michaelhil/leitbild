@@ -21,7 +21,7 @@ export const balanceOfPlantComponentDefinitions: ReadonlyArray<ComponentDefiniti
       maxOutletFlowKgPerS: z.number().finite().nonnegative(),
       thermalTimeConstantS: z.number().finite().positive().optional(),
     }).strict(),
-    semantics: fixedSemantics({ aspects: [aspect('level', { variable: 'levelPercent', reading: 'value' })], ratedOutflow: [{ port: 'outlet', parameter: 'maxOutletFlowKgPerS' }] }),
+    semantics: fixedSemantics({ keyValues: ['levelPercent'], aspects: [aspect('level', { variable: 'levelPercent', reading: 'value' })], ratedOutflow: [{ port: 'outlet', parameter: 'maxOutletFlowKgPerS' }] }),
     variables: [
       variable({ path: 'inventoryKg', label: 'Tank inventory', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg' }),
       variable({ path: 'levelPercent', label: 'Tank level', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', measurand: 'level', quantity: 'ratio', unit: 'percent' }),
@@ -50,7 +50,7 @@ export const balanceOfPlantComponentDefinitions: ReadonlyArray<ComponentDefiniti
       exhaustTemperatureAtFullLoadC: z.number().finite().optional(),
       exhaustTemperatureAtNoLoadC: z.number().finite().optional(),
     }),
-    semantics: fixedSemantics({ aspects: [aspect('running', { variable: 'electricMw', reading: 'aboveZero' })], ratedOutflow: [{ port: 'exhaustSteamOutlet', parameter: 'nominalSteamFlowKgPerS' }] }),
+    semantics: fixedSemantics({ keyValues: ['electricMw'], aspects: [aspect('running', { variable: 'electricMw', reading: 'aboveZero' })], ratedOutflow: [{ port: 'exhaustSteamOutlet', parameter: 'nominalSteamFlowKgPerS' }] }),
     variables: [
       variable({ path: 'electricMw', label: 'Electrical output', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
       variable({ path: 'loadFraction', label: 'Load demand', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'command', measurand: 'load', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
@@ -83,7 +83,7 @@ export const balanceOfPlantComponentDefinitions: ReadonlyArray<ComponentDefiniti
       condenserThermalTimeConstantS: z.number().finite().positive().optional(),
       exhaustCondensationTemperatureC: z.number().finite().optional(),
     }),
-    semantics: fixedSemantics({ aspects: [aspect('level', { variable: 'condensateLevelPercent', reading: 'value' })], ratedOutflow: [{ port: 'condensateOutlet', parameter: 'maxCondensateOutletFlowKgPerS' }, { port: 'coolingWaterOutlet', parameter: 'nominalCoolingWaterFlowKgPerS' }] }),
+    semantics: fixedSemantics({ keyValues: ['condensateLevelPercent', 'backPressurePa'], aspects: [aspect('level', { variable: 'condensateLevelPercent', reading: 'value' })], ratedOutflow: [{ port: 'condensateOutlet', parameter: 'maxCondensateOutletFlowKgPerS' }, { port: 'coolingWaterOutlet', parameter: 'nominalCoolingWaterFlowKgPerS' }] }),
     variables: [
       variable({ path: 'steamFlowKgPerS', label: 'Condenser steam flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'condensateProductionKgPerS', label: 'Condensate production', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),

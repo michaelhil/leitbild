@@ -25,7 +25,7 @@ export const accumulatorComponentDefinitions: ReadonlyArray<ComponentDefinition>
       initialDischargeIsolationOpen: z.boolean().optional(),
       initialTemperatureC: z.number().finite().optional(),
     }).strict(),
-    semantics: fixedSemantics({
+    semantics: fixedSemantics({ keyValues: ['gasPressureMPa'],
       aspects: [aspect('throughput', { variable: 'outletFlowKgPerS', reading: 'flow' })],
       // The discharge isolation valve and the check valve are modelled inside the accumulator, on its outlet.
       embedded: [
