@@ -41,6 +41,8 @@ export interface MimicDrawnItem {
    * is empty unless the valve says something (rows.ts).
    */
   readonly marker: boolean
+  /** The Plant components it stands for, by id (a group's members, a bundled device's host): what opening it shows. */
+  readonly components: ReadonlyArray<string>
 }
 
 export type MimicPipeState =

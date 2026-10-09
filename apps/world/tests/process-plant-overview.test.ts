@@ -125,3 +125,56 @@ describe('the unit overview World generates for a Plant', () => {
       .toThrow(`Display state targets plant:other, not ${system.plant.id}`)
   })
 })
+
+describe('equipment opened from the unit overview', () => {
+  const system = plant()
+  const plants = new Map([[system.plant.id, system]])
+  const ask = (capabilityId: string, input: unknown) => answerProcessPlantQuery({
+    request: { capabilityId, input },
+    plants,
+    objects: new Map(),
+    simulationTime: '2026-10-09T10:00:00.000Z' as IsoTimestamp,
+    recordedSeriesIds: new Set(),
+  })
+  const detailState = (components: ReadonlyArray<string>) => JSON.stringify({ detail: { plantId: system.plant.id, components } })
+
+  test('every drawn item names the components it opens: a group its members, other equipment itself', () => {
+    const result = compileOverviewDisplay(system, new Set(), fullHd)
+    if (!result.ok) throw new Error(result.issues.map(issue => issue.message).join('; '))
+    const panel = result.display.panels.find(candidate => candidate.kind === 'mimic')!
+    if (panel.kind !== 'mimic') throw new Error('expected the mimic')
+    const opens = new Map(panel.mimic.items.map(item => [item.binding.label, item.components]))
+    expect(opens.get('MFW A/B')).toEqual(['mainFeedwaterPumpA', 'mainFeedwaterPumpB'])
+    expect(opens.get('SG B')).toEqual(['sgB'])
+    expect(panel.mimic.items.every(item => item.components.length > 0)).toBe(true)
+  })
+
+  test('opens as what feeds it and where its outflow goes, its own values first and the alarms of what is drawn', () => {
+    expect(() => ask('world.process-plant.display.view', { plantId: system.plant.id, state: detailState(['sgB']) })).toThrow('send its size')
+    const result = ask('world.process-plant.display.view', { plantId: system.plant.id, state: detailState(['sgB']), size: fullHd }) as {
+      kind: string
+      display: CompiledComposedDisplay
+    }
+    expect(result.kind).toBe('detail')
+    expect(result.display.title).toBe('Steam Generator B')
+    expect(result.display.advice).toBeNull()
+    expect(result.display.height).toBeLessThanOrEqual(fullHd.height)
+    expect(result.display.panels.map(panel => panel.kind)).toEqual(['readouts', 'mimic', 'alarms'])
+    const [readouts, mimic, alarms] = result.display.panels
+    if (readouts?.kind !== 'readouts' || mimic?.kind !== 'mimic' || alarms?.kind !== 'alarms') throw new Error('expected readouts, a mimic and alarms')
+    // Its own signals lead, the ones its I&C rules judge first.
+    expect(readouts.pens.every(pen => String(pen.path).startsWith('sgB.'))).toBe(true)
+    expect(readouts.pens[0]!.thresholds.length).toBeGreaterThan(0)
+    // Narrowed to its loop: both sides of the steam generator, the shared headers beyond as stops.
+    const labels = mimic.mimic.items.map(item => item.binding.label)
+    expect(labels).toEqual(expect.arrayContaining(['SG B', 'RCP B', 'FCV B', 'MSIV B']))
+    expect(labels).not.toContain('SG A')
+    expect(mimic.mimic.stubs.map(stub => stub.text)).toContain('to Steam header inlet B')
+    expect(alarms.scope).toBe('related')
+    expect(alarms.ruleIds.length).toBeGreaterThan(0)
+  })
+
+  test('equipment the Plant does not have is refused', () => {
+    expect(() => ask('world.process-plant.display.view', { plantId: system.plant.id, state: detailState(['nope']), size: fullHd })).toThrow(`${system.plant.id} has no component nope`)
+  })
+})

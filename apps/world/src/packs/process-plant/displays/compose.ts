@@ -35,11 +35,12 @@ import {
   type ComposedPanelSize,
 } from './composition.ts'
 import { formatQuantity, marginText, nearestThresholdMargin, thresholdName } from './display-text.ts'
-import { compileMimic, compileMimicScope } from './mimic/compile-mimic.ts'
+import { compileMimic, compileMimicScope, groupLabel, type MimicCompileResult } from './mimic/compile-mimic.ts'
 import { MIMIC_MAX_WIDTH } from './mimic/mimic-model.ts'
 import { chatMimicProfile, overviewMimicProfile } from './mimic/profiles.ts'
 import { principalCircuits } from './mimic/principal.ts'
-import { overviewKeyValues } from './overview-key-values.ts'
+import { equipmentKeyValues, overviewKeyValues } from './overview-key-values.ts'
+import { MIMIC_REACH_LINKS, resolveMimicScope } from './mimic/scope.ts'
 import type { CompiledMimic } from './mimic/mimic-model.ts'
 import {
   icAlarmRuleIdsForEquipment,
@@ -625,69 +626,124 @@ const overviewHeight = (arrangement: OverviewArrangement, readouts: number, mimi
   return layout.overviewFrame + drawing + others + layout.overviewFooter
 }
 
+/** A generated display's drawing for the room a view leaves it. */
+type GeneratedDrawing = (room: { readonly maxWidth: number; readonly maxHeight: number }) => MimicCompileResult
+
+/**
+ * Fits a generated display to its view at 1:1, taking the first that fits:
+ * each drawing in turn (the most it can show first), beside the column of
+ * lead values and alarms (the drawing has the view's height), then stacked
+ * with them (the view's width); then the last drawing as wide as the view and
+ * scrolling down, then at its own size, scrolling both ways. Without a view
+ * (a listing of what it draws) the first drawing is drawn at its own size.
+ */
+const fitGenerated = (
+  view: OverviewView | null,
+  readouts: number,
+  drawings: ReadonlyArray<GeneratedDrawing>,
+): { readonly ok: true; readonly arrangement: OverviewArrangement; readonly mimic: CompiledMimic } | { readonly ok: false; readonly issues: ReadonlyArray<string> } => {
+  const whole = view === null ? [] : (['column', 'stacked'] as const).flatMap(arrangement => {
+    const room = overviewDrawingRoom(view, arrangement, readouts)
+    return room === null ? [] : [{ arrangement, room }]
+  })
+  const last = view === null ? drawings[0]! : drawings.at(-1)!
+  const attempts = [
+    ...drawings.flatMap(draw => whole.map(({ arrangement, room }) => ({ draw, arrangement, room }))),
+    ...(view === null ? [] : [{ draw: last, arrangement: 'stacked' as const, room: { maxWidth: view.width - 2 * composedDisplayLayout.overviewPadding, maxHeight: UNCONSTRAINED } }]),
+    { draw: last, arrangement: 'stacked' as const, room: { maxWidth: UNCONSTRAINED, maxHeight: UNCONSTRAINED } },
+  ]
+  // Unconstrained room draws whatever can be drawn verified, so the last refusal says why nothing can.
+  let refusal: ReadonlyArray<string> = []
+  for (const { draw, arrangement, room } of attempts) {
+    const drawn = draw(room)
+    if (drawn.ok) return { ok: true, arrangement, mimic: drawn.mimic }
+    refusal = drawn.issues.map(issue => issue.message)
+  }
+  return { ok: false, issues: refusal }
+}
+
+/** A display World generates: lead values, a drawing and alarms, sized for its arrangement. */
+const generatedDisplay = (
+  system: ProcessPlantRuntimeInstance,
+  title: string,
+  readouts: UnsizedPanel | undefined,
+  fitted: { readonly arrangement: OverviewArrangement; readonly mimic: CompiledMimic },
+  alarms: (panels: ReadonlyArray<CompiledComposedPanel>) => ComposedAlarmsPanel,
+): CompiledComposedDisplay => {
+  // Nothing generated is a trend, so every panel has its natural height.
+  const shown = [...(readouts === undefined ? [] : [readouts]), { kind: 'mimic' as const, mimic: fitted.mimic }].map((panel): CompiledComposedPanel => {
+    if (panel.kind === 'trend') throw new Error('a generated display has no trend')
+    return panel
+  })
+  const values = readouts?.kind === 'readouts' ? readouts.pens.length : 0
+  return {
+    plantId: system.plant.id,
+    title,
+    advice: null,
+    modelDigest: system.plant.modelDigest,
+    height: overviewHeight(fitted.arrangement, values, fitted.mimic),
+    panels: [...shown, alarms(shown)],
+  }
+}
+
+const leadValues = (
+  system: ProcessPlantRuntimeInstance,
+  paths: ReadonlyArray<VariablePath>,
+  recordedSeriesIds: ReadonlySet<string>,
+  issues: ComposedDisplayIssue[],
+): UnsizedPanel | undefined => paths.length === 0 ? undefined
+  : compilePanel(system, { kind: 'readouts', signals: paths.map(path => ({ ref: path, role: 'primary' as const })) }, 0, recordedSeriesIds, issues)
+
 /**
  * The unit overview World generates for a Plant: its lead values (protection
  * and energy, overview-key-values.ts), its principal circuits drawn by the
  * overview profile (principal.ts), and the whole Plant's active alarms. Every
- * part comes from the model; nothing names equipment.
- *
- * It is drawn for the view it is shown in, at 1:1, taking the first that
- * fits: beside the column of lead values and alarms (the drawing has the
- * view's height), stacked with them (the view's width), then as wide as the
- * view and scrolling down, then at its own size, scrolling both ways. Without
- * a view (a listing of what it draws) it is drawn at its own size.
+ * part comes from the model; nothing names equipment. It is drawn for the
+ * view it is shown in (fitGenerated).
  */
 export const compileOverviewDisplay = (system: ProcessPlantRuntimeInstance, recordedSeriesIds: ReadonlySet<string>, view: OverviewView | null): ComposedDisplayCompileResult => {
   const issues: ComposedDisplayIssue[] = []
-  const keyValues = overviewKeyValues(system.plant)
-  const readouts = keyValues.length === 0 ? undefined
-    : compilePanel(system, { kind: 'readouts', signals: keyValues.map(path => ({ ref: path, role: 'primary' as const })) }, 0, recordedSeriesIds, issues)
+  const readouts = leadValues(system, overviewKeyValues(system.plant), recordedSeriesIds, issues)
   const circuits = principalCircuits(system.plant.graph)
   if (!circuits.ok) return { ok: false, issues: [{ path: 'overview', message: circuits.reason }] }
   if (issues.length > 0) return { ok: false, issues }
   const values = readouts?.kind === 'readouts' ? readouts.pens.length : 0
-  const whole = view === null ? [] : (['column', 'stacked'] as const).flatMap(arrangement => {
-    const room = overviewDrawingRoom(view, arrangement, values)
-    return room === null ? [] : [{ arrangement, room }]
-  })
-  const scrolling = [
-    ...(view === null ? [] : [{ arrangement: 'stacked' as const, room: { maxWidth: view.width - 2 * composedDisplayLayout.overviewPadding, maxHeight: UNCONSTRAINED } }]),
-    { arrangement: 'stacked' as const, room: { maxWidth: UNCONSTRAINED, maxHeight: UNCONSTRAINED } },
-  ]
-  const rooms = [...whole, ...scrolling]
-  // Unconstrained room always draws a verified Plant, so the last refusal says why the Plant cannot be drawn at all.
-  let fitted: { readonly arrangement: OverviewArrangement; readonly mimic: CompiledMimic } | null = null
-  let refusal: ReadonlyArray<ComposedDisplayIssue> = []
-  for (const { arrangement, room } of rooms) {
-    const drawn = compileMimicScope(system.plant, circuits.scope, { profile: overviewMimicProfile, ...room })
-    if (drawn.ok) {
-      fitted = { arrangement, mimic: drawn.mimic }
-      break
-    }
-    refusal = drawn.issues.map(issue => ({ path: 'overview', message: issue.message }))
-  }
-  if (fitted === null) return { ok: false, issues: refusal }
-  const unsized: ReadonlyArray<UnsizedPanel> = [
-    ...(readouts === undefined ? [] : [readouts]),
-    { kind: 'mimic', mimic: fitted.mimic },
-    { kind: 'alarms', scope: 'plant', ruleIds: [] },
-  ]
-  // Nothing in an overview is a trend, so every panel has its natural height.
-  const panels = unsized.map((panel): CompiledComposedPanel => {
-    if (panel.kind === 'trend') throw new Error('a unit overview has no trend')
-    return panel
-  })
-  return {
-    ok: true,
-    display: {
-      plantId: system.plant.id,
-      title: 'Unit overview',
-      advice: null,
-      modelDigest: system.plant.modelDigest,
-      height: overviewHeight(fitted.arrangement, values, fitted.mimic),
-      panels,
-    },
-  }
+  const fitted = fitGenerated(view, values, [room => compileMimicScope(system.plant, circuits.scope, { profile: overviewMimicProfile, ...room })])
+  if (!fitted.ok) return { ok: false, issues: fitted.issues.map(message => ({ path: 'overview', message })) }
+  return { ok: true, display: generatedDisplay(system, 'Unit overview', readouts, fitted, () => ({ kind: 'alarms', scope: 'plant', ruleIds: [] })) }
+}
+
+/**
+ * Equipment opened from a generated display: what feeds it and where its
+ * outflow goes (narrowed to its loop when all of it belongs to one), as far
+ * as the view allows, from the reach a mimic follows down to the next link;
+ * its lead values (equipmentKeyValues); and the alarms related to what is
+ * drawn. Where the drawing stops, its stubs say what lies beyond.
+ */
+export const compileDetailDisplay = (
+  system: ProcessPlantRuntimeInstance,
+  recordedSeriesIds: ReadonlySet<string>,
+  componentIds: ReadonlyArray<string>,
+  view: OverviewView | null,
+): ComposedDisplayCompileResult => {
+  const graph = system.plant.graph
+  const unknown = componentIds.filter(id => graph.componentIndexById.get(id as never) === undefined)
+  if (unknown.length > 0) return { ok: false, issues: [{ path: 'detail', message: `${system.plant.id} has no ${unknown.length === 1 ? 'component' : 'components'} ${unknown.join(', ')}` }] }
+  const components = componentIds.map(id => graph.componentIndexById.get(id as never)!)
+  const issues: ComposedDisplayIssue[] = []
+  const readouts = leadValues(system, equipmentKeyValues(system.plant, components), recordedSeriesIds, issues)
+  if (issues.length > 0) return { ok: false, issues }
+  const loops = [...new Set(components.map(index => graph.components[index]!.metadata?.loopId))]
+  const narrowed = loops.every((loop): loop is string => loop !== undefined) ? { loops } : {}
+  const reaches = Array.from({ length: MIMIC_REACH_LINKS }, (_, step) => MIMIC_REACH_LINKS - step)
+  const values = readouts?.kind === 'readouts' ? readouts.pens.length : 0
+  const scopes = reaches.map(reach => resolveMimicScope(graph, { around: componentIds, ...narrowed, reach }))
+  const unresolved = scopes.find(scope => !scope.ok)
+  if (unresolved !== undefined && !unresolved.ok) return { ok: false, issues: unresolved.issues.map(issue => ({ path: 'detail', message: issue.message })) }
+  const fitted = fitGenerated(view, values, scopes.flatMap(scope => scope.ok ? [(room: Parameters<GeneratedDrawing>[0]) => compileMimicScope(system.plant, scope.scope, { profile: overviewMimicProfile, ...room })] : []))
+  if (!fitted.ok) return { ok: false, issues: fitted.issues.map(message => ({ path: 'detail', message })) }
+  const title = groupLabel(components.map(index => graph.components[index]!.label))
+  return { ok: true, display: generatedDisplay(system, title, readouts, fitted, panels => ({ kind: 'alarms', scope: 'related', ruleIds: relatedRuleIds(system, panels) })) }
 }
 
 const operatorText = { '<': 'below', '<=': 'at or below', '>': 'above', '>=': 'at or above' } as const

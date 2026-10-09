@@ -47,6 +47,8 @@ interface PlannedItem {
   readonly role: DiagramNode['role']
   readonly rank: string
   readonly lane?: DiagramNode['lane']
+  /** The Plant components it stands for: a group's members, or a bundled device's host. */
+  readonly components: ReadonlyArray<number>
 }
 
 const laneOf = (component: CompiledComponent, orders: ReadonlyMap<string, number>): DiagramNode['lane'] | undefined => {
@@ -278,7 +280,7 @@ const plan = (plant: CompiledProcessPlant, scope: MimicScope, profile: MimicProf
     for (const member of group) componentRank.set(member, rank)
     const lane = laneOf(component, loopOrder)
     addItem(
-      { id: nodeOf(index), item: { kind: 'component', component: index }, binding, presentation, rows: itemRows(group.length === 1 ? binding : bindings[0]!, presentation, { marker, members: group.length === 1 ? [] : bindings, commands: profile.commands }), marker, role, rank, ...(lane === undefined ? {} : { lane }) },
+      { id: nodeOf(index), item: { kind: 'component', component: index }, binding, presentation, rows: itemRows(group.length === 1 ? binding : bindings[0]!, presentation, { marker, members: group.length === 1 ? [] : bindings, commands: profile.commands }), marker, role, rank, ...(lane === undefined ? {} : { lane }), components: group },
       ports.map(port => ({ id: port, direction: portDirection(component, port), rank: port })),
     )
   }
@@ -316,7 +318,7 @@ const plan = (plant: CompiledProcessPlant, scope: MimicScope, profile: MimicProf
           const lane = laneOf(host, loopOrder)
           const marker = profile.valves === 'markers' && isValve(presentation)
           addItem(
-            { id, item: { kind: 'device', component: host.index, device: device.id }, binding, presentation, rows: itemRows(binding, presentation, { marker, members: [], commands: profile.commands }), marker, role: 'device', rank: `${componentRank.get(host.index)}|${device.id}`, ...(lane === undefined ? {} : { lane }) },
+            { id, item: { kind: 'device', component: host.index, device: device.id }, binding, presentation, rows: itemRows(binding, presentation, { marker, members: [], commands: profile.commands }), marker, role: 'device', rank: `${componentRank.get(host.index)}|${device.id}`, ...(lane === undefined ? {} : { lane }), components: [host.index] },
             [{ id: 'in', direction: 'in', rank: 'in' }, { id: 'out', direction: 'out', rank: 'out' }],
           )
         }
@@ -408,6 +410,7 @@ const assemble = (plant: CompiledProcessPlant, intent: MimicIntent | null, profi
       frame: node.frame,
       rows: item.rows.slice(0, Math.max(0, (node.text?.lines ?? tagLines) - tagLines)),
       marker: item.marker,
+      components: item.components.map(component => String(graph.components[component]!.id)),
     }
   })
   const linkOf = (edgeId: string) => planned.edgeLinks.get(edgeId)!

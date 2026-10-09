@@ -131,13 +131,29 @@ export const overviewDisplayStateSchema = z.object({
 }).strict()
 export type OverviewDisplayState = z.infer<typeof overviewDisplayStateSchema>
 
-/** What an embedded Process Plant display re-opens: an agent's advice, or a Plant's unit overview. */
-export const processDisplayStateSchema = z.union([composedDisplayStateSchema, overviewDisplayStateSchema])
+/** The most components one detail opens: a drawn symbol stands for one, or for a group of parallel equipment. */
+export const PROCESS_DISPLAY_DETAIL_MAX_COMPONENTS = 8
+
+/**
+ * Equipment opened from a generated display: World draws what feeds it and
+ * where its outflow goes, its lead values and its alarms. Like the overview,
+ * it holds no advice.
+ */
+export const detailDisplayStateSchema = z.object({
+  detail: z.object({
+    plantId: idSchema,
+    components: z.array(idSchema).min(1).max(PROCESS_DISPLAY_DETAIL_MAX_COMPONENTS),
+  }).strict(),
+}).strict()
+export type DetailDisplayState = z.infer<typeof detailDisplayStateSchema>
+
+/** What an embedded Process Plant display re-opens: an agent's advice, a Plant's unit overview, or equipment opened from it. */
+export const processDisplayStateSchema = z.union([composedDisplayStateSchema, overviewDisplayStateSchema, detailDisplayStateSchema])
 export type ProcessDisplayState = z.infer<typeof processDisplayStateSchema>
 
 /** The Plant a display state is about. */
 export const processDisplayStatePlantId = (state: ProcessDisplayState): string =>
-  'overview' in state ? state.overview.plantId : state.composition.plantId
+  'overview' in state ? state.overview.plantId : 'detail' in state ? state.detail.plantId : state.composition.plantId
 
 // One layout used by the compiler (to size the embedded card) and by the view
 // (to size each panel), so the reserved frame always fits what is drawn.
