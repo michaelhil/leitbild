@@ -2,12 +2,14 @@
 //
 // Uses a hand-rolled fake ProviderRouter (LLMProvider + getMonitorSnapshot)
 // so we can drive every code path deterministically without booting the
-// gateway/circuit-breaker stack.
+// gateway/circuit-breaker stack. Its failures are the two the real router
+// throws: its own all-failed error (routerFailure) for a bare model id, and
+// the provider's error itself for a provider-pinned ref.
 
 import { describe, expect, test } from 'bun:test'
 import type { ChatRequest, ChatResponse, StreamChunk } from '../core/types/llm.ts'
 import type { MonitorState } from './provider-monitor.ts'
-import type { ProviderAttemptRecord, ProviderRouter } from './router.ts'
+import type { ProviderRouter } from './router.ts'
 import { createCloudProviderError } from './errors.ts'
 import { createLLMService } from './llm-service.ts'
 import { classifyLLMError } from '../agents/error-classify.ts'
@@ -46,15 +48,10 @@ const okChat = async (model: string): Promise<ChatResponse> => ({
   provider: model.split(':')[0] ?? 'unknown',
 })
 
-const routerError = (message: string, attempts: ReadonlyArray<ProviderAttemptRecord>): Error => {
-  const err = createCloudProviderError({
-    code: 'provider_down',
-    provider: 'router',
-    message,
-  })
-  Object.assign(err, { attempts })
-  return err
-}
+// router.ts exhausted(): cause, remedy and the other tried routes are in the
+// message; no structured attempts travel with the error.
+const routerFailure = (message: string): Error =>
+  createCloudProviderError({ code: 'provider_down', provider: 'router', message })
 
 describe('LLMService — continuation route isolation', () => {
   const continuation = { provider: 'openrouter' as const, model: 'qwen/reasoner', endpointHash: 'a'.repeat(64), reasoningDetails: [{ type: 'reasoning.encrypted', data: 'opaque' }] }
@@ -113,7 +110,7 @@ describe('LLMService — chain walk on fallbackable error', () => {
     const router = fakeRouter({
       stream: function (req: ChatRequest) {
         calls.push(req.model)
-        if (req.model === 'primary') {
+        if (req.model === 'gemini:gemini-2.5-flash') {
           return (async function*() {
             throw createCloudProviderError({
               code: 'rate_limit', provider: 'gemini', status: 429,
@@ -132,78 +129,40 @@ describe('LLMService — chain walk on fallbackable error', () => {
     const svc = createLLMService({ router })
     const provider = svc.bound({
       source: 'agent',
-      fallbackChain: ['fallback'],
+      fallbackChain: ['openai:gpt-5.4-mini'],
       onChainSwitch: (preferred, effective) => events.push({ preferred, effective }),
     })
 
     let collected = ''
-    const stream = provider.stream!({ model: 'primary', messages: [] })
+    const stream = provider.stream!({ model: 'gemini:gemini-2.5-flash', messages: [] })
     for await (const chunk of stream) {
       if (chunk.delta) collected += chunk.delta
     }
     expect(collected).toBe('pong')
-    expect(calls).toEqual(['primary', 'fallback'])
-    expect(events).toEqual([{ preferred: 'primary', effective: 'fallback' }])
+    expect(calls).toEqual(['gemini:gemini-2.5-flash', 'openai:gpt-5.4-mini'])
+    expect(events).toEqual([{ preferred: 'gemini:gemini-2.5-flash', effective: 'openai:gpt-5.4-mini' }])
   })
 
-  test('stream uses implicit default chain after transient provider saturation', async () => {
+  test('a configured system chain walks on from the router all-failed error', async () => {
     const events: Array<{ preferred: string; effective: string }> = []
     const calls: string[] = []
     const router = fakeRouter({
-      providerNames: ['openai', 'gemini'],
-      models: ['openai:gpt-5.1', 'gemini:gemini-2.5-flash', 'gemini:gemini-2.5-pro'],
-      stream: function (req: ChatRequest) {
+      chat: async (req) => {
         calls.push(req.model)
-        if (req.model === 'gpt-5.1') {
-          return (async function*() {
-            throw routerError('All providers failed for stream of model gpt-5.1', [
-              { provider: 'gemini', reason: 'does not list gpt-5.1', code: 'not_listed' },
-              { provider: 'openai', reason: 'queue_full', code: 'queue_full' },
-            ])
-            // eslint-disable-next-line no-unreachable
-            yield {} as StreamChunk
-          })()
-        }
-        return (async function*() {
-          yield { delta: 'rescued', done: false }
-          yield { delta: '', done: true, tokensUsed: { prompt: 1, completion: 1 }, provider: 'gemini' }
-        })()
+        if (req.model === 'gpt-5.4') throw routerFailure('gpt-5.4 could not be served. openrouter: LLM gateway queue full — request shed (queue_full; maxConcurrent 1).')
+        return okChat(req.model)
       },
     })
-    const svc = createLLMService({ router })
+    const svc = createLLMService({ router, getSystemChain: () => ['openai:gpt-5.4-mini'] })
     const provider = svc.bound({
       source: 'agent',
       onChainSwitch: (preferred, effective) => events.push({ preferred, effective }),
     })
 
-    let collected = ''
-    const stream = provider.stream!({ model: 'gpt-5.1', messages: [] })
-    for await (const chunk of stream) {
-      if (chunk.delta) collected += chunk.delta
-    }
-
-    expect(collected).toBe('rescued')
-    expect(calls).toEqual(['gpt-5.1', 'gemini-2.5-flash'])
-    expect(events).toEqual([{ preferred: 'gpt-5.1', effective: 'gemini-2.5-flash' }])
-  })
-
-  test('implicit default chain does not hide purely structural model typos', async () => {
-    const calls: string[] = []
-    const router = fakeRouter({
-      providerNames: ['gemini'],
-      models: ['gemini:gemini-2.5-flash'],
-      chat: async (req) => {
-        calls.push(req.model)
-        throw routerError('All providers failed for model gpt-made-up', [
-          { provider: 'gemini', reason: 'does not list gpt-made-up', code: 'not_listed' },
-        ])
-      },
-    })
-    const svc = createLLMService({ router })
-    const provider = svc.bound({ source: 'agent' })
-
-    await expect(provider.chat({ model: 'gpt-made-up', messages: [] })).rejects.toThrow(/gpt-made-up/)
-    expect(calls).toEqual(['gpt-made-up'])
+    const res = await provider.chat({ model: 'gpt-5.4', messages: [] })
+    expect(res.content).toBe('from:openai:gpt-5.4-mini')
+    expect(calls).toEqual(['gpt-5.4', 'openai:gpt-5.4-mini'])
+    expect(events).toEqual([{ preferred: 'gpt-5.4', effective: 'openai:gpt-5.4-mini' }])
   })
 })
 
@@ -214,7 +173,7 @@ describe('LLMService — bare network retry', () => {
     const router = fakeRouter({
       chat: async (req) => {
         calls.push(req.model)
-        if (req.model === 'primary' && primaryFails > 0) {
+        if (req.model === 'gemini:gemini-2.5-flash' && primaryFails > 0) {
           primaryFails--
           throw new Error('socket hang up: ECONNRESET')
         }
@@ -223,13 +182,13 @@ describe('LLMService — bare network retry', () => {
     })
     const svc = createLLMService({
       router,
-      getSystemChain: () => ['fallback'],
+      getSystemChain: () => ['openai:gpt-5.4-mini'],
     })
     const provider = svc.bound({ source: 'agent' })
-    const res = await provider.chat({ model: 'primary', messages: [] })
+    const res = await provider.chat({ model: 'gemini:gemini-2.5-flash', messages: [] })
     // Two attempts on primary (retry), no advance to chain[0].
-    expect(calls).toEqual(['primary', 'primary'])
-    expect(res.content).toContain('primary')
+    expect(calls).toEqual(['gemini:gemini-2.5-flash', 'gemini:gemini-2.5-flash'])
+    expect(res.content).toContain('gemini:gemini-2.5-flash')
   })
 })
 
@@ -259,17 +218,40 @@ describe('LLMService — provider auth isolation', () => {
   })
 })
 
-describe('LLMService — failure reported to the agent', () => {
-  // ProviderRouter errors carry cause and remedy in their message and no
-  // attempts[]; the service must neither hide their classification nor add
-  // a remedy it has no evidence for.
-  for (const streaming of [false, true]) test(`${streaming ? 'stream' : 'chat'} keeps a router failure's classification and adds no invented remedy`, async () => {
-    const routed = createCloudProviderError({ code: 'provider_down', provider: 'router', message: 'gpt-5.4 could not be served. openrouter: shed.' })
-    const router = fakeRouter({ chat: async () => { throw routed }, stream: async function*() { throw routed } })
-    const provider = createLLMService({ router, getSystemChain: () => [] }).bound({ source: 'agent', fallbackChain: [] })
+describe('LLMService — empty chain', () => {
+  // An empty system chain disables cross-provider recovery (Providers panel)
+  // and an empty per-call chain overrides a configured one. Either way a
+  // saturated primary is not answered by another model, even when provider
+  // catalogs list others, and the router's own failure reaches the agent
+  // with its classification, cause and remedy intact.
+  const cases = [
+    { name: 'empty system chain', systemChain: [], bind: {} },
+    { name: 'empty per-call chain', systemChain: ['openai:gpt-5.4-mini'], bind: { fallbackChain: [] } },
+  ] as const
+  for (const c of cases) for (const streaming of [false, true]) test(`${c.name}: ${streaming ? 'stream' : 'chat'} rethrows the router failure without trying another model`, async () => {
+    const calls: string[] = []
+    const switches: string[] = []
+    const routed = routerFailure('gpt-5.4 could not be served. openrouter: LLM gateway queue full — request shed (queue_full; maxConcurrent 1). Retry in a few seconds, or raise the openrouter concurrency limit in the Providers panel.')
+    const fail = (req: ChatRequest): never => {
+      calls.push(req.model)
+      throw routed
+    }
+    const router = fakeRouter({
+      providerNames: ['openrouter', 'gemini'],
+      models: ['openrouter:openai/gpt-5.4', 'gemini:gemini-2.5-flash'],
+      chat: async req => fail(req),
+      stream: async function*(req) { fail(req) },
+    })
+    const provider = createLLMService({ router, getSystemChain: () => c.systemChain }).bound({
+      source: 'agent',
+      ...c.bind,
+      onChainSwitch: (_preferred, effective) => switches.push(effective),
+    })
     const request = { model: 'gpt-5.4', messages: [] }
     const err = await (streaming ? Array.fromAsync(provider.stream!(request)) : provider.chat(request)).then(() => null, (error: unknown) => error)
+    expect(err).toBe(routed)
     expect(classifyLLMError(err)).toEqual({ code: 'provider_down', message: routed.message, providerHint: 'router' })
-    expect((err as { remediation?: string }).remediation).toBe('')
+    expect(calls).toEqual(['gpt-5.4'])
+    expect(switches).toEqual([])
   })
 })

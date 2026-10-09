@@ -641,22 +641,15 @@ export const evaluate = async (
       triggerRoomId,
     })
   } catch (err) {
+    // A routed failure's message already names its cause and remedy
+    // (router.ts allFailedMessage); LLMService rethrows it unchanged.
     const classified = classifyLLMError(err)
-    // LLMService attaches `remediation` to thrown errors derived from the
-    // structured attempts[] array. When present, append to the user-visible
-    // message so the agent's error bubble includes actionable next steps
-    // ("Set a fallback chain in Settings → Providers", etc.) rather than
-    // just the raw upstream string.
-    const remediation = (err as { remediation?: string }).remediation
-    const message = remediation && remediation.length > 0
-      ? `${classified.message}\n\n${remediation}`
-      : classified.message
-    onEvent?.({ kind: 'warning', message })
+    onEvent?.({ kind: 'warning', message: classified.message })
     return makeResult({
       response: {
         action: 'error',
         code: classified.code,
-        message,
+        message: classified.message,
         ...(classified.providerHint ? { providerHint: classified.providerHint } : {}),
       },
       generationMs: totalGenerationMs,
