@@ -17,6 +17,8 @@ requirement of this operating kernel.
   non-overlapping prompt/stored energy budgets.
 - I-135/Xe-135 and Pm-149/Sm-149 inventory equations with direct production and
   actual capture coefficients.
+- Finite capture targets with shared target-loss, product and binding-energy
+  receipts from the same actual exposure, not a fixed ratio to fissions.
 - Exact directional derivatives including constitutive input directions.
   A frozen-input derivative is not the complete coupled plant Jacobian.
 - Additive fixed-input sparse kinetics Jacobian assembly in linear work, without
@@ -34,8 +36,12 @@ caller/engineering owner's responsibility.
 Kinetics inputs include actual material fission conversion, current emission and
 outside fractions, regional gain/source and directed coupling. The same actual
 fission receipts feed energy and poison inventories. Geometry is not production
-physics. The separate TypeScript static fuel-intersection compiler does not yet
-supply moving topology admission, pose derivatives or a calibrated hot operator.
+physics. The TypeScript source/energy/fluid compilers now consume actual wiki
+coefficients, geometry, finite donor/history and caloric/property preparation.
+The strict `prepare_hot` binary evaluates that same package through this kernel.
+This is quantitative hot-reference preparation, not empirical plant calibration.
+The static fuel compiler still does not supply moving topology admission or
+pose derivatives.
 The [state allocation](https://leitbild.app/wiki?path=world%2Fpacks%2Fprocess-plant%2Freference-designs%2Fld-01%2Fmodel%2Foperating-equations.md)
 counts regional populations plus six histories per material carrier (`R+6A`),
 not the first module's replaced `7R` regional inventory. It also records the
@@ -43,7 +49,44 @@ uniform two-metre emission approximation and unqualified physical domains.
 
 There are no default plant coefficients, prescribed successful outcomes,
 water-property approximation, solver wrapper or live Pack installation here.
-The tests use explicit synthetic equation fixtures, not a qualified LD-01.
+Core tests use explicit synthetic equation fixtures; separate opt-in checks
+consume the actual owner-generated package. Neither qualifies a connected LD-01.
+
+## Actual hot preparation
+
+The [hot-reference owner](https://leitbild.app/wiki?path=world%2Fpacks%2Fprocess-plant%2Freference-designs%2Fld-01%2Fmodel%2Foperating-hot-reference.md)
+documents the quantitative source, finite 30-day material history, 26 primary
+water owners and 2,710 finite solid/helium/SG-metal caloric stores. Maintained
+IF97 supplies preparation properties through the existing narrow adapter;
+neither the parent fine crate nor its solver/checkpoint is used.
+
+Build explicitly in this directory, then run the composer from the app root:
+
+```sh
+cargo build --release --locked --bin prepare_hot
+```
+
+```sh
+bun apps/world/scripts/reference-design-operating-hot.ts /path/to/Leitbild-wiki /path/to/pinned-IF97 /path/to/operating/target/release/prepare_hot /path/to/private-receipt.json
+```
+
+The native boundary uses pinned maintained Serde/JSON decoding once during
+preparation, never per stage. It rejects unknown fields, duplicate identities,
+invalid finite donors, missing recipients and inconsistent energy/continuity
+receipts. The source-off stationary comparator is separate from actual finite
+precursor history and external source. A partial pressure check receives only
+direct coolant deposition; it does not bypass fuel/clad energy storage.
+
+This binary advances **no simulated time**. Loop mechanics/work, five split
+resistances, reciprocal heat laws, PZR/phase transitions, full feedback Jacobian,
+stock IDA/KLU integration, real actuation/acquisition and Grid remain joins—not
+hidden fixtures, imposed successful outcomes or measured whole-plant throughput.
+SG fluid charts are checked by the preparation helper/tests; the native package
+currently consumes SG metal, not connected SG fluid evolution.
+
+Native property/package tests are opt-in through `LD01_WIKI_ROOT`,
+`LD01_IF97_DIRECTORY` and `LD01_OPERATING_PREPARATION`. Ordinary Bun/application
+checks do not require a Rust compiler, property installation or native build.
 
 ## Checks
 

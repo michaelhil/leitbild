@@ -4,6 +4,7 @@
 //! solver, prepare a successful plant state, or install the live LD-01 runtime.
 //! Callers own plant coefficients, equipment mappings and constitutive inputs.
 
+pub mod capture;
 pub mod heat_history;
 pub mod kinetics;
 pub mod poisons;

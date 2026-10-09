@@ -30,39 +30,45 @@ use std::fmt;
 
 pub const DELAYED_GROUPS: usize = 6;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReactivityDomain {
     pub minimum: f64,
     pub maximum: f64,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RegionParameters {
     pub generation_time_s: f64,
     pub reactivity_domain: ReactivityDomain,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MaterialParameters {
     /// Equivalent delayed-neutron births per achieved fission, NOT beta alone.
     pub delayed_yields_per_fission: [f64; DELAYED_GROUPS],
     pub decay_constants_per_s: [f64; DELAYED_GROUPS],
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Transfer {
     pub donor: usize,
     pub receiver: usize,
 }
 
 /// Reachable support; currently zero overlap retains its identity.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Support {
     pub region: usize,
     pub material: usize,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RegionInput {
     pub reactivity: f64,
     pub external_source_per_s: f64,
