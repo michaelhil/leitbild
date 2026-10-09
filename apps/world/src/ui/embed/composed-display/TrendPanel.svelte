@@ -51,8 +51,8 @@
   // Several strips share the page; each hatch pattern needs its own id.
   const uid = $props.id()
   const patternId = `no-data-${uid}`
-  // The right gutter fits the longest threshold label, such as "LO TRIP 13.8 (+1)".
-  const pad = $derived({ left: 44, right: 104, top: 18, bottom: timeAxis ? 22 : 0 })
+  // The right gutter fits the longest threshold label, such as "LO TRIP 16.35 (+2)".
+  const pad = $derived({ left: 44, right: 118, top: 18, bottom: timeAxis ? 22 : 0 })
 
   // Trip and alarm thresholds always fit the scale; control set points are
   // marked on the axis only when they fall inside it, to keep the trend quiet.
@@ -226,7 +226,7 @@
   .threshold.alarm { stroke: var(--element-neutral-color); stroke-opacity: 0.7; }
   .threshold.qualified { stroke-dasharray: 5 3; }
   .leader { fill: none; stroke: var(--element-neutral-color); stroke-width: 1; stroke-opacity: 0.7; }
-  .threshold-label { fill: var(--element-neutral-color); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+  .threshold-label { fill: var(--element-neutral-color); font-size: 10px; font-variant-numeric: tabular-nums; }
   /* Colour appears only while the rule behind the line is active, keyed by its severity. */
   .threshold-label.active-critical { fill: var(--alert-alarm-color); font-weight: 700; }
   .threshold-label.active-warning { fill: var(--alert-warning-color); font-weight: 700; }

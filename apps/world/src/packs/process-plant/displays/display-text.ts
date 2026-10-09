@@ -20,6 +20,8 @@ export const displayValue = (value: number, unit: string): number =>
 /** Precision follows magnitude; trend readers compare, they do not audit digits. */
 export const valueDigits = (value: number): number => {
   const magnitude = Math.abs(value)
+  // An exact zero (a closed valve, a stopped flow) reads "0", not "0.000".
+  if (magnitude === 0) return 0
   return magnitude >= 100 ? 0 : magnitude >= 10 ? 1 : magnitude >= 1 ? 2 : 3
 }
 

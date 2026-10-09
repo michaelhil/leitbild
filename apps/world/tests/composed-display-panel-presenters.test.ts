@@ -28,6 +28,7 @@ describe('composed display panel presenters', () => {
     const busLow = { ruleId: 'bus-low', label: 'Bus voltage low', kind: 'alarm', operator: '<', direction: 'low', value: 0.9 } as const
     expect(formatQuantity(1, 'fraction')).toBe('100 %')
     expect(formatQuantity(0.955, 'fraction')).toBe('95.5 %')
+    expect(formatQuantity(0, 'kg/s')).toBe('0 kg/s')
     expect(thresholdName(busLow, 'fraction')).toBe('LO ALM 90 %')
     expect(marginText(nearestThresholdMargin(0.955, [busLow])!, 'fraction')).toBe('LO ALM 90 % · 5.50 above')
     expect(rateText(-0.012, 0.955, 'fraction')).toBe('▼ −1.20 %/min')
