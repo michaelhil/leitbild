@@ -20,3 +20,13 @@ export const roleLabel: Readonly<Record<ComposedDisplaySignalRole, string>> = {
 
 /** What operators call the signal, decided by World: its tag, or its label with its equipment. */
 export const displayName = (pen: { readonly name: string }): string => pen.name
+
+/**
+ * A name shortened from the middle, so the equipment at its end survives:
+ * "Process valve position · Feedwater Control Valve B" → "Process valve… Control Valve B".
+ */
+export const shortName = (name: string, maxLength: number): string => {
+  if (name.length <= maxLength) return name
+  const tail = Math.ceil((maxLength - 1) * 0.55)
+  return `${name.slice(0, maxLength - 1 - tail).trimEnd()}…${name.slice(name.length - tail).trimStart()}`
+}

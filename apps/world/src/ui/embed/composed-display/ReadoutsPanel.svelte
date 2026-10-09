@@ -4,7 +4,7 @@
   import type { ComposedDisplaySample } from './composed-display-client.ts'
   import { displayValue, marginText, nearestThresholdMargin, unitLabel, valueDigits } from '../../../packs/process-plant/displays/display-text.ts'
   import { activeThreshold } from './panel-presenters.ts'
-  import { displayName } from './pen-style.ts'
+  import { displayName, shortName } from './pen-style.ts'
   import AlarmChip from './AlarmChip.svelte'
   import './openbridge.ts'
 
@@ -25,7 +25,7 @@
     {@const margin = typeof value === 'number' ? nearestThresholdMargin(value, pen.thresholds) : null}
     {@const inAlarm = activeThreshold(pen.thresholds, activeRuleIds)}
     <li class:primary={pen.role === 'primary'} title={`${pen.label} · ${pen.role}`}>
-      <span class="name" title={pen.command ? 'operator or automation demand, not a measured state' : pen.label}>{displayName(pen)}{#if pen.command}<span class="demand">demand</span>{/if}{#if inAlarm !== null}&nbsp;<AlarmChip threshold={inAlarm} />{/if}</span>
+      <span class="head" title={`${displayName(pen)}${pen.command ? ' · operator or automation demand, not a measured state' : ` · ${pen.label}`}`}><span class="name">{shortName(displayName(pen), 24)}</span>{#if pen.command}<span class="demand">demand</span>{/if}{#if inAlarm !== null}<AlarmChip threshold={inAlarm} />{/if}</span>
       {#if typeof value === 'boolean'}
         <span class="state">{value ? pen.label : `Not ${pen.label.charAt(0).toLowerCase()}${pen.label.slice(1)}`}</span>
       {:else}
@@ -54,7 +54,8 @@
   .name { font-size: 11.5px; color: var(--element-neutral-color); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* Normal states read as plain text; colour and weight are kept for alarms. */
   .state { font-size: 13.5px; padding: 6px 0; }
-  .demand { margin-left: 5px; padding: 0 4px; border: 1px solid var(--border-outline-color); border-radius: 3px; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .head { display: flex; align-items: center; gap: 5px; min-width: 0; }
+  .demand { flex: none; padding: 0 4px; border: 1px solid var(--border-outline-color); border-radius: 3px; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.04em; }
   .margin { font-size: 11px; color: var(--element-neutral-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .margin.beyond { color: var(--alert-caution-color); font-weight: 600; }
 </style>

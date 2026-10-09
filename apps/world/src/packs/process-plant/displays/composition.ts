@@ -97,8 +97,8 @@ export type ComposedDisplayState = z.infer<typeof composedDisplayStateSchema>
 // One layout used by the compiler (to size the embedded card) and by the view
 // (to size each panel), so the reserved frame always fits what is drawn.
 export const composedDisplayLayout = {
-  /** Header, two-line caption, one reserved notice line, footer, gaps and padding. */
-  frame: 124,
+  /** Header, unit and Run line, two-line caption, one reserved notice line, footer, gaps and padding. */
+  frame: 140,
   /** Above each trend strip: unit and advice labels. */
   trendStripTop: 18,
   /**

@@ -1,6 +1,6 @@
 // Pure derivations for composed-display panels. Thresholds come from World;
 // these functions only relate them to the latest sampled values.
-import { displayValue, formatValue, unitLabel, type ThresholdMargin } from '../../../packs/process-plant/displays/display-text.ts'
+import { displayValue, formatValue, thresholdName, unitLabel, type ThresholdMargin } from '../../../packs/process-plant/displays/display-text.ts'
 import type { ComposedDisplayThreshold } from '../../../packs/process-plant/displays/ic-thresholds.ts'
 import type { ComposedDisplayAlarm } from './composed-display-client.ts'
 import type { TrendPoint } from './trend-geometry.ts'
@@ -99,6 +99,18 @@ export const limitAhead = (
   const moving = rate !== null && !isSteady(rate, value)
   const ahead = moving ? unpassed.filter(candidate => (candidate.threshold.direction === 'low') === (rate < 0)) : unpassed
   return ahead.length === 0 ? null : ahead.reduce((nearest, candidate) => candidate.margin < nearest.margin ? candidate : nearest)
+}
+
+/**
+ * For a value in alarm that is moving back: the time until it is back inside
+ * the active limit ("back above LO ALM 30 % · ≈2 min"); empty otherwise.
+ */
+export const returningText = (value: number, rate: number | null, active: ComposedDisplayThreshold, unit: string): string => {
+  if (rate === null || isSteady(rate, value)) return ''
+  const returning = active.direction === 'low' ? rate > 0 : rate < 0
+  if (!returning) return ''
+  const eta = timeToThresholdText(value, rate, { ...active, direction: active.direction === 'low' ? 'high' : 'low' })
+  return `back ${active.direction === 'low' ? 'above' : 'below'} ${thresholdName(active, unit)}${eta === '' ? '' : ` · ${eta}`}`
 }
 
 /** Whether the value moves away from every limit it has not passed ("no HI limit ahead"). */

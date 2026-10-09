@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { activeThreshold, agoText, alarmAge, limitAhead, median, minutesToThreshold, movingAwayFromLimits, rateChange, ratePerMinute, rateText, rateWindowMs, timeToThresholdText, visibleAlarms } from '../src/ui/embed/composed-display/panel-presenters.ts'
+import { shortName } from '../src/ui/embed/composed-display/pen-style.ts'
+import { activeThreshold, agoText, alarmAge, limitAhead, returningText, median, minutesToThreshold, movingAwayFromLimits, rateChange, ratePerMinute, rateText, rateWindowMs, timeToThresholdText, visibleAlarms } from '../src/ui/embed/composed-display/panel-presenters.ts'
 import { formatQuantity, marginText, nearestThresholdMargin, simulationClock, thresholdName, unitLabel } from '../src/packs/process-plant/displays/display-text.ts'
 import type { ComposedDisplayThreshold } from '../src/packs/process-plant/displays/ic-thresholds.ts'
 import type { ComposedDisplayAlarm } from '../src/ui/embed/composed-display/composed-display-client.ts'
@@ -49,6 +50,18 @@ describe('composed display panel presenters', () => {
     // Steady: the nearest limit either way.
     expect(limitAhead(34.5, 0, thresholds)?.threshold.ruleId).toBe('alarm-low')
     expect(movingAwayFromLimits(34.5, 0, thresholds)).toBeNull()
+  })
+
+  test('a value in alarm that is moving back says when it will be back inside the limit', () => {
+    // SG A N-16 in HI ALM 5 mSv/h and drifting down.
+    const highRadiation = { ruleId: 'n16-high', label: 'Secondary radiation high', kind: 'alarm', operator: '>', direction: 'high', value: 5 } as const
+    expect(returningText(5.4, -0.2, highRadiation, 'mSv/h')).toBe('back below HI ALM 5 mSv/h · ≈2 min')
+    expect(returningText(5.4, 0.2, highRadiation, 'mSv/h')).toBe('')
+  })
+
+  test('long names are shortened from the middle so the equipment survives', () => {
+    expect(shortName('Process valve position · Feedwater Control Valve B', 30)).toBe('Process valve…Control Valve B')
+    expect(shortName('PT-455', 30)).toBe('PT-455')
   })
 
   test('median of parallel signals', () => {
