@@ -7,8 +7,13 @@ import type { ComposedDisplayThreshold } from './ic-thresholds.ts'
 const unitLabels: Readonly<Record<string, string>> = {
   percent: '%',
   degC: '°C',
+  'degC/s': '°C/s',
   // Fractions (speeds, positions, bus voltages) read as percent: 1.00 → 100 %.
   fraction: '%',
+  amps: 'A',
+  volts_dc: 'V DC',
+  m3: 'm³',
+  boolean: '',
 }
 
 export const unitLabel = (unit: string): string => unitLabels[unit] ?? unit

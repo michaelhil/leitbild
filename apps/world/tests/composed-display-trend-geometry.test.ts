@@ -8,6 +8,7 @@ import {
   stepPath,
   tickLabels,
   timeTicks,
+  limitInScale,
   trendWindowMs,
   valueTicks,
 } from '../src/ui/embed/composed-display/trend-geometry.ts'
@@ -17,11 +18,14 @@ describe('composed display trend geometry', () => {
     expect(rawDomain([])).toBeNull()
     expect(paddedDomain({ min: 20, max: 70 })).toEqual({ min: 16, max: 74 })
     const flat = paddedDomain({ min: 15.5, max: 15.5 })
-    expect([flat.min, flat.max].map(value => Number(value.toFixed(2)))).toEqual([15.19, 15.81])
+    expect([flat.min, flat.max].map(value => Number(value.toFixed(2)))).toEqual([15, 16])
     // A 0.6 °C wobble of Tavg at 291 °C spans at least 4 % of the value, not the whole strip.
     const steady = paddedDomain({ min: 291.2, max: 291.8 })
     expect(Number((steady.max - steady.min).toFixed(2))).toBe(11.67)
     expect(paddedDomain({ min: 0, max: 0 })).toEqual({ min: -1, max: 1 })
+    // Near zero a scale still spans one unit: a 5.3 °C subcooling margin is not magnified to 0.2 °C.
+    const margin = paddedDomain({ min: 5.3, max: 5.36 })
+    expect(Number((margin.max - margin.min).toFixed(2))).toBe(1)
   })
 
   test('spans a young Run\'s history, rounded up to 30 s, until it reaches the horizon', () => {
@@ -32,7 +36,15 @@ describe('composed display trend geometry', () => {
     expect(timeTicks(1_000_000, 120_000).map(tick => tick.label)).toEqual(['−2 min', '−90 s', '−1 min', '−30 s', 'now'])
   })
 
-  test('chooses readable value ticks', () => {
+  test('names far limits at the plot edge instead of stretching the scale', () => {
+    expect(limitInScale(450, { min: 1080, max: 1120 })).toBe(false)
+    expect(limitInScale(30, { min: 34, max: 36 })).toBe(true)
+    expect(limitInScale(13.8, { min: 4, max: 15.5 })).toBe(true)
+    expect(limitInScale(450, null)).toBe(true)
+  })
+
+  test('chooses readable value ticks, never a single one', () => {
+    expect(valueTicks({ min: 8.2, max: 10.6 }, 2).length).toBeGreaterThanOrEqual(2)
     expect(valueTicks({ min: 13.6, max: 16.5 })).toEqual([14, 15, 16])
     expect(valueTicks({ min: 16, max: 74 })).toEqual([20, 40, 60])
   })

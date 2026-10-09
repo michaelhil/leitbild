@@ -199,6 +199,7 @@ test('presence reports a cold Run without loading it or holding a lease', async 
     const cold = await callRoute<{ simulationRunId: string; loaded: boolean; execution: { playback: string; currentSimulationTime: string } }>(unleased, runPath(created.id, '/presence'))
     expect(cold.status).toBe(200)
     expect(cold.body).toMatchObject({ simulationRunId: created.id, loaded: false })
+    expect(typeof (cold.body as { title?: unknown }).title).toBe('string')
     expect(typeof cold.body.execution.currentSimulationTime).toBe('string')
     expect(registry.get(created.id)).toBeUndefined()
     await registry.delete(created.id)

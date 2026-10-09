@@ -1,6 +1,6 @@
 // Pure derivations for composed-display panels. Thresholds come from World;
 // these functions only relate them to the latest sampled values.
-import { displayValue, formatValue, unitLabel } from '../../../packs/process-plant/displays/display-text.ts'
+import { displayValue, formatValue, unitLabel, type ThresholdMargin } from '../../../packs/process-plant/displays/display-text.ts'
 import type { ComposedDisplayThreshold } from '../../../packs/process-plant/displays/ic-thresholds.ts'
 import type { ComposedDisplayAlarm } from './composed-display-client.ts'
 import type { TrendPoint } from './trend-geometry.ts'
@@ -82,6 +82,31 @@ export const timeToThresholdText = (value: number, rate: number | null, threshol
   return minutes < 2 ? `≈${Math.max(1, Math.round(minutes * 60))} s` : `≈${Math.round(minutes)} min`
 }
 
+/**
+ * The limit the value is heading for: the nearest alarm or trip threshold not
+ * yet passed in the direction it is moving, or either way while it is steady.
+ * Null when it moves away from every limit it has not passed.
+ */
+export const limitAhead = (
+  value: number,
+  rate: number | null,
+  thresholds: ReadonlyArray<ComposedDisplayThreshold>,
+): ThresholdMargin | null => {
+  const unpassed = thresholds
+    .filter(threshold => threshold.kind !== 'control')
+    .map(threshold => ({ threshold, margin: threshold.direction === 'low' ? value - threshold.value : threshold.value - value }))
+    .filter(candidate => candidate.margin >= 0)
+  const moving = rate !== null && !isSteady(rate, value)
+  const ahead = moving ? unpassed.filter(candidate => (candidate.threshold.direction === 'low') === (rate < 0)) : unpassed
+  return ahead.length === 0 ? null : ahead.reduce((nearest, candidate) => candidate.margin < nearest.margin ? candidate : nearest)
+}
+
+/** Whether the value moves away from every limit it has not passed ("no HI limit ahead"). */
+export const movingAwayFromLimits = (value: number, rate: number | null, thresholds: ReadonlyArray<ComposedDisplayThreshold>): 'rising' | 'falling' | null => {
+  if (rate === null || isSteady(rate, value) || thresholds.every(threshold => threshold.kind === 'control')) return null
+  return limitAhead(value, rate, thresholds) === null ? (rate > 0 ? 'rising' : 'falling') : null
+}
+
 export const agoText = (ms: number): string => {
   const seconds = Math.max(0, Math.round(ms / 1000))
   if (seconds < 60) return `${seconds} s ago`
@@ -107,9 +132,9 @@ export const median = (values: ReadonlyArray<number>): number | null => {
 const severityRank = { critical: 0, warning: 1, notice: 2, info: 3 } as const
 
 /**
- * Alarms in reading order: the first-out alarm, then by onset so the
- * initiating alarm leads its consequences, then severity. "related" keeps only
- * the rules acting on the display.
+ * Alarms in reading order: the first-out alarm, then by severity so trips are
+ * never hidden behind warnings, then by onset. "related" keeps only the rules
+ * acting on the display.
  */
 export const visibleAlarms = (
   alarms: ReadonlyArray<ComposedDisplayAlarm>,
@@ -121,8 +146,8 @@ export const visibleAlarms = (
     .filter(alarm => scope === 'plant' || related.has(alarm.ruleId))
     .sort((left, right) =>
       Number(right.firstOut) - Number(left.firstOut)
-      || (left.firstActiveElapsedMs ?? Number.POSITIVE_INFINITY) - (right.firstActiveElapsedMs ?? Number.POSITIVE_INFINITY)
       || severityRank[left.severity] - severityRank[right.severity]
+      || (left.firstActiveElapsedMs ?? Number.POSITIVE_INFINITY) - (right.firstActiveElapsedMs ?? Number.POSITIVE_INFINITY)
       || left.title.localeCompare(right.title))
 }
 

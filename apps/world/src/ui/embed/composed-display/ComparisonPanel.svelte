@@ -3,7 +3,7 @@
   import { composedDisplayLayout } from '../../../packs/process-plant/displays/composition.ts'
   import type { ComposedDisplaySample } from './composed-display-client.ts'
   import { displayValue, formatQuantity, formatValue, thresholdName } from '../../../packs/process-plant/displays/display-text.ts'
-  import { activeThreshold, median, ratePerMinute, rateText, windowText } from './panel-presenters.ts'
+  import { activeThreshold, median, ratePerMinute, rateText, rateWindowMs, windowText } from './panel-presenters.ts'
   import { displayName } from './pen-style.ts'
   import { paddedDomain, rawDomain, type TrendPoint, type ValueDomain } from './trend-geometry.ts'
 
@@ -47,8 +47,8 @@
     return Math.abs(difference) < 1e-9 ? '' : `${difference > 0 ? '+' : '−'}${formatValue(displayValue(Math.abs(difference), panel.unit))} vs median`
   }
   const lines = $derived(panel.thresholds.filter(threshold => threshold.kind !== 'control'))
-  // Comparisons read the present; a one-minute rate says which loop is moving.
-  const RATE_WINDOW_MS = 60_000
+  // The same 30 s window as a 10-minute trend's legend, so one signal never shows two rates.
+  const RATE_WINDOW_MS = rateWindowMs(600_000)
 </script>
 
 <div class="comparison" bind:clientWidth={width}>
@@ -67,7 +67,7 @@
       {@const value = values[index]}
       {@const y = top + index * row}
       {@const inAlarm = activeThreshold(pen.thresholds, activeRuleIds)}
-      <text class="tag" class:primary={pen.role === 'primary'} x="0" y={y + row / 2} dominant-baseline="middle">{displayName(pen)}<title>{pen.label} · {pen.role}</title></text>
+      <text class="tag" class:primary={pen.role === 'primary'} x="0" y={y + row / 2} dominant-baseline="middle">{displayName(pen)}{pen.command ? ' (demand)' : ''}<title>{pen.label} · {pen.role}{pen.command ? ' · operator or automation demand, not a measured state' : ''}</title></text>
       <line class="track" x1={scaleStart} x2={scaleStart + scaleWidth} y1={y + row / 2} y2={y + row / 2} />
       {#if value !== undefined && domain !== null}
         <path class="pointer" class:primary={pen.role === 'primary'} class:alarm={inAlarm !== null} d={`M${x(value)} ${y + 4} l5 ${row / 2 - 4} l-5 ${row / 2 - 4} l-5 ${-(row / 2 - 4)} z`} />

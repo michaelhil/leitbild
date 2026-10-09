@@ -136,7 +136,7 @@ const handleSimulationRunApiInner = async (
       return apiError(404, 'simulation_run_not_found', summary.loadError ?? 'simulation run not found')
     }
     const execution = await config.registry.executionOverview(simulationRunId)
-    return json({ simulationRunId, loaded: config.registry.get(simulationRunId) !== undefined, execution })
+    return json({ simulationRunId, title: summary.title, loaded: config.registry.get(simulationRunId) !== undefined, execution })
   }
 
   const simulationRunMatch = pathname.match(/^\/simulation-runs\/([^/]+)$/)

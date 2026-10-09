@@ -25,9 +25,9 @@
     {@const margin = typeof value === 'number' ? nearestThresholdMargin(value, pen.thresholds) : null}
     {@const inAlarm = activeThreshold(pen.thresholds, activeRuleIds)}
     <li class:primary={pen.role === 'primary'} title={`${pen.label} · ${pen.role}`}>
-      <span class="name">{displayName(pen)}{#if inAlarm !== null}&nbsp;<AlarmChip threshold={inAlarm} />{/if}</span>
+      <span class="name" title={pen.command ? 'operator or automation demand, not a measured state' : pen.label}>{displayName(pen)}{#if pen.command}<span class="demand">demand</span>{/if}{#if inAlarm !== null}&nbsp;<AlarmChip threshold={inAlarm} />{/if}</span>
       {#if typeof value === 'boolean'}
-        <span class="state">{value ? pen.label.toUpperCase() : `NOT ${pen.label.toUpperCase()}`}</span>
+        <span class="state">{value ? pen.label : `Not ${pen.label.charAt(0).toLowerCase()}${pen.label.slice(1)}`}</span>
       {:else}
         <obc-readout
           value={typeof value === 'number' ? displayValue(value, pen.unit) : null}
@@ -52,7 +52,9 @@
   li { display: flex; flex-direction: column; justify-content: center; min-width: 0; padding: 2px 8px; border-left: 2px solid var(--border-divider-color); }
   li.primary { border-left-color: var(--element-active-color); }
   .name { font-size: 11.5px; color: var(--element-neutral-color); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .state { font-size: 15px; font-weight: 700; letter-spacing: 0.02em; padding: 6px 0; }
+  /* Normal states read as plain text; colour and weight are kept for alarms. */
+  .state { font-size: 13.5px; padding: 6px 0; }
+  .demand { margin-left: 5px; padding: 0 4px; border: 1px solid var(--border-outline-color); border-radius: 3px; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.04em; }
   .margin { font-size: 11px; color: var(--element-neutral-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .margin.beyond { color: var(--alert-caution-color); font-weight: 600; }
 </style>

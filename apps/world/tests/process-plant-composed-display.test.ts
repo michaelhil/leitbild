@@ -124,6 +124,15 @@ describe('world.process-plant.display.compose', () => {
     expect(suggestions('RCS-TAVG')).toStartWith('TAVG (Mean primary coolant temperature, degC)')
   })
 
+  test('says when a signal is a command, not a measured state', () => {
+    const result = ask('world.process-plant.display.compose', {
+      ...composition([{ ref: 'PT-455', role: 'primary' }]),
+      panels: [{ kind: 'trend', horizon: '2m', signals: [{ ref: 'PT-455', role: 'primary' }] }, { kind: 'readouts', signals: [{ ref: 'PORV-456A', role: 'context' }] }],
+    }) as { warnings: ReadonlyArray<string>; shows: ReadonlyArray<string> }
+    expect(result.warnings).toContain("PORV-456A is a writable command (a demand), not a measured state; never present it as the equipment's actual state or position.")
+    expect(result.shows.join('\n')).toContain('PORV-456A (Pressurizer relief valve position, fraction, context, a command (demand), shown as demand)')
+  })
+
   test('says which trended signals the Run does not record', () => {
     const result = ask('world.process-plant.display.compose', composition([
       { ref: 'SG-B-LVL-NR', role: 'primary' },

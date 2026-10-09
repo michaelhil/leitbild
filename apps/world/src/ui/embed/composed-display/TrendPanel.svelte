@@ -2,6 +2,7 @@
   import type { ComposedTrendStrip, ComposedTrendThreshold } from '../../../packs/process-plant/displays/compose.ts'
   import { displayValue, formatQuantity, simulationClock, thresholdName, unitLabel } from '../../../packs/process-plant/displays/display-text.ts'
   import {
+    limitInScale,
     paddedDomain,
     rawDomain,
     stepPath,
@@ -54,9 +55,16 @@
   // The right gutter fits the longest threshold label, such as "LO TRIP 16.35 (+2)".
   const pad = $derived({ left: 44, right: 118, top: 18, bottom: timeAxis ? 22 : 0 })
 
-  // Trip and alarm thresholds always fit the scale; control set points are
-  // marked on the axis only when they fall inside it, to keep the trend quiet.
-  const drawnThresholds = $derived(strip.thresholds.filter(threshold => threshold.kind !== 'control'))
+  // Trip and alarm thresholds near the values share their scale; farther ones
+  // are named at the plot edge. Control set points are marked on the axis only
+  // when they fall inside it, to keep the trend quiet.
+  const limitThresholds = $derived(strip.thresholds.filter(threshold => threshold.kind !== 'control'))
+  const drawnThresholds = $derived(limitThresholds.filter(threshold => limitInScale(threshold.value, range)))
+  const offScale = $derived((['high', 'low'] as const).flatMap(direction => {
+    const beyond = limitThresholds.filter(threshold => threshold.direction === direction && !limitInScale(threshold.value, range))
+    const nearest = beyond.sort((left, right) => direction === 'high' ? left.value - right.value : right.value - left.value)[0]
+    return nearest === undefined ? [] : [{ threshold: nearest, more: beyond.length - 1 }]
+  }))
   const controlThresholds = $derived(strip.thresholds.filter(threshold => threshold.kind === 'control'))
 
   // Fixed scale: the grow-only range seen since the view opened plus the drawn
@@ -188,6 +196,14 @@
           <polyline class="leader" points={`${pad.left + plotWidth},${label.lineY} ${pad.left + plotWidth + 4},${label.lineY} ${pad.left + plotWidth + 8},${label.y}`} />
         {/if}
         <text class={`threshold-label ${label.severity === null ? '' : `active-${label.severity}`}`} x={pad.left + plotWidth + 10} y={label.y} dominant-baseline="middle"><title>{label.title}</title>{label.text}</text>
+      {/each}
+      {#each offScale as edge (edge.threshold.ruleId)}
+        <text
+          class={`threshold-label off-scale ${activeSeverity(edge.threshold) === null ? '' : `active-${activeSeverity(edge.threshold)}`}`}
+          x={pad.left + plotWidth + 10}
+          y={edge.threshold.direction === 'high' ? pad.top + 4 : pad.top + plotHeight - 4}
+          dominant-baseline="middle"
+        ><title>{edge.threshold.label}: {formatQuantity(edge.threshold.value, strip.unit)}, off this scale</title>{edge.threshold.direction === 'high' ? '▲' : '▼'} {thresholdName(edge.threshold, strip.unit, { withUnit: false })}{edge.more > 0 ? ` (+${edge.more})` : ''}</text>
       {/each}
       {#each controlThresholds.filter(threshold => threshold.value >= domain!.min && threshold.value <= domain!.max) as threshold (threshold.ruleId)}
         <line class="control-mark" x1={pad.left + plotWidth} x2={pad.left + plotWidth + 3} y1={y(threshold.value)} y2={y(threshold.value)}><title>{threshold.label} at {formatQuantity(threshold.value, strip.unit)} (control set point)</title></line>

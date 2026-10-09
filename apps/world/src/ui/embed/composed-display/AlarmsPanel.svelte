@@ -30,7 +30,7 @@
         </li>
       {/each}
     </ul>
-    {#if hidden.length > 0}<p class="more">+{hidden.length} more active{#if hidden.some(alarm => !alarm.acknowledged)} ({hidden.filter(alarm => !alarm.acknowledged).length} unacknowledged){/if}</p>{/if}
+    {#if hidden.length > 0}<p class="more">+{hidden.length} more active{#if hidden.some(alarm => !alarm.acknowledged)}{' '}({hidden.filter(alarm => !alarm.acknowledged).length} unacknowledged){/if}</p>{/if}
   {/if}
 </section>
 

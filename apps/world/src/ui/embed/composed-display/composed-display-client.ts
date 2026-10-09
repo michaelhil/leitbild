@@ -5,6 +5,8 @@ import { workspaceApiPath } from '../../workspace-context.ts'
 import type { TrendPoint } from './trend-geometry.ts'
 
 export interface RunPresence {
+  /** The Run's name, so a display says which Run its advice is about. */
+  readonly title: string
   readonly loaded: boolean
   readonly playback: 'playing' | 'paused'
   readonly currentSimulationTime: string
@@ -79,8 +81,8 @@ export const composedDisplayClient: ComposedDisplayClient = {
     const response = await fetch(runPath(runId, '/presence'))
     if (response.status === 404) return null
     if (!response.ok) throw new Error(await failureMessage(response, 'Run status'))
-    const body = await response.json() as { loaded: boolean; execution: { playback: 'playing' | 'paused'; currentSimulationTime: string } }
-    return { loaded: body.loaded, playback: body.execution.playback, currentSimulationTime: body.execution.currentSimulationTime }
+    const body = await response.json() as { title: string; loaded: boolean; execution: { playback: 'playing' | 'paused'; currentSimulationTime: string } }
+    return { title: body.title, loaded: body.loaded, playback: body.execution.playback, currentSimulationTime: body.execution.currentSimulationTime }
   },
   loadRun: async runId => {
     const response = await fetch(runPath(runId))

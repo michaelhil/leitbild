@@ -26,14 +26,16 @@ export const rawDomain = (values: ReadonlyArray<number>): ValueDomain | null => 
   return { min: Math.min(...finite), max: Math.max(...finite) }
 }
 
-// A scale spans at least this share of the value, so a nearly steady signal
-// does not fill its strip with noise-sized swings.
+// A scale spans at least this share of the value, and at least one unit for
+// values of one or more, so a nearly steady signal does not fill its strip
+// with noise-sized swings, even near zero (a 5 °C subcooling margin).
 const MIN_SPAN_FRACTION = 0.04
 
-/** Fixed display scale: padded, never zero-height, never narrower than 4 % of the value. */
+/** Fixed display scale: padded, never zero-height, never narrower than 4 % of the value or one unit. */
 export const paddedDomain = (raw: ValueDomain): ValueDomain => {
   const span = raw.max - raw.min
-  const minimum = Math.max(Math.abs(raw.max), Math.abs(raw.min)) * MIN_SPAN_FRACTION
+  const magnitude = Math.max(Math.abs(raw.max), Math.abs(raw.min))
+  const minimum = magnitude >= 1 ? Math.max(magnitude * MIN_SPAN_FRACTION, 1) : magnitude * MIN_SPAN_FRACTION
   if (span === 0 && minimum === 0) return { min: raw.min - 1, max: raw.max + 1 }
   if (span < minimum) {
     const middle = (raw.max + raw.min) / 2
@@ -50,13 +52,18 @@ const niceStep = (span: number, count: number): number => {
   return nice * magnitude
 }
 
-// Few gridlines: a mini trend is read for direction and margin, not exact values.
+// Few gridlines: a mini trend is read for direction and margin, not exact
+// values; but never a single one, which gives no scale.
 export const valueTicks = (domain: ValueDomain, count = 3): ReadonlyArray<number> => {
-  const step = niceStep(domain.max - domain.min, count)
-  const first = Math.ceil(domain.min / step) * step
-  const ticks: number[] = []
-  for (let tick = first; tick <= domain.max + step * 1e-9; tick += step) ticks.push(Number(tick.toPrecision(12)))
-  return ticks
+  const ticksFor = (wanted: number): number[] => {
+    const step = niceStep(domain.max - domain.min, wanted)
+    const first = Math.ceil(domain.min / step) * step
+    const ticks: number[] = []
+    for (let tick = first; tick <= domain.max + step * 1e-9; tick += step) ticks.push(Number(tick.toPrecision(12)))
+    return ticks
+  }
+  const ticks = ticksFor(count)
+  return ticks.length >= 2 ? ticks : ticksFor(count + 2)
 }
 
 /** Tick labels share the precision of the step, so an axis never reads "5.00" beside "10.0". */
@@ -65,6 +72,18 @@ export const tickLabels = (ticks: ReadonlyArray<number>): ReadonlyArray<string> 
   const step = Math.abs(ticks[1]! - ticks[0]!)
   const digits = Math.min(4, Math.max(0, Math.ceil(-Math.log10(step) - 1e-9)))
   return ticks.map(tick => tick.toFixed(digits))
+}
+
+/**
+ * Whether a limit is close enough to the values to share their scale: within
+ * three times their spread, or a quarter of their magnitude. A farther limit
+ * (generator low alarm 450 MW under 1,100 MW) would flatten the curve, so it
+ * is named at the plot edge instead.
+ */
+export const limitInScale = (limit: number, range: ValueDomain | null): boolean => {
+  if (range === null) return true
+  const reach = Math.max(3 * (range.max - range.min), 0.25 * Math.max(Math.abs(range.max), Math.abs(range.min)))
+  return limit >= range.min - reach && limit <= range.max + reach
 }
 
 export interface TimeTick {

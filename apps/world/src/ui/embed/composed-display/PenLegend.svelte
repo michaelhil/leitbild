@@ -4,7 +4,7 @@
   import { formatQuantity, marginText, nearestThresholdMargin } from '../../../packs/process-plant/displays/display-text.ts'
   import type { ComposedDisplaySample } from './composed-display-client.ts'
   import { displayName, penStroke, roleLabel } from './pen-style.ts'
-  import { activeThreshold, rateChange, ratePerMinute, rateText, rateWindowMs, timeToThresholdText } from './panel-presenters.ts'
+  import { activeThreshold, limitAhead, movingAwayFromLimits, rateChange, ratePerMinute, rateText, rateWindowMs, timeToThresholdText } from './panel-presenters.ts'
   import type { TrendPoint } from './trend-geometry.ts'
   import AlarmChip from './AlarmChip.svelte'
 
@@ -32,14 +32,16 @@
     {@const points = series.get(String(pen.path)) ?? []}
     {@const liveOnly = live || historyMissing.has(String(pen.path))}
     {@const inAlarm = activeThreshold(pen.thresholds, activeRuleIds)}
-    {@const margin = typeof value === 'number' && inAlarm === null ? nearestThresholdMargin(value, pen.thresholds) : null}
-    {@const rate = ratePerMinute(points, windowMs)}
+    {@const rate = live ? null : ratePerMinute(points, windowMs)}
+    {@const margin = typeof value === 'number' ? (live ? nearestThresholdMargin(value, pen.thresholds) : limitAhead(value, rate, pen.thresholds)) : null}
+    {@const away = typeof value === 'number' && !live ? movingAwayFromLimits(value, rate, pen.thresholds) : null}
     <li>
       {#if live}<span class="swatch live" aria-hidden="true">now</span>{:else}<svg class="swatch" width="22" height="8" aria-hidden="true"><line x1="0" x2="22" y1="4" y2="4" style={penStroke(pen.role, index)} /></svg>{/if}
-      <span class="name" title={`${pen.label} · ${roleLabel[pen.role]}${live ? ' · not recorded by this Run: current value only' : liveOnly ? ' · no recorded history in this window' : ''}`}>{displayName(pen)}</span>
+      <span class="name" title={`${pen.label} · ${roleLabel[pen.role]}${pen.command ? ' · operator or automation demand, not a measured state' : ''}${live ? ' · not recorded by this Run: current value only' : liveOnly ? ' · no recorded history in this window' : ''}`}>{displayName(pen)}{#if pen.command}<span class="demand">demand</span>{/if}</span>
       <span class="value">{typeof value === 'number' ? formatQuantity(value, pen.unit) : typeof value === 'boolean' ? (value ? 'ON' : 'OFF') : '—'}</span>
       <span class="state">
-        {#if inAlarm !== null}<AlarmChip threshold={inAlarm} />{:else if margin !== null}<span class:beyond={margin.margin < 0}>{marginText(margin, pen.unit)}{#if typeof value === 'number' && margin.margin >= 0}{@const eta = timeToThresholdText(value, rate, margin.threshold)}{eta === '' ? '' : ` · ${eta}`}{/if}</span>{/if}
+        {#if inAlarm !== null}<AlarmChip threshold={inAlarm} />{/if}
+        {#if margin !== null}<span class:beyond={margin.margin < 0}>{marginText(margin, pen.unit)}{#if typeof value === 'number' && margin.margin >= 0}{@const eta = timeToThresholdText(value, rate, margin.threshold)}{eta === '' ? '' : ` · ${eta}`}{/if}</span>{:else if away !== null}<span>no {away === 'rising' ? 'HI' : 'LO'} limit ahead</span>{/if}
         {#if entry?.quality === 'outside-hard-range'}<span class="beyond">outside range</span>{/if}
       </span>
       <span class="rate">{typeof value === 'number' && !live ? rateText(rate, value, pen.unit, { windowMs, change: rateChange(points, windowMs, value) }) : ''}{live ? 'not recorded · current value' : liveOnly ? ' · live only' : ''}</span>
@@ -54,6 +56,8 @@
     grid-auto-rows: 16px; column-gap: 10px; align-items: center;
   }
   li { display: contents; }
+  .demand { margin-left: 5px; padding: 0 4px; border: 1px solid var(--border-outline-color); border-radius: 3px; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .state { display: flex; align-items: center; gap: 6px; }
   .swatch.live { font-size: 9.5px; color: var(--element-neutral-color); text-transform: uppercase; letter-spacing: 0.04em; }
   .name { font-size: 12px; color: var(--element-neutral-color); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .value { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }

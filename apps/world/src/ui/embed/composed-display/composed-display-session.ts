@@ -25,6 +25,7 @@ export interface ComposedDisplaySnapshot {
   readonly ranges: ReadonlyArray<ReadonlyArray<ValueDomain | null>>
   readonly latest?: ComposedDisplaySample
   readonly playback?: 'playing' | 'paused'
+  readonly runTitle?: string
   readonly lastSampleWallMs?: number
   /** Message of the last failed sample; null once a sample succeeds again. */
   readonly sampleError: string | null
@@ -135,7 +136,7 @@ export const createComposedDisplaySession = (config: {
     const presence = await config.client.presence(config.runId)
     if (presence === null) { stopPolling(); update({ phase: { kind: 'missing' } }); return false }
     if (!presence.loaded) { stopPolling(); update({ phase: { kind: 'inactive' } }); return false }
-    update({ playback: presence.playback })
+    update({ playback: presence.playback, runTitle: presence.title })
     return true
   }
 

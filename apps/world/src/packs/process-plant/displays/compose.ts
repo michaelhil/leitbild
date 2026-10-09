@@ -52,6 +52,12 @@ export interface ComposedDisplayPen {
   readonly seriesId: string
   /** Recorded by this Run's historian, so a trend has history from before the view opened. */
   readonly recorded: boolean
+  /**
+   * A writable operator or automation command (a demand), not a measured
+   * state: a valve's commanded position can read closed while the valve is
+   * stuck open. Shown as "demand" wherever it appears.
+   */
+  readonly command: boolean
   readonly limits?: ProcessVariableLimits
   readonly thresholds: ReadonlyArray<ComposedDisplayThreshold>
   readonly combinedRules: ReadonlyArray<ComposedDisplayCombinedRule>
@@ -326,6 +332,7 @@ const resolvePens = (
       valueKind: typeof value === 'number' ? 'number' : 'boolean',
       seriesId,
       recorded: options.recordedSeriesIds.has(seriesId),
+      command: binding.writable,
       ...(binding.limits === undefined ? {} : { limits: binding.limits }),
       thresholds,
       combinedRules,
@@ -565,7 +572,7 @@ export const compileComposedDisplay = (
 }
 
 const operatorText = { '<': 'below', '<=': 'at or below', '>': 'above', '>=': 'at or above' } as const
-const signalName = (pen: ComposedDisplayPen): string => `${pen.name} (${pen.tagId === undefined ? `${pen.path}, ` : `${pen.label}, `}${pen.unit}, ${pen.role})`
+const signalName = (pen: ComposedDisplayPen): string => `${pen.name} (${pen.tagId === undefined ? `${pen.path}, ` : `${pen.label}, `}${pen.unit}, ${pen.role}${pen.command ? ', a command (demand), shown as demand' : ''})`
 
 // Lines are named as the display labels them ("LO ALM 30 %"), so an answer
 // can refer to them by the same name.
@@ -631,6 +638,7 @@ export const composedDisplayMargins = (
 export const composedDisplayWarnings = (display: CompiledComposedDisplay): ReadonlyArray<string> => display.panels.flatMap(panel => {
   if (panel.kind === 'alarms') return panel.scope === 'related' && panel.ruleIds.length === 0 ? ['No alarm or trip rule acts on the displayed signals; the related alarms panel will stay empty.'] : []
   return composedPanelPens(panel).flatMap(pen => [
+    ...(pen.command ? [`${pen.name} is a writable command (a demand), not a measured state; never present it as the equipment's actual state or position.`] : []),
     ...(panel.kind === 'trend' && pen.role === 'primary' && pen.thresholds.length === 0 ? [`No single-signal I&C threshold acts on ${pen.tagId ?? pen.path}; its trend shows values without threshold lines.`] : []),
     ...(panel.kind === 'trend' && !pen.recorded ? [`${pen.tagId ?? pen.path} is not recorded by this Run's historian; its trend starts when the view opens. Do not describe its history from the display.`] : []),
     ...pen.combinedRules.map(rule => `${pen.tagId ?? pen.path} also feeds the combined rule "${rule.label}" (${rule.kind}); it is listed, not drawn.`),

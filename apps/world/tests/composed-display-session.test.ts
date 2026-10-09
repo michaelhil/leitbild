@@ -76,7 +76,7 @@ const session = (client: ComposedDisplayClient, wall = { now: 0 }) => {
 
 describe('composed display session', () => {
   test('never loads an inactive Run on its own and loads it only on request', async () => {
-    const { client, calls } = fakeClient({ presence: { loaded: false, playback: 'playing', currentSimulationTime: at(0) }, samples: [{ time: at(0), value: 15.4 }] })
+    const { client, calls } = fakeClient({ presence: { title: 'Run', loaded: false, playback: 'playing', currentSimulationTime: at(0) }, samples: [{ time: at(0), value: 15.4 }] })
     const { controller, last } = session(client)
     await controller.start({ poll: false })
     expect(last().phase.kind).toBe('inactive')
@@ -94,7 +94,7 @@ describe('composed display session', () => {
   })
 
   test('backfills history, marks signals without recorded history and appends live samples', async () => {
-    const { client } = fakeClient({ presence: { loaded: true, playback: 'playing', currentSimulationTime: at(0) }, samples: [{ time: at(0), value: 15.45 }, { time: at(1_000), value: 15.5 }] })
+    const { client } = fakeClient({ presence: { title: 'Run', loaded: true, playback: 'playing', currentSimulationTime: at(0) }, samples: [{ time: at(0), value: 15.45 }, { time: at(1_000), value: 15.5 }] })
     const { controller, last } = session(client)
     await controller.start({ poll: false })
     expect([...last().historyMissing]).toEqual(['x.value'])
@@ -105,7 +105,7 @@ describe('composed display session', () => {
 
   test('flags a Run reset after the advice and keeps stale values on failure', async () => {
     const { client } = fakeClient({
-      presence: { loaded: true, playback: 'playing', currentSimulationTime: at(0) },
+      presence: { title: 'Run', loaded: true, playback: 'playing', currentSimulationTime: at(0) },
       samples: [{ time: at(0), value: 15.4 }, { time: at(-30_000), value: 15.0 }, new Error('Capability query failed: 503')],
     })
     const { controller, last } = session(client)
@@ -120,7 +120,7 @@ describe('composed display session', () => {
 
   test('suspends after a long time without interaction and resumes on request', async () => {
     const wall = { now: 0 }
-    const { client, calls } = fakeClient({ presence: { loaded: true, playback: 'playing', currentSimulationTime: at(0) }, samples: [{ time: at(0), value: 15.4 }, { time: at(1_000), value: 15.5 }] })
+    const { client, calls } = fakeClient({ presence: { title: 'Run', loaded: true, playback: 'playing', currentSimulationTime: at(0) }, samples: [{ time: at(0), value: 15.4 }, { time: at(1_000), value: 15.5 }] })
     const { controller, last } = session(client, wall)
     await controller.start({ poll: false })
     wall.now = IDLE_SUSPEND_MS + 1

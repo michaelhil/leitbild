@@ -82,7 +82,7 @@
 <article class="card" aria-label={`AI-composed view: ${composition.title}`}>
   <header>
     <h1 title={composition.title}>{composition.title}</h1>
-    <span class="unit">{view?.plantLabel ?? composition.plantId}</span>
+    <span class="unit" title={`${view?.plantLabel ?? composition.plantId}${snapshot?.runTitle === undefined ? '' : ` · Run: ${snapshot.runTitle}`}`}>{view?.plantLabel ?? composition.plantId}{#if snapshot?.runTitle !== undefined} · {snapshot.runTitle}{/if}</span>
     <span class={`chip ${stateChip.tone}`}>{stateChip.text}</span>
     <span class="clock">sim {simulationClock(now)}</span>
   </header>
@@ -166,6 +166,7 @@
   header { display: flex; align-items: center; gap: 8px; min-width: 0; }
   h1 { margin: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
   .unit, .clock { font-size: 11.5px; color: var(--element-neutral-color); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .unit { max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
   .chip { font-size: 11px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; padding: 1px 7px; border-radius: 9px; border: 1px solid var(--border-outline-color); white-space: nowrap; }
   .chip.live { color: var(--element-active-color); }
   .chip.quiet { color: var(--element-neutral-color); }

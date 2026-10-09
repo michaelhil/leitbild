@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { activeThreshold, agoText, alarmAge, median, minutesToThreshold, rateChange, ratePerMinute, rateText, rateWindowMs, timeToThresholdText, visibleAlarms } from '../src/ui/embed/composed-display/panel-presenters.ts'
+import { activeThreshold, agoText, alarmAge, limitAhead, median, minutesToThreshold, movingAwayFromLimits, rateChange, ratePerMinute, rateText, rateWindowMs, timeToThresholdText, visibleAlarms } from '../src/ui/embed/composed-display/panel-presenters.ts'
 import { formatQuantity, marginText, nearestThresholdMargin, simulationClock, thresholdName, unitLabel } from '../src/packs/process-plant/displays/display-text.ts'
 import type { ComposedDisplayThreshold } from '../src/packs/process-plant/displays/ic-thresholds.ts'
 import type { ComposedDisplayAlarm } from '../src/ui/embed/composed-display/composed-display-client.ts'
@@ -29,10 +29,26 @@ describe('composed display panel presenters', () => {
     expect(formatQuantity(1, 'fraction')).toBe('100 %')
     expect(formatQuantity(0.955, 'fraction')).toBe('95.5 %')
     expect(formatQuantity(0, 'kg/s')).toBe('0 kg/s')
+    expect(formatQuantity(125, 'volts_dc')).toBe('125 V DC')
+    expect(unitLabel('degC/s')).toBe('°C/s')
     expect(thresholdName(busLow, 'fraction')).toBe('LO ALM 90 %')
     expect(marginText(nearestThresholdMargin(0.955, [busLow])!, 'fraction')).toBe('LO ALM 90 % · 5.50 above')
     expect(rateText(-0.012, 0.955, 'fraction')).toBe('▼ −1.20 %/min')
     expect(unitLabel('fraction')).toBe('%')
+  })
+
+  test('the limit ahead follows the direction of travel, also while in alarm', () => {
+    // SG B in LO ALM 30, falling: the next limit is LO TRIP 20, not the alarm it has passed.
+    expect(limitAhead(28, -2.25, thresholds)?.threshold.ruleId).toBe('trip-low')
+    // Rising away from the low limits toward HI ALM 75.
+    expect(limitAhead(60, 24, thresholds)?.threshold.ruleId).toBe('alarm-high')
+    // Rising with no high limit configured: none ahead, and the legend says so.
+    const lowOnly = thresholds.filter(threshold => threshold.direction === 'low')
+    expect(limitAhead(72, 24, lowOnly)).toBeNull()
+    expect(movingAwayFromLimits(72, 24, lowOnly)).toBe('rising')
+    // Steady: the nearest limit either way.
+    expect(limitAhead(34.5, 0, thresholds)?.threshold.ruleId).toBe('alarm-low')
+    expect(movingAwayFromLimits(34.5, 0, thresholds)).toBeNull()
   })
 
   test('median of parallel signals', () => {
@@ -41,7 +57,7 @@ describe('composed display panel presenters', () => {
     expect(median([])).toBeNull()
   })
 
-  test('alarms read first-out first, then by onset so the initiating alarm leads its consequences', () => {
+  test('alarms read first-out first, then by severity so trips are never hidden, then by onset', () => {
     const alarms: ReadonlyArray<ComposedDisplayAlarm> = [
       { id: 'a', ruleId: 'sg-b-level-low', kind: 'alarm', title: 'SG B level low', severity: 'warning', acknowledged: true, firstOut: false, firstActiveElapsedMs: 100_000 },
       { id: 'b', ruleId: 'sg-b-level-low-low', kind: 'trip', title: 'SG B low-low', severity: 'critical', acknowledged: false, firstOut: true, firstActiveElapsedMs: 200_000 },
@@ -49,7 +65,7 @@ describe('composed display panel presenters', () => {
       { id: 'd', ruleId: 'sg-b-feedwater-low', kind: 'alarm', title: 'SG B feed low', severity: 'warning', acknowledged: false, firstOut: false, firstActiveElapsedMs: 50_000 },
     ]
     expect(visibleAlarms(alarms, 'related', ['sg-b-level-low', 'sg-b-level-low-low', 'sg-b-feedwater-low']).map(alarm => alarm.id)).toEqual(['b', 'd', 'a'])
-    expect(visibleAlarms(alarms, 'plant', []).map(alarm => alarm.id)).toEqual(['b', 'd', 'a', 'c'])
+    expect(visibleAlarms(alarms, 'plant', []).map(alarm => alarm.id)).toEqual(['b', 'c', 'd', 'a'])
   })
 
   test('alarm age in Plant time', () => {
