@@ -287,22 +287,22 @@ Action: Test-only handover.
         body: JSON.stringify({ workspaceId, capabilityId, resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }, input, access }),
       })
     const plantId = 'plant:halden-a1'
-    const validProjection = await read('world.process-plant.display.project', { plantId, displayId: 'unit-overview', lens: { mode: 'selected-only', selectedComponentIds: ['core'] } })
-    expect(validProjection.status).toBe(200)
-    for (const capabilityId of ['world.process-plant.display.read', 'world.process-plant.display.snapshot', 'world.process-plant.display.project', 'world.process-plant.display-profile.read']) {
-      const projection = capabilityId.endsWith('.project') ? { lens: { mode: 'selected-only', selectedComponentIds: ['core'] } } : {}
-      const profile = capabilityId.includes('display-profile')
-      const response = await read(capabilityId, { plantId, [profile ? 'profileId' : 'displayId']: 'guessed-overview', ...projection })
-      expect(response.status).toBe(404)
-      expect(response.body!.error).toMatchObject({ code: 'capability_target_not_found', message: expect.stringContaining('Discover exact') })
-      expect(run.health().every(health => health.state === 'ready' && health.failureCount === 0 && health.lastFailure === undefined)).toBe(true)
-      const valid = await read(capabilityId, { plantId, [profile ? 'profileId' : 'displayId']: profile ? 'leitbild-rail' : 'unit-overview', ...projection })
-      expect(valid.status).toBe(200)
-      expect(valid.body!.result).toHaveProperty('plantId', plantId)
-      if (projection.lens) expect(valid.body!.result!.graphProjection).toMatchObject({ componentIds: ['core'] })
-    }
-    expect((await read('world.process-plant.display.snapshot', { plantId, displayId: 'unit-overview', unexpected: true })).status).toBe(400)
-    expect((await read('world.process-plant.display.snapshot', { plantId, displayId: 'unit-overview' })).status).toBe(200)
+    const guessedProfile = await read('world.process-plant.display-profile.read', { plantId, profileId: 'guessed-overview' })
+    expect(guessedProfile.status).toBe(404)
+    expect(guessedProfile.body!.error).toMatchObject({ code: 'capability_target_not_found', message: expect.stringContaining('Discover exact') })
+    expect(run.health().every(health => health.state === 'ready' && health.failureCount === 0 && health.lastFailure === undefined)).toBe(true)
+    const profile = await read('world.process-plant.display-profile.read', { plantId, profileId: 'leitbild-rail' })
+    expect(profile.status).toBe(200)
+    expect(profile.body!.result).toHaveProperty('plantId', plantId)
+    // The unit overview is generated from the Plant, so the only selector is the Plant itself.
+    const guessedPlant = await read('world.process-plant.display.overview', { plantId: 'plant:guessed' })
+    expect(guessedPlant.status).toBe(404)
+    expect(guessedPlant.body!.error).toMatchObject({ code: 'capability_target_not_found', message: expect.stringContaining(`Live Plants: ${plantId}`) })
+    expect((await read('world.process-plant.display.overview', { plantId, unexpected: true })).status).toBe(400)
+    const overview = await read('world.process-plant.display.overview', { plantId })
+    expect(overview.status).toBe(200)
+    expect(overview.body!.result).toHaveProperty('plantId', plantId)
+    expect(overview.body!.result).toHaveProperty('view.viewType', 'process-plant.display')
   })
 
   test('procedure reads select canonical evidence without duplicating Markdown or changing the UI document', async () => {

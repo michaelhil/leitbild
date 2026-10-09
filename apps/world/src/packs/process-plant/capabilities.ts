@@ -27,7 +27,6 @@ import {
   credibilityListPayloadSchema,
   credibilityReadPayloadSchema,
 } from './queries/credibility-query.ts'
-import { displayQuerySchema, graphLensQuerySchema } from './queries/display-query.ts'
 import { embeddedViewPublicationSchema } from '@leitbild/contracts'
 import {
   displayComposeQuerySchema,
@@ -71,7 +70,6 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
     actions: recordArraySchema,
     assessments: recordArraySchema,
     recordingProfiles: recordArraySchema,
-    displays: recordArraySchema,
     credibilityEvidence: recordArraySchema,
   }).strict(),
   'world.process-plant.actions.search': z.object({
@@ -173,15 +171,6 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
   'world.process-plant.alarms.status': z.object({ plantId: plantIdSchema, alarms: recordArraySchema, trips: recordArraySchema, summary: recordSchema }).strict(),
   'world.process-plant.alarms.summary': z.object({ plantId: plantIdSchema, summary: recordSchema }).strict(),
   'world.process-plant.alarms.history': z.object({ plantId: plantIdSchema, history: recordArraySchema }).strict(),
-  'world.process-plant.displays.list': z.object({ plantId: plantIdSchema, displays: recordArraySchema }).strict(),
-  'world.process-plant.display.read': z.object({ plantId: plantIdSchema, display: recordSchema }).strict(),
-  'world.process-plant.display.snapshot': z.object({ plantId: plantIdSchema, displayId: z.string(), values: recordArraySchema, alarms: recordSchema }).strict(),
-  'world.process-plant.display.project': z.object({
-    plantId: plantIdSchema,
-    displayId: z.string(),
-    graphProjection: recordSchema,
-    displayProjection: recordSchema,
-  }).strict(),
   'world.process-plant.display.compose': z.object({
     plantId: plantIdSchema,
     issuedAt: z.string(),
@@ -264,10 +253,6 @@ const queryInputById: Readonly<Record<string, z.ZodType>> = {
   'world.process-plant.runtime.status': processPlantCatalogInputSchema,
   'world.process-plant.transient.diagnostics': plantQuerySchema,
   ...Object.fromEntries(processPlantIcQueryKinds.map(id => [id, plantQuerySchema])),
-  'world.process-plant.displays.list': plantQuerySchema,
-  'world.process-plant.display.read': displayQuerySchema,
-  'world.process-plant.display.snapshot': displayQuerySchema,
-  'world.process-plant.display.project': graphLensQuerySchema,
   'world.process-plant.display.compose': displayComposeQuerySchema,
   'world.process-plant.display.overview': displayOverviewQuerySchema,
   'world.process-plant.display.view': displayViewQuerySchema,
@@ -307,10 +292,6 @@ const queryDescriptionById: Readonly<Record<string, string>> = {
   'world.process-plant.alarms.status': 'Read active alarms and trips plus a compact current lifecycle summary for one Plant. Use ic.status only when inactive lifecycle records are needed.',
   'world.process-plant.alarms.summary': 'Read a compact current alarm and trip summary for one Plant.',
   'world.process-plant.alarms.history': 'Read alarm and trip lifecycle transitions recorded for one Plant.',
-  'world.process-plant.displays.list': 'List operator displays available for one Plant.',
-  'world.process-plant.display.read': 'Read one operator display definition and its available lenses.',
-  'world.process-plant.display.snapshot': 'Read the current values and alarms projected onto one operator display.',
-  'world.process-plant.display.project': 'Project one Plant graph and operator display through a selected display lens.',
   'world.process-plant.display.compose': 'Compose a small live operator display for one Plant, shown below your answer. State the operator question and need, then choose 1-3 panels: one trend (history of 1-6 numeric signals; each measurement gets its own strip on one time axis, parallel equipment sharing one, at most 4 strips of 4; signals the Run does not record show as current values), comparison (2-6 parallel signals of one unit, e.g. the loops), mimic (a live equipment drawing World generates from the Plant model: "from" and/or "to" name one component per entry by id, a tag on it or its label, and draw every route between them, or what lies downstream of "from" or upstream of "to" alone; "services" (e.g. feedwater, auxFeedwater, safetyInjection, electricalPower) with optional "loops" draws whole systems or narrows a route; "exclude" leaves equipment out; e.g. {"kind":"mimic","to":["sgB"],"services":["feedwater","auxFeedwater"]}; World picks every OpenBridge symbol, state signal and the layout, draws actual pump and valve states, states a disagreeing command, draws unknown states and unverified flows as unknown, and frames alarmed equipment), readouts (1-6 current values or on/off states with margin to thresholds, not already trended or drawn) and alarms (active alarms of the displayed signals and equipment, or the whole Plant). Give every signal a role (primary, context, counter-evidence) and use exact tagIds or paths from your evidence. Most answers need one trend, e.g. {"plantId":"plant:x","title":"SG B level","question":"Is SG B level recovering?","need":"Decide on manual feed","panels":[{"kind":"trend","horizon":"10m","signals":[{"ref":"SG-B-LVL-NR","role":"primary"}]}]}. Read-only: stores nothing. Returns the view to present, the display clock, what it shows, each drawn item with its current state (equipment), the nearest alarm or trip limit of each value (margins) and warnings, or rejects with every issue, did-you-mean names and fixes known to fit.',
   'world.process-plant.display.overview': 'Open the live unit overview World generates for one Plant from its model: the principal circuits its heat flows through (drawn with OpenBridge, actual equipment states, alarmed equipment framed, safety and auxiliary services as stubs where they join), the values its protection trips on, and the active alarms. Use when the operator asks for the whole unit at a glance; for a question about part of the Plant, compose a display. Read-only: stores nothing. Returns the view to present, the display clock, what it shows and each drawn item with its current state (equipment).',
   'world.process-plant.display.view': 'Compile a display state for a live display view: an agent\'s composed display (kind advice) or a Plant\'s unit overview (kind overview). Display views use this; to create a display, use display.compose or display.overview.',

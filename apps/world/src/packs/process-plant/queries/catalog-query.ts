@@ -26,11 +26,6 @@ const catalogView = (): Record<string, unknown> => ({
   actions: processPlantActionCatalog(),
   assessments: processPlantAssessmentCatalog(),
   recordingProfiles: processPlantRecordingProfiles,
-  displays: [...processPlantCatalog.displaysById.values()].map(entry => ({
-    id: entry.id,
-    title: entry.title,
-    description: entry.description,
-  })),
   credibilityEvidence: [...processPlantCatalog.credibilityEvidenceById.values()].map(entry => ({
     id: entry.id,
     title: entry.title,

@@ -216,7 +216,6 @@ describe('process plant discovery', () => {
     expect(catalog.models.map(entry => entry.id)).toEqual([processPlantPwrReferenceModelRef])
     expect(catalog.operatingPoints).toHaveLength(1)
     expect(catalog.automations.map(entry => entry.id)).toEqual([processPlantPwrReferenceAutomationRef])
-    expect([...processPlantCatalog.displaysById.keys()]).toEqual(['unit-overview'])
     expect([...processPlantCatalog.credibilityEvidenceById.keys()]).toHaveLength(1)
   })
 
@@ -228,8 +227,9 @@ describe('process plant discovery', () => {
     const response = answerProcessPlantQuery({ request, plants: new Map(), objects: new Map() })
     expect(response).toMatchObject({
       models: [{ id: processPlantPwrReferenceModelRef }],
-      displays: [{ id: 'unit-overview' }],
     })
+    // Displays are generated from each Plant's model, never listed in a catalogue.
+    expect(response).not.toHaveProperty('displays')
     expect(JSON.stringify(response)).not.toContain('sourcePath')
   })
 
@@ -357,14 +357,13 @@ describe('process plant discovery', () => {
     ]))
   })
 
-  test('rejects duplicate display contributions', () => {
-    const existing = processPlantCatalog.displaysById.get('unit-overview')
-    if (existing === undefined) throw new Error('unit overview display is required')
-    const display = { ...existing, id: 'overview' }
+  test('rejects duplicate credibility evidence contributions', () => {
+    const existing = [...processPlantCatalog.credibilityEvidenceById.values()][0]
+    if (existing === undefined) throw new Error('credibility evidence is required')
     expect(() => collectProcessPlantCatalog([
-      { id: 'one', displays: [display] },
-      { id: 'two', displays: [display] },
-    ])).toThrow('duplicate display id')
+      { id: 'one', credibilityEvidence: [existing] },
+      { id: 'two', credibilityEvidence: [existing] },
+    ])).toThrow('duplicate credibility evidence id')
   })
 })
 

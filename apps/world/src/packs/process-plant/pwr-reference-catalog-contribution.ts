@@ -1,16 +1,9 @@
-import { processPlantUnitOverviewDisplayForGraph } from './displays/reference-unit-overview.ts'
 import type { ProcessPlantCatalogContribution } from './catalog-contributions.ts'
 
 export const processPlantPwrReferenceCredibilityEvidenceId = 'process-plant.pwr.reference.credibility'
 
 export const processPlantPwrReferenceCatalogContribution: ProcessPlantCatalogContribution = {
   id: 'process-plant.pwr-reference',
-  displays: [{
-    id: 'unit-overview',
-    title: 'Unit overview',
-    description: 'Reference operating overview generated from the Plant graph and its published display profile.',
-    display: config => processPlantUnitOverviewDisplayForGraph(config.graph),
-  }],
   credibilityEvidence: [{
     id: processPlantPwrReferenceCredibilityEvidenceId,
     title: 'PWR reference credibility targets',

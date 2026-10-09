@@ -1,65 +1,8 @@
 import type { OperationalObject, SimulationRunId } from '../../core/model/index.ts'
 import type { VariablePath } from '../../packs/process-plant/graph/index.ts'
-import type {
-  CompiledProcessDisplay,
-  ProcessDisplayAlarmAnnunciator,
-  ProcessDisplayAlarmLifecycle,
-  ProcessDisplayAlarmSnapshot,
-  ProcessDisplayAlarmSeverity,
-  ProcessDisplayGraphLens,
-  ProcessDisplayValue,
-} from '../../packs/process-plant/displays/index.ts'
 import { embeddedViewEnvelopeSchema, type EmbeddedViewEnvelope, type EmbeddedViewPublication } from '@leitbild/contracts'
 import { querySimulationRunCapability } from '../simulation-run-client.ts'
 import { activeWorkspaceId } from '../workspace-context.ts'
-
-export interface ProcessDisplayLensOption {
-  readonly id: string
-  readonly label: string
-  readonly description?: string
-  readonly lens?: ProcessDisplayGraphLens
-}
-
-export interface ProcessDisplayListItem {
-  readonly id: string
-  readonly title: string
-  readonly description?: string
-  readonly lenses: ReadonlyArray<ProcessDisplayLensOption>
-}
-
-export interface ProcessDisplaySnapshot {
-  readonly plantId: string
-  readonly displayId: string
-  readonly values: ReadonlyArray<ProcessDisplayValue>
-  readonly alarms: ProcessDisplayAlarmSnapshot
-}
-
-export const emptyProcessDisplayAlarmSnapshot: ProcessDisplayAlarmSnapshot = {
-  configured: false,
-  activeAlarmCount: 0,
-  activeTripCount: 0,
-  unacknowledgedCount: 0,
-  firstOutCount: 0,
-  activeHighestSeverity: null,
-  activeFirstOut: [],
-  active: [],
-}
-
-export interface ProcessDisplayProjection {
-  readonly plantId: string
-  readonly displayId: string
-  readonly graphProjection: {
-    readonly componentIds: ReadonlyArray<string>
-    readonly connectionIds: ReadonlyArray<string>
-    readonly diagnostics: ReadonlyArray<Record<string, unknown>>
-  }
-  readonly displayProjection: {
-    readonly visibleWidgetIds: ReadonlyArray<string>
-    readonly visiblePathIds: ReadonlyArray<string>
-    readonly hiddenWidgetIds: ReadonlyArray<string>
-    readonly hiddenPathIds: ReadonlyArray<string>
-  }
-}
 
 export type ProcessPlantArtifactKind = 'authored-spec' | 'compiled-graph-mermaid'
 
@@ -132,7 +75,6 @@ export interface ProcessPlantCatalog {
   readonly actions: ReadonlyArray<ProcessPlantActionCatalogEntry>
   readonly assessments: ReadonlyArray<ProcessPlantCatalogEntry>
   readonly recordingProfiles: ReadonlyArray<ProcessPlantCatalogEntry>
-  readonly displays: ReadonlyArray<ProcessPlantCatalogEntry>
   readonly credibilityEvidence: ReadonlyArray<ProcessPlantCatalogEntry>
 }
 
@@ -189,130 +131,6 @@ const assertString = (value: unknown, message: string): string => {
 const assertNumber = (value: unknown, message: string): number => {
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(message)
   return value
-}
-
-const assertBoolean = (value: unknown, message: string): boolean => {
-  if (typeof value !== 'boolean') throw new Error(message)
-  return value
-}
-
-const parseLensOption = (value: unknown): ProcessDisplayLensOption => {
-  const lens = assertObject(value, 'process display lens option is malformed')
-  return {
-    id: assertString(lens.id, 'process display lens option requires id'),
-    label: assertString(lens.label, 'process display lens option requires label'),
-    ...(typeof lens.description === 'string' ? { description: lens.description } : {}),
-    ...(lens.lens === undefined ? {} : { lens: assertObject(lens.lens, 'process display lens option has malformed lens') as unknown as ProcessDisplayGraphLens }),
-  }
-}
-
-const parseDisplayValues = (value: unknown): ReadonlyArray<ProcessDisplayValue> =>
-  assertArray(value, 'process display snapshot result has no values array').map(item => {
-    const record = assertObject(item, 'process display value is malformed')
-    return {
-      path: assertString(record.path, 'process display value requires path') as ProcessDisplayValue['path'],
-      label: assertString(record.label, 'process display value requires label'),
-      unit: assertString(record.unit, 'process display value requires unit'),
-      value: record.value,
-      formatted: assertString(record.formatted, 'process display value requires formatted'),
-    }
-  })
-
-const parseAlarmSeverity = (value: unknown): ProcessDisplayAlarmSeverity => {
-  if (value === 'info' || value === 'notice' || value === 'warning' || value === 'critical') return value
-  throw new Error('process display alarm lifecycle has invalid severity')
-}
-
-const parseAlarmPriority = (value: unknown): NonNullable<ProcessDisplayAlarmLifecycle['annunciator']>['priority'] => {
-  if (value === 'low' || value === 'medium' || value === 'high' || value === 'urgent') return value
-  throw new Error('process display alarm annunciator has invalid priority')
-}
-
-const parseAlarmRole = (value: unknown): NonNullable<ProcessDisplayAlarmLifecycle['annunciator']>['role'] => {
-  if (value === 'symptom' || value === 'cause' || value === 'automaticAction' || value === 'status') return value
-  throw new Error('process display alarm annunciator has invalid role')
-}
-
-const parseOptionalNumber = (value: unknown, message: string): number | undefined => {
-  if (value === undefined) return undefined
-  return assertNumber(value, message)
-}
-
-const parseAlarmAnnunciator = (value: unknown): ProcessDisplayAlarmAnnunciator | undefined => {
-  if (value === undefined) return undefined
-  const annunciator = assertObject(value, 'process display alarm annunciator is malformed')
-  const priority = annunciator.priority === undefined ? undefined : parseAlarmPriority(annunciator.priority)
-  const role = annunciator.role === undefined ? undefined : parseAlarmRole(annunciator.role)
-  return {
-    ...(typeof annunciator.system === 'string' ? { system: annunciator.system } : {}),
-    ...(typeof annunciator.equipmentId === 'string' ? { equipmentId: annunciator.equipmentId } : {}),
-    ...(typeof annunciator.group === 'string' ? { group: annunciator.group } : {}),
-    ...(typeof annunciator.firstOutGroup === 'string' ? { firstOutGroup: annunciator.firstOutGroup } : {}),
-    ...(priority === undefined ? {} : { priority }),
-    ...(role === undefined ? {} : { role }),
-  }
-}
-
-const parseAlarmLifecycle = (value: unknown): ProcessDisplayAlarmLifecycle => {
-  const lifecycle = assertObject(value, 'process display alarm lifecycle is malformed')
-  const kind = lifecycle.kind
-  if (kind !== 'alarm' && kind !== 'trip') throw new Error('process display alarm lifecycle has invalid kind')
-  const parsedAnnunciator = parseAlarmAnnunciator(lifecycle.annunciator)
-  const firstOutRank = parseOptionalNumber(lifecycle.firstOutRank, 'process display alarm lifecycle has invalid firstOutRank')
-  const firstActiveElapsedMs = parseOptionalNumber(lifecycle.firstActiveElapsedMs, 'process display alarm lifecycle has invalid firstActiveElapsedMs')
-  const lastActiveElapsedMs = parseOptionalNumber(lifecycle.lastActiveElapsedMs, 'process display alarm lifecycle has invalid lastActiveElapsedMs')
-  const lastClearedElapsedMs = parseOptionalNumber(lifecycle.lastClearedElapsedMs, 'process display alarm lifecycle has invalid lastClearedElapsedMs')
-  return {
-    id: assertString(lifecycle.id, 'process display alarm lifecycle requires id'),
-    kind,
-    title: assertString(lifecycle.title, 'process display alarm lifecycle requires title'),
-    message: assertString(lifecycle.message, 'process display alarm lifecycle requires message'),
-    severity: parseAlarmSeverity(lifecycle.severity),
-    phase: assertString(lifecycle.phase, 'process display alarm lifecycle requires phase'),
-    active: assertBoolean(lifecycle.active, 'process display alarm lifecycle requires active'),
-    acknowledged: assertBoolean(lifecycle.acknowledged, 'process display alarm lifecycle requires acknowledged'),
-    firstOut: assertBoolean(lifecycle.firstOut, 'process display alarm lifecycle requires firstOut'),
-    resettable: assertBoolean(lifecycle.resettable, 'process display alarm lifecycle requires resettable'),
-    ...(parsedAnnunciator === undefined ? {} : { annunciator: parsedAnnunciator }),
-    ...(firstOutRank === undefined ? {} : { firstOutRank }),
-    ...(firstActiveElapsedMs === undefined ? {} : { firstActiveElapsedMs }),
-    ...(lastActiveElapsedMs === undefined ? {} : { lastActiveElapsedMs }),
-    ...(lastClearedElapsedMs === undefined ? {} : { lastClearedElapsedMs }),
-  }
-}
-
-const parseAlarmSnapshot = (value: unknown): ProcessDisplayAlarmSnapshot => {
-  const snapshot = assertObject(value, 'process display snapshot result has no alarms object')
-  const activeHighestSeverity = snapshot.activeHighestSeverity
-  if (activeHighestSeverity !== null && activeHighestSeverity !== undefined) parseAlarmSeverity(activeHighestSeverity)
-  return {
-    configured: assertBoolean(snapshot.configured, 'process display alarm snapshot requires configured'),
-    activeAlarmCount: assertNumber(snapshot.activeAlarmCount, 'process display alarm snapshot requires activeAlarmCount'),
-    activeTripCount: assertNumber(snapshot.activeTripCount, 'process display alarm snapshot requires activeTripCount'),
-    unacknowledgedCount: assertNumber(snapshot.unacknowledgedCount, 'process display alarm snapshot requires unacknowledgedCount'),
-    firstOutCount: assertNumber(snapshot.firstOutCount, 'process display alarm snapshot requires firstOutCount'),
-    activeHighestSeverity: activeHighestSeverity === null || activeHighestSeverity === undefined ? null : parseAlarmSeverity(activeHighestSeverity),
-    activeFirstOut: assertArray(snapshot.activeFirstOut, 'process display alarm snapshot requires activeFirstOut').map(parseAlarmLifecycle),
-    active: assertArray(snapshot.active, 'process display alarm snapshot requires active').map(parseAlarmLifecycle),
-  }
-}
-
-const parseCompiledProcessDisplay = (value: unknown): CompiledProcessDisplay => {
-  const display = assertObject(value, 'process display read result has no display')
-  const designSize = assertObject(display.designSize, 'process display requires designSize')
-  if (typeof designSize.width !== 'number' || typeof designSize.height !== 'number') {
-    throw new Error('process display designSize requires numeric width and height')
-  }
-  return {
-    id: assertString(display.id, 'process display requires id'),
-    title: assertString(display.title, 'process display requires title'),
-    ...(typeof display.description === 'string' ? { description: display.description } : {}),
-    designSize: { width: designSize.width, height: designSize.height },
-    lenses: assertArray(display.lenses, 'process display requires lenses').map(parseLensOption),
-    widgets: assertArray(display.widgets, 'process display requires widgets') as CompiledProcessDisplay['widgets'],
-    paths: assertArray(display.paths, 'process display requires paths') as CompiledProcessDisplay['paths'],
-    bindingPaths: assertArray(display.bindingPaths, 'process display requires bindingPaths') as CompiledProcessDisplay['bindingPaths'],
-  }
 }
 
 const parseProcessPlantArtifactComponent = (value: unknown): ProcessPlantArtifactComponent => {
@@ -403,7 +221,6 @@ export const readProcessPlantCatalog = async (
     actions: assertArray(result.actions, 'process plant catalog result has no actions array').map(parseProcessPlantAction),
     assessments: assertArray(result.assessments, 'process plant catalog result has no assessments array').map(parseProcessPlantCatalogEntry),
     recordingProfiles: assertArray(result.recordingProfiles, 'process plant catalog result has no recordingProfiles array').map(parseProcessPlantCatalogEntry),
-    displays: assertArray(result.displays, 'process plant catalog result has no displays array').map(parseProcessPlantCatalogEntry),
     credibilityEvidence: assertArray(result.credibilityEvidence, 'process plant catalog result has no credibilityEvidence array').map(parseProcessPlantCatalogEntry),
   }
 }
@@ -500,90 +317,6 @@ export const listProcessPlantVariablePaths = async (
     if (returned === 0) throw new Error('process plant variables search pagination made no progress')
   } while (true)
   return paths
-}
-
-export const listProcessDisplays = async (
-  simulationRunId: SimulationRunId,
-  plantId: string,
-): Promise<ReadonlyArray<ProcessDisplayListItem>> => {
-  const result = assertObject(await querySimulationRunCapability(
-    simulationRunId,
-    'world.process-plant.displays.list',
-    { plantId },
-  ), 'process display list result is malformed')
-  return assertArray(result.displays, 'process display list result has no displays array').map(item => {
-    const display = assertObject(item, 'process display list item is malformed')
-    if (typeof display.id !== 'string' || typeof display.title !== 'string') throw new Error('process display list item requires id and title')
-    return {
-      id: display.id,
-      title: display.title,
-      ...(typeof display.description === 'string' ? { description: display.description } : {}),
-      lenses: assertArray(display.lenses, 'process display list item requires lenses').map(parseLensOption),
-    }
-  })
-}
-
-export const readProcessDisplay = async (
-  simulationRunId: SimulationRunId,
-  plantId: string,
-  displayId: string,
-): Promise<CompiledProcessDisplay> => {
-  const result = assertObject(await querySimulationRunCapability(
-    simulationRunId,
-    'world.process-plant.display.read',
-    { plantId, displayId },
-  ), 'process display read result is malformed')
-  return parseCompiledProcessDisplay(result.display)
-}
-
-export const readProcessDisplaySnapshot = async (
-  simulationRunId: SimulationRunId,
-  plantId: string,
-  displayId: string,
-): Promise<ProcessDisplaySnapshot> => {
-  const result = assertObject(await querySimulationRunCapability(
-    simulationRunId,
-    'world.process-plant.display.snapshot',
-    { plantId, displayId },
-  ), 'process display snapshot result is malformed')
-  if (typeof result.plantId !== 'string' || typeof result.displayId !== 'string') throw new Error('process display snapshot result requires plantId and displayId')
-  return {
-    plantId: result.plantId,
-    displayId: result.displayId,
-    values: parseDisplayValues(result.values),
-    alarms: parseAlarmSnapshot(result.alarms),
-  }
-}
-
-export const readProcessDisplayProjection = async (
-  simulationRunId: SimulationRunId,
-  plantId: string,
-  displayId: string,
-  lens: ProcessDisplayGraphLens,
-): Promise<ProcessDisplayProjection> => {
-  const result = assertObject(await querySimulationRunCapability(
-    simulationRunId,
-    'world.process-plant.display.project',
-    { plantId, displayId, lens },
-  ), 'process display projection result is malformed')
-  if (typeof result.plantId !== 'string' || typeof result.displayId !== 'string') throw new Error('process display projection result requires plantId and displayId')
-  const graphProjection = assertObject(result.graphProjection, 'process display projection result has no graphProjection')
-  const displayProjection = assertObject(result.displayProjection, 'process display projection result has no displayProjection')
-  return {
-    plantId: result.plantId,
-    displayId: result.displayId,
-    graphProjection: {
-      componentIds: assertArray(graphProjection.componentIds, 'process display graph projection has no componentIds') as ReadonlyArray<string>,
-      connectionIds: assertArray(graphProjection.connectionIds, 'process display graph projection has no connectionIds') as ReadonlyArray<string>,
-      diagnostics: assertArray(graphProjection.diagnostics, 'process display graph projection has no diagnostics') as ReadonlyArray<Record<string, unknown>>,
-    },
-    displayProjection: {
-      visibleWidgetIds: assertArray(displayProjection.visibleWidgetIds, 'process display projection has no visibleWidgetIds') as ReadonlyArray<string>,
-      visiblePathIds: assertArray(displayProjection.visiblePathIds, 'process display projection has no visiblePathIds') as ReadonlyArray<string>,
-      hiddenWidgetIds: assertArray(displayProjection.hiddenWidgetIds, 'process display projection has no hiddenWidgetIds') as ReadonlyArray<string>,
-      hiddenPathIds: assertArray(displayProjection.hiddenPathIds, 'process display projection has no hiddenPathIds') as ReadonlyArray<string>,
-    },
-  }
 }
 
 export const readProcessPlantArtifact = async (

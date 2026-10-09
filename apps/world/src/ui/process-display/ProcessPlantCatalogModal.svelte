@@ -36,7 +36,6 @@
     { id: 'actions', title: 'Actions', rows: catalog.actions },
     { id: 'assessments', title: 'Assessments', rows: catalog.assessments },
     { id: 'recording-profiles', title: 'Recording profiles', rows: catalog.recordingProfiles },
-    { id: 'displays', title: 'Process displays', rows: catalog.displays },
     { id: 'credibility', title: 'Credibility evidence', rows: catalog.credibilityEvidence },
   ])
   const normalizedQuery = $derived(query.trim().toLowerCase())

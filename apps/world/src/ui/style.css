@@ -114,7 +114,6 @@ body {
   .builder-spacer { display: none; }
 }
 
-
 button,
 input,
 select {
@@ -1303,24 +1302,6 @@ body.rail-resizing {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--panel) 80%, transparent);
 }
 
-.process-display-status-items {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.process-display-status-items span {
-  white-space: nowrap;
-}
-
-.process-display-status-items b {
-  color: var(--text);
-}
-
 .process-display-statusbar button {
   width: 30px;
   height: 30px;
@@ -1340,16 +1321,6 @@ body.rail-resizing {
   background: color-mix(in srgb, var(--border) 45%, transparent);
 }
 
-.process-display-lens-control {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  cursor: default;
-  touch-action: auto;
-}
-
 .process-display-window-actions {
   display: flex;
   align-items: center;
@@ -1363,49 +1334,6 @@ body.rail-resizing {
 .process-display-statusbar .process-display-icon-button[aria-pressed="true"] {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 18%, transparent);
-}
-
-.process-display-lens-menu {
-  position: absolute;
-  z-index: 5;
-  top: 34px;
-  right: 0;
-  width: 260px;
-  display: grid;
-  gap: 4px;
-  padding: 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--panel) 96%, transparent);
-  box-shadow: 0 18px 42px rgba(16, 24, 40, 0.24);
-  cursor: default;
-  pointer-events: auto;
-  user-select: auto;
-}
-
-.process-display-statusbar .process-display-lens-menu button {
-  width: 100%;
-  height: auto;
-  display: grid;
-  justify-items: start;
-  gap: 2px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  text-align: left;
-  font-size: 12px;
-}
-
-.process-display-lens-menu button strong {
-  font-size: 13px;
-}
-
-.process-display-lens-menu button span {
-  color: var(--muted);
-}
-
-.process-display-lens-menu button.active {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .process-transient-backdrop {
@@ -3748,130 +3676,6 @@ body.rail-resizing {
   }
 }
 
-.process-display-viewport {
-  height: 100%;
-  width: 100%;
-  overflow: hidden;
-  border: 0;
-  border-radius: 0;
-  background:
-    linear-gradient(color-mix(in srgb, #8391a2 13%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, #8391a2 13%, transparent) 1px, transparent 1px),
-    #1c2024;
-  background-size: 40px 40px, 40px 40px, auto;
-}
-
-.process-display-svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-  font-family: inherit;
-  cursor: grab;
-  touch-action: none;
-}
-
-.process-display-svg.panning {
-  cursor: grabbing;
-}
-
-.process-display-system-zone {
-  fill: color-mix(in srgb, #252a30 52%, transparent);
-  stroke: color-mix(in srgb, #9aa5b1 20%, transparent);
-  stroke-width: 1;
-}
-
-.process-display-system-zone.primary-zone {
-  fill: color-mix(in srgb, #24303c 56%, transparent);
-}
-
-.process-display-system-zone.heat-transfer-zone {
-  fill: color-mix(in srgb, #252a30 62%, transparent);
-}
-
-.process-display-system-zone.secondary-zone {
-  fill: color-mix(in srgb, #302a26 46%, transparent);
-}
-
-.process-display-header-lane {
-  fill: color-mix(in srgb, #111418 38%, transparent);
-  stroke: color-mix(in srgb, #9aa5b1 12%, transparent);
-  stroke-width: 1;
-}
-
-.process-display-header-lane.steam-lane {
-  stroke: color-mix(in srgb, #df846c 34%, transparent);
-}
-
-.process-display-header-lane.feedwater-lane {
-  stroke: color-mix(in srgb, #40c4d6 34%, transparent);
-}
-
-.process-display-zone-label {
-  fill: #9ba6b2;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0;
-}
-
-.process-display-lane-label {
-  fill: #737f8c;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0;
-}
-
-.process-flow-casing {
-  fill: none;
-  stroke: color-mix(in srgb, #101418 88%, #ffffff);
-  stroke-width: 9;
-  stroke-linecap: square;
-  stroke-linejoin: round;
-  pointer-events: none;
-}
-
-.process-flow {
-  fill: none;
-  stroke-width: 4;
-  stroke-linecap: square;
-  stroke-linejoin: round;
-  opacity: 0.86;
-  pointer-events: none;
-}
-
-.process-flow.primary { stroke: #5ba3f0; }
-.process-flow.steam { stroke: #e07a5f; }
-.process-flow.feedwater,
-.process-flow.condensate { stroke: #34c4d8; }
-.process-flow.electrical { stroke: #f0c14b; }
-.process-flow.cooling { stroke: #44b3a4; }
-.process-flow.support { stroke: #94a3b8; }
-
-.process-widget .widget-shell {
-  fill: color-mix(in srgb, var(--panel) 94%, transparent);
-  stroke: color-mix(in srgb, var(--border) 78%, var(--text));
-  stroke-width: 1.6;
-}
-
-.process-widget {
-  cursor: grab;
-  touch-action: none;
-}
-
-.process-widget.dragging {
-  cursor: grabbing;
-}
-
-.process-widget.dragging .widget-shell {
-  filter: drop-shadow(0 10px 18px color-mix(in srgb, var(--text) 22%, transparent));
-  stroke-width: 3;
-}
-
-.process-widget.primary .widget-shell { stroke: #2563eb; }
-.process-widget.secondary .widget-shell { stroke: #a85623; }
-.process-widget.support .widget-shell { stroke: #22845d; }
-.process-widget.warning .widget-shell { stroke: #b97912; }
-.process-widget.critical .widget-shell { stroke: #c7352b; }
-
 .overview-status-shell,
 .overview-readout-shell {
   fill: color-mix(in srgb, #23272c 94%, transparent);
@@ -4241,10 +4045,6 @@ body.rail-resizing {
   fill: #94a3b8;
   font-size: 8.5px;
   font-weight: 750;
-}
-
-.process-widget.steam-generator {
-  color: #d7dee8;
 }
 
 .sg-shell {

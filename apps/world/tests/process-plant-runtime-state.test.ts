@@ -170,8 +170,8 @@ describe('process plant Pack runtime lifecycle', () => {
       }))
       expect((read as { variables: ReadonlyArray<{ value: number }> }).variables[0]?.value).toBeCloseTo(0.5, 2)
 
-      const displays = await connection.invokeQuery(query('world.process-plant.displays.list', { plantId: basePlant.id }))
-      expect((displays as { displays: ReadonlyArray<{ id: string }> }).displays).toContainEqual(expect.objectContaining({ id: 'unit-overview' }))
+      const overview = await connection.invokeQuery(query('world.process-plant.display.overview', { plantId: basePlant.id }))
+      expect(JSON.parse((overview as { view: { state: string } }).view.state)).toEqual({ overview: { plantId: basePlant.id } })
 
       const automation = await connection.invokeQuery(query('world.process-plant.ic.catalog', { plantId: basePlant.id }))
       expect((automation as { ic: { rules: ReadonlyArray<unknown> } }).ic.rules.length).toBeGreaterThan(0)

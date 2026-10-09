@@ -1,13 +1,5 @@
 import type { CompiledPlantGraph } from './graph/index.ts'
-import type { ProcessDisplayDefinition } from './displays/model.ts'
 import { processPlantPwrReferenceCatalogContribution } from './pwr-reference-catalog-contribution.ts'
-
-export interface ProcessPlantDisplayCatalogEntry {
-  readonly id: string
-  readonly title: string
-  readonly description: string
-  readonly display: (config: { readonly graph: CompiledPlantGraph }) => ProcessDisplayDefinition
-}
 
 export type ProcessPlantCredibilityArtifactLanguage = 'json' | 'svg'
 
@@ -31,12 +23,10 @@ export interface ProcessPlantCredibilityEvidenceCatalogEntry {
 
 export interface ProcessPlantCatalogContribution {
   readonly id: string
-  readonly displays?: ReadonlyArray<ProcessPlantDisplayCatalogEntry>
   readonly credibilityEvidence?: ReadonlyArray<ProcessPlantCredibilityEvidenceCatalogEntry>
 }
 
 export interface ProcessPlantCatalog {
-  readonly displaysById: ReadonlyMap<string, ProcessPlantDisplayCatalogEntry>
   readonly credibilityEvidenceById: ReadonlyMap<string, ProcessPlantCredibilityEvidenceCatalogEntry>
 }
 
@@ -64,7 +54,6 @@ const collectById = <TEntry extends { readonly id: string }>(
 export const collectProcessPlantCatalog = (
   contributions: ReadonlyArray<ProcessPlantCatalogContribution>,
 ): ProcessPlantCatalog => ({
-  displaysById: collectById('display id', contributions, contribution => contribution.displays),
   credibilityEvidenceById: collectById('credibility evidence id', contributions, contribution => contribution.credibilityEvidence),
 })
 

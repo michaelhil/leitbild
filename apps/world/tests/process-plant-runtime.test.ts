@@ -30,7 +30,7 @@ import {
   createProcessPlantScheduleRunner,
   createProcessPlantTestbed,
 } from '../src/packs/process-plant/engineering/index.ts'
-import { answerProcessPlantDisplayQuery } from '../src/packs/process-plant/queries/display-query.ts'
+import { answerProcessPlantQuery } from '../src/packs/process-plant/query.ts'
 import { componentBehaviorDefinitions, initialComponentValueFor } from '../src/packs/process-plant/runtime/component-behaviors.ts'
 import { componentInitialValueDefinitions } from '../src/packs/process-plant/runtime/component-initial-values.ts'
 import { componentInitialReconciliationDefinitions } from '../src/packs/process-plant/runtime/component-behaviors.ts'
@@ -150,23 +150,18 @@ const displayAlarmIdsFor = (input: {
       performance: createProcessPlantRuntimePerformance(),
     },
   ]])
-  const response = answerProcessPlantDisplayQuery({
+  // What a live display shows: the active alarms and trips one sample reads.
+  const response = answerProcessPlantQuery({
     request: {
-      capabilityId: 'world.process-plant.display.snapshot',
-      input: {
-        plantId: input.system.id,
-        displayId: 'unit-overview',
-      },
+      capabilityId: 'world.process-plant.display.sample',
+      input: { plantId: input.system.id, paths: ['core.powerMw'], alarms: true },
     },
     plants,
-  })
-  if (response === undefined) throw new Error('display alarm snapshot query did not resolve')
-  const alarms = (response as {
-    readonly alarms: {
-      readonly active: ReadonlyArray<{ readonly id: string }>
-    }
-  }).alarms
-  return alarms.active.map(alarm => alarm.id).sort()
+    objects: new Map(),
+    simulationTime: '2026-01-01T10:00:00.000Z' as IsoTimestamp,
+    recordedSeriesIds: new Set(),
+  }) as { readonly alarms: ReadonlyArray<{ readonly id: string }> }
+  return response.alarms.map(alarm => alarm.id).sort()
 }
 
 const fluidVariable = (input: {

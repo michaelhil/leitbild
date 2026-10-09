@@ -9,7 +9,6 @@ import { answerProcessPlantCredibilityQuery, processPlantCredibilityQueryKinds }
 import { answerProcessPlantGraphQuery, processPlantGraphQueryKinds } from './queries/graph-query.ts'
 import { answerProcessPlantRuntimeQuery, processPlantRuntimeQueryKinds } from './queries/runtime-query.ts'
 import { answerProcessPlantSignalQuery, processPlantSignalQueryKinds } from './queries/signal-query.ts'
-import { answerProcessPlantDisplayQuery, processPlantDisplayQueryKinds } from './queries/display-query.ts'
 import { answerProcessPlantComposedDisplayQuery, processPlantComposedDisplayQueryKinds } from './queries/composed-display-query.ts'
 import { answerProcessPlantVariableQuery, processPlantVariableQueryKinds } from './queries/variable-query.ts'
 
@@ -24,7 +23,6 @@ export const processPlantQueryKinds = [
   ...processPlantControlQueryKinds,
   ...processPlantRuntimeQueryKinds,
   ...processPlantIcQueryKinds,
-  ...processPlantDisplayQueryKinds,
   ...processPlantComposedDisplayQueryKinds,
 ] as const
 
@@ -44,6 +42,5 @@ export const answerProcessPlantQuery = (config: {
   ?? answerProcessPlantSignalQuery(config)
   ?? answerProcessPlantControlQuery(config)
   ?? answerProcessPlantRuntimeQuery(config)
-  ?? answerProcessPlantDisplayQuery(config)
   ?? answerProcessPlantComposedDisplayQuery(config)
   ?? failure(`Process Plant does not support query Capability: ${config.request.capabilityId}`)

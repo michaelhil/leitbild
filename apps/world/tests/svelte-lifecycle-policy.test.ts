@@ -74,13 +74,14 @@ describe('Svelte lifecycle policy', () => {
     const mount = source.slice(mountStart, source.indexOf('</script>', mountStart))
 
     // Startup is deliberately non-reactive. Live telemetry and dragging must
-    // never restart discovery, blank the renderer, or install another poller.
+    // never reopen the overview or blank it; the framed view samples the
+    // Plant itself, so the window installs no poller.
     expect(source).not.toContain('$effect(')
     expect(source).toContain('untrack(() => plantIdFor(object))')
     expect(source).toContain('untrack(() => simulationRunId)')
-    expect(mount).toContain('void loadDisplay()')
+    expect(mount).toContain('void loadOverview()')
     expect(mount).toContain('disposed = true')
-    expect(mount).toContain('session.close()')
+    expect(source).not.toContain('setInterval(')
   })
 
   test('floating window drag guards ignore icon clicks inside buttons', () => {
