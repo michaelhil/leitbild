@@ -7,6 +7,7 @@
   import { displayValue, formatQuantity, unitLabel, valueDigits } from '../../../../packs/process-plant/displays/display-text.ts'
   import type { ComposedDisplayAlarm, ComposedDisplaySample } from '../composed-display-client.ts'
   import { chevronSegment, pipeSegments, pipeValue, stubEndSegment } from './pipe-segments.ts'
+  import { mimicLegend } from './mimic-legend.ts'
   import { openBridgeDevice } from '../../../../packs/process-plant/displays/mimic/text-metrics.ts'
   import type * as OpenBridgeMimic from './openbridge-mimic.ts'
 
@@ -236,15 +237,15 @@
   </div>
   <!-- The key names only what this drawing can show; a stale view says so first. -->
   <p class="legend">
-    {#if stale}<span class="stale-tag">STALE</span><span>not current</span>{/if}
+    {#if stale}<span class="stale-tag">{mimicLegend.stale}</span><span>{mimicLegend.staleMeaning}</span>{/if}
     {#if openBridge !== null}
-      <span class="key"><canvas use:keyGlyph={{ ob: openBridge, value: 'open-flow', chevron: true, theme }}></canvas>flow</span>
-      <span class="key"><canvas use:keyGlyph={{ ob: openBridge, value: 'empty', chevron: false, theme }}></canvas>no flow</span>
-      <span class="key"><canvas use:keyGlyph={{ ob: openBridge, value: 'closed-dash', chevron: false, theme }}></canvas>not known</span>
+      <span class="key"><canvas use:keyGlyph={{ ob: openBridge, value: 'open-flow', chevron: true, theme }}></canvas>{mimicLegend.flow}</span>
+      <span class="key"><canvas use:keyGlyph={{ ob: openBridge, value: 'empty', chevron: false, theme }}></canvas>{mimicLegend.noFlow}</span>
+      <span class="key"><canvas use:keyGlyph={{ ob: openBridge, value: 'closed-dash', chevron: false, theme }}></canvas>{mimicLegend.unknownFlow}</span>
     {/if}
-    <span>CMD: command ≠ state</span>
-    {#if drawsRelief}<span>POS ?: not computed</span>{/if}
-    <span>simulator</span>
+    <span>{mimicLegend.command}</span>
+    {#if drawsRelief}<span>{mimicLegend.notComputed}</span>{/if}
+    <span>{mimicLegend.simulator}</span>
   </p>
 </div>
 

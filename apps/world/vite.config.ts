@@ -2,6 +2,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { defineConfig } from 'vite'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { openBridgeMimicFont } from './src/ui/embed/composed-display/mimic/mimic-font.ts'
 
 const packageJson = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as {
   readonly version: string
@@ -9,7 +10,7 @@ const packageJson = JSON.parse(readFileSync(new URL('./package.json', import.met
 
 export default defineConfig({
   root: 'src/ui',
-  plugins: [svelte()],
+  plugins: [svelte(), openBridgeMimicFont()],
   define: {
     __LEITBILD_VERSION__: JSON.stringify(packageJson.version),
   },

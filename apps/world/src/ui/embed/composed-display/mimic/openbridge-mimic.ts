@@ -35,7 +35,7 @@ import '@oicl/openbridge-webcomponents/dist/icons/icon-converter-dcac.js'
 import '@oicl/openbridge-webcomponents/dist/icons/icon-converter-dcac-on.js'
 import '@oicl/openbridge-webcomponents/dist/icons/icon-converter-dcac-off.js'
 import '@oicl/openbridge-webcomponents/dist/icons/icon-battery-vertical-75.js'
-import notoSansUrl from '@oicl/openbridge-webcomponents/dist/NotoSans.ttf?url'
+import mimicFontUrl from 'virtual:openbridge-mimic-font'
 import { renderSegments, themeFromCss, type Segment, type ThemeVars } from '@oicl/connector-diagram'
 import type { MimicIconFamily } from '../../../../packs/process-plant/displays/mimic/presentation.ts'
 import type { ItemLook } from '../../../../packs/process-plant/displays/mimic/evaluate.ts'
@@ -51,10 +51,10 @@ export const flapLabel = (label: string, others: number, frameWidth: number): st
   return textWidth('alertLabel', counted) + openBridgeDevice.flapLabelInset <= frameWidth ? counted : label
 }
 
-/** The text widths the server reserved were measured in OpenBridge's Noto Sans, so the mimic loads it. */
+/** The text widths the server reserved were measured in OpenBridge's Noto Sans, so the mimic loads its glyphs (mimic-font.ts). */
 export const loadMimicFont = async (): Promise<void> => {
   if ([...document.fonts].some(face => face.family.replace(/"/g, '') === 'Noto Sans')) return
-  const face = new FontFace('Noto Sans', `url(${notoSansUrl})`, { weight: '100 900' })
+  const face = new FontFace('Noto Sans', `url(${mimicFontUrl})`, { weight: '100 900' })
   document.fonts.add(face)
   await face.load()
 }
