@@ -15,8 +15,14 @@ import type { MimicIntent } from './scope.ts'
 /** Changes whenever the same intent on the same model could draw differently. */
 export const MIMIC_LAYOUT_VERSION = `diagram-${DIAGRAM_ENGINE_VERSION}/openbridge-2.0.0/mimic-1`
 
-/** The drawing is 600 design px wide, the width of a chat display. */
-export const MIMIC_MAX_WIDTH = 600
+/**
+ * A mimic may be up to 800 px wide (owner decision): OpenBridge's full-size
+ * symbols need it for four loops. A narrower chat column shrinks the drawing
+ * only as far as its smallest text stays 11 px; beyond that it scrolls.
+ */
+export const MIMIC_MAX_WIDTH = 800
+/** The smallest text in a mimic is OpenBridge's 11.5 px readout row; it may shrink to 11 px. */
+export const MIMIC_MIN_SCALE = 11 / 11.5
 
 export interface MimicDrawnItem {
   readonly id: string

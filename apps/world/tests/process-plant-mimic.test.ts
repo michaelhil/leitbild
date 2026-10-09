@@ -12,7 +12,7 @@ import {
 import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
 import { recordedPlantVariables } from '../src/packs/process-plant/recording.ts'
 import { compileMimic, type MimicBudget } from '../src/packs/process-plant/displays/mimic/compile-mimic.ts'
-import type { CompiledMimic } from '../src/packs/process-plant/displays/mimic/mimic-model.ts'
+import { MIMIC_MAX_WIDTH, type CompiledMimic } from '../src/packs/process-plant/displays/mimic/mimic-model.ts'
 import type { MimicIntent } from '../src/packs/process-plant/displays/mimic/scope.ts'
 
 const plantWithLoops = (loopCount: number): ProcessPlantRuntimeInstance => {
@@ -27,7 +27,8 @@ const plantWithLoops = (loopCount: number): ProcessPlantRuntimeInstance => {
   }
 }
 
-const roomy: MimicBudget = { maxWidth: 600, maxHeight: 744 }
+// The room a mimic-led display leaves beside alarms: 800 px wide, about 620 px tall.
+const roomy: MimicBudget = { maxWidth: MIMIC_MAX_WIDTH, maxHeight: 624 }
 
 const generated = (system: ProcessPlantRuntimeInstance, intent: MimicIntent, budget = roomy): CompiledMimic => {
   const result = compileMimic(system.plant, intent, budget)
@@ -42,6 +43,9 @@ const situations: ReadonlyArray<[string, MimicIntent]> = [
   ['the SI lineup to loop C', { services: ['safetyInjection'], loops: ['C'] }],
   ['where letdown goes', { from: ['letdownValve'], services: ['letdown', 'charging'] }],
   ['the pressurizer relief path', { from: ['pressurizer'], to: ['PRT'] }],
+  ['all four reactor coolant loops', { services: ['primaryCoolant'] }],
+  ['main and auxiliary feed to SG B', { to: ['sgB'], services: ['feedwater', 'auxFeedwater'] }],
+  ['auxiliary feedwater to every SG', { services: ['auxFeedwater'] }],
 ]
 
 describe('generated equipment mimics', () => {

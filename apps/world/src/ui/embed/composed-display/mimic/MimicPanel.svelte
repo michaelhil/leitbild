@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import type { Segment } from '@oicl/connector-diagram'
-  import type { CompiledMimic, MimicDrawnItem, MimicPipeState } from '../../../../packs/process-plant/displays/mimic/mimic-model.ts'
+  import { MIMIC_MIN_SCALE, type CompiledMimic, type MimicDrawnItem, type MimicPipeState } from '../../../../packs/process-plant/displays/mimic/mimic-model.ts'
   import { flowLook, indexSample, itemLook, powerLook, type ItemLook, type SampleIndex } from '../../../../packs/process-plant/displays/mimic/evaluate.ts'
   import { rowText, type MimicRow } from '../../../../packs/process-plant/displays/mimic/rows.ts'
   import { displayValue, formatQuantity, unitLabel, valueDigits } from '../../../../packs/process-plant/displays/display-text.ts'
@@ -21,6 +21,9 @@
   } = $props()
 
   let openBridge = $state<typeof OpenBridgeMimic | null>(null)
+  let columnWidth = $state(0)
+  // A chat column narrower than the drawing shrinks it while its smallest text stays 11 px; then it scrolls.
+  const scale = $derived(columnWidth === 0 ? 1 : Math.min(1, Math.max(MIMIC_MIN_SCALE, columnWidth / mimic.width)))
   let theme = $state(document.documentElement.dataset.obcTheme ?? '')
   let canvas = $state<HTMLCanvasElement | undefined>(undefined)
 
@@ -181,7 +184,8 @@
 </script>
 
 <div class="mimic-panel" role="img" aria-label={`Equipment mimic${stale ? ' (stale: states not current)' : ''}. ${equipmentWords}`}>
-  <div class="drawing" style={`width:${mimic.width}px;height:${mimic.height}px`}>
+  <div class="viewport" bind:clientWidth={columnWidth} style={`height:${Math.ceil(mimic.height * scale)}px`}>
+  <div class="drawing" style={`width:${mimic.width}px;height:${mimic.height}px;transform:scale(${scale})`}>
     {#each mimic.zones as zone (zone.lane)}
       <div class="zone" style={`left:${zone.x}px;top:${zone.y}px;width:${zone.width}px;height:${zone.height}px`} title={zone.label}></div>
     {/each}
@@ -226,6 +230,7 @@
       </div>
     {/if}
   </div>
+  </div>
   <!-- The key names only what this drawing can show; a stale view says so first. -->
   <p class="legend">
     {#if stale}<span class="stale-tag">STALE</span><span>states not current</span>{/if}
@@ -242,7 +247,8 @@
 
 <style>
   .mimic-panel { display: flex; flex-direction: column; gap: 2px; }
-  .drawing { position: relative; }
+  .viewport { overflow-x: auto; overflow-y: hidden; }
+  .drawing { position: relative; transform-origin: 0 0; }
   .zone { position: absolute; box-sizing: border-box; border: 1px solid var(--border-divider-color, var(--element-neutral-color)); border-radius: 4px; }
   .pipes { position: absolute; left: 0; top: 0; }
   /* OpenBridge positions a point device at its symbol centre; its stack must not wrap. */
