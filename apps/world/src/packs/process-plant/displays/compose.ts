@@ -571,19 +571,14 @@ export const compileComposedDisplay = (
   }
 }
 
-/**
- * The screens a unit overview is drawn for at 1:1, smallest first, as the
- * view its window shows on each: on a Full HD screen as measured on
- * production, on a QHD screen with the same browser and window around it.
- * The overview takes the first screen and arrangement its Plant fits (four
- * loops fit Full HD, six need QHD), so it never draws larger than the screen
- * it needs and never scrolls there. A Plant that fits none is refused with
- * the size it needs.
- */
-export const UNIT_OVERVIEW_SCREENS = [
-  { name: 'Full HD', width: 1896, height: 972 },
-  { name: 'QHD', width: 2536, height: 1332 },
-] as const
+/** The view a unit overview is shown in: its window's inner size in CSS px. */
+export interface OverviewView {
+  readonly width: number
+  readonly height: number
+}
+
+/** Room no drawing reaches: leaves the layout unconstrained along that axis. */
+const UNCONSTRAINED = 1_000_000
 
 /**
  * How an overview's panels share its window: the drawing beside a column of
@@ -598,13 +593,13 @@ export type OverviewArrangement = 'column' | 'stacked'
  * its height.
  */
 export const overviewDrawingRoom = (
-  screen: { readonly width: number; readonly height: number },
+  view: OverviewView,
   arrangement: OverviewArrangement,
   readouts: number,
 ): { readonly maxWidth: number; readonly maxHeight: number } | null => {
   const layout = composedDisplayLayout
-  const width = screen.width - 2 * layout.overviewPadding
-  const height = screen.height - layout.overviewFrame
+  const width = view.width - 2 * layout.overviewPadding
+  const height = view.height - layout.overviewFrame
   const alarms = layout.alarms
   if (arrangement === 'column') {
     const column = overviewColumnHeight(readouts)
@@ -635,8 +630,14 @@ const overviewHeight = (arrangement: OverviewArrangement, readouts: number, mimi
  * and energy, overview-key-values.ts), its principal circuits drawn by the
  * overview profile (principal.ts), and the whole Plant's active alarms. Every
  * part comes from the model; nothing names equipment.
+ *
+ * It is drawn for the view it is shown in, at 1:1, taking the first that
+ * fits: beside the column of lead values and alarms (the drawing has the
+ * view's height), stacked with them (the view's width), then as wide as the
+ * view and scrolling down, then at its own size, scrolling both ways. Without
+ * a view (a listing of what it draws) it is drawn at its own size.
  */
-export const compileOverviewDisplay = (system: ProcessPlantRuntimeInstance, recordedSeriesIds: ReadonlySet<string>): ComposedDisplayCompileResult => {
+export const compileOverviewDisplay = (system: ProcessPlantRuntimeInstance, recordedSeriesIds: ReadonlySet<string>, view: OverviewView | null): ComposedDisplayCompileResult => {
   const issues: ComposedDisplayIssue[] = []
   const keyValues = overviewKeyValues(system.plant)
   const readouts = keyValues.length === 0 ? undefined
@@ -645,12 +646,16 @@ export const compileOverviewDisplay = (system: ProcessPlantRuntimeInstance, reco
   if (!circuits.ok) return { ok: false, issues: [{ path: 'overview', message: circuits.reason }] }
   if (issues.length > 0) return { ok: false, issues }
   const values = readouts?.kind === 'readouts' ? readouts.pens.length : 0
-  // Per screen, smallest first: beside the column (the drawing gets the window's height), then stacked (its width).
-  const rooms = UNIT_OVERVIEW_SCREENS.flatMap(screen => (['column', 'stacked'] as const).flatMap(arrangement => {
-    const room = overviewDrawingRoom(screen, arrangement, values)
+  const whole = view === null ? [] : (['column', 'stacked'] as const).flatMap(arrangement => {
+    const room = overviewDrawingRoom(view, arrangement, values)
     return room === null ? [] : [{ arrangement, room }]
-  }))
-  // Stacked always leaves some room, so the last refusal (the largest screen) says what the Plant needs.
+  })
+  const scrolling = [
+    ...(view === null ? [] : [{ arrangement: 'stacked' as const, room: { maxWidth: view.width - 2 * composedDisplayLayout.overviewPadding, maxHeight: UNCONSTRAINED } }]),
+    { arrangement: 'stacked' as const, room: { maxWidth: UNCONSTRAINED, maxHeight: UNCONSTRAINED } },
+  ]
+  const rooms = [...whole, ...scrolling]
+  // Unconstrained room always draws a verified Plant, so the last refusal says why the Plant cannot be drawn at all.
   let fitted: { readonly arrangement: OverviewArrangement; readonly mimic: CompiledMimic } | null = null
   let refusal: ReadonlyArray<ComposedDisplayIssue> = []
   for (const { arrangement, room } of rooms) {

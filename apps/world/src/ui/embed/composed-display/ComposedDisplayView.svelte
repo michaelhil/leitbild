@@ -25,6 +25,8 @@
 
   // A sample older than this marks the view stale (polling is 1 Hz).
   const STALE_AFTER_MS = 5_000
+  // How long a window must keep its size before an overview is drawn again for it.
+  const RELAYOUT_AFTER_MS = 300
 
   let snapshot = $state<ComposedDisplaySnapshot | null>(null)
   let wallNow = $state(Date.now())
@@ -39,12 +41,21 @@
       client: composedDisplayClient,
       onChange: next => { snapshot = next },
       suspendWhenIdle: advice !== null,
+      size: () => (advice === null ? { width: window.innerWidth, height: window.innerHeight } : null),
     })
     session = active
     void active.start()
     const interacted = (): void => active.interacted()
     const visibility = (): void => active.setVisible(document.visibilityState === 'visible')
     const clock = setInterval(() => { wallNow = Date.now() }, 1_000)
+    // A unit overview is drawn for its window: once resizing settles, it is drawn again for the new size.
+    let resizing: ReturnType<typeof setTimeout> | undefined
+    const resized = (): void => {
+      if (advice !== null) return
+      clearTimeout(resizing)
+      resizing = setTimeout(() => { void active.relayout() }, RELAYOUT_AFTER_MS)
+    }
+    window.addEventListener('resize', resized)
     document.addEventListener('pointerdown', interacted)
     document.addEventListener('pointermove', interacted)
     document.addEventListener('keydown', interacted)
@@ -56,6 +67,8 @@
       document.removeEventListener('pointermove', interacted)
       document.removeEventListener('keydown', interacted)
       document.removeEventListener('visibilitychange', visibility)
+      window.removeEventListener('resize', resized)
+      clearTimeout(resizing)
     }
   })
 

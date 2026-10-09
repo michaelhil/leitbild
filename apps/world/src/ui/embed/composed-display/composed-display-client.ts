@@ -33,6 +33,11 @@ export type ComposedDisplayViewResult =
     readonly display: CompiledComposedDisplay
   }
 
+export interface ViewSize {
+  readonly width: number
+  readonly height: number
+}
+
 export interface ComposedDisplayAlarm {
   readonly id: string
   readonly ruleId: string
@@ -61,7 +66,8 @@ export interface ComposedDisplayClient {
   readonly presence: (runId: SimulationRunId) => Promise<RunPresence | null>
   /** Explicitly loads a Run at the reader's request. */
   readonly loadRun: (runId: SimulationRunId) => Promise<void>
-  readonly view: (runId: SimulationRunId, plantId: string, state: string) => Promise<ComposedDisplayViewResult>
+  /** `size`: the view's inner size, which a unit overview is drawn for; null for advice, sized when composed. */
+  readonly view: (runId: SimulationRunId, plantId: string, state: string, size: ViewSize | null) => Promise<ComposedDisplayViewResult>
   readonly history: (runId: SimulationRunId, seriesId: string, window: { readonly from: number; readonly to: number }) => Promise<ReadonlyArray<TrendPoint>>
   readonly sample: (runId: SimulationRunId, plantId: string, paths: ReadonlyArray<string>, alarms: boolean) => Promise<ComposedDisplaySample>
 }
@@ -100,7 +106,7 @@ export const composedDisplayClient: ComposedDisplayClient = {
     const response = await fetch(runPath(runId))
     if (!response.ok) throw new Error(await failureMessage(response, 'Loading the Run'))
   },
-  view: (runId, plantId, state) => querySimulationRunCapability<ComposedDisplayViewResult>(runId, 'world.process-plant.display.view', { plantId, state }),
+  view: (runId, plantId, state, size) => querySimulationRunCapability<ComposedDisplayViewResult>(runId, 'world.process-plant.display.view', { plantId, state, ...(size === null ? {} : { size }) }),
   history: async (runId, seriesId, window) => {
     const query = new URLSearchParams({
       mode: 'raw',

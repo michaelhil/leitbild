@@ -1,6 +1,6 @@
 import type { SimulationRunId } from '../../../core/model/index.ts'
 import type { CompiledComposedPanel, ComposedDisplayPen } from '../../../packs/process-plant/displays/compose.ts'
-import type { ComposedDisplayClient, ComposedDisplaySample, ComposedDisplayViewResult } from './composed-display-client.ts'
+import type { ComposedDisplayClient, ComposedDisplaySample, ComposedDisplayViewResult, ViewSize } from './composed-display-client.ts'
 import { appendPoint, type TrendPoint, type ValueDomain } from './trend-geometry.ts'
 
 export type ComposedDisplayPhase =
@@ -63,6 +63,8 @@ export const createComposedDisplaySession = (config: {
   readonly onChange: (snapshot: ComposedDisplaySnapshot) => void
   /** Advice stops updating after a quarter of an hour unattended; an operating overview keeps updating. */
   readonly suspendWhenIdle: boolean
+  /** The view's current size, which a unit overview is drawn for; null for advice. */
+  readonly size: () => ViewSize | null
   readonly wallNow?: () => number
 }) => {
   const wallNow = config.wallNow ?? (() => Date.now())
@@ -164,7 +166,7 @@ export const createComposedDisplaySession = (config: {
 
   const begin = async (): Promise<void> => {
     update({ phase: { kind: 'starting' } })
-    const view = await config.client.view(config.runId, config.plantId, config.state)
+    const view = await config.client.view(config.runId, config.plantId, config.state, config.size())
     update({ view })
     const now = Date.parse(view.simulationTime)
     const series = new Map<string, ReadonlyArray<TrendPoint>>()
@@ -204,6 +206,15 @@ export const createComposedDisplaySession = (config: {
       startPolling()
     },
     interacted: (): void => { lastInteractionWallMs = wallNow() },
+    /** A unit overview is drawn again for the view's new size; its samples carry on. */
+    relayout: async (): Promise<void> => {
+      if (closed || snapshot.view?.kind !== 'overview') return
+      try {
+        update({ view: await config.client.view(config.runId, config.plantId, config.state, config.size()) })
+      } catch (error) {
+        update({ sampleError: error instanceof Error ? error.message : String(error) })
+      }
+    },
     poll,
     setVisible: (visible: boolean): void => {
       if (!visible) { stopPolling(); return }

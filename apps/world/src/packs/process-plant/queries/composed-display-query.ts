@@ -18,6 +18,8 @@ import {
 import {
   compileComposedDisplay,
   compileOverviewDisplay,
+  type CompiledComposedDisplay,
+  type OverviewView,
   composedDisplayShows,
   composedDisplayMargins,
   composedDisplaySignals,
@@ -46,6 +48,8 @@ export const displayOverviewQuerySchema = z.object({
 export const displayViewQuerySchema = z.object({
   plantId: idSchema,
   state: z.string().min(2),
+  /** The view's inner size in CSS px: a unit overview is drawn for it. */
+  size: z.object({ width: z.number().int().min(1).max(16_384), height: z.number().int().min(1).max(16_384) }).strict().optional(),
 }).strict()
 // One sample serves one view: a unit overview reads the most.
 export const displaySampleQuerySchema = z.object({
@@ -53,6 +57,11 @@ export const displaySampleQuerySchema = z.object({
   paths: z.array(variablePathSchema).min(1).max(PROCESS_DISPLAY_SAMPLE_MAX_PATHS),
   alarms: z.boolean().default(false),
 }).strict()
+
+// A compiled overview per Plant and view size: windows rarely change size,
+// and resizing one recompiles only for sizes not yet drawn.
+const OVERVIEW_CACHE_SIZES = 8
+const overviewCache = new WeakMap<ProcessPlantRuntimeInstance, Map<string, CompiledComposedDisplay>>()
 
 const compiledOrRejected = (
   system: ProcessPlantRuntimeInstance,
@@ -116,16 +125,23 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
 
   // The asset label distinguishes identical units; null when the Plant has no projected asset.
   const plantLabelOf = (plantId: string): string | null => config.objects.get(plantId as ObjectId)?.label ?? null
-  const overviewOrRejected = (system: ProcessPlantRuntimeInstance) => {
-    const result = compileOverviewDisplay(system, recordedSeriesIds)
+  const overviewOrRejected = (system: ProcessPlantRuntimeInstance, view: OverviewView | null) => {
+    const key = view === null ? 'natural' : `${view.width}x${view.height}`
+    const cached = overviewCache.get(system)?.get(key)
+    if (cached !== undefined) return cached
+    const result = compileOverviewDisplay(system, recordedSeriesIds, view)
     if (!result.ok) return rejectCapabilityTarget(`Process Plant ${system.plant.id} has no unit overview: ${result.issues.map(issue => issue.message).join('; ')}`)
+    const sizes = overviewCache.get(system) ?? new Map<string, CompiledComposedDisplay>()
+    if (sizes.size >= OVERVIEW_CACHE_SIZES) sizes.delete(sizes.keys().next().value!)
+    sizes.set(key, result.display)
+    overviewCache.set(system, sizes)
     return result.display
   }
 
   if (config.request.capabilityId === 'world.process-plant.display.overview') {
     const payload = displayOverviewQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
-    const display = overviewOrRejected(system)
+    const display = overviewOrRejected(system, null)
     const mimics = display.panels.flatMap(panel => panel.kind === 'mimic' ? [panel.mimic] : [])
     const now = indexSample(mimics.flatMap(mimic => mimic.paths).map(path => {
       const snapshot = system.runtime.readVariableSnapshot(path)
@@ -157,7 +173,8 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
     const statePlantId = processDisplayStatePlantId(state)
     if (statePlantId !== payload.plantId) return rejectCapabilityInput(`Display state targets ${statePlantId}, not ${payload.plantId}`)
     if ('overview' in state) {
-      const display = overviewOrRejected(system)
+      if (payload.size === undefined) return rejectCapabilityInput('A unit overview is drawn for the view it is shown in: send its size')
+      const display = overviewOrRejected(system, payload.size)
       return { kind: 'overview', plantId: display.plantId, plantLabel: plantLabelOf(display.plantId), simulationTime, display }
     }
     const display = compiledOrRejected(system, state.composition, 'view', recordedSeriesIds)

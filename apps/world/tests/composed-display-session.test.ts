@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { SimulationRunId } from '../src/core/model/index.ts'
-import type { ComposedDisplayClient, ComposedDisplayViewResult, RunPresence } from '../src/ui/embed/composed-display/composed-display-client.ts'
+import type { ComposedDisplayClient, ComposedDisplayViewResult, RunPresence, ViewSize } from '../src/ui/embed/composed-display/composed-display-client.ts'
 import {
   createComposedDisplaySession,
   IDLE_SUSPEND_MS,
@@ -43,13 +43,14 @@ const view: ComposedDisplayViewResult = {
 const fakeClient = (config: {
   presence: RunPresence | null
   samples?: Array<{ readonly time: string; readonly value: number } | Error>
+  view?: ComposedDisplayViewResult
 }) => {
   const calls: string[] = []
   let presence = config.presence
   const client: ComposedDisplayClient = {
     presence: async () => { calls.push('presence'); return presence },
     loadRun: async () => { calls.push('loadRun'); presence = presence && { ...presence, loaded: true } },
-    view: async () => { calls.push('view'); return view },
+    view: async (_run, _plant, _state, size) => { calls.push(size === null ? 'view' : `view:${size.width}x${size.height}`); return config.view ?? view },
     history: async (_run, seriesId) => {
       calls.push(`history:${seriesId}`)
       return seriesId === 'series:pressure' ? [{ t: Date.parse(at(-60_000)), v: 15.4 }] : []
@@ -65,12 +66,13 @@ const fakeClient = (config: {
   return { client, calls }
 }
 
-const session = (client: ComposedDisplayClient, wall = { now: 0 }, suspendWhenIdle = true) => {
+const session = (client: ComposedDisplayClient, wall = { now: 0 }, suspendWhenIdle = true, size: () => ViewSize | null = () => null) => {
   const snapshots: ComposedDisplaySnapshot[] = []
   const controller = createComposedDisplaySession({
     runId, plantId: 'plant:1', state: '{}', client,
     onChange: snapshot => { snapshots.push(snapshot) },
     suspendWhenIdle,
+    size,
     wallNow: () => wall.now,
   })
   return { controller, last: () => snapshots[snapshots.length - 1]! }
@@ -131,6 +133,27 @@ describe('composed display session', () => {
     expect(calls.filter(call => call === 'sample')).toHaveLength(1)
     controller.resume()
     expect(last().phase.kind).toBe('live')
+    controller.close()
+  })
+
+  test('an overview is drawn for its window, and again when the window settles at a new size', async () => {
+    const overview: ComposedDisplayViewResult = { kind: 'overview', plantId: 'plant:1', plantLabel: 'Unit 1', simulationTime: at(0), display: view.display }
+    const window = { width: 1896, height: 972 }
+    const { client, calls } = fakeClient({ presence: { title: 'Run', loaded: true, playback: 'playing', currentSimulationTime: at(0) }, samples: [{ time: at(0), value: 15.4 }], view: overview })
+    const { controller } = session(client, { now: 0 }, false, () => window)
+    await controller.start({ poll: false })
+    window.width = 1440
+    await controller.relayout()
+    expect(calls.filter(call => call.startsWith('view'))).toEqual(['view:1896x972', 'view:1440x972'])
+    controller.close()
+  })
+
+  test('advice keeps the size it was composed with', async () => {
+    const { client, calls } = fakeClient({ presence: { title: 'Run', loaded: true, playback: 'playing', currentSimulationTime: at(0) }, samples: [{ time: at(0), value: 15.4 }] })
+    const { controller } = session(client)
+    await controller.start({ poll: false })
+    await controller.relayout()
+    expect(calls.filter(call => call.startsWith('view'))).toEqual(['view'])
     controller.close()
   })
 

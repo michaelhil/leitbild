@@ -7,7 +7,7 @@ import {
   type CompiledProcessPlant,
   type PlantGraphSpec,
 } from '../src/packs/process-plant/index.ts'
-import { overviewDrawingRoom, UNIT_OVERVIEW_SCREENS } from '../src/packs/process-plant/displays/compose.ts'
+import { overviewDrawingRoom } from '../src/packs/process-plant/displays/compose.ts'
 import { compileMimicScope, planMimicDiagram, type MimicBudget } from '../src/packs/process-plant/displays/mimic/compile-mimic.ts'
 import { indexSample } from '../src/packs/process-plant/displays/mimic/evaluate.ts'
 import { layoutDiagram, verifyDiagram } from '../src/packs/process-plant/displays/mimic/layout/index.ts'
@@ -33,7 +33,8 @@ const plantOf = (loops: number): CompiledProcessPlant => plants.get(loops)!
  * (compose.ts); for six what the engine reaches today at full text (see the
  * fit ladder test for less).
  */
-const fullHdColumn = overviewDrawingRoom(UNIT_OVERVIEW_SCREENS[0], 'column', overviewKeyValues(plantOf(4)).length)!
+// The process display window as measured on production in a Full HD browser.
+const fullHdColumn = overviewDrawingRoom({ width: 1896, height: 972 }, 'column', overviewKeyValues(plantOf(4)).length)!
 const ROOM: Readonly<Record<number, Omit<MimicBudget, 'profile'>>> = { 4: fullHdColumn, 6: { maxWidth: 2160, maxHeight: 1080 } }
 const budgetFor = (loops: number): MimicBudget => ({ profile: overviewMimicProfile, ...ROOM[loops]! })
 
