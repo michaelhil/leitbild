@@ -76,6 +76,18 @@ describe('mimic scope from the agent\'s intent', () => {
     ])
   })
 
+  test('around an item draws what feeds it and where its outflow goes, in every service it carries', () => {
+    const scope = drawn(graph, { around: ['auxFeedwaterPumpMotor'], reach: 1 })
+    // Its suction tank, its discharge header and its bus; the bus's other loads are a stop, not drawn.
+    expect(scope.labels).toEqual(['AFW header', 'AFW tank', 'Bus A', 'MD AFW A'])
+    expect(scope.carriers).toEqual(['auxFeedwater', 'electricalPower'])
+    expect(scope.stubs.map(stub => `${label(graph, stub.component)}: ${stubText(graph, stub)}`)).toContain('Bus A: to CHG A, Cond pump A, CS A and 6 more')
+    // Narrowed to its loop, a steam generator draws both sides and stops at the shared headers.
+    expect(drawn(graph, { around: ['SG B'], loops: ['B'], reach: 1 }).labels).toEqual(['AFW valve B', 'Core', 'FCV B', 'MSIV B', 'RCP B', 'SG B'])
+    expect(drawn(graph, { around: ['steam generators'], services: ['mainSteam'], reach: 1 }).labels).toEqual(['MSIV A', 'MSIV B', 'MSIV C', 'MSIV D', 'SG A', 'SG B', 'SG C', 'SG D'])
+    expect(rejection(graph, { around: ['sgB'], from: ['core'] })).toEqual([{ field: 'around', message: 'around draws what feeds items and where their outflow goes; give it without from or to' }])
+  })
+
   test('loops narrow a system to their own links and the shared equipment on routes into them', () => {
     const scope = drawn(graph, { services: ['safetyInjection'], loops: ['C'] })
     expect(scope.labels).toEqual(['Core', 'HHSI A', 'HHSI B', 'RWST', 'SI header'])

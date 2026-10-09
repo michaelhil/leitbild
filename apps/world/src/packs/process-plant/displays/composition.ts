@@ -77,8 +77,9 @@ const equipmentName = text(1, 120)
 /**
  * A generated equipment drawing of the part of the Plant the question is
  * about, stated in plant terms: a route from equipment to equipment, what is
- * upstream of (`to` alone) or downstream of (`from` alone) one item, or whole
- * services, narrowed to loops. Each entry names one component by its id, a
+ * upstream of (`to` alone) or downstream of (`from` alone) one item, what
+ * feeds an item and where its outflow goes (`around`), or whole services,
+ * narrowed to loops. Each entry names one component by its id, a
  * tag measured on it, or its label or short label. World draws every symbol
  * and picks every state signal; there is no catalogue of views.
  */
@@ -86,6 +87,7 @@ export const composedDisplayMimicPanelSchema = z.object({
   kind: z.literal('mimic'),
   from: z.array(equipmentName).min(1).max(4).optional(),
   to: z.array(equipmentName).min(1).max(4).optional(),
+  around: z.array(equipmentName).min(1).max(4).optional(),
   services: z.array(text(1, 64)).min(1).max(4).optional(),
   loops: z.array(text(1, 16)).min(1).max(6).optional(),
   exclude: z.array(equipmentName).min(1).max(6).optional(),

@@ -9,9 +9,13 @@ import { SUGGESTION_COUNT, letters, matchedWords, normalized, words } from '../n
 export interface MimicIntent {
   readonly from?: ReadonlyArray<string> | undefined
   readonly to?: ReadonlyArray<string> | undefined
+  /** What feeds these items and where their outflow goes, by every service they carry unless `services` narrows it. */
+  readonly around?: ReadonlyArray<string> | undefined
   readonly services?: ReadonlyArray<string> | undefined
   readonly loops?: ReadonlyArray<string> | undefined
   readonly exclude?: ReadonlyArray<string> | undefined
+  /** Links a one-ended or around intent follows; MIMIC_REACH_LINKS unless a display narrows it to fit. */
+  readonly reach?: number | undefined
 }
 
 /** Where the drawing stops: links that leave a drawn component for equipment not drawn, grouped by port. */
@@ -81,7 +85,7 @@ type ResolvedName = { readonly components: ReadonlyArray<number>; readonly via: 
 const resolveName = (
   graph: CompiledPlantGraph,
   name: string,
-  role: 'from' | 'to' | 'exclude',
+  role: 'from' | 'to' | 'around' | 'exclude',
 ): ResolvedName | { readonly error: string; readonly didYouMean: ReadonlyArray<string> } => {
   const byId = graph.componentIndexById.get(name as never)
   if (byId !== undefined) return { components: [byId], via: 'id' }
@@ -90,6 +94,7 @@ const resolveName = (
     if (binding.owner.type === 'component') return { components: [binding.owner.componentIndex], via: 'tag' }
     const link = graph.links[binding.owner.linkIndex]!
     if (role === 'exclude') return { error: `${name} is measured on the pipe ${link.id}; exclude equipment, not a pipe`, didYouMean: [] }
+    // A pipe's tag names the end the role points at; around a pipe means around what it feeds.
     return { components: [role === 'from' ? link.fromComponentIndex : link.toComponentIndex], via: 'tag' }
   }
   const wanted = normalized(name)
@@ -114,7 +119,7 @@ const bundledDevices = (graph: CompiledPlantGraph, wanted: string): ReadonlyArra
     .filter(([, label]) => normalized(label) === wanted)
     .map(([device]) => ({ host: component.index, device })))
 
-const bundledDeviceMessage = (graph: CompiledPlantGraph, name: string, bundled: ReadonlyArray<{ readonly host: number; readonly device: string }>, role: 'from' | 'to' | 'exclude'): string => {
+const bundledDeviceMessage = (graph: CompiledPlantGraph, name: string, bundled: ReadonlyArray<{ readonly host: number; readonly device: string }>, role: 'from' | 'to' | 'around' | 'exclude'): string => {
   if (new Set(bundled.map(entry => entry.host)).size > 1) {
     return `"${name}" names devices the model bundles in ${[...new Set(bundled.map(entry => String(graph.components[entry.host]!.id)))].join(', ')}; name the component that holds the one you mean`
   }
@@ -195,7 +200,7 @@ export const resolveMimicScope = (graph: CompiledPlantGraph, intent: MimicIntent
   const issues: Array<{ readonly field: string; readonly message: string; readonly didYouMean?: ReadonlyArray<string> }> = []
   const names: Array<MimicScope['names'][number]> = []
   const known = plantCarriers(graph)
-  const resolveAll = (field: 'from' | 'to' | 'exclude', list: ReadonlyArray<string> | undefined): ReadonlyArray<number> => (list ?? []).flatMap((name, index) => {
+  const resolveAll = (field: 'from' | 'to' | 'around' | 'exclude', list: ReadonlyArray<string> | undefined): ReadonlyArray<number> => (list ?? []).flatMap((name, index) => {
     const resolved = resolveName(graph, name, field)
     if ('error' in resolved) {
       issues.push({ field: `${field}.${index}`, message: resolved.error, ...(resolved.didYouMean.length === 0 ? {} : { didYouMean: resolved.didYouMean }) })
@@ -211,7 +216,11 @@ export const resolveMimicScope = (graph: CompiledPlantGraph, intent: MimicIntent
   })
   const from = resolveAll('from', intent.from)
   const to = resolveAll('to', intent.to)
+  const around = resolveAll('around', intent.around)
   const excluded = new Set(resolveAll('exclude', intent.exclude))
+  if (around.length > 0 && (from.length > 0 || to.length > 0)) {
+    issues.push({ field: 'around', message: 'around draws what feeds items and where their outflow goes; give it without from or to' })
+  }
 
   for (const [index, service] of (intent.services ?? []).entries()) {
     if (known.includes(service)) continue
@@ -221,10 +230,10 @@ export const resolveMimicScope = (graph: CompiledPlantGraph, intent: MimicIntent
   const loops = plantLoops(graph)
   const unknownLoops = (intent.loops ?? []).filter(loop => !loops.includes(loop))
   if (unknownLoops.length > 0) issues.push({ field: 'loops', message: `loops ${unknownLoops.join(', ')} do not exist; this Plant has loops ${loops.join(', ')}` })
-  if (from.length === 0 && to.length === 0 && intent.services === undefined && issues.length === 0) {
-    issues.push({ field: '(mimic)', message: 'say what to draw: from and/or to (equipment), or services (with loops)' })
+  if (from.length === 0 && to.length === 0 && around.length === 0 && intent.services === undefined && issues.length === 0) {
+    issues.push({ field: '(mimic)', message: 'say what to draw: from and/or to (equipment), around (equipment), or services (with loops)' })
   }
-  for (const anchor of [...from, ...to]) {
+  for (const anchor of [...from, ...to, ...around]) {
     if (excluded.has(anchor)) issues.push({ field: 'exclude', message: `${graph.components[anchor]!.id} is an end of the drawing and cannot be excluded` })
   }
   if (issues.length > 0) return { ok: false, issues }
@@ -238,10 +247,12 @@ export const resolveMimicScope = (graph: CompiledPlantGraph, intent: MimicIntent
   const listed = (carriers: ReadonlySet<string>) => [...carriers].sort().join(', ') || 'nothing'
   // What equipment does carry, so a wrong service is corrected in one call.
   const carriedBy = (list: ReadonlyArray<number>) => list.map(index => `${graph.components[index]!.id} carries ${listed(new Set([...delivered([index]), ...received([index])]))}`).join('; ')
+  // Around an item, every service it carries: its fluid on both sides and its power supply.
   const carriers: ReadonlySet<string> = intent.services !== undefined ? new Set(intent.services)
-    : from.length > 0 && to.length > 0 ? shared(delivered(from), received(to))
-      : from.length > 0 ? delivered(from) : received(to)
-  if (intent.services === undefined && (from.length === 0 || to.length === 0) && carriers.size > 1) {
+    : around.length > 0 ? new Set([...delivered(around), ...received(around)])
+      : from.length > 0 && to.length > 0 ? shared(delivered(from), received(to))
+        : from.length > 0 ? delivered(from) : received(to)
+  if (intent.services === undefined && around.length === 0 && (from.length === 0 || to.length === 0) && carriers.size > 1) {
     const anchor = from.length > 0 ? from : to
     return { ok: false, issues: [{ field: 'services', message: `${ends(anchor)} ${from.length > 0 ? 'delivers' : 'receives'} ${[...carriers].sort().join(', ')}; add services to say which` }] }
   }
@@ -249,23 +260,29 @@ export const resolveMimicScope = (graph: CompiledPlantGraph, intent: MimicIntent
   const passable = (link: CompiledProcessLink): boolean => !excluded.has(link.fromComponentIndex) && !excluded.has(link.toComponentIndex)
   const allowed = new Set(graph.links.filter(link => carriers.has(linkCarrier(link)) && passable(link)).map(link => link.index))
   const subgraph = (indexes: ReadonlySet<number>): ReadonlySet<number> => new Set([...indexes].filter(index => allowed.has(index)))
-  const reached = subgraph(
-    from.length > 0 && to.length > 0 ? routeLinks(graph, from, to, carriers)
-      : from.length > 0 ? downstreamLinks(graph, from, carriers, MIMIC_REACH_LINKS)
-        : to.length > 0 ? upstreamLinks(graph, to, carriers, MIMIC_REACH_LINKS)
-          : allowed,
-  )
+  const upstreamOf = to.length > 0 && from.length === 0 ? to : around
+  const downstreamOf = from.length > 0 && to.length === 0 ? from : around
+  const reach = intent.reach ?? MIMIC_REACH_LINKS
+  const route = from.length > 0 && to.length > 0
+  const upstream = subgraph(route || upstreamOf.length === 0 ? new Set() : upstreamLinks(graph, upstreamOf, carriers, reach))
+  const downstream = subgraph(route || downstreamOf.length === 0 ? new Set() : downstreamLinks(graph, downstreamOf, carriers, reach))
+  const reached = route ? subgraph(routeLinks(graph, from, to, carriers))
+    : upstreamOf.length > 0 || downstreamOf.length > 0 ? new Set([...upstream, ...downstream]) : allowed
   // A reach that stops one step short of where the flow starts or ends (a
   // tank feeding the pumps) draws that end too: one symbol says more than a
-  // stub at every pump it feeds.
-  const terminalSteps = (from.length > 0) === (to.length > 0) ? [] : [...allowed].filter(index => {
+  // stub at every pump it feeds. Only along the reach: around a pump, the bus
+  // feeding it does not draw every other load it feeds.
+  const endsOf = (links: ReadonlySet<number>) => new Set([...links].flatMap(drawn => [graph.links[drawn]!.fromComponentIndex, graph.links[drawn]!.toComponentIndex]))
+  const reachedEnds = endsOf(reached)
+  const upstreamEnds = endsOf(upstream)
+  const downstreamEnds = endsOf(downstream)
+  const carried = (indexes: ReadonlyArray<number> | undefined) => (indexes ?? []).filter(other => allowed.has(other))
+  const terminalSteps = [...allowed].filter(index => {
     if (reached.has(index)) return false
     const link = graph.links[index]!
-    const ends = new Set([...reached].flatMap(drawn => [graph.links[drawn]!.fromComponentIndex, graph.links[drawn]!.toComponentIndex]))
-    const carried = (indexes: ReadonlyArray<number> | undefined) => (indexes ?? []).filter(other => allowed.has(other))
-    return to.length > 0
-      ? ends.has(link.toComponentIndex) && !ends.has(link.fromComponentIndex) && carried(graph.incomingLinksByComponent[link.fromComponentIndex]).length === 0
-      : ends.has(link.fromComponentIndex) && !ends.has(link.toComponentIndex) && carried(graph.outgoingLinksByComponent[link.toComponentIndex]).length === 0
+    const sourceStep = upstreamEnds.has(link.toComponentIndex) && !reachedEnds.has(link.fromComponentIndex) && carried(graph.incomingLinksByComponent[link.fromComponentIndex]).length === 0
+    const sinkStep = downstreamEnds.has(link.fromComponentIndex) && !reachedEnds.has(link.toComponentIndex) && carried(graph.outgoingLinksByComponent[link.toComponentIndex]).length === 0
+    return sourceStep || sinkStep
   })
   const selected = new Set([...reached, ...terminalSteps])
   if (selected.size === 0) {
@@ -280,7 +297,7 @@ export const resolveMimicScope = (graph: CompiledPlantGraph, intent: MimicIntent
         field: '(mimic)',
         message: reverse ? `${ends(to)} feeds ${ends(from)}, not the other way: swap from and to`
           : from.length > 0 && to.length > 0 ? `no ${[...carriers].join(' or ')} route from ${ends(from)} to ${ends(to)} in the Plant model; ${ends(from)} delivers ${listed(delivered(from))} and ${ends(to)} receives ${listed(received(to))}`
-            : `nothing ${[...carriers].join(' or ')} connects to ${ends([...from, ...to])} in the Plant model; ${carriedBy([...from, ...to])}`,
+            : `nothing ${[...carriers].join(' or ')} connects to ${ends([...from, ...to, ...around])} in the Plant model; ${carriedBy([...from, ...to, ...around])}`,
       }],
     }
   }
