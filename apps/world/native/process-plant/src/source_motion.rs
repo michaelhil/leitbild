@@ -638,6 +638,21 @@ fn validate_input(i: Input) -> Result<(), String> {
     }
     Ok(())
 }
+fn same_mode_bits(a:&Mode,b:&Mode)->bool {
+    a.branches==b.branches && a.geometry==b.geometry
+        && a.input.requested_rate_m_s.to_bits()==b.input.requested_rate_m_s.to_bits()
+        && a.input.motive_power_w.to_bits()==b.input.motive_power_w.to_bits()
+        && a.input.holding_power_w.to_bits()==b.input.holding_power_w.to_bits()
+}
+fn same_prhr_bits(a:Option<crate::prhr::Input>,b:Option<crate::prhr::Input>)->bool {
+    match (a,b) {
+        (None,None)=>true,
+        (Some(a),Some(b))=>[a.opening,a.opening_rate,a.electrical_receipt_w,a.room_heat_w,a.ambient_temperature_k]
+            .iter().zip([b.opening,b.opening_rate,b.electrical_receipt_w,b.room_heat_w,b.ambient_temperature_k])
+            .all(|(a,b)|a.to_bits()==b.to_bits()),
+        _=>false,
+    }
+}
 #[derive(Clone, Copy, Debug)]
 pub struct Layout {
     pub cooling_end: usize,
@@ -736,6 +751,9 @@ pub struct Workspace {
     dvelocity: Vec<cg::Direction>,
     dforces: Vec<am::Forces>,
     state: Vec<f64>,
+    stage_rates:Vec<f64>,
+    stage_prhr:Option<crate::prhr::Input>,
+    direction_prepared:bool,
     mode: Option<Mode>,
     cj: Option<f64>,
     owner: Arc<()>,
@@ -744,6 +762,8 @@ pub struct Workspace {
     energy_tangent: Option<f64>,
     thermal_work_rate: f64,
     thermal_work_tangent: Option<f64>,
+    pub full_evaluations:u64,
+    pub reused_evaluations:u64,
 }
 /// Root interpolation prepares only actual geometry, fluid properties and
 /// traction. Its separate owned workspace cannot replace an implicit stage's
@@ -1251,6 +1271,9 @@ impl Model {
                 n
             ],
             state: vec![0.; self.dimension()],
+            stage_rates:vec![0.;self.dimension()],
+            stage_prhr:None,
+            direction_prepared:false,
             mode: None,
             cj: None,
             owner: self.owner.clone(),
@@ -1259,6 +1282,8 @@ impl Model {
             energy_tangent: None,
             thermal_work_rate: f64::NAN,
             thermal_work_tangent: None,
+            full_evaluations:0,
+            reused_evaluations:0,
         }
     }
     pub fn root_workspace(&self) -> RootWorkspace {
@@ -1481,7 +1506,23 @@ impl Model {
         prhr: Option<crate::prhr::Input>,
         mode: &Mode,
     ) -> Result<(), String> {
+        // Reuse only this untouched, owned value preparation. An audit,
+        // direction use/failure or changed dependency always prepares afresh.
+        if cj.is_some() && w.valid && !w.direction_prepared && Arc::ptr_eq(&self.owner,&w.owner)
+            && y.len()==self.dimension() && yp.len()==self.dimension()
+            && w.cj.zip(cj).is_some_and(|(a,b)|a.to_bits()==b.to_bits())
+            && y.iter().zip(&w.state).all(|(a,b)|a.to_bits()==b.to_bits())
+            && yp.iter().zip(&w.stage_rates).all(|(a,b)|a.to_bits()==b.to_bits())
+            && w.mode.as_ref().is_some_and(|old|same_mode_bits(old,mode))
+            && same_prhr_bits(w.stage_prhr,prhr)
+        {
+            w.energy_tangent=None;w.thermal_work_tangent=None;
+            w.reused_evaluations+=1;
+            return Ok(());
+        }
         w.valid = false;
+        w.direction_prepared=false;
+        w.full_evaluations+=1;
         w.energy_tangent = None;
         w.thermal_work_tangent = None;
         if yp.len() != self.dimension() || yp.iter().any(|v| !v.is_finite()) {
@@ -1592,6 +1633,8 @@ impl Model {
             return Err("Nonfinite connected mechanical residual/work".into());
         }
         w.state.copy_from_slice(y);
+        w.stage_rates.copy_from_slice(yp);
+        w.stage_prhr=prhr;
         w.mode = Some(mode.clone());
         w.cj = cj;
         w.valid = true;
@@ -1620,10 +1663,12 @@ impl Model {
     /// initialization/events. It consumes this stage's actual velocities and
     /// accelerations and introduces no second motion or integration clock.
     pub fn prepare_time_direction(&self, w: &mut Workspace) -> Result<(), String> {
-        if !w.valid || !Arc::ptr_eq(&self.owner, &w.owner) {
+        w.direction_prepared=true;
+        let prepared=w.valid;
+        w.valid=false;
+        if !prepared || !Arc::ptr_eq(&self.owner, &w.owner) {
             return Err("Geometry-time action requires current connected mechanics".into());
         }
-        w.valid = false;
         for k in 0..self.clusters() {
             w.dposes[k] = w.velocity[k];
             w.dvelocity[k] = cg::Direction {
@@ -1668,15 +1713,17 @@ impl Model {
     pub fn jvp(&self, dy: &[f64], cj: f64, w: &mut Workspace) -> Result<(), String> {
         w.energy_tangent = None;
         w.thermal_work_tangent = None;
+        let prepared=w.valid;
+        w.valid=false;
+        w.direction_prepared=true;
         if !Arc::ptr_eq(&self.owner, &w.owner)
-            || !w.valid
+            || !prepared
             || w.cj != Some(cj)
             || dy.len() != self.dimension()
             || dy.iter().any(|v| !v.is_finite())
         {
             return Err("Connected mechanical JVP requires its current owned stage and cj".into());
         }
-        w.valid = false;
         for k in 0..self.clusters() {
             let r = self.motion_row(k, 0);
             w.dposes[k] = cg::Direction {

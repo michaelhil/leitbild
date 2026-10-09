@@ -143,6 +143,21 @@ unsafe extern "C" {
         f: unsafe extern "C" fn(f64, Handle, Handle, *mut f64, Handle) -> c_int,
     ) -> c_int;
     fn IDAGetRootInfo(mem: Handle, roots: *mut c_int) -> c_int;
+    fn IDAGetErrWeights(mem: Handle, weights: Handle) -> c_int;
+    fn IDAGetEstLocalErrors(mem: Handle, errors: Handle) -> c_int;
+    fn IDAGetCurrentCj(mem: Handle, cj: *mut f64) -> c_int;
+    fn IDAGetCurrentTime(mem: Handle, time: *mut f64) -> c_int;
+}
+fn weighted_contributors(values: &[f64], weights: &[f64], differential: impl Fn(usize) -> bool) -> String {
+    let mut rows = values.iter().zip(weights).enumerate()
+        .filter(|(r,_)| differential(*r))
+        .map(|(r,(&value,&weight))| (r,value,weight,(value*weight).abs()))
+        .collect::<Vec<_>>();
+    let norm = rows.iter().fold(0_f64,|s,q|s.hypot(q.3)) / (values.len() as f64).sqrt();
+    rows.sort_unstable_by(|a,b|b.3.total_cmp(&a.3));
+    rows.truncate(8);
+    format!("{{\"differentialWRMS\":{},\"topRows\":[{}]}}",finite(norm),
+        rows.iter().map(|(r,v,w,q)|format!("{{\"row\":{r},\"value\":{},\"weight\":{},\"weightedMagnitude\":{}}}",finite(*v),finite(*w),finite(*q))).collect::<Vec<_>>().join(","))
 }
 struct Case {
     burst: f64,
@@ -332,6 +347,7 @@ fn parse(text: &str) -> Result<Prepared, String> {
     })
 }
 struct Callbacks<'a> {
+    ida: Handle,
     model: &'a sm::Model,
     work: sm::Workspace,
     root_work: sm::RootWorkspace,
@@ -362,6 +378,13 @@ struct Callbacks<'a> {
     root_calls: u64,
     root_seconds: f64,
     root_properties: u64,
+    weights_seconds: f64,
+    psolve_seconds: f64,
+    audit_seconds: f64,
+    observation_seconds: f64,
+    retention_seconds: f64,
+    audit_pool: leitbild_plant_numerics::cold_pressurizer::Workspace,
+    audit_line: leitbild_plant_numerics::finite_surge::Workspace,
 }
 impl Callbacks<'_> {
     fn decode(&self, x: &[f64], rate: bool) -> Vec<f64> {
@@ -412,11 +435,13 @@ impl Callbacks<'_> {
     }
     fn metrics(&self) -> String {
         format!(
-            "{{\"residuals\":{},\"bases\":{},\"actions\":{},\"recoverable\":{},\"residualSeconds\":{},\"baseSeconds\":{},\"actionSeconds\":{},\"PSeconds\":{},\"rootCalls\":{},\"rootSeconds\":{},\"rootPropertyRequests\":{},\"convergence\":{},\"P\":{}}}",
+            "{{\"residuals\":{},\"bases\":{},\"actions\":{},\"recoverable\":{},\"fullEvaluations\":{},\"reusedEvaluations\":{},\"residualSeconds\":{},\"baseSeconds\":{},\"actionSeconds\":{},\"PSeconds\":{},\"rootCalls\":{},\"rootSeconds\":{},\"rootPropertyRequests\":{},\"weightsSeconds\":{},\"PSolveSeconds\":{},\"auditSeconds\":{},\"observationSeconds\":{},\"retentionSeconds\":{},\"timingScope\":\"nonoverlapping-callback-audit-observation-retention;P-and-convergence-internals-nested\",\"convergence\":{},\"P\":{}}}",
             self.calls[0],
             self.calls[1],
             self.calls[2],
             self.calls[3],
+            self.work.full_evaluations,
+            self.work.reused_evaluations,
             self.seconds[0],
             self.seconds[1],
             self.seconds[2],
@@ -424,6 +449,11 @@ impl Callbacks<'_> {
             self.root_calls,
             self.root_seconds,
             self.root_properties,
+            self.weights_seconds,
+            self.psolve_seconds,
+            self.audit_seconds,
+            self.observation_seconds,
+            self.retention_seconds,
             self.convergence.json(),
             self.p.metrics_json()
         )
@@ -459,7 +489,11 @@ unsafe extern "C" fn residual(t: f64, y: Handle, yp: Handle, r: Handle, u: Handl
     callback(u, |c| {
         let started = Instant::now();
         c.calls[0] += 1;
-        c.evaluate(t, y, yp, None)?;
+        let mut cj = 0.;
+        checked(unsafe { IDAGetCurrentCj(c.ida, &mut cj) }, "Current residual linearization coefficient")?;
+        // Prepare the actual current shift once. A matching J-times setup can
+        // then consume this exact owned stage, without another full RHS pass.
+        c.evaluate(t, y, yp, Some(cj))?;
         let n = c.model.dimension();
         let z = unsafe { output(r, n) }?;
         z.copy_from_slice(&c.work.residual);
@@ -567,6 +601,7 @@ unsafe extern "C" fn psolve(
     u: Handle,
 ) -> c_int {
     callback(u, |c| {
+        let began = Instant::now();
         let n = c.model.dimension();
         let raw = unsafe { values(r, n) }?;
         let g = raw[c.energy.row];
@@ -578,11 +613,14 @@ unsafe extern "C" fn psolve(
         c.rhs = rhs;
         solved?;
         c.energy.vector_to_solver(out);
-        c.ep.apply(g, out)
+        let applied = c.ep.apply(g, out);
+        c.psolve_seconds += began.elapsed().as_secs_f64();
+        applied
     })
 }
 unsafe extern "C" fn weights(y: Handle, w: Handle, u: Handle) -> c_int {
     callback(u, |c| {
+        let began = Instant::now();
         let n = c.model.dimension();
         let raw = unsafe { values(y, n) }?;
         let out = unsafe { output(w, n) }?;
@@ -618,6 +656,7 @@ unsafe extern "C" fn weights(y: Handle, w: Handle, u: Handle) -> c_int {
             }
             *v = 1. / *v;
         }
+        c.weights_seconds += began.elapsed().as_secs_f64();
         Ok(())
     })
 }
@@ -734,6 +773,7 @@ fn audit(
     initial: &[f64],
     flow: &[f64],
 ) -> Result<(f64, f64), String> {
+    let began = Instant::now();
     let m = c.model;
     let b = &m.cooling;
     let end = m.layout.cooling_end;
@@ -776,23 +816,24 @@ fn audit(
     if c.work.residual[l.barrel_temperature].abs() / c.work.cooling.barrel.capacity()? > 1e-4 {
         return Err("Moving barrel caloric chart".into());
     }
-    let mut pool = b.pressure_connection().pressurizer.workspace();
-    let mut line = b.pressure_connection().surge.workspace();
+    // Dedicated admission workspaces, never a previously prepared solver stage.
+    // The correction call overwrites their current trial, so allocation has no
+    // physical or validity role and need not recur at every accepted step.
     let (p, s) = b.pressure_chart_corrections(
         &c.work.cooling.network,
         &y[..end],
         &yp[..end],
-        &mut pool,
-        &mut line,
+        &mut c.audit_pool,
+        &mut c.audit_line,
     )?;
     cooling_accuracy::check_pressure_chart(
         b,
         &p,
         &s,
-        cooling_accuracy::pressure_level_head_scale(b, &y[..end], &pool)?,
+        cooling_accuracy::pressure_level_head_scale(b, &y[..end], &c.audit_pool)?,
     )?;
-    if cooling_convergence::pressure_caloric_ratio(b, &y[..end], &pool, &line)? > 1.
-        || cooling_convergence::pressure_flow_ratio(b, &line)? > 1.
+    if cooling_convergence::pressure_caloric_ratio(b, &y[..end], &c.audit_pool, &c.audit_line)? > 1.
+        || cooling_convergence::pressure_flow_ratio(b, &c.audit_line)? > 1.
     {
         return Err("Moving pressure caloric/flow closure".into());
     }
@@ -827,6 +868,7 @@ fn audit(
             "Independent prefix thermal+fluid-work balance defect {energy:e} J"
         ));
     }
+    c.audit_seconds += began.elapsed().as_secs_f64();
     Ok((mech.abs(), energy))
 }
 fn check_root_workspace(
@@ -1027,6 +1069,7 @@ fn run(
     )?;
     m.evaluate(&y, &yp, Some(1.), &mut w, Some(input), &mode.borrow())?;
     let mut c = Box::new(Callbacks {
+        ida: ptr::null_mut(),
         model: m,
         work: w,
         root_work: m.root_workspace(),
@@ -1064,6 +1107,13 @@ fn run(
         root_calls: 0,
         root_seconds: 0.,
         root_properties: 0,
+        weights_seconds: 0.,
+        psolve_seconds: 0.,
+        audit_seconds: 0.,
+        observation_seconds: 0.,
+        retention_seconds: 0.,
+        audit_pool: b.pressure_connection().pressurizer.workspace(),
+        audit_line: b.pressure_connection().surge.workspace(),
     });
     c.ep = cooling_energy_preconditioner::EnergyRow::new(n, c.energy.row)?;
     let initial_physical = y.clone();
@@ -1077,6 +1127,10 @@ fn run(
     let mut owned = Resources::new()?;
     let yy = owned.vector(&y)?;
     let yypp = owned.vector(&yp)?;
+    // Separate public solver diagnostics. Never reuse state, rate or stage
+    // buffers for an error-estimate query.
+    let diagnostic_weights = owned.vector(&vec![0.; n])?;
+    let diagnostic_errors = owned.vector(&vec![0.; n])?;
     let ids = owned.vector(
         &(0..n)
             .map(|r| f64::from(m.is_differential(r)))
@@ -1103,6 +1157,7 @@ fn run(
     if owned.ida.is_null() {
         return Err("Null moving IDA".into());
     }
+    c.ida = owned.ida;
     checked(
         unsafe { IDAInit(owned.ida, residual, 0., yy, yypp) },
         "Moving IDA init",
@@ -1189,14 +1244,16 @@ fn run(
     let mut motion_comparisons = Vec::new();
     let mut events = Vec::new();
     let mut event_snapshots = Vec::new();
+    let mut performance_planes = Vec::new();
     let mut time = 0.;
     let mut last_admitted = 0.;
     let mut initial_admitted = false;
-    let mut steps = 0;
+    let mut steps: u64 = 0;
     let mut root_adjustment = 0.;
     let mut ics = 0;
     let mut ic_seconds = 0.;
     let mut startup_ic_seconds = 0.;
+    let mut initial_weighted_rates = String::from("null");
     let mut max_mech = 0_f64;
     let mut max_energy = 0_f64;
     let mut admitted_y = initial_physical.clone();
@@ -1242,6 +1299,9 @@ fn run(
         check_root_workspace(m, &admitted_y, &admitted_yp, &mut c.work,
             input, &c.mode.borrow())?;
         initial_admitted = true;
+        checked(unsafe { weights(yy, diagnostic_weights, &mut *c as *mut _ as Handle) }, "Initial diagnostic error weights")?;
+        initial_weighted_rates = weighted_contributors(
+            unsafe { values(yypp,n) }?, unsafe { values(diagnostic_weights,n) }?, |r|m.is_differential(r));
         loop {
             let physical_stop = c.support.borrow().next(horizon)?;
             // This bounded mechanical exercise has sparse explicit observation planes.
@@ -1270,6 +1330,7 @@ fn run(
             let mut py = c.decode(unsafe { values(yy, n) }?, false);
             let mut pyp = c.decode(unsafe { values(yypp, n) }?, true);
             let mut committed_event = false;
+            let mut committed_audit = None;
             // Process root equality before endpoint branch admission, but retain the
             // last admitted transaction if any downstream current chart refuses it.
             if status == 2 || (time > 0. && dc::coincident(time, physical_stop) && time < horizon) {
@@ -1279,7 +1340,7 @@ fn run(
                 let old_mode = c.mode.borrow().clone();
                 let mut next_adjustment = root_adjustment;
                 let mut pending_events = Vec::new();
-                let transaction = (|| -> Result<(), String> {
+                let transaction = (|| -> Result<(f64, f64), String> {
                     let pi = old_support.prhr_input(time, py[old_support.a.room_row])?;
                     m.evaluate(&py, &pyp, None, &mut c.work, Some(pi), &old_mode)?;
                     let mut init_required = false;
@@ -1366,19 +1427,24 @@ fn run(
                         initial_balance,
                         &initial_physical,
                         &network_weights.flow,
-                    )?;
-                    Ok(())
+                    )
                 })();
-                if let Err(e) = transaction {
-                    *c.mode.borrow_mut() = old_mode;
-                    *c.support.borrow_mut() = old_support;
-                    return Err(format!("Atomic event admission refused: {e}"));
+                match transaction {
+                    Err(e) => {
+                        *c.mode.borrow_mut() = old_mode;
+                        *c.support.borrow_mut() = old_support;
+                        return Err(format!("Atomic event admission refused: {e}"));
+                    }
+                    Ok(audited) => committed_audit = Some(audited),
                 }
                 root_adjustment = next_adjustment;
                 events.extend(pending_events);
                 committed_event = true;
             }
-            let (me, eb) = audit(
+            // The successful event transaction already admitted these exact
+            // physical vectors and modes. No intervening mutation needs a
+            // second full SOURCE/water evaluation of the same transaction.
+            let (me, eb) = if let Some(audited) = committed_audit { audited } else { audit(
                 &mut c,
                 accuracy,
                 time,
@@ -1389,7 +1455,7 @@ fn run(
                 initial_balance,
                 &initial_physical,
                 &network_weights.flow,
-            )?;
+            )? };
             max_mech = max_mech.max(me);
             max_energy = max_energy.max(eb);
             last_admitted = time;
@@ -1399,14 +1465,17 @@ fn run(
             admitted_mode = c.mode.borrow().clone();
             steps += 1;
             if committed_event {
+                let retention_began = Instant::now();
                 let index = event_snapshots.len();
                 let path = dir.join(format!("event-{index}.bin"));
                 retain(&path, time, &admitted_y, &admitted_yp)?;
                 c.support.borrow().retain(&path, time)?;
                 retain_mode(&path, &c.mode.borrow())?;
+                c.retention_seconds += retention_began.elapsed().as_secs_f64();
                 event_snapshots.push(format!("{{\"time\":{time},\"index\":{index}}}"));
             }
             while next_output < outputs.len() && outputs[next_output] <= time {
+                let observation_began = Instant::now();
                 let t = outputs[next_output];
                 let (oy, op) = if dc::coincident(t, time) {
                     (admitted_y.clone(), admitted_yp.clone())
@@ -1506,6 +1575,7 @@ fn run(
                     };
                     motion_comparisons.push(format!("{{\"time\":{t},\"suffixRow\":{row},\"normal\":{},\"tighter\":{},\"difference\":{},\"bound\":{},\"ratio\":{}}}",finite(a),finite(bb),finite((a-bb).abs()),finite(bound),finite(worst.0)));
                 }
+                let retention_began = Instant::now();
                 retain(&dir.join(format!("common-{next_output}.bin")), t, &oy, &op)?;
                 c.support
                     .borrow()
@@ -1519,6 +1589,8 @@ fn run(
                     c.support.borrow().json(t)?,
                 )
                 .map_err(|e| e.to_string())?;
+                let retained_seconds = retention_began.elapsed().as_secs_f64();
+                c.retention_seconds += retained_seconds;
                 samples.push(s);
                 material_samples.push(material);
                 if t == horizon {
@@ -1529,9 +1601,29 @@ fn run(
                         finite(d.emitted),finite(d.metal_total()),finite(d.water.iter().sum()),finite(d.exported),numbers(&d.family_emitted))).collect::<Vec<_>>().join(","));
                 }
                 motions.push(motion);
+                c.observation_seconds += observation_began.elapsed().as_secs_f64() - retained_seconds;
+                performance_planes.push(format!("{{\"time\":{t},\"wallSeconds\":{},\"steps\":{steps},\"residuals\":{},\"bases\":{},\"actions\":{},\"residualSeconds\":{},\"baseSeconds\":{},\"actionSeconds\":{},\"PSeconds\":{},\"PSolveSeconds\":{},\"rootSeconds\":{},\"weightsSeconds\":{},\"auditSeconds\":{},\"observationSeconds\":{},\"retentionSeconds\":{}}}",
+                    begin.elapsed().as_secs_f64(),c.calls[0],c.calls[1],c.calls[2],
+                    c.seconds[0],c.seconds[1],c.seconds[2],c.seconds[3],c.psolve_seconds,
+                    c.root_seconds,c.weights_seconds,c.audit_seconds,c.observation_seconds,c.retention_seconds));
                 next_output += 1;
             }
-            if last_checkpoint.elapsed().as_secs_f64() > 1. {
+            if steps > 0 && (steps.is_power_of_two() || last_checkpoint.elapsed().as_secs_f64() > 1.) {
+                // IDA's estimate belongs to its last accepted internal step,
+                // not necessarily the interpolated root/output time. ReInit
+                // resets that history: no estimate is meaningful at an event
+                // commit or the initial zero-time return.
+                if time > 0. && !committed_event {
+                    let mut last_step = 0.;
+                    let mut internal_time = 0.;
+                    checked(unsafe { IDAGetLastStep(owned.ida, &mut last_step) }, "Accepted internal-step diagnostic size")?;
+                    checked(unsafe { IDAGetCurrentTime(owned.ida, &mut internal_time) }, "Accepted internal-step diagnostic time")?;
+                    checked(unsafe { IDAGetErrWeights(owned.ida, diagnostic_weights) }, "Accepted internal-step diagnostic weights")?;
+                    checked(unsafe { IDAGetEstLocalErrors(owned.ida, diagnostic_errors) }, "Accepted internal-step diagnostic LTE")?;
+                    let diagnostic = weighted_contributors(unsafe { values(diagnostic_errors,n) }?,
+                        unsafe { values(diagnostic_weights,n) }?, |r|m.is_differential(r));
+                    eprintln!("{{\"kind\":\"motion-accepted-LTE\",\"refinement\":{refinement},\"returnedTime\":{},\"internalTime\":{},\"lastStepS\":{},\"contributors\":{diagnostic}}}",finite(time),finite(internal_time),finite(last_step));
+                }
                 eprintln!(
                     "Moving arm{refinement}: admitted{time:.9}s/{horizon}, {steps} steps, aggregate{:.3}s",
                     start.elapsed().as_secs_f64()
@@ -1590,6 +1682,7 @@ fn run(
             &returned_yp,
         )?;
     }
+    let retention_began = Instant::now();
     let terminal_path = dir.join(if initial_admitted {
         "terminal-admitted.bin"
     } else {
@@ -1603,8 +1696,9 @@ fn run(
     )?;
     admitted_support.retain(&terminal_path, last_admitted)?;
     retain_mode(&terminal_path, &admitted_mode)?;
+    c.retention_seconds += retention_began.elapsed().as_secs_f64();
     let terminal = format!(
-        "{{\"passed\":{},\"lastAdmittedTime\":{},\"solverReturnedTime\":{},\"reason\":{},\"seconds\":{},\"steps\":{},\"initialization\":{},\"startupICSeconds\":{},\"eventICCalls\":{},\"eventICSeconds\":{},\"maxMechanicalDefectJ\":{},\"maxThermalWorkDefectJ\":{},\"events\":[{}],\"eventSnapshots\":[{}],\"comparisons\":[{}],\"motionComparisons\":[{}],\"controlMaterialSamples\":[{}],\"controlMaterialComparisons\":[{}],\"controlChordSensitivity\":{},\"structuralTemperaturesK\":{},\"costs\":{},\"support\":{},\"finalMotion\":{}}}",
+        "{{\"passed\":{},\"lastAdmittedTime\":{},\"solverReturnedTime\":{},\"reason\":{},\"seconds\":{},\"steps\":{},\"initialization\":{},\"startupICSeconds\":{},\"initialWeightedRates\":{},\"eventICCalls\":{},\"eventICSeconds\":{},\"maxMechanicalDefectJ\":{},\"maxThermalWorkDefectJ\":{},\"events\":[{}],\"eventSnapshots\":[{}],\"comparisons\":[{}],\"motionComparisons\":[{}],\"controlMaterialSamples\":[{}],\"controlMaterialComparisons\":[{}],\"controlChordSensitivity\":{},\"structuralTemperaturesK\":{},\"costs\":{},\"performancePlanes\":[{}],\"support\":{},\"finalMotion\":{}}}",
         result.is_ok(),
         finite(last_admitted),
         finite(time),
@@ -1613,6 +1707,7 @@ fn run(
         steps,
         init.json(),
         finite(startup_ic_seconds),
+        initial_weighted_rates,
         ics,
         ic_seconds,
         finite(max_mech),
@@ -1626,6 +1721,7 @@ fn run(
         chord_sensitivity,
         structural_temperatures,
         c.metrics(),
+        performance_planes.join(","),
         admitted_support
             .json(last_admitted)
             .unwrap_or("null".into()),
@@ -1709,6 +1805,300 @@ fn retained_current_material_frame_constructs_without_advancement() {
     assert_eq!(p.model.dimension(), 75866);
     assert_eq!(p.model.control_material.host_count(), 104);
     assert_eq!(p.model.control_material.config().routes.len(), 360);
+}
+#[cfg(test)]
+#[test]
+#[ignore = "requires explicit frozen input and admitted initial full frame; no advancement"]
+fn retained_initial_source_rate_weight_diagnosis() {
+    let p = parse(&fs::read_to_string(std::env::var("LEITBILD_MOTION_INPUT").unwrap()).unwrap()).unwrap();
+    let bytes=fs::read(std::env::var("LEITBILD_MOTION_INITIAL_FRAME").unwrap()).unwrap();
+    let frame=bytes.chunks_exact(8).map(|b|f64::from_le_bytes(b.try_into().unwrap())).collect::<Vec<_>>();
+    let m=&p.model;
+    assert_eq!(bytes.len(),8*(1+2*m.dimension()));
+    assert_eq!(frame[0],0.);
+    let source=&m.cooling.source;
+    let n=source.state_count();
+    let y=&frame[1..1+n];
+    let yp=&frame[1+m.dimension()..1+m.dimension()+n];
+    let policy=source_accuracy::Accuracy::new(source,&p.emissions).unwrap();
+    let mut scales=policy.absolute(1.).unwrap();
+    for (a,v) in scales.iter_mut().zip(y) { *a+=1e-5*v.abs(); }
+    // These are the same emitted-power caps as the actual composed callback.
+    let power=cooling_power::PowerWeights::new(source).unwrap();
+    let mut work=power.workspace();
+    power.cap(&y[..source.history_dimension()],1e-5,cooling_accuracy::DEPOSIT_RESOLUTION_W,
+        &mut scales,&mut work).unwrap();
+    let mut barrel=cooling_power::BarrelWeights::new(source,m.cooling.barrel.config().targets,
+        m.cooling.barrel.config().capture_photon_j).unwrap();
+    barrel.cap(y,1e-5,cooling_accuracy::DEPOSIT_RESOLUTION_W,&mut scales).unwrap();
+    let physical=&frame[1..1+m.dimension()];
+    let mut full_scales=scales.clone();
+    full_scales.resize(m.layout.cooling_end,1.);
+    let mut capture=cooling_power::CaptureWeights::new(&m.cooling).unwrap();
+    capture.cap(&physical[..m.layout.cooling_end],1e-5,cooling_accuracy::DEPOSIT_RESOLUTION_W,&mut full_scales).unwrap();
+    scales.copy_from_slice(&full_scales[..n]);
+    let mut raw=y.to_vec();
+    let mut rates=yp.to_vec();
+    let coordinates=source_coordinates::Coordinates{nc:source.nc_dimension(),ledger:source.ledger_row()};
+    coordinates.transform(&mut raw);coordinates.transform(&mut rates);
+    // The ledger is a transformed balance, not the large original paid history.
+    scales[source.ledger_row()]=policy.absolute(1.).unwrap()[source.ledger_row()]+1e-5*raw[source.ledger_row()].abs();
+    let weights=scales.iter().map(|s|1./s).collect::<Vec<_>>();
+    eprintln!("SOURCE_WEIGHT_DIAG dimension={n} nc={} cf={} ledger={} report={}",source.nc_dimension(),source.cf_row(),source.ledger_row(),
+        weighted_contributors(&rates,&weights,|_|true));
+}
+#[cfg(test)]
+#[test]
+#[ignore = "explicit retained input/arm; fixed complete native work pattern, no advancement"]
+fn retained_geometry_direction_and_native_work_pattern() {
+    fn fields(s: &cg::Stage) -> Vec<f64> {
+        s.source.passive_volumes.iter().chain(&s.source.cylinder_shares)
+            .chain(&s.source.moderator_volumes).chain(&s.source.external_water_volumes)
+            .chain(&s.mobile.birth_shares).chain(&s.mobile.path_shares)
+            .chain(&s.mobile.boundary_shares).chain(&s.mobile.liquid_chords_m)
+            .chain(&s.mobile.wall_thicknesses_m).chain(&s.barrel_chords_m).copied()
+            .chain(s.water.iter().flat_map(|q| [q.volume, q.moment]))
+            .chain(s.contacts.iter().flat_map(|q| [q.area_m2, q.solid_geometry_m_inv, q.liquid_chord_m]))
+            .collect()
+    }
+    let all_started = Instant::now();
+    let input = std::env::var("LEITBILD_MOTION_INPUT").expect("explicit frozen input");
+    let arm = PathBuf::from(std::env::var("LEITBILD_MOTION_RETAINED_ARM").expect("explicit retained arm"));
+    let p = parse(&fs::read_to_string(input).unwrap()).unwrap();
+    let m = &p.model;
+    let support = motion_support::Support::new(p.a.clone(),p.b.clone(),p.holding,p.motive,
+        p.base_b,p.rate,p.case.burst).unwrap();
+    let mut timed = [0.;5];
+    let mut counts = [0_usize;5];
+    let mut proof_fields = 0_usize;
+    let mut empty_entry = false;
+    // Same retained stages and work count in both separately compiled source
+    // variants. This is core F/base/J/P/admission work, not a solver trajectory,
+    // and does not measure weights, root search, output or startup step counts.
+    for name in ["common-0.bin", "event-2.bin", "terminal-admitted.bin"] {
+        assert!(all_started.elapsed().as_secs_f64() < 15., "bounded retained work proof expired");
+        let path = arm.join(name);
+        let bytes = fs::read(&path).unwrap();
+        assert_eq!(bytes.len(),8*(1+2*m.dimension()));
+        let frame = bytes.chunks_exact(8).map(|b|f64::from_le_bytes(b.try_into().unwrap())).collect::<Vec<_>>();
+        let t = frame[0];
+        let y = &frame[1..1+m.dimension()];
+        let yp = &frame[1+m.dimension()..];
+        let mode = sm::Mode::restore_words(&fs::read_to_string(path.with_extension("bin.mode.txt")).unwrap()).unwrap();
+        let support_words = fs::read_to_string(path.with_extension("bin.motion-support.txt")).unwrap()
+            .split_whitespace().map(|s|s.parse::<f64>().unwrap()).collect::<Vec<_>>();
+        let stage_support = support.restore_words(&support_words).unwrap();
+        assert_eq!(stage_support.motion_input(t).unwrap(),mode.input);
+        let pi = stage_support.prhr_input(t,y[stage_support.a.room_row]).unwrap();
+        let poses = (0..m.clusters()).map(|k| cg::Pose {
+            body:y[m.motion_row(k,sm::BODY_Y)],stem:y[m.motion_row(k,sm::STEM_Y)],
+            body_right:mode.geometry[k].body_right,stem_right:mode.geometry[k].stem_right,
+            seated:mode.geometry[k].seated,
+        }).collect::<Vec<_>>();
+        let velocity = (0..m.clusters()).map(|k|cg::Direction {
+            body:y[m.motion_row(k,sm::BODY_V)],stem:y[m.motion_row(k,sm::STEM_V)],
+        }).collect::<Vec<_>>();
+        let directions = [(1.,0.),(0.,-1.),(1.,-2.),(-1.,2.),(0.,0.)].map(|(body,stem)| {
+            let mut dy = vec![0.;m.dimension()];
+            for k in 0..m.clusters() {
+                let q = (k as f64+1.)/m.clusters() as f64;
+                dy[m.motion_row(k,sm::BODY_Y)] = body*q*0.001;
+                dy[m.motion_row(k,sm::STEM_Y)] = stem*q*0.001;
+                dy[m.motion_row(k,sm::BODY_V)] = -body*q*0.002;
+                dy[m.motion_row(k,sm::STEM_V)] = stem*q*0.003;
+            }
+            dy
+        });
+        let cj = 1000.;
+        let mut w = m.workspace();
+        m.evaluate(y,yp,Some(cj),&mut w,Some(pi),&mode).unwrap();
+        m.validate_accepted(y,&w).unwrap();
+        let values = fields(&w.geometry.value);
+        let mut direct = m.geometry.workspace();
+        for dy in &directions {
+            let dpose = (0..m.clusters()).map(|k|cg::Direction {
+                body:dy[m.motion_row(k,sm::BODY_Y)],stem:dy[m.motion_row(k,sm::STEM_Y)],
+            }).collect::<Vec<_>>();
+            let dv = (0..m.clusters()).map(|k|cg::Direction {
+                body:dy[m.motion_row(k,sm::BODY_V)],stem:dy[m.motion_row(k,sm::STEM_V)],
+            }).collect::<Vec<_>>();
+            m.jvp(dy,cj,&mut w).unwrap();
+            m.geometry.evaluate_into(&poses,&dpose,&mut direct).unwrap();
+            m.geometry.water_rates_into(&velocity,&dv,&mut direct).unwrap();
+            assert_eq!(values,fields(&w.geometry.value),"value mutation at {name}");
+            assert_eq!(values,fields(&direct.value),"direct value mismatch at {name}");
+            for (row,(a,b)) in fields(&w.geometry.direction).into_iter().zip(fields(&direct.direction)).enumerate() {
+                assert!((a-b).abs()<=64.*f64::EPSILON*(a.abs()+b.abs()),
+                    "{name} geometry field {row}: prepared={a:e}, direct={b:e}");
+                proof_fields+=1;
+            }
+            for (a,b) in w.geometry.water_rate_direction.iter().zip(&direct.water_rate_direction) {
+                assert_eq!(a.volume,b.volume); assert_eq!(a.moment,b.moment);
+            }
+            empty_entry |= direct.value.source.cylinder_shares.iter().zip(&direct.direction.source.cylinder_shares)
+                .any(|(&value,&direction)|value==0.&&direction!=0.);
+            assert!(w.jvp.iter().all(|q|q.is_finite()));
+        }
+        let mut bp = cooling_block::Preconditioner::new_prepared(&m.cooling,
+            std::mem::replace(&mut w.cooling,m.cooling.workspace())).unwrap();
+        let mut mp = sm::MechanicalPreconditioner::new(m);
+        let mut out = vec![0.;m.dimension()];
+        let mut rhs = directions[2].clone();
+        m.mechanical_to_solver(&mut rhs);
+        for repeat in 0..4 {
+            assert!(all_started.elapsed().as_secs_f64()<15.,"bounded retained work proof expired");
+            for base in [false,true] {
+                let started = Instant::now();
+                m.evaluate(y,yp,if base {Some(cj)} else {None},&mut w,Some(pi),&mode).unwrap();
+                timed[0]+=started.elapsed().as_secs_f64(); counts[0]+=1;
+            }
+            if repeat==0 {
+                let started=Instant::now();
+                bp.setup_prepared(&m.cooling,&mut w.cooling,cj).unwrap();
+                mp.setup(m,&w,cj).unwrap();
+                timed[2]+=started.elapsed().as_secs_f64(); counts[2]+=1;
+            }
+            for dy in &directions {
+                let started=Instant::now();
+                m.jvp(dy,cj,&mut w).unwrap();
+                timed[1]+=started.elapsed().as_secs_f64(); counts[1]+=1;
+            }
+            for _ in 0..6 {
+                let started=Instant::now();
+                let end=m.layout.cooling_end;
+                bp.solve(&m.cooling,&rhs[..end],&mut out[..end]).unwrap();
+                mp.solve_solver(&rhs[end..],&mut out[end..]).unwrap();
+                assert!(out.iter().all(|q|q.is_finite()));
+                timed[3]+=started.elapsed().as_secs_f64(); counts[3]+=1;
+            }
+            let started=Instant::now();
+            m.evaluate(y,yp,None,&mut w,Some(pi),&mode).unwrap();
+            m.validate_accepted(y,&w).unwrap();
+            timed[4]+=started.elapsed().as_secs_f64(); counts[4]+=1;
+        }
+    }
+    assert!(empty_entry,"actual ORIGINAL empty-support entering derivative not exercised");
+    eprintln!("RETAINED_NATIVE_WORK_PATTERN frames=3 repeats=4 counts={counts:?} seconds={timed:?} proofFields={proof_fields} emptyEntry={empty_entry} measuredSeconds={} completeProofSeconds={}",
+        timed.iter().sum::<f64>(),all_started.elapsed().as_secs_f64());
+}
+#[cfg(test)]
+#[test]
+#[ignore = "explicit frozen input/admitted initial frame; exact owned-stage reuse, no advancement"]
+fn retained_owned_stage_reuse_keys_and_failure_invalidation() {
+    let p=parse(&fs::read_to_string(std::env::var("LEITBILD_MOTION_INPUT").unwrap()).unwrap()).unwrap();
+    let path=PathBuf::from(std::env::var("LEITBILD_MOTION_INITIAL_FRAME").unwrap());
+    let bytes=fs::read(&path).unwrap();
+    let m=&p.model;
+    assert_eq!(bytes.len(),8*(1+2*m.dimension()));
+    let frame=bytes.chunks_exact(8).map(|b|f64::from_le_bytes(b.try_into().unwrap())).collect::<Vec<_>>();
+    assert_eq!(frame[0],0.);
+    let y=&frame[1..1+m.dimension()];let yp=&frame[1+m.dimension()..];
+    let mode=sm::Mode::restore_words(&fs::read_to_string(path.with_extension("bin.mode.txt")).unwrap()).unwrap();
+    let pi=p.a.input(0.,y[p.a.room_row]).unwrap();
+    let mut w=m.workspace();
+    m.evaluate(y,yp,None,&mut w,Some(pi),&mode).unwrap();
+    let residual=w.residual.clone();let rates=w.rates.clone();let geometry=w.geometry.value.source.clone();
+    let energy=w.complete_energy_rate().unwrap();let thermal=w.thermal_work_energy_rate().unwrap();
+    m.evaluate(y,yp,Some(1.),&mut w,Some(pi),&mode).unwrap();
+    assert_eq!(w.full_evaluations,2);assert_eq!(w.reused_evaluations,0);
+    assert_eq!(residual,w.residual);assert_eq!(rates,w.rates);assert_eq!(geometry,w.geometry.value.source);
+    assert_eq!(energy.to_bits(),w.complete_energy_rate().unwrap().to_bits());
+    assert_eq!(thermal.to_bits(),w.thermal_work_energy_rate().unwrap().to_bits());
+    m.evaluate(y,yp,Some(1.),&mut w,Some(pi),&mode).unwrap();
+    assert_eq!(w.full_evaluations,2);assert_eq!(w.reused_evaluations,1);
+    let mut misses=2;
+    // An exact dependency changes, then restoration, each requires fresh work.
+    let mut yy=y.to_vec();yy[m.motion_row(0,sm::JACK_HEAT)]=1e-9;
+    m.evaluate(&yy,yp,Some(1.),&mut w,Some(pi),&mode).unwrap();misses+=1;
+    m.evaluate(y,yp,Some(1.),&mut w,Some(pi),&mode).unwrap();misses+=1;
+    let mut pp=yp.to_vec();pp[m.motion_row(0,sm::JACK_HEAT)]+=1e-9;
+    m.evaluate(y,&pp,Some(1.),&mut w,Some(pi),&mode).unwrap();misses+=1;
+    m.evaluate(y,yp,Some(1.),&mut w,Some(pi),&mode).unwrap();misses+=1;
+    m.evaluate(y,yp,Some(2.),&mut w,Some(pi),&mode).unwrap();misses+=1;
+    m.evaluate(y,yp,Some(1.),&mut w,Some(pi),&mode).unwrap();misses+=1;
+    for changed in 0..3 {
+        let mut other=mode.clone();
+        match changed {
+            0=>other.input.holding_power_w+=0.01,
+            1=>other.geometry[0].seated=!other.geometry[0].seated,
+            _=>other.branches[0].joint=am::JointMode::Separated,
+        }
+        m.evaluate(y,yp,Some(1.),&mut w,Some(pi),&other).unwrap();misses+=1;
+        m.evaluate(y,yp,Some(1.),&mut w,Some(pi),&mode).unwrap();misses+=1;
+    }
+    for field in 0..5 {
+        let mut other=pi;
+        match field {
+            0=>other.opening+=1e-8,1=>other.opening_rate+=1e-8,
+            2=>other.electrical_receipt_w+=1e-8,3=>other.room_heat_w+=1e-8,
+            _=>other.ambient_temperature_k+=1e-8,
+        }
+        // Some independently changed achieved-input fields are physically
+        // incompatible. They must attempt fresh preparation and invalidate,
+        // never silently reuse the former valid stage.
+        let changed=m.evaluate(y,yp,Some(1.),&mut w,Some(other),&mode);misses+=1;
+        if changed.is_err() {assert!(w.complete_energy_rate().is_err());}
+        m.evaluate(y,yp,Some(1.),&mut w,Some(pi),&mode).unwrap();misses+=1;
+    }
+    assert_eq!(w.full_evaluations,misses);assert_eq!(w.reused_evaluations,1);
+    let zero=vec![0.;m.dimension()];
+    m.jvp(&zero,1.,&mut w).unwrap();
+    assert!(w.complete_energy_rate_jvp().is_ok());
+    m.evaluate(y,yp,Some(1.),&mut w,Some(pi),&mode).unwrap();misses+=1;
+    assert!(w.complete_energy_rate_jvp().is_err());
+    assert!(w.geometry.direction.source.passive_volumes.iter().all(|q|*q==0.));
+    assert!(m.jvp(&zero,2.,&mut w).is_err());
+    assert!(w.complete_energy_rate().is_err());
+    m.evaluate(y,yp,Some(1.),&mut w,Some(pi),&mode).unwrap();misses+=1;
+    m.evaluate(y,yp,None,&mut w,Some(pi),&mode).unwrap();misses+=1;
+    m.evaluate(y,yp,None,&mut w,Some(pi),&mode).unwrap();misses+=1;
+    assert_eq!(w.full_evaluations,misses);assert_eq!(w.reused_evaluations,1);
+    let mut invalid=zero;invalid[0]=f64::NAN;
+    assert!(m.jvp(&invalid,1.,&mut w).is_err());
+    assert!(w.complete_energy_rate().is_err());
+    m.evaluate(y,yp,Some(1.),&mut w,Some(pi),&mode).unwrap();misses+=1;
+    assert_eq!(w.full_evaluations,misses);
+    m.validate_accepted(y,&w).unwrap();
+    let support=motion_support::Support::new(p.a.clone(),p.b.clone(),p.holding,p.motive,p.base_b,p.rate,p.case.burst).unwrap();
+    for name in ["common-1.bin","terminal-admitted.bin"] {
+        let stage=path.parent().unwrap().join(name);
+        let bytes=fs::read(&stage).unwrap();
+        assert_eq!(bytes.len(),8*(1+2*m.dimension()));
+        let frame=bytes.chunks_exact(8).map(|b|f64::from_le_bytes(b.try_into().unwrap())).collect::<Vec<_>>();
+        let t=frame[0];let y=&frame[1..1+m.dimension()];let yp=&frame[1+m.dimension()..];
+        let mode=sm::Mode::restore_words(&fs::read_to_string(stage.with_extension("bin.mode.txt")).unwrap()).unwrap();
+        let words=fs::read_to_string(stage.with_extension("bin.motion-support.txt")).unwrap()
+            .split_whitespace().map(|s|s.parse::<f64>().unwrap()).collect::<Vec<_>>();
+        let supply=support.restore_words(&words).unwrap();
+        let pi=supply.prhr_input(t,y[supply.a.room_row]).unwrap();
+        let mut reused=m.workspace();let mut fresh=m.workspace();
+        m.evaluate(y,yp,None,&mut fresh,Some(pi),&mode).unwrap();
+        m.evaluate(y,yp,Some(3.),&mut reused,Some(pi),&mode).unwrap();
+        assert_eq!(fresh.residual,reused.residual);assert_eq!(fresh.rates,reused.rates);
+        assert_eq!(fresh.complete_energy_rate().unwrap().to_bits(),reused.complete_energy_rate().unwrap().to_bits());
+        assert_eq!(fresh.thermal_work_energy_rate().unwrap().to_bits(),reused.thermal_work_energy_rate().unwrap().to_bits());
+        m.evaluate(y,yp,Some(3.),&mut reused,Some(pi),&mode).unwrap();
+        assert_eq!(reused.full_evaluations,1);assert_eq!(reused.reused_evaluations,1);
+        m.evaluate(y,yp,Some(3.),&mut fresh,Some(pi),&mode).unwrap();
+        let mut d=vec![0.;m.dimension()];
+        for k in 0..m.clusters() {
+            d[m.motion_row(k,sm::BODY_Y)]=0.001;
+            d[m.motion_row(k,sm::STEM_Y)]=-0.002;
+            d[m.motion_row(k,sm::BODY_V)]=-0.003;
+            d[m.motion_row(k,sm::STEM_V)]=0.004;
+        }
+        m.jvp(&d,3.,&mut reused).unwrap();m.jvp(&d,3.,&mut fresh).unwrap();
+        for (a,b) in reused.jvp.iter().zip(&fresh.jvp) {assert_eq!(a.to_bits(),b.to_bits());}
+        for (a,b) in reused.cooling.source.rate_jvp().unwrap().iter().zip(fresh.cooling.source.rate_jvp().unwrap()) {
+            assert_eq!(a.to_bits(),b.to_bits());
+        }
+        assert_eq!(reused.complete_energy_rate_jvp().unwrap().to_bits(),fresh.complete_energy_rate_jvp().unwrap().to_bits());
+        assert_eq!(reused.thermal_work_energy_rate_jvp().unwrap().to_bits(),fresh.thermal_work_energy_rate_jvp().unwrap().to_bits());
+        if name=="common-1.bin" {assert!((0..m.clusters()).any(|k|y[m.motion_row(k,sm::STEM_V)]!=0.));}
+        else {assert!(mode.branches.iter().all(|b|b.regulator==am::RegulatorBranch::HoldRest));}
+        m.validate_accepted(y,&reused).unwrap();m.validate_accepted(y,&fresh).unwrap();
+    }
+    eprintln!("OWNED_STAGE_REUSE_PROOF full={} reused={} sameSomeNoneBits=true allKeysAndDirectionInvalidation=true",w.full_evaluations,w.reused_evaluations);
 }
 fn main() {
     if let Err(e) = execute() {
