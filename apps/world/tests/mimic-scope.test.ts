@@ -31,16 +31,27 @@ describe('mimic scope from the agent\'s intent', () => {
     expect(drawn(graph, { from: ['feedwaterTank'], to: ['sgB'] }).labels).toEqual(['FCV B', 'FW tank', 'MFW A', 'MFW B', 'MFW header', 'SG B'])
     // The diesel feeds its own bus only; no route reaches the other train's pump.
     expect(drawn(graph, { from: ['dieselGeneratorA'], to: ['auxFeedwaterPumpMotor'] }).labels).toEqual(['Bus A', 'EDG A', 'EDG BKR A', 'MD AFW A'])
-    expect(rejection(graph, { from: ['dieselGeneratorB'], to: ['auxFeedwaterPumpMotor'] })[0]!.message).toBe('no electricalPower route from dieselGeneratorB to auxFeedwaterPumpMotor in the Plant model')
+    expect(rejection(graph, { from: ['dieselGeneratorB'], to: ['auxFeedwaterPumpMotor'] })[0]!.message).toBe('no electricalPower route from dieselGeneratorB to auxFeedwaterPumpMotor in the Plant model; dieselGeneratorB delivers electricalPower and auxFeedwaterPumpMotor receives auxFeedwater, electricalPower')
   })
 
-  test('names resolve from ids, the tags the agent already has, or short labels', () => {
+  test('names resolve from ids, the tags the agent already has, labels or short labels', () => {
     const scope = drawn(graph, { from: ['FW tank', 'AFW tank'], to: ['SG-B-LVL-NR'] })
     expect(scope.names.map(name => name.via)).toEqual(['label', 'label', 'tag'])
     expect(scope.labels).toContain('AFW valve B')
-    const [unknown] = rejection(graph, { to: ['SG-B'], services: ['feedwater'] })
-    expect(unknown!.message).toBe('unknown equipment "SG-B"; name a component id, a tag measured on it, or its short label')
-    expect(unknown!.didYouMean![0]).toStartWith('sgB (Steam Generator B, SG B); tags SG-B-LVL-NR')
+    // A label as an operator writes it: any case, spaces or hyphens.
+    for (const [name, id] of [['safety bus A', 'safetyBusA'], ['motor-driven auxiliary feedwater pump', 'auxFeedwaterPumpMotor'], ['SG-B', 'sgB']] as const) {
+      const [resolved] = drawn(graph, { to: [name], services: ['electricalPower', 'auxFeedwater', 'feedwater'] }).names
+      expect(graph.components[resolved!.component]!.id).toBe(id as never)
+    }
+    // A class of equipment is not one component: the suggestions name each.
+    const [unknown] = rejection(graph, { to: ['steam generators'], services: ['feedwater'] })
+    expect(unknown!.message).toBe('unknown equipment "steam generators"; name one component per entry: its id, a tag measured on it, its label or its short label')
+    expect(unknown!.didYouMean!.map(suggestion => suggestion.split(' ')[0])).toEqual(['sgA', 'sgB', 'sgC'])
+  })
+
+  test('a service the equipment does not carry is refused with what it carries', () => {
+    expect(rejection(graph, { from: ['pressurizer'], services: ['feedwater'] })[0]!.message)
+      .toBe('nothing feedwater connects to pressurizer in the Plant model; pressurizer carries electricalPower, primaryCoolant, primaryRelief')
   })
 
   test('one end needs a service when it has several, and a reversed route says so', () => {

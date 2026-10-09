@@ -486,6 +486,14 @@ const relatedRuleIds = (system: ProcessPlantRuntimeInstance, panels: ReadonlyArr
   ])].sort()
 }
 
+// The panels whose removal lets a drawing fit as asked: each one alone, or else all of them.
+const fewerPanels = (besides: ReadonlyArray<number>, fits: (kept: ReadonlyArray<number>) => boolean): ReadonlyArray<ReadonlyArray<number>> => {
+  if (besides.length === 0) return []
+  const singles = besides.filter(removed => fits(besides.filter(other => other !== removed))).map(removed => [removed])
+  if (singles.length > 0) return singles
+  return besides.length > 1 && fits([]) ? [besides] : []
+}
+
 /**
  * `compose` applies the authoring rules (panel counts, strips, size budget,
  * one panel per signal, a primary signal) that keep new displays lean. `view` re-opens a
@@ -512,14 +520,24 @@ export const compileComposedDisplay = (
   }
   const others = composition.panels.map((panel, index) => panel.kind === 'mimic' ? undefined : compilePanel(system, panel, index, recordedSeriesIds, issues))
   // The mimic draws in the room the other panels leave at their smallest.
-  const othersHeight = others.reduce((sum, panel) => panel === undefined ? sum : sum + composedPanelMinimumHeight(panelShape(panel)) + composedDisplayLayout.panelGap, 0)
+  const heights = others.map(panel => panel === undefined ? 0 : composedPanelMinimumHeight(panelShape(panel)) + composedDisplayLayout.panelGap)
+  const mimicBudget = (left: ReadonlyArray<number>) => ({
+    maxWidth: MIMIC_MAX_WIDTH,
+    maxHeight: COMPOSED_MIMIC_DISPLAY_MAX_HEIGHT_PX - composedDisplayLayout.frame - composedDisplayLayout.mimicLegend - left.reduce((sum, index) => sum + heights[index]!, 0),
+  })
+  const besides = others.flatMap((panel, index) => panel === undefined ? [] : [index])
   const panels = composition.panels.map((panel, index): UnsizedPanel | undefined => {
     if (panel.kind !== 'mimic') return others[index]
     const { kind: _kind, ...intent } = panel
-    const budget = { maxWidth: MIMIC_MAX_WIDTH, maxHeight: COMPOSED_MIMIC_DISPLAY_MAX_HEIGHT_PX - composedDisplayLayout.frame - composedDisplayLayout.mimicLegend - othersHeight }
-    const compiled = compileMimic(system.plant, intent, budget)
+    const compiled = compileMimic(system.plant, intent, mimicBudget(besides))
     if (!compiled.ok) {
-      for (const issue of compiled.issues) issues.push({ path: `panels.${index}${issue.field === '(mimic)' ? '' : `.${issue.field}`}`, message: issue.message, ...(issue.didYouMean === undefined ? {} : { didYouMean: issue.didYouMean }) })
+      // A drawing refused for its size may fit as asked beside fewer panels.
+      const roomier = compiled.issues.some(issue => issue.field === '(mimic)') ? fewerPanels(besides, kept => compileMimic(system.plant, intent, mimicBudget(kept)).ok) : []
+      const without = roomier.map(removed => removed.map(other => `panels.${other} (${composition.panels[other]!.kind})`).join(' and '))
+      for (const issue of compiled.issues) {
+        const message = issue.field === '(mimic)' && without.length > 0 ? `${issue.message}; or it fits as asked without ${without.join(', or without ')}` : issue.message
+        issues.push({ path: `panels.${index}${issue.field === '(mimic)' ? '' : `.${issue.field}`}`, message, ...(issue.didYouMean === undefined ? {} : { didYouMean: issue.didYouMean }) })
+      }
       return undefined
     }
     return { kind: 'mimic', mimic: compiled.mimic }

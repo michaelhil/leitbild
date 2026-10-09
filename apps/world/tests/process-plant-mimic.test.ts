@@ -104,10 +104,17 @@ describe('generated equipment mimics', () => {
   })
 
   test('names that do not resolve come back with suggestions', () => {
-    const result = compileMimic(system.plant, { to: ['SG-B'], services: ['feedwater'] }, roomy)
+    const result = compileMimic(system.plant, { to: ['steam gen B'], services: ['feedwater'] }, roomy)
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.issues[0]!.didYouMean![0]).toStartWith('sgB (Steam Generator B, SG B)')
+  })
+
+  test('a drawing too large says how far off its closest layout is', () => {
+    const result = compileMimic(system.plant, { services: ['auxFeedwater', 'feedwater'] }, roomy)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.issues[0]!.message.match(/the drawing needs/g)).toHaveLength(1)
   })
 })
 
@@ -143,6 +150,12 @@ describe('mimic panels in composed displays', () => {
     const result = ask('world.process-plant.display.compose', display([{ kind: 'mimic', to: ['safetyBusA'] }, trend, { kind: 'alarms', scope: 'related' }])) as { view: { height: number } }
     expect(result.view.height).toBeGreaterThan(660)
     expect(result.view.height).toBeLessThanOrEqual(900)
+  })
+
+  test('a drawing that fits only with the room of another panel says which panel to drop', () => {
+    const trend = { kind: 'trend', horizon: '10m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }, { ref: 'SG-A-LVL-NR', role: 'context' }, { ref: 'SG-C-LVL-NR', role: 'context' }, { ref: 'SG-D-LVL-NR', role: 'context' }] }
+    expect(() => ask('world.process-plant.display.compose', display([{ kind: 'mimic', to: ['sgB'], services: ['feedwater', 'auxFeedwater'] }, trend, { kind: 'alarms', scope: 'related' }])))
+      .toThrow('or it fits as asked without panels.1 (trend), or without panels.2 (alarms)')
   })
 
   test('a stored display re-opens with its drawing, and relates its alarms to the drawn equipment', () => {

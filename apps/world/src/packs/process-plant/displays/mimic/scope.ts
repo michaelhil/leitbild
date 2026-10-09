@@ -1,6 +1,6 @@
 import type { CompiledPlantGraph, CompiledProcessLink } from '../../graph/index.ts'
 import { carriersAt, downstreamLinks, linkCarrier, routeLinks, upstreamLinks } from '../../graph/index.ts'
-import { SUGGESTION_COUNT, letters, matchedWords, words } from '../name-matching.ts'
+import { SUGGESTION_COUNT, letters, matchedWords, normalized, words } from '../name-matching.ts'
 
 // What a mimic draws, resolved from the agent's intent in plant terms. The
 // scope comes from the static Plant graph alone (never from live values), so
@@ -58,9 +58,10 @@ const loopOf = (graph: CompiledPlantGraph, link: CompiledProcessLink): string | 
     ?? graph.components[link.fromComponentIndex]!.metadata?.loopId
     ?? graph.components[link.toComponentIndex]!.metadata?.loopId
 
-// A name is a component id, a tag measured on equipment (its owner), or an
-// operator's short label. A tag on a pipe names the pipe's end that the role
-// points at: what a route starts from, or what it reaches.
+// A name is a component id, a tag measured on equipment (its owner), or its
+// label or short label, ignoring case, spaces and hyphens ("safety bus A",
+// "SG-B"). A tag on a pipe names the pipe's end that the role points at: what
+// a route starts from, or what it reaches.
 const resolveName = (
   graph: CompiledPlantGraph,
   name: string,
@@ -75,10 +76,12 @@ const resolveName = (
     if (role === 'exclude') return { error: `${name} is measured on the pipe ${link.id}; exclude equipment, not a pipe`, didYouMean: [] }
     return { component: role === 'from' ? link.fromComponentIndex : link.toComponentIndex, via: 'tag' }
   }
-  const lowered = name.trim().toLowerCase()
-  const byLabel = graph.components.filter(component => component.metadata?.presentation?.shortLabel?.toLowerCase() === lowered)
+  const wanted = normalized(name)
+  const byLabel = graph.components.filter(component => [component.label, component.metadata?.presentation?.shortLabel]
+    .some(label => label !== undefined && normalized(label) === wanted))
   if (byLabel.length === 1) return { component: byLabel[0]!.index, via: 'label' }
-  return { error: `unknown equipment "${name}"; name a component id, a tag measured on it, or its short label`, didYouMean: equipmentSuggestions(graph, name) }
+  if (byLabel.length > 1) return { error: `"${name}" names ${byLabel.length} components; name one by its id`, didYouMean: byLabel.slice(0, SUGGESTION_COUNT).map(component => componentDescription(graph, component.index)) }
+  return { error: `unknown equipment "${name}"; name one component per entry: its id, a tag measured on it, its label or its short label`, didYouMean: equipmentSuggestions(graph, name) }
 }
 
 /** Components whose id, label, short label or tags match the guessed words best. */
@@ -166,6 +169,9 @@ export const resolveMimicScope = (graph: CompiledPlantGraph, intent: MimicIntent
   const delivered = (list: ReadonlyArray<number>) => new Set(list.flatMap(index => carriersAt(graph, index, 'out')).filter(carrier => known.includes(carrier)))
   const received = (list: ReadonlyArray<number>) => new Set(list.flatMap(index => carriersAt(graph, index, 'in')).filter(carrier => known.includes(carrier)))
   const shared = (left: ReadonlySet<string>, right: ReadonlySet<string>) => new Set([...left].filter(carrier => right.has(carrier)))
+  const listed = (carriers: ReadonlySet<string>) => [...carriers].sort().join(', ') || 'nothing'
+  // What equipment does carry, so a wrong service is corrected in one call.
+  const carriedBy = (list: ReadonlyArray<number>) => list.map(index => `${graph.components[index]!.id} carries ${listed(new Set([...delivered([index]), ...received([index])]))}`).join('; ')
   const carriers: ReadonlySet<string> = intent.services !== undefined ? new Set(intent.services)
     : from.length > 0 && to.length > 0 ? shared(delivered(from), received(to))
       : from.length > 0 ? delivered(from) : received(to)
@@ -200,15 +206,15 @@ export const resolveMimicScope = (graph: CompiledPlantGraph, intent: MimicIntent
     const reverseCarriers = intent.services !== undefined ? carriers : shared(delivered(to), received(from))
     const reverse = from.length > 0 && to.length > 0 && routeLinks(graph, to, from, reverseCarriers).size > 0
     if (from.length > 0 && to.length > 0 && carriers.size === 0 && !reverse) {
-      return { ok: false, issues: [{ field: '(mimic)', message: `${ends(from)} delivers ${[...delivered(from)].sort().join(', ') || 'nothing'} and ${ends(to)} receives ${[...received(to)].sort().join(', ') || 'nothing'}: no service connects them` }] }
+      return { ok: false, issues: [{ field: '(mimic)', message: `${ends(from)} delivers ${listed(delivered(from))} and ${ends(to)} receives ${listed(received(to))}: no service connects them` }] }
     }
     return {
       ok: false,
       issues: [{
         field: '(mimic)',
         message: reverse ? `${ends(to)} feeds ${ends(from)}, not the other way: swap from and to`
-          : from.length > 0 && to.length > 0 ? `no ${[...carriers].join(' or ')} route from ${ends(from)} to ${ends(to)} in the Plant model`
-            : `nothing ${[...carriers].join(' or ')} connects to ${ends([...from, ...to])} in the Plant model`,
+          : from.length > 0 && to.length > 0 ? `no ${[...carriers].join(' or ')} route from ${ends(from)} to ${ends(to)} in the Plant model; ${ends(from)} delivers ${listed(delivered(from))} and ${ends(to)} receives ${listed(received(to))}`
+            : `nothing ${[...carriers].join(' or ')} connects to ${ends([...from, ...to])} in the Plant model; ${carriedBy([...from, ...to])}`,
       }],
     }
   }

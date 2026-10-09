@@ -40,8 +40,9 @@ const profileFor = (budget: MimicBudget): DiagramProfile => ({
   flapLabelPadding: openBridgeDevice.flapLabelInset,
   maxWidth: budget.maxWidth,
   maxHeight: budget.maxHeight,
-  // About three symbols per loop and six shared: what an operator takes in at a glance.
-  limits: { symbols: 16, symbolsPerLane: 3, sharedSymbols: 7, lanes: 4, crossings: 6, bendsPerEdge: 3 },
+  // About three symbols per loop and eight shared: what an operator takes in at
+  // a glance, and enough for one service to all four loops or a diesel to its pump.
+  limits: { symbols: 20, symbolsPerLane: 3, sharedSymbols: 8, lanes: 4, crossings: 6, bendsPerEdge: 3 },
 })
 
 interface PlannedItem {
@@ -348,7 +349,14 @@ const assemble = (plant: CompiledProcessPlant, intent: MimicIntent, scope: Mimic
   }
 }
 
-const layoutReasons = (result: Extract<DiagramLayoutResult, { ok: false }>, budget: MimicBudget): string => result.reasons.map(reason => {
+// Each orientation the layout tries reports its own size; the closest fit says how far off the drawing is.
+const closestSize = (reasons: Extract<DiagramLayoutResult, { ok: false }>['reasons'], budget: MimicBudget) => {
+  const overflow = (reason: { readonly width: number; readonly height: number }) => Math.max(reason.width / budget.maxWidth, reason.height / budget.maxHeight)
+  const sizes = reasons.filter(reason => reason.kind === 'size')
+  return sizes.length === 0 ? undefined : sizes.reduce((best, reason) => overflow(reason) < overflow(best) ? reason : best)
+}
+
+const layoutReasons = (result: Extract<DiagramLayoutResult, { ok: false }>, budget: MimicBudget): string => result.reasons.filter(reason => reason.kind !== 'size' || reason === closestSize(result.reasons, budget)).map(reason => {
   if (reason.kind === 'density') {
     const what = { symbols: 'symbols', symbolsPerLane: 'symbols in one loop', sharedSymbols: 'shared symbols outside the loops', lanes: 'loops', crossings: 'crossing pipes', bendsPerEdge: 'bends in one pipe' }[reason.limit]
     return `${reason.count} ${what} (at most ${reason.max} stay legible at a glance)`
