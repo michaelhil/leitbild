@@ -66,13 +66,13 @@ const PUMP = 16
 const feedToSg = (loops: ReadonlyArray<string>): MimicViewSpec => {
   const centers = loopCenters(loops.length)
   const lastCenter = centers.at(-1)!
-  const sgTop = 20
+  const sgTop = 16
   const sgHeight = 60
-  const tee = 92
-  const valveY = 112
-  const fwHeader = 144
-  const afwHeader = 168
-  const afwPumpY = 196
+  const tee = 88
+  const valveY = 108
+  const fwHeader = 136
+  const afwHeader = 160
+  const afwPumpY = 184
   const nodes: MimicNodeSpec[] = []
   const pipes: MimicPipeSpec[] = []
 
@@ -117,8 +117,8 @@ const feedToSg = (loops: ReadonlyArray<string>): MimicViewSpec => {
   )
 
   const mfwPumps = [
-    { id: 'mfw-pump-a', componentId: 'mainFeedwaterPumpA', label: 'MFW A', y: 120, linkId: 'main-feedwater-pump-a-to-header' },
-    { id: 'mfw-pump-b', componentId: 'mainFeedwaterPumpB', label: 'MFW B', y: 152, linkId: 'main-feedwater-pump-b-to-header' },
+    { id: 'mfw-pump-a', componentId: 'mainFeedwaterPumpA', label: 'MFW A', y: 112, linkId: 'main-feedwater-pump-a-to-header' },
+    { id: 'mfw-pump-b', componentId: 'mainFeedwaterPumpB', label: 'MFW B', y: 140, linkId: 'main-feedwater-pump-b-to-header' },
   ]
   for (const pump of mfwPumps) {
     nodes.push({
@@ -143,7 +143,7 @@ const feedToSg = (loops: ReadonlyArray<string>): MimicViewSpec => {
     pipes.push({ id: `${pump.id}-to-header`, linkId: pump.linkId, points: [[pump.x, afwPumpY - PUMP / 2], [pump.x, afwHeader]] })
   }
 
-  return { height: 216, nodes, pipes }
+  return { height: 204, nodes, pipes }
 }
 
 /**

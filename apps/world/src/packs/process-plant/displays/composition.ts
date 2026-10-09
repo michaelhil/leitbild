@@ -121,7 +121,7 @@ export const composedDisplayLayout = {
    */
   trendPlot: 116,
   trendStackedPlot: 72,
-  trendMinPlot: 72,
+  trendMinPlot: 64,
   trendMinStackedPlot: 48,
   /** Time labels, once under the bottom strip. */
   trendTimeAxis: 22,

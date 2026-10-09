@@ -167,6 +167,10 @@ describe('mimic panels in composed displays', () => {
     const twoStrips = ask('world.process-plant.display.compose', display([mimic, twoMeasurements])) as { view: { height: number } }
     expect(twoStrips.view.height).toBeLessThanOrEqual(640)
     expect(rejection(display([mimic, twoMeasurements, { kind: 'alarms', scope: 'related' }]))).toContain('without panels.2 (alarms)')
+    // Evaluation run 8, AFW reach: the four SG levels beside the mimic and the alarms.
+    const fourLevels = { kind: 'trend', horizon: '10m', signals: ['A', 'B', 'C', 'D'].map(loop => ({ ref: `SG-${loop}-LVL-NR`, role: loop === 'A' ? 'primary' : 'context' })) }
+    const afw = ask('world.process-plant.display.compose', display([mimic, fourLevels, { kind: 'alarms', scope: 'related' }])) as { view: { height: number } }
+    expect(afw.view.height).toBeLessThanOrEqual(640)
   })
 
   test('relate the alarms panel to the drawn equipment, and allow one mimic', () => {
