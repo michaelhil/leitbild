@@ -144,12 +144,12 @@ describe('mimic presentation and bindings', () => {
     }
   })
 
-  test('flaps say what a rule watches: the drawn level by its limit, other signals by their letter, a command as a command', () => {
+  test('flaps say what a rule watches: the drawn level by its limit, other signals by their letter, a run command as NOT RUN', () => {
     const framed = framingRules(plant)
     const flaps = (id: string, aspect: 'level' | 'running') => Object.fromEntries(itemBinding(plant, { kind: 'component', component: graph.componentIndexById.get(id as never)! }, aspect, framed).frames.map(frame => [frame.ruleId, frame.flap]))
     expect(flaps('pressurizer', 'level')).toMatchObject({ 'pzr-pressure-low': 'P LO', 'pzr-pressure-low-reactor-trip': 'P LO-LO', 'pzr-level-low': 'LO' })
-    expect(flaps('sgB', 'level')).toMatchObject({ 'sg-b-level-low': 'LO', 'sg-b-level-low-low-afw-actuation': 'LO-LO', 'sg-b-pressure-high': 'P HI' })
-    expect(flaps('rcpA', 'running')).toMatchObject({ 'rcp-a-trip': 'CMD STOP', 'rcp-a-loop-flow-low': 'F LO' })
+    expect(flaps('sgB', 'level')).toMatchObject({ 'sg-b-level-low': 'LO', 'sg-b-level-low-low-afw-actuation': 'LO-LO', 'sg-b-pressure-high': 'P HI', 'sg-b-feedwater-low': 'LO & F LO' })
+    expect(flaps('rcpA', 'running')).toMatchObject({ 'rcp-a-trip': 'NOT RUN', 'rcp-a-loop-flow-low': 'F LO' })
     // A vote across loops frames no single pump; it leads the banner.
     const voted = plant.automation.rules.filter(rule => rule.condition.type === 'vote').map(rule => rule.id)
     expect(voted.length).toBeGreaterThan(0)

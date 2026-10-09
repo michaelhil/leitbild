@@ -39,7 +39,7 @@ export const NO_FLOW_FRACTION = 0.0025
 export interface MimicStateBinding {
   readonly aspect: StateAspect
   /** The solved signal; absent when the model computes none, so the state reads "not measured". */
-  readonly state?: { readonly path: VariablePath; readonly reading: AspectReading }
+  readonly state?: { readonly path: VariablePath; readonly reading: AspectReading; readonly noFlowBelow?: number | null }
   readonly command?: VariablePath
   /** What passes the item, judging it where its own state is not solved. */
   readonly throughput?: { readonly path: VariablePath; readonly noFlowBelow: number | null }
@@ -151,11 +151,11 @@ const discreteWords = (graph: CompiledPlantGraph, binding: ProcessSignalBinding,
   const served = aspects.find(aspect => aspect.command === binding.path || aspect.state?.path === binding.path)?.aspect
   // A flag that serves no aspect says itself: "degraded" true reads DEGRADED.
   const flag = String(binding.path).split('.').at(-1)!.replace(/([a-z])([A-Z])/g, '$1 $2').toUpperCase()
-  const words = served === 'running' ? (value ? 'RUN' : 'STOP')
+  // "CMD" is kept for a command the equipment does not follow; a rule on the run command reads NOT RUN.
+  return served === 'running' ? (value ? 'RUN' : 'NOT RUN')
     : served === 'position' ? (value ? 'OPEN' : 'SHUT')
       : served === 'energized' ? (value ? 'LIVE' : 'DEAD')
         : (value ? flag : `NOT ${flag}`)
-  return binding.actuation === 'command' ? `CMD ${words}` : words
 }
 
 /**
@@ -183,7 +183,8 @@ export const flapText = (plant: CompiledProcessPlant, rule: ProcessPlantIcRule, 
     const limit = low ? (rank === 0 ? 'LO' : 'LO-LO') : (rank === 0 ? 'HI' : 'HI-HI')
     return binding.path === drawnState ? limit : `${variableLetters(binding)} ${limit}`
   }))]
-  return names.join(' + ')
+  // Conditions that must all hold read "&", alternatives "or".
+  return names.join(rule.condition.type === 'any' ? ' or ' : ' & ')
 }
 
 /** Rules whose every watched signal belongs to one drawn item frame that item; votes and rules across items lead the banner. */
@@ -207,9 +208,12 @@ const stateBinding = (aspects: ReadonlyArray<CompiledStateAspect>, aspect: State
   const declared = aspectOf(aspects, aspect)
   if (declared === undefined) return null
   const throughput = aspectOf(aspects, 'throughput')?.state
+  // A flow read as a state (a turbine runs while steam drives it) has the same no-flow band as a pipe.
+  const state = declared.state === undefined ? undefined
+    : declared.state.reading === 'flow' ? { ...declared.state, noFlowBelow: flow(declared.state.path) } : declared.state
   return {
     aspect,
-    ...(declared.state === undefined ? {} : { state: declared.state }),
+    ...(state === undefined ? {} : { state }),
     ...(declared.command === undefined ? {} : { command: declared.command }),
     // A state the model does not solve is judged by what passes the item.
     ...(declared.state !== undefined || throughput === undefined ? {} : { throughput: { path: throughput.path, noFlowBelow: flow(throughput.path) } }),
@@ -231,9 +235,10 @@ export const itemBinding = (
   const graph = plant.graph
   const component = graph.components[item.component]!
   const device = item.kind === 'device' ? component.semantics.embedded.find(candidate => candidate.id === item.device)! : undefined
-  // A device's no-flow band is its host outlet's rating.
-  const deviceRating = device === undefined ? null : component.semantics.ratedOutflow.find(rating => rating.port === device.port)?.flowKgPerS ?? null
-  const state = stateBinding(device?.aspects ?? component.semantics.aspects, aspect, () => deviceRating === null ? null : deviceRating * NO_FLOW_FRACTION)
+  // A device's no-flow band is its host outlet's rating; a component's, its largest rated outflow.
+  const ratings = component.semantics.ratedOutflow.filter(rating => device === undefined || rating.port === device.port).map(rating => rating.flowKgPerS)
+  const rated = ratings.length === 0 ? null : Math.max(...ratings)
+  const state = stateBinding(device?.aspects ?? component.semantics.aspects, aspect, () => rated === null ? null : rated * NO_FLOW_FRACTION)
   const drawnState = state?.state?.path
   return {
     item,

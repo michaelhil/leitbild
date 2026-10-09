@@ -50,12 +50,14 @@
   const alertStatus = { critical: 'alarm', warning: 'warning', notice: 'caution', info: 'caution' } as const
 
   /** The most severe active alarm framing an item, trips first, with the flap text that says what it watches. */
-  const alertOf = (item: MimicDrawnItem): { readonly status: 'alarm' | 'warning' | 'caution'; readonly label: string } | null => {
+  const alertOf = (item: MimicDrawnItem): { readonly status: 'alarm' | 'warning' | 'caution'; readonly label: string; readonly others: number } | null => {
     const flaps = new Map(item.binding.frames.map(frame => [frame.ruleId, frame.flap]))
     const active = alarms
       .filter(alarm => flaps.has(alarm.ruleId))
-      .sort((left, right) => Number(right.kind === 'trip') - Number(left.kind === 'trip') || severityRank[left.severity] - severityRank[right.severity])[0]
-    return active === undefined ? null : { status: alertStatus[active.severity], label: flaps.get(active.ruleId)! }
+      .sort((left, right) => Number(right.kind === 'trip') - Number(left.kind === 'trip') || severityRank[left.severity] - severityRank[right.severity])
+    const first = active[0]
+    if (first === undefined) return null
+    return { status: alertStatus[first.severity], label: flaps.get(first.ruleId)!, others: active.length - 1 }
   }
 
   const format = (value: number, unit: string): string => formatQuantity(value, unit)
@@ -68,7 +70,8 @@
       return fraction >= 0.05 && fraction <= 0.95 ? [{ type: 'value' as const, value: Math.round(fraction * 100), unit: '%' }] : []
     }
     const text = rowText(row, look, index, format)
-    return text === '' ? [] : [{ type: 'state' as const, text, emphasis: row.kind === 'mismatch' || text === 'POS ?' || text === '?' }]
+    // Every state word is emphasised: STOP or PASSING is what the operator reads the symbol for.
+    return text === '' ? [] : [{ type: 'state' as const, text, emphasis: true }]
   })
 
   const valueOf = (row: Extract<MimicRow, { kind: 'value' }>): number | null => {
@@ -157,12 +160,12 @@
     return { update: apply, destroy: () => element.remove() }
   }
 
-  const frame = (host: HTMLElement, params: { ob: Ob; alert: NonNullable<ReturnType<typeof alertOf>> }) => {
+  const frame = (host: HTMLElement, params: { ob: Ob; alert: NonNullable<ReturnType<typeof alertOf>>; width: number }) => {
     const element = params.ob.createAlertFrame()
     element.style.width = '100%'
     element.style.height = '100%'
     host.append(element)
-    const apply = (next: typeof params) => next.ob.updateAlertFrame(element, next.alert.status, next.alert.label)
+    const apply = (next: typeof params) => next.ob.updateAlertFrame(element, next.alert.status, next.ob.flapLabel(next.alert.label, next.alert.others, next.width))
     apply(params)
     return { update: apply, destroy: () => element.remove() }
   }
@@ -199,7 +202,7 @@
           {@const alert = alertOf(item)}
           {#if alert !== null && item.frame !== null}
             <!-- OpenBridge draws the flap below the framed region; the server reserved both. -->
-            <div class="box" style={`left:${item.frame.x}px;top:${item.frame.y}px;width:${item.frame.width}px;height:${item.frame.height - flapHeight}px`} use:frame={{ ob, alert }}></div>
+            <div class="box" style={`left:${item.frame.x}px;top:${item.frame.y}px;width:${item.frame.width}px;height:${item.frame.height - flapHeight}px`} use:frame={{ ob, alert, width: item.frame.width }}></div>
           {/if}
           {#if item.presentation.element === 'device'}
             <div class="anchor" style={`left:${item.box.x + item.box.width / 2}px;top:${item.box.y + item.box.height / 2}px`} use:device={{ ob, item, look, rows: deviceRows(item, look), alert }}></div>
@@ -233,15 +236,15 @@
   </div>
   <!-- The key names only what this drawing can show; a stale view says so first. -->
   <p class="legend">
-    {#if stale}<span class="stale-tag">STALE</span><span>states not current</span>{/if}
+    {#if stale}<span class="stale-tag">STALE</span><span>not current</span>{/if}
     {#if openBridge !== null}
       <span class="key"><canvas use:keyGlyph={{ ob: openBridge, value: 'open-flow', chevron: true, theme }}></canvas>flow</span>
       <span class="key"><canvas use:keyGlyph={{ ob: openBridge, value: 'empty', chevron: false, theme }}></canvas>no flow</span>
       <span class="key"><canvas use:keyGlyph={{ ob: openBridge, value: 'closed-dash', chevron: false, theme }}></canvas>not known</span>
     {/if}
     <span>CMD: command ≠ state</span>
-    {#if drawsRelief}<span>POS ?: position not computed</span>{/if}
-    <span>simulator values</span>
+    {#if drawsRelief}<span>POS ?: not computed</span>{/if}
+    <span>simulator</span>
   </p>
 </div>
 

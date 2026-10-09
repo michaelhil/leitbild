@@ -39,6 +39,17 @@ import notoSansUrl from '@oicl/openbridge-webcomponents/dist/NotoSans.ttf?url'
 import { renderSegments, themeFromCss, type Segment, type ThemeVars } from '@oicl/connector-diagram'
 import type { MimicIconFamily } from '../../../../packs/process-plant/displays/mimic/presentation.ts'
 import type { ItemLook } from '../../../../packs/process-plant/displays/mimic/evaluate.ts'
+import { openBridgeDevice, textWidth } from '../../../../packs/process-plant/displays/mimic/text-metrics.ts'
+
+/**
+ * The flap names the most severe active alarm and counts the others (" +2")
+ * where the reserved frame has room; the alarms panel lists every one.
+ */
+export const flapLabel = (label: string, others: number, frameWidth: number): string => {
+  if (others === 0) return label
+  const counted = `${label} +${others}`
+  return textWidth('alertLabel', counted) + openBridgeDevice.flapLabelInset <= frameWidth ? counted : label
+}
 
 /** The text widths the server reserved were measured in OpenBridge's Noto Sans, so the mimic loads it. */
 export const loadMimicFont = async (): Promise<void> => {
@@ -275,12 +286,18 @@ export const drawPipes = (canvas: HTMLCanvasElement, width: number, height: numb
   if (context === null) return
   context.setTransform(ratio, 0, 0, ratio, 0, 0)
   context.clearRect(0, 0, width, height)
-  const theme = pipeTheme()
+  const background = getComputedStyle(document.documentElement).getPropertyValue('--container-background-color').trim()
+  const palette = pipeTheme()
+  // Flow must read as the heavier line. Where a palette's open pipe fades into
+  // the background more than its empty pipe does (day), the open pipe is drawn
+  // solid in its own outline colour.
+  const theme = contrast(palette.pipeFillColor, background) < contrast(palette.pipeFillInverted, background)
+    ? { ...palette, pipeFillColor: palette.pipeOutlineColor }
+    : palette
   renderSegments(context, [...segments], { theme, clear: false })
   if (contrast(theme.pipeOutlineColor, theme.pipeFillColor) < 3) {
-    const background = getComputedStyle(document.documentElement).getPropertyValue('--container-background-color').trim() || theme.pipeDirectionHalo
     renderSegments(context, segments.filter(segment => segment.kind === 'direction'), {
-      theme: { ...theme, pipeOutlineColor: background, pipeDirectionHalo: theme.pipeFillColor },
+      theme: { ...theme, pipeOutlineColor: background || theme.pipeDirectionHalo, pipeDirectionHalo: theme.pipeFillColor },
       clear: false,
     })
   }

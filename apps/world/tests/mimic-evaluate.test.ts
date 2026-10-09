@@ -48,6 +48,12 @@ describe('mimic state of one sample', () => {
     expect(flowLook(solved, sample({})).look).toBe('unknown')
   })
 
+  test('equipment that runs on a flow runs only above its no-flow band (a coasting turbine has stopped)', () => {
+    const turbine = item({ aspect: 'running', state: { path: 't.steam' as never, reading: 'flow', noFlowBelow: 4 } })
+    expect(itemLook(turbine, sample({ 't.steam': 0.5 })).state.kind).toBe('stopped')
+    expect(itemLook(turbine, sample({ 't.steam': 380 })).state.kind).toBe('running')
+  })
+
   test('a power line is live while what feeds it is energized', () => {
     expect(powerLook('b.energized', sample({ 'b.energized': false }))).toBe('dead')
     expect(powerLook(null, sample({}))).toBe('unknown')

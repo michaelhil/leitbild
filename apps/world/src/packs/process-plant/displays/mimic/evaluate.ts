@@ -66,7 +66,9 @@ export const itemLook = (binding: MimicItemBinding, index: SampleIndex): ItemLoo
   if (state.aspect === 'running') {
     const value = state.state?.reading === 'true' ? booleanAt(index, state.state.path) : numberAt(index, state.state?.path)
     if (value === null) return unknown()
-    const running = typeof value === 'boolean' ? value : value > 0
+    // A flow runs equipment only above its no-flow band; a speed or flag as it reads.
+    const band = state.state?.reading === 'flow' ? state.state.noFlowBelow ?? 0 : 0
+    const running = typeof value === 'boolean' ? value : state.state?.reading === 'flow' ? Math.abs(value) >= band && value !== 0 : value > 0
     const command = commandText(index, state.command, 'running')
     const mismatch = command === null || command.open === running ? null : command.text
     return { state: { kind: running ? 'running' : 'stopped' }, notMeasured: false, mismatch, words: `${running ? 'running' : 'stopped'}${mismatch === null ? '' : `; commanded to ${running ? 'stop' : 'run'}`}` }
