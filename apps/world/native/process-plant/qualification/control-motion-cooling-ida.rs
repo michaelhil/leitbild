@@ -44,6 +44,8 @@ mod motion_support;
 mod control_material_accuracy;
 #[path = "control_release_input.rs"]
 mod control_release_input;
+#[path = "control_armature_coordinates.rs"]
+mod control_armature_coordinates;
 #[path = "../examples/operating_network_input/mod.rs"]
 mod operating_network_input;
 #[path = "source_accuracy.rs"]
@@ -382,6 +384,7 @@ struct Callbacks<'a> {
     mp: sm::MechanicalPreconditioner,
     convergence: cooling_convergence::Convergence<'a>,
     energy: cooling_coordinates::EnergyCoordinates,
+    armatures: control_armature_coordinates::Coordinates,
     coordinates: source_coordinates::Coordinates,
     ep: cooling_energy_preconditioner::EnergyRow,
     state: Vec<f64>,
@@ -414,7 +417,7 @@ struct Callbacks<'a> {
     audit_line: leitbild_plant_numerics::finite_surge::Workspace,
 }
 impl Callbacks<'_> {
-    fn decode(&self, x: &[f64], rate: bool) -> Vec<f64> {
+    fn decode(&self, time: f64, x: &[f64], rate: bool) -> Result<Vec<f64>, String> {
         let mut y = vec![0.; x.len()];
         self.coordinates.physical(x, &mut y);
         if rate {
@@ -423,9 +426,19 @@ impl Callbacks<'_> {
             self.energy.state_to_physical(&mut y)
         }
         self.model.mechanical_to_physical(&mut y);
-        y
+        if rate {
+            self.armatures.recover_rates(time, &self.mode.borrow(), &mut y)?;
+        } else {
+            self.armatures.recover_state(time, &self.mode.borrow(), &mut y)?;
+        }
+        Ok(y)
     }
-    fn encode(&self, x: &mut [f64], rate: bool) {
+    fn encode(&self, time: f64, x: &mut [f64], rate: bool) -> Result<(), String> {
+        if rate {
+            self.armatures.encode_rates(time, &self.mode.borrow(), x)?;
+        } else {
+            self.armatures.encode_state(time, &self.mode.borrow(), x)?;
+        }
         self.model.mechanical_to_solver(x);
         self.coordinates.transform(x);
         if rate {
@@ -433,6 +446,7 @@ impl Callbacks<'_> {
         } else {
             self.energy.state_to_solver(x)
         }
+        Ok(())
     }
     fn evaluate(&mut self, t: f64, y: Handle, yp: Handle, cj: Option<f64>) -> Result<(), String> {
         self.coordinates.physical(
@@ -447,6 +461,11 @@ impl Callbacks<'_> {
         );
         self.energy.vector_to_physical(&mut self.slopes);
         self.model.mechanical_to_physical(&mut self.slopes);
+        // The selected autonomous armature consumes this same callback time,
+        // not the solver's approximate algebraic interpolation. All physical
+        // force/heat consumers see the same reconstructed finite state.
+        self.armatures.recover_state(t, &self.mode.borrow(), &mut self.state)?;
+        self.armatures.recover_rates(t, &self.mode.borrow(), &mut self.slopes)?;
         let input = self
             .support
             .borrow()
@@ -533,6 +552,17 @@ unsafe extern "C" fn residual(t: f64, y: Handle, yp: Handle, r: Handle, u: Handl
         // fluid work. Mechanical KE is nonlinear and audited independently.
         z[c.energy.row] =
             unsafe { values(yp, n) }?[c.energy.row] - c.work.thermal_work_energy_rate()?;
+        c.armatures.residual(t, &c.mode.borrow(), unsafe { values(y,n) }?, z)?;
+        if c.model.release.is_some() {
+            // C = actual jack heat minus exact armature dissipation. Integrate
+            // only the other physical jack receipts, avoiding subtraction of
+            // two large equal damping rates in the nonlinear residual.
+            for (k,q) in c.work.responses.iter().enumerate() {
+                let row=c.model.motion_row(k,sm::JACK_HEAT);
+                z[row]=unsafe { values(yp,n) }?[row]
+                    -(q.slip_to_jack_w+q.electrical_loss_to_jack_w+q.holding_to_jack_w);
+            }
+        }
         c.seconds[0] += started.elapsed().as_secs_f64();
         Ok(())
     })
@@ -573,6 +603,7 @@ unsafe extern "C" fn jtimes(
         c.coordinates.physical(raw, &mut c.direction);
         c.energy.vector_to_physical(&mut c.direction);
         c.model.mechanical_to_physical(&mut c.direction);
+        c.armatures.direction_to_physical(&mut c.direction)?;
         c.model.jvp(&c.direction, cj, &mut c.work)?;
         let z = unsafe { output(jv, n) }?;
         z.copy_from_slice(&c.work.jvp);
@@ -584,6 +615,7 @@ unsafe extern "C" fn jtimes(
         // Complete wrapper balance equals thermal balance + mechanical balance.
         // Recover the desired affine-rate tangent without a cancellation cj*dE.
         z[c.energy.row] = cj * raw[c.energy.row] - c.work.thermal_work_energy_rate_jvp()?;
+        c.armatures.identity_rows(raw,z)?;
         c.seconds[2] += started.elapsed().as_secs_f64();
         Ok(())
     })
@@ -600,6 +632,7 @@ unsafe extern "C" fn psetup(t: f64, y: Handle, yp: Handle, _: Handle, cj: f64, u
         c.evaluate(t, y, yp, Some(cj))?;
         c.p.setup_prepared(&c.model.cooling, &mut c.work.cooling, cj)?;
         c.mp.setup(c.model, &c.work, cj)?;
+        c.mp.exact_armature_constraints()?;
         let mut rhs = std::mem::take(&mut c.rhs);
         rhs.fill(0.);
         rhs[c.energy.row] = 1.;
@@ -635,15 +668,31 @@ unsafe extern "C" fn psolve(
         let mut rhs = std::mem::take(&mut c.rhs);
         rhs.copy_from_slice(raw);
         c.energy.vector_to_physical(&mut rhs);
+        c.armatures.direction_to_physical(&mut rhs)?;
         let out = unsafe { output(z, n) }?;
         let solved = physical_p(c, &rhs, out);
         c.rhs = rhs;
         solved?;
         c.energy.vector_to_solver(out);
+        c.armatures.identity_rows(raw,out)?;
         let applied = c.ep.apply(g, out);
         c.psolve_seconds += began.elapsed().as_secs_f64();
         applied
     })
+}
+fn scalar_receipt_scale(local: f64, dimension: usize) -> f64 {
+    local / (dimension as f64).sqrt()
+}
+#[cfg(test)]
+#[test]
+fn standalone_receipt_local_error_is_not_diluted_by_unrelated_plant_rows() {
+    for dimension in [1,52,76074] {
+        for local in [1e-7,1e-8] {
+            let weight=1./scalar_receipt_scale(local,dimension);
+            let norm=((local*weight).powi(2)/dimension as f64).sqrt();
+            assert!((norm-1.).abs()<4.*f64::EPSILON);
+        }
+    }
 }
 unsafe extern "C" fn weights(y: Handle, w: Handle, u: Handle) -> c_int {
     callback(u, |c| {
@@ -677,6 +726,12 @@ unsafe extern "C" fn weights(y: Handle, w: Handle, u: Handle) -> c_int {
             c.resolution,
             &mut out[..c.model.layout.cooling_end],
         )?;
+        // This standalone signed-work receipt owns a scalar local-error
+        // budget, unlike a regional stock sharing a group RMS budget. IDA's
+        // masked WRMS still divides by the FULL vector length. Remove that
+        // dilution; keep the independent accumulated 10-microjoule pair gate.
+        let work=c.model.layout.fluid_mechanical_work;
+        out[work]=scalar_receipt_scale(out[work],n);
         for v in out {
             if !v.is_finite() || *v <= 0. {
                 return Err("Invalid moving error weight".into());
@@ -702,6 +757,8 @@ unsafe extern "C" fn roots(t: f64, y: Handle, yp: Handle, g: *mut f64, u: Handle
             .physical(unsafe { values(yp, c.model.dimension()) }?, &mut c.slopes);
         c.energy.vector_to_physical(&mut c.slopes);
         c.model.mechanical_to_physical(&mut c.slopes);
+        c.armatures.recover_state(t, &c.mode.borrow(), &mut c.state)?;
+        c.armatures.recover_rates(t, &c.mode.borrow(), &mut c.slopes)?;
         let pi = c
             .support
             .borrow()
@@ -824,6 +881,13 @@ fn pending_release_diagnostic(m:&sm::Model,y:&[f64],yp:&[f64],mode:&sm::Mode,
         for k in 0..m.clusters() {
             yy[m.motion_row(k,sm::BODY_V)]=speed;yy[m.motion_row(k,sm::STEM_V)]=speed;
             yy[m.release_row(k,cr::GAP)]=m.configs()[k].gap_stroke_m;yy[m.release_row(k,cr::GAP_V)]=0.;
+            // This explicitly hypothetical open pose owns no past damping.
+            mm.release.as_mut().unwrap().openings[k]=Some(
+                leitbild_plant_numerics::control_armature::Opening {
+                    epoch_time_s:time,
+                    state:leitbild_plant_numerics::control_armature::State {
+                        gap_m:m.configs()[k].gap_stroke_m,velocity_m_s:0.},
+                });
             mm.branches[k]=am::TrialBranch{regulator:am::RegulatorBranch::Open,joint:am::JointMode::Contact};
         }
         let mut roots=vec![0.;m.root_count()];m.roots_at(&yy,yp,Some(input),&mm,&mut root_work,&mut roots)?;
@@ -1184,6 +1248,7 @@ fn run(
         mp: sm::MechanicalPreconditioner::new(m),
         convergence,
         energy,
+        armatures: control_armature_coordinates::Coordinates::new(m)?,
         coordinates: source_coordinates::Coordinates {
             nc: b.source.nc_dimension(),
             ledger: b.source.ledger_row(),
@@ -1229,8 +1294,8 @@ fn run(
         c.energy.state_to_solver(&mut z);
         z[c.energy.row]
     };
-    c.encode(&mut y, false);
-    c.encode(&mut yp, true);
+    c.encode(0., &mut y, false)?;
+    c.encode(0., &mut yp, true)?;
     let mut owned = Resources::new()?;
     let yy = owned.vector(&y)?;
     let yypp = owned.vector(&yp)?;
@@ -1240,7 +1305,7 @@ fn run(
     let diagnostic_errors = owned.vector(&vec![0.; n])?;
     let ids = owned.vector(
         &(0..n)
-            .map(|r| f64::from(m.is_differential(r)))
+            .map(|r| f64::from(c.armatures.is_differential(m, r)))
             .collect::<Vec<_>>(),
     )?;
     let mut cs = cooling_constraints::physical_constraints(b, c.energy.row);
@@ -1375,7 +1440,7 @@ fn run(
     let mut max_mech = 0_f64;
     let mut max_energy = 0_f64;
     let mut admitted_y = initial_physical.clone();
-    let mut admitted_yp = c.decode(&yp, true);
+    let mut admitted_yp = c.decode(0., &yp, true)?;
     let mut admitted_support = c.support.borrow().clone();
     let mut admitted_mode = c.mode.borrow().clone();
     let mut next_output = 0;
@@ -1398,13 +1463,13 @@ fn run(
             return Err(e);
         }
         let actual = unsafe { values(yy, n) }?;
-        if (0..n).any(|r| m.is_differential(r)
+        if (0..n).any(|r| c.armatures.is_differential(m, r)
             && fixed[r].to_bits() != actual[r].to_bits()) {
             return Err("Startup IC changed differential stocks".into());
         }
-        admitted_y = c.decode(unsafe { values(yy, n) }?, false);
-        admitted_yp = c.decode(unsafe { values(yypp, n) }?, true);
-        if (0..n).any(|r| m.is_differential(r)
+        admitted_y = c.decode(0., unsafe { values(yy, n) }?, false)?;
+        admitted_yp = c.decode(0., unsafe { values(yypp, n) }?, true)?;
+        if (0..n).any(|r| c.armatures.is_differential(m, r)
             && admitted_y[r].to_bits() != initial_physical[r].to_bits()) {
             return Err("Startup IC changed decoded physical stocks".into());
         }
@@ -1419,7 +1484,7 @@ fn run(
         initial_admitted = true;
         checked(unsafe { weights(yy, diagnostic_weights, &mut *c as *mut _ as Handle) }, "Initial diagnostic error weights")?;
         initial_weighted_rates = weighted_contributors(
-            unsafe { values(yypp,n) }?, unsafe { values(diagnostic_weights,n) }?, |r|m.is_differential(r));
+            unsafe { values(yypp,n) }?, unsafe { values(diagnostic_weights,n) }?, |r|c.armatures.is_differential(m,r));
         loop {
             let physical_stop = c.support.borrow().next(horizon)?;
             // This bounded mechanical exercise has sparse explicit observation planes.
@@ -1445,8 +1510,8 @@ fn run(
             if status < 0 {
                 return Err(format!("Moving IDA failed status{status} at {time}"));
             }
-            let mut py = c.decode(unsafe { values(yy, n) }?, false);
-            let mut pyp = c.decode(unsafe { values(yypp, n) }?, true);
+            let mut py = c.decode(time, unsafe { values(yy, n) }?, false)?;
+            let mut pyp = c.decode(time, unsafe { values(yypp, n) }?, true)?;
             let mut committed_event = false;
             let mut committed_audit = None;
             if status!=2 && time>0. && dc::coincident(time,physical_stop) && time<horizon {
@@ -1549,7 +1614,7 @@ fn run(
                             } else if old_support.is_healthy_motion_continuity(time,&next_support)? {
                                 cr::SupportCause::HealthyContinuity
                             } else {cr::SupportCause::FaultOrInvalidatedIntent};
-                            m.support_event(&py,&c.work,&mut next_mode,next_support.motion_input(time)?,
+                            m.support_event(time,&py,&c.work,&mut next_mode,next_support.motion_input(time)?,
                                 if releasing {Some(p.release.as_ref().unwrap().failed_cluster)}else{None},cause)?;
                         } else {
                             next_mode=m.select_mode(&py, &c.work, next_support.motion_input(time)?)?;
@@ -1567,8 +1632,8 @@ fn run(
                         .prhr_input(time, py[c.support.borrow().a.room_row])?;
                     m.evaluate(&py, &pyp, None, &mut c.work, Some(pi), &c.mode.borrow())?;
                     m.set_mechanical_rates(&py, &mut pyp, &c.work)?;
-                    c.encode(&mut py, false);
-                    c.encode(&mut pyp, true);
+                    c.encode(time, &mut py, false)?;
+                    c.encode(time, &mut pyp, true)?;
                     unsafe { output(yy, n) }?.copy_from_slice(&py);
                     unsafe { output(yypp, n) }?.copy_from_slice(&pyp);
                     checked(
@@ -1591,15 +1656,15 @@ fn run(
                         }
                         let actual = unsafe { values(yy, n) }?;
                         if (0..n).any(|r| {
-                            m.is_differential(r) && fixed[r].to_bits() != actual[r].to_bits()
+                            c.armatures.is_differential(m,r) && fixed[r].to_bits() != actual[r].to_bits()
                         }) {
                             return Err("Event IC changed differential stocks".into());
                         }
                         ics += 1;
                         ic_seconds += began.elapsed().as_secs_f64();
                     }
-                    py = c.decode(unsafe { values(yy, n) }?, false);
-                    pyp = c.decode(unsafe { values(yypp, n) }?, true);
+                    py = c.decode(time, unsafe { values(yy, n) }?, false)?;
+                    pyp = c.decode(time, unsafe { values(yypp, n) }?, true)?;
                     audit(
                         &mut c,
                         accuracy,
@@ -1661,6 +1726,9 @@ fn run(
             while next_output < outputs.len() && outputs[next_output] <= time {
                 let observation_began = Instant::now();
                 let t = outputs[next_output];
+                if committed_event && t < time && !dc::coincident(t,time) {
+                    return Err("Observation cannot cross a committed physical-mode event".into());
+                }
                 let (oy, op) = if dc::coincident(t, time) {
                     (admitted_y.clone(), admitted_yp.clone())
                 } else {
@@ -1668,12 +1736,12 @@ fn run(
                         unsafe { IDAGetDky(owned.ida, t, 0, yy) },
                         "Moving common observation state",
                     )?;
-                    let oy = c.decode(unsafe { values(yy, n) }?, false);
+                    let oy = c.decode(t, unsafe { values(yy, n) }?, false)?;
                     checked(
                         unsafe { IDAGetDky(owned.ida, t, 1, yypp) },
                         "Moving common observation slope",
                     )?;
-                    (oy, c.decode(unsafe { values(yypp, n) }?, true))
+                    (oy, c.decode(t, unsafe { values(yypp, n) }?, true)?)
                 };
                 let pi = c
                     .support
@@ -1789,7 +1857,7 @@ fn run(
                     checked(unsafe { IDAGetErrWeights(owned.ida, diagnostic_weights) }, "Accepted internal-step diagnostic weights")?;
                     checked(unsafe { IDAGetEstLocalErrors(owned.ida, diagnostic_errors) }, "Accepted internal-step diagnostic LTE")?;
                     let diagnostic = weighted_contributors(unsafe { values(diagnostic_errors,n) }?,
-                        unsafe { values(diagnostic_weights,n) }?, |r|m.is_differential(r));
+                        unsafe { values(diagnostic_weights,n) }?, |r|c.armatures.is_differential(m,r));
                     eprintln!("{{\"kind\":\"motion-accepted-LTE\",\"refinement\":{refinement},\"returnedTime\":{},\"internalTime\":{},\"lastStepS\":{},\"contributors\":{diagnostic}}}",finite(time),finite(internal_time),finite(last_step));
                 }
                 eprintln!(
@@ -1857,13 +1925,14 @@ fn run(
         // separately retained admitted transaction below. A refused event may
         // already have restored its old support/mode; do not label these raw
         // solver buffers as a restartable physical checkpoint.
-        let returned_y = c.decode(unsafe { values(yy, n) }?, false);
-        let returned_yp = c.decode(unsafe { values(yypp, n) }?, true);
+        // A refused event can roll back the mode/epoch while the solver still
+        // holds its outgoing chart. Keep those raw numerical coordinates;
+        // reconstructing them with the incoming mode would invent a state.
         retain(
-            &dir.join("solver-returned-NOT-ADMITTED.bin"),
+            &dir.join("solver-returned-chart-NOT-ADMITTED.bin"),
             time,
-            &returned_y,
-            &returned_yp,
+            unsafe { values(yy,n) }?,
+            unsafe { values(yypp,n) }?,
         )?;
     }
     let retention_began = Instant::now();
@@ -1927,7 +1996,7 @@ fn execute() -> Result<(), String> {
         return Err("Expected wall allowance, NEW artifact directory and optional authored release file".into());
     }
     let allowance = args[0].parse::<f64>().map_err(|e| e.to_string())?;
-    if !allowance.is_finite() || allowance <= 0. || allowance > 180. {
+    if !allowance.is_finite() || allowance <= 0. || allowance > 240. {
         return Err("Invalid bounded allowance".into());
     }
     let directory = PathBuf::from(&args[1]);
@@ -2080,18 +2149,18 @@ fn actual_release_frame_normal_coast_and_fault_transactions() {
     m.evaluate(&y,&yp,None,&mut w,Some(input),&mode).unwrap();
     let stop=sm::Input{requested_rate_m_s:0.,motive_power_w:0.,holding_power_w:mode.input.holding_power_w};
     let mut coast=mode.clone();
-    m.support_event(&y,&w,&mut coast,stop,None,cr::SupportCause::NormalStop).unwrap();
+    m.support_event(0.,&y,&w,&mut coast,stop,None,cr::SupportCause::NormalStop).unwrap();
     assert!(coast.branches.iter().all(|b|b.regulator==am::RegulatorBranch::CoastPositive));
     m.evaluate(&y,&yp,None,&mut w,Some(input),&coast).unwrap();
     m.validate_accepted(&y,&w).unwrap();
     assert!(w.responses.iter().all(|r|r.grip_force_n==0. && r.motive_mechanical_w==0. && r.slip_to_jack_w==0.));
     let mut continued=coast.clone();
-    m.support_event(&y,&w,&mut continued,stop,None,cr::SupportCause::HealthyContinuity).unwrap();
+    m.support_event(0.,&y,&w,&mut continued,stop,None,cr::SupportCause::HealthyContinuity).unwrap();
     assert_eq!(continued,coast);
     let persisted=sm::Mode::restore_words(&coast.snapshot_words().unwrap()).unwrap();
     assert_eq!(persisted,coast);assert_eq!(persisted.release.as_ref().unwrap().initial_density,density);
     let mut fault=coast.clone();
-    m.support_event(&y,&w,&mut fault,stop,None,cr::SupportCause::FaultOrInvalidatedIntent).unwrap();
+    m.support_event(0.,&y,&w,&mut fault,stop,None,cr::SupportCause::FaultOrInvalidatedIntent).unwrap();
     assert!(fault.branches.iter().all(|b|b.regulator==am::RegulatorBranch::HoldPositive));
     // A true STEM zero root does not silently stop the separately moving BODY.
     let mut yy=y.clone();yy[m.motion_row(0,sm::STEM_V)]=0.;
@@ -2139,6 +2208,8 @@ fn actual_release_frame_current_owner_and_dimensional_rows() {
     for branch in &mut mm.branches {branch.regulator=am::RegulatorBranch::HoldRest;}
     mm.release.as_mut().unwrap().initial_density=Some(w.cooling.network.liquids[m.hydraulics.upper].density);
     mm.release.as_mut().unwrap().armatures[0]=leitbild_plant_numerics::control_armature::Mode::Opening;
+    mm.release.as_mut().unwrap().openings[0]=Some(leitbild_plant_numerics::control_armature::Opening {
+        epoch_time_s:0.,state:leitbild_plant_numerics::control_armature::State {gap_m:0.,velocity_m_s:0.}});
     mm.branches[0].regulator=am::RegulatorBranch::HoldNegative;
     yy[m.release_row(0,cr::GAP)]=m.configs()[0].gap_stroke_m;
     m.evaluate(&yy,&yp,None,&mut w,Some(input),&mm).unwrap();

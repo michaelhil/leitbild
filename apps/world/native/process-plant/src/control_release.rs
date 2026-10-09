@@ -61,6 +61,9 @@ pub struct Mode {
     /// support restoration or a later consistent-initialization transaction.
     pub initial_density: Option<f64>,
     pub armatures: Vec<ca::Mode>,
+    /// Actual accepted release epoch and initial finite state. This is history
+    /// on the composition's sole clock, not an independently advanced clock.
+    pub openings: Vec<Option<ca::Opening>>,
     pub body_seated: Vec<bool>,
     pub stem_stopped: Vec<bool>,
 }
@@ -68,14 +71,42 @@ impl Mode {
     pub fn new(clusters: usize) -> Result<Self, String> {
         if clusters == 0 { return Err("Empty cold release bank".into()); }
         Ok(Self { initial_density: None, armatures: vec![ca::Mode::Latched; clusters],
+            openings: vec![None;clusters],
             body_seated: vec![false; clusters], stem_stopped: vec![false; clusters] })
     }
     pub fn validate(&self, clusters: usize) -> Result<(), String> {
         if self.armatures.len()!=clusters || self.body_seated.len()!=clusters
-            || self.stem_stopped.len()!=clusters
+            || self.stem_stopped.len()!=clusters || self.openings.len()!=clusters
             || self.initial_density.is_some_and(|rho| !rho.is_finite() || rho<=0.)
             || (self.initial_density.is_none() && self.armatures.iter().any(|m| *m!=ca::Mode::Latched))
         { return Err("Invalid retained cold release mode".into()); }
+        for (branch,epoch) in self.armatures.iter().zip(&self.openings) {
+            if matches!(branch,ca::Mode::Opening|ca::Mode::Open)!=epoch.is_some()
+                || epoch.is_some_and(|e|!e.epoch_time_s.is_finite() || e.epoch_time_s<0.
+                    || !e.state.gap_m.is_finite() || e.state.gap_m<0.
+                    || !e.state.velocity_m_s.is_finite() || e.state.velocity_m_s<0.)
+            {return Err("Retained armature branch lacks its actual release epoch".into());}
+        }
+        Ok(())
+    }
+    /// The accepted support transaction records a release epoch exactly once.
+    /// Restored power retains both the physical branch and its original epoch.
+    pub fn armature_support_event(&mut self,cluster:usize,config:ca::Config,state:ca::State,
+        time_s:f64,hold_available:bool,failure:ca::ReleaseFailure)->Result<(),String>
+    {
+        self.validate(self.armatures.len())?;
+        if !time_s.is_finite() || time_s<0. || cluster>=self.armatures.len()
+            || self.openings[cluster].is_some_and(|e|time_s<e.epoch_time_s)
+        {return Err("Invalid accepted armature support-event time/cluster".into());}
+        let old=self.armatures[cluster];
+        let next=config.support_event(state,old,hold_available,failure)?;
+        let opening=if old==ca::Mode::Latched && next==ca::Mode::Opening {
+            Some(ca::Opening {epoch_time_s:time_s,state})
+        } else {self.openings[cluster]};
+        if next!=ca::Mode::Latched && self.initial_density.is_none() {
+            return Err("Armature release requires its admitted initial liquid density".into());
+        }
+        self.armatures[cluster]=next;self.openings[cluster]=opening;
         Ok(())
     }
     pub fn snapshot_words(&self) -> Result<String,String> {
@@ -85,23 +116,44 @@ impl Mode {
         for k in 0..self.armatures.len() {
             let a=match self.armatures[k] {ca::Mode::Latched=>"latched",ca::Mode::StuckLatched=>"stuck",
                 ca::Mode::Opening=>"opening",ca::Mode::Open=>"open"};
-            out.push_str(&format!("{a} {} {}\n",u8::from(self.body_seated[k]),u8::from(self.stem_stopped[k])));
+            out.push_str(&format!("{a} {} {}",u8::from(self.body_seated[k]),u8::from(self.stem_stopped[k])));
+            match self.openings[k] {
+                None=>out.push_str(" none\n"),
+                Some(e)=>out.push_str(&format!(" epoch {:.17e} {:.17e} {:.17e}\n",
+                    e.epoch_time_s,e.state.gap_m,e.state.velocity_m_s)),
+            }
         }
         Ok(out)
     }
     pub fn restore_words(words:&[&str],clusters:usize)->Result<Self,String> {
-        if words.len()!=3+3*clusters || words[0]!="COLD_RELEASE"
+        if words.len()<3 || words[0]!="COLD_RELEASE"
             || words[1].parse::<usize>().ok()!=Some(clusters)
         {return Err("Wrong retained cold release frame".into());}
         let mut m=Self::new(clusters)?;
         m.initial_density=if words[2]=="unbound" {None} else {
             Some(words[2].parse().map_err(|_|"Invalid retained release density")?) };
         let boolean=|s|match s {"0"=>Ok(false),"1"=>Ok(true),_=>Err("Invalid retained release stop".to_string())};
-        for (k,row) in words[3..].chunks_exact(3).enumerate() {
+        let number=|s:&str|s.parse::<f64>().map_err(|_|"Invalid retained armature epoch".to_string());
+        let mut cursor=3;
+        for k in 0..clusters {
+            let row=words.get(cursor..cursor+4).ok_or("Incomplete retained armature epoch")?;
             m.armatures[k]=match row[0] {"latched"=>ca::Mode::Latched,"stuck"=>ca::Mode::StuckLatched,
                 "opening"=>ca::Mode::Opening,"open"=>ca::Mode::Open,_=>return Err("Invalid retained armature branch".into())};
             m.body_seated[k]=boolean(row[1])?;m.stem_stopped[k]=boolean(row[2])?;
+            cursor+=4;
+            m.openings[k]=match row[3] {
+                "none"=>None,
+                "epoch"=>{
+                    let epoch=words.get(cursor..cursor+3).ok_or("Incomplete retained armature epoch")?;
+                    cursor+=3;
+                    Some(ca::Opening {epoch_time_s:number(epoch[0])?,state:ca::State {
+                        gap_m:number(epoch[1])?,velocity_m_s:number(epoch[2])?,
+                    }})
+                },
+                _=>return Err("Invalid retained armature epoch kind".into()),
+            };
         }
+        if cursor!=words.len() {return Err("Trailing retained armature epoch fields".into());}
         m.validate(clusters)?;Ok(m)
     }
 }
@@ -252,13 +304,45 @@ mod tests {
         assert_eq!(mode,Mode::restore_words(&mode.snapshot_words().unwrap().split_whitespace().collect::<Vec<_>>(),52).unwrap());
         mode.initial_density=Some(997.0000000000001);
         for k in 0..52 {mode.armatures[k]=[ca::Mode::Latched,ca::Mode::StuckLatched,ca::Mode::Opening,ca::Mode::Open][k%4];
+            if matches!(mode.armatures[k],ca::Mode::Opening|ca::Mode::Open) {
+                mode.openings[k]=Some(ca::Opening {epoch_time_s:32.+k as f64*0.001,state:ca::State::default()});
+            }
             mode.body_seated[k]=k%3==0;mode.stem_stopped[k]=k%5==0;}
         let words=mode.snapshot_words().unwrap();let restored=Mode::restore_words(&words.split_whitespace().collect::<Vec<_>>(),52).unwrap();
         assert_eq!(mode,restored);assert_eq!(words,restored.snapshot_words().unwrap());
         mode.initial_density=None;assert!(mode.snapshot_words().is_err());
-        for bad in ["COLD_RELEASE 0 unbound","COLD_RELEASE 1 NaN latched 0 0",
-            "COLD_RELEASE 1 997 opening 2 0","COLD_RELEASE 1 unbound opening 0 0"] {
+        for bad in ["COLD_RELEASE 0 unbound","COLD_RELEASE 1 NaN latched 0 0 none",
+            "COLD_RELEASE 1 997 opening 2 0 epoch 32 0 0","COLD_RELEASE 1 unbound opening 0 0 epoch 32 0 0",
+            "COLD_RELEASE 1 997 opening 0 0 none","COLD_RELEASE 1 997 latched 0 0 epoch 32 0 0",
+            "COLD_RELEASE 1 997 open 0 0 epoch NaN 0 0","COLD_RELEASE 1 997 opening 0 0 epoch -1 0 0",
+            "COLD_RELEASE 1 997 opening 0 0 epoch 32 -1 0","COLD_RELEASE 1 997 opening 0 0 epoch 32 0 -1",
+            "COLD_RELEASE 1 997 opening 0 0 epoch 32 0 0 extra",
+            // Deliberately refuse old frames without retained exact history.
+            "COLD_RELEASE 1 997 opening 0 0"] {
             assert!(Mode::restore_words(&bad.split_whitespace().collect::<Vec<_>>(),1).is_err());
         }
+    }
+    #[test]
+    fn accepted_release_epoch_is_once_only_and_failed_transactions_are_atomic() {
+        let config=model().input.armature;let state=ca::State::default();
+        let mut mode=Mode::new(2).unwrap();let before=mode.clone();
+        assert!(mode.armature_support_event(0,config,state,32.,false,ca::ReleaseFailure::None).is_err());
+        assert_eq!(mode,before);
+        mode.initial_density=Some(997.);
+        mode.armature_support_event(0,config,state,32.,false,ca::ReleaseFailure::None).unwrap();
+        mode.armature_support_event(1,config,state,32.,false,ca::ReleaseFailure::DetentJammed).unwrap();
+        let opening=mode.openings[0].unwrap();
+        assert_eq!(mode.armatures[1],ca::Mode::StuckLatched);assert_eq!(mode.openings[1],None);
+        let actual=config.exact(opening,32.001).unwrap().state;
+        mode.armature_support_event(0,config,actual,32.001,true,ca::ReleaseFailure::None).unwrap();
+        assert_eq!(mode.armatures[0],ca::Mode::Opening);assert_eq!(mode.openings[0],Some(opening));
+        mode.armatures[0]=ca::Mode::Open;
+        mode.armature_support_event(0,config,ca::State {gap_m:config.stroke_m,velocity_m_s:0.},33.,true,ca::ReleaseFailure::None).unwrap();
+        assert_eq!(mode.armatures[0],ca::Mode::Open);assert_eq!(mode.openings[0],Some(opening));
+        let before=mode.clone();
+        assert!(mode.armature_support_event(0,config,state,31.,true,ca::ReleaseFailure::None).is_err());
+        assert_eq!(mode,before);
+        let text=mode.snapshot_words().unwrap();
+        assert_eq!(mode,Mode::restore_words(&text.split_whitespace().collect::<Vec<_>>(),2).unwrap());
     }
 }

@@ -161,6 +161,7 @@ mod tests {
         let mut mode=Mode::new(Input {requested_rate_m_s:0.,motive_power_w:0.,holding_power_w:20.},2).unwrap();
         mode.enable_cold_release().unwrap();let release=mode.release.as_mut().unwrap();
         release.initial_density=Some(997.123456789);release.armatures[0]=ca::Mode::Opening;
+        release.openings[0]=Some(ca::Opening{epoch_time_s:0.,state:ca::State{gap_m:0.,velocity_m_s:0.}});
         release.armatures[1]=ca::Mode::StuckLatched;
         mode.input.holding_power_w=0.;let text=mode.snapshot_words().unwrap();
         assert_eq!(mode,Mode::restore_words(&text).unwrap());
@@ -183,6 +184,7 @@ mod tests {
         assert_eq!(Mode::restore_words(&mode.snapshot_words().unwrap()).unwrap(),mode);
         mode.input.holding_power_w=0.;assert!(mode.snapshot_words().is_err());
         mode.input.holding_power_w=20.;mode.release.as_mut().unwrap().armatures[0]=ca::Mode::Opening;
+        mode.release.as_mut().unwrap().openings[0]=Some(ca::Opening{epoch_time_s:0.,state:ca::State{gap_m:0.,velocity_m_s:0.}});
         assert!(mode.snapshot_words().is_err());
     }
     #[test]
@@ -200,6 +202,55 @@ mod tests {
         let open=am::TrialBranch {regulator:am::RegulatorBranch::Open,joint:am::JointMode::Separated};
         assert!(mechanical_event_actions(open,&[1,0,0],false,true,true).is_err());
         assert!(mechanical_event_actions(open,&[0,0,-1],true,true,false).is_err());
+        assert!(mechanical_event_actions(incoming,&[1,0],false,false,false).is_err());
+    }
+    #[test]
+    fn declared_root_projection_budget_is_used_without_an_extra_submargin() {
+        let velocity:f64=1e-10;
+        // Actual last refused clock-31.25145 STEM equality: IDA's temporal
+        // bracket can be resolved while g(t_return) is nonzero but admitted.
+        for signed in [-1.4424222907102506e-11,1.4424222907102506e-11,-velocity,velocity] {
+            admit_root_projection(34,"speed",signed.abs(),velocity).unwrap();
+        }
+        let outside=f64::from_bits(velocity.to_bits()+1);
+        let error=admit_root_projection(34,"speed",outside,velocity).unwrap_err();
+        assert!(error.contains("cluster=34") && error.contains("adjustment=") && error.contains("declared_bound="));
+        for quantity in ["armature-open position","BODY fitting position","STEM collar position","bayonet position"] {
+            admit_root_projection(7,quantity,1e-9,1e-9).unwrap();
+            assert!(admit_root_projection(7,quantity,1.0000001e-9,1e-9).is_err());
+        }
+        assert!(admit_root_projection(0,"speed",f64::NAN,velocity).is_err());
+        assert!(admit_root_projection(0,"speed",0.,0.).is_err());
+    }
+    #[test]
+    fn detected_and_projected_speed_equality_has_one_branch_specific_target() {
+        use am::RegulatorBranch::*;
+        for requested in [-0.008,0.,0.008] {
+            for branch in [ApproachPositive,ApproachNegative] {
+                assert_eq!(branch_speed_target(branch,requested),Some(requested));
+            }
+            for branch in [HoldPositive,HoldNegative,CoastPositive,CoastNegative] {
+                assert_eq!(branch_speed_target(branch,requested),Some(0.));
+            }
+            for branch in [Track,HoldRest,Open] {assert_eq!(branch_speed_target(branch,requested),None);}
+        }
+    }
+    #[test]
+    fn resolved_speed_projection_is_signed_energy_not_contact_heat() {
+        let c=am::Config {body_mass_kg:35.,stem_mass_kg:5.44,force_limit_n:2000.,grip_closed_force_n:2000.,
+            gap_stroke_m:0.01,maximum_rate_m_s:0.008,efficiency:0.8,joint_capacity_n:2500.};
+        for velocity in [-1.4424222907102506e-11,1.4424222907102506e-11] {
+            for joint in [am::JointMode::Contact,am::JointMode::Separated] {
+                let original=am::State {body_y_m:0.,body_v_m_s:velocity,stem_y_m:0.,stem_v_m_s:velocity,reference_y_m:0.};
+                let projected=resolve_speed_root(34,c,original,am::RegulatorBranch::HoldNegative,joint,0.008,1e-10).unwrap();
+                assert_eq!(projected.target,0.);assert_eq!(projected.state.stem_v_m_s,0.);
+                assert_eq!(projected.state.body_v_m_s,if joint==am::JointMode::Contact {0.} else {velocity});
+                let mass=if joint==am::JointMode::Contact {c.body_mass_kg+c.stem_mass_kg} else {c.stem_mass_kg};
+                let expected=-0.5*mass*velocity.powi(2);
+                assert!((projected.energy_adjustment-expected).abs()<=16.*f64::EPSILON*expected.abs());
+                assert!(projected.energy_adjustment<0.);
+            }
+        }
     }
     #[test]
     fn unilateral_bayonet_equality_does_not_capture_separating_or_grazing_motion() {
@@ -798,6 +849,10 @@ impl MechanicalCoordinates {
         Ok(())
     }
 }
+/// Allowed absolute representation adjustment at a located event. These are
+/// the caller's complete projection budgets, not quantities to be silently
+/// multiplied by an additional numerical margin. They do not replace solver
+/// error controls, physical-domain admission or independent trajectory gates.
 #[derive(Clone, Copy, Debug)]
 pub struct RootAccuracy {
     pub position_m: f64,
@@ -826,10 +881,8 @@ fn mechanical_event_actions(
     stem_stop: bool,
     armature_open: bool,
 ) -> Result<[bool; 3], String> {
-    if roots[0] != 0 && !matches!(incoming.regulator,
-        am::RegulatorBranch::ApproachPositive | am::RegulatorBranch::ApproachNegative
-        | am::RegulatorBranch::HoldPositive | am::RegulatorBranch::HoldNegative
-        | am::RegulatorBranch::CoastPositive | am::RegulatorBranch::CoastNegative)
+    if roots.len()!=3 {return Err("Wrong incoming mechanical root-action shape".into());}
+    if roots[0] != 0 && branch_speed_target(incoming.regulator,0.).is_none()
     { return Err("Inactive connected speed root".into()); }
     if roots[1] != 0 && incoming.joint != am::JointMode::Separated
     { return Err("Inactive connected contact root".into()); }
@@ -843,6 +896,37 @@ fn mechanical_event_actions(
 }
 fn bayonet_is_closing(body_v:f64,stem_v:f64,body_a:f64,stem_a:f64) -> bool {
     body_v < stem_v || (body_v == stem_v && body_a < stem_a)
+}
+/// One equality for both root detection and its accepted representation.
+/// HOLD/coast stops at actual zero STEM speed; approach branches target the
+/// request. Detection and projection must not infer different equalities.
+fn branch_speed_target(branch:am::RegulatorBranch,requested:f64)->Option<f64> {
+    match branch {
+        am::RegulatorBranch::ApproachPositive|am::RegulatorBranch::ApproachNegative=>Some(requested),
+        am::RegulatorBranch::HoldPositive|am::RegulatorBranch::HoldNegative
+            |am::RegulatorBranch::CoastPositive|am::RegulatorBranch::CoastNegative=>Some(0.),
+        _=>None,
+    }
+}
+fn admit_root_projection(cluster:usize,quantity:&str,adjustment:f64,bound:f64)->Result<(),String> {
+    if !adjustment.is_finite() || adjustment<0. || !bound.is_finite() || bound<=0. || adjustment>bound {
+        return Err(format!("Unresolved connected {quantity} root: cluster={cluster}, \
+            adjustment={adjustment:.17e}, declared_bound={bound:.17e}"));
+    }
+    Ok(())
+}
+struct SpeedProjection {state:am::State,target:f64,adjustment:f64,energy_adjustment:f64}
+fn resolve_speed_root(cluster:usize,c:am::Config,mut state:am::State,incoming:am::RegulatorBranch,
+    joint:am::JointMode,requested:f64,bound:f64)->Result<SpeedProjection,String>
+{
+    let target=branch_speed_target(incoming,requested).ok_or("Inactive connected speed root")?;
+    let adjustment=(state.stem_v_m_s-target).abs();
+    admit_root_projection(cluster,"speed",adjustment,bound)?;
+    let before=c.mechanical_energy_j(state,GRAVITY)?;
+    state.stem_v_m_s=target;
+    if joint==am::JointMode::Contact {state.body_v_m_s=target;}
+    let energy_adjustment=c.mechanical_energy_j(state,GRAVITY)?-before;
+    Ok(SpeedProjection {state,target,adjustment,energy_adjustment})
 }
 pub struct Model {
     pub cooling: sc::Model,
@@ -926,6 +1010,14 @@ pub struct MechanicalPreconditioner {
     armature_blocks: Vec<[[f64;2];2]>,
 }
 impl MechanicalPreconditioner {
+    /// The exact-time armature chart retains GAP/V as identity constraints,
+    /// rather than differential spring coordinates. Other mechanical rows
+    /// keep their current coupled physical preconditioner unchanged.
+    pub fn exact_armature_constraints(&mut self) -> Result<(), String> {
+        if !self.valid {return Err("Armature constraints require a current mechanical P stage".into());}
+        self.armature_blocks.fill([[1.,0.],[0.,1.]]);
+        Ok(())
+    }
     pub fn new(model: &Model) -> Self {
         Self {
             blocks: vec![[[0.; WIDTH]; WIDTH]; model.clusters()],
@@ -1967,7 +2059,7 @@ impl Model {
     /// healthy detent. All physical states and stored spring energy are kept.
     /// The caller proves cause against both actual A/B outputs after all
     /// coincident events. The input triple alone cannot identify a B failure.
-    pub fn support_event(&self,y:&[f64],w:&Workspace,mode:&mut Mode,input:Input,
+    pub fn support_event(&self,time:f64,y:&[f64],w:&Workspace,mode:&mut Mode,input:Input,
         failed_cluster:Option<usize>,cause:cr::SupportCause)->Result<(),String>
     {
         self.require_current(y,w)?;
@@ -1988,7 +2080,7 @@ impl Model {
         if retained.initial_density.is_none() {return Err("Release requires its retained admitted density".into());}
         for k in 0..self.clusters() {
             let r=self.release_row(k,0);let arm=release.armature_state(&y[r..r+cr::WIDTH])?;
-            retained.armatures[k]=release.input.armature.support_event(arm,retained.armatures[k],
+            retained.armature_support_event(k,release.input.armature,arm,time,
                 input.holding_power_w>0.,if failed_cluster==Some(k) {ca::ReleaseFailure::DetentJammed}
                 else {ca::ReleaseFailure::None})?;
         }
@@ -2403,16 +2495,8 @@ impl Model {
             let r = self.motion_row(k, 0);
             let s = state(&y[r..r + WIDTH]);
             let b = mode.branches[k];
-            let speed = match b.regulator {
-                am::RegulatorBranch::ApproachPositive | am::RegulatorBranch::ApproachNegative => {
-                    s.stem_v_m_s - mode.input.requested_rate_m_s
-                }
-                am::RegulatorBranch::HoldPositive | am::RegulatorBranch::HoldNegative
-                    | am::RegulatorBranch::CoastPositive | am::RegulatorBranch::CoastNegative => {
-                    s.stem_v_m_s
-                }
-                _ => 1.,
-            };
+            let speed=branch_speed_target(b.regulator,mode.input.requested_rate_m_s)
+                .map_or(1.,|target|s.stem_v_m_s-target);
             out[4 * k..4 * k + 4].copy_from_slice(&[
                 speed,
                 if b.joint == am::JointMode::Separated {
@@ -2493,7 +2577,7 @@ impl Model {
                 if roots[extra+1]!=0 {
                     let retained=branch.release.as_mut().unwrap();
                     let adjustment=(next[a+cr::GAP]-release.input.armature.stroke_m).abs();
-                    if adjustment>0.1*accuracy.position_m {return Err("Unresolved finite armature open stop".into());}
+                    admit_root_projection(k,"armature-open position",adjustment,accuracy.position_m)?;
                     report.maximum_position_adjustment_m=report.maximum_position_adjustment_m.max(adjustment);
                     next[a+cr::GAP]=release.input.armature.stroke_m;
                     let arm=release.armature_state(&next[a..a+cr::WIDTH])?;
@@ -2506,7 +2590,7 @@ impl Model {
                     let retained=branch.release.as_mut().unwrap();
                     if retained.body_seated[k] {return Err("Inactive BODY fitting contact".into());}
                     let adjustment=s.body_y_m.abs();
-                    if adjustment>0.1*accuracy.position_m {return Err("Unresolved BODY fitting seat".into());}
+                    admit_root_projection(k,"BODY fitting position",adjustment,accuracy.position_m)?;
                     report.maximum_position_adjustment_m=report.maximum_position_adjustment_m.max(adjustment);
                     s.body_y_m=0.;let (after,moving,fixed)=release.body_impact(c,s)?;s=after;
                     next[r+SPIDER_HEAT]+=moving;next[a+cr::FITTING_HEAT]+=fixed;
@@ -2520,7 +2604,7 @@ impl Model {
                     let retained=branch.release.as_mut().unwrap();
                     if retained.stem_stopped[k] {return Err("Inactive STEM collar contact".into());}
                     let adjustment=(s.stem_y_m-release.input.minimum_stem_m).abs();
-                    if adjustment>0.1*accuracy.position_m {return Err("Unresolved STEM shoulder/collar seat".into());}
+                    admit_root_projection(k,"STEM collar position",adjustment,accuracy.position_m)?;
                     report.maximum_position_adjustment_m=report.maximum_position_adjustment_m.max(adjustment);
                     s.stem_y_m=release.input.minimum_stem_m;
                     let rho=retained.initial_density.ok_or("Collar impact lacks retained density")?;
@@ -2544,22 +2628,16 @@ impl Model {
                 ));}
             }
             if actions[0] {
-                let target = mode.input.requested_rate_m_s;
-                let adjustment = (s.stem_v_m_s - target).abs();
-                if adjustment > 0.1 * accuracy.velocity_m_s {
-                    return Err("Unresolved connected speed root".into());
-                }
+                let projected=resolve_speed_root(k,c,s,mode.branches[k].regulator,branch.branches[k].joint,
+                    mode.input.requested_rate_m_s,accuracy.velocity_m_s)?;
+                let target=projected.target;let adjustment=projected.adjustment;
                 report.maximum_velocity_adjustment_m_s =
                     report.maximum_velocity_adjustment_m_s.max(adjustment);
                 // Represent the located ideal-graph equality at its declared
                 // root resolution, following the existing mechanical owner.
                 // Keep its signed numerical energy change outside real heat.
-                let before = c.mechanical_energy_j(s, GRAVITY)?;
-                s.stem_v_m_s = target;
-                if branch.branches[k].joint == am::JointMode::Contact {
-                    s.body_v_m_s = target;
-                }
-                report.mechanical_adjustment_j += c.mechanical_energy_j(s, GRAVITY)? - before;
+                s=projected.state;
+                report.mechanical_adjustment_j += projected.energy_adjustment;
                 report.needs_fluid_initialization |= adjustment != 0.;
                 write_state(&mut next[r..r + WIDTH], s);
                 branch.branches[k].regulator = if target == 0. {
@@ -2571,9 +2649,7 @@ impl Model {
             }
             if actions[1] {
                 let adjustment = (s.body_y_m - s.stem_y_m).abs();
-                if adjustment > 0.1 * accuracy.position_m {
-                    return Err("Unresolved connected bayonet root".into());
-                }
+                admit_root_projection(k,"bayonet position",adjustment,accuracy.position_m)?;
                 report.maximum_position_adjustment_m =
                     report.maximum_position_adjustment_m.max(adjustment);
                 let before = c.mechanical_energy_j(s, GRAVITY)?;
