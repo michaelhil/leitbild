@@ -8,6 +8,7 @@ import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { processPlantSignalQuality } from '../signals.ts'
 import {
   COMPOSED_DISPLAY_VIEW_TYPE,
+  COMPOSED_DISPLAY_MAX_SAMPLE_PATHS,
   composedDisplayCompositionSchema,
   composedDisplayStateSchema,
 } from '../displays/composition.ts'
@@ -37,7 +38,7 @@ export const displayViewQuerySchema = z.object({
   state: z.string().min(2),
 }).strict()
 // One sample serves one view; a trend never has more pens than this.
-const SAMPLE_MAX_PATHS = 12
+const SAMPLE_MAX_PATHS = COMPOSED_DISPLAY_MAX_SAMPLE_PATHS
 export const displaySampleQuerySchema = z.object({
   plantId: idSchema,
   paths: z.array(variablePathSchema).min(1).max(SAMPLE_MAX_PATHS),

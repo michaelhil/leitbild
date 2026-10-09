@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { idSchema, isoTimestampSchema } from '../../../core/model/index.ts'
+import { composedMimicViewSchema, mimicLoopSchema } from './mimic/mimic-model.ts'
 
 // An AI-composed display states WHAT the operator should see and WHY. The
 // Pack owns HOW: resolution, units, I&C thresholds, scales, layout and live
@@ -40,6 +41,8 @@ export const COMPOSED_READOUTS_MAX_SIGNALS = 6
 // One trend plus up to two supporting panels (HMI review); with the 640 px cap
 // nearly every three-panel combination fits by construction.
 export const COMPOSED_DISPLAY_MAX_PANELS = 3
+/** Live values one display samples each second, across its panels (a six-loop feed mimic reads 75). */
+export const COMPOSED_DISPLAY_MAX_SAMPLE_PATHS = 96
 export const COMPOSED_DISPLAY_MAX_TRENDS = 1
 
 /** History of numeric signals; the Pack groups them into one strip per measurement. */
@@ -68,11 +71,22 @@ export const composedDisplayAlarmsPanelSchema = z.object({
   scope: z.enum(['related', 'plant']),
 }).strict()
 
+/**
+ * A reviewed equipment drawing of one part of the Plant (a view), for the
+ * chosen loops (default all). World picks every symbol's state signal.
+ */
+export const composedDisplayMimicPanelSchema = z.object({
+  kind: z.literal('mimic'),
+  view: composedMimicViewSchema,
+  loops: z.array(mimicLoopSchema).min(1).max(6).optional(),
+}).strict()
+
 export const composedDisplayPanelSchema = z.discriminatedUnion('kind', [
   composedDisplayTrendPanelSchema,
   composedDisplayComparisonPanelSchema,
   composedDisplayReadoutsPanelSchema,
   composedDisplayAlarmsPanelSchema,
+  composedDisplayMimicPanelSchema,
 ])
 export type ComposedDisplayPanel = z.infer<typeof composedDisplayPanelSchema>
 
@@ -136,6 +150,8 @@ export type ComposedPanelShape =
   | { readonly kind: 'comparison'; readonly rows: number }
   | { readonly kind: 'readouts'; readonly values: number }
   | { readonly kind: 'alarms' }
+  /** A mimic has the fixed height of its view. */
+  | { readonly kind: 'mimic'; readonly height: number }
 
 /** A panel shape with its trend plot height decided. */
 export type ComposedPanelSize =
@@ -164,6 +180,7 @@ export const composedPanelHeight = (panel: ComposedPanelSize): number => {
   }
   if (panel.kind === 'comparison') return layout.comparisonHeader + layout.comparisonRow * panel.rows + layout.comparisonCaption
   if (panel.kind === 'readouts') return layout.readoutsRow * Math.ceil(panel.values / layout.readoutsPerRow)
+  if (panel.kind === 'mimic') return panel.height
   return layout.alarms
 }
 

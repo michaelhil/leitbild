@@ -10,6 +10,7 @@
   import ComparisonPanel from './ComparisonPanel.svelte'
   import PenLegend from './PenLegend.svelte'
   import ReadoutsPanel from './ReadoutsPanel.svelte'
+  import MimicPanel from './mimic/MimicPanel.svelte'
   import TrendPanel from './TrendPanel.svelte'
   import { agoText, alarmAge } from './panel-presenters.ts'
   import { trendWindowMs } from './trend-geometry.ts'
@@ -152,6 +153,8 @@
           <ComparisonPanel {panel} latest={snapshot.latest} series={snapshot.series} range={snapshot.ranges[index]?.[0] ?? null} {activeRuleIds} />
         {:else if panel.kind === 'readouts'}
           <ReadoutsPanel {panel} latest={snapshot.latest} {activeRuleIds} />
+        {:else if panel.kind === 'mimic'}
+          <MimicPanel mimic={panel.mimic} latest={snapshot.latest} {stale} />
         {:else}
           <AlarmsPanel {panel} latest={snapshot.latest} />
         {/if}

@@ -12,6 +12,7 @@ import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { findProcessPlantSignalBinding } from '../signals.ts'
 import {
   COMPOSED_DISPLAY_MAX_HEIGHT_PX,
+  COMPOSED_DISPLAY_MAX_SAMPLE_PATHS,
   COMPOSED_DISPLAY_MAX_TRENDS,
   COMPOSED_TREND_MAX_SIGNALS,
   COMPOSED_TREND_MAX_STRIPS,
@@ -29,6 +30,8 @@ import {
   type ComposedPanelSize,
 } from './composition.ts'
 import { formatQuantity, marginText, nearestThresholdMargin, thresholdName } from './display-text.ts'
+import { compileMimic } from './mimic/compile-mimic.ts'
+import type { CompiledMimic } from './mimic/mimic-model.ts'
 import {
   icAlarmRuleIdsForEquipment,
   icThresholdsForSignal,
@@ -109,11 +112,16 @@ export interface ComposedAlarmsPanel {
   readonly ruleIds: ReadonlyArray<string>
 }
 
-export type CompiledComposedPanel = ComposedTrendPanel | ComposedComparisonPanel | ComposedReadoutsPanel | ComposedAlarmsPanel
+export interface ComposedMimicPanel {
+  readonly kind: 'mimic'
+  readonly mimic: CompiledMimic
+}
+
+export type CompiledComposedPanel = ComposedTrendPanel | ComposedComparisonPanel | ComposedReadoutsPanel | ComposedAlarmsPanel | ComposedMimicPanel
 
 /** Every signal a compiled panel shows, in display order. */
 export const composedPanelPens = (panel: CompiledComposedPanel): ReadonlyArray<ComposedDisplayPen> => {
-  if (panel.kind === 'alarms') return []
+  if (panel.kind === 'alarms' || panel.kind === 'mimic') return []
   return panel.kind === 'trend' ? [...panel.strips.flatMap(strip => strip.pens), ...panel.live] : panel.pens
 }
 
@@ -388,6 +396,14 @@ const compilePanel = (
 ): UnsizedPanel | undefined => {
   const panelPath = `panels.${panelIndex}`
   if (panel.kind === 'alarms') return { kind: 'alarms', scope: panel.scope, ruleIds: [] }
+  if (panel.kind === 'mimic') {
+    const compiled = compileMimic(system, { view: panel.view, ...(panel.loops === undefined ? {} : { loops: panel.loops }) })
+    if (!compiled.ok) {
+      for (const message of compiled.issues) issues.push({ path: panelPath, message })
+      return undefined
+    }
+    return { kind: 'mimic', mimic: compiled.mimic }
+  }
   if (panel.kind === 'readouts') {
     const pens = resolvePens(system, panel.signals, panelPath, { numericOnly: false, panelName: 'readouts', recordedSeriesIds }, issues)
     return pens === undefined ? undefined : { kind: 'readouts', pens }
@@ -412,6 +428,7 @@ const panelShape = (panel: UnsizedPanel): ComposedPanelShape => {
   if (panel.kind === 'trend') return { kind: 'trend', strips: panel.strips.map(strip => strip.pens.length), live: panel.live.length }
   if (panel.kind === 'comparison') return { kind: 'comparison', rows: panel.pens.length }
   if (panel.kind === 'readouts') return { kind: 'readouts', values: panel.pens.length }
+  if (panel.kind === 'mimic') return { kind: 'mimic', height: panel.mimic.height }
   return { kind: 'alarms' }
 }
 
@@ -426,12 +443,13 @@ const compositionIssues = (composition: ComposedDisplayComposition): ReadonlyArr
       issues.push({ path: `panels.${index}.signals`, message: `a trend shows at most ${COMPOSED_TREND_MAX_SIGNALS} signals, but this one lists ${panel.signals.length}; keep the ones the question is about` })
     }
   })
-  for (const kind of ['comparison', 'readouts', 'alarms'] as const) {
+  for (const kind of ['comparison', 'readouts', 'alarms', 'mimic'] as const) {
     if (kinds.filter(candidate => candidate === kind).length > 1) issues.push({ path: 'panels', message: `use at most one ${kind} panel` })
   }
-  if (kinds.every(kind => kind === 'alarms')) issues.push({ path: 'panels', message: 'an alarms panel accompanies signal panels; add a trend, comparison or readouts panel' })
-  const signals = composition.panels.flatMap(panel => panel.kind === 'alarms' ? [] : panel.signals)
-  if (!signals.some(signal => signal.role === 'primary')) issues.push({ path: 'panels', message: 'mark at least one signal with role "primary": the signal the operator question is about' })
+  if (kinds.every(kind => kind === 'alarms')) issues.push({ path: 'panels', message: 'an alarms panel accompanies signal panels; add a trend, comparison, readouts or mimic panel' })
+  const signals = composition.panels.flatMap(panel => panel.kind === 'alarms' || panel.kind === 'mimic' ? [] : panel.signals)
+  // A mimic alone answers an equipment question and names no signals.
+  if (signals.length > 0 && !signals.some(signal => signal.role === 'primary')) issues.push({ path: 'panels', message: 'mark at least one signal with role "primary": the signal the operator question is about' })
   // A signal repeated in a second panel of the same kind, or as a readout of a
   // trended signal (whose legend already carries its value), adds height but
   // no evidence. A comparison (now, across loops) and a trend (history) of the
@@ -440,7 +458,7 @@ const compositionIssues = (composition: ComposedDisplayComposition): ReadonlyArr
     first === second || (first === 'trend' && second === 'readouts') || (first === 'readouts' && second === 'trend')
   const shownIn = new Map<string, Array<{ readonly index: number; readonly kind: ComposedDisplayPanel['kind'] }>>()
   composition.panels.forEach((panel, panelIndex) => {
-    if (panel.kind === 'alarms') return
+    if (panel.kind === 'alarms' || panel.kind === 'mimic') return
     for (const signal of panel.signals) {
       const earlier = shownIn.get(signal.ref) ?? []
       const clash = earlier.find(entry => entry.index !== panelIndex && redundantPair(entry.kind, panel.kind))
@@ -472,6 +490,10 @@ const layoutIssues = (
       issues.push({ path: `panels.${index}.signals`, message: `a trend strip shows at most ${COMPOSED_TREND_STRIP_MAX_PENS} parallel signals, but [${strip.pens[0]!.label}, ${strip.unit}] has ${strip.pens.length}: ${strip.pens.map(pen => pen.ref).join(', ')}; keep the most telling ones, or compare the loops in a comparison panel` })
     }
   })
+  const sampled = new Set(panels.flatMap(panel => panel.kind === 'mimic' ? panel.mimic.paths : composedPanelPens(panel).map(pen => pen.path)))
+  if (sampled.size > COMPOSED_DISPLAY_MAX_SAMPLE_PATHS) {
+    issues.push({ path: 'panels', message: `the display would read ${sampled.size} live values, more than the ${COMPOSED_DISPLAY_MAX_SAMPLE_PATHS} a chat view samples; draw fewer loops in the mimic or show fewer signals` })
+  }
   if (fit.height > COMPOSED_DISPLAY_MAX_HEIGHT_PX) {
     const parts = fit.panels.map((size, index) => `panels.${index} ${size.kind}${size.kind === 'trend' && size.strips.length > 1 ? ` (${size.strips.length} strips)` : ''} ${composedPanelHeight(size)} px`).join(', ')
     const shrunk = fit.panels.some(size => size.kind === 'trend') ? ' even with its trend at the smallest height' : ''
@@ -517,6 +539,7 @@ const relatedRuleIds = (system: ProcessPlantRuntimeInstance, panels: ReadonlyArr
       ...pen.combinedRules.filter(rule => rule.kind !== 'control').map(rule => rule.ruleId),
     ]),
     ...icAlarmRuleIdsForEquipment(system.plant, pens.map(pen => pen.path)),
+    ...panels.flatMap(panel => panel.kind === 'mimic' ? panel.mimic.nodes.flatMap(node => node.ruleIds) : []),
   ])].sort()
 }
 
@@ -596,6 +619,13 @@ export const composedDisplaySignals = (display: CompiledComposedDisplay): Readon
   unit: pen.unit,
 })))
 
+const mimicViewText: Readonly<Record<string, string>> = {
+  'feed-to-sg': 'main feedwater (MFW pumps, MFW header, feedwater control valves FCV) and auxiliary feedwater (AFW pumps, AFW header, AFW valves) to the steam generators',
+}
+
+const mimicShows = (mimic: CompiledMimic): string =>
+  `Live equipment mimic of ${mimicViewText[mimic.view] ?? mimic.view}, loops ${mimic.loops.join(', ')}: pumps drawn running or stopped from their actual speed, valves from their actual position (a command that disagrees is stated as "CMD … · POS …"), SG levels, flow or no flow ("empty" pipes) on every branch, and alarm frames on equipment with active alarms`
+
 /** Plain statements of what the view shows, so the agent's text need not repeat it. */
 export const composedDisplayShows = (display: CompiledComposedDisplay): ReadonlyArray<string> => display.panels.flatMap(panel => {
   if (panel.kind === 'trend') {
@@ -608,6 +638,7 @@ export const composedDisplayShows = (display: CompiledComposedDisplay): Readonly
   }
   if (panel.kind === 'comparison') return [`Live side-by-side comparison with the median: ${panel.pens.map(signalName).join('; ')}`, ...panel.thresholds.map(threshold => thresholdText(threshold, panel.unit))]
   if (panel.kind === 'readouts') return [`Live readouts with margin to the nearest I&C alarm or trip threshold: ${panel.pens.map(signalName).join('; ')}`]
+  if (panel.kind === 'mimic') return [mimicShows(panel.mimic)]
   return [panel.scope === 'related' ? `Active alarms and trips of the ${panel.ruleIds.length} I&C rules acting on the displayed signals and their equipment` : 'All active alarms and trips of the Plant']
 })
 

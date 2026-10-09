@@ -45,7 +45,7 @@ const COMPARISON_SERIES_MS = 600_000
 const WITH_ALARMS = true
 
 const pensOf = (panel: CompiledComposedPanel): ReadonlyArray<ComposedDisplayPen> => {
-  if (panel.kind === 'alarms') return []
+  if (panel.kind === 'alarms' || panel.kind === 'mimic') return []
   return panel.kind === 'trend' ? [...panel.strips.flatMap(strip => strip.pens), ...panel.live] : panel.pens
 }
 
@@ -84,7 +84,9 @@ export const createComposedDisplaySession = (config: {
   const panels = () => snapshot.view?.display.panels ?? []
 
   /** Every displayed signal is sampled once, however many panels show it. */
-  const sampledPaths = (): ReadonlyArray<string> => [...new Set(panels().flatMap(panel => pensOf(panel).map(pen => String(pen.path))))]
+  const sampledPaths = (): ReadonlyArray<string> => [...new Set(panels().flatMap(panel => panel.kind === 'mimic'
+    ? panel.mimic.paths.map(String)
+    : pensOf(panel).map(pen => String(pen.path))))]
 
   /** Trends keep their horizon; comparisons keep ten minutes for rates. Readouts use the latest sample. */
   const trendPens = (): ReadonlyArray<{ readonly path: string; readonly seriesId: string; readonly horizonMs: number }> =>
