@@ -44,20 +44,25 @@ pub fn fixture() -> (on::Network,cg::Prepared,cf::Plan) {
 pub fn stage(n:&on::Network,g:&cg::Prepared,p:&cf::Plan,y:&[f64],pose:cg::Pose,velocity:cg::Direction,
     reverse_connections:bool) -> (on::Workspace,cg::Workspace,cf::Workspace)
 {
-    let zero=cg::Direction::default();
+    stages(n,g,p,y,&[pose],&[velocity],reverse_connections)
+}
+fn stages(n:&on::Network,g:&cg::Prepared,p:&cf::Plan,y:&[f64],poses:&[cg::Pose],velocity:&[cg::Direction],
+    reverse_connections:bool) -> (on::Workspace,cg::Workspace,cf::Workspace)
+{
+    let zero=vec![cg::Direction::default();poses.len()];
     let mut gw=g.workspace();
-    g.evaluate_into(&[pose],&[zero],&mut gw).unwrap();
-    g.water_rates_into(&[velocity],&[zero],&mut gw).unwrap();
+    g.evaluate_into(poses,&zero,&mut gw).unwrap();
+    g.water_rates_into(velocity,&zero,&mut gw).unwrap();
     let water:Vec<_>=gw.value.water.iter().zip(&gw.water_rates).map(|(v,r)|on::WaterShape {
         volume_m3:v.volume,first_moment_m4:v.moment,volume_rate_m3_s:r.volume,first_moment_rate_m4_s:r.moment,
     }).collect();
-    let mut c=vec![];p.connections_into(&[pose],&[velocity],&mut c).unwrap();
+    let mut c=vec![];p.connections_into(poses,velocity,&mut c).unwrap();
     if reverse_connections { c.reverse(); }
     let mut nw=on::Workspace::new(n);
     nw.evaluate_with_motion(n,y,&vec![0.;n.dimension()],Some(1.),&[],None,
         Some(on::MotionGeometry{water:&water,connections:&c})).unwrap();
     let mut fw=cf::Workspace::new(p);
-    p.evaluate(n,y,&nw,&gw,&[pose],&[velocity],&mut fw).unwrap();
+    p.evaluate(n,y,&nw,&gw,poses,velocity,&mut fw).unwrap();
     (nw,gw,fw)
 }
 fn pose() -> cg::Pose {cg::Pose{body:0.05,stem:0.07,body_right:true,stem_right:true,seated:false}}
@@ -162,7 +167,10 @@ fn equal_config_and_state_cannot_rebind_prepared_forces_to_a_foreign_network() {
     p.direction(&n,&y,&nw,&gw,&zero,&dp,&dp,&fw,&mut df).unwrap();
     assert!(p.direction(&foreign,&y,&foreign_work,&foreign_geometry,&zero,&dp,&dp,&fw,&mut df).is_err());
     let selection=Selection{initial_density:nw.liquids[p.upper].density,
-        minimum_stem:0.,maximum_stem:0.5,maximum_density_departure:0.01};
+        minimum_stem:0.,maximum_stem:0.5,maximum_density_departure:0.01,
+        shoulder:leitbild_plant_numerics::control_release_hydraulics::Shoulder {
+            radius_m:0.006,bottom_m:4.29,top_m:4.3,
+        }};
     let error=selection.prepare_current(&p,&fw,&foreign,&y,&foreign_work,0,pose(),velocity().stem,3536.).unwrap_err();
     assert!(error.contains("exact current force/network stage"),"{error}");
     // A refused foreign preparation cannot leave the original force stage live.
@@ -171,4 +179,87 @@ fn equal_config_and_state_cannot_rebind_prepared_forces_to_a_foreign_network() {
     assert!(p.direction(&n,&y,&nw,&gw,&zero,&dp,&dp,&fw,&mut df).is_err());
     p.evaluate(&n,&y,&nw,&gw,&[pose()],&[velocity()],&mut fw).unwrap();
     fw.check_current_network_state(&p,&n,&y).unwrap();
+}
+#[test]
+fn local_force_actions_match_full_direction_bits_with_shuffled_bindings() {
+    let (n,g,mut p)=fixture();let i=g.input();
+    let mut water=i.water.clone();water.push(water[1]);
+    let geometry=cg::Prepared::new(cg::Input {
+        clusters:2,maximum_body:i.maximum_body,minimum_stem:i.minimum_stem,maximum_stem:i.maximum_stem,
+        bottom:i.bottom,top:i.top,active_bottom:i.active_bottom,active_length:i.active_length,active_top:i.active_top,
+        head:i.head,housing_top:i.housing_top,neck_top:i.neck_top,rodlets:i.rodlets,
+        guide_radius:i.guide_radius,body_radius:i.body_radius,guide_area:i.guide_area,body_area:i.body_area,
+        water:water.clone(),upper:i.upper,guides:vec![1,3],passive:vec![],cylinders:vec![],
+        intruders:(0..2).flat_map(|cluster|i.intruders.iter().map(move |s|cg::Intruder {
+            cluster,motion:s.motion,lo:s.lo,hi:s.hi,area:s.area,
+        })).collect(),patches:vec![],row_water:vec![],routes:vec![],origins:vec![],contacts:vec![],barrel_paths:vec![],
+    },&se::Geometry{passive_volumes:vec![],cylinder_shares:vec![],moderator_volumes:vec![],
+        external_water_volumes:water.iter().map(|w|w.volume).collect()}).unwrap();
+    let mut config=n.config().clone();config.water.push(config.water[1].clone());
+    for edge in 0..2 {
+        let mut link=config.hydraulic[edge].clone();
+        if link.from==1 {link.from=3;}if link.to==1 {link.to=3;}
+        config.hydraulic.push(link);
+    }
+    let n=on::Network::new(config).unwrap();
+    p.stems.push(p.stems[0].clone());
+    p.bindings.push(cf::Binding{cluster:1,cell:3,lower_edge:2,upper_edge:3});
+    p.bindings.reverse();p.check(&n,2).unwrap();
+    let mut y=n.initial_state().unwrap();
+    for edge in 0..4 {y[n.flow_row(edge)]=(edge as f64-1.5)*0.0001;}
+    let poses=[pose(),cg::Pose{body:0.09,stem:0.03,..pose()}];
+    let velocity=[velocity(),cg::Direction{body:-0.004,stem:0.003}];
+    for reverse in [false,true] {
+        let (nw,gw,fw)=stages(&n,&geometry,&p,&y,&poses,&velocity,reverse);
+        for properties in [false,true] {
+            let mut dn=vec![0.;n.dimension()];
+            if properties {
+                dn[n.pressure_row()]=123.;
+                for cell in 0..4 {dn[n.temperature_row(cell)]=0.02*(cell+1) as f64;}
+            }
+            let local=p.direction_stage(&n,&y,&nw,&gw,&dn,&fw).unwrap();
+            for k in 0..2 {for column in 0..5 {
+                let mut dp=vec![cg::Direction::default();2];let mut dv=dp.clone();
+                dp[k]=cg::Direction{body:if column==0 {1.}else{0.},stem:if column==2 {1.}else{0.}};
+                dv[k]=cg::Direction{body:if column==1 {1.}else{0.},stem:if column==3 {1.}else{0.}};
+                let mut full=vec![];
+                let full_work=p.direction(&n,&y,&nw,&gw,&dn,&dp,&dv,&fw,&mut full).unwrap();
+                let mut local_work=0.;
+                for binding in &p.bindings {
+                    let cluster=binding.cluster;
+                    let (force,work)=local.cluster(cluster,dp[cluster],dv[cluster]).unwrap();
+                    assert_eq!(force.body_n.to_bits(),full[cluster].body_n.to_bits());
+                    assert_eq!(force.stem_n.to_bits(),full[cluster].stem_n.to_bits());
+                    local_work+=work;
+                }
+                assert_eq!(local_work.to_bits(),full_work.to_bits());
+            }}
+        }
+    }
+}
+#[test]
+fn local_direction_stage_keeps_complete_input_and_current_owner_guards() {
+    let (n,g,p)=fixture();let y=n.initial_state().unwrap();
+    let (mut nw,gw,mut fw)=stage(&n,&g,&p,&y,pose(),velocity(),false);
+    let zero=vec![0.;n.dimension()];let d=cg::Direction::default();
+    {
+        let local=p.direction_stage(&n,&y,&nw,&gw,&zero,&fw).unwrap();
+        assert!(local.cluster(1,d,d).is_err());
+        assert!(local.cluster(0,cg::Direction{body:f64::NAN,stem:0.},d).is_err());
+        assert!(local.cluster(0,d,cg::Direction{body:0.,stem:f64::INFINITY}).is_err());
+    }
+    // This lower-cell direction does not enter the selected cluster action;
+    // validation must still reject it rather than treating it as irrelevant.
+    let mut malformed=zero.clone();malformed[n.temperature_row(0)]=f64::NAN;
+    assert!(p.direction_stage(&n,&y,&nw,&gw,&malformed,&fw).is_err());
+    let mut next=y.clone();next[n.pressure_row()]+=1.;
+    assert!(p.direction_stage(&n,&next,&nw,&gw,&zero,&fw).is_err());
+    let mut other_pose=pose();other_pose.stem+=1e-6;
+    let (_,other_geometry,_)=stage(&n,&g,&p,&y,other_pose,velocity(),false);
+    assert!(p.direction_stage(&n,&y,&nw,&other_geometry,&zero,&fw).is_err());
+    nw.water_shapes[p.upper].first_moment_rate_m4_s+=1e-7;
+    assert!(p.direction_stage(&n,&y,&nw,&gw,&zero,&fw).is_err());
+    // Failed preparation invalidates the old value stage, including local P.
+    assert!(p.evaluate(&n,&y,&nw,&gw,&[pose()],&[velocity()],&mut fw).is_err());
+    assert!(p.direction_stage(&n,&y,&nw,&gw,&zero,&fw).is_err());
 }

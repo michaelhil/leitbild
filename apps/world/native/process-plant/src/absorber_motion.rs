@@ -72,6 +72,11 @@ pub enum RegulatorBranch {
     HoldPositive,
     HoldNegative,
     HoldRest,
+    /// Explicit backdrivable normal-stop selection. Neither branch anchors
+    /// the reference: zero motor effort lets the actual finite stem backdrive
+    /// it until the caller locates zero stem speed and engages static HOLD.
+    CoastPositive,
+    CoastNegative,
     Open,
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -191,6 +196,8 @@ impl Config {
             RegulatorBranch::HoldPositive
                 | RegulatorBranch::HoldNegative
                 | RegulatorBranch::HoldRest
+                | RegulatorBranch::CoastPositive
+                | RegulatorBranch::CoastNegative
         );
         if (hold && input.requested_rate_m_s != 0.)
             || (matches!(
@@ -200,6 +207,8 @@ impl Config {
                     | RegulatorBranch::Track
             ) && input.requested_rate_m_s == 0.)
             || (branch.regulator == RegulatorBranch::Open && input.gap_m != self.gap_stroke_m)
+            || (matches!(branch.regulator,RegulatorBranch::CoastPositive|RegulatorBranch::CoastNegative)
+                && (input.motive_power_w!=0. || input.holding_power_w<=0. || input.gap_m!=0.))
         {
             return Err("Retained absorber branch does not match delivered request");
         }
@@ -233,6 +242,18 @@ impl Config {
             regulator,
             joint: r.joint_mode,
         })
+    }
+    /// Prospective hardware/control choice, not the ordinary branch selector.
+    /// The caller owns authorization and the supported RATE -> HOLD event.
+    /// Contact is selected from the actual zero-effort finite-mass equations.
+    pub fn coast_branch(self,s:State,input:Input,forces:Forces)->Result<TrialBranch,&'static str> {
+        if s.stem_v_m_s==0. || s.body_y_m<s.stem_y_m
+            || (s.body_y_m==s.stem_y_m && s.body_v_m_s<s.stem_v_m_s)
+        {return Err("Coast selection requires actual nonzero speed without closing penetration");}
+        let regulator=if s.stem_v_m_s>0. {RegulatorBranch::CoastPositive} else {RegulatorBranch::CoastNegative};
+        self.evaluate_trial(s,input,forces,TrialBranch {regulator,joint:JointMode::Separated})?;
+        let joint=self.accelerations(s,forces,0.,None)?.3;
+        Ok(TrialBranch {regulator,joint})
     }
     fn evaluate_inner(
         self,
@@ -282,7 +303,13 @@ impl Config {
         } else {
             self.tracking_force(s, forces)
         };
-        let (u, grip, mode) = if cap == 0. {
+        let (u, grip, mode) = if branch.is_some_and(|b|matches!(b.regulator,
+            RegulatorBranch::CoastPositive|RegulatorBranch::CoastNegative)) {
+            // A deliberately backdrivable transmission, not an anchored
+            // reference with reduced friction. Actual reference travel and
+            // finite plant inertia remain; all drive/slip work is exactly zero.
+            (v,0.,GripMode::Stick)
+        } else if cap == 0. {
             if request != 0. {
                 return Err("Ordinary motion requested through an open grip");
             }
@@ -414,7 +441,9 @@ impl Config {
         let drequired = if branch.joint == JointMode::Contact {
             -(df.body_n + df.stem_n)
         } else { -df.stem_n };
-        let (du, dg) = if r.grip_mode == GripMode::Open {
+        let (du, dg) = if matches!(branch.regulator,RegulatorBranch::CoastPositive|RegulatorBranch::CoastNegative) {
+            (ds.stem_v_m_s,0.)
+        } else if r.grip_mode == GripMode::Open {
             (0., 0.)
         } else if input.requested_rate_m_s == 0. {
             let dg = match branch.regulator {
@@ -619,6 +648,69 @@ mod tests {
         Forces {
             body_n: -350.,
             stem_n: -55.,
+        }
+    }
+    #[test]
+    fn explicit_backdrive_coast_retains_real_reference_motion_without_drive_or_slip_work() {
+        let c=config();let mut i=input(0.);i.motive_power_w=0.;
+        for (v,regulator) in [(0.008,RegulatorBranch::CoastPositive),(-0.008,RegulatorBranch::CoastNegative)] {
+            let s=State {body_y_m:0.02,stem_y_m:0.01,..state(v)};
+            let q=c.evaluate_trial(s,i,forces(),TrialBranch {regulator,joint:JointMode::Separated}).unwrap();
+            assert_eq!(q.reference_rate_m_s,v);assert_eq!(q.grip_mode,GripMode::Stick);
+            assert_eq!(q.grip_force_n,0.);assert_eq!(q.motive_mechanical_w,0.);
+            assert_eq!(q.grip_to_stem_w,0.);assert_eq!(q.slip_to_jack_w,0.);
+            assert_eq!(q.electrical_loss_to_jack_w,0.);assert_eq!(q.holding_to_jack_w,i.holding_power_w);
+            near(q.body_acceleration_m_s2,forces().body_n/c.body_mass_kg);
+            near(q.stem_acceleration_m_s2,forces().stem_n/c.stem_mass_kg);
+        }
+        let b=TrialBranch {regulator:RegulatorBranch::CoastPositive,joint:JointMode::Separated};
+        for invalid in [Input {holding_power_w:0.,..i},Input {motive_power_w:1.,..i},
+            Input {gap_m:1e-8,..i},Input {requested_rate_m_s:0.008,..i}]
+        {assert!(c.evaluate_trial(state(0.008),invalid,forces(),b).is_err());}
+    }
+    #[test]
+    fn coast_contact_selection_uses_zero_effort_not_the_historical_full_brake() {
+        let c=config();let mut i=input(0.);i.motive_power_w=0.;let s=state(0.008);
+        for (stem,joint) in [(-70.,JointMode::Separated),(-30.,JointMode::Contact)] {
+            let f=Forces {stem_n:stem,..forces()};
+            let b=c.coast_branch(s,i,f).unwrap();assert_eq!(b.regulator,RegulatorBranch::CoastPositive);
+            assert_eq!(b.joint,joint);let q=c.evaluate_trial(s,i,f,b).unwrap();
+            assert_eq!(q.grip_force_n,0.);assert!(q.joint_force_n>=0.);
+            let old=c.branch(s,i,f).unwrap();assert_eq!(old.regulator,RegulatorBranch::HoldPositive);
+            assert_eq!(old.joint,JointMode::Separated);
+            assert_eq!(c.evaluate_trial(s,i,f,old).unwrap().grip_force_n,-2000.);
+        }
+        assert!(c.coast_branch(state(0.),i,forces()).is_err());
+        assert!(c.coast_branch(State {body_y_m:0.,stem_y_m:0.01,..s},i,forces()).is_err());
+    }
+    #[test]
+    fn coast_added_inertia_and_analytic_actions_follow_the_actual_finite_force_balance() {
+        let c=config();let mut i=input(0.);i.motive_power_w=0.;
+        let ds=State {body_y_m:0.01,stem_y_m:-0.02,body_v_m_s:0.02,stem_v_m_s:-0.03,reference_y_m:0.04};
+        let df=Forces {body_n:0.4,stem_n:-0.7};let dm=-0.04;
+        for joint in [JointMode::Separated,JointMode::Contact] {
+            let mut s=state(0.008);if joint==JointMode::Separated {s.body_y_m+=0.01;}
+            let b=TrialBranch {regulator:RegulatorBranch::CoastPositive,joint};
+            let loading=Loading {stem_added_mass_kg:0.27,..Loading::default()};
+            let q=c.evaluate_loaded_trial(s,i,forces(),b,loading).unwrap();
+            let dq=c.evaluate_loaded_trial_direction(s,i,forces(),b,loading,ds,df,0.,dm).unwrap();
+            assert_eq!(dq.reference_rate_m_s,ds.stem_v_m_s);assert_eq!(dq.grip_force_n,0.);
+            assert_eq!(dq.motive_mechanical_w,0.);assert_eq!(dq.slip_to_jack_w,0.);
+            let mechanical=c.body_mass_kg*s.body_v_m_s*q.body_acceleration_m_s2
+                +(c.stem_mass_kg+loading.stem_added_mass_kg)*s.stem_v_m_s*q.stem_acceleration_m_s2;
+            near(mechanical,forces().body_n*s.body_v_m_s+forces().stem_n*s.stem_v_m_s);
+            let h=1e-5;
+            let arms=[-1.,1.].map(|sign|c.evaluate_loaded_trial(State {
+                body_y_m:s.body_y_m+sign*h*ds.body_y_m,stem_y_m:s.stem_y_m+sign*h*ds.stem_y_m,
+                body_v_m_s:s.body_v_m_s+sign*h*ds.body_v_m_s,stem_v_m_s:s.stem_v_m_s+sign*h*ds.stem_v_m_s,
+                reference_y_m:s.reference_y_m+sign*h*ds.reference_y_m},i,
+                Forces {body_n:forces().body_n+sign*h*df.body_n,stem_n:forces().stem_n+sign*h*df.stem_n},b,
+                Loading {stem_added_mass_kg:loading.stem_added_mass_kg+sign*h*dm,..loading}).unwrap());
+            for (a,z,exact) in [(arms[0].reference_rate_m_s,arms[1].reference_rate_m_s,dq.reference_rate_m_s),
+                (arms[0].body_acceleration_m_s2,arms[1].body_acceleration_m_s2,dq.body_acceleration_m_s2),
+                (arms[0].stem_acceleration_m_s2,arms[1].stem_acceleration_m_s2,dq.stem_acceleration_m_s2),
+                (arms[0].joint_force_n,arms[1].joint_force_n,dq.joint_force_n)]
+            {assert!(((z-a)/(2.*h)-exact).abs()<2e-7*(1.+exact.abs()));}
         }
     }
     fn near(a: f64, b: f64) {

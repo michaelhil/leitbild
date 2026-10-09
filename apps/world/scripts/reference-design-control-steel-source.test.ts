@@ -121,7 +121,7 @@ describe.skipIf(!wiki||!evidence||!water)('actual joined moving structural SOURC
   expect(plan.minimumStemPose_m).toBe(0)
   expect(signed.minimumStemPose_m).toBe(physical.minimumStemPose_m)
   expect(signedHeat.hosts).toEqual(heat.hosts)
-  expect(physical.fields).toHaveLength(691)
+  expect(physical.fields).toHaveLength(698)
   for(const y of [physical.minimumStemPose_m,physical.minimumStemPose_m/2,0]){
    const stage=controlSourceMotionAt(signed,poses.map((p,i)=>({...p,stem_y_m:y*(52-i)/52,
     stem_side:y===0?'decreasing' as const:'increasing' as const})))

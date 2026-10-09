@@ -419,6 +419,13 @@ fn stock_bits(s: &ms::Stocks) -> [u64; 5] {
     ]
 }
 impl Evolution {
+    /// Actual immutable passive material identity for a finite receiving
+    /// slice. Matching a density or aggregate UPPER stock is insufficient.
+    pub fn passive_stock_for_targets(&self, targets:&[usize])->Result<&ps::Stock,String> {
+        self.input.passive_stocks.iter().find(|stock| stock.targets.len()==targets.len()
+            && stock.targets.iter().zip(targets).all(|(a,b)|a.index==*b))
+            .ok_or_else(|| "No actual passive SOURCE stock for receiving targets".into())
+    }
     /// Existing volume-material application order, retained before target aggregation.
     pub fn passive_birth_rows(&self) -> impl Iterator<Item = (usize, usize, usize)> + '_ {
         self.input

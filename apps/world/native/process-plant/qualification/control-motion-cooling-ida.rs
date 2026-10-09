@@ -42,6 +42,8 @@ mod ida_support;
 mod motion_support;
 #[path = "control_material_accuracy.rs"]
 mod control_material_accuracy;
+#[path = "control_release_input.rs"]
+mod control_release_input;
 #[path = "../examples/operating_network_input/mod.rs"]
 mod operating_network_input;
 #[path = "source_accuracy.rs"]
@@ -62,7 +64,8 @@ use leitbild_plant_numerics::{
     control_source_geometry as cg, converter_heat, cylindrical_source, dc_supply as dc,
     fuel_history, fuel_source, fuel_thermal, heat_history, moderator_source, operating_admission,
     operating_network, optical_source, passive_source, prhr, source_cooling, source_evolution,
-    source_motion as sm, control_material_heat as cm, transport_source, water_carrier,
+    source_motion as sm, control_material_heat as cm, control_release as cr,
+    transport_source, water_carrier,
 };
 use source_evolution::Evolution;
 use std::{
@@ -182,8 +185,23 @@ struct Prepared {
     base_b: f64,
     rate: f64,
     case: Case,
+    release: Option<ReleaseCase>,
 }
+struct ReleaseCase { at: f64, restore: Option<f64>, failed_cluster: usize }
 fn parse(text: &str) -> Result<Prepared, String> {
+    parse_with_release(text,None)
+}
+fn parse_with_release(text: &str, release_text: Option<&str>) -> Result<Prepared, String> {
+    let release = release_text.map(|text| -> Result<_,String> {
+        let words=text.split_whitespace().collect::<Vec<_>>();
+        let mut r=geometry_input::Reader::new(&words);
+        let at=r.number()?;let restore=r.number()?;let failed_cluster=r.count()?;
+        let input=control_release_input::read(&mut r)?;r.end()?;
+        if at<=0. || restore<0. || (restore>0. && restore<=at) || failed_cluster>=input.contacts.len() {
+            return Err("Invalid authored cold release schedule/failure".into());
+        }
+        Ok((ReleaseCase {at,restore:if restore==0. {None}else{Some(restore)},failed_cluster},input))
+    }).transpose()?;
     let all = text.split_whitespace().collect::<Vec<_>>();
     let mut words = all.iter().copied();
     let fixture = source_input::framed(&mut words);
@@ -305,7 +323,14 @@ fn parse(text: &str) -> Result<Prepared, String> {
     let p = cooling_input::parse_with_source_incidence(&fixture.join(" "), &passive, &cylinder)?;
     let a = cooling_actuation::Schedule::new(&p.model, p.prhr_action, p.actuation.as_ref())?
         .ok_or("Missing ACT.A/PRHR")?;
-    let ginput = geometry_input::parse(&plan)?;
+    let mut ginput = geometry_input::parse(&plan)?;
+    if let Some((schedule,input))=&release {
+        if schedule.at<=case.burst || schedule.at>=case.horizon()
+            || schedule.restore.is_some_and(|t|t>=case.horizon())
+            || (rate*case.burst-input.lift_m).abs()>case.position
+        {return Err("Release case must pay its selected lift before actual HOLD disconnect".into());}
+        ginput.minimum_stem=input.minimum_stem_m;
+    }
     let n = ginput.clusters;
     let geometry =
         cg::Prepared::new(ginput, p.model.source.prepared_geometry()).map_err(str::to_string)?;
@@ -332,7 +357,8 @@ fn parse(text: &str) -> Result<Prepared, String> {
     };
     let material = cm::Model::new(&p.model.source,&geometry,p.model.network.config().water.len(),
         cm::Input {density_steel,mu_steel_1,mu_water_1,hosts,routes})?;
-    let model = sm::Model::new(p.model, geometry, hydraulic, vec![cfg; n], material)?;
+    let mut model = sm::Model::new(p.model, geometry, hydraulic, vec![cfg; n], material)?;
+    if let Some((_,input))=&release {model=model.with_cold_release(input.clone())?;}
     let b = dc::Supply::new(bconfig, energy, paths, closed, base_b + motive)?;
     Ok(Prepared {
         model,
@@ -344,6 +370,7 @@ fn parse(text: &str) -> Result<Prepared, String> {
         base_b,
         rate,
         case,
+        release:release.map(|(schedule,_)|schedule),
     })
 }
 struct Callbacks<'a> {
@@ -754,12 +781,75 @@ fn retain_mode(path: &Path, mode: &sm::Mode) -> Result<(), String> {
     let cleanup = fs::remove_file(&pending).map_err(|e| e.to_string());
     published.and(cleanup)
 }
+fn load_physical(path:&Path,dimension:usize)->Result<(f64,Vec<f64>,Vec<f64>),String> {
+    let bytes=fs::read(path).map_err(|e|e.to_string())?;
+    if bytes.len()!=8*(1+2*dimension) {return Err("Retained physical layout differs".into());}
+    let words=bytes.chunks_exact(8).map(|q|f64::from_le_bytes(q.try_into().unwrap())).collect::<Vec<_>>();
+    if words.iter().any(|v|!v.is_finite()) {return Err("Nonfinite retained physical frame".into());}
+    Ok((words[0],words[1..1+dimension].to_vec(),words[1+dimension..].to_vec()))
+}
+fn pending_release_diagnostic(m:&sm::Model,y:&[f64],yp:&[f64],mode:&sm::Mode,
+    support:&motion_support::Support,w:&sm::Workspace,dir:&Path,time:f64)->Result<(),String>
+{
+    // The incoming held parent has already passed full admission. Reuse its
+    // exact prepared stage rather than rebuild SOURCE for a diagnostic.
+    let input=support.prhr_input(time,y[support.a.room_row])?;
+    let (neck,broad)=m.release_stage(y,w)?;
+    let upper=m.hydraulics.upper;
+    let ports=m.cooling.network.config().hydraulic.iter().enumerate()
+        .filter(|(_,edge)|edge.from==upper||edge.to==upper)
+        .map(|(edge,h)|format!("{{\"edge\":{edge},\"intoUpperKgPerS\":{}}}",
+            finite(w.cooling.network.mass_flows[edge]*if h.to==upper {1.}else{-1.})))
+        .collect::<Vec<_>>();
+    let current=(0..m.clusters()).map(|k| {
+        let q=neck[k].wet_margin(w.responses[k].stem_acceleration_m_s2)?;
+        Ok(format!("{{\"cluster\":{k},\"bodyPositionM\":{},\"stemPositionM\":{},\"addedMassKg\":{},\"wetMarginPa\":{},\"wetLocation\":{},\"bodyForceN\":{},\"stemForceN\":{},\"broadBodyForceN\":{}}}",
+            finite(y[m.motion_row(k,sm::BODY_Y)]),finite(y[m.motion_row(k,sm::STEM_Y)]),finite(neck[k].added_mass_kg),
+            finite(q.margin_pa),quote(&format!("{:?}",q.location)),finite(w.forces[k].body_n),finite(w.forces[k].stem_n),finite(broad[k].body_force_n)))
+    }).collect::<Result<Vec<_>,String>>()?;
+    let stem=&m.hydraulics.stems[0];let liquid=&w.cooling.network.liquids[upper];
+    let inlet=stem.passages.first().ok_or("Absent physical neck inlet")?.bottom_m;
+    let cap=stem.passages.last().ok_or("Absent physical neck cap")?.top_m;
+    let occupied=stem.top_m+y[m.motion_row(0,sm::STEM_Y)]-inlet;
+    let free_acceleration=w.forces[0].stem_n/(m.configs()[0].stem_mass_kg+neck[0].added_mass_kg);
+    let nominal_coast_scale=m.configs()[0].maximum_rate_m_s/free_acceleration.abs();
+    // Same attained water/pressure/geometry, hypothetical instantaneous speed
+    // and open grip. This is an applicability forecast, never a future state.
+    let mut forecast=Vec::new();let mut root_work=m.root_workspace();
+    for speed in [0.,-0.1,-0.2,-0.3,-0.5,-1.] {
+        let mut yy=y.to_vec();let mut mm=mode.clone();mm.input=sm::Input {
+            requested_rate_m_s:0.,motive_power_w:0.,holding_power_w:0.};
+        mm.release.as_mut().ok_or("Missing forecast release mode")?.armatures.fill(
+            leitbild_plant_numerics::control_armature::Mode::Open);
+        for k in 0..m.clusters() {
+            yy[m.motion_row(k,sm::BODY_V)]=speed;yy[m.motion_row(k,sm::STEM_V)]=speed;
+            yy[m.release_row(k,cr::GAP)]=m.configs()[k].gap_stroke_m;yy[m.release_row(k,cr::GAP_V)]=0.;
+            mm.branches[k]=am::TrialBranch{regulator:am::RegulatorBranch::Open,joint:am::JointMode::Contact};
+        }
+        let mut roots=vec![0.;m.root_count()];m.roots_at(&yy,yp,Some(input),&mm,&mut root_work,&mut roots)?;
+        let minimum=(0..m.clusters()).map(|k|roots[4*m.clusters()+cr::EXTRA_ROOTS*k+3]).fold(f64::INFINITY,f64::min);
+        forecast.push(format!("{{\"hypotheticalSpeedMPerS\":{},\"minimumWetMarginPa\":{}}}",finite(speed),finite(minimum)));
+    }
+    let path=dir.join("release-parent.forecast.json");
+    let mut file=fs::OpenOptions::new().create_new(true).write(true).open(path).map_err(|e|e.to_string())?;
+    let acoustic=format!("{{\"nativeSoundSpeedMPerS\":{},\"occupiedTransitS\":{},\"inletToCapTransitS\":{},\"nominalRateOverFreeStemAccelerationS\":{},\"limitation\":\"Held applicability scales, not attained stop timing or acoustic/water-hammer qualification\"}}",
+        finite(liquid.sound_speed),finite(occupied/liquid.sound_speed),finite((cap-inlet)/liquid.sound_speed),finite(nominal_coast_scale));
+    file.write_all(format!("{{\"time\":{},\"scope\":\"actual attained paid-lift current; held instantaneous-speed forecast is not a trajectory\",\"acousticApplicability\":{},\"upperThroughflow\":{{\"ports\":[{}],\"densityKgPerM3\":{},\"broadDragFluidSpeedMPerS\":0,\"limitation\":\"Quiescent broad-drag selection. Boundary mass flows do not determine the local spider velocity field; hot throughflow is unqualified.\"}},\"current\":[{}],\"forecast\":[{}]}}",finite(time),acoustic,ports.join(","),finite(w.cooling.network.liquids[upper].density),current.join(","),forecast.join(",")).as_bytes()).map_err(|e|e.to_string())
+}
 struct Arm {
     samples: Vec<Sample>,
     motion: Vec<Vec<f64>>,
     material: Vec<control_material_accuracy::Sample>,
     final_y: Vec<f64>,
     summary: String,
+}
+fn motion_pair_scale(m:&sm::Model,row:usize)->f64 {
+    if m.release.is_some() && row>m.layout.control_photon_export {
+        match (row-m.layout.control_photon_export-1)%cr::WIDTH {cr::GAP|cr::GAP_V=>1e-7,_=>1e-5}
+    } else if row>=m.layout.mechanics_start+sm::WIDTH*m.clusters() {1e-5}
+    else {match (row-m.layout.mechanics_start)%sm::WIDTH {
+        sm::BODY_Y|sm::STEM_Y|sm::REFERENCE_Y|sm::BODY_V|sm::STEM_V=>1e-7,_=>1e-5,
+    }}
 }
 fn audit(
     c: &mut Callbacks<'_>,
@@ -837,7 +927,8 @@ fn audit(
     {
         return Err("Moving pressure caloric/flow closure".into());
     }
-    let mech = m.mechanical_energy_j(y)? + m.apparatus_heat_j(y)?
+    let mechanical = m.extended_mechanical_energy_j(y,&c.mode.borrow())?;
+    let mech = mechanical + m.apparatus_heat_j(y)?
         - initial_mechanical
         - y[m.layout.fluid_mechanical_work]
         - (y[m.layout.nuclear_to_apparatus]-initial[m.layout.nuclear_to_apparatus])
@@ -847,7 +938,7 @@ fn audit(
     let mechanical_bound = m.clusters() as f64 * 1e-5
         + 128.
             * f64::EPSILON
-            * (m.mechanical_energy_j(y)?.abs()
+            * (mechanical.abs()
                 + m.apparatus_heat_j(y)?.abs()
                 + initial_mechanical.abs()
                 + y[m.layout.fluid_mechanical_work].abs()
@@ -953,10 +1044,15 @@ fn run(
         p.rate,
         p.case.burst,
     )?));
+    if let Some(release)=&p.release {
+        support.borrow_mut().enable_release_at(release.at)?;
+        if let Some(t)=release.restore {support.borrow_mut().enable_holding_restore_at(t)?;}
+    }
     let mode = Rc::new(RefCell::new(sm::Mode::new(
         support.borrow().motion_input(0.)?,
         m.clusters(),
     )?));
+    if p.release.is_some() {mode.borrow_mut().enable_cold_release()?;}
     let initial_input = support.borrow().prhr_input(0., 0.)?;
     let mut y = m.initial_state(Some(initial_input))?;
     let mut yp = vec![0.; n];
@@ -1003,8 +1099,12 @@ fn run(
         &moving,
     )?;
     m.evaluate(&y, &yp, Some(1.), &mut w, Some(input), &mode.borrow())?;
+    if p.release.is_some() {
+        m.bind_release_density(&y,&w,&mut mode.borrow_mut())?;
+        m.evaluate(&y,&yp,Some(1.),&mut w,Some(input),&mode.borrow())?;
+    }
     m.set_mechanical_rates(&y, &mut yp, &w)?;
-    let initial_mechanical = m.mechanical_energy_j(&y)? + m.apparatus_heat_j(&y)?;
+    let initial_mechanical = m.extended_mechanical_energy_j(&y,&mode.borrow())? + m.apparatus_heat_j(&y)?;
     let mut energy = cooling_coordinates::EnergyCoordinates::new(b, &y[..end])?;
     energy.add_receipt(
         m.layout.fluid_mechanical_work,
@@ -1025,6 +1125,13 @@ fn run(
                 sm::BODY_V | sm::STEM_V => p.case.velocity,
                 _ => p.case.heat,
             } / refinement;
+        }
+        if p.release.is_some() {
+            for field in 0..cr::WIDTH {
+                absolute[m.release_row(k,field)]=match field {
+                    cr::GAP=>p.case.position,cr::GAP_V=>p.case.velocity,_=>p.case.heat,
+                }/refinement;
+            }
         }
     }
     absolute[m.layout.fluid_mechanical_work] = p.case.heat / refinement;
@@ -1143,9 +1250,14 @@ fn run(
         // contact with signed trials; only the owned root transaction may
         // apply the physical impulse. Accepted gaps remain nonnegative.
         cs[m.motion_row(k, sm::BODY_Y)] = 0.;
-        cs[m.motion_row(k, sm::STEM_Y)] = 1.;
+        cs[m.motion_row(k, sm::STEM_Y)] = if p.release.is_some() {0.} else {1.};
         for f in sm::JACK_HEAT..sm::WIDTH {
             cs[m.motion_row(k, f)] = 1.;
+        }
+        if p.release.is_some() {
+            cs[m.release_row(k,cr::GAP)]=1.;
+            cs[m.release_row(k,cr::FITTING_HEAT)]=1.;
+            cs[m.release_row(k,cr::COLLAR_HEAT)]=1.;
         }
     }
     for row in [m.layout.nuclear_to_apparatus, m.layout.control_photon_export] {
@@ -1217,7 +1329,7 @@ fn run(
         "Moving native event roots",
     )?;
     let horizon = p.case.horizon();
-    let outputs = [
+    let mut outputs = vec![
         0.,
         0.00001,
         0.0001,
@@ -1234,6 +1346,12 @@ fn run(
         30.,
         horizon,
     ];
+    if let Some(release)=&p.release {
+        outputs.extend([release.at,release.at+0.001,release.at+0.01,release.at+0.1]);
+        if let Some(t)=release.restore {outputs.push(t);}
+    }
+    outputs.retain(|t|*t<=horizon);
+    outputs.sort_by(f64::total_cmp);outputs.dedup();
     let mut samples = Vec::new();
     let mut motions = Vec::new();
     let mut material_samples = Vec::new();
@@ -1331,13 +1449,63 @@ fn run(
             let mut pyp = c.decode(unsafe { values(yypp, n) }?, true);
             let mut committed_event = false;
             let mut committed_audit = None;
+            if status!=2 && time>0. && dc::coincident(time,physical_stop) && time<horizon {
+                // Admit the incoming physical branch before a timed command.
+                // If its outgoing branch is refused, retain this actual parent
+                // at the event time, not merely the preceding output plane.
+                // Root projection/admission remains its separate transaction.
+                let (me,eb)=audit(&mut c,accuracy,time,&py,&pyp,initial_mechanical,
+                    root_adjustment,initial_balance,&initial_physical,&network_weights.flow)?;
+                max_mech=max_mech.max(me);max_energy=max_energy.max(eb);
+                admitted_y=py.clone();admitted_yp=pyp.clone();last_admitted=time;
+                admitted_support=c.support.borrow().clone();admitted_mode=c.mode.borrow().clone();
+            }
             // Process root equality before endpoint branch admission, but retain the
             // last admitted transaction if any downstream current chart refuses it.
             if status == 2 || (time > 0. && dc::coincident(time, physical_stop) && time < horizon) {
                 let mut next_mode = c.mode.borrow().clone();
                 let mut next_support = c.support.borrow().clone();
-                let old_support = c.support.borrow().clone();
-                let old_mode = c.mode.borrow().clone();
+                let mut old_support = c.support.borrow().clone();
+                let mut old_mode = c.mode.borrow().clone();
+                if p.release.is_some() && old_support.is_release_event(time) {
+                    // A newly returned solver frame is not a restartable
+                    // parent until its incoming held branch passes admission.
+                    if status==2 {audit(&mut c,accuracy,time,&py,&pyp,initial_mechanical,
+                        root_adjustment,initial_balance,&initial_physical,&network_weights.flow)?;}
+                    pending_release_diagnostic(m,&py,&pyp,&old_mode,&old_support,&c.work,dir,time)?;
+                    // The mandatory support event is also a persistent copy
+                    // boundary. Resume from actual disk-loaded physical stocks,
+                    // modes and finite supplies before the ordinary ReInit.
+                    // No extra trajectory or invented pre-release pose is used.
+                    let began=Instant::now();let path=dir.join("release-parent.bin");
+                    retain(&path,time,&py,&pyp)?;old_support.retain(&path,time)?;retain_mode(&path,&old_mode)?;
+                    let audit_path=dir.join("release-parent.audit.txt");
+                    let metadata=[initial_mechanical,root_adjustment,initial_balance];
+                    let mut file=fs::OpenOptions::new().create_new(true).write(true).open(&audit_path).map_err(|e|e.to_string())?;
+                    file.write_all(numbers(&metadata).as_bytes()).map_err(|e|e.to_string())?;
+                    let actual_metadata=fs::read_to_string(&audit_path).map_err(|e|e.to_string())?;
+                    if actual_metadata!=numbers(&metadata) {return Err("Retained release audit metadata differs".into());}
+                    let (restored_time,yy,pp)=load_physical(&path,n)?;
+                    if restored_time.to_bits()!=time.to_bits() {return Err("Retained release time differs".into());}
+                    if yy.iter().zip(&py).chain(pp.iter().zip(&pyp)).any(|(a,b)|a.to_bits()!=b.to_bits()) {
+                        return Err("Retained release physical stocks or rates differ".into());
+                    }
+                    let mode_path=format!("{}.mode.txt",path.display());
+                    let restored_mode=sm::Mode::restore_words(&fs::read_to_string(mode_path).map_err(|e|e.to_string())?)?;
+                    if restored_mode!=old_mode {return Err("Retained release mechanical mode differs".into());}
+                    old_mode=restored_mode;
+                    let support_path=format!("{}.motion-support.txt",path.display());
+                    let support_text=fs::read_to_string(support_path).map_err(|e|e.to_string())?;
+                    let words=support_text.split_whitespace().map(|v|v.parse::<f64>().map_err(|e|e.to_string())).collect::<Result<Vec<_>,_>>()?;
+                    let restored_support=old_support.restore_words(&words)?;
+                    if restored_support.snapshot_words(time)?!=old_support.snapshot_words(time)? {
+                        return Err("Retained release finite support differs".into());
+                    }
+                    old_support=restored_support;
+                    py=yy;pyp=pp;next_support=old_support.clone();next_mode=old_mode.clone();
+                    *c.mode.borrow_mut()=old_mode.clone();*c.support.borrow_mut()=old_support.clone();
+                    c.retention_seconds+=began.elapsed().as_secs_f64();
+                }
                 let mut next_adjustment = root_adjustment;
                 let mut pending_events = Vec::new();
                 let transaction = (|| -> Result<(f64, f64), String> {
@@ -1365,11 +1533,27 @@ fn run(
                         pending_events.push(format!("{{\"time\":{time},\"velocityEvents\":{},\"contactEvents\":{},\"separationEvents\":{},\"realImpactHeatJ\":{},\"signedRootAdjustmentJ\":{}}}",event.velocity_events,event.contact_events,event.separation_events,finite(event.contact_heat_j),finite(event.mechanical_adjustment_j)));
                     }
                     if dc::coincident(time, physical_stop) {
+                        let releasing=old_support.is_release_event(time);
+                        let before=old_support.prhr_input(time,py[old_support.a.room_row])?;
                         next_support.accept(time)?;
                         let pi = next_support.prhr_input(time, py[next_support.a.room_row])?;
+                        // A real ACT.A load transition changes ROOM.A heat and
+                        // cooling-prefix rates, not just the mechanical suffix.
+                        // Re-establish the complete current rates without
+                        // changing any retained differential stock.
+                        init_required |= pi != before;
                         m.evaluate(&py, &pyp, None, &mut c.work, Some(pi), &next_mode)?;
-                        next_mode =
-                            m.select_mode(&py, &c.work, next_support.motion_input(time)?)?;
+                        if p.release.is_some() {
+                            let cause=if old_support.is_healthy_normal_stop(time,&next_support)? {
+                                cr::SupportCause::NormalStop
+                            } else if old_support.is_healthy_motion_continuity(time,&next_support)? {
+                                cr::SupportCause::HealthyContinuity
+                            } else {cr::SupportCause::FaultOrInvalidatedIntent};
+                            m.support_event(&py,&c.work,&mut next_mode,next_support.motion_input(time)?,
+                                if releasing {Some(p.release.as_ref().unwrap().failed_cluster)}else{None},cause)?;
+                        } else {
+                            next_mode=m.select_mode(&py, &c.work, next_support.motion_input(time)?)?;
+                        }
                         pending_events.push(format!(
                             "{{\"time\":{time},\"commandOrSupport\":true,\"requestedRate\":{}}}",
                             finite(next_mode.input.requested_rate_m_s)
@@ -1540,15 +1724,8 @@ fn run(
                         .zip(&motion)
                         .enumerate()
                     {
-                        let scale = if j >= sm::WIDTH*m.clusters() {
-                            1e-5
-                        } else {
-                            match j % sm::WIDTH {
-                                sm::BODY_Y | sm::STEM_Y | sm::REFERENCE_Y => 1e-7,
-                                sm::BODY_V | sm::STEM_V => 1e-7,
-                                _ => 1e-5,
-                            }
-                        };
+                        let absolute_row=end+j;
+                        let scale = motion_pair_scale(m,absolute_row);
                         let q = (a - bb).abs() / scale;
                         if q > worst.0 {
                             worst = (q, j)
@@ -1563,16 +1740,7 @@ fn run(
                     let row = worst.1;
                     let a = reference.motion[next_output][row];
                     let bb = motion[row];
-                    let bound = if row >= sm::WIDTH*m.clusters() {
-                        1e-5
-                    } else {
-                        match row % sm::WIDTH {
-                            sm::BODY_Y | sm::STEM_Y | sm::REFERENCE_Y | sm::BODY_V | sm::STEM_V => {
-                                1e-7
-                            }
-                            _ => 1e-5,
-                        }
-                    };
+                    let bound=motion_pair_scale(m,end+row);
                     motion_comparisons.push(format!("{{\"time\":{t},\"suffixRow\":{row},\"normal\":{},\"tighter\":{},\"difference\":{},\"bound\":{},\"ratio\":{}}}",finite(a),finite(bb),finite((a-bb).abs()),finite(bound),finite(worst.0)));
                 }
                 let retention_began = Instant::now();
@@ -1637,15 +1805,31 @@ fn run(
         if samples.len() != outputs.len() {
             return Err("Missing common-time trajectory observations".into());
         }
-        if c.mode.borrow().branches.iter().any(|q| {
+        if p.release.is_none() && (c.mode.borrow().branches.iter().any(|q| {
             q.joint != am::JointMode::Contact || q.regulator != am::RegulatorBranch::HoldRest
         }) || (0..m.clusters()).any(|k| {
             admitted_y[m.motion_row(k, sm::BODY_Y)] <= 1e-7
                 || admitted_y[m.motion_row(k, sm::STEM_Y)] <= 1e-7
-        }) {
+        })) {
             return Err("All52 actual motion did not settle in resolved Contact/HoldRest".into());
         }
-        if let Some(reference) = reference {
+        if let Some(release)=&p.release {
+            let mode=c.mode.borrow();let retained=mode.release.as_ref().ok_or("Missing retained release owner")?;
+            let failed=release.failed_cluster;
+            let (parent_time,parent,_)=load_physical(&dir.join("release-parent.bin"),n)?;
+            if parent_time.to_bits()!=release.at.to_bits() {return Err("Release development lacks actual event parent".into());}
+            if retained.armatures[failed]!=leitbild_plant_numerics::control_armature::Mode::StuckLatched
+                || admitted_y[m.release_row(failed,cr::GAP)]!=0.
+                || (0..m.clusters()).filter(|k|*k!=failed).any(|k|
+                    admitted_y[m.release_row(k,cr::GAP)]<=0.
+                    || [sm::BODY_Y,sm::STEM_Y].iter().any(|&field|
+                        admitted_y[m.motion_row(failed,field)]-admitted_y[m.motion_row(k,field)]
+                            <=motion_pair_scale(m,m.motion_row(k,field))
+                        || parent[m.motion_row(k,field)]-admitted_y[m.motion_row(k,field)]
+                            <=motion_pair_scale(m,m.motion_row(k,field))))
+            {return Err("Actual finite release / jammed-detent contrary not developed".into());}
+        }
+        if let Some(reference) = reference.filter(|_|p.release.is_none()) {
             let a=&reference.material.last().ok_or("Missing control material normal sample")?.powers;
             let bb=&material_samples.last().ok_or("Missing control material tighter sample")?.powers;
             for family in 0..2 {
@@ -1739,8 +1923,8 @@ fn run(
 }
 fn execute() -> Result<(), String> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
-    if args.len() != 2 {
-        return Err("Expected wall allowance and NEW artifact directory".into());
+    if args.len() != 2 && args.len()!=3 {
+        return Err("Expected wall allowance, NEW artifact directory and optional authored release file".into());
     }
     let allowance = args[0].parse::<f64>().map_err(|e| e.to_string())?;
     if !allowance.is_finite() || allowance <= 0. || allowance > 180. {
@@ -1752,7 +1936,8 @@ fn execute() -> Result<(), String> {
     io::stdin()
         .read_to_string(&mut text)
         .map_err(|e| e.to_string())?;
-    let p = parse(&text)?;
+    let release_text=args.get(2).map(fs::read_to_string).transpose().map_err(|e|e.to_string())?;
+    let p = parse_with_release(&text,release_text.as_deref())?;
     let input = p.a.input(0., 0.)?;
     let accuracy = cooling_accuracy::Accuracy::new(&p.model.cooling, &p.emissions, Some(input))?;
     fs::create_dir(directory.join("normal")).map_err(|e| e.to_string())?;
@@ -1775,14 +1960,16 @@ fn execute() -> Result<(), String> {
         &directory.join("tighter"),
         Some(&normal),
     )?;
-    if (0..p.model.clusters()).any(|k| {
+    if p.release.is_none() && (0..p.model.clusters()).any(|k| {
         normal.final_y[p.model.motion_row(k, sm::BODY_Y)] <= 20. * p.case.position
             || normal.final_y[p.model.motion_row(k, sm::STEM_Y)] <= 20. * p.case.position
     }) {
         return Err("Actual all-cluster motion not developed".into());
     }
     println!(
-        "{{\"status\":\"PASS\",\"scope\":\"cold-all52-accepted-motion-full98-SOURCE-water-thermal-single-clock\",\"trajectoryAdmitted\":true,\"liveModelInstalled\":false,\"unknowns\":{},\"waterOwners\":{},\"clusters\":{},\"controlSteelHosts\":{},\"controlSteelRoutes\":{},\"controlPaidRows\":[{}],\"elapsedS\":{},\"normal\":{},\"tighter\":{}}}",
+        "{{\"status\":\"PASS\",\"scope\":{},\"trajectoryAdmitted\":true,\"liveModelInstalled\":false,\"unknowns\":{},\"waterOwners\":{},\"clusters\":{},\"controlSteelHosts\":{},\"controlSteelRoutes\":{},\"controlPaidRows\":[{}],\"elapsedS\":{},\"normal\":{},\"tighter\":{}}}",
+        quote(if p.release.is_some(){"cold-paid-lift-finite-release-jammed-detent-bounded-prefix-not-whole-insertion"}
+            else{"cold-all52-accepted-motion-full98-SOURCE-water-thermal-single-clock"}),
         p.model.dimension(),
         p.model.cooling.carrier.cells(),
         p.model.clusters(),
@@ -1794,6 +1981,171 @@ fn execute() -> Result<(), String> {
         tighter.summary
     );
     Ok(())
+}
+
+#[cfg(test)]
+#[test]
+#[ignore="explicit refused release frame diagnostic; no stock mutation or advancement"]
+fn refused_release_current_event_diagnosis() {
+    let text=fs::read_to_string(std::env::var("LEITBILD_MOTION_INPUT").unwrap()).unwrap();
+    let release=fs::read_to_string(std::env::var("LEITBILD_RELEASE_INPUT").unwrap()).unwrap();
+    let p=parse_with_release(&text,Some(&release)).unwrap();let m=&p.model;
+    let (t,y,yp)=load_physical(Path::new(&std::env::var("LEITBILD_REFUSED_FRAME").unwrap()),m.dimension()).unwrap();
+    let mode_text=fs::read_to_string(std::env::var("LEITBILD_ADMITTED_MODE").unwrap()).unwrap();
+    let mode=sm::Mode::restore_words(&mode_text).unwrap();
+    // Diagnostic reconstruction of the actual RATE→HOLD branch from unchanged
+    // returned stocks. This is NOT an admitted parent or a continued trajectory.
+    let mut s=motion_support::Support::new(p.a.clone(),p.b.clone(),p.holding,p.motive,p.base_b,p.rate,p.case.burst).unwrap();
+    s.enable_release_at(p.release.as_ref().unwrap().at).unwrap();
+    let words=fs::read_to_string(std::env::var("LEITBILD_ADMITTED_SUPPORT").unwrap()).unwrap()
+        .split_whitespace().map(|q|q.parse::<f64>().unwrap()).collect::<Vec<_>>();
+    let s=s.restore_words(&words).unwrap();
+    let pi=s.prhr_input(t,y[s.a.room_row]).unwrap();let mut w=m.workspace();
+    m.evaluate(&y,&yp,None,&mut w,Some(pi),&mode).unwrap();
+    let before=m.release_stage(&y,&w).unwrap().0[0].wet_margin(w.responses[0].stem_acceleration_m_s2).unwrap();
+    let mut request=mode.input;request.requested_rate_m_s=0.;request.motive_power_w=0.;
+    let mode=m.select_mode(&y,&w,request).unwrap();
+    m.evaluate(&y,&yp,None,&mut w,Some(pi),&mode).unwrap();
+    let (neck,broad)=m.release_stage(&y,&w).unwrap();
+    let r=w.responses[0];let wet=neck[0].wet_margin(r.stem_acceleration_m_s2).unwrap();
+    println!("{{\"time\":{t},\"scope\":\"refused returned stock diagnostic; no advancement\",\"bodyPosition\":{},\"stemPosition\":{},\"stemSpeed\":{},\"bodyAcceleration\":{},\"stemAcceleration\":{},\"addedMass\":{},\"bodyForce\":{},\"stemForce\":{},\"gripForce\":{},\"wetMarginPa\":{},\"wetLocation\":{},\"broadBodyForce\":{}}}",
+        finite(y[m.motion_row(0,sm::BODY_Y)]),finite(y[m.motion_row(0,sm::STEM_Y)]),finite(y[m.motion_row(0,sm::STEM_V)]),
+        finite(r.body_acceleration_m_s2),finite(r.stem_acceleration_m_s2),finite(neck[0].added_mass_kg),
+        finite(w.forces[0].body_n),finite(w.forces[0].stem_n),finite(r.grip_force_n),finite(wet.margin_pa),quote(&format!("{:?}",wet.location)),finite(broad[0].body_force_n));
+    println!("admission={:?}",m.validate_accepted(&y,&w));
+    println!("before_wet_margin_pa={:e}; selected_branch={:?}",before.margin_pa,mode.branches[0]);
+    assert!(before.margin_pa>0. && wet.margin_pa<0.);
+    assert_eq!(mode.branches[0].regulator,am::RegulatorBranch::HoldPositive);
+    assert_eq!(mode.branches[0].joint,am::JointMode::Separated);
+    assert!(m.validate_accepted(&y,&w).is_err());
+}
+
+#[cfg(test)]
+#[test]
+#[ignore="explicit actual retained release stages; exact mechanical P/action comparison, no advancement"]
+fn retained_release_mechanical_preconditioner_work_proof() {
+    let text=fs::read_to_string(std::env::var("LEITBILD_MOTION_INPUT").unwrap()).unwrap();
+    let release=fs::read_to_string(std::env::var("LEITBILD_RELEASE_INPUT").unwrap()).unwrap();
+    let p=parse_with_release(&text,Some(&release)).unwrap();let m=&p.model;
+    let arm=PathBuf::from(std::env::var("LEITBILD_RELEASE_RETAINED_ARM").unwrap());
+    let target=PathBuf::from(std::env::var("LEITBILD_RELEASE_PROOF_OUTPUT").unwrap());
+    fs::create_dir(&target).unwrap();
+    let mut support=motion_support::Support::new(p.a.clone(),p.b.clone(),p.holding,p.motive,p.base_b,p.rate,p.case.burst).unwrap();
+    support.enable_release_at(p.release.as_ref().unwrap().at).unwrap();
+    for name in ["common-0.bin","release-parent.bin","terminal-admitted.bin"] {
+        let path=arm.join(name);let (t,y,yp)=load_physical(&path,m.dimension()).unwrap();
+        let mode=sm::Mode::restore_words(&fs::read_to_string(format!("{}.mode.txt",path.display())).unwrap()).unwrap();
+        let words=fs::read_to_string(format!("{}.motion-support.txt",path.display())).unwrap()
+            .split_whitespace().map(|q|q.parse::<f64>().unwrap()).collect::<Vec<_>>();
+        let support=support.restore_words(&words).unwrap();
+        let input=support.prhr_input(t,y[support.a.room_row]).unwrap();
+        let mut w=m.workspace();m.evaluate(&y,&yp,Some(1000.),&mut w,Some(input),&mode).unwrap();
+        let mut proof=Vec::new();
+        m.visit_mechanical_jacobian(&w,1000.,|r,c,v| {
+            proof.extend_from_slice(&(r as u64).to_le_bytes());
+            proof.extend_from_slice(&(c as u64).to_le_bytes());
+            proof.extend_from_slice(&v.to_le_bytes());
+        }).unwrap();
+        let mut preconditioner=sm::MechanicalPreconditioner::new(m);
+        let began=Instant::now();
+        for _ in 0..10 {preconditioner.setup(m,&w,1000.).unwrap();}
+        let seconds=began.elapsed().as_secs_f64();
+        let rhs=(0..m.dimension()-m.layout.cooling_end).map(|i|((i%7) as f64-3.)*1e-8).collect::<Vec<_>>();
+        let mut solution=vec![0.;rhs.len()];preconditioner.solve(&rhs,&mut solution).unwrap();
+        for v in solution {proof.extend_from_slice(&v.to_le_bytes());}
+        let direction=(0..m.dimension()).map(|i|((i%7) as f64-3.)*1e-8).collect::<Vec<_>>();
+        m.jvp(&direction,1000.,&mut w).unwrap();
+        for v in &w.jvp {proof.extend_from_slice(&v.to_le_bytes());}
+        for v in [w.complete_energy_rate_jvp().unwrap(),w.thermal_work_energy_rate_jvp().unwrap()] {
+            proof.extend_from_slice(&v.to_le_bytes());
+        }
+        let file=target.join(name);let mut out=fs::OpenOptions::new().write(true).create_new(true).open(file).unwrap();
+        out.write_all(&proof).unwrap();out.sync_all().unwrap();
+        println!("{{\"frame\":{},\"time\":{},\"bytes\":{},\"tenMechanicalPSetupsSeconds\":{seconds}}}",quote(name),finite(t),proof.len());
+    }
+}
+
+#[cfg(test)]
+#[test]
+#[ignore="explicit returned physical frame; normal/fault/continuity/zero-speed transactions, no advancement"]
+fn actual_release_frame_normal_coast_and_fault_transactions() {
+    let text=fs::read_to_string(std::env::var("LEITBILD_MOTION_INPUT").unwrap()).unwrap();
+    let release=fs::read_to_string(std::env::var("LEITBILD_RELEASE_INPUT").unwrap()).unwrap();
+    let p=parse_with_release(&text,Some(&release)).unwrap();let m=&p.model;
+    let (_,y,yp)=load_physical(Path::new(&std::env::var("LEITBILD_REFUSED_FRAME").unwrap()),m.dimension()).unwrap();
+    let mode=sm::Mode::restore_words(&fs::read_to_string(std::env::var("LEITBILD_ADMITTED_MODE").unwrap()).unwrap()).unwrap();
+    let density=mode.release.as_ref().unwrap().initial_density;
+    let support=motion_support::Support::new(p.a.clone(),p.b.clone(),p.holding,p.motive,p.base_b,p.rate,p.case.burst).unwrap();
+    let input=support.prhr_input(0.,y[support.a.room_row]).unwrap();let mut w=m.workspace();
+    m.evaluate(&y,&yp,None,&mut w,Some(input),&mode).unwrap();
+    let stop=sm::Input{requested_rate_m_s:0.,motive_power_w:0.,holding_power_w:mode.input.holding_power_w};
+    let mut coast=mode.clone();
+    m.support_event(&y,&w,&mut coast,stop,None,cr::SupportCause::NormalStop).unwrap();
+    assert!(coast.branches.iter().all(|b|b.regulator==am::RegulatorBranch::CoastPositive));
+    m.evaluate(&y,&yp,None,&mut w,Some(input),&coast).unwrap();
+    m.validate_accepted(&y,&w).unwrap();
+    assert!(w.responses.iter().all(|r|r.grip_force_n==0. && r.motive_mechanical_w==0. && r.slip_to_jack_w==0.));
+    let mut continued=coast.clone();
+    m.support_event(&y,&w,&mut continued,stop,None,cr::SupportCause::HealthyContinuity).unwrap();
+    assert_eq!(continued,coast);
+    let persisted=sm::Mode::restore_words(&coast.snapshot_words().unwrap()).unwrap();
+    assert_eq!(persisted,coast);assert_eq!(persisted.release.as_ref().unwrap().initial_density,density);
+    let mut fault=coast.clone();
+    m.support_event(&y,&w,&mut fault,stop,None,cr::SupportCause::FaultOrInvalidatedIntent).unwrap();
+    assert!(fault.branches.iter().all(|b|b.regulator==am::RegulatorBranch::HoldPositive));
+    // A true STEM zero root does not silently stop the separately moving BODY.
+    let mut yy=y.clone();yy[m.motion_row(0,sm::STEM_V)]=0.;
+    let before_body_v=yy[m.motion_row(0,sm::BODY_V)];
+    m.evaluate(&yy,&yp,None,&mut w,Some(input),&coast).unwrap();
+    let mut roots=vec![0;m.root_count()];roots[0]=1;
+    let report=m.accept_roots(&mut yy,&w,&mut coast,&roots,
+        sm::RootAccuracy{position_m:1e-9,velocity_m_s:1e-9}).unwrap();
+    assert_eq!(report.velocity_events,1);
+    assert_eq!(coast.branches[0].regulator,am::RegulatorBranch::HoldRest);
+    assert_eq!(yy[m.motion_row(0,sm::STEM_V)],0.);
+    assert_eq!(yy[m.motion_row(0,sm::BODY_V)].to_bits(),before_body_v.to_bits());
+    assert_eq!(coast.release.as_ref().unwrap().initial_density,density);
+}
+
+#[cfg(test)]
+#[test]
+#[ignore="explicit authored release frame; complete fixed-stage construction/JVP, no advancement"]
+fn actual_release_frame_current_owner_and_dimensional_rows() {
+    let text=fs::read_to_string(std::env::var("LEITBILD_MOTION_INPUT").unwrap()).unwrap();
+    let release=fs::read_to_string(std::env::var("LEITBILD_RELEASE_INPUT").unwrap()).unwrap();
+    let p=parse_with_release(&text,Some(&release)).unwrap();let m=&p.model;
+    assert_eq!(m.dimension(),76074);assert_eq!(m.root_count(),416);
+    let support=motion_support::Support::new(p.a.clone(),p.b.clone(),p.holding,p.motive,p.base_b,p.rate,p.case.burst).unwrap();
+    let mut mode=sm::Mode::new(support.motion_input(0.).unwrap(),m.clusters()).unwrap();
+    mode.enable_cold_release().unwrap();
+    let input=support.prhr_input(0.,0.).unwrap();let y=m.initial_state(Some(input)).unwrap();
+    let yp=vec![0.;m.dimension()];let mut w=m.workspace();
+    m.evaluate(&y,&yp,Some(1.),&mut w,Some(input),&mode).unwrap();
+    let mut d=vec![0.;m.dimension()];
+    for k in 0..m.clusters() {
+        for field in 0..cr::WIDTH {
+            let r=m.release_row(k,field);d[r]=1e-8;
+            assert!(m.is_differential(r));
+            assert_eq!(motion_pair_scale(m,r),if field<2 {1e-7}else{1e-5});
+        }
+    }
+    m.jvp(&d,1.,&mut w).unwrap();assert!(w.jvp.iter().all(|v|v.is_finite()));
+    let mode_record=mode.snapshot_words().unwrap();assert_eq!(sm::Mode::restore_words(&mode_record).unwrap(),mode);
+    assert!(m.extended_mechanical_energy_j(&y,&mode).unwrap().is_finite());
+    // Full consumed transaction, not merely a precedence-helper test: an
+    // opening armature's physical stop dominates its obsolete speed equality.
+    let mut yy=y.clone();let mut mm=mode.clone();
+    mm.input=sm::Input{requested_rate_m_s:0.,motive_power_w:0.,holding_power_w:0.};
+    for branch in &mut mm.branches {branch.regulator=am::RegulatorBranch::HoldRest;}
+    mm.release.as_mut().unwrap().initial_density=Some(w.cooling.network.liquids[m.hydraulics.upper].density);
+    mm.release.as_mut().unwrap().armatures[0]=leitbild_plant_numerics::control_armature::Mode::Opening;
+    mm.branches[0].regulator=am::RegulatorBranch::HoldNegative;
+    yy[m.release_row(0,cr::GAP)]=m.configs()[0].gap_stroke_m;
+    m.evaluate(&yy,&yp,None,&mut w,Some(input),&mm).unwrap();
+    let mut roots=vec![0;m.root_count()];roots[0]=1;roots[4*m.clusters()+1]=1;
+    m.accept_roots(&mut yy,&w,&mut mm,&roots,sm::RootAccuracy{position_m:1e-9,velocity_m_s:1e-9}).unwrap();
+    assert_eq!(mm.release.as_ref().unwrap().armatures[0],leitbild_plant_numerics::control_armature::Mode::Open);
+    assert_eq!(mm.branches[0].regulator,am::RegulatorBranch::Open);
 }
 
 #[cfg(test)]

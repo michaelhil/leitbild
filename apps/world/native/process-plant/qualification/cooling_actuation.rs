@@ -74,6 +74,8 @@ pub struct Schedule {
     /// A restored copy cannot query the past even when its exact affine anchor
     /// predates the checkpoint. Anchors themselves are retained, not rounded.
     retained_time: f64,
+    bank_partition_w: f64,
+    bank_holding_connected: bool,
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct Point {
@@ -170,6 +172,8 @@ impl Schedule {
             prhr_delivered_j: 0.,
             other_delivered_j: 0.,
             retained_time: 0.,
+            bank_partition_w:0.,
+            bank_holding_connected:true,
         };
         {
             s.settle(0., None)?;
@@ -182,6 +186,26 @@ impl Schedule {
 
     pub fn other_requested_w(&self) -> f64 {
         self.plan.config.normal_group_w - self.motion.snapshot().config.hold_power_w
+            -if self.bank_holding_connected {0.} else {self.bank_partition_w}
+    }
+    pub fn authorize_bank_partition(&mut self,holding_w:f64)->Result<(),String> {
+        if self.bank_partition_w!=0. || !holding_w.is_finite() || holding_w<=0.
+            || holding_w>self.other_requested_w() || self.supply.snapshot().state.time_s!=0.
+        {return Err("Invalid actual BANK.HOLD partition of ACT.A".into());}
+        self.bank_partition_w=holding_w;Ok(())
+    }
+    /// One accepted consumer-load transaction, retaining A energy, receipts,
+    /// PRHR mechanism and its existing demand. No command is replayed.
+    pub fn bank_holding_event(&mut self,time:f64,connected:bool)->Result<(),String> {
+        if self.bank_partition_w<=0. || self.bank_holding_connected==connected {
+            return Err("Inactive BANK.HOLD load transaction".into());
+        }
+        let mut next=self.clone();let before=next.point(time)?;
+        next.prhr_delivered_j=before.prhr_j;next.other_delivered_j=before.other_j;
+        next.bank_holding_connected=connected;
+        let request=next.other_requested_w()+next.motion.requested_power_w(time)?;
+        next.supply.transition(time,next.supply.paths(),request,&[])?;
+        next.settle(time,None)?;next.retained_time=time;*self=next;Ok(())
     }
     pub fn supply_snapshot(&self) -> dc::Snapshot {
         self.supply.snapshot()
@@ -199,9 +223,8 @@ impl Schedule {
         self.inputs.support = self.support();
         self.motion.transition(time, command, self.inputs)?;
         {
+            let other=self.other_requested_w();
             let s = &mut self.supply;
-            let other =
-                self.plan.config.normal_group_w - self.motion.snapshot().config.hold_power_w;
             let request = other + self.motion.requested_power_w(time)?;
             s.transition(time, s.paths(), request, &[])?;
             let support = self.support();
@@ -520,6 +543,16 @@ impl Schedule {
             initial_opening: w[32],
             initial_room_temperature_k: w[33],
         };
+        // The optional bank partition is fixed by the connected caller. Its
+        // actual disconnected state is carried by the retained finite demand.
+        let connected_request=out.plan.config.normal_group_w-c.hold_power_w
+            +pa::Motion::restore(pa::MotionSnapshot {config:c,anchor_s:w[13],anchor_opening:w[14],
+                initial_spring_energy_j:w[15],holding:boolean(16)?,closing:boolean(17)?,
+                inputs:pa::Inputs {support:pa::Support {hold_supported:boolean(18)?,closing_supported:boolean(19)?},
+                    blocked:boolean(20)?,ambient_temperature_k:w[21]}})?.requested_power_w(w[1])?;
+        out.bank_holding_connected=if ds.requested_w==connected_request {true}
+            else if out.bank_partition_w>0. && ds.requested_w==connected_request-out.bank_partition_w {false}
+            else {return Err("Retained ACT.A demand changed its authorized bank partition".into());};
         if c != original.config
             || w[15] != original.initial_spring_energy_j
             || ds.original_energy_j != out.plan.initial_energy_j
@@ -835,6 +868,8 @@ mod tests {
             prhr_delivered_j: 0.,
             other_delivered_j: 0.,
             retained_time: 0.,
+            bank_partition_w:0.,
+            bank_holding_connected:true,
         }
     }
     fn to(s: &mut Schedule, time: f64) {

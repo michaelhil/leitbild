@@ -6,6 +6,7 @@
 use crate::{
     GRAVITY, absorber_motion as am, control_motion_forces as cf, control_source_geometry as cg,
     operating_network as on, source_cooling as sc, control_material_heat as cm,
+    control_release as cr, control_armature as ca, control_release_hydraulics as rh,
 };
 use std::sync::Arc;
 
@@ -156,6 +157,59 @@ mod tests {
         assert!(malformed.snapshot_words().is_err());
     }
     #[test]
+    fn connected_release_mode_persists_density_and_zero_power_without_rearming() {
+        let mut mode=Mode::new(Input {requested_rate_m_s:0.,motive_power_w:0.,holding_power_w:20.},2).unwrap();
+        mode.enable_cold_release().unwrap();let release=mode.release.as_mut().unwrap();
+        release.initial_density=Some(997.123456789);release.armatures[0]=ca::Mode::Opening;
+        release.armatures[1]=ca::Mode::StuckLatched;
+        mode.input.holding_power_w=0.;let text=mode.snapshot_words().unwrap();
+        assert_eq!(mode,Mode::restore_words(&text).unwrap());
+        mode.input=Input {requested_rate_m_s:0.008,motive_power_w:1000.,holding_power_w:0.};
+        assert!(mode.snapshot_words().is_err());
+        mode.input.holding_power_w=20.;assert!(mode.snapshot_words().is_err());
+        mode.input.requested_rate_m_s=0.;mode.input.motive_power_w=0.;
+        assert_eq!(mode.release.as_ref().unwrap().armatures[0],ca::Mode::Opening);
+        assert!(mode.snapshot_words().is_ok());assert!(mode.enable_cold_release().is_err());
+    }
+    #[test]
+    fn coast_checkpoint_is_explicit_supported_closed_grip_and_cannot_appear_in_ordinary_history() {
+        let mut mode=Mode::new(Input {requested_rate_m_s:0.,motive_power_w:0.,holding_power_w:20.},1).unwrap();
+        mode.branches[0].regulator=am::RegulatorBranch::CoastPositive;
+        assert!(mode.snapshot_words().is_err());
+        mode.enable_cold_release().unwrap();mode.release.as_mut().unwrap().initial_density=Some(997.);
+        let record=mode.snapshot_words().unwrap();assert!(record.contains("coast-positive"));
+        assert_eq!(Mode::restore_words(&record).unwrap(),mode);
+        mode.branches[0].regulator=am::RegulatorBranch::CoastNegative;
+        assert_eq!(Mode::restore_words(&mode.snapshot_words().unwrap()).unwrap(),mode);
+        mode.input.holding_power_w=0.;assert!(mode.snapshot_words().is_err());
+        mode.input.holding_power_w=20.;mode.release.as_mut().unwrap().armatures[0]=ca::Mode::Opening;
+        assert!(mode.snapshot_words().is_err());
+    }
+    #[test]
+    fn coincident_stops_consume_only_active_incoming_graph_roots() {
+        let incoming=am::TrialBranch {regulator:am::RegulatorBranch::HoldNegative,joint:am::JointMode::Contact};
+        // A BODY fitting stop makes the old contact-force equality obsolete;
+        // it is still a valid incoming flag and must not refuse the stop.
+        assert_eq!(mechanical_event_actions(incoming,&[0,0,-1],true,false,false).unwrap(),[false,false,false]);
+        // Opening and collar stops dominate a coincident old speed equality.
+        assert_eq!(mechanical_event_actions(incoming,&[1,0,0],false,false,true).unwrap(),[false,false,false]);
+        assert_eq!(mechanical_event_actions(incoming,&[-1,0,0],false,true,false).unwrap(),[false,false,false]);
+        assert_eq!(mechanical_event_actions(incoming,&[1,0,-1],false,false,false).unwrap(),[true,false,true]);
+        // Stop dominance does not excuse an inactive or fabricated flag.
+        assert!(mechanical_event_actions(incoming,&[0,-1,0],true,false,false).is_err());
+        let open=am::TrialBranch {regulator:am::RegulatorBranch::Open,joint:am::JointMode::Separated};
+        assert!(mechanical_event_actions(open,&[1,0,0],false,true,true).is_err());
+        assert!(mechanical_event_actions(open,&[0,0,-1],true,true,false).is_err());
+    }
+    #[test]
+    fn unilateral_bayonet_equality_does_not_capture_separating_or_grazing_motion() {
+        assert!(bayonet_is_closing(-0.2,-0.1,0.,0.));
+        assert!(!bayonet_is_closing(-0.1,-0.2,-100.,100.));
+        assert!(bayonet_is_closing(0.,0.,-2.,-1.));
+        assert!(!bayonet_is_closing(0.,0.,-1.,-2.));
+        assert!(!bayonet_is_closing(0.,0.,-1.,-1.));
+    }
+    #[test]
     fn branch_independent_relative_chart_round_trips_and_preserves_other_owners() {
         let layout = Layout {
             cooling_end: 17,
@@ -301,6 +355,7 @@ mod tests {
             scratch: vec![0.; WIDTH + 1],
             valid: true,
             owner: Arc::new(()),
+            armature_blocks:Vec::new(),
         };
         for relative in [0., 0.017] {
             let rhs = vec![
@@ -348,6 +403,7 @@ mod tests {
                 scratch: vec![0.; WIDTH + 1],
                 valid: false,
                 owner: Arc::new(()),
+                armature_blocks:Vec::new(),
             };
             p.factor().unwrap();
             let mut rhs = vec![0.; WIDTH + 1];
@@ -414,6 +470,7 @@ mod tests {
                 scratch: vec![0.; WIDTH + 1],
                 valid: false,
                 owner: Arc::new(()),
+                armature_blocks:Vec::new(),
             };
             p.factor().unwrap();
             for rhs in [
@@ -474,6 +531,7 @@ mod tests {
                 scratch: vec![0.; WIDTH + 1],
                 valid: false,
                 owner: Arc::new(()),
+                armature_blocks:Vec::new(),
             };
             assert!(p.factor().unwrap_err().contains("unowned reference/caloric feedback"));
             assert!(!p.valid);
@@ -491,6 +549,7 @@ pub struct Mode {
     pub input: Input,
     pub branches: Vec<am::TrialBranch>,
     pub geometry: Vec<GeometryBranch>,
+    pub release: Option<cr::Mode>,
 }
 impl Mode {
     pub fn new(input: Input, clusters: usize) -> Result<Self, String> {
@@ -507,6 +566,7 @@ impl Mode {
         };
         Ok(Self {
             input,
+            release: None,
             branches: vec![
                 am::TrialBranch {
                     regulator,
@@ -529,7 +589,7 @@ impl Mode {
     /// Complete discrete continuation paired with the caller's retained
     /// physical state/support checkpoint. The record owns no second clock.
     pub fn snapshot_words(&self) -> Result<String, String> {
-        validate_input(self.input)?;
+        validate_mode_input(self)?;
         if self.branches.is_empty() || self.branches.len() != self.geometry.len() {
             return Err("Invalid retained mechanical mode shape".into());
         }
@@ -548,6 +608,8 @@ impl Mode {
                 am::RegulatorBranch::HoldPositive => "hold-positive",
                 am::RegulatorBranch::HoldNegative => "hold-negative",
                 am::RegulatorBranch::HoldRest => "hold-rest",
+                am::RegulatorBranch::CoastPositive => "coast-positive",
+                am::RegulatorBranch::CoastNegative => "coast-negative",
                 am::RegulatorBranch::Open => "open",
             };
             let joint = match b.joint {
@@ -561,6 +623,7 @@ impl Mode {
                 u8::from(g.seated)
             ));
         }
+        if let Some(release)=&self.release {out.push_str(&release.snapshot_words()?);}
         Ok(out)
     }
     pub fn restore_words(record: &str) -> Result<Self, String> {
@@ -575,7 +638,7 @@ impl Mode {
             .checked_mul(5)
             .and_then(|n| n.checked_add(5))
             .ok_or("Retained mechanical mode size overflow")?;
-        if count == 0 || words.len() != expected {
+        if count == 0 || words.len() < expected {
             return Err("Wrong retained mechanical mode field count".into());
         }
         let number = |word: &str| {
@@ -587,7 +650,8 @@ impl Mode {
             motive_power_w: number(words[3])?,
             holding_power_w: number(words[4])?,
         };
-        validate_input(input)?;
+        let release=if words.len()==expected {None} else {
+            Some(cr::Mode::restore_words(&words[expected..],count)?)};
         let boolean = |word: &str| match word {
             "0" => Ok(false),
             "1" => Ok(true),
@@ -595,7 +659,7 @@ impl Mode {
         };
         let mut branches = Vec::with_capacity(count);
         let mut geometry = Vec::with_capacity(count);
-        for row in words[5..].chunks_exact(5) {
+        for row in words[5..expected].chunks_exact(5) {
             let regulator = match row[0] {
                 "approach-positive" => am::RegulatorBranch::ApproachPositive,
                 "approach-negative" => am::RegulatorBranch::ApproachNegative,
@@ -603,6 +667,8 @@ impl Mode {
                 "hold-positive" => am::RegulatorBranch::HoldPositive,
                 "hold-negative" => am::RegulatorBranch::HoldNegative,
                 "hold-rest" => am::RegulatorBranch::HoldRest,
+                "coast-positive" => am::RegulatorBranch::CoastPositive,
+                "coast-negative" => am::RegulatorBranch::CoastNegative,
                 "open" => am::RegulatorBranch::Open,
                 _ => return Err("Invalid retained mechanical regulator branch".into()),
             };
@@ -618,11 +684,39 @@ impl Mode {
                 seated: boolean(row[4])?,
             });
         }
-        Ok(Self {
+        let mode=Self {
             input,
             branches,
             geometry,
-        })
+            release,
+        };
+        validate_mode_input(&mode)?;Ok(mode)
+    }
+    pub fn enable_cold_release(&mut self)->Result<(),String> {
+        if self.release.is_some() {return Err("Cold release mode is already installed".into());}
+        self.release=Some(cr::Mode::new(self.branches.len())?);Ok(())
+    }
+}
+fn validate_mode_input(mode:&Mode)->Result<(),String> {
+    if let Some(release)=&mode.release {
+        release.validate(mode.branches.len())?;
+        let i=mode.input;
+        if [i.requested_rate_m_s,i.motive_power_w,i.holding_power_w].iter().any(|v|!v.is_finite())
+            || i.motive_power_w<0. || i.holding_power_w<0.
+            || (i.requested_rate_m_s==0. && i.motive_power_w!=0.)
+            || (i.requested_rate_m_s!=0. && (i.motive_power_w==0. || i.holding_power_w==0.
+                || release.armatures.iter().any(|m|*m!=ca::Mode::Latched)))
+        {return Err("Cold release lacks actual delivered drive/HOLD selection".into());}
+        if mode.branches.iter().enumerate().any(|(k,b)|matches!(b.regulator,
+            am::RegulatorBranch::CoastPositive|am::RegulatorBranch::CoastNegative)
+            && (i.requested_rate_m_s!=0. || i.motive_power_w!=0. || i.holding_power_w<=0.
+                || release.armatures[k]!=ca::Mode::Latched || release.stem_stopped[k]))
+        {return Err("Retained normal coast lacks actual supported closed-grip ownership".into());}
+        Ok(())
+    } else {
+        if mode.branches.iter().any(|b|matches!(b.regulator,am::RegulatorBranch::CoastPositive|am::RegulatorBranch::CoastNegative))
+        {return Err("Ordinary historical apparatus has no normal coast selection".into());}
+        validate_input(mode.input)
     }
 }
 fn validate_input(i: Input) -> Result<(), String> {
@@ -639,7 +733,7 @@ fn validate_input(i: Input) -> Result<(), String> {
     Ok(())
 }
 fn same_mode_bits(a:&Mode,b:&Mode)->bool {
-    a.branches==b.branches && a.geometry==b.geometry
+    a.branches==b.branches && a.geometry==b.geometry && a.release==b.release
         && a.input.requested_rate_m_s.to_bits()==b.input.requested_rate_m_s.to_bits()
         && a.input.motive_power_w.to_bits()==b.input.motive_power_w.to_bits()
         && a.input.holding_power_w.to_bits()==b.input.holding_power_w.to_bits()
@@ -722,11 +816,40 @@ pub struct EventReport {
     pub maximum_velocity_adjustment_m_s: f64,
     pub needs_fluid_initialization: bool,
 }
+/// Root activation belongs to the retained incoming graph. A coincident
+/// physical stop consumes the old equality flag without replaying that old
+/// graph over the stop's new constraint.
+fn mechanical_event_actions(
+    incoming: am::TrialBranch,
+    roots: &[i32],
+    body_stop: bool,
+    stem_stop: bool,
+    armature_open: bool,
+) -> Result<[bool; 3], String> {
+    if roots[0] != 0 && !matches!(incoming.regulator,
+        am::RegulatorBranch::ApproachPositive | am::RegulatorBranch::ApproachNegative
+        | am::RegulatorBranch::HoldPositive | am::RegulatorBranch::HoldNegative
+        | am::RegulatorBranch::CoastPositive | am::RegulatorBranch::CoastNegative)
+    { return Err("Inactive connected speed root".into()); }
+    if roots[1] != 0 && incoming.joint != am::JointMode::Separated
+    { return Err("Inactive connected contact root".into()); }
+    if roots[2] != 0 && incoming.joint != am::JointMode::Contact
+    { return Err("Inactive connected separation root".into()); }
+    Ok([
+        roots[0] != 0 && !stem_stop && !armature_open,
+        roots[1] != 0 && !body_stop && !stem_stop,
+        roots[2] != 0 && !body_stop && !stem_stop,
+    ])
+}
+fn bayonet_is_closing(body_v:f64,stem_v:f64,body_a:f64,stem_a:f64) -> bool {
+    body_v < stem_v || (body_v == stem_v && body_a < stem_a)
+}
 pub struct Model {
     pub cooling: sc::Model,
     pub geometry: cg::Prepared,
     pub hydraulics: cf::Plan,
     pub control_material: cm::Model,
+    pub release: Option<cr::Model>,
     config: Vec<am::Config>,
     pub layout: Layout,
     owner: Arc<()>,
@@ -764,6 +887,9 @@ pub struct Workspace {
     thermal_work_tangent: Option<f64>,
     pub full_evaluations:u64,
     pub reused_evaluations:u64,
+    release_hydraulics: Vec<rh::Prepared>,
+    release_broad: Vec<rh::BroadPrepared>,
+    armatures: Vec<ca::Response>,
 }
 /// Root interpolation prepares only actual geometry, fluid properties and
 /// traction. Its separate owned workspace cannot replace an implicit stage's
@@ -778,7 +904,10 @@ pub struct RootWorkspace {
     velocity: Vec<cg::Direction>,
     zero: Vec<cg::Direction>,
     responses: Vec<am::Response>,
+    forces: Vec<am::Forces>,
     owner: Arc<()>,
+    release_hydraulics: Vec<rh::Prepared>,
+    release_broad: Vec<rh::BroadPrepared>,
 }
 /// Held-fluid component blocks with their physical triangular ownership:
 /// four finite body/stem coordinates, then the massless reference and three
@@ -794,6 +923,7 @@ pub struct MechanicalPreconditioner {
     scratch: Vec<f64>,
     valid: bool,
     owner: Arc<()>,
+    armature_blocks: Vec<[[f64;2];2]>,
 }
 impl MechanicalPreconditioner {
     pub fn new(model: &Model) -> Self {
@@ -806,6 +936,7 @@ impl MechanicalPreconditioner {
             scratch: vec![0.; model.dimension() - model.layout.cooling_end],
             valid: false,
             owner: model.owner.clone(),
+            armature_blocks:Vec::new(),
         }
     }
     pub fn setup(&mut self, model: &Model, w: &Workspace, cj: f64) -> Result<(), String> {
@@ -820,6 +951,15 @@ impl MechanicalPreconditioner {
         self.blocks.fill([[0.; WIDTH]; WIDTH]);
         self.work_row.fill(0.);
         self.work_diagonal = 0.;
+        self.armature_blocks.clear();
+        if let (Some(release),Some(mode))=(&model.release,&w.mode.as_ref().ok_or("Missing mechanical P mode")?.release) {
+            let a=release.input.armature;
+            for branch in &mode.armatures {
+                self.armature_blocks.push(if *branch==ca::Mode::Opening {
+                    [[cj,-1.],[a.spring_n_m/a.mass_kg,cj+a.damping_n_s_m/a.mass_kg]]
+                } else {[[cj,0.],[0.,cj]]});
+            }
+        }
         for (c, b) in self
             .contact
             .iter_mut()
@@ -935,6 +1075,14 @@ impl MechanicalPreconditioner {
         // Their physical source/geometry feedback remains in the complete JVP.
         for row in end + 1..out.len() {
             out[row] = rhs[row] / self.work_diagonal;
+        }
+        // The finite armature has its own exact held branch. The approximate
+        // mechanics block freezes grip-gap feedback; complete JVP retains it.
+        for (k,a) in self.armature_blocks.iter().enumerate() {
+            let row=end+3+cr::WIDTH*k;let det=a[0][0]*a[1][1]-a[0][1]*a[1][0];
+            if !det.is_finite() || det<=0. {return Err("Singular armature preconditioner".into());}
+            out[row]=(a[1][1]*rhs[row]-a[0][1]*rhs[row+1])/det;
+            out[row+1]=(a[0][0]*rhs[row+1]-a[1][0]*rhs[row])/det;
         }
         if out.iter().any(|v| !v.is_finite()) {
             return Err("Nonfinite mechanical P solution".into());
@@ -1163,6 +1311,7 @@ impl Model {
             geometry,
             hydraulics,
             control_material,
+            release: None,
             config,
             layout: Layout {
                 cooling_end: end,
@@ -1177,6 +1326,39 @@ impl Model {
     }
     pub fn dimension(&self) -> usize {
         self.layout.dimension
+    }
+    pub fn with_cold_release(mut self,input:cr::Input)->Result<Self,String> {
+        if self.release.is_some() {return Err("Cold release physical owner is already installed".into());}
+        let g=self.geometry.input();
+        if input.broad.coefficient!=1.28 || !input.broad.body_area_m2.is_finite()
+            || input.broad.body_area_m2<=0. || !input.broad.stem_area_m2.is_finite() || input.broad.stem_area_m2<=0.
+            || self.config.iter().any(|c|c.gap_stroke_m!=input.armature.stroke_m)
+        {return Err("Cold release differs from its selected gap/broad-force reduction".into());}
+        for k in 0..self.clusters() {
+            let shaft=self.hydraulics.stems[k].radius_m;
+            let shoulder_area=std::f64::consts::PI*(input.shoulder.radius_m.powi(2)-shaft.powi(2));
+            let same_area=|area:f64|(area-shoulder_area).abs()<=64.*f64::EPSILON*area.abs().max(shoulder_area.abs());
+            if !g.intruders.iter().any(|part|part.cluster==k && matches!(part.motion,cg::Motion::Stem)
+                && part.lo.to_bits()==input.shoulder.bottom_m.to_bits() && part.hi.to_bits()==input.shoulder.top_m.to_bits()
+                && same_area(part.area))
+            {return Err(format!("Release cluster {k} shoulder differs from actual SOURCE/water displaced material"));}
+        }
+        self.release=Some(cr::Model::new(&self.cooling.source,input,self.clusters(),
+            self.cooling.barrel.config().steel_density_kg_m3,g.minimum_stem,g.maximum_stem,
+            self.config[0].gap_stroke_m)?);
+        self.layout.dimension=self.layout.dimension.checked_add(cr::WIDTH*self.clusters())
+            .ok_or("Cold release layout overflow")?;
+        Ok(self)
+    }
+    pub fn release_row(&self,cluster:usize,field:usize)->usize {
+        self.layout.control_photon_export+1+cr::WIDTH*cluster+field
+    }
+    pub fn release_stage<'a>(&self,y:&[f64],w:&'a Workspace)
+        ->Result<(&'a [rh::Prepared],&'a [rh::BroadPrepared]),String>
+    {
+        self.require_current(y,w)?;
+        if self.release.is_none() {return Err("No connected cold release stage".into());}
+        Ok((&w.release_hydraulics,&w.release_broad))
     }
     pub fn mechanical_to_solver(&self, values: &mut [f64]) {
         MechanicalCoordinates::new(self)
@@ -1205,7 +1387,7 @@ impl Model {
         }
     }
     pub fn root_count(&self) -> usize {
-        ROOTS_PER_CLUSTER * self.clusters()
+        (ROOTS_PER_CLUSTER+if self.release.is_some(){cr::EXTRA_ROOTS}else{0}) * self.clusters()
     }
     /// Held-state uncertainty inspection only. Reuses the actual prepared
     /// SOURCE and primary properties; no second trajectory or property solve.
@@ -1284,6 +1466,9 @@ impl Model {
             thermal_work_tangent: None,
             full_evaluations:0,
             reused_evaluations:0,
+            release_hydraulics:vec![rh::Prepared::default();n],
+            release_broad:Vec::with_capacity(n),
+            armatures:Vec::with_capacity(n),
         }
     }
     pub fn root_workspace(&self) -> RootWorkspace {
@@ -1307,8 +1492,88 @@ impl Model {
             velocity: vec![cg::Direction { body: 0., stem: 0. }; n],
             zero: vec![cg::Direction { body: 0., stem: 0. }; n],
             responses: Vec::with_capacity(n),
+            forces:Vec::with_capacity(n),
             owner: self.owner.clone(),
+            release_hydraulics:vec![rh::Prepared::default();n],
+            release_broad:Vec::with_capacity(n),
         }
+    }
+    fn prepare_release_hydraulics(&self,y:&[f64],nw:&on::Workspace,fluid:&cf::Workspace,
+        poses:&[cg::Pose],velocity:&[cg::Direction],mode:&Mode,
+        neck:&mut [rh::Prepared],broad:&mut Vec<rh::BroadPrepared>)->Result<(),String>
+    {
+        match (&self.release,&mode.release) {
+            (None,None)=>return Ok(()),
+            (Some(_),None)|(None,Some(_))=>return Err("Cold release state/model ownership mismatch".into()),
+            _=>(),
+        }
+        let release=self.release.as_ref().unwrap();let retained=mode.release.as_ref().unwrap();
+        let n=&self.cooling.network;let l=self.cooling.layout;let upper=self.hydraulics.upper;
+        let yn=&y[l.network_start..l.carrier_start];let liquid=nw.liquids[upper];
+        // IF97's current saturation boundary, not an assigned cold pressure.
+        let pvap=crate::sg_secondary::endpoints(liquid.temperature,liquid.pressure)?.2[0];
+        let rho0=retained.initial_density.unwrap_or(liquid.density);
+        if retained.initial_density.is_none() && (0..self.clusters()).any(|k|
+            y[self.motion_row(k,BODY_V)]!=0. || y[self.motion_row(k,STEM_V)]!=0.)
+        {return Err("Moving cold release requires its admitted retained density anchor".into());}
+        let selection=release.selection(rho0,self.geometry.input().maximum_stem);
+        broad.clear();
+        for k in 0..self.clusters() {
+            neck[k]=selection.prepare_current(&self.hydraulics,fluid,n,yn,nw,k,
+                poses[k],velocity[k].stem,pvap)?;
+            broad.push(release.input.broad.prepare(velocity[k].body,velocity[k].stem,liquid.density)?);
+        }
+        Ok(())
+    }
+    fn cluster_input(&self,input:Input,y:&[f64],k:usize)->am::Input {
+        let mut i=self.per_cluster_input(input);
+        if self.release.is_some() {
+            // Only the force law's explicit saturated trial continuation:
+            // accepted armature pose is independently admitted without this
+            // extension, and open-stop localization preserves actual state.
+            i.gap_m=y[self.release_row(k,cr::GAP)].clamp(0.,self.config[k].gap_stroke_m);
+        }
+        i
+    }
+    fn gap_direction(&self,y:&[f64],dy:&[f64],k:usize)->f64 {
+        if self.release.is_none() {return 0.;}
+        let gap=y[self.release_row(k,cr::GAP)];
+        if gap<0. || gap>self.config[k].gap_stroke_m {0.} else {dy[self.release_row(k,cr::GAP)]}
+    }
+    fn loading(&self,mode:&Mode,k:usize,neck:&[rh::Prepared])->am::Loading {
+        mode.release.as_ref().map_or(am::Loading::default(),|r|am::Loading {
+            stem_added_mass_kg:neck[k].added_mass_kg,body_seated:r.body_seated[k],stem_stopped:r.stem_stopped[k]})
+    }
+    fn check_coast_policy(&self,mode:&Mode)->Result<(),String> {
+        if mode.branches.iter().any(|b|b.regulator==am::RegulatorBranch::CoastNegative)
+        {return Err("Cold normal coast is not a general descending stop policy".into());}
+        if mode.branches.iter().any(|b|matches!(b.regulator,
+            am::RegulatorBranch::CoastPositive|am::RegulatorBranch::CoastNegative))
+            && !self.release.as_ref().is_some_and(|r|r.input.normal_stop==cr::NormalStopPolicy::BackdrivableCoastToHold)
+        {return Err("Normal coast is not selected by this physical drive frame".into());}
+        Ok(())
+    }
+    fn total_force(&self,k:usize,f:am::Forces,neck:&[rh::Prepared],broad:&[rh::BroadPrepared])->am::Forces {
+        let c=self.config[k];let mut total=am::Forces {body_n:f.body_n-c.body_mass_kg*GRAVITY,
+            stem_n:f.stem_n-c.stem_mass_kg*GRAVITY};
+        if self.release.is_some() {
+            total.body_n+=broad[k].body_force_n;
+            total.stem_n+=neck[k].geometry_force_n+neck[k].form_force_n
+                +neck[k].shoulder_force_correction_n+broad[k].stem_force_n;
+        }
+        total
+    }
+    fn release_direction(&self,k:usize,dy:&[f64],nw:&on::Workspace,neck:&[rh::Prepared],
+        broad:&[rh::BroadPrepared])->Result<(rh::Direction,[f64;3],rh::Partials),String>
+    {
+        let n=&self.cooling.network;let l=self.cooling.layout;let upper=self.hydraulics.upper;
+        let yn=&dy[l.network_start..l.carrier_start];let liquid=nw.liquids[upper];
+        let dp=yn[n.pressure_row()];let dt=yn[n.temperature_row(upper)];
+        let drho=liquid.density*(liquid.compressibility*dp-liquid.expansion*dt);
+        let dmu=nw.film_property_direction(upper,dp,dt)[0];
+        let d=[dy[self.motion_row(k,STEM_Y)],dy[self.motion_row(k,STEM_V)],drho,dmu,
+            n.relative_pressure(upper,yn),0.];
+        Ok((neck[k].direction(d)?,broad[k].direction(drho,dy[self.motion_row(k,BODY_V)],dy[self.motion_row(k,STEM_V)])?,d))
     }
     /// Lightweight root evaluation at the caller's actual interpolated state.
     /// Relative pressure/current and geometry are supplied by this same trial;
@@ -1322,7 +1587,8 @@ impl Model {
         w: &mut RootWorkspace,
         out: &mut [f64],
     ) -> Result<(), String> {
-        validate_input(mode.input)?;
+        validate_mode_input(mode)?;
+        self.check_coast_policy(mode)?;
         if !Arc::ptr_eq(&self.owner, &w.owner)
             || y.len() != self.dimension()
             || yp.len() != y.len()
@@ -1389,26 +1655,28 @@ impl Model {
             &w.velocity,
             &mut w.fluid,
         )?;
+        self.prepare_release_hydraulics(y,&w.network,&w.fluid,&w.poses,&w.velocity,mode,
+            &mut w.release_hydraulics,&mut w.release_broad)?;
         w.responses.clear();
-        let input = self.per_cluster_input(mode.input);
+        w.forces.clear();
         for k in 0..self.clusters() {
             let r = self.motion_row(k, 0);
             let c = self.config[k];
             let f = w.fluid.forces[k];
-            w.responses.push(c.evaluate_trial(
+            let force=self.total_force(k,f,&w.release_hydraulics,&w.release_broad);
+            w.forces.push(force);
+            w.responses.push(c.evaluate_loaded_trial(
                 state(&y[r..r + WIDTH]),
-                input,
-                am::Forces {
-                    body_n: f.body_n - c.body_mass_kg * GRAVITY,
-                    stem_n: f.stem_n - c.stem_mass_kg * GRAVITY,
-                },
+                self.cluster_input(mode.input,y,k),force,
                 mode.branches[k],
+                self.loading(mode,k,&w.release_hydraulics),
             )?);
         }
-        self.fill_roots(y, mode, &w.responses, out)
+        self.fill_roots(y, mode, &w.responses,&w.forces,&w.release_hydraulics,out)
     }
     fn check(&self, y: &[f64], w: &Workspace, mode: &Mode) -> Result<(), String> {
-        validate_input(mode.input)?;
+        validate_mode_input(mode)?;
+        self.check_coast_policy(mode)?;
         if !Arc::ptr_eq(&self.owner, &w.owner)
             || y.len() != self.dimension()
             || y.iter().any(|v| !v.is_finite())
@@ -1561,6 +1829,8 @@ impl Model {
             &w.velocity,
             &mut w.fluid,
         )?;
+        self.prepare_release_hydraulics(y,&w.cooling.network,&w.fluid,&w.poses,&w.velocity,mode,
+            &mut w.release_hydraulics,&mut w.release_broad)?;
         w.residual[..end].copy_from_slice(&w.cooling.residual);
         let upper_energy = l.network_start + self.cooling.network.energy_row(self.hydraulics.upper);
         w.residual[upper_energy] -= w.fluid.stem_fluid_work_w;
@@ -1569,22 +1839,40 @@ impl Model {
             w.residual[l.network_start + self.cooling.network.energy_row(water)] -= power;
         }
         w.responses.clear();
-        let input = self.per_cluster_input(mode.input);
         let mut water_power = 0.;
         let mut mechanical_power = 0.;
         let mut apparatus_heat = 0.;
+        let mut extra_fluid_heat=0.;
+        w.armatures.clear();
         for k in 0..self.clusters() {
             let r = self.motion_row(k, 0);
             let s = state(&y[r..r + WIDTH]);
             let c = self.config[k];
             let f = w.fluid.forces[k];
-            let gravity = am::Forces {
-                body_n: f.body_n - c.body_mass_kg * GRAVITY,
-                stem_n: f.stem_n - c.stem_mass_kg * GRAVITY,
-            };
+            let gravity=self.total_force(k,f,&w.release_hydraulics,&w.release_broad);
             w.forces[k] = gravity;
-            let q = c.evaluate_trial(s, input, gravity, mode.branches[k])?;
-            let heat = q.slip_to_jack_w + q.electrical_loss_to_jack_w + q.holding_to_jack_w;
+            let input=self.cluster_input(mode.input,y,k);
+            let q = c.evaluate_loaded_trial(s,input,gravity,mode.branches[k],self.loading(mode,k,&w.release_hydraulics))?;
+            let mut heat = q.slip_to_jack_w + q.electrical_loss_to_jack_w + q.holding_to_jack_w;
+            if let (Some(release),Some(retained))=(&self.release,&mode.release) {
+                let a=self.release_row(k,0);let arm=release.armature_state(&y[a..a+cr::WIDTH])?;
+                let response=release.input.armature.evaluate_trial(arm,retained.armatures[k])?;
+                heat+=response.damping_to_jack_w;
+                w.residual[a+cr::GAP]=yp[a+cr::GAP]-response.gap_rate_m_s;
+                w.residual[a+cr::GAP_V]=yp[a+cr::GAP_V]-response.acceleration_m_s2;
+                w.residual[a+cr::FITTING_HEAT]=yp[a+cr::FITTING_HEAT];
+                w.residual[a+cr::COLLAR_HEAT]=yp[a+cr::COLLAR_HEAT];
+                mechanical_power+=release.input.armature.energy_direction_j(arm,ca::State {
+                    gap_m:response.gap_rate_m_s,velocity_m_s:response.acceleration_m_s2})?;
+                let neck=w.release_hydraulics[k];let broad=w.release_broad[k];
+                mechanical_power+=neck.kinetic_rate_w(q.stem_acceleration_m_s2)?;
+                extra_fluid_heat+=neck.shoulder_fluid_work_correction_w+neck.form_fluid_work_w+broad.fluid_work_w;
+                // Neck inertia exchanges energy inside the extended mechanical
+                // domain; this receipt is bulk water <-> metal+neck+armature.
+                water_power+=broad.body_force_n*s.body_v_m_s
+                    +(neck.shoulder_force_correction_n+neck.form_force_n+broad.stem_force_n)*s.stem_v_m_s;
+                w.armatures.push(response);
+            }
             let rr = [
                 s.body_v_m_s,
                 q.body_acceleration_m_s2,
@@ -1606,6 +1894,7 @@ impl Model {
             apparatus_heat += heat;
             w.responses.push(q);
         }
+        w.residual[upper_energy]-=extra_fluid_heat;
         for (host, &power) in self.control_material.config().hosts.iter().zip(&nuclear.metal) {
             let field = match host.kind { cm::Kind::Spider => SPIDER_HEAT, cm::Kind::Stem => STEM_HEAT };
             w.residual[self.motion_row(host.cluster, field)] -= power;
@@ -1621,9 +1910,10 @@ impl Model {
             w.rates[r] = yp[r] - w.residual[r];
         }
         w.thermal_work_rate =
-            w.cooling.complete_energy_rate()? + w.fluid.stem_fluid_work_w + water_power + nuclear_balance;
+            w.cooling.complete_energy_rate()? + w.fluid.stem_fluid_work_w + extra_fluid_heat + water_power + nuclear_balance;
         w.energy_rate = w.cooling.complete_energy_rate()?
             + w.fluid.stem_fluid_work_w
+            + extra_fluid_heat
             + mechanical_power
             + apparatus_heat
             - mode.input.motive_power_w
@@ -1642,7 +1932,6 @@ impl Model {
     }
     pub fn select_mode(&self, y: &[f64], w: &Workspace, input: Input) -> Result<Mode, String> {
         self.require_current(y, w)?;
-        validate_input(input)?;
         if self
             .config
             .iter()
@@ -1652,12 +1941,85 @@ impl Model {
         }
         let mut mode = w.mode.as_ref().unwrap().clone();
         mode.input = input;
-        let i = self.per_cluster_input(input);
         for k in 0..self.clusters() {
             let r = self.motion_row(k, 0);
-            mode.branches[k] = self.config[k].branch(state(&y[r..r + WIDTH]), i, w.forces[k])?;
+            let loading=self.loading(&mode,k,&w.release_hydraulics);
+            let effective=am::Config {stem_mass_kg:self.config[k].stem_mass_kg+loading.stem_added_mass_kg,..self.config[k]};
+            mode.branches[k] = effective.branch(state(&y[r..r + WIDTH]),self.cluster_input(input,y,k),w.forces[k])?;
+            if loading.body_seated || loading.stem_stopped {mode.branches[k].joint=am::JointMode::Separated;}
         }
+        // Validate the selected new graph, not obsolete incoming coast flags
+        // against a just-lost support input. The candidate remains local.
+        validate_mode_input(&mode)?;
         Ok(mode)
+    }
+    pub fn bind_release_density(&self,y:&[f64],w:&Workspace,mode:&mut Mode)->Result<(),String> {
+        self.validate_accepted(y,w)?;
+        if w.mode.as_ref()!=Some(mode) {return Err("Density binding needs its admitted current release mode".into());}
+        let retained=mode.release.as_mut().ok_or("No cold release density owner")?;
+        if self.release.is_none() || retained.initial_density.is_some()
+            || (0..self.clusters()).any(|k|y[self.motion_row(k,BODY_V)]!=0. || y[self.motion_row(k,STEM_V)]!=0.)
+        {return Err("Cold release density binds once at admitted original rest".into());}
+        retained.initial_density=Some(w.cooling.network.liquids[self.hydraulics.upper].density);
+        Ok(())
+    }
+    /// Actual finite support transition; only delivered HOLD loss can open a
+    /// healthy detent. All physical states and stored spring energy are kept.
+    /// The caller proves cause against both actual A/B outputs after all
+    /// coincident events. The input triple alone cannot identify a B failure.
+    pub fn support_event(&self,y:&[f64],w:&Workspace,mode:&mut Mode,input:Input,
+        failed_cluster:Option<usize>,cause:cr::SupportCause)->Result<(),String>
+    {
+        self.require_current(y,w)?;
+        if w.mode.as_ref()!=Some(mode) || failed_cluster.is_some_and(|k|k>=self.clusters()) {
+            return Err("Invalid cold release support event owner/failure".into());
+        }
+        let release=self.release.as_ref().ok_or("No cold release support mechanism")?;
+        match cause {
+            cr::SupportCause::NormalStop if mode.input.requested_rate_m_s<=0.
+                || input.requested_rate_m_s!=0. || input.motive_power_w!=0. || input.holding_power_w<=0.
+                || failed_cluster.is_some() => return Err("Normal stop lacks an authorized supported positive RATE to HOLD command".into()),
+            cr::SupportCause::HealthyContinuity if input!=mode.input || input.holding_power_w<=0.
+                || failed_cluster.is_some() => return Err("Healthy continuity cannot invalidate or replay delivered motion intent".into()),
+            _=>(),
+        }
+        let mut next=self.select_mode(y,w,input)?;
+        let retained=next.release.as_mut().ok_or("No cold release support state")?;
+        if retained.initial_density.is_none() {return Err("Release requires its retained admitted density".into());}
+        for k in 0..self.clusters() {
+            let r=self.release_row(k,0);let arm=release.armature_state(&y[r..r+cr::WIDTH])?;
+            retained.armatures[k]=release.input.armature.support_event(arm,retained.armatures[k],
+                input.holding_power_w>0.,if failed_cluster==Some(k) {ca::ReleaseFailure::DetentJammed}
+                else {ca::ReleaseFailure::None})?;
+        }
+        // This is a normal supported stop only. Electrical/hold failure keeps
+        // the anchored-reference brake and actual finite detent release graph.
+        // Only an authorized normal stop enters coast; independently proven
+        // healthy continuity can preserve it. A fault/invalidated intent always
+        // cancels coast into the anchored-reference brake/release graph.
+        if release.input.normal_stop==cr::NormalStopPolicy::BackdrivableCoastToHold
+        {
+            for k in 0..self.clusters() {
+                let retained=next.release.as_ref().unwrap();let r=self.motion_row(k,0);
+                let coast=matches!(cause,cr::SupportCause::NormalStop)
+                    || (cause==cr::SupportCause::HealthyContinuity
+                        && mode.branches[k].regulator==am::RegulatorBranch::CoastPositive);
+                if coast && retained.armatures[k]==ca::Mode::Latched
+                    && !retained.stem_stopped[k] && y[r+STEM_V]!=0.
+                {
+                    if y[r+STEM_V]<0. {return Err("Cold normal coast cannot promise to stop actual descending STEM".into());}
+                    let c=am::Config {stem_mass_kg:self.config[k].stem_mass_kg+w.release_hydraulics[k].added_mass_kg,..self.config[k]};
+                    next.branches[k]=c.coast_branch(state(&y[r..r+WIDTH]),self.cluster_input(input,y,k),w.forces[k])?;
+                    if retained.body_seated[k] {next.branches[k].joint=am::JointMode::Separated;}
+                    let response=c.evaluate_trial(state(&y[r..r+WIDTH]),self.cluster_input(input,y,k),w.forces[k],next.branches[k])?;
+                    if response.stem_acceleration_m_s2>=0. {
+                        return Err("Cold normal coast has no actual decelerating force at entry".into());
+                    }
+                }
+            }
+        }
+        validate_mode_input(&next)?;
+        *mode=next;Ok(())
     }
     /// Explicit geometry-time direction for differentiated fluid charts at
     /// initialization/events. It consumes this stage's actual velocities and
@@ -1789,20 +2151,46 @@ impl Model {
             w.jvp[l.network_start + self.cooling.network.energy_row(water)] -= power;
         }
         let mode = w.mode.as_ref().unwrap();
-        let input = self.per_cluster_input(mode.input);
         let mut water_tangent = 0.;
         let mut mechanical_tangent = 0.;
         let mut heat_tangent = 0.;
+        let mut extra_fluid_tangent=0.;
         for k in 0..self.clusters() {
             let r = self.motion_row(k, 0);
             let s = state(&w.state[r..r + WIDTH]);
             let ds = state(&dy[r..r + WIDTH]);
             let c = self.config[k];
             let f = w.fluid.forces[k];
-            let df = w.dforces[k];
+            let native_df = w.dforces[k];let mut df=native_df;
             let q = w.responses[k];
-            let dq = c.evaluate_trial_direction(s, input, w.forces[k], mode.branches[k], ds, df)?;
-            let heat = dq.slip_to_jack_w + dq.electrical_loss_to_jack_w;
+            let input=self.cluster_input(mode.input,&w.state,k);
+            let mut dmass=0.;let mut dgap=0.;let mut release_direction=None;
+            if self.release.is_some() {
+                let d=self.release_direction(k,dy,&w.cooling.network,&w.release_hydraulics,&w.release_broad)?;
+                dmass=d.0.added_mass_kg;dgap=self.gap_direction(&w.state,dy,k);
+                df.body_n+=d.1[0];df.stem_n+=d.0.geometry_force_n+d.0.form_force_n
+                    +d.0.shoulder_force_correction_n+d.1[1];
+                release_direction=Some(d);
+            }
+            let dq = c.evaluate_loaded_trial_direction(s,input,w.forces[k],mode.branches[k],
+                self.loading(mode,k,&w.release_hydraulics),ds,df,dgap,dmass)?;
+            let mut heat = dq.slip_to_jack_w + dq.electrical_loss_to_jack_w;
+            if let (Some(release),Some(retained))=(&self.release,&mode.release) {
+                let a=self.release_row(k,0);let arm=release.armature_state(&w.state[a..a+cr::WIDTH])?;
+                let darm=release.armature_state(&dy[a..a+cr::WIDTH])?;
+                let da=release.input.armature.direction(arm,darm,retained.armatures[k])?;
+                heat+=da.damping_to_jack_w;mechanical_tangent-=da.damping_to_jack_w;
+                w.jvp[a+cr::GAP]=cj*dy[a+cr::GAP]-da.gap_rate_m_s;
+                w.jvp[a+cr::GAP_V]=cj*dy[a+cr::GAP_V]-da.acceleration_m_s2;
+                w.jvp[a+cr::FITTING_HEAT]=cj*dy[a+cr::FITTING_HEAT];
+                w.jvp[a+cr::COLLAR_HEAT]=cj*dy[a+cr::COLLAR_HEAT];
+                let (d,broad,partials)=release_direction.unwrap();let neck=w.release_hydraulics[k];
+                mechanical_tangent+=neck.kinetic_rate_direction_w(q.stem_acceleration_m_s2,dq.stem_acceleration_m_s2,partials)?;
+                extra_fluid_tangent+=d.shoulder_fluid_work_correction_w+d.form_fluid_work_w+broad[2];
+                water_tangent+=broad[0]*s.body_v_m_s+w.release_broad[k].body_force_n*ds.body_v_m_s
+                    +(d.shoulder_force_correction_n+d.form_force_n+broad[1])*s.stem_v_m_s
+                    +(neck.shoulder_force_correction_n+neck.form_force_n+w.release_broad[k].stem_force_n)*ds.stem_v_m_s;
+            }
             let rates = [
                 ds.body_v_m_s,
                 dq.body_acceleration_m_s2,
@@ -1816,9 +2204,9 @@ impl Model {
             for j in 0..WIDTH {
                 w.jvp[r + j] = cj * dy[r + j] - rates[j];
             }
-            water_tangent += df.body_n * s.body_v_m_s
+            water_tangent += native_df.body_n * s.body_v_m_s
                 + f.body_n * ds.body_v_m_s
-                + df.stem_n * s.stem_v_m_s
+                + native_df.stem_n * s.stem_v_m_s
                 + f.stem_n * ds.stem_v_m_s;
             mechanical_tangent += c.body_mass_kg
                 * (ds.body_v_m_s * q.body_acceleration_m_s2
@@ -1830,6 +2218,7 @@ impl Model {
                         + GRAVITY * ds.stem_v_m_s);
             heat_tangent += heat;
         }
+        w.jvp[upper]-=extra_fluid_tangent;
         for (host, &power) in self.control_material.config().hosts.iter().zip(&nuclear.metal) {
             let field = match host.kind { cm::Kind::Spider => SPIDER_HEAT, cm::Kind::Stem => STEM_HEAT };
             w.jvp[self.motion_row(host.cluster, field)] -= power;
@@ -1842,9 +2231,9 @@ impl Model {
         w.jvp[self.layout.fluid_mechanical_work] =
             cj * dy[self.layout.fluid_mechanical_work] - water_tangent;
         w.thermal_work_tangent =
-            Some(w.cooling.complete_energy_rate_jvp()? + dwork + water_tangent + nuclear_balance);
+            Some(w.cooling.complete_energy_rate_jvp()? + dwork + extra_fluid_tangent + water_tangent + nuclear_balance);
         w.energy_tangent =
-            Some(w.cooling.complete_energy_rate_jvp()? + dwork + mechanical_tangent + heat_tangent + nuclear_balance);
+            Some(w.cooling.complete_energy_rate_jvp()? + dwork + extra_fluid_tangent + mechanical_tangent + heat_tangent + nuclear_balance);
         if w.jvp.iter().any(|v| !v.is_finite()) || !w.energy_tangent.unwrap().is_finite() {
             return Err("Nonfinite connected mechanical Jacobian/work action".into());
         }
@@ -1864,48 +2253,42 @@ impl Model {
             return Err("Mechanical preconditioner requires current owned linearization".into());
         }
         let mode = w.mode.as_ref().unwrap();
-        let input = self.per_cluster_input(mode.input);
-        let zero = cg::Direction { body: 0., stem: 0. };
-        let mut dpose = vec![zero; self.clusters()];
-        let mut dvelocity = dpose.clone();
         let dn = vec![0.; self.cooling.network.dimension()];
-        let mut df = vec![
-            am::Forces {
-                body_n: 0.,
-                stem_n: 0.
-            };
-            self.clusters()
-        ];
         let l = self.cooling.layout;
+        let fluid_direction=self.hydraulics.direction_stage(&self.cooling.network,
+            &w.state[l.network_start..l.carrier_start],&w.cooling.network,&w.geometry,&dn,&w.fluid)?;
+        let mut local_direction=vec![0.;self.dimension()];
         for k in 0..self.clusters() {
             let r = self.motion_row(k, 0);
             let s = state(&w.state[r..r + WIDTH]);
             let c = self.config[k];
             for col in 0..5 {
-                dpose[k] = cg::Direction {
+                let dpose = cg::Direction {
                     body: if col == BODY_Y { 1. } else { 0. },
                     stem: if col == STEM_Y { 1. } else { 0. },
                 };
-                dvelocity[k] = cg::Direction {
+                let dvelocity = cg::Direction {
                     body: if col == BODY_V { 1. } else { 0. },
                     stem: if col == STEM_V { 1. } else { 0. },
                 };
-                self.hydraulics.direction(
-                    &self.cooling.network,
-                    &w.state[l.network_start..l.carrier_start],
-                    &w.cooling.network,
-                    &w.geometry,
-                    &dn,
-                    &dpose,
-                    &dvelocity,
-                    &w.fluid,
-                    &mut df,
-                )?;
+                let (df,_)=fluid_direction.cluster(k,dpose,dvelocity)?;
                 let mut local = [0.; WIDTH];
                 local[col] = 1.;
                 let ds = state(&local);
-                let dq =
-                    c.evaluate_trial_direction(s, input, w.forces[k], mode.branches[k], ds, df[k])?;
+                let mut force_direction=df;let mut dmass=0.;let mut extra_work=0.;
+                local_direction[r+col]=1.;
+                if self.release.is_some() {
+                    let (d,b,_)=self.release_direction(k,&local_direction,&w.cooling.network,&w.release_hydraulics,&w.release_broad)?;
+                    dmass=d.added_mass_kg;
+                    force_direction.body_n+=b[0];force_direction.stem_n+=d.geometry_force_n+d.form_force_n
+                        +d.shoulder_force_correction_n+b[1];
+                    let neck=w.release_hydraulics[k];let broad=w.release_broad[k];
+                    extra_work=b[0]*s.body_v_m_s+broad.body_force_n*ds.body_v_m_s
+                        +(d.form_force_n+d.shoulder_force_correction_n+b[1])*s.stem_v_m_s
+                        +(neck.form_force_n+neck.shoulder_force_correction_n+broad.stem_force_n)*ds.stem_v_m_s;
+                }
+                let dq=c.evaluate_loaded_trial_direction(s,self.cluster_input(mode.input,&w.state,k),w.forces[k],
+                    mode.branches[k],self.loading(mode,k,&w.release_hydraulics),ds,force_direction,0.,dmass)?;
                 let dr = [
                     ds.body_v_m_s,
                     dq.body_acceleration_m_s2,
@@ -1924,14 +2307,13 @@ impl Model {
                     );
                 }
                 let f = w.fluid.forces[k];
-                let work = df[k].body_n * s.body_v_m_s
+                let work = df.body_n * s.body_v_m_s
                     + f.body_n * ds.body_v_m_s
-                    + df[k].stem_n * s.stem_v_m_s
-                    + f.stem_n * ds.stem_v_m_s;
+                    + df.stem_n * s.stem_v_m_s
+                    + f.stem_n * ds.stem_v_m_s+extra_work;
                 visit(self.layout.fluid_mechanical_work, r + col, -work);
+                local_direction[r+col]=0.;
             }
-            dpose[k] = zero;
-            dvelocity[k] = zero;
             for col in 5..WIDTH {
                 visit(r + col, r + col, cj);
             }
@@ -1966,26 +2348,52 @@ impl Model {
         }
         Ok(total)
     }
+    /// Retained neck KE and armature energy extend the metal mechanical
+    /// domain. rho0 is explicitly supplied by its checkpoint's discrete mode.
+    pub fn extended_mechanical_energy_j(&self,y:&[f64],mode:&Mode)->Result<f64,String> {
+        let mut total=self.mechanical_energy_j(y)?;
+        match (&self.release,&mode.release) {
+            (None,None)=>return Ok(total),
+            (Some(_),None)|(None,Some(_))=>return Err("Extended mechanical energy lacks its retained release owner".into()),
+            _=>(),
+        }
+        let release=self.release.as_ref().unwrap();let retained=mode.release.as_ref().unwrap();
+        retained.validate(self.clusters())?;
+        for k in 0..self.clusters() {
+            let r=self.motion_row(k,0);let a=self.release_row(k,0);
+            total+=release.input.armature.energy_j(release.armature_state(&y[a..a+cr::WIDTH])?)?;
+            if y[r+STEM_V]!=0. {
+                let rho=retained.initial_density.ok_or("Moving neck KE requires retained initial density")?;
+                let mass=release.selection(rho,self.geometry.input().maximum_stem).mass_at(&self.hydraulics,k,y[r+STEM_Y])?.0;
+                total+=0.5*mass*y[r+STEM_V].powi(2);
+            }
+        }
+        if !total.is_finite() {return Err("Nonfinite extended mechanical energy".into());}Ok(total)
+    }
     pub fn apparatus_heat_j(&self, y: &[f64]) -> Result<f64, String> {
         if y.len() != self.dimension() {
             return Err("Wrong connected apparatus heat state".into());
         }
-        Ok((0..self.clusters())
+        let ordinary=(0..self.clusters())
             .map(|k| {
                 let r = self.motion_row(k, 0);
                 y[r + JACK_HEAT] + y[r + STEM_HEAT] + y[r + SPIDER_HEAT]
             })
-            .sum())
+            .sum::<f64>();
+        Ok(ordinary+if self.release.is_some() {(0..self.clusters()).map(|k|
+            y[self.release_row(k,cr::FITTING_HEAT)]+y[self.release_row(k,cr::COLLAR_HEAT)]).sum()} else {0.})
     }
     pub fn roots(&self, y: &[f64], w: &Workspace, out: &mut [f64]) -> Result<(), String> {
         self.require_current(y, w)?;
-        self.fill_roots(y, w.mode.as_ref().unwrap(), &w.responses, out)
+        self.fill_roots(y,w.mode.as_ref().unwrap(),&w.responses,&w.forces,&w.release_hydraulics,out)
     }
     fn fill_roots(
         &self,
         y: &[f64],
         mode: &Mode,
         responses: &[am::Response],
+        forces:&[am::Forces],
+        neck:&[rh::Prepared],
         out: &mut [f64],
     ) -> Result<(), String> {
         if out.len() != self.root_count() {
@@ -1999,7 +2407,8 @@ impl Model {
                 am::RegulatorBranch::ApproachPositive | am::RegulatorBranch::ApproachNegative => {
                     s.stem_v_m_s - mode.input.requested_rate_m_s
                 }
-                am::RegulatorBranch::HoldPositive | am::RegulatorBranch::HoldNegative => {
+                am::RegulatorBranch::HoldPositive | am::RegulatorBranch::HoldNegative
+                    | am::RegulatorBranch::CoastPositive | am::RegulatorBranch::CoastNegative => {
                     s.stem_v_m_s
                 }
                 _ => 1.,
@@ -2016,8 +2425,22 @@ impl Model {
                 } else {
                     1.
                 },
-                s.body_y_m,
+                if mode.release.as_ref().is_some_and(|m|m.body_seated[k]) {1.} else {s.body_y_m},
             ]);
+            if let (Some(release),Some(retained))=(&self.release,&mode.release) {
+                let a=self.release_row(k,0);let extra=4*self.clusters()+cr::EXTRA_ROOTS*k;
+                let capacity=self.config[k].grip_closed_force_n*(1.-self.cluster_input(mode.input,y,k).gap_m
+                    /self.config[k].gap_stroke_m);
+                let required=if b.joint==am::JointMode::Contact {-(forces[k].body_n+forces[k].stem_n)} else {-forces[k].stem_n};
+                out[extra..extra+cr::EXTRA_ROOTS].copy_from_slice(&[
+                    if b.regulator==am::RegulatorBranch::HoldRest && retained.armatures[k]==ca::Mode::Opening {
+                        capacity-required.abs()
+                    } else {1.},
+                    if retained.armatures[k]==ca::Mode::Opening {release.input.armature.stroke_m-y[a+cr::GAP]} else {1.},
+                    if retained.stem_stopped[k] {1.} else {s.stem_y_m-release.input.minimum_stem_m},
+                    neck[k].wet_margin(responses[k].stem_acceleration_m_s2)?.margin_pa,
+                ]);
+            }
         }
         Ok(())
     }
@@ -2045,26 +2468,82 @@ impl Model {
         let mut next = y.to_vec();
         let mut branch = mode.clone();
         let mut report = EventReport::default();
+        let initial_extended=if self.release.is_some() {Some(self.extended_mechanical_energy_j(y,mode)?)} else {None};
         for k in 0..self.clusters() {
             let r = self.motion_row(k, 0);
             let mut s = state(&next[r..r + WIDTH]);
             let c = self.config[k];
-            if roots[4 * k + 3] != 0 {
-                return Err(format!(
-                    "Cluster {k} reaches unqualified incoming fitting contact"
-                ));
-            }
-            if roots[4 * k] != 0 {
-                let regulator = branch.branches[k].regulator;
-                if !matches!(
-                    regulator,
-                    am::RegulatorBranch::ApproachPositive
-                        | am::RegulatorBranch::ApproachNegative
-                        | am::RegulatorBranch::HoldPositive
-                        | am::RegulatorBranch::HoldNegative
-                ) {
-                    return Err("Inactive connected speed root".into());
+            let extra = 4*self.clusters()+cr::EXTRA_ROOTS*k;
+            let actions = mechanical_event_actions(mode.branches[k], &roots[4*k..4*k+3],
+                self.release.is_some() && roots[4*k+3]!=0,
+                self.release.is_some() && roots[extra+2]!=0,
+                self.release.is_some() && roots[extra+1]!=0)?;
+            if let Some(release)=&self.release {
+                let extra=4*self.clusters()+cr::EXTRA_ROOTS*k;let a=self.release_row(k,0);
+                if roots[extra+3]!=0 {return Err(format!("Cluster {k} reaches unrepresented release cavitation boundary; insertion unfinished"));}
+                if roots[extra]!=0 {
+                    let retained=branch.release.as_ref().unwrap();
+                    if branch.branches[k].regulator!=am::RegulatorBranch::HoldRest
+                        || retained.armatures[k]!=ca::Mode::Opening
+                    {return Err("Inactive finite-grip release capacity root".into());}
+                    let required=if branch.branches[k].joint==am::JointMode::Contact {
+                        -(w.forces[k].body_n+w.forces[k].stem_n)} else {-w.forces[k].stem_n};
+                    branch.branches[k].regulator=if required>=0. {am::RegulatorBranch::HoldNegative} else {am::RegulatorBranch::HoldPositive};
                 }
+                if roots[extra+1]!=0 {
+                    let retained=branch.release.as_mut().unwrap();
+                    let adjustment=(next[a+cr::GAP]-release.input.armature.stroke_m).abs();
+                    if adjustment>0.1*accuracy.position_m {return Err("Unresolved finite armature open stop".into());}
+                    report.maximum_position_adjustment_m=report.maximum_position_adjustment_m.max(adjustment);
+                    next[a+cr::GAP]=release.input.armature.stroke_m;
+                    let arm=release.armature_state(&next[a..a+cr::WIDTH])?;
+                    let (after,m,heat)=release.input.armature.open_stop(arm,retained.armatures[k])?;
+                    next[a+cr::GAP]=after.gap_m;next[a+cr::GAP_V]=after.velocity_m_s;
+                    next[r+JACK_HEAT]+=heat;report.contact_heat_j+=heat;retained.armatures[k]=m;
+                    branch.branches[k].regulator=am::RegulatorBranch::Open;
+                }
+                if roots[4*k+3]!=0 {
+                    let retained=branch.release.as_mut().unwrap();
+                    if retained.body_seated[k] {return Err("Inactive BODY fitting contact".into());}
+                    let adjustment=s.body_y_m.abs();
+                    if adjustment>0.1*accuracy.position_m {return Err("Unresolved BODY fitting seat".into());}
+                    report.maximum_position_adjustment_m=report.maximum_position_adjustment_m.max(adjustment);
+                    s.body_y_m=0.;let (after,moving,fixed)=release.body_impact(c,s)?;s=after;
+                    next[r+SPIDER_HEAT]+=moving;next[a+cr::FITTING_HEAT]+=fixed;
+                    report.contact_heat_j+=moving+fixed;report.contact_events+=1;
+                    retained.body_seated[k]=true;branch.geometry[k].seated=true;
+                    branch.branches[k].joint=am::JointMode::Separated;
+                    report.needs_fluid_initialization=true;
+                    write_state(&mut next[r..r+WIDTH],s);
+                }
+                if roots[extra+2]!=0 {
+                    let retained=branch.release.as_mut().unwrap();
+                    if retained.stem_stopped[k] {return Err("Inactive STEM collar contact".into());}
+                    let adjustment=(s.stem_y_m-release.input.minimum_stem_m).abs();
+                    if adjustment>0.1*accuracy.position_m {return Err("Unresolved STEM shoulder/collar seat".into());}
+                    report.maximum_position_adjustment_m=report.maximum_position_adjustment_m.max(adjustment);
+                    s.stem_y_m=release.input.minimum_stem_m;
+                    let rho=retained.initial_density.ok_or("Collar impact lacks retained density")?;
+                    let mass=release.selection(rho,self.geometry.input().maximum_stem).mass_at(&self.hydraulics,k,s.stem_y_m)?.0;
+                    let (after,moving,fixed,fluid)=release.stem_impact(c,s,0.5*mass*s.stem_v_m_s.powi(2))?;s=after;
+                    next[r+STEM_HEAT]+=moving;next[a+cr::COLLAR_HEAT]+=fixed;
+                    let upper=self.cooling.layout.network_start+self.cooling.network.energy_row(self.hydraulics.upper);
+                    next[upper]+=fluid;next[self.layout.fluid_mechanical_work]-=fluid;
+                    report.contact_heat_j+=moving+fixed+fluid;report.contact_events+=1;
+                    retained.stem_stopped[k]=true;branch.branches[k].joint=am::JointMode::Separated;
+                    if matches!(branch.branches[k].regulator,am::RegulatorBranch::CoastPositive|am::RegulatorBranch::CoastNegative) {
+                        branch.branches[k].regulator=am::RegulatorBranch::HoldRest;
+                    }
+                    report.needs_fluid_initialization=true;
+                    write_state(&mut next[r..r+WIDTH],s);
+                }
+            }
+            if roots[4 * k + 3] != 0 {
+                if self.release.is_none() {return Err(format!(
+                    "Cluster {k} reaches unqualified incoming fitting contact"
+                ));}
+            }
+            if actions[0] {
                 let target = mode.input.requested_rate_m_s;
                 let adjustment = (s.stem_v_m_s - target).abs();
                 if adjustment > 0.1 * accuracy.velocity_m_s {
@@ -2090,10 +2569,7 @@ impl Model {
                 };
                 report.velocity_events += 1;
             }
-            if roots[4 * k + 1] != 0 {
-                if branch.branches[k].joint != am::JointMode::Separated {
-                    return Err("Inactive connected contact root".into());
-                }
+            if actions[1] {
                 let adjustment = (s.body_y_m - s.stem_y_m).abs();
                 if adjustment > 0.1 * accuracy.position_m {
                     return Err("Unresolved connected bayonet root".into());
@@ -2106,15 +2582,32 @@ impl Model {
                 s.body_y_m = plane;
                 s.stem_y_m = plane;
                 report.mechanical_adjustment_j += c.mechanical_energy_j(s, GRAVITY)? - before;
+                // A separating/grazing zero is not a new contact. IDA can
+                // report either crossing direction, so the actual incoming
+                // relative velocity/acceleration selects unilateral contact.
+                if !bayonet_is_closing(s.body_v_m_s,s.stem_v_m_s,
+                    w.responses[k].body_acceleration_m_s2,w.responses[k].stem_acceleration_m_s2) {
+                    report.needs_fluid_initialization |= adjustment != 0.;
+                    write_state(&mut next[r..r+WIDTH],s);
+                    continue;
+                }
                 if s.body_v_m_s < s.stem_v_m_s {
-                    let impact = c.recontact(s)?;
+                    let impact = if let Some(release)=&self.release {
+                        let rho=branch.release.as_ref().unwrap().initial_density.ok_or("Bayonet impact lacks retained density")?;
+                        let mass=release.selection(rho,self.geometry.input().maximum_stem).mass_at(&self.hydraulics,k,s.stem_y_m)?.0;
+                        release.recontact(c,s,mass)?
+                    } else {c.recontact(s)?};
                     s = impact.state;
                     next[r + STEM_HEAT] += impact.stem_heat_j;
                     next[r + SPIDER_HEAT] += impact.spider_heat_j;
                     report.contact_heat_j += impact.stem_heat_j + impact.spider_heat_j;
                 }
                 branch.branches[k].joint = am::JointMode::Contact;
-                branch.branches[k].regulator = if mode.input.requested_rate_m_s == 0. {
+                branch.branches[k].regulator = if mode.branches[k].regulator==am::RegulatorBranch::CoastPositive
+                    && s.stem_v_m_s>0.
+                {
+                    am::RegulatorBranch::CoastPositive
+                } else if mode.input.requested_rate_m_s == 0. {
                     if s.stem_v_m_s > 0. {
                         am::RegulatorBranch::HoldPositive
                     } else if s.stem_v_m_s < 0. {
@@ -2133,13 +2626,13 @@ impl Model {
                 report.needs_fluid_initialization = true;
                 write_state(&mut next[r..r + WIDTH], s);
             }
-            if roots[4 * k + 2] != 0 {
-                if branch.branches[k].joint != am::JointMode::Contact {
-                    return Err("Inactive connected separation root".into());
-                }
+            if actions[2] {
                 branch.branches[k].joint = am::JointMode::Separated;
                 report.separation_events += 1;
             }
+        }
+        if let Some(before)=initial_extended {
+            report.mechanical_adjustment_j=self.extended_mechanical_energy_j(&next,&branch)?-before+report.contact_heat_j;
         }
         y.copy_from_slice(&next);
         *mode = branch;
@@ -2155,10 +2648,11 @@ impl Model {
             return Err("Invalid accepted control nuclear-apparatus or photon-export receipt".into());
         }
         self.structural_temperatures(y)?;
-        let input = self.per_cluster_input(w.mode.as_ref().unwrap().input);
+        let retained_mode=w.mode.as_ref().unwrap();
         for k in 0..self.clusters() {
             let r = self.motion_row(k, 0);
             let s = state(&y[r..r + WIDTH]);
+            let input=self.cluster_input(retained_mode.input,y,k);
             if s.body_y_m < 0.
                 || s.body_y_m < s.stem_y_m
                 || y[r + JACK_HEAT..r + WIDTH].iter().any(|v| *v < 0.)
@@ -2177,6 +2671,8 @@ impl Model {
                 || (mode.regulator == am::RegulatorBranch::HoldRest && s.stem_v_m_s != 0.)
                 || (mode.regulator == am::RegulatorBranch::HoldPositive && s.stem_v_m_s < 0.)
                 || (mode.regulator == am::RegulatorBranch::HoldNegative && s.stem_v_m_s > 0.)
+                || (mode.regulator == am::RegulatorBranch::CoastPositive && s.stem_v_m_s < 0.)
+                || (mode.regulator == am::RegulatorBranch::CoastNegative && s.stem_v_m_s > 0.)
                 || (mode.regulator == am::RegulatorBranch::ApproachPositive
                     && s.stem_v_m_s > input.requested_rate_m_s)
                 || (mode.regulator == am::RegulatorBranch::ApproachNegative
@@ -2217,9 +2713,45 @@ impl Model {
                     response.stem_acceleration_m_s2,
                 ));
             }
-            self.config[k].evaluate(s, input, w.forces[k])?;
+            if let (Some(release),Some(retained))=(&self.release,&retained_mode.release) {
+                let a=self.release_row(k,0);let arm=release.armature_state(&y[a..a+cr::WIDTH])?;
+                release.input.armature.validate_accepted(arm,retained.armatures[k])?;
+                let wet=w.release_hydraulics[k].wet_margin(w.responses[k].stem_acceleration_m_s2)?;
+                if y[a+cr::FITTING_HEAT]<0. || y[a+cr::COLLAR_HEAT]<0.
+                    || (retained.body_seated[k] && (s.body_y_m!=0. || s.body_v_m_s!=0.))
+                    || (retained.stem_stopped[k] && (s.stem_y_m!=release.input.minimum_stem_m || s.stem_v_m_s!=0.))
+                    || s.stem_y_m<release.input.minimum_stem_m
+                    || wet.margin_pa<=0.
+                {return Err(format!("Accepted release cluster {k} leaves its finite contact/liquid branch: \
+                    body_seated={}, stem_stopped={}, body_y={:e}, stem_y={:e}, body_v={:e}, stem_v={:e}, \
+                    fitting_heat={:e}, collar_heat={:e}, stem_acceleration={:e}, wet_margin_pa={:e}, wet_location={:?}",
+                    retained.body_seated[k],retained.stem_stopped[k],s.body_y_m,s.stem_y_m,s.body_v_m_s,s.stem_v_m_s,
+                    y[a+cr::FITTING_HEAT],y[a+cr::COLLAR_HEAT],w.responses[k].stem_acceleration_m_s2,wet.margin_pa,wet.location));}
+                self.config[k].evaluate_loaded_trial(s,input,w.forces[k],mode,self.loading(retained_mode,k,&w.release_hydraulics))?;
+            } else {self.config[k].evaluate(s, input, w.forces[k])?;}
         }
+        self.release_receiver_temperatures(y)?;
+        self.release_jack_temperatures(y)?;
         Ok(())
+    }
+    pub fn release_jack_temperatures(&self,y:&[f64])->Result<Vec<f64>,String> {
+        if y.len()!=self.dimension() {return Err("Wrong release jack caloric state".into());}
+        let Some(release)=&self.release else {return Ok(Vec::new());};
+        (0..self.clusters()).map(|k|self.cooling.barrel.temperature_from_energy_increment(
+            release.input.jacks.mass_kg/self.clusters() as f64,release.input.jacks.initial_k,
+            y[self.motion_row(k,JACK_HEAT)]).map_err(str::to_string)).collect()
+    }
+    /// Impact increments only; this deliberately does not claim a total
+    /// fitting/collar temperature while nuclear and wet-film joins are absent.
+    pub fn release_receiver_temperatures(&self,y:&[f64])->Result<Vec<[f64;2]>,String> {
+        if y.len()!=self.dimension() {return Err("Wrong release receiving state".into());}
+        let Some(release)=&self.release else {return Ok(Vec::new());};
+        release.input.contacts.iter().enumerate().map(|(k,c)|Ok([
+            crate::fuel_thermal::clad_temperature_from_energy_increment(c.fitting.mass_kg,c.fitting.initial_k,
+                y[self.release_row(k,cr::FITTING_HEAT)])?,
+            self.cooling.barrel.temperature_from_energy_increment(c.collar_slice_mass_kg,c.collar.initial_k,
+                y[self.release_row(k,cr::COLLAR_HEAT)])?,
+        ])).collect()
     }
     /// Recover the existing finite apparatus stocks in control-material host
     /// order. This is an adiabatic 304 caloric view/domain check, not a new

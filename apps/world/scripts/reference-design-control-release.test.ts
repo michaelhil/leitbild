@@ -2,8 +2,9 @@ import {expect,test} from 'bun:test'
 import {controlReleasePhysicalInput,parseColdControlRelease} from './reference-design-control-release'
 
 const selected={configuration:'offline-paid-lift-physical-release',lift_m:.25,
- neckInertance:'plug-displacement-fixed-initial-UPPER-density',maximumInertanceDensityRelativeDeparture:.01,
- neckAreaChangeLoss:'geometric-small-area-sudden-change',
+ neckInertance:'piecewise-shaft-shoulder-plug-fixed-initial-UPPER-density',maximumInertanceDensityRelativeDeparture:.01,
+ neckAreaChangeLoss:'geometric-small-area-sudden-change-with-moving-shoulder',broadDrag:'quiescent-UPPER-envelope-disk-1.28',
+ normalStop:'backdrivable-coast-to-hold',
  impact:'fully-inelastic-no-grip-impulse',movingImpactHeatFraction:.5,
  receiverThermal:'adiabatic-impact-increment-only',localPressureAdmission:'serial-absolute-above-current-saturation'} as const
 const document=(body:unknown=selected)=>'```reference-cold-control-release\n'+JSON.stringify(body)+'\n```\n'
@@ -14,9 +15,10 @@ function fixture(){
  const c={clusters:52 as const,gapArmature_kg:1,gapStroke_m:.01,gapSpring_N_m:20000,gapDamping_N_s_m:20,
   attachedJackMassPerCluster_kg:20,collarBottoms_m:[8.05,8.35],collarHeight_m:.1,
   collarID_m:.0125,collarOD_m:.025,steelDensity_kg_m3:7920,headBottom_m:4,housingTop_m:8,neckTop_m:13.6,
-  housingID_m:.25,neckID_m:.05,stemDiameter_m:.012,spiderBottom_m:2.4,spiderHeight_m:.1,stemLength_m:6},
+  housingID_m:.25,neckID_m:.05,stemDiameter_m:.012,spiderBottom_m:2.4,spiderHeight_m:.1,spiderRadius_m:.115,stemLength_m:6},
   clusterFA=Array.from({length:52},(_,i)=>'TEST.FA.'+i),
-  plan={d:{control:c,attachment:{shoulderBottom_m:8.49,stubLength_m:.055,shoulderDiameter_m:.02},handling:{topFitting_kg:10},fuel:{cladDensity_kg_m3:6500}},
+  plan={d:{control:c,attachment:{shoulderBottom_m:8.49,stubLength_m:.055,shoulderDiameter_m:.02,
+   shoulderHeight_m:.01,lugWidth_m:.003,lugOuterRadius_m:.008},handling:{topFitting_kg:10},fuel:{cladDensity_kg_m3:6500}},
    motion:{clusters:clusterFA.map((_,i)=>({id:'TEST.CR.'+i}))},clusterFA,water:[{id:'LOWER'},{id:'UPPER'}],upper:1,maximumStemPose_m:1.54},
   collarVolume=52*2*Math.PI*(c.collarOD_m**2-c.collarID_m**2)*c.collarHeight_m/4,
   stocks:Parameters<typeof controlReleasePhysicalInput>[1]['material']['materialPayload']['passive']['stocks']=[
@@ -34,7 +36,9 @@ test('new release selection is strict and leaves ordinary control selection outs
  expect(parseColdControlRelease(document())).toEqual(selected)
  for(const body of [{...selected,lift_m:.004},{...selected,movingImpactHeatFraction:1},
   {...selected,neckInertance:'silent-extra-metal-mass'},{...selected,configuration:'ordinary-MANUAL'},
-  {...selected,maximumInertanceDensityRelativeDeparture:1},{...selected,dragCoefficient:1.2}])
+  {...selected,maximumInertanceDensityRelativeDeparture:1},{...selected,dragCoefficient:1.2},
+  {...selected,normalStop:'brake-until-model-pressure-passes'},
+  Object.fromEntries(Object.entries(selected).filter(([key])=>key!=='normalStop'))])
   expect(()=>parseColdControlRelease(document(body))).toThrow()
  expect(()=>parseColdControlRelease(document()+document())).toThrow()
  expect(()=>parseColdControlRelease('')).toThrow()
@@ -59,7 +63,7 @@ test('one finite receiver slice per actual contact, no extra material or thermal
 
 test('new opt-in numeric frame preserves physical owner/target order and carries no assigned density',()=>{
  const {plan,source}=fixture(),p=controlReleasePhysicalInput(plan,source,selected),q=p.clusters[0]!
- expect(p.fields).toHaveLength(15+52*13)
+ expect(p.fields).toHaveLength(22+52*13)
  expect(p.fields.slice(0,9)).toEqual([52,.25,p.minimumStemPose_m,1,.01,20000,20,.01,.5])
  expect(p.fields.slice(9,15)).toEqual([...p.jacks.targets,p.jacks.volume_m3,p.jacks.mass_kg])
  expect(p.fields.slice(15,28)).toEqual([q.topFitting.targets[0]!,q.topFitting.volume_m3,q.topFitting.mass_kg,300,
@@ -70,6 +74,22 @@ test('new opt-in numeric frame preserves physical owner/target order and carries
  }
  expect(p.fields.every(Number.isFinite)).toBe(true)
  expect('density_kg_m3' in p).toBe(false)
+ expect(p.fields.slice(-7)).toEqual([.01,8.49,8.5,Math.PI*.115**2,Math.PI*.006**2+2*.003*.002,1.28,1])
+ expect(p.broadDrag.coefficientSensitivity).toEqual([.64,2.56])
+})
+
+test('normal coast and abrupt-brake contrary are explicit consumed policies over identical physical owners',()=>{
+ const {plan,source}=fixture(),normal=controlReleasePhysicalInput(plan,source,selected),
+  contrarySelection={...selected,normalStop:'anchored-reference-full-grip-brake'} as const,
+  contrary=controlReleasePhysicalInput(plan,source,parseColdControlRelease(document(contrarySelection)))
+ expect(contrary.selection.normalStop).toBe('anchored-reference-full-grip-brake')
+ expect(normal.fields.at(-1)).toBe(1)
+ expect(contrary.fields.at(-1)).toBe(0)
+ expect(normal.fields.slice(0,-1)).toEqual(contrary.fields.slice(0,-1))
+ expect(normal.clusters).toEqual(contrary.clusters)
+ expect(normal.shoulder).toEqual(contrary.shoulder)
+ expect(normal.broadDrag).toEqual(contrary.broadDrag)
+ expect(normal.minimumStemPose_m).toBe(contrary.minimumStemPose_m)
 })
 
 test('all five actual smaller-area loss interfaces stay shaft-occupied over the signed domain',()=>{
@@ -86,6 +106,8 @@ test('all five actual smaller-area loss interfaces stay shaft-occupied over the 
   (f:ReturnType<typeof fixture>)=>{f.plan.d.control.stemLength_m=5.9},
   (f:ReturnType<typeof fixture>)=>{f.plan.d.attachment.stubLength_m=.07},
   (f:ReturnType<typeof fixture>)=>{f.plan.d.attachment.shoulderDiameter_m=.012},
+  (f:ReturnType<typeof fixture>)=>{f.plan.d.attachment.shoulderHeight_m=.02},
+  (f:ReturnType<typeof fixture>)=>{f.plan.d.control.spiderRadius_m=.125},
  ]){const f=fixture();edit(f);expect(()=>controlReleasePhysicalInput(f.plan,f.source,selected)).toThrow()}
 })
 
