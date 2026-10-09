@@ -25,7 +25,7 @@
     {@const margin = typeof value === 'number' ? nearestThresholdMargin(value, pen.thresholds) : null}
     {@const inAlarm = activeThreshold(pen.thresholds, activeRuleIds)}
     <li class:primary={pen.role === 'primary'} title={`${pen.label} · ${pen.role}`}>
-      <span class="head" title={`${displayName(pen)}${pen.command ? ' · operator or automation demand, not a measured state' : ` · ${pen.label}`}`}><span class="name">{shortName(displayName(pen), 24)}</span>{#if pen.command}<span class="demand">demand</span>{/if}{#if inAlarm !== null}<AlarmChip threshold={inAlarm} />{/if}</span>
+      <span class="head" title={`${displayName(pen)}${pen.command ? ' · operator or automation demand, not a measured state' : ` · ${pen.label}`}`}><span class="name">{shortName(displayName(pen), pen.command ? 16 : 24)}</span>{#if pen.command}<span class="demand">demand</span>{/if}{#if inAlarm !== null}<AlarmChip threshold={inAlarm} />{/if}</span>
       {#if typeof value === 'boolean'}
         <span class="state">{value ? pen.label : `Not ${pen.label.charAt(0).toLowerCase()}${pen.label.slice(1)}`}</span>
       {:else}
