@@ -12,7 +12,8 @@ export interface OllamaError extends Error {
 }
 
 // Invalid request/protocol state is not a provider outage. Never retry it on
-// another route or count it against provider health.
+// another route or count it against provider health. Route refusals (see
+// isRouteRefusal) are the one exception to "another route".
 export interface LLMRequestError extends Error {
   readonly kind: 'request_error'
   readonly code: string
@@ -25,6 +26,19 @@ export const createLLMRequestError = (code: string, message: string): LLMRequest
 
 export const isLLMRequestError = (err: unknown): err is LLMRequestError =>
   err instanceof Error && (err as { kind?: string }).kind === 'request_error'
+
+// Request errors one provider route raises locally, before any network I/O,
+// because that route cannot carry this request: direct OpenAI Chat
+// Completions with tools at a non-none effort, an effort the route has no
+// mapping for, or a context window smaller than the request. Another route
+// for the same model may carry the identical request, so an unpinned router
+// skips the route with a structured reason; the request is never adapted.
+const ROUTE_REFUSAL_CODES: ReadonlySet<string> = new Set([
+  'unsupported_provider_transport', 'reasoning_effort_unsupported', 'context_capacity',
+])
+
+export const isRouteRefusal = (err: unknown): err is LLMRequestError =>
+  isLLMRequestError(err) && ROUTE_REFUSAL_CODES.has(err.code)
 
 export interface GatewayError extends Error {
   readonly kind: 'gateway_error'

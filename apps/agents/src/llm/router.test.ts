@@ -1,9 +1,10 @@
 import { describe, test, expect } from 'bun:test'
 import type { ChatRequest, ChatResponse, StreamChunk, ProviderHealth, GatewayMetrics } from '../core/types/llm.ts'
 import type { ChatCallOptions, ProviderGateway } from './provider-gateway.ts'
-import { createProviderRouter, parseProviderPrefix, type ProviderRoutingEvent } from './router.ts'
-import { createCloudProviderError, createGatewayError } from './errors.ts'
+import { createProviderRouter, parseProviderPrefix, type ProviderAllFailedEvent, type ProviderRoutingEvent } from './router.ts'
+import { createCloudProviderError, createGatewayError, isCloudProviderError, isLLMRequestError } from './errors.ts'
 import { createProviderMonitor, type ProviderMonitor } from './provider-monitor.ts'
+import { buildOAIBody } from './openai-compatible-wire.ts'
 
 // Helper: build a fake-monitor map for the given provider names so the
 // router enforces cooldown / unhealthy state. Tests that don't care about
@@ -115,7 +116,9 @@ describe('actual routed model capacity', () => {
     const router = createProviderRouter({ large, small }, { order: ['large', 'small'], contextLookup: async provider => ({ contextMax: provider === 'large' ? 100_000 : 1_000, source: 'test' }) })
     const request = chatReq('model', 'x'.repeat(20_000))
     const invoke = async () => { if (mode === 'chat') return router.chat(request); for await (const _ of router.stream(request)) { /* drain */ } }
-    await expect(invoke()).rejects.toThrow('exceeds small:model capacity 1000')
+    // The outage on the route that could carry the request is the cause; the
+    // smaller route's refusal is detail.
+    await expect(invoke()).rejects.toThrow(/^model could not be served\. large: provider unavailable: unavailable\..* small: skipped before dispatch — Request estimate \d+ tokens exceeds small:model capacity 1000/)
     expect(small.callCount()).toBe(0)
     expect(small.streamOptions()).toHaveLength(0)
     router.dispose()
@@ -334,6 +337,109 @@ describe('createProviderRouter — failover', () => {
     const metrics = router.getAggregatedMetrics()
     expect(Object.keys(metrics.byProvider)).toEqual(['a', 'b'])
     expect(metrics.lastSuccessByModel).toEqual({ m: 'a' })
+  })
+})
+
+// The 2026-10-09 incident shape: OpenRouter's local gateway sheds a gpt-5.4
+// tool request under load, the router falls through to direct OpenAI, and
+// the real OpenAI wire builder refuses the request before any network I/O.
+// The shed must stay the reported cause; the refusal is a recorded skip.
+describe('createProviderRouter — route refusals', () => {
+  const tools = [{ type: 'function' as const, function: { name: 'inspect', description: 'Inspect', parameters: { type: 'object', properties: {} } } }]
+  const toolRequest = (model: string): ChatRequest => ({ ...chatReq(model), tools })
+  const shed = () => createGatewayError('queue_full', 'LLM gateway queue full — request shed')
+  // Test double confined to this file: runs the production OpenAI body
+  // builder so the refusal is the real one, then answers without I/O.
+  const directOpenAI = (availableModels: ReadonlyArray<string> = ['gpt-5.4']) => {
+    const base = createFakeGateway({ availableModels })
+    let wireCalls = 0
+    return {
+      ...base,
+      chat: async (request: ChatRequest): Promise<ChatResponse> => {
+        buildOAIBody(request, false, 'openai')
+        wireCalls++
+        return { content: 'served by openai', generationMs: 1, tokensUsed: { prompt: 1, completion: 1 } }
+      },
+      stream: async function* (request: ChatRequest): AsyncIterable<StreamChunk> {
+        buildOAIBody(request, true, 'openai')
+        wireCalls++
+        yield { delta: 'served by openai', done: false }
+        yield { delta: '', done: true }
+      },
+      wireCalls: () => wireCalls,
+    }
+  }
+  const invoke = async (router: ReturnType<typeof createProviderRouter>, mode: 'chat' | 'stream', request: ChatRequest): Promise<string> => {
+    if (mode === 'chat') return (await router.chat(request)).content
+    let text = ''
+    for await (const chunk of router.stream(request)) text += chunk.delta
+    return text
+  }
+  const rejection = async (run: () => Promise<unknown>): Promise<unknown> => {
+    try { await run() } catch (err) { return err }
+    throw new Error('expected the call to fail')
+  }
+
+  test.each(['chat', 'stream'] as const)('%s: a shed on the first route stays the cause when the next route refuses the request shape', async mode => {
+    const openrouter = createFakeGateway({ availableModels: ['gpt-5.4'], responses: [shed()], streamResponses: [shed()] })
+    const openai = directOpenAI()
+    const anthropic = createFakeGateway({ availableModels: [] })
+    const monitors = monitorsFor(['openrouter', 'anthropic', 'openai'])
+    const router = createProviderRouter({ openrouter, anthropic, openai }, { order: ['openrouter', 'anthropic', 'openai'], monitors })
+    const events: ProviderRoutingEvent[] = []
+    router.onRoutingEvent(event => events.push(event))
+
+    const err = await rejection(() => invoke(router, mode, toolRequest('gpt-5.4')))
+
+    expect(isLLMRequestError(err)).toBe(false)
+    expect(isCloudProviderError(err) && err.code).toBe('provider_down')
+    const message = (err as Error).message
+    expect(message.startsWith('gpt-5.4 could not be served. openrouter: LLM gateway queue full — request shed (queue_full')).toBe(true)
+    expect(message).toContain('openai: skipped before dispatch — unsupported_provider_transport')
+    expect(message).not.toContain('anthropic')
+    expect(openai.wireCalls()).toBe(0)
+    const failed = events.find((event): event is ProviderAllFailedEvent => event.type === 'provider_all_failed')
+    expect(failed?.primaryCode).toBe('queue_full')
+    expect(failed?.attempts.map(attempt => [attempt.provider, attempt.code])).toEqual([
+      ['anthropic', 'not_listed'], ['openrouter', 'queue_full'], ['openai', 'unsupported_route'],
+    ])
+    // A local refusal says nothing about OpenAI's health.
+    expect(router.getMonitorSnapshot().openai?.sub).toBe('ok')
+    router.dispose()
+  })
+
+  test.each(['chat', 'stream'] as const)('%s: a refusing route is skipped and the next route serves the request', async mode => {
+    const openai = directOpenAI()
+    const openrouter = createFakeGateway({ availableModels: ['gpt-5.4'] })
+    const router = createProviderRouter({ openai, openrouter }, { order: ['openai', 'openrouter'] })
+    expect(await invoke(router, mode, toolRequest('gpt-5.4'))).not.toContain('openai')
+    expect(openai.wireCalls()).toBe(0)
+    router.dispose()
+  })
+
+  test.each(['chat', 'stream'] as const)('%s: with nothing transient in the way the refusal itself surfaces unchanged', async mode => {
+    for (const model of ['gpt-5.4', 'openai:gpt-5.4']) {
+      const router = createProviderRouter({ openai: directOpenAI(), groq: createFakeGateway({ availableModels: [] }) }, { order: ['groq', 'openai'] })
+      const events: ProviderRoutingEvent[] = []
+      router.onRoutingEvent(event => events.push(event))
+      const err = await rejection(() => invoke(router, mode, toolRequest(model)))
+      expect(isLLMRequestError(err) && err.code).toBe('unsupported_provider_transport')
+      expect(events.some(event => event.type === 'provider_all_failed')).toBe(false)
+      router.dispose()
+    }
+  })
+
+  test('routes that never were candidates do not outrank the failure of the route that was tried', async () => {
+    const limited = createFakeGateway({ availableModels: ['m'], responses: [createCloudProviderError({ code: 'rate_limit', provider: 'limited', status: 429, message: 'slow down' })] })
+    const keyless = createFakeGateway({ availableModels: ['m'] })
+    const router = createProviderRouter({ keyless, limited }, { order: ['keyless', 'limited'], isProviderEnabled: name => name !== 'keyless' })
+    const events: ProviderRoutingEvent[] = []
+    router.onRoutingEvent(event => events.push(event))
+    const err = await rejection(() => router.chat(chatReq('m')))
+    expect((err as Error).message.startsWith('m could not be served. limited: rate-limited (HTTP 429): slow down.')).toBe(true)
+    expect((err as Error).message).not.toContain('keyless')
+    expect(events.find((event): event is ProviderAllFailedEvent => event.type === 'provider_all_failed')?.primaryCode).toBe('rate_limit')
+    router.dispose()
   })
 })
 

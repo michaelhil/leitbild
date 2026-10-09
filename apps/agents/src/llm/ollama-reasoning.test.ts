@@ -10,12 +10,20 @@ import { isCloudProviderError } from './errors.ts'
 
 const fixture = async () => {
   const ollamaBodies: Record<string, unknown>[] = []
+  const backupBodies: Record<string, unknown>[] = []
   let cloudCalls = 0
-  let backupCalls = 0
   const server = Bun.serve({ port: 0, fetch: async request => {
     const path = new URL(request.url).pathname
-    if (path === '/cloud/models') return Response.json({ data: [{ id: 'shared' }] })
+    if (path === '/cloud/models' || path === '/backup/models') return Response.json({ data: [{ id: 'shared' }] })
     if (path === '/cloud/chat/completions') { cloudCalls++; return new Response('fixture unavailable', { status: 503 }) }
+    if (path === '/backup/chat/completions') {
+      const body = await request.json() as Record<string, unknown>
+      backupBodies.push(body)
+      const answer = { role: 'assistant', content: 'answer with the requested effort' }
+      return body.stream
+        ? new Response([JSON.stringify({ choices: [{ delta: answer, finish_reason: 'stop' }] }), '[DONE]'].map(line => `data: ${line}\n\n`).join(''), { headers: { 'Content-Type': 'text/event-stream' } })
+        : Response.json({ choices: [{ message: answer, finish_reason: 'stop' }] })
+    }
     if (path === '/ollama/api/tags') return Response.json({ models: [{ name: 'shared' }] })
     if (path === '/ollama/api/ps') return Response.json({ models: [] })
     if (path === '/ollama/api/chat') {
@@ -29,18 +37,37 @@ const fixture = async () => {
   const url = `http://localhost:${server.port}`
   const cloud = createProviderGateway(createOpenAICompatibleProvider({ name: 'openrouter', getBaseUrl: () => `${url}/cloud`, getApiKey: () => 'fixture' }), {}, { isPermanentError: isCloudProviderError })
   const ollama = createOllamaGateway(createOllamaProvider(`${url}/ollama`), { circuitBreakerThreshold: 1 })
-  const backup = createProviderGateway({ models: async () => ['shared'], chat: async () => { backupCalls++; return { content: 'wrong fallback', generationMs: 1, tokensUsed: { prompt: 1, completion: 1 } } }, stream: async function*() { backupCalls++; yield { done: true, delta: 'wrong fallback' } } })
+  // A conforming route: the OpenRouter wire carries an explicit effort or refuses it.
+  const backup = createProviderGateway(createOpenAICompatibleProvider({ name: 'openrouter', getBaseUrl: () => `${url}/backup`, getApiKey: () => 'fixture' }), {}, { isPermanentError: isCloudProviderError })
   await Promise.all([cloud.refreshModels(), ollama.refreshModels(), backup.refreshModels()])
   const router = createProviderRouter({ cloud, ollama, backup }, { order: ['cloud', 'ollama', 'backup'], contextLookup: async () => ({ contextMax: 0, source: 'fixture_unknown' }) })
-  return { router, ollama, ollamaBodies, cloudCalls: () => cloudCalls, backupCalls: () => backupCalls, close: () => { router.dispose(); server.stop(true) } }
+  return { router, ollama, ollamaBodies, backupBodies, cloudCalls: () => cloudCalls, backupCalls: () => backupBodies.length, close: () => { router.dispose(); server.stop(true) } }
 }
 
 for (const mode of ['chat', 'stream'] as const) {
-  for (const chain of [false, true]) test(`explicit effort is nonfallbackable at Ollama after cloud failure (${mode}, ${chain ? 'service chain' : 'router fallthrough'})`, async () => {
+  // Routes of one model: Ollama refuses the explicit effort before any I/O,
+  // so the router skips it with a recorded reason and the next route that
+  // carries the exact effort serves the request.
+  test(`explicit effort skips Ollama after cloud failure and reaches only a route that carries it (${mode}, router fallthrough)`, async () => {
     const fx = await fixture()
     try {
-      const provider = chain ? createLLMService({ router: fx.router }).bound({ source: 'agent', fallbackChain: ['ollama:shared', 'backup:shared'] }) : fx.router
-      const request: ChatRequest = { model: chain ? 'cloud:shared' : 'shared', messages: [{ role: 'user', content: 'hello' }], reasoningEffort: 'high', think: true }
+      const request: ChatRequest = { model: 'shared', messages: [{ role: 'user', content: 'hello' }], reasoningEffort: 'high', think: true }
+      const text = mode === 'chat' ? (await fx.router.chat(request)).content : (await Array.fromAsync(fx.router.stream(request))).map(chunk => chunk.delta).join('')
+      expect(text).toBe('answer with the requested effort')
+      expect(fx.cloudCalls()).toBe(1)
+      expect(fx.ollamaBodies).toHaveLength(0)
+      expect(fx.backupBodies.map(body => body.reasoning)).toEqual([{ effort: 'high' }])
+      expect(fx.ollama.getMetrics().circuitState).toBe('closed')
+    } finally { fx.close() }
+  })
+
+  // An explicitly configured fallback model is a separate choice; its
+  // refusal ends the service chain and is reported as configured.
+  test(`explicit effort is nonfallbackable at Ollama after cloud failure (${mode}, service chain)`, async () => {
+    const fx = await fixture()
+    try {
+      const provider = createLLMService({ router: fx.router }).bound({ source: 'agent', fallbackChain: ['ollama:shared', 'backup:shared'] })
+      const request: ChatRequest = { model: 'cloud:shared', messages: [{ role: 'user', content: 'hello' }], reasoningEffort: 'high', think: true }
       const invoke = () => mode === 'chat' ? provider.chat(request) : Array.fromAsync(provider.stream!(request))
       await expect(invoke()).rejects.toThrow('reasoning_effort_unsupported')
       expect(fx.cloudCalls()).toBe(1)

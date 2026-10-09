@@ -6,7 +6,10 @@
 // that are cold (cooldown timer not yet elapsed) or whose cached /models list
 // doesn't include the requested model. On rate_limit / quota / provider_down
 // errors, trips a per-provider cooldown and falls through. On auth /
-// bad_request errors, propagates without fallback (config problem).
+// bad_request errors, propagates without fallback (config problem). A route
+// that refuses the request shape locally (errors.ts isRouteRefusal) is
+// skipped with a structured attempt; it becomes the reported cause only when
+// nothing transient was in the way.
 //
 // Emits routing events so the UI can show toaster notifications:
 //   - provider_bound       a call succeeded after a provider change
@@ -23,7 +26,7 @@
 
 import type { LLMProvider, ChatRequest, ChatResponse, StreamChunk, GatewayMetrics } from '../core/types/llm.ts'
 import type { ProviderGateway, ChatCallOptions } from './provider-gateway.ts'
-import { createCloudProviderError, isAbortError, isCloudProviderError, isFallbackable, isGatewayError, isLLMRequestError } from './errors.ts'
+import { createCloudProviderError, isAbortError, isCloudProviderError, isFallbackable, isGatewayError, isLLMRequestError, isRouteRefusal, type LLMRequestError } from './errors.ts'
 import type { ProviderMonitor, MonitorState } from './provider-monitor.ts'
 import type { ModelInfo } from '../core/types/model-info.ts'
 import { estimateRequestSize } from './request-size.ts'
@@ -48,12 +51,19 @@ import { createLLMRequestError } from './errors.ts'
 //   network        | network/transport failure
 //   forced_fail    | test hook
 //   unknown        | catch-all
+//   unsupported_route | route refused this request shape before dispatch
+//                    | (tools, reasoning effort or context it cannot carry)
 export type ProviderAttemptCode =
   | 'no_key' | 'disabled' | 'not_listed'
   | 'backoff' | 'unhealthy'
   | 'rate_limit' | 'quota' | 'provider_down'
   | 'queue_full' | 'queue_timeout' | 'circuit_open'
   | 'network' | 'forced_fail' | 'unknown'
+  | 'unsupported_route'
+
+// Codes for routes that never were candidates for the model. They explain a
+// failure only when no route was tried at all.
+const NOT_CANDIDATE_CODES: ReadonlySet<ProviderAttemptCode> = new Set(['no_key', 'disabled', 'not_listed'])
 
 export interface ProviderAttemptRecord {
   readonly provider: string
@@ -355,7 +365,7 @@ export const createProviderRouter = (
   const WARN_TTL_MS = 5 * WARN_SUPPRESS_MS
   type WarnKey = string  // `${kind}:${provider}:${code}`
   const warnState = new Map<WarnKey, { firstAt: number; suppressedSince: number; suppressedCount: number; lastMessage: string }>()
-  const warnOnce = (kind: 'rethrow' | 'fallthrough' | 'shed' | 'unknown', name: string, code: string, line: string): void => {
+  const warnOnce = (kind: 'rethrow' | 'fallthrough' | 'shed' | 'refused' | 'unknown', name: string, code: string, line: string): void => {
     const key: WarnKey = `${kind}:${name}:${code}`
     const t = now()
     // TTL prune: drop entries past 5× the suppression window. Keeps the
@@ -389,6 +399,8 @@ export const createProviderRouter = (
     request: ChatRequest,
     agentId: string | null,
   ): 'fallthrough' | 'rethrow' => {
+    // Route refusals were recorded before this call; any other request error
+    // is wrong on every route.
     if (isLLMRequestError(err)) return 'rethrow'
     if (isCloudProviderError(err)) {
       if (!isFallbackable(err)) {
@@ -406,8 +418,10 @@ export const createProviderRouter = (
       return 'fallthrough'
     }
     if (isGatewayError(err) && (err.code === 'queue_full' || err.code === 'circuit_open' || err.code === 'queue_timeout')) {
-      // Local shed — does NOT count against monitor health.
-      attempts.push({ provider: name, reason: err.code, code: err.code })
+      // Local shed — does NOT count against monitor health. A queue shed is
+      // bounded by this gateway's own concurrency, so name it.
+      const limit = err.code === 'circuit_open' ? '' : `; maxConcurrent ${providers[name]!.getConfig().maxConcurrent}`
+      attempts.push({ provider: name, reason: `${err.message} (${err.code}${limit})`, code: err.code })
       warnOnce('shed', name, err.code, `[llm:${name}] attempt failed (local shed) code=${err.code} model=${request.model}`)
       return 'fallthrough'
     }
@@ -417,6 +431,21 @@ export const createProviderRouter = (
     attempts.push({ provider: name, reason: message, code: 'network' })
     warnOnce('unknown', name, 'network', `[llm:${name}] attempt failed (network/unknown) model=${request.model}: ${message}`)
     return 'fallthrough'
+  }
+
+  // A route refused the request shape locally, before any network I/O. That
+  // is not a health signal, so the monitor is untouched; exhausted() decides
+  // whether it is the cause or detail beside a transient failure.
+  const recordRefusal = (
+    err: LLMRequestError,
+    name: string,
+    attempts: ProviderAttemptRecord[],
+    refusals: LLMRequestError[],
+    request: ChatRequest,
+  ): void => {
+    attempts.push({ provider: name, reason: `skipped before dispatch — ${err.message}`, code: 'unsupported_route' })
+    refusals.push(err)
+    warnOnce('refused', name, err.code, `[llm:${name}] route refused request before dispatch code=${err.code} model=${request.model}: ${err.message}`)
   }
 
   const errorAttempt = (err: import('./errors.ts').CloudProviderError): { reason: string; code: ProviderAttemptCode } => {
@@ -462,19 +491,22 @@ export const createProviderRouter = (
 
   // Priority order for picking the *primary* cause from a list of failed
   // attempts. Items earlier in the list are more actionable / louder for
-  // the user — "no key" beats "rate-limited" beats "internal error".
+  // the user — "no key" beats "rate-limited" beats "internal error". The
+  // not-candidate codes only compete when no route was tried (see
+  // summarizeAttempts); a refusal never outranks a transient failure.
   const PRIMARY_CODE_PRIORITY: ReadonlyArray<ProviderAttemptCode> = [
     'no_key', 'disabled', 'not_listed',
     'quota', 'rate_limit', 'backoff',
     'provider_down', 'unhealthy',
     'circuit_open', 'queue_full', 'queue_timeout',
     'forced_fail', 'network', 'unknown',
+    'unsupported_route',
   ]
 
   // Build a one-line user-facing remediation hint for a given primary code.
   // Kept here (not in the UI) so the same string flows to logs / MCP /
   // future API consumers without each layer reinventing it.
-  const remediationFor = (code: ProviderAttemptCode, model: string): string => {
+  const remediationFor = (code: ProviderAttemptCode, model: string, provider: string): string => {
     switch (code) {
       case 'no_key': return `Add an API key in the Providers panel`
       case 'disabled': return `Re-enable the provider in the Providers panel`
@@ -484,21 +516,29 @@ export const createProviderRouter = (
       case 'quota': return `Wait for the cooldown to expire, or pick a model on a different provider`
       case 'provider_down':
       case 'unhealthy': return `Provider is having trouble — try again, switch model, or check the provider's status page`
-      case 'circuit_open':
+      case 'circuit_open': return `Provider is temporarily overloaded — retry in a few seconds`
       case 'queue_full':
-      case 'queue_timeout': return `Provider is temporarily overloaded — retry in a few seconds`
+      case 'queue_timeout': return `Retry in a few seconds, or raise the ${provider} concurrency limit in the Providers panel`
       case 'network': return `Network/transport error — check connectivity`
       case 'forced_fail': return `Test hook is forcing this provider to fail (FORCE_PROVIDER_FAIL)`
+      case 'unsupported_route': return `No configured route can carry this request — change the agent's model or reasoning setting`
       case 'unknown':
       default: return `Open the Providers panel for details`
     }
+  }
+
+  type AttemptSummary = {
+    readonly code: ProviderAttemptCode
+    readonly reason: string
+    readonly remediation: string
+    readonly attempt: ProviderAttemptRecord | null
   }
 
   const emitAllFailed = (
     agentId: string | null,
     model: string,
     attempts: ReadonlyArray<ProviderAttemptRecord>,
-  ): void => {
+  ): AttemptSummary => {
     const summary = summarizeAttempts(attempts, model)
     emit({
       type: 'provider_all_failed',
@@ -507,23 +547,31 @@ export const createProviderRouter = (
       primaryReason: summary.reason,
       remediation: summary.remediation,
     })
+    return summary
   }
 
   const summarizeAttempts = (
     attempts: ReadonlyArray<ProviderAttemptRecord>,
     model: string,
-  ): { code: ProviderAttemptCode; reason: string; remediation: string } => {
-    if (attempts.length === 0) {
+  ): AttemptSummary => {
+    // "anthropic: no API key" must not headline a shed on the route that
+    // actually serves the model; routes that never were candidates only
+    // explain the failure when no route was tried at all.
+    const tried = attempts.filter(a => !NOT_CANDIDATE_CODES.has(a.code))
+    const pool = tried.length > 0 ? tried : attempts
+    const [first] = pool
+    if (!first) {
       return {
         code: 'not_listed',
         reason: `no eligible provider for ${model}`,
-        remediation: remediationFor('not_listed', model),
+        remediation: remediationFor('not_listed', model, 'router'),
+        attempt: null,
       }
     }
-    let pick = attempts[0]!
+    let pick = first
     let pickRank = PRIMARY_CODE_PRIORITY.indexOf(pick.code)
     if (pickRank < 0) pickRank = PRIMARY_CODE_PRIORITY.length
-    for (const a of attempts) {
+    for (const a of pool) {
       let rank = PRIMARY_CODE_PRIORITY.indexOf(a.code)
       if (rank < 0) rank = PRIMARY_CODE_PRIORITY.length
       if (rank < pickRank) { pick = a; pickRank = rank }
@@ -531,8 +579,35 @@ export const createProviderRouter = (
     return {
       code: pick.code,
       reason: `${pick.provider}: ${pick.reason}`,
-      remediation: remediationFor(pick.code, model),
+      remediation: remediationFor(pick.code, model, pick.provider),
+      attempt: pick,
     }
+  }
+
+  // Cause and remedy come first so a view that clips the message still says
+  // what happened and what to do; other tried routes follow as detail.
+  const allFailedMessage = (model: string, attempts: ReadonlyArray<ProviderAttemptRecord>, summary: AttemptSummary): string => {
+    const sentence = (text: string): string => /[.!?]$/.test(text) ? text : `${text}.`
+    const tried = attempts.filter(a => !NOT_CANDIDATE_CODES.has(a.code))
+    const detail = (tried.length > 0 ? tried : attempts).filter(a => a !== summary.attempt)
+    return [`${model} could not be served`, summary.reason, summary.remediation, ...detail.map(a => `${a.provider}: ${a.reason}`)]
+      .map(sentence).join(' ')
+  }
+
+  // Every candidate is spent. A refusal is the cause only when nothing else
+  // was in the way (e.g. direct OpenAI is the sole route for the model) and
+  // then surfaces unchanged, as before. After a shed, limit or outage it is
+  // detail beside that failure, never the headline.
+  const exhausted = (
+    agentId: string | null,
+    model: string,
+    attempts: ReadonlyArray<ProviderAttemptRecord>,
+    refusals: ReadonlyArray<LLMRequestError>,
+  ): Error => {
+    const [refusal] = refusals
+    if (refusal && attempts.every(a => NOT_CANDIDATE_CODES.has(a.code) || a.code === 'unsupported_route')) return refusal
+    const summary = emitAllFailed(agentId, model, attempts)
+    return createCloudProviderError({ code: 'provider_down', provider: 'router', message: allFailedMessage(model, attempts, summary) })
   }
 
   // The `mayCall=false` skip path needs to record the structural reason.
@@ -563,6 +638,7 @@ export const createProviderRouter = (
     const agentId = options?.agentId ?? null
     const { candidates, modelId, pinned, structuralAttempts } = resolveCandidates(request.model)
     const attempts: ProviderAttemptRecord[] = [...structuralAttempts]
+    const refusals: LLMRequestError[] = []
 
     for (const name of candidates) {
       if (!mayCall(name)) {
@@ -594,6 +670,10 @@ export const createProviderRouter = (
         }
         return response
       } catch (err) {
+        if (isRouteRefusal(err)) {
+          recordRefusal(err, name, attempts, refusals, request)
+          continue
+        }
         const decision = classifyProviderError(err, name, attempts, request, agentId)
         if (decision === 'rethrow') throw err
         if (pinned) {
@@ -604,13 +684,7 @@ export const createProviderRouter = (
       }
     }
 
-    // All candidates exhausted without success.
-    emitAllFailed(agentId, request.model, attempts)
-    throw createCloudProviderError({
-      code: 'provider_down',
-      provider: 'router',
-      message: `All providers failed for model ${request.model}: ${attempts.map(a => `${a.provider}(${a.reason})`).join(', ')}`,
-    })
+    throw exhausted(agentId, request.model, attempts, refusals)
   }
 
   // Stream: mid-stream failover is NOT attempted (A3 resolution).
@@ -624,6 +698,7 @@ export const createProviderRouter = (
     const agentId = options?.agentId ?? null
     const { candidates, modelId, pinned, structuralAttempts } = resolveCandidates(request.model)
     const attempts: ProviderAttemptRecord[] = [...structuralAttempts]
+    const refusals: LLMRequestError[] = []
 
     for (const name of candidates) {
       if (!mayCall(name)) {
@@ -659,6 +734,10 @@ export const createProviderRouter = (
         iter = gateway.stream!(adjusted, signal, options)[Symbol.asyncIterator]()
       } catch (err) {
         if (isAbortError(err, signal)) throw err
+        if (isRouteRefusal(err)) {
+          recordRefusal(err, name, attempts, refusals, request)
+          continue
+        }
         const decision = classifyProviderError(err, name, attempts, request, agentId)
         if (decision === 'rethrow') throw err
         if (pinned) {
@@ -673,6 +752,10 @@ export const createProviderRouter = (
         firstChunk = await iter.next()
       } catch (err) {
         if (isAbortError(err, signal)) throw err
+        if (isRouteRefusal(err)) {
+          recordRefusal(err, name, attempts, refusals, request)
+          continue
+        }
         const decision = classifyProviderError(err, name, attempts, request, agentId)
         if (decision === 'rethrow') throw err
         if (pinned) {
@@ -742,12 +825,7 @@ export const createProviderRouter = (
     }
 
     // No candidate produced even a first chunk.
-    emitAllFailed(agentId, request.model, attempts)
-    throw createCloudProviderError({
-      code: 'provider_down',
-      provider: 'router',
-      message: `All providers failed for stream of model ${request.model}: ${attempts.map(a => `${a.provider}(${a.reason})`).join(', ')}`,
-    })
+    throw exhausted(agentId, request.model, attempts, refusals)
   }
 
   const models = async (): Promise<string[]> => {
