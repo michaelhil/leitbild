@@ -198,5 +198,6 @@
   .panels { display: flex; flex-direction: column; }
   /* A unit overview fills a window and is larger than it: its panels scroll, and nothing is shrunk. */
   .overview .panels { flex: 1 1 auto; min-height: 0; overflow: auto; }
+  .overview .panels > :global(*) { flex-shrink: 0; }
   footer { margin-top: auto; font-size: 10.5px; color: var(--element-neutral-color); }
 </style>

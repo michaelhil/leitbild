@@ -571,8 +571,16 @@ export const compileComposedDisplay = (
   }
 }
 
-/** The largest screen a unit overview is drawn for at 1:1; a larger drawing is refused with the size it needs. */
-export const UNIT_OVERVIEW_CANVAS = { maxWidth: 2560, maxHeight: 1440 } as const
+/**
+ * The screens a unit overview is drawn for at 1:1, smallest first: the
+ * overview takes the first its Plant fits (four loops fit Full HD, six need
+ * QHD), so it never draws taller or wider than the screen it needs. A Plant
+ * that fits none is refused with the size it needs.
+ */
+export const UNIT_OVERVIEW_SCREENS = [
+  { maxWidth: 1920, maxHeight: 1080 },
+  { maxWidth: 2560, maxHeight: 1440 },
+] as const
 
 /**
  * The unit overview World generates for a Plant: its lead values (protection
@@ -587,7 +595,9 @@ export const compileOverviewDisplay = (system: ProcessPlantRuntimeInstance, reco
     : compilePanel(system, { kind: 'readouts', signals: keyValues.map(path => ({ ref: path, role: 'primary' as const })) }, 0, recordedSeriesIds, issues)
   const circuits = principalCircuits(system.plant.graph)
   if (!circuits.ok) return { ok: false, issues: [{ path: 'overview', message: circuits.reason }] }
-  const drawn = compileMimicScope(system.plant, circuits.scope, { profile: overviewMimicProfile, ...UNIT_OVERVIEW_CANVAS })
+  const attempts = UNIT_OVERVIEW_SCREENS.map(screen => () => compileMimicScope(system.plant, circuits.scope, { profile: overviewMimicProfile, ...screen }))
+  let drawn = attempts[0]!()
+  for (const attempt of attempts.slice(1)) if (!drawn.ok) drawn = attempt()
   if (!drawn.ok) return { ok: false, issues: drawn.issues.map(issue => ({ path: 'overview', message: issue.message })) }
   if (issues.length > 0) return { ok: false, issues }
   const unsized: ReadonlyArray<UnsizedPanel> = [

@@ -136,7 +136,7 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
       plantId: display.plantId,
       view: embeddedViewPublicationSchema.parse({
         viewType: COMPOSED_DISPLAY_VIEW_TYPE,
-        title: `${label ?? display.plantId} unit overview`,
+        title: `${label ?? display.plantId} overview`,
         // A chat card reserves at most this; a window shows the whole overview.
         height: Math.min(display.height, EMBEDDED_VIEW_MAX_HEIGHT),
         state: JSON.stringify(overviewDisplayStateSchema.parse({ overview: { plantId: display.plantId } })),
