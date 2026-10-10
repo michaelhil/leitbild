@@ -3,6 +3,7 @@ import type { IsoTimestamp, ObjectId } from '../src/core/model/index.ts'
 import { recordingSeriesIdFor } from '../src/core/model/index.ts'
 import {
   answerProcessPlantQuery,
+  commandsForProcessPlantAction,
   compileProcessPlant,
   createProcessPlantProtectionRunner,
   createProcessPlantRampRunner,
@@ -13,6 +14,8 @@ import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance 
 import { recordedPlantVariables } from '../src/packs/process-plant/recording.ts'
 import { annunciatorHeight, compileDetailDisplay, compileOverviewDisplay, composedDisplayShows, overviewDrawingRoom, type CompiledComposedDisplay, type OverviewView } from '../src/packs/process-plant/displays/compose.ts'
 import { composedDisplayLayout } from '../src/packs/process-plant/displays/composition.ts'
+import { indexSample } from '../src/packs/process-plant/displays/mimic/evaluate.ts'
+import { drawnLook, itemTreatment } from '../src/packs/process-plant/displays/mimic/rows.ts'
 
 // Process display windows as measured on production in Full HD and QHD browsers.
 const fullHd: OverviewView = { width: 1896, height: 972 }
@@ -201,6 +204,22 @@ describe('the unit overview World generates for a Plant', () => {
     expect(mimic.crossings.forced).toBe(1)
     // Five and six loops overflow Full HD, so each searches the least height that draws: seconds under load.
   }, 30_000)
+
+  test('on a feedwater runback the failed valve that causes it stands out as abnormal, and nothing else does', () => {
+    const upset = plant()
+    upset.runtime.tick(1_000)
+    for (const command of commandsForProcessPlantAction({ actionId: 'steam-generator-b-feedwater-runback', parameters: { positionPercent: 35 }, graph: upset.plant.graph })) {
+      upset.runtime.writeCommand({ type: 'setVariable', path: command.path, value: command.value })
+    }
+    upset.runtime.tick(5_000)
+    const result = compileOverviewDisplay(upset, new Set(), fullHd)
+    if (!result.ok) throw new Error(result.issues.map(issue => issue.message).join('; '))
+    const panel = result.display.panels.find(candidate => candidate.kind === 'mimic')!
+    if (panel.kind !== 'mimic') throw new Error('expected the mimic')
+    const index = indexSample(panel.mimic.paths.map(path => ({ path, value: upset.runtime.readVariable(path), quality: 'good' })))
+    const abnormal = panel.mimic.items.filter(item => itemTreatment(drawnLook(item.binding, item.rows, index), false) === 'abnormal').map(item => item.components.join(','))
+    expect(abnormal).toEqual(['feedwaterControlValveB'])
+  })
 
   test('an overview state for another Plant is refused', () => {
     expect(() => ask('world.process-plant.display.view', { plantId: system.plant.id, state: JSON.stringify({ overview: { plantId: 'plant:other' } }) }))
