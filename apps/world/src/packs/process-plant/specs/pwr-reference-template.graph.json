@@ -51,7 +51,7 @@
           "path": "rodInsertionFraction",
           "tagId": "ROD-POS-AVG",
           "equipmentId": "rod-control-system",
-          "description": "Average control rod insertion used to derive steps withdrawn for procedure checks",
+          "description": "Average control rod insertion demand; the model moves the rods to it at once, so procedure checks derive steps withdrawn from it",
           "externalRefs": [
             "rcs.rod.position.avg"
           ],
@@ -215,13 +215,13 @@
           "path": "heaterPowerMw",
           "tagId": "PZR-HTR",
           "equipmentId": "pressurizer",
-          "description": "Pressurizer heater power"
+          "description": "Pressurizer heater power demand"
         },
         {
           "path": "sprayFlowKgPerS",
           "tagId": "PZR-SPRAY",
           "equipmentId": "pressurizer",
-          "description": "Pressurizer spray flow"
+          "description": "Pressurizer spray flow demand"
         },
         {
           "path": "reliefValvePositionFraction",
@@ -706,7 +706,7 @@
           "path": "speedFraction",
           "tagId": "RCP-A-SPD",
           "equipmentId": "rcpA",
-          "description": "Reactor coolant pump A speed fraction"
+          "description": "Reactor coolant pump A speed demand"
         },
         {
           "path": "loopFlowKgPerS",
@@ -755,7 +755,7 @@
           "path": "speedFraction",
           "tagId": "RCP-B-SPD",
           "equipmentId": "rcpB",
-          "description": "Reactor coolant pump B speed fraction"
+          "description": "Reactor coolant pump B speed demand"
         },
         {
           "path": "loopFlowKgPerS",
@@ -804,7 +804,7 @@
           "path": "speedFraction",
           "tagId": "RCP-C-SPD",
           "equipmentId": "rcpC",
-          "description": "Reactor coolant pump C speed fraction"
+          "description": "Reactor coolant pump C speed demand"
         },
         {
           "path": "loopFlowKgPerS",
@@ -853,7 +853,7 @@
           "path": "speedFraction",
           "tagId": "RCP-D-SPD",
           "equipmentId": "rcpD",
-          "description": "Reactor coolant pump D speed fraction"
+          "description": "Reactor coolant pump D speed demand"
         },
         {
           "path": "loopFlowKgPerS",
@@ -902,7 +902,7 @@
           "path": "speedFraction",
           "tagId": "RCP-E-SPD",
           "equipmentId": "rcpE",
-          "description": "Reactor coolant pump E speed fraction"
+          "description": "Reactor coolant pump E speed demand"
         },
         {
           "path": "loopFlowKgPerS",
@@ -951,7 +951,7 @@
           "path": "speedFraction",
           "tagId": "RCP-F-SPD",
           "equipmentId": "rcpF",
-          "description": "Reactor coolant pump F speed fraction"
+          "description": "Reactor coolant pump F speed demand"
         },
         {
           "path": "loopFlowKgPerS",
@@ -1080,10 +1080,16 @@
           "path": "positionFraction",
           "tagId": "MFW-A-CV",
           "equipmentId": "feedwaterControlValveA",
-          "description": "Main feedwater control valve A position",
+          "description": "Main feedwater control valve A position demand",
           "externalRefs": [
             "secondary.mfw.a.cv_position"
           ]
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "MFW-A-CV-POS",
+          "equipmentId": "feedwaterControlValveA",
+          "description": "Main feedwater control valve A position feedback"
         }
       ],
       "metadata": {
@@ -1115,7 +1121,21 @@
         "presentation": {
           "shortLabel": "FCV B"
         }
-      }
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "MFW-B-CV",
+          "equipmentId": "feedwaterControlValveB",
+          "description": "Main feedwater control valve B position demand"
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "MFW-B-CV-POS",
+          "equipmentId": "feedwaterControlValveB",
+          "description": "Main feedwater control valve B position feedback"
+        }
+      ]
     },
     {
       "id": "feedwaterControlValveC",
@@ -1140,7 +1160,21 @@
         "presentation": {
           "shortLabel": "FCV C"
         }
-      }
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "MFW-C-CV",
+          "equipmentId": "feedwaterControlValveC",
+          "description": "Main feedwater control valve C position demand"
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "MFW-C-CV-POS",
+          "equipmentId": "feedwaterControlValveC",
+          "description": "Main feedwater control valve C position feedback"
+        }
+      ]
     },
     {
       "id": "feedwaterControlValveD",
@@ -1165,7 +1199,21 @@
         "presentation": {
           "shortLabel": "FCV D"
         }
-      }
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "MFW-D-CV",
+          "equipmentId": "feedwaterControlValveD",
+          "description": "Main feedwater control valve D position demand"
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "MFW-D-CV-POS",
+          "equipmentId": "feedwaterControlValveD",
+          "description": "Main feedwater control valve D position feedback"
+        }
+      ]
     },
     {
       "id": "feedwaterControlValveE",
@@ -1190,7 +1238,21 @@
         "presentation": {
           "shortLabel": "FCV E"
         }
-      }
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "MFW-E-CV",
+          "equipmentId": "feedwaterControlValveE",
+          "description": "Main feedwater control valve E position demand"
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "MFW-E-CV-POS",
+          "equipmentId": "feedwaterControlValveE",
+          "description": "Main feedwater control valve E position feedback"
+        }
+      ]
     },
     {
       "id": "feedwaterControlValveF",
@@ -1215,7 +1277,21 @@
         "presentation": {
           "shortLabel": "FCV F"
         }
-      }
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "MFW-F-CV",
+          "equipmentId": "feedwaterControlValveF",
+          "description": "Main feedwater control valve F position demand"
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "MFW-F-CV-POS",
+          "equipmentId": "feedwaterControlValveF",
+          "description": "Main feedwater control valve F position feedback"
+        }
+      ]
     },
     {
       "id": "auxFeedwaterTank",
@@ -1393,10 +1469,16 @@
           "path": "positionFraction",
           "tagId": "AFW-A-CV",
           "equipmentId": "auxFeedwaterValveA",
-          "description": "Auxiliary feedwater valve A position",
+          "description": "Auxiliary feedwater valve A position demand",
           "externalRefs": [
             "afw.a.cv_position"
           ]
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "AFW-A-CV-POS",
+          "equipmentId": "auxFeedwaterValveA",
+          "description": "Auxiliary feedwater valve A position feedback"
         }
       ],
       "metadata": {
@@ -1417,10 +1499,16 @@
           "path": "positionFraction",
           "tagId": "AFW-B-CV",
           "equipmentId": "auxFeedwaterValveB",
-          "description": "Auxiliary feedwater valve B position",
+          "description": "Auxiliary feedwater valve B position demand",
           "externalRefs": [
             "afw.b.cv_position"
           ]
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "AFW-B-CV-POS",
+          "equipmentId": "auxFeedwaterValveB",
+          "description": "Auxiliary feedwater valve B position feedback"
         }
       ],
       "metadata": {
@@ -1441,10 +1529,16 @@
           "path": "positionFraction",
           "tagId": "AFW-C-CV",
           "equipmentId": "auxFeedwaterValveC",
-          "description": "Auxiliary feedwater valve C position",
+          "description": "Auxiliary feedwater valve C position demand",
           "externalRefs": [
             "afw.c.cv_position"
           ]
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "AFW-C-CV-POS",
+          "equipmentId": "auxFeedwaterValveC",
+          "description": "Auxiliary feedwater valve C position feedback"
         }
       ],
       "metadata": {
@@ -1465,10 +1559,16 @@
           "path": "positionFraction",
           "tagId": "AFW-D-CV",
           "equipmentId": "auxFeedwaterValveD",
-          "description": "Auxiliary feedwater valve D position",
+          "description": "Auxiliary feedwater valve D position demand",
           "externalRefs": [
             "afw.d.cv_position"
           ]
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "AFW-D-CV-POS",
+          "equipmentId": "auxFeedwaterValveD",
+          "description": "Auxiliary feedwater valve D position feedback"
         }
       ],
       "metadata": {
@@ -1489,10 +1589,16 @@
           "path": "positionFraction",
           "tagId": "AFW-E-CV",
           "equipmentId": "auxFeedwaterValveE",
-          "description": "Auxiliary feedwater valve E position",
+          "description": "Auxiliary feedwater valve E position demand",
           "externalRefs": [
             "afw.e.cv_position"
           ]
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "AFW-E-CV-POS",
+          "equipmentId": "auxFeedwaterValveE",
+          "description": "Auxiliary feedwater valve E position feedback"
         }
       ],
       "metadata": {
@@ -1513,10 +1619,16 @@
           "path": "positionFraction",
           "tagId": "AFW-F-CV",
           "equipmentId": "auxFeedwaterValveF",
-          "description": "Auxiliary feedwater valve F position",
+          "description": "Auxiliary feedwater valve F position demand",
           "externalRefs": [
             "afw.f.cv_position"
           ]
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "AFW-F-CV-POS",
+          "equipmentId": "auxFeedwaterValveF",
+          "description": "Auxiliary feedwater valve F position feedback"
         }
       ],
       "metadata": {
@@ -1537,10 +1649,16 @@
           "path": "positionFraction",
           "tagId": "MSIV-A",
           "equipmentId": "mainSteamIsolationValveA",
-          "description": "Main steam isolation valve A position",
+          "description": "Main steam isolation valve A position demand",
           "externalRefs": [
             "secondary.msiv.a.position"
           ]
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "MSIV-A-POS",
+          "equipmentId": "mainSteamIsolationValveA",
+          "description": "Main steam isolation valve A position feedback"
         }
       ],
       "metadata": {
@@ -1561,10 +1679,16 @@
           "path": "positionFraction",
           "tagId": "MSIV-B",
           "equipmentId": "mainSteamIsolationValveB",
-          "description": "Main steam isolation valve B position",
+          "description": "Main steam isolation valve B position demand",
           "externalRefs": [
             "secondary.msiv.b.position"
           ]
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "MSIV-B-POS",
+          "equipmentId": "mainSteamIsolationValveB",
+          "description": "Main steam isolation valve B position feedback"
         }
       ],
       "metadata": {
@@ -1585,10 +1709,16 @@
           "path": "positionFraction",
           "tagId": "MSIV-C",
           "equipmentId": "mainSteamIsolationValveC",
-          "description": "Main steam isolation valve C position",
+          "description": "Main steam isolation valve C position demand",
           "externalRefs": [
             "secondary.msiv.c.position"
           ]
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "MSIV-C-POS",
+          "equipmentId": "mainSteamIsolationValveC",
+          "description": "Main steam isolation valve C position feedback"
         }
       ],
       "metadata": {
@@ -1609,10 +1739,16 @@
           "path": "positionFraction",
           "tagId": "MSIV-D",
           "equipmentId": "mainSteamIsolationValveD",
-          "description": "Main steam isolation valve D position",
+          "description": "Main steam isolation valve D position demand",
           "externalRefs": [
             "secondary.msiv.d.position"
           ]
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "MSIV-D-POS",
+          "equipmentId": "mainSteamIsolationValveD",
+          "description": "Main steam isolation valve D position feedback"
         }
       ],
       "metadata": {
@@ -1633,10 +1769,16 @@
           "path": "positionFraction",
           "tagId": "MSIV-E",
           "equipmentId": "mainSteamIsolationValveE",
-          "description": "Main steam isolation valve E position",
+          "description": "Main steam isolation valve E position demand",
           "externalRefs": [
             "secondary.msiv.e.position"
           ]
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "MSIV-E-POS",
+          "equipmentId": "mainSteamIsolationValveE",
+          "description": "Main steam isolation valve E position feedback"
         }
       ],
       "metadata": {
@@ -1657,10 +1799,16 @@
           "path": "positionFraction",
           "tagId": "MSIV-F",
           "equipmentId": "mainSteamIsolationValveF",
-          "description": "Main steam isolation valve F position",
+          "description": "Main steam isolation valve F position demand",
           "externalRefs": [
             "secondary.msiv.f.position"
           ]
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "MSIV-F-POS",
+          "equipmentId": "mainSteamIsolationValveF",
+          "description": "Main steam isolation valve F position feedback"
         }
       ],
       "metadata": {
@@ -1702,7 +1850,21 @@
         "presentation": {
           "shortLabel": "TSV"
         }
-      }
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "TURB-STOP",
+          "equipmentId": "turbineStopValve",
+          "description": "Turbine stop valve position demand"
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "TURB-STOP-POS",
+          "equipmentId": "turbineStopValve",
+          "description": "Turbine stop valve position feedback"
+        }
+      ]
     },
     {
       "id": "turbineBypassValve",
@@ -1731,7 +1893,13 @@
           "path": "positionFraction",
           "tagId": "TURB-BYP",
           "equipmentId": "turbineBypassValve",
-          "description": "Turbine bypass valve position"
+          "description": "Turbine bypass valve position demand"
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "TURB-BYP-POS",
+          "equipmentId": "turbineBypassValve",
+          "description": "Turbine bypass valve position feedback"
         }
       ],
       "metadata": {
@@ -2012,10 +2180,16 @@
           "path": "positionFraction",
           "tagId": "LET-ISOL",
           "equipmentId": "letdownValve",
-          "description": "CVCS letdown isolation valve position",
+          "description": "CVCS letdown isolation valve position demand",
           "externalRefs": [
             "cvcs.letdown.isolation"
           ]
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "LET-ISOL-POS",
+          "equipmentId": "letdownValve",
+          "description": "CVCS letdown isolation valve position feedback"
         }
       ],
       "metadata": {
@@ -2380,10 +2554,16 @@
           "path": "positionFraction",
           "tagId": "RHR-ISOL",
           "equipmentId": "rhrIsolationValve",
-          "description": "Residual heat removal isolation valve position",
+          "description": "Residual heat removal isolation valve position demand",
           "externalRefs": [
             "ess.rhr.isolation_valve"
           ]
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "RHR-ISOL-POS",
+          "equipmentId": "rhrIsolationValve",
+          "description": "Residual heat removal isolation valve position feedback"
         }
       ],
       "metadata": {
@@ -2483,7 +2663,7 @@
           "path": "dischargeIsolationOpen",
           "tagId": "ACCUM-1",
           "equipmentId": "safetyAccumulatorA",
-          "description": "Accumulator A discharge isolation open",
+          "description": "Accumulator A discharge isolation valve open command; the model opens the valve at once",
           "externalRefs": [
             "ess.accumulator.1.discharge_valve"
           ]
@@ -2516,7 +2696,7 @@
           "path": "dischargeIsolationOpen",
           "tagId": "ACCUM-2",
           "equipmentId": "safetyAccumulatorB",
-          "description": "Accumulator B discharge isolation open",
+          "description": "Accumulator B discharge isolation valve open command; the model opens the valve at once",
           "externalRefs": [
             "ess.accumulator.2.discharge_valve"
           ]
@@ -2549,7 +2729,7 @@
           "path": "dischargeIsolationOpen",
           "tagId": "ACCUM-3",
           "equipmentId": "safetyAccumulatorC",
-          "description": "Accumulator C discharge isolation open",
+          "description": "Accumulator C discharge isolation valve open command; the model opens the valve at once",
           "externalRefs": [
             "ess.accumulator.3.discharge_valve"
           ]
@@ -2582,7 +2762,7 @@
           "path": "dischargeIsolationOpen",
           "tagId": "ACCUM-4",
           "equipmentId": "safetyAccumulatorD",
-          "description": "Accumulator D discharge isolation open",
+          "description": "Accumulator D discharge isolation valve open command; the model opens the valve at once",
           "externalRefs": [
             "ess.accumulator.4.discharge_valve"
           ]
@@ -2615,7 +2795,7 @@
           "path": "dischargeIsolationOpen",
           "tagId": "ACCUM-5",
           "equipmentId": "safetyAccumulatorE",
-          "description": "Accumulator E discharge isolation open",
+          "description": "Accumulator E discharge isolation valve open command; the model opens the valve at once",
           "externalRefs": [
             "ess.accumulator.5.discharge_valve"
           ]
@@ -2648,7 +2828,7 @@
           "path": "dischargeIsolationOpen",
           "tagId": "ACCUM-6",
           "equipmentId": "safetyAccumulatorF",
-          "description": "Accumulator F discharge isolation open",
+          "description": "Accumulator F discharge isolation valve open command; the model opens the valve at once",
           "externalRefs": [
             "ess.accumulator.6.discharge_valve"
           ]
@@ -9823,6 +10003,7 @@
     "rhrPumpB.flowKgPerS",
     "rhrHeader.outletFlowKgPerS",
     "rhrIsolationValve.positionFraction",
+    "rhrIsolationValve.effectivePositionFraction",
     "boricAcidInjectionValve.positionFraction",
     "boricAcidInjectionValve.effectivePositionFraction",
     "containment.pressureMPa",

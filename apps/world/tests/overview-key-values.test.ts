@@ -30,7 +30,9 @@ describe('the values equipment opened from the overview leads with', () => {
   test('are its signals the I&C rules judge, then its key values and instruments; never a demand', () => {
     expect(of('core').slice(0, 2)).toEqual(['core.powerMw', 'core.coolantOutletTemperatureC'] as never)
     // A pump's run command and a valve's position demand are writable: the drawing shows them, the values do not.
-    expect(of('feedwaterControlValveA')).toEqual([])
+    // A valve's values lead with its position feedback instead.
+    expect(of('feedwaterControlValveA')).toEqual(['feedwaterControlValveA.effectivePositionFraction'] as never)
+    expect(of('rcpA')).not.toContain('rcpA.running' as never)
   })
 
   test('parallel equipment is compared value by value', () => {

@@ -151,6 +151,25 @@ describe('world.process-plant.display.compose', () => {
     expect(() => ask('world.process-plant.display.compose', readouts('pressurizer.reliefFlowKgPerS'))).not.toThrow()
   })
 
+  test('no tag described as a position or run state binds a writable variable', () => {
+    // A display shows a tag by its label and description; one that reads as a state must be the solved state.
+    const readsAsState = /\b(positions?|running|run status|status|open|closed|insertion|feedback)\b/i
+    const saysDemand = /\b(command|demand)\b/i
+    const tagged = [...compiled.graph.signalBindingByPath.values()].filter(binding => binding.tagId !== undefined)
+    const states = tagged.filter(binding => [binding.label, binding.description ?? ''].some(text => readsAsState.test(text) && !saysDemand.test(text)))
+    for (const binding of states) expect(binding.writable, `${binding.tagId}: ${binding.label} | ${binding.description}`).toBe(false)
+    // Every command tag says it is one, and every position or run command has a feedback tag beside it.
+    const commands = tagged.filter(binding => binding.writable && binding.actuation === 'command')
+    for (const binding of commands) expect(binding.description, `${binding.tagId}`).toMatch(saysDemand)
+    const feedback = new Set(states.map(binding => String(binding.tagId)))
+    for (const tagId of ['PORV-456A', 'TRIP-BKR-A', 'BRK-OFFSITE-B-CLOSED', 'RCP-C-RUN', 'MFW-PUMP-B-RUN', 'AFW-PUMP-T', 'CHG-PUMP-A', 'SI-PUMP-B', 'CSPRAY-A', 'RHR-PUMP-B', 'MFW-D-CV', 'AFW-B-CV', 'MSIV-C', 'TURB-STOP', 'TURB-BYP', 'LET-ISOL', 'RHR-ISOL']) {
+      expect(commands.some(binding => binding.tagId === tagId), tagId).toBe(true)
+    }
+    for (const tagId of ['PORV-456A-POS', 'TRIP-BKR-A-POS', 'BRK-OFFSITE-B-POS', 'RCP-C-RUNNING', 'MFW-PUMP-B-RUNNING', 'AFW-PUMP-T-RUNNING', 'CHG-PUMP-A-RUNNING', 'SI-PUMP-B-RUNNING', 'CSPRAY-A-RUNNING', 'RHR-PUMP-B-RUNNING', 'MFW-D-CV-POS', 'AFW-B-CV-POS', 'MSIV-C-POS', 'TURB-STOP-POS', 'TURB-BYP-POS', 'LET-ISOL-POS', 'RHR-ISOL-POS']) {
+      expect(feedback.has(tagId), tagId).toBe(true)
+    }
+  })
+
   test('a state readout names its equipment, so two alike states cannot be confused', () => {
     const result = ask('world.process-plant.display.view', { plantId: compiled.id, state: JSON.stringify({
       composition: { ...composition([{ ref: 'PT-455', role: 'primary' }]), panels: [{ kind: 'readouts', signals: [{ ref: 'BUS-A-ENERGIZED', role: 'primary' }, { ref: 'BUS-B-ENERGIZED', role: 'context' }] }] },
