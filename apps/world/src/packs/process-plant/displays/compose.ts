@@ -4,6 +4,7 @@ import type { EmbeddedViewContent } from '@leitbild/contracts'
 import { recordingSeriesIdFor } from '../../../core/model/index.ts'
 import type {
   CompiledPlantGraph,
+  CompiledProcessLink,
   ProcessQuantity,
   ProcessSignalBinding,
   ProcessUnit,
@@ -45,7 +46,7 @@ import { chatMimicProfile, detailMimicProfile, overviewMimicProfile } from './mi
 import { principalCircuits } from './mimic/principal.ts'
 import { equipmentKeyValues, overviewKeyValues } from './overview-key-values.ts'
 import { annunciatorSystems, type AnnunciatorSystem } from './annunciators.ts'
-import { MIMIC_REACH_LINKS, componentDescription, itemServices, plantCarriers, plantLoops, resolveEquipmentName, resolveMimicScope, serviceResembles, withOtherServicesStopped } from './mimic/scope.ts'
+import { MIMIC_REACH_LINKS, componentDescription, itemServices, plantCarriers, plantLoops, portName, resolveEquipmentName, resolveMimicScope, serviceResembles, withOtherServicesStopped } from './mimic/scope.ts'
 import type { CompiledMimic } from './mimic/mimic-model.ts'
 import {
   icAlarmRuleIdsForEquipment,
@@ -451,37 +452,71 @@ const compositionIssues = (composition: ComposedDisplayComposition): ReadonlyArr
 }
 
 /**
- * A link's flow that the model also solves as the throughput of equipment it
- * bundles on that link's end (the PORV on the pressurizer's relief outlet),
- * where the I&C judges that variable and not the link's. Shown as it is, the
- * display would read "no I&C limit" beside an alarm on the same flow; the
- * refusal names the judged signal and its limits.
+ * The flows the model declares through the ports at a link's ends: what a
+ * component's kind names as the whole flow through a port (a steam
+ * generator's feedwater inflow through its feedwater inlet), and the
+ * throughput of a device it bundles there (the PORV on the pressurizer's
+ * relief outlet). Each says what it is the flow through, and the other links
+ * on that port: none where the link carries the same flow, else the links
+ * whose flow it shares. Only declared flows count, never names.
+ */
+export const declaredPortFlows = (graph: CompiledPlantGraph, linkIndex: number): ReadonlyArray<{
+  readonly path: VariablePath
+  readonly through: string
+  /** The component whose port it is. */
+  readonly component: number
+  readonly others: ReadonlyArray<CompiledProcessLink>
+}> => {
+  const link = graph.links[linkIndex]!
+  const ends = [{ index: link.fromComponentIndex, port: String(link.fromPortName) }, { index: link.toComponentIndex, port: String(link.toPortName) }]
+  return ends.flatMap(end => {
+    const component = graph.components[end.index]!
+    const others = graph.links.filter(other => other.index !== link.index
+      && ((other.fromComponentIndex === end.index && String(other.fromPortName) === end.port) || (other.toComponentIndex === end.index && String(other.toPortName) === end.port)))
+    return [
+      ...component.semantics.portFlows.filter(flow => String(flow.port) === end.port).map(flow => ({ path: flow.path, through: `${component.label}'s ${portName(end.port)}`, component: end.index, others })),
+      ...component.semantics.embedded.filter(device => String(device.port) === end.port).flatMap(device => device.aspects
+        .flatMap(aspect => aspect.aspect === 'throughput' && aspect.state !== undefined ? [{ path: aspect.state.path, through: `${component.label}'s ${device.label}`, component: end.index, others }] : [])),
+    ]
+  })
+}
+
+/**
+ * A link's flow the I&C judges no rule on, where the model declares a flow
+ * through the port at one of its ends that the I&C does judge. Shown as it
+ * is, the display would read "no I&C limit" beside an alarm on that flow. A
+ * link alone on the port carries the same flow, so the judged signal is shown
+ * instead; a link that shares the port carries part of the judged flow, so
+ * the judged flow must be shown beside it. The refusal names the judged
+ * signal and its limits.
  */
 const judgedElsewhereIssues = (system: ProcessPlantRuntimeInstance, composition: ComposedDisplayComposition): ReadonlyArray<ComposedDisplayIssue> => {
   const graph = system.plant.graph
   const acting = (path: VariablePath) => icThresholdsForSignal(system.plant, path).thresholds.filter(threshold => threshold.kind !== 'control')
+  const shown = new Set(composition.panels.flatMap(panel => 'signals' in panel ? panel.signals : []).flatMap(signal => resolveRef(system, signal.ref)?.path ?? []))
+  const farLabel = (link: CompiledProcessLink, near: number) => {
+    const far = graph.components[link.fromComponentIndex === near ? link.toComponentIndex : link.fromComponentIndex]!
+    return far.metadata?.presentation?.shortLabel ?? far.label
+  }
   return composition.panels.flatMap((panel, panelIndex) => !('signals' in panel) ? [] : panel.signals.flatMap((signal, signalIndex): ComposedDisplayIssue[] => {
     const binding = resolveRef(system, signal.ref)
     if (binding?.owner.type !== 'link' || acting(binding.path).length > 0) return []
     const link = graph.links[binding.owner.linkIndex]!
-    const ends = [{ index: link.fromComponentIndex, port: String(link.fromPortName) }, { index: link.toComponentIndex, port: String(link.toPortName) }]
-    for (const end of ends) {
-      const component = graph.components[end.index]!
-      for (const device of component.semantics.embedded.filter(candidate => String(candidate.port) === end.port)) {
-        for (const aspect of device.aspects) {
-          if (aspect.aspect !== 'throughput' || aspect.state === undefined) continue
-          const judged = graph.signalBindingByPath.get(aspect.state.path)
-          if (judged === undefined || judged.unit !== binding.unit || judged.quantity !== binding.quantity) continue
-          const limits = acting(judged.path)
-          if (limits.length === 0) continue
-          const ref = judged.tagId ?? String(judged.path)
-          return [{
-            path: `panels.${panelIndex}.signals.${signalIndex}.ref`,
-            message: `"${signal.ref}" is judged by no I&C rule, but the same flow through ${component.label}'s ${device.label} is: show ${ref} (${judged.label}, ${limits.map(limit => thresholdName(limit, judged.unit)).join(', ')}) instead, so the display carries the limits its alarms act on`,
-            didYouMean: [ref],
-          }]
-        }
-      }
+    for (const flow of declaredPortFlows(graph, link.index)) {
+      const judged = graph.signalBindingByPath.get(flow.path)
+      if (judged === undefined || judged.unit !== binding.unit || judged.quantity !== binding.quantity) continue
+      const limits = acting(judged.path)
+      if (limits.length === 0 || (flow.others.length > 0 && shown.has(judged.path))) continue
+      const ref = judged.tagId ?? String(judged.path)
+      const named = `${ref} (${judged.label}, ${limits.map(limit => thresholdName(limit, judged.unit)).join(', ')})`
+      const sharing = flow.others.map(other => farLabel(other, flow.component)).join(', ')
+      return [{
+        path: `panels.${panelIndex}.signals.${signalIndex}.ref`,
+        message: flow.others.length === 0
+          ? `"${signal.ref}" is judged by no I&C rule, but the same flow through ${flow.through} is: show ${named} instead, so the display carries the limits its alarms act on`
+          : `"${signal.ref}" is judged by no I&C rule, but the whole flow through ${flow.through}, which this line shares with the ${flow.others.length === 1 ? 'line' : 'lines'} of ${sharing}, is: show ${named} beside it, so the display carries the limits its alarms act on`,
+        didYouMean: [ref],
+      }]
     }
     return []
   }))

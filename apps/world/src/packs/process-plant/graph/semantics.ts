@@ -105,6 +105,14 @@ export interface ComponentSemantics {
   readonly embedded: ReadonlyArray<EmbeddedDeviceDeclaration>
   /** Rated flow out of a port, named by the parameter that holds it: the reference for "no flow" on the links it feeds. */
   readonly ratedOutflow: ReadonlyArray<{ readonly port: string; readonly parameter: string }>
+  /**
+   * Solved flows that are the whole flow through one of its ports, every link
+   * on that port together: a steam generator's feedwater inflow is what its
+   * main and auxiliary feed lines bring in through its feedwater inlet. A link
+   * alone on such a port carries the same flow; one of several carries part of
+   * it. (A bundled device's throughput is the flow through its port too.)
+   */
+  readonly portFlows: ReadonlyArray<{ readonly port: string; readonly variable: string }>
   /** The values an operator reads first on this equipment (a pressurizer's pressure and level), most important first. */
   readonly keyValues: ReadonlyArray<string>
   /** What the equipment does with energy, by port circuit. */
@@ -113,7 +121,7 @@ export interface ComponentSemantics {
 
 /** Declares semantics that do not depend on a component's parameters. */
 export const fixedSemantics = (semantics: Partial<ComponentSemantics>): ((parameters: unknown) => ComponentSemantics) => {
-  const resolved: ComponentSemantics = { aspects: [], embedded: [], ratedOutflow: [], keyValues: [], energy: [], ...semantics }
+  const resolved: ComponentSemantics = { aspects: [], embedded: [], ratedOutflow: [], portFlows: [], keyValues: [], energy: [], ...semantics }
   return () => resolved
 }
 
@@ -148,6 +156,7 @@ export interface CompiledComponentSemantics {
   readonly aspects: ReadonlyArray<CompiledStateAspect>
   readonly embedded: ReadonlyArray<CompiledEmbeddedDevice>
   readonly ratedOutflow: ReadonlyArray<{ readonly port: PortName; readonly flowKgPerS: number }>
+  readonly portFlows: ReadonlyArray<{ readonly port: PortName; readonly path: VariablePath }>
   readonly keyValues: ReadonlyArray<VariablePath>
   readonly energy: ReadonlyArray<CompiledEnergyRole>
 }

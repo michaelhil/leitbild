@@ -185,6 +185,12 @@ describe('world.process-plant.display.compose', () => {
     expect(rejectionOf(() => ask('world.process-plant.display.compose', readouts('pressurizer-relief-to-tank.flowKgPerS'))))
       .toContain('show pressurizer.reliefFlowKgPerS (Pressurizer relief flow, HI ALM 1 kg/s) instead')
     expect(() => ask('world.process-plant.display.compose', readouts('pressurizer.reliefFlowKgPerS'))).not.toThrow()
+    // Run 21 (sg-b-runback): the feed line into SG B read "no I&C limit" while SG B's feedwater inflow was in LO ALM. The SG
+    // declares that inflow as the flow through its feedwater inlet, which the line shares with auxiliary feed: show both.
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', readouts('feedwater-control-valve-b-to-sg-b.flowKgPerS'))))
+      .toContain('"feedwater-control-valve-b-to-sg-b.flowKgPerS" is judged by no I&C rule, but the whole flow through Steam Generator B\'s feedwater inlet, which this line shares with the line of AFW valve B, is: show sgB.feedwaterFlowKgPerS (Feedwater inflow, LO ALM 150 kg/s) beside it')
+    const beside = { ...composition([{ ref: 'feedwater-control-valve-b-to-sg-b.flowKgPerS', role: 'primary' }]), panels: [{ kind: 'readouts', signals: [{ ref: 'feedwater-control-valve-b-to-sg-b.flowKgPerS', role: 'primary' }, { ref: 'sgB.feedwaterFlowKgPerS', role: 'context' }] }] }
+    expect(() => ask('world.process-plant.display.compose', beside)).not.toThrow()
   })
 
   test('no tag described as a position or run state binds a writable variable', () => {

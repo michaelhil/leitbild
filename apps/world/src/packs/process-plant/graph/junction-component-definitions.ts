@@ -40,6 +40,7 @@ const valveSemantics = (parameters: unknown): ComponentSemantics => {
     aspects: [aspect('position', { variable: 'effectivePositionFraction', reading: 'value' }, 'positionFraction')],
     embedded: [],
     ratedOutflow: [],
+    portFlows: [],
     keyValues: [],
     energy: [],
   }
