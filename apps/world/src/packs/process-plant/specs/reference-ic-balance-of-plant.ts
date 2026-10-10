@@ -3,7 +3,7 @@ import { alarm, all, annunciator, any, comparison, reactorTripBreakerOpen, rule,
 
 const feedwaterAlarm = annunciator({
   system: 'feedwater',
-  equipmentId: 'mainFeedwaterHeader',
+  equipmentId: 'feedwaterHeader',
   group: 'feedwater',
   priority: 'high',
   role: 'symptom',

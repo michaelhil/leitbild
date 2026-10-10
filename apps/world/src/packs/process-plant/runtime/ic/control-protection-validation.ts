@@ -1,3 +1,4 @@
+import type { CompiledPlantGraph } from '../../graph/index.ts'
 import type { CompiledProcessPlant } from '../../plant-compiler.ts'
 import { resolveProcessPlantSignalBinding } from '../../signals.ts'
 import type { ProcessPlantSignalReference } from '../../signals.ts'
@@ -83,10 +84,26 @@ const assertRuleShapeValid = (rule: ProcessPlantIcRule): void => {
   if (rule.effects.length > 0) throw new Error(`process plant I&C ${rule.ruleClass} rule ${rule.id} cannot define effects`)
 }
 
+/** An alarm or trip names the equipment it concerns by a component of the Plant, so readers can find it. */
+export const assertProcessPlantIcAnnunciatorEquipmentValid = (
+  graph: CompiledPlantGraph,
+  rules: ReadonlyArray<ProcessPlantIcRule>,
+): void => {
+  for (const rule of rules) {
+    for (const effect of rule.effects) {
+      if (effect.type === 'writeSignal') continue
+      const equipmentId = effect.annunciator?.equipmentId
+      if (equipmentId === undefined || graph.componentIndexById.has(equipmentId as never)) continue
+      throw new Error(`process plant I&C rule ${rule.id} annunciates ${effect.id} on equipment ${equipmentId}, which is not a component of the Plant`)
+    }
+  }
+}
+
 export const assertProcessPlantIcRulesValid = (
   system: CompiledProcessPlant,
   rules: ReadonlyArray<ProcessPlantIcRule>,
 ): void => {
+  assertProcessPlantIcAnnunciatorEquipmentValid(system.graph, rules)
   for (const rule of rules) {
     assertRuleShapeValid(rule)
     if (rule.modeCondition !== undefined) assertConditionSignalsValid(system, rule, rule.modeCondition)

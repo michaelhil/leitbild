@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import type { SimulationRunId } from '../src/core/model/index.ts'
 import {
+  assemblePwrReferencePlantGraph,
   commandsForProcessPlantAction,
   compileProcessPlant,
+  compileResolvedProcessPlant,
+  pressurizedWaterReactorReferenceIcForGraph,
   createProcessPlantProtectionRunner,
   createProcessPlantRuntime,
   createPwrReferencePlantDefinition,
@@ -151,5 +154,40 @@ describe('pumps', () => {
     plantRun.run(3_000)
     expect(plantRun.tag('RCP-A-RUN')).toBe(true)
     expect(plantRun.activeIds()).toEqual(expect.arrayContaining(['alarm:rcp-a-trip:not-running', 'alarm:rcp-b-trip:not-running', 'alarm:main-feedwater-pump-trip:main-feedwater-pump-unavailable']))
+  })
+})
+
+describe('annunciators', () => {
+  test('every annunciator names a component of the Plant as its equipment', () => {
+    for (let loopCount = 2; loopCount <= 6; loopCount += 1) {
+      const system = compileProcessPlant(createPwrReferencePlantDefinition({ id: `plant:annunciators-${loopCount}`, loopCount }))
+      const named = system.automation.rules.flatMap(rule => rule.effects.flatMap(effect => effect.type === 'writeSignal' || effect.annunciator?.equipmentId === undefined ? [] : [effect.annunciator.equipmentId]))
+      expect(named.length).toBeGreaterThan(40)
+      for (const equipmentId of named) expect(system.graph.componentIndexById.has(equipmentId as never), equipmentId).toBe(true)
+    }
+    expect(plant.automation.rules.find(rule => rule.id === 'main-feedwater-pump-trip')!.effects[0]).toMatchObject({ annunciator: { equipmentId: 'feedwaterHeader' } })
+  })
+
+  test('an annunciator that names no component is refused when the Plant is compiled and when its I&C runs', () => {
+    const misnamed = (graphOf: Parameters<typeof pressurizedWaterReactorReferenceIcForGraph>[0]) => {
+      const config = pressurizedWaterReactorReferenceIcForGraph(graphOf)
+      return {
+        ...config,
+        rules: config.rules.map(rule => rule.id !== 'main-feedwater-pump-trip' ? rule : {
+          ...rule,
+          effects: rule.effects.map(effect => effect.type === 'alarm.enter' ? { ...effect, annunciator: { ...effect.annunciator!, equipmentId: 'mainFeedwaterHeader' } } : effect),
+        }),
+      }
+    }
+    const message = 'process plant I&C rule main-feedwater-pump-trip annunciates main-feedwater-pump-unavailable on equipment mainFeedwaterHeader, which is not a component of the Plant'
+    expect(() => compileResolvedProcessPlant({
+      id: 'plant:misnamed',
+      modelRef: 'test.model',
+      operatingPointRef: 'test.operating-point',
+      automationRef: 'test.automation',
+      graph: assemblePwrReferencePlantGraph({ loopCount: 4 }),
+      automationForGraph: misnamed,
+    })).toThrow(message)
+    expect(() => createProcessPlantProtectionRunner({ system: plant, protection: misnamed(graph) })).toThrow(message)
   })
 })
