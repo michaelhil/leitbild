@@ -2,8 +2,10 @@ import { expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { carveOperatingPrimary, prepareOperatingSpine } from './reference-design-operating-spine'
+import { carveOperatingPrimary, compileOperatingSurgeHydraulics, prepareOperatingSpine } from './reference-design-operating-spine'
 import { operatingCirculationCycles } from './reference-design-operating-hydraulics'
+import { compileOperatingPzr } from './reference-design-operating-pzr'
+import { routeElevation } from './reference-design-surge-route'
 
 // Test-only stock amounts: structural conservation independently of IF97.
 function fixture() {
@@ -63,6 +65,44 @@ test('carve refuses altered partition, hidden owners and malformed incidence', (
   expect(() => carveOperatingPrimary(f.regions, outside, f.partition)).toThrow('incidence')
 })
 
+test('actual five-piece surge splits at8m with disjoint inertia, head, elbow and first-moment geometry', () => {
+  const record = (name: string, value: unknown) => '```' + name + '\n' + JSON.stringify(value) + '\n```'
+  const pzr = compileOperatingPzr(record('reference-operating-pzr', {
+    commonPressure_Pa: 15e6, liquidTemperature_K: 600, vaporTemperature_K: 630, phaseBoundaryHeight_m: 6,
+    bands_m: [0, 1, 3, 6, 9, 12], interfacialLength_m: .003, solidRoughness_m: .000045, absorberMassFraction: .001 }), record('reference-surge-route', {
+      source: 'LD01.HOT.A', receiver: 'LD01.PZR', sourceElevation_m: 2.5, receiverElevation_m: 6.5,
+      developedLength_m: 16, firstStraight_m: 6, bendRadius_m: .45, internalDiameter_m: .3, wallThickness_m: .025,
+      steelDensity_kg_m3: 7920, roughness_m: .0000015, entryLoss: .5, elbowLoss: .2, exitLoss: 1 }),
+    { id: 'HOT.A', volume_m3: 15, mainFlowArea_m2: Math.PI / 4, elevation_m: 2.5 })
+  const h = compileOperatingSurgeHydraulics(pzr), A = Math.PI * .3 ** 2 / 4
+  expect(h.halves.map(p => p.length_m)).toEqual([8, 8])
+  expect(h.halves.map(p => p.elevationChange_m)).toEqual([0, 4])
+  expect(h.halves.map(p => p.elbowLoss)).toEqual([.2, .2])
+  expect(h.halves.flatMap(p => p.pieces)).toHaveLength(6)
+  expect(sum(h.halves.map(p => p.volume_m3))).toBeCloseTo(16 * A, 14)
+  expect(h.halves[0]!.pieces.at(-1)!.physical_piece_id).toBe('SURGE.PHYSICAL.2')
+  expect(h.halves[1]!.pieces[0]!.physical_piece_id).toBe('SURGE.PHYSICAL.2')
+  expect(h.halves[0]!.pieces.at(-1)!.end_m).toBe(h.halves[1]!.pieces[0]!.start_m)
+  expect(h.momentumPlane).toEqual({ distance_m: 8, elevation_m: 2.5 })
+  expect(h.inventoryMeanElevation_m).toBeGreaterThan(h.momentumPlane.elevation_m)
+  for (const half of h.halves) {
+    expect(half.geometricInertance_per_m).toBeCloseTo(8 / A, 12)
+    expect(half.roughness_m).toBe(.0000015); expect(half.additionalThermalPower).toBe(false)
+    // Independent bounded midpoint quadrature of actual z(s), not the compiler's primitive.
+    const n = 2000, ds = half.length_m / n
+    let integral = 0
+    for (let i = 0; i < n; i++) integral += routeElevation(pzr.surge.route, half.start_m + (i + .5) * ds) * ds
+    expect(Math.abs(integral / half.length_m - half.meanElevation_m)).toBeLessThan(2e-7)
+  }
+  expect(h.endpointLoss.hotEntrance).toBe(0); expect(h.endpointLoss.pzrReceipt).toBe(0)
+  expect(h.endpointLoss.pzrWithdrawalCdA_m2).toBeCloseTo(A / Math.sqrt(1.5), 14)
+  expect(h.junctionFirstMoment.lateralInertance_per_m).toBeCloseTo(Math.sqrt(Math.PI / 4) / (2 * A), 13)
+  expect(h.junctionFirstMoment.status).toBe('PROJECTION_CANDIDATE')
+  expect(h.junctionFirstMoment.scope).toContain('expansion-tree')
+  const cut = structuredClone(pzr); cut.surge.pieces[1]!.start_m = 7; cut.surge.pieces[1]!.end_m = 9
+  expect(() => compileOperatingSurgeHydraulics(cut)).toThrow('split elbow')
+})
+
 const wiki = process.env.LD01_WIKI_ROOT, if97 = process.env.LD01_IF97_DIRECTORY
 if (!!wiki !== !!if97) throw Error('Supply both actual wiki and pinned IF97 directory')
 test.skipIf(!wiki || !if97)('actual single hot packet rebases every recipient, finite store and hydraulic cycle; native consumes it', async () => {
@@ -82,6 +122,9 @@ test.skipIf(!wiki || !if97)('actual single hot packet rebases every recipient, f
   expect(p.external_ports.surge_stock.absorberTracer_kgEq).toBeCloseTo(p.external_ports.surge_stock.mass_kg / 1000, 12)
   expect(p.thermal.water[p.external_ports.primary_to_surge.primary_water]!.id).toBe('HOT.A.JUNCTION')
   expect(p.hydraulics.sections).toHaveLength(21); expect(p.hydraulics.cycles.columns).toHaveLength(7)
+  expect(p.hydraulics.surge.halves).toHaveLength(2)
+  expect(p.hydraulics.surge.halves.map(h => h.elevationChange_m)).toEqual([0, 4])
+  expect(p.pzr.faces.every(f => f.distance_m > 0 && f.normal.length === 2)).toBe(true)
   expect(p.hydraulics.coveredEdges).toHaveLength(31); expect(p.hydraulics.unclosedTreeEdges).toHaveLength(2)
   expect(p.hydraulics.mainInertance.aa).toBeCloseTo(70.629211610045, 10)
   expect(p.hydraulics.mainInertance.ab).toBeCloseTo(2.654786439092273, 12)

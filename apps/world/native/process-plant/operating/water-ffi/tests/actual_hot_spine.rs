@@ -1,11 +1,11 @@
 //! Test-only conversion of the one actual owner package. Runtime composition
 //! is typed; there is no JSON work, coefficient copy or power rebasing at stage.
 use leitbild_operating_plant::{
-    capture, heat_history, hot_spine as hs, initialization, kinetics, poisons, pressure,
-    source_feedback as sf,
+    capture, heat_history, hot_spine as hs, initialization, kinetics, poisons, pressure, pzr,
+    pzr_field as pf, source_feedback as sf, surge,
     thermal::{self, Scalar, WaterProperties},
 };
-use leitbild_operating_water::If97;
+use leitbild_operating_water::{Branch, If97, point};
 use serde_json::Value;
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
@@ -920,6 +920,614 @@ fn pressure_oracle(model: &hs::Model, x: &Current, w: &hs::Work) -> (f64, f64) {
     (maximum_defect, maximum_flow_change)
 }
 
+// Test-only assembly of the actual three-territory transport call. The current
+// node velocities and phase face currents are independent Newton trial inputs:
+// this deliberately supplies no unselected pressure/kinematic force stencil.
+struct SurgePzrReplay {
+    field: pf::Model,
+    junction: usize,
+    mouth: usize,
+    line_volume: f64,
+    line_state: surge::State,
+    pzr_pressure: Scalar,
+    pzr_temperature: [Scalar; pf::REGIONS],
+    liquid: [bool; pf::REGIONS],
+    retained_energy: [f64; pf::REGIONS],
+    retained_boron: [Scalar; pf::REGIONS],
+    phase: [[Option<pf::Phase>; 2]; pf::REGIONS],
+    face_flow: [[Scalar; 2]; pf::FACES],
+    external: [[pf::Sources; 2]; pf::REGIONS],
+    field_work: pf::Work,
+    hot_work: hs::Work,
+    fuel_rate: Vec<[Scalar; 3]>,
+    helium_rate: Vec<Scalar>,
+    passive_rate: Vec<Scalar>,
+    sg_rate: Vec<Scalar>,
+    zero: Vec<Scalar>,
+    external_mass: Vec<Scalar>,
+    external_energy: Vec<Scalar>,
+    external_boron: Vec<Scalar>,
+}
+impl SurgePzrReplay {
+    fn new(packet: &Value, model: &hs::Model) -> Self {
+        let p = &packet["pzr"];
+        let region = a(p, "regions");
+        let face = a(p, "faces");
+        assert_eq!(region.len(), pf::REGIONS);
+        assert_eq!(face.len(), pf::FACES);
+        let regions = std::array::from_fn(|j| pf::Region {
+            volume_m3: n(&region[j], "volume_m3"),
+            axial_area_m2: n(&region[j], "axialArea_m2"),
+            height_m: n(&region[j], "top_m") - n(&region[j], "bottom_m"),
+            solid_perimeter_m: n(&region[j], "solidPerimeter_m"),
+            elevation_m: n(&region[j], "elevation_m"),
+        });
+        let faces = std::array::from_fn(|j| {
+            assert_eq!(face[j]["contrastContact"], true);
+            let normal = vecn(&face[j], "normal");
+            pf::Face {
+                from: i(&face[j], "from"),
+                to: i(&face[j], "to"),
+                area_m2: n(&face[j], "area_m2"),
+                distance_m: n(&face[j], "distance_m"),
+                normal: [normal[0], normal[1]],
+            }
+        });
+        let port = &packet["external_ports"];
+        let line = &port["surge_stock"];
+        for owner in region.iter().chain(std::iter::once(line)) {
+            assert_eq!(
+                n(owner, "airMass_kg"),
+                0.,
+                "pure-water replay cannot omit air"
+            );
+            assert_eq!(
+                n(owner, "nitrogenMass_kg"),
+                0.,
+                "pure-water replay cannot omit nitrogen"
+            );
+        }
+        let count = model.volumes.len();
+        Self {
+            field: pf::Model::new(
+                regions,
+                faces,
+                n(&p["selection"], "interfacialLength_m"),
+                n(&p["selection"], "solidRoughness_m"),
+                // Owned contrast contact is exactly Af*|alpha_l,a-alpha_l,b|.
+                1.,
+            )
+            .unwrap(),
+            junction: i(&port["primary_to_surge"], "primary_water"),
+            mouth: i(&port["surge_to_pzr"], "pzr_water"),
+            line_volume: n(line, "volume_m3"),
+            line_state: surge::State {
+                pressure: Scalar::new(n(line, "pressure_Pa"), 700.),
+                temperature: Scalar::new(n(line, "temperature_K"), 0.07),
+                energy: s(n(line, "internalEnergy_J")),
+                boron: Scalar::new(n(line, "absorberTracer_kgEq"), 0.0001),
+            },
+            pzr_pressure: Scalar::new(n(&p["selection"], "commonPressure_Pa"), -500.),
+            pzr_temperature: std::array::from_fn(|j| {
+                Scalar::new(n(&region[j]["water"], "T"), 0.03 + j as f64 * 0.002)
+            }),
+            liquid: std::array::from_fn(|j| region[j]["initialPhase"] == "liquid"),
+            retained_energy: std::array::from_fn(|j| {
+                n(&region[j], "liquidEnergy_J") + n(&region[j], "vaporEnergy_J")
+            }),
+            retained_boron: std::array::from_fn(|j| {
+                let b = n(&region[j], "absorberTracer_kgEq");
+                if region[j]["initialPhase"] == "vapor" {
+                    assert_eq!(b, 0., "PZR vapor cannot carry dissolved tracer");
+                    s(0.)
+                } else {
+                    Scalar::new(b, 0.00001 * (j + 1) as f64)
+                }
+            }),
+            phase: [[None; 2]; pf::REGIONS],
+            face_flow: [[s(0.); 2]; pf::FACES],
+            external: [[pf::Sources::default(); 2]; pf::REGIONS],
+            field_work: pf::Work::default(),
+            hot_work: model.workspace().unwrap(),
+            fuel_rate: vec![[s(0.); 3]; model.bands.len()],
+            helium_rate: vec![s(0.); model.helium_nr.len()],
+            passive_rate: vec![s(0.); model.passive_mass.len()],
+            sg_rate: vec![s(0.); model.sg.len()],
+            zero: vec![s(0.); count],
+            external_mass: vec![s(0.); count],
+            external_energy: vec![s(0.); count],
+            external_boron: vec![s(0.); count],
+        }
+    }
+
+    fn evaluate(
+        &mut self,
+        model: &hs::Model,
+        current: &Current,
+        currents: [f64; 2],
+        offset: Option<f64>,
+        zero_slip: bool,
+    ) -> surge::Evaluation {
+        let at = |v: Scalar| offset.map_or(v, |h| s(v.value + h * v.direction));
+        let pp = at(self.pzr_pressure);
+        let saturation = If97.saturation(pp).unwrap();
+        for j in 0..pf::REGIONS {
+            let k = usize::from(!self.liquid[j]);
+            let t = at(self.pzr_temperature[j]);
+            // Exact absence: do not recover or query the other phase.
+            let water = if k == 0 {
+                If97.liquid(pp, t)
+            } else {
+                If97.vapor(pp, t)
+            }
+            .unwrap();
+            let volume = s(self.field.regions()[j].volume_m3);
+            let sign = if k == 0 { 1. } else { -1. };
+            let velocity = if zero_slip {
+                [s(0.); 2]
+            } else {
+                [
+                    at(Scalar::new(sign * 0.001 * (j + 1) as f64, 0.00001)),
+                    at(Scalar::new(sign * 0.003 * (j + 1) as f64, -0.00002)),
+                ]
+            };
+            self.phase[j] = [None; 2];
+            self.phase[j][k] = Some(pf::Phase {
+                mass: water.density * volume,
+                volume,
+                temperature: t,
+                water,
+                velocity,
+                // Actual finite prepared/current amount, not a ppm reset to
+                // each freshly recovered EOS mass. Vapor amount is exactly0.
+                boron_mass: at(self.retained_boron[j]),
+            });
+        }
+        for (j, face) in self.field.faces().iter().enumerate() {
+            for k in 0..2 {
+                // Actual separate phase transport, including responsible
+                // arrivals into absent recipients. Never withdraw an absence.
+                let sign = match (self.phase[face.from][k], self.phase[face.to][k]) {
+                    (Some(_), Some(_)) => {
+                        if j % 2 == 0 {
+                            1.
+                        } else {
+                            -1.
+                        }
+                    }
+                    (Some(_), None) => 1.,
+                    (None, Some(_)) => -1.,
+                    (None, None) => 0.,
+                };
+                self.face_flow[j][k] = if sign == 0. {
+                    s(0.)
+                } else {
+                    at(Scalar::new(sign * (0.01 + j as f64 * 0.001), sign * 0.0001))
+                };
+            }
+        }
+        let primary = hs::Properties::fixed_liquid(
+            &If97,
+            model.volumes[self.junction],
+            current.pressure,
+            current.water_t[self.junction],
+        )
+        .unwrap();
+        let pzr_liquid = self.phase[self.mouth][0].map(|p| surge::Liquid {
+            mass: p.mass,
+            enthalpy: p.water.enthalpy,
+            boron: p.boron_mass,
+        });
+        let line = surge::evaluate(
+            &If97,
+            self.line_volume,
+            surge::State {
+                pressure: at(self.line_state.pressure),
+                temperature: at(self.line_state.temperature),
+                energy: at(self.line_state.energy),
+                boron: at(self.line_state.boron),
+            },
+            surge::Rates {
+                pressure: s(0.),
+                energy: s(0.),
+                boron: s(0.),
+            },
+            surge::Liquid {
+                mass: primary.mass,
+                enthalpy: primary.projection.enthalpy,
+                boron: current.boron[self.junction],
+            },
+            pzr_liquid,
+            at(Scalar::new(currents[0], 0.02)),
+            at(Scalar::new(currents[1], -0.03)),
+            s(0.), // No unowned wall, pressure, drag, or balancing heat.
+        )
+        .unwrap();
+        self.external_mass.fill(s(0.));
+        self.external_energy.fill(s(0.));
+        self.external_boron.fill(s(0.));
+        self.external_mass[self.junction] = line.primary.mass;
+        self.external_energy[self.junction] = line.primary.energy;
+        self.external_boron[self.junction] = line.primary.boron;
+        model
+            .evaluate(
+                &If97,
+                current.state(),
+                hs::Rates {
+                    fuel: &self.fuel_rate,
+                    helium: &self.helium_rate,
+                    passive: &self.passive_rate,
+                    sg: &self.sg_rate,
+                    pressure: s(0.),
+                    water: &self.zero,
+                    boron: &self.zero,
+                },
+                hs::External {
+                    mass: &self.external_mass,
+                    energy: &self.external_energy,
+                    boron: &self.external_boron,
+                },
+                &mut self.hot_work,
+            )
+            .unwrap();
+        self.external.fill([pf::Sources::default(); 2]);
+        self.external[self.mouth][0] = pf::Sources {
+            mass: line.pzr_liquid.mass,
+            enthalpy: line.pzr_liquid.energy,
+            boron: line.pzr_liquid.boron,
+            // EXCLUDED port momentum: this is only the M/H/B transport join.
+            // Zero is an omitted component in this constitutive replay, NOT
+            // an admitted zero physical mouth impulse or full force residual.
+            momentum: [s(0.); 2],
+        };
+        self.field
+            .evaluate(
+                pf::Input {
+                    pressure: pp,
+                    saturation,
+                    phase: &self.phase,
+                    face_mass_flow: &self.face_flow,
+                },
+                &self.external,
+                &mut self.field_work,
+            )
+            .unwrap();
+        line
+    }
+
+    fn outputs(&self, line: surge::Evaluation) -> Vec<Scalar> {
+        let mut values = flatten(&self.hot_work);
+        values.extend(
+            self.field_work
+                .sources
+                .iter()
+                .flatten()
+                .flat_map(|r| [r.mass, r.enthalpy, r.boron, r.momentum[0], r.momentum[1]]),
+        );
+        values.extend(
+            self.field_work
+                .birth_receipts
+                .iter()
+                .flatten()
+                .flat_map(|r| [r.mass, r.enthalpy, r.boron, r.momentum[0], r.momentum[1]]),
+        );
+        values.extend(
+            self.field_work
+                .mass_defect_kg
+                .iter()
+                .flatten()
+                .chain(&self.field_work.volume_defect_m3)
+                .chain(self.field_work.wall_loss_w.iter().flatten())
+                .chain(self.field_work.molecular_loss_w.iter().flatten())
+                .chain(self.field_work.conversion_mixing_loss_w.iter().flatten())
+                .chain(&self.field_work.slip_loss_w)
+                .chain(self.field_work.gravity_power_w.iter().flatten())
+                .copied(),
+        );
+        values.extend([
+            line.primary.mass,
+            line.primary.energy,
+            line.primary.boron,
+            line.pzr_liquid.mass,
+            line.pzr_liquid.energy,
+            line.pzr_liquid.boron,
+            line.line.mass,
+            line.line.energy,
+            line.line.boron,
+            line.caloric,
+            line.continuity,
+            line.energy_residual,
+            line.boron_residual,
+        ]);
+        values
+    }
+}
+
+fn actual_surge_pzr_join(packet: &Value, model: &hs::Model, current: &Current) -> Value {
+    let mut replay = SurgePzrReplay::new(packet, model);
+    let retained = current.finite_stocks();
+    let line_stock = [
+        replay.line_state.energy.value.to_bits(),
+        replay.line_state.boron.value.to_bits(),
+    ];
+    let pzr_stock = replay.retained_energy.map(f64::to_bits);
+    let pzr_boron_stock = replay.retained_boron.map(|b| b.value.to_bits());
+    assert_ne!(current.pressure.value, replay.pzr_pressure.value);
+    assert_eq!(replay.line_state.pressure.value, 15.2e6);
+    assert_eq!(replay.pzr_pressure.value, 15e6);
+    // Zero endpoint receipts at the same source/thermal point provide the
+    // independent local primary ledger, not an initialized pressure solution.
+    replay.evaluate(model, current, [0., 0.], Some(0.), false);
+    let baseline_water = replay.hot_work.water_rhs.clone();
+    let baseline_boron = replay.hot_work.boron_rhs.clone();
+    let baseline_continuity = replay.hot_work.continuity.clone();
+    let mut audit = Vec::new();
+    for currents in [[2., -3.], [-2., 3.]] {
+        let line = replay.evaluate(model, current, currents, None, false);
+        assert!(line.linearizable);
+        for j in 0..model.volumes.len() {
+            let receipt = if j == replay.junction {
+                line.primary
+            } else {
+                surge::Receipt::default()
+            };
+            for (actual, expected) in [
+                (
+                    replay.hot_work.water_rhs[j],
+                    baseline_water[j] + receipt.energy,
+                ),
+                (
+                    replay.hot_work.boron_rhs[j],
+                    baseline_boron[j] + receipt.boron,
+                ),
+                (
+                    replay.hot_work.continuity[j],
+                    baseline_continuity[j] - receipt.mass,
+                ),
+            ] {
+                close(actual.value, expected.value, 2e-13);
+                close(actual.direction, expected.direction, 2e-13);
+            }
+        }
+        let sum = |f: fn(&pf::Sources) -> Scalar| {
+            replay
+                .field_work
+                .sources
+                .iter()
+                .flatten()
+                .fold(s(0.), |a, b| a + f(b))
+        };
+        let mass = line.primary.mass + line.line.mass + sum(|s| s.mass);
+        close(mass.value, 0., 1e-12);
+        close(mass.direction, 0., 1e-12);
+        for (primary, stored, pzr, total) in [
+            (
+                line.primary.mass,
+                line.line.mass,
+                line.pzr_liquid.mass,
+                sum(|s| s.mass),
+            ),
+            (
+                line.primary.energy,
+                line.line.energy,
+                line.pzr_liquid.energy,
+                sum(|s| s.enthalpy),
+            ),
+            (
+                line.primary.boron,
+                line.line.boron,
+                line.pzr_liquid.boron,
+                sum(|s| s.boron),
+            ),
+        ] {
+            for (value, expected) in [(total.value, pzr.value), (total.direction, pzr.direction)] {
+                close(value, expected, 2e-10);
+            }
+            close(primary.value + stored.value + pzr.value, 0., 2e-9);
+            close(
+                primary.direction + stored.direction + pzr.direction,
+                0.,
+                2e-9,
+            );
+        }
+        let heat = replay
+            .hot_work
+            .fuel_rhs
+            .iter()
+            .flatten()
+            .chain(&replay.hot_work.helium_rhs)
+            .chain(&replay.hot_work.passive_rhs)
+            .chain(&replay.hot_work.sg_rhs)
+            .chain(&replay.hot_work.water_rhs)
+            .chain(&replay.hot_work.secondary_heat)
+            .copied()
+            .fold(s(0.), |a, b| a + b)
+            + line.line.energy
+            + sum(|s| s.enthalpy);
+        close(heat.value, replay.hot_work.released_heat.value, 2e-12);
+        close(
+            heat.direction,
+            replay.hot_work.released_heat.direction,
+            2e-10,
+        );
+        let boron = replay
+            .hot_work
+            .boron_rhs
+            .iter()
+            .copied()
+            .fold(s(0.), |a, b| a + b)
+            + line.line.boron
+            + sum(|s| s.boron);
+        close(boron.value, 0., 1e-12);
+        close(boron.direction, 0., 1e-12);
+        assert_eq!(replay.field_work.zero_slip_inexact_contacts, 0);
+        assert!(
+            replay
+                .field_work
+                .birth_receipts
+                .iter()
+                .flatten()
+                .any(|r| r.mass.value > 0.)
+        );
+        let analytic = replay.outputs(line);
+        let epsilon = 0.002;
+        let plus_line = replay.evaluate(
+            model,
+            &current.shift(epsilon),
+            currents,
+            Some(epsilon),
+            false,
+        );
+        let plus = replay.outputs(plus_line);
+        let minus_line = replay.evaluate(
+            model,
+            &current.shift(-epsilon),
+            currents,
+            Some(-epsilon),
+            false,
+        );
+        let minus = replay.outputs(minus_line);
+        let mut maximum = 0_f64;
+        for (index, ((actual, plus), minus)) in analytic.iter().zip(plus).zip(minus).enumerate() {
+            let numerical = (plus.value - minus.value) / (2. * epsilon);
+            let defect = (actual.direction - numerical).abs()
+                / actual.direction.abs().max(numerical.abs()).max(1.);
+            maximum = maximum.max(defect);
+            assert!(
+                defect < 3e-5,
+                "three-territory current direction index {index}: {} vs {numerical}, defect {defect}",
+                actual.direction
+            );
+        }
+        // Re-evaluate the SAME current point: no FD offset enters the receipt.
+        let line = replay.evaluate(model, current, currents, None, false);
+        let mut maximum_mass_rate_defect = 0_f64;
+        let mut maximum_energy_rate_defect = 0_f64;
+        for j in 0..pf::REGIONS {
+            let k = usize::from(!replay.liquid[j]);
+            let phase = replay.phase[j][k].unwrap();
+            let wp = point(
+                if k == 0 {
+                    Branch::Liquid
+                } else {
+                    Branch::Vapor
+                },
+                replay.pzr_pressure.value,
+                phase.temperature.value,
+            )
+            .unwrap()
+            .phase_point();
+            let chart = pzr::chart(
+                replay.field.regions()[j].volume_m3,
+                replay.pzr_pressure.value,
+                k as f64,
+                if k == 0 {
+                    pzr::Active::Liquid
+                } else {
+                    pzr::Active::Vapor
+                },
+                if k == 0 { Some(wp) } else { None },
+                if k == 1 { Some(wp) } else { None },
+            )
+            .unwrap();
+            close(
+                chart.stock[1] + chart.stock[2],
+                replay.retained_energy[j],
+                3e-12,
+            );
+            let source = replay.field_work.sources[j];
+            let rows = pzr::rate_constraints(
+                chart,
+                [0.; 4],
+                pzr::Sources {
+                    liquid_mass_kg_s: source[0].mass.value,
+                    vapor_mass_kg_s: source[1].mass.value,
+                    liquid_energy_w: source[0].enthalpy.value,
+                    vapor_energy_w: source[1].enthalpy.value,
+                },
+            )
+            .unwrap();
+            for (row, (residual, expected)) in rows
+                .residual
+                .into_iter()
+                .zip([
+                    source[0].mass.value,
+                    source[1].mass.value,
+                    source[0].enthalpy.value,
+                    source[1].enthalpy.value,
+                ])
+                .enumerate()
+            {
+                close(residual, -expected, 1e-14);
+                if row < 2 {
+                    maximum_mass_rate_defect = maximum_mass_rate_defect.max(residual.abs());
+                } else {
+                    maximum_energy_rate_defect = maximum_energy_rate_defect.max(residual.abs());
+                }
+            }
+        }
+        audit.push(serde_json::json!({"inlet_kg_s":currents[0],"outlet_kg_s":currents[1],
+            "line_mass_receipt_kg_s":line.line.mass.value,"primary_enthalpy_receipt_w":line.primary.energy.value,
+            "line_enthalpy_receipt_w":line.line.energy.value,"pzr_enthalpy_receipt_w":line.pzr_liquid.energy.value,
+            "birth_receipt_count":replay.field_work.birth_receipts.iter().flatten().filter(|r|r.mass.value>0.).count(),
+            "maximum_scaled_complete_direction_defect":maximum,
+            "global_mass_receipt_defect_kg_s":mass.value,
+            "global_thermal_receipt_defect_w":heat.value-replay.hot_work.released_heat.value,
+            "global_boron_receipt_defect_kg_eq_s":boron.value,
+            "maximum_zero_rate_mass_row_defect_kg_s":maximum_mass_rate_defect,
+            "maximum_zero_rate_energy_row_defect_w":maximum_energy_rate_defect}));
+    }
+    replay.evaluate(model, current, [2., -3.], None, true);
+    let zero_slip_inexact_contacts = replay.field_work.zero_slip_inexact_contacts;
+    assert!(zero_slip_inexact_contacts > 0);
+    let mut stage = current.clone();
+    let p0 = stage.pressure.value;
+    let t0 = stage.water_t[replay.junction].value;
+    let lp0 = replay.line_state.pressure.value;
+    let lt0 = replay.line_state.temperature.value;
+    let pp0 = replay.pzr_pressure.value;
+    let pt0 = replay.pzr_temperature[0].value;
+    let timer = std::time::Instant::now();
+    for call in 0..50 {
+        let c = call as f64;
+        stage.pressure.value = p0 + c;
+        stage.water_t[replay.junction].value = t0 + c * 1e-4;
+        replay.line_state.pressure.value = lp0 + c * 0.7;
+        replay.line_state.temperature.value = lt0 + c * 1e-4;
+        replay.pzr_pressure.value = pp0 - c * 0.5;
+        replay.pzr_temperature[0].value = pt0 + c * 1e-4;
+        let result = replay.evaluate(
+            model,
+            &stage,
+            [2. + c * 0.001, -3. - c * 0.001],
+            None,
+            false,
+        );
+        std::hint::black_box((result, &replay.hot_work, &replay.field_work));
+    }
+    let seconds = timer.elapsed().as_secs_f64();
+    assert_eq!(retained, current.finite_stocks());
+    assert_eq!(
+        line_stock,
+        [
+            replay.line_state.energy.value.to_bits(),
+            replay.line_state.boron.value.to_bits()
+        ]
+    );
+    assert_eq!(pzr_stock, replay.retained_energy.map(f64::to_bits));
+    assert_eq!(
+        pzr_boron_stock,
+        replay.retained_boron.map(|b| b.value.to_bits())
+    );
+    assert_eq!(retained, stage.finite_stocks());
+    serde_json::json!({"scope":"same-call actual hot+finite SURGE+ten-region NC-free PZR M/H/B transport and known constitutive ports; no advancement, full force residual, pressure/kinematic stencil or rank admission",
+        "pzr_mouth_momentum_scope":"EXCLUDED_UNSELECTED: no physical zero impulse, guessed velocity or pressure traction is admitted by the zero omitted external momentum component",
+        "cases":audit,"primary_pressure_pa":p0,"line_pressure_pa":lp0,"pzr_common_pressure_pa":pp0,
+        "fresh_zero_slip_inexact_contacts":zero_slip_inexact_contacts,
+        "fresh_current_cost":{"calls":50,"seconds":seconds,"seconds_per_call":seconds/50.,
+            "scope":"preallocated work/rate/phase/receipt arrays; fresh primary/line/PZR p,T and independent inlet/outlet currents every call; no held property tuple"}})
+}
+
 #[test]
 #[ignore = "requires actual owner-generated LD01_OPERATING_HOT_SPINE_PACKET"]
 fn actual_hot_spine_current_state_receipts_and_complete_direction() {
@@ -1196,6 +1804,11 @@ fn actual_hot_spine_current_state_receipts_and_complete_direction() {
         release_cost = serde_json::json!({"calls":50,"seconds":timer.elapsed().as_secs_f64(),"seconds_per_same_trial_value_and_direction":timer.elapsed().as_secs_f64()/50.,
             "scope":"reused workspace; four current trial coordinates freshly changed each call; no advancement"});
     }
+    let surge_pzr_same_call = actual_surge_pzr_join(&packet, &model, &current);
+    assert_eq!(
+        packet, original,
+        "same-call transport mutated the owner packet"
+    );
     eprintln!(
         "{}",
         serde_json::json!({"scope":"actual current hot nuclear/history/thermal/primary residual, no advancement; PZR phase-force join open",
@@ -1206,6 +1819,7 @@ fn actual_hot_spine_current_state_receipts_and_complete_direction() {
         "frozen_heat_pressure_projection_defect_kg_s":pressure_constraint_defect,"projected_minus_trial_face_flow_kg_s":pressure_projected_flow_change,
         "fixed_stock_startup_seconds":initialization_only_seconds,"initialization_and_one_joined_call_seconds":initialization_seconds,
         "maximum_scaled_complete_direction_defect":maximum_scaled_direction_defect,"direction_offset_audit":direction_audit,"release_same_call_cost":release_cost,"property_calls":property_calls,
-        "same_stage_value_direction_fingerprints":fingerprints,"same_stage_scalar_count_per_case":snapshots[0].len()})
+        "same_stage_value_direction_fingerprints":fingerprints,"same_stage_scalar_count_per_case":snapshots[0].len(),
+        "surge_pzr_same_call":surge_pzr_same_call})
     );
 }

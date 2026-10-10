@@ -14,6 +14,7 @@ import { fluidTree, preparePressureContinuity } from './reference-design-operati
 import { loadOperatingHydraulics, operatingMainInertance, type Section } from './reference-design-operating-hydraulics'
 import { prepareOperatingPzr } from './reference-design-operating-pzr'
 import { operatingSourceNativeMetadata } from './reference-design-operating-source'
+import { routeElevation } from './reference-design-surge-route'
 
 type Edge = { id: string, from: number, to: number }
 type Stock = { id: string, volume_m3: number, mass_kg: number, internalEnergy_J: number,
@@ -121,6 +122,67 @@ export function rebaseOperatingHydraulics(original: Awaited<ReturnType<typeof lo
     kineticScope: '21 once-owned geometric supports; same two-main metric and five split force rows. Lateral surge/expansion acceleration and junction force are not admitted.' }
 }
 
+/** Actual route integration/ownership, not another hydraulic numerical law.
+ * The two half-route supports are a selected mass-lumped geometric candidate;
+ * force/convection/traction and its joint pressure chart need native admission.
+ * In particular, actual first-moment Px contains expansion-tree flow that is
+ * NOT automatically retained by the original two-main circulation metric. */
+export function compileOperatingSurgeHydraulics(pzr: Pick<Awaited<ReturnType<typeof prepareOperatingPzr>>, 'surge' | 'hotPartition'>) {
+  const r = pzr.surge.route, length = r.developedLength_m, middle = length / 2, area = r.area_m2
+  const elevationIntegral = (s: number) => {
+    if (!Number.isFinite(s) || s < 0 || s > length) throw Error('Surge integral outside actual route')
+    if (s <= r.risingStart_m) return r.sourceElevation_m * s
+    const arc = Math.PI * r.bendRadius_m / 2
+    if (s <= r.verticalStart_m) {
+      const d = s - r.risingStart_m
+      return r.sourceElevation_m * s + r.bendRadius_m * d - r.bendRadius_m ** 2 * Math.sin(d / r.bendRadius_m)
+    }
+    const d = s - r.verticalStart_m
+    return r.sourceElevation_m * s + r.bendRadius_m * arc - r.bendRadius_m ** 2 + r.bendRadius_m * d + d * d / 2
+  }
+  const halves = [0, 1].map(half => {
+    const start = half * middle, end = start + middle
+    const pieces = pzr.surge.pieces.flatMap(piece => {
+      const lo = Math.max(start, piece.start_m), hi = Math.min(end, piece.end_m)
+      if (lo >= hi) return []
+      // The actual eight-metre cut is in a straight, not inside either elbow.
+      if (piece.elbowLoss !== 0 && (lo !== piece.start_m || hi !== piece.end_m)) throw Error('A split elbow requires an explicit loss-location decision')
+      return [{ id: piece.id + '.HALF.' + half, physical_piece_id: piece.id, start_m: lo, end_m: hi,
+        length_m: hi - lo, area_m2: area, volume_m3: (hi - lo) * area,
+        inletElevation_m: routeElevation(r, lo), outletElevation_m: routeElevation(r, hi),
+        meanElevation_m: (elevationIntegral(hi) - elevationIntegral(lo)) / (hi - lo),
+        roughness_m: piece.wallRoughness_m, elbowLoss: piece.elbowLoss }]
+    })
+    return { id: 'SURGE.HALF.' + half, start_m: start, end_m: end, length_m: middle, area_m2: area,
+      volume_m3: middle * area, inletElevation_m: routeElevation(r, start), outletElevation_m: routeElevation(r, end),
+      elevationChange_m: routeElevation(r, end) - routeElevation(r, start),
+      meanElevation_m: (elevationIntegral(end) - elevationIntegral(start)) / middle,
+      geometricInertance_per_m: middle / area, hydraulicDiameter_m: r.internalDiameter_m, roughness_m: r.roughness_m,
+      elbowLoss: sum(pieces.map(p => p.elbowLoss)), pieces,
+      forceRecipient: 'SURGE', additionalThermalPower: false as const }
+  })
+  if (!near(sum(halves.map(h => h.volume_m3)), r.liquidVolume_m3)
+    || !near(sum(halves.map(h => h.length_m)), length)
+    || !near(sum(halves.map(h => h.elbowLoss)), 2 * r.elbowLoss)
+    || !near(sum(halves.map(h => h.meanElevation_m * h.length_m)) / length, r.volumeMeanElevation_m))
+    throw Error('Nonconservative physical surge-half partition')
+  const mainArea = pzr.hotPartition.area_m2, width = Math.sqrt(mainArea), lateralArm = width / 2,
+    junctionLength = pzr.hotPartition.parts[1]!.length_m
+  if (![area, mainArea, lateralArm, junctionLength].every(x => Number.isFinite(x) && x > 0)) throw Error('Invalid actual junction first moment')
+  return { halves, momentumPlane: { distance_m: middle, elevation_m: routeElevation(r, middle) },
+    inventoryMeanElevation_m: r.volumeMeanElevation_m,
+    lossLaw: 'Reviewed circular Churchill Darcy64/Re continuation with actual roughness; NOT annular96/Re or smooth Colebrook',
+    endpointLoss: { hotEntrance: 0, pzrReceipt: 0, pzrWithdrawalCdA_m2: area / Math.sqrt(1 + r.entryLoss),
+      scope: 'No retired HOT entrance/tee or PZR exit loss; phase-weighted withdrawal area belongs to its separate endpoint receipt' },
+    junctionFirstMoment: { status: 'PROJECTION_CANDIDATE' as const, owner: 'HOT.A.JUNCTION',
+      mainAxisArm_m: junctionLength / 2, lateralArm_m: lateralArm,
+      lateralInertance_per_m: lateralArm / area,
+      mainMoment: 'Px=Lx/2*(qin_main+qout_main)', lateralMoment: 'Py=width/2*qout_surge',
+      meanVelocity: 'Current vector first moment divided by actual junction mass; never qsurge/(rho*surgeArea) as whole-junction velocity',
+      scope: 'Uniform retained-density continuity first moment. Actual open-face/wall traction and upwind vector convection are unadmitted. MAIN metric covers only its selected cycle contribution; expansion-tree Px inertia needs explicit ownership or an omission diagnostic.' },
+    inertiaScope: 'Two diagonal Lhalf/A geometric supports are a mass-lumped low-Mach candidate, not exact affine-profile inertia, an acoustic face or admitted surge dynamics' }
+}
+
 export async function prepareOperatingSpine(wiki: string, if97: string) {
   const base = join(wiki, 'world/packs/process-plant/reference-designs/ld-01'), read = (p: string) => Bun.file(join(base, p)).text()
   const [hot, fuelDoc, handlingDoc, controlDoc, thermalDoc, gapDoc] = await Promise.all([
@@ -152,7 +214,8 @@ export async function prepareOperatingSpine(wiki: string, if97: string) {
       mass_p_at_energy_kg_pa: r.massPAtEnergy_kg_Pa, mass_energy_at_pressure_kg_j: r.massEnergyAtPressure_kg_J })),
     direct_coolant_projection: { heat_w: direct, edges: carved.edges.map(e => ({ from: e.from, to: e.to })),
       donors: projection.donors, flows_kg_s: projection.flows_kg_s, pressure_rate_pa_s: projection.pressureRate_Pa_s } }
-  const hydraulics = rebaseOperatingHydraulics(originalHydraulics, carved)
+  const rebasedHydraulics = rebaseOperatingHydraulics(originalHydraulics, carved),
+    hydraulics = { ...rebasedHydraulics, surge: { ...rebasedHydraulics.surge, ...compileOperatingSurgeHydraulics(pzr) } }
   const hash = (s: string) => createHash('sha256').update(s).digest('hex')
   return { identity: 'LD01-HOT-SPINE-1', thermal, hot: { ...hot.nativeInput, fluid: nativeFluid },
     feedback_metadata: operatingSourceNativeMetadata(hot.compiledSource), feedback_reference: hot.compiledSource.reference.conditions,
@@ -166,7 +229,7 @@ export async function prepareOperatingSpine(wiki: string, if97: string) {
       surge_to_pzr: { id: 'SURGE->PZR.SURGE.MOUTH', surge_id: carved.surgeStock.id, pzr_water: pzr.mouth.region,
         area_m2: pzr.mouth.area_m2, elevation_m: pzr.mouth.elevation_m, normal: pzr.mouth.normal },
       receiptRule: 'Signed actual donor material/thermal enthalpy; no prescribed flow, pressure matching or zero-filled external equation',
-      scope: 'Finite removed line stock plus actual endpoint geometry only. Surge force/transport, PZR aggregate pressure and phase-cycle composition remain open.' },
+      scope: 'Finite removed line stock and actual geometry/storage ports; native SURGE provides current signed M/H/B transport. Surge/junction forces, PZR pressure/kinematic/inertia and phase events, and complete unit F remain open.' },
     preparation: { direct_source_projection: projection,
       scope: 'Preparation-only pressure/enthalpy/continuity check with specified zero cycle currents and no external mass. It is not the joined current-flow solution.' },
     provenance: { sourceSha256: hash(await Bun.file(import.meta.path).text()), hot: hot.provenance, fluid: hot.fluid.provenance,

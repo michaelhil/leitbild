@@ -19,7 +19,8 @@ requirement of this operating kernel.
   actual capture coefficients.
 - Finite capture targets with shared target-loss, product and binding-energy
   receipts from the same actual exposure, not a fixed ratio to fissions.
-- Exact directional derivatives including constitutive input directions.
+- Analytic equation directions including constitutive input directions, with
+  explicitly disclosed inexact property-coefficient and nonsmooth branches.
   A frozen-input derivative is not the complete coupled plant Jacobian.
 - Additive fixed-input sparse kinetics Jacobian assembly in linear work, without
   evaluating the whole block once per column. Sum repeated diagonal entries;
@@ -33,6 +34,16 @@ requirement of this operating kernel.
 - Current-material pump, friction and gravity force/work ports on the actual
   circulation graph. The selected bounded low-Mach thermal convention does not
   claim exact coolant kinetic/gravitational feedback into thermal stocks.
+- Finite liquid surge-line storage and reciprocal current-donor mass, thermal
+  enthalpy and boron receipts, with independent inlet/outlet currents and its
+  own thermodynamic pressure. This does not supply its momentum equation.
+- Ten-region PZR phase-specific advection, bulk/contrast thermal conversion,
+  interphase/solid drag, gravity and partial molecular face transport. Supplied
+  face currents and nodal velocities are not a closed pressure/inertia chart.
+  Exact zero-slip heat-transfer values retain their physical square-root cusp;
+  the explicitly flagged coefficient direction there is inexact, not smoothed.
+  Finite phase-receipt arithmetic exposes volume defects and cannot replace
+  event roots, post-event EOS recovery or active-row consistency.
 
 Compile immutable coefficients/topology once; evaluate into caller-owned
 buffers without stage allocation. Signed finite Newton trials are distinct

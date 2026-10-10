@@ -325,6 +325,109 @@ pub fn require_pure_water(
     Ok(())
 }
 
+/// Finite physical phase/event stock, not a padded absent-phase state. Momentum
+/// is retained for the responsible material receipt even under the low-Mach
+/// thermal reduction; no K/PE or friction heat is added to internal energy.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PhaseInventory {
+    pub mass_kg: f64,
+    pub internal_energy_j: f64,
+    pub momentum_kg_m_s: [f64; 2],
+    pub dissolved_boron_kg: f64,
+}
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FiniteReceipt {
+    pub mass_kg: f64,
+    pub thermal_enthalpy_j: f64,
+    pub phase_volume_m3: f64,
+    pub momentum_kg_m_s: [f64; 2],
+    pub dissolved_boron_kg: f64,
+}
+#[derive(Clone, Copy, Debug)]
+pub struct PhaseTransition {
+    pub inventory: [PhaseInventory; 2],
+    pub active: Active,
+    /// Caller must close this fixed-volume row and actual maintained-EOS
+    /// caloric/volume rows at the candidate pressure before event admission.
+    pub phase_volume_defect_m3: f64,
+}
+fn inventory(p: PhaseInventory, vapor: bool) -> Result<()> {
+    finite(&[
+        p.mass_kg,
+        p.internal_energy_j,
+        p.momentum_kg_m_s[0],
+        p.momentum_kg_m_s[1],
+        p.dissolved_boron_kg,
+    ])?;
+    if p.mass_kg < 0. || p.dissolved_boron_kg < 0. || (vapor && p.dissolved_boron_kg != 0.) {
+        return Err("inadmissible physical PZR phase inventory");
+    }
+    if p.mass_kg == 0.
+        && [
+            p.internal_energy_j,
+            p.momentum_kg_m_s[0],
+            p.momentum_kg_m_s[1],
+            p.dissolved_boron_kg,
+        ]
+        .iter()
+        .any(|v| *v != 0.)
+    {
+        return Err("PZR exhaustion retains energy/momentum/tracer residue");
+    }
+    Ok(())
+}
+/// Apply an ACTUAL finite receipt at a candidate common pressure. This performs
+/// no root localization, EOS recovery, pressure reset or epsilon seeding. Each
+/// phase receives dU=dH-p*dV; their pressure work cancels only when the reported
+/// fixed-volume row closes. A phase is removed only after the responsible
+/// outflow/conversion carries its entire finite energy, momentum and tracer.
+pub fn apply_phase_receipts(
+    p: f64,
+    before: [PhaseInventory; 2],
+    receipt: [FiniteReceipt; 2],
+) -> Result<PhaseTransition> {
+    finite(&[p])?;
+    if p <= 0. {
+        return Err("positive PZR event pressure required");
+    }
+    let mut after = before;
+    for k in 0..2 {
+        inventory(before[k], k == 1)?;
+        let r = receipt[k];
+        finite(&[
+            r.mass_kg,
+            r.thermal_enthalpy_j,
+            r.phase_volume_m3,
+            r.momentum_kg_m_s[0],
+            r.momentum_kg_m_s[1],
+            r.dissolved_boron_kg,
+        ])?;
+        if k == 1 && r.dissolved_boron_kg != 0. {
+            return Err("PZR vapor receipt cannot carry dissolved boron");
+        }
+        after[k].mass_kg += r.mass_kg;
+        after[k].internal_energy_j += r.thermal_enthalpy_j - p * r.phase_volume_m3;
+        for j in 0..2 {
+            after[k].momentum_kg_m_s[j] += r.momentum_kg_m_s[j];
+        }
+        after[k].dissolved_boron_kg += r.dissolved_boron_kg;
+        inventory(after[k], k == 1)?;
+    }
+    let active = match (after[0].mass_kg > 0., after[1].mass_kg > 0.) {
+        (true, true) => Active::TwoPhase,
+        (true, false) => Active::Liquid,
+        (false, true) => Active::Vapor,
+        (false, false) => return Err("empty PZR region needs a separate evacuated-domain chart"),
+    };
+    let phase_volume_defect_m3 = receipt[0].phase_volume_m3 + receipt[1].phase_volume_m3;
+    finite(&[phase_volume_defect_m3])?;
+    Ok(PhaseTransition {
+        inventory: after,
+        active,
+        phase_volume_defect_m3,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

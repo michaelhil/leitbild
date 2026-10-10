@@ -1,4 +1,4 @@
-/** Actual PZR/connection geometry and finite pure-water preparation. Rust owns
+/** Actual PZR/connection geometry and finite NC-free water/tracer preparation. Rust owns
  * thermodynamic/rate laws. No fine field, HEM vessel, held pressure or line
  * solver is imported; numerical phase force/active topology admission is open. */
 import {createHash} from 'node:crypto'
@@ -12,7 +12,8 @@ import {nativeIf97Revision,nativeIf97HeaderSha256,nativeIf97LicenseSha256} from 
 const positive=z.number().finite().positive()
 const schema=z.object({commonPressure_Pa:positive,liquidTemperature_K:positive,vaporTemperature_K:positive,
   phaseBoundaryHeight_m:positive,bands_m:z.tuple([z.literal(0),z.literal(1),z.literal(3),z.literal(6),z.literal(9),z.literal(12)]),
-  interfacialLength_m:positive,solidRoughness_m:z.number().finite().nonnegative()}).strict()
+  interfacialLength_m:positive,solidRoughness_m:z.number().finite().nonnegative(),
+  absorberMassFraction:z.number().finite().min(0).lt(1)}).strict()
 export function parseOperatingPzr(text:string){
   const blocks=[...text.matchAll(/^```reference-operating-pzr\s*\n([\s\S]*?)^```\s*$/gm)]
   if(blocks.length!==1)throw Error('Expected one reference-operating-pzr block')
@@ -21,9 +22,9 @@ export function parseOperatingPzr(text:string){
   return b
 }
 export type PzrRegion={id:string,lane:'inner'|'outer',bottom_m:number,top_m:number,elevation_m:number,
-  volume_m3:number,axialArea_m2:number,solidPerimeter_m:number,initialPhase:'liquid'|'vapor'}
+  radialCentroid_m:number,volume_m3:number,axialArea_m2:number,solidPerimeter_m:number,initialPhase:'liquid'|'vapor'}
 export type PzrFace={id:string,from:number,to:number,area_m2:number,direction:'radial'|'axial',elevation_m:number,
-  contrastContact:true,bulkPhaseVelocity:'separate'}
+  distance_m:number,normal:[number,number],contrastContact:true,bulkPhaseVelocity:'separate'}
 export type PzrPort={id:string,region:number,area_m2:number,elevation_m:number,normal:[number,number,number],
   receiptConvention:'signed thermal enthalpy into each actual phase',noncondensableScope:'explicit refusal in first composed hot spine'}
 
@@ -31,7 +32,11 @@ export type HotEnvelope={id:string,volume_m3:number,mainFlowArea_m2:number,eleva
 export function compileOperatingPzr(selection:string,surgeOwner:string,hot:HotEnvelope){
   const b=parseOperatingPzr(selection),hardware=heaterBankBasis,bank=heaterBankGeometry(6),
     route=resolveSurgeRoute(parseSurgeRoute(surgeOwner)),innerRadius=Math.sqrt(hardware.upflowArea_m2/Math.PI),
-    shellRadius=Math.sqrt(hardware.vesselArea_m2/Math.PI),regions:PzrRegion[]=[],faces:PzrFace[]=[],
+    shellRadius=Math.sqrt(hardware.vesselArea_m2/Math.PI),
+    // Selected uniform gross-ring volume centroids. Rod displacement remains
+    // in actual fluid V/A and solid perimeter, not a second fitted radial mesh.
+    innerCentroid=2*innerRadius/3,outerCentroid=(2/3)*(shellRadius**3-innerRadius**3)/(shellRadius**2-innerRadius**2),
+    regions:PzrRegion[]=[],faces:PzrFace[]=[],
     rodArea=(z:number)=>Object.values(hardware).reduce((sum,q)=>sum+(typeof q==='object'&&'count'in q&&z<=q.length_m?q.count*Math.PI*(q.diameter_m/2)**2:0),0)
   if(route.receiverElevation_m!==hardware.bottom_m||route.internalDiameter_m!==.3)throw Error('PZR mouth/route datum mismatch')
   if(hot.id!=='HOT.A'||![hot.volume_m3,hot.mainFlowArea_m2,hot.elevation_m].every(Number.isFinite)
@@ -40,16 +45,18 @@ export function compileOperatingPzr(selection:string,surgeOwner:string,hot:HotEn
     const lo=b.bands_m[i]!,hi=b.bands_m[i+1]!,mid=(lo+hi)/2,
       area=hardware.upflowArea_m2-rodArea(mid),perimeter=(['normal','backup']as const).reduce((a,k)=>a+(mid<hardware[k].length_m?hardware[k].count*Math.PI*hardware[k].diameter_m:0),0)
     for(const lane of ['inner','outer']as const)regions.push({id:`PZR.${i}.${lane}`,lane,bottom_m:hardware.bottom_m+lo,top_m:hardware.bottom_m+hi,
-      elevation_m:hardware.bottom_m+mid,volume_m3:(hi-lo)*(lane==='inner'?area:hardware.vesselArea_m2-hardware.upflowArea_m2),
+      elevation_m:hardware.bottom_m+mid,radialCentroid_m:lane==='inner'?innerCentroid:outerCentroid,
+      volume_m3:(hi-lo)*(lane==='inner'?area:hardware.vesselArea_m2-hardware.upflowArea_m2),
       axialArea_m2:lane==='inner'?area:hardware.vesselArea_m2-hardware.upflowArea_m2,
       solidPerimeter_m:lane==='inner'?perimeter:2*Math.PI*shellRadius,initialPhase:hi<=b.phaseBoundaryHeight_m?'liquid':'vapor'})
     faces.push({id:`PZR.RADIAL.${i}`,from:2*i,to:2*i+1,area_m2:2*Math.PI*innerRadius*(hi-lo),direction:'radial',elevation_m:hardware.bottom_m+mid,
-      contrastContact:true,bulkPhaseVelocity:'separate'})
+      distance_m:outerCentroid-innerCentroid,normal:[1,0],contrastContact:true,bulkPhaseVelocity:'separate'})
     if(i<4)for(const lane of [0,1])faces.push({id:`PZR.AXIAL.${i}.${lane}`,from:2*i+lane,to:2*(i+1)+lane,
       // Lower-sided/minimum throat: a rod end cap remains solid on its plane.
       // This intentionally differs from the upper-sided volume-section helper.
       area_m2:lane===0?hardware.upflowArea_m2-rodArea(hi):hardware.vesselArea_m2-hardware.upflowArea_m2,
-      direction:'axial',elevation_m:hardware.bottom_m+hi,contrastContact:true,bulkPhaseVelocity:'separate'})
+      direction:'axial',elevation_m:hardware.bottom_m+hi,distance_m:(b.bands_m[i+2]!-b.bands_m[i]!)/2,
+      normal:[0,1],contrastContact:true,bulkPhaseVelocity:'separate'})
   }
   const totalVolume=regions.reduce((a,r)=>a+r.volume_m3,0)
   if(Math.abs(totalVolume+bank.totalSolid_m3-hardware.vesselArea_m2*hardware.vesselHeight_m)>1e-12)throw Error('PZR displaced volume mismatch')
@@ -67,10 +74,12 @@ export function compileOperatingPzr(selection:string,surgeOwner:string,hot:HotEn
     pieces=lengths.map((L,i)=>({id:`SURGE.PHYSICAL.${i}`,length_m:L,area_m2:route.area_m2,volume_m3:L*route.area_m2,
       start_m:ends[i]!,end_m:ends[i+1]!,inletElevation_m:routeElevation(route,ends[i]!),outletElevation_m:routeElevation(route,ends[i+1]!),
       wallRoughness_m:route.roughness_m,elbowLoss:i===1||i===3?route.elbowLoss:0}))
-  return {scope:'Actual common-P purewater PZR chart/ports; separatephase cycle forces and joined rank unadmitted',selection:b,regions,faces,
+  return {scope:'Actual common-P NC-free water PZR chart/ports with retained passive absorber; pressure/kinematic/inertia composition and joined rank unadmitted',selection:b,regions,faces,
+    radialGeometry:{innerRadius_m:innerRadius,shellRadius_m:shellRadius,innerCentroid_m:innerCentroid,outerCentroid_m:outerCentroid,
+      scope:'Selected uniform gross-annular volume centroid approximation for radial gradients; actual displaced V/A, face apertures and rod/shell perimeter stay separate'},
     totalVolume_m3:totalVolume,heaterDisplacement_m3:bank.totalSolid_m3,cycleColumns:cycles,
-    phaseCycles:{liquid:4,vapor:4,preparedLiquid:2,preparedVapor:1,scope:'Maximum supports only; actual absentphase topology is not padded with momentum/property states'},
-    material:'pure water only; any air/nitrogen amount or arrival explicitly refuses',
+    phaseCycles:{liquid:4,vapor:4,preparedLiquid:2,preparedVapor:1,scope:'Maximum graph-cycle supports only, not a complete dynamic allocation; actual absentphase topology is not padded with momentum/property states'},
+    material:'NC-free water EOS with finite passive dissolved absorber; any air/nitrogen amount or arrival explicitly refuses',
     mouth:{...mouth,withdrawalCdAAtUnitFraction_m2:mouth.area_m2/Math.sqrt(1.5),receiptArea_m2:mouth.area_m2,radiusFromAxis_m:.8,
       bottomOuterContactArea_m2:hardware.vesselArea_m2-hardware.upflowArea_m2-mouth.area_m2},
     hotPartition:{sourceOwner:'HOT.A',totalVolume_m3:hot.volume_m3,parts:[{id:'HOT.A.UPSTREAM',volume_m3:stubVolume,length_m:stubVolume/hotArea},
@@ -93,11 +102,14 @@ export async function prepareOperatingPzr(wikiRoot:string,if97Directory:string,h
       regions=g.regions.map(r=>{const q=props[r.initialPhase==='liquid'?0:1]!,c=fixedVolumeChart(r.volume_m3,q);return {...r,
         commonPressure_Pa:b.commonPressure_Pa,vaporFraction:r.initialPhase==='liquid'?0:1,liquidEnergy_J:r.initialPhase==='liquid'?c.internalEnergy_J:0,
         vaporEnergy_J:r.initialPhase==='vapor'?c.internalEnergy_J:0,mass_kg:c.mass_kg,water:q,partials:waterPartials(q),
+        // Once-only prepared tracer stock; pressure/temperature trials do not
+        // reapply this fraction to the current EOS mass.
+        absorberTracer_kgEq:r.initialPhase==='liquid'?b.absorberMassFraction*c.mass_kg:0,
         airMass_kg:0,nitrogenMass_kg:0,massPAtEnergy_kg_Pa:c.massPAtEnergy_kg_Pa,massEnergyAtPressure_kg_J:c.massEnergyAtPressure_kg_J}}),
       hash=(s:string)=>createHash('sha256').update(s).digest('hex')
     return {...g,regions,totalMass_kg:regions.reduce((a,r)=>a+r.mass_kg,0),totalInternalEnergy_J:regions.reduce((a,r)=>a+r.liquidEnergy_J+r.vaporEnergy_J,0),
       aggregateMassPAtEnergy_kg_Pa:regions.reduce((a,r)=>a+r.massPAtEnergy_kg_Pa,0),
-      preparationScope:'Fresh finite commonP purewater thermalstocks; not oldseedprofile, hydrostatic/forcebalance or phasecycleflow initialization',
+      preparationScope:'Fresh finite commonP NC-free water thermal and dissolved-tracer stocks; not oldseedprofile, hydrostatic/forcebalance or phasecycleflow initialization',
       provenance:{sourceSha256:hash(await Bun.file(import.meta.path).text()),consumed:paths.map((name,i)=>({name,sha256:hash(docs[i]!)})),
         if97Revision:nativeIf97Revision,if97HeaderSha256:nativeIf97HeaderSha256,if97LicenseSha256:nativeIf97LicenseSha256,
         propertyInterfaceSha256:hash(await Bun.file(new URL('./reference-design-operating-fluid.ts',import.meta.url)).text()),
