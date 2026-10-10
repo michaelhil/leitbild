@@ -12,7 +12,7 @@ export interface AnnunciatorSystem {
   readonly id: string
   /** As operators name it ("Reactor coolant system"). */
   readonly name: string
-  /** What its tile says: the name, or the declared short label where the name does not fit a tile at its least width. Never cut. */
+  /** What its tile says at the display's tile width: the name, or the declared short label where the name does not fit. Never cut. */
   readonly label: string
   /** The rules whose alarms or trips it annunciates. */
   readonly ruleIds: ReadonlyArray<string>
@@ -24,15 +24,15 @@ export type AnnunciatorSystemsResult =
 
 const fits = (text: string, room: number): boolean => unmeasurable('tag', text).length === 0 && textWidth('tag', text) <= room
 
-export const annunciatorSystems = (plant: CompiledProcessPlant): AnnunciatorSystemsResult => {
+/** The declared systems with what each tile says at a tile width (composedDisplayLayout.annunciatorTile.widths). */
+export const annunciatorSystems = (plant: CompiledProcessPlant, tileWidth: number): AnnunciatorSystemsResult => {
   const ruleIds = new Map<string, string[]>()
   for (const rule of plant.automation.rules) {
     if (!rule.enabled) continue
     const systems = new Set(rule.effects.flatMap(effect => (effect.type === 'alarm.enter' || effect.type === 'trip.enter') && effect.annunciator?.system !== undefined ? [effect.annunciator.system] : []))
     for (const system of systems) ruleIds.set(system, [...(ruleIds.get(system) ?? []), rule.id])
   }
-  const tile = composedDisplayLayout.annunciatorTile
-  const room = tile.width - tile.inset
+  const room = tileWidth - composedDisplayLayout.annunciatorTile.inset
   const issues: string[] = []
   const systems = plant.automation.annunciatorSystems.map(system => {
     const label = [system.label, system.shortLabel].find((candidate): candidate is string => candidate !== undefined && fits(candidate, room))

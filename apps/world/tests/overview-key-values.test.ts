@@ -42,7 +42,7 @@ describe('the annunciator systems an overview summarises its alarms by', () => {
   const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:annunciators', loopCount: 4 }))
 
   test('are the systems the I&C config declares, in its order, each with the rules that name it', () => {
-    const result = annunciatorSystems(plant)
+    const result = annunciatorSystems(plant, 134)
     if (!result.ok) throw new Error(result.issues.join('; '))
     const systems = result.systems
     expect(systems.map(system => system.name)).toEqual(['Reactor protection', 'Reactor coolant system', 'Steam generators', 'Safety injection', 'Containment', 'Electrical', 'Feedwater', 'Balance of plant', 'Main steam'])
@@ -56,7 +56,7 @@ describe('the annunciator systems an overview summarises its alarms by', () => {
 
   test('a declared name that fits no tile, with no short label that does, is refused', () => {
     const long = { ...plant, automation: { ...plant.automation, annunciatorSystems: [{ id: 'turbineGeneratorAndAuxiliaries', label: 'Turbine generator and auxiliaries' }] } }
-    expect(annunciatorSystems(long)).toEqual({ ok: false, issues: ['annunciator system turbineGeneratorAndAuxiliaries: neither "Turbine generator and auxiliaries" nor its short label (none declared) fits a tile 118 px wide; declare a short label that does'] })
+    expect(annunciatorSystems(long, 134)).toEqual({ ok: false, issues: ['annunciator system turbineGeneratorAndAuxiliaries: neither "Turbine generator and auxiliaries" nor its short label (none declared) fits a tile 118 px wide; declare a short label that does'] })
   })
 })
 

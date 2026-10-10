@@ -121,8 +121,10 @@ export interface ComposedAlarmsPanel {
   readonly scope: 'related' | 'plant'
   /** I&C rules acting on the displayed signals; used when scope is related. */
   readonly ruleIds: ReadonlyArray<string>
-  /** A unit overview's annunciator tiles over the list: the Plant's declared systems (annunciators.ts). */
+  /** A unit overview's annunciator tiles over the list: the Plant's declared systems (annunciators.ts), labelled for the tile width. */
   readonly systems?: ReadonlyArray<AnnunciatorSystem>
+  /** The tiles' least width (composedDisplayLayout.annunciatorTile.widths). */
+  readonly tileWidth?: number
 }
 
 export interface ComposedMimicPanel {
@@ -584,6 +586,9 @@ export interface OverviewView {
 /** Room no drawing reaches: leaves the layout unconstrained along that axis. */
 const UNCONSTRAINED = 1_000_000
 
+/** How much more height a drawing that scrolls is offered at a time: two rows of its grid. */
+const SCROLL_STEP = 2 * overviewMimicProfile.layout.grid
+
 /**
  * How an overview's panels share its window: the drawing beside a column of
  * lead values over the alarms, or lead values, drawing and alarms stacked.
@@ -591,17 +596,21 @@ const UNCONSTRAINED = 1_000_000
  */
 export type OverviewArrangement = 'column' | 'stacked'
 
-/** What a generated display shows besides its drawing: how many lead values, and how many annunciator tiles over its alarms. */
+/**
+ * What a generated display shows besides its drawing: how many lead values,
+ * and how many annunciator tiles over its alarms at what least width.
+ */
 export interface GeneratedPanels {
   readonly readouts: number
   readonly annunciators: number
+  readonly tileWidth: number
 }
 
 /** Annunciator tiles across a width: as many to a row as fit at their least width (the view's grid does the same). */
-export const annunciatorHeight = (count: number, width: number): number => {
+export const annunciatorHeight = (count: number, tileWidth: number, width: number): number => {
   if (count === 0) return 0
   const { annunciatorTile: tile, annunciatorGap: gap, panelGap } = composedDisplayLayout
-  const perRow = Math.max(1, Math.floor((width + gap) / (tile.width + gap)))
+  const perRow = Math.max(1, Math.floor((width + gap) / (tileWidth + gap)))
   const rows = Math.ceil(count / perRow)
   return rows * tile.height + (rows - 1) * gap + panelGap
 }
@@ -631,14 +640,14 @@ export const overviewDrawingRoom = (
 const overviewColumnHeight = (panels: GeneratedPanels): number => {
   const layout = composedDisplayLayout
   return (panels.readouts === 0 ? 0 : panels.readouts * layout.overviewReadoutRow + layout.panelGap)
-    + annunciatorHeight(panels.annunciators, layout.overviewColumn) + layout.alarms + layout.overviewFooter
+    + annunciatorHeight(panels.annunciators, panels.tileWidth, layout.overviewColumn) + layout.alarms + layout.overviewFooter
 }
 
 /** Stacked with the drawing across a width: the lead values above it, the annunciator tiles and the alarms below. */
 const stackedPanelsHeight = (panels: GeneratedPanels, width: number): number => {
   const layout = composedDisplayLayout
   return (panels.readouts === 0 ? 0 : composedPanelHeight({ kind: 'readouts', values: panels.readouts }) + layout.panelGap)
-    + layout.panelGap + annunciatorHeight(panels.annunciators, width) + layout.alarms
+    + layout.panelGap + annunciatorHeight(panels.annunciators, panels.tileWidth, width) + layout.alarms
 }
 
 /** A generated display's whole height in an arrangement across a width: what a window shows without scrolling. */
@@ -655,34 +664,62 @@ type GeneratedDrawing = (room: { readonly maxWidth: number; readonly maxHeight: 
 /**
  * Fits a generated display to its view at 1:1, taking the first that fits:
  * each drawing in turn (the most it can show first), beside the column of
- * lead values and alarms (the drawing has the view's height), then stacked
- * with them (the view's width); then, the drawings in the same order, as wide
- * as the view and scrolling down, then at their own size, scrolling both
- * ways. Without a view (a listing of what it draws) the first drawing that
- * draws at all is drawn at its own size.
+ * lead values and alarms (the drawing has the view's height), with the
+ * panels' widest tiles first, then stacked with them (the view's width);
+ * then, the drawings in the same order, at the least height that draws
+ * beside the column, then as wide as the view, scrolling down, then at any
+ * width; then at their own size, scrolling both ways. Without a view (a
+ * listing of what it draws) the first drawing that draws at all is drawn at
+ * its own size. `panels` lists the same panels at each tile width, widest
+ * first.
  */
 const fitGenerated = (
   view: OverviewView | null,
-  panels: GeneratedPanels,
+  panels: ReadonlyArray<GeneratedPanels>,
   drawings: ReadonlyArray<GeneratedDrawing>,
-): { readonly ok: true; readonly arrangement: OverviewArrangement; readonly mimic: CompiledMimic } | { readonly ok: false; readonly issues: ReadonlyArray<string> } => {
-  const whole = view === null ? [] : (['column', 'stacked'] as const).flatMap(arrangement => {
-    const room = overviewDrawingRoom(view, arrangement, panels)
-    return room === null ? [] : [{ arrangement, room }]
+): { readonly ok: true; readonly arrangement: OverviewArrangement; readonly panels: GeneratedPanels; readonly mimic: CompiledMimic } | { readonly ok: false; readonly issues: ReadonlyArray<string> } => {
+  const widest = panels[0]!
+  const whole = view === null ? [] : [
+    ...panels.map(option => ({ arrangement: 'column' as const, panels: option })),
+    { arrangement: 'stacked' as const, panels: widest },
+  ].flatMap(layout => {
+    const room = overviewDrawingRoom(view, layout.arrangement, layout.panels)
+    return room === null ? [] : [{ ...layout, room }]
   })
-  const scrolling = [
-    ...(view === null ? [] : [{ maxWidth: view.width - 2 * composedDisplayLayout.overviewPadding, maxHeight: UNCONSTRAINED }]),
-    { maxWidth: UNCONSTRAINED, maxHeight: UNCONSTRAINED },
+  // A window too small scrolls by as little as the drawing needs: the least
+  // height that draws, in steps of two grid rows up to twice the window,
+  // beside the column while the window is wide enough for it, else stacked,
+  // else at any width; a drawing that fits no such height is drawn at its
+  // own size.
+  const shortest = view === null ? 0 : view.height - composedDisplayLayout.overviewFrame - composedDisplayLayout.mimicLegend
+  const heights = Array.from({ length: Math.floor(shortest / SCROLL_STEP) }, (_, step) => shortest + (step + 1) * SCROLL_STEP)
+  const scrolling = view === null ? [] : [
+    { arrangement: 'column' as const, maxWidth: overviewDrawingRoom({ width: view.width, height: UNCONSTRAINED }, 'column', widest)!.maxWidth },
+    { arrangement: 'stacked' as const, maxWidth: view.width - 2 * composedDisplayLayout.overviewPadding },
   ]
-  const attempts = [
-    ...drawings.flatMap(draw => whole.map(({ arrangement, room }) => ({ draw, arrangement, room }))),
-    ...scrolling.flatMap(room => drawings.map(draw => ({ draw, arrangement: 'stacked' as const, room }))),
-  ]
+  // Taller room never stops a drawing that fits in less, so the least height is found by halving.
+  const leastHeight = (draw: GeneratedDrawing, maxWidth: number): MimicCompileResult => {
+    let best = draw({ maxWidth, maxHeight: heights.at(-1) ?? shortest })
+    if (!best.ok) return best
+    let [low, high] = [0, heights.length - 1]
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2)
+      const drawn = draw({ maxWidth, maxHeight: heights[middle]! })
+      if (drawn.ok) { best = drawn; high = middle } else low = middle + 1
+    }
+    return best
+  }
   // Unconstrained room draws whatever can be drawn verified, so the last refusal says why nothing can.
   let refusal: ReadonlyArray<string> = []
-  for (const { draw, arrangement, room } of attempts) {
-    const drawn = draw(room)
-    if (drawn.ok) return { ok: true, arrangement, mimic: drawn.mimic }
+  const attempts = [
+    ...drawings.flatMap(draw => whole.map(layout => ({ arrangement: layout.arrangement, panels: layout.panels, draw: () => draw(layout.room) }))),
+    ...scrolling.flatMap(rung => drawings.map(draw => ({ arrangement: rung.arrangement, panels: widest, draw: () => leastHeight(draw, rung.maxWidth) }))),
+    ...(view === null ? [] : drawings.map(draw => ({ arrangement: 'stacked' as const, panels: widest, draw: () => leastHeight(draw, UNCONSTRAINED) }))),
+    ...drawings.map(draw => ({ arrangement: 'stacked' as const, panels: widest, draw: () => draw({ maxWidth: UNCONSTRAINED, maxHeight: UNCONSTRAINED }) })),
+  ]
+  for (const { arrangement, panels: shown, draw } of attempts) {
+    const drawn = draw()
+    if (drawn.ok) return { ok: true, arrangement, panels: shown, mimic: drawn.mimic }
     refusal = drawn.issues.map(issue => issue.message)
   }
   return { ok: false, issues: refusal }
@@ -693,9 +730,8 @@ const generatedDisplay = (
   system: ProcessPlantRuntimeInstance,
   title: string,
   readouts: UnsizedPanel | undefined,
-  panels: GeneratedPanels,
   view: OverviewView | null,
-  fitted: { readonly arrangement: OverviewArrangement; readonly mimic: CompiledMimic },
+  fitted: { readonly arrangement: OverviewArrangement; readonly panels: GeneratedPanels; readonly mimic: CompiledMimic },
   alarms: (panels: ReadonlyArray<CompiledComposedPanel>) => ComposedAlarmsPanel,
 ): CompiledComposedDisplay => {
   // Nothing generated is a trend, so every panel has its natural height.
@@ -709,7 +745,7 @@ const generatedDisplay = (
     title,
     advice: null,
     modelDigest: system.plant.modelDigest,
-    height: overviewHeight(fitted.arrangement, panels, fitted.mimic, width),
+    height: overviewHeight(fitted.arrangement, fitted.panels, fitted.mimic, width),
     panels: [...shown, alarms(shown)],
   }
 }
@@ -735,13 +771,19 @@ export const compileOverviewDisplay = (system: ProcessPlantRuntimeInstance, reco
   const circuits = principalCircuits(system.plant.graph)
   if (!circuits.ok) return { ok: false, issues: [{ path: 'overview', message: circuits.reason }] }
   if (issues.length > 0) return { ok: false, issues }
-  const annunciators = annunciatorSystems(system.plant)
-  if (!annunciators.ok) return { ok: false, issues: annunciators.issues.map(message => ({ path: 'overview', message })) }
-  const systems = annunciators.systems
-  const panels = { readouts: readouts?.kind === 'readouts' ? readouts.pens.length : 0, annunciators: systems.length }
-  const fitted = fitGenerated(view, panels, [room => compileMimicScope(system.plant, circuits.scope, { profile: overviewMimicProfile, ...room })])
+  // The tiles at each width their names fit, widest first; the widest must fit, so a narrower one only ever saves height.
+  const [widest, ...narrower] = composedDisplayLayout.annunciatorTile.widths
+  const regular = annunciatorSystems(system.plant, widest)
+  if (!regular.ok) return { ok: false, issues: regular.issues.map(message => ({ path: 'overview', message })) }
+  const tiles = [{ width: widest, systems: regular.systems }, ...narrower.flatMap(width => {
+    const fitted = annunciatorSystems(system.plant, width)
+    return fitted.ok ? [{ width, systems: fitted.systems }] : []
+  })]
+  const values = readouts?.kind === 'readouts' ? readouts.pens.length : 0
+  const fitted = fitGenerated(view, tiles.map(option => ({ readouts: values, annunciators: option.systems.length, tileWidth: option.width })), [room => compileMimicScope(system.plant, circuits.scope, { profile: overviewMimicProfile, ...room })])
   if (!fitted.ok) return { ok: false, issues: fitted.issues.map(message => ({ path: 'overview', message })) }
-  return { ok: true, display: generatedDisplay(system, 'Unit overview', readouts, panels, view, fitted, () => ({ kind: 'alarms', scope: 'plant', ruleIds: [], systems })) }
+  const systems = tiles.find(option => option.width === fitted.panels.tileWidth)!.systems
+  return { ok: true, display: generatedDisplay(system, 'Unit overview', readouts, view, fitted, () => ({ kind: 'alarms', scope: 'plant', ruleIds: [], systems, tileWidth: fitted.panels.tileWidth })) }
 }
 
 /**
@@ -768,7 +810,7 @@ export const compileDetailDisplay = (
   const loops = [...new Set(components.map(index => graph.components[index]!.metadata?.loopId))]
   const narrowed = loops.every((loop): loop is string => loop !== undefined) ? { loops } : {}
   const reaches = Array.from({ length: MIMIC_REACH_LINKS }, (_, step) => MIMIC_REACH_LINKS - step)
-  const panels = { readouts: readouts?.kind === 'readouts' ? readouts.pens.length : 0, annunciators: 0 }
+  const panels = [{ readouts: readouts?.kind === 'readouts' ? readouts.pens.length : 0, annunciators: 0, tileWidth: composedDisplayLayout.annunciatorTile.widths[0] }]
   const whole = reaches.map(reach => resolveMimicScope(graph, { around: componentIds, ...narrowed, reach }))
   const unresolved = whole.find(scope => !scope.ok)
   if (unresolved !== undefined && !unresolved.ok) return { ok: false, issues: unresolved.issues.map(issue => ({ path: 'detail', message: issue.message })) }
@@ -783,7 +825,7 @@ export const compileDetailDisplay = (
   const fitted = fitGenerated(view, panels, scopes.map(scope => (room: Parameters<GeneratedDrawing>[0]) => compileMimicScope(system.plant, scope, { profile: detailMimicProfile, ...room })))
   if (!fitted.ok) return { ok: false, issues: [{ path: 'detail', message: `nothing around it can be drawn legibly; ${fitted.issues.join('; ')}` }] }
   const title = groupLabel(components.map(index => graph.components[index]!.label))
-  return { ok: true, display: generatedDisplay(system, title, readouts, panels, view, fitted, shown => ({ kind: 'alarms', scope: 'related', ruleIds: relatedRuleIds(system, shown) })) }
+  return { ok: true, display: generatedDisplay(system, title, readouts, view, fitted, shown => ({ kind: 'alarms', scope: 'related', ruleIds: relatedRuleIds(system, shown) })) }
 }
 
 const operatorText = { '<': 'below', '<=': 'at or below', '>': 'above', '>=': 'at or above' } as const

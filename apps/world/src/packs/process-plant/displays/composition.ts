@@ -205,11 +205,12 @@ export const composedDisplayLayout = {
   overviewReadoutRow: 82,
   /**
    * Annunciator tiles over a generated display's alarm list: each tile's
-   * least width, its height (the system's name, then its counts and tags),
-   * and the severity bar and padding its name leaves room for; and the gap
-   * between tiles.
+   * least width, widest first (a column too short for two tiles to a row
+   * takes three compact ones), its height (the system's name, then its counts
+   * and tags), and the severity bar and padding its name leaves room for; and
+   * the gap between tiles.
    */
-  annunciatorTile: { width: 134, height: 40, inset: 16 },
+  annunciatorTile: { widths: [134, 88], height: 40, inset: 16 },
   annunciatorGap: 4,
 } as const
 

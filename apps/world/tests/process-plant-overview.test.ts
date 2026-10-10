@@ -108,8 +108,8 @@ describe('the unit overview World generates for a Plant', () => {
   })
 
   test('in a Full HD window four loops draw beside the column of lead values and alarms, the window\'s whole height theirs', () => {
-    const column = overviewDrawingRoom(fullHd, 'column', { readouts: 6, annunciators: 9 })!
-    const stacked = overviewDrawingRoom(fullHd, 'stacked', { readouts: 6, annunciators: 9 })!
+    const column = overviewDrawingRoom(fullHd, 'column', { readouts: 6, annunciators: 9, tileWidth: 134 })!
+    const stacked = overviewDrawingRoom(fullHd, 'stacked', { readouts: 6, annunciators: 9, tileWidth: 134 })!
     expect(column.maxHeight).toBeGreaterThan(stacked.maxHeight + 200)
     const result = compileOverviewDisplay(system, new Set(), fullHd)
     if (!result.ok) throw new Error(result.issues.map(issue => issue.message).join('; '))
@@ -118,6 +118,30 @@ describe('the unit overview World generates for a Plant', () => {
     expect(panel.mimic.width).toBeLessThanOrEqual(column.maxWidth)
     expect(panel.mimic.height).toBeLessThanOrEqual(column.maxHeight)
     expect(panel.mimic.readoutSize).toBe('regular')
+  })
+
+  test('a window a little too short keeps the drawing beside the column and scrolls by only what it lacks', () => {
+    const drawn = (view: OverviewView) => {
+      const result = compileOverviewDisplay(system, new Set(), view)
+      if (!result.ok) throw new Error(result.issues.map(issue => issue.message).join('; '))
+      const panel = result.display.panels.find(candidate => candidate.kind === 'mimic')!
+      if (panel.kind !== 'mimic') throw new Error('expected the mimic')
+      return { height: result.display.height, width: panel.mimic.width, drawing: panel.mimic.height }
+    }
+    const roomy = drawn(fullHd)
+    // A browser with a bookmarks bar shows less of the screen: the same drawing, a few pixels of scrolling.
+    expect(drawn({ width: fullHd.width, height: 885 })).toEqual(roomy)
+  })
+
+  test('where only compact tiles let the column fit, they go three to a row with the declared short labels', () => {
+    const threeLoops = plant(3)
+    const result = compileOverviewDisplay(threeLoops, new Set(), { width: 1896, height: 880 })
+    if (!result.ok) throw new Error(result.issues.map(issue => issue.message).join('; '))
+    expect(result.display.height).toBeLessThanOrEqual(880)
+    const alarms = result.display.panels.find(candidate => candidate.kind === 'alarms')!
+    if (alarms.kind !== 'alarms') throw new Error('expected the alarms')
+    expect(alarms.tileWidth).toBe(88)
+    expect(alarms.systems?.map(system => system.label)).toEqual(['RPS', 'RCS', 'SG', 'SI', 'CTMT', 'Electrical', 'Feedwater', 'BOP', 'Main steam'])
   })
 
   test('an overview state for another Plant is refused', () => {

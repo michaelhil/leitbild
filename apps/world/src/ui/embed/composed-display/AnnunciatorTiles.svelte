@@ -12,8 +12,10 @@
   // once all are; TRIP and 1st say in words what colour alone cannot. This
   // display cannot acknowledge, so nothing flashes. A tile filters the alarm
   // list to its system.
-  let { systems, latest, selected, select }: {
+  let { systems, tileWidth, latest, selected, select }: {
     systems: ReadonlyArray<AnnunciatorSystem>
+    /** The tiles' least width the server sized the display for; their labels fit it. */
+    tileWidth: number
     latest: ComposedDisplaySample | undefined
     selected: string | null
     select: (system: string | null) => void
@@ -27,7 +29,7 @@
     : `${state.name}: ${state.active} active${state.unacknowledged > 0 ? `, ${state.unacknowledged} unacknowledged` : ''}${state.trip ? ', trip' : ''}${state.firstOut ? ', first out' : ''}`
 </script>
 
-<div class="tiles" role="group" aria-label="Alarms by system" style={`grid-template-columns:repeat(auto-fill,minmax(${layout.annunciatorTile.width}px,1fr));gap:${layout.annunciatorGap}px`}>
+<div class="tiles" role="group" aria-label="Alarms by system" style={`grid-template-columns:repeat(auto-fill,minmax(${tileWidth}px,1fr));gap:${layout.annunciatorGap}px`}>
   {#each states as state, at (state.id)}
     {@const type = state.severity === null ? null : alertTypeOf(state.severity)}
     <button

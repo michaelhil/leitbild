@@ -134,6 +134,7 @@
   let seenElsewhere = new Set<string>()
   const alarmsPanel = $derived(view?.display.panels.find(panel => panel.kind === 'alarms'))
   const systems = $derived(alarmsPanel?.kind === 'alarms' ? alarmsPanel.systems ?? [] : [])
+  const tileWidth = $derived(alarmsPanel?.kind === 'alarms' ? alarmsPanel.tileWidth : undefined)
   const narrowedTo = $derived(systems.find(system => system.id === systemFilter) ?? null)
   // The drawing dims only where the system frames something in it; otherwise nothing of it is drawn here.
   const highlight = $derived.by(() => {
@@ -270,7 +271,7 @@
           {#if panel.kind === 'readouts'}
             <ReadoutsPanel {panel} latest={snapshot.latest} {activeRuleIds} column />
           {:else if panel.kind === 'alarms'}
-            {#if systems.length > 0}<AnnunciatorTiles {systems} latest={snapshot.latest} selected={systemFilter} select={selectSystem} />{/if}
+            {#if systems.length > 0 && tileWidth !== undefined}<AnnunciatorTiles {systems} {tileWidth} latest={snapshot.latest} selected={systemFilter} select={selectSystem} />{/if}
             <AlarmsPanel {panel} latest={snapshot.latest} fill only={narrowedTo === null ? null : { ...narrowedTo, drawn: highlight !== null }} showAll={() => selectSystem(null)} />
           {/if}
         {/each}
@@ -312,7 +313,7 @@
         {:else if panel.kind === 'mimic'}
           <MimicPanel mimic={panel.mimic} latest={snapshot.latest} {stale} open={opens} {highlight} />
         {:else}
-          {#if systems.length > 0}<AnnunciatorTiles {systems} latest={snapshot.latest} selected={systemFilter} select={selectSystem} />{/if}
+          {#if systems.length > 0 && tileWidth !== undefined}<AnnunciatorTiles {systems} {tileWidth} latest={snapshot.latest} selected={systemFilter} select={selectSystem} />{/if}
           <AlarmsPanel {panel} latest={snapshot.latest} only={narrowedTo === null ? null : { ...narrowedTo, drawn: highlight !== null }} showAll={() => selectSystem(null)} />
         {/if}
       {/each}
