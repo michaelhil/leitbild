@@ -35,6 +35,7 @@ import {
   displayViewQuerySchema,
 } from './queries/composed-display-query.ts'
 import { artifactReadQuerySchema, componentsSearchQuerySchema } from './queries/graph-query.ts'
+import { graphReadQuerySchema, graphReadResultSchema } from './queries/graph-read.ts'
 import { plantQuerySchema } from './queries/common.ts'
 import {
   procedureTagsValidateQuerySchema,
@@ -101,7 +102,7 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
       elapsedMs: z.number().nonnegative(),
     }).strict()),
   }).strict(),
-  'world.process-plant.graph.read': z.object({ graph: recordSchema }).strict(),
+  'world.process-plant.graph.read': graphReadResultSchema,
   'world.process-plant.components.search': z.object({
     plantId: plantIdSchema,
     specification: recordSchema,
@@ -244,7 +245,7 @@ const queryInputById: Readonly<Record<string, z.ZodType>> = {
   'world.process-plant.credibility.list': credibilityListPayloadSchema,
   'world.process-plant.credibility.read': credibilityReadPayloadSchema,
   'world.process-plant.plants.list': processPlantCatalogInputSchema,
-  'world.process-plant.graph.read': plantQuerySchema,
+  'world.process-plant.graph.read': graphReadQuerySchema,
   'world.process-plant.components.search': componentsSearchQuerySchema,
   'world.process-plant.artifact.read': artifactReadQuerySchema,
   'world.process-plant.variables.read': variablesReadQuerySchema,
@@ -278,7 +279,7 @@ const queryDescriptionById: Readonly<Record<string, string>> = {
   'world.process-plant.credibility.list': 'List engineering credibility evidence available for one Plant.',
   'world.process-plant.credibility.read': 'Read one engineering evidence artifact and its provenance for one Plant.',
   'world.process-plant.plants.list': 'Discover live active Plant units and their exact plantId values, model library, graph size, variable count, the services and loops a display can name, and elapsed simulation time. Use these identities for Plant-specific reads.',
-  'world.process-plant.graph.read': 'Read one complete compiled Plant component, connection, variable, and signal graph. This is a large engineering view; prefer component or signal search for focused questions.',
+  'world.process-plant.graph.read': 'Read how Plant equipment is connected: what feeds or supplies a component (water, steam or power) and where its flow or power goes. Default mode connections returns compact links (kind, service, from and to component ids and ports, loop) and the components at their ends. With componentIds (exact ids from components.search), their own links, direction upstream, downstream or both (default), followed reach links (default 1) the way flow or power travels through each component\'s circuit; continues names where the connection goes on beyond reach and what comes next. Without componentIds, every link of the Plant. services (as plants.list names them, or a link kind such as thermalContact) narrows either; results are paginated. mode full explicitly exports the complete compiled graph with every component\'s parameters, ports and variables: about 200k tokens for a 4-loop PWR, so only for a complete engineering export.',
   'world.process-plant.components.search': 'Discover Plant components by identity, kind, or text. Returns compact summaries by default and parameters only when requested.',
   'world.process-plant.artifact.read': 'Inspect Plant configuration and implementation evidence. Default mode index returns paged component identities and source-file paths, sizes and hashes, without source content. mode component selects one exact componentId and its authored configuration/source links. mode source reads bounded lines from an indexed sourcePath; copy nextRead to continue with the same content hash. mode full explicitly exports the complete authored Plant configuration or compiled graph and existing source bundle (large). The implementation bundle covers behavior files and direct named imports, not the complete Pack or application; absence is not proof of no implementation. Not a live-state read.',
   'world.process-plant.variables.read': 'Read current values and metadata for exact Plant variable paths returned by variables.search or another discovery view; do not guess paths.',

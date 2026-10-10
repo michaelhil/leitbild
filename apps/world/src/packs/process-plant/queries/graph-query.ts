@@ -10,7 +10,8 @@ import { principalCircuits } from '../displays/mimic/principal.ts'
 import { plantCarriers, plantLoops } from '../displays/mimic/scope.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { rejectCapabilityInput } from '../../../simulation/capability-rejection.ts'
-import { capabilityTargetNotFound, requirePlant, plantQuerySchema, processPlantSearchPaginationShape, paginateProcessPlantSearch } from './common.ts'
+import { capabilityTargetNotFound, requirePlant, processPlantSearchPaginationShape, paginateProcessPlantSearch } from './common.ts'
+import { graphReadQuerySchema, graphReadView } from './graph-read.ts'
 
 const artifactIdentityShape = {
   plantId: idSchema,
@@ -185,16 +186,6 @@ const componentSearchView = (
   }
 }
 
-const graphView = (graph: CompiledPlantGraph): unknown => ({
-  specId: graph.specId,
-  title: graph.title,
-  timestep: graph.timestep,
-  components: graph.components,
-  links: graph.links,
-  linksByKind: graph.linksByKind,
-  variables: graph.variables,
-})
-
 const overviewComponentIdsCache = new WeakMap<ProcessPlantRuntimeInstance, ReadonlySet<ComponentId>>()
 
 // The equipment the generated unit overview draws: its principal circuits.
@@ -364,9 +355,9 @@ export const answerProcessPlantGraphQuery = (config: {
     }
   }
   if (config.request.capabilityId === 'world.process-plant.graph.read') {
-    const payload = plantQuerySchema.parse(config.request.input)
+    const payload = graphReadQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
-    return { graph: graphView(system.plant.graph) }
+    return graphReadView(system.plant.id, system.plant.graph, payload)
   }
   if (config.request.capabilityId === 'world.process-plant.components.search') {
     const payload = componentsSearchQuerySchema.parse(config.request.input)
