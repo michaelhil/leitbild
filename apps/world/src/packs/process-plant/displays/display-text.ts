@@ -10,6 +10,8 @@ const unitLabels: Readonly<Record<string, string>> = {
   'degC/s': '°C/s',
   // Fractions (speeds, positions, bus voltages) read as percent: 1.00 → 100 %.
   fraction: '%',
+  // Pressures in pascals (condenser vacuum, developed head) read in kilopascals: 12388 Pa → 12.4 kPa.
+  Pa: 'kPa',
   amps: 'A',
   volts_dc: 'V DC',
   m3: 'm³',
@@ -20,7 +22,7 @@ export const unitLabel = (unit: string): string => unitLabels[unit] ?? unit
 
 /** A native value in the unit the display shows it in. */
 export const displayValue = (value: number, unit: string): number =>
-  unit === 'fraction' ? Number((value * 100).toPrecision(12)) : value
+  unit === 'fraction' ? Number((value * 100).toPrecision(12)) : unit === 'Pa' ? Number((value / 1000).toPrecision(12)) : value
 
 /** Precision follows magnitude; trend readers compare, they do not audit digits. */
 export const valueDigits = (value: number): number => {
@@ -71,12 +73,16 @@ export const nearestThresholdMargin = (
   return margins.reduce((nearest, candidate) => candidate.margin < nearest.margin ? candidate : nearest)
 }
 
-/** "LO ALM 30 % · 4.50 above", or "past LO ALM 30 %" once the value is beyond it. */
+/**
+ * "4.50 % above LO ALM 30 %", or "past LO ALM 30 %" once the value is beyond
+ * it: the margin first, with its unit, so a narrow tile cuts the limit's name
+ * rather than how far away it is.
+ */
 export const marginText = (margin: ThresholdMargin, unit: string): string => {
   const name = thresholdName(margin.threshold, unit)
   const qualified = margin.threshold.modeLabel === undefined ? '' : ` (${margin.threshold.modeLabel})`
   if (margin.margin < 0) return `past ${name}${qualified}`
-  return `${name}${qualified} · ${formatValue(displayValue(margin.margin, unit))} ${margin.threshold.direction === 'low' ? 'above' : 'below'}`
+  return `${formatQuantity(margin.margin, unit)} ${margin.threshold.direction === 'low' ? 'above' : 'below'} ${name}${qualified}`
 }
 
 /** Simulation time of day as the display header shows it: "10:01:00". */

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { shortName } from '../src/ui/embed/composed-display/pen-style.ts'
+import { fitName } from '../src/ui/embed/composed-display/pen-style.ts'
 import { activeThreshold, agoText, alarmAge, limitAhead, returningText, median, minutesToThreshold, movingAwayFromLimits, rateChange, ratePerMinute, rateText, rateWindowMs, timeToThresholdText, visibleAlarms, annunciatorStates } from '../src/ui/embed/composed-display/panel-presenters.ts'
 import { formatQuantity, marginText, nearestThresholdMargin, simulationClock, thresholdName, unitLabel } from '../src/packs/process-plant/displays/display-text.ts'
 import type { ComposedDisplayThreshold } from '../src/packs/process-plant/displays/ic-thresholds.ts'
@@ -16,10 +16,10 @@ describe('composed display panel presenters', () => {
   test('margin to the nearest acting alarm or trip threshold, ignoring control set points', () => {
     const near = nearestThresholdMargin(34.5, thresholds)!
     expect([near.threshold.ruleId, near.margin]).toEqual(['alarm-low', 4.5])
-    expect(marginText(near, '%')).toBe('LO ALM 30 % · 4.50 above')
+    expect(marginText(near, '%')).toBe('4.50 % above LO ALM 30 %')
     const beyond = nearestThresholdMargin(26.9, thresholds)!
     expect(marginText(beyond, '%')).toBe('past LO ALM 30 %')
-    expect(marginText(nearestThresholdMargin(70, thresholds)!, '%')).toBe('HI ALM 75 % (power operation) · 5.00 below')
+    expect(marginText(nearestThresholdMargin(70, thresholds)!, '%')).toBe('5.00 % below HI ALM 75 % (power operation)')
     expect(thresholdName(thresholds[0]!, 'MPa')).toBe('LO TRIP 20 MPa')
     expect(thresholdName(thresholds[0]!, 'MPa', { withUnit: false })).toBe('LO TRIP 20')
     expect(nearestThresholdMargin(10, [thresholds[2]!])).toBeNull()
@@ -33,7 +33,7 @@ describe('composed display panel presenters', () => {
     expect(formatQuantity(125, 'volts_dc')).toBe('125 V DC')
     expect(unitLabel('degC/s')).toBe('°C/s')
     expect(thresholdName(busLow, 'fraction')).toBe('LO ALM 90 %')
-    expect(marginText(nearestThresholdMargin(0.955, [busLow])!, 'fraction')).toBe('LO ALM 90 % · 5.50 above')
+    expect(marginText(nearestThresholdMargin(0.955, [busLow])!, 'fraction')).toBe('5.50 % above LO ALM 90 %')
     expect(rateText(-0.012, 0.955, 'fraction')).toBe('▼ −1.20 %/min')
     expect(unitLabel('fraction')).toBe('%')
   })
@@ -55,15 +55,20 @@ describe('composed display panel presenters', () => {
   test('a value in alarm that is moving back says when it will be back inside the limit', () => {
     // SG A N-16 in HI ALM 5 mSv/h and drifting down.
     const highRadiation = { ruleId: 'n16-high', label: 'Secondary radiation high', kind: 'alarm', operator: '>', direction: 'high', value: 5 } as const
-    expect(returningText(5.4, -0.2, highRadiation, 'mSv/h')).toBe('back below HI ALM 5 mSv/h · ≈2 min')
+    expect(returningText(5.4, -0.2, highRadiation, 'mSv/h')).toBe('back below HI ALM 5 mSv/h in ≈2 min')
     expect(returningText(5.4, 0.2, highRadiation, 'mSv/h')).toBe('')
-    // Hours away at this rate: the direction, never a recovery.
-    expect(returningText(5.4, -0.01, highRadiation, 'mSv/h')).toBe('toward HI ALM 5 mSv/h · over 30 min')
+    // Hours away at this rate: when, never a recovery already made.
+    expect(returningText(5.4, -0.01, highRadiation, 'mSv/h')).toBe('back below HI ALM 5 mSv/h in over 30 min')
   })
 
   test('long names are shortened from the middle so the equipment survives', () => {
-    expect(shortName('Process valve position · Feedwater Control Valve B', 30)).toBe('Process valve…Control Valve B')
-    expect(shortName('PT-455', 30)).toBe('PT-455')
+    // Whole words only: the equipment's leading words go first, keeping what tells parallel equipment apart, then the quantity's middle words.
+    const within = (length: number) => (text: string) => text.length <= length
+    expect(fitName('Process valve position · Feedwater Control Valve B', within(60))).toBe('Process valve position · Feedwater Control Valve B')
+    expect(fitName('Process valve position · Feedwater Control Valve B', within(40))).toBe('Process valve position · …Valve B')
+    expect(fitName('Core heat removal deficit · Reactor Core', within(26))).toBe('Core … deficit · …Core')
+    expect(fitName('Auxiliary feedwater to steam generator A temperature', within(40))).toBe('Auxiliary … generator A temperature')
+    expect(fitName('PT-455', within(3))).toBe('PT-455')
   })
 
   test('median of parallel signals', () => {

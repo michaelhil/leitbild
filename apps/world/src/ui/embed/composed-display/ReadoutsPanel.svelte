@@ -4,7 +4,8 @@
   import type { ComposedDisplaySample } from './composed-display-client.ts'
   import { displayValue, marginText, nearestThresholdMargin, unitLabel, valueDigits } from '../../../packs/process-plant/displays/display-text.ts'
   import { activeThreshold } from './panel-presenters.ts'
-  import { displayName, shortName } from './pen-style.ts'
+  import { displayName, fitName } from './pen-style.ts'
+  import { panelFont, textMeasure } from './text-measure.ts'
   import AlarmChip from './AlarmChip.svelte'
   import './openbridge.ts'
 
@@ -16,8 +17,19 @@
     column?: boolean
   } = $props()
 
-  /** The row gap (the CSS below). */
+  /** The row gap, column gap and a value's padding and bar (the CSS below). */
   const ROW_GAP = 4
+  const COLUMN_GAP = 12
+  const VALUE_INSET = 18
+  /** What a demand badge and an alarm chip take from the name's line. */
+  const DEMAND_WIDTH = 52
+  const CHIP_WIDTH = 92
+  const measureName = textMeasure(panelFont(11.5))
+  let width = $state(0)
+  const perRow = $derived(column ? 1 : composedDisplayLayout.readoutsPerRow)
+  const nameRoom = $derived((width - (perRow - 1) * COLUMN_GAP) / perRow - VALUE_INSET)
+  const named = (name: string, demand: boolean, chip: boolean): string => width === 0 ? name
+    : fitName(name, text => measureName(text) <= nameRoom - (demand ? DEMAND_WIDTH : 0) - (chip ? CHIP_WIDTH : 0))
   const sampled = (path: string) => latest?.values.find(entry => entry.path === path)
   const rows = $derived(Math.ceil(panel.pens.length / (column ? 1 : composedDisplayLayout.readoutsPerRow)))
   const size = $derived(column
@@ -25,14 +37,14 @@
     : `height:${rows * composedDisplayLayout.readoutsRow}px;grid-template-columns:repeat(${composedDisplayLayout.readoutsPerRow}, minmax(0, 1fr));`)
 </script>
 
-<ul class="readouts" style={size}>
+<ul class="readouts" style={size} bind:clientWidth={width}>
   {#each panel.pens as pen (pen.path)}
     {@const entry = sampled(String(pen.path))}
     {@const value = entry?.value}
     {@const margin = typeof value === 'number' ? nearestThresholdMargin(value, pen.thresholds) : null}
     {@const inAlarm = activeThreshold(pen.thresholds, activeRuleIds)}
     <li class:primary={pen.role === 'primary'} title={`${pen.label} · ${pen.role}`}>
-      <span class="head" title={`${displayName(pen)}${pen.command ? ' · operator or automation demand, not a measured state' : ` · ${pen.label}`}`}><span class="name">{shortName(displayName(pen), (column ? 44 : 24) - (pen.command ? 8 : 0))}</span>{#if pen.command}<span class="demand">demand</span>{/if}{#if inAlarm !== null}<AlarmChip threshold={inAlarm} />{/if}</span>
+      <span class="head" title={`${displayName(pen)}${pen.command ? ' · operator or automation demand, not a measured state' : ` · ${pen.label}`}`}><span class="name">{named(displayName(pen), pen.command, inAlarm !== null)}</span>{#if pen.command}<span class="demand">demand</span>{/if}{#if inAlarm !== null}<AlarmChip threshold={inAlarm} />{/if}</span>
       {#if typeof value === 'boolean'}
         <!-- A state names its equipment, so a row of alike states (two buses) cannot be confused. -->
         <span class="state" title={pen.described}>{value ? pen.described : `Not ${pen.described.charAt(0).toLowerCase()}${pen.described.slice(1)}`}</span>
@@ -56,7 +68,7 @@
 </ul>
 
 <style>
-  .readouts { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px 12px; overflow: hidden; }
+  .readouts { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px 12px; /* ROW_GAP, COLUMN_GAP */ overflow: hidden; }
   li { display: flex; flex-direction: column; justify-content: center; min-width: 0; padding: 2px 8px; border-left: 2px solid var(--border-divider-color); }
   li.primary { border-left-color: var(--element-active-color); }
   .name { font-size: 11.5px; color: var(--element-neutral-color); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

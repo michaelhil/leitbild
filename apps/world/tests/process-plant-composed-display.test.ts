@@ -108,7 +108,7 @@ describe('world.process-plant.display.compose', () => {
     expect((result as unknown as { simulationClock: string }).simulationClock).toBe('21:00:00')
     const margins = (result as unknown as { margins: ReadonlyArray<string> }).margins
     expect(margins).toHaveLength(2)
-    expect(margins[0]).toMatch(/^SG-[AB]-LVL-NR: [0-9.]+ %, LO ALM 30 % · [0-9.]+ above$/)
+    expect(margins[0]).toMatch(/^SG-[AB]-LVL-NR: [0-9.]+ %, [0-9.]+ % above LO ALM 30 %$/)
     expect(runtime.checkpoint()).toEqual(before)
   })
 

@@ -4,7 +4,8 @@
   import type { ComposedDisplaySample } from './composed-display-client.ts'
   import { displayValue, formatQuantity, formatValue, thresholdName } from '../../../packs/process-plant/displays/display-text.ts'
   import { activeThreshold, median, ratePerMinute, rateText, rateWindowMs, windowText } from './panel-presenters.ts'
-  import { displayName, shortName } from './pen-style.ts'
+  import { displayName, fitName } from './pen-style.ts'
+  import { panelFont, textMeasure } from './text-measure.ts'
   import { paddedDomain, rawDomain, type TrendPoint, type ValueDomain } from './trend-geometry.ts'
 
   let { panel, latest, series, range, activeRuleIds }: {
@@ -18,23 +19,15 @@
   let width = $state(520)
   const valueWidth = 220
   // The label column is as wide as its widest label, measured in the panel's
-  // font, up to two fifths of the panel; a longer label is shortened from the
-  // middle until it fits, so the track never starts under text.
+  // font, up to two fifths of the panel; a longer label drops whole words
+  // until it fits, so the track never starts under text.
   const LABEL_GAP = 10
-  const context = document.createElement('canvas').getContext('2d')
-  const measure = (text: string, primary: boolean): number => {
-    if (context === null) throw new Error('the comparison panel needs a 2D canvas to measure its labels')
-    context.font = `${primary ? 700 : 400} 12px "Noto Sans", system-ui, sans-serif`
-    return context.measureText(text).width
-  }
+  const measures = { primary: textMeasure(panelFont(12, 700)), context: textMeasure(panelFont(12)) }
+  const measure = (text: string, primary: boolean): number => (primary ? measures.primary : measures.context)(text)
   const labelled = $derived(panel.pens.map(pen => ({ text: `${displayName(pen)}${pen.command ? ' (demand)' : ''}`, primary: pen.role === 'primary' })))
   const labelWidth = $derived(Math.min(Math.round(width * 0.4), Math.ceil(Math.max(...labelled.map(label => measure(label.text, label.primary)))) + LABEL_GAP))
-  const fitted = (label: { readonly text: string; readonly primary: boolean }): string => {
-    let length = label.text.length
-    let text = label.text
-    while (length > 4 && measure(text, label.primary) > labelWidth - LABEL_GAP) text = shortName(label.text, --length)
-    return text
-  }
+  const fitted = (label: { readonly text: string; readonly primary: boolean }): string =>
+    fitName(label.text, text => measure(text, label.primary) <= labelWidth - LABEL_GAP)
   const scaleStart = $derived(labelWidth)
   const scaleWidth = $derived(Math.max(60, width - labelWidth - valueWidth))
 

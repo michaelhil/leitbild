@@ -3,7 +3,8 @@
   import { composedTrendLegendHeight } from '../../../packs/process-plant/displays/composition.ts'
   import { formatQuantity, marginText, nearestThresholdMargin } from '../../../packs/process-plant/displays/display-text.ts'
   import type { ComposedDisplaySample } from './composed-display-client.ts'
-  import { displayName, penStroke, roleLabel, shortName } from './pen-style.ts'
+  import { displayName, fitName, penStroke, roleLabel } from './pen-style.ts'
+  import { panelFont, textMeasure } from './text-measure.ts'
   import { activeThreshold, limitAhead, movingAwayFromLimits, rateChange, ratePerMinute, rateText, rateWindowMs, returningText, timeToThresholdText } from './panel-presenters.ts'
   import type { TrendPoint } from './trend-geometry.ts'
   import AlarmChip from './AlarmChip.svelte'
@@ -23,9 +24,19 @@
 
   const sampled = (path: string) => latest?.values.find(entry => entry.path === path)
   const windowMs = $derived(rateWindowMs(horizonMs))
+
+  // A name takes what the swatch and column gaps (the CSS below) and room for
+  // a value, a limit state and a readable rate leave of the legend's width,
+  // dropping whole words to fit.
+  const RESERVED = 22 + 4 * 10 + 80 + 220 + 100
+  const BADGE_WIDTH = 64
+  const measureName = textMeasure(panelFont(12))
+  let width = $state(0)
+  const named = (name: string, badges: number): string => width === 0 ? name
+    : fitName(name, text => measureName(text) <= Math.max(120, width - RESERVED) - badges * BADGE_WIDTH)
 </script>
 
-<ul class="legend" style={`height:${composedTrendLegendHeight(pens.length)}px`}>
+<ul class="legend" style={`height:${composedTrendLegendHeight(pens.length)}px`} bind:clientWidth={width}>
   {#each pens as pen, index (pen.path)}
     {@const entry = sampled(String(pen.path))}
     {@const value = entry?.value}
@@ -39,7 +50,7 @@
     {@const limited = pen.thresholds.some(threshold => threshold.kind !== 'control')}
     <li>
       {#if live}<span class="swatch live" aria-hidden="true"></span>{:else}<svg class="swatch" width="22" height="8" aria-hidden="true"><line x1="0" x2="22" y1="4" y2="4" style={penStroke(pen.role, index)} /></svg>{/if}
-      <span class="name" title={`${displayName(pen)} · ${pen.label} · ${roleLabel[pen.role]}${pen.command ? ' · operator or automation demand, not a measured state' : ''}${live ? ' · not recorded by this Run: current value only' : liveOnly ? ' · no recorded history in this window' : ''}`}>{#if live}<span class="badge">not recorded</span>{/if}{shortName(displayName(pen), 30)}{#if pen.command}<span class="badge">demand</span>{/if}</span>
+      <span class="name" title={`${displayName(pen)} · ${pen.label} · ${roleLabel[pen.role]}${pen.command ? ' · operator or automation demand, not a measured state' : ''}${live ? ' · not recorded by this Run: current value only' : liveOnly ? ' · no recorded history in this window' : ''}`}>{#if live}<span class="badge">not recorded</span>{/if}{named(displayName(pen), (live ? 1 : 0) + (pen.command ? 1 : 0))}{#if pen.command}<span class="badge">demand</span>{/if}</span>
       <span class="value">{typeof value === 'number' ? formatQuantity(value, pen.unit) : typeof value === 'boolean' ? (value ? 'ON' : 'OFF') : '—'}</span>
       <span class="state">
         {#if inAlarm !== null}<AlarmChip threshold={inAlarm} />{/if}

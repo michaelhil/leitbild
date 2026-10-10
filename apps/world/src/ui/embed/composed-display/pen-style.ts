@@ -22,11 +22,23 @@ export const roleLabel: Readonly<Record<ComposedDisplaySignalRole, string>> = {
 export const displayName = (pen: { readonly name: string }): string => pen.name
 
 /**
- * A name shortened from the middle, so the equipment at its end survives:
- * "Process valve position · Feedwater Control Valve B" → "Process valve… Control Valve B".
+ * A name fitted to the room it is shown in by dropping whole words, so no word
+ * that carries meaning (deficit, net, margin) is ever cut through: whole;
+ * then the equipment's leading words, keeping what tells parallel equipment
+ * apart ("Narrow range level · …Generator A", "… · …A"); then the quantity's
+ * middle words, keeping its first and last ("Core … deficit · …Core"). The
+ * shortest form is returned when none fits; the tooltip keeps the whole name.
  */
-export const shortName = (name: string, maxLength: number): string => {
-  if (name.length <= maxLength) return name
-  const tail = Math.ceil((maxLength - 1) * 0.55)
-  return `${name.slice(0, maxLength - 1 - tail).trimEnd()}…${name.slice(name.length - tail).trimStart()}`
+export const fitName = (name: string, fits: (text: string) => boolean): string => {
+  const at = name.lastIndexOf(' · ')
+  const quantity = at < 0 ? name : name.slice(0, at)
+  const equipment = at < 0 ? [] : name.slice(at + 3).split(' ')
+  const words = quantity.split(' ')
+  const withEquipment = (text: string, kept: number): string => kept === 0 ? text : `${text} · ${kept === equipment.length ? '' : '…'}${equipment.slice(-kept).join(' ')}`
+  const candidates = [
+    ...equipment.map((_, index) => withEquipment(quantity, equipment.length - index)),
+    ...words.slice(2).map((_, index) => withEquipment(`${words[0]} … ${words.slice(index + 2 - words.length).join(' ')}`, Math.min(1, equipment.length))),
+  ]
+  if (candidates.length === 0) return name
+  return candidates.find(fits) ?? candidates[candidates.length - 1]!
 }
