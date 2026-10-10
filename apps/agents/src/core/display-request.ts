@@ -43,6 +43,7 @@ export type DisplayRequestRefusalCode =
   | 'answer_shows_display'
   | 'display_already_shown'
   | 'agent_unavailable'
+  | 'room_paused'
   | 'display_skill_missing'
   | 'request_pending'
   | 'script_running'
@@ -55,6 +56,7 @@ export const DISPLAY_REQUEST_REFUSAL_STATUS: Readonly<Record<DisplayRequestRefus
   answer_shows_display: 409,
   display_already_shown: 409,
   agent_unavailable: 409,
+  room_paused: 409,
   display_skill_missing: 409,
   request_pending: 409,
   script_running: 409,

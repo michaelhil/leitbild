@@ -96,6 +96,8 @@ export const requestDisplay = (
   if (!room.hasMember(ai.id)) throw displayRequestRefusal('agent_unavailable', `${ai.name} is no longer in this Room`)
   if (room.isMuted(ai.id)) throw displayRequestRefusal('agent_unavailable', `${ai.name} is muted in this Room`)
   if (!ai.requestTurn) throw displayRequestRefusal('agent_unavailable', `${ai.name} cannot take requested turns`)
+  // A paused Room stores messages but runs no Agent; a request would bypass that.
+  if (room.paused) throw displayRequestRefusal('room_paused', 'This Room is paused; resume it to ask for a display')
   if (!ai.getSkills().includes(DISPLAY_SKILL)) {
     throw displayRequestRefusal('display_skill_missing', `${ai.name} does not have the ${DISPLAY_SKILL} Skill`)
   }

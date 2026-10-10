@@ -183,6 +183,13 @@ describe('requestDisplay', () => {
     expect(refusal(setup({ requestTurn: false }).ask)).toEqual({ code: 'agent_unavailable', message: 'Operator cannot take requested turns' })
   })
 
+  test('refuses a paused Room', () => {
+    const { room, ask, turns } = setup()
+    room.setPaused(true)
+    expect(refusal(ask)).toEqual({ code: 'room_paused', message: 'This Room is paused; resume it to ask for a display' })
+    expect(turns).toEqual([])
+  })
+
   test('refuses an author without the display Skill', () => {
     const { ask, turns } = setup({ skills: ['process-plant'] })
     expect(refusal(ask)).toEqual({ code: 'display_skill_missing', message: 'Operator does not have the operator-displays Skill' })
