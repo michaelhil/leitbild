@@ -40,9 +40,10 @@ describe('process plant model composition', () => {
     // owner, when the reactor protection gained its loop delta-T channels
     // and the accumulators came to inject until their gas pressure meets the
     // coolant's, the high-head SI pumps came to pump against the coolant
-    // pressure and the PORV gained its block valve; PWR Runs checkpointed
-    // before then must be restarted.
-    expect(system.modelDigest).toBe('a9d521ae1e66c86822e76471bdcd4cfab415d9bfb6286be7b55115538d498128')
+    // pressure, the PORV gained its block valve and leaks came to be read
+    // from an RCS inventory balance; PWR Runs checkpointed before then must
+    // be restarted.
+    expect(system.modelDigest).toBe('f48292a631fdc8fde218ca3cf8c277ea20b440dbfd440b01a6ac01e5986bcee1')
     const running = createProcessPlantRuntime({ system })
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))
