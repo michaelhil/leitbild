@@ -129,7 +129,7 @@ const advance = async (resource: Record<string, string>, minutes: number): Promi
   throw new Error(`Run ${resource.id} did not advance ${minutes} min within the probe deadline`)
 }
 
-interface ComposeOutcome { readonly accepted: boolean; readonly panels: ReadonlyArray<string>; readonly signals: ReadonlyArray<string>; readonly mimics: ReadonlyArray<Record<string, unknown>>; readonly error?: string }
+interface ComposeOutcome { readonly accepted: boolean; readonly panels: ReadonlyArray<string>; readonly signals: ReadonlyArray<string>; readonly mimics: ReadonlyArray<Record<string, unknown>>; readonly subjects: ReadonlyArray<string>; readonly error?: string }
 
 // An accepted result names each signal's resolved tag and path, so a key
 // signal counts whether the agent referred to it by tag or by path.
@@ -154,6 +154,7 @@ const composeOutcomes = async (roomId: string, turnId: string): Promise<Readonly
         panels: panels.map(panel => panel.kind),
         // What each mimic was asked to draw, so the intent the agent chose (route, one end, around, services) is on record.
         mimics: panels.filter(panel => panel.kind === 'mimic').map(({ kind: _kind, ...intent }) => intent),
+        subjects: (entry.input?.subjects ?? []) as ReadonlyArray<string>,
         signals: result?.success === true ? resolvedNames(result) : panels.flatMap(panel => (panel.signals ?? []).map(signal => signal.ref)),
         ...(result?.success === true ? {} : { error: String(result?.error ?? 'no result').slice(0, 400) }),
       })
@@ -200,6 +201,9 @@ for (const scenario of chosen) {
     correct: (fence !== null) === (scenario.expect === 'display'),
     composeCalls: composes.length,
     firstComposeAccepted: composes.length === 0 ? null : composes[0]!.accepted,
+    // A refusal names fixes known to fit; the owner counts a display the agent fixes on its next call as valid.
+    validWithinTwo: composes.length === 0 ? null : composes.slice(0, 2).some(outcome => outcome.accepted),
+    subjects: accepted.at(-1)?.subjects ?? [],
     panels: accepted.at(-1)?.panels ?? [],
     signals: [...usedSignals],
     keySignalHit: scenario.keySignals === undefined || fence === null ? null : scenario.keySignals.some(signal => usedSignals.has(signal)),
@@ -234,6 +238,7 @@ const summary = {
   displayRecall: ratio(expectDisplay.filter(row => row.displayed).length, expectDisplay.length),
   falsePositiveRate: ratio(expectNone.filter(row => row.displayed).length, expectNone.length),
   firstComposeValid: ratio(composed.filter(row => row.firstComposeAccepted).length, composed.length),
+  composeValidWithinTwo: ratio(composed.filter(row => row.validWithinTwo).length, composed.length),
   keySignalRecall: ratio(keyed.filter(row => row.keySignalHit).length, keyed.length),
   mimicRecall: ratio(rows.filter(row => row.mimic === 'expected' && row.mimicShown).length, rows.filter(row => row.mimic === 'expected').length),
   mimicFalsePositives: ratio(rows.filter(row => row.mimic === 'avoid' && row.mimicShown).length, rows.filter(row => row.mimic === 'avoid').length),
