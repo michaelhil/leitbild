@@ -50,8 +50,8 @@ describe('model semantics declared per component kind', () => {
         if (declared.command !== undefined) expect(graph.signalBindingByPath.get(declared.command)!.actuation).toBe('command')
       }
     }
-    // A pump runs when it turns, whatever its run command says; a valve sits where it actually is.
-    expect(componentById(graph, 'rcpA').semantics.aspects).toEqual([{ aspect: 'running', state: { path: 'rcpA.speedRpm' as never, reading: 'aboveZero' }, command: 'rcpA.running' as never }])
+    // A pump runs while its motor is commanded to run and has power, whatever its run command alone says; a valve sits where it actually is.
+    expect(componentById(graph, 'rcpA').semantics.aspects).toEqual([{ aspect: 'running', state: { path: 'rcpA.runningState' as never, reading: 'true' }, command: 'rcpA.running' as never }])
     expect(componentById(graph, 'feedwaterControlValveB').semantics.aspects[0]!.state!.path).toBe('feedwaterControlValveB.effectivePositionFraction' as never)
   })
 

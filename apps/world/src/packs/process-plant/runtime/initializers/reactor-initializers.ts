@@ -77,6 +77,7 @@ export const reactorInitialValueDefinitions: ReadonlyArray<ComponentInitialValue
       const running = optionalParameterBoolean(component, 'initialRunning', true)
       const primaryLoopId = primaryLoopIdForPump(component)
       if (localPath === 'running') return running
+      if (localPath === 'runningState') return running
       if (localPath === 'speedFraction') return 1
       if (localPath === 'speedRpm') return running ? optionalParameterNumber(component, 'nominalSpeedRpm', 3600) : 0
       if (localPath === 'flowKgPerS') return running ? parameterNumber(component, 'nominalFlowKgPerS') : 0

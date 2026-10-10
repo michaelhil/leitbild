@@ -118,3 +118,38 @@ describe('breakers', () => {
     expect(Number(runtime.readVariable('turbineStopValve.positionFraction' as VariablePath))).toBe(0)
   })
 })
+
+describe('pumps', () => {
+  const pumps = graph.components.filter(component => component.kind === 'centrifugalPump').map(component => String(component.id))
+
+  test('under loss of offsite power every pump reads not running while its run command stays', () => {
+    const plantRun = started()
+    plantRun.run(2_000, { withIc: false })
+    const commanded = pumps.filter(id => plantRun.read(`${id}.running`) === true)
+    expect(commanded).toEqual(expect.arrayContaining(['rcpA', 'rcpB', 'rcpC', 'rcpD', 'mainFeedwaterPumpA', 'mainFeedwaterPumpB', 'chargingPump']))
+    for (const id of pumps) expect(plantRun.read(`${id}.runningState`), id).toBe(plantRun.read(`${id}.running`))
+
+    // Without the I&C no diesel starts, so the safety buses stay dead.
+    plantRun.act('loss-offsite-power')
+    plantRun.run(3_000, { withIc: false })
+    expect(plantRun.read('safetyBusA.energized')).toBe(false)
+    expect(plantRun.read('safetyBusB.energized')).toBe(false)
+    for (const id of commanded) {
+      expect(plantRun.read(`${id}.running`), id).toBe(true)
+      expect(plantRun.read(`${id}.runningState`), id).toBe(false)
+    }
+    for (const loop of ['A', 'B', 'C', 'D']) {
+      expect(plantRun.tag(`RCP-${loop}-RUN`)).toBe(true)
+      expect(plantRun.tag(`RCP-${loop}-RUNNING`)).toBe(false)
+    }
+  })
+
+  test('a reactor coolant pump that loses its power alarms as not running, though its run command stands', () => {
+    const plantRun = started()
+    plantRun.run(2_000)
+    plantRun.act('loss-offsite-power')
+    plantRun.run(3_000)
+    expect(plantRun.tag('RCP-A-RUN')).toBe(true)
+    expect(plantRun.activeIds()).toEqual(expect.arrayContaining(['alarm:rcp-a-trip:not-running', 'alarm:rcp-b-trip:not-running', 'alarm:main-feedwater-pump-trip:main-feedwater-pump-unavailable']))
+  })
+})

@@ -48,12 +48,12 @@ export const balanceOfPlantReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRu
     label: 'Main feedwater pump unavailable',
     ruleClass: 'alarm',
     condition: any([
-      comparison({ tagId: 'MFW-PUMP-A-RUN' }, '==', false),
-      comparison({ tagId: 'MFW-PUMP-B-RUN' }, '==', false),
+      comparison({ tagId: 'MFW-PUMP-A-RUNNING' }, '==', false),
+      comparison({ tagId: 'MFW-PUMP-B-RUNNING' }, '==', false),
     ]),
     clearCondition: all([
-      comparison({ tagId: 'MFW-PUMP-A-RUN' }, '==', true),
-      comparison({ tagId: 'MFW-PUMP-B-RUN' }, '==', true),
+      comparison({ tagId: 'MFW-PUMP-A-RUNNING' }, '==', true),
+      comparison({ tagId: 'MFW-PUMP-B-RUNNING' }, '==', true),
     ]),
     clearDelayMs: 1_000,
     delayMs: 1_000,

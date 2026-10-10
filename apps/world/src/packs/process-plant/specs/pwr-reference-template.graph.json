@@ -690,11 +690,17 @@
           "path": "running",
           "tagId": "RCP-A-RUN",
           "equipmentId": "rcpA",
-          "description": "Reactor coolant pump A running command/status",
+          "description": "Reactor coolant pump A run command",
           "externalRefs": [
             "RCP-1",
             "rcs.rcp.1.status"
           ]
+        },
+        {
+          "path": "runningState",
+          "tagId": "RCP-A-RUNNING",
+          "equipmentId": "rcpA",
+          "description": "Reactor coolant pump A run feedback"
         },
         {
           "path": "speedFraction",
@@ -733,11 +739,17 @@
           "path": "running",
           "tagId": "RCP-B-RUN",
           "equipmentId": "rcpB",
-          "description": "Reactor coolant pump B running command/status",
+          "description": "Reactor coolant pump B run command",
           "externalRefs": [
             "RCP-2",
             "rcs.rcp.2.status"
           ]
+        },
+        {
+          "path": "runningState",
+          "tagId": "RCP-B-RUNNING",
+          "equipmentId": "rcpB",
+          "description": "Reactor coolant pump B run feedback"
         },
         {
           "path": "speedFraction",
@@ -776,11 +788,17 @@
           "path": "running",
           "tagId": "RCP-C-RUN",
           "equipmentId": "rcpC",
-          "description": "Reactor coolant pump C running command/status",
+          "description": "Reactor coolant pump C run command",
           "externalRefs": [
             "RCP-3",
             "rcs.rcp.3.status"
           ]
+        },
+        {
+          "path": "runningState",
+          "tagId": "RCP-C-RUNNING",
+          "equipmentId": "rcpC",
+          "description": "Reactor coolant pump C run feedback"
         },
         {
           "path": "speedFraction",
@@ -819,11 +837,17 @@
           "path": "running",
           "tagId": "RCP-D-RUN",
           "equipmentId": "rcpD",
-          "description": "Reactor coolant pump D running command/status",
+          "description": "Reactor coolant pump D run command",
           "externalRefs": [
             "RCP-4",
             "rcs.rcp.4.status"
           ]
+        },
+        {
+          "path": "runningState",
+          "tagId": "RCP-D-RUNNING",
+          "equipmentId": "rcpD",
+          "description": "Reactor coolant pump D run feedback"
         },
         {
           "path": "speedFraction",
@@ -862,11 +886,17 @@
           "path": "running",
           "tagId": "RCP-E-RUN",
           "equipmentId": "rcpE",
-          "description": "Reactor coolant pump E running command/status",
+          "description": "Reactor coolant pump E run command",
           "externalRefs": [
             "RCP-5",
             "rcs.rcp.5.status"
           ]
+        },
+        {
+          "path": "runningState",
+          "tagId": "RCP-E-RUNNING",
+          "equipmentId": "rcpE",
+          "description": "Reactor coolant pump E run feedback"
         },
         {
           "path": "speedFraction",
@@ -905,11 +935,17 @@
           "path": "running",
           "tagId": "RCP-F-RUN",
           "equipmentId": "rcpF",
-          "description": "Reactor coolant pump F running command/status",
+          "description": "Reactor coolant pump F run command",
           "externalRefs": [
             "RCP-6",
             "rcs.rcp.6.status"
           ]
+        },
+        {
+          "path": "runningState",
+          "tagId": "RCP-F-RUNNING",
+          "equipmentId": "rcpF",
+          "description": "Reactor coolant pump F run feedback"
         },
         {
           "path": "speedFraction",
@@ -945,7 +981,13 @@
           "path": "running",
           "tagId": "MFW-PUMP-A-RUN",
           "equipmentId": "mainFeedwaterPumpA",
-          "description": "Main feedwater pump A running command/status"
+          "description": "Main feedwater pump A run command"
+        },
+        {
+          "path": "runningState",
+          "tagId": "MFW-PUMP-A-RUNNING",
+          "equipmentId": "mainFeedwaterPumpA",
+          "description": "Main feedwater pump A run feedback"
         }
       ],
       "metadata": {
@@ -969,7 +1011,13 @@
           "path": "running",
           "tagId": "MFW-PUMP-B-RUN",
           "equipmentId": "mainFeedwaterPumpB",
-          "description": "Main feedwater pump B running command/status"
+          "description": "Main feedwater pump B run command"
+        },
+        {
+          "path": "runningState",
+          "tagId": "MFW-PUMP-B-RUNNING",
+          "equipmentId": "mainFeedwaterPumpB",
+          "description": "Main feedwater pump B run feedback"
         }
       ],
       "metadata": {
@@ -1216,10 +1264,16 @@
           "path": "running",
           "tagId": "AFW-PUMP-A",
           "equipmentId": "auxFeedwaterPumpMotor",
-          "description": "Motor-driven auxiliary feedwater pump running status",
+          "description": "Motor-driven auxiliary feedwater pump A run command",
           "externalRefs": [
             "afw.pump.a.status"
           ]
+        },
+        {
+          "path": "runningState",
+          "tagId": "AFW-PUMP-A-RUNNING",
+          "equipmentId": "auxFeedwaterPumpMotor",
+          "description": "Motor-driven auxiliary feedwater pump A run feedback"
         }
       ],
       "metadata": {
@@ -1244,10 +1298,16 @@
           "path": "running",
           "tagId": "AFW-PUMP-B",
           "equipmentId": "auxFeedwaterPumpMotorB",
-          "description": "Motor-driven auxiliary feedwater pump B running status",
+          "description": "Motor-driven auxiliary feedwater pump B run command",
           "externalRefs": [
             "afw.pump.b.status"
           ]
+        },
+        {
+          "path": "runningState",
+          "tagId": "AFW-PUMP-B-RUNNING",
+          "equipmentId": "auxFeedwaterPumpMotorB",
+          "description": "Motor-driven auxiliary feedwater pump B run feedback"
         }
       ],
       "metadata": {
@@ -1272,10 +1332,16 @@
           "path": "running",
           "tagId": "AFW-PUMP-T",
           "equipmentId": "auxFeedwaterPumpTurbine",
-          "description": "Turbine-driven auxiliary feedwater pump running status",
+          "description": "Turbine-driven auxiliary feedwater pump run command",
           "externalRefs": [
             "afw.pump.tdafw.status"
           ]
+        },
+        {
+          "path": "runningState",
+          "tagId": "AFW-PUMP-T-RUNNING",
+          "equipmentId": "auxFeedwaterPumpTurbine",
+          "description": "Turbine-driven auxiliary feedwater pump run feedback"
         },
         {
           "path": "speedRpm",
@@ -1884,10 +1950,16 @@
           "path": "running",
           "tagId": "CHG-PUMP-A",
           "equipmentId": "chargingPump",
-          "description": "Charging pump running status",
+          "description": "Charging pump A run command",
           "externalRefs": [
             "cvcs.charging_pump.a.status"
           ]
+        },
+        {
+          "path": "runningState",
+          "tagId": "CHG-PUMP-A-RUNNING",
+          "equipmentId": "chargingPump",
+          "description": "Charging pump A run feedback"
         }
       ],
       "metadata": {
@@ -1910,10 +1982,16 @@
           "path": "running",
           "tagId": "CHG-PUMP-B",
           "equipmentId": "chargingPumpB",
-          "description": "Charging pump B running status",
+          "description": "Charging pump B run command",
           "externalRefs": [
             "cvcs.charging_pump.b.status"
           ]
+        },
+        {
+          "path": "runningState",
+          "tagId": "CHG-PUMP-B-RUNNING",
+          "equipmentId": "chargingPumpB",
+          "description": "Charging pump B run feedback"
         }
       ],
       "metadata": {
@@ -2040,10 +2118,16 @@
           "path": "running",
           "tagId": "SI-PUMP-A",
           "equipmentId": "safetyInjectionPumpA",
-          "description": "High-head safety injection pump A running status",
+          "description": "High-head safety injection pump A run command",
           "externalRefs": [
             "ess.si_pump.a.status"
           ]
+        },
+        {
+          "path": "runningState",
+          "tagId": "SI-PUMP-A-RUNNING",
+          "equipmentId": "safetyInjectionPumpA",
+          "description": "High-head safety injection pump A run feedback"
         }
       ],
       "metadata": {
@@ -2068,10 +2152,16 @@
           "path": "running",
           "tagId": "SI-PUMP-B",
           "equipmentId": "safetyInjectionPumpB",
-          "description": "High-head safety injection pump B running status",
+          "description": "High-head safety injection pump B run command",
           "externalRefs": [
             "ess.si_pump.b.status"
           ]
+        },
+        {
+          "path": "runningState",
+          "tagId": "SI-PUMP-B-RUNNING",
+          "equipmentId": "safetyInjectionPumpB",
+          "description": "High-head safety injection pump B run feedback"
         }
       ],
       "metadata": {
@@ -2112,10 +2202,16 @@
           "path": "running",
           "tagId": "CSPRAY-A",
           "equipmentId": "containmentSprayPumpA",
-          "description": "Containment spray pump A running status",
+          "description": "Containment spray pump A run command",
           "externalRefs": [
             "ess.cspray_pump.a.status"
           ]
+        },
+        {
+          "path": "runningState",
+          "tagId": "CSPRAY-A-RUNNING",
+          "equipmentId": "containmentSprayPumpA",
+          "description": "Containment spray pump A run feedback"
         }
       ],
       "metadata": {
@@ -2140,10 +2236,16 @@
           "path": "running",
           "tagId": "CSPRAY-B",
           "equipmentId": "containmentSprayPumpB",
-          "description": "Containment spray pump B running status",
+          "description": "Containment spray pump B run command",
           "externalRefs": [
             "ess.cspray_pump.b.status"
           ]
+        },
+        {
+          "path": "runningState",
+          "tagId": "CSPRAY-B-RUNNING",
+          "equipmentId": "containmentSprayPumpB",
+          "description": "Containment spray pump B run feedback"
         }
       ],
       "metadata": {
@@ -2184,10 +2286,16 @@
           "path": "running",
           "tagId": "RHR-PUMP-A",
           "equipmentId": "rhrPumpA",
-          "description": "Residual heat removal pump A running status",
+          "description": "Residual heat removal pump A run command",
           "externalRefs": [
             "ess.rhr_pump.a.status"
           ]
+        },
+        {
+          "path": "runningState",
+          "tagId": "RHR-PUMP-A-RUNNING",
+          "equipmentId": "rhrPumpA",
+          "description": "Residual heat removal pump A run feedback"
         }
       ],
       "metadata": {
@@ -2212,10 +2320,16 @@
           "path": "running",
           "tagId": "RHR-PUMP-B",
           "equipmentId": "rhrPumpB",
-          "description": "Residual heat removal pump B running status",
+          "description": "Residual heat removal pump B run command",
           "externalRefs": [
             "ess.rhr_pump.b.status"
           ]
+        },
+        {
+          "path": "runningState",
+          "tagId": "RHR-PUMP-B-RUNNING",
+          "equipmentId": "rhrPumpB",
+          "description": "Residual heat removal pump B run feedback"
         }
       ],
       "metadata": {
@@ -9298,6 +9412,7 @@
     "sgA.steamQualityFraction",
     "sgA.secondaryInventoryKg",
     "rcpA.running",
+    "rcpA.runningState",
     "rcpA.flowKgPerS",
     "rcpA.developedHeadPa",
     "rcpA.loopFlowTargetKgPerS",
@@ -9325,6 +9440,7 @@
     "sgB.steamQualityFraction",
     "sgB.secondaryInventoryKg",
     "rcpB.running",
+    "rcpB.runningState",
     "rcpB.flowKgPerS",
     "rcpB.developedHeadPa",
     "rcpB.loopFlowTargetKgPerS",
@@ -9352,6 +9468,7 @@
     "sgC.steamQualityFraction",
     "sgC.secondaryInventoryKg",
     "rcpC.running",
+    "rcpC.runningState",
     "rcpC.flowKgPerS",
     "rcpC.developedHeadPa",
     "rcpC.loopFlowTargetKgPerS",
@@ -9379,6 +9496,7 @@
     "sgD.steamQualityFraction",
     "sgD.secondaryInventoryKg",
     "rcpD.running",
+    "rcpD.runningState",
     "rcpD.flowKgPerS",
     "rcpD.developedHeadPa",
     "rcpD.loopFlowTargetKgPerS",
@@ -9394,7 +9512,9 @@
     "feedwater-control-valve-d-to-sg-d.flowKgPerS",
     "aux-feedwater-valve-d-to-sg-d.flowKgPerS",
     "mainFeedwaterPumpA.running",
+    "mainFeedwaterPumpA.runningState",
     "mainFeedwaterPumpB.running",
+    "mainFeedwaterPumpB.runningState",
     "mainFeedwaterPumpA.flowKgPerS",
     "mainFeedwaterPumpB.flowKgPerS",
     "feedwaterTank.inventoryKg",
@@ -9403,8 +9523,11 @@
     "feedwaterTank.makeupFlowKgPerS",
     "feedwaterTank.availableOutletFlowKgPerS",
     "auxFeedwaterPumpMotor.running",
+    "auxFeedwaterPumpMotor.runningState",
     "auxFeedwaterPumpMotorB.running",
+    "auxFeedwaterPumpMotorB.runningState",
     "auxFeedwaterPumpTurbine.running",
+    "auxFeedwaterPumpTurbine.runningState",
     "auxFeedwaterPumpTurbine.speedRpm",
     "auxFeedwaterPumpMotor.flowKgPerS",
     "auxFeedwaterPumpMotorB.flowKgPerS",
@@ -9678,19 +9801,25 @@
     "rwst.levelPercent",
     "rwst.availableOutletFlowKgPerS",
     "safetyInjectionPumpA.running",
+    "safetyInjectionPumpA.runningState",
     "safetyInjectionPumpA.flowKgPerS",
     "safetyInjectionPumpB.running",
+    "safetyInjectionPumpB.runningState",
     "safetyInjectionPumpB.flowKgPerS",
     "safetyInjectionHeader.outletFlowKgPerS",
     "containmentSprayAdditiveTank.levelPercent",
     "containmentSprayPumpA.running",
+    "containmentSprayPumpA.runningState",
     "containmentSprayPumpA.flowKgPerS",
     "containmentSprayPumpB.running",
+    "containmentSprayPumpB.runningState",
     "containmentSprayPumpB.flowKgPerS",
     "containmentSprayHeader.outletFlowKgPerS",
     "rhrPumpA.running",
+    "rhrPumpA.runningState",
     "rhrPumpA.flowKgPerS",
     "rhrPumpB.running",
+    "rhrPumpB.runningState",
     "rhrPumpB.flowKgPerS",
     "rhrHeader.outletFlowKgPerS",
     "rhrIsolationValve.positionFraction",
@@ -9795,8 +9924,10 @@
     "plantControlsLoadA.energized",
     "plantControlsLoadB.energized",
     "chargingPump.running",
+    "chargingPump.runningState",
     "chargingPump.flowKgPerS",
     "chargingPumpB.running",
+    "chargingPumpB.runningState",
     "chargingPumpB.flowKgPerS",
     "vitalBatteryA.voltageVdc",
     "vessel.boronConcentrationPpm",
@@ -9831,7 +9962,9 @@
     "sgE.secondaryInventoryKg",
     "sgF.secondaryInventoryKg",
     "rcpE.running",
+    "rcpE.runningState",
     "rcpF.running",
+    "rcpF.runningState",
     "rcpE.flowKgPerS",
     "rcpF.flowKgPerS",
     "rcpE.developedHeadPa",
