@@ -41,7 +41,7 @@ import { chatMimicProfile, detailMimicProfile, overviewMimicProfile } from './mi
 import { principalCircuits } from './mimic/principal.ts'
 import { equipmentKeyValues, overviewKeyValues } from './overview-key-values.ts'
 import { annunciatorSystems, type AnnunciatorSystem } from './annunciators.ts'
-import { MIMIC_REACH_LINKS, resolveMimicScope } from './mimic/scope.ts'
+import { MIMIC_REACH_LINKS, itemServices, resolveMimicScope, withOtherServicesStopped } from './mimic/scope.ts'
 import type { CompiledMimic } from './mimic/mimic-model.ts'
 import {
   icAlarmRuleIdsForEquipment,
@@ -656,9 +656,10 @@ type GeneratedDrawing = (room: { readonly maxWidth: number; readonly maxHeight: 
  * Fits a generated display to its view at 1:1, taking the first that fits:
  * each drawing in turn (the most it can show first), beside the column of
  * lead values and alarms (the drawing has the view's height), then stacked
- * with them (the view's width); then the last drawing as wide as the view and
- * scrolling down, then at its own size, scrolling both ways. Without a view
- * (a listing of what it draws) the first drawing is drawn at its own size.
+ * with them (the view's width); then, the drawings in the same order, as wide
+ * as the view and scrolling down, then at their own size, scrolling both
+ * ways. Without a view (a listing of what it draws) the first drawing that
+ * draws at all is drawn at its own size.
  */
 const fitGenerated = (
   view: OverviewView | null,
@@ -669,11 +670,13 @@ const fitGenerated = (
     const room = overviewDrawingRoom(view, arrangement, panels)
     return room === null ? [] : [{ arrangement, room }]
   })
-  const last = view === null ? drawings[0]! : drawings.at(-1)!
+  const scrolling = [
+    ...(view === null ? [] : [{ maxWidth: view.width - 2 * composedDisplayLayout.overviewPadding, maxHeight: UNCONSTRAINED }]),
+    { maxWidth: UNCONSTRAINED, maxHeight: UNCONSTRAINED },
+  ]
   const attempts = [
     ...drawings.flatMap(draw => whole.map(({ arrangement, room }) => ({ draw, arrangement, room }))),
-    ...(view === null ? [] : [{ draw: last, arrangement: 'stacked' as const, room: { maxWidth: view.width - 2 * composedDisplayLayout.overviewPadding, maxHeight: UNCONSTRAINED } }]),
-    { draw: last, arrangement: 'stacked' as const, room: { maxWidth: UNCONSTRAINED, maxHeight: UNCONSTRAINED } },
+    ...scrolling.flatMap(room => drawings.map(draw => ({ draw, arrangement: 'stacked' as const, room }))),
   ]
   // Unconstrained room draws whatever can be drawn verified, so the last refusal says why nothing can.
   let refusal: ReadonlyArray<string> = []
@@ -766,10 +769,18 @@ export const compileDetailDisplay = (
   const narrowed = loops.every((loop): loop is string => loop !== undefined) ? { loops } : {}
   const reaches = Array.from({ length: MIMIC_REACH_LINKS }, (_, step) => MIMIC_REACH_LINKS - step)
   const panels = { readouts: readouts?.kind === 'readouts' ? readouts.pens.length : 0, annunciators: 0 }
-  const scopes = reaches.map(reach => resolveMimicScope(graph, { around: componentIds, ...narrowed, reach }))
-  const unresolved = scopes.find(scope => !scope.ok)
+  const whole = reaches.map(reach => resolveMimicScope(graph, { around: componentIds, ...narrowed, reach }))
+  const unresolved = whole.find(scope => !scope.ok)
   if (unresolved !== undefined && !unresolved.ok) return { ok: false, issues: unresolved.issues.map(issue => ({ path: 'detail', message: issue.message })) }
-  const fitted = fitGenerated(view, panels, scopes.flatMap(scope => scope.ok ? [(room: Parameters<GeneratedDrawing>[0]) => compileMimicScope(system.plant, scope.scope, { profile: detailMimicProfile, ...room })] : []))
+  // Where every service at once does not draw legibly, one at a time, the
+  // equipment's own first; its other services stop at it.
+  const services = itemServices(graph, components)
+  const oneService = services.length < 2 ? [] : services.flatMap(service => reaches.flatMap(reach => {
+    const scope = resolveMimicScope(graph, { around: componentIds, ...narrowed, services: [service], reach })
+    return scope.ok ? [withOtherServicesStopped(graph, scope.scope, components, services)] : []
+  }))
+  const scopes = [...whole.flatMap(scope => scope.ok ? [scope.scope] : []), ...oneService]
+  const fitted = fitGenerated(view, panels, scopes.map(scope => (room: Parameters<GeneratedDrawing>[0]) => compileMimicScope(system.plant, scope, { profile: detailMimicProfile, ...room })))
   if (!fitted.ok) return { ok: false, issues: [{ path: 'detail', message: `nothing around it can be drawn legibly; ${fitted.issues.join('; ')}` }] }
   const title = groupLabel(components.map(index => graph.components[index]!.label))
   return { ok: true, display: generatedDisplay(system, title, readouts, panels, view, fitted, shown => ({ kind: 'alarms', scope: 'related', ruleIds: relatedRuleIds(system, shown) })) }

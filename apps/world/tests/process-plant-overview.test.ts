@@ -11,7 +11,7 @@ import {
 } from '../src/packs/process-plant/index.ts'
 import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
 import { recordedPlantVariables } from '../src/packs/process-plant/recording.ts'
-import { compileOverviewDisplay, overviewDrawingRoom, type CompiledComposedDisplay, type OverviewView } from '../src/packs/process-plant/displays/compose.ts'
+import { compileDetailDisplay, compileOverviewDisplay, overviewDrawingRoom, type CompiledComposedDisplay, type OverviewView } from '../src/packs/process-plant/displays/compose.ts'
 
 // Process display windows as measured on production in Full HD and QHD browsers.
 const fullHd: OverviewView = { width: 1896, height: 972 }
@@ -174,6 +174,30 @@ describe('equipment opened from the unit overview', () => {
     expect(mimic.mimic.stubs.map(stub => stub.text)).toContain('to Steam header inlet B')
     expect(alarms.scope).toBe('related')
     expect(alarms.ruleIds.length).toBeGreaterThan(0)
+  })
+
+  test('where every service at once does not draw legibly, it draws the one it works in and stops the others where they join', () => {
+    const result = ask('world.process-plant.display.view', { plantId: system.plant.id, state: detailState(['core']), size: fullHd }) as { display: CompiledComposedDisplay }
+    const mimic = result.display.panels.find(panel => panel.kind === 'mimic')!
+    if (mimic.kind !== 'mimic') throw new Error('expected the mimic')
+    // The core heats its coolant: that circuit is drawn, every loop of it.
+    expect(mimic.mimic.summary.carriers).toEqual(['primaryCoolant'])
+    expect(mimic.mimic.items.map(item => item.binding.label)).toEqual(expect.arrayContaining(['Core', 'PZR', 'SG A', 'RCP D']))
+    // Its injection and charging lines stop at it, by name.
+    expect(mimic.mimic.stubs.map(stub => stub.text)).toContain('from ACC ×4, CHG ×2, RHR iso, SI header')
+    expect(result.display.height).toBeLessThanOrEqual(fullHd.height)
+  })
+
+  test('every item of the overview opens', () => {
+    const overview = compileOverviewDisplay(system, new Set(), fullHd)
+    if (!overview.ok) throw new Error(overview.issues.map(issue => issue.message).join('; '))
+    const panel = overview.display.panels.find(candidate => candidate.kind === 'mimic')!
+    if (panel.kind !== 'mimic') throw new Error('expected the mimic')
+    const refused = panel.mimic.items.flatMap(item => {
+      const detail = compileDetailDisplay(system, new Set(), item.components, fullHd)
+      return detail.ok ? [] : [`${item.binding.label}: ${detail.issues.map(issue => issue.message).join('; ')}`]
+    })
+    expect(refused).toEqual([])
   })
 
   test('equipment the Plant does not have is refused', () => {

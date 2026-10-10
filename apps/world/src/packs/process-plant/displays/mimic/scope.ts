@@ -355,6 +355,43 @@ export const resolveMimicScope = (graph: CompiledPlantGraph, intent: MimicIntent
 }
 
 /**
+ * The services items carry, the ones they do their work in first: those on a
+ * port circuit their energy role names (a core's coolant), then by how many
+ * of their links each takes. What a drawing narrowed to one service starts
+ * with, since every service at once may not draw legibly.
+ */
+export const itemServices = (graph: CompiledPlantGraph, items: ReadonlyArray<number>): ReadonlyArray<string> => {
+  const known = new Set(plantCarriers(graph))
+  const tally = new Map<string, { links: number; energy: boolean }>()
+  for (const item of items) {
+    const component = graph.components[item]!
+    const circuits = new Set(component.semantics.energy.flatMap(role => role.role === 'transfer' ? [role.from, role.to] : [role.circuit]))
+    for (const [side, indexes] of [['from', graph.outgoingLinksByComponent[item]], ['to', graph.incomingLinksByComponent[item]]] as const) {
+      for (const index of indexes ?? []) {
+        const link = graph.links[index]!
+        const carrier = linkCarrier(link)
+        if (!known.has(carrier)) continue
+        const circuit = component.ports[String(side === 'from' ? link.fromPortName : link.toPortName)]?.circuit
+        const entry = tally.get(carrier) ?? { links: 0, energy: false }
+        tally.set(carrier, { links: entry.links + 1, energy: entry.energy || (circuit !== undefined && circuits.has(circuit)) })
+      }
+    }
+  }
+  return [...tally].sort(([leftName, left], [rightName, right]) => Number(right.energy) - Number(left.energy) || right.links - left.links || leftName.localeCompare(rightName)).map(([name]) => name)
+}
+
+/**
+ * A scope narrowed to some services, with a stop at the given items for
+ * every other service they carry, so what the drawing leaves out still shows
+ * where it joins.
+ */
+export const withOtherServicesStopped = (graph: CompiledPlantGraph, scope: MimicScope, items: ReadonlyArray<number>, services: ReadonlyArray<string>): MimicScope => {
+  const others = new Set(services.filter(service => !scope.carriers.includes(service)))
+  const stops = drawingStops(graph, items.filter(item => scope.components.includes(item)), new Set(scope.links), others, () => false)
+  return { ...scope, stubs: [...scope.stubs, ...stops] }
+}
+
+/**
  * Where a drawing of these components and links stops: every other link of
  * the given carriers at a drawn component, one stub per port circuit and
  * direction. Flow into the drawing that `ignoreIncoming` names is left out.

@@ -7,7 +7,7 @@ import {
   type CompiledPlantGraph,
 } from '../src/packs/process-plant/index.ts'
 import { component, connect, plantGraph } from '../src/packs/process-plant/graph/builder.ts'
-import { resolveMimicScope, stubText, type MimicIntent } from '../src/packs/process-plant/displays/mimic/scope.ts'
+import { itemServices, resolveMimicScope, stubText, type MimicIntent } from '../src/packs/process-plant/displays/mimic/scope.ts'
 import { unpresentedKinds } from '../src/packs/process-plant/displays/mimic/presentation.ts'
 import { framingRules, itemBinding, linkFlowBinding, NO_FLOW_FRACTION } from '../src/packs/process-plant/displays/mimic/bindings.ts'
 
@@ -86,6 +86,14 @@ describe('mimic scope from the agent\'s intent', () => {
     expect(drawn(graph, { around: ['SG B'], loops: ['B'], reach: 1 }).labels).toEqual(['AFW valve B', 'Core', 'FCV B', 'MSIV B', 'RCP B', 'SG B'])
     expect(drawn(graph, { around: ['steam generators'], services: ['mainSteam'], reach: 1 }).labels).toEqual(['MSIV A', 'MSIV B', 'MSIV C', 'MSIV D', 'SG A', 'SG B', 'SG C', 'SG D'])
     expect(rejection(graph, { around: ['sgB'], from: ['core'] })).toEqual([{ field: 'around', message: 'around draws what feeds items and where their outflow goes; give it without from or to' }])
+  })
+
+  test('an item\'s services lead with the circuit its energy role names, then by how many of its links each takes', () => {
+    const index = (id: string) => graph.componentIndexById.get(id as never)!
+    expect(itemServices(graph, [index('core')])[0]).toBe('primaryCoolant')
+    // Both sides of a steam generator are its energy circuits; the primary takes two of its links.
+    expect(itemServices(graph, [index('sgB')])).toEqual(['primaryCoolant', 'auxFeedwater', 'feedwater', 'mainSteam'])
+    expect(itemServices(graph, [index('auxFeedwaterPumpMotor')])).toEqual(['auxFeedwater', 'electricalPower'])
   })
 
   test('loops narrow a system to their own links and the shared equipment on routes into them', () => {
