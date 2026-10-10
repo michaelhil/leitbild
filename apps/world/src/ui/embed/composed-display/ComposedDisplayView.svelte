@@ -19,9 +19,9 @@
 
   let { envelope }: { envelope: EmbeddedViewEnvelope } = $props()
 
-  // An agent's advice, or a unit overview World generates; only advice has a question, a need and an issue time.
+  // An agent's advice, or a display World generates (a unit overview, or equipment opened from it); only advice has a question, a need and an issue time.
   const parsed = $derived(processDisplayStateSchema.parse(JSON.parse(envelope.state)))
-  const advice = $derived('overview' in parsed ? null : parsed)
+  const advice = $derived('composition' in parsed ? parsed : null)
   const plantId = $derived(processDisplayStatePlantId(parsed))
   const title = $derived(advice?.composition.title ?? (snapshot?.view?.kind === 'detail' ? snapshot.view.display.title : envelope.title))
 
