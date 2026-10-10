@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { fitName } from '../src/ui/embed/composed-display/pen-style.ts'
 import { limitLabelRanks, stackLabels } from '../src/ui/embed/composed-display/limit-labels.ts'
-import { activeThreshold, agoText, alarmAge, limitAhead, limitInForce, limitsInForce, projectionBasis, returningText, median, minutesToThreshold, movingAwayFromLimits, rateChange, ratePerMinute, rateText, rateWindowMs, timeToThresholdText, visibleAlarms, annunciatorStates } from '../src/ui/embed/composed-display/panel-presenters.ts'
-import { formatQuantity, limitKindName, marginText, nearestThresholdMargin, simulationClock, thresholdName, unitLabel } from '../src/packs/process-plant/displays/display-text.ts'
+import { activeThreshold, agoText, alarmAge, fitMarginText, limitAhead, limitInForce, limitsInForce, projectionBasis, returningText, median, minutesToThreshold, movingAwayFromLimits, rateChange, ratePerMinute, rateText, rateWindowMs, timeToThresholdText, visibleAlarms, annunciatorStates } from '../src/ui/embed/composed-display/panel-presenters.ts'
+import { formatQuantity, limitKindName, marginText, marginTextForms, nearestThresholdMargin, simulationClock, thresholdName, unitLabel } from '../src/packs/process-plant/displays/display-text.ts'
 import { escalateLimits, type ComposedDisplayThreshold } from '../src/packs/process-plant/displays/ic-thresholds.ts'
 import type { ComposedDisplayAlarm } from '../src/ui/embed/composed-display/composed-display-client.ts'
 
@@ -43,6 +43,27 @@ describe('composed display panel presenters', () => {
     // Two rules at one value are one step.
     expect(names([limit('a', 'alarm', 'low', 10), limit('b', 'alarm', 'low', 10), limit('c', 'alarm', 'low', 5)])).toEqual(['LO ALM 10 °C', 'LO ALM 10 °C', 'LO-LO ALM 5 °C'])
     expect(limitKindName({ direction: 'high', kind: 'trip', escalation: 2 })).toBe('HI-HI TRIP')
+  })
+
+  test('a margin fitted to its room drops whole parts, the mode qualifier first, never cutting a word', () => {
+    // Primary inventory net flow on the overview: 0 kg/s against the power-operation-only LO TRIP -250 kg/s.
+    const netFlowTrip = { ruleId: 'net-flow', label: 'Primary inventory loss trip', kind: 'trip', operator: '<', direction: 'low', value: -250, escalation: 1, modeLabel: 'Power operation', modeIds: ['powerOperation'] } as const
+    const margin = { threshold: netFlowTrip, margin: 250 }
+    expect(marginTextForms(margin, 'kg/s')).toEqual([
+      '250 kg/s above LO TRIP -250 kg/s (Power operation)',
+      '250 kg/s above LO TRIP -250 kg/s',
+      '250 kg/s above LO TRIP -250',
+      '250 kg/s above LO TRIP',
+    ])
+    expect(marginText(margin, 'kg/s')).toBe('250 kg/s above LO TRIP -250 kg/s (Power operation)')
+    const within = (length: number) => (text: string) => text.length <= length
+    expect(fitMarginText(margin, 'kg/s', within(48))).toBe('250 kg/s above LO TRIP -250 kg/s')
+    expect(fitMarginText(margin, 'kg/s', within(28))).toBe('250 kg/s above LO TRIP -250')
+    // Too narrow for any: the shortest, which still says how far and from which limit.
+    expect(fitMarginText(margin, 'kg/s', within(10))).toBe('250 kg/s above LO TRIP')
+    expect(marginTextForms({ threshold: netFlowTrip, margin: -5 }, 'kg/s')).toEqual(['past LO TRIP -250 kg/s (Power operation)', 'past LO TRIP -250 kg/s', 'past LO TRIP -250', 'past LO TRIP'])
+    // A unitless limit without modes has fewer forms, none repeated.
+    expect(marginTextForms({ threshold: { ...thresholds[1]!, value: 0.5 }, margin: 0.25 }, 'boolean')).toEqual(['0.250 above LO ALM 0.5', '0.250 above LO ALM'])
   })
 
   test('fractions read as percent wherever the display or the answer names them', () => {
