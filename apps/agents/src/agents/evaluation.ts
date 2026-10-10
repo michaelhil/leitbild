@@ -10,7 +10,7 @@ import type { AgentResponse, AIAgentConfig } from '../core/types/agent.ts'
 import type { ChatRequest, GenerationQuery, LLMCallOptions, LLMProvider, ProviderContinuation } from '../core/types/llm.ts'
 import type { EvalEventCore } from '../core/types/agent-eval.ts'
 import type { NativeToolCall, ToolCall, ToolDefinition, ToolExecutor, ToolResult } from '../core/types/tool.ts'
-import type { ToolTraceEntry } from '../core/types/messaging.ts'
+import type { MessageCause, ToolTraceEntry } from '../core/types/messaging.ts'
 import type { ContextResult, FlushInfo } from './context-builder.ts'
 import { classifyLLMError } from './error-classify.ts'
 import { extractFences } from './fence-extract.ts'
@@ -43,6 +43,9 @@ export interface Decision {
   // store by spawn.ts.
   readonly generationQuery?: GenerationQuery
   readonly generationTraceId?: string
+  // Set by the agent on a requested turn (RequestedTurn.cause); posted with
+  // every message the turn produces.
+  readonly cause?: MessageCause
 }
 
 export type OnDecision = (decision: Decision) => void
@@ -292,6 +295,11 @@ const viewFenceErrors = (content: string, viewRefs: ReadonlySet<string>): Readon
   return errors
 }
 
+// A turn that must present a live view (RequestedTurn.requireView) and
+// answered without composing one is asked once more inside the tool loop, so
+// the model can still compose it. A second answer without one stands.
+const REQUIRED_VIEW_CORRECTION = `The reader asked for a live display, and this response presents none. If you have not composed one yet, compose it now and end the response with its \`${VIEW_FENCE_LANGUAGE}\` block. If no display can be produced, reply with one sentence saying why.`
+
 const validateResponseFences = (content: string, viewRefs: ReadonlySet<string>): { ok: boolean; errors: string } => {
   const errors = [...mapFenceErrors(content), ...viewFenceErrors(content, viewRefs)]
   return { ok: errors.length === 0, errors: errors.join('\n\n') }
@@ -373,6 +381,8 @@ export interface EvalOptions {
   readonly executionTurnId?: string
   readonly toolDefinitions?: ReadonlyArray<ToolDefinition>
   readonly inReplyTo?: ReadonlyArray<string>
+  // The turn must present a live view; see REQUIRED_VIEW_CORRECTION.
+  readonly requireView?: boolean
   readonly onEvent?: (event: EvalEventCore) => void
   readonly signal?: AbortSignal
   // Optional operator-configured tool-iteration check-in. Returns true to
@@ -398,7 +408,7 @@ export const evaluate = async (
   const context: Array<ChatRequest['messages'][number]> = [...contextResult.messages]
   let totalGenerationMs = 0
   let metrics: LLMCallMetrics = { modelCalls: 0 }
-  const { toolDefinitions, inReplyTo, onEvent, signal, requestToolCheckin } = options ?? {}
+  const { toolDefinitions, inReplyTo, requireView, onEvent, signal, requestToolCheckin } = options ?? {}
   // Optional mutable operator threshold. Undefined means there is no hidden
   // engine quota; the Agent decides when it has enough evidence.
   let effectiveMaxIterations = maxToolIterations
@@ -408,6 +418,7 @@ export const evaluate = async (
   // reconstruct what the agent actually did before answering.
   const toolTrace: Array<ToolTraceEntry> = []
   const viewRefs = new Set<string>()
+  let viewInsisted = false
   let lastGenerationQuery: GenerationQuery | undefined
   const captureRequest = (request: ChatRequest): void => {
     // ChatRequest is JSON-shaped. Clone at the call boundary so subsequent
@@ -594,6 +605,12 @@ export const evaluate = async (
           generationMs: totalGenerationMs,
           triggerRoomId,
         })
+      }
+      if (requireView && !viewInsisted && viewRefs.size === 0) {
+        viewInsisted = true
+        context.push({ role: 'assistant', content, ...(streamResult.continuation ? { continuation: streamResult.continuation } : {}) })
+        context.push({ role: 'user', content: REQUIRED_VIEW_CORRECTION })
+        continue
       }
       // Fence retry loop: validate ```map / ```geojson schemas and that every
       // ```leitbild-view names a display composed in this turn. If invalid,
