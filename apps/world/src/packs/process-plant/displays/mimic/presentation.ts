@@ -69,7 +69,7 @@ const byKind: Readonly<Record<string, MimicPresentation | ((component: CompiledC
   inverter: { element: 'device', icon: 'converter', aspect: 'energized' },
   battery: { element: 'device', icon: 'battery', aspect: 'energized' },
   electricalLoad: { element: 'not-drawn', reason: 'a load is where power ends; it is named where its supply stops' },
-  atmosphereBoundary: { element: 'not-drawn', reason: 'the atmosphere is where a release leaves the Plant; it is named where the discharge pipe ends' },
+  atmosphereBoundary: { element: 'not-drawn', reason: 'the atmosphere is where a release leaves the Plant; it is named where each discharge pipe ends' },
 }
 
 /** Kinds the table covers, for the completeness test against the component registry. */
