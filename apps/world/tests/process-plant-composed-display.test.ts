@@ -143,6 +143,14 @@ describe('world.process-plant.display.compose', () => {
     expect(result.shows.join('\n')).toContain('PORV-456A (Pressurizer relief valve position, fraction, context, a command (demand), shown as demand)')
   })
 
+  test('a line flow the I&C judges on the equipment it passes is refused with the judged signal', () => {
+    // The PORV is bundled in the pressurizer on its relief outlet; its alarm acts on the pressurizer's relief flow, not the line's.
+    const readouts = (ref: string) => ({ ...composition([{ ref, role: 'primary' }]), panels: [{ kind: 'readouts', signals: [{ ref, role: 'primary' }, { ref: 'PT-455', role: 'context' }] }] })
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', readouts('pressurizer-relief-to-tank.flowKgPerS'))))
+      .toContain('show pressurizer.reliefFlowKgPerS (Pressurizer relief flow, HI ALM 1 kg/s) instead')
+    expect(() => ask('world.process-plant.display.compose', readouts('pressurizer.reliefFlowKgPerS'))).not.toThrow()
+  })
+
   test('a state readout names its equipment, so two alike states cannot be confused', () => {
     const result = ask('world.process-plant.display.view', { plantId: compiled.id, state: JSON.stringify({
       composition: { ...composition([{ ref: 'PT-455', role: 'primary' }]), panels: [{ kind: 'readouts', signals: [{ ref: 'BUS-A-ENERGIZED', role: 'primary' }, { ref: 'BUS-B-ENERGIZED', role: 'context' }] }] },

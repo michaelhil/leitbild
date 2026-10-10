@@ -443,6 +443,43 @@ const compositionIssues = (composition: ComposedDisplayComposition): ReadonlyArr
 }
 
 /**
+ * A link's flow that the model also solves as the throughput of equipment it
+ * bundles on that link's end (the PORV on the pressurizer's relief outlet),
+ * where the I&C judges that variable and not the link's. Shown as it is, the
+ * display would read "no I&C limit" beside an alarm on the same flow; the
+ * refusal names the judged signal and its limits.
+ */
+const judgedElsewhereIssues = (system: ProcessPlantRuntimeInstance, composition: ComposedDisplayComposition): ReadonlyArray<ComposedDisplayIssue> => {
+  const graph = system.plant.graph
+  const acting = (path: VariablePath) => icThresholdsForSignal(system.plant, path).thresholds.filter(threshold => threshold.kind !== 'control')
+  return composition.panels.flatMap((panel, panelIndex) => !('signals' in panel) ? [] : panel.signals.flatMap((signal, signalIndex): ComposedDisplayIssue[] => {
+    const binding = resolveRef(system, signal.ref)
+    if (binding?.owner.type !== 'link' || acting(binding.path).length > 0) return []
+    const link = graph.links[binding.owner.linkIndex]!
+    const ends = [{ index: link.fromComponentIndex, port: String(link.fromPortName) }, { index: link.toComponentIndex, port: String(link.toPortName) }]
+    for (const end of ends) {
+      const component = graph.components[end.index]!
+      for (const device of component.semantics.embedded.filter(candidate => String(candidate.port) === end.port)) {
+        for (const aspect of device.aspects) {
+          if (aspect.aspect !== 'throughput' || aspect.state === undefined) continue
+          const judged = graph.signalBindingByPath.get(aspect.state.path)
+          if (judged === undefined || judged.unit !== binding.unit || judged.quantity !== binding.quantity) continue
+          const limits = acting(judged.path)
+          if (limits.length === 0) continue
+          const ref = judged.tagId ?? String(judged.path)
+          return [{
+            path: `panels.${panelIndex}.signals.${signalIndex}.ref`,
+            message: `"${signal.ref}" is judged by no I&C rule, but the same flow through ${component.label}'s ${device.label} is: show ${ref} (${judged.label}, ${limits.map(limit => thresholdName(limit, judged.unit)).join(', ')}) instead, so the display carries the limits its alarms act on`,
+            didYouMean: [ref],
+          }]
+        }
+      }
+    }
+    return []
+  }))
+}
+
+/**
  * Each subject the display must show: a signal some panel shows (a trend,
  * comparison or readout pen, or a value or state a mimic draws); a service a
  * mimic draws or a flow of which a panel shows; a loop whose equipment is
@@ -659,7 +696,8 @@ export const compileComposedDisplay = (
   })
   const layout = purpose === 'compose' ? layoutIssues(compiled, fit) : []
   const uncovered = purpose === 'compose' && composition.subjects !== undefined ? subjectIssues(system, composition.subjects, compiled) : []
-  if (authoring.length > 0 || layout.length > 0 || uncovered.length > 0) return { ok: false, issues: [...authoring, ...layout, ...uncovered] }
+  const elsewhere = purpose === 'compose' ? judgedElsewhereIssues(system, composition) : []
+  if (authoring.length > 0 || layout.length > 0 || uncovered.length > 0 || elsewhere.length > 0) return { ok: false, issues: [...authoring, ...layout, ...uncovered, ...elsewhere] }
   const ruleIds = relatedRuleIds(system, compiled)
   return {
     ok: true,
