@@ -127,6 +127,8 @@ const evaluateRuleCondition = (config: {
   }).matches
 }
 
+// An alarm qualified by a mode clears when the Plant leaves the mode: outside
+// it the alarm no longer applies, whatever its own clear condition reads.
 const evaluateAlarmClearCondition = (config: {
   readonly system: CompiledProcessPlant
   readonly runtime: ProcessPlantRuntime
@@ -140,7 +142,7 @@ const evaluateAlarmClearCondition = (config: {
       runtime: config.runtime,
       condition: config.rule.modeCondition,
     }).matches
-    if (!modeMatches) return false
+    if (!modeMatches) return true
   }
   return evaluateProcessPlantIcCondition({
     system: config.system,

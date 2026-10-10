@@ -191,3 +191,56 @@ describe('annunciators', () => {
     expect(() => createProcessPlantProtectionRunner({ system: plant, protection: misnamed(graph) })).toThrow(message)
   })
 })
+
+describe('alarms that apply only in power operation', () => {
+  const lifecycleOf = (plantRun: ReturnType<typeof started>, id: string) =>
+    [...plantRun.protection.snapshot().alarms, ...plantRun.protection.snapshot().trips].find(lifecycle => lifecycle.id === id)!
+
+  test('read power operation from the trip breakers and fission power, never a command', () => {
+    for (const rule of plant.automation.rules.filter(candidate => candidate.modeLabel === 'power operation')) {
+      expect(JSON.stringify(rule.modeCondition), rule.id).toBe(JSON.stringify({
+        type: 'all',
+        conditions: [
+          { type: 'comparison', signal: { tagId: 'TRIP-BKR-A-POS' }, operator: '==', value: true },
+          { type: 'comparison', signal: { tagId: 'TRIP-BKR-B-POS' }, operator: '==', value: true },
+          { type: 'comparison', signal: { path: 'core.powerMw' }, operator: '>', value: 100 },
+        ],
+      }))
+    }
+    const generator = plant.automation.rules.filter(rule => rule.modeLabel === 'generator on line').map(rule => rule.id)
+    expect(generator.sort()).toEqual(['generator-output-low', 'turbine-load-low'])
+  })
+
+  test('clear after a reactor trip, though their own clear condition still reads abnormal', () => {
+    const plantRun = started()
+    plantRun.act('steam-generator-b-feedwater-runback')
+    plantRun.run(90_000)
+    const feedLow = 'alarm:sg-b-feedwater-flow-low:feedwater-flow-low'
+    expect(plantRun.activeIds()).toContain(feedLow)
+
+    // A manual reactor trip: both trip breakers open and the rods drop.
+    for (const [path, value] of [['reactorTripBreakerA.closed', false], ['reactorTripBreakerB.closed', false], ['core.rodInsertionFraction', 1]] as const) {
+      plantRun.runtime.writeCommand({ type: 'setVariable', path: path as VariablePath, value })
+    }
+    plantRun.run(5_000)
+    expect(Number(plantRun.read('sgB.feedwaterFlowKgPerS'))).toBeLessThan(180)
+    expect(lifecycleOf(plantRun, feedLow)).toMatchObject({ active: false, clearCount: 1 })
+    expect(plantRun.activeIds()).not.toContain('alarm:generator-output-low:generator-output-low')
+    expect(plantRun.activeIds()).not.toContain('alarm:turbine-load-low:load-low')
+  })
+
+  test('the generator alarms clear after a turbine trip', () => {
+    const plantRun = started()
+    plantRun.run(2_000)
+    plantRun.runtime.writeCommand({ type: 'setVariable', path: 'turbine.loadFraction' as VariablePath, value: 0.3 })
+    plantRun.run(30_000)
+    expect(Number(plantRun.tag('GEN-MW'))).toBeLessThan(450)
+    expect(plantRun.activeIds()).toEqual(expect.arrayContaining(['alarm:generator-output-low:generator-output-low', 'alarm:turbine-load-low:load-low']))
+
+    plantRun.act('turbine-trip')
+    plantRun.run(5_000)
+    expect(plantRun.tag('TURB-STOP-POS')).toBeLessThan(0.05)
+    expect(lifecycleOf(plantRun, 'alarm:generator-output-low:generator-output-low').active).toBe(false)
+    expect(lifecycleOf(plantRun, 'alarm:turbine-load-low:load-low').active).toBe(false)
+  })
+})

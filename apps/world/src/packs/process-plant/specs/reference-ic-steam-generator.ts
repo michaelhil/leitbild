@@ -1,5 +1,5 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
-import { alarm, all, annunciator, any, comparison, rule, trip, write } from './reference-ic-helpers.ts'
+import { alarm, all, annunciator, any, comparison, powerOperation, rule, trip, write } from './reference-ic-helpers.ts'
 import type { ProcessPlantReferenceLoop } from './reference-loop.ts'
 
 export const steamGeneratorReferenceIcRules = (loop: ProcessPlantReferenceLoop): ReadonlyArray<ProcessPlantIcRule> => {
@@ -129,8 +129,7 @@ export const steamGeneratorReferenceIcRules = (loop: ProcessPlantReferenceLoop):
       id: `sg-${lower}-feedwater-flow-low`,
       label: `Steam generator ${loop} feedwater flow low`,
       ruleClass: 'alarm',
-      modeLabel: 'power operation',
-      modeCondition: comparison({ path: 'core.powerMw' }, '>', 100),
+      ...powerOperation(),
       condition: comparison({ path: `${sg}.feedwaterFlowKgPerS` }, '<', 150),
       clearCondition: comparison({ path: `${sg}.feedwaterFlowKgPerS` }, '>', 180),
       clearDelayMs: 2_000,

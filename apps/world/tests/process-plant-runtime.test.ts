@@ -324,10 +324,8 @@ describe('process plant runtime', () => {
       ['pressurizer-relief-open', [
         'alarm:pzr-relief-flow-high:relief-flow-high',
       ]],
-      ['turbine-trip', [
-        'alarm:turbine-load-low:load-low',
-        'alarm:generator-output-low:generator-output-low',
-      ]],
+      // The generator leaves the line: its output and load alarms apply only while it is on line.
+      ['turbine-trip', []],
       ['loss-offsite-power', [
         'alarm:loss-of-offsite-power:loss-of-offsite-power',
       ]],
@@ -377,10 +375,8 @@ describe('process plant runtime', () => {
       ['pressurizer-relief-open', [
         'alarm:pzr-relief-flow-high:relief-flow-high',
       ]],
-      ['turbine-trip', [
-        'alarm:turbine-load-low:load-low',
-        'alarm:generator-output-low:generator-output-low',
-      ]],
+      // The generator leaves the line: its output and load alarms apply only while it is on line.
+      ['turbine-trip', []],
       ['loss-offsite-power', [
         'alarm:loss-of-offsite-power:loss-of-offsite-power',
       ]],
@@ -1141,13 +1137,14 @@ describe('process plant runtime', () => {
     expect(active.trips).toContain('trip:reactor-low-rcp-flow-trip:low-rcp-flow-trip')
     expect(active.alarms).toEqual(expect.arrayContaining([
       'alarm:main-feedwater-pump-trip:main-feedwater-pump-unavailable',
-      'alarm:turbine-load-low:load-low',
-      'alarm:generator-output-low:generator-output-low',
       'alarm:rcp-a-trip:not-running',
       'alarm:rcp-b-trip:not-running',
       'alarm:rcp-c-trip:not-running',
       'alarm:rcp-d-trip:not-running',
     ]))
+    // The trip ends power operation: the generator's output and load alarms no longer apply.
+    expect(active.alarms).not.toContain('alarm:turbine-load-low:load-low')
+    expect(active.alarms).not.toContain('alarm:generator-output-low:generator-output-low')
 
     expect(runtime.readVariable(valueOf('reactorTripBreakerA.closed'))).toBe(false)
     expect(runtime.readVariable(valueOf('reactorTripBreakerB.closed'))).toBe(false)

@@ -82,6 +82,32 @@ export const reactorTripBreakerOpen = (): ProcessPlantIcCondition => any([
   comparison({ tagId: 'TRIP-BKR-B-POS' }, '==', false),
 ])
 
+/** Fission power above which the reactor is at power: 100 MW, about 3 % of rated. */
+export const atPowerThresholdMw = 100
+
+/**
+ * Power operation, read from what the plant does: both reactor trip
+ * breakers read closed and fission power is above 100 MW. A reactor trip
+ * ends it at once, whatever any command says.
+ */
+export const powerOperation = (): { readonly modeLabel: string; readonly modeCondition: ProcessPlantIcCondition } => ({
+  modeLabel: 'power operation',
+  modeCondition: all([
+    comparison({ tagId: 'TRIP-BKR-A-POS' }, '==', true),
+    comparison({ tagId: 'TRIP-BKR-B-POS' }, '==', true),
+    comparison({ path: 'core.powerMw' }, '>', atPowerThresholdMw),
+  ]),
+})
+
+/** The generator on line: power operation with the turbine stop valve reading open. A turbine trip ends it. */
+export const generatorOnLine = (): { readonly modeLabel: string; readonly modeCondition: ProcessPlantIcCondition } => ({
+  modeLabel: 'generator on line',
+  modeCondition: all([
+    powerOperation().modeCondition,
+    comparison({ tagId: 'TURB-STOP-POS' }, '>', 0.05),
+  ]),
+})
+
 export const reactorTripBreakerWrites = (idPrefix: string): ReadonlyArray<ReferenceIcEffect> => [
   write(`${idPrefix}-open-trip-breaker-a`, { tagId: 'TRIP-BKR-A' }, false),
   write(`${idPrefix}-open-trip-breaker-b`, { tagId: 'TRIP-BKR-B' }, false),

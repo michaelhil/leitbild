@@ -1,5 +1,5 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
-import { alarm, annunciator, comparison, deadbandController, reactorTripBreakerWrites, rule, trip, write } from './reference-ic-helpers.ts'
+import { alarm, annunciator, comparison, deadbandController, powerOperation, reactorTripBreakerWrites, rule, trip, write } from './reference-ic-helpers.ts'
 
 const pzrAlarm = annunciator({
   system: 'reactorCoolantSystem',
@@ -92,8 +92,7 @@ export const pressurizerReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRule>
     id: 'pzr-pressure-low-reactor-trip',
     label: 'Pressurizer pressure low reactor trip',
     ruleClass: 'protection',
-    modeLabel: 'power operation',
-    modeCondition: comparison({ path: 'core.powerMw' }, '>', 100),
+    ...powerOperation(),
     condition: comparison({ tagId: 'PT-455' }, '<', 13.8),
     delayMs: 1_000,
     effects: [
@@ -111,8 +110,7 @@ export const pressurizerReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRule>
     id: 'pzr-pressure-high-reactor-trip',
     label: 'Pressurizer pressure high reactor trip',
     ruleClass: 'protection',
-    modeLabel: 'power operation',
-    modeCondition: comparison({ path: 'core.powerMw' }, '>', 100),
+    ...powerOperation(),
     condition: comparison({ tagId: 'PT-455' }, '>', 16.35),
     delayMs: 1_000,
     effects: [

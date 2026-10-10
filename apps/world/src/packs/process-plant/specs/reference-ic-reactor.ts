@@ -1,6 +1,6 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
 import type { ProcessPlantReferenceLoop } from './reference-loop.ts'
-import { alarm, annunciator, comparison, reactorTripBreakerWrites, rule, trip, vote, write } from './reference-ic-helpers.ts'
+import { alarm, annunciator, comparison, powerOperation, reactorTripBreakerWrites, rule, trip, vote, write } from './reference-ic-helpers.ts'
 
 const reactorAlarm = annunciator({
   system: 'reactorProtection',
@@ -64,8 +64,7 @@ export const reactorReferenceIcRules = (
     id: 'reactor-low-primary-flow-trip',
     label: 'Reactor low primary flow trip',
     ruleClass: 'protection',
-    modeLabel: 'power operation',
-    modeCondition: comparison({ path: 'core.powerMw' }, '>', 100),
+    ...powerOperation(),
     condition: comparison({ path: 'vessel.netInventoryFlowKgPerS' }, '<', -250),
     delayMs: 2_000,
     effects: [
@@ -83,8 +82,7 @@ export const reactorReferenceIcRules = (
     id: 'reactor-low-rcp-flow-trip',
     label: 'Reactor low reactor coolant pump flow trip',
     ruleClass: 'protection',
-    modeLabel: 'power operation',
-    modeCondition: comparison({ path: 'core.powerMw' }, '>', 100),
+    ...powerOperation(),
     condition: vote(lowRcpFlowVoteThresholdFor(loops), loops.map(loop => comparison({ path: `rcp${loop}.loopFlowKgPerS` }, '<', lowRcpFlowTripThresholdKgPerS))),
     delayMs: 2_000,
     effects: [

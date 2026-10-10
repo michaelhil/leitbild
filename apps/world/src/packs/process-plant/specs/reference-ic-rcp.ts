@@ -1,5 +1,5 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
-import { alarm, annunciator, comparison, rule } from './reference-ic-helpers.ts'
+import { alarm, annunciator, comparison, powerOperation, rule } from './reference-ic-helpers.ts'
 import type { ProcessPlantReferenceLoop } from './reference-loop.ts'
 
 export const reactorCoolantPumpReferenceIcRules = (loop: ProcessPlantReferenceLoop): ReadonlyArray<ProcessPlantIcRule> => {
@@ -35,8 +35,7 @@ export const reactorCoolantPumpReferenceIcRules = (loop: ProcessPlantReferenceLo
       id: `rcp-${lower}-loop-flow-low`,
       label: `RCP ${loop} loop flow low`,
       ruleClass: 'alarm',
-      modeLabel: 'power operation',
-      modeCondition: comparison({ path: 'core.powerMw' }, '>', 100),
+      ...powerOperation(),
       condition: comparison({ tagId: `RCP-${loop}-FLOW` }, '<', 2_500),
       clearCondition: comparison({ tagId: `RCP-${loop}-FLOW` }, '>', 2_800),
       clearDelayMs: 1_000,
