@@ -281,6 +281,7 @@ export type AgentResponseErrorCode =
   | 'tool_loop_exceeded' // tool iteration cap hit and no partial text
   | 'empty_response'     // LLM returned no content and no tool calls
   | 'tools_unavailable'  // model emitted tool calls but no executor wired
+  | 'request_dropped'    // a requested turn could no longer run (RequestedTurn)
   | 'unknown'
 
 export type AgentResponse =

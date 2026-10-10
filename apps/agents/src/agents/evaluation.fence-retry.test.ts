@@ -294,6 +294,17 @@ describe('evaluation required view (display requests)', () => {
     expect(result.decision.response).toEqual({ action: 'respond', content: viewFence('call_0_0/compose') })
   })
 
+  test('asking again does not count against the tool iteration limit', async () => {
+    const { provider, calls } = scripted([
+      { content: 'Pressurizer level is steady at 55 %.' },
+      composeCall,
+      { content: viewFence('call_1_0/compose') },
+    ])
+    const result = await evaluate(mkContext(), mkConfig(), provider, executor, 1, 'room-1', options)
+    expect(calls).toHaveLength(3)
+    expect(result.decision.response).toEqual({ action: 'respond', content: viewFence('call_1_0/compose') })
+  })
+
   test('without the requirement an answer without a display is final', async () => {
     const { provider, calls } = scripted([{ content: 'Pressurizer level is steady at 55 %.' }])
     await evaluate(mkContext(), mkConfig(), provider, executor, 5, 'room-1', { ...options, requireView: false })

@@ -113,12 +113,17 @@ export const fitToolEvidence = (
   tools: ReadonlyArray<ChatRequest['messages'][number]>,
   tokenBudget: number | undefined,
   systemTokens = 0,
+  // Index of the message that opened this turn; it and everything after it
+  // stay even when a later correction became the last user message.
+  turnStart = -1,
 ): { droppedHistory: number; overBudget: boolean } => {
   if (tokenBudget === undefined) {
     context.push(assistant, ...tools)
     return { droppedHistory: 0, overBudget: false }
   }
-  const lastUser = context.findLastIndex(message => message.role === 'user')
+  const lastUser = turnStart >= 0
+    ? Math.min(turnStart, context.findLastIndex(message => message.role === 'user'))
+    : context.findLastIndex(message => message.role === 'user')
   context.push(assistant, ...tools)
   let total = systemTokens + context.reduce((sum, message) => sum + messageTokens(message), 0)
   let droppedHistory = 0
@@ -419,6 +424,12 @@ export const evaluate = async (
   const toolTrace: Array<ToolTraceEntry> = []
   const viewRefs = new Set<string>()
   let viewInsisted = false
+  // The message that opened the turn (a requested turn's instruction, or the
+  // newest question); shifts left as older history is dropped.
+  let turnStart = context.findLastIndex(message => message.role === 'user')
+  // Rounds spent insisting on a view call the model again without a tool
+  // round of the agent's own; they do not count against its iteration limit.
+  let insistRounds = 0
   let lastGenerationQuery: GenerationQuery | undefined
   const captureRequest = (request: ChatRequest): void => {
     // ChatRequest is JSON-shaped. Clone at the call boundary so subsequent
@@ -572,20 +583,22 @@ export const evaluate = async (
           toolMessages.push({ role: 'tool', toolCallId: wireCalls[i]!.id, name: call.tool, content: formatToolResult(result) })
         }
         const systemTokens = Math.ceil((contextResult.systemBlocks?.map(block=>block.text).join('\n\n').length ?? 0)/4)
-        const fit = fitToolEvidence(context, assistantToolMessage, toolMessages, contextResult.tokenBudget, systemTokens)
+        const fit = fitToolEvidence(context, assistantToolMessage, toolMessages, contextResult.tokenBudget, systemTokens, turnStart)
+        turnStart -= fit.droppedHistory
         if (fit.overBudget) onEvent?.({ kind: 'warning', message: 'Current request and tool evidence exceed the model context budget. Evidence was preserved intact; use a narrower or paginated read.' })
         if (fit.droppedHistory > 0) onEvent?.({ kind: 'warning', message: `Dropped ${fit.droppedHistory} oldest context messages to retain current tool evidence.` })
 
-        if (effectiveMaxIterations !== undefined && toolRound + 1 > effectiveMaxIterations) {
+        const iterations = toolRound + 1 - insistRounds
+        if (effectiveMaxIterations !== undefined && iterations > effectiveMaxIterations) {
           if (requestToolCheckin) {
             const recentTools = toolTrace.slice(-3).map(t => ({ tool: t.tool, success: t.success }))
             onEvent?.({
               kind: 'tool_iteration_checkin',
-              iterations: toolRound + 1,
+              iterations,
               roomId: triggerRoomId,
               recentTools,
             })
-            const shouldContinue = await requestToolCheckin({ iterations: toolRound + 1, recentTools })
+            const shouldContinue = await requestToolCheckin({ iterations, recentTools })
             if (!shouldContinue) break
             // A human explicitly chose to continue this turn. Hand control
             // back to the Agent instead of imposing another arbitrary block.
@@ -608,6 +621,7 @@ export const evaluate = async (
       }
       if (requireView && !viewInsisted && viewRefs.size === 0) {
         viewInsisted = true
+        insistRounds++
         context.push({ role: 'assistant', content, ...(streamResult.continuation ? { continuation: streamResult.continuation } : {}) })
         context.push({ role: 'user', content: REQUIRED_VIEW_CORRECTION })
         continue

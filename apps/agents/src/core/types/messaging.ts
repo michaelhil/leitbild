@@ -22,6 +22,7 @@ export type MessageErrorCode =
   | 'tool_loop_exceeded'
   | 'empty_response'
   | 'tools_unavailable'
+  | 'request_dropped'
   | 'unknown'
 
 // === Causality: what subsystem caused this message ===

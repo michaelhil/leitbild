@@ -54,6 +54,8 @@ export interface AgentTurnStart {
   readonly toolDefinitions: ReadonlyArray<ToolDefinition>
   readonly focusedSubjects: ReadonlyArray<WorkspaceSubjectReference>
   readonly inReplyTo?: ReadonlyArray<string>
+  // A requested turn that must present a live view; a comparison replays it so.
+  readonly requireView?: boolean
 }
 
 export interface AIAgentOptions {
@@ -104,6 +106,10 @@ export interface AIAgentOptions {
   // bump `multimodalImagesDropped`. Wired by spawn.ts from shared.limitMetrics.
   readonly metricsSink?: { inc: (field: 'multimodalImagesDropped', by?: number) => void }
 }
+
+// Messages that ask the agent for an answer; the others only join its view.
+const triggersEvaluation = (message: Message): boolean =>
+  message.type !== 'system' && message.type !== 'join' && message.type !== 'leave' && message.type !== 'pass' && message.type !== 'error'
 
 // === Factory ===
 
@@ -210,10 +216,11 @@ export const createAIAgent = (
   // Set LEITBILD_TOOL_CHECKIN_ABANDON_MS=0 to disable the pause entirely
   // (headless / batch / test mode): evaluation stops at maxToolIterations.
   const pendingCheckins = new Map<string, (continueTurn: boolean) => void>()
-  // Requested turns (requestTurn) waiting for their room's next evaluation.
-  // At most one per room; consumed when that evaluation starts and dropped
-  // with all pending work by cancelGeneration.
+  // Requested turns (requestTurn): waiting for their room's next evaluation,
+  // and rooms whose requested turn is running. At most one of either per
+  // room. Waiting ones are dropped with all pending work by cancelGeneration.
   const requestedTurns = new Map<string, RequestedTurn>()
+  const runningRequests = new Set<string>()
   const parsedAbandonMs = Number.parseInt(process.env.LEITBILD_TOOL_CHECKIN_ABANDON_MS ?? '', 10)
   const abandonMs = Number.isFinite(parsedAbandonMs) && parsedAbandonMs >= 0
     ? parsedAbandonMs
@@ -355,6 +362,7 @@ export const createAIAgent = (
           toolDefinitions: evalToolDefs ?? [],
           focusedSubjects: focusedSubjectsByRoom.get(triggerRoomId) ?? [],
           ...(inReplyTo ? { inReplyTo } : {}),
+          ...(requireView ? { requireView } : {}),
         }))
       } catch (error) {
         // Comparison evidence is optional; its failure must not break ordinary
@@ -398,6 +406,26 @@ export const createAIAgent = (
     }
   }
 
+  // A waiting requested turn runs once the room's own questions are answered:
+  // they get an ordinary turn first, so a requested reply never swallows them.
+  // One that a script now directs is dropped with a posted reason, because the
+  // script's context has no place for its instruction.
+  const takeRequestedTurn = (roomId: string): RequestedTurn | undefined => {
+    const turn = requestedTurns.get(roomId)
+    if (turn === undefined) return undefined
+    if (agentHistory.incoming.some(message => message.roomId === roomId && triggersEvaluation(message))) return undefined
+    requestedTurns.delete(roomId)
+    if (getScriptContext?.(roomId, resolveName(agentId))) {
+      onDecision({
+        response: { action: 'error', code: 'request_dropped', message: 'A script started directing this room before the requested turn ran; ask again when it ends.' },
+        generationMs: 0, triggerRoomId: roomId, inReplyTo: turn.inReplyTo, cause: turn.cause,
+      })
+      return undefined
+    }
+    runningRequests.add(roomId)
+    return turn
+  }
+
   const tryEvaluate = (triggerRoomId: string): void => {
     if (cm.isBusy()) {
       cm.addPending(triggerRoomId)
@@ -406,8 +434,7 @@ export const createAIAgent = (
 
     cm.startGeneration(triggerRoomId)
     cm.notifyState('generating', triggerRoomId)
-    const requested = requestedTurns.get(triggerRoomId)
-    requestedTurns.delete(triggerRoomId)
+    const requested = takeRequestedTurn(triggerRoomId)
 
     // Use the newest transient focus carried by this pending turn. It lives
     // only for tool context; it never enters the prompt history or snapshots.
@@ -547,8 +574,11 @@ export const createAIAgent = (
           console.error(`[${config.name}] onDecision threw while reporting eval error:`, decisionErr)
         }
       } finally {
+        if (requested) runningRequests.delete(triggerRoomId)
         notifyTurnFinished(traceId)
         if (cm.isEpochCurrent(epoch)) {
+          // A requested turn that waited behind this room's questions runs next.
+          if (requestedTurns.has(triggerRoomId)) cm.addPending(triggerRoomId)
           cm.endGeneration(triggerRoomId)
           // Check for pending work: same room first, then any other room
           const nextRoom = cm.consumePending(triggerRoomId)
@@ -586,7 +616,7 @@ export const createAIAgent = (
 
     agentHistory.incoming.push(message)
 
-    if (message.type === 'system' || message.type === 'join' || message.type === 'leave' || message.type === 'pass' || message.type === 'error') return
+    if (!triggersEvaluation(message)) return
 
     tryEvaluate(message.roomId)
   }
@@ -727,7 +757,7 @@ export const createAIAgent = (
     }),
     cancelGeneration: () => { activeAbortController?.abort(); activeAbortController = null; requestedTurns.clear(); cm.cancelAll() },
     requestTurn: (roomId: string, turn: RequestedTurn) => {
-      if (requestedTurns.has(roomId)) return { kind: 'refused', reason: 'pending', message: `${config.name} already has a requested turn waiting in this room` }
+      if (requestedTurns.has(roomId) || runningRequests.has(roomId)) return { kind: 'refused', reason: 'pending', message: `${config.name} is already working on a request in this room; ask again when its reply arrives` }
       if (getScriptContext?.(roomId, resolveName(agentId))) return { kind: 'refused', reason: 'script', message: 'A script directs this room; requested turns wait until it ends' }
       const queued = cm.isBusy()
       requestedTurns.set(roomId, turn)
@@ -886,9 +916,12 @@ export const createAIAgent = (
         }
         if (cm.isEpochCurrent(epoch)) {
           cm.endGeneration(roomId)
-          // Resume normal eval if anything is queued.
-          if (agentHistory.incoming.length > 0) {
-            tryEvaluate(agentHistory.incoming[0]!.roomId)
+          // Resume queued work: rooms that asked while the trigger ran (a
+          // requested turn has no incoming message), then held messages.
+          const next = cm.nextPending() ?? agentHistory.incoming[0]?.roomId
+          if (next !== undefined) {
+            cm.consumePending(next)
+            tryEvaluate(next)
           }
         }
       }
