@@ -248,7 +248,10 @@ describe('process plant runtime', () => {
   // Long deterministic trajectories test correctness, not a five-second CPU budget.
   // Keep every simulated step and assertion; allow shared-runner scheduling overhead.
   test('keeps the reference plant normal under reference I&C during a no-fault run', () => {
-    const system = compiledSystem()
+    // The deployed Plant: the template at its full-power operating point. The
+    // template alone heats its coolant to a mean 342 °C at 16.1 MPa, about
+    // 5 °C below saturation, which the subcooling alarm rightly reports.
+    const system = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant' }))
     const runtime = createProcessPlantRuntime({ system })
     const protection = createProcessPlantProtectionRunner({
       system,

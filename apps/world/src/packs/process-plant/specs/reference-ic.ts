@@ -9,6 +9,7 @@ import { pressurizerReferenceIcRules } from './reference-ic-pressurizer.ts'
 import { reactorReferenceIcRules } from './reference-ic-reactor.ts'
 import { reactorCoolantPumpReferenceIcRules } from './reference-ic-rcp.ts'
 import { steamGeneratorReferenceIcRules } from './reference-ic-steam-generator.ts'
+import { subcoolingReferenceIcRules } from './reference-ic-subcooling.ts'
 import { fourLoopReferenceLetters, type ProcessPlantReferenceLoop } from './reference-loop.ts'
 
 export const pressurizedWaterReactorReferenceIcFor = (
@@ -18,6 +19,7 @@ export const pressurizedWaterReactorReferenceIcFor = (
   rules: [
     ...reactorReferenceIcRules(loops),
     ...pressurizerReferenceIcRules(),
+    ...subcoolingReferenceIcRules(),
     ...loops.flatMap(loop => steamGeneratorReferenceIcRules(loop)),
     ...loops.flatMap(loop => reactorCoolantPumpReferenceIcRules(loop)),
     ...loops.flatMap(loop => accumulatorReferenceIcRules(loop)),

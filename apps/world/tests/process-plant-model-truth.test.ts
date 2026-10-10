@@ -14,6 +14,7 @@ import {
 import { resolveProcessPlantSignalBinding } from '../src/packs/process-plant/signals.ts'
 import { itemBinding, framingRules } from '../src/packs/process-plant/displays/mimic/bindings.ts'
 import { indexSample, itemLook } from '../src/packs/process-plant/displays/mimic/evaluate.ts'
+import { icThresholdsForSignal } from '../src/packs/process-plant/displays/ic-thresholds.ts'
 
 // The reference PWR reports what its equipment does, beside what it is told
 // to do: a feedback tag for each command tag, read from the solved state.
@@ -242,5 +243,32 @@ describe('alarms that apply only in power operation', () => {
     expect(plantRun.tag('TURB-STOP-POS')).toBeLessThan(0.05)
     expect(lifecycleOf(plantRun, 'alarm:generator-output-low:generator-output-low').active).toBe(false)
     expect(lifecycleOf(plantRun, 'alarm:turbine-load-low:load-low').active).toBe(false)
+  })
+})
+
+describe('RCS subcooling margin', () => {
+  test('alarms below the 30 °F minimum of the procedures and at saturation, and displays draw both limits', () => {
+    const margin = resolveProcessPlantSignalBinding(graph, { tagId: 'SUB-MARGIN' as never }).path
+    expect(icThresholdsForSignal(plant, margin).thresholds.map(threshold => [threshold.ruleId, threshold.operator, threshold.value, threshold.kind, threshold.severity])).toEqual([
+      ['rcs-subcooling-lost', '<=', 0, 'alarm', 'critical'],
+      ['rcs-subcooling-margin-low', '<', 16.7, 'alarm', 'warning'],
+    ])
+  })
+
+  test('fires as the margin drops through a stuck-open PORV', () => {
+    const plantRun = started()
+    plantRun.run(5_000)
+    expect(Number(plantRun.tag('SUB-MARGIN'))).toBeGreaterThan(19.5)
+    expect(plantRun.activeIds().filter(id => id.includes('subcooling'))).toEqual([])
+    plantRun.act('pressurizer-relief-open', { positionPercent: 35 })
+    const entered = new Map<string, number>()
+    for (let second = 0; second < 300 && entered.size < 2; second += 1) {
+      plantRun.run(1_000)
+      for (const id of plantRun.activeIds()) if (id.includes('subcooling') && !entered.has(id)) entered.set(id, Number(plantRun.tag('SUB-MARGIN')))
+    }
+    // Each came in after its delay, past its limit; the low margin alarm first.
+    expect([...entered.keys()]).toEqual(['alarm:rcs-subcooling-margin-low:subcooling-margin-low', 'alarm:rcs-subcooling-lost:subcooling-lost'])
+    expect(entered.get('alarm:rcs-subcooling-margin-low:subcooling-margin-low')!).toBeLessThan(16.7)
+    expect(entered.get('alarm:rcs-subcooling-lost:subcooling-lost')!).toBeLessThanOrEqual(0)
   })
 })
