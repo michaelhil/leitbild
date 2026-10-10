@@ -4,7 +4,7 @@ description: Composes a small live operator display (trends, loop comparisons, r
 allowed-tools: [workspace_explore, workspace_call]
 ---
 
-A display is a small live panel set that the Process Plant module validates, lays out and keeps current below your answer. You decide what the operator must see and why; the module takes units, scales, thresholds, symbols, colours and layout from the plant model. Composing is read-only and needs no confirmation.
+A display is a small live panel set that the Process Plant module validates, lays out and keeps current below your answer. You decide what the operator must see and why; the module takes units, scales, thresholds, symbols, colours and layout from the plant model.
 
 ## Decide
 
@@ -18,17 +18,17 @@ Start from the panel that answers the question, usually one trend of the signals
 
 - `trend`: how two to four signals change. Put them all in one trend: the module gives each measurement its own strip on one time axis (parallel equipment, such as one value per loop, shares one), at most four strips of four signals; signals the Run does not record show as current values. Horizon: `2m` for fast pressure or power transients, `10m` for most levels and temperatures, `30m` for slow drifts.
 - `comparison`: which of two to six parallel signals of one unit differs, such as the loops.
-- `readouts`: current values or on/off states with margin to alarm and trip thresholds.
-- `mimic`: which equipment runs, is open or energized and where flow or power goes, when the answer depends on that (a pump trip, a stuck valve, whether flow or power arrives). The module generates it from the model. Name items by id, tag, label or, for alike ones, the plural of their shared label: `from` and `to` draw every route between them, `to` alone what feeds an item, `from` alone where it goes, `around` both; `services` and `loops`, as `plants.list` names them, draw those systems or narrow a route, e.g. `{"kind":"mimic","to":["<item>"],"services":["<service>"]}`. For a one-loop fault draw it and one healthy peer. It draws actual states and disagreeing commands: add no readout of drawn equipment; never use it for one state, a trended value or a loop comparison.
+- `readouts`: current values or on/off states with margin to thresholds.
+- `mimic`: which equipment runs, is open or energized and where flow or power goes, when the answer depends on that (a pump trip, a stuck valve, whether flow or power arrives). Name items by id, tag, label or, for alike ones, the plural of their shared label: `from` and `to` draw every route between them, `to` alone what feeds an item, `from` alone where it goes, `around` both; `services` and `loops`, as `plants.list` names them, draw those systems or narrow a route, e.g. `{"kind":"mimic","to":["<item>"],"services":["<service>"]}`. Draw the least that answers: one item (`around`, `to` or `from`) or one service narrowed to the loops at issue (a faulted loop and a healthy peer); several services or all loops at once are too dense. It draws actual states and disagreeing commands: add no readout of drawn equipment; never use it for one state, a trended value or a loop comparison.
 - `alarms`: active alarms of the displayed signals and equipment (`related`) or of the whole unit (`plant`), only next to other panels.
 
 Size: next to a three- or four-measurement trend add only `alarms`; next to two, at most `alarms` and three readouts. A mimic leads its display: next to it add `alarms` and at most a one- or two-measurement trend.
 
-Never supply numbers, limits, setpoints, forecasts, colours or positions; there are no fields for them. Never draw equipment or state yourself (Mermaid, ASCII or any diagram): it would be neither live nor validated.
+Never supply numbers, limits, colours or positions; there are no fields for them. Never draw equipment or state yourself (Mermaid, ASCII or any diagram): it would be neither live nor validated.
 
 ## Compose
 
-1. Call `world.process-plant.display.compose` through `workspace_call` with the exact Run target and `plantId` you analysed; it is a read and can be batched with others. A typical input is one trend: `{"plantId":"<plantId>","title":"<what it shows>","question":"<the question it answers>","need":"<the decision it supports>","panels":[{"kind":"trend","horizon":"10m","signals":[{"ref":"<tagId>","role":"primary"},{"ref":"<tagId of a healthy peer>","role":"context"}]}]}`.
+1. Call `world.process-plant.display.compose` through `workspace_call` with the exact Run target and `plantId` you analysed; it is a read; batch it with others. A typical input is one trend: `{"plantId":"<plantId>","title":"<what it shows>","question":"<the question it answers>","need":"<the decision it supports>","panels":[{"kind":"trend","horizon":"10m","signals":[{"ref":"<tagId>","role":"primary"},{"ref":"<tagId of a healthy peer>","role":"context"}]}]}`.
 2. A rejection stores nothing and lists every issue with `Did you mean` names and fixes known to fit. Apply them all and call again. After two rejections, answer in text and say in one sentence that no display could be produced.
 
 ## Present
