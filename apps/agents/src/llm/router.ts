@@ -597,7 +597,11 @@ export const createProviderRouter = (
   // Every candidate is spent. A refusal is the cause only when nothing else
   // was in the way (e.g. direct OpenAI is the sole route for the model) and
   // then surfaces unchanged, as before. After a shed, limit or outage it is
-  // detail beside that failure, never the headline.
+  // detail beside that failure, never the headline. The failed route is not
+  // re-dispatched here even when it alone can carry the request: an upstream
+  // limit or outage has put it in its monitor's backoff, a shed is its
+  // gateway's own load decision, and the next call reaches it as soon as the
+  // monitor allows.
   const exhausted = (
     agentId: string | null,
     model: string,

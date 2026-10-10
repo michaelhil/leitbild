@@ -10,7 +10,8 @@
 //
 //   2. Walk-on-fallbackable — single source of truth for the agent-level
 //      fallbackable codes. On a transient/account-state error, advance to
-//      the next chain element.
+//      the next chain element. A fallback element that refuses the request
+//      shape is skipped and never becomes the reported failure.
 //
 //   3. One network-only retry per chain element on bare network errors
 //      (ECONNRESET / ETIMEDOUT / EPIPE / generic "fetch failed"). Classified
@@ -46,7 +47,7 @@ import type { ProviderRouter, RouterCallOptions } from './router.ts'
 import type { MonitorState } from './provider-monitor.ts'
 import { parsePrefixedModel } from './models/parse-prefix.ts'
 import { isAgentFallbackable as classifyIsAgentFallbackable } from '../agents/error-classify.ts'
-import { createLLMRequestError, isAbortError } from './errors.ts'
+import { createLLMRequestError, isAbortError, isRouteRefusal } from './errors.ts'
 
 // === Source tagging — every call site declares its identity ===
 
@@ -195,15 +196,27 @@ export const createLLMService = (deps: LLMServiceDeps): LLMService => {
   const resolveChain = (override: ReadonlyArray<string> | undefined): ReadonlyArray<string> =>
     override ?? getSystemChain() ?? []
 
-  // When the chain is spent, the last element's own error reaches the caller
+  // When the chain is spent, the last real failure reaches the caller
   // unchanged: it carries the classification, and a router failure's message
   // already names the cause, the remedy and the other tried routes
   // (router.ts allFailedMessage).
+  //
+  // A fallback element whose route refuses the request shape before dispatch
+  // (errors.ts isRouteRefusal) cannot carry this request, but says nothing
+  // about the failure that started the walk: the walk goes on and the refusal
+  // never replaces that failure (2026-10-10: OpenRouter's 402 was reported as
+  // openai:gpt-5.4-mini's tools refusal). The requested model's own refusal
+  // is the request's configuration problem and still ends the walk.
+  const isSkippedRefusal = (request: ChatRequest, model: string, err: unknown): boolean =>
+    model !== request.model && isRouteRefusal(err)
+
   const callChat = async (request: ChatRequest, opts: LLMServiceBindOptions): Promise<ChatResponse> => {
     const pinned = continuationRoute(request)
     const chain = dedupChain(request.model, resolveChain(pinned ? [] : opts.fallbackChain))
     const order = pinned ? [pinned] : buildAttemptOrder(request, chain)
     let lastError: unknown
+    // Always assigned: request.model is in order and never a skipped refusal.
+    let failure: unknown
 
     for (let idx = 0; idx < order.length; idx++) {
       const model = order[idx]!
@@ -240,9 +253,11 @@ export const createLLMService = (deps: LLMServiceDeps): LLMService => {
           break  // advance to next chain element (or finalize)
         }
       }
-      if (!classifyIsAgentFallbackable(lastError)) break
+      if (isSkippedRefusal(request, model, lastError)) continue
+      failure = lastError
+      if (!classifyIsAgentFallbackable(failure)) break
     }
-    throw lastError
+    throw failure
   }
 
   const callStream = async function* (
@@ -254,6 +269,8 @@ export const createLLMService = (deps: LLMServiceDeps): LLMService => {
     const chain = dedupChain(request.model, resolveChain(pinned ? [] : opts.fallbackChain))
     const order = pinned ? [pinned] : buildAttemptOrder(request, chain)
     let lastError: unknown
+    // Always assigned: request.model is in order and never a skipped refusal.
+    let failure: unknown
 
     for (let idx = 0; idx < order.length; idx++) {
       const model = order[idx]!
@@ -329,9 +346,11 @@ export const createLLMService = (deps: LLMServiceDeps): LLMService => {
           break
         }
       }
-      if (!classifyIsAgentFallbackable(lastError)) break
+      if (isSkippedRefusal(request, model, lastError)) continue
+      failure = lastError
+      if (!classifyIsAgentFallbackable(failure)) break
     }
-    throw lastError
+    throw failure
   }
 
   return {

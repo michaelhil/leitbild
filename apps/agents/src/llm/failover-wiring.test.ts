@@ -1,15 +1,20 @@
 // ============================================================================
-// End-to-end: the 2026-10-09 production failure with real wiring; only the
-// network is a local fixture. Real buildProvidersFromConfig (OpenRouter at its
-// catalog maxConcurrent), real gateways and semaphores, real OpenAI-compatible
-// wire, real router, real LLMService and a real AI agent with a tool.
+// End-to-end: production failures with real wiring; only the network is a
+// local fixture. Real buildProvidersFromConfig (OpenRouter at its catalog
+// maxConcurrent), real gateways and semaphores, real OpenAI-compatible wire,
+// real router, real LLMService and a real AI agent with a tool.
 //
-// Fourteen Assistant rooms asked gpt-5.4 at once. OpenRouter's one slot and
-// six queue places were taken, so its gateway shed the next request; the
-// router reached direct OpenAI, whose wire refuses gpt-5.4 tools at default
-// effort before any I/O. Rooms showed "[error: unknown]
+// 2026-10-09: fourteen Assistant rooms asked gpt-5.4 at once. OpenRouter's
+// one slot and six queue places were taken, so its gateway shed the next
+// request; the router reached direct OpenAI, whose wire refuses gpt-5.4 tools
+// at default effort before any I/O. Rooms showed "[error: unknown]
 // unsupported_provider_transport: ...". The room must get the shed as the
 // cause, with a remedy, and the refusal only as detail.
+//
+// 2026-10-10: OpenRouter answered with 402 in_flight_budget_exhausted. The
+// router rethrows it (bad_request); LLMService walked the default model chain
+// to openai:gpt-5.4-mini, whose wire refused the tool request, and the room
+// again showed that refusal. The room must get OpenRouter's 402.
 // ============================================================================
 
 import { expect, test } from 'bun:test'
@@ -20,28 +25,49 @@ import { createProviderKeys } from './provider-keys.ts'
 import { buildProvidersFromConfig } from './providers-setup.ts'
 import { mergeWithEnv } from './providers-store.ts'
 import { createLLMService } from './llm-service.ts'
+import { DEFAULT_MODEL_FALLBACK } from './models/catalog.ts'
 
-const startFixture = () => {
+// Only OpenRouter may be dispatched; every other route must refuse or shed
+// before any I/O.
+const startFixture = (openrouterChat: (released: Promise<void>) => Promise<Response>) => {
   let release: () => void = () => {}
   const released = new Promise<void>(resolve => { release = resolve })
-  const chatRequests: Record<string, number> = { openrouter: 0, openai: 0, anthropic: 0 }
+  const chatRequests: Record<string, number> = { openrouter: 0, openai: 0, anthropic: 0, kimi: 0 }
   const server = Bun.serve({ port: 0, fetch: async request => {
     const [, provider, ...rest] = new URL(request.url).pathname.split('/')
     const path = rest.join('/')
     if (path === 'models') {
       if (provider === 'openrouter') return Response.json({ data: [{ id: 'openai/gpt-5.4', context_length: 1_050_000 }] })
-      if (provider === 'openai') return Response.json({ data: [{ id: 'gpt-5.4' }] })
+      if (provider === 'openai') return Response.json({ data: [{ id: 'gpt-5.4' }, { id: 'gpt-5.4-mini' }] })
+      if (provider === 'kimi') return Response.json({ data: [{ id: 'moonshot-v1-8k', context_length: 8192 }] })
       return Response.json({ data: [] })
     }
     if (path === 'chat/completions' && provider !== undefined && provider in chatRequests) {
       chatRequests[provider]!++
       if (provider !== 'openrouter') return new Response('this route must not be dispatched', { status: 500 })
-      await released
-      return Response.json({ choices: [{ message: { role: 'assistant', content: 'earlier room answered' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1 } })
+      return openrouterChat(released)
     }
     return new Response('unexpected path', { status: 404 })
   } })
   return { url: `http://localhost:${server.port}`, chatRequests, release, stop: () => server.stop(true) }
+}
+
+const cloud = (name: 'openrouter' | 'openai' | 'kimi') => ({ apiKey: 'fixture-key', maxConcurrent: PROVIDER_PROFILES[name].defaultMaxConcurrent, source: 'stored' as const, enabled: true })
+
+const buildSetup = (fixtureUrl: string, names: ReadonlyArray<'openrouter' | 'openai' | 'kimi'>) => {
+  const providerKeys = createProviderKeys(mergeWithEnv({ version: 1, providers: {} }, { env: {} as Record<string, string | undefined> }))
+  for (const name of names) providerKeys.set(name, 'fixture-key')
+  return buildProvidersFromConfig({
+    order: ['openrouter', 'anthropic', 'openai', 'kimi'].filter(name => name === 'anthropic' || names.some(listed => listed === name)),
+    cloud: Object.fromEntries(names.map(name => [name, cloud(name)])),
+    ollamaUrl: '', ollamaMaxConcurrent: 2, baseUrls: {}, ollamaOnly: false,
+    forceFailProvider: null, droppedFromOrder: [], orderFromUser: false,
+  }, {
+    providerKeys,
+    baseUrlOverrides: Object.fromEntries(['openrouter', 'openai', 'anthropic', 'kimi'].map(name => [name, `${fixtureUrl}/${name}`])),
+    // No heartbeat traffic during the test.
+    isActive: () => false,
+  })
 }
 
 const tools: ReadonlyArray<ToolDefinition> = [{
@@ -50,22 +76,11 @@ const tools: ReadonlyArray<ToolDefinition> = [{
 }]
 
 test('a room whose request is shed by OpenRouter reports the shed and its remedy, not the direct-OpenAI refusal', async () => {
-  const fx = startFixture()
-  const providerKeys = createProviderKeys(mergeWithEnv({ version: 1, providers: {} }, { env: {} as Record<string, string | undefined> }))
-  providerKeys.set('openrouter', 'fixture-key')
-  providerKeys.set('openai', 'fixture-key')
-  const cloud = (name: 'openrouter' | 'openai') => ({ apiKey: 'fixture-key', maxConcurrent: PROVIDER_PROFILES[name].defaultMaxConcurrent, source: 'stored' as const, enabled: true })
-  const setup = buildProvidersFromConfig({
-    order: ['openrouter', 'anthropic', 'openai'],
-    cloud: { openrouter: cloud('openrouter'), openai: cloud('openai') },
-    ollamaUrl: '', ollamaMaxConcurrent: 2, baseUrls: {}, ollamaOnly: false,
-    forceFailProvider: null, droppedFromOrder: [], orderFromUser: false,
-  }, {
-    providerKeys,
-    baseUrlOverrides: { openrouter: `${fx.url}/openrouter`, openai: `${fx.url}/openai`, anthropic: `${fx.url}/anthropic` },
-    // No heartbeat traffic during the test.
-    isActive: () => false,
+  const fx = startFixture(async released => {
+    await released
+    return Response.json({ choices: [{ message: { role: 'assistant', content: 'earlier room answered' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1 } })
   })
+  const setup = buildSetup(fx.url, ['openrouter', 'openai'])
   const blockers: Promise<unknown>[] = []
   try {
     await Promise.all([setup.gateways.openrouter!.refreshModels(), setup.gateways.openai!.refreshModels()])
@@ -107,6 +122,52 @@ test('a room whose request is shed by OpenRouter reports the shed and its remedy
   } finally {
     fx.release()
     await Promise.allSettled(blockers)
+    setup.dispose()
+    fx.stop()
+  }
+})
+
+test('a room whose gpt-5.4 turn OpenRouter answers with 402 reports that 402, not the refusal of a fallback model', async () => {
+  const body = { error: {
+    message: 'This request would exceed your available credits given your current in-flight requests. Retry after in-flight requests settle, or add credits.',
+    code: 402, metadata: { reason: 'in_flight_budget_exhausted', limit_source: 'openrouter_in_flight_budget' },
+  } }
+  const fx = startFixture(async () => Response.json(body, { status: 402 }))
+  const setup = buildSetup(fx.url, ['openrouter', 'openai', 'kimi'])
+  try {
+    await Promise.all(['openrouter', 'openai', 'kimi'].map(name => setup.gateways[name]!.refreshModels()))
+    const decisions: Decision[] = []
+    const switches: string[] = []
+    // The production default chain: gpt-5.4-mini refuses tools at default
+    // effort and, like the production turn of 24k tokens after three tool
+    // rounds, the request exceeds moonshot-v1-8k's window.
+    const llm = createLLMService({ router: setup.router, getSystemChain: () => DEFAULT_MODEL_FALLBACK })
+      .bound({ source: 'agent', onChainSwitch: (_preferred, effective) => switches.push(effective) })
+    const agent = createAIAgent(
+      { name: 'Leitbild Assistant', model: 'gpt-5.4', persona: 'Operator assistant.' },
+      llm,
+      decision => { decisions.push(decision) },
+      { toolDefinitions: tools, toolExecutor: async calls => calls.map(() => ({ success: true, data: 'unused' })) },
+    )
+    const trend = '2026-10-10T09:22:00Z PZR level 54.2 %\n'.repeat(1_000)
+    agent.receive({ id: 'q1', senderId: 'operator', content: `Explain this pressurizer level trend:\n${trend}`, timestamp: Date.now(), type: 'chat', roomId: 'display-probe' })
+    await agent.whenIdle()
+
+    const response = decisions[0]?.response
+    if (response?.action !== 'error') throw new Error(`expected an error decision, got ${JSON.stringify(response)}`)
+    // OpenRouter's own classification and words. bad_request maps to
+    // model_unavailable at the agent layer.
+    expect(response.code).toBe('model_unavailable')
+    expect(response.providerHint).toBe('openrouter')
+    expect(response.message).toBe(`openrouter request error 402: ${JSON.stringify(body).slice(0, 300)}`)
+    expect(response.message).not.toContain('unsupported_provider_transport')
+    expect(switches).toEqual([...DEFAULT_MODEL_FALLBACK])
+    expect(fx.chatRequests).toEqual({ openrouter: 1, openai: 0, anthropic: 0, kimi: 0 })
+    // Neither refusal is a health problem of its provider.
+    expect(setup.router.getMonitorSnapshot().openai?.sub).toBe('ok')
+    expect(setup.router.getMonitorSnapshot().kimi?.sub).toBe('ok')
+  } finally {
+    fx.release()
     setup.dispose()
     fx.stop()
   }

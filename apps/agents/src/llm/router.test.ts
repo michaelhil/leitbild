@@ -5,6 +5,7 @@ import { createProviderRouter, parseProviderPrefix, type ProviderAllFailedEvent,
 import { createCloudProviderError, createGatewayError, isCloudProviderError, isLLMRequestError } from './errors.ts'
 import { createProviderMonitor, type ProviderMonitor } from './provider-monitor.ts'
 import { buildOAIBody } from './openai-compatible-wire.ts'
+import { classifyLLMError } from '../agents/error-classify.ts'
 
 // Helper: build a fake-monitor map for the given provider names so the
 // router enforces cooldown / unhealthy state. Tests that don't care about
@@ -404,6 +405,50 @@ describe('createProviderRouter — route refusals', () => {
       ['anthropic', 'not_listed'], ['openrouter', 'queue_full'], ['openai', 'unsupported_route'],
     ])
     // A local refusal says nothing about OpenAI's health.
+    expect(router.getMonitorSnapshot().openai?.sub).toBe('ok')
+    router.dispose()
+  })
+
+  // OpenRouter is the only route that can carry gpt-5.4 with tools. It fails
+  // once with a fallbackable error and then recovers. Inside the backoff that
+  // failure opened, the router does not re-dispatch it; once the backoff ends
+  // it serves again. Every failure in between names OpenRouter, not the
+  // direct-OpenAI refusal.
+  test.each(['chat', 'stream'] as const)('%s: the only carrying route is not retried inside its backoff and its failure, not the refusal, is reported', async mode => {
+    let t = 1_000_000
+    const now = () => t
+    const outage = () => createCloudProviderError({ code: 'provider_down', provider: 'openrouter', status: 503, message: 'openrouter server error 503: upstream overloaded' })
+    const openrouter = createFakeGateway({ availableModels: ['gpt-5.4'], responses: [outage()], streamResponses: [outage()] })
+    const openai = directOpenAI()
+    const monitors = monitorsFor(['openrouter', 'openai'], now)
+    const router = createProviderRouter({ openrouter, openai }, { order: ['openrouter', 'openai'], monitors }, { now })
+    const dispatched = () => mode === 'chat' ? openrouter.callCount() : openrouter.streamOptions().length
+    const refusalDetail = 'openai: skipped before dispatch — unsupported_provider_transport: direct OpenAI Chat Completions requires explicit none reasoning effort for this model with tools; choose none or a supported route such as OpenRouter.'
+
+    const failed = await rejection(() => invoke(router, mode, toolRequest('gpt-5.4')))
+    expect(isLLMRequestError(failed)).toBe(false)
+    expect(classifyLLMError(failed)).toEqual({ code: 'provider_down', providerHint: 'router', message: [
+      'gpt-5.4 could not be served.',
+      'openrouter: provider unavailable (HTTP 503): openrouter server error 503: upstream overloaded.',
+      "Provider is having trouble — try again, switch model, or check the provider's status page.",
+      refusalDetail,
+    ].join(' ') })
+    expect(dispatched()).toBe(1)
+
+    t += 1_000
+    const cooling = await rejection(() => invoke(router, mode, toolRequest('gpt-5.4')))
+    expect((cooling as Error).message).toBe([
+      'gpt-5.4 could not be served.',
+      'openrouter: provider unavailable (retry in 29s).',
+      'Wait for the cooldown to expire, or pick a model on a different provider.',
+      refusalDetail,
+    ].join(' '))
+    expect(dispatched()).toBe(1)
+
+    t += 30_000
+    expect(await invoke(router, mode, toolRequest('gpt-5.4'))).toBe(mode === 'chat' ? 'default' : 'x')
+    expect(dispatched()).toBe(2)
+    expect(openai.wireCalls()).toBe(0)
     expect(router.getMonitorSnapshot().openai?.sub).toBe('ok')
     router.dispose()
   })

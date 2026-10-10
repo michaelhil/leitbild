@@ -10,7 +10,9 @@ import { describe, expect, test } from 'bun:test'
 import type { ChatRequest, ChatResponse, StreamChunk } from '../core/types/llm.ts'
 import type { MonitorState } from './provider-monitor.ts'
 import type { ProviderRouter } from './router.ts'
-import { createCloudProviderError } from './errors.ts'
+import { createCloudProviderError, createLLMRequestError, isRouteRefusal } from './errors.ts'
+import { mapHttpError } from './openai-compatible-errors.ts'
+import { buildOAIBody } from './openai-compatible-wire.ts'
 import { createLLMService } from './llm-service.ts'
 import { classifyLLMError } from '../agents/error-classify.ts'
 
@@ -254,4 +256,67 @@ describe('LLMService — empty chain', () => {
     expect(calls).toEqual(['gpt-5.4'])
     expect(switches).toEqual([])
   })
+})
+
+// Production 2026-10-10: OpenRouter answered a gpt-5.4 tool turn with 402
+// in_flight_budget_exhausted, which the wire classifies bad_request: the
+// router rethrows it and the agent layer walks the system chain. Its
+// openai:gpt-5.4-mini refused the tool request before dispatch, the walk
+// stopped there, and the room showed that refusal instead of the 402.
+describe('LLMService — fallback route refusals', () => {
+  const tools = [{ type: 'function' as const, function: { name: 'signals_search', description: 'Find plant signals', parameters: { type: 'object', properties: {} } } }]
+  const inFlight = mapHttpError('openrouter', 402, JSON.stringify({ error: {
+    message: 'This request would exceed your available credits given your current in-flight requests. Retry after in-flight requests settle, or add credits.',
+    code: 402, metadata: { reason: 'in_flight_budget_exhausted', limit_source: 'openrouter_in_flight_budget' },
+  } }), null)
+  // The pinned route refuses exactly as the real router returns a sole
+  // route's refusal: the wire's or the capacity check's own error.
+  const routed = (served: ReadonlySet<string>) => (req: ChatRequest): ChatResponse => {
+    if (req.model === 'gpt-5.4') throw inFlight
+    if (req.model.startsWith('openai:')) buildOAIBody(req, false, 'openai')
+    if (req.model === 'kimi:moonshot-v1-8k' && !served.has(req.model)) throw createLLMRequestError('context_capacity', 'Request estimate 24800 tokens exceeds kimi:moonshot-v1-8k capacity 8192.')
+    return { content: `from:${req.model}`, generationMs: 1, tokensUsed: { prompt: 1, completion: 1 } }
+  }
+  const run = async (streaming: boolean, request: ChatRequest, served: ReadonlySet<string> = new Set()) => {
+    const calls: string[] = []
+    const switches: string[] = []
+    const answer = routed(served)
+    const router = fakeRouter({
+      chat: async req => { calls.push(req.model); return answer(req) },
+      stream: async function*(req) { calls.push(req.model); yield { delta: answer(req).content, done: false }; yield { delta: '', done: true } },
+    })
+    const provider = createLLMService({ router, getSystemChain: () => ['openai:gpt-5.4-mini', 'kimi:moonshot-v1-8k'] })
+      .bound({ source: 'agent', onChainSwitch: (_preferred, effective) => switches.push(effective) })
+    const outcome = await (streaming
+      ? Array.fromAsync(provider.stream!(request)).then(chunks => chunks.map(chunk => chunk.delta).join(''))
+      : provider.chat(request).then(response => response.content)
+    ).then(content => ({ content }), (error: unknown) => ({ error }))
+    return { ...outcome, calls, switches }
+  }
+
+  for (const streaming of [false, true]) {
+    const mode = streaming ? 'stream' : 'chat'
+    test(`${mode}: when every fallback refuses, the failure that started the walk is reported`, async () => {
+      const result = await run(streaming, { model: 'gpt-5.4', messages: [{ role: 'user', content: 'Show the trend.' }], tools })
+      expect('error' in result && result.error).toBe(inFlight)
+      expect(classifyLLMError(inFlight)).toEqual({ code: 'model_unavailable', providerHint: 'openrouter', message: inFlight.message })
+      expect(inFlight.message).toStartWith('openrouter request error 402: {"error":{"message":"This request would exceed your available credits given your current in-flight requests.')
+      expect(result.calls).toEqual(['gpt-5.4', 'openai:gpt-5.4-mini', 'kimi:moonshot-v1-8k'])
+      expect(result.switches).toEqual(['openai:gpt-5.4-mini', 'kimi:moonshot-v1-8k'])
+    })
+
+    test(`${mode}: a refusing fallback is skipped and the next fallback serves`, async () => {
+      const result = await run(streaming, { model: 'gpt-5.4', messages: [{ role: 'user', content: 'Show the trend.' }], tools }, new Set(['kimi:moonshot-v1-8k']))
+      expect('content' in result && result.content).toBe('from:kimi:moonshot-v1-8k')
+      expect(result.calls).toEqual(['gpt-5.4', 'openai:gpt-5.4-mini', 'kimi:moonshot-v1-8k'])
+    })
+
+    test(`${mode}: the requested model's own refusal still ends the walk unchanged`, async () => {
+      const result = await run(streaming, { model: 'openai:gpt-5.4', messages: [{ role: 'user', content: 'Show the trend.' }], tools }, new Set(['kimi:moonshot-v1-8k']))
+      const error = 'error' in result ? result.error : undefined
+      expect(isRouteRefusal(error) && error.code).toBe('unsupported_provider_transport')
+      expect(result.calls).toEqual(['openai:gpt-5.4'])
+      expect(result.switches).toEqual([])
+    })
+  }
 })
