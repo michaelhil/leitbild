@@ -1000,6 +1000,7 @@ export const composedDisplaySignals = (display: CompiledComposedDisplay): Readon
 const mimicShows = (mimic: CompiledMimic): ReadonlyArray<string> => [
   `Live equipment mimic generated from the Plant model (${mimic.summary.carriers.join(', ')}): ${mimic.summary.equipment.map(item => `${item.label} (${item.id})`).join(', ')}. Pumps are drawn running or stopped from their actual speed, valves from their actual position, levels as vessel fills; pipes show flow, no flow (hollow) or unknown (dashed), with a direction arrow only where the model computes the direction; a command that disagrees with the equipment is stated as "CMD …"; equipment with an active alarm is framed with what the alarm watches ("P LO-LO")`,
   ...(mimic.summary.stops.length === 0 ? [] : [`The drawing stops at: ${mimic.summary.stops.join('; ')}`]),
+  ...mimic.summary.entries.map(entry => `The pipe drawn into ${entry.item} enters it at ${entry.port}; the drawing does not name that port, so say it`),
 ]
 
 // A sparkline has no value axis: it shows which way a value went and how fast, never a value to quote.
