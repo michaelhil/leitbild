@@ -115,13 +115,19 @@ export interface ComponentSemantics {
   readonly portFlows: ReadonlyArray<{ readonly port: string; readonly variable: string }>
   /** The values an operator reads first on this equipment (a pressurizer's pressure and level), most important first. */
   readonly keyValues: ReadonlyArray<string>
+  /**
+   * Readings that measure something only while a solved flag of the same
+   * equipment reads true: a source-range detector counts only while its high
+   * voltage is on, and reads a zero that measures nothing while it is off.
+   */
+  readonly meaningfulWhile: ReadonlyArray<{ readonly flag: string; readonly variables: ReadonlyArray<string> }>
   /** What the equipment does with energy, by port circuit. */
   readonly energy: ReadonlyArray<EnergyRole>
 }
 
 /** Declares semantics that do not depend on a component's parameters. */
 export const fixedSemantics = (semantics: Partial<ComponentSemantics>): ((parameters: unknown) => ComponentSemantics) => {
-  const resolved: ComponentSemantics = { aspects: [], embedded: [], ratedOutflow: [], portFlows: [], keyValues: [], energy: [], ...semantics }
+  const resolved: ComponentSemantics = { aspects: [], embedded: [], ratedOutflow: [], portFlows: [], keyValues: [], meaningfulWhile: [], energy: [], ...semantics }
   return () => resolved
 }
 
@@ -158,6 +164,7 @@ export interface CompiledComponentSemantics {
   readonly ratedOutflow: ReadonlyArray<{ readonly port: PortName; readonly flowKgPerS: number }>
   readonly portFlows: ReadonlyArray<{ readonly port: PortName; readonly path: VariablePath }>
   readonly keyValues: ReadonlyArray<VariablePath>
+  readonly meaningfulWhile: ReadonlyArray<{ readonly flag: VariablePath; readonly variables: ReadonlyArray<VariablePath> }>
   readonly energy: ReadonlyArray<CompiledEnergyRole>
 }
 

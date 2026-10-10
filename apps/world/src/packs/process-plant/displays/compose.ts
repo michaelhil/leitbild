@@ -13,6 +13,7 @@ import type {
 } from '../graph/index.ts'
 import { linkCarrier, processSignalTagIdSchema, variablePathSchema } from '../graph/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
+import { processPlantOperatingMode } from '../runtime/index.ts'
 import { findProcessPlantSignalBinding } from '../signals.ts'
 import {
   COMPOSED_DISPLAY_MAX_HEIGHT_PX,
@@ -44,7 +45,7 @@ import { compileMimic, compileMimicScope, groupLabel, type MimicCompileResult } 
 import { MIMIC_MAX_WIDTH } from './mimic/mimic-model.ts'
 import { chatMimicProfile, detailMimicProfile, overviewMimicProfile } from './mimic/profiles.ts'
 import { principalCircuits } from './mimic/principal.ts'
-import { equipmentKeyValues, overviewKeyValues } from './overview-key-values.ts'
+import { equipmentKeyValues, leadValuesKey, overviewKeyValues, type PlantNow } from './overview-key-values.ts'
 import { annunciatorSystems, type AnnunciatorSystem } from './annunciators.ts'
 import { MIMIC_REACH_LINKS, componentDescription, itemServices, plantCarriers, plantLoops, portName, resolveEquipmentName, resolveMimicScope, serviceResembles, withOtherServicesStopped } from './mimic/scope.ts'
 import type { CompiledMimic } from './mimic/mimic-model.ts'
@@ -217,6 +218,22 @@ const suggestionsFor = (ref: string, graph: CompiledPlantGraph): ReadonlyArray<s
     .slice(0, SUGGESTION_COUNT)
     .map(({ binding }) => `${binding.tagId ?? binding.path} (${binding.label}, ${binding.unit})`)
 }
+
+/** The Plant's declared operating mode and live values now: what a detail's lead values are chosen by. */
+const plantNow = (system: ProcessPlantRuntimeInstance): PlantNow => {
+  const modes = system.plant.automation.operatingModes
+  return {
+    mode: modes.length === 0 ? null : processPlantOperatingMode({ system: system.plant, runtime: system.runtime, modes })?.id ?? null,
+    read: path => system.runtime.readVariableSnapshot(path).value,
+  }
+}
+
+/**
+ * What equipment opened now leads with besides itself (the Plant's mode, and
+ * which readings measure nothing): a detail compiled under the same key shows
+ * the same values, so a cached detail is reused only while it still holds.
+ */
+export const detailLeadKey = (system: ProcessPlantRuntimeInstance): string => leadValuesKey(system.plant, plantNow(system))
 
 const resolveRef = (system: ProcessPlantRuntimeInstance, ref: string): ProcessSignalBinding | undefined => {
   const tag = processSignalTagIdSchema.safeParse(ref)
@@ -593,7 +610,7 @@ const subjectIssues = (
       return [{ path, message: `${named} is connected to no other equipment in the Plant model, so no display can show it; name the equipment it is part of or acts on instead` }]
     }
     // Its lead values as a detail of it shows them: what its I&C judges, its key values and instruments.
-    const leads = equipmentKeyValues(system.plant, equipment.components).map(value => graph.signalBindingByPath.get(value)?.tagId ?? String(value)).slice(0, SUGGESTION_COUNT)
+    const leads = equipmentKeyValues(system.plant, equipment.components, plantNow(system)).map(value => graph.signalBindingByPath.get(value)?.tagId ?? String(value)).slice(0, SUGGESTION_COUNT)
     return [{ path, message: `${named} is what the question is about but no panel shows it: draw it in a mimic or show one of its signals${leads.length === 0 ? '' : ` (such as ${leads.join(', ')})`}` }]
   })
 }
@@ -972,6 +989,10 @@ export const compileOverviewDisplay = (system: ProcessPlantRuntimeInstance, reco
  * follows down to the next link;
  * its lead values (equipmentKeyValues); and the alarms related to what is
  * drawn. Where the drawing stops, its stubs say what lies beyond.
+ * The lead values are chosen for the Plant's operating mode when the detail
+ * is opened (what rules acting in that mode judge first, readings that
+ * measure nothing then last); they stay as chosen while the detail is open,
+ * and opening it again in another mode chooses again (detailLeadKey).
  */
 export const compileDetailDisplay = (
   system: ProcessPlantRuntimeInstance,
@@ -984,7 +1005,7 @@ export const compileDetailDisplay = (
   if (unknown.length > 0) return { ok: false, issues: [{ path: 'detail', message: `${system.plant.id} has no ${unknown.length === 1 ? 'component' : 'components'} ${unknown.join(', ')}` }] }
   const components = componentIds.map(id => graph.componentIndexById.get(id as never)!)
   const issues: ComposedDisplayIssue[] = []
-  const readouts = leadValues(system, equipmentKeyValues(system.plant, components), recordedSeriesIds, issues)
+  const readouts = leadValues(system, equipmentKeyValues(system.plant, components, plantNow(system)), recordedSeriesIds, issues)
   if (issues.length > 0) return { ok: false, issues }
   const loops = [...new Set(components.map(index => graph.components[index]!.metadata?.loopId))]
   const narrowed = loops.every((loop): loop is string => loop !== undefined) ? { loops } : {}

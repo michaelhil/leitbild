@@ -198,12 +198,6 @@ export const icAlarmRuleIdsForPaths = (
     .map(rule => rule.id)
 }
 
-/** Every signal an alarm or trip rule judges: trips first, each kind in rule order. */
-export const icWatchedPaths = (plant: CompiledProcessPlant): ReadonlyArray<VariablePath> => [...new Set((['trip', 'alarm'] as const)
-  .flatMap(kind => plant.automation.rules
-    .filter(rule => rule.enabled && kindFor(rule) === kind)
-    .flatMap(rule => conditionBindings(plant, rule.condition).map(binding => binding.path))))]
-
 /** Every signal a trip rule judges, in rule order: what the Plant's protection treats as decisive. */
 export const icTripWatchedPaths = (plant: CompiledProcessPlant): ReadonlyArray<VariablePath> => [...new Set(plant.automation.rules
   .filter(rule => rule.enabled && kindFor(rule) === 'trip')

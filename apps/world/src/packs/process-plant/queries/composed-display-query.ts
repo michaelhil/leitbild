@@ -19,6 +19,7 @@ import {
 import {
   compileComposedDisplay,
   compileDetailDisplay,
+  detailLeadKey,
   compileOverviewDisplay,
   type CompiledComposedDisplay,
   type OverviewView,
@@ -215,7 +216,8 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
     if ('detail' in state) {
       if (payload.size === undefined) return rejectCapabilityInput('Equipment opened from an overview is drawn for the view it is shown in: send its size')
       const components = state.detail.components
-      const display = generatedOrRejected(system, `detail:${components.join(',')}`, payload.size, () => compileDetailDisplay(system, recordedSeriesIds, components, payload.size!), null)
+      // A detail's lead values follow the Plant's mode at opening: one opened in another mode is compiled again.
+      const display = generatedOrRejected(system, `detail:${components.join(',')}|${detailLeadKey(system)}`, payload.size, () => compileDetailDisplay(system, recordedSeriesIds, components, payload.size!), null)
       return { kind: 'detail', plantId: display.plantId, plantLabel: plantLabelOf(display.plantId), simulationTime, display }
     }
     const display = compiledOrRejected(system, state.composition, 'view', recordedSeriesIds)
