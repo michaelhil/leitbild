@@ -12,7 +12,7 @@ Show at most one display per answer, and only when change over time, margin to a
 
 ## Plan
 
-Fill `question` (what the operator should answer at a glance) and `need` (the decision or watch it supports), and give each signal a `role`: `primary` for what the question is about, `context` for comparison (such as the healthy loop), `counter-evidence` for a signal that would look different if your diagnosis were wrong; include one whenever you state a diagnosis. Name in `subjects` the 1-4 items or signals the question is about (equipment by id or label, signals by tag); a display that shows one nowhere is refused.
+Fill `question` (what the operator should answer at a glance) and `need` (the decision or watch it supports), and give each signal a `role`: `primary` for what the question is about, `context` for comparison (such as the healthy loop), `counter-evidence` for a signal that would look different if your diagnosis were wrong; include one whenever you state a diagnosis. Name in `subjects` the 1-4 items, signals, services or loops the question is about (never the unit itself); a display that shows one nowhere is refused.
 
 Start from the panel that answers the question, usually one trend of the signals it is about, using exact tagIds or paths from your evidence. Add a panel only for a part of the question it cannot answer; never repeat a trended signal as a readout. Most answers need one or two panels (at most three):
 
