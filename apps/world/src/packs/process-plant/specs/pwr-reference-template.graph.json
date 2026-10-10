@@ -280,7 +280,7 @@
         "heatTransferCoefficientMwPerK": 18.75,
         "initialPrimaryInletTemperatureC": 322,
         "initialSecondaryTemperatureC": 285,
-        "nominalSecondaryInventoryKg": 56000,
+        "nominalSecondaryInventoryKg": 100000,
         "nominalSteamFlowKgPerS": 335,
         "initialSteamFlowFraction": 0.85,
         "recirculationRatio": 4.2,
@@ -296,8 +296,12 @@
         "nominalSteamMassKg": 15500,
         "voidFractionAtNominalBoiling": 0.16,
         "voidFractionTimeConstantS": 6,
-        "swellLevelGainPercent": 26,
-        "pressureInventoryGainMPaPerFraction": 0.6
+        "swellLevelGainPercent": 105,
+        "pressureInventoryGainMPaPerFraction": 0.6,
+        "narrowRangeLowerFraction": 0.32,
+        "narrowRangeUpperFraction": 0.92,
+        "tubeBundleBottomLevelPercent": 0.02,
+        "tubeBundleTopLevelPercent": 0.12
       },
       "variables": [
         {
@@ -348,7 +352,7 @@
         "heatTransferCoefficientMwPerK": 18.75,
         "initialPrimaryInletTemperatureC": 322,
         "initialSecondaryTemperatureC": 285,
-        "nominalSecondaryInventoryKg": 56000,
+        "nominalSecondaryInventoryKg": 100000,
         "nominalSteamFlowKgPerS": 335,
         "initialSteamFlowFraction": 0.85,
         "recirculationRatio": 4.2,
@@ -364,8 +368,12 @@
         "nominalSteamMassKg": 15500,
         "voidFractionAtNominalBoiling": 0.16,
         "voidFractionTimeConstantS": 6,
-        "swellLevelGainPercent": 26,
-        "pressureInventoryGainMPaPerFraction": 0.6
+        "swellLevelGainPercent": 105,
+        "pressureInventoryGainMPaPerFraction": 0.6,
+        "narrowRangeLowerFraction": 0.32,
+        "narrowRangeUpperFraction": 0.92,
+        "tubeBundleBottomLevelPercent": 0.02,
+        "tubeBundleTopLevelPercent": 0.12
       },
       "variables": [
         {
@@ -416,7 +424,7 @@
         "heatTransferCoefficientMwPerK": 18.75,
         "initialPrimaryInletTemperatureC": 322,
         "initialSecondaryTemperatureC": 285,
-        "nominalSecondaryInventoryKg": 56000,
+        "nominalSecondaryInventoryKg": 100000,
         "nominalSteamFlowKgPerS": 335,
         "initialSteamFlowFraction": 0.85,
         "recirculationRatio": 4.2,
@@ -432,8 +440,12 @@
         "nominalSteamMassKg": 15500,
         "voidFractionAtNominalBoiling": 0.16,
         "voidFractionTimeConstantS": 6,
-        "swellLevelGainPercent": 26,
-        "pressureInventoryGainMPaPerFraction": 0.6
+        "swellLevelGainPercent": 105,
+        "pressureInventoryGainMPaPerFraction": 0.6,
+        "narrowRangeLowerFraction": 0.32,
+        "narrowRangeUpperFraction": 0.92,
+        "tubeBundleBottomLevelPercent": 0.02,
+        "tubeBundleTopLevelPercent": 0.12
       },
       "variables": [
         {
@@ -484,7 +496,7 @@
         "heatTransferCoefficientMwPerK": 18.75,
         "initialPrimaryInletTemperatureC": 322,
         "initialSecondaryTemperatureC": 285,
-        "nominalSecondaryInventoryKg": 56000,
+        "nominalSecondaryInventoryKg": 100000,
         "nominalSteamFlowKgPerS": 335,
         "initialSteamFlowFraction": 0.85,
         "recirculationRatio": 4.2,
@@ -500,8 +512,12 @@
         "nominalSteamMassKg": 15500,
         "voidFractionAtNominalBoiling": 0.16,
         "voidFractionTimeConstantS": 6,
-        "swellLevelGainPercent": 26,
-        "pressureInventoryGainMPaPerFraction": 0.6
+        "swellLevelGainPercent": 105,
+        "pressureInventoryGainMPaPerFraction": 0.6,
+        "narrowRangeLowerFraction": 0.32,
+        "narrowRangeUpperFraction": 0.92,
+        "tubeBundleBottomLevelPercent": 0.02,
+        "tubeBundleTopLevelPercent": 0.12
       },
       "variables": [
         {
@@ -552,7 +568,7 @@
         "heatTransferCoefficientMwPerK": 18.75,
         "initialPrimaryInletTemperatureC": 322,
         "initialSecondaryTemperatureC": 285,
-        "nominalSecondaryInventoryKg": 56000,
+        "nominalSecondaryInventoryKg": 100000,
         "nominalSteamFlowKgPerS": 335,
         "initialSteamFlowFraction": 0.85,
         "recirculationRatio": 4.2,
@@ -568,8 +584,12 @@
         "nominalSteamMassKg": 15500,
         "voidFractionAtNominalBoiling": 0.16,
         "voidFractionTimeConstantS": 6,
-        "swellLevelGainPercent": 26,
-        "pressureInventoryGainMPaPerFraction": 0.6
+        "swellLevelGainPercent": 105,
+        "pressureInventoryGainMPaPerFraction": 0.6,
+        "narrowRangeLowerFraction": 0.32,
+        "narrowRangeUpperFraction": 0.92,
+        "tubeBundleBottomLevelPercent": 0.02,
+        "tubeBundleTopLevelPercent": 0.12
       },
       "variables": [
         {
@@ -620,7 +640,7 @@
         "heatTransferCoefficientMwPerK": 18.75,
         "initialPrimaryInletTemperatureC": 322,
         "initialSecondaryTemperatureC": 285,
-        "nominalSecondaryInventoryKg": 56000,
+        "nominalSecondaryInventoryKg": 100000,
         "nominalSteamFlowKgPerS": 335,
         "initialSteamFlowFraction": 0.85,
         "recirculationRatio": 4.2,
@@ -636,8 +656,12 @@
         "nominalSteamMassKg": 15500,
         "voidFractionAtNominalBoiling": 0.16,
         "voidFractionTimeConstantS": 6,
-        "swellLevelGainPercent": 26,
-        "pressureInventoryGainMPaPerFraction": 0.6
+        "swellLevelGainPercent": 105,
+        "pressureInventoryGainMPaPerFraction": 0.6,
+        "narrowRangeLowerFraction": 0.32,
+        "narrowRangeUpperFraction": 0.92,
+        "tubeBundleBottomLevelPercent": 0.02,
+        "tubeBundleTopLevelPercent": 0.12
       },
       "variables": [
         {
