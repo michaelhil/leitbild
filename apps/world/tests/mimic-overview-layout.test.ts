@@ -202,20 +202,21 @@ describe('the unit overview of the principal circuits', () => {
     expect(valves.length).toBeGreaterThanOrEqual(10)
     for (const valve of valves) {
       expect(valve.marker).toBe(true)
-      // A commanded valve: CMD over the command where it disagrees; no tag.
-      expect(valve.rows.map(row => row.kind === 'marker' ? row.part : row.kind)).toEqual(['word', 'value'])
-      expect(valve.text?.height).toBe(2 * openBridgeDevice.row)
+      // A commanded valve: what it does, then CMD over the command where it disagrees; no tag.
+      expect(valve.rows.map(row => row.kind === 'marker' ? row.part : row.kind)).toEqual(['word', 'command', 'value'])
+      expect(valve.text?.height).toBe(3 * openBridgeDevice.row)
     }
     const fcv = valves.find(item => item.binding.label === 'FCV A')!
     const state = fcv.binding.state!
     const at = (position: number, command: number) => indexSample([{ path: state.state!.path, value: position, quality: 'good' }, { path: state.command!, value: command, quality: 'good' }])
     const texts = (index: ReturnType<typeof indexSample>) => fcv.rows.map(row => rowText(row, drawnLook(fcv.binding, fcv.rows, index), index, String))
-    expect(texts(at(1, 1))).toEqual(['', ''])
-    expect(texts(at(0, 0))).toEqual(['', ''])
-    expect(texts(at(0.4, 0.4))).toEqual(['', '40 %'])
-    expect(texts(at(1, 0))).toEqual(['CMD', 'SHUT'])
-    expect(texts(at(0.2, 1))).toEqual(['CMD', '100 %'])
-    expect(texts(indexSample([]))).toEqual(['POS ?', ''])
+    expect(texts(at(1, 1))).toEqual(['', '', ''])
+    expect(texts(at(0, 0))).toEqual(['', '', ''])
+    expect(texts(at(0.4, 0.4))).toEqual(['40 %', '', ''])
+    // A command it does not follow never takes the place of what it does: a runback reads 35 %, then CMD 100 %.
+    expect(texts(at(1, 0))).toEqual(['OPEN', 'CMD', 'SHUT'])
+    expect(texts(at(0.35, 1))).toEqual(['35 %', 'CMD', '100 %'])
+    expect(texts(indexSample([]))).toEqual(['POS ?', '', ''])
   })
 
   test('stubs name alike far ends once with a count, and a lone far end in full', () => {
