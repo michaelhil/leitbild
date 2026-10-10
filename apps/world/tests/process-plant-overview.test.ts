@@ -144,6 +144,29 @@ describe('the unit overview World generates for a Plant', () => {
     expect(alarms.systems?.map(system => system.label)).toEqual(['RPS', 'RCS', 'SG', 'SI', 'CTMT', 'Electrical', 'Feedwater', 'BOP', 'Main steam'])
   })
 
+  test('every loop count the reference PWR is built with draws its overview, two loops in Full HD beside the column', () => {
+    const mimicOf = (display: CompiledComposedDisplay) => {
+      const panel = display.panels.find(candidate => candidate.kind === 'mimic')!
+      if (panel.kind !== 'mimic') throw new Error('expected the mimic')
+      return panel.mimic
+    }
+    for (const loops of [2, 3, 4, 5, 6]) {
+      const result = compileOverviewDisplay(plant(loops), new Set(), fullHd)
+      if (!result.ok) throw new Error(`${loops} loops: ${result.issues.map(issue => issue.message).join('; ')}`)
+      const { count, forced } = mimicOf(result.display).crossings
+      expect(count).toBeLessThanOrEqual(forced + 2)
+    }
+    const twoLoops = compileOverviewDisplay(plant(2), new Set(), fullHd)
+    if (!twoLoops.ok) throw new Error(twoLoops.issues.map(issue => issue.message).join('; '))
+    const column = overviewDrawingRoom(fullHd, 'column', { readouts: 6, annunciators: 9, tileWidth: 134 })!
+    const mimic = mimicOf(twoLoops.display)
+    expect(twoLoops.display.height).toBeLessThanOrEqual(fullHd.height)
+    expect(mimic.width).toBeLessThanOrEqual(column.maxWidth)
+    expect(mimic.height).toBeLessThanOrEqual(column.maxHeight)
+    // Two loops on two headers closed by the feed train force one crossing.
+    expect(mimic.crossings.forced).toBe(1)
+  })
+
   test('an overview state for another Plant is refused', () => {
     expect(() => ask('world.process-plant.display.view', { plantId: system.plant.id, state: JSON.stringify({ overview: { plantId: 'plant:other' } }) }))
       .toThrow(`Display state targets plant:other, not ${system.plant.id}`)

@@ -23,6 +23,11 @@
 // either Q crosses the ladder too (one more), or Q divides the outer region
 // so that X's part touches only one end lane:
 // min(Σ c − max(c_first, c_last), Σ c − c_first − c_last + 1).
+// Two lanes already make a ladder: one cycle, whose outer region touches both
+// lanes, so X reaches both without crossing it. Q changes that: no shared
+// symbol lies between two lanes, so Q either crosses the cycle or runs outside
+// it with X and divides that region; the count above gives
+// min(c_first, c_last, 1). Z(p, n) is zero below three lanes.
 //
 // The bound is the largest of these. It is a lower bound, not the optimum.
 
@@ -67,7 +72,8 @@ export const zarankiewicz = (m: number, n: number): number =>
 
 export const forcedCrossings = (model: Model): number => {
   const lanes = model.lanes.length
-  if (lanes < 3) return 0
+  // A ladder needs two rungs.
+  if (lanes < 2) return 0
   const nodes = model.nodes
   // Undirected multigraph without stubs: crossings do not care which way flow runs.
   const links = new Map<number, Map<number, number>>()
@@ -155,6 +161,6 @@ export const forcedCrossings = (model: Model): number => {
     if (chosen.length === 6) return
     for (let next = from; next < reaching.length; next++) subsets(next + 1, [...chosen, reaching[next]!])
   }
-  subsets(0, [])
+  if (lanes >= 3) subsets(0, [])
   return Math.max(ladder, complete)
 }

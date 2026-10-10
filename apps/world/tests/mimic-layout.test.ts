@@ -624,7 +624,8 @@ describe('crossings the structure forces', () => {
   })
 
   test('a hub reaching every lane across a ladder of two headers is forced across it 2n − 4 times; a train closing the ladder adds one', () => {
-    for (const lanes of [3, 4, 6]) {
+    // Two lanes are a ladder of one cycle: the hub reaches both from outside it, unless the train closes it there too.
+    for (const lanes of [2, 3, 4, 6]) {
       const open = layoutDiagram(ladder(lanes, false), roomy)
       const closed = layoutDiagram(ladder(lanes, true), roomy)
       if (!open.ok || !closed.ok) throw new Error('refused')
@@ -634,7 +635,7 @@ describe('crossings the structure forces', () => {
   })
 
   test('the closed ladder draws within two crossings of the bound, verified, deterministic and id-free', () => {
-    for (const lanes of [4, 6]) {
+    for (const lanes of [2, 4, 6]) {
       const graph = ladder(lanes, true)
       const result = accepted(graph, roomy)
       expect(result.crossings).toBeLessThanOrEqual(result.forcedCrossings + 2)

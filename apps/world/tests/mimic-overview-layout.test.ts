@@ -24,18 +24,18 @@ import { openBridgeDevice } from '../src/packs/process-plant/displays/mimic/text
 // structure's bound plus two, deterministic, id-free) and by the overview's
 // own rules (markers, grouped parallel equipment, text never below 12/14 px).
 
-const plants = new Map([4, 6].map(loops => [loops, compileProcessPlant(createPwrReferencePlantDefinition({ id: `plant:overview-${loops}`, loopCount: loops }))]))
+const plants = new Map([2, 4, 6].map(loops => [loops, compileProcessPlant(createPwrReferencePlantDefinition({ id: `plant:overview-${loops}`, loopCount: loops }))]))
 const plantOf = (loops: number): CompiledProcessPlant => plants.get(loops)!
 
 /**
- * The room each Plant's overview is drawn in here: for four loops what a Full
- * HD window leaves the drawing beside the column of lead values and alarms
- * (compose.ts); for six what the engine reaches today at full text (see the
- * fit ladder test for less).
+ * The room each Plant's overview is drawn in here: for two and four loops what
+ * a Full HD window leaves the drawing beside the column of lead values and
+ * alarms (compose.ts); for six what the engine reaches today at full text
+ * (see the fit ladder test for less).
  */
 // The process display window as measured on production in a Full HD browser.
 const fullHdColumn = overviewDrawingRoom({ width: 1896, height: 972 }, 'column', { readouts: overviewKeyValues(plantOf(4)).length, annunciators: 9, tileWidth: 134 })!
-const ROOM: Readonly<Record<number, Omit<MimicBudget, 'profile'>>> = { 4: fullHdColumn, 6: { maxWidth: 2160, maxHeight: 1080 } }
+const ROOM: Readonly<Record<number, Omit<MimicBudget, 'profile'>>> = { 2: fullHdColumn, 4: fullHdColumn, 6: { maxWidth: 2160, maxHeight: 1080 } }
 const budgetFor = (loops: number): MimicBudget => ({ profile: overviewMimicProfile, ...ROOM[loops]! })
 
 const scopeOf = (plant: CompiledProcessPlant) => {
@@ -116,7 +116,7 @@ const geometry = (mimic: CompiledMimic) => ({
 })
 
 describe('the unit overview of the principal circuits', () => {
-  for (const loops of [4, 6]) {
+  for (const loops of [2, 4, 6]) {
     test(`${loops} loops: drawn, verified, within the room, crossings at most two over what the structure forces`, () => {
       const plant = plantOf(loops)
       const budget = budgetFor(loops)
@@ -124,7 +124,7 @@ describe('the unit overview of the principal circuits', () => {
       expect(mimic.width).toBeLessThanOrEqual(budget.maxWidth)
       expect(mimic.height).toBeLessThanOrEqual(budget.maxHeight)
       // The core reaches every loop by two paths around a ladder of the two headers and the loops,
-      // and the feed train closes that ladder outside the loops: 2n − 3 crossings are forced.
+      // and the feed train closes that ladder outside the loops: 2n − 3 crossings are forced (one for two loops).
       expect(mimic.crossings.forced).toBe(2 * loops - 3)
       expect(mimic.crossings.count).toBeLessThanOrEqual(mimic.crossings.forced + overviewMimicProfile.layout.limits.crossingsOverBound)
       expect(mimic.pipes.reduce((sum, pipe) => sum + pipe.gaps.length, 0)).toBe(mimic.crossings.count)
