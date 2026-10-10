@@ -125,7 +125,7 @@ const roomProfileSchema = z.object({
 }).strict()
 
 const messageCauseSchema = z.object({
-  kind: z.enum(['script', 'trigger', 'biometric', 'resource-event']),
+  kind: z.enum(['script', 'trigger', 'biometric', 'resource-event', 'display-request']),
   name: z.string(),
   step: z.number().int().optional(),
 }).strict()
