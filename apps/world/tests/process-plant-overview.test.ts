@@ -166,7 +166,8 @@ describe('the unit overview World generates for a Plant', () => {
     expect(mimic.height).toBeLessThanOrEqual(column.maxHeight)
     // Two loops on two headers closed by the feed train force one crossing.
     expect(mimic.crossings.forced).toBe(1)
-  })
+    // Five and six loops overflow Full HD, so each searches the least height that draws: seconds under load.
+  }, 30_000)
 
   test('an overview state for another Plant is refused', () => {
     expect(() => ask('world.process-plant.display.view', { plantId: system.plant.id, state: JSON.stringify({ overview: { plantId: 'plant:other' } }) }))

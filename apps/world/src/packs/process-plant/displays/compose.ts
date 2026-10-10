@@ -2,6 +2,7 @@ import { SUGGESTION_COUNT, editDistance, letters, matchedWords, normalized, word
 import { z } from 'zod'
 import { recordingSeriesIdFor } from '../../../core/model/index.ts'
 import type {
+  CompiledPlantGraph,
   ProcessQuantity,
   ProcessSignalBinding,
   ProcessUnit,
@@ -164,20 +165,32 @@ export type ComposedDisplayCompileResult =
   | { readonly ok: false; readonly issues: ReadonlyArray<ComposedDisplayIssue> }
 
 
-const suggestionsFor = (ref: string, bindings: ReadonlyArray<ProcessSignalBinding>): ReadonlyArray<string> => {
+// A signal is named by its tag, path and label, and by the equipment it is
+// measured on: "reactor power" is the reactor core's power, not the power a
+// reactor trip breaker passes, though both labels say power.
+const suggestionsFor = (ref: string, graph: CompiledPlantGraph): ReadonlyArray<string> => {
   const guessed = words(ref)
   const target = normalized(ref)
   if (guessed.length === 0) return []
-  return bindings
+  const ownerLabels = (binding: ProcessSignalBinding): ReadonlyArray<string> => {
+    if (binding.owner.type !== 'component') return []
+    const component = graph.components[binding.owner.componentIndex]!
+    return [component.label, component.metadata?.presentation?.shortLabel ?? '']
+  }
+  return graph.signalBindings
     .map(binding => {
       const keys = [binding.tagId, binding.path].filter((key): key is NonNullable<typeof key> => key !== undefined).map(String)
-      const matched = matchedWords(guessed, [...new Set([...keys, binding.label].flatMap(words))])
+      // The owner adds what it is ("reactor"), not its designator, which tags and paths already carry.
+      const named = [...new Set([...[...keys, binding.label].flatMap(words), ...ownerLabels(binding).flatMap(words).filter(word => word.length >= 3)])]
+      const matched = matchedWords(guessed, named)
       const label = words(binding.label)
       const distance = Math.min(...keys.map(key => editDistance(normalized(key), target)))
       return {
         binding,
         // Longer guessed words carry more meaning: in RCS-TAVG, tavg outweighs rcs.
         score: letters(matched) / letters(guessed),
+        // Whole words and prefixes before abbreviations: "power" is power, not the "per" of a kg/s path.
+        whole: guessed.filter(guess => named.some(word => word === guess || word.startsWith(guess))).length,
         substantive: matched.some(guess => guess.length >= 2),
         // How much of what the signal is (its label) the guess names: PZR-PRESS is pressurizer pressure, not spray.
         labelCover: label.length === 0 ? 0 : matchedWords(label, guessed).length / label.length,
@@ -187,6 +200,7 @@ const suggestionsFor = (ref: string, bindings: ReadonlyArray<ProcessSignalBindin
     .filter(entry => entry.substantive && entry.score >= 0.5)
     // Operators name instruments by tag, so tagged signals lead among equal matches.
     .sort((left, right) => right.score - left.score
+      || right.whole - left.whole
       || Number(left.binding.tagId === undefined) - Number(right.binding.tagId === undefined)
       || right.labelCover - left.labelCover
       || left.distance - right.distance
@@ -268,7 +282,7 @@ const resolvePens = (
     const path = `${panelPath}.signals.${signalIndex}.ref`
     const binding = resolveRef(system, signal.ref)
     if (!binding) {
-      const didYouMean = suggestionsFor(signal.ref, system.plant.graph.signalBindings)
+      const didYouMean = suggestionsFor(signal.ref, system.plant.graph)
       issues.push({
         path,
         message: `unknown signal "${signal.ref}"; use an exact tagId or variable path from your evidence or world.process-plant.signals.search`,
@@ -487,7 +501,7 @@ const subjectIssues = (
     }
     const equipment = resolveEquipmentName(graph, subject)
     if ('error' in equipment) {
-      const didYouMean = [...plantCarriers(graph).filter(candidate => serviceResembles(subject, candidate)), ...suggestionsFor(subject, graph.signalBindings), ...equipment.didYouMean].slice(0, SUGGESTION_COUNT)
+      const didYouMean = [...plantCarriers(graph).filter(candidate => serviceResembles(subject, candidate)), ...suggestionsFor(subject, graph), ...equipment.didYouMean].slice(0, SUGGESTION_COUNT)
       return [{ path, message: `"${subject}" names no signal, equipment, service or loop of this Plant: give a tag or path, equipment by id, tag or label, or a service or loop as plants.list names them; the Plant itself is not a subject (${equipment.error})`, ...(didYouMean.length === 0 ? {} : { didYouMean }) }]
     }
     if (equipment.components.some(component => shownComponents.has(component))) return []
