@@ -55,11 +55,11 @@ describe('model semantics declared per component kind', () => {
     expect(componentById(graph, 'feedwaterControlValveB').semantics.aspects[0]!.state!.path).toBe('feedwaterControlValveB.effectivePositionFraction' as never)
   })
 
-  test('the PORV is a device on the pressurizer relief outlet whose position the model does not solve', () => {
+  test('the PORV is a device on the pressurizer relief outlet whose position is the opening the model relieves through', () => {
     const [porv] = componentById(graph, 'pressurizer').semantics.embedded
     expect(porv).toMatchObject({ id: 'reliefValve', function: 'relieving', port: 'reliefOutlet' })
     expect(porv!.aspects).toEqual([
-      { aspect: 'position', command: 'pressurizer.reliefValvePositionFraction' as never },
+      { aspect: 'position', state: { path: 'pressurizer.reliefValveEffectivePositionFraction' as never, reading: 'value' }, command: 'pressurizer.reliefValvePositionFraction' as never },
       { aspect: 'throughput', state: { path: 'pressurizer.reliefFlowKgPerS' as never, reading: 'flow' } },
     ])
   })

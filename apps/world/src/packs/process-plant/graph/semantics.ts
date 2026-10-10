@@ -59,8 +59,9 @@ export interface StateAspectDeclaration {
   readonly aspect: StateAspect
   /**
    * The solved variable that is the equipment's state for this aspect. Absent
-   * when the model computes none (the PORV's position), so the aspect reads
-   * "not measured" and is judged by what the model does solve.
+   * when the model computes none (an accumulator's discharge isolation valve
+   * follows its command at once), so the aspect reads "not measured" and is
+   * judged by what the model does solve.
    */
   readonly state?: { readonly variable: LocalVariablePath; readonly reading: AspectReading }
   /** The writable variable that demands this aspect. It only annotates a disagreement, never the state. */

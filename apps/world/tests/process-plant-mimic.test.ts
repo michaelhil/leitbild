@@ -83,13 +83,13 @@ describe('generated equipment mimics', () => {
     }
   })
 
-  test('the PORV the model bundles in the pressurizer is drawn on the relief line, judged by its flow', () => {
+  test('the PORV the model bundles in the pressurizer is drawn on the relief line with the opening it relieves through', () => {
     const mimic = generated(system, { from: ['pressurizer'], to: ['PRT'] })
     expect(mimic.items.map(item => item.binding.label).sort()).toEqual(['PORV', 'PRT', 'PZR'])
     const porv = mimic.items.find(item => item.binding.label === 'PORV')!
     expect(porv.presentation).toEqual({ element: 'device', icon: 'valve-digital', aspect: 'position' })
-    expect(porv.rows.map(row => row.kind)).toEqual(['state', 'throughput', 'mismatch'])
-    expect(mimic.summary.unmeasuredStates).toEqual(['PORV'])
+    expect(porv.rows.map(row => row.kind)).toEqual(['position', 'mismatch'])
+    expect(mimic.summary.unmeasuredStates).toEqual([])
   })
 
   test('a lone pipe into a hub says where it enters when nothing is drawn at the hub\'s other alike ports', () => {
@@ -258,7 +258,7 @@ describe('mimic panels in composed displays', () => {
   test('a stored display re-opens with its drawing, and relates its alarms to the drawn equipment', () => {
     const composed = ask('world.process-plant.display.compose', { ...display([{ kind: 'mimic', from: ['pressurizer'], to: ['PRT'] }, { kind: 'alarms', scope: 'related' }]), subjects: ['pressurizer'] }) as { view: { state: string }; equipment: ReadonlyArray<{ id: string; label: string; state: string }> }
     expect(composed.equipment.map(item => item.label)).toEqual(['PZR', 'PRT', 'PORV'])
-    expect(composed.equipment.find(item => item.label === 'PORV')!.state).toBe('position not measured; no flow')
+    expect(composed.equipment.find(item => item.label === 'PORV')!.state).toBe('closed')
     const result = ask('world.process-plant.display.view', { plantId: system.plant.id, state: composed.view.state }) as {
       drawingChanged: boolean
       display: { panels: ReadonlyArray<{ kind: string; ruleIds?: ReadonlyArray<string> }> }

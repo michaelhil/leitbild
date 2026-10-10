@@ -227,7 +227,13 @@
           "path": "reliefValvePositionFraction",
           "tagId": "PORV-456A",
           "equipmentId": "pressurizer",
-          "description": "Pressurizer relief valve position"
+          "description": "Pressurizer PORV 456A position demand"
+        },
+        {
+          "path": "reliefValveEffectivePositionFraction",
+          "tagId": "PORV-456A-POS",
+          "equipmentId": "pressurizer",
+          "description": "Pressurizer PORV 456A position feedback"
         }
       ],
       "metadata": {
@@ -9248,6 +9254,7 @@
     "pressurizer.heaterPowerMw",
     "pressurizer.sprayFlowKgPerS",
     "pressurizer.reliefValvePositionFraction",
+    "pressurizer.reliefValveEffectivePositionFraction",
     "pressurizer.reliefFlowKgPerS",
     "pressurizerReliefTank.inventoryKg",
     "pressurizerReliefTank.levelPercent",

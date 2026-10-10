@@ -140,7 +140,7 @@ describe('world.process-plant.display.compose', () => {
       panels: [{ kind: 'trend', horizon: '2m', signals: [{ ref: 'PT-455', role: 'primary' }] }, { kind: 'readouts', signals: [{ ref: 'PORV-456A', role: 'context' }] }],
     }) as { warnings: ReadonlyArray<string>; shows: ReadonlyArray<string> }
     expect(result.warnings).toContain("PORV-456A is a writable command (a demand), not a measured state; never present it as the equipment's actual state or position.")
-    expect(result.shows.join('\n')).toContain('PORV-456A (Pressurizer relief valve position, fraction, context, a command (demand), shown as demand)')
+    expect(result.shows.join('\n')).toContain('PORV-456A (Pressurizer relief valve position demand, fraction, context, a command (demand), shown as demand)')
   })
 
   test('a line flow the I&C judges on the equipment it passes is refused with the judged signal', () => {
