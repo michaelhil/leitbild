@@ -56,6 +56,8 @@ const scenarios: ReadonlyArray<Scenario> = [
     prompt: 'Where is the coolant leaving the Unit 2 pressurizer going, and is the relief valve shut?' },
   { id: 'si-loop-c', advanceMinutes: 1, expect: 'display', keyPanel: 'mimic', mimic: 'expected',
     prompt: 'Show me the safety injection lineup to loop C on Unit 2.' },
+  { id: 'afw-pump-around', fault: { actionId: 'loss-main-feedwater' }, advanceMinutes: 2, expect: 'display', keyPanel: 'mimic', mimic: 'expected',
+    prompt: 'On Unit 2, what does motor-driven auxiliary feedwater pump A take its water and power from, and where does its flow go?' },
   { id: 'single-state', advanceMinutes: 1, expect: 'none', mimic: 'avoid', prompt: 'Is main feedwater pump A on Unit 2 running?' },
   { id: 'power-stable', advanceMinutes: 1, expect: 'display', mimic: 'avoid',
     prompt: 'Is reactor power on Unit 2 stable over the last few minutes?', keySignals: ['core.powerMw', 'NIS-PR', 'GEN-MW'] },
@@ -127,7 +129,7 @@ const advance = async (resource: Record<string, string>, minutes: number): Promi
   throw new Error(`Run ${resource.id} did not advance ${minutes} min within the probe deadline`)
 }
 
-interface ComposeOutcome { readonly accepted: boolean; readonly panels: ReadonlyArray<string>; readonly signals: ReadonlyArray<string>; readonly error?: string }
+interface ComposeOutcome { readonly accepted: boolean; readonly panels: ReadonlyArray<string>; readonly signals: ReadonlyArray<string>; readonly mimics: ReadonlyArray<Record<string, unknown>>; readonly error?: string }
 
 // An accepted result names each signal's resolved tag and path, so a key
 // signal counts whether the agent referred to it by tag or by path.
@@ -150,6 +152,8 @@ const composeOutcomes = async (roomId: string, turnId: string): Promise<Readonly
       outcomes.push({
         accepted: result?.success === true && typeof result.viewRef === 'string',
         panels: panels.map(panel => panel.kind),
+        // What each mimic was asked to draw, so the intent the agent chose (route, one end, around, services) is on record.
+        mimics: panels.filter(panel => panel.kind === 'mimic').map(({ kind: _kind, ...intent }) => intent),
         signals: result?.success === true ? resolvedNames(result) : panels.flatMap(panel => (panel.signals ?? []).map(signal => signal.ref)),
         ...(result?.success === true ? {} : { error: String(result?.error ?? 'no result').slice(0, 400) }),
       })
@@ -202,6 +206,7 @@ for (const scenario of chosen) {
     keyPanelHit: scenario.keyPanel === undefined || fence === null ? null : (accepted.at(-1)?.panels ?? []).includes(scenario.keyPanel),
     mimic: scenario.mimic ?? null,
     mimicShown: fence !== null && (accepted.at(-1)?.panels ?? []).includes('mimic'),
+    mimicIntents: accepted.at(-1)?.mimics ?? [],
     rejections: composes.filter(outcome => !outcome.accepted).map(outcome => outcome.error),
     wallMs,
     modelCalls: answer.modelCalls,
