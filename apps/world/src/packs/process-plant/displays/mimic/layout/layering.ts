@@ -1,6 +1,7 @@
 // Layers along the flow: longest path from the sources, sources pulled up next
-// to their first successor, bars given layers of their own, and long edges cut
-// into chains of dummy items, one per layer they pass.
+// to their first successor that does not just follow them, bars given layers
+// of their own, and long edges cut into chains of dummy items, one per layer
+// they pass.
 //
 // A reversed edge (a return run) attaches to its physical ends by their flow
 // faces: its source leaves downstream and its target is entered from
@@ -68,9 +69,9 @@ const feedsHub = (model: Model, predecessors: ReadonlyArray<number>, successors:
   model.nodes[node]!.role === 'stub' && predecessors.length === 0 && successors.some(next => model.nodes[next]!.role === 'hub')
 
 /**
- * Layer per node: longest path, sources beside what they feed, stubs beside
- * their node, bars on layers of their own. A flat edge may keep its ends in
- * one layer.
+ * Layer per node: longest path, sources beside what they feed, stubs and
+ * symbols that only end a source's pipe beside it, bars on layers of their
+ * own. A flat edge may keep its ends in one layer.
  */
 export const layerNodes = (model: Model, reversed: ReadonlyArray<boolean>, stubsIntoHubsFirst = false, flat: ReadonlyArray<boolean> = model.edges.map(() => false)): number[] => {
   const count = model.nodes.length
@@ -102,17 +103,27 @@ export const layerNodes = (model: Model, reversed: ReadonlyArray<boolean>, stubs
   }
   if (topological.length !== count) throw new Error('cycle breaking left a cycle')
   // A stub is an off-sheet end on one edge: it goes wherever its neighbour is,
-  // so it never holds a source back from the equipment it feeds.
+  // so it never holds a source back from the equipment it feeds. Nor does a
+  // symbol that only the source feeds and that feeds nothing: it follows the
+  // source, which goes beside the first equipment that takes flow from
+  // elsewhere too. Before it, the source and its followers would take the
+  // first layers, and every pipe the source sends on would cross the first
+  // channel with theirs.
   const isStub = (node: number): boolean => model.nodes[node]!.role === 'stub'
+  const follows = (node: number): boolean => model.nodes[node]!.role === 'device' && successors[node]!.length === 0 && new Set(predecessors[node]).size === 1
   for (const node of topological) {
     if (predecessors[node]!.length === 0 && successors[node]!.length > 0) {
       const all = successors[node]!.map((next, k) => ({ next, step: steps[node]![k]! }))
-      const firm = all.filter(({ next }) => !isStub(next))
+      const firm = all.filter(({ next }) => !isStub(next) && !follows(next))
       layer[node] = Math.min(...(firm.length > 0 ? firm : all).map(({ next, step }) => layer[next]! - step))
     }
   }
   for (const node of topological) {
     if (isStub(node) && successors[node]!.length === 0 && predecessors[node]!.length === 1) layer[node] = layer[predecessors[node]![0]!]! + 1
+    else if (follows(node)) {
+      const from = predecessors[node]![0]!
+      layer[node] = layer[from]! + Math.max(...successors[from]!.flatMap((next, k) => (next === node ? [steps[from]![k]!] : [])))
+    }
   }
 
   // A bar spans what it connects; it never shares a layer with a symbol.

@@ -165,13 +165,13 @@ describe('equipment opened from the unit overview', () => {
     // Its own signals lead, the ones its I&C rules judge first.
     expect(readouts.pens.every(pen => String(pen.path).startsWith('sgB.'))).toBe(true)
     expect(readouts.pens[0]!.thresholds.length).toBeGreaterThan(0)
-    // Narrowed to its loop: both sides of the steam generator, the shared headers beyond as stops, every valve named.
+    // Narrowed to its loop: both sides of the steam generator and the shared headers, the other loops beyond as stops, every valve named.
     expect(mimic.mimic.profile).toBe('detail')
     expect(mimic.mimic.items.some(item => item.marker)).toBe(false)
     const labels = mimic.mimic.items.map(item => item.binding.label)
-    expect(labels).toEqual(expect.arrayContaining(['SG B', 'RCP B', 'FCV B', 'MSIV B']))
+    expect(labels).toEqual(expect.arrayContaining(['SG B', 'RCP B', 'FCV B', 'MSIV B', 'Steam header']))
     expect(labels).not.toContain('SG A')
-    expect(mimic.mimic.stubs.map(stub => stub.text)).toContain('to Steam header inlet B')
+    expect(mimic.mimic.stubs.map(stub => stub.text)).toContain('to SG A, SG C, SG D')
     expect(alarms.scope).toBe('related')
     expect(alarms.ruleIds.length).toBeGreaterThan(0)
   })
