@@ -14,6 +14,7 @@ import { recordedPlantVariables } from '../src/packs/process-plant/recording.ts'
 import { recordingSeriesIdFor } from '../src/core/model/index.ts'
 import { processPlantCapabilities } from '../src/packs/process-plant/capabilities.ts'
 import { icThresholdsForSignal } from '../src/packs/process-plant/displays/ic-thresholds.ts'
+import { thresholdName } from '../src/packs/process-plant/displays/display-text.ts'
 import { composedDisplayStateSchema } from '../src/packs/process-plant/displays/composition.ts'
 import type { VariablePath } from '../src/packs/process-plant/graph/index.ts'
 
@@ -77,6 +78,14 @@ describe('I&C thresholds for composed displays', () => {
       [16.18, 'trip', null],
       [16.35, 'trip', 'Power operation'],
     ])
+  })
+
+  test('name a signal\'s further limits of one kind LO-LO and HI-HI', () => {
+    const names = (tagId: string, unit: string) => icThresholdsForSignal(compiled, compiled.graph.signalBindingByTagId.get(tagId as never)!.path).thresholds
+      .filter(threshold => threshold.kind !== 'control').map(threshold => thresholdName(threshold, unit))
+    expect(names('SUB-MARGIN', 'degC')).toEqual(['LO-LO ALM 0 °C', 'LO ALM 16.7 °C'])
+    expect(names('PT-455', 'MPa')).toEqual(['LO TRIP 13.8 MPa', 'LO ALM 14.8 MPa', 'HI ALM 16 MPa', 'HI TRIP 16.18 MPa', 'HI-HI TRIP 16.35 MPa'])
+    expect(names('SG-A-LVL-NR', 'percent')).toEqual(['LO TRIP 20 %', 'LO ALM 30 %', 'HI ALM 75 %', 'HI TRIP 82 %'])
   })
 
   test('list combined-condition rules instead of drawing them', () => {

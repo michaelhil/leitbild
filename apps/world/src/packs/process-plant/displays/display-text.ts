@@ -44,14 +44,20 @@ export const formatQuantity = (value: number, unit: string): string => {
 
 const kindAbbreviation = { trip: 'TRIP', alarm: 'ALM', control: 'CTL' } as const
 
+/** Direction and kind, doubled for a limit beyond the first of its kind: "LO ALM", "LO-LO ALM", "HI TRIP". */
+export const limitKindName = (threshold: Pick<ComposedDisplayThreshold, 'direction' | 'kind' | 'escalation'>): string => {
+  const direction = threshold.direction === 'low' ? 'LO' : 'HI'
+  return `${threshold.escalation > 1 ? `${direction}-${direction}` : direction} ${kindAbbreviation[threshold.kind]}`
+}
+
 /** Direction, kind and the exact configured value: "LO ALM 30 %". */
 export const thresholdName = (
-  threshold: Pick<ComposedDisplayThreshold, 'direction' | 'kind' | 'value'>,
+  threshold: Pick<ComposedDisplayThreshold, 'direction' | 'kind' | 'escalation' | 'value'>,
   unit: string,
   options: { readonly withUnit: boolean } = { withUnit: true },
 ): string => {
   const label = options.withUnit ? unitLabel(unit) : ''
-  return `${threshold.direction === 'low' ? 'LO' : 'HI'} ${kindAbbreviation[threshold.kind]} ${displayValue(threshold.value, unit)}${label === '' ? '' : ` ${label}`}`
+  return `${limitKindName(threshold)} ${displayValue(threshold.value, unit)}${label === '' ? '' : ` ${label}`}`
 }
 
 export interface ThresholdMargin {

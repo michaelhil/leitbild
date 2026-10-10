@@ -1,15 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import { fitName } from '../src/ui/embed/composed-display/pen-style.ts'
 import { activeThreshold, agoText, alarmAge, limitAhead, returningText, median, minutesToThreshold, movingAwayFromLimits, rateChange, ratePerMinute, rateText, rateWindowMs, timeToThresholdText, visibleAlarms, annunciatorStates } from '../src/ui/embed/composed-display/panel-presenters.ts'
-import { formatQuantity, marginText, nearestThresholdMargin, simulationClock, thresholdName, unitLabel } from '../src/packs/process-plant/displays/display-text.ts'
-import type { ComposedDisplayThreshold } from '../src/packs/process-plant/displays/ic-thresholds.ts'
+import { formatQuantity, limitKindName, marginText, nearestThresholdMargin, simulationClock, thresholdName, unitLabel } from '../src/packs/process-plant/displays/display-text.ts'
+import { escalateLimits, type ComposedDisplayThreshold } from '../src/packs/process-plant/displays/ic-thresholds.ts'
 import type { ComposedDisplayAlarm } from '../src/ui/embed/composed-display/composed-display-client.ts'
 
 const thresholds: ReadonlyArray<ComposedDisplayThreshold> = [
-  { ruleId: 'trip-low', label: 'Low-low', kind: 'trip', operator: '<', direction: 'low', value: 20 },
-  { ruleId: 'alarm-low', label: 'Low', kind: 'alarm', operator: '<', direction: 'low', value: 30 },
-  { ruleId: 'control', label: 'Demand', kind: 'control', operator: '<', direction: 'low', value: 50 },
-  { ruleId: 'alarm-high', label: 'High', kind: 'alarm', operator: '>', direction: 'high', value: 75, modeLabel: 'power operation' },
+  { ruleId: 'trip-low', label: 'Low-low', kind: 'trip', operator: '<', direction: 'low', value: 20, escalation: 1 },
+  { ruleId: 'alarm-low', label: 'Low', kind: 'alarm', operator: '<', direction: 'low', value: 30, escalation: 1 },
+  { ruleId: 'control', label: 'Demand', kind: 'control', operator: '<', direction: 'low', value: 50, escalation: 1 },
+  { ruleId: 'alarm-high', label: 'High', kind: 'alarm', operator: '>', direction: 'high', value: 75, escalation: 1, modeLabel: 'power operation', modeIds: ['powerOperation'] },
 ]
 
 describe('composed display panel presenters', () => {
@@ -27,8 +27,25 @@ describe('composed display panel presenters', () => {
     expect(nearestThresholdMargin(10, [thresholds[2]!])).toBeNull()
   })
 
+  test('limits of one kind escalate by order away from normal, never by signal', () => {
+    const limit = (ruleId: string, kind: 'alarm' | 'trip', direction: 'low' | 'high', value: number, modeIds?: ReadonlyArray<string>) =>
+      ({ ruleId, label: ruleId, kind, operator: direction === 'low' ? '<' : '>', direction, value, ...(modeIds === undefined ? {} : { modeLabel: modeIds.join(' or '), modeIds }) }) as const
+    const names = (limits: Parameters<typeof escalateLimits>[0]) => escalateLimits(limits).map(threshold => thresholdName(threshold, 'degC'))
+    // Subcooling: a warning at 16.7 °C and a critical alarm at 0 °C, both alarms below normal.
+    expect(names([limit('lost', 'alarm', 'low', 0), limit('low', 'alarm', 'low', 16.7)])).toEqual(['LO-LO ALM 0 °C', 'LO ALM 16.7 °C'])
+    // A trip and an alarm are each the first of their kind; high limits count upward.
+    expect(names([limit('trip', 'trip', 'low', 20), limit('alarm', 'alarm', 'low', 30), limit('high', 'alarm', 'high', 75), limit('higher', 'alarm', 'high', 82), limit('highest', 'alarm', 'high', 90)]))
+      .toEqual(['LO TRIP 20 °C', 'LO ALM 30 °C', 'HI ALM 75 °C', 'HI-HI ALM 82 °C', 'HI-HI ALM 90 °C'])
+    // A limit in every mode and one only in power operation act together; limits of two different modes are alternatives.
+    expect(names([limit('relief', 'trip', 'high', 16.18), limit('reactor', 'trip', 'high', 16.35, ['powerOperation'])])).toEqual(['HI TRIP 16.18 °C', 'HI-HI TRIP 16.35 °C'])
+    expect(names([limit('startup', 'alarm', 'low', 20, ['startup']), limit('power', 'alarm', 'low', 30, ['powerOperation'])])).toEqual(['LO ALM 20 °C', 'LO ALM 30 °C'])
+    // Two rules at one value are one step.
+    expect(names([limit('a', 'alarm', 'low', 10), limit('b', 'alarm', 'low', 10), limit('c', 'alarm', 'low', 5)])).toEqual(['LO ALM 10 °C', 'LO ALM 10 °C', 'LO-LO ALM 5 °C'])
+    expect(limitKindName({ direction: 'high', kind: 'trip', escalation: 2 })).toBe('HI-HI TRIP')
+  })
+
   test('fractions read as percent wherever the display or the answer names them', () => {
-    const busLow = { ruleId: 'bus-low', label: 'Bus voltage low', kind: 'alarm', operator: '<', direction: 'low', value: 0.9 } as const
+    const busLow = { ruleId: 'bus-low', label: 'Bus voltage low', kind: 'alarm', operator: '<', direction: 'low', value: 0.9, escalation: 1 } as const
     expect(formatQuantity(1, 'fraction')).toBe('100 %')
     expect(formatQuantity(0.955, 'fraction')).toBe('95.5 %')
     expect(formatQuantity(0, 'kg/s')).toBe('0 kg/s')
@@ -56,7 +73,7 @@ describe('composed display panel presenters', () => {
 
   test('a value in alarm that is moving back says when it will be back inside the limit', () => {
     // SG A N-16 in HI ALM 5 mSv/h and drifting down.
-    const highRadiation = { ruleId: 'n16-high', label: 'Secondary radiation high', kind: 'alarm', operator: '>', direction: 'high', value: 5 } as const
+    const highRadiation = { ruleId: 'n16-high', label: 'Secondary radiation high', kind: 'alarm', operator: '>', direction: 'high', value: 5, escalation: 1 } as const
     expect(returningText(5.4, -0.2, highRadiation, 'mSv/h')).toBe('back below HI ALM 5 mSv/h in ≈2 min')
     expect(returningText(5.4, 0.2, highRadiation, 'mSv/h')).toBe('')
     // Hours away at this rate: when, never a recovery already made.
@@ -137,7 +154,7 @@ describe('composed display panel presenters', () => {
     expect(rateChange(stepped, window, 12)).toBeNull()
     expect(simulationClock(Date.parse('2026-01-01T10:01:00.049Z'))).toBe('10:01:00')
     // Rising 0.31 MPa/min with 0.285 MPa left to HI ALM 16 (turbine trip, run 6).
-    const highAlarm = { ruleId: 'pzr-high', label: 'Pressurizer pressure high', kind: 'alarm', operator: '>', direction: 'high', value: 16 } as const
+    const highAlarm = { ruleId: 'pzr-high', label: 'Pressurizer pressure high', kind: 'alarm', operator: '>', direction: 'high', value: 16, escalation: 1 } as const
     expect(timeToThresholdText(15.715, 0.31, highAlarm)).toBe('≈55 s')
     expect(timeToThresholdText(15.715, -0.31, highAlarm)).toBe('')
     expect(timeToThresholdText(10, 0.1, highAlarm)).toBe('')
