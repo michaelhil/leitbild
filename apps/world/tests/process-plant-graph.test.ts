@@ -37,7 +37,12 @@ describe('process plant model composition', () => {
     // Changed again on 2026-10-10, approved by the owner, when the model was
     // made to report equipment state truthfully; PWR Runs checkpointed before
     // then must be restarted.
-    expect(system.modelDigest).toBe('7ea5b4b52e74b1652b3cadd87a5f97745d4462a2c21f2050f2b57cf9317819fd')
+    // Changed again on 2026-10-10, approved by the owner as a model-truth
+    // change, when the primary system was given IF97 coolant properties, a
+    // closed energy balance, a letdown line, a pressurizer coupled to the
+    // loops' inventory and saturation, and realistic loop and tube-metal
+    // sizes; PWR Runs checkpointed before then must be restarted.
+    expect(system.modelDigest).toBe('44d14643f66c77ffe29b3fd2e53e8e7df11c5b9ee9fdcaae32586d9343efc056')
     const running = createProcessPlantRuntime({ system })
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))
