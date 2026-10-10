@@ -132,13 +132,14 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
     shows: string,
     view: OverviewView | null,
     compile: () => ReturnType<typeof compileOverviewDisplay>,
-    refusal: string,
+    /** What the refusal is about; null where the view names it (equipment opened from an overview says what it opened). */
+    refusal: string | null,
   ) => {
     const key = `${shows}|${view === null ? 'natural' : `${view.width}x${view.height}`}`
     const cached = generatedCache.get(system)?.get(key)
     if (cached !== undefined) return cached
     const result = compile()
-    if (!result.ok) return rejectCapabilityTarget(`${refusal}: ${result.issues.map(issue => issue.message).join('; ')}`)
+    if (!result.ok) return rejectCapabilityTarget(`${refusal === null ? '' : `${refusal}: `}${result.issues.map(issue => issue.message).join('; ')}`)
     const displays = generatedCache.get(system) ?? new Map<string, CompiledComposedDisplay>()
     if (displays.size >= GENERATED_CACHE_SIZE) displays.delete(displays.keys().next().value!)
     displays.set(key, result.display)
@@ -190,7 +191,7 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
     if ('detail' in state) {
       if (payload.size === undefined) return rejectCapabilityInput('Equipment opened from an overview is drawn for the view it is shown in: send its size')
       const components = state.detail.components
-      const display = generatedOrRejected(system, `detail:${components.join(',')}`, payload.size, () => compileDetailDisplay(system, recordedSeriesIds, components, payload.size!), `${components.join(', ')} cannot be opened`)
+      const display = generatedOrRejected(system, `detail:${components.join(',')}`, payload.size, () => compileDetailDisplay(system, recordedSeriesIds, components, payload.size!), null)
       return { kind: 'detail', plantId: display.plantId, plantLabel: plantLabelOf(display.plantId), simulationTime, display }
     }
     const display = compiledOrRejected(system, state.composition, 'view', recordedSeriesIds)

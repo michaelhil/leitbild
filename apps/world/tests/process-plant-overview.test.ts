@@ -165,7 +165,9 @@ describe('equipment opened from the unit overview', () => {
     // Its own signals lead, the ones its I&C rules judge first.
     expect(readouts.pens.every(pen => String(pen.path).startsWith('sgB.'))).toBe(true)
     expect(readouts.pens[0]!.thresholds.length).toBeGreaterThan(0)
-    // Narrowed to its loop: both sides of the steam generator, the shared headers beyond as stops.
+    // Narrowed to its loop: both sides of the steam generator, the shared headers beyond as stops, every valve named.
+    expect(mimic.mimic.profile).toBe('detail')
+    expect(mimic.mimic.items.some(item => item.marker)).toBe(false)
     const labels = mimic.mimic.items.map(item => item.binding.label)
     expect(labels).toEqual(expect.arrayContaining(['SG B', 'RCP B', 'FCV B', 'MSIV B']))
     expect(labels).not.toContain('SG A')
@@ -175,6 +177,6 @@ describe('equipment opened from the unit overview', () => {
   })
 
   test('equipment the Plant does not have is refused', () => {
-    expect(() => ask('world.process-plant.display.view', { plantId: system.plant.id, state: detailState(['nope']), size: fullHd })).toThrow(`${system.plant.id} has no component nope`)
+    expect(() => ask('world.process-plant.display.view', { plantId: system.plant.id, state: detailState(['nope']), size: fullHd })).toThrow(new RegExp(`^${system.plant.id} has no component nope$`))
   })
 })

@@ -128,3 +128,17 @@ export const overviewMimicProfile: MimicProfile = {
   commands: 'stacked',
   minScale: 1,
 }
+
+/**
+ * Equipment opened from a generated display: its surroundings at 1:1, read
+ * at arm's length like the overview and held to the same crossings, but
+ * read for which item does what. Every valve is a symbol with its tag and
+ * every parallel item is drawn on its own; stubs name their far ends.
+ */
+export const detailMimicProfile: MimicProfile = {
+  ...overviewMimicProfile,
+  id: 'detail',
+  valves: 'symbols',
+  parallel: 'each',
+  stubLabels: 'names',
+}

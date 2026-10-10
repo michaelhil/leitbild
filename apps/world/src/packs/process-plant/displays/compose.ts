@@ -37,7 +37,7 @@ import {
 import { formatQuantity, marginText, nearestThresholdMargin, thresholdName } from './display-text.ts'
 import { compileMimic, compileMimicScope, groupLabel, type MimicCompileResult } from './mimic/compile-mimic.ts'
 import { MIMIC_MAX_WIDTH } from './mimic/mimic-model.ts'
-import { chatMimicProfile, overviewMimicProfile } from './mimic/profiles.ts'
+import { chatMimicProfile, detailMimicProfile, overviewMimicProfile } from './mimic/profiles.ts'
 import { principalCircuits } from './mimic/principal.ts'
 import { equipmentKeyValues, overviewKeyValues } from './overview-key-values.ts'
 import { MIMIC_REACH_LINKS, resolveMimicScope } from './mimic/scope.ts'
@@ -715,8 +715,9 @@ export const compileOverviewDisplay = (system: ProcessPlantRuntimeInstance, reco
 
 /**
  * Equipment opened from a generated display: what feeds it and where its
- * outflow goes (narrowed to its loop when all of it belongs to one), as far
- * as the view allows, from the reach a mimic follows down to the next link;
+ * outflow goes (narrowed to its loop when all of it belongs to one), drawn by
+ * the detail profile as far as the view allows, from the reach a mimic
+ * follows down to the next link;
  * its lead values (equipmentKeyValues); and the alarms related to what is
  * drawn. Where the drawing stops, its stubs say what lies beyond.
  */
@@ -740,8 +741,8 @@ export const compileDetailDisplay = (
   const scopes = reaches.map(reach => resolveMimicScope(graph, { around: componentIds, ...narrowed, reach }))
   const unresolved = scopes.find(scope => !scope.ok)
   if (unresolved !== undefined && !unresolved.ok) return { ok: false, issues: unresolved.issues.map(issue => ({ path: 'detail', message: issue.message })) }
-  const fitted = fitGenerated(view, values, scopes.flatMap(scope => scope.ok ? [(room: Parameters<GeneratedDrawing>[0]) => compileMimicScope(system.plant, scope.scope, { profile: overviewMimicProfile, ...room })] : []))
-  if (!fitted.ok) return { ok: false, issues: fitted.issues.map(message => ({ path: 'detail', message })) }
+  const fitted = fitGenerated(view, values, scopes.flatMap(scope => scope.ok ? [(room: Parameters<GeneratedDrawing>[0]) => compileMimicScope(system.plant, scope.scope, { profile: detailMimicProfile, ...room })] : []))
+  if (!fitted.ok) return { ok: false, issues: [{ path: 'detail', message: `nothing around it can be drawn legibly; ${fitted.issues.join('; ')}` }] }
   const title = groupLabel(components.map(index => graph.components[index]!.label))
   return { ok: true, display: generatedDisplay(system, title, readouts, fitted, panels => ({ kind: 'alarms', scope: 'related', ruleIds: relatedRuleIds(system, panels) })) }
 }
