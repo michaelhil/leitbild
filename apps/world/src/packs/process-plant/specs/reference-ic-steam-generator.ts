@@ -6,14 +6,14 @@ export const steamGeneratorReferenceIcRules = (loop: ProcessPlantReferenceLoop):
   const lower = loop.toLowerCase()
   const sg = `sg${loop}`
   const sgAlarm = annunciator({
-    system: 'steam generators',
+    system: 'steamGenerators',
     equipmentId: sg,
     group: `steam-generator-${lower}`,
     priority: 'high',
     role: 'symptom',
   })
   const sgAction = annunciator({
-    system: 'steam generators',
+    system: 'steamGenerators',
     equipmentId: sg,
     group: `steam-generator-${lower}`,
     priority: 'urgent',

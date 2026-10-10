@@ -25,6 +25,7 @@ export const processPlantIcAnnunciatorRoleSchema = z.enum(['symptom', 'cause', '
 export type ProcessPlantIcAnnunciatorRole = z.infer<typeof processPlantIcAnnunciatorRoleSchema>
 
 export const processPlantIcAnnunciatorSchema = z.object({
+  /** The id of an annunciator system the I&C config declares (processPlantIcAnnunciatorSystemSchema). */
   system: z.string().min(1).optional(),
   equipmentId: idSchema.optional(),
   group: z.string().min(1).optional(),
@@ -183,9 +184,45 @@ export const processPlantIcRuleSchema = z.object({
 }).strict()
 export type ProcessPlantIcRule = z.infer<typeof processPlantIcRuleSchema>
 
-export const processPlantIcConfigSchema = z.object({
-  rules: z.array(processPlantIcRuleSchema).default([]),
+/**
+ * A system the Plant's alarms and trips are annunciated by ("Reactor coolant
+ * system"), declared once and named by its id on each annunciator. Its label
+ * is how operators name it; its short label is how a tile too narrow for the
+ * label names it ("RCS"). Declaration order is the order displays show them.
+ */
+export const processPlantIcAnnunciatorSystemSchema = z.object({
+  id: idSchema,
+  label: z.string().min(1),
+  shortLabel: z.string().min(1).optional(),
 }).strict()
+export type ProcessPlantIcAnnunciatorSystem = z.infer<typeof processPlantIcAnnunciatorSystemSchema>
+
+export const processPlantIcConfigSchema = z.object({
+  annunciatorSystems: z.array(processPlantIcAnnunciatorSystemSchema).default([]),
+  rules: z.array(processPlantIcRuleSchema).default([]),
+}).strict().superRefine((config, ctx) => {
+  // A system's alarms are all its own and all named, so a system that shows quiet is quiet.
+  const declared = new Set<string>()
+  for (const [index, system] of config.annunciatorSystems.entries()) {
+    if (declared.has(system.id)) ctx.addIssue({ code: 'custom', path: ['annunciatorSystems', index, 'id'], message: `annunciator system ${system.id} is declared twice` })
+    declared.add(system.id)
+  }
+  for (const [ruleIndex, rule] of config.rules.entries()) {
+    const named = new Set<string>()
+    for (const [effectIndex, effect] of rule.effects.entries()) {
+      if (effect.type !== 'alarm.enter' && effect.type !== 'trip.enter') continue
+      const system = effect.annunciator?.system
+      const path = ['rules', ruleIndex, 'effects', effectIndex, 'annunciator', 'system']
+      if (system === undefined) {
+        if (declared.size > 0) ctx.addIssue({ code: 'custom', path, message: `${rule.id} ${effect.type === 'alarm.enter' ? 'alarm' : 'trip'} ${effect.id} names no annunciator system; this Plant annunciates every alarm on one of ${[...declared].join(', ')}` })
+        continue
+      }
+      if (!declared.has(system)) ctx.addIssue({ code: 'custom', path, message: `${rule.id} names annunciator system ${system}, which is not declared; declared: ${[...declared].join(', ') || 'none'}` })
+      named.add(system)
+    }
+    if (named.size > 1) ctx.addIssue({ code: 'custom', path: ['rules', ruleIndex], message: `${rule.id} annunciates on ${[...named].join(' and ')}; a rule annunciates on one system` })
+  }
+})
 export type ProcessPlantIcConfig = z.infer<typeof processPlantIcConfigSchema>
 
 export const processPlantIcRuleSnapshotSchema = z.object({

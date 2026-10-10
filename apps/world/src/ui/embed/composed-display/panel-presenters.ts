@@ -178,6 +178,7 @@ export const alarmAge = (plantElapsedMs: number, firstActiveElapsedMs: number | 
 }
 
 export interface AnnunciatorState {
+  readonly id: string
   readonly name: string
   readonly active: number
   readonly unacknowledged: number
@@ -189,13 +190,14 @@ export interface AnnunciatorState {
 
 /** Each annunciator system's share of the active alarms, in the order the model declares the systems. */
 export const annunciatorStates = (
-  systems: ReadonlyArray<{ readonly name: string; readonly ruleIds: ReadonlyArray<string> }>,
+  systems: ReadonlyArray<{ readonly id: string; readonly name: string; readonly ruleIds: ReadonlyArray<string> }>,
   alarms: ReadonlyArray<ComposedDisplayAlarm>,
 ): ReadonlyArray<AnnunciatorState> => systems.map(system => {
   const rules = new Set(system.ruleIds)
   const active = alarms.filter(alarm => alarm.active && rules.has(alarm.ruleId))
   const worst = [...active].sort((left, right) => severityRank[left.severity] - severityRank[right.severity])[0]
   return {
+    id: system.id,
     name: system.name,
     active: active.length,
     unacknowledged: active.filter(alarm => !alarm.acknowledged).length,

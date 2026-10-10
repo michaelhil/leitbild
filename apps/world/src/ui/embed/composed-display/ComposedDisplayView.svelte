@@ -132,7 +132,7 @@
   let seenElsewhere = new Set<string>()
   const alarmsPanel = $derived(view?.display.panels.find(panel => panel.kind === 'alarms'))
   const systems = $derived(alarmsPanel?.kind === 'alarms' ? alarmsPanel.systems ?? [] : [])
-  const narrowedTo = $derived(systems.find(system => system.name === systemFilter) ?? null)
+  const narrowedTo = $derived(systems.find(system => system.id === systemFilter) ?? null)
   // The drawing dims only where the system frames something in it; otherwise nothing of it is drawn here.
   const highlight = $derived.by(() => {
     if (narrowedTo === null) return null
@@ -144,11 +144,11 @@
     const rules = new Set(ruleIds)
     return (next.latest?.alarms ?? []).filter(alarm => alarm.active && (alarm.kind === 'trip' || alarm.firstOut) && !rules.has(alarm.ruleId)).map(alarm => alarm.id)
   }
-  const selectSystem = (name: string | null): void => {
-    const system = systems.find(candidate => candidate.name === name)
+  const selectSystem = (id: string | null): void => {
+    const system = systems.find(candidate => candidate.id === id)
     seenElsewhere = new Set(system === undefined || snapshot === null ? [] : decisiveElsewhere(snapshot, system.ruleIds))
     lastInputWallMs = Date.now()
-    systemFilter = system?.name ?? null
+    systemFilter = system?.id ?? null
   }
   const keepFilter = (next: ComposedDisplaySnapshot): void => {
     if (narrowedTo === null) return

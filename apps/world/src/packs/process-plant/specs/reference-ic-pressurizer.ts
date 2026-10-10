@@ -2,7 +2,7 @@ import type { ProcessPlantIcRule } from '../runtime/index.ts'
 import { alarm, annunciator, comparison, deadbandController, reactorTripBreakerWrites, rule, trip, write } from './reference-ic-helpers.ts'
 
 const pzrAlarm = annunciator({
-  system: 'reactor coolant system',
+  system: 'reactorCoolantSystem',
   equipmentId: 'pressurizer',
   group: 'pressurizer',
   priority: 'high',
@@ -10,7 +10,7 @@ const pzrAlarm = annunciator({
 })
 
 const pzrAction = annunciator({
-  system: 'reactor coolant system',
+  system: 'reactorCoolantSystem',
   equipmentId: 'pressurizer',
   group: 'pressurizer',
   priority: 'urgent',

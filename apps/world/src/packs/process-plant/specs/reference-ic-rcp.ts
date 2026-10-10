@@ -5,7 +5,7 @@ import type { ProcessPlantReferenceLoop } from './reference-loop.ts'
 export const reactorCoolantPumpReferenceIcRules = (loop: ProcessPlantReferenceLoop): ReadonlyArray<ProcessPlantIcRule> => {
   const lower = loop.toLowerCase()
   const rcpAlarm = annunciator({
-    system: 'reactor coolant system',
+    system: 'reactorCoolantSystem',
     equipmentId: `rcp${loop}`,
     group: `reactor-coolant-pump-${lower}`,
     priority: 'high',

@@ -141,7 +141,7 @@ describe('annunciator tiles', () => {
   })
 
   test('each declared system counts its own active alarms, says how severe the worst is, and whether any trip or is unacknowledged', () => {
-    const systems = [{ name: 'steam generators', ruleIds: ['sg-a-low', 'sg-b-low'] }, { name: 'electrical', ruleIds: ['bus-a-dead'] }, { name: 'containment', ruleIds: ['ctmt-high'] }]
+    const systems = [{ id: 'steamGenerators', name: 'Steam generators', ruleIds: ['sg-a-low', 'sg-b-low'] }, { id: 'electrical', name: 'Electrical', ruleIds: ['bus-a-dead'] }, { id: 'containment', name: 'Containment', ruleIds: ['ctmt-high'] }]
     const states = annunciatorStates(systems, [
       alarm('sg-a-low', 'warning'),
       alarm('sg-b-low', 'critical', { acknowledged: false }),
@@ -151,10 +151,10 @@ describe('annunciator tiles', () => {
       alarm('ctmt-high', 'critical', { active: false, acknowledged: false }),
     ])
     expect(states).toEqual([
-      { name: 'steam generators', active: 2, unacknowledged: 1, severity: 'critical', trip: false, firstOut: false },
-      { name: 'electrical', active: 1, unacknowledged: 0, severity: 'notice', trip: true, firstOut: true },
+      { id: 'steamGenerators', name: 'Steam generators', active: 2, unacknowledged: 1, severity: 'critical', trip: false, firstOut: false },
+      { id: 'electrical', name: 'Electrical', active: 1, unacknowledged: 0, severity: 'notice', trip: true, firstOut: true },
       // A quiet system keeps its place.
-      { name: 'containment', active: 0, unacknowledged: 0, severity: null, trip: false, firstOut: false },
+      { id: 'containment', name: 'Containment', active: 0, unacknowledged: 0, severity: null, trip: false, firstOut: false },
     ])
   })
 })

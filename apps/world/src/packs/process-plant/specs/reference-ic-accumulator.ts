@@ -6,7 +6,7 @@ export const accumulatorReferenceIcRules = (loop: ProcessPlantReferenceLoop): Re
   const lower = loop.toLowerCase()
   const id = `safetyAccumulator${loop}`
   const accumulatorAlarm = annunciator({
-    system: 'safety injection',
+    system: 'safetyInjection',
     equipmentId: id,
     group: `accumulator-${lower}`,
     priority: 'high',

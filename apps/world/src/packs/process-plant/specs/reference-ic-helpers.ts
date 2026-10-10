@@ -1,5 +1,6 @@
 import { processPlantSignalReferenceSchema, type ProcessPlantSignalReference } from '../signals.ts'
 import type { ProcessPlantIcAnnunciator, ProcessPlantIcCondition, ProcessPlantIcRule } from '../runtime/index.ts'
+import type { ReferenceAnnunciatorSystemId } from './reference-ic-annunciators.ts'
 
 export type ReferenceIcEffect = ProcessPlantIcRule['effects'][number]
 export type SignalRef = { readonly tagId: string } | { readonly path: string }
@@ -34,7 +35,9 @@ export const vote = (required: number, conditions: ReadonlyArray<ProcessPlantIcC
   conditions,
 })
 
-export const annunciator = (config: ProcessPlantIcAnnunciator): ProcessPlantIcAnnunciator => config
+/** An annunciator on one of the systems the reference PWR declares (reference-ic-annunciators.ts). */
+export type ReferenceAnnunciator = ProcessPlantIcAnnunciator & { readonly system: ReferenceAnnunciatorSystemId }
+export const annunciator = (config: ReferenceAnnunciator): ReferenceAnnunciator => config
 
 export const alarm = (config: {
   readonly id: string

@@ -3,7 +3,7 @@ import type { ProcessPlantReferenceLoop } from './reference-loop.ts'
 import { alarm, annunciator, comparison, reactorTripBreakerWrites, rule, trip, vote, write } from './reference-ic-helpers.ts'
 
 const reactorAlarm = annunciator({
-  system: 'reactor protection',
+  system: 'reactorProtection',
   equipmentId: 'core',
   group: 'reactor-protection',
   priority: 'urgent',
@@ -11,7 +11,7 @@ const reactorAlarm = annunciator({
 })
 
 const reactorAction = annunciator({
-  system: 'reactor protection',
+  system: 'reactorProtection',
   equipmentId: 'core',
   group: 'reactor-protection',
   firstOutGroup: 'reactor-trip',

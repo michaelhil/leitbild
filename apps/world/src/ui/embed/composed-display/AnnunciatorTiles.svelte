@@ -28,16 +28,16 @@
 </script>
 
 <div class="tiles" role="group" aria-label="Alarms by system" style={`grid-template-columns:repeat(auto-fill,minmax(${layout.annunciatorTile.width}px,1fr));gap:${layout.annunciatorGap}px`}>
-  {#each states as state, at (state.name)}
+  {#each states as state, at (state.id)}
     {@const type = state.severity === null ? null : alertTypeOf(state.severity)}
     <button
       type="button"
       class={`tile${type === null ? '' : ` alert-${type}`}`}
-      class:selected={selected === state.name}
+      class:selected={selected === state.id}
       style={`height:${layout.annunciatorTile.height}px`}
-      aria-pressed={selected === state.name}
-      title={`${described(state)}. ${selected === state.name ? 'Show all alarms' : 'Show only its alarms'}`}
-      onclick={() => select(selected === state.name ? null : state.name)}
+      aria-pressed={selected === state.id}
+      title={`${described(state)}. ${selected === state.id ? 'Show all alarms' : 'Show only its alarms'}`}
+      onclick={() => select(selected === state.id ? null : state.id)}
     >
       <span class="label">{systems[at]!.label}</span>
       <span class="counts">

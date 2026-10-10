@@ -105,7 +105,7 @@ describe('process plant model composition', () => {
       operatingPointRef: 'test.operating-point',
       automationRef: 'test.automation',
       graph: invalid,
-      automationForGraph: () => ({ rules: [] }),
+      automationForGraph: () => ({ annunciatorSystems: [], rules: [] }),
       validateGraph: assertPrimaryLoopTopologyValid,
     })).toThrow('primary loop A must have exactly one core hotLegA primaryCoolant outlet')
   })

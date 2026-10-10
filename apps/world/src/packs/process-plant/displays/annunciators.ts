@@ -2,18 +2,17 @@ import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import { composedDisplayLayout } from './composition.ts'
 import { textWidth, unmeasurable } from './mimic/text-metrics.ts'
 
-// The Plant's annunciator systems, as its I&C rules declare them on each
-// alarm and trip ("steam generators", "electrical"): the first level an
-// overview summarises its alarms by. Systems keep the order the model first
-// declares them in, so their tiles never move as alarms come and go.
+// The Plant's annunciator systems as its I&C config declares them, in their
+// declared order, each with the rules whose alarms and trips name it: the
+// first level an overview summarises its alarms by. The config guarantees
+// that every alarm names exactly one declared system, so a quiet tile is a
+// quiet system.
 
 export interface AnnunciatorSystem {
-  /** As the model declares it. */
+  readonly id: string
+  /** As operators name it ("Reactor coolant system"). */
   readonly name: string
-  /**
-   * What its tile says: the name with a capital, or its initials ("RCS")
-   * where the name does not fit a tile at its least width. Text is never cut.
-   */
+  /** What its tile says: the name, or the declared short label where the name does not fit a tile at its least width. Never cut. */
   readonly label: string
   /** The rules whose alarms or trips it annunciates. */
   readonly ruleIds: ReadonlyArray<string>
@@ -23,37 +22,22 @@ export type AnnunciatorSystemsResult =
   | { readonly ok: true; readonly systems: ReadonlyArray<AnnunciatorSystem> }
   | { readonly ok: false; readonly issues: ReadonlyArray<string> }
 
-const capitalised = (name: string): string => `${name.charAt(0).toUpperCase()}${name.slice(1)}`
-const initials = (name: string): string => name.split(/\s+/).filter(word => word.length > 0).map(word => word.charAt(0).toUpperCase()).join('')
+const fits = (text: string, room: number): boolean => unmeasurable('tag', text).length === 0 && textWidth('tag', text) <= room
 
-/**
- * Every declared system with its rules. A tile that looks quiet must be
- * quiet, so either every alarm and trip names its system, or none does (the
- * Plant then has no tiles), and no rule annunciates on two systems.
- */
 export const annunciatorSystems = (plant: CompiledProcessPlant): AnnunciatorSystemsResult => {
-  const systems = new Map<string, string[]>()
-  const unnamed: string[] = []
-  const spanning: string[] = []
+  const ruleIds = new Map<string, string[]>()
   for (const rule of plant.automation.rules) {
     if (!rule.enabled) continue
-    const effects = rule.effects.filter(effect => effect.type === 'alarm.enter' || effect.type === 'trip.enter')
-    const names = [...new Set(effects.flatMap(effect => effect.annunciator?.system ?? []))]
-    if (effects.some(effect => effect.annunciator?.system === undefined)) unnamed.push(rule.id)
-    if (names.length > 1) spanning.push(`${rule.id} (${names.join(', ')})`)
-    for (const name of names) systems.set(name, [...(systems.get(name) ?? []), rule.id])
+    const systems = new Set(rule.effects.flatMap(effect => (effect.type === 'alarm.enter' || effect.type === 'trip.enter') && effect.annunciator?.system !== undefined ? [effect.annunciator.system] : []))
+    for (const system of systems) ruleIds.set(system, [...(ruleIds.get(system) ?? []), rule.id])
   }
-  if (systems.size === 0) return { ok: true, systems: [] }
-  const issues = [
-    ...(unnamed.length === 0 ? [] : [`alarms of ${unnamed.join(', ')} name no annunciator system, so a system's tile could look quiet while they are active`]),
-    ...(spanning.length === 0 ? [] : [`rules annunciate on more than one system: ${spanning.join('; ')}`]),
-  ]
   const tile = composedDisplayLayout.annunciatorTile
   const room = tile.width - tile.inset
-  const labelled = [...systems].map(([name, ruleIds]) => {
-    const label = [capitalised(name), initials(name)].find(candidate => unmeasurable('tag', candidate).length === 0 && textWidth('tag', candidate) <= room)
-    if (label === undefined) issues.push(`the annunciator system "${name}" cannot be named on a tile ${room} px wide`)
-    return { name, label: label ?? name, ruleIds }
+  const issues: string[] = []
+  const systems = plant.automation.annunciatorSystems.map(system => {
+    const label = [system.label, system.shortLabel].find((candidate): candidate is string => candidate !== undefined && fits(candidate, room))
+    if (label === undefined) issues.push(`annunciator system ${system.id}: neither "${system.label}" nor its short label${system.shortLabel === undefined ? ' (none declared)' : ` "${system.shortLabel}"`} fits a tile ${room} px wide; declare a short label that does`)
+    return { id: system.id, name: system.label, label: label ?? system.label, ruleIds: ruleIds.get(system.id) ?? [] }
   })
-  return issues.length > 0 ? { ok: false, issues } : { ok: true, systems: labelled }
+  return issues.length > 0 ? { ok: false, issues } : { ok: true, systems }
 }

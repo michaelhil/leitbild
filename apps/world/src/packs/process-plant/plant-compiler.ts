@@ -11,7 +11,7 @@ import {
 } from './graph/index.ts'
 import { processPlantComponentRegistry } from './graph/index.ts'
 import { assertProcessPlantVariableValueValid } from './runtime/variable-validation.ts'
-import type { ProcessPlantProtectionConfig } from './runtime/ic/control-protection-model.ts'
+import { processPlantIcConfigSchema, type ProcessPlantProtectionConfig } from './runtime/ic/control-protection-model.ts'
 import type { ProcessPlantDefinition } from './config.ts'
 import {
   resolveProcessPlantAutomation,
@@ -171,7 +171,8 @@ export const compileResolvedProcessPlant = (
     sourceGraph: graph,
     graph: compiledGraph,
     initialState,
-    automation: definition.automationForGraph(compiledGraph),
+    // Validated once here, so every reader sees declared annunciator systems and their references whole.
+    automation: processPlantIcConfigSchema.parse(definition.automationForGraph(compiledGraph)),
   }
 }
 

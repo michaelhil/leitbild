@@ -10,7 +10,7 @@ const feedwaterAlarm = annunciator({
 })
 
 const turbineAlarm = annunciator({
-  system: 'balance of plant',
+  system: 'balanceOfPlant',
   equipmentId: 'turbine',
   group: 'turbine-generator',
   priority: 'medium',
@@ -142,7 +142,7 @@ export const balanceOfPlantReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRu
       title: 'Main steam safety valve open',
       message: 'Main steam safety valve effective position is above the reference open threshold.',
       severity: 'warning',
-      annunciator: annunciator({ system: 'main steam', equipmentId: 'mainSteamSafetyValve', group: 'main-steam', priority: 'high', role: 'status' }),
+      annunciator: annunciator({ system: 'mainSteam', equipmentId: 'mainSteamSafetyValve', group: 'main-steam', priority: 'high', role: 'status' }),
     })],
   }),
 ]
