@@ -16,6 +16,7 @@
 // that same layer.
 import type { DiagramProfile } from './diagram.ts'
 import { ceilTo, roundTo } from './geometry.ts'
+import type { Attachments } from './attach.ts'
 import type { Layering } from './layering.ts'
 import type { Model } from './model.ts'
 import type { Ordering } from './ordering.ts'
@@ -35,6 +36,17 @@ export interface AcrossInput {
   readonly refine: boolean
   /** Per node: drawn mirrored (a folded return leg). */
   readonly flipped: ReadonlyArray<boolean>
+  /** Room bars' labels need, kept where the shared items of lane layers are placed in order (refined). */
+  readonly room: ReadonlyArray<LabelRoom>
+  /** Net per edge: pipes of one net are one pipe up to their tee. */
+  readonly net: ReadonlyArray<number>
+}
+
+/** A bar's label needs `after` (an item it attaches) at least `gap` past `before` (a run through the bar's layer). */
+export interface LabelRoom {
+  readonly before: number
+  readonly after: number
+  readonly gap: number
 }
 
 /** Where a band of items ends: everything, and the solids. */
@@ -50,17 +62,18 @@ export interface AcrossPlacement {
   readonly laneStart: number
   readonly pitch: number
   /**
-   * Given each chain's pins, moves one strand that jogs at both ends into an
-   * end's column; returns the new anchors, or null when no strand needs or
-   * allows a move.
+   * Given the attachments, moves one strand that jogs at both ends into an
+   * end's column, or one item whose pipe to a bar crosses another bar of its
+   * stack out of that bar's span; returns the new anchors, or null when
+   * nothing needs or allows a move.
    */
-  readonly align: (pins: ReadonlyArray<ReadonlyArray<number>>) => ReadonlyArray<number> | null
+  readonly align: (attached: Attachments) => ReadonlyArray<number> | null
 }
 
 const MEDIAN_SWEEPS = 4
 
 export const placeAcross = (input: AcrossInput): AcrossPlacement => {
-  const { model, profile, layering, ordering, left, right, leftSolid, rightSolid, refine, flipped } = input
+  const { model, profile, layering, ordering, left, right, leftSolid, rightSolid, refine, flipped, room, net } = input
   const grid = profile.grid
   const laneCount = model.lanes.length
   const items = layering.items
@@ -113,10 +126,12 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
   // Shared strands a lane layer places are fixed: free layers keep their column.
   const fixedColumn = new Map<number, number>()
   // Refined, the shared items of lane layers keep their order: each strand is one column through its
-  // layers, packed with the symbols by the longest path over each layer's order, from the hub band. A
-  // strand whose order disagrees between its layers would cross another there: it goes after its
-  // layers' items, as unordered. Then a strand between two symbols lines up with a shared symbol at its
-  // end where that moves nothing else and widens nothing, so the edge jogs only at its other end.
+  // layers, packed with the symbols by the longest path over each layer's order, from the hub band.
+  // Neighbouring strands of one net are one pipe up to where they part: they keep no order or distance
+  // among themselves, and what follows them clears them all. A strand whose order disagrees between its
+  // layers would cross another there: it goes after its layers' items, as unordered. Then, nearest the
+  // hubs first, a strand lines up with a shared symbol at one of its ends where that puts it in line,
+  // widens nothing and keeps the strands lined up before it in line, so the edge jogs only at its other end.
   const placeSharedInOrder = (): void => {
     const lists = ordering.layers.map(layer => (hasLaneContent(layer) ? inBlock(layer, SHARED_BLOCK) : []))
     const unitOf = (item: number): number => (isDummy(item) ? -1 - items[item]!.edge! : item)
@@ -125,16 +140,24 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
       lists.forEach(list => list.forEach(item => members.set(unitOf(item), [...(members.get(unitOf(item)) ?? []), item])))
       return members
     }
+    const kin = (a: number, b: number): boolean => isDummy(a) && isDummy(b) && net[items[a]!.edge!] === net[items[b]!.edge!]
+    // What an item must clear in its layer: the group before its own (a run of kin strands, or one item).
+    const before = (item: number): number[] => {
+      const list = lists[items[item]!.layer]!
+      let start = list.indexOf(item)
+      while (start > 0 && kin(list[start - 1]!, item)) start--
+      if (start === 0) return []
+      const last = list[start - 1]!
+      let first = start - 1
+      while (first > 0 && kin(list[first - 1]!, last)) first--
+      return list.slice(first, start)
+    }
     // Units in an order every layer agrees with, nearest the hubs first; or the strand that blocks one.
     const sequenceOf = (members: ReadonlyMap<number, ReadonlyArray<number>>): { readonly sequence: number[] } | { readonly blocking: number } => {
       const done = new Set<number>()
       const sequence: number[] = []
       const meanIndex = (unit: number): number => members.get(unit)!.reduce((sum, item) => sum + lists[items[item]!.layer]!.indexOf(item), 0) / members.get(unit)!.length
-      const ready = (unit: number): boolean => members.get(unit)!.every(item => {
-        const list = lists[items[item]!.layer]!
-        const k = list.indexOf(item)
-        return k === 0 || done.has(unitOf(list[k - 1]!))
-      })
+      const ready = (unit: number): boolean => members.get(unit)!.every(item => before(item).every(other => done.has(unitOf(other))))
       while (sequence.length < members.size) {
         const waiting = [...members.keys()].filter(unit => !done.has(unit))
         const next = waiting.filter(ready).sort((a, b) => (meanIndex(a) - meanIndex(b)) || (a - b))[0]
@@ -165,34 +188,41 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
     const compact = (lining: ReadonlyMap<number, number>): Map<number, number> => {
       const at = new Map<number, number>()
       for (const unit of sequence) {
-        const value = Math.max(...members.get(unit)!.map(item => {
-          const list = lists[items[item]!.layer]!
-          const k = list.indexOf(item)
-          return k === 0 ? floorAt(item) : at.get(unitOf(list[k - 1]!))! + separation(list[k - 1]!, item)
+        const value = Math.max(...members.get(unit)!.flatMap(item => {
+          const previous = before(item)
+          return previous.length === 0 ? [floorAt(item)] : previous.map(other => at.get(unitOf(other))! + separation(other, item))
         }))
-        at.set(unit, Math.max(value, lining.get(unit) ?? -Infinity))
+        // A label's room counts where the run before it is already placed.
+        const labels = room.filter(entry => unitOf(entry.after) === unit && at.has(unitOf(entry.before))).map(entry => at.get(unitOf(entry.before))! + entry.gap)
+        at.set(unit, Math.max(value, lining.get(unit) ?? -Infinity, ...labels))
       }
       return at
     }
-    const packed = compact(new Map())
-    const band = lists.flat().reduce((edge, item) => ({
-      full: Math.max(edge.full, packed.get(unitOf(item))! + right[item]!),
-      solid: Math.max(edge.solid, packed.get(unitOf(item))! + rightSolid[item]!),
+    const bandOf = (at: ReadonlyMap<number, number>): Edge => lists.flat().reduce((edge, item) => ({
+      full: Math.max(edge.full, at.get(unitOf(item))! + right[item]!),
+      solid: Math.max(edge.solid, at.get(unitOf(item))! + rightSolid[item]!),
     }), hubBandEnd)
+    const packed = compact(new Map())
+    const band = bandOf(packed)
     const lining = new Map<number, number>()
+    const lined = new Map<number, number>()
+    let current = packed
     for (const unit of sequence.filter(unit => unit < 0)) {
       const chain = layering.chains[-1 - unit]!
       if (!chain.steps.every(step => step === 'next')) continue
-      const target = [chain.items[0]!, chain.items.at(-1)!].filter(end => isPlain(end) && packed.has(end)).map(end => packed.get(end)!)[0]
-      if (target === undefined || target <= packed.get(unit)!) continue
-      const room = members.get(unit)!.every(item => {
-        const list = lists[items[item]!.layer]!
-        const following = list[list.indexOf(item) + 1]
-        return following === undefined
-          ? target + right[item]! <= band.full && target + rightSolid[item]! <= band.solid
-          : target + separation(item, following) <= packed.get(unitOf(following))!
-      })
-      if (room) lining.set(unit, target)
+      for (const end of [chain.items[0]!, chain.items.at(-1)!].filter(item => isPlain(item) && current.has(item))) {
+        const target = current.get(end)!
+        if (target <= current.get(unit)!) continue
+        lining.set(unit, target)
+        const trial = compact(lining)
+        const wider = bandOf(trial)
+        if (trial.get(unit) === trial.get(end) && wider.full <= band.full && wider.solid <= band.solid && [...lined].every(([other, symbol]) => trial.get(symbol) === trial.get(other))) {
+          lined.set(unit, end)
+          current = trial
+          break
+        }
+        lining.delete(unit)
+      }
     }
     for (const [unit, value] of compact(lining)) {
       if (unit >= 0) c[unit] = value
@@ -529,10 +559,51 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
     }
     return false
   }
-  let budget = 2 * strands.length + symbols.length
-  const align = (pins: ReadonlyArray<ReadonlyArray<number>>): ReadonlyArray<number> | null => {
+  // A symbol or stub of a free layer whose pipe to a bar passes another bar of the stack inside its span
+  // crosses it: it moves out of that span once, the nearer way its layer has room for that clears every
+  // bar its pipe passes, within what the drawing already spans across (a crossing is not traded for
+  // size). The bars' rows come from the attachments, so this waits for them.
+  const bars = items.map((_, index) => index).filter(isBar)
+  const stacked = bars.filter(bar => bars.some(other => other !== bar && items[other]!.layer === items[bar]!.layer))
+  const escaped = new Set<number>()
+  const escape = (attached: Attachments): boolean => {
+    const placed = items.map((_, index) => index).filter(index => Number.isFinite(c[index]!) && !isBar(index))
+    const low = Math.min(...placed.map(index => c[index]! - left[index]!))
+    const high = Math.max(...placed.map(index => c[index]! + right[index]!))
+    for (const bar of stacked) {
+      const layer = items[bar]!.layer
+      const stack = stacked.filter(other => other !== bar && items[other]!.layer === layer)
+      for (const [index, chain] of layering.chains.entries()) {
+        const position = chain.items.indexOf(bar)
+        if (position < 0) continue
+        const k = position === 0 ? 1 : position - 1
+        const other = chain.items[k]!
+        if (escaped.has(other) || !freeItems.has(other) || !isPlain(other)) continue
+        const pin = attached.pin[index]![k]!
+        const upstream = items[other]!.layer < layer
+        const passed = stack.filter(y => (upstream ? attached.barRow[y]! < attached.barRow[bar]! : attached.barRow[y]! > attached.barRow[bar]!))
+        const within = (at: number): boolean => passed.some(y => at > attached.span[y]![0] && at < attached.span[y]![1])
+        if (!within(pin)) continue
+        escaped.add(other)
+        const crossed = passed.filter(y => pin > attached.span[y]![0] && pin < attached.span[y]![1])
+        const targets = [Math.min(...crossed.map(y => attached.span[y]![0])) - grid / 2, Math.max(...crossed.map(y => attached.span[y]![1])) + grid / 2]
+          .filter(at => !within(at))
+          .sort((a, b) => (Math.abs(a - pin) - Math.abs(b - pin)) || (a - b))
+        for (const at of targets) {
+          const moves = makeRoom([other], c[other]! + at - pin)
+          if (moves === null || [...moves].some(([item, value]) => value - left[item]! < low || value + right[item]! > high)) continue
+          for (const [item, value] of moves) c[item] = value
+          return true
+        }
+      }
+    }
+    return false
+  }
+  let budget = 2 * strands.length + symbols.length + stacked.length
+  const align = (attached: Attachments): ReadonlyArray<number> | null => {
     if (budget <= 0) return null
-    if (lineUp(pins)) {
+    const pins = attached.pin
+    if (lineUp(pins) || escape(attached)) {
       budget--
       placeHighHubs()
       return [...c]

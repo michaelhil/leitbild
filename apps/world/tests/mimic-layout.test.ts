@@ -338,7 +338,7 @@ describe('diagram layout engine', () => {
       ],
     })
     const tangled = layoutDiagram(combined(4), { ...profile, limits: { ...profile.limits, crossings: 2 } })
-    expect(tangled).toEqual({ ok: false, reasons: [{ kind: 'density', limit: 'crossings', count: 5, max: 2 }] })
+    expect(tangled).toEqual({ ok: false, reasons: [{ kind: 'density', limit: 'crossings', count: 4, max: 2 }] })
     const lanes = layoutDiagram(hubLoops(6), { ...profile, limits: { ...profile.limits, lanes: 4 } })
     expect(lanes).toEqual({ ok: false, reasons: [{ kind: 'density', limit: 'lanes', count: 6, max: 4 }] })
     const narrow = layoutDiagram(hubLoops(6), { ...profile, maxWidth: 400, maxHeight: 300 })

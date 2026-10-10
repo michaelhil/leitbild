@@ -1,6 +1,6 @@
 // One layout attempt: an orientation and a text detail level, from the
 // orientation-free structure (cycles, layers, order) to screen geometry.
-import { placeAcross } from './across.ts'
+import { placeAcross, type LabelRoom } from './across.ts'
 import { placeAlong, type LayerExtent } from './along.ts'
 import { attach } from './attach.ts'
 import { planChannels, trackKey } from './channels.ts'
@@ -175,119 +175,140 @@ export const runAttempt = (prepared: Prepared, profile: DiagramProfile, orientat
   const leftSolid = items.map((_, item) => reachOf(item, 'c0', false))
   const rightSolid = items.map((_, item) => reachOf(item, 'c1', false))
 
-  const across = placeAcross({ model, profile, layering, ordering, left, right, leftSolid, rightSolid, refine: prepared.refine, flipped: prepared.flipped })
-  const attachAt = (anchors: ReadonlyArray<number>) => attach({
-    model, profile, layering, ordering, c: anchors, entries,
-    box: model.nodes.map(node => (shape[node.index] === null ? { f0: 0, f1: 0, c0: 0, c1: 0 } : shiftBox(shape[node.index]!, 0, anchors[node.index]!))),
-  })
-  // Strands line up with the ports their ends were given, until none can move.
-  let c = across.c
-  let attached = attachAt(c)
-  for (let next = across.align(attached.pin); next !== null; next = across.align(attached.pin)) {
-    c = next
-    attached = attachAt(c)
-  }
-  const plan = planChannels({ model, profile, layering, structure, pin: attached.pin, tighten: prepared.refine })
+  // Across, attachments, channels and along, then each bar's label end; once more with room kept for the
+  // labels that found neither end free, where the shared items before a bar's span can give it.
+  const place = (room: ReadonlyArray<LabelRoom>) => {
+    const across = placeAcross({ model, profile, layering, ordering, left, right, leftSolid, rightSolid, refine: prepared.refine, flipped: prepared.flipped, room, net: structure.net })
+    const attachAt = (anchors: ReadonlyArray<number>) => attach({
+      model, profile, layering, ordering, c: anchors, entries,
+      box: model.nodes.map(node => (shape[node.index] === null ? { f0: 0, f1: 0, c0: 0, c1: 0 } : shiftBox(shape[node.index]!, 0, anchors[node.index]!))),
+    })
+    // Strands line up with the ports their ends were given, until none can move.
+    let c = across.c
+    let attached = attachAt(c)
+    for (let next = across.align(attached); next !== null; next = across.align(attached)) {
+      c = next
+      attached = attachAt(c)
+    }
+    const plan = planChannels({ model, profile, layering, structure, pin: attached.pin, tighten: prepared.refine })
 
-  // Bars: a line `outline` thick, rows a grid apart.
-  const barLine = (node: number): AxisBox => ({ f0: -outline / 2, f1: outline / 2, c0: attached.span[node]![0], c1: attached.span[node]![1] })
-  const extents: LayerExtent[] = Array.from({ length: layering.layerCount }, () => ({ lowReserve: 0, highReserve: 0, lowFace: 0, highFace: 0 }))
-  for (const node of model.nodes) {
-    if (node.role === 'hub') continue
-    const layer = items[node.index]!.layer
-    const current = extents[layer]!
-    if (node.role === 'bar') {
-      const row = attached.barRow[node.index]! * grid
-      const reserve = dressNode(node.index, barLine(node.index)).reserve
-      extents[layer] = {
-        lowReserve: Math.max(current.lowReserve, -(row + reserve.f0)),
-        highReserve: Math.max(current.highReserve, row + reserve.f1),
-        lowFace: current.lowFace,
-        highFace: Math.max(current.highFace, row),
+    // Bars: a line `outline` thick, rows a grid apart.
+    const barLine = (node: number): AxisBox => ({ f0: -outline / 2, f1: outline / 2, c0: attached.span[node]![0], c1: attached.span[node]![1] })
+    const extents: LayerExtent[] = Array.from({ length: layering.layerCount }, () => ({ lowReserve: 0, highReserve: 0, lowFace: 0, highFace: 0 }))
+    for (const node of model.nodes) {
+      if (node.role === 'hub') continue
+      const layer = items[node.index]!.layer
+      const current = extents[layer]!
+      if (node.role === 'bar') {
+        const row = attached.barRow[node.index]! * grid
+        const reserve = dressNode(node.index, barLine(node.index)).reserve
+        extents[layer] = {
+          lowReserve: Math.max(current.lowReserve, -(row + reserve.f0)),
+          highReserve: Math.max(current.highReserve, row + reserve.f1),
+          lowFace: current.lowFace,
+          highFace: Math.max(current.highFace, row),
+        }
+        continue
       }
-      continue
+      const reserve = relative[node.index]!.reserve
+      extents[layer] = {
+        lowReserve: Math.max(current.lowReserve, -reserve.f0),
+        highReserve: Math.max(current.highReserve, reserve.f1),
+        lowFace: Math.max(current.lowFace, -shape[node.index]!.f0),
+        highFace: Math.max(current.highFace, shape[node.index]!.f1),
+      }
     }
-    const reserve = relative[node.index]!.reserve
-    extents[layer] = {
-      lowReserve: Math.max(current.lowReserve, -reserve.f0),
-      highReserve: Math.max(current.highReserve, reserve.f1),
-      lowFace: Math.max(current.lowFace, -shape[node.index]!.f0),
-      highFace: Math.max(current.highFace, shape[node.index]!.f1),
-    }
-  }
-  const along = placeAlong(profile, extents, plan)
-  const trackF = (channel: number, net: number): number => along.firstTrack[channel]! + plan.offset[channel]![plan.track.get(trackKey(channel, net))!]!
-  const stepTrack = (chain: number, step: number): number => {
-    const jog = plan.jog[chain]![step]!
-    return trackF(jog.channel, jog.net)
-  }
+    const along = placeAlong(profile, extents, plan)
+    const trackF = (channel: number, net: number): number => along.firstTrack[channel]! + plan.offset[channel]![plan.track.get(trackKey(channel, net))!]!
 
-  // Hubs grow along their side face to cover their tracks.
-  const hubPorts = model.nodes.map(() => new Map<number, Set<number>>())
-  layering.chains.forEach((chain, index) => chain.steps.forEach((_, k) => {
-    for (const position of [k, k + 1]) {
-      const item = chain.items[position]!
-      if (item >= nodeCount || model.nodes[item]!.role !== 'hub') continue
-      const edge = model.edges[chain.edge]!
-      const port = item === edge.from ? edge.fromPort : edge.toPort
-      const tracks = hubPorts[item]!.get(port) ?? new Set<number>()
-      tracks.add(stepTrack(index, k))
-      hubPorts[item]!.set(port, tracks)
-    }
-  }))
-  const box: AxisBox[] = model.nodes.map(node => {
-    const layer = items[node.index]!.layer
-    if (node.role === 'bar') return shiftBox(barLine(node.index), along.axis[layer]! + attached.barRow[node.index]! * grid, 0)
-    const placed = shiftBox(shape[node.index]!, along.axis[layer]!, c[node.index]!)
-    if (node.role !== 'hub') return placed
-    const tracks = [...hubPorts[node.index]!.values()].flatMap(set => [...set])
-    if (tracks.length === 0) return placed
-    const low = Math.min(...tracks)
-    const high = Math.max(...tracks)
-    const size = alongCells(node) * profile.cell
-    const f0 = floorTo(Math.min(low - grid, (low + high) / 2 - size / 2), grid)
-    const f1 = Math.max(f0 + size, ceilTo(high + grid, grid))
-    return { f0, f1, c0: placed.c0, c1: placed.c1 }
-  })
-  hubPorts.forEach((ports, node) => ports.forEach((tracks, port) => {
-    if (tracks.size > 1) throw new Error(`hub ${model.nodes[node]!.id} port ${model.nodes[node]!.ports[port]!.id} would need two places on its face; split its edges over separate ports`)
-  }))
-  // A bar's label goes to the first end no vertical run passes: runs through
-  // its layer (dummies), and runs to the other bars of its stack that cross
-  // its row. It keeps clear of the hubs beside the layers and of the frames of
-  // the bars stacked with it (a bar's frame spans its whole line, as wide as
-  // its label), both ways. Either end reserves the same room along the flow,
-  // so the end is chosen once everything is placed.
-  const apart = (a: AxisBox | null | undefined, b: AxisBox | null | undefined): boolean => a === null || a === undefined || b === null || b === undefined
-    || a.f1 + profile.textClearance <= b.f0 || b.f1 + profile.textClearance <= a.f0 || a.c1 + profile.textClearance <= b.c0 || b.c1 + profile.textClearance <= a.c0
-  const overlaps = (a: AxisBox, b: AxisBox): boolean => a.f0 < b.f1 && b.f0 < a.f1 && a.c0 < b.c1 && b.c0 < a.c1
-  const hubsDressed = model.nodes.filter(node => node.role === 'hub').map(node => dressNode(node.index, box[node.index]!))
-  for (const bar of model.nodes.filter(node => node.role === 'bar')) {
-    const layer = items[bar.index]!.layer
-    const row = attached.barRow[bar.index]!
-    const columns: number[] = []
-    items.forEach((item, index) => { if (item.node === null && item.layer === layer) columns.push(c[index]!) })
-    layering.chains.forEach((chain, index) => chain.items.forEach((item, position) => {
-      if (item === bar.index || item >= nodeCount || model.nodes[item]!.role !== 'bar' || items[item]!.layer !== layer) return
-      const neighbour = chain.items[position === 0 ? 1 : position - 1]!
-      const otherRow = attached.barRow[item]!
-      if (items[neighbour]!.layer < layer ? row < otherRow : row > otherRow) columns.push(attached.pin[index]![position]!)
+    // Hubs grow along their side face to cover their tracks.
+    const hubPorts = model.nodes.map(() => new Map<number, Set<number>>())
+    layering.chains.forEach((chain, index) => chain.steps.forEach((_, k) => {
+      for (const position of [k, k + 1]) {
+        const item = chain.items[position]!
+        if (item >= nodeCount || model.nodes[item]!.role !== 'hub') continue
+        const edge = model.edges[chain.edge]!
+        const port = item === edge.from ? edge.fromPort : edge.toPort
+        const tracks = hubPorts[item]!.get(port) ?? new Set<number>()
+        const jog = plan.jog[index]![k]!
+        tracks.add(trackF(jog.channel, jog.net))
+        hubPorts[item]!.set(port, tracks)
+      }
     }))
-    const stacked = model.nodes.filter(other => other.role === 'bar' && other.index !== bar.index && items[other.index]!.layer === layer)
-    const free = (end: AxisFace): boolean => {
-      const own = dress({ orientation, profile, node: bar, box: box[bar.index]!, lines: kept[bar.index]!, side: screenFace(orientation, end), gap: outline })
-      const text = own.text
-      if (text === null) return true
-      const [low, high] = [text.box.c0 - outline / 2, text.box.c1 + outline / 2]
-      const clearOfBars = stacked.every(other => {
-        const beside = dressNode(other.index, box[other.index]!)
-        return !overlaps(text.box, box[other.index]!) && apart(text.box, beside.frame) && apart(beside.text?.box, own.frame)
-      })
-      const clearOfHubs = hubsDressed.every(hub => !overlaps(text.box, hub.box) && (hub.text === null || !overlaps(text.box, hub.text.box)) && apart(text.box, hub.frame) && apart(hub.text?.box, own.frame))
-      return clearOfBars && clearOfHubs && columns.every(column => column <= low || column >= high)
+    const box: AxisBox[] = model.nodes.map(node => {
+      const layer = items[node.index]!.layer
+      if (node.role === 'bar') return shiftBox(barLine(node.index), along.axis[layer]! + attached.barRow[node.index]! * grid, 0)
+      const placed = shiftBox(shape[node.index]!, along.axis[layer]!, c[node.index]!)
+      if (node.role !== 'hub') return placed
+      const tracks = [...hubPorts[node.index]!.values()].flatMap(set => [...set])
+      if (tracks.length === 0) return placed
+      const low = Math.min(...tracks)
+      const high = Math.max(...tracks)
+      const size = alongCells(node) * profile.cell
+      const f0 = floorTo(Math.min(low - grid, (low + high) / 2 - size / 2), grid)
+      const f1 = Math.max(f0 + size, ceilTo(high + grid, grid))
+      return { f0, f1, c0: placed.c0, c1: placed.c1 }
+    })
+    hubPorts.forEach((ports, node) => ports.forEach((tracks, port) => {
+      if (tracks.size > 1) throw new Error(`hub ${model.nodes[node]!.id} port ${model.nodes[node]!.ports[port]!.id} would need two places on its face; split its edges over separate ports`)
+    }))
+    // A bar's label goes to the first end no vertical run passes: runs through
+    // its layer (dummies), and runs to the other bars of its stack that cross
+    // its row. It keeps clear of the hubs beside the layers and of the frames of
+    // the bars stacked with it (a bar's frame spans its whole line, as wide as
+    // its label), both ways. Either end reserves the same room along the flow,
+    // so the end is chosen once everything is placed.
+    const apart = (a: AxisBox | null | undefined, b: AxisBox | null | undefined): boolean => a === null || a === undefined || b === null || b === undefined
+      || a.f1 + profile.textClearance <= b.f0 || b.f1 + profile.textClearance <= a.f0 || a.c1 + profile.textClearance <= b.c0 || b.c1 + profile.textClearance <= a.c0
+    const overlaps = (a: AxisBox, b: AxisBox): boolean => a.f0 < b.f1 && b.f0 < a.f1 && a.c0 < b.c1 && b.c0 < a.c1
+    const hubsDressed = model.nodes.filter(node => node.role === 'hub').map(node => dressNode(node.index, box[node.index]!))
+    const barSide = new Map<number, TextSide>()
+    const sideOf = (node: number): TextSide => barSide.get(node) ?? side[node]!
+    const blocked: LabelRoom[] = []
+    for (const bar of model.nodes.filter(node => node.role === 'bar')) {
+      const layer = items[bar.index]!.layer
+      const row = attached.barRow[bar.index]!
+      const dummies = items.flatMap((item, index) => (item.node === null && item.layer === layer ? [index] : []))
+      const columns = dummies.map(item => c[item]!)
+      const attachments: Array<{ readonly item: number; readonly pin: number }> = []
+      layering.chains.forEach((chain, index) => chain.items.forEach((item, position) => {
+        if (item === bar.index) attachments.push({ item: chain.items[position === 0 ? 1 : position - 1]!, pin: attached.pin[index]![position]! })
+        if (item === bar.index || item >= nodeCount || model.nodes[item]!.role !== 'bar' || items[item]!.layer !== layer) return
+        const neighbour = chain.items[position === 0 ? 1 : position - 1]!
+        const otherRow = attached.barRow[item]!
+        if (items[neighbour]!.layer < layer ? row < otherRow : row > otherRow) columns.push(attached.pin[index]![position]!)
+      }))
+      const stacked = model.nodes.filter(other => other.role === 'bar' && other.index !== bar.index && items[other.index]!.layer === layer)
+      const label = (end: AxisFace) => dress({ orientation, profile, node: bar, box: box[bar.index]!, lines: kept[bar.index]!, side: screenFace(orientation, end), gap: outline })
+      const free = (end: AxisFace): boolean => {
+        const own = label(end)
+        const text = own.text
+        if (text === null) return true
+        const [low, high] = [text.box.c0 - outline / 2, text.box.c1 + outline / 2]
+        const clearOfBars = stacked.every(other => {
+          const beside = dress({ orientation, profile, node: other, box: box[other.index]!, lines: kept[other.index]!, side: sideOf(other.index), gap: outline })
+          return !overlaps(text.box, box[other.index]!) && apart(text.box, beside.frame) && apart(beside.text?.box, own.frame)
+        })
+        const clearOfHubs = hubsDressed.every(hub => !overlaps(text.box, hub.box) && (hub.text === null || !overlaps(text.box, hub.text.box)) && apart(text.box, hub.frame) && apart(hub.text?.box, own.frame))
+        return clearOfBars && clearOfHubs && columns.every(column => column <= low || column >= high)
+      }
+      const high = free('+c')
+      const low = !high && free('-c')
+      barSide.set(bar.index, screenFace(orientation, high || !low ? '+c' : '-c'))
+      if (high || low) continue
+      // Neither end: the label needs room before the bar's first attachment, past the run before it in its layer.
+      const first = attachments.reduce((a, b) => (b.pin < a.pin ? b : a))
+      const before = dummies.filter(item => c[item]! < attached.span[bar.index]![0]).sort((a, b) => c[b]! - c[a]!)[0]
+      const text = label('-c').text
+      if (before === undefined || text === null) continue
+      blocked.push({ before, after: first.item, gap: ceilTo((c[first.item]! - first.pin) + grid / 2 + outline + (text.box.c1 - text.box.c0) + outline / 2 + 1, grid) })
     }
-    side[bar.index] = screenFace(orientation, free('+c') || !free('-c') ? '+c' : '-c')
+    return { across, attached, plan, along, trackF, hubPorts, box, barSide, blocked }
   }
+  const first = place([])
+  const second = first.blocked.length === 0 ? null : place(first.blocked)
+  const { across, attached, plan, along, trackF, hubPorts, box, barSide } = second !== null && second.blocked.length < first.blocked.length ? second : first
+  for (const [bar, end] of barSide) side[bar] = end
   const dressed = model.nodes.map(node => dressNode(node.index, box[node.index]!))
 
   // Polylines in the abstract axes. An approach runs from the item outward to
