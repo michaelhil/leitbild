@@ -4,7 +4,7 @@
   import type { ComposedDisplaySample } from './composed-display-client.ts'
   import { displayValue, formatQuantity, formatValue, thresholdName } from '../../../packs/process-plant/displays/display-text.ts'
   import { activeThreshold, median, ratePerMinute, rateText, rateWindowMs, windowText } from './panel-presenters.ts'
-  import { displayName } from './pen-style.ts'
+  import { displayName, shortName } from './pen-style.ts'
   import { paddedDomain, rawDomain, type TrendPoint, type ValueDomain } from './trend-geometry.ts'
 
   let { panel, latest, series, range, activeRuleIds }: {
@@ -16,9 +16,26 @@
   } = $props()
 
   let width = $state(520)
-  const labelWidth = 120
   const valueWidth = 220
-  const scaleStart = labelWidth
+  // The label column is as wide as its widest label, measured in the panel's
+  // font, up to two fifths of the panel; a longer label is shortened from the
+  // middle until it fits, so the track never starts under text.
+  const LABEL_GAP = 10
+  const context = document.createElement('canvas').getContext('2d')
+  const measure = (text: string, primary: boolean): number => {
+    if (context === null) throw new Error('the comparison panel needs a 2D canvas to measure its labels')
+    context.font = `${primary ? 700 : 400} 12px "Noto Sans", system-ui, sans-serif`
+    return context.measureText(text).width
+  }
+  const labelled = $derived(panel.pens.map(pen => ({ text: `${displayName(pen)}${pen.command ? ' (demand)' : ''}`, primary: pen.role === 'primary' })))
+  const labelWidth = $derived(Math.min(Math.round(width * 0.4), Math.ceil(Math.max(...labelled.map(label => measure(label.text, label.primary)))) + LABEL_GAP))
+  const fitted = (label: { readonly text: string; readonly primary: boolean }): string => {
+    let length = label.text.length
+    let text = label.text
+    while (length > 4 && measure(text, label.primary) > labelWidth - LABEL_GAP) text = shortName(label.text, --length)
+    return text
+  }
+  const scaleStart = $derived(labelWidth)
   const scaleWidth = $derived(Math.max(60, width - labelWidth - valueWidth))
 
   const valueOf = (path: string): number | undefined => {
@@ -67,7 +84,7 @@
       {@const value = values[index]}
       {@const y = top + index * row}
       {@const inAlarm = activeThreshold(pen.thresholds, activeRuleIds)}
-      <text class="tag" class:primary={pen.role === 'primary'} x="0" y={y + row / 2} dominant-baseline="middle">{displayName(pen)}{pen.command ? ' (demand)' : ''}<title>{pen.label} · {pen.role}{pen.command ? ' · operator or automation demand, not a measured state' : ''}</title></text>
+      <text class="tag" class:primary={pen.role === 'primary'} x="0" y={y + row / 2} dominant-baseline="middle">{fitted(labelled[index]!)}<title>{labelled[index]!.text} · {pen.label} · {pen.role}{pen.command ? ' · operator or automation demand, not a measured state' : ''}</title></text>
       <line class="track" x1={scaleStart} x2={scaleStart + scaleWidth} y1={y + row / 2} y2={y + row / 2} />
       {#if value !== undefined && domain !== null}
         <path class="pointer" class:primary={pen.role === 'primary'} class:alarm={inAlarm !== null} d={`M${x(value)} ${y + 4} l5 ${row / 2 - 4} l-5 ${row / 2 - 4} l-5 ${-(row / 2 - 4)} z`} />

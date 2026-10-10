@@ -58,6 +58,8 @@ export interface ComposedDisplayPen {
   readonly label: string
   /** What operators call it: the tag, or the label with its equipment ("Feedwater inflow · Steam Generator B"). */
   readonly name: string
+  /** The label with its equipment, where the label does not name it: what a state reads as ("Electrical bus energized · Safety Bus A"). */
+  readonly described: string
   /** One measurement across parallel equipment ("steam-generator.levelPercent|percent"); pens sharing it share an axis. */
   readonly measurement: string
   readonly unit: ProcessUnit
@@ -237,16 +239,17 @@ const drawnThresholds = (pens: ReadonlyArray<ComposedDisplayPen>): ReadonlyArray
 const signalIdentity = (
   system: ProcessPlantRuntimeInstance,
   binding: ProcessSignalBinding,
-): { readonly name: string; readonly measurement: string } => {
+): { readonly name: string; readonly described: string; readonly measurement: string } => {
   const variable = String(binding.path).slice(String(binding.path).indexOf('.') + 1)
   if (binding.owner.type === 'link') {
     const link = system.plant.graph.links[binding.owner.linkIndex]!
-    return { name: binding.tagId ?? binding.label, measurement: `link:${link.service ?? link.kind}.${variable}|${binding.unit}` }
+    return { name: binding.tagId ?? binding.label, described: binding.label, measurement: `link:${link.service ?? link.kind}.${variable}|${binding.unit}` }
   }
   const component = system.plant.graph.components[binding.owner.componentIndex]!
   const named = binding.label.toLowerCase().includes(component.label.toLowerCase()) ? binding.label : `${binding.label} · ${component.label}`
   return {
     name: binding.tagId ?? named,
+    described: named,
     measurement: `${component.metadata?.equipmentClass ?? component.kind}.${variable}|${binding.unit}`,
   }
 }
@@ -292,6 +295,7 @@ const resolvePens = (
       ...(binding.tagId === undefined ? {} : { tagId: binding.tagId }),
       label: binding.label,
       name: identity.name,
+      described: identity.described,
       measurement: identity.measurement,
       unit: binding.unit,
       quantity: binding.quantity,

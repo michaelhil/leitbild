@@ -34,7 +34,8 @@
     <li class:primary={pen.role === 'primary'} title={`${pen.label} · ${pen.role}`}>
       <span class="head" title={`${displayName(pen)}${pen.command ? ' · operator or automation demand, not a measured state' : ` · ${pen.label}`}`}><span class="name">{shortName(displayName(pen), (column ? 44 : 24) - (pen.command ? 8 : 0))}</span>{#if pen.command}<span class="demand">demand</span>{/if}{#if inAlarm !== null}<AlarmChip threshold={inAlarm} />{/if}</span>
       {#if typeof value === 'boolean'}
-        <span class="state">{value ? pen.label : `Not ${pen.label.charAt(0).toLowerCase()}${pen.label.slice(1)}`}</span>
+        <!-- A state names its equipment, so a row of alike states (two buses) cannot be confused. -->
+        <span class="state" title={pen.described}>{value ? pen.described : `Not ${pen.described.charAt(0).toLowerCase()}${pen.described.slice(1)}`}</span>
       {:else}
         <obc-readout
           value={typeof value === 'number' ? displayValue(value, pen.unit) : null}

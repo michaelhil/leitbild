@@ -133,6 +133,18 @@ describe('world.process-plant.display.compose', () => {
     expect(result.shows.join('\n')).toContain('PORV-456A (Pressurizer relief valve position, fraction, context, a command (demand), shown as demand)')
   })
 
+  test('a state readout names its equipment, so two alike states cannot be confused', () => {
+    const result = ask('world.process-plant.display.view', { plantId: compiled.id, state: JSON.stringify({
+      composition: { ...composition([{ ref: 'PT-455', role: 'primary' }]), panels: [{ kind: 'readouts', signals: [{ ref: 'BUS-A-ENERGIZED', role: 'primary' }, { ref: 'BUS-B-ENERGIZED', role: 'context' }] }] },
+      issuedAt: simulationTime,
+      modelDigest: compiled.modelDigest,
+    }) }) as { display: { panels: ReadonlyArray<{ kind: string; pens?: ReadonlyArray<{ name: string; described: string }> }> } }
+    const pens = result.display.panels[0]!.pens!
+    expect(pens.map(pen => pen.name)).toEqual(['BUS-A-ENERGIZED', 'BUS-B-ENERGIZED'])
+    expect(new Set(pens.map(pen => pen.described)).size).toBe(2)
+    for (const pen of pens) expect(pen.described).toMatch(/ · .*Bus [AB]$/)
+  })
+
   test('says which trended signals the Run does not record', () => {
     const result = ask('world.process-plant.display.compose', composition([
       { ref: 'SG-B-LVL-NR', role: 'primary' },
