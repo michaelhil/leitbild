@@ -120,6 +120,25 @@ describe('Evaluation — error classification', () => {
     }
   })
 
+  // HTTP 402: a transient in-flight limit is retried, not a model problem;
+  // missing credits make the model unavailable to this account.
+  test.each([['in_flight_limit', 'rate_limited'], ['credits', 'model_unavailable']] as const)('cloud %s → %s', async (code, expected) => {
+    const decisions: Decision[] = []
+    const provider = errProvider(createCloudProviderError({
+      code, provider: 'openrouter', message: 'openrouter refused (HTTP 402)', status: 402,
+    }))
+    const agent = createAIAgent(makeConfig(), provider, (d) => { decisions.push(d) })
+    agent.receive(makeMessage())
+    await agent.whenIdle()
+
+    if (decisions[0]!.response.action === 'error') {
+      expect(decisions[0]!.response.code).toBe(expected)
+      expect(decisions[0]!.response.providerHint).toBe('openrouter')
+    } else {
+      throw new Error('expected error action')
+    }
+  })
+
   test('ollama 4xx → model_unavailable', async () => {
     const decisions: Decision[] = []
     const provider = errProvider(createOllamaError(404, 'model "qwen99" not found'))

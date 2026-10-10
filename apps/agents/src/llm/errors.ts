@@ -4,7 +4,9 @@
 
 export type OllamaErrorCode = 'ollama_error'
 export type GatewayErrorCode = 'circuit_open' | 'queue_full' | 'queue_timeout' | 'not_supported'
-export type CloudErrorCode = 'rate_limit' | 'quota' | 'auth' | 'provider_down' | 'bad_request'
+// in_flight_limit and credits are HTTP 402 answers about the provider
+// account's credits (openai-compatible-errors.ts, isCreditRefusal).
+export type CloudErrorCode = 'rate_limit' | 'quota' | 'auth' | 'provider_down' | 'bad_request' | 'in_flight_limit' | 'credits'
 
 export interface OllamaError extends Error {
   readonly kind: 'ollama_error'
@@ -123,7 +125,19 @@ export const isPermanent = (err: OllamaError): boolean =>
 // remain provider/request configuration errors at this layer; LLMService may
 // still advance an explicit cross-provider model chain for auth isolation.
 export const isFallbackable = (err: CloudProviderError): boolean =>
-  err.code === 'rate_limit' || err.code === 'quota' || err.code === 'provider_down'
+  err.code === 'rate_limit' || err.code === 'quota' || err.code === 'provider_down' || isCreditRefusal(err)
+
+// HTTP 402: the provider account's credits refused this one request. Another
+// route may still serve it, so the router falls through, but the monitor
+// holds no cooldown. The refusal ends when the requests in flight on the
+// account settle (in_flight_limit, seconds) or when a human adds credits
+// (credits), neither at a time a timer knows. A cooldown would sideline the
+// provider for every room past that moment, and gpt-5.4 with tools has no
+// other route. The provider's next answer is the probe: a refusal returns
+// quickly, and production (2026-10-10) runs OpenRouter at maxConcurrent 1,
+// so it sees at most one probe at a time.
+export const isCreditRefusal = (err: CloudProviderError): boolean =>
+  err.code === 'in_flight_limit' || err.code === 'credits'
 
 // Parse Retry-After header: HTTP spec allows delta-seconds (integer) or HTTP-date.
 // Returns ms from now, or undefined if absent/unparseable/already-elapsed.

@@ -252,8 +252,8 @@ export interface AIAgentConfig {
 // targeted remediation (e.g. "Change model" when the provider is unconfigured).
 export type AgentResponseErrorCode =
   | 'no_api_key'         // provider has no effective key (env or store)
-  | 'model_unavailable'  // model not found / not in subscription
-  | 'rate_limited'       // 429 / quota
+  | 'model_unavailable'  // model not found / not in subscription / no provider credits
+  | 'rate_limited'       // 429 / quota / provider in-flight credit budget
   | 'network'            // transport failure
   | 'provider_down'      // provider returned 5xx / circuit-open / all providers exhausted
   | 'tool_loop_exceeded' // tool iteration cap hit and no partial text

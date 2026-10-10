@@ -5,6 +5,7 @@ import { createProviderRouter, parseProviderPrefix, type ProviderAllFailedEvent,
 import { createCloudProviderError, createGatewayError, isCloudProviderError, isLLMRequestError } from './errors.ts'
 import { createProviderMonitor, type ProviderMonitor } from './provider-monitor.ts'
 import { buildOAIBody } from './openai-compatible-wire.ts'
+import { mapHttpError } from './openai-compatible-errors.ts'
 import { classifyLLMError } from '../agents/error-classify.ts'
 
 // Helper: build a fake-monitor map for the given provider names so the
@@ -450,6 +451,51 @@ describe('createProviderRouter — route refusals', () => {
     expect(dispatched()).toBe(2)
     expect(openai.wireCalls()).toBe(0)
     expect(router.getMonitorSnapshot().openai?.sub).toBe('ok')
+    router.dispose()
+  })
+
+  // Production 2026-10-10: OpenRouter answered 402 in_flight_budget_exhausted
+  // between successful calls. Unlike the outage above, the refusal opens no
+  // backoff: the very next request is dispatched to OpenRouter again.
+  test.each(['chat', 'stream'] as const)('%s: an in-flight credit refusal on the only carrying route is reported in its own words and holds no cooldown', async mode => {
+    const refusal = () => mapHttpError('openrouter', 402, JSON.stringify({ error: {
+      message: 'This request would exceed your available credits given your current in-flight requests. Retry after in-flight requests settle, or add credits.',
+      code: 402, metadata: { reason: 'in_flight_budget_exhausted', limit_source: 'openrouter_in_flight_budget' },
+    } }), null)
+    const openrouter = createFakeGateway({ availableModels: ['gpt-5.4'], responses: [refusal()], streamResponses: [refusal()] })
+    const openai = directOpenAI()
+    const monitors = monitorsFor(['openrouter', 'openai'])
+    const router = createProviderRouter({ openrouter, openai }, { order: ['openrouter', 'openai'], monitors })
+    const events: ProviderRoutingEvent[] = []
+    router.onRoutingEvent(event => events.push(event))
+    const dispatched = () => mode === 'chat' ? openrouter.callCount() : openrouter.streamOptions().length
+
+    const failed = await rejection(() => invoke(router, mode, toolRequest('gpt-5.4')))
+    expect(classifyLLMError(failed)).toEqual({ code: 'provider_down', providerHint: 'router', message: [
+      'gpt-5.4 could not be served.',
+      'openrouter: openrouter in-flight budget exhausted (HTTP 402, in_flight_budget_exhausted): This request would exceed your available credits given your current in-flight requests. Retry after in-flight requests settle, or add credits.',
+      "Retry in a few seconds, once openrouter's in-flight requests settle; if it recurs, add openrouter credits.",
+      'openai: skipped before dispatch — unsupported_provider_transport: direct OpenAI Chat Completions requires explicit none reasoning effort for this model with tools; choose none or a supported route such as OpenRouter.',
+    ].join(' ') })
+    expect(events.find((event): event is ProviderAllFailedEvent => event.type === 'provider_all_failed')?.primaryCode).toBe('in_flight_limit')
+    const state = router.getMonitorSnapshot().openrouter
+    expect([state?.sub, state?.retryAt, state?.consecutiveFailures, state?.lastError?.code]).toEqual(['ok', null, 0, 'in_flight_limit'])
+
+    expect(await invoke(router, mode, toolRequest('gpt-5.4'))).toBe(mode === 'chat' ? 'default' : 'x')
+    expect(dispatched()).toBe(2)
+    expect(openai.wireCalls()).toBe(0)
+    router.dispose()
+  })
+
+  test.each(['chat', 'stream'] as const)('%s: a credit refusal falls through to another route that lists the model', async mode => {
+    const refusal = () => mapHttpError('openrouter', 402, JSON.stringify({ error: { message: 'Insufficient credits.', code: 402 } }), null)
+    const openrouter = createFakeGateway({ availableModels: ['gpt-5.4'], responses: [refusal()], streamResponses: [refusal()] })
+    const anthropic = createFakeGateway({ availableModels: ['gpt-5.4'], responses: [{ content: 'served by anthropic', generationMs: 1, tokensUsed: { prompt: 1, completion: 1 } }], streamResponses: [[{ delta: 'served by anthropic', done: false }, { delta: '', done: true }]] })
+    const monitors = monitorsFor(['openrouter', 'anthropic'])
+    const router = createProviderRouter({ openrouter, anthropic }, { order: ['openrouter', 'anthropic'], monitors })
+    expect(await invoke(router, mode, chatReq('gpt-5.4'))).toBe('served by anthropic')
+    expect(router.getMonitorSnapshot().openrouter?.sub).toBe('ok')
+    expect(router.getMonitorSnapshot().openrouter?.lastError?.code).toBe('credits')
     router.dispose()
   })
 

@@ -13,13 +13,22 @@
 // think-block parser share enough state that extracting them in one
 // session is too risky (audit-flagged as the highest-risk Tier-2 item).
 // Error mapping is the most self-contained piece — pure function with
-// only two external deps (parseRetryAfterMs + createCloudProviderError,
-// both in errors.ts).
+// only errors.ts helpers (parseRetryAfterMs + createCloudProviderError)
+// and a schema for the upstream error body as external deps.
 //
 // Classification rules:
 //   401/403 with quota-ish body  → quota
 //   401/403 otherwise            → auth
 //   429                          → rate_limit
+//   402 with OpenRouter reason   → in_flight_limit (the balance cannot
+//   in_flight_budget_exhausted      cover this request beside the credits
+//                                   in-flight requests hold; clears once
+//                                   they settle)
+//   402 otherwise                → credits (a human adds credits). Neither
+//                                   holds a cooldown (errors.ts
+//                                   isCreditRefusal); the message carries
+//                                   the upstream error.message and
+//                                   metadata.reason, not the raw body.
 //   5xx                          → provider_down (router falls through)
 //   404 / "model_not_found"      → provider_down (per-model issue, not
 //                                   a permanent config error — router
@@ -30,7 +39,30 @@
 //                                   request is malformed)
 // ============================================================================
 
+import { z } from 'zod'
 import { createCloudProviderError, parseRetryAfterMs } from './errors.ts'
+
+// The OpenAI-compatible error body; OpenRouter adds error.metadata.reason.
+const upstreamErrorSchema = z.object({
+  error: z.object({
+    message: z.string(),
+    metadata: z.object({ reason: z.string().optional() }).optional(),
+  }),
+})
+
+const IN_FLIGHT_BUDGET_REASON = 'in_flight_budget_exhausted'
+
+// A body that is not JSON of that shape (a proxy's HTML page, another
+// provider's format) yields undefined and the caller shows its raw snippet:
+// the operator still reads exactly what came back.
+const parseUpstreamError = (body: string): { readonly message: string; readonly reason?: string } | undefined => {
+  let json: unknown
+  try { json = JSON.parse(body) } catch { return undefined }
+  const parsed = upstreamErrorSchema.safeParse(json)
+  if (!parsed.success) return undefined
+  const reason = parsed.data.error.metadata?.reason
+  return { message: parsed.data.error.message, ...(reason !== undefined ? { reason } : {}) }
+}
 
 export const mapHttpError = (
   providerName: string,
@@ -59,6 +91,17 @@ export const mapHttpError = (
     return createCloudProviderError({
       code: 'rate_limit', provider: providerName, message: `${providerName} rate-limited: ${snippet}`,
       status, retryAfterMs,
+    })
+  }
+  if (status === 402) {
+    // Only the structured reason marks the transient case; any other 402,
+    // including one whose body cannot be read, is the account's balance.
+    const upstream = parseUpstreamError(body)
+    const reason = upstream?.reason
+    const inFlight = reason === IN_FLIGHT_BUDGET_REASON
+    return createCloudProviderError({
+      code: inFlight ? 'in_flight_limit' : 'credits', provider: providerName, status,
+      message: `${providerName} ${inFlight ? 'in-flight budget exhausted' : 'insufficient credits'} (HTTP ${status}${reason !== undefined ? `, ${reason}` : ''}): ${upstream?.message ?? snippet}`,
     })
   }
   if (status >= 500) {

@@ -12,6 +12,9 @@
 //   - 'unhealthy'  inferred from a streak of failures without a known
 //                  recovery time. Self-tested via heartbeat.
 // Plus the static states: 'no_key', 'disabled', 'down', 'ok'.
+// A credit refusal (HTTP 402, errors.ts isCreditRefusal) enters neither: it
+// is recorded as lastError and in the failure log, and the provider's next
+// answer decides.
 //
 // Heartbeat is a /models call (metadata, no token cost on any provider).
 // Pacing:
@@ -24,7 +27,7 @@
 // ============================================================================
 
 import type { ProviderGateway } from './provider-gateway.ts'
-import { isCloudProviderError, isFallbackable, isGatewayError } from './errors.ts'
+import { isCloudProviderError, isCreditRefusal, isFallbackable, isGatewayError } from './errors.ts'
 
 export type MonitorSubState =
   | 'ok'
@@ -278,8 +281,10 @@ export const createProviderMonitor = (
   ): { kind: 'backoff'; cooldownMs: number; reason: string; code: string }
     | { kind: 'unhealthy'; reason: string; code: string }
     | { kind: 'permanent'; reason: string; code: string }
-    | { kind: 'gateway'; reason: string; code: string } => {
+    | { kind: 'gateway'; reason: string; code: string }
+    | { kind: 'refused'; reason: string; code: string } => {
     if (isCloudProviderError(err)) {
+      if (isCreditRefusal(err)) return { kind: 'refused', reason: err.message, code: err.code }
       if (!isFallbackable(err)) {
         // auth, bad_request — config problem, not a health problem.
         return { kind: 'permanent', reason: err.message, code: err.code }
@@ -335,6 +340,9 @@ export const createProviderMonitor = (
         reason: decision.reason,
       })
     }
+    // A credit refusal is the account's answer to one request, not a health
+    // signal: no backoff, no streak (see isCreditRefusal).
+    if (decision.kind === 'refused') return
     if (decision.kind === 'backoff') {
       transitionToBackoff(decision.cooldownMs, decision.reason, decision.code)
     } else {
@@ -368,9 +376,10 @@ export const createProviderMonitor = (
         return
       }
       state = { ...state, lastError: { code: decision.code, message: decision.reason }, lastErrorAt: now() }
+      // A credit refusal ('refused') changes no state, as in a chat outcome.
       if (decision.kind === 'backoff') {
         transitionToBackoff(decision.cooldownMs, decision.reason, decision.code)
-      } else {
+      } else if (decision.kind === 'unhealthy') {
         const newStreak = state.consecutiveFailures + 1
         if (state.sub !== 'unhealthy' && newStreak >= unhealthyThreshold) {
           transitionToUnhealthy(decision.reason)

@@ -127,6 +127,22 @@ describe('provider-monitor — backoff transitions', () => {
   })
 })
 
+describe('provider-monitor — credit refusals (HTTP 402)', () => {
+  test.each(['in_flight_limit', 'credits'] as const)('%s is recorded without a backoff or a streak', code => {
+    // A threshold of one would quarantine on the first counted failure.
+    const { monitor } = makeMonitor({ name: 'openrouter', unhealthyThreshold: 1 })
+    monitor.recordChatOutcome({
+      ok: false, model: 'gpt-5.4', agentId: 'assistant',
+      error: createCloudProviderError({ code, provider: 'openrouter', status: 402, message: 'refused' }),
+    })
+    const state = monitor.getState()
+    expect([state.sub, state.retryAt, state.consecutiveFailures]).toEqual(['ok', null, 0])
+    expect(state.lastError).toEqual({ code, message: 'refused' })
+    expect(monitor.getRecentFailures().map(failure => [failure.provider, failure.model, failure.code])).toEqual([['openrouter', 'gpt-5.4', code]])
+    expect(monitor.mayCall()).toBe(true)
+  })
+})
+
 describe('provider-monitor — unhealthy streak', () => {
   test('flips to unhealthy after threshold consecutive network failures', () => {
     const { monitor } = makeMonitor({ unhealthyThreshold: 3 })

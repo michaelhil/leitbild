@@ -12,9 +12,11 @@
 // cause, with a remedy, and the refusal only as detail.
 //
 // 2026-10-10: OpenRouter answered with 402 in_flight_budget_exhausted. The
-// router rethrows it (bad_request); LLMService walked the default model chain
-// to openai:gpt-5.4-mini, whose wire refused the tool request, and the room
-// again showed that refusal. The room must get OpenRouter's 402.
+// wire classified it bad_request, the router rethrew it, LLMService walked the
+// default model chain to openai:gpt-5.4-mini, whose wire refused the tool
+// request, and the room again showed that refusal. The room must get
+// OpenRouter's 402 in its own words, and, since the refusal clears once
+// in-flight requests settle, the next turn must reach OpenRouter again.
 // ============================================================================
 
 import { expect, test } from 'bun:test'
@@ -127,12 +129,17 @@ test('a room whose request is shed by OpenRouter reports the shed and its remedy
   }
 })
 
-test('a room whose gpt-5.4 turn OpenRouter answers with 402 reports that 402, not the refusal of a fallback model', async () => {
+test('a room whose gpt-5.4 turn OpenRouter answers with 402 in_flight_budget_exhausted reports it in OpenRouter\'s words, and the next turn is served', async () => {
   const body = { error: {
     message: 'This request would exceed your available credits given your current in-flight requests. Retry after in-flight requests settle, or add credits.',
     code: 402, metadata: { reason: 'in_flight_budget_exhausted', limit_source: 'openrouter_in_flight_budget' },
   } }
-  const fx = startFixture(async () => Response.json(body, { status: 402 }))
+  // The agent streams; the second answer is an SSE stream.
+  const served = [JSON.stringify({ choices: [{ delta: { content: 'served once in-flight requests settled' }, finish_reason: 'stop' }] }), '[DONE]']
+  let openrouterAnswers = 0
+  const fx = startFixture(async () => openrouterAnswers++ === 0
+    ? Response.json(body, { status: 402 })
+    : new Response(served.map(line => `data: ${line}\n\n`).join(''), { headers: { 'Content-Type': 'text/event-stream' } }))
   const setup = buildSetup(fx.url, ['openrouter', 'openai', 'kimi'])
   try {
     await Promise.all(['openrouter', 'openai', 'kimi'].map(name => setup.gateways[name]!.refreshModels()))
@@ -155,17 +162,30 @@ test('a room whose gpt-5.4 turn OpenRouter answers with 402 reports that 402, no
 
     const response = decisions[0]?.response
     if (response?.action !== 'error') throw new Error(`expected an error decision, got ${JSON.stringify(response)}`)
-    // OpenRouter's own classification and words. bad_request maps to
-    // model_unavailable at the agent layer.
-    expect(response.code).toBe('model_unavailable')
-    expect(response.providerHint).toBe('openrouter')
-    expect(response.message).toBe(`openrouter request error 402: ${JSON.stringify(body).slice(0, 300)}`)
-    expect(response.message).not.toContain('unsupported_provider_transport')
+    // The posted room message is `[error: ${code}] ${message}` (spawn.ts).
+    // No other route carries the request, so the router reports OpenRouter's
+    // refusal as the cause, in its words and reason, not its raw body.
+    expect(response.code).toBe('provider_down')
+    expect(response.message).toBe([
+      'gpt-5.4 could not be served.',
+      'openrouter: openrouter in-flight budget exhausted (HTTP 402, in_flight_budget_exhausted): This request would exceed your available credits given your current in-flight requests. Retry after in-flight requests settle, or add credits.',
+      "Retry in a few seconds, once openrouter's in-flight requests settle; if it recurs, add openrouter credits.",
+      'openai: skipped before dispatch — unsupported_provider_transport: direct OpenAI Chat Completions requires explicit none reasoning effort for this model with tools; choose none or a supported route such as OpenRouter.',
+    ].join(' '))
+    expect(response.message).not.toContain('{"error"')
     expect(switches).toEqual([...DEFAULT_MODEL_FALLBACK])
     expect(fx.chatRequests).toEqual({ openrouter: 1, openai: 0, anthropic: 0, kimi: 0 })
-    // Neither refusal is a health problem of its provider.
-    expect(setup.router.getMonitorSnapshot().openai?.sub).toBe('ok')
-    expect(setup.router.getMonitorSnapshot().kimi?.sub).toBe('ok')
+    // The refusal is recorded, but holds OpenRouter in no cooldown; neither
+    // fallback refusal is a health problem of its provider.
+    const monitors = setup.router.getMonitorSnapshot()
+    expect([monitors.openrouter?.sub, monitors.openrouter?.lastError?.code]).toEqual(['ok', 'in_flight_limit'])
+    expect(monitors.openai?.sub).toBe('ok')
+    expect(monitors.kimi?.sub).toBe('ok')
+
+    agent.receive({ id: 'q2', senderId: 'operator', content: 'And now?', timestamp: Date.now(), type: 'chat', roomId: 'display-probe' })
+    await agent.whenIdle()
+    expect(decisions[1]?.response).toEqual({ action: 'respond', content: 'served once in-flight requests settled' })
+    expect(fx.chatRequests).toEqual({ openrouter: 2, openai: 0, anthropic: 0, kimi: 0 })
   } finally {
     fx.release()
     setup.dispose()

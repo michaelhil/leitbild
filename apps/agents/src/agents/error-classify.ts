@@ -20,6 +20,11 @@ export const classifyLLMError = (err: unknown): ClassifiedLLMError => {
     if (err.code === 'auth') return { code: 'no_api_key', message: err.message, providerHint: err.provider }
     if (err.code === 'bad_request') return { code: 'model_unavailable', message: err.message, providerHint: err.provider }
     if (err.code === 'rate_limit' || err.code === 'quota') return { code: 'rate_limited', message: err.message, providerHint: err.provider }
+    // Transient: retrying is the remedy, so no "Change model" affordance.
+    if (err.code === 'in_flight_limit') return { code: 'rate_limited', message: err.message, providerHint: err.provider }
+    // The account cannot use the model until a human adds credits; a model on
+    // another provider is the in-app remedy (offers "Change model").
+    if (err.code === 'credits') return { code: 'model_unavailable', message: err.message, providerHint: err.provider }
     if (err.code === 'provider_down') return { code: 'provider_down', message: err.message, providerHint: err.provider }
   }
   if (isOllamaError(err) && isPermanent(err)) {

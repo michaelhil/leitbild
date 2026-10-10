@@ -259,10 +259,12 @@ describe('LLMService — empty chain', () => {
 })
 
 // Production 2026-10-10: OpenRouter answered a gpt-5.4 tool turn with 402
-// in_flight_budget_exhausted, which the wire classifies bad_request: the
-// router rethrows it and the agent layer walks the system chain. Its
+// in_flight_budget_exhausted and the agent layer walked the system chain. Its
 // openai:gpt-5.4-mini refused the tool request before dispatch, the walk
-// stopped there, and the room showed that refusal instead of the 402.
+// stopped there, and the room showed that refusal instead of the 402. The
+// wire now classifies that 402 in_flight_limit; the router reports it inside
+// its provider_down summary unless the route is pinned, when it arrives as
+// here, unchanged.
 describe('LLMService — fallback route refusals', () => {
   const tools = [{ type: 'function' as const, function: { name: 'signals_search', description: 'Find plant signals', parameters: { type: 'object', properties: {} } } }]
   const inFlight = mapHttpError('openrouter', 402, JSON.stringify({ error: {
@@ -299,8 +301,8 @@ describe('LLMService — fallback route refusals', () => {
     test(`${mode}: when every fallback refuses, the failure that started the walk is reported`, async () => {
       const result = await run(streaming, { model: 'gpt-5.4', messages: [{ role: 'user', content: 'Show the trend.' }], tools })
       expect('error' in result && result.error).toBe(inFlight)
-      expect(classifyLLMError(inFlight)).toEqual({ code: 'model_unavailable', providerHint: 'openrouter', message: inFlight.message })
-      expect(inFlight.message).toStartWith('openrouter request error 402: {"error":{"message":"This request would exceed your available credits given your current in-flight requests.')
+      expect(classifyLLMError(inFlight)).toEqual({ code: 'rate_limited', providerHint: 'openrouter', message: inFlight.message })
+      expect(inFlight.message).toBe('openrouter in-flight budget exhausted (HTTP 402, in_flight_budget_exhausted): This request would exceed your available credits given your current in-flight requests. Retry after in-flight requests settle, or add credits.')
       expect(result.calls).toEqual(['gpt-5.4', 'openai:gpt-5.4-mini', 'kimi:moonshot-v1-8k'])
       expect(result.switches).toEqual(['openai:gpt-5.4-mini', 'kimi:moonshot-v1-8k'])
     })

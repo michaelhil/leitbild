@@ -5,11 +5,12 @@
 // chat/stream call, walks the configured priority order, skipping providers
 // that are cold (cooldown timer not yet elapsed) or whose cached /models list
 // doesn't include the requested model. On rate_limit / quota / provider_down
-// errors, trips a per-provider cooldown and falls through. On auth /
-// bad_request errors, propagates without fallback (config problem). A route
-// that refuses the request shape locally (errors.ts isRouteRefusal) is
-// skipped with a structured attempt; it becomes the reported cause only when
-// nothing transient was in the way.
+// errors, trips a per-provider cooldown and falls through. On a credit
+// refusal (HTTP 402, errors.ts isCreditRefusal) falls through without a
+// cooldown. On auth / bad_request errors, propagates without fallback
+// (config problem). A route that refuses the request shape locally
+// (errors.ts isRouteRefusal) is skipped with a structured attempt; it
+// becomes the reported cause only when nothing transient was in the way.
 //
 // Emits routing events so the UI can show toaster notifications:
 //   - provider_bound       a call succeeded after a provider change
@@ -44,6 +45,9 @@ import { createLLMRequestError } from './errors.ts'
 //   unhealthy      | inferred unhealthy from streak; retried anyway
 //   rate_limit     | upstream returned 429 on this attempt
 //   quota          | upstream returned quota-exceeded on this attempt
+//   in_flight_limit | upstream 402: credits held by in-flight requests leave
+//                  | none for this one; clears once they settle
+//   credits        | upstream 402: the account cannot pay; add credits
 //   provider_down  | upstream returned 5xx
 //   queue_full     | local gateway shed
 //   queue_timeout  | local gateway timed out waiting for slot
@@ -57,6 +61,7 @@ export type ProviderAttemptCode =
   | 'no_key' | 'disabled' | 'not_listed'
   | 'backoff' | 'unhealthy'
   | 'rate_limit' | 'quota' | 'provider_down'
+  | 'in_flight_limit' | 'credits'
   | 'queue_full' | 'queue_timeout' | 'circuit_open'
   | 'network' | 'forced_fail' | 'unknown'
   | 'unsupported_route'
@@ -476,6 +481,8 @@ export const createProviderRouter = (
         code: 'provider_down',
       }
     }
+    // The wire's message already names the cause, status and upstream reason.
+    if (err.code === 'in_flight_limit' || err.code === 'credits') return { reason: err.message, code: err.code }
     return { reason: err.message, code: 'unknown' }
   }
 
@@ -496,7 +503,7 @@ export const createProviderRouter = (
   // summarizeAttempts); a refusal never outranks a transient failure.
   const PRIMARY_CODE_PRIORITY: ReadonlyArray<ProviderAttemptCode> = [
     'no_key', 'disabled', 'not_listed',
-    'quota', 'rate_limit', 'backoff',
+    'credits', 'quota', 'rate_limit', 'in_flight_limit', 'backoff',
     'provider_down', 'unhealthy',
     'circuit_open', 'queue_full', 'queue_timeout',
     'forced_fail', 'network', 'unknown',
@@ -514,6 +521,8 @@ export const createProviderRouter = (
       case 'rate_limit':
       case 'backoff':
       case 'quota': return `Wait for the cooldown to expire, or pick a model on a different provider`
+      case 'in_flight_limit': return `Retry in a few seconds, once ${provider}'s in-flight requests settle; if it recurs, add ${provider} credits`
+      case 'credits': return `Add ${provider} credits, or pick a model on a different provider`
       case 'provider_down':
       case 'unhealthy': return `Provider is having trouble — try again, switch model, or check the provider's status page`
       case 'circuit_open': return `Provider is temporarily overloaded — retry in a few seconds`
