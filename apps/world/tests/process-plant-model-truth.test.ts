@@ -345,3 +345,37 @@ describe('nuclear instrumentation', () => {
     expect(Number(tag('NIS-IR'))).toBe(1e-11)
   })
 })
+
+describe('steam generator high level', () => {
+  test('displays draw the high alarm and the P-14 high-high limit beside the low ones', () => {
+    const level = resolveProcessPlantSignalBinding(graph, { tagId: 'SG-B-LVL-NR' as never }).path
+    expect(icThresholdsForSignal(plant, level).thresholds.map(threshold => [threshold.value, threshold.kind, threshold.direction])).toEqual([
+      [20, 'trip', 'low'],
+      [30, 'alarm', 'low'],
+      [75, 'alarm', 'high'],
+      [82, 'trip', 'high'],
+    ])
+  })
+
+  test('high-high level isolates main feedwater and trips the turbine, and so the reactor', () => {
+    const overfilled = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:sg-high-high', valueOverrides: { 'sgA.secondaryInventoryKg': 70_000 } }))
+    const runtime = createProcessPlantRuntime({ system: overfilled })
+    const protection = createProcessPlantProtectionRunner({ system: overfilled, protection: overfilled.automation })
+    for (let second = 0; second < 10; second += 1) {
+      runtime.tick(1_000)
+      protection.evaluate({ runtime, elapsedMs: runtime.elapsedMs(), simulationRunId: 'run-model-truth' as SimulationRunId, sourceRuntimeId: 'process-plant.local' })
+    }
+    const tag = (tagId: string) => runtime.readVariable(resolveProcessPlantSignalBinding(overfilled.graph, { tagId: tagId as never }).path)
+    expect(Number(tag('SG-A-LVL-NR'))).toBeGreaterThan(82)
+    const active = [...protection.snapshot().alarms, ...protection.snapshot().trips].filter(lifecycle => lifecycle.active).map(lifecycle => lifecycle.id)
+    expect(active).toEqual(expect.arrayContaining([
+      'alarm:sg-a-level-high:level-high',
+      'trip:sg-a-level-high-high-feedwater-isolation:feedwater-isolation',
+      'trip:reactor-turbine-trip:turbine-trip-reactor-trip',
+    ]))
+    expect(tag('MFW-PUMP-A-RUNNING')).toBe(false)
+    expect(tag('MFW-PUMP-B-RUNNING')).toBe(false)
+    expect(Number(tag('TURB-STOP-POS'))).toBeLessThan(0.05)
+    expect(tag('TRIP-BKR-A-POS')).toBe(false)
+  })
+})

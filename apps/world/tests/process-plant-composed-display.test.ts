@@ -108,7 +108,8 @@ describe('world.process-plant.display.compose', () => {
     expect((result as unknown as { simulationClock: string }).simulationClock).toBe('21:00:00')
     const margins = (result as unknown as { margins: ReadonlyArray<string> }).margins
     expect(margins).toHaveLength(2)
-    expect(margins[0]).toMatch(/^SG-[AB]-LVL-NR: [0-9.]+ %, [0-9.]+ % above LO ALM 30 %$/)
+    // At the 55 % program the high alarm is nearer than the low one.
+    expect(margins[0]).toMatch(/^SG-[AB]-LVL-NR: [0-9.]+ %, [0-9.]+ % below HI ALM 75 %$/)
     expect(runtime.checkpoint()).toEqual(before)
   })
 
@@ -225,6 +226,8 @@ describe('thresholds drawn on composed trends', () => {
     expect(panel.thresholds.map(threshold => [threshold.value, threshold.kind, threshold.signals])).toEqual([
       [20, 'trip', ['SG-B-LVL-NR', 'SG-A-LVL-NR', 'SG-C-LVL-NR']],
       [30, 'alarm', ['SG-B-LVL-NR', 'SG-A-LVL-NR', 'SG-C-LVL-NR']],
+      [75, 'alarm', ['SG-B-LVL-NR', 'SG-A-LVL-NR', 'SG-C-LVL-NR']],
+      [82, 'trip', ['SG-B-LVL-NR', 'SG-A-LVL-NR', 'SG-C-LVL-NR']],
     ])
     expect((panel.thresholds[1] as unknown as { ruleIds: string[]; direction: string })).toMatchObject({
       direction: 'low', ruleIds: ['sg-b-level-low', 'sg-a-level-low', 'sg-c-level-low'],
@@ -236,6 +239,8 @@ describe('thresholds drawn on composed trends', () => {
     expect(panel.thresholds.map(threshold => [threshold.value, threshold.signals])).toEqual([
       [20, ['SG-A-LVL-NR', 'SG-B-LVL-NR']],
       [30, ['SG-A-LVL-NR', 'SG-B-LVL-NR']],
+      [75, ['SG-A-LVL-NR', 'SG-B-LVL-NR']],
+      [82, ['SG-A-LVL-NR', 'SG-B-LVL-NR']],
     ])
     expect(panel.thresholds[1]!.label).toBe('Steam generator A level low · Steam generator B level low')
   })
