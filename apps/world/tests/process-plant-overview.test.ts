@@ -170,6 +170,16 @@ describe('the unit overview World generates for a Plant', () => {
     expect(drawn({ width: fullHd.width, height: 885 })).toEqual(roomy)
   })
 
+  test('a window too small for any arrangement scrolls the drawing, never refusing it', () => {
+    // A zoomed-in display window or a narrow pane leaves less room than the frame itself (display-modal session, 654 × 470).
+    for (const view of [{ width: 654, height: 470 }, { width: 320, height: 200 }, { width: 200, height: 60 }]) {
+      const result = compileOverviewDisplay(system, new Set(), view)
+      expect(result.ok, `${view.width} × ${view.height}`).toBe(true)
+      if (!result.ok) continue
+      expect(result.display.height).toBeGreaterThan(view.height)
+    }
+  })
+
   test('where only compact tiles let the column fit, they go three to a row with the declared short labels', () => {
     const threeLoops = plant(3)
     const result = compileOverviewDisplay(threeLoops, new Set(), { width: 1896, height: 880 })

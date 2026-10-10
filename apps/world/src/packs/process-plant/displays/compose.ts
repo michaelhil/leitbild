@@ -879,19 +879,21 @@ const fitGenerated = (
     { arrangement: 'stacked' as const, panels: widest },
   ].flatMap(layout => {
     const room = overviewDrawingRoom(view, layout.arrangement, layout.panels)
-    return room === null ? [] : [{ ...layout, room }]
+    // A window too small for an arrangement leaves it no room at all; it is skipped, never asked to draw.
+    return room === null || room.maxWidth <= 0 || room.maxHeight <= 0 ? [] : [{ ...layout, room }]
   })
   // A window too small scrolls by as little as the drawing needs: the least
   // height that draws, in steps of two grid rows up to twice the window,
   // beside the column while the window is wide enough for it, else stacked,
   // else at any width; a drawing that fits no such height is drawn at its
   // own size.
-  const shortest = view === null ? 0 : view.height - composedDisplayLayout.overviewFrame - composedDisplayLayout.mimicLegend
+  // A window shorter than its frame still scrolls from the least room a drawing can have.
+  const shortest = view === null ? 0 : Math.max(SCROLL_STEP, view.height - composedDisplayLayout.overviewFrame - composedDisplayLayout.mimicLegend)
   const heights = Array.from({ length: Math.floor(shortest / SCROLL_STEP) }, (_, step) => shortest + (step + 1) * SCROLL_STEP)
-  const scrolling = view === null ? [] : [
+  const scrolling = (view === null ? [] : [
     { arrangement: 'column' as const, maxWidth: overviewDrawingRoom({ width: view.width, height: UNCONSTRAINED }, 'column', widest)!.maxWidth },
     { arrangement: 'stacked' as const, maxWidth: view.width - 2 * composedDisplayLayout.overviewPadding },
-  ]
+  ]).filter(rung => rung.maxWidth > 0)
   // Taller room never stops a drawing that fits in less, so the least height is found by halving.
   const leastHeight = (draw: GeneratedDrawing, maxWidth: number): MimicCompileResult => {
     let best = draw({ maxWidth, maxHeight: heights.at(-1) ?? shortest })
