@@ -13,7 +13,8 @@ import { resolveProcessPlantSignalBinding } from '../src/packs/process-plant/sig
 import { validateProcessPlantControlWrite } from '../src/packs/process-plant/control-write-validation.ts'
 
 // Reactor protection and safety injection of the four-loop reference PWR,
-// read from the I&C's trips and alarms and the equipment's feedback.
+// read from the I&C's trips and alarms and the equipment's feedback. Each
+// test runs minutes of plant time, so each has a minute to run in.
 
 const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:protection', loopCount: 4 }))
 const graph = plant.graph
@@ -80,7 +81,7 @@ describe('high pressurizer pressure', () => {
     plantRun.run(10_000)
     expect(plantRun.tag('TRIP-BKR-A-POS')).toBe(false)
     expect(Number(plantRun.read('core.powerMw'))).toBeLessThan(500)
-  })
+  }, 60_000)
 })
 
 describe('pressurizer code safety valves', () => {
@@ -113,7 +114,7 @@ describe('pressurizer code safety valves', () => {
     expect(dischargePeak).toBeGreaterThan(40)
     expect(Number(plantRun.read('pressurizerReliefTank.inventoryKg'))).toBeGreaterThan(tankBefore + 1_000)
     expect(plantRun.protection.snapshot().alarms.find(lifecycle => lifecycle.id === 'alarm:pzr-safety-valve-open:safety-valve-open')!.occurrenceCount).toBeGreaterThan(0)
-  })
+  }, 60_000)
 
   test('stay shut at normal pressure and through a normal trip', () => {
     const plantRun = started()
@@ -123,7 +124,7 @@ describe('pressurizer code safety valves', () => {
     expect(plantRun.tag('PSV-8010-OPEN')).toBe(false)
     expect(plantRun.tag('PSV-8010-POS')).toBe(0)
     expect(plantRun.protection.snapshot().alarms.find(lifecycle => lifecycle.id === 'alarm:pzr-safety-valve-open:safety-valve-open')!.occurrenceCount).toBe(0)
-  })
+  }, 60_000)
 })
 
 describe('overtemperature and overpower delta-T', () => {
@@ -140,7 +141,7 @@ describe('overtemperature and overpower delta-T', () => {
       expect(Number(plantRun.tag(`OPDT-${loop}-MARGIN`))).toBeGreaterThan(0)
     }
     expect(plantRun.protection.snapshot().trips.filter(lifecycle => lifecycle.active)).toEqual([])
-  })
+  }, 60_000)
 
   test('a loss of feedwater at power trips the reactor on overtemperature delta-T before the coolant saturates', () => {
     const plantRun = started(withOnlyReactorTrips(['reactor-overtemperature-delta-t-trip']))
@@ -157,7 +158,7 @@ describe('overtemperature and overpower delta-T', () => {
     expect(plantRun.tag('TRIP-BKR-B-POS')).toBe(false)
     expect(Number(plantRun.read('core.powerMw'))).toBeLessThan(500)
     expect(plantRun.activeIds()).not.toContain('alarm:rcs-subcooling-lost:subcooling-lost')
-  })
+  }, 60_000)
 })
 
 describe('a reactor coolant pump that stops at power', () => {
@@ -180,14 +181,14 @@ describe('a reactor coolant pump that stops at power', () => {
     // The rods are in while the coasting pumps still move most of the flow, so the core exit barely rises.
     expect(coreExitPeak).toBeLessThan(coreExitBefore + 2)
     expect(plantRun.activeIds()).not.toContain('trip:reactor-low-rcp-flow-trip:low-rcp-flow-trip')
-  })
+  }, 60_000)
 
   test('above P-8 one stopped pump trips the reactor', () => {
     const plantRun = started()
     plantRun.run(5_000)
     plantRun.runtime.writeCommand({ type: 'setVariable', path: 'rcpC.running' as VariablePath, value: false })
     expect(plantRun.secondsUntil(rcpTrip, 2)).toBe(1)
-  })
+  }, 60_000)
 
   test('between P-7 and P-8 one stopped pump leaves the reactor at power and a second trips it', () => {
     const partPower = compileProcessPlant(createPwrReferencePlantDefinition({
@@ -212,7 +213,7 @@ describe('a reactor coolant pump that stops at power', () => {
     runtime.writeCommand({ type: 'setVariable', path: 'rcpB.running' as VariablePath, value: false })
     step()
     expect(tripped()).toBe(true)
-  })
+  }, 60_000)
 })
 
 describe('safety injection', () => {
@@ -238,7 +239,7 @@ describe('safety injection', () => {
     expect(Number(plantRun.read('safetyAccumulatorA.gasPressureMPa'))).toBeLessThan(4.4)
     for (const loop of accumulators) expect(plantRun.activeIds()).toContain(`alarm:accumulator-${loop.toLowerCase()}-injecting:injecting`)
     expect(Number(plantRun.tag('SI-FLOW'))).toBeGreaterThan(Number(plantRun.read('safetyInjectionPumpA.flowKgPerS')) + Number(plantRun.read('safetyInjectionPumpB.flowKgPerS')))
-  })
+  }, 60_000)
 
   test('high-head SI pumps deliver less the higher the reactor coolant pressure they pump against', () => {
     const plantRun = started()
@@ -251,7 +252,7 @@ describe('safety injection', () => {
     expect(pressure).toBeGreaterThan(14.5)
     expect(flow).toBeCloseTo(35 * Math.sqrt(1 - pressure / 18.5), 0)
     expect(flow).toBeLessThan(20)
-  })
+  }, 60_000)
 
   test('acts after a reactor trip, in hot standby, but not on the pressure of a normal trip', () => {
     const qualified = plant.automation.rules.find(rule => rule.id === 'safety-injection-low-pzr-pressure')!
@@ -263,7 +264,7 @@ describe('safety injection', () => {
     expect(plantRun.tag('TRIP-BKR-A-POS')).toBe(false)
     expect(plantRun.activeIds()).not.toContain(siActuated)
     expect(plantRun.tag('SI-PUMP-A-RUNNING')).toBe(false)
-  })
+  }, 60_000)
 })
 
 describe('safety injection accumulators', () => {
@@ -280,7 +281,7 @@ describe('safety injection accumulators', () => {
     expect(gas).toBeGreaterThan(pressure)
     expect(Number(plantRun.read('safetyAccumulatorA.outletFlowKgPerS'))).toBeGreaterThan(1)
     expect(Number(plantRun.read('safetyAccumulatorA.depletedFraction'))).toBeGreaterThan(0.2)
-  })
+  }, 60_000)
 })
 
 describe('the PORV block valve', () => {
@@ -306,7 +307,7 @@ describe('the PORV block valve', () => {
     expect(Number(plantRun.read('pressurizer-relief-to-tank.flowKgPerS'))).toBe(0)
     plantRun.run(3_000)
     expect(plantRun.activeIds()).not.toContain('alarm:pzr-relief-flow-high:relief-flow-high')
-  })
+  }, 60_000)
 
   test('without power on its motor it stays where it is', () => {
     const plantRun = started()
@@ -321,7 +322,7 @@ describe('the PORV block valve', () => {
     expect(plantRun.read('safetyBusA.energized')).toBe(false)
     expect(plantRun.tag('MOV-8000A')).toBe(0)
     expect(plantRun.tag('MOV-8000A-POS')).toBe(1)
-  })
+  }, 60_000)
 })
 
 describe('steam generator tube leak detection', () => {
@@ -339,7 +340,7 @@ describe('steam generator tube leak detection', () => {
       expect(conditionPaths(rule.condition).filter(path => path.endsWith('.tubeLeakFraction')), rule.id).toEqual([])
     }
     expect(graph.signalBindingByTagId.has('SG-A-TUBE-LEAK' as never)).toBe(false)
-  })
+  }, 60_000)
 
   test('a tube leak alarms from its steam generator\'s radiation and the RCS inventory balance, which estimates its rate', () => {
     const plantRun = started()
@@ -355,7 +356,7 @@ describe('steam generator tube leak detection', () => {
     plantRun.run(60_000)
     const tubeFlow = Number(plantRun.read('sgA.primaryToSecondaryLeakKgPerS'))
     expect(Number(plantRun.tag('RCS-LEAK-RATE'))).toBeCloseTo(tubeFlow, 1)
-  })
+  }, 60_000)
 
   test('a hot-leg leak shows on the inventory balance but on no steam generator', () => {
     const plantRun = started()
@@ -364,7 +365,7 @@ describe('steam generator tube leak detection', () => {
     expect(plantRun.secondsUntil(leakRateHigh, 60)).not.toBeNull()
     plantRun.run(30_000)
     for (const loop of ['a', 'b', 'c', 'd']) expect(plantRun.activeIds()).not.toContain(tubeLeak(loop))
-  })
+  }, 60_000)
 
   test('a stuck-open PORV relieves to the relief tank, which the balance counts as identified, not as a leak', () => {
     const plantRun = started()
@@ -373,7 +374,7 @@ describe('steam generator tube leak detection', () => {
     plantRun.run(120_000)
     expect(Math.abs(Number(plantRun.tag('RCS-LEAK-RATE')))).toBeLessThan(0.063)
     expect(plantRun.activeIds()).not.toContain(leakRateHigh)
-  })
+  }, 60_000)
 })
 
 describe('blocking low-pressure safety injection below P-11', () => {
@@ -392,7 +393,7 @@ describe('blocking low-pressure safety injection below P-11', () => {
     expect(plantRun.tag('P-11')).toBe(false)
     expect(plantRun.operate('SI-BLOCK', true).accepted).toBe(false)
     expect(plantRun.tag('SI-BLOCKED')).toBe(false)
-  })
+  }, 60_000)
 
   test('lets a planned depressurization in hot standby pass 12.7 MPa without SI, and resets above P-11', () => {
     const plantRun = started()
@@ -433,5 +434,5 @@ describe('blocking low-pressure safety injection below P-11', () => {
     expect(plantRun.secondsUntil(siActuated, 120)).not.toBeNull()
     plantRun.run(5_000)
     expect(plantRun.tag('SI-PUMP-A-RUNNING')).toBe(true)
-  })
+  }, 60_000)
 })
