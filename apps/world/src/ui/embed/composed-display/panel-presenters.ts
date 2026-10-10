@@ -35,13 +35,23 @@ const isSteady = (rate: number, value: number): boolean => Math.abs(rate) <= Mat
 
 export type RateChange = 'accelerating' | 'slowing' | 'reversing'
 
+// A tendency needs enough history to mean something: half a minute at least,
+// with several distinct values in it, so sample-and-hold steps never read as
+// accelerating or reversing (HMI review).
+const CHANGE_MIN_WINDOW_MS = 30_000
+const CHANGE_MIN_DISTINCT_VALUES = 5
+
 /**
- * How the rate over the window compares with the rate over three windows, so
- * a curve that has flattened is not reported only by its older, steeper slope.
+ * How the rate over the window, half a minute at least, compares with the
+ * rate over three such windows, so a curve that has flattened is not reported
+ * only by its older, steeper slope.
  */
 export const rateChange = (points: ReadonlyArray<TrendPoint>, windowMs: number, value: number): RateChange | null => {
-  const recent = ratePerMinute(points, windowMs)
-  const longer = ratePerMinute(points, windowMs * 3)
+  const window = Math.max(windowMs, CHANGE_MIN_WINDOW_MS)
+  const last = points.at(-1)
+  if (last === undefined || new Set(points.filter(point => point.t >= last.t - window).map(point => point.v)).size < CHANGE_MIN_DISTINCT_VALUES) return null
+  const recent = ratePerMinute(points, window)
+  const longer = ratePerMinute(points, window * 3)
   if (recent === null || longer === null || isSteady(longer, value)) return null
   if (!isSteady(recent, value) && Math.sign(recent) !== Math.sign(longer)) return 'reversing'
   if (Math.abs(recent) < Math.abs(longer) * 0.5) return 'slowing'

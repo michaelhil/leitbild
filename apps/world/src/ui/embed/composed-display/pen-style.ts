@@ -30,13 +30,14 @@ export const displayName = (pen: { readonly name: string }): string => pen.name
  * shortest form is returned when none fits; the tooltip keeps the whole name.
  */
 export const fitName = (name: string, fits: (text: string) => boolean): string => {
+  if (fits(name)) return name
   const at = name.lastIndexOf(' · ')
   const quantity = at < 0 ? name : name.slice(0, at)
   const equipment = at < 0 ? [] : name.slice(at + 3).split(' ')
   const words = quantity.split(' ')
   const withEquipment = (text: string, kept: number): string => kept === 0 ? text : `${text} · ${kept === equipment.length ? '' : '…'}${equipment.slice(-kept).join(' ')}`
   const candidates = [
-    ...equipment.map((_, index) => withEquipment(quantity, equipment.length - index)),
+    ...equipment.slice(1).map((_, index) => withEquipment(quantity, equipment.length - 1 - index)),
     ...words.slice(2).map((_, index) => withEquipment(`${words[0]} … ${words.slice(index + 2 - words.length).join(' ')}`, Math.min(1, equipment.length))),
   ]
   if (candidates.length === 0) return name

@@ -61,7 +61,7 @@ describe('composed display panel presenters', () => {
     expect(returningText(5.4, -0.01, highRadiation, 'mSv/h')).toBe('back below HI ALM 5 mSv/h in over 30 min')
   })
 
-  test('long names are shortened from the middle so the equipment survives', () => {
+  test('long names drop whole words, never cutting through one', () => {
     // Whole words only: the equipment's leading words go first, keeping what tells parallel equipment apart, then the quantity's middle words.
     const within = (length: number) => (text: string) => text.length <= length
     expect(fitName('Process valve position · Feedwater Control Valve B', within(60))).toBe('Process valve position · Feedwater Control Valve B')
@@ -69,6 +69,9 @@ describe('composed display panel presenters', () => {
     expect(fitName('Core heat removal deficit · Reactor Core', within(26))).toBe('Core … deficit · …Core')
     expect(fitName('Auxiliary feedwater to steam generator A temperature', within(40))).toBe('Auxiliary … generator A temperature')
     expect(fitName('PT-455', within(3))).toBe('PT-455')
+    // A name without equipment that fits stays whole.
+    expect(fitName('Pressurizer relief flow', within(40))).toBe('Pressurizer relief flow')
+    expect(fitName('Pressurizer relief flow', within(20))).toBe('Pressurizer … flow')
   })
 
   test('median of parallel signals', () => {
@@ -120,13 +123,16 @@ describe('composed display panel presenters', () => {
 
   test('rates follow the curve on screen and say when it is slowing', () => {
     expect([120_000, 600_000, 1_800_000].map(rateWindowMs)).toEqual([10_000, 30_000, 30_000])
-    // Falling fast for a minute, then nearly flat for the last 15 s.
-    const flattening = Array.from({ length: 76 }, (_, index) => ({ t: index * 1000, v: index <= 60 ? 15 - index * 0.05 : 12 - (index - 60) * 0.002 }))
+    // Falling fast for a minute and a half, then nearly flat for the last 30 s.
+    const flattening = Array.from({ length: 121 }, (_, index) => ({ t: index * 1000, v: index <= 90 ? 15 - index * 0.05 : 10.5 - (index - 90) * 0.002 }))
     const window = rateWindowMs(120_000)
     expect(Math.abs(ratePerMinute(flattening, window)!)).toBeLessThan(0.3)
     expect(rateChange(flattening, window, 12)).toBe('slowing')
     const steadyFall = Array.from({ length: 76 }, (_, index) => ({ t: index * 1000, v: 15 - index * 0.05 }))
     expect(rateChange(steadyFall, window, 12)).toBeNull()
+    // Samples held for 10 s at a time (rcp-trip): steps, not a tendency.
+    const stepped = Array.from({ length: 76 }, (_, index) => ({ t: index * 1000, v: 15 - Math.floor(index / 10) * (index < 50 ? 0.2 : 0.6) }))
+    expect(rateChange(stepped, window, 12)).toBeNull()
     expect(simulationClock(Date.parse('2026-01-01T10:01:00.049Z'))).toBe('10:01:00')
     // Rising 0.31 MPa/min with 0.285 MPa left to HI ALM 16 (turbine trip, run 6).
     const highAlarm = { ruleId: 'pzr-high', label: 'Pressurizer pressure high', kind: 'alarm', operator: '>', direction: 'high', value: 16 } as const
