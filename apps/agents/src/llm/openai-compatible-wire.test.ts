@@ -23,7 +23,8 @@ describe('OpenAI-compatible native tool history', () => {
     const request = { model: 'gpt-6-astra', messages: [], tools, reasoningEffort: 'high' as const }
     expect(() => buildOAIBody(request, false, 'openai')).toThrow('unsupported_provider_transport')
     expect(() => buildOAIBody({ ...request, tools: [], reasoningEffort: 'none' }, false, 'openai')).toThrow('reasoning_effort_unsupported')
-    for (const model of ['gpt-5.4', 'gpt-5.5', 'gpt-5.6']) {
+    expect(() => buildOAIBody({ ...request, model: 'gpt-6.1-sol', reasoningEffort: 'low' }, false, 'openai')).toThrow('does not support gpt-6.1-sol function calling')
+    for (const model of ['gpt-5.4', 'gpt-5.5', 'gpt-5.6', 'gpt-6-sol', 'gpt-6-luna']) {
       expect(() => buildOAIBody({ ...request, model }, false, 'openai')).toThrow('unsupported_provider_transport')
       expect(() => buildOAIBody({ ...request, model, reasoningEffort: undefined }, false, 'openai')).toThrow('requires explicit none')
       expect(buildOAIBody({ ...request, model, reasoningEffort: 'none' }, false, 'openai')).toHaveProperty('tools')

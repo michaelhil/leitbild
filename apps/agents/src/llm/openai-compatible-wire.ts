@@ -168,14 +168,16 @@ export const buildOAIBody = (request: ChatRequest, stream: boolean, providerName
   // https://developers.openai.com/api/docs/guides/migrate-to-responses
   if (providerName === 'openai') {
     const id = stripProviderPrefix(request.model).toLowerCase()
-    const astra = /^gpt-6-astra(?:-|$)/.test(id)
-    if (astra && request.reasoningEffort === 'none') {
-      throw createLLMRequestError('reasoning_effort_unsupported', 'reasoning_effort_unsupported: GPT-6 Astra does not support none reasoning effort')
+    // Models that always reason cannot call functions over Chat Completions;
+    // the others can only with reasoning off.
+    const alwaysReasons = /^gpt-6(?:-astra|\.1-sol)(?:-|$)/.test(id)
+    if (alwaysReasons && request.reasoningEffort === 'none') {
+      throw createLLMRequestError('reasoning_effort_unsupported', `reasoning_effort_unsupported: ${id} does not support none reasoning effort`)
     }
-    const requiresNone = /^gpt-5\.[456](?:-|$)/.test(id)
-    if (request.tools?.length && (astra || (requiresNone && (request.reasoningEffort ?? modelInfo?.reasoning?.defaultEffort) !== 'none'))) {
-      throw createLLMRequestError('unsupported_provider_transport', astra
-        ? 'unsupported_provider_transport: direct OpenAI Chat Completions does not support GPT-6 Astra function calling; use a supported route such as OpenRouter'
+    const requiresNone = /^(?:gpt-5\.[456]|gpt-6-(?:sol|luna))(?:-|$)/.test(id)
+    if (request.tools?.length && (alwaysReasons || (requiresNone && (request.reasoningEffort ?? modelInfo?.reasoning?.defaultEffort) !== 'none'))) {
+      throw createLLMRequestError('unsupported_provider_transport', alwaysReasons
+        ? `unsupported_provider_transport: direct OpenAI Chat Completions does not support ${id} function calling; use a supported route such as OpenRouter`
         : 'unsupported_provider_transport: direct OpenAI Chat Completions requires explicit none reasoning effort for this model with tools; choose none or a supported route such as OpenRouter')
     }
   }

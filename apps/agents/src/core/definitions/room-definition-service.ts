@@ -2,6 +2,7 @@ import type { AgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
 import { SYSTEM_SENDER_ID } from '../types/constants.ts'
 import { owningPackFor } from '../types/tool-pack.ts'
 import { resolveWorkspaceDefaultModel } from '../workspaces/seed-workspace.ts'
+import { DEFAULT_MODEL_ID, DEFAULT_REASONING_EFFORT } from '../../llm/models/catalog.ts'
 import type { RoomDefinition, PromptDeckEntry } from './room-definition-catalog.ts'
 import type { RoomDefinitionLibrary } from './room-definition-library.ts'
 import type { WorkspaceRoomScope } from '@leitbild/contracts'
@@ -94,6 +95,10 @@ export const startRoomDefinition = async (
     await system.addAgentToRoom(human.id, room.profile.id, 'demo')
     const defaultModel = resolveWorkspaceDefaultModel(system)
     for (const agentDefinition of definition.room.agents) {
+      // The default effort belongs to the default model, so it applies only
+      // when this Agent runs that model and declares no effort of its own.
+      const reasoningEffort = agentDefinition.reasoningEffort
+        ?? (agentDefinition.model === undefined && defaultModel === DEFAULT_MODEL_ID ? DEFAULT_REASONING_EFFORT : undefined)
       const agent = await system.spawnAIAgent({
         name: uniqueAgentName(system, agentDefinition.name),
         ownerRoomId: room.profile.id,
@@ -102,7 +107,7 @@ export const startRoomDefinition = async (
         tools: agentDefinition.tools,
         skills: agentDefinition.skills,
         ...(agentDefinition.temperature !== undefined ? { temperature: agentDefinition.temperature } : {}),
-        ...(agentDefinition.reasoningEffort !== undefined ? { reasoningEffort: agentDefinition.reasoningEffort } : {}),
+        ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
         ...(agentDefinition.historyTokenBudget !== undefined ? { historyTokenBudget: agentDefinition.historyTokenBudget } : {}),
         ...(agentDefinition.maxToolIterations !== undefined ? { maxToolIterations: agentDefinition.maxToolIterations } : {}),
         ...(agentDefinition.includeContext ? { includeContext: agentDefinition.includeContext } : {}),

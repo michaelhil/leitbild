@@ -7,6 +7,7 @@
 // ============================================================================
 
 import type { CloudProviderName } from '../provider-catalog.ts'
+import type { ReasoningEffort } from '../../core/types/llm.ts'
 
 export interface CuratedModel {
   readonly id: string
@@ -37,7 +38,12 @@ export interface CuratedModel {
 // model-name exceptions. The primary remains bare so the router may use any
 // provider that genuinely reports it; fallback refs are pinned because they
 // intentionally cross model/provider boundaries.
-export const DEFAULT_MODEL_ID = 'gpt-5.4'
+export const DEFAULT_MODEL_ID = 'gpt-6-sol'
+// Paired with DEFAULT_MODEL_ID: Room Definition Agents that run the default
+// model without their own setting get this effort. Left to the provider,
+// GPT-6 Sol would reason at medium. On scripts/model-probe.ts (2026-10-10)
+// low chose and composed displays as well as none and finished turns sooner.
+export const DEFAULT_REASONING_EFFORT: ReasoningEffort = 'low'
 export const DEFAULT_MODEL_FALLBACK: ReadonlyArray<string> = [
   'openai:gpt-5.4-mini',
   'kimi:moonshot-v1-8k',
@@ -52,14 +58,15 @@ export const CURATED_MODELS: Record<string, ReadonlyArray<CuratedModel>> = {
     { id: 'claude-sonnet-4-5', label: 'Sonnet 4.5 (balanced)',   supportsImages: true },
   ],
   openai: [
-    // gpt-5.4 first: curated default for the showcase demos. The gpt-5 family
-    // detection in openai-compatible.ts (`startsWith('gpt-5')`) already routes
-    // it through max_completion_tokens + temperature-rejection branches.
-    { id: DEFAULT_MODEL_ID, label: '5.4 (default)',                     supportsTools: true, supportsImages: true },
+    // The default first. isNewOpenAIFamily in openai-compatible-wire.ts
+    // routes gpt-5.x and gpt-6.x through max_completion_tokens and drops
+    // temperature.
+    { id: DEFAULT_MODEL_ID, label: '6 Sol (default)',                   supportsTools: true, supportsImages: true },
+    { id: 'gpt-6.1-sol',   label: '6.1 Sol (stronger, slower)',         supportsTools: true, supportsImages: true },
+    { id: 'gpt-6-luna',    label: '6 Luna (high volume)',               supportsTools: true, supportsImages: true },
+    { id: 'gpt-6-astra',   label: '6 Astra (frontier)',                 supportsTools: true, supportsImages: true },
+    { id: 'gpt-5.4',       label: '5.4 (previous default)',             supportsTools: true, supportsImages: true },
     { id: 'gpt-5.4-mini',  label: '5.4 mini (fast fallback)',           supportsTools: true, supportsImages: true },
-    { id: 'gpt-5.5',       label: '5.5 (frontier)',                     supportsTools: true, supportsImages: true },
-    { id: 'gpt-5.6-terra', label: '5.6 Terra (balanced)',               supportsTools: true, supportsImages: true },
-    { id: 'gpt-5.6-luna',  label: '5.6 Luna (high volume)',             supportsTools: true, supportsImages: true },
     { id: 'gpt-4o-mini',   label: '4o-mini (legacy, cheap)',            supportsTools: true, supportsImages: true },
   ],
   kimi: [
@@ -98,7 +105,9 @@ export const CURATED_MODELS: Record<string, ReadonlyArray<CuratedModel>> = {
     { id: 'mistral-large-latest',  label: 'Large (premium)', supportsImages: false },
   ],
   openrouter: [
-    { id: DEFAULT_MODEL_ID,                       label: 'OpenAI 5.4 (default)', supportsTools: true, supportsImages: true },
+    { id: DEFAULT_MODEL_ID,                       label: 'OpenAI 6 Sol (default)', supportsTools: true, supportsImages: true },
+    { id: 'gpt-6.1-sol',                        label: 'OpenAI 6.1 Sol',        supportsTools: true, supportsImages: true },
+    { id: 'gpt-5.4',                            label: 'OpenAI 5.4 (previous)', supportsTools: true, supportsImages: true },
     { id: 'deepseek/deepseek-chat',             label: 'DeepSeek V3 (cheap)', supportsImages: false },
     { id: 'meta-llama/llama-3.3-70b-instruct',  label: 'Llama 3.3 70B',       supportsImages: false },
   ],
@@ -110,8 +119,8 @@ export const CURATED_MODELS: Record<string, ReadonlyArray<CuratedModel>> = {
 // Preferred default picks for a fresh system, in order. Used by /api/models
 // when no last-used model is available, and by the seed flow.
 //
-// OpenRouter first because it is the preferred gateway for the same curated
-// gpt-5.4 default; direct provider keys remain available as router fallbacks.
+// OpenRouter first because it is the preferred gateway for the curated
+// default; direct provider keys remain available as router fallbacks.
 // Gemini stays prioritized above Anthropic after OpenAI because its free tier
 // remains the most generous fallback for developers without an OpenAI key.
 export const DEFAULT_PREFERENCE_ORDER: ReadonlyArray<CloudProviderName | 'ollama'> = [

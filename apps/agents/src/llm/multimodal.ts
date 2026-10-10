@@ -30,6 +30,7 @@ const MULTIMODAL_MODEL_SUBSTRINGS: ReadonlyArray<string> = [
   'gpt-4o',
   'gpt-4-vision',
   'gpt-5',          // gpt-5.4, gpt-5-pro, etc. all multimodal
+  'gpt-6',          // gpt-6-sol, gpt-6.1-sol, gpt-6-luna, gpt-6-astra
   // Anthropic
   'claude-3-opus',
   'claude-3-sonnet',
