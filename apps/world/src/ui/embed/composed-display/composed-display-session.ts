@@ -184,15 +184,27 @@ export const createComposedDisplaySession = (config: {
     update({ series, historyMissing, latest: first, lastSampleWallMs: wallNow(), ranges: grownRanges(series, first), phase: { kind: 'live' } })
   }
 
+  // A generated display is drawn for its view, so a view with no size yet (a
+  // hidden or collapsed frame) waits until it has one rather than asking for a
+  // drawing of nothing.
+  const drawable = (): boolean => {
+    const size = config.size()
+    return size === null || (size.width >= 1 && size.height >= 1)
+  }
+  let awaitingSize: { readonly poll?: boolean } | null = null
+
+  /** Checks presence first and never loads an inactive Run on its own. */
+  const start = async (options: { readonly poll?: boolean } = {}): Promise<void> => {
+    if (!drawable()) { awaitingSize = options; return }
+    try {
+      if (!await checkPresence()) return
+      await begin()
+      if (options.poll !== false) startPolling()
+    } catch (error) { fail(error) }
+  }
+
   return {
-    /** Checks presence first and never loads an inactive Run on its own. */
-    start: async (options: { readonly poll?: boolean } = {}): Promise<void> => {
-      try {
-        if (!await checkPresence()) return
-        await begin()
-        if (options.poll !== false) startPolling()
-      } catch (error) { fail(error) }
-    },
+    start,
     loadRun: async (options: { readonly poll?: boolean } = {}): Promise<void> => {
       try {
         update({ phase: { kind: 'starting' } })
@@ -208,9 +220,16 @@ export const createComposedDisplaySession = (config: {
       startPolling()
     },
     interacted: (): void => { lastInteractionWallMs = wallNow() },
-    /** A generated display is drawn again for the view's new size; its samples carry on. */
+    /** A generated display is drawn again for the view's new size, or first drawn once the view has one; its samples carry on. */
     relayout: async (): Promise<void> => {
-      if (closed || (snapshot.view?.kind !== 'overview' && snapshot.view?.kind !== 'detail')) return
+      if (closed || !drawable()) return
+      if (awaitingSize !== null) {
+        const options = awaitingSize
+        awaitingSize = null
+        await start(options)
+        return
+      }
+      if (snapshot.view?.kind !== 'overview' && snapshot.view?.kind !== 'detail') return
       const drawn = state
       try {
         const view = await config.client.view(config.runId, config.plantId, drawn, config.size())

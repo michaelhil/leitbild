@@ -178,6 +178,23 @@ describe('composed display session', () => {
     controller.close()
   })
 
+  test('a generated display opened in a window with no size yet waits for one, then draws for it', async () => {
+    const overview: ComposedDisplayViewResult = { kind: 'overview', plantId: 'plant:1', plantLabel: 'Unit 1', simulationTime: at(0), display: view.display }
+    const window = { width: 0, height: 0 }
+    const { client, calls } = fakeClient({ presence: { title: 'Run', loaded: true, playback: 'playing', currentSimulationTime: at(0) }, samples: [{ time: at(0), value: 15.4 }], view: overview })
+    const { controller, last } = session(client, { now: 0 }, false, () => window)
+    await controller.start({ poll: false })
+    await controller.relayout()
+    // Nothing is asked of the Run until the window can show a drawing.
+    expect(calls).toEqual([])
+    window.width = 1896
+    window.height = 972
+    await controller.relayout()
+    expect(calls.filter(call => call.startsWith('view'))).toEqual(['view:1896x972'])
+    expect(last().phase.kind).toBe('live')
+    controller.close()
+  })
+
   test('advice keeps the size it was composed with', async () => {
     const { client, calls } = fakeClient({ presence: { title: 'Run', loaded: true, playback: 'playing', currentSimulationTime: at(0) }, samples: [{ time: at(0), value: 15.4 }] })
     const { controller } = session(client)

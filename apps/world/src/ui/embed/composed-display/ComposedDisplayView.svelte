@@ -53,7 +53,8 @@
       wallNow = Date.now()
       if (systemFilter !== null && wallNow - lastInputWallMs > FILTER_IDLE_MS) systemFilter = null
     }, 1_000)
-    // A unit overview is drawn for its window: once resizing settles, it is drawn again for the new size.
+    // A unit overview is drawn for its window: once resizing settles, it is drawn again for the new size
+    // (or first drawn, where the window had no size when it opened).
     let resizing: ReturnType<typeof setTimeout> | undefined
     const resized = (): void => {
       if (advice !== null) return
