@@ -3,32 +3,41 @@ import type { CompiledProcessPlant } from '../../plant-compiler.ts'
 import { resolveProcessPlantSignalBinding } from '../../signals.ts'
 import type { ProcessPlantSignalReference } from '../../signals.ts'
 import { assertProcessPlantVariableValueValid } from '../variable-validation.ts'
-import type { ProcessPlantIcCondition, ProcessPlantIcEffect, ProcessPlantIcRule } from './control-protection-model.ts'
+import type { ProcessPlantIcCondition, ProcessPlantIcEffect, ProcessPlantIcOperatingMode, ProcessPlantIcRule } from './control-protection-model.ts'
 
+/** `owner` names what holds the condition in messages: "rule pzr-high", "operating mode power-operation". */
 const assertConditionSignalsValid = (
-  system: CompiledProcessPlant,
-  rule: ProcessPlantIcRule,
+  graph: CompiledPlantGraph,
+  owner: string,
   condition: ProcessPlantIcCondition,
 ): void => {
   if (condition.type === 'comparison') {
-    const binding = resolveProcessPlantSignalBinding(system.graph, condition.signal)
+    const binding = resolveProcessPlantSignalBinding(graph, condition.signal)
     const signalType = binding.quantity === 'boolean' ? 'boolean' : 'number'
     const valueType = typeof condition.value
     if (condition.operator !== '==' && condition.operator !== '!=' && signalType !== 'number') {
-      throw new Error(`process plant I&C rule ${rule.id} uses numeric operator ${condition.operator} with non-numeric signal ${binding.path}`)
+      throw new Error(`process plant I&C ${owner} uses numeric operator ${condition.operator} with non-numeric signal ${binding.path}`)
     }
     if (signalType !== valueType) {
-      throw new Error(`process plant I&C rule ${rule.id} compares signal ${binding.path} ${signalType} value with ${valueType} threshold`)
+      throw new Error(`process plant I&C ${owner} compares signal ${binding.path} ${signalType} value with ${valueType} threshold`)
     }
     return
   }
   if (condition.type === 'not') {
-    assertConditionSignalsValid(system, rule, condition.condition)
+    assertConditionSignalsValid(graph, owner, condition.condition)
     return
   }
   for (const child of condition.conditions) {
-    assertConditionSignalsValid(system, rule, child)
+    assertConditionSignalsValid(graph, owner, child)
   }
+}
+
+/** Each operating mode's condition reads signals of the Plant, compared by their type. */
+export const assertProcessPlantIcOperatingModesValid = (
+  graph: CompiledPlantGraph,
+  modes: ReadonlyArray<ProcessPlantIcOperatingMode>,
+): void => {
+  for (const mode of modes) assertConditionSignalsValid(graph, `operating mode ${mode.id}`, mode.condition)
 }
 
 const variableFor = (
@@ -106,10 +115,9 @@ export const assertProcessPlantIcRulesValid = (
   assertProcessPlantIcAnnunciatorEquipmentValid(system.graph, rules)
   for (const rule of rules) {
     assertRuleShapeValid(rule)
-    if (rule.modeCondition !== undefined) assertConditionSignalsValid(system, rule, rule.modeCondition)
-    assertConditionSignalsValid(system, rule, rule.condition)
-    if (rule.clearCondition !== undefined) assertConditionSignalsValid(system, rule, rule.clearCondition)
-    if (rule.resetCondition !== undefined) assertConditionSignalsValid(system, rule, rule.resetCondition)
+    assertConditionSignalsValid(system.graph, `rule ${rule.id}`, rule.condition)
+    if (rule.clearCondition !== undefined) assertConditionSignalsValid(system.graph, `rule ${rule.id}`, rule.clearCondition)
+    if (rule.resetCondition !== undefined) assertConditionSignalsValid(system.graph, `rule ${rule.id}`, rule.resetCondition)
     for (const gate of rule.commandGates) {
       variableFor(system, gate.signal)
     }

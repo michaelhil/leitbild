@@ -57,7 +57,7 @@ const compileTestSystem = (definition: {
   graph: definition.graph,
   ...(definition.parameters === undefined ? {} : { parameterOverrides: definition.parameters }),
   ...(definition.initialState === undefined ? {} : { valueOverrides: definition.initialState }),
-  automationForGraph: () => ({ annunciatorSystems: [], rules: [] }),
+  automationForGraph: () => ({ operatingModes: [], annunciatorSystems: [], rules: [] }),
 })
 
 const compiledSystem = () => compileTestSystem({

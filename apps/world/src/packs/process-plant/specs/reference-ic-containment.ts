@@ -1,5 +1,5 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
-import { alarm, annunciator, comparison, powerOperation, reactorTripBreakerWrites, rule, trip, write } from './reference-ic-helpers.ts'
+import { alarm, annunciator, comparison, reactorTripBreakerWrites, rule, trip, write } from './reference-ic-helpers.ts'
 
 const containmentAlarm = annunciator({
   system: 'containment',
@@ -46,7 +46,7 @@ export const containmentReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRule>
     id: 'containment-pressure-high-reactor-trip',
     label: 'Containment pressure high reactor trip',
     ruleClass: 'protection',
-    ...powerOperation(),
+    modes: ['powerOperation'],
     condition: comparison({ path: 'containment.pressureMPa' }, '>', 0.24),
     delayMs: 1_000,
     effects: [

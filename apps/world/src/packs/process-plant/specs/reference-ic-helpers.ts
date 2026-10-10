@@ -1,6 +1,7 @@
 import { processPlantSignalReferenceSchema, type ProcessPlantSignalReference } from '../signals.ts'
 import type { ProcessPlantIcAnnunciator, ProcessPlantIcCondition, ProcessPlantIcRule } from '../runtime/index.ts'
 import type { ReferenceAnnunciatorSystemId } from './reference-ic-annunciators.ts'
+import type { ReferenceOperatingModeId } from './reference-ic-modes.ts'
 
 export type ReferenceIcEffect = ProcessPlantIcRule['effects'][number]
 export type SignalRef = { readonly tagId: string } | { readonly path: string }
@@ -85,29 +86,6 @@ export const reactorTripBreakerOpen = (): ProcessPlantIcCondition => any([
 /** Fission power above which the reactor is at power: 100 MW, about 3 % of rated. */
 export const atPowerThresholdMw = 100
 
-/**
- * Power operation, read from what the plant does: both reactor trip
- * breakers read closed and fission power is above 100 MW. A reactor trip
- * ends it at once, whatever any command says.
- */
-export const powerOperation = (): { readonly modeLabel: string; readonly modeCondition: ProcessPlantIcCondition } => ({
-  modeLabel: 'power operation',
-  modeCondition: all([
-    comparison({ tagId: 'TRIP-BKR-A-POS' }, '==', true),
-    comparison({ tagId: 'TRIP-BKR-B-POS' }, '==', true),
-    comparison({ path: 'core.powerMw' }, '>', atPowerThresholdMw),
-  ]),
-})
-
-/** The generator on line: power operation with the turbine stop valve reading open. A turbine trip ends it. */
-export const generatorOnLine = (): { readonly modeLabel: string; readonly modeCondition: ProcessPlantIcCondition } => ({
-  modeLabel: 'generator on line',
-  modeCondition: all([
-    powerOperation().modeCondition,
-    comparison({ tagId: 'TURB-STOP-POS' }, '>', 0.05),
-  ]),
-})
-
 export const reactorTripBreakerWrites = (idPrefix: string): ReadonlyArray<ReferenceIcEffect> => [
   write(`${idPrefix}-open-trip-breaker-a`, { tagId: 'TRIP-BKR-A' }, false),
   write(`${idPrefix}-open-trip-breaker-b`, { tagId: 'TRIP-BKR-B' }, false),
@@ -117,8 +95,7 @@ export const rule = (config: {
   readonly id: string
   readonly label?: string
   readonly ruleClass?: ProcessPlantIcRule['ruleClass']
-  readonly modeLabel?: string
-  readonly modeCondition?: ProcessPlantIcCondition
+  readonly modes?: ReadonlyArray<ReferenceOperatingModeId>
   readonly condition: ProcessPlantIcCondition
   readonly delayMs?: number
   readonly clearCondition?: ProcessPlantIcCondition
@@ -131,8 +108,7 @@ export const rule = (config: {
   ...(config.label === undefined ? {} : { label: config.label }),
   enabled: true,
   ruleClass: config.ruleClass ?? 'alarm',
-  ...(config.modeLabel === undefined ? {} : { modeLabel: config.modeLabel }),
-  ...(config.modeCondition === undefined ? {} : { modeCondition: config.modeCondition }),
+  ...(config.modes === undefined ? {} : { modes: [...config.modes] }),
   condition: config.condition,
   delayMs: config.delayMs ?? 0,
   ...(config.clearCondition === undefined ? {} : { clearCondition: config.clearCondition }),
@@ -160,15 +136,13 @@ export const deadbandController = (config: {
     readonly max: number
     readonly effects: ReadonlyArray<ReferenceIcEffect>
   }
-  readonly modeLabel?: string
-  readonly modeCondition?: ProcessPlantIcCondition
+  readonly modes?: ReadonlyArray<ReferenceOperatingModeId>
 }): ReadonlyArray<ProcessPlantIcRule> => [
   rule({
     id: `${config.id}-low-demand`,
     label: `${config.label} low demand`,
     ruleClass: 'normalControl',
-    ...(config.modeLabel === undefined ? {} : { modeLabel: config.modeLabel }),
-    ...(config.modeCondition === undefined ? {} : { modeCondition: config.modeCondition }),
+    ...(config.modes === undefined ? {} : { modes: config.modes }),
     condition: comparison(config.signal, '<', config.low.threshold),
     latch: false,
     resetWhenClear: true,
@@ -178,8 +152,7 @@ export const deadbandController = (config: {
     id: `${config.id}-high-demand`,
     label: `${config.label} high demand`,
     ruleClass: 'normalControl',
-    ...(config.modeLabel === undefined ? {} : { modeLabel: config.modeLabel }),
-    ...(config.modeCondition === undefined ? {} : { modeCondition: config.modeCondition }),
+    ...(config.modes === undefined ? {} : { modes: config.modes }),
     condition: comparison(config.signal, '>', config.high.threshold),
     latch: false,
     resetWhenClear: true,
@@ -190,8 +163,7 @@ export const deadbandController = (config: {
       id: `${config.id}-normal-band`,
       label: `${config.label} normal band`,
       ruleClass: 'normalControl',
-      ...(config.modeLabel === undefined ? {} : { modeLabel: config.modeLabel }),
-      ...(config.modeCondition === undefined ? {} : { modeCondition: config.modeCondition }),
+      ...(config.modes === undefined ? {} : { modes: config.modes }),
       condition: all([
         comparison(config.signal, '>=', config.normal.min),
         comparison(config.signal, '<=', config.normal.max),

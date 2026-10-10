@@ -9,6 +9,7 @@ import {
   createProcessPlantProtectionRunner,
   createProcessPlantRuntime,
   createPwrReferencePlantDefinition,
+  processPlantOperatingMode,
   type VariablePath,
 } from '../src/packs/process-plant/index.ts'
 import { resolveProcessPlantSignalBinding } from '../src/packs/process-plant/signals.ts'
@@ -199,18 +200,35 @@ describe('alarms that apply only in power operation', () => {
     [...plantRun.protection.snapshot().alarms, ...plantRun.protection.snapshot().trips].find(lifecycle => lifecycle.id === id)!
 
   test('read power operation from the trip breakers and fission power, never a command', () => {
-    for (const rule of plant.automation.rules.filter(candidate => candidate.modeLabel === 'power operation')) {
-      expect(JSON.stringify(rule.modeCondition), rule.id).toBe(JSON.stringify({
-        type: 'all',
-        conditions: [
-          { type: 'comparison', signal: { tagId: 'TRIP-BKR-A-POS' }, operator: '==', value: true },
-          { type: 'comparison', signal: { tagId: 'TRIP-BKR-B-POS' }, operator: '==', value: true },
-          { type: 'comparison', signal: { path: 'core.powerMw' }, operator: '>', value: 100 },
-        ],
-      }))
+    const declared = plant.automation.operatingModes.find(mode => mode.id === 'powerOperation')!
+    expect(JSON.stringify(declared.condition)).toBe(JSON.stringify({
+      type: 'all',
+      conditions: [
+        { type: 'comparison', signal: { tagId: 'TRIP-BKR-A-POS' }, operator: '==', value: true },
+        { type: 'comparison', signal: { tagId: 'TRIP-BKR-B-POS' }, operator: '==', value: true },
+        { type: 'comparison', signal: { path: 'core.powerMw' }, operator: '>', value: 100 },
+      ],
+    }))
+    const qualified = plant.automation.rules.filter(rule => rule.modes !== undefined)
+    expect(qualified.every(rule => JSON.stringify(rule.modes) === '["powerOperation"]')).toBe(true)
+    expect(qualified.map(rule => rule.id)).toEqual(expect.arrayContaining(['generator-output-low', 'turbine-load-low']))
+  })
+
+  test('the Plant is in the first declared mode that holds: power operation at power, hot standby once tripped', () => {
+    expect(plant.automation.operatingModes.map(mode => mode.label)).toEqual(['Power operation', 'Startup', 'Hot standby', 'Hot shutdown', 'Cold shutdown'])
+    const plantRun = started()
+    const modeOf = () => processPlantOperatingMode({ system: plant, runtime: plantRun.runtime, modes: plant.automation.operatingModes })?.id
+    plantRun.run(2_000)
+    expect(modeOf()).toBe('powerOperation')
+    // A qualified rule names its modes as declared, and watches what decides them.
+    const catalogued = plantRun.protection.catalog().rules.find(rule => rule.id === 'generator-output-low')!
+    expect(catalogued.modes).toEqual(['Power operation'])
+    expect(catalogued.watchedSignals.map(signal => signal.tagId)).toEqual(expect.arrayContaining(['TRIP-BKR-A-POS', 'TRIP-BKR-B-POS', 'GEN-MW']))
+    for (const [path, value] of [['reactorTripBreakerA.closed', false], ['reactorTripBreakerB.closed', false], ['core.rodInsertionFraction', 1]] as const) {
+      plantRun.runtime.writeCommand({ type: 'setVariable', path: path as VariablePath, value })
     }
-    const generator = plant.automation.rules.filter(rule => rule.modeLabel === 'generator on line').map(rule => rule.id)
-    expect(generator.sort()).toEqual(['generator-output-low', 'turbine-load-low'])
+    plantRun.run(5_000)
+    expect(modeOf()).toBe('hotStandby')
   })
 
   test('clear after a reactor trip, though their own clear condition still reads abnormal', () => {

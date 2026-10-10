@@ -1,6 +1,6 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
 import type { ProcessPlantReferenceLoop } from './reference-loop.ts'
-import { alarm, all, annunciator, comparison, powerOperation, reactorTripBreakerWrites, rule, trip, vote, write } from './reference-ic-helpers.ts'
+import { alarm, all, annunciator, comparison, reactorTripBreakerWrites, rule, trip, vote, write } from './reference-ic-helpers.ts'
 
 const reactorAlarm = annunciator({
   system: 'reactorProtection',
@@ -69,7 +69,7 @@ export const reactorReferenceIcRules = (
     id: 'reactor-low-primary-flow-trip',
     label: 'Reactor low primary flow trip',
     ruleClass: 'protection',
-    ...powerOperation(),
+    modes: ['powerOperation'],
     condition: comparison({ path: 'vessel.netInventoryFlowKgPerS' }, '<', -250),
     delayMs: 2_000,
     effects: [
@@ -88,7 +88,7 @@ export const reactorReferenceIcRules = (
     label: 'Reactor trip on turbine trip',
     ruleClass: 'protection',
     // In power operation, so the turbine trip a reactor trip itself causes does not trip it again.
-    ...powerOperation(),
+    modes: ['powerOperation'],
     // The stop valve closed and power above P-9, as the RPS logic ANDs them.
     condition: all([
       comparison({ tagId: 'TURB-STOP-POS' }, '<', 0.05),
@@ -109,7 +109,7 @@ export const reactorReferenceIcRules = (
     id: 'reactor-low-rcp-flow-trip',
     label: 'Reactor low reactor coolant pump flow trip',
     ruleClass: 'protection',
-    ...powerOperation(),
+    modes: ['powerOperation'],
     condition: vote(lowRcpFlowVoteThresholdFor(loops), loops.map(loop => comparison({ path: `rcp${loop}.loopFlowKgPerS` }, '<', lowRcpFlowTripThresholdKgPerS))),
     delayMs: 2_000,
     effects: [

@@ -68,14 +68,14 @@ describe('I&C thresholds for composed displays', () => {
     const pressure = compiled.graph.signalBindingByTagId.get('PT-455' as never)!.path
     const { thresholds } = icThresholdsForSignal(compiled, pressure)
     expect(thresholds.map(threshold => [threshold.value, threshold.kind, threshold.modeLabel ?? null])).toEqual([
-      [13.8, 'trip', 'power operation'],
+      [13.8, 'trip', 'Power operation'],
       [14.8, 'alarm', null],
       [15.35, 'control', null],
       [15.65, 'control', null],
       [15.85, 'control', null],
       [16, 'alarm', null],
       [16.18, 'trip', null],
-      [16.35, 'trip', 'power operation'],
+      [16.35, 'trip', 'Power operation'],
     ])
   })
 
@@ -477,6 +477,8 @@ describe('world.process-plant.display.view and sample', () => {
     expect(sample.values[0]).toMatchObject({ path: pressure, quality: 'good' })
     const withAlarms = ask('world.process-plant.display.sample', { plantId: compiled.id, paths: [pressure], alarms: true })
     expect(withAlarms).toMatchObject({ alarms: [], plantElapsedMs: 0 })
+    // The operating mode the Plant declares and is in, for the display's header.
+    expect((sample as unknown as { mode: unknown }).mode).toEqual({ id: 'powerOperation', label: 'Power operation' })
     expect(typeof sample.values[0]!.value).toBe('number')
     expect(rejectionOf(() => ask('world.process-plant.display.sample', { plantId: compiled.id, paths: ['nowhere.value' as VariablePath] }))).toContain('signal path not found')
   })

@@ -1,5 +1,5 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
-import { alarm, all, annunciator, any, comparison, generatorOnLine, reactorTripBreakerOpen, rule, write } from './reference-ic-helpers.ts'
+import { alarm, all, annunciator, any, comparison, reactorTripBreakerOpen, rule, write } from './reference-ic-helpers.ts'
 
 const feedwaterAlarm = annunciator({
   system: 'feedwater',
@@ -71,7 +71,7 @@ export const balanceOfPlantReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRu
     id: 'turbine-load-low',
     label: 'Turbine load low',
     ruleClass: 'alarm',
-    ...generatorOnLine(),
+    modes: ['powerOperation'],
     condition: comparison({ tagId: 'TURB-LOAD' }, '<', 0.5),
     clearCondition: comparison({ tagId: 'TURB-LOAD' }, '>', 0.55),
     clearDelayMs: 1_000,
@@ -90,7 +90,7 @@ export const balanceOfPlantReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRu
     id: 'generator-output-low',
     label: 'Generator output low',
     ruleClass: 'alarm',
-    ...generatorOnLine(),
+    modes: ['powerOperation'],
     condition: comparison({ tagId: 'GEN-MW' }, '<', 450),
     clearCondition: comparison({ tagId: 'GEN-MW' }, '>', 500),
     clearDelayMs: 2_000,
