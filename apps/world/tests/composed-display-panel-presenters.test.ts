@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { fitName } from '../src/ui/embed/composed-display/pen-style.ts'
-import { activeThreshold, agoText, alarmAge, limitAhead, returningText, median, minutesToThreshold, movingAwayFromLimits, rateChange, ratePerMinute, rateText, rateWindowMs, timeToThresholdText, visibleAlarms, annunciatorStates } from '../src/ui/embed/composed-display/panel-presenters.ts'
+import { activeThreshold, agoText, alarmAge, limitAhead, projectionBasis, returningText, median, minutesToThreshold, movingAwayFromLimits, rateChange, ratePerMinute, rateText, rateWindowMs, timeToThresholdText, visibleAlarms, annunciatorStates } from '../src/ui/embed/composed-display/panel-presenters.ts'
 import { formatQuantity, limitKindName, marginText, nearestThresholdMargin, simulationClock, thresholdName, unitLabel } from '../src/packs/process-plant/displays/display-text.ts'
 import { escalateLimits, type ComposedDisplayThreshold } from '../src/packs/process-plant/displays/ic-thresholds.ts'
 import type { ComposedDisplayAlarm } from '../src/ui/embed/composed-display/composed-display-client.ts'
@@ -74,10 +74,33 @@ describe('composed display panel presenters', () => {
   test('a value in alarm that is moving back says when it will be back inside the limit', () => {
     // SG A N-16 in HI ALM 5 mSv/h and drifting down.
     const highRadiation = { ruleId: 'n16-high', label: 'Secondary radiation high', kind: 'alarm', operator: '>', direction: 'high', value: 5, escalation: 1 } as const
-    expect(returningText(5.4, -0.2, highRadiation, 'mSv/h')).toBe('back below HI ALM 5 mSv/h in ≈2 min')
-    expect(returningText(5.4, 0.2, highRadiation, 'mSv/h')).toBe('')
+    expect(returningText(5.4, -0.2, highRadiation, 'mSv/h', true)).toBe('back below HI ALM 5 mSv/h in ≈2 min')
+    expect(returningText(5.4, 0.2, highRadiation, 'mSv/h', true)).toBe('')
     // Hours away at this rate: when, never a recovery already made.
-    expect(returningText(5.4, -0.01, highRadiation, 'mSv/h')).toBe('back below HI ALM 5 mSv/h in over 30 min')
+    expect(returningText(5.4, -0.01, highRadiation, 'mSv/h', true)).toBe('back below HI ALM 5 mSv/h in over 30 min')
+    // Without a basis for a time, the recovery is said, not timed.
+    expect(returningText(5.4, -0.2, highRadiation, 'mSv/h', false)).toBe('recovering, not projected')
+    expect(returningText(5.4, 0.2, highRadiation, 'mSv/h', false)).toBe('')
+  })
+
+  test('a time to a limit is projected only from half a minute of change one way that is not slowing', () => {
+    const window = rateWindowMs(120_000)
+    const series = (seconds: number, value: (second: number) => number) => Array.from({ length: seconds + 1 }, (_, second) => ({ t: second * 1000, v: value(second) }))
+    // Pressure recovering steadily at 0.3 MPa/min for two minutes.
+    expect(projectionBasis(series(120, second => 4 + second * 0.005), window, 'MPa')).toBe(true)
+    // Subcooling with the PORV stuck open: rising fast, then bending over (porv-open).
+    const bending = series(120, second => -45.6 - 30 * Math.exp(-second / 25))
+    expect(rateChange(bending, window, bending.at(-1)!.v)).toBe('slowing')
+    expect(projectionBasis(bending, window, 'degC')).toBe(false)
+    // A drift the display hardly shows: 5.40 to 5.38 mSv/h in half a minute (sg-a-tube-leak).
+    expect(projectionBasis(series(120, second => 5.45 - second * 0.00065), window, 'mSv/h')).toBe(false)
+    // Twenty seconds of history are not half a minute.
+    expect(projectionBasis(series(20, second => 4 + second * 0.005), window, 'MPa')).toBe(false)
+    // A step back inside the half minute: the rate has not kept its sign.
+    expect(projectionBasis(series(120, second => 4 + second * 0.005 - (second === 110 ? 0.03 : 0)), window, 'MPa')).toBe(false)
+    // Steady: nothing to project.
+    expect(projectionBasis(series(120, () => 4), window, 'MPa')).toBe(false)
+    expect(projectionBasis([], window, 'MPa')).toBe(false)
   })
 
   test('long names drop whole words, never cutting through one', () => {
@@ -155,9 +178,12 @@ describe('composed display panel presenters', () => {
     expect(simulationClock(Date.parse('2026-01-01T10:01:00.049Z'))).toBe('10:01:00')
     // Rising 0.31 MPa/min with 0.285 MPa left to HI ALM 16 (turbine trip, run 6).
     const highAlarm = { ruleId: 'pzr-high', label: 'Pressurizer pressure high', kind: 'alarm', operator: '>', direction: 'high', value: 16, escalation: 1 } as const
-    expect(timeToThresholdText(15.715, 0.31, highAlarm)).toBe('≈55 s')
-    expect(timeToThresholdText(15.715, -0.31, highAlarm)).toBe('')
-    expect(timeToThresholdText(10, 0.1, highAlarm)).toBe('')
+    expect(timeToThresholdText(15.715, 0.31, highAlarm, true)).toBe('≈55 s')
+    expect(timeToThresholdText(15.715, -0.31, highAlarm, true)).toBe('')
+    expect(timeToThresholdText(10, 0.1, highAlarm, true)).toBe('')
+    // Where a time would be shown but the tendency gives no basis for one.
+    expect(timeToThresholdText(15.715, 0.31, highAlarm, false)).toBe('approaching, not projected')
+    expect(timeToThresholdText(10, 0.1, highAlarm, false)).toBe('')
     expect(unitLabel('degC')).toBe('°C')
   })
 
