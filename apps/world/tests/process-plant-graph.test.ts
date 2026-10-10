@@ -39,8 +39,12 @@ describe('process plant model composition', () => {
     // then must be restarted. Changed again on 2026-10-10, approved by the
     // owner as a model-truth change, when the main steam safety valve was made
     // to discharge to the atmosphere instead of into containment; PWR Runs
-    // checkpointed before then must be restarted.
-    expect(system.modelDigest).toBe('a17c7f14547d3866515bdaa0362986cb74794bedc025100005258c1a75240e34')
+    // checkpointed before then must be restarted. Changed again on
+    // 2026-10-10, approved by the owner as model-truth changes, for the
+    // steam generators' narrow-range level, the auxiliary feedwater ratings
+    // and the main steam pressure set points; PWR Runs checkpointed before
+    // then must be restarted.
+    expect(system.modelDigest).toBe('c9e3ce7be2bf20ff5d87aacc0b90c840f3b11a526824e5409f77a646a71d7f5c')
     const running = createProcessPlantRuntime({ system })
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))
