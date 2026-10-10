@@ -34,7 +34,7 @@ const plantOf = (loops: number): CompiledProcessPlant => plants.get(loops)!
  * fit ladder test for less).
  */
 // The process display window as measured on production in a Full HD browser.
-const fullHdColumn = overviewDrawingRoom({ width: 1896, height: 972 }, 'column', overviewKeyValues(plantOf(4)).length)!
+const fullHdColumn = overviewDrawingRoom({ width: 1896, height: 972 }, 'column', { readouts: overviewKeyValues(plantOf(4)).length, annunciators: 9 })!
 const ROOM: Readonly<Record<number, Omit<MimicBudget, 'profile'>>> = { 4: fullHdColumn, 6: { maxWidth: 2160, maxHeight: 1080 } }
 const budgetFor = (loops: number): MimicBudget => ({ profile: overviewMimicProfile, ...ROOM[loops]! })
 

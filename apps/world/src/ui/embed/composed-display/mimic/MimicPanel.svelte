@@ -6,6 +6,7 @@
   import { bundleFlowLook, drawnLook, rowText, type MimicRow } from '../../../../packs/process-plant/displays/mimic/rows.ts'
   import { displayValue, formatQuantity, unitLabel, valueDigits } from '../../../../packs/process-plant/displays/display-text.ts'
   import type { ComposedDisplayAlarm, ComposedDisplaySample } from '../composed-display-client.ts'
+  import { alertTypeOf } from '../panel-presenters.ts'
   import { chevronSegment, pipeSegments, pipeValue, stubEndSegment } from './pipe-segments.ts'
   import { mimicLegend } from './mimic-legend.ts'
   import { openBridgeDevice } from '../../../../packs/process-plant/displays/mimic/text-metrics.ts'
@@ -16,11 +17,14 @@
   // geometry is fixed by the server; a sample restyles it and never moves it.
   // A stale view draws every state as unknown and says so.
   // A generated display opens what an item stands for; an agent's advice is read-only.
-  let { mimic, latest, stale, open }: {
+  // Narrowed to an annunciator system, the items its rules frame stand out and
+  // the rest dim, except any item with an active alarm of its own.
+  let { mimic, latest, stale, open, highlight = null }: {
     mimic: CompiledMimic
     latest: ComposedDisplaySample | undefined
     stale: boolean
     open?: ((item: MimicDrawnItem) => void) | undefined
+    highlight?: ReadonlySet<string> | null
   } = $props()
 
   let openBridge = $state<typeof OpenBridgeMimic | null>(null)
@@ -46,12 +50,12 @@
   })
 
   const index = $derived<SampleIndex>(indexSample(stale ? undefined : latest?.values))
-  const alarms = $derived<ReadonlyArray<ComposedDisplayAlarm>>(stale ? [] : latest?.alarms ?? [])
+  // A cleared alarm awaiting acknowledgement is listed, not framed.
+  const alarms = $derived<ReadonlyArray<ComposedDisplayAlarm>>(stale ? [] : (latest?.alarms ?? []).filter(alarm => alarm.active))
   // A grouped symbol reads as its members together ("1/2 RUN").
   const looks = $derived(new Map(mimic.items.map(item => [item.id, drawnLook(item.binding, item.rows, index)])))
 
   const severityRank = { critical: 0, warning: 1, notice: 2, info: 3 } as const
-  const alertStatus = { critical: 'alarm', warning: 'warning', notice: 'caution', info: 'caution' } as const
 
   /** The most severe active alarm framing an item, trips first, with the flap text that says what it watches. */
   const alertOf = (item: MimicDrawnItem): { readonly status: 'alarm' | 'warning' | 'caution'; readonly label: string; readonly others: number } | null => {
@@ -61,8 +65,12 @@
       .sort((left, right) => Number(right.kind === 'trip') - Number(left.kind === 'trip') || severityRank[left.severity] - severityRank[right.severity])
     const first = active[0]
     if (first === undefined) return null
-    return { status: alertStatus[first.severity], label: flaps.get(first.ruleId)!, others: active.length - 1 }
+    return { status: alertTypeOf(first.severity), label: flaps.get(first.ruleId)!, others: active.length - 1 }
   }
+
+  const dimmed = (item: MimicDrawnItem): boolean => highlight !== null
+    && !item.binding.frames.some(frame => highlight.has(frame.ruleId))
+    && alertOf(item) === null
 
   const format = (value: number, unit: string): string => formatQuantity(value, unit)
   const flapHeight = openBridgeDevice.flapHeight
@@ -206,7 +214,7 @@
     {#each mimic.zones as zone (zone.lane)}
       <div class="zone" style={`left:${zone.x}px;top:${zone.y}px;width:${zone.width}px;height:${zone.height}px`} title={zone.label}></div>
     {/each}
-    <canvas class="pipes" bind:this={canvas}></canvas>
+    <canvas class="pipes" class:dimmed={highlight !== null} bind:this={canvas}></canvas>
     {#if openBridge !== null}
       {@const ob = openBridge}
       <!-- A read-only advisory drawing: nothing in it can be focused or clicked. -->
@@ -214,6 +222,7 @@
         {#each mimic.items as item (item.id)}
           {@const look = looks.get(item.id)!}
           {@const alert = alertOf(item)}
+          <div class="item" class:dimmed={dimmed(item)}>
           {#if alert !== null && item.frame !== null}
             <!-- OpenBridge draws the flap below the framed region; the server reserved both. -->
             <div class="box" style={`left:${item.frame.x}px;top:${item.frame.y}px;width:${item.frame.width}px;height:${item.frame.height - flapHeight}px`} use:frame={{ ob, alert, width: item.frame.width }}></div>
@@ -238,6 +247,7 @@
               </div>
             {/if}
           {/if}
+          </div>
         {/each}
         {#each mimic.stubs as stub (stub.id)}
           {#if stub.textBox !== null}
@@ -280,6 +290,9 @@
   /* OpenBridge positions a point device at its symbol centre; its stack must not wrap. */
   .symbols { position: absolute; inset: 0; white-space: nowrap; --obc-can-hover: 0; }
   .anchor { position: absolute; width: 0; height: 0; }
+  /* Each item's layer spans the drawing, so its parts keep their coordinates; dimming fades a whole item at once. */
+  .item { position: absolute; inset: 0; }
+  .dimmed { opacity: 0.4; }
   .box { position: absolute; }
   .stack { position: absolute; display: flex; flex-direction: column; align-items: flex-start; }
   .stack.below { align-items: center; }

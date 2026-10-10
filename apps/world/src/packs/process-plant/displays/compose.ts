@@ -40,6 +40,7 @@ import { MIMIC_MAX_WIDTH } from './mimic/mimic-model.ts'
 import { chatMimicProfile, detailMimicProfile, overviewMimicProfile } from './mimic/profiles.ts'
 import { principalCircuits } from './mimic/principal.ts'
 import { equipmentKeyValues, overviewKeyValues } from './overview-key-values.ts'
+import { annunciatorSystems, type AnnunciatorSystem } from './annunciators.ts'
 import { MIMIC_REACH_LINKS, resolveMimicScope } from './mimic/scope.ts'
 import type { CompiledMimic } from './mimic/mimic-model.ts'
 import {
@@ -120,6 +121,8 @@ export interface ComposedAlarmsPanel {
   readonly scope: 'related' | 'plant'
   /** I&C rules acting on the displayed signals; used when scope is related. */
   readonly ruleIds: ReadonlyArray<string>
+  /** A unit overview's annunciator tiles over the list: the Plant's declared systems (annunciators.ts). */
+  readonly systems?: ReadonlyArray<AnnunciatorSystem>
 }
 
 export interface ComposedMimicPanel {
@@ -588,6 +591,21 @@ const UNCONSTRAINED = 1_000_000
  */
 export type OverviewArrangement = 'column' | 'stacked'
 
+/** What a generated display shows besides its drawing: how many lead values, and how many annunciator tiles over its alarms. */
+export interface GeneratedPanels {
+  readonly readouts: number
+  readonly annunciators: number
+}
+
+/** Annunciator tiles across a width: as many to a row as fit at their least width (the view's grid does the same). */
+export const annunciatorHeight = (count: number, width: number): number => {
+  if (count === 0) return 0
+  const { annunciatorTile: tile, annunciatorGap: gap, panelGap } = composedDisplayLayout
+  const perRow = Math.max(1, Math.floor((width + gap) / (tile.width + gap)))
+  const rows = Math.ceil(count / perRow)
+  return rows * tile.height + (rows - 1) * gap + panelGap
+}
+
 /**
  * The room a window leaves an overview's drawing in an arrangement, from the
  * declared panel sizes (composition.ts); null when the column does not fit
@@ -596,34 +614,39 @@ export type OverviewArrangement = 'column' | 'stacked'
 export const overviewDrawingRoom = (
   view: OverviewView,
   arrangement: OverviewArrangement,
-  readouts: number,
+  panels: GeneratedPanels,
 ): { readonly maxWidth: number; readonly maxHeight: number } | null => {
   const layout = composedDisplayLayout
   const width = view.width - 2 * layout.overviewPadding
   const height = view.height - layout.overviewFrame
-  const alarms = layout.alarms
   if (arrangement === 'column') {
-    const column = overviewColumnHeight(readouts)
+    const column = overviewColumnHeight(panels)
     if (column > height) return null
     return { maxWidth: width - layout.overviewColumnGap - layout.overviewColumn, maxHeight: height - layout.mimicLegend }
   }
-  const others = (readouts === 0 ? 0 : composedPanelHeight({ kind: 'readouts', values: readouts }) + layout.panelGap) + layout.panelGap + alarms
-  return { maxWidth: width, maxHeight: height - layout.overviewFooter - others - layout.mimicLegend }
+  return { maxWidth: width, maxHeight: height - layout.overviewFooter - stackedPanelsHeight(panels, width) - layout.mimicLegend }
 }
 
-/** The column's least height: its lead values, the alarms and the footer. */
-const overviewColumnHeight = (readouts: number): number => {
+/** The column's least height: its lead values, the annunciator tiles, the alarms and the footer. */
+const overviewColumnHeight = (panels: GeneratedPanels): number => {
   const layout = composedDisplayLayout
-  return (readouts === 0 ? 0 : readouts * layout.overviewReadoutRow + layout.panelGap) + layout.alarms + layout.overviewFooter
+  return (panels.readouts === 0 ? 0 : panels.readouts * layout.overviewReadoutRow + layout.panelGap)
+    + annunciatorHeight(panels.annunciators, layout.overviewColumn) + layout.alarms + layout.overviewFooter
 }
 
-/** An overview's whole height in an arrangement: what a window shows without scrolling. */
-const overviewHeight = (arrangement: OverviewArrangement, readouts: number, mimic: CompiledMimic): number => {
+/** Stacked with the drawing across a width: the lead values above it, the annunciator tiles and the alarms below. */
+const stackedPanelsHeight = (panels: GeneratedPanels, width: number): number => {
+  const layout = composedDisplayLayout
+  return (panels.readouts === 0 ? 0 : composedPanelHeight({ kind: 'readouts', values: panels.readouts }) + layout.panelGap)
+    + layout.panelGap + annunciatorHeight(panels.annunciators, width) + layout.alarms
+}
+
+/** A generated display's whole height in an arrangement across a width: what a window shows without scrolling. */
+const overviewHeight = (arrangement: OverviewArrangement, panels: GeneratedPanels, mimic: CompiledMimic, width: number): number => {
   const layout = composedDisplayLayout
   const drawing = mimic.height + layout.mimicLegend
-  if (arrangement === 'column') return layout.overviewFrame + Math.max(drawing, overviewColumnHeight(readouts))
-  const others = (readouts === 0 ? 0 : composedPanelHeight({ kind: 'readouts', values: readouts }) + layout.panelGap) + layout.panelGap + layout.alarms
-  return layout.overviewFrame + drawing + others + layout.overviewFooter
+  if (arrangement === 'column') return layout.overviewFrame + Math.max(drawing, overviewColumnHeight(panels))
+  return layout.overviewFrame + drawing + stackedPanelsHeight(panels, width) + layout.overviewFooter
 }
 
 /** A generated display's drawing for the room a view leaves it. */
@@ -639,11 +662,11 @@ type GeneratedDrawing = (room: { readonly maxWidth: number; readonly maxHeight: 
  */
 const fitGenerated = (
   view: OverviewView | null,
-  readouts: number,
+  panels: GeneratedPanels,
   drawings: ReadonlyArray<GeneratedDrawing>,
 ): { readonly ok: true; readonly arrangement: OverviewArrangement; readonly mimic: CompiledMimic } | { readonly ok: false; readonly issues: ReadonlyArray<string> } => {
   const whole = view === null ? [] : (['column', 'stacked'] as const).flatMap(arrangement => {
-    const room = overviewDrawingRoom(view, arrangement, readouts)
+    const room = overviewDrawingRoom(view, arrangement, panels)
     return room === null ? [] : [{ arrangement, room }]
   })
   const last = view === null ? drawings[0]! : drawings.at(-1)!
@@ -667,6 +690,8 @@ const generatedDisplay = (
   system: ProcessPlantRuntimeInstance,
   title: string,
   readouts: UnsizedPanel | undefined,
+  panels: GeneratedPanels,
+  view: OverviewView | null,
   fitted: { readonly arrangement: OverviewArrangement; readonly mimic: CompiledMimic },
   alarms: (panels: ReadonlyArray<CompiledComposedPanel>) => ComposedAlarmsPanel,
 ): CompiledComposedDisplay => {
@@ -675,13 +700,13 @@ const generatedDisplay = (
     if (panel.kind === 'trend') throw new Error('a generated display has no trend')
     return panel
   })
-  const values = readouts?.kind === 'readouts' ? readouts.pens.length : 0
+  const width = view === null ? fitted.mimic.width : view.width - 2 * composedDisplayLayout.overviewPadding
   return {
     plantId: system.plant.id,
     title,
     advice: null,
     modelDigest: system.plant.modelDigest,
-    height: overviewHeight(fitted.arrangement, values, fitted.mimic),
+    height: overviewHeight(fitted.arrangement, panels, fitted.mimic, width),
     panels: [...shown, alarms(shown)],
   }
 }
@@ -707,10 +732,13 @@ export const compileOverviewDisplay = (system: ProcessPlantRuntimeInstance, reco
   const circuits = principalCircuits(system.plant.graph)
   if (!circuits.ok) return { ok: false, issues: [{ path: 'overview', message: circuits.reason }] }
   if (issues.length > 0) return { ok: false, issues }
-  const values = readouts?.kind === 'readouts' ? readouts.pens.length : 0
-  const fitted = fitGenerated(view, values, [room => compileMimicScope(system.plant, circuits.scope, { profile: overviewMimicProfile, ...room })])
+  const annunciators = annunciatorSystems(system.plant)
+  if (!annunciators.ok) return { ok: false, issues: annunciators.issues.map(message => ({ path: 'overview', message })) }
+  const systems = annunciators.systems
+  const panels = { readouts: readouts?.kind === 'readouts' ? readouts.pens.length : 0, annunciators: systems.length }
+  const fitted = fitGenerated(view, panels, [room => compileMimicScope(system.plant, circuits.scope, { profile: overviewMimicProfile, ...room })])
   if (!fitted.ok) return { ok: false, issues: fitted.issues.map(message => ({ path: 'overview', message })) }
-  return { ok: true, display: generatedDisplay(system, 'Unit overview', readouts, fitted, () => ({ kind: 'alarms', scope: 'plant', ruleIds: [] })) }
+  return { ok: true, display: generatedDisplay(system, 'Unit overview', readouts, panels, view, fitted, () => ({ kind: 'alarms', scope: 'plant', ruleIds: [], systems })) }
 }
 
 /**
@@ -737,14 +765,14 @@ export const compileDetailDisplay = (
   const loops = [...new Set(components.map(index => graph.components[index]!.metadata?.loopId))]
   const narrowed = loops.every((loop): loop is string => loop !== undefined) ? { loops } : {}
   const reaches = Array.from({ length: MIMIC_REACH_LINKS }, (_, step) => MIMIC_REACH_LINKS - step)
-  const values = readouts?.kind === 'readouts' ? readouts.pens.length : 0
+  const panels = { readouts: readouts?.kind === 'readouts' ? readouts.pens.length : 0, annunciators: 0 }
   const scopes = reaches.map(reach => resolveMimicScope(graph, { around: componentIds, ...narrowed, reach }))
   const unresolved = scopes.find(scope => !scope.ok)
   if (unresolved !== undefined && !unresolved.ok) return { ok: false, issues: unresolved.issues.map(issue => ({ path: 'detail', message: issue.message })) }
-  const fitted = fitGenerated(view, values, scopes.flatMap(scope => scope.ok ? [(room: Parameters<GeneratedDrawing>[0]) => compileMimicScope(system.plant, scope.scope, { profile: detailMimicProfile, ...room })] : []))
+  const fitted = fitGenerated(view, panels, scopes.flatMap(scope => scope.ok ? [(room: Parameters<GeneratedDrawing>[0]) => compileMimicScope(system.plant, scope.scope, { profile: detailMimicProfile, ...room })] : []))
   if (!fitted.ok) return { ok: false, issues: [{ path: 'detail', message: `nothing around it can be drawn legibly; ${fitted.issues.join('; ')}` }] }
   const title = groupLabel(components.map(index => graph.components[index]!.label))
-  return { ok: true, display: generatedDisplay(system, title, readouts, fitted, panels => ({ kind: 'alarms', scope: 'related', ruleIds: relatedRuleIds(system, panels) })) }
+  return { ok: true, display: generatedDisplay(system, title, readouts, panels, view, fitted, shown => ({ kind: 'alarms', scope: 'related', ruleIds: relatedRuleIds(system, shown) })) }
 }
 
 const operatorText = { '<': 'below', '<=': 'at or below', '>': 'above', '>=': 'at or above' } as const

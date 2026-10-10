@@ -143,6 +143,10 @@ export const median = (values: ReadonlyArray<number>): number | null => {
 
 const severityRank = { critical: 0, warning: 1, notice: 2, info: 3 } as const
 
+/** The OpenBridge alert type each severity is drawn as, everywhere an alarm shows: list, tiles and drawing. */
+export const alertTypeOf = (severity: ComposedDisplayAlarm['severity']): 'alarm' | 'warning' | 'caution' =>
+  severity === 'critical' ? 'alarm' : severity === 'warning' ? 'warning' : 'caution'
+
 /**
  * Alarms in reading order: the first-out alarm, then by severity so trips are
  * never hidden behind warnings, then by onset. "related" keeps only the rules
@@ -158,7 +162,9 @@ export const visibleAlarms = (
     .filter(alarm => scope === 'plant' || related.has(alarm.ruleId))
     .sort((left, right) =>
       Number(right.firstOut) - Number(left.firstOut)
+      || Number(right.kind === 'trip') - Number(left.kind === 'trip')
       || severityRank[left.severity] - severityRank[right.severity]
+      || Number(right.active) - Number(left.active)
       || (left.firstActiveElapsedMs ?? Number.POSITIVE_INFINITY) - (right.firstActiveElapsedMs ?? Number.POSITIVE_INFINITY)
       || left.title.localeCompare(right.title))
 }
@@ -170,3 +176,31 @@ export const alarmAge = (plantElapsedMs: number, firstActiveElapsedMs: number | 
   if (seconds < 3600) return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
   return `${Math.floor(seconds / 3600)} h ${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}`
 }
+
+export interface AnnunciatorState {
+  readonly name: string
+  readonly active: number
+  readonly unacknowledged: number
+  /** The most severe active alarm's severity; null while the system is quiet. */
+  readonly severity: ComposedDisplayAlarm['severity'] | null
+  readonly trip: boolean
+  readonly firstOut: boolean
+}
+
+/** Each annunciator system's share of the active alarms, in the order the model declares the systems. */
+export const annunciatorStates = (
+  systems: ReadonlyArray<{ readonly name: string; readonly ruleIds: ReadonlyArray<string> }>,
+  alarms: ReadonlyArray<ComposedDisplayAlarm>,
+): ReadonlyArray<AnnunciatorState> => systems.map(system => {
+  const rules = new Set(system.ruleIds)
+  const active = alarms.filter(alarm => alarm.active && rules.has(alarm.ruleId))
+  const worst = [...active].sort((left, right) => severityRank[left.severity] - severityRank[right.severity])[0]
+  return {
+    name: system.name,
+    active: active.length,
+    unacknowledged: active.filter(alarm => !alarm.acknowledged).length,
+    severity: worst?.severity ?? null,
+    trip: active.some(alarm => alarm.kind === 'trip'),
+    firstOut: active.some(alarm => alarm.firstOut),
+  }
+})

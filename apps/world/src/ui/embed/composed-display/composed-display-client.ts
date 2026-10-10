@@ -44,6 +44,8 @@ export interface ComposedDisplayAlarm {
   readonly kind: 'alarm' | 'trip'
   readonly title: string
   readonly severity: 'info' | 'notice' | 'warning' | 'critical'
+  /** False once its condition cleared; it stays listed until acknowledged. */
+  readonly active: boolean
   readonly acknowledged: boolean
   readonly firstOut: boolean
   readonly firstActiveElapsedMs?: number

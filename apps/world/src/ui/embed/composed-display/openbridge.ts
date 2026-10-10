@@ -4,3 +4,4 @@
 // carries the day/night palettes selected by data-obc-theme on <html>.
 import '@oicl/openbridge-webcomponents/dist/openbridge.css'
 import '@oicl/openbridge-webcomponents/dist/navigation-instruments/readout/readout.js'
+import '@oicl/openbridge-webcomponents/dist/components/badge/badge.js'

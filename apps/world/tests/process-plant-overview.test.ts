@@ -108,8 +108,8 @@ describe('the unit overview World generates for a Plant', () => {
   })
 
   test('in a Full HD window four loops draw beside the column of lead values and alarms, the window\'s whole height theirs', () => {
-    const column = overviewDrawingRoom(fullHd, 'column', 6)!
-    const stacked = overviewDrawingRoom(fullHd, 'stacked', 6)!
+    const column = overviewDrawingRoom(fullHd, 'column', { readouts: 6, annunciators: 9 })!
+    const stacked = overviewDrawingRoom(fullHd, 'stacked', { readouts: 6, annunciators: 9 })!
     expect(column.maxHeight).toBeGreaterThan(stacked.maxHeight + 200)
     const result = compileOverviewDisplay(system, new Set(), fullHd)
     if (!result.ok) throw new Error(result.issues.map(issue => issue.message).join('; '))

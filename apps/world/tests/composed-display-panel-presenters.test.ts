@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { shortName } from '../src/ui/embed/composed-display/pen-style.ts'
-import { activeThreshold, agoText, alarmAge, limitAhead, returningText, median, minutesToThreshold, movingAwayFromLimits, rateChange, ratePerMinute, rateText, rateWindowMs, timeToThresholdText, visibleAlarms } from '../src/ui/embed/composed-display/panel-presenters.ts'
+import { activeThreshold, agoText, alarmAge, limitAhead, returningText, median, minutesToThreshold, movingAwayFromLimits, rateChange, ratePerMinute, rateText, rateWindowMs, timeToThresholdText, visibleAlarms, annunciatorStates } from '../src/ui/embed/composed-display/panel-presenters.ts'
 import { formatQuantity, marginText, nearestThresholdMargin, simulationClock, thresholdName, unitLabel } from '../src/packs/process-plant/displays/display-text.ts'
 import type { ComposedDisplayThreshold } from '../src/packs/process-plant/displays/ic-thresholds.ts'
 import type { ComposedDisplayAlarm } from '../src/ui/embed/composed-display/composed-display-client.ts'
@@ -70,14 +70,20 @@ describe('composed display panel presenters', () => {
     expect(median([])).toBeNull()
   })
 
-  test('alarms read first-out first, then by severity so trips are never hidden, then by onset', () => {
+  test('alarms read first-out first, then trips, then by severity, then active before cleared, then by onset', () => {
     const alarms: ReadonlyArray<ComposedDisplayAlarm> = [
-      { id: 'a', ruleId: 'sg-b-level-low', kind: 'alarm', title: 'SG B level low', severity: 'warning', acknowledged: true, firstOut: false, firstActiveElapsedMs: 100_000 },
-      { id: 'b', ruleId: 'sg-b-level-low-low', kind: 'trip', title: 'SG B low-low', severity: 'critical', acknowledged: false, firstOut: true, firstActiveElapsedMs: 200_000 },
-      { id: 'c', ruleId: 'other', kind: 'alarm', title: 'Other', severity: 'critical', acknowledged: false, firstOut: false },
-      { id: 'd', ruleId: 'sg-b-feedwater-low', kind: 'alarm', title: 'SG B feed low', severity: 'warning', acknowledged: false, firstOut: false, firstActiveElapsedMs: 50_000 },
+      { id: 'a', ruleId: 'sg-b-level-low', kind: 'alarm', title: 'SG B level low', severity: 'warning', active: true, acknowledged: true, firstOut: false, firstActiveElapsedMs: 100_000 },
+      { id: 'b', ruleId: 'sg-b-level-low-low', kind: 'trip', title: 'SG B low-low', severity: 'critical', active: true, acknowledged: false, firstOut: true, firstActiveElapsedMs: 200_000 },
+      { id: 'c', ruleId: 'other', kind: 'alarm', title: 'Other', severity: 'critical', active: true, acknowledged: false, firstOut: false },
+      { id: 'd', ruleId: 'sg-b-feedwater-low', kind: 'alarm', title: 'SG B feed low', severity: 'warning', active: true, acknowledged: false, firstOut: false, firstActiveElapsedMs: 50_000 },
     ]
     expect(visibleAlarms(alarms, 'related', ['sg-b-level-low', 'sg-b-level-low-low', 'sg-b-feedwater-low']).map(alarm => alarm.id)).toEqual(['b', 'd', 'a'])
+    const plant: ReadonlyArray<ComposedDisplayAlarm> = [
+      { id: 'cleared', ruleId: 'r1', kind: 'alarm', title: 'Cleared', severity: 'critical', active: false, acknowledged: false, firstOut: false, firstActiveElapsedMs: 1_000 },
+      { id: 'critical', ruleId: 'r2', kind: 'alarm', title: 'Critical', severity: 'critical', active: true, acknowledged: true, firstOut: false, firstActiveElapsedMs: 2_000 },
+      { id: 'trip', ruleId: 'r3', kind: 'trip', title: 'Trip', severity: 'warning', active: true, acknowledged: true, firstOut: false, firstActiveElapsedMs: 3_000 },
+    ]
+    expect(visibleAlarms(plant, 'plant', []).map(alarm => alarm.id)).toEqual(['trip', 'critical', 'cleared'])
     expect(visibleAlarms(alarms, 'plant', []).map(alarm => alarm.id)).toEqual(['b', 'c', 'd', 'a'])
   })
 
@@ -126,5 +132,29 @@ describe('composed display panel presenters', () => {
   test('the most severe active threshold marks the value', () => {
     expect(activeThreshold(thresholds, new Set(['alarm-low', 'trip-low']))?.ruleId).toBe('trip-low')
     expect(activeThreshold(thresholds, new Set(['control']))).toBeNull()
+  })
+})
+
+describe('annunciator tiles', () => {
+  const alarm = (ruleId: string, severity: ComposedDisplayAlarm['severity'], extra: Partial<ComposedDisplayAlarm> = {}): ComposedDisplayAlarm => ({
+    id: `${ruleId}:a`, ruleId, kind: 'alarm', title: ruleId, severity, active: true, acknowledged: true, firstOut: false, ...extra,
+  })
+
+  test('each declared system counts its own active alarms, says how severe the worst is, and whether any trip or is unacknowledged', () => {
+    const systems = [{ name: 'steam generators', ruleIds: ['sg-a-low', 'sg-b-low'] }, { name: 'electrical', ruleIds: ['bus-a-dead'] }, { name: 'containment', ruleIds: ['ctmt-high'] }]
+    const states = annunciatorStates(systems, [
+      alarm('sg-a-low', 'warning'),
+      alarm('sg-b-low', 'critical', { acknowledged: false }),
+      alarm('bus-a-dead', 'notice', { kind: 'trip', firstOut: true }),
+      alarm('not-annunciated', 'critical'),
+      // Cleared but unacknowledged: listed, not counted as active.
+      alarm('ctmt-high', 'critical', { active: false, acknowledged: false }),
+    ])
+    expect(states).toEqual([
+      { name: 'steam generators', active: 2, unacknowledged: 1, severity: 'critical', trip: false, firstOut: false },
+      { name: 'electrical', active: 1, unacknowledged: 0, severity: 'notice', trip: true, firstOut: true },
+      // A quiet system keeps its place.
+      { name: 'containment', active: 0, unacknowledged: 0, severity: null, trip: false, firstOut: false },
+    ])
   })
 })

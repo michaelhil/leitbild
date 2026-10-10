@@ -8,6 +8,7 @@
   import { composedDisplayClient } from './composed-display-client.ts'
   import { createComposedDisplaySession, type ComposedDisplaySnapshot } from './composed-display-session.ts'
   import AlarmsPanel from './AlarmsPanel.svelte'
+  import AnnunciatorTiles from './AnnunciatorTiles.svelte'
   import ComparisonPanel from './ComparisonPanel.svelte'
   import PenLegend from './PenLegend.svelte'
   import ReadoutsPanel from './ReadoutsPanel.svelte'
@@ -40,15 +41,18 @@
       plantId,
       state: envelope.state,
       client: composedDisplayClient,
-      onChange: next => { snapshot = next },
+      onChange: next => { snapshot = next; keepFilter(next) },
       suspendWhenIdle: advice !== null,
       size: () => (advice === null ? { width: window.innerWidth, height: window.innerHeight } : null),
     })
     session = active
     void active.start()
-    const interacted = (): void => active.interacted()
+    const interacted = (): void => { active.interacted(); lastInputWallMs = Date.now() }
     const visibility = (): void => active.setVisible(document.visibilityState === 'visible')
-    const clock = setInterval(() => { wallNow = Date.now() }, 1_000)
+    const clock = setInterval(() => {
+      wallNow = Date.now()
+      if (systemFilter !== null && wallNow - lastInputWallMs > FILTER_IDLE_MS) systemFilter = null
+    }, 1_000)
     // A unit overview is drawn for its window: once resizing settles, it is drawn again for the new size.
     let resizing: ReturnType<typeof setTimeout> | undefined
     const resized = (): void => {
@@ -82,7 +86,8 @@
   // returns along the displays opened before it. A display that cannot be
   // drawn leaves the current one and says why.
   let trail = $state<ReadonlyArray<{ readonly state: string; readonly title: string }>>([])
-  let shownState = envelope.state
+  // Null while the view shows the state it was embedded with.
+  let shownState: string | null = null
   let opening = $state(false)
   let openError = $state<string | null>(null)
 
@@ -93,6 +98,7 @@
     try {
       await session.open(next)
       shownState = next
+      systemFilter = null
       trail = nextTrail
     } catch (error) {
       openError = `${name} cannot be opened: ${error instanceof Error ? error.message : String(error)}`
@@ -104,8 +110,9 @@
   const openItem = (item: MimicDrawnItem): void => {
     if (view === undefined) return
     const next = JSON.stringify(detailDisplayStateSchema.parse({ detail: { plantId, components: item.components } }))
-    if (next === shownState) return
-    void show(next, [...trail, { state: shownState, title: view.display.title }], item.binding.label)
+    const current = shownState ?? envelope.state
+    if (next === current) return
+    void show(next, [...trail, { state: current, title: view.display.title }], item.binding.label)
   }
 
   const back = (): void => {
@@ -113,6 +120,40 @@
     if (previous !== undefined) void show(previous.state, trail.slice(0, -1), previous.title)
   }
   const opens = $derived(advice === null ? openItem : undefined)
+
+  // A unit overview's annunciator tiles narrow its alarm list to one system.
+  // The narrowing never hides news: it ends by itself on a new trip or
+  // first-out alarm in another system, after a minute without input, and on
+  // opening anything; the tiles, the frames in the drawing and the trip notice
+  // are never narrowed.
+  const FILTER_IDLE_MS = 60_000
+  let systemFilter = $state<string | null>(null)
+  let lastInputWallMs = Date.now()
+  let seenElsewhere = new Set<string>()
+  const alarmsPanel = $derived(view?.display.panels.find(panel => panel.kind === 'alarms'))
+  const systems = $derived(alarmsPanel?.kind === 'alarms' ? alarmsPanel.systems ?? [] : [])
+  const narrowedTo = $derived(systems.find(system => system.name === systemFilter) ?? null)
+  // The drawing dims only where the system frames something in it; otherwise nothing of it is drawn here.
+  const highlight = $derived.by(() => {
+    if (narrowedTo === null) return null
+    const rules = new Set(narrowedTo.ruleIds)
+    const drawn = view?.display.panels.some(panel => panel.kind === 'mimic' && panel.mimic.items.some(item => item.binding.frames.some(frame => rules.has(frame.ruleId))))
+    return drawn === true ? rules : null
+  })
+  const decisiveElsewhere = (next: ComposedDisplaySnapshot, ruleIds: ReadonlyArray<string>): ReadonlyArray<string> => {
+    const rules = new Set(ruleIds)
+    return (next.latest?.alarms ?? []).filter(alarm => alarm.active && (alarm.kind === 'trip' || alarm.firstOut) && !rules.has(alarm.ruleId)).map(alarm => alarm.id)
+  }
+  const selectSystem = (name: string | null): void => {
+    const system = systems.find(candidate => candidate.name === name)
+    seenElsewhere = new Set(system === undefined || snapshot === null ? [] : decisiveElsewhere(snapshot, system.ruleIds))
+    lastInputWallMs = Date.now()
+    systemFilter = system?.name ?? null
+  }
+  const keepFilter = (next: ComposedDisplaySnapshot): void => {
+    if (narrowedTo === null) return
+    if (decisiveElsewhere(next, narrowedTo.ruleIds).some(id => !seenElsewhere.has(id))) systemFilter = null
+  }
   const adviceView = $derived(view?.kind === 'advice' ? view : undefined)
   const issuedAt = $derived(advice === null ? null : Date.parse(advice.issuedAt))
   const adviceStale = $derived(advice !== null && (snapshot?.resetSinceAdvice === true || adviceView?.modelChanged === true || adviceView?.drawingChanged === true))
@@ -133,9 +174,9 @@
 
   // Recorded history cannot reach before the Run started; trends say so.
   const runStartedAt = $derived(snapshot?.latest === undefined ? null : Date.parse(snapshot.latest.simulationTime) - snapshot.latest.plantElapsedMs)
-  const activeRuleIds = $derived(new Set((snapshot?.latest?.alarms ?? []).map(alarm => alarm.ruleId)))
+  const activeRuleIds = $derived(new Set((snapshot?.latest?.alarms ?? []).filter(alarm => alarm.active).map(alarm => alarm.ruleId)))
   // A protection trip changes the plant state; it leads the notice line.
-  const activeTrip = $derived((snapshot?.latest?.alarms ?? []).filter(alarm => alarm.kind === 'trip')
+  const activeTrip = $derived((snapshot?.latest?.alarms ?? []).filter(alarm => alarm.active && alarm.kind === 'trip')
     .sort((left, right) => (left.firstActiveElapsedMs ?? 0) - (right.firstActiveElapsedMs ?? 0))[0])
 
   // A unit overview fills its window. Where the window is wide enough its
@@ -219,7 +260,7 @@
     <div class="panels beside" style={`gap:${layout.overviewColumnGap}px`}>
       <div class="drawing">
         {#each view.display.panels as panel, index (index)}
-          {#if panel.kind === 'mimic'}<MimicPanel mimic={panel.mimic} latest={snapshot.latest} {stale} open={opens} />{/if}
+          {#if panel.kind === 'mimic'}<MimicPanel mimic={panel.mimic} latest={snapshot.latest} {stale} open={opens} {highlight} />{/if}
         {/each}
       </div>
       <div class="column" style={`width:${layout.overviewColumn}px;gap:${layout.panelGap}px`}>
@@ -227,7 +268,8 @@
           {#if panel.kind === 'readouts'}
             <ReadoutsPanel {panel} latest={snapshot.latest} {activeRuleIds} column />
           {:else if panel.kind === 'alarms'}
-            <AlarmsPanel {panel} latest={snapshot.latest} fill />
+            {#if systems.length > 0}<AnnunciatorTiles {systems} latest={snapshot.latest} selected={systemFilter} select={selectSystem} />{/if}
+            <AlarmsPanel {panel} latest={snapshot.latest} fill only={narrowedTo === null ? null : { ...narrowedTo, drawn: highlight !== null }} showAll={() => selectSystem(null)} />
           {/if}
         {/each}
         {@render footerLine()}
@@ -266,9 +308,10 @@
         {:else if panel.kind === 'readouts'}
           <ReadoutsPanel {panel} latest={snapshot.latest} {activeRuleIds} />
         {:else if panel.kind === 'mimic'}
-          <MimicPanel mimic={panel.mimic} latest={snapshot.latest} {stale} open={opens} />
+          <MimicPanel mimic={panel.mimic} latest={snapshot.latest} {stale} open={opens} {highlight} />
         {:else}
-          <AlarmsPanel {panel} latest={snapshot.latest} />
+          {#if systems.length > 0}<AnnunciatorTiles {systems} latest={snapshot.latest} selected={systemFilter} select={selectSystem} />{/if}
+          <AlarmsPanel {panel} latest={snapshot.latest} only={narrowedTo === null ? null : { ...narrowedTo, drawn: highlight !== null }} showAll={() => selectSystem(null)} />
         {/if}
       {/each}
     </div>

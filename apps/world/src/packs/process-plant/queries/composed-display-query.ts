@@ -216,14 +216,17 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
     simulationTime,
     plantElapsedMs: system.runtime.elapsedMs(),
     ...(protection === undefined ? {} : {
+      // Shelved, suppressed and out-of-service alarms annunciate nowhere; one
+      // that cleared unacknowledged stays listed until it is acknowledged.
       alarms: [...protection.alarms, ...protection.trips]
-        .filter(lifecycle => lifecycle.active)
+        .filter(lifecycle => !lifecycle.shelved && !lifecycle.suppressed && !lifecycle.outOfService && (lifecycle.active || !lifecycle.acknowledged))
         .map(lifecycle => ({
           id: lifecycle.id,
           ruleId: lifecycle.ruleId,
           kind: lifecycle.kind,
           title: lifecycle.title,
           severity: lifecycle.severity,
+          active: lifecycle.active,
           acknowledged: lifecycle.acknowledged,
           firstOut: lifecycle.firstOut,
           ...(lifecycle.firstActiveElapsedMs === undefined ? {} : { firstActiveElapsedMs: lifecycle.firstActiveElapsedMs }),

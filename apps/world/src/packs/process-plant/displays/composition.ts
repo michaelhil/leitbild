@@ -200,6 +200,14 @@ export const composedDisplayLayout = {
   overviewColumnGap: 12,
   /** A lead value in that column, one per row: its name, readout and margin lines (78 px) and the gap under it. */
   overviewReadoutRow: 82,
+  /**
+   * Annunciator tiles over a generated display's alarm list: each tile's
+   * least width, its height (the system's name, then its counts and tags),
+   * and the severity bar and padding its name leaves room for; and the gap
+   * between tiles.
+   */
+  annunciatorTile: { width: 134, height: 40, inset: 16 },
+  annunciatorGap: 4,
 } as const
 
 // A chat display taller than about 600 px pushes its own lower panels below
