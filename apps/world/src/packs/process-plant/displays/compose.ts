@@ -506,6 +506,11 @@ const subjectIssues = (
     }
     if (equipment.components.some(component => shownComponents.has(component))) return []
     const named = equipment.components.map(component => componentDescription(graph, component)).join(', ')
+    // Equipment the model connects to nothing has no place in any drawing, and its signals describe nothing it does.
+    const linked = (component: number) => (graph.incomingLinksByComponent[component] ?? []).length + (graph.outgoingLinksByComponent[component] ?? []).length > 0
+    if (!equipment.components.some(linked)) {
+      return [{ path, message: `${named} is connected to no other equipment in the Plant model, so no display can show it; name the equipment it is part of or acts on instead` }]
+    }
     // Its lead values as a detail of it shows them: what its I&C judges, its key values and instruments.
     const leads = equipmentKeyValues(system.plant, equipment.components).map(value => graph.signalBindingByPath.get(value)?.tagId ?? String(value)).slice(0, SUGGESTION_COUNT)
     return [{ path, message: `${named} is what the question is about but no panel shows it: draw it in a mimic or show one of its signals${leads.length === 0 ? '' : ` (such as ${leads.join(', ')})`}` }]

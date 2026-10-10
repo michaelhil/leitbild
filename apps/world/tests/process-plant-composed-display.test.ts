@@ -506,6 +506,12 @@ describe('a display shows what its question is about', () => {
       .toContain('subjects.0: loop D is what the question is about but no panel shows it')
   })
 
+  test('equipment the model connects to nothing is refused as a subject, never offered by its signals', () => {
+    // Probe run 19: the agent named the model's unconnected relief valve, whose position always reads open.
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', display(['pressurizerReliefValve'], [trendOf('PT-455')]))))
+      .toContain('subjects.0: pressurizerReliefValve (Pressurizer Relief Valve, PZR relief valve) is connected to no other equipment in the Plant model, so no display can show it; name the equipment it is part of or acts on instead')
+  })
+
   test('a subject that names nothing comes back with names that do', () => {
     const message = rejectionOf(() => ask('world.process-plant.display.compose', display(['auxiliary feedwater'], [trendOf('core.powerMw')])))
     expect(message).toContain('subjects.0: "auxiliary feedwater" names no signal, equipment, service or loop of this Plant')
