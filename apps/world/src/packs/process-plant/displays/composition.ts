@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { idSchema, isoTimestampSchema } from '../../../core/model/index.ts'
+import { MIMIC_REACH_LINKS } from './mimic/scope.ts'
 
 // An AI-composed display states WHAT the operator should see and WHY. The
 // Pack owns HOW: resolution, units, I&C thresholds, scales, layout and live
@@ -91,6 +92,8 @@ export const composedDisplayMimicPanelSchema = z.object({
   services: z.array(text(1, 64)).min(1).max(4).optional(),
   loops: z.array(text(1, 16)).min(1).max(6).optional(),
   exclude: z.array(equipmentName).min(1).max(6).optional(),
+  /** How many links a one-ended or around drawing follows from its items; a smaller reach draws a closer neighbourhood. */
+  reach: z.number().int().min(1).max(MIMIC_REACH_LINKS).optional(),
 }).strict()
 
 export const composedDisplayPanelSchema = z.discriminatedUnion('kind', [

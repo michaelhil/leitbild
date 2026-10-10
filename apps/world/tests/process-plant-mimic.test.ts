@@ -103,6 +103,11 @@ describe('generated equipment mimics', () => {
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.issues[0]!.message).toMatch(/it fits with "loops":\["A"/)
+    // Around an item, the first narrower drawing offered stays centred on it: fewer links out.
+    const around = compileMimic(system.plant, { around: ['pressurizer'] }, { profile: chatMimicProfile, maxWidth: MIMIC_MAX_WIDTH, maxHeight: 628 })
+    if (around.ok) throw new Error('expected a refusal')
+    expect(around.issues[0]!.message).toMatch(/it fits with "reach":1, or "loops"/)
+    expect(compileMimic(system.plant, { around: ['pressurizer'], reach: 1 }, { profile: chatMimicProfile, maxWidth: MIMIC_MAX_WIDTH, maxHeight: 628 }).ok).toBe(true)
   })
 
   test('names that do not resolve come back with suggestions', () => {

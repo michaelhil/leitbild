@@ -42,7 +42,7 @@ export type MimicScopeResult =
   | { readonly ok: true; readonly scope: MimicScope }
   | { readonly ok: false; readonly issues: ReadonlyArray<{ readonly field: string; readonly message: string; readonly didYouMean?: ReadonlyArray<string> }> }
 
-/** Steps down- or upstream a one-ended intent follows: enough to show a component's neighbours and theirs. */
+/** Steps down- or upstream a one-ended or around intent follows unless it asks for fewer: enough to show a component's neighbours and theirs. */
 export const MIMIC_REACH_LINKS = 3
 
 const shortLabelOf = (graph: CompiledPlantGraph, index: number): string => {
@@ -231,6 +231,9 @@ export const resolveMimicScope = (graph: CompiledPlantGraph, intent: MimicIntent
   const excluded = new Set(resolveAll('exclude', intent.exclude))
   if (around.length > 0 && (from.length > 0 || to.length > 0)) {
     issues.push({ field: 'around', message: 'around draws what feeds items and where their outflow goes; give it without from or to' })
+  }
+  if (intent.reach !== undefined && from.length > 0 && to.length > 0) {
+    issues.push({ field: 'reach', message: 'a route draws every link between its ends; reach applies to one end (from or to alone) or around' })
   }
 
   for (const [index, service] of (intent.services ?? []).entries()) {

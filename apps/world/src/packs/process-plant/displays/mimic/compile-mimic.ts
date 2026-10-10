@@ -8,7 +8,7 @@ import { MIMIC_LAYOUT_VERSION, type CompiledMimic, type MimicDrawnItem, type Mim
 import { embeddedPresentation, presentationFor, type MimicPresentation } from './presentation.ts'
 import type { MimicProfile } from './profiles.ts'
 import { COUNT_WORDS, itemRows, type MimicRow } from './rows.ts'
-import { resolveMimicScope, stubText, plantLoops, type MimicIntent, type MimicScope, type MimicStub } from './scope.ts'
+import { MIMIC_REACH_LINKS, resolveMimicScope, stubText, plantLoops, type MimicIntent, type MimicScope, type MimicStub } from './scope.ts'
 import { openBridgeDevice, readoutBlockWidth, smallStateRowWidth, smallValueRowWidth, textWidth, unmeasurable, type OpenBridgeTextStyle } from './text-metrics.ts'
 
 // Intent (or a scope World resolved itself) → items with their bindings → a
@@ -535,14 +535,18 @@ const narrower = (plant: CompiledProcessPlant, intent: MimicIntent): ReadonlyArr
     ? [drawnLoops.slice(0, 2), ...drawnLoops.map(loop => [loop])]
     : intent.loops !== undefined && intent.loops.length > 1 ? intent.loops.map(loop => [loop]) : []
   const serviceSets = (intent.services ?? []).length > 1 ? intent.services!.map(service => [service]) : []
-  return [
+  // A drawing from one end or around its items can stop closer to them; around, that keeps it centred on what was asked about.
+  const oneEnded = (intent.from === undefined) !== (intent.to === undefined) || intent.around !== undefined
+  const reaches = oneEnded ? Array.from({ length: (intent.reach ?? MIMIC_REACH_LINKS) - 1 }, (_, step) => (intent.reach ?? MIMIC_REACH_LINKS) - 1 - step).map(reach => ({ ...intent, reach })) : []
+  const narrowed = [
     ...loopSets.map(loops => ({ ...intent, loops })),
     ...serviceSets.map(services => ({ ...intent, services })),
   ]
+  return intent.around !== undefined ? [...reaches, ...narrowed] : [...narrowed, ...reaches]
 }
 
 const describeChange = (from: MimicIntent, to: MimicIntent): string =>
-  to.loops !== from.loops ? `"loops":${JSON.stringify(to.loops)}` : `"services":${JSON.stringify(to.services)}`
+  to.reach !== from.reach ? `"reach":${to.reach}` : to.loops !== from.loops ? `"loops":${JSON.stringify(to.loops)}` : `"services":${JSON.stringify(to.services)}`
 
 /** The agent's path: an intent resolved to a scope, drawn by the budget's profile, or refused with narrower intents that fit. */
 export const compileMimic = (plant: CompiledProcessPlant, intent: MimicIntent, budget: MimicBudget): MimicCompileResult => {

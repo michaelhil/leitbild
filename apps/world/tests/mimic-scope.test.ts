@@ -87,6 +87,7 @@ describe('mimic scope from the agent\'s intent', () => {
     expect(drawn(graph, { around: ['SG B'], loops: ['B'], reach: 1 }).labels).toEqual(['AFW valve B', 'Core', 'FCV B', 'MSIV B', 'RCP B', 'SG B'])
     expect(drawn(graph, { around: ['steam generators'], services: ['mainSteam'], reach: 1 }).labels).toEqual(['MSIV A', 'MSIV B', 'MSIV C', 'MSIV D', 'SG A', 'SG B', 'SG C', 'SG D'])
     expect(rejection(graph, { around: ['sgB'], from: ['core'] })).toEqual([{ field: 'around', message: 'around draws what feeds items and where their outflow goes; give it without from or to' }])
+    expect(rejection(graph, { from: ['feedwaterTank'], to: ['sgB'], reach: 1 })).toEqual([{ field: 'reach', message: 'a route draws every link between its ends; reach applies to one end (from or to alone) or around' }])
   })
 
   test('an item\'s services lead with the circuit its energy role names, then by how many of its links each takes', () => {
