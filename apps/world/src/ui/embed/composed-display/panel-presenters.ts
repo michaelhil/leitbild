@@ -102,15 +102,18 @@ export const limitAhead = (
 }
 
 /**
- * For a value in alarm that is moving back: the time until it is back inside
- * the active limit ("back above LO ALM 30 % · ≈2 min"); empty otherwise.
+ * For a value in alarm that is moving back: when it will be back inside the
+ * active limit ("back above LO ALM 30 % · ≈2 min"), or, where that is beyond
+ * the half hour an ETA is given for, only the direction ("toward HI ALM
+ * 0.5 mSv/h · over 30 min"), so a slow drift never reads as a recovery;
+ * empty otherwise.
  */
 export const returningText = (value: number, rate: number | null, active: ComposedDisplayThreshold, unit: string): string => {
   if (rate === null || isSteady(rate, value)) return ''
   const returning = active.direction === 'low' ? rate > 0 : rate < 0
   if (!returning) return ''
   const eta = timeToThresholdText(value, rate, { ...active, direction: active.direction === 'low' ? 'high' : 'low' })
-  return `back ${active.direction === 'low' ? 'above' : 'below'} ${thresholdName(active, unit)}${eta === '' ? '' : ` · ${eta}`}`
+  return eta === '' ? `toward ${thresholdName(active, unit)} · over 30 min` : `back ${active.direction === 'low' ? 'above' : 'below'} ${thresholdName(active, unit)} · ${eta}`
 }
 
 /** Whether the value moves away from every limit it has not passed ("no HI limit ahead"). */

@@ -57,6 +57,8 @@ describe('composed display panel presenters', () => {
     const highRadiation = { ruleId: 'n16-high', label: 'Secondary radiation high', kind: 'alarm', operator: '>', direction: 'high', value: 5 } as const
     expect(returningText(5.4, -0.2, highRadiation, 'mSv/h')).toBe('back below HI ALM 5 mSv/h · ≈2 min')
     expect(returningText(5.4, 0.2, highRadiation, 'mSv/h')).toBe('')
+    // Hours away at this rate: the direction, never a recovery.
+    expect(returningText(5.4, -0.01, highRadiation, 'mSv/h')).toBe('toward HI ALM 5 mSv/h · over 30 min')
   })
 
   test('long names are shortened from the middle so the equipment survives', () => {
