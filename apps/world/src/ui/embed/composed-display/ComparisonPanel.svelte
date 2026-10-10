@@ -2,7 +2,7 @@
   import type { ComposedComparisonPanel } from '../../../packs/process-plant/displays/compose.ts'
   import { composedDisplayLayout } from '../../../packs/process-plant/displays/composition.ts'
   import type { ComposedDisplaySample } from './composed-display-client.ts'
-  import { displayValue, formatQuantity, formatValue, thresholdName } from '../../../packs/process-plant/displays/display-text.ts'
+  import { displayValue, formatQuantity, formatValue, limitKindName, thresholdName } from '../../../packs/process-plant/displays/display-text.ts'
   import { activeThreshold, median, ratePerMinute, rateText, rateWindowMs, windowText } from './panel-presenters.ts'
   import { displayName, fitName } from './pen-style.ts'
   import { panelFont, textMeasure } from './text-measure.ts'
@@ -81,7 +81,7 @@
       <line class="track" x1={scaleStart} x2={scaleStart + scaleWidth} y1={y + row / 2} y2={y + row / 2} />
       {#if value !== undefined && domain !== null}
         <path class="pointer" class:primary={pen.role === 'primary'} class:alarm={inAlarm !== null} d={`M${x(value)} ${y + 4} l5 ${row / 2 - 4} l-5 ${row / 2 - 4} l-5 ${-(row / 2 - 4)} z`} />
-        <text class="value" x={scaleStart + scaleWidth + 10} y={y + row / 2} dominant-baseline="middle">{formatQuantity(value, panel.unit)}{#if inAlarm !== null}<tspan class={`state ${inAlarm.severity ?? 'warning'}`} dx="6">{inAlarm.direction === 'low' ? 'LO' : 'HI'} {inAlarm.kind === 'trip' ? 'TRIP' : 'ALM'}</tspan>{/if}<tspan class="sub" dx="6">{deviation(value)} {rateText(ratePerMinute(series.get(String(pen.path)) ?? [], RATE_WINDOW_MS), value, panel.unit)}</tspan></text>
+        <text class="value" x={scaleStart + scaleWidth + 10} y={y + row / 2} dominant-baseline="middle">{formatQuantity(value, panel.unit)}{#if inAlarm !== null}<tspan class={`state ${inAlarm.severity ?? 'warning'}`} dx="6">{limitKindName(inAlarm)}</tspan>{/if}<tspan class="sub" dx="6">{deviation(value)} {rateText(ratePerMinute(series.get(String(pen.path)) ?? [], RATE_WINDOW_MS), value, panel.unit)}</tspan></text>
       {:else}
         <text class="value" x={scaleStart + scaleWidth + 10} y={y + row / 2} dominant-baseline="middle">—</text>
       {/if}
