@@ -131,7 +131,7 @@ describe('the unit overview World generates for a Plant', () => {
     expect(readouts.sparklineMs).toBe(600_000)
     // The vessel's net inventory flow is not recorded: it has no sparkline, and the agent is told so.
     expect(readouts.pens.filter(pen => !pen.recorded).map(pen => String(pen.path))).toEqual(['vessel.netInventoryFlowKgPerS'])
-    const shows = composedDisplayShows(result.display).join(' ')
+    const shows = composedDisplayShows(result.display, system.runtime.elapsedMs()).join(' ')
     expect(shows).toContain('each recorded one has a sparkline of its last 10 min, for direction and rate only (no value scale); not recorded by this Run, so without one: ')
     // The column as drawn: the title over six lead values, nine tiles two to a row, the alarms and the footer, under the window's header row.
     const layout = composedDisplayLayout
