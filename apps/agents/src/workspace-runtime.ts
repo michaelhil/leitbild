@@ -987,7 +987,9 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       spawnAIAgent: boundSpawnAIAgent,
       spawnHumanAgent: boundSpawnHumanAgent,
       activateAgentInRoom,
-      requestDisplay: (roomId, messageId, requesterId) => requestDisplay({ rooms, team }, roomId, messageId, requesterId),
+      requestDisplay: (roomId, messageId, requesterId) => requestDisplay({
+        rooms, team, isScriptRunning: roomId => scriptRunnerRef?.getRun(roomId) !== undefined,
+      }, roomId, messageId, requesterId),
       setOnMessagePosted: messagePosted.set,
       setOnMessagesRemoved: messagesRemoved.set,
       setOnTurnChanged: turnChanged.set,

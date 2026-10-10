@@ -16,10 +16,12 @@ import {
 } from '../core/display-request.ts'
 import { VIEW_FENCE_LANGUAGE } from '../core/render-validators/view-fence.ts'
 import { asAIAgent } from './shared.ts'
+import { DEFAULTS } from '../core/types/constants.ts'
 
 export interface DisplayRequestDeps {
   readonly rooms: Pick<RoomDirectory, 'getRoom'>
   readonly team: Pick<Team, 'getAgent'>
+  readonly isScriptRunning: (roomId: string) => boolean
 }
 
 type TurnRefusal = Extract<RequestedTurnResult, { kind: 'refused' }>['reason']
@@ -98,10 +100,18 @@ export const requestDisplay = (
   if (!ai.requestTurn) throw displayRequestRefusal('agent_unavailable', `${ai.name} cannot take requested turns`)
   // A paused Room stores messages but runs no Agent; a request would bypass that.
   if (room.paused) throw displayRequestRefusal('room_paused', 'This Room is paused; resume it to ask for a display')
+  // A script directs every turn in its Room, whether or not the author is in its cast.
+  if (deps.isScriptRunning(room.profile.id)) throw displayRequestRefusal('script_running', 'A script directs this Room; ask again when it ends')
   if (!ai.getSkills().includes(DISPLAY_SKILL)) {
     throw displayRequestRefusal('display_skill_missing', `${ai.name} does not have the ${DISPLAY_SKILL} Skill`)
   }
 
+  // A manual Room delivers nothing to the author, so it catches up on the
+  // Room first, as manual activation does.
+  if (room.deliveryMode === 'manual') {
+    if (!ai.ingestHistory) throw displayRequestRefusal('agent_unavailable', `${ai.name} cannot catch up on a manual Room`)
+    ai.ingestHistory(room.profile.id, room.getRecent((ai.getHistoryLimit() ?? DEFAULTS.historyLimit) * 2))
+  }
   const result = ai.requestTurn(room.profile.id, {
     instruction: displayRequestInstruction({ requesterName: requester.name, answer }),
     inReplyTo: [messageId],

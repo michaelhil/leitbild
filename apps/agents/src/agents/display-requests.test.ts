@@ -17,6 +17,7 @@ interface AuthorOptions {
   readonly result?: RequestedTurnResult
   readonly turns?: Turns
   readonly requestTurn?: false
+  readonly ingested?: Array<{ roomId: string; ids: ReadonlyArray<string> }>
 }
 
 // Only what the service reads of an AI Agent; requestTurn records each call.
@@ -26,6 +27,8 @@ const fakeAuthor = (name: string, options: AuthorOptions = {}): AIAgent => ({
   kind: 'ai',
   metadata: {},
   getSkills: () => options.skills ?? [DISPLAY_SKILL],
+  getHistoryLimit: () => 10,
+  ingestHistory: (roomId: string, messages: ReadonlyArray<Message>) => { options.ingested?.push({ roomId, ids: messages.map(message => message.id) }) },
   ...(options.requestTurn === false ? {} : {
     requestTurn: (roomId: string, turn: RequestedTurn): RequestedTurnResult => {
       options.turns?.push({ roomId, turn })
@@ -46,9 +49,11 @@ const setup = (author: AuthorOptions = {}) => {
   team.addAgent(ai)
   room.addMember(ai.id)
   const answer = room.post({ senderId: ai.id, senderName: ai.name, content: 'The level is steady at 42 %.', type: 'chat', generationTraceId: 'trace-1' })
+  let scriptRunning = false
   const ask = (overrides: { roomId?: string; messageId?: string; requesterId?: string } = {}) =>
-    requestDisplay({ rooms, team }, overrides.roomId ?? room.profile.id, overrides.messageId ?? answer.id, overrides.requesterId ?? reader.id)
-  return { rooms, team, room, reader, ai, answer, turns, ask }
+    requestDisplay({ rooms, team, isScriptRunning: () => scriptRunning }, overrides.roomId ?? room.profile.id, overrides.messageId ?? answer.id, overrides.requesterId ?? reader.id)
+  const startScript = (): void => { scriptRunning = true }
+  return { rooms, team, room, reader, ai, answer, turns, ask, startScript }
 }
 
 const refusal = (ask: () => unknown): { code: DisplayRequestRefusalCode; message: string } => {
@@ -190,6 +195,26 @@ describe('requestDisplay', () => {
     expect(turns).toEqual([])
   })
 
+  test('refuses a Room a script directs, cast or not', () => {
+    const { ask, turns, startScript } = setup()
+    startScript()
+    expect(refusal(ask)).toEqual({ code: 'script_running', message: 'A script directs this Room; ask again when it ends' })
+    expect(turns).toEqual([])
+  })
+
+  test('catches the author up on a manual Room before its turn', () => {
+    const ingested: Array<{ roomId: string; ids: ReadonlyArray<string> }> = []
+    const { room, answer, ask, turns } = setup({ ingested })
+    expect(ask()).toEqual({ queued: false })
+    expect(ingested).toEqual([])
+    room.setDeliveryMode('manual')
+    expect(ask()).toEqual({ queued: false })
+    expect(ingested).toHaveLength(1)
+    expect(ingested[0]!.roomId).toBe(room.profile.id)
+    expect(ingested[0]!.ids).toContain(answer.id)
+    expect(turns).toHaveLength(2)
+  })
+
   test('refuses an author without the display Skill', () => {
     const { ask, turns } = setup({ skills: ['process-plant'] })
     expect(refusal(ask)).toEqual({ code: 'display_skill_missing', message: 'Operator does not have the operator-displays Skill' })
@@ -212,7 +237,7 @@ describe('requestDisplay', () => {
     const answer = room.post({ senderId: ai.id, content: 'The flow is steady.', type: 'chat', generationTraceId: 'trace-4' })
     room.removeMember(ai.id)
     const code = (roomId: string, messageId: string) =>
-      refusal(() => requestDisplay({ rooms, team }, roomId, messageId, reader.id)).code
+      refusal(() => requestDisplay({ rooms, team, isScriptRunning: () => false }, roomId, messageId, reader.id)).code
 
     expect(code('missing', 'missing')).toBe('room_not_found')
     expect(code(room.profile.id, 'missing')).toBe('message_not_found')
