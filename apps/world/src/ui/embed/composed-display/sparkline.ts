@@ -22,6 +22,8 @@ export interface Sparkline {
   readonly limit: { readonly y: number; readonly threshold: ComposedDisplayThreshold } | null
   /** The lowest and highest value drawn; null when none is. */
   readonly range: ValueDomain | null
+  /** The line breaks where nothing was recorded for longer than a value holds. */
+  readonly broken: boolean
 }
 
 /**
@@ -48,7 +50,7 @@ export const sparkline = (input: {
     return point.t <= now && holdEnd >= start
   })
   const range = rawDomain(drawn.map(point => point.v))
-  if (range === null) return { path: '', end: null, limit: null, range: null }
+  if (range === null) return { path: '', end: null, limit: null, range: null, broken: false }
   const domain = paddedDomain(range)
   const x = (t: number): number => ((t - start) / windowMs) * (size.width - INSET_END)
   const y = (v: number): number => INSET_Y + (1 - (v - domain.min) / (domain.max - domain.min)) * (size.height - 2 * INSET_Y)
@@ -59,6 +61,7 @@ export const sparkline = (input: {
     end: last.t >= now - HOLD_GAP_MS ? { x: x(now), y: y(last.v) } : null,
     limit: limit !== null && limit.value > domain.min && limit.value < domain.max ? { y: y(limit.value), threshold: limit } : null,
     range,
+    broken: drawn.some((point, index) => index > 0 && point.t - drawn[index - 1]!.t > HOLD_GAP_MS),
   }
 }
 
@@ -91,5 +94,6 @@ export const sparklineText = (input: {
     ? `steady at ${formatQuantity(range.min, input.unit)}`
     : `${formatValue(displayValue(range.min, input.unit))} to ${formatQuantity(range.max, input.unit)}`
   const limit = input.line?.limit ?? null
-  return `Last ${window}: ${spread}${limit === null ? '' : ` · dashed line: ${thresholdName(limit.threshold, input.unit)}`}${since}`
+  const broken = input.line?.broken === true ? ' · broken where nothing was recorded' : ''
+  return `Last ${window}: ${spread}${limit === null ? '' : ` · dashed line: ${thresholdName(limit.threshold, input.unit)}`}${broken}${since}`
 }
