@@ -220,6 +220,7 @@ describe('mimic panels in composed displays', () => {
     title: 'Safety bus A supply',
     question: 'What supplies safety bus A now?',
     need: 'Decide whether to start the diesel',
+    subjects: ['safetyBusA'],
     panels,
   })
 
@@ -240,12 +241,12 @@ describe('mimic panels in composed displays', () => {
 
   test('a drawing that fits only with the room of another panel says which panel to drop', () => {
     const trend = { kind: 'trend', horizon: '10m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }, { ref: 'SG-A-LVL-NR', role: 'context' }, { ref: 'SG-C-LVL-NR', role: 'context' }, { ref: 'SG-D-LVL-NR', role: 'context' }] }
-    expect(() => ask('world.process-plant.display.compose', display([{ kind: 'mimic', to: ['sgB'], services: ['feedwater', 'auxFeedwater'] }, trend, { kind: 'alarms', scope: 'related' }])))
+    expect(() => ask('world.process-plant.display.compose', { ...display([{ kind: 'mimic', to: ['sgB'], services: ['feedwater', 'auxFeedwater'] }, trend, { kind: 'alarms', scope: 'related' }]), subjects: ['sgB'] }))
       .toThrow('or it fits as asked without panels.1 (trend), or without panels.2 (alarms)')
   })
 
   test('a stored display re-opens with its drawing, and relates its alarms to the drawn equipment', () => {
-    const composed = ask('world.process-plant.display.compose', display([{ kind: 'mimic', from: ['pressurizer'], to: ['PRT'] }, { kind: 'alarms', scope: 'related' }])) as { view: { state: string }; equipment: ReadonlyArray<{ id: string; label: string; state: string }> }
+    const composed = ask('world.process-plant.display.compose', { ...display([{ kind: 'mimic', from: ['pressurizer'], to: ['PRT'] }, { kind: 'alarms', scope: 'related' }]), subjects: ['pressurizer'] }) as { view: { state: string }; equipment: ReadonlyArray<{ id: string; label: string; state: string }> }
     expect(composed.equipment.map(item => item.label)).toEqual(['PZR', 'PRT', 'PORV'])
     expect(composed.equipment.find(item => item.label === 'PORV')!.state).toBe('position not measured; no flow')
     const result = ask('world.process-plant.display.view', { plantId: system.plant.id, state: composed.view.state }) as {

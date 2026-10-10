@@ -122,6 +122,9 @@ const resolveName = (
   return { error: `unknown equipment "${name}"; name one component per entry: its id, a tag measured on it, its label or its short label`, didYouMean: equipmentSuggestions(graph, name) }
 }
 
+/** Equipment by one name, as a mimic resolves it (resolveName): the components it names, or why it names none. */
+export const resolveEquipmentName = (graph: CompiledPlantGraph, name: string): ReturnType<typeof resolveName> => resolveName(graph, name, 'around')
+
 // A device the model bundles inside a component (a pressurizer's relief valve)
 // has a label of its own but is not a component: it is drawn on its host's
 // line, so a name for it is answered with the host and that line's ends.

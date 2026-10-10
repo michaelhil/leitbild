@@ -38,11 +38,19 @@ const ask = (capabilityId: string, input: unknown, at: IsoTimestamp | null = sim
   ...(at === null ? {} : { simulationTime: at }),
 })
 
+// What a display is about: its primary signal, as an agent names it in subjects.
+const subjectsOf = (panels: ReadonlyArray<unknown>) => {
+  const signals = panels.flatMap(panel => (panel as { signals?: ReadonlyArray<{ readonly ref: string; readonly role: string }> }).signals ?? [])
+  const subject = signals.find(signal => signal.role === 'primary') ?? signals[0]
+  return subject === undefined ? {} : { subjects: [subject.ref] }
+}
+
 const composition = (signals: ReadonlyArray<{ readonly ref: string; readonly role: string }>, horizon = '10m') => ({
   plantId: compiled.id,
   title: 'SG B level after feed valve failure',
   question: 'Is SG B level recovering after its feed valve failed?',
   need: 'Decide whether to take manual feed control before AFW actuates',
+  ...subjectsOf([{ signals }]),
   panels: [{ kind: 'trend', horizon, signals }],
 })
 
@@ -205,7 +213,7 @@ describe('thresholds drawn on composed trends', () => {
 })
 
 describe('composed display panels', () => {
-  const display = (panels: ReadonlyArray<unknown>) => ({ ...composition([]), panels })
+  const display = (panels: ReadonlyArray<unknown>) => ({ ...composition([]), ...subjectsOf(panels), panels })
   const composeView = (panels: ReadonlyArray<unknown>) => {
     const composed = ask('world.process-plant.display.compose', display(panels)) as { view: { state: string; height: number }; shows: ReadonlyArray<string> }
     const view = ask('world.process-plant.display.view', { plantId: compiled.id, state: composed.view.state }) as { display: { height: number; panels: ReadonlyArray<Record<string, unknown>> } }
@@ -451,4 +459,43 @@ test('composed display operations are published read-only Capabilities', () => {
     const capability = processPlantCapabilities.find(candidate => candidate.id === id)
     expect(capability?.kind).toBe('query')
   }
+})
+
+describe('a display shows what its question is about', () => {
+  const display = (subjects: ReadonlyArray<string> | undefined, panels: ReadonlyArray<unknown>) => ({
+    plantId: compiled.id,
+    title: 'What the operator asked about',
+    question: 'Is the equipment the operator asked about doing what it should?',
+    need: 'Decide on the next action for it',
+    ...(subjects === undefined ? {} : { subjects }),
+    panels,
+  })
+  const trendOf = (ref: string) => ({ kind: 'trend', horizon: '10m', signals: [{ ref, role: 'primary' }] })
+
+  test('composing names its subjects', () => {
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', display(undefined, [trendOf('SG-B-LVL-NR')]))))
+      .toContain('subjects: name in subjects the 1-4 pieces of equipment (id, tag or label) or signals (tag or path) the question is about; every one must be shown')
+  })
+
+  test('equipment asked about but shown nowhere is refused with what of it could be shown', () => {
+    // Evaluation run 16: asked whether reactor power was stable, an answer trended another signal.
+    const message = rejectionOf(() => ask('world.process-plant.display.compose', display(['core'], [trendOf('SG-B-LVL-NR')])))
+    expect(message).toContain('subjects.0: core (Reactor Core, Core) is what the question is about but no panel shows it: draw it in a mimic or show one of its signals (such as core.powerMw')
+    // Any signal of the equipment shows it.
+    expect(() => ask('world.process-plant.display.compose', display(['core'], [trendOf('core.powerMw')]))).not.toThrow()
+  })
+
+  test('a drawing shows the equipment it draws, and the values it draws', () => {
+    // Evaluation run 15: asked whether the diesel fed the AFW pump, an answer drew auxiliary feedwater alone.
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', display(['dieselGeneratorA'], [{ kind: 'mimic', around: ['auxFeedwaterPumpMotor'], services: ['auxFeedwater'], reach: 1 }]))))
+      .toContain('subjects.0: dieselGeneratorA (Emergency Diesel Generator A, EDG A) is what the question is about but no panel shows it')
+    expect(() => ask('world.process-plant.display.compose', display(['dieselGeneratorA', 'auxFeedwaterPumpMotor'], [{ kind: 'mimic', from: ['dieselGeneratorA'], to: ['auxFeedwaterPumpMotor'] }]))).not.toThrow()
+    // A signal drawn on a symbol counts as shown.
+    expect(() => ask('world.process-plant.display.compose', display(['SG-B-LVL-NR'], [{ kind: 'mimic', to: ['sgB'], services: ['feedwater'] }]))).not.toThrow()
+  })
+
+  test('a subject that names nothing comes back with names that do', () => {
+    const message = rejectionOf(() => ask('world.process-plant.display.compose', display(['reactor powr'], [trendOf('core.powerMw')])))
+    expect(message).toContain('subjects.0: "reactor powr" names no signal or equipment')
+  })
 })

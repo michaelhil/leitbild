@@ -18,6 +18,7 @@ import {
   composedDisplayMaxHeight,
   composedPanelMinimumHeight,
   COMPOSED_DISPLAY_MAX_SAMPLE_PATHS,
+  COMPOSED_DISPLAY_MAX_SUBJECTS,
   COMPOSED_DISPLAY_MAX_TRENDS,
   COMPOSED_TREND_MAX_SIGNALS,
   COMPOSED_TREND_MAX_STRIPS,
@@ -41,7 +42,7 @@ import { chatMimicProfile, detailMimicProfile, overviewMimicProfile } from './mi
 import { principalCircuits } from './mimic/principal.ts'
 import { equipmentKeyValues, overviewKeyValues } from './overview-key-values.ts'
 import { annunciatorSystems, type AnnunciatorSystem } from './annunciators.ts'
-import { MIMIC_REACH_LINKS, itemServices, resolveMimicScope, withOtherServicesStopped } from './mimic/scope.ts'
+import { MIMIC_REACH_LINKS, componentDescription, itemServices, resolveEquipmentName, resolveMimicScope, withOtherServicesStopped } from './mimic/scope.ts'
 import type { CompiledMimic } from './mimic/mimic-model.ts'
 import {
   icAlarmRuleIdsForEquipment,
@@ -402,6 +403,7 @@ const compositionIssues = (composition: ComposedDisplayComposition): ReadonlyArr
     if (kinds.filter(candidate => candidate === kind).length > 1) issues.push({ path: 'panels', message: `use at most one ${kind} panel` })
   }
   if (kinds.every(kind => kind === 'alarms')) issues.push({ path: 'panels', message: 'an alarms panel accompanies signal panels; add a trend, comparison, readouts or mimic panel' })
+  if (composition.subjects === undefined) issues.push({ path: 'subjects', message: `name in subjects the 1-${COMPOSED_DISPLAY_MAX_SUBJECTS} pieces of equipment (id, tag or label) or signals (tag or path) the question is about; every one must be shown` })
   const signals = composition.panels.flatMap(panel => panel.kind === 'alarms' || panel.kind === 'mimic' ? [] : panel.signals)
   // A mimic alone answers an equipment question and names no signals.
   if (signals.length > 0 && !signals.some(signal => signal.role === 'primary')) issues.push({ path: 'panels', message: 'mark at least one signal with role "primary": the signal the operator question is about' })
@@ -424,6 +426,49 @@ const compositionIssues = (composition: ComposedDisplayComposition): ReadonlyArr
     }
   })
   return issues
+}
+
+/**
+ * Each subject the display must show: a signal some panel shows (a trend,
+ * comparison or readout pen, or a value or state a mimic draws), or
+ * equipment a mimic draws or one of whose signals a panel shows. A subject
+ * shown nowhere is refused with what of it could be shown.
+ */
+const subjectIssues = (
+  system: ProcessPlantRuntimeInstance,
+  subjects: ReadonlyArray<string>,
+  panels: ReadonlyArray<CompiledComposedPanel>,
+): ReadonlyArray<ComposedDisplayIssue> => {
+  const graph = system.plant.graph
+  const mimics = panels.flatMap(panel => panel.kind === 'mimic' ? [panel.mimic] : [])
+  const pens = panels.flatMap(composedPanelPens)
+  const shownPaths = new Set([...pens.map(pen => String(pen.path)), ...mimics.flatMap(mimic => mimic.paths.map(String))])
+  const ownerOf = (path: string): number | undefined => {
+    const owner = graph.signalBindingByPath.get(path as VariablePath)?.owner
+    return owner?.type === 'component' ? owner.componentIndex : undefined
+  }
+  const shownComponents = new Set([
+    ...mimics.flatMap(mimic => mimic.items.flatMap(item => item.components.map(id => graph.componentIndexById.get(id as never)!))),
+    ...pens.flatMap(pen => ownerOf(String(pen.path)) ?? []),
+  ])
+  const shownNames = (): string => [...new Set(pens.map(pen => pen.name))].slice(0, SUGGESTION_COUNT).join(', ') || 'no signals'
+  return subjects.flatMap((subject, index): ComposedDisplayIssue[] => {
+    const path = `subjects.${index}`
+    const signal = resolveRef(system, subject)
+    if (signal !== undefined) {
+      return shownPaths.has(String(signal.path)) ? [] : [{ path, message: `${subject} is what the question is about but no panel shows it; this display shows ${shownNames()}` }]
+    }
+    const equipment = resolveEquipmentName(graph, subject)
+    if ('error' in equipment) {
+      const didYouMean = [...suggestionsFor(subject, graph.signalBindings), ...equipment.didYouMean].slice(0, SUGGESTION_COUNT)
+      return [{ path, message: `"${subject}" names no signal or equipment: give a tag or path, or equipment by id, tag or label (${equipment.error})`, ...(didYouMean.length === 0 ? {} : { didYouMean }) }]
+    }
+    if (equipment.components.some(component => shownComponents.has(component))) return []
+    const named = equipment.components.map(component => componentDescription(graph, component)).join(', ')
+    // Its lead values as a detail of it shows them: what its I&C judges, its key values and instruments.
+    const leads = equipmentKeyValues(system.plant, equipment.components).map(value => graph.signalBindingByPath.get(value)?.tagId ?? String(value)).slice(0, SUGGESTION_COUNT)
+    return [{ path, message: `${named} is what the question is about but no panel shows it: draw it in a mimic or show one of its signals${leads.length === 0 ? '' : ` (such as ${leads.join(', ')})`}` }]
+  })
 }
 
 // Strip and size limits need resolved units, so they are checked after compiling.
@@ -566,7 +611,8 @@ export const compileComposedDisplay = (
     return { ...panel, plot: size.plot }
   })
   const layout = purpose === 'compose' ? layoutIssues(compiled, fit) : []
-  if (authoring.length > 0 || layout.length > 0) return { ok: false, issues: [...authoring, ...layout] }
+  const uncovered = purpose === 'compose' && composition.subjects !== undefined ? subjectIssues(system, composition.subjects, compiled) : []
+  if (authoring.length > 0 || layout.length > 0 || uncovered.length > 0) return { ok: false, issues: [...authoring, ...layout, ...uncovered] }
   const ruleIds = relatedRuleIds(system, compiled)
   return {
     ok: true,

@@ -81,6 +81,7 @@ describe('the unit overview World generates for a Plant', () => {
       title: 'Pressurizer pressure',
       question: 'Is pressurizer pressure holding?',
       need: 'Decide on spray',
+      subjects: ['pressurizer'],
       panels: [{ kind: 'trend', horizon: '10m', signals: [{ ref: 'pressurizer.pressureMPa', role: 'primary' }] }],
     }) as { view: { state: string } }
     const result = ask('world.process-plant.display.view', { plantId: system.plant.id, state: composed.view.state }) as { kind: string; display: CompiledComposedDisplay }

@@ -105,11 +105,20 @@ export const composedDisplayPanelSchema = z.discriminatedUnion('kind', [
 ])
 export type ComposedDisplayPanel = z.infer<typeof composedDisplayPanelSchema>
 
+/** The most subjects a display names: what its question is about. */
+export const COMPOSED_DISPLAY_MAX_SUBJECTS = 4
+
 export const composedDisplayCompositionSchema = z.object({
   plantId: idSchema,
   title: text(3, 60),
   question: text(8, 160),
   need: text(8, 160),
+  /**
+   * What the question is about: equipment (id, a tag on it, its label) or
+   * signals (tag or path). Composing refuses a display that shows any of them
+   * nowhere. Advice composed before subjects existed re-opens without them.
+   */
+  subjects: z.array(text(1, 120)).min(1).max(COMPOSED_DISPLAY_MAX_SUBJECTS).optional(),
   panels: z.array(composedDisplayPanelSchema).min(1).max(COMPOSED_DISPLAY_MAX_PANELS),
 }).strict()
 export type ComposedDisplayComposition = z.infer<typeof composedDisplayCompositionSchema>

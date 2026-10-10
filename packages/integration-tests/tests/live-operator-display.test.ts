@@ -128,6 +128,7 @@ describe('live operator display chain with real Modules', () => {
           title: 'Pressurizer pressure',
           question: 'Is pressurizer pressure holding inside its control band?',
           need: 'Decide whether spray or heaters need manual action',
+          subjects: ['PT-455'],
           panels: [{ kind: 'trend', horizon: '2m', signals: [{ ref: 'PT-455', role: 'primary' }] }],
         },
       }],
