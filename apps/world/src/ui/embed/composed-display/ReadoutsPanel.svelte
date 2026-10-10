@@ -4,7 +4,7 @@
   import type { ComposedDisplaySample } from './composed-display-client.ts'
   import type { ComposedDisplaySnapshot } from './composed-display-session.ts'
   import { displayValue, marginText, nearestThresholdMargin, unitLabel, valueDigits } from '../../../packs/process-plant/displays/display-text.ts'
-  import { activeThreshold } from './panel-presenters.ts'
+  import { activeThreshold, limitsInForce } from './panel-presenters.ts'
   import { displayName, fitName } from './pen-style.ts'
   import { panelFont, textMeasure } from './text-measure.ts'
   import { SPARKLINE_SIZE, sparklineWindowText } from './sparkline.ts'
@@ -49,7 +49,7 @@
   {#each panel.pens as pen (pen.path)}
     {@const entry = sampled(String(pen.path))}
     {@const value = entry?.value}
-    {@const margin = typeof value === 'number' ? nearestThresholdMargin(value, pen.thresholds) : null}
+    {@const margin = typeof value === 'number' ? nearestThresholdMargin(value, limitsInForce(pen.thresholds, latest?.mode, activeRuleIds)) : null}
     {@const inAlarm = activeThreshold(pen.thresholds, activeRuleIds)}
     <li class:primary={pen.role === 'primary'} title={`${pen.label} · ${pen.role}`}>
       <span class="head" title={`${displayName(pen)}${pen.command ? ' · operator or automation demand, not a measured state' : ` · ${pen.label}`}`}><span class="name" bind:clientWidth={rooms[String(pen.path)]}>{named(String(pen.path), displayName(pen))}</span>{#if pen.command}<span class="demand">demand</span>{/if}{#if inAlarm !== null}<AlarmChip threshold={inAlarm} />{/if}</span>

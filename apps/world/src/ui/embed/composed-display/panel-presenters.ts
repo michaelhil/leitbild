@@ -2,7 +2,7 @@
 // these functions only relate them to the latest sampled values.
 import { displayValue, formatValue, thresholdName, unitLabel, type ThresholdMargin } from '../../../packs/process-plant/displays/display-text.ts'
 import type { ComposedDisplayThreshold } from '../../../packs/process-plant/displays/ic-thresholds.ts'
-import type { ComposedDisplayAlarm } from './composed-display-client.ts'
+import type { ComposedDisplayAlarm, ComposedDisplaySample } from './composed-display-client.ts'
 import type { TrendPoint } from './trend-geometry.ts'
 
 // A rate needs some history: two points at least this far apart.
@@ -174,6 +174,27 @@ export const agoText = (ms: number): string => {
   const minutes = Math.floor(seconds / 60)
   return minutes < 60 ? `${minutes} min ago` : `${Math.floor(minutes / 60)} h ${minutes % 60} min ago`
 }
+
+/**
+ * Whether a limit acts now: one the I&C applies in every mode always; a
+ * mode-qualified one while the Plant is in one of its modes, or while its rule
+ * is still active (a trip latched in power operation stays until it is reset).
+ */
+export const limitInForce = (threshold: Pick<ComposedDisplayThreshold, 'modeIds'>, mode: { readonly id: string } | null, active: boolean): boolean =>
+  active || threshold.modeIds === undefined || (mode !== null && threshold.modeIds.includes(mode.id))
+
+/**
+ * A signal's limits that act in the Plant's current mode, so no margin or
+ * time is read against one that does not. The mode is unknown only where the
+ * Plant declares none (no limit is qualified) or before the first sample
+ * (no value is compared), so then every limit is kept.
+ */
+export const limitsInForce = (
+  thresholds: ReadonlyArray<ComposedDisplayThreshold>,
+  mode: ComposedDisplaySample['mode'],
+  activeRuleIds: ReadonlySet<string>,
+): ReadonlyArray<ComposedDisplayThreshold> =>
+  mode === undefined ? thresholds : thresholds.filter(threshold => limitInForce(threshold, mode, activeRuleIds.has(threshold.ruleId)))
 
 /** The most severe of a signal's thresholds whose I&C rule is active now. */
 export const activeThreshold = (

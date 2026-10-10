@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { fitName } from '../src/ui/embed/composed-display/pen-style.ts'
 import { limitLabelRanks, stackLabels } from '../src/ui/embed/composed-display/limit-labels.ts'
-import { activeThreshold, agoText, alarmAge, limitAhead, projectionBasis, returningText, median, minutesToThreshold, movingAwayFromLimits, rateChange, ratePerMinute, rateText, rateWindowMs, timeToThresholdText, visibleAlarms, annunciatorStates } from '../src/ui/embed/composed-display/panel-presenters.ts'
+import { activeThreshold, agoText, alarmAge, limitAhead, limitInForce, limitsInForce, projectionBasis, returningText, median, minutesToThreshold, movingAwayFromLimits, rateChange, ratePerMinute, rateText, rateWindowMs, timeToThresholdText, visibleAlarms, annunciatorStates } from '../src/ui/embed/composed-display/panel-presenters.ts'
 import { formatQuantity, limitKindName, marginText, nearestThresholdMargin, simulationClock, thresholdName, unitLabel } from '../src/packs/process-plant/displays/display-text.ts'
 import { escalateLimits, type ComposedDisplayThreshold } from '../src/packs/process-plant/displays/ic-thresholds.ts'
 import type { ComposedDisplayAlarm } from '../src/ui/embed/composed-display/composed-display-client.ts'
@@ -250,12 +250,32 @@ describe('limit labels', () => {
 
   test('keep active limits first, then the limit a value is heading for, then the nearest', () => {
     const ranks = limitLabelRanks([
-      { key: 'hi-trip', value: 82, active: null, ahead: false },
-      { key: 'hi-alarm', value: 75, active: null, ahead: true },
-      { key: 'lo-alarm', value: 30, active: 'warning', ahead: false },
-      { key: 'lo-trip', value: 20, active: 'critical', ahead: false },
-      { key: 'far', value: 95, active: null, ahead: false },
+      { key: 'hi-trip', value: 82, active: null, ahead: false, inForce: true },
+      { key: 'idle', value: 74, active: null, ahead: false, inForce: false },
+      { key: 'hi-alarm', value: 75, active: null, ahead: true, inForce: true },
+      { key: 'lo-alarm', value: 30, active: 'warning', ahead: false, inForce: true },
+      { key: 'lo-trip', value: 20, active: 'critical', ahead: false, inForce: true },
+      { key: 'far', value: 95, active: null, ahead: false, inForce: true },
     ], 73)
-    expect([...ranks.entries()].sort((left, right) => left[1] - right[1]).map(([key]) => key)).toEqual(['lo-trip', 'lo-alarm', 'hi-alarm', 'hi-trip', 'far'])
+    // A limit that does not act in the current mode gives way first, however near.
+    expect([...ranks.entries()].sort((left, right) => left[1] - right[1]).map(([key]) => key)).toEqual(['lo-trip', 'lo-alarm', 'hi-alarm', 'hi-trip', 'far', 'idle'])
+  })
+
+  test('a mode-qualified limit acts only in its modes, or while its rule is still active', () => {
+    // RCP A loop flow low acts in power operation only (rcp-trip, in hot standby).
+    const flowLow = { ruleId: 'rcp-a-loop-flow-low', label: 'RCP A loop flow low', kind: 'alarm', operator: '<', direction: 'low', value: 2500, escalation: 1, modeLabel: 'Power operation', modeIds: ['powerOperation'] } as const
+    const hotStandby = { id: 'hotStandby', label: 'Hot standby' }
+    expect(limitInForce(flowLow, hotStandby, false)).toBe(false)
+    expect(limitInForce(flowLow, { id: 'powerOperation' }, false)).toBe(true)
+    expect(limitInForce(flowLow, null, false)).toBe(false)
+    // A trip latched at power stays in force after the mode changes.
+    expect(limitInForce(flowLow, hotStandby, true)).toBe(true)
+    expect(limitInForce(thresholds[0]!, hotStandby, false)).toBe(true)
+    // No margin or limit ahead is read against a limit that does not act: 401 kg/s is past nothing in hot standby.
+    expect(limitsInForce([flowLow], hotStandby, new Set())).toEqual([])
+    expect(limitAhead(401, -629, limitsInForce([flowLow], hotStandby, new Set()))).toBeNull()
+    expect(limitsInForce([flowLow], hotStandby, new Set(['rcp-a-loop-flow-low']))).toEqual([flowLow])
+    // Before the first sample the mode is unknown; nothing is compared yet.
+    expect(limitsInForce([flowLow], undefined, new Set())).toEqual([flowLow])
   })
 })

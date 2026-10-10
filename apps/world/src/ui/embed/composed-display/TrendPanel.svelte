@@ -13,8 +13,10 @@
     type ValueDomain,
   } from './trend-geometry.ts'
   import { limitLabelRanks, stackLabels, type LabelSlot } from './limit-labels.ts'
-  import { limitAhead, ratePerMinute, rateWindowMs } from './panel-presenters.ts'
-  import { penStroke } from './pen-style.ts'
+  import type { ComposedDisplaySample } from './composed-display-client.ts'
+  import { limitAhead, limitInForce, limitsInForce, ratePerMinute, rateWindowMs } from './panel-presenters.ts'
+  import { fitName, penStroke } from './pen-style.ts'
+  import { panelFont, textMeasure } from './text-measure.ts'
 
   // One strip of a trend: one measurement of parallel equipment on its own
   // value axis. Strips of a trend share the time window; only the bottom one
@@ -32,6 +34,7 @@
     height,
     timeAxis,
     adviceLabel,
+    mode,
     activeRuleIds,
   }: {
     strip: ComposedTrendStrip
@@ -50,6 +53,8 @@
     height: number
     timeAxis: boolean
     adviceLabel: boolean
+    /** The Plant's operating mode in the latest sample; undefined before it or where the Plant declares none. */
+    mode: ComposedDisplaySample['mode']
     /** I&C rules active now; their threshold labels take the alarm colour. */
     activeRuleIds: ReadonlySet<string>
   } = $props()
@@ -91,6 +96,15 @@
   const activeSeverity = (threshold: ComposedTrendThreshold): string | null =>
     threshold.ruleIds.some(ruleId => activeRuleIds.has(ruleId)) ? threshold.severity ?? 'warning' : null
 
+  // A mode-qualified limit that does not act in the Plant's current mode is
+  // drawn faint and dashed and labelled with its modes, so a value beyond it
+  // does not read as beyond a limit; one that acts now is drawn as any other.
+  // While the mode is not known yet, a qualified limit is drawn dashed.
+  const lineLook = (threshold: ComposedTrendThreshold): 'acting' | 'qualified' | 'idle' =>
+    threshold.modeIds === undefined ? 'acting'
+      : mode === undefined ? 'qualified'
+        : limitInForce(threshold, mode, activeSeverity(threshold) !== null) ? 'acting' : 'idle'
+
   // The value labels are read against: the latest value of the strip's first pen.
   const current = $derived(strip.pens.map(pen => series.get(String(pen.path))?.at(-1)?.v).find(value => value !== undefined))
 
@@ -100,11 +114,15 @@
   // the least important into a neighbour's count (limit-labels.ts): never an
   // active limit, nor the one a value is heading for, while another can give way.
   const LINE = 12
+  /** The modes line under an idle limit's name. */
+  const MODES_LINE = 10
+  const GUTTER_TEXT = 106
+  const measureModes = textMeasure(panelFont(9))
   const labelRoom = $derived({ start: pad.top - LINE, end: pad.top + plotHeight + LINE / 2 })
   const aheadRuleIds = $derived(new Set(strip.pens.flatMap(pen => {
     const points = series.get(String(pen.path)) ?? []
     const latest = points.at(-1)
-    const ahead = latest === undefined ? null : limitAhead(latest.v, ratePerMinute(points, rateWindowMs(horizonMs)), pen.thresholds)
+    const ahead = latest === undefined ? null : limitAhead(latest.v, ratePerMinute(points, rateWindowMs(horizonMs)), limitsInForce(pen.thresholds, mode, activeRuleIds))
     return ahead === null ? [] : [ahead.threshold.ruleId]
   })))
   const edgeOf = (threshold: ComposedTrendThreshold): 'above' | 'below' | null =>
@@ -115,15 +133,17 @@
       value: threshold.value,
       active: activeSeverity(threshold),
       ahead: threshold.ruleIds.some(ruleId => aheadRuleIds.has(ruleId)),
+      inForce: lineLook(threshold) !== 'idle',
     })), current)
     // Top to bottom as they read: highest value first.
     const ordered = [...limitThresholds].sort((left, right) => right.value - left.value)
     const slots = ordered.map((threshold): LabelSlot => {
       const edge = edgeOf(threshold)
+      const size = lineLook(threshold) === 'idle' ? LINE + MODES_LINE : LINE
       return {
         key: threshold.ruleId,
-        want: edge === 'above' ? labelRoom.start : edge === 'below' ? labelRoom.end - LINE : y(threshold.value) - LINE / 2,
-        size: LINE,
+        want: edge === 'above' ? labelRoom.start : edge === 'below' ? labelRoom.end - size : y(threshold.value) - LINE / 2,
+        size,
         group: threshold.direction,
         rank: ranks.get(threshold.ruleId)!,
       }
@@ -135,9 +155,13 @@
       const named = byKey.get(label.key)!
       const folded = label.folded.map(key => byKey.get(key)!)
       const edge = edgeOf(named)
+      const idle = lineLook(named) === 'idle'
       return {
         key: label.key,
         edge,
+        idle,
+        // Whole words only; the tooltip keeps every mode.
+        modes: idle ? fitName(named.modeLabel!, text => measureModes(text) <= GUTTER_TEXT) : '',
         lineY: y(named.value),
         y: label.start + LINE / 2,
         // Thresholds are configured numbers; show them exactly, never rounded.
@@ -200,8 +224,7 @@
 
       {#each drawnThresholds as threshold (threshold.ruleId)}
         <line
-          class={`threshold ${threshold.kind}`}
-          class:qualified={threshold.modeLabel !== undefined}
+          class={`threshold ${threshold.kind} ${lineLook(threshold)}`}
           x1={pad.left}
           x2={pad.left + plotWidth}
           y1={y(threshold.value)}
@@ -212,7 +235,10 @@
         {#if label.edge === null && Math.abs(label.y - label.lineY) > 2}
           <polyline class="leader" points={`${pad.left + plotWidth},${label.lineY} ${pad.left + plotWidth + 4},${label.lineY} ${pad.left + plotWidth + 8},${label.y}`} />
         {/if}
-        <text class={`threshold-label ${label.severity === null ? '' : `active-${label.severity}`}`} x={pad.left + plotWidth + 10} y={label.y} dominant-baseline="middle"><title>{label.title}</title>{label.text}</text>
+        <text class={`threshold-label ${label.severity === null ? '' : `active-${label.severity}`}`} class:idle={label.idle} x={pad.left + plotWidth + 10} y={label.y} dominant-baseline="middle"><title>{label.title}</title>{label.text}</text>
+        {#if label.idle}
+          <text class="threshold-label idle modes" x={pad.left + plotWidth + 10} y={label.y + LINE / 2 + MODES_LINE / 2} dominant-baseline="middle"><title>{label.title}</title>{label.modes}</text>
+        {/if}
       {/each}
       {#each controlThresholds.filter(threshold => threshold.value >= domain!.min && threshold.value <= domain!.max) as threshold (threshold.ruleId)}
         <line class="control-mark" x1={pad.left + plotWidth} x2={pad.left + plotWidth + 3} y1={y(threshold.value)} y2={y(threshold.value)}><title>{threshold.label} at {formatQuantity(threshold.value, strip.unit)} (control set point)</title></line>
@@ -250,8 +276,12 @@
   .threshold.trip { stroke: var(--element-neutral-color); stroke-width: 1.5; }
   .threshold.alarm { stroke: var(--element-neutral-color); stroke-opacity: 0.7; }
   .threshold.qualified { stroke-dasharray: 5 3; }
+  /* A limit that does not act in the current mode: present, but plainly not in force. */
+  .threshold.idle { stroke-dasharray: 3 4; stroke-opacity: 0.35; }
   .leader { fill: none; stroke: var(--element-neutral-color); stroke-width: 1; stroke-opacity: 0.7; }
   .threshold-label { fill: var(--element-neutral-color); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .threshold-label.idle { fill-opacity: 0.6; }
+  .threshold-label.modes { font-size: 9px; }
   /* Colour appears only while the rule behind the line is active, keyed by its severity. */
   .threshold-label.active-critical { fill: var(--alert-alarm-color); font-weight: 700; }
   .threshold-label.active-warning { fill: var(--alert-warning-color); font-weight: 700; }
