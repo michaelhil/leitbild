@@ -13,7 +13,10 @@
 // (`near`), or all through the first channel (`outer`: before every layer
 // but that of the stubs feeding hubs), from where they run in their items'
 // lanes: across the bars between, instead of along the lanes' own pipes, and
-// clear of what lies upstream of them.
+// clear of what lies upstream of them. Near, a return run comes back through
+// the layers it passes to the channel after the hub's own; `late`, one alone
+// on its hub port meets the hub in the channel before the symbol it turns at,
+// beside the layers in between instead of through them.
 import type { Model } from './model.ts'
 import type { Structure } from './structure.ts'
 
@@ -47,7 +50,7 @@ export interface LayeringOptions {
   readonly folded: ReadonlyArray<boolean>
   /** Per edge: its ends may share a layer, joined by a turn over both. */
   readonly flat: ReadonlyArray<boolean>
-  readonly hubReach: 'near' | 'outer'
+  readonly hubReach: 'near' | 'outer' | 'late'
 }
 
 export const plainLayering = (model: Model): LayeringOptions => ({
@@ -174,6 +177,11 @@ export const assignLayers = (model: Model, structure: Structure, reversed: Reado
   const hubPort = (edge: Model['edges'][number], node: number): string => `${node}:${edge.from === node ? edge.fromPort : edge.toPort}`
   const reachesFirst = (edge: Model['edges'][number]): boolean => Number.isFinite(firstLayer) && layer[dagFrom(edge.index)]! < firstLayer
   const nearPorts = new Set(model.edges.filter(edge => role(dagTo(edge.index)) === 'hub' && !reachesFirst(edge)).map(edge => hubPort(edge, dagTo(edge.index))))
+  // A hub port is one place on one track, so only a return run alone on its port can take a channel of its own.
+  const portEdges = new Map<string, number>()
+  for (const edge of model.edges) {
+    for (const node of [edge.from, edge.to]) if (role(node) === 'hub') portEdges.set(hubPort(edge, node), (portEdges.get(hubPort(edge, node)) ?? 0) + 1)
+  }
   const chains: Chain[] = model.edges.map(edge => {
     const start = dagFrom(edge.index)
     const end = dagTo(edge.index)
@@ -182,7 +190,8 @@ export const assignLayers = (model: Model, structure: Structure, reversed: Reado
     const turnAbove = !turnless(end, edge.index) && portFace(end, edge.index) === '+f'
     const outer = role(start) === 'hub' && Number.isFinite(firstLayer) && firstLayer < layer[start]! + 1 && !nearPorts.has(hubPort(edge, start))
     const outerEnd = role(end) === 'hub' && reachesFirst(edge)
-    const first = turnBelow ? layer[start]! : outer ? firstLayer : layer[start]! + 1
+    const late = options.hubReach === 'late' && role(start) === 'hub' && isReversed && turnAbove && portEdges.get(hubPort(edge, start)) === 1
+    const first = turnBelow ? layer[start]! : outer ? firstLayer : late ? layer[end]! : layer[start]! + 1
     const last = turnAbove ? layer[end]! : outerEnd ? firstLayer - 1 : layer[end]! - 1
     const chain = [start]
     for (let at = first; at <= last; at++) {

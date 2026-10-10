@@ -4,14 +4,15 @@
 // labels below, below the symbols of lanes, below every symbol). Each rung is
 // laid out in both orientations and in each arrangement the graph allows
 // (hubs on either side of the lanes, reaching their items near or from the
-// outer channel; cycles whose return runs through shared symbols folded or
-// not), and the first rung with an attempt that verifies, keeps within the
-// crossing limits and fits the box wins; within it, fewer crossings, then the
-// earlier arrangement (the plain one first), then the better fit. The crossing
-// limits are absolute and relative to the crossings the graph's structure
-// forces (bound.ts). Without one, the result says why: density (crossings,
-// when every attempt crosses too often, verified or not), the smallest size
-// per orientation, or the verifier's findings. Nothing is truncated silently.
+// outer channel, and a hub of one lane its return runs late; cycles whose
+// return runs through shared symbols folded or not), and the first rung with
+// an attempt that verifies, keeps within the crossing limits and fits the box
+// wins; within it, fewer crossings, then the earlier arrangement (the plain
+// one first), then the better fit. The crossing limits are absolute and
+// relative to the crossings the graph's structure forces (bound.ts). Without
+// one, the result says why: density (crossings, when every attempt crosses
+// too often, verified or not), the smallest size per orientation, or the
+// verifier's findings. Nothing is truncated silently.
 import { runAttempt, prepare, type AttemptGeometry } from './attempt.ts'
 import { breakCycles, foldReturns, type Fold } from './cycles.ts'
 import { findCrossings, drawingSegments, gapsByEdge } from './crossings.ts'
@@ -87,7 +88,9 @@ interface Arrangement {
  * The arrangements a graph allows, the plain one first: hubs beside lane 0
  * reaching each item through the channel before it, no fold, no refinement.
  * Then refined ones: with hubs, beside lane 0 or after the last lane, reaching
- * near or from the outer channel; with a return leg through shared symbols,
+ * near or from the outer channel, and a hub that serves one lane with return
+ * runs also late (beside more lanes, a run straight to the hub crosses the
+ * lanes between it and its own); with a return leg through shared symbols,
  * each also folded, and folded beside its turn where that cuts the leg
  * elsewhere.
  */
@@ -101,8 +104,12 @@ const arrangements = (model: Model): ReadonlyArray<Arrangement> => {
   const length = (entry: Fold | null): number => Math.max(0, ...layerNodes(model, entry?.reversed ?? reversed, false, entry?.flat))
   const folds = [fold, beside !== null && length(beside) < length(fold) ? beside : null].filter((entry): entry is Fold => entry !== null)
   const hubs = model.nodes.some(node => node.role === 'hub') && model.lanes.length > 0
+  const returns = model.lanes.length === 1 && model.edges.some(edge => reversed[edge.index] && model.nodes[edge.to]!.role === 'hub')
   const placements: ReadonlyArray<{ readonly hubSide: HubSide; readonly hubReach: LayeringOptions['hubReach'] }> = hubs
-    ? [{ hubSide: 'low', hubReach: 'near' }, { hubSide: 'low', hubReach: 'outer' }, { hubSide: 'high', hubReach: 'near' }, { hubSide: 'high', hubReach: 'outer' }]
+    ? [
+      { hubSide: 'low', hubReach: 'near' }, { hubSide: 'low', hubReach: 'outer' }, { hubSide: 'high', hubReach: 'near' }, { hubSide: 'high', hubReach: 'outer' },
+      ...(returns ? [{ hubSide: 'low', hubReach: 'late' }, { hubSide: 'high', hubReach: 'late' }] as const : []),
+    ]
     : [{ hubSide: 'low', hubReach: 'near' }]
   return [
     { reversed, layering: plain, hubSide: 'low', refine: false },
