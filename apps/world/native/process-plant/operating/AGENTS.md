@@ -22,6 +22,15 @@ expected deliverables. Escalate major architecture/fidelity/cost blockers for
 root-cause analysis and user approval; repair ordinary code defects directly.
 No live LD-01 installation without the separate construction approval.
 
+Owner-approved decision 0013 replaces the unadmitted common-pressure/tree-current
+mechanics with the existing 38-volume coarse local-pressure network. Retain
+actual differential M/U; EOS rows recover local pressure and temperatures.
+Use one physical generalized hydraulic impulse per consequential phase path,
+not length-times-upwind-mass-current or a duplicate nodal momentum bank. Keep
+pressure/gravity well balanced and exact absent donors/birth receipts explicit.
+Do not expand plant scope before genuinely connected advancement and recurring
+cost have passed. A mechanics-only pilot is not full hot-spine qualification.
+
 The owner-approved decision 0012 selects a bounded low-Mach coolant energy
 reduction. Pay actual shaft power once into finite pump water; never stack a
 friction/pressure heater on it. Coolant K/PE is diagnostic, not a second exactly

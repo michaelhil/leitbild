@@ -5,6 +5,9 @@ edition = "2024"
 license = "MIT"
 description = "Opt-in narrow maintained IF97 C ABI, not another property backend"
 
+[features]
+ida = []
+
 [workspace]
 
 [dependencies]

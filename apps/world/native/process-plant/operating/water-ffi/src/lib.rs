@@ -113,6 +113,199 @@ pub fn directional(
     }
 }
 
+/// Invert the maintained pure-phase EOS at the SAME pressure and specific U.
+/// This is a local coordinate elimination, not a flash calculation or a new
+/// property fit. A target outside the selected stable R1/R2 branch is rejected;
+/// it is never clamped to saturation or assigned a different phase.
+pub fn point_pu(branch: Branch, p: f64, u: f64) -> Result<WaterPoint, Error> {
+    CaloricLinearization::internal_energy(branch, p, u).map(|q| q.point())
+}
+
+/// The same stable-branch inverse for a responsible incoming enthalpy. This
+/// creates no phase stock and is not used to assign a point to an empty phase
+/// without a physical receipt.
+pub fn point_ph(branch: Branch, p: f64, h: f64) -> Result<WaterPoint, Error> {
+    CaloricLinearization::enthalpy(branch, p, h).map(|q| q.point())
+}
+
+/// One immutable, successfully recovered caloric point. A Jacobian may reuse
+/// this point for directions at EXACTLY its pressure and specific energy;
+/// callers must construct another point when either value or branch changes.
+/// There is no lookup, cross-trial cache, held derivative or EOS approximation.
+/// Private fields prevent pairing an arbitrary WaterPoint with another branch.
+#[derive(Clone, Copy, Debug)]
+pub struct CaloricLinearization {
+    branch: Branch,
+    kind: Caloric,
+    point: WaterPoint,
+}
+impl CaloricLinearization {
+    pub fn internal_energy(branch: Branch, p: f64, u: f64) -> Result<Self, Error> {
+        Self::new(branch, p, u, Caloric::Internal)
+    }
+
+    pub fn enthalpy(branch: Branch, p: f64, h: f64) -> Result<Self, Error> {
+        Self::new(branch, p, h, Caloric::Enthalpy)
+    }
+
+    fn new(branch: Branch, p: f64, target: f64, kind: Caloric) -> Result<Self, Error> {
+        Ok(Self {
+            branch,
+            kind,
+            point: invert_caloric(branch, p, target, kind)?,
+        })
+    }
+
+    pub fn point(self) -> WaterPoint {
+        self.point
+    }
+
+    /// Same implicit caloric tangent and native coefficient probes as the
+    /// one-shot directional_pu/ph calls, without repeating the inverse solve.
+    /// A zero direction consumes no derivative and needs no native query.
+    pub fn directional(self, dp: f64, dtarget: f64) -> Result<WaterPoint, Error> {
+        if !dp.is_finite() || !dtarget.is_finite() {
+            return Err(Error::Domain);
+        }
+        if dp == 0. && dtarget == 0. {
+            return Ok(WaterPoint::default());
+        }
+        let (up, ut) = self.kind.partials(self.point);
+        if !ut.is_finite() || ut <= 0. {
+            return Err(Error::NativeFailure);
+        }
+        directional(
+            self.branch,
+            self.point.pressure_pa,
+            self.point.temperature_k,
+            dp,
+            (dtarget - up * dp) / ut,
+        )
+        .map(|(_, d)| d)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Caloric {
+    Internal,
+    Enthalpy,
+}
+impl Caloric {
+    fn value(self, q: WaterPoint) -> f64 {
+        match self {
+            Self::Internal => q.internal_energy_j_kg,
+            Self::Enthalpy => q.enthalpy_j_kg,
+        }
+    }
+    fn partials(self, q: WaterPoint) -> (f64, f64) {
+        let a = q.expansion_per_k;
+        let r = q.density_kg_m3;
+        match self {
+            Self::Internal => (
+                (q.pressure_pa * q.compressibility_per_pa - q.temperature_k * a) / r,
+                q.cp_j_kg_k - q.pressure_pa * a / r,
+            ),
+            Self::Enthalpy => ((1. - q.temperature_k * a) / r, q.cp_j_kg_k),
+        }
+    }
+}
+fn invert_caloric(branch: Branch, p: f64, target: f64, kind: Caloric) -> Result<WaterPoint, Error> {
+    if !target.is_finite() {
+        return Err(Error::Domain);
+    }
+    // These are the normative IF97 R1/R2 temperature bounds already selected
+    // by this boundary. Pressure/domain admission remains in the native EOS.
+    let (mut low, mut high) = match branch {
+        Branch::Liquid => (
+            point(branch, p, 273.15)?,
+            point(Branch::SaturatedLiquid, p, 0.)?,
+        ),
+        Branch::Vapor => (
+            point(Branch::SaturatedVapor, p, 0.)?,
+            point(branch, p, 1073.15)?,
+        ),
+        _ => return Err(Error::AbiArgument),
+    };
+    if target < kind.value(low) || target > kind.value(high) {
+        return Err(Error::Domain);
+    }
+    if target == kind.value(low) {
+        return Ok(low);
+    }
+    if target == kind.value(high) {
+        return Ok(high);
+    }
+    let mut t = low.temperature_k
+        + (high.temperature_k - low.temperature_k) * (target - kind.value(low))
+            / (kind.value(high) - kind.value(low));
+    // Safeguarded Newton uses the actual thermodynamic partial. Bisection is
+    // only a root-finding safeguard, never a replacement EOS value or state.
+    // The bound is a numerical termination guard, not a simulation timestep.
+    for _ in 0..64 {
+        let q = point(branch, p, t)?;
+        let defect = kind.value(q) - target;
+        let (_, ut) = kind.partials(q);
+        if !ut.is_finite() || ut <= 0. {
+            return Err(Error::NativeFailure);
+        }
+        // Use the local thermal energy scale as well as the energy value.
+        // An arbitrary EOS datum can make target U zero without making the
+        // attainable numerical precision or the heat capacity zero.
+        if defect.abs() <= 2e-12 * target.abs().max(ut * q.temperature_k).max(1.) {
+            return Ok(q);
+        }
+        if defect < 0. {
+            low = q;
+        } else {
+            high = q;
+        }
+        let proposed = t - defect / ut;
+        t = if proposed > low.temperature_k && proposed < high.temperature_k {
+            proposed
+        } else {
+            (low.temperature_k + high.temperature_k) / 2.
+        };
+    }
+    Err(Error::NativeFailure)
+}
+
+/// Implicit p/u direction through the same local EOS inversion. Exact first
+/// thermo partials determine T'; coefficient directions retain the existing
+/// adapter's disclosed same-branch accuracy. No cross-trial cache is used.
+pub fn directional_pu(
+    branch: Branch,
+    p: f64,
+    u: f64,
+    dp: f64,
+    du: f64,
+) -> Result<(WaterPoint, WaterPoint), Error> {
+    directional_caloric(branch, p, u, dp, du, Caloric::Internal)
+}
+
+pub fn directional_ph(
+    branch: Branch,
+    p: f64,
+    h: f64,
+    dp: f64,
+    dh: f64,
+) -> Result<(WaterPoint, WaterPoint), Error> {
+    directional_caloric(branch, p, h, dp, dh, Caloric::Enthalpy)
+}
+fn directional_caloric(
+    branch: Branch,
+    p: f64,
+    target: f64,
+    dp: f64,
+    dtarget: f64,
+    kind: Caloric,
+) -> Result<(WaterPoint, WaterPoint), Error> {
+    if !dp.is_finite() || !dtarget.is_finite() {
+        return Err(Error::Domain);
+    }
+    let q = CaloricLinearization::new(branch, p, target, kind)?;
+    Ok((q.point(), q.directional(dp, dtarget)?))
+}
+
 pub fn surface_tension(t: f64, dt: f64) -> Result<(f64, f64), Error> {
     let mut value = 0.;
     let mut direction = 0.;
@@ -273,3 +466,5 @@ impl leitbild_operating_plant::hot_spine::Properties for If97 {
         })
     }
 }
+#[cfg(feature = "ida")]
+pub mod ida;

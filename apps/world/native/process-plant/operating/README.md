@@ -29,21 +29,28 @@ requirement of this operating kernel.
   store per assembly, three algebraic surfaces per material half and reciprocal
   core/guide/fitting/plenum/SG heat laws with current property directions.
 - Pure-water separated liquid/steam and equilibrium SG charts, exact absence,
-  Stefan conversion and opposite phase-volume work. These local equations do
-  not implement a PZR mixture, connected phase event or full pressure closure.
+  Stefan conversion and opposite phase-volume work. Local elimination supplies
+  pressure/phase-volume rates from actual retained stocks and heat receipts;
+  this is not itself an event integrator or a qualified connected phase event.
 - Current-material pump, friction and gravity force/work ports on the actual
   circulation graph. The selected bounded low-Mach thermal convention does not
   claim exact coolant kinetic/gravitational feedback into thermal stocks.
-- Finite liquid surge-line storage and reciprocal current-donor mass, thermal
+- Finite liquid surge-line mass/energy storage and reciprocal current-donor mass, thermal
   enthalpy and boron receipts, with independent inlet/outlet currents and its
-  own thermodynamic pressure. This does not supply its momentum equation.
+  own thermodynamic pressure.
 - Ten-region PZR phase-specific advection, bulk/contrast thermal conversion,
-  interphase/solid drag, gravity and partial molecular face transport. Supplied
-  face currents and nodal velocities are not a closed pressure/inertia chart.
+  interphase/solid drag and partial molecular face transport. Gravity belongs
+  once to the local face mechanics, not to a second nodal force source.
   Exact zero-slip heat-transfer values retain their physical square-root cusp;
   the explicitly flagged coefficient direction there is inexact, not smoothed.
   Finite phase-receipt arithmetic exposes volume defects and cannot replace
   event roots, post-event EOS recovery or active-row consistency.
+- Coarse local-pressure mechanics on the actual 38 volumes and 48 connections:
+  finite retained M/U, local EOS constraints, physical section/radial inertia
+  integrals, well-balanced pressure/gravity and current-donor phase transport.
+  Generalized hydraulic impulse is not length times upwind mass current. Nodal
+  velocity and nonpressure force use the same virtual-work projection, without
+  a duplicate nodal momentum bank. Constituent checks are not advancement.
 
 Compile immutable coefficients/topology once; evaluate into caller-owned
 buffers without stage allocation. Signed finite Newton trials are distinct
@@ -68,15 +75,17 @@ not the first module's replaced `7R` regional inventory. It also records the
 uniform two-metre emission approximation and unqualified physical domains.
 
 There are no default plant coefficients, prescribed successful outcomes,
-replacement water-property formulation, solver wrapper or live Pack installation here.
+replacement water-property formulation or live Pack installation here.
 Core tests use explicit synthetic equation fixtures; separate opt-in checks
 consume the actual owner-generated package. Neither qualifies a connected LD-01.
 
 ## Actual hot preparation
 
 The [hot-reference owner](https://leitbild.app/wiki?path=world%2Fpacks%2Fprocess-plant%2Freference-designs%2Fld-01%2Fmodel%2Foperating-hot-reference.md)
-documents the quantitative source, finite 30-day material history, 26 primary
-water owners and 2,710 finite solid/helium/SG-metal caloric stores. Maintained
+documents the quantitative source, finite 30-day material history and 2,710
+finite solid/helium/SG-metal caloric stores. Its original 26 primary water owners
+were replaced by the disjoint HOT.A carving: 27 primary owners, one finite SURGE
+and ten PZR regions in the current 38-volume mechanics packet. Maintained
 IF97 supplies preparation properties through the existing narrow adapter;
 neither the parent fine crate nor its solver/checkpoint is used.
 
@@ -101,10 +110,11 @@ This binary advances **no simulated time**. Actual mechanical/thermal law blocks
 now exist. The [connected current-state subset](https://leitbild.app/wiki?path=world%2Fpacks%2Fprocess-plant%2Freference-designs%2Fld-01%2Fmodel%2Foperating-hot-spine.md)
 composes current source, material/history, finite thermal and primary continuity
 equations, with fixed-stock surface initialization and current input directions.
-It is not complete unit `F(t,y,ydot)`: momentum/inventory/PZR composition, phase
-events, stock IDA/KLU integration, real actuation/acquisition and Grid remain
-joins—not hidden fixtures, imposed successful outcomes or measured whole-plant
-throughput.
+It is not complete unit `F(t,y,ydot)`: the separate local-pressure mechanical
+pilot now composes inventory/PZR mechanics through stock IDA/KLU, but that
+advancing assembly does not yet include this nuclear/thermal operator. Full
+phase-event qualification, real actuation/acquisition and Grid remain joins—not
+hidden fixtures, imposed successful outcomes or measured whole-plant throughput.
 SG fluid charts are checked by the preparation helper/tests; the native package
 currently consumes SG metal, not connected SG fluid evolution.
 
@@ -153,8 +163,42 @@ transport/cp/expansion coefficient directions use disclosed local inexact probes
 The owner-approved [energy reduction](https://leitbild.app/wiki?path=world%2Fpacks%2Fprocess-plant%2Freference-designs%2Fengineering%2Fdevelopment%2Fdecisions%2F0012-bounded-low-mach-energy.md)
 pays delivered shaft power once into finite pump water, without a second friction
 heater. Diagnostic fluid K and omitted mechanical feedback require local output
-budgets before A3. This approval does not admit the two-main/five-split dynamics
-or guarantee precise PZR regulation. No acoustic research campaign is required.
+budgets before A3. [Decision 0013](https://leitbild.app/wiki?path=world%2Fpacks%2Fprocess-plant%2Freference-designs%2Fengineering%2Fdevelopment%2Fdecisions%2F0013-coarse-local-pressure.md)
+replaces the unadmitted common-pressure mechanics with this same 38-volume
+local-pressure network. It does not guarantee precise PZR regulation or admit
+connected advancement before the phase and performance gates pass. No finer
+acoustic mesh or acoustic research campaign is required.
+
+The optional `water-ffi` feature `ida` adds original narrow ABI glue to explicitly
+selected, unmodified SUNDIALS 7.5.0 IDA/KLU. Set
+`LD01_OPERATING_SUNDIALS_PREFIX` to the verified absolute installation prefix.
+It checks the double/64-bit-index ABI and runtime version, contains callback
+panics, and fail-stops on fatal callbacks or failed solver operations. Observation
+requests do not force integration steps; `stop_at` names an actual final/event
+boundary. It does not import the parent research driver or its solver patches.
+The opt-in `actual_local_flow` test is a mechanical pilot, not the full
+nuclear/thermal/SG trajectory or whole-plant throughput evidence.
+
+The pilot retains 328 coordinates: 38 local pressures, 76 phase masses,
+76 phase energies, 38 liquid tracer amounts, 96 phase-path impulses and four
+rotor momenta. All use the actual 38-volume/48-connection packet. Its current
+two-second advancement gate is **failing**, not skipped into success: stock
+IDA exhausts its per-call step allowance at 0.05504 simulated seconds.
+The wiki readiness owner records the measured recurring cost and pressure-error
+diagnosis. Do not raise that allowance or expand plant scope to hide the failure.
+
+Property inversion values are reused only within one Jacobian build, keyed by
+the exact current pressure, caloric target and phase. Current directions are
+still evaluated; no value survives into another trial or matrix. Physical
+absence remains zero M/U. The pilot retains and reports tiny raw zero-mass
+energy defects against the existing numerical error scales, without clipping,
+seeding mass or querying absent-phase properties. Significant defects fail.
+
+Read-only IDA history/error getters do not change steps or solver settings.
+Requested-time output may differ from the retained internal endpoint; inspect
+the latter through `IDAGetDky(tn,0/1)` into independent buffers, not aliased
+`IDAGetCurrentY/Yp` output storage. These observations are diagnostics, not
+permission to suppress pressure error control without physical qualification.
 
 Native property/package tests are opt-in through `LD01_WIKI_ROOT`,
 `LD01_IF97_DIRECTORY` and `LD01_OPERATING_PREPARATION`. Ordinary Bun/application
@@ -173,9 +217,9 @@ bun run tests/build-boundary.ts
 
 The build-boundary check examines Cargo's actual dependency graph. Core tests
 must work without the parent crate's property backend, private SUNDIALS patch
-or fine-model preparation. The next solver join is maintained stock IDA/KLU
-through narrow FFI after the bounded compatibility decision, not the previous
-fine research driver.
+or fine-model preparation. The solver join uses maintained stock IDA/KLU through
+this narrow FFI, not the previous fine research driver. Boundary tests do not
+qualify the composed plant residual or its sparse Jacobian.
 
 ## Progress and change control
 
