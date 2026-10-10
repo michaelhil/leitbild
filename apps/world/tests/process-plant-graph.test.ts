@@ -39,9 +39,10 @@ describe('process plant model composition', () => {
     // then must be restarted. Changed again on 2026-10-10, approved by the
     // owner, when the reactor protection gained its loop delta-T channels
     // and the accumulators came to inject until their gas pressure meets the
-    // coolant's, and again when the high-head SI pumps came to pump against
-    // the coolant pressure; PWR Runs checkpointed before then must be restarted.
-    expect(system.modelDigest).toBe('c0a5f7b4f92e8a39ccf6cddf169c6505b6019778c2715dd32dbb0a365b7d9a72')
+    // coolant's, the high-head SI pumps came to pump against the coolant
+    // pressure and the PORV gained its block valve; PWR Runs checkpointed
+    // before then must be restarted.
+    expect(system.modelDigest).toBe('a9d521ae1e66c86822e76471bdcd4cfab415d9bfb6286be7b55115538d498128')
     const running = createProcessPlantRuntime({ system })
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))
