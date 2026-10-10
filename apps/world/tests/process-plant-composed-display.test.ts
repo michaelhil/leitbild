@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { embeddedViewPublicationSchema } from '@leitbild/contracts'
+import { embeddedViewContentSchema, embeddedViewPublicationSchema } from '@leitbild/contracts'
 import type { IsoTimestamp } from '../src/core/model/index.ts'
 import {
   answerProcessPlantQuery,
@@ -111,6 +111,30 @@ describe('world.process-plant.display.compose', () => {
     // At the 55 % program the high alarm is nearer than the low one.
     expect(margins[0]).toMatch(/^SG-[AB]-LVL-NR: [0-9.]+ %, [0-9.]+ % below HI ALM 75 %$/)
     expect(runtime.checkpoint()).toEqual(before)
+  })
+
+  test('says what the view shows in the terms an answer may cite, and what it leads with', () => {
+    const result = ask('world.process-plant.display.compose', {
+      ...composition([{ ref: 'SG-B-LVL-NR', role: 'primary' }, { ref: 'SG-A-LVL-NR', role: 'context' }]),
+      panels: [
+        { kind: 'trend', horizon: '10m', signals: [{ ref: 'SG-B-LVL-NR', role: 'primary' }, { ref: 'SG-A-LVL-NR', role: 'context' }] },
+        { kind: 'alarms', scope: 'related' },
+      ],
+    }) as { shows: ReadonlyArray<string>; margins: ReadonlyArray<string>; viewContent: unknown }
+    const content = embeddedViewContentSchema.parse(result.viewContent)
+    const level = content.items.find(item => item.names.includes('SG-B-LVL-NR'))!
+    expect(level.names).toEqual(expect.arrayContaining(['sgB.levelPercent', 'Steam generator level']))
+    expect(level.history).toBe(true)
+    // Its current value and the LO TRIP 20 % and LO ALM 30 % lines, as the display shows them.
+    expect(level.values).toEqual([{ value: 55, unit: '%' }])
+    expect(level.limits).toEqual(expect.arrayContaining([{ value: 20, unit: '%' }, { value: 30, unit: '%' }]))
+    expect(content.items.at(-1)!.names[0]).toContain('Active alarms and trips')
+    // The display leads with the first margin.
+    expect(content.lead!.reason).toBe(result.margins[0]!)
+    expect(result.margins[0]!.startsWith(content.items[content.lead!.item]!.names[0]!)).toBe(true)
+    // A Plant that has not run yet: the axis reaches back the least a trend spans, and says so.
+    expect(content.span).toEqual({ shownMs: 60_000, horizonMs: 600_000 })
+    expect(result.shows[0]).toStartWith("Live trend of the last 1 min (the Run's history so far; it widens to 10m as the Run continues)")
   })
 
   test('rejects every issue at once with did-you-mean suggestions and never repairs', () => {
@@ -528,6 +552,15 @@ describe('a display shows what its question is about', () => {
     expect(() => ask('world.process-plant.display.compose', display(['dieselGeneratorA', 'auxFeedwaterPumpMotor'], [{ kind: 'mimic', from: ['dieselGeneratorA'], to: ['auxFeedwaterPumpMotor'] }]))).not.toThrow()
     // A signal drawn on a symbol counts as shown.
     expect(() => ask('world.process-plant.display.compose', display(['SG-B-LVL-NR'], [{ kind: 'mimic', to: ['sgB'], services: ['feedwater'] }]))).not.toThrow()
+  })
+
+  test('a drawing says what an answer may cite of it: each item by its label and id, its drawn state and values', () => {
+    const result = ask('world.process-plant.display.compose', display(['sgB'], [{ kind: 'mimic', to: ['sgB'], services: ['feedwater'] }])) as { viewContent: unknown }
+    const content = embeddedViewContentSchema.parse(result.viewContent)
+    const generator = content.items.find(item => item.names.includes('sgB'))!
+    expect(generator.state).toStartWith('level ')
+    expect(generator.history).toBe(false)
+    expect(content.span).toBeNull()
   })
 
   test('a service or loop is a subject as plants.list names it', () => {

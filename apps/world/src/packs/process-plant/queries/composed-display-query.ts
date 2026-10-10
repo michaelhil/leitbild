@@ -1,9 +1,9 @@
 import { z } from 'zod'
-import { EMBEDDED_VIEW_MAX_HEIGHT, embeddedViewPublicationSchema } from '@leitbild/contracts'
+import { EMBEDDED_VIEW_MAX_HEIGHT, embeddedViewContentSchema, embeddedViewPublicationSchema } from '@leitbild/contracts'
 import { idSchema, type IsoTimestamp, type ObjectId, type OperationalObject } from '../../../core/model/index.ts'
 import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import { rejectCapabilityInput, rejectCapabilityTarget } from '../../../simulation/capability-rejection.ts'
-import { variablePathSchema } from '../graph/index.ts'
+import { variablePathSchema, type VariablePath } from '../graph/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { processPlantSignalQuality } from '../signals.ts'
 import { processPlantOperatingMode } from '../runtime/index.ts'
@@ -22,6 +22,8 @@ import {
   compileOverviewDisplay,
   type CompiledComposedDisplay,
   type OverviewView,
+  composedDisplayContent,
+  shownQuantity,
   composedDisplayShows,
   composedDisplayMargins,
   composedDisplaySignals,
@@ -105,6 +107,20 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
       const snapshot = system.runtime.readVariableSnapshot(path)
       return { path, value: snapshot.value, quality: processPlantSignalQuality(snapshot).status }
     }))
+    const read = (path: VariablePath) => system.runtime.readVariableSnapshot(path).value
+    // The trend's axis reaches back as far as the Plant has run, up to its horizon.
+    const historyMs = system.runtime.elapsedMs()
+    const drawn = mimics.flatMap(mimic => mimic.items.map(item => ({
+      id: mimicItemId(system.plant.graph, item.binding.item),
+      label: item.binding.label,
+      state: itemLook(item.binding, now).words || 'no state drawn',
+      // The values written beside it, and what they measure.
+      values: item.rows.flatMap(row => {
+        if (row.kind !== 'value') return []
+        const snapshot = system.runtime.readVariableSnapshot(row.path as VariablePath)
+        return typeof snapshot.value === 'number' ? shownQuantity(snapshot.value, row.unit).map(quantity => ({ quantity, label: snapshot.label })) : []
+      }),
+    })))
     return {
       plantId: display.plantId,
       issuedAt: simulationTime,
@@ -117,12 +133,19 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
       // The display header's clock, so the answer gives times as the display does.
       simulationClock: simulationClock(Date.parse(simulationTime)),
       signals: composedDisplaySignals(display),
-      shows: composedDisplayShows(display),
-      margins: composedDisplayMargins(display, path => system.runtime.readVariableSnapshot(path).value),
+      shows: composedDisplayShows(display, historyMs),
+      margins: composedDisplayMargins(display, read),
       warnings: composedDisplayWarnings(display),
       // What the mimic draws now, so the answer states equipment exactly as the operator sees it.
-      equipment: mimics.flatMap(mimic => mimic.items
-        .map(item => ({ id: mimicItemId(system.plant.graph, item.binding.item), label: item.binding.label, state: itemLook(item.binding, now).words || 'no state drawn' }))),
+      equipment: drawn.map(({ id, label, state }) => ({ id, label, state })),
+      // What the view shows, for Agents to check the answer that presents it against.
+      viewContent: embeddedViewContentSchema.parse(composedDisplayContent(display, read, historyMs, drawn.map(item => ({
+        names: [...new Set([item.label, item.id, ...item.values.map(value => value.label)])],
+        values: item.values.map(value => value.quantity),
+        limits: [],
+        history: false,
+        state: item.state,
+      })))),
     }
   }
 
@@ -170,7 +193,7 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
         state: JSON.stringify(overviewDisplayStateSchema.parse({ overview: { plantId: display.plantId } })),
       }),
       simulationClock: simulationClock(Date.parse(simulationTime)),
-      shows: composedDisplayShows(display),
+      shows: composedDisplayShows(display, system.runtime.elapsedMs()),
       equipment: mimics.flatMap(mimic => mimic.items
         .map(item => ({ id: mimicItemId(system.plant.graph, item.binding.item), label: item.binding.label, state: itemLook(item.binding, now).words || 'no state drawn' }))),
     }

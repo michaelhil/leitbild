@@ -1,5 +1,6 @@
 import { SUGGESTION_COUNT, editDistance, letters, matchedWords, normalized, words } from './name-matching.ts'
 import { z } from 'zod'
+import type { EmbeddedViewContent } from '@leitbild/contracts'
 import { recordingSeriesIdFor } from '../../../core/model/index.ts'
 import type {
   CompiledPlantGraph,
@@ -37,7 +38,7 @@ import {
   type ComposedPanelShape,
   type ComposedPanelSize,
 } from './composition.ts'
-import { formatQuantity, marginText, nearestThresholdMargin, thresholdName } from './display-text.ts'
+import { displayValue, formatQuantity, marginText, nearestThresholdMargin, thresholdName, trendSpanMs, unitLabel } from './display-text.ts'
 import { compileMimic, compileMimicScope, groupLabel, type MimicCompileResult } from './mimic/compile-mimic.ts'
 import { MIMIC_MAX_WIDTH } from './mimic/mimic-model.ts'
 import { chatMimicProfile, detailMimicProfile, overviewMimicProfile } from './mimic/profiles.ts'
@@ -1007,12 +1008,22 @@ const sparklinesShow = (pens: ReadonlyArray<ComposedDisplayPen>, sparklineMs: nu
   return `Where the lead values stand beside the drawing, each recorded one has a sparkline of its last ${sparklineMs / 60_000} min, for direction and rate only (no value scale)${unrecorded.length === 0 ? '' : `; not recorded by this Run, so without one: ${unrecorded.map(pen => pen.name).join(', ')}`}`
 }
 
+const minutes = (ms: number): string => `${Number((ms / 60_000).toFixed(1))} min`
+
+// While the Run's history is shorter than the horizon, the axis reaches only
+// as far back as the history: say so, or an answer promises a window the
+// operator does not see (evaluation run 19: "10-minute window" over a 1 min axis).
+const trendSpanText = (panel: ComposedTrendPanel, historyMs: number): string => {
+  const shown = trendSpanMs(panel.horizonMs, historyMs)
+  return shown === panel.horizonMs ? `the last ${panel.horizon}` : `the last ${minutes(shown)} (the Run's history so far; it widens to ${panel.horizon} as the Run continues)`
+}
+
 /** Plain statements of what the view shows, so the agent's text need not repeat it. */
-export const composedDisplayShows = (display: CompiledComposedDisplay): ReadonlyArray<string> => display.panels.flatMap(panel => {
+export const composedDisplayShows = (display: CompiledComposedDisplay, historyMs: number): ReadonlyArray<string> => display.panels.flatMap(panel => {
   if (panel.kind === 'trend') {
     const strips = panel.strips.length === 1 ? '' : ` in ${panel.strips.length} stacked strips (one per measurement)`
     return [
-      ...(panel.strips.length === 0 ? [] : [`Live trend of the last ${panel.horizon}${strips}: ${panel.strips.flatMap(strip => strip.pens).map(signalName).join('; ')}`]),
+      ...(panel.strips.length === 0 ? [] : [`Live trend of ${trendSpanText(panel, historyMs)}${strips}: ${panel.strips.flatMap(strip => strip.pens).map(signalName).join('; ')}`]),
       ...(panel.live.length === 0 ? [] : [`Current values only, not recorded by this Run (no history to describe): ${panel.live.map(signalName).join('; ')}`]),
       ...panel.strips.flatMap(strip => strip.thresholds.map(threshold => thresholdText(threshold, strip.unit))),
     ]
@@ -1037,19 +1048,69 @@ export const composedDisplayShows = (display: CompiledComposedDisplay): Readonly
 export const composedDisplayMargins = (
   display: CompiledComposedDisplay,
   read: (path: VariablePath) => unknown,
-): ReadonlyArray<string> => {
-  const pens = [...new Map(display.panels.flatMap(composedPanelPens).map(pen => [pen.path, pen])).values()]
-  return pens
-    .flatMap(pen => {
-      const value = read(pen.path)
-      if (typeof value !== 'number') return []
-      const margin = nearestThresholdMargin(value, pen.thresholds)
-      if (margin === null) return []
-      const relative = margin.margin / Math.max(Math.abs(margin.threshold.value), Number.EPSILON)
-      return [{ relative, text: `${pen.name}: ${formatQuantity(value, pen.unit)}, ${marginText(margin, pen.unit)}` }]
-    })
-    .sort((left, right) => left.relative - right.relative)
-    .map(entry => entry.text)
+): ReadonlyArray<string> => rankedMargins(display, read).map(entry => entry.text)
+
+/** Each signal the view shows once, in display order. */
+const shownPens = (display: CompiledComposedDisplay): ReadonlyArray<ComposedDisplayPen> =>
+  [...new Map(display.panels.flatMap(composedPanelPens).map(pen => [pen.path, pen])).values()]
+
+// Past a limit first, then nearest relative to the limit: the first is what
+// the display leads with.
+const rankedMargins = (
+  display: CompiledComposedDisplay,
+  read: (path: VariablePath) => unknown,
+): ReadonlyArray<{ readonly pen: ComposedDisplayPen; readonly text: string }> => shownPens(display)
+  .flatMap(pen => {
+    const value = read(pen.path)
+    if (typeof value !== 'number') return []
+    const margin = nearestThresholdMargin(value, pen.thresholds)
+    if (margin === null) return []
+    const relative = margin.margin / Math.max(Math.abs(margin.threshold.value), Number.EPSILON)
+    return [{ pen, relative, text: `${pen.name}: ${formatQuantity(value, pen.unit)}, ${marginText(margin, pen.unit)}` }]
+  })
+  .sort((left, right) => left.relative - right.relative)
+
+/** A native value as the view shows it, to six digits, or nothing for a state. */
+export const shownQuantity = (value: number, unit: string): EmbeddedViewContent['items'][number]['values'] =>
+  unitLabel(unit) === '' ? [] : [{ value: Number(displayValue(value, unit).toPrecision(6)), unit: unitLabel(unit) }]
+
+const penNames = (pen: ComposedDisplayPen): Array<string> =>
+  [...new Set([pen.name, ...(pen.tagId === undefined ? [] : [pen.tagId]), String(pen.path), pen.label, pen.described])]
+
+/**
+ * What the view shows in the terms an answer may cite (the contract's
+ * embedded view content): each signal with its current value and limits, the
+ * equipment its mimics draw (from the caller, which reads their states), the
+ * related or plant alarms, how far back the trend reaches now, and the signal
+ * the display leads with, which the answer must name.
+ */
+export const composedDisplayContent = (
+  display: CompiledComposedDisplay,
+  read: (path: VariablePath) => unknown,
+  historyMs: number,
+  equipment: EmbeddedViewContent['items'],
+): EmbeddedViewContent => {
+  const pens = shownPens(display)
+  const trended = new Set(display.panels.flatMap(panel => panel.kind === 'trend' ? panel.strips.flatMap(strip => strip.pens.filter(pen => pen.recorded).map(pen => pen.path)) : []))
+  const items = pens.map(pen => {
+    const value = read(pen.path)
+    return {
+      names: penNames(pen),
+      values: typeof value === 'number' ? shownQuantity(value, pen.unit) : [],
+      limits: pen.thresholds.flatMap(threshold => shownQuantity(threshold.value, pen.unit)),
+      history: trended.has(pen.path),
+    }
+  })
+  const alarms = display.panels.flatMap(panel => panel.kind === 'alarms' && (panel.scope === 'plant' || panel.ruleIds.length > 0)
+    ? [{ names: [panel.scope === 'plant' ? 'Active alarms and trips of the Plant' : 'Active alarms and trips of the displayed signals and equipment'], values: [], limits: [], history: false }]
+    : [])
+  const trend = display.panels.find(panel => panel.kind === 'trend')
+  const lead = rankedMargins(display, read)[0]
+  return {
+    items: [...items, ...equipment, ...alarms],
+    span: trend === undefined ? null : { shownMs: trendSpanMs(trend.horizonMs, historyMs), horizonMs: trend.horizonMs },
+    lead: lead === undefined ? null : { item: pens.indexOf(lead.pen), reason: lead.text },
+  }
 }
 
 export const composedDisplayWarnings = (display: CompiledComposedDisplay): ReadonlyArray<string> => display.panels.flatMap(panel => {

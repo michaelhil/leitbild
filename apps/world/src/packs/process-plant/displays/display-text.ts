@@ -89,3 +89,17 @@ export const marginText = (margin: ThresholdMargin, unit: string): string => {
 
 /** Simulation time of day as the display header shows it: "10:01:00". */
 export const simulationClock = (ms: number): string => new Date(ms).toISOString().slice(11, 19)
+
+// A trend never spans less than this, so a Run's first minute still reads as a curve.
+const MIN_TREND_SPAN_MS = 60_000
+const TREND_SPAN_STEP_MS = 30_000
+
+/**
+ * The time a trend's axis spans: its horizon, or the Run's history rounded up
+ * to 30 s while that is shorter, so a young Run is not drawn as a mostly
+ * hatched plot. The compose result states it as the embedded view draws it.
+ */
+export const trendSpanMs = (horizonMs: number, historyMs: number): number => {
+  const history = Math.ceil(Math.max(0, historyMs) / TREND_SPAN_STEP_MS) * TREND_SPAN_STEP_MS
+  return Math.min(horizonMs, Math.max(MIN_TREND_SPAN_MS, history))
+}
