@@ -8,7 +8,7 @@ import { balanceOfPlantBehaviorDefinitions } from './balance-of-plant-behaviors.
 import { containmentBehaviorDefinitions } from './containment-behaviors.ts'
 import { electricalBehaviorDefinitions, electricalInitialReconciliationDefinitions } from './electrical-behaviors.ts'
 import { heatExchangerBehaviorDefinitions } from './heat-exchanger-behaviors.ts'
-import { junctionBehaviorDefinitions } from './junction-behaviors.ts'
+import { junctionBehaviorDefinitions, junctionInitialReconciliationDefinitions } from './junction-behaviors.ts'
 import { pressurizerBehaviorDefinitions, pressurizerInitialReconciliationDefinitions } from './pressurizer-behaviors.ts'
 import { pumpBehaviorDefinitions, pumpInitialReconciliationDefinitions } from './pump-behaviors.ts'
 import { reactorBehaviorDefinitions, reactorInitialReconciliationDefinitions } from './reactor-behaviors.ts'
@@ -75,6 +75,7 @@ export const componentInitialReconciliationDefinitions: ReadonlyArray<ComponentI
   ...electricalInitialReconciliationDefinitions,
   ...pressurizerInitialReconciliationDefinitions,
   ...reactorInitialReconciliationDefinitions,
+  ...junctionInitialReconciliationDefinitions,
 ]
 
 /**
