@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { ComposedDisplayThreshold } from '../src/packs/process-plant/displays/ic-thresholds.ts'
 import { SPARKLINE_SIZE, sparkline, sparklineText, sparklineWindowText } from '../src/ui/embed/composed-display/sparkline.ts'
-import type { TrendPoint } from '../src/ui/embed/composed-display/trend-geometry.ts'
+import type { TrendPoint } from '../src/packs/process-plant/displays/trend-reading.ts'
 
 const now = 1_000_000
 const windowMs = 600_000
