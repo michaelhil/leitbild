@@ -92,6 +92,16 @@ describe('generated equipment mimics', () => {
     expect(mimic.summary.unmeasuredStates).toEqual(['PORV'])
   })
 
+  test('a lone pipe into a hub says where it enters when nothing is drawn at the hub\'s other alike ports', () => {
+    // Safety injection to loop C reaches the core at cold leg C only; the header's stub names the other legs.
+    const labels = (intent: MimicIntent) => generated(system, intent).items.map(item => item.binding.label)
+    expect(labels({ services: ['safetyInjection'], loops: ['C'] })).toContain('Core · cold leg C')
+    expect(labels({ services: ['primaryInjection'], loops: ['A'] })).toContain('Core · cold leg A')
+    // Several legs reached: the equipment on them tells them apart, and headers never list their branches.
+    expect(labels({ services: ['primaryCoolant'], loops: ['A'] })).toContain('Core')
+    expect(labels({ services: ['primaryCoolant'] }).filter(label => label.includes(' · '))).toEqual([])
+  })
+
   test('the same intent on the same model draws the same mimic', () => {
     const intent = { to: ['safetyBusA'] }
     expect(generated(system, intent).hash).toBe(generated(system, intent).hash)
