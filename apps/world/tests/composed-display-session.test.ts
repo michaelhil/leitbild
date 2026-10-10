@@ -189,8 +189,10 @@ describe('composed display session', () => {
     expect(calls).toEqual([])
     window.width = 1896
     window.height = 972
+    // A page that is not rendered gets no resize event; the view's clock asks.
+    await controller.sized()
     await controller.relayout()
-    expect(calls.filter(call => call.startsWith('view'))).toEqual(['view:1896x972'])
+    expect(calls.filter(call => call.startsWith('view'))).toEqual(['view:1896x972', 'view:1896x972'])
     expect(last().phase.kind).toBe('live')
     controller.close()
   })

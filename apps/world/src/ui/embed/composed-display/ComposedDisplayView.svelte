@@ -51,6 +51,7 @@
     const visibility = (): void => active.setVisible(document.visibilityState === 'visible')
     const clock = setInterval(() => {
       wallNow = Date.now()
+      void active.sized()
       if (systemFilter !== null && wallNow - lastInputWallMs > FILTER_IDLE_MS) systemFilter = null
     }, 1_000)
     // A unit overview is drawn for its window: once resizing settles, it is drawn again for the new size

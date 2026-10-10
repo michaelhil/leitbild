@@ -220,6 +220,17 @@ export const createComposedDisplaySession = (config: {
       startPolling()
     },
     interacted: (): void => { lastInteractionWallMs = wallNow() },
+    /**
+     * Draws a display that waited for its view to have a size, once it has
+     * one. A page that is not rendered gets no resize events, so the view
+     * also asks on its clock.
+     */
+    sized: async (): Promise<void> => {
+      if (closed || awaitingSize === null || !drawable()) return
+      const options = awaitingSize
+      awaitingSize = null
+      await start(options)
+    },
     /** A generated display is drawn again for the view's new size, or first drawn once the view has one; its samples carry on. */
     relayout: async (): Promise<void> => {
       if (closed || !drawable()) return
