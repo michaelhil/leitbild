@@ -180,3 +180,39 @@ describe('equipment opened from the unit overview', () => {
     expect(() => ask('world.process-plant.display.view', { plantId: system.plant.id, state: detailState(['nope']), size: fullHd })).toThrow(new RegExp(`^${system.plant.id} has no component nope$`))
   })
 })
+
+describe('the alarms a generated display annunciates', () => {
+  test('are the active ones and those that cleared unacknowledged; never shelved, suppressed or out of service, and never ones that have not fired', () => {
+    const base = plant()
+    const lifecycle = (id: string, phase: string, flags: { active: boolean; acknowledged: boolean; shelved?: boolean; suppressed?: boolean; outOfService?: boolean }) => ({
+      id, ruleId: id, kind: 'alarm', title: id, severity: 'warning', phase, firstOut: false,
+      shelved: false, suppressed: false, outOfService: false, ...flags,
+    })
+    const system = {
+      ...base,
+      protection: {
+        ...base.protection,
+        snapshot: () => ({
+          alarms: [
+            lifecycle('normal', 'normal', { active: false, acknowledged: false }),
+            lifecycle('active', 'activeUnacknowledged', { active: true, acknowledged: false }),
+            lifecycle('cleared', 'clearedUnacknowledged', { active: false, acknowledged: false }),
+            lifecycle('done', 'clearedAcknowledged', { active: false, acknowledged: true }),
+            lifecycle('shelved', 'shelved', { active: true, acknowledged: false, shelved: true }),
+            lifecycle('suppressed', 'suppressed', { active: true, acknowledged: false, suppressed: true }),
+            lifecycle('out', 'outOfService', { active: true, acknowledged: false, outOfService: true }),
+          ],
+          trips: [],
+        }),
+      },
+    } as unknown as ProcessPlantRuntimeInstance
+    const sample = answerProcessPlantQuery({
+      request: { capabilityId: 'world.process-plant.display.sample', input: { plantId: system.plant.id, paths: ['core.powerMw'], alarms: true } },
+      plants: new Map([[system.plant.id, system]]),
+      objects: new Map(),
+      simulationTime: '2026-10-09T10:00:00.000Z' as IsoTimestamp,
+      recordedSeriesIds: new Set(),
+    }) as { alarms: ReadonlyArray<{ id: string; active: boolean }> }
+    expect(sample.alarms.map(alarm => [alarm.id, alarm.active])).toEqual([['active', true], ['cleared', false]])
+  })
+})

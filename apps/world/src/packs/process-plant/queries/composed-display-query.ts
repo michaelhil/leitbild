@@ -219,7 +219,7 @@ export const answerProcessPlantComposedDisplayQuery = (config: {
       // Shelved, suppressed and out-of-service alarms annunciate nowhere; one
       // that cleared unacknowledged stays listed until it is acknowledged.
       alarms: [...protection.alarms, ...protection.trips]
-        .filter(lifecycle => !lifecycle.shelved && !lifecycle.suppressed && !lifecycle.outOfService && (lifecycle.active || !lifecycle.acknowledged))
+        .filter(lifecycle => !lifecycle.shelved && !lifecycle.suppressed && !lifecycle.outOfService && (lifecycle.active || lifecycle.phase === 'clearedUnacknowledged'))
         .map(lifecycle => ({
           id: lifecycle.id,
           ruleId: lifecycle.ruleId,
