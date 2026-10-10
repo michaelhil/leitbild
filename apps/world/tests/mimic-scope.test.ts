@@ -39,7 +39,8 @@ describe('mimic scope from the agent\'s intent', () => {
     expect(scope.names.map(name => name.via)).toEqual(['label', 'label', 'tag'])
     expect(scope.labels).toContain('AFW valve B')
     // A label as an operator writes it: any case, spaces or hyphens.
-    for (const [name, id] of [['safety bus A', 'safetyBusA'], ['motor-driven auxiliary feedwater pump', 'auxFeedwaterPumpMotor'], ['SG-B', 'sgB']] as const) {
+    // A long label without a designator is qualified by the one its short label carries (MD AFW A).
+    for (const [name, id] of [['safety bus A', 'safetyBusA'], ['motor-driven auxiliary feedwater pump', 'auxFeedwaterPumpMotor'], ['motor-driven auxiliary feedwater pump A', 'auxFeedwaterPumpMotor'], ['SG-B', 'sgB']] as const) {
       const [resolved] = drawn(graph, { to: [name], services: ['electricalPower', 'auxFeedwater', 'feedwater'] }).names
       expect(graph.components[resolved!.component]!.id).toBe(id as never)
     }

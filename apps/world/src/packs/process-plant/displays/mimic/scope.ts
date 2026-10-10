@@ -1,4 +1,4 @@
-import type { CompiledPlantGraph, CompiledProcessLink } from '../../graph/index.ts'
+import type { CompiledComponent, CompiledPlantGraph, CompiledProcessLink } from '../../graph/index.ts'
 import { carriersAt, downstreamLinks, linkCarrier, routeLinks, upstreamLinks } from '../../graph/index.ts'
 import { SUGGESTION_COUNT, letters, matchedWords, normalized, words } from '../name-matching.ts'
 
@@ -77,8 +77,20 @@ const groupMembers = (graph: CompiledPlantGraph, stems: ReadonlyArray<string>): 
 
 type ResolvedName = { readonly components: ReadonlyArray<number>; readonly via: 'id' | 'tag' | 'label' | 'group' }
 
-// A name is a component id, a tag measured on equipment (its owner), or its
-// label or short label, ignoring case, spaces and hyphens ("safety bus A",
+// What equipment is called: its label, its short label, and its label with
+// the designator its short label carries where the label has none ("Motor-
+// Driven Auxiliary Feedwater Pump A" for the pump whose short label is
+// "MD AFW A"): operators qualify the long name with the letter they know.
+const namesOf = (component: CompiledComponent): ReadonlyArray<string> => {
+  const label = component.label
+  const short = component.metadata?.presentation?.shortLabel
+  const designator = short === undefined || groupStem(short) === undefined ? undefined : short.trim().split(/\s+/).at(-1)!
+  const qualified = designator === undefined || groupStem(label) !== undefined ? [] : [`${label} ${designator}`]
+  return [label, ...(short === undefined ? [] : [short]), ...qualified]
+}
+
+// A name is a component id, a tag measured on equipment (its owner), or one
+// of its names (namesOf), ignoring case, spaces and hyphens ("safety bus A",
 // "SG-B"). The plural of what alike items' labels share names all of them
 // ("safety buses", "steam generators"). A tag on a pipe names the pipe's end
 // that the role points at: what a route starts from, or what it reaches.
@@ -98,8 +110,7 @@ const resolveName = (
     return { components: [role === 'from' ? link.fromComponentIndex : link.toComponentIndex], via: 'tag' }
   }
   const wanted = normalized(name)
-  const byLabel = graph.components.filter(component => [component.label, component.metadata?.presentation?.shortLabel]
-    .some(label => label !== undefined && normalized(label) === wanted))
+  const byLabel = graph.components.filter(component => namesOf(component).some(label => normalized(label) === wanted))
   if (byLabel.length === 1) return { components: [byLabel[0]!.index], via: 'label' }
   if (byLabel.length > 1) return { error: `"${name}" names ${byLabel.length} components; name one by its id`, didYouMean: byLabel.slice(0, SUGGESTION_COUNT).map(component => componentDescription(graph, component.index)) }
   const plural = groupMembers(graph, [wanted.replace(/ES$/, ''), wanted.replace(/S$/, '')].filter(stem => stem !== wanted))
