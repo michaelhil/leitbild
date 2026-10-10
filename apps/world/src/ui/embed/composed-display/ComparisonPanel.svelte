@@ -3,7 +3,8 @@
   import { composedDisplayLayout } from '../../../packs/process-plant/displays/composition.ts'
   import type { ComposedDisplaySample } from './composed-display-client.ts'
   import { displayValue, formatQuantity, formatValue, limitKindName, thresholdName } from '../../../packs/process-plant/displays/display-text.ts'
-  import { activeThreshold, median, ratePerMinute, rateText, rateWindowMs, windowText } from './panel-presenters.ts'
+  import { activeThreshold, limitAhead, median, ratePerMinute, rateText, rateWindowMs, windowText } from './panel-presenters.ts'
+  import { limitLabelRanks, stackLabels, type LabelSlot } from './limit-labels.ts'
   import { displayName, fitName } from './pen-style.ts'
   import { panelFont, textMeasure } from './text-measure.ts'
   import { paddedDomain, rawDomain, type TrendPoint, type ValueDomain } from './trend-geometry.ts'
@@ -59,15 +60,66 @@
   const lines = $derived(panel.thresholds.filter(threshold => threshold.kind !== 'control'))
   // The same 30 s window as a 10-minute trend's legend, so one signal never shows two rates.
   const RATE_WINDOW_MS = rateWindowMs(600_000)
+  const activeOf = (threshold: (typeof lines)[number]): string | null =>
+    threshold.ruleIds.some(ruleId => activeRuleIds.has(ruleId)) ? threshold.severity ?? 'warning' : null
+
+  // Limit names over the scale sit at their lines, pushed apart along the head
+  // with a leader where two lines are closer than their names are wide ("HI
+  // ALM 75" beside "HI TRIP 82"), so they never overlap. Only a head too
+  // narrow for all of them folds the least important into a count, with room
+  // measured for it (limit-labels.ts). Widths are measured bold, as an active
+  // limit is drawn.
+  const measureHead = textMeasure(panelFont(10.5, 700))
+  const HEAD_GAP = 8
+  const LINE_TOP = top - 6
+  const headName = (threshold: (typeof lines)[number]): string => thresholdName(threshold, panel.unit, { withUnit: false })
+  const aheadRuleIds = $derived(new Set(panel.pens.flatMap((pen, index) => {
+    const value = values[index]
+    const ahead = value === undefined ? null : limitAhead(value, ratePerMinute(series.get(String(pen.path)) ?? [], RATE_WINDOW_MS), pen.thresholds)
+    return ahead === null ? [] : [ahead.threshold.ruleId]
+  })))
+  const heads = $derived.by(() => {
+    if (domain === null) return []
+    const ranks = limitLabelRanks(lines.map(threshold => ({
+      key: threshold.ruleId,
+      value: threshold.value,
+      active: activeOf(threshold),
+      ahead: threshold.ruleIds.some(ruleId => aheadRuleIds.has(ruleId)),
+    })), center ?? undefined)
+    const tight = lines.reduce((sum, threshold) => sum + measureHead(headName(threshold)) + HEAD_GAP, 0) > width
+    const slots = lines.map((threshold): LabelSlot => {
+      const size = measureHead(`${headName(threshold)}${tight ? ' (+9)' : ''}`) + HEAD_GAP
+      return { key: threshold.ruleId, want: x(threshold.value) - size / 2, size, group: threshold.direction, rank: ranks.get(threshold.ruleId)! }
+    })
+    const byKey = new Map(lines.map(threshold => [threshold.ruleId, threshold]))
+    const sizes = new Map(slots.map(slot => [slot.key, slot.size]))
+    return stackLabels(slots, { start: 0, end: width }).map(label => {
+      const named = byKey.get(label.key)!
+      const folded = label.folded.map(key => byKey.get(key)!)
+      return {
+        key: label.key,
+        lineX: x(named.value),
+        x: label.start + sizes.get(label.key)! / 2,
+        text: `${headName(named)}${folded.length > 0 ? ` (+${folded.length})` : ''}`,
+        title: [named, ...folded].map(threshold => `${thresholdName(threshold, panel.unit)}: ${threshold.label}${threshold.modeLabel === undefined ? '' : `, only in ${threshold.modeLabel}`}`).join('\n'),
+        active: activeOf(named) ?? folded.map(activeOf).find(active => active !== null) ?? null,
+      }
+    })
+  })
 </script>
 
 <div class="comparison" bind:clientWidth={width}>
   <svg {width} {height} role="img" aria-label={`Comparison now: ${panel.pens.map((pen, index) => `${displayName(pen)} ${values[index] === undefined ? 'no value' : formatQuantity(values[index]!, panel.unit)}`).join('; ')}`}>
     {#if domain !== null}
       {#each lines as threshold (threshold.ruleId)}
-        {@const active = threshold.ruleIds.some(ruleId => activeRuleIds.has(ruleId)) ? threshold.severity ?? 'warning' : null}
-        <line class="threshold" class:qualified={threshold.modeLabel !== undefined} x1={x(threshold.value)} x2={x(threshold.value)} y1={top - 6} y2={height}><title>{threshold.label}</title></line>
-        <text class={`head ${active === null ? '' : `active-${active}`}`} x={x(threshold.value)} y="12" text-anchor="middle">{thresholdName(threshold, panel.unit, { withUnit: false })}</text>
+        <line class="threshold" class:qualified={threshold.modeLabel !== undefined} x1={x(threshold.value)} x2={x(threshold.value)} y1={LINE_TOP} y2={height}><title>{threshold.label}</title></line>
+      {/each}
+      {#each heads as head (head.key)}
+        {#if Math.abs(head.x - head.lineX) > 2}
+          <!-- A name pushed off its line keeps a leader down to it. -->
+          <polyline class="leader" points={`${head.x},15 ${head.lineX},${top - 1}`} />
+        {/if}
+        <text class={`head ${head.active === null ? '' : `active-${head.active}`}`} x={head.x} y="12" text-anchor="middle"><title>{head.title}</title>{head.text}</text>
       {/each}
       {#if center !== null}
         <line class="median" x1={x(center)} x2={x(center)} y1={top - 2} y2={height} />
@@ -114,5 +166,6 @@
   .median { stroke: var(--element-neutral-color); stroke-dasharray: 2 3; }
   .threshold { stroke: var(--element-neutral-color); stroke-width: 1.5; }
   .threshold.qualified { stroke-dasharray: 5 3; }
+  .leader { fill: none; stroke: var(--element-neutral-color); stroke-width: 1; stroke-opacity: 0.7; }
   .caption { margin: 0; font-size: 10.5px; color: var(--element-neutral-color); }
 </style>

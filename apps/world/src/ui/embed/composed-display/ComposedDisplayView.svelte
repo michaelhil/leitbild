@@ -293,6 +293,7 @@
               <TrendPanel
                 {strip}
                 horizon={panel.horizon}
+                horizonMs={panel.horizonMs}
                 {windowMs}
                 series={snapshot.series}
                 range={snapshot.ranges[index]?.[stripIndex] ?? null}

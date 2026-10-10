@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { fitName } from '../src/ui/embed/composed-display/pen-style.ts'
+import { limitLabelRanks, stackLabels } from '../src/ui/embed/composed-display/limit-labels.ts'
 import { activeThreshold, agoText, alarmAge, limitAhead, projectionBasis, returningText, median, minutesToThreshold, movingAwayFromLimits, rateChange, ratePerMinute, rateText, rateWindowMs, timeToThresholdText, visibleAlarms, annunciatorStates } from '../src/ui/embed/composed-display/panel-presenters.ts'
 import { formatQuantity, limitKindName, marginText, nearestThresholdMargin, simulationClock, thresholdName, unitLabel } from '../src/packs/process-plant/displays/display-text.ts'
 import { escalateLimits, type ComposedDisplayThreshold } from '../src/packs/process-plant/displays/ic-thresholds.ts'
@@ -214,5 +215,47 @@ describe('annunciator tiles', () => {
       // A quiet system keeps its place.
       { id: 'containment', name: 'Containment', active: 0, unacknowledged: 0, severity: null, trip: false, firstOut: false },
     ])
+  })
+})
+
+describe('limit labels', () => {
+  const slot = (key: string, want: number, rank: number, group = 'high', size = 12) => ({ key, want, size, group, rank })
+
+  test('stack at their lines, pushed clear of each other with every limit named, inside the room', () => {
+    // HI TRIP 82 and HI ALM 75 eight pixels apart (turbine-trip): both named, the lower one pushed down.
+    expect(stackLabels([slot('trip', 20, 1), slot('alarm', 28, 0)], { start: 0, end: 120 })).toEqual([
+      { key: 'trip', start: 20, folded: [] },
+      { key: 'alarm', start: 32, folded: [] },
+    ])
+    // Three labels at the bottom edge are pulled back up so the last ends inside the room.
+    expect(stackLabels([slot('a', 100, 0, 'low'), slot('b', 104, 1, 'low'), slot('c', 108, 2, 'low')], { start: 0, end: 120 }).map(label => label.start)).toEqual([84, 96, 108])
+    // Side by side along a scale, of different widths: "HI ALM 75" and "HI TRIP 82" never overlap.
+    const [alarm, trip] = stackLabels([slot('alarm', 300, 0, 'high', 60), slot('trip', 330, 1, 'high', 66)], { start: 0, end: 520 })
+    expect(trip!.start).toBeGreaterThanOrEqual(alarm!.start + 60)
+  })
+
+  test('fold only where the room is short, the least important into a neighbour of their own direction', () => {
+    // Room for three of four: the least important high limit folds into the other high one.
+    const placed = stackLabels([slot('hi-trip', 10, 3), slot('hi-alarm', 14, 1), slot('lo-alarm', 30, 0, 'low'), slot('lo-trip', 34, 2, 'low')], { start: 0, end: 36 })
+    expect(placed).toEqual([
+      { key: 'hi-alarm', start: 0, folded: ['hi-trip'] },
+      { key: 'lo-alarm', start: 12, folded: [] },
+      { key: 'lo-trip', start: 24, folded: [] },
+    ])
+    // Never into a low limit's label, though one sits nearer.
+    expect(stackLabels([slot('a', 0, 0, 'low'), slot('b', 12, 1), slot('c', 14, 3), slot('d', 15, 2, 'low')], { start: 0, end: 36 }).find(label => label.key === 'b')!.folded).toEqual(['c'])
+    // A room shorter than one label still names the most important limit.
+    expect(stackLabels([slot('a', 0, 1), slot('b', 0, 0)], { start: 0, end: 8 })).toEqual([{ key: 'b', start: -4, folded: ['a'] }])
+  })
+
+  test('keep active limits first, then the limit a value is heading for, then the nearest', () => {
+    const ranks = limitLabelRanks([
+      { key: 'hi-trip', value: 82, active: null, ahead: false },
+      { key: 'hi-alarm', value: 75, active: null, ahead: true },
+      { key: 'lo-alarm', value: 30, active: 'warning', ahead: false },
+      { key: 'lo-trip', value: 20, active: 'critical', ahead: false },
+      { key: 'far', value: 95, active: null, ahead: false },
+    ], 73)
+    expect([...ranks.entries()].sort((left, right) => left[1] - right[1]).map(([key]) => key)).toEqual(['lo-trip', 'lo-alarm', 'hi-alarm', 'hi-trip', 'far'])
   })
 })
