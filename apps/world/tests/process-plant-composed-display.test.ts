@@ -68,7 +68,6 @@ describe('I&C thresholds for composed displays', () => {
     const pressure = compiled.graph.signalBindingByTagId.get('PT-455' as never)!.path
     const { thresholds } = icThresholdsForSignal(compiled, pressure)
     expect(thresholds.map(threshold => [threshold.value, threshold.kind, threshold.modeLabel ?? null])).toEqual([
-      [12.7, 'trip', 'Power operation or Startup or Hot standby'],
       [13.8, 'trip', 'Power operation'],
       [14.8, 'alarm', null],
       [15.35, 'control', null],
@@ -78,6 +77,11 @@ describe('I&C thresholds for composed displays', () => {
       [16.18, 'trip', null],
       [16.35, 'trip', 'Power operation'],
     ])
+  })
+
+  test('list safety injection on pressure as combined, since a block below P-11 can hold it off', () => {
+    const pressure = compiled.graph.signalBindingByTagId.get('PT-455' as never)!.path
+    expect(icThresholdsForSignal(compiled, pressure).combinedRules.map(rule => rule.ruleId)).toContain('safety-injection-low-pzr-pressure')
   })
 
   test('list combined-condition rules instead of drawing them', () => {
@@ -434,7 +438,7 @@ describe('world.process-plant.display.view and sample', () => {
     const strip = view.display.panels[0]!.strips[0]!
     expect(strip.unit).toBe('MPa')
     expect(strip.pens[0]!.seriesId).toStartWith('series:')
-    expect(strip.pens[0]!.thresholds.length).toBe(9)
+    expect(strip.pens[0]!.thresholds.length).toBe(8)
   })
 
   test('view keeps rendering displays that later authoring rules would reject', () => {

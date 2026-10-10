@@ -71,6 +71,7 @@ const byKind: Readonly<Record<string, MimicPresentation | ((component: CompiledC
   electricalLoad: { element: 'not-drawn', reason: 'a load is where power ends; it is named where its supply stops' },
   deltaTProtectionChannel: { element: 'not-drawn', reason: 'an instrument channel moves no fluid; it is read through the values it computes' },
   rcsInventoryBalance: { element: 'not-drawn', reason: 'an instrument channel moves no fluid; it is read through the values it computes' },
+  safetyInjectionBlockLogic: { element: 'not-drawn', reason: 'protection logic moves no fluid; it is read through its permissive and block states' },
 }
 
 /** Kinds the table covers, for the completeness test against the component registry. */

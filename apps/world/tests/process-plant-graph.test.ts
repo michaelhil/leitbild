@@ -41,10 +41,10 @@ describe('process plant model composition', () => {
     // and the accumulators came to inject until their gas pressure meets the
     // coolant's, the high-head SI pumps came to pump against the coolant
     // pressure, the PORV gained its block valve, leaks came to be read
-    // from an RCS inventory balance and the pressurizer gained its code
-    // safety valves and relief header; PWR Runs checkpointed before then
-    // must be restarted.
-    expect(system.modelDigest).toBe('de6fe3fa7ec2a2f1d9ee158cef7271e65314652fe5a21e6f07be5bd5900a389e')
+    // from an RCS inventory balance, the pressurizer gained its code safety
+    // valves and relief header, and low-pressure SI became blockable below
+    // P-11; PWR Runs checkpointed before then must be restarted.
+    expect(system.modelDigest).toBe('5be0025a122e9971950b4198e2d429c70a6b8db247558c33bfd170b5f7a29b94')
     const running = createProcessPlantRuntime({ system })
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))

@@ -14,8 +14,9 @@ const readableIn = (plant: CompiledProcessPlant) => (path: VariablePath): boolea
 // containment's pressure; per-loop values stay on their loop's symbols), then
 // the first key value of each energy source and sink (a core's outlet
 // temperature, a generator's output). Unpublished signals are left out; so
-// are writable ones, which would show a demand, and the states symbols draw
-// (a turbine stop valve's position, a breaker's contacts).
+// are writable ones, which would show a demand, the states symbols draw
+// (a turbine stop valve's position, a breaker's contacts), and on-off states
+// (a protection block), which are no value to lead with.
 export const overviewKeyValues = (plant: CompiledProcessPlant): ReadonlyArray<VariablePath> => {
   const graph = plant.graph
   const ownerOf = (path: VariablePath) => {
@@ -27,7 +28,7 @@ export const overviewKeyValues = (plant: CompiledProcessPlant): ReadonlyArray<Va
     .flatMap(aspect => aspect.state === undefined ? [] : [aspect.state.path]))
   const tripWatched = icTripWatchedPaths(plant).filter(path => {
     const owner = ownerOf(path)
-    return owner !== undefined && owner.metadata?.loopId === undefined && !drawn.has(path)
+    return owner !== undefined && owner.metadata?.loopId === undefined && !drawn.has(path) && graph.signalBindingByPath.get(path)?.quantity !== 'boolean'
   })
   const energyEnds = graph.components
     .filter(component => component.semantics.energy.some(role => role.role === 'source' || role.role === 'sink'))
