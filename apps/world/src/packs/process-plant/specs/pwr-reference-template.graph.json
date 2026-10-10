@@ -3385,7 +3385,6 @@
         },
         {
           "path": "pressureMPa",
-          "label": "pressurizer-surge-line primary coolant pressure",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -3396,7 +3395,6 @@
         },
         {
           "path": "pressureDropMPa",
-          "label": "pressurizer-surge-line pressure drop",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -3407,7 +3405,6 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "pressurizer-surge-line leak area",
           "kind": "control",
           "discipline": "control",
           "writable": true,
@@ -3418,7 +3415,6 @@
         },
         {
           "path": "leakFlowKgPerS",
-          "label": "pressurizer-surge-line leak flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -3515,7 +3511,6 @@
         },
         {
           "path": "pressureMPa",
-          "label": "rcs-hot-leg-a primary coolant pressure",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -3526,7 +3521,6 @@
         },
         {
           "path": "pressureDropMPa",
-          "label": "rcs-hot-leg-a pressure drop",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -3537,7 +3531,6 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "rcs-hot-leg-a leak area",
           "kind": "control",
           "discipline": "control",
           "writable": true,
@@ -3548,7 +3541,6 @@
         },
         {
           "path": "leakFlowKgPerS",
-          "label": "rcs-hot-leg-a leak flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -3607,7 +3599,6 @@
         },
         {
           "path": "pressureMPa",
-          "label": "rcs-cold-leg-a primary coolant pressure",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -3618,7 +3609,6 @@
         },
         {
           "path": "pressureDropMPa",
-          "label": "rcs-cold-leg-a pressure drop",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -3629,7 +3619,6 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "rcs-cold-leg-a leak area",
           "kind": "control",
           "discipline": "control",
           "writable": true,
@@ -3640,7 +3629,6 @@
         },
         {
           "path": "leakFlowKgPerS",
-          "label": "rcs-cold-leg-a leak flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -3685,7 +3673,6 @@
         },
         {
           "path": "pressureMPa",
-          "label": "rcp-a-to-core primary coolant pressure",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -3696,7 +3683,6 @@
         },
         {
           "path": "pressureDropMPa",
-          "label": "rcp-a-to-core pressure drop",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -3707,7 +3693,6 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "rcp-a-to-core leak area",
           "kind": "control",
           "discipline": "control",
           "writable": true,
@@ -3718,7 +3703,6 @@
         },
         {
           "path": "leakFlowKgPerS",
-          "label": "rcp-a-to-core leak flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -3781,7 +3765,6 @@
         },
         {
           "path": "pressureMPa",
-          "label": "rcs-hot-leg-b primary coolant pressure",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -3792,7 +3775,6 @@
         },
         {
           "path": "pressureDropMPa",
-          "label": "rcs-hot-leg-b pressure drop",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -3803,7 +3785,6 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "rcs-hot-leg-b leak area",
           "kind": "control",
           "discipline": "control",
           "writable": true,
@@ -3814,7 +3795,6 @@
         },
         {
           "path": "leakFlowKgPerS",
-          "label": "rcs-hot-leg-b leak flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -3873,7 +3853,6 @@
         },
         {
           "path": "pressureMPa",
-          "label": "rcs-cold-leg-b primary coolant pressure",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -3884,7 +3863,6 @@
         },
         {
           "path": "pressureDropMPa",
-          "label": "rcs-cold-leg-b pressure drop",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -3895,7 +3873,6 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "rcs-cold-leg-b leak area",
           "kind": "control",
           "discipline": "control",
           "writable": true,
@@ -3906,7 +3883,6 @@
         },
         {
           "path": "leakFlowKgPerS",
-          "label": "rcs-cold-leg-b leak flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -3951,7 +3927,6 @@
         },
         {
           "path": "pressureMPa",
-          "label": "rcp-b-to-core primary coolant pressure",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -3962,7 +3937,6 @@
         },
         {
           "path": "pressureDropMPa",
-          "label": "rcp-b-to-core pressure drop",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -3973,7 +3947,6 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "rcp-b-to-core leak area",
           "kind": "control",
           "discipline": "control",
           "writable": true,
@@ -3984,7 +3957,6 @@
         },
         {
           "path": "leakFlowKgPerS",
-          "label": "rcp-b-to-core leak flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4047,7 +4019,6 @@
         },
         {
           "path": "pressureMPa",
-          "label": "rcs-hot-leg-c primary coolant pressure",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -4058,7 +4029,6 @@
         },
         {
           "path": "pressureDropMPa",
-          "label": "rcs-hot-leg-c pressure drop",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4069,7 +4039,6 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "rcs-hot-leg-c leak area",
           "kind": "control",
           "discipline": "control",
           "writable": true,
@@ -4080,7 +4049,6 @@
         },
         {
           "path": "leakFlowKgPerS",
-          "label": "rcs-hot-leg-c leak flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4139,7 +4107,6 @@
         },
         {
           "path": "pressureMPa",
-          "label": "rcs-cold-leg-c primary coolant pressure",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -4150,7 +4117,6 @@
         },
         {
           "path": "pressureDropMPa",
-          "label": "rcs-cold-leg-c pressure drop",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4161,7 +4127,6 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "rcs-cold-leg-c leak area",
           "kind": "control",
           "discipline": "control",
           "writable": true,
@@ -4172,7 +4137,6 @@
         },
         {
           "path": "leakFlowKgPerS",
-          "label": "rcs-cold-leg-c leak flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4217,7 +4181,6 @@
         },
         {
           "path": "pressureMPa",
-          "label": "rcp-c-to-core primary coolant pressure",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -4228,7 +4191,6 @@
         },
         {
           "path": "pressureDropMPa",
-          "label": "rcp-c-to-core pressure drop",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4239,7 +4201,6 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "rcp-c-to-core leak area",
           "kind": "control",
           "discipline": "control",
           "writable": true,
@@ -4250,7 +4211,6 @@
         },
         {
           "path": "leakFlowKgPerS",
-          "label": "rcp-c-to-core leak flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4313,7 +4273,6 @@
         },
         {
           "path": "pressureMPa",
-          "label": "rcs-hot-leg-d primary coolant pressure",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -4324,7 +4283,6 @@
         },
         {
           "path": "pressureDropMPa",
-          "label": "rcs-hot-leg-d pressure drop",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4335,7 +4293,6 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "rcs-hot-leg-d leak area",
           "kind": "control",
           "discipline": "control",
           "writable": true,
@@ -4346,7 +4303,6 @@
         },
         {
           "path": "leakFlowKgPerS",
-          "label": "rcs-hot-leg-d leak flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4405,7 +4361,6 @@
         },
         {
           "path": "pressureMPa",
-          "label": "rcs-hot-leg-e primary coolant pressure",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -4416,7 +4371,6 @@
         },
         {
           "path": "pressureDropMPa",
-          "label": "rcs-hot-leg-e pressure drop",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4427,7 +4381,6 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "rcs-hot-leg-e leak area",
           "kind": "control",
           "discipline": "control",
           "writable": true,
@@ -4438,7 +4391,6 @@
         },
         {
           "path": "leakFlowKgPerS",
-          "label": "rcs-hot-leg-e leak flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4497,7 +4449,6 @@
         },
         {
           "path": "pressureMPa",
-          "label": "rcs-hot-leg-f primary coolant pressure",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -4508,7 +4459,6 @@
         },
         {
           "path": "pressureDropMPa",
-          "label": "rcs-hot-leg-f pressure drop",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4519,7 +4469,6 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "rcs-hot-leg-f leak area",
           "kind": "control",
           "discipline": "control",
           "writable": true,
@@ -4530,7 +4479,6 @@
         },
         {
           "path": "leakFlowKgPerS",
-          "label": "rcs-hot-leg-f leak flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4589,7 +4537,6 @@
         },
         {
           "path": "pressureMPa",
-          "label": "rcs-cold-leg-d primary coolant pressure",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -4600,7 +4547,6 @@
         },
         {
           "path": "pressureDropMPa",
-          "label": "rcs-cold-leg-d pressure drop",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4611,7 +4557,6 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "rcs-cold-leg-d leak area",
           "kind": "control",
           "discipline": "control",
           "writable": true,
@@ -4622,7 +4567,6 @@
         },
         {
           "path": "leakFlowKgPerS",
-          "label": "rcs-cold-leg-d leak flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4681,7 +4625,6 @@
         },
         {
           "path": "pressureMPa",
-          "label": "rcs-cold-leg-e primary coolant pressure",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -4692,7 +4635,6 @@
         },
         {
           "path": "pressureDropMPa",
-          "label": "rcs-cold-leg-e pressure drop",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4703,7 +4645,6 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "rcs-cold-leg-e leak area",
           "kind": "control",
           "discipline": "control",
           "writable": true,
@@ -4714,7 +4655,6 @@
         },
         {
           "path": "leakFlowKgPerS",
-          "label": "rcs-cold-leg-e leak flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4773,7 +4713,6 @@
         },
         {
           "path": "pressureMPa",
-          "label": "rcs-cold-leg-f primary coolant pressure",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -4784,7 +4723,6 @@
         },
         {
           "path": "pressureDropMPa",
-          "label": "rcs-cold-leg-f pressure drop",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4795,7 +4733,6 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "rcs-cold-leg-f leak area",
           "kind": "control",
           "discipline": "control",
           "writable": true,
@@ -4806,7 +4743,6 @@
         },
         {
           "path": "leakFlowKgPerS",
-          "label": "rcs-cold-leg-f leak flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4851,7 +4787,6 @@
         },
         {
           "path": "pressureMPa",
-          "label": "rcp-d-to-core primary coolant pressure",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -4862,7 +4797,6 @@
         },
         {
           "path": "pressureDropMPa",
-          "label": "rcp-d-to-core pressure drop",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4873,7 +4807,6 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "rcp-d-to-core leak area",
           "kind": "control",
           "discipline": "control",
           "writable": true,
@@ -4884,7 +4817,6 @@
         },
         {
           "path": "leakFlowKgPerS",
-          "label": "rcp-d-to-core leak flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4933,7 +4865,6 @@
         },
         {
           "path": "pressureMPa",
-          "label": "rcp-e-to-core primary coolant pressure",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -4944,7 +4875,6 @@
         },
         {
           "path": "pressureDropMPa",
-          "label": "rcp-e-to-core pressure drop",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -4955,7 +4885,6 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "rcp-e-to-core leak area",
           "kind": "control",
           "discipline": "control",
           "writable": true,
@@ -4966,7 +4895,6 @@
         },
         {
           "path": "leakFlowKgPerS",
-          "label": "rcp-e-to-core leak flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -5015,7 +4943,6 @@
         },
         {
           "path": "pressureMPa",
-          "label": "rcp-f-to-core primary coolant pressure",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -5026,7 +4953,6 @@
         },
         {
           "path": "pressureDropMPa",
-          "label": "rcp-f-to-core pressure drop",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -5037,7 +4963,6 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "rcp-f-to-core leak area",
           "kind": "control",
           "discipline": "control",
           "writable": true,
@@ -5048,7 +4973,6 @@
         },
         {
           "path": "leakFlowKgPerS",
-          "label": "rcp-f-to-core leak flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -7459,7 +7383,6 @@
         },
         {
           "path": "soluteConcentrationPpm",
-          "label": "vct-to-charging-pump solute concentration",
           "kind": "derived",
           "discipline": "chemical",
           "writable": false,
@@ -7600,7 +7523,6 @@
         },
         {
           "path": "soluteConcentrationPpm",
-          "label": "charging-pump-to-cold-leg-a solute concentration",
           "kind": "derived",
           "discipline": "chemical",
           "writable": false,
@@ -7645,7 +7567,6 @@
         },
         {
           "path": "soluteConcentrationPpm",
-          "label": "letdown-to-vct solute concentration",
           "kind": "derived",
           "discipline": "chemical",
           "writable": false,
@@ -7758,7 +7679,6 @@
         },
         {
           "path": "soluteConcentrationPpm",
-          "label": "vct-to-charging-pump-b solute concentration",
           "kind": "derived",
           "discipline": "chemical",
           "writable": false,
@@ -7803,7 +7723,6 @@
         },
         {
           "path": "soluteConcentrationPpm",
-          "label": "charging-pump-b-to-cold-leg-b solute concentration",
           "kind": "derived",
           "discipline": "chemical",
           "writable": false,
@@ -8728,7 +8647,6 @@
         },
         {
           "path": "soluteConcentrationPpm",
-          "label": "safety-accumulator-a-to-cold-leg-a solute concentration",
           "kind": "derived",
           "discipline": "chemical",
           "writable": false,
@@ -8784,7 +8702,6 @@
         },
         {
           "path": "soluteConcentrationPpm",
-          "label": "safety-accumulator-b-to-cold-leg-b solute concentration",
           "kind": "derived",
           "discipline": "chemical",
           "writable": false,
@@ -8840,7 +8757,6 @@
         },
         {
           "path": "soluteConcentrationPpm",
-          "label": "safety-accumulator-c-to-cold-leg-c solute concentration",
           "kind": "derived",
           "discipline": "chemical",
           "writable": false,
@@ -8896,7 +8812,6 @@
         },
         {
           "path": "soluteConcentrationPpm",
-          "label": "safety-accumulator-d-to-cold-leg-d solute concentration",
           "kind": "derived",
           "discipline": "chemical",
           "writable": false,
@@ -8952,7 +8867,6 @@
         },
         {
           "path": "soluteConcentrationPpm",
-          "label": "safety-accumulator-e-to-cold-leg-e solute concentration",
           "kind": "derived",
           "discipline": "chemical",
           "writable": false,
@@ -9008,7 +8922,6 @@
         },
         {
           "path": "soluteConcentrationPpm",
-          "label": "safety-accumulator-f-to-cold-leg-f solute concentration",
           "kind": "derived",
           "discipline": "chemical",
           "writable": false,

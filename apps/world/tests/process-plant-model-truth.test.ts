@@ -379,3 +379,21 @@ describe('steam generator high level', () => {
     expect(tag('TRIP-BKR-A-POS')).toBe(false)
   })
 })
+
+describe('signal labels', () => {
+  test('no label in the reference model begins with a kebab-case id; link labels name the link by its ends', () => {
+    const kebab = /^[a-z0-9]+(-[a-z0-9]+){2,}\b/u
+    for (let loopCount = 2; loopCount <= 6; loopCount += 1) {
+      const system = compileProcessPlant(createPwrReferencePlantDefinition({ id: `plant:labels-${loopCount}`, loopCount }))
+      const labels = [
+        ...system.graph.variables.map(variable => variable.descriptor.label),
+        ...system.graph.components.map(component => component.label),
+      ]
+      expect(labels.filter(label => kebab.test(label))).toEqual([])
+    }
+    const label = (path: string) => graph.signalBindingByPath.get(path as VariablePath)!.label
+    expect(label('safety-accumulator-a-to-cold-leg-a.soluteConcentrationPpm')).toBe('Safety Injection Accumulator A to cold leg A boron concentration')
+    expect(label('rcp-a-to-core.pressureDropMPa')).toBe('Reactor Coolant Pump A to cold leg A pressure drop')
+    expect(label('pressurizer-surge-line.leakFlowKgPerS')).toBe('Hot leg A to Pressurizer leak flow')
+  })
+})
