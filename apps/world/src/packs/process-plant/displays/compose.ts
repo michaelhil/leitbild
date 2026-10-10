@@ -8,7 +8,7 @@ import type {
   ProcessVariableLimits,
   VariablePath,
 } from '../graph/index.ts'
-import { processSignalTagIdSchema, variablePathSchema } from '../graph/index.ts'
+import { linkCarrier, processSignalTagIdSchema, variablePathSchema } from '../graph/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { findProcessPlantSignalBinding } from '../signals.ts'
 import {
@@ -42,7 +42,7 @@ import { chatMimicProfile, detailMimicProfile, overviewMimicProfile } from './mi
 import { principalCircuits } from './mimic/principal.ts'
 import { equipmentKeyValues, overviewKeyValues } from './overview-key-values.ts'
 import { annunciatorSystems, type AnnunciatorSystem } from './annunciators.ts'
-import { MIMIC_REACH_LINKS, componentDescription, itemServices, resolveEquipmentName, resolveMimicScope, withOtherServicesStopped } from './mimic/scope.ts'
+import { MIMIC_REACH_LINKS, componentDescription, itemServices, plantCarriers, plantLoops, resolveEquipmentName, resolveMimicScope, serviceResembles, withOtherServicesStopped } from './mimic/scope.ts'
 import type { CompiledMimic } from './mimic/mimic-model.ts'
 import {
   icAlarmRuleIdsForEquipment,
@@ -430,9 +430,11 @@ const compositionIssues = (composition: ComposedDisplayComposition): ReadonlyArr
 
 /**
  * Each subject the display must show: a signal some panel shows (a trend,
- * comparison or readout pen, or a value or state a mimic draws), or
- * equipment a mimic draws or one of whose signals a panel shows. A subject
- * shown nowhere is refused with what of it could be shown.
+ * comparison or readout pen, or a value or state a mimic draws); a service a
+ * mimic draws or a flow of which a panel shows; a loop whose equipment is
+ * drawn or one of whose signals is shown; or equipment a mimic draws or one
+ * of whose signals a panel shows. A subject shown nowhere is refused with
+ * what of it could be shown.
  */
 const subjectIssues = (
   system: ProcessPlantRuntimeInstance,
@@ -451,6 +453,21 @@ const subjectIssues = (
     ...mimics.flatMap(mimic => mimic.items.flatMap(item => item.components.map(id => graph.componentIndexById.get(id as never)!))),
     ...pens.flatMap(pen => ownerOf(String(pen.path)) ?? []),
   ])
+  const linkOf = (path: string) => {
+    const owner = graph.signalBindingByPath.get(path as VariablePath)?.owner
+    return owner?.type === 'link' ? graph.links[owner.linkIndex] : undefined
+  }
+  const shownServices = new Set([
+    ...mimics.flatMap(mimic => mimic.summary.carriers),
+    ...pens.flatMap(pen => { const link = linkOf(String(pen.path)); return link === undefined ? [] : [linkCarrier(link)] }),
+  ])
+  // A pipe drawn into a loop (safety injection to cold leg C) shows that loop as its equipment does.
+  const drawnLinks = new Set(mimics.flatMap(mimic => mimic.pipes.map(pipe => pipe.linkId)))
+  const shownLoops = new Set([
+    ...[...shownComponents].flatMap(component => graph.components[component]!.metadata?.loopId ?? []),
+    ...graph.links.filter(link => drawnLinks.has(String(link.id))).flatMap(link => link.metadata?.loopId ?? []),
+    ...pens.flatMap(pen => linkOf(String(pen.path))?.metadata?.loopId ?? []),
+  ])
   const shownNames = (): string => [...new Set(pens.map(pen => pen.name))].slice(0, SUGGESTION_COUNT).join(', ') || 'no signals'
   return subjects.flatMap((subject, index): ComposedDisplayIssue[] => {
     const path = `subjects.${index}`
@@ -458,10 +475,20 @@ const subjectIssues = (
     if (signal !== undefined) {
       return shownPaths.has(String(signal.path)) ? [] : [{ path, message: `${subject} is what the question is about but no panel shows it; this display shows ${shownNames()}` }]
     }
+    // A service or loop as plants.list names them, ignoring case, spaces and hyphens ("aux feedwater", "loop C").
+    const wanted = normalized(subject)
+    const service = plantCarriers(graph).find(candidate => normalized(candidate) === wanted)
+    if (service !== undefined) {
+      return shownServices.has(service) ? [] : [{ path, message: `the ${service} service is what the question is about but no panel shows it: draw it in a mimic or show a flow of it` }]
+    }
+    const loop = plantLoops(graph).find(candidate => normalized(`loop ${candidate}`) === wanted)
+    if (loop !== undefined) {
+      return shownLoops.has(loop) ? [] : [{ path, message: `loop ${loop} is what the question is about but no panel shows it: draw its equipment or show one of its signals` }]
+    }
     const equipment = resolveEquipmentName(graph, subject)
     if ('error' in equipment) {
-      const didYouMean = [...suggestionsFor(subject, graph.signalBindings), ...equipment.didYouMean].slice(0, SUGGESTION_COUNT)
-      return [{ path, message: `"${subject}" names no signal or equipment: give a tag or path, or equipment by id, tag or label (${equipment.error})`, ...(didYouMean.length === 0 ? {} : { didYouMean }) }]
+      const didYouMean = [...plantCarriers(graph).filter(candidate => serviceResembles(subject, candidate)), ...suggestionsFor(subject, graph.signalBindings), ...equipment.didYouMean].slice(0, SUGGESTION_COUNT)
+      return [{ path, message: `"${subject}" names no signal, equipment, service or loop of this Plant: give a tag or path, equipment by id, tag or label, or a service or loop as plants.list names them; the Plant itself is not a subject (${equipment.error})`, ...(didYouMean.length === 0 ? {} : { didYouMean }) }]
     }
     if (equipment.components.some(component => shownComponents.has(component))) return []
     const named = equipment.components.map(component => componentDescription(graph, component)).join(', ')

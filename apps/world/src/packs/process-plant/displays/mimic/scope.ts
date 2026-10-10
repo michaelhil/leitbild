@@ -200,7 +200,7 @@ export const plantLoops = (graph: CompiledPlantGraph): ReadonlyArray<string> =>
     })
 
 // "AFW" for auxFeedwater: the guess's letters, in order, from the same first letter; or a shared word.
-const serviceResembles = (guess: string, candidate: string): boolean => {
+export const serviceResembles = (guess: string, candidate: string): boolean => {
   const letters_ = guess.toLowerCase().replace(/[^a-z0-9]/g, '')
   const target = candidate.toLowerCase()
   let at = 0

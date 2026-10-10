@@ -494,8 +494,19 @@ describe('a display shows what its question is about', () => {
     expect(() => ask('world.process-plant.display.compose', display(['SG-B-LVL-NR'], [{ kind: 'mimic', to: ['sgB'], services: ['feedwater'] }]))).not.toThrow()
   })
 
+  test('a service or loop is a subject as plants.list names it', () => {
+    expect(() => ask('world.process-plant.display.compose', display(['feedwater', 'sgB'], [{ kind: 'mimic', to: ['sgB'], services: ['feedwater'] }]))).not.toThrow()
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', display(['aux feedwater'], [trendOf('SG-B-LVL-NR')]))))
+      .toContain('subjects.0: the auxFeedwater service is what the question is about but no panel shows it')
+    // Safety injection to loop C draws shared equipment only; its pipe into cold leg C is loop C.
+    expect(() => ask('world.process-plant.display.compose', display(['loop C', 'safetyInjection'], [{ kind: 'mimic', services: ['safetyInjection'], loops: ['C'] }]))).not.toThrow()
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', display(['loop D'], [{ kind: 'mimic', services: ['safetyInjection'], loops: ['C'] }]))))
+      .toContain('subjects.0: loop D is what the question is about but no panel shows it')
+  })
+
   test('a subject that names nothing comes back with names that do', () => {
-    const message = rejectionOf(() => ask('world.process-plant.display.compose', display(['reactor powr'], [trendOf('core.powerMw')])))
-    expect(message).toContain('subjects.0: "reactor powr" names no signal or equipment')
+    const message = rejectionOf(() => ask('world.process-plant.display.compose', display(['auxiliary feedwater'], [trendOf('core.powerMw')])))
+    expect(message).toContain('subjects.0: "auxiliary feedwater" names no signal, equipment, service or loop of this Plant')
+    expect(message).toContain('auxFeedwater')
   })
 })
