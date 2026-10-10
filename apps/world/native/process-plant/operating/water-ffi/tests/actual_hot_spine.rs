@@ -1528,6 +1528,199 @@ fn actual_surge_pzr_join(packet: &Value, model: &hs::Model, current: &Current) -
             "scope":"preallocated work/rate/phase/receipt arrays; fresh primary/line/PZR p,T and independent inlet/outlet currents every call; no held property tuple"}})
 }
 
+// A bounded countercheck of the ACTUAL prepared sharp chart, not another
+// mechanical model. Zero face currents/slip expose the component expansion
+// obligations without hiding them behind arbitrary imposed transport.
+fn prepared_pzr_pressure_compatibility(
+    packet: &Value,
+    model: &hs::Model,
+    current: &Current,
+) -> Value {
+    let mut r = SurgePzrReplay::new(packet, model);
+    r.evaluate(model, current, [0.; 2], Some(0.), true);
+    r.face_flow.fill([s(0.); 2]);
+    r.external.fill([pf::Sources::default(); 2]);
+    let sat = If97.saturation(s(r.pzr_pressure.value)).unwrap();
+    r.field
+        .evaluate(
+            pf::Input {
+                pressure: s(r.pzr_pressure.value),
+                saturation: sat,
+                phase: &r.phase,
+                face_mass_flow: &r.face_flow,
+            },
+            &r.external,
+            &mut r.field_work,
+        )
+        .unwrap();
+    assert!(
+        r.field_work
+            .birth_receipts
+            .iter()
+            .flatten()
+            .all(|b| b.mass.value == 0.)
+    );
+    let raw: Vec<_> = (0..pf::REGIONS)
+        .map(|j| {
+            let k = usize::from(!r.liquid[j]);
+            let p = r.phase[j][k].unwrap();
+            let w = point(
+                if k == 0 {
+                    Branch::Liquid
+                } else {
+                    Branch::Vapor
+                },
+                r.pzr_pressure.value,
+                p.temperature.value,
+            )
+            .unwrap();
+            // From V'=a*M'+b*H+d*p', U'=H-p*V', and Gibbs identities.
+            let a = (1. - w.expansion_per_k * w.enthalpy_j_kg / w.cp_j_kg_k) / w.density_kg_m3;
+            let b = w.expansion_per_k / (w.density_kg_m3 * w.cp_j_kg_k);
+            let d = -r.field.regions()[j].volume_m3
+                * (w.compressibility_per_pa
+                    - w.temperature_k * w.expansion_per_k.powi(2)
+                        / (w.density_kg_m3 * w.cp_j_kg_k));
+            assert!(d < 0., "positive isentropic compressibility required");
+            close(a + b * w.enthalpy_j_kg, 1. / w.density_kg_m3, 1e-14);
+            (k, a, b, d)
+        })
+        .collect();
+    let component = |k: usize, work: &pf::Work| {
+        raw.iter().enumerate().filter(|(_, row)| row.0 == k).fold(
+            (0., 0., 0.),
+            |(mass, heat, volume), (j, row)| {
+                let source = work.sources[j][k];
+                (
+                    mass + source.mass.value,
+                    heat + source.enthalpy.value,
+                    volume + row.1 * source.mass.value + row.2 * source.enthalpy.value,
+                )
+            },
+        )
+    };
+    let d = std::array::from_fn::<_, 2, _>(|k| {
+        raw.iter()
+            .filter(|row| row.0 == k)
+            .map(|row| row.3)
+            .sum::<f64>()
+    });
+    let base = [component(0, &r.field_work), component(1, &r.field_work)];
+    let demands = [-base[0].2 / d[0], -base[1].2 / d[1]];
+    // Independently reconstruct the selected two-sided Nu=2 contact at rest.
+    let l = r.phase.iter().find_map(|p| p[0]).unwrap();
+    let g = r.phase.iter().find_map(|p| p[1]).unwrap();
+    let contact: f64 = r
+        .field
+        .faces()
+        .iter()
+        .filter(|f| r.liquid[f.from] != r.liquid[f.to])
+        .map(|f| f.area_m2)
+        .sum();
+    let ql = contact * 2. * l.water.conductivity.value
+        / n(&packet["pzr"]["selection"], "interfacialLength_m")
+        * (l.temperature.value - sat.temperature.value);
+    let qg = contact * 2. * g.water.conductivity.value
+        / n(&packet["pzr"]["selection"], "interfacialLength_m")
+        * (g.temperature.value - sat.temperature.value);
+    let gamma = (ql + qg) / (sat.vapor.enthalpy.value - sat.liquid.enthalpy.value);
+    close(base[0].0, -gamma, 1e-13);
+    close(base[1].0, gamma, 1e-13);
+    close(base[0].1, -gamma * sat.liquid.enthalpy.value - ql, 1e-13);
+    close(base[1].1, gamma * sat.vapor.enthalpy.value - qg, 1e-13);
+    assert!(demands[0] > 0. && demands[1] < 0.);
+    let (_, a, b, _) = raw[r.mouth];
+    let numerator = -d[0] * demands[1] - base[0].2;
+    let donor_h = if numerator >= 0. {
+        hs::Properties::fixed_liquid(
+            &If97,
+            r.line_volume,
+            s(r.line_state.pressure.value),
+            s(r.line_state.temperature.value),
+        )
+        .unwrap()
+        .projection
+        .enthalpy
+        .value
+    } else {
+        r.phase[r.mouth][0].unwrap().water.enthalpy.value
+    };
+    let qout = numerator / (a + b * donor_h);
+    let primary = hs::Properties::fixed_liquid(
+        &If97,
+        model.volumes[r.junction],
+        current.pressure,
+        current.water_t[r.junction],
+    )
+    .unwrap();
+    let mouth = r.phase[r.mouth][0].unwrap();
+    let receipt = surge::evaluate(
+        &If97,
+        r.line_volume,
+        r.line_state,
+        surge::Rates {
+            pressure: s(0.),
+            energy: s(0.),
+            boron: s(0.),
+        },
+        surge::Liquid {
+            mass: primary.mass,
+            enthalpy: primary.projection.enthalpy,
+            boron: current.boron[r.junction],
+        },
+        Some(surge::Liquid {
+            mass: mouth.mass,
+            enthalpy: mouth.water.enthalpy,
+            boron: mouth.boron_mass,
+        }),
+        s(0.),
+        s(qout),
+        s(0.),
+    )
+    .unwrap();
+    // Exact signed donor law, not a chosen successful flow outcome.
+    close(receipt.pzr_liquid.energy.value, qout * donor_h, 1e-14);
+    close(
+        base[0].2 + (a + b * donor_h) * qout + d[0] * demands[1],
+        0.,
+        1e-13,
+    );
+    let zero_start_volume_defect = base[0].2 + d[0] * demands[1];
+    assert!(zero_start_volume_defect != 0.);
+
+    // Candidate sharp half-dual counterexample: a donor-side occupied half is
+    // NOT a full ℓ*q inventory when the upwind phase aperture is the full A.
+    let f = r
+        .field
+        .faces()
+        .iter()
+        .find(|f| r.liquid[f.from] && !r.liquid[f.to])
+        .unwrap();
+    let donor = r.phase[f.from][0].unwrap();
+    let half_mass = donor.water.density.value * f.area_m2 * f.distance_m / 2.;
+    let unit_speed = 1.; // Test direction/units only, not an operating velocity.
+    let q = donor.water.density.value * f.area_m2 * unit_speed;
+    let momentum = half_mass * unit_speed;
+    close(momentum, f.distance_m * q / 2., 1e-14);
+    assert_ne!(momentum, f.distance_m * q);
+    let reverse_momentum = -half_mass * unit_speed;
+    let absent_upwind_flux = 0.;
+    assert!(reverse_momentum != 0. && absent_upwind_flux == 0.);
+    serde_json::json!({
+        "scope":"actual zero-slip sharp preparation expansion audit; no mechanical closure or trajectory; no heaters/shell/nozzle sources in this bounded field operator",
+        "phase_component_pressure_rate_pa_s":demands,"compatible_free_surge_outlet_kg_s":qout,
+        "common_pressure_rate_with_compatible_outlet_pa_s":demands[1],
+        "zero_outlet_liquid_volume_defect_at_gas_rate_m3_s":zero_start_volume_defect,
+        "zero_start_scope":"initial zero currents cannot satisfy these frozen pure-phase volume rows; compatible outlet is not an admitted momentum reset or dynamically reached flow",
+        "phase_conversion_kg_s":gamma,"liquid_heat_receipt_w":base[0].1,"vapor_heat_receipt_w":base[1].1,
+        "sharp_half_dual":{"distance_m":f.distance_m,"area_m2":f.area_m2,
+            "unit_speed_flux_kg_s":q,"unit_speed_momentum_kg_m_s":momentum,
+            "momentum_over_distance_times_flux":momentum/(f.distance_m*q),
+            "reverse_nonzero_dual_momentum_kg_m_s":reverse_momentum,"absent_upwind_flux_kg_s":absent_upwind_flux,
+            "scope":"counterexample to a general Pi=distance*q chart, not a selected dual discretization; exact absence is not an epsilon phase"}
+    })
+}
+
 #[test]
 #[ignore = "requires actual owner-generated LD01_OPERATING_HOT_SPINE_PACKET"]
 fn actual_hot_spine_current_state_receipts_and_complete_direction() {
@@ -1805,6 +1998,8 @@ fn actual_hot_spine_current_state_receipts_and_complete_direction() {
             "scope":"reused workspace; four current trial coordinates freshly changed each call; no advancement"});
     }
     let surge_pzr_same_call = actual_surge_pzr_join(&packet, &model, &current);
+    let prepared_pzr_pressure_audit =
+        prepared_pzr_pressure_compatibility(&packet, &model, &current);
     assert_eq!(
         packet, original,
         "same-call transport mutated the owner packet"
@@ -1820,6 +2015,6 @@ fn actual_hot_spine_current_state_receipts_and_complete_direction() {
         "fixed_stock_startup_seconds":initialization_only_seconds,"initialization_and_one_joined_call_seconds":initialization_seconds,
         "maximum_scaled_complete_direction_defect":maximum_scaled_direction_defect,"direction_offset_audit":direction_audit,"release_same_call_cost":release_cost,"property_calls":property_calls,
         "same_stage_value_direction_fingerprints":fingerprints,"same_stage_scalar_count_per_case":snapshots[0].len(),
-        "surge_pzr_same_call":surge_pzr_same_call})
+        "surge_pzr_same_call":surge_pzr_same_call,"prepared_pzr_pressure_audit":prepared_pzr_pressure_audit})
     );
 }
