@@ -135,6 +135,8 @@ describe('world.process-plant.display.compose', () => {
     // A Plant that has not run yet: the axis reaches back the least a trend spans, and says so.
     expect(content.span).toEqual({ shownMs: 60_000, horizonMs: 600_000 })
     expect(result.shows[0]).toStartWith("Live trend of the last 1 min (the Run's history so far; it widens to 10m as the Run continues)")
+    // The published Capability returns it: its output schema is enforced at the boundary.
+    expect(() => processPlantCapabilities.find(capability => capability.id === 'world.process-plant.display.compose')!.output.parse(result)).not.toThrow()
   })
 
   test('rejects every issue at once with did-you-mean suggestions and never repairs', () => {
