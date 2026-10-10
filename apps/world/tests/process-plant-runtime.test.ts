@@ -327,8 +327,10 @@ describe('process plant runtime', () => {
       ['pressurizer-relief-open', [
         'alarm:pzr-relief-flow-high:relief-flow-high',
       ]],
-      // The generator leaves the line: its output and load alarms apply only while it is on line.
-      ['turbine-trip', []],
+      // Above P-9 a turbine trip trips the reactor; the generator's output and load alarms apply only while it is on line.
+      ['turbine-trip', [
+        'trip:reactor-turbine-trip:turbine-trip-reactor-trip',
+      ]],
       ['loss-offsite-power', [
         'alarm:loss-of-offsite-power:loss-of-offsite-power',
       ]],
@@ -378,8 +380,10 @@ describe('process plant runtime', () => {
       ['pressurizer-relief-open', [
         'alarm:pzr-relief-flow-high:relief-flow-high',
       ]],
-      // The generator leaves the line: its output and load alarms apply only while it is on line.
-      ['turbine-trip', []],
+      // Above P-9 a turbine trip trips the reactor; the generator's output and load alarms apply only while it is on line.
+      ['turbine-trip', [
+        'trip:reactor-turbine-trip:turbine-trip-reactor-trip',
+      ]],
       ['loss-offsite-power', [
         'alarm:loss-of-offsite-power:loss-of-offsite-power',
       ]],

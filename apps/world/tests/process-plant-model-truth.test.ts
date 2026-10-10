@@ -272,3 +272,39 @@ describe('RCS subcooling margin', () => {
     expect(entered.get('alarm:rcs-subcooling-lost:subcooling-lost')!).toBeLessThanOrEqual(0)
   })
 })
+
+describe('a turbine trip', () => {
+  test('above P-9 trips the reactor, first out, and leaves no generator alarm', () => {
+    const plantRun = started()
+    plantRun.run(5_000)
+    plantRun.act('turbine-trip')
+    plantRun.run(10_000)
+    const trip = plantRun.protection.snapshot().trips.find(lifecycle => lifecycle.id === 'trip:reactor-turbine-trip:turbine-trip-reactor-trip')!
+    expect(trip).toMatchObject({ active: true, firstOut: true })
+    expect(plantRun.tag('TRIP-BKR-A-POS')).toBe(false)
+    expect(plantRun.tag('TRIP-BKR-B-POS')).toBe(false)
+    expect(Number(plantRun.read('core.powerMw'))).toBeLessThan(500)
+    // The reactor trip it causes does not trip the reactor again, and no other trip comes in.
+    expect(plantRun.protection.snapshot().trips.filter(lifecycle => lifecycle.active).map(lifecycle => lifecycle.id)).toEqual(['trip:reactor-turbine-trip:turbine-trip-reactor-trip'])
+    expect(plantRun.activeIds().filter(id => id.includes('generator-output-low') || id.includes('turbine-load-low'))).toEqual([])
+  })
+
+  test('below P-9 leaves the reactor at power', () => {
+    const halfPower = compileProcessPlant(createPwrReferencePlantDefinition({
+      id: 'plant:below-p9',
+      parameterOverrides: { core: { initialPowerFraction: 0.4 } },
+    }))
+    const runtime = createProcessPlantRuntime({ system: halfPower })
+    const protection = createProcessPlantProtectionRunner({ system: halfPower, protection: halfPower.automation })
+    const step = () => {
+      runtime.tick(1_000)
+      protection.evaluate({ runtime, elapsedMs: runtime.elapsedMs(), simulationRunId: 'run-model-truth' as SimulationRunId, sourceRuntimeId: 'process-plant.local' })
+    }
+    for (let second = 0; second < 5; second += 1) step()
+    expect(Number(runtime.readVariable('core.powerMw' as VariablePath))).toBeLessThan(1_700)
+    for (const command of commandsForProcessPlantAction({ actionId: 'turbine-trip', parameters: {}, graph: halfPower.graph })) runtime.writeCommand({ type: 'setVariable', path: command.path, value: command.value })
+    for (let second = 0; second < 10; second += 1) step()
+    expect(runtime.readVariable('reactorTripBreakerA.closedState' as VariablePath)).toBe(true)
+    expect(protection.snapshot().trips.find(lifecycle => lifecycle.id === 'trip:reactor-turbine-trip:turbine-trip-reactor-trip')!.active).toBe(false)
+  })
+})
