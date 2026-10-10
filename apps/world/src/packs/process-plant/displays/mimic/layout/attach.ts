@@ -1,5 +1,6 @@
 // Where each edge meets each item across the flow. A symbol's ports take
-// distinct grid slots on their face, in the order of what they connect to;
+// distinct grid slots on their face, in the order of what they connect to
+// (a port only bars feed, toward where the bars reach from);
 // a hub's side face takes the edges at its face; a bar spans the branches it
 // connects, so each branch meets it straight; bars sharing a layer stack in
 // the order that crosses the fewest pipes.
@@ -75,7 +76,19 @@ export const attach = (input: {
   // (its short edges jog anyway, and a strand from a bar or hub meets that
   // end straight already).
   const slot = model.nodes.map(node => node.ports.map(() => Number.NaN))
-  const wants = model.nodes.map(node => node.ports.map(() => [] as Array<{ readonly at: number; readonly strand: boolean; readonly turn: boolean }>))
+  // Where a bar's other attachments are: the bar spans them, so a port it feeds sits on that side of a busy face.
+  const barNeighbours = new Map<number, Array<{ readonly chain: number; readonly item: number }>>()
+  layering.chains.forEach((chain, index) => chain.steps.forEach((step, k) => {
+    if (step !== 'next') return
+    for (const [own, other] of [[chain.items[k]!, chain.items[k + 1]!], [chain.items[k + 1]!, chain.items[k]!]] as const) {
+      if (role(own) === 'bar' && role(other) !== 'hub') barNeighbours.set(own, [...(barNeighbours.get(own) ?? []), { chain: index, item: other }])
+    }
+  }))
+  const barSide = (bar: number, chain: number): number | null => {
+    const others = (barNeighbours.get(bar) ?? []).filter(entry => entry.chain !== chain).map(entry => c[entry.item]!)
+    return others.length === 0 ? null : others.reduce((sum, at) => sum + at, 0) / others.length
+  }
+  const wants = model.nodes.map(node => node.ports.map(() => [] as Array<{ readonly at: number; readonly strand: boolean; readonly turn: boolean; readonly bar: number | null }>))
   layering.chains.forEach((chain, index) => {
     for (const [position, adjacent] of [[0, 1], [chain.items.length - 1, chain.items.length - 2]] as const) {
       const node = items[chain.items[position]!]!.node!
@@ -83,7 +96,8 @@ export const attach = (input: {
       const target = role(other) === 'bar' ? c[node]! : role(other) === 'hub' ? hubFace(items[other]!.node!) : c[other]!
       const far = role(chain.items[position === 0 ? chain.items.length - 1 : 0]!)
       const step = chain.steps[position === 0 ? 0 : chain.steps.length - 1]!
-      wants[node]![portAt(index, position)]!.push({ at: target, strand: role(other) === null && far !== 'bar' && far !== 'hub', turn: step !== 'next' && role(other) !== 'hub' })
+      const bar = role(other) === 'bar' ? barSide(other, index) : null
+      wants[node]![portAt(index, position)]!.push({ at: target, strand: role(other) === null && far !== 'bar' && far !== 'hub', turn: step !== 'next' && role(other) !== 'hub', bar })
     }
   })
   // Pipes that turn over a face nest: from each side, the farther one turns
@@ -103,6 +117,9 @@ export const attach = (input: {
       if (ports.length === 0) continue
       const target = (index: number): number => {
         const all = wants[node.index]![index]!
+        // Beside other ports, a port only bars feed aims where the bars reach from, so they end before its neighbours' pipes.
+        const bars = all.map(want => want.bar)
+        if (ports.length > 1 && bars.every(bar => bar !== null)) return (bars as number[]).reduce((sum, at) => sum + at, 0) / bars.length
         const strands = all.filter(want => want.strand)
         const list = strands.length > 0 ? strands : all
         return list.reduce((sum, want) => sum + want.at, 0) / list.length

@@ -36,6 +36,12 @@ export interface Prepared {
    */
   readonly refine: boolean
   readonly pipeFaces: ReadonlyArray<ReadonlySet<AxisFace>>
+  /**
+   * Per node: a busy flow face grows before its anchor instead of after it,
+   * toward the bars that feed it: their ports take the slots on that side,
+   * and the bars end before the face's other pipes.
+   */
+  readonly growLow: ReadonlyArray<boolean>
 }
 
 export interface AttemptGeometry {
@@ -60,7 +66,28 @@ export const prepare = (model: Model, structure: Structure, layering: Layering, 
     if (node.ports.some(port => port.use === 'source')) faces.add(flipped[node.index] ? '-f' : '+f')
     return faces
   })
-  return { model, structure, layering, ordering, flipped, refine, pipeFaces }
+  // A busy face grows before its anchor when the bars feeding it reach mostly from before it: by order in
+  // their own layer, else by block.
+  const items = layering.items
+  const position = new Map(ordering.layers.flatMap(layer => layer.map((item, index) => [item, index] as const)))
+  const roleOf = (item: number) => (items[item]!.node === null ? null : model.nodes[items[item]!.node!]!.role)
+  const sideOf = (item: number, of: number): number => items[item]!.layer === items[of]!.layer
+    ? Math.sign(position.get(item)! - position.get(of)!)
+    : Math.sign(ordering.block[item]! - ordering.block[of]!)
+  const barNeighbours = new Map<number, number[]>()
+  for (const chain of layering.chains) {
+    chain.steps.forEach((step, k) => {
+      if (step !== 'next') return
+      const [a, b] = [chain.items[k]!, chain.items[k + 1]!]
+      if (roleOf(a) === 'bar') barNeighbours.set(a, [...(barNeighbours.get(a) ?? []), b])
+      if (roleOf(b) === 'bar') barNeighbours.set(b, [...(barNeighbours.get(b) ?? []), a])
+    })
+  }
+  const growLow = model.nodes.map(node => node.role !== 'bar' && node.role !== 'hub' && [...barNeighbours.values()]
+    .filter(neighbours => neighbours.includes(node.index))
+    .flatMap(neighbours => neighbours.filter(other => other !== node.index && roleOf(other) !== 'hub'))
+    .reduce((sum, other) => sum + sideOf(other, node.index), 0) < 0)
+  return { model, structure, layering, ordering, flipped, refine, pipeFaces, growLow }
 }
 
 export const runAttempt = (prepared: Prepared, profile: DiagramProfile, orientation: Orientation, detail: Detail, policy: TextPolicy): AttemptGeometry => {
@@ -77,7 +104,11 @@ export const runAttempt = (prepared: Prepared, profile: DiagramProfile, orientat
     const own = orientation === 'leftToRight' ? node.height : node.width
     const ports = (['source', 'target'] as const).filter(use => !(sideEntry && use === 'target')).map(use => node.ports.filter(port => port.use === use).length)
     const across = node.role === 'hub' ? own : Math.max(own, Math.ceil(((Math.max(0, ...ports) + 1) * grid) / profile.cell))
-    return footprint(alongCells(node) * profile.cell, across * profile.cell, grid)
+    const box = footprint(alongCells(node) * profile.cell, across * profile.cell, grid)
+    if (across === own || !prepared.growLow[node.index]) return box
+    // Grown toward the bars that feed it: the symbol's own footprint keeps its place on the anchor.
+    const c1 = footprint(alongCells(node) * profile.cell, own * profile.cell, grid).c1
+    return { ...box, c0: c1 - across * profile.cell, c1 }
   }
   const dressAt = (node: number, box: AxisBox, side: TextSide): Dressed =>
     dress({ orientation, profile, node: model.nodes[node]!, box, lines: kept[node]!, side, gap: model.nodes[node]!.role === 'bar' ? outline : 0 })
@@ -160,35 +191,6 @@ export const runAttempt = (prepared: Prepared, profile: DiagramProfile, orientat
 
   // Bars: a line `outline` thick, rows a grid apart.
   const barLine = (node: number): AxisBox => ({ f0: -outline / 2, f1: outline / 2, c0: attached.span[node]![0], c1: attached.span[node]![1] })
-  // A bar's label goes to the first end no vertical run passes: runs through
-  // its layer (dummies), and runs to the other bars of its stack that cross
-  // its row. Hubs may reach any row, so their band counts as taken.
-  const hubReach = model.nodes.filter(node => node.role === 'hub').map(node => [c[node.index]! + relative[node.index]!.reserve.c0, c[node.index]! + relative[node.index]!.reserve.c1] as const)
-  for (const bar of model.nodes.filter(node => node.role === 'bar')) {
-    const layer = items[bar.index]!.layer
-    const row = attached.barRow[bar.index]!
-    const columns: number[] = []
-    items.forEach((item, index) => { if (item.node === null && item.layer === layer) columns.push(c[index]!) })
-    layering.chains.forEach((chain, index) => chain.items.forEach((item, position) => {
-      if (item === bar.index || item >= nodeCount || model.nodes[item]!.role !== 'bar' || items[item]!.layer !== layer) return
-      const neighbour = chain.items[position === 0 ? 1 : position - 1]!
-      const otherRow = attached.barRow[item]!
-      if (items[neighbour]!.layer < layer ? row < otherRow : row > otherRow) columns.push(attached.pin[index]![position]!)
-    }))
-    const stacked = model.nodes.filter(other => other.role === 'bar' && other.index !== bar.index && items[other.index]!.layer === layer)
-    const free = (end: AxisFace): boolean => {
-      const text = dress({ orientation, profile, node: bar, box: barLine(bar.index), lines: kept[bar.index]!, side: screenFace(orientation, end), gap: outline }).text
-      if (text === null) return true
-      const [low, high] = [text.box.c0 - outline / 2, text.box.c1 + outline / 2]
-      const clearOfBars = stacked.every(other => {
-        const offset = (attached.barRow[other.index]! - row) * grid
-        const [a, b] = attached.span[other.index]!
-        return b <= low || a >= high || offset + outline / 2 <= text.box.f0 || offset - outline / 2 >= text.box.f1
-      })
-      return clearOfBars && columns.every(column => column <= low || column >= high) && hubReach.every(([a, b]) => b <= text.box.c0 || a >= text.box.c1)
-    }
-    side[bar.index] = screenFace(orientation, free('+c') || !free('-c') ? '+c' : '-c')
-  }
   const extents: LayerExtent[] = Array.from({ length: layering.layerCount }, () => ({ lowReserve: 0, highReserve: 0, lowFace: 0, highFace: 0 }))
   for (const node of model.nodes) {
     if (node.role === 'hub') continue
@@ -250,6 +252,42 @@ export const runAttempt = (prepared: Prepared, profile: DiagramProfile, orientat
   hubPorts.forEach((ports, node) => ports.forEach((tracks, port) => {
     if (tracks.size > 1) throw new Error(`hub ${model.nodes[node]!.id} port ${model.nodes[node]!.ports[port]!.id} would need two places on its face; split its edges over separate ports`)
   }))
+  // A bar's label goes to the first end no vertical run passes: runs through
+  // its layer (dummies), and runs to the other bars of its stack that cross
+  // its row. It keeps clear of the hubs beside the layers and of the frames of
+  // the bars stacked with it (a bar's frame spans its whole line, as wide as
+  // its label), both ways. Either end reserves the same room along the flow,
+  // so the end is chosen once everything is placed.
+  const apart = (a: AxisBox | null | undefined, b: AxisBox | null | undefined): boolean => a === null || a === undefined || b === null || b === undefined
+    || a.f1 + profile.textClearance <= b.f0 || b.f1 + profile.textClearance <= a.f0 || a.c1 + profile.textClearance <= b.c0 || b.c1 + profile.textClearance <= a.c0
+  const overlaps = (a: AxisBox, b: AxisBox): boolean => a.f0 < b.f1 && b.f0 < a.f1 && a.c0 < b.c1 && b.c0 < a.c1
+  const hubsDressed = model.nodes.filter(node => node.role === 'hub').map(node => dressNode(node.index, box[node.index]!))
+  for (const bar of model.nodes.filter(node => node.role === 'bar')) {
+    const layer = items[bar.index]!.layer
+    const row = attached.barRow[bar.index]!
+    const columns: number[] = []
+    items.forEach((item, index) => { if (item.node === null && item.layer === layer) columns.push(c[index]!) })
+    layering.chains.forEach((chain, index) => chain.items.forEach((item, position) => {
+      if (item === bar.index || item >= nodeCount || model.nodes[item]!.role !== 'bar' || items[item]!.layer !== layer) return
+      const neighbour = chain.items[position === 0 ? 1 : position - 1]!
+      const otherRow = attached.barRow[item]!
+      if (items[neighbour]!.layer < layer ? row < otherRow : row > otherRow) columns.push(attached.pin[index]![position]!)
+    }))
+    const stacked = model.nodes.filter(other => other.role === 'bar' && other.index !== bar.index && items[other.index]!.layer === layer)
+    const free = (end: AxisFace): boolean => {
+      const own = dress({ orientation, profile, node: bar, box: box[bar.index]!, lines: kept[bar.index]!, side: screenFace(orientation, end), gap: outline })
+      const text = own.text
+      if (text === null) return true
+      const [low, high] = [text.box.c0 - outline / 2, text.box.c1 + outline / 2]
+      const clearOfBars = stacked.every(other => {
+        const beside = dressNode(other.index, box[other.index]!)
+        return !overlaps(text.box, box[other.index]!) && apart(text.box, beside.frame) && apart(beside.text?.box, own.frame)
+      })
+      const clearOfHubs = hubsDressed.every(hub => !overlaps(text.box, hub.box) && (hub.text === null || !overlaps(text.box, hub.text.box)) && apart(text.box, hub.frame) && apart(hub.text?.box, own.frame))
+      return clearOfBars && clearOfHubs && columns.every(column => column <= low || column >= high)
+    }
+    side[bar.index] = screenFace(orientation, free('+c') || !free('-c') ? '+c' : '-c')
+  }
   const dressed = model.nodes.map(node => dressNode(node.index, box[node.index]!))
 
   // Polylines in the abstract axes. An approach runs from the item outward to

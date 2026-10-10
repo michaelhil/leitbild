@@ -112,51 +112,120 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
   const sharedStrands = strandsOf(SHARED_BLOCK)
   // Shared strands a lane layer places are fixed: free layers keep their column.
   const fixedColumn = new Map<number, number>()
-  // Refined: a strand ordered before every shared symbol of its lane layers runs before them, nearest the hubs' side first.
-  const runStart = ordering.layers.map(() => hubBandEnd)
-  if (refine) {
-    const inLane = (edge: number): number[] => sharedStrands.get(edge)!.filter(item => hasLaneContent(ordering.layers[items[item]!.layer]!))
-    const indexIn = (item: number): number => ordering.layers[items[item]!.layer]!.indexOf(item)
-    const leads = (item: number): boolean => sharedRuns[items[item]!.layer]!.every(symbol => indexIn(item) < indexIn(symbol))
-    const meanIndex = (edge: number): number => inLane(edge).reduce((sum, item) => sum + indexIn(item), 0) / inLane(edge).length
-    const ahead = [...sharedStrands.keys()].filter(edge => inLane(edge).length > 0 && inLane(edge).every(leads)).sort((a, b) => (meanIndex(a) - meanIndex(b)) || (a - b))
-    const lastAhead = new Map<number, number>()
-    for (const edge of ahead) {
+  // Refined, the shared items of lane layers keep their order: each strand is one column through its
+  // layers, packed with the symbols by the longest path over each layer's order, from the hub band. A
+  // strand whose order disagrees between its layers would cross another there: it goes after its
+  // layers' items, as unordered. Then a strand between two symbols lines up with a shared symbol at its
+  // end where that moves nothing else and widens nothing, so the edge jogs only at its other end.
+  const placeSharedInOrder = (): void => {
+    const lists = ordering.layers.map(layer => (hasLaneContent(layer) ? inBlock(layer, SHARED_BLOCK) : []))
+    const unitOf = (item: number): number => (isDummy(item) ? -1 - items[item]!.edge! : item)
+    const membersOf = (): Map<number, number[]> => {
+      const members = new Map<number, number[]>()
+      lists.forEach(list => list.forEach(item => members.set(unitOf(item), [...(members.get(unitOf(item)) ?? []), item])))
+      return members
+    }
+    // Units in an order every layer agrees with, nearest the hubs first; or the strand that blocks one.
+    const sequenceOf = (members: ReadonlyMap<number, ReadonlyArray<number>>): { readonly sequence: number[] } | { readonly blocking: number } => {
+      const done = new Set<number>()
+      const sequence: number[] = []
+      const meanIndex = (unit: number): number => members.get(unit)!.reduce((sum, item) => sum + lists[items[item]!.layer]!.indexOf(item), 0) / members.get(unit)!.length
+      const ready = (unit: number): boolean => members.get(unit)!.every(item => {
+        const list = lists[items[item]!.layer]!
+        const k = list.indexOf(item)
+        return k === 0 || done.has(unitOf(list[k - 1]!))
+      })
+      while (sequence.length < members.size) {
+        const waiting = [...members.keys()].filter(unit => !done.has(unit))
+        const next = waiting.filter(ready).sort((a, b) => (meanIndex(a) - meanIndex(b)) || (a - b))[0]
+        if (next === undefined) {
+          // Only a unit in several layers can close a cycle: a strand.
+          const blocking = waiting.filter(unit => unit < 0).sort((a, b) => b - a)[0]
+          if (blocking === undefined) throw new Error('shared items of lane layers cannot be ordered')
+          return { blocking }
+        }
+        done.add(next)
+        sequence.push(next)
+      }
+      return { sequence }
+    }
+    let members = membersOf()
+    let ordered = sequenceOf(members)
+    while ('blocking' in ordered) {
+      for (const item of members.get(ordered.blocking)!) {
+        const list = lists[items[item]!.layer]!
+        list.splice(list.indexOf(item), 1)
+        list.push(item)
+      }
+      members = membersOf()
+      ordered = sequenceOf(members)
+    }
+    const { sequence } = ordered
+    const floorAt = (item: number): number => ceilTo(need(hubBandEnd.full, hubBandEnd.solid, left[item]!, leftSolid[item]!), grid)
+    const compact = (lining: ReadonlyMap<number, number>): Map<number, number> => {
+      const at = new Map<number, number>()
+      for (const unit of sequence) {
+        const value = Math.max(...members.get(unit)!.map(item => {
+          const list = lists[items[item]!.layer]!
+          const k = list.indexOf(item)
+          return k === 0 ? floorAt(item) : at.get(unitOf(list[k - 1]!))! + separation(list[k - 1]!, item)
+        }))
+        at.set(unit, Math.max(value, lining.get(unit) ?? -Infinity))
+      }
+      return at
+    }
+    const packed = compact(new Map())
+    const band = lists.flat().reduce((edge, item) => ({
+      full: Math.max(edge.full, packed.get(unitOf(item))! + right[item]!),
+      solid: Math.max(edge.solid, packed.get(unitOf(item))! + rightSolid[item]!),
+    }), hubBandEnd)
+    const lining = new Map<number, number>()
+    for (const unit of sequence.filter(unit => unit < 0)) {
+      const chain = layering.chains[-1 - unit]!
+      if (!chain.steps.every(step => step === 'next')) continue
+      const target = [chain.items[0]!, chain.items.at(-1)!].filter(end => isPlain(end) && packed.has(end)).map(end => packed.get(end)!)[0]
+      if (target === undefined || target <= packed.get(unit)!) continue
+      const room = members.get(unit)!.every(item => {
+        const list = lists[items[item]!.layer]!
+        const following = list[list.indexOf(item) + 1]
+        return following === undefined
+          ? target + right[item]! <= band.full && target + rightSolid[item]! <= band.solid
+          : target + separation(item, following) <= packed.get(unitOf(following))!
+      })
+      if (room) lining.set(unit, target)
+    }
+    for (const [unit, value] of compact(lining)) {
+      if (unit >= 0) c[unit] = value
+      else {
+        for (const item of sharedStrands.get(-1 - unit)!) {
+          c[item] = value
+          fixedColumn.set(item, value)
+        }
+      }
+    }
+    lists.forEach((list, layer) => sharedRuns[layer]!.splice(0, sharedRuns[layer]!.length, ...list))
+  }
+  if (refine) placeSharedInOrder()
+  else {
+    sharedRuns.forEach(run => pack(run, hubBandEnd))
+    for (const edge of [...sharedStrands.keys()].sort((a, b) => a - b)) {
       const strand = sharedStrands.get(edge)!
-      const at = Math.max(...inLane(edge).map(item => {
-        const previous = lastAhead.get(items[item]!.layer)
-        return previous === undefined ? ceilTo(need(hubBandEnd.full, hubBandEnd.solid, left[item]!, leftSolid[item]!), grid) : c[previous]! + separation(previous, item)
+      const inLaneLayers = strand.filter(item => hasLaneContent(ordering.layers[items[item]!.layer]!))
+      if (inLaneLayers.length === 0) continue
+      const chain = layering.chains[edge]!
+      const ends = [chain.items[0]!, chain.items.at(-1)!]
+      const lined = chain.steps.every(step => step === 'next') && ends.every(isPlain) ? ends.map(item => c[item]!).find(Number.isFinite) : undefined
+      const at = Math.max(lined ?? -Infinity, ...inLaneLayers.map(item => {
+        const run = sharedRuns[items[item]!.layer]!
+        const last = run.at(-1)
+        return last === undefined ? ceilTo(need(hubBandEnd.full, hubBandEnd.solid, left[item]!, leftSolid[item]!), grid) : c[last]! + separation(last, item)
       }))
       for (const item of strand) {
         c[item] = at
         fixedColumn.set(item, at)
       }
-      for (const item of inLane(edge)) lastAhead.set(items[item]!.layer, item)
+      for (const item of inLaneLayers) sharedRuns[items[item]!.layer]!.push(item)
     }
-    for (const [layer, item] of lastAhead) {
-      runStart[layer] = edgeOf([item], hubBandEnd)
-      sharedRuns[layer]!.unshift(item)
-    }
-  }
-  sharedRuns.forEach((run, layer) => pack(run.filter(item => !fixedColumn.has(item)), runStart[layer]!))
-  for (const edge of [...sharedStrands.keys()].sort((a, b) => a - b)) {
-    const strand = sharedStrands.get(edge)!
-    if (strand.some(item => fixedColumn.has(item))) continue
-    const inLaneLayers = strand.filter(item => hasLaneContent(ordering.layers[items[item]!.layer]!))
-    if (inLaneLayers.length === 0) continue
-    const chain = layering.chains[edge]!
-    const ends = [chain.items[0]!, chain.items.at(-1)!]
-    const lined = chain.steps.every(step => step === 'next') && ends.every(isPlain) ? ends.map(item => c[item]!).find(Number.isFinite) : undefined
-    const at = Math.max(lined ?? -Infinity, ...inLaneLayers.map(item => {
-      const run = sharedRuns[items[item]!.layer]!
-      const last = run.at(-1)
-      return last === undefined ? ceilTo(need(hubBandEnd.full, hubBandEnd.solid, left[item]!, leftSolid[item]!), grid) : c[last]! + separation(last, item)
-    }))
-    for (const item of strand) {
-      c[item] = at
-      fixedColumn.set(item, at)
-    }
-    for (const item of inLaneLayers) sharedRuns[items[item]!.layer]!.push(item)
   }
   const sharedEnds = sharedRuns.map(run => edgeOf(run, hubBandEnd))
   const sharedEnd: Edge = { full: Math.max(hubBandEnd.full, ...sharedEnds.map(edge => edge.full)), solid: Math.max(hubBandEnd.solid, ...sharedEnds.map(edge => edge.solid)) }

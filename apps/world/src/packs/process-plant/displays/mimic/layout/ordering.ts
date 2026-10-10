@@ -1,11 +1,14 @@
 // Order within layers. Blocks are fixed: hubs, shared items, lanes in lane
 // order, then lane-less stubs; or, with hubs on the high side, shared items,
 // lanes, stubs, then hubs. Barycentre sweeps reorder items only inside their
-// block, so lanes always line up and never swap. Refined, a stub of a shared
-// symbol or hub stays in the block beside it, and adjacent items of a block
-// then swap while that crosses fewer pipes, counted in the order: pipes
-// between neighbouring layers, U-turns of return runs at the layer they turn
-// at, and hub pipes from the hubs' side.
+// block, so lanes always line up and never swap. A lane-less long edge runs in
+// the block of the stub it ends at. Refined, a stub of a shared symbol or hub
+// stays in the block beside it (a hub's beside the other ends of its port, when
+// the port has some), and items of a block then move, alone or with the long
+// edges that are all their pipes, while that crosses fewer pipes, counted in
+// the order: pipes between neighbouring layers, U-turns of return runs at the
+// layer they turn at, hub pipes from the hubs' side, and the nets a hub sends
+// through one channel.
 import type { Layering } from './layering.ts'
 import type { Model } from './model.ts'
 
@@ -36,24 +39,34 @@ const SWEEPS = 4
 export const orderLayers = (model: Model, layering: Layering, hubSide: HubSide, refine: { readonly net: ReadonlyArray<number> } | null = null): Ordering => {
   const laneCount = model.lanes.length
   const blocks = blocksFor(laneCount, hubSide)
-  // The node a lane-less stub ends the drawing at: its one neighbour.
-  const stubOwner = (node: number): number | undefined => {
+  // The node a lane-less stub ends the drawing at: its one neighbour, and whether its pipe shares that port with others.
+  const stubOwner = (node: number): { readonly node: number; readonly shared: boolean } | undefined => {
     const edge = model.edges.find(candidate => candidate.from === node || candidate.to === node)
-    return edge === undefined ? undefined : edge.from === node ? edge.to : edge.from
+    if (edge === undefined) return undefined
+    const [owner, port] = edge.from === node ? [edge.to, edge.toPort] : [edge.from, edge.fromPort]
+    const shared = model.edges.some(other => other !== edge && ((other.from === owner && other.fromPort === port) || (other.to === owner && other.toPort === port)))
+    return { node: owner, shared }
+  }
+  const nodeBlock = (node: number, lane: number | null): number => {
+    const role = model.nodes[node]!.role
+    if (role === 'hub') return blocks.hub
+    if (role === 'stub' && lane === null) {
+      const owner = refine === null ? undefined : stubOwner(node)
+      if (owner === undefined) return blocks.stub
+      // Beside its node: a shared symbol's in the shared block, a hub's in the block next to the hub,
+      // unless its port leads on elsewhere: then beside that net's other ends, outside the lanes it would straddle.
+      if (model.nodes[owner.node]!.role !== 'hub') return blocks.shared
+      return hubSide === 'low' || owner.shared ? blocks.shared : blocks.stub
+    }
+    return lane === null ? blocks.shared : blocks.lane(lane)
   }
   const block = layering.items.map(item => {
-    if (item.node !== null) {
-      const role = model.nodes[item.node]!.role
-      if (role === 'hub') return blocks.hub
-      if (role === 'stub' && item.lane === null) {
-        const owner = refine === null ? undefined : stubOwner(item.node)
-        if (owner === undefined) return blocks.stub
-        // Beside its node: a shared symbol's in the shared block, a hub's in the block next to the hub.
-        if (model.nodes[owner]!.role !== 'hub') return blocks.shared
-        return hubSide === 'low' ? blocks.shared : blocks.stub
-      }
-    }
-    return item.lane === null ? blocks.shared : blocks.lane(item.lane)
+    if (item.node !== null) return nodeBlock(item.node, item.lane)
+    if (item.lane !== null) return blocks.lane(item.lane)
+    // A lane-less pipe runs in the block of the stub it ends at, beside it.
+    const chain = layering.chains[item.edge!]!
+    const ends = [chain.items[0]!, chain.items.at(-1)!].map(end => layering.items[end]!)
+    return ends.some(end => end.node !== null && end.lane === null && model.nodes[end.node]!.role === 'stub' && nodeBlock(end.node, null) === blocks.stub) ? blocks.stub : blocks.shared
   })
   // Structural key: nodes by index, then dummies by edge and layer.
   const compareKey = (a: number, b: number): number => {
@@ -105,7 +118,8 @@ const HIGH_SIDE = -2
 
 /** Pieces of pipe in the gap between layer g and g + 1, as the order sees them. */
 type GapPiece =
-  | { readonly kind: 'span'; readonly low: number; readonly high: number; readonly net: number }
+  /** Between an item of the layer below the gap (`low`) and one above it (`high`); a hub's side stands in for the hub (`hub`). */
+  | { readonly kind: 'span'; readonly low: number; readonly high: number; readonly net: number; readonly hub?: number }
   /** A U-turn at the layer below the gap (`low`) or above it (`high`), between two of its items. */
   | { readonly kind: 'turn'; readonly side: 'low' | 'high'; readonly p: number; readonly q: number; readonly net: number }
 
@@ -124,8 +138,8 @@ const transpose = (model: Model, layering: Layering, layers: number[][], block: 
       const b = chain.items[k + 1]!
       if (step === 'next') {
         // A hub reaches an item from its side, through the gap before the item.
-        if (isHub(a)) { const g = items[b]!.layer - 1; if (g >= 0) gaps[g]!.push({ kind: 'span', low: side, high: b, net: pipe }); return }
-        if (isHub(b)) { const g = items[a]!.layer; if (g < gapCount) gaps[g]!.push({ kind: 'span', low: a, high: side, net: pipe }); return }
+        if (isHub(a)) { const g = items[b]!.layer - 1; if (g >= 0) gaps[g]!.push({ kind: 'span', low: side, high: b, net: pipe, hub: a }); return }
+        if (isHub(b)) { const g = items[a]!.layer; if (g < gapCount) gaps[g]!.push({ kind: 'span', low: a, high: side, net: pipe, hub: b }); return }
         const g = items[a]!.layer
         if (items[b]!.layer === g + 1 && g < gapCount) gaps[g]!.push({ kind: 'span', low: a, high: b, net: pipe })
         return
@@ -166,6 +180,31 @@ const transpose = (model: Model, layering: Layering, layers: number[][], block: 
     }
     return [...byNode.values()].filter(nets => nets.size > 1).map(nets => [...nets.values()])
   })
+  // Nets a hub sends through one gap run on tracks from its side face to their farthest end. Of two, the
+  // one on the track nearer the far ends' layer has its risers cross the other's track where they lie
+  // within it; the channel takes the cheaper order. Per gap, hub and direction, the far ends of each net.
+  const hubMeetings = gaps.map(pieces => {
+    const byHub = new Map<string, Map<number, number[]>>()
+    for (const piece of pieces) {
+      if (piece.kind !== 'span' || piece.hub === undefined) continue
+      const outgoing = piece.low === side
+      const key = `${piece.hub}:${outgoing ? 'out' : 'in'}`
+      const nets = byHub.get(key) ?? new Map<number, number[]>()
+      nets.set(piece.net, [...(nets.get(piece.net) ?? []), outgoing ? piece.high : piece.low])
+      byHub.set(key, nets)
+    }
+    return [...byHub.values()].filter(nets => nets.size > 1).map(nets => [...nets.values()])
+  })
+  const within = (far: number, others: ReadonlyArray<number>): boolean => hubSide === 'low' ? at(far) < Math.max(...others.map(at)) : at(far) > Math.min(...others.map(at))
+  const hubStraddles = (groups: ReadonlyArray<ReadonlyArray<number>>): number => {
+    let total = 0
+    for (let i = 0; i < groups.length; i++) {
+      for (let j = i + 1; j < groups.length; j++) {
+        total += Math.min(groups[i]!.filter(far => within(far, groups[j]!)).length, groups[j]!.filter(far => within(far, groups[i]!)).length)
+      }
+    }
+    return total
+  }
   const straddles = (groups: ReadonlyArray<ReadonlyArray<number>>): number => {
     const spans = groups.map(fars => [Math.min(...fars.map(at)), Math.max(...fars.map(at))] as const)
     let total = 0
@@ -232,6 +271,7 @@ const transpose = (model: Model, layering: Layering, layers: number[][], block: 
         }
       }
       for (const groups of meetings[g]!) if (groups.some(fars => fars.includes(item))) total += straddles(groups)
+      for (const groups of hubMeetings[g]!) if (groups.some(fars => fars.includes(item))) total += hubStraddles(groups)
     }
     for (const bar of barsNear(item)) total += barCount(bar)
     return total
@@ -239,7 +279,7 @@ const transpose = (model: Model, layering: Layering, layers: number[][], block: 
   const total = (): number => gaps.reduce((sum, pieces, g) => {
     let count = 0
     for (let i = 0; i < pieces.length; i++) for (let j = i + 1; j < pieces.length; j++) count += cross(pieces[i]!, pieces[j]!)
-    return sum + count + meetings[g]!.reduce((all, groups) => all + straddles(groups), 0)
+    return sum + count + meetings[g]!.reduce((all, groups) => all + straddles(groups), 0) + hubMeetings[g]!.reduce((all, groups) => all + hubStraddles(groups), 0)
   }, 0) + bars.reduce((sum, bar) => sum + barCount(bar), 0)
 
   const runOf = (layer: ReadonlyArray<number>, item: number): readonly [number, number] => {
@@ -261,8 +301,16 @@ const transpose = (model: Model, layering: Layering, layers: number[][], block: 
     .filter(chain => chain.items[0] === item || chain.items.at(-1) === item)
     .map(chain => (chain.items[0] === item ? chain.items.at(-1)! : chain.items[0]!))
     .filter(other => role(other) === 'stub'))
+  // A long edge's dummies move with an end that has no other pipe (a stub, or a symbol only it reaches), when they share its block.
+  const degree = model.nodes.map(node => model.edges.filter(edge => edge.from === node.index || edge.to === node.index).length)
   const units = [
-    ...layering.chains.map(chain => chain.items.filter(item => items[item]!.node === null)).filter(dummies => dummies.length >= 2),
+    ...layering.chains.map(chain => {
+      const dummies = chain.items.filter(item => items[item]!.node === null)
+      const loose = (end: number): boolean => dummies.length > 0 && role(end) !== 'hub' && role(end) !== 'bar'
+        && degree[items[end]!.node!] === 1 && dummies.every(item => block[item] === block[end])
+      const [start, end] = [chain.items[0]!, chain.items.at(-1)!]
+      return [...(loose(start) ? [start] : []), ...dummies, ...(loose(end) ? [end] : [])]
+    }).filter(unit => unit.length >= 2),
     ...layering.items.map((_, item) => item).filter(item => role(item) !== null && role(item) !== 'stub' && role(item) !== 'hub' && role(item) !== 'bar' && stubsOf(item).length > 0)
       .map(item => [item, ...stubsOf(item)]),
   ]

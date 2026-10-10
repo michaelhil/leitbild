@@ -9,9 +9,10 @@
 // symbol of a folded return leg (its faces swap), nor a bar a fold reaches.
 //
 // A hub's pipes reach their items through the channel just before each
-// (`near`), or all through the first channel (`outer`), from where they run
-// in their items' lanes: across the bars between, instead of along the
-// lanes' own pipes.
+// (`near`), or all through the first channel (`outer`: before every layer
+// but that of the stubs feeding hubs), from where they run in their items'
+// lanes: across the bars between, instead of along the lanes' own pipes, and
+// clear of what lies upstream of them.
 import type { Model } from './model.ts'
 import type { Structure } from './structure.ts'
 
@@ -61,6 +62,10 @@ export interface Layering {
   readonly layerCount: number
   readonly chains: ReadonlyArray<Chain>
 }
+
+/** A stub that only feeds, and feeds a hub: in outer hub reach it comes in through the first channel. */
+const feedsHub = (model: Model, predecessors: ReadonlyArray<number>, successors: ReadonlyArray<number>, node: number): boolean =>
+  model.nodes[node]!.role === 'stub' && predecessors.length === 0 && successors.some(next => model.nodes[next]!.role === 'hub')
 
 /**
  * Layer per node: longest path, sources beside what they feed, stubs beside
@@ -121,8 +126,8 @@ export const layerNodes = (model: Model, reversed: ReadonlyArray<boolean>, stubs
   }
   // In outer hub reach, a stub that feeds a hub comes in through the first channel, with the hub's other pipes.
   if (stubsIntoHubsFirst) {
-    const feeding = topological.filter(node => isStub(node) && predecessors[node]!.length === 0 && successors[node]!.some(next => model.nodes[next]!.role === 'hub'))
-    const firm = model.nodes.filter(node => node.role !== 'stub' && node.role !== 'hub').map(node => layer[node.index]!)
+    const feeding = topological.filter(node => feedsHub(model, predecessors[node]!, successors[node]!, node))
+    const firm = model.nodes.filter(node => node.role !== 'hub' && !feeding.includes(node.index)).map(node => layer[node.index]!)
     if (feeding.length > 0 && firm.length > 0) {
       const first = Math.min(...firm)
       for (const node of feeding) layer[node] = first - 1
@@ -136,9 +141,14 @@ export const layerNodes = (model: Model, reversed: ReadonlyArray<boolean>, stubs
 
 export const assignLayers = (model: Model, structure: Structure, reversed: ReadonlyArray<boolean>, options: LayeringOptions): Layering => {
   const layer = layerNodes(model, reversed, options.hubReach === 'outer', options.flat)
-  const firstLayer = options.hubReach === 'outer' ? Math.min(...model.nodes.filter(node => node.role !== 'stub' && node.role !== 'hub').map(node => layer[node.index]!), Infinity) : Infinity
   const dagFrom = (e: number): number => (reversed[e] ? model.edges[e]!.to : model.edges[e]!.from)
   const dagTo = (e: number): number => (reversed[e] ? model.edges[e]!.from : model.edges[e]!.to)
+  // Outer reach runs before every layer that holds anything but hubs and the stubs that feed them, stubs included:
+  // a stub upstream of the hub's channel would cross every pipe the hub sends past it.
+  const predecessors = model.nodes.map(node => model.edges.filter(edge => dagTo(edge.index) === node.index).map(edge => dagFrom(edge.index)))
+  const successors = model.nodes.map(node => model.edges.filter(edge => dagFrom(edge.index) === node.index).map(edge => dagTo(edge.index)))
+  const firm = model.nodes.filter(node => node.role !== 'hub' && !feedsHub(model, predecessors[node.index]!, successors[node.index]!, node.index))
+  const firstLayer = options.hubReach === 'outer' ? Math.min(...firm.map(node => layer[node.index]!), Infinity) : Infinity
   const role = (node: number) => model.nodes[node]!.role
   // Which flow face of a node an edge's port is on, in layering terms: +f downstream, -f upstream.
   const portFace = (node: number, e: number): '-f' | '+f' => {
@@ -172,7 +182,8 @@ export const assignLayers = (model: Model, structure: Structure, reversed: Reado
     const steps: Step[] = []
     for (let k = 0; k + 1 < chain.length; k++) {
       const same = items[chain[k]!]!.layer === items[chain[k + 1]!]!.layer
-      steps.push(!same ? 'next' : k === 0 && turnBelow ? 'turnBelow' : 'turnAbove')
+      // In outer reach a hub meets its first item in the channel before that item, even one of its own layer.
+      steps.push(!same || (k === 0 && outer) ? 'next' : k === 0 && turnBelow ? 'turnBelow' : 'turnAbove')
     }
     return { edge: edge.index, items: chain, steps, reversed: isReversed }
   })
