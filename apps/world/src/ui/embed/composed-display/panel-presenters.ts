@@ -1,6 +1,6 @@
 // Pure derivations for composed-display panels. Thresholds come from World;
 // these functions only relate them to the latest sampled values.
-import { displayValue, formatValue, thresholdName, unitLabel, type ThresholdMargin } from '../../../packs/process-plant/displays/display-text.ts'
+import { displayValue, formatValue, marginTextForms, thresholdName, unitLabel, type ThresholdMargin } from '../../../packs/process-plant/displays/display-text.ts'
 import type { ComposedDisplayThreshold } from '../../../packs/process-plant/displays/ic-thresholds.ts'
 import type { ComposedDisplayAlarm, ComposedDisplaySample } from './composed-display-client.ts'
 import type { TrendPoint } from './trend-geometry.ts'
@@ -160,6 +160,12 @@ export const returningText = (value: number, rate: number | null, active: Compos
   if (!projectable) return 'recovering, not projected'
   const eta = timeToThresholdText(value, rate, { ...active, direction: active.direction === 'low' ? 'high' : 'low' }, true)
   return `back ${active.direction === 'low' ? 'above' : 'below'} ${thresholdName(active, unit)} in ${eta === '' ? 'over 30 min' : eta}`
+}
+
+/** The fullest wording of a margin that fits its room (marginTextForms); the shortest where none does. */
+export const fitMarginText = (margin: ThresholdMargin, unit: string, fits: (text: string) => boolean): string => {
+  const forms = marginTextForms(margin, unit)
+  return forms.find(fits) ?? forms.at(-1)!
 }
 
 /** Whether the value moves away from every limit it has not passed ("no HI limit ahead"). */
