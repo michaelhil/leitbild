@@ -11,6 +11,7 @@ import {
 } from '../component-helpers.ts'
 import {
   averageIncomingComponentLinkValue as averageIncomingLinkValue,
+  sumOutgoingComponentLinkValue,
   sumProcessLinkValueByService as sumLinkValueByService,
 } from '../component-link-helpers.ts'
 import { flowWeightedIncomingLinkValue, sumIncomingLinkValue } from '../links/link-flow-helpers.ts'
@@ -317,7 +318,11 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
         sumLinkValueByService(system, 'flowKgPerS', context, 'letdown'),
         optionalParameterNumber(component, 'normalLetdownFlowKgPerS', 0),
       )
-      const reliefFlow = sumLinkValueByService(system, 'flowKgPerS', context, 'primaryRelief')
+      // Relief leaves the coolant where it leaves the pressurizer; the relief header it joins downstream carries it again.
+      const relievingPressurizer = primarySystemPressurizer(system)
+      const reliefFlow = relievingPressurizer === null
+        ? 0
+        : sumOutgoingComponentLinkValue(system, relievingPressurizer, 'flowKgPerS', context, link => link.service === 'primaryRelief')
       const primaryLeakFlow = sumLinkValueByService(system, 'leakFlowKgPerS', context, 'primaryCoolant')
       const tubeLeakFlow = sumComponentValueByKind(system, 'steamGenerator', 'primaryToSecondaryLeakKgPerS', context)
       const totalInflow = chargingFlow + primaryInjectionFlow

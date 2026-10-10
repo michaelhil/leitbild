@@ -39,6 +39,7 @@ export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       'reliefValveFailedPositionFraction',
       'blockValvePositionFraction',
       'blockValveEffectivePositionFraction',
+      'safetyValvesOpen',
       'incoming:primaryCoolant.temperatureC',
       'reactor vessel primaryPressureBiasMPa',
     ],
@@ -58,6 +59,9 @@ export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       'reliefValveEffectivePositionFraction',
       'blockValveEffectivePositionFraction',
       'reliefFlowKgPerS',
+      'safetyValvesOpen',
+      'safetyValvesLiftFraction',
+      'safetyValveFlowKgPerS',
       'demandMw',
     ],
     update: ({ system, component, context }): void => {
@@ -91,6 +95,20 @@ export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
         ? approach(blockValvePosition, clamp(context.readNumber(componentVariablePath(component, 'blockValvePositionFraction')), 0, 1), context.dtSeconds / parameterNumber(component, 'blockValveStrokeTimeS'))
         : blockValvePosition
       const reliefFlow = reliefCapacity * Math.min(reliefOpening, nextBlockValvePosition) * clamp(currentPressure / nominalPressure, 0.1, 1.4)
+      // The code safety valves pop open at their set pressure, reach full lift
+      // with the accumulation above it and stay open until pressure falls by
+      // the blowdown below it. Their lift follows pressure between reseat and
+      // full lift, and their choked steam flow the pressure upstream.
+      const safetySetpoint = parameterNumber(component, 'safetyValveSetpointMPa')
+      const safetyFullLiftPressure = safetySetpoint * (1 + parameterNumber(component, 'safetyValveAccumulationFraction'))
+      const safetyReseatPressure = safetySetpoint * (1 - parameterNumber(component, 'safetyValveBlowdownFraction'))
+      const safetyValvesOpen = context.readBoolean(componentVariablePath(component, 'safetyValvesOpen'))
+        ? currentPressure > safetyReseatPressure
+        : currentPressure >= safetySetpoint
+      const safetyLift = safetyValvesOpen
+        ? clamp((currentPressure - safetyReseatPressure) / (safetyFullLiftPressure - safetyReseatPressure), 0, 1)
+        : 0
+      const safetyFlow = parameterNumber(component, 'safetyValvesCapacityKgPerS') * safetyLift * currentPressure / safetyFullLiftPressure
 
       const surgeTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.service === 'primaryCoolant')
         ?? context.readNumber(componentVariablePath(component, 'waterTemperatureC'))
@@ -117,12 +135,12 @@ export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       const nextSteamMass = inventoryBalanceStep({
         currentInventory: currentSteamMass,
         inflowKgPerS: heaterSteamGeneration,
-        outflowKgPerS: sprayCondensation + reliefFlow,
+        outflowKgPerS: sprayCondensation + reliefFlow + safetyFlow,
         dtSeconds: context.dtSeconds,
         minInventory: nominalSteamMass * 0.05,
         maxInventory: nominalSteamMass * 3,
       })
-      const steamMassNetFlow = heaterSteamGeneration - sprayCondensation - reliefFlow
+      const steamMassNetFlow = heaterSteamGeneration - sprayCondensation - reliefFlow - safetyFlow
 
       const currentInventory = context.readNumber(componentVariablePath(component, 'waterInventoryKg'))
       const waterNetFlow = sprayFlow + sprayCondensation - heaterSteamGeneration
@@ -148,6 +166,9 @@ export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       context.write(componentVariablePath(component, 'reliefValveEffectivePositionFraction'), reliefOpening)
       context.write(componentVariablePath(component, 'blockValveEffectivePositionFraction'), nextBlockValvePosition)
       context.write(componentVariablePath(component, 'reliefFlowKgPerS'), reliefFlow)
+      context.write(componentVariablePath(component, 'safetyValvesOpen'), safetyValvesOpen)
+      context.write(componentVariablePath(component, 'safetyValvesLiftFraction'), safetyLift)
+      context.write(componentVariablePath(component, 'safetyValveFlowKgPerS'), safetyFlow)
       context.write(componentVariablePath(component, 'waterTemperatureC'), nextWaterTemperature)
       context.write(componentVariablePath(component, 'steamTemperatureC'), nextSteamTemperature)
       context.write(componentVariablePath(component, 'waterInventoryKg'), nextInventory)
