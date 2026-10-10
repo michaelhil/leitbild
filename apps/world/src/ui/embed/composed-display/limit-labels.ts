@@ -68,15 +68,17 @@ export interface RankedLimit {
   readonly active: string | null
   /** A value on the panel is heading for it (limitAhead). */
   readonly ahead: boolean
+  /** It acts in the Plant's current mode (limitInForce). */
+  readonly inForce: boolean
 }
 
 /**
  * The order limit labels are kept in when they do not all fit: active limits,
  * critical ones first; then each limit a value is heading for; then the rest,
- * nearest the value first.
+ * nearest the value first; last those that do not act in the current mode.
  */
 export const limitLabelRanks = (limits: ReadonlyArray<RankedLimit>, current: number | undefined): ReadonlyMap<string, number> => {
-  const tier = (limit: RankedLimit): number => limit.active === 'critical' ? 0 : limit.active !== null ? 1 : limit.ahead ? 2 : 3
+  const tier = (limit: RankedLimit): number => limit.active === 'critical' ? 0 : limit.active !== null ? 1 : limit.ahead ? 2 : limit.inForce ? 3 : 4
   const distance = (limit: RankedLimit): number => current === undefined ? 0 : Math.abs(limit.value - current)
   const ranked = [...limits].sort((left, right) => tier(left) - tier(right) || distance(left) - distance(right))
   return new Map(ranked.map((limit, index) => [limit.key, index]))
