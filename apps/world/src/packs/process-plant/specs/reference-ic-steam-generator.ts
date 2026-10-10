@@ -1,5 +1,5 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
-import { alarm, all, annunciator, any, comparison, rule, trip, write } from './reference-ic-helpers.ts'
+import { alarm, all, annunciator, any, comparison, reactorTripBreakerWrites, rule, trip, write } from './reference-ic-helpers.ts'
 import type { ProcessPlantReferenceLoop } from './reference-loop.ts'
 
 // Narrow-range level limits above the 55 % program: a high alarm, and P-14
@@ -7,6 +7,15 @@ import type { ProcessPlantReferenceLoop } from './reference-loop.ts'
 // turbine (and so, above P-9, the reactor) before water reaches the steam lines.
 const levelHighPercent = 75
 const levelHighHighPercent = 82
+
+// Low-low narrow-range level in any one steam generator starts auxiliary
+// feedwater and trips the reactor: a generator boiling down at power soon
+// uncovers its tubes and the core loses its heat sink. The trip acts while the
+// reactor can be critical (the standard technical specifications' modes 1 and
+// 2); auxiliary feedwater starts in every mode. A real plant votes two of three
+// or four level channels per generator; this model has one channel each, so
+// that one channel trips.
+const levelLowLowPercent = 20
 
 export const steamGeneratorReferenceIcRules = (loop: ProcessPlantReferenceLoop): ReadonlyArray<ProcessPlantIcRule> => {
   const lower = loop.toLowerCase()
@@ -22,6 +31,15 @@ export const steamGeneratorReferenceIcRules = (loop: ProcessPlantReferenceLoop):
     system: 'steamGenerators',
     equipmentId: sg,
     group: `steam-generator-${lower}`,
+    priority: 'urgent',
+    role: 'automaticAction',
+  })
+  // The reactor trip is the reactor protection system's, first out among its trips.
+  const reactorTripAction = annunciator({
+    system: 'reactorProtection',
+    equipmentId: sg,
+    group: 'reactor-protection',
+    firstOutGroup: 'reactor-trip',
     priority: 'urgent',
     role: 'automaticAction',
   })
@@ -75,7 +93,7 @@ export const steamGeneratorReferenceIcRules = (loop: ProcessPlantReferenceLoop):
       id: `sg-${lower}-level-low-low-afw-actuation`,
       label: `Steam generator ${loop} low-low level auxiliary feedwater actuation`,
       ruleClass: 'protection',
-      condition: comparison({ tagId: `SG-${loop}-LVL-NR` }, '<', 20),
+      condition: comparison({ tagId: `SG-${loop}-LVL-NR` }, '<', levelLowLowPercent),
       delayMs: 1_000,
       effects: [
         trip({
@@ -87,6 +105,24 @@ export const steamGeneratorReferenceIcRules = (loop: ProcessPlantReferenceLoop):
         write('start-motor-afw', { path: 'auxFeedwaterPumpMotor.running' }, true),
         write('start-turbine-afw', { path: 'auxFeedwaterPumpTurbine.running' }, true),
         write(`open-afw-valve-${lower}`, { path: `auxFeedwaterValve${loop}.positionFraction` }, 1),
+      ],
+    }),
+    rule({
+      id: `sg-${lower}-level-low-low-reactor-trip`,
+      label: `Steam generator ${loop} low-low level reactor trip`,
+      ruleClass: 'protection',
+      modes: ['powerOperation', 'startup'],
+      condition: comparison({ tagId: `SG-${loop}-LVL-NR` }, '<', levelLowLowPercent),
+      delayMs: 1_000,
+      effects: [
+        trip({
+          id: 'low-low-level-reactor-trip',
+          title: `Reactor trip on steam generator ${loop} low-low level`,
+          message: `Steam generator ${loop} narrow-range level fell below the ${levelLowLowPercent} % low-low reactor trip setpoint.`,
+          annunciator: reactorTripAction,
+        }),
+        ...reactorTripBreakerWrites(`sg-${lower}-low-low-level-trip`),
+        write(`insert-control-rods-sg-${lower}-low-low-level`, { path: 'core.rodInsertionFraction' }, 1),
       ],
     }),
     rule({
