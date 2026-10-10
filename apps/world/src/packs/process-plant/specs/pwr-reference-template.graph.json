@@ -32,7 +32,7 @@
         "fuelThermalCapacityMjPerC": 45000,
         "nominalPrimaryFlowKgPerS": 17000,
         "nominalSourceRangeCountRateCps": 100000,
-        "nominalIntermediateRangeCurrentAmps": 0.00001,
+        "nominalIntermediateRangeCurrentAmps": 0.0005,
         "minimumNaturalCirculationCoolingFraction": 0.08
       },
       "variables": [
@@ -60,10 +60,16 @@
           }
         },
         {
+          "path": "sourceRangeEnergized",
+          "tagId": "NIS-SR-HV",
+          "equipmentId": "nuclear-instrumentation",
+          "description": "Source-range detector high voltage on; cut above P-6, an intermediate-range current of 1e-10 A"
+        },
+        {
           "path": "sourceRangeCountRateCps",
           "tagId": "NIS-SR",
           "equipmentId": "nuclear-instrumentation",
-          "description": "Source-range nuclear instrumentation count rate",
+          "description": "Source-range nuclear instrumentation count rate; no counts while its detectors' high voltage is off above P-6 (NIS-SR-HV)",
           "externalRefs": [
             "nis.source_range.count_rate"
           ]
@@ -72,7 +78,7 @@
           "path": "intermediateRangeCurrentAmps",
           "tagId": "NIS-IR",
           "equipmentId": "nuclear-instrumentation",
-          "description": "Intermediate-range nuclear instrumentation current",
+          "description": "Intermediate-range nuclear instrumentation current, in proportion to neutron flux over its 1e-11 A to 1e-3 A span",
           "externalRefs": [
             "nis.intermediate_range.avg"
           ]
@@ -9548,6 +9554,7 @@
     "core.effectiveReactivityPcm",
     "core.rodInsertionFraction",
     "core.sourceRangeCountRateCps",
+    "core.sourceRangeEnergized",
     "core.intermediateRangeCurrentAmps",
     "core.fuelTemperatureC",
     "core.fuelLowerTemperatureC",

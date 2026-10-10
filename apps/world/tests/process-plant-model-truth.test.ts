@@ -15,6 +15,7 @@ import { resolveProcessPlantSignalBinding } from '../src/packs/process-plant/sig
 import { itemBinding, framingRules } from '../src/packs/process-plant/displays/mimic/bindings.ts'
 import { indexSample, itemLook } from '../src/packs/process-plant/displays/mimic/evaluate.ts'
 import { icThresholdsForSignal } from '../src/packs/process-plant/displays/ic-thresholds.ts'
+import { formatQuantity } from '../src/packs/process-plant/displays/display-text.ts'
 
 // The reference PWR reports what its equipment does, beside what it is told
 // to do: a feedback tag for each command tag, read from the solved state.
@@ -306,5 +307,41 @@ describe('a turbine trip', () => {
     for (let second = 0; second < 10; second += 1) step()
     expect(runtime.readVariable('reactorTripBreakerA.closedState' as VariablePath)).toBe(true)
     expect(protection.snapshot().trips.find(lifecycle => lifecycle.id === 'trip:reactor-turbine-trip:turbine-trip-reactor-trip')!.active).toBe(false)
+  })
+})
+
+describe('nuclear instrumentation', () => {
+  test('at power the intermediate range reads high and the source range is de-energized', () => {
+    const plantRun = started()
+    plantRun.run(5_000)
+    const current = Number(plantRun.tag('NIS-IR'))
+    expect(current).toBeGreaterThan(4e-4)
+    expect(current).toBeLessThanOrEqual(1e-3)
+    expect(formatQuantity(current, 'amps')).toMatch(/^0\.000[1-9]\d A$/)
+    expect(plantRun.tag('NIS-SR-HV')).toBe(false)
+    expect(plantRun.tag('NIS-SR')).toBe(0)
+  })
+
+  test('after a trip the source range is energized below P-6 and counts', () => {
+    const tripped = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:nis-trip', valueOverrides: { 'pressurizer.pressureMPa': 10 } }))
+    const runtime = createProcessPlantRuntime({ system: tripped })
+    const protection = createProcessPlantProtectionRunner({ system: tripped, protection: tripped.automation })
+    const tag = (tagId: string) => runtime.readVariable(resolveProcessPlantSignalBinding(tripped.graph, { tagId: tagId as never }).path)
+    let energizedAt: number | null = null
+    for (let second = 1; second <= 600; second += 1) {
+      runtime.tick(1_000)
+      protection.evaluate({ runtime, elapsedMs: runtime.elapsedMs(), simulationRunId: 'run-model-truth' as SimulationRunId, sourceRuntimeId: 'process-plant.local' })
+      if (energizedAt === null && tag('NIS-SR-HV') === true) {
+        energizedAt = second
+        // It comes on below P-6 at the top of its range.
+        expect(Number(tag('NIS-SR'))).toBeGreaterThan(1_000)
+        expect(Number(tag('NIS-SR'))).toBeLessThanOrEqual(100_010)
+      }
+    }
+    expect(energizedAt).not.toBeNull()
+    // Shut down, the source range counts the startup source and the intermediate range sits at the bottom of its span.
+    expect(Number(tag('NIS-SR'))).toBeGreaterThanOrEqual(10)
+    expect(Number(tag('NIS-SR'))).toBeLessThan(100)
+    expect(Number(tag('NIS-IR'))).toBe(1e-11)
   })
 })
