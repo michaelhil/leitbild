@@ -2723,7 +2723,13 @@
           "path": "closed",
           "tagId": "BRK-OFFSITE-A-CLOSED",
           "equipmentId": "offsiteBreakerA",
-          "description": "Offsite breaker A closed status"
+          "description": "Offsite breaker A close command"
+        },
+        {
+          "path": "closedState",
+          "tagId": "BRK-OFFSITE-A-POS",
+          "equipmentId": "offsiteBreakerA",
+          "description": "Offsite breaker A position feedback, closed while true"
         }
       ],
       "metadata": {
@@ -2745,7 +2751,13 @@
           "path": "closed",
           "tagId": "BRK-OFFSITE-B-CLOSED",
           "equipmentId": "offsiteBreakerB",
-          "description": "Offsite breaker B closed status"
+          "description": "Offsite breaker B close command"
+        },
+        {
+          "path": "closedState",
+          "tagId": "BRK-OFFSITE-B-POS",
+          "equipmentId": "offsiteBreakerB",
+          "description": "Offsite breaker B position feedback, closed while true"
         }
       ],
       "metadata": {
@@ -2981,10 +2993,16 @@
           "path": "closed",
           "tagId": "TRIP-BKR-A",
           "equipmentId": "reactorTripBreakerA",
-          "description": "Reactor trip breaker A closed status",
+          "description": "Reactor trip breaker A close command",
           "externalRefs": [
             "rps.trip_breaker.a.position"
           ]
+        },
+        {
+          "path": "closedState",
+          "tagId": "TRIP-BKR-A-POS",
+          "equipmentId": "reactorTripBreakerA",
+          "description": "Reactor trip breaker A position feedback, closed while true"
         }
       ],
       "metadata": {
@@ -3006,10 +3024,16 @@
           "path": "closed",
           "tagId": "TRIP-BKR-B",
           "equipmentId": "reactorTripBreakerB",
-          "description": "Reactor trip breaker B closed status",
+          "description": "Reactor trip breaker B close command",
           "externalRefs": [
             "rps.trip_breaker.b.position"
           ]
+        },
+        {
+          "path": "closedState",
+          "tagId": "TRIP-BKR-B-POS",
+          "equipmentId": "reactorTripBreakerB",
+          "description": "Reactor trip breaker B position feedback, closed while true"
         }
       ],
       "metadata": {

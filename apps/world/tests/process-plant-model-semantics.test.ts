@@ -64,6 +64,13 @@ describe('model semantics declared per component kind', () => {
     ])
   })
 
+  test('a breaker position is its contacts, closed while its solved state reads true', () => {
+    expect(componentById(graph, 'offsiteBreakerA').semantics.aspects).toEqual([
+      { aspect: 'energized', state: { path: 'offsiteBreakerA.energized' as never, reading: 'true' } },
+      { aspect: 'position', state: { path: 'offsiteBreakerA.closedState' as never, reading: 'closedWhileTrue' }, command: 'offsiteBreakerA.closed' as never },
+    ])
+  })
+
   test('valves say what they do from their mode', () => {
     const functionOf = (id: string) => componentById(graph, id).semantics.function
     expect(functionOf('feedwaterControlValveB')).toBe('modulating')

@@ -14,6 +14,8 @@ import { recordedPlantVariables } from '../src/packs/process-plant/recording.ts'
 import { compileMimic, type MimicBudget } from '../src/packs/process-plant/displays/mimic/compile-mimic.ts'
 import { MIMIC_MAX_WIDTH, type CompiledMimic } from '../src/packs/process-plant/displays/mimic/mimic-model.ts'
 import { chatMimicProfile } from '../src/packs/process-plant/displays/mimic/profiles.ts'
+import { indexSample } from '../src/packs/process-plant/displays/mimic/evaluate.ts'
+import { itemRowTexts } from '../src/packs/process-plant/displays/mimic/rows.ts'
 import { plantCarriers, plantLoops, type MimicIntent } from '../src/packs/process-plant/displays/mimic/scope.ts'
 import { carriersAt } from '../src/packs/process-plant/graph/index.ts'
 
@@ -100,6 +102,22 @@ describe('generated equipment mimics', () => {
     // Several legs reached: the equipment on them tells them apart, and headers never list their branches.
     expect(labels({ services: ['primaryCoolant'], loops: ['A'] })).toContain('Core')
     expect(labels({ services: ['primaryCoolant'] }).filter(label => label.includes(' · '))).toEqual([])
+  })
+
+  test('a breaker says its contacts, and a command it does not follow', () => {
+    const mimic = generated(system, { to: ['safetyBusA'] })
+    const breaker = mimic.items.find(item => item.binding.label === 'Offsite BKR A')!
+    expect(breaker.rows.map(row => row.kind)).toEqual(['state', 'mismatch'])
+    expect(mimic.summary.unmeasuredStates).toEqual([])
+    const state = breaker.binding.state!
+    const at = (closed: boolean, command: boolean) => indexSample([{ path: state.state!.path, value: closed, quality: 'good' }, { path: state.command!, value: command, quality: 'good' }])
+    const texts = (index: ReturnType<typeof indexSample>) => itemRowTexts(breaker.binding, breaker.presentation, breaker.rows, index, String)
+    expect(texts(at(true, true))).toEqual(['CLOSED', ''])
+    expect(texts(at(false, false))).toEqual(['OPEN', ''])
+    // Tripped open while still commanded closed, and stuck closed while commanded open.
+    expect(texts(at(false, true))).toEqual(['OPEN', 'CMD CLOSE'])
+    expect(texts(at(true, false))).toEqual(['CLOSED', 'CMD OPEN'])
+    expect(texts(indexSample([]))).toEqual(['?', ''])
   })
 
   test('the same intent on the same model draws the same mimic', () => {

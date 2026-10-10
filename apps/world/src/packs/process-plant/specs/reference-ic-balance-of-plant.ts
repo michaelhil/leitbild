@@ -1,5 +1,5 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
-import { alarm, all, annunciator, any, comparison, rule, write } from './reference-ic-helpers.ts'
+import { alarm, all, annunciator, any, comparison, reactorTripBreakerOpen, rule, write } from './reference-ic-helpers.ts'
 
 const feedwaterAlarm = annunciator({
   system: 'feedwater',
@@ -22,10 +22,7 @@ export const balanceOfPlantReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRu
     id: 'reactor-trip-turbine-trip',
     label: 'Reactor trip turbine trip',
     ruleClass: 'normalControl',
-    condition: any([
-      comparison({ tagId: 'TRIP-BKR-A' }, '==', false),
-      comparison({ tagId: 'TRIP-BKR-B' }, '==', false),
-    ]),
+    condition: reactorTripBreakerOpen(),
     latch: false,
     resetWhenClear: true,
     effects: [
@@ -37,10 +34,7 @@ export const balanceOfPlantReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRu
     id: 'reactor-trip-main-feedwater-isolation',
     label: 'Reactor trip main feedwater isolation',
     ruleClass: 'normalControl',
-    condition: any([
-      comparison({ tagId: 'TRIP-BKR-A' }, '==', false),
-      comparison({ tagId: 'TRIP-BKR-B' }, '==', false),
-    ]),
+    condition: reactorTripBreakerOpen(),
     delayMs: 45_000,
     latch: false,
     resetWhenClear: true,

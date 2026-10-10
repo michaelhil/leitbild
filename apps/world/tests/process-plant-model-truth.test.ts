@@ -66,3 +66,55 @@ describe('the pressurizer PORV', () => {
     expect(Number(plantRun.tag('PORV-456A-POS'))).toBeCloseTo(0.35, 6)
   })
 })
+
+describe('breakers', () => {
+  const breakerLook = (system: typeof plant, id: string, read: (path: string) => unknown) => {
+    const binding = itemBinding(system, { kind: 'component', component: system.graph.componentIndexById.get(id as never)! }, 'position', framingRules(system))
+    const paths = [binding.state!.state!.path, binding.state!.command!]
+    return itemLook(binding, indexSample(paths.map(path => ({ path, value: read(path), quality: 'good' }))))
+  }
+
+  test('a breaker opened by its command reads open', () => {
+    const plantRun = started()
+    plantRun.run(2_000, { withIc: false })
+    expect(plantRun.tag('BRK-OFFSITE-A-POS')).toBe(true)
+    expect(breakerLook(plant, 'offsiteBreakerA', plantRun.read)).toMatchObject({ state: { kind: 'closed' }, mismatch: null, words: 'closed' })
+    plantRun.runtime.writeCommand({ type: 'setVariable', path: 'offsiteBreakerA.closed' as VariablePath, value: false })
+    plantRun.run(1_000, { withIc: false })
+    expect(plantRun.tag('BRK-OFFSITE-A-CLOSED')).toBe(false)
+    expect(plantRun.tag('BRK-OFFSITE-A-POS')).toBe(false)
+    expect(plantRun.read('offsiteBreakerA.energized')).toBe(false)
+    expect(breakerLook(plant, 'offsiteBreakerA', plantRun.read)).toMatchObject({ state: { kind: 'open' }, mismatch: null, words: 'open' })
+  })
+
+  test('a tripped breaker reads open while its close command stays', () => {
+    const plantRun = started()
+    plantRun.run(2_000, { withIc: false })
+    // A protective relay latches the trip; the close command is left as it was.
+    plantRun.runtime.writeCommand({ type: 'setVariable', path: 'offsiteBreakerA.tripped' as VariablePath, value: true })
+    plantRun.run(1_000, { withIc: false })
+    expect(plantRun.tag('BRK-OFFSITE-A-CLOSED')).toBe(true)
+    expect(plantRun.tag('BRK-OFFSITE-A-POS')).toBe(false)
+    expect(plantRun.tag('BRK-OFFSITE-B-POS')).toBe(true)
+    expect(plantRun.read('offsiteBreakerA.energized')).toBe(false)
+    expect(breakerLook(plant, 'offsiteBreakerA', plantRun.read)).toMatchObject({ state: { kind: 'open' }, mismatch: 'CMD CLOSE', words: 'open; commanded close disagrees' })
+  })
+
+  test('a reactor trip opens both reactor trip breakers, read from their position feedback', () => {
+    const tripped = compileProcessPlant(createPwrReferencePlantDefinition({
+      id: 'plant:reactor-trip',
+      valueOverrides: { 'pressurizer.pressureMPa': 10 },
+    }))
+    const runtime = createProcessPlantRuntime({ system: tripped })
+    const protection = createProcessPlantProtectionRunner({ system: tripped, protection: tripped.automation })
+    for (let elapsed = 0; elapsed < 5_000; elapsed += 1_000) {
+      runtime.tick(1_000)
+      protection.evaluate({ runtime, elapsedMs: runtime.elapsedMs(), simulationRunId: 'run-model-truth' as SimulationRunId, sourceRuntimeId: 'process-plant.local' })
+    }
+    const tag = (tagId: string) => runtime.readVariable(resolveProcessPlantSignalBinding(tripped.graph, { tagId: tagId as never }).path)
+    expect(tag('TRIP-BKR-A-POS')).toBe(false)
+    expect(tag('TRIP-BKR-B-POS')).toBe(false)
+    // The turbine follows the reactor trip, as the breakers' position reads it.
+    expect(Number(runtime.readVariable('turbineStopValve.positionFraction' as VariablePath))).toBe(0)
+  })
+})

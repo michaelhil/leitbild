@@ -76,6 +76,12 @@ export const write = (id: string, signal: SignalRef, value: number | boolean): R
   value,
 })
 
+/** The reactor is tripped while either reactor trip breaker's contacts read open, whatever their commands say. */
+export const reactorTripBreakerOpen = (): ProcessPlantIcCondition => any([
+  comparison({ tagId: 'TRIP-BKR-A-POS' }, '==', false),
+  comparison({ tagId: 'TRIP-BKR-B-POS' }, '==', false),
+])
+
 export const reactorTripBreakerWrites = (idPrefix: string): ReadonlyArray<ReferenceIcEffect> => [
   write(`${idPrefix}-open-trip-breaker-a`, { tagId: 'TRIP-BKR-A' }, false),
   write(`${idPrefix}-open-trip-breaker-b`, { tagId: 'TRIP-BKR-B' }, false),
