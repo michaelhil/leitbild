@@ -502,6 +502,8 @@ describe('a display shows what its question is about', () => {
       .toContain('subjects.0: the auxFeedwater service is what the question is about but no panel shows it')
     // Safety injection to loop C draws shared equipment only; its pipe into cold leg C is loop C.
     expect(() => ask('world.process-plant.display.compose', display(['loop C', 'safetyInjection'], [{ kind: 'mimic', services: ['safetyInjection'], loops: ['C'] }]))).not.toThrow()
+    // As plants.list names it (probe run 20).
+    expect(() => ask('world.process-plant.display.compose', display(['C'], [{ kind: 'mimic', services: ['safetyInjection'], loops: ['C'] }]))).not.toThrow()
     expect(rejectionOf(() => ask('world.process-plant.display.compose', display(['loop D'], [{ kind: 'mimic', services: ['safetyInjection'], loops: ['C'] }]))))
       .toContain('subjects.0: loop D is what the question is about but no panel shows it')
   })

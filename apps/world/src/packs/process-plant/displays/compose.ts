@@ -495,7 +495,8 @@ const subjectIssues = (
     if (service !== undefined) {
       return shownServices.has(service) ? [] : [{ path, message: `the ${service} service is what the question is about but no panel shows it: draw it in a mimic or show a flow of it` }]
     }
-    const loop = plantLoops(graph).find(candidate => normalized(`loop ${candidate}`) === wanted)
+    // plants.list names loops by their ids ("C"); "loop C" names the same loop.
+    const loop = plantLoops(graph).find(candidate => normalized(candidate) === wanted || normalized(`loop ${candidate}`) === wanted)
     if (loop !== undefined) {
       return shownLoops.has(loop) ? [] : [{ path, message: `loop ${loop} is what the question is about but no panel shows it: draw its equipment or show one of its signals` }]
     }
