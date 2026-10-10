@@ -1,6 +1,6 @@
 //! Connected current-state hot thermal/source residual/RHS operator.
 //! One call composes current feedback, actual event-fed history, reciprocal
-//! finite heat receipts and differentiated primary continuity. External ports
+//! finite heat receipts and local retained-mass continuity. External ports
 //! remain explicit. No fixed-power heater, steady-state reset, JSON stage work,
 //! solver, absent-phase floor or automatically successful startup lives here.
 //! Nuclear, isotope and history outputs are RHS vectors; thermal/caloric and
@@ -154,7 +154,9 @@ pub struct State<'a> {
     pub helium_u: &'a [Scalar],
     pub passive_u: &'a [Scalar],
     pub sg_u: &'a [Scalar],
-    pub pressure: Scalar,
+    pub pressure: &'a [Scalar],
+    /// Differential inventory, not freshly inferred from p/T on every call.
+    pub water_mass: &'a [Scalar],
     pub water_t: &'a [Scalar],
     pub water_u: &'a [Scalar],
     pub boron_amount: &'a [Scalar],
@@ -174,7 +176,7 @@ pub struct Rates<'a> {
     pub helium: &'a [Scalar],
     pub passive: &'a [Scalar],
     pub sg: &'a [Scalar],
-    pub pressure: Scalar,
+    pub water_mass: &'a [Scalar],
     pub water: &'a [Scalar],
     pub boron: &'a [Scalar],
 }
@@ -222,6 +224,9 @@ pub struct Work {
     pub water_residual: Vec<Scalar>,
     pub continuity: Vec<Scalar>,
     pub caloric: Vec<Scalar>,
+    pub mass_caloric: Vec<Scalar>,
+    saturation: Vec<thermal::Saturation>,
+    needs_saturation: Vec<bool>,
     pub boron_residual: Vec<Scalar>,
     pub event_heat: Scalar,
     pub released_heat: Scalar,
@@ -371,6 +376,15 @@ impl Model {
             return Err("invalid finite passive/SG contact".into());
         }
         let z = |k| vec![Scalar::default(); k];
+        let mut needs_saturation = vec![false; n];
+        for c in self
+            .bands
+            .iter()
+            .flat_map(|b| &b.contacts)
+            .chain(self.sg.iter().map(|g| &g.contact))
+        {
+            needs_saturation[c.water] = true;
+        }
         Ok(Work {
             feedback: sf::Output::new(r, a, self.feedback.support_count()),
             water: vec![
@@ -414,6 +428,9 @@ impl Model {
             water_residual: z(n),
             continuity: z(n),
             caloric: z(n),
+            mass_caloric: z(n),
+            saturation: vec![thermal::Saturation::default(); n],
+            needs_saturation,
             boron_residual: z(n),
             event_heat: s(0.),
             released_heat: s(0.),
@@ -484,6 +501,8 @@ impl Model {
             || x.passive_t.len() != self.passive_mass.len()
             || x.sg_t.len() != self.sg.len()
             || x.water_t.len() != n
+            || x.pressure.len() != n
+            || x.water_mass.len() != n
             || x.water_u.len() != n
             || x.boron_amount.len() != n
             || x.face_flow.len() != self.edges.len()
@@ -494,6 +513,7 @@ impl Model {
             || d.passive.len() != x.passive_t.len()
             || d.sg.len() != x.sg_t.len()
             || d.water.len() != n
+            || d.water_mass.len() != n
             || d.boron.len() != n
             || ext.mass.len() != n
             || ext.energy.len() != n
@@ -512,7 +532,7 @@ impl Model {
             .chain(d.sg)
             .chain(d.water)
             .chain(d.boron)
-            .chain([&d.pressure])
+            .chain(d.water_mass)
             .copied()
             .all(finite)
         {
@@ -537,6 +557,7 @@ impl Model {
             || w.water_residual.len() != n
             || w.continuity.len() != n
             || w.caloric.len() != n
+            || w.mass_caloric.len() != n
             || w.boron_rhs.len() != n
             || w.boron_residual.len() != n
             || w.helium_rhs.len() != x.helium_t.len()
@@ -554,17 +575,23 @@ impl Model {
             return Err("connected hot workspace length".into());
         }
         for (i, v) in self.volumes.iter().enumerate() {
-            w.water[i] = props.fixed_liquid(*v, x.pressure, x.water_t[i])?;
-            w.caloric[i] = x.water_u[i] - w.water[i].energy;
+            if !finite(x.water_mass[i]) || x.water_mass[i].value == 0. {
+                return Err("hot single-phase inventory unavailable".into());
+            }
+            w.water[i] = props.fixed_liquid(*v, x.pressure[i], x.water_t[i])?;
+            w.mass_caloric[i] = x.water_mass[i] - w.water[i].mass;
+            w.caloric[i] = x.water_u[i] - x.water_mass[i] * (w.water[i].energy / w.water[i].mass);
+            if w.needs_saturation[i] {
+                w.saturation[i] = props.saturation(x.pressure[i]).map_err(error)?;
+            }
             w.water_rhs[i] = ext.energy[i];
             w.boron_rhs[i] = ext.boron[i];
             w.continuity[i] = ext.mass[i];
         }
-        let primary_saturation = props.saturation(x.pressure).map_err(error)?;
         for (i, j) in self.source_water.iter().enumerate() {
-            w.density[i] = w.water[*j].density;
-            w.boron[i] = s(1e6) * x.boron_amount[*j] / w.water[*j].mass;
-            w.p[i] = x.pressure;
+            w.density[i] = x.water_mass[*j] / s(self.volumes[*j]);
+            w.boron[i] = s(1e6) * x.boron_amount[*j] / x.water_mass[*j];
+            w.p[i] = x.pressure[*j];
             w.t[i] = x.water_t[*j];
         }
         for (i, f) in x.fuel.iter().enumerate() {
@@ -786,7 +813,7 @@ impl Model {
             for c in &b.contacts {
                 let q = thermal::liquid_wall_current(
                     props,
-                    x.pressure,
+                    x.pressure[c.water],
                     x.water_t[c.water],
                     v.clad_outer,
                     self.mass_flux(c, x),
@@ -797,7 +824,7 @@ impl Model {
                         material: thermal::core_wall_material(v.clad_mean, density)
                             .map_err(error)?,
                     },
-                    primary_saturation,
+                    w.saturation[c.water],
                     w.water[c.water].thermal,
                 )
                 .map_err(error)?;
@@ -874,7 +901,7 @@ impl Model {
         for (i, c) in self.sg.iter().enumerate() {
             let q = thermal::liquid_wall_current(
                 props,
-                x.pressure,
+                x.pressure[c.contact.water],
                 x.water_t[c.contact.water],
                 x.sg_t[i],
                 self.mass_flux(&c.contact, x),
@@ -888,7 +915,7 @@ impl Model {
                         cp: s(500.),
                     },
                 },
-                primary_saturation,
+                w.saturation[c.contact.water],
                 w.water[c.contact.water].thermal,
             )
             .map_err(error)?;
@@ -920,7 +947,7 @@ impl Model {
             let q = x.face_flow[e];
             let donor = if q.value >= 0. { c.from } else { c.to };
             let heat = q * w.water[donor].projection.enthalpy;
-            let tracer = q * x.boron_amount[donor] / w.water[donor].mass;
+            let tracer = q * x.boron_amount[donor] / x.water_mass[donor];
             w.water_rhs[c.from] = w.water_rhs[c.from] - heat;
             w.water_rhs[c.to] = w.water_rhs[c.to] + heat;
             w.continuity[c.from] = w.continuity[c.from] - q;
@@ -929,9 +956,7 @@ impl Model {
             w.boron_rhs[c.to] = w.boron_rhs[c.to] + tracer;
         }
         for i in 0..n {
-            w.continuity[i] = w.water[i].projection.mass_p_at_energy * d.pressure
-                + w.water[i].projection.mass_energy_at_pressure * d.water[i]
-                - w.continuity[i];
+            w.continuity[i] = d.water_mass[i] - w.continuity[i];
             w.water_residual[i] = d.water[i] - w.water_rhs[i];
             w.boron_residual[i] = d.boron[i] - w.boron_rhs[i];
         }
@@ -958,6 +983,7 @@ impl Model {
             .chain(&w.boron_rhs)
             .chain(&w.continuity)
             .chain(&w.caloric)
+            .chain(&w.mass_caloric)
             .chain(&w.secondary_heat)
             .chain(w.surface.iter().flatten())
             .chain(w.fuel_residual.iter().flatten())

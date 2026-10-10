@@ -12,7 +12,7 @@ import { prepareOperatingHot } from './reference-design-operating-hot'
 import { compileOperatingThermal, parseOperatingThermal } from './reference-design-operating-thermal'
 import { fluidTree, preparePressureContinuity } from './reference-design-operating-fluid'
 import { loadOperatingHydraulics, operatingMainInertance, type Section } from './reference-design-operating-hydraulics'
-import { prepareOperatingPzr } from './reference-design-operating-pzr'
+import { prepareOperatingPzr, type compileOperatingPzr } from './reference-design-operating-pzr'
 import { operatingSourceNativeMetadata } from './reference-design-operating-source'
 import { routeElevation } from './reference-design-surge-route'
 
@@ -183,6 +183,156 @@ export function compileOperatingSurgeHydraulics(pzr: Pick<Awaited<ReturnType<typ
     inertiaScope: 'Two diagonal Lhalf/A geometric supports are a mass-lumped low-Mach candidate, not exact affine-profile inertia, an acoustic face or admitted surge dynamics' }
 }
 
+type HousingGeometry = Pick<ReturnType<typeof parseControlAbsorber>, 'clusters' | 'rodletsPerCluster' | 'bodyDiameter_m' | 'bodyLength_m'
+  | 'insertedBodyBottom_m' | 'spiderBottom_m' | 'spiderHeight_m' | 'spiderMass_kg' | 'steelDensity_kg_m3' | 'stemDiameter_m'
+  | 'stemLength_m' | 'headBottom_m' | 'housingID_m' | 'housingTop_m' | 'housingCapHeight_m' | 'neckID_m' | 'neckTop_m'
+  | 'collarID_m' | 'collarOD_m' | 'collarBottoms_m' | 'collarHeight_m' | 'normalTravel_m'>
+
+/** Actual fixed-pose free sections, including the collar's OUTER bypass. The
+ * spider uses its already selected distributed-volume reduction. This does
+ * not manufacture a housing loss coefficient or a moving-rod flow law. */
+export function operatingHousingMechanicalGeometry(c: HousingGeometry, travel: number) {
+  if (!Number.isFinite(travel) || travel < 0 || travel > c.normalTravel_m) throw Error('Housing mechanical pose outside normal travel')
+  const body0 = c.insertedBodyBottom_m + travel, body1 = body0 + c.bodyLength_m,
+    spider0 = c.spiderBottom_m + travel, spider1 = spider0 + c.spiderHeight_m,
+    stem0 = spider1, stem1 = stem0 + c.stemLength_m,
+    mainPlane = (c.headBottom_m + c.housingTop_m) / 2,
+    neckPlane = (c.housingTop_m + c.housingCapHeight_m + c.neckTop_m) / 2,
+    cuts = [...new Set([c.headBottom_m, c.housingTop_m, c.housingTop_m + c.housingCapHeight_m, c.neckTop_m,
+      mainPlane, neckPlane, body0, body1, spider0, spider1, stem0, stem1,
+      ...c.collarBottoms_m.flatMap(z => [z, z + c.collarHeight_m])]
+      .filter(z => z >= c.headBottom_m && z <= c.neckTop_m))].sort((a, b) => a - b)
+  const pieces = cuts.slice(0, -1).map((lo, i) => {
+    const hi = cuts[i + 1]!, z = (lo + hi) / 2, main = z < c.housingTop_m,
+      gross = c.clusters * Math.PI * (main ? c.housingID_m : c.neckID_m) ** 2 / 4,
+      body = z >= body0 && z < body1 ? c.clusters * c.rodletsPerCluster * Math.PI * c.bodyDiameter_m ** 2 / 4 : 0,
+      spider = z >= spider0 && z < spider1 ? c.clusters * c.spiderMass_kg / (c.steelDensity_kg_m3 * c.spiderHeight_m) : 0,
+      stem = z >= stem0 && z < stem1 ? c.clusters * Math.PI * c.stemDiameter_m ** 2 / 4 : 0,
+      collar = c.collarBottoms_m.some(start => z >= start && z < start + c.collarHeight_m)
+        ? c.clusters * Math.PI * (c.collarOD_m ** 2 - c.collarID_m ** 2) / 4 : 0,
+      area = gross - body - spider - stem - collar, length = hi - lo
+    if (![area, length].every(v => Number.isFinite(v) && v > 0)) throw Error('Nonpositive actual housing aperture')
+    return { owner: main ? 'HOUSING.MAIN' : 'HOUSING.NECK', start_m: lo, end_m: hi, length_m: length,
+      area_m2: area, volume_m3: area * length, inverse_area_length_per_m: length / area,
+      collar_outer_bypass: collar > 0 }
+  })
+  return { pieces, mainPlane_m: mainPlane, neckPlane_m: neckPlane,
+    resistanceScope: 'Actual free geometry only. Housing/spider resistance is not authored; guide-mouth endLossEach is not a housing K.' }
+}
+
+type MomentumSupport = { region: number, path_length_m: number, inverse_area_length_per_m: number, volume_m3: number }
+type PressureSegment = { region: number, path_length_m: number, elevation_change_m: number }
+type MechanicalFace = { id: string, from: number, to: number, flow_area_m2: number,
+  supports: MomentumSupport[], pressure_segments: PressureSegment[] }
+type PzrGeometry = Pick<ReturnType<typeof compileOperatingPzr>, 'regions' | 'faces' | 'mouth' | 'radialGeometry' | 'surge' | 'hotPartition'>
+
+/** Coarse physical path geometry for generalized hydraulic impulse I_Q*Q,
+ * I_Q=sum(rho*alpha*integral(ds/A)). Not literal linear momentum, a constant
+ * density mass-current metric, or a second pressure projection framework.
+ * The same profile projects a region-uniform force with Lsupport/Vregion. */
+export function compileOperatingMechanics(primary: { regions: readonly { id: string, volume_m3: number, elevation_m: number }[],
+  edges: readonly Edge[], junction: number, surgeStock: { id: string, volume_m3: number, elevation_m: number } },
+  hydraulics: { sections: readonly Section[], gravityIncidence: readonly { edge: number, region: number, delta_z_m: number }[] },
+  pzr: PzrGeometry, control: HousingGeometry, travel: number) {
+  if (primary.regions.length !== 27 || primary.edges.length !== 33) throw Error('Mechanical map requires actual carved27/33 primary')
+  const surge = 27, pzrOffset = 28, regions = [...primary.regions, primary.surgeStock, ...pzr.regions]
+    .map(r => ({ id: r.id, volume_m3: r.volume_m3, elevation_m: r.elevation_m })),
+    faces: MechanicalFace[] = primary.edges.map(e => ({ ...e, flow_area_m2: Infinity, supports: [], pressure_segments: [] })),
+    force_projection: { face: number, region: number, coefficient_per_m2: number, normal: [number, number] }[] = []
+  const add = (face: MechanicalFace, region: number, L: number, inverseA: number, V: number, dz = 0) => {
+    face.supports.push({ region, path_length_m: L, inverse_area_length_per_m: inverseA, volume_m3: V })
+    face.pressure_segments.push({ region, path_length_m: L, elevation_change_m: dz })
+    // Reference throat velocity only; current transport is rho_up*alpha_up*Q.
+    face.flow_area_m2 = Math.min(face.flow_area_m2, L / inverseA)
+  }
+  for (const section of hydraulics.sections) for (const side of ['incoming', 'outgoing'] as const) {
+    const ports = section.flow.filter(t => side === 'incoming' ? primary.edges[t.edge]!.to === section.region : primary.edges[t.edge]!.from === section.region)
+    if (![1, 2].includes(ports.length) || ports.some(t => t.weight !== .5)) throw Error('Unselected primary parallel support geometry')
+    const L = section.parameters.length_m / 2, A = section.parameters.area_m2 / ports.length
+    for (const port of ports) add(faces[port.edge]!, section.region, L, L / A, L * A)
+  }
+  // Existing actual heads include massless mixed-plenum reference-plane to
+  // mouth segments. They are explicit pressure geometry, not zero-filled pipe
+  // inertia and not extra thermal storage.
+  for (const head of hydraulics.gravityIncidence) {
+    const face = faces[head.edge]!, segment = face.pressure_segments.find(s => s.region === head.region)
+    if (segment) segment.elevation_change_m += head.delta_z_m
+    else face.pressure_segments.push({ region: head.region, path_length_m: 0, elevation_change_m: head.delta_z_m })
+  }
+  const housing = operatingHousingMechanicalGeometry(control, travel), index = (id: string) => {
+    const i = regions.findIndex(r => r.id === id); if (i < 0) throw Error('Unknown mechanical region ' + id); return i
+  }
+  for (const owner of ['HOUSING.MAIN', 'HOUSING.NECK']) if (!near(sum(housing.pieces.filter(p => p.owner === owner).map(p => p.volume_m3)), regions[index(owner)]!.volume_m3))
+    throw Error('Housing mechanical free volume disagrees with retained stock')
+  for (const [from, to, lo, hi] of [
+    ['UPPER', 'HOUSING.MAIN', control.headBottom_m, housing.mainPlane_m],
+    ['HOUSING.MAIN', 'HOUSING.NECK', housing.mainPlane_m, housing.neckPlane_m],
+  ] as const) {
+    const face = faces.find(f => f.from === index(from) && f.to === index(to))
+    if (!face || face.supports.length) throw Error('Missing or duplicated housing momentum path')
+    for (const p of housing.pieces.filter(p => p.start_m >= lo && p.end_m <= hi))
+      add(face, index(p.owner), p.length_m, p.inverse_area_length_per_m, p.volume_m3, p.length_m)
+    if (from === 'UPPER') face.pressure_segments.unshift({ region: index(from), path_length_m: 0,
+      elevation_change_m: control.headBottom_m - regions[index(from)]!.elevation_m })
+  }
+  const line = compileOperatingSurgeHydraulics(pzr), lateral = pzr.hotPartition.junctionPorts[2]!,
+    start: MechanicalFace = { id: 'HOT.A.JUNCTION->SURGE', from: primary.junction, to: surge, flow_area_m2: lateral.area_m2, supports: [], pressure_segments: [] },
+    end: MechanicalFace = { id: 'SURGE->PZR.SURGE.MOUTH', from: surge, to: pzrOffset + pzr.mouth.region,
+      flow_area_m2: pzr.mouth.area_m2, supports: [], pressure_segments: [] }
+  const arm = line.junctionFirstMoment.lateralArm_m
+  add(start, primary.junction, arm, arm / lateral.area_m2, arm * lateral.area_m2)
+  for (const [face, half] of [[start, line.halves[0]!], [end, line.halves[1]!]] as const)
+    for (const p of half.pieces) add(face, surge, p.length_m, p.length_m / p.area_m2, p.volume_m3, p.outletElevation_m - p.inletElevation_m)
+  // The retained line's pressure is referred to its volume-mean elevation,
+  // not the arclength-midpoint plane. Transfer that reference hydrostatically;
+  // this is not a second physical length, inertia or inventory.
+  const lineReferenceHead = primary.surgeStock.elevation_m - line.momentumPlane.elevation_m
+  start.pressure_segments.push({ region: surge, path_length_m: 0, elevation_change_m: lineReferenceHead })
+  end.pressure_segments.unshift({ region: surge, path_length_m: 0, elevation_change_m: -lineReferenceHead })
+  const mouth = pzr.regions[pzr.mouth.region]!, mouthLength = mouth.elevation_m - pzr.mouth.elevation_m
+  add(end, pzrOffset + pzr.mouth.region, mouthLength, mouthLength / mouth.axialArea_m2, mouthLength * mouth.axialArea_m2, mouthLength)
+  faces.push(start, end)
+  force_projection.push({ face: 34, region: end.to, coefficient_per_m2: mouthLength / mouth.volume_m3, normal: [0, 1] })
+  for (const physical of pzr.faces) {
+    const face: MechanicalFace = { id: physical.id, from: pzrOffset + physical.from, to: pzrOffset + physical.to,
+      flow_area_m2: physical.area_m2, supports: [], pressure_segments: [] }
+    for (const [local, incoming] of [[physical.from, true], [physical.to, false]] as const) {
+      const r = pzr.regions[local]!
+      if (physical.direction === 'axial') {
+        const L = Math.abs(r.elevation_m - physical.elevation_m)
+        add(face, pzrOffset + local, L, L / r.axialArea_m2, L * r.axialArea_m2, L)
+      } else {
+        const boundary = pzr.radialGeometry.innerRadius_m, lo = incoming ? r.radialCentroid_m : boundary,
+          hi = incoming ? boundary : r.radialCentroid_m, height = r.top_m - r.bottom_m,
+          porosity = r.lane === 'inner' ? r.axialArea_m2 / (Math.PI * boundary ** 2) : 1,
+          L = hi - lo, inverseA = Math.log(hi / lo) / (2 * Math.PI * height * porosity),
+          V = Math.PI * (hi ** 2 - lo ** 2) * height * porosity
+        add(face, pzrOffset + local, L, inverseA, V)
+      }
+      const s = face.supports.at(-1)!
+      force_projection.push({ face: faces.length, region: pzrOffset + local,
+        coefficient_per_m2: s.path_length_m / r.volume_m3, normal: [...physical.normal] })
+    }
+    // Its declared physical throat, not a logarithmic/volume-mean area.
+    face.flow_area_m2 = physical.area_m2; faces.push(face)
+  }
+  if (regions.length !== 38 || faces.length !== 48 || new Set(faces.map(f => f.id)).size !== faces.length
+    || regions.some(r => !Number.isFinite(r.volume_m3) || r.volume_m3 <= 0 || !Number.isFinite(r.elevation_m))
+    || faces.some(f => !Number.isFinite(f.flow_area_m2) || f.flow_area_m2 <= 0 || !f.supports.length
+      || f.supports.some(s => ![s.path_length_m, s.inverse_area_length_per_m, s.volume_m3].every(v => Number.isFinite(v) && v > 0))
+      || f.pressure_segments.some(s => !Number.isFinite(s.path_length_m) || s.path_length_m < 0 || !Number.isFinite(s.elevation_change_m))
+      || !near(sum(f.pressure_segments.map(s => s.elevation_change_m)), regions[f.to]!.elevation_m - regions[f.from]!.elevation_m)))
+    throw Error('Incomplete physical local-pressure path map')
+  return { regions, faces, force_projection,
+    section_force_projection: hydraulics.sections.flatMap((s, section) => s.force.map(t => ({ face: t.edge, section, coefficient: t.weight }))),
+    housing, pressureProfile: 'Current mixture hydrostatic head on each segment plus length-linear dynamic pressure remainder; sharp pure-phase rest shares one reconstructed face pressure.',
+    radialProfile: 'Exact annular inverse-area integral between selected positive centroids and lane boundary; uniform existing inner-lane rod porosity reduction.',
+    momentumScope: 'Generalized hydraulic impulse; parallel half-paths once per component. HOT lateral y profile overlaps main x water, not a second x inertia or a second junction momentum bank.',
+    omittedMomentum: 'Mixed LOWER/UPPER/COLD reservoirs have no invented pipe inertia; closed-end beyond-centroid motion is unresolved at this coarse pressure-cell resolution.',
+    resistanceScope: housing.resistanceScope,
+    scope: 'Physical geometry and force/velocity projection only. No advancement, phase-event, operational-fidelity or performance admission.' }
+}
+
 export async function prepareOperatingSpine(wiki: string, if97: string) {
   const base = join(wiki, 'world/packs/process-plant/reference-designs/ld-01'), read = (p: string) => Bun.file(join(base, p)).text()
   const [hot, fuelDoc, handlingDoc, controlDoc, thermalDoc, gapDoc] = await Promise.all([
@@ -216,11 +366,12 @@ export async function prepareOperatingSpine(wiki: string, if97: string) {
       donors: projection.donors, flows_kg_s: projection.flows_kg_s, pressure_rate_pa_s: projection.pressureRate_Pa_s } }
   const rebasedHydraulics = rebaseOperatingHydraulics(originalHydraulics, carved),
     hydraulics = { ...rebasedHydraulics, surge: { ...rebasedHydraulics.surge, ...compileOperatingSurgeHydraulics(pzr) } }
+  const mechanics = compileOperatingMechanics(carved, hydraulics, pzr, parseControlAbsorber(controlDoc), hot.fluid.geometry.referenceRodTravel_m)
   const hash = (s: string) => createHash('sha256').update(s).digest('hex')
   return { identity: 'LD01-HOT-SPINE-1', thermal, hot: { ...hot.nativeInput, fluid: nativeFluid },
     feedback_metadata: operatingSourceNativeMetadata(hot.compiledSource), feedback_reference: hot.compiledSource.reference.conditions,
     edges: carved.edges, source_water, water_flow_area_m2: carved.regions.map(r => r.mainFlowArea_m2),
-    water_boron_amount_kg_eq: carved.regions.map(r => r.absorberTracer_kgEq), hydraulics, pzr,
+    water_boron_amount_kg_eq: carved.regions.map(r => r.absorberTracer_kgEq), hydraulics, pzr, mechanics,
     external_ports: {
       surge_stock: carved.surgeStock,
       primary_to_surge: { id: 'HOT.A.JUNCTION->SURGE', primary_water: carved.junction, surge_id: carved.surgeStock.id,

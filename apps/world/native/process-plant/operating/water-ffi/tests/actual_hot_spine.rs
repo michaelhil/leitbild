@@ -311,6 +311,8 @@ struct Current {
     passive_u: Vec<Scalar>,
     sg_u: Vec<Scalar>,
     pressure: Scalar,
+    local_pressure: Vec<Scalar>,
+    water_mass: Vec<Scalar>,
     water_t: Vec<Scalar>,
     water_u: Vec<Scalar>,
     boron: Vec<Scalar>,
@@ -361,6 +363,20 @@ impl Current {
             passive_u: scalar(a(t, "passive_stores"), "energy_j"),
             sg_u: scalar(a(t, "sg_segments"), "energy_j"),
             pressure: s(n(&t["water"][0], "pressure_pa")),
+            local_pressure: scalar(a(t, "water"), "pressure_pa"),
+            water_mass: a(t, "water")
+                .iter()
+                .map(|v| {
+                    hs::Properties::fixed_liquid(
+                        &If97,
+                        n(v, "volume_m3"),
+                        s(n(v, "pressure_pa")),
+                        s(n(v, "temperature_k")),
+                    )
+                    .unwrap()
+                    .mass
+                })
+                .collect(),
             water_t: scalar(a(t, "water"), "temperature_k"),
             water_u: scalar(a(t, "water"), "energy_j"),
             boron: vecn(packet, "water_boron_amount_kg_eq")
@@ -416,7 +432,8 @@ impl Current {
             helium_u: &self.helium_u,
             passive_u: &self.passive_u,
             sg_u: &self.sg_u,
-            pressure: self.pressure,
+            pressure: &self.local_pressure,
+            water_mass: &self.water_mass,
             water_t: &self.water_t,
             water_u: &self.water_u,
             boron_amount: &self.boron,
@@ -458,6 +475,8 @@ impl Current {
             .chain(&mut x.passive_u)
             .chain(&mut x.sg_u)
             .chain(&mut x.water_t)
+            .chain(&mut x.local_pressure)
+            .chain(&mut x.water_mass)
             .chain(&mut x.water_u)
             .chain(&mut x.boron)
             .chain(&mut x.flow)
@@ -627,7 +646,7 @@ fn try_evaluate(model: &hs::Model, x: &Current, offset: Option<f64>) -> hs::Resu
             helium: &he,
             passive: &p,
             sg: &sg,
-            pressure: seed(1e4, 100.),
+            water_mass: &zero,
             water: &water,
             boron: &zero,
         },
@@ -658,6 +677,7 @@ fn flatten(w: &hs::Work) -> Vec<Scalar> {
         .chain(&w.water_residual)
         .chain(&w.continuity)
         .chain(&w.caloric)
+        .chain(&w.mass_caloric)
         .chain(&w.boron_residual)
         .chain(w.fuel_caloric.iter().flatten())
         .chain(&w.helium_caloric)
@@ -701,6 +721,7 @@ fn label(mut index: usize, w: &hs::Work) -> (&'static str, usize) {
         ("water_residual_W", w.water_residual.len()),
         ("continuity_kg_s", w.continuity.len()),
         ("water_caloric_J", w.caloric.len()),
+        ("water_mass_caloric_kg", w.mass_caloric.len()),
         ("boron_residual_kgEq_s", w.boron_residual.len()),
         ("fuel_caloric_J", 3 * a),
         ("helium_caloric_J", w.helium_caloric.len()),
@@ -752,7 +773,7 @@ fn snapshot(w: &hs::Work) -> Vec<[u64; 2]> {
 }
 fn verify_current_bulk(w: &hs::Work, x: &Current) {
     for (owner, (actual, t)) in w.water.iter().zip(&x.water_t).enumerate() {
-        let expected = If97.liquid(x.pressure, *t).unwrap();
+        let expected = If97.liquid(x.local_pressure[owner], *t).unwrap();
         for (name, actual, expected) in [
             ("density", actual.thermal.density, expected.density),
             ("viscosity", actual.thermal.viscosity, expected.viscosity),
@@ -1004,6 +1025,7 @@ impl SurgePzrReplay {
             line_state: surge::State {
                 pressure: Scalar::new(n(line, "pressure_Pa"), 700.),
                 temperature: Scalar::new(n(line, "temperature_K"), 0.07),
+                mass: s(n(line, "mass_kg")),
                 energy: s(n(line, "internalEnergy_J")),
                 boron: Scalar::new(n(line, "absorberTracer_kgEq"), 0.0001),
             },
@@ -1124,11 +1146,12 @@ impl SurgePzrReplay {
             surge::State {
                 pressure: at(self.line_state.pressure),
                 temperature: at(self.line_state.temperature),
+                mass: at(self.line_state.mass),
                 energy: at(self.line_state.energy),
                 boron: at(self.line_state.boron),
             },
             surge::Rates {
-                pressure: s(0.),
+                mass: s(0.),
                 energy: s(0.),
                 boron: s(0.),
             },
@@ -1158,7 +1181,7 @@ impl SurgePzrReplay {
                     helium: &self.helium_rate,
                     passive: &self.passive_rate,
                     sg: &self.sg_rate,
-                    pressure: s(0.),
+                    water_mass: &self.zero,
                     water: &self.zero,
                     boron: &self.zero,
                 },
@@ -1183,8 +1206,9 @@ impl SurgePzrReplay {
         self.field
             .evaluate(
                 pf::Input {
-                    pressure: pp,
-                    saturation,
+                    pressure: &[pp; pf::REGIONS],
+                    saturation: &[saturation; pf::REGIONS],
+                    face_saturation: &[saturation; pf::FACES],
                     phase: &self.phase,
                     face_mass_flow: &self.face_flow,
                 },
@@ -1491,6 +1515,7 @@ fn actual_surge_pzr_join(packet: &Value, model: &hs::Model, current: &Current) -
     for call in 0..50 {
         let c = call as f64;
         stage.pressure.value = p0 + c;
+        stage.local_pressure.fill(stage.pressure);
         stage.water_t[replay.junction].value = t0 + c * 1e-4;
         replay.line_state.pressure.value = lp0 + c * 0.7;
         replay.line_state.temperature.value = lt0 + c * 1e-4;
@@ -1544,8 +1569,9 @@ fn prepared_pzr_pressure_compatibility(
     r.field
         .evaluate(
             pf::Input {
-                pressure: s(r.pzr_pressure.value),
-                saturation: sat,
+                pressure: &[s(r.pzr_pressure.value); pf::REGIONS],
+                saturation: &[sat; pf::REGIONS],
+                face_saturation: &[sat; pf::FACES],
                 phase: &r.phase,
                 face_mass_flow: &r.face_flow,
             },
@@ -1659,7 +1685,7 @@ fn prepared_pzr_pressure_compatibility(
         r.line_volume,
         r.line_state,
         surge::Rates {
-            pressure: s(0.),
+            mass: s(0.),
             energy: s(0.),
             boron: s(0.),
         },
@@ -1775,6 +1801,7 @@ fn actual_hot_spine_current_state_receipts_and_complete_direction() {
     current.fuel[0].outer.value -= 20.;
     current.water_t[0].value += 1.;
     current.pressure.value += 1000.;
+    current.local_pressure.fill(current.pressure);
     current.material[0].fissile.value *= 0.999;
     current.material[0].fertile.value *= 0.9999;
     current.material[0].xenon.value *= 1.01;
@@ -1796,10 +1823,11 @@ fn actual_hot_spine_current_state_receipts_and_complete_direction() {
         ];
     }
     for (i, t) in current.water_t.iter().enumerate() {
-        current.water_u[i] =
-            hs::Properties::fixed_liquid(&If97, model.volumes[i], current.pressure, *t)
-                .unwrap()
-                .energy;
+        let chart =
+            hs::Properties::fixed_liquid(&If97, model.volumes[i], current.local_pressure[i], *t)
+                .unwrap();
+        current.water_u[i] = chart.energy;
+        current.water_mass[i] = chart.mass;
     }
     current.initialize(&model);
     current.fuel[0].inner.direction = 3.;
@@ -1809,7 +1837,11 @@ fn actual_hot_spine_current_state_receipts_and_complete_direction() {
     current.fuel[0].clad_mean.direction = 0.01;
     current.fuel[0].clad_outer.direction = 0.02;
     current.pressure.direction = 1000.;
+    for p in &mut current.local_pressure {
+        p.direction = 1000.;
+    }
     current.water_t[0].direction = 0.1;
+    current.water_mass[0].direction = 0.1;
     current.water_u[0].direction = 1e4;
     current.boron[0].direction = 0.01;
     current.helium[0].direction = 0.02;
@@ -1934,7 +1966,7 @@ fn actual_hot_spine_current_state_receipts_and_complete_direction() {
                 helium: &he,
                 passive: &passive,
                 sg: &sg,
-                pressure: Scalar::new(1e4, 100.),
+                water_mass: &zero,
                 water: &water,
                 boron: &zero,
             },
@@ -1968,6 +2000,7 @@ fn actual_hot_spine_current_state_receipts_and_complete_direction() {
             // Independent current trial coordinates on EVERY call, not time
             // stepping, a held constitutive cache or a stationary-duty replay.
             stage.pressure.value = p0 + call as f64;
+            stage.local_pressure.fill(stage.pressure);
             stage.water_t[0].value = t0 + 1e-4 * call as f64;
             stage.neutrons[0].value = n0 * (1. + 1e-7 * call as f64);
             stage.sg[0].value = wall0 + 1e-4 * call as f64;
@@ -1980,7 +2013,7 @@ fn actual_hot_spine_current_state_receipts_and_complete_direction() {
                         helium: &he,
                         passive: &passive,
                         sg: &sg,
-                        pressure: Scalar::new(1e4, 100.),
+                        water_mass: &zero,
                         water: &water,
                         boron: &zero,
                     },
@@ -2000,6 +2033,28 @@ fn actual_hot_spine_current_state_receipts_and_complete_direction() {
     let surge_pzr_same_call = actual_surge_pzr_join(&packet, &model, &current);
     let prepared_pzr_pressure_audit =
         prepared_pzr_pressure_compatibility(&packet, &model, &current);
+    // Off-constraint trials must retain the actual M bank. EOS-derived M is
+    // only the coherence target; it must not replace density/tracer ownership.
+    let mut off = current.shift(0.);
+    off.water_mass[0].value += 1.;
+    off.local_pressure[1].value += 2500.;
+    let changed = evaluate(&model, &off);
+    let untouched = evaluate(&model, &current.shift(0.));
+    close(
+        changed.mass_caloric[0].value - untouched.mass_caloric[0].value,
+        1.,
+        1e-10,
+    );
+    close(
+        changed.caloric[0].value - untouched.caloric[0].value,
+        -untouched.water[0].energy.value / untouched.water[0].mass.value,
+        1e-10,
+    );
+    assert_ne!(
+        changed.feedback.regions[0].reactivity.value,
+        untouched.feedback.regions[0].reactivity.value
+    );
+    verify_current_bulk(&changed, &off);
     assert_eq!(
         packet, original,
         "same-call transport mutated the owner packet"

@@ -1,10 +1,11 @@
 //! Actual hydraulic constitutive ports, NOT a completed low-Mach momentum chart.
 //!
 //! One implementation of reviewed signed RCP and passive pressure laws. The
-//! compiler supplies geometry, force incidence, current retained material and
-//! seven cycle columns. This module does not equate pressure-cycle closure to
-//! kinetic/thermal work closure. Two geometric main momenta and five algebraic
-//! split rows are an explicit bounded0012 allocation, not an index-1 admission.
+//! compiler supplies geometry, force incidence and current retained material.
+//! This module supplies constitutive force/work ports, not a momentum layout.
+//! The selected decision0013 local-pressure network owns physical phase-path
+//! impulses; the earlier two-main/five-split allocation is comparison evidence.
+//! Neither pressure-cycle closure nor local tests qualify connected work.
 //! Stage evaluation is allocation-free. Exact kinks have directional derivatives,
 //! explicitly marked non-linearizable; they are not smooth Jacobian entries.
 
@@ -16,6 +17,7 @@ pub enum WallLaw {
     None,
     Rod,
     SmoothPipe,
+    CircularChurchill,
     AnnularChurchill,
 }
 
@@ -215,9 +217,9 @@ fn log_add(a: D, b: D) -> D {
     hi + (D::c(1.) + (lo - hi).exp()).ln()
 }
 
-/// Exact original Churchill log expression, with the owner's 12/Re narrow-
-/// annulus shear continuation (Darcy96/Re). No roughness/flow floor.
-fn annular_log_darcy(re: D) -> D {
+/// Churchill log expression: circular8/Re (Darcy64/Re), or the selected
+/// narrow-annulus12/Re (Darcy96/Re). No roughness/flow floor.
+fn churchill_log_darcy(re: D, laminar: f64) -> D {
     let lr = re.ln();
     let t = (lr - D::c(7_f64.ln())) * D::c(2.457 * 0.9);
     let la = if t.v == 0. {
@@ -228,7 +230,7 @@ fn annular_log_darcy(re: D) -> D {
     let lb = (D::c(37530_f64.ln()) - lr) * D::c(16.);
     D::c(8_f64.ln())
         + log_add(
-            (D::c(12_f64.ln()) - lr) * D::c(12.),
+            (D::c(laminar.ln()) - lr) * D::c(12.),
             log_add(la, lb) * D::c(-1.5),
         ) / D::c(12.)
 }
@@ -354,8 +356,13 @@ impl Section {
                 WallLaw::SmoothPipe => {
                     pipe_darcy(re, &mut linear) * dynamic * D::c(self.length_m) / dh
                 }
-                WallLaw::AnnularChurchill => {
-                    annular_log_darcy(re).exp() * dynamic * D::c(self.length_m) / dh
+                WallLaw::CircularChurchill | WallLaw::AnnularChurchill => {
+                    let laminar = if matches!(self.wall, WallLaw::CircularChurchill) {
+                        8.
+                    } else {
+                        12.
+                    };
+                    churchill_log_darcy(re, laminar).exp() * dynamic * D::c(self.length_m) / dh
                 }
             }
         };
@@ -805,11 +812,69 @@ mod tests {
         );
     }
     #[test]
+    fn circular_churchill_has_circular_laminar_and_continuous_transition() {
+        let mut section = section(WallLaw::CircularChurchill);
+        section.grid_count = 0;
+        section.form_loss = 0.;
+        for re in [0., 100., 1200., 2300., 4000., 100000.] {
+            let mut x = input(
+                re * section.area_m2 * input(0.).viscosity_pa_s / section.hydraulic_diameter_m,
+            );
+            let d = Input {
+                massflow_kg_s: 1.,
+                ..Input::default()
+            };
+            let e = section.evaluate(x, d).unwrap();
+            if re <= 100. {
+                let slope = 32. * section.length_m * x.viscosity_pa_s
+                    / (x.density_kg_m3 * section.area_m2 * section.hydraulic_diameter_m.powi(2));
+                close(e.value.wall_loss_pa, slope * x.massflow_kg_s, 1e-12);
+                close(e.direction.wall_loss_pa, slope, 1e-12);
+            }
+            assert!(e.linearizable);
+            x.massflow_kg_s = -x.massflow_kg_s;
+            let reverse = section.evaluate(x, d).unwrap();
+            close(e.value.wall_loss_pa, -reverse.value.wall_loss_pa, 1e-12);
+            close(
+                e.direction.wall_loss_pa,
+                reverse.direction.wall_loss_pa,
+                1e-12,
+            );
+            if re > 100. {
+                let step = x.massflow_kg_s.abs() * 1e-5;
+                let plus = section
+                    .evaluate(
+                        Input {
+                            massflow_kg_s: x.massflow_kg_s + step,
+                            ..x
+                        },
+                        Input::default(),
+                    )
+                    .unwrap();
+                let minus = section
+                    .evaluate(
+                        Input {
+                            massflow_kg_s: x.massflow_kg_s - step,
+                            ..x
+                        },
+                        Input::default(),
+                    )
+                    .unwrap();
+                close(
+                    reverse.direction.wall_loss_pa,
+                    (plus.value.wall_loss_pa - minus.value.wall_loss_pa) / (2. * step),
+                    1e-7,
+                );
+            }
+        }
+    }
+    #[test]
     fn passive_signed_and_zero_limits() {
         for law in [
             WallLaw::None,
             WallLaw::Rod,
             WallLaw::SmoothPipe,
+            WallLaw::CircularChurchill,
             WallLaw::AnnularChurchill,
         ] {
             let s = section(law);
@@ -846,6 +911,7 @@ mod tests {
             WallLaw::None,
             WallLaw::Rod,
             WallLaw::SmoothPipe,
+            WallLaw::CircularChurchill,
             WallLaw::AnnularChurchill,
         ] {
             let mut s = section(law);

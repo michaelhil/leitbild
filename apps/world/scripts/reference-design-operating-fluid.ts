@@ -235,7 +235,9 @@ export function operatingFluidGeometry({fuel:f,handling:h,control:c,achievedRodT
     add(`RETURN.${side}`,returnV,3,p.inlet_K,2*pumpA)
   }
   add('HOUSING.MAIN',cg.head.grossMainWater_m3-displacement(c.headBottom_m,c.housingTop_m),(c.headBottom_m+c.housingTop_m)/2,p.outlet_K)
-  add('HOUSING.NECK',cg.head.grossNeckWater_m3-cg.head.collarDisplacement_m3-displacement(c.housingTop_m+c.housingCapHeight_m,c.neckTop_m),(c.housingTop_m+c.housingCapHeight_m+c.neckTop_m)/2,p.outlet_K)
+  // grossNeckWater includes the cap bore. Subtract its actual stem occupancy
+  // from the same bottom plane, not only from the cap's upper surface.
+  add('HOUSING.NECK',cg.head.grossNeckWater_m3-cg.head.collarDisplacement_m3-displacement(c.housingTop_m,c.neckTop_m),(c.housingTop_m+c.housingCapHeight_m+c.neckTop_m)/2,p.outlet_K)
   add('SURGE',Math.PI*p.surgeDiameter_m**2/4*p.surgeLength_m,p.surgeElevation_m,p.outlet_K,Math.PI*p.surgeDiameter_m**2/4)
   const edges:{id:string,from:number,to:number}[]=[],index=(id:string)=>{const n=regions.findIndex(r=>r.id===id);if(n<0)throw Error('Unknown fluid owner');return n},
     edge=(a:string,b:string)=>edges.push({id:`${a}->${b}`,from:index(a),to:index(b)})

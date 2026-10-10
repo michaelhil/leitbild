@@ -28,12 +28,13 @@ impl Liquid {
 pub struct State {
     pub pressure: Scalar,
     pub temperature: Scalar,
+    pub mass: Scalar,
     pub energy: Scalar,
     pub boron: Scalar,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Rates {
-    pub pressure: Scalar,
+    pub mass: Scalar,
     pub energy: Scalar,
     pub boron: Scalar,
 }
@@ -51,6 +52,7 @@ pub struct Evaluation {
     pub primary: Receipt,
     pub pzr_liquid: Receipt,
     pub line: Receipt,
+    pub mass_caloric: Scalar,
     pub caloric: Scalar,
     pub continuity: Scalar,
     pub energy_residual: Scalar,
@@ -111,9 +113,10 @@ pub fn evaluate<P: Properties>(
         || ![
             x.pressure,
             x.temperature,
+            x.mass,
             x.energy,
             x.boron,
-            d.pressure,
+            d.mass,
             d.energy,
             d.boron,
             inlet,
@@ -131,7 +134,7 @@ pub fn evaluate<P: Properties>(
     }
     let water = properties.fixed_liquid(volume_m3, x.pressure, x.temperature)?;
     let line_liquid = Liquid {
-        mass: water.mass,
+        mass: x.mass,
         enthalpy: water.projection.enthalpy,
         boron: x.boron,
     };
@@ -148,10 +151,9 @@ pub fn evaluate<P: Properties>(
         primary: negative(into),
         pzr_liquid: out,
         line,
-        caloric: x.energy - water.energy,
-        continuity: water.projection.mass_p_at_energy * d.pressure
-            + water.projection.mass_energy_at_pressure * d.energy
-            - line.mass,
+        mass_caloric: x.mass - water.mass,
+        caloric: x.energy - x.mass * (water.energy / water.mass),
+        continuity: d.mass - line.mass,
         energy_residual: d.energy - line.energy,
         boron_residual: d.boron - line.boron,
         linearizable: !((inlet.value == 0. && inlet.direction != 0.)
@@ -161,6 +163,7 @@ pub fn evaluate<P: Properties>(
         result.line.mass,
         result.line.energy,
         result.line.boron,
+        result.mass_caloric,
         result.caloric,
         result.continuity,
         result.energy_residual,
@@ -177,6 +180,10 @@ pub fn evaluate<P: Properties>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        pressure,
+        thermal::{Saturation, WaterPoint, WaterProperties},
+    };
     fn s(x: f64) -> Scalar {
         Scalar::constant(x)
     }
@@ -186,6 +193,116 @@ mod tests {
             enthalpy: s(enthalpy),
             boron: s(boron),
         }
+    }
+    // Analytic properties confined to this storage/receipt regression fixture.
+    // Production always uses the actual current IF97 property boundary.
+    struct Analytic;
+    impl WaterProperties for Analytic {
+        fn liquid(&self, _p: Scalar, _t: Scalar) -> crate::thermal::Result<WaterPoint> {
+            Err("unused analytic fixture liquid query")
+        }
+        fn vapor(&self, _p: Scalar, _t: Scalar) -> crate::thermal::Result<WaterPoint> {
+            Err("unused analytic fixture vapor query")
+        }
+        fn saturation(&self, _p: Scalar) -> crate::thermal::Result<Saturation> {
+            Err("unused analytic fixture saturation query")
+        }
+        fn saturated_vapor_density(&self, _t: Scalar) -> crate::thermal::Result<Scalar> {
+            Err("unused analytic fixture vapor-density query")
+        }
+    }
+    impl Properties for Analytic {
+        fn fixed_liquid(&self, v: f64, p: Scalar, t: Scalar) -> Result<WaterChart, String> {
+            let mass = s(100.) + s(0.01) * (p - s(1e6)) - s(0.2) * (t - s(300.));
+            let u = s(4.) * t;
+            let density = mass / s(v);
+            let h = u + p / density;
+            Ok(WaterChart {
+                mass,
+                energy: mass * u,
+                density,
+                projection: pressure::Region {
+                    enthalpy: h,
+                    ..pressure::Region::default()
+                },
+                thermal: WaterPoint {
+                    density,
+                    enthalpy: h,
+                    ..WaterPoint::default()
+                },
+            })
+        }
+    }
+    #[test]
+    fn finite_retained_mass_has_its_own_storage_and_caloric_rows() {
+        let x = State {
+            pressure: s(1e6),
+            temperature: s(300.),
+            mass: s(90.),
+            energy: s(108000.),
+            boron: s(0.18),
+        };
+        let d = Rates {
+            mass: s(3.),
+            energy: s(7.),
+            boron: s(0.01),
+        };
+        let r = evaluate(
+            &Analytic,
+            2.,
+            x,
+            d,
+            liquid(10., 1000., 0.01),
+            None,
+            s(5.),
+            s(2.),
+            s(0.),
+        )
+        .unwrap();
+        assert_eq!(r.mass_caloric.value, -10.);
+        assert_eq!(r.caloric.value, 0.);
+        assert_eq!(r.continuity.value, 0.);
+        // The outgoing line concentration is retained B/M, not B/(EOS rho V).
+        assert_eq!(r.pzr_liquid.boron.value, 2. * (0.18 / 90.));
+        assert_eq!((r.primary.mass + r.line.mass + r.pzr_liquid.mass).value, 0.);
+        assert_eq!(
+            (r.primary.energy + r.line.energy + r.pzr_liquid.energy).value,
+            0.
+        );
+        assert_eq!(
+            (r.primary.boron + r.line.boron + r.pzr_liquid.boron).value,
+            0.
+        );
+    }
+    #[test]
+    fn mass_rate_is_independent_of_pressure_and_energy_rates() {
+        let x = State {
+            pressure: Scalar::new(1e6, 1.),
+            temperature: Scalar::new(300., 2.),
+            mass: Scalar::new(90., 3.),
+            energy: Scalar::new(108000., 5.),
+            boron: s(0.18),
+        };
+        let d = Rates {
+            mass: Scalar::new(3., 7.),
+            energy: Scalar::new(11., 13.),
+            boron: s(0.),
+        };
+        let r = evaluate(
+            &Analytic,
+            2.,
+            x,
+            d,
+            liquid(10., 1000., 0.01),
+            None,
+            s(5.),
+            s(2.),
+            s(0.),
+        )
+        .unwrap();
+        assert_eq!(r.continuity.direction, 7.);
+        assert!((r.mass_caloric.direction - (3. - 0.01 + 0.4)).abs() < 1e-12);
+        assert!((r.caloric.direction - (5. - 3. * 1200. - 90. * 8.)).abs() < 1e-10);
     }
     #[test]
     fn reversal_uses_its_actual_donor_without_equalizing_end_currents() {

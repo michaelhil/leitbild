@@ -55,6 +55,14 @@ fn norm(a: [Scalar; 2]) -> Scalar {
 fn sub(a: [Scalar; 2], b: [Scalar; 2]) -> [Scalar; 2] {
     [a[0] - b[0], a[1] - b[1]]
 }
+fn phase_contrast(from: [Scalar; 2], to: [Scalar; 2]) -> Scalar {
+    // On each rigid-volume complement row this is alpha_l(from)-alpha_l(to),
+    // including its tangent direction. Unlike subtracting two dominant
+    // fractions, it retains a tiny positive minority value and its direction.
+    // Off the volume rows it is the selected signed Newton residual extension;
+    // do not normalize, clip, or override its recipient from a derivative.
+    from[0] * to[1] - to[0] * from[1]
+}
 fn water(w: WaterPoint) -> Result<()> {
     for v in [w.density, w.viscosity, w.conductivity, w.cp] {
         positive(v)?;
@@ -91,11 +99,26 @@ pub struct Phase {
     pub boron_mass: Scalar,
 }
 pub struct Input<'a> {
-    pub pressure: Scalar,
-    pub saturation: Saturation,
+    pub pressure: &'a [Scalar; REGIONS],
+    pub saturation: &'a [Saturation; REGIONS],
+    /// Saturation at the mechanically reconstructed physical interface p.
+    /// Never substitute one shared vessel p for nonuniform local pressures.
+    pub face_saturation: &'a [Saturation; FACES],
     /// Liquid then vapor. None has no temperature, velocity or property query.
     pub phase: &'a [[Option<Phase>; 2]; REGIONS],
     pub face_mass_flow: &'a [[Scalar; 2]; FACES],
+}
+fn validate_charts(x: &Input<'_>) -> Result<()> {
+    for p in x.pressure {
+        positive(*p)?;
+    }
+    for sat in x.saturation.iter().chain(x.face_saturation) {
+        positive(sat.temperature)?;
+        water(sat.liquid)?;
+        water(sat.vapor)?;
+        positive(sat.vapor.enthalpy - sat.liquid.enthalpy)?;
+    }
+    Ok(())
 }
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Sources {
@@ -243,11 +266,7 @@ impl Model {
     /// Physical input admission is separate from signed trial evaluation.
     /// Coherence rows are returned rather than hidden behind a private tolerance.
     pub fn validate_accepted(&self, x: &Input<'_>) -> Result<()> {
-        positive(x.pressure)?;
-        positive(x.saturation.temperature)?;
-        water(x.saturation.liquid)?;
-        water(x.saturation.vapor)?;
-        positive(x.saturation.vapor.enthalpy - x.saturation.liquid.enthalpy)?;
+        validate_charts(x)?;
         for q in x.face_mass_flow.iter().flatten() {
             finite(*q)?;
         }
@@ -279,8 +298,8 @@ impl Model {
                     if k == 1 && (p.boron_mass.value != 0. || p.boron_mass.direction != 0.) {
                         return Err("PZR vapor does not own dissolved boron");
                     }
-                    if (k == 0 && p.temperature.value > x.saturation.temperature.value)
-                        || (k == 1 && p.temperature.value < x.saturation.temperature.value)
+                    if (k == 0 && p.temperature.value > x.saturation[i].temperature.value)
+                        || (k == 1 && p.temperature.value < x.saturation[i].temperature.value)
                     {
                         return Err("PZR stable phase boundary requires active conversion");
                     }
@@ -298,11 +317,7 @@ impl Model {
         external: &[[Sources; 2]; REGIONS],
         w: &mut Work,
     ) -> Result<()> {
-        positive(x.pressure)?;
-        positive(x.saturation.temperature)?;
-        water(x.saturation.liquid)?;
-        water(x.saturation.vapor)?;
-        positive(x.saturation.vapor.enthalpy - x.saturation.liquid.enthalpy)?;
+        validate_charts(&x)?;
         *w = Work::default();
         w.sources = *external;
         for (i, node) in x.phase.iter().enumerate() {
@@ -334,7 +349,8 @@ impl Model {
                         w.sources[i][k].momentum[j] = w.sources[i][k].momentum[j] + *f;
                     }
                     w.wall_loss_w[i][k] = -dot(force, p.velocity);
-                    w.sources[i][k].momentum[1] = w.sources[i][k].momentum[1] - s(G) * p.mass;
+                    // Gravity is owned by the well-balanced face pressure
+                    // equation. Return constitutive/advective forces only.
                     w.gravity_power_w[i][k] = -s(G) * p.mass * p.velocity[1];
                 }
             }
@@ -364,7 +380,7 @@ impl Model {
                 w.slip_loss_w[i] = dot(force, slip);
                 let area = s(6. * self.regions[i].volume_m3 / self.interfacial_length_m) * al * ag;
                 if area.value != 0. || area.direction != 0. {
-                    self.exchange(i, i, *l, *g, area, x.saturation, w)?;
+                    self.exchange(i, i, *l, *g, area, x.saturation[i], w)?;
                 }
             }
         }
@@ -430,9 +446,12 @@ impl Model {
                     w.molecular_loss_w[f.to][k] = w.molecular_loss_w[f.to][k] + loss;
                 }
             }
-            let al =
-                |i: usize| x.phase[i][0].map_or(s(0.), |p| p.volume / s(self.regions[i].volume_m3));
-            let contrast = al(f.from) - al(f.to);
+            let fractions = |i: usize| {
+                std::array::from_fn(|k| {
+                    x.phase[i][k].map_or(s(0.), |p| p.volume / s(self.regions[i].volume_m3))
+                })
+            };
+            let contrast = phase_contrast(fractions(f.from), fractions(f.to));
             if contrast.value != 0. || contrast.direction != 0. {
                 let forward =
                     contrast.value > 0. || (contrast.value == 0. && contrast.direction > 0.);
@@ -449,7 +468,7 @@ impl Model {
                 let area = s(f.area_m2 * self.contrast_factor)
                     * if forward { contrast } else { -contrast };
                 if area.value != 0. || area.direction != 0. {
-                    self.exchange(li, gi, liquid, gas, area, x.saturation, w)?;
+                    self.exchange(li, gi, liquid, gas, area, x.face_saturation[j], w)?;
                 }
             }
         }
@@ -625,6 +644,58 @@ fn solid_force(r: Region, p: Phase, alpha: Scalar, roughness: f64) -> Result<([S
 #[cfg(test)]
 mod branch_tests {
     use super::*;
+    #[test]
+    fn contrast_retains_tiny_minority_value_and_direction_in_both_phase_regimes() {
+        let minority = Scalar::new(1e-33, -3e-33);
+        let relative = |actual: f64, expected: f64| {
+            assert_ne!(actual, 0.);
+            assert_eq!(actual.is_sign_positive(), expected.is_sign_positive());
+            assert!((actual - expected).abs() <= 1e-14 * expected.abs());
+        };
+        for k in 0..2 {
+            let mut pure = [s(0.); 2];
+            pure[k] = s(1.);
+            let mut mixed = pure;
+            mixed[1 - k] = minority;
+            mixed[k] = s(1.) - minority;
+            // The dominant value has rounded to one while its direction has
+            // not vanished: the actual pilot's failed liquid subtraction.
+            assert_eq!(mixed[k].value, 1.);
+            assert_ne!(mixed[k].direction, 0.);
+            let expected = if k == 0 { minority } else { -minority };
+            for (from, to, sign) in [(pure, mixed, 1.), (mixed, pure, -1.)] {
+                let actual = phase_contrast(from, to);
+                relative(actual.value, sign * expected.value);
+                relative(actual.direction, sign * expected.direction);
+            }
+        }
+    }
+
+    #[test]
+    fn contrast_matches_complement_rows_and_current_tangent_without_a_branch_switch() {
+        for (a, b, ad, bd) in [
+            (0.8, 0.2, 0.03, -0.04),
+            (0.2, 0.8, -0.03, 0.04),
+            (0.75, 0.75, 0.03, -0.04),
+            (1., 0., -0.03, 0.04),
+        ] {
+            let a = Scalar::new(a, ad);
+            let b = Scalar::new(b, bd);
+            let actual = phase_contrast([a, s(1.) - a], [b, s(1.) - b]);
+            let expected = a - b;
+            assert!((actual.value - expected.value).abs() < 2e-16);
+            assert!((actual.direction - expected.direction).abs() < 2e-16);
+            let step = 1e-5;
+            let at = |h: f64| {
+                let av = s(a.value + h * a.direction);
+                let bv = s(b.value + h * b.direction);
+                phase_contrast([av, s(1.) - av], [bv, s(1.) - bv]).value
+            };
+            let fd = (at(step) - at(-step)) / (2. * step);
+            assert!((actual.direction - fd).abs() < 1e-11);
+        }
+    }
+
     #[test]
     fn drag_and_solid_transition_ties_are_explicit_not_smoothed() {
         let below = interphase_drag_factor(Scalar::new(1000. - 1e-6, 1.));

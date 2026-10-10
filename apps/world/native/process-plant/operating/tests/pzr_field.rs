@@ -142,8 +142,9 @@ fn evaluate(m: &Model, h: f64) -> Work {
     let mut w = Work::default();
     m.evaluate(
         Input {
-            pressure: Scalar::new(15e6 + h * 10., 10.),
-            saturation: saturation(h),
+            pressure: &[Scalar::new(15e6 + h * 10., 10.); REGIONS],
+            saturation: &[saturation(h); REGIONS],
+            face_saturation: &[saturation(h); FACES],
             phase: &phase,
             face_mass_flow: &q,
         },
@@ -192,8 +193,9 @@ fn direct_field_balances_material_heat_and_tracer_without_mechanical_heaters() {
     let x = phases(&m, 0.);
     let q = flows(0.);
     m.validate_accepted(&Input {
-        pressure: s(15e6),
-        saturation: saturation(0.),
+        pressure: &[s(15e6); REGIONS],
+        saturation: &[saturation(0.); REGIONS],
+        face_saturation: &[saturation(0.); FACES],
         phase: &x,
         face_mass_flow: &q,
     })
@@ -201,6 +203,83 @@ fn direct_field_balances_material_heat_and_tracer_without_mechanical_heaters() {
     for r in w.mass_defect_kg.iter().flatten().chain(&w.volume_defect_m3) {
         close(r.value, 0., 1e-10);
         close(r.direction, 0., 1e-10);
+    }
+}
+
+#[test]
+fn node_and_face_saturation_have_distinct_local_owners_and_no_duplicate_gravity() {
+    let m = model();
+    let mut phase = phases(&m, 0.);
+    for p in phase.iter_mut().flatten().flatten() {
+        p.velocity = [s(0.); 2];
+    }
+    let q = [[s(0.); 2]; FACES];
+    let pressures = std::array::from_fn(|i| s(15e6 + 1000. * i as f64));
+    let baseline = [saturation(0.); REGIONS];
+    let faces = [saturation(0.); FACES];
+    let evaluate = |nodes: &[Saturation; REGIONS], faces: &[Saturation; FACES]| {
+        let mut w = Work::default();
+        m.evaluate(
+            Input {
+                pressure: &pressures,
+                saturation: nodes,
+                face_saturation: faces,
+                phase: &phase,
+                face_mass_flow: &q,
+            },
+            &[[Sources::default(); 2]; REGIONS],
+            &mut w,
+        )
+        .unwrap();
+        w
+    };
+    let original = evaluate(&baseline, &faces);
+    assert!(
+        original
+            .sources
+            .iter()
+            .flatten()
+            .flat_map(|v| v.momentum)
+            .all(|v| v.value == 0.)
+    );
+    let mut changed = baseline;
+    changed[3].temperature = s(616.);
+    let local = evaluate(&changed, &faces);
+    assert_ne!(
+        local.sources[3][0].mass.value,
+        original.sources[3][0].mass.value
+    );
+    for i in 0..REGIONS {
+        if i != 3 {
+            assert_eq!(
+                local.sources[i][0].mass.value,
+                original.sources[i][0].mass.value
+            );
+        }
+    }
+    let mut face_changed = faces;
+    face_changed[0].temperature = s(617.);
+    let crossing = evaluate(&baseline, &face_changed);
+    assert_ne!(
+        crossing.sources[m.faces()[0].from][0].mass.value,
+        original.sources[m.faces()[0].from][0].mass.value
+    );
+    for field in [&local, &crossing] {
+        close(
+            field.sources.iter().flatten().map(|v| v.mass.value).sum(),
+            0.,
+            1e-7,
+        );
+        close(
+            field
+                .sources
+                .iter()
+                .flatten()
+                .map(|v| v.enthalpy.value)
+                .sum(),
+            0.,
+            1e-7,
+        );
     }
 }
 #[test]
@@ -216,6 +295,87 @@ fn smooth_current_directions_include_every_transport_property_and_force_port() {
             (a.direction - fd).abs() < 3e-6 * (1. + a.direction.abs().max(fd.abs())),
             "row{i}: {} != {fd}",
             a.direction
+        );
+    }
+}
+
+#[test]
+fn positive_tiny_minority_with_opposing_direction_uses_the_existing_phase_recipient() {
+    let m = model();
+    let q = [[s(0.); 2]; FACES];
+    let external = [[Sources::default(); 2]; REGIONS];
+    let mut sat = saturation(0.);
+    sat.temperature.direction = 0.;
+    sat.liquid = properties(sat.temperature, false);
+    sat.vapor = properties(sat.temperature, true);
+    for dominant in 0..2 {
+        let pure = |k: usize, volume: Scalar, temperature: Scalar| {
+            let water = properties(temperature, k == 1);
+            Phase {
+                mass: volume * water.density,
+                volume,
+                temperature,
+                water,
+                velocity: [s(0.); 2],
+                boron_mass: s(0.),
+            }
+        };
+        let mut phase: [[Option<Phase>; 2]; REGIONS] = std::array::from_fn(|i| {
+            let mut node = [None; 2];
+            node[dominant] = Some(pure(
+                dominant,
+                s(m.regions()[i].volume_m3),
+                s(if dominant == 0 { 600. } else { 630. }),
+            ));
+            node
+        });
+        let mixed = 2;
+        let volume = s(m.regions()[mixed].volume_m3);
+        let minority = Scalar::new(1e-33, -2e-33);
+        phase[mixed][dominant] = Some(pure(dominant, volume * (s(1.) - minority), sat.temperature));
+        phase[mixed][1 - dominant] = Some(pure(1 - dominant, volume * minority, sat.temperature));
+        let mut work = Work::default();
+        m.evaluate(
+            Input {
+                pressure: &[s(15e6); REGIONS],
+                saturation: &[sat; REGIONS],
+                face_saturation: &[sat; FACES],
+                phase: &phase,
+                face_mass_flow: &q,
+            },
+            &external,
+            &mut work,
+        )
+        .unwrap();
+        // There is no local conversion: both phases of the mixed receiver
+        // have saturation temperature. Every nonzero mass source is therefore
+        // the genuine minority contrast contact at one of its physical faces.
+        let receipt = work.sources[mixed][1 - dominant].mass;
+        assert_ne!(receipt.value, 0.);
+        assert_ne!(receipt.direction, 0.);
+        assert!(receipt.value < 0.);
+        assert!(receipt.direction > 0.);
+        assert!((receipt.direction / receipt.value + 2.).abs() < 1e-13);
+        for i in 0..REGIONS {
+            if i != mixed {
+                assert_eq!(work.sources[i][1 - dominant].mass.value, 0.);
+                assert_eq!(work.sources[i][1 - dominant].mass.direction, 0.);
+            }
+        }
+        // Relative-only conservation checks must detect loss of these tiny
+        // contacts; an absolute `1 + magnitude` tolerance would accept zero.
+        let total = work
+            .sources
+            .iter()
+            .flatten()
+            .fold(s(0.), |sum, source| sum + source.mass);
+        assert!(total.value.abs() <= 2e-15 * receipt.value.abs());
+        assert!(total.direction.abs() <= 2e-15 * receipt.direction.abs());
+        assert!(
+            work.birth_receipts
+                .iter()
+                .flatten()
+                .all(|source| { source.mass.value == 0. && source.mass.direction == 0. })
         );
     }
 }
@@ -238,8 +398,9 @@ fn exact_absence_has_responsible_arrivals_and_no_phantom_caloric_or_tracer_owner
     let run = |q: &[[Scalar; 2]; FACES], external: &[[Sources; 2]; REGIONS], w: &mut Work| {
         m.evaluate(
             Input {
-                pressure: s(15e6),
-                saturation: saturation(0.),
+                pressure: &[s(15e6); REGIONS],
+                saturation: &[saturation(0.); REGIONS],
+                face_saturation: &[saturation(0.); FACES],
                 phase: &x,
                 face_mass_flow: q,
             },
@@ -327,8 +488,9 @@ fn zero_slip_heat_value_keeps_sqrt_cusp_and_declares_inexact_linearization() {
         let mut w = Work::default();
         m.evaluate(
             Input {
-                pressure: s(15e6),
-                saturation: sat,
+                pressure: &[s(15e6); REGIONS],
+                saturation: &[sat; REGIONS],
+                face_saturation: &[sat; FACES],
                 phase: x,
                 face_mass_flow: &q,
             },
@@ -445,8 +607,9 @@ fn reversal_uses_actual_liquid_donor_and_signed_trials_are_not_clipped() {
     let run = |x: &[[Option<Phase>; 2]; REGIONS], q: &[[Scalar; 2]; FACES], w: &mut Work| {
         m.evaluate(
             Input {
-                pressure: s(15e6),
-                saturation: saturation(0.),
+                pressure: &[s(15e6); REGIONS],
+                saturation: &[saturation(0.); REGIONS],
+                face_saturation: &[saturation(0.); FACES],
                 phase: x,
                 face_mass_flow: q,
             },
@@ -477,8 +640,9 @@ fn reversal_uses_actual_liquid_donor_and_signed_trials_are_not_clipped() {
     assert_eq!(x[0][0].unwrap().mass.value, -1.);
     assert!(
         m.validate_accepted(&Input {
-            pressure: s(15e6),
-            saturation: saturation(0.),
+            pressure: &[s(15e6); REGIONS],
+            saturation: &[saturation(0.); REGIONS],
+            face_saturation: &[saturation(0.); FACES],
             phase: &x,
             face_mass_flow: &q
         })
@@ -488,8 +652,9 @@ fn reversal_uses_actual_liquid_donor_and_signed_trials_are_not_clipped() {
     assert!(run(&x, &q, &mut b).is_err());
     assert!(
         m.validate_accepted(&Input {
-            pressure: s(15e6),
-            saturation: saturation(0.),
+            pressure: &[s(15e6); REGIONS],
+            saturation: &[saturation(0.); REGIONS],
+            face_saturation: &[saturation(0.); FACES],
             phase: &x,
             face_mass_flow: &q
         })
@@ -508,8 +673,9 @@ fn accepted_admission_refuses_nonfinite_state_property_and_flow_seeds() {
                  phase: &[[Option<Phase>; 2]; REGIONS],
                  face_mass_flow: &[[Scalar; 2]; FACES]| {
         m.validate_accepted(&Input {
-            pressure,
-            saturation,
+            pressure: &[pressure; REGIONS],
+            saturation: &[saturation; REGIONS],
+            face_saturation: &[saturation; FACES],
             phase,
             face_mass_flow,
         })
@@ -568,8 +734,9 @@ fn accepted_admission_requires_positive_phase_domains_and_no_vapor_boron() {
     let sat = saturation(0.);
     let admit = |pressure, saturation, phase: &[[Option<Phase>; 2]; REGIONS]| {
         m.validate_accepted(&Input {
-            pressure,
-            saturation,
+            pressure: &[pressure; REGIONS],
+            saturation: &[saturation; REGIONS],
+            face_saturation: &[saturation; FACES],
             phase,
             face_mass_flow: &q,
         })
@@ -627,8 +794,9 @@ fn bounded_fresh_constitutive_port_cost_is_not_a_trajectory_or_eos_benchmark() {
         x[0][1].as_mut().unwrap().velocity[1].value = 0.13 + i as f64 * 1e-5;
         m.evaluate(
             Input {
-                pressure: s(15e6),
-                saturation: saturation(0.),
+                pressure: &[s(15e6); REGIONS],
+                saturation: &[saturation(0.); REGIONS],
+                face_saturation: &[saturation(0.); FACES],
                 phase: &x,
                 face_mass_flow: &q,
             },

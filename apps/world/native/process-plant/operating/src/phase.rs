@@ -8,6 +8,8 @@
 
 use std::fmt;
 
+use crate::thermal::Scalar;
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Point {
     pub pressure_pa: f64,
@@ -183,6 +185,267 @@ pub fn single_constraints(v: f64, s: Stock, p: Point) -> Result<([f64; 2], [[f64
         finite(row)?;
     }
     Ok((residual, jacobian))
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PhaseRates {
+    pub pressure_rate_pa_s: f64,
+    /// An absent phase has no temperature; an exact newborn's T is fixed by
+    /// its responsible receipt row, not an independent finite-stock T rate.
+    pub temperature_rate_k_s: [Option<f64>; 2],
+    pub volume_rate_m3_s: [f64; 2],
+    pub internal_energy_rate_w: [f64; 2],
+}
+
+/// Current phase properties and their complete caller-supplied direction.
+/// `Some` means a present phase or an explicitly selected responsible birth
+/// chart; it does not create an absent-phase temperature or seed stock.
+#[derive(Clone, Copy, Debug)]
+pub struct ScalarRatePhase {
+    pub mass: Scalar,
+    pub density: Scalar,
+    pub specific_u: Scalar,
+    pub rho_p: Scalar,
+    pub rho_t: Scalar,
+    pub u_p: Scalar,
+    pub u_t: Scalar,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ScalarPhaseRates {
+    pub pressure_rate_pa_s: Scalar,
+    pub volume_rate_m3_s: [Scalar; 2],
+    pub internal_energy_rate_w: [Scalar; 2],
+}
+
+/// Locally eliminated rigid-volume M/U rates, with current directional values.
+///
+/// Cancel the phase mass analytically BEFORE evaluating the caloric/volume
+/// elimination. This avoids a `1/M` coefficient or a finite-difference probe
+/// across an exact-zero mass. Signed off-manifold Newton masses are evaluable;
+/// no stock is modified or accepted here. Actual phase-volume work is paid
+/// once, and cancels between phases of the rigid cell.
+///
+/// At an exact birth the caller owns the responsible receipt row `H'=h M'`.
+/// On that row this gives `V'=M'/rho`. Away from it, the same mass-cancelled
+/// formula is an explicit Newton residual extension, NOT an admitted physical
+/// birth or an alternate heat/flash source. An absent `None` phase has neither
+/// receipts nor a receipt direction; its appearance needs a selected chart.
+pub fn current_rates(
+    pressure: Scalar,
+    phases: [Option<ScalarRatePhase>; 2],
+    mass_rate: [Scalar; 2],
+    enthalpy_rate: [Scalar; 2],
+) -> Result<ScalarPhaseRates, Error> {
+    let check = |values: &[Scalar]| -> Result<(), Error> {
+        for x in values {
+            finite(&[x.value, x.direction])?;
+        }
+        Ok(())
+    };
+    check(&[pressure])?;
+    check(&mass_rate)?;
+    check(&enthalpy_rate)?;
+    if pressure.value <= 0. {
+        return Err(Error::InvalidInput("positive physical property pressure"));
+    }
+    let zero = Scalar::constant(0.);
+    let mut expansion = [zero; 2];
+    let mut compliance = [zero; 2];
+    for i in 0..2 {
+        let Some(s) = phases[i] else {
+            if [mass_rate[i], enthalpy_rate[i]]
+                .iter()
+                .any(|x| x.value != 0. || x.direction != 0.)
+            {
+                return Err(Error::InvalidInput("absent phase requires birth chart"));
+            }
+            continue;
+        };
+        check(&[
+            s.mass,
+            s.density,
+            s.specific_u,
+            s.rho_p,
+            s.rho_t,
+            s.u_p,
+            s.u_t,
+        ])?;
+        if s.density.value <= 0. {
+            return Err(Error::InvalidInput("positive physical property density"));
+        }
+        let density_squared = s.density * s.density;
+        let a = -s.rho_p / density_squared;
+        let b = -s.rho_t / density_squared;
+        let ap = s.u_p + pressure * a;
+        let at = s.u_t + pressure * b;
+        check(&[a, b, ap, at])?;
+        if at.value == 0. {
+            return Err(Error::SingularChart);
+        }
+        let h = s.specific_u + pressure / s.density;
+        expansion[i] = mass_rate[i] / s.density + b / at * (enthalpy_rate[i] - h * mass_rate[i]);
+        compliance[i] = s.mass * (a - b * ap / at);
+    }
+    check(&expansion)?;
+    check(&compliance)?;
+    let total_compliance = compliance[0] + compliance[1];
+    if total_compliance.value == 0. {
+        return Err(Error::SingularChart);
+    }
+    let pressure_rate = -(expansion[0] + expansion[1]) / total_compliance;
+    let volume_rate = std::array::from_fn(|i| expansion[i] + compliance[i] * pressure_rate);
+    let energy_rate = std::array::from_fn(|i| enthalpy_rate[i] - pressure * volume_rate[i]);
+    check(&[pressure_rate])?;
+    check(&volume_rate)?;
+    check(&energy_rate)?;
+    Ok(ScalarPhaseRates {
+        pressure_rate_pa_s: pressure_rate,
+        volume_rate_m3_s: volume_rate,
+        internal_energy_rate_w: energy_rate,
+    })
+}
+
+/// Differentiate a rigid cell's caloric and volume constraints locally.
+///
+/// `enthalpy_rate` contains actual advected enthalpy and heat receipts, BEFORE
+/// phase-volume work. The returned energy rates pay `-p V_i'` once. This small
+/// local elimination avoids differentiating algebraic p/T solver variables in
+/// the differential M/U equations. It does not advance or alter any stock.
+///
+/// Present stocks must be nonzero, but signed Newton trial masses are not
+/// clipped or confused with accepted-state admission. An exact-zero newborn
+/// phase needs its responsible one-sided receipt/enthalpy chart instead;
+/// neither a seed mass nor an absent-phase temperature is supplied here.
+pub fn present_rates(
+    v: f64,
+    stocks: [Option<Stock>; 2],
+    points: [Option<Point>; 2],
+    mass_rate: [f64; 2],
+    enthalpy_rate: [f64; 2],
+) -> Result<PhaseRates, Error> {
+    local_rates(v, stocks, points, mass_rate, enthalpy_rate, false)
+}
+
+/// The same local rate closure with explicitly selected exact-zero births.
+///
+/// `Some(Stock { mass_kg: 0., internal_energy_j: 0. })` and a property point
+/// identify a newborn, NOT an arbitrary absent-phase seed. The caller must
+/// obtain this point from an actual positive receipt (or its responsible
+/// one-sided onset), enforce `h(p,T) = H'/M'` as the active caloric row, and
+/// admit its stable branch. This function supplies no inverse, default T,
+/// flash partition, phase layout change, or independent newborn T rate.
+///
+/// At zero mass, `V' = M'/rho` and `U' = H' - p V'`. This expansion participates
+/// in the existing finite phase's pressure closure. Once mass is nonzero,
+/// the ordinary present-phase caloric constraint and rate apply again.
+/// Finite off-manifold U trials are evaluable: U does not enter these rate
+/// coefficients. The accepted birth transaction still requires exactly zero
+/// retained U; this constitutive evaluator does not reset or admit a stock.
+pub fn rates_with_birth(
+    v: f64,
+    stocks: [Option<Stock>; 2],
+    points: [Option<Point>; 2],
+    mass_rate: [f64; 2],
+    enthalpy_rate: [f64; 2],
+) -> Result<PhaseRates, Error> {
+    local_rates(v, stocks, points, mass_rate, enthalpy_rate, true)
+}
+
+fn local_rates(
+    v: f64,
+    stocks: [Option<Stock>; 2],
+    points: [Option<Point>; 2],
+    mass_rate: [f64; 2],
+    enthalpy_rate: [f64; 2],
+    allow_birth: bool,
+) -> Result<PhaseRates, Error> {
+    volume(v)?;
+    finite(&mass_rate)?;
+    finite(&enthalpy_rate)?;
+    let mut pressure = None;
+    // Per phase: V_p, V_T, caloric p/T coefficients, and caloric receipt.
+    let mut coefficients = [[0.; 5]; 2];
+    let mut expansion = 0.;
+    let mut compliance = 0.;
+    for i in 0..2 {
+        let (s, p) = match (stocks[i], points[i]) {
+            (Some(s), Some(p)) => (s, p),
+            (None, None) => {
+                if mass_rate[i] != 0. || enthalpy_rate[i] != 0. {
+                    return Err(Error::InvalidInput("absent phase requires birth chart"));
+                }
+                continue;
+            }
+            _ => return Err(Error::InvalidInput("phase stock/property mismatch")),
+        };
+        point(p)?;
+        finite(&[s.mass_kg, s.internal_energy_j])?;
+        if pressure.is_some_and(|previous| previous != p.pressure_pa) {
+            return Err(Error::InvalidInput("different phase pressures"));
+        }
+        pressure = Some(p.pressure_pa);
+        if s.mass_kg == 0. {
+            if !allow_birth {
+                return Err(Error::InvalidInput("zero phase mass requires birth chart"));
+            }
+            if mass_rate[i] < 0. || (mass_rate[i] == 0. && enthalpy_rate[i] != 0.) {
+                return Err(Error::InvalidInput("invalid exact-zero birth receipt"));
+            }
+            expansion += mass_rate[i] / p.density_kg_m3;
+            continue;
+        }
+        let density_squared = p.density_kg_m3 * p.density_kg_m3;
+        let vp = -s.mass_kg * p.density_pressure / density_squared;
+        let vt = -s.mass_kg * p.density_temperature / density_squared;
+        let ap = s.mass_kg * p.energy_pressure + p.pressure_pa * vp;
+        let at = s.mass_kg * p.energy_temperature + p.pressure_pa * vt;
+        // Use the identity from the retained caloric constraint itself; the
+        // independently supplied property h is used by transport, not as an
+        // alternate caloric convention in this differentiated row.
+        let h = p.internal_energy_j_kg + p.pressure_pa / p.density_kg_m3;
+        let receipt = enthalpy_rate[i] - h * mass_rate[i];
+        finite(&[vp, vt, ap, at, receipt])?;
+        if at == 0. {
+            return Err(Error::SingularChart);
+        }
+        expansion += mass_rate[i] / p.density_kg_m3 + vt * receipt / at;
+        compliance += vp - vt * ap / at;
+        coefficients[i] = [vp, vt, ap, at, receipt];
+    }
+    let pressure = pressure.ok_or(Error::InvalidInput("no present phase"))?;
+    finite(&[expansion, compliance])?;
+    if compliance == 0. {
+        return Err(Error::SingularChart);
+    }
+    let pd = -expansion / compliance;
+    let mut out = PhaseRates {
+        pressure_rate_pa_s: pd,
+        temperature_rate_k_s: [None; 2],
+        volume_rate_m3_s: [0.; 2],
+        internal_energy_rate_w: [0.; 2],
+    };
+    for i in 0..2 {
+        if let Some(p) = points[i] {
+            if stocks[i].is_some_and(|s| s.mass_kg == 0.) {
+                let vd = mass_rate[i] / p.density_kg_m3;
+                let ud = enthalpy_rate[i] - pressure * vd;
+                finite(&[pd, vd, ud])?;
+                out.volume_rate_m3_s[i] = vd;
+                out.internal_energy_rate_w[i] = ud;
+                continue;
+            }
+            let [vp, vt, ap, at, receipt] = coefficients[i];
+            let td = (receipt - ap * pd) / at;
+            let vd = mass_rate[i] / p.density_kg_m3 + vp * pd + vt * td;
+            let ud = enthalpy_rate[i] - pressure * vd;
+            finite(&[pd, td, vd, ud])?;
+            out.temperature_rate_k_s[i] = Some(td);
+            out.volume_rate_m3_s[i] = vd;
+            out.internal_energy_rate_w[i] = ud;
+        }
+    }
+    Ok(out)
 }
 
 pub fn validate_separated_accepted(v: f64, vl: f64, l: Stock, g: Stock) -> Result<(), Error> {
