@@ -38,6 +38,8 @@ describe('lead value sparklines', () => {
     })
     expect(line.range).toEqual({ min: 15.4, max: 15.6 })
     expect(line.path.match(/M/g)).toHaveLength(2)
+    expect(line.broken).toBe(true)
+    expect(sparklineText({ recorded: true, windowMs, unit: 'MPa', line, historyMissing: false, historyError: undefined })).toBe('Last 10 min: 15.4 to 15.6 MPa · broken where nothing was recorded')
     expect(line.path.startsWith(`M${(50_000 / windowMs * (size.width - 4)).toFixed(1)} `)).toBe(true)
     expect(line.end?.x).toBe(size.width - 4)
   })
@@ -47,14 +49,14 @@ describe('lead value sparklines', () => {
     expect(held.path.startsWith('M0.0 ')).toBe(true)
     // The last value is older than the historian's re-recording interval allows: no dot at now.
     expect(held.end).toBeNull()
-    expect(sparkline({ points: [], now, windowMs, size, value: undefined, thresholds: [] })).toEqual({ path: '', end: null, limit: null, range: null })
+    expect(sparkline({ points: [], now, windowMs, size, value: undefined, thresholds: [] })).toEqual({ path: '', end: null, limit: null, range: null, broken: false })
   })
 
   test('a steady value is a flat line in the middle, a small wobble stays small, and a ramp fills the height', () => {
     // Recorded once a minute, as the historian records an unchanged value.
     const flat = sparkline({ points: every(60_000, start, now, () => 15.5), now, windowMs, size, value: 15.5, thresholds: [] })
     expect(new Set(ys(flat.path))).toEqual(new Set([size.height / 2]))
-    expect(flat.path.match(/M/g)).toHaveLength(1)
+    expect([flat.path.match(/M/g)?.length, flat.broken]).toEqual([1, false])
     // ±0.01 MPa about 15.51 MPa is noise on a scale at least 1 MPa tall.
     const wobble = ys(sparkline({ points: every(1_000, now - 60_000, now, t => (t / 1_000) % 2 === 0 ? 15.5 : 15.52), now, windowMs, size, value: 15.52, thresholds: [] }).path)
     expect(Math.max(...wobble) - Math.min(...wobble)).toBeLessThan(1)
