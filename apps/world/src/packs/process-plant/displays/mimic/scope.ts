@@ -457,7 +457,7 @@ export const drawingStops = (
 const STUB_NAMES = 3
 
 /** "cold leg A" for a port named coldLegA. */
-const portName = (port: string): string => words(port).map(word => word.length === 1 ? word.toUpperCase() : word).join(' ')
+export const portName = (port: string): string => words(port).map(word => word.length === 1 ? word.toUpperCase() : word).join(' ')
 
 // Ports are named only where a component has several alike: connected, of the
 // same circuit and direction (the core's four cold legs; a 4-loop Plant leaves
