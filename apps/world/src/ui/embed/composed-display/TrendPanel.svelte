@@ -12,6 +12,8 @@
     type TrendPoint,
     type ValueDomain,
   } from './trend-geometry.ts'
+  import { limitLabelRanks, stackLabels, type LabelSlot } from './limit-labels.ts'
+  import { limitAhead, ratePerMinute, rateWindowMs } from './panel-presenters.ts'
   import { penStroke } from './pen-style.ts'
 
   // One strip of a trend: one measurement of parallel equipment on its own
@@ -20,6 +22,7 @@
   let {
     strip,
     horizon,
+    horizonMs,
     windowMs,
     series,
     range,
@@ -33,6 +36,8 @@
   }: {
     strip: ComposedTrendStrip
     horizon: string
+    /** The horizon's length; rates over it are read as the legend reads them. */
+    horizonMs: number
     /** The time the strip spans: the horizon, or the Run's history when that is shorter. */
     windowMs: number
     series: ReadonlyMap<string, ReadonlyArray<TrendPoint>>
@@ -53,19 +58,14 @@
   // Several strips share the page; each hatch pattern needs its own id.
   const uid = $props.id()
   const patternId = `no-data-${uid}`
-  // The right gutter fits the longest threshold label, such as "LO TRIP 16.35 (+2)".
+  // The right gutter fits a limit label such as "HI-HI TRIP 16.35 (+1)".
   const pad = $derived({ left: 44, right: 118, top: 18, bottom: timeAxis ? 22 : 0 })
 
   // Trip and alarm thresholds near the values share their scale; farther ones
-  // are named at the plot edge. Control set points are marked on the axis only
-  // when they fall inside it, to keep the trend quiet.
+  // are named at the plot edge they lie beyond. Control set points are marked
+  // on the axis only when they fall inside it, to keep the trend quiet.
   const limitThresholds = $derived(strip.thresholds.filter(threshold => threshold.kind !== 'control'))
   const drawnThresholds = $derived(limitThresholds.filter(threshold => limitInScale(threshold.value, range)))
-  const offScale = $derived((['high', 'low'] as const).flatMap(direction => {
-    const beyond = limitThresholds.filter(threshold => threshold.direction === direction && !limitInScale(threshold.value, range))
-    const nearest = beyond.sort((left, right) => direction === 'high' ? left.value - right.value : right.value - left.value)[0]
-    return nearest === undefined ? [] : [{ threshold: nearest, more: beyond.length - 1 }]
-  }))
   const controlThresholds = $derived(strip.thresholds.filter(threshold => threshold.kind === 'control'))
 
   // Fixed scale: the grow-only range seen since the view opened plus the drawn
@@ -94,42 +94,58 @@
   // The value labels are read against: the latest value of the strip's first pen.
   const current = $derived(strip.pens.map(pen => series.get(String(pen.path))?.at(-1)?.v).find(value => value !== undefined))
 
-  // Lines of one direction closer than one label height share one label: the
-  // active rule names the cluster, otherwise the line nearest the current
-  // value, with a count of the others (all listed in its tooltip). Low and high
-  // limits never merge, so the limit a value approaches stays named. A label
-  // pushed off its line keeps a leader to it.
-  const LABEL_SPACING = 12
+  // Labels stack down the gutter, each at its line or pushed clear of its
+  // neighbour with a leader back to it; a limit off the scale is named at the
+  // edge it lies beyond, ▲ or ▼. Only a strip too short for all of them folds
+  // the least important into a neighbour's count (limit-labels.ts): never an
+  // active limit, nor the one a value is heading for, while another can give way.
+  const LINE = 12
+  const labelRoom = $derived({ start: pad.top - LINE, end: pad.top + plotHeight + LINE / 2 })
+  const aheadRuleIds = $derived(new Set(strip.pens.flatMap(pen => {
+    const points = series.get(String(pen.path)) ?? []
+    const latest = points.at(-1)
+    const ahead = latest === undefined ? null : limitAhead(latest.v, ratePerMinute(points, rateWindowMs(horizonMs)), pen.thresholds)
+    return ahead === null ? [] : [ahead.threshold.ruleId]
+  })))
+  const edgeOf = (threshold: ComposedTrendThreshold): 'above' | 'below' | null =>
+    range === null || limitInScale(threshold.value, range) ? null : threshold.value > range.max ? 'above' : 'below'
   const thresholdLabels = $derived.by(() => {
-    const sorted = [...drawnThresholds].sort((left, right) => right.value - left.value)
-    const clusters: Array<Array<ComposedTrendThreshold>> = []
-    for (const threshold of sorted) {
-      const cluster = clusters.at(-1)
-      const joins = cluster !== undefined
-        && cluster[0]!.direction === threshold.direction
-        && y(threshold.value) - y(cluster[0]!.value) < LABEL_SPACING
-      if (joins) cluster.push(threshold)
-      else clusters.push([threshold])
-    }
-    const placed: Array<{ key: string; lineY: number; y: number; text: string; title: string; severity: string | null }> = []
-    for (const cluster of clusters) {
-      const distance = (value: number): number => current === undefined ? 0 : Math.abs(value - current)
-      const named = cluster.find(threshold => activeSeverity(threshold) === 'critical')
-        ?? cluster.find(threshold => activeSeverity(threshold) !== null)
-        ?? [...cluster].sort((left, right) => distance(left.value) - distance(right.value))[0]!
-      const lineY = y(named.value)
-      const previous = placed.at(-1)
-      placed.push({
-        key: named.ruleId,
-        lineY,
-        y: previous === undefined ? lineY : Math.max(lineY, previous.y + LABEL_SPACING),
+    const ranks = limitLabelRanks(limitThresholds.map(threshold => ({
+      key: threshold.ruleId,
+      value: threshold.value,
+      active: activeSeverity(threshold),
+      ahead: threshold.ruleIds.some(ruleId => aheadRuleIds.has(ruleId)),
+    })), current)
+    // Top to bottom as they read: highest value first.
+    const ordered = [...limitThresholds].sort((left, right) => right.value - left.value)
+    const slots = ordered.map((threshold): LabelSlot => {
+      const edge = edgeOf(threshold)
+      return {
+        key: threshold.ruleId,
+        want: edge === 'above' ? labelRoom.start : edge === 'below' ? labelRoom.end - LINE : y(threshold.value) - LINE / 2,
+        size: LINE,
+        group: threshold.direction,
+        rank: ranks.get(threshold.ruleId)!,
+      }
+    })
+    const byKey = new Map(ordered.map(threshold => [threshold.ruleId, threshold]))
+    const describe = (threshold: ComposedTrendThreshold): string =>
+      `${thresholdName(threshold, strip.unit)}: ${threshold.label} (${threshold.signals.join(', ')})${threshold.modeLabel === undefined ? '' : `, only in ${threshold.modeLabel}`}${edgeOf(threshold) === null ? '' : ', off this scale'}`
+    return stackLabels(slots, labelRoom).map(label => {
+      const named = byKey.get(label.key)!
+      const folded = label.folded.map(key => byKey.get(key)!)
+      const edge = edgeOf(named)
+      return {
+        key: label.key,
+        edge,
+        lineY: y(named.value),
+        y: label.start + LINE / 2,
         // Thresholds are configured numbers; show them exactly, never rounded.
-        text: `${thresholdName(named, strip.unit, { withUnit: false })}${cluster.length > 1 ? ` (+${cluster.length - 1})` : ''}`,
-        title: cluster.map(threshold => `${thresholdName(threshold, strip.unit)}: ${threshold.label} (${threshold.signals.join(', ')})${threshold.modeLabel === undefined ? '' : `, only in ${threshold.modeLabel}`}`).join('\n'),
-        severity: activeSeverity(named),
-      })
-    }
-    return placed
+        text: `${edge === 'above' ? '▲ ' : edge === 'below' ? '▼ ' : ''}${thresholdName(named, strip.unit, { withUnit: false })}${folded.length > 0 ? ` (+${folded.length})` : ''}`,
+        title: [named, ...folded].map(describe).join('\n'),
+        severity: activeSeverity(named) ?? folded.map(activeSeverity).find(severity => severity !== null) ?? null,
+      }
+    })
   })
 
   // Where the window starts before any recorded value, say why instead of
@@ -193,18 +209,10 @@
         ><title>{threshold.label}</title></line>
       {/each}
       {#each thresholdLabels as label (label.key)}
-        {#if Math.abs(label.y - label.lineY) > 2}
+        {#if label.edge === null && Math.abs(label.y - label.lineY) > 2}
           <polyline class="leader" points={`${pad.left + plotWidth},${label.lineY} ${pad.left + plotWidth + 4},${label.lineY} ${pad.left + plotWidth + 8},${label.y}`} />
         {/if}
         <text class={`threshold-label ${label.severity === null ? '' : `active-${label.severity}`}`} x={pad.left + plotWidth + 10} y={label.y} dominant-baseline="middle"><title>{label.title}</title>{label.text}</text>
-      {/each}
-      {#each offScale as edge (edge.threshold.ruleId)}
-        <text
-          class={`threshold-label off-scale ${activeSeverity(edge.threshold) === null ? '' : `active-${activeSeverity(edge.threshold)}`}`}
-          x={pad.left + plotWidth + 10}
-          y={edge.threshold.direction === 'high' ? pad.top + 4 : pad.top + plotHeight - 4}
-          dominant-baseline="middle"
-        ><title>{edge.threshold.label}: {formatQuantity(edge.threshold.value, strip.unit)}, off this scale</title>{edge.threshold.direction === 'high' ? '▲' : '▼'} {thresholdName(edge.threshold, strip.unit, { withUnit: false })}{edge.more > 0 ? ` (+${edge.more})` : ''}</text>
       {/each}
       {#each controlThresholds.filter(threshold => threshold.value >= domain!.min && threshold.value <= domain!.max) as threshold (threshold.ruleId)}
         <line class="control-mark" x1={pad.left + plotWidth} x2={pad.left + plotWidth + 3} y1={y(threshold.value)} y2={y(threshold.value)}><title>{threshold.label} at {formatQuantity(threshold.value, strip.unit)} (control set point)</title></line>
