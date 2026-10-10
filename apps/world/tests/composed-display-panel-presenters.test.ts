@@ -19,6 +19,8 @@ describe('composed display panel presenters', () => {
     expect(marginText(near, '%')).toBe('4.50 % above LO ALM 30 %')
     const beyond = nearestThresholdMargin(26.9, thresholds)!
     expect(marginText(beyond, '%')).toBe('past LO ALM 30 %')
+    // Past both, the trip is what it says.
+    expect(marginText(nearestThresholdMargin(19.5, thresholds)!, '%')).toBe('past LO TRIP 20 %')
     expect(marginText(nearestThresholdMargin(70, thresholds)!, '%')).toBe('5.00 % below HI ALM 75 % (power operation)')
     expect(thresholdName(thresholds[0]!, 'MPa')).toBe('LO TRIP 20 MPa')
     expect(thresholdName(thresholds[0]!, 'MPa', { withUnit: false })).toBe('LO TRIP 20')

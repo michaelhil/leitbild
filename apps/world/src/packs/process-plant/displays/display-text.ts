@@ -60,7 +60,12 @@ export interface ThresholdMargin {
   readonly margin: number
 }
 
-/** The alarm or trip threshold the value is closest to acting on. */
+/**
+ * The alarm or trip threshold the value is closest to acting on or, once it
+ * is past some, the outermost it has passed: 19.5 % is past LO TRIP 20 %, not
+ * only past LO ALM 30 % (evaluation run 19: steam generators below their
+ * low-low trip read as merely past the low alarm).
+ */
 export const nearestThresholdMargin = (
   value: number,
   thresholds: ReadonlyArray<ComposedDisplayThreshold>,
@@ -72,6 +77,8 @@ export const nearestThresholdMargin = (
       margin: threshold.operator === '<' || threshold.operator === '<=' ? value - threshold.value : threshold.value - value,
     }))
   if (margins.length === 0) return null
+  const passed = margins.filter(margin => margin.margin < 0)
+  if (passed.length > 0) return passed.reduce((outermost, candidate) => candidate.margin > outermost.margin ? candidate : outermost)
   return margins.reduce((nearest, candidate) => candidate.margin < nearest.margin ? candidate : nearest)
 }
 

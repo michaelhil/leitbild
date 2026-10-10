@@ -38,7 +38,7 @@ import {
   type ComposedPanelShape,
   type ComposedPanelSize,
 } from './composition.ts'
-import { displayValue, formatQuantity, marginText, nearestThresholdMargin, thresholdName, trendSpanMs, unitLabel } from './display-text.ts'
+import { displayValue, formatQuantity, marginText, nearestThresholdMargin, thresholdName, trendSpanMs, unitLabel, type ThresholdMargin } from './display-text.ts'
 import { compileMimic, compileMimicScope, groupLabel, type MimicCompileResult } from './mimic/compile-mimic.ts'
 import { MIMIC_MAX_WIDTH } from './mimic/mimic-model.ts'
 import { chatMimicProfile, detailMimicProfile, overviewMimicProfile } from './mimic/profiles.ts'
@@ -1054,8 +1054,9 @@ export const composedDisplayMargins = (
 const shownPens = (display: CompiledComposedDisplay): ReadonlyArray<ComposedDisplayPen> =>
   [...new Map(display.panels.flatMap(composedPanelPens).map(pen => [pen.path, pen])).values()]
 
-// Past a limit first, then nearest relative to the limit: the first is what
-// the display leads with.
+// Past a trip limit first, then past an alarm limit, then nearest relative
+// to the limit: the first is what the display leads with.
+const passedRank = (margin: ThresholdMargin): number => margin.margin >= 0 ? 2 : margin.threshold.kind === 'trip' ? 0 : 1
 const rankedMargins = (
   display: CompiledComposedDisplay,
   read: (path: VariablePath) => unknown,
@@ -1066,9 +1067,9 @@ const rankedMargins = (
     const margin = nearestThresholdMargin(value, pen.thresholds)
     if (margin === null) return []
     const relative = margin.margin / Math.max(Math.abs(margin.threshold.value), Number.EPSILON)
-    return [{ pen, relative, text: `${pen.name}: ${formatQuantity(value, pen.unit)}, ${marginText(margin, pen.unit)}` }]
+    return [{ pen, rank: passedRank(margin), relative, text: `${pen.name}: ${formatQuantity(value, pen.unit)}, ${marginText(margin, pen.unit)}` }]
   })
-  .sort((left, right) => left.relative - right.relative)
+  .sort((left, right) => left.rank - right.rank || left.relative - right.relative)
 
 /** A native value as the view shows it, to six digits, or nothing for a state. */
 export const shownQuantity = (value: number, unit: string): EmbeddedViewContent['items'][number]['values'] =>
