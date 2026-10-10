@@ -226,7 +226,7 @@
         {
           "path": "reliefValvePositionFraction",
           "tagId": "PORV-456A",
-          "equipmentId": "pressurizerReliefValve",
+          "equipmentId": "pressurizer",
           "description": "Pressurizer relief valve position"
         }
       ],
@@ -236,17 +236,6 @@
           "embedded": {
             "reliefValve": "PORV"
           }
-        }
-      }
-    },
-    {
-      "id": "pressurizerReliefValve",
-      "kind": "processValve",
-      "label": "Pressurizer Relief Valve",
-      "parameters": {},
-      "metadata": {
-        "presentation": {
-          "shortLabel": "PZR relief valve"
         }
       }
     },
@@ -9564,11 +9553,6 @@
     "sgD.secondaryInventoryBalanceResidualKg",
     "sgD.steamMassBalanceResidualKg",
     "sgD.boilingEnergyResidualMw",
-    "pressurizerReliefValve.positionFraction",
-    "pressurizerReliefValve.effectivePositionFraction",
-    "pressurizerReliefValve.inletFlowKgPerS",
-    "pressurizerReliefValve.outletFlowKgPerS",
-    "pressurizerReliefValve.flowBalanceResidualKgPerS",
     "feedwaterHeader.inletFlowKgPerS",
     "feedwaterHeader.outletFlowKgPerS",
     "feedwaterHeader.flowBalanceResidualKgPerS",

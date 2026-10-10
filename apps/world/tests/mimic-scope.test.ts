@@ -114,7 +114,7 @@ describe('mimic scope from the agent\'s intent', () => {
   })
 
   test('equipment the model connects to nothing is refused as such', () => {
-    for (const id of ['pressurizerReliefValve', 'reactorTripBreakerA', 'containmentSprayAdditiveTank']) {
+    for (const id of ['reactorTripBreakerA', 'containmentSprayAdditiveTank']) {
       expect(rejection(graph, { from: [id], services: ['primaryRelief'] })).toEqual([{ field: 'from.0', message: `${id} is not connected to any equipment in the Plant model, so it cannot be drawn` }])
       expect(rejection(graph, { from: ['pressurizer'], to: [id] })[0]).toEqual({ field: 'to.0', message: `${id} is not connected to any equipment in the Plant model, so it cannot be drawn` })
     }

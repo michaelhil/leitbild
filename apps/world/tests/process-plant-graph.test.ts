@@ -34,7 +34,10 @@ describe('process plant model composition', () => {
     // the Agent upgrade; changed on 2026-10-10 when the owner chose to delete
     // the spec's hand-picked display profiles, accepting that PWR Runs
     // checkpointed before then cannot be restored and must be restarted.
-    expect(system.modelDigest).toBe('207c0c7f2c2603700b29f2e70b2fb657a0259e0591960e471fff350b1e527093')
+    // Changed again on 2026-10-10, approved by the owner, when the model was
+    // made to report equipment state truthfully; PWR Runs checkpointed before
+    // then must be restarted.
+    expect(system.modelDigest).toBe('b9d65903c815ea578545e3837c5d2e5e2ddcdb4c9b281dd07983a70a01fa280e')
     const running = createProcessPlantRuntime({ system })
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))

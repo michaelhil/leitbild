@@ -517,9 +517,9 @@ describe('a display shows what its question is about', () => {
   })
 
   test('equipment the model connects to nothing is refused as a subject, never offered by its signals', () => {
-    // Probe run 19: the agent named the model's unconnected relief valve, whose position always reads open.
-    expect(rejectionOf(() => ask('world.process-plant.display.compose', display(['pressurizerReliefValve'], [trendOf('PT-455')]))))
-      .toContain('subjects.0: pressurizerReliefValve (Pressurizer Relief Valve, PZR relief valve) is connected to no other equipment in the Plant model, so no display can show it; name the equipment it is part of or acts on instead')
+    // Probe run 19 named an unconnected relief valve the model has since dropped; the reactor trip breakers are still unwired.
+    expect(rejectionOf(() => ask('world.process-plant.display.compose', display(['reactorTripBreakerA'], [trendOf('PT-455')]))))
+      .toContain('subjects.0: reactorTripBreakerA (Reactor Trip Breaker A, RTB A) is connected to no other equipment in the Plant model, so no display can show it; name the equipment it is part of or acts on instead')
   })
 
   test('a subject that names nothing comes back with names that do', () => {
