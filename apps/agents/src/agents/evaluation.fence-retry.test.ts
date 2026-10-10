@@ -211,6 +211,31 @@ describe('evaluation view-fence guard', () => {
     expect(result.decision.response).toEqual({ action: 'respond', content: viewFence('call_0_0/compose') })
   })
 
+  test('a display composed in this turn but left out of the answer is corrected', async () => {
+    // Probe run 19: the answer said "the mimic below shows" and carried no view block.
+    const answers = [
+      { content: '', toolCalls: [{ id: 'w1', function: { name: 'workspace_call', arguments: { calls: [] } } }] },
+      { content: 'The pump runs; the mimic below shows its branches.' },
+      { content: viewFence('call_0_0/compose') },
+    ]
+    let index = 0
+    const calls: ChatRequest[] = []
+    const provider: LLMProvider = {
+      models: async () => [],
+      chat: async request => { calls.push(request); return { ...mkResponse(''), ...answers[index++]! } },
+    }
+    const executor = async () => [{
+      success: true,
+      data: { results: [{ key: 'compose', operationId: 'world.process-plant.display.compose', success: true, data: {}, viewRef: 'call_0_0/compose' }] },
+    }]
+    const result = await evaluate(mkContext(), mkConfig(), provider, executor, 5, 'room-1', {
+      toolDefinitions: [{ type: 'function', function: { name: 'workspace_call', description: 'call', parameters: {} } }],
+    })
+    expect(calls).toHaveLength(3)
+    expect(calls[2]!.messages.at(-1)!.content).toContain('This turn composed a display (viewRef call_0_0/compose) but the response does not present it.')
+    expect(result.decision.response).toEqual({ action: 'respond', content: viewFence('call_0_0/compose') })
+  })
+
   test('more than one display per answer is corrected', async () => {
     const twice = `${viewFence('call_0_0/a')}\n\n\`\`\`leitbild-view\nview call_0_0/b\n\`\`\``
     const { provider, callLog } = mkProvider([twice, 'text only'])

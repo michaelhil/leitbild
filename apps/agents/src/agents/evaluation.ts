@@ -271,9 +271,14 @@ const mapFenceErrors = (content: string): ReadonlyArray<string> =>
 
 // A view fence must name a display this turn actually composed. Evidence of
 // earlier turns is not accepted: the answer must present what it just built.
+// A display composed in this turn and left out is corrected too: the answer
+// would point the operator to a display that is not there.
 const viewFenceErrors = (content: string, viewRefs: ReadonlySet<string>): ReadonlyArray<string> => {
   const fences = extractFences(content, [VIEW_FENCE_LANGUAGE])
-  if (fences.length === 0) return []
+  if (fences.length === 0) {
+    const latest = [...viewRefs].at(-1)
+    return latest === undefined ? [] : [`This turn composed a display (viewRef ${latest}) but the response does not present it. End the response with the \`${VIEW_FENCE_LANGUAGE}\` block (view ${latest}), or, if that display does not answer the question, say so in one sentence and never refer to it as shown.`]
+  }
   const errors: string[] = []
   if (fences.length > 1) errors.push(`Show at most one display per answer; the response has ${fences.length} \`${VIEW_FENCE_LANGUAGE}\` blocks.`)
   for (const fence of fences) {
