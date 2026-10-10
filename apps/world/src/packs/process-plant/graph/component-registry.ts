@@ -1,6 +1,7 @@
 import type { ComponentDefinition, ComponentKind } from './model.ts'
 import { accumulatorComponentDefinitions } from './accumulator-component-definitions.ts'
 import { balanceOfPlantComponentDefinitions } from './balance-of-plant-component-definitions.ts'
+import { boundaryComponentDefinitions } from './boundary-component-definitions.ts'
 import { containmentComponentDefinitions } from './containment-component-definitions.ts'
 import { heatExchangerComponentDefinitions } from './heat-exchanger-component-definitions.ts'
 import { electricalComponentDefinitions } from './electrical-component-definitions.ts'
@@ -19,6 +20,7 @@ export const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition
   ...balanceOfPlantComponentDefinitions,
   ...heatExchangerComponentDefinitions,
   ...containmentComponentDefinitions,
+  ...boundaryComponentDefinitions,
   ...accumulatorComponentDefinitions,
   ...electricalComponentDefinitions,
 ]
