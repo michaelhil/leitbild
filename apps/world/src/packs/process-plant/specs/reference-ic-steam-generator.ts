@@ -33,11 +33,16 @@ export const levelHighHighPercent = 82
 // generators, as in a Westinghouse plant: one generator's low level is a
 // feedwater fault the motor-driven pumps cover, two a loss of heat sink. The
 // trip acts while the reactor can be critical (the standard technical
-// specifications' modes 1 and 2); auxiliary feedwater starts in every mode,
-// lined up, as on every other start, to every steam generator, so that one
-// generator's low level does not send all the pumps' flow to it. A real plant
-// votes two of three or four level channels per generator; this model has one
-// channel each, so that one channel trips.
+// specifications' modes 1 and 2); auxiliary feedwater starts in every mode.
+// The trains stay apart: each motor-driven pump feeds its own two steam
+// generators (A and B, C and D) and the turbine-driven pump all four, each
+// line through a cavitating venturi that caps what it passes, and a
+// generator's two lines through its auxiliary feedwater valve (USNRC
+// Westinghouse Technology Systems Manual 5.7). Every start lines its pump up
+// to all of its generators, so one generator's low level does not send its
+// pump's whole flow to it. A real plant votes two of three
+// or four level channels per generator; this model has one channel each, so
+// that one channel trips.
 export const levelLowLowPercent = 20
 
 // Steam pressure ladder of the reference main steam system: the steam dumps
@@ -148,7 +153,7 @@ export const steamGeneratorReferenceIcRules = (
         trip({
           id: 'afw-actuation',
           title: `Steam generator ${loop} low-low level`,
-          message: `Steam generator ${loop} low-low level starts the motor-driven auxiliary feedwater pumps, feeding every steam generator.`,
+          message: `Steam generator ${loop} low-low level starts the motor-driven auxiliary feedwater pumps, each feeding its own two steam generators.`,
           annunciator: annunciator({ ...sgAction, firstOutGroup: 'auxiliary-feedwater' }),
         }),
         write('start-motor-afw', { path: 'auxFeedwaterPumpMotor.running' }, true),
@@ -303,10 +308,11 @@ export const turbineDrivenAuxiliaryFeedwaterReferenceIcRules = (loops: ReadonlyA
       trip({
         id: 'turbine-afw-start',
         title: 'Turbine-driven AFW start on low-low level',
-        message: `Narrow-range level is below ${levelLowLowPercent} % in two steam generators: the turbine-driven auxiliary feedwater pump starts.`,
+        message: `Narrow-range level is below ${levelLowLowPercent} % in two steam generators: the turbine-driven auxiliary feedwater pump starts, feeding every steam generator.`,
         annunciator: annunciator({ system: 'feedwater', equipmentId: 'auxFeedwaterPumpTurbine', group: 'auxiliary-feedwater', firstOutGroup: 'auxiliary-feedwater', priority: 'urgent', role: 'automaticAction' }),
       }),
       write('start-turbine-afw', { path: 'auxFeedwaterPumpTurbine.running' }, true),
+      ...loops.map(loop => write(`open-afw-valve-${loop.toLowerCase()}`, { path: `auxFeedwaterValve${loop}.positionFraction` }, 1)),
     ],
   }),
 ]

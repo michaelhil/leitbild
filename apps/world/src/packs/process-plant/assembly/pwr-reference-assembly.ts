@@ -114,7 +114,9 @@ const sharedLoopParameters = (
   if (
     component.id === 'feedwaterHeader'
     || component.id === 'mainSteamHeader'
-    || component.id === 'auxFeedwaterHeader'
+    || component.id === 'auxFeedwaterHeaderA'
+    || component.id === 'auxFeedwaterHeaderB'
+    || component.id === 'auxFeedwaterHeaderTurbine'
     || component.id === 'safetyInjectionHeader'
   ) {
     return { ...component, parameters: { ...parameters, portIds: loopIds } }

@@ -43,17 +43,18 @@ describe('Plant graph read', () => {
     expect(result).toMatchObject({ mode: 'connections', total: 3, returned: 3, hasMore: false })
     expect(result.links.map(({ from, fromPort, to, toPort, kind, service }) => ({ from, fromPort, to, toPort, kind, service }))).toEqual([
       { from: 'auxFeedwaterTank', fromPort: 'outlet', to: 'auxFeedwaterPumpMotor', toPort: 'inlet', kind: 'fluidFlow', service: 'auxFeedwater' },
-      { from: 'auxFeedwaterPumpMotor', fromPort: 'outlet', to: 'auxFeedwaterHeader', toPort: 'inletA', kind: 'fluidFlow', service: 'auxFeedwater' },
+      { from: 'auxFeedwaterPumpMotor', fromPort: 'outlet', to: 'auxFeedwaterHeaderA', toPort: 'inletA', kind: 'fluidFlow', service: 'auxFeedwater' },
       { from: 'safetyBusA', fromPort: 'outlet', to: 'auxFeedwaterPumpMotor', toPort: 'power', kind: 'electricalPower', service: undefined },
     ])
-    expect(result.components.map(component => component.id).sort()).toEqual(['auxFeedwaterHeader', 'auxFeedwaterPumpMotor', 'auxFeedwaterTank', 'safetyBusA'])
+    expect(result.components.map(component => component.id).sort()).toEqual(['auxFeedwaterHeaderA', 'auxFeedwaterPumpMotor', 'auxFeedwaterTank', 'safetyBusA'])
     expect(result.components.find(component => component.id === 'safetyBusA')).toEqual({ id: 'safetyBusA', kind: 'electricalBus', label: 'Safety Bus A', shortLabel: 'Bus A' })
     // Where the read stops is stated, with what comes next: never a silent cut.
     expect(result.continues).toEqual([
       // The condensate storage tank also takes the hotwell's reject.
       { componentId: 'auxFeedwaterTank', direction: 'upstream', links: 1, next: ['hotwellRejectValve'] },
       { componentId: 'safetyBusA', direction: 'upstream', links: 2, next: ['dieselBreakerA', 'offsiteBreakerA'] },
-      { componentId: 'auxFeedwaterHeader', direction: 'downstream', links: 4, next: ['auxFeedwaterValveA', 'auxFeedwaterValveB', 'auxFeedwaterValveC', 'auxFeedwaterValveD'] },
+      // Its train's header feeds its own two steam generators' valves.
+      { componentId: 'auxFeedwaterHeaderA', direction: 'downstream', links: 2, next: ['auxFeedwaterValveA', 'auxFeedwaterValveB'] },
     ])
     // The production turn read the complete compiled graph (812,258 bytes) for this answer.
     expect(bytes(result)).toBeLessThan(2_000)
@@ -62,11 +63,14 @@ describe('Plant graph read', () => {
   })
 
   test('follows flow downstream to say which loops a header feeds', () => {
-    const result = connections({ componentIds: ['auxFeedwaterHeader'], direction: 'downstream', reach: 2 })
-    expect(result.links.every(link => link.from === 'auxFeedwaterHeader' || link.from.startsWith('auxFeedwaterValve'))).toBe(true)
+    const result = connections({ componentIds: ['auxFeedwaterHeaderTurbine'], direction: 'downstream', reach: 2 })
+    expect(result.links.every(link => link.from === 'auxFeedwaterHeaderTurbine' || link.from.startsWith('auxFeedwaterTurbineValve'))).toBe(true)
     expect(result.links.filter(link => link.toPort === 'feedwaterInlet').map(link => [link.to, link.loop])).toEqual([['sgA', 'A'], ['sgB', 'B'], ['sgC', 'C'], ['sgD', 'D']])
     expect(result.continues.every(stop => stop.direction === 'downstream' && stop.componentId.startsWith('sg'))).toBe(true)
-    expect(connections({ componentIds: ['auxFeedwaterHeader'], direction: 'upstream' }).links.every(link => link.to === 'auxFeedwaterHeader')).toBe(true)
+    expect(connections({ componentIds: ['auxFeedwaterHeaderTurbine'], direction: 'upstream' }).links.every(link => link.to === 'auxFeedwaterHeaderTurbine')).toBe(true)
+    // A motor-driven train's header feeds its own two loops.
+    expect(connections({ componentIds: ['auxFeedwaterHeaderB'], direction: 'downstream', reach: 2 }).links
+      .filter(link => link.toPort === 'feedwaterInlet').map(link => [link.to, link.loop])).toEqual([['sgC', 'C'], ['sgD', 'D']])
   })
 
   test('one more step of reach adds exactly the links continues announced', () => {
@@ -114,7 +118,8 @@ describe('Plant graph read', () => {
   test('rejects with every issue and how to fix it', () => {
     const unknown = rejection({ componentIds: ['afwPumpA'] })
     expect(unknown.code).toBe('capability_target_not_found')
-    expect(unknown.message).toContain('no component afwPumpA; did you mean auxFeedwaterPumpMotor')
+    expect(unknown.message).toContain('no component afwPumpA; did you mean ')
+    expect(unknown.message).toContain('auxFeedwaterPumpMotor (Motor-Driven Auxiliary Feedwater Pump, MD AFW A)')
     expect(unknown.message).toContain('world.process-plant.components.search')
 
     const issues = rejection({ services: ['afw'], reach: 2, direction: 'upstream' })

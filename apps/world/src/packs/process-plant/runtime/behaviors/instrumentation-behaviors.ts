@@ -1,4 +1,4 @@
-import type { CompiledComponent, CompiledProcessLink } from '../../graph/index.ts'
+import type { CompiledComponent, CompiledProcessLink, VariablePath } from '../../graph/index.ts'
 import type { CompiledProcessPlant } from '../../plant-compiler.ts'
 import { reactorInitialThermalState } from '../../reactor-initial-conditions.ts'
 import {
@@ -118,6 +118,28 @@ const writeSafetyInjectionBlock = (system: CompiledProcessPlant, logic: Compiled
   context.write(componentVariablePath(logic, 'blockPushbutton'), false)
 }
 
+const summedFlowPathsCache = new WeakMap<CompiledComponent, ReadonlyArray<VariablePath>>()
+
+// A flow summation totals the flows of every link of its service into a
+// component of its kind; a Plant with no such link, or one that measures no
+// flow, gives it nothing it could mean, and is refused.
+const summedFlowPaths = (system: CompiledProcessPlant, summation: CompiledComponent): ReadonlyArray<VariablePath> => {
+  const cached = summedFlowPathsCache.get(summation)
+  if (cached !== undefined) return cached
+  const parameters = summation.parameters as Readonly<Record<string, unknown>>
+  const known = new Set(system.graph.variables.map(variable => variable.path))
+  const links = system.graph.links.filter(link => link.kind === 'fluidFlow' && link.service === parameters.service
+    && system.graph.components[link.toComponentIndex]?.kind === parameters.intoComponentKind)
+  if (links.length === 0) throw new Error(`flow summation ${summation.id} totals ${String(parameters.service)} into ${String(parameters.intoComponentKind)}, which no link of the Plant carries`)
+  const paths = links.map(link => processLinkVariablePath(link, 'flowKgPerS'))
+  for (const path of paths) if (!known.has(path)) throw new Error(`flow summation ${summation.id} totals ${path}, which the Plant does not declare`)
+  summedFlowPathsCache.set(summation, paths)
+  return paths
+}
+
+const writeFlowSummation = (system: CompiledProcessPlant, summation: CompiledComponent, context: Pick<ProcessPlantBehaviorContext, 'readNumber' | 'write'>): void =>
+  context.write(componentVariablePath(summation, 'totalFlowKgPerS'), summedFlowPaths(system, summation).reduce((total, path) => total + context.readNumber(path), 0))
+
 export const instrumentationBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition> = [
   {
     id: 'delta-t-protection-channel',
@@ -154,6 +176,15 @@ export const instrumentationBehaviorDefinitions: ReadonlyArray<ComponentBehavior
     },
   },
   {
+    id: 'flow-summation',
+    // After the components it reads have updated, so the total is this step's.
+    phase: 'updateComponentState',
+    componentKind: 'flowSummation',
+    reads: ['every summed link:flowKgPerS'],
+    writes: ['totalFlowKgPerS'],
+    update: ({ system, component, context }): void => writeFlowSummation(system, component, context),
+  },
+  {
     id: 'safety-injection-block-logic',
     phase: 'updateComponentState',
     componentKind: 'safetyInjectionBlockLogic',
@@ -185,6 +216,14 @@ export const instrumentationInitialReconciliationDefinitions: ReadonlyArray<Comp
       context.write(componentVariablePath(component, 'leakRateKgPerS'), 0)
       context.write(componentVariablePath(component, 'balancedInventoryKg'), rcsInventoryKg(system, component, context))
     },
+  },
+  {
+    id: 'flow-summation-initial-state',
+    componentKind: 'flowSummation',
+    reads: ['every summed link:flowKgPerS'],
+    writes: ['totalFlowKgPerS'],
+    afterLinks: true,
+    reconcile: ({ system, component, context }): void => writeFlowSummation(system, component, context),
   },
   {
     id: 'safety-injection-block-logic-initial-state',

@@ -11,6 +11,7 @@ import {
   averageIncomingComponentLinkValue as averageIncomingLinkValue,
   averageOutgoingComponentLinkValue as averageOutgoingLinkValue,
   incomingComponentLinks,
+  sumIncomingComponentLinkValue,
   sumOutgoingComponentLinkValue,
 } from '../component-link-helpers.ts'
 import { primaryLoopLegReversed } from '../primary-loop-hydraulics.ts'
@@ -199,8 +200,8 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
     ],
     update: (input): void => {
       const { system, component, context } = input
-      const feedwaterFlow = (averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'feedwater') ?? 0)
-        + (averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'auxFeedwater') ?? 0)
+      // Every feed line into the generator adds its flow: main and auxiliary feedwater.
+      const feedwaterFlow = sumIncomingComponentLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'feedwater' || link.service === 'auxFeedwater')
       const tubeLeakFlow = context.readNumber(componentVariablePath(component, 'primaryToSecondaryLeakKgPerS'))
       context.write(componentVariablePath(component, 'feedwaterFlowKgPerS'), feedwaterFlow)
       // A generator's steam leaves by every main steam line: by its steam outlet to its isolation valve and by its

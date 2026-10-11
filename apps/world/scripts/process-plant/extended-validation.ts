@@ -62,7 +62,7 @@ const telemetryVariables = [
   'rcpA.loopFlowKgPerS',
   'rcpB.loopFlowKgPerS',
   'feedwaterHeader.flowBalanceResidualKgPerS',
-  'auxFeedwaterHeader.flowBalanceResidualKgPerS',
+  'auxFeedwaterHeaderA.flowBalanceResidualKgPerS',
   'main-feedwater-pump-a-to-header.flowKgPerS',
   'main-feedwater-pump-b-to-header.flowKgPerS',
   'aux-feedwater-valve-a-to-sg-a.flowKgPerS',
@@ -448,7 +448,7 @@ const evaluateIntegrity = (
   const badNegative = telemetry.flatMap(series => series.points.map(point => ({ path: series.path, value: point.value })))
     .find(point => typeof point.value === 'number' && nonnegativePaths.has(point.path) && point.value < -1e-7)
   const maxFeedHeaderResidual = Math.max(...numericValues(telemetry, 'feedwaterHeader.flowBalanceResidualKgPerS').map(Math.abs))
-  const maxAuxHeaderResidual = Math.max(...numericValues(telemetry, 'auxFeedwaterHeader.flowBalanceResidualKgPerS').map(Math.abs))
+  const maxAuxHeaderResidual = Math.max(...numericValues(telemetry, 'auxFeedwaterHeaderA.flowBalanceResidualKgPerS').map(Math.abs))
   const minLevel = Math.min(...[
     ...numericValues(telemetry, 'sgA.levelPercent'),
     ...numericValues(telemetry, 'sgB.levelPercent'),

@@ -11,17 +11,30 @@ import {
 import { headerPressureBalance } from '../src/packs/process-plant/runtime/behaviors/junction/header-pressure-balance.ts'
 import { resolveProcessPlantSignalBinding } from '../src/packs/process-plant/signals.ts'
 
-// Auxiliary feedwater of the four-loop reference PWR: two motor-driven pumps
-// of 440 gpm (27.6 kg/s) and a turbine-driven one of 880 gpm (55.2 kg/s)
-// discharge into one header, which feeds each steam generator through its
-// own valve and line. The header's pressure settles where the pumps' curves
-// deliver what the open lines pass to their generators.
+// Auxiliary feedwater of the four-loop reference PWR, in three trains kept
+// apart as a Westinghouse plant's are (USNRC Westinghouse Technology Systems
+// Manual 5.7): motor-driven pump A (440 gpm, 27.6 kg/s) feeds steam
+// generators A and B, motor-driven pump B feeds C and D, and the
+// turbine-driven pump (880 gpm, 55.2 kg/s) feeds all four. Each pump
+// discharges into its own header, which feeds each of its generators by its
+// own line with a cavitating venturi; a generator's two lines, its motor-driven
+// train's and the turbine-driven train's, pass its auxiliary feedwater valve.
+// Each header's pressure settles where its pump's curve delivers what its open
+// lines pass. The venturis cavitate at about 240 gpm (15 kg/s) with the pumps
+// at their rated head, as Point Beach's (NRC, ML113202356), so a depressurized
+// generator cannot draw off the other generators' feed.
 
 const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:afw', loopCount: 4 }))
 const graph = plant.graph
 const loops = ['A', 'B', 'C', 'D'] as const
 const ratedFlowKgPerS = { auxFeedwaterPumpMotor: 27.6, auxFeedwaterPumpMotorB: 27.6, auxFeedwaterPumpTurbine: 55.2 } as const
 const pumps = Object.keys(ratedFlowKgPerS) as ReadonlyArray<keyof typeof ratedFlowKgPerS>
+const trains = [
+  { header: 'auxFeedwaterHeaderA', pump: 'auxFeedwaterPumpMotor', line: (loop: string) => `aux-feedwater-header-to-valve-${loop.toLowerCase()}`, generators: ['A', 'B'] },
+  { header: 'auxFeedwaterHeaderB', pump: 'auxFeedwaterPumpMotorB', line: (loop: string) => `aux-feedwater-header-to-valve-${loop.toLowerCase()}`, generators: ['C', 'D'] },
+  { header: 'auxFeedwaterHeaderTurbine', pump: 'auxFeedwaterPumpTurbine', line: (loop: string) => `aux-feedwater-turbine-header-to-valve-${loop.toLowerCase()}`, generators: ['A', 'B', 'C', 'D'] },
+] as const
+const venturiKgPerSPerSqrtMPa = 5
 
 const started = (withIc = true, system = plant) => {
   const runtime = createProcessPlantRuntime({ system })
@@ -46,8 +59,43 @@ const started = (withIc = true, system = plant) => {
   return { runtime, read, tag, set, run, act, active }
 }
 
+/** Each train's header balance with the generators' pressures overridden, as if they stood there now. */
+const balanceWith = (plantRun: ReturnType<typeof started>, header: string, pressures: ReadonlyMap<string, number>) => {
+  const known = new Set(graph.variables.map(variable => variable.path))
+  return headerPressureBalance(plant, graph.components[graph.componentIndexById.get(header as never)!]!, {
+    has: path => known.has(path),
+    readNumber: path => pressures.get(path) ?? plantRun.read(path),
+    readBoolean: path => plantRun.runtime.readVariable(path) === true,
+  })
+}
+const branchOf = (train: (typeof trains)[number], loop: string): number => graph.links.find(link => link.id === train.line(loop))!.index
+
 describe('auxiliary feedwater', () => {
-  test('after a loss of main feedwater feeds each generator a quarter of the three pumps\' rated 110 kg/s', () => {
+  test('keeps its trains apart: each motor-driven pump feeds its own two generators, the turbine-driven pump all four', () => {
+    for (const train of trains) {
+      const header = graph.componentIndexById.get(train.header as never)!
+      const pumpsIn = (graph.incomingLinksByComponent[header] ?? []).map(index => graph.components[graph.links[index]!.fromComponentIndex]!.id)
+      expect(pumpsIn).toEqual([train.pump] as never)
+      // Each branch is its own line to one generator's auxiliary feedwater valve.
+      const onward = (component: number): ReadonlyArray<number> => (graph.outgoingLinksByComponent[component] ?? []).map(next => graph.links[next]!.toComponentIndex)
+      const fed = (graph.outgoingLinksByComponent[header] ?? []).map(index => ({
+        line: graph.links[index]!.id,
+        generator: onward(graph.links[index]!.toComponentIndex).map(generator => graph.components[generator]!.id),
+      }))
+      expect(fed).toEqual(train.generators.map(loop => ({ line: train.line(loop), generator: [`sg${loop}`] })) as never)
+    }
+    // A generator's valve takes its motor-driven train's line and the turbine-driven train's, and nothing else.
+    for (const loop of loops) {
+      const valve = graph.componentIndexById.get(`auxFeedwaterValve${loop}` as never)!
+      expect((graph.incomingLinksByComponent[valve] ?? []).map(index => graph.links[index]!.id).sort())
+        .toEqual(trains.filter(train => (train.generators as ReadonlyArray<string>).includes(loop)).map(train => train.line(loop)).sort())
+    }
+    // Each generator's auxiliary feedwater flow, its line's, and the total are signals.
+    for (const loop of loops) expect(resolveProcessPlantSignalBinding(graph, { tagId: `AFW-${loop}-FLOW` as never }).path).toBe(`aux-feedwater-valve-${loop.toLowerCase()}-to-sg-${loop.toLowerCase()}.flowKgPerS` as VariablePath)
+    expect(resolveProcessPlantSignalBinding(graph, { tagId: 'AFW-FLOW' as never }).path).toBe('auxFeedwaterFlowTotal.totalFlowKgPerS' as VariablePath)
+  })
+
+  test('after a loss of main feedwater feeds each generator a quarter of the three pumps\' rated 110 kg/s, half from each of its trains', () => {
     const plantRun = started()
     plantRun.run(5)
     plantRun.act('loss-main-feedwater')
@@ -62,16 +110,28 @@ describe('auxiliary feedwater', () => {
       expect(flow).toBeLessThan(30)
       expect(Math.abs(flow - flows[0]!)).toBeLessThan(0.01 * flows[0]!)
     }
+    for (const loop of loops) {
+      const motor = read(trains.find(train => train.pump !== 'auxFeedwaterPumpTurbine' && (train.generators as ReadonlyArray<string>).includes(loop))!.line(loop) + '.flowKgPerS')
+      const turbine = read(trains[2].line(loop) + '.flowKgPerS')
+      // Its line into the generator carries both (a solver step behind them).
+      expect(motor + turbine).toBeCloseTo(tag(`AFW-${loop}-FLOW`), 3)
+      expect(motor / turbine).toBeCloseTo(1, 1)
+      // Each generator's feedwater inflow is its auxiliary feedwater, main feedwater being lost.
+      expect(read(`sg${loop}.feedwaterFlowKgPerS`)).toBeCloseTo(tag(`AFW-${loop}-FLOW`), 6)
+    }
     expect(tag('AFW-FLOW')).toBeCloseTo(flows.reduce((total, flow) => total + flow, 0), 6)
     expect(tag('AFW-FLOW')).toBeGreaterThan(100)
     expect(tag('AFW-FLOW')).toBeLessThan(115)
-    expect(read('auxFeedwaterHeader.pressureNodeMPa')).toBeGreaterThan(8.8)
-    expect(read('auxFeedwaterHeader.pressureNodeMPa')).toBeLessThan(9.6)
-    // Each generator's feedwater inflow is its auxiliary feedwater, main feedwater being lost.
-    for (const loop of loops) expect(read(`sg${loop}.feedwaterFlowKgPerS`)).toBeCloseTo(tag(`AFW-${loop}-FLOW`), 6)
+    // Each pump's discharge is its own signal, and each header stands near the pumps' 9.1 MPa rated discharge.
+    expect(tag('AFW-PUMP-A-FLOW')).toBeCloseTo(read('auxFeedwaterPumpMotor.flowKgPerS'), 1)
+    expect(tag('AFW-PUMP-T-FLOW')).toBeCloseTo(read('auxFeedwaterPumpTurbine.flowKgPerS'), 1)
+    for (const train of trains) {
+      expect(read(`${train.header}.pressureNodeMPa`)).toBeGreaterThan(8.8)
+      expect(read(`${train.header}.pressureNodeMPa`)).toBeLessThan(9.6)
+    }
   })
 
-  test('with one line open, that generator takes what the line passes, and the pumps run back along their curves', () => {
+  test('with one line open, that generator takes what the line passes, and its pump runs back along its curve', () => {
     const plantRun = started(false)
     plantRun.run(5)
     for (const pump of pumps) plantRun.set(`${pump}.running`, true)
@@ -79,86 +139,121 @@ describe('auxiliary feedwater', () => {
     // The turbine-driven pump takes its 30 s run-up to come to speed.
     plantRun.run(60)
     const { read, tag } = plantRun
-    // About 44 kg/s into a generator at 6.9 MPa, not the pumps' 110 kg/s.
-    expect(tag('AFW-B-FLOW')).toBeGreaterThan(35)
-    expect(tag('AFW-B-FLOW')).toBeLessThan(50)
+    // Motor-driven pump A, its other line shut, runs back to what generator B's line passes, which its venturi caps
+    // near the pump's shutoff head: about 16 kg/s, not the pump's 27.6. The turbine-driven pump, its other three
+    // lines shut, does the same, and motor-driven pump B, both its lines shut, delivers nothing.
+    const header = read('auxFeedwaterHeaderA.pressureNodeMPa')
+    expect(header).toBeGreaterThan(10)
+    expect(read(trains[0].line('B') + '.flowKgPerS')).toBeCloseTo(venturiKgPerSPerSqrtMPa * Math.sqrt(header), 1)
+    expect(read(trains[2].line('B') + '.flowKgPerS')).toBeCloseTo(venturiKgPerSPerSqrtMPa * Math.sqrt(read('auxFeedwaterHeaderTurbine.pressureNodeMPa')), 1)
+    expect(read('auxFeedwaterPumpMotor.flowKgPerS')).toBeLessThan(0.65 * ratedFlowKgPerS.auxFeedwaterPumpMotor)
     for (const loop of ['A', 'C', 'D']) expect(tag(`AFW-${loop}-FLOW`)).toBe(0)
-    for (const pump of pumps) expect(read(`${pump}.flowKgPerS`)).toBeLessThan(0.5 * ratedFlowKgPerS[pump])
+    expect(read('auxFeedwaterPumpMotorB.flowKgPerS')).toBe(0)
+    expect(tag('AFW-B-FLOW')).toBeGreaterThan(30)
+    expect(tag('AFW-B-FLOW')).toBeLessThan(36)
     // What the tank gives is what the pumps deliver, and what the generator takes (the lines read a solver step apart).
     const suction = read('aux-feedwater-tank-to-motor-pump.flowKgPerS') + read('aux-feedwater-tank-to-motor-pump-b.flowKgPerS') + read('aux-feedwater-tank-to-turbine-pump.flowKgPerS')
     expect(suction).toBeCloseTo(tag('AFW-B-FLOW'), 2)
-    expect(read('auxFeedwaterHeader.flowBalanceResidualKgPerS')).toBeCloseTo(0, 2)
-    // The header stands near the pumps' shutoff head, above their 9 MPa rated head.
-    expect(read('auxFeedwaterHeader.pressureNodeMPa')).toBeGreaterThan(10)
-    expect(read('auxFeedwaterValveB.availablePressureDropMPa')).toBeCloseTo(read('auxFeedwaterHeader.pressureNodeMPa') - read('sgB.pressureMPa'), 1)
+    expect(read('auxFeedwaterHeaderA.flowBalanceResidualKgPerS')).toBeCloseTo(0, 2)
   })
 
-  test('a generator at lower pressure takes more than its share', () => {
+  test('a depressurized generator takes no more than its lines\' venturis pass, and the other generators keep their feed', () => {
     const plantRun = started(false)
     plantRun.run(5)
     for (const pump of pumps) plantRun.set(`${pump}.running`, true)
     for (const loop of loops) plantRun.set(`auxFeedwaterValve${loop}.positionFraction`, 1)
-    plantRun.run(5)
-    const header = graph.components[graph.componentIndexById.get('auxFeedwaterHeader' as never)!]!
-    const known = new Set(graph.variables.map(variable => variable.path))
-    const balanceWith = (overrides: ReadonlyMap<string, number>) => headerPressureBalance(plant, header, {
-      has: path => known.has(path),
-      readNumber: path => overrides.get(path) ?? plantRun.read(path),
-      readBoolean: path => plantRun.runtime.readVariable(path) === true,
-    })
-    const branchOf = (loop: string): number => graph.links.find(link => link.id === `aux-feedwater-header-to-valve-${loop.toLowerCase()}`)!.index
-    const even = balanceWith(new Map(loops.map(loop => [`sg${loop}.pressureMPa`, 7.6])))
-    const faulted = balanceWith(new Map(loops.map(loop => [`sg${loop}.pressureMPa`, loop === 'A' ? 5.6 : 7.6])))
-    expect(even.branchFlowKgPerS.get(branchOf('A'))!).toBeCloseTo(even.branchFlowKgPerS.get(branchOf('B'))!, 6)
-    expect(faulted.branchFlowKgPerS.get(branchOf('A'))!).toBeGreaterThan(1.5 * faulted.branchFlowKgPerS.get(branchOf('B'))!)
-    expect(faulted.branchFlowKgPerS.get(branchOf('B'))!).toBeLessThan(even.branchFlowKgPerS.get(branchOf('B'))!)
-    // The pumps deliver what the lines pass, at a lower header pressure.
-    const total = (flows: ReadonlyMap<number, number>): number => [...flows.values()].reduce((sum, flow) => sum + flow, 0)
-    expect(total(faulted.pumpFlowKgPerS)).toBeCloseTo(total(faulted.branchFlowKgPerS), 3)
-    expect(faulted.pressureMPa).toBeLessThan(even.pressureMPa)
+    plantRun.run(60)
+    // Generator A faulted, at atmospheric pressure behind a broken steam line; the others at no-load pressure.
+    const even = new Map(loops.map(loop => [`sg${loop}.pressureMPa`, 7.6]))
+    const faulted = new Map(loops.map(loop => [`sg${loop}.pressureMPa`, loop === 'A' ? 0.101 : 7.6]))
+    for (const train of [trains[0], trains[2]]) {
+      const before = balanceWith(plantRun, train.header, even)
+      const after = balanceWith(plantRun, train.header, faulted)
+      // The faulted generator's line cavitates at its venturi's flow, about 15 to 17 kg/s, not the 30 to 50 kg/s
+      // its valve alone would pass into a dead generator.
+      const faultedLine = after.branchFlowKgPerS.get(branchOf(train, 'A'))!
+      expect(faultedLine).toBeCloseTo(venturiKgPerSPerSqrtMPa * Math.sqrt(after.pressureMPa), 6)
+      expect(faultedLine).toBeLessThan(1.25 * before.branchFlowKgPerS.get(branchOf(train, 'A'))!)
+      // The train's intact generators lose some of their feed, not all of it.
+      for (const loop of train.generators.filter(other => other !== 'A')) {
+        expect(after.branchFlowKgPerS.get(branchOf(train, loop))!).toBeGreaterThan(0.6 * before.branchFlowKgPerS.get(branchOf(train, loop))!)
+      }
+      // The pump delivers what the lines pass, at a lower header pressure.
+      const total = (flows: ReadonlyMap<number, number>): number => [...flows.values()].reduce((sum, flow) => sum + flow, 0)
+      expect(total(after.pumpFlowKgPerS)).toBeCloseTo(total(after.branchFlowKgPerS), 3)
+      expect(after.pressureMPa).toBeLessThan(before.pressureMPa)
+    }
+    // Motor-driven pump B's train does not see generator A at all.
+    expect(balanceWith(plantRun, 'auxFeedwaterHeaderB', faulted).pressureMPa).toBeCloseTo(balanceWith(plantRun, 'auxFeedwaterHeaderB', even).pressureMPa, 9)
   })
 
-  test('started by one generator\'s low-low level, the motor-driven pumps feed every generator, not that one alone', () => {
+  test('with generator A\'s relief valve stuck open after a loss of main feedwater, its lines cap its feed at their venturis', () => {
+    const plantRun = started()
+    plantRun.run(5)
+    plantRun.act('loss-main-feedwater')
+    plantRun.set('steamGeneratorReliefValveA.positionFailureActive', true)
+    plantRun.set('steamGeneratorReliefValveA.failedPositionFraction', 1)
+    plantRun.run(300)
+    const { read, tag } = plantRun
+    expect(read('sgA.pressureMPa')).toBeLessThan(read('sgB.pressureMPa') - 0.4)
+    for (const train of [trains[0], trains[2]]) {
+      const line = read(`${train.line('A')}.flowKgPerS`)
+      expect(line).toBeCloseTo(venturiKgPerSPerSqrtMPa * Math.sqrt(read(`${train.header}.pressureNodeMPa`)), 1)
+    }
+    expect(tag('AFW-A-FLOW')).toBeGreaterThan(tag('AFW-B-FLOW'))
+    expect(tag('AFW-A-FLOW')).toBeLessThan(1.15 * tag('AFW-B-FLOW'))
+    for (const loop of ['B', 'C', 'D']) expect(tag(`AFW-${loop}-FLOW`)).toBeGreaterThan(25)
+  })
+
+  test('with motor-driven pump A failed, generators A and B still take the turbine-driven pump\'s feed, well above the 28 kg/s minimum in all', () => {
+    // The heat-sink success criterion: 440 gpm (28 kg/s) in all (USNRC Westinghouse Technology Systems Manual 5.7).
+    const plantRun = started()
+    plantRun.run(5)
+    plantRun.act('loss-main-feedwater')
+    plantRun.run(300, () => plantRun.set('auxFeedwaterPumpMotor.running', false))
+    const { tag } = plantRun
+    for (const loop of ['A', 'B']) {
+      expect(tag(`AFW-${loop}-FLOW`)).toBeGreaterThan(12)
+      expect(tag(`AFW-${loop}-FLOW`)).toBeLessThan(16)
+    }
+    for (const loop of ['C', 'D']) expect(tag(`AFW-${loop}-FLOW`)).toBeGreaterThan(25)
+    expect(tag('AFW-PUMP-A-FLOW')).toBe(0)
+    expect(tag('AFW-FLOW')).toBeGreaterThan(80)
+  })
+
+  test('started by one generator\'s low-low level, each motor-driven pump feeds its own two generators, not that one alone', () => {
     // Feedwater control valve B fails to 35 % at full power; generator B boils down to its low-low level.
     const plantRun = started()
     plantRun.run(5)
     plantRun.act('steam-generator-b-feedwater-runback', { positionPercent: 35 })
     let afwStartedAt: number | null = null
-    for (let second = 1; second <= 200 && afwStartedAt === null; second += 1) {
+    for (let second = 1; second <= 120 && afwStartedAt === null; second += 1) {
       plantRun.run(1)
       if (plantRun.read('auxFeedwaterPumpMotor.runningState') === 1) afwStartedAt = second
     }
     expect(afwStartedAt).not.toBeNull()
-    // As they start, only generator B is at low-low level, so the turbine-driven pump, which wants two, stays off.
     const { tag, read } = plantRun
+    // Generator B alone is at low-low level: the turbine-driven pump, which wants two, stays off.
     expect(tag('SG-B-LVL-NR')).toBeLessThan(20)
-    for (const loop of ['A', 'C', 'D']) expect(tag(`SG-${loop}-LVL-NR`)).toBeGreaterThan(20)
-    // Ten seconds on, the two motor-driven pumps, running out along their curves, feed all four lines; the
-    // turbine-driven pump, started as the trip shrinks a second generator below its low-low level, is still running up.
-    plantRun.run(10)
+    expect(loops.filter(loop => tag(`SG-${loop}-LVL-NR`) < 20)).toEqual(['B'])
     expect(read('auxFeedwaterPumpMotorB.runningState')).toBe(1)
-    expect(read('auxFeedwaterPumpTurbine.flowKgPerS')).toBe(0)
-    expect(tag('AFW-FLOW')).toBeGreaterThan(60)
-    expect(tag('AFW-FLOW')).toBeLessThan(75)
-    // About a quarter each; generator B, at slightly lower pressure, a little more.
-    const others = ['A', 'C', 'D'].map(loop => tag(`AFW-${loop}-FLOW`))
-    for (const flow of [...others, tag('AFW-B-FLOW')]) {
-      expect(flow).toBeGreaterThan(14)
-      expect(flow).toBeLessThan(20)
-    }
-    expect(tag('AFW-B-FLOW') / (others.reduce((sum, flow) => sum + flow, 0) / others.length)).toBeLessThan(1.15)
-    // Feedwater isolation on the trip has shut every feed regulating valve, so the other generators shrink to their
-    // low-low level too, and with two of them there the turbine-driven pump joins: some 28 kg/s into each.
+    expect(read('auxFeedwaterPumpTurbine.runningState')).toBe(0)
+    // Ten seconds on, each motor-driven pump splits its flow between its two generators.
+    plantRun.run(10)
+    expect(tag('AFW-A-FLOW')).toBeGreaterThan(10)
+    expect(tag('AFW-B-FLOW') / tag('AFW-A-FLOW')).toBeGreaterThan(0.9)
+    expect(tag('AFW-B-FLOW') / tag('AFW-A-FLOW')).toBeLessThan(1.15)
+    expect(tag('AFW-PUMP-A-FLOW')).toBeCloseTo(tag('AFW-A-FLOW') + tag('AFW-B-FLOW'), 0)
+    // The reactor trip shrinks the other generators to their low-low level too, and with two of them there the
+    // turbine-driven pump joins: a minute on, past its run-up, some 28 kg/s into each.
     let turbinePumpAt: number | null = null
     for (let second = 1; second <= 120 && turbinePumpAt === null; second += 1) {
       plantRun.run(1)
       if (read('auxFeedwaterPumpTurbine.runningState') === 1) turbinePumpAt = second
     }
     expect(turbinePumpAt).not.toBeNull()
-    expect(['A', 'C', 'D'].filter(loop => tag(`SG-${loop}-LVL-NR`) < 20).length).toBeGreaterThanOrEqual(2)
-    // A minute on, past its run-up, it delivers its rated flow.
     plantRun.run(60)
-    for (const loop of ['A', 'B', 'C', 'D']) {
+    for (const loop of loops) {
       expect(tag(`AFW-${loop}-FLOW`)).toBeGreaterThan(25)
       expect(tag(`AFW-${loop}-FLOW`)).toBeLessThan(31)
     }

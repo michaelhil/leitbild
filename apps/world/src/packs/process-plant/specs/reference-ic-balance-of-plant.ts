@@ -204,8 +204,8 @@ export const balanceOfPlantReferenceIcRules = (loops: ReadonlyArray<ProcessPlant
       trip({
         id: 'afw-start',
         title: 'Auxiliary feedwater start on main feedwater pump trip',
-        message: 'Both main feedwater pumps read stopped: the motor-driven auxiliary feedwater pumps start and feed every steam generator.',
-        annunciator: annunciator({ ...feedwaterAction, equipmentId: 'auxFeedwaterHeader', firstOutGroup: 'auxiliary-feedwater' }),
+        message: 'Both main feedwater pumps read stopped: the motor-driven auxiliary feedwater pumps start, each feeding its own two steam generators.',
+        annunciator: annunciator({ ...feedwaterAction, equipmentId: 'auxFeedwaterPumpMotor', firstOutGroup: 'auxiliary-feedwater' }),
       }),
       write('start-motor-afw-on-main-feedwater-pump-trip', { path: 'auxFeedwaterPumpMotor.running' }, true),
       write('start-motor-afw-b-on-main-feedwater-pump-trip', { path: 'auxFeedwaterPumpMotorB.running' }, true),

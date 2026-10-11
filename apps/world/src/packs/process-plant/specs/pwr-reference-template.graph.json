@@ -1700,26 +1700,74 @@
       }
     },
     {
-      "id": "auxFeedwaterHeader",
+      "id": "auxFeedwaterHeaderA",
       "kind": "processHeader",
-      "label": "Auxiliary Feedwater Header",
+      "label": "Motor-Driven AFW Pump A Discharge Header",
       "parameters": {
         "distributionMode": "pressureBalance"
       },
       "variables": [
         {
           "path": "outletFlowKgPerS",
-          "tagId": "AFW-FLOW",
-          "equipmentId": "auxFeedwaterHeader",
-          "description": "Auxiliary feedwater header flow",
+          "tagId": "AFW-PUMP-A-FLOW",
+          "equipmentId": "auxFeedwaterHeaderA",
+          "description": "Motor-driven auxiliary feedwater pump A discharge flow, to steam generators A and B",
           "externalRefs": [
-            "afw.header.flow"
+            "afw.pump.a.flow"
           ]
         }
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "AFW header"
+          "shortLabel": "MD AFW A header"
+        }
+      }
+    },
+    {
+      "id": "auxFeedwaterHeaderB",
+      "kind": "processHeader",
+      "label": "Motor-Driven AFW Pump B Discharge Header",
+      "parameters": {
+        "distributionMode": "pressureBalance"
+      },
+      "variables": [
+        {
+          "path": "outletFlowKgPerS",
+          "tagId": "AFW-PUMP-B-FLOW",
+          "equipmentId": "auxFeedwaterHeaderB",
+          "description": "Motor-driven auxiliary feedwater pump B discharge flow, to steam generators C and D",
+          "externalRefs": [
+            "afw.pump.b.flow"
+          ]
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "MD AFW B header"
+        }
+      }
+    },
+    {
+      "id": "auxFeedwaterHeaderTurbine",
+      "kind": "processHeader",
+      "label": "Turbine-Driven AFW Pump Discharge Header",
+      "parameters": {
+        "distributionMode": "pressureBalance"
+      },
+      "variables": [
+        {
+          "path": "outletFlowKgPerS",
+          "tagId": "AFW-PUMP-T-FLOW",
+          "equipmentId": "auxFeedwaterHeaderTurbine",
+          "description": "Turbine-driven auxiliary feedwater pump discharge flow, to every steam generator",
+          "externalRefs": [
+            "afw.pump.tdafw.flow"
+          ]
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "TD AFW header"
         }
       }
     },
@@ -1729,14 +1777,15 @@
       "label": "Auxiliary Feedwater Valve A",
       "parameters": {
         "initialPositionFraction": 0,
-        "cvKgPerSPerSqrtMPa": 22.5
+        "cvKgPerSPerSqrtMPa": 11.3,
+        "cavitatingVenturiKgPerSPerSqrtMPa": 5.0
       },
       "variables": [
         {
           "path": "positionFraction",
           "tagId": "AFW-A-CV",
           "equipmentId": "auxFeedwaterValveA",
-          "description": "Auxiliary feedwater valve A position demand",
+          "description": "Auxiliary feedwater valve A position demand: the motor- and turbine-driven trains' lines to steam generator A through it",
           "externalRefs": [
             "afw.a.cv_position"
           ]
@@ -1760,14 +1809,15 @@
       "label": "Auxiliary Feedwater Valve B",
       "parameters": {
         "initialPositionFraction": 0,
-        "cvKgPerSPerSqrtMPa": 22.5
+        "cvKgPerSPerSqrtMPa": 11.3,
+        "cavitatingVenturiKgPerSPerSqrtMPa": 5.0
       },
       "variables": [
         {
           "path": "positionFraction",
           "tagId": "AFW-B-CV",
           "equipmentId": "auxFeedwaterValveB",
-          "description": "Auxiliary feedwater valve B position demand",
+          "description": "Auxiliary feedwater valve B position demand: the motor- and turbine-driven trains' lines to steam generator B through it",
           "externalRefs": [
             "afw.b.cv_position"
           ]
@@ -1791,14 +1841,15 @@
       "label": "Auxiliary Feedwater Valve C",
       "parameters": {
         "initialPositionFraction": 0,
-        "cvKgPerSPerSqrtMPa": 22.5
+        "cvKgPerSPerSqrtMPa": 11.3,
+        "cavitatingVenturiKgPerSPerSqrtMPa": 5.0
       },
       "variables": [
         {
           "path": "positionFraction",
           "tagId": "AFW-C-CV",
           "equipmentId": "auxFeedwaterValveC",
-          "description": "Auxiliary feedwater valve C position demand",
+          "description": "Auxiliary feedwater valve C position demand: the motor- and turbine-driven trains' lines to steam generator C through it",
           "externalRefs": [
             "afw.c.cv_position"
           ]
@@ -1822,14 +1873,15 @@
       "label": "Auxiliary Feedwater Valve D",
       "parameters": {
         "initialPositionFraction": 0,
-        "cvKgPerSPerSqrtMPa": 22.5
+        "cvKgPerSPerSqrtMPa": 11.3,
+        "cavitatingVenturiKgPerSPerSqrtMPa": 5.0
       },
       "variables": [
         {
           "path": "positionFraction",
           "tagId": "AFW-D-CV",
           "equipmentId": "auxFeedwaterValveD",
-          "description": "Auxiliary feedwater valve D position demand",
+          "description": "Auxiliary feedwater valve D position demand: the motor- and turbine-driven trains' lines to steam generator D through it",
           "externalRefs": [
             "afw.d.cv_position"
           ]
@@ -1853,14 +1905,15 @@
       "label": "Auxiliary Feedwater Valve E",
       "parameters": {
         "initialPositionFraction": 0,
-        "cvKgPerSPerSqrtMPa": 22.5
+        "cvKgPerSPerSqrtMPa": 11.3,
+        "cavitatingVenturiKgPerSPerSqrtMPa": 5.0
       },
       "variables": [
         {
           "path": "positionFraction",
           "tagId": "AFW-E-CV",
           "equipmentId": "auxFeedwaterValveE",
-          "description": "Auxiliary feedwater valve E position demand",
+          "description": "Auxiliary feedwater valve E position demand: the motor- and turbine-driven trains' lines to steam generator E through it",
           "externalRefs": [
             "afw.e.cv_position"
           ]
@@ -1884,14 +1937,15 @@
       "label": "Auxiliary Feedwater Valve F",
       "parameters": {
         "initialPositionFraction": 0,
-        "cvKgPerSPerSqrtMPa": 22.5
+        "cvKgPerSPerSqrtMPa": 11.3,
+        "cavitatingVenturiKgPerSPerSqrtMPa": 5.0
       },
       "variables": [
         {
           "path": "positionFraction",
           "tagId": "AFW-F-CV",
           "equipmentId": "auxFeedwaterValveF",
-          "description": "Auxiliary feedwater valve F position demand",
+          "description": "Auxiliary feedwater valve F position demand: the motor- and turbine-driven trains' lines to steam generator F through it",
           "externalRefs": [
             "afw.f.cv_position"
           ]
@@ -1906,6 +1960,31 @@
       "metadata": {
         "presentation": {
           "shortLabel": "AFW valve F"
+        }
+      }
+    },
+    {
+      "id": "auxFeedwaterFlowTotal",
+      "kind": "flowSummation",
+      "label": "Total Auxiliary Feedwater Flow",
+      "parameters": {
+        "service": "auxFeedwater",
+        "intoComponentKind": "steamGenerator"
+      },
+      "variables": [
+        {
+          "path": "totalFlowKgPerS",
+          "tagId": "AFW-FLOW",
+          "equipmentId": "auxFeedwaterFlowTotal",
+          "description": "Total auxiliary feedwater flow into the steam generators, the sum of each one's",
+          "externalRefs": [
+            "afw.header.flow"
+          ]
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "AFW total"
         }
       }
     },
@@ -8165,7 +8244,7 @@
     {
       "id": "motor-afw-pump-to-header",
       "from": "auxFeedwaterPumpMotor.outlet",
-      "to": "auxFeedwaterHeader.inletA",
+      "to": "auxFeedwaterHeaderA.inletA",
       "connectionKind": "fluidFlow",
       "service": "auxFeedwater",
       "nominalFluid": "water",
@@ -8199,7 +8278,7 @@
     {
       "id": "turbine-afw-pump-to-header",
       "from": "auxFeedwaterPumpTurbine.outlet",
-      "to": "auxFeedwaterHeader.inletB",
+      "to": "auxFeedwaterHeaderTurbine.inletA",
       "connectionKind": "fluidFlow",
       "service": "auxFeedwater",
       "nominalFluid": "water",
@@ -8232,7 +8311,7 @@
     },
     {
       "id": "aux-feedwater-header-to-valve-a",
-      "from": "auxFeedwaterHeader.outletA",
+      "from": "auxFeedwaterHeaderA.outletA",
       "to": "auxFeedwaterValveA.inlet",
       "connectionKind": "fluidFlow",
       "service": "auxFeedwater",
@@ -8242,18 +8321,18 @@
       "variables": [
         {
           "path": "flowKgPerS",
-          "label": "AFW header branch A flow",
+          "label": "MD AFW A header branch A flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 85
+          "initialValue": 0
         },
         {
           "path": "temperatureC",
-          "label": "AFW header branch A temperature",
+          "label": "MD AFW A header branch A temperature",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -8283,10 +8362,10 @@
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 85,
+          "initialValue": 0,
           "tagId": "AFW-A-FLOW",
           "equipmentId": "aux-feedwater-valve-a-to-sg-a",
-          "description": "Auxiliary feedwater flow to steam generator A"
+          "description": "Auxiliary feedwater flow to steam generator A: its motor- and turbine-driven trains' lines together"
         },
         {
           "path": "temperatureC",
@@ -8303,7 +8382,7 @@
     },
     {
       "id": "aux-feedwater-header-to-valve-b",
-      "from": "auxFeedwaterHeader.outletB",
+      "from": "auxFeedwaterHeaderA.outletB",
       "to": "auxFeedwaterValveB.inlet",
       "connectionKind": "fluidFlow",
       "service": "auxFeedwater",
@@ -8313,18 +8392,18 @@
       "variables": [
         {
           "path": "flowKgPerS",
-          "label": "AFW header branch B flow",
+          "label": "MD AFW A header branch B flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 85
+          "initialValue": 0
         },
         {
           "path": "temperatureC",
-          "label": "AFW header branch B temperature",
+          "label": "MD AFW A header branch B temperature",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -8354,10 +8433,10 @@
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 85,
+          "initialValue": 0,
           "tagId": "AFW-B-FLOW",
           "equipmentId": "aux-feedwater-valve-b-to-sg-b",
-          "description": "Auxiliary feedwater flow to steam generator B"
+          "description": "Auxiliary feedwater flow to steam generator B: its motor- and turbine-driven trains' lines together"
         },
         {
           "path": "temperatureC",
@@ -8374,7 +8453,7 @@
     },
     {
       "id": "aux-feedwater-header-to-valve-c",
-      "from": "auxFeedwaterHeader.outletC",
+      "from": "auxFeedwaterHeaderB.outletC",
       "to": "auxFeedwaterValveC.inlet",
       "connectionKind": "fluidFlow",
       "service": "auxFeedwater",
@@ -8384,18 +8463,18 @@
       "variables": [
         {
           "path": "flowKgPerS",
-          "label": "AFW header branch C flow",
+          "label": "MD AFW B header branch C flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 85
+          "initialValue": 0
         },
         {
           "path": "temperatureC",
-          "label": "AFW header branch C temperature",
+          "label": "MD AFW B header branch C temperature",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -8425,10 +8504,10 @@
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 85,
+          "initialValue": 0,
           "tagId": "AFW-C-FLOW",
           "equipmentId": "aux-feedwater-valve-c-to-sg-c",
-          "description": "Auxiliary feedwater flow to steam generator C"
+          "description": "Auxiliary feedwater flow to steam generator C: its motor- and turbine-driven trains' lines together"
         },
         {
           "path": "temperatureC",
@@ -8445,7 +8524,7 @@
     },
     {
       "id": "aux-feedwater-header-to-valve-d",
-      "from": "auxFeedwaterHeader.outletD",
+      "from": "auxFeedwaterHeaderB.outletD",
       "to": "auxFeedwaterValveD.inlet",
       "connectionKind": "fluidFlow",
       "service": "auxFeedwater",
@@ -8455,18 +8534,18 @@
       "variables": [
         {
           "path": "flowKgPerS",
-          "label": "AFW header branch D flow",
+          "label": "MD AFW B header branch D flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 85
+          "initialValue": 0
         },
         {
           "path": "temperatureC",
-          "label": "AFW header branch D temperature",
+          "label": "MD AFW B header branch D temperature",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -8479,7 +8558,7 @@
     },
     {
       "id": "aux-feedwater-header-to-valve-e",
-      "from": "auxFeedwaterHeader.outletE",
+      "from": "auxFeedwaterHeaderA.outletE",
       "to": "auxFeedwaterValveE.inlet",
       "connectionKind": "fluidFlow",
       "service": "auxFeedwater",
@@ -8489,18 +8568,18 @@
       "variables": [
         {
           "path": "flowKgPerS",
-          "label": "AFW header branch E flow",
+          "label": "MD AFW A header branch E flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 85
+          "initialValue": 0
         },
         {
           "path": "temperatureC",
-          "label": "AFW header branch E temperature",
+          "label": "MD AFW A header branch E temperature",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -8513,7 +8592,7 @@
     },
     {
       "id": "aux-feedwater-header-to-valve-f",
-      "from": "auxFeedwaterHeader.outletF",
+      "from": "auxFeedwaterHeaderB.outletF",
       "to": "auxFeedwaterValveF.inlet",
       "connectionKind": "fluidFlow",
       "service": "auxFeedwater",
@@ -8523,18 +8602,18 @@
       "variables": [
         {
           "path": "flowKgPerS",
-          "label": "AFW header branch F flow",
+          "label": "MD AFW B header branch F flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 85
+          "initialValue": 0
         },
         {
           "path": "temperatureC",
-          "label": "AFW header branch F temperature",
+          "label": "MD AFW B header branch F temperature",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -8564,10 +8643,10 @@
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 85,
+          "initialValue": 0,
           "tagId": "AFW-D-FLOW",
           "equipmentId": "aux-feedwater-valve-d-to-sg-d",
-          "description": "Auxiliary feedwater flow to steam generator D"
+          "description": "Auxiliary feedwater flow to steam generator D: its motor- and turbine-driven trains' lines together"
         },
         {
           "path": "temperatureC",
@@ -8601,10 +8680,10 @@
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 85,
+          "initialValue": 0,
           "tagId": "AFW-E-FLOW",
           "equipmentId": "aux-feedwater-valve-e-to-sg-e",
-          "description": "Auxiliary feedwater flow to steam generator E"
+          "description": "Auxiliary feedwater flow to steam generator E: its motor- and turbine-driven trains' lines together"
         },
         {
           "path": "temperatureC",
@@ -8638,14 +8717,218 @@
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 85,
+          "initialValue": 0,
           "tagId": "AFW-F-FLOW",
           "equipmentId": "aux-feedwater-valve-f-to-sg-f",
-          "description": "Auxiliary feedwater flow to steam generator F"
+          "description": "Auxiliary feedwater flow to steam generator F: its motor- and turbine-driven trains' lines together"
         },
         {
           "path": "temperatureC",
           "label": "Auxiliary feedwater to steam generator F temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "aux-feedwater-turbine-header-to-valve-a",
+      "from": "auxFeedwaterHeaderTurbine.outletA",
+      "to": "auxFeedwaterValveA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "TD AFW header branch A flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "TD AFW header branch A temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "aux-feedwater-turbine-header-to-valve-b",
+      "from": "auxFeedwaterHeaderTurbine.outletB",
+      "to": "auxFeedwaterValveB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "TD AFW header branch B flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "TD AFW header branch B temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "aux-feedwater-turbine-header-to-valve-c",
+      "from": "auxFeedwaterHeaderTurbine.outletC",
+      "to": "auxFeedwaterValveC.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "TD AFW header branch C flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "TD AFW header branch C temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "aux-feedwater-turbine-header-to-valve-d",
+      "from": "auxFeedwaterHeaderTurbine.outletD",
+      "to": "auxFeedwaterValveD.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "TD AFW header branch D flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "TD AFW header branch D temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "aux-feedwater-turbine-header-to-valve-e",
+      "from": "auxFeedwaterHeaderTurbine.outletE",
+      "to": "auxFeedwaterValveE.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "TD AFW header branch E flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "TD AFW header branch E temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "aux-feedwater-turbine-header-to-valve-f",
+      "from": "auxFeedwaterHeaderTurbine.outletF",
+      "to": "auxFeedwaterValveF.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "TD AFW header branch F flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "TD AFW header branch F temperature",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -8965,7 +9248,7 @@
     {
       "id": "motor-afw-pump-b-to-header",
       "from": "auxFeedwaterPumpMotorB.outlet",
-      "to": "auxFeedwaterHeader.inletC",
+      "to": "auxFeedwaterHeaderB.inletA",
       "connectionKind": "fluidFlow",
       "service": "auxFeedwater",
       "nominalFluid": "water",
@@ -11641,6 +11924,7 @@
     "auxFeedwaterPumpMotor.flowKgPerS",
     "auxFeedwaterPumpMotorB.flowKgPerS",
     "auxFeedwaterPumpTurbine.flowKgPerS",
+    "auxFeedwaterFlowTotal.totalFlowKgPerS",
     "auxFeedwaterTank.inventoryKg",
     "auxFeedwaterTank.levelPercent",
     "auxFeedwaterTank.temperatureC",
@@ -11843,11 +12127,21 @@
     "feedwaterControlValveD.inletFlowKgPerS",
     "feedwaterControlValveD.outletFlowKgPerS",
     "feedwaterControlValveD.flowBalanceResidualKgPerS",
-    "auxFeedwaterHeader.inletFlowKgPerS",
-    "auxFeedwaterHeader.outletFlowKgPerS",
-    "auxFeedwaterHeader.flowBalanceResidualKgPerS",
-    "auxFeedwaterHeader.mixedTemperatureC",
-    "auxFeedwaterHeader.mixedPressureMPa",
+    "auxFeedwaterHeaderA.inletFlowKgPerS",
+    "auxFeedwaterHeaderB.inletFlowKgPerS",
+    "auxFeedwaterHeaderTurbine.inletFlowKgPerS",
+    "auxFeedwaterHeaderA.outletFlowKgPerS",
+    "auxFeedwaterHeaderB.outletFlowKgPerS",
+    "auxFeedwaterHeaderTurbine.outletFlowKgPerS",
+    "auxFeedwaterHeaderA.flowBalanceResidualKgPerS",
+    "auxFeedwaterHeaderB.flowBalanceResidualKgPerS",
+    "auxFeedwaterHeaderTurbine.flowBalanceResidualKgPerS",
+    "auxFeedwaterHeaderA.mixedTemperatureC",
+    "auxFeedwaterHeaderB.mixedTemperatureC",
+    "auxFeedwaterHeaderTurbine.mixedTemperatureC",
+    "auxFeedwaterHeaderA.mixedPressureMPa",
+    "auxFeedwaterHeaderB.mixedPressureMPa",
+    "auxFeedwaterHeaderTurbine.mixedPressureMPa",
     "auxFeedwaterValveA.positionFraction",
     "auxFeedwaterValveA.effectivePositionFraction",
     "auxFeedwaterValveA.inletFlowKgPerS",

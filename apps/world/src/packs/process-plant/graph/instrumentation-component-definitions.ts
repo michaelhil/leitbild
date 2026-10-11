@@ -75,6 +75,25 @@ export const instrumentationComponentDefinitions: ReadonlyArray<ComponentDefinit
     ],
   }),
   defineComponent({
+    kind: 'flowSummation' as ComponentKind,
+    label: 'Flow Summation',
+    // The plant computer's total of the flows one service brings into every
+    // component of a kind, from each line's own flow measurement: the
+    // auxiliary feedwater the steam generators take, which no single line
+    // carries once its trains feed their generators apart.
+    ports: {},
+    parametersSchema: z.object({
+      /** The service whose flows it totals. */
+      service: z.string().min(1),
+      /** The kind of component the flows go into. */
+      intoComponentKind: z.string().min(1),
+    }).strict(),
+    semantics: fixedSemantics({ keyValues: ['totalFlowKgPerS'] }),
+    variables: [
+      variable({ path: 'totalFlowKgPerS', label: 'Total flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+    ],
+  }),
+  defineComponent({
     kind: 'safetyInjectionBlockLogic' as ComponentKind,
     label: 'Safety Injection Block Logic',
     // The safeguards logic that lets operators block safety injection on low

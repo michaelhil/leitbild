@@ -86,7 +86,7 @@ const telemetryVariables = [
   'turbine.steamAvailabilityFraction',
   'turbine.exhaustTemperatureC',
   'feedwaterHeader.flowBalanceResidualKgPerS',
-  'auxFeedwaterHeader.flowBalanceResidualKgPerS',
+  'auxFeedwaterHeaderA.flowBalanceResidualKgPerS',
   'main-feedwater-pump-a-to-header.flowKgPerS',
   'main-feedwater-pump-b-to-header.flowKgPerS',
   'motor-afw-pump-to-header.flowKgPerS',
@@ -606,7 +606,7 @@ const evaluateTelemetryIntegrity = (
   const maxPressurizerSteamResidual = maxAbsoluteValue(telemetry, 'pressurizer.steamMassBalanceResidualKg')
   const maxPressurizerSteamMass = maxAbsoluteValue(telemetry, 'pressurizer.steamMassKg')
   const maxFeedwaterHeaderResidual = maxAbsoluteValue(telemetry, 'feedwaterHeader.flowBalanceResidualKgPerS')
-  const maxAuxFeedwaterHeaderResidual = maxAbsoluteValue(telemetry, 'auxFeedwaterHeader.flowBalanceResidualKgPerS')
+  const maxAuxFeedwaterHeaderResidual = maxAbsoluteValue(telemetry, 'auxFeedwaterHeaderA.flowBalanceResidualKgPerS')
   return [
     check(
       caseId,

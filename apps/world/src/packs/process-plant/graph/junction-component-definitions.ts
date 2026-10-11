@@ -133,6 +133,14 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
       strokeCloseTimeS: z.number().finite().positive().optional(),
       valveMode: z.enum(['control', 'isolation', 'check', 'relief', 'safety', 'throttle', 'bypass']).optional(),
       cvKgPerSPerSqrtMPa: z.number().finite().nonnegative().optional(),
+      /**
+       * A cavitating venturi in the valve's line, on a pressure-balanced
+       * header's branch: once the drop across the line is large, as into a
+       * depressurized vessel, its throat cavitates and the line passes no more
+       * than this coefficient times the square root of the absolute pressure
+       * ahead of it, whatever the pressure beyond.
+       */
+      cavitatingVenturiKgPerSPerSqrtMPa: z.number().finite().positive().optional(),
       failPositionFraction: z.number().finite().min(0).max(1).optional(),
       leakageFractionClosed: z.number().finite().min(0).max(1).optional(),
       reverseFlowAllowed: z.boolean().optional(),

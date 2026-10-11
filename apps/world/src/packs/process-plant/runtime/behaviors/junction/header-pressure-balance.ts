@@ -7,15 +7,17 @@ import { componentHasElectricalPower, type ElectricalReadContext } from '../elec
 
 // A pressure-balanced header is the discharge manifold of pumps that feed
 // several branches, each through a valve to a vessel at its own pressure, as
-// auxiliary feedwater feeds the steam generators. Its pressure settles where
-// the pumps deliver what the branches pass: each pump along its curve, from
-// its rated flow and head to its shutoff head, and each branch with its
-// opening, its flow coefficient (valve, flow-limiting orifice and piping
-// together) and the square root of the pressure it drops to its vessel. A
-// branch to a vessel at lower pressure, or one more open, takes more; the
-// pumps run back along their curves when few branches are open, and deliver
-// nothing against branches all shut. The pumps take suction from vented
-// tanks, at atmospheric pressure.
+// an auxiliary feedwater train feeds its steam generators. Its pressure
+// settles where the pumps deliver what the branches pass: each pump along its
+// curve, from its rated flow and head to its shutoff head, and each branch
+// with its opening, its flow coefficient (valve, flow-limiting orifice and
+// piping together) and the square root of the pressure it drops to its
+// vessel. A branch to a vessel at lower pressure, or one more open, takes
+// more, up to what a cavitating venturi in its line passes, whatever the
+// vessel's pressure, so a depressurized vessel cannot draw off the others'
+// flow; the pumps run back along their curves when few branches are open,
+// and deliver nothing against branches all shut. The pumps take suction from
+// vented tanks, at atmospheric pressure.
 
 const atmosphericPressureMPa = 0.101325
 
@@ -31,6 +33,7 @@ interface Branch {
   readonly link: CompiledProcessLink
   readonly valve: CompiledComponent
   readonly coefficientKgPerSPerSqrtMPa: number
+  readonly venturiKgPerSPerSqrtMPa: number
   readonly terminalPressurePath: VariablePath
 }
 
@@ -64,6 +67,10 @@ const feedPumpFor = (header: CompiledComponent, pump: CompiledComponent | undefi
   return { pump, nominalSpeedRpm: optionalParameterNumber(pump, 'nominalSpeedRpm', 3600), ratedFlowKgPerS: parameterNumber(pump, 'nominalFlowKgPerS'), ratedHeadMPa, shutoffHeadMPa }
 }
 
+// A valve may take the branches of several headers, as each steam
+// generator's auxiliary feedwater valve takes its motor-driven train's line
+// and the turbine-driven train's: each line keeps its own coefficient and
+// venturi, and its opening throttles them alike.
 const branchFor = (system: CompiledProcessPlant, header: CompiledComponent, link: CompiledProcessLink, knownPaths: ReadonlySet<VariablePath>): Branch => {
   const valve = system.graph.components[link.toComponentIndex]
   if (valve?.kind !== 'processValve') throw new Error(`pressure-balanced header ${header.id} branch ${link.id} must lead to a valve`)
@@ -72,7 +79,13 @@ const branchFor = (system: CompiledProcessPlant, header: CompiledComponent, link
   if (terminal === undefined) throw new Error(`valve ${valve.id} on pressure-balanced header ${header.id} must lead to exactly one vessel`)
   const terminalPressurePath = componentVariablePath(terminal, 'pressureMPa')
   if (!knownPaths.has(terminalPressurePath)) throw new Error(`branch ${link.id} of pressure-balanced header ${header.id} ends at ${terminal.id}, which has no pressure to feed against`)
-  return { link, valve, coefficientKgPerSPerSqrtMPa: parameterNumber(valve, 'cvKgPerSPerSqrtMPa'), terminalPressurePath }
+  return {
+    link,
+    valve,
+    coefficientKgPerSPerSqrtMPa: parameterNumber(valve, 'cvKgPerSPerSqrtMPa'),
+    venturiKgPerSPerSqrtMPa: optionalParameterNumber(valve, 'cavitatingVenturiKgPerSPerSqrtMPa', Number.POSITIVE_INFINITY),
+    terminalPressurePath,
+  }
 }
 
 const balancedHeader = (system: CompiledProcessPlant, header: CompiledComponent): BalancedHeader => {
@@ -126,7 +139,11 @@ export const headerPressureBalance = (
     terminalPressure: context.readNumber(branch.terminalPressurePath),
   })).filter(branch => branch.conductance > 0)
   const pumpFlowAt = (pressure: number): number => running.reduce((total, { feed, speed }) => total + pumpCurveFlowKgPerS(feed, speed, pressure), 0)
-  const branchFlowAt = (pressure: number): number => open.reduce((total, branch) => total + branch.conductance * Math.sqrt(Math.max(0, pressure - branch.terminalPressure)), 0)
+  const lineFlowAt = (branch: (typeof open)[number], pressure: number): number => Math.min(
+    branch.conductance * Math.sqrt(Math.max(0, pressure - branch.terminalPressure)),
+    branch.branch.venturiKgPerSPerSqrtMPa * Math.sqrt(Math.max(0, pressure)),
+  )
+  const branchFlowAt = (pressure: number): number => open.reduce((total, branch) => total + lineFlowAt(branch, pressure), 0)
   // The pumps deliver less, and the branches pass more, the higher the
   // pressure: they meet between the lowest vessel pressure and the highest
   // shutoff head.
@@ -142,7 +159,7 @@ export const headerPressureBalance = (
   return {
     pressureMPa: pressure,
     pumpFlowKgPerS: new Map(running.map(({ feed, speed }) => [feed.pump.index, open.length === 0 ? 0 : pumpCurveFlowKgPerS(feed, speed, pressure)])),
-    branchFlowKgPerS: new Map(open.map(branch => [branch.branch.link.index, branch.conductance * Math.sqrt(Math.max(0, pressure - branch.terminalPressure))])),
+    branchFlowKgPerS: new Map(open.map(branch => [branch.branch.link.index, lineFlowAt(branch, pressure)])),
   }
 }
 
