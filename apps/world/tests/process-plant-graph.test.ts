@@ -89,9 +89,10 @@ describe('process plant model composition', () => {
     // four-loop plant's, 0.4 MW proportional and 1.4 MW backup, and again
     // when the narrow-range levels' spans moved from each steam generator to
     // their kind, beside their hard range, and again when the turbine-driven
-    // auxiliary feedwater pump was given its 30 s run-up; PWR Runs
-    // checkpointed before then must be restarted.
-    expect(system.modelDigest).toBe('1761486f7018b7147012487eb77a45b80c0779f3e70225899555369a98017515')
+    // auxiliary feedwater pump was given its 30 s run-up, and again when the
+    // condensate storage tank was sized from its Technical Specification
+    // reserve; PWR Runs checkpointed before then must be restarted.
+    expect(system.modelDigest).toBe('36abf35971dde12e7a476e47e72337f8030ef7cac016b98f02d88c2480b8384a')
     const running = createProcessPlantRuntime({ system })
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))
