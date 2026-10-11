@@ -1643,6 +1643,7 @@
         "nominalFlowKgPerS": 55.2,
         "nominalHeadPa": 9000000,
         "shutoffHeadPa": 11000000,
+        "runUpTimeS": 30,
         "initialRunning": false,
         "flowTimeConstantS": 4,
         "maxFlowRampKgPerS2": 90
