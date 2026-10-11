@@ -210,17 +210,18 @@ describe('breakers', () => {
       return itemRowTexts(item.binding, item.presentation, item.rows, sample, formatQuantity)
     }
     expect(drawing.mimic.items.find(item => item.binding.label === 'EDG A')!.binding.state).toMatchObject({ aspect: 'running', state: { path: 'dieselGeneratorA.running' }, command: 'dieselGeneratorA.startCommand' })
-    expect(rowsOf('Bus A')).toEqual(['100 %'])
+    // A share of a whole says what it measures: the bus's voltage.
+    expect(rowsOf('Bus A')).toEqual(['V 100 %'])
     expect(rowsOf('EDG A')).toEqual(['STOP'])
     plantRun.act('loss-offsite-power')
     plantRun.run(5_000)
     // Started on the dead bus and not yet up to speed: its start command shows beside it.
     expect(rowsOf('EDG A')).toEqual(['CMD RUN'])
-    expect(rowsOf('Bus A')).toEqual(['0 %'])
+    expect(rowsOf('Bus A')).toEqual(['V 0 %'])
     plantRun.run(20_000)
     // Running, the symbol shows it and says RUN, as a pump's does.
     expect(rowsOf('EDG A')).toEqual(['RUN'])
-    expect(rowsOf('Bus A')).toEqual(['100 %'])
+    expect(rowsOf('Bus A')).toEqual(['V 100 %'])
   })
 
   test('a reactor trip opens both reactor trip breakers, read from their position feedback', () => {
