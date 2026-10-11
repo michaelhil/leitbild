@@ -299,11 +299,11 @@ describe('equipment opened from the unit overview', () => {
     // Its injection and charging lines stop at it, by name.
     expect(mimic.mimic.stubs.map(stub => stub.text)).toContain('from ACC ×4, CHG ×2, RHR iso, SI header')
     expect(result.display.height).toBeLessThanOrEqual(fullHd.height)
-    // Opened at power it leads with power, subcooling margin, the RCS leak rate and outlet temperature, then its
-    // instruments, the core exit thermocouples among them; the de-energized source range no longer fits.
+    // Opened at power it leads with the power range, subcooling margin, the RCS leak rate and outlet temperature, then
+    // its instruments, the core exit thermocouples among them; the de-energized source range no longer fits.
     const readouts = result.display.panels.find(panel => panel.kind === 'readouts')!
     if (readouts.kind !== 'readouts') throw new Error('expected the readouts')
-    expect(readouts.pens.map(pen => pen.tagId ?? String(pen.path)).slice(0, 4)).toEqual(['core.powerMw', 'SUB-MARGIN', 'RCS-LEAK-RATE', 'core.coolantOutletTemperatureC'])
+    expect(readouts.pens.map(pen => pen.tagId ?? String(pen.path)).slice(0, 4)).toEqual(['NIS-PR-AVG', 'SUB-MARGIN', 'RCS-LEAK-RATE', 'core.coolantOutletTemperatureC'])
     expect(readouts.pens.map(pen => pen.tagId ?? String(pen.path)).slice(-2)).toEqual(['NIS-IR', 'CET-AVG'])
   })
 

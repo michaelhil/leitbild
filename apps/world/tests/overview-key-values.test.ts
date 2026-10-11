@@ -10,8 +10,9 @@ describe('the values a unit overview leads with', () => {
     for (const loopCount of [4, 6]) {
       const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: `plant:key-values-${loopCount}`, loopCount }))
       const paths = overviewKeyValues(plant)
+      // The power the reactor protection trips on is the power range's, in percent of rated power.
       expect(paths).toEqual([
-        'core.powerMw',
+        'core.powerRangePercent',
         'vessel.netInventoryFlowKgPerS',
         'pressurizer.pressureMPa',
         'containment.pressureMPa',
@@ -39,12 +40,12 @@ describe('the values equipment opened from the overview leads with', () => {
     expect(of(['rcpA'])).not.toContain('rcpA.running' as never)
   })
 
-  test('at power the core leads with its power, the subcooling margin, the RCS leak rate and its outlet temperature, and ranks the de-energized source range after every live reading', () => {
+  test('at power the core leads with its power range, the subcooling margin, the RCS leak rate and its outlet temperature, and ranks the de-energized source range after every live reading', () => {
     // The subcooling margin and the RCS leak rate are bound to the reactor coolant system, as the core exit
     // thermocouples are: their alarms are the core's related alarms. The core exit thermocouples read their own
     // variable beside the mixed outlet temperature, an instrument after the intermediate range, so the de-energized
     // source range, last, no longer fits the six.
-    expect(of(['core'])).toEqual(['core.powerMw', 'vessel.subcoolingMarginC', 'rcsInventoryBalance.leakRateKgPerS', 'core.coolantOutletTemperatureC', 'core.intermediateRangeCurrentAmps', 'core.coreExitTemperatureC'] as never)
+    expect(of(['core'])).toEqual(['core.powerRangePercent', 'vessel.subcoolingMarginC', 'rcsInventoryBalance.leakRateKgPerS', 'core.coolantOutletTemperatureC', 'core.intermediateRangeCurrentAmps', 'core.coreExitTemperatureC'] as never)
     // With its high voltage on, the source range counts something and ranks as an instrument, ahead of the
     // intermediate range, which no longer fits.
     const counting: PlantNow = { ...atPower, read: path => String(path) === 'core.sourceRangeEnergized' ? true : runtime.readVariable(path) }
