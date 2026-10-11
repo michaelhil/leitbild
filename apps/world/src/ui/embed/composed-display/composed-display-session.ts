@@ -1,7 +1,7 @@
 import type { SimulationRunId } from '../../../core/model/index.ts'
 import type { CompiledComposedPanel, ComposedDisplayPen } from '../../../packs/process-plant/displays/compose.ts'
 import type { ComposedDisplayClient, ComposedDisplaySample, ComposedDisplayViewResult, ViewSize } from './composed-display-client.ts'
-import { appendPoint, COMPARISON_HISTORY_MS, HOLD_GAP_MS, type TrendPoint } from '../../../packs/process-plant/displays/trend-reading.ts'
+import { appendPoint, COMPARISON_HISTORY_MS, gatePaths, HOLD_GAP_MS, type TrendPoint } from '../../../packs/process-plant/displays/trend-reading.ts'
 import type { ValueDomain } from './trend-geometry.ts'
 
 export type ComposedDisplayPhase =
@@ -104,12 +104,12 @@ export const createComposedDisplaySession = (config: {
 
   /**
    * Every displayed signal is sampled once, however many panels show it, and
-   * the on/off states its drawn gated limits require, so a limit whose gates
+   * the values its drawn gated limits require, so a limit whose gates
    * do not hold is drawn idle as World reads it (gatesHold).
    */
   const sampledPaths = (): ReadonlyArray<string> => [...new Set(panels().flatMap(panel => panel.kind === 'mimic'
     ? panel.mimic.paths.map(String)
-    : pensOf(panel).flatMap(pen => [String(pen.path), ...pen.thresholds.flatMap(threshold => (threshold.gates ?? []).map(gate => String(gate.path)))])))]
+    : pensOf(panel).flatMap(pen => [String(pen.path), ...pen.thresholds.flatMap(threshold => (threshold.gates ?? []).flatMap(gatePaths))])))]
 
   /** Trends keep their horizon; comparisons keep ten minutes for rates. Advice readouts use only the latest sample. */
   const trendPens = (shown: ReadonlyArray<CompiledComposedPanel>): ReadonlyArray<HistoryPen> =>
