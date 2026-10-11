@@ -70,8 +70,10 @@ describe('process plant model composition', () => {
     // and a 1.5 MW backup group on diesel-backed safety bus A, through its
     // own breaker, and again when the core was given six delayed-neutron
     // groups, decay heat on the ANS-5.1 curve and a scram worth on its trip
-    // breakers; PWR Runs checkpointed before then must be restarted.
-    expect(system.modelDigest).toBe('48532a7dca022978a7d04d3949bdc669fad5dbecf5eb5047d5ec508d021c3335')
+    // breakers, and again when its nuclear instruments were given their
+    // spans, the power range and startup rate, and P-6 and P-10; PWR Runs
+    // checkpointed before then must be restarted.
+    expect(system.modelDigest).toBe('96dfd5c79924d58f03c816fb13e625807feb04ff4935adcf9da09b4006cba23e')
     const running = createProcessPlantRuntime({ system })
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))
@@ -377,7 +379,8 @@ describe('process plant discovery', () => {
             expect.stringContaining('Conversion from MPa to psig is unavailable'),
           ],
         },
-        { id: 'NIS-PR-AVG', status: 'resolved-with-warnings', warnings: [expect.stringContaining('Conversion from MW to percent is unavailable'), expect.stringContaining('no equipment identity')] },
+        // The power-range instruments read percent of rated power, as the procedures expect.
+        { id: 'NIS-PR-AVG', status: 'resolved', warnings: [] },
         { id: 'SI-SIG', status: 'missing', warnings: [] },
       ],
     })
