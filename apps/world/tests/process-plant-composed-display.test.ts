@@ -82,8 +82,9 @@ describe('I&C thresholds for composed displays', () => {
       [15.65, 'control', null],
       [15.85, 'control', null],
       [16, 'alarm', null],
-      // The PORV opens below the high-pressure reactor trip, as at the reference plant (2,335 and 2,385 psig).
-      [16.18, 'trip', null],
+      // The PORV opens below the high-pressure reactor trip, as at the reference plant (2,335 and 2,385 psig), on
+      // pressure control rather than as a protective actuation.
+      [16.18, 'control', null],
       [16.55, 'trip', 'Power operation'],
     ])
   })
@@ -94,7 +95,7 @@ describe('I&C thresholds for composed displays', () => {
     expect(names('SUB-MARGIN', 'degC')).toEqual(['LO-LO ALM 0 °C', 'LO ALM 16.7 °C'])
     // Safety injection actuates below the low-pressure reactor trip, unless blocked below P-11: the low-low
     // pressurizer pressure SI signal.
-    expect(names('PT-455', 'MPa')).toEqual(['LO-LO TRIP 12.7 MPa', 'LO TRIP 13.8 MPa', 'LO ALM 14.8 MPa', 'HI ALM 16 MPa', 'HI TRIP 16.18 MPa', 'HI-HI TRIP 16.55 MPa'])
+    expect(names('PT-455', 'MPa')).toEqual(['LO-LO TRIP 12.7 MPa', 'LO TRIP 13.8 MPa', 'LO ALM 14.8 MPa', 'HI ALM 16 MPa', 'HI TRIP 16.55 MPa'])
     // Low-low level starts auxiliary feedwater and trips the reactor at the one set point: two trips, neither further.
     expect(names('SG-A-LVL-NR', 'percent')).toEqual(['LO TRIP 20 %', 'LO TRIP 20 %', 'LO ALM 30 %', 'HI ALM 75 %', 'HI TRIP 82 %'])
   })
