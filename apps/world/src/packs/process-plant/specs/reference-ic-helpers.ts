@@ -1,5 +1,6 @@
 import { processPlantSignalReferenceSchema, type ProcessPlantSignalReference } from '../signals.ts'
 import type { ProcessPlantIcAnnunciator, ProcessPlantIcCondition, ProcessPlantIcRule } from '../runtime/index.ts'
+import type { ReferenceActuationId } from './reference-ic-actuations.ts'
 import type { ReferenceAnnunciatorSystemId } from './reference-ic-annunciators.ts'
 import type { ReferenceOperatingModeId } from './reference-ic-modes.ts'
 
@@ -55,19 +56,21 @@ export const alarm = (config: {
   ...(config.annunciator === undefined ? {} : { annunciator: config.annunciator }),
 })
 
+/** A trip: an automatic action, annunciated with what it actuates (reference-ic-actuations.ts), its own function first. */
 export const trip = (config: {
   readonly id: string
   readonly title: string
   readonly message: string
   readonly severity?: 'info' | 'notice' | 'warning' | 'critical'
-  readonly annunciator?: ProcessPlantIcAnnunciator
+  readonly actuates: readonly [ReferenceActuationId, ...ReferenceActuationId[]]
+  readonly annunciator: ReferenceAnnunciator
 }): ReferenceIcEffect => ({
   type: 'trip.enter',
   id: config.id,
   title: config.title,
   message: config.message,
   severity: config.severity ?? 'critical',
-  ...(config.annunciator === undefined ? {} : { annunciator: config.annunciator }),
+  annunciator: { ...config.annunciator, actuates: [...config.actuates] },
 })
 
 export const write = (id: string, signal: SignalRef, value: number | boolean): ReferenceIcEffect => ({
