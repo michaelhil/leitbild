@@ -93,9 +93,12 @@ describe('process plant model composition', () => {
     // simulator-only, and again when the rods gained their position
     // indication and rod bottom bistable, and again when the diesels gained
     // their kW, voltage and frequency, the buses their kilovolts, and each
-    // safety train its load sequencer and the loads it sequences; PWR Runs
-    // checkpointed before then must be restarted.
-    expect(system.modelDigest).toBe('229a9ad3d5bdd3a53e8d7ed5f1a911164c147174cc6dfbdcb5e1dba43de730e1')
+    // safety train its load sequencer and the loads it sequences, and again
+    // when the pressurizer relief tank became a nitrogen-blanketed quench
+    // tank and the relief lines gained their tailpipe temperatures and the
+    // PORV its acoustic flow monitor; PWR Runs checkpointed before then must
+    // be restarted.
+    expect(system.modelDigest).toBe('54fb04492e18feeed31117e5881ae48dadad86701fe5bfa1cd177a9fd171398b')
     const running = createProcessPlantRuntime({ system })
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))
