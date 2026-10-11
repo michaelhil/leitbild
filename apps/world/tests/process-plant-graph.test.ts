@@ -90,8 +90,10 @@ describe('process plant model composition', () => {
     // when the narrow-range levels' spans moved from each steam generator to
     // their kind, beside their hard range, and again when the link flows no
     // plant instrument measures (leak, relief and release flows) were marked
-    // simulator-only; PWR Runs checkpointed before then must be restarted.
-    expect(system.modelDigest).toBe('de70446c5bdf3ca691ccf1fa227cf5ec19a86310591241d96413f485c1991bfb')
+    // simulator-only, and again when the rods gained their position
+    // indication and rod bottom bistable; PWR Runs checkpointed before then
+    // must be restarted.
+    expect(system.modelDigest).toBe('715028d31a53a15e52117d9adde3d27fdd23c45a8bd023e94ff7af49e6edac95')
     const running = createProcessPlantRuntime({ system })
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))
