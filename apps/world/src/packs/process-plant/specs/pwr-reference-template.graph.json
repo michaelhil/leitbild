@@ -388,6 +388,8 @@
         "pressureInventoryGainMPaPerFraction": 0.6,
         "narrowRangeLowerFraction": 0.32,
         "narrowRangeUpperFraction": 0.92,
+        "wideRangeLowerFraction": 0,
+        "wideRangeUpperFraction": 0.92,
         "tubeBundleBottomLevelPercent": 0.02,
         "tubeBundleTopLevelPercent": 0.12
       },
@@ -399,6 +401,15 @@
           "description": "Steam generator A narrow-range level",
           "externalRefs": [
             "secondary.sg.a.level_nr"
+          ]
+        },
+        {
+          "path": "wideRangeLevelPercent",
+          "tagId": "SG-A-LVL-WR",
+          "equipmentId": "sgA",
+          "description": "Steam generator A wide-range level, from just above the tube sheet to the narrow range's upper tap above the separators",
+          "externalRefs": [
+            "secondary.sg.a.level_wr"
           ]
         },
         {
@@ -454,6 +465,8 @@
         "pressureInventoryGainMPaPerFraction": 0.6,
         "narrowRangeLowerFraction": 0.32,
         "narrowRangeUpperFraction": 0.92,
+        "wideRangeLowerFraction": 0,
+        "wideRangeUpperFraction": 0.92,
         "tubeBundleBottomLevelPercent": 0.02,
         "tubeBundleTopLevelPercent": 0.12
       },
@@ -465,6 +478,15 @@
           "description": "Steam generator B narrow-range level",
           "externalRefs": [
             "secondary.sg.b.level_nr"
+          ]
+        },
+        {
+          "path": "wideRangeLevelPercent",
+          "tagId": "SG-B-LVL-WR",
+          "equipmentId": "sgB",
+          "description": "Steam generator B wide-range level, from just above the tube sheet to the narrow range's upper tap above the separators",
+          "externalRefs": [
+            "secondary.sg.b.level_wr"
           ]
         },
         {
@@ -520,6 +542,8 @@
         "pressureInventoryGainMPaPerFraction": 0.6,
         "narrowRangeLowerFraction": 0.32,
         "narrowRangeUpperFraction": 0.92,
+        "wideRangeLowerFraction": 0,
+        "wideRangeUpperFraction": 0.92,
         "tubeBundleBottomLevelPercent": 0.02,
         "tubeBundleTopLevelPercent": 0.12
       },
@@ -531,6 +555,15 @@
           "description": "Steam generator C narrow-range level",
           "externalRefs": [
             "secondary.sg.c.level_nr"
+          ]
+        },
+        {
+          "path": "wideRangeLevelPercent",
+          "tagId": "SG-C-LVL-WR",
+          "equipmentId": "sgC",
+          "description": "Steam generator C wide-range level, from just above the tube sheet to the narrow range's upper tap above the separators",
+          "externalRefs": [
+            "secondary.sg.c.level_wr"
           ]
         },
         {
@@ -586,6 +619,8 @@
         "pressureInventoryGainMPaPerFraction": 0.6,
         "narrowRangeLowerFraction": 0.32,
         "narrowRangeUpperFraction": 0.92,
+        "wideRangeLowerFraction": 0,
+        "wideRangeUpperFraction": 0.92,
         "tubeBundleBottomLevelPercent": 0.02,
         "tubeBundleTopLevelPercent": 0.12
       },
@@ -597,6 +632,15 @@
           "description": "Steam generator D narrow-range level",
           "externalRefs": [
             "secondary.sg.d.level_nr"
+          ]
+        },
+        {
+          "path": "wideRangeLevelPercent",
+          "tagId": "SG-D-LVL-WR",
+          "equipmentId": "sgD",
+          "description": "Steam generator D wide-range level, from just above the tube sheet to the narrow range's upper tap above the separators",
+          "externalRefs": [
+            "secondary.sg.d.level_wr"
           ]
         },
         {
@@ -652,6 +696,8 @@
         "pressureInventoryGainMPaPerFraction": 0.6,
         "narrowRangeLowerFraction": 0.32,
         "narrowRangeUpperFraction": 0.92,
+        "wideRangeLowerFraction": 0,
+        "wideRangeUpperFraction": 0.92,
         "tubeBundleBottomLevelPercent": 0.02,
         "tubeBundleTopLevelPercent": 0.12
       },
@@ -663,6 +709,15 @@
           "description": "Steam generator E narrow-range level",
           "externalRefs": [
             "secondary.sg.e.level_nr"
+          ]
+        },
+        {
+          "path": "wideRangeLevelPercent",
+          "tagId": "SG-E-LVL-WR",
+          "equipmentId": "sgE",
+          "description": "Steam generator E wide-range level, from just above the tube sheet to the narrow range's upper tap above the separators",
+          "externalRefs": [
+            "secondary.sg.e.level_wr"
           ]
         },
         {
@@ -718,6 +773,8 @@
         "pressureInventoryGainMPaPerFraction": 0.6,
         "narrowRangeLowerFraction": 0.32,
         "narrowRangeUpperFraction": 0.92,
+        "wideRangeLowerFraction": 0,
+        "wideRangeUpperFraction": 0.92,
         "tubeBundleBottomLevelPercent": 0.02,
         "tubeBundleTopLevelPercent": 0.12
       },
@@ -729,6 +786,15 @@
           "description": "Steam generator F narrow-range level",
           "externalRefs": [
             "secondary.sg.f.level_nr"
+          ]
+        },
+        {
+          "path": "wideRangeLevelPercent",
+          "tagId": "SG-F-LVL-WR",
+          "equipmentId": "sgF",
+          "description": "Steam generator F wide-range level, from just above the tube sheet to the narrow range's upper tap above the separators",
+          "externalRefs": [
+            "secondary.sg.f.level_wr"
           ]
         },
         {
@@ -11204,6 +11270,7 @@
     "pressurizer-relief-to-tank.flowKgPerS",
     "pressurizer-relief-to-tank.temperatureC",
     "sgA.levelPercent",
+    "sgA.wideRangeLevelPercent",
     "sgA.pressureMPa",
     "sgA.primaryInletTemperatureC",
     "sgA.primaryOutletTemperatureC",
@@ -11232,6 +11299,7 @@
     "feedwater-control-valve-a-to-sg-a.flowKgPerS",
     "aux-feedwater-valve-a-to-sg-a.flowKgPerS",
     "sgB.levelPercent",
+    "sgB.wideRangeLevelPercent",
     "sgB.pressureMPa",
     "sgB.primaryInletTemperatureC",
     "sgB.primaryOutletTemperatureC",
@@ -11260,6 +11328,7 @@
     "feedwater-control-valve-b-to-sg-b.flowKgPerS",
     "aux-feedwater-valve-b-to-sg-b.flowKgPerS",
     "sgC.levelPercent",
+    "sgC.wideRangeLevelPercent",
     "sgC.pressureMPa",
     "sgC.primaryInletTemperatureC",
     "sgC.primaryOutletTemperatureC",
@@ -11288,6 +11357,7 @@
     "feedwater-control-valve-c-to-sg-c.flowKgPerS",
     "aux-feedwater-valve-c-to-sg-c.flowKgPerS",
     "sgD.levelPercent",
+    "sgD.wideRangeLevelPercent",
     "sgD.pressureMPa",
     "sgD.primaryInletTemperatureC",
     "sgD.primaryOutletTemperatureC",
@@ -11748,7 +11818,9 @@
     "charging-pump-b-to-cold-leg-b.soluteConcentrationPpm",
     "letdown-to-vct.soluteConcentrationPpm",
     "sgE.levelPercent",
+    "sgE.wideRangeLevelPercent",
     "sgF.levelPercent",
+    "sgF.wideRangeLevelPercent",
     "sgE.pressureMPa",
     "sgF.pressureMPa",
     "sgE.primaryInletTemperatureC",
