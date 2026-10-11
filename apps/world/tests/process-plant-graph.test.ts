@@ -73,9 +73,10 @@ describe('process plant model composition', () => {
     // feedwater was given pump curves, line coefficients and a header whose
     // pressure balances them, with a flow signal for each steam generator,
     // and again when each steam generator gained a wide-range level beside
-    // its narrow-range one; PWR Runs checkpointed before then must be
-    // restarted.
-    expect(system.modelDigest).toBe('fc6781762638e139b49ff44b65715909b80a9699efe7cab05db1a53c13fda8cf')
+    // its narrow-range one, and again when the pressurizer's heaters were
+    // rated like a Westinghouse four-loop plant's, 0.4 MW proportional and
+    // 1.4 MW backup; PWR Runs checkpointed before then must be restarted.
+    expect(system.modelDigest).toBe('ee4a0bf356889c6c3600b8d4131bd8c8cfc4d8b0e9ddfab18b9568c18b693c7d')
     const running = createProcessPlantRuntime({ system })
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))
