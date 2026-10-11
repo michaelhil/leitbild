@@ -141,18 +141,19 @@ describe('what World adds to a composed display', () => {
   const relief = once(() => situation({ actionId: 'pressurizer-relief-open', parameters: { positionPercent: 35 } }, 3))
 
   test('PORV open: the safety injection it set off and the subcooling margin fill the free places of the agent\'s readouts', () => {
-    // Run 22: pressure 10.7 MPa falling with the PORV stuck at 35 %; the display showed no subcooling margin. After
-    // the trip the overview leads with it (core cooling, the first critical safety function it checks), so it is
-    // added; containment pressure, at normal, is no lead.
+    // Run 22: pressure 10.7 MPa falling with the PORV stuck at 35 %; the display showed no subcooling margin, which
+    // the overview leads with after the trip. Since the relief tank has its instruments, the tank filling towards its
+    // high-level alarm is watched and ranks before it for the one free place left; containment pressure, at normal,
+    // is no lead.
     const { compose, read } = relief()
     const { evidence, display, result } = compose('Pressurizer depressurization', ['PT-455', 'PORV-456A', 'PZR-LVL'], [
       { kind: 'trend', horizon: '2m', signals: [signal('PT-455', 'primary'), signal('PZR-LVL')] },
       { kind: 'readouts', signals: [signal('pressurizer.reliefFlowKgPerS'), signal('PORV-456A-POS'), signal('PORV-456A'), signal('MOV-8000A-POS')] },
       { kind: 'alarms', scope: 'related' },
     ])
-    expect(listed(evidence)).toEqual([['safetyInjectionHeader.outletFlowKgPerS', 'delivers'], ['vessel.subcoolingMarginC', 'mode']])
+    expect(listed(evidence)).toEqual([['safetyInjectionHeader.outletFlowKgPerS', 'delivers'], ['pressurizerReliefTank.levelPercent', 'mode']])
     expect(read('safetyInjectionHeader.outletFlowKgPerS')).toBeGreaterThan(30)
-    expect(evidence[1]!.reason).toBe('what the unit leads with in Hot standby')
+    expect(evidence[1]!.reason).toBe('what the unit watches in Hot standby')
     // The four readouts left two places in their second row: no panel and no height are added.
     expect(display.panels.map(panel => panel.kind)).toEqual(['trend', 'readouts', 'alarms'])
     const readouts = display.panels[1]!
@@ -165,19 +166,20 @@ describe('what World adds to a composed display', () => {
   test('PORV open as run 22 composed it: with no room for a panel of their own, the values join the agent\'s readouts in a row of their own', () => {
     // Run 22 QA: the display added nothing three minutes in. Its trend has two strips and a live row, and its three
     // readouts fill their row: a labelled panel of the safety injection and the subcooling margin needed 662 px of
-    // the 660 a chat view allows, so both were dropped.
+    // the 660 a chat view allows, so both were dropped. The relief tank's level and pressure, heading for and past
+    // their alarms, now rank before the margin.
     const { compose, read } = relief()
     const { evidence, display, result } = compose('Unit 2 pressurizer depressurization', ['PT-455', 'PORV-456A', 'PZR-LVL'], [
       { kind: 'trend', horizon: '2m', signals: [signal('PT-455', 'primary'), signal('pressurizer.reliefFlowKgPerS'), signal('PZR-LVL', 'counter-evidence')] },
       { kind: 'readouts', signals: [signal('PORV-456A-POS', 'primary'), signal('PORV-456A'), signal('MOV-8000A-POS')] },
       { kind: 'alarms', scope: 'related' },
     ])
-    expect(listed(evidence)).toEqual([['safetyInjectionHeader.outletFlowKgPerS', 'delivers'], ['vessel.subcoolingMarginC', 'mode']])
+    expect(listed(evidence)).toEqual([['safetyInjectionHeader.outletFlowKgPerS', 'delivers'], ['pressurizerReliefTank.levelPercent', 'mode'], ['pressurizerReliefTank.pressureMPa', 'mode']])
     expect(display.panels.map(panel => panel.kind)).toEqual(['trend', 'readouts', 'alarms'])
     const readouts = display.panels[1]!
     if (readouts.kind !== 'readouts') throw new Error('expected the readouts')
     expect(readouts.added).toBeUndefined()
-    expect(readouts.pens.map(pen => pen.added?.kind ?? null)).toEqual([null, null, null, 'delivers', 'mode'])
+    expect(readouts.pens.map(pen => pen.added?.kind ?? null)).toEqual([null, null, null, 'delivers', 'mode', 'mode'])
     expect(result.view.height).toBeLessThanOrEqual(COMPOSED_DISPLAY_MAX_HEIGHT_PX)
     expect(read('vessel.subcoolingMarginC')).toBeGreaterThan(16.7)
   }, 60_000)
