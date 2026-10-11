@@ -27,7 +27,7 @@ export const pressurizedWaterReactorReferenceIcFor = (
     ...pressurizerReferenceIcRules(),
     ...subcoolingReferenceIcRules(),
     ...rcsLeakageReferenceIcRules(),
-    ...loops.flatMap(loop => steamGeneratorReferenceIcRules(loop)),
+    ...loops.flatMap(loop => steamGeneratorReferenceIcRules(loop, loops)),
     ...loops.flatMap(loop => reactorCoolantPumpReferenceIcRules(loop)),
     ...loops.flatMap(loop => accumulatorReferenceIcRules(loop)),
     ...safetyInjectionReferenceIcRules(),
