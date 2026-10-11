@@ -68,8 +68,11 @@ describe('process plant model composition', () => {
     // and charging resized to a four-loop plant's, and again when the
     // pressurizer's heaters were split into a control group on unit bus A
     // and a 1.5 MW backup group on diesel-backed safety bus A, through its
-    // own breaker; PWR Runs checkpointed before then must be restarted.
-    expect(system.modelDigest).toBe('7220d85e896f5d43429a50b3f44cbc6415a436f8fdf860c97804e254c289c270')
+    // own breaker, and again when the reactor coolant loops were given their
+    // hydraulics (flywheel coastdown, a vessel pressure drop the loops share,
+    // reverse flow in an idle loop and natural circulation by buoyancy);
+    // PWR Runs checkpointed before then must be restarted.
+    expect(system.modelDigest).toBe('b13bc9411e81b116976004d9559a480b93de1fb570e14d5f67e6c0fcee6e3c6a')
     const running = createProcessPlantRuntime({ system })
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))
