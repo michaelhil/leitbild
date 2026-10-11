@@ -217,6 +217,19 @@ describe('operator names', () => {
     expect(() => compilePlantGraph(worded({ powerMw: { on: 'at power', off: 'shut down' } }), processPlantComponentRegistry)).toThrow('not one of its on/off signals')
   })
 
+  test('a diagnostic only the simulator computes is flagged on its signal, for displays to tag SIM', () => {
+    const spec = assemblePwrReferencePlantGraph({ loopCount: 4 })
+    const flagged: PlantGraphSpec = {
+      ...spec,
+      components: spec.components.map(entry => String(entry.id) === 'safetyBusA'
+        ? { ...entry, variables: (entry.variables ?? []).map(variable => String(variable.path) === 'marginMw' ? { ...variable, simulatorOnly: true as const } : variable) }
+        : entry),
+    }
+    const graph = compilePlantGraph(flagged, processPlantComponentRegistry)
+    expect(graph.signalBindingByTagId.get('BUS-A-MARGIN' as never)?.simulatorOnly).toBe(true)
+    expect(graph.signalBindingByTagId.get('BUS-B-MARGIN' as never)?.simulatorOnly).toBeUndefined()
+  })
+
   test('renaming equipment never changes the Plant identity that persisted Runs are bound to', () => {
     const spec = assemblePwrReferencePlantGraph({ loopCount: 4 })
     const renamed: PlantGraphSpec = {

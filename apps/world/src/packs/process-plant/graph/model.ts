@@ -398,6 +398,12 @@ const variableDescriptorBaseSchema = z.object({
   actuation: variableActuationSchema.optional(),
   /** What a ratio measures; every ratio declares one. */
   measurand: ratioMeasurandSchema.optional(),
+  /**
+   * A diagnostic only the simulator computes, which no instrument of a real
+   * plant reads (a heat-removal deficit, a true leak flow): displays tag it
+   * SIM wherever they show it.
+   */
+  simulatorOnly: z.literal(true).optional(),
 })
 export const variableDescriptorSchema = variableDescriptorBaseSchema.superRefine(validateQuantityUnit)
 export type VariableDescriptor = z.infer<typeof variableDescriptorSchema>
@@ -427,6 +433,7 @@ export const componentVariableBindingOverrideSchema = z.object({
   externalRefs: z.array(z.string().min(1)).optional(),
   capabilities: processVariableCapabilitySchema.optional(),
   limits: processVariableLimitsSchema.optional(),
+  simulatorOnly: z.literal(true).optional(),
 }).strict()
 export type ComponentVariableBindingOverride = z.infer<typeof componentVariableBindingOverrideSchema>
 
@@ -596,6 +603,8 @@ export interface ProcessSignalBinding {
   readonly writable: boolean
   readonly actuation?: VariableActuation
   readonly measurand?: RatioMeasurand
+  /** A diagnostic only the simulator computes (variableDescriptorBaseSchema.simulatorOnly). */
+  readonly simulatorOnly?: true
   readonly published: boolean
   readonly owner:
     | { readonly type: 'component'; readonly componentIndex: number }
