@@ -811,8 +811,10 @@ describe('what a display\'s banner, actuation line and alarm rows name', () => {
       tagsOf('reactor-overtemperature-delta-t-trip'),
       tagsOf('loss-of-offsite-power'),
       tagsOf('safety-bus-a-loss-alarm'),
-    ]).toEqual([['LO-LO · RX TRIP'], ['LO-LO · SI', 'LO-LO · RX TRIP'], ['LO · ALM'], ['RX TRIP'], ['LO-LO · ALM'], ['ALM']])
+    ]).toEqual([['LO-LO · RX TRIP'], ['LO-LO · SI', 'LO-LO · RX TRIP', 'LO-LO · FWI'], ['LO · ALM'], ['RX TRIP'], ['LO-LO · ALM'], ['ALM']])
     expect(annunciation.tags['trip:safety-injection-low-pzr-pressure:reactor-trip']).toBe('LO-LO · RX TRIP')
+    // The feedwater isolation the SI signal causes is a feedwater isolation.
+    expect(annunciation.tags['trip:safety-injection-low-pzr-pressure:feedwater-isolation']).toBe('LO-LO · FWI')
     expect(annunciation.tags['trip:safety-injection-low-pzr-pressure:safety-injection']).toBe('LO-LO · SI')
     // Every alarm and trip has a tag, and every one naming a group its group's short label for the tiles.
     const annunciated = compiled.automation.rules.filter(rule => rule.enabled).flatMap(rule => rule.effects.flatMap(effect => effect.type === 'alarm.enter' || effect.type === 'trip.enter' ? [{ rule, effect }] : []))

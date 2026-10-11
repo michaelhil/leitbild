@@ -150,15 +150,16 @@ describe('what World adds to a composed display', () => {
       { kind: 'readouts', signals: [signal('pressurizer.reliefFlowKgPerS'), signal('PORV-456A-POS'), signal('PORV-456A'), signal('MOV-8000A-POS')] },
       { kind: 'alarms', scope: 'related' },
     ])
-    expect(listed(evidence)).toEqual([['safetyInjectionHeader.outletFlowKgPerS', 'delivers'], ['vessel.subcoolingMarginC', 'mode']])
+    // The safety injection signal also isolates main feedwater: what it delivers and what it isolates take the two
+    // free places, ahead of the subcooling margin.
+    expect(listed(evidence)).toEqual([['safetyInjectionHeader.outletFlowKgPerS', 'delivers'], ['feedwaterHeader.outletFlowKgPerS', 'isolates']])
     expect(read('safetyInjectionHeader.outletFlowKgPerS')).toBeGreaterThan(30)
-    expect(evidence[1]!.reason).toBe('what the unit leads with in Hot standby')
     // The four readouts left two places in their second row: no panel and no height are added.
     expect(display.panels.map(panel => panel.kind)).toEqual(['trend', 'readouts', 'alarms'])
     const readouts = display.panels[1]!
     if (readouts.kind !== 'readouts') throw new Error('expected the readouts')
     expect(readouts.added).toBeUndefined()
-    expect(readouts.pens.map(pen => pen.added?.kind ?? null)).toEqual([null, null, null, null, 'delivers', 'mode'])
+    expect(readouts.pens.map(pen => pen.added?.kind ?? null)).toEqual([null, null, null, null, 'delivers', 'isolates'])
     expect(result.view.height).toBe(COMPOSED_DISPLAY_MAX_HEIGHT_PX)
   }, 60_000)
 
@@ -172,12 +173,12 @@ describe('what World adds to a composed display', () => {
       { kind: 'readouts', signals: [signal('PORV-456A-POS', 'primary'), signal('PORV-456A'), signal('MOV-8000A-POS')] },
       { kind: 'alarms', scope: 'related' },
     ])
-    expect(listed(evidence)).toEqual([['safetyInjectionHeader.outletFlowKgPerS', 'delivers'], ['vessel.subcoolingMarginC', 'mode']])
+    expect(listed(evidence)).toEqual([['safetyInjectionHeader.outletFlowKgPerS', 'delivers'], ['feedwaterHeader.outletFlowKgPerS', 'isolates'], ['vessel.subcoolingMarginC', 'mode']])
     expect(display.panels.map(panel => panel.kind)).toEqual(['trend', 'readouts', 'alarms'])
     const readouts = display.panels[1]!
     if (readouts.kind !== 'readouts') throw new Error('expected the readouts')
     expect(readouts.added).toBeUndefined()
-    expect(readouts.pens.map(pen => pen.added?.kind ?? null)).toEqual([null, null, null, 'delivers', 'mode'])
+    expect(readouts.pens.map(pen => pen.added?.kind ?? null)).toEqual([null, null, null, 'delivers', 'isolates', 'mode'])
     expect(result.view.height).toBeLessThanOrEqual(COMPOSED_DISPLAY_MAX_HEIGHT_PX)
     expect(read('vessel.subcoolingMarginC')).toBeGreaterThan(16.7)
   }, 60_000)
@@ -205,14 +206,14 @@ describe('what World adds to a composed display', () => {
       { kind: 'trend', horizon: '10m', signals: [signal('SG-A-LVL-NR', 'primary'), signal('SG-B-LVL-NR'), signal('PT-455'), signal('PZR-LVL')] },
       { kind: 'alarms', scope: 'related' },
     ])
-    // With feedwater isolated on the trip, SG A has fallen to the low-low level that starts auxiliary feedwater within
-    // the minute: what it delivers, then C and D.
+    // With feedwater isolated on the trip, the generators have shrunk below their narrow range within the minute: the
+    // trended ones' wide ranges say where their level is, then what the low-low level's auxiliary feedwater delivers.
     expect(listed(trip.evidence)).toEqual([
+      ['sgA.wideRangeLevelPercent', 'wider'],
+      ['sgB.wideRangeLevelPercent', 'wider'],
       ['auxFeedwaterHeader.outletFlowKgPerS', 'delivers'],
-      ['sgC.levelPercent', 'reference'],
-      ['sgD.levelPercent', 'reference'],
     ])
-    expect(trip.evidence[0]!.reason).toBe('Steam generator A low-low level auxiliary feedwater actuation: what it delivers')
+    expect(trip.evidence[2]!.reason).toBe('Steam generator A low-low level auxiliary feedwater actuation: what it delivers')
     // One row was all the chat view had room for: the isolated main feed is left out.
     expect(trip.result.view.height).toBeLessThanOrEqual(COMPOSED_DISPLAY_MAX_HEIGHT_PX)
   }, 60_000)
