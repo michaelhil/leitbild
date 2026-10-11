@@ -3,6 +3,7 @@ import { primaryLoopIdForPump, type CompiledPlantGraph, type CompiledComponent }
 import { accumulatorReferenceIcRules } from './reference-ic-accumulator.ts'
 import { referenceActuations } from './reference-ic-actuations.ts'
 import { referenceAnnunciatorSystems } from './reference-ic-annunciators.ts'
+import { referenceFirstOutGroups } from './reference-ic-first-out-groups.ts'
 import { referenceOperatingModes } from './reference-ic-modes.ts'
 import { balanceOfPlantReferenceIcRules } from './reference-ic-balance-of-plant.ts'
 import { containmentReferenceIcRules } from './reference-ic-containment.ts'
@@ -22,6 +23,7 @@ export const pressurizedWaterReactorReferenceIcFor = (
   operatingModes: [...referenceOperatingModes],
   annunciatorSystems: [...referenceAnnunciatorSystems],
   actuations: [...referenceActuations],
+  firstOutGroups: [...referenceFirstOutGroups],
   rules: [
     ...reactorReferenceIcRules(loops),
     ...pressurizerReferenceIcRules(),
