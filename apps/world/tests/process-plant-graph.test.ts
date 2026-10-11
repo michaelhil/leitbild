@@ -69,7 +69,11 @@ describe('process plant model composition', () => {
     // pressurizer's heaters were split into a control group on unit bus A
     // and a 1.5 MW backup group on diesel-backed safety bus A, through its
     // own breaker; PWR Runs checkpointed before then must be restarted.
-    expect(system.modelDigest).toBe('7220d85e896f5d43429a50b3f44cbc6415a436f8fdf860c97804e254c289c270')
+    // Changed again on 2026-10-11, as a model-truth change, when the
+    // pressurizer's level deviation from its program was given its tag
+    // (PZR-LVL-DEV), so its low-deviation alarm replaces the fixed 35 %
+    // low-level alarm that stood after every trip.
+    expect(system.modelDigest).toBe('fd24b94e3952054d544651b23e372d607a1b05001f63282fb1c85e2eb93a2509')
     const running = createProcessPlantRuntime({ system })
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))
