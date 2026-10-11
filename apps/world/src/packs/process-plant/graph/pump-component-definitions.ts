@@ -35,6 +35,13 @@ export const pumpComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
        */
       reactorCoolantShutoffPressureMPa: z.number().finite().positive().optional(),
       /**
+       * For a pump that discharges into a pressure-balanced header: its head
+       * at zero flow. Its nominal flow and head are then its rated point, on a
+       * parabolic curve from shutoff through it that speed scales by the
+       * affinity laws, and the header's pressure sets where on it it runs.
+       */
+      shutoffHeadPa: z.number().finite().positive().optional(),
+      /**
        * For a pump whose flow a controller sets, as pressurizer level control
        * sets the charging pump's: the variable holding the flow it is to
        * deliver. It runs at the speed that delivers it, within its speed range.

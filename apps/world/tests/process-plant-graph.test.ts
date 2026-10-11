@@ -69,9 +69,11 @@ describe('process plant model composition', () => {
     // pressurizer's heaters were split into a control group on unit bus A
     // and a 1.5 MW backup group on diesel-backed safety bus A, through its
     // own breaker, and again when the PORV was rated at a Westinghouse
-    // PORV's 26.5 kg/s of steam at 16.2 MPa; PWR Runs checkpointed before
-    // then must be restarted.
-    expect(system.modelDigest).toBe('f6969e8a088bfb539452ee022b09b58b666284cfd8472746ce5fb5b9ad34f1e6')
+    // PORV's 26.5 kg/s of steam at 16.2 MPa, and again when auxiliary
+    // feedwater was given pump curves, line coefficients and a header whose
+    // pressure balances them, with a flow signal for each steam generator;
+    // PWR Runs checkpointed before then must be restarted.
+    expect(system.modelDigest).toBe('bcb4160edd2e49a2751980ecf92fe4ae175ccbac845a85b1403499190e99e5cd')
     const running = createProcessPlantRuntime({ system })
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))
