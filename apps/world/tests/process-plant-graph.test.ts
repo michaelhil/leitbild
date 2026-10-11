@@ -91,9 +91,11 @@ describe('process plant model composition', () => {
     // their kind, beside their hard range, and again when the link flows no
     // plant instrument measures (leak, relief and release flows) were marked
     // simulator-only, and again when the rods gained their position
-    // indication and rod bottom bistable; PWR Runs checkpointed before then
-    // must be restarted.
-    expect(system.modelDigest).toBe('715028d31a53a15e52117d9adde3d27fdd23c45a8bd023e94ff7af49e6edac95')
+    // indication and rod bottom bistable, and again when the diesels gained
+    // their kW, voltage and frequency, the buses their kilovolts, and each
+    // safety train its load sequencer and the loads it sequences; PWR Runs
+    // checkpointed before then must be restarted.
+    expect(system.modelDigest).toBe('229a9ad3d5bdd3a53e8d7ed5f1a911164c147174cc6dfbdcb5e1dba43de730e1')
     const running = createProcessPlantRuntime({ system })
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))
