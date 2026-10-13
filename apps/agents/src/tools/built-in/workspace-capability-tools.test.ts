@@ -7,7 +7,13 @@ import {
   workspaceResourceReferenceSchema,
   type WorkspaceRoomScope,
 } from '@leitbild/contracts'
-import { createWorkspaceCapabilityTools, workspaceCallResultForModel } from './workspace-capability-tools.ts'
+import {
+  createWorkspaceCapabilityTools,
+  createWorkspaceCatalogs,
+  createWorkspaceOperationIndex,
+  renderOperationIndex,
+  workspaceCallResultForModel,
+} from './workspace-capability-tools.ts'
 import { toolsToDefinitions } from '../../llm/tool-capability.ts'
 
 const workspaceId = newWorkspaceId()
@@ -175,6 +181,58 @@ describe('Workspace progressive-discovery tools', () => {
     expect(await query()).toMatchObject({success:true,data:{operations:[]}})
     expect(statuses).toEqual([200,304,200])
   })
+  test('indexes the operations of the Room Scope by target, the title only where it says more than the id', async () => {
+    const index = createWorkspaceOperationIndex({ getRoomScope: () => ({ kind: 'workspace' }) },
+      createWorkspaceCatalogs({ workspaceId, hostBaseUrl: 'https://host.test', fetchImpl: catalogFetch([]) }))
+    const [header, ...entries] = (await index('room')).split('\n')
+    expect(header).toContain('call one with workspace_call without searching for it')
+    expect(entries).toEqual([
+      'Definition world.scenario:',
+      `- ${inspectDefinitionId}`,
+      'Resource world.simulation-run:',
+      `- ${readId}`,
+      `- ${writeId} — Change run [write]`,
+    ])
+    // A Room scoped to one Run has neither the Scenario's operations nor the other Run's.
+    const runOnly = createWorkspaceOperationIndex({ getRoomScope: () => ({ kind: 'resource', resource: otherRun }) },
+      createWorkspaceCatalogs({ workspaceId, hostBaseUrl: 'https://host.test', fetchImpl: catalogFetch([]) }))
+    expect((await runOnly('room')).split('\n').slice(1)).toEqual(['Resource world.simulation-run:', `- ${readId}`])
+    await expect(createWorkspaceOperationIndex({ getRoomScope: () => undefined },
+      createWorkspaceCatalogs({ workspaceId, hostBaseUrl: 'https://host.test', fetchImpl: catalogFetch([]) }))('room')).rejects.toThrow('room_scope_unavailable')
+  })
+
+  test('the index is identical while the revalidated catalog is, and follows it when it changes', async () => {
+    let version = 1
+    const statuses: number[] = []
+    const base = catalogFetch([])
+    const catalogs = createWorkspaceCatalogs({ workspaceId, hostBaseUrl: 'https://host.test',
+      fetchImpl: (async (input, init) => {
+        const request = new Request(String(input), init)
+        if (!request.url.endsWith('/capabilities')) return base(input, init)
+        const etag = `"${version}"`
+        if (request.headers.get('if-none-match') === etag) { statuses.push(304); return new Response(null, { status: 304 }) }
+        const body = await (await base(input, init)).json() as { capabilities: Array<{ id: string; title: string }> }
+        if (version === 2) body.capabilities = body.capabilities.map(operation => operation.id === readId ? { ...operation, title: 'Read the live run' } : operation)
+        statuses.push(200)
+        return Response.json(body, { headers: { etag } })
+      }) as typeof fetch })
+    const scope = { getRoomScope: () => ({ kind: 'workspace' as const }) }
+    const index = createWorkspaceOperationIndex(scope, catalogs)
+    const [explore] = createWorkspaceCapabilityTools({ workspaceId, hostBaseUrl: 'https://host.test', ...scope }, catalogs)
+    const first = await index('room')
+    // The tools and the index share one catalog: neither reloads unchanged content.
+    await explore!.execute({ view: 'operations', operationIds: [readId] }, context)
+    expect(await index('room')).toBe(first)
+    version = 2
+    const changed = await index('room')
+    expect(changed).toContain(`- ${readId} — Read the live run`)
+    expect(statuses).toEqual([200, 304, 304, 200])
+  })
+
+  test('renders an empty scope as no index', () => {
+    expect(renderOperationIndex([])).toBe('')
+  })
+
   test('filters all result kinds and operations consistently', async () => {
     const [explore] = makeTools({kind:'workspace'})
     expect(await explore!.execute({view:'operations',definitionType:definition.type},context)).toMatchObject({

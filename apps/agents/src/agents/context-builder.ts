@@ -13,7 +13,10 @@
 // 2. Skills (from getSkills, skill-store) — may be empty
 // 3. Active script context (from getScriptContext) — only when in a running script
 // 4. Wiki bindings + pack-owned context — empty when none active
-// 5. Room participant profiles + room running summary
+// 5. Response format, then the Room Scope's operation index (only for an
+//    Agent that calls workspace operations; last of the stable blocks, as the
+//    one that changes most often)
+// 6. Room participant profiles + room running summary
 // Each source can return empty; the assembled prompt skips empty sections.
 // Token budgeting is a single pass at the end (contextTokenBudget).
 // ============================================================================
@@ -213,6 +216,8 @@ export interface BuildContextDeps {
   // One requested turn's instruction (core/types/agent.ts RequestedTurn).
   // Ends the context as a transient user message; never enters history.
   readonly turnInstruction?: string
+  // The Room Scope's operation index, read for this turn (ai-agent.ts).
+  readonly operationIndex?: string
 }
 
 const resolveIncludes = (inc: IncludePrompts | undefined): Required<IncludePrompts> => ({
@@ -275,7 +280,7 @@ export interface SystemSection {
 }
 
 export type SystemSectionKey =
-  | 'workspace' | 'room' | 'persona' | 'responseFormat' | 'skills' | 'wikis'
+  | 'workspace' | 'room' | 'persona' | 'responseFormat' | 'skills' | 'wikis' | 'operations'
   | 'ctx_intro'           // "You are in room X" — always emitted
   | 'ctx_flow'
   | 'ctx_participants'
@@ -398,6 +403,16 @@ export const buildSystemSections = (
     optional: true,
   })
 
+  // Describes the workspace tools the Agent holds, so only the prompt group's
+  // master switch removes it, not a section toggle.
+  out.push({
+    key: 'operations',
+    label: 'OPERATIONS',
+    text: deps.operationIndex ?? '',
+    enabled: promptsEnabled && !!deps.operationIndex,
+    optional: false,
+  })
+
   return out
 }
 
@@ -419,13 +434,14 @@ const CTX_VARIABLE_KEYS: ReadonlyArray<SystemSectionKey> = [
 // Map a SystemSection to the XML tag used to fence it. Tag names are
 // canonical (lower_snake_case), namespaced under `leitbild:`. Adding a new
 // prompt-level section means adding it here.
-const TAG_FOR_PROMPT_KEY: Record<'workspace' | 'room' | 'persona' | 'skills' | 'wikis' | 'responseFormat', string> = {
+const TAG_FOR_PROMPT_KEY: Record<'workspace' | 'room' | 'persona' | 'skills' | 'wikis' | 'responseFormat' | 'operations', string> = {
   workspace: 'leitbild:workspace_rules',
   room: 'leitbild:room',
   persona: 'leitbild:identity',
   skills: 'leitbild:skills',
   wikis: 'leitbild:wikis',
   responseFormat: 'leitbild:response_format',
+  operations: 'leitbild:operations',
 }
 const CTX_TAG = 'leitbild:context'
 
@@ -451,7 +467,7 @@ const buildSystemBlocks = (
 
   // Stable top-level prompt sections, in order.
   const promptOrder: ReadonlyArray<keyof typeof TAG_FOR_PROMPT_KEY> = [
-    'workspace', 'room', 'persona', 'skills', 'wikis', 'responseFormat',
+    'workspace', 'room', 'persona', 'skills', 'wikis', 'responseFormat', 'operations',
   ]
   const stableLines: string[] = []
   const roomCtx = deps.history.rooms.get(triggerRoomId)

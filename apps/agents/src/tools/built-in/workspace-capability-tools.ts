@@ -326,15 +326,26 @@ export const workspaceCallResultForModel = (result: ToolResult): ToolResult => {
   }) } }
 }
 
-export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDeps): ReadonlyArray<Tool> => {
+type WorkspaceOperationCatalog = ReturnType<typeof workspaceCapabilityCatalogSchema.parse>
+
+/** One Workspace's catalogs as the Host serves them, shared by the tools and the operation index. */
+export interface WorkspaceCatalogs {
+  readonly load: (signal?: AbortSignal) => Promise<{
+    readonly definitions: ReturnType<typeof workspaceDefinitionCatalogSchema.parse>
+    readonly resources: ReturnType<typeof workspaceResourceCatalogSchema.parse>
+    readonly operations: WorkspaceOperationCatalog
+  }>
+}
+
+export const createWorkspaceCatalogs = (deps: Pick<WorkspaceCapabilityToolsDeps, 'workspaceId' | 'hostBaseUrl' | 'fetchImpl'>): WorkspaceCatalogs => {
   const fetchImpl = deps.fetchImpl ?? fetch
   const workspacePath = `${origin(deps.hostBaseUrl)}/api/workspaces/${encodeURIComponent(deps.workspaceId)}`
   // Revalidate on every access. Only reuse a parsed operation catalog when
   // the Host confirms the exact same content; membership/policy stays live.
-  let operationCache: { etag: string; catalog: ReturnType<typeof workspaceCapabilityCatalogSchema.parse> } | undefined
-  const loadOperations = async (context: ToolContext) => {
+  let operationCache: { etag: string; catalog: WorkspaceOperationCatalog } | undefined
+  const loadOperations = async (signal?: AbortSignal) => {
     const cached = operationCache
-    const response = await getJson(fetchImpl, catalogPath(workspacePath, 'capabilities'), context.signal, cached?.etag)
+    const response = await getJson(fetchImpl, catalogPath(workspacePath, 'capabilities'), signal, cached?.etag)
     if (response.status === 304) {
       if (!cached) throw new Error('Host returned 304 without a cached operation catalog')
       return cached.catalog
@@ -345,21 +356,89 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
     operationCache = etag ? {etag,catalog} : undefined
     return catalog
   }
+  return {
+    load: async signal => {
+      const [definitionResponse, resourceResponse, operations] = await Promise.all([
+        getJson(fetchImpl, catalogPath(workspacePath, 'definitions'), signal),
+        getJson(fetchImpl, catalogPath(workspacePath, 'resources'), signal),
+        loadOperations(signal),
+      ])
+      for (const response of [definitionResponse, resourceResponse]) {
+        if (!response.ok) throw await readHostError(response)
+      }
+      return {
+        definitions: workspaceDefinitionCatalogSchema.parse(await definitionResponse.json()),
+        resources: workspaceResourceCatalogSchema.parse(await resourceResponse.json()),
+        operations,
+      }
+    },
+  }
+}
+
+// The operations a scope's Resources and Definitions advertise, and the
+// Workspace's own operations where the Room is scoped to the whole Workspace.
+const advertisedOperationIds = (
+  resources: ReadonlyArray<ModuleResourceDescriptor>,
+  definitions: ReadonlyArray<ModuleDefinitionDescriptor>,
+  workspaceOperations: ReadonlyArray<ModuleCapabilityDescriptor>,
+): ReadonlySet<string> => new Set([
+  ...resources.flatMap(resource => resource.capabilityIds),
+  ...definitions.flatMap(definition => definition.capabilityIds),
+  ...workspaceOperations.filter(operation => operation.scope.kind === 'workspace').map(operation => operation.id),
+])
+
+const OPERATION_INDEX_HEADER = 'Every operation in this Room\'s Scope, by exact id: call one with workspace_call without searching for it. '
+  + 'For an input schema you do not know, use workspace_explore view=operations with its operationIds and includeInputSchema true. '
+  + '[write] and [destructive] operations change state; the others read.'
+
+/**
+ * The operation index an Agent reads in its context: each in-scope operation's
+ * id, with its title where the title says more than the id, grouped by what it
+ * targets. Rendered from the operation catalog the Host revalidates by its
+ * content ETag, so it is byte-identical while the catalog and the Scope's
+ * advertised operations are, and a cacheable prompt prefix.
+ */
+export const renderOperationIndex = (operations: ReadonlyArray<ModuleCapabilityDescriptor>): string => {
+  if (operations.length === 0) return ''
+  const groupOf = (operation: ModuleCapabilityDescriptor): string => operation.scope.kind === 'workspace'
+    ? 'Workspace (no target):'
+    : operation.scope.kind === 'definition' ? `Definition ${operation.scope.definitionType}:` : `Resource ${operation.scope.resourceType}:`
+  const rank = (operation: ModuleCapabilityDescriptor): number => ({ workspace: 0, definition: 1, resource: 2 })[operation.scope.kind]
+  const sorted = [...operations].sort((left, right) => rank(left) - rank(right) || groupOf(left).localeCompare(groupOf(right)) || left.id.localeCompare(right.id))
+  const lines = [OPERATION_INDEX_HEADER]
+  let currentGroup: string | undefined
+  for (const operation of sorted) {
+    const group = groupOf(operation)
+    if (group !== currentGroup) lines.push(group)
+    currentGroup = group
+    const idTerms = new Set(textTerms(operation.id))
+    const title = textTerms(operation.title).every(term => idTerms.has(term)) ? '' : ` — ${operation.title}`
+    lines.push(`- ${operation.id}${title}${operation.risk === 'read' ? '' : ` [${operation.risk}]`}`)
+  }
+  return lines.join('\n')
+}
+
+/** The operation index of a Room's Scope (renderOperationIndex), read fresh for each turn. */
+export const createWorkspaceOperationIndex = (deps: Pick<WorkspaceCapabilityToolsDeps, 'getRoomScope'>, catalogs: WorkspaceCatalogs) =>
+  async (roomId: string, signal?: AbortSignal): Promise<string> => {
+    const scope = deps.getRoomScope(roomId)
+    if (!scope) throw new Error(`room_scope_unavailable: Room ${roomId} has no valid scope`)
+    const { definitions, resources, operations } = await catalogs.load(signal)
+    const resolved = resolveScope(scope, resources.resources, definitions.definitions)
+    const inScope = advertisedOperationIds(resolved.resources, resolved.definitions, scope.kind === 'workspace' ? operations.capabilities : [])
+    return renderOperationIndex(operations.capabilities.filter(operation => inScope.has(operation.id)))
+  }
+
+export const createWorkspaceCapabilityTools = (
+  deps: WorkspaceCapabilityToolsDeps,
+  workspaceCatalogs: WorkspaceCatalogs = createWorkspaceCatalogs(deps),
+): ReadonlyArray<Tool> => {
+  const fetchImpl = deps.fetchImpl ?? fetch
+  const workspacePath = `${origin(deps.hostBaseUrl)}/api/workspaces/${encodeURIComponent(deps.workspaceId)}`
 
   const loadCatalogs = async (context: ToolContext) => {
-    const [definitionResponse, resourceResponse, operations] = await Promise.all([
-      getJson(fetchImpl, catalogPath(workspacePath, 'definitions'), context.signal),
-      getJson(fetchImpl, catalogPath(workspacePath, 'resources'), context.signal),
-      loadOperations(context),
-    ])
-    for (const response of [definitionResponse, resourceResponse]) {
-      if (!response.ok) throw await readHostError(response)
-    }
-    const catalogs = {
-      definitions: workspaceDefinitionCatalogSchema.parse(await definitionResponse.json()),
-      resources: workspaceResourceCatalogSchema.parse(await resourceResponse.json()),
-      operations,
-    }
+    const catalogs = await workspaceCatalogs.load(context.signal)
+    const { operations } = catalogs
     if (!context.comparison) return catalogs
     const captured = context.comparison
     const liveScope = requireRoomScope(context, deps)
@@ -445,14 +524,9 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
           && (definitionType === undefined || definition.ref.type === definitionType))
 
         const exactIds = new Set(operationIds)
-        const relevantIds = target === undefined
-          ? new Set([
-              ...resources.flatMap(resource => resource.capabilityIds),
-              ...definitions.flatMap(definition => definition.capabilityIds),
-              ...(resolved.scope.kind === 'workspace' && resourceType === undefined && definitionType === undefined
-                ? catalogs.operations.capabilities.filter(operation => operation.scope.kind === 'workspace').map(operation => operation.id)
-                : []),
-            ])
+        const relevantIds: ReadonlySet<string> = target === undefined
+          ? advertisedOperationIds(resources, definitions,
+              resolved.scope.kind === 'workspace' && resourceType === undefined && definitionType === undefined ? catalogs.operations.capabilities : [])
           : new Set(target.kind === 'resource'
               ? catalogs.resources.resources.find(resource => referenceKey(resource.ref) === referenceKey(target.ref))?.capabilityIds ?? []
               : catalogs.definitions.definitions.find(definition => referenceKey(definition.ref) === referenceKey(target.ref))?.capabilityIds ?? [])

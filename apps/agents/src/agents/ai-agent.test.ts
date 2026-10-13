@@ -587,6 +587,48 @@ describe('[NEW] message tagging', () => {
     expect(capturedSystem).toContain('</leitbild:response_format>')
   })
 
+  test('an Agent that calls workspace operations reads their index at each turn', async () => {
+    const systems: string[] = []
+    const reads: string[] = []
+    const warnings: string[] = []
+    const provider: LLMProvider = {
+      chat: async (req) => {
+        systems.push((req.systemBlocks ?? []).map(block => block.text).join('\n\n'))
+        return { content: 'Answer', generationMs: 1, tokensUsed: { prompt: 1, completion: 1 } }
+      },
+      models: async () => [],
+    }
+    const tool = (name: string) => ({ type: 'function' as const, function: { name, description: name, parameters: {} } })
+    let index: () => Promise<string> = async () => 'Resource world.simulation-run:\n- world.procedure.run.step.read'
+    const agentWith = (toolDefinitions: ReadonlyArray<ReturnType<typeof tool>>) => createAIAgent(makeConfig(), provider, () => {}, {
+      toolDefinitions,
+      toolExecutor: async () => [],
+      getOperationIndex: async roomId => { reads.push(roomId); return index() },
+      onEvalEvent: (_scope, event) => { if (event.kind === 'warning') warnings.push(event.message) },
+    })
+    const agent = agentWith([tool('workspace_explore'), tool('workspace_call')])
+    agent.receive(makeMessage())
+    await agent.whenIdle()
+    expect(reads).toEqual(['room-1'])
+    expect(systems[0]).toContain('<leitbild:operations>\nResource world.simulation-run:\n- world.procedure.run.step.read\n</leitbild:operations>')
+    expect(agent.getContextPreview('room-1').sections.find(section => section.key === 'operations')?.enabled).toBe(true)
+
+    // Unreadable: the turn runs without an index and says why.
+    index = async () => { throw new Error('Workspace Host is unreachable') }
+    agent.receive(makeMessage())
+    await agent.whenIdle()
+    expect(reads).toEqual(['room-1', 'room-1'])
+    expect(systems[1]).not.toContain('leitbild:operations')
+    expect(warnings).toEqual([expect.stringContaining('Workspace Host is unreachable')])
+
+    // Without workspace_call there is nothing to index.
+    const plain = agentWith([tool('product_search')])
+    plain.receive(makeMessage())
+    await plain.whenIdle()
+    expect(reads).toHaveLength(2)
+    expect(systems[2]).not.toContain('leitbild:operations')
+  })
+
   test('buffered messages during generation are all tagged [NEW]', async () => {
     let callCount = 0
     let lastCapturedMessages: ReadonlyArray<{ role: string; content: string }> = []

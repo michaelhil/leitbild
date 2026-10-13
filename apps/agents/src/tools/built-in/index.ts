@@ -14,6 +14,8 @@ export { createProductKnowledgeTools } from './product-knowledge-tools.ts'
 export { createBiometricsTools, createBiometricsStartTool, createBiometricsStopTool, createBiometricsReadTool, BIOMETRICS_PACK_NAMESPACE } from './biometric-tools.ts'
 export {
   createWorkspaceCapabilityTools,
+  createWorkspaceCatalogs,
+  createWorkspaceOperationIndex,
   WORKSPACE_CAPABILITY_TOOL_NAMES,
   type WorkspaceCapabilityToolsDeps,
 } from './workspace-capability-tools.ts'

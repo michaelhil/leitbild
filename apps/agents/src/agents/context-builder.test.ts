@@ -169,6 +169,27 @@ describe('buildSystemSections', () => {
   })
 })
 
+describe('operation index', () => {
+  const index = 'Every operation in this Room\'s Scope, by exact id.\nResource world.simulation-run:\n- world.procedure.run.step.read'
+
+  test('closes the cacheable prompt, after the response format and before the variable context', () => {
+    const history = mkHistory('room-1', 'General')
+    history.agentProfiles.set('b', { id: 'b', name: 'Bob', kind: 'ai' })
+    const blocks = buildContext(mkDeps({ history, operationIndex: index }), 'room-1').systemBlocks ?? []
+    const stable = blocks.find(block => block.cacheable)!.text
+    expect(stable).toContain(`<leitbild:operations>\n${index}\n</leitbild:operations>`)
+    expect(stable.indexOf('<leitbild:response_format>')).toBeLessThan(stable.indexOf('<leitbild:operations>'))
+    expect(blocks.filter(block => !block.cacheable).map(block => block.text).join('')).not.toContain('world.procedure')
+  })
+
+  test('is absent without an index, and goes with the prompt group, not a section toggle', () => {
+    expect(systemText(buildContext(mkDeps(), 'room-1'))).not.toContain('leitbild:operations')
+    const sections = buildSystemSections(mkDeps({ operationIndex: index, includePrompts: { skills: false, responseFormat: false } }), 'room-1')
+    expect(sections.find(section => section.key === 'operations')).toMatchObject({ label: 'OPERATIONS', text: index, enabled: true, optional: false })
+    expect(systemText(buildContext(mkDeps({ operationIndex: index, promptsEnabled: false }), 'room-1'))).not.toContain('world.procedure')
+  })
+})
+
 describe('context-builder skills + context-data toggles', () => {
   test('skills section appears by default when getSkills returns text', () => {
     const result = buildContext(mkDeps({

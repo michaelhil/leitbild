@@ -334,6 +334,8 @@ export interface SpawnOptions {
   readonly getScriptContext?: (roomId: string, agentName: string) =>
     | { systemDoc: string; dialogue: ReadonlyArray<{ speaker: string; content: string }> }
     | undefined
+  // The Room Scope's operation index, read for each turn (workspace-capability-tools.ts).
+  readonly getOperationIndex?: (roomId: string, signal: AbortSignal) => Promise<string>
   readonly onEvalEvent?: import('../core/types/agent-eval.ts').OnEvalEvent
   // Per-room pack-activation resolver. When provided, the LLM tool surface
   // is filtered per eval to tools owned by packs active in the trigger
@@ -533,6 +535,7 @@ export const spawnAIAgent = async (
     getSkills: spawnOptions?.getSkills,
     ...(spawnOptions?.getActiveSkillsDeclarations ? { getActiveSkillsDeclarations: spawnOptions.getActiveSkillsDeclarations } : {}),
     getScriptContext: spawnOptions?.getScriptContext,
+    ...(spawnOptions?.getOperationIndex ? { getOperationIndex: spawnOptions.getOperationIndex } : {}),
     onEvalEvent: spawnOptions?.onEvalEvent,
     ...(spawnOptions?.resolveEffectiveModel ? { resolveEffectiveModel: spawnOptions.resolveEffectiveModel } : {}),
     ...(spawnOptions?.metricsSink ? { metricsSink: spawnOptions.metricsSink } : {}),

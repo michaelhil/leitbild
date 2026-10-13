@@ -90,6 +90,9 @@ export interface AIAgentOptions {
   readonly getScriptContext?: (roomId: string, agentName: string) =>
     | { systemDoc: string; dialogue: ReadonlyArray<{ speaker: string; content: string }> }
     | undefined
+  // The Room Scope's operation index (workspace-capability-tools.ts), read at
+  // the start of each turn of an Agent whose tools include workspace_call.
+  readonly getOperationIndex?: (roomId: string, signal: AbortSignal) => Promise<string>
   readonly onEvalEvent?: (scope: EvalEventScope, event: EvalEvent) => void
   // Per-call effective-model resolution. When provided, the agent calls this
   // before each LLM request to derive the actual model from the user's
@@ -197,6 +200,7 @@ export const createAIAgent = (
   const getSkills = options?.getSkills
   const getActiveSkillsDeclarations = options?.getActiveSkillsDeclarations
   const getScriptContext = options?.getScriptContext
+  const getOperationIndex = options?.getOperationIndex
   const onEvalEvent = options?.onEvalEvent
   const resolveEffective = options?.resolveEffectiveModel
 
@@ -237,7 +241,35 @@ export const createAIAgent = (
 
   // --- Context deps ---
 
-  const contextDeps = (effectiveModel: string, definitions: ReadonlyArray<ToolDefinition> | undefined, turnInstruction?: string): BuildContextDeps => ({
+  // The operation index each Room's latest turn read; the context preview shows it.
+  const operationIndexByRoom = new Map<string, string>()
+  // Only an Agent that can call workspace operations reads their index. The
+  // index spares discovery; the tools stay the authority. A turn whose index
+  // cannot be read runs without it and says so (a warning event): the Agent
+  // then finds operations with workspace_explore, as it did before the index.
+  const readOperationIndex = async (
+    roomId: string,
+    definitions: ReadonlyArray<ToolDefinition> | undefined,
+    signal: AbortSignal,
+    emit: (event: EvalEventCore) => void,
+  ): Promise<string | undefined> => {
+    operationIndexByRoom.delete(roomId)
+    if (getOperationIndex === undefined || !definitions?.some(definition => definition.function.name === 'workspace_call')) return undefined
+    try {
+      const index = await getOperationIndex(roomId, signal)
+      operationIndexByRoom.set(roomId, index)
+      return index
+    } catch (error) {
+      if (signal.aborted) throw error
+      // The catalogs throw a Host refusal as a failed ToolResult.
+      const reason = error instanceof Error ? error.message
+        : typeof error === 'object' && error !== null && 'error' in error ? String(error.error) : String(error)
+      emit({ kind: 'warning', message: `The operation index could not be read, so this turn finds operations with workspace_explore: ${reason}` })
+      return undefined
+    }
+  }
+
+  const contextDeps = (effectiveModel: string, definitions: ReadonlyArray<ToolDefinition> | undefined, turnInstruction?: string, operationIndex?: string): BuildContextDeps => ({
     agentId,
     persona: currentPersona,
     workspacePrompt: getWorkspacePrompt?.(),
@@ -259,6 +291,7 @@ export const createAIAgent = (
     modelForWarn: effectiveModel,
     metricsSink: options?.metricsSink,
     ...(turnInstruction === undefined ? {} : { turnInstruction }),
+    ...(operationIndex === undefined ? {} : { operationIndex }),
   })
   // buildContext walks five sources to assemble the LLM context. Order in
   // src/agents/context-builder.ts top header. Quick map of sources here so
@@ -494,11 +527,14 @@ export const createAIAgent = (
         } else if (!resolved.fallback) {
           lastFallbackTarget = null
         }
-        const info = await llmProvider.modelInfo?.(effectiveModel)
+        const effectiveToolDefs = effectiveToolsForRoom(triggerRoomId)
+        const [info, operationIndex] = await Promise.all([
+          llmProvider.modelInfo?.(effectiveModel),
+          readOperationIndex(triggerRoomId, effectiveToolDefs, abortController.signal, emit),
+        ])
         if (!cm.isEpochCurrent(epoch) || abortController.signal.aborted) return
         describedModel = { requested: effectiveModel, info: info ?? { id: effectiveModel, provider: 'unknown', contextMax: 0, source: 'unavailable' } }
-        const effectiveToolDefs = effectiveToolsForRoom(triggerRoomId)
-        const initialContext = buildContext(contextDeps(effectiveModel, effectiveToolDefs, requested?.instruction), triggerRoomId)
+        const initialContext = buildContext(contextDeps(effectiveModel, effectiveToolDefs, requested?.instruction, operationIndex), triggerRoomId)
         // Only prior replay uses the working target. During a tool turn, keep
         // complete new evidence and fit older history to actual known capacity.
         const toolTokens = estimateTokens(JSON.stringify(effectiveToolDefs ?? []))
@@ -721,7 +757,7 @@ export const createAIAgent = (
     },
     getContextPreview: (roomId: string) => {
       const defs = effectiveToolsForRoom(roomId)
-      const deps = contextDeps(currentModel, defs)
+      const deps = contextDeps(currentModel, defs, undefined, operationIndexByRoom.get(roomId))
       const sections = buildSystemSections(deps, roomId)
       const roomCtx = agentHistory.rooms.get(roomId)
       const previewSections = sections.map(s => ({
@@ -895,7 +931,9 @@ export const createAIAgent = (
         const effectiveModel = resolved.model
 
         const effectiveToolDefs = effectiveToolsForRoom(roomId)
-        const baseCtx = buildContext(contextDeps(effectiveModel, effectiveToolDefs), roomId)
+        const operationIndex = await readOperationIndex(roomId, effectiveToolDefs, abortController.signal, emit)
+        if (!cm.isEpochCurrent(epoch) || abortController.signal.aborted) return
+        const baseCtx = buildContext(contextDeps(effectiveModel, effectiveToolDefs, undefined, operationIndex), roomId)
         // Append the trigger prompt as a transient trailing user message.
         // Not in incoming, so flushIncoming has nothing to do; the prompt
         // never lands in room history.

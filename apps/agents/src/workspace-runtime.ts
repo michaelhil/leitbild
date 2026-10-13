@@ -61,6 +61,8 @@ import {
   createRecallTool,
   createQueryDocumentsTool,
   createWorkspaceCapabilityTools,
+  createWorkspaceCatalogs,
+  createWorkspaceOperationIndex,
 } from './tools/built-in/index.ts'
 import { createBiometricsTools, BIOMETRICS_PACK_NAMESPACE } from './tools/built-in/biometric-tools.ts'
 import { createWikiLookupTool } from './wikis/wiki-lookup.ts'
@@ -678,12 +680,18 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
 
     // Cross-Module interaction is Host-routed. Room Scope is the durable access
     // boundary; target Modules enforce their own current run restrictions.
+    // The operation index each Agent reads at a turn comes from the same
+    // catalogs, so it shares the tools' revalidated operation catalog.
+    let getOperationIndex: ((roomId: string, signal: AbortSignal) => Promise<string>) | undefined
     if (options.workspaceId !== undefined && options.workspaceHostUrl !== undefined) {
-      toolRegistry.registerAll(createWorkspaceCapabilityTools({
+      const workspaceAccess = {
         workspaceId: options.workspaceId,
         hostBaseUrl: options.workspaceHostUrl,
-        getRoomScope: roomId => rooms.getRoom(roomId)?.profile.scope,
-      }))
+        getRoomScope: (roomId: string) => rooms.getRoom(roomId)?.profile.scope,
+      }
+      const workspaceCatalogs = createWorkspaceCatalogs(workspaceAccess)
+      toolRegistry.registerAll(createWorkspaceCapabilityTools(workspaceAccess, workspaceCatalogs))
+      getOperationIndex = createWorkspaceOperationIndex(workspaceAccess, workspaceCatalogs)
     }
 
     // Biometrics tools — implementation lives in core (needs RoomDirectory + capture
@@ -850,6 +858,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
         ...(runToolOperation ? { runToolOperation } : {}),
         getSkills: getSkillsForRoom,
         getActiveSkillsDeclarations: getActiveSkillsDeclarationsForRoom,
+        ...(getOperationIndex ? { getOperationIndex } : {}),
         getScriptContext: (roomId, agentName) => scriptRunner.getScriptContextForAgent(roomId, agentName),
         // Pack-aware tool surface filter — the LLM only sees tools owned by
         // packs active in the trigger room. Returns the Room directly; the
