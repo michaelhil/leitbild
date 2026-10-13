@@ -116,12 +116,28 @@ export interface ToolTraceEntry {
   readonly target?: string
   readonly success: boolean
   readonly resultBytes?: number
-  readonly operationOutcomes?: ReadonlyArray<{
-    readonly key: string
-    readonly operationId: string
-    readonly success: boolean
-  }>
+  readonly operationOutcomes?: ReadonlyArray<ToolTraceOperation>
   readonly resultPreview: string   // <=200 chars (truncated result or error message)
+}
+
+/** A target a workspace operation went to, exactly as workspace_call accepts it. */
+export type WorkspaceOperationTarget =
+  | { readonly kind: 'resource'; readonly ref: import('@leitbild/contracts').WorkspaceResourceReference }
+  | { readonly kind: 'definition'; readonly ref: import('@leitbild/contracts').WorkspaceDefinitionRevisionReference }
+
+/** One operation a workspace_call issued (agents/working-set.ts traceOperations). */
+export interface ToolTraceOperation {
+  readonly key: string
+  readonly operationId: string
+  readonly success: boolean
+  // What a later turn reuses without rediscovering it, recorded where the
+  // call succeeded: the input keys it took, the exact target it went to,
+  // identifiers its input named or its result returned, and the id of a
+  // command the Module accepted. Historical: the Module refuses stale ones.
+  readonly inputKeys?: ReadonlyArray<string>
+  readonly target?: WorkspaceOperationTarget
+  readonly ids?: Readonly<Record<string, string>>
+  readonly commandId?: string
 }
 
 // === Profiles — what agents know about rooms and other agents ===

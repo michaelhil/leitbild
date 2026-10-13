@@ -26,6 +26,7 @@ import type { ChatRequest } from '../core/types/llm.ts'
 import type { IncludeContext, IncludePrompts } from '../core/types/agent.ts'
 import { SYSTEM_SENDER_ID } from '../core/types/constants.ts'
 import { imagePlaceholder, warnImageDroppedOnce } from '../llm/multimodal.ts'
+import { renderWorkingSet } from './working-set.ts'
 // Text tool protocol removed — all tools use native tool calling
 
 // === Flush info — describes which incoming messages were consumed ===
@@ -94,7 +95,10 @@ export const formatMessage = (
   if (msg.senderId === agentId) {
     const staleRef = compressedIds && msg.inReplyTo?.some(id => compressedIds.has(id))
     const suffix = staleRef ? '\n[↩ context compressed]' : ''
-    const evidence = msg.toolTrace?.length ? `\n[Prior work: conversation_read messageId="${msg.id}"; use its executionTurnId for actual tool outcomes when available. Model-request evidence is separate. Historical, not current state.]` : ''
+    // The turn's working set travels with its answer, so a later turn reuses
+    // its operations, target and ids instead of rediscovering them.
+    const workingSet = msg.toolTrace?.length ? renderWorkingSet(msg.toolTrace) : ''
+    const evidence = msg.toolTrace?.length ? `\n[Prior work: conversation_read messageId="${msg.id}"; use its executionTurnId for actual tool outcomes when available. Model-request evidence is separate. Historical, not current state.${workingSet === '' ? '' : `\n${workingSet}`}]` : ''
     return { role: 'assistant' as const, content: `${msg.content}${suffix}${imagePlaceholderText}${evidence}`, ...(imageInfo ?? {}) }
   }
   const name = msg.type === 'room_summary' ? 'Room Summary' : resolveName(msg.senderId)

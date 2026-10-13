@@ -19,6 +19,7 @@ import { parseViewFenceBody, viewRefFor, VIEW_FENCE_LANGUAGE } from '../core/ren
 import { embeddedViewContentSchema, type EmbeddedViewContent } from '@leitbild/contracts'
 import { answerViewIssues } from './answer-consistency.ts'
 import { collectTurnOperations, operationClaimIssues, type TurnOperation } from './operation-claims.ts'
+import { traceOperations } from './working-set.ts'
 import { workspaceCallResultForModel } from '../tools/built-in/workspace-capability-tools.ts'
 
 // Max times the eval loop will ask the LLM to fix an invalid map/geojson
@@ -522,18 +523,6 @@ export const evaluate = async (
       : (result.error ?? '')
     return raw.length > PREVIEW_MAX ? `${raw.slice(0, PREVIEW_MAX)}…` : raw
   }
-  const operationOutcomesFor = (tool: string, result: ToolResult): ToolTraceEntry['operationOutcomes'] => {
-    if (tool !== 'workspace_call' || !result.success || !result.data || typeof result.data !== 'object') return undefined
-    const results = (result.data as { results?: unknown }).results
-    if (!Array.isArray(results)) return undefined
-    const outcomes = results.flatMap(value => {
-      if (!value || typeof value !== 'object') return []
-      const raw = value as Record<string, unknown>
-      if (typeof raw.key !== 'string' || typeof raw.operationId !== 'string' || typeof raw.success !== 'boolean') return []
-      return [{ key: raw.key, operationId: raw.operationId, success: raw.success }]
-    })
-    return outcomes.length === 0 ? undefined : outcomes
-  }
   const traceArguments = (tool: string, value: Record<string, unknown>): Pick<ToolTraceEntry, 'argumentKeys' | 'argumentBytes' | 'operationIds' | 'target'> => {
     const serialized = JSON.stringify(value)
     const calls = Array.isArray(value.calls) ? value.calls.filter(call => call && typeof call === 'object') as ReadonlyArray<Record<string, unknown>> : []
@@ -637,7 +626,8 @@ export const evaluate = async (
           collectViewRefs(viewRefs, call.tool, result)
           collectViewContents(viewContents, call.tool, result)
           collectTurnOperations(turnOperations, call.tool, call.arguments, result)
-          const operationOutcomes = operationOutcomesFor(call.tool, result)
+          // Each operation's outcome, with what a later turn reuses (working-set.ts).
+          const operationOutcomes = traceOperations(call.tool, call.arguments, result)
           const traceSuccess = result.success && (operationOutcomes?.every(outcome => outcome.success) ?? true)
           onEvent?.({ kind: 'tool_result', tool: call.tool, callId: call.callId ?? String(i), success: traceSuccess, preview: traceSuccess ? undefined : result.error ?? 'One or more requested operations failed' })
           const serializedResult = formatToolResult(call.tool, result)

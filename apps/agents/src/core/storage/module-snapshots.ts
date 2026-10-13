@@ -1,7 +1,7 @@
 import { mkdir, rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
-import { workspaceRoomScopeSchema } from '@leitbild/contracts'
+import { workspaceDefinitionRevisionReferenceSchema, workspaceResourceReferenceSchema, workspaceRoomScopeSchema } from '@leitbild/contracts'
 import type { Agent, AIAgentConfig } from '../types/agent.ts'
 import type { DeliveryMode, Message, RoomProfile } from '../types/messaging.ts'
 import type { GenerationQueryRecord, Room } from '../types/room.ts'
@@ -184,6 +184,13 @@ const messageSchema = z.object({
       key: z.string(),
       operationId: z.string(),
       success: z.boolean(),
+      inputKeys: z.array(z.string()).max(16).optional(),
+      target: z.discriminatedUnion('kind', [
+        z.object({ kind: z.literal('resource'), ref: workspaceResourceReferenceSchema }).strict(),
+        z.object({ kind: z.literal('definition'), ref: workspaceDefinitionRevisionReferenceSchema }).strict(),
+      ]).optional(),
+      ids: z.record(z.string(), z.string().max(128)).optional(),
+      commandId: z.string().optional(),
     }).strict()).optional(),
     resultPreview: z.string(),
   }).strict()).optional(),

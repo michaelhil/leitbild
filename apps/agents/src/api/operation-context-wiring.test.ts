@@ -2,7 +2,8 @@
 // Integration test: what an Agent knows of Workspace operations at the start
 // of a turn crosses Workspace Host → workspace runtime → agent → model
 // request. The Room Scope's operation index reaches the cacheable system
-// prompt, revalidated by the catalog's ETag at every turn.
+// prompt, revalidated by the catalog's ETag at every turn; what one turn's
+// workspace calls established reaches the next turn inline with its answer.
 // ============================================================================
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
@@ -30,7 +31,7 @@ describe('operation context wiring', () => {
     delete process.env.LEITBILD_HOME
   })
 
-  test('each turn reads the Room Scope\'s operation index into its cacheable system prompt', async () => {
+  test('a turn reads the operation index, and the next turn the working set of the answer before it', async () => {
     const workspaceId = newWorkspaceId()
     const run = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-1' })
     const operation = (id: string, title: string, risk: 'read' | 'write') => ({
@@ -53,6 +54,9 @@ describe('operation context wiring', () => {
           { ref: run, title: 'Halden', capabilityIds: [START, STEP_READ], links: [], summary: [], observedAt: new Date().toISOString() },
         ] })
         if (path.endsWith('/definitions')) return Response.json({ workspaceId, modules: [{ moduleId: 'world', status: 'ready' }], definitions: [] })
+        if (path.endsWith(`/capabilities/${START}/invoke`)) return Response.json({ result: {
+          ok: true, commandId: 'command:start-1', acceptedAt: 'x', pinned: { runId: 'procedure-run:1', sourceId: 'westinghouse' }, next: { sequence: 7 },
+        } })
         return Response.json({ error: { code: 'not_found', message: path } }, { status: 404 })
       },
     })
@@ -62,6 +66,13 @@ describe('operation context wiring', () => {
         ...makeStubGateway(),
         stream: async function* (request: ChatRequest): AsyncIterable<StreamChunk> {
           requests.push(structuredClone(request))
+          if (requests.length === 1) {
+            // Turn 1 starts E-0 without naming the target: the one Run in scope.
+            yield { delta: '', done: true, finishReason: 'tool_calls', tokensUsed: { prompt: 1, completion: 1 }, toolCalls: [{ id: 'c1', function: { name: 'workspace_call', arguments: {
+              calls: [{ key: 'start', operationId: START, input: { procedureId: 'E-0', scope: { plantId: 'plant:halden-2', label: 'Halden Unit 2' } } }],
+            } } }] }
+            return
+          }
           yield { delta: 'Holding.', done: false }
           yield { delta: '', done: true, finishReason: 'stop', tokensUsed: { prompt: 1, completion: 1 } }
         },
@@ -79,7 +90,8 @@ describe('operation context wiring', () => {
         await assistant.whenIdle()
       }
 
-      expect(requests).toHaveLength(2)
+      // Turn 1: the start and its answer; turn 2: one request.
+      expect(requests).toHaveLength(3)
       const index = [
         'Resource world.simulation-run:',
         `- ${START} [write]`,
@@ -90,9 +102,16 @@ describe('operation context wiring', () => {
         expect(stable).toContain('<leitbild:operations>')
         expect(stable).toContain(`${index}\n</leitbild:operations>`)
       }
-      // Identical bytes on both turns: the second read was a revalidation.
-      expect(requests[1]!.systemBlocks).toEqual(requests[0]!.systemBlocks)
-      expect(catalogRequests).toEqual([{ ifNoneMatch: null }, { ifNoneMatch: '"catalog-1"' }])
+      // Identical bytes on both turns: each later read was a revalidation.
+      expect(requests[2]!.systemBlocks).toEqual(requests[0]!.systemBlocks)
+      expect(catalogRequests[0]).toEqual({ ifNoneMatch: null })
+      expect(catalogRequests.slice(1).every(entry => entry.ifNoneMatch === '"catalog-1"')).toBe(true)
+
+      // Turn 2 replays turn 1's answer with what its call established.
+      const answer = requests[2]!.messages.find(message => message.role === 'assistant')!.content
+      expect(answer).toContain(`- operations: ${START} {procedureId, scope}`)
+      expect(answer).toContain(`- target: ${JSON.stringify({ kind: 'resource', ref: run })}`)
+      expect(answer).toContain('- ids: procedureId E-0; plantId plant:halden-2; runId procedure-run:1; sourceId westinghouse')
     } finally {
       host.stop(true)
     }

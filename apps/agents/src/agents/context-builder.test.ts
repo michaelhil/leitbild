@@ -190,6 +190,31 @@ describe('operation index', () => {
   })
 })
 
+describe('prior work', () => {
+  const answer = (toolTrace: Message['toolTrace']): Message => ({
+    id: 'answer-1', roomId: 'room-1', senderId: 'agent-1', content: 'Holding at step 2.', type: 'chat', timestamp: 1, ...(toolTrace ? { toolTrace } : {}),
+  })
+  const replay = (message: Message): string => buildContext(mkDeps({ history: mkHistory('room-1', 'General', undefined, [message]) }), 'room-1').messages[0]!.content
+
+  test('an answer carries its turn\'s working set inline, with the pointer to its exact evidence', () => {
+    const content = replay(answer([{
+      tool: 'workspace_call', argumentKeys: ['calls'], argumentBytes: 80, success: true, resultPreview: '',
+      operationOutcomes: [{ key: 'step', operationId: 'world.procedure.run.step.read', success: true, inputKeys: [], ids: { runId: 'procedure-run:1', plantId: 'plant:halden-2' } }],
+    }]))
+    expect(content.startsWith('Holding at step 2.\n[Prior work: conversation_read messageId="answer-1";')).toBe(true)
+    expect(content).toContain('Working set, reusable without rediscovery')
+    expect(content).toContain('- operations: world.procedure.run.step.read {}')
+    expect(content).toContain('- ids: runId procedure-run:1; plantId plant:halden-2')
+    expect(content.endsWith(']')).toBe(true)
+  })
+
+  test('an answer whose turn called no workspace operation keeps only the pointer', () => {
+    expect(replay(answer([{ tool: 'product_search', argumentKeys: ['query'], argumentBytes: 9, success: true, resultPreview: '' }])))
+      .toBe('Holding at step 2.\n[Prior work: conversation_read messageId="answer-1"; use its executionTurnId for actual tool outcomes when available. Model-request evidence is separate. Historical, not current state.]')
+    expect(replay(answer(undefined))).toBe('Holding at step 2.')
+  })
+})
+
 describe('context-builder skills + context-data toggles', () => {
   test('skills section appears by default when getSkills returns text', () => {
     const result = buildContext(mkDeps({

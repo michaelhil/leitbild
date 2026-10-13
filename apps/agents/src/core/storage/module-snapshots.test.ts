@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { newWorkspaceId } from '@leitbild/contracts'
+import { newWorkspaceId, workspaceResourceReferenceSchema } from '@leitbild/contracts'
 import { createTeam } from '../../agents/team.ts'
 import { createRoomDirectory } from '../rooms/directory.ts'
 import { workspaceModulePaths } from '../paths.ts'
@@ -271,6 +271,34 @@ describe('Workspace Module snapshots', () => {
       const roomsOnly = await loadWorkspaceModuleSnapshots(paths)
       expect(roomsOnly.rooms?.rooms).toHaveLength(1)
       expect(roomsOnly.agents).toBeNull()
+    } finally {
+      if (priorHome === undefined) delete process.env.LEITBILD_HOME
+      else process.env.LEITBILD_HOME = priorHome
+    }
+  })
+
+  test('an answer\'s working set round-trips with its tool trace', async () => {
+    temporaryRoot = await mkdtemp(join(tmpdir(), 'module-snapshots-working-set-'))
+    const priorHome = process.env.LEITBILD_HOME
+    process.env.LEITBILD_HOME = temporaryRoot
+    try {
+      const workspaceId = newWorkspaceId()
+      const paths = workspaceModulePaths(workspaceId)
+      const source = runtime()
+      const room = source.rooms.createRoom({ name: 'Procedures', createdBy: 'human-1' })
+      const toolTrace = [{
+        tool: 'workspace_call', argumentKeys: ['calls'], argumentBytes: 120, operationIds: ['world.procedure.run.start'], success: true, resultBytes: 900,
+        operationOutcomes: [{
+          key: 'start', operationId: 'world.procedure.run.start', success: true, inputKeys: ['procedureId', 'scope'],
+          target: { kind: 'resource' as const, ref: workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-1' }) },
+          ids: { plantId: 'plant:halden-2', runId: 'procedure-run:1' }, commandId: 'command:s1',
+        }],
+        resultPreview: '{}',
+      }]
+      room.post({ senderId: 'agent-1', content: 'Started E-0.', type: 'chat', toolTrace })
+      await saveWorkspaceModuleSnapshots(serializeModuleSnapshots(source), paths)
+      const loaded = await loadWorkspaceModuleSnapshots(paths)
+      expect(loaded.rooms?.rooms[0]?.messages[0]?.toolTrace).toEqual(toolTrace)
     } finally {
       if (priorHome === undefined) delete process.env.LEITBILD_HOME
       else process.env.LEITBILD_HOME = priorHome
