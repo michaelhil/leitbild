@@ -352,6 +352,11 @@ pub trait Secondary<P> {
         x: Coordinates<'_>,
         out: &mut [f64],
     ) -> Result<(), Failure>;
+    /// The crossing direction each root function reports in the owner's
+    /// current state, root order (stock IDASetRootDirection: +1 rising
+    /// only, -1 falling only, 0 both). Read at every restart, after the
+    /// transactions.
+    fn root_directions(&self, out: &mut [i32]) -> Result<(), Failure>;
     /// The discrete transaction at located roots (`directions` per root
     /// function as IDAGetRootInfo). `y` holds own physical coordinates and
     /// may be changed only by conserving transactions.

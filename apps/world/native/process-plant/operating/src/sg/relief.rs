@@ -23,6 +23,14 @@
 //! target zero: ascending below crack, entered at a crack fall or a reseat).
 //! A disarmed root never crosses, so the memory cannot chatter at either
 //! switch, and an opening disc passing the seat lift is no event.
+//!
+//! An armed root reports only the crossing direction the memory acts on
+//! ([`Characteristic::direction`], stock IDASetRootDirection): crack rising
+//! for a seated or closing disc and falling for a lifted ascending one, full
+//! lift rising, reseat and seat falling. The threshold just crossed is thus
+//! disarmed in the direction it was crossed: a restart's consistent start
+//! that moves the algebraic pressure back across it (a few pascals) is no
+//! second event.
 use crate::thermal::Scalar;
 use serde::Serialize;
 
@@ -172,6 +180,26 @@ impl Characteristic {
             (Branch::Ascending, true) => &[Threshold::Crack, Threshold::FullLift, Threshold::Seat],
             (Branch::Ascending, false) => &[Threshold::Crack, Threshold::FullLift],
             (Branch::Descending, _) => &[Threshold::Reseat],
+        }
+    }
+
+    /// The one crossing direction an armed root reports, for stock
+    /// IDASetRootDirection (+1 rising only, -1 falling only): the direction
+    /// [`Self::transition`] acts on. The other direction is no event: crack
+    /// rising on a lifted ascending disc changes nothing, crack falling on a
+    /// seated or closing disc contradicts the memory, and either occurs only
+    /// when a restart's consistent start moves the algebraic pressure back
+    /// across the threshold just crossed. A disarmed root is constant and
+    /// reports none (0).
+    pub fn direction(valve: Valve, threshold: Threshold) -> i32 {
+        if !Self::armed(valve).contains(&threshold) {
+            return 0;
+        }
+        match threshold {
+            Threshold::Crack if valve.seated || valve.closing => 1,
+            Threshold::Crack => -1,
+            Threshold::FullLift => 1,
+            Threshold::Reseat | Threshold::Seat => -1,
         }
     }
 

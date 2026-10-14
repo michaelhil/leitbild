@@ -751,6 +751,7 @@ mod integrated {
         ida.reinitialize(t, y, &yp)?;
         ida.set_differential(&ids)?;
         restart.configure(ida)?;
+        root_directions(ida)?;
         Ok(Restarted {
             transactions: done,
             placements,
@@ -759,6 +760,33 @@ mod integrated {
             yp,
             report,
         })
+    }
+
+    /// Stock IDASetRootDirection from the owners' current state
+    /// ([`Joined::root_directions`]): each armed relief threshold reports
+    /// only the crossing its memory acts on, so a threshold just crossed is
+    /// not crossed again by the restart's own consistent start. Roots a
+    /// wrapper declares after the operator's (an observation root) report
+    /// both directions. [`discrete_restart`] applies it at every restart; a
+    /// segment start after construction may apply it too.
+    pub fn root_directions<S: JoinedSystem>(ida: &mut Ida<S>) -> Result<(), String> {
+        let mut directions =
+            ida.system()
+                .integrated()
+                .joined
+                .root_directions()
+                .map_err(|f| match f {
+                    network::Failure::Recoverable(r) | network::Failure::Fatal(r) => r,
+                })?;
+        let declared = ida.system().root_count();
+        if declared < directions.len() {
+            return Err("the system declares fewer roots than its operator".into());
+        }
+        if declared == 0 {
+            return Ok(());
+        }
+        directions.resize(declared, 0);
+        ida.set_root_directions(&directions)
     }
 
     /// A stock-IDA system whose residual is one [`Integrated`] joined

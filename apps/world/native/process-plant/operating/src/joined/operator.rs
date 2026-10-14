@@ -675,6 +675,19 @@ impl<P: Properties + WaterProperties> Joined<P> {
             + self.rods().map_or(0, |b| b.root_count())
             + self.pzr().map_or(0, |b| b.root_count())
     }
+    /// The crossing direction each root function reports at the owners'
+    /// current state, in [`Self::roots`]' order (stock
+    /// IDASetRootDirection): the secondary owner's (each armed relief
+    /// threshold only the crossing its memory acts on), then both (0) for
+    /// the rods' and the PZR relief's.
+    pub fn root_directions(&self) -> Result<Vec<i32>, Failure> {
+        let mut out = vec![0; self.root_count()];
+        if let Some(b) = self.secondary() {
+            let ns = b.root_count();
+            b.root_directions(&mut out[..ns])?;
+        }
+        Ok(out)
+    }
     /// The PZR block's physical coordinates and the roof pressure of `y`.
     fn pzr_state(&self, y: &[f64]) -> (Vec<f64>, f64) {
         let o = self.blocks.offsets;

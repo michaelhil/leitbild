@@ -719,6 +719,28 @@ impl<P: Properties> Secondary<P> for Secondaries {
         Ok(())
     }
 
+    /// Each armed relief threshold reports only the crossing its valve's
+    /// memory acts on ([`Characteristic::direction`]); the crown and pickup
+    /// guards report both (either crossing is a domain exit).
+    fn root_directions(&self, out: &mut [i32]) -> Result<(), Failure> {
+        if out.len() != Secondary::<P>::root_count(self) {
+            return Err(fatal("secondary root direction layout"));
+        }
+        let mut i = 0;
+        for (k, g) in self.sgs.iter().enumerate() {
+            for j in 0..g.valves.len() {
+                for threshold in THRESHOLDS {
+                    out[i] = Characteristic::direction(self.valves[k][j], threshold);
+                    i += 1;
+                }
+            }
+            out[i] = 0;
+            out[i + 1] = 0;
+            i += 2;
+        }
+        Ok(())
+    }
+
     fn transact(
         &mut self,
         _props: &P,

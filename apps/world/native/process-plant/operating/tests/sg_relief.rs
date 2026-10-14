@@ -195,3 +195,41 @@ fn the_selection_is_refused_out_of_order() {
     assert!(Characteristic::new(6.8e6, 7.0e6, 6.6e6, 0.1, 1.).is_err());
     assert!(Characteristic::new(6.8e6, 7.0e6, 6.6e6, 0.1, 0.).is_err());
 }
+
+/// Each armed root reports only the crossing its valve's memory acts on
+/// (stock IDASetRootDirection): every reported crossing changes the valve,
+/// and the other direction is a no-op or a refusal. The threshold just
+/// crossed is thereby disarmed in the direction it was crossed, so a
+/// restart's consistent start that moves the pressure back across it is no
+/// second event (RESTART's duplicate crack roots).
+#[test]
+fn an_armed_root_reports_only_the_crossing_its_memory_acts_on() {
+    let c = valve();
+    use Threshold::*;
+    for v in [SEATED, LIFTED_UP, CLOSING, LIFTED_DOWN] {
+        for t in [Crack, FullLift, Reseat, Seat] {
+            let d = Characteristic::direction(v, t);
+            assert_eq!(d != 0, Characteristic::armed(v).contains(&t), "{v:?} {t:?}");
+            if d == 0 {
+                continue;
+            }
+            assert!(d == 1 || d == -1);
+            // Above the seat lift a close is a closing disc; the seat itself
+            // is located at the seat lift.
+            let lift = if t == Seat { c.seat_lift } else { 0.3 };
+            let x = c.transition(v, t, d, lift).unwrap();
+            assert_ne!(x.after, v, "{v:?} {t:?} {d} must change the valve");
+            if let Ok(other) = c.transition(v, t, -d, lift) {
+                assert_eq!(other.after, v, "{v:?} {t:?} {}: no event", -d);
+            }
+        }
+    }
+    let opened = c.transition(SEATED, Crack, 1, 0.).unwrap().after;
+    assert_eq!(opened, LIFTED_UP);
+    assert_eq!(Characteristic::direction(opened, Crack), -1);
+    let closing = c.transition(LIFTED_UP, Crack, -1, 0.3).unwrap().after;
+    assert_eq!(closing, CLOSING);
+    assert_eq!(Characteristic::direction(closing, Crack), 1);
+    assert_eq!(Characteristic::direction(closing, Seat), -1);
+    assert_eq!(Characteristic::direction(LIFTED_DOWN, Crack), 0);
+}
