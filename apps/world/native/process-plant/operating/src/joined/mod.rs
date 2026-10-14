@@ -20,6 +20,7 @@ pub mod nuclear;
 pub mod operator;
 pub mod packet;
 pub mod post_trip_domain;
+pub mod presence;
 pub mod pzr;
 pub mod solids;
 
