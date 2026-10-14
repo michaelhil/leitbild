@@ -121,6 +121,28 @@ int operating_ida_advance(OperatingIDA *o,double target,double *time,double *y,d
     }
     return code;
 }
+/* S3 hook (IC-PROT, for KERN): stock IDA_ONE_STEP, one internal step per
+   call toward target, so the frame driver reads every accepted step's dense
+   output without IDASolve calls at the observation rate (S3-D1.6). */
+int operating_ida_step(OperatingIDA *o,double target,double *time,double *y,double *yp) {
+    int code=IDASolve(o->ida,target,&o->time,o->y,o->yp,IDA_ONE_STEP);
+    *time=o->time;
+    if (code>=0) {
+        memcpy(y,N_VGetArrayPointer(o->y),N_VGetLength(o->y)*sizeof(double));
+        memcpy(yp,N_VGetArrayPointer(o->yp),N_VGetLength(o->yp)*sizeof(double));
+    }
+    return code;
+}
+/* S3 hook (IC-PROT, for KERN): stock IDAGetDky, the k-th derivative at t of
+   the last step's interpolating polynomial, into independent scratch. */
+int operating_ida_dky(OperatingIDA *o,double t,int k,double *out) {
+    N_Vector v=N_VClone(o->y);
+    if (!v) return IDA_MEM_FAIL;
+    int code=IDAGetDky(o->ida,t,k,v);
+    if (code>=0) memcpy(out,N_VGetArrayPointer(v),N_VGetLength(v)*sizeof(double));
+    N_VDestroy(v);
+    return code;
+}
 int operating_ida_stop_at(OperatingIDA *o,double target) { return IDASetStopTime(o->ida,target); }
 int operating_ida_nonnegative(OperatingIDA *o,const double *flags) {
     if (!flags) return IDASetConstraints(o->ida,NULL);
