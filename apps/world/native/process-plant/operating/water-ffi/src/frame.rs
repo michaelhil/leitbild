@@ -277,7 +277,25 @@ pub struct Driver<S> {
     pub cpu: Cpu,
     /// One record per stop or restart instant.
     pub log: Vec<Value>,
+    /// Stock counters summed over closed segments (IDAReInit restarts
+    /// them): steps, residuals, Jacobians, nonlinear iterations, error and
+    /// convergence failures, linear setups, root evaluations.
+    pub totals: [i64; 8],
+    /// The segments' counters in order, one per restart and the last.
+    pub segments: Vec<Value>,
 }
+
+/// Names of [`Driver::totals`].
+pub const COUNTER_NAMES: [&str; 8] = [
+    "steps",
+    "residuals",
+    "jacobians",
+    "nonlinear_iterations",
+    "error_failures",
+    "convergence_failures",
+    "linear_setups",
+    "root_evaluations",
+];
 
 /// Why `Driver::run` returned.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -308,6 +326,8 @@ impl<S: JoinedSystem> Driver<S> {
             counts: Counts::default(),
             cpu: Cpu::default(),
             log: Vec::new(),
+            totals: [0; 8],
+            segments: Vec::new(),
         })
     }
     pub fn frame(&self) -> Frame {
@@ -377,6 +397,33 @@ impl<S: JoinedSystem> Driver<S> {
     }
     fn earliest_due(&self) -> Option<f64> {
         self.pending.first().map(|c| c.due_s)
+    }
+
+    /// Add the open segment's stock counters (ending at `t`) to the totals.
+    /// Call once more after the last `run` to close the final segment.
+    pub fn close_segment(&mut self, ida: &Ida<S>, t: f64) -> Result<(), String> {
+        let s = ida.stats()?;
+        let c = [
+            s.steps,
+            s.residuals,
+            s.jacobians,
+            s.nonlinear_iterations,
+            s.error_failures,
+            s.convergence_failures,
+            s.linear_setups,
+            s.root_evaluations,
+        ];
+        for (a, b) in self.totals.iter_mut().zip(c) {
+            *a += b;
+        }
+        let named: serde_json::Map<String, Value> = COUNTER_NAMES
+            .iter()
+            .zip(c)
+            .map(|(k, v)| (k.to_string(), json!(v)))
+            .collect();
+        self.segments
+            .push(json!({"to_s": t, "counts": named, "last_step_s": s.last_step}));
+        Ok(())
     }
 
     /// Process the frame at the segment start `t` if it lies exactly there
@@ -592,6 +639,7 @@ impl<S: JoinedSystem> Driver<S> {
         yp: &mut [f64],
         setup: &Setup<'_>,
     ) -> Result<(Restarted, Vec<Transaction>), String> {
+        self.close_segment(ida, t)?;
         let started = (self.clock)();
         let mut before: Vec<Transaction> = Vec::new();
         let (early, last) = match (roots, commands.split_last()) {
