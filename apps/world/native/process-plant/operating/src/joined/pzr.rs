@@ -20,8 +20,16 @@
 //! G6 with P4 (S2 design choices, 11 October): the steel is prepared at the
 //! composed cell's `Tsat(p_s)`, and the heater demand is the metal's
 //! exterior loss (shell bands and both heads) at that temperature, computed
-//! once and held constant. It stands in for the pressure controller's
-//! steady output, which belongs to S3; control laws are S3.
+//! once. Without a controller it is held constant (S2).
+//!
+//! S3 (IC-CTRL): the normal pressure controller (`control::pzr_pressure`)
+//! replaces the demand at frame instants through [`Pzr::apply_control`],
+//! a held-input change between solver segments that the frame driver
+//! classifies (S3-D1: class S under the smallness criterion, else R). The
+//! banks take the request by the equipment's continuous split. The S2
+//! network composes no controlled-spray material path (the spray port's
+//! receipt is the network's zero), so a nonzero spray demand refuses here
+//! instead of being dropped.
 //!
 //! The relief is the independent device unchanged from its owner: demand
 //! by root on raw PT1 (at the roof, so the roof pressure), finite lift
@@ -167,12 +175,23 @@ pub struct Ledger {
     pub exterior_w: f64,
 }
 
+/// What one control frame put in force, for its receipt.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ControlApplied {
+    pub t_s: f64,
+    pub request_before_w: f64,
+    pub request_after_w: f64,
+    pub banks_before_w: Vec<f64>,
+    pub banks_after_w: Vec<f64>,
+}
+
 /// The joined PZR block.
 pub struct Pzr {
     heaters: Heaters,
     walls: Walls,
     relief: Option<Relief>,
-    /// P4's constant heater demand (W) and each bank's delivered power.
+    /// The heater demand in force (W; P4's until a control frame) and each
+    /// bank's delivered power.
     request_w: f64,
     bank_power_w: Vec<f64>,
     /// `Tsat(p_s)` of the composed cell: the prepared steel temperature.
@@ -320,9 +339,39 @@ impl Pzr {
     pub fn relief(&self) -> Option<Relief> {
         self.relief
     }
-    /// P4's constant heater demand, W.
+    /// The heater demand in force, W: P4's prepared demand until a
+    /// controller frame replaces it.
     pub fn request_w(&self) -> f64 {
         self.request_w
+    }
+    /// Put a normal-control frame's demands in force (S3, IC-CTRL): the
+    /// heater request by the banks' continuous split
+    /// (`Heaters::bank_powers`, which rejects a request outside its range).
+    /// The spray demand must be zero: no controlled-spray path is composed.
+    /// Changes no coordinate; the caller owns the solver consequence (stop
+    /// and continue or restart).
+    pub fn apply_control(
+        &mut self,
+        t: f64,
+        demand: &crate::control::pzr_pressure::Demand,
+    ) -> Result<ControlApplied, Failure> {
+        if demand.spray_target != 0. {
+            return Err(fatal(format!(
+                "controlled-spray demand {} at {t} s, but no controlled-spray material path is composed",
+                demand.spray_target
+            )));
+        }
+        let bank_power_w = self.heaters.bank_powers(demand.heater_request_w)?;
+        let applied = ControlApplied {
+            t_s: t,
+            request_before_w: self.request_w,
+            request_after_w: demand.heater_request_w,
+            banks_before_w: self.bank_power_w.clone(),
+            banks_after_w: bank_power_w.clone(),
+        };
+        self.request_w = demand.heater_request_w;
+        self.bank_power_w = bank_power_w;
+        Ok(applied)
     }
     pub fn bank_power_w(&self) -> &[f64] {
         &self.bank_power_w
@@ -475,13 +524,14 @@ impl Pzr {
                 "stateChanged":event.before != event.after}),
         })
     }
-    /// The heater demand stays P4's constant and the relief answers its own
-    /// demand: a command changes nothing here.
+    /// The heater demand changes only at control frames
+    /// ([`Pzr::apply_control`]) and the relief answers its own demand: a
+    /// command changes nothing here.
     pub fn command(&self, t: f64, command: super::block::Command) -> Transaction {
         Transaction {
             deposits: Vec::new(),
             receipt: json!({"owner":"pzr","t_s":t,"command":command,
-                "heaterDemand_W":self.request_w,"note":"constant heater demand (P4); control laws are S3"}),
+                "heaterDemand_W":self.request_w,"note":"heater demand in force; it changes only at control frames"}),
         }
     }
 }
