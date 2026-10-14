@@ -1,0 +1,232 @@
+//! spec: world/packs/process-plant/reference-designs/ld-01/safety/reactor-trip-and-hold.md#protection-divisions-and-request-ownership
+//! spec: world/packs/process-plant/reference-designs/ld-01/safety/steam-generator-protection.md#qualification-and-latching
+//! spec: world/packs/process-plant/reference-designs/ld-01/safety/source-and-primary-protection.md#retention-unavailable-control-and-return-to-service
+//! One powered division processor: its own channel standing (first
+//! acquisition, loss, one-period recovery), its own continuous
+//! qualification timers in decision frames, and its latched named causes.
+//! A division with an accepted reactor-trip cause latches its trip state
+//! (initiating function and time) and requests its permissive contact
+//! open. Latches are retained through power loss; an unpowered division
+//! evaluates nothing, accrues no duration and makes no record.
+use serde_json::{Value, json};
+use std::collections::BTreeMap;
+
+/// Continuous qualification in decision frames: the duration starts at
+/// zero at the first frame the condition holds and resets when it does not.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Timer {
+    since: Option<u64>,
+}
+impl Timer {
+    /// Whether the condition, true at frame `k`, has now held for `frames`.
+    pub fn qualify(&mut self, k: u64, condition: bool, frames: u64) -> bool {
+        if !condition {
+            self.since = None;
+            return false;
+        }
+        let since = *self.since.get_or_insert(k);
+        k - since >= frames
+    }
+    pub fn clear(&mut self) {
+        self.since = None;
+    }
+    pub fn since(&self) -> Option<u64> {
+        self.since
+    }
+}
+
+/// A channel's standing in one division.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Standing {
+    /// No delivery yet: the original healthy first acquisition joins at
+    /// once (it is not recovery from lost evidence).
+    Never,
+    Qualified,
+    /// Previously established evidence lost.
+    Lost,
+    /// Usable again since this frame, not yet for the recovery duration.
+    Recovering(u64),
+}
+impl Standing {
+    /// Advance at decision frame `k` from the channel's raw usability;
+    /// returns whether it may vote now.
+    pub fn update(&mut self, k: u64, usable: bool, recovery_frames: u64) -> bool {
+        *self = match (*self, usable) {
+            (Standing::Never, true) | (Standing::Qualified, true) => Standing::Qualified,
+            (Standing::Never, false) => Standing::Never,
+            (_, false) => Standing::Lost,
+            (Standing::Lost, true) if recovery_frames == 0 => Standing::Qualified,
+            (Standing::Lost, true) => Standing::Recovering(k),
+            (Standing::Recovering(since), true) if k - since >= recovery_frames => {
+                Standing::Qualified
+            }
+            (Standing::Recovering(since), true) => Standing::Recovering(since),
+        };
+        *self == Standing::Qualified
+    }
+}
+
+/// An accepted, latched cause.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Cause {
+    pub function: String,
+    pub frame: u64,
+    pub at_s: f64,
+}
+
+#[derive(Clone, Debug)]
+pub struct Division {
+    pub supply: String,
+    pub powered: bool,
+    pub timers: BTreeMap<String, Timer>,
+    pub standing: BTreeMap<String, Standing>,
+    pub causes: Vec<Cause>,
+    /// The division trip latch: its initiating cause.
+    pub trip: Option<Cause>,
+    /// Outgoing requests recorded at acceptance (PRHR, CMT injection,
+    /// heater isolation): requests only, no actuation in S3.
+    pub requests: Vec<Value>,
+}
+impl Division {
+    pub fn new(supply: &str) -> Self {
+        Self {
+            supply: supply.into(),
+            powered: true,
+            timers: BTreeMap::new(),
+            standing: BTreeMap::new(),
+            causes: Vec::new(),
+            trip: None,
+            requests: Vec::new(),
+        }
+    }
+    pub fn latched(&self, function: &str) -> bool {
+        self.causes.iter().any(|c| c.function == function)
+    }
+    /// Power loss: no evaluation, no accrued duration, evidence lost (a
+    /// restored division requalifies its channels); latches are retained.
+    pub fn set_powered(&mut self, powered: bool) {
+        if self.powered && !powered {
+            for t in self.timers.values_mut() {
+                t.clear();
+            }
+            for s in self.standing.values_mut() {
+                if *s != Standing::Never {
+                    *s = Standing::Lost;
+                }
+            }
+        }
+        self.powered = powered;
+    }
+    /// The channel's standing at frame `k`: whether it may vote.
+    pub fn usable(&mut self, channel: &str, k: u64, raw: bool, recovery_frames: u64) -> bool {
+        self.standing
+            .entry(channel.into())
+            .or_insert(Standing::Never)
+            .update(k, raw, recovery_frames)
+    }
+    pub fn qualify(&mut self, function: &str, k: u64, condition: bool, frames: u64) -> bool {
+        self.timers
+            .entry(function.into())
+            .or_default()
+            .qualify(k, condition, frames)
+    }
+    /// Latch a newly qualified cause (once per function) with its selected
+    /// requests; a reactor-trip cause latches the division trip and
+    /// records the PRHR request of every accepted reactor-trip initiation.
+    pub fn accept(
+        &mut self,
+        function: &str,
+        k: u64,
+        at_s: f64,
+        reactor_trip: bool,
+        cmt_injection: bool,
+        heater_isolation: bool,
+    ) -> bool {
+        if self.latched(function) {
+            return false;
+        }
+        let cause = Cause {
+            function: function.into(),
+            frame: k,
+            at_s,
+        };
+        self.causes.push(cause.clone());
+        if reactor_trip {
+            if self.trip.is_none() {
+                self.trip = Some(cause);
+            }
+            self.requests
+                .push(json!({"request": "PRHR", "by": function, "t_s": at_s}));
+        }
+        if cmt_injection {
+            self.requests
+                .push(json!({"request": "CMT injection", "by": function, "t_s": at_s}));
+        }
+        if heater_isolation {
+            self.requests
+                .push(json!({"request": "heater isolation", "by": function, "t_s": at_s}));
+        }
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn qualification_counts_whole_frames_and_resets_on_interruption() {
+        let mut t = Timer::default();
+        // 0.5 s on the 0.1 s frame: true at frames 10..=15 qualifies at 15.
+        for k in 10..15 {
+            assert!(!t.qualify(k, true, 5));
+        }
+        assert!(t.qualify(15, true, 5));
+        let mut t = Timer::default();
+        for k in 10..14 {
+            assert!(!t.qualify(k, true, 5));
+        }
+        assert!(!t.qualify(14, false, 5), "an interruption resets");
+        for k in 15..20 {
+            assert!(!t.qualify(k, true, 5));
+        }
+        assert!(t.qualify(20, true, 5));
+        // No selected duration: the first true decision qualifies.
+        assert!(Timer::default().qualify(3, true, 0));
+    }
+
+    #[test]
+    fn first_acquisition_joins_and_lost_evidence_requalifies() {
+        let mut s = Standing::Never;
+        assert!(!s.update(1, false, 10));
+        assert!(s.update(2, true, 10), "first delivery joins at once");
+        assert!(!s.update(3, false, 10));
+        assert_eq!(s, Standing::Lost);
+        for k in 4..14 {
+            assert!(!s.update(k, true, 10), "recovering at {k}");
+        }
+        assert!(s.update(14, true, 10), "usable for one second");
+        assert!(!s.update(15, false, 10));
+        assert!(!s.update(16, true, 10));
+        assert_eq!(s, Standing::Recovering(16));
+    }
+
+    #[test]
+    fn causes_latch_once_and_survive_power_loss() {
+        let mut d = Division::new("I1");
+        assert!(d.accept("LD01.PROT.PZR.LOW_PRESSURE", 7, 0.7, true, true, false));
+        assert!(!d.accept("LD01.PROT.PZR.LOW_PRESSURE", 8, 0.8, true, true, false));
+        assert!(d.accept("LD01.PROT.TG.TRIP", 9, 0.9, true, false, false));
+        assert_eq!(
+            d.trip.as_ref().unwrap().function,
+            "LD01.PROT.PZR.LOW_PRESSURE"
+        );
+        assert_eq!(d.requests.len(), 3, "PRHR, CMT, then PRHR again");
+        d.qualify("X", 1, true, 5);
+        d.usable("PT1", 1, true, 10);
+        d.set_powered(false);
+        assert!(d.trip.is_some() && d.causes.len() == 2);
+        assert_eq!(d.timers["X"].since(), None);
+        assert_eq!(d.standing["PT1"], Standing::Lost);
+    }
+}
