@@ -204,7 +204,14 @@ unsafe extern "C" {
     -> c_int;
     fn operating_ida_root_directions(ida: *mut c_void, directions: *mut c_int) -> c_int;
     fn operating_ida_set_root_direction(ida: *mut c_void, directions: *mut c_int) -> c_int;
-    fn operating_ida_dense(ida: *mut c_void, t: f64, y: *mut f64, yp: *mut f64) -> c_int;
+    fn operating_ida_step(
+        ida: *mut c_void,
+        target: f64,
+        time: *mut f64,
+        y: *mut f64,
+        yp: *mut f64,
+    ) -> c_int;
+    fn operating_ida_dky(ida: *mut c_void, t: f64, k: c_int, out: *mut f64) -> c_int;
     fn operating_ida_differential(ida: *mut c_void, ids: *const f64) -> c_int;
     fn operating_ida_stop_at(ida: *mut c_void, target: f64) -> c_int;
     fn operating_ida_nonnegative(ida: *mut c_void, flags: *const f64) -> c_int;
@@ -813,34 +820,69 @@ impl<S: System> Ida<S> {
         }
         Ok(time)
     }
-    /// Dense output (S3-D1 #7): stock IDAGetDky with k = 0 and 1, the state
-    /// and its derivative at `t` on stock's interpolating polynomial of the
-    /// last accepted step, for `t` within `[tn - h_used, tn]` (`stats()`'s
-    /// `internal_time` and `last_step`). An observation, never an `IDASolve`
-    /// call: no step, history, option or status changes, and the `advance`
-    /// buffers are untouched. Refused before the first accepted step of a
-    /// segment, on a fail-stopped handle, and (stock IDA_BAD_T) outside the
-    /// last step.
-    pub fn dense_output(&self, t: f64, y: &mut [f64], yp: &mut [f64]) -> Result<()> {
+    /// Stock IDA_ONE_STEP: one internal step toward `target` (an armed stop
+    /// boundary is never passed); a located root returns early as
+    /// `Advance::Root`. An observer reads each accepted step by
+    /// [`Self::dense`] instead of `advance` calls at the observation rate
+    /// (S3-D1 #7; IC-PROT's frame driver).
+    pub fn step(&mut self, target: f64, y: &mut [f64], yp: &mut [f64]) -> Result<Advance> {
+        if self.failed {
+            return Err("IDA handle is fail-stopped".into());
+        }
+        self.buffers(y, yp)?;
+        if !target.is_finite() || target <= self.time {
+            return Err("IDA target must be in the future".into());
+        }
+        self.started = true;
+        let status = unsafe {
+            operating_ida_step(
+                self.handle.as_ptr(),
+                target,
+                &mut self.time,
+                y.as_mut_ptr(),
+                yp.as_mut_ptr(),
+            )
+        };
+        let result = self.check(status).and_then(|()| self.outcome(status));
+        self.failed = result.is_err();
+        result
+    }
+    /// Dense output (S3-D1 #7): stock IDAGetDky, the `k`-th derivative at
+    /// `t` of the last accepted step's interpolating polynomial, for `t`
+    /// within `[tn - h_used, tn]` (`stats()`'s `internal_time` and
+    /// `last_step`) and `k` at most that step's order (`last_order`). An
+    /// observation, never an `IDASolve` call: no step, history, option or
+    /// status changes, and the `advance` buffers are untouched. Refused
+    /// before the first accepted step of a segment, on a fail-stopped
+    /// handle, outside the last step (stock IDA_BAD_T; stock alone would
+    /// extrapolate past tn) and above its order (IDA_BAD_K).
+    pub fn dense(&self, t: f64, k: usize, out: &mut [f64]) -> Result<()> {
         if self.failed {
             return Err("IDA handle is fail-stopped".into());
         }
         if !self.started {
             return Err("IDA dense output needs an accepted step of this segment".into());
         }
-        self.buffers(y, yp)?;
+        if out.len() != self.context.n {
+            return Err("IDA output dimension".into());
+        }
         if !t.is_finite() {
             return Err(format!("IDA dense output time {t} must be finite"));
         }
-        let code = unsafe {
-            operating_ida_dense(self.handle.as_ptr(), t, y.as_mut_ptr(), yp.as_mut_ptr())
-        };
+        let order = c_int::try_from(k).map_err(|_| format!("IDA dense derivative {k}"))?;
+        let code = unsafe { operating_ida_dky(self.handle.as_ptr(), t, order, out.as_mut_ptr()) };
         if code < 0 {
             return Err(format!(
-                "stock IDAGetDky status {code} at {t} s (outside the last accepted step [tn - h_used, tn])"
+                "stock IDAGetDky status {code} at {t} s, derivative {k} (outside the last accepted step [tn - h_used, tn] or above its order)"
             ));
         }
         Ok(())
+    }
+    /// [`Self::dense`] at `k` = 0 and 1: the state and its derivative at `t`.
+    pub fn dense_output(&self, t: f64, y: &mut [f64], yp: &mut [f64]) -> Result<()> {
+        self.buffers(y, yp)?;
+        self.dense(t, 0, y)?;
+        self.dense(t, 1, yp)
     }
     /// Copy stock's current local-error estimate and reciprocal error weights.
     /// These are diagnostics of its current history, not errors of the last

@@ -273,6 +273,15 @@ fn dense_output_reads_the_last_steps_interpolant_without_changing_history() {
         assert_eq!(probe, [7.; 2]);
     }
     assert!(ida.dense_output(tn, &mut [0.; 1], &mut dyp).is_err());
+    // Any derivative up to the step's order; above it refused (IDA_BAD_K).
+    let order = before.last_order as usize;
+    assert!(order >= 1);
+    let mut d0 = [0.; 2];
+    ida.dense(inside, 0, &mut d0).unwrap();
+    ida.dense_output(inside, &mut dy, &mut dyp).unwrap();
+    assert_eq!(d0, dy);
+    ida.dense(inside, order, &mut d0).unwrap();
+    assert!(ida.dense(inside, order + 1, &mut d0).is_err());
     // No effect on the history, the counters or the advance buffers.
     let after = ida.stats().unwrap();
     assert_eq!(
@@ -301,6 +310,43 @@ fn dense_output_reads_the_last_steps_interpolant_without_changing_history() {
     ida.advance(0.3, &mut y, &mut yp).unwrap();
     ida.dense_output(0.3, &mut dy, &mut dyp).unwrap();
     assert!((dy[0] - y[0]).abs() <= 1e-14);
+}
+
+/// Stock IDA_ONE_STEP: one internal step per call, never past an armed stop
+/// boundary, readable by dense output, and the same steps and endpoint as
+/// stock's IDA_NORMAL to the same boundary.
+#[test]
+fn one_step_mode_takes_one_step_per_call_and_ends_at_the_boundary() {
+    let (mut y, mut yp) = ([1., 2.], [-1., -2.]);
+    let mut ida = new(decay(), &y, &yp);
+    ida.initialize(0.1, &mut y, &mut yp).unwrap();
+    ida.stop_at(0.05).unwrap();
+    let (mut last, mut calls) = (0., 0);
+    while last < 0.05 {
+        let steps = ida.stats().unwrap().steps;
+        let time = ida.step(1., &mut y, &mut yp).unwrap().reached().unwrap();
+        calls += 1;
+        assert_eq!(ida.stats().unwrap().steps, steps + 1);
+        assert!(time > last && time <= 0.05, "{time}");
+        let (mut dy, mut dyp) = ([0.; 2], [0.; 2]);
+        ida.dense_output(time, &mut dy, &mut dyp).unwrap();
+        // The returned state is the step's endpoint, the polynomial's value
+        // there to an ulp; the returned y' is the corrector's y'_n, which the
+        // polynomial's derivative matches only to the step's local error.
+        assert!((dy[0] - y[0]).abs() <= 4. * f64::EPSILON * y[0].abs());
+        assert!((dyp[0] - yp[0]).abs() <= 1e-5, "{} vs {}", dyp[0], yp[0]);
+        last = time;
+    }
+    let (mut cy, mut cyp) = ([1., 2.], [-1., -2.]);
+    let mut control = new(decay(), &cy, &cyp);
+    control.initialize(0.1, &mut cy, &mut cyp).unwrap();
+    control.stop_at(0.05).unwrap();
+    assert_eq!(
+        control.advance(1., &mut cy, &mut cyp).unwrap(),
+        Advance::Reached(0.05)
+    );
+    assert_eq!(control.stats().unwrap().steps, calls);
+    assert_eq!((y, yp), (cy, cyp));
 }
 
 #[test]

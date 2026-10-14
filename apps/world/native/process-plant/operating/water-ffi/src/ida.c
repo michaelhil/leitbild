@@ -32,7 +32,7 @@ typedef struct {
     SUNContext ctx;
     N_Vector y, yp, atol, ids, q;
     /* Scratch of the dense output (IDAGetDky), never solver history. */
-    N_Vector dense_y, dense_yp;
+    N_Vector dense;
     SUNMatrix matrix;
     SUNLinearSolver linear;
     void *ida, *user;
@@ -63,8 +63,7 @@ void operating_ida_free(OperatingIDA *o) {
     if (o->linear) SUNLinSolFree(o->linear);
     if (o->matrix) SUNMatDestroy(o->matrix);
     if (o->ids) N_VDestroy(o->ids);
-    if (o->dense_yp) N_VDestroy(o->dense_yp);
-    if (o->dense_y) N_VDestroy(o->dense_y);
+    if (o->dense) N_VDestroy(o->dense);
     if (o->q) N_VDestroy(o->q);
     if (o->atol) N_VDestroy(o->atol);
     if (o->yp) N_VDestroy(o->yp);
@@ -86,8 +85,8 @@ OperatingIDA *operating_ida_create(int64_t n,int64_t nnz,double t,double rtol,
     if (SUNContext_Create(SUN_COMM_NULL,&o->ctx)) goto fail;
     o->y=N_VNew_Serial(n,o->ctx); o->yp=N_VNew_Serial(n,o->ctx);
     o->atol=N_VNew_Serial(n,o->ctx); o->ids=N_VNew_Serial(n,o->ctx);
-    o->dense_y=N_VNew_Serial(n,o->ctx); o->dense_yp=N_VNew_Serial(n,o->ctx);
-    if (!o->y || !o->yp || !o->atol || !o->ids || !o->dense_y || !o->dense_yp) goto fail;
+    o->dense=N_VNew_Serial(n,o->ctx);
+    if (!o->y || !o->yp || !o->atol || !o->ids || !o->dense) goto fail;
     memcpy(N_VGetArrayPointer(o->y),y,n*sizeof(double));
     memcpy(N_VGetArrayPointer(o->yp),yp,n*sizeof(double));
     memcpy(N_VGetArrayPointer(o->atol),atol,n*sizeof(double));
@@ -161,23 +160,32 @@ int operating_ida_current_state(OperatingIDA *o,double *time,double *y,double *y
     N_VDestroy(state);
     return code;
 }
-/* Stock IDAGetDky (k = 0 and 1): the solution and its derivative at t on
-   stock's interpolating polynomial of the last accepted step, t within
-   [tn - hu, tn], into the handle's own scratch, then copied out. No step,
-   history, option or status changes (dense output, S3-D1 #7). Stock checks
-   only the lower end (it would extrapolate past tn); a time past tn is
-   refused here with stock's own IDA_BAD_T. */
-int operating_ida_dense(OperatingIDA *o,double t,double *y,double *yp) {
+/* Stock IDA_ONE_STEP: one internal step toward target per call (an armed
+   stop time is never passed), so an observer reads every accepted step's
+   dense output instead of IDASolve calls at the observation rate (S3-D1 #7;
+   IC-PROT's frame driver). */
+int operating_ida_step(OperatingIDA *o,double target,double *time,double *y,double *yp) {
+    int code=IDASolve(o->ida,target,&o->time,o->y,o->yp,IDA_ONE_STEP);
+    *time=o->time;
+    if (code>=0) {
+        memcpy(y,N_VGetArrayPointer(o->y),N_VGetLength(o->y)*sizeof(double));
+        memcpy(yp,N_VGetArrayPointer(o->yp),N_VGetLength(o->yp)*sizeof(double));
+    }
+    return code;
+}
+/* Stock IDAGetDky: the k-th derivative at t of the last accepted step's
+   interpolating polynomial, t within [tn - hu, tn] and k at most that step's
+   order, into the handle's own scratch, then copied out. No step, history,
+   option or status changes (dense output, S3-D1 #7). Stock checks only the
+   lower end (it would extrapolate past tn); a time past tn is refused here
+   with stock's own IDA_BAD_T. */
+int operating_ida_dky(OperatingIDA *o,double t,int k,double *out) {
     double current;
     int code=IDAGetCurrentTime(o->ida,&current);
     if (code<0) return code;
     if (!(t<=current)) return IDA_BAD_T;
-    code=IDAGetDky(o->ida,t,0,o->dense_y);
-    if (code>=0) code=IDAGetDky(o->ida,t,1,o->dense_yp);
-    if (code>=0) {
-        memcpy(y,N_VGetArrayPointer(o->dense_y),N_VGetLength(o->dense_y)*sizeof(double));
-        memcpy(yp,N_VGetArrayPointer(o->dense_yp),N_VGetLength(o->dense_yp)*sizeof(double));
-    }
+    code=IDAGetDky(o->ida,t,k,o->dense);
+    if (code>=0) memcpy(out,N_VGetArrayPointer(o->dense),N_VGetLength(o->dense)*sizeof(double));
     return code;
 }
 int operating_ida_error_diagnostics(OperatingIDA *o,double *errors,double *weights,int *order) {
