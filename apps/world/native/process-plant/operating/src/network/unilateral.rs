@@ -229,7 +229,17 @@ pub fn decide(lock: Lock, view: PathView, fired: Option<Fired>) -> Result<Decisi
                 Cause::AtRest
             };
             let payment = match donor {
-                Some(end) if moving => Some((end.other(), kinetic_j)),
+                Some(end) if moving => {
+                    // The receipt enters the end the path was feeding,
+                    // which holds the phase; anything else is a presence
+                    // the phase-mode owner must answer first.
+                    if !holding.holds(end.other()) {
+                        return Err(Failure::Fatal(format!(
+                            "L1 contact would pay into an end holding no phase ({view:?})"
+                        )));
+                    }
+                    Some((end.other(), kinetic_j))
+                }
                 _ => None,
             };
             Ok(Decision {
@@ -642,6 +652,15 @@ mod tests {
             let d = free(Holding::Both, f, q, None);
             assert_eq!((d.lock, d.cause), (Lock::Free, None));
         }
+    }
+
+    #[test]
+    fn a_moving_path_with_neither_end_holding_refuses_to_pay() {
+        let e = decide(Lock::Free, view(Holding::Neither, 1., 0.3), None);
+        assert!(matches!(e, Err(Failure::Fatal(_))));
+        // At rest there is nothing to pay: it locks.
+        let d = decide(Lock::Free, view(Holding::Neither, 1., 0.), None).unwrap();
+        assert_eq!((d.lock, d.payment), (Lock::Locked(Holding::Neither), None));
     }
 
     #[test]
