@@ -257,6 +257,16 @@ fn s3_ic_prot_t1_turbine_trip_through_acquired_protection() {
         .map(|(k, v)| (k.to_string(), json!(v)))
         .collect();
     let restarts_r = driver.counts.total(Class::R);
+    let c = &ida.system().joined.counters;
+    let digest = |v: &[f64]| {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for x in v {
+            for b in x.to_bits().to_le_bytes() {
+                h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
+            }
+        }
+        format!("{h:016x}")
+    };
     let receipt = json!({
         "kind": "S3 IC-PROT T1 probe: operator turbine trip through acquired protection",
         "status": "NOT-EVIDENCE probe; S3 is not declared and no gate is judged",
@@ -296,8 +306,14 @@ fn s3_ic_prot_t1_turbine_trip_through_acquired_protection() {
             "smallness_s": driver.cpu.smallness_s,
             "attributed_fraction": (driver.cpu.solver_s + driver.cpu.observation_s + driver.cpu.restart_s + driver.cpu.smallness_s) / run_cpu_s,
             "run_per_simulated_s": run_cpu_s / (until - t0),
-            "joined_counters": {"residuals": ida.system().joined.counters.residuals,
-                "jacobians": ida.system().joined.counters.jacobians}},
+            "joined_counters": {"residuals": c.residuals, "residual_wall_s": c.residual_wall_s,
+                "coupled_wall_s": c.coupled_wall_s, "jacobians": c.jacobians, "jacobian_wall_s": c.jacobian_wall_s,
+                "jacobian_wall_s_per_call": c.jacobian_wall_s / c.jacobians.max(1) as f64,
+                "residual_wall_s_per_call": c.residual_wall_s / c.residuals.max(1) as f64,
+                "roots": c.roots, "root_wall_s": c.root_wall_s},
+            "load_average_end": String::from_utf8_lossy(&std::process::Command::new("sysctl").args(["-n", "vm.loadavg"]).output().unwrap().stdout).trim().to_string()},
+        "final_state": {"t_s": until, "y_digest": digest(&y), "yp_digest": digest(&yp),
+            "digest_of": "FNV-1a over the bits of every coordinate, in order"},
         "frames": recorder.rows,
     });
     std::fs::write(
