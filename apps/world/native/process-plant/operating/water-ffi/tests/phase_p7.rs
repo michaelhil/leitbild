@@ -682,6 +682,8 @@ struct Config {
     nonnegative: Vec<usize>,
     basis: Basis,
     dcj: Option<f64>,
+    /// A declared step cap (E3's 2.5 ms reference), every segment.
+    max_step: Option<f64>,
 }
 
 fn new_segment(
@@ -720,6 +722,9 @@ fn new_segment(
     ida.set_nonlinear_convergence_coefficient(config.newton_coefficient)?;
     if let Some(dcj) = config.dcj {
         ida.set_delta_cj_lsetup(dcj)?;
+    }
+    if let Some(h) = config.max_step {
+        ida.set_max_step(h)?;
     }
     if restart {
         ida.set_init_step(config.first_step_s)?;
@@ -1120,7 +1125,10 @@ fn phase_p7_post_birth_cost() {
         nonnegative: net.nonnegative_stocks(),
         basis,
         dcj,
+        max_step: env_f("LD01_P7_MAX_STEP_S"),
     };
+    let spectrum_every = env_f("LD01_P7_SPECTRUM_EVERY_S");
+    let mut track: Vec<Value> = Vec::new();
     let face_index = |id: &str| {
         raw["mechanics"]["faces"]
             .as_array()
@@ -1247,6 +1255,19 @@ fn phase_p7_post_birth_cost() {
                         let mut v = sample(&mut sp, t, &y, &yp, &watch);
                         v["stats"] = stats_json(&ida);
                         samples.push(v);
+                    }
+                    if let (Some(every), Some(birth)) = (spectrum_every, first_birth) {
+                        if t > birth && ((t / every).round() * every - t).abs() < 1e-9 {
+                            let spec = spectrum_summary(&mut sp, t, &y, &yp, &names, 12.);
+                            let e_cells: Vec<usize> = (0..sp.modes.len())
+                                .filter(|c| sp.modes[*c] == Mode::Equilibrium)
+                                .collect();
+                            let compliance: Vec<Value> = e_cells
+                                .iter()
+                                .map(|c| sp.compliance(*c, &y).unwrap_or_else(|e| json!({"cell":c,"error":format!("{e:?}")})))
+                                .collect();
+                            track.push(json!({"t":t,"compliance":compliance,"spectrum":spec}));
+                        }
                     }
                     if observe_file.is_some() && t + 1e-12 >= observe_from_s {
                         observed.push_str(&credited(&mut sp, t, &y, &yp, &taps).to_string());
@@ -1562,6 +1583,8 @@ fn phase_p7_post_birth_cost() {
         "kind":"ld01-phase-p7-post-birth-cost-NOT-EVIDENCE",
         "study":{"class":format!("{:?}",config.basis),"reference_factor":factor,"dcj":dcj,"observe_s":observe_s,"observe_from_s":if observe_from_s.is_finite() {json!(observe_from_s)} else {Value::Null},"max_hz":max_hz,"what_if":what_if,"start_state":start_state},
         "class_log":spike.borrow().class_log.clone(),
+        "spectrum_track":track,
+        "max_step_s":config.max_step,
         "start_spectra":start_spectra,
         "provenance":std::env::var("LD01_PHASE_PROVENANCE").ok().and_then(|v| serde_json::from_str::<Value>(&v).ok()),
         "scope":"PHASE-P7 study copy of the PHASE spike: S1 network (G6 relief hook) with C4's stuck-open relief; cell modes L/E (both-active equilibrium, totals differential), L1 holds by root, exact consistent restarts, new stock IDA handle per segment; colored Jacobian on the S1 structural pattern; study variants in `study`; NOT a selected law, NOT evidence",
