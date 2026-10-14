@@ -291,7 +291,7 @@ mod tests {
     /// span 0–20 MPa.
     fn section() -> Section {
         Section {
-            setpoint_pa: 14_864_186.8055,
+            setpoint_pa: 14_864_186.805_5,
             heater_capacity_w: 3e6,
             heater_band_pa: 1e5,
             spray_start_pa: 2e4,
@@ -330,7 +330,7 @@ mod tests {
     #[test]
     fn heaters_saturate_and_spray_ramps_between_its_offsets() {
         let law = Law::new(&section()).unwrap();
-        let sp = 14_864_186.8055;
+        let sp = 14_864_186.805_5;
         let low = law.auto(Some(&usable(sp - 2e5, 0.)), 0.);
         assert_eq!(low.heater_request_w, 3e6);
         let at = law.auto(Some(&usable(sp, 0.)), 0.);
