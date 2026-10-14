@@ -172,7 +172,7 @@ impl<P: Properties> Network<P> {
         let volumes = &self.cell_volume[..n];
         let pre_source_mass_rate = vec![s(0.); n];
         self.charts.fill([None; 2]);
-        for l in &self.face_layout {
+        for (li, l) in self.face_layout.iter().enumerate() {
             let pi = self.get(y, seed, l.index);
             let f = &self.faces[l.face];
             let inertance = f.supports.iter().fold(s(0.), |sum, support| {
@@ -192,7 +192,10 @@ impl<P: Properties> Network<P> {
             // Source assembly first needs the exact empty-path rest value.
             // The physical TOTAL-force limit is checked after source assembly;
             // a nonzero-I path always uses its retained impulse, not this value.
-            let path = if inertance.value == 0. && pi.value == 0. {
+            // L1 hook (PHASE-L1 for KERN): a locked path transports nothing.
+            let path = if self.unilateral_locked(li) {
+                super::unilateral::held_path(inertance)
+            } else if inertance.value == 0. && pi.value == 0. {
                 flow::PathKinematics {
                     inertance_kg_m4: inertance,
                     inertance_rate_kg_m4_s: s(0.),
@@ -562,27 +565,38 @@ impl<P: Properties> Network<P> {
             // network is not a generic disappearance/reappearance handler.
             // Cold I' uses assembled physical receipts, not an off-row yp.
             let pi = self.get(y, seed, l.index);
-            let path = flow::phase_path_kinematics(
-                &self.faces[l.face],
-                &phase_mass[l.phase],
-                &phase_mass_rate[l.phase],
-                &self.cell_volume[..n],
-                pi,
-                force + current.pressure_gravity_pa,
-                flow::ColdOnset::ProvenRest,
-            )
-            .map_err(|e| {
-                self.first_mechanical_birth.get_or_insert(json!({"time_s":t,"face":l.face,"phase":l.phase,"inertance_kg_m4":current.inertance_kg_m4.value,"total_force_pa":(force+current.pressure_gravity_pa).value,"scope":"unsupported exact-zero physical onset; no guessed Q, phase seed or momentum reset"}));
-                Failure::Recoverable(format!("{e}; t={t},face={},phase={}", l.face, l.phase))
-            })?;
+            // L1 hook (PHASE-L1 for KERN, decision 0014): a locked path's
+            // row is `Pi/s`, it transports nothing, and its drive is the
+            // reported reaction.
+            let locked = self.unilateral_locked(li);
+            let path = if locked {
+                super::unilateral::held_path(current.inertance_kg_m4)
+            } else {
+                flow::phase_path_kinematics(
+                    &self.faces[l.face],
+                    &phase_mass[l.phase],
+                    &phase_mass_rate[l.phase],
+                    &self.cell_volume[..n],
+                    pi,
+                    force + current.pressure_gravity_pa,
+                    flow::ColdOnset::ProvenRest,
+                )
+                .map_err(|e| {
+                    self.first_mechanical_birth.get_or_insert(json!({"time_s":t,"face":l.face,"phase":l.phase,"inertance_kg_m4":current.inertance_kg_m4.value,"total_force_pa":(force+current.pressure_gravity_pa).value,"scope":"unsupported exact-zero physical onset; no guessed Q, phase seed or momentum reset"}));
+                    Failure::Recoverable(format!("{e}; t={t},face={},phase={}", l.face, l.phase))
+                })?
+            };
             let chart = flow::chart_from_path(&self.faces[l.face], &self.cells, l.phase, pi, path)
                 .map_err(|e| Failure::Recoverable(e.into()))?;
             self.charts[l.face][l.phase] = Some(chart);
             self.face_drive[l.face][l.phase] = force + chart.pressure_gravity_pa;
-            self.rows[l.index] =
+            self.rows[l.index] = if locked {
+                pi / s(self.scales[l.index])
+            } else {
                 flow::momentum_residual(self.rate(yp, seed, cj, l.index), chart, force)
                     .map_err(|e| Failure::Recoverable(e.into()))?
-                    / s(self.scales[l.index]);
+                    / s(self.scales[l.index])
+            };
         }
         Ok(())
     }

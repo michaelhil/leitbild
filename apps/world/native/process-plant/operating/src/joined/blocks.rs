@@ -13,6 +13,7 @@
 use super::{
     nuclear::{LinearTemplate, Nuclear, RegionWater, Target},
     operator::{Joined, LocalCoupler, LocalRows, OwnerRows},
+    presence::VaporPresence,
     solids::FUEL_HEAT_SPLIT,
 };
 use crate::{
@@ -426,11 +427,13 @@ pub fn nuclear_partials(
 /// Every other part is the joined operator's own structural pattern.
 /// `partials` fixes the nuclear structure, which no state changes; the
 /// pattern holds while every wall cell holds liquid only, which S2's wall
-/// laws require (a vapor-holding wall cell refuses).
+/// laws require (a vapor-holding wall cell refuses). `vapor` is the vapor
+/// presence the donor reads follow (S3-D-P3 hook, PHASE-L1 for KERN).
 pub fn joined_pattern<P: Properties + WaterProperties>(
     joined: &Joined<P>,
     template: &LinearTemplate,
     partials: &NuclearPartials,
+    vapor: &VaporPresence,
 ) -> Result<Vec<Vec<usize>>, Failure> {
     let o = joined.offsets();
     let n = o.end;
@@ -600,7 +603,7 @@ pub fn joined_pattern<P: Properties + WaterProperties>(
         }
         let l = network.cell_layout[m];
         let mut out = vec![l.base, l.mass[0], l.energy[0]];
-        if network.cell(m).phase[1].is_some() {
+        if vapor.holds(m) {
             out.extend([l.mass[1], l.energy[1]]);
             out.extend(moved.get(&m).into_iter().flatten().copied());
         }
@@ -787,6 +790,17 @@ impl JoinedJacobian {
         t: f64,
         y: &[f64],
     ) -> Result<Self, Failure> {
+        Self::compile_for(joined, t, y, None)
+    }
+    /// [`JoinedJacobian::compile`] with the donor reads following the
+    /// declared vapor presence (the phase-mode owner's, S3-D-P3), or the
+    /// value state's own when `None` (S3-D-P3 hook, PHASE-L1 for KERN).
+    pub fn compile_for<P: Properties + WaterProperties>(
+        joined: &mut Joined<P>,
+        t: f64,
+        y: &[f64],
+        presence: Option<&VaporPresence>,
+    ) -> Result<Self, Failure> {
         let o = joined.offsets();
         if y.len() != o.end {
             return Err(fatal("joined block Jacobian compile length"));
@@ -804,7 +818,8 @@ impl JoinedJacobian {
             partials.fuel_w.len(),
             partials.coolant_w.len(),
         ];
-        let columns = joined_pattern(joined, &template, &partials)?;
+        let evaluated = VaporPresence::evaluated(&joined.network);
+        let columns = joined_pattern(joined, &template, &partials, presence.unwrap_or(&evaluated))?;
         let pattern = Pattern::from_columns(o.end, &columns).map_err(fatal)?;
         let network = joined.network.block_jacobian()?;
         let row_scales = joined

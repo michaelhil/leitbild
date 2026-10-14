@@ -23,12 +23,14 @@ mod evaluate;
 pub mod heaters;
 mod jacobian;
 pub mod packet;
+pub mod phase_events;
 pub mod ports;
 pub mod prepare;
 pub mod properties;
 pub mod stratified;
 mod structure;
 mod tolerance;
+pub mod unilateral;
 pub mod walls;
 
 pub use account::{Tolerances, empty_energy_ratio};
@@ -231,6 +233,9 @@ pub struct Network<P: Properties> {
     endpoints: Vec<(usize, usize)>,
     coupled_tracer: Vec<Scalar>,
     coupled_receipts: Vec<[[Scalar; 3]; 2]>,
+    /// L1's lock table once a caller declares L1 active ([`unilateral`]);
+    /// `None` composes every impulse row as before (S1, S2).
+    unilateral: Option<unilateral::Locks>,
 }
 
 fn s(v: f64) -> Scalar {
@@ -524,6 +529,7 @@ impl<P: Properties> Network<P> {
                 endpoints,
                 coupled_tracer: vec![s(0.); pzr],
                 coupled_receipts: vec![[[s(0.); 3]; 2]; pzr],
+                unilateral: None,
             },
             Prepared {
                 y,
@@ -696,9 +702,15 @@ impl<P: Properties> Network<P> {
         y[index] = 0.;
         Ok(locking)
     }
-    /// Current IDA id vector: a locked rotor's speed row is algebraic.
+    /// Current IDA id vector: a locked rotor's speed row and an L1-locked
+    /// phase path's impulse row are algebraic.
     pub fn differential(&self, prepared: &[f64]) -> Vec<f64> {
         let mut ids = prepared.to_vec();
+        for (li, l) in self.face_layout.iter().enumerate() {
+            if self.unilateral_locked(li) {
+                ids[l.index] = 0.;
+            }
+        }
         for (r, index) in self.rotor_index.iter().enumerate() {
             if matches!(
                 self.rotor_states[r],
