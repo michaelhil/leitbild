@@ -202,6 +202,8 @@ pub struct Network<P: Properties> {
     sections: Vec<Hydraulic>,
     section_projection: Vec<(usize, usize, f64)>,
     section_drive: Vec<Scalar>,
+    /// HOOK (PHASE-P7, S3-D-P8): each passive section's gas-phase drive.
+    section_gas_drive: Vec<Scalar>,
     pub rotor_index: Vec<usize>,
     rotor_inertia: f64,
     drive: rotor::Parameters,
@@ -502,6 +504,7 @@ impl<P: Properties> Network<P> {
                 sections,
                 section_projection,
                 section_drive: vec![s(0.); section_count],
+                section_gas_drive: vec![s(0.); section_count],
                 rotor_states: vec![None; rotor_index.len()],
                 motor: vec![None; rotor_index.len()],
                 rotor_index,

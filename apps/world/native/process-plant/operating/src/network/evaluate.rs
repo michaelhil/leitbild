@@ -480,6 +480,52 @@ impl<P: Properties> Network<P> {
                     e.value.pump_euler_pa - e.value.passive_loss_pa,
                     e.direction.pump_euler_pa - e.direction.passive_loss_pa,
                 );
+            // HOOK (PHASE-P7, S3-D-P8 gas-path loss; operating-hydraulics.md
+            // gas-phase passive loss): a passive section's own law on the
+            // same declared geometry, with the gas phase's current, density
+            // and viscosity, weighted by its fraction as the liquid's drive
+            // is. No pump head acts on gas; a pump section carries none. A
+            // region without gas composes nothing, so liquid-only states are
+            // unchanged.
+            self.section_gas_drive[j] = s(0.);
+            if self.sections[j].rotor.is_none()
+                && self.sections[j].section.pump.is_none()
+                && let (Some(gas), Some((qg, dqg))) =
+                    (self.cells[region].phase[1], points[region][1])
+            {
+                let mut gas_profile = s(0.);
+                for (face, section, w) in &self.section_projection {
+                    if *section == j
+                        && let Some(chart) = self.charts[*face][1]
+                    {
+                        gas_profile = gas_profile + s(*w) * chart.volume_flow_m3_s;
+                    }
+                }
+                let gas_current = gas.density * gas.fraction * gas_profile;
+                let g = self.sections[j]
+                    .section
+                    .evaluate(
+                        hydraulics::Input {
+                            massflow_kg_s: gas_current.value,
+                            density_kg_m3: qg.density_kg_m3,
+                            viscosity_pa_s: qg.viscosity_pa_s,
+                            pressure_drop_pa: 0.,
+                            omega_rad_s: 0.,
+                            gas_volume_fraction: gas.fraction.value,
+                        },
+                        hydraulics::Input {
+                            massflow_kg_s: gas_current.direction,
+                            density_kg_m3: dqg.density_kg_m3,
+                            viscosity_pa_s: dqg.viscosity_pa_s,
+                            pressure_drop_pa: 0.,
+                            omega_rad_s: 0.,
+                            gas_volume_fraction: gas.fraction.direction,
+                        },
+                    )
+                    .map_err(|e| Failure::Recoverable(e.to_string()))?;
+                self.section_gas_drive[j] =
+                    gas.fraction * rec(-g.value.passive_loss_pa, -g.direction.passive_loss_pa);
+            }
             if let Some(r) = self.sections[j].rotor {
                 let shaft = rec(e.value.shaft_power_w, e.direction.shaft_power_w);
                 self.shaft_power = self.shaft_power + shaft;
@@ -555,6 +601,13 @@ impl<P: Properties> Network<P> {
                 for (face, section, w) in &self.section_projection {
                     if *face == l.face {
                         force = force + s(*w) * self.section_drive[*section];
+                    }
+                }
+            } else {
+                // HOOK (PHASE-P7, S3-D-P8): the gas phase's passive loss.
+                for (face, section, w) in &self.section_projection {
+                    if *face == l.face {
+                        force = force + s(*w) * self.section_gas_drive[*section];
                     }
                 }
             }
