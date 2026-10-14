@@ -429,7 +429,7 @@ mod tests {
                 "effects": {"reactor_trip": true, "cmt_injection": false, "heater_isolation": true}, "reset": reset}),
             json!({"id": "LD01.PROT.TG.TRIP", "rule": {"report": {"report": "LD01.TG.TRIP.REPORT"}},
                 "effects": {"reactor_trip": true, "cmt_injection": false, "heater_isolation": false},
-                "reset": {"band": [0., 0.], "duration_s": 1.}}),
+                "reset": null}),
         ];
         functions.extend(extra_functions.as_array().unwrap().iter().cloned());
         serde_json::from_value(json!({

@@ -135,8 +135,9 @@ pub struct Effects {
     pub heater_isolation: bool,
 }
 
-/// A cause's reset evidence (S3 cases request no reset; carried for the
-/// function record).
+/// A cause's reset evidence: all three usable channels inside the band for
+/// the duration (S3 cases request no reset; carried for the function
+/// record). A report's cause resets on its cleared report instead (`null`).
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Reset {
@@ -150,7 +151,7 @@ pub struct FunctionSpec {
     pub id: String,
     pub rule: Rule,
     pub effects: Effects,
-    pub reset: Reset,
+    pub reset: Option<Reset>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
