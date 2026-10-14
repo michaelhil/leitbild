@@ -536,6 +536,14 @@ fn main() {
         unit.signals();
     }
     receipt["observe_cpu_ms_per_call"] = json!(100. * (cpu::thread_s() - c));
+    // One unit only (peak RSS of a single restored unit), then 10 s free.
+    if only.as_deref() == Some("single") {
+        unit.advance(t_s + 10., false).expect("single unit advance");
+        receipt["single_unit_reached_s"] = json!(unit.t);
+        std::fs::write(&out, serde_json::to_vec_pretty(&receipt).unwrap()).unwrap();
+        eprintln!("wrote {}", out.display());
+        return;
+    }
     // (1) Quiet cost: free versus stop at every boundary.
     let mut variants = Vec::new();
     let plan: Vec<(Option<f64>, bool, f64, f64)> = vec![
