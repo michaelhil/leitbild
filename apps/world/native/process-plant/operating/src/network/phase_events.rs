@@ -8,13 +8,15 @@
 //!   located rising through zero (the drive reverses toward the holding
 //!   end);
 //! - a free path: its contact root, the phase-k mass (kg) of the end it
-//!   draws from by the sign of its flow (at rest, the larger end mass, so a
-//!   path at rest has no contact), located falling through zero;
+//!   draws from by the sign of its impulse (`Q = Pi/I` with `I >= 0` at
+//!   every admitted state; at `Pi = 0` the larger end mass, so a path at
+//!   rest has no contact), located falling through zero;
 //! - a locked path with neither end holding has no root: only a birth
 //!   releases it, and a birth is the phase-mode owner's transaction.
 //!
-//! Values are read from the network's last value evaluation of the same
-//! coordinate view (drives, flows) and that view's stocks.
+//! Contact values read only the coordinate view (impulses and stocks);
+//! release values read the drives of the network's last value evaluation
+//! of that view ([`release_roots`] says whether one is needed).
 //!
 //! The ledger counts every located root and every lock change by path,
 //! class and cause, and the energy paid. The law has no hysteresis and none
@@ -61,6 +63,12 @@ impl Root {
     }
 }
 
+/// Whether any of `roots` reads a drive, so the caller must evaluate the
+/// network at the root function's state first.
+pub fn release_roots(roots: &[Root]) -> bool {
+    roots.iter().any(|r| matches!(r, Root::Release(_)))
+}
+
 /// The crossings stock IDA reported for `roots`, split into located roots
 /// (the declared direction) and opposite crossings, which are counted and
 /// do not act.
@@ -97,10 +105,10 @@ impl<P: Properties> Network<P> {
             })
             .collect()
     }
-    /// The values of `roots` at the last value evaluation of the coordinate
-    /// view `y` (the network's own coordinates, or a phase-mode owner's view
-    /// of them): release `orientation × F` in Pa, contact the drawing end's
-    /// phase mass in kg.
+    /// The values of `roots` in the coordinate view `y` (the network's own
+    /// coordinates, or a phase-mode owner's view of them): release
+    /// `orientation × F` in Pa from the last value evaluation of `y`,
+    /// contact the drawing end's phase mass in kg from `y` alone.
     pub fn unilateral_root_values(
         &self,
         y: &[f64],
@@ -128,15 +136,12 @@ impl<P: Properties> Network<P> {
                     orientation * self.face_drive[l.face][l.phase].value
                 }
                 (Root::Contact(_), Lock::Free) => {
-                    let chart = self.charts[l.face][l.phase].ok_or_else(|| {
-                        Failure::Fatal("L1 contact roots need the last value evaluation".into())
-                    })?;
                     let (from, to) = self.endpoints[l.face];
-                    let q = chart.volume_flow_m3_s.value;
+                    let pi = y[l.index];
                     let m = |c| self.end_mass(y, c, l.phase);
-                    if q > 0. {
+                    if pi > 0. {
                         m(from)
-                    } else if q < 0. {
+                    } else if pi < 0. {
                         m(to)
                     } else {
                         m(from).max(m(to))
