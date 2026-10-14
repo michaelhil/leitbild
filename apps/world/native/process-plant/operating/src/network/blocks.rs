@@ -425,7 +425,11 @@ impl<P: Properties> Blocks<'_, P> {
                 "signed nonzero phase masses cancelled face inertia; not an empty rest chart",
             ));
         }
-        let path = if inertance.value == 0. && pi.value == 0. {
+        // L1 hook (PHASE-L1 for KERN): as the residual, a locked path
+        // transports nothing.
+        let path = if net.unilateral_locked(li) {
+            super::unilateral::held_path(inertance)
+        } else if inertance.value == 0. && pi.value == 0. {
             flow::PathKinematics {
                 inertance_kg_m4: inertance,
                 inertance_rate_kg_m4_s: s(0.),
@@ -556,6 +560,11 @@ impl<P: Properties> Blocks<'_, P> {
             for (section, w) in forced_by {
                 force = force + s(*w) * pass.section_drive[*section];
             }
+        }
+        // L1 hook (PHASE-L1 for KERN): as the residual, a locked path's
+        // row is `Pi/s`; it reads no onset.
+        if net.unilateral_locked(li) {
+            return Ok((self.get(seed, l.index) / s(net.scales[l.index]), false));
         }
         let rate = self.rate(seed, l.index);
         if reuse_chart {
