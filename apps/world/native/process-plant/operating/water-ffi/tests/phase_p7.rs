@@ -1096,9 +1096,12 @@ fn phase_p7_post_birth_cost() {
         }
     }
     let f = |k: &str| gates[k].as_f64().unwrap_or_else(|| panic!("gate {k}"));
+    // Declared at the prepared (transit-free) state, as the S2 runs declare
+    // theirs; rotor values do not enter the classes, so the spike's own
+    // path is unchanged.
     let atol = net
         .absolute_tolerances(
-            &y,
+            &prepared.y,
             ToleranceClasses {
                 relative: f("relativeTolerance"),
                 stock_scaled: f("stockScaledAbsolute"),
