@@ -205,6 +205,14 @@ unsafe extern "C" {
     fn operating_ida_root_directions(ida: *mut c_void, directions: *mut c_int) -> c_int;
     fn operating_ida_differential(ida: *mut c_void, ids: *const f64) -> c_int;
     fn operating_ida_stop_at(ida: *mut c_void, target: f64) -> c_int;
+    fn operating_ida_step(
+        ida: *mut c_void,
+        target: f64,
+        time: *mut f64,
+        y: *mut f64,
+        yp: *mut f64,
+    ) -> c_int;
+    fn operating_ida_dky(ida: *mut c_void, t: f64, k: c_int, out: *mut f64) -> c_int;
     fn operating_ida_nonnegative(ida: *mut c_void, flags: *const f64) -> c_int;
     fn operating_ida_current_time(ida: *mut c_void, time: *mut f64) -> c_int;
     fn operating_ida_current_state(
@@ -536,6 +544,50 @@ impl<S: System> Ida<S> {
         let result = self.check(status).and_then(|()| self.outcome(status));
         self.failed = result.is_err();
         result
+    }
+    /// S3 hook (IC-PROT, for KERN): stock IDA_ONE_STEP. One internal step
+    /// toward `target` (an armed stop boundary is never passed); a located
+    /// root returns early as `Advance::Root`. The frame driver reads each
+    /// accepted step's polynomial by [`Ida::dense`] instead of output calls
+    /// at the observation rate (lead decision S3-D1.6).
+    pub fn step(&mut self, target: f64, y: &mut [f64], yp: &mut [f64]) -> Result<Advance> {
+        if self.failed {
+            return Err("IDA handle is fail-stopped".into());
+        }
+        self.buffers(y, yp)?;
+        if !target.is_finite() || target <= self.time {
+            return Err("IDA target must be in the future".into());
+        }
+        self.started = true;
+        let status = unsafe {
+            operating_ida_step(
+                self.handle.as_ptr(),
+                target,
+                &mut self.time,
+                y.as_mut_ptr(),
+                yp.as_mut_ptr(),
+            )
+        };
+        let result = self.check(status).and_then(|()| self.outcome(status));
+        self.failed = result.is_err();
+        result
+    }
+    /// S3 hook (IC-PROT, for KERN): stock IDAGetDky, the `k`-th derivative
+    /// at `t` of the interpolating polynomial of the last accepted step
+    /// (`t` within `[tn − hu, tn]`, `k` at most that step's order). Reading
+    /// it changes no history, setting or status.
+    pub fn dense(&self, t: f64, k: usize, out: &mut [f64]) -> Result<()> {
+        if out.len() != self.context.n || !t.is_finite() {
+            return Err("IDA dense output dimension or time".into());
+        }
+        let k = c_int::try_from(k).map_err(|_| "IDA dense derivative order".to_string())?;
+        let code = unsafe { operating_ida_dky(self.handle.as_ptr(), t, k, out.as_mut_ptr()) };
+        if code < 0 {
+            return Err(format!(
+                "stock IDAGetDky status {code} at {t} s, derivative {k}"
+            ));
+        }
+        Ok(())
     }
     fn outcome(&self, status: c_int) -> Result<Advance> {
         match status {
