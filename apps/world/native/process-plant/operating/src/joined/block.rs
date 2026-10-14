@@ -239,6 +239,17 @@ pub enum Command {
     /// command's time, with no turbine trip (G7's contrary case). The steam
     /// demand stays at its constant A/B values as a declared boundary.
     ManualReactorTrip,
+    /// S3 hook (IC-PROT, for KERN): the manual turbine TRIP with acquired
+    /// protection composed (C16). The STOP ramps exactly as for
+    /// `TurbineTrip`; the reactor-trip request travels the acquired path
+    /// (turbine-state report, division processors, holding contacts), so no
+    /// owner schedules S2's declared opening (H6).
+    TurbineTripAcquired,
+    /// S3 hook (IC-PROT, for KERN): `LD01.TRIP.HOLD` loses its holding
+    /// voltage at the command's time (the acquired protection's two-of-three
+    /// permissive majority opened, `reactor-trip-and-hold.md`). Every
+    /// healthy grip releases there (the armature's opening omitted, G3).
+    HoldingLoss,
 }
 
 /// Structural dependencies of one block, in its own indices, for the joined
