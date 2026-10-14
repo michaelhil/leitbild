@@ -14,9 +14,12 @@
 //! vapor path whose drive would draw from a vapor-free endpoint is held by
 //! L1 (`Pi = 0`, algebraic) with a root on its drive. The restart is the
 //! existing exact consistent start, then a new stock IDA handle with the
-//! declared 1e-4 s first step. The spike ends at its time cap or at the first
-//! vapor arrival into a liquid-only cell (the declared C4 end, design §7).
-//! Parameters come from the packet and the wiki's strict blocks only.
+//! declared 1e-4 s first step. The spike ends at its time cap, at the first
+//! vapor arrival into a liquid-only cell (the declared C4 end, design §7) or
+//! at a dryout (mode G). Parameters come from the packet and the wiki's
+//! strict blocks only. It needs a water build with the saturation-seam
+//! adapter (`tests/saturation_seam.rs`): an equilibrium cell sits on its
+//! saturated endpoints and differentiates along the saturation line.
 #![cfg(all(feature = "ida", target_os = "macos"))]
 use leitbild_operating_plant::{
     network::{
@@ -82,64 +85,6 @@ fn strict_block(page: &str, fence: &str) -> Value {
     serde_json::from_str(&text[start..end]).unwrap_or_else(|e| panic!("{fence}: {e}"))
 }
 
-/// The scaled energy coordinate nearest `u * m / scale` whose reconstructed
-/// specific energy `(x * scale) / mass` the maintained property boundary
-/// admits on `vapor`'s branch at `p`, value and both unit directions,
-/// searching up to 64 representable neighbours on each side. SPIKE
-/// WORKAROUND, not a proposal: the boundary refuses targets a few ulps
-/// beside the saturated endpoints (report.md, DR); the chosen coordinate is
-/// within a few ulps of the endpoint, so no physical quantity moves.
-fn admitted_quotient(
-    u: f64,
-    m: f64,
-    scale: f64,
-    mass: f64,
-    vapor: bool,
-    p: f64,
-) -> Result<f64, network::Failure> {
-    let start = u * m / scale;
-    if mass == 0. || start == 0. {
-        return Ok(start);
-    }
-    let admitted = |x: f64| -> bool {
-        let q = (x * scale) / mass;
-        let k = usize::from(vapor);
-        [(0., 0.), (1., 0.), (0., 1.)].iter().all(|(dp, du)| {
-            network::properties::inverse_for(
-                &If97,
-                Scalar::new(p, *dp),
-                Scalar::new(q, *du),
-                k,
-                false,
-                network::properties::Need::Complete,
-                None,
-            )
-            .is_ok()
-        })
-    };
-    let mut lo = start;
-    let mut hi = start;
-    for _ in 0..=64 {
-        for x in [lo, hi] {
-            if admitted(x) {
-                return Ok(x);
-            }
-        }
-        lo = f64::from_bits(if lo > 0. {
-            lo.to_bits() - 1
-        } else {
-            lo.to_bits() + 1
-        });
-        hi = f64::from_bits(if hi > 0. {
-            hi.to_bits() + 1
-        } else {
-            hi.to_bits() - 1
-        });
-    }
-    Err(network::Failure::Recoverable(format!(
-        "no admitted representable energy within 64 ulps of u = {u} (m = {mass}, p = {p}, vapor = {vapor})"
-    )))
-}
 fn s(v: f64) -> Scalar {
     Scalar::constant(v)
 }
@@ -282,33 +227,8 @@ impl Spike {
             let ul = ml * uf;
             let ugas = mg * ug;
             ym[m0] = ml.value / sc[m0];
-            // Each phase's specific energy is its saturated endpoint's own
-            // forward value, written so that U/M reconstructs it exactly
-            // (prepare's adjacent-representable search): the maintained
-            // inverse refuses targets a few ulps beside u_f(p) (report.md).
-            let tsat = self
-                .net
-                .properties()
-                .saturation_caloric(s(p.value))
-                .map_err(network::Failure::Recoverable)?
-                .temperature
-                .value;
-            let props = self.net.properties();
-            let ul_end = props
-                .forward(false, p.value, tsat)
-                .map_err(network::Failure::Recoverable)?
-                .internal_energy_j_kg;
-            ym[e0] = admitted_quotient(ul_end, ml.value, sc[e0], ym[m0] * sc[m0], false, p.value)?;
-            ym[e1] = if mg.value != 0. {
-                let ug_end = props
-                    .forward(true, p.value, tsat)
-                    .map_err(network::Failure::Recoverable)?
-                    .internal_energy_j_kg;
-                admitted_quotient(ug_end, mg.value, sc[e1], y[m1] * sc[m1], true, p.value)?
-            } else {
-                0.
-            };
-            let _ = (ul, ugas);
+            ym[e0] = ul.value / sc[e0];
+            ym[e1] = ugas.value / sc[e1];
             if let Some(d) = sm.as_mut() {
                 d[m0] = ml.direction / sc[m0];
                 d[e0] = ul.direction / sc[e0];
@@ -369,13 +289,9 @@ impl Spike {
         Ok(rows)
     }
     /// The colored stage Jacobian on the network's structural pattern, which
-    /// covers every phase presence of a regular cell (design §5). The
-    /// network's columns are seeded on its own slots at the view (the
-    /// maintained property boundary refuses a direction along the
-    /// saturation line at the endpoint, report.md); each equilibrium cell's
-    /// view chain is then applied by exact column operations, and its own
-    /// rows are rebuilt from the network's stock rows and its analytic
-    /// saturation rows.
+    /// covers every phase presence of a regular cell (design §5): one seeded
+    /// evaluation per color through the equilibrium cells' view, its rows
+    /// and the L1-held rows included.
     fn assemble(
         &mut self,
         t: f64,
@@ -390,21 +306,13 @@ impl Spike {
         let n = y.len();
         let mut seed = vec![0.; n];
         values.fill(0.);
-        let held: Vec<usize> = (0..self.held.len())
-            .filter(|j| self.held[*j])
-            .map(|j| self.vapor_index(j))
-            .collect();
         for color in 0..self.structure.coloring.count() {
             self.structure
                 .coloring
                 .seed_into(color, &signs, &mut seed)
                 .map_err(fatal)?;
-            self.net
-                .evaluate_coupled(t, &ym, yp, Some(&seed), cj, None, Some(&mut self.relief))?;
-            let mut directions: Vec<f64> = self.net.rows().iter().map(|r| r.direction).collect();
-            for &i in &held {
-                directions[i] = seed[i];
-            }
+            let rows = self.rows(t, y, yp, Some(&seed), cj)?;
+            let directions: Vec<f64> = rows.iter().map(|r| r.direction).collect();
             sparse::scatter(
                 &self.structure.pattern,
                 &self.structure.coloring,
@@ -414,137 +322,6 @@ impl Spike {
                 values,
             )
             .map_err(fatal)?;
-        }
-        let pointers = self.structure.pattern.pointers().to_vec();
-        let indices = self.structure.pattern.indices().to_vec();
-        let sc = self.net.scales().to_vec();
-        for c in 0..self.modes.len() {
-            if self.modes[c] != Mode::Equilibrium {
-                continue;
-            }
-            let [b, m0, e0, m1, e1, _] = self.slots(c);
-            let p = y[b] * sc[b];
-            let total_m = y[m0] * sc[m0];
-            let mg = y[m1] * sc[m1];
-            let ml = total_m - mg;
-            let [rf, uf, rg, ug] = self.saturation(Scalar::new(p, 1.))?;
-            let v = self.net.volume(c);
-            // dV/dy of the view, in solver scaling.
-            let dul_dp = ml * uf.direction * sc[b] / sc[e0];
-            let dug_dp = mg * ug.direction * sc[b] / sc[e1];
-            let dul_dm0 = uf.value * sc[m0] / sc[e0];
-            let dul_dm1 = -uf.value * sc[m1] / sc[e0];
-            let dml_dm1 = -sc[m1] / sc[m0];
-            let dug_dm1 = ug.value * sc[m1] / sc[e1];
-            let range = |j: usize| pointers[j]..pointers[j + 1];
-            for j in [m0, e0, m1, e1] {
-                if indices[range(j)] != indices[range(b)] {
-                    return Err(fatal("an equilibrium cell's columns differ in rows"));
-                }
-            }
-            let column = |values: &[f64], j: usize| values[range(j)].to_vec();
-            let (cb, cm0, ce0, cm1, ce1) = (
-                column(values, b),
-                column(values, m0),
-                column(values, e0),
-                column(values, m1),
-                column(values, e1),
-            );
-            for k in 0..cb.len() {
-                values[range(b).start + k] = cb[k] + dul_dp * ce0[k] + dug_dp * ce1[k];
-                values[range(m0).start + k] = cm0[k] + dul_dm0 * ce0[k];
-                values[range(m1).start + k] =
-                    cm1[k] + dml_dm1 * cm0[k] + dul_dm1 * ce0[k] + dug_dm1 * ce1[k];
-                values[range(e0).start + k] = 0.;
-                values[range(e1).start + k] = 0.;
-            }
-            // dV_k/dy for the cell's own stock rows k (their yp part is e_k).
-            let dv = |row: usize, col: usize| -> f64 {
-                match (row, col) {
-                    (r, q) if r == m0 && q == m0 => 1.,
-                    (r, q) if r == m0 && q == m1 => dml_dm1,
-                    (r, q) if r == m1 && q == m1 => 1.,
-                    (r, q) if r == e0 && q == b => dul_dp,
-                    (r, q) if r == e0 && q == m0 => dul_dm0,
-                    (r, q) if r == e0 && q == m1 => dul_dm1,
-                    (r, q) if r == e1 && q == b => dug_dp,
-                    (r, q) if r == e1 && q == m1 => dug_dm1,
-                    _ => 0.,
-                }
-            };
-            let eos = |col: usize| -> f64 {
-                if col == b {
-                    (ml * (-rf.direction / (rf.value * rf.value))
-                        + mg * (-rg.direction / (rg.value * rg.value)))
-                        * sc[b]
-                        / v
-                } else if col == m0 {
-                    sc[m0] / (rf.value * v)
-                } else if col == m1 {
-                    (-1. / rf.value + 1. / rg.value) * sc[m1] / v
-                } else {
-                    0.
-                }
-            };
-            let split = |col: usize| -> f64 {
-                if col == e0 {
-                    1.
-                } else if col == b {
-                    -(ml * uf.direction + mg * ug.direction) * sc[b] / sc[e0]
-                } else if col == m0 {
-                    -uf.value * sc[m0] / sc[e0]
-                } else if col == m1 {
-                    (uf.value - ug.value) * sc[m1] / sc[e0]
-                } else {
-                    0.
-                }
-            };
-            let definition = |col: usize| -> f64 {
-                if col == e1 {
-                    1.
-                } else if col == b {
-                    -mg * ug.direction * sc[b] / sc[e1]
-                } else if col == m1 {
-                    -ug.value * sc[m1] / sc[e1]
-                } else {
-                    0.
-                }
-            };
-            for col in 0..n {
-                let span = range(col);
-                let mut at = [None; 4]; // positions of rows m0, m1, e0, e1
-                for pos in span.clone() {
-                    match indices[pos] {
-                        r if r == m0 => at[0] = Some(pos),
-                        r if r == m1 => at[1] = Some(pos),
-                        r if r == e0 => at[2] = Some(pos),
-                        r if r == e1 => at[3] = Some(pos),
-                        _ => {}
-                    }
-                }
-                let get = |slot: Option<usize>| slot.map_or(0., |pos| values[pos]);
-                let df = |slot: Option<usize>, row: usize| get(slot) - cj * dv(row, col);
-                let total_mass = if col == m0 { cj } else { 0. }
-                    + df(at[0], m0)
-                    + (sc[m1] / sc[m0]) * df(at[1], m1);
-                let total_energy = if col == e0 { cj } else { 0. }
-                    + df(at[2], e0)
-                    + (sc[e1] / sc[e0]) * df(at[3], e1);
-                for pos in span {
-                    let row = indices[pos];
-                    if row == b {
-                        values[pos] = eos(col);
-                    } else if row == m0 {
-                        values[pos] = total_mass;
-                    } else if row == e0 {
-                        values[pos] = total_energy;
-                    } else if row == m1 {
-                        values[pos] = split(col);
-                    } else if row == e1 {
-                        values[pos] = definition(col);
-                    }
-                }
-            }
         }
         Ok(())
     }
@@ -1465,8 +1242,9 @@ fn phase_birth_spike() {
     );
 }
 
-/// Diagnostic for the spike's refused restart: the liquid inverse at the
-/// saturated endpoint `u_f(p)` the equilibrium view asks for.
+/// Diagnostic of the saturation seam the spike first met (fixed in the
+/// adapter; `tests/saturation_seam.rs` is its regression test): the liquid
+/// inverse at the saturated endpoint `u_f(p)` the equilibrium view asks for.
 #[test]
 #[ignore = "PHASE spike diagnostic, NOT EVIDENCE: maintained IF97"]
 fn phase_saturated_liquid_inverse_probe() {
