@@ -203,6 +203,7 @@ unsafe extern "C" {
     fn operating_ida_reinitialize(ida: *mut c_void, t: f64, y: *const f64, yp: *const f64)
     -> c_int;
     fn operating_ida_root_directions(ida: *mut c_void, directions: *mut c_int) -> c_int;
+    fn operating_ida_dense(ida: *mut c_void, t: f64, y: *mut f64, yp: *mut f64) -> c_int;
     fn operating_ida_differential(ida: *mut c_void, ids: *const f64) -> c_int;
     fn operating_ida_stop_at(ida: *mut c_void, target: f64) -> c_int;
     fn operating_ida_nonnegative(ida: *mut c_void, flags: *const f64) -> c_int;
@@ -792,6 +793,35 @@ impl<S: System> Ida<S> {
             return Err(format!("stock IDA current-state query failed ({status})"));
         }
         Ok(time)
+    }
+    /// Dense output (S3-D1 #7): stock IDAGetDky with k = 0 and 1, the state
+    /// and its derivative at `t` on stock's interpolating polynomial of the
+    /// last accepted step, for `t` within `[tn - h_used, tn]` (`stats()`'s
+    /// `internal_time` and `last_step`). An observation, never an `IDASolve`
+    /// call: no step, history, option or status changes, and the `advance`
+    /// buffers are untouched. Refused before the first accepted step of a
+    /// segment, on a fail-stopped handle, and (stock IDA_BAD_T) outside the
+    /// last step.
+    pub fn dense_output(&self, t: f64, y: &mut [f64], yp: &mut [f64]) -> Result<()> {
+        if self.failed {
+            return Err("IDA handle is fail-stopped".into());
+        }
+        if !self.started {
+            return Err("IDA dense output needs an accepted step of this segment".into());
+        }
+        self.buffers(y, yp)?;
+        if !t.is_finite() {
+            return Err(format!("IDA dense output time {t} must be finite"));
+        }
+        let code = unsafe {
+            operating_ida_dense(self.handle.as_ptr(), t, y.as_mut_ptr(), yp.as_mut_ptr())
+        };
+        if code < 0 {
+            return Err(format!(
+                "stock IDAGetDky status {code} at {t} s (outside the last accepted step [tn - h_used, tn])"
+            ));
+        }
+        Ok(())
     }
     /// Copy stock's current local-error estimate and reciprocal error weights.
     /// These are diagnostics of its current history, not errors of the last

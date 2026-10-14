@@ -222,6 +222,87 @@ fn current_snapshot_reads_internal_endpoint_without_changing_interpolant_or_hist
     assert_eq!(actual.internal_time, expected.internal_time);
 }
 
+/// Dense output (S3-D1 #7): stock IDAGetDky reads the interpolant of the
+/// last accepted step at any time inside it, equal to stock's IDA_NORMAL
+/// output there, bitwise equal to the internal endpoint's snapshot, refused
+/// outside the step or before one, and with no effect on the history.
+#[test]
+fn dense_output_reads_the_last_steps_interpolant_without_changing_history() {
+    let mut y = [1., 2.];
+    let mut yp = [-1., -2.];
+    let mut ida = new(decay(), &y, &yp);
+    let (mut dy, mut dyp) = ([0.; 2], [0.; 2]);
+    assert!(
+        ida.dense_output(0., &mut dy, &mut dyp)
+            .unwrap_err()
+            .contains("accepted step")
+    );
+    ida.initialize(0.1, &mut y, &mut yp).unwrap();
+    let requested = ida
+        .advance(0.137, &mut y, &mut yp)
+        .and_then(Advance::reached)
+        .unwrap();
+    let output = (y, yp);
+    let before = ida.stats().unwrap();
+    let (tn, hu) = (before.internal_time, before.last_step);
+    assert!(
+        tn > requested && tn - hu < requested,
+        "test must interpolate inside the last step"
+    );
+    // At the requested time: the same interpolant as stock's output.
+    ida.dense_output(requested, &mut dy, &mut dyp).unwrap();
+    for j in 0..2 {
+        assert!((dy[j] - y[j]).abs() <= 1e-14, "{} vs {}", dy[j], y[j]);
+        assert!((dyp[j] - yp[j]).abs() <= 1e-12, "{} vs {}", dyp[j], yp[j]);
+    }
+    // Inside the step: the solution to the run's accuracy.
+    let inside = tn - 0.5 * hu;
+    ida.dense_output(inside, &mut dy, &mut dyp).unwrap();
+    assert!((dy[0] - (-inside).exp()).abs() < 4e-8);
+    assert!((dy[1] - 2. * dy[0]).abs() < 1e-8);
+    assert!((dyp[0] + dy[0]).abs() < 2e-7);
+    // At tn: the internal endpoint's snapshot, bit for bit.
+    let (mut sy, mut syp) = ([0.; 2], [0.; 2]);
+    assert_eq!(ida.current_state(&mut sy, &mut syp).unwrap(), tn);
+    ida.dense_output(tn, &mut dy, &mut dyp).unwrap();
+    assert_eq!((dy, dyp), (sy, syp));
+    // Outside the last step, a wrong buffer: refused, nothing written.
+    for t in [tn + hu, tn - 1.5 * hu, f64::NAN] {
+        let mut probe = [7.; 2];
+        assert!(ida.dense_output(t, &mut probe, &mut dyp).is_err(), "{t}");
+        assert_eq!(probe, [7.; 2]);
+    }
+    assert!(ida.dense_output(tn, &mut [0.; 1], &mut dyp).is_err());
+    // No effect on the history, the counters or the advance buffers.
+    let after = ida.stats().unwrap();
+    assert_eq!(
+        (after.steps, after.residuals, after.jacobians),
+        (before.steps, before.residuals, before.jacobians)
+    );
+    assert_eq!(after.internal_time, before.internal_time);
+    assert_eq!((y, yp), output);
+    ida.advance(0.27, &mut y, &mut yp).unwrap();
+    let mut control_y = [1., 2.];
+    let mut control_yp = [-1., -2.];
+    let mut control = new(decay(), &control_y, &control_yp);
+    control
+        .initialize(0.1, &mut control_y, &mut control_yp)
+        .unwrap();
+    for target in [0.137, 0.27] {
+        control
+            .advance(target, &mut control_y, &mut control_yp)
+            .unwrap();
+    }
+    assert_eq!((y, yp), (control_y, control_yp));
+    assert_eq!(ida.stats().unwrap().steps, control.stats().unwrap().steps);
+    // A restarted segment has no step to read until it advances.
+    ida.reinitialize(0.27, &y, &yp).unwrap();
+    assert!(ida.dense_output(0.27, &mut dy, &mut dyp).is_err());
+    ida.advance(0.3, &mut y, &mut yp).unwrap();
+    ida.dense_output(0.3, &mut dy, &mut dyp).unwrap();
+    assert!((dy[0] - y[0]).abs() <= 1e-14);
+}
+
 #[test]
 fn stock_constraints_reject_negative_inventory_without_rewriting_it() {
     let mut y = [-1., -2.];
