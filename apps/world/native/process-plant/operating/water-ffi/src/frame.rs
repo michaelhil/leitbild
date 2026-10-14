@@ -71,55 +71,8 @@ impl Class {
     }
 }
 
-/// The declared I&C frame: instants `k · period_s`, integer indexed, on the
-/// simulation-time axis (epoch 0).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Frame {
-    period_s: f64,
-}
-impl Frame {
-    pub fn new(period_s: f64) -> Result<Self, String> {
-        if !(period_s.is_finite() && period_s > 0.) {
-            return Err(format!("frame period {period_s} s"));
-        }
-        Ok(Self { period_s })
-    }
-    pub fn period_s(&self) -> f64 {
-        self.period_s
-    }
-    /// Instant of frame `k`, always by the same product.
-    pub fn instant(&self, k: u64) -> f64 {
-        k as f64 * self.period_s
-    }
-    /// The smallest `k` with `instant(k) >= t` (exact comparison).
-    pub fn at_or_after(&self, t: f64) -> Result<u64, String> {
-        if !(t.is_finite() && t >= 0.) {
-            return Err(format!("frame index of {t} s"));
-        }
-        let mut k = (t / self.period_s).ceil() as u64;
-        if self.instant(k) < t {
-            k += 1;
-        }
-        if k > 0 && self.instant(k - 1) >= t {
-            k -= 1;
-        }
-        Ok(k)
-    }
-    /// Whole frames in a selected duration, refused unless the duration is
-    /// a whole number of frames to within the decimal representation (a
-    /// qualification of 0.5 s on the 0.1 s frame is 5 frames).
-    pub fn frames_in(&self, duration_s: f64) -> Result<u64, String> {
-        let n = duration_s / self.period_s;
-        let whole = n.round();
-        if !(duration_s.is_finite() && duration_s >= 0.) || (n - whole).abs() > 1e-9 * n.max(1.) {
-            return Err(format!(
-                "{duration_s} s is not a whole number of {} s frames",
-                self.period_s
-            ));
-        }
-        Ok(whole as u64)
-    }
-}
+/// The declared I&C frame (shared with the plant-side I&C).
+pub use leitbild_operating_plant::ic::Frame;
 
 /// Dense output of the accepted trajectory: the interpolating polynomial of
 /// the last accepted step, in solver scaling.
@@ -188,13 +141,16 @@ impl Dense for PointDense<'_> {
     }
 }
 
+/// A held-input change applied to the system at an exact stop.
+pub type HeldChange<S> = Box<dyn FnOnce(&mut S) -> Result<(), String>>;
+
 /// What a decided change does at its due instant.
 pub enum Action<S> {
     /// An owner command applied through `discrete_restart` (class R).
     Command(Command),
     /// A held-input change the client applies to the system at an exact
     /// stop (class S if [`Smallness`] admits its residual jump, else R).
-    Held(Box<dyn FnOnce(&mut S) -> Result<(), String>>),
+    Held(HeldChange<S>),
 }
 
 /// A physical change a client decided, due at a known time.
@@ -455,8 +411,8 @@ impl<S: JoinedSystem> Driver<S> {
         ida: &mut Ida<S>,
         mut t: f64,
         until: f64,
-        y: &mut Vec<f64>,
-        yp: &mut Vec<f64>,
+        y: &mut [f64],
+        yp: &mut [f64],
         clients: &mut [&mut dyn Client<S>],
         setup: &Setup<'_>,
     ) -> Result<Reached, String> {
@@ -578,7 +534,7 @@ impl<S: JoinedSystem> Driver<S> {
                 kinds.push(format!("{} (S decided late)", c.kind));
             }
         }
-        let mut held: Vec<Box<dyn FnOnce(&mut S) -> Result<(), String>>> = Vec::new();
+        let mut held: Vec<HeldChange<S>> = Vec::new();
         for c in changes {
             match c.action {
                 Action::Command(command) => commands.push(command),
@@ -682,7 +638,7 @@ impl<S: JoinedSystem> Driver<S> {
         t: f64,
         y: &[f64],
         yp: &[f64],
-        held: Vec<Box<dyn FnOnce(&mut S) -> Result<(), String>>>,
+        held: Vec<HeldChange<S>>,
         setup: &Setup<'_>,
     ) -> Result<f64, String> {
         let n = y.len();
@@ -754,24 +710,6 @@ fn summary((r, before): &(Restarted, Vec<Transaction>)) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn frame_instants_are_integer_indexed_and_durations_whole() {
-        let f = Frame::new(0.1).unwrap();
-        assert_eq!(f.instant(5220), 522.0);
-        assert_eq!(f.at_or_after(522.0).unwrap(), 5220);
-        assert_eq!(f.at_or_after(522.05).unwrap(), 5221);
-        assert_eq!(f.at_or_after(0.).unwrap(), 0);
-        // Just above an instant: the next frame.
-        assert_eq!(f.at_or_after(f.instant(7) + 1e-15).unwrap(), 8);
-        assert_eq!(f.frames_in(0.5).unwrap(), 5);
-        assert_eq!(f.frames_in(0.2).unwrap(), 2);
-        assert_eq!(f.frames_in(1.).unwrap(), 10);
-        assert_eq!(f.frames_in(5.).unwrap(), 50);
-        assert_eq!(f.frames_in(0.).unwrap(), 0);
-        assert!(f.frames_in(0.25).is_err());
-        assert!(Frame::new(0.).is_err());
-    }
 
     #[test]
     fn counts_are_by_class_and_kind() {

@@ -923,6 +923,8 @@ impl WaterPoint {
 #[cfg(feature = "ida")]
 pub mod frame;
 #[cfg(feature = "ida")]
+pub mod ic;
+#[cfg(feature = "ida")]
 pub mod ida;
 #[cfg(feature = "ida")]
 pub mod joined;
