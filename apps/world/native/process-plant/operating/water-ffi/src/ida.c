@@ -13,6 +13,8 @@
 #include <klu.h>
 #include <sundials/sundials_config.h>
 #include <sundials/sundials_version.h>
+#include <float.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -177,13 +179,16 @@ int operating_ida_step(OperatingIDA *o,double target,double *time,double *y,doub
    interpolating polynomial, t within [tn - hu, tn] and k at most that step's
    order, into the handle's own scratch, then copied out. No step, history,
    option or status changes (dense output, S3-D1 #7). Stock checks only the
-   lower end (it would extrapolate past tn); a time past tn is refused here
-   with stock's own IDA_BAD_T. */
+   lower end (it would extrapolate past tn); a time past tn by more than
+   stock's own time fuzz, 100 uround (|tn| + |h|) as in IDAGetDky's lower
+   end and the stop-time test (a stop at tstop leaves tn a few ulps short of
+   the returned tstop), is refused here with stock's own IDA_BAD_T. */
 int operating_ida_dky(OperatingIDA *o,double t,int k,double *out) {
-    double current;
+    double current, next;
     int code=IDAGetCurrentTime(o->ida,&current);
+    if (code>=0) code=IDAGetCurrentStep(o->ida,&next);
     if (code<0) return code;
-    if (!(t<=current)) return IDA_BAD_T;
+    if (!(t<=current+100.0*DBL_EPSILON*(fabs(current)+fabs(next)))) return IDA_BAD_T;
     code=IDAGetDky(o->ida,t,k,o->dense);
     if (code>=0) memcpy(out,N_VGetArrayPointer(o->dense),N_VGetLength(o->dense)*sizeof(double));
     return code;
