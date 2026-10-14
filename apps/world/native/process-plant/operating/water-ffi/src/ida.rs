@@ -203,6 +203,7 @@ unsafe extern "C" {
     fn operating_ida_reinitialize(ida: *mut c_void, t: f64, y: *const f64, yp: *const f64)
     -> c_int;
     fn operating_ida_root_directions(ida: *mut c_void, directions: *mut c_int) -> c_int;
+    fn operating_ida_set_root_direction(ida: *mut c_void, directions: *mut c_int) -> c_int;
     fn operating_ida_dense(ida: *mut c_void, t: f64, y: *mut f64, yp: *mut f64) -> c_int;
     fn operating_ida_differential(ida: *mut c_void, ids: *const f64) -> c_int;
     fn operating_ida_stop_at(ida: *mut c_void, target: f64) -> c_int;
@@ -608,6 +609,24 @@ impl<S: System> Ida<S> {
         } else {
             Ok(())
         }
+    }
+    /// Stock IDASetRootDirection: one of -1, 0, +1 per declared root
+    /// function (+1 locates rising crossings only, -1 falling only, 0 both;
+    /// stock's default is 0 for every function). A segment option like the
+    /// others: before `advance`; stock keeps it across IDAReInit.
+    pub fn set_root_directions(&mut self, directions: &[i32]) -> Result<()> {
+        self.configurable("root directions")?;
+        if directions.len() != self.context.roots
+            || directions.is_empty()
+            || directions.iter().any(|d| !(-1..=1).contains(d))
+        {
+            return Err("IDA root directions need one of -1, 0, +1 per root function".into());
+        }
+        // Stock copies the array, so the copy may drop after the call.
+        let mut copy: Vec<c_int> = directions.to_vec();
+        let code =
+            unsafe { operating_ida_set_root_direction(self.handle.as_ptr(), copy.as_mut_ptr()) };
+        self.check(code)
     }
     /// IDASetMaxOrd; stock admits 1 through its allocated maximum order 5.
     pub fn set_max_order(&mut self, order: usize) -> Result<()> {

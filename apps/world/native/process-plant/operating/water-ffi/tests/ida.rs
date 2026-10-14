@@ -602,6 +602,56 @@ fn roots_stop_at_known_crossings_and_reinitialization_follows_the_analytic_bounc
     }
 }
 
+/// Stock IDASetRootDirection: a root function restricted to rising
+/// crossings never locates its falling one, the restriction survives
+/// IDAReInit, and it is a segment option checked like the others.
+#[test]
+fn a_root_restricted_to_one_direction_ignores_the_other_and_survives_a_restart() {
+    let mut y = [1., 0.];
+    let mut yp = [0.; 2];
+    let mut ida = start(Crossings(decay()), &y, &yp, 1e-10, 1e-12);
+    for wrong in [&[1, 0][..], &[2, 0, 0], &[0, -2, 0], &[]] {
+        assert!(ida.set_root_directions(wrong).is_err(), "{wrong:?}");
+    }
+    // y0 - 0.5 falls through zero at ln 2: rising only, it is never located.
+    ida.set_root_directions(&[1, 1, 0]).unwrap();
+    ida.initialize(0.01, &mut y, &mut yp).unwrap();
+    let Advance::Root { time, directions } = ida.advance(2., &mut y, &mut yp).unwrap() else {
+        panic!("the rising time crossing is still located");
+    };
+    assert!((time - 0.3).abs() < 1e-9, "{time}");
+    assert_eq!(directions, [0, 1, 0]);
+    assert_eq!(
+        ida.advance(2., &mut y, &mut yp).unwrap(),
+        Advance::Reached(2.)
+    );
+    assert!(
+        ida.set_root_directions(&[0, 0, 0])
+            .unwrap_err()
+            .contains("only after construction or reinitialization")
+    );
+    // IDAReInit keeps the restriction: the inventory jumps back to 1 and
+    // falls through 0.5 again at 2 + ln 2, unlocated.
+    ida.reinitialize(2., &[1., 2.], &[-1., -2.]).unwrap();
+    let (mut y, mut yp) = ([1., 2.], [-1., -2.]);
+    assert_eq!(
+        ida.advance(3., &mut y, &mut yp).unwrap(),
+        Advance::Reached(3.)
+    );
+    // Falling only, set at the next restart: located at 3 + ln 2.
+    ida.reinitialize(3., &[1., 2.], &[-1., -2.]).unwrap();
+    ida.set_root_directions(&[-1, 0, 0]).unwrap();
+    let (mut y, mut yp) = ([1., 2.], [-1., -2.]);
+    let Advance::Root { time, directions } = ida.advance(5., &mut y, &mut yp).unwrap() else {
+        panic!("the falling crossing is located");
+    };
+    assert!((time - 3. - LN_2).abs() < 1e-8, "{time}");
+    assert_eq!(directions, [-1, 0, 0]);
+    // A system without root functions has nothing to restrict.
+    let mut plain = new(decay(), &[1., 2.], &[-1., -2.]);
+    assert!(plain.set_root_directions(&[]).is_err());
+}
+
 #[test]
 fn reinitialization_after_an_imposed_discontinuity_retains_options_and_constraints() {
     let mut y = [1., 2.];

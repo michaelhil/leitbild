@@ -254,6 +254,12 @@ int operating_ida_reinitialize(OperatingIDA *o,double t,const double *y,const do
 int operating_ida_root_directions(OperatingIDA *o,int *directions) {
     return IDAGetRootInfo(o->ida,directions);
 }
+/* Stock IDASetRootDirection after IDARootInit: per root function +1 locates
+   rising crossings only, -1 falling only, 0 both. Stock copies the array;
+   IDAReInit keeps it. */
+int operating_ida_set_root_direction(OperatingIDA *o,int *directions) {
+    return IDASetRootDirection(o->ida,directions);
+}
 /* Stock IDASetId copies the vector; the owned ids remain only its source. */
 int operating_ida_differential(OperatingIDA *o,const double *ids) {
     memcpy(N_VGetArrayPointer(o->ids),ids,N_VGetLength(o->ids)*sizeof(double));
