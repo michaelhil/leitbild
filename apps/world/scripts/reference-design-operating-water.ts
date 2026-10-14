@@ -232,8 +232,11 @@ bool in_band(double p) {
 // The metastable side of saturation on an explicit branch: liquid above Tsat;
 // vapor below it where the shared adapter's own supersaturation test refuses
 // (every vapor state that test admits keeps its unchanged stable path).
+// At p == p_T(T) with T < ts the TP region search is ambiguous (its REGION_4),
+// so the stable path could only refuse there: that rounding tie is the
+// metastable side too.
 bool metastable_side(int branch,double p,double T,double ts) {
- return (branch==0&&T>ts)||(branch==1&&T<ts&&T>=IF97::Tmin&&!(p<=r4.p_T(T)));
+ return (branch==0&&T>ts)||(branch==1&&T<ts&&T>=IF97::Tmin&&!(p<r4.p_T(T)));
 }
 // The caloric state on the shared adapter's branch paths; ld01_water_point
 // completes it (complete_state) rather than evaluating gibbs()'s tuple.
@@ -252,6 +255,12 @@ struct CaloricTuple {
 // equation, region-1 Eq. (7) or region-2 Eq. (15), inside the band's pressure
 // range and trial departure only: no region search and no backward equation.
 // Outside them it returns TRIAL_BAND. Without admission it is the stable path.
+// The saturation seam: Tsat(p) and psat(T) are not exact inverses, so a state
+// a few ulps on the stable side of ts (by T) can compare as the other phase in
+// the TP region search (p <= psat(T) for liquid, p >= psat(T) for vapor), and
+// the shared stable path refuses it. Such a state is the branch's own region
+// equation, which is exactly what the stable path evaluates wherever its search
+// agrees: no band, no tolerance, and no admitted state changes.
 template<class Tuple> int branch_state(int branch,double p,double T,State& q,double& ts,bool metastable) {
  require(std::isfinite(p)&&p>=1e5&&p<=(branch==0||branch==2?liquid_ceiling_pa:vapor_ceiling_pa),
   "Operating water pressure domain");
@@ -265,8 +274,12 @@ template<class Tuple> int branch_state(int branch,double p,double T,State& q,dou
   case 0:
    if(T==ts){q=Tuple::saturated(p,true);break;}
    require(!(T>liquid_temperature_max_k),"Liquid above the region-1 temperature limit");
+   if(T<ts&&!(p>r4.p_T(T))){q=Tuple::liquid_equation(T,p);break;}
    q=Tuple::stable_liquid(T,p);break;
-  case 1:q=T==ts?Tuple::saturated(p,false):Tuple::stable_vapor(T,p);break;
+  case 1:
+   if(T==ts){q=Tuple::saturated(p,false);break;}
+   if(T>ts&&T<=IF97::T23min&&!(p<r4.p_T(T))){q=Tuple::vapor_equation(T,p);break;}
+   q=Tuple::stable_vapor(T,p);break;
   case 2:q=Tuple::saturated(p,true);break;
   case 3:q=Tuple::saturated(p,false);break;
   default:return 2;
@@ -354,7 +367,11 @@ int ld01_water_complete(const OperatingWaterPoint* caloric,int fields,OperatingW
 // Direction at q, which is ld01_water_point(branch,p,T)'s own complete output.
 // Coefficient probes stay with the centre's admission: a stable-side centre
 // is probed on stable-side states only, as before metastable admission, and a
-// metastable centre inside the band.
+// metastable centre inside the band. A stable-side centre at or next to
+// saturation whose two probes both leave the stable side (a direction along
+// the saturation line: Tsat is concave in p) is probed on its branch's admitted
+// metastable states instead, inside the band's pressure range and trial
+// departure only; elsewhere it still refuses.
 // The exact part of a direction at q: p, T, rho, u, h and departure by the
 // Gibbs identities. The saturation slope is read only on a saturated branch
 // and for the departure.
@@ -378,8 +395,13 @@ static int water_direction_at(int branch,double p,double T,double dp,double dT,
  if(scale!=0.) {
   const double h=std::cbrt(std::numeric_limits<double>::epsilon())/scale;
   OperatingWaterPoint a{},b{},c{};
-  const bool plus=water_point_at(branch,p+h*dp,T+h*dT,&a,metastable)==0;
-  const bool minus=water_point_at(branch,p-h*dp,T-h*dT,&b,metastable)==0;
+  bool plus=water_point_at(branch,p+h*dp,T+h*dT,&a,metastable)==0;
+  bool minus=water_point_at(branch,p-h*dp,T-h*dT,&b,metastable)==0;
+  if(!plus&&!minus&&!metastable&&(branch==0||branch==1)){
+   metastable=true;
+   plus=water_point_at(branch,p+h*dp,T+h*dT,&a,metastable)==0;
+   minus=water_point_at(branch,p-h*dp,T-h*dT,&b,metastable)==0;
+  }
   int side=0;
   if(!(plus&&minus)){
    side=plus?1:minus?-1:0;
