@@ -1128,6 +1128,9 @@ fn phase_p7_post_birth_cost() {
         max_step: env_f("LD01_P7_MAX_STEP_S"),
     };
     let spectrum_every = env_f("LD01_P7_SPECTRUM_EVERY_S");
+    let track_hold: Option<Vec<usize>> = std::env::var("LD01_P7_TRACK_HOLD")
+        .ok()
+        .map(|v| v.split(',').map(|j| j.trim().parse().unwrap()).collect());
     let mut track: Vec<Value> = Vec::new();
     let face_index = |id: &str| {
         raw["mechanics"]["faces"]
@@ -1266,7 +1269,18 @@ fn phase_p7_post_birth_cost() {
                                 .iter()
                                 .map(|c| sp.compliance(*c, &y).unwrap_or_else(|e| json!({"cell":c,"error":format!("{e:?}")})))
                                 .collect();
-                            track.push(json!({"t":t,"compliance":compliance,"spectrum":spec}));
+                            // Diagnostic what-if (NOT a trajectory): the same
+                            // pencil with the named vapor paths held (Pi_g = 0).
+                            let held_what_if = track_hold.as_ref().map(|faces| {
+                                let saved = sp.held.clone();
+                                for j in faces {
+                                    sp.held[*j] = true;
+                                }
+                                let v = spectrum_summary(&mut sp, t, &y, &yp, &names, 12.);
+                                sp.held = saved;
+                                json!({"held_faces":faces,"spectrum":v})
+                            });
+                            track.push(json!({"t":t,"compliance":compliance,"spectrum":spec,"what_if_held":held_what_if}));
                         }
                     }
                     if observe_file.is_some() && t + 1e-12 >= observe_from_s {
