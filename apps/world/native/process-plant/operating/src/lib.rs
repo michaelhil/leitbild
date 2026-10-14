@@ -6,6 +6,7 @@
 //! Callers own plant coefficients, equipment mappings and constitutive inputs.
 
 pub mod capture;
+pub mod control;
 pub mod heat_history;
 pub mod hydraulics;
 pub mod initialization;
