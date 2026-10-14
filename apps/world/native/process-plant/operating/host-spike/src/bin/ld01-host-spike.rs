@@ -24,7 +24,7 @@
 //! | 9 CLOSE | — | — (then exit 0) |
 //! | 10 STATUS | — | UTF-8 JSON (process CPU, time) |
 use leitbild_ld01_host_spike::{
-    cpu, sha256,
+    cpu,
     unit::{Command, Config, Mode, SIGNALS, Unit},
 };
 use serde_json::json;
@@ -172,8 +172,7 @@ fn write_frame(w: &mut impl Write, status: u8, seq: u32, payload: &[u8]) -> std:
 }
 
 fn main() {
-    let exe = std::env::current_exe().expect("current exe");
-    let kernel = sha256::hex(&std::fs::read(&exe).expect("read own executable"));
+    let kernel = leitbild_ld01_host_spike::KERNEL_SOURCE_SHA256.to_string();
     let mut host = Host { unit: None, kernel };
     let mut input = BufReader::new(std::io::stdin().lock());
     let mut output = BufWriter::new(std::io::stdout().lock());

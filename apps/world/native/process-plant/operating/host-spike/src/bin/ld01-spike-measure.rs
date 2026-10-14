@@ -14,8 +14,7 @@ use serde_json::{Value, json};
 use std::time::Instant;
 
 fn kernel() -> String {
-    let exe = std::env::current_exe().expect("current exe");
-    leitbild_ld01_host_spike::sha256::hex(&std::fs::read(exe).expect("read exe"))
+    leitbild_ld01_host_spike::KERNEL_SOURCE_SHA256.to_string()
 }
 
 fn signals(unit: &mut Unit) -> Vec<f64> {

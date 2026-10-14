@@ -4,6 +4,10 @@
 //! caller-driven time behind a narrow surface, for measurement. It is never
 //! registered in a Pack, the Runtime Hub or the deployer, and it adds no
 //! physics, solver option or fallback.
+/// SHA-256 over the kernel's own sources (see build.rs): the `kernel` part
+/// of every snapshot identity, shared by the binary and the cdylib.
+pub const KERNEL_SOURCE_SHA256: &str = env!("LD01_KERNEL_SOURCE_SHA256");
 pub mod cpu;
+pub mod ffi;
 pub mod sha256;
 pub mod unit;
