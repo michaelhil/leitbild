@@ -8,18 +8,18 @@
 //! - `R`: every change class R (`discrete_restart`; a change discovered
 //!   after the step passed its frame restarts there from the step's dense
 //!   output);
-//! - `S`: every change class S, admitted whatever its residual jump (the
-//!   driver's criterion set to admit all), so S's own error is measured;
-//!   the controller asks for a stop at every frame, since an S change cannot
-//!   be applied late;
-//! - `CRIT`: class S under the provisional smallness criterion (0.1 of the
-//!   Newton coefficient), restarted when refused: the policy under test;
+//! - `S`: every change class S, as lead decision S3-D4 classes a heater
+//!   power step (it enters only the heater steel's energy balance); the
+//!   driver checks that rule at each stop. The controller asks for a stop at
+//!   every frame, since an S change cannot be applied late;
 //!
 //! against a tight reference `REF` (R at rtol/10). Both closed loops run,
 //! and `R-replay`/`S-replay` apply the reference's own request schedule, so
 //! the integration policy's error is measured apart from any divergence of
-//! the quantized control decisions. The driver logs the jump of every S
-//! candidate: the Newton correction `J(cj)^-1 ΔF` in IDA's WRMS.
+//! the quantized control decisions. The driver reports the jump of every S
+//! instant, the Newton correction `J(cj)^-1 ΔF` in IDA's WRMS, as a
+//! diagnostic. The first receipt (615e26f4e) also ran S3-D1.2's provisional
+//! fraction (`CRIT`), which S3-D4 retired on its result.
 //!
 //! PT1 is the stratified cell's roof-pressure coordinate (the PT1 tap is the
 //! roof), so the channel's first-order lag is integrated exactly under each
@@ -40,7 +40,7 @@
 //! this packet), `LD01_PZR_CONTROL_SECTION` (the compiled `pzrControl`
 //! section), `LD01_PZR_CONTROL_WIKI` (the wiki root it was compiled from,
 //! for the channel block), optionally `LD01_C1_SPAN_S` (default 300),
-//! `LD01_C1_RUNS` (comma list of R, S, CRIT, R-replay, S-replay; default
+//! `LD01_C1_RUNS` (comma list of R, S, R-replay, S-replay; default
 //! all; REF always runs) and `LD01_C1_RECEIPT` (a new receipt path; the
 //! series go beside it).
 #![cfg(all(feature = "ida", target_os = "macos"))]
@@ -56,7 +56,7 @@ use leitbild_operating_plant::{
 };
 use leitbild_operating_water::{
     If97,
-    frame::{Action, Change, Class, Client, Dense, Driver, Frame, Setup, Smallness},
+    frame::{Action, Change, Class, Client, Dense, Diagnostic, Driver, Frame, Setup},
     ida::{Ida, Initial},
     joined::{Discrete, Integrated, Restart, discrete_restart},
 };
@@ -69,8 +69,9 @@ type System = Integrated<If97>;
 
 /// S2's hold configuration (BDF order at most 2).
 const MAX_ORDER: usize = 2;
-/// The provisional smallness criterion (S3-D1 #2).
-const SMALLNESS_FRACTION: f64 = 0.1;
+/// S3-D1.2's retired provisional bound, kept to report how many jumps it
+/// would have admitted: 0.1 of the Newton coefficient.
+const RETIRED_FRACTION: f64 = 0.1;
 /// The credited band (`ld01-accuracy-contract`, uncreditedAbove_Hz).
 const CREDITED_HZ: f64 = 2.;
 /// The two main-loop return faces (RETURN.A/B -> DOWN), as the settle's
@@ -314,10 +315,9 @@ fn run(
     channel: ChannelBlock,
     span_s: f64,
 ) -> Run {
-    let (class, fraction) = match name {
-        "REF" | "R" | "R-replay" => (Class::R, SMALLNESS_FRACTION),
-        "S" | "S-replay" => (Class::S, f64::INFINITY),
-        "CRIT" => (Class::S, SMALLNESS_FRACTION),
+    let class = match name {
+        "REF" | "R" | "R-replay" => Class::R,
+        "S" | "S-replay" => Class::S,
         other => panic!("unknown run {other}"),
     };
     let restart = Restart {
@@ -432,10 +432,7 @@ fn run(
     let initial_cpu = z1::cpu_s() - started;
     let mut driver = Driver::<System>::new(
         Frame::new(law.frame_s()).unwrap(),
-        Smallness {
-            fraction,
-            newton_tolerance: NEWTON_COEFFICIENT,
-        },
+        Diagnostic::Jump,
         z1::cpu_s,
         t0,
     )
@@ -469,22 +466,21 @@ fn run(
         .iter()
         .filter_map(|r| r["jump_wrms"].as_f64())
         .collect();
-    let bound = SMALLNESS_FRACTION * NEWTON_COEFFICIENT;
+    let bound = RETIRED_FRACTION * NEWTON_COEFFICIENT;
     let mut sorted = jumps.clone();
     sorted.sort_by(f64::total_cmp);
     let summary = json!({"run": name, "class_of_changes": class.name(),
-        "smallness_fraction": if fraction.is_finite() { json!(fraction) } else { json!("admit all") },
         "tolerance_divisor": divisor, "replay_of_reference_schedule": replay.is_some(),
         "t0_s": t0, "span_s": span_s, "prepared_request_w": prepared_w, "start_request_w": start_w,
         "composition_cpu_s": composition_cpu, "initial_start_cpu_s": initial_cpu,
         "cpu_s": loop_cpu, "cpu_s_per_simulated_s": loop_cpu / span_s,
         "driver_cpu": {"solver_s": driver.cpu.solver_s, "observation_s": driver.cpu.observation_s,
-            "restart_s": driver.cpu.restart_s, "smallness_s": driver.cpu.smallness_s},
+            "restart_s": driver.cpu.restart_s, "held_s": driver.cpu.held_s},
         "counts": driver.counts.json(),
         "operator": {"residuals": counters.residuals - counters_before.residuals,
             "jacobians": counters.jacobians - counters_before.jacobians, "roots": counters.roots - counters_before.roots},
         "changes": client.schedule.len() - 1,
-        "s_candidate_jumps": {"n": jumps.len(), "passing_provisional_bound": jumps.iter().filter(|j| **j <= bound).count(),
+        "s_jump_diagnostic": {"n": jumps.len(), "within_retired_s3_d1_2_bound": jumps.iter().filter(|j| **j <= bound).count(),
             "min": sorted.first(), "median": sorted.get(sorted.len() / 2), "max": sorted.last()},
         "log": driver.log});
     Run {
@@ -553,7 +549,7 @@ fn s3_c1_controller_updates_as_stop_and_continue_against_restart() {
     }
     let span_s: f64 = std::env::var("LD01_C1_SPAN_S").map_or(300., |s| s.parse().unwrap());
     let wanted: Vec<String> = std::env::var("LD01_C1_RUNS")
-        .unwrap_or_else(|_| "R,S,CRIT,R-replay,S-replay".into())
+        .unwrap_or_else(|_| "R,S,R-replay,S-replay".into())
         .split(',')
         .map(str::to_string)
         .collect();
@@ -590,7 +586,7 @@ fn s3_c1_controller_updates_as_stop_and_continue_against_restart() {
     let mut runs: Vec<Run> = Vec::new();
     for p in &wanted {
         let r = match p.as_str() {
-            "R" | "S" | "CRIT" => run(p, 1., None, &state, &law, channel, span_s),
+            "R" | "S" => run(p, 1., None, &state, &law, channel, span_s),
             "R-replay" | "S-replay" => run(p, 1., Some(&schedule), &state, &law, channel, span_s),
             other => panic!("unknown run {other}"),
         };
@@ -610,14 +606,15 @@ fn s3_c1_controller_updates_as_stop_and_continue_against_restart() {
     summaries.extend(runs.iter().map(|r| r.summary.clone()));
     let receipt = json!({
         "kind": "s3-d1-c1-refinement-pair",
-        "status": "NOT-EVIDENCE measurement for S3-D1 decision 2 (provisional smallness criterion), on IC-PROT's frame driver; the PT1 channel is the test's own until IC-PROT's acquisition lands",
+        "status": "NOT-EVIDENCE measurement: S against R for the C1 controller on IC-PROT's frame driver with S3-D4's rule classifier; the PT1 channel is the test's own until IC-PROT's acquisition lands",
         "provenance": spine::provenance(),
         "settled_state": state_path, "settled_state_t_s": state["t_s"], "packet_sha256": state["packet_sha256"],
         "control_section": section_path, "control_section_provenance": section.provenance, "control_wiki": wiki,
         "channel": {"lag_s": channel.lag_s, "quantum_pa": channel.quantum_pa, "sample_s": channel.sample_s,
             "transport_s": channel.transport_s, "span_pa": [channel.min_pa, channel.max_pa]},
-        "criterion": {"definition": "frame.rs held_jump: WRMS of J(cj)^-1 (F_new - F_old) at the exact stop, cj = sum_{j<=q} 1/j / h_next, weights 1/(rtol|y|+atol)",
-            "fraction": SMALLNESS_FRACTION, "newton_coefficient": NEWTON_COEFFICIENT, "bound": SMALLNESS_FRACTION * NEWTON_COEFFICIENT},
+        "classifier": "S3-D4 rule (frame.rs storage_rate_only): S iff the held change moves no algebraic row, leaves the identity and every root value unchanged",
+        "jump_diagnostic": {"definition": "WRMS of J(cj)^-1 (F_new - F_old) at the exact stop, cj = sum_{j<=q} 1/j / h_next, weights 1/(rtol|y|+atol)",
+            "retired_s3_d1_2_bound": RETIRED_FRACTION * NEWTON_COEFFICIENT},
         "observation": {"interval_s": frame_s, "filter": filter::DECLARED_FILTER, "cutoff_hz": CREDITED_HZ,
             "note": "frame samples from dense output (0.1 s), not the contract's 0.002 s; loop flows are the impulse coordinates times their flow ratio at the start"},
         "outputs": OUTPUTS,

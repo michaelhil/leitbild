@@ -10,13 +10,18 @@
 //! **Classes.** Every discrete change is counted by class and kind:
 //! - **R**: `discrete_restart` (transactions, time events, bound placement,
 //!   identity, exact consistent start, IDAReInit). Every root-located event,
-//!   every command, every protective or equipment output that writes state,
-//!   changes an algebraic equation or arms a root, and every known-time
-//!   change that fails the smallness criterion.
+//!   every command, and every change that alters an algebraic constraint, a
+//!   differential coordinate or the DAE structure, or arms or jumps a root.
 //! - **S**: stop exactly at a known time, apply a held-input change, continue
-//!   the retained BDF history, admitted only if the residual jump passes
-//!   [`Smallness`] (provisional, S3-D1.2; IC-CTRL's C1 S-vs-R pair
-//!   qualifies it).
+//!   the retained BDF history. By rule (lead decision S3-D4, on IC-CTRL's C1
+//!   pair; it replaces S3-D1.2's residual-jump fraction): a held input that
+//!   enters the residual only through a storage element's rate, a source or
+//!   sink term of a differential balance (heater power, a demand into a
+//!   balance). The driver checks the rule at the stop and refuses a change
+//!   declared S that breaks it: the residual moves on no algebraic row, the
+//!   differential identity is unchanged and no root function moves. The
+//!   residual jump `J(cj)^-1 ΔF` stays a reported diagnostic
+//!   ([`Diagnostic::Jump`]), never a gate.
 //! - **O**: observation only. Clients read each accepted step's
 //!   interpolating polynomial through [`Dense`] (stock IDAGetDky) between
 //!   steps; the integrator runs in stock IDA_ONE_STEP, so observation adds
@@ -141,6 +146,9 @@ impl Dense for PointDense<'_> {
     }
 }
 
+/// Residual, differential identity and root values at one exact stop.
+type HeldState = (Vec<f64>, Vec<f64>, Vec<f64>);
+
 /// A held-input change applied to the system at an exact stop.
 pub type HeldChange<S> = Box<dyn FnOnce(&mut S) -> Result<(), String>>;
 
@@ -149,14 +157,16 @@ pub enum Action<S> {
     /// An owner command applied through `discrete_restart` (class R).
     Command(Command),
     /// A held-input change the client applies to the system at an exact
-    /// stop (class S if [`Smallness`] admits its residual jump, else R).
+    /// stop: class S when it enters only a storage element's rate
+    /// (S3-D4, checked by the driver), class R otherwise.
     Held(HeldChange<S>),
 }
 
 /// A physical change a client decided, due at a known time.
 pub struct Change<S> {
     pub due_s: f64,
-    /// R or S (O and C never stop the integrator).
+    /// R or S by S3-D4's rule (O and C never stop the integrator). A
+    /// `Command` is always R.
     pub class: Class,
     /// Counting key, e.g. `"LD01.TRIP.HOLD loss"`.
     pub kind: String,
@@ -186,22 +196,55 @@ pub trait Client<S> {
     }
 }
 
-/// Provisional smallness criterion for class S (S3-D1.2): the Newton
-/// correction the held-input change alone asks for, `J(cj)^-1 ΔF`, in IDA's
-/// WRMS norm, at most `fraction` of the Newton convergence tolerance
-/// (stock's coefficient, the segment's 0.33).
-#[derive(Clone, Copy, Debug)]
-pub struct Smallness {
-    pub fraction: f64,
-    pub newton_tolerance: f64,
+/// The reported diagnostic of a class-S instant (S3-D4): the Newton
+/// correction the held changes alone ask for, `J(cj)^-1 ΔF` in IDA's WRMS
+/// (one Jacobian assembly and factorization per S instant), or none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Diagnostic {
+    Jump,
+    None,
 }
-impl Smallness {
-    pub fn bound(&self) -> f64 {
-        self.fraction * self.newton_tolerance
+
+/// S3-D4's rule at an exact stop, on the residual change `delta` of the
+/// held inputs at `(t, y, y')`, the differential identity before and after
+/// them, and the root functions before and after: a class-S change enters
+/// only differential rows (a storage element's rate), leaves the identity
+/// and every root value unchanged. Returns the rows it entered.
+pub fn storage_rate_only(
+    delta: &[f64],
+    identity_before: &[f64],
+    identity_after: &[f64],
+    roots_before: &[f64],
+    roots_after: &[f64],
+) -> Result<usize, String> {
+    if delta.len() != identity_before.len() || identity_before.len() != identity_after.len() {
+        return Err("S3-D4 check: layout".into());
     }
-    pub fn admits(&self, jump_wrms: f64) -> bool {
-        jump_wrms.is_finite() && jump_wrms <= self.bound()
+    if let Some(i) = (0..identity_before.len())
+        .find(|i| identity_before[*i].to_bits() != identity_after[*i].to_bits())
+    {
+        return Err(format!(
+            "a change declared S changes the differential identity at coordinate {i}: class R (S3-D4)"
+        ));
     }
+    if let Some(i) = (0..delta.len()).find(|i| identity_before[*i] == 0. && delta[*i] != 0.) {
+        return Err(format!(
+            "a change declared S alters algebraic row {i} by {}: class R (S3-D4)",
+            delta[i]
+        ));
+    }
+    if roots_before.len() != roots_after.len() {
+        return Err("S3-D4 check: root layout".into());
+    }
+    if let Some(i) =
+        (0..roots_before.len()).find(|i| roots_before[*i].to_bits() != roots_after[*i].to_bits())
+    {
+        return Err(format!(
+            "a change declared S moves root function {i} from {} to {}: class R (S3-D4)",
+            roots_before[i], roots_after[i]
+        ));
+    }
+    Ok(delta.iter().filter(|d| **d != 0.).count())
 }
 
 /// The restart configuration the driver passes to `discrete_restart`.
@@ -258,13 +301,14 @@ pub struct Cpu {
     pub solver_s: f64,
     pub observation_s: f64,
     pub restart_s: f64,
-    pub smallness_s: f64,
+    /// S3-D4's rule check and the jump diagnostic at S instants.
+    pub held_s: f64,
 }
 
 /// The driver's state between calls of [`Driver::run`].
 pub struct Driver<S> {
     frame: Frame,
-    smallness: Smallness,
+    diagnostic: Diagnostic,
     clock: fn() -> f64,
     /// First frame index not yet observed.
     next_frame: u64,
@@ -289,16 +333,13 @@ impl<S: JoinedSystem> Driver<S> {
     /// A driver whose first observed frame is the first at or after `t0`.
     pub fn new(
         frame: Frame,
-        smallness: Smallness,
+        diagnostic: Diagnostic,
         clock: fn() -> f64,
         t0: f64,
     ) -> Result<Self, String> {
-        if !(smallness.fraction > 0. && smallness.newton_tolerance > 0.) {
-            return Err("smallness criterion".into());
-        }
         Ok(Self {
             frame,
-            smallness,
+            diagnostic,
             clock,
             next_frame: frame.at_or_after(t0)?,
             observed_to: t0,
@@ -484,8 +525,8 @@ impl<S: JoinedSystem> Driver<S> {
 
     /// Everything due at `t`, as one instant: commands, the clients'
     /// changes, located roots and owner time events. One restart if any
-    /// part is R; otherwise one stop with the held changes judged by
-    /// [`Smallness`].
+    /// part is R; otherwise one stop with the held changes checked by
+    /// S3-D4's rule ([`storage_rate_only`]).
     #[allow(clippy::too_many_arguments)] // One instant: handle, state, clients, setup.
     fn apply(
         &mut self,
@@ -542,24 +583,15 @@ impl<S: JoinedSystem> Driver<S> {
             }
         }
         if !restart_class {
-            // Class S candidate: every change is a held input.
+            // Class S: every change is a held input entering only a storage
+            // element's rate (S3-D4, checked; a broken rule refuses).
             let started = (self.clock)();
-            let jump = self.held_jump(ida, t, y, yp, held, setup)?;
-            self.cpu.smallness_s += (self.clock)() - started;
-            if self.smallness.admits(jump) {
-                self.counts.record(Class::S, &kinds.join(" + "));
-                self.log.push(
-                    json!({"t_s": t, "class": "S", "kinds": kinds, "jump_wrms": jump,
-                    "bound": self.smallness.bound()}),
-                );
-                return Ok(());
-            }
-            // Fails the criterion: restart with the held inputs applied.
-            let restarted = self.restart(ida, t, None, &[], y, yp, setup)?;
-            self.counts
-                .record(Class::R, &format!("{} (S refused)", kinds.join(" + ")));
-            self.log.push(json!({"t_s": t, "class": "R", "kinds": kinds, "jump_wrms": jump,
-                "bound": self.smallness.bound(), "s_refused": true, "restart": summary(&restarted)}));
+            let (entered, jump) = self.held(ida, t, y, yp, held, setup)?;
+            self.cpu.held_s += (self.clock)() - started;
+            self.counts.record(Class::S, &kinds.join(" + "));
+            self.log.push(
+                json!({"t_s": t, "class": "S", "kinds": kinds, "rows_entered": entered, "jump_wrms": jump}),
+            );
             return Ok(());
         }
         for f in held {
@@ -628,11 +660,13 @@ impl<S: JoinedSystem> Driver<S> {
         Ok((restarted, before))
     }
 
-    /// The smallness metric of held changes at the exact stop `t`: the
-    /// residual before and after them at `(t, y, y')`, and the Newton
-    /// correction `J(cj)^-1 ΔF` in IDA's WRMS, with `cj` stock's leading
-    /// coefficient for its next order and step (`Σ_{j≤q} 1/j / h`).
-    fn held_jump(
+    /// Held changes at the exact stop `t`: the residual, the differential
+    /// identity and the root functions before and after them at
+    /// `(t, y, y')`, checked by S3-D4's rule ([`storage_rate_only`]); then,
+    /// as the reported diagnostic, the Newton correction `J(cj)^-1 ΔF` in
+    /// IDA's WRMS, with `cj` stock's leading coefficient for its next order
+    /// and step (`Σ_{j≤q} 1/j / h`). Returns the rows entered and the jump.
+    fn held(
         &mut self,
         ida: &mut Ida<S>,
         t: f64,
@@ -640,30 +674,49 @@ impl<S: JoinedSystem> Driver<S> {
         yp: &[f64],
         held: Vec<HeldChange<S>>,
         setup: &Setup<'_>,
-    ) -> Result<f64, String> {
+    ) -> Result<(usize, Option<f64>), String> {
         let n = y.len();
         let stats = ida.stats()?;
         let q = stats.current_order.max(1) as usize;
         let h = stats.current_step;
-        if !(h.is_finite() && h > 0.) {
-            return Err(format!("no step to judge a held change against at {t} s"));
-        }
-        let cj = (1..=q).map(|j| 1. / j as f64).sum::<f64>() / h;
         let system = ida.system_mut();
-        let mut before = vec![0.; n];
-        system
-            .residual(t, y, yp, &mut before)
-            .map_err(|f| format!("{f:?}"))?;
+        let state = |system: &mut S| -> Result<HeldState, String> {
+            let mut residual = vec![0.; n];
+            system
+                .residual(t, y, yp, &mut residual)
+                .map_err(|f| format!("{f:?}"))?;
+            let mut roots = vec![0.; system.root_count()];
+            system
+                .roots(t, y, yp, &mut roots)
+                .map_err(|f| format!("{f:?}"))?;
+            let identity = system.integrated().joined.differential(setup.network_ids);
+            Ok((residual, identity, roots))
+        };
+        let (before, identity_before, roots_before) = state(system)?;
         for f in held {
             f(system)?;
         }
-        let mut delta = vec![0.; n];
-        system
-            .residual(t, y, yp, &mut delta)
-            .map_err(|f| format!("{f:?}"))?;
+        let (mut delta, identity_after, roots_after) = state(system)?;
         for (d, b) in delta.iter_mut().zip(&before) {
             *d -= b;
         }
+        let entered = storage_rate_only(
+            &delta,
+            &identity_before,
+            &identity_after,
+            &roots_before,
+            &roots_after,
+        )
+        .map_err(|e| format!("at {t} s: {e}"))?;
+        if self.diagnostic == Diagnostic::None {
+            return Ok((entered, None));
+        }
+        if !(h.is_finite() && h > 0.) {
+            return Err(format!(
+                "no step to report a held change's jump against at {t} s"
+            ));
+        }
+        let cj = (1..=q).map(|j| 1. / j as f64).sum::<f64>() / h;
         let nnz = system.nonzeros();
         let (mut data, mut rows, mut pointers) =
             (vec![0.; nnz], vec![0i64; nnz], vec![0i64; n + 1]);
@@ -684,7 +737,7 @@ impl<S: JoinedSystem> Driver<S> {
             .zip(setup.absolute)
             .map(|((d, v), a)| (d / (setup.relative * v.abs() + a)).powi(2))
             .sum();
-        Ok((sum / n as f64).sqrt())
+        Ok((entered, Some((sum / n as f64).sqrt())))
     }
 }
 
@@ -728,15 +781,28 @@ mod tests {
     }
 
     #[test]
-    fn smallness_is_a_fraction_of_the_newton_tolerance() {
-        let s = Smallness {
-            fraction: 0.1,
-            newton_tolerance: 0.33,
-        };
-        assert!((s.bound() - 0.033).abs() < 1e-15);
-        assert!(s.admits(0.03));
-        assert!(!s.admits(0.04));
-        assert!(!s.admits(f64::NAN));
+    fn a_held_change_is_s_only_through_a_storage_rate() {
+        // Coordinates 0 and 2 differential, 1 algebraic.
+        let ids = [1., 0., 1.];
+        let roots = [0.5, -2.];
+        // A heater-power step: only differential rows move.
+        assert_eq!(
+            storage_rate_only(&[3e-4, 0., 0.], &ids, &ids, &roots, &roots).unwrap(),
+            1
+        );
+        // A no-op is S and enters nothing.
+        assert_eq!(
+            storage_rate_only(&[0.; 3], &ids, &ids, &roots, &roots).unwrap(),
+            0
+        );
+        // An algebraic constraint moved: R.
+        let e = storage_rate_only(&[3e-4, 1e-12, 0.], &ids, &ids, &roots, &roots).unwrap_err();
+        assert!(e.contains("algebraic row 1"), "{e}");
+        // The identity changed (a mode switch): R.
+        assert!(storage_rate_only(&[0.; 3], &ids, &[1., 1., 1.], &roots, &roots).is_err());
+        // A root armed or jumped: R.
+        let e = storage_rate_only(&[1e-3, 0., 0.], &ids, &ids, &roots, &[0.5, 1.]).unwrap_err();
+        assert!(e.contains("root function 1"), "{e}");
     }
 
     #[test]
