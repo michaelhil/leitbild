@@ -109,7 +109,39 @@ fn flux<P: Properties>(pr: &P, p0: S, h0: S, pb: S) -> Result<S, String> {
     if pb.value > p0.value {
         return Err(format!("reverse restriction flow ({} > {}) is outside this prototype", pb.value, p0.value));
     }
-    Ok(restriction_flux(pr, false, p0, h0, pb).map_err(text)?.mass_flux)
+    if std::env::var("G1C09_DROP_FORM").is_ok() {
+        return flux_drop(pr, p0, h0, pb);
+    }
+    let f = restriction_flux(pr, false, p0, h0, pb).map_err(text)?;
+    if f.choked {
+        return Err("choked restriction is outside this prototype".into());
+    }
+    Ok(f.mass_flux)
+}
+/// DEMONSTRATION ONLY (G1C09_DROP_FORM): the kernel's unchoked liquid
+/// restriction on the same RK4 `ln p` grid, accumulating the drop
+/// `Δh = ∫v dp` from zero instead of forming `h0 − h`; `G = sqrt(2 Δh)/v`
+/// at the back pressure, where the unchoked maximum lies. Not a kernel change.
+fn flux_drop<P: Properties>(pr: &P, p0: S, h0: S, pb: S) -> Result<S, String> {
+    if pb.value == p0.value {
+        return Ok(k(0.));
+    }
+    let ratio = (-LOG_STEP).exp();
+    let v = |p: S, dh: S| -> Result<S, String> { Ok(k(1.) / liquid(pr, p, h0 - dh, true)?.rho) };
+    let (mut p, mut dh) = (p0, k(0.));
+    while p.value > pb.value {
+        let next = if p.value * ratio > pb.value { p * k(ratio) } else { pb };
+        let dp = p - next;
+        let mid = (p + next) * k(0.5);
+        let k1 = v(p, dh)?;
+        let k2 = v(mid, dh + dp * k1 * k(0.5))?;
+        let k3 = v(mid, dh + dp * k2 * k(0.5))?;
+        let k4 = v(next, dh + dp * k3)?;
+        dh = dh + dp * (k1 + k(2.) * k2 + k(2.) * k3 + k4) / k(6.);
+        p = next;
+    }
+    let root = (2. * dh.value).sqrt();
+    Ok(S::new(root, dh.direction / root) / v(pb, dh)?)
 }
 fn forward(p: f64, t: f64) -> leitbild_operating_plant::network::Water {
     If97.forward(false, p, t).expect("prepared liquid state")
@@ -604,7 +636,8 @@ fn section() -> Value {
 fn g1_c09_feed_block() {
     cpu::prefer_performance_core();
     let block = Block::new(&section());
-    let mut report = json!({ "calibration": block.pump.calibration.clone(),
+    let mut report = json!({ "restrictionForm": if std::env::var("G1C09_DROP_FORM").is_ok() { "drop-accumulating demonstration" } else { "kernel restriction_flux" },
+        "calibration": block.pump.calibration.clone(),
         "heaters": block.heaters.iter().map(|h| json!({"cdaIn_m2": h.cda_in, "cdaChannel_m2": h.cda_ch, "cdaOut_m2": h.cda_out, "cdaBypass_m2": h.cda_byp})).collect::<Vec<_>>(),
         "branch": {"cdaIso_m2": block.cda_iso, "cdaFcvFull_m2": block.cda_fcv, "hFeed0_J_kg": block.h_feed0},
         "census": {"differential": NDIFF, "algebraic": N - NDIFF, "ports": NPORTS} });
