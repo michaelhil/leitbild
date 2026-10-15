@@ -509,6 +509,54 @@ int ld01_water_vapor_sat_density(double T,double dT,double* value,double* direct
   *value=q.rho;*direction=d.rho;return 0;
  }catch(...){return 1;}
 }
+// G1-C13 hook (adapter, shared; KERN reconciles): IF97 saturation pressure
+// p_sat(T) (r4.p_T, bit for bit) and its direction: the exact derivative of
+// that same region-4 equation (the basic-equation Clapeyron slope differs
+// from it at about 1e-5 relative). The containment's ideal-vapor convention
+// needs p_sat at a given temperature, below the operating 0.1 MPa floor.
+int ld01_water_saturation_pressure(double T,double dT,double* value,double* direction) noexcept {
+ if(!value||!direction||!std::isfinite(T)||!std::isfinite(dT))return 2;
+ try {
+  const double p=r4.p_T(T);
+  const std::vector<double>& n=r4.n;
+  const double s=T/r4.T_star,ds=1/r4.T_star,theta=s+n[9]/(s-n[10]),dtheta=ds*(1-n[9]/((s-n[10])*(s-n[10])));
+  const double A=theta*theta+n[1]*theta+n[2],B=n[3]*theta*theta+n[4]*theta+n[5],C=n[6]*theta*theta+n[7]*theta+n[8];
+  const double dA=(2*theta+n[1])*dtheta,dB=(2*n[3]*theta+n[4])*dtheta,dC=(2*n[6]*theta+n[7])*dtheta;
+  const double D=std::sqrt(B*B-4*A*C),dD=(2*B*dB-4*(dA*C+A*dC))/(2*D);
+  const double den=-B+D,x=2*C/den,dx=(2*dC*den-2*C*(-dB+dD))/(den*den);
+  const double dpdT=r4.p_star*4*x*x*x*dx;
+  if(!std::isfinite(p)||!std::isfinite(dpdT)||!(dpdT>0))return 3;
+  *value=p;*direction=dpdT*dT;return 0;
+ }catch(...){return 1;}
+}
+// G1-C13 hook (adapter, shared; KERN reconciles): the saturated-vapor
+// enthalpy at T on IF97's own saturation endpoint, below the operating
+// 0.1 MPa floor (the containment's vapor caloric anchor at 25°C, 3.17 kPa).
+int ld01_water_saturated_vapor_enthalpy(double T,double* value) noexcept {
+ if(!value||!std::isfinite(T))return 2;
+ try {
+  const State q=endpoint_caloric(r4.p_T(T),false);
+  if(!std::isfinite(q.h))return 3;
+  *value=q.h;return 0;
+ }catch(...){return 1;}
+}
+// G1-C13 hook (adapter, shared; KERN reconciles): the saturated-vapor dynamic
+// viscosity at T on the endpoint below the operating floor (the containment
+// gas viscosity's water constituent at saturation), with the same disclosed
+// central-difference temperature direction as ld01_water_surface.
+int ld01_water_saturated_vapor_viscosity(double T,double dT,double* value,double* direction) noexcept {
+ if(!value||!direction||!std::isfinite(T)||!std::isfinite(dT))return 2;
+ try {
+  const auto mu=[](double t){State q=endpoint_caloric(r4.p_T(t),false);complete_state(q,FIELD_MU);return q.mu;};
+  const double q=mu(T);double d=0.;
+  if(dT!=0.){
+   const double h=std::cbrt(std::numeric_limits<double>::epsilon())*T;
+   d=(mu(T+h)-mu(T-h))/(2*h)*dT;
+  }
+  if(!std::isfinite(q)||!std::isfinite(d))return 3;
+  *value=q;*direction=d;return 0;
+ }catch(...){return 1;}
+}
 }
 `
 
