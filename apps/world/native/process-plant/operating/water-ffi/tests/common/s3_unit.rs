@@ -213,9 +213,10 @@ pub fn compose(inputs: &Inputs, state: &Value) -> Result<S3Unit, String> {
             joined.dimension()
         ));
     }
-    if joined.network.spray().is_none() {
-        return Err("the S3 packet composes no spray line".into());
-    }
+    // The S3 packet composes the spray line closed (S3-D25); a packet
+    // without it is composed as it is and reported (`spray_path`), for the
+    // caller to refuse or disclose.
+    let spray_path = joined.network.spray().is_some();
     joined
         .declare_feed_gate()
         .map_err(|e| format!("feed gate: {e:?}"))?;
@@ -371,7 +372,7 @@ pub fn compose(inputs: &Inputs, state: &Value) -> Result<S3Unit, String> {
     control.scratch = vec![0.; y_all.len()];
     let receipt = json!({
         "composition": "S3-D28 (3): joined + spray closed + SG two-zone + feed gate declared + S2-D24r/S3-D16 + PZR control AUTO (S) + L1 + phase modes + ELEC slice connected",
-        "from_saved_s3_state": saved, "t0_s": t0,
+        "from_saved_s3_state": saved, "t0_s": t0, "spray_path": spray_path,
         "sections": {"ic": inputs.ic_path, "pzr_control": inputs.control_path, "control_wiki": inputs.control_wiki, "electrical": inputs.elec_path},
         "l1_activation_changes": l1_changes,
         "pzr_control": {"class": "S (S3-D4)", "prepared_request_w": prepared_w, "start_request_w": start_w,

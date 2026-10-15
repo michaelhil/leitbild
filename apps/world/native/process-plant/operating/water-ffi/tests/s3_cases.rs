@@ -461,11 +461,7 @@ fn s3_case_run() {
         |e| json!({"pinned": false, "error": e, "declared_sha256": guards::declared_sha256(&d.block).ok()}),
     );
     let tbd = d.tbd().unwrap();
-    let refusals = declaration::case_refusals(case, &pin, &tbd);
-    assert!(
-        preview || refusals.is_empty(),
-        "the S3 case run refuses (LD01_S3_PREVIEW=1 runs a NOT-EVIDENCE preview): {refusals:#?}"
-    );
+    let mut refusals = declaration::case_refusals(case, &pin, &tbd);
     let spec = d.case(case);
     let declared_s = spec["duration_s"].as_f64().expect("duration_s");
     let span = match std::env::var("LD01_S3_PREVIEW_SPAN_S") {
@@ -496,6 +492,23 @@ fn s3_case_run() {
         frame,
         receipt: composition,
     } = s3_unit::compose(&inputs, &state).unwrap_or_else(|e| panic!("{e}"));
+    // S3-D28: every case starts from the full composition (the spray line
+    // composed closed) at KERN's settled S3 state.
+    if composition["spray_path"] != json!(true) {
+        refusals.push(
+            "preview, no spray path (DR-P1-SPRAY-REST open): the packet composes no spray line"
+                .into(),
+        );
+    }
+    if composition["from_saved_s3_state"] != json!(true) {
+        refusals.push(format!(
+            "the start is not a settled S3 state: {state_path} is composed into S3 at its own time"
+        ));
+    }
+    assert!(
+        preview || refusals.is_empty(),
+        "the S3 case run refuses (LD01_S3_PREVIEW=1 runs a NOT-EVIDENCE preview): {refusals:#?}"
+    );
     let declared_frame_s = d.block.number("/frameAlignment/frame_s");
     d.block.text("/frameAlignment/rule");
     assert_eq!(
