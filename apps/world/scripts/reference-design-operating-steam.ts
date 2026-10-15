@@ -15,6 +15,7 @@ import {join} from 'node:path'
 import {z} from 'zod'
 import {runCycle} from './reference-design-cycle'
 import {parseShaftDrag} from './reference-design-operating-electrical'
+import {parseOperatingHotReference} from './reference-design-operating-fluid'
 import {ownedBlock} from './reference-design-operating-pzr'
 import {parseSteamValveTravel} from './reference-design-operating-sg'
 import {parseTurbinePreparation} from './reference-design-turbine-preparation'
@@ -33,14 +34,14 @@ export const steamOwners={
 } as const
 export const steamPages=['systems/steam-power/turbine-and-regeneration-dynamics.md','systems/steam-power/admission-and-protection.md',
   'systems/steam-power/condenser-and-cooling.md','systems/steam-power/shaft-torque-and-rolling.md','systems/steam-power/cycle-basis.md',
-  'systems/steam-power/cold-casing-and-admission.md'] as const
+  'systems/steam-power/cold-casing-and-admission.md','model/operating-hot-reference.md'] as const
 
 const pos=z.number().finite().positive(),fraction=pos.max(1),finite=z.number().finite()
 const stocksSchema=z.object({header_m3:pos,hpAdmission_m3:pos,hpExtraction_m3:pos,separator_m3:pos,reheaterProcess_m3:pos,
   reheaterShell_m3:pos,lpFirst_m3:pos,lpSecond_m3:pos,reheaterWall_J_K:pos,separatorArea_m2:pos,
   separatorPickup_m3:z.tuple([pos,pos]),drainPickupFraction:fraction}).strict()
   .refine(s=>s.separatorPickup_m3[0]<s.separatorPickup_m3[1]&&s.separatorPickup_m3[1]<s.separator_m3,'Separator pickup span must be ordered inside the vessel')
-const preparationSchema=z.object({sgPrepared_Pa:pos,mainSteamLoss_Pa:pos,stopAdmissionLoss_Pa:pos,stopAdmissionShare:fraction,
+const preparationSchema=z.object({mainSteamLoss_Pa:pos,stopAdmissionLoss_Pa:pos,stopAdmissionShare:fraction,
   hpExtraction_Pa:pos,separator_Pa:pos,separatorLiquid_m3:pos,reheaterProcess_Pa:pos,reheaterProcess_C:finite,lpFirst_Pa:pos,
   lpSecond_Pa:pos,reheaterShellPressureFactor:fraction,reheaterShellLiquid_m3:pos,
   separatorReheaterSizing:z.object({flow_kg_s:pos,inlet_Pa:pos,outlet_Pa:pos,cdA_m2:pos}).strict(),
@@ -84,7 +85,7 @@ export const parseSteamActuators=(t:string)=>parse(actuatorsSchema,t,steamOwners
 export const parseReceivers=(v:unknown)=>receiversSchema.parse(v)
 
 type Cycle=Awaited<ReturnType<typeof runCycle>>
-export type SteamTexts={turbine:string,admission:string,condenser:string,shaft:string,casing:string}
+export type SteamTexts={turbine:string,admission:string,condenser:string,shaft:string,casing:string,hot:string}
 const MPa=1e6,K=(c:number)=>c+273.15,close=(a:number,b:number,rel=1e-12)=>Math.abs(a-b)<=rel*Math.max(Math.abs(a),Math.abs(b))
 
 /** The pure compilation over the owners' texts, the cycle calculator's result and C09's receiving shells. */
@@ -93,7 +94,9 @@ export function compileOperatingSteam(texts:SteamTexts,cycle:Cycle,receivers:z.i
     governor=parseGovernor(texts.turbine),bypass=parseBypass(texts.admission),protection=parseCondenserProtection(texts.admission),
     travel=parseSteamValveTravel(texts.admission),cond=parseCondenser(texts.condenser),gases=parseNoncondensables(texts.condenser),
     drag=parseShaftDrag(texts.shaft),casing=parseTurbinePreparation(texts.casing),shells=parseReceivers(receivers),
-    act=parseSteamActuators(texts.admission)
+    act=parseSteamActuators(texts.admission),
+    // The SG preparation pressure has one numeric owner: the prepared-hot block (S2-D18); C10 holds no copy.
+    sgPrepared_Pa=parseOperatingHotReference(texts.hot).sgSecondaryPressure_Pa
   // Prepared positions: each isolation listed once; the emergency drain's CLOSED comes from its own block (the schema's literal).
   const isolations=['MS.ISO.A','MS.ISO.B','TG.STOP','TG.ADM','TG.RH.ISO','TG.BYP']
   const listed=[...prep.preparedOpen,...prep.preparedClosed]
@@ -119,11 +122,11 @@ export function compileOperatingSteam(texts:SteamTexts,cycle:Cycle,receivers:z.i
     throw Error('Prepared separator liquid must cover the bottom drain and stay below the pickup sill')
   if(!(prep.reheaterShellLiquid_m3>stocks.drainPickupFraction*stocks.reheaterShell_m3))throw Error('Prepared RH shell liquid must cover its drain')
   // D2 re-anchoring: the same losses at the SG preparation.
-  const header=prep.sgPrepared_Pa-prep.mainSteamLoss_Pa,junction=header-prep.stopAdmissionShare*prep.stopAdmissionLoss_Pa,
+  const header=sgPrepared_Pa-prep.mainSteamLoss_Pa,junction=header-prep.stopAdmissionShare*prep.stopAdmissionLoss_Pa,
     admission=header-prep.stopAdmissionLoss_Pa,rhShell=prep.reheaterShellPressureFactor*header
   if(!(admission>prep.hpExtraction_Pa))throw Error('HP admission must lie above the HP extraction')
   if(!(shells.h4Shell_Pa<rhShell&&shells.h2Shell_Pa<prep.separator_Pa))throw Error('Drain receivers must lie below their donors')
-  const throttled={kind:'throttledSaturatedVapor',fromSaturationPressure_Pa:prep.sgPrepared_Pa} as const
+  const throttled={kind:'throttledSaturatedVapor',fromSaturationPressure_Pa:sgPrepared_Pa} as const
   const ph=(p:number,point:keyof typeof pt)=>({kind:'pressureEnthalpy',pressure_Pa:p,enthalpy_J_kg:pt[point].h_kJ_kg*1e3} as const)
   const store=(id:string,volume_m3:number,prepared:unknown,casing?:{capacity_J_K:number,contact_W_K:number})=>({id,volume_m3,prepared,...(casing?{casing}:{})})
   const hp={capacity_J_K:casing.hpCapacity_J_K,contact_W_K:casing.hpContact_W_K},lp={capacity_J_K:casing.lpCapacity_J_K,contact_W_K:casing.lpContact_W_K}
@@ -157,8 +160,8 @@ export function compileOperatingSteam(texts:SteamTexts,cycle:Cycle,receivers:z.i
     radius_m:Math.sqrt(2*drops[k]!)/(2*omega0),efficiency:eta[k]!,referenceDrop_J_kg:drops[k]!})
   const nozzle=(id:string,from:string,to:string,sizingFlow_kg_s:number,sizingOpening:number,extra:object={})=>({id,from,to,law:'nozzle',sizingFlow_kg_s,sizingOpening,...extra})
   const branches=[
-    nozzle('MS.ISO.A','SG.A','MS.HEADER',f.SG_each_kg_s,1,{sizingInlet:{kind:'saturatedVapor',pressure_Pa:prep.sgPrepared_Pa},sizingOutlet_Pa:header,travel_s:travel.sgIsolation_s,...actuator('MS.ISO.A')}),
-    nozzle('MS.ISO.B','SG.B','MS.HEADER',f.SG_each_kg_s,1,{sizingInlet:{kind:'saturatedVapor',pressure_Pa:prep.sgPrepared_Pa},sizingOutlet_Pa:header,travel_s:travel.sgIsolation_s,...actuator('MS.ISO.B')}),
+    nozzle('MS.ISO.A','SG.A','MS.HEADER',f.SG_each_kg_s,1,{sizingInlet:{kind:'saturatedVapor',pressure_Pa:sgPrepared_Pa},sizingOutlet_Pa:header,travel_s:travel.sgIsolation_s,...actuator('MS.ISO.A')}),
+    nozzle('MS.ISO.B','SG.B','MS.HEADER',f.SG_each_kg_s,1,{sizingInlet:{kind:'saturatedVapor',pressure_Pa:sgPrepared_Pa},sizingOutlet_Pa:header,travel_s:travel.sgIsolation_s,...actuator('MS.ISO.B')}),
     nozzle('TG.STOP','MS.HEADER','TG.ADM.JUNCTION',admitted,1,{sizingOutlet_Pa:junction,travel_s:travel.turbineStop_s,...actuator('TG.STOP')}),
     nozzle('TG.ADM','TG.ADM.JUNCTION','TG.HP1',admitted,1,{sizingInlet:{...throttled,pressure_Pa:junction},sizingOutlet_Pa:admission,travel_s:travel.admission_s,...actuator('TG.ADM')}),
     nozzle('TG.RH.ISO','MS.HEADER','TG.RH.SHELL',f.reheat_fraction*total,1,{sizingOutlet_Pa:rhShell,travel_s:travel.reheaterIsolation_s,...actuator('TG.RH.ISO'),check:true}),
@@ -189,8 +192,9 @@ export function compileOperatingSteam(texts:SteamTexts,cycle:Cycle,receivers:z.i
       drainPickupFraction:stocks.drainPickupFraction},
     condenser:{hotwellArea_m2:cond.hotwellArea_m2,floor_m:cond.pumpEye_m,surface_m:cond.surface_m,pumpEye_m:cond.pumpEye_m,manifold_m:cond.manifold_m,
       walls:cond.wallPrepared_C.map((t,i)=>({capacity_J_K:cond.wallCapacity_J_K,prepared_K:K(t),shellConductance_W_K:g(i),waterConductance_W_K:g(i)})),
-      cells:cond.cellPrepared_C.map(t=>({volume_m3:cond.waterCell_m3,prepared_K:K(t),mass_kg:cond.sizingDensity_kg_m3*cond.waterCell_m3})),
-      sizingCp_J_kgK:cond.sizingCp_J_kgK,condensing_K:K(cond.condensing_C),
+      // Native-water cells (the page's preparation selects native water); the sizing ρ/cp are a comparison only.
+      cells:cond.cellPrepared_C.map(t=>({volume_m3:cond.waterCell_m3,prepared_K:K(t)})),
+      sizingComparison:{density_kg_m3:cond.sizingDensity_kg_m3,cp_J_kgK:cond.sizingCp_J_kgK},condensing_K:K(cond.condensing_C),
       preparedPort:{cwFlow_kg_s:cond.preparedPort.cwFlow_kg_s,cwInlet_K:K(cond.preparedPort.cwInlet_C)}},
     casing:{roomContact_W_K:casing.roomContact_W_K},
     noncondensables:gases,
@@ -198,7 +202,7 @@ export function compileOperatingSteam(texts:SteamTexts,cycle:Cycle,receivers:z.i
     controllers:{governor,bypass,protection,drains},
     actuatorDuties:{isolationMotion_W:act.isolationMotion_W,openingMotion_W:act.openingMotion_W,springStockShare:act.springStockShare,
       holding_W:act.holding_W,controllerElectronics_W:act.controllerElectronics_W,drainMotion_W:act.drainMotion_W,drainElectronics_W:act.drainElectronics_W},
-    prepared:{sg_Pa:prep.sgPrepared_Pa,header_Pa:header,junction_Pa:junction,admission_Pa:admission,reheaterShell_Pa:rhShell,condenserNominal_Pa,
+    prepared:{sg_Pa:sgPrepared_Pa,header_Pa:header,junction_Pa:junction,admission_Pa:admission,reheaterShell_Pa:rhShell,condenserNominal_Pa,
       requests:{msIsolation:position('MS.ISO.A'),stop:position('TG.STOP'),admission:position('TG.ADM'),reheaterIsolation:position('TG.RH.ISO'),
         bypass:position('TG.BYP'),separatorDrain:prep.preparedDrainOpening,separatorEmergency:0,reheaterDrain:prep.preparedDrainOpening}},
     /** D2: the unchanged band evaluated at the re-anchored header. A demand above zero at full power is owner item S4-3. */
@@ -215,9 +219,9 @@ const hash=(s:string)=>createHash('sha256').update(s).digest('hex')
 export async function prepareOperatingSteam(wikiRoot:string,python:string,receivers:unknown){
   const root='world/packs/process-plant/reference-designs/ld-01/'
   const docs=await Promise.all(steamPages.map(p=>Bun.file(join(wikiRoot,root,p)).text()))
-  const [turbine,admission,condenser,shaft,cycleText,casing]=docs as [string,string,string,string,string,string]
+  const [turbine,admission,condenser,shaft,cycleText,casing,hot]=docs as [string,string,string,string,string,string,string]
   const cycle=await runCycle(cycleText,python)
-  const packet=compileOperatingSteam({turbine,admission,condenser,shaft,casing},cycle,parseReceivers(receivers))
+  const packet=compileOperatingSteam({turbine,admission,condenser,shaft,casing,hot},cycle,parseReceivers(receivers))
   const after=await Promise.all(steamPages.map(p=>Bun.file(join(wikiRoot,root,p)).text()))
   if(after.some((d,i)=>d!==docs[i]))throw Error('An owner page changed during compilation')
   return {...packet,provenance:{packetSha256:hash(JSON.stringify(packet)),sourceSha256:hash(await Bun.file(import.meta.path).text()),

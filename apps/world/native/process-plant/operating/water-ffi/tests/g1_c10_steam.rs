@@ -158,16 +158,8 @@ fn flux<Q: Properties>(pp: &Q, p0: Scalar, h0: Scalar, pb: Scalar) -> Result<Sca
 fn path_volume<Q: Properties>(pp: &Q, p: Scalar, h: Scalar) -> Result<Scalar, String> {
     Ok(c(1.) / closure(pp, p, h)?.rho)
 }
-/// Reversible drop `h0 - h(pb)` along `dh/dp = v` by RK4 in ln p, step 0.02.
-fn adiabat_drop<Q: Properties>(
-    pp: &Q,
-    p0: Scalar,
-    h0: Scalar,
-    pb: Scalar,
-) -> Result<Scalar, String> {
-    adiabat_drop_step(pp, p0, h0, pb, 0.02)
-}
-/// The same RK4 path with a chosen step in ln p (cost/accuracy diagnostic only).
+/// Reversible drop `h0 - h(pb)` along `dh/dp = v` by RK4 in ln p (0.02, the restriction law's
+/// own step; coarser steps only for the cost-option diagnostic).
 fn adiabat_drop_step<Q: Properties>(
     pp: &Q,
     p0: Scalar,
@@ -244,7 +236,10 @@ struct Ports {
     h_h1: Scalar,
     m_cond: Scalar,
     m_cw: Scalar,
-    t_cw: Scalar,
+    /// C12's inlet total enthalpy at cell 1 (port P9).
+    h_cw: Scalar,
+    /// Each cell's hydraulic pressure: the native cells need it (P9 extension; held, not seeded).
+    p_cell: [Scalar; 2],
     omega: Scalar,
     t_room: Scalar,
 }
@@ -261,7 +256,7 @@ const PORT_NAMES: [&str; 15] = [
     "C09 H1 drain enthalpy (P7)",
     "C09 COND.P flow (P8)",
     "C12 CW flow",
-    "C12 CW inlet temperature",
+    "C12 CW inlet total enthalpy",
     "C15 shaft speed",
     "C12 room temperature",
 ];
@@ -279,7 +274,7 @@ impl Ports {
             9 => bump(&mut q.h_h1),
             10 => bump(&mut q.m_cond),
             11 => bump(&mut q.m_cw),
-            12 => bump(&mut q.t_cw),
+            12 => bump(&mut q.h_cw),
             13 => bump(&mut q.omega),
             14 => bump(&mut q.t_room),
             _ => unreachable!(),
@@ -295,7 +290,7 @@ impl Ports {
             9 => self.h_h1.value,
             10 => self.m_cond.value,
             11 => self.m_cw.value,
-            12 => self.t_cw.value,
+            12 => self.h_cw.value,
             13 => self.omega.value,
             14 => self.t_room.value,
             _ => unreachable!(),
@@ -314,7 +309,7 @@ impl Ports {
             9 => add(&mut q.h_h1),
             10 => add(&mut q.m_cond),
             11 => add(&mut q.m_cw),
-            12 => add(&mut q.t_cw),
+            12 => add(&mut q.h_cw),
             13 => add(&mut q.omega),
             14 => add(&mut q.t_room),
             _ => unreachable!(),
@@ -329,7 +324,8 @@ struct Model {
     room_contact: f64,
     rh_wall: (f64, f64, f64),    // capacity, shell G, process G
     cond_walls: [(f64, f64); 2], // capacity, G (shell = water side)
-    cells: [(f64, f64); 2],      // mass, cp
+    /// Fixed cell masses (native water at the prepared state).
+    cells: [f64; 2],
     branches: Vec<Branch>,
     sep_pickup: (f64, f64),
     drain_fraction: f64,
@@ -338,6 +334,9 @@ struct Model {
     flow_scale: f64,
     /// Cost breakdown only: the interval drops held at their cycle references.
     reference_drops: bool,
+    /// RK4 step in ln p of the interval reversible drops (0.02, the restriction law's own;
+    /// coarser only in the G1.4 cost-option measurement).
+    drop_step: f64,
 }
 
 /// One evaluation: rows and a few diagnostics.
@@ -454,7 +453,7 @@ impl Model {
             {
                 let drop = match self.reference_drops {
                     true => c(*reference),
-                    false => adiabat_drop(pp, p0, h0, pb)?,
+                    false => adiabat_drop_step(pp, p0, h0, pb, self.drop_step)?,
                 };
                 let v = sqrt(c(2.) * drop);
                 let tau = c(2. * eta * radius) * m * (v - c(*radius) * ports.omega);
@@ -518,18 +517,24 @@ impl Model {
             de[i] = de[i] - q;
             rows[SOLIDS + 1 + k] = yp[SOLIDS + 1 + k] - (q - q_room);
         }
-        let mut t_in = ports.t_cw;
+        // Native-water cells (the condenser page's preparation selects native water;
+        // S4-D4 as corrected): fixed mass, energy differential, T and h recovered at
+        // each cell's hydraulic pressure.
+        let mut h_in = ports.h_cw;
         for k in 0..2 {
             let (cap, g) = self.cond_walls[k];
             let tw = y[SOLIDS + 5 + k] / c(cap) + c(273.15);
-            let (mass, cp) = self.cells[k];
-            let tc = y[CELLS + k] / c(mass * cp) + c(273.15);
+            let u = y[CELLS + k] / c(self.cells[k]);
+            let (q, d) = props::inverse_thermodynamic(pp, ports.p_cell[k], u, 0, false, None)
+                .map_err(|e| format!("CW cell {k}: {e:?}"))?;
+            let tc = Scalar::new(q.temperature_k, d.temperature_k);
+            let hc = Scalar::new(q.enthalpy_j_kg, d.enthalpy_j_kg);
             let q_shell = c(g) * (t_of(COND) - tw);
             let q_water = c(g) * (tw - tc);
             de[COND] = de[COND] - q_shell;
             rows[SOLIDS + 5 + k] = yp[SOLIDS + 5 + k] - (q_shell - q_water);
-            rows[CELLS + k] = yp[CELLS + k] - (ports.m_cw * c(cp) * (t_in - tc) + q_water);
-            t_in = tc;
+            rows[CELLS + k] = yp[CELLS + k] - (ports.m_cw * (h_in - hc) + q_water);
+            h_in = hc;
         }
         for i in 0..NS {
             let b = 6 * i;
@@ -687,7 +692,10 @@ fn prepare(packet: &Value) -> Prepared {
     }
     let cd = &packet["condenser"];
     let mut cond_walls = [(0., 0.); 2];
-    let mut cells = [(0., 0.); 2];
+    let mut cells = [0.; 2];
+    // FIXTURE pending C12's cell-pressure port (P9 extension): the owner's CW pump-discharge
+    // sizing face, 401325 Pa (condenser page, letdown branch calibration).
+    let p_cell = [401325., 401325.];
     for k in 0..2 {
         let w = &cd["walls"][k];
         cond_walls[k] = (num(w, "capacity_J_K"), num(w, "shellConductance_W_K"));
@@ -697,8 +705,9 @@ fn prepare(packet: &Value) -> Prepared {
         );
         y[SOLIDS + 5 + k] = cond_walls[k].0 * (num(w, "prepared_K") - 273.15);
         let cl = &cd["cells"][k];
-        cells[k] = (num(cl, "mass_kg"), num(cd, "sizingCp_J_kgK"));
-        y[CELLS + k] = cells[k].0 * cells[k].1 * (num(cl, "prepared_K") - 273.15);
+        let w = Properties::forward(&If97, false, p_cell[k], num(cl, "prepared_K")).unwrap();
+        cells[k] = num(cl, "volume_m3") * w.density_kg_m3;
+        y[CELLS + k] = cells[k] * w.internal_energy_j_kg;
     }
     y[JUNCTION] = num(&packet["junctions"][0], "prepared_Pa");
     // Branch areas from their sizing points with the runtime nozzle law.
@@ -843,7 +852,17 @@ fn prepare(packet: &Value) -> Prepared {
         h_h1: c(h1),
         m_cond: c(num(held, "condensate_kg_s")),
         m_cw: c(num(&cd["preparedPort"], "cwFlow_kg_s")),
-        t_cw: c(num(&cd["preparedPort"], "cwInlet_K")),
+        // C12's inlet total enthalpy (P9), here native liquid at the cell-1 pressure and the
+        // owner's 20.084436 °C inlet: FIXTURE pending C12's port value.
+        h_cw: c(Properties::forward(
+            &If97,
+            false,
+            p_cell[0],
+            num(&cd["preparedPort"], "cwInlet_K"),
+        )
+        .unwrap()
+        .enthalpy_j_kg),
+        p_cell: [c(p_cell[0]), c(p_cell[1])],
         omega: c(num(&packet["shaft"], "referenceSpeed_rad_s")),
         // Held port: C12's ROOM.B preparation, `ld01-support-rooms.initialB_C` 25.634 °C
         // (C12 wiki 349d4ed); in S5 the room is a labelled ledger (C12 port P17).
@@ -865,6 +884,7 @@ fn prepare(packet: &Value) -> Prepared {
         eye: num(cd, "floor_m"),
         flow_scale: num(held, "condensate_kg_s"),
         reference_drops: false,
+        drop_step: 0.02,
     };
     Prepared {
         model,
@@ -1283,6 +1303,37 @@ fn g1_c10_zero_time_block() {
     };
     let jacobian_s = jacobian(false);
     let jacobian_shared_s = jacobian(true);
+    // G1.4 cost option: the interval drops on a coarser RK4 step (0.05 / 0.1 in ln p),
+    // shared boundary; residual and colored Jacobian, and the prepared aero work.
+    let mut step_options = Vec::new();
+    for step in [0.05, 0.1] {
+        let mut ms = prepare(&packet).model;
+        ms.drop_step = step;
+        let r = timed(&|| {
+            let shared = props::Shared::new(&If97);
+            std::hint::black_box(ms.eval(&shared, &scalars(y, None), &ypc, ports).unwrap());
+        });
+        let t0 = cpu::thread_cpu_s();
+        for _ in 0..5 {
+            for col in 0..colours {
+                let seeded: Vec<Scalar> = y
+                    .iter()
+                    .enumerate()
+                    .map(|(j, v)| Scalar::new(*v, if colour[j] == col { 1. } else { 0. }))
+                    .collect();
+                let cache = props::Shared::new(&If97);
+                std::hint::black_box(ms.eval(&cache, &seeded, &ypc, ports).unwrap());
+            }
+        }
+        let jac = (cpu::thread_cpu_s() - t0) / 5.;
+        let work = ms
+            .eval(&If97, &scalars(y, None), &ypc, ports)
+            .unwrap()
+            .aero_work
+            .value;
+        step_options.push(json!({"stepLnP": step, "residualShared_s": r, "coloredJacobianShared_s": jac,
+            "aeroWork_W": work, "aeroWorkRelativeVsStep0.02": (work - e.aero_work.value) / e.aero_work.value}));
+    }
     // D2 check of the wiki's statement: the old 5.98 MPa header against the 6.36314 MPa SG.
     let ms = m.branches.iter().find(|b| b.id == "MS.ISO.A").unwrap();
     let hg_sg = sat(&If97, ports.p_sg[0]).unwrap().vapor.enthalpy;
@@ -1350,6 +1401,7 @@ fn g1_c10_zero_time_block() {
             "jacobianPairCpu_s": jac_pair_cpu},
         "cost": {"residual_s": residual_s, "residualShared_s": residual_shared_s, "residualSharedReferenceDrops_s": residual_reference_drops_s,
             "coloredJacobian_s": jacobian_s, "coloredJacobianShared_s": jacobian_shared_s, "colours": colours,
+            "dropStepOptions": step_options,
             "loadavg": cpu::load_average()},
         "d2": {"oldHeaderMsFlowOverSizing": old_ratio},
         "dropStepDiagnostic": drop_steps,

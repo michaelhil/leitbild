@@ -8,7 +8,7 @@ const fence=(name:string,value:unknown)=>'```'+name+'\n'+JSON.stringify(value)+'
 const blocks={
   stocks:{header_m3:120,hpAdmission_m3:10,hpExtraction_m3:20,separator_m3:100,reheaterProcess_m3:30,reheaterShell_m3:20,lpFirst_m3:500,
     lpSecond_m3:1000,reheaterWall_J_K:200000000,separatorArea_m2:5,separatorPickup_m3:[20,22.5],drainPickupFraction:0.05},
-  preparation:{sgPrepared_Pa:6363140,mainSteamLoss_Pa:20000,stopAdmissionLoss_Pa:20000,stopAdmissionShare:0.5,hpExtraction_Pa:4000000,
+  preparation:{mainSteamLoss_Pa:20000,stopAdmissionLoss_Pa:20000,stopAdmissionShare:0.5,hpExtraction_Pa:4000000,
     separator_Pa:800000,separatorLiquid_m3:10,reheaterProcess_Pa:800000,reheaterProcess_C:260,lpFirst_Pa:200000,lpSecond_Pa:50000,
     reheaterShellPressureFactor:0.995,reheaterShellLiquid_m3:5,separatorReheaterSizing:{flow_kg_s:978.730519,inlet_Pa:800000,outlet_Pa:796000,cdA_m2:5.382216},
     preparedOpen:['MS.ISO.A','MS.ISO.B','TG.STOP','TG.ADM','TG.RH.ISO'],preparedClosed:['TG.BYP'],preparedDrainOpening:0.5},
@@ -62,7 +62,7 @@ test('the compiler input refuses every missing value, at every depth',()=>{
       expect(()=>parsers[name](pageFor(name,without(blocks[name],path)))).toThrow()
       refused++
     }
-  expect(refused).toBe(115)
+  expect(refused).toBe(114)
   expect(()=>parseReceivers({h2Shell_Pa:199000,source:'x'})).toThrow()
 })
 
@@ -102,7 +102,9 @@ const texts={turbine:`# T\n\n## Compact operating allocation (15 October 2026)\n
   condenser:`# C\n\n## Compact operating allocation (15 October 2026)\n\n${fence('ld01-condenser',blocks.condenser)}\n\n${fence('ld01-noncondensable-gases',blocks.gases)}\n`,
   shaft:`# S\n\n## Rotor and loss connection\n\n${fence('ld01-shaft-drag',{dragPowerAtReference_W:500000,referenceSpeed_rpm:1500})}\n`,
   casing:fence('reference-turbine-preparation',{hpCapacity_J_K:30000000,lpCapacity_J_K:150000000,hpContact_W_K:50000,lpContact_W_K:100000,roomContact_W_K:100,
-    drainCdA_m2:0.0005,drainStroke_s:2,drainMotion_W:100,warmDifference_K:30,warmDuration_s:30,maximumLiquidFraction:0.01})}
+    drainCdA_m2:0.0005,drainStroke_s:2,drainMotion_W:100,warmDifference_K:30,warmDuration_s:30,maximumLiquidFraction:0.01}),
+  hot:fence('reference-operating-hot',{primaryPressure_Pa:15200000,achievedRodTravel_m:2.8,boronReference_ppmEq:1000,
+    gapAccommodationReferenceTemperature_K:650,sgSecondaryPressure_Pa:6363140,initialLoopMassflow_kg_s:0,sgMetalSegments:4})}
 const receivers={h1Shell_Pa:49750,h2Shell_Pa:199000,h4Shell_Pa:3980000,source:'FIXTURE: 0.995 × (0.05/0.2/4) MPa from the turbine page preparation table, pending C09 block (A5)'}
 
 test('the compiled packet re-anchors D2, reproduces the arms and discloses the bypass band conflict',()=>{
@@ -127,6 +129,9 @@ test('the compiler refuses an inconsistent cross-owner value',()=>{
   const wall={...texts,condenser:texts.condenser.replace('32.542217844','32.6')}
   expect(()=>compileOperatingSteam(wall,cycle,receivers)).toThrow('halfway')
   expect(()=>compileOperatingSteam(texts,cycle,{...receivers,h4Shell_Pa:7e6})).toThrow('below their donors')
+  // The SG pressure comes from its one numeric owner: a C10 copy is refused as an extra key.
+  expect(()=>compileOperatingSteam({...texts,turbine:texts.turbine.replace('{"mainSteamLoss_Pa"','{"sgPrepared_Pa":6363140,"mainSteamLoss_Pa"')},cycle,receivers)).toThrow()
+  expect(compileOperatingSteam({...texts,hot:texts.hot.replace('6363140','6400000')},cycle,receivers).prepared.header_Pa).toBe(6380000)
   const unlisted={...texts,turbine:texts.turbine.replace('"preparedClosed":["TG.BYP"]','"preparedClosed":[]')}
   expect(()=>compileOperatingSteam(unlisted,cycle,receivers)).toThrow('exactly once')
 })
@@ -135,7 +140,7 @@ const wiki=process.env.LD01_STEAM_WIKI_ROOT,python=process.env.LD01_RESEARCH_PYT
 test.skipIf(!wiki||!python)('the actual owner pages compile; the cycle reproduces the selected arms',async()=>{
   const p=await prepareOperatingSteam(wiki!,python!,receivers)
   expect(p.census).toEqual({differential:45,algebraic:19})
-  expect(p.provenance.consumed).toHaveLength(6)
+  expect(p.provenance.consumed).toHaveLength(7)
   expect(p.disclosed.bypassBandConflict).toBe(true)
 },120000)
 test.skipIf(!archive||!python)('the archived wiki refuses: its C10 numbers are still prose there',async()=>{
