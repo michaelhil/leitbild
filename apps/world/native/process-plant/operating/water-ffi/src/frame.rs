@@ -419,6 +419,12 @@ pub struct Driver<S> {
     /// The IDAS quadratures the driver carries: where the open segment
     /// started and the value carried into it.
     quadratures: Option<(f64, Vec<f64>)>,
+    /// HOOK (C4 lane, for KERN): a declared event window's step cap (0015
+    /// E2), set at the restart whose transaction receipts start a window
+    /// (the predicate): stock keeps IDASetMaxStep across IDAReInit and takes
+    /// a new bound only after a reinitialization, before the next step. The
+    /// caller removes it at the window's end (`Ida::remove_max_step`).
+    pub restart_max_step: Option<(f64, fn(&Value) -> bool)>,
 }
 
 /// Names of [`Driver::totals`].
@@ -478,6 +484,7 @@ impl<S: JoinedSystem> Driver<S> {
             attempt_s: None,
             solver_reached_s: t0,
             quadratures: None,
+            restart_max_step: None,
         })
     }
     pub fn frame(&self) -> Frame {
@@ -959,6 +966,16 @@ impl<S: JoinedSystem> Driver<S> {
             // carried (the S2 joined ledger's rule, S2-14 M2).
             ida.reinitialize_quadratures(&q)?;
             self.quadratures = Some((t, q));
+        }
+        // HOOK (C4 lane): a window starting at this restart caps its steps.
+        if let Some((h, starts)) = self.restart_max_step
+            && restarted
+                .transactions
+                .iter()
+                .chain(&before)
+                .any(|x| starts(&x.receipt))
+        {
+            ida.set_max_step(h)?;
         }
         yp.copy_from_slice(&restarted.yp);
         self.cpu.restart_s += (self.clock)() - started;
