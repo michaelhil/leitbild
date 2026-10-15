@@ -622,6 +622,8 @@ struct Modes {
     vent_locked: [bool; 2],
     src_locked: [[bool; 2]; 2],
     term_locked: [[bool; 2]; 2],
+    /// Regular cells in the equilibrium mode E (S3-D-P1), per train and cell.
+    e_cells: Vec<bool>,
 }
 #[derive(Clone)]
 struct Inputs {
@@ -645,23 +647,55 @@ struct Eval {
     f: Vec<D>,
 }
 
-/// Liquid-mode cell view.
+/// A regular cell's view: its liquid state (mode L: at (p, U/M); mode E:
+/// the saturated-liquid endpoint at p) and, in E, the saturated vapor.
 #[derive(Clone, Copy)]
 struct Cv {
     p: D,
     m: D,
     st: St,
+    vap: Option<St>,
     c: D,
     z: f64,
 }
-fn view(y: &[D], i0: usize, z: f64) -> Result<Cv, String> {
+/// A saturated endpoint at p with its exact directions along the saturation line.
+fn saturated(branch: Branch, p: D) -> Result<St, String> {
+    let (q, d) = directional(branch, p.v, 0., p.d, 0.)
+        .map_err(|e| format!("IF97 {branch:?} at {} Pa: {e}", p.v))?;
+    let t = D::new(q.temperature_k, d.temperature_k);
+    Ok(St {
+        rho: D::new(q.density_kg_m3, d.density_kg_m3),
+        u: D::new(q.internal_energy_j_kg, d.internal_energy_j_kg),
+        h: D::new(q.enthalpy_j_kg, d.enthalpy_j_kg),
+        mu: D::new(
+            q.viscosity_pa_s,
+            viscosity_direction(branch, p, t, d.viscosity_pa_s),
+        ),
+        t,
+    })
+}
+fn view(y: &[D], i0: usize, z: f64, equilibrium: bool) -> Result<Cv, String> {
     let (p, m, u) = (y[i0], y[i0 + 1], y[i0 + 2]);
+    if equilibrium {
+        // Slots M_l, U_l hold the totals; M_g is algebraic (S3-D-P1).
+        let liquid = saturated(Branch::SaturatedLiquid, p)?;
+        let vapor = saturated(Branch::SaturatedVapor, p)?;
+        return Ok(Cv {
+            p,
+            m,
+            st: liquid,
+            vap: Some(vapor),
+            c: y[i0 + 5] / (m - y[i0 + 3]),
+            z,
+        });
+    }
     let t = temperature_pu(Branch::Liquid, p, u / m)?;
     let st = state(Branch::Liquid, p, t)?;
     Ok(Cv {
         p,
         m,
         st,
+        vap: None,
         c: y[i0 + 5] / m,
         z,
     })
@@ -680,7 +714,7 @@ fn residual(y: &[D], yp: &[D], m: &Modes, inp: &Inputs, p: &Prm) -> Result<Eval,
             .collect();
         let mut cv = Vec::with_capacity(NCELL);
         for k in 0..NCELL {
-            cv.push(view(y, cell(t, k, 0), geo[k].z)?);
+            cv.push(view(y, cell(t, k, 0), geo[k].z, m.e_cells[t * NCELL + k])?);
         }
         // Rates accumulated per cell: mass, energy, tracer.
         let mut dm = vec![c(0.); NCELL];
@@ -693,6 +727,7 @@ fn residual(y: &[D], yp: &[D], m: &Modes, inp: &Inputs, p: &Prm) -> Result<Eval,
                 p: c(pp),
                 m: c(1.),
                 st: state(Branch::Liquid, c(pp), c(tt))?,
+                vap: None,
                 c: c(p.tracer),
                 z: 3.,
             })
@@ -938,6 +973,18 @@ fn residual(y: &[D], yp: &[D], m: &Modes, inp: &Inputs, p: &Prm) -> Result<Eval,
         for k in 0..NCELL {
             let i0 = cell(t, k, 0);
             let v = geo[k].v;
+            if let Some(vap) = cv[k].vap {
+                // Equilibrium mode: EOS on p, totals differential, split on M_g, definition on U_g.
+                let (mt, ut, mg) = (y[i0 + 1], y[i0 + 2], y[i0 + 3]);
+                let liq = cv[k].st;
+                f[i0] = (mt - mg) / liq.rho + mg / vap.rho - v;
+                f[i0 + 1] = yp[i0 + 1] - dm[k];
+                f[i0 + 2] = yp[i0 + 2] - de[k];
+                f[i0 + 3] = ut - (mt - mg) * liq.u - mg * vap.u;
+                f[i0 + 4] = y[i0 + 4] - mg * vap.u;
+                f[i0 + 5] = yp[i0 + 5] - db[k];
+                continue;
+            }
             f[i0] = y[i0 + 1] / cv[k].st.rho - v;
             f[i0 + 1] = yp[i0 + 1] - dm[k];
             f[i0 + 2] = yp[i0 + 2] - de[k];
@@ -1019,7 +1066,11 @@ struct Prepared {
 
 /// The prepared state (allocation "Births, exhaustions …" and the preparations it cites).
 fn prepare(p: &Prm) -> Prepared {
-    let inp = prepared_inputs(p);
+    prepare_with(p, prepared_inputs(p), None)
+}
+/// The preparation at given C06 port states; `cap` puts the receiving layer
+/// L6 in the equilibrium mode with that vapor volume above its liquid.
+fn prepare_with(p: &Prm, inp: Inputs, cap: Option<f64>) -> Prepared {
     let mut y = vec![0.; N];
     let t_tap = temperature_ph(Branch::Liquid, inp.tap_p, inp.tap_h);
     let mut checks = json!({});
@@ -1039,20 +1090,45 @@ fn prepare(p: &Prm) -> Prepared {
         // Tank: the cold column below the hot BAL rise, equal at the +12 m datum
         // ("Initial pressure follows the COLD port and the hot balance-line hydrostatic rise, then the cold-water column").
         let (p_dist, rho_dist, z_dist) = (pa, rho_a, za);
-        let l6 = march(p_dist, rho_dist, z_dist, 12., p.layers[5].z, p.cmt_t);
-        set_cell(&mut y, cell(t, 5, 0), p.layers[5].v, l6, p.cmt_t, p.tracer);
+        let (l6, mut rho_up) = if let Some(vg) = cap {
+            // Saturated receiving layer: the liquid's saturation density in the march (60 passes).
+            let target = p_dist + rho_dist * G * (z_dist - 12.);
+            let mut pp = target;
+            for _ in 0..60 {
+                pp = target
+                    - saturated(Branch::SaturatedLiquid, c(pp)).unwrap().rho.v
+                        * G
+                        * (p.layers[5].z - 12.);
+            }
+            let liq = saturated(Branch::SaturatedLiquid, c(pp)).unwrap();
+            let vap = saturated(Branch::SaturatedVapor, c(pp)).unwrap();
+            let (mf, mg) = (liq.rho.v * (p.layers[5].v - vg), vap.rho.v * vg);
+            let i0 = cell(t, 5, 0);
+            y[i0] = pp;
+            y[i0 + 1] = mf + mg;
+            y[i0 + 2] = mf * liq.u.v + mg * vap.u.v;
+            y[i0 + 3] = mg;
+            y[i0 + 4] = mg * vap.u.v;
+            y[i0 + 5] = mf * p.tracer;
+            (pp, liq.rho.v)
+        } else {
+            let pp = march(p_dist, rho_dist, z_dist, 12., p.layers[5].z, p.cmt_t);
+            set_cell(&mut y, cell(t, 5, 0), p.layers[5].v, pp, p.cmt_t, p.tracer);
+            (pp, rho_at(pp, p.cmt_t))
+        };
         let mut upper = l6;
         for k in (0..5).rev() {
             let q = &p.paths[k];
             let pk = march(
                 upper,
-                rho_at(upper, p.cmt_t),
+                rho_up,
                 p.layers[k + 1].z,
                 q.junction,
                 p.layers[k].z,
                 p.cmt_t,
             );
             set_cell(&mut y, cell(t, k, 0), p.layers[k].v, pk, p.cmt_t, p.tracer);
+            rho_up = rho_at(pk, p.cmt_t);
             upper = pk;
         }
         // DVI at the C06 +3 m state; OUT seated against it (drive exactly 0 without preload).
@@ -1169,7 +1245,13 @@ fn prepare(p: &Prm) -> Prepared {
         vent_locked: [true; 2],
         src_locked: [[true; 2]; 2],
         term_locked: [[true; 2]; 2],
+        e_cells: vec![false; 2 * NCELL],
     };
+    if cap.is_some() {
+        for t in 0..2 {
+            modes.e_cells[t * NCELL + 5] = true;
+        }
+    }
     for t in 0..2 {
         modes.locked[t * NPATH + 9][0] = true; // tank->OUT: isolations closed
         modes.locked[t * NPATH + 10][0] = true; // OUT->DVI: check seated
@@ -1227,10 +1309,23 @@ fn is_differential(i: usize, m: &Modes) -> bool {
             let phase = (r - T_PATHS) % 2;
             return !m.locked[t * NPATH + j][phase];
         }
+        if r < T_NC && m.e_cells[t * NCELL + r / CELL_SLOTS] && matches!(r % CELL_SLOTS, 3 | 4) {
+            return false;
+        }
     }
     declared_differential(i)
 }
 
+/// The C06 port states for the cap probe: COLD tap and DOWNCOMER at 7 MPa, 550 K.
+fn cap_inputs(p: &Prm) -> Inputs {
+    let mut inp = prepared_inputs(p);
+    let h = state(Branch::Liquid, c(7e6), c(550.)).unwrap().h.v;
+    inp.tap_p = 7e6;
+    inp.dc_p = 7e6;
+    inp.tap_h = h;
+    inp.dc_h = h;
+    inp
+}
 /// Probe P1: CMT delivering at 20 kg/s through BAL, tank and outlet (stems open).
 fn probe_cmt(base: &Prepared, p: &Prm) -> Prepared {
     let mut s = Prepared {
@@ -1347,8 +1442,8 @@ fn row_scale(i: usize, y: &[f64], p: &Prm) -> f64 {
                     vec![p.out.v, p.dvi.v],
                 ]
                 .concat()[k],
-                1 | 3 => y[i0 + 1],
-                2 | 4 => y[i0 + 2].abs() + y[i0 + 1] * G * 20.,
+                1 => y[i0 + 1],
+                2 | 3 | 4 => y[i0 + 2].abs() + y[i0 + 1] * G * 20.,
                 _ => y[i0 + 5],
             };
         }
@@ -1736,6 +1831,11 @@ fn g1_c11_sources_zero_time() {
         ("P1 CMT delivering", probe_cmt(&base, &p)),
         ("P2 ACC injecting", probe_acc(&base, &p)),
         ("P3 GIV delivering", probe_giv(&base, &p)),
+        // P4: the receiving layer L6 in mode E with a 0.01 m3 steam cap above covered rings (S3-D-P1, C11-D2).
+        (
+            "P4 receiving layer E",
+            prepare_with(&p, cap_inputs(&p), Some(0.01)),
+        ),
     ];
     let mut pattern = vec![vec![false; N]; N];
     let mut report = Vec::new();
@@ -1836,6 +1936,18 @@ fn g1_c11_sources_zero_time() {
                     rows: vec![(path(0, 11, 0), -1)],
                 },
             ],
+            "P4 receiving layer E" => vec![
+                Change {
+                    label: "+COLD tap pressure",
+                    apply: |i| i.tap_p += 100.,
+                    rows: vec![(path(0, 5, 0), 1)],
+                },
+                Change {
+                    label: "+DOWNCOMER pressure",
+                    apply: |i| i.dc_p += 100.,
+                    rows: vec![(path(0, 11, 0), -1)],
+                },
+            ],
             "P2 ACC injecting" => vec![
                 Change {
                     label: "ACC stem closing",
@@ -1875,6 +1987,42 @@ fn g1_c11_sources_zero_time() {
             directions.extend(direction(s, &yp, &p, ch));
         }
     }
+    // The located birth is exact (S3-D-P1): a saturated L6 in mode L and the same stocks
+    // in mode E with M_g = U_g = 0 give the same rows; the E rows hold at the birth.
+    let born = prepare_with(&p, cap_inputs(&p), Some(0.));
+    let mut liquid = Prepared {
+        y: born.y.clone(),
+        modes: born.modes.clone(),
+        inputs: born.inputs.clone(),
+        checks: json!({}),
+    };
+    for t in 0..2 {
+        liquid.modes.e_cells[t * NCELL + 5] = false;
+    }
+    let yp_l = consistent(&liquid.y, &liquid.modes, &liquid.inputs, &p);
+    let f_e = eval_f(&born.y, &yp_l, &born, &born.inputs, &p);
+    let f_l = eval_f(&liquid.y, &yp_l, &liquid, &liquid.inputs, &p);
+    let (mut same, mut e_rows) = (0f64, 0f64);
+    for i in 0..N {
+        let r = row_scale(i, &born.y, &p);
+        let e_slot = i < U_CHAMBERS
+            && (i % PER_TRAIN) < T_NC
+            && (i % PER_TRAIN) / CELL_SLOTS == 5
+            && matches!((i % PER_TRAIN) % CELL_SLOTS, 3 | 4);
+        if e_slot {
+            e_rows = e_rows.max(f_e[i].abs() / r);
+        } else {
+            same = same.max((f_e[i] - f_l[i]).abs() / r);
+        }
+    }
+    println!(
+        "birth transaction: rows unchanged to {same:.2e}; E split/definition rows at the birth {e_rows:.2e}"
+    );
+    assert!(
+        same <= 1e-12 && e_rows <= 1e-12,
+        "birth transaction not exact"
+    );
+    let birth = json!({"rowsUnchanged": same, "equilibriumRowsAtBirth": e_rows, "layer": "L6", "pressure_Pa": born.y[cell(0, 5, 0)]});
     let nnz = pattern
         .iter()
         .map(|r| r.iter().filter(|&&b| b).count())
@@ -1904,7 +2052,7 @@ fn g1_c11_sources_zero_time() {
     let receipt = json!({
         "lane": "g1-c11", "prototype": "g1_c11_sources", "kind": "test-only standalone block, never joined, never a gate",
         "census": {"differential": differential, "algebraic": algebraic, "total": N, "structuralNnz": nnz},
-        "preparedChecks": base.checks, "reproductions": reproductions, "states": report, "directions": directions,
+        "preparedChecks": base.checks, "birthTransaction": birth, "reproductions": reproductions, "states": report, "directions": directions,
         "cost": {"residual_s": residual_s, "denseJacobian_s": jacobian_s, "sweeps": 2 * N, "loadAverage": cpu::load_average()},
         "provenance": {"packet": provenance("LD01_G1_C11_PACKET"), "waterLibrary": std::env::var("LD01_OPERATING_WATER_LIB_DIR").unwrap_or_default(),
             "appCommit": std::env::var("LD01_G1_C11_APP_COMMIT").unwrap_or_default(), "wikiCommit": std::env::var("LD01_G1_C11_WIKI_COMMIT").unwrap_or_default()},
