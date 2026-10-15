@@ -166,17 +166,29 @@ fn l1_joins_the_spine_with_one_root_slot_per_phase_path() {
     ida.set_delta_cj_lsetup(DELTA_CJ_LSETUP).unwrap();
     ida.set_init_step(FIRST_STEP_S).unwrap();
     root_directions(&mut ida).unwrap();
-    match ida.advance(0.2, &mut y, &mut yp).unwrap() {
-        Advance::Reached(t) => assert_eq!(t, 0.2),
-        Advance::Root { time, directions } => panic!(
-            "no event expected at the composed state: {time} {:?}",
-            directions
-                .iter()
-                .enumerate()
-                .filter(|(_, d)| **d != 0)
-                .collect::<Vec<_>>()
-        ),
+    // Output targets 10 ms apart, as the S2 probes advance (stock's
+    // 500-step limit per call; the composed state's first second takes
+    // about 1,250 steps).
+    for k in 1..=20 {
+        let target = 0.01 * f64::from(k);
+        match ida.advance(target, &mut y, &mut yp).unwrap() {
+            Advance::Reached(t) => assert_eq!(t, target),
+            Advance::Root { time, directions } => panic!(
+                "no event expected at the composed state: {time} {:?}",
+                directions
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, d)| **d != 0)
+                    .collect::<Vec<_>>()
+            ),
+        }
     }
+    let stats = ida.stats().unwrap();
+    println!(
+        "{}",
+        serde_json::json!({"reached_s": 0.2, "steps": stats.steps, "jacobians": stats.jacobians,
+            "root_evaluations": stats.root_evaluations})
+    );
 }
 
 /// The presence-keyed structure on one stock handle: sized for the widest

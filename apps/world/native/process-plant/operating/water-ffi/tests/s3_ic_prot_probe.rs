@@ -26,7 +26,7 @@ mod spine;
 
 use leitbild_operating_plant::{ic::packet::Section, joined::block::Command};
 use leitbild_operating_water::{
-    frame::{COUNTER_NAMES, Class, Client, Dense, Driver, Frame, Setup, Smallness},
+    frame::{COUNTER_NAMES, Class, Client, Dense, Diagnostic, Driver, Frame, Setup},
     ic::{HOLDING_LOSS, ProtectionClient},
     ida::{Ida, Initial, KluOrdering, System},
     joined::{Integrated, Restart},
@@ -195,16 +195,7 @@ fn s3_ic_prot_t1_turbine_trip_through_acquired_protection() {
     restart.configure(&mut ida).unwrap();
     ida.set_max_step(WINDOW_MAX_STEP_S).unwrap();
     let frame = Frame::new(section.frame_s).unwrap();
-    let mut driver = Driver::new(
-        frame,
-        Smallness {
-            fraction: 0.1,
-            newton_tolerance: NEWTON_COEFFICIENT,
-        },
-        z1::cpu_s,
-        t0,
-    )
-    .unwrap();
+    let mut driver = Driver::new(frame, Diagnostic::Jump, z1::cpu_s, t0).unwrap();
     let t1 = t0 + t1_after;
     driver.command(t1, Command::TurbineTripAcquired).unwrap();
     let setup = Setup {
@@ -287,7 +278,7 @@ fn s3_ic_prot_t1_turbine_trip_through_acquired_protection() {
             "tolerance_class": "the composition's with the derived classes (S2-D24) applied at the composed state",
             "derived_tolerances": derived,
             "integration": "frame driver: stock IDA_ONE_STEP, observation from IDAGetDky, restarts by discrete_restart",
-            "smallness": {"fraction": 0.1, "newton_tolerance": NEWTON_COEFFICIENT}},
+            "classifier": "S3-D4 rule (frame.rs storage_rate_only); the jump is a reported diagnostic"},
         "observed": protection.observed(),
         "timing": {
             "t1_s": t1,
@@ -308,8 +299,8 @@ fn s3_ic_prot_t1_turbine_trip_through_acquired_protection() {
         "segments": driver.segments,
         "cpu": {"preparation_s": preparation_cpu_s, "run_s": run_cpu_s, "solver_s": driver.cpu.solver_s,
             "observation_s": driver.cpu.observation_s, "restart_s": driver.cpu.restart_s,
-            "smallness_s": driver.cpu.smallness_s,
-            "attributed_fraction": (driver.cpu.solver_s + driver.cpu.observation_s + driver.cpu.restart_s + driver.cpu.smallness_s) / run_cpu_s,
+            "held_s": driver.cpu.held_s,
+            "attributed_fraction": (driver.cpu.solver_s + driver.cpu.observation_s + driver.cpu.restart_s + driver.cpu.held_s) / run_cpu_s,
             "run_per_simulated_s": run_cpu_s / (until - t0),
             "joined_counters": {"residuals": c.residuals, "residual_wall_s": c.residual_wall_s,
                 "coupled_wall_s": c.coupled_wall_s, "jacobians": c.jacobians, "jacobian_wall_s": c.jacobian_wall_s,
