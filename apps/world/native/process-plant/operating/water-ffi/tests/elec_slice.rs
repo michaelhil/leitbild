@@ -153,6 +153,7 @@ fn run(packet: &Packet, name: &str, actions: &[(f64, Action)], horizon: f64) -> 
         joined: true,
         v_line,
         f_grid_hz: f0,
+        carrier_rad_s: slice::prepared_carrier(f0),
         admitted_kg_s: m0,
         field_v: field_demand,
         room_k: room,

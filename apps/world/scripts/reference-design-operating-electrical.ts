@@ -23,6 +23,8 @@ const positive=z.number().finite().positive()
 export const electricalOwners={
   generator:{page:'systems/electrical/generator-and-synchronization.md'},
   switching:{page:'systems/electrical/generator-and-synchronization.md',heading:'Breaker movement and passive opening',fence:'ld01-generator-switching'},
+  /** Owner decision D2 (15 Oct 2026): the carrier as a continuous input, no per-boundary angle conversion. */
+  carrier:{page:'systems/electrical/generator-and-synchronization.md',heading:'External carrier and operating Grid join',fence:'ld01-generator-carrier'},
   shaft:{page:'systems/steam-power/shaft-torque-and-rolling.md',heading:'Rotor and loss connection',fence:'ld01-shaft-drag'},
   distribution:{page:'systems/electrical/distribution-and-switching.md',heading:'Sources and distribution',fence:'ld01-ac-distribution'},
   cycle:{page:'systems/steam-power/cycle-basis.md'},
@@ -35,6 +37,15 @@ const switchingSchema=z.object({breakerTravel_s:positive,breakerClosingWork_J:po
   breakerBodyCapacity_J_K:positive,breakerBodyRoomConductance_W_K:positive,breakerBodyInitial_C:z.number().finite(),
   fieldConverterEfficiency:positive.max(1)}).strict()
   .refine(s=>s.breakerSpringStock_J<=s.breakerClosingWork_J,'The stocked spring energy cannot exceed the closing work')
+/** D2's selection: the native machine owner implements exactly these values and refuses a packet without them. */
+const carrierSchema=z.object({angleReference:z.literal('continuousCarrier'),rateInput:z.literal('heldPerInterval'),
+  reconciliation:z.literal('phaseErrorAsRateOverNextInterval'),boundaryConversion:z.literal('none'),rateChangeClass:z.literal('S3-D4')}).strict()
+/** Owner decision D1 (15 Oct 2026): the adaptive plant <-> Grid exchange, on the interval handoff's page. Read by the
+ * (test-only) Grid stand-in: the exchange law is the Grid side's, the plant follows each request. */
+export const exchangeOwner={page:'model/operating-scale-realization.md',heading:'Selected electrical interval handoff',fence:'ld01-electrical-exchange'} as const
+const exchangeSchema=z.object({quietInterval_s:positive,windowInterval_s:positive,refinementInterval_s:positive,
+  windowDeclaredBy:z.literal('Grid'),receipt:z.literal('IDAS quadrature')}).strict()
+  .refine(x=>x.refinementInterval_s<x.windowInterval_s&&x.windowInterval_s<x.quietInterval_s,'Exchange intervals must be ordered refinement < window < quiet')
 const shaftSchema=z.object({dragPowerAtReference_W:positive,referenceSpeed_rpm:positive}).strict()
 const bus=z.enum(['AC.A','AC.B'])
 const distributionSchema=z.object({incomingTravel_s:positive,transferOpenInterval_s:positive,motorDropout_s:positive,
@@ -46,6 +57,8 @@ const distributionSchema=z.object({incomingTravel_s:positive,transferOpenInterva
   fieldConverterBus:bus}).strict()
 
 export const parseSwitching=(generatorPage:string)=>switchingSchema.parse(ownedBlock(generatorPage,electricalOwners.switching.heading,electricalOwners.switching.fence))
+export const parseCarrier=(generatorPage:string)=>carrierSchema.parse(ownedBlock(generatorPage,electricalOwners.carrier.heading,electricalOwners.carrier.fence))
+export const parseExchange=(handoffPage:string)=>exchangeSchema.parse(ownedBlock(handoffPage,exchangeOwner.heading,exchangeOwner.fence))
 export const parseShaftDrag=(shaftPage:string)=>shaftSchema.parse(ownedBlock(shaftPage,electricalOwners.shaft.heading,electricalOwners.shaft.fence))
 export const parseDistribution=(distributionPage:string)=>distributionSchema.parse(ownedBlock(distributionPage,electricalOwners.distribution.heading,electricalOwners.distribution.fence))
 
@@ -56,7 +69,7 @@ const intervalPoints=[['main_steam','HP_bleed'],['HP_bleed','HP_separator_inlet'
 /** The pure compilation over the owners' texts and the cycle calculator's result. */
 export function compileOperatingElectrical(texts:{generator:string,shaft:string,distribution:string,admission:string},cycle:Cycle){
   const basis=parseGenerator(texts.generator),g=generatorParameters(basis)
-  const switching=parseSwitching(texts.generator),drag=parseShaftDrag(texts.shaft),routing=parseDistribution(texts.distribution)
+  const switching=parseSwitching(texts.generator),carrier=parseCarrier(texts.generator),drag=parseShaftDrag(texts.shaft),routing=parseDistribution(texts.distribution)
   const travel=parseSteamValveTravel(texts.admission)
   const omega0=drag.referenceSpeed_rpm*2*Math.PI/60
   if(Math.abs(omega0-g.speed)>1e-12*omega0)throw Error('Shaft reference speed differs from the generator synchronous speed')
@@ -87,6 +100,7 @@ export function compileOperatingElectrical(texts:{generator:string,shaft:string,
       conversionLoadLossFraction:routing.conversionLoadLossFraction,sourceBudget_W:routing.sourceBudget_W,busBudget_W:routing.busBudget_W,
       consumers:routing.motorConsumers},
     fieldConverterBus:routing.fieldConverterBus,
+    carrier,
     boundary:{lineVoltage_V:basis.lineVoltage_V,frequency_Hz:basis.frequency_Hz,base_VA:basis.base_VA},
     prepared:{initialFlux:g.initialFlux,speed_rad_s:g.speed,angle_rad:g.angle,fieldCurrent_A:basis.fieldCurrent_A,
       fieldDemand_V:g.fieldResistance*basis.fieldCurrent_A,admittedSteam_kg_s:f.SG_total_kg_s,

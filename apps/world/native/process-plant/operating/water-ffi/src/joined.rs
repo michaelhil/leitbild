@@ -826,7 +826,8 @@ mod integrated {
         /// from the start's WRMS guard ([`Report::exempt`]).
         pub transacted: Vec<&'static str>,
         /// The start's pass bound: `transaction_passes` after an owner
-        /// transaction, `start_passes` otherwise.
+        /// transaction or a birth (DR-C3-BIRTH05), `start_passes`
+        /// otherwise.
         pub passes_allowed: usize,
         /// The declared vapor presence's key changed, so the restart
         /// switched the block structure (S3-D-P3; never without
@@ -842,6 +843,14 @@ mod integrated {
         /// The appended owners' changes at this restart (ELEC hook; empty
         /// without appended coordinates).
         pub appended: Vec<String>,
+        /// The largest algebraic row of the state handed to the restart,
+        /// before any transaction, under the identity before it
+        /// (DR-C3-BIRTH05).
+        pub constraint_at_entry: super::Largest,
+        /// Every cell born at this restart: its pressure at entry and after
+        /// the consistent start, the step, and its vapor (physical units,
+        /// [`network::Network::birth_flash`]).
+        pub births: Vec<serde_json::Value>,
         pub yp: Vec<f64>,
         pub report: Report,
     }
@@ -886,7 +895,10 @@ mod integrated {
     ///    After an owner transaction the start takes up to the declared
     ///    `transaction_passes`, and its WRMS guard leaves out the transacted
     ///    owners' algebraic coordinates, whose correction it reports; the
-    ///    constraint and rate bounds are unchanged (S2-D21);
+    ///    constraint and rate bounds are unchanged (S2-D21). A birth's
+    ///    flash at the born cell's unchanged totals is finite at G1's
+    ///    credited superheat, so it also takes up to `transaction_passes`,
+    ///    with no coordinate exempt (DR-C3-BIRTH05);
     /// 5. IDAReInit with the consistent rates and the segment configuration.
     #[allow(clippy::too_many_arguments)] // One restart: event, state, identity and tolerances.
     pub fn discrete_restart<S: JoinedSystem>(
@@ -929,6 +941,26 @@ mod integrated {
         let before = y.to_vec();
         let identity_before = joined.differential(network_ids);
         let modes_before = joined.network.cell_modes().to_vec();
+        // HOOK (BIRTH05, DR-C3-BIRTH05; KERN to reconcile): the constraint
+        // of the state handed to the restart, before any transaction: the
+        // largest algebraic row of one value evaluation at `(t, y, 0)` under
+        // the identity before it. A root-located or dense-output state off
+        // the algebraic manifold shows here, separately from what the
+        // transactions change.
+        let entry = {
+            let zero = vec![0.; y.len()];
+            joined
+                .evaluate(t, y, &zero, None, 0., None)
+                .map_err(message)?;
+            super::largest(
+                joined
+                    .rows()
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| identity_before[*i] == 0.)
+                    .map(|(i, r)| (i, r.value)),
+            )
+        };
         let mut done = match discrete {
             Discrete::Roots(directions) => joined.transact(t, directions, y).map_err(message)?,
             Discrete::TimeEvent => Vec::new(),
@@ -990,7 +1022,18 @@ mod integrated {
                 })
                 .collect()
         };
-        let passes_allowed = if transacted.is_empty() {
+        // HOOK (BIRTH05, DR-C3-BIRTH05; KERN to reconcile): a birth at the
+        // band's credited superheat (owner decision G1) keeps the cell's
+        // totals, but its algebraic rows become the flash at those totals,
+        // which the metastable liquid misses by a finite step (about
+        // +0.1 MPa): the start takes up to `transaction_passes` (lead
+        // decision S2-D21's pass bound, proposed S3-D41). No coordinate
+        // leaves the WRMS guard and the bound is unchanged.
+        let born = joined
+            .network
+            .born_cells(&modes_before)
+            .map_err(message)?;
+        let passes_allowed = if transacted.is_empty() && born.is_empty() {
             restart.start_passes
         } else {
             restart.transaction_passes
@@ -1014,6 +1057,11 @@ mod integrated {
             passes_allowed,
         )
         .map_err(message)?;
+        let births = born
+            .iter()
+            .map(|c| joined.network.birth_flash(*c, &before, y))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(message)?;
         // L1 at the segment start (DR S3-REBIRTH, decision 0014): a lock
         // whose drive draws from its holding end at t0+ (at the consistent
         // state, or from an exact zero by its rate) is released now; stock
@@ -1062,6 +1110,8 @@ mod integrated {
             modes_changed,
             equilibrium_classes,
             appended: appended_done,
+            constraint_at_entry: entry,
+            births,
             yp,
             report,
         })

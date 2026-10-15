@@ -176,6 +176,10 @@ type HeldState = (Vec<f64>, Vec<f64>, Vec<f64>);
 /// A held-input change applied to the system at an exact stop.
 pub type HeldChange<S> = Box<dyn FnOnce(&mut S) -> Result<(), String>>;
 
+/// A declared event window's step cap and the predicate on a restart's
+/// transaction receipts that starts it ([`Driver::restart_max_step`]).
+pub type WindowCap = (f64, fn(&Value) -> bool);
+
 /// What a decided change does at its due instant.
 pub enum Action<S> {
     /// An owner command applied through `discrete_restart` (class R).
@@ -485,7 +489,7 @@ pub struct Driver<S> {
     /// (the predicate): stock keeps IDASetMaxStep across IDAReInit and takes
     /// a new bound only after a reinitialization, before the next step. The
     /// caller removes it at the window's end (`Ida::remove_max_step`).
-    pub restart_max_step: Option<(f64, fn(&Value) -> bool)>,
+    pub restart_max_step: Option<WindowCap>,
 }
 
 /// Names of [`Driver::totals`].
@@ -559,6 +563,38 @@ impl<S: JoinedSystem> Driver<S> {
         }
         self.commands.push((t, command));
         self.commands.sort_by(|a, b| a.0.total_cmp(&b.0));
+        Ok(())
+    }
+    /// HOOK (C5X; KERN to reconcile): changes decided outside the clients at
+    /// the driver's time, due at or after it: the Grid's held boundary at an
+    /// exchange (C5, owners' decisions D1 + D2). The next [`Driver::run`]
+    /// applies those due now before its first step, by the same rules as a
+    /// client's (one instant, R if any is R, S checked by S3-D4's rule).
+    pub fn decide(&mut self, changes: Vec<Change<S>>) -> Result<(), String> {
+        let now = self.observed_to;
+        self.insert(changes, now)
+    }
+    /// HOOK (C5X; KERN to reconcile): apply every change and command due at
+    /// the driver's time now, as one instant, without a step, so the caller
+    /// can configure the segment a restart opened (an event window's step
+    /// cap, decision 0015 E2) before the next [`Driver::run`] steps. Nothing
+    /// due: no effect.
+    #[allow(clippy::too_many_arguments)] // One instant: handle, state, clients, setup.
+    pub fn apply_due(
+        &mut self,
+        ida: &mut Ida<S>,
+        y: &mut [f64],
+        yp: &mut [f64],
+        clients: &mut [&mut dyn Client<S>],
+        setup: &Setup<'_>,
+    ) -> Result<(), String> {
+        setup.check_derived()?;
+        let t = self.observed_to;
+        let due = self.earliest_due().is_some_and(|d| Self::due_at(d, t))
+            || self.commands.first().is_some_and(|c| Self::due_at(c.0, t));
+        if due {
+            self.apply(ida, t, None, y, yp, clients, setup, None, None)?;
+        }
         Ok(())
     }
     fn insert(&mut self, changes: Vec<Change<S>>, now: f64) -> Result<(), String> {
@@ -1245,10 +1281,21 @@ fn due_owner_event<S: JoinedSystem>(ida: &Ida<S>, t: f64) -> bool {
 
 fn summary((r, before): &(Restarted, Vec<Transaction>)) -> Value {
     let rep = &r.report;
+    // HOOK (BIRTH05, DR-C3-BIRTH05): S2-D21's receipts report the transacted
+    // correction (the coordinates exempt from the WRMS guard with their own
+    // WRMS and largest weighted change, null when none is exempt); the
+    // constraint of the state handed to the restart before its
+    // transactions, and every birth's flash in physical units.
+    let exempt = rep.exempt.map(
+        |e| json!({"coordinates": e.coordinates, "wrms": e.wrms, "max": [e.max.value, e.max.row]}),
+    );
     json!({"transactions": r.transactions.iter().chain(before).map(|t| t.receipt.clone()).collect::<Vec<_>>(),
         "transacted": r.transacted, "passes_allowed": r.passes_allowed, "placements": r.placements.len(),
+        "constraint_at_entry": [r.constraint_at_entry.value, r.constraint_at_entry.row],
+        "constraint_before": [rep.constraint_before.value, rep.constraint_before.row],
+        "births": r.births,
         "projection_passes": rep.projection_passes, "rate_passes": rep.rate_passes,
-        "correction_wrms": rep.correction_wrms, "residual": rep.residual.value,
+        "correction_wrms": rep.correction_wrms, "exempt": exempt, "residual": rep.residual.value,
         "analyses_made": rep.analyses, "assemblies": rep.jacobian_s.len()})
 }
 

@@ -20,8 +20,9 @@
 //! - **Absent.** Without this wrapper nothing changes: the hooks' defaults
 //!   append no coordinate (S1/S2 paths are bitwise unchanged).
 //!
-//! No exchange law and no carrier-angle choice: the boundary is the held
-//! stiff bus of the slice's inputs.
+//! No exchange law (the Grid side's): the boundary is the held stiff bus of
+//! the slice's inputs, and the carrier a continuous input of its angle row
+//! (owner decision D2).
 use crate::{
     ida::{Failure, KluOrdering, System},
     joined::{DerivedRow, Determined, Integrated, JoinedSystem},
