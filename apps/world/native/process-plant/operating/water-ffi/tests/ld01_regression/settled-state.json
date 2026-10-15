@@ -1,71 +1,71 @@
 {
   "kind": "ld01-settled-state-pin",
-  "status": "Regression pin (NOT evidence; S2 is not declared): the S2 re-settle after S3-D36 (the PZR shell, heads and heater steel prepared at their steady state, SOLIDS 559504c57), settled at 455 s by r7.1's settling block with S3-D35's 2 s maximum step (DR-P2-SPRAYDROP open: default steps trip the drop coordinate's restart bound at 211 s); packet 303f0998 = wiki claude/ld01-s3-wiki-integ a6f3f7a, the spray line composed closed; water library adapter 10252c28; PHASE's saturated-line inverse (8794e1451). On the window that starts at the pair every range holds (PT1 52 of 344 Pa)",
-  "file": "settled-state-s3d36-455s-303f0998.bits.json.gz",
-  "sha256": "f00bb658b39642599f66e9d4f95b7638fc9d30fba0ff1d703defcb89868138a4",
-  "bytes": 14325,
+  "status": "Regression pin (NOT evidence; S2 is not declared): the S2 re-settle after S3-D36 (the PZR shell, heads and heater steel prepared at their steady state, SOLIDS 559504c57), settled at 455 s by r7.1's settling block with S3-D35's 2 s maximum step (DR-P2-SPRAYDROP open: default steps trip the drop coordinate's restart bound at 211 s); packet 303f0998 = wiki claude/ld01-s3-wiki-integ a6f3f7a, the spray line composed closed; water library adapter 10252c28; PHASE's saturated-line inverse (8794e1451); after DR-P2-SPRAYDROP's drop exhaustion at the port's contact (IC-CTRL e166d5fb1), which changes the capped settle's state at the same 455 s and 1,605 steps. On the window that starts at the pair every range holds (PT1 52 of 344 Pa)",
+  "file": "settled-state-s3d36-455s-303f0998-spraydrop.bits.json.gz",
+  "sha256": "ebd45a3ec3ac4d48250bc4bef4bb6d0c0f4c37e85e6d3218938ea82191f9a525",
+  "bytes": 13933,
   "packet_sha256": "303f0998da00160c6a4b6a7e37f9ac477bee43421e9a8d69d8bba54eb3dce041",
   "t_s": 455.0,
   "row_bound": 1e-10,
   "provisional": false,
   "known_misses": [],
   "digest": {
-    "macos-aarch64": "0x6931e1f2ce573efa"
+    "macos-aarch64": "0xffc4d8ba19f49658"
   },
-  "made_by": "ld01_regression::settled_state_pin from kern/s3d36-a6f3f7a/s2-settle-303f0998-1/settled-state.json",
+  "made_by": "ld01_regression::settled_state_pin from kern/s3d36-a6f3f7a/s2-settle-303f0998-2/settled-state.json",
   "source": {
-    "file": "kern/s3d36-a6f3f7a/s2-settle-303f0998-1/settled-state.json",
-    "max_abs_scaled_row_as_settled": 4.371788843585685e-09,
-    "sha256": "b610d1c423f45197d06207b0116e7e9a3f605e4a7508641e7a01c69d66f99c08"
+    "file": "kern/s3d36-a6f3f7a/s2-settle-303f0998-2/settled-state.json",
+    "max_abs_scaled_row_as_settled": 4.371779360262451e-09,
+    "sha256": "44bc88ac3df13b7b8f166a6cd8e331f9e7d7a1f58a800800281e0d22ad824f0f"
   },
   "start": {
-    "constraint_rate": 1.443926477272565e-20,
-    "correction_wrms": 2.0328532989861685e-06,
+    "constraint_rate": 9.932784795536756e-20,
+    "correction_wrms": 2.034965389610763e-06,
     "projection_passes": 1,
     "rate_passes": 1,
-    "residual": 4.439492244445095e-14
+    "residual": 4.7928662198002943e-14
   },
   "at_pin": {
-    "max_abs_scaled_row": 4.439492244445095e-14,
+    "max_abs_scaled_row": 4.7928662198002943e-14,
     "settling_window_20_s": {
       "average_coolant_k": {
         "holds": true,
-        "range": 3.771103661165398e-05,
+        "range": 3.7711036839027656e-05,
         "threshold": 0.0034
       },
       "core_cell_liquid_k": {
         "holds": true,
-        "range": 9.419017931122653e-05,
+        "range": 9.419018033440807e-05,
         "threshold": 0.01
       },
       "core_power": {
         "holds": true,
-        "range": 4.5811940437261986e-06,
+        "range": 4.581194091836031e-06,
         "threshold": 6.8e-05
       },
       "loop_flow": {
         "holds": true,
-        "range": 1.798345024922766e-07,
+        "range": 1.798345011031553e-07,
         "threshold": 0.0005
       },
       "pt1_pa": {
         "holds": true,
-        "range": 52.44363270141184,
+        "range": 52.4436316434294,
         "threshold": 344.0
       },
       "pzr_level_m": {
         "holds": true,
-        "range": 3.3780490243273675e-05,
+        "range": 3.3780489800072644e-05,
         "threshold": 0.00068
       },
       "sg_liquid_m3": {
         "holds": true,
-        "range": 5.280505362748045e-06,
+        "range": 5.2805053769588994e-06,
         "threshold": 0.0034
       },
       "sg_pressure_pa": {
         "holds": true,
-        "range": 3.6075102873146534,
+        "range": 3.607510161586106,
         "threshold": 344.0
       }
     },
