@@ -46,22 +46,22 @@ use s3_harness::{
 };
 use serde_json::{Value, json};
 
-/// The published block (wiki b6e74fe), pinned by RP1-pin-s3-c1c3-r3.6.
-const C1C3_R3_6: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c1c3-r3.6.json");
+/// The published block (wiki 0ccf579), pinned by RP1-pin-s3-c1c3-r3.7.
+const C1C3_R3_7: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c1c3-r3.7.json");
 
 fn block() -> Block {
-    Block::from_json(declaration::FENCE, C1C3_R3_6).unwrap()
+    Block::from_json(declaration::FENCE, C1C3_R3_7).unwrap()
 }
 
 #[test]
 fn the_published_block_pins_and_its_open_values_refuse_their_cases() {
     let b = block();
-    // RP1-pin-s3-c1c3-r3.6's declared sha256.
+    // RP1-pin-s3-c1c3-r3.7's declared sha256.
     assert_eq!(
         guards::declared_sha256(&b).unwrap(),
-        "2df5cd086a0dfe60ee71205f0cf493f23b17c815d522e1c8483c6ad6a79c3476"
+        "083df1253745f4c895a69b13e5579b2099e3e2271f06acef1ac309e0eb431d2d"
     );
-    let log = "| RP1-pin-s3-c1c3-r3.6 | 15 Oct | `ld01-s3-cases-c1c3` frozen; sha256 2df5cd086a0dfe60ee71205f0cf493f23b17c815d522e1c8483c6ad6a79c3476 |\n";
+    let log = "| RP1-pin-s3-c1c3-r3.7 | 15 Oct | `ld01-s3-cases-c1c3` frozen; sha256 083df1253745f4c895a69b13e5579b2099e3e2271f06acef1ac309e0eb431d2d |\n";
     let pin = guards::pin_of(&b, Some(log), "log").unwrap();
     assert_eq!(pin["pinned"], json!(true), "{pin}");
     // The S2 gates' pin never reads the S3 row, nor the reverse.
@@ -381,7 +381,7 @@ fn each_case_takes_its_clock_and_command_from_the_block() {
 #[test]
 fn the_s3_settle_reads_its_maximum_step_from_the_block() {
     // S3-D35: settling.maxStep_s, 2 s since r3.5; absent refuses.
-    let mut v: Value = serde_json::from_str(C1C3_R3_6).unwrap();
+    let mut v: Value = serde_json::from_str(C1C3_R3_7).unwrap();
     assert_eq!(s3_unit::settle_max_step(&v), Ok(2.));
     v.as_object_mut().unwrap().remove("settling");
     assert!(s3_unit::settle_max_step(&v).is_err());
@@ -390,8 +390,8 @@ fn the_s3_settle_reads_its_maximum_step_from_the_block() {
     v["settling"]["maxStep_s"] = json!(0.);
     assert!(s3_unit::settle_max_step(&v).is_err());
     // The block is found once in a page.
-    let page = format!("text\n```ld01-s3-cases-c1c3\n{C1C3_R3_6}\n```\nmore");
-    assert_eq!(s3_unit::cases_block(&page).unwrap()["revision"], "3.6");
+    let page = format!("text\n```ld01-s3-cases-c1c3\n{C1C3_R3_7}\n```\nmore");
+    assert_eq!(s3_unit::cases_block(&page).unwrap()["revision"], "3.7");
     let twice = format!("{page}\n```ld01-s3-cases-c1c3\n{{}}\n```");
     assert!(s3_unit::cases_block(&twice).is_err());
 }
@@ -565,6 +565,50 @@ impl RuleI {
     }
 }
 
+/// Rule I and the kinetics floor as r3.7 declares them (owner request 5):
+/// A4 (R5-A) and B1 (R5-B), the only rules the harness implements. The
+/// floor's 8 MPa and the D3 (a) extension are the packet's compiled
+/// sections; B1's per-core-region phase-absence check is [`RuleI::judge`]'s
+/// admission. Any other declared text refuses.
+fn kinetics_rule(block: &Block) -> Result<Value, String> {
+    let rule_i = block.whole("/kineticsDomain/ruleI");
+    let floor = block.whole("/kineticsDomain/floor");
+    let (Some(rule_i), Some(floor)) = (rule_i.as_str(), floor.as_str()) else {
+        return Err("the block declares no kineticsDomain.ruleI and floor".into());
+    };
+    if !rule_i.starts_with("A4 (owner-approved, R5-A)") {
+        return Err(format!(
+            "rule I {rule_i:?}: the harness implements the owner's A4 (R5-A)"
+        ));
+    }
+    if !floor.starts_with("B1 (owner-approved, R5-B)") {
+        return Err(format!(
+            "kinetics floor {floor:?}: the harness implements the owner's B1 (R5-B)"
+        ));
+    }
+    Ok(
+        json!({"ruleI": "A4", "floor": "B1", "ruleI_text": rule_i, "floor_text": floor,
+        "exits": ["D3 (a) margin exit", "D3 (a) source-domain exit", "B1 phase-absence exit"]}),
+    )
+}
+
+#[test]
+fn rule_i_is_read_as_the_owners_a4_and_b1() {
+    let b = block();
+    let k = kinetics_rule(&b).unwrap();
+    assert_eq!(
+        (k["ruleI"].as_str(), k["floor"].as_str()),
+        (Some("A4"), Some("B1"))
+    );
+    // r3.6's pre-answer defaults are not read (no legacy text).
+    let old = Block::from_json(
+        declaration::FENCE,
+        include_str!("s3_harness/fixtures/ld01-s3-cases-c1c3-r3.6.json"),
+    )
+    .unwrap();
+    assert!(kinetics_rule(&old).is_err());
+}
+
 /// S3-D39: C3's operator turbine-trip delay after the acquired reactor trip
 /// (`operatorTurbineTripDelay_s`, with its `operatorTurbineTripFrom` and
 /// `operatorTurbineTripBasis`); `None` for the other cases.
@@ -732,13 +776,9 @@ fn s3_case_run() {
         "the block's frame is the I&C frame"
     );
     let (zero_after, command) = case_clock(case, &spec, declared_frame_s).unwrap();
-    // Rule I: the block declares owner request A's default, A4.
+    // Rule I: the owner's answers A4 and B1 (r3.7).
+    let kinetics = kinetics_rule(&d.block).unwrap_or_else(|e| panic!("{e}"));
     let rule_i_text = d.block.text("/kineticsDomain/ruleI");
-    assert_eq!(
-        rule_i_text, "owner request A, default A4",
-        "rule I {rule_i_text:?}: the harness implements the declared default A4"
-    );
-    d.block.text("/kineticsDomain/floor");
     let packet_json: Value = serde_json::from_slice(&spine::packet_bytes().1).expect("packet json");
     let extension: leitbild_operating_plant::joined::post_trip_domain::Extension =
         serde_json::from_value(packet_json["post_trip_domain"].clone())
@@ -933,8 +973,8 @@ fn s3_case_run() {
         .unwrap()
         .with_electrical(&electrical_log, zero);
     tl.monitors_declared = section.monitors.iter().map(|m| m.id.clone()).collect();
-    // Rule I, A4 (the block's declared default pending owner request A):
-    // the lines are judged on the declared part, up to the D3 (a) exit; the
+    // Rule I, A4 (owner-approved, R5-A): the lines are judged on the
+    // declared part, up to the D3 (a) or B1 phase-absence exit; the
     // whole run is judged again for information only.
     let exit_after_zero = domain
         .exit
@@ -974,7 +1014,8 @@ fn s3_case_run() {
         "lines not all passing".to_string()
     };
     let simulated = end - t0;
-    let rule_i_record = json!({"declared": rule_i_text, "applied": "A4 (the block's declared default, pending owner request A): a run ends, labelled, at the first state D3 (a) does not admit; continued to its end for information only",
+    let rule_i_record = json!({"declared": rule_i_text, "kinetics": kinetics,
+            "applied": "A4 (owner-approved, R5-A): a run ends, labelled, at the first state D3 (a) does not admit; with B1 (R5-B) the per-core-region phase-absence check is part of that admission (labelled \"B1 phase-absence exit\"); continued to its end for information only",
             "evaluated_at": "every frame instant, at the solver's state there", "samples": domain.samples,
             "first_extended_s": domain.first_extended, "margin_failures": domain.margin_failures,
             "exit": domain.exit, "exit_after_zero_s": exit_after_zero,
