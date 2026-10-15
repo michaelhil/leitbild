@@ -41,3 +41,36 @@ pub fn thread_s() -> f64 {
 pub fn process_s() -> f64 {
     read(PROCESS)
 }
+
+#[repr(C)]
+struct Rusage {
+    user: [i64; 2],
+    system: [i64; 2],
+    max_rss: i64,
+    rest: [i64; 13],
+}
+unsafe extern "C" {
+    fn getrusage(who: i32, usage: *mut Rusage) -> i32;
+}
+
+/// Peak resident set of this process in bytes (getrusage RUSAGE_SELF;
+/// macOS reports bytes, Linux KiB).
+pub fn max_rss_bytes() -> u64 {
+    let mut u = Rusage {
+        user: [0; 2],
+        system: [0; 2],
+        max_rss: 0,
+        rest: [0; 13],
+    };
+    // SAFETY: one live struct matching the 64-bit `struct rusage` layout on
+    // both supported targets (two timevals of 16 bytes, then 14 longs); the
+    // C library writes it and keeps no pointer.
+    let status = unsafe { getrusage(0, &mut u) };
+    assert_eq!(status, 0, "getrusage unavailable");
+    let rss = u.max_rss.max(0) as u64;
+    if cfg!(target_os = "linux") {
+        rss * 1024
+    } else {
+        rss
+    }
+}

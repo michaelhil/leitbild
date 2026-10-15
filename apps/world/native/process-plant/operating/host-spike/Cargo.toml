@@ -15,6 +15,11 @@ crate-type = ["rlib", "cdylib"]
 name = "ld01-host-spike"
 path = "src/bin/ld01-host-spike.rs"
 
+[features]
+# Stock IDAS of the same release (the S2 gate's declared build); the joined
+# host's trajectories are bit-identical on IDA (S2-15 Step A).
+quadratures = ["leitbild-operating-water/quadratures"]
+
 [dependencies]
 leitbild-operating-plant = { path = ".." }
 leitbild-operating-water = { path = "../water-ffi", features = ["ida"] }

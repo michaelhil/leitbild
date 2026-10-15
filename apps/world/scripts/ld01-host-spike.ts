@@ -35,11 +35,11 @@ function f64Bytes(values:number[]){const out=new Uint8Array(8*values.length),v=n
 function concat(parts:Uint8Array[]){const out=new Uint8Array(parts.reduce((n,p)=>n+p.length,0));let at=0;for(const p of parts){out.set(p,at);at+=p.length}return out}
 const text=new TextEncoder(),utf8=new TextDecoder()
 
-/** One child process hosting one unit. Every request resolves with the
- * host's reply or rejects with a HostError naming the refusal or the
- * child's exit; nothing is retried. */
-export function spawnHost(binary:string){
- const child=Bun.spawn([binary],{stdin:'pipe',stdout:'pipe',stderr:'pipe'})
+/** One framed child process: every request resolves with the host's reply
+ * or rejects with an error naming the refusal or the child's exit; nothing
+ * is retried. Shared by the S1 spike host and the joined host. */
+export function spawnFramed(binary:string,env?:Record<string,string|undefined>){
+ const child=Bun.spawn([binary],{stdin:'pipe',stdout:'pipe',stderr:'pipe',...(env?{env}:{})})
  const pending=new Map<number,{resolve:(r:Reply)=>void,reject:(e:Error)=>void,sent:number}>()
  let seq=0,ended:HostExit|null=null,buffer:Uint8Array=new Uint8Array(0),stderr=''
  const failAll=(reason:string)=>{for(const [,p] of pending)p.reject(hostError(reason));pending.clear()}
@@ -72,6 +72,12 @@ export function spawnHost(binary:string){
   const id=++seq;pending.set(id,{resolve,reject,sent:Bun.nanoseconds()})
   child.stdin.write(frame(op,id,payload));child.stdin.flush()
  })
+ return {pid:child.pid,exited,kill:(signal:NodeJS.Signals)=>child.kill(signal),request}
+}
+
+/** One child process hosting one S1 unit (the spike's first host). */
+export function spawnHost(binary:string){
+ const {pid,exited,kill,request}=spawnFramed(binary)
  const parseAdvance=(r:Reply):AdvanceReply=>{
   const v=new DataView(r.data.buffer,r.data.byteOffset,r.data.byteLength),i=(k:number)=>Number(v.getBigInt64(16+8*k,true))
   const n=v.getUint32(80,true),signals=new Float64Array(n)
@@ -81,8 +87,7 @@ export function spawnHost(binary:string){
  }
  const json=(r:Reply)=>JSON.parse(utf8.decode(r.data)) as Record<string,unknown>
  return {
-  pid:child.pid,exited,
-  kill:(signal:NodeJS.Signals)=>child.kill(signal),
+  pid,exited,kill,
   load:async(config:HostConfig)=>json(await request(Op.load,text.encode(JSON.stringify(config)))),
   advance:async(target:number,mode:AdvanceModeCode,observe:boolean)=>{
    const p=new Uint8Array(10);new DataView(p.buffer).setFloat64(0,target,true);p[8]=mode;p[9]=observe?1:0
