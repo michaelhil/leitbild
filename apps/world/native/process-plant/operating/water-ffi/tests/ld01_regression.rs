@@ -32,6 +32,8 @@
 #![cfg(feature = "ida")]
 #[path = "common/cpu.rs"]
 mod cpu;
+#[path = "common/filter.rs"]
+mod filter;
 #[path = "ld01_regression/wiki.rs"]
 mod wiki;
 
@@ -808,6 +810,10 @@ const SETTLING: [(&str, f64, bool); 8] = [
     ("loop_flow", 5e-4, true),
 ];
 const SETTLING_WINDOW_S: f64 = 20.;
+/// `ld01-s2-gates`: the output interval and the 2 Hz credited band of the
+/// settling measure.
+const SETTLING_OUTPUT_S: f64 = 0.1;
+const SETTLING_BAND_HZ: f64 = 2.;
 const ROW_BOUND: f64 = 1e-10;
 
 /// The credited outputs at `(t, y)`: each name of [`SETTLING`] with one
@@ -889,46 +895,108 @@ fn credited(
     ]
 }
 
-/// Each credited output's change over the settling window at the pair's
-/// exact rates (`y'`), by a central difference along `y'` of half-width
-/// `h`, against its threshold: (name, worst change, threshold, holds).
-fn settling_rates(
-    joined: &mut Joined<If97>,
+/// The declared settling measure (`ld01-s2-gates` settling, DR-P3-PT1: one
+/// measure everywhere): each credited output sampled at the output
+/// interval over the settling window, 2 Hz zero-phase filtered
+/// (`filter::zero_phase_lowpass`, the S2 settle's), its range max - min
+/// (relative to the filtered mean where declared) against its threshold.
+/// The S2 settle judges the window that ends at the settled time; a pinned
+/// pair is judged on the window that starts at it, integrated by stock IDA
+/// at S2's configuration: (name, worst range, threshold, holds), and the
+/// window start's bound placements (the restart rule: a nonnegative
+/// coordinate below zero by roundoff starts the window on its bound,
+/// reported). A root or a failure inside the window refuses.
+#[allow(clippy::too_many_arguments)] // The operator, its packet, the pair and its tolerance classes.
+fn settling_window(
+    joined: Joined<If97>,
     network_packet: &NetworkPacket,
-    t: f64,
+    t0: f64,
     y: &[f64],
     yp: &[f64],
-) -> Vec<(&'static str, f64, f64, bool)> {
-    let h = 0.01;
-    let shifted =
-        |sign: f64| -> Vec<f64> { y.iter().zip(yp).map(|(v, r)| v + sign * h * r).collect() };
-    let at = credited(joined, network_packet, t, y, yp);
-    let ahead = credited(joined, network_packet, t + h, &shifted(1.), yp);
-    let behind = credited(joined, network_packet, t - h, &shifted(-1.), yp);
-    // Leave the operator evaluated at the pair itself.
-    credited(joined, network_packet, t, y, yp);
-    SETTLING
+    ids: &[f64],
+    atol: &[f64],
+    rtol: f64,
+) -> Result<(Vec<(&'static str, f64, f64, bool)>, Value), String> {
+    let nonnegative = joined.network.nonnegative_stocks();
+    let mut start = y.to_vec();
+    let placed =
+        leitbild_operating_plant::network::place_on_bounds(t0, &mut start, &nonnegative, 1e-12)
+            .map_err(|f| format!("{f:?}"))?;
+    let y = start.as_slice();
+    let mut ida = Ida::new(
+        Integrated::with_blocks(joined, t0, y)?,
+        Initial {
+            time: t0,
+            y,
+            yp,
+            differential: ids,
+            absolute_tolerance: atol,
+            relative_tolerance: rtol,
+        },
+    )?;
+    ida.set_max_order(2)?;
+    ida.constrain_nonnegative(&nonnegative)?;
+    let restart = Restart {
+        newton_coefficient: NEWTON_COEFFICIENT,
+        delta_cj_lsetup: DELTA_CJ_LSETUP,
+        first_step_s: FIRST_STEP_S,
+        start_bound: START_BOUND,
+        start_passes: 2,
+        transaction_passes: 12,
+        bound_placement: 1e-12,
+    };
+    restart.configure(&mut ida)?;
+    let samples = (SETTLING_WINDOW_S / SETTLING_OUTPUT_S).round() as usize;
+    let end = t0 + samples as f64 * SETTLING_OUTPUT_S;
+    ida.stop_at(end)?;
+    let (mut ys, mut yps) = (y.to_vec(), yp.to_vec());
+    let mut series = vec![credited(
+        &mut ida.system_mut().joined,
+        network_packet,
+        t0,
+        y,
+        yp,
+    )];
+    for k in 1..=samples {
+        let target = t0 + k as f64 * SETTLING_OUTPUT_S;
+        match ida.advance(target, &mut ys, &mut yps)? {
+            Advance::Reached(_) => {}
+            Advance::Root { time, directions } => {
+                return Err(format!(
+                    "a root at {time} s inside the settling window: {directions:?}"
+                ));
+            }
+        }
+        series.push(credited(
+            &mut ida.system_mut().joined,
+            network_packet,
+            target,
+            &ys,
+            &yps,
+        ));
+    }
+    let measured = SETTLING
         .iter()
-        .map(|(name, threshold, relative)| {
-            let find =
-                |v: &[(&str, Vec<f64>)]| v.iter().find(|(n, _)| n == name).unwrap().1.clone();
-            let (a, b, c) = (find(&at), find(&ahead), find(&behind));
-            assert_eq!(a.len(), b.len());
-            let worst = a
-                .iter()
-                .zip(b.iter().zip(&c))
-                .map(|(v, (p, m))| {
-                    let change = (p - m) / (2. * h) * SETTLING_WINDOW_S;
+        .enumerate()
+        .map(|(q, (name, threshold, relative))| {
+            assert_eq!(series[0][q].0, *name);
+            let worst = (0..series[0][q].1.len())
+                .map(|i| {
+                    let x: Vec<f64> = series.iter().map(|s| s[q].1[i]).collect();
+                    let f = filter::zero_phase_lowpass(&x, SETTLING_BAND_HZ, SETTLING_OUTPUT_S);
+                    let hi = f.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                    let lo = f.iter().cloned().fold(f64::INFINITY, f64::min);
                     if *relative {
-                        (change / v).abs()
+                        ((hi - lo) / filter::mean(&f)).abs()
                     } else {
-                        change.abs()
+                        hi - lo
                     }
                 })
-                .fold(0., f64::max);
+                .fold(0., filter::larger);
             (*name, worst, *threshold, worst <= *threshold)
         })
-        .collect()
+        .collect();
+    Ok((measured, json!(placed)))
 }
 
 /// Exact f64 bits as hex: serde_json's default float parsing is best
@@ -1065,7 +1133,8 @@ fn settled_state_pin() {
     .expect("exact consistent start at the settled state");
     joined.evaluate(t, &y, &yp, None, 0., None).unwrap();
     let rows: Vec<f64> = joined.rows().iter().map(|r| r.value).collect();
-    let rates = settling_rates(&mut joined, &network_packet, t, &y, &yp);
+    let (rates, placed) = settling_window(joined, &network_packet, t, &y, &yp, &ids, &atol, rtol)
+        .expect("the settling window from the pinned pair");
     let pin = json!({
         "kind": "ld01-settled-state-pin",
         "status": "NOT-EVIDENCE regression pin; S2 is not declared",
@@ -1086,7 +1155,8 @@ fn settled_state_pin() {
             "provisional": !misses.is_empty(), "known_misses": misses,
             "digest": {platform(): digest(&rows)},
             "max_abs_scaled_row": rows.iter().fold(0_f64, |m, r| m.max(r.abs())),
-            "rates_per_20_s": rates.iter().map(|r| (r.0.to_string(), json!({"change": r.1, "threshold": r.2, "holds": r.3}))).collect::<Map<String, Value>>(),
+            "settling_window_20_s": rates.iter().map(|r| (r.0.to_string(), json!({"range": r.1, "threshold": r.2, "holds": r.3}))).collect::<Map<String, Value>>(),
+            "window_start_placements": placed,
             "source": pin["source"], "start": pin["start"],
         })
     );
@@ -1117,7 +1187,16 @@ fn settled_state() {
     );
     assert_eq!(state["packet_sha256"], pin["packet_sha256"]);
     let gates = s1_gates();
-    let (Composed { mut joined, .. }, network_packet) = operator(&bytes, &gates);
+    let (
+        Composed {
+            mut joined,
+            ids,
+            atol,
+            rtol,
+            ..
+        },
+        network_packet,
+    ) = operator(&bytes, &gates);
     let t = state["t_s"].as_f64().unwrap();
     let (y, yp) = (from_bits(&state["y_bits"]), from_bits(&state["yp_bits"]));
     joined
@@ -1137,15 +1216,16 @@ fn settled_state() {
         .flat_map(|(o, l)| l.labels.iter().map(move |x| format!("{o}/{x}")))
         .nth(worst_row)
         .unwrap_or_default();
-    let rates = settling_rates(&mut joined, &network_packet, t, &y, &yp);
+    let (rates, placed) = settling_window(joined, &network_packet, t, &y, &yp, &ids, &atol, rtol)
+        .expect("the settling window from the pinned pair");
     let misses: Vec<&str> = rates.iter().filter(|r| !r.3).map(|r| r.0).collect();
     let found_digest = digest(&rows);
     let pinned_digest = pin["digest"][platform()].as_str();
     println!(
         "{}",
         json!({"max_abs_scaled_row": worst, "at": label, "digest": found_digest, "pinned_digest": pinned_digest,
-            "rates_per_20_s": rates.iter().map(|r| (r.0.to_string(), json!({"change": r.1, "threshold": r.2, "holds": r.3}))).collect::<Map<String, Value>>(),
-            "misses": misses, "provisional": pin["provisional"]})
+            "settling_window_20_s": rates.iter().map(|r| (r.0.to_string(), json!({"range": r.1, "threshold": r.2, "holds": r.3}))).collect::<Map<String, Value>>(),
+            "window_start_placements": placed, "misses": misses, "provisional": pin["provisional"]})
     );
     let mut problems = Vec::new();
     if worst.is_nan() || worst > ROW_BOUND {
