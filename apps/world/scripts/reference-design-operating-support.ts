@@ -4,14 +4,15 @@
  * every law; this compiler reads, checks and composes. Nothing is defaulted.
  *
  * - `ld01-support-trains`, `ld01-support-stores`, `ld01-support-rooms`,
- *   `ld01-ccw-regulator`, `ld01-support-preparation` (thermal-water-and-air.md,
+ *   `ld01-ccw-regulator`, `ld01-support-preparation`, `ld01-site-intake` (thermal-water-and-air.md,
  *   "Compact operating allocation (15 October 2026)");
  * - `ld01-rhr-train` (shutdown-cooling.md, same heading);
  * - existing strict blocks reused only here: `reference-station` (pump heads,
  *   efficiencies, drag, rated flows, site/ambient, motor conductances, rooms),
  *   `reference-support-network` (sizing drops, jacket and exchanger
  *   conductances), `reference-lubrication` (oil pair, jacket volume),
- *   `reference-ccw-expansion` (vessel volumes), `reference-feed-pool` (g).
+ *   `reference-ccw-expansion` (vessel volumes), `reference-feed-pool` (g),
+ *   `reference-letdown-cooling-branch` (CW combined reference, letdown branch).
  *
  * The prepared state comes from the named calculator `runPrimaryStation` (the
  * owner's "same frozen station preparation"); the printed preparation block
@@ -21,6 +22,7 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { parseExpansion } from './reference-design-ccw-expansion'
+import { parseLetdownCoolingBranch } from './reference-design-letdown-cooling-branch'
 import { parseLubrication } from './reference-design-lubrication'
 import { ownedBlock } from './reference-design-operating-pzr'
 import { runPrimaryStation } from './reference-design-primary-station'
@@ -35,6 +37,7 @@ export const supportOwners = {
   rooms: { page: 'systems/support-services/thermal-water-and-air.md', heading: 'Motor, jacket and room stores', fence: 'ld01-support-rooms' },
   regulator: { page: 'systems/support-services/thermal-water-and-air.md', heading: 'CCW temperature-regulator block', fence: 'ld01-ccw-regulator' },
   preparation: { page: 'systems/support-services/thermal-water-and-air.md', heading: 'Prepared support state', fence: 'ld01-support-preparation' },
+  intake: { page: 'systems/support-services/thermal-water-and-air.md', heading: 'Intake bay and circulating water', fence: 'ld01-site-intake' },
   rhr: { page: 'systems/primary-coolant/shutdown-cooling.md', heading: allocation, fence: 'ld01-rhr-train' },
 } as const
 export const supportPages = {
@@ -43,6 +46,7 @@ export const supportPages = {
   station: 'model/station-balance.md',
   lubrication: 'systems/steam-power/lubrication-and-turning.md',
   feed: 'systems/feedwater/index.md',
+  condenser: 'systems/steam-power/condenser-and-cooling.md',
 } as const
 export type SupportPages = Record<keyof typeof supportPages, string>
 
@@ -81,6 +85,10 @@ const rhrSchema = z.object({ externalFlow_kg_s: positive, minimumFlow_kg_s: posi
     bypassFlow_kg_s: positive, bypassDrop_MPa: positive, stroke_per_s: positive, movingDuty_kW: positive }).strict()
     .refine(r => r.targetMin_C < r.targetMax_C, 'RHR target band must be ordered'),
 }).strict()
+const intakeSchema = z.object({ bayArea_m2: positive, floor_m: z.number().finite(), normalDepth_m: positive, refillLevel_m: positive, floatSpan_m: positive,
+  initialVolume_m3: positive, initialTemperature_C: temperature, sourceTemperature_C: temperature, sourceCapacity_m3_s: positive, refillMouth_m: z.number().finite(),
+  condenserPathDrop_kPa: positive, cwPumpSpeed_rpm: positive, cwCoastdown_s: positive, cwTrackingTime_s: positive, cwTorqueCapFactor: positive }).strict()
+  .refine(b => b.normalDepth_m < b.refillLevel_m && b.refillLevel_m - b.floatSpan_m <= b.normalDepth_m, 'The float must open fully at or above the normal level')
 const feedPoolSchema = z.object({ gravity_m_s2: positive }).passthrough()
 
 const parse = <T extends z.ZodTypeAny>(schema: T, page: string, o: { heading: string, fence: string }): z.infer<T> =>
@@ -91,6 +99,7 @@ export const parseSupportRooms = (thermal: string) => parse(roomsSchema, thermal
 export const parseCcwRegulator = (thermal: string) => parse(regulatorSchema, thermal, supportOwners.regulator)
 export const parseSupportPreparation = (thermal: string) => parse(preparationSchema, thermal, supportOwners.preparation)
 export const parseRhrTrain = (shutdown: string) => parse(rhrSchema, shutdown, supportOwners.rhr)
+export const parseSiteIntake = (thermal: string) => parse(intakeSchema, thermal, supportOwners.intake)
 function parseFeedPool(feed: string) {
   const blocks = [...feed.matchAll(/^```reference-feed-pool\s*\n([\s\S]*?)^```\s*$/gm)]
   if (blocks.length !== 1) throw Error('Expected one reference-feed-pool block')
@@ -102,7 +111,7 @@ export type PreparedBranch = { id: string, heat_MW: number, reference_kg_s: numb
 export type PreparedTrain = { bypass: number, flow_kg_s: number, head_MPa: number, localDrop_MPa: number, commonDrop_MPa: number, hxFlow_kg_s: number,
   temperatures_C: { supply: number, return: number, coolerOutlet: number, wall: number, swOutlet: number }, branches: PreparedBranch[] }
 export type StationPreparation = { A: PreparedTrain, B: PreparedTrain, generatorLoss_MW: number, swFluid_MW: { A: number, B: number },
-  motorAndDrag_MW: { CCW_A: number, CCW_B: number, SWA: number, SWB: number } }
+  motorAndDrag_MW: { CCW_A: number, CCW_B: number, SWA: number, SWB: number, CW: number } }
 
 /** Agreement to the printed digits: |a-b| below half a unit of the printed last place. */
 function printedAgreement(name: string, printed: number, computed: number) {
@@ -118,6 +127,10 @@ export function compileOperatingSupport(pages: SupportPages, prepared: StationPr
   const regulator = parseCcwRegulator(pages.thermal), preparation = parseSupportPreparation(pages.thermal), rhr = parseRhrTrain(pages.shutdown)
   const station = parseStationBasis(pages.station), network = parseSupportBasis(pages.thermal), oil = parseLubrication(pages.lubrication)
   const vessel = parseExpansion(pages.thermal), { gravity_m_s2: g } = parseFeedPool(pages.feed)
+  const intake = parseSiteIntake(pages.thermal), letdown = parseLetdownCoolingBranch(pages.condenser)
+  if (letdown.gravity_m_s2 !== g || letdown.cwReferenceDensity_kg_m3 !== station.waterDensity_kg_m3) throw Error('Gravity or sizing density differs between owners')
+  if (intake.cwPumpSpeed_rpm !== trains.ccw.pumpSpeed_rpm) throw Error('CW pumps share the selected 1500 rpm')
+  if (letdown.outfall_m !== trains.sw.dischargeElevation_m || intake.floor_m !== letdown.takeoff_m) throw Error('Outfall and datum differ between owners')
   if (trains.ccw.pumpSpeed_rpm !== trains.sw.pumpSpeed_rpm) throw Error('CCW and SW pumps share one selected speed')
   if (network.jacket_MW_K.oil * MW !== oil.coolerConductance_W_K) throw Error('Oil jacket conductance differs between its two owners')
   if (rhr.train.fixed_MPa + rhr.train.hx_MPa + rhr.train.fcv_MPa !== rhr.train.drop_MPa) throw Error('RHR train allocation does not sum to its drop')
@@ -127,12 +140,13 @@ export function compileOperatingSupport(pages: SupportPages, prepared: StationPr
   const displacedBound = vessel.vesselVolume_m3 - vessel.initialLiquid_m3 - preparation.plusFiveKelvinGasSpace_m3
   if (!(displacedBound > 0)) throw Error('The +5 K comparison must leave a positive displaced volume')
 
-  const pump = (head_MPa: number, flow_kg_s: number, etaH: number, etaM: number, drag: number, coastdown_s: number) => {
+  const pump = (head_MPa: number, flow_kg_s: number, etaH: number, etaM: number, drag: number, coastdown_s: number,
+    tracking_s = trains.drive.trackingTime_s, capFactor = trains.drive.torqueCapFactor) => {
     const fluid0 = flow_kg_s / rho0 * head_MPa * MPa / etaH, drag0 = drag * fluid0
     return { omega0_rad_s: omega0, referenceFlow_kg_s: flow_kg_s, referenceHead_Pa: head_MPa * MPa, referenceDensity_kg_m3: rho0,
       hydraulicEfficiency: etaH, motorEfficiency: etaM, fluidPower0_W: fluid0, dragPower0_W: drag0,
-      inertia_kg_m2: (fluid0 + drag0) * coastdown_s / omega0 ** 2, trackingTime_s: trains.drive.trackingTime_s,
-      torqueCap_N_m: trains.drive.torqueCapFactor * (fluid0 + drag0) / omega0, churnFraction: trains.lowPressurePump.churnFraction }
+      inertia_kg_m2: (fluid0 + drag0) * coastdown_s / omega0 ** 2, trackingTime_s: tracking_s,
+      torqueCap_N_m: capFactor * (fluid0 + drag0) / omega0, churnFraction: trains.lowPressurePump.churnFraction }
   }
   const jacketStore = (id: string) => id.startsWith('RCP.') ? { volume_m3: stores.rcpJacket_m3, metal_J_K: stores.rcpMotor_MJ_K * MW }
     : id.startsWith('FW.P') ? { volume_m3: stores.feedJacket_m3, metal_J_K: stores.feedMotor_MJ_K * MW }
@@ -209,6 +223,21 @@ export function compileOperatingSupport(pages: SupportPages, prepared: StationPr
         // identical split of the prepared aggregate oil temperature (lubrication owner)
         initial_K: kelvin(B.metal_C) },
       generatorCooler: { conductance_W_K: trains.generatorCooler.conductance_MW_K * MW, storeCapacity_J_K: trains.generatorCooler.store_MJ_K * MW },
+      intake: { area_m2: intake.bayArea_m2, floor_m: intake.floor_m, refillLevel_m: intake.refillLevel_m, floatSpan_m: intake.floatSpan_m,
+        refillMouth_m: intake.refillMouth_m, sourceCapacity_m3_s: intake.sourceCapacity_m3_s, initialVolume_m3: intake.initialVolume_m3,
+        initial_K: kelvin(intake.initialTemperature_C), normalDepth_m: intake.normalDepth_m },
+      circulating: {
+        // two equal parallel pumps on the combined reference; each pump carries half
+        pump: pump(station.CW.head_MPa, letdown.cwReference_m3_s * rho0 / 2, station.CW.hydraulicEfficiency, station.CW.motorEfficiency, station.CW.dragFraction,
+          intake.cwCoastdown_s, intake.cwTrackingTime_s, intake.cwTorqueCapFactor),
+        buses: ['AC.A', 'AC.B'],
+        motor: { capacity_J_K: stores.cwMotor_MJ_K * MW, ambientConductance_W_K: station.CWmotorEach_MW_K * MW,
+          initial_K: kelvin(station.ambient_C + prepared.motorAndDrag_MW.CW / 2 / station.CWmotorEach_MW_K) },
+        // both paths sized on their residual head after the common lift
+        condenserK_Pa_per_kg2_s2: intake.condenserPathDrop_kPa * 1000 / (letdown.cwReference_m3_s * rho0) ** 2,
+        letdown: { referenceFlow_kg_s: letdown.referenceFlow_kg_s, referenceHead_Pa: letdown.referenceHead_Pa },
+        dischargeElevation_m: letdown.outfall_m,
+      },
       regulator: { sample_s: regulator.sample_s, target_K: kelvin(regulator.target_C), proportional_per_K: regulator.proportional_per_K, integral_per_K_s: regulator.integral_per_K_s },
       /** Port values at the prepared state; each neighbour supplies the live value (port table P1-P16). */
       ports: {
@@ -217,9 +246,8 @@ export function compileOperatingSupport(pages: SupportPages, prepared: StationPr
         // P5 belongs to C10's lube intersection; at the identical split it carries no heat at t=0
         oilFlow_m3_s: oil.mainFlow_m3_s,
         generatorMetal_K: kelvin(generatorWater_C + prepared.generatorLoss_MW / trains.generatorCooler.conductance_MW_K),
-        bay_K: kelvin(station.siteWater_C),
-        // "the initial intake/discharge elevation heads cancel" (condenser owner)
-        bayLevel_m: trains.sw.dischargeElevation_m,
+        source_K: kelvin(intake.sourceTemperature_C),
+        sourceCapacity_m3_s: intake.sourceCapacity_m3_s,
         ambient_K: kelvin(station.ambient_C),
       },
     },
@@ -239,9 +267,10 @@ export function compileOperatingSupport(pages: SupportPages, prepared: StationPr
 /** The fields of `runPrimaryStation`'s result the compiler consumes. */
 export function stationPreparation(result: Awaited<ReturnType<typeof runPrimaryStation>>): StationPreparation {
   const point = (t: 'A' | 'B') => result.support[t].point as unknown as PreparedTrain
-  const s = result.station as unknown as { powers_MW: { generatorLoss: number }, pumps: Record<'CCW_A' | 'CCW_B' | 'SWA' | 'SWB', { fluid_MW: number, motorAndDrag_MW: number }> }
+  const s = result.station as unknown as { powers_MW: { generatorLoss: number }, pumps: Record<'CCW_A' | 'CCW_B' | 'SWA' | 'SWB' | 'CW', { fluid_MW: number, motorAndDrag_MW: number }> }
   return { A: point('A'), B: point('B'), generatorLoss_MW: s.powers_MW.generatorLoss, swFluid_MW: { A: s.pumps.SWA.fluid_MW, B: s.pumps.SWB.fluid_MW },
-    motorAndDrag_MW: { CCW_A: s.pumps.CCW_A.motorAndDrag_MW, CCW_B: s.pumps.CCW_B.motorAndDrag_MW, SWA: s.pumps.SWA.motorAndDrag_MW, SWB: s.pumps.SWB.motorAndDrag_MW } }
+    motorAndDrag_MW: { CCW_A: s.pumps.CCW_A.motorAndDrag_MW, CCW_B: s.pumps.CCW_B.motorAndDrag_MW, SWA: s.pumps.SWA.motorAndDrag_MW, SWB: s.pumps.SWB.motorAndDrag_MW,
+      CW: s.pumps.CW.motorAndDrag_MW } }
 }
 
 const hash = (s: string) => createHash('sha256').update(s).digest('hex')

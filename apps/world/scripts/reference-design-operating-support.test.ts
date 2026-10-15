@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { join } from 'node:path'
-import { parseCcwRegulator, parseRhrTrain, parseSupportPreparation, parseSupportRooms, parseSupportStores, parseSupportTrains,
+import { parseCcwRegulator, parseRhrTrain, parseSiteIntake, parseSupportPreparation, parseSupportRooms, parseSupportStores, parseSupportTrains,
   prepareOperatingSupport, supportOwners } from './reference-design-operating-support'
 
 // Test-only owner texts in the shapes the compiler reads; not plant evidence.
@@ -22,10 +22,14 @@ const rhr = { externalFlow_kg_s: 150, minimumFlow_kg_s: 15, minimumFlowCalibrati
   fixedInTrain_kPa: 10, pumpElevation_m: -2, caseResidence_s: .05,
   regulator: { sample_s: .2, targetMin_C: 40, targetMax_C: 140, proportional_per_K: .02, integral_per_K_s: .005, bypassFlow_kg_s: 150, bypassDrop_MPa: .15,
     stroke_per_s: .1, movingDuty_kW: 1 } }
+const intake = { bayArea_m2: 200, floor_m: 0, normalDepth_m: 5, refillLevel_m: 6, floatSpan_m: 1, initialVolume_m3: 1000, initialTemperature_C: 20,
+  sourceTemperature_C: 20, sourceCapacity_m3_s: 52.878938608, refillMouth_m: 6, condenserPathDrop_kPa: 300, cwPumpSpeed_rpm: 1500, cwCoastdown_s: 2,
+  cwTrackingTime_s: 3, cwTorqueCapFactor: 1.5 }
 const o = supportOwners
-type Over = Partial<Record<'trains' | 'stores' | 'rooms' | 'regulator' | 'preparation', unknown>>
+type Over = Partial<Record<'trains' | 'stores' | 'rooms' | 'regulator' | 'preparation' | 'intake', unknown>>
 const thermal = (over: Over = {}) => ['# Owner', '## Compact operating allocation (15 October 2026)', 'Text.',
   `### ${o.trains.heading}`, fence(o.trains.fence, over.trains ?? trains),
+  `### ${o.intake.heading}`, fence(o.intake.fence, over.intake ?? intake),
   `### ${o.stores.heading}`, fence(o.stores.fence, over.stores ?? stores), fence(o.rooms.fence, over.rooms ?? rooms),
   `### ${o.regulator.heading}`, fence(o.regulator.fence, over.regulator ?? regulator),
   `### ${o.preparation.heading}`, fence(o.preparation.fence, over.preparation ?? preparation), '## Next', ''].join('\n\n')
@@ -39,6 +43,7 @@ test('the C12 blocks parse strictly from their owning sections', () => {
   expect(parseCcwRegulator(thermal())).toEqual(regulator)
   expect(parseSupportPreparation(thermal())).toEqual(preparation)
   expect(parseRhrTrain(shutdown())).toEqual(rhr)
+  expect(parseSiteIntake(thermal())).toEqual(intake)
 })
 
 test('the compiler refuses a missing value in every C12 block', () => {
@@ -49,6 +54,7 @@ test('the compiler refuses a missing value in every C12 block', () => {
   expect(() => parseCcwRegulator(thermal({ regulator: without(regulator, 'integral_per_K_s') }))).toThrow()
   expect(() => parseSupportPreparation(thermal({ preparation: { ...preparation, B: without(train, 'wall_C') } }))).toThrow()
   expect(() => parseRhrTrain(shutdown(without(rhr, 'minimumFlow_kg_s')))).toThrow()
+  expect(() => parseSiteIntake(thermal({ intake: without(intake, 'sourceCapacity_m3_s') }))).toThrow()
   expect(() => parseRhrTrain(shutdown({ ...rhr, regulator: without(rhr.regulator, 'bypassDrop_MPa') }))).toThrow()
 })
 
@@ -60,6 +66,7 @@ test('the compiler refuses extra keys, wrong signs, misplaced or duplicated bloc
   expect(() => parseCcwRegulator(thermal().replace(`### ${o.regulator.heading}`, '### Elsewhere'))).toThrow()
   expect(() => parseCcwRegulator(thermal() + '\n' + fence(o.regulator.fence, regulator))).toThrow()
   expect(() => parseRhrTrain(shutdown({ ...rhr, regulator: { ...rhr.regulator, targetMin_C: 150 } }))).toThrow('ordered')
+  expect(() => parseSiteIntake(thermal({ intake: { ...intake, floatSpan_m: .5 } }))).toThrow('float')
 })
 
 const wiki = process.env.LD01_C12_WIKI_ROOT, python = process.env.LD01_RESEARCH_PYTHON, archive = process.env.LD01_WIKI_ROOT
@@ -80,7 +87,11 @@ test.skipIf(!wiki || !python)('the actual owners compile; the printed preparatio
   expect(B!.sw.motor.initial_K - 273.15).toBeCloseTo(66.888, 3)
   expect(B!.sw.paths.map(q => [q.id, q.reference_kg_s])).toEqual([['HX', 2000], ['GEN', 1000]])
   expect(p.s5.oil.coolerCapacity_J_K).toBe(170000)
-  expect(p.provenance.consumed).toHaveLength(5)
+  // CW: each pump carries half the combined reference; the owner's CW motor preparation is about 42.603 C
+  expect(p.s5.circulating.pump.referenceFlow_kg_s).toBeCloseTo(47878.938608 / 2, 6)
+  expect(p.s5.circulating.motor.initial_K - 273.15).toBeCloseTo(42.603, 3)
+  expect(p.s5.intake.initialVolume_m3 / p.s5.intake.area_m2).toBe(p.s5.intake.normalDepth_m)
+  expect(p.provenance.consumed).toHaveLength(6)
 }, 120000)
 test.skipIf(!archive || !python)('the unpatched archive refuses: it has no C12 allocation blocks', async () => {
   await expect(prepareOperatingSupport(archive!, python!)).rejects.toThrow()
