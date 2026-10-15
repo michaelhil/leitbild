@@ -21,7 +21,9 @@
  * - `ld01-sg-level-channels` (steam-generation/instrumentation.md): the NR span;
  * - `reference-operating-hot` (model/operating-hot-reference.md): the prepared
  *   SG pressure (S2-D18), its single numeric owner, at which S4-D6 derives the
- *   prepared MANUAL FCV opening.
+ *   prepared MANUAL FCV opening;
+ * - `ld01-s2-sg-boundaries` (steam-generation/thermodynamics.md): the SG
+ *   owner's A/B steam flow, which that opening delivers (S4-D10 (c)).
  *
  * - with a research Python, the cycle's own sizing calculation (`runCycle`
  *   over `reference-cycle`, as the steam compiler uses it): the steady
@@ -48,6 +50,7 @@ export const feedOwners = {
   cycle: { page: 'systems/steam-power/cycle-basis.md', heading: 'Authoritative selected input', fence: 'reference-cycle' },
   level: { page: 'systems/steam-generation/instrumentation.md', heading: 'Selected channels', fence: 'ld01-sg-level-channels' },
   hot: { page: 'model/operating-hot-reference.md', heading: 'Compact finite prepared-hot inputs', fence: 'reference-operating-hot' },
+  sg: { page: 'systems/steam-generation/thermodynamics.md', heading: 'Emergent full-power SG pressure', fence: 'ld01-s2-sg-boundaries' },
 } as const
 export type FeedPages = Record<keyof typeof feedOwners, string>
 
@@ -57,7 +60,7 @@ const four = (s: z.ZodTypeAny) => z.array(s).length(4)
 const cascadeSchema = z.object({
   levelSetpoint: fraction, outerProportional: pos, outerIntegral_per_s: pos, requestRange: range, valveBias: fraction, valveRange: range,
   innerProportional: pos, innerIntegral_per_s: pos, sample_s: pos, feedFlowLag_s: pos, feedFlowSpan: range, steamFlowLag_s: pos, steamFlowSpan: range,
-  controlChannel: z.literal('LT.NR1'), initialMode: z.enum(['MANUAL', 'AUTO']), initialDemandRule: z.literal('nominalFlowAtPreparedSgPressure') }).strict()
+  controlChannel: z.literal('LT.NR1'), initialMode: z.enum(['MANUAL', 'AUTO']), initialDemandRule: z.literal('sgSteamFlowAtPreparedSgPressure') }).strict()
 const trainSchema = z.object({
   pumpEye_m: z.number().finite(), shutoffHeadRatio: pos, brakeFactor: pos, motorEfficiency: fraction, coastdownScale_s: pos, torqueTracking_s: pos,
   torqueLimit: pos, dragFraction: nonneg, churnFloorFraction: nonneg, suctionExponent: pos, gasFactorFull: fraction, gasFactorZero: fraction,
@@ -88,6 +91,7 @@ const cycleSchema = z.object({ steamPressure_MPaAbs: pos, feedInlet_C: z.number(
   heaterOutlet_C: z.array(z.number().finite()).length(3) }).passthrough()
 const levelSchema = z.object({ nrSpan_m: z.tuple([z.number().finite(), z.number().finite()]) }).passthrough()
 const hotSchema = z.object({ sgSecondaryPressure_Pa: pos }).passthrough()
+const sgSchema = z.object({ steamDemand_kg_s: z.object({ A: pos, B: pos }).strict() }).passthrough()
 
 const MPa = 1e6, kPa = 1e3, kelvin = (c: number) => c + 273.15, rpm = (n: number) => n * 2 * Math.PI / 60
 /** Exact decimal agreement of two block values that state one quantity. */
@@ -102,7 +106,7 @@ export function compileOperatingFeed(pages: FeedPages) {
   const cascade = read('cascade', cascadeSchema), train = read('train', trainSchema), pump = read('pump', pumpSchema),
     signed = read('signed', signedSchema), pool = read('pool', poolSchema), heaters = read('heaters', heatersSchema),
     cond = read('condensate', condensateSchema), cycle = read('cycle', cycleSchema), level = read('level', levelSchema),
-    hot = read('hot', hotSchema)
+    hot = read('hot', hotSchema), sg = read('sg', sgSchema)
   // One quantity, one value: the feed blocks must agree with the cycle sizing they were taken from.
   same('FW discharge', pump.outletPressure_MPa, cycle.feedPumpDischarge_MPaAbs)
   same('FW suction', pump.inletPressure_MPa, cycle.feedSourcePressure_MPaAbs)
@@ -182,8 +186,8 @@ export function compileOperatingFeed(pages: FeedPages) {
       innerProportional: cascade.innerProportional, innerIntegral_per_s: cascade.innerIntegral_per_s, sample_s: cascade.sample_s,
       feedFlowLag_s: cascade.feedFlowLag_s, feedFlowSpan: cascade.feedFlowSpan, steamFlowLag_s: cascade.steamFlowLag_s, steamFlowSpan: cascade.steamFlowSpan,
       controlChannel: cascade.controlChannel, initialMode: cascade.initialMode,
-      // S4-D6: the prepared MANUAL opening delivering m0 at the prepared SG pressure, derived once by the block.
-      initialDemand: { rule: cascade.initialDemandRule, sgPressure_Pa: hot.sgSecondaryPressure_Pa, flow_kg_s: pump.flow_kg_s } },
+      // S4-D6/S4-D10 (c): the prepared MANUAL opening delivering the SG owner's steam flow at the prepared SG pressure, derived once by the block.
+      initialDemand: { rule: cascade.initialDemandRule, sgPressure_Pa: hot.sgSecondaryPressure_Pa, flow_kg_s: sg.steamDemand_kg_s } },
   }
 }
 

@@ -251,8 +251,8 @@ struct Ports {
     a_ext: [f64; 3],
     u_drain: [f64; 2],
     /// S4-D6 preparation: the FCV openings become unknowns and each branch
-    /// delivers this flow (coordinates N and N+1, rows N and N+1).
-    fcv_target: Option<f64>,
+    /// delivers its SG's steam flow (coordinates N and N+1, rows N and N+1).
+    fcv_target: Option<[f64; 2]>,
     /// Prototype stand-in for transients only: the casing is inert and the
     /// stage draws tank liquid at the held suction state (`p_eye`, `h_s`),
     /// because the suction link's impulse is the open G1.1 item.
@@ -660,7 +660,7 @@ impl Block {
             let u = if n > N { ys[N + s] } else { port(28 + s) };
             r[44 + 2 * s] = m - u * k(self.cda_fcv) * flux(pr, p_mid, h_up, port(12 + s))?;
             if let Some(target) = ports.fcv_target {
-                r[N + s] = m - k(target);
+                r[N + s] = m - k(target[s]);
             }
         }
         // Shell side H2–H4: saturated chart, wall, extraction and drains.
@@ -856,19 +856,23 @@ fn g1_c09_feed_block() {
 
     // G1.3 (a): the prepared state, made consistent by stock IDACalcIC, at the
     // reference SG pressure (6.0 MPa) and at the emergent 6.36314 MPa (D2).
-    // S4-D6: at the prepared SG pressure (reference-operating-hot, S2-D18)
-    // the MANUAL FCV opening that delivers m0 per branch, the hardware
+    // S4-D6 / S4-D10 (c): at the prepared SG pressure (reference-operating-hot,
+    // S2-D18) the MANUAL FCV openings that deliver the SG owner's A/B steam
+    // flow (ld01-s2-sg-boundaries, through the compiler), the hardware
     // unchanged; stock IDACalcIC with the two openings as unknowns.
-    let p_d2 = section()["branches"]["sgPreparedPressure_Pa"].as_f64().unwrap();
+    let sec = section();
+    let p_d2 = sec["branches"]["sgPreparedPressure_Pa"].as_f64().unwrap();
+    let steam = &sec["cascade"]["initialDemand"]["flow_kg_s"];
+    let targets = [steam["A"].as_f64().unwrap(), steam["B"].as_f64().unwrap()];
     let mut prep = block.prepared_ports(p_d2);
-    prep.fcv_target = Some(block.pump.m0);
+    prep.fcv_target = Some(targets);
     let mut yu = block.prepared();
     yu.extend([0.7, 0.7]);
     let mut ypu = vec![0.; N + 2];
     consistent(&block, &prep, &mut yu, &mut ypu).unwrap();
     let u_star = [yu[N], yu[N + 1]];
     let prep_rows = block.values(&yu, &ypu, &prep).unwrap();
-    report["fcvPreparation_S4D6"] = json!({"sgPressure_Pa": p_d2, "targetFlow_kg_s": block.pump.m0, "openingA": u_star[0], "openingB": u_star[1],
+    report["fcvPreparation_S4D6"] = json!({"sgPressure_Pa": p_d2, "targetFlow_kg_s": targets, "nominalM0_kg_s": block.pump.m0, "openingA": u_star[0], "openingB": u_star[1],
         "header_Pa": yu[42], "fcvInlet_Pa": [yu[44], yu[46]], "pumpFlows_kg_s": [yu[16], yu[17]], "discharge_Pa": yu[18],
         "scaledMaxRow": scaled_max(&block, &yu, &prep_rows).0, "tubeH4_dMdt": ypu[12]});
     let mut states = Vec::new();
