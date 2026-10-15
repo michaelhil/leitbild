@@ -647,22 +647,25 @@ fn s3_case_run() {
                 .run(&mut ida, t, *b, &mut y, &mut yp, &mut clients, &setup)
                 .map(|_| ());
             t = *b;
-            cpu_at.push((*b, spine::z1::cpu_s()));
+            // A segment that fails ends where the solver reached.
+            let reached = if r.is_err() {
+                driver.solver_reached_s
+            } else {
+                *b
+            };
+            cpu_at.push((reached, spine::z1::cpu_s()));
         }
         r
     };
     let run_cpu_s = spine::z1::cpu_s() - run_started;
+    // The window from t = 0 to its declared end, or to where the run
+    // stopped inside it.
     let window_cpu = window_s.filter(|_| command.is_some()).and_then(|w| {
-        let at = |x: f64| {
-            cpu_at
-                .iter()
-                .find(|(b, _)| (*b - x).abs() < 1e-9)
-                .map(|(_, c)| *c)
-        };
-        Some(
-            json!({"from_zero_s": 0., "to_s": w, "cpu_s": at(zero + w)? - at(zero)?,
-            "cpu_s_per_s": (at(zero + w)? - at(zero)?) / w}),
-        )
+        let start = cpu_at.iter().find(|(b, _)| (*b - zero).abs() < 1e-9)?.1;
+        let (end_t, end_c) = *cpu_at.iter().find(|(b, _)| *b > zero + 1e-9)?;
+        let span = (end_t - zero).min(w);
+        Some(json!({"from_zero_s": 0., "to_s": span, "declared_window_s": w, "truncated": span < w - 1e-9,
+            "cpu_s": end_c - start, "cpu_s_per_s": (end_c - start) / span}))
     });
     driver.close_segment(&ida, until).unwrap();
     let failure = outcome.as_ref().err().cloned();
