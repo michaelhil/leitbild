@@ -502,7 +502,8 @@ fn s3_settle_state_for_c1() {
     control.scratch = vec![0.; y_all.len()];
     let preparation_cpu_s = z1::cpu_s() - started;
 
-    let mut driver = Driver::new(frame, Diagnostic::Jump, z1::cpu_s, t0).unwrap();
+    // S3-D34: the class-S jump diagnostic is the harness's, not this run's.
+    let mut driver = Driver::new(frame, Diagnostic::None, z1::cpu_s, t0).unwrap();
     let setup = Setup {
         network_ids: &network_ids,
         absolute: &atol_all,

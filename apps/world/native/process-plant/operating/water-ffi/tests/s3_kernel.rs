@@ -1045,7 +1045,7 @@ fn an_rcp_supply_loss_restarts_through_the_frame_driver_with_c3s_cost_lines() {
     restart.configure(&mut ida).unwrap();
     ida.set_max_step(0.02).unwrap();
     let frame = Frame::new(section.frame_s).unwrap();
-    let mut driver = Driver::new(frame, Diagnostic::Jump, spine::z1::cpu_s, 0.).unwrap();
+    let mut driver = Driver::new(frame, Diagnostic::None, spine::z1::cpu_s, 0.).unwrap();
     let t_loss = 0.0537; // a non-integer instant, as C3's t0
     driver
         .command(t_loss, Command::SupplyLoss { rotor: lost })
