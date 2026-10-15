@@ -769,8 +769,13 @@ fn the_phase_mode_transactions_move_no_stock() {
     y[e1] = mg * ug / sc[e1];
     joined.activate_unilateral(0., &y).expect("L1");
     joined.activate_phase_modes().expect("phase modes");
+    // The mode slots precede a composed spray path's check slot (last).
     let slot = |joined: &leitbild_operating_plant::joined::operator::Joined<If97>, k: usize| {
-        joined.root_count() - 2 * joined.network.pzr.cell + 2 * neck + k
+        joined.root_count()
+            - usize::from(joined.network.spray().is_some())
+            - 2 * joined.network.pzr.cell
+            + 2 * neck
+            + k
     };
     let others = |a: &[f64], b: &[f64]| {
         a.iter()
