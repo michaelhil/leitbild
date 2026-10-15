@@ -1265,6 +1265,9 @@ impl<P: Properties + WaterProperties> Joined<P> {
         command: super::block::Command,
     ) -> Result<Vec<super::block::Transaction>, Failure> {
         let mut done = Vec::new();
+        if let super::block::Command::SupplyLoss { rotor } = command {
+            done.push(self.supply_loss(t, rotor)?);
+        }
         if let Some(b) = self.secondary_mut() {
             done.push(b.command(t, command)?);
         }
@@ -1277,6 +1280,72 @@ impl<P: Properties + WaterProperties> Joined<P> {
         self.deposit(&done, y)?;
         done.extend(self.time_events(t, y)?);
         Ok(done)
+    }
+    /// R3 on the joined spine (C3's cost line): how many rod clusters'
+    /// annulus volume current lies inside R3's blend band at the accepted
+    /// state `(t, y, y')`, on the cells the rod owner reads (as its roots
+    /// read them); 0 without a composed rod owner.
+    pub fn r3_band_clusters(&mut self, y: &[f64], yp: &[f64]) -> Result<usize, Failure> {
+        let o = self.blocks.offsets;
+        if !matches!(self.blocks.rods, RodPort::Owner(_)) {
+            return Ok(0);
+        }
+        self.blocks.pre_network(y, yp, None, 0.)?;
+        let Blocks {
+            rods,
+            rod_reads,
+            cell_volumes,
+            scales,
+            ..
+        } = &mut self.blocks;
+        let (RodPort::Owner(b), Some(reads)) = (rods, rod_reads.as_ref()) else {
+            return Err(fatal("R3 band without the rod owner's reads"));
+        };
+        let x = view(y, yp, None, 0., o.rods..o.pzr, &scales[3].coordinates)?;
+        self.network
+            .cells_fluid(&y[..o.nuclear], cell_volumes, &reads.read_cells, |fluid| {
+                b.r3_band(x, fluid)
+            })
+            .and_then(|r| r)
+    }
+    /// C3's initiator on the network: RCP `rotor` loses its supply, its drive
+    /// unsupported with the shaft free (it coasts down on its own law). No
+    /// coordinate moves; the caller restarts by the exact consistent start
+    /// (class R). A rotor that is not supported refuses.
+    fn supply_loss(&mut self, t: f64, rotor: usize) -> Result<super::block::Transaction, Failure> {
+        use crate::{
+            network::RotorState,
+            rotor::{Shaft, Support},
+        };
+        if rotor >= self.network.rotor_count() {
+            return Err(fatal(format!(
+                "supply loss of rotor {rotor}: no such rotor"
+            )));
+        }
+        let before = self.network.rotor_state(rotor).ok_or_else(|| {
+            fatal(format!(
+                "supply loss of rotor {rotor}: its state is undeclared"
+            ))
+        })?;
+        if !matches!(before.support, Support::Supported(_)) {
+            return Err(fatal(format!(
+                "supply loss of rotor {rotor} at {t} s: it is not supported ({:?})",
+                before.support
+            )));
+        }
+        self.network.set_rotor_state(
+            rotor,
+            RotorState {
+                support: Support::Unsupported,
+                shaft: Shaft::Free,
+            },
+        );
+        Ok(super::block::Transaction {
+            deposits: Vec::new(),
+            receipt: serde_json::json!({"owner":"network","command":"SupplyLoss","rotor":rotor,"t_s":t,
+                "before":{"support":format!("{:?}", before.support),"shaft":format!("{:?}", before.shaft)},
+                "after":{"support":"Unsupported","shaft":"Free"},"stateChanged":true}),
+        })
     }
     /// The owners' transactions of every time event due exactly at `t`: at
     /// a stop at [`Joined::next_time_event`] and after a command. Each owner

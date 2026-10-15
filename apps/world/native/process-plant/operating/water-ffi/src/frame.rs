@@ -54,6 +54,7 @@ use crate::{
     klu::SparseLu,
 };
 use leitbild_operating_plant::joined::block::{Command, Transaction};
+use leitbild_operating_plant::network::phase_events::DonorFlips;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -363,6 +364,13 @@ pub struct Driver<S> {
     pub totals: [i64; 8],
     /// The segments' counters in order, one per restart and the last.
     pub segments: Vec<Value>,
+    /// Class O at every accepted step (C3's cost lines): the network's
+    /// donor flips (exact donor by flow sign, decision E2b) ...
+    pub donor_flips: DonorFlips,
+    /// ... and the accepted states with any rod cluster's annulus volume
+    /// current inside R3's blend band, of `observed_states`.
+    pub r3_band_states: u64,
+    pub observed_states: u64,
 }
 
 /// Names of [`Driver::totals`].
@@ -381,6 +389,17 @@ pub const COUNTER_NAMES: [&str; 8] = [
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Reached {
     Until(f64),
+}
+
+impl<S> Driver<S> {
+    /// C3's class-O cost lines: the donor flips (total, per path, events)
+    /// and the accepted states inside R3's band.
+    pub fn observation_json(&self) -> Value {
+        json!({"donor_flips": {"total": self.donor_flips.total(),
+                "by_path": self.donor_flips.flips.iter().enumerate().filter(|(_, n)| **n > 0).collect::<Vec<_>>(),
+                "events": self.donor_flips.events},
+            "r3_band_states": self.r3_band_states, "observed_states": self.observed_states})
+    }
 }
 
 impl<S: JoinedSystem> Driver<S> {
@@ -405,6 +424,9 @@ impl<S: JoinedSystem> Driver<S> {
             log: Vec::new(),
             totals: [0; 8],
             segments: Vec::new(),
+            donor_flips: DonorFlips::default(),
+            r3_band_states: 0,
+            observed_states: 0,
         })
     }
     pub fn frame(&self) -> Frame {
@@ -574,6 +596,25 @@ impl<S: JoinedSystem> Driver<S> {
                 Advance::Reached(time) => (time, None),
                 Advance::Root { time, directions } => (time, Some(directions)),
             };
+            if roots.is_none() {
+                // An accepted step's state: C3's donor flips and R3 band.
+                let started = (self.clock)();
+                let joined = &mut ida.system_mut().integrated_mut().joined;
+                let flips = self.donor_flips.total();
+                self.donor_flips.observe(&joined.network, reached, y);
+                for _ in flips..self.donor_flips.total() {
+                    self.counts.record(Class::O, "donor flip");
+                }
+                let in_band = joined
+                    .r3_band_clusters(y, yp)
+                    .map_err(|e| format!("R3 band at {reached} s: {e:?}"))?;
+                if in_band > 0 {
+                    self.r3_band_states += 1;
+                    self.counts.record(Class::O, "R3 band state");
+                }
+                self.observed_states += 1;
+                self.cpu.observation_s += (self.clock)() - started;
+            }
             let stats = ida.stats()?;
             let order = usize::try_from(stats.last_order.max(0)).unwrap_or(0);
             let observed = {

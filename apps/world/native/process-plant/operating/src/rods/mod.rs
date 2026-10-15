@@ -1471,6 +1471,21 @@ impl<P> Rods<P> for RodBlock {
     fn roots_read_fluid(&self) -> bool {
         self.modes.contains(&Mode::Seated)
     }
+    fn r3_band(&self, x: Coordinates<'_>, fluid: &Fluid<'_>) -> Result<usize, Failure> {
+        let rho_lower = fluid.cells[self.lower].phase[0]
+            .ok_or_else(|| recoverable("rods: LOWER holds no liquid"))?
+            .density
+            .value;
+        Ok((0..self.clusters.len())
+            .filter(|c| {
+                let (v, m) = (x.value(3 * c + 1).value, x.value(3 * c + 2).value);
+                // `forces`' reversal measure: the annulus volume current over
+                // the band's volume current.
+                let reversal = (m / rho_lower - self.body_area * v) / self.blend_volume_current;
+                reversal.abs() < 1.
+            })
+            .count())
+    }
     fn roots(
         &mut self,
         _: &P,
@@ -1562,6 +1577,12 @@ impl<P> Rods<P> for RodBlock {
     fn command(&mut self, t: f64, command: Command) -> Result<Transaction, Failure> {
         match command {
             Command::StuckCluster { cluster } => self.stick(t, cluster),
+            // C3's initiator is the network's (a rotor's supply); the rods
+            // schedule nothing for it.
+            Command::SupplyLoss { rotor } => Ok(Transaction {
+                deposits: Vec::new(),
+                receipt: json!({"supply_loss_rotor": rotor, "t_s": t, "holding": "unchanged"}),
+            }),
             Command::ManualReactorTrip => self.open_holding_circuit(t),
             // S3 (C16, acquired protection): with acquired protection the
             // turbine TRIP schedules nothing here; the protection's holding

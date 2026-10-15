@@ -257,6 +257,12 @@ pub enum Command {
     /// `cluster` is indexed as the source feedback's rods (the rod owner's
     /// cluster order); the harness names the highest-worth one.
     StuckCluster { cluster: usize },
+    /// C3's initiator: RCP `rotor` (the network's rotor order) loses its
+    /// supply at the command's time: its drive becomes unsupported with the
+    /// shaft free, so it coasts down on its own law; a class-R restart
+    /// (lead S3-D1; R3 lane's probe). ELEC's bus support feeds the same
+    /// change once composed. Refused for a rotor that is not supported.
+    SupplyLoss { rotor: usize },
 }
 
 /// S5 snapshot hook (PLATFORM, claude/ld01-s5-host; KERN reconciles): an
@@ -525,6 +531,11 @@ pub trait Rods<P> {
         fluid: &Fluid<'_>,
         out: &mut [f64],
     ) -> Result<(), Failure>;
+    /// How many clusters' annulus volume current lies strictly inside R3's
+    /// blend band at these coordinates and this fluid state (R3, adopted 11
+    /// October; C3's cost line counts the accepted states with any). Reads
+    /// LOWER's liquid density only.
+    fn r3_band(&self, x: Coordinates<'_>, fluid: &Fluid<'_>) -> Result<usize, Failure>;
     /// Whether [`Rods::roots`] reads `fluid` in the owner's present modes;
     /// an owner that cannot tell answers `true`.
     fn roots_read_fluid(&self) -> bool {

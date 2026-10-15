@@ -872,6 +872,13 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 receipt: json!({"owner":"secondary","command":"StuckCluster","t_s":t,
                     "steamDemand":"unchanged (a rod malfunction)"}),
             }),
+            // C3's RCP supply loss is the network's; the steam demand is
+            // untouched.
+            Command::SupplyLoss { rotor } => Ok(Transaction {
+                deposits: Vec::new(),
+                receipt: json!({"owner":"secondary","command":"SupplyLoss","rotor":rotor,"t_s":t,
+                    "steamDemand":"unchanged (an RCP supply loss)"}),
+            }),
             // G7: the steam demand stays at its constant A/B values.
             Command::ManualReactorTrip => Ok(Transaction {
                 deposits: Vec::new(),

@@ -860,6 +860,19 @@ fn every_owners_discrete_state_survives_a_snapshot() {
     joined
         .command(0.2, &mut y, Command::HoldingLoss)
         .expect("holding loss");
+    // C3's initiator: the network's rotor state, no coordinate moved.
+    let lost = spine::z1::s1_gates()["supplyLoss"]["rotor"]
+        .as_u64()
+        .unwrap() as usize;
+    let unmoved = y.clone();
+    joined
+        .command(0.2, &mut y, Command::SupplyLoss { rotor: lost })
+        .expect("RCP supply loss");
+    assert_eq!(
+        unmoved.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+        y.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+        "a supply loss moves no coordinate"
+    );
     let request = 0.5 * joined.pzr().expect("PZR block").request_w();
     joined
         .pzr_mut()
@@ -924,4 +937,129 @@ fn every_owners_discrete_state_survives_a_snapshot() {
         "root values"
     );
     println!("{}", serde_json::json!({"snapshot": snapshot}));
+}
+
+/// C3 on the joined spine (R3 lane's hand-over): the RCP supply loss is a
+/// class-R command through the frame driver (`Joined::command` sets the
+/// rotor unsupported with its shaft free, then `discrete_restart`); the
+/// driver counts the network's donor flips (E2b: exact donor by flow sign)
+/// and the accepted states inside R3's rod-passage band at every accepted
+/// step, as class-O kinds. At power no cluster's annulus current is inside
+/// R3's band. The frame period is the IC section's (`LD01_IC_SECTION`).
+#[test]
+#[ignore = "requires the joined packet, the wiki, the ic section, IF97 and stock IDA/KLU"]
+fn an_rcp_supply_loss_restarts_through_the_frame_driver_with_c3s_cost_lines() {
+    use leitbild_operating_plant::{
+        ic::packet::Section,
+        joined::block::Command,
+        rotor::{Shaft, Support},
+    };
+    use leitbild_operating_water::frame::{Class, Client, Diagnostic, Driver, Frame, Setup};
+    let section_path = std::env::var("LD01_IC_SECTION").expect("LD01_IC_SECTION");
+    let section: Section = serde_json::from_slice(&std::fs::read(&section_path).expect("section"))
+        .expect("ic section");
+    let (
+        Started {
+            mut joined,
+            mut y,
+            mut yp,
+            ids,
+            network_ids,
+            atol,
+            rtol,
+            structure,
+            analyses,
+            ..
+        },
+        derived,
+    ) = spine::started_s3_composition();
+    let lost = spine::z1::s1_gates()["supplyLoss"]["rotor"]
+        .as_u64()
+        .unwrap() as usize;
+    assert!(matches!(
+        joined.network.rotor_state(lost).unwrap().support,
+        Support::Supported(_)
+    ));
+    assert_eq!(joined.r3_band_clusters(&y, &yp).unwrap(), 0, "at power");
+    let restart = Restart {
+        newton_coefficient: NEWTON_COEFFICIENT,
+        delta_cj_lsetup: DELTA_CJ_LSETUP,
+        first_step_s: FIRST_STEP_S,
+        start_bound: 1e-12,
+        start_passes: 2,
+        transaction_passes: 12,
+        bound_placement: 1e-12,
+    };
+    let nonnegative = joined.network.nonnegative_stocks();
+    let mut ida = Ida::new(
+        Integrated::from_blocks(joined, structure, analyses).expect("integrable"),
+        Initial {
+            time: 0.,
+            y: &y,
+            yp: &yp,
+            differential: &ids,
+            absolute_tolerance: &atol,
+            relative_tolerance: rtol,
+        },
+    )
+    .expect("stock IDA");
+    ida.set_max_order(2).unwrap();
+    ida.constrain_nonnegative(&nonnegative).unwrap();
+    restart.configure(&mut ida).unwrap();
+    ida.set_max_step(0.02).unwrap();
+    let frame = Frame::new(section.frame_s).unwrap();
+    let mut driver = Driver::new(frame, Diagnostic::Jump, spine::z1::cpu_s, 0.).unwrap();
+    let t_loss = 0.0537; // a non-integer instant, as C3's t0
+    driver
+        .command(t_loss, Command::SupplyLoss { rotor: lost })
+        .unwrap();
+    let setup = Setup {
+        network_ids: &network_ids,
+        absolute: &atol,
+        relative: rtol,
+        restart,
+        derived: &derived,
+    };
+    let until = 0.3;
+    let mut clients: Vec<&mut dyn Client<Integrated<If97>>> = Vec::new();
+    driver.start(&mut clients, 0., &y, &yp).unwrap();
+    driver
+        .run(&mut ida, 0., until, &mut y, &mut yp, &mut clients, &setup)
+        .expect("C3's initiator through the frame driver");
+    driver.close_segment(&ida, until).unwrap();
+    let joined = &ida.system().joined;
+    let state = joined.network.rotor_state(lost).unwrap();
+    assert_eq!(
+        (state.support, state.shaft),
+        (Support::Unsupported, Shaft::Free)
+    );
+    let instant = driver
+        .log
+        .iter()
+        .find(|e| e["class"] == "R" && e["t_s"].as_f64() == Some(t_loss))
+        .expect("the supply loss's class-R instant");
+    assert!(
+        instant["restart"]["transactions"]
+            .to_string()
+            .contains("SupplyLoss"),
+        "{instant}"
+    );
+    assert_eq!(driver.counts.total(Class::R), 1);
+    assert!(driver.observed_states > 0);
+    assert_eq!(
+        driver.donor_flips.observations as u64,
+        driver.observed_states
+    );
+    assert_eq!(
+        driver.counts.get(Class::O, "donor flip"),
+        driver.donor_flips.total() as u64
+    );
+    assert_eq!(driver.r3_band_states, 0, "no rod passage inside R3's band");
+    assert_eq!(driver.counts.get(Class::O, "R3 band state"), 0);
+    println!(
+        "{}",
+        serde_json::json!({"rotor": lost, "t_loss_s": t_loss, "until_s": until,
+            "observation": driver.observation_json(), "counts": driver.counts.json(),
+            "instant": instant, "segments": driver.segments})
+    );
 }
