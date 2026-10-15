@@ -99,6 +99,10 @@ function checkCounterexample(){
 
 export type Plan={name:string,kind:'C5'|'D2',windowIntervalS:number,quietIntervalS:number,windowS:number,
  durationS:number,eventAtS:number,frequencyEvent:{deviationHz:number,tauS:number}|null,toleranceFactor:number,maxStepS:number|null,
+ /** The plant's own E2 event window after the LOOP (C5 declaration: 20 ms cap over 30 s), or null. */
+ plantWindow:{capS:number,durationS:number}|null,
+ /** The Grid's window applies to connected units only (ADR draft G4; design note §6.2 A). */
+ gridWindowConnectedOnly:boolean,
  observeEveryS:number,fieldSupplyLossTripDelayS:number}
 
 /** The common boundaries: quiet intervals on the whole-second grid from the start, split exactly at the event, the
@@ -109,14 +113,17 @@ function boundaries(t0:number,p:Plan){
  const push=(t1:number,window:boolean)=>{out.push({t1,window});t=t1}
  while(t<te-1e-9)push(Math.min(t0+Math.round((t-t0)/p.quietIntervalS+1)*p.quietIntervalS,te),false)
  let k=1
- while(t<Math.min(we,end)-1e-9){push(Math.min(te+k*p.windowIntervalS,we,end),true);k++}
+ // A dead bus disconnects the unit: with connected-only windows it keeps the quiet cadence (C5 after the LOOP).
+ const windowInterval=p.kind==='C5'&&p.gridWindowConnectedOnly?p.quietIntervalS:p.windowIntervalS
+ while(t<Math.min(we,end)-1e-9){push(Math.min(te+k*windowInterval,we,end),true);k++}
  while(t<end-1e-9)push(Math.min(t0+Math.floor((t-t0)/p.quietIntervalS+1e-9+1)*p.quietIntervalS,end),false)
  return {te,we,end,out}
 }
 
 async function run(binary:string,state:string,p:Plan){
  const plant=spawnC5(binary)
- const load=await plant.load({state,tolerance_factor:p.toleranceFactor,max_step_s:p.maxStepS,field_supply_loss_trip_delay_s:p.fieldSupplyLossTripDelayS,
+ const load=await plant.load({state,tolerance_factor:p.toleranceFactor,max_step_s:p.maxStepS,
+  event_window:p.plantWindow&&{cap_s:p.plantWindow.capS,duration_s:p.plantWindow.durationS},field_supply_loss_trip_delay_s:p.fieldSupplyLossTripDelayS,
   declared:'C5 declaration (S3 r3 research draft): the field-supply-loss protection requests GCB OPEN and a turbine trip at t0 + 0.2 s (0.1 s sampling, 0.1 s transport); not in IC-PROT\'s S3 set, so a declared case input'})
  const t0=load.t as number,{te,we,end,out}=boundaries(t0,p)
  const grid=island(50,p.frequencyEvent&&{te,...p.frequencyEvent})

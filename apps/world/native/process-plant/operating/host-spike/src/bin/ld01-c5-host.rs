@@ -51,7 +51,7 @@
 //! Frames as the other hosts; status 1 is an explicit refusal.
 //! | op | request | reply data |
 //! |---|---|---|
-//! | 1 LOAD | JSON `{state, tolerance_factor, max_step_s, field_supply_loss_trip_delay_s, declared}` | JSON |
+//! | 1 LOAD | JSON `{state, tolerance_factor, max_step_s, event_window, field_supply_loss_trip_delay_s, declared}` | JSON |
 //! | 12 EXCHANGE | `f64 t1, u8 window, u8 observe, u8 energized, f64 voltage_pu, f64 frequency_hz, f64 phase_error_rad` | `16 x f64, 10 x i64, u32 n, n x f64 signals, u32 m, m bytes JSON events` |
 //! | 13 REPORT | `f64 zero` (the case's t = 0) | JSON (counts, instants, protection, timeline, rule I) |
 //! | 7 PING, 9 CLOSE, 10 STATUS | as the other hosts | |
@@ -194,6 +194,12 @@ struct Host {
     observe_cpu_s: f64,
     offsite_lost_at: Option<f64>,
     exchanges: [u64; 2],
+    /// The plant's own event window after the offsite loss (decision 0015
+    /// E2's step cap over the case's declared window; C5 declaration), or
+    /// none: `(cap_s, duration_s)`.
+    event_window: Option<(f64, f64)>,
+    /// The open event window's end, while its cap is in force.
+    window_end: Option<f64>,
 }
 
 impl Host {
@@ -221,6 +227,21 @@ impl Host {
         };
         if config.get("max_step_s").is_none() {
             return Err("LOAD needs max_step_s (null for a run)".into());
+        }
+        let event_window = match config.get("event_window") {
+            None => return Err("LOAD needs event_window ({cap_s, duration_s} or null)".into()),
+            Some(Value::Null) => None,
+            Some(w) => {
+                let cap = w["cap_s"].as_f64().filter(|h| h.is_finite() && *h > 0.);
+                let duration = w["duration_s"].as_f64().filter(|d| d.is_finite() && *d > 0.);
+                match (cap, duration) {
+                    (Some(c), Some(d)) => Some((c, d)),
+                    _ => return Err("event_window needs positive cap_s and duration_s".into()),
+                }
+            }
+        };
+        if event_window.is_some() && max_step_s.is_some() {
+            return Err("an event window's cap and a reference's max_step_s exclude each other".into());
         }
         let inputs = s3_unit::Inputs::from_env();
         let section = inputs.ic.clone();
@@ -346,6 +367,8 @@ impl Host {
             observe_cpu_s: 0.,
             offsite_lost_at: None,
             exchanges: [0, 0],
+            event_window,
+            window_end: None,
         };
         Ok((host, reply))
     }
@@ -382,6 +405,14 @@ impl Host {
                     Command::TurbineTripAcquired,
                 )?;
                 self.offsite_lost_at = Some(t0);
+                if let Some((cap, duration)) = self.event_window {
+                    // The restart now, then the window's cap on the segment
+                    // it opened (stock keeps it across later IDAReInit).
+                    self.apply_due()?;
+                    self.ida.set_max_step(cap)?;
+                    self.window_end = Some(t0 + duration);
+                    return Ok("R: offsite loss; event window cap in force");
+                }
                 Ok("R: offsite loss")
             }
             (true, true) => Err(
@@ -420,6 +451,33 @@ impl Host {
         }
     }
 
+    /// Everything due at the unit's time, now (the offsite loss's restart).
+    fn apply_due(&mut self) -> Result<(), String> {
+        let Self {
+            ida,
+            y,
+            yp,
+            network_ids,
+            atol,
+            rtol,
+            derived,
+            restart,
+            driver,
+            protection,
+            control,
+            ..
+        } = self;
+        let setup = Setup {
+            network_ids: network_ids.as_slice(),
+            absolute: atol.as_slice(),
+            relative: *rtol,
+            restart: *restart,
+            derived: &*derived,
+        };
+        let mut clients: Vec<&mut dyn Client<Unit>> = vec![&mut *protection, &mut *control];
+        driver.apply_due(ida, y, yp, &mut clients, &setup)
+    }
+
     /// Advance the driver to `t1`, frame instant by frame instant, judging
     /// rule I at each (the S3 cases' rule).
     fn advance(&mut self, t1: f64) -> Result<(), String> {
@@ -433,7 +491,12 @@ impl Host {
                 bounds.push(b);
             }
         }
+        if let Some(w) = self.window_end.filter(|w| *w > self.t && *w < t1) {
+            bounds.push(w);
+            bounds.sort_by(f64::total_cmp);
+        }
         bounds.push(t1);
+        let window_end = self.window_end;
         let Self {
             ida,
             y,
@@ -468,6 +531,13 @@ impl Host {
             *t = b;
             let joined = &mut ida.system_mut().integrated_mut().joined;
             rule_i.judge(joined, &*extension, b, &y[..*n], &yp[..*n])?;
+            if window_end == Some(b) {
+                // The window's end lifts the cap on the same history.
+                ida.remove_max_step()?;
+            }
+        }
+        if self.window_end.is_some_and(|w| w <= self.t) {
+            self.window_end = None;
         }
         Ok(())
     }
@@ -654,6 +724,8 @@ impl Host {
             .collect();
         Ok(json!({
             "t_s": self.t, "t0_s": self.t0, "zero_s": zero, "offsite_lost_s": self.offsite_lost_at,
+            "event_window": self.event_window.map(|(c, d)| json!({"cap_s": c, "duration_s": d})),
+            "routing_records": self.ida.system().routing.records.iter().map(|r| json!([r.time, r.what])).collect::<Vec<_>>(),
             "exchanges": {"quiet": self.exchanges[0], "window": self.exchanges[1]},
             "counts_by_class": self.driver.counts.json(), "stock_totals": totals,
             "cpu": {"solver_s": self.driver.cpu.solver_s, "observation_s": self.driver.cpu.observation_s,
