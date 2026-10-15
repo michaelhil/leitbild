@@ -482,3 +482,60 @@ fn the_electrical_discrete_state_survives_a_snapshot() {
         json!({"t_s": t - c.t0, "electrical": e, "next_event_s": driven.2.map(|x| x - c.t0)})
     );
 }
+
+/// C3's supply loss with the slice composed (lead, S3-D28 follow-up): the
+/// command reaches the AC routing first, which opens the RCP's consumer
+/// contactor; the drive support follows (unsupported, shaft free) and the
+/// network's part of the command checks it; the rotor coasts down while the
+/// other three keep their nominal support; the restart is class R by
+/// `discrete_restart`, with no stop for the unchanged buses.
+#[test]
+#[ignore = "requires the joined packet, the wiki, IF97, stock IDAS and ELEC_PACKET"]
+fn an_rcp_supply_loss_is_routed_through_the_ac_routing() {
+    let mut c = build(None);
+    let lost = spine::z1::s1_gates()["supplyLoss"]["rotor"]
+        .as_u64()
+        .unwrap() as usize;
+    let rotor = |c: &Case, r: usize| {
+        let net = &c.ida.system().integrated().joined.network;
+        let i = net.rotor_index[r];
+        c.y[i] * net.scales()[i]
+    };
+    let before: Vec<f64> = (0..4).map(|r| rotor(&c, r)).collect();
+    let out = run(&mut c, &[(0.1, Command::SupplyLoss { rotor: lost })], 2.);
+    let unit = c.ida.system();
+    let net = &unit.integrated().joined.network;
+    for r in 0..net.rotor_count() {
+        let s = net.rotor_state(r).unwrap();
+        if r == lost {
+            assert_eq!(s.support, Support::Unsupported, "rotor {r}");
+        } else {
+            assert!(
+                matches!(s.support, Support::Supported(_)),
+                "rotor {r}: {s:?}"
+            );
+        }
+    }
+    let consumer = &unit.configuration.rotor_consumers[lost];
+    assert!(!unit.routing.support(consumer).unwrap().contactor_closed);
+    assert!(
+        out["log"]
+            .to_string()
+            .contains(&format!("{consumer} supply lost")),
+        "{}",
+        out["log"]
+    );
+    let after: Vec<f64> = (0..4).map(|r| rotor(&c, r)).collect();
+    let drop = |r: usize| before[r] - after[r];
+    assert!(
+        (0..4)
+            .filter(|r| *r != lost)
+            .all(|r| drop(lost) > 10. * drop(r).abs()),
+        "the lost rotor coasts down: {before:?} -> {after:?}"
+    );
+    println!(
+        "{}",
+        json!({"rotor": lost, "consumer": consumer, "rotor_coordinate_before": before, "rotor_coordinate_after": after,
+            "restarts": out["restarts"], "supports": out["supports"], "log": out["log"]})
+    );
+}

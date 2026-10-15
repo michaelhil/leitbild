@@ -144,6 +144,9 @@ impl<S: JoinedSystem> Electrified<S> {
         let field_bus = routing
             .bus_index(&configuration.field_bus)
             .ok_or("unknown field converter bus")?;
+        let mut inner = inner;
+        // The routing owns the RCP drives' support (S3-D9..D12).
+        inner.integrated_mut().joined.declare_supply_routing();
         let mut e = Self {
             inner,
             slice,
@@ -407,16 +410,20 @@ impl<S: JoinedSystem> JoinedSystem for Electrified<S> {
         command: Option<Command>,
         y: &mut [f64],
     ) -> Result<Vec<String>, String> {
-        // C3's network supply loss (Joined::command) would be undone by the
-        // routing's delivered support at the next restart: with the slice
-        // composed, an RCP loses its supply through the routing, which this
-        // wrapper does not yet accept as a command.
-        if let Some(Command::SupplyLoss { rotor }) = command {
-            return Err(format!(
-                "RCP {rotor} supply loss at {t} s: with the electrical slice composed an RCP's supply is the routing's; a supply-loss command is not routed"
-            ));
-        }
         let mut done = Vec::new();
+        // C3's malfunction: the RCP's consumer loses its supply in the
+        // routing; the drive support follows below (apply_supply), before
+        // the operator's part of the command checks it.
+        if let Some(Command::SupplyLoss { rotor }) = command {
+            let consumer = self
+                .configuration
+                .rotor_consumers
+                .get(rotor)
+                .ok_or_else(|| format!("supply loss of rotor {rotor}: no routing consumer"))?
+                .clone();
+            self.routing.lose_consumer_supply(t, &consumer)?;
+            done.push(format!("{consumer} supply lost (RCP {rotor})"));
+        }
         let f0 = self.slice.inputs.f_grid_hz;
         // A turbine trip requests GCB OPEN at its own time (cold-casing page):
         // the command itself, or a trip the SG owner has latched.
