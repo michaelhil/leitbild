@@ -13,13 +13,26 @@
 //!   is open, or the model lacks a prerequisite the case needs; with
 //!   `LD01_S3_PREVIEW=1` it runs anyway as a NOT-EVIDENCE preview with each
 //!   refusal recorded as a deviation (`LD01_S3_PREVIEW_SPAN_S` may shorten
-//!   it). C3 never runs: its prerequisites are not in the model.
+//!   it, `LD01_S3_PREVIEW_JUDGED_FROM_S` move C1's judged span).
+//! - Rule I (A4 with B1, r3.7) is judged at every accepted stock step.
+//! - `LD01_S3_GATES=1` (stock IDAS, feature `quadratures`) adds the gate
+//!   families beside the lines, each with its receipt section, verdict and
+//!   threshold source: D conservation, E refinement (with E′), F smoothness,
+//!   G cost, H repeatability (a repeat run; `LD01_S3_GATES_REPEAT=0` skips
+//!   it), K spectra (external Z6 receipts, `LD01_S3_Z6_RECEIPTS`), B
+//!   directions, and C1's drift, SS-1 and SS-2. The references are run in
+//!   the same invocation (`LD01_S3_GATES_REFERENCES` = a comma list of their
+//!   names limits them). A family a run cannot exercise is listed in
+//!   `gates_not_yet_implemented` with its reason.
 //!
 //! Environment: the joined spine's (packet, wiki, IF97, SUNDIALS, water),
 //! `LD01_S3_DECLARATION` / `LD01_S3_DECISION_LOG` (the page holding the
 //! block and its decision log), `LD01_S3_STATE` (a settled state of the
-//! packet), `LD01_IC_SECTION` (the compiled `ic` section) and
-//! `LD01_S3_CASE_RECEIPT` (a new receipt path).
+//! packet), `LD01_IC_SECTION` (the compiled `ic` section),
+//! `LD01_S3_CASE_RECEIPT` (a new receipt path) and, for a gate run,
+//! `LD01_S2_DECLARATION` (the page holding the S2 blocks the families read:
+//! identity and ledger bounds, the observation and output grids, the
+//! accuracy extension, the reference factors; else the wiki's page).
 #![cfg(all(feature = "ida", target_os = "macos"))]
 #[allow(dead_code)] // The S2 harness's comparisons; S3 uses E0 and the drift.
 #[path = "s2_harness/compare.rs"]
@@ -1166,6 +1179,44 @@ fn conservation_family(g: &observe::Gates, units_bound: f64) -> Value {
             "closures": g.slice.closures, "worst": g.slice.worst, "worst_units": g.slice.worst_units, "bound_units": units_bound, "pass": slice_pass},
         "pzr_spray": "internal to the primary: closed by the primary mass, boron and unit energy identities",
         "receipts_at_last_closure": receipts})
+}
+
+/// Critic item 2 (B1 on accepted states): rule I is judged at every
+/// accepted stock step of a short C1 span, not only at the 0.1 s frames.
+#[test]
+#[ignore = "requires the S3 packets, KERN's settled S3 state, the sections, the S3 declaration, the wiki, IF97 and stock IDA/KLU"]
+fn rule_i_is_judged_at_every_accepted_step() {
+    let d = declaration::Declaration::load().unwrap_or_else(|e| panic!("{e}"));
+    let spec = d.case(Case::C1);
+    let state_path = std::env::var("LD01_S3_STATE").expect("LD01_S3_STATE");
+    let state: Value =
+        serde_json::from_slice(&std::fs::read(&state_path).expect("state")).expect("state json");
+    let inputs = s3_unit::Inputs::from_env();
+    let run = drive(
+        Case::C1,
+        &d,
+        &spec,
+        &inputs,
+        &state,
+        &state_path,
+        1.,
+        None,
+        &Ask {
+            label: "rule I cadence",
+            scaling: s3_unit::Scaling::NONE,
+            max_step: None,
+            credited_from: 0.,
+            window_state: None,
+        },
+    );
+    let steps = run.record["stock_totals"]["steps"].as_i64().unwrap();
+    let frames = run.record["frames"].as_array().unwrap().len() as i64;
+    let samples = run.record["rule_i"]["samples"].as_i64().unwrap();
+    // C1 locates no root and rolls nothing back: every step is judged,
+    // and there are more steps than frames.
+    assert_eq!(run.record["counts_by_class"]["R"]["total"], 0);
+    assert_eq!(samples, steps, "rule I samples against stock steps");
+    assert!(steps > frames, "{steps} steps, {frames} frames");
 }
 
 #[test]
