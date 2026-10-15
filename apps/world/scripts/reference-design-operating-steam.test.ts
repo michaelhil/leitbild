@@ -62,6 +62,14 @@ test('the compiler input refuses every missing value, at every depth',()=>{
   expect(()=>parseReceivers({h2Shell_Pa:199000,source:'x'})).toThrow()
 })
 
+test('the noncondensable constants reproduce the condenser owner\'s 50 kg air + 50 kg N2 illustration at 40 °C',()=>{
+  // condenser-and-cooling.md#retained-noncondensables-and-vacuum-recovery: "With 50 kg air and 50 kg nitrogen,
+  // pressure falls from 9.2131 ..." at 40 °C in the 6000 m³ shell with 5000 m³ shared gas; psat(40 °C) is the cycle's.
+  const g=parseNoncondensables(pageFor('gases',blocks.gases)),psat=0.0073844274870695295e6,T=313.15,Vg=5000
+  const p=psat+(50*g.air.gasConstant_J_kgK+50*g.nitrogen.gasConstant_J_kgK)*T/Vg
+  expect(Math.abs(p-9213.1)/9213.1).toBeLessThan(1e-4)
+})
+
 test('inconsistent values refuse rather than being repaired',()=>{
   expect(()=>parseSteamStocks(pageFor('stocks',{...blocks.stocks,separatorPickup_m3:[22.5,20]}))).toThrow('ordered')
   expect(()=>parseBypass(pageFor('bypass',{...blocks.bypass,bandFull_Pa:6000000}))).toThrow('ordered')
