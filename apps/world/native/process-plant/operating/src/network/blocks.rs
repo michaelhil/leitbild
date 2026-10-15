@@ -1604,9 +1604,9 @@ impl<P: Properties> Blocks<'_, P> {
                 .collect()
         });
         // An equilibrium cell's liquid is its view's `M - M_g` (S3-D-P1).
-        for node in 0..n {
+        for (node, liquid) in phase_mass[0].iter_mut().enumerate() {
             if net.cell_modes()[node] == CellMode::Equilibrium {
-                phase_mass[0][node] = self.view(None, node)?.0[0];
+                *liquid = self.view(None, node)?.0[0];
             }
         }
         let tracer: Vec<Scalar> = (0..n)
