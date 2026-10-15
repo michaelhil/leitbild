@@ -526,6 +526,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
     fn discrete_state(&self) -> serde_json::Value {
         json!({
             "trip_s": snapshot_time(self.trip_s),
+            "feed_supported": self.feed_supported,
             "valves": self.valves.iter().map(|sg| sg.iter().map(|v| json!({
                 "branch": match v.branch { Branch::Ascending => "ascending", Branch::Descending => "descending" },
                 "seated": v.seated, "closing": v.closing,
@@ -533,8 +534,11 @@ impl<P: Properties> Secondary<P> for Secondaries {
         })
     }
     fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure> {
-        let o = snapshot_object(state, "secondary", &["trip_s", "valves"])?;
+        let o = snapshot_object(state, "secondary", &["trip_s", "feed_supported", "valves"])?;
         let trip_s = restored_time(&o["trip_s"])?;
+        let feed_supported = o["feed_supported"]
+            .as_bool()
+            .ok_or_else(|| fatal("secondary snapshot: feed_supported"))?;
         let sgs = o["valves"]
             .as_array()
             .filter(|a| a.len() == self.valves.len())
@@ -566,6 +570,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
             }
         }
         self.trip_s = trip_s;
+        self.feed_supported = feed_supported;
         self.valves = valves;
         Ok(())
     }

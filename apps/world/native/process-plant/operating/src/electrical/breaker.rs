@@ -20,7 +20,7 @@ pub struct Parameters {
     pub spring_stock_j: f64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Contact {
     Open,
     Closed,
@@ -45,7 +45,34 @@ pub struct Breaker {
     pending: Option<(Contact, f64)>,
 }
 
+/// S3-D19: the breaker's discrete state (contact, opening-spring stock,
+/// stuck latch, pending travel), exact (real numbers as IEEE bits).
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct State {
+    pub contact: Contact,
+    #[serde(with = "crate::joined::block::snapshot_bits")]
+    pub spring_j: f64,
+    pub stuck: bool,
+    #[serde(with = "crate::joined::block::snapshot_bits_pair_option")]
+    pub pending: Option<(Contact, f64)>,
+}
+
 impl Breaker {
+    pub fn discrete_state(&self) -> State {
+        State {
+            contact: self.contact,
+            spring_j: self.spring_j,
+            stuck: self.stuck,
+            pending: self.pending,
+        }
+    }
+    pub fn restore_discrete_state(&mut self, state: State) {
+        self.contact = state.contact;
+        self.spring_j = state.spring_j;
+        self.stuck = state.stuck;
+        self.pending = state.pending;
+    }
     pub fn new(parameters: Parameters, contact: Contact) -> Result<Self, String> {
         let p = parameters;
         if !(p.travel_s > 0. && p.closing_work_j >= p.spring_stock_j && p.spring_stock_j >= 0.)
@@ -156,5 +183,20 @@ mod tests {
         b.stuck = true;
         b.request(Contact::Open, 4.0);
         assert_eq!(b.next_event(), None);
+    }
+    /// S3-D19: a pending travel's end time round-trips exactly.
+    #[test]
+    fn the_discrete_state_round_trips_exactly() {
+        let mut b = Breaker::new(p(), Contact::Closed).unwrap();
+        b.request(Contact::Open, 0.1 + 0.2);
+        let text = serde_json::to_string(&b.discrete_state()).unwrap();
+        let mut c = Breaker::new(p(), Contact::Closed).unwrap();
+        c.restore_discrete_state(serde_json::from_str(&text).unwrap());
+        assert_eq!(c, b);
+        assert_eq!(
+            c.next_event().map(f64::to_bits),
+            b.next_event().map(f64::to_bits)
+        );
+        assert!(serde_json::from_str::<State>(&text.replace("stuck", "jammed")).is_err());
     }
 }

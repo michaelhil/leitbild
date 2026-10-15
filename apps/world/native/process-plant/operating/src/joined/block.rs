@@ -306,6 +306,60 @@ pub fn snapshot_object<'a>(
     }
     Ok(o)
 }
+/// S3-D19: a real number in a snapshot as its 16 hex IEEE-754 bits (as
+/// [`snapshot_time`]), for `#[serde(with = "...")]` on an owner's discrete
+/// state: exact, where a decimal JSON number need not round-trip.
+pub mod snapshot_bits {
+    use serde::{Deserialize, Deserializer, Serializer, de::Error};
+    pub fn serialize<S: Serializer>(v: &f64, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&format!("{:016x}", v.to_bits()))
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+        parse(&String::deserialize(d)?).map_err(D::Error::custom)
+    }
+    pub(crate) fn parse(h: &str) -> Result<f64, String> {
+        if h.len() != 16 {
+            return Err(format!("snapshot number {h} is not 16 hex digits"));
+        }
+        u64::from_str_radix(h, 16)
+            .map(f64::from_bits)
+            .map_err(|e| format!("snapshot number {h}: {e}"))
+    }
+}
+/// [`snapshot_bits`] for an optional real number (null when absent).
+pub mod snapshot_bits_option {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+    pub fn serialize<S: Serializer>(v: &Option<f64>, s: S) -> Result<S::Ok, S::Error> {
+        v.map(|v| format!("{:016x}", v.to_bits())).serialize(s)
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<f64>, D::Error> {
+        Option::<String>::deserialize(d)?
+            .map(|h| super::snapshot_bits::parse(&h))
+            .transpose()
+            .map_err(D::Error::custom)
+    }
+}
+/// [`snapshot_bits`] for an optional `(value, time)` pair, such as a
+/// pending travel's target and end time.
+pub mod snapshot_bits_pair_option {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+    pub fn serialize<C: Serialize, S: Serializer>(
+        v: &Option<(C, f64)>,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        v.as_ref()
+            .map(|(c, t)| (c, format!("{:016x}", t.to_bits())))
+            .serialize(s)
+    }
+    pub fn deserialize<'de, C: Deserialize<'de>, D: Deserializer<'de>>(
+        d: D,
+    ) -> Result<Option<(C, f64)>, D::Error> {
+        Option::<(C, String)>::deserialize(d)?
+            .map(|(c, h)| super::snapshot_bits::parse(&h).map(|t| (c, t)))
+            .transpose()
+            .map_err(D::Error::custom)
+    }
+}
 
 /// Structural dependencies of one block, in its own indices, for the joined
 /// sparse pattern. It must contain every dependency any state can produce,

@@ -61,7 +61,9 @@ pub struct Parameters {
     pub consumers: BTreeMap<String, String>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub enum Source {
     Unit = 0,
     Reserve = 1,
@@ -76,10 +78,13 @@ impl Source {
 }
 
 /// Actual state of one source-conversion path at its 10 kV output.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SourceState {
     pub energized: bool,
+    #[serde(with = "crate::joined::block::snapshot_bits")]
     pub voltage_pu: f64,
+    #[serde(with = "crate::joined::block::snapshot_bits")]
     pub frequency_hz: f64,
 }
 impl SourceState {
@@ -90,28 +95,39 @@ impl SourceState {
     };
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Contact {
     Open,
     Closed,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Device {
     contact: Contact,
     /// (target, end time) of ordinary travel; contacts change at the end.
+    #[serde(with = "crate::joined::block::snapshot_bits_pair_option")]
     travel: Option<(Contact, f64)>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 enum Transfer {
     Idle,
-    Opening { to: Source },
-    Interval { to: Source, until: f64 },
-    Closing { to: Source },
+    Opening {
+        to: Source,
+    },
+    Interval {
+        to: Source,
+        #[serde(with = "crate::joined::block::snapshot_bits")]
+        until: f64,
+    },
+    Closing {
+        to: Source,
+    },
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Bus {
     name: String,
     devices: [Device; 2],
@@ -120,16 +136,20 @@ struct Bus {
     control: Option<Source>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Qual {
     qualified: bool,
+    #[serde(with = "crate::joined::block::snapshot_bits")]
     since: f64,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Motor {
     bus: usize,
     contactor: bool,
+    #[serde(with = "crate::joined::block::snapshot_bits_option")]
     lost_since: Option<f64>,
 }
 
@@ -162,7 +182,52 @@ pub struct Distribution {
     pub records: Vec<Record>,
 }
 
+/// S3-D19: the routing's discrete state (sources, qualification runs,
+/// buses with their devices, transfers and control, motor contactors and
+/// dropout timers, the processed time), exact. The records are receipts,
+/// not state, and stay with the running distribution.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct State {
+    sources: [SourceState; 2],
+    qual: [Qual; 2],
+    buses: Vec<Bus>,
+    motors: BTreeMap<String, Motor>,
+    #[serde(with = "crate::joined::block::snapshot_bits")]
+    time: f64,
+}
+
 impl Distribution {
+    pub fn discrete_state(&self) -> State {
+        State {
+            sources: self.sources,
+            qual: self.qual,
+            buses: self.buses.clone(),
+            motors: self.motors.clone(),
+            time: self.time,
+        }
+    }
+    /// Restore [`Distribution::discrete_state`]: the same buses and
+    /// consumers on the same buses, refused otherwise.
+    pub fn restore_discrete_state(&mut self, state: State) -> Result<(), String> {
+        let names = |b: &[Bus]| b.iter().map(|b| b.name.clone()).collect::<Vec<_>>();
+        let wiring = |m: &BTreeMap<String, Motor>| {
+            m.iter()
+                .map(|(k, m)| (k.clone(), m.bus))
+                .collect::<Vec<_>>()
+        };
+        if names(&state.buses) != names(&self.buses)
+            || wiring(&state.motors) != wiring(&self.motors)
+        {
+            return Err("routing snapshot of another bus or consumer layout".into());
+        }
+        self.sources = state.sources;
+        self.qual = state.qual;
+        self.buses = state.buses;
+        self.motors = state.motors;
+        self.time = state.time;
+        Ok(())
+    }
     /// Normal initial alignment at `t0`: unit source on both buses, reserve
     /// incoming open, every listed consumer running with a closed contactor;
     /// each source's qualification is its prepared retained state.
@@ -623,5 +688,33 @@ mod tests {
         assert!(!s.contactor_closed, "{s:?}");
         d.advance(20.).unwrap();
         assert!(!d.support("LD01.P.A1").unwrap().contactor_closed);
+    }
+    /// S3-D19: mid-transfer state (a source dead, the open interval
+    /// running, motors in their dropout ride-through) round-trips through
+    /// JSON exactly and continues identically; another layout refuses.
+    #[test]
+    fn the_discrete_state_round_trips_exactly_mid_transfer() {
+        let mut d = Distribution::prepared(params(), [LIVE, LIVE], [true, true], 0.).unwrap();
+        d.set_source(0.1 + 0.2, Source::Unit, SourceState::DEAD)
+            .unwrap();
+        d.advance(0.3 + 0.05).unwrap();
+        let text = serde_json::to_string(&d.discrete_state()).unwrap();
+        let mut e = Distribution::prepared(params(), [LIVE, LIVE], [true, true], 0.).unwrap();
+        e.restore_discrete_state(serde_json::from_str(&text).unwrap())
+            .unwrap();
+        assert_eq!(e.discrete_state(), d.discrete_state());
+        assert_eq!(e.next_event(), d.next_event());
+        while let Some(n) = d.next_event().filter(|n| *n < 5.) {
+            d.advance(n).unwrap();
+            e.advance(n).unwrap();
+            assert_eq!(e.discrete_state(), d.discrete_state());
+        }
+        let mut other = params();
+        other.consumers.remove("LD01.FW.P2");
+        let mut f = Distribution::prepared(other, [LIVE, LIVE], [true, true], 0.).unwrap();
+        assert!(
+            f.restore_discrete_state(serde_json::from_str(&text).unwrap())
+                .is_err()
+        );
     }
 }

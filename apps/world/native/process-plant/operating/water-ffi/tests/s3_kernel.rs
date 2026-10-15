@@ -860,6 +860,12 @@ fn every_owners_discrete_state_survives_a_snapshot() {
     joined
         .command(0.2, &mut y, Command::HoldingLoss)
         .expect("holding loss");
+    // ELEC's S3-D12 feed gate (a held input of the SG owner).
+    joined
+        .secondary_mut()
+        .unwrap()
+        .set_feed_supported(false)
+        .expect("the feed gate");
     // C3's initiator: the network's rotor state, no coordinate moved.
     let lost = spine::z1::s1_gates()["supplyLoss"]["rotor"]
         .as_u64()

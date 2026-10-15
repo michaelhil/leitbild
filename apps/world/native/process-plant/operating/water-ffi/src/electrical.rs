@@ -28,11 +28,11 @@ use crate::{
 };
 use leitbild_operating_plant::{
     electrical::{
-        breaker::{Breaker, Contact},
-        bus::{Distribution, Source, SourceState},
+        breaker::{self, Breaker, Contact},
+        bus::{self, Distribution, Source, SourceState},
         slice::{self, QUADRATURES, Slice},
     },
-    joined::block::Command,
+    joined::block::{Command, snapshot_bits, snapshot_bits_option},
     network::RotorState,
     rotor::{SpeedRequest, Support},
 };
@@ -95,6 +95,26 @@ fn live(frequency_hz: f64) -> SourceState {
         voltage_pu: 1.,
         frequency_hz,
     }
+}
+
+/// S3-D19: the wrapper's discrete state, exact (real numbers as IEEE
+/// bits): the breaker, the routing, the slice's held inputs, the declared
+/// offsite loss and its latch, the trip request latch, and the deposited
+/// arc and mechanism heats (the slice's accounts). The log is a receipt.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct State {
+    breaker: breaker::State,
+    routing: bus::State,
+    inputs: slice::Inputs,
+    #[serde(with = "snapshot_bits_option")]
+    offsite_loss_s: Option<f64>,
+    offsite_lost: bool,
+    trip_requested: bool,
+    #[serde(with = "snapshot_bits")]
+    arc_heat_j: f64,
+    #[serde(with = "snapshot_bits")]
+    mechanism_j: f64,
 }
 
 impl<S: JoinedSystem> Electrified<S> {
@@ -374,6 +394,15 @@ impl<S: JoinedSystem> JoinedSystem for Electrified<S> {
         command: Option<Command>,
         y: &mut [f64],
     ) -> Result<Vec<String>, String> {
+        // C3's network supply loss (Joined::command) would be undone by the
+        // routing's delivered support at the next restart: with the slice
+        // composed, an RCP loses its supply through the routing, which this
+        // wrapper does not yet accept as a command.
+        if let Some(Command::SupplyLoss { rotor }) = command {
+            return Err(format!(
+                "RCP {rotor} supply loss at {t} s: with the electrical slice composed an RCP's supply is the routing's; a supply-loss command is not routed"
+            ));
+        }
         let mut done = Vec::new();
         let f0 = self.slice.inputs.f_grid_hz;
         // A turbine trip requests GCB OPEN at its own time (cold-casing page):
@@ -470,6 +499,37 @@ impl<S: JoinedSystem> JoinedSystem for Electrified<S> {
             .flatten()
             .filter(|e| *e > t)
             .reduce(f64::min)
+    }
+    fn appended_discrete_state(&self) -> serde_json::Value {
+        let state = State {
+            breaker: self.breaker.discrete_state(),
+            routing: self.routing.discrete_state(),
+            inputs: self.slice.inputs,
+            offsite_loss_s: self.offsite_loss_s,
+            offsite_lost: self.offsite_lost,
+            trip_requested: self.trip_requested,
+            arc_heat_j: self.arc_heat_j,
+            mechanism_j: self.mechanism_j,
+        };
+        serde_json::json!({ "electrical": state })
+    }
+    fn restore_appended_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), String> {
+        let o = state
+            .as_object()
+            .filter(|o| o.len() == 1)
+            .and_then(|o| o.get("electrical"))
+            .ok_or("appended snapshot is not {electrical}")?;
+        let s: State =
+            serde_json::from_value(o.clone()).map_err(|e| format!("electrical snapshot: {e}"))?;
+        self.routing.restore_discrete_state(s.routing)?;
+        self.breaker.restore_discrete_state(s.breaker);
+        self.slice.inputs = s.inputs;
+        self.offsite_loss_s = s.offsite_loss_s;
+        self.offsite_lost = s.offsite_lost;
+        self.trip_requested = s.trip_requested;
+        self.arc_heat_j = s.arc_heat_j;
+        self.mechanism_j = s.mechanism_j;
+        Ok(())
     }
     fn differential_all(&self, network_ids: &[f64]) -> Vec<f64> {
         [

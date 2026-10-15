@@ -402,3 +402,74 @@ fn the_generator_joins_the_spine_through_a_turbine_trip_and_an_offsite_loss() {
     assert_eq!(rcp_at(&r_loop, 1.0), vec![false; 4]);
     assert!(r_loop["arc_heat_J"].as_f64().unwrap() > 0.);
 }
+
+/// S3-D19 for the appended owners (KERN, reconciling ELEC's hooks): a unit
+/// driven by `discrete_restart` through a turbine trip (GCB OPEN requested,
+/// pending travel) and the declared offsite loss (stator separated, both
+/// sources dead, RCP drives unsupported, the S3-D12 feed gate shut, the
+/// breaker's travel completed) restores into a freshly built unit with the
+/// same system snapshot, time events, identity, residual rows and root
+/// values, bit for bit; the fresh unit before restoring differs (the check
+/// sees a left-out state).
+#[test]
+#[ignore = "requires the joined packet, the wiki, IF97, stock IDAS and ELEC_PACKET"]
+fn the_electrical_discrete_state_survives_a_snapshot() {
+    use leitbild_operating_water::ida::System;
+    let mut c = build(Some(0.5));
+    let (t1, t2) = (c.t0 + 0.1, c.t0 + 0.5);
+    for (t, kind) in [
+        (t1, Discrete::Command(Command::TurbineTrip)),
+        (t2, Discrete::TimeEvent),
+    ] {
+        let r = discrete_restart(
+            &mut c.ida,
+            t,
+            kind,
+            &mut c.y,
+            &c.network_ids,
+            &c.atol,
+            c.rtol,
+            &c.restart,
+        )
+        .unwrap_or_else(|e| panic!("restart at {t} s: {e}"));
+        c.yp.copy_from_slice(&r.yp);
+    }
+    let snapshot = c.ida.system().system_discrete_state();
+    let e = &snapshot["appended"]["electrical"];
+    assert_eq!(e["offsite_lost"], true, "{e}");
+    assert_eq!(e["trip_requested"], true);
+    assert_eq!(e["inputs"]["joined"], false);
+    assert_eq!(snapshot["operator"]["secondary"]["feed_supported"], false);
+    let t = t2;
+    let state = |u: &mut Unit| {
+        let mut rows = vec![0.; u.dimension()];
+        u.residual(t, &c.y, &c.yp, &mut rows).unwrap();
+        let mut roots = vec![0.; u.root_count()];
+        u.roots(t, &c.y, &c.yp, &mut roots).unwrap();
+        (
+            rows.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            roots.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            u.next_time_event(t),
+            u.differential_all(&c.network_ids),
+        )
+    };
+    let driven = state(c.ida.system_mut());
+    let mut fresh = build(Some(0.5));
+    let unrestored = state(fresh.ida.system_mut());
+    assert_ne!(unrestored.0, driven.0, "the unrestored unit must differ");
+    fresh
+        .ida
+        .system_mut()
+        .restore_system_discrete_state(&snapshot)
+        .expect("restore into a fresh unit");
+    assert_eq!(fresh.ida.system().system_discrete_state(), snapshot);
+    let restored = state(fresh.ida.system_mut());
+    assert_eq!(restored.2, driven.2, "next time event");
+    assert_eq!(restored.3, driven.3, "identity");
+    assert_eq!(restored.1, driven.1, "root values");
+    assert_eq!(restored.0, driven.0, "residual rows");
+    println!(
+        "{}",
+        json!({"t_s": t - c.t0, "electrical": e, "next_event_s": driven.2.map(|x| x - c.t0)})
+    );
+}

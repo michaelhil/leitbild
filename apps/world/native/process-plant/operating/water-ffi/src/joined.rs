@@ -1131,6 +1131,47 @@ mod integrated {
         fn differential_all(&self, network_ids: &[f64]) -> Vec<f64> {
             self.integrated().joined.differential(network_ids)
         }
+        /// S3-D19: the appended owners' discrete state (null when none is
+        /// appended), beside the operator's.
+        fn appended_discrete_state(&self) -> serde_json::Value {
+            serde_json::Value::Null
+        }
+        /// Restore [`JoinedSystem::appended_discrete_state`] exactly.
+        fn restore_appended_discrete_state(
+            &mut self,
+            state: &serde_json::Value,
+        ) -> Result<(), String> {
+            if state.is_null() {
+                Ok(())
+            } else {
+                Err("this system appends no owner: its appended snapshot is null".into())
+            }
+        }
+        /// S3-D19 (S5's snapshot): every owner's discrete state, the
+        /// operator's ([`Joined::discrete_state`]) and the appended owners'.
+        fn system_discrete_state(&self) -> serde_json::Value {
+            serde_json::json!({"operator": self.integrated().joined.discrete_state(),
+                "appended": self.appended_discrete_state()})
+        }
+        /// Restore [`JoinedSystem::system_discrete_state`] exactly: the
+        /// operator's owners, then the appended ones (no owner re-derives
+        /// another's state here).
+        fn restore_system_discrete_state(
+            &mut self,
+            state: &serde_json::Value,
+        ) -> Result<(), String> {
+            let o = state
+                .as_object()
+                .filter(|o| {
+                    o.len() == 2 && o.contains_key("operator") && o.contains_key("appended")
+                })
+                .ok_or("system snapshot is not {operator, appended}")?;
+            self.integrated_mut()
+                .joined
+                .restore_discrete_state(&o["operator"])
+                .map_err(|f| format!("{f:?}"))?;
+            self.restore_appended_discrete_state(&o["appended"])
+        }
     }
     impl<P: Properties + WaterProperties> JoinedSystem for Integrated<P> {
         type Properties = P;
