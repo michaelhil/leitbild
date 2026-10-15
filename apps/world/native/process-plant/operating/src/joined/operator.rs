@@ -33,13 +33,20 @@ use super::{
 use crate::{
     network::{
         Coupling, Failure, Fluid, Network, PZR_PRESSURE, Properties, Receipts, Reuse,
-        packet::Packet as NetworkPacket, stratified,
+        packet::Packet as NetworkPacket,
+        phase_events::{located, release_roots},
+        stratified,
+        unilateral::Transaction as UnilateralTransaction,
     },
     sparse::{self, Coloring, Pattern},
     thermal::{self, Scalar, WaterProperties},
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
+
+/// The value of an L1 root slot whose path carries no root (a lock with
+/// neither end holding): a constant that never crosses.
+const L1_DISARMED: f64 = 1.;
 
 fn s(v: f64) -> Scalar {
     Scalar::constant(v)
@@ -667,13 +674,45 @@ impl<P: Properties + WaterProperties> Joined<P> {
     }
 
     /// Root functions: the secondary owner's, the rod owner's (on one
-    /// value evaluation's fluid state), then the PZR relief's (on the roof
-    /// pressure and the lift). Stock IDA cannot retry a root, so every
-    /// failure is fatal.
+    /// value evaluation's fluid state), the PZR relief's (on the roof
+    /// pressure and the lift), then, once L1 is active, one slot per phase
+    /// path of the network ([`Self::activate_unilateral`]). Stock IDA cannot
+    /// retry a root, so every failure is fatal.
     pub fn root_count(&self) -> usize {
         self.secondary().map_or(0, |b| b.root_count())
             + self.rods().map_or(0, |b| b.root_count())
             + self.pzr().map_or(0, |b| b.root_count())
+            + self.unilateral_slots()
+    }
+    /// L1's root slots: one per phase path (face-layout order) while L1 is
+    /// active, none before (S1, S2). A slot carries the root of its path's
+    /// current lock ([`Network::unilateral_roots`]): a free path its contact
+    /// root, a one-sided lock its release root, a lock with neither end
+    /// holding none (a constant). The count is fixed for a handle, so L1 is
+    /// activated before the stock-IDA handle is made.
+    fn unilateral_slots(&self) -> usize {
+        self.network.unilateral().map_or(0, |u| u.paths.len())
+    }
+    /// Declare L1 active (decision 0014, lead decision S3-D-P2) at the
+    /// value state `(t, y, 0)`: every phase path classified from free by
+    /// the presence the network's stocks declare
+    /// ([`Network::stock_presence`]; the phase-mode owner's declaration
+    /// replaces it once modes are composed). Before the stock-IDA handle is
+    /// made (the root count grows by one slot per path) and before the
+    /// consistent start (a locked path's impulse row becomes `Π/s`,
+    /// algebraic). Never by default: S1 and S2 compose no L1.
+    pub fn activate_unilateral(
+        &mut self,
+        t: f64,
+        y: &[f64],
+    ) -> Result<UnilateralTransaction, Failure> {
+        if self.network.unilateral().is_some() {
+            return Err(fatal("L1 is already active"));
+        }
+        let zero = vec![0.; y.len()];
+        self.evaluate(t, y, &zero, None, 0., None)?;
+        let presence = self.network.stock_presence(y);
+        self.network.activate_unilateral(&presence)
     }
     /// The crossing direction each root function reports at the owners'
     /// current state, in [`Self::roots`]' order (stock
@@ -685,6 +724,12 @@ impl<P: Properties + WaterProperties> Joined<P> {
         if let Some(b) = self.secondary() {
             let ns = b.root_count();
             b.root_directions(&mut out[..ns])?;
+        }
+        // L1: release rising, contact falling (`Root::direction`); a slot
+        // with no root reports none.
+        let first = out.len() - self.unilateral_slots();
+        for r in self.network.unilateral_roots() {
+            out[first + r.path()] = r.direction();
         }
         Ok(out)
     }
@@ -718,12 +763,31 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let ns = self.secondary().map_or(0, |b| b.root_count());
         let nr = self.rods().map_or(0, |b| b.root_count());
         let np = self.pzr().map_or(0, |b| b.root_count());
-        if out.len() != ns + nr + np {
+        let nl = self.unilateral_slots();
+        if out.len() != ns + nr + np + nl {
             return Err(fatal("root layout"));
+        }
+        if nl > 0 {
+            // L1's release roots read the drives of this state's value
+            // evaluation; its contact roots read the coordinates alone.
+            let roots = self.network.unilateral_roots();
+            if release_roots(&roots) {
+                self.evaluate(t, y, yp, None, 0., None)
+                    .map_err(|e| fatal(format!("L1 root evaluation: {e:?}")))?;
+            }
+            let mut values = vec![0.; roots.len()];
+            self.network
+                .unilateral_root_values(y, &roots, &mut values)
+                .map_err(|e| fatal(format!("L1 root values: {e:?}")))?;
+            let slots = &mut out[ns + nr + np..];
+            slots.fill(L1_DISARMED);
+            for (r, v) in roots.iter().zip(values) {
+                slots[r.path()] = v;
+            }
         }
         if let Some(b) = self.pzr() {
             let (x, roof) = self.pzr_state(y);
-            b.roots(roof, &x, &mut out[ns + nr..])?;
+            b.roots(roof, &x, &mut out[ns + nr..ns + nr + np])?;
         }
         if let SecondaryPort::Owner(b) = &mut self.blocks.secondary {
             let x = view(
@@ -819,16 +883,74 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 y[i] = v / s;
             }
         }
+        let np = b.pzr.as_ref().map_or(0, |p| p.root_count());
         if let Some(owner) = &mut b.pzr
-            && directions[ns + nr..].iter().any(|d| *d != 0)
+            && directions[ns + nr..ns + nr + np].iter().any(|d| *d != 0)
         {
-            done.push(owner.transact(t, &directions[ns + nr..], roof, &mut pzr_x)?);
+            done.push(owner.transact(t, &directions[ns + nr..ns + nr + np], roof, &mut pzr_x)?);
             for ((i, v), s) in (o.pzr..o.end).zip(&pzr_x).zip(&b.scales[4].coordinates) {
                 y[i] = v / s;
             }
         }
         self.deposit(&done, y)?;
+        if self.network.unilateral().is_some() {
+            let first = ns + nr + np;
+            if let Some(l1) = self.unilateral_transact(t, &directions[first..], y)? {
+                done.push(l1);
+            }
+        }
         Ok(done)
+    }
+    /// L1's transaction at a root-located instant, after the owners' (on
+    /// the state they leave): every path decided by the presence the
+    /// network's stocks declare and the drives of the value evaluation at
+    /// `(t, y, 0)` (a drive reads the coordinates alone), with the L1 roots
+    /// located in this instant's `directions` (one per slot). A contact
+    /// sets `Π = 0` and pays its kinetic energy once into the receiving
+    /// end's energy stock. A crossing against a root's declared direction
+    /// does not act and is reported (stock IDASetRootDirection, set at
+    /// every restart, reports none). `None` when nothing was located and no
+    /// path changed.
+    fn unilateral_transact(
+        &mut self,
+        t: f64,
+        directions: &[i32],
+        y: &mut [f64],
+    ) -> Result<Option<super::block::Transaction>, Failure> {
+        let roots = self.network.unilateral_roots();
+        if directions.len() != self.unilateral_slots() {
+            return Err(fatal("L1 root layout"));
+        }
+        let carried: Vec<bool> = {
+            let mut c = vec![false; directions.len()];
+            for r in &roots {
+                c[r.path()] = true;
+            }
+            c
+        };
+        if let Some(slot) = (0..directions.len()).find(|i| directions[*i] != 0 && !carried[*i]) {
+            return Err(fatal(format!(
+                "L1 slot {slot} crossed while its path carries no root"
+            )));
+        }
+        let per_root: Vec<i32> = roots.iter().map(|r| directions[r.path()]).collect();
+        let (fired, opposite) = located(&roots, &per_root);
+        let zero = vec![0.; y.len()];
+        self.evaluate(t, y, &zero, None, 0., None)?;
+        let presence = self.network.stock_presence(y);
+        let tx = self
+            .network
+            .unilateral_transaction(y, &presence, &fired, None)?;
+        if fired.is_empty() && opposite.is_empty() && tx.changes.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(super::block::Transaction {
+            deposits: Vec::new(),
+            receipt: serde_json::json!({"owner":"network L1","t_s":t,
+                "located":fired.iter().map(|(p, f)| serde_json::json!({"path":p,"root":format!("{f:?}")})).collect::<Vec<_>>(),
+                "opposite":opposite,"changes":tx.changes,"energyPaid_J":tx.energy_paid_j,
+                "stateChanged":!tx.changes.is_empty()}),
+        }))
     }
     /// A declared command to every composed owner, in order, followed by
     /// any time event the command makes due at once ([`Joined::time_events`]).
