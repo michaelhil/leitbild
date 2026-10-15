@@ -205,9 +205,11 @@ fn electrical_at(state: &Value, elec_path: &str) -> Result<Electrical, String> {
     };
     let params: slice::Parameters =
         serde_json::from_value(e["slice"].clone()).map_err(|x| x.to_string())?;
-    let appended = &state["discrete_state"]["appended"];
-    let inputs: SliceInputs = serde_json::from_value(appended["inputs"].clone())
-        .map_err(|x| format!("the saved slice inputs: {x}"))?;
+    // The wrapper's discrete state (S3-D19), under its owner's name.
+    let appended = &state["discrete_state"]["appended"]["electrical"];
+    let inputs: SliceInputs = serde_json::from_value(appended["inputs"].clone()).map_err(|x| {
+        format!("the saved slice inputs (discrete_state.appended.electrical.inputs): {x}")
+    })?;
     let slice = slice::Slice::new(params, inputs)?;
     let (y, yp) = (
         vector(&state["appended"]["y"]),
