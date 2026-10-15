@@ -49,7 +49,7 @@ ownerTest('actual owners compile both finite SG secondaries and reciprocal metal
   expect(p.secondaries.map(s => s.id)).toEqual(['SG.A.SECONDARY', 'SG.B.SECONDARY'])
   for (const s of p.secondaries) expect(s).toMatchObject({ volume_m3: 120, liquidVolume_m3: 72,
     gasVolume_m3: 48, temperature_K: 313.15, pressure_Pa: 101325, nitrogenMass_kg: 0,
-    minimumWettedVolume_m3: 71.25 })
+    minimumWettedVolume_m3: 42 })
   for (const [i, h] of p.secondaryHeat.entries()) expect(h).toEqual({ solid: i,
     secondary: i < 4 ? 0 : 1, area_m2: 1250, diameter_m: .020 })
   expect(p.nativeInput.trim().split('\n').slice(-11)[0]).toBe('2 8')
@@ -81,15 +81,16 @@ ownerTest('actual owners compile both finite SG secondaries and reciprocal metal
 
 test('secondary preparation changes follow the authored physical state and reject incomplete scope', () => {
   const fixture = '## Secondary exposure and local metal storage\n'
-    + 'horizontal area **7.5 m²**, bottom **+2.5 m**; crown at +12 m.\n'
+    + '```ld01-sg-exposure\n{"bottom_m":2.5,"top_m":18.5,"crownTop_m":12,"upperZoneArea_m2":12}\n```\n'
     + '### Cold secondary and startup heat-receiving path\n'
     + 'Each SG starts at 40°C, 101325 Pa total absolute pressure, with its existing 120 m³ envelope divided into 72 m³ liquid and 48 m³ shared gas; nitrogen is zero.\n'
-  expect(parseOperatingSgSecondary(fixture).minimumWettedVolume_m3).toBe(71.25)
+  expect(parseOperatingSgSecondary(fixture).minimumWettedVolume_m3).toBe(42)
   expect(parseOperatingSgSecondary(fixture.replace('40°C', '35°C')).temperature_K).toBe(308.15)
   for (const changed of [fixture.replace('nitrogen is zero', 'nitrogen unknown'),
     fixture.replace('48 m³ shared gas', '47 m³ shared gas'),
-    fixture.replace('72 m³ liquid and 48', '70 m³ liquid and 50'),
-    fixture.replace('crown at +12 m', 'crown at +? m')]) expect(() => parseOperatingSgSecondary(changed)).toThrow()
+    fixture.replace('72 m³ liquid and 48', '40 m³ liquid and 80'),
+    fixture.replace('"upperZoneArea_m2":12', '"upperZoneArea_m2":20'),
+    fixture.replace('"crownTop_m":12', '"crownTop_m":"12"')]) expect(() => parseOperatingSgSecondary(changed)).toThrow()
 })
 
 test('execution controls require a useful interval and one finite allowance', async () => {

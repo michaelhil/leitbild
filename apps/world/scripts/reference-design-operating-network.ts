@@ -9,6 +9,7 @@ import { coldReturnGeometry, foldedGeometry } from './reference-design-primary-m
 import { parseConnectedFuelSelection } from './reference-design-connected-fuel'
 import { fuelGeometry } from './reference-design-fuel-construction'
 import { compileSourcePartition } from './reference-design-source-partition'
+import { sgExposure } from './reference-design-operating-sg'
 import { parseOperatingFuelCohorts } from './reference-design-source-material'
 import { compilePrimaryWaterGeometry, originalWaterMassRelativeScreen } from './reference-design-source-water'
 import { compilePrhrOperatingGeometry } from './reference-design-prhr-operating'
@@ -86,14 +87,13 @@ export function parseOperatingSgColdContact(document: string) {
 export function parseOperatingSgSecondary(document: string) {
   const cold = document.split('### Cold secondary and startup heat-receiving path')[1]?.split('###')[0]
   const initial = cold?.match(/Each SG starts at ([\d.]+)°C, ([\d.]+) Pa total absolute pressure, with its existing ([\d.]+) m³ envelope divided into ([\d.]+) m³ liquid and ([\d.]+) m³ shared gas/)
-  const geometry = document.split('## Secondary exposure and local metal storage')[1]?.split('###')[0]
-  const surface = geometry?.match(/horizontal area \*\*([\d.]+) m²\*\*, bottom \*\*\+([\d.]+) m\*\*/)
-  const crest = geometry?.match(/crown at \+([\d.]+) m/)
-  if (!initial || !surface || !crest || !cold?.includes('nitrogen is zero'))
+  if (!initial || !cold?.includes('nitrogen is zero'))
     throw Error('Missing current SG cold material preparation/contact geometry')
+  // The crown's first uncovery from the strict two-zone contact block (S3-D26).
+  const minimumWettedVolume_m3 = sgExposure(document, Number(initial[3])).bundleZoneVolume_m3
   const result = { temperature_K: Number(initial[1]) + 273.15, pressure_Pa: Number(initial[2]),
     volume_m3: Number(initial[3]), liquidVolume_m3: Number(initial[4]), gasVolume_m3: Number(initial[5]),
-    nitrogenMass_kg: 0, minimumWettedVolume_m3: (Number(crest[1]) - Number(surface[2])) * Number(surface[1]) }
+    nitrogenMass_kg: 0, minimumWettedVolume_m3 }
   if (![result.temperature_K, result.pressure_Pa, result.volume_m3, result.liquidVolume_m3,
     result.gasVolume_m3, result.minimumWettedVolume_m3].every(v => Number.isFinite(v) && v > 0)
     || Math.abs(result.liquidVolume_m3 + result.gasVolume_m3 - result.volume_m3) > 1e-10 * result.volume_m3
