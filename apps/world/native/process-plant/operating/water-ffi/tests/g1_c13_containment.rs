@@ -11,13 +11,18 @@
 //!   the prepared state and at an active probe;
 //! - forward-mode (IF97 exact rho/u/h directions) partials against central
 //!   differences (1e-6 relative);
-//! - the iteration matrix `dF/dy + cj dF/dy'` nonsingular for cj 1e1..1e5;
+//! - the iteration matrix `dF/dy + cj dF/dy'` nonsingular for cj 1e1..1e5,
+//!   with no `1/cj` pivot (one index-1 DAE: S4-D5);
 //! - the CPU cost of one residual and one dense Jacobian.
 //!
 //! Owners and coordinates (wiki allocation table): CNV gas `M_air, M_N2,
 //! M_w, E_mix | p, T, V_mix, M_d, v_t`; shell remainder `U`; 16 local bay
 //! hosts `U`; four open pools WST, GUTTER, FLOOR, SUMP `M, E, B | T, V, h,
-//! m_b`; PCC tank `M`; exterior film `M, H | T, m_evap`. Bays (C17: surfaces,
+//! m_b`; PCC tank `M`; exterior film `M, H | T, m_evap`. Bulk boiling and
+//! film evaporation are equilibrium modes (S3-D-P1, S4-D5): energy stays
+//! differential, the saturated endpoint splits it into an algebraic `M`, and
+//! the phase change is the net flow minus `M'`; the `m_b`/`m_evap` slots are
+//! unused in those modes. Bays (C17: surfaces,
 //! liquid temperatures, occupied volume), PRHR (C11), releases (C06),
 //! capture heat and ROOM.B (C12) are held port inputs.
 //!
@@ -524,6 +529,19 @@ const N: usize = 59;
 fn pool(i: usize, slot: usize) -> usize {
     POOL0 + 7 * i + slot
 }
+/// The mode-dependent classification (S3-D-P1 slot reinterpretation): a
+/// boiling pool's `M` and an evaporating film's `M` are algebraic (the
+/// saturated-endpoint split of their differential energy).
+fn is_diff(i: usize, m: &Modes) -> bool {
+    if (POOL0..TANK).contains(&i) && (i - POOL0) % 7 == PM && m.pools[(i - POOL0) / 7] == Pool::B {
+        return false;
+    }
+    if i == FM && m.film == Film::Evap {
+        return false;
+    }
+    differential(i)
+}
+/// The declared (prepared) classification.
 fn differential(i: usize) -> bool {
     match i {
         MAIR | MN2 | MW | EMIX | REM | TANK | FM | FH => true,
@@ -699,6 +717,10 @@ impl Inputs {
 struct Eval {
     f: Vec<D>,
     rhs: Vec<D>,
+    /// Boil-off of each B pool and the film's evaporation, `net - M'`
+    /// (observations and exhaustion roots; zero outside those modes).
+    boil: Vec<f64>,
+    evap: f64,
 }
 /// Rows in coordinate order. Differential rows are `y' - rhs`; algebraic rows
 /// are the constraints of the allocation table. `rhs` is also returned for
@@ -768,12 +790,16 @@ fn residual(
                 ps.push(Some(Ps { rho, hs }));
             }
             Pool::B => {
-                // Saturated endpoint at p_CNV (no metastable evaluation); the
-                // manifold constraint holds the m_b slot (index-2 Hessenberg).
+                // Equilibrium mode (S3-D-P1): E stays differential; the liquid
+                // is the saturated endpoint at p_CNV, so M is the algebraic
+                // split of E (no metastable evaluation, first derivatives
+                // only). The boil-off is never a coordinate: it is the pool's
+                // net flow minus the rate of its algebraic M, paid below.
                 let (rho, uu, hs) = saturated_liquid(pr)?;
+                f[pool(i, PM)] = pe - (pm * uu + rho * moment * G);
                 f[pool(i, PT)] = pt - tsat(pr)?;
                 f[pool(i, PV)] = pv - pm / rho;
-                f[pool(i, PMB)] = pe - (pm * uu + rho * moment * G);
+                f[pool(i, PMB)] = y[pool(i, PMB)]; // unused slot in mode B
                 ps.push(Some(Ps { rho, hs }));
             }
         }
@@ -891,14 +917,6 @@ fn residual(
         pen[i] = pen[i] - ms * ht;
         g_w = g_w + ms;
         g_e = g_e + ms * ht;
-        if m.pools[i] == Pool::B {
-            let mb = y[pool(i, PMB)];
-            let htb = hv(ti) + level(i) * G;
-            pm[i] = pm[i] - mb;
-            pen[i] = pen[i] - mb * htb;
-            g_w = g_w + mb;
-            g_e = g_e + mb * htb;
-        }
     }
     // Crest paths (signed, actual donor; an empty owner has no surface).
     let surface = |i: usize| ps[i].as_ref().map(|_| level(i));
@@ -1036,6 +1054,21 @@ fn residual(
         }
     }
 
+    // Boil-off of each B pool: its net flow minus the rate of its algebraic
+    // M, carried at the vapor convention `h_v(T) + g*surface` into CNV; the
+    // same expression leaves the pool's E and enters the gas once.
+    let mut boil = vec![0.; 4];
+    for i in 0..4 {
+        if m.pools[i] == Pool::B {
+            let mb = pm[i] - yp[pool(i, PM)];
+            let htb = hv(y[pool(i, PT)]) + level(i) * G;
+            pen[i] = pen[i] - mb * htb;
+            g_w = g_w + mb;
+            g_e = g_e + mb * htb;
+            boil[i] = mb.v;
+        }
+    }
+
     // CNV rows.
     rhs[MAIR] = g_air;
     rhs[MN2] = g_n2;
@@ -1064,6 +1097,7 @@ fn residual(
         (head / p.feed_href).sqrt() * (u.pcc_a * p.feed_full)
     };
     rhs[TANK] = -feed;
+    let mut evap = 0.;
     match m.film {
         Film::Dry => {
             rhs[FM] = feed;
@@ -1078,25 +1112,28 @@ fn residual(
                 saturated_liquid(c(p.p_amb))?.2
             };
             let runoff = y[FM] / p.runoff_tau;
-            rhs[FM] = feed - runoff - y[FEV];
-            rhs[FH] = feed * p.h_tank - runoff * hf - y[FEV] * p.h_vsat_amb + q_film;
+            f[FEV] = y[FEV]; // unused slot: evaporation is not a coordinate
             if m.film == Film::Wet {
+                rhs[FM] = feed - runoff;
+                rhs[FH] = feed * p.h_tank - runoff * hf + q_film;
                 f[FT] = y[FH] - y[FM] * hf;
-                f[FEV] = y[FEV];
             } else {
-                // Evaporating at ambient saturation: T on the endpoint, the
-                // manifold constraint in the m_evap slot (index-2 Hessenberg).
+                // Evaporating at ambient saturation (equilibrium mode): H
+                // differential, M its endpoint split, evaporation = net - M'.
+                let me = feed - runoff - yp[FM];
+                rhs[FH] = feed * p.h_tank - runoff * hf - me * p.h_vsat_amb + q_film;
+                f[FM] = y[FH] - y[FM] * hf;
                 f[FT] = y[FT] - tsat(c(p.p_amb))?;
-                f[FEV] = y[FH] - y[FM] * hf;
+                evap = me.v;
             }
         }
     }
     for i in 0..N {
-        if differential(i) {
+        if is_diff(i, m) {
             f[i] = yp[i] - rhs[i];
         }
     }
-    Ok(Eval { f, rhs })
+    Ok(Eval { f, rhs, boil, evap })
 }
 
 // -------------------------------------------------------------- preparation
@@ -1251,14 +1288,14 @@ fn row_scale(i: usize, m: &Modes, y0: &[f64], p: &Prm) -> f64 {
         // Placeholders (dry film, empty pools) and the B/evaporating T rows are temperatures.
         FT if m.film != Film::Wet => p.t0,
         FT => p.film_mref * p.h_tank,
-        FEV if m.film == Film::Evap => p.film_mref * p.h_tank,
+        FM if m.film == Film::Evap => p.film_mref * p.h_tank,
         _ if (POOL0..TANK).contains(&i) => {
             let k = (i - POOL0) / 7;
             match (i - POOL0) % 7 {
                 PT if m.pools[k] != Pool::L => p.t0,
                 PT => e_wst,
                 PH => p.pools[k].area,
-                PMB if m.pools[k] == Pool::B => e_wst,
+                PM if m.pools[k] == Pool::B => e_wst,
                 _ => col_scale(i, y0, p),
             }
         }
@@ -1276,10 +1313,10 @@ fn scaled_max(f: &[D], m: &Modes, y0: &[f64], p: &Prm) -> (f64, usize) {
     worst
 }
 /// Central differences on y (yp held) against the forward-mode columns, at
-/// two declared steps (1e-5 and 1e-3 of the coordinate scale): the smaller
-/// step's roundoff dominates where a row's magnitude dwarfs one entry's
-/// contribution, the larger step's truncation elsewhere. An entry passes
-/// when either step agrees.
+/// two declared steps (1e-5 and 1e-3 of the coordinate scale) and the
+/// Richardson combination of 1e-3 and 2e-3: the smaller step's roundoff
+/// dominates where a row's magnitude dwarfs one entry's contribution, the
+/// larger step's truncation elsewhere. An entry passes when one agrees.
 fn compare(k: &Case, y0: &[f64], jy: &[Vec<f64>]) -> (f64, usize, f64, String) {
     let p = k.p;
     let (mut worst, mut checked, mut floor_worst, mut at) = (0f64, 0usize, 0f64, String::new());
@@ -1294,7 +1331,9 @@ fn compare(k: &Case, y0: &[f64], jy: &[Vec<f64>]) -> (f64, usize, f64, String) {
         (0..N).map(|i| (fa[i].v - fb[i].v) / actual).collect()
     };
     for j in 0..N {
-        let (small, large) = (cd(j, 1e-5), cd(j, 1e-3));
+        let (small, large, double) = (cd(j, 1e-5), cd(j, 1e-3), cd(j, 2e-3));
+        // Richardson on the larger step: O(h^4) truncation, little roundoff.
+        let richardson: Vec<f64> = (0..N).map(|i| (4. * large[i] - double[i]) / 3.).collect();
         for i in 0..N {
             let ad = jy[i][j];
             let s = col_scale(j, y0, p) / row_scale(i, &k.m, y0, p);
@@ -1302,15 +1341,16 @@ fn compare(k: &Case, y0: &[f64], jy: &[Vec<f64>]) -> (f64, usize, f64, String) {
             let big = ad.abs().max(small[i].abs()).max(large[i].abs()) * s;
             if big > 1e-8 {
                 checked += 1;
-                let r = rel(small[i]).min(rel(large[i]));
+                let r = rel(small[i]).min(rel(large[i])).min(rel(richardson[i]));
                 if r > worst {
                     worst = r;
                     at = format!(
-                        "d {} / d {}: AD {ad:e}, CD {:e} / {:e}",
+                        "d {} / d {}: AD {ad:e}, CD {:e} / {:e} / R {:e}",
                         name(i, p),
                         name(j, p),
                         small[i],
-                        large[i]
+                        large[i],
+                        richardson[i]
                     );
                 }
             } else {
@@ -1430,9 +1470,7 @@ fn probe(p: &Prm, boiling: bool, droplets: bool, flooded: bool) -> (Modes, Input
         y[pool(i, PT)] = if mode == Pool::B { ts } else { tp };
         y[pool(i, PV)] = vol;
         y[pool(i, PH)] = h;
-        if mode == Pool::B {
-            y[pool(i, PMB)] = 2.;
-        }
+
         m.pools[i] = mode;
     };
     let mode = |b: bool| if b { Pool::B } else { Pool::L };
@@ -1453,7 +1491,6 @@ fn probe(p: &Prm, boiling: bool, droplets: bool, flooded: bool) -> (Modes, Input
         y[FM] = 8000.;
         y[FH] = 8000. * hf.v;
         y[FT] = tsat(c(p.p_amb)).unwrap().v;
-        y[FEV] = 0.5;
     } else {
         m.film = Film::Wet;
         let tf = 313.15;
@@ -1487,7 +1524,7 @@ fn direction(
     let mut rows = vec![];
     for &(row, sign) in expect {
         let value = |e: &Eval| {
-            if differential(row) {
+            if is_diff(row, &k.m) {
                 e.rhs[row].v
             } else {
                 e.f[row].v
@@ -1759,16 +1796,33 @@ fn g1_c13_containment_prototype() {
             y,
             yp: vec![0.; N],
         };
-        // y' from the rows' own rates: differential rows then vanish.
+        // y' from the rows' own rates, so differential rows vanish; a boiling
+        // pool's M' and an evaporating film's M' are set for a boil-off of
+        // 2 kg/s and an evaporation of 0.5 kg/s, then the rates again.
+        let r = k.eval();
+        for i in 0..4 {
+            if k.m.pools[i] == Pool::B {
+                k.yp[pool(i, PM)] = r.boil[i] - 2.;
+            }
+        }
+        if k.m.film == Film::Evap {
+            k.yp[FM] = r.evap - 0.5;
+        }
         let r = k.eval();
         for i in 0..N {
-            if differential(i) {
+            if is_diff(i, &k.m) {
                 k.yp[i] = r.rhs[i].v;
             }
         }
+        let r = k.eval();
+        let (boil, evap) = (r.boil.clone(), r.evap);
         let (jy, jp) = k.jacobian();
         pattern(&jy, &jp, &mut pat);
         record(&k, label, &jy, &jp, &mut partials, &mut pivots);
+        if let Some(last) = partials.last_mut() {
+            last["boilOff_kg_s"] = json!(boil);
+            last["filmEvaporation_kg_s"] = json!(evap);
+        }
         probes.push(k);
     }
 
@@ -1864,6 +1918,42 @@ fn g1_c13_containment_prototype() {
             expect,
         ));
     }
+    // Equilibrium (B) mode at held rates: what enters the boiling SUMP leaves
+    // as vapor into CNV through net - M'; its energy enters the pool's E.
+    let boiling: Vec<Declared> = vec![(
+        "boiling SUMP: liquid inflow +1 kg/s",
+        ch(|u, _| u.break_liquid = 1.),
+        vec![(MW, 1), (EMIX, 1)],
+    )];
+    for (label, change, expect) in &boiling {
+        directions.push(direction(
+            &probes[1],
+            &names,
+            &format!("B mode: {label}"),
+            change,
+            expect,
+        ));
+    }
+    // With 1 kg/s already entering the boiling SUMP, a warmer stream raises
+    // the pool's E (the extra mass itself leaves as vapor at held M').
+    let feeding = Case {
+        p: &p,
+        m: probes[1].m.clone(),
+        u: Inputs {
+            break_liquid: 1.,
+            ..probes[1].u.clone()
+        },
+        v_avail,
+        y: probes[1].y.clone(),
+        yp: probes[1].yp.clone(),
+    };
+    directions.push(direction(
+        &feeding,
+        &names,
+        "B mode: boiling SUMP fed 1 kg/s, its Ht +1 kJ/kg",
+        &ch(|u, _| u.break_liquid_ht += 1e3),
+        &[(pool(SUMP, PE), 1)],
+    ));
     directions.push(direction(
         &probes[2],
         &names,
