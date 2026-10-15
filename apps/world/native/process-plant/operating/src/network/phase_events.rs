@@ -341,9 +341,9 @@ mod tests {
             cause,
             drive_pa: 0.,
             impulse_pa_s: 0.,
-            volume_flow_m3_s: 0.,
+            volume_flow_m3_s: Some(0.),
+            mass_flow_kg_s: None,
             payment: None,
-            unpaid_kinetic_j: None,
         }
     }
 

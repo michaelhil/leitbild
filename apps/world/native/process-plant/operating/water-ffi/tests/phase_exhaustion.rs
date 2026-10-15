@@ -12,8 +12,9 @@
 //! It shows the plain exhaustion leaves face 34's impulse with no inertia
 //! ("zero phase inertia cannot retain finite impulse"), and that
 //! `Network::exhaustion_with_paths` locks that path in the same transaction
-//! (`Π = 0`, `Locked(Neither)`, its unbounded model kinetic energy reported,
-//! not paid), moves no other coordinate, so mass, energy and boron are
+//! (`Π = 0`, `Locked(Neither)`, its unbounded model kinetic energy not paid;
+//! its volume flow undefined and its finite vapor mass flow reported, DR
+//! S3-EXHAUST-REPORT), moves no other coordinate, so mass, energy and boron are
 //! bitwise unchanged, lets L1's own transaction lock face 33 by contact with
 //! its finite payment, and that a re-birth arms the release again.
 #![cfg(all(feature = "ida", target_os = "macos"))]
@@ -158,8 +159,25 @@ fn exhaustion_with_live_vapor_paths_locks_them_in_the_same_transaction() {
     assert_eq!(c.after, Lock::Locked(Holding::Neither));
     assert_eq!(c.payment, None);
     assert_eq!(tx.energy_paid_j, 0.);
-    let unpaid = c.unpaid_kinetic_j.expect("reported model kinetic energy");
-    assert!(unpaid.abs() > 1e9, "½Π²/I at a root-size inertia: {unpaid}");
+    // `Q = Π/I` is undefined at the root-size inertia; the record carries the
+    // path's vapor mass flow, `Π` over the reciprocal-area length of its
+    // supports, all in SURGE (DR S3-EXHAUST-REPORT).
+    assert_eq!(c.volume_flow_m3_s, None);
+    let w34: f64 = raw["mechanics"]["faces"][34]["supports"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| {
+            assert_eq!(s["region"].as_u64(), Some(surge as u64));
+            s["inverse_area_length_per_m"].as_f64().unwrap()
+        })
+        .sum();
+    let m34 = c.mass_flow_kg_s.expect("the path's vapor mass flow");
+    assert!(
+        (m34 * w34 / FACE34_VAPOR_IMPULSE - 1.).abs() <= 1e-14,
+        "{m34} kg/s vs Π/W {} kg/s",
+        FACE34_VAPOR_IMPULSE / w34
+    );
     for (i, (a, b)) in before.iter().zip(&y).enumerate() {
         if i == p34 || i == ls.mass[1] || i == ls.energy[1] {
             continue;
