@@ -394,8 +394,8 @@ impl Model {
             }
             st.push(closure(pp, y[6 * i + P], y[6 * i + H])?);
         }
-        let mut dm = vec![c(0.); NS];
-        let mut de = vec![c(0.); NS];
+        let mut dm = [c(0.); NS];
+        let mut de = [c(0.); NS];
         let mut to_junction = c(0.);
         let mut from_junction = c(0.);
         let mut torque = c(0.);
@@ -926,13 +926,13 @@ fn jacobians(m: &Model, y: &[f64], yp: &[f64], ports: &Ports) -> (Vec<Vec<f64>>,
     let mut d = vec![vec![0.; N]; N];
     for j in 0..N {
         let e = m.eval(&If97, &scalars(y, Some(j)), &ypc, ports).unwrap();
-        for k in 0..N {
-            a[k][j] = e.rows[k].direction;
+        for (row, r) in a.iter_mut().zip(&e.rows) {
+            row[j] = r.direction;
         }
         if j < SOLIDS && (j % 6 == MA || j % 6 == MN) {
             // Pure-water prototype: no row reads the gas masses but their own rate rows.
-            for k in 0..N {
-                d[k][j] = a[k][j];
+            for (dr, ar) in d.iter_mut().zip(&a) {
+                dr[j] = ar[j];
             }
             continue;
         }
@@ -961,6 +961,7 @@ fn jacobians(m: &Model, y: &[f64], yp: &[f64], ports: &Ports) -> (Vec<Vec<f64>>,
 ///   `|a_kj| s_j` is at least 1e-3 of the row's dominant scaled entry;
 /// - `scaled`: worst `|a-c| s_j / dominant_k` over all entries, which judges a
 ///   near-cancellation remainder against the terms it cancels.
+///
 /// Both must be at most 1e-6.
 fn compare(
     a: &[Vec<f64>],
@@ -1227,9 +1228,9 @@ fn g1_c10_zero_time_block() {
     let mut colour = vec![usize::MAX; N];
     for j in 0..N {
         let mut used = std::collections::BTreeSet::new();
-        for i in 0..j {
+        for (i, ci) in colour.iter().enumerate().take(j) {
             if (0..N).any(|k| pattern(k, j) && pattern(k, i)) {
-                used.insert(colour[i]);
+                used.insert(*ci);
             }
         }
         colour[j] = (0..).find(|x| !used.contains(x)).unwrap();
