@@ -44,7 +44,14 @@ export const steadySolidsSchema=z.object({identity:z.literal('LD01-STEADY-SOLIDS
   passive:z.array(z.object({id:z.string().min(1),temperature_k:positiveNumber,energy_j:finiteNumber,rate_w:finiteNumber}).strict()),
   sg_metal:z.array(z.object({id:z.string().min(1),generator:z.string(),temperature_k:positiveNumber,energy_j:finiteNumber,
     primary_to_metal_w:finiteNumber,metal_to_secondary_w:finiteNumber,rate_w:finiteNumber}).strict()),
-  steam_generators:z.array(record),admission:record,steady:record,checkpoints:z.array(record),ida:record}).strict()
+  steam_generators:z.array(record),admission:record,steady:record,checkpoints:z.array(record),ida:record,
+  /** The PZR steel at the steady state of its laws (S3-D36): present exactly
+   * when the settle's input carries the PZR owner's pzrMetal section. */
+  pzr:z.object({frozen:z.array(z.string()),roof_pressure_pa:positiveNumber,level_m:positiveNumber,saturation_k:positiveNumber,
+    heater_request_w:finiteNumber,joule_w:finiteNumber,exterior_w:finiteNumber,to_fluid_w:finiteNumber,
+    stores:z.array(z.object({id:z.string().min(1),temperature_k:positiveNumber,energy_j:positiveNumber,saturation_energy_j:positiveNumber,
+      rate_w:finiteNumber}).strict()).min(1),temperature_k:z.tuple([positiveNumber,positiveNumber]),stored_energy_change_j:finiteNumber,
+    steady:record,checkpoints:z.array(record),ida:record}).strict().optional()}).strict()
 export type SteadySolids=z.infer<typeof steadySolidsSchema>
 /** Where the prepared solid stocks come from: the steady solid state, or the
  * explicit seed of its own solve. The seed puts every core solid store at

@@ -29,6 +29,11 @@ pub struct Packet {
     /// boundary stays closed and a declared relief port refuses.
     #[serde(rename = "pzrMetal")]
     pub pzr_metal: Option<super::pzr::Section>,
+    /// The PZR steel at the steady state of its laws (S3-D36), from the
+    /// stock-IDA steady solids settle: required with `pzrMetal` (the PZR
+    /// owner refuses without it), absent without it.
+    #[serde(rename = "pzrSteel")]
+    pub pzr_steel: Option<super::pzr::Steel>,
 }
 
 /// The SG owner's section, read here only for its contact record
