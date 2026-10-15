@@ -518,7 +518,8 @@ impl ExchangeCase {
 }
 
 /// Piecewise free-area geometry: band start, end, area, volume below the
-/// band start and first moment `∫ z A dz` below the band start.
+/// band start and first moment `∫ z A dz` below the band start (kept for
+/// the band records; the centroid sums band by band).
 #[derive(Clone, Debug)]
 struct Geometry {
     bands: Vec<[f64; 5]>,
@@ -556,11 +557,6 @@ impl Geometry {
         let [from, _, area, below, _] = self.bands[self.band_at(z)];
         s(below) + s(area) * (z - s(from))
     }
-    /// First moment `∫ z A dz` below elevation `z`.
-    fn moment(&self, z: Scalar) -> Scalar {
-        let [from, _, area, _, below] = self.bands[self.band_at(z)];
-        s(below) + s(area / 2.) * (z * z - s(from * from))
-    }
     /// Elevation below which the volume is `v`, the inverse of `volume`.
     fn level(&self, v: Scalar) -> Scalar {
         let last = self.bands.len() - 1;
@@ -583,9 +579,31 @@ impl Geometry {
         let [from, _, area, below, _] = self.bands[j];
         s(from) + (v - s(below)) / s(area)
     }
-    /// Volume centroid elevation of `[low, high]`.
+    /// Volume centroid elevation of `[low, high]`, summed band by band as
+    /// `sum A (z2 - z1)(z1 + z2)/2 / sum A (z2 - z1)`: within one band the
+    /// exact midpoint, so a thin region keeps its own centroid instead of a
+    /// cancelled difference of whole-vessel moments (G6-DR).
     fn centroid(&self, low: Scalar, high: Scalar) -> Scalar {
-        (self.moment(high) - self.moment(low)) / (self.volume(high) - self.volume(low))
+        let (first, last) = (self.band_at(low), self.band_at(high));
+        if first == last {
+            return (low + high) / s(2.);
+        }
+        // The ratio does not depend on the orientation of [low, high].
+        let ((from, lo), (to, hi)) = if first < last {
+            ((first, low), (last, high))
+        } else {
+            ((last, high), (first, low))
+        };
+        let (mut moment, mut volume) = (s(0.), s(0.));
+        for j in from..=to {
+            let [start, end, area, ..] = self.bands[j];
+            let z1 = if j == from { lo } else { s(start) };
+            let z2 = if j == to { hi } else { s(end) };
+            let height = z2 - z1;
+            moment = moment + s(area) * height * (z1 + z2) / s(2.);
+            volume = volume + s(area) * height;
+        }
+        moment / volume
     }
 }
 
@@ -1833,7 +1851,6 @@ impl Cell {
     pub fn level(&self, v: Scalar) -> Scalar {
         self.geometry.level(v)
     }
-
     fn hydrostatics(&self, x: &Coordinates) -> Result<Hydrostatics, Failure> {
         let geometry = &self.geometry;
         let (bottom, top) = (s(self.parameters.bottom_m), s(self.parameters.top_m));
@@ -1860,20 +1877,26 @@ impl Cell {
             boundary_pressure + g * admitted_density * (boundary - centroid[1]),
             interface + g * resident_density * (mixture - centroid[2]),
         ];
-        for v in [
-            boundary,
-            mixture,
-            collapsed,
-            liquid_boundary,
-            interface,
-            boundary_pressure,
-            bottom_pressure,
-        ]
-        .iter()
-        .chain(&pressure)
-        .chain(&centroid)
-        {
-            finite(*v, "column geometry or pressure")?;
+        for (name, v) in [
+            ("A/R boundary elevation", boundary),
+            ("mixture elevation", mixture),
+            ("collapsed elevation", collapsed),
+            ("A liquid boundary elevation", liquid_boundary),
+            ("interface pressure", interface),
+            ("A/R boundary pressure", boundary_pressure),
+            ("bottom pressure", bottom_pressure),
+            ("vapor zone pressure", pressure[0]),
+            ("A zone pressure", pressure[1]),
+            ("R zone pressure", pressure[2]),
+            ("vapor region centroid", centroid[0]),
+            ("A region centroid", centroid[1]),
+            ("R region centroid", centroid[2]),
+        ] {
+            if !(v.value.is_finite() && v.direction.is_finite()) {
+                return Err(recoverable(format!(
+                    "nonfinite column {name} {v:?} (G6-DR diagnostic: x = {x:?}; region densities g {vapor_density:?}, R {resident_density:?}, A {admitted_density:?})"
+                )));
+            }
         }
         Ok(Hydrostatics {
             boundary_elevation: boundary,
