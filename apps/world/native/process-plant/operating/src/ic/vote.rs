@@ -14,6 +14,8 @@ use serde::Deserialize;
 pub enum Side {
     AtOrBelow(f64),
     AtOrAbove(f64),
+    /// Strictly above: "conclusively exceeds" (the arming proxy).
+    Above(f64),
 }
 
 /// What one usable sample establishes about the predicate: `Some` when it
@@ -29,6 +31,23 @@ pub fn predicate(q: Quality, side: Side) -> Option<bool> {
         // Actual above `bound`.
         (Quality::AboveRange(bound), Side::AtOrAbove(s)) => (bound >= s).then_some(true),
         (Quality::AboveRange(bound), Side::AtOrBelow(s)) => (bound >= s).then_some(false),
+        (Quality::Value(v), Side::Above(s)) => Some(v > s),
+        (Quality::BelowRange(bound), Side::Above(s)) => (bound <= s).then_some(false),
+        (Quality::AboveRange(bound), Side::Above(s)) => (bound >= s).then_some(true),
+        // Magnitude at most `b`, sign unknown: conclusive only if the whole
+        // interval [-b, b] lies on one side.
+        (Quality::Indeterminate(b), Side::AtOrBelow(s)) => interval(b <= s, -b > s),
+        (Quality::Indeterminate(b), Side::AtOrAbove(s)) => interval(-b >= s, b < s),
+        (Quality::Indeterminate(b), Side::Above(s)) => interval(-b > s, b <= s),
+    }
+}
+fn interval(all: bool, none: bool) -> Option<bool> {
+    if all {
+        Some(true)
+    } else if none {
+        Some(false)
+    } else {
+        None
     }
 }
 
@@ -111,6 +130,28 @@ mod tests {
         );
         assert_eq!(
             predicate(Quality::AboveRange(9.), Side::AtOrAbove(9.5)),
+            None
+        );
+        assert_eq!(
+            predicate(Quality::Value(0.2), Side::Above(0.2)),
+            Some(false)
+        );
+        assert_eq!(
+            predicate(Quality::Value(0.21), Side::Above(0.2)),
+            Some(true)
+        );
+        // The FT band (±10 kg/s): conclusively below 0.70 of nominal, never
+        // a sign.
+        assert_eq!(
+            predicate(Quality::Indeterminate(1e-3), Side::AtOrBelow(0.7)),
+            Some(true)
+        );
+        assert_eq!(
+            predicate(Quality::Indeterminate(1e-3), Side::AtOrAbove(0.8)),
+            Some(false)
+        );
+        assert_eq!(
+            predicate(Quality::Indeterminate(1e-3), Side::AtOrBelow(0.)),
             None
         );
         assert!(within(Quality::Value(14e6), 13.5e6, 15.2e6));

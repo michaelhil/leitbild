@@ -22,7 +22,7 @@
 //! delivered TRIPPED report (no qualification duration is selected).
 use super::{
     Frame,
-    acquisition::{Analog, Quality, Report},
+    acquisition::{Analog, AnalogConfig, Quality, Report},
     division::Division,
     holding::Holding,
     packet::{Effects, Family, FunctionSpec, Quantity, ReportSource, ReportSpec, Rule, Section},
@@ -81,10 +81,34 @@ impl Protection {
                 return Err(format!("{}: {} channels", f.id, f.channels.len()));
             }
             let value = initial(&f.quantity)?;
+            // A loop flow is observed in fractions of its nominal; its kg/s
+            // quantization and sign band convert with the resolved nominal.
+            let config = match &f.quantity {
+                Quantity::LoopFlow {
+                    nominal_kg_s,
+                    quantum_kg_s,
+                    indeterminate_band_kg_s,
+                    face_id,
+                    ..
+                } => {
+                    let nominal = nominal_kg_s
+                        .filter(|n| n.is_finite() && *n > 0.)
+                        .ok_or_else(|| format!("{}: unresolved nominal flow at {face_id}", f.id))?;
+                    if f.channel.quantum.is_some() || f.channel.indeterminate_band.is_some() {
+                        return Err(format!("{}: the kg/s fields belong to the quantity", f.id));
+                    }
+                    AnalogConfig {
+                        quantum: Some(quantum_kg_s / nominal),
+                        indeterminate_band: Some(indeterminate_band_kg_s / nominal),
+                        ..f.channel
+                    }
+                }
+                _ => f.channel,
+            };
             let channels = f
                 .channels
                 .iter()
-                .map(|c| Analog::new(&c.id, &c.supply, f.channel, section.frame_s, value))
+                .map(|c| Analog::new(&c.id, &c.supply, config, section.frame_s, value))
                 .collect::<Result<Vec<_>, _>>()?;
             families.push(FamilyState {
                 spec: f.clone(),
@@ -413,7 +437,7 @@ mod tests {
         let mut families = vec![json!({"id": "LD01.PZR.PT", "quantity": "pzr_roof_pressure",
             "channels": [{"id": "LD01.PZR.PT1", "supply": "I1"}, {"id": "LD01.PZR.PT2", "supply": "I2"},
                 {"id": "LD01.PZR.PT3", "supply": "I3"}],
-            "channel": {"lag_s": 0.2, "min": 0., "max": 2e7, "quantum": 1000., "sample_s": 0.1, "transport_s": 0.1},
+            "channel": {"lag_s": 0.2, "min": 0., "max": 2e7, "quantum": 1000., "indeterminate_band": null, "sample_s": 0.1, "transport_s": 0.1},
             "maximum_age_s": 0.3, "recovery_s": 1.})];
         families.extend(extra_families.as_array().unwrap().iter().cloned());
         let reset = json!({"band": [13.5e6, 15.2e6], "duration_s": 5.});
@@ -446,7 +470,7 @@ mod tests {
     fn pressure(p: f64) -> impl Fn(&Quantity) -> Result<f64, String> {
         move |q| match q {
             Quantity::PzrRoofPressure => Ok(p),
-            Quantity::LoopFlow { nominal_kg_s, .. } => Ok(*nominal_kg_s),
+            Quantity::LoopFlow { .. } => Ok(1.),
             _ => Ok(5.),
         }
     }
@@ -581,29 +605,28 @@ mod tests {
 
     #[test]
     fn an_armed_single_channel_function_needs_its_arming_vote() {
-        // Loop low flow shape with test values (no strict block exists).
-        let flow = json!([{"id": "FT.A", "quantity": {"loop_flow": {"loop_id": "A", "nominal_kg_s": 1.}},
+        // Loop low flow's shape: one FT in fractions of nominal, armed by a
+        // three-channel vote (test arming on the PT family).
+        let flow = json!([{"id": "FT.A", "quantity": {"loop_flow": {"loop_id": "A", "face": 0, "face_id": "RETURN.A->DOWN",
+            "nominal_kg_s": 8849., "quantum_kg_s": 5., "indeterminate_band_kg_s": 10.}},
             "channels": [{"id": "FT.A", "supply": "I1"}],
-            "channel": {"lag_s": 0.25, "min": -1.5, "max": 1.5, "quantum": 0.001, "sample_s": 0.1, "transport_s": 0.1},
+            "channel": {"lag_s": 0.25, "min": -1.5, "max": 1.5, "quantum": null, "indeterminate_band": null, "sample_s": 0.1, "transport_s": 0.1},
             "maximum_age_s": 0.3, "recovery_s": 1.}]);
         let low = json!([{"id": "LOW_FLOW.A", "rule": {"armed": {"family": "FT.A", "side": {"at_or_below": 0.7},
             "qualification_s": 0.5, "arming_family": "LD01.PZR.PT", "arming": {"at_or_above": 1e6}}},
             "effects": {"reactor_trip": true, "cmt_injection": false, "heater_isolation": false},
             "reset": {"band": [0.8, 1.5], "duration_s": 5.}}]);
+        let ft: Quantity = serde_json::from_value(flow[0]["quantity"].clone()).unwrap();
+        // Unresolved nominal: refused.
+        let mut unresolved = flow.clone();
+        unresolved[0]["quantity"]["loop_flow"]["nominal_kg_s"] = Value::Null;
+        assert!(Protection::new(&section(low.clone(), unresolved), pressure(15.2e6)).is_err());
         let mut prot = Protection::new(&section(low, flow), pressure(15.2e6)).unwrap();
         let lost = {
             let mut lost = None;
             for k in 5220..5240 {
                 if k > 5220 {
-                    prot.advance(
-                        &Quantity::LoopFlow {
-                            loop_id: "A".into(),
-                            nominal_kg_s: 1.,
-                        },
-                        0.1,
-                        &[0.5],
-                    )
-                    .unwrap();
+                    prot.advance(&ft, 0.1, &[0.5]).unwrap();
                     prot.advance(&Quantity::PzrRoofPressure, 0.1, &[15.2e6])
                         .unwrap();
                 }

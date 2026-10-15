@@ -35,10 +35,28 @@ pub enum Quantity {
     /// An SG's collapsed level `V_l / area`, m (declared S3 limit, decision
     /// S3-D1.20).
     SgCollapsedLevel { sg: String, area_m2: f64 },
-    /// A loop's signed mass flow at its SG-primary outlet over its installed
-    /// nominal forward flow (no driver mapping until the path and nominal
-    /// are selected in strict blocks).
-    LoopFlow { loop_id: String, nominal_kg_s: f64 },
+    /// A loop's signed mass flow at its cold-return face, observed as a
+    /// fraction of the loop's installed nominal forward flow. The family's
+    /// span is in fractions (`spanFractionOfNominal`); its quantization and
+    /// sign band are the block's kg/s, converted once the nominal is
+    /// resolved. The compiler leaves `nominal_kg_s` null: the composing
+    /// driver resolves it at the packet's prepared hot reference.
+    LoopFlow {
+        loop_id: String,
+        face: usize,
+        face_id: String,
+        nominal_kg_s: Option<f64>,
+        quantum_kg_s: f64,
+        indeterminate_band_kg_s: f64,
+    },
+    /// The protective acquired local-current proxy in S3-D7's ratio form,
+    /// `(E_c / E_c,ref) (E_tot,ref / Fref)`: `weights` per source region
+    /// (the converter's coated span), the reference at the packet's
+    /// prepared hot reference.
+    CurrentProxy {
+        weights: Vec<f64>,
+        fref_events_per_s: f64,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize)]
