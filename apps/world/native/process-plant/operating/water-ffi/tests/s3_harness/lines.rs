@@ -352,8 +352,28 @@ fn judge_one(
             let ids = ["LD01.PROT.RCS.A.LOW_FLOW", "LD01.PROT.RCS.B.LOW_FLOW"];
             Ok(no_causes(tl, &ids, implemented))
         }
-        (Case::C3, "O1") | (Case::C3, "O2") => {
-            kind(line, if id == "O1" { "iff" } else { "must" })?;
+        (Case::C3, "O1") => {
+            kind(line, "iff")?;
+            let low = "LD01.PROT.RCS.A.LOW_FLOW";
+            names(line, low)?;
+            if !implemented.iter().any(|f| f == low) {
+                return Ok((
+                    "not executable".into(),
+                    json!({"reason": format!("{low} is not acquired by the composed protection (no loop-flow acquisition)")}),
+                ));
+            }
+            // The cause as accepted, recorded; the iff is the protection
+            // consistency gate (A'), not implemented here, and P-3b decides
+            // whether the line is must or may.
+            let accepted = tl.accepted(low);
+            Ok((
+                "recorded".into(),
+                json!({"accepted": accepted, "first_s": accepted.iter().map(|(_, t)| *t).fold(f64::INFINITY, f64::min),
+                    "note": "the iff (consistency gate A') is not implemented; P-3b decides must or may"}),
+            ))
+        }
+        (Case::C3, "O2") => {
+            kind(line, "must")?;
             let low = "LD01.PROT.RCS.A.LOW_FLOW";
             if !implemented.iter().any(|f| f == low) {
                 return Ok((
@@ -361,8 +381,27 @@ fn judge_one(
                     json!({"reason": format!("{low} is not acquired by the composed protection (no loop-flow acquisition)")}),
                 ));
             }
-            Err(format!(
-                "C3.{id} with loop-flow acquisition needs its judge"
+            let first = tl
+                .accepted(low)
+                .iter()
+                .map(|(_, t)| *t)
+                .fold(f64::INFINITY, f64::min);
+            if !first.is_finite() {
+                return Ok((
+                    "not applicable".into(),
+                    json!({"reason": "C3.O1 did not occur, so its trip cannot follow"}),
+                ));
+            }
+            let release = tl.holding_lost.filter(|t| *t >= first - 1e-9);
+            let mut seated: Vec<&String> = tl.seats.iter().map(|(c, _)| c).collect();
+            seated.sort();
+            seated.dedup();
+            let prhr = tl.requests.iter().any(|(_, r)| r["request"] == "PRHR");
+            Ok((
+                verdict(release.is_some() && seated.len() == clusters && prhr),
+                json!({"low_flow_s": first, "release_s": release, "seated": seated.len(), "clusters": clusters,
+                    "last_seat_s": tl.seats.iter().map(|(_, t)| *t).fold(f64::NEG_INFINITY, f64::max),
+                    "prhr_requested": prhr}),
             ))
         }
         (Case::C3, "N1") => {
@@ -372,17 +411,28 @@ fn judge_one(
         }
         (Case::C3, "N2") => {
             kind(line, "mustNot")?;
+            let low = "LD01.PROT.RCS.A.LOW_FLOW";
             let cmt = tl.requests.iter().any(|(_, r)| r["request"] == "CMT");
             let relief = !tl.pzr_relief_openings.is_empty();
+            let first = tl
+                .accepted(low)
+                .iter()
+                .map(|(_, t)| *t)
+                .fold(f64::INFINITY, f64::min);
+            let before: Vec<Value> = tl
+                .causes
+                .iter()
+                .filter(|c| c.function != low && c.t < first)
+                .map(|c| json!([c.division, c.function, c.t]))
+                .collect();
             let evidence = json!({"cmt_requested": cmt, "pzr_relief_openings": tl.pzr_relief_openings,
-                "causes": tl.causes.iter().map(|c| json!([c.division, c.function, c.t])).collect::<Vec<_>>()});
-            if cmt || relief {
+                "low_flow_s": if first.is_finite() { json!(first) } else { Value::Null },
+                "causes_before_low_flow": before});
+            if cmt || relief || !before.is_empty() {
                 return Ok(("fail".into(), evidence));
             }
-            // "No cause before C3.O1" needs O1's time: the acquired low-flow
-            // cause.
-            if implemented.iter().any(|f| f == "LD01.PROT.RCS.A.LOW_FLOW") {
-                Err("C3.N2 with loop-flow acquisition needs its judge".into())
+            if implemented.iter().any(|f| f == low) {
+                Ok(("pass".into(), evidence))
             } else {
                 Ok(("not executable".into(), evidence))
             }

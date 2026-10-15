@@ -249,13 +249,21 @@ fn c1s_must_not_lines_fail_on_any_listed_cause_and_never_pass_unacquired_ones() 
 }
 
 #[test]
-fn c3_is_wired_but_gated_on_its_missing_prerequisites() {
+fn c3s_lines_follow_the_acquired_low_flow_cause() {
     let b = block();
-    let tl = Timeline::default();
+    let v = |judged: &[Value], id: &str| {
+        judged
+            .iter()
+            .find(|l| l["id"] == id)
+            .map(|l| l["verdict"].as_str().unwrap().to_string())
+            .unwrap()
+    };
+    // Without loop-flow acquisition every C3 line but M1 is not executable.
+    let quiet = Timeline::default();
     let judged = lines::judge(
         Case::C3,
         &b.whole("/cases/C3/lines"),
-        &tl,
+        &quiet,
         &implemented(),
         52,
     );
@@ -267,12 +275,42 @@ fn c3_is_wired_but_gated_on_its_missing_prerequisites() {
             .all(|l| l["verdict"] == "not executable"),
         "{judged:?}"
     );
-    assert!(
-        Case::C3
-            .missing_prerequisites()
-            .iter()
-            .any(|m| m.contains("loop-flow acquisition"))
-    );
+    // With it: loop A's low flow at +12.4 s in I1-I3, the release there,
+    // every seat by +15 s and the PRHR request.
+    let mut with_flow = implemented();
+    with_flow.extend([
+        "LD01.PROT.RCS.A.LOW_FLOW".to_string(),
+        "LD01.PROT.RCS.B.LOW_FLOW".to_string(),
+    ]);
+    let division = json!({"powered": true,
+        "causes": [{"function": "LD01.PROT.RCS.A.LOW_FLOW", "t_s": 12.4}],
+        "trip": {"function": "LD01.PROT.RCS.A.LOW_FLOW", "t_s": 12.4},
+        "requests": [{"by": "LD01.PROT.RCS.A.LOW_FLOW", "request": "PRHR", "t_s": 12.4}]});
+    let seats: Vec<Value> = (0..52)
+        .map(|c| json!({"cluster": format!("LD01.CR.{c:03}"), "event": "seat", "t_s": 15.}))
+        .collect();
+    let log = vec![json!({"t_s": 15., "class": "R", "kinds": ["located roots"],
+        "restart": {"transactions": [{"rods": seats}]}})];
+    let divisions = vec![division.clone(), division.clone(), division];
+    let tl = Timeline::from_logs(&log, &divisions, Some(12.4), 0., 60.).unwrap();
+    let judged = lines::judge(Case::C3, &b.whole("/cases/C3/lines"), &tl, &with_flow, 52);
+    assert_eq!(v(&judged, "C3.O1"), "recorded");
+    assert_eq!(v(&judged, "C3.O2"), "pass");
+    assert_eq!(v(&judged, "C3.N1"), "pass");
+    assert_eq!(v(&judged, "C3.N2"), "pass");
+    // A cause before the low flow fails N2; no low flow leaves O2 not
+    // applicable.
+    let mut early = divisions.clone();
+    early[0]["causes"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"function": "LD01.PROT.PZR.HIGH_PRESSURE", "t_s": 11.}));
+    let tl = Timeline::from_logs(&log, &early, Some(12.4), 0., 60.).unwrap();
+    let judged = lines::judge(Case::C3, &b.whole("/cases/C3/lines"), &tl, &with_flow, 52);
+    assert_eq!(v(&judged, "C3.N2"), "fail");
+    let none = Timeline::default();
+    let judged = lines::judge(Case::C3, &b.whole("/cases/C3/lines"), &none, &with_flow, 52);
+    assert_eq!(v(&judged, "C3.O2"), "not applicable");
 }
 
 #[test]
@@ -584,14 +622,48 @@ fn s3_case_run() {
     let preparation_cpu_s = spine::z1::cpu_s() - started;
     let run_started = spine::z1::cpu_s();
     let until = zero + span;
+    // The run in segments: to the case's t = 0, over its declared event
+    // window, then to the end, so the window's CPU is measured on its own
+    // (each boundary is one more stop, no restart).
+    let window_s = spec["window_s"].as_f64();
+    let mut bounds: Vec<f64> = vec![zero];
+    if let Some(w) = window_s.filter(|_| command.is_some()) {
+        bounds.push(zero + w);
+    }
+    bounds.push(until);
+    bounds.retain(|b| *b > t0 && *b <= until);
+    bounds.dedup();
+    let mut cpu_at: Vec<(f64, f64)> = vec![(t0, run_started)];
     let outcome = {
         let mut clients: Vec<&mut dyn Client<Unit>> =
             vec![&mut protection, &mut recorder, &mut control];
-        driver
-            .start(&mut clients, t0, &y, &yp)
-            .and_then(|()| driver.run(&mut ida, t0, until, &mut y, &mut yp, &mut clients, &setup))
+        let mut r = driver.start(&mut clients, t0, &y, &yp);
+        let mut t = t0;
+        for b in &bounds {
+            if r.is_err() {
+                break;
+            }
+            r = driver
+                .run(&mut ida, t, *b, &mut y, &mut yp, &mut clients, &setup)
+                .map(|_| ());
+            t = *b;
+            cpu_at.push((*b, spine::z1::cpu_s()));
+        }
+        r
     };
     let run_cpu_s = spine::z1::cpu_s() - run_started;
+    let window_cpu = window_s.filter(|_| command.is_some()).and_then(|w| {
+        let at = |x: f64| {
+            cpu_at
+                .iter()
+                .find(|(b, _)| (*b - x).abs() < 1e-9)
+                .map(|(_, c)| *c)
+        };
+        Some(
+            json!({"from_zero_s": 0., "to_s": w, "cpu_s": at(zero + w)? - at(zero)?,
+            "cpu_s_per_s": (at(zero + w)? - at(zero)?) / w}),
+        )
+    });
     driver.close_segment(&ida, until).unwrap();
     let failure = outcome.as_ref().err().cloned();
     let p = &protection.protection;
@@ -677,7 +749,8 @@ fn s3_case_run() {
         "cpu": {"preparation_s": preparation_cpu_s, "run_s": run_cpu_s, "solver_s": driver.cpu.solver_s,
             "observation_s": driver.cpu.observation_s, "restart_s": driver.cpu.restart_s, "held_s": driver.cpu.held_s,
             "run_per_simulated_s": if simulated > 0. { json!(run_cpu_s / simulated) } else { Value::Null },
-            "restarts_r": driver.counts.total(Class::R), "s_instants": driver.counts.total(Class::S)},
+            "restarts_r": driver.counts.total(Class::R), "s_instants": driver.counts.total(Class::S),
+            "event_window": window_cpu, "segments_cpu_s": cpu_at.iter().map(|(b, c)| json!([b - zero, c - run_started])).collect::<Vec<_>>()},
         "frames": recorder.rows,
     });
     std::fs::write(

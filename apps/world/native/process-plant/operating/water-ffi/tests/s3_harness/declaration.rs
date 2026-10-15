@@ -45,12 +45,10 @@ impl Case {
             Self::C1 => vec![
                 "prerequisite 10 / request D: the generator exports into the electrical packet's fixed boundary (line voltage and frequency), not request D's Grid exchange (D1 + D2)",
             ],
-            Self::C2 => vec![
-                "loop-flow acquisition: the protection client refuses Quantity::LoopFlow and the S3 ic section has no loop-flow family, so C2.N4 cannot be judged",
-            ],
-            Self::C3 => vec![
-                "loop-flow acquisition: the protection client refuses Quantity::LoopFlow and the S3 ic section has no loop-flow family, so C3.O1, C3.O2, C3.N1 and C3.N2 cannot be judged",
-            ],
+            // Loop-flow acquisition is now the ic section's (KERN 53ae7c05);
+            // a section without it leaves its lines not executable, judged
+            // per line from the protection's own function list.
+            Self::C2 | Self::C3 => Vec::new(),
         }
     }
 }
