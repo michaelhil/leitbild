@@ -211,6 +211,15 @@ pub trait Client<S> {
     /// Frame `k` at its instant `t`, after `advance` reached `t`: sample the
     /// plant's left limit, run the logic, return changes due at or after `t`.
     fn frame(&mut self, k: u64, t: f64, dense: &dyn Dense) -> Result<Vec<Change<S>>, String>;
+    /// HOOK (ICFIELD; KERN to reconcile): equipment reports. Frame `k` at
+    /// its instant `t`, before `frame`: the system's discrete state there
+    /// is its left limit (discrete changes apply after the frames of their
+    /// instant). Not called for a frame at a segment start the driver
+    /// processes before any step ([`Driver::start`]): a client reads the
+    /// system's state there when it is constructed.
+    fn sample(&mut self, _k: u64, _t: f64, _system: &S) -> Result<(), String> {
+        Ok(())
+    }
     /// Whether the integrator must stop exactly at frame `k` (a class-S
     /// output may change there). Protection, whose outputs are R, says no.
     fn stop_at_frame(&self, _k: u64) -> bool {
@@ -221,6 +230,58 @@ pub trait Client<S> {
     /// turbine controls' trip memory). It may decide changes.
     fn command(&mut self, _t: f64, _command: Command) -> Result<Vec<Change<S>>, String> {
         Ok(Vec::new())
+    }
+}
+
+/// HOOK (S3GATES, gate observation; KERN to reconcile): which side of the
+/// trajectory an [`Observer`] sample is on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Side {
+    /// A point of an accepted step on the observer's own grid, read from
+    /// that step's dense output before any change due at or after it.
+    Step,
+    /// The state at a restart instant before its changes (the left limit,
+    /// in the discrete state of the step that reached it).
+    BeforeRestart,
+    /// The exact consistent start after a restart.
+    AfterRestart,
+}
+
+/// HOOK (S3GATES, gate observation; KERN to reconcile): a class-O observer
+/// that needs the system itself (a conservation account, credited outputs
+/// read from an evaluation), where a [`Client`] sees only dense output.
+/// It is sampled on its own time grid from each accepted step's dense
+/// output (stock IDAGetDky, and IDAGetQuadDky for the carried quadratures),
+/// in the discrete state of that step, and on both sides of every restart.
+/// It never decides a change, so it adds no stop and no step; its CPU is
+/// [`Cpu::gate_s`].
+pub trait Observer<S> {
+    /// Its next sample time strictly after `t`, if any.
+    fn next_after(&self, t: f64) -> Option<f64>;
+    /// One sample at `t`: `y`, `y'` and the driver's carried quadratures
+    /// there (empty when it carries none).
+    fn sample(
+        &mut self,
+        system: &mut S,
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+        q: &[f64],
+        side: Side,
+    ) -> Result<(), String>;
+    /// Every accepted stock step's end at `t` (not a located root, whose
+    /// step the restart discards, nor a step a late change rolls back),
+    /// before any change due there: `y`, `y'` and the carried quadratures
+    /// (empty when none). For checks that hold on accepted states.
+    fn accepted(
+        &mut self,
+        _system: &mut S,
+        _t: f64,
+        _y: &[f64],
+        _yp: &[f64],
+        _q: &[f64],
+    ) -> Result<(), String> {
+        Ok(())
     }
 }
 
@@ -382,6 +443,13 @@ pub struct Cpu {
     pub restart_s: f64,
     /// S3-D4's rule check and the jump diagnostic at S instants.
     pub held_s: f64,
+    /// HOOK (S3GATES, gate observation; KERN to reconcile): the gate
+    /// harness's [`Observer`] CPU, kept out of `observation_s` (the I&C
+    /// clients' class O) ...
+    pub gate_s: f64,
+    /// ... and the largest CPU of one stock step (IDASolve in one-step
+    /// mode) with the time it reached (rule G: the worst step is recorded).
+    pub worst_step: (f64, f64),
 }
 
 /// The driver's state between calls of [`Driver::run`].
@@ -423,6 +491,8 @@ pub struct Driver<S> {
     /// The IDAS quadratures the driver carries: where the open segment
     /// started and the value carried into it.
     quadratures: Option<(f64, Vec<f64>)>,
+    /// HOOK (S3GATES): the time an [`Observer`] was last sampled to.
+    gate_observed_to: f64,
     /// HOOK (C4 lane, for KERN): a declared event window's step cap (0015
     /// E2), set at the restart whose transaction receipts start a window
     /// (the predicate): stock keeps IDASetMaxStep across IDAReInit and takes
@@ -488,6 +558,7 @@ impl<S: JoinedSystem> Driver<S> {
             attempt_s: None,
             solver_reached_s: t0,
             quadratures: None,
+            gate_observed_to: t0,
             restart_max_step: None,
         })
     }
@@ -531,7 +602,7 @@ impl<S: JoinedSystem> Driver<S> {
         let due = self.earliest_due().is_some_and(|d| Self::due_at(d, t))
             || self.commands.first().is_some_and(|c| Self::due_at(c.0, t));
         if due {
-            self.apply(ida, t, None, y, yp, clients, setup, None)?;
+            self.apply(ida, t, None, y, yp, clients, setup, None, None)?;
         }
         Ok(())
     }
@@ -556,6 +627,7 @@ impl<S: JoinedSystem> Driver<S> {
         &mut self,
         clients: &mut [&mut dyn Client<S>],
         dense: &dyn Dense,
+        system: &S,
         to: f64,
     ) -> Result<f64, String> {
         let started = (self.clock)();
@@ -573,6 +645,10 @@ impl<S: JoinedSystem> Driver<S> {
                     c.advance(dense, self.observed_to, tk)?;
                 }
                 self.observed_to = tk;
+            }
+            // HOOK (ICFIELD): equipment reports at the frame's left limit.
+            for c in clients.iter_mut() {
+                c.sample(k, tk, system)?;
             }
             let mut decided = Vec::new();
             for c in clients.iter_mut() {
@@ -706,12 +782,30 @@ impl<S: JoinedSystem> Driver<S> {
     pub fn run(
         &mut self,
         ida: &mut Ida<S>,
+        t: f64,
+        until: f64,
+        y: &mut [f64],
+        yp: &mut [f64],
+        clients: &mut [&mut dyn Client<S>],
+        setup: &Setup<'_>,
+    ) -> Result<Reached, String> {
+        self.run_observed(ida, t, until, y, yp, clients, setup, None)
+    }
+
+    /// HOOK (S3GATES, gate observation; KERN to reconcile): [`Driver::run`]
+    /// with a gate [`Observer`] sampled on every accepted step and on both
+    /// sides of every restart. It changes no stop, step or change.
+    #[allow(clippy::too_many_arguments)] // One driven span: handle, state, clients, setup, observer.
+    pub fn run_observed<'o>(
+        &mut self,
+        ida: &mut Ida<S>,
         mut t: f64,
         until: f64,
         y: &mut [f64],
         yp: &mut [f64],
         clients: &mut [&mut dyn Client<S>],
         setup: &Setup<'_>,
+        mut observer: Option<&mut (dyn Observer<S> + 'o)>,
     ) -> Result<Reached, String> {
         setup.check_derived()?;
         // The integrator stands where the driver left it; a start stock
@@ -734,7 +828,17 @@ impl<S: JoinedSystem> Driver<S> {
             let due_now = self.earliest_due().is_some_and(|d| Self::due_at(d, t))
                 || self.commands.first().is_some_and(|c| Self::due_at(c.0, t));
             if due_now {
-                self.apply(ida, t, None, y, yp, clients, setup, None)?;
+                self.apply(
+                    ida,
+                    t,
+                    None,
+                    y,
+                    yp,
+                    clients,
+                    setup,
+                    None,
+                    observer.as_deref_mut(),
+                )?;
                 continue;
             }
             // ELEC hook: the operator's and any appended owners' time events.
@@ -767,12 +871,16 @@ impl<S: JoinedSystem> Driver<S> {
             ida.stop_at(stop)?;
             let started = (self.clock)();
             let outcome = ida.step(stop, y, yp);
-            self.cpu.solver_s += (self.clock)() - started;
+            let step_s = (self.clock)() - started;
+            self.cpu.solver_s += step_s;
             let (reached, roots) = match outcome? {
                 Advance::Reached(time) => (time, None),
                 Advance::Root { time, directions } => (time, Some(directions)),
             };
             self.solver_reached_s = reached;
+            if step_s > self.cpu.worst_step.0 {
+                self.cpu.worst_step = (step_s, reached);
+            }
             if roots.is_none() {
                 // An accepted step's state: C3's donor flips and R3 band.
                 let started = (self.clock)();
@@ -801,8 +909,20 @@ impl<S: JoinedSystem> Driver<S> {
                     from: self.observed_to,
                     to: reached,
                 };
-                self.observe(clients, &dense, reached)?
+                self.observe(clients, &dense, ida.system(), reached)?
             };
+            if let Some(o) = observer.as_deref_mut() {
+                self.gate_samples(ida, o, observed)?;
+                if roots.is_none() && observed == reached {
+                    let started = (self.clock)();
+                    let q = match &self.quadratures {
+                        Some(_) => self.quadratures_at(ida, reached)?,
+                        None => Vec::new(),
+                    };
+                    o.accepted(ida.system_mut(), reached, y, yp, &q)?;
+                    self.cpu.gate_s += (self.clock)() - started;
+                }
+            }
             if observed < reached {
                 // A change decided inside this step is due before its end:
                 // restart there from the same step's dense output.
@@ -810,7 +930,17 @@ impl<S: JoinedSystem> Driver<S> {
                 y.copy_from_slice(&scratch);
                 ida.dense(observed, 1, &mut scratch)?;
                 yp.copy_from_slice(&scratch);
-                self.apply(ida, observed, None, y, yp, clients, setup, Some(reached))?;
+                self.apply(
+                    ida,
+                    observed,
+                    None,
+                    y,
+                    yp,
+                    clients,
+                    setup,
+                    Some(reached),
+                    observer.as_deref_mut(),
+                )?;
                 t = observed;
                 continue;
             }
@@ -819,18 +949,79 @@ impl<S: JoinedSystem> Driver<S> {
             let due = self.earliest_due().is_some_and(|d| Self::due_at(d, t))
                 || self.commands.first().is_some_and(|c| Self::due_at(c.0, t));
             if roots.is_some() || event || due {
-                self.apply(ida, t, roots, y, yp, clients, setup, None)?;
+                self.apply(
+                    ida,
+                    t,
+                    roots,
+                    y,
+                    yp,
+                    clients,
+                    setup,
+                    None,
+                    observer.as_deref_mut(),
+                )?;
             }
         }
         Ok(Reached::Until(t))
+    }
+
+    /// HOOK (S3GATES): sample the gate observer on its grid up to `to`
+    /// within the last accepted step (its dense output), before any change.
+    fn gate_samples(
+        &mut self,
+        ida: &mut Ida<S>,
+        observer: &mut (dyn Observer<S> + '_),
+        to: f64,
+    ) -> Result<(), String> {
+        let started = (self.clock)();
+        let n = ida.system().dimension();
+        let (mut y, mut yp) = (vec![0.; n], vec![0.; n]);
+        while let Some(ts) = observer.next_after(self.gate_observed_to) {
+            if !(ts <= to || same_instant(ts, to)) {
+                break;
+            }
+            // A grid point an ulp beyond the step's end is read at the
+            // end; the observer's grid moves past the point itself.
+            let at = ts.min(to);
+            ida.dense(at, 0, &mut y)?;
+            ida.dense(at, 1, &mut yp)?;
+            let q = match &self.quadratures {
+                Some(_) => self.quadratures_at(ida, at)?,
+                None => Vec::new(),
+            };
+            observer.sample(ida.system_mut(), at, &y, &yp, &q, Side::Step)?;
+            self.gate_observed_to = ts;
+        }
+        self.cpu.gate_s += (self.clock)() - started;
+        Ok(())
+    }
+
+    /// HOOK (S3GATES): one restart-side sample of the gate observer at `t`.
+    fn gate_point(
+        &mut self,
+        ida: &mut Ida<S>,
+        observer: &mut (dyn Observer<S> + '_),
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+        side: Side,
+    ) -> Result<(), String> {
+        let started = (self.clock)();
+        let q = match &self.quadratures {
+            Some(_) => self.quadratures_at(ida, t)?,
+            None => Vec::new(),
+        };
+        observer.sample(ida.system_mut(), t, y, yp, &q, side)?;
+        self.cpu.gate_s += (self.clock)() - started;
+        Ok(())
     }
 
     /// Everything due at `t`, as one instant: commands, the clients'
     /// changes, located roots and owner time events. One restart if any
     /// part is R; otherwise one stop with the held changes checked by
     /// S3-D4's rule ([`storage_rate_only`]).
-    #[allow(clippy::too_many_arguments)] // One instant: handle, state, clients, setup.
-    fn apply(
+    #[allow(clippy::too_many_arguments)] // One instant: handle, state, clients, setup, observer.
+    fn apply<'o>(
         &mut self,
         ida: &mut Ida<S>,
         t: f64,
@@ -840,6 +1031,7 @@ impl<S: JoinedSystem> Driver<S> {
         clients: &mut [&mut dyn Client<S>],
         setup: &Setup<'_>,
         rolled_back_from: Option<f64>,
+        mut observer: Option<&mut (dyn Observer<S> + 'o)>,
     ) -> Result<(), String> {
         self.attempt_s = Some(t);
         let mut commands: Vec<Command> = Vec::new();
@@ -862,6 +1054,18 @@ impl<S: JoinedSystem> Driver<S> {
             .is_some_and(|c| Self::due_at(c.due_s, t))
         {
             changes.push(self.pending.remove(0));
+        }
+        // HOOK (ICFIELD; KERN to reconcile): a command a client decided (the
+        // field controller's turbine trip) reaches the clients' own retained
+        // part as a declared command does (the turbine controls' trip memory).
+        for c in &changes {
+            if let Action::Command(command) = &c.action {
+                let mut decided = Vec::new();
+                for client in clients.iter_mut() {
+                    decided.extend(client.command(t, *command)?);
+                }
+                self.insert(decided, t)?;
+            }
         }
         let mut kinds: Vec<String> = commands.iter().map(|c| format!("command {c:?}")).collect();
         kinds.extend(changes.iter().map(|c| c.kind.clone()));
@@ -901,10 +1105,18 @@ impl<S: JoinedSystem> Driver<S> {
             );
             return Ok(());
         }
+        if let Some(o) = observer.as_deref_mut() {
+            // The restart's left side, before any change of the instant.
+            self.gate_point(ida, o, t, y, yp, Side::BeforeRestart)?;
+        }
         for f in held {
             f(ida.system_mut())?;
         }
         let restarted = self.restart(ida, t, roots.as_deref(), &commands, y, yp, setup)?;
+        if let Some(o) = observer {
+            self.gate_point(ida, o, t, y, yp, Side::AfterRestart)?;
+            self.gate_observed_to = self.gate_observed_to.max(t);
+        }
         let mut kinds_r = kinds.clone();
         if kinds_r.is_empty() {
             kinds_r.push("owner time event".into());
@@ -1100,9 +1312,9 @@ fn summary((r, before): &(Restarted, Vec<Transaction>)) -> Value {
     // WRMS and largest weighted change, null when none is exempt); the
     // constraint of the state handed to the restart before its
     // transactions, and every birth's flash in physical units.
-    let exempt = rep.exempt.map(|e| {
-        json!({"coordinates": e.coordinates, "wrms": e.wrms, "max": [e.max.value, e.max.row]})
-    });
+    let exempt = rep.exempt.map(
+        |e| json!({"coordinates": e.coordinates, "wrms": e.wrms, "max": [e.max.value, e.max.row]}),
+    );
     json!({"transactions": r.transactions.iter().chain(before).map(|t| t.receipt.clone()).collect::<Vec<_>>(),
         "transacted": r.transacted, "passes_allowed": r.passes_allowed, "placements": r.placements.len(),
         "constraint_at_entry": [r.constraint_at_entry.value, r.constraint_at_entry.row],

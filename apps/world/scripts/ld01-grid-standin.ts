@@ -103,7 +103,7 @@ export type Plan={name:string,kind:'C5'|'D2',windowIntervalS:number,quietInterva
  plantWindow:{capS:number,durationS:number}|null,
  /** The Grid's window applies to connected units only (ADR draft G4; design note §6.2 A). */
  gridWindowConnectedOnly:boolean,
- observeEveryS:number,fieldSupplyLossTripDelayS:number}
+ observeEveryS:number}
 
 /** The common boundaries: quiet intervals on the whole-second grid from the start, split exactly at the event, the
  * declared window at the window interval, then quiet again. */
@@ -123,8 +123,7 @@ function boundaries(t0:number,p:Plan){
 async function run(binary:string,state:string,p:Plan){
  const plant=spawnC5(binary)
  const load=await plant.load({state,tolerance_factor:p.toleranceFactor,max_step_s:p.maxStepS,
-  event_window:p.plantWindow&&{cap_s:p.plantWindow.capS,duration_s:p.plantWindow.durationS},field_supply_loss_trip_delay_s:p.fieldSupplyLossTripDelayS,
-  declared:'C5 declaration (S3 r3 research draft): the field-supply-loss protection requests GCB OPEN and a turbine trip at t0 + 0.2 s (0.1 s sampling, 0.1 s transport); not in IC-PROT\'s S3 set, so a declared case input'})
+  event_window:p.plantWindow&&{cap_s:p.plantWindow.capS,duration_s:p.plantWindow.durationS}})
  const t0=load.t as number,{te,we,end,out}=boundaries(t0,p)
  const grid=island(50,p.frequencyEvent&&{te,...p.frequencyEvent})
  const receipts:Receipt[]=[]

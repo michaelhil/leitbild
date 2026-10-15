@@ -14,7 +14,9 @@
 //! IC-PROT's frame driver with the acquired protection and the PZR
 //! controller as clients (0.1 s frame, stock IDA_ONE_STEP, classes R/S/O
 //! counted by kind); the driver carries the slice's IDAS quadratures across
-//! every restart (KERN 1e581c97).
+//! every restart (KERN 1e581c97). The generator page's ACT.B field
+//! controller (ICFIELD, `electrical::field` from the packet's
+//! `fieldProtection`) is a third client.
 //!
 //! **Exchange** (`[t0, t1)`, ordered-join phase 1). The request carries the
 //! Grid's committed boundary for the interval and the interval itself; the
@@ -31,10 +33,9 @@
 //!   refusal is an error, never a reclassification).
 //! - **Dead** (first time): S3-D10's offsite loss, class R (stator
 //!   separated through the passive arc limit, both sources dead). The
-//!   field converter on AC.B is then unsupplied; the field-supply-loss
-//!   protection is not in IC-PROT's S3 set, so its turbine trip is the C5
-//!   declaration's timing (LOAD's `field_supply_loss_trip_delay_s`, a
-//!   declared case input), an acquired turbine trip (`TurbineTripAcquired`:
+//!   field converter on AC.B is then unsupplied; the field controller
+//!   acquires the loss at its next frame and requests GCB OPEN plus an
+//!   acquired turbine trip at its decision (ICFIELD; no declared input:
 //!   the reactor-trip request travels the acquired path).
 //! - **Dead again**: no change. **Restoration** is refused (not in S3).
 //!
@@ -51,7 +52,7 @@
 //! Frames as the other hosts; status 1 is an explicit refusal.
 //! | op | request | reply data |
 //! |---|---|---|
-//! | 1 LOAD | JSON `{state, tolerance_factor, max_step_s, event_window, field_supply_loss_trip_delay_s, declared}` | JSON |
+//! | 1 LOAD | JSON `{state, tolerance_factor, max_step_s, event_window}` | JSON |
 //! | 12 EXCHANGE | `f64 t1, u8 window, u8 observe, u8 energized, f64 voltage_pu, f64 frequency_hz, f64 phase_error_rad` | `16 x f64, 10 x i64, u32 n, n x f64 signals, u32 m, m bytes JSON events` |
 //! | 13 REPORT | `f64 zero` (the case's t = 0) | JSON (counts, instants, protection, timeline, rule I) |
 //! | 7 PING, 9 CLOSE, 10 STATUS | as the other hosts | |
@@ -71,11 +72,15 @@ mod timeline;
 
 use leitbild_ld01_host_spike::{KERNEL_SOURCE_SHA256, cpu as time};
 use leitbild_operating_plant::{
-    electrical::slice::{self, CarrierLaw},
-    joined::{block::Command, post_trip_domain::Extension},
+    electrical::{
+        field,
+        slice::{self, CarrierLaw},
+    },
+    joined::post_trip_domain::Extension,
     rotor::Support,
 };
 use leitbild_operating_water::{
+    electrical::FieldClient,
     frame::{Action, COUNTER_NAMES, Change, Class, Client, Diagnostic, Driver, Frame, Setup},
     ic::ProtectionClient,
     ida::Ida,
@@ -178,13 +183,14 @@ struct Host {
     driver: Driver<Unit>,
     protection: ProtectionClient,
     control: PzrClient,
+    /// ICFIELD: the ACT.B field controller.
+    field: FieldClient,
     frame: Frame,
     t0: f64,
     /// The unit's time: the driver stands exactly here between exchanges.
     t: f64,
     v_nominal: f64,
     carrier_law: CarrierLaw,
-    field_trip_delay_s: f64,
     extension: Extension,
     rule_i: RuleI,
     log_seen: usize,
@@ -206,10 +212,11 @@ impl Host {
     fn load(config: &Value) -> Result<(Self, Value), String> {
         let (c0, w0) = (time::thread_s(), Instant::now());
         let state_path = config["state"].as_str().ok_or("LOAD needs {state}")?;
-        let field_trip_delay_s = config["field_supply_loss_trip_delay_s"]
-            .as_f64()
-            .filter(|d| d.is_finite() && *d > 0.)
-            .ok_or("LOAD needs a positive field_supply_loss_trip_delay_s (the C5 declaration)")?;
+        // ICFIELD: the field-supply-loss trip is the field controller's, not
+        // a declared case input.
+        if config.get("field_supply_loss_trip_delay_s").is_some() {
+            return Err("field_supply_loss_trip_delay_s: the field controller implements the trip (ICFIELD); no declared input".into());
+        }
         // A refinement reference scales every tolerance, derived classes
         // included (S3 rule E: BDF2 at rtol/100); runs pass 1.
         let tolerance_factor = config["tolerance_factor"]
@@ -250,6 +257,10 @@ impl Host {
         let carrier_law: CarrierLaw = serde_json::from_value(e["carrier"].clone()).map_err(|x| {
             format!("electrical packet: no owner-D2 carrier selection (ld01-generator-carrier): {x}")
         })?;
+        let field_parameters: field::Parameters =
+            serde_json::from_value(e["fieldProtection"].clone()).map_err(|x| {
+                format!("electrical packet: no field controller timing (ld01-generator-field-protection): {x}")
+            })?;
         let v_nominal = e["boundary"]["lineVoltage_V"]
             .as_f64()
             .ok_or("electrical packet: boundary.lineVoltage_V")?;
@@ -306,10 +317,12 @@ impl Host {
             // Before the first step; stock keeps it across every IDAReInit.
             ida.set_max_step(h)?;
         }
+        let mut field = FieldClient::new(&field_parameters, frame, ida.system())?;
         let mut driver = Driver::new(frame, Diagnostic::None, time::thread_s, t0)?;
         driver.start_quadratures(&mut ida, vec![0.; slice::QUADRATURES.len()])?;
         {
-            let mut clients: Vec<&mut dyn Client<Unit>> = vec![&mut protection, &mut control];
+            let mut clients: Vec<&mut dyn Client<Unit>> =
+                vec![&mut protection, &mut control, &mut field];
             driver.start(&mut clients, t0, &y, &yp)?;
         }
         if tolerance_factor != 1. {
@@ -332,11 +345,12 @@ impl Host {
             "boundary": {"v_line_V": s.inputs.v_line, "frequency_hz": s.inputs.f_grid_hz,
                 "carrier_rad_s": s.inputs.carrier_rad_s, "joined": s.inputs.joined},
             "carrier_law": format!("{carrier_law:?}"),
-            "field_supply_loss_trip": {"delay_s": field_trip_delay_s, "declared": config["declared"]},
+            "field_supply_loss_trip": {"implemented": "the generator page's ACT.B field controller (ICFIELD): GCB OPEN + acquired turbine trip at its decision frame",
+                "parameters": e["fieldProtection"]},
             "export_w": s.export_w(&y[n..]), "composition": composition,
             "ic_section": inputs.ic_path, "implemented_causes": section.functions.iter().map(|f| f.id.clone()).collect::<Vec<_>>(),
             "quadratures": slice::QUADRATURES, "frame_s": frame.period_s(),
-            "integration": "frame driver (IC-PROT): stock IDA_ONE_STEP, IC-PROT + PZR control (S) clients, Diagnostic::None, quadratures carried",
+            "integration": "frame driver (IC-PROT): stock IDA_ONE_STEP, IC-PROT + PZR control (S) + field controller (ICFIELD) clients, Diagnostic::None, quadratures carried",
             "cpu_s": time::thread_s() - c0, "wall_s": w0.elapsed().as_secs_f64(),
             "max_rss_bytes": time::max_rss_bytes(), "pid": std::process::id()});
         let host = Self {
@@ -352,12 +366,12 @@ impl Host {
             driver,
             protection,
             control,
+            field,
             frame,
             t0,
             t: t0,
             v_nominal,
             carrier_law,
-            field_trip_delay_s,
             extension,
             rule_i: RuleI::default(),
             log_seen: 0,
@@ -398,12 +412,7 @@ impl Host {
                 };
                 self.driver.decide(vec![change])?;
                 // The field converter on AC.B loses its supply with the
-                // sources: the field-supply-loss protection's turbine trip at
-                // the C5 declaration's time (declared case input).
-                self.driver.command(
-                    t0 + self.field_trip_delay_s,
-                    Command::TurbineTripAcquired,
-                )?;
+                // sources; the field controller acquires it (ICFIELD).
                 self.offsite_lost_at = Some(t0);
                 if let Some((cap, duration)) = self.event_window {
                     // The restart now, then the window's cap on the segment
@@ -465,6 +474,7 @@ impl Host {
             driver,
             protection,
             control,
+            field,
             ..
         } = self;
         let setup = Setup {
@@ -474,7 +484,8 @@ impl Host {
             restart: *restart,
             derived: &*derived,
         };
-        let mut clients: Vec<&mut dyn Client<Unit>> = vec![&mut *protection, &mut *control];
+        let mut clients: Vec<&mut dyn Client<Unit>> =
+            vec![&mut *protection, &mut *control, &mut *field];
         driver.apply_due(ida, y, yp, &mut clients, &setup)
     }
 
@@ -510,6 +521,7 @@ impl Host {
             driver,
             protection,
             control,
+            field,
             extension,
             rule_i,
             t,
@@ -525,7 +537,7 @@ impl Host {
         for b in bounds {
             {
                 let mut clients: Vec<&mut dyn Client<Unit>> =
-                    vec![&mut *protection, &mut *control];
+                    vec![&mut *protection, &mut *control, &mut *field];
                 driver.run(ida, *t, b, y, yp, &mut clients, &setup)?;
             }
             *t = b;
@@ -743,6 +755,8 @@ impl Host {
                 "requests": tl.requests.iter().map(|(d, r)| json!([d, r])).collect::<Vec<_>>(),
                 "electrical": tl.electrical.as_ref().map(|l| l.iter().map(|(t, w)| json!([t, w])).collect::<Vec<_>>())},
             "divisions": divisions, "protection_log": p.log,
+            "field_controller": {"initiated": self.field.protection.initiated.as_ref().map(|i| json!({"cause": i.cause, "frame": i.frame, "t_s": i.at_s})),
+                "log": self.field.protection.log},
             "pzr_control": {"changes": self.control.schedule.len().saturating_sub(1), "final_request_w": self.control.in_force_w},
             "derived_tolerances": self.derived,
             "segments": self.driver.segments.len(),
