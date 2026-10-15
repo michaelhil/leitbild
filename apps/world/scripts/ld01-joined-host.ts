@@ -16,9 +16,12 @@ import {writeFile} from 'node:fs/promises'
 import {hostError,spawnFramed,type Reply} from './ld01-host-spike'
 
 const Op={load:1,advance:2,command:3,snapshot:5,restore:6,abort:8,close:9,status:10,restart:11} as const
-export const CommandKind={turbineTrip:1,reactorTrip:2,stuckCluster:3} as const
+export const CommandKind={stop:0,turbineTrip:1,reactorTrip:2,stuckCluster:3} as const
 const text=new TextEncoder(),utf8=new TextDecoder()
 const sha=(b:Uint8Array)=>createHash('sha256').update(b).digest('hex')
+/** A snapshot's header (JSON) and body (y, y' bits) digests. */
+const parts=(b:Uint8Array)=>{const n=new DataView(b.buffer,b.byteOffset,b.byteLength).getUint32(8,true)
+ return {header_sha256:sha(b.slice(12,12+n)),body_sha256:sha(b.slice(12+n)),header:JSON.parse(utf8.decode(b.slice(12,12+n))) as unknown}}
 
 export type JoinedAdvance={t:number,internalT:number,steps:number,residuals:number,jacobians:number,
  nonlinearIterations:number,errorFailures:number,convergenceFailures:number,restarts:number,signals:number[],
@@ -85,7 +88,14 @@ async function determinism(binary:string,settled:string){
  log(`A loaded at t0=${t0} s in ${(load.wall_s as number).toFixed(2)} s`)
  // (a) A: turbine trip at t0, exchanges every 0.1 s, a stop at t_c, the
  // snapshot there, the exact consistent restart in place, on to t0 + 60.
+ // Stops are prospective: scheduled before the integrator can pass them.
+ const t60=t0+60
  await A.command(t0,CommandKind.turbineTrip)
+ await A.command(tc,CommandKind.stop)
+ await A.command(t60,CommandKind.stop)
+ // The copies will also stop at t_c + 60; the source schedules the same
+ // stop so the snapshots' schedules (part of the truth) agree at t0 + 60.
+ await A.command(tc+60,CommandKind.stop)
  const before=await drive([A],t0,tc,dt,true,10)
  const snap=await A.snapshot(),Sc=snap.blob
  const restartA=await A.restart()
@@ -97,13 +107,17 @@ async function determinism(binary:string,settled:string){
  const [rb,rc]=await Promise.all([B.restore(Sc),C.restore(Sc)])
  r.restores=[rb.reply,rc.reply].map((x,i)=>({...x,round_trip_s:[rb,rc][i]!.roundTripS}))
  log(`B, C restored: ${JSON.stringify(r.restores)}`)
- // All three exchange identically from t_c to t0 + 60 (a stop there).
- const t60=t0+60
+ // All three exchange identically from t_c to t0 + 60 (a stop there, in
+ // the snapshot's schedule); B and C also stop at t_c + 60.
+ await Promise.all([B,C].map(h=>h.command(tc+60,CommandKind.stop)))
  const run=await drive([A,B,C],tc,t60,dt,true,10)
  const [sa,sb,sc]=await Promise.all([A.snapshot(),B.snapshot(),C.snapshot()] as const)
  const signalsEqual=run.trace[0]!.every((x,i)=>sameBits(x.signals,run.trace[1]![i]!.signals))
+ const [pa,pb]=[parts(sa.blob),parts(sb.blob)]
  r.a_copy_at_restart_boundary={t_copy_s:tc,until_s:t60,
   source_sha256:sha(sa.blob),copy_sha256:sha(sb.blob),snapshots_byte_equal:sha(sa.blob)===sha(sb.blob),
+  body_equal:pa.body_sha256===pb.body_sha256,header_equal:pa.header_sha256===pb.header_sha256,
+  headers:pa.header_sha256===pb.header_sha256?undefined:[pa.header,pb.header],
   observed_signals_bitwise_equal:signalsEqual,observations:run.trace[0]!.length,
   source_counts:run.trace[0]!.at(-1),copy_counts:run.trace[1]!.at(-1)}
  log('(a) '+JSON.stringify(r.a_copy_at_restart_boundary))

@@ -27,7 +27,7 @@
 //! |---|---|---|
 //! | 1 LOAD | UTF-8 JSON `{settled}` (settled-state file) | JSON |
 //! | 2 ADVANCE | `f64 target, u8 stop, u8 observe` | `f64 t, f64 internal_t, 7 x i64 counts, u32 n, n x f64` |
-//! | 3 COMMAND | `f64 t, u8 kind (1 turbine trip, 2 reactor trip, 3 stuck cluster), u32 cluster` | — |
+//! | 3 COMMAND | `f64 t, u8 kind (0 scheduled stop, 1 turbine trip, 2 reactor trip, 3 stuck cluster), u32 cluster` | — |
 //! | 5 SNAPSHOT | — (the unit must stand at an accepted stop) | snapshot bytes |
 //! | 6 RESTORE | snapshot bytes | JSON |
 //! | 7 PING | bytes | the same bytes |
@@ -189,6 +189,15 @@ struct Unit {
     pressures: Vec<usize>,
     /// The interpolated state at `t` when the integrator stands past it.
     view: Option<(f64, Vec<f64>, Vec<f64>)>,
+    /// Restarts called for at the internal time, not yet made.
+    deferred: Option<Deferred>,
+    /// Caller-scheduled forced stops (prospective), ascending.
+    stops: Vec<f64>,
+}
+
+enum Deferred {
+    Roots(Vec<i32>),
+    Boundary { event: bool },
 }
 
 /// The run's identity: packet, declaration and S1 blocks, water build and
@@ -298,6 +307,8 @@ impl Unit {
             identity,
             pressures,
             view: None,
+            deferred: None,
+            stops: Vec::new(),
         };
         unit.configure()?;
         Ok(unit)
@@ -389,6 +400,7 @@ impl Unit {
             joined.next_time_event(self.internal),
             self.pending.first().map(|(at, _)| *at),
             self.window_end,
+            self.stops.first().copied(),
         ]
         .into_iter()
         .flatten()
@@ -396,22 +408,59 @@ impl Unit {
         .reduce(f64::min)
     }
 
+    /// The restarts a step's end calls for, at the internal time: located
+    /// roots, or a forced boundary's time event, due commands and the event
+    /// window's end (H1). They are deferred while the unit's time lies
+    /// behind the integrator, so the step's interpolant still serves it.
+    fn settle(&mut self) -> Result<(), String> {
+        match self.deferred.take() {
+            Some(Deferred::Roots(directions)) => {
+                self.restart_at(Discrete::Roots(&directions))?;
+            }
+            Some(Deferred::Boundary { event }) => {
+                if event {
+                    self.restart_at(Discrete::TimeEvent)?;
+                }
+                self.apply_due()?;
+                if self.window_end == Some(self.internal) {
+                    self.window_end = None;
+                    self.ida.remove_max_step()?;
+                    self.restart_at(Discrete::TimeEvent)?;
+                }
+            }
+            None => self.apply_due()?,
+        }
+        self.stops.retain(|s| *s > self.internal);
+        Ok(())
+    }
+
     /// Advance to `target`: one stock step at a time, forced stops only at
-    /// physics boundaries (and at `target` when `stop`). When a step passes
-    /// `target`, the state there is read from that step's interpolant before
-    /// any restart discards it.
+    /// physics boundaries and scheduled stops (and at `target` when
+    /// `stop`). A target the integrator has already passed is read from the
+    /// last step's interpolant.
     fn advance(&mut self, target: f64, stop: bool) -> Result<(), String> {
         if !(target.is_finite() && target > self.t) {
             return Err(format!("target {target} is not after {}", self.t));
         }
+        if stop && self.internal > target {
+            return Err(format!(
+                "cannot stop at {target} s: the integrator stands at {} s (schedule stops prospectively)",
+                self.internal
+            ));
+        }
         self.view = None;
         loop {
-            self.apply_due()?;
+            if self.internal > target {
+                let (mut y, mut yp) = (self.y.clone(), self.yp.clone());
+                self.ida.dense(target, &mut y, &mut yp)?;
+                self.view = Some((target, y, yp));
+                break;
+            }
+            self.settle()?;
             if self.internal >= target {
                 break;
             }
-            let physics = self.boundary();
-            let forced = match (physics, stop) {
+            let forced = match (self.boundary(), stop) {
                 (Some(b), true) => Some(b.min(target)),
                 (Some(b), false) => Some(b),
                 (None, true) => Some(target),
@@ -422,31 +471,17 @@ impl Unit {
                 self.ida.stop_at(b)?;
             }
             let event = self.ida.system().joined.next_time_event(self.internal);
-            let outcome = self.ida.advance_one_step(tout, &mut self.y, &mut self.yp)?;
-            let time = match &outcome {
-                Advance::Root { time, .. } | Advance::Reached(time) => *time,
-            };
-            self.internal = time;
-            if time > target {
-                let (mut y, mut yp) = (self.y.clone(), self.yp.clone());
-                self.ida.dense(target, &mut y, &mut yp)?;
-                self.view = Some((target, y, yp));
-            }
-            match outcome {
-                Advance::Root { directions, .. } => {
-                    self.restart_at(Discrete::Roots(&directions))?;
+            match self.ida.advance_one_step(tout, &mut self.y, &mut self.yp)? {
+                Advance::Root { time, directions } => {
+                    self.internal = time;
+                    self.deferred = Some(Deferred::Roots(directions));
                 }
-                Advance::Reached(_) => {
+                Advance::Reached(time) => {
+                    self.internal = time;
                     if forced == Some(time) {
-                        if event == Some(time) {
-                            self.restart_at(Discrete::TimeEvent)?;
-                        }
-                        self.apply_due()?;
-                        if self.window_end == Some(time) {
-                            self.window_end = None;
-                            self.ida.remove_max_step()?;
-                            self.restart_at(Discrete::TimeEvent)?;
-                        }
+                        self.deferred = Some(Deferred::Boundary {
+                            event: event == Some(time),
+                        });
                     }
                 }
             }
@@ -499,7 +534,7 @@ impl Unit {
     }
 
     fn snapshot(&self) -> Result<Vec<u8>, String> {
-        if self.internal != self.t {
+        if self.internal != self.t || self.deferred.is_some() {
             return Err(format!(
                 "a snapshot needs an accepted stop: the unit is at {} s, the integrator at {} s",
                 self.t, self.internal
@@ -513,6 +548,7 @@ impl Unit {
             "policy": {
                 "window_end": self.window_end.map(bits),
                 "pending": self.pending.iter().map(|(at, c)| json!({"t": bits(*at), "command": command_code(*c)})).collect::<Vec<_>>(),
+                "stops": self.stops.iter().map(|s| bits(*s)).collect::<Vec<_>>(),
             },
             "atol_sha256": sha256::hex(&self.atol.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<_>>()),
         }))
@@ -585,6 +621,12 @@ impl Unit {
             .ok_or("snapshot pending")?
             .iter()
             .map(|p| Ok((from_bits(&p["t"])?, command_from(&p["command"])?)))
+            .collect::<Result<_, String>>()?;
+        unit.stops = policy["stops"]
+            .as_array()
+            .ok_or("snapshot stops")?
+            .iter()
+            .map(from_bits)
             .collect::<Result<_, String>>()?;
         unit.configure()?;
         let restart = unit.restart_at(Discrete::TimeEvent)?;
@@ -673,6 +715,20 @@ impl Host {
                 let t = r.f64()?;
                 let kind = r.u8()?;
                 let cluster = r.u32()? as usize;
+                if kind == 0 {
+                    let unit = self.unit()?;
+                    if !(t.is_finite() && t > unit.internal) {
+                        return Err(format!(
+                            "a stop at {t} s is behind the integrator ({} s): stops are prospective",
+                            unit.internal
+                        ));
+                    }
+                    if !unit.stops.contains(&t) {
+                        unit.stops.push(t);
+                        unit.stops.sort_by(f64::total_cmp);
+                    }
+                    return Ok(false);
+                }
                 let command = match kind {
                     1 => Command::TurbineTrip,
                     2 => Command::ManualReactorTrip,
@@ -709,7 +765,7 @@ impl Host {
             }
             11 => {
                 let unit = self.unit()?;
-                if unit.internal != unit.t {
+                if unit.internal != unit.t || unit.deferred.is_some() {
                     return Err("a restart needs an accepted stop".into());
                 }
                 let reply = unit.restart_at(Discrete::TimeEvent)?;
