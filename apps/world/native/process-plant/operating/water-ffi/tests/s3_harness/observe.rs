@@ -188,6 +188,9 @@ pub struct Gates {
     pub samples: u64,
     /// Every rotor's angular momentum at each output (C3's directions).
     pub rotors: Vec<(f64, Vec<f64>)>,
+    /// The carried quadratures at the last closure: every named receipt
+    /// (the joined ledgers, then the slice's), for the receipt.
+    pub last_receipts: Option<(f64, Vec<f64>)>,
 }
 
 /// The run's observer: rule I always, the gate parts when asked.
@@ -290,6 +293,7 @@ impl Gates {
             return;
         }
         self.pending.retain(|o| *o > t + fuzz);
+        self.last_receipts = Some((t, q.to_vec()));
         let ledgers = self.plan.ledger_names().len();
         if q.len() < ledgers {
             self.conservation_error

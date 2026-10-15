@@ -801,6 +801,7 @@ fn drive(
             fingerprint: observe::Fingerprint::default(),
             samples: 0,
             rotors: Vec::new(),
+            last_receipts: None,
         }
     });
     let mut observer = observe::CaseObserver {
@@ -1134,6 +1135,28 @@ fn conservation_family(g: &observe::Gates, units_bound: f64) -> Value {
         o.remove("over_time");
     }
     let slice_pass = g.slice.worst_units >= 0. && g.slice.worst_units <= units_bound;
+    // Every named receipt at the last closure: heater Joule, PZR relief and
+    // exterior loss, SG feed/steam/relief, motor work, event energy, and the
+    // slice's aero work, export (the Grid's signed receipt), losses and the
+    // auxiliary draws.
+    let names: Vec<String> = g
+        .plan
+        .ledger_names()
+        .into_iter()
+        .chain(
+            leitbild_operating_plant::electrical::slice::QUADRATURES
+                .iter()
+                .map(|k| format!("slice.{k}_integral_J")),
+        )
+        .collect();
+    let receipts = g.last_receipts.as_ref().map(|(t, q)| {
+        let named: serde_json::Map<String, Value> = names
+            .iter()
+            .zip(q)
+            .map(|(k, v)| (k.clone(), json!(v)))
+            .collect();
+        json!({"t_s": t, "values": named})
+    });
     let pass =
         c.identities_pass() && c.ledger_pass() && slice_pass && g.conservation_error.is_none();
     json!({"family": "D conservation", "verdict": if g.conservation_error.is_some() { "fail" } else if pass { "pass" } else { "fail" },
@@ -1141,7 +1164,8 @@ fn conservation_family(g: &observe::Gates, units_bound: f64) -> Value {
         "identities": identities, "ledger": ledger, "error": g.conservation_error,
         "slice": {"rule": "stored energy (rotor kinetic + magnetic + breaker body) change = aero work - oil heat - export + field input - stator and field copper - body to room + mechanism deposits, in first-order local tolerance units of the stored energy",
             "closures": g.slice.closures, "worst": g.slice.worst, "worst_units": g.slice.worst_units, "bound_units": units_bound, "pass": slice_pass},
-        "pzr_spray": "internal to the primary: closed by the primary mass, boron and unit energy identities"})
+        "pzr_spray": "internal to the primary: closed by the primary mass, boron and unit energy identities",
+        "receipts_at_last_closure": receipts})
 }
 
 #[test]
