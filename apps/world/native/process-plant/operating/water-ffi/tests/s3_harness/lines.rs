@@ -220,21 +220,50 @@ fn judge_one(
         (Case::C2, "O2") => {
             kind(line, "must")?;
             let (from, to) = window(line, "window_s")?;
+            let in_window = |t: f64| t >= from - 1e-9 && t <= to + 1e-9;
             let ramp = tl.stop_ramp_end;
-            let on_time = ramp.is_some_and(|t| t >= from - 1e-9 && t <= to + 1e-9);
+            let Some(open) = tl.electrical_events("GCB Open") else {
+                return Ok((
+                    if ramp.is_some_and(in_window) {
+                        "not executable"
+                    } else {
+                        "fail"
+                    }
+                    .into(),
+                    json!({"stop_ramp_end_s": ramp, "window_s": [from, to], "generator_breaker": elec}),
+                ));
+            };
+            let opened = open.first().map(|(t, _)| *t);
             Ok((
-                if on_time {
-                    "not executable".into()
-                } else {
-                    "fail".into()
-                },
-                json!({"stop_ramp_end_s": ramp, "window_s": [from, to],
-                    "generator_breaker": elec}),
+                verdict(ramp.is_some_and(in_window) && opened.is_some_and(in_window)),
+                json!({"stop_ramp_end_s": ramp, "gcb_open_s": opened, "window_s": [from, to]}),
             ))
         }
-        (Case::C2, "O3") | (Case::C2, "N5") => {
-            kind(line, if id == "O3" { "must" } else { "mustNot" })?;
-            Ok(("not executable".into(), json!({"reason": elec})))
+        (Case::C2, "O3") => {
+            kind(line, "must")?;
+            let (from, to) = window(line, "window_s")?;
+            let Some(done) = tl.electrical_events("transfer to Reserve complete") else {
+                return Ok(("not executable".into(), json!({"reason": elec})));
+            };
+            let all = !done.is_empty()
+                && done
+                    .iter()
+                    .all(|(t, _)| *t >= from - 1e-9 && *t <= to + 1e-9);
+            Ok((
+                verdict(all),
+                json!({"transfers_complete": done.iter().map(|(t, w)| json!([t, w])).collect::<Vec<_>>(),
+                    "window_s": [from, to]}),
+            ))
+        }
+        (Case::C2, "N5") => {
+            kind(line, "mustNot")?;
+            let Some(dropouts) = tl.electrical_events("contactor undervoltage dropout") else {
+                return Ok(("not executable".into(), json!({"reason": elec})));
+            };
+            Ok((
+                verdict(dropouts.is_empty()),
+                json!({"dropouts": dropouts.iter().map(|(t, w)| json!([t, w])).collect::<Vec<_>>()}),
+            ))
         }
         (Case::C2, "O4") => {
             kind(line, "must")?;
@@ -323,10 +352,41 @@ fn judge_one(
             let ids = ["LD01.PROT.RCS.A.LOW_FLOW", "LD01.PROT.RCS.B.LOW_FLOW"];
             Ok(no_causes(tl, &ids, implemented))
         }
-        (Case::C3, _) => Ok((
-            "not executable".into(),
-            json!({"reason": "C3 is gated: R3's pump-off law, an RCP supply-loss command and loop-flow acquisition are not in the model"}),
-        )),
+        (Case::C3, "O1") | (Case::C3, "O2") => {
+            kind(line, if id == "O1" { "iff" } else { "must" })?;
+            let low = "LD01.PROT.RCS.A.LOW_FLOW";
+            if !implemented.iter().any(|f| f == low) {
+                return Ok((
+                    "not executable".into(),
+                    json!({"reason": format!("{low} is not acquired by the composed protection (no loop-flow acquisition)")}),
+                ));
+            }
+            Err(format!(
+                "C3.{id} with loop-flow acquisition needs its judge"
+            ))
+        }
+        (Case::C3, "N1") => {
+            kind(line, "mustNot")?;
+            names(line, "LD01.PROT.RCS.B.LOW_FLOW")?;
+            Ok(no_causes(tl, &["LD01.PROT.RCS.B.LOW_FLOW"], implemented))
+        }
+        (Case::C3, "N2") => {
+            kind(line, "mustNot")?;
+            let cmt = tl.requests.iter().any(|(_, r)| r["request"] == "CMT");
+            let relief = !tl.pzr_relief_openings.is_empty();
+            let evidence = json!({"cmt_requested": cmt, "pzr_relief_openings": tl.pzr_relief_openings,
+                "causes": tl.causes.iter().map(|c| json!([c.division, c.function, c.t])).collect::<Vec<_>>()});
+            if cmt || relief {
+                return Ok(("fail".into(), evidence));
+            }
+            // "No cause before C3.O1" needs O1's time: the acquired low-flow
+            // cause.
+            if implemented.iter().any(|f| f == "LD01.PROT.RCS.A.LOW_FLOW") {
+                Err("C3.N2 with loop-flow acquisition needs its judge".into())
+            } else {
+                Ok(("not executable".into(), evidence))
+            }
+        }
         _ => Err(format!("the harness has no judge for {}.{id}", case.key())),
     }
 }
