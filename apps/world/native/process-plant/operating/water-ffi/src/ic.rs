@@ -303,6 +303,20 @@ impl ProtectionClient {
             states: Vec::new(),
         })
     }
+    /// HOOK (GATE, S3 case harness; KERN to reconcile): the dense-output
+    /// buffer for a system that appends owners after the joined operator
+    /// (ELEC's slice), whose dense output has the system's full dimension;
+    /// the observed indices stay the operator's.
+    pub fn with_system_dimension(mut self, dimension: usize) -> Result<Self, String> {
+        if dimension < self.scratch.len() {
+            return Err(format!(
+                "a system of {dimension} coordinates cannot hold the operator's {}",
+                self.scratch.len()
+            ));
+        }
+        self.scratch = vec![0.; dimension];
+        Ok(self)
+    }
     /// The observed quantities, how they are read and their references.
     pub fn observed(&self) -> Value {
         json!({"quantities": self.observed.iter().map(|(q, o)| json!({"quantity": format!("{q:?}"),

@@ -371,6 +371,13 @@ pub struct Driver<S> {
     /// current inside R3's blend band, of `observed_states`.
     pub r3_band_states: u64,
     pub observed_states: u64,
+    /// HOOK (GATE, receipts; KERN to reconcile): the instant of the last
+    /// discrete change attempted (on a refusal, the refusal's time) ...
+    pub attempt_s: Option<f64>,
+    /// ... and the time the stock solver last reached (an accepted step, a
+    /// located root or a stop), so a failed run's receipt states both
+    /// rather than only its last logged instant.
+    pub solver_reached_s: f64,
 }
 
 /// Names of [`Driver::totals`].
@@ -427,6 +434,8 @@ impl<S: JoinedSystem> Driver<S> {
             donor_flips: DonorFlips::default(),
             r3_band_states: 0,
             observed_states: 0,
+            attempt_s: None,
+            solver_reached_s: t0,
         })
     }
     pub fn frame(&self) -> Frame {
@@ -597,6 +606,7 @@ impl<S: JoinedSystem> Driver<S> {
                 Advance::Reached(time) => (time, None),
                 Advance::Root { time, directions } => (time, Some(directions)),
             };
+            self.solver_reached_s = reached;
             if roots.is_none() {
                 // An accepted step's state: C3's donor flips and R3 band.
                 let started = (self.clock)();
@@ -665,6 +675,7 @@ impl<S: JoinedSystem> Driver<S> {
         setup: &Setup<'_>,
         rolled_back_from: Option<f64>,
     ) -> Result<(), String> {
+        self.attempt_s = Some(t);
         let mut commands: Vec<Command> = Vec::new();
         while self.commands.first().is_some_and(|c| c.0 <= t) {
             commands.push(self.commands.remove(0).1);

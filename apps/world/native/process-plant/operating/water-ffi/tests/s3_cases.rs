@@ -32,10 +32,13 @@ mod provenance;
 #[path = "common/pzr_control.rs"]
 mod pzr_control;
 mod s3_harness;
+#[path = "common/s3_unit.rs"]
+mod s3_unit;
 #[path = "joined_spine.rs"]
 mod spine;
 
 use gates::Block;
+use leitbild_operating_plant::joined::block::Command;
 use s3_harness::{
     declaration::{self, Case},
     lines,
@@ -43,21 +46,22 @@ use s3_harness::{
 };
 use serde_json::{Value, json};
 
-const C1C3_R3_2: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c1c3-r3.2.json");
+/// The published block (wiki 272d83f), pinned by RP1-pin-s3-c1c3-r3.4.
+const C1C3_R3_4: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c1c3-r3.4.json");
 
 fn block() -> Block {
-    Block::from_json(declaration::FENCE, C1C3_R3_2).unwrap()
+    Block::from_json(declaration::FENCE, C1C3_R3_4).unwrap()
 }
 
 #[test]
 fn the_published_block_pins_and_its_open_values_refuse_their_cases() {
     let b = block();
-    // RP1-pin-s3-c1c3-r3.2's declared sha256.
+    // RP1-pin-s3-c1c3-r3.4's declared sha256.
     assert_eq!(
         guards::declared_sha256(&b).unwrap(),
-        "8b1f795e9bfefc5d344ab8b3dd95b169d3459c78ad0132197950fcd741af093e"
+        "c1f629b00411a6e288e8d041c29c84d7c315f2274a392ed7fab57c2278815729"
     );
-    let log = "| RP1-pin-s3-c1c3-r3.2 | 15 Oct | `ld01-s3-cases-c1c3` frozen; sha256 8b1f795e9bfefc5d344ab8b3dd95b169d3459c78ad0132197950fcd741af093e |\n";
+    let log = "| RP1-pin-s3-c1c3-r3.4 | 15 Oct | `ld01-s3-cases-c1c3` frozen; sha256 c1f629b00411a6e288e8d041c29c84d7c315f2274a392ed7fab57c2278815729 |\n";
     let pin = guards::pin_of(&b, Some(log), "log").unwrap();
     assert_eq!(pin["pinned"], json!(true), "{pin}");
     // The S2 gates' pin never reads the S3 row, nor the reverse.
@@ -267,7 +271,72 @@ fn c3_is_wired_but_gated_on_its_missing_prerequisites() {
         Case::C3
             .missing_prerequisites()
             .iter()
-            .any(|m| m.contains("R3"))
+            .any(|m| m.contains("loop-flow acquisition"))
+    );
+}
+
+#[test]
+fn c2s_electrical_lines_are_judged_on_the_slices_log() {
+    let (log, divisions) = c2_logs(52);
+    let b = block();
+    let judge = |elog: &[(f64, String)]| {
+        let tl = Timeline::from_logs(&log, &divisions, Some(500.15), 500., 560.)
+            .unwrap()
+            .with_electrical(elog, 500.);
+        lines::judge(
+            Case::C2,
+            &b.whole("/cases/C2/lines"),
+            &tl,
+            &implemented(),
+            52,
+        )
+        .into_iter()
+        .map(|l| {
+            (
+                l["id"].as_str().unwrap().to_string(),
+                l["verdict"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect::<std::collections::BTreeMap<_, _>>()
+    };
+    let good = vec![
+        (500.3, "GCB Open".to_string()),
+        (500.8, "AC.A transfer to Reserve complete".to_string()),
+        (500.8, "AC.B transfer to Reserve complete".to_string()),
+    ];
+    let v = judge(&good);
+    for id in ["C2.O2", "C2.O3", "C2.N5"] {
+        assert_eq!(v[id], "pass", "{id}");
+    }
+    // A late transfer fails O3; a contactor dropout fails N5; a breaker
+    // opening off its instant fails O2.
+    let mut bad = good.clone();
+    bad[1].0 = 501.;
+    bad.push((
+        501.2,
+        "LD01.P.A1 contactor undervoltage dropout".to_string(),
+    ));
+    bad[0].0 = 500.35;
+    let v = judge(&bad);
+    for id in ["C2.O2", "C2.O3", "C2.N5"] {
+        assert_eq!(v[id], "fail", "{id}");
+    }
+}
+
+#[test]
+fn each_case_takes_its_clock_and_command_from_the_block() {
+    let b = block();
+    let clock = |c: Case| {
+        let (z, cmd) = case_clock(c, &b.whole(&format!("/cases/{}", c.key())), 0.1).unwrap();
+        (z, cmd.map(|x| format!("{x:?}")))
+    };
+    assert_eq!(clock(Case::C1), (0., None));
+    // C2's trip 0.05 s after the frame-aligned start: mid-frame.
+    assert_eq!(clock(Case::C2), (0.05, Some("TurbineTripAcquired".into())));
+    // C3: LD01.P.A1, the slice's first RCP, at 10.37 s (0.07 s off).
+    assert_eq!(
+        clock(Case::C3),
+        (10.37, Some("SupplyLoss { rotor: 0 }".into()))
     );
 }
 
@@ -311,22 +380,73 @@ impl<S> leitbild_operating_water::frame::Client<S> for Recorder {
     }
 }
 
+/// A case's t = 0 after its start (s) and the command there, from the
+/// block's frame alignment (r3.4: every case starts on a frame instant;
+/// event times relative to the start with their offset from the grid). C1:
+/// the start, no command. C2: `LD01.TG` TRIP `tripOffsetFromFrame_s` after
+/// the start. C3: the RCP the block names loses its supply at
+/// `malfunctionTime_s`, which must lie `malfunctionOffsetFromFrame_s` off
+/// the grid.
+fn case_clock(case: Case, spec: &Value, frame_s: f64) -> Result<(f64, Option<Command>), String> {
+    use s3_unit::ROTOR_CONSUMERS;
+    let number = |k: &str| spec[k].as_f64().ok_or(format!("{} has no {k}", case.key()));
+    match case {
+        Case::C1 => {
+            if spec["startOnFrame"] != json!(true) {
+                return Err("C1 does not declare startOnFrame".into());
+            }
+            Ok((0., None))
+        }
+        Case::C2 => {
+            if spec["lineTimesFrom"] != json!("the trip") {
+                return Err(format!(
+                    "C2's line times are from {}, not the trip",
+                    spec["lineTimesFrom"]
+                ));
+            }
+            let at = number("tripOffsetFromFrame_s")?;
+            if !(at > 0. && at < frame_s) {
+                return Err(format!("C2's trip offset {at} s is not inside a frame"));
+            }
+            Ok((at, Some(Command::TurbineTripAcquired)))
+        }
+        Case::C3 => {
+            let at = number("malfunctionTime_s")?;
+            let off = number("malfunctionOffsetFromFrame_s")?;
+            if ((at / frame_s - (at / frame_s).floor()) * frame_s - off).abs() > 1e-9 {
+                return Err(format!(
+                    "C3's malfunction at {at} s is not {off} s off the {frame_s} s grid"
+                ));
+            }
+            let text = spec["malfunction"]
+                .as_str()
+                .ok_or("C3 has no malfunction")?;
+            let named: Vec<usize> = (0..ROTOR_CONSUMERS.len())
+                .filter(|r| text.contains(ROTOR_CONSUMERS[*r]))
+                .collect();
+            match named.as_slice() {
+                [rotor] if text.starts_with("supply loss") => {
+                    Ok((at, Some(Command::SupplyLoss { rotor: *rotor })))
+                }
+                _ => Err(format!(
+                    "C3's malfunction {text:?} names no single RCP supply loss"
+                )),
+            }
+        }
+    }
+}
+
 #[test]
-#[ignore = "S3 case run: requires the joined packet, a settled state, the ic section, the S3 declaration, the wiki, IF97 and stock IDA/KLU"]
+#[ignore = "S3 case run: requires the S3 packets, KERN's settled S3 state, the sections, the S3 declaration, the wiki, IF97 and stock IDA/KLU"]
 #[allow(clippy::too_many_lines)] // One case: refusals, composition, run, judgement, receipt.
 fn s3_case_run() {
-    use leitbild_operating_plant::{ic::packet::Section, joined::block::Command};
     use leitbild_operating_water::{
-        If97,
-        frame::{COUNTER_NAMES, Class, Client, Diagnostic, Driver, Frame, Setup},
+        frame::{COUNTER_NAMES, Class, Client, Diagnostic, Driver, Setup},
         ic::ProtectionClient,
-        ida::{Ida, Initial},
-        joined::{Integrated, Restart},
+        joined::JoinedSystem,
     };
-    use spine::{
-        DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, started_s3_composition, z1,
-    };
-    let started = z1::cpu_s();
+    use s3_unit::Unit;
+    let started = spine::z1::cpu_s();
     let case = Case::parse(&std::env::var("LD01_S3_CASE").expect("LD01_S3_CASE")).unwrap();
     let preview = std::env::var("LD01_S3_PREVIEW").as_deref() == Ok("1");
     let receipt_path = std::env::var("LD01_S3_CASE_RECEIPT").expect("LD01_S3_CASE_RECEIPT");
@@ -337,50 +457,12 @@ fn s3_case_run() {
     let d = declaration::Declaration::load().unwrap_or_else(|e| panic!("{e}"));
     // A log the pin rule cannot read (e.g. an RP1 row naming two SHA-256
     // values) leaves the block unpinned: a refusal, recorded with its reason.
-    let pin = d
-        .pin()
-        .unwrap_or_else(|e| json!({"pinned": false, "error": e, "declared_sha256": guards::declared_sha256(&d.block).ok()}));
+    let pin = d.pin().unwrap_or_else(
+        |e| json!({"pinned": false, "error": e, "declared_sha256": guards::declared_sha256(&d.block).ok()}),
+    );
     let tbd = d.tbd().unwrap();
     let mut refusals = declaration::case_refusals(case, &pin, &tbd);
-    assert!(
-        case != Case::C3,
-        "C3 is gated on its prerequisites: {:?}",
-        case.missing_prerequisites()
-    );
-    let section_path = std::env::var("LD01_IC_SECTION").expect("LD01_IC_SECTION");
-    let section: Section = serde_json::from_slice(&std::fs::read(&section_path).expect("section"))
-        .expect("ic section");
-    let state_path = std::env::var("LD01_S3_STATE").expect("LD01_S3_STATE");
-    let state: Value =
-        serde_json::from_slice(&std::fs::read(&state_path).expect("state")).expect("state json");
-    let (packet_path, _) = spine::packet_bytes();
-    assert_eq!(
-        state["packet"].as_str(),
-        Some(packet_path.as_str()),
-        "state of another packet"
-    );
     let spec = d.case(case);
-    // C2's trip is declared at t = 0, not on a frame instant: the start
-    // state's time must not be one (the acquisition then takes 0.20 s, not
-    // the non-frame 0.15 s the line's probe set).
-    let frame_s = section.frame_s;
-    let t_start = state["t_s"].as_f64().expect("t_s");
-    if case == Case::C2 && (t_start / frame_s - (t_start / frame_s).round()).abs() < 1e-9 {
-        refusals.push(format!(
-            "C2's trip at t = 0 is declared non-frame, but the start state's time {t_start} s is a frame instant"
-        ));
-    }
-    // C1's control channel commissions its first sample at the start and
-    // delivers it one frame later: the start must be a frame instant.
-    if case == Case::C1 && (t_start / frame_s - (t_start / frame_s).round()).abs() >= 1e-9 {
-        refusals.push(format!(
-            "C1's start state's time {t_start} s is not a frame instant (the PZR control channel commissions there)"
-        ));
-    }
-    assert!(
-        preview || refusals.is_empty(),
-        "the S3 case run refuses (LD01_S3_PREVIEW=1 runs a NOT-EVIDENCE preview): {refusals:#?}"
-    );
     let declared_s = spec["duration_s"].as_f64().expect("duration_s");
     let span = match std::env::var("LD01_S3_PREVIEW_SPAN_S") {
         Ok(v) => {
@@ -389,60 +471,58 @@ fn s3_case_run() {
         }
         Err(_) => declared_s,
     };
-    let (
-        Started {
-            mut joined,
-            ids,
-            network_ids,
-            atol,
-            rtol,
-            structure,
-            analyses,
-            y: reference,
-            ..
-        },
+    // The full S3 composition (S3-D28) at KERN's settled S3 state.
+    let state_path = std::env::var("LD01_S3_STATE").expect("LD01_S3_STATE");
+    let state: Value =
+        serde_json::from_slice(&std::fs::read(&state_path).expect("state")).expect("state json");
+    let inputs = s3_unit::Inputs::from_env();
+    let section = inputs.ic.clone();
+    let s3_unit::S3Unit {
+        mut ida,
+        t0,
+        mut y,
+        mut yp,
+        n,
+        network_ids,
+        atol,
+        rtol,
         derived,
-    ) = started_s3_composition();
-    let vector = |k: &str| -> Vec<f64> {
-        state[k]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_f64().unwrap())
-            .collect()
-    };
-    let (mut y, mut yp) = (vector("y"), vector("yp"));
-    let t0 = state["t_s"].as_f64().unwrap();
-    assert_eq!(y.len(), joined.dimension());
-    let mut protection =
-        ProtectionClient::new(&section, &joined, &y, &reference).expect("protection");
-    // C1: IC-CTRL's normal PZR pressure control in AUTO (S3-D5), heater
-    // changes class S (S3-D4), commissioned at the start state before the
-    // integrator is made; consistency is re-established at t0 below.
-    let mut control = if case == Case::C1 {
-        use leitbild_operating_plant::control::pzr_pressure::{Law, Section as ControlSection};
-        let path = std::env::var("LD01_PZR_CONTROL_SECTION").expect("LD01_PZR_CONTROL_SECTION");
-        let control_section: ControlSection =
-            serde_json::from_slice(&std::fs::read(&path).expect("control section"))
-                .expect("control section json");
-        let law = Law::new(&control_section).unwrap();
-        assert_eq!(
-            law.frame_s(),
-            section.frame_s,
-            "the control frame is the I&C frame"
+        restart,
+        mut control,
+        frame,
+        receipt: composition,
+        reference,
+    } = s3_unit::compose(&inputs, &state).unwrap_or_else(|e| panic!("{e}"));
+    // S3-D28: every case starts from the full composition (the spray line
+    // composed closed) at KERN's settled S3 state.
+    if composition["spray_path"] != json!(true) {
+        refusals.push(
+            "preview, no spray path (DR-P1-SPRAY-REST open): the packet composes no spray line"
+                .into(),
         );
-        let wiki = std::env::var("LD01_PZR_CONTROL_WIKI").expect("LD01_PZR_CONTROL_WIKI");
-        let channel = pzr_control::channel_block(&wiki, &law);
-        let (client, prepared_w, start_w) =
-            pzr_control::commission(&mut joined, &law, channel, Class::S, None, t0, &y, &yp);
-        Some((
-            client,
-            json!({"section": {"path": path, "sha256": provenance::sha256_file(&path).ok()},
-            "wiki": wiki, "class": "S (S3-D4)", "prepared_request_w": prepared_w, "start_request_w": start_w}),
-        ))
-    } else {
-        None
-    };
+    }
+    if composition["from_saved_s3_state"] != json!(true) {
+        refusals.push(format!(
+            "the start is not a settled S3 state: {state_path} is composed into S3 at its own time"
+        ));
+    }
+    assert!(
+        preview || refusals.is_empty(),
+        "the S3 case run refuses (LD01_S3_PREVIEW=1 runs a NOT-EVIDENCE preview): {refusals:#?}"
+    );
+    let declared_frame_s = d.block.number("/frameAlignment/frame_s");
+    d.block.text("/frameAlignment/rule");
+    assert_eq!(
+        declared_frame_s,
+        frame.period_s(),
+        "the block's frame is the I&C frame"
+    );
+    let (zero_after, command) = case_clock(case, &spec, declared_frame_s).unwrap();
+    let zero = t0 + zero_after;
+    let joined = &ida.system().integrated().joined;
+    let mut protection = ProtectionClient::new(&section, joined, &y[..n], &reference)
+        .and_then(|p| p.with_system_dimension(y.len()))
+        .expect("protection");
     let implemented: Vec<String> = section.functions.iter().map(|f| f.id.clone()).collect();
     let scales = joined.scales();
     let labels: Vec<String> = joined
@@ -467,57 +547,16 @@ fn s3_case_run() {
         scratch: vec![0.; y.len()],
         rows: Vec::new(),
     };
-    let restart = Restart {
-        newton_coefficient: NEWTON_COEFFICIENT,
-        delta_cj_lsetup: DELTA_CJ_LSETUP,
-        first_step_s: FIRST_STEP_S,
-        start_bound: 1e-12,
-        start_passes: 2,
-        transaction_passes: 12,
-        bound_placement: 1e-12,
-    };
-    let nonnegative = joined.network.nonnegative_stocks();
-    let mut ida = Ida::new(
-        Integrated::from_blocks(joined, structure, analyses).expect("integrable"),
-        Initial {
-            time: t0,
-            y: &y,
-            yp: &yp,
-            differential: &ids,
-            absolute_tolerance: &atol,
-            relative_tolerance: rtol,
-        },
-    )
-    .expect("stock IDA");
-    // S2's configuration: BDF order 2; the 20 ms window cap from the start
-    // for a trip case (options are refused mid-segment).
-    const MAX_ORDER: usize = 2;
+    // S2's 20 ms event-window cap for an event case, from the start
+    // (options are refused mid-segment).
     const WINDOW_MAX_STEP_S: f64 = 0.02;
-    ida.set_max_order(MAX_ORDER).unwrap();
-    ida.constrain_nonnegative(&nonnegative).unwrap();
-    restart.configure(&mut ida).unwrap();
-    if control.is_some() {
-        // The commissioning demand is in force: re-establish consistency.
-        let initial = leitbild_operating_water::joined::discrete_restart(
-            &mut ida,
-            t0,
-            leitbild_operating_water::joined::Discrete::TimeEvent,
-            &mut y,
-            &network_ids,
-            &atol,
-            rtol,
-            &restart,
-        )
-        .expect("consistent start after commissioning");
-        yp.clone_from(&initial.yp);
+    let max_step = command.is_some().then_some(WINDOW_MAX_STEP_S);
+    if let Some(h) = max_step {
+        ida.set_max_step(h).unwrap();
     }
-    let frame = Frame::new(section.frame_s).unwrap();
-    let mut driver = Driver::new(frame, Diagnostic::Jump, z1::cpu_s, t0).unwrap();
-    if case == Case::C2 {
-        ida.set_max_step(WINDOW_MAX_STEP_S).unwrap();
-        // C2: `LD01.TG` TRIP at the case's t = 0 (the settled time, not a
-        // frame instant), the reactor trip acquired.
-        driver.command(t0, Command::TurbineTripAcquired).unwrap();
+    let mut driver = Driver::new(frame, Diagnostic::Jump, spine::z1::cpu_s, t0).unwrap();
+    if let Some(c) = command {
+        driver.command(zero, c).unwrap();
     }
     let setup = Setup {
         network_ids: &network_ids,
@@ -526,20 +565,17 @@ fn s3_case_run() {
         restart,
         derived: &derived,
     };
-    let preparation_cpu_s = z1::cpu_s() - started;
-    let run_started = z1::cpu_s();
-    let until = t0 + span;
+    let preparation_cpu_s = spine::z1::cpu_s() - started;
+    let run_started = spine::z1::cpu_s();
+    let until = zero + span;
     let outcome = {
-        let mut clients: Vec<&mut dyn Client<Integrated<If97>>> =
-            vec![&mut protection, &mut recorder];
-        if let Some((c, _)) = control.as_mut() {
-            clients.push(c);
-        }
+        let mut clients: Vec<&mut dyn Client<Unit>> =
+            vec![&mut protection, &mut recorder, &mut control];
         driver
             .start(&mut clients, t0, &y, &yp)
             .and_then(|()| driver.run(&mut ida, t0, until, &mut y, &mut yp, &mut clients, &setup))
     };
-    let run_cpu_s = z1::cpu_s() - run_started;
+    let run_cpu_s = spine::z1::cpu_s() - run_started;
     driver.close_segment(&ida, until).unwrap();
     let failure = outcome.as_ref().err().cloned();
     let p = &protection.protection;
@@ -551,17 +587,17 @@ fn s3_case_run() {
             "trip": dv.trip.as_ref().map(|c| json!({"function": c.function, "t_s": c.at_s})),
             "requests": dv.requests}))
         .collect();
-    // A failed run ends at its last recorded instant (the driver's log).
+    // A failed run ends where the solver last reached; its refusal is at
+    // the driver's last attempted instant (both recorded).
     let end = if failure.is_some() {
-        driver
-            .log
-            .last()
-            .and_then(|e| e["t_s"].as_f64())
-            .unwrap_or(t0)
+        driver.solver_reached_s
     } else {
         until
     };
-    let tl = Timeline::from_logs(&driver.log, &divisions, p.holding.lost_at, t0, end).unwrap();
+    let electrical_log = ida.system().log.clone();
+    let tl = Timeline::from_logs(&driver.log, &divisions, p.holding.lost_at, zero, end)
+        .unwrap()
+        .with_electrical(&electrical_log, zero);
     let judged = lines::judge(case, &spec["lines"], &tl, &implemented, clusters);
     let totals: serde_json::Map<String, Value> = COUNTER_NAMES
         .iter()
@@ -585,44 +621,47 @@ fn s3_case_run() {
     } else {
         "lines not all passing".to_string()
     };
+    let simulated = end - t0;
     let receipt = json!({
         "kind": if evidence { "s3-case-run" } else { "s3-case-preview" },
         "case": case.key(), "status": status, "verdict": verdict, "failure": failure,
+        "failure_at": failure.as_ref().map(|_| json!({
+            "refusal_s": driver.attempt_s, "refusal_after_zero_s": driver.attempt_s.map(|a| a - zero),
+            "solver_reached_s": driver.solver_reached_s, "solver_reached_after_zero_s": driver.solver_reached_s - zero,
+            "last_logged_s": driver.log.last().and_then(|e| e["t_s"].as_f64()),
+            "note": "refusal_s is the driver's last attempted discrete instant; a failure inside a step is at or after solver_reached_s"})),
         "refusals_or_deviations": refusals,
         "declaration": {"block": d.block.receipt(), "pin": pin, "tbd": tbd},
         "provenance": spine::provenance(),
-        "packet": {"path": packet_path, "sha256": provenance::sha256_file(&packet_path).ok()},
+        "packet": state["packet"], "packet_sha256": state["packet_sha256"],
         "start_state": {"path": state_path, "sha256": provenance::sha256_file(&state_path).ok(), "t_s": t0},
-        "ic_section": {"path": section_path, "sha256": provenance::sha256_file(&section_path).ok(),
-            "implemented_causes": implemented},
-        "configuration": {"declared_duration_s": declared_s, "span_s": span, "frame_s": frame.period_s(),
-            "max_order": MAX_ORDER, "max_step_s": if case == Case::C2 { json!(WINDOW_MAX_STEP_S) } else { Value::Null },
+        "composition": composition,
+        "ic_section": {"path": inputs.ic_path, "implemented_causes": implemented},
+        "configuration": {"declared_duration_s": declared_s, "span_after_zero_s": span, "zero_after_start_s": zero_after,
+            "command": command.map(|c| format!("{c:?}")), "frame_s": frame.period_s(),
+            "max_order": s3_unit::MAX_ORDER, "max_step_s": max_step,
             "derived_tolerances": derived, "relative_tolerance": rtol,
             "integration": "frame driver: stock IDA_ONE_STEP, observation from IDAGetDky, restarts by discrete_restart"},
         "lines": judged,
-        "pzr_control": control.as_ref().map(|(c, info)| {
-            let mut info = info.clone();
-            info["changes"] = json!(c.schedule.len().saturating_sub(1));
-            info["final_request_w"] = json!(c.in_force_w);
-            info
-        }),
-        "timeline": {"end_s": tl.end, "holding_lost_s": tl.holding_lost, "stop_ramp_end_s": tl.stop_ramp_end,
+        "timeline": {"zero_s": zero, "end_s": tl.end, "holding_lost_s": tl.holding_lost, "stop_ramp_end_s": tl.stop_ramp_end,
             "seats": tl.seats.len(), "last_seat_s": tl.seats.iter().map(|(_, t)| *t).fold(f64::NEG_INFINITY, f64::max),
             "sg_relief": tl.sg_relief.iter().map(|(v, th, d, t)| json!([v, th, d, t])).collect::<Vec<_>>(),
             "pzr_relief_openings": tl.pzr_relief_openings,
-            "causes": tl.causes.iter().map(|c| json!([c.division, c.function, c.t])).collect::<Vec<_>>()},
+            "causes": tl.causes.iter().map(|c| json!([c.division, c.function, c.t])).collect::<Vec<_>>(),
+            "electrical": tl.electrical.as_ref().map(|l| l.iter().map(|(t, w)| json!([t, w])).collect::<Vec<_>>())},
+        "pzr_control": {"changes": control.schedule.len().saturating_sub(1), "final_request_w": control.in_force_w},
         "gates_not_yet_implemented": ["D conservation (S2 identities and ledgers plus heater, spray, relief, turbine, generator and Grid receipts)",
             "E refinement (2.5 ms-capped reference and BDF2 at rtol/100 over the window; rtol/10 for the hold)",
             "F smoothness (derivative-jump detector)", "H repeatability", "K post-event spectra",
             "I kinetics domain: D3 (a) admission at every accepted state and rule I's end (the frame driver does not check it; a preview past the S2 trip's 24.3 s exit is outside the admitted domain)",
-            "C1 drift, SS-1 and SS-2", "C2 directions (B)", "cost against the S3 and S2 budgets (counts and CPU are recorded)"],
+            "C1 drift, SS-1 and SS-2", "C2/C3 directions (B)", "cost against the S3 and S2 budgets (counts and CPU are recorded)"],
         "protection_log": p.log, "divisions": divisions,
         "counts_by_class": driver.counts.json(), "stock_totals": totals, "segments": driver.segments,
         "instants": driver.log,
         "cpu": {"preparation_s": preparation_cpu_s, "run_s": run_cpu_s, "solver_s": driver.cpu.solver_s,
             "observation_s": driver.cpu.observation_s, "restart_s": driver.cpu.restart_s, "held_s": driver.cpu.held_s,
-            "run_per_simulated_s": if end > t0 { json!(run_cpu_s / (end - t0)) } else { Value::Null },
-            "restarts_r": driver.counts.total(Class::R)},
+            "run_per_simulated_s": if simulated > 0. { json!(run_cpu_s / simulated) } else { Value::Null },
+            "restarts_r": driver.counts.total(Class::R), "s_instants": driver.counts.total(Class::S)},
         "frames": recorder.rows,
     });
     std::fs::write(
@@ -631,10 +670,12 @@ fn s3_case_run() {
     )
     .unwrap();
     eprintln!(
-        "{}: {status}; {verdict}; R {}; run CPU {run_cpu_s:.2} s over {:.2} s; failure {failure:?}",
+        "{}: {status}; {verdict}; R {} S {}; run CPU {run_cpu_s:.2} s over {simulated:.2} s; failure {failure:?}; attempted {:?} s, solver {:.4} s after zero",
         case.key(),
         driver.counts.total(Class::R),
-        end - t0
+        driver.counts.total(Class::S),
+        driver.attempt_s.map(|a| a - zero),
+        driver.solver_reached_s - zero
     );
     for l in &judged {
         eprintln!("  {} {}: {}", l["id"], l["kind"], l["verdict"]);

@@ -265,14 +265,17 @@ impl<P: Properties> Network<P> {
     /// through their flash sensitivity at fixed totals, `atol_Mg = budget
     /// |dM_g/dp|`, `atol_Ug = budget |dU_g/dp|` (the derivatives of
     /// [`Self::equilibrium_tolerances`]), at the state the segment starts
-    /// from. A cell whose pressure no credited output reads refuses: its
-    /// budget is undeclared (no default class). `atol` is in solver scaling;
+    /// from. S3-D16b (lead, 15 Oct): a cell whose pressure no credited
+    /// output reads determines none, and takes `rtol·|p|` at its own
+    /// pressure through the same sensitivity (`relative` is the contract's
+    /// rtol), recorded per cell with that rule. `atol` is in solver scaling;
     /// liquid-mode cells keep their entries. Returns one record per
     /// equilibrium cell, with every output it determines.
     pub fn equilibrium_credited_tolerances(
         &self,
         y: &[f64],
         credited: &[super::CreditedOutput],
+        relative: f64,
         atol: &mut [f64],
     ) -> Result<Vec<Value>, Failure> {
         if atol.len() != self.scales.len() {
@@ -289,12 +292,24 @@ impl<P: Properties> Network<P> {
                 .filter(|o| o.columns.contains(&l.base))
                 .collect();
             determined.sort_by(|a, b| a.budget.total_cmp(&b.budget));
-            let Some(tightest) = determined.first() else {
-                return Err(Failure::Fatal(format!(
-                    "S3-D16: equilibrium cell {node}'s vapor class determines no credited output (none reads its pressure); its budget is undeclared"
-                )));
-            };
             let p = y[l.base] * self.scales[l.base];
+            let (budget, output, rule) = match determined.first() {
+                Some(tightest) => (
+                    tightest.budget,
+                    json!(tightest.name),
+                    "S3-D16: tightest credited budget x flash sensitivity",
+                ),
+                None => (
+                    relative * p.abs(),
+                    Value::Null,
+                    "S3-D16b: determines no credited output (none reads its pressure); rtol x |p| x flash sensitivity",
+                ),
+            };
+            if !(budget.is_finite() && budget > 0.) {
+                return Err(Failure::Recoverable(format!(
+                    "cell {node}: nonpositive vapor-class basis {budget} Pa"
+                )));
+            }
             let total = y[l.mass[0]] * self.scales[l.mass[0]];
             let mg = y[l.mass[1]] * self.scales[l.mass[1]];
             let sat = self.saturated_at(rec(p, 1.))?;
@@ -302,10 +317,7 @@ impl<P: Properties> Network<P> {
             let ml = total - mg;
             let dmg_dp = -(ml * uf.direction + mg * ug.direction) / (ug.value - uf.value);
             let dug_dp = ug.value * dmg_dp + mg * ug.direction;
-            let (am, au) = (
-                tightest.budget * dmg_dp.abs(),
-                tightest.budget * dug_dp.abs(),
-            );
+            let (am, au) = (budget * dmg_dp.abs(), budget * dug_dp.abs());
             if !(am.is_finite() && au.is_finite() && am > 0. && au > 0.) {
                 return Err(Failure::Recoverable(format!(
                     "cell {node}: nonpositive derived vapor class ({am}, {au})"
@@ -314,9 +326,9 @@ impl<P: Properties> Network<P> {
             atol[l.mass[1]] = am / self.scales[l.mass[1]];
             atol[l.energy[1]] = au / self.scales[l.energy[1]];
             records.push(json!({"cell":node,"p_pa":p,"mass_kg":total,"vapor_kg":mg,
-                "rule":"S3-D16: tightest credited budget x flash sensitivity",
+                "rule":rule,
                 "determines":determined.iter().map(|o| json!({"output":o.name,"budget":o.budget})).collect::<Vec<_>>(),
-                "budget":tightest.budget,"output":tightest.name,
+                "budget":budget,"output":output,
                 "dmg_dp_kg_per_pa":dmg_dp,"dug_dp_j_per_pa":dug_dp,"atol_mg_kg":am,"atol_ug_j":au}));
         }
         Ok(records)

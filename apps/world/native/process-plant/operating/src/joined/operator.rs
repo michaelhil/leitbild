@@ -2507,7 +2507,9 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
             &scales[1].coordinates,
         )
         .and_then(|x| {
-            solids.rows_local(
+            // HOOK (COST lane): directions only, as every reader of this
+            // call takes them (Solids::rows_local_directions).
+            solids.rows_local_directions(
                 properties,
                 x,
                 temperatures,
@@ -2797,7 +2799,9 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
             if let Some((k, _)) = saved {
                 solids.temperatures_local(x, &[k], temperatures)?;
             }
-            solids.rows_local(
+            // HOOK (COST lane): directions only, as every reader of this
+            // owner column takes them (Solids::rows_local_directions).
+            solids.rows_local_directions(
                 properties,
                 x,
                 temperatures,

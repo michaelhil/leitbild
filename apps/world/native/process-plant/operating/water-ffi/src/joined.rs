@@ -953,8 +953,9 @@ mod integrated {
         // S3-D16 (default on every path): an equilibrium cell's algebraic
         // vapor slots take the tightest credited budget among the declared
         // credited outputs they determine through their flash sensitivity
-        // at this segment's start state; every other coordinate keeps the
-        // caller's class. With every cell liquid this is the caller's
+        // at this segment's start state, or rtol·|p| when they determine
+        // none (S3-D16b; HOOK by GATE, KERN to reconcile); every other
+        // coordinate keeps the caller's class. With every cell liquid this is the caller's
         // vector unchanged.
         let modes_changed = joined.network.cell_modes() != modes_before.as_slice();
         let mut effective = absolute.to_vec();
@@ -963,7 +964,7 @@ mod integrated {
             let credited = joined.credited().to_vec();
             joined
                 .network
-                .equilibrium_credited_tolerances(&y[..n], &credited, &mut effective[..n])
+                .equilibrium_credited_tolerances(&y[..n], &credited, relative, &mut effective[..n])
                 .map_err(message)?
         } else {
             Vec::new()
