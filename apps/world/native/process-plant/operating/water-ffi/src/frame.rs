@@ -851,6 +851,9 @@ impl<S: JoinedSystem> Driver<S> {
         system
             .jacobian(t, cj, y, yp, &mut data, &mut rows, &mut pointers)
             .map_err(|f| format!("{f:?}"))?;
+        // A presence-following handle's capacity may exceed the structure
+        // in force; its column pointers end at the entries in use.
+        in_use(&pointers, &mut rows, &mut data)?;
         let reuse = matches!(&self.cached, Some((p, r, _)) if *p == pointers && *r == rows);
         if !reuse {
             let lu = SparseLu::analyze(n, &pointers, &rows).map_err(|e| e.to_string())?;
@@ -867,6 +870,19 @@ impl<S: JoinedSystem> Driver<S> {
             .sum();
         Ok((entered, Some((sum / n as f64).sqrt())))
     }
+}
+
+/// Keep the entries the column pointers use (the structure in force), out
+/// of a Jacobian buffer sized for the system's capacity.
+fn in_use(pointers: &[i64], rows: &mut Vec<i64>, data: &mut Vec<f64>) -> Result<(), String> {
+    let used = pointers
+        .last()
+        .and_then(|p| usize::try_from(*p).ok())
+        .filter(|u| *u <= rows.len() && rows.len() == data.len())
+        .ok_or("Jacobian column pointers beyond the buffer")?;
+    rows.truncate(used);
+    data.truncate(used);
+    Ok(())
 }
 
 /// Whether an owner time event is due exactly at `t` (the owners report
@@ -890,6 +906,15 @@ fn summary((r, before): &(Restarted, Vec<Transaction>)) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_capacity_buffer_keeps_the_entries_in_use() {
+        let (mut rows, mut data) = (vec![0, 1, 1, 0, 0], vec![1., 2., 3., 0., 0.]);
+        in_use(&[0, 2, 3], &mut rows, &mut data).unwrap();
+        assert_eq!((rows, data), (vec![0, 1, 1], vec![1., 2., 3.]));
+        let (mut rows, mut data) = (vec![0], vec![1.]);
+        assert!(in_use(&[0, 2], &mut rows, &mut data).is_err());
+    }
 
     #[test]
     fn counts_are_by_class_and_kind() {
