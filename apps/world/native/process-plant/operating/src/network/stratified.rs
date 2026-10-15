@@ -2087,6 +2087,18 @@ impl Cell {
                 let (a, r) = (&column.admitted, &column.resident);
                 let rest = s(1.) - phi;
                 let density = s(1.) / (phi / a.density + rest / r.density);
+                // S3-D37: an outflow of vapor draws zone A's bubble
+                // population b_A at A's region bubble fraction
+                // V_bA/(V_A + V_bA), saturated at p_s, without boron. The
+                // liquid path keeps its selected aperture fraction 1.
+                let sat = &column.interface_saturation;
+                let bubbles = (column.admitted_bubble_mass.value != 0.).then(|| FacePhase {
+                    fraction: column.admitted_bubble_volume
+                        / (a.volume + column.admitted_bubble_volume),
+                    density: sat.vapor.density,
+                    enthalpy: sat.vapor.enthalpy,
+                    boron_concentration: s(0.),
+                });
                 Ok(FaceCell {
                     pressure: column.pressure_at(p.elevation_m),
                     phase: [
@@ -2097,7 +2109,7 @@ impl Cell {
                             boron_concentration: phi * column.admitted_concentration
                                 + rest * column.resident_concentration,
                         }),
-                        None,
+                        bubbles,
                     ],
                 })
             }
@@ -2291,9 +2303,11 @@ impl Cell {
                 // entry, saturated at p_s like every bubble; A pays the
                 // difference between the arriving enthalpy and h_g(p_s), as
                 // for the wall-born vapor it hosts. b_A then condenses and
-                // rises under K1's exchange and amendment 6's crossing. A
-                // withdrawal of vapor, or vapor at another port, is outside
-                // the composed cell.
+                // rises under K1's exchange and amendment 6's crossing.
+                // S3-D37: vapor leaving through the port is drawn from b_A
+                // (the port view's bubbles at h_g(p_s)), so the same terms
+                // hold with w < 0 and A pays nothing. Vapor at another port
+                // is outside the composed cell.
                 let (w, h) = (
                     finite(rec.vapor_mass, "surge vapor receipt")?,
                     finite(rec.vapor_enthalpy, "surge vapor receipt")?,
@@ -2301,12 +2315,6 @@ impl Cell {
                 if port.kind != PortKind::Surge {
                     return Err(fatal(format!(
                         "port {}: only the surge port receives vapor",
-                        port.id
-                    )));
-                }
-                if w.value < 0. || (w.value == 0. && w.direction < 0.) {
-                    return Err(fatal(format!(
-                        "port {}: a vapor withdrawal through the surge port is outside the composed cell",
                         port.id
                     )));
                 }

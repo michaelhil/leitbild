@@ -200,17 +200,69 @@ fn surge_vapor_arrival_joins_the_admitted_bubbles_and_is_conserved_exactly() {
         assert!((b.mass_kg_s.value - b.receipt_mass_kg_s.value).abs() <= scale(1e3));
         assert!((b.energy_w.value - b.receipt_energy_w.value).abs() <= scale(1e10));
         assert!((b.boron_kg_s.value - b.receipt_boron_kg_s.value).abs() <= scale(1.));
-        // A vapor withdrawal through the surge port is outside the cell.
+        // S3-D37: vapor leaving through the surge port is drawn from b_A at
+        // h_g(p_s), which the port view offers: b_A loses it, A pays nothing.
         let out = Receipt {
             vapor_mass: s(-w),
-            vapor_enthalpy: s(-h),
+            vapor_enthalpy: s(-w) * ev.column.interface_saturation.vapor.enthalpy,
             ..liquid
         };
-        assert!(matches!(
-            evaluate(&p, &v, &rate, out, heat),
-            Err(Failure::Fatal(_))
-        ));
+        let left = evaluate(&p, &v, &rate, out, heat).unwrap();
+        let d = |i: usize| left.flows.sources[i].value - dry.flows.sources[i].value;
+        assert!((d(st::ADMITTED_BUBBLE_MASS) + w).abs() <= 1e-12 * w);
+        assert_eq!(d(st::ADMITTED_ENERGY), 0.);
+        let b = &left.balance;
+        assert!((b.receipt_mass_kg_s.value - (liquid.mass.value - w)).abs() <= scale(1e3));
+        assert!((b.mass_kg_s.value - b.receipt_mass_kg_s.value).abs() <= scale(1e3));
+        assert!((b.energy_w.value - b.receipt_energy_w.value).abs() <= scale(1e10));
+        assert!((b.boron_kg_s.value - b.receipt_boron_kg_s.value).abs() <= scale(1.));
     }
+}
+
+/// S3-D37: the surge port view offers zone A's bubbles to an outflowing
+/// vapor path at A's region bubble fraction, saturated at p_s, without
+/// boron, and no vapor where b_A is empty; the liquid view is unchanged.
+#[test]
+fn the_surge_port_view_offers_zone_as_bubbles_to_a_vapor_outflow() {
+    let p = prepared();
+    let mut v = active(&p);
+    // A bubble stock in A's region (about 100 kg/m3 vapor at 15 MPa).
+    v[st::ADMITTED_BUBBLE_MASS] = 0.8;
+    v[st::ADMITTED_BUBBLE_VOLUME] = 0.008;
+    let ev = evaluate(
+        &p,
+        &v,
+        &[0.; st::COORDINATES],
+        Receipt::zero(),
+        Heat::zero(),
+    )
+    .unwrap();
+    let c = &ev.column;
+    assert!(c.admitted_bubble_mass.value > 0.);
+    let view = p.cell.port_view(c, 0).unwrap();
+    let g = view.phase[1].expect("A's bubbles at the mouth");
+    let alpha =
+        c.admitted_bubble_volume.value / (c.admitted.volume.value + c.admitted_bubble_volume.value);
+    assert_eq!(g.fraction.value, alpha);
+    assert_eq!(g.density.value, c.interface_saturation.vapor.density.value);
+    assert_eq!(
+        g.enthalpy.value,
+        c.interface_saturation.vapor.enthalpy.value
+    );
+    assert_eq!(g.boron_concentration.value, 0.);
+    assert_eq!(view.phase[0].unwrap().fraction.value, 1.);
+    // No bubble stock, no vapor at the mouth.
+    v[st::ADMITTED_BUBBLE_MASS] = 0.;
+    v[st::ADMITTED_BUBBLE_VOLUME] = 0.;
+    let empty = evaluate(
+        &p,
+        &v,
+        &[0.; st::COORDINATES],
+        Receipt::zero(),
+        Heat::zero(),
+    )
+    .unwrap();
+    assert!(p.cell.port_view(&empty.column, 0).unwrap().phase[1].is_none());
 }
 
 fn physical(x: &Coordinates) -> [f64; st::COORDINATES] {
