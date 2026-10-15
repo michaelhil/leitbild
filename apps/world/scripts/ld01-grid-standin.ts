@@ -209,6 +209,7 @@ function analyse(p:Plan,r:Awaited<ReturnType<typeof run>>){
    omega:q.speedRadS,theta:q.thetaRad,ieq:q.ieqA,carrier:q.carrierRadS,rcp:q.rcpSupported,s:q.signals})),
   boundaries:x.map(q=>[q.t0,q.t1,q.window?1:0,q.exportJ,q.exportW,q.ieqA,q.rInterval,q.sInterval,plantCpu(q)]),
   events:x.filter(q=>q.events).map(q=>({t0:q.t0,...q.events})),
+  routing_records:(rep.routing_records??[]).map(([t,w]:[number,string])=>[t-r.te,w]),
   instants:rep.instants,refusal_report:rep.refusal??null,
  }
 }
