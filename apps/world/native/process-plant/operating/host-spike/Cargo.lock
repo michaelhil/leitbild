@@ -31,6 +31,8 @@ name = "leitbild-operating-water"
 version = "0.1.0"
 dependencies = [
  "leitbild-operating-plant",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
