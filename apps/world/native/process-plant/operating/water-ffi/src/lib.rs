@@ -117,22 +117,6 @@ unsafe extern "C" {
         value: *mut f64,
         direction: *mut f64,
     ) -> i32;
-    // G1-C13 hook (lib.rs, shared; KERN reconciles): IF97 p_sat(T).
-    fn ld01_water_saturation_pressure(
-        temperature: f64,
-        temperature_direction: f64,
-        value: *mut f64,
-        direction: *mut f64,
-    ) -> i32;
-    // G1-C13 hook (lib.rs, shared; KERN reconciles): h_g(T) below 0.1 MPa.
-    fn ld01_water_saturated_vapor_enthalpy(temperature: f64, value: *mut f64) -> i32;
-    // G1-C13 hook (lib.rs, shared; KERN reconciles): saturated-vapor mu(T) below 0.1 MPa.
-    fn ld01_water_saturated_vapor_viscosity(
-        temperature: f64,
-        temperature_direction: f64,
-        value: *mut f64,
-        direction: *mut f64,
-    ) -> i32;
 }
 
 pub fn point(branch: Branch, pressure_pa: f64, temperature_k: f64) -> Result<WaterPoint, Error> {
@@ -824,53 +808,6 @@ fn directional_caloric(
     }
     let q = CaloricLinearization::new(branch, p, target, kind, FIELDS_ALL)?;
     Ok((q.point(), q.directional(dp, dtarget)?))
-}
-
-/// G1-C13 hook (lib.rs, shared; KERN reconciles): IF97 saturation pressure
-/// `p_sat(T)` and its direction along `dt` (`dt / (dT_sat/dp)`), for the
-/// containment's ideal-vapor saturation density `p_sat(T)/(R_v T)`.
-pub fn saturation_pressure(t: f64, dt: f64) -> Result<(f64, f64), Error> {
-    let mut value = 0.;
-    let mut direction = 0.;
-    // SAFETY: two unique live scalar outputs; C keeps no pointers/catches errors.
-    let status = unsafe { ld01_water_saturation_pressure(t, dt, &mut value, &mut direction) };
-    match status {
-        0 => Ok((value, direction)),
-        1 => Err(Error::Domain),
-        2 => Err(Error::AbiArgument),
-        _ => Err(Error::NativeFailure),
-    }
-}
-
-/// G1-C13 hook (lib.rs, shared; KERN reconciles): IF97 saturated-vapor
-/// enthalpy at `t` on the saturation endpoint, outside the operating 0.1 MPa
-/// floor; value only (the containment's 25°C vapor caloric anchor).
-pub fn saturated_vapor_enthalpy(t: f64) -> Result<f64, Error> {
-    let mut value = 0.;
-    // SAFETY: one unique live scalar output; C keeps no pointer/catches errors.
-    let status = unsafe { ld01_water_saturated_vapor_enthalpy(t, &mut value) };
-    match status {
-        0 => Ok(value),
-        1 => Err(Error::Domain),
-        2 => Err(Error::AbiArgument),
-        _ => Err(Error::NativeFailure),
-    }
-}
-
-/// G1-C13 hook (lib.rs, shared; KERN reconciles): IF97 saturated-vapor
-/// dynamic viscosity at `t` on the endpoint below the operating 0.1 MPa
-/// floor, with the adapter's disclosed central-difference direction.
-pub fn saturated_vapor_viscosity(t: f64, dt: f64) -> Result<(f64, f64), Error> {
-    let mut value = 0.;
-    let mut direction = 0.;
-    // SAFETY: two unique live scalar outputs; C keeps no pointers/catches errors.
-    let status = unsafe { ld01_water_saturated_vapor_viscosity(t, dt, &mut value, &mut direction) };
-    match status {
-        0 => Ok((value, direction)),
-        1 => Err(Error::Domain),
-        2 => Err(Error::AbiArgument),
-        _ => Err(Error::NativeFailure),
-    }
 }
 
 pub fn surface_tension(t: f64, dt: f64) -> Result<(f64, f64), Error> {

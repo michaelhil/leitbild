@@ -30,6 +30,11 @@
 //! anchor, the saturated-vapor viscosity) use the lane's marked hooks; they
 //! stand only with the owner's decision on the property domain.
 // Test-only dense-matrix loops and fixed four-pool tables.
+// Held out of the S3 batch until the owner answers F5 (lead, 15 Oct): the
+// three IF97 hooks below the 0.1 MPa floor this prototype reads are not in
+// the batch's narrow FFI (claude/ld01-g1-c13 keeps them), so it compiles to
+// nothing here. `any()` is never true.
+#![cfg(any())]
 #![allow(
     clippy::too_many_arguments,
     clippy::needless_range_loop,
