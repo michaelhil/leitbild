@@ -885,6 +885,7 @@ pub struct Started {
 #[allow(dead_code)] // Used by the S3 probes that include this module.
 pub fn started_s3_composition() -> (Started, leitbild_operating_water::joined::DerivedTolerances) {
     let mut s = started_full_composition();
+    let credited = credited_outputs(&s.joined);
     let derived = leitbild_operating_water::joined::derived_tolerances(
         &mut s.joined,
         &s.structure,
@@ -892,10 +893,56 @@ pub fn started_s3_composition() -> (Started, leitbild_operating_water::joined::D
         &s.y,
         &s.yp,
         s.rtol,
+        &credited,
         &mut s.atol,
     )
-    .expect("S2-D24 derived tolerance classes at the composed state");
+    .expect("S2-D24r derived tolerance classes at the composed state");
+    s.joined
+        .declare_credited(credited)
+        .expect("credited outputs declared");
     (s, derived)
+}
+
+/// The credited outputs on the joined operator's pressure coordinates,
+/// each with its budget from `ld01-accuracy-contract` (operating-hot-spine,
+/// the wiki named by `LD01_WIKI_ROOT`): core DP, the LOWER and UPPER
+/// plena's pressure difference, as the S2 gate harness defines it.
+#[allow(dead_code)] // Used by the S3 compositions.
+pub fn credited_outputs(
+    joined: &leitbild_operating_plant::joined::operator::Joined<If97>,
+) -> Vec<leitbild_operating_plant::network::CreditedOutput> {
+    let wiki = std::env::var("LD01_WIKI_ROOT").expect("LD01_WIKI_ROOT");
+    let page = format!(
+        "{wiki}/world/packs/process-plant/reference-designs/ld-01/model/operating-hot-spine.md"
+    );
+    let text = std::fs::read_to_string(&page).unwrap_or_else(|e| panic!("{page}: {e}"));
+    let open = "```ld01-accuracy-contract\n";
+    let start = text.find(open).expect("ld01-accuracy-contract") + open.len();
+    assert!(
+        !text[start..].contains(open),
+        "{page} holds more than one ld01-accuracy-contract block"
+    );
+    let end = start + text[start..].find("\n```").expect("block end");
+    let contract: Value = serde_json::from_str(&text[start..end]).expect("contract json");
+    let budget = contract["coreDifferentialPressure_Pa"]
+        .as_f64()
+        .expect("coreDifferentialPressure_Pa");
+    let (_, bytes) = packet_bytes();
+    let raw: Value = serde_json::from_slice(&bytes).expect("packet json");
+    let base = |id: &str| {
+        let c = raw["mechanics"]["regions"]
+            .as_array()
+            .expect("regions")
+            .iter()
+            .position(|r| r["id"] == id)
+            .unwrap_or_else(|| panic!("no region {id}"));
+        joined.network.cell_layout[c].base
+    };
+    vec![leitbild_operating_plant::network::CreditedOutput {
+        name: "core_dp_pa".into(),
+        budget,
+        columns: vec![base("LOWER"), base("UPPER")],
+    }]
 }
 
 /// The S3 composition with L1 and the regular cells' phase modes declared

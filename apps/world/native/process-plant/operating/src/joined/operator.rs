@@ -32,7 +32,8 @@ use super::{
 };
 use crate::{
     network::{
-        CellMode, Coupling, Failure, Fluid, Network, PZR_PRESSURE, Properties, Receipts, Reuse,
+        CellMode, Coupling, CreditedOutput, Failure, Fluid, Network, PZR_PRESSURE, Properties,
+        Receipts, Reuse,
         packet::Packet as NetworkPacket,
         phase_events::{located, release_roots},
         stratified,
@@ -218,6 +219,11 @@ pub struct Joined<P: Properties> {
     /// unless declared ([`Joined::activate_phase_modes`]): S1 and S2 hold
     /// every cell liquid with no mode roots.
     phase_modes: bool,
+    /// The credited outputs on pressure coordinates the derived tolerance
+    /// classes take their budgets from (S2-D24r, S3-D16), declared by the
+    /// composition from their strict blocks ([`Joined::declare_credited`]);
+    /// empty until declared.
+    credited: Vec<CreditedOutput>,
 }
 
 fn view<'a>(
@@ -460,6 +466,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             structure: None,
             counters: Counters::default(),
             phase_modes: false,
+            credited: Vec::new(),
         };
         let columns = joined.structural_pattern()?;
         let pattern = Pattern::from_columns(offsets.end, &columns).map_err(fatal)?;
@@ -717,6 +724,29 @@ impl<P: Properties + WaterProperties> Joined<P> {
     /// Whether the phase modes are composed.
     pub fn phase_modes_active(&self) -> bool {
         self.phase_modes
+    }
+    /// Declare the credited outputs on pressure coordinates (each with its
+    /// strict block's budget) that the derived tolerance classes read
+    /// (S2-D24r, S3-D16); every column must be a coordinate of this
+    /// operator and every budget finite and positive.
+    pub fn declare_credited(&mut self, outputs: Vec<CreditedOutput>) -> Result<(), Failure> {
+        let n = self.blocks.offsets.end;
+        if let Some(o) = outputs.iter().find(|o| {
+            o.columns.is_empty()
+                || o.columns.iter().any(|j| *j >= n)
+                || !(o.budget.is_finite() && o.budget > 0.)
+        }) {
+            return Err(fatal(format!(
+                "credited output {} is not declarable",
+                o.name
+            )));
+        }
+        self.credited = outputs;
+        Ok(())
+    }
+    /// The declared credited outputs (empty until declared).
+    pub fn credited(&self) -> &[CreditedOutput] {
+        &self.credited
     }
     /// L1's root slots: one per phase path (face-layout order) while L1 is
     /// active, none before (S1, S2). A slot carries the root of its path's

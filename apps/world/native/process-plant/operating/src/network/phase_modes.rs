@@ -187,7 +187,9 @@ impl<P: Properties> Network<P> {
         Ok((vapor, total - vapor))
     }
 
-    /// S3-D3 (lead, 15 Oct; S2-D24's pattern): an equilibrium cell's
+    /// S3-D3 as first declared (rtol |p| basis; superseded by S3-D16,
+    /// [`Self::equilibrium_credited_tolerances`], and kept for PHASE-P7's
+    /// study receipts): an equilibrium cell's
     /// algebraic `M_g, U_g` take their absolute class from the pressure
     /// class through their own flash sensitivity at fixed totals,
     /// `atol_Mg = atol_p |dM_g/dp|`, `atol_Ug = atol_p |dU_g/dp|`, with
@@ -234,6 +236,70 @@ impl<P: Properties> Network<P> {
                 json!({"cell":node,"p_pa":p,"mass_kg":total,"vapor_kg":mg,"atol_p_pa":atol_p,
                 "dmg_dp_kg_per_pa":dmg_dp,"dug_dp_j_per_pa":dug_dp,"atol_mg_kg":am,"atol_ug_j":au}),
             );
+        }
+        Ok(records)
+    }
+
+    /// S3-D16 (lead, 15 Oct; S2-D24r's rule): an equilibrium cell's
+    /// algebraic `M_g, U_g` take their absolute class from the tightest
+    /// credited budget among the credited outputs they determine (those
+    /// reading the cell's pressure, the one pressure their own rows read)
+    /// through their flash sensitivity at fixed totals, `atol_Mg = budget
+    /// |dM_g/dp|`, `atol_Ug = budget |dU_g/dp|` (the derivatives of
+    /// [`Self::equilibrium_tolerances`]), at the state the segment starts
+    /// from. A cell whose pressure no credited output reads refuses: its
+    /// budget is undeclared (no default class). `atol` is in solver scaling;
+    /// liquid-mode cells keep their entries. Returns one record per
+    /// equilibrium cell, with every output it determines.
+    pub fn equilibrium_credited_tolerances(
+        &self,
+        y: &[f64],
+        credited: &[super::CreditedOutput],
+        atol: &mut [f64],
+    ) -> Result<Vec<Value>, Failure> {
+        if atol.len() != self.scales.len() {
+            return Err(bad("equilibrium tolerances need a full atol"));
+        }
+        let mut records = Vec::new();
+        for node in 0..self.modes.len() {
+            if self.modes[node] != CellMode::Equilibrium {
+                continue;
+            }
+            let l = self.cell_layout[node];
+            let mut determined: Vec<&super::CreditedOutput> = credited
+                .iter()
+                .filter(|o| o.columns.contains(&l.base))
+                .collect();
+            determined.sort_by(|a, b| a.budget.total_cmp(&b.budget));
+            let Some(tightest) = determined.first() else {
+                return Err(Failure::Fatal(format!(
+                    "S3-D16: equilibrium cell {node}'s vapor class determines no credited output (none reads its pressure); its budget is undeclared"
+                )));
+            };
+            let p = y[l.base] * self.scales[l.base];
+            let total = y[l.mass[0]] * self.scales[l.mass[0]];
+            let mg = y[l.mass[1]] * self.scales[l.mass[1]];
+            let sat = self.saturated_at(rec(p, 1.))?;
+            let (uf, ug) = (sat.liquid_energy, sat.vapor_energy);
+            let ml = total - mg;
+            let dmg_dp = -(ml * uf.direction + mg * ug.direction) / (ug.value - uf.value);
+            let dug_dp = ug.value * dmg_dp + mg * ug.direction;
+            let (am, au) = (
+                tightest.budget * dmg_dp.abs(),
+                tightest.budget * dug_dp.abs(),
+            );
+            if !(am.is_finite() && au.is_finite() && am > 0. && au > 0.) {
+                return Err(Failure::Recoverable(format!(
+                    "cell {node}: nonpositive derived vapor class ({am}, {au})"
+                )));
+            }
+            atol[l.mass[1]] = am / self.scales[l.mass[1]];
+            atol[l.energy[1]] = au / self.scales[l.energy[1]];
+            records.push(json!({"cell":node,"p_pa":p,"mass_kg":total,"vapor_kg":mg,
+                "rule":"S3-D16: tightest credited budget x flash sensitivity",
+                "determines":determined.iter().map(|o| json!({"output":o.name,"budget":o.budget})).collect::<Vec<_>>(),
+                "budget":tightest.budget,"output":tightest.name,
+                "dmg_dp_kg_per_pa":dmg_dp,"dug_dp_j_per_pa":dug_dp,"atol_mg_kg":am,"atol_ug_j":au}));
         }
         Ok(records)
     }

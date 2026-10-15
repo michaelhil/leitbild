@@ -30,8 +30,8 @@ use leitbild_operating_water::{
 };
 use serde_json::Value;
 use spine::{
-    DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, started_full_composition,
-    started_s3_phase_composition,
+    DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, credited_outputs,
+    started_full_composition, started_s3_phase_composition,
 };
 
 /// L1 on the joined spine: activation adds one root slot per phase path
@@ -282,7 +282,7 @@ fn a_presence_change_switches_the_block_structure_on_one_handle() {
 /// plena's |p|, under 1 %).
 #[test]
 #[ignore = "requires the joined packet, the wiki, IF97 and stock IDA/KLU"]
-fn the_derived_guide_current_class_is_s2_d24s() {
+fn the_derived_guide_current_class_is_s2_d24r() {
     let Started {
         mut joined,
         y,
@@ -293,8 +293,23 @@ fn the_derived_guide_current_class_is_s2_d24s() {
         ..
     } = started_full_composition();
     let before = atol.clone();
-    let derived =
-        derived_tolerances(&mut joined, &structure, 0., &y, &yp, rtol, &mut atol).unwrap();
+    let credited = credited_outputs(&joined);
+    assert_eq!(credited.len(), 1);
+    assert_eq!(
+        credited[0].budget, 50.,
+        "ld01-accuracy-contract's core DP budget"
+    );
+    let derived = derived_tolerances(
+        &mut joined,
+        &structure,
+        0.,
+        &y,
+        &yp,
+        rtol,
+        &credited,
+        &mut atol,
+    )
+    .unwrap();
     assert_eq!(DERIVED_CLASSES, &["rods/GuideCurrent"]);
     let clusters = joined.rods().unwrap().clusters();
     assert_eq!(derived.rows.len(), clusters);
@@ -307,8 +322,16 @@ fn the_derived_guide_current_class_is_s2_d24s() {
             None => assert_eq!(a.to_bits(), b.to_bits(), "coordinate {i} not derived"),
         }
     }
-    // RESTART 799d0b61's receipt on packet 91d85fc1 (relative basis):
-    // 9.6223e-4 kg/s at 149.50 Pa and 6.4362e-6 kg/s per Pa.
+    // Every guide current determines core DP: 50 Pa x |dm/dDp| (RESTART
+    // 799d0b61's receipt on packet 91d85fc1: 6.4362e-6 kg/s per Pa, so
+    // about 3.22e-4 kg/s, the lead's S2-D24r value).
+    for r in &derived.rows {
+        assert_eq!(r.determines[0].output, "core_dp_pa");
+        assert_eq!(
+            r.applied,
+            r.determines[0].budget * r.determines[0].sensitivity
+        );
+    }
     let applied: Vec<f64> = derived.rows.iter().map(|r| r.applied).collect();
     let (lo, hi) = (
         applied.iter().copied().fold(f64::INFINITY, f64::min),
@@ -322,7 +345,7 @@ fn the_derived_guide_current_class_is_s2_d24s() {
     if std::env::var("LD01_OPERATING_HOT_SPINE_PACKET").is_ok_and(|p| p.contains("91d85fc1")) {
         for a in applied {
             assert!(
-                ((a - 9.622295293786392e-4) / 9.622295293786392e-4).abs() < 0.01,
+                ((a - 50. * 6.436241968892448e-6) / (50. * 6.436241968892448e-6)).abs() < 0.01,
                 "{a}"
             );
         }
@@ -456,11 +479,32 @@ fn an_equilibrium_cell_assembles_by_blocks_and_integrates_on_the_joined_spine() 
     // The identity, S3-D3's class and the exact start at the flashed state.
     let ids = joined.differential(&network_ids);
     assert_eq!((ids[m1], ids[e1]), (0., 0.));
+    // S3-D16: the contract's credited outputs read no NECK pressure, so a
+    // NECK equilibrium cell's vapor class is undeclared and refuses. This
+    // test declares, for the kernel's mechanics only, one output on NECK's
+    // pressure with the contract's PT1 sample-noise budget (labelled
+    // test-only; the S3 declaration owns the real mapping).
     let nn = joined.offsets().nuclear;
+    let contract = credited_outputs(&joined);
+    let undeclared = joined
+        .network
+        .equilibrium_credited_tolerances(&y[..nn], &contract, &mut atol.clone()[..nn])
+        .unwrap_err();
+    assert!(
+        format!("{undeclared:?}").contains("S3-D16"),
+        "{undeclared:?}"
+    );
+    let mut credited = contract;
+    credited.push(leitbild_operating_plant::network::CreditedOutput {
+        name: "TEST-ONLY neck pressure (PT1 sample-noise budget)".into(),
+        budget: 200.,
+        columns: vec![l.base],
+    });
+    joined.declare_credited(credited.clone()).unwrap();
     let classes = joined
         .network
-        .equilibrium_tolerances(&y[..nn], rtol, &mut atol[..nn])
-        .expect("S3-D3");
+        .equilibrium_credited_tolerances(&y[..nn], &credited, &mut atol[..nn])
+        .expect("S3-D16");
     assert_eq!(classes.len(), 1);
     let weights: Vec<f64> = y
         .iter()

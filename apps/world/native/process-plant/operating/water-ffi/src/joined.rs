@@ -22,7 +22,7 @@ use leitbild_operating_plant::{
         blocks::{Classes, JoinedJacobian, jacobian_blocks},
         operator::Joined,
     },
-    network::{Failure, Properties},
+    network::{CreditedOutput, Failure, Properties},
     sparse::Pattern,
     thermal::WaterProperties,
 };
@@ -581,15 +581,29 @@ fn transacted_owners(
         .collect()
 }
 
-/// The derived absolute-tolerance classes (lead decision S2-D24, and the
-/// lead's 15 Oct rule that they are the default in every S3 run path, never
-/// an opt-in), as `owner/Class` of the joined layouts: an algebraic current
-/// set by pressure differences takes its absolute tolerance from the
-/// pressure class through its own sensitivity. S3-D3's mode-E `M_g`/`U_g`
-/// and ELEC's stator class join this list when their owners land.
+/// The derived absolute-tolerance classes on the composition's own rows
+/// (lead decisions S2-D24r and S3-D16, the default in every S3 run path,
+/// never an opt-in), as `owner/Class` of the joined layouts: an algebraic
+/// current set by pressure differences takes the tightest credited budget
+/// among the credited outputs it determines through its own sensitivity.
+/// The equilibrium cells' vapor class (S3-D16 on S3-D3) is derived at
+/// every restart ([`discrete_restart`]); ELEC's stator class joins this
+/// list when its owner is composed.
 pub const DERIVED_CLASSES: &[&str] = &["rods/GuideCurrent"];
-/// The pressure class whose columns set a derived current.
-pub const DERIVED_PRESSURE_CLASS: &str = "network/CellPressure";
+
+/// One credited output a derived coordinate determines.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct Determined {
+    pub output: String,
+    /// The output's budget (Pa).
+    pub budget: f64,
+    /// `|∂x/∂p_j|` in SI, the largest over the output's coordinates the row
+    /// reads (for a difference output, `|∂x/∂Δp|`).
+    pub sensitivity: f64,
+    pub column: String,
+    /// `budget × sensitivity`, SI.
+    pub tolerance: f64,
+}
 
 /// One coordinate's derived absolute tolerance.
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
@@ -600,13 +614,10 @@ pub struct DerivedRow {
     /// The class tolerance it replaces, and the applied one, solver scaling.
     pub replaced_scaled: f64,
     pub applied_scaled: f64,
-    /// The applied tolerance in physical units.
+    /// The applied tolerance in SI: the tightest determined output's.
     pub applied: f64,
-    /// `|∂m/∂p|` at the governing pressure column, physical units.
-    pub sensitivity: f64,
-    pub pressure_column: String,
-    /// `atol_p = rtol |p|` at that column, Pa.
-    pub atol_p_pa: f64,
+    /// Every credited output it determines, tightest first.
+    pub determines: Vec<Determined>,
 }
 
 /// What [`derived_tolerances`] applied: the evidence an S3 run path carries
@@ -615,6 +626,7 @@ pub struct DerivedRow {
 pub struct DerivedTolerances {
     pub rule: &'static str,
     pub classes: Vec<String>,
+    pub credited: Vec<CreditedOutput>,
     pub t_s: f64,
     pub relative: f64,
     pub rows: Vec<DerivedRow>,
@@ -630,23 +642,24 @@ impl DerivedTolerances {
         for r in &mut out.rows {
             r.applied_scaled *= factor;
             r.applied *= factor;
-            r.atol_p_pa *= factor;
         }
         out
     }
 }
 
-/// S2-D24 on `atol` (solver scaling) for every coordinate of
-/// [`DERIVED_CLASSES`]: from the block Jacobian `∂F/∂y` at `(t, y, y')`, a
-/// derived row `r`'s sensitivity to pressure column `j` is
-/// `∂m/∂p_j = −J[r,j] / J[r,r]`, and its absolute tolerance is
-/// `max_j (rtol |p_j|) |∂m/∂p_j|` over the pressure columns it reads, the
-/// basis S2-D24 declares (PLAN §11: `atol_p = rtol |p|`, RODCOST's V1). The
-/// rule HARNESS-B's S2 harness and RESTART's probe apply, evaluated at the
-/// state the caller names (the composed state, as S2 records it). A
-/// covered row without a finite nonzero diagonal or without a pressure
-/// column refuses; a composition with no covered coordinate refuses.
-#[allow(clippy::too_many_arguments)] // The operator, its structure, the state, the rule's rtol and atol.
+/// S2-D24r / S3-D16 on `atol` (solver scaling) for every coordinate of
+/// [`DERIVED_CLASSES`], from the block Jacobian `∂F/∂y` at `(t, y, y')`: a
+/// derived row `r`'s sensitivity to a pressure column `j` is
+/// `|∂x/∂p_j| = |J[r,j] / J[r,r]|`; the credited outputs it determines are
+/// those whose coordinates its row reads, each giving `budget × |∂x/∂p_j|`
+/// over its own coordinates; the tightest is applied, so every determined
+/// output's budget holds (rods/GuideCurrent: core DP's 50 Pa × `|∂m/∂Δp|`).
+/// The rule HARNESS-B's S2 gate harness applies (r7.1). `credited` comes
+/// from the strict blocks and is also declared on the operator for the
+/// restarts' classes. A covered row without a finite nonzero diagonal, or
+/// that determines no credited output, refuses; so does a composition with
+/// no covered coordinate.
+#[allow(clippy::too_many_arguments)] // The operator, its structure, the state, the outputs, rtol and atol.
 pub fn derived_tolerances<P: Properties + WaterProperties>(
     joined: &mut Joined<P>,
     structure: &JoinedJacobian,
@@ -654,6 +667,7 @@ pub fn derived_tolerances<P: Properties + WaterProperties>(
     y: &[f64],
     yp: &[f64],
     relative: f64,
+    credited: &[CreditedOutput],
     atol: &mut [f64],
 ) -> Result<DerivedTolerances, String> {
     let layouts = joined.layouts();
@@ -668,10 +682,9 @@ pub fn derived_tolerances<P: Properties + WaterProperties>(
     if class_of.len() != y.len() || atol.len() != y.len() {
         return Err("derived tolerances: the layouts do not cover the coordinates".into());
     }
-    let pressure: Vec<bool> = class_of
-        .iter()
-        .map(|c| c == DERIVED_PRESSURE_CLASS)
-        .collect();
+    if credited.is_empty() {
+        return Err("derived tolerances: no credited output declared".into());
+    }
     let covered: Vec<usize> = (0..y.len())
         .filter(|i| DERIVED_CLASSES.contains(&class_of[*i].as_str()))
         .collect();
@@ -693,7 +706,7 @@ pub fn derived_tolerances<P: Properties + WaterProperties>(
             if let Some(k) = index.get(&indices[position]) {
                 if indices[position] == j {
                     diagonal[*k] = Some(values[position]);
-                } else if pressure[j] {
+                } else if values[position] != 0. {
                     entries[*k].push((j, values[position]));
                 }
             }
@@ -710,32 +723,45 @@ pub fn derived_tolerances<P: Properties + WaterProperties>(
                     labels[*r]
                 )
             })?;
-        let (applied, sensitivity, j) = entries[k]
+        let mut determines: Vec<Determined> = credited
             .iter()
-            .map(|(j, v)| (relative * y[*j].abs() * (v / d).abs(), (v / d).abs(), *j))
-            .max_by(|a, b| a.0.total_cmp(&b.0))
-            .ok_or_else(|| {
-                format!(
-                    "derived tolerances: {} reads no pressure column",
-                    labels[*r]
-                )
-            })?;
+            .filter_map(|o| {
+                entries[k]
+                    .iter()
+                    .filter(|(j, _)| o.columns.contains(j))
+                    .map(|(j, v)| ((v / d).abs() * scales[*r] / scales[*j], *j))
+                    .max_by(|a, b| a.0.total_cmp(&b.0))
+                    .map(|(sensitivity, j)| Determined {
+                        output: o.name.clone(),
+                        budget: o.budget,
+                        sensitivity,
+                        column: labels[j].clone(),
+                        tolerance: o.budget * sensitivity,
+                    })
+            })
+            .collect();
+        determines.sort_by(|a, b| a.tolerance.total_cmp(&b.tolerance));
+        let applied = determines.first().map(|o| o.tolerance).ok_or_else(|| {
+            format!(
+                "derived tolerances: {} determines no credited output",
+                labels[*r]
+            )
+        })?;
         rows.push(DerivedRow {
             coordinate: *r,
             label: labels[*r].clone(),
             class: class_of[*r].clone(),
             replaced_scaled: atol[*r],
-            applied_scaled: applied,
-            applied: applied * scales[*r],
-            sensitivity: sensitivity * scales[*r] / scales[j],
-            pressure_column: labels[j].clone(),
-            atol_p_pa: relative * y[j].abs() * scales[j],
+            applied_scaled: applied / scales[*r],
+            applied,
+            determines,
         });
-        atol[*r] = applied;
+        atol[*r] = applied / scales[*r];
     }
     Ok(DerivedTolerances {
-        rule: "S2-D24: atol_m = max_j (rtol |p_j|) |dm/dp_j|, dm/dp_j = -J[r,j]/J[r,r] from the block Jacobian dF/dy",
+        rule: "S2-D24r/S3-D16: the tightest credited budget among the credited outputs the coordinate determines x |dx/dp| = |J[r,j]/J[r,r]| from the block Jacobian dF/dy",
         classes: DERIVED_CLASSES.iter().map(|c| c.to_string()).collect(),
+        credited: credited.to_vec(),
         t_s: t,
         relative,
         rows,
@@ -810,7 +836,7 @@ mod integrated {
         /// exhaustion): the identity, the nonnegative stocks and the
         /// tolerances were set again.
         pub modes_changed: bool,
-        /// S3-D3's derived class of every equilibrium cell at this start
+        /// S3-D16's derived vapor class of every equilibrium cell at this start
         /// (empty with every cell liquid).
         pub equilibrium_classes: Vec<serde_json::Value>,
         pub yp: Vec<f64>,
@@ -902,18 +928,20 @@ mod integrated {
         let placements = network::place_on_bounds(t, y, &nonnegative, restart.bound_placement)
             .map_err(message)?;
         let ids = joined.differential(network_ids);
-        // S3-D3 (the S2-D24 pattern, default on every path): an equilibrium
-        // cell's algebraic vapor slots take their class from the pressure
-        // class through their flash sensitivity at this segment's start
-        // state; every other coordinate keeps the caller's class. With
-        // every cell liquid this is the caller's vector unchanged.
+        // S3-D16 (default on every path): an equilibrium cell's algebraic
+        // vapor slots take the tightest credited budget among the declared
+        // credited outputs they determine through their flash sensitivity
+        // at this segment's start state; every other coordinate keeps the
+        // caller's class. With every cell liquid this is the caller's
+        // vector unchanged.
         let modes_changed = joined.network.cell_modes() != modes_before.as_slice();
         let mut effective = absolute.to_vec();
         let equilibrium_classes = if joined.network.has_equilibrium_cells() {
             let n = joined.offsets().nuclear;
+            let credited = joined.credited().to_vec();
             joined
                 .network
-                .equilibrium_tolerances(&y[..n], relative, &mut effective[..n])
+                .equilibrium_credited_tolerances(&y[..n], &credited, &mut effective[..n])
                 .map_err(message)?
         } else {
             Vec::new()

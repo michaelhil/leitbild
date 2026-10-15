@@ -43,7 +43,7 @@ pub use jacobian::{
 pub use phase_modes::CellMode;
 pub use ports::{CellVolume, Coupling, Fluid, Receipts};
 pub use properties::{Band, BandReport, MetastableBand, Properties, Reuse, Water};
-pub use tolerance::ToleranceClasses;
+pub use tolerance::{CreditedOutput, ToleranceClasses};
 
 use crate::{
     hydraulics::Section,

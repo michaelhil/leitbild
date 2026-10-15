@@ -16,6 +16,18 @@ use super::{
     Properties, stratified,
 };
 
+/// A credited output on the operator's pressure coordinates, for the
+/// derived tolerance classes (lead decisions S2-D24r, S3-D16): its key, its
+/// absolute budget in its strict block (Pa), and the coordinates it reads
+/// (a difference output reads two). A coordinate of a derived class whose
+/// own row reads any of them "determines" the output.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct CreditedOutput {
+    pub name: String,
+    pub budget: f64,
+    pub columns: Vec<usize>,
+}
+
 /// Declared absolute tolerances; all fields are required, none defaulted.
 #[derive(Clone, Copy, Debug)]
 pub struct ToleranceClasses {
