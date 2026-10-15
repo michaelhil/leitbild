@@ -46,17 +46,14 @@
 #![cfg(all(feature = "ida", target_os = "macos"))]
 #[path = "common/filter.rs"]
 mod filter;
+#[path = "common/pzr_control.rs"]
+mod pzr_control;
 #[path = "joined_spine.rs"]
 mod spine;
 
-use leitbild_operating_plant::{
-    control::pzr_pressure::{Controller, Demand, Law, Quality, Sample, Section},
-    network::stratified::{self, Coordinates as PzrCoordinates},
-    thermal::Scalar,
-};
+use leitbild_operating_plant::control::pzr_pressure::{Law, Section};
 use leitbild_operating_water::{
-    If97,
-    frame::{Action, Change, Class, Client, Dense, Diagnostic, Driver, Frame, Setup},
+    frame::{Class, Client, Diagnostic, Driver, Frame, Setup},
     ida::{Ida, Initial},
     joined::{Discrete, Integrated, Restart, discrete_restart},
 };
@@ -65,7 +62,7 @@ use spine::{
     DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, started_s3_composition, z1,
 };
 
-type System = Integrated<If97>;
+use pzr_control::{ChannelBlock, System};
 
 /// S2's hold configuration (BDF order at most 2).
 const MAX_ORDER: usize = 2;
@@ -74,9 +71,6 @@ const MAX_ORDER: usize = 2;
 const RETIRED_FRACTION: f64 = 0.1;
 /// The credited band (`ld01-accuracy-contract`, uncreditedAbove_Hz).
 const CREDITED_HZ: f64 = 2.;
-/// The two main-loop return faces (RETURN.A/B -> DOWN), as the settle's
-/// credited outputs read them.
-const LOOP_FACES: [usize; 2] = [22, 30];
 const OUTPUTS: [&str; 7] = [
     "pt1_pa",
     "collapsed_level_m",
@@ -86,205 +80,6 @@ const OUTPUTS: [&str; 7] = [
     "loop_b_kg_s",
     "request_w",
 ];
-
-/// `reference-pzr-pressure-channel` (operational-observations.md).
-#[derive(Clone, Copy, Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChannelBlock {
-    lag_s: f64,
-    min_pa: f64,
-    max_pa: f64,
-    quantum_pa: f64,
-    sample_s: f64,
-    transport_s: f64,
-}
-
-/// Where the recorded outputs live in `y` (solver scaling) and their
-/// physical factors.
-#[derive(Clone)]
-struct Probe {
-    pzr: std::ops::Range<usize>,
-    pzr_scales: Vec<f64>,
-    cell: stratified::Cell,
-    sg: [(usize, f64); 2],
-    loops: [(usize, f64); 2],
-}
-impl Probe {
-    fn new(
-        joined: &mut leitbild_operating_plant::joined::operator::Joined<If97>,
-        t: f64,
-        y: &[f64],
-        yp: &[f64],
-    ) -> Self {
-        joined.evaluate(t, y, yp, None, 0., None).unwrap();
-        let net = &joined.network;
-        let pzr = net.pzr.coordinates();
-        let pzr_scales = pzr.clone().map(|i| net.scales()[i]).collect();
-        let loops = LOOP_FACES.map(|f| {
-            let l = net
-                .face_layout
-                .iter()
-                .find(|l| l.face == f && l.phase == 0)
-                .expect("loop face coordinate");
-            let flow = net.chart(f, 0).unwrap().mass_flow_kg_s.value;
-            (l.index, flow / y[l.index])
-        });
-        let cell = net.stratified().clone();
-        let mut sg = Vec::new();
-        let mut k = 0;
-        for (owner, layout) in joined.layouts() {
-            for (i, label) in layout.labels.iter().enumerate() {
-                if owner == "secondary" && label.ends_with(".p_s") {
-                    sg.push((k, layout.scales[i]));
-                }
-                k += 1;
-            }
-        }
-        Self {
-            pzr,
-            pzr_scales,
-            cell,
-            sg: [sg[0], sg[1]],
-            loops,
-        }
-    }
-    fn roof_pa(&self, y: &[f64]) -> f64 {
-        y[self.pzr.start + stratified::ROOF_PRESSURE] * self.pzr_scales[stratified::ROOF_PRESSURE]
-    }
-    fn outputs(&self, y: &[f64]) -> [f64; 6] {
-        let x: Vec<Scalar> = self
-            .pzr
-            .clone()
-            .zip(&self.pzr_scales)
-            .map(|(i, s)| Scalar::constant(y[i] * s))
-            .collect();
-        let x = PzrCoordinates::from_slice(&x).unwrap();
-        let column = self.cell.column(&If97, &x, None).expect("PZR column");
-        let level = self
-            .cell
-            .taps(&If97, &column)
-            .expect("PZR taps")
-            .collapsed_level_m
-            .value;
-        [
-            self.roof_pa(y),
-            level,
-            y[self.sg[0].0] * self.sg[0].1,
-            y[self.sg[1].0] * self.sg[1].1,
-            y[self.loops[0].0] * self.loops[0].1,
-            y[self.loops[1].0] * self.loops[1].1,
-        ]
-    }
-}
-
-/// The normal PZR pressure controller as a frame-driver client, with the
-/// test's PT1 channel.
-struct PzrClient {
-    class: Class,
-    controller: Controller,
-    replay: Option<Vec<(u64, f64)>>,
-    channel: ChannelBlock,
-    probe: Probe,
-    lag: f64,
-    lag_at: f64,
-    in_flight: Sample,
-    in_force_w: f64,
-    scratch: Vec<f64>,
-    /// Per frame: index, outputs and the request in force after it.
-    series: Vec<(u64, [f64; 7])>,
-    schedule: Vec<(u64, f64)>,
-}
-impl PzrClient {
-    fn acquire(&self, t: f64) -> Sample {
-        let quality = if self.lag < self.channel.min_pa {
-            Quality::BelowRange
-        } else if self.lag > self.channel.max_pa {
-            Quality::AboveRange
-        } else {
-            Quality::Usable
-        };
-        Sample {
-            value_pa: (self.lag / self.channel.quantum_pa + 0.5).floor() * self.channel.quantum_pa,
-            acquired_s: t,
-            quality,
-        }
-    }
-    /// `Σ_k (−τ)^k p^(k)(t)` of the roof-pressure polynomial.
-    fn particular(&mut self, dense: &dyn Dense, t: f64) -> Result<f64, String> {
-        let (tau, mut sum, mut factor) = (self.channel.lag_s, 0., 1.);
-        for k in 0..=dense.order() {
-            dense.derivative(t, k, &mut self.scratch)?;
-            sum += factor * self.probe.roof_pa(&self.scratch);
-            factor *= -tau;
-        }
-        Ok(sum)
-    }
-}
-impl Client<System> for PzrClient {
-    fn name(&self) -> &str {
-        "LD01.PZR normal pressure control"
-    }
-    fn advance(&mut self, dense: &dyn Dense, from: f64, to: f64) -> Result<(), String> {
-        if from != self.lag_at {
-            return Err(format!("lag at {} s advanced from {from} s", self.lag_at));
-        }
-        let (a, b) = (self.particular(dense, from)?, self.particular(dense, to)?);
-        self.lag = b + (self.lag - a) * (-(to - from) / self.channel.lag_s).exp();
-        self.lag_at = to;
-        Ok(())
-    }
-    fn frame(&mut self, k: u64, t: f64, dense: &dyn Dense) -> Result<Vec<Change<System>>, String> {
-        if t != self.lag_at {
-            return Err(format!("frame at {t} s with the lag at {} s", self.lag_at));
-        }
-        dense.derivative(t, 0, &mut self.scratch)?;
-        let o = self.probe.outputs(&self.scratch);
-        // The sample acquired one transport earlier arrives now; the start's
-        // commissioning sample is acquired and delivered at the start.
-        let due = self.in_flight.acquired_s + self.channel.transport_s;
-        if !((due - t).abs() <= 1e-9 * t.abs() || self.in_flight.acquired_s == t) {
-            return Err(format!("the sample in flight is due at {due} s, not {t} s"));
-        }
-        let delivered = self.in_flight;
-        self.in_flight = self.acquire(t);
-        let decided = self.controller.frame(t, Some(&delivered)).demand;
-        let target = match &self.replay {
-            Some(s) => s.iter().find(|e| e.0 == k).map_or(self.in_force_w, |e| e.1),
-            None => decided.heater_request_w,
-        };
-        let mut out = Vec::new();
-        if target != self.in_force_w {
-            let demand = Demand {
-                heater_request_w: target,
-                spray_target: 0.,
-                withdrawn: None,
-            };
-            out.push(Change {
-                due_s: t,
-                class: self.class,
-                kind: "PZR heater request".into(),
-                action: Action::Held(Box::new(move |s: &mut System| {
-                    s.joined
-                        .pzr_mut()
-                        .ok_or("no PZR block")?
-                        .apply_control(t, &demand)
-                        .map(|_| ())
-                        .map_err(|f| format!("{f:?}"))
-                })),
-            });
-            self.in_force_w = target;
-            self.schedule.push((k, target));
-        }
-        self.series
-            .push((k, [o[0], o[1], o[2], o[3], o[4], o[5], self.in_force_w]));
-        Ok(out)
-    }
-    fn stop_at_frame(&self, _k: u64) -> bool {
-        // An S change can only be applied at an exact stop; with a 0.1 s
-        // transport the decision at frame k+1 is known only after frame k.
-        self.class == Class::S
-    }
-}
 
 struct Run {
     name: String,
@@ -356,56 +151,8 @@ fn run(
         joined.dimension(),
         "settled state of another packet"
     );
-    let prepared_w = joined
-        .pzr()
-        .expect("a G6 packet composes the PZR block")
-        .request_w();
-    let probe = Probe::new(&mut joined, t0, &y, &yp);
-    let lag = probe.roof_pa(&y);
-    // Commissioning: lag at the roof pressure, first sample acquired now.
-    let mut client = PzrClient {
-        class,
-        controller: Controller::new(law.clone(), prepared_w, 0.).unwrap(),
-        replay: replay.map(<[_]>::to_vec),
-        channel,
-        probe,
-        lag,
-        lag_at: t0,
-        in_flight: Sample {
-            value_pa: 0.,
-            acquired_s: t0,
-            quality: Quality::Unavailable,
-        },
-        in_force_w: prepared_w,
-        scratch: vec![0.; y.len()],
-        series: Vec::new(),
-        schedule: Vec::new(),
-    };
-    client.in_flight = client.acquire(t0);
-    let first = client.controller.law().auto(Some(&client.in_flight), t0);
-    let start_w = match replay {
-        Some(s) => {
-            assert_eq!(
-                s.first().map(|e| e.1),
-                Some(first.heater_request_w),
-                "the replayed schedule starts on the same commissioning demand"
-            );
-            s[0].1
-        }
-        None => first.heater_request_w,
-    };
-    let start = Demand {
-        heater_request_w: start_w,
-        spray_target: 0.,
-        withdrawn: None,
-    };
-    joined.pzr_mut().unwrap().apply_control(t0, &start).unwrap();
-    // The controller and the client hold the start demand in force, so the
-    // start frame reports no change.
-    client.controller = Controller::new(law.clone(), start_w, 0.).unwrap();
-    client.in_force_w = start_w;
-    let k0 = Frame::new(law.frame_s()).unwrap().at_or_after(t0).unwrap();
-    client.schedule.push((k0, start_w));
+    let (mut client, prepared_w, start_w) =
+        pzr_control::commission(&mut joined, law, channel, class, replay, t0, &y, &yp);
     let nonnegative = joined.network.nonnegative_stocks();
     let mut ida = Ida::new(
         Integrated::from_blocks(joined, structure, analyses).unwrap(),

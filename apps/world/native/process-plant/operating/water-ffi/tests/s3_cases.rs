@@ -29,6 +29,8 @@ mod gates;
 mod guards;
 #[path = "common/provenance.rs"]
 mod provenance;
+#[path = "common/pzr_control.rs"]
+mod pzr_control;
 mod s3_harness;
 #[path = "joined_spine.rs"]
 mod spine;
@@ -382,7 +384,7 @@ fn s3_case_run() {
     };
     let (
         Started {
-            joined,
+            mut joined,
             ids,
             network_ids,
             atol,
@@ -405,6 +407,33 @@ fn s3_case_run() {
     let t0 = state["t_s"].as_f64().unwrap();
     assert_eq!(y.len(), joined.dimension());
     let mut protection = ProtectionClient::new(&section, &joined, &y).expect("protection");
+    // C1: IC-CTRL's normal PZR pressure control in AUTO (S3-D5), heater
+    // changes class S (S3-D4), commissioned at the start state before the
+    // integrator is made; consistency is re-established at t0 below.
+    let mut control = if case == Case::C1 {
+        use leitbild_operating_plant::control::pzr_pressure::{Law, Section as ControlSection};
+        let path = std::env::var("LD01_PZR_CONTROL_SECTION").expect("LD01_PZR_CONTROL_SECTION");
+        let control_section: ControlSection =
+            serde_json::from_slice(&std::fs::read(&path).expect("control section"))
+                .expect("control section json");
+        let law = Law::new(&control_section).unwrap();
+        assert_eq!(
+            law.frame_s(),
+            section.frame_s,
+            "the control frame is the I&C frame"
+        );
+        let wiki = std::env::var("LD01_PZR_CONTROL_WIKI").expect("LD01_PZR_CONTROL_WIKI");
+        let channel = pzr_control::channel_block(&wiki, &law);
+        let (client, prepared_w, start_w) =
+            pzr_control::commission(&mut joined, &law, channel, Class::S, None, t0, &y, &yp);
+        Some((
+            client,
+            json!({"section": {"path": path, "sha256": provenance::sha256_file(&path).ok()},
+            "wiki": wiki, "class": "S (S3-D4)", "prepared_request_w": prepared_w, "start_request_w": start_w}),
+        ))
+    } else {
+        None
+    };
     let implemented: Vec<String> = section.functions.iter().map(|f| f.id.clone()).collect();
     let scales = joined.scales();
     let labels: Vec<String> = joined
@@ -458,6 +487,21 @@ fn s3_case_run() {
     ida.set_max_order(MAX_ORDER).unwrap();
     ida.constrain_nonnegative(&nonnegative).unwrap();
     restart.configure(&mut ida).unwrap();
+    if control.is_some() {
+        // The commissioning demand is in force: re-establish consistency.
+        let initial = leitbild_operating_water::joined::discrete_restart(
+            &mut ida,
+            t0,
+            leitbild_operating_water::joined::Discrete::TimeEvent,
+            &mut y,
+            &network_ids,
+            &atol,
+            rtol,
+            &restart,
+        )
+        .expect("consistent start after commissioning");
+        yp.clone_from(&initial.yp);
+    }
     let frame = Frame::new(section.frame_s).unwrap();
     let mut driver = Driver::new(frame, Diagnostic::Jump, z1::cpu_s, t0).unwrap();
     if case == Case::C2 {
@@ -479,6 +523,9 @@ fn s3_case_run() {
     let outcome = {
         let mut clients: Vec<&mut dyn Client<Integrated<If97>>> =
             vec![&mut protection, &mut recorder];
+        if let Some((c, _)) = control.as_mut() {
+            clients.push(c);
+        }
         driver
             .start(&mut clients, t0, &y, &yp)
             .and_then(|()| driver.run(&mut ida, t0, until, &mut y, &mut yp, &mut clients, &setup))
@@ -544,6 +591,12 @@ fn s3_case_run() {
             "derived_tolerances": derived, "relative_tolerance": rtol,
             "integration": "frame driver: stock IDA_ONE_STEP, observation from IDAGetDky, restarts by discrete_restart"},
         "lines": judged,
+        "pzr_control": control.as_ref().map(|(c, info)| {
+            let mut info = info.clone();
+            info["changes"] = json!(c.schedule.len().saturating_sub(1));
+            info["final_request_w"] = json!(c.in_force_w);
+            info
+        }),
         "timeline": {"end_s": tl.end, "holding_lost_s": tl.holding_lost, "stop_ramp_end_s": tl.stop_ramp_end,
             "seats": tl.seats.len(), "last_seat_s": tl.seats.iter().map(|(_, t)| *t).fold(f64::NEG_INFINITY, f64::max),
             "sg_relief": tl.sg_relief.iter().map(|(v, th, d, t)| json!([v, th, d, t])).collect::<Vec<_>>(),

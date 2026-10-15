@@ -44,7 +44,6 @@ impl Case {
         match self {
             Self::C1 => vec![
                 "prerequisite 10: the generator exporting through the Grid exchange is not composed in the joined operator (ELEC's slice runs stand-alone)",
-                "prerequisite 5: IC-CTRL's PZR pressure controller (AUTO) has no client the harness can compose (PzrClient is private to s3_c1_pzr_control.rs)",
             ],
             Self::C2 => vec![
                 "prerequisite 8: ELEC's slice (breaker, unit-to-reserve transfer, contactors) is not composed in the joined operator, so C2.O2's breaker, C2.O3 and C2.N5 cannot be judged",
