@@ -159,6 +159,63 @@ impl<P: Properties> Network<P> {
     }
 }
 
+/// Donor flips of the free phase paths between accepted states, an
+/// observation (class O): E2b keeps the exact donor by the flow's sign and
+/// selects no donor law, and C3 counts its flips (S3 declaration r2, C3's
+/// cost line; R3 for the rod passages). A path's donor is the end its flow
+/// draws from, by the sign of its impulse (`Q = Pi/I`, `I >= 0` at admitted
+/// states). A flip is a change between the two nonzero signs, counted once
+/// however many accepted states sit exactly at rest in between.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct DonorFlips {
+    /// Per face-layout path: the last nonzero sign, 0 before any.
+    last: Vec<i8>,
+    /// Per face-layout path: flips counted.
+    pub flips: Vec<usize>,
+    /// `(time, path)` of every flip, in order.
+    pub events: Vec<(f64, usize)>,
+    pub observations: usize,
+}
+impl DonorFlips {
+    /// Observe the accepted state `y` at `t`. Locked paths (L1) carry no
+    /// donor and are skipped.
+    pub fn observe<P: Properties>(&mut self, network: &Network<P>, t: f64, y: &[f64]) {
+        let impulses = network
+            .face_layout
+            .iter()
+            .enumerate()
+            .filter(|(li, _)| !network.unilateral_locked(*li))
+            .map(|(li, l)| (li, y[l.index]));
+        self.record(network.face_layout.len(), t, impulses);
+    }
+    /// One accepted state's `(path, impulse)` pairs among `paths` paths.
+    pub fn record(&mut self, paths: usize, t: f64, impulses: impl Iterator<Item = (usize, f64)>) {
+        if self.last.len() != paths {
+            self.last = vec![0; paths];
+            self.flips = vec![0; paths];
+        }
+        self.observations += 1;
+        for (li, pi) in impulses {
+            let sign: i8 = if pi > 0. {
+                1
+            } else if pi < 0. {
+                -1
+            } else {
+                continue;
+            };
+            if self.last[li] != 0 && self.last[li] != sign {
+                self.flips[li] += 1;
+                self.events.push((t, li));
+            }
+            self.last[li] = sign;
+        }
+    }
+    /// Flips counted over all paths.
+    pub fn total(&self) -> usize {
+        self.flips.iter().sum()
+    }
+}
+
 /// One path's history in the ledger.
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct PathLedger {
@@ -313,6 +370,23 @@ mod tests {
         assert_eq!(ledger.paths[&65].locks, 2);
         assert_eq!(ledger.paths[&65].releases, 2);
         assert_eq!(ledger.causes["DriveRoot"], 2);
+    }
+
+    #[test]
+    fn a_donor_flip_is_a_change_between_nonzero_signs_counted_once_through_rest() {
+        let mut d = DonorFlips::default();
+        for (t, signs) in [
+            (0., [1., 0.]),
+            (1., [0., 0.]),
+            (2., [-1., 2.]),
+            (3., [-2., -1.]),
+            (4., [3., -1.]),
+        ] {
+            d.record(2, t, signs.into_iter().enumerate());
+        }
+        assert_eq!(d.flips, vec![2, 1]);
+        assert_eq!(d.events, vec![(2., 0), (3., 1), (4., 0)]);
+        assert_eq!((d.total(), d.observations), (3, 5));
     }
 
     #[test]
