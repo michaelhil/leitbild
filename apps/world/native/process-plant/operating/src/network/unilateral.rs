@@ -351,10 +351,15 @@ impl<P: Properties> Network<P> {
         let port = self.cells[self.pzr.cell].phase;
         cells.push([port[0].is_some(), port[1].is_some()]);
         // IC-CTRL (S3 spray path): the spray port's virtual cell holds the
-        // vapor region's drops and vapor as its port view shows them.
+        // vapor region's vapor as its port view shows it, and its drops
+        // while the drop stock is positive: the stock its liquid path's
+        // contact root reads (DR-P3-SPRAY). No phase-mode owner zeroes the
+        // drop stock at its exhaustion, so the root's crossing is the
+        // presence's edge.
         if let Some(sp) = self.spray {
             let view = self.cells[sp.port_cell].phase;
-            cells.push([view[0].is_some(), view[1].is_some()]);
+            let drops = self.pzr.base + super::stratified::DROP_MASS;
+            cells.push([y[drops] > 0., view[1].is_some()]);
         }
         Presence { cells }
     }
