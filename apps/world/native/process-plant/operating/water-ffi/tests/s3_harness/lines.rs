@@ -164,24 +164,43 @@ fn judge_one(
             ))
         }
         (Case::C1, "N5") => {
+            // "No cause from the S3-implemented protection set": no accepted
+            // cause of any function the composed protection implements (the
+            // ic section's own list, so the loop-flow-evidence-unavailable
+            // causes the block names in prose are judged by their IDs); every
+            // ID the block lists must be implemented to be judged.
             kind(line, "mustNot")?;
+            names(line, "S3-implemented protection set")?;
             let listed: Vec<String> = line["mustNotCauses"]
                 .as_array()
                 .ok_or("no mustNotCauses list")?
                 .iter()
                 .filter_map(|c| c.as_str().map(str::to_string))
                 .collect();
-            let ids: Vec<&str> = listed
+            let ids: Vec<&str> = implemented.iter().map(String::as_str).collect();
+            let (v, mut evidence) = no_causes(tl, &ids, implemented);
+            let unimplemented: Vec<&String> = listed
                 .iter()
-                .map(String::as_str)
-                .filter(|c| c.starts_with("LD01."))
+                .filter(|c| c.starts_with("LD01.") && !implemented.contains(c))
                 .collect();
-            let prose: Vec<&String> = listed.iter().filter(|c| !c.starts_with("LD01.")).collect();
-            let (mut v, mut evidence) = no_causes(tl, &ids, implemented);
-            if v == "pass" && !prose.is_empty() {
-                v = "not executable".into();
-            }
-            evidence["listed_without_a_cause_id"] = json!(prose);
+            evidence["listed_ids_not_implemented"] = json!(unimplemented);
+            evidence["implemented_not_listed_by_id"] = json!(
+                implemented
+                    .iter()
+                    .filter(|f| !listed.contains(f))
+                    .collect::<Vec<_>>()
+            );
+            evidence["listed_without_a_cause_id"] = json!(
+                listed
+                    .iter()
+                    .filter(|c| !c.starts_with("LD01."))
+                    .collect::<Vec<_>>()
+            );
+            let v = if v == "pass" && !unimplemented.is_empty() {
+                "not executable".to_string()
+            } else {
+                v
+            };
             Ok((v, evidence))
         }
         (Case::C1, "M1") | (Case::C2, "M1") | (Case::C3, "M1") => {
@@ -342,10 +361,18 @@ fn judge_one(
         }
         (Case::C2, "N3") => {
             kind(line, "mustNot")?;
-            Ok((
-                "not executable".into(),
-                json!({"reason": "the PZR level causes are not implemented in S3 and the acquired LT vote is not observed by the composed protection (P-2c)"}),
-            ))
+            // The acquired PZR LT vote, once the composed protection carries
+            // it as the (recorded) cause LD01.PROT.PZR.LOW_LEVEL (IC-PROT,
+            // option (a) of GATE's request); until then not executable.
+            let low = "LD01.PROT.PZR.LOW_LEVEL";
+            if implemented.iter().any(|f| f == low) {
+                Ok(no_causes(tl, &[low], implemented))
+            } else {
+                Ok((
+                    "not executable".into(),
+                    json!({"reason": "the composed protection acquires no PZR level (LD01.PZR.LT) and implements no LD01.PROT.PZR.LOW_LEVEL (P-2c; requested from IC-PROT)"}),
+                ))
+            }
         }
         (Case::C2, "N4") => {
             kind(line, "mustNot")?;

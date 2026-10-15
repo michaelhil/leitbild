@@ -434,6 +434,70 @@ impl<S> leitbild_operating_water::frame::Client<S> for Recorder {
     }
 }
 
+/// Rule I's record (S2's D3 (a) as `runner` keeps it): samples, the first
+/// extended state, margin failures and the first exit, labelled as S2
+/// labels it ("D3 (a) margin exit" or "D3 (a) source-domain exit").
+#[derive(Default)]
+struct RuleI {
+    samples: u64,
+    first_extended: Option<f64>,
+    margin_failures: u64,
+    exit: Option<Value>,
+}
+impl RuleI {
+    fn judge(
+        &mut self,
+        joined: &mut leitbild_operating_plant::joined::operator::Joined<
+            leitbild_operating_water::If97,
+        >,
+        extension: &leitbild_operating_plant::joined::post_trip_domain::Extension,
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+    ) -> Result<(), String> {
+        use leitbild_operating_plant::joined::post_trip_domain::{self, Domain, Error};
+        joined
+            .evaluate(t, y, yp, None, 0., None)
+            .map_err(|e| format!("rule I: the operator at {t} s: {e:?}"))?;
+        self.samples += 1;
+        let (label, verdict) = match post_trip_domain::admit_accepted(
+            joined.nuclear(),
+            extension,
+            joined.travel(),
+            t,
+            0.,
+        ) {
+            Ok(a) => {
+                self.margin_failures += u64::from(!a.margin.holds);
+                if a.domain != Domain::Original && self.first_extended.is_none() {
+                    self.first_extended = Some(t);
+                }
+                (
+                    None,
+                    format!("admitted {:?}, margin holds {}", a.domain, a.margin.holds),
+                )
+            }
+            Err(Error::Unsupported {
+                margin_holds, exit, ..
+            }) => (
+                Some(if margin_holds {
+                    "D3 (a) source-domain exit"
+                } else {
+                    "D3 (a) margin exit"
+                }),
+                format!("unsupported: margin holds {margin_holds}, {exit:?}"),
+            ),
+            Err(e) => return Err(format!("D3 (a) at {t} s: {e}")),
+        };
+        if self.exit.is_none()
+            && let Some(label) = label
+        {
+            self.exit = Some(json!({"t_s": t, "label": label, "verdict": verdict}));
+        }
+        Ok(())
+    }
+}
+
 /// A case's t = 0 after its start (s) and the command there, from the
 /// block's frame alignment (r3.4: every case starts on a frame instant;
 /// event times relative to the start with their offset from the grid). C1:
@@ -572,6 +636,17 @@ fn s3_case_run() {
         "the block's frame is the I&C frame"
     );
     let (zero_after, command) = case_clock(case, &spec, declared_frame_s).unwrap();
+    // Rule I: the block declares owner request A's default, A4.
+    let rule_i_text = d.block.text("/kineticsDomain/ruleI");
+    assert_eq!(
+        rule_i_text, "owner request A, default A4",
+        "rule I {rule_i_text:?}: the harness implements the declared default A4"
+    );
+    d.block.text("/kineticsDomain/floor");
+    let packet_json: Value = serde_json::from_slice(&spine::packet_bytes().1).expect("packet json");
+    let extension: leitbild_operating_plant::joined::post_trip_domain::Extension =
+        serde_json::from_value(packet_json["post_trip_domain"].clone())
+            .expect("the packet's post_trip_domain section (D3 (a))");
     let zero = t0 + zero_after;
     let joined = &ida.system().integrated().joined;
     let mut protection = ProtectionClient::new(&section, joined, &y[..n], &reference)
@@ -631,9 +706,18 @@ fn s3_case_run() {
         bounds.push(zero + w);
     }
     bounds.push(until);
+    // Rule I is evaluated at every frame instant (the control client, class
+    // S, stops the solver there anyway, so these chunks add no stop).
+    let marks = bounds.clone();
+    let period = frame.period_s();
+    let first = (t0 / period).floor() as i64 + 1;
+    let last = (until / period).ceil() as i64;
+    bounds.extend((first..=last).map(|k| k as f64 * period));
     bounds.retain(|b| *b > t0 && *b <= until);
-    bounds.dedup();
+    bounds.sort_by(f64::total_cmp);
+    bounds.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
     let mut cpu_at: Vec<(f64, f64)> = vec![(t0, run_started)];
+    let mut domain = RuleI::default();
     let outcome = {
         let mut clients: Vec<&mut dyn Client<Unit>> =
             vec![&mut protection, &mut recorder, &mut control];
@@ -653,7 +737,17 @@ fn s3_case_run() {
             } else {
                 *b
             };
-            cpu_at.push((reached, spine::z1::cpu_s()));
+            if r.is_ok() {
+                // Rule I (D3 (a)) at the solver's state there, exactly as S2
+                // judges it (`runner::d3_exit`).
+                let joined = &mut ida.system_mut().integrated_mut().joined;
+                if let Err(e) = domain.judge(joined, &extension, *b, &y[..n], &yp[..n]) {
+                    r = Err(e);
+                }
+            }
+            if marks.iter().any(|m| (*m - *b).abs() < 1e-9) || r.is_err() {
+                cpu_at.push((reached, spine::z1::cpu_s()));
+            }
         }
         r
     };
@@ -689,7 +783,18 @@ fn s3_case_run() {
     let tl = Timeline::from_logs(&driver.log, &divisions, p.holding.lost_at, zero, end)
         .unwrap()
         .with_electrical(&electrical_log, zero);
-    let judged = lines::judge(case, &spec["lines"], &tl, &implemented, clusters);
+    // Rule I, A4 (the block's declared default pending owner request A):
+    // the lines are judged on the declared part, up to the D3 (a) exit; the
+    // whole run is judged again for information only.
+    let exit_after_zero = domain
+        .exit
+        .as_ref()
+        .and_then(|x| x["t_s"].as_f64())
+        .map(|x| x - zero);
+    let declared_tl = exit_after_zero.map_or_else(|| tl.clone(), |x| tl.truncated(x));
+    let judged = lines::judge(case, &spec["lines"], &declared_tl, &implemented, clusters);
+    let information =
+        exit_after_zero.map(|_| lines::judge(case, &spec["lines"], &tl, &implemented, clusters));
     let totals: serde_json::Map<String, Value> = COUNTER_NAMES
         .iter()
         .zip(driver.totals)
@@ -713,6 +818,23 @@ fn s3_case_run() {
         "lines not all passing".to_string()
     };
     let simulated = end - t0;
+    let rule_i_record = json!({"declared": rule_i_text, "applied": "A4 (the block's declared default, pending owner request A): a run ends, labelled, at the first state D3 (a) does not admit; continued to its end for information only",
+            "evaluated_at": "every frame instant, at the solver's state there", "samples": domain.samples,
+            "first_extended_s": domain.first_extended, "margin_failures": domain.margin_failures,
+            "exit": domain.exit, "exit_after_zero_s": exit_after_zero,
+            "information_from_s": exit_after_zero});
+    let information_record = information.map(|l| json!({"note": "INFORMATION ONLY (past the D3 (a) exit): every line over the whole run", "lines": l}));
+    let cpu_record = json!({"preparation_s": preparation_cpu_s, "run_s": run_cpu_s, "solver_s": driver.cpu.solver_s,
+            "observation_s": driver.cpu.observation_s, "restart_s": driver.cpu.restart_s, "held_s": driver.cpu.held_s,
+            "run_per_simulated_s": if simulated > 0. { json!(run_cpu_s / simulated) } else { Value::Null },
+            "restarts_r": driver.counts.total(Class::R), "s_instants": driver.counts.total(Class::S),
+            "event_window": window_cpu, "segments_cpu_s": cpu_at.iter().map(|(b, c)| json!([b - zero, c - run_started])).collect::<Vec<_>>()});
+    let timeline_record = json!({"zero_s": zero, "end_s": tl.end, "holding_lost_s": tl.holding_lost, "stop_ramp_end_s": tl.stop_ramp_end,
+            "seats": tl.seats.len(), "last_seat_s": tl.seats.iter().map(|(_, t)| *t).fold(f64::NEG_INFINITY, f64::max),
+            "sg_relief": tl.sg_relief.iter().map(|(v, th, d, t)| json!([v, th, d, t])).collect::<Vec<_>>(),
+            "pzr_relief_openings": tl.pzr_relief_openings,
+            "causes": tl.causes.iter().map(|c| json!([c.division, c.function, c.t])).collect::<Vec<_>>(),
+            "electrical": tl.electrical.as_ref().map(|l| l.iter().map(|(t, w)| json!([t, w])).collect::<Vec<_>>())});
     let receipt = json!({
         "kind": if evidence { "s3-case-run" } else { "s3-case-preview" },
         "case": case.key(), "status": status, "verdict": verdict, "failure": failure,
@@ -734,26 +856,18 @@ fn s3_case_run() {
             "derived_tolerances": derived, "relative_tolerance": rtol,
             "integration": "frame driver: stock IDA_ONE_STEP, observation from IDAGetDky, restarts by discrete_restart"},
         "lines": judged,
-        "timeline": {"zero_s": zero, "end_s": tl.end, "holding_lost_s": tl.holding_lost, "stop_ramp_end_s": tl.stop_ramp_end,
-            "seats": tl.seats.len(), "last_seat_s": tl.seats.iter().map(|(_, t)| *t).fold(f64::NEG_INFINITY, f64::max),
-            "sg_relief": tl.sg_relief.iter().map(|(v, th, d, t)| json!([v, th, d, t])).collect::<Vec<_>>(),
-            "pzr_relief_openings": tl.pzr_relief_openings,
-            "causes": tl.causes.iter().map(|c| json!([c.division, c.function, c.t])).collect::<Vec<_>>(),
-            "electrical": tl.electrical.as_ref().map(|l| l.iter().map(|(t, w)| json!([t, w])).collect::<Vec<_>>())},
+        "rule_i": rule_i_record,
+        "information": information_record,
+        "timeline": timeline_record,
         "pzr_control": {"changes": control.schedule.len().saturating_sub(1), "final_request_w": control.in_force_w},
         "gates_not_yet_implemented": ["D conservation (S2 identities and ledgers plus heater, spray, relief, turbine, generator and Grid receipts)",
             "E refinement (2.5 ms-capped reference and BDF2 at rtol/100 over the window; rtol/10 for the hold)",
             "F smoothness (derivative-jump detector)", "H repeatability", "K post-event spectra",
-            "I kinetics domain: D3 (a) admission at every accepted state and rule I's end (the frame driver does not check it; a preview past the S2 trip's 24.3 s exit is outside the admitted domain)",
             "C1 drift, SS-1 and SS-2", "C2/C3 directions (B)", "cost against the S3 and S2 budgets (counts and CPU are recorded)"],
         "protection_log": p.log, "divisions": divisions,
         "counts_by_class": driver.counts.json(), "stock_totals": totals, "segments": driver.segments,
         "instants": driver.log,
-        "cpu": {"preparation_s": preparation_cpu_s, "run_s": run_cpu_s, "solver_s": driver.cpu.solver_s,
-            "observation_s": driver.cpu.observation_s, "restart_s": driver.cpu.restart_s, "held_s": driver.cpu.held_s,
-            "run_per_simulated_s": if simulated > 0. { json!(run_cpu_s / simulated) } else { Value::Null },
-            "restarts_r": driver.counts.total(Class::R), "s_instants": driver.counts.total(Class::S),
-            "event_window": window_cpu, "segments_cpu_s": cpu_at.iter().map(|(b, c)| json!([b - zero, c - run_started])).collect::<Vec<_>>()},
+        "cpu": cpu_record,
         "frames": recorder.rows,
     });
     std::fs::write(
