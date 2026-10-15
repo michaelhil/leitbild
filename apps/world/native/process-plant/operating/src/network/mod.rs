@@ -28,7 +28,7 @@ mod phase_modes;
 pub mod ports;
 pub mod prepare;
 pub mod properties;
-mod spray;
+pub mod spray;
 pub mod stratified;
 mod structure;
 mod tolerance;
@@ -146,6 +146,10 @@ pub struct SprayLayout {
     pub valve: crate::control::spray_valve::Valve,
     pub stem: crate::control::spray_valve::Stem,
     pub closed: bool,
+    /// The inlet check (S3-D25 (3)): closed while it holds the valve path.
+    pub check_closed: bool,
+    /// The valve's sizing volume flow, the restriction row's scale.
+    pub q_ref_m3_s: f64,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct FaceLayout {
@@ -265,9 +269,9 @@ pub struct Network<P: Properties> {
     /// The controlled-spray path (IC-CTRL, S3); `None` composes S1/S2 as
     /// before.
     spray: Option<SprayLayout>,
-    /// The valve section's form loss of the last evaluation (the block
-    /// replay reuses it: it reads no coordinate).
-    spray_loss: Option<f64>,
+    /// The valve's opening at the last evaluation's time (the block replay
+    /// reuses it: it reads no coordinate).
+    spray_x: Option<f64>,
 }
 
 fn s(v: f64) -> Scalar {
@@ -650,6 +654,8 @@ impl<P: Properties> Network<P> {
                         section.valve.strokes_per_second,
                     )?,
                     closed: true,
+                    check_closed: false,
+                    q_ref_m3_s: section.valve.sizing.flow_kg_s / section.valve.sizing.density_kg_m3,
                 })
             }
         };
@@ -704,7 +710,7 @@ impl<P: Properties> Network<P> {
                 coupled_receipts: vec![[[s(0.); 3]; 2]; pzr],
                 unilateral: None,
                 spray,
-                spray_loss: None,
+                spray_x: None,
             },
             Prepared {
                 y,
@@ -893,7 +899,11 @@ impl<P: Properties> Network<P> {
         // differential whatever identity the caller's prepared vector
         // carried (IC-CTRL: a preparation with the valve closed).
         for (li, l) in self.face_layout.iter().enumerate() {
-            ids[l.index] = if self.path_locked(li) { 0. } else { 1. };
+            ids[l.index] = if self.path_locked(li) || self.spray_algebraic(li) {
+                0.
+            } else {
+                1.
+            };
         }
         for (l, mode) in self.cell_layout.iter().zip(&self.modes) {
             if *mode == CellMode::Equilibrium {

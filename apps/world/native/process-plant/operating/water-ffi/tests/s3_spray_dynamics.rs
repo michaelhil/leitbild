@@ -3,9 +3,10 @@
 //! the zero-time joined composition of a packet with the spray path, after
 //! a quiet second the controlled stem is issued 0.5 (opening a closed valve:
 //! its lock releases, class R, `discrete_restart`); it travels at its rate
-//! and arrives (class S: an exact stop, history continued); it is
-//! held open to +4 s (closing to 0 is refused by the network until its
-//! closing lock is represented). Recorded every 0.1 s: the
+//! and arrives (class S: an exact stop, history continued); at +3 s it is
+//! issued 0 and its arrival at 0 locks the valve path again (an owner time
+//! event, class R). The valve is the quasi-steady restriction and the inlet
+//! check its root-located lock (lead decision S3-D25). Recorded every 0.1 s: the
 //! stem, the valve and port faces' liquid mass flows, the roof pressure,
 //! the line pressure and the primary water mass (regular cells and the PZR
 //! cell's stocks).
@@ -31,7 +32,7 @@ use spine::{
 
 #[test]
 #[ignore = "NOT-EVIDENCE check: requires the spray packet, the wiki, IF97 and stock IDA/KLU"]
-fn the_spray_valve_opens_with_its_lock_release_and_delivers() {
+fn the_spray_valve_opens_delivers_and_closes_on_its_locks() {
     let receipt_path = std::env::var_os("LD01_SPRAY_DYNAMICS_RECEIPT");
     if let Some(p) = &receipt_path {
         assert!(
@@ -117,13 +118,13 @@ fn the_spray_valve_opens_with_its_lock_release_and_delivers() {
     };
     let mut rows = vec![observe(&mut ida, 0., &y, &yp)];
     let mut events = Vec::new();
-    let end: f64 = 4.;
+    let end: f64 = 5.;
+    let mut sample_k = 1u32;
     let mut next_sample = 0.1;
     let mut t = 0.;
     // Instants: open at 1 s, close-issue at 4 s; the stem's arrivals follow.
-    // Closing to 0 is not yet represented (the network refuses it at the
-    // stem's arrival): the check opens and holds.
-    let mut issues = vec![(1., 0.5)];
+    // Open to 0.5 at 1 s, close at 3 s (the arrival at 4 s locks the path).
+    let mut issues = vec![(1., 0.5), (3., 0.)];
     while t < end - 1e-12 {
         let joined = &ida.system().joined;
         let mut stop = end.min(next_sample);
@@ -136,9 +137,31 @@ fn the_spray_valve_opens_with_its_lock_release_and_delivers() {
             stop = stop.min(a);
         }
         ida.stop_at(stop).unwrap();
-        t = match ida.advance(stop, &mut y, &mut yp).unwrap() {
+        let advanced = ida.advance(stop, &mut y, &mut yp);
+        if let Err(e) = &advanced {
+            panic!("advance from {t} to {stop} failed: {e}; events {events:?}");
+        }
+        t = match advanced.unwrap() {
             Advance::Reached(r) => r,
-            Advance::Root { time, directions } => panic!("root at {time}: {directions:?}"),
+            Advance::Root { time, directions } => {
+                // The inlet check (the last slot) or any owner's root: R.
+                let r = discrete_restart(
+                    &mut ida,
+                    time,
+                    Discrete::Roots(&directions),
+                    &mut y,
+                    &network_ids,
+                    &atol,
+                    rtol,
+                    &restart,
+                )
+                .unwrap();
+                yp.clone_from(&r.yp);
+                events.push(json!({"t_s": time, "event": "located root", "class": "R",
+                    "transactions": r.transactions.iter().map(|x| x.receipt.clone()).collect::<Vec<_>>()}));
+                t = time;
+                continue;
+            }
         };
         assert_eq!(t, stop, "stopped exactly");
         if issues.first().is_some_and(|(ti, _)| *ti == t) {
@@ -190,22 +213,29 @@ fn the_spray_valve_opens_with_its_lock_release_and_delivers() {
             events.push(json!({"t_s": t, "event": "closing arrival", "class": "R",
                 "transactions": r.transactions.iter().map(|x| x.receipt.clone()).collect::<Vec<_>>()}));
         }
-        if t >= next_sample - 1e-12 {
-            rows.push(observe(&mut ida, t, &y, &yp));
-            next_sample += 0.1;
+        while t >= next_sample - 1e-9 {
+            if t >= next_sample - 1e-12 {
+                rows.push(observe(&mut ida, t, &y, &yp));
+            }
+            sample_k += 1;
+            next_sample = f64::from(sample_k) / 10.;
         }
     }
     let cpu = z1::cpu_s() - started;
-    let closed = ida.system().joined.network.spray().unwrap().closed;
+    let sp = *ida.system().joined.network.spray().unwrap();
+    let closed = sp.closed;
     let receipt = json!({"kind": "s3-spray-path-dynamics", "status": "NOT-EVIDENCE",
         "provenance": spine::provenance(), "heater_request_w": heater, "cpu_s": cpu,
         "columns": ["t_s", "stem", "valve_face_kg_s", "port_face_kg_s", "roof_pa", "line_pa", "primary_water_kg"],
-        "events": events, "rows": rows, "valve_closed_at_end": closed});
+        "events": events, "rows": rows, "valve_closed_at_end": closed, "check_closed_at_end": sp.check_closed});
     println!("{}", serde_json::to_string(&receipt).unwrap());
     if let Some(p) = &receipt_path {
         std::fs::write(p, serde_json::to_vec_pretty(&receipt).unwrap()).unwrap();
     }
-    assert!(!closed, "the opened valve's path is free");
+    assert!(
+        closed || sp.check_closed,
+        "the valve path ends locked (closing arrival or the check's contact)"
+    );
 }
 
 /// The S2-07 settled hold with and without the closed spray path, 20 s from

@@ -542,13 +542,8 @@ impl<P: Properties> Blocks<'_, P> {
             omega_rad_s: omega.direction,
             gas_volume_fraction: gas_fraction.direction,
         };
-        // IC-CTRL (S3 spray path): the valve section's held-input loss of
-        // the network's evaluation (it reads no coordinate).
-        let mut law = net.sections[j].section;
-        if let Some(k) = net.spray_section_loss(j) {
-            law.form_loss = k;
-        }
-        let e = law
+        let e = net.sections[j]
+            .section
             .evaluate(input, direction)
             .map_err(|e| recoverable(e.to_string()))?;
         let drive = liquid.fraction
@@ -570,7 +565,8 @@ impl<P: Properties> Blocks<'_, P> {
                 gas_profile = gas_profile + s(*w) * pass.chart(2 * face + 1).volume_flow_m3_s;
             }
             let gas_current = gas.density * gas.fraction * gas_profile;
-            let g = law
+            let g = net.sections[j]
+                .section
                 .evaluate(
                     hydraulics::Input {
                         massflow_kg_s: gas_current.value,
@@ -658,8 +654,29 @@ impl<P: Properties> Blocks<'_, P> {
         if net.path_locked(li) {
             return Ok((self.get(seed, l.index) / s(net.scales[l.index]), false));
         }
+        // IC-CTRL (S3 spray path, S3-D25 (1)): the open valve's liquid path
+        // is the restriction relation, as the residual's.
+        let restriction = |chart: flow::Chart| -> Result<Option<Scalar>, Failure> {
+            match net.spray {
+                Some(sp) if net.spray_algebraic(li) => {
+                    let rho = pass.cells[sp.region].phase[0]
+                        .map(|p| p.density)
+                        .ok_or_else(|| recoverable("spray line without liquid"))?;
+                    net.spray_restriction_row(
+                        li,
+                        chart.volume_flow_m3_s,
+                        force + chart.pressure_gravity_pa,
+                        rho,
+                    )
+                }
+                _ => Ok(None),
+            }
+        };
         let rate = self.rate(seed, l.index);
         if reuse_chart {
+            if let Some(row) = restriction(current)? {
+                return Ok((row, false));
+            }
             let row = flow::momentum_residual(rate, current, force).map_err(recoverable)?
                 / s(net.scales[l.index]);
             return Ok((row, false));
@@ -683,6 +700,9 @@ impl<P: Properties> Blocks<'_, P> {
         let cold = path.inertance_kg_m4.value == 0.;
         let chart = flow::chart_from_path(&net.faces[l.face], &pass.cells, l.phase, pi, path)
             .map_err(recoverable)?;
+        if let Some(row) = restriction(chart)? {
+            return Ok((row, cold));
+        }
         let row = flow::momentum_residual(rate, chart, force).map_err(recoverable)?
             / s(net.scales[l.index]);
         Ok((row, cold))

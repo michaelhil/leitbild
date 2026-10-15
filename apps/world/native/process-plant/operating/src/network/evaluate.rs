@@ -253,7 +253,9 @@ impl<P: Properties> Network<P> {
         if let Some(coupling) = coupling.as_deref_mut() {
             self.couple(coupling, y, seed, &points, &phase_mass)?;
         }
-        self.compose_sections(t, y, yp, seed, cj, &points)?;
+        // IC-CTRL (S3 spray path, S3-D25): the valve opening of this time.
+        self.spray_opening_at(t)?;
+        self.compose_sections(y, yp, seed, cj, &points)?;
         self.compose_momentum(t, y, yp, seed, cj, &phase_mass)?;
         self.compose_stocks(y, yp, seed, cj, &points, reuse)?;
         // HOOK (PHASE-P7, S3-D-P1): equilibrium rows from the coordinates.
@@ -455,7 +457,6 @@ impl<P: Properties> Network<P> {
 
     fn compose_sections(
         &mut self,
-        t: f64,
         y: &[f64],
         yp: &[f64],
         seed: Option<&[f64]>,
@@ -502,14 +503,8 @@ impl<P: Properties> Network<P> {
                 omega_rad_s: omega.direction,
                 gas_volume_fraction: gas_fraction.direction,
             };
-            // IC-CTRL (S3 spray path, for KERN): the spray valve's section
-            // carries the open stem's held-input form loss K_v(x(t)).
-            let mut section = self.sections[j].section;
-            if let Some(k) = self.spray_form_loss(j, t)? {
-                section.form_loss = k;
-                self.spray_loss = Some(k);
-            }
-            let e = section
+            let e = self.sections[j]
+                .section
                 .evaluate(input, direction)
                 .map_err(|e| Failure::Recoverable(e.to_string()))?;
             self.section_drive[j] = liquid.fraction
@@ -539,7 +534,8 @@ impl<P: Properties> Network<P> {
                     }
                 }
                 let gas_current = gas.density * gas.fraction * gas_profile;
-                let g = section
+                let g = self.sections[j]
+                    .section
                     .evaluate(
                         hydraulics::Input {
                             massflow_kg_s: gas_current.value,
@@ -676,8 +672,26 @@ impl<P: Properties> Network<P> {
                 .map_err(|e| Failure::Recoverable(e.into()))?;
             self.charts[l.face][l.phase] = Some(chart);
             self.face_drive[l.face][l.phase] = force + chart.pressure_gravity_pa;
+            // IC-CTRL (S3 spray path, S3-D25 (1)): the open valve's liquid
+            // path is the restriction relation, algebraic.
+            let restriction = match self.spray {
+                Some(sp) if !locked && self.spray_algebraic(li) => {
+                    let rho = self.cells[sp.region].phase[0]
+                        .map(|p| p.density)
+                        .ok_or_else(|| Failure::Recoverable("spray line without liquid".into()))?;
+                    self.spray_restriction_row(
+                        li,
+                        chart.volume_flow_m3_s,
+                        force + chart.pressure_gravity_pa,
+                        rho,
+                    )?
+                }
+                _ => None,
+            };
             self.rows[l.index] = if locked {
                 pi / s(self.scales[l.index])
+            } else if let Some(row) = restriction {
+                row
             } else {
                 flow::momentum_residual(self.rate(yp, seed, cj, l.index), chart, force)
                     .map_err(|e| Failure::Recoverable(e.into()))?
