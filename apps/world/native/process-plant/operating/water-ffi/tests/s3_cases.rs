@@ -370,6 +370,13 @@ fn s3_case_run() {
             "C2's trip at t = 0 is declared non-frame, but the start state's time {t_start} s is a frame instant"
         ));
     }
+    // C1's control channel commissions its first sample at the start and
+    // delivers it one frame later: the start must be a frame instant.
+    if case == Case::C1 && (t_start / frame_s - (t_start / frame_s).round()).abs() >= 1e-9 {
+        refusals.push(format!(
+            "C1's start state's time {t_start} s is not a frame instant (the PZR control channel commissions there)"
+        ));
+    }
     assert!(
         preview || refusals.is_empty(),
         "the S3 case run refuses (LD01_S3_PREVIEW=1 runs a NOT-EVIDENCE preview): {refusals:#?}"
@@ -612,7 +619,7 @@ fn s3_case_run() {
         "instants": driver.log,
         "cpu": {"preparation_s": preparation_cpu_s, "run_s": run_cpu_s, "solver_s": driver.cpu.solver_s,
             "observation_s": driver.cpu.observation_s, "restart_s": driver.cpu.restart_s, "held_s": driver.cpu.held_s,
-            "run_per_simulated_s": run_cpu_s / (end - t0).max(1e-9),
+            "run_per_simulated_s": if end > t0 { json!(run_cpu_s / (end - t0)) } else { Value::Null },
             "restarts_r": driver.counts.total(Class::R)},
         "frames": recorder.rows,
     });
