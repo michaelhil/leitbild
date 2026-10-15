@@ -226,6 +226,10 @@ impl Stem {
             self.x0 - step
         })
     }
+    /// Whether the stem is issued 0 (moving toward or resting at closed).
+    pub fn closing(&self) -> bool {
+        self.target == 0.
+    }
     /// Whether the stem rests closed at `t` (its path is locked).
     pub fn closed_at(&self, t: f64) -> Result<bool, Failure> {
         Ok(self.position(t)? == 0.)

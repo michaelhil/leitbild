@@ -1161,6 +1161,45 @@ impl<P: Properties + WaterProperties> Joined<P> {
         }
         Ok(done)
     }
+    /// IC-CTRL (S3 spray path, for KERN): put a normal PZR pressure control
+    /// frame's demands in force: the heater request into the PZR block, the
+    /// controlled-spray fraction into the network's valve stem when the
+    /// spray path is composed (without it a nonzero spray demand refuses in
+    /// the PZR block). Returns how the stem change enters (S3-D4: `Lock` is
+    /// class R, `Slope` class S, `None` nothing) and the receipts.
+    pub fn apply_pzr_control(
+        &mut self,
+        t: f64,
+        demand: &crate::control::pzr_pressure::Demand,
+    ) -> Result<
+        (
+            crate::control::spray_valve::StemChange,
+            Vec<serde_json::Value>,
+        ),
+        Failure,
+    > {
+        use crate::control::spray_valve::StemChange;
+        let composed = self.network.spray().is_some();
+        let heater = crate::control::pzr_pressure::Demand {
+            spray_target: if composed { 0. } else { demand.spray_target },
+            ..*demand
+        };
+        let applied = self
+            .blocks
+            .pzr
+            .as_mut()
+            .ok_or_else(|| fatal("no PZR block for the control frame"))?
+            .apply_control(t, &heater)?;
+        let mut receipts = vec![serde_json::to_value(&applied).map_err(|e| fatal(e.to_string()))?];
+        let change = if composed {
+            let (change, receipt) = self.network.issue_spray(t, demand.spray_target)?;
+            receipts.push(receipt);
+            change
+        } else {
+            StemChange::None
+        };
+        Ok((change, receipts))
+    }
     /// The earliest declared time event of any owner strictly after `t`.
     pub fn next_time_event(&self, t: f64) -> Option<f64> {
         [

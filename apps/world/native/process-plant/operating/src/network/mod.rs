@@ -888,10 +888,12 @@ impl<P: Properties> Network<P> {
     /// vapor mass and energy (S3-D-P1) are algebraic.
     pub fn differential(&self, prepared: &[f64]) -> Vec<f64> {
         let mut ids = prepared.to_vec();
+        // An impulse is differential unless its path is locked (L1 or the
+        // closed spray valve); a released path's impulse returns to
+        // differential whatever identity the caller's prepared vector
+        // carried (IC-CTRL: a preparation with the valve closed).
         for (li, l) in self.face_layout.iter().enumerate() {
-            if self.path_locked(li) {
-                ids[l.index] = 0.;
-            }
+            ids[l.index] = if self.path_locked(li) { 0. } else { 1. };
         }
         for (l, mode) in self.cell_layout.iter().zip(&self.modes) {
             if *mode == CellMode::Equilibrium {

@@ -39,6 +39,20 @@ impl<P: Properties> Network<P> {
             return Ok(Some(0.));
         }
         let x = s.stem.position(t)?;
+        if x == 0. {
+            // The release instant of an opening: the stem is still at 0 and
+            // the path leaves its lock with `Π = 0`, so the restriction's
+            // loss `K ρ v|v|/2` is its value at zero flow; every later
+            // instant has its finite K. A free path reaching 0 while closing
+            // would need the closing lock before its own instant: refuse.
+            return if s.stem.closing() {
+                Err(Failure::Fatal(format!(
+                    "spray valve closing to 0 at {t} s with its path free: the closing lock transaction is not represented (IC-CTRL open item)"
+                )))
+            } else {
+                Ok(Some(0.))
+            };
+        }
         Ok(Some(s.valve.form_loss(x)?))
     }
     /// The valve section's form loss of the last evaluation, for the block
