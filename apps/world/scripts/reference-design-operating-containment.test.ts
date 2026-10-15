@@ -66,9 +66,9 @@ function edit<T>(block: T, path: (string | number)[], change: (parent: Record<st
 const without = <T>(block: T, path: (string | number)[]) => edit(block, path, (o, k) => { delete o[k] })
 const replaced = <T>(block: T, path: (string | number)[], value: unknown) => edit(block, path, (o, k) => { o[k] = value })
 
-test('compiles the containment owners into the SI packet and counts 36 + 23 coordinates', () => {
+test('compiles the containment owners into the SI packet and counts 38 + 23 coordinates', () => {
   const c = compileOperatingContainment(pages())
-  expect(c.census).toMatchObject({ differential: 36, algebraic: 23, total: 59, bayTemplate: { perBay: { differential: 3, algebraic: 4 }, bays: 3, total: 21 } })
+  expect(c.census).toMatchObject({ differential: 38, algebraic: 23, total: 61, bayTemplate: { perBay: { differential: 3, algebraic: 4 }, bays: 3, total: 21 } })
   expect(c.census.owners.map(o => o.owner).slice(0, 2)).toEqual(['CNV', 'SHELL.REMAINDER'])
   expect(c.census.owners.at(-1)).toEqual({ owner: 'PCC.FILM', differential: ['M', 'H'], algebraic: ['T', 'm_evap'] })
   expect(c.atmosphere).toMatchObject({ initialPressure_Pa: 101325, initialTemperature_K: 298.15, maxPressure_Pa: 500000, maxTemperature_K: 433.15,

@@ -216,6 +216,9 @@ export function compileOperatingContainment(pages: ContainmentPages) {
     { owner: 'SHELL.REMAINDER', differential: ['U'], algebraic: [] as string[] },
     ...local.map(p => ({ owner: p.id, differential: ['U'], algebraic: [] as string[] })),
     ...poolEntries.map(p => ({ owner: p.id, differential: [...poolDifferential], algebraic: [...poolAlgebraic] })),
+    // S4-D13: each FLOOR→SUMP drain channel carries its mass flow (path
+    // inertance); the channels' inertance has no wiki value yet.
+    { owner: 'FLOOR-SUMP.DRAINS', differential: Array.from({ length: floor.drains }, (_, i) => `m_${i + 1}`), algebraic: [] as string[] },
     { owner: 'PCC.TANK', differential: ['M'], algebraic: [] as string[] },
     { owner: 'PCC.FILM', differential: ['M', 'H'], algebraic: ['T', 'm_evap'] },
   ]
@@ -243,7 +246,9 @@ export function compileOperatingContainment(pages: ContainmentPages) {
         { id: 'GUTTER.SPILL', from: 'GUTTER', to: gutter.emergencyReceiver, width_m: gutter.emergencyWidth_m, crest_m: gutter.emergencyCrest_m,
           law: 'backwater' as const },
         { id: 'WST.SPILL', from: 'WST', to: wst.spillReceiver, width_m: wst.spillWidth_m, crest_m: wst.spillRim_m, law: 'backwater' as const },
-        // The rim's own law: head over the higher of the rim and the receiving surface, signed by donor.
+        // The rim's own law: head over the higher of the rim and the receiving
+        // surface, signed by donor; it acts only while the SUMP surface is at or
+        // above the rim (S4-D15), else deck water reaches the pit by the drains.
         { id: 'SUMP.RIM', from: 'SUMP', to: sump.rimReceiver, width_m: sump.rimWidth_m, crest_m: sump.rim_m, law: 'receiving-surface' as const },
       ],
       drains: { from: 'FLOOR' as const, to: 'SUMP' as const, count: floor.drains, face_m: floor.drainMouth_m, reference_kg_s: floor.drainReference_kg_s,
