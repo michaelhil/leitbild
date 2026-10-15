@@ -361,18 +361,29 @@ fn judge_one(
         }
         (Case::C2, "N3") => {
             kind(line, "mustNot")?;
-            // The acquired PZR LT vote, once the composed protection carries
-            // it as the (recorded) cause LD01.PROT.PZR.LOW_LEVEL (IC-PROT,
-            // option (a) of GATE's request); until then not executable.
-            let low = "LD01.PROT.PZR.LOW_LEVEL";
-            if implemented.iter().any(|f| f == low) {
-                Ok(no_causes(tl, &[low], implemented))
-            } else {
-                Ok((
+            // S3-D38: the acquired PZR LT vote, recorded by the compiled
+            // section's monitor for this line (id "C2.N3 …"), the trip
+            // withheld; fail if any division qualified it.
+            let Some(monitor) = tl
+                .monitors_declared
+                .iter()
+                .find(|m| m.starts_with("C2.N3 "))
+            else {
+                return Ok((
                     "not executable".into(),
-                    json!({"reason": "the composed protection acquires no PZR level (LD01.PZR.LT) and implements no LD01.PROT.PZR.LOW_LEVEL (P-2c; requested from IC-PROT)"}),
-                ))
-            }
+                    json!({"reason": "the compiled ic section carries no C2.N3 monitor (PZR LT vote)"}),
+                ));
+            };
+            let qualified: Vec<Value> = tl
+                .monitors
+                .iter()
+                .filter(|(m, _, _)| m == monitor)
+                .map(|(_, d, t)| json!({"division": d, "t_s": t}))
+                .collect();
+            Ok((
+                verdict(qualified.is_empty()),
+                json!({"monitor": monitor, "qualified": qualified}),
+            ))
         }
         (Case::C2, "N4") => {
             kind(line, "mustNot")?;

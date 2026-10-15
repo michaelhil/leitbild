@@ -39,6 +39,11 @@ pub struct Timeline {
     /// The electrical slice's log (breaker, routing, contactors), when the
     /// slice is composed: `None` when it is not.
     pub electrical: Option<Vec<(f64, String)>>,
+    /// The compiled section's recorded monitors (voted rules with no output,
+    /// e.g. "C2.N3 PZR LT vote", S3-D38) ...
+    pub monitors_declared: Vec<String>,
+    /// ... and each division's first qualification: (monitor, division, t).
+    pub monitors: Vec<(String, usize, f64)>,
 }
 
 impl Timeline {
@@ -80,6 +85,9 @@ impl Timeline {
                     division: i,
                     t: rel(&d["trip"]["t_s"], "a trip")?,
                 });
+            }
+            for (id, at) in d["monitors"].as_object().into_iter().flatten() {
+                tl.monitors.push((id.clone(), i, rel(at, "a monitor")?));
             }
             for r in d["requests"].as_array().into_iter().flatten() {
                 // The request as written, with its time on the case clock.
@@ -187,6 +195,13 @@ impl Timeline {
                 .electrical
                 .as_ref()
                 .map(|l| l.iter().filter(|(t, _)| keep(*t)).cloned().collect()),
+            monitors_declared: self.monitors_declared.clone(),
+            monitors: self
+                .monitors
+                .iter()
+                .filter(|x| keep(x.2))
+                .cloned()
+                .collect(),
         }
     }
 

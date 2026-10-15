@@ -418,6 +418,34 @@ fn c3s_operator_turbine_trip_and_labelled_end_are_read_from_the_block() {
     assert!(zone_r_exhausts_within(0., -1e-9, 1e-6));
 }
 
+#[test]
+fn c2s_level_line_is_judged_on_the_sections_recorded_vote() {
+    let b = block();
+    let (log, mut divisions) = c2_logs(52);
+    let verdict = |tl: &Timeline| {
+        lines::judge(
+            Case::C2,
+            &b.whole("/cases/C2/lines"),
+            tl,
+            &implemented(),
+            52,
+        )
+        .into_iter()
+        .find(|l| l["id"] == "C2.N3")
+        .map(|l| l["verdict"].as_str().unwrap().to_string())
+        .unwrap()
+    };
+    let mut tl = Timeline::from_logs(&log, &divisions, Some(500.15), 500., 560.).unwrap();
+    assert_eq!(verdict(&tl), "not executable", "no monitor in the section");
+    tl.monitors_declared = vec!["C2.N3 PZR LT vote".into()];
+    assert_eq!(verdict(&tl), "pass", "declared, never qualified");
+    divisions[1]["monitors"] = json!({"C2.N3 PZR LT vote": 530.});
+    let mut tl = Timeline::from_logs(&log, &divisions, Some(500.15), 500., 560.).unwrap();
+    tl.monitors_declared = vec!["C2.N3 PZR LT vote".into()];
+    assert_eq!(tl.monitors, vec![("C2.N3 PZR LT vote".to_string(), 1, 30.)]);
+    assert_eq!(verdict(&tl), "fail", "a division qualified the vote");
+}
+
 // ------------------------------------------------------------ the case run
 
 /// The PZR roof pressure, SG pressures and rod travel range at each frame's
@@ -876,7 +904,7 @@ fn s3_case_run() {
         .map(|dv| json!({"supply": dv.supply, "powered": dv.powered,
             "causes": dv.causes.iter().map(|c| json!({"function": c.function, "t_s": c.at_s})).collect::<Vec<_>>(),
             "trip": dv.trip.as_ref().map(|c| json!({"function": c.function, "t_s": c.at_s})),
-            "requests": dv.requests}))
+            "requests": dv.requests, "monitors": dv.monitors}))
         .collect();
     // A failed run ends where the solver last reached; its refusal is at
     // the driver's last attempted instant (both recorded).
@@ -886,9 +914,10 @@ fn s3_case_run() {
         until
     };
     let electrical_log = ida.system().log.clone();
-    let tl = Timeline::from_logs(&driver.log, &divisions, p.holding.lost_at, zero, end)
+    let mut tl = Timeline::from_logs(&driver.log, &divisions, p.holding.lost_at, zero, end)
         .unwrap()
         .with_electrical(&electrical_log, zero);
+    tl.monitors_declared = section.monitors.iter().map(|m| m.id.clone()).collect();
     // Rule I, A4 (the block's declared default pending owner request A):
     // the lines are judged on the declared part, up to the D3 (a) exit; the
     // whole run is judged again for information only.
