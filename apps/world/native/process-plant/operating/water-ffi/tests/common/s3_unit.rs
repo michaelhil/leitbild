@@ -51,9 +51,6 @@ use leitbild_operating_water::{
 use serde_json::{Value, json};
 
 pub type Unit = Electrified<Integrated<If97>>;
-/// The S3 unit with the S2 joined ledgers as IDAS quadratures (the gate
-/// harness's conservation family, rule D; stock IDAS only).
-pub type LedgeredUnit = Electrified<leitbild_operating_water::joined_ledger::Ledgered<If97>>;
 
 /// A reference run's tolerance scaling: the relative tolerance by
 /// `relative`, every absolute tolerance (derived classes included) by
