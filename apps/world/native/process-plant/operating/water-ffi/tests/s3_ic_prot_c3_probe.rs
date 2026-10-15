@@ -308,3 +308,78 @@ fn s3_ic_prot_c3_rcp_supply_loss_through_acquired_protection() {
     );
     assert!(failure.is_none(), "{failure:?}");
 }
+
+/// The PZR LT pair's tap pressures from the coordinates alone
+/// (`stratified::Cell::level_tap_pressures`) equal the evaluated column's
+/// (`Network::pzr_taps`) bit for bit at the composition's start, and the
+/// acquired LT quantity is that difference through the calibration, with the
+/// compiled section's LT family (`ld01-pzr-level-channels`).
+#[test]
+#[ignore = "requires the joined packet, the ic section, the wiki, IF97 and stock IDA/KLU"]
+fn the_lt_tap_pressures_from_coordinates_equal_the_evaluated_column() {
+    use leitbild_operating_plant::network::stratified;
+    let section_path = std::env::var("LD01_IC_SECTION").expect("LD01_IC_SECTION");
+    let section: Section =
+        serde_json::from_slice(&std::fs::read(&section_path).expect("section")).expect("section");
+    assert!(
+        section.families.iter().any(|f| f.id == "LD01.PZR.LT"),
+        "the compiled section carries the LT family"
+    );
+    let (
+        Started {
+            mut joined, y, yp, ..
+        },
+        _,
+    ) = started_s3_composition();
+    joined
+        .evaluate(0., &y, &yp, None, 0., None)
+        .expect("evaluation at the start");
+    let taps = joined.network.pzr_taps().expect("taps");
+    let evaluated = taps.level.expect("LT pair").difference_pa.value;
+    let scales = joined.scales();
+    let base = joined.network.pzr.base;
+    let x: Vec<leitbild_operating_plant::thermal::Scalar> = (0..stratified::COORDINATES)
+        .map(|i| {
+            leitbild_operating_plant::thermal::Scalar::constant(y[base + i] * scales[base + i])
+        })
+        .collect();
+    let (low, high) = joined
+        .network
+        .stratified()
+        .level_tap_pressures(&stratified::Coordinates::from_slice(&x).unwrap())
+        .unwrap()
+        .expect("LT pair");
+    assert_eq!(
+        (low.value - high.value).to_bits(),
+        evaluated.to_bits(),
+        "{} vs {evaluated}",
+        low.value - high.value
+    );
+    let client = ProtectionClient::new(&section, &joined, &y, &y).expect("protection with LT");
+    let values = client.values(&y).unwrap();
+    let observed = client.observed();
+    let level = values
+        .as_object()
+        .unwrap()
+        .iter()
+        .find(|(k, _)| k.starts_with("PzrLevel"))
+        .map(|(_, v)| v.as_f64().unwrap())
+        .unwrap();
+    let r = &observed["references"]["LD01.PZR.LT"];
+    let (rl, rg, h) = (
+        r["liquid_density_kg_m3"].as_f64().unwrap(),
+        r["vapor_density_kg_m3"].as_f64().unwrap(),
+        r["tap_span_m"].as_f64().unwrap(),
+    );
+    let g = leitbild_operating_plant::network::ports::G;
+    let expected = (evaluated - rg * g * h) / ((rl - rg) * g);
+    assert!(
+        (level - expected).abs() <= 1e-12 * expected.abs(),
+        "{level} vs {expected}"
+    );
+    println!(
+        "{}",
+        json!({"dp_pa": evaluated, "lt_indicated_m": level, "collapsed_level_m": taps.collapsed_level_m.value,
+            "mixture_level_m": taps.mixture_level_m.value, "calibration": r})
+    );
+}

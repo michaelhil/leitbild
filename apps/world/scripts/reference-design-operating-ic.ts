@@ -62,6 +62,48 @@ export const parsePowerProxyPaths = (text: string) => z.object({
   transport_s: positive, maximumAge_s: positive, recovery_s: positive,
 }).strict().parse(configurationBlock(text, 'ld01-power-proxy-protective-paths'))
 
+/** The PZR LT devices (`ld01-pzr-level-channels`, S3-D37/S3-D38): the fixed
+ * saturated-water calibration pressure, the device lag, the interface span,
+ * the indicated span and resolution, and the I-group supplies. */
+export const parsePzrLevelChannels = (text: string) => z.object({
+  calibrationPressure_Pa: positive, lag_s: positive, interfaceSpan_Pa: band, indicatedSpan_m: band,
+  quantum_m: positive, supplies: z.tuple([z.string(), z.string(), z.string()]),
+}).strict().parse(configurationBlock(text, 'ld01-pzr-level-channels'))
+/** The PZR level protection settings (`ld01-pzr-level-protection`). */
+export const parsePzrLevelProtection = (text: string) => z.object({
+  lowLevel_m: finite, lowQualification_s: positive, highLevel_m: finite, highQualification_s: positive,
+  unavailableQualification_s: positive, resetBand_m: band, resetDuration_s: positive,
+}).strict().parse(configurationBlock(text, 'ld01-pzr-level-protection'))
+
+/** The PZR LT family and C2.N3's recorded vote, from the two blocks and the
+ * page-wide protective timing (the PT/LT families share it: "For these
+ * protection channels select 0.1 s ..." on the PZR protection page). The vote
+ * is recorded only: LD01.PROT.PZR.LOW_LEVEL is not implemented in S3 (S3-D21). */
+export function compilePzrLevelFrom(texts: { measurements: string, observations: string, protection: string }) {
+  const levelChannels = parsePzrLevelChannels(texts.measurements)
+  const levelProtection = parsePzrLevelProtection(texts.protection)
+  const channel = parsePressureChannel(texts.observations)
+  const timing = parsePressureProtection(texts.protection)
+  const taps = parsePzrTaps(texts.measurements)
+  const low = taps.find(t => t.id === 'LT.LOW'), high = taps.find(t => t.id === 'LT.HIGH')
+  if (!low || !high || !(high.elevation_m > low.elevation_m)) throw Error('The LT taps must be a rising pair')
+  wholeFrames('LT low-level qualification', levelProtection.lowQualification_s, channel.sample_s)
+  const family = {
+    id: 'LD01.PZR.LT',
+    quantity: { pzr_level: { calibration_pressure_pa: levelChannels.calibrationPressure_Pa, interface_span_pa: levelChannels.interfaceSpan_Pa } },
+    channels: levelChannels.supplies.map((supply, i) => ({ id: `LD01.PZR.LT${i + 1}`, supply })),
+    channel: { lag_s: levelChannels.lag_s, min: levelChannels.indicatedSpan_m[0], max: levelChannels.indicatedSpan_m[1],
+      quantum: levelChannels.quantum_m, indeterminate_band: null, sample_s: channel.sample_s, transport_s: channel.transport_s },
+    maximum_age_s: timing.maximum_age_s, recovery_s: timing.recovery_s,
+  }
+  const monitors = [{
+    id: 'C2.N3 PZR LT vote',
+    rule: { voted: { family: 'LD01.PZR.LT', side: { at_or_below: levelProtection.lowLevel_m }, qualification_s: levelProtection.lowQualification_s } },
+    basis: 'ld01-pzr-level-protection lowLevel_m/lowQualification_s; recorded only: LD01.PROT.PZR.LOW_LEVEL is not implemented in S3 (S3-D21)',
+  }]
+  return { family, monitors }
+}
+
 /** What the section reads from the joined packet it is compiled against. */
 export const packetSchema = z.object({
   mechanics: z.object({ faces: z.array(z.object({ id: z.string() }).passthrough()) }).passthrough(),
@@ -100,6 +142,8 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
   const flowChannel = parseLoopFlowChannel(texts['systems/instrumentation/operational-observations.md'])
   const proxyPaths = parsePowerProxyPaths(texts['systems/instrumentation/operational-observations.md'])
   const reference = parseRegionalCurrentReference(texts['systems/instrumentation/nuclear-observation-apparatus.md'])
+  const pzrLevel = compilePzrLevelFrom({ measurements: texts['systems/instrumentation/phase-dependent-measurements.md'],
+    observations: texts['systems/instrumentation/operational-observations.md'], protection: texts['safety/source-and-primary-protection.md'] })
   const pt1 = taps.find(t => t.id === 'PT1')
   if (!pt1) throw Error('No PT1 tap')
   const frame_s = channel.sample_s
@@ -175,7 +219,7 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
       channel: { lag_s: channel.lag_s, min: channel.min_pa, max: channel.max_pa, quantum: channel.quantum_pa,
         indeterminate_band: null, sample_s: channel.sample_s, transport_s: channel.transport_s },
       maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
-    }, ...sgFamilies, ...flowFamilies, proxyFamily],
+    }, pzrLevel.family, ...sgFamilies, ...flowFamilies, proxyFamily],
     reports: [{
       id: 'LD01.TG.TRIP.REPORT', source: 'turbine_retained_trip', supply: 'ACT.B',
       sample_s: report.sample_s, transport_s: report.transport_s, maximum_age_s: report.maximumAge_s, recovery_s: report.recovery_s,
@@ -211,6 +255,7 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
           effects: trip, reset: flowReset },
       ]),
     ],
+    monitors: pzrLevel.monitors,
     holding: {
       interface: 'LD01.TRIP.HOLD', supply: 'LD01.DC.ACT.A', manual_interrupt: 'LD01.TRIP.MANUAL',
       divisions: [...supplies], contacts: supplies.map(s => `LD01.TRIP.PERM.${s}`),
