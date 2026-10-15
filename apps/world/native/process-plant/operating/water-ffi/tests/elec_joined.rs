@@ -20,6 +20,7 @@ use leitbild_operating_plant::{
     electrical::{
         breaker::{self, Breaker, Contact},
         bus::{self, Distribution, SourceState},
+        field,
         slice::{self, Inputs, QUADRATURES, Slice},
     },
     joined::block::Command,
@@ -27,7 +28,7 @@ use leitbild_operating_plant::{
 };
 use leitbild_operating_water::{
     If97,
-    electrical::{Configuration, Electrified, N, PROPOSED_BUDGET},
+    electrical::{Configuration, Electrified, FieldClient, N, PROPOSED_BUDGET},
     frame::{Action, Change, Class, Client, Dense, Diagnostic, Driver, Frame, Reached, Setup},
     ida::{Advance, Ida, Initial},
     joined::{
@@ -785,5 +786,122 @@ fn the_frame_driver_carries_the_slices_quadratures_across_its_restarts() {
     assert!(
         defect.abs() < 1e-5 * throughput,
         "slice ledger {defect} of {throughput}"
+    );
+}
+
+/// ICFIELD: records the commands the frame driver hands the clients
+/// (declared ones and, through the driver's hook, client-decided ones).
+struct Commands {
+    seen: Vec<(f64, Command)>,
+}
+impl Client<Unit> for Commands {
+    fn name(&self) -> &str {
+        "TEST-ONLY command recorder"
+    }
+    fn advance(&mut self, _: &dyn Dense, _: f64, _: f64) -> Result<(), String> {
+        Ok(())
+    }
+    fn frame(&mut self, _: u64, _: f64, _: &dyn Dense) -> Result<Vec<Change<Unit>>, String> {
+        Ok(Vec::new())
+    }
+    fn command(&mut self, t: f64, command: Command) -> Result<Vec<Change<Unit>>, String> {
+        self.seen.push((t, command));
+        Ok(Vec::new())
+    }
+}
+
+/// ICFIELD (generator page, field-supply loss): an offsite loss between
+/// frames leaves the field converter on AC.B unsupplied. The field
+/// controller acquires the loss at the next frame and, one transport
+/// later, requests GCB OPEN and the acquired turbine trip in one class-R
+/// instant; the trip latches the SG owner's STOP, reaches the clients'
+/// retained part (the driver's hook) and the GCB opens one travel later.
+/// Needs `ELEC_PACKET` with `fieldProtection` (S3-D44, wiki e522644).
+#[test]
+#[ignore = "requires the joined packet, the wiki, IF97, stock IDAS and ELEC_PACKET with fieldProtection"]
+fn a_loops_field_supply_loss_trips_the_turbine_through_the_field_controller() {
+    clock::prefer_performance_core();
+    let frame = Frame::new(0.1).unwrap();
+    let loss_after_s = 0.6789;
+    let params: field::Parameters = serde_json::from_value(packet()["fieldProtection"].clone())
+        .expect("ELEC_PACKET with the field controller's timing (fieldProtection)");
+    let mut c = build_with(Some(loss_after_s), false);
+    let mut controller = FieldClient::new(&params, frame, c.ida.system()).unwrap();
+    let mut recorder = Commands { seen: Vec::new() };
+    let mut driver = Driver::new(frame, Diagnostic::None, clock::thread_cpu_s, c.t0).unwrap();
+    driver
+        .start_quadratures(&mut c.ida, vec![0.; QUADRATURES.len()])
+        .unwrap();
+    let setup = Setup {
+        network_ids: &c.network_ids,
+        absolute: &c.atol,
+        relative: c.rtol,
+        restart: c.restart,
+        derived: &c.joined_derived,
+    };
+    {
+        let mut clients: Vec<&mut dyn Client<Unit>> = vec![&mut controller, &mut recorder];
+        driver.start(&mut clients, c.t0, &c.y, &c.yp).unwrap();
+        driver
+            .run(
+                &mut c.ida,
+                c.t0,
+                c.t0 + 1.5,
+                &mut c.y,
+                &mut c.yp,
+                &mut clients,
+                &setup,
+            )
+            .expect("the LOOP through the frame driver with the field controller");
+    }
+    // The acquisition reads the left limit: the first frame after the loss.
+    let loss = c.t0 + loss_after_s;
+    let mut acquired = frame.at_or_after(loss).unwrap();
+    if frame.instant(acquired) == loss {
+        acquired += 1;
+    }
+    let decided = frame.instant(acquired + 1);
+    let unit = c.ida.system();
+    let instant = driver
+        .log
+        .iter()
+        .find(|e| e["kinds"].to_string().contains(field::SUPPLY_LOSS))
+        .cloned()
+        .expect("the field controller's instant");
+    let opened = unit
+        .log
+        .iter()
+        .find(|(_, w)| w == "GCB Open")
+        .map(|(t, _)| *t);
+    println!(
+        "{}",
+        json!({"t0_s": c.t0, "loss_s": loss, "acquired_frame_s": frame.instant(acquired), "decided_s": decided,
+            "initiation": controller.protection.log, "instant": instant,
+            "commands_seen": recorder.seen.iter().map(|(t, k)| json!([t, format!("{k:?}")])).collect::<Vec<_>>(),
+            "electrical_log": unit.log, "gcb_open_s": opened, "counts": driver.counts.json()})
+    );
+    let i = controller.protection.initiated.clone().expect("an initiation");
+    assert_eq!((i.cause, i.at_s), (field::SUPPLY_LOSS, decided));
+    assert_eq!(instant["class"], "R", "{instant}");
+    assert_eq!(instant["t_s"].as_f64(), Some(decided));
+    assert_eq!(
+        unit.integrated()
+            .joined
+            .secondary()
+            .and_then(|s| s.turbine_trip_time()),
+        Some(decided),
+        "the STOP latched at the decision"
+    );
+    assert!(
+        unit.log.iter().any(|(t, w)| *t == decided
+            && w.starts_with(&format!("GCB OPEN requested by {}", field::SUPPLY_LOSS))),
+        "{:?}",
+        unit.log
+    );
+    assert_eq!(recorder.seen, vec![(decided, Command::TurbineTripAcquired)]);
+    let opened = opened.expect("the GCB opened");
+    assert!(
+        (opened - (decided + 0.3)).abs() < 1e-9,
+        "GCB open at {opened}"
     );
 }

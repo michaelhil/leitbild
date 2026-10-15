@@ -20,10 +20,18 @@
 //! - **Absent.** Without this wrapper nothing changes: the hooks' defaults
 //!   append no coordinate (S1/S2 paths are bitwise unchanged).
 //!
+//! - **Field controller** (ICFIELD, generator page § field-supply loss):
+//!   [`FieldClient`] reads the converter's delivered supply, its demand and
+//!   the breaker's contact/pending travel at each frame's left limit and
+//!   runs `electrical::field`; an initiation requests GCB OPEN (CLOSE
+//!   withdrawn) and an acquired turbine trip at its decision frame, both
+//!   class R by S3-D4 (a command and a breaker request at one instant).
+//!
 //! No exchange law (the Grid side's): the boundary is the held stiff bus of
 //! the slice's inputs, and the carrier a continuous input of its angle row
 //! (owner decision D2).
 use crate::{
+    frame::{Action, Change, Class, Client, Dense},
     ida::{Failure, KluOrdering, System},
     joined::{DerivedRow, Determined, Integrated, JoinedSystem},
 };
@@ -31,8 +39,10 @@ use leitbild_operating_plant::{
     electrical::{
         breaker::{self, Breaker, Contact},
         bus::{self, Distribution, Source, SourceState},
+        field::{self, ConnectionReport, FieldProtection, FieldReport},
         slice::{self, QUADRATURES, Slice},
     },
+    ic::Frame,
     joined::block::{Command, snapshot_bits, snapshot_bits_option},
     network::RotorState,
     rotor::{SpeedRequest, Support},
@@ -258,6 +268,33 @@ impl<S: JoinedSystem> Electrified<S> {
         }
         None
     }
+    /// ICFIELD: the equipment state the field controller's reports acquire.
+    /// The converter's delivered motive supply is its bus's (a supply
+    /// change is a restart, so it is current at every frame); S3 has no
+    /// field switch, so OFF/dump is an OFF (zero) demand. The breaker's
+    /// contact and pending CLOSE travel are `LD01.TG.GEN.BREAKER`'s.
+    pub fn field_reports(&self) -> (FieldReport, ConnectionReport) {
+        (
+            FieldReport {
+                converter_supplied: self.routing.bus_energized(self.field_bus).is_some(),
+                off_or_dump: self.configuration.field_demand_v == 0.,
+            },
+            ConnectionReport {
+                closed: self.breaker.contact == Contact::Closed,
+                pending_close: matches!(self.breaker.pending(), Some((Contact::Closed, _))),
+            },
+        )
+    }
+    /// ICFIELD: the field controller's generator request at `t`: OPEN, which
+    /// withdraws a pending CLOSE (the breaker's own rule), recorded in the
+    /// ELEC log with its cause.
+    pub fn field_protection_open(&mut self, t: f64, cause: &str) {
+        self.breaker.request(Contact::Open, t);
+        self.log.push((
+            t,
+            format!("GCB OPEN requested by {cause} (field controller; CLOSE withdrawn)"),
+        ));
+    }
     /// The derived stator classes (S3-D16 rule; budget per [`CreditedBudget`],
     /// pending the lead): currents from the tightest of `IEQ` and the export,
     /// linkages through `L'd`. Coordinates are physical (scale 1).
@@ -311,6 +348,80 @@ impl<S: JoinedSystem> Electrified<S> {
             row(3, "id", "StatorCurrent", 1.),
             row(4, "iq", "StatorCurrent", 1.),
         ]
+    }
+}
+
+/// ICFIELD: the ACT.B field controller (`electrical::field`) as a frame-driver
+/// client of the electrified unit. It samples [`Electrified::field_reports`]
+/// at each frame's left limit (the driver's equipment-report hook) and, at
+/// its decision frame, emits the generator OPEN request and the acquired
+/// turbine trip, which the plant's owners apply (STOP ramp, GCB OPEN by the
+/// trip) and the clients' retained parts receive (IC-PROT's turbine
+/// controls' trip memory, then `LD01.PROT.TG.TRIP` on its report).
+pub struct FieldClient {
+    pub protection: FieldProtection,
+    reports: (FieldReport, ConnectionReport),
+}
+impl FieldClient {
+    /// The controller on the I&C `frame`, reading `unit`'s state at its
+    /// construction (the start frame's left limit, which the driver's
+    /// start processes before any step).
+    pub fn new<S: JoinedSystem>(
+        parameters: &field::Parameters,
+        frame: Frame,
+        unit: &Electrified<S>,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            protection: FieldProtection::new(parameters, frame)?,
+            reports: unit.field_reports(),
+        })
+    }
+}
+impl<S: JoinedSystem> Client<Electrified<S>> for FieldClient {
+    fn name(&self) -> &str {
+        "LD01.TG.GEN.FIELD controller (field-supply loss)"
+    }
+    fn advance(&mut self, _: &dyn Dense, _: f64, _: f64) -> Result<(), String> {
+        Ok(())
+    }
+    fn sample(&mut self, _: u64, _: f64, system: &Electrified<S>) -> Result<(), String> {
+        self.reports = system.field_reports();
+        Ok(())
+    }
+    fn frame(
+        &mut self,
+        k: u64,
+        _: f64,
+        _: &dyn Dense,
+    ) -> Result<Vec<Change<Electrified<S>>>, String> {
+        let (f, c) = self.reports;
+        let Some(decided) = self.protection.frame(k, f, c)? else {
+            return Ok(Vec::new());
+        };
+        let cause = self
+            .protection
+            .initiated
+            .as_ref()
+            .map(|i| i.cause)
+            .ok_or("an initiation without its record")?;
+        let due = self.protection.frame_of().instant(decided);
+        Ok(vec![
+            Change {
+                due_s: due,
+                class: Class::R,
+                kind: format!("{cause}: GCB OPEN"),
+                action: Action::Held(Box::new(move |u: &mut Electrified<S>| {
+                    u.field_protection_open(due, cause);
+                    Ok(())
+                })),
+            },
+            Change {
+                due_s: due,
+                class: Class::R,
+                kind: format!("{cause}: turbine trip"),
+                action: Action::Command(Command::TurbineTripAcquired),
+            },
+        ])
     }
 }
 

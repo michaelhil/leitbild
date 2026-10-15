@@ -516,9 +516,10 @@ mod tests {
             saturation_departure_k: -30.,
             vapor_kg: 0.,
         };
+        // B1 as kinetics.md states it (S2-D42): vapour in the region's cell.
         let boiling = sf::RegionPhase {
             saturation_departure_k: 0.1,
-            vapor_kg: 0.,
+            vapor_kg: 1e-3,
         };
         let phases = [liquid, boiling, liquid];
         // What B1's check returns on these phases is B1's exit.
