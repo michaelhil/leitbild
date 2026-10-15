@@ -686,17 +686,45 @@ pub fn fuel_heat_rates(
     source: [Scalar; 2],
     water_heat: Scalar,
 ) -> Result<FuelHeatRates> {
+    fuel_heat_rates_and_transfers(g, t, source, water_heat).map(|(rates, _)| rates)
+}
+/// [`fuel_heat_rates`] together with the transfers it evaluated.
+pub fn fuel_heat_rates_and_transfers(
+    g: &FuelGeometry,
+    t: FuelTemperatures,
+    source: [Scalar; 2],
+    water_heat: Scalar,
+) -> Result<(FuelHeatRates, FuelTransfers)> {
     source[0].finite()?;
     source[1].finite()?;
     let q = fuel_transfers(g, t, water_heat)?;
-    Ok(FuelHeatRates {
+    Ok((rates_of(&q, source, water_heat), q))
+}
+/// [`fuel_heat_rates`] at a wall heat `water_heat`, from transfers `q` that
+/// [`fuel_transfers`] returned at the same geometry and temperatures with
+/// any wall heat: the wall heat enters the transfers only through the clad
+/// outer surface residual, which is recomputed here by the same operation,
+/// so the result equals [`fuel_heat_rates`]'s bit for bit (COST lane).
+pub fn fuel_heat_rates_from(
+    q: &FuelTransfers,
+    source: [Scalar; 2],
+    water_heat: Scalar,
+) -> Result<FuelHeatRates> {
+    source[0].finite()?;
+    source[1].finite()?;
+    let mut q = *q;
+    q.surface_residuals[2] = (q.clad_mean_to_outer - water_heat).finite()?;
+    Ok(rates_of(&q, source, water_heat))
+}
+fn rates_of(q: &FuelTransfers, source: [Scalar; 2], water_heat: Scalar) -> FuelHeatRates {
+    FuelHeatRates {
         fuel_inner: source[0] - q.inner_to_outer,
         fuel_outer: source[1] + q.inner_to_outer - q.surface_to_helium - q.gap_radiation,
         helium: q.surface_to_helium - q.helium_to_clad_inner,
         clad: q.helium_to_clad_inner + q.gap_radiation - water_heat,
         water: water_heat,
         surface_residuals: q.surface_residuals,
-    })
+    }
 }
 pub fn fuel_transfers(
     g: &FuelGeometry,

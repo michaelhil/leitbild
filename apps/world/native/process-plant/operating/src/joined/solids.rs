@@ -236,6 +236,48 @@ pub struct Solids {
     /// Structural incidence and its inverse, compiled once.
     incidence: Incidence,
     inverse: Inverse,
+    /// Per half: its fuel transfers at the last undirected temperatures
+    /// (every input direction zero), keyed by those inputs' bits. The
+    /// transfers are a pure function of the geometry and the temperatures
+    /// except the clad outer residual, which reads the wall heat and is
+    /// recomputed on every use ([`thermal::fuel_heat_rates_from`]); a hit
+    /// therefore returns [`thermal::fuel_heat_rates`]'s result bit for bit.
+    /// The block Jacobian's network and rod columns, and its owner columns
+    /// for every other half, evaluate the halves at undirected temperatures
+    /// (COST lane: 21 % of the C2 trip window was their local solids, a
+    /// third of it these transfers).
+    fuel_memo: Vec<Option<(FuelKey, thermal::FuelTransfers)>>,
+}
+
+/// The bits of a half's fuel-transfer inputs: seven temperatures' values
+/// and directions.
+type FuelKey = [u64; 14];
+
+fn fuel_key(t: &thermal::FuelTemperatures) -> FuelKey {
+    let v = [
+        t.inner_mean,
+        t.outer_mean,
+        t.fuel_surface,
+        t.helium,
+        t.clad_inner,
+        t.clad_mean,
+        t.clad_outer,
+    ];
+    let mut key = [0; 14];
+    for (k, x) in v.iter().enumerate() {
+        key[2 * k] = x.value.to_bits();
+        key[2 * k + 1] = x.direction.to_bits();
+    }
+    key
+}
+
+/// Whether every number of a memo key is undirected (a zero direction of
+/// either sign).
+fn undirected_bits(key: &[u64]) -> bool {
+    key.iter()
+        .skip(1)
+        .step_by(2)
+        .all(|d| f64::from_bits(*d) == 0.)
 }
 
 /// The inverse of [`Incidence`], each list ascending: for local scopes in
@@ -563,6 +605,7 @@ impl Solids {
             wall_cells,
             wall_slot,
             wall,
+            fuel_memo: vec![None; a],
         };
         solids.compile_incidence(water_cells)?;
         Ok(solids)
@@ -1283,21 +1326,35 @@ impl Solids {
                 receipts.heat(c.water, into_water)?;
             }
             heat.clad_to_water_w = heat.clad_to_water_w + wall;
-            let q = thermal::fuel_heat_rates(
-                &b.geometry,
-                thermal::FuelTemperatures {
-                    inner_mean: inner,
-                    outer_mean: outer,
-                    fuel_surface: surface,
-                    helium: temperatures.helium[b.helium],
-                    clad_inner,
-                    clad_mean,
-                    clad_outer,
-                },
-                FUEL_HEAT_SPLIT.map(|f| fuel_heat_w[i] * s(f)),
-                wall,
-            )
-            .map_err(trial)?;
+            let temperatures_i = thermal::FuelTemperatures {
+                inner_mean: inner,
+                outer_mean: outer,
+                fuel_surface: surface,
+                helium: temperatures.helium[b.helium],
+                clad_inner,
+                clad_mean,
+                clad_outer,
+            };
+            let source = FUEL_HEAT_SPLIT.map(|f| fuel_heat_w[i] * s(f));
+            let key = fuel_key(&temperatures_i);
+            let q = match &self.fuel_memo[i] {
+                Some((k, transfers)) if *k == key => {
+                    thermal::fuel_heat_rates_from(transfers, source, wall).map_err(trial)?
+                }
+                _ => {
+                    let (q, transfers) = thermal::fuel_heat_rates_and_transfers(
+                        &b.geometry,
+                        temperatures_i,
+                        source,
+                        wall,
+                    )
+                    .map_err(trial)?;
+                    if undirected_bits(&key) {
+                        self.fuel_memo[i] = Some((key, transfers));
+                    }
+                    q
+                }
+            };
             let rates = [q.fuel_inner, q.fuel_outer, q.clad];
             for (k, rate) in rates.into_iter().enumerate() {
                 write(3 * i + k, x.rate(3 * i + k) - rate);
