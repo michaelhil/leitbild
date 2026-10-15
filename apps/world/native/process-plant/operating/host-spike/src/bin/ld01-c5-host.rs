@@ -23,14 +23,17 @@
 //! Grid side alone declares whether the interval lies in a grid-event
 //! window (D1: 1 s quiet, 20 ms in windows; the plant never infers one).
 //! The boundary is decided at `t0` through the driver (`Driver::decide`):
-//! - **Energized**: voltage and the carrier (D2). The carrier rate held over
-//!   the interval is `2*pi*f + e/(t1 - t0)`, with `e` the Grid's accepted
-//!   carrier phase at `t0` less the phase the plant followed
-//!   (`slice::carrier_rate`). A boundary that agrees with the held
-//!   prediction (same voltage, same frequency, `e = 0`) changes no bit of
-//!   the inputs and is **no event**. Any other boundary is a held input,
-//!   class S by S3-D4's rule, checked by the driver at the exact stop (a
-//!   refusal is an error, never a reclassification).
+//! - **Energized**: voltage and the carrier (D2 + R6-K SW-1). The Grid holds
+//!   its frequency `f` and frequency rate `fdot` over the interval; the
+//!   carrier rate is `2*pi*f + e/(t1 - t0) + 2*pi*fdot*(t - t0)`, with `e`
+//!   the Grid's accepted carrier phase at `t0` less the phase the plant
+//!   followed (`slice::carrier_rate`). A boundary that agrees with the held
+//!   prediction of a steady Grid (same voltage and frequency, `fdot = 0`,
+//!   `e = 0`) changes no bit of the inputs and is **no event**. Any other
+//!   boundary (a frequency or rate mismatch, a new slope) is a held input
+//!   entering only the angle's rate row, class S by S3-D4's rule, checked by
+//!   the driver at the exact stop (a refusal is an error, never a
+//!   reclassification).
 //! - **Dead** (first time): S3-D10's offsite loss, class R (stator
 //!   separated through the passive arc limit, both sources dead). The
 //!   field converter on AC.B is then unsupplied; the field controller
@@ -53,7 +56,7 @@
 //! | op | request | reply data |
 //! |---|---|---|
 //! | 1 LOAD | JSON `{state, tolerance_factor, max_step_s, event_window}` | JSON |
-//! | 12 EXCHANGE | `f64 t1, u8 window, u8 observe, u8 energized, f64 voltage_pu, f64 frequency_hz, f64 phase_error_rad` | `16 x f64, 10 x i64, u32 n, n x f64 signals, u32 m, m bytes JSON events` |
+//! | 12 EXCHANGE | `f64 t1, u8 window, u8 observe, u8 energized, f64 voltage_pu, f64 frequency_hz, f64 phase_error_rad, f64 frequency_rate_hz_s` | `16 x f64, 15 x i64 (counts, BDF orders, instructions and cycles), u32 n, n x f64 signals, u32 m, m bytes JSON events` |
 //! | 13 REPORT | `f64 zero` (the case's t = 0) | JSON (counts, instants, protection, timeline, rule I) |
 //! | 7 PING, 9 CLOSE, 10 STATUS | as the other hosts | |
 #![allow(dead_code)]
@@ -112,6 +115,7 @@ struct RuleI {
     margin_failures: u64,
     exit: Option<Value>,
     cpu_s: f64,
+    instructions: u64,
 }
 impl RuleI {
     fn judge(
@@ -126,6 +130,7 @@ impl RuleI {
     ) -> Result<(), String> {
         use leitbild_operating_plant::joined::post_trip_domain::{self, Domain, Error};
         let c0 = time::thread_s();
+        let i0 = time::instructions_cycles().map_or(0, |x| x.0);
         joined
             .evaluate(t, y, yp, None, 0., None)
             .map_err(|e| format!("rule I: the operator at {t} s: {e:?}"))?;
@@ -166,6 +171,7 @@ impl RuleI {
             self.exit = Some(json!({"t_s": t, "label": label, "verdict": verdict}));
         }
         self.cpu_s += time::thread_s() - c0;
+        self.instructions += time::instructions_cycles().map_or(0, |x| x.0) - i0;
         Ok(())
     }
 }
@@ -198,6 +204,7 @@ struct Host {
     sg: Vec<(String, usize, f64)>,
     rotors: Vec<(usize, f64)>,
     observe_cpu_s: f64,
+    observe_instructions: u64,
     offsite_lost_at: Option<f64>,
     exchanges: [u64; 2],
     /// The plant's own event window after the offsite loss (decision 0015
@@ -343,7 +350,7 @@ impl Host {
         let reply = json!({"t": t0, "tolerance_factor": tolerance_factor, "rtol": rtol, "max_step_s": max_step_s, "dimension": y.len(), "operator": n,
             "kernel_source_sha256": KERNEL_SOURCE_SHA256,
             "boundary": {"v_line_V": s.inputs.v_line, "frequency_hz": s.inputs.f_grid_hz,
-                "carrier_rad_s": s.inputs.carrier_rad_s, "joined": s.inputs.joined},
+                "carrier_rad_s": s.inputs.carrier_rad_s, "carrier_accel_rad_s2": s.inputs.carrier_accel_rad_s2, "joined": s.inputs.joined},
             "carrier_law": format!("{carrier_law:?}"),
             "field_supply_loss_trip": {"implemented": "the generator page's ACT.B field controller (ICFIELD): GCB OPEN + acquired turbine trip at its decision frame",
                 "parameters": e["fieldProtection"]},
@@ -379,6 +386,7 @@ impl Host {
             sg,
             rotors,
             observe_cpu_s: 0.,
+            observe_instructions: 0,
             offsite_lost_at: None,
             exchanges: [0, 0],
             event_window,
@@ -395,6 +403,7 @@ impl Host {
         voltage_pu: f64,
         frequency_hz: f64,
         phase_error_rad: f64,
+        frequency_rate_hz_s: f64,
     ) -> Result<&'static str, String> {
         let t0 = self.t;
         let lost = self.ida.system().offsite_loss_s.is_some();
@@ -434,23 +443,31 @@ impl Host {
                 if !(v_line.is_finite() && v_line > 0.) {
                     return Err(format!("boundary voltage {voltage_pu} pu"));
                 }
-                // D2: the carrier rate held over [t0, t1).
+                // D2: the carrier rate at t0; SW-1: its held slope over [t0, t1).
                 let carrier = slice::carrier_rate(frequency_hz, phase_error_rad, t1 - t0)?;
+                if !frequency_rate_hz_s.is_finite() {
+                    return Err(format!("boundary frequency rate {frequency_rate_hz_s} Hz/s"));
+                }
+                let accel = 2. * std::f64::consts::PI * frequency_rate_hz_s;
                 let i = self.ida.system().slice.inputs;
+                let steady = accel == 0. && i.carrier_accel_rad_s2 == 0.;
                 if i.v_line.to_bits() == v_line.to_bits()
                     && i.f_grid_hz.to_bits() == frequency_hz.to_bits()
                     && i.carrier_rad_s.to_bits() == carrier.to_bits()
+                    && steady
                 {
                     return Ok("none (agrees with the held prediction)");
                 }
                 let change = Change {
                     due_s: t0,
                     class: Class::S,
-                    kind: "Grid boundary (held voltage/carrier, D2)".into(),
+                    kind: "Grid boundary (held voltage/carrier and slope, D2 + SW-1)".into(),
                     action: Action::Held(Box::new(move |u: &mut Unit| {
                         u.slice.inputs.v_line = v_line;
                         u.slice.inputs.f_grid_hz = frequency_hz;
                         u.slice.inputs.carrier_rad_s = carrier;
+                        u.slice.inputs.carrier_accel_rad_s2 = accel;
+                        u.slice.inputs.carrier_from_s = t0;
                         Ok(())
                     })),
                 };
@@ -556,6 +573,7 @@ impl Host {
 
     fn observe(&mut self) -> Result<Vec<f64>, String> {
         let c0 = time::thread_s();
+        let i0 = time::instructions_cycles().map_or(0, |x| x.0);
         let (t, n) = (self.t, self.n);
         let (y, yp) = (&self.y, &self.yp);
         let joined = &mut self.ida.system_mut().integrated_mut().joined;
@@ -576,6 +594,7 @@ impl Host {
         v.extend(self.sg.iter().map(|(_, i, s)| y[*i] * s));
         v.extend(self.rotors.iter().map(|(i, s)| y[*i] * s));
         self.observe_cpu_s += time::thread_s() - c0;
+        self.observe_instructions += time::instructions_cycles().map_or(0, |x| x.0) - i0;
         Ok(v)
     }
 
@@ -590,9 +609,12 @@ impl Host {
         voltage_pu: f64,
         frequency_hz: f64,
         phase_error_rad: f64,
+        frequency_rate_hz_s: f64,
         out: &mut Vec<u8>,
     ) -> Result<(), String> {
         let t0 = self.t;
+        let ins0 = time::instructions_cycles();
+        let (rule_ins0, obs_ins0) = (self.rule_i.instructions, self.observe_instructions);
         if !(t1.is_finite() && t1 > t0) {
             return Err(format!("t1 {t1} is not after {t0}"));
         }
@@ -603,7 +625,14 @@ impl Host {
             self.driver.counts.total(Class::R),
             self.driver.counts.total(Class::S),
         );
-        let decided = self.boundary(t1, energized, voltage_pu, frequency_hz, phase_error_rad)?;
+        let decided = self.boundary(
+            t1,
+            energized,
+            voltage_pu,
+            frequency_hz,
+            phase_error_rad,
+            frequency_rate_hz_s,
+        )?;
         self.advance(t1)?;
         self.exchanges[usize::from(window)] += 1;
         let q1 = self.driver.quadratures_at(&self.ida, t1)?;
@@ -656,10 +685,14 @@ impl Host {
         ] {
             out.extend_from_slice(&v.to_le_bytes());
         }
+        let stats = self.ida.stats()?;
         let totals = {
-            let s = self.ida.stats()?;
             let t = self.driver.totals;
-            [t[0] + s.steps, t[2] + s.jacobians, t[1] + s.residuals]
+            [
+                t[0] + stats.steps,
+                t[2] + stats.jacobians,
+                t[1] + stats.residuals,
+            ]
         };
         for v in [
             totals[0],
@@ -671,11 +704,26 @@ impl Host {
             s1 as i64,
             self.driver.counts.total(Class::O) as i64,
             i64::from(self.rule_i.exit.is_some()),
-            0,
+            i64::from(stats.last_order),
+            i64::from(stats.current_order),
         ] {
             out.extend_from_slice(&v.to_le_bytes());
         }
         let signals = if observe { self.observe()? } else { Vec::new() };
+        // Instructions retired over the exchange (whole process), and the
+        // shares of rule I (harness) and host observation within it.
+        let ins = match (ins0, time::instructions_cycles()) {
+            (Some(a), Some(b)) => [(b.0 - a.0) as i64, (b.1 - a.1) as i64],
+            _ => [-1, -1],
+        };
+        for v in [
+            ins[0],
+            ins[1],
+            (self.rule_i.instructions - rule_ins0) as i64,
+            (self.observe_instructions - obs_ins0) as i64,
+        ] {
+            out.extend_from_slice(&v.to_le_bytes());
+        }
         out.extend_from_slice(&(signals.len() as u32).to_le_bytes());
         for v in signals {
             out.extend_from_slice(&v.to_le_bytes());
@@ -742,7 +790,9 @@ impl Host {
             "counts_by_class": self.driver.counts.json(), "stock_totals": totals,
             "cpu": {"solver_s": self.driver.cpu.solver_s, "observation_s": self.driver.cpu.observation_s,
                 "restart_s": self.driver.cpu.restart_s, "held_s": self.driver.cpu.held_s,
-                "rule_i_s": self.rule_i.cpu_s, "host_observe_s": self.observe_cpu_s, "thread_s": time::thread_s()},
+                "rule_i_s": self.rule_i.cpu_s, "host_observe_s": self.observe_cpu_s, "thread_s": time::thread_s(),
+                "instructions_cycles": time::instructions_cycles(), "rule_i_instructions": self.rule_i.instructions,
+                "host_observe_instructions": self.observe_instructions},
             "rule_i": {"applied": "A4 (owner R5-A): a run ends, labelled, at the first frame state D3 (a) does not admit (B1's per-region phase absence included)",
                 "samples": self.rule_i.samples, "first_extended_s": self.rule_i.first_extended,
                 "margin_failures": self.rule_i.margin_failures, "exit": self.rule_i.exit},
@@ -812,6 +862,7 @@ fn handle(
             let voltage_pu = r.f64()?;
             let frequency_hz = r.f64()?;
             let phase_error_rad = r.f64()?;
+            let frequency_rate_hz_s = r.f64()?;
             let h = host.as_mut().ok_or("no unit is loaded")?;
             h.exchange(
                 t1,
@@ -821,6 +872,7 @@ fn handle(
                 voltage_pu,
                 frequency_hz,
                 phase_error_rad,
+                frequency_rate_hz_s,
                 out,
             )?;
         }

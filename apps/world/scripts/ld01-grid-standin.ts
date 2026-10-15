@@ -8,11 +8,12 @@
  *   page): 1 s intervals in quiet operation, 20 ms only inside grid-event
  *   windows that the Grid side declares in the exchange; known
  *   discontinuities split an interval exactly.
- * - **D2** (carrier as a continuous input, `ld01-generator-carrier`): with
- *   each boundary the Grid hands its frequency at t0 and the accepted carrier
- *   phase error `e(t0)`: the integral of its own frequency deviation from the
- *   value it held over the previous interval (zero, exactly, while the
- *   frequency is unchanged).
+ * - **D2 + SW-1** (carrier as a continuous, smooth input,
+ *   `ld01-generator-carrier`; owner R6-K): with each boundary the Grid hands
+ *   its frequency and its exact frequency rate at t0, held over the interval,
+ *   and the accepted carrier phase error `e(t0)`: the integral of its own
+ *   frequency deviation from the linear prediction it held over the previous
+ *   interval (zero, exactly, while the frequency is steady).
  * - Receipts: the plant's IDAS export/auxiliary quadratures per interval.
  *
  * The Grid's own island is a stand-in input, not a Grid model: a stiff bus at
@@ -42,6 +43,7 @@ export type Receipt={t0:number,t1:number,window:boolean,exportJ:number,unitDrawJ
  joined:boolean,offsiteLost:boolean,rcpSupported:number,ruleICpuS:number,arcHeatJ:number,
  steps:number,jacobians:number,residuals:number,rInterval:number,sInterval:number,rTotal:number,sTotal:number,
  oTotal:number,ruleIExit:boolean,signals:number[],events:Record<string,unknown>|null,
+ lastOrder:number,currentOrder:number,instructions:number,cycles:number,ruleIInstructions:number,observeInstructions:number,
  roundTripS:number,handlerWallS:number,handlerCpuS:number}
 
 /** One child hosting the S3 unit with ELEC's slice on the frame driver. */
@@ -50,18 +52,19 @@ export function spawnC5(binary:string){
  return {
   pid:host.pid,exited:host.exited,
   load:async(config:Record<string,unknown>)=>JSON.parse(utf8.decode((await host.request(Op.load,text.encode(JSON.stringify(config)))).data)) as Record<string,unknown>,
-  exchange:async(t1:number,window:boolean,observe:boolean,energized:boolean,voltagePu:number,frequencyHz:number,phaseErrorRad:number):Promise<Receipt>=>{
-   const p=new Uint8Array(35),v=new DataView(p.buffer)
+  exchange:async(t1:number,window:boolean,observe:boolean,energized:boolean,voltagePu:number,frequencyHz:number,phaseErrorRad:number,frequencyRateHzS:number):Promise<Receipt>=>{
+   const p=new Uint8Array(43),v=new DataView(p.buffer)
    v.setFloat64(0,t1,true);p[8]=window?1:0;p[9]=observe?1:0;p[10]=energized?1:0
-   v.setFloat64(11,voltagePu,true);v.setFloat64(19,frequencyHz,true);v.setFloat64(27,phaseErrorRad,true)
+   v.setFloat64(11,voltagePu,true);v.setFloat64(19,frequencyHz,true);v.setFloat64(27,phaseErrorRad,true);v.setFloat64(35,frequencyRateHzS,true)
    const r:Reply=await host.request(Op.exchange,p),d=new DataView(r.data.buffer,r.data.byteOffset,r.data.byteLength)
    const f=(k:number)=>d.getFloat64(8*k,true),i=(k:number)=>Number(d.getBigInt64(128+8*k,true))
-   const n=d.getUint32(208,true),signals=Array.from({length:n},(_,k)=>d.getFloat64(212+8*k,true))
-   const at=212+8*n,m=d.getUint32(at,true)
+   const n=d.getUint32(248,true),signals=Array.from({length:n},(_,k)=>d.getFloat64(252+8*k,true))
+   const at=252+8*n,m=d.getUint32(at,true)
    return {t0:f(0),t1:f(1),window,exportJ:f(2),unitDrawJ:f(3),reserveDrawJ:f(4),cumulativeExportJ:f(5),exportW:f(6),
     speedRadS:f(7),thetaRad:f(8),ieqA:f(9),carrierRadS:f(10),joined:f(11)===1,offsiteLost:f(12)===1,rcpSupported:f(13),
     ruleICpuS:f(14),arcHeatJ:f(15),steps:i(0),jacobians:i(1),residuals:i(2),rInterval:i(3),sInterval:i(4),rTotal:i(5),
-    sTotal:i(6),oTotal:i(7),ruleIExit:i(8)===1,signals,events:m?JSON.parse(utf8.decode(r.data.slice(at+4,at+4+m))):null,
+    sTotal:i(6),oTotal:i(7),ruleIExit:i(8)===1,lastOrder:i(9),currentOrder:i(10),instructions:i(11),cycles:i(12),
+    ruleIInstructions:i(13),observeInstructions:i(14),signals,events:m?JSON.parse(utf8.decode(r.data.slice(at+4,at+4+m))):null,
     roundTripS:r.roundTripS,handlerWallS:r.handlerWallS,handlerCpuS:r.handlerCpuS}
   },
   report:async(zero:number)=>{
@@ -80,12 +83,15 @@ export function island(nominalHz:number,event:FrequencyEvent|null){
  const f=(t:number)=>!event||t<=event.te?nominalHz:nominalHz-event.deviationHz*(1-Math.exp(-(t-event.te)/event.tauS))
  // G(t) = integral from te to t of (f - nominal): exactly 0 before the event.
  const g=(t:number)=>!event||t<=event.te?0:-event.deviationHz*((t-event.te)-event.tauS*(1-Math.exp(-(t-event.te)/event.tauS)))
- /** D2: the accepted carrier phase at t0 less the phase followed from tPrev at the held f(tPrev). */
- const phaseError=(tPrev:number,t0:number)=>{
-  const dev=g(t0)-g(tPrev)-(f(tPrev)-nominalHz)*(t0-tPrev)
+ /** The exact frequency rate on [t, ...): the event's right derivative from te on. */
+ const fdot=(t:number)=>!event||t<event.te?0:-(event.deviationHz/event.tauS)*Math.exp(-(t-event.te)/event.tauS)
+ /** D2 (+ SW-1 when `withRate`): the accepted carrier phase at t0 less the phase followed from tPrev at the held
+  * f(tPrev) (and its held rate fdot(tPrev)). */
+ const phaseError=(tPrev:number,t0:number,withRate:boolean)=>{
+  const h=t0-tPrev,dev=g(t0)-g(tPrev)-(f(tPrev)-nominalHz)*h-(withRate?fdot(tPrev)*h*h/2:0)
   return dev===0?0:2*Math.PI*dev
  }
- return {f,phaseError}
+ return {f,fdot,phaseError}
 }
 
 /** The counterexample's own numbers, checked before any use of its law. */
@@ -103,7 +109,9 @@ export type Plan={name:string,kind:'C5'|'D2',windowIntervalS:number,quietInterva
  plantWindow:{capS:number,durationS:number}|null,
  /** The Grid's window applies to connected units only (ADR draft G4; design note §6.2 A). */
  gridWindowConnectedOnly:boolean,
- observeEveryS:number}
+ observeEveryS:number,
+ /** SW-1 (owner R6-K): the Grid sends its exact frequency rate; false sends 0 (D2's held frequency only, for comparison). */
+ sendRate:boolean}
 
 /** The common boundaries: quiet intervals on the whole-second grid from the start, split exactly at the event, the
  * declared window at the window interval, then quiet again. */
@@ -132,8 +140,9 @@ async function run(binary:string,state:string,p:Plan){
   const tStart=receipts.at(-1)?.t1??t0
   const energized=p.kind==='D2'||tStart<te-1e-9
   const observe=Math.abs((t1-t0)/p.observeEveryS-Math.round((t1-t0)/p.observeEveryS))<1e-6
-  const e=receipts.length?grid.phaseError(tPrev,tStart):0
-  try{receipts.push(await plant.exchange(t1,window,observe,energized,energized?1:0,energized?grid.f(tStart):0,energized?e:0))}
+  const e=receipts.length?grid.phaseError(tPrev,tStart,p.sendRate):0
+  const rate=p.sendRate?grid.fdot(tStart):0
+  try{receipts.push(await plant.exchange(t1,window,observe,energized,energized?1:0,energized?grid.f(tStart):0,energized?e:0,energized?rate:0))}
   catch(x){refusal=(x as Error).message;break}
   tPrev=tStart
  }
@@ -142,6 +151,9 @@ async function run(binary:string,state:string,p:Plan){
  await plant.close()
  return {load,t0,te,we,end,receipts,refusal,report,status}
 }
+
+/** COST2's conversion (lanes/cost2/reconcile.txt): 14.32 G instructions per quiet window CPU-s. */
+const COST2_WINDOW_INS_PER_CPU_S=14.32e9
 
 function quantiles(values:number[]){
  const s=[...values].sort((a,b)=>a-b),q=(x:number)=>s[Math.min(s.length-1,Math.floor(x*s.length))]??NaN
@@ -162,7 +174,14 @@ function analyse(p:Plan,r:Awaited<ReturnType<typeof run>>){
  const plantCpu=(q:Receipt)=>q.handlerCpuS-q.ruleICpuS-Number((q.events as any)?.observe_cpu_s??0)
  const span=(sel:(q:Receipt)=>boolean)=>{
   const s=x.filter(sel),sim=s.reduce((a,q)=>a+q.t1-q.t0,0),cpu=s.reduce((a,q)=>a+plantCpu(q),0)
+  // COST2 method: instructions retired (load-independent), converted at COST2's quiet window ratio.
+  const insAll=s.reduce((a,q)=>a+q.instructions,0),insPlant=s.reduce((a,q)=>a+q.instructions-q.ruleIInstructions-q.observeInstructions,0)
   return {simulated_s:sim,plant_cpu_s:cpu,cpu_s_per_s:sim?cpu/sim:null,exchanges:s.length,
+   instructions_G:insAll/1e9,plant_instructions_G:insPlant/1e9,
+   quiet_equivalent_cpu_s_per_s:sim?insAll/COST2_WINDOW_INS_PER_CPU_S/sim:null,
+   plant_quiet_equivalent_cpu_s_per_s:sim?insPlant/COST2_WINDOW_INS_PER_CPU_S/sim:null,
+   steps:s.length?s.at(-1)!.steps-(x[x.indexOf(s[0]!)-1]?.steps??0):0,
+   jacobians:s.length?s.at(-1)!.jacobians-(x[x.indexOf(s[0]!)-1]?.jacobians??0):0,
    r:s.reduce((a,q)=>a+q.rInterval,0),s:s.reduce((a,q)=>a+q.sInterval,0)}
  }
  const pre=span(q=>q.t1<=r.te+1e-9),window=span(q=>q.window),whole=span(()=>true)
@@ -206,7 +225,8 @@ function analyse(p:Plan,r:Awaited<ReturnType<typeof run>>){
   pzr_control:rep.pzr_control,lines,timeline:tl,divisions:rep.divisions,
   series:x.filter(q=>q.signals.length||Math.abs(q.t1-Math.round(q.t1))<1e-9).map(q=>({t:q.t1-r.te,P:q.exportW,E:q.cumulativeExportJ,
    omega:q.speedRadS,theta:q.thetaRad,ieq:q.ieqA,carrier:q.carrierRadS,rcp:q.rcpSupported,s:q.signals})),
-  boundaries:x.map(q=>[q.t0,q.t1,q.window?1:0,q.exportJ,q.exportW,q.ieqA,q.rInterval,q.sInterval,plantCpu(q)]),
+  boundaries:x.map(q=>[q.t0,q.t1,q.window?1:0,q.exportJ,q.exportW,q.ieqA,q.rInterval,q.sInterval,plantCpu(q),
+   q.instructions,q.ruleIInstructions,q.observeInstructions,q.lastOrder,q.currentOrder,q.steps,q.jacobians]),
   events:x.filter(q=>q.events).map(q=>({t0:q.t0,...q.events})),
   routing_records:(rep.routing_records??[]).map(([t,w]:[number,string])=>[t-r.te,w]),
   instants:rep.instants,refusal_report:rep.refusal??null,
