@@ -34,7 +34,7 @@
 //! The distributor face (the tips) is never locked by the valve or the
 //! check: the wiki keeps the tips bidirectional.
 use super::{
-    Failure, Network, Properties, SprayLayout,
+    Failure, Network, PZR_COORDINATES, Properties, SprayLayout, stratified,
     unilateral::{End, Fired, Lock, Presence, decide},
 };
 use crate::{control::spray_valve::StemChange, thermal::Scalar};
@@ -324,11 +324,39 @@ impl<P: Properties> Network<P> {
                     None
                 }
             };
+            // A located contact drawing from the port's drop zone is the
+            // drop stock's exhaustion: the zone's residue rains out first
+            // (DR-P2-SPRAYDROP), as an owner's exhaustion precedes L1's lock;
+            // a lock found at the transaction while drawing from the drops
+            // exhausts them after the decision.
+            let (_, to) = self.endpoints[l.face];
+            let drawing_drops = k == 0 && to == s.port_cell && y[l.index] < 0.;
+            let exhausted = if fired == Some(Fired::Contact) && drawing_drops {
+                Some(self.exhaust_spray_drops(y)?)
+            } else {
+                None
+            };
+            let declared;
+            let presence = if exhausted.is_some() {
+                declared = self.declared_presence(y);
+                &declared
+            } else {
+                presence
+            };
             let view = self.path_view(li, presence)?;
             let decision = decide(tip[k], view, fired)?;
             if decision.cause.is_none() {
                 continue;
             }
+            let exhausted = match exhausted {
+                None if drawing_drops
+                    && matches!(tip[k], Lock::Free)
+                    && matches!(decision.lock, Lock::Locked(_)) =>
+                {
+                    Some(self.exhaust_spray_drops(y)?)
+                }
+                e => e,
+            };
             let mut paid = None;
             if let Some((end, energy)) = decision.payment {
                 let (from, to) = self.endpoints[l.face];
@@ -340,7 +368,8 @@ impl<P: Properties> Network<P> {
             }
             changes.push(json!({"phase": k, "root": format!("{fired:?}"), "before": format!("{:?}", tip[k]),
                 "after": format!("{:?}", decision.lock), "cause": format!("{:?}", decision.cause),
-                "drive_pa": view.drive_pa, "volume_flow_m3_s": view.volume_flow_m3_s, "payment": paid}));
+                "drive_pa": view.drive_pa, "volume_flow_m3_s": view.volume_flow_m3_s, "payment": paid,
+                "drops_exhausted": exhausted}));
             tip[k] = decision.lock;
         }
         if let Some(sp) = self.spray.as_mut() {
@@ -348,6 +377,47 @@ impl<P: Properties> Network<P> {
         }
         Ok((!changes.is_empty())
             .then(|| json!({"owner": "spray port (scoped L1)", "t_s": t, "changes": changes})))
+    }
+    /// The port's drop zone exhausted where its liquid path locks drawing
+    /// from it (DR-P2-SPRAYDROP): the contact root locates the drop mass's zero,
+    /// where the drop stocks hold only the integration's residue (either
+    /// sign; the drop tracer's need not lie within the restart's bound
+    /// placement). No phase-mode owner exhausts the drop zone, so the
+    /// port's transaction does: the residue goes where drops rain out, the
+    /// resident liquid (mass and tracer as they are, energy at the
+    /// interface's saturated liquid enthalpy, the drops' inventory energy),
+    /// and both drop stocks become exactly zero. Mass, tracer and the
+    /// inventory energy are conserved; the algebraic drop volume follows at
+    /// the restart's projection. Returns the receipt.
+    fn exhaust_spray_drops(&mut self, y: &mut [f64]) -> Result<Value, Failure> {
+        use stratified::{DROP_BORON, DROP_MASS, RESIDENT_BORON, RESIDENT_ENERGY, RESIDENT_MASS};
+        let base = self.pzr.base;
+        let mut values = [0.; PZR_COORDINATES];
+        for (v, i) in values.iter_mut().zip(self.pzr.coordinates()) {
+            *v = y[i] * self.scales[i];
+        }
+        let x = stratified::Coordinates::values(&values);
+        let column = self.stratified.column(&self.properties, &x, None)?;
+        let hf = column.interface_saturation.liquid.enthalpy.value;
+        let (m, b) = (values[DROP_MASS], values[DROP_BORON]);
+        if !(m.is_finite() && b.is_finite() && hf.is_finite()) {
+            return Err(Failure::Fatal(format!(
+                "spray drop exhaustion on a nonfinite residue (M {m}, B {b}, h_f {hf})"
+            )));
+        }
+        let add = |y: &mut [f64], o: usize, v: f64| {
+            let i = base + o;
+            y[i] = (y[i] * self.scales[i] + v) / self.scales[i];
+        };
+        add(y, RESIDENT_MASS, m);
+        add(y, RESIDENT_BORON, b);
+        add(y, RESIDENT_ENERGY, m * hf);
+        y[base + DROP_MASS] = 0.;
+        y[base + DROP_BORON] = 0.;
+        Ok(
+            json!({"drop_mass_kg": m, "drop_boron_kg_eq": b, "liquid_enthalpy_j_kg": hf,
+            "into": "resident liquid (rain-out)"}),
+        )
     }
     /// Whether phase path `li` is the valve's liquid path, algebraic in
     /// every state (the restriction relation open, the lock closed).
