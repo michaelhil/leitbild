@@ -1014,11 +1014,13 @@ mod integrated {
         )
         .map_err(message)?;
         // L1 at the segment start (DR S3-REBIRTH, decision 0014): a lock
-        // whose drive is exactly zero and leaves zero toward its holding end
-        // along these consistent rates is released now; stock IDA would
-        // never report its root leaving zero. Only the id vector changes.
+        // whose drive draws from its holding end at t0+ (at the consistent
+        // state, or from an exact zero by its rate) is released now; stock
+        // IDA would never report its root. No coordinate moves; the
+        // released impulse's rate and the id vector change.
+        let mut yp = yp;
         let ids = match joined
-            .unilateral_release_at_start(t, y, &yp)
+            .unilateral_release_at_start(t, y, &mut yp)
             .map_err(message)?
         {
             Some(release) => {

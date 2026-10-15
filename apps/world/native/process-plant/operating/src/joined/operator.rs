@@ -1357,33 +1357,34 @@ impl<P: Properties + WaterProperties> Joined<P> {
         }))
     }
     /// L1 at a segment start, after the restart's exact consistent start
-    /// (DR S3-REBIRTH, decision 0014): the drives' rates along the
+    /// (DR S3-REBIRTH, decision 0014): the drives and their rates along the
     /// consistent rates `yp` from one value evaluation seeded along `yp`
     /// (`cj = 0`, so a direction is `dF/dt`), then
-    /// [`Network::unilateral_release_at_start`]. A one-sided lock whose
-    /// drive is exactly zero and leaves zero toward its holding end is
-    /// released; no coordinate or rate moves, so the caller only updates
-    /// the id vector. `None` while L1 is inactive or nothing sits at an
-    /// exactly zero drive.
+    /// [`Network::unilateral_release_at_start`]: a one-sided lock whose
+    /// drive draws from its holding end at `t0+` is released, its impulse
+    /// rate set to the free row's `F` in `yp`; no coordinate moves, so the
+    /// caller updates the id vector only. `None` while L1 is inactive or
+    /// no one-sided lock exists.
     pub fn unilateral_release_at_start(
         &mut self,
         t: f64,
         y: &[f64],
-        yp: &[f64],
+        yp: &mut [f64],
     ) -> Result<Option<super::block::Transaction>, Failure> {
         if self.network.unilateral().is_none() {
             return Ok(None);
         }
-        self.evaluate(t, y, yp, Some(yp), 0., None)?;
-        let (tx, zero) = self.network.unilateral_release_at_start()?;
-        if zero.is_empty() {
+        let seed = yp.to_vec();
+        self.evaluate(t, y, yp, Some(&seed), 0., None)?;
+        let (tx, one_sided) = self.network.unilateral_release_at_start(yp)?;
+        if one_sided.is_empty() {
             return Ok(None);
         }
         Ok(Some(super::block::Transaction {
             deposits: Vec::new(),
             receipt: serde_json::json!({"owner":"network L1 at the segment start","t_s":t,
-                "zeroDrive":zero.iter().map(|(p, r)| serde_json::json!({"path":p,"orientedRate_Pa_s":r})).collect::<Vec<_>>(),
-                "changes":tx.changes,"stateChanged":false}),
+                "oneSided":one_sided.iter().map(|(p, f, r)| serde_json::json!({"path":p,"orientedDrive_Pa":f,"orientedRate_Pa_s":r})).collect::<Vec<_>>(),
+                "changes":tx.changes,"stateChanged":!tx.changes.is_empty()}),
         }))
     }
     /// A declared command to every composed owner, in order, followed by

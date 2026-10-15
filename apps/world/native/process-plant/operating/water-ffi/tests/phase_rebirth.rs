@@ -252,13 +252,19 @@ fn a_reborn_cells_zero_drive_paths_release_at_the_start_by_their_rate() {
         .expect("seeded evaluation");
     let rate = |net: &Network<If97>, face: usize| net.face_drive(face, 1).direction;
     let (r33, r34) = (rate(&system.net, 33), rate(&system.net, 34));
+    let mut yp = yp;
     let (tx, zero_drives) = system
         .net
-        .unilateral_release_at_start()
+        .unilateral_release_at_start(&mut yp)
         .expect("release at the start");
-    let listed = |li: usize| zero_drives.iter().find(|(p, _)| *p == li).map(|(_, r)| *r);
-    assert_eq!(listed(v34), Some(r34));
-    assert_eq!(listed(v33), Some(-r33));
+    let listed = |li: usize| {
+        zero_drives
+            .iter()
+            .find(|(p, _, _)| *p == li)
+            .map(|(_, f, r)| (*f, *r))
+    };
+    assert_eq!(listed(v34), Some((0., r34)));
+    assert_eq!(listed(v33), Some((0., -r33)));
     // Face 34 is released exactly when its oriented rate is positive (the
     // drive leaves zero toward SURGE); face 33 by the same rule.
     assert!(r34 > 0., "face 34's drive leaves zero upward: {r34} Pa/s");
@@ -294,8 +300,7 @@ fn a_reborn_cells_zero_drive_paths_release_at_the_start_by_their_rate() {
         system
             .net
             .unilateral_roots()
-            .iter()
-            .any(|r| *r == network::phase_events::Root::Contact(v34))
+            .contains(&network::phase_events::Root::Contact(v34))
     );
     println!(
         "{}",

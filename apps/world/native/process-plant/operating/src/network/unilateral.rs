@@ -154,12 +154,12 @@ pub enum Cause {
     /// exhaustion, so its retained impulse has no inertia left (DR
     /// S3-EXHAUST; decision 0014's contact at the donor's exhaustion).
     Exhaustion,
-    /// Released at a segment start: the drive is exactly zero there (a
-    /// newborn phase's fraction is zero) and its rate along the consistent
-    /// rates leaves zero toward the holding end, so the drive reverses at
-    /// this instant (`F(t0+)` has the sign of `F'(t0)`). Stock IDA
-    /// deactivates a root that is exactly zero at the segment start and
-    /// never reports it leaving zero (DR S3-REBIRTH).
+    /// Released at a segment start, after the exact consistent start: the
+    /// drive draws from the holding end at `t0+`, already at the consistent
+    /// state or, from an exact zero (a newborn phase's fraction), by its
+    /// rate along the consistent rates (`F(t0+)` has the sign of `F'(t0)`).
+    /// Stock IDA never reports a root that starts on the released side or
+    /// at an exact zero (DR S3-REBIRTH).
     DriveAtStart,
 }
 
@@ -646,31 +646,34 @@ impl<P: Properties> Network<P> {
         self.unilateral = Some(locks);
         Ok(out)
     }
-    /// Decision 0014's release at a segment start (DR S3-REBIRTH): after a
-    /// restart's exact consistent start, a one-sided lock whose drive is
-    /// exactly zero and whose drive rate leaves zero toward its holding end
-    /// is released now. Its release root would start at an exact zero,
-    /// which stock IDA deactivates and never reports leaving zero, so the
-    /// instant is decided here by the drive's one-sided limit: for `t`
-    /// just after `t0`, `F(t)` has the sign of `F'(t0)`. No coordinate
-    /// moves (`Π = 0` stays; with `F = 0` the free row's rate `Π' = F` is
-    /// the locked row's `0`, so the consistent rates stay consistent). A
-    /// zero drive with a zero rate stays locked (no higher order is taken).
-    /// Returns the transaction and every one-sided lock at an exactly zero
-    /// drive with its oriented rate `orientation × dF/dt` (Pa/s), released
-    /// or not. Precondition: the last evaluation is seeded along the
-    /// consistent rates `y'` with `cj = 0`, so each drive's direction is
-    /// `dF/dt`.
-    #[allow(clippy::type_complexity)] // The transaction and its zero-drive list.
+    /// Decision 0014's release at a segment start (DR S3-REBIRTH), after a
+    /// restart's exact consistent start: a one-sided lock is released now
+    /// when its drive at `t0+` draws from its holding end, that is when the
+    /// drive at the consistent state already does (`orientation × F > 0`:
+    /// the transaction decided on the state before the projection moved a
+    /// newborn cell's algebraic vapor mass), or when it is exactly zero and
+    /// its rate along the consistent rates leaves zero toward the holding
+    /// end (`F(t0+)` has the sign of `F'(t0)`). Its release root would
+    /// otherwise start on the released side, or at an exact zero that stock
+    /// IDA deactivates and never reports leaving zero. No coordinate moves
+    /// (`Π = 0` stays); the released impulse's rate becomes the free row's
+    /// `Π' = F` in `yp` (zero when `F = 0`), and no other row reads it, so
+    /// the pair stays consistent. A zero drive with a zero rate stays locked
+    /// (no higher order is taken). Returns the transaction and every
+    /// one-sided lock with its oriented drive and oriented rate (Pa, Pa/s).
+    /// Precondition: the last evaluation is seeded along the consistent
+    /// rates `yp` with `cj = 0`, so each drive's direction is `dF/dt`.
+    #[allow(clippy::type_complexity)] // The transaction and its one-sided list.
     pub fn unilateral_release_at_start(
         &mut self,
-    ) -> Result<(Transaction, Vec<(usize, f64)>), Failure> {
+        yp: &mut [f64],
+    ) -> Result<(Transaction, Vec<(usize, f64, f64)>), Failure> {
         let mut locks = self
             .unilateral
             .clone()
             .ok_or_else(|| Failure::Fatal("L1 is not active".into()))?;
         let mut out = Transaction::default();
-        let mut zero = Vec::new();
+        let mut one_sided = Vec::new();
         for (li, l) in self.face_layout.iter().enumerate() {
             let Lock::Locked(holding) = locks.paths[li] else {
                 continue;
@@ -685,12 +688,11 @@ impl<P: Properties> Network<P> {
                     l.face, l.phase
                 )));
             }
-            if drive.value != 0. {
-                continue;
-            }
-            zero.push((li, o * drive.direction));
-            if o * drive.direction > 0. {
+            let (value, rate) = (o * drive.value, o * drive.direction);
+            one_sided.push((li, value, rate));
+            if value > 0. || (value == 0. && rate > 0.) {
                 locks.paths[li] = Lock::Free;
+                yp[l.index] = drive.value / self.scales[l.index];
                 out.changes.push(Change {
                     path: li,
                     face: l.face,
@@ -707,7 +709,7 @@ impl<P: Properties> Network<P> {
             }
         }
         self.unilateral = Some(locks);
-        Ok((out, zero))
+        Ok((out, one_sided))
     }
     /// The reaction of every locked path at the last value evaluation: its
     /// drive `F` in Pa, by `(face, phase)`.
