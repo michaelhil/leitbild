@@ -37,6 +37,16 @@ use super::{Failure, Network, Properties, SprayLayout};
 use crate::{control::spray_valve::StemChange, thermal::Scalar};
 use serde_json::{Value, json};
 
+/// S3-D19: the spray path's discrete state: the stem's held trajectory and
+/// the valve's and the inlet check's locks.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SprayState {
+    pub stem: crate::control::spray_valve::Stem,
+    pub closed: bool,
+    pub check_closed: bool,
+}
+
 /// A disarmed root slot's constant value.
 pub const DISARMED: f64 = 1.;
 
@@ -85,6 +95,36 @@ impl<P: Properties> Network<P> {
     /// The composed spray path, if any.
     pub fn spray(&self) -> Option<&SprayLayout> {
         self.spray.as_ref()
+    }
+    /// S3-D19: the composed spray path's discrete state.
+    pub fn spray_discrete_state(&self) -> Option<SprayState> {
+        self.spray.map(|s| SprayState {
+            stem: s.stem,
+            closed: s.closed,
+            check_closed: s.check_closed,
+        })
+    }
+    /// Restore [`Network::spray_discrete_state`] exactly: the same
+    /// composition and stroke rate, refused otherwise.
+    pub fn restore_spray_discrete_state(
+        &mut self,
+        state: Option<SprayState>,
+    ) -> Result<(), Failure> {
+        match (self.spray.as_mut(), state) {
+            (None, None) => Ok(()),
+            (Some(s), Some(v))
+                if v.stem.strokes_per_second().to_bits()
+                    == s.stem.strokes_per_second().to_bits() =>
+            {
+                s.stem = v.stem;
+                s.closed = v.closed;
+                s.check_closed = v.check_closed;
+                Ok(())
+            }
+            _ => Err(Failure::Fatal(
+                "snapshot: the spray path's composition or stroke rate differs".into(),
+            )),
+        }
     }
     /// Whether phase path `li` (face-layout index) is locked: by L1, or as
     /// the closed spray valve's or the closed inlet check's path.

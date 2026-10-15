@@ -583,6 +583,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             "network": {
                 "unilateral": self.network.unilateral().map(|l| serde_json::to_value(l).expect("L1 locks serialize")),
                 "modes": serde_json::to_value(self.network.cell_modes()).expect("cell modes serialize"),
+                "spray": serde_json::to_value(self.network.spray_discrete_state()).expect("spray state serializes"),
             },
             // No discrete state: their rows read coordinates and the packet only.
             "nuclear": serde_json::Value::Null,
@@ -620,8 +621,14 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 "snapshot: the nuclear and solid blocks hold no discrete state",
             ));
         }
-        let network =
-            super::block::snapshot_object(&o["network"], "network", &["unilateral", "modes"])?;
+        let network = super::block::snapshot_object(
+            &o["network"],
+            "network",
+            &["unilateral", "modes", "spray"],
+        )?;
+        let spray = serde_json::from_value(network["spray"].clone())
+            .map_err(|e| fatal(format!("snapshot: spray path: {e}")))?;
+        self.network.restore_spray_discrete_state(spray)?;
         let modes: Vec<CellMode> = serde_json::from_value(network["modes"].clone())
             .map_err(|e| fatal(format!("snapshot: cell modes: {e}")))?;
         self.network.set_cell_modes(&modes)?;

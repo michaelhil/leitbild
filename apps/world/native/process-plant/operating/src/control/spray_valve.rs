@@ -183,15 +183,24 @@ pub enum StemChange {
 }
 
 /// The stem's held trajectory: from `x0` at `t0` toward `target` at `rate`
-/// full strokes per second.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// full strokes per second (S3-D19: copyable exactly, as IEEE bits).
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Stem {
+    #[serde(with = "crate::joined::block::snapshot_bits")]
     x0: f64,
+    #[serde(with = "crate::joined::block::snapshot_bits")]
     t0: f64,
+    #[serde(with = "crate::joined::block::snapshot_bits")]
     target: f64,
+    #[serde(with = "crate::joined::block::snapshot_bits")]
     rate: f64,
 }
 impl Stem {
+    /// The selected stroke rate (full strokes per second).
+    pub fn strokes_per_second(&self) -> f64 {
+        self.rate
+    }
     /// The commissioning state: closed and at rest (the controlled stem
     /// starts achieved 0).
     pub fn closed(t0: f64, strokes_per_second: f64) -> Result<Self, Failure> {

@@ -514,3 +514,101 @@ fn the_settled_hold_changes_only_through_the_closed_spray_line() {
         std::fs::write(p, serde_json::to_vec_pretty(&receipt).unwrap()).unwrap();
     }
 }
+
+/// S3-D19 for the spray path (KERN): an operator whose spray valve a
+/// control frame opened (its lock released, the stem travelling) restores
+/// into a freshly composed operator with the same snapshot, root count,
+/// identity, root directions, next time event, residual rows and root
+/// values, bit for bit, while the stem still moves (the unrestored
+/// operator's rows differ: lock against restriction); and again after the
+/// inlet check closed at its located contact root (the unrestored
+/// operator's roots and time events differ).
+#[test]
+#[ignore = "NOT-EVIDENCE check: requires the spray packet, the wiki, IF97 and stock IDA/KLU"]
+fn the_spray_paths_discrete_state_survives_a_snapshot() {
+    type Op = leitbild_operating_plant::joined::operator::Joined<leitbild_operating_water::If97>;
+    let (
+        Started {
+            mut joined,
+            mut y,
+            yp,
+            network_ids,
+            ..
+        },
+        _,
+    ) = started_s3_composition();
+    assert!(joined.network.spray().is_some(), "a spray packet");
+    let t = 0.3;
+    let state = |j: &mut Op, y: &[f64]| {
+        j.evaluate(t, y, &yp, None, 0., None).unwrap();
+        let rows: Vec<u64> = j.rows().iter().map(|r| r.value.to_bits()).collect();
+        let mut roots = vec![0.; j.root_count()];
+        j.roots(t, y, &yp, &mut roots).unwrap();
+        (
+            rows,
+            roots.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            j.next_time_event(t),
+            j.differential(&network_ids),
+            j.root_directions().unwrap(),
+        )
+    };
+    // Restores into a fresh composition bit for bit; returns whether the
+    // unrestored operator's rows differ.
+    let survives = |joined: &mut Op, y: &[f64]| {
+        let snapshot = joined.discrete_state();
+        let driven = state(joined, y);
+        let mut fresh = started_s3_composition().0.joined;
+        let unrestored = state(&mut fresh, y);
+        assert_ne!(unrestored, driven, "the unrestored operator must differ");
+        fresh
+            .restore_discrete_state(&snapshot)
+            .expect("restore into a fresh composition");
+        assert_eq!(fresh.discrete_state(), snapshot, "round trip");
+        let restored = state(&mut fresh, y);
+        assert_eq!(restored.2, driven.2, "next time event");
+        assert_eq!(restored.3, driven.3, "identity");
+        assert_eq!(restored.4, driven.4, "root directions");
+        assert_eq!(restored.1, driven.1, "root values");
+        assert_eq!(restored.0, driven.0, "residual rows");
+        (
+            snapshot["network"]["spray"].clone(),
+            unrestored.0 != driven.0,
+        )
+    };
+    let heater = joined.pzr().unwrap().request_w();
+    let (change, _) = joined
+        .apply_pzr_control(
+            0.1,
+            &Demand {
+                heater_request_w: heater,
+                spray_target: 0.5,
+                withdrawn: None,
+            },
+        )
+        .expect("a control frame opening the spray valve");
+    assert_eq!(
+        change,
+        StemChange::Lock,
+        "opening a closed valve releases its lock"
+    );
+    let (opened, rows_differ) = survives(&mut joined, &y);
+    assert!(
+        rows_differ,
+        "an open valve's restriction row differs from the lock's"
+    );
+    let mut directions = vec![0; joined.root_count()];
+    *directions.last_mut().unwrap() = -1;
+    joined
+        .transact(0.2, &directions, &mut y)
+        .expect("the inlet check's contact");
+    let (checked, _) = survives(&mut joined, &y);
+    assert_eq!(
+        (
+            checked["closed"].as_bool(),
+            checked["check_closed"].as_bool()
+        ),
+        (Some(false), Some(true)),
+        "{checked}"
+    );
+    println!("{}", json!({"opened": opened, "check_closed": checked}));
+}
