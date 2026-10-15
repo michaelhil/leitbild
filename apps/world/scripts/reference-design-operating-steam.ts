@@ -57,11 +57,11 @@ const protectionSchema=z.object({backpressureTrip_Pa:pos,backpressurePersistence
   .refine(p=>p.resetBelow_Pa<p.backpressureTrip_Pa&&p.backpressureTrip_Pa<p.channel.rangeMax_Pa,'Reset, trip and range must be ordered')
 const condenserSchema=z.object({shell_m3:pos,liquid_m3:pos,vapor_m3:pos,prepared_C:pos,hotwellArea_m2:pos,surface_m:finite,pumpEye_m:finite,
   manifold_m:finite,manifoldCovered_m3:pos,wallCapacity_J_K:pos,waterCell_m3:pos,cellPrepared_C:z.tuple([pos,pos]),wallPrepared_C:z.tuple([pos,pos]),
-  cellDuty_W:pos,condensing_C:pos,preparedPort:z.object({cwFlow_kg_s:pos,cwInlet_C:pos}).strict()}).strict()
+  cellDuty_W:pos,condensing_C:pos,sizingDensity_kg_m3:pos,sizingCp_J_kgK:pos,preparedPort:z.object({cwFlow_kg_s:pos,cwInlet_C:pos}).strict()}).strict()
 const gasSchema=z.object({gasConstant_J_kgK:pos,cv_J_kgK:pos}).strict()
 const gasesSchema=z.object({air:gasSchema,nitrogen:gasSchema,energyReference_K:pos}).strict()
 /** C09's prepared receiving shells (P5, P6). C09 owns the number; C10 reads it, never copies it into its own block. */
-const receiversSchema=z.object({h2Shell_Pa:pos,h4Shell_Pa:pos,source:z.string().min(1)}).strict()
+const receiversSchema=z.object({h1Shell_Pa:pos,h2Shell_Pa:pos,h4Shell_Pa:pos,source:z.string().min(1)}).strict()
 
 const parse=<T extends z.ZodTypeAny>(schema:T,text:string,owner:{heading:string,fence:string})=>schema.parse(ownedBlock(text,owner.heading,owner.fence)) as z.infer<T>
 export const parseSteamStocks=(t:string)=>parse(stocksSchema,t,steamOwners.stocks)
@@ -117,7 +117,9 @@ export function compileOperatingSteam(texts:SteamTexts,cycle:Cycle,receivers:z.i
     store('TG.RH.SHELL',stocks.reheaterShell_m3,{kind:'saturatedLiquidVolume',pressure_Pa:rhShell,liquid_m3:prep.reheaterShellLiquid_m3}),
     store('TG.LP1',stocks.lpFirst_m3,ph(prep.lpFirst_Pa,'LP_bleed'),lp),
     store('TG.LP2',stocks.lpSecond_m3,ph(prep.lpSecond_Pa,'LP_lowest_bleed'),lp),
-    store('LD01.COND',cond.shell_m3,{kind:'saturatedLiquidVolumeAtTemperature',temperature_K:K(cond.prepared_C),liquid_m3:cond.liquid_m3}),
+    // 40 °C saturation through the cycle calculator's own IF97 saturation pressure (no second inverse);
+    // the runtime checks the native saturation temperature against the selected 40 °C.
+    store('LD01.COND',cond.shell_m3,{kind:'saturatedLiquidVolume',pressure_Pa:pt.condenser_liquid.p_MPaAbs*MPa,liquid_m3:cond.liquid_m3,checkTemperature_K:K(cond.prepared_C)}),
   ]
   // Sizing flows from the cycle (the same fractions the S3 stand-in reads).
   const admitted=(1-f.reheat_fraction)*total,hp2=(1-f.reheat_fraction-f.high_heater_fraction)*total,
@@ -168,7 +170,8 @@ export function compileOperatingSteam(texts:SteamTexts,cycle:Cycle,receivers:z.i
       drainPickupFraction:stocks.drainPickupFraction},
     condenser:{hotwellArea_m2:cond.hotwellArea_m2,floor_m:cond.pumpEye_m,surface_m:cond.surface_m,pumpEye_m:cond.pumpEye_m,manifold_m:cond.manifold_m,
       walls:cond.wallPrepared_C.map((t,i)=>({capacity_J_K:cond.wallCapacity_J_K,prepared_K:K(t),shellConductance_W_K:g(i),waterConductance_W_K:g(i)})),
-      cells:cond.cellPrepared_C.map(t=>({volume_m3:cond.waterCell_m3,prepared_K:K(t)})),condensing_K:K(cond.condensing_C),
+      cells:cond.cellPrepared_C.map(t=>({volume_m3:cond.waterCell_m3,prepared_K:K(t),mass_kg:cond.sizingDensity_kg_m3*cond.waterCell_m3})),
+      sizingCp_J_kgK:cond.sizingCp_J_kgK,condensing_K:K(cond.condensing_C),
       preparedPort:{cwFlow_kg_s:cond.preparedPort.cwFlow_kg_s,cwInlet_K:K(cond.preparedPort.cwInlet_C)}},
     casing:{roomContact_W_K:casing.roomContact_W_K},
     noncondensables:gases,
@@ -179,6 +182,10 @@ export function compileOperatingSteam(texts:SteamTexts,cycle:Cycle,receivers:z.i
     /** D2: the unchanged band evaluated at the re-anchored header. A demand above zero at full power is owner item S4-3. */
     disclosed:{bypassBandDemandAtPreparation:bandDemand,bypassBandConflict:bandDemand>0},
     receivers:shells,
+    /** Neighbours' flows at preparation, held as port inputs by the standalone prototype only: the cycle's
+     * sizing values (C09 computes them in a joined unit). FIXTURE for the prototype, not a C10 law. */
+    heldPortsAtPreparation:{extraction_kg_s:{H4:f.high_heater_fraction*total,H3:f.separator_heater_fraction*total,
+      H2:f.low_heater_fraction*total,H1:f.lowest_heater_fraction*total},h1Drain_kg_s:f.condenser_drains_fraction*total,condensate_kg_s:total},
   }
 }
 

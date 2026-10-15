@@ -21,7 +21,7 @@ const blocks={
     channel:{rangeMin_Pa:0,rangeMax_Pa:50000,lag_s:0.2,sample_s:0.1,transport_s:0.1,maxAge_s:0.5}},
   condenser:{shell_m3:6000,liquid_m3:1000,vapor_m3:5000,prepared_C:40,hotwellArea_m2:200,surface_m:0,pumpEye_m:-5,manifold_m:1,manifoldCovered_m3:1200,
     wallCapacity_J_K:500000000,waterCell_m3:250,cellPrepared_C:[25.084435688,30.084435688],wallPrepared_C:[32.542217844,35.042217844],
-    cellDuty_W:1000669817,condensing_C:40,preparedPort:{cwFlow_kg_s:47878.938608,cwInlet_C:20.084436}},
+    cellDuty_W:1000669817,condensing_C:40,sizingDensity_kg_m3:1000,sizingCp_J_kgK:4180,preparedPort:{cwFlow_kg_s:47878.938608,cwInlet_C:20.084436}},
   gases:{air:{gasConstant_J_kgK:287,cv_J_kgK:718},nitrogen:{gasConstant_J_kgK:296.8,cv_J_kgK:742},energyReference_K:298.15},
 } as const
 type Name=keyof typeof blocks
@@ -58,7 +58,7 @@ test('the compiler input refuses every missing value, at every depth',()=>{
       expect(()=>parsers[name](pageFor(name,without(blocks[name],path)))).toThrow()
       refused++
     }
-  expect(refused).toBe(95)
+  expect(refused).toBe(97)
   expect(()=>parseReceivers({h2Shell_Pa:199000,source:'x'})).toThrow()
 })
 
@@ -75,10 +75,10 @@ const cycle={inputSha256:'fixture',calculationSha256:'fixture',
     condensate_C:40,HPTurbineEfficiency:0.85,LPTurbineEfficiency:0.88,shaftMechanicalEfficiency:0.995},
   points:{main_steam:{h_kJ_kg:2784.561732103704,p_MPaAbs:6},HP_bleed:{h_kJ_kg:2718.509920711288,p_MPaAbs:4},HP_separator_inlet:{h_kJ_kg:2478.3610261949816,p_MPaAbs:0.8},
     LP_reheat_inlet:{h_kJ_kg:2972.0219105659444,p_MPaAbs:0.8},LP_bleed:{h_kJ_kg:2722.248447069538,p_MPaAbs:0.2},LP_lowest_bleed:{h_kJ_kg:2521.6393144237654,p_MPaAbs:0.05},
-    LP_exhaust:{h_kJ_kg:2288.6220826457743,p_MPaAbs:0.0073844274870695295}},
+    LP_exhaust:{h_kJ_kg:2288.6220826457743,p_MPaAbs:0.0073844274870695295},condenser_liquid:{h_kJ_kg:167.5410472587315,p_MPaAbs:0.0073844274870695295}},
   flows:{SG_total_kg_s:1639.6379652662608,SG_each_kg_s:819.8189826331304,reheat_fraction:0.07741378197751048,high_heater_fraction:0.16981876127034656,
     separator_heater_fraction:0.04924002070293842,low_heater_fraction:0.036269360215151855,lowest_heater_fraction:0.022874688155052947,
-    separator_drain_fraction:0.10660876241214139,LP_inlet_fraction:0.5969186736370632,LP_exhaust_fraction:0.5377746252668585},
+    separator_drain_fraction:0.10660876241214139,LP_inlet_fraction:0.5969186736370632,LP_exhaust_fraction:0.5377746252668585,condenser_drains_fraction:0.4622253747331417},
   powers_MW:{turbine_thermodynamic_work:1030.6622174330623},
 } as never
 const texts={turbine:`# T\n\n## Compact operating allocation (15 October 2026)\n\n### Strict blocks\n\n`+
@@ -89,7 +89,7 @@ const texts={turbine:`# T\n\n## Compact operating allocation (15 October 2026)\n
   shaft:`# S\n\n## Rotor and loss connection\n\n${fence('ld01-shaft-drag',{dragPowerAtReference_W:500000,referenceSpeed_rpm:1500})}\n`,
   casing:fence('reference-turbine-preparation',{hpCapacity_J_K:30000000,lpCapacity_J_K:150000000,hpContact_W_K:50000,lpContact_W_K:100000,roomContact_W_K:100,
     drainCdA_m2:0.0005,drainStroke_s:2,drainMotion_W:100,warmDifference_K:30,warmDuration_s:30,maximumLiquidFraction:0.01})}
-const receivers={h2Shell_Pa:199000,h4Shell_Pa:3980000,source:'FIXTURE: 0.995 × (0.2/4) MPa from the turbine page preparation table, pending C09 block (A5)'}
+const receivers={h1Shell_Pa:49750,h2Shell_Pa:199000,h4Shell_Pa:3980000,source:'FIXTURE: 0.995 × (0.05/0.2/4) MPa from the turbine page preparation table, pending C09 block (A5)'}
 
 test('the compiled packet re-anchors D2, reproduces the arms and discloses the bypass band conflict',()=>{
   const p=compileOperatingSteam(texts,cycle,receivers)
