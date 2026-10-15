@@ -1,14 +1,17 @@
 /** The S3 `ic` section: acquired protection, the C16 slice of S3 (lead
- * decisions S3-D1.1–21). Channel families, the turbine-trip report, the
- * protective functions and the holding chain's identities. Every number comes
- * from a strict wiki block; a needed value without one is listed under
- * `missing` with its page and section, and its function is not emitted. Rust
+ * decisions S3-D1.1–21, S3-D6, S3-D7). Channel families, the turbine-state
+ * report, the protective functions and the holding chain's identities. Every
+ * number comes from a strict wiki block; identities that locate a quantity in
+ * the model (a loop's cold-return face, an SG, the source regions' axial
+ * bounds) come from the joined packet the section is compiled against. Rust
  * owns acquisition, voting, qualification, latching and the holding path. */
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
+import { z } from 'zod'
 import { parsePressureChannel, parsePressureProtection } from './reference-design-pressure-observation'
 import { parsePzrTaps } from './reference-design-operating-pzr'
 import { parseS2Holding } from './reference-design-operating-rods'
+import { configurationBlock } from './reference-design-source-laws'
 
 /** Pages consumed, relative to the LD-01 design root. */
 export const OPERATING_IC_PAGES = [
@@ -16,64 +19,153 @@ export const OPERATING_IC_PAGES = [
   'systems/instrumentation/operational-observations.md',
   'systems/instrumentation/phase-dependent-measurements.md',
   'safety/reactor-trip-and-hold.md',
+  'safety/steam-generator-protection.md',
+  'systems/steam-generation/instrumentation.md',
+  'systems/instrumentation/nuclear-observation-apparatus.md',
 ] as const
-type Pages = Readonly<Record<(typeof OPERATING_IC_PAGES)[number], string>>
+type Page = (typeof OPERATING_IC_PAGES)[number]
+type Pages = Readonly<Record<Page, string>>
 
-/** Needed values that have no strict block on the compiled wiki (page,
- * section, the prose values). Their functions stay out of the section until
- * the owners add blocks; no value here is consumed. */
-export const MISSING_BLOCKS = [
-  {
-    functions: ['LD01.PROT.SG.A.LOW', 'LD01.PROT.SG.B.LOW', 'LD01.PROT.SG.A.UNAVAILABLE', 'LD01.PROT.SG.B.UNAVAILABLE'],
-    needed: [
-      { value: 'low actuation 5.00 m; qualification 1.00 s; unavailable 1.00 s; recovered channel 1.00 s; reset band 5.25–8.25 m for 5.00 s',
-        page: 'safety/steam-generator-protection.md', section: 'Candidate settings (prose table)' },
-      { value: 'NR1/2/3 lag 0.5 s, span 4–9 m', page: 'systems/steam-generation/instrumentation.md', section: 'channel table (prose)' },
-      { value: 'protective NR sampling, transport and maximum age (the page defers them to the instrumentation definition)',
-        page: 'safety/steam-generator-protection.md', section: 'What constitutes usable evidence' },
-      { value: 'collapsed-level area 12 m² (`Vl/12 m²`, decision S3-D1.20)', page: 'systems/steam-generation/thermodynamics.md',
-        section: 'Apparent level is not liquid inventory; SG feed/SGTR distribution (prose)' },
-    ],
-  },
-  {
-    functions: ['LD01.PROT.RCS.A.LOW_FLOW', 'LD01.PROT.RCS.B.LOW_FLOW', 'loop A/B flow-evidence unavailable'],
-    needed: [
-      { value: 'FT ≤ 0.70 installed nominal for 0.5 s while the protective proxy vote > 0.20; unavailable FT 0.5 s; reset FT > 0.80 for 5 s',
-        page: 'safety/source-and-primary-protection.md', section: 'At-power flow and temperature challenges (prose)' },
-      { value: 'RCS.A/B.FT lag 0.25 s, span ±1.5 nominal, 5 kg/s quantization, ±10 kg/s indeterminate band',
-        page: 'systems/instrumentation/operational-observations.md', section: 'channel table and main-loop resolution (prose)' },
-      { value: 'arming evidence: LD01.CORE.POWER.P1/P2/P3 original reference Iref is uncomputed ("blocks regional proxy installation")',
-        page: 'systems/instrumentation/nuclear-observation-apparatus.md', section: 'One original world reference, not ongoing gain adjustment' },
-    ],
-  },
+const positive = z.number().finite().positive()
+const finite = z.number().finite()
+const nonnegative = z.number().finite().nonnegative()
+const band = z.tuple([finite, finite]).refine(([a, b]) => a < b, 'band must be increasing')
+export const parseSgLevelProtection = (text: string) => z.object({
+  lowWarning_m: positive, lowActuation_m: positive, highWarning_m: positive, highActuation_m: positive,
+  warningClearing_m: positive, demandQualification_s: positive, unavailableQualification_s: positive,
+  recoveredChannelQualification_s: positive, resetBand_m: band, resetDuration_s: positive,
+}).strict().parse(configurationBlock(text, 'ld01-sg-level-protection'))
+export const parseSgLevelAcquisition = (text: string) => z.object({
+  sample_s: positive, transport_s: positive, maximumAge_s: positive,
+}).strict().parse(configurationBlock(text, 'ld01-sg-level-protective-acquisition'))
+export const parseSgLevelChannels = (text: string) => z.object({
+  nrLag_s: positive, nrSpan_m: band, indicatedLevelArea_m2: positive,
+}).strict().parse(configurationBlock(text, 'ld01-sg-level-channels'))
+export const parseLoopLowFlow = (text: string) => z.object({
+  lowFlowFractionOfNominal: positive, lowFlowQualification_s: positive, armingProxyFraction: positive,
+  unavailableQualification_s: positive, resetFlowFractionOfNominal: positive, resetProxyFraction: positive,
+  resetDuration_s: positive,
+}).strict().parse(configurationBlock(text, 'ld01-loop-low-flow-protection'))
+export const parseLoopFlowChannel = (text: string) => z.object({
+  lag_s: positive, spanFractionOfNominal: band, quantum_kg_s: positive, indeterminateBand_kg_s: nonnegative,
+  supply: z.object({ A: z.string(), B: z.string() }).strict(),
+}).strict().parse(configurationBlock(text, 'ld01-loop-flow-channel'))
+export const parseTurbineStateReport = (text: string) => z.object({
+  sample_s: positive, transport_s: positive, maximumAge_s: positive, recovery_s: positive,
+}).strict().parse(configurationBlock(text, 'ld01-turbine-state-report'))
+export const parseRegionalCurrentReference = (text: string) => z.object({
+  eventReferencePower_W: positive, eventEnergy_MeV: positive, Fref_events_per_s: positive,
+  convertedSpan_m: band, form: z.literal('proxy = (E_c/E_c_ref) * (E_tot_ref/Fref)'),
+}).strict().parse(configurationBlock(text, 'ld01-regional-current-reference'))
+export const parsePowerProxyPaths = (text: string) => z.object({
+  filter_s: positive, supplies: z.tuple([z.string(), z.string(), z.string()]), sample_s: positive,
+  transport_s: positive, maximumAge_s: positive, recovery_s: positive,
+}).strict().parse(configurationBlock(text, 'ld01-power-proxy-protective-paths'))
+
+/** What the section reads from the joined packet it is compiled against. */
+export const packetSchema = z.object({
+  mechanics: z.object({ faces: z.array(z.object({ id: z.string() }).passthrough()) }).passthrough(),
+  secondary: z.object({ steamGenerators: z.array(z.object({ id: z.string() }).passthrough()) }).passthrough(),
+  feedback_metadata: z.object({ regions: z.array(z.object({ z0_m: finite, z1_m: finite }).passthrough()) }).passthrough(),
+}).passthrough()
+type Packet = z.infer<typeof packetSchema>
+
+/** Still without a strict block, or a value the owners have not selected. */
+export const OPEN_ITEMS = [
+  { item: 'LD01.SG.*.LT.NR1–3 instrument supply groups', note: 'no group is selected; S3 injects no NR supply loss, so the channels carry the label "unselected"' },
+  { item: 'loop A/B flow-evidence-unavailable cause ID', note: 'the wiki names the cause but gives no ID; compiled as LD01.PROT.RCS.<loop>.FLOW.UNAVAILABLE' },
+  { item: 'ld01-power-proxy-protective-paths', note: 'proposed by IC-PROT on claude/ld01-s3-ic-prot2-wiki (prose values only); needs the lead\'s decision row' },
+  { item: 'loop FT protective timing', note: 'compiled as the page-wide protective timing of source-and-primary-protection.md (reference-pzr-pressure-channel sample/transport, reference-pzr-pressure-protection age/recovery), as ld01-turbine-state-report states for its report; the lead to confirm' },
+  { item: 'installed nominal loop flow', note: 'resolved natively as the loop cold-return mass flow at the packet\'s prepared hot reference (S3-D7\'s reference state); no strict block holds a kg/s value' },
 ] as const
 
-/** Compile the `ic` section from page texts keyed as `OPERATING_IC_PAGES`. */
-export function compileOperatingIcFrom(texts: Pages) {
+function wholeFrames(name: string, v: number, frame: number) {
+  const n = v / frame
+  if (Math.abs(n - Math.round(n)) > 1e-9 * Math.max(1, n)) throw Error(`${name} ${v} s is not whole ${frame} s frames`)
+}
+
+/** Compile the `ic` section from page texts keyed as `OPERATING_IC_PAGES`
+ * and the joined packet. */
+export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
+  const packet: Packet = packetSchema.parse(packetValue)
   const channel = parsePressureChannel(texts['systems/instrumentation/operational-observations.md'])
   const protection = parsePressureProtection(texts['safety/source-and-primary-protection.md'])
   const taps = parsePzrTaps(texts['systems/instrumentation/phase-dependent-measurements.md'])
   const s2 = parseS2Holding(texts['safety/reactor-trip-and-hold.md'])
+  const report = parseTurbineStateReport(texts['safety/reactor-trip-and-hold.md'])
+  const sgProtection = parseSgLevelProtection(texts['safety/steam-generator-protection.md'])
+  const sgAcquisition = parseSgLevelAcquisition(texts['safety/steam-generator-protection.md'])
+  const sgChannels = parseSgLevelChannels(texts['systems/steam-generation/instrumentation.md'])
+  const lowFlow = parseLoopLowFlow(texts['safety/source-and-primary-protection.md'])
+  const flowChannel = parseLoopFlowChannel(texts['systems/instrumentation/operational-observations.md'])
+  const proxyPaths = parsePowerProxyPaths(texts['systems/instrumentation/operational-observations.md'])
+  const reference = parseRegionalCurrentReference(texts['systems/instrumentation/nuclear-observation-apparatus.md'])
   const pt1 = taps.find(t => t.id === 'PT1')
   if (!pt1) throw Error('No PT1 tap')
-  // The frame is the protective channels' sampling; transport travels whole
-  // frames (the channel schema already requires transport = sampling).
   const frame_s = channel.sample_s
   for (const [name, v] of [['maximum age', protection.maximum_age_s], ['recovery', protection.recovery_s],
     ['high qualification', protection.high_qualification_s], ['low qualification', protection.low_qualification_s],
-    ['unavailable qualification', protection.unavailable_qualification_s], ['reset', protection.reset_qualification_s]] as const) {
-    const n = v / frame_s
-    if (Math.abs(n - Math.round(n)) > 1e-9 * Math.max(1, n)) throw Error(`${name} ${v} s is not whole ${frame_s} s frames`)
+    ['unavailable qualification', protection.unavailable_qualification_s], ['reset', protection.reset_qualification_s],
+    ['report sampling', report.sample_s], ['report transport', report.transport_s], ['report age', report.maximumAge_s],
+    ['report recovery', report.recovery_s], ['SG sampling', sgAcquisition.sample_s], ['SG transport', sgAcquisition.transport_s],
+    ['SG age', sgAcquisition.maximumAge_s], ['SG demand', sgProtection.demandQualification_s],
+    ['SG unavailable', sgProtection.unavailableQualification_s], ['SG recovery', sgProtection.recoveredChannelQualification_s],
+    ['SG reset', sgProtection.resetDuration_s], ['low flow', lowFlow.lowFlowQualification_s],
+    ['flow unavailable', lowFlow.unavailableQualification_s], ['flow reset', lowFlow.resetDuration_s],
+    ['proxy sampling', proxyPaths.sample_s], ['proxy transport', proxyPaths.transport_s], ['proxy age', proxyPaths.maximumAge_s],
+    ['proxy recovery', proxyPaths.recovery_s]] as const) wholeFrames(name, v, frame_s)
+  if (Math.abs(report.sample_s + report.transport_s - s2.turbineTripToOpening_s) > 1e-12)
+    throw Error('S2 holding boundary disagrees with the turbine-state report')
+  // Fref is the ORIGINAL event reference: check the block's arithmetic.
+  const fref = reference.eventReferencePower_W / (reference.eventEnergy_MeV * 1e6 * 1.602176634e-19)
+  if (Math.abs(fref / reference.Fref_events_per_s - 1) > 1e-6) throw Error('Fref disagrees with 3 GW / 200 MeV')
+  // The converter's coated span sits in the vessel-fixed thimble at the
+  // central assembly, on all four sector boundaries (the source compiler's
+  // capsule convention): each sector's region holds a quarter of it, weighted
+  // by the axial overlap of the span with the region.
+  const regions = packet.feedback_metadata.regions
+  const [s0, s1] = reference.convertedSpan_m
+  const atHeight = (z: number) => regions.filter(r => z >= r.z0_m && z < r.z1_m).length
+  if (atHeight((s0 + s1) / 2) !== 4) throw Error('Expected four sector regions at the converter height')
+  const weights = regions.map(r => .25 * Math.max(0, Math.min(s1, r.z1_m) - Math.max(s0, r.z0_m)) / (s1 - s0))
+  if (Math.abs(weights.reduce((a, b) => a + b, 0) - 1) > 1e-12) throw Error('Converter span not fully represented')
+  const faceIndex = (id: string) => {
+    const i = packet.mechanics.faces.findIndex(f => f.id === id)
+    if (i < 0) throw Error(`No face ${id}`)
+    return i
   }
-  // The turbine controls' report: the reactor-trip page selects "the same
-  // 0.1 s reporting/at-most-0.1 s transport, 0.3 s age and one-second recovery
-  // qualification used above", the existing protective acquisition, whose
-  // numbers are the PZR protective blocks'. S2's declared 0.2 s opening is
-  // their worst-case sum (H6) and must agree.
-  if (Math.abs(channel.sample_s + channel.transport_s - s2.turbineTripToOpening_s) > 1e-12)
-    throw Error('S2 holding boundary disagrees with the protective sampling plus transport')
-  const reset = { band: [protection.reset_low_pa, protection.reset_high_pa], duration_s: protection.reset_qualification_s }
+  const sgs = packet.secondary.steamGenerators.map(g => g.id)
+  if (sgs.join() !== 'A,B') throw Error(`Expected SGs A and B, found ${sgs}`)
   const supplies = ['I1', 'I2', 'I3'] as const
+  const pressureReset = { band: [protection.reset_low_pa, protection.reset_high_pa], duration_s: protection.reset_qualification_s }
+  const sgReset = { band: sgProtection.resetBand_m, duration_s: sgProtection.resetDuration_s }
+  const flowReset = { band: [lowFlow.resetFlowFractionOfNominal, flowChannel.spanFractionOfNominal[1]], duration_s: lowFlow.resetDuration_s }
+  const trip = { reactor_trip: true, cmt_injection: false, heater_isolation: false }
+  const sgFamilies = sgs.map(sg => ({
+    id: `LD01.SG.${sg}.LT.NR`, quantity: { sg_collapsed_level: { sg, area_m2: sgChannels.indicatedLevelArea_m2 } },
+    channels: [1, 2, 3].map(i => ({ id: `LD01.SG.${sg}.LT.NR${i}`, supply: 'unselected' })),
+    channel: { lag_s: sgChannels.nrLag_s, min: sgChannels.nrSpan_m[0], max: sgChannels.nrSpan_m[1], quantum: null,
+      indeterminate_band: null, sample_s: sgAcquisition.sample_s, transport_s: sgAcquisition.transport_s },
+    maximum_age_s: sgAcquisition.maximumAge_s, recovery_s: sgProtection.recoveredChannelQualification_s,
+  }))
+  const loops = ['A', 'B'] as const
+  const flowFamilies = loops.map(loop => ({
+    id: `LD01.RCS.${loop}.FT`,
+    quantity: { loop_flow: { loop_id: loop, face: faceIndex(`RETURN.${loop}->DOWN`), face_id: `RETURN.${loop}->DOWN`,
+      nominal_kg_s: null, quantum_kg_s: flowChannel.quantum_kg_s, indeterminate_band_kg_s: flowChannel.indeterminateBand_kg_s } },
+    channels: [{ id: `LD01.RCS.${loop}.FT`, supply: flowChannel.supply[loop] }],
+    channel: { lag_s: flowChannel.lag_s, min: flowChannel.spanFractionOfNominal[0], max: flowChannel.spanFractionOfNominal[1],
+      quantum: null, indeterminate_band: null, sample_s: channel.sample_s, transport_s: channel.transport_s },
+    maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
+  }))
+  const proxyFamily = {
+    id: 'LD01.CORE.POWER.P',
+    quantity: { current_proxy: { weights, fref_events_per_s: reference.Fref_events_per_s } },
+    channels: proxyPaths.supplies.map((supply, i) => ({ id: `LD01.CORE.POWER.P${i + 1}`, supply })),
+    channel: { lag_s: proxyPaths.filter_s, min: null, max: null, quantum: null, indeterminate_band: null,
+      sample_s: proxyPaths.sample_s, transport_s: proxyPaths.transport_s },
+    maximum_age_s: proxyPaths.maximumAge_s, recovery_s: proxyPaths.recovery_s,
+  }
   return {
     identity: 'ld01-s3-ic',
     frame_s,
@@ -81,51 +173,70 @@ export function compileOperatingIcFrom(texts: Pages) {
       id: 'LD01.PZR.PT', quantity: 'pzr_roof_pressure',
       channels: supplies.map((supply, i) => ({ id: `LD01.PZR.PT${i + 1}`, supply })),
       channel: { lag_s: channel.lag_s, min: channel.min_pa, max: channel.max_pa, quantum: channel.quantum_pa,
-        sample_s: channel.sample_s, transport_s: channel.transport_s },
+        indeterminate_band: null, sample_s: channel.sample_s, transport_s: channel.transport_s },
       maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
-    }],
+    }, ...sgFamilies, ...flowFamilies, proxyFamily],
     reports: [{
       id: 'LD01.TG.TRIP.REPORT', source: 'turbine_retained_trip', supply: 'ACT.B',
-      sample_s: channel.sample_s, transport_s: channel.transport_s,
-      maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
-      basis: 'reactor-trip-and-hold.md "the same 0.1 s reporting/at-most-0.1 s transport, 0.3 s age and one-second recovery qualification used above": reference-pzr-pressure-channel sample_s/transport_s and reference-pzr-pressure-protection maximum_age_s/recovery_s; no qualification duration is selected for the turbine-trip cause',
+      sample_s: report.sample_s, transport_s: report.transport_s, maximum_age_s: report.maximumAge_s, recovery_s: report.recovery_s,
+      basis: 'ld01-turbine-state-report (reactor-trip-and-hold.md); no qualification duration is selected for LD01.PROT.TG.TRIP',
     }],
     functions: [
       { id: 'LD01.PROT.PZR.HIGH_PRESSURE',
         rule: { voted: { family: 'LD01.PZR.PT', side: { at_or_above: protection.high_pa }, qualification_s: protection.high_qualification_s } },
-        effects: { reactor_trip: true, cmt_injection: false, heater_isolation: true }, reset },
+        effects: { reactor_trip: true, cmt_injection: false, heater_isolation: true }, reset: pressureReset },
       { id: 'LD01.PROT.PZR.LOW_PRESSURE',
         rule: { voted: { family: 'LD01.PZR.PT', side: { at_or_below: protection.low_pa }, qualification_s: protection.low_qualification_s } },
-        effects: { reactor_trip: true, cmt_injection: true, heater_isolation: false }, reset },
+        effects: { reactor_trip: true, cmt_injection: true, heater_isolation: false }, reset: pressureReset },
       { id: 'LD01.PROT.PZR.PRESSURE.UNAVAILABLE',
         rule: { unavailable: { family: 'LD01.PZR.PT', qualification_s: protection.unavailable_qualification_s } },
-        effects: { reactor_trip: true, cmt_injection: false, heater_isolation: true }, reset },
-      { id: 'LD01.PROT.TG.TRIP', rule: { report: { report: 'LD01.TG.TRIP.REPORT' } },
-        effects: { reactor_trip: true, cmt_injection: false, heater_isolation: false }, reset: null },
+        effects: { reactor_trip: true, cmt_injection: false, heater_isolation: true }, reset: pressureReset },
+      { id: 'LD01.PROT.TG.TRIP', rule: { report: { report: 'LD01.TG.TRIP.REPORT' } }, effects: trip, reset: null },
+      ...sgs.flatMap(sg => [
+        { id: `LD01.PROT.SG.${sg}.LOW`,
+          rule: { voted: { family: `LD01.SG.${sg}.LT.NR`, side: { at_or_below: sgProtection.lowActuation_m }, qualification_s: sgProtection.demandQualification_s } },
+          effects: trip, reset: sgReset },
+        { id: `LD01.PROT.SG.${sg}.UNAVAILABLE`,
+          rule: { unavailable: { family: `LD01.SG.${sg}.LT.NR`, qualification_s: sgProtection.unavailableQualification_s } },
+          effects: trip, reset: sgReset },
+      ]),
+      ...loops.flatMap(loop => [
+        { id: `LD01.PROT.RCS.${loop}.LOW_FLOW`,
+          rule: { armed: { family: `LD01.RCS.${loop}.FT`, side: { at_or_below: lowFlow.lowFlowFractionOfNominal },
+            qualification_s: lowFlow.lowFlowQualification_s, arming_family: 'LD01.CORE.POWER.P', arming: { above: lowFlow.armingProxyFraction } } },
+          effects: trip, reset: flowReset },
+        { id: `LD01.PROT.RCS.${loop}.FLOW.UNAVAILABLE`,
+          rule: { armed_unavailable: { family: `LD01.RCS.${loop}.FT`, qualification_s: lowFlow.unavailableQualification_s,
+            arming_family: 'LD01.CORE.POWER.P', arming: { above: lowFlow.armingProxyFraction } } },
+          effects: trip, reset: flowReset },
+      ]),
     ],
     holding: {
       interface: 'LD01.TRIP.HOLD', supply: 'LD01.DC.ACT.A', manual_interrupt: 'LD01.TRIP.MANUAL',
       divisions: [...supplies], contacts: supplies.map(s => `LD01.TRIP.PERM.${s}`),
     },
-    missing: MISSING_BLOCKS,
+    missing: OPEN_ITEMS,
     provenance: [{ pt1_tap_elevation_m: pt1.elevation_m, pt1_reads: 'the stratified cell roof pressure (operational-observations.md)',
-      s2_holding_boundary_replaced_s: s2.turbineTripToOpening_s }],
+      s2_holding_boundary_replaced_s: s2.turbineTripToOpening_s, converter_region_weights: weights,
+      fref_check_events_per_s: fref, flow_reset_band_upper: 'the FT span top (the reset needs only FT above 0.80 nominal)' }],
   }
 }
 
-/** Read the owners' pages from the wiki root and return the section with
- * page provenance appended. */
-export async function compileOperatingIc(wikiRoot: string) {
+/** Read the owners' pages from the wiki root and the joined packet, and
+ * return the section with page and packet provenance appended. */
+export async function compileOperatingIc(wikiRoot: string, packetPath: string) {
   const root = join(wikiRoot, 'world/packs/process-plant/reference-designs/ld-01')
   const texts = Object.fromEntries(await Promise.all(OPERATING_IC_PAGES.map(async page =>
-    [page, await Bun.file(join(root, page)).text()] as const))) as Record<(typeof OPERATING_IC_PAGES)[number], string>
-  const section = compileOperatingIcFrom(texts)
+    [page, await Bun.file(join(root, page)).text()] as const))) as Record<Page, string>
+  const packetText = await Bun.file(packetPath).text()
+  const section = compileOperatingIcFrom(texts, JSON.parse(packetText))
   return { ...section, provenance: [...section.provenance,
-    ...OPERATING_IC_PAGES.map(name => ({ name, sha256: createHash('sha256').update(texts[name]).digest('hex') }))] }
+    ...OPERATING_IC_PAGES.map(name => ({ name, sha256: createHash('sha256').update(texts[name]).digest('hex') })),
+    { packet: packetPath, sha256: createHash('sha256').update(packetText).digest('hex') }] }
 }
 
 if (import.meta.main) {
-  const [wiki, ...rest] = Bun.argv.slice(2)
-  if (!wiki || rest.length) throw Error('Usage: reference-design-operating-ic <wiki root>')
-  console.log(JSON.stringify(await compileOperatingIc(wiki), null, 1))
+  const [wiki, packet, ...rest] = Bun.argv.slice(2)
+  if (!wiki || !packet || rest.length) throw Error('Usage: reference-design-operating-ic <wiki root> <joined packet>')
+  console.log(JSON.stringify(await compileOperatingIc(wiki, packet), null, 1))
 }
