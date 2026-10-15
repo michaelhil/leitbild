@@ -492,6 +492,15 @@ impl<S: JoinedSystem> Driver<S> {
         self.commands.sort_by(|a, b| a.0.total_cmp(&b.0));
         Ok(())
     }
+    /// HOOK (C5X; KERN to reconcile): changes decided outside the clients at
+    /// the driver's time, due at or after it: the Grid's held boundary at an
+    /// exchange (C5, owners' decisions D1 + D2). The next [`Driver::run`]
+    /// applies those due now before its first step, by the same rules as a
+    /// client's (one instant, R if any is R, S checked by S3-D4's rule).
+    pub fn decide(&mut self, changes: Vec<Change<S>>) -> Result<(), String> {
+        let now = self.observed_to;
+        self.insert(changes, now)
+    }
     fn insert(&mut self, changes: Vec<Change<S>>, now: f64) -> Result<(), String> {
         for c in changes {
             if !(c.due_s.is_finite() && c.due_s >= now) {
