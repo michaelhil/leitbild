@@ -1,80 +1,76 @@
 {
   "kind": "ld01-settled-state-pin",
-  "status": "Regression pin (NOT evidence; S2 is not declared): the S3-D28 S2 re-settle's exact consistent pair (settled at 514 s by r7.1's settling block; packet 6515d63d = every LD-01 wiki branch merged at claude/ld01-s3-wiki-integ b0ec724, joined compiler then the spray path composed closed; the same values as 78cb1fe9 from 272d83f, provenance only differs). Judged by the declared settling measure everywhere (DR-P3-PT1): the 2 Hz-filtered range over the 20 s window that starts at the pinned pair",
-  "file": "settled-state-s3d28-514s-6515d63d.bits.json.gz",
-  "sha256": "610de083a9fa23640ea63aa9474b5719923754f23aad4e48a9b971c3699cda5b",
-  "bytes": 14529,
-  "packet_sha256": "6515d63df4334470fd784cb9d1ca1d137c757003b9113c2f2077c4e213337693",
-  "t_s": 514.0,
+  "status": "Regression pin (NOT evidence; S2 is not declared): the S2 re-settle after DR-P3-SPRAY's fix (the spray port's paths under L1's law, IC-CTRL 424f97202), settled at 499 s by r7.1's settling block (the 20 s window ending there: PT1 341.7 of 344 Pa); packet e2f918aa = wiki claude/ld01-s3-wiki-integ 44af1e7 (720057b7's values; provenance only differs), the spray line composed closed; water library adapter 10252c28 (PHASE's seam bridge). PROVISIONAL: on the window that starts at the pinned pair PT1 moves 519 Pa against 344 (the settle stops at the first window that holds; S2 has no pressure control)",
+  "file": "settled-state-s3-499s-e2f918aa.bits.json.gz",
+  "sha256": "28fce878cea2b0da4795d95432319bfbe6876c3d47176dd22f6042f38c9fe0ab",
+  "bytes": 14171,
+  "packet_sha256": "e2f918aa63d0ddc06405e2640fb9b14b780da0d0d206ee7190a301c330ff3373",
+  "t_s": 499.0,
   "row_bound": 1e-10,
-  "provisional": false,
-  "known_misses": [],
+  "provisional": true,
+  "known_misses": [
+    "pt1_pa"
+  ],
   "digest": {
-    "macos-aarch64": "0xfea8ccf05b1394c8"
+    "macos-aarch64": "0x6e4371be549b75c7"
   },
-  "made_by": "ld01_regression::settled_state_pin from kern/s3d28-b0ec724/s2-settled-state-514s-on-6515d63d.json (kern/s3d28-272d83f/s2-settle-78cb1fe9-1/settled-state.json relabelled to packet 6515d63d)",
+  "made_by": "ld01_regression::settled_state_pin from kern/s3d28-44af1e7/s2-settled-state-499s-on-e2f918aa.json (kern/s3d28-61d4d63/s2-settle-720057b7-1/settled-state.json relabelled)",
   "source": {
-    "file": "kern/s3d28-b0ec724/s2-settled-state-514s-on-6515d63d.json",
-    "max_abs_scaled_row_as_settled": 2.741108940784379e-06,
-    "sha256": "771c5afc9276cf80bc4d2d2c800effeeda92cc8a46bd3c5f917a67c3187c2d75"
+    "file": "kern/s3d28-44af1e7/s2-settled-state-499s-on-e2f918aa.json",
+    "max_abs_scaled_row_as_settled": 1.554425157471929e-06,
+    "sha256": "9839f6a9baf8d399a904b1152534cd8b663b5162a02f746c9571ab2cdbe33d73"
   },
   "start": {
-    "constraint_rate": 8.872670122488796e-20,
-    "correction_wrms": 0.00019409388973496393,
+    "constraint_rate": 8.020343219314156e-20,
+    "correction_wrms": 4.2988510430124304e-05,
     "projection_passes": 1,
     "rate_passes": 1,
-    "residual": 3.637443113241295e-14
+    "residual": 4.8393249058129044e-14
   },
   "at_pin": {
-    "max_abs_scaled_row": 3.637443113241295e-14,
+    "max_abs_scaled_row": 4.8393249058129044e-14,
     "settling_window_20_s": {
       "average_coolant_k": {
         "holds": true,
-        "range": 0.0001063697581002998,
+        "range": 0.000245688514610265,
         "threshold": 0.0034
       },
       "core_cell_liquid_k": {
         "holds": true,
-        "range": 7.783575051689695e-05,
+        "range": 0.0002740492254815763,
         "threshold": 0.01
       },
       "core_power": {
         "holds": true,
-        "range": 3.192812866862043e-06,
+        "range": 6.986909726331201e-07,
         "threshold": 6.8e-05
       },
       "loop_flow": {
         "holds": true,
-        "range": 3.736286714036505e-07,
+        "range": 7.076330361290616e-07,
         "threshold": 0.0005
       },
       "pt1_pa": {
-        "holds": true,
-        "range": 247.43364780209959,
+        "holds": false,
+        "range": 519.4173115808517,
         "threshold": 344.0
       },
       "pzr_level_m": {
         "holds": true,
-        "range": 2.642248076334397e-05,
+        "range": 1.688246211184463e-05,
         "threshold": 0.00068
       },
       "sg_liquid_m3": {
         "holds": true,
-        "range": 1.8413674155226545e-05,
+        "range": 3.3082541932571985e-05,
         "threshold": 0.0034
       },
       "sg_pressure_pa": {
         "holds": true,
-        "range": 12.579816916957498,
+        "range": 22.60148674994707,
         "threshold": 344.0
       }
     },
-    "window_start_placements": [
-      {
-        "coordinate": 191,
-        "time": 514.0,
-        "value": -2.6220935427065348e-24
-      }
-    ]
+    "window_start_placements": []
   }
 }

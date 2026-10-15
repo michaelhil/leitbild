@@ -245,9 +245,14 @@ impl<P: Properties> Network<P> {
             })?;
             self.charts[l.face][l.phase] = Some(c);
             let flux = [c.mass_flow_kg_s, c.enthalpy_flow_w, c.boron_flow_kg_s];
+            // S3-D32: vapor at a liquid-mode end is that end's liquid.
+            let (pf, pt) = (
+                self.receipt_phase(f.from, l.phase),
+                self.receipt_phase(f.to, l.phase),
+            );
             for (k, q) in flux.into_iter().enumerate() {
-                self.receipts[f.from][l.phase][k] = self.receipts[f.from][l.phase][k] - q;
-                self.receipts[f.to][l.phase][k] = self.receipts[f.to][l.phase][k] + q;
+                self.receipts[f.from][pf][k] = self.receipts[f.from][pf][k] - q;
+                self.receipts[f.to][pt][k] = self.receipts[f.to][pt][k] + q;
             }
         }
         if let Some(coupling) = coupling.as_deref_mut() {
@@ -828,18 +833,18 @@ impl<P: Properties> Network<P> {
     /// virtual cell, which the cell's own spray law takes (it splits a
     /// withdrawal by its vapour region's volume share); an uncomposed spray
     /// port and the relief receive none (the relief's flow is the cell's
-    /// own restriction). A vapor arrival through the surge port is outside
-    /// the composed cell and refuses.
+    /// own restriction). The surge face's vapor receipt is the cell's
+    /// surge vapor arrival (S3-D30), which joins zone A's bubbles; vapor
+    /// carries no boron, so a vapor tracer receipt refuses.
     pub(super) fn pzr_receipts(
         &self,
         surge: [[thermal::Scalar; 3]; 2],
         spray: Option<[[thermal::Scalar; 3]; 2]>,
     ) -> Result<Vec<stratified::Receipt>, Failure> {
         let [liquid, vapor] = surge;
-        if vapor.iter().any(|q| q.value != 0. || q.direction != 0.) {
+        if vapor[2].value != 0. || vapor[2].direction != 0. {
             return Err(Failure::Fatal(
-                "a vapor receipt through the surge port is outside the composed stratified cell"
-                    .into(),
+                "a vapor tracer receipt through the surge port: vapor carries no boron".into(),
             ));
         }
         let mut receipts =
@@ -848,12 +853,15 @@ impl<P: Properties> Network<P> {
             mass: liquid[0],
             enthalpy: liquid[1],
             boron: liquid[2],
+            vapor_mass: vapor[0],
+            vapor_enthalpy: vapor[1],
         };
         if let (Some(sp), Some([l, v])) = (self.spray, spray) {
             receipts[sp.port] = stratified::Receipt {
                 mass: l[0] + v[0],
                 enthalpy: l[1] + v[1],
                 boron: l[2] + v[2],
+                ..stratified::Receipt::zero()
             };
         }
         Ok(receipts)

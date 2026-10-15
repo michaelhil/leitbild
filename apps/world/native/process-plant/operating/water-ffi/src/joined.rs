@@ -1014,6 +1014,22 @@ mod integrated {
             passes_allowed,
         )
         .map_err(message)?;
+        // L1 at the segment start (DR S3-REBIRTH, decision 0014): a lock
+        // whose drive draws from its holding end at t0+ (at the consistent
+        // state, or from an exact zero by its rate) is released now; stock
+        // IDA would never report its root. No coordinate moves; the
+        // released impulse's rate and the id vector change.
+        let mut yp = yp;
+        let ids = match joined
+            .unilateral_release_at_start(t, y, &mut yp)
+            .map_err(message)?
+        {
+            Some(release) => {
+                done.push(release);
+                joined.differential(network_ids)
+            }
+            None => ids,
+        };
         let (yp, ids) = if appended > 0 {
             let mut tail = vec![0.; appended];
             let tail_ids = ida.system_mut().appended_start(t, y_tail, &mut tail)?;

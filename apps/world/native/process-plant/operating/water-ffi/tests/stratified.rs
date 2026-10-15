@@ -105,6 +105,114 @@ fn rates(yp: &[f64], scales: &[f64], seed: Option<&[f64]>, cj: f64) -> Coordinat
         .collect();
     Coordinates::from_slice(&v).unwrap()
 }
+/// S3-D30: vapor arriving through the surge port joins zone A's bubble
+/// stock b_A at h_g(p_s); A pays the enthalpy difference. The rows stay
+/// exactly conservative, the bubble stock and A's energy take exactly the
+/// arrival, and a withdrawal of vapor refuses.
+#[test]
+fn surge_vapor_arrival_joins_the_admitted_bubbles_and_is_conserved_exactly() {
+    let p = prepared();
+    let v = active(&p);
+    let rate = active_rates();
+    let heat = Heat::zero();
+    let (w, h) = (1.9, 1.9 * 2.61e6);
+    for liquid in [
+        Receipt {
+            mass: s(-380.),
+            enthalpy: s(-380. * 1.6e6),
+            boron: s(-0.38),
+            ..Receipt::zero()
+        },
+        Receipt {
+            mass: s(18.3),
+            enthalpy: s(18.3 * 1.21e6),
+            boron: s(0.023),
+            ..Receipt::zero()
+        },
+    ] {
+        let dry = evaluate(&p, &v, &rate, liquid, heat).unwrap();
+        let receipt = Receipt {
+            vapor_mass: s(w),
+            vapor_enthalpy: s(h),
+            ..liquid
+        };
+        let ev = evaluate(&p, &v, &rate, receipt, heat).unwrap();
+        let hg = ev.column.interface_saturation.vapor.enthalpy.value;
+        assert_eq!(ev.flows.surge_vapor.value, w);
+        // The arrival enters b_A; A pays h - w h_g(p_s); nothing else moves.
+        let d = |i: usize| ev.flows.sources[i].value - dry.flows.sources[i].value;
+        assert!((d(st::ADMITTED_BUBBLE_MASS) - w).abs() <= 1e-12 * w);
+        assert!((d(st::ADMITTED_ENERGY) - (h - w * hg)).abs() <= 1e-9 * h);
+        for i in [
+            st::VAPOR_MASS,
+            st::VAPOR_ENERGY,
+            st::ADMITTED_MASS,
+            st::ADMITTED_BORON,
+            st::RESIDENT_MASS,
+            st::RESIDENT_ENERGY,
+            st::RESIDENT_BORON,
+            st::BUBBLE_MASS,
+            st::DROP_MASS,
+            st::DROP_BORON,
+        ] {
+            assert_eq!(d(i), 0., "source {i} moved");
+        }
+        // Exact conservation of the assembled rows, as for liquid receipts.
+        let implied: Vec<f64> = (0..st::COORDINATES)
+            .map(|i| rate[i] - ev.rows[i].value * p.scales[i])
+            .collect();
+        let sat = &ev.column.interface_saturation;
+        let mass = implied[st::VAPOR_MASS]
+            + implied[st::ADMITTED_MASS]
+            + implied[st::RESIDENT_MASS]
+            + implied[st::BUBBLE_MASS]
+            + implied[st::ADMITTED_BUBBLE_MASS]
+            + implied[st::DROP_MASS];
+        let boron =
+            implied[st::ADMITTED_BORON] + implied[st::RESIDENT_BORON] + implied[st::DROP_BORON];
+        let f = &ev.flows;
+        let work: f64 = f.work.iter().map(|w| w.value).sum();
+        let energy = implied[st::VAPOR_ENERGY]
+            + implied[st::ADMITTED_ENERGY]
+            + implied[st::RESIDENT_ENERGY]
+            + work
+            + (implied[st::BUBBLE_MASS] + implied[st::ADMITTED_BUBBLE_MASS])
+                * sat.vapor.enthalpy.value
+            + implied[st::DROP_MASS] * sat.liquid.enthalpy.value
+            + f.transit_drift[0].value
+            + f.transit_drift[1].value
+            + f.admitted_transit_drift.value;
+        let scale = |x: f64| 1e-12 * x.abs().max(1.);
+        assert!(
+            (mass - (liquid.mass.value + w)).abs() <= scale(1e3),
+            "mass {mass}"
+        );
+        assert!(
+            (boron - liquid.boron.value).abs() <= scale(1.),
+            "boron {boron}"
+        );
+        assert!(
+            (energy - (liquid.enthalpy.value + h)).abs() <= scale(1e10),
+            "energy {energy}"
+        );
+        let b = &ev.balance;
+        assert!((b.receipt_mass_kg_s.value - (liquid.mass.value + w)).abs() <= scale(1e3));
+        assert!((b.mass_kg_s.value - b.receipt_mass_kg_s.value).abs() <= scale(1e3));
+        assert!((b.energy_w.value - b.receipt_energy_w.value).abs() <= scale(1e10));
+        assert!((b.boron_kg_s.value - b.receipt_boron_kg_s.value).abs() <= scale(1.));
+        // A vapor withdrawal through the surge port is outside the cell.
+        let out = Receipt {
+            vapor_mass: s(-w),
+            vapor_enthalpy: s(-h),
+            ..liquid
+        };
+        assert!(matches!(
+            evaluate(&p, &v, &rate, out, heat),
+            Err(Failure::Fatal(_))
+        ));
+    }
+}
+
 fn physical(x: &Coordinates) -> [f64; st::COORDINATES] {
     x.to_array().map(|v| v.value)
 }
@@ -333,11 +441,13 @@ fn arbitrary_receipts_are_conserved_exactly_by_the_assembled_rows() {
             mass: s(-31.7),
             enthalpy: s(-31.7 * 1.6e6 - 2.9e5),
             boron: s(-0.041),
+            ..Receipt::zero()
         },
         Receipt {
             mass: s(18.3),
             enthalpy: s(18.3 * 1.21e6),
             boron: s(0.023),
+            ..Receipt::zero()
         },
     ] {
         let ev = evaluate(&p, &v, &rate, receipt, heat).unwrap();
@@ -430,6 +540,7 @@ fn admitted_layer_follows_the_analytic_lower_bound_under_a_long_outsurge() {
             mass: s(-w),
             enthalpy: s(-w * 1.6e6),
             boron: s(-w * 0.001),
+            ..Receipt::zero()
         };
         let ev = evaluate(&p, &v, &[0.; st::COORDINATES], receipt, Heat::zero()).unwrap();
         let f = &ev.flows;
@@ -597,6 +708,7 @@ fn seeded_directions_match_central_differences_on_an_active_state() {
         mass: s(-23.),
         enthalpy: s(-23. * 1.6e6),
         boron: s(-0.023),
+        ..Receipt::zero()
     };
     let heat = Heat {
         vapor: s(0.),
@@ -694,6 +806,7 @@ fn residual_on_a_shared_column_is_bitwise_the_residual() {
         mass: Scalar::new(-12., 0.3),
         enthalpy: Scalar::new(-12. * 1.6e6, 4e5),
         boron: Scalar::new(-0.012, 3e-4),
+        ..Receipt::zero()
     }];
     let heat = Heat {
         vapor: s(0.),
@@ -821,6 +934,7 @@ fn spray_is_heated_to_saturation_at_entry_by_condensing_vapor() {
             mass: s(w),
             enthalpy: s(w * h_s),
             boron: s(w * 0.0012),
+            ..Receipt::zero()
         };
         let ev = evaluate_all(
             &p,
@@ -975,11 +1089,13 @@ fn every_port_kind_and_both_banks_are_conserved_exactly() {
             mass: s(-21.),
             enthalpy: s(-21. * 1.6e6 + 7.0e4),
             boron: s(-0.02),
+            ..Receipt::zero()
         },
         Receipt {
             mass: s(2.4),
             enthalpy: s(2.4 * 1.25e6),
             boron: s(0.003),
+            ..Receipt::zero()
         },
         Receipt::zero(),
     ];
@@ -1360,11 +1476,13 @@ fn walls_with_every_port_kind_are_conserved_exactly() {
             mass: s(9.),
             enthalpy: s(9. * 1.28e6),
             boron: s(0.011),
+            ..Receipt::zero()
         },
         Receipt {
             mass: s(1.1),
             enthalpy: s(1.1 * 1.3e6),
             boron: s(0.0013),
+            ..Receipt::zero()
         },
         Receipt::zero(),
     ];

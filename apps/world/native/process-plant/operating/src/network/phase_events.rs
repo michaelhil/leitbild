@@ -8,9 +8,9 @@
 //!   located rising through zero (the drive reverses toward the holding
 //!   end);
 //! - a free path: its contact root, the phase-k mass (kg) of the end it
-//!   draws from by the sign of its impulse (`Q = Pi/I` with `I >= 0` at
-//!   every admitted state; at `Pi = 0` the larger end mass, so a path at
-//!   rest has no contact), located falling through zero;
+//!   draws from by the sign of its flow `Q = Pi/I` (`Network::path_flow_sign`;
+//!   at `Pi = 0` the larger end mass, so a path at rest has no contact),
+//!   located falling through zero;
 //! - a locked path with neither end holding has no root: only a birth
 //!   releases it, and a birth is the phase-mode owner's transaction.
 //!
@@ -137,11 +137,11 @@ impl<P: Properties> Network<P> {
                 }
                 (Root::Contact(_), Lock::Free) => {
                     let (from, to) = self.endpoints[l.face];
-                    let pi = y[l.index];
+                    let flow = self.path_flow_sign(y, li);
                     let m = |c| self.end_mass(y, c, l.phase);
-                    if pi > 0. {
+                    if flow > 0. {
                         m(from)
-                    } else if pi < 0. {
+                    } else if flow < 0. {
                         m(to)
                     } else {
                         m(from).max(m(to))
@@ -163,8 +163,9 @@ impl<P: Properties> Network<P> {
 /// observation (class O): E2b keeps the exact donor by the flow's sign and
 /// selects no donor law, and C3 counts its flips (S3 declaration r2, C3's
 /// cost line; R3 for the rod passages). A path's donor is the end its flow
-/// draws from, by the sign of its impulse (`Q = Pi/I`, `I >= 0` at admitted
-/// states). A flip is a change between the two nonzero signs, counted once
+/// draws from, by the sign of its flow `Q = Pi/I`
+/// ([`Network::path_flow_sign`]). A flip is a change between the two
+/// nonzero signs, counted once
 /// however many accepted states sit exactly at rest in between.
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct DonorFlips {
@@ -185,7 +186,7 @@ impl DonorFlips {
             .iter()
             .enumerate()
             .filter(|(li, _)| !network.unilateral_locked(*li))
-            .map(|(li, l)| (li, y[l.index]));
+            .map(|(li, _)| (li, network.path_flow_sign(y, li)));
         self.record(network.face_layout.len(), t, impulses);
     }
     /// One accepted state's `(path, impulse)` pairs among `paths` paths.
@@ -342,6 +343,7 @@ mod tests {
             impulse_pa_s: 0.,
             volume_flow_m3_s: 0.,
             payment: None,
+            unpaid_kinetic_j: None,
         }
     }
 

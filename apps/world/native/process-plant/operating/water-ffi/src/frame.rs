@@ -200,6 +200,12 @@ pub trait Client<S> {
 /// The reported diagnostic of a class-S instant (S3-D4): the Newton
 /// correction the held changes alone ask for, `J(cj)^-1 ΔF` in IDA's WRMS
 /// (one Jacobian assembly and factorization per S instant), or none.
+///
+/// S3-D34: the jump costs one Jacobian assembly and factorization per S
+/// instant (about 0.02 CPU-s/s in C2), so it runs only inside the gate
+/// harness and the lanes' probes that report it; a run path (the S3 settle,
+/// the kernel's checks, a production run) passes `None`. Neither changes
+/// the trajectory.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Diagnostic {
     Jump,

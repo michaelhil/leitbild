@@ -77,7 +77,7 @@ pub enum End {
     To,
 }
 impl End {
-    fn other(self) -> Self {
+    pub(super) fn other(self) -> Self {
         match self {
             Self::From => Self::To,
             Self::To => Self::From,
@@ -149,6 +149,18 @@ pub enum Cause {
     /// Locked at rest (`Q = 0`): the drive would draw from an empty end,
     /// or there is no drive and an end is empty. Nothing to pay.
     AtRest,
+    /// Locked in the phase-mode owner's exhaustion transaction: the path's
+    /// phase inertia lived only in cells that hold no phase k after the
+    /// exhaustion, so its retained impulse has no inertia left (DR
+    /// S3-EXHAUST; decision 0014's contact at the donor's exhaustion).
+    Exhaustion,
+    /// Released at a segment start, after the exact consistent start: the
+    /// drive draws from the holding end at `t0+`, already at the consistent
+    /// state or, from an exact zero (a newborn phase's fraction), by its
+    /// rate along the consistent rates (`F(t0+)` has the sign of `F'(t0)`).
+    /// Stock IDA never reports a root that starts on the released side or
+    /// at an exact zero (DR S3-REBIRTH).
+    DriveAtStart,
 }
 
 /// One path's view at a transaction: its ends' holding and its last value
@@ -307,6 +319,11 @@ pub struct Change {
     /// A contact's payment: the receiving cell, the coordinate it entered
     /// and the energy in J.
     pub payment: Option<(usize, usize, f64)>,
+    /// An exhaustion lock's model kinetic energy `½ Π Q` at the located
+    /// instant, reported and not paid: the path's inertia vanished with its
+    /// donor, so `½ Π²/I` is unbounded (DR S3-EXHAUST; see
+    /// [`Network::exhaustion_with_paths`]).
+    pub unpaid_kinetic_j: Option<f64>,
 }
 
 /// The outcome of one L1 transaction.
@@ -317,6 +334,37 @@ pub struct Transaction {
 }
 
 impl<P: Properties> Network<P> {
+    /// The sign of path `li`'s volume flow `Q = Pi/I` in the coordinate
+    /// view `y`, with `I` the supports' phase mass per current volume (as
+    /// the charts compose it, from the last evaluation's volumes): `+1`
+    /// from `from`, `-1` from `to`, `0` at rest. A signed root-size phase
+    /// mass can make `I` negative, so the impulse's sign alone may name the
+    /// wrong donor (DR S3-REBIRTH).
+    pub fn path_flow_sign(&self, y: &[f64], li: usize) -> f64 {
+        let l = self.face_layout[li];
+        let pi = y[l.index];
+        if pi == 0. {
+            return 0.;
+        }
+        let inertance: f64 = self.faces[l.face]
+            .supports
+            .iter()
+            .map(|support| {
+                let i = self.cell_layout[support.region].mass[l.phase];
+                y[i] * self.scales[i] / self.cell_volume[support.region].value
+                    * support.inverse_area_length_per_m
+            })
+            .sum();
+        if inertance < 0. {
+            -pi.signum()
+        } else {
+            pi.signum()
+        }
+    }
+    /// The `(from, to)` cells of face `face`.
+    pub fn face_ends(&self, face: usize) -> (usize, usize) {
+        self.endpoints[face]
+    }
     /// The L1 lock table, when L1 is active.
     pub fn unilateral(&self) -> Option<&Locks> {
         self.unilateral.as_ref()
@@ -351,10 +399,15 @@ impl<P: Properties> Network<P> {
         let port = self.cells[self.pzr.cell].phase;
         cells.push([port[0].is_some(), port[1].is_some()]);
         // IC-CTRL (S3 spray path): the spray port's virtual cell holds the
-        // vapor region's drops and vapor as its port view shows them.
+        // vapor region's vapor as its port view shows it, and its drops
+        // while the drop stock is positive: the stock its liquid path's
+        // contact root reads (DR-P3-SPRAY). No phase-mode owner zeroes the
+        // drop stock at its exhaustion, so the root's crossing is the
+        // presence's edge.
         if let Some(sp) = self.spray {
             let view = self.cells[sp.port_cell].phase;
-            cells.push([view[0].is_some(), view[1].is_some()]);
+            let drops = self.pzr.base + super::stratified::DROP_MASS;
+            cells.push([y[drops] > 0., view[1].is_some()]);
         }
         Presence { cells }
     }
@@ -375,6 +428,105 @@ impl<P: Properties> Network<P> {
                 "no L1 payment coordinate for phase {k} of cell {cell}"
             )))
         }
+    }
+    /// The phase-mode owner's exhaustion of `cells` with the vapor paths it
+    /// empties, in one exact transaction at a located instant (lead DR
+    /// S3-EXHAUST). The caller evaluated the network's value state at this
+    /// instant, before the exhaustion. Every free vapor path whose inertia
+    /// supports hold no vapor once `cells` are exhausted (each support is one
+    /// of `cells` or a regular cell with no vapor stock) and that carries
+    /// impulse or flow in that evaluation is locked with `Π = 0`
+    /// (`Locked(holding after the exhaustion)`, so a re-birth releases it
+    /// through [`decide`]); then each cell is exhausted
+    /// ([`Network::exhaustion`]): its vapor slots, of root size, are zeroed
+    /// and its totals stay. No mass, energy or boron moves.
+    ///
+    /// **The path's kinetic energy is reported, not paid (PROPOSED, lead to
+    /// confirm).** Decision 0014 pays a contact's `½ Π Q` once. Here the
+    /// path's inertia `I` lives only in the exhausting donor, so `I ∝ M_g` is
+    /// of root size at the located instant while `Π` stays finite (every
+    /// force on the phase scales with its fraction and no advective momentum
+    /// outflux is composed), and `½ Π²/I` is unbounded and sign-indefinite:
+    /// in C2 it was -2.8e12 J. Paying it would create that energy. Without
+    /// L1 the cells are only exhausted.
+    pub fn exhaustion_with_paths(
+        &mut self,
+        y: &mut [f64],
+        cells: &[usize],
+    ) -> Result<(Vec<serde_json::Value>, Transaction), Failure> {
+        let mut out = Transaction::default();
+        let mut vanishing = Vec::new();
+        if let Some(locks) = &self.unilateral {
+            for li in 0..self.face_layout.len() {
+                let l = self.face_layout[li];
+                if l.phase != 1 || locks.paths[li] != Lock::Free {
+                    continue;
+                }
+                let face = &self.faces[l.face];
+                let empties = !face.supports.is_empty()
+                    && face.supports.iter().any(|s| cells.contains(&s.region))
+                    && face
+                        .supports
+                        .iter()
+                        .all(|s| cells.contains(&s.region) || self.end_mass(y, s.region, 1) == 0.);
+                if !empties {
+                    continue;
+                }
+                let chart = self.charts[l.face][1].ok_or_else(|| {
+                    Failure::Fatal(
+                        "an exhaustion with L1 needs the value evaluation's vapor charts".into(),
+                    )
+                })?;
+                let impulse = y[l.index] * self.scales[l.index];
+                let (q, kinetic) = (chart.volume_flow_m3_s.value, chart.kinetic_j.value);
+                if impulse == 0. && q == 0. {
+                    continue;
+                }
+                if ![impulse, q, kinetic].iter().all(|v| v.is_finite()) {
+                    return Err(Failure::Fatal(format!(
+                        "exhaustion contact on a nonfinite vapor path view (face {}, Π {impulse}, Q {q})",
+                        l.face
+                    )));
+                }
+                vanishing.push((li, impulse, q, kinetic, self.face_drive[l.face][1].value));
+            }
+        }
+        let mut events = Vec::new();
+        for c in cells {
+            events.push(self.exhaustion(*c, y)?);
+        }
+        if vanishing.is_empty() {
+            return Ok((events, out));
+        }
+        let presence = self.declared_presence(y);
+        let mut locks = self
+            .unilateral
+            .clone()
+            .ok_or_else(|| Failure::Fatal("L1 is not active".into()))?;
+        for (li, impulse, q, kinetic, drive) in vanishing {
+            let l = self.face_layout[li];
+            let (from, to) = self.endpoints[l.face];
+            let holding = Holding::of(presence.cells[from][1], presence.cells[to][1]);
+            let before = locks.paths[li];
+            let after = Lock::Locked(holding);
+            y[l.index] = 0.;
+            out.changes.push(Change {
+                path: li,
+                face: l.face,
+                phase: l.phase,
+                before,
+                after,
+                cause: Cause::Exhaustion,
+                drive_pa: drive,
+                impulse_pa_s: impulse,
+                volume_flow_m3_s: q,
+                payment: None,
+                unpaid_kinetic_j: Some(kinetic),
+            });
+            locks.paths[li] = after;
+        }
+        self.unilateral = Some(locks);
+        Ok((events, out))
     }
     /// Phase-`k` mass of one end in a coordinate view the network evaluated:
     /// a regular cell's stock, the stratified cell's surge-port layers
@@ -404,8 +556,9 @@ impl<P: Properties> Network<P> {
             0.
         }
     }
-    /// One path's view from the last value evaluation and `presence`.
-    fn path_view(&self, li: usize, presence: &Presence) -> Result<PathView, Failure> {
+    /// One path's view from the last value evaluation and `presence`
+    /// (also the spray port's scoped law, DR-P3-SPRAY).
+    pub(super) fn path_view(&self, li: usize, presence: &Presence) -> Result<PathView, Failure> {
         let l = self.face_layout[li];
         let (from, to) = self.endpoints[l.face];
         let chart = self.charts[l.face][l.phase].ok_or_else(|| {
@@ -523,11 +676,77 @@ impl<P: Properties> Network<P> {
                 impulse_pa_s: impulse,
                 volume_flow_m3_s: view.volume_flow_m3_s,
                 payment,
+                unpaid_kinetic_j: None,
             });
             locks.paths[li] = decision.lock;
         }
         self.unilateral = Some(locks);
         Ok(out)
+    }
+    /// Decision 0014's release at a segment start (DR S3-REBIRTH), after a
+    /// restart's exact consistent start: a one-sided lock is released now
+    /// when its drive at `t0+` draws from its holding end, that is when the
+    /// drive at the consistent state already does (`orientation × F > 0`:
+    /// the transaction decided on the state before the projection moved a
+    /// newborn cell's algebraic vapor mass), or when it is exactly zero and
+    /// its rate along the consistent rates leaves zero toward the holding
+    /// end (`F(t0+)` has the sign of `F'(t0)`). Its release root would
+    /// otherwise start on the released side, or at an exact zero that stock
+    /// IDA deactivates and never reports leaving zero. No coordinate moves
+    /// (`Π = 0` stays); the released impulse's rate becomes the free row's
+    /// `Π' = F` in `yp` (zero when `F = 0`), and no other row reads it, so
+    /// the pair stays consistent. A zero drive with a zero rate stays locked
+    /// (no higher order is taken). Returns the transaction and every
+    /// one-sided lock with its oriented drive and oriented rate (Pa, Pa/s).
+    /// Precondition: the last evaluation is seeded along the consistent
+    /// rates `yp` with `cj = 0`, so each drive's direction is `dF/dt`.
+    #[allow(clippy::type_complexity)] // The transaction and its one-sided list.
+    pub fn unilateral_release_at_start(
+        &mut self,
+        yp: &mut [f64],
+    ) -> Result<(Transaction, Vec<(usize, f64, f64)>), Failure> {
+        let mut locks = self
+            .unilateral
+            .clone()
+            .ok_or_else(|| Failure::Fatal("L1 is not active".into()))?;
+        let mut out = Transaction::default();
+        let mut one_sided = Vec::new();
+        for (li, l) in self.face_layout.iter().enumerate() {
+            let Lock::Locked(holding) = locks.paths[li] else {
+                continue;
+            };
+            let Some(o) = holding.orientation() else {
+                continue;
+            };
+            let drive = self.face_drive[l.face][l.phase];
+            if !(drive.value.is_finite() && drive.direction.is_finite()) {
+                return Err(Failure::Fatal(format!(
+                    "L1 start release: nonfinite drive {drive:?} on face {} phase {}",
+                    l.face, l.phase
+                )));
+            }
+            let (value, rate) = (o * drive.value, o * drive.direction);
+            one_sided.push((li, value, rate));
+            if value > 0. || (value == 0. && rate > 0.) {
+                locks.paths[li] = Lock::Free;
+                yp[l.index] = drive.value / self.scales[l.index];
+                out.changes.push(Change {
+                    path: li,
+                    face: l.face,
+                    phase: l.phase,
+                    before: Lock::Locked(holding),
+                    after: Lock::Free,
+                    cause: Cause::DriveAtStart,
+                    drive_pa: drive.value,
+                    impulse_pa_s: 0.,
+                    volume_flow_m3_s: 0.,
+                    payment: None,
+                    unpaid_kinetic_j: None,
+                });
+            }
+        }
+        self.unilateral = Some(locks);
+        Ok((out, one_sided))
     }
     /// The reaction of every locked path at the last value evaluation: its
     /// drive `F` in Pa, by `(face, phase)`.

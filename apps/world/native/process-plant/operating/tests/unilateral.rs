@@ -896,3 +896,54 @@ fn a_contact_root_whose_donor_is_still_declared_present_refuses() {
     // A refused transaction leaves the lock table unchanged.
     assert_eq!(network.unilateral().unwrap(), &before);
 }
+
+#[test]
+fn a_one_sided_lock_drawing_from_its_holding_end_at_the_start_is_released_with_its_free_rate() {
+    // DR S3-REBIRTH: after a restart's consistent start a one-sided lock
+    // whose drive already draws from its holding end is released, its
+    // impulse rate set to the free row's; the opposite orientation holds.
+    let (_, mut y, _) = prepared();
+    flowing(&activated(&y, &vec![0.; y.len()]), &mut y);
+    let mut network = activated(&y, &vec![0.; y.len()]);
+    let li = 2; // face 1, liquid
+    let l = network.face_layout[li];
+    y[l.index] = 0.;
+    network
+        .evaluate(0., &y, &vec![0.; y.len()], None, 0., None)
+        .unwrap();
+    let drive = network.face_drive(l.face, 0).value;
+    assert!(drive != 0.);
+    // `From` holding draws from `from` when F > 0; choose the orientation
+    // that the drive releases and the one it holds.
+    let (releasing, holding) = if drive > 0. {
+        (Holding::From, Holding::To)
+    } else {
+        (Holding::To, Holding::From)
+    };
+    for (h, released) in [(releasing, true), (holding, false)] {
+        let mut locks = network.unilateral().unwrap().clone();
+        locks.paths[li] = Lock::Locked(h);
+        network.restore_unilateral(locks).unwrap();
+        let mut yp = vec![0.; y.len()];
+        network
+            .evaluate(0., &y, &yp.clone(), Some(&yp.clone()), 0., None)
+            .unwrap();
+        let (tx, one_sided) = network.unilateral_release_at_start(&mut yp).unwrap();
+        let listed = one_sided.iter().find(|(p, _, _)| *p == li).unwrap();
+        assert_eq!(listed.1 > 0., released, "{listed:?}");
+        let state = network.unilateral().unwrap().paths[li];
+        if released {
+            assert_eq!(state, Lock::Free);
+            assert_eq!(tx.changes.len(), 1);
+            assert_eq!(tx.changes[0].cause, Cause::DriveAtStart);
+            // The free row holds at the patched rate: Pi' = F.
+            assert_eq!(yp[l.index] * network.scales()[l.index], drive);
+            network.evaluate(0., &y, &yp, None, 0., None).unwrap();
+            assert!(network.rows()[l.index].value.abs() <= 1e-15 * drive.abs());
+        } else {
+            assert_eq!(state, Lock::Locked(h));
+            assert!(tx.changes.is_empty());
+            assert_eq!(yp[l.index], 0.);
+        }
+    }
+}

@@ -69,36 +69,38 @@ pub fn lag_continuation(
     Ok(result)
 }
 
-/// Selected analog channel: response lag, indicated span, quantum,
-/// sampling and transport (physical units of its quantity).
+/// Selected analog channel: response lag, indicated span, quantum, the
+/// band that establishes no sign, sampling and transport (units of its
+/// quantity). `None` (an explicit `null` in the packet) is a channel the
+/// owners give no span, quantization or band in these units (the current
+/// proxy's ratio form has no absolute span; SG NR has no quantization).
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AnalogConfig {
     pub lag_s: f64,
-    pub min: f64,
-    pub max: f64,
-    pub quantum: f64,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub quantum: Option<f64>,
+    /// `|indication| <= band` establishes a bounded magnitude, no sign.
+    pub indeterminate_band: Option<f64>,
     pub sample_s: f64,
     pub transport_s: f64,
 }
 impl AnalogConfig {
     pub fn validate(&self) -> Result<(), String> {
-        let all = [
-            self.lag_s,
-            self.min,
-            self.max,
-            self.quantum,
-            self.sample_s,
-            self.transport_s,
-        ];
-        if all.iter().any(|v| !v.is_finite())
-            || self.lag_s <= 0.
-            || self.max <= self.min
-            || self.quantum <= 0.
-            || self.quantum > self.max - self.min
-            || self.sample_s <= 0.
-            || self.transport_s < 0.
-        {
+        let optional = [self.min, self.max, self.quantum, self.indeterminate_band];
+        let bad = !(self.lag_s.is_finite()
+            && self.lag_s > 0.
+            && self.sample_s.is_finite()
+            && self.sample_s > 0.
+            && self.transport_s.is_finite()
+            && self.transport_s >= 0.)
+            || optional.iter().flatten().any(|v| !v.is_finite())
+            || matches!((self.min, self.max), (Some(a), Some(b)) if b <= a)
+            || self.quantum.is_some_and(|q| q <= 0.)
+            || matches!((self.min, self.max, self.quantum), (Some(a), Some(b), Some(q)) if q > b - a)
+            || self.indeterminate_band.is_some_and(|b| b < 0.);
+        if bad {
             return Err(format!("invalid analog channel {self:?}"));
         }
         Ok(())
@@ -113,6 +115,9 @@ pub enum Quality {
     BelowRange(f64),
     /// The actual indication lies above this bound (the span's maximum).
     AboveRange(f64),
+    /// The indication's magnitude is at most this bound; no sign is
+    /// established (the main-loop FT's low-flow band).
+    Indeterminate(f64),
 }
 
 /// A sample in flight or delivered, in frame indices.
@@ -255,12 +260,13 @@ impl Analog {
         // onto an endpoint. Half bins round away from zero (toward greater
         // absolute value).
         let c = &self.config;
-        Ok(if raw < c.min {
-            Quality::BelowRange(c.min)
-        } else if raw > c.max {
-            Quality::AboveRange(c.max)
-        } else {
-            Quality::Value((raw / c.quantum).round() * c.quantum)
+        Ok(match (c.min, c.max) {
+            (Some(min), _) if raw < min => Quality::BelowRange(min),
+            (_, Some(max)) if raw > max => Quality::AboveRange(max),
+            _ => match c.indeterminate_band {
+                Some(band) if raw.abs() <= band => Quality::Indeterminate(band),
+                _ => Quality::Value(c.quantum.map_or(raw, |q| (raw / q).round() * q)),
+            },
         })
     }
     /// Acquire at frame `k` if it is an acquisition frame and powered.
@@ -379,9 +385,10 @@ mod tests {
     fn pt() -> AnalogConfig {
         AnalogConfig {
             lag_s: 0.2,
-            min: 0.,
-            max: 20e6,
-            quantum: 1000.,
+            min: Some(0.),
+            max: Some(20e6),
+            quantum: Some(1000.),
+            indeterminate_band: None,
             sample_s: 0.1,
             transport_s: 0.1,
         }
@@ -398,6 +405,39 @@ mod tests {
         a.faults.bias = 0.;
         a.faults.stuck = Some(1.0e6);
         assert_eq!(a.indication().unwrap(), Quality::Value(1.0e6));
+    }
+
+    #[test]
+    fn a_band_establishes_magnitude_only_and_unset_fields_are_absent() {
+        let ft = AnalogConfig {
+            lag_s: 0.25,
+            min: Some(-1.5),
+            max: Some(1.5),
+            quantum: Some(5. / 8849.),
+            indeterminate_band: Some(10. / 8849.),
+            sample_s: 0.1,
+            transport_s: 0.1,
+        };
+        let mut a = Analog::new("FT", "I1", ft, 0.1, 9e-4).unwrap();
+        assert_eq!(a.indication().unwrap(), Quality::Indeterminate(10. / 8849.));
+        a.faults.bias = -3e-3;
+        assert!(matches!(a.indication().unwrap(), Quality::Value(v) if v < 0.));
+        let proxy = AnalogConfig {
+            lag_s: 0.2,
+            min: None,
+            max: None,
+            quantum: None,
+            indeterminate_band: None,
+            sample_s: 0.1,
+            transport_s: 0.1,
+        };
+        let b = Analog::new("P1", "I1", proxy, 0.1, 0.9987654321).unwrap();
+        assert_eq!(b.indication().unwrap(), Quality::Value(0.9987654321));
+        let bad = AnalogConfig {
+            quantum: Some(0.),
+            ..proxy
+        };
+        assert!(Analog::new("P1", "I1", bad, 0.1, 1.).is_err());
     }
 
     #[test]

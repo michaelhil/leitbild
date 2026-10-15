@@ -870,10 +870,12 @@ impl<P: Properties + WaterProperties> Joined<P> {
             + self.phase_mode_slots()
             + self.spray_slots()
     }
-    /// IC-CTRL (S3 spray path, S3-D25 (3), for KERN): the inlet check's one
-    /// root slot, last, while the spray path is composed.
+    /// IC-CTRL (S3 spray path, for KERN): three root slots, last, while the
+    /// spray path is composed: the inlet check's (S3-D25 (3)), then the
+    /// spray port's two phase paths under the scoped L1 (DR-P3-SPRAY;
+    /// disarmed constants once the network-wide L1 governs them).
     fn spray_slots(&self) -> usize {
-        usize::from(self.network.spray().is_some())
+        if self.network.spray().is_some() { 3 } else { 0 }
     }
     /// The phase modes' root slots: two per regular cell once declared,
     /// after L1's ([`Self::activate_phase_modes`]).
@@ -967,19 +969,26 @@ impl<P: Properties + WaterProperties> Joined<P> {
             b.root_directions(&mut out[..ns])?;
         }
         // L1: release rising, contact falling (`Root::direction`); a slot
-        // with no root reports none.
-        let first = out.len() - self.phase_mode_slots() - self.unilateral_slots();
+        // with no root reports none. L1's slots follow the PZR relief's and
+        // precede the phase modes' and the spray path's three ([`Self::roots`]).
+        let first =
+            out.len() - self.spray_slots() - self.phase_mode_slots() - self.unilateral_slots();
         for r in self.network.unilateral_roots() {
             out[first + r.path()] = r.direction();
         }
-        // The spray inlet check: contact falling, release rising.
-        if self.spray_slots() == 1 {
-            let last = out.len() - 1;
-            out[last] = match self.network.spray_check_watch() {
+        // The spray inlet check: contact falling, release rising; then the
+        // spray port's scoped L1 slots (their own directions).
+        if self.spray_slots() == 3 {
+            let check = out.len() - 3;
+            out[check] = match self.network.spray_check_watch() {
                 Some(crate::network::spray::CheckRoot::Contact) => -1,
                 Some(crate::network::spray::CheckRoot::Release) => 1,
                 _ => 0,
             };
+            let tip = self.network.spray_tip_roots(&vec![0.; self.dimension()])?;
+            for (k, (_, d)) in tip.iter().enumerate() {
+                out[check + 1 + k] = *d;
+            }
         }
         // Phase modes: birth rising; exhaustion and dryout falling.
         if self.phase_modes {
@@ -1030,15 +1039,25 @@ impl<P: Properties + WaterProperties> Joined<P> {
         if out.len() != ns + nr + np + nl + nm + nk {
             return Err(fatal("root layout"));
         }
-        if nk == 1 {
-            // The inlet check's release root reads the valve path's drive of
-            // this state's value evaluation; its contact root the impulse.
-            if self.network.spray_check_watch() == Some(crate::network::spray::CheckRoot::Release) {
+        if nk == 3 {
+            // The inlet check's and the spray port's release roots read the
+            // drives of this state's value evaluation; their contact roots
+            // the coordinates.
+            if self.network.spray_check_watch() == Some(crate::network::spray::CheckRoot::Release)
+                || self.network.spray_tip_reads_drive()
+            {
                 self.evaluate(t, y, yp, None, 0., None)
-                    .map_err(|e| fatal(format!("spray check root evaluation: {e:?}")))?;
+                    .map_err(|e| fatal(format!("spray root evaluation: {e:?}")))?;
             }
-            let last = out.len() - 1;
-            out[last] = self.network.spray_check_root(y).map_or(1., |r| r.1);
+            let check = out.len() - 3;
+            out[check] = self.network.spray_check_root(y).map_or(1., |r| r.1);
+            let tip = self
+                .network
+                .spray_tip_roots(y)
+                .map_err(|e| fatal(format!("spray port roots: {e:?}")))?;
+            for (k, (v, _)) in tip.iter().enumerate() {
+                out[check + 1 + k] = *v;
+            }
         }
         if nm > 0 {
             let slots = &mut out[ns + nr + np + nl..ns + nr + np + nl + nm];
@@ -1188,31 +1207,82 @@ impl<P: Properties + WaterProperties> Joined<P> {
         }
         self.deposit(&done, y)?;
         // The phase modes' transactions, then L1's on the post-mode state.
+        // L1's slots carry the roots armed for the segment that located
+        // this instant (an exhaustion may lock a path first: DR S3-EXHAUST).
         let nl = self.unilateral_slots();
+        let armed = self.network.unilateral_roots();
         if self.phase_modes {
             let first = ns + nr + np + nl;
             let nm = self.phase_mode_slots();
-            if let Some(m) = self.mode_transact(t, &directions[first..first + nm], y)? {
+            let mut modes = directions[first..first + nm].to_vec();
+            // DR S3-REBIRTH (PHASE-L1, for KERN): an L1 contact root located
+            // on a path drawing from an equilibrium cell is that cell's
+            // exhaustion root (the same function, the donor's vapor mass
+            // falling through zero, decision 0014's contact). The cell's own
+            // exhaustion root can start on the wrong side of a re-birth's
+            // projected root-size vapor and miss it, so the located contact
+            // exhausts the donor in this transaction, before L1 locks.
+            for r in &armed {
+                let crate::network::phase_events::Root::Contact(li) = *r else {
+                    continue;
+                };
+                if directions[ns + nr + np + li] != r.direction() {
+                    continue;
+                }
+                let l = self.network.face_layout[li];
+                let (from, to) = self.network.face_ends(l.face);
+                let flow = self.network.path_flow_sign(y, li);
+                let donor = if flow > 0. {
+                    from
+                } else if flow < 0. {
+                    to
+                } else {
+                    continue;
+                };
+                if donor < self.network.pzr.cell
+                    && self.network.cell_modes()[donor] == CellMode::Equilibrium
+                    && l.phase == 1
+                {
+                    modes[2 * donor] = -1;
+                }
+            }
+            if let Some(m) = self.mode_transact(t, &modes, y)? {
                 done.push(m);
             }
         }
         if self.network.unilateral().is_some() {
             let first = ns + nr + np;
-            if let Some(l1) = self.unilateral_transact(t, &directions[first..first + nl], y)? {
+            if let Some(l1) =
+                self.unilateral_transact(t, &directions[first..first + nl], y, armed)?
+            {
                 done.push(l1);
             }
         }
-        // IC-CTRL (S3 spray path, S3-D25 (3)): the inlet check's transaction
-        // at its located root, last.
-        if self.spray_slots() == 1
-            && let Some(receipt) = self
-                .network
-                .spray_check_transaction(t, directions[directions.len() - 1])?
-        {
-            done.push(super::block::Transaction {
-                deposits: Vec::new(),
-                receipt,
-            });
+        // IC-CTRL (S3 spray path): the inlet check's transaction at its
+        // located root (S3-D25 (3)), then the spray port's scoped L1
+        // (DR-P3-SPRAY) on a value evaluation of the post-transaction state.
+        if self.spray_slots() == 3 {
+            let check = directions.len() - 3;
+            if let Some(receipt) = self.network.spray_check_transaction(t, directions[check])? {
+                done.push(super::block::Transaction {
+                    deposits: Vec::new(),
+                    receipt,
+                });
+            }
+            // Every root transaction decides the port's paths, as L1 decides
+            // all of its own (found at the transaction or at a located root).
+            let tip = [directions[check + 1], directions[check + 2]];
+            if self.network.unilateral().is_none() {
+                let zero = vec![0.; y.len()];
+                self.evaluate(t, y, &zero, None, 0., None)?;
+                let presence = self.network.declared_presence(y);
+                if let Some(receipt) = self.network.spray_tip_transaction(t, tip, y, &presence)? {
+                    done.push(super::block::Transaction {
+                        deposits: Vec::new(),
+                        receipt,
+                    });
+                }
+            }
         }
         Ok(done)
     }
@@ -1238,6 +1308,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         }
         let mut events = Vec::new();
         let mut opposite = Vec::new();
+        let mut exhausted = Vec::new();
         for c in 0..self.network.pzr.cell {
             let [a, b] = [directions[2 * c], directions[2 * c + 1]];
             match self.network.cell_modes()[c] {
@@ -1265,7 +1336,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
                             .push(serde_json::json!({"cell": c, "root": "dryout", "direction": 1}));
                     }
                     match a {
-                        -1 => events.push(self.network.exhaustion(c, y)?),
+                        -1 => exhausted.push(c),
                         1 => opposite.push(
                             serde_json::json!({"cell": c, "root": "exhaustion", "direction": 1}),
                         ),
@@ -1274,9 +1345,26 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 }
             }
         }
+        // DR S3-EXHAUST (PHASE-P7, for KERN): the exhaustions with the vapor
+        // paths they empty, in one transaction on this instant's value
+        // evaluation before the exhaustion (`Network::exhaustion_with_paths`).
+        let mut contacts = serde_json::Value::Null;
+        if !exhausted.is_empty() {
+            if self.network.unilateral().is_some() {
+                let zero = vec![0.; y.len()];
+                self.evaluate(t, y, &zero, None, 0., None)?;
+            }
+            let (ex, tx) = self.network.exhaustion_with_paths(y, &exhausted)?;
+            events.extend(ex);
+            if !tx.changes.is_empty() {
+                contacts =
+                    serde_json::json!({"changes":tx.changes,"energyPaid_J":tx.energy_paid_j});
+            }
+        }
         Ok(Some(super::block::Transaction {
             deposits: Vec::new(),
             receipt: serde_json::json!({"owner":"phase modes","t_s":t,"events":events,
+                "vaporPathContacts":contacts,
                 "opposite":opposite,"stateChanged":!events.is_empty()}),
         }))
     }
@@ -1295,8 +1383,8 @@ impl<P: Properties + WaterProperties> Joined<P> {
         t: f64,
         directions: &[i32],
         y: &mut [f64],
+        roots: Vec<crate::network::phase_events::Root>,
     ) -> Result<Option<super::block::Transaction>, Failure> {
-        let roots = self.network.unilateral_roots();
         if directions.len() != self.unilateral_slots() {
             return Err(fatal("L1 root layout"));
         }
@@ -1329,6 +1417,37 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 "located":fired.iter().map(|(p, f)| serde_json::json!({"path":p,"root":format!("{f:?}")})).collect::<Vec<_>>(),
                 "opposite":opposite,"changes":tx.changes,"energyPaid_J":tx.energy_paid_j,
                 "stateChanged":!tx.changes.is_empty()}),
+        }))
+    }
+    /// L1 at a segment start, after the restart's exact consistent start
+    /// (DR S3-REBIRTH, decision 0014): the drives and their rates along the
+    /// consistent rates `yp` from one value evaluation seeded along `yp`
+    /// (`cj = 0`, so a direction is `dF/dt`), then
+    /// [`Network::unilateral_release_at_start`]: a one-sided lock whose
+    /// drive draws from its holding end at `t0+` is released, its impulse
+    /// rate set to the free row's `F` in `yp`; no coordinate moves, so the
+    /// caller updates the id vector only. `None` while L1 is inactive or
+    /// no one-sided lock exists.
+    pub fn unilateral_release_at_start(
+        &mut self,
+        t: f64,
+        y: &[f64],
+        yp: &mut [f64],
+    ) -> Result<Option<super::block::Transaction>, Failure> {
+        if self.network.unilateral().is_none() {
+            return Ok(None);
+        }
+        let seed = yp.to_vec();
+        self.evaluate(t, y, yp, Some(&seed), 0., None)?;
+        let (tx, one_sided) = self.network.unilateral_release_at_start(yp)?;
+        if one_sided.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(super::block::Transaction {
+            deposits: Vec::new(),
+            receipt: serde_json::json!({"owner":"network L1 at the segment start","t_s":t,
+                "oneSided":one_sided.iter().map(|(p, f, r)| serde_json::json!({"path":p,"orientedDrive_Pa":f,"orientedRate_Pa_s":r})).collect::<Vec<_>>(),
+                "changes":tx.changes,"stateChanged":!tx.changes.is_empty()}),
         }))
     }
     /// A declared command to every composed owner, in order, followed by
@@ -2388,7 +2507,9 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
             &scales[1].coordinates,
         )
         .and_then(|x| {
-            solids.rows_local(
+            // HOOK (COST lane): directions only, as every reader of this
+            // call takes them (Solids::rows_local_directions).
+            solids.rows_local_directions(
                 properties,
                 x,
                 temperatures,
@@ -2678,7 +2799,9 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
             if let Some((k, _)) = saved {
                 solids.temperatures_local(x, &[k], temperatures)?;
             }
-            solids.rows_local(
+            // HOOK (COST lane): directions only, as every reader of this
+            // owner column takes them (Solids::rows_local_directions).
+            solids.rows_local_directions(
                 properties,
                 x,
                 temperatures,

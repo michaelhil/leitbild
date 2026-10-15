@@ -118,6 +118,9 @@ pub struct S3Unit {
     pub control: PzrClient,
     pub frame: Frame,
     pub receipt: Value,
+    /// The operator at the packet's prepared hot reference (the composed
+    /// state): the acquired protection's references (IC-PROT, 5a4f3228).
+    pub reference: Vec<f64>,
 }
 
 /// The electrical slice at the packet's prepared state, connected.
@@ -204,6 +207,7 @@ pub fn compose(inputs: &Inputs, state: &Value) -> Result<S3Unit, String> {
         network_ids,
         mut atol,
         rtol,
+        y: reference,
         ..
     } = started_full_composition();
     if y.len() != joined.dimension() {
@@ -395,5 +399,6 @@ pub fn compose(inputs: &Inputs, state: &Value) -> Result<S3Unit, String> {
         control,
         frame,
         receipt,
+        reference,
     })
 }

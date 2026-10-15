@@ -72,7 +72,11 @@ fn l1_joins_the_spine_with_one_root_slot_per_phase_path() {
     assert_eq!(joined.root_count(), s2_roots + paths);
     // The owners' roots and directions are S2's; the slots follow the locks.
     let directions = joined.root_directions().unwrap();
-    assert_eq!(&directions[..s2_roots], &s2_directions[..]);
+    // A composed spray path's three slots stay last (DR-P3-SPRAY): the
+    // owners' precede L1's slots, the spray slots follow them.
+    let spray = 3 * usize::from(joined.network.spray().is_some());
+    let owners = s2_roots - spray;
+    assert_eq!(&directions[..owners], &s2_directions[..owners]);
     let roots = joined.network.unilateral_roots();
     for (li, lock) in locks.paths.iter().enumerate() {
         let expected = match lock {
@@ -80,19 +84,22 @@ fn l1_joins_the_spine_with_one_root_slot_per_phase_path() {
             Lock::Locked(h) if h.orientation().is_some() => 1,
             Lock::Locked(_) => 0,
         };
-        assert_eq!(directions[s2_roots + li], expected, "path {li} {lock:?}");
+        assert_eq!(directions[owners + li], expected, "path {li} {lock:?}");
     }
     let mut values = vec![0.; s2_roots + paths];
     joined.roots(0., &y, &yp, &mut values).unwrap();
     assert_eq!(
-        values[..s2_roots]
+        values[..owners]
             .iter()
             .map(|v| v.to_bits())
             .collect::<Vec<_>>(),
-        s2_values.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+        s2_values[..owners]
+            .iter()
+            .map(|v| v.to_bits())
+            .collect::<Vec<_>>()
     );
     for r in &roots {
-        let v = values[s2_roots + r.path()];
+        let v = values[owners + r.path()];
         assert!(v.is_finite(), "{r:?}");
         if let Root::Contact(_) = r {
             assert!(v > 0., "a contact root reads its donor's mass: {r:?} {v}");
@@ -123,7 +130,16 @@ fn l1_joins_the_spine_with_one_root_slot_per_phase_path() {
             assert_eq!(ids[i], 0., "row {i} changed but is not a locked impulse");
         }
     }
-    assert_eq!(changed_ids, locks.locked());
+    // A composed spray path's locked paths (the closed valve, the port's
+    // scoped L1) are algebraic already before activation.
+    let already = joined
+        .network
+        .face_layout
+        .iter()
+        .enumerate()
+        .filter(|(li, l)| locks.is_locked(*li) && s2_ids[l.index] == 0.)
+        .count();
+    assert_eq!(changed_ids, locks.locked() - already);
     println!(
         "{}",
         serde_json::json!({"paths": paths, "locked": locks.locked(), "roots": roots.len(),
@@ -566,7 +582,9 @@ fn an_equilibrium_cell_assembles_by_blocks_and_integrates_on_the_joined_spine() 
     // stops at the exhaustion and reports what was located before it.
     let (first_mode, first_l1) = {
         let joined = &ida.system().integrated().joined;
-        let first_mode = joined.root_count() - 2 * joined.network.pzr.cell;
+        // A composed spray path's three slots stay last (DR-P3-SPRAY).
+        let spray = 3 * usize::from(joined.network.spray().is_some());
+        let first_mode = joined.root_count() - spray - 2 * joined.network.pzr.cell;
         (first_mode, first_mode - joined.network.face_layout.len())
     };
     let label = |i: usize, d: i32| -> String {
@@ -773,10 +791,11 @@ fn the_phase_mode_transactions_move_no_stock() {
     y[e1] = mg * ug / sc[e1];
     joined.activate_unilateral(0., &y).expect("L1");
     joined.activate_phase_modes().expect("phase modes");
-    // The mode slots precede a composed spray path's check slot (last).
+    // The mode slots precede a composed spray path's three slots (its inlet
+    // check and its port's two scoped-L1 paths, last).
     let slot = |joined: &leitbild_operating_plant::joined::operator::Joined<If97>, k: usize| {
         joined.root_count()
-            - usize::from(joined.network.spray().is_some())
+            - 3 * usize::from(joined.network.spray().is_some())
             - 2 * joined.network.pzr.cell
             + 2 * neck
             + k
@@ -1026,7 +1045,7 @@ fn an_rcp_supply_loss_restarts_through_the_frame_driver_with_c3s_cost_lines() {
     restart.configure(&mut ida).unwrap();
     ida.set_max_step(0.02).unwrap();
     let frame = Frame::new(section.frame_s).unwrap();
-    let mut driver = Driver::new(frame, Diagnostic::Jump, spine::z1::cpu_s, 0.).unwrap();
+    let mut driver = Driver::new(frame, Diagnostic::None, spine::z1::cpu_s, 0.).unwrap();
     let t_loss = 0.0537; // a non-integer instant, as C3's t0
     driver
         .command(t_loss, Command::SupplyLoss { rotor: lost })
@@ -1062,7 +1081,20 @@ fn an_rcp_supply_loss_restarts_through_the_frame_driver_with_c3s_cost_lines() {
             .contains("SupplyLoss"),
         "{instant}"
     );
-    assert_eq!(driver.counts.total(Class::R), 1);
+    // Beside the supply loss, only a composed spray port's scoped L1
+    // (DR-P3-SPRAY) restarts, at its located roots.
+    let port: Vec<&Value> = driver
+        .log
+        .iter()
+        .filter(|e| e["class"] == "R" && e["t_s"].as_f64() != Some(t_loss))
+        .collect();
+    assert!(
+        port.iter().all(|e| e["restart"]["transactions"]
+            .to_string()
+            .contains("spray port (scoped L1)")),
+        "{port:?}"
+    );
+    assert_eq!(driver.counts.total(Class::R), 1 + port.len() as u64);
     assert!(driver.observed_states > 0);
     assert_eq!(
         driver.donor_flips.observations as u64,
