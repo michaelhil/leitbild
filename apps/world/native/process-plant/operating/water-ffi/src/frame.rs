@@ -1322,7 +1322,10 @@ fn summary((r, before): &(Restarted, Vec<Transaction>)) -> Value {
         "births": r.births,
         "projection_passes": rep.projection_passes, "rate_passes": rep.rate_passes,
         "correction_wrms": rep.correction_wrms, "exempt": exempt, "residual": rep.residual.value,
-        "analyses_made": rep.analyses, "assemblies": rep.jacobian_s.len()})
+        "analyses_made": rep.analyses, "assemblies": rep.jacobian_s.len(),
+        // HOOK (C4 lane, receipts only; KERN to reconcile): C4.O4 judges the
+        // birth's restart on the presence-keyed recompile and the mode change.
+        "presence_changed": r.presence_changed, "modes_changed": r.modes_changed})
 }
 
 #[cfg(test)]

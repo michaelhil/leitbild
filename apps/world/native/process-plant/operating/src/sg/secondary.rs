@@ -941,6 +941,13 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 receipt: json!({"owner":"secondary","command":"SupplyLoss","rotor":rotor,"t_s":t,
                     "steamDemand":"unchanged (an RCP supply loss)"}),
             }),
+            // HOOK (C4 lane): C4's relief malfunction is the PZR owner's;
+            // the steam demand is untouched.
+            Command::ReliefStuckOpen => Ok(Transaction {
+                deposits: Vec::new(),
+                receipt: json!({"owner":"secondary","command":"ReliefStuckOpen","t_s":t,
+                    "steamDemand":"unchanged (a PZR relief malfunction)"}),
+            }),
             // G7: the steam demand stays at its constant A/B values.
             Command::ManualReactorTrip => Ok(Transaction {
                 deposits: Vec::new(),

@@ -1556,8 +1556,9 @@ impl<P: Properties + WaterProperties> Joined<P> {
         if let Some(b) = self.rods_mut() {
             done.push(b.command(t, command)?);
         }
-        if let Some(b) = self.pzr() {
-            done.push(b.command(t, command));
+        // HOOK (C4 lane): the PZR owner may change its relief's state.
+        if let Some(b) = self.pzr_mut() {
+            done.push(b.command(t, command)?);
         }
         self.deposit(&done, y)?;
         done.extend(self.time_events(t, y)?);
