@@ -604,7 +604,8 @@ fn declared_differential(i: usize) -> bool {
         if r < T_COL {
             return false;
         }
-        return (r - T_COL) % 11 < CP;
+        // Column storage slots, and (S4-D13) the source/terminal path impulses.
+        return (r - T_COL) % 11 != CP && (r - T_COL) % 11 != CT;
     }
     if i < U_DEVICES {
         return (i - U_CHAMBERS) % 7 < 5;
@@ -896,7 +897,9 @@ fn residual(y: &[D], yp: &[D], m: &Modes, inp: &Inputs, p: &Prm) -> Result<Eval,
             f[column(t, j, CT)] = k(CE) - mass * (u_c + G * zc);
             let src = column(t, j, CSRC);
             let term = column(t, j, CTERM);
-            // Source device: pool mouth -> column (liquid limit of the two-face law).
+            // S4-D13: the source and terminal devices sit on inertance paths, each over half the
+            // column's developed length (the selected device law has no low-Reynolds branch);
+            // their losses are the devices' velocity heads K = (A/a)^2 - 1 at the frozen areas.
             let surface = if j == 0 {
                 inp.wst_surface
             } else {
@@ -922,17 +925,19 @@ fn residual(y: &[D], yp: &[D], m: &Modes, inp: &Inputs, p: &Prm) -> Result<Eval,
                 j == 0 || m.src_locked[t][j],
                 "RECIRC from an empty SUMP draws CNV gas: C06's discharge law, not evaluated here"
             );
+            let inertance = num(col, "/length_m") / 2. / ab;
             if m.src_locked[t][j] {
                 f[src] = y[src];
             } else {
                 let p_mouth_pool = c(inp.cnv_p) + pool.rho * (G * (surface - zm));
                 let p_mouth_col = pc + rho_c * (G * (zc - zm));
-                let delta = p_mouth_pool - p_mouth_col;
-                let a = calibration(num(col, "/sourceDrop_Pa"))? * inp.x_src[j];
-                let donor_rho = if delta.v >= 0. { pool.rho } else { rho_c };
-                let mag = (delta.abs() * (donor_rho * 2. / (1. - (a / ab).powi(2)))).sqrt() * a;
-                f[src] = y[src] - if delta.v >= 0. { mag } else { -mag };
-                msrc = y[src];
+                let flow = y[src] / inertance;
+                let k = ((ab / calibration(num(col, "/sourceDrop_Pa"))?).powi(2) - 1.)
+                    / (inp.x_src[j] * inp.x_src[j]);
+                let donor_rho = if flow.v >= 0. { pool.rho } else { rho_c };
+                let loss = flow * flow.abs() * (k / (2. * ab * ab)) / donor_rho;
+                f[src] = yp[src] - (p_mouth_pool - p_mouth_col - loss);
+                msrc = flow;
             }
             f[src + 1] = y[src + 1];
             let mut mterm = c(0.);
@@ -940,11 +945,11 @@ fn residual(y: &[D], yp: &[D], m: &Modes, inp: &Inputs, p: &Prm) -> Result<Eval,
                 f[term] = y[term];
             } else {
                 let p_term = pc + rho_c * (G * (zc - zt));
-                let delta = p_term - dvi.p - num(&p.gravity, "/checkCrack_Pa");
-                let a = calibration(num(col, "/meterDrop_Pa"))?;
-                let mag = (delta * (rho_c * 2. / (1. - (a / ab).powi(2)))).sqrt() * a;
-                f[term] = y[term] - mag;
-                mterm = y[term];
+                let flow = y[term] / inertance;
+                let k = (ab / calibration(num(col, "/meterDrop_Pa"))?).powi(2) - 1.;
+                let loss = flow * flow.abs() * (k / (2. * ab * ab)) / rho_c;
+                f[term] = yp[term] - (p_term - dvi.p - num(&p.gravity, "/checkCrack_Pa") - loss);
+                mterm = flow;
             }
             f[term + 1] = y[term + 1];
             // Column balances: mouth inflow carries the pool's Ht = h_s + g*surface; terminal outflow the column's h + g z (constant on its adiabat).
@@ -1312,6 +1317,16 @@ fn is_differential(i: usize, m: &Modes) -> bool {
         if r < T_NC && m.e_cells[t * NCELL + r / CELL_SLOTS] && matches!(r % CELL_SLOTS, 3 | 4) {
             return false;
         }
+        if r >= T_COL {
+            let j = (r - T_COL) / 11;
+            let s = (r - T_COL) % 11;
+            if s == CSRC || s == CSRC + 1 {
+                return s == CSRC && !m.src_locked[t][j];
+            }
+            if s == CTERM || s == CTERM + 1 {
+                return s == CTERM && !m.term_locked[t][j];
+            }
+        }
     }
     declared_differential(i)
 }
@@ -1391,6 +1406,11 @@ fn probe_giv(base: &Prepared, p: &Prm) -> Prepared {
         s.y[column(t, 0, CP)] = pc;
         s.modes.src_locked[t][0] = false;
         s.modes.term_locked[t][0] = false;
+        // Path impulses (S4-D13) for 30 kg/s through the source and the terminal.
+        let ab = std::f64::consts::PI * num(col, "/bore_m").powi(2) / 4.;
+        let inertance = num(col, "/length_m") / 2. / ab;
+        s.y[column(t, 0, CSRC)] = 30. * inertance;
+        s.y[column(t, 0, CTERM)] = 30. * inertance;
     }
     resolve_links(&mut s, p);
     s
@@ -1407,8 +1427,6 @@ fn resolve_links(s: &mut Prepared, p: &Prm) {
                 ring(t, 1, 0),
                 ring(t, 2, 0),
                 t * PER_TRAIN + T_ACC_OUT,
-                column(t, 0, CSRC),
-                column(t, 0, CTERM),
             ] {
                 s.y[i] -= e.f[i].v;
             }
@@ -1483,7 +1501,8 @@ fn row_scale(i: usize, y: &[f64], p: &Prm) -> f64 {
         return match s {
             CMW | CMA | CMN | CB | CP => mass,
             CE | CT => y[column(t, j, CE)].abs().max(mass * 1e5),
-            _ => 60.,
+            // Path rows (S4-D13): pressure balances at the column's pressure.
+            _ => y[column(t, j, CP)],
         };
     }
     if i < U_DEVICES {
@@ -1533,7 +1552,13 @@ fn col_scale(i: usize, y: &[f64], p: &Prm) -> f64 {
         return match (r - T_COL) % 11 {
             CP => y[column(t, j, CP)],
             CT => 300.,
-            CSRC.. => 60.,
+            // Path impulses: 60 kg/s (the sizing flow) times the half-column inertance.
+            CSRC.. => {
+                let col = &p.columns[j];
+                60. * num(col, "/length_m")
+                    / 2.
+                    / (std::f64::consts::PI * num(col, "/bore_m").powi(2) / 4.)
+            }
             _ => row_scale(i, y, p),
         };
     }

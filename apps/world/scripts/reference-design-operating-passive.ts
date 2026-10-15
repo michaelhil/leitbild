@@ -249,7 +249,8 @@ export function compileOperatingPassive(pages: PassivePages) {
     links(`CMT.${t}.RINGS`, rings.length), cell(`CMT.${t}.OUT`), paths(`CMT.${t}.OUTLET.PATHS`, outletPaths.length),
     cell(`DVI.${t}`, true), paths(`DVI.${t}.NECK`, 1),
     { owner: `ACC.${t}`, differential: 7, algebraic: 4 }, links(`ACC.${t}.OUTLET`, 1), links(`ACC.${t}.VENT`, 1),
-    ...['GIV', 'RECIRC'].flatMap(c => [{ owner: `${c}.${t}`, differential: 5, algebraic: 2 }, links(`${c}.${t}.SOURCE`, 1), links(`${c}.${t}.TERMINAL`, 1)]),
+    // S4-D13: the GIV/RECIRC source and terminal devices sit on inertance paths over half the column each.
+    ...['GIV', 'RECIRC'].flatMap(c => [{ owner: `${c}.${t}`, differential: 5, algebraic: 2 }, paths(`${c}.${t}.SOURCE`, 1), paths(`${c}.${t}.TERMINAL`, 1)]),
   ]
   const owners: Owner[] = [...train('A'), ...train('B'),
     ...chambers.map(c => ({ owner: c.id, differential: 5, algebraic: 2 })), links('ADS.1-3.DEVICES', 2 * chambers.length), links('ADS.4', ads.paths),
@@ -262,7 +263,11 @@ export function compileOperatingPassive(pages: PassivePages) {
 
   return {
     cmt: { temperature_K: kelvin(cmt.waterTemperature_C), tracer_kg_kg: ppm(cmt.tracer_ppm), referencePressure_Pa: mega(cmt.referencePressure_MPa),
-      mouth_m: g.mouth, roof_m: roof, radius_m: g.R, upperTap_m: gb.upperTap_m, probes: g.probes.map(p => ({ id: p.name, elevation_m: p.elevation_m })),
+      mouth_m: g.mouth, roof_m: roof, radius_m: g.R, upperTap_m: gb.upperTap_m,
+      // The free-area law A(z) inputs (cmt-receiving-geometry.md): shell radius and head depth, virtual tips,
+      // body and feed obstruction radii and their interval; the draindown probe integrates A(z) from these.
+      geometry: { shellRadius_m: g.R, headDepth_m: a, bottomTip_m: gb.bottomDatum_m, topTip_m: gb.top_m,
+        bodyBottom_m: gb.bodyBottom_m, bodyTop_m: gb.bodyTop_m, bodyRadius_m: gb.bodyOuterDiameter_m / 2, feedRadius_m: gb.feedOuterDiameter_m / 2 }, probes: g.probes.map(p => ({ id: p.name, elevation_m: p.elevation_m })),
       layers, interfaces, rings: { holeDiameter_m: gb.holeDiameter_m, Cd: bal.Cd, Cv: bal.Cv, list: rings },
       balance: { tap_m: bal.headerElevation_m, bore_m: bal.bore_m, roughness_m: bal.roughness_m, cells: balanceCells, paths: balancePaths,
         isolation: { area_m2: cmt.balance.isolationArea_m2, referenceLoss_Pa: cmt.balance.isolationLoss_Pa, travel_s: cmt.balance.travel_s, motionPower_W: cmt.balance.motionPower_W } },
