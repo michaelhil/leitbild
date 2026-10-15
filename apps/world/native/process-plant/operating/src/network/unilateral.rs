@@ -334,6 +334,10 @@ pub struct Transaction {
 }
 
 impl<P: Properties> Network<P> {
+    /// The `(from, to)` cells of face `face`.
+    pub fn face_ends(&self, face: usize) -> (usize, usize) {
+        self.endpoints[face]
+    }
     /// The L1 lock table, when L1 is active.
     pub fn unilateral(&self) -> Option<&Locks> {
         self.unilateral.as_ref()

@@ -1197,7 +1197,38 @@ impl<P: Properties + WaterProperties> Joined<P> {
         if self.phase_modes {
             let first = ns + nr + np + nl;
             let nm = self.phase_mode_slots();
-            if let Some(m) = self.mode_transact(t, &directions[first..first + nm], y)? {
+            let mut modes = directions[first..first + nm].to_vec();
+            // DR S3-REBIRTH (PHASE-L1, for KERN): an L1 contact root located
+            // on a path drawing from an equilibrium cell is that cell's
+            // exhaustion root (the same function, the donor's vapor mass
+            // falling through zero, decision 0014's contact). The cell's own
+            // exhaustion root can start on the wrong side of a re-birth's
+            // projected root-size vapor and miss it, so the located contact
+            // exhausts the donor in this transaction, before L1 locks.
+            for r in &armed {
+                let crate::network::phase_events::Root::Contact(li) = *r else {
+                    continue;
+                };
+                if directions[ns + nr + np + li] != r.direction() {
+                    continue;
+                }
+                let l = self.network.face_layout[li];
+                let (from, to) = self.network.face_ends(l.face);
+                let donor = if y[l.index] > 0. {
+                    from
+                } else if y[l.index] < 0. {
+                    to
+                } else {
+                    continue;
+                };
+                if donor < self.network.pzr.cell
+                    && self.network.cell_modes()[donor] == CellMode::Equilibrium
+                    && l.phase == 1
+                {
+                    modes[2 * donor] = -1;
+                }
+            }
+            if let Some(m) = self.mode_transact(t, &modes, y)? {
                 done.push(m);
             }
         }
