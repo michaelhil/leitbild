@@ -666,6 +666,23 @@ fn window_cap(case: Case, spec: &Value) -> Option<WindowCap> {
     })
 }
 
+/// S3-D39's operator turbine trip: once any division's acquired reactor
+/// trip exists, its earliest time and the declared delay to the operator's
+/// turbine trip (None before that, or for a case without one).
+fn operator_trip_at(
+    protection: &leitbild_operating_water::ic::ProtectionClient,
+    delay: Option<f64>,
+) -> Option<(f64, f64)> {
+    let delay = delay?;
+    let trip = protection
+        .protection
+        .divisions
+        .iter()
+        .filter_map(|d| d.trip.as_ref().map(|c| c.at_s))
+        .reduce(f64::min)?;
+    Some((trip, delay))
+}
+
 /// Whether the cap comes off at the chunk bound `b`: the first bound at
 /// or after the window's end.
 fn cap_removed_at(b: f64, zero: f64, window_s: f64) -> bool {
@@ -986,23 +1003,20 @@ fn drive(
             if r.is_err() {
                 break;
             }
-            if let Some(delay) = operator_trip
-                && operator_trip_record.is_null()
-                && let Some(trip) = protection
-                    .protection
-                    .divisions
-                    .iter()
-                    .filter_map(|d| d.trip.as_ref().map(|c| c.at_s))
-                    .reduce(f64::min)
-            {
+            let operator_trip_now = if operator_trip_record.is_null() {
+                operator_trip_at(&protection, operator_trip)
+            } else {
+                None
+            };
+            if let Some((trip, delay)) = operator_trip_now {
                 let at = trip + delay;
                 operator_trip_record = json!({"reactor_trip_cause_s": trip, "reactor_trip_after_zero_s": trip - zero,
                     "turbine_trip_s": at, "turbine_trip_after_zero_s": at - zero, "delay_s": delay,
                     "command": "TurbineTripAcquired (LD01.TG TRIP, as C2)"});
-                if let Err(e) = driver.command(at, Command::TurbineTripAcquired) {
-                    r = Err(e);
-                    break;
-                }
+                r = driver.command(at, Command::TurbineTripAcquired);
+            }
+            if r.is_err() {
+                break;
             }
             r = {
                 let mut clients: Vec<&mut dyn Client<CaseUnit>> =
