@@ -18,6 +18,10 @@ pub struct Section {
     pub families: Vec<Family>,
     pub reports: Vec<ReportSpec>,
     pub functions: Vec<FunctionSpec>,
+    /// Voted predicates evaluated and recorded per division with no cause,
+    /// latch or output (a case line's acquired evidence where S3 implements
+    /// no protective function, e.g. C2.N3's PZR LT vote).
+    pub monitors: Vec<MonitorSpec>,
     pub holding: HoldingSpec,
     /// Needed values without a strict block (compiler's list; not consumed).
     pub missing: Vec<Value>,
@@ -48,6 +52,18 @@ pub enum Quantity {
         nominal_kg_s: Option<f64>,
         quantum_kg_s: f64,
         indeterminate_band_kg_s: f64,
+    },
+    /// The PZR electronic differential level: `p(LT.LOW) − p(LT.HIGH)` from
+    /// the stratified column at the taps, converted with the fixed
+    /// saturated-water calibration at `calibration_pressure_pa` over the tap
+    /// span (indicated metres above the LT datum). The lag is applied to the
+    /// indication, equivalent to lagging the DP, since the conversion is
+    /// affine with constant coefficients.
+    /// Both interfaces must lie inside `interface_span_pa`; S3 refuses an
+    /// interface overrange (its device semantics are not built).
+    PzrLevel {
+        calibration_pressure_pa: f64,
+        interface_span_pa: [f64; 2],
     },
     /// The protective acquired local-current proxy in S3-D7's ratio form,
     /// `(E_c / E_c,ref) (E_tot,ref / Fref)`: `weights` per source region
@@ -182,4 +198,13 @@ pub struct HoldingSpec {
     pub divisions: [String; 3],
     /// Their permissive contacts, in division order.
     pub contacts: [String; 3],
+}
+
+/// A recorded vote: `rule` must be `voted`; `basis` names its blocks.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MonitorSpec {
+    pub id: String,
+    pub rule: Rule,
+    pub basis: String,
 }

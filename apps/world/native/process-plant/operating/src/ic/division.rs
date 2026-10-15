@@ -86,10 +86,14 @@ pub struct Division {
     /// Outgoing requests recorded at acceptance (PRHR, CMT injection,
     /// heater isolation): requests only, no actuation in S3.
     pub requests: Vec<Value>,
+    /// Recorded votes (monitors): first qualification time by monitor id.
+    /// No cause, latch or output follows.
+    pub monitors: BTreeMap<String, f64>,
 }
 impl Division {
     pub fn new(supply: &str) -> Self {
         Self {
+            monitors: BTreeMap::new(),
             supply: supply.into(),
             powered: true,
             timers: BTreeMap::new(),
