@@ -46,22 +46,22 @@ use s3_harness::{
 };
 use serde_json::{Value, json};
 
-/// The published block (wiki 272d83f), pinned by RP1-pin-s3-c1c3-r3.4.
-const C1C3_R3_4: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c1c3-r3.4.json");
+/// The published block (wiki b6e74fe), pinned by RP1-pin-s3-c1c3-r3.6.
+const C1C3_R3_6: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c1c3-r3.6.json");
 
 fn block() -> Block {
-    Block::from_json(declaration::FENCE, C1C3_R3_4).unwrap()
+    Block::from_json(declaration::FENCE, C1C3_R3_6).unwrap()
 }
 
 #[test]
 fn the_published_block_pins_and_its_open_values_refuse_their_cases() {
     let b = block();
-    // RP1-pin-s3-c1c3-r3.4's declared sha256.
+    // RP1-pin-s3-c1c3-r3.6's declared sha256.
     assert_eq!(
         guards::declared_sha256(&b).unwrap(),
-        "c1f629b00411a6e288e8d041c29c84d7c315f2274a392ed7fab57c2278815729"
+        "2df5cd086a0dfe60ee71205f0cf493f23b17c815d522e1c8483c6ad6a79c3476"
     );
-    let log = "| RP1-pin-s3-c1c3-r3.4 | 15 Oct | `ld01-s3-cases-c1c3` frozen; sha256 c1f629b00411a6e288e8d041c29c84d7c315f2274a392ed7fab57c2278815729 |\n";
+    let log = "| RP1-pin-s3-c1c3-r3.6 | 15 Oct | `ld01-s3-cases-c1c3` frozen; sha256 2df5cd086a0dfe60ee71205f0cf493f23b17c815d522e1c8483c6ad6a79c3476 |\n";
     let pin = guards::pin_of(&b, Some(log), "log").unwrap();
     assert_eq!(pin["pinned"], json!(true), "{pin}");
     // The S2 gates' pin never reads the S3 row, nor the reverse.
@@ -380,18 +380,42 @@ fn each_case_takes_its_clock_and_command_from_the_block() {
 
 #[test]
 fn the_s3_settle_reads_its_maximum_step_from_the_block() {
-    // S3-D35: settling.maxStep_s; r3.4 has none yet, so a settle refuses.
-    let mut v: Value = serde_json::from_str(C1C3_R3_4).unwrap();
+    // S3-D35: settling.maxStep_s, 2 s since r3.5; absent refuses.
+    let mut v: Value = serde_json::from_str(C1C3_R3_6).unwrap();
+    assert_eq!(s3_unit::settle_max_step(&v), Ok(2.));
+    v.as_object_mut().unwrap().remove("settling");
     assert!(s3_unit::settle_max_step(&v).is_err());
     v["settling"] = json!({"maxStep_s": 2.0});
     assert_eq!(s3_unit::settle_max_step(&v), Ok(2.));
     v["settling"]["maxStep_s"] = json!(0.);
     assert!(s3_unit::settle_max_step(&v).is_err());
     // The block is found once in a page.
-    let page = format!("text\n```ld01-s3-cases-c1c3\n{C1C3_R3_4}\n```\nmore");
-    assert_eq!(s3_unit::cases_block(&page).unwrap()["revision"], "3.4");
+    let page = format!("text\n```ld01-s3-cases-c1c3\n{C1C3_R3_6}\n```\nmore");
+    assert_eq!(s3_unit::cases_block(&page).unwrap()["revision"], "3.6");
     let twice = format!("{page}\n```ld01-s3-cases-c1c3\n{{}}\n```");
     assert!(s3_unit::cases_block(&twice).is_err());
+}
+
+#[test]
+fn c3s_operator_turbine_trip_and_labelled_end_are_read_from_the_block() {
+    // S3-D39: 10 s after the acquired reactor trip; C3 only.
+    let b = block();
+    assert_eq!(
+        operator_trip_delay(Case::C3, &b.whole("/cases/C3")),
+        Ok(Some(10.))
+    );
+    assert_eq!(
+        operator_trip_delay(Case::C2, &b.whole("/cases/C2")),
+        Ok(None)
+    );
+    let mut c3 = b.whole("/cases/C3");
+    c3.as_object_mut().unwrap().remove("labelledEnd");
+    assert!(operator_trip_delay(Case::C3, &c3).is_err());
+    // Zone R exhausts within the next step only when draining that far.
+    assert!(zone_r_exhausts_within(0.4, -1., 0.5));
+    assert!(!zone_r_exhausts_within(0.4, -1., 0.3));
+    assert!(!zone_r_exhausts_within(0.4, 1., 10.));
+    assert!(zone_r_exhausts_within(0., -1e-9, 1e-6));
 }
 
 // ------------------------------------------------------------ the case run
@@ -496,6 +520,35 @@ impl RuleI {
         }
         Ok(())
     }
+}
+
+/// S3-D39: C3's operator turbine-trip delay after the acquired reactor trip
+/// (`operatorTurbineTripDelay_s`, with its `operatorTurbineTripFrom` and
+/// `operatorTurbineTripBasis`); `None` for the other cases.
+fn operator_trip_delay(case: Case, spec: &Value) -> Result<Option<f64>, String> {
+    if case != Case::C3 {
+        return Ok(None);
+    }
+    let delay = spec["operatorTurbineTripDelay_s"]
+        .as_f64()
+        .filter(|d| d.is_finite() && *d > 0.)
+        .ok_or("C3 declares no positive operatorTurbineTripDelay_s (S3-D39)")?;
+    for k in [
+        "operatorTurbineTripFrom",
+        "operatorTurbineTripBasis",
+        "labelledEnd",
+    ] {
+        spec[k]
+            .as_str()
+            .ok_or(format!("C3 declares no {k} (S3-D39)"))?;
+    }
+    Ok(Some(delay))
+}
+
+/// S3-D39's labelled end: zone R's mass `m` (kg), draining at `rate`
+/// (kg/s), reaches exhaustion within the `step` (s) the solver attempts next.
+fn zone_r_exhausts_within(m: f64, rate: f64, step: f64) -> bool {
+    rate < 0. && step > 0. && m + rate * step <= 0.
 }
 
 /// A case's t = 0 after its start (s) and the command there, from the
@@ -718,18 +771,46 @@ fn s3_case_run() {
     bounds.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
     let mut cpu_at: Vec<(f64, f64)> = vec![(t0, run_started)];
     let mut domain = RuleI::default();
+    // S3-D39 (C3): the operator trips the turbine a declared delay after the
+    // acquired reactor trip (the first accepted reactor-trip cause), as C2-M.
+    let operator_trip = operator_trip_delay(case, &spec).unwrap();
+    let mut operator_trip_record = Value::Null;
     let outcome = {
-        let mut clients: Vec<&mut dyn Client<Unit>> =
-            vec![&mut protection, &mut recorder, &mut control];
-        let mut r = driver.start(&mut clients, t0, &y, &yp);
+        let mut r = {
+            let mut clients: Vec<&mut dyn Client<Unit>> =
+                vec![&mut protection, &mut recorder, &mut control];
+            driver.start(&mut clients, t0, &y, &yp)
+        };
         let mut t = t0;
         for b in &bounds {
             if r.is_err() {
                 break;
             }
-            r = driver
-                .run(&mut ida, t, *b, &mut y, &mut yp, &mut clients, &setup)
-                .map(|_| ());
+            if let Some(delay) = operator_trip
+                && operator_trip_record.is_null()
+                && let Some(trip) = protection
+                    .protection
+                    .divisions
+                    .iter()
+                    .filter_map(|d| d.trip.as_ref().map(|c| c.at_s))
+                    .reduce(f64::min)
+            {
+                let at = trip + delay;
+                operator_trip_record = json!({"reactor_trip_cause_s": trip, "reactor_trip_after_zero_s": trip - zero,
+                    "turbine_trip_s": at, "turbine_trip_after_zero_s": at - zero, "delay_s": delay,
+                    "command": "TurbineTripAcquired (LD01.TG TRIP, as C2)"});
+                if let Err(e) = driver.command(at, Command::TurbineTripAcquired) {
+                    r = Err(e);
+                    break;
+                }
+            }
+            r = {
+                let mut clients: Vec<&mut dyn Client<Unit>> =
+                    vec![&mut protection, &mut recorder, &mut control];
+                driver
+                    .run(&mut ida, t, *b, &mut y, &mut yp, &mut clients, &setup)
+                    .map(|_| ())
+            };
             t = *b;
             // A segment that fails ends where the solver reached.
             let reached = if r.is_err() {
@@ -762,7 +843,32 @@ fn s3_case_run() {
             "cpu_s": end_c - start, "cpu_s_per_s": (end_c - start) / span}))
     });
     driver.close_segment(&ida, until).unwrap();
-    let failure = outcome.as_ref().err().cloned();
+    let mut failure = outcome.as_ref().err().cloned();
+    // S3-D39's labelled end (C3): a run that stops while the PZR's resident
+    // zone R drains to exhaustion within the step the solver attempts next
+    // ends there, labelled, at its last accepted step (as S3-D17 for C4);
+    // any other stop stays a failure.
+    let mut labelled_end = Value::Null;
+    if failure.is_some() && spec.get("labelledEnd").is_some() {
+        let mut ys = vec![0.; y.len()];
+        let mut yps = vec![0.; y.len()];
+        let ended = ida.current_state(&mut ys, &mut yps);
+        let stats = ida.stats();
+        if let (Ok(t_last), Ok(s)) = (ended, stats) {
+            let joined = &ida.system().integrated().joined;
+            let i = joined.network.pzr.base
+                + leitbild_operating_plant::network::stratified::RESIDENT_MASS;
+            let scale = joined.scales()[i];
+            let (m, rate) = (ys[i] * scale, yps[i] * scale);
+            let exhausting = zone_r_exhausts_within(m, rate, s.current_step);
+            labelled_end = json!({"declared": spec["labelledEnd"], "zone_r_mass_kg": m, "zone_r_rate_kg_s": rate,
+                "next_step_s": s.current_step, "last_accepted_s": t_last, "last_accepted_after_zero_s": t_last - zero,
+                "applies": exhausting, "refusal": failure});
+            if exhausting {
+                failure = None;
+            }
+        }
+    }
     let p = &protection.protection;
     let divisions: Vec<Value> = p
         .divisions
@@ -774,7 +880,7 @@ fn s3_case_run() {
         .collect();
     // A failed run ends where the solver last reached; its refusal is at
     // the driver's last attempted instant (both recorded).
-    let end = if failure.is_some() {
+    let end = if outcome.is_err() {
         driver.solver_reached_s
     } else {
         until
@@ -810,6 +916,12 @@ fn s3_case_run() {
             refusals.len()
         )
     };
+    let status = if labelled_end["applies"] == json!(true) {
+        format!("{status}; ended, labelled, at PZR zone-R exhaustion (S3-D39, a declared exit)")
+    } else {
+        status
+    };
+
     let verdict = if failure.is_some() {
         "FAIL: the run failed".to_string()
     } else if lines::all_pass(&judged) {
@@ -857,6 +969,8 @@ fn s3_case_run() {
             "integration": "frame driver: stock IDA_ONE_STEP, observation from IDAGetDky, restarts by discrete_restart"},
         "lines": judged,
         "rule_i": rule_i_record,
+        "operator_turbine_trip": operator_trip_record,
+        "labelled_end": labelled_end,
         "information": information_record,
         "timeline": timeline_record,
         "pzr_control": {"changes": control.schedule.len().saturating_sub(1), "final_request_w": control.in_force_w},
