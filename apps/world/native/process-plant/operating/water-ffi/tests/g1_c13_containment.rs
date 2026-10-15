@@ -47,6 +47,13 @@ mod cpu;
 
 /// Standard gravity of the network and of the collection checker.
 const G: f64 = 9.80665;
+/// S4-D13: the FLOOR→SUMP drains carry path inertance (a differential flow
+/// per channel), since the wiki selects no low-Reynolds branch for their
+/// square-root law. The wiki gives the channels no length or area, so their
+/// inertance `∫dx/A` is a wiki-engineering gap. This is a STRUCTURAL CHECK
+/// VALUE ONLY, not a selection: the rows, partials and directions do not
+/// depend on it, and the pivots are re-checked at 1e2 and 1e6 1/m.
+const DRAIN_INERTANCE_CHECK_PER_M: f64 = 1e4;
 
 // ---------------------------------------------------------------- dual numbers
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -277,6 +284,7 @@ struct Prm {
     drain_ref_m: f64,
     drain_ref_dp: f64,
     rho_ref: f64,
+    drain_inertance: f64,
     drop_d: f64,
     drag: [f64; 5],
     mu_air: [f64; 3],
@@ -470,6 +478,7 @@ fn load() -> (Prm, Value) {
         drain_face: num(dr, "face_m"),
         drain_ref_m: num(dr, "reference_kg_s"),
         drain_ref_dp: num(dr, "referenceHead_Pa"),
+        drain_inertance: DRAIN_INERTANCE_CHECK_PER_M,
         rho_ref,
         drop_d: num(dp, "diameter_m"),
         drag: [
@@ -525,7 +534,9 @@ const FH: usize = 55;
 const FT: usize = 56;
 const FEV: usize = 57;
 const VT: usize = 58;
-const N: usize = 59;
+/// FLOOR→SUMP drain channel mass flows (S4-D13 inertance form).
+const DR0: usize = 59;
+const N: usize = 61;
 fn pool(i: usize, slot: usize) -> usize {
     POOL0 + 7 * i + slot
 }
@@ -544,7 +555,7 @@ fn is_diff(i: usize, m: &Modes) -> bool {
 /// The declared (prepared) classification.
 fn differential(i: usize) -> bool {
     match i {
-        MAIR | MN2 | MW | EMIX | REM | TANK | FM | FH => true,
+        MAIR | MN2 | MW | EMIX | REM | TANK | FM | FH | DR0 | 60 => true,
         LOC0..POOL0 => true,
         _ if (POOL0..TANK).contains(&i) => (i - POOL0) % 7 < 3,
         _ => false,
@@ -561,6 +572,7 @@ fn name(i: usize, p: &Prm) -> String {
         VMIX => "CNV.V_mix".into(),
         MD => "CNV.M_d".into(),
         VT => "CNV.v_t".into(),
+        DR0 | 60 => format!("FLOOR-SUMP.DRAIN.{}.m", i - DR0 + 1),
         REM => "SHELL.REMAINDER.U".into(),
         TANK => "PCC.TANK.M".into(),
         FM => "PCC.FILM.M".into(),
@@ -931,6 +943,12 @@ fn residual(
                 head(cr.from) - head(cr.to)
             }
             Law::ReceivingSurface => {
+                // S4-D15: the rim acts only while the SUMP (its `from`)
+                // surface is at or above the rim; below, deck water reaches
+                // the pit only through the drains.
+                if surface(cr.from).is_none_or(|h| h.v < cr.crest) {
+                    continue;
+                }
                 let over = |donor: usize, receiver: usize| match surface(donor) {
                     None => c(0.),
                     Some(h) => {
@@ -962,34 +980,42 @@ fn residual(
         pen[cr.to] = pen[cr.to] + mflow * ht;
         pb[cr.to] = pb[cr.to] + tr;
     }
-    // FLOOR → SUMP drains (lock at equal face pressure).
-    if !m.drains_locked {
-        // Face pressure above the common CNV pressure, which cancels exactly.
-        let face = |i: usize| -> D {
-            match &ps[i] {
-                Some(s) if level(i).v > p.drain_face => s.rho * (level(i) - p.drain_face) * G,
-                _ => c(0.),
-            }
-        };
-        let dp = face(FLOOR) - face(SUMP);
-        if dp.v != 0. {
-            let donor = if dp.v > 0. { FLOOR } else { SUMP };
-            let s = ps[donor].as_ref().ok_or("drain donor without liquid")?;
-            let mag = (if dp.v > 0. { dp } else { -dp }) / p.drain_ref_dp * s.rho / p.rho_ref;
-            for b in u.drain_open {
-                let mut mflow = mag.sqrt() * (p.drain_ref_m * b);
-                if dp.v < 0. {
-                    mflow = -mflow;
-                }
-                let ht = s.hs + level(donor) * G;
-                pm[FLOOR] = pm[FLOOR] - mflow;
-                pen[FLOOR] = pen[FLOOR] - mflow * ht;
-                pb[FLOOR] = pb[FLOOR] - mflow * tracer(donor);
-                pm[SUMP] = pm[SUMP] + mflow;
-                pen[SUMP] = pen[SUMP] + mflow * ht;
-                pb[SUMP] = pb[SUMP] + mflow * tracer(donor);
-            }
+    // FLOOR → SUMP drains (S4-D13): each channel's mass flow is differential,
+    // `I*m' = dP_face - K*m|m|` with `K = dP_ref/(m_ref*b)^2 * rho_ref/rho_donor`
+    // (the selected 50 kg/s at 5 kPa), so the slope at zero drive is bounded.
+    // Locked (no donor above the +4.1 m mouth, or blocked): zero flow, held.
+    // Face pressure above the common CNV pressure, which cancels exactly.
+    let face = |i: usize| -> D {
+        match &ps[i] {
+            Some(s) if level(i).v > p.drain_face => s.rho * (level(i) - p.drain_face) * G,
+            _ => c(0.),
         }
+    };
+    let dp = face(FLOOR) - face(SUMP);
+    for k in 0..2 {
+        let (mflow, b) = (y[DR0 + k], u.drain_open[k]);
+        if m.drains_locked || b == 0. {
+            rhs[DR0 + k] = c(0.);
+            continue;
+        }
+        // Held donor: the flow's sign (at exactly zero, the drive's).
+        let forward = if mflow.v != 0. {
+            mflow.v > 0.
+        } else {
+            dp.v >= 0.
+        };
+        let donor = if forward { FLOOR } else { SUMP };
+        let s = ps[donor].as_ref().ok_or("drain donor without liquid")?;
+        let kq = s.rho * (p.drain_ref_m * p.drain_ref_m * b * b / p.rho_ref);
+        let loss = mflow * (if mflow.v < 0. { -mflow } else { mflow }) * p.drain_ref_dp / kq;
+        rhs[DR0 + k] = (dp - loss) / p.drain_inertance;
+        let ht = s.hs + level(donor) * G;
+        pm[FLOOR] = pm[FLOOR] - mflow;
+        pen[FLOOR] = pen[FLOOR] - mflow * ht;
+        pb[FLOOR] = pb[FLOOR] - mflow * tracer(donor);
+        pm[SUMP] = pm[SUMP] + mflow;
+        pen[SUMP] = pen[SUMP] + mflow * ht;
+        pb[SUMP] = pb[SUMP] + mflow * tracer(donor);
     }
     // Droplet settling (mode E): terminal speed v_t from the drag balance,
     // residence (20 - FLOOR surface)/v_t, settled liquid into FLOOR.
@@ -1260,6 +1286,7 @@ fn col_scale(i: usize, y0: &[f64], p: &Prm) -> f64 {
         T | FT => p.t0,
         VMIX => p.v_gas0,
         VT => 1.,
+        DR0 | 60 => p.drain_ref_m,
         REM => p.rem_cap,
         TANK => y0[TANK],
         FM => p.film_mref,
@@ -1313,10 +1340,12 @@ fn scaled_max(f: &[D], m: &Modes, y0: &[f64], p: &Prm) -> (f64, usize) {
     worst
 }
 /// Central differences on y (yp held) against the forward-mode columns, at
-/// two declared steps (1e-5 and 1e-3 of the coordinate scale) and the
-/// Richardson combination of 1e-3 and 2e-3: the smaller step's roundoff
-/// dominates where a row's magnitude dwarfs one entry's contribution, the
-/// larger step's truncation elsewhere. An entry passes when one agrees.
+/// three declared steps (1e-5, 1e-3 and 1e-2 of the coordinate scale) and
+/// the Richardson combination of 1e-3 and 2e-3: the smaller steps' roundoff
+/// dominates where a row's magnitude dwarfs one entry's contribution (exactly
+/// linear couplings such as a drain flow's enthalpy in a boiling pool's
+/// boil-off), the larger steps' truncation elsewhere. An entry passes when
+/// one agrees.
 fn compare(k: &Case, y0: &[f64], jy: &[Vec<f64>]) -> (f64, usize, f64, String) {
     let p = k.p;
     let (mut worst, mut checked, mut floor_worst, mut at) = (0f64, 0usize, 0f64, String::new());
@@ -1331,7 +1360,7 @@ fn compare(k: &Case, y0: &[f64], jy: &[Vec<f64>]) -> (f64, usize, f64, String) {
         (0..N).map(|i| (fa[i].v - fb[i].v) / actual).collect()
     };
     for j in 0..N {
-        let (small, large, double) = (cd(j, 1e-5), cd(j, 1e-3), cd(j, 2e-3));
+        let (small, large, double, coarse) = (cd(j, 1e-5), cd(j, 1e-3), cd(j, 2e-3), cd(j, 1e-2));
         // Richardson on the larger step: O(h^4) truncation, little roundoff.
         let richardson: Vec<f64> = (0..N).map(|i| (4. * large[i] - double[i]) / 3.).collect();
         for i in 0..N {
@@ -1341,7 +1370,10 @@ fn compare(k: &Case, y0: &[f64], jy: &[Vec<f64>]) -> (f64, usize, f64, String) {
             let big = ad.abs().max(small[i].abs()).max(large[i].abs()) * s;
             if big > 1e-8 {
                 checked += 1;
-                let r = rel(small[i]).min(rel(large[i])).min(rel(richardson[i]));
+                let r = rel(small[i])
+                    .min(rel(large[i]))
+                    .min(rel(richardson[i]))
+                    .min(rel(coarse[i]));
                 if r > worst {
                     worst = r;
                     at = format!(
@@ -1485,6 +1517,8 @@ fn probe(p: &Prm, boiling: bool, droplets: bool, flooded: bool) -> (Modes, Input
         [Donor::Pool, Donor::Gas, Donor::Pool, Donor::Pool]
     };
     m.drains_locked = false;
+    y[DR0] = 10.;
+    y[DR0 + 1] = 10.;
     if boiling {
         m.film = Film::Evap;
         let (_, _, hf) = saturated_liquid(c(p.p_amb)).unwrap();
@@ -1846,9 +1880,19 @@ fn g1_c13_containment_prototype() {
             vec![(pool(GUTTER, PM), 1), (pool(WST, PM), -1)],
         ),
         (
-            "FLOOR drain 1 half blocked",
+            "FLOOR drain 1 half blocked (decelerates its flow)",
             ch(|u, _| u.drain_open[0] = 0.5),
-            vec![(pool(FLOOR, PM), 1), (pool(SUMP, PM), -1)],
+            vec![(DR0, -1), (DR0 + 1, 0)],
+        ),
+        (
+            "FLOOR surface +1 cm over the drain mouth",
+            ch(|_, y| y[pool(FLOOR, PH)] += 0.01),
+            vec![(DR0, 1), (DR0 + 1, 1)],
+        ),
+        (
+            "Drain 1 flow +1 kg/s",
+            ch(|_, y| y[DR0] += 1.),
+            vec![(pool(FLOOR, PM), -1), (pool(SUMP, PM), 1), (DR0, -1)],
         ),
         (
             "C17 POOL surface +5 → +6 m (covers condensing wall)",
@@ -1985,6 +2029,35 @@ fn g1_c13_containment_prototype() {
     }
     let jac_dense = (cpu::thread_cpu_s() - t0) / jreps as f64;
 
+    // S4-D13 drains: the iteration matrix at the active probe for drain
+    // inertances two decades either side of the structural check value.
+    let mut inertance = vec![];
+    for value in [1e2, 1e6] {
+        let q = Prm {
+            drain_inertance: value,
+            ..p.clone()
+        };
+        let k = Case {
+            p: &q,
+            m: a.m.clone(),
+            u: a.u.clone(),
+            v_avail: a.v_avail,
+            y: a.y.clone(),
+            yp: a.yp.clone(),
+        };
+        let (jy, jp) = k.jacobian();
+        let piv: Vec<f64> = [1e1, 1e3, 1e5]
+            .iter()
+            .map(|&cj| min_pivot(&k, &y0, &jy, &jp, cj))
+            .collect();
+        assert!(
+            piv.iter().all(|&x| x > 1e-14),
+            "drain inertance {value}: singular {piv:?}"
+        );
+        inertance
+            .push(json!({"inertance_per_m": value, "cj": [1e1, 1e3, 1e5], "minScaledPivot": piv}));
+    }
+
     let nnz: usize = pat.iter().map(|r| r.iter().filter(|&&x| x).count()).sum();
     let receipt = json!({
         "lane": "g1-c13",
@@ -1999,6 +2072,9 @@ fn g1_c13_containment_prototype() {
         "directions": directions,
         "partials": partials,
         "iterationMatrix": pivots,
+        "drainInertance": {"structuralCheckValue_per_m": DRAIN_INERTANCE_CHECK_PER_M,
+            "note": "not a selection: the wiki gives the drain channels no geometry (S4-D13 wiki engineering item)",
+            "pivotsAtOtherValues": inertance},
         "cost": {"residualQuiet_s": res_quiet, "residualActive_s": res_active, "denseJacobian_s": jac_dense,
             "denseSweeps": 2 * N, "loadAverage": cpu::load_average()},
     });
