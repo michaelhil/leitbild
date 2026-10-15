@@ -562,8 +562,9 @@ fn owner_ranges(
 /// The owners (name, coordinate range) whose transaction changed the value
 /// of a coordinate that was differential before it (`identity_before`):
 /// lead decision S2-D21's transacted owners, such as a seated rod (travel
-/// and speed) or a seated relief disc (lift). A mode change alone, or a
-/// change of an algebraic coordinate, does not make an owner transacted.
+/// and speed) or a seated relief disc (lift). A change of an algebraic
+/// coordinate does not make an owner transacted, and neither does a mode
+/// change, except a birth ([`discrete_restart`], DR-C3-BIRTH05).
 fn transacted_owners(
     owners: &[(&'static str, std::ops::Range<usize>)],
     before: &[f64],
@@ -822,8 +823,10 @@ mod integrated {
         /// Nonnegative stocks placed on their bound, each reported.
         pub placements: Vec<network::Placement>,
         /// The owners whose transactions changed one of their differential
-        /// coordinates (S2-D21); their algebraic coordinates were exempt
-        /// from the start's WRMS guard ([`Report::exempt`]).
+        /// coordinates (S2-D21), and `"phase modes"` when a cell was born
+        /// (DR-C3-BIRTH05); their algebraic coordinates (a born cell's
+        /// `p, M_g, U_g`) were exempt from the start's WRMS guard
+        /// ([`Report::exempt`]).
         pub transacted: Vec<&'static str>,
         /// The start's pass bound: `transaction_passes` after an owner
         /// transaction, `start_passes` otherwise.
@@ -886,7 +889,11 @@ mod integrated {
     ///    After an owner transaction the start takes up to the declared
     ///    `transaction_passes`, and its WRMS guard leaves out the transacted
     ///    owners' algebraic coordinates, whose correction it reports; the
-    ///    constraint and rate bounds are unchanged (S2-D21);
+    ///    constraint and rate bounds are unchanged (S2-D21). A birth is the
+    ///    phase-mode owner's transaction: its flash at the born cell's
+    ///    unchanged totals is finite at G1's credited superheat
+    ///    (DR-C3-BIRTH05), and the born cell's algebraic coordinates are
+    ///    the ones exempt;
     /// 5. IDAReInit with the consistent rates and the segment configuration.
     #[allow(clippy::too_many_arguments)] // One restart: event, state, identity and tolerances.
     pub fn discrete_restart<S: JoinedSystem>(
@@ -977,16 +984,33 @@ mod integrated {
             .collect();
         let o = joined.offsets();
         let owners = super::owner_ranges(o);
-        let transacted = transacted_owners(&owners, &before, y, &identity_before);
+        let mut transacted = transacted_owners(&owners, &before, y, &identity_before);
+        // HOOK (BIRTH05, DR-C3-BIRTH05; KERN to reconcile): a birth at the
+        // band's credited superheat (owner decision G1) is the phase-mode
+        // owner's S2-D21 transaction. The cell's totals stay, but its
+        // algebraic rows become the flash at those totals, which the
+        // metastable liquid's state misses by a finite step. C3 at 576.32 s:
+        // SURGE's volume row starts at 3.0e-3 and its pressure rises by
+        // 106 kPa. The start then takes up to `transaction_passes`, and the
+        // born cells' p, M_g, U_g (network coordinates, joined offset 0)
+        // leave its WRMS guard and are reported. The bound is unchanged.
+        let born = joined
+            .network
+            .born_flash_coordinates(&modes_before)
+            .map_err(message)?;
+        if !born.is_empty() {
+            transacted.push("phase modes");
+        }
         let exempt: Vec<bool> = if transacted.is_empty() {
             Vec::new()
         } else {
             (0..y.len())
                 .map(|i| {
                     ids[i] == 0.
-                        && owners
-                            .iter()
-                            .any(|(name, range)| transacted.contains(name) && range.contains(&i))
+                        && (born.contains(&i)
+                            || owners.iter().any(|(name, range)| {
+                                transacted.contains(name) && range.contains(&i)
+                            }))
                 })
                 .collect()
         };

@@ -143,6 +143,37 @@ impl<P: Properties> Network<P> {
         Ok(json!({"birth":node,"vapor_slots":[mg,ug]}))
     }
 
+    /// The algebraic coordinates `p, M_g, U_g` of every cell born since
+    /// `before` (the mode table copied before this instant's transactions),
+    /// in cell order; empty when no cell was born, as on every S1/S2 path.
+    ///
+    /// DR-C3-BIRTH05 (owner decision G1): a birth at the band's credited
+    /// superheat leaves the cell's totals unchanged, but its algebraic rows
+    /// become the flash at those totals. The metastable liquid's pressure
+    /// and zero vapor do not satisfy that flash. The restart's exact
+    /// consistent start completes it as the phase-mode owner's transaction
+    /// (lead decision S2-D21). A birth at saturation, outside the band's
+    /// pressure range, is consistent at its root already.
+    pub fn born_flash_coordinates(&self, before: &[CellMode]) -> Result<Vec<usize>, Failure> {
+        if before.len() != self.modes.len() {
+            return Err(bad(format!(
+                "{} modes before for {} regular cells",
+                before.len(),
+                self.modes.len()
+            )));
+        }
+        Ok(before
+            .iter()
+            .zip(&self.modes)
+            .enumerate()
+            .filter(|(_, (b, a))| **b == CellMode::Liquid && **a == CellMode::Equilibrium)
+            .flat_map(|(node, _)| {
+                let l = self.cell_layout[node];
+                [l.base, l.mass[1], l.energy[1]]
+            })
+            .collect())
+    }
+
     /// Exhaustion transaction (equilibrium → liquid) at a located root: the
     /// algebraic vapor slots are zeroed; the totals stay in the liquid's
     /// slots, so the last vapor's material and energy join the liquid
