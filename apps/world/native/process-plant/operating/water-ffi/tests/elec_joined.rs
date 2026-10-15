@@ -28,9 +28,11 @@ use leitbild_operating_plant::{
 use leitbild_operating_water::{
     If97,
     electrical::{Configuration, Electrified, N, PROPOSED_BUDGET},
+    frame::{Action, Change, Class, Client, Dense, Diagnostic, Driver, Frame, Reached, Setup},
     ida::{Advance, Ida, Initial},
     joined::{
-        Analyses, Discrete, Integrated, JoinedSystem, Restart, discrete_restart, root_directions,
+        Analyses, DerivedTolerances, Discrete, Integrated, JoinedSystem, Restart, discrete_restart,
+        root_directions,
     },
 };
 use serde_json::{Value, json};
@@ -62,6 +64,9 @@ struct Case {
     e0: f64,
     n: usize,
     derived: Value,
+    /// The joined S3 classes the tolerances carry (the frame driver's
+    /// `Setup::derived`).
+    joined_derived: DerivedTolerances,
 }
 
 /// The joined state to start from: the settled state named by
@@ -90,6 +95,12 @@ fn initial(s: &spine::Started) -> (f64, Vec<f64>, Vec<f64>) {
 }
 
 fn build(offsite_loss_after_s: Option<f64>) -> Case {
+    build_with(offsite_loss_after_s, true)
+}
+
+/// [`build`], with the slice's IDAS quadratures started on the handle
+/// (`quadratures`) or left for the frame driver to start.
+fn build_with(offsite_loss_after_s: Option<f64>, quadratures: bool) -> Case {
     let e = packet();
     let (mut s, joined_derived) = started_s3_composition();
     // S3-D27: the routing gates the feed, so the SG mass rows' structure
@@ -213,7 +224,9 @@ fn build(offsite_loss_after_s: Option<f64>) -> Case {
     ida.constrain_nonnegative(&nonnegative).unwrap();
     restart.configure(&mut ida).unwrap();
     root_directions(&mut ida).unwrap();
-    ida.initialize_quadratures(&[0.; 10]).unwrap();
+    if quadratures {
+        ida.initialize_quadratures(&[0.; 10]).unwrap();
+    }
     Case {
         t0,
         ida,
@@ -226,6 +239,7 @@ fn build(offsite_loss_after_s: Option<f64>) -> Case {
         e0,
         n,
         derived: json!({"joined_rows": joined_derived.rows.len(), "stator": rows}),
+        joined_derived,
     }
 }
 
@@ -537,5 +551,238 @@ fn an_rcp_supply_loss_is_routed_through_the_ac_routing() {
         "{}",
         json!({"rotor": lost, "consumer": consumer, "rotor_coordinate_before": before, "rotor_coordinate_after": after,
             "restarts": out["restarts"], "supports": out["supports"], "log": out["log"]})
+    );
+}
+
+/// A TEST-ONLY client: one class-R decision (a no-op held change) at frame
+/// `at`, due at its instant, which the driver restarts late, from the
+/// step's interpolant, when the step passed the frame.
+struct LateRestart {
+    at: u64,
+}
+impl Client<Unit> for LateRestart {
+    fn name(&self) -> &str {
+        "TEST-ONLY late class-R decision"
+    }
+    fn advance(&mut self, _: &dyn Dense, _: f64, _: f64) -> Result<(), String> {
+        Ok(())
+    }
+    fn frame(&mut self, k: u64, t: f64, _: &dyn Dense) -> Result<Vec<Change<Unit>>, String> {
+        Ok(if k == self.at {
+            vec![Change {
+                due_s: t,
+                class: Class::R,
+                kind: "TEST-ONLY late R".into(),
+                action: Action::Held(Box::new(|_| Ok(()))),
+            }]
+        } else {
+            Vec::new()
+        })
+    }
+}
+
+/// PLATFORM (C5 native preview, design.md §12): the frame driver carries
+/// the slice's IDAS quadratures (its energy receipts) across every restart
+/// as the S2 joined ledger does (S2-14 M2).
+/// - A handle whose quadratures were started outside the driver is refused
+///   at its first restart.
+/// - TRIP through the driver, no clients: the same steps and restarts as
+///   [`run`]'s loop, which carries the quadratures itself; state and
+///   cumulative quadratures equal its own bitwise.
+/// - TRIP with a TEST-ONLY class-R decision at a frame (restarted late,
+///   from the step's interpolant) and receipts every 0.25 s: the receipts
+///   sum to the cumulative quadratures bitwise and the slice's energy
+///   ledger closes on them.
+#[test]
+#[ignore = "requires the joined packet, the wiki, IF97, stock IDAS and ELEC_PACKET"]
+fn the_frame_driver_carries_the_slices_quadratures_across_its_restarts() {
+    clock::prefer_performance_core();
+    let frame = Frame::new(0.1).unwrap();
+    let span = 2.;
+    let trip_after_s = 0.5;
+    // Started outside the driver: refused at the first restart.
+    let mut c = build(None);
+    let mut driver = Driver::new(frame, Diagnostic::None, clock::thread_cpu_s, c.t0).unwrap();
+    driver.command(c.t0 + 0.05, Command::TurbineTrip).unwrap();
+    let setup = Setup {
+        network_ids: &c.network_ids,
+        absolute: &c.atol,
+        relative: c.rtol,
+        restart: c.restart,
+        derived: &c.joined_derived,
+    };
+    let mut none: Vec<&mut dyn Client<Unit>> = Vec::new();
+    let refused = driver
+        .run(
+            &mut c.ida,
+            c.t0,
+            c.t0 + 0.1,
+            &mut c.y,
+            &mut c.yp,
+            &mut none,
+            &setup,
+        )
+        .unwrap_err();
+    assert!(
+        refused.contains("started outside the frame driver"),
+        "{refused}"
+    );
+
+    // The reference: run()'s own loop, which carries the quadratures.
+    let mut reference = build(None);
+    let r = run(
+        &mut reference,
+        &[(trip_after_s, Command::TurbineTrip)],
+        span,
+    );
+    let q_reference: Vec<f64> = QUADRATURES
+        .iter()
+        .map(|k| r["quadratures"][*k].as_f64().unwrap())
+        .collect();
+
+    // The same TRIP through the frame driver, no clients.
+    let mut c = build_with(None, false);
+    let mut driver = Driver::new(frame, Diagnostic::None, clock::thread_cpu_s, c.t0).unwrap();
+    driver
+        .start_quadratures(&mut c.ida, vec![0.; QUADRATURES.len()])
+        .unwrap();
+    driver
+        .command(c.t0 + trip_after_s, Command::TurbineTrip)
+        .unwrap();
+    let setup = Setup {
+        network_ids: &c.network_ids,
+        absolute: &c.atol,
+        relative: c.rtol,
+        restart: c.restart,
+        derived: &c.joined_derived,
+    };
+    let mut none: Vec<&mut dyn Client<Unit>> = Vec::new();
+    driver.start(&mut none, c.t0, &c.y, &c.yp).unwrap();
+    let Reached::Until(end) = driver
+        .run(
+            &mut c.ida,
+            c.t0,
+            c.t0 + span,
+            &mut c.y,
+            &mut c.yp,
+            &mut none,
+            &setup,
+        )
+        .expect("TRIP through the frame driver");
+    let q_driven = driver.quadratures_at(&c.ida, end).unwrap();
+    let same_state =
+        c.y.iter()
+            .zip(&reference.y)
+            .all(|(a, b)| a.to_bits() == b.to_bits());
+    let driven_restarts = driver.counts.total(Class::R);
+
+    // TRIP with a late class-R decision at a frame, receipts every 0.25 s.
+    let mut c = build_with(None, false);
+    let mut driver = Driver::new(frame, Diagnostic::None, clock::thread_cpu_s, c.t0).unwrap();
+    driver
+        .start_quadratures(&mut c.ida, vec![0.; QUADRATURES.len()])
+        .unwrap();
+    driver
+        .command(c.t0 + trip_after_s, Command::TurbineTrip)
+        .unwrap();
+    let mut late = LateRestart {
+        at: frame.at_or_after(c.t0 + 0.26).unwrap(),
+    };
+    let setup = Setup {
+        network_ids: &c.network_ids,
+        absolute: &c.atol,
+        relative: c.rtol,
+        restart: c.restart,
+        derived: &c.joined_derived,
+    };
+    let mut clients: Vec<&mut dyn Client<Unit>> = vec![&mut late];
+    driver.start(&mut clients, c.t0, &c.y, &c.yp).unwrap();
+    let (mut t, mut previous) = (c.t0, vec![0.; QUADRATURES.len()]);
+    let mut sums = vec![0.; QUADRATURES.len()];
+    let mut receipts: Vec<Value> = Vec::new();
+    for i in 1..=8 {
+        let until = c.t0 + 0.25 * f64::from(i);
+        let Reached::Until(reached) = driver
+            .run(
+                &mut c.ida,
+                t,
+                until,
+                &mut c.y,
+                &mut c.yp,
+                &mut clients,
+                &setup,
+            )
+            .expect("TRIP with a late restart through the frame driver");
+        t = reached;
+        let q = driver.quadratures_at(&c.ida, t).unwrap();
+        for (s, (a, b)) in sums.iter_mut().zip(q.iter().zip(&previous)) {
+            *s += a - b;
+        }
+        receipts.push(json!({"t_s": t - c.t0, "export_J": q[0] - previous[0]}));
+        previous = q;
+    }
+    let cumulative = driver.quadratures_at(&c.ida, t).unwrap();
+    let unit = c.ida.system();
+    let defect = unit
+        .slice
+        .ledger_defect(c.e0, &c.y[c.n..], &cumulative, unit.mechanism_j);
+    let throughput: f64 = cumulative[..6].iter().map(|v| v.abs()).sum();
+    let late_r = driver
+        .log
+        .iter()
+        .find(|e| e["class"] == "R" && e["kinds"].to_string().contains("TEST-ONLY late R"))
+        .cloned()
+        .expect("the late class-R instant");
+    let telescoped: Vec<bool> = sums
+        .iter()
+        .zip(&cumulative)
+        .map(|(s, q)| s.to_bits() == q.to_bits())
+        .collect();
+    println!(
+        "{}",
+        json!({"refused": refused,
+            "driven": {"same_state_as_reference": same_state, "restarts_r": driven_restarts,
+                "quadratures": QUADRATURES.iter().zip(&q_driven).map(|(k, v)| (k.to_string(), *v)).collect::<BTreeMap<_, _>>(),
+                "reference": QUADRATURES.iter().zip(&q_reference).map(|(k, v)| (k.to_string(), *v)).collect::<BTreeMap<_, _>>()},
+            "late": {"instant": late_r, "restarts_r": driver.counts.total(Class::R), "receipts": receipts,
+                "telescoped_bitwise": QUADRATURES.iter().zip(&telescoped).map(|(k, v)| (k.to_string(), *v)).collect::<BTreeMap<_, _>>(),
+                "slice_ledger_defect_J": defect, "throughput_J": throughput}})
+    );
+    assert!(
+        same_state,
+        "the driven TRIP leaves the reference's trajectory"
+    );
+    assert!(driven_restarts >= 3, "{driven_restarts} restarts");
+    for (k, (a, b)) in QUADRATURES.iter().zip(q_driven.iter().zip(&q_reference)) {
+        assert_eq!(a.to_bits(), b.to_bits(), "{k}: driven {a}, reference {b}");
+    }
+    assert!(
+        late_r["rolled_back_from_s"].is_f64(),
+        "the TEST-ONLY decision restarted late: {late_r}"
+    );
+    // Sensitivity: the late restart discarded the rest of its step; carried
+    // from the step's end instead of the interpolant at the restart, the
+    // export receipt holding it would exceed its steady predecessor (both
+    // before the trip) by the discarded fraction of a receipt.
+    let export = |i: usize| receipts[i]["export_J"].as_f64().unwrap();
+    let discarded_s =
+        late_r["rolled_back_from_s"].as_f64().unwrap() - late_r["t_s"].as_f64().unwrap();
+    let steady = (export(1) - export(0)).abs() / export(0);
+    assert!(
+        steady < 0.1 * discarded_s / 0.25,
+        "receipts {} and {}: {steady} against the discarded {discarded_s} s",
+        export(0),
+        export(1)
+    );
+    for (k, (s, q)) in QUADRATURES.iter().zip(sums.iter().zip(&cumulative)) {
+        assert_eq!(
+            s.to_bits(),
+            q.to_bits(),
+            "{k}: receipts sum to {s}, cumulative {q}"
+        );
+    }
+    assert!(
+        defect.abs() < 1e-5 * throughput,
+        "slice ledger {defect} of {throughput}"
     );
 }

@@ -236,7 +236,6 @@ struct Context<S> {
     nnz: usize,
     roots: usize,
     /// Quadratures initialized on this handle (stock IDAS), else 0.
-    #[cfg_attr(not(feature = "quadratures"), allow(dead_code))]
     quadratures: usize,
     fatal: Option<String>,
     last_trial: Option<String>,
@@ -734,6 +733,12 @@ impl<S: System> Ida<S> {
         }
         let code = unsafe { operating_ida_quadrature_reinit(self.handle.as_ptr(), q0.as_ptr()) };
         self.check(code)
+    }
+    /// The quadratures stock IDAS integrates on this handle: zero until
+    /// `initialize_quadratures` (always zero without the `quadratures`
+    /// feature).
+    pub fn quadrature_count(&self) -> usize {
+        self.context.quadratures
     }
     /// Stock IDAS IDAGetQuad: the quadratures at the last returned time.
     #[cfg(feature = "quadratures")]

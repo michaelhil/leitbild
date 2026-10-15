@@ -45,6 +45,17 @@
 //! a client that may emit one at frame `k` asks for a stop there through
 //! [`Client::stop_at_frame`].
 //!
+//! **Quadratures.** IDAS quadratures the driver started
+//! ([`Driver::start_quadratures`], e.g. ELEC's slice receipts) are carried
+//! across every restart as the S2 joined ledger carries its own (S2-14 M2):
+//! their value at the restart's time is read before IDAReInit (the
+//! segment's carried value at its start, otherwise stock IDAGetQuadDky on
+//! the step's interpolant, also for a change discovered late inside the
+//! step) and stock IDAQuadReInit starts the next segment from it. IDAReInit
+//! alone would leave stock continuing from its history's value at the
+//! step's end, past a located root or a late restart. A handle whose
+//! quadratures were started elsewhere is refused at its first restart.
+//!
 //! No solver algorithm, tolerance or step control lives here: the driver
 //! only arms stock stop times, reads stock dense output and calls
 //! `discrete_restart`.
@@ -384,6 +395,9 @@ pub struct Driver<S> {
     /// located root or a stop), so a failed run's receipt states both
     /// rather than only its last logged instant.
     pub solver_reached_s: f64,
+    /// The IDAS quadratures the driver carries: where the open segment
+    /// started and the value carried into it.
+    quadratures: Option<(f64, Vec<f64>)>,
 }
 
 /// Names of [`Driver::totals`].
@@ -442,6 +456,7 @@ impl<S: JoinedSystem> Driver<S> {
             observed_states: 0,
             attempt_s: None,
             solver_reached_s: t0,
+            quadratures: None,
         })
     }
     pub fn frame(&self) -> Frame {
@@ -511,6 +526,48 @@ impl<S: JoinedSystem> Driver<S> {
     }
     fn earliest_due(&self) -> Option<f64> {
         self.pending.first().map(|c| c.due_s)
+    }
+
+    /// Start the handle's IDAS quadratures from `q0` at the driver's
+    /// current time (stock IDAQuadInit, once per handle, before a step);
+    /// the driver then carries them across every restart.
+    pub fn start_quadratures(&mut self, ida: &mut Ida<S>, q0: Vec<f64>) -> Result<(), String> {
+        if self.quadratures.is_some() {
+            return Err("the frame driver's quadratures are already started".into());
+        }
+        ida.initialize_quadratures(&q0)?;
+        self.quadratures = Some((self.observed_to, q0));
+        Ok(())
+    }
+
+    /// The carried quadratures at `t` (for example an interval receipt's
+    /// end): the open segment's carried value at its start, otherwise stock
+    /// IDAGetQuadDky on the last step's interpolant, which must contain `t`.
+    pub fn quadratures_at(&self, ida: &Ida<S>, t: f64) -> Result<Vec<f64>, String> {
+        let (started_s, carried) = self
+            .quadratures
+            .as_ref()
+            .ok_or("the frame driver carries no quadratures")?;
+        if t == *started_s {
+            return Ok(carried.clone());
+        }
+        let mut q = vec![0.; carried.len()];
+        ida.quadratures_at(t, &mut q)?;
+        Ok(q)
+    }
+
+    /// The quadratures a restart at `t` carries, read before IDAReInit.
+    fn carried(&self, ida: &Ida<S>, t: f64) -> Result<Option<Vec<f64>>, String> {
+        match (&self.quadratures, ida.quadrature_count()) {
+            (None, 0) => Ok(None),
+            (None, _) => Err(format!(
+                "restart at {t} s: the handle's IDAS quadratures were started outside the frame driver, which would not carry them (Driver::start_quadratures)"
+            )),
+            (Some((_, q)), n) if n == q.len() => self.quadratures_at(ida, t).map(Some),
+            (Some(_), n) => Err(format!(
+                "restart at {t} s: the handle integrates {n} quadratures, not the driver's"
+            )),
+        }
     }
 
     /// Add the open segment's stock counters (ending at `t`) to the totals.
@@ -768,6 +825,8 @@ impl<S: JoinedSystem> Driver<S> {
         setup: &Setup<'_>,
     ) -> Result<(Restarted, Vec<Transaction>), String> {
         self.close_segment(ida, t)?;
+        // The quadratures at t, read before IDAReInit discards the step.
+        let carried = self.carried(ida, t)?;
         let started = (self.clock)();
         let mut before: Vec<Transaction> = Vec::new();
         let (early, last) = match (roots, commands.split_last()) {
@@ -799,6 +858,12 @@ impl<S: JoinedSystem> Driver<S> {
             setup.relative,
             &setup.restart,
         )?;
+        if let Some(q) = carried {
+            // Stock IDAQuadReInit: the next segment starts from the value
+            // carried (the S2 joined ledger's rule, S2-14 M2).
+            ida.reinitialize_quadratures(&q)?;
+            self.quadratures = Some((t, q));
+        }
         yp.copy_from_slice(&restarted.yp);
         self.cpu.restart_s += (self.clock)() - started;
         Ok((restarted, before))
