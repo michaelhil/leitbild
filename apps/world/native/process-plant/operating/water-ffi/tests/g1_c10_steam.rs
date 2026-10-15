@@ -693,9 +693,11 @@ fn prepare(packet: &Value) -> Prepared {
     let cd = &packet["condenser"];
     let mut cond_walls = [(0., 0.); 2];
     let mut cells = [0.; 2];
-    // FIXTURE pending C12's cell-pressure port (P9 extension): the owner's CW pump-discharge
-    // sizing face, 401325 Pa (condenser page, letdown branch calibration).
-    let p_cell = [401325., 401325.];
+    // Cell pressures from the compiler: the owner's equal split with C12's prepared head (P9).
+    let p_cell = [
+        num(&cd["cells"][0], "pressure_Pa"),
+        num(&cd["cells"][1], "pressure_Pa"),
+    ];
     for k in 0..2 {
         let w = &cd["walls"][k];
         cond_walls[k] = (num(w, "capacity_J_K"), num(w, "shellConductance_W_K"));
@@ -851,17 +853,9 @@ fn prepare(packet: &Value) -> Prepared {
         m_h1: c(num(held, "h1Drain_kg_s")),
         h_h1: c(h1),
         m_cond: c(num(held, "condensate_kg_s")),
-        m_cw: c(num(&cd["preparedPort"], "cwFlow_kg_s")),
-        // C12's inlet total enthalpy (P9), here native liquid at the cell-1 pressure and the
-        // owner's 20.084436 °C inlet: FIXTURE pending C12's port value.
-        h_cw: c(Properties::forward(
-            &If97,
-            false,
-            p_cell[0],
-            num(&cd["preparedPort"], "cwInlet_K"),
-        )
-        .unwrap()
-        .enthalpy_j_kg),
+        // C12's prepared P9 port: condenser flow and cell-1 inlet total enthalpy.
+        m_cw: c(num(&cd["c12Port"], "cwFlow_kg_s")),
+        h_cw: c(num(&cd["c12Port"], "inletTotalEnthalpy_J_kg")),
         p_cell: [c(p_cell[0]), c(p_cell[1])],
         omega: c(num(&packet["shaft"], "referenceSpeed_rad_s")),
         // Held port: C12's ROOM.B preparation, `ld01-support-rooms.initialB_C` 25.634 °C

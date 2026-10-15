@@ -9,7 +9,7 @@
  * names, as the SG relief area is derived. The packet is consumed only by
  * the test-only Gate-1 prototype (water-ffi/tests/g1_c10_steam.rs); it is
  * not joined to the kernel.
- * Usage: bun reference-design-operating-steam.ts <wiki root> <research-python> <packet.json> [<c09-fixture.json>] */
+ * Usage: bun reference-design-operating-steam.ts <wiki root> <research-python> <packet.json> <c09-receivers.json> <c12-support-receipt.json> */
 import {createHash} from 'node:crypto'
 import {join} from 'node:path'
 import {z} from 'zod'
@@ -61,7 +61,9 @@ const protectionSchema=z.object({backpressureTrip_Pa:pos,backpressurePersistence
   .refine(p=>p.resetBelow_Pa<p.backpressureTrip_Pa&&p.backpressureTrip_Pa<p.channel.rangeMax_Pa,'Reset, trip and range must be ordered')
 const condenserSchema=z.object({shell_m3:pos,liquid_m3:pos,vapor_m3:pos,prepared_C:pos,hotwellArea_m2:pos,surface_m:finite,pumpEye_m:finite,
   manifold_m:finite,manifoldCovered_m3:pos,wallCapacity_J_K:pos,waterCell_m3:pos,cellPrepared_C:z.tuple([pos,pos]),wallPrepared_C:z.tuple([pos,pos]),
-  cellDuty_W:pos,condensing_C:pos,sizingDensity_kg_m3:pos,sizingCp_J_kgK:pos,preparedPort:z.object({cwFlow_kg_s:pos,cwInlet_C:pos}).strict()}).strict()
+  cellDuty_W:pos,condensing_C:pos,sizingDensity_kg_m3:pos,sizingCp_J_kgK:pos,cellElevation_m:finite,
+  historicalCellOverAtmosphere_Pa:z.tuple([pos,pos]),preparedPort:z.object({cwFlow_kg_s:pos,cwInlet_C:pos}).strict()}).strict()
+  .refine(c=>c.historicalCellOverAtmosphere_Pa[0]>c.historicalCellOverAtmosphere_Pa[1],'Cell 1 lies upstream of cell 2')
 const valveIds=['MS.ISO.A','MS.ISO.B','TG.STOP','TG.ADM','TG.RH.ISO','TG.BYP','TG.SEP.DRAIN','TG.SEP.EMERGENCY','TG.RH.DRAIN'] as const
 const actuatorsSchema=z.object({isolationMotion_W:pos,openingMotion_W:pos,springStockShare:fraction,holding_W:pos,controllerElectronics_W:pos,
   drainMotion_W:pos,drainElectronics_W:pos,groups:z.object(Object.fromEntries(valveIds.map(v=>[v,z.enum(['ACT.A','ACT.B'])]))).strict(),
@@ -84,6 +86,16 @@ export const parseCondenser=(t:string)=>parse(condenserSchema,t,steamOwners.cond
 export const parseNoncondensables=(t:string)=>parse(gasesSchema,t,steamOwners.gases)
 export const parseSteamActuators=(t:string)=>parse(actuatorsSchema,t,steamOwners.actuators)
 export const parseReceivers=(v:unknown)=>receiversSchema.parse(v)
+/** C12's prepared circulating-water port (P9) from C12's own computed receipt: the residual header head,
+ * the condenser flow, the cell-1 inlet total enthalpy and C12's atmosphere. C10 copies no number. */
+const c12Schema=z.object({packetSha256:z.string().regex(/^[0-9a-f]{64}$/),
+  circulating:z.object({headerResidualHead_Pa:pos,condenser_kg_s:pos,inletTotalEnthalpy_J_kg:pos}).passthrough(),
+  provenance:z.object({compiledPacket:z.object({s5:z.object({constants:z.object({atmosphere_Pa:pos}).passthrough()}).passthrough()}).passthrough()}).passthrough()}).passthrough()
+export function parseC12Circulating(receipt:unknown){
+  const r=c12Schema.parse(receipt)
+  return {header_Pa:r.circulating.headerResidualHead_Pa,flow_kg_s:r.circulating.condenser_kg_s,inletEnthalpy_J_kg:r.circulating.inletTotalEnthalpy_J_kg,
+    atmosphere_Pa:r.provenance.compiledPacket.s5.constants.atmosphere_Pa,c12PacketSha256:r.packetSha256}
+}
 
 type Cycle=Awaited<ReturnType<typeof runCycle>>
 export type SteamTexts={turbine:string,admission:string,condenser:string,shaft:string,casing:string,hot:string,generator:string}
@@ -107,7 +119,7 @@ export function preparedMachinePhasor(h:{lineVoltage_V:number,frequency_Hz:numbe
 const MPa=1e6,K=(c:number)=>c+273.15,close=(a:number,b:number,rel=1e-12)=>Math.abs(a-b)<=rel*Math.max(Math.abs(a),Math.abs(b))
 
 /** The pure compilation over the owners' texts, the cycle calculator's result and C09's receiving shells. */
-export function compileOperatingSteam(texts:SteamTexts,cycle:Cycle,receivers:z.infer<typeof receiversSchema>){
+export function compileOperatingSteam(texts:SteamTexts,cycle:Cycle,receivers:z.infer<typeof receiversSchema>,cw:ReturnType<typeof parseC12Circulating>){
   const stocks=parseSteamStocks(texts.turbine),prep=parseSteamPreparation(texts.turbine),drains=parseMsrDrains(texts.turbine),
     governor=parseGovernor(texts.turbine),bypass=parseBypass(texts.admission),protection=parseCondenserProtection(texts.admission),
     travel=parseSteamValveTravel(texts.admission),cond=parseCondenser(texts.condenser),gases=parseNoncondensables(texts.condenser),
@@ -212,9 +224,13 @@ export function compileOperatingSteam(texts:SteamTexts,cycle:Cycle,receivers:z.i
     condenser:{hotwellArea_m2:cond.hotwellArea_m2,floor_m:cond.pumpEye_m,surface_m:cond.surface_m,pumpEye_m:cond.pumpEye_m,manifold_m:cond.manifold_m,
       walls:cond.wallPrepared_C.map((t,i)=>({capacity_J_K:cond.wallCapacity_J_K,prepared_K:K(t),shellConductance_W_K:g(i),waterConductance_W_K:g(i)})),
       // Native-water cells (the page's preparation selects native water); the sizing ρ/cp are a comparison only.
-      cells:cond.cellPrepared_C.map(t=>({volume_m3:cond.waterCell_m3,prepared_K:K(t)})),
+      // Cell pressures: the owner's equal split of the condenser path, cell i at p_atm + s·h_i/(h_1+h_2)
+      // with the historical 225/75 kPa, s and p_atm from C12's prepared port (P9).
+      cells:cond.cellPrepared_C.map((t,i)=>({volume_m3:cond.waterCell_m3,prepared_K:K(t),elevation_m:cond.cellElevation_m,
+        pressure_Pa:cw.atmosphere_Pa+cw.header_Pa*cond.historicalCellOverAtmosphere_Pa[i]!/(cond.historicalCellOverAtmosphere_Pa[0]+cond.historicalCellOverAtmosphere_Pa[1])})),
       sizingComparison:{density_kg_m3:cond.sizingDensity_kg_m3,cp_J_kgK:cond.sizingCp_J_kgK},condensing_K:K(cond.condensing_C),
-      preparedPort:{cwFlow_kg_s:cond.preparedPort.cwFlow_kg_s,cwInlet_K:K(cond.preparedPort.cwInlet_C)}},
+      ownerDesignPort:{cwFlow_kg_s:cond.preparedPort.cwFlow_kg_s,cwInlet_K:K(cond.preparedPort.cwInlet_C)},
+      c12Port:{cwFlow_kg_s:cw.flow_kg_s,inletTotalEnthalpy_J_kg:cw.inletEnthalpy_J_kg,header_Pa:cw.header_Pa,atmosphere_Pa:cw.atmosphere_Pa,c12PacketSha256:cw.c12PacketSha256}},
     casing:{roomContact_W_K:casing.roomContact_W_K},
     noncondensables:gases,
     shaft:{referenceSpeed_rad_s:omega0,loadLossFraction:(1-b.shaftMechanicalEfficiency)-drag.dragPowerAtReference_W/reference,drag_Nm_per_rad_s:drag.dragPowerAtReference_W/omega0**2},
@@ -241,12 +257,12 @@ export function compileOperatingSteam(texts:SteamTexts,cycle:Cycle,receivers:z.i
 }
 
 const hash=(s:string)=>createHash('sha256').update(s).digest('hex')
-export async function prepareOperatingSteam(wikiRoot:string,python:string,receivers:unknown){
+export async function prepareOperatingSteam(wikiRoot:string,python:string,receivers:unknown,c12Receipt:unknown){
   const root='world/packs/process-plant/reference-designs/ld-01/'
   const docs=await Promise.all(steamPages.map(p=>Bun.file(join(wikiRoot,root,p)).text()))
   const [turbine,admission,condenser,shaft,cycleText,casing,hot,generator]=docs as [string,string,string,string,string,string,string,string]
   const cycle=await runCycle(cycleText,python)
-  const packet=compileOperatingSteam({turbine,admission,condenser,shaft,casing,hot,generator},cycle,parseReceivers(receivers))
+  const packet=compileOperatingSteam({turbine,admission,condenser,shaft,casing,hot,generator},cycle,parseReceivers(receivers),parseC12Circulating(c12Receipt))
   const after=await Promise.all(steamPages.map(p=>Bun.file(join(wikiRoot,root,p)).text()))
   if(after.some((d,i)=>d!==docs[i]))throw Error('An owner page changed during compilation')
   return {...packet,provenance:{packetSha256:hash(JSON.stringify(packet)),sourceSha256:hash(await Bun.file(import.meta.path).text()),
@@ -255,10 +271,12 @@ export async function prepareOperatingSteam(wikiRoot:string,python:string,receiv
 }
 
 if(import.meta.main){
-  const [wikiRoot,python,target,receiversFile,...extra]=Bun.argv.slice(2)
-  if(!wikiRoot||!python||!target||!receiversFile||extra.length)
-    throw Error('Usage: bun reference-design-operating-steam.ts <wiki root> <research-python> <packet.json> <c09-receivers.json>')
-  const packet=await prepareOperatingSteam(wikiRoot,python,JSON.parse(await Bun.file(receiversFile).text()))
+  const [wikiRoot,python,target,receiversFile,c12File,...extra]=Bun.argv.slice(2)
+  if(!wikiRoot||!python||!target||!receiversFile||!c12File||extra.length)
+    throw Error('Usage: bun reference-design-operating-steam.ts <wiki root> <research-python> <packet.json> <c09-receivers.json> <c12-support-receipt.json>')
+  const c12Text=await Bun.file(c12File).text()
+  const prepared=await prepareOperatingSteam(wikiRoot,python,JSON.parse(await Bun.file(receiversFile).text()),JSON.parse(c12Text))
+  const packet={...prepared,provenance:{...prepared.provenance,c12ReceiptSha256:hash(c12Text)}}
   await Bun.write(target,JSON.stringify(packet,null,2)+'\n')
   console.log(JSON.stringify({target,packetSha256:packet.provenance.packetSha256,census:packet.census,disclosed:packet.disclosed}))
 }

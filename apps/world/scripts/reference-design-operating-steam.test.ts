@@ -1,6 +1,6 @@
 import {expect,test} from 'bun:test'
 import {generatorParameters,parseGenerator} from './reference-design-generator'
-import {compileOperatingSteam,preparedMachinePhasor,parseBypass,parseCondenser,parseCondenserProtection,parseGovernor,parseMsrDrains,parseNoncondensables,parseSteamActuators,
+import {compileOperatingSteam,parseC12Circulating,preparedMachinePhasor,parseBypass,parseCondenser,parseCondenserProtection,parseGovernor,parseMsrDrains,parseNoncondensables,parseSteamActuators,
   parseReceivers,parseSteamPreparation,parseSteamStocks,prepareOperatingSteam,steamOwners} from './reference-design-operating-steam'
 
 // Test-only owner texts in the shapes the compiler reads; the values are the
@@ -26,7 +26,7 @@ const blocks={
     channel:{rangeMin_Pa:0,rangeMax_Pa:50000,lag_s:0.2,sample_s:0.1,transport_s:0.1,maxAge_s:0.5}},
   condenser:{shell_m3:6000,liquid_m3:1000,vapor_m3:5000,prepared_C:40,hotwellArea_m2:200,surface_m:0,pumpEye_m:-5,manifold_m:1,manifoldCovered_m3:1200,
     wallCapacity_J_K:500000000,waterCell_m3:250,cellPrepared_C:[25.084435688,30.084435688],wallPrepared_C:[32.542217844,35.042217844],
-    cellDuty_W:1000669817,condensing_C:40,sizingDensity_kg_m3:1000,sizingCp_J_kgK:4180,preparedPort:{cwFlow_kg_s:47878.938608,cwInlet_C:20.084436}},
+    cellDuty_W:1000669817,condensing_C:40,sizingDensity_kg_m3:1000,sizingCp_J_kgK:4180,cellElevation_m:5,historicalCellOverAtmosphere_Pa:[225000,75000],preparedPort:{cwFlow_kg_s:47878.938608,cwInlet_C:20.084436}},
   gases:{air:{gasConstant_J_kgK:287,cv_J_kgK:718},nitrogen:{gasConstant_J_kgK:296.8,cv_J_kgK:742},energyReference_K:298.15},
 } as const
 type Name=keyof typeof blocks
@@ -63,7 +63,7 @@ test('the compiler input refuses every missing value, at every depth',()=>{
       expect(()=>parsers[name](pageFor(name,without(blocks[name],path)))).toThrow()
       refused++
     }
-  expect(refused).toBe(114)
+  expect(refused).toBe(116)
   expect(()=>parseReceivers({h2Shell_Pa:199000,source:'x'})).toThrow()
 })
 
@@ -109,9 +109,13 @@ const texts={turbine:`# T\n\n## Compact operating allocation (15 October 2026)\n
   generator:fence('reference-generator',{lineVoltage_V:10000,frequency_Hz:50,polePairs:2,base_VA:1100000000,referenceShaft_W:1025508905.915,
     sizingConversion:0.985,reactance_pu:1.5,fieldCurrent_A:2000,fieldCopper_W:500000,inductanceMargin:2,fieldDump_Ohm:2,shaftInertia_s:5})}
 const receivers={h1Shell_Pa:49750,h2Shell_Pa:199000,h4Shell_Pa:3980000,source:'FIXTURE: 0.995 × (0.05/0.2/4) MPa from the turbine page preparation table, pending C09 block (A5)'}
+// C12's receipt fields the compiler reads (support-zero-time-84623576f values), test-only.
+const c12=parseC12Circulating({packetSha256:'86b60014fc2dbc362c2e2e0276f44a7b56742ebc3c6a264161fca49ba9055ea0',
+  circulating:{headerResidualHead_Pa:299749.31579280586,condenser_kg_s:47858.930271037636,inletTotalEnthalpy_J_kg:84411.84954784776},
+  provenance:{compiledPacket:{s5:{constants:{atmosphere_Pa:101325}}}}})
 
 test('the compiled packet re-anchors D2, reproduces the arms and discloses the bypass band conflict',()=>{
-  const p=compileOperatingSteam(texts,cycle,receivers)
+  const p=compileOperatingSteam(texts,cycle,receivers,c12)
   expect(p.census).toEqual({differential:45,algebraic:19})
   expect(p.prepared.header_Pa).toBe(6343140)
   expect(p.prepared.admission_Pa).toBe(6323140)
@@ -124,30 +128,34 @@ test('the compiled packet re-anchors D2, reproduces the arms and discloses the b
   expect(p.disclosed.bypassBandDemandAtPreparation).toBeCloseTo((6343140-6050000)/300000,12)
   expect(p.condenser.walls[0]!.shellConductance_W_K).toBeCloseTo(2*1000669817/(40-25.084435688),3)
   expect(p.stores).toHaveLength(9)
+  // the owner's equal split with C12's prepared head (C12 port P9)
+  expect(p.condenser.cells[0]!.pressure_Pa).toBeCloseTo(326136.98684460437,6)
+  expect(p.condenser.cells[1]!.pressure_Pa).toBeCloseTo(176262.32894820147,6)
+  expect(p.condenser.c12Port.cwFlow_kg_s).toBe(47858.930271037636)
 })
 
 test('the compiler refuses an inconsistent cross-owner value',()=>{
   const moved={...texts,turbine:texts.turbine.replace('"hpExtraction_Pa":4000000','"hpExtraction_Pa":4100000')}
-  expect(()=>compileOperatingSteam(moved,cycle,receivers)).toThrow('differs from the cycle')
+  expect(()=>compileOperatingSteam(moved,cycle,receivers,c12)).toThrow('differs from the cycle')
   const wall={...texts,condenser:texts.condenser.replace('32.542217844','32.6')}
-  expect(()=>compileOperatingSteam(wall,cycle,receivers)).toThrow('halfway')
-  expect(()=>compileOperatingSteam(texts,cycle,{...receivers,h4Shell_Pa:7e6})).toThrow('below their donors')
+  expect(()=>compileOperatingSteam(wall,cycle,receivers,c12)).toThrow('halfway')
+  expect(()=>compileOperatingSteam(texts,cycle,{...receivers,h4Shell_Pa:7e6},c12)).toThrow('below their donors')
   // The SG pressure comes from its one numeric owner: a C10 copy is refused as an extra key.
-  expect(()=>compileOperatingSteam({...texts,turbine:texts.turbine.replace('{"mainSteamLoss_Pa"','{"sgPrepared_Pa":6363140,"mainSteamLoss_Pa"')},cycle,receivers)).toThrow()
-  expect(compileOperatingSteam({...texts,hot:texts.hot.replace('6363140','6400000')},cycle,receivers).prepared.header_Pa).toBe(6380000)
+  expect(()=>compileOperatingSteam({...texts,turbine:texts.turbine.replace('{"mainSteamLoss_Pa"','{"sgPrepared_Pa":6363140,"mainSteamLoss_Pa"')},cycle,receivers,c12)).toThrow()
+  expect(compileOperatingSteam({...texts,hot:texts.hot.replace('6363140','6400000')},cycle,receivers,c12).prepared.header_Pa).toBe(6380000)
   const unlisted={...texts,turbine:texts.turbine.replace('"preparedClosed":["TG.BYP"]','"preparedClosed":[]')}
-  expect(()=>compileOperatingSteam(unlisted,cycle,receivers)).toThrow('exactly once')
+  expect(()=>compileOperatingSteam(unlisted,cycle,receivers,c12)).toThrow('exactly once')
 })
 
 const wiki=process.env.LD01_STEAM_WIKI_ROOT,python=process.env.LD01_RESEARCH_PYTHON,archive=process.env.LD01_WIKI_ROOT
 test.skipIf(!wiki||!python)('the actual owner pages compile; the cycle reproduces the selected arms',async()=>{
-  const p=await prepareOperatingSteam(wiki!,python!,receivers)
+  const p=await prepareOperatingSteam(wiki!,python!,receivers,c12Receipt)
   expect(p.census).toEqual({differential:45,algebraic:19})
   expect(p.provenance.consumed).toHaveLength(8)
   expect(p.disclosed.bypassBandConflict).toBe(true)
 },120000)
 test.skipIf(!archive||!python)('the archived wiki refuses: its C10 numbers are still prose there',async()=>{
-  await expect(prepareOperatingSteam(archive!,python!,receivers)).rejects.toThrow('Expected')
+  await expect(prepareOperatingSteam(archive!,python!,receivers,c12Receipt)).rejects.toThrow('Expected')
 },120000)
 
 test('S4-D7: the prepared phasor is the owner\'s sizing phasor at referenceShaft and balances the turbine elsewhere',()=>{
@@ -170,4 +178,9 @@ test('S4-D7: the prepared phasor is the owner\'s sizing phasor at referenceShaft
   expect(Math.abs(P+p*M*ifl*iq*w0)/P).toBeLessThan(1e-12)
   expect(s1.fieldCurrent_A).toBeCloseTo(2014.829285841,6)
   expect(s1.export_W/1e6).toBeCloseTo(1021.5693815,4)
+})
+
+const c12Receipt={packetSha256:'86b60014fc2dbc362c2e2e0276f44a7b56742ebc3c6a264161fca49ba9055ea0',circulating:{headerResidualHead_Pa:299749.31579280586,condenser_kg_s:47858.930271037636,inletTotalEnthalpy_J_kg:84411.84954784776},provenance:{compiledPacket:{s5:{constants:{atmosphere_Pa:101325}}}}}
+test('C12\'s port refuses a receipt without its prepared head',()=>{
+  expect(()=>parseC12Circulating({...c12Receipt,circulating:{condenser_kg_s:1,inletTotalEnthalpy_J_kg:1}})).toThrow()
 })
