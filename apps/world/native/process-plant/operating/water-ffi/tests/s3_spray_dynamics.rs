@@ -213,7 +213,9 @@ fn the_spray_valve_opens_delivers_and_closes_on_its_locks() {
             events.push(json!({"t_s": t, "event": "closing arrival", "class": "R",
                 "transactions": r.transactions.iter().map(|x| x.receipt.clone()).collect::<Vec<_>>()}));
         }
-        while t >= next_sample - 1e-9 {
+        // Every stop is at or before the next 0.1 s sample, so at most that
+        // one sample is due here (an observation schedule, not an iteration).
+        if t >= next_sample - 1e-9 {
             if t >= next_sample - 1e-12 {
                 rows.push(observe(&mut ida, t, &y, &yp));
             }
