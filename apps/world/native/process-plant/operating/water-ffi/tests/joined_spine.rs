@@ -898,6 +898,28 @@ pub fn started_s3_composition() -> (Started, leitbild_operating_water::joined::D
     (s, derived)
 }
 
+/// The S3 composition with L1 and the regular cells' phase modes declared
+/// (decision 0014, lead decisions S3-D-P1/P2): the composition of C4 and of
+/// every phase-branch case. L1 is activated at the composed state (its
+/// locks make the vapor paths whose ends hold no vapor algebraic, every
+/// residual row unchanged there), so the identity is taken again; build
+/// the stock-IDA handle after it (the root count grows), on
+/// `Integrated::following_presence` when a birth may change the presence
+/// key.
+#[allow(dead_code)] // Used by the S3 phase-branch probes that include this module.
+pub fn started_s3_phase_composition()
+-> (Started, leitbild_operating_water::joined::DerivedTolerances) {
+    let (mut s, derived) = started_s3_composition();
+    s.joined
+        .activate_unilateral(0., &s.y)
+        .expect("L1 at the composed state");
+    s.joined
+        .activate_phase_modes()
+        .expect("phase modes at the composed state");
+    s.ids = s.joined.differential(&s.network_ids);
+    (s, derived)
+}
+
 /// The full composition at the hot reference, consistently started: memo
 /// §3 (A)-(D), the start on the block assembly (lead decision S2-D4).
 pub fn started_full_composition() -> Started {

@@ -29,7 +29,10 @@ use leitbild_operating_water::{
     },
 };
 use serde_json::Value;
-use spine::{DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, started_full_composition};
+use spine::{
+    DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, started_full_composition,
+    started_s3_phase_composition,
+};
 
 /// L1 on the joined spine: activation adds one root slot per phase path
 /// after the S2 owners' roots (whose values and directions are unchanged),
@@ -591,5 +594,184 @@ fn an_equilibrium_cell_assembles_by_blocks_and_integrates_on_the_joined_spine() 
         serde_json::json!({"reached_s": t, "steps": stats.steps, "jacobians": stats.jacobians,
             "start_passes": start.projection_passes, "exhausted_at_s": exhausted_at,
             "events": events, "derived_vapor_class": classes})
+    );
+}
+
+/// The S3 phase-branch composition (`started_s3_phase_composition`): L1
+/// and the phase modes declared on the S2-D24 composition. Its root count
+/// is S2's plus one L1 slot per phase path and two mode slots per regular
+/// cell, every cell liquid; the exact start holds at the composed state
+/// under the L1 identity, and a presence-following handle advances 0.05 s
+/// with no event.
+#[test]
+#[ignore = "requires the joined packet, the wiki, IF97 and stock IDA/KLU"]
+fn the_s3_phase_composition_starts_and_advances_with_l1_and_the_modes() {
+    let s2_roots = started_full_composition().joined.root_count();
+    let (
+        Started {
+            mut joined,
+            mut y,
+            ids,
+            atol,
+            rtol,
+            structure,
+            ..
+        },
+        derived,
+    ) = started_s3_phase_composition();
+    let paths = joined.network.face_layout.len();
+    let cells = joined.network.pzr.cell;
+    assert_eq!(joined.root_count(), s2_roots + paths + 2 * cells);
+    assert!(
+        joined
+            .network
+            .cell_modes()
+            .iter()
+            .all(|m| *m == CellMode::Liquid)
+    );
+    assert!(!derived.rows.is_empty());
+    let weights: Vec<f64> = y
+        .iter()
+        .zip(&atol)
+        .map(|(v, a)| 1. / (rtol * v.abs() + a))
+        .collect();
+    let mut analyses = Analyses::default();
+    let (mut yp, start) = consistent_start(
+        &mut joined,
+        Matrices::Blocks {
+            structure: &structure,
+            analyses: &mut analyses,
+        },
+        0.,
+        &mut y,
+        &ids,
+        &weights,
+        1e-12,
+        2,
+    )
+    .expect("exact start under the L1 identity");
+    let liquid = VaporPresence::liquid(&joined.network);
+    let mut ida = Ida::new(
+        Integrated::following_presence(joined, 0., &y, &liquid).unwrap(),
+        Initial {
+            time: 0.,
+            y: &y,
+            yp: &yp,
+            differential: &ids,
+            absolute_tolerance: &atol,
+            relative_tolerance: rtol,
+        },
+    )
+    .unwrap();
+    ida.set_max_order(2).unwrap();
+    ida.set_nonlinear_convergence_coefficient(NEWTON_COEFFICIENT)
+        .unwrap();
+    ida.set_delta_cj_lsetup(DELTA_CJ_LSETUP).unwrap();
+    ida.set_init_step(FIRST_STEP_S).unwrap();
+    root_directions(&mut ida).unwrap();
+    for k in 1..=5 {
+        let target = 0.01 * f64::from(k);
+        assert_eq!(
+            ida.advance(target, &mut y, &mut yp).unwrap(),
+            Advance::Reached(target)
+        );
+    }
+    let stats = ida.stats().unwrap();
+    println!(
+        "{}",
+        serde_json::json!({"roots": ida.system().root_count(), "paths": paths, "cells": cells,
+            "start_passes": start.projection_passes, "steps": stats.steps, "jacobians": stats.jacobians,
+            "root_evaluations": stats.root_evaluations})
+    );
+}
+
+/// The phase-mode owner's transactions through `Joined::transact` (S3-D-P1):
+/// at the flashed NECK with L1 and the modes active, a located exhaustion
+/// (its slot falling) makes NECK liquid with its vapor slots zeroed and its
+/// totals bitwise unchanged; a located birth (its slot rising) makes it
+/// equilibrium again with no stock moved; a located dryout refuses (mode G
+/// is S6). Each instant also runs L1's transaction on the post-mode state.
+#[test]
+#[ignore = "requires the joined packet, the wiki, IF97 and stock IDA/KLU"]
+fn the_phase_mode_transactions_move_no_stock() {
+    let Started {
+        mut joined, mut y, ..
+    } = started_full_composition();
+    let packet: Value = serde_json::from_slice(&spine::packet_bytes().1).unwrap();
+    let neck = packet["mechanics"]["regions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|r| r["id"] == "HOUSING.NECK")
+        .expect("HOUSING.NECK");
+    let l = joined.network.cell_layout[neck];
+    let sc = joined.scales();
+    let p = y[l.base] * sc[l.base];
+    let sat = If97
+        .saturation_caloric(Scalar::constant(p))
+        .expect("saturation");
+    let (rf, rg) = (sat.liquid.density.value, sat.vapor.density.value);
+    let (uf, ug) = (
+        sat.liquid.enthalpy.value - p / rf,
+        sat.vapor.enthalpy.value - p / rg,
+    );
+    let mg = 2.;
+    let ml = (joined.network.volume(neck) - mg / rg) * rf;
+    let (m0, e0, m1, e1) = (l.mass[0], l.energy[0], l.mass[1], l.energy[1]);
+    joined.network.birth(neck, &mut y).expect("birth");
+    y[m0] = (ml + mg) / sc[m0];
+    y[e0] = (ml * uf + mg * ug) / sc[e0];
+    y[m1] = mg / sc[m1];
+    y[e1] = mg * ug / sc[e1];
+    joined.activate_unilateral(0., &y).expect("L1");
+    joined.activate_phase_modes().expect("phase modes");
+    let slot = |joined: &leitbild_operating_plant::joined::operator::Joined<If97>, k: usize| {
+        joined.root_count() - 2 * joined.network.pzr.cell + 2 * neck + k
+    };
+    let others = |a: &[f64], b: &[f64]| {
+        a.iter()
+            .zip(b)
+            .enumerate()
+            .filter(|(i, (x, y))| ![m1, e1].contains(i) && x.to_bits() != y.to_bits())
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>()
+    };
+    // Exhaustion.
+    let before = y.clone();
+    let mut directions = vec![0; joined.root_count()];
+    directions[slot(&joined, 0)] = -1;
+    let done = joined
+        .transact(0., &directions, &mut y)
+        .expect("exhaustion");
+    assert_eq!(joined.network.cell_modes()[neck], CellMode::Liquid);
+    assert_eq!((y[m1], y[e1]), (0., 0.));
+    let moved = others(&before, &y);
+    assert!(
+        moved
+            .iter()
+            .all(|i| joined.network.face_layout.iter().any(|f| f.index == *i)),
+        "only L1 impulses may move besides the vapor slots: {moved:?}"
+    );
+    // Birth.
+    let before = y.clone();
+    let mut directions = vec![0; joined.root_count()];
+    directions[slot(&joined, 0)] = 1;
+    let born = joined.transact(0., &directions, &mut y).expect("birth");
+    assert_eq!(joined.network.cell_modes()[neck], CellMode::Equilibrium);
+    assert_eq!(
+        before.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+        y.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+        "a birth moves no stock"
+    );
+    // Dryout refuses.
+    let mut directions = vec![0; joined.root_count()];
+    directions[slot(&joined, 1)] = -1;
+    let refused = joined.transact(0., &directions, &mut y).unwrap_err();
+    assert!(format!("{refused:?}").contains("mode G"), "{refused:?}");
+    println!(
+        "{}",
+        serde_json::json!({"exhaustion": done.iter().map(|t| t.receipt.clone()).collect::<Vec<_>>(),
+            "birth": born.iter().map(|t| t.receipt.clone()).collect::<Vec<_>>(),
+            "dryout": format!("{refused:?}")})
     );
 }
