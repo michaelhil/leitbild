@@ -1108,7 +1108,9 @@ fn prepare(p: &Prm) -> Prepared {
         );
         let pool = state(Branch::Liquid, c(inp.cnv_p), c(inp.wst_t)).unwrap();
         let pm = inp.cnv_p + pool.rho.v * G * (inp.wst_surface - zm);
-        let hm = state(Branch::Liquid, c(pm), c(inp.wst_t)).unwrap().h.v;
+        // The pool's own head transformation from its 25 C surface: h + g z constant, so the mouth is
+        // marginally warmer than 25 C ("the native mouth temperature is not constrained to exactly 25°C").
+        let hm = pool.h.v + G * (inp.wst_surface - zm);
         let mut pc = pm + rho_at(pm, inp.wst_t) * G * (zm - zc);
         let hc = hm + G * (zm - zc);
         for _ in 0..50 {
