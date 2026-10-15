@@ -38,6 +38,7 @@ export const supportOwners = {
   regulator: { page: 'systems/support-services/thermal-water-and-air.md', heading: 'CCW temperature-regulator block', fence: 'ld01-ccw-regulator' },
   preparation: { page: 'systems/support-services/thermal-water-and-air.md', heading: 'Prepared support state', fence: 'ld01-support-preparation' },
   intake: { page: 'systems/support-services/thermal-water-and-air.md', heading: 'Intake bay and circulating water', fence: 'ld01-site-intake' },
+  continuation: { page: 'systems/support-services/thermal-water-and-air.md', heading: 'Low-pressure continuation block (S7)', fence: 'ld01-low-pressure-continuation' },
   rhr: { page: 'systems/primary-coolant/shutdown-cooling.md', heading: allocation, fence: 'ld01-rhr-train' },
 } as const
 export const supportPages = {
@@ -81,6 +82,7 @@ const rhrSchema = z.object({ externalFlow_kg_s: positive, minimumFlow_kg_s: posi
   train: z.object({ drop_MPa: positive, fixed_MPa: positive, hx_MPa: positive, fcv_MPa: positive, fcvOpening: positive.max(1) }).strict(),
   return_MPa: positive, meter_kPa: positive, isoIn_kPa: positive, isoOut_kPa: positive, fixedInTrain_kPa: positive,
   pumpElevation_m: z.number().finite(), caseResidence_s: positive,
+  vent: z.object({ areaFraction: positive, referenceVelocity_m_s: positive, stroke_s: positive, outlet_m: z.number().finite() }).strict(),
   regulator: z.object({ sample_s: positive, targetMin_C: temperature, targetMax_C: temperature, proportional_per_K: positive, integral_per_K_s: positive,
     bypassFlow_kg_s: positive, bypassDrop_MPa: positive, stroke_per_s: positive, movingDuty_kW: positive }).strict()
     .refine(r => r.targetMin_C < r.targetMax_C, 'RHR target band must be ordered'),
@@ -89,6 +91,13 @@ const intakeSchema = z.object({ bayArea_m2: positive, floor_m: z.number().finite
   initialVolume_m3: positive, initialTemperature_C: temperature, sourceTemperature_C: temperature, sourceCapacity_m3_s: positive, refillMouth_m: z.number().finite(),
   condenserPathDrop_kPa: positive, cwPumpSpeed_rpm: positive, cwCoastdown_s: positive, cwTrackingTime_s: positive, cwTorqueCapFactor: positive }).strict()
   .refine(b => b.normalDepth_m < b.refillLevel_m && b.refillLevel_m - b.floatSpan_m <= b.normalDepth_m, 'The float must open fully at or above the normal level')
+const continuationSchema = z.object({ caseResidence_s: positive, referenceVelocity_m_s: positive, npshSpeed_m: positive, npshFlow_m: positive,
+  gasOnset: positive.lt(1), gasZeroHead: positive.lt(1), gasZeroHeadSensitivity: z.array(positive.lt(1)).min(1), suctionExponent: positive,
+  suctionExponentSensitivity: z.array(positive).min(1), ventAreaFraction: positive.lt(1), ventStroke_s: positive, screeningPressure_MPa: positive,
+  screeningTemperature_C: temperature, fugacityScaleMax: positive,
+  ventReturn_m: z.object({ outfall: z.number().finite(), condenserReturn: z.number().finite(), ccwVesselTop: z.number().finite() }).strict() }).strict()
+  .refine(c => c.gasOnset < c.gasZeroHead && c.gasZeroHeadSensitivity.includes(c.gasZeroHead) && c.suctionExponentSensitivity.includes(c.suctionExponent),
+    'Gas onset precedes zero head, and the selected values lie in their sensitivity sets')
 const feedPoolSchema = z.object({ gravity_m_s2: positive }).passthrough()
 
 const parse = <T extends z.ZodTypeAny>(schema: T, page: string, o: { heading: string, fence: string }): z.infer<T> =>
@@ -100,6 +109,7 @@ export const parseCcwRegulator = (thermal: string) => parse(regulatorSchema, the
 export const parseSupportPreparation = (thermal: string) => parse(preparationSchema, thermal, supportOwners.preparation)
 export const parseRhrTrain = (shutdown: string) => parse(rhrSchema, shutdown, supportOwners.rhr)
 export const parseSiteIntake = (thermal: string) => parse(intakeSchema, thermal, supportOwners.intake)
+export const parseLowPressureContinuation = (thermal: string) => parse(continuationSchema, thermal, supportOwners.continuation)
 function parseFeedPool(feed: string) {
   const blocks = [...feed.matchAll(/^```reference-feed-pool\s*\n([\s\S]*?)^```\s*$/gm)]
   if (blocks.length !== 1) throw Error('Expected one reference-feed-pool block')
@@ -126,8 +136,13 @@ export function compileOperatingSupport(pages: SupportPages, prepared: StationPr
   const trains = parseSupportTrains(pages.thermal), stores = parseSupportStores(pages.thermal), rooms = parseSupportRooms(pages.thermal)
   const regulator = parseCcwRegulator(pages.thermal), preparation = parseSupportPreparation(pages.thermal), rhr = parseRhrTrain(pages.shutdown)
   const station = parseStationBasis(pages.station), network = parseSupportBasis(pages.thermal), oil = parseLubrication(pages.lubrication)
-  const vessel = parseExpansion(pages.thermal), { gravity_m_s2: g } = parseFeedPool(pages.feed)
-  const intake = parseSiteIntake(pages.thermal), letdown = parseLetdownCoolingBranch(pages.condenser)
+  const record = parseExpansion(pages.thermal), { gravity_m_s2: g } = parseFeedPool(pages.feed)
+  // parseExpansion has checked every field; name the ones read here
+  const field = (k: string) => { const v = record[k]; if (v === undefined) throw Error(`reference-ccw-expansion lacks ${k}`); return v }
+  const vessel = { ...record, floor_m: field('floor_m'), vesselVolume_m3: field('vesselVolume_m3'), area_m2: field('area_m2'),
+    initialLiquid_m3: field('initialLiquid_m3'), referenceOutfallPressure_Pa: field('referenceOutfallPressure_Pa') }
+  const intake = parseSiteIntake(pages.thermal), letdown = parseLetdownCoolingBranch(pages.condenser), continuation = parseLowPressureContinuation(pages.thermal)
+  if (continuation.ventReturn_m.ccwVesselTop !== vessel.floor_m + vessel.vesselVolume_m3 / vessel.area_m2) throw Error('CCW vents return to the vessel top')
   if (letdown.gravity_m_s2 !== g || letdown.cwReferenceDensity_kg_m3 !== station.waterDensity_kg_m3) throw Error('Gravity or sizing density differs between owners')
   if (intake.cwPumpSpeed_rpm !== trains.ccw.pumpSpeed_rpm) throw Error('CW pumps share the selected 1500 rpm')
   if (letdown.outfall_m !== trains.sw.dischargeElevation_m || intake.floor_m !== letdown.takeoff_m) throw Error('Outfall and datum differ between owners')
@@ -275,6 +290,7 @@ export function compileOperatingSupport(pages: SupportPages, prepared: StationPr
       rhrMotor: { capacity_J_K: stores.rhrMotor_MJ_K * MW, ambientConductance_W_K: stores.rhrMotorAmbient_MW_K * MW, initial_K: kelvin(stores.rhrMotorInitial_C) },
       rhrTrain: rhr,
       expansion: vessel,
+      lowPressureContinuation: continuation,
     },
   }
 }

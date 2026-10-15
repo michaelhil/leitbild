@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { join } from 'node:path'
-import { parseCcwRegulator, parseRhrTrain, parseSiteIntake, parseSupportPreparation, parseSupportRooms, parseSupportStores, parseSupportTrains,
+import { parseCcwRegulator, parseLowPressureContinuation, parseRhrTrain, parseSiteIntake, parseSupportPreparation, parseSupportRooms, parseSupportStores, parseSupportTrains,
   prepareOperatingSupport, supportOwners } from './reference-design-operating-support'
 
 // Test-only owner texts in the shapes the compiler reads; not plant evidence.
@@ -19,17 +19,21 @@ const train = { supply_C: 30, return_C: 38.374256975, cooler_C: 21.574936536, wa
 const preparation = { A: train, B: train, plusFiveKelvinGasSpace_m3: 4.156036 }
 const rhr = { externalFlow_kg_s: 150, minimumFlow_kg_s: 15, minimumFlowCalibration_MPa: .5, dragFraction: .01, commonSuction: { drop_MPa: .05, flow_kg_s: 300 },
   train: { drop_MPa: .35, fixed_MPa: .05, hx_MPa: .15, fcv_MPa: .15, fcvOpening: .8 }, return_MPa: .1, meter_kPa: 20, isoIn_kPa: 10, isoOut_kPa: 10,
-  fixedInTrain_kPa: 10, pumpElevation_m: -2, caseResidence_s: .05,
+  fixedInTrain_kPa: 10, pumpElevation_m: -2, caseResidence_s: .05, vent: { areaFraction: .0001, referenceVelocity_m_s: 2, stroke_s: 2, outlet_m: -2 },
   regulator: { sample_s: .2, targetMin_C: 40, targetMax_C: 140, proportional_per_K: .02, integral_per_K_s: .005, bypassFlow_kg_s: 150, bypassDrop_MPa: .15,
     stroke_per_s: .1, movingDuty_kW: 1 } }
 const intake = { bayArea_m2: 200, floor_m: 0, normalDepth_m: 5, refillLevel_m: 6, floatSpan_m: 1, initialVolume_m3: 1000, initialTemperature_C: 20,
   sourceTemperature_C: 20, sourceCapacity_m3_s: 52.878938608, refillMouth_m: 6, condenserPathDrop_kPa: 300, cwPumpSpeed_rpm: 1500, cwCoastdown_s: 2,
   cwTrackingTime_s: 3, cwTorqueCapFactor: 1.5 }
+const continuation = { caseResidence_s: .05, referenceVelocity_m_s: 2, npshSpeed_m: 1, npshFlow_m: 2, gasOnset: .02, gasZeroHead: .15,
+  gasZeroHeadSensitivity: [.1, .15, .3], suctionExponent: 2, suctionExponentSensitivity: [1, 2], ventAreaFraction: .0001, ventStroke_s: 2,
+  screeningPressure_MPa: 2, screeningTemperature_C: 220, fugacityScaleMax: .02, ventReturn_m: { outfall: 5, condenserReturn: 5, ccwVesselTop: .5 } }
 const o = supportOwners
-type Over = Partial<Record<'trains' | 'stores' | 'rooms' | 'regulator' | 'preparation' | 'intake', unknown>>
+type Over = Partial<Record<'trains' | 'stores' | 'rooms' | 'regulator' | 'preparation' | 'intake' | 'continuation', unknown>>
 const thermal = (over: Over = {}) => ['# Owner', '## Compact operating allocation (15 October 2026)', 'Text.',
   `### ${o.trains.heading}`, fence(o.trains.fence, over.trains ?? trains),
   `### ${o.intake.heading}`, fence(o.intake.fence, over.intake ?? intake),
+  `### ${o.continuation.heading}`, fence(o.continuation.fence, over.continuation ?? continuation),
   `### ${o.stores.heading}`, fence(o.stores.fence, over.stores ?? stores), fence(o.rooms.fence, over.rooms ?? rooms),
   `### ${o.regulator.heading}`, fence(o.regulator.fence, over.regulator ?? regulator),
   `### ${o.preparation.heading}`, fence(o.preparation.fence, over.preparation ?? preparation), '## Next', ''].join('\n\n')
@@ -44,6 +48,7 @@ test('the C12 blocks parse strictly from their owning sections', () => {
   expect(parseSupportPreparation(thermal())).toEqual(preparation)
   expect(parseRhrTrain(shutdown())).toEqual(rhr)
   expect(parseSiteIntake(thermal())).toEqual(intake)
+  expect(parseLowPressureContinuation(thermal())).toEqual(continuation)
 })
 
 test('the compiler refuses a missing value in every C12 block', () => {
@@ -55,6 +60,8 @@ test('the compiler refuses a missing value in every C12 block', () => {
   expect(() => parseSupportPreparation(thermal({ preparation: { ...preparation, B: without(train, 'wall_C') } }))).toThrow()
   expect(() => parseRhrTrain(shutdown(without(rhr, 'minimumFlow_kg_s')))).toThrow()
   expect(() => parseSiteIntake(thermal({ intake: without(intake, 'sourceCapacity_m3_s') }))).toThrow()
+  expect(() => parseLowPressureContinuation(thermal({ continuation: without(continuation, 'npshFlow_m') }))).toThrow()
+  expect(() => parseRhrTrain(shutdown({ ...rhr, vent: without(rhr.vent, 'outlet_m') }))).toThrow()
   expect(() => parseRhrTrain(shutdown({ ...rhr, regulator: without(rhr.regulator, 'bypassDrop_MPa') }))).toThrow()
 })
 
@@ -67,6 +74,7 @@ test('the compiler refuses extra keys, wrong signs, misplaced or duplicated bloc
   expect(() => parseCcwRegulator(thermal() + '\n' + fence(o.regulator.fence, regulator))).toThrow()
   expect(() => parseRhrTrain(shutdown({ ...rhr, regulator: { ...rhr.regulator, targetMin_C: 150 } }))).toThrow('ordered')
   expect(() => parseSiteIntake(thermal({ intake: { ...intake, floatSpan_m: .5 } }))).toThrow('float')
+  expect(() => parseLowPressureContinuation(thermal({ continuation: { ...continuation, gasZeroHead: .2 } }))).toThrow('sensitivity')
 })
 
 const wiki = process.env.LD01_C12_WIKI_ROOT, python = process.env.LD01_RESEARCH_PYTHON, archive = process.env.LD01_WIKI_ROOT
