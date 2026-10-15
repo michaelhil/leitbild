@@ -110,7 +110,7 @@ pub struct WallRead {
 /// Wall water a local refresh replaced: (slot, previous water).
 #[must_use = "restore the replaced wall water after the local call"]
 #[derive(Debug)]
-pub struct ReplacedWall(Vec<(usize, Option<WallWater>, u64)>);
+pub struct ReplacedWall(Vec<(usize, Option<WallWater>, u64, bool)>);
 
 /// Elements of one local evaluation, by index: core halves, passive
 /// contacts, plenum contacts and SG segments.
@@ -262,6 +262,11 @@ pub struct Solids {
     /// version together), so equal versions mean bit-identical water.
     wall_version: Vec<u64>,
     wall_clock: u64,
+    /// Per wall slot: whether its current water is undirected (every
+    /// direction zero), set with every write and restored with the water.
+    wall_undirected: Vec<bool>,
+    /// Set only for the duration of [`Solids::rows_local_directions`].
+    directions_only: bool,
     /// Per half: its first contact's slot in `wall_memo`.
     contact_base: Vec<usize>,
     /// Per passive contact: its heat at the last undirected (store, water)
@@ -670,6 +675,8 @@ impl Solids {
             wall_memo: Vec::new(),
             wall_version: Vec::new(),
             wall_clock: 0,
+            wall_undirected: Vec::new(),
+            directions_only: false,
             contact_base: Vec::new(),
             passive_memo: Vec::new(),
         };
@@ -680,6 +687,7 @@ impl Solids {
         }
         solids.wall_memo = vec![None; base + solids.segments.len()];
         solids.wall_version = vec![0; solids.wall.len()];
+        solids.wall_undirected = vec![false; solids.wall.len()];
         solids.passive_memo = vec![None; solids.passive.len()];
         solids.compile_incidence(water_cells)?;
         Ok(solids)
@@ -940,7 +948,12 @@ impl Solids {
         let mut replaced = ReplacedWall(Vec::with_capacity(cells.len()));
         for cell in cells {
             if let Some(k) = self.wall_slot.get(*cell).copied().flatten() {
-                replaced.0.push((k, self.wall[k], self.wall_version[k]));
+                replaced.0.push((
+                    k,
+                    self.wall[k],
+                    self.wall_version[k],
+                    self.wall_undirected[k],
+                ));
                 if let Err(e) = self.wall_water_at_slot(properties, fluid, k) {
                     self.restore_wall_water(replaced);
                     return Err(e);
@@ -952,9 +965,10 @@ impl Solids {
 
     /// Put back the wall water a [`Solids::wall_water_local`] call replaced.
     pub fn restore_wall_water(&mut self, replaced: ReplacedWall) {
-        for (k, w, version) in replaced.0.into_iter().rev() {
+        for (k, w, version, undirected) in replaced.0.into_iter().rev() {
             self.wall[k] = w;
             self.wall_version[k] = version;
+            self.wall_undirected[k] = undirected;
         }
     }
 
@@ -992,15 +1006,17 @@ impl Solids {
                 flow = flow + s(0.5) * fluid.liquid_mass_flow(face);
             }
         }
-        self.wall_clock += 1;
-        self.wall_version[k] = self.wall_clock;
-        self.wall[k] = Some(WallWater {
+        let water = WallWater {
             pressure,
             temperature: Scalar::new(q.temperature_k, d.temperature_k),
             bulk: point(q, d),
             saturation,
             mass_flux: flow / s(self.flow_area[cell]),
-        });
+        };
+        self.wall_clock += 1;
+        self.wall_version[k] = self.wall_clock;
+        self.wall_undirected[k] = undirected_water(&water);
+        self.wall[k] = Some(water);
         Ok(())
     }
 
@@ -1015,6 +1031,7 @@ impl Solids {
             .ok_or_else(|| fatal(format!("cell {cell} has no wall slot")))?;
         self.wall_clock += 1;
         self.wall_version[k] = self.wall_clock;
+        self.wall_undirected[k] = undirected_water(&water);
         self.wall[k] = Some(water);
         Ok(())
     }
@@ -1115,6 +1132,15 @@ impl Solids {
             .copied()
             .flatten()
             .map_or(0, |k| self.wall_version[k])
+    }
+
+    /// Whether `cell`'s wall water is evaluated and undirected.
+    fn undirected_at(&self, cell: usize) -> bool {
+        self.wall_slot
+            .get(cell)
+            .copied()
+            .flatten()
+            .is_some_and(|k| self.wall[k].is_some() && self.wall_undirected[k])
     }
 
     fn wall_at(&self, cell: usize) -> Result<WallWater, Failure> {
@@ -1286,6 +1312,49 @@ impl Solids {
         )
     }
 
+    /// [`Solids::rows_local`] for a caller that reads directions only (the
+    /// block Jacobian's local coupling and owner columns: their rows, SG
+    /// heats and receipts enter by direction alone, and the network replay
+    /// reads no receipt value). A term whose inputs are all undirected has
+    /// a zero direction, so it is left out: no law is evaluated for a wall
+    /// contact, passive contact, plenum contact or SG segment that reads
+    /// only undirected water, temperatures and views. Every written row's
+    /// direction, every heat's and every receipt's then equals
+    /// [`Solids::rows_local`]'s bit for bit up to the sign of a zero (an
+    /// omitted term adds a zero of either sign); values are partial sums
+    /// and must not be read (COST lane).
+    #[allow(clippy::too_many_arguments)] // As rows_local.
+    pub fn rows_local_directions<P: WaterProperties>(
+        &mut self,
+        properties: &P,
+        x: Coordinates<'_>,
+        temperatures: &Temperatures,
+        fuel_heat_w: &[Scalar],
+        fluid: &Fluid<'_>,
+        secondary: &[SecondaryView],
+        scope: &Closed,
+        receipts: &mut Receipts<'_>,
+        out: &mut Vec<(usize, Scalar)>,
+        heat: &mut Heat,
+    ) -> Result<(), Failure> {
+        out.clear();
+        self.directions_only = true;
+        let result = self.evaluate_scope(
+            properties,
+            x,
+            temperatures,
+            fuel_heat_w,
+            fluid,
+            secondary,
+            scope,
+            receipts,
+            &mut |i, r| out.push((i, r)),
+            heat,
+        );
+        self.directions_only = false;
+        result
+    }
+
     /// The entry of `temperatures` that own store coordinate `i` sets.
     pub fn temperature_of<'t>(
         &self,
@@ -1386,7 +1455,13 @@ impl Solids {
             let clad_inner = x.value(self.surface(i, 1));
             let clad_outer = x.value(self.surface(i, 2));
             let mut wall = s(0.);
+            let skip_undirected = self.directions_only
+                && clad_outer.direction == 0.
+                && clad_mean.direction == 0.;
             for (n, c) in b.contacts.iter().enumerate() {
+                if skip_undirected && self.undirected_at(c.water) {
+                    continue;
+                }
                 let slot = self.contact_base[i] + n;
                 let key = wall_key(self.version_at(c.water), clad_outer, clad_mean);
                 let q = match &self.wall_memo[slot] {
@@ -1474,6 +1549,9 @@ impl Solids {
                 .map(|(q, d)| Scalar::new(q.temperature_k, d.temperature_k))
                 .ok_or_else(|| trial(format!("passive contact cell {} has no liquid", c.water)))?;
             let solid_t = temperatures.passive[c.solid];
+            if self.directions_only && solid_t.direction == 0. && water_t.direction == 0. {
+                continue;
+            }
             let key = [
                 solid_t.value.to_bits(),
                 solid_t.direction.to_bits(),
@@ -1503,6 +1581,12 @@ impl Solids {
         }
         for &k in &scope.plenum {
             let c = self.plenum[k];
+            if self.directions_only
+                && temperatures.helium[c.helium].direction == 0.
+                && temperatures.passive[c.solid].direction == 0.
+            {
+                continue;
+            }
             let q = thermal::helium_to_plenum(
                 temperatures.helium[c.helium],
                 temperatures.passive[c.solid],
@@ -1518,6 +1602,18 @@ impl Solids {
         for &i in &scope.segments {
             let g = self.segments[i];
             let metal_t = temperatures.metal[i];
+            if self.directions_only && metal_t.direction == 0. && self.undirected_at(g.primary) {
+                let view = secondary[g.secondary];
+                if view.pressure.direction == 0.
+                    && view.saturation_temperature.direction == 0.
+                    && view.liquid_volume.direction == 0.
+                {
+                    // Every term of the segment is undirected: its row's
+                    // direction is its own rate's.
+                    write(m0 + i, x.rate(m0 + i));
+                    continue;
+                }
+            }
             let slot = self.wall_memo.len() - self.segments.len() + i;
             let key = wall_key(self.version_at(g.primary), metal_t, s(0.));
             let q = match &self.wall_memo[slot] {
