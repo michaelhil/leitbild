@@ -235,3 +235,118 @@ fn the_spray_path_adds_only_its_line_and_faces_and_leaves_every_original_row_bit
     assert_eq!(outside, 0, "dense entries outside the structural pattern");
     assert!(worst <= 1e-12 * scale.max(1.), "colored vs dense {worst}");
 }
+
+fn joined(bytes: &[u8]) -> leitbild_operating_plant::joined::operator::Joined<If97> {
+    use leitbild_operating_plant::{
+        joined::{
+            operator::{Joined, RodPort, SecondaryPort},
+            packet,
+        },
+        rods::{RodBlock, Section as RodSection},
+        sg::{packet::Section as SecondarySection, secondary::Secondaries},
+    };
+    let network_packet: Packet = serde_json::from_slice(bytes).unwrap();
+    let joined_packet: packet::Packet = serde_json::from_slice(bytes).unwrap();
+    let raw: Value = serde_json::from_slice(bytes).unwrap();
+    let section: SecondarySection = serde_json::from_value(raw["secondary"].clone()).unwrap();
+    let rods: RodSection = serde_json::from_value(raw["rods"].clone()).unwrap();
+    Joined::new(
+        composed(&network_packet),
+        &network_packet,
+        &joined_packet,
+        If97,
+        SecondaryPort::Owner(Box::new(
+            Secondaries::new(&section, &joined_packet.thermal.secondaries, &If97).unwrap(),
+        )),
+        RodPort::Owner(Box::new(
+            RodBlock::from_packet(&rods, &network_packet).unwrap(),
+        )),
+    )
+    .expect("joined operator")
+}
+
+/// The same at the joined operator: every original joined row (network,
+/// nuclear, solids, SG secondary, rods, PZR block) is reproduced bitwise at
+/// the S2-07 settled state with the line embedded at rest, and the census
+/// grows by the line's ten network coordinates only.
+#[test]
+#[ignore = "NOT-EVIDENCE check: requires both packets, a settled state, IF97 and the water library"]
+fn the_joined_spine_with_the_spray_path_reproduces_every_original_row_bitwise() {
+    let (_, old_bytes) = read("LD01_OPERATING_HOT_SPINE_PACKET");
+    let (_, new_bytes) = read("LD01_SPRAY_PACKET");
+    let (_, state_bytes) = read("LD01_C1_STATE");
+    let state: Value = serde_json::from_slice(&state_bytes).unwrap();
+    let mut old = joined(&old_bytes);
+    let mut new = joined(&new_bytes);
+    let (n_old, n_new) = (old.dimension(), new.dimension());
+    assert_eq!(n_new, n_old + 10, "joined census");
+    let (no, nn) = (old.offsets().nuclear, new.offsets().nuclear);
+    assert_eq!(nn, no + 10);
+    // The network part maps by identity; every later block shifts by ten.
+    let (on, nw) = (&old.network, &new.network);
+    let mut map = vec![usize::MAX; n_old];
+    for (node, l) in on.cell_layout.iter().enumerate() {
+        for k in 0..6 {
+            map[l.base + k] = nw.cell_layout[node].base + k;
+        }
+    }
+    for (a, b) in on.pzr.coordinates().zip(nw.pzr.coordinates()) {
+        map[a] = b;
+    }
+    for (li, l) in on.face_layout.iter().enumerate() {
+        map[l.index] = nw.face_layout[li].index;
+    }
+    for (r, i) in on.rotor_index.iter().enumerate() {
+        map[*i] = nw.rotor_index[r];
+    }
+    for (i, m) in map.iter_mut().enumerate().skip(no) {
+        *m = i + 10;
+    }
+    let spray = *nw.spray().unwrap();
+    let t = state["t_s"].as_f64().unwrap();
+    let (y_old, yp_old) = (vector(&state["y"]), vector(&state["yp"]));
+    let mut y_new = vec![0.; n_new];
+    let mut yp_new = vec![0.; n_new];
+    for (i, j) in map.iter().enumerate() {
+        y_new[*j] = y_old[i];
+        yp_new[*j] = yp_old[i];
+    }
+    // The line at COLD.A's settled specific state (rows of the line are not
+    // compared here; its impulses are zero, its valve closed).
+    let (so, sn) = (on.scales().to_vec(), nw.scales().to_vec());
+    let new_packet: Packet = serde_json::from_slice(&new_bytes).unwrap();
+    let source = new_packet
+        .mechanics
+        .regions
+        .iter()
+        .position(|r| r.id == "COLD.A")
+        .unwrap();
+    let c = on.cell_layout[source];
+    let s = nw.cell_layout[spray.region];
+    let ratio = new_packet.pzr_spray.as_ref().unwrap().line.volume_m3
+        / new_packet.mechanics.regions[source].volume_m3;
+    for (from, to) in [
+        (c.base, s.base),
+        (c.mass[0], s.mass[0]),
+        (c.energy[0], s.energy[0]),
+        (c.boron, s.boron),
+    ] {
+        let physical = y_old[from] * so[from] * if from == c.base { 1. } else { ratio };
+        y_new[to] = physical / sn[to];
+    }
+    old.evaluate(t, &y_old, &yp_old, None, 0., None).unwrap();
+    new.evaluate(t, &y_new, &yp_new, None, 0., None).unwrap();
+    let (a, b) = (old.rows().to_vec(), new.rows().to_vec());
+    let differing: Vec<usize> = (0..n_old)
+        .filter(|i| a[*i].value.to_bits() != b[map[*i]].value.to_bits())
+        .collect();
+    println!(
+        "{}",
+        json!({"joined_census": {"original": n_old, "composed": n_new},
+            "original_rows_differing_bitwise": differing.len(), "first": differing.first()})
+    );
+    assert!(
+        differing.is_empty(),
+        "original joined rows changed: {differing:?}"
+    );
+}
