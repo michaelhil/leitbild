@@ -1184,6 +1184,7 @@ fn g1_c12_support_zero_time() {
             "packetSha256": packet["provenance"]["packetSha256"],
             "consumed": packet["provenance"]["consumed"],
             "waterBuild": provenance("LD01_OPERATING_WATER_LIB_DIR"),
+            "compiledPacket": packet.clone(),
             "profile": if cfg!(debug_assertions) { "debug" } else { "release" },
         });
         assert!(
