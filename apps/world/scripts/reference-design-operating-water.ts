@@ -540,6 +540,23 @@ int ld01_water_saturated_vapor_enthalpy(double T,double* value) noexcept {
   *value=q.h;return 0;
  }catch(...){return 1;}
 }
+// G1-C13 hook (adapter, shared; KERN reconciles): the saturated-vapor dynamic
+// viscosity at T on the endpoint below the operating floor (the containment
+// gas viscosity's water constituent at saturation), with the same disclosed
+// central-difference temperature direction as ld01_water_surface.
+int ld01_water_saturated_vapor_viscosity(double T,double dT,double* value,double* direction) noexcept {
+ if(!value||!direction||!std::isfinite(T)||!std::isfinite(dT))return 2;
+ try {
+  const auto mu=[](double t){State q=endpoint_caloric(r4.p_T(t),false);complete_state(q,FIELD_MU);return q.mu;};
+  const double q=mu(T);double d=0.;
+  if(dT!=0.){
+   const double h=std::cbrt(std::numeric_limits<double>::epsilon())*T;
+   d=(mu(T+h)-mu(T-h))/(2*h)*dT;
+  }
+  if(!std::isfinite(q)||!std::isfinite(d))return 3;
+  *value=q;*direction=d;return 0;
+ }catch(...){return 1;}
+}
 }
 `
 

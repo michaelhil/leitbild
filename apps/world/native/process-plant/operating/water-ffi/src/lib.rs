@@ -126,6 +126,13 @@ unsafe extern "C" {
     ) -> i32;
     // G1-C13 hook (lib.rs, shared; KERN reconciles): h_g(T) below 0.1 MPa.
     fn ld01_water_saturated_vapor_enthalpy(temperature: f64, value: *mut f64) -> i32;
+    // G1-C13 hook (lib.rs, shared; KERN reconciles): saturated-vapor mu(T) below 0.1 MPa.
+    fn ld01_water_saturated_vapor_viscosity(
+        temperature: f64,
+        temperature_direction: f64,
+        value: *mut f64,
+        direction: *mut f64,
+    ) -> i32;
 }
 
 pub fn point(branch: Branch, pressure_pa: f64, temperature_k: f64) -> Result<WaterPoint, Error> {
@@ -844,6 +851,22 @@ pub fn saturated_vapor_enthalpy(t: f64) -> Result<f64, Error> {
     let status = unsafe { ld01_water_saturated_vapor_enthalpy(t, &mut value) };
     match status {
         0 => Ok(value),
+        1 => Err(Error::Domain),
+        2 => Err(Error::AbiArgument),
+        _ => Err(Error::NativeFailure),
+    }
+}
+
+/// G1-C13 hook (lib.rs, shared; KERN reconciles): IF97 saturated-vapor
+/// dynamic viscosity at `t` on the endpoint below the operating 0.1 MPa
+/// floor, with the adapter's disclosed central-difference direction.
+pub fn saturated_vapor_viscosity(t: f64, dt: f64) -> Result<(f64, f64), Error> {
+    let mut value = 0.;
+    let mut direction = 0.;
+    // SAFETY: two unique live scalar outputs; C keeps no pointers/catches errors.
+    let status = unsafe { ld01_water_saturated_vapor_viscosity(t, dt, &mut value, &mut direction) };
+    match status {
+        0 => Ok((value, direction)),
         1 => Err(Error::Domain),
         2 => Err(Error::AbiArgument),
         _ => Err(Error::NativeFailure),

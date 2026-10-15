@@ -16,10 +16,12 @@
  * - `ld01-cnv-shell`: total area and capacity, contact budget, condensation
  *   velocity, the upper/lower catchments of the one remainder host, and the
  *   remainder/local partition;
- * - `ld01-cnv-local-hosts`: bay floors and the sixteen patches;
+ * - `ld01-cnv-local-hosts`: bay floors, the +14 m top and the sixteen patches
+ *   (floor patches, and wall patches with their rectangles);
  * - `ld01-cnv-pools`: WST, gutter, SUMP, FLOOR, crest coefficient, surface
  *   transfer velocity;
- * - `ld01-cnv-droplets`: origin, diameter and sensitivity, drag law;
+ * - `ld01-cnv-droplets`: origin, diameter and sensitivity, drag law, the
+ *   air/nitrogen viscosity laws and the native vapor viscosity;
  * - `ld01-pcc-exterior`: tank, feed, valve, film, dry path, ambient;
  * and `reference-prhr-geometry` (residual-heat-exchanger.md, "Geometry, finite
  * owners and actual height") for the PRHR external tube/header envelope.
@@ -68,8 +70,11 @@ const shellSchema = z.object({ totalArea_m2: positive, totalCapacity_MJ_K: posit
   remainderArea_m2: positive, remainderCapacity_J_K: positive, localArea_m2: positive, localCapacity_J_K: positive,
   localCapacityPerArea_J_m2K: positive }).strict()
 const baySchema = z.enum(['WELL', 'CANAL', 'POOL'])
-const localHostsSchema = z.object({ floors_m: z.object({ WELL: finite, CANAL: finite, POOL: finite }).strict(),
-  patches: z.array(z.object({ id: z.string().min(1), bays: z.array(baySchema).min(1).max(2), area_m2: positive, elevation_m: finite }).strict()) }).strict()
+const patchBase = { id: z.string().min(1), bays: z.array(baySchema).min(1).max(2), area_m2: positive, elevation_m: finite }
+const localHostsSchema = z.object({ floors_m: z.object({ WELL: finite, CANAL: finite, POOL: finite }).strict(), top_m: finite,
+  patches: z.array(z.discriminatedUnion('kind', [
+    z.object({ ...patchBase, kind: z.literal('floor') }).strict(),
+    z.object({ ...patchBase, kind: z.literal('wall'), rectangles_m: z.array(z.tuple([positive, finite, finite])).min(1) }).strict()])) }).strict()
 const poolsSchema = z.object({
   wst: z.object({ water_m3: positive, initialTemperature_C: celsius, tracer_ppm: z.number().finite().nonnegative(), width_m: positive, length_m: positive,
     area_m2: positive, floor_m: finite, initialSurface_m: finite, hardwareBottom_m: finite, hardwareTop_m: finite, exposureLoss_m3: positive,
@@ -81,9 +86,11 @@ const poolsSchema = z.object({
   floor: z.object({ area_m2: positive, deck_m: finite, drainMouth_m: finite, retainedLayer_m3: positive, drains: count,
     drainReference_kg_s: positive, drainReferenceHead_kPa: positive, drainReferenceTemperature_K: positive, drainReferencePressure_Pa: positive }).strict(),
   crestCoefficient: positive, surfaceTransferVelocity_m_s: positive }).strict()
+const viscositySchema = z.object({ reference_Pa_s: positive, referenceTemperature_K: positive, exponent: finite }).strict()
 const dropletsSchema = z.object({ origin_m: finite, diameter_mm: positive, sensitivityDiameters_mm: z.array(positive).min(2),
   dragStokes: positive, dragCorrection: positive, dragExponent: positive, dragReynoldsLimit: positive, newtonDrag: positive,
-  receiver: z.literal('FLOOR') }).strict()
+  receiver: z.literal('FLOOR'), airViscosity: viscositySchema, nitrogenViscosity: viscositySchema,
+  vaporViscosity: z.literal('native-saturated-vapor') }).strict()
 const exteriorSchema = z.object({ tank_m3: positive, tankTemperature_C: celsius, tankArea_m2: positive, tankBottom_m: finite,
   filmDatum_m: finite, initialHead_m: finite, fullOpenFeed_kg_s: positive, feedReferenceHead_m: positive,
   valveTravel_s: positive, valveActuator: z.literal('ACT.B'), valveRoom: z.literal('ROOM.B'), holdPower_W: positive,
@@ -159,7 +166,21 @@ export function compileOperatingContainment(pages: ContainmentPages) {
   for (const p of patches) {
     const own = p.bays.length === 1 ? p.id.startsWith(`${p.bays[0]}.`) : p.bays[0] !== p.bays[1] && p.id === p.bays.join('-')
     if (!own) throw Error(`Patch ${p.id} does not name its bays ${p.bays.join(', ')}`)
-    if (p.id.endsWith('.FLOOR') && p.elevation_m !== hosts.floors_m[p.bays[0]!]) throw Error(`Patch ${p.id} does not lie on its bay floor`)
+    if (p.id.endsWith('.FLOOR') !== (p.kind === 'floor')) throw Error(`Patch ${p.id} is a ${p.kind} patch`)
+    if (p.kind === 'floor') {
+      if (p.elevation_m !== hosts.floors_m[p.bays[0]!]) throw Error(`Patch ${p.id} does not lie on its bay floor`)
+      continue
+    }
+    // A wall patch's rectangles reproduce its area and centroid and lie in its bays' extent.
+    const lowest = Math.min(...p.bays.map(b => hosts.floors_m[b]))
+    let area = 0, moment = 0
+    for (const [w, bottom, top] of p.rectangles_m) {
+      if (!(bottom < top && top <= hosts.top_m && bottom >= lowest)) throw Error(`Patch ${p.id} has a rectangle outside ${lowest}..${hosts.top_m} m`)
+      area += w * (top - bottom)
+      moment += w * (top * top - bottom * bottom) / 2
+    }
+    if (!near(area, p.area_m2, 1e-9)) throw Error(`Patch ${p.id}: its rectangles give ${area} m2, the block prints ${p.area_m2} m2`)
+    if (!near(moment / area, p.elevation_m, 1e-9)) throw Error(`Patch ${p.id}: its rectangles' centroid ${moment / area} m is not ${p.elevation_m} m`)
   }
   if (!near(localArea, shell.localArea_m2, 1e-9)) throw Error(`The local patch areas sum to ${localArea} m2, the shell block prints ${shell.localArea_m2} m2`)
   if (!near(localArea * shell.localCapacityPerArea_J_m2K, shell.localCapacity_J_K, 1e-3))
@@ -185,13 +206,13 @@ export function compileOperatingContainment(pages: ContainmentPages) {
       hardware: { volume_m3: atm.prhrEnvelope_m3, firstMoment_m4: firstMoment, bottom_m: wst.hardwareBottom_m, top_m: wst.hardwareTop_m } },
     emptyPool('GUTTER', gutter.area_m2, gutter.floor_m), emptyPool('FLOOR', floor.area_m2, floor.deck_m), emptyPool('SUMP', sump.area_m2, sump.floor_m),
   ]
-  const local = patches.map(p => ({ id: p.id, bays: p.bays, area_m2: p.area_m2, elevation_m: p.elevation_m,
-    capacity_J_K: p.area_m2 * shell.localCapacityPerArea_J_m2K }))
+  const local = patches.map(p => ({ id: p.id, bays: p.bays, kind: p.kind, area_m2: p.area_m2, elevation_m: p.elevation_m,
+    rectangles_m: p.kind === 'wall' ? p.rectangles_m : [], capacity_J_K: p.area_m2 * shell.localCapacityPerArea_J_m2K }))
 
   // Census from the compiled owners; the pool template recurs in each bay.
   const poolDifferential = ['M', 'E', 'B'], poolAlgebraic = ['T', 'V', 'h', 'm_b']
   const owners = [
-    { owner: 'CNV', differential: ['M_air', 'M_N2', 'M_w', 'E_mix'], algebraic: ['p', 'T', 'V_mix', 'M_d'] },
+    { owner: 'CNV', differential: ['M_air', 'M_N2', 'M_w', 'E_mix'], algebraic: ['p', 'T', 'V_mix', 'M_d', 'v_t'] },
     { owner: 'SHELL.REMAINDER', differential: ['U'], algebraic: [] as string[] },
     ...local.map(p => ({ owner: p.id, differential: ['U'], algebraic: [] as string[] })),
     ...poolEntries.map(p => ({ owner: p.id, differential: [...poolDifferential], algebraic: [...poolAlgebraic] })),
@@ -218,17 +239,20 @@ export function compileOperatingContainment(pages: ContainmentPages) {
     paths: { crestCoefficient: pools.crestCoefficient, surfaceTransferVelocity_m_s: pools.surfaceTransferVelocity_m_s,
       crests: [
         ...Array.from({ length: gutter.returnChutes }, (_, i) => ({ id: `GUTTER.RETURN.${i + 1}`, from: 'GUTTER', to: gutter.chuteReceiver,
-          width_m: gutter.chuteWidth_m, crest_m: gutter.chuteCrest_m })),
-        { id: 'GUTTER.SPILL', from: 'GUTTER', to: gutter.emergencyReceiver, width_m: gutter.emergencyWidth_m, crest_m: gutter.emergencyCrest_m },
-        { id: 'WST.SPILL', from: 'WST', to: wst.spillReceiver, width_m: wst.spillWidth_m, crest_m: wst.spillRim_m },
-        { id: 'SUMP.RIM', from: 'SUMP', to: sump.rimReceiver, width_m: sump.rimWidth_m, crest_m: sump.rim_m },
+          width_m: gutter.chuteWidth_m, crest_m: gutter.chuteCrest_m, law: 'backwater' as const })),
+        { id: 'GUTTER.SPILL', from: 'GUTTER', to: gutter.emergencyReceiver, width_m: gutter.emergencyWidth_m, crest_m: gutter.emergencyCrest_m,
+          law: 'backwater' as const },
+        { id: 'WST.SPILL', from: 'WST', to: wst.spillReceiver, width_m: wst.spillWidth_m, crest_m: wst.spillRim_m, law: 'backwater' as const },
+        // The rim's own law: head over the higher of the rim and the receiving surface, signed by donor.
+        { id: 'SUMP.RIM', from: 'SUMP', to: sump.rimReceiver, width_m: sump.rimWidth_m, crest_m: sump.rim_m, law: 'receiving-surface' as const },
       ],
       drains: { from: 'FLOOR' as const, to: 'SUMP' as const, count: floor.drains, face_m: floor.drainMouth_m, reference_kg_s: floor.drainReference_kg_s,
         referenceHead_Pa: kPa(floor.drainReferenceHead_kPa), referenceTemperature_K: floor.drainReferenceTemperature_K,
         referencePressure_Pa: floor.drainReferencePressure_Pa } },
     droplets: { origin_m: drops.origin_m, diameter_m: mm(drops.diameter_mm), sensitivityDiameters_m: drops.sensitivityDiameters_mm.map(mm),
       dragStokes: drops.dragStokes, dragCorrection: drops.dragCorrection, dragExponent: drops.dragExponent,
-      dragReynoldsLimit: drops.dragReynoldsLimit, newtonDrag: drops.newtonDrag, receiver: drops.receiver },
+      dragReynoldsLimit: drops.dragReynoldsLimit, newtonDrag: drops.newtonDrag, receiver: drops.receiver,
+      airViscosity: drops.airViscosity, nitrogenViscosity: drops.nitrogenViscosity, vaporViscosity: drops.vaporViscosity },
     exterior: { tank: { volume_m3: pcc.tank_m3, temperature_K: kelvin(pcc.tankTemperature_C), area_m2: pcc.tankArea_m2, bottom_m: pcc.tankBottom_m },
       filmDatum_m: pcc.filmDatum_m, fullOpenFeed_kg_s: pcc.fullOpenFeed_kg_s, feedReferenceHead_m: pcc.feedReferenceHead_m,
       valve: { travel_s: pcc.valveTravel_s, actuator: pcc.valveActuator, room: pcc.valveRoom, holdPower_W: pcc.holdPower_W,
