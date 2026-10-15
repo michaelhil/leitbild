@@ -512,8 +512,13 @@ impl RuleI {
             .evaluate(t, y, yp, None, 0., None)
             .map_err(|e| format!("rule I: the operator at {t} s: {e:?}"))?;
         self.samples += 1;
+        // Owner answer B1: the regions' coolant phase at the same evaluation.
+        let phase = joined
+            .region_phases()
+            .map_err(|e| format!("rule I: region phases at {t} s: {e:?}"))?;
         let (label, verdict) = match post_trip_domain::admit_accepted(
             joined.nuclear(),
+            &phase,
             extension,
             joined.travel(),
             t,
@@ -532,11 +537,21 @@ impl RuleI {
             Err(Error::Unsupported {
                 margin_holds, exit, ..
             }) => (
-                Some(if margin_holds {
-                    "D3 (a) source-domain exit"
-                } else {
-                    "D3 (a) margin exit"
-                }),
+                Some(
+                    if matches!(
+                        exit,
+                        leitbild_operating_plant::source_feedback::Error::OutsideDomain(
+                            "phase absence",
+                            _
+                        )
+                    ) {
+                        "B1 phase-absence exit"
+                    } else if margin_holds {
+                        "D3 (a) source-domain exit"
+                    } else {
+                        "D3 (a) margin exit"
+                    },
+                ),
                 format!("unsupported: margin holds {margin_holds}, {exit:?}"),
             ),
             Err(e) => return Err(format!("D3 (a) at {t} s: {e}")),
