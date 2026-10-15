@@ -1073,7 +1073,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 let pair = match self.network.cell_modes()[c] {
                     CellMode::Liquid => [
                         self.network
-                            .liquid_departure(c, y)
+                            .birth_root(c, y)
                             .map_err(|e| fatal(format!("birth root of cell {c}: {e:?}")))?,
                         L1_DISARMED,
                     ],

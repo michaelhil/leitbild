@@ -165,9 +165,8 @@ impl<P: Properties> Network<P> {
         Ok(json!({"exhaustion":node,"vapor_kg_j_at_root":at_root}))
     }
 
-    /// Birth root value of a liquid-mode cell: `T_l(p, U_l/M_l) - Tsat(p)`
-    /// [K], rising through zero at a birth (saturation, no metastable
-    /// threshold: the owner's bound is an equilibrium-stability assumption).
+    /// A liquid-mode cell's departure from saturation, `T_l(p, U_l/M_l) -
+    /// Tsat(p)` [K] (positive: superheated liquid).
     pub fn liquid_departure(&self, node: usize, y: &[f64]) -> Result<f64, Failure> {
         self.regular(node)?;
         if self.modes[node] != CellMode::Liquid {
@@ -187,6 +186,28 @@ impl<P: Properties> Network<P> {
             .saturation_caloric(s(p))
             .map_err(Failure::Recoverable)?;
         Ok(temperature - saturation.temperature.value)
+    }
+
+    /// Birth root value of a liquid-mode cell, rising through zero at a
+    /// birth (owner decision G1, 15 Oct: vapour forms at the H3 band's
+    /// credited liquid superheat, disclosed as a nucleation-delay model):
+    /// the departure less the compiled band's `creditedMax_K` while the
+    /// cell's pressure lies in the band's pressure range, where the bridge
+    /// admits superheated liquid; outside that range the bridge admits none
+    /// and the birth stays at saturation (the departure itself).
+    pub fn birth_root(&self, node: usize, y: &[f64]) -> Result<f64, Failure> {
+        let departure = self.liquid_departure(node, y)?;
+        let band = self.properties.metastable_band().map_err(Failure::Fatal)?;
+        let l = self.cell_layout[node];
+        let p = y[l.base] * self.scales[l.base];
+        let [low, high] = band.pressure_range_pa;
+        let in_range = p <= high
+            && if band.lower_bound_exclusive {
+                p > low
+            } else {
+                p >= low
+            };
+        Ok(departure - if in_range { band.credited_max_k } else { 0. })
     }
 
     /// An equilibrium cell's vapor and liquid mass `(M_g, M - M_g)` [kg]:

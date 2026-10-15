@@ -676,7 +676,7 @@ impl System for Handle {
         }
         for (k, root) in c.roots.clone().into_iter().enumerate() {
             out[k] = match root {
-                RootKind::Birth(n) => c.net.liquid_departure(n, y).map_err(ida_failure)?,
+                RootKind::Birth(n) => c.net.birth_root(n, y).map_err(ida_failure)?,
                 RootKind::Exhaustion(n) => c.net.equilibrium_masses(n, y).map_err(ida_failure)?.0,
                 RootKind::Dryout(n) => c.net.equilibrium_masses(n, y).map_err(ida_failure)?.1,
                 RootKind::Release(j) => c.orientation[j] * c.net.face_drive(j, 1).value,

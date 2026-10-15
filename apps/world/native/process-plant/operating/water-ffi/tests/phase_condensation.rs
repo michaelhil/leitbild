@@ -202,14 +202,17 @@ fn vapor_into_a_subcooled_liquid_cell_condenses_into_its_totals_exactly() {
 
 #[test]
 #[ignore = "S3-D32, NOT EVIDENCE: needs the S3 base packet (LD01_PHASE_PACKET), the wiki, maintained IF97 and stock IDA/KLU"]
-fn vapor_driving_a_liquid_cell_to_saturation_births_it_by_its_root() {
+fn vapor_driving_a_liquid_cell_to_its_birth_superheat_births_it_by_its_root() {
     use leitbild_operating_plant::network::{PZR_MASS, PZR_TRACER, ToleranceClasses};
     use leitbild_operating_water::{
         ida::{Advance, Ida, Initial},
         network::Integrated,
     };
-    // The junction 0.01 K below saturation, its liquid faces at rest, fed
-    // by SURGE's vapor (5 kg held, so SURGE does not exhaust in the window).
+    // The junction 0.01 K below its birth superheat (G1: the compiled
+    // band's creditedMax_K above saturation; the junction lies in the
+    // band's pressure range), its liquid faces at rest, fed by SURGE's
+    // vapor (5 kg held, so SURGE does not exhaust in the window).
+    let credited_k = If97.metastable_band().expect("band").credited_max_k;
     let Setup {
         mut net,
         prepared,
@@ -217,7 +220,7 @@ fn vapor_driving_a_liquid_cell_to_saturation_births_it_by_its_root() {
         junction,
         regions,
         ..
-    } = setup(5., Some(-0.01), true);
+    } = setup(5., Some(credited_k - 0.01), true);
     let wiki = std::env::var("LD01_WIKI_ROOT").expect("LD01_WIKI_ROOT");
     let page = format!(
         "{wiki}/world/packs/process-plant/reference-designs/ld-01/model/build-readiness.md"
@@ -293,16 +296,19 @@ fn vapor_driving_a_liquid_cell_to_saturation_births_it_by_its_root() {
         let net = &ida.system().network;
         // No vapor inventory in the liquid cell, ever.
         assert_eq!((y[lj.mass[1]], y[lj.energy[1]]), (0., 0.), "t = {t}");
+        // The birth root (G1: the band's credited superheat above
+        // saturation inside its pressure range).
         let d = net.liquid_departure(junction, &y).expect("departure");
-        if track.len() < 400 && (track.len() % 10 == 0 || d > 0.) {
-            track.push(json!([t, d]));
+        let root = net.birth_root(junction, &y).expect("birth root");
+        if track.len() < 400 && (track.len() % 10 == 0 || root > 0.) {
+            track.push(json!([t, d, root]));
         }
-        if d > 0. {
+        if root > 0. {
             crossed = Some((t, d));
             break;
         }
     }
-    let (tc, dc) = crossed.expect("the junction reaches saturation");
+    let (tc, dc) = crossed.expect("the junction reaches its birth superheat");
     let after = totals(&ida.system().network, &y);
     // Mass and boron: the closed network conserves them to the solver's
     // tolerance (vapor became liquid in the junction, nothing was lost).
