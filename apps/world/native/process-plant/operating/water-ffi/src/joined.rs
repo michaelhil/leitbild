@@ -793,6 +793,13 @@ mod integrated {
         /// switched the block structure (S3-D-P3; never without
         /// [`Integrated::following_presence`]).
         pub presence_changed: bool,
+        /// The phase-mode owner's mode table changed (a birth or an
+        /// exhaustion): the identity, the nonnegative stocks and the
+        /// tolerances were set again.
+        pub modes_changed: bool,
+        /// S3-D3's derived class of every equilibrium cell at this start
+        /// (empty with every cell liquid).
+        pub equilibrium_classes: Vec<serde_json::Value>,
         pub yp: Vec<f64>,
         pub report: Report,
     }
@@ -860,15 +867,17 @@ mod integrated {
         let joined = &mut integrated.joined;
         let before = y.to_vec();
         let identity_before = joined.differential(network_ids);
+        let modes_before = joined.network.cell_modes().to_vec();
         let mut done = match discrete {
             Discrete::Roots(directions) => joined.transact(t, directions, y).map_err(message)?,
             Discrete::TimeEvent => Vec::new(),
             Discrete::Command(c) => joined.command(t, y, c).map_err(message)?,
         };
         done.extend(joined.time_events(t, y).map_err(message)?);
-        // The vapor presence the stocks declare after the transactions: a
-        // changed presence key switches the block structure (S3-D-P3).
-        let declared = VaporPresence::of(&joined.network, &joined.network.stock_presence(y));
+        // The vapor presence declared after the transactions (the stocks'
+        // for liquid cells, both phases for an equilibrium cell): a changed
+        // presence key switches the block structure (S3-D-P3).
+        let declared = VaporPresence::of(&joined.network, &joined.network.declared_presence(y));
         let presence_changed = integrated.follow_presence(t, y, &declared)?;
         let Integrated {
             joined,
@@ -880,9 +889,26 @@ mod integrated {
         let placements = network::place_on_bounds(t, y, &nonnegative, restart.bound_placement)
             .map_err(message)?;
         let ids = joined.differential(network_ids);
+        // S3-D3 (the S2-D24 pattern, default on every path): an equilibrium
+        // cell's algebraic vapor slots take their class from the pressure
+        // class through their flash sensitivity at this segment's start
+        // state; every other coordinate keeps the caller's class. With
+        // every cell liquid this is the caller's vector unchanged.
+        let modes_changed = joined.network.cell_modes() != modes_before.as_slice();
+        let mut effective = absolute.to_vec();
+        let equilibrium_classes = if joined.network.has_equilibrium_cells() {
+            let n = joined.offsets().nuclear;
+            joined
+                .network
+                .equilibrium_tolerances(&y[..n], relative, &mut effective[..n])
+                .map_err(message)?
+        } else {
+            Vec::new()
+        };
+        let retune = modes_changed || !equilibrium_classes.is_empty();
         let weights: Vec<f64> = y
             .iter()
-            .zip(absolute)
+            .zip(&effective)
             .map(|(v, a)| 1. / (relative * v.abs() + a))
             .collect();
         let o = joined.offsets();
@@ -928,12 +954,22 @@ mod integrated {
         ida.set_differential(&ids)?;
         restart.configure(ida)?;
         root_directions(ida)?;
+        if retune {
+            // A phase-mode change or an equilibrium cell: the segment's
+            // derived tolerances and its nonnegative stocks (an equilibrium
+            // cell's vapor mass is algebraic, its sign the exhaustion
+            // root's).
+            ida.set_tolerances(relative, &effective)?;
+            ida.constrain_nonnegative(&nonnegative)?;
+        }
         Ok(Restarted {
             transactions: done,
             placements,
             transacted,
             passes_allowed,
             presence_changed,
+            modes_changed,
+            equilibrium_classes,
             yp,
             report,
         })

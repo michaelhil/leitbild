@@ -72,6 +72,21 @@ impl<P: Properties> Network<P> {
     pub fn cell_modes(&self) -> &[CellMode] {
         &self.modes
     }
+    /// The phase presence the phase-mode owner declares (decision 0014's
+    /// L1 reads it, the presence-keyed joined pattern follows it): a
+    /// liquid-mode cell's by its stocks ([`Network::stock_presence`]), an
+    /// equilibrium cell holds both phases (its vapor is present from its
+    /// birth, at zero mass), the stratified port's by the last evaluation.
+    /// With every cell liquid it is the stocks' presence.
+    pub fn declared_presence(&self, y: &[f64]) -> super::unilateral::Presence {
+        let mut presence = self.stock_presence(y);
+        for (node, mode) in self.modes.iter().enumerate() {
+            if *mode == CellMode::Equilibrium {
+                presence.cells[node] = [true, true];
+            }
+        }
+        presence
+    }
     /// Whether any regular cell is in the equilibrium mode.
     pub fn has_equilibrium_cells(&self) -> bool {
         self.modes.contains(&CellMode::Equilibrium)

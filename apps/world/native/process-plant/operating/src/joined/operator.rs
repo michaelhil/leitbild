@@ -32,7 +32,7 @@ use super::{
 };
 use crate::{
     network::{
-        Coupling, Failure, Fluid, Network, PZR_PRESSURE, Properties, Receipts, Reuse,
+        CellMode, Coupling, Failure, Fluid, Network, PZR_PRESSURE, Properties, Receipts, Reuse,
         packet::Packet as NetworkPacket,
         phase_events::{located, release_roots},
         stratified,
@@ -213,6 +213,11 @@ pub struct Joined<P: Properties> {
     rows: Vec<Scalar>,
     structure: Option<(Pattern, Coloring)>,
     pub counters: Counters,
+    /// The regular cells' phase modes are composed (S3-D-P1): two root
+    /// slots per regular cell and the birth/exhaustion transactions. Off
+    /// unless declared ([`Joined::activate_phase_modes`]): S1 and S2 hold
+    /// every cell liquid with no mode roots.
+    phase_modes: bool,
 }
 
 fn view<'a>(
@@ -454,6 +459,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             rows: vec![s(0.); offsets.end],
             structure: None,
             counters: Counters::default(),
+            phase_modes: false,
         };
         let columns = joined.structural_pattern()?;
         let pattern = Pattern::from_columns(offsets.end, &columns).map_err(fatal)?;
@@ -683,6 +689,34 @@ impl<P: Properties + WaterProperties> Joined<P> {
             + self.rods().map_or(0, |b| b.root_count())
             + self.pzr().map_or(0, |b| b.root_count())
             + self.unilateral_slots()
+            + self.phase_mode_slots()
+    }
+    /// The phase modes' root slots: two per regular cell once declared,
+    /// after L1's ([`Self::activate_phase_modes`]).
+    fn phase_mode_slots(&self) -> usize {
+        if self.phase_modes {
+            2 * self.network.pzr.cell
+        } else {
+            0
+        }
+    }
+    /// Declare the regular cells' phase modes composed (lead decision
+    /// S3-D-P1): per regular cell two root slots after L1's, in the
+    /// phase-mode owner's mode at the restart: a liquid cell's birth root
+    /// `T_l(p, U_l/M_l) - Tsat(p)` [K] rising and a constant; an
+    /// equilibrium cell's exhaustion root `M_g` [kg] and dryout root
+    /// `M - M_g` [kg], both falling. Before the stock-IDA handle is made (the
+    /// root count grows by two per cell). Never by default.
+    pub fn activate_phase_modes(&mut self) -> Result<(), Failure> {
+        if self.phase_modes {
+            return Err(fatal("the phase modes are already composed"));
+        }
+        self.phase_modes = true;
+        Ok(())
+    }
+    /// Whether the phase modes are composed.
+    pub fn phase_modes_active(&self) -> bool {
+        self.phase_modes
     }
     /// L1's root slots: one per phase path (face-layout order) while L1 is
     /// active, none before (S1, S2). A slot carries the root of its path's
@@ -695,9 +729,9 @@ impl<P: Properties + WaterProperties> Joined<P> {
     }
     /// Declare L1 active (decision 0014, lead decision S3-D-P2) at the
     /// value state `(t, y, 0)`: every phase path classified from free by
-    /// the presence the network's stocks declare
-    /// ([`Network::stock_presence`]; the phase-mode owner's declaration
-    /// replaces it once modes are composed). Before the stock-IDA handle is
+    /// the phase-mode owner's declared presence
+    /// ([`Network::declared_presence`]: the stocks' for liquid cells, both
+    /// phases for an equilibrium cell). Before the stock-IDA handle is
     /// made (the root count grows by one slot per path) and before the
     /// consistent start (a locked path's impulse row becomes `Π/s`,
     /// algebraic). Never by default: S1 and S2 compose no L1.
@@ -711,7 +745,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         }
         let zero = vec![0.; y.len()];
         self.evaluate(t, y, &zero, None, 0., None)?;
-        let presence = self.network.stock_presence(y);
+        let presence = self.network.declared_presence(y);
         self.network.activate_unilateral(&presence)
     }
     /// The crossing direction each root function reports at the owners'
@@ -727,9 +761,20 @@ impl<P: Properties + WaterProperties> Joined<P> {
         }
         // L1: release rising, contact falling (`Root::direction`); a slot
         // with no root reports none.
-        let first = out.len() - self.unilateral_slots();
+        let first = out.len() - self.phase_mode_slots() - self.unilateral_slots();
         for r in self.network.unilateral_roots() {
             out[first + r.path()] = r.direction();
+        }
+        // Phase modes: birth rising; exhaustion and dryout falling.
+        if self.phase_modes {
+            let first = out.len() - self.phase_mode_slots();
+            for (c, mode) in self.network.cell_modes().iter().enumerate() {
+                let pair = match mode {
+                    CellMode::Liquid => [1, 0],
+                    CellMode::Equilibrium => [-1, -1],
+                };
+                out[first + 2 * c..first + 2 * c + 2].copy_from_slice(&pair);
+            }
         }
         Ok(out)
     }
@@ -764,8 +809,30 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let nr = self.rods().map_or(0, |b| b.root_count());
         let np = self.pzr().map_or(0, |b| b.root_count());
         let nl = self.unilateral_slots();
-        if out.len() != ns + nr + np + nl {
+        let nm = self.phase_mode_slots();
+        if out.len() != ns + nr + np + nl + nm {
             return Err(fatal("root layout"));
+        }
+        if nm > 0 {
+            let slots = &mut out[ns + nr + np + nl..];
+            for c in 0..self.network.pzr.cell {
+                let pair = match self.network.cell_modes()[c] {
+                    CellMode::Liquid => [
+                        self.network
+                            .liquid_departure(c, y)
+                            .map_err(|e| fatal(format!("birth root of cell {c}: {e:?}")))?,
+                        L1_DISARMED,
+                    ],
+                    CellMode::Equilibrium => {
+                        let (vapor, liquid) = self
+                            .network
+                            .equilibrium_masses(c, y)
+                            .map_err(|e| fatal(format!("mode roots of cell {c}: {e:?}")))?;
+                        [vapor, liquid]
+                    }
+                };
+                slots[2 * c..2 * c + 2].copy_from_slice(&pair);
+            }
         }
         if nl > 0 {
             // L1's release roots read the drives of this state's value
@@ -779,7 +846,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             self.network
                 .unilateral_root_values(y, &roots, &mut values)
                 .map_err(|e| fatal(format!("L1 root values: {e:?}")))?;
-            let slots = &mut out[ns + nr + np..];
+            let slots = &mut out[ns + nr + np..ns + nr + np + nl];
             slots.fill(L1_DISARMED);
             for (r, v) in roots.iter().zip(values) {
                 slots[r.path()] = v;
@@ -893,17 +960,89 @@ impl<P: Properties + WaterProperties> Joined<P> {
             }
         }
         self.deposit(&done, y)?;
+        // The phase modes' transactions, then L1's on the post-mode state.
+        let nl = self.unilateral_slots();
+        if self.phase_modes {
+            let first = ns + nr + np + nl;
+            if let Some(m) = self.mode_transact(t, &directions[first..], y)? {
+                done.push(m);
+            }
+        }
         if self.network.unilateral().is_some() {
             let first = ns + nr + np;
-            if let Some(l1) = self.unilateral_transact(t, &directions[first..], y)? {
+            if let Some(l1) = self.unilateral_transact(t, &directions[first..first + nl], y)? {
                 done.push(l1);
             }
         }
         Ok(done)
     }
+    /// The phase-mode owner's transactions at a root-located instant
+    /// (S3-D-P1): a located birth makes a liquid cell equilibrium (its
+    /// vapor slots, exactly zero, join its totals: no stock moves); a
+    /// located exhaustion makes an equilibrium cell liquid (its algebraic
+    /// vapor slots are zeroed, the totals stay); a located dryout refuses:
+    /// mode G is S6 scope, so it is C4's declared end. A crossing against a
+    /// root's declared direction does not act and is reported. `None` when
+    /// nothing was located.
+    fn mode_transact(
+        &mut self,
+        t: f64,
+        directions: &[i32],
+        y: &mut [f64],
+    ) -> Result<Option<super::block::Transaction>, Failure> {
+        if directions.len() != self.phase_mode_slots() {
+            return Err(fatal("phase-mode root layout"));
+        }
+        if directions.iter().all(|d| *d == 0) {
+            return Ok(None);
+        }
+        let mut events = Vec::new();
+        let mut opposite = Vec::new();
+        for c in 0..self.network.pzr.cell {
+            let [a, b] = [directions[2 * c], directions[2 * c + 1]];
+            match self.network.cell_modes()[c] {
+                CellMode::Liquid => {
+                    if b != 0 {
+                        return Err(fatal(format!(
+                            "cell {c}: a disarmed phase-mode slot crossed"
+                        )));
+                    }
+                    match a {
+                        1 => events.push(self.network.birth(c, y)?),
+                        -1 => opposite
+                            .push(serde_json::json!({"cell": c, "root": "birth", "direction": -1})),
+                        _ => {}
+                    }
+                }
+                CellMode::Equilibrium => {
+                    if b == -1 {
+                        return Err(fatal(format!(
+                            "dryout of cell {c} at t = {t} s: mode G is S6 scope (C4's declared end)"
+                        )));
+                    }
+                    if b == 1 {
+                        opposite
+                            .push(serde_json::json!({"cell": c, "root": "dryout", "direction": 1}));
+                    }
+                    match a {
+                        -1 => events.push(self.network.exhaustion(c, y)?),
+                        1 => opposite.push(
+                            serde_json::json!({"cell": c, "root": "exhaustion", "direction": 1}),
+                        ),
+                        _ => {}
+                    }
+                }
+            }
+        }
+        Ok(Some(super::block::Transaction {
+            deposits: Vec::new(),
+            receipt: serde_json::json!({"owner":"phase modes","t_s":t,"events":events,
+                "opposite":opposite,"stateChanged":!events.is_empty()}),
+        }))
+    }
     /// L1's transaction at a root-located instant, after the owners' (on
-    /// the state they leave): every path decided by the presence the
-    /// network's stocks declare and the drives of the value evaluation at
+    /// the state they leave): every path decided by the declared presence
+    /// ([`Network::declared_presence`]) and the drives of the value evaluation at
     /// `(t, y, 0)` (a drive reads the coordinates alone), with the L1 roots
     /// located in this instant's `directions` (one per slot). A contact
     /// sets `Π = 0` and pays its kinetic energy once into the receiving
@@ -937,7 +1076,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let (fired, opposite) = located(&roots, &per_root);
         let zero = vec![0.; y.len()];
         self.evaluate(t, y, &zero, None, 0., None)?;
-        let presence = self.network.stock_presence(y);
+        let presence = self.network.declared_presence(y);
         let tx = self
             .network
             .unilateral_transaction(y, &presence, &fired, None)?;

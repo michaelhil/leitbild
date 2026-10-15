@@ -14,18 +14,21 @@ mod spine;
 
 use leitbild_operating_plant::{
     joined::{
-        blocks::{Classes, jacobian_blocks},
+        blocks::{Classes, JoinedJacobian, jacobian_blocks},
         presence::{VaporPresence, pattern_cells},
     },
-    network::{phase_events::Root, unilateral::Lock},
+    network::{CellMode, Properties, phase_events::Root, unilateral::Lock},
+    thermal::Scalar,
 };
 use leitbild_operating_water::{
+    If97,
     ida::{Advance, Ida, Initial, System},
     joined::{
-        DERIVED_CLASSES, Integrated, Matrices, consistent_start, derived_tolerances,
-        root_directions,
+        Analyses, DERIVED_CLASSES, Discrete, Integrated, JoinedSystem, Matrices, Restart,
+        consistent_start, derived_tolerances, discrete_restart, root_directions,
     },
 };
+use serde_json::Value;
 use spine::{DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, started_full_composition};
 
 /// L1 on the joined spine: activation adds one root slot per phase path
@@ -321,4 +324,272 @@ fn the_derived_guide_current_class_is_s2_d24s() {
             );
         }
     }
+}
+
+/// Phase modes on the joined spine (S3-D-P1, KERN's joined block replay):
+/// HOUSING.NECK flashed on the composed state (2 kg of saturated vapor at
+/// its pressure, PHASE-P7's cell test), with L1 and the phase modes active.
+/// The joined block Jacobian on the declared presence's structure equals
+/// the colored assembly on the operator's structural pattern, and the state
+/// integrates on the block assembly with S3-D3's derived vapor class, every
+/// located root (the bubble's own, in its declared direction) restarted by
+/// `discrete_restart`, up to NECK's exhaustion.
+#[test]
+#[ignore = "requires the joined packet, the wiki, IF97 and stock IDA/KLU"]
+fn an_equilibrium_cell_assembles_by_blocks_and_integrates_on_the_joined_spine() {
+    let Started {
+        mut joined,
+        mut y,
+        network_ids,
+        mut atol,
+        rtol,
+        ..
+    } = started_full_composition();
+    let n = y.len();
+    let packet: Value = serde_json::from_slice(&spine::packet_bytes().1).unwrap();
+    let neck = packet["mechanics"]["regions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|r| r["id"] == "HOUSING.NECK")
+        .expect("HOUSING.NECK");
+    let l = joined.network.cell_layout[neck];
+    let sc = joined.scales();
+    let p = y[l.base] * sc[l.base];
+    let sat = If97
+        .saturation_caloric(Scalar::constant(p))
+        .expect("saturation");
+    let (rf, rg) = (sat.liquid.density.value, sat.vapor.density.value);
+    let (uf, ug) = (
+        sat.liquid.enthalpy.value - p / rf,
+        sat.vapor.enthalpy.value - p / rg,
+    );
+    let v = joined.network.volume(neck);
+    let mg = 2.;
+    let ml = (v - mg / rg) * rf;
+    let (m0, e0, m1, e1) = (l.mass[0], l.energy[0], l.mass[1], l.energy[1]);
+    assert_eq!(
+        (y[m1], y[e1]),
+        (0., 0.),
+        "a composed liquid cell holds no vapor"
+    );
+    joined.network.birth(neck, &mut y).expect("birth");
+    y[m0] = (ml + mg) / sc[m0];
+    y[e0] = (ml * uf + mg * ug) / sc[e0];
+    y[m1] = mg / sc[m1];
+    y[e1] = mg * ug / sc[e1];
+    assert_eq!(joined.network.cell_modes()[neck], CellMode::Equilibrium);
+    let l1 = joined.activate_unilateral(0., &y).expect("L1");
+    joined.activate_phase_modes().expect("phase modes");
+    let presence = VaporPresence::of(&joined.network, &joined.network.declared_presence(&y));
+    let structure =
+        JoinedJacobian::compile_for(&mut joined, 0., &y, Some(&presence)).expect("structure");
+    // Block against colored at (0, y, 0).
+    let zero = vec![0.; n];
+    let cj = 20.;
+    let mut bv = vec![0.; structure.pattern.nonzeros()];
+    jacobian_blocks(
+        &mut joined,
+        &structure,
+        0.,
+        cj,
+        &y,
+        &zero,
+        &mut bv,
+        Classes::ALL,
+    )
+    .expect("joined block assembly");
+    let colored = joined.structure().unwrap().0.clone();
+    let mut cv = vec![0.; colored.nonzeros()];
+    joined
+        .jacobian(0., cj, &y, &zero, &mut cv)
+        .expect("joined colored assembly");
+    let (mut worst, mut at) = (0_f64, serde_json::json!(null));
+    for j in 0..n {
+        let b = structure.pattern.pointers()[j]..structure.pattern.pointers()[j + 1];
+        let c = colored.pointers()[j]..colored.pointers()[j + 1];
+        let scale = b
+            .clone()
+            .map(|q| bv[q].abs())
+            .chain(c.clone().map(|q| cv[q].abs()))
+            .fold(0., f64::max);
+        if scale == 0. {
+            continue;
+        }
+        for q in b {
+            let row = structure.pattern.indices()[q];
+            let other = colored.position(row, j).map_or(0., |k| cv[k]);
+            let e = (bv[q] - other).abs() / scale;
+            if e > worst {
+                (worst, at) = (
+                    e,
+                    serde_json::json!({"row": row, "column": j, "blocks": bv[q], "colored": other}),
+                );
+            }
+        }
+        for q in c {
+            let row = colored.indices()[q];
+            if structure.pattern.position(row, j).is_none() && cv[q] != 0. {
+                let e = cv[q].abs() / scale;
+                if e > worst {
+                    (worst, at) = (
+                        e,
+                        serde_json::json!({"row": row, "column": j, "blocks": null, "colored": cv[q]}),
+                    );
+                }
+            }
+        }
+    }
+    println!(
+        "{}",
+        serde_json::json!({"neck": neck, "block_vs_colored": worst, "worst": at,
+            "block_nnz": structure.pattern.nonzeros(), "colored_nnz": colored.nonzeros(),
+            "l1_locked": joined.network.unilateral().map(|u| u.locked()), "l1_changes": l1.changes.len()})
+    );
+    assert!(
+        worst < 1e-10,
+        "joined block against colored {worst:e} at {at}"
+    );
+    // The identity, S3-D3's class and the exact start at the flashed state.
+    let ids = joined.differential(&network_ids);
+    assert_eq!((ids[m1], ids[e1]), (0., 0.));
+    let nn = joined.offsets().nuclear;
+    let classes = joined
+        .network
+        .equilibrium_tolerances(&y[..nn], rtol, &mut atol[..nn])
+        .expect("S3-D3");
+    assert_eq!(classes.len(), 1);
+    let weights: Vec<f64> = y
+        .iter()
+        .zip(&atol)
+        .map(|(v, a)| 1. / (rtol * v.abs() + a))
+        .collect();
+    let mut analyses = Analyses::default();
+    let (mut yp, start) = consistent_start(
+        &mut joined,
+        Matrices::Blocks {
+            structure: &structure,
+            analyses: &mut analyses,
+        },
+        0.,
+        &mut y,
+        &ids,
+        &weights,
+        1e-12,
+        2,
+    )
+    .expect("exact start at the flashed state");
+    let nonnegative = joined.network.nonnegative_stocks();
+    assert!(!nonnegative.contains(&m1));
+    let mut ida = Ida::new(
+        Integrated::from_blocks(joined, structure, analyses).unwrap(),
+        Initial {
+            time: 0.,
+            y: &y,
+            yp: &yp,
+            differential: &ids,
+            absolute_tolerance: &atol,
+            relative_tolerance: rtol,
+        },
+    )
+    .unwrap();
+    let restart = Restart {
+        newton_coefficient: NEWTON_COEFFICIENT,
+        delta_cj_lsetup: DELTA_CJ_LSETUP,
+        first_step_s: FIRST_STEP_S,
+        start_bound: 1e-12,
+        start_passes: 2,
+        transaction_passes: 12,
+        bound_placement: 1e-12,
+    };
+    ida.set_max_order(2).unwrap();
+    ida.constrain_nonnegative(&nonnegative).unwrap();
+    restart.configure(&mut ida).unwrap();
+    root_directions(&mut ida).unwrap();
+    // Integrate with every located root restarted by `discrete_restart`
+    // until NECK's exhaustion. The flash is not the composed state's
+    // physics (NECK is about 20 K subcooled at full power): the bubble
+    // vents through its L1-released vapor path and collapses, and the vapor
+    // that reaches a liquid-mode neighbour is C4's declared end ("first
+    // vapor into subcooled liquid"), not a state S3 represents. So the run
+    // stops at the exhaustion and reports what was located before it.
+    let (first_mode, first_l1) = {
+        let joined = &ida.system().integrated().joined;
+        let first_mode = joined.root_count() - 2 * joined.network.pzr.cell;
+        (first_mode, first_mode - joined.network.face_layout.len())
+    };
+    let label = |i: usize, d: i32| -> String {
+        if i >= first_mode {
+            let c = (i - first_mode) / 2;
+            let slot = if (i - first_mode).is_multiple_of(2) {
+                "birth/exhaustion"
+            } else {
+                "dryout"
+            };
+            format!("cell {c} {slot} {d:+}")
+        } else if i >= first_l1 {
+            format!("L1 path {} {d:+}", i - first_l1)
+        } else {
+            format!("owner root {i} {d:+}")
+        }
+    };
+    let exhaustion = first_mode + 2 * neck;
+    let mut t = 0.;
+    let mut events: Vec<Value> = Vec::new();
+    let mut exhausted_at = None;
+    'outputs: for k in 1..=20 {
+        let target = 0.01 * f64::from(k);
+        while t < target {
+            match ida.advance(target, &mut y, &mut yp).unwrap() {
+                Advance::Reached(time) => t = time,
+                Advance::Root { time, directions } => {
+                    t = time;
+                    // Every located root crosses in its declared direction.
+                    let declared = ida.system().integrated().joined.root_directions().unwrap();
+                    let located: Vec<(usize, i32)> = directions
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, d)| **d != 0)
+                        .map(|(i, d)| (i, *d))
+                        .collect();
+                    let kinds: Vec<String> = located.iter().map(|(i, d)| label(*i, *d)).collect();
+                    for (i, d) in &located {
+                        assert_eq!(*d, declared[*i], "{kinds:?}");
+                        assert!(*i >= first_l1, "only the bubble's roots: {kinds:?}");
+                    }
+                    if located.iter().any(|(i, _)| *i == exhaustion) {
+                        exhausted_at = Some(t);
+                        events.push(
+                            serde_json::json!({"t_s": t, "located": kinds, "restarted": false}),
+                        );
+                        break 'outputs;
+                    }
+                    let restarted = discrete_restart(
+                        &mut ida,
+                        t,
+                        Discrete::Roots(&directions),
+                        &mut y,
+                        &network_ids,
+                        &atol,
+                        rtol,
+                        &restart,
+                    )
+                    .unwrap_or_else(|e| panic!("restart at {t} s, {kinds:?}: {e}"));
+                    yp.copy_from_slice(&restarted.yp);
+                    events.push(serde_json::json!({"t_s": t, "located": kinds,
+                        "transactions": restarted.transactions.iter().map(|x| x.receipt.clone()).collect::<Vec<_>>(),
+                        "modes_changed": restarted.modes_changed,
+                        "equilibrium_classes": restarted.equilibrium_classes.len()}));
+                }
+            }
+        }
+    }
+    assert!(!events.is_empty(), "the bubble's roots are located");
+    let stats = ida.stats().unwrap();
+    println!(
+        "{}",
+        serde_json::json!({"reached_s": t, "steps": stats.steps, "jacobians": stats.jacobians,
+            "start_passes": start.projection_passes, "exhausted_at_s": exhausted_at,
+            "events": events, "derived_vapor_class": classes})
+    );
 }
