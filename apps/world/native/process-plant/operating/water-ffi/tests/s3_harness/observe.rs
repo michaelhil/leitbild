@@ -199,9 +199,93 @@ pub struct CaseObserver {
     pub extension: Extension,
     pub rule_i: RuleI,
     pub gates: Option<Gates>,
-    /// The instructions its own calls retired (the cost family subtracts
-    /// them, as the driver's `gate_s` CPU).
+    /// The instructions its own calls retired (the cost family reports
+    /// rule G without them, as the driver's `gate_s` CPU) ...
     pub instructions: u64,
+    /// ... or why the counter could not be read.
+    pub instructions_error: Option<String>,
+    /// The largest |algebraic row| per row family over the accepted steps
+    /// (a reported quantity in every S3 receipt; JACAGE's metric).
+    pub residuals: AlgebraicResiduals,
+}
+
+/// The largest |residual| of the algebraic rows, in solver row units (the
+/// 1e-12 consistent-start bound's unit), per row family (`owner/class` of
+/// the operator's layouts), over every accepted step at the solver's
+/// state there; the identity is the one in force at that step.
+#[derive(Default, Debug)]
+pub struct AlgebraicResiduals {
+    pub network_ids: Vec<f64>,
+    /// Each operator coordinate's family.
+    pub families: Vec<String>,
+    /// family -> (largest |row|, its time, its row, steps judged).
+    pub worst: std::collections::BTreeMap<String, (f64, f64, usize, u64)>,
+}
+
+impl AlgebraicResiduals {
+    /// The families from the operator's layouts.
+    pub fn of(joined: &Joined<If97>, network_ids: Vec<f64>) -> Self {
+        let families = joined
+            .layouts()
+            .into_iter()
+            .flat_map(|(owner, l)| l.classes.into_iter().map(move |c| format!("{owner}/{c:?}")))
+            .collect();
+        Self {
+            network_ids,
+            families,
+            worst: std::collections::BTreeMap::new(),
+        }
+    }
+    /// One accepted step, after the operator's evaluation there.
+    pub fn record(&mut self, joined: &Joined<If97>, t: f64) {
+        if self.families.is_empty() {
+            return;
+        }
+        let identity = joined.differential(&self.network_ids);
+        let rows = joined.rows();
+        let mut seen = std::collections::BTreeSet::new();
+        for (i, (d, r)) in identity.iter().zip(rows).enumerate() {
+            if *d != 0. {
+                continue;
+            }
+            let f = &self.families[i];
+            let v = r.value.abs();
+            let e = self.worst.entry(f.clone()).or_insert((-1., t, i, 0));
+            if seen.insert(f.clone()) {
+                e.3 += 1;
+            }
+            if v.is_nan() || v > e.0 {
+                e.0 = v;
+                e.1 = t;
+                e.2 = i;
+            }
+        }
+    }
+    pub fn json(&self) -> Value {
+        let families: serde_json::Map<String, Value> = self
+            .worst
+            .iter()
+            .map(|(k, (v, t, i, n))| {
+                (
+                    k.clone(),
+                    json!({"max_abs_row": v, "at_t_s": t, "row": i, "steps": n}),
+                )
+            })
+            .collect();
+        json!({"metric": "largest |residual| of the algebraic rows (identity in force) in solver row units, per row family (owner/class of the operator's layouts), over every accepted stock step at the solver's state; reported only (JACAGE defines the metric; the appended ELEC slice's rows are not included)",
+            "families": families})
+    }
+}
+
+impl CaseObserver {
+    fn count(&mut self, i0: Result<u64, String>) {
+        match (i0, super::counters::instructions()) {
+            (Ok(a), Ok(b)) => self.instructions += b.saturating_sub(a),
+            (Err(e), _) | (_, Err(e)) => {
+                self.instructions_error.get_or_insert(e);
+            }
+        }
+    }
 }
 
 fn grid_after(origin: f64, dt: f64, t: f64) -> f64 {
@@ -351,10 +435,22 @@ impl<J: JoinedSystem<Properties = If97>> Observer<Electrified<J>> for CaseObserv
         side: Side,
     ) -> Result<(), String> {
         let i0 = super::counters::instructions();
+        // Rule I on the restart's consistent start too (S2 judged both
+        // sides; a birth's exit is not taken a step late).
+        if side == Side::AfterRestart {
+            let n = self.n;
+            self.rule_i.judge(
+                &mut system.integrated_mut().joined,
+                &self.extension,
+                t,
+                &y[..n],
+                &yp[..n],
+            )?;
+        }
         if let Some(g) = self.gates.as_mut() {
             g.sample(system, self.n, t, y, yp, side);
         }
-        self.instructions += super::counters::instructions().saturating_sub(i0);
+        self.count(i0);
         Ok(())
     }
     fn accepted(
@@ -374,10 +470,12 @@ impl<J: JoinedSystem<Properties = If97>> Observer<Electrified<J>> for CaseObserv
             &y[..n],
             &yp[..n],
         )?;
+        // Rule I evaluated the operator at this accepted state.
+        self.residuals.record(&system.integrated().joined, t);
         if let Some(g) = self.gates.as_mut() {
             g.accepted(system, n, t, y, q);
         }
-        self.instructions += super::counters::instructions().saturating_sub(i0);
+        self.count(i0);
         Ok(())
     }
 }

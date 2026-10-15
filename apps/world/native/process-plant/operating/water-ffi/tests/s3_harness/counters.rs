@@ -27,10 +27,10 @@ pub fn read() -> Result<(u64, u64), String> {
     Ok((buffer[INSTRUCTIONS], buffer[CYCLES]))
 }
 
-/// Instructions retired so far (0 when the counters are unavailable; the
-/// receipt then states it).
-pub fn instructions() -> u64 {
-    read().map_or(0, |(i, _)| i)
+/// Instructions retired so far; an unreadable counter is an error (a cost
+/// is never taken as zero).
+pub fn instructions() -> Result<u64, String> {
+    read().map(|(i, _)| i)
 }
 
 #[cfg(test)]
