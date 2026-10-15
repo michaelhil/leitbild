@@ -252,6 +252,20 @@ impl Protection {
             }
         }
     }
+    /// Every analog channel's delivered sample: id, acquisition frame and
+    /// what it establishes (receipts).
+    pub fn delivered(&self) -> Vec<(String, Option<(u64, Quality)>)> {
+        self.families
+            .iter()
+            .flat_map(|f| f.channels.iter())
+            .map(|c| {
+                (
+                    c.id.clone(),
+                    c.delivery.delivered().map(|s| (s.acquired, s.value)),
+                )
+            })
+            .collect()
+    }
     pub fn channel_mut(&mut self, id: &str) -> Option<&mut Analog> {
         self.families
             .iter_mut()
