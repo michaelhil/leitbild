@@ -13,14 +13,18 @@
 //! the admitted steam flow, the field converter's delivered voltage
 //! fraction, room temperature and the auxiliary source draws.
 //!
-//! **Carrier (owner decision D2, 15 Oct; `ld01-generator-carrier`).**
-//! `theta` is the rotor angle relative to the Grid-owned carrier, which
-//! enters as a continuous input: its phase is continuous and its rate
-//! `carrier_rad_s` is held over each exchange interval, `2*pi*f_grid(t0)`
-//! plus the Grid's accepted-minus-predicted phase spread over the interval
-//! ([`carrier_rate`]). Nothing writes `theta` at a boundary (the replaced
-//! per-boundary reference conversion). A changed rate enters only the angle's
-//! rate row: a held input of class S under S3-D4.
+//! **Carrier (owner decisions D2 and R6-K SW-1, 15 Oct;
+//! `ld01-generator-carrier`).** `theta` is the rotor angle relative to the
+//! Grid-owned carrier, which enters as a continuous, smooth input: over each
+//! exchange interval `[t0, t1)` the Grid holds its frequency `f` and its
+//! frequency rate `fdot`, and the carrier phase follows
+//! `phi(t) = phi(t0) + 2*pi*(f*(t - t0) + fdot*(t - t0)^2/2)`, plus the
+//! Grid's accepted-minus-predicted phase of the previous interval spread
+//! over this one as a rate ([`carrier_rate`]). The angle row reads the
+//! carrier rate `carrier_rad_s + carrier_accel_rad_s2*(t - carrier_from_s)`.
+//! Nothing writes `theta` at a boundary (the replaced per-boundary
+//! reference conversion). A changed rate or rate slope enters only the
+//! angle's rate row: a held input of class S under S3-D4.
 use super::generator::{self, Machine, Mode};
 use crate::turbine::admission::ReferenceDropAdmission;
 use std::f64::consts::PI;
@@ -85,8 +89,9 @@ pub enum AngleReference {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
 pub enum RateInput {
-    #[serde(rename = "heldPerInterval")]
-    HeldPerInterval,
+    /// SW-1 (owner R6-K): frequency and frequency rate held per interval.
+    #[serde(rename = "frequencyAndRatePerInterval")]
+    FrequencyAndRatePerInterval,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
 pub enum Reconciliation {
@@ -143,10 +148,17 @@ pub struct Inputs {
     /// state when the generator breaker closes onto the Grid.
     #[serde(with = "crate::joined::block::snapshot_bits")]
     pub f_grid_hz: f64,
-    /// D2: the held rate of the carrier the relative angle follows (rad/s),
-    /// [`carrier_rate`] of the Grid's boundary.
+    /// D2: the carrier rate the relative angle follows at `carrier_from_s`
+    /// (rad/s), [`carrier_rate`] of the Grid's boundary.
     #[serde(with = "crate::joined::block::snapshot_bits")]
     pub carrier_rad_s: f64,
+    /// SW-1: the carrier rate's slope over the interval, `2*pi*fdot`
+    /// (rad/s²); zero on a boundary with a steady frequency.
+    #[serde(with = "crate::joined::block::snapshot_bits")]
+    pub carrier_accel_rad_s2: f64,
+    /// SW-1: the interval start the slope is measured from (s).
+    #[serde(with = "crate::joined::block::snapshot_bits")]
+    pub carrier_from_s: f64,
     #[serde(with = "crate::joined::block::snapshot_bits")]
     pub admitted_kg_s: f64,
     /// Field converter demand (V) times its delivered AC fraction; zero when
@@ -213,7 +225,12 @@ impl Slice {
         let (em, d_iq, d_if) = self.machine.torque(y[4], y[5]);
         Ok((em, d_iq, d_if, t))
     }
-    pub fn rows(&self, y: &[f64], yp: &[f64], out: &mut [f64]) -> Result<(), String> {
+    /// The carrier rate at `t` (rad/s): the held rate plus its held slope.
+    pub fn carrier_at(&self, t: f64) -> f64 {
+        let i = self.inputs;
+        i.carrier_rad_s + i.carrier_accel_rad_s2 * (t - i.carrier_from_s)
+    }
+    pub fn rows(&self, time: f64, y: &[f64], yp: &[f64], out: &mut [f64]) -> Result<(), String> {
         let i = self.inputs;
         self.machine.rows(
             self.mode(),
@@ -227,7 +244,8 @@ impl Slice {
         );
         let (em, _, _, t) = self.torque_parts(y)?;
         out[OMEGA] = self.parameters.inertia_kg_m2 * yp[OMEGA] - (t.net_nm + em);
-        out[THETA] = yp[THETA] - (self.parameters.generator.pole_pairs * y[OMEGA] - i.carrier_rad_s);
+        out[THETA] =
+            yp[THETA] - (self.parameters.generator.pole_pairs * y[OMEGA] - self.carrier_at(time));
         let b = self.parameters.body;
         out[BODY] = b.capacity_j_k * yp[BODY] + b.room_conductance_w_k * (y[BODY] - i.room_k);
         Ok(())
@@ -253,7 +271,7 @@ impl Slice {
         Ok(g)
     }
     /// Exact consistent `(y, y')` from the retained differential coordinates.
-    pub fn consistent(&self, y: &mut [f64], yp: &mut [f64]) -> Result<(), String> {
+    pub fn consistent(&self, time: f64, y: &mut [f64], yp: &mut [f64]) -> Result<(), String> {
         let i = self.inputs;
         let (omega, theta) = (y[OMEGA], y[THETA]);
         self.machine.consistent(
@@ -267,7 +285,7 @@ impl Slice {
         );
         let (em, _, _, t) = self.torque_parts(y)?;
         yp[OMEGA] = (t.net_nm + em) / self.parameters.inertia_kg_m2;
-        yp[THETA] = self.parameters.generator.pole_pairs * y[OMEGA] - i.carrier_rad_s;
+        yp[THETA] = self.parameters.generator.pole_pairs * y[OMEGA] - self.carrier_at(time);
         let b = self.parameters.body;
         yp[BODY] = -b.room_conductance_w_k * (y[BODY] - i.room_k) / b.capacity_j_k;
         Ok(())
@@ -344,14 +362,18 @@ mod tests {
         assert!(carrier_rate(50., f64::NAN, 1.).is_err());
     }
     #[test]
-    fn only_owner_d2s_carrier_selection_is_accepted() {
-        let d2 = serde_json::json!({"angleReference": "continuousCarrier", "rateInput": "heldPerInterval",
+    fn only_the_owners_carrier_selection_is_accepted() {
+        let d2 = serde_json::json!({"angleReference": "continuousCarrier", "rateInput": "frequencyAndRatePerInterval",
             "reconciliation": "phaseErrorAsRateOverNextInterval", "boundaryConversion": "none",
             "rateChangeClass": "S3-D4"});
         assert!(serde_json::from_value::<CarrierLaw>(d2.clone()).is_ok());
         let mut other = d2.clone();
         other["boundaryConversion"] = "thetaReferenceConversion".into();
         assert!(serde_json::from_value::<CarrierLaw>(other).is_err());
+        // D2's held-frequency-only rate is superseded by SW-1 (owner R6-K).
+        let mut held = d2.clone();
+        held["rateInput"] = "heldPerInterval".into();
+        assert!(serde_json::from_value::<CarrierLaw>(held).is_err());
         let mut extra = d2;
         extra["extra"] = 1.into();
         assert!(serde_json::from_value::<CarrierLaw>(extra).is_err());
