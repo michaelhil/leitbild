@@ -400,7 +400,12 @@ impl<P: Properties> Network<P> {
             .map(|l| [y[l.mass[0]] != 0., y[l.mass[1]] != 0.])
             .collect();
         let port = self.cells[self.pzr.cell].phase;
-        cells.push([port[0].is_some(), port[1].is_some()]);
+        // S3-D37: the surge port's vapor is zone A's bubble stock b_A, held
+        // while it is positive: the stock its vapor path's contact root
+        // reads, which no phase-mode owner zeroes at its exhaustion, so the
+        // root's crossing is the presence's edge (as for the spray drops).
+        let bubbles = self.pzr.base + super::stratified::ADMITTED_BUBBLE_MASS;
+        cells.push([port[0].is_some(), port[1].is_some() && y[bubbles] > 0.]);
         // IC-CTRL (S3 spray path): the spray port's virtual cell holds the
         // vapor region's vapor as its port view shows it, and its drops
         // while the drop stock is positive: the stock its liquid path's
@@ -416,12 +421,12 @@ impl<P: Properties> Network<P> {
     }
     /// The energy coordinate a contact payment of phase `k` into `cell`
     /// enters: a regular cell's phase-k energy stock, or the stratified
-    /// cell's admitted layer, which receives every surge-port inflow. A
-    /// vapor payment into the stratified cell has no port and refuses.
+    /// cell's admitted layer, which receives every surge-port inflow, the
+    /// vapor's too (S3-D30: its bubbles' enthalpy is A's to pay).
     pub fn payment_coordinate(&self, cell: usize, k: usize) -> Result<usize, Failure> {
         if cell < self.pzr.cell {
             Ok(self.cell_layout[cell].energy[k])
-        } else if cell == self.pzr.cell && k == 0 {
+        } else if cell == self.pzr.cell {
             Ok(self.pzr.base + PZR_ENERGY[1])
         } else if k == 1 && self.spray.is_some_and(|s| s.port_cell == cell) {
             // The spray port's vapor is the vapor zone's.
@@ -578,7 +583,8 @@ impl<P: Properties> Network<P> {
     }
     /// Phase-`k` mass of one end in a coordinate view the network evaluated:
     /// a regular cell's stock, the stratified cell's surge-port layers
-    /// (admitted and resident liquid) for liquid; its port holds no vapor.
+    /// (admitted and resident liquid) for liquid, and zone A's bubble stock
+    /// b_A for vapor (S3-D37).
     pub(super) fn end_mass(&self, y: &[f64], cell: usize, k: usize) -> f64 {
         if cell < self.pzr.cell {
             let i = self.cell_layout[cell].mass[k];
@@ -601,7 +607,8 @@ impl<P: Properties> Network<P> {
                 })
                 .sum()
         } else {
-            0.
+            let i = self.pzr.base + super::stratified::ADMITTED_BUBBLE_MASS;
+            y[i] * self.scales[i]
         }
     }
     /// One path's view from the last value evaluation and `presence`
