@@ -72,3 +72,19 @@ test('heater banks and the relief device parse from their owners and agree with 
   expect(()=>joinedPzrSections(cell,{...pages,thermal:'### Elsewhere\n'})).toThrow('Shell and head metal')
 })
 
+
+test('S3-D36: the packet takes the settle\'s PZR steel in layout order by label, with its receipt; the schema refuses extra fields', async ()=>{
+  const {pzrSteelSection}=await import('./reference-design-operating-joined'),{steadySolidsSchema}=await import('./reference-design-operating-fluid')
+  const store=(id:string,T:number,E:number)=>({id,temperature_k:T,energy_j:E,saturation_energy_j:E+1,rate_w:1e-4})
+  const pzr={frozen:['cell'],roof_pressure_pa:14.86e6,level_m:6,saturation_k:614.6,heater_request_w:19590,joule_w:19590,exterior_w:19583,
+    to_fluid_w:7,stores:[store('heater normal [6.5, 7.5] m steel energy U (J)',615.3,1.3e7),store('bottom head steel energy U (J)',614.4,9.9e8)],
+    temperature_k:[614.4,615.3] as [number,number],stored_energy_change_j:-8e6,steady:{reached_s:4116},checkpoints:[],ida:{steps:268}}
+  const section=pzrSteelSection(pzr)
+  expect(section.stores).toEqual([{id:'heater normal [6.5, 7.5] m steel energy U (J)',energy_J:1.3e7,temperature_K:615.3},
+    {id:'bottom head steel energy U (J)',energy_J:9.9e8,temperature_K:614.4}])
+  expect(section.provenance.receipt).toMatchObject({heaterRequest_W:19590,exterior_W:19583,toFluid_W:7,storedEnergyChange_J:-8e6})
+  const shape=steadySolidsSchema.shape.pzr.unwrap()
+  expect(shape.parse(pzr).stores.length).toBe(2)
+  expect(()=>shape.parse({...pzr,extra:1})).toThrow()
+  expect(()=>shape.parse({...pzr,stores:[]})).toThrow()
+})

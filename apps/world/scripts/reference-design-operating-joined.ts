@@ -12,7 +12,9 @@
  * ports.
  *
  * The spine is compiled in two passes around the stock-IDA steady solids
- * settle (G18); `settle` produces that steady state.
+ * settle (G18); `settle` produces that steady state. The settle's input
+ * carries G6's cell and the PZR owner's section, so the PZR steel settles
+ * with the solids (S3-D36) and the packet carries it as `pzrSteel`.
  *
  * Usage: bun reference-design-operating-joined.ts <wiki root> <pinned IF97 directory> <prepare_steady_solids executable> */
 import { createHash } from 'node:crypto'
@@ -22,6 +24,7 @@ import { caseSetSections, equipmentOwners, parsePzrHeaterBanks, parsePzrRelief, 
 import { compileOperatingRods } from './reference-design-operating-rods'
 import { prepareOperatingSecondary } from './reference-design-operating-sg'
 import { compileOperatingPostTripDomain } from './reference-design-operating-source'
+import type { SteadySolids } from './reference-design-operating-fluid'
 import { nativeSteadySolids, prepareOperatingSpine, type SteadySolidsSettle } from './reference-design-operating-spine'
 
 /** The owners' pages G6 reads, under the LD-01 design root. */
@@ -50,8 +53,30 @@ export function joinedPzrSections<Cell extends Parameters<typeof caseSetSections
     reliefBackPressure_Pa: relief.calibration.backPressure_Pa } }
 }
 
+/** The packet's `pzrSteel` (S3-D36): each PZR steel coordinate's steady
+ * energy and temperature from the settle, in the block's layout order and by
+ * its label (Rust's `joined::pzr::Steel` admits them strictly), with the
+ * settle's PZR receipt. */
+export function pzrSteelSection(pzr: NonNullable<SteadySolids['pzr']>) {
+  const { stores, frozen, saturation_k, heater_request_w, joule_w, exterior_w, to_fluid_w, stored_energy_change_j, steady, ida } = pzr
+  return { stores: stores.map(s => ({ id: s.id, energy_J: s.energy_j, temperature_K: s.temperature_k })),
+    provenance: { settle: 'the packet provenance\'s steadySolids (binary, input and output hashes)',
+      receipt: { frozen, saturation_K: saturation_k, heaterRequest_W: heater_request_w, joule_W: joule_w, exterior_W: exterior_w,
+        toFluid_W: to_fluid_w, storedEnergyChange_J: stored_energy_change_j, steady, ida } } }
+}
+
 export async function prepareOperatingJoined(wiki: string, if97: string, settle: SteadySolidsSettle) {
-  const spine = await prepareOperatingSpine(wiki, if97, settle)
+  const base = join(wiki, 'world/packs/process-plant/reference-designs/ld-01'), names = Object.entries(pzrMetalPages)
+  const pages = Object.fromEntries(await Promise.all(names.map(async ([k, p]) => [k, await Bun.file(join(base, p)).text()]))) as Record<keyof typeof pzrMetalPages, string>
+  let steel: ReturnType<typeof pzrSteelSection> | undefined
+  const spine = await prepareOperatingSpine(wiki, if97, async seed => {
+    const g6 = joinedPzrSections(seed.packet.pzr.cell, pages),
+      settled = await settle(seed, { pzr: { ...seed.packet.pzr, cell: g6.cell }, pzrMetal: { ...g6.pzrMetal, provenance: {} } })
+    if (!settled.steady.pzr) throw Error('The steady solids settle returned no PZR steel for the PZR owner\'s section')
+    steel = pzrSteelSection(settled.steady.pzr)
+    return settled
+  })
+  if (!steel) throw Error('The spine compile did not run the steady solids settle')
   const secondary = await prepareOperatingSecondary(wiki)
   const rods = await compileOperatingRods(wiki)
   if (rods.clusters.length !== spine.feedback_reference.achievedRodTravel_m.length)
@@ -62,15 +87,13 @@ export async function prepareOperatingJoined(wiki: string, if97: string, settle:
   for (const [i, g] of secondary.steamGenerators.entries())
     if (g.volume_m3 !== spine.thermal.secondaries[i]!.volume_m3) throw Error(`SG.${g.id} volume disagrees with its prepared stock`)
   const hash = (s: string) => createHash('sha256').update(s).digest('hex')
-  const base = join(wiki, 'world/packs/process-plant/reference-designs/ld-01'), names = Object.entries(pzrMetalPages)
-  const pages = Object.fromEntries(await Promise.all(names.map(async ([k, p]) => [k, await Bun.file(join(base, p)).text()]))) as Record<keyof typeof pzrMetalPages, string>
   const consumed = names.map(([k, name]) => ({ name, sha256: hash(pages[k as keyof typeof pzrMetalPages]) }))
   const g6 = joinedPzrSections(spine.pzr.cell, pages)
   return { ...spine, identity: 'LD01-JOINED-SPINE-1', secondary, rods, post_trip_domain: await compileOperatingPostTripDomain(wiki),
     pzr: { ...spine.pzr, cell: g6.cell, provenance: { ...spine.pzr.provenance, consumed: [...spine.pzr.provenance.consumed, ...consumed] } },
-    pzrMetal: { ...g6.pzrMetal, provenance: { consumed } },
+    pzrMetal: { ...g6.pzrMetal, provenance: { consumed } }, pzrSteel: steel,
     provenance: { ...spine.provenance, joinedSourceSha256: hash(await Bun.file(import.meta.path).text()) },
-    scope: 'Joined S2 inputs: the compact spine packet, its PZR cell with the spray and relief ports (G6), with the SG secondary, rod, D3 (a) post-trip domain and PZR metal and relief owners\' strict sections. No trajectory admission.' }
+    scope: 'Joined S2 inputs: the compact spine packet, its PZR cell with the spray and relief ports (G6), with the SG secondary, rod, D3 (a) post-trip domain and PZR metal and relief owners\' strict sections, and the PZR steel at its steady state (S3-D36). No trajectory admission.' }
 }
 
 if (import.meta.main) {

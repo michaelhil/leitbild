@@ -634,8 +634,11 @@ export type OperatingSpineSeed = Awaited<ReturnType<typeof compileOperatingSpine
 export type SteadySolidsProvenance = { binary: { name: string, sha256: string }, inputSha256: string, outputSha256: string,
   basis: Record<string, unknown>, receipt: Record<string, unknown> }
 /** The producer of the steady solid state from the seed compile: in
- * production `nativeSteadySolids`, the stock-IDA settle binary. */
-export type SteadySolidsSettle = (seed: OperatingSpineSeed) => Promise<{ steady: SteadySolids, provenance: SteadySolidsProvenance }>
+ * production `nativeSteadySolids`, the stock-IDA settle binary. `sections`
+ * are further owners' sections of the settle's input only (the joined
+ * compiler's G6 cell and PZR metal, S3-D36); they never enter the spine. */
+export type SteadySolidsSettle = (seed: OperatingSpineSeed, sections?: Readonly<Record<string, unknown>>) =>
+  Promise<{ steady: SteadySolids, provenance: SteadySolidsProvenance }>
 
 /** Leaves of the spine packet that the solid preparation owns. Every other
  * leaf must be bitwise identical between the seed and the steady compile:
@@ -678,12 +681,12 @@ export async function prepareOperatingSpine(wiki: string, if97: string, settle: 
  * operating crate), on the seed packet with the SG owner's section and the
  * settle's flow basis. The binary is deterministic, so its output hash pins
  * the steady state; a refusal stops the compile. */
-export async function steadySolidsInput(seed: OperatingSpineSeed, wiki: string) {
-  return JSON.stringify({ ...seed.packet, secondary: await prepareOperatingSecondary(wiki), steady: seed.settleBasis })
+export async function steadySolidsInput(seed: OperatingSpineSeed, wiki: string, sections: Readonly<Record<string, unknown>> = {}) {
+  return JSON.stringify({ ...seed.packet, ...sections, secondary: await prepareOperatingSecondary(wiki), steady: seed.settleBasis })
 }
 export function nativeSteadySolids(executable: string, wiki: string): SteadySolidsSettle {
-  return async seed => {
-    const input = await steadySolidsInput(seed, wiki),
+  return async (seed, sections) => {
+    const input = await steadySolidsInput(seed, wiki, sections),
       child = Bun.spawn([executable], { stdin: new Blob([input]), stdout: 'pipe', stderr: 'pipe' }),
       [output, error, status] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
     if (status !== 0) throw Error('The steady solids settle refused: ' + error.trim())

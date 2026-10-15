@@ -27,7 +27,7 @@ use super::{
     block::{CellVolume, Coordinates, Layout, Rods, Secondary, SecondaryView},
     nuclear::{self, Nuclear, RegionWater},
     packet::Packet,
-    pzr::Pzr,
+    pzr::{Pzr, SteelPreparation},
     solids::{self, Solids},
 };
 use crate::{
@@ -309,15 +309,23 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 0
             }
         };
-        // G6: the PZR owner composes from its section, its steel at the
-        // prepared cell's Tsat(p_s); a relief port needs it.
+        // G6: the PZR owner composes from its section, P4's demand at the
+        // prepared cell's Tsat(p_s) and (S3-D36, PZRSOLIDS hook) its steel at
+        // the steady state of its laws, the packet's pzrSteel; a relief port
+        // needs it.
         let pzr = match &packet.pzr_metal {
             Some(section) => Some(Pzr::new(
                 network.stratified(),
                 section,
+                SteelPreparation::Steady(packet.pzr_steel.as_ref().ok_or_else(|| {
+                    fatal("the PZR owner's pzrMetal section needs its steady steel (pzrSteel, S3-D36)")
+                })?),
                 network.pzr_saturation_temperature_k(),
             )?),
             None => {
+                if packet.pzr_steel.is_some() {
+                    return Err(fatal("pzrSteel without the PZR owner's pzrMetal section"));
+                }
                 if let Some(port) = network
                     .stratified()
                     .parameters()

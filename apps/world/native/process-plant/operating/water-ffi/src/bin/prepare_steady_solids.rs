@@ -35,9 +35,13 @@ use leitbild_operating_plant::{
         block::{Coordinates, Fluid, Receipts, SecondaryView},
         nuclear::{self, Nuclear, RegionWater},
         packet::Packet,
+        pzr::{Pzr, SteelPreparation},
         solids::{self, Closed, Solids, WallWater},
     },
-    network::{self, Properties, Water},
+    network::{
+        self, Network, Properties, PzrPreparation, Water, heaters::Caloric304,
+        packet::Packet as NetworkPacket, stratified,
+    },
     sg::{Secondaries, packet::Section},
     thermal::{self, Scalar, WaterProperties},
 };
@@ -98,6 +102,14 @@ const BASIS_RELATIVE: f64 = 2e-3;
 /// passive store.
 const FUEL_SURFACE_DOMAIN_K: [f64; 2] = [500., 2000.];
 const CLAD_DOMAIN_K: [f64; 2] = [290., 1800.];
+/// The stratified cell's preparation controls at the packet's operating
+/// point, as the S1/S2/S3 compositions declare them (`joined_spine.rs`,
+/// `s2_harness`): the composed cell is exactly this preparation, which the
+/// flowing composition keeps (`prepare::compose_flows`).
+const PZR_PREPARATION: PzrPreparation = PzrPreparation {
+    pressure_tolerance_pa: 1e-6,
+    max_passes: 50,
+};
 
 fn checkpoints() -> Vec<f64> {
     (0..CHECKPOINTS).map(|k| (1u64 << k) as f64).collect()
@@ -144,6 +156,58 @@ pub struct Steady {
     pub steady: Reached,
     pub checkpoints: Vec<Checkpoint>,
     pub ida: IdaStats,
+    /// The PZR steel (S3-D36), present exactly when the input carries the
+    /// PZR owner's `pzrMetal` section.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pzr: Option<PzrSteady>,
+}
+
+/// The PZR steel at the steady state of its laws (S3-D36): a second stock
+/// IDA run, under the same declared tolerances, checkpoints and store
+/// criterion, over the joined PZR block's coordinates (the relief lift and
+/// every heater rod segment's and wall element's steel), at the frozen
+/// prepared cell and P4's prepared heater demand.
+#[derive(Debug, Serialize)]
+pub struct PzrSteady {
+    pub frozen: Vec<&'static str>,
+    pub roof_pressure_pa: f64,
+    pub level_m: f64,
+    pub saturation_k: f64,
+    /// P4's demand: the walls' exterior loss with every steel at Tsat(p_s).
+    pub heater_request_w: f64,
+    pub joule_w: f64,
+    /// The walls' exterior loss at the steady steel.
+    pub exterior_w: f64,
+    /// Joule power less exterior loss: what the steady steel passes on to
+    /// the cell's fluid, W.
+    pub to_fluid_w: f64,
+    pub stores: Vec<PzrStore>,
+    pub temperature_k: [f64; 2],
+    pub stored_energy_change_j: f64,
+    pub steady: PzrReached,
+    pub checkpoints: Vec<Checkpoint>,
+    pub ida: IdaStats,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PzrStore {
+    pub id: String,
+    pub temperature_k: f64,
+    pub energy_j: f64,
+    /// The store's energy at Tsat(p_s), the settle's initial state.
+    pub saturation_energy_j: f64,
+    pub rate_w: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PzrReached {
+    pub reached_s: f64,
+    pub stores: usize,
+    pub worst_rate_w: f64,
+    pub worst_rate_store: String,
+    pub worst_temperature_rate_k_s: f64,
+    pub worst_temperature_rate_store: String,
+    pub lift: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -611,6 +675,406 @@ impl System for SolidsSystem {
 }
 
 // ---------------------------------------------------------------------------
+// The PZR steel (S3-D36) as a second stock IDA system.
+
+/// The joined PZR block's rows at the frozen prepared cell: the block's own
+/// boundary evaluation (`Pzr::boundary`) on the prepared column, every row
+/// differential. Its Jacobian is dense over the block's few coordinates,
+/// each column the laws' own seeded direction.
+pub struct PzrSystem {
+    block: Pzr,
+    cell: stratified::Cell,
+    column: stratified::Column,
+    caloric: Caloric304,
+    /// Per coordinate: the steel's mass (kg), `None` for the relief lift.
+    masses: Vec<Option<f64>>,
+    labels: Vec<String>,
+    scales: Vec<f64>,
+    row_scales: Vec<f64>,
+    rows: Vec<Scalar>,
+    seed: Vec<f64>,
+}
+
+impl PzrSystem {
+    fn physical_rows(
+        &mut self,
+        y: &[f64],
+        yp: &[f64],
+        seeded: Option<usize>,
+        cj: f64,
+    ) -> Result<(), network::Failure> {
+        if let Some(j) = seeded {
+            self.seed[j] = 1.;
+        }
+        let result = Coordinates::new(y, yp, seeded.map(|_| &self.seed[..]), cj, &self.scales)
+            .and_then(|x| {
+                self.block
+                    .boundary(&If97, &self.cell, &self.column, x, &mut self.rows, false)
+                    .map(|_| ())
+            });
+        if let Some(j) = seeded {
+            self.seed[j] = 0.;
+        }
+        result
+    }
+
+    /// Each steel's temperature and dT/dU from its 304 caloric inverse.
+    fn temperature(&self, i: usize, energy_j: f64) -> Result<Option<Scalar>, Failure> {
+        let Some(m) = self.masses[i] else {
+            return Ok(None);
+        };
+        Ok(Some(
+            self.caloric
+                .temperature(Scalar::new(energy_j / m, 1. / m))
+                .map_err(nf)?,
+        ))
+    }
+}
+
+impl System for PzrSystem {
+    fn dimension(&self) -> usize {
+        self.scales.len()
+    }
+    fn nonzeros(&self) -> usize {
+        self.scales.len() * self.scales.len()
+    }
+    fn root_count(&self) -> usize {
+        0
+    }
+    fn klu_ordering(&self) -> KluOrdering {
+        KluOrdering::Amd
+    }
+    fn residual(
+        &mut self,
+        _time: f64,
+        y: &[f64],
+        yp: &[f64],
+        out: &mut [f64],
+    ) -> Result<(), ida::Failure> {
+        self.physical_rows(y, yp, None, 0.).map_err(callback)?;
+        for ((o, r), sc) in out.iter_mut().zip(&self.rows).zip(&self.row_scales) {
+            *o = r.value / sc;
+        }
+        Ok(())
+    }
+    fn jacobian(
+        &mut self,
+        _time: f64,
+        cj: f64,
+        y: &[f64],
+        yp: &[f64],
+        data: &mut [f64],
+        rows: &mut [i64],
+        pointers: &mut [i64],
+    ) -> Result<(), ida::Failure> {
+        let n = self.scales.len();
+        for j in 0..n {
+            self.physical_rows(y, yp, Some(j), cj).map_err(callback)?;
+            pointers[j] = (j * n) as i64;
+            for i in 0..n {
+                rows[j * n + i] = i as i64;
+                data[j * n + i] = self.rows[i].direction / self.row_scales[i];
+            }
+        }
+        pointers[n] = (n * n) as i64;
+        Ok(())
+    }
+    fn roots(
+        &mut self,
+        _time: f64,
+        _y: &[f64],
+        _yp: &[f64],
+        _out: &mut [f64],
+    ) -> Result<(), ida::Failure> {
+        Ok(())
+    }
+}
+
+/// The PZR block at the prepared cell, its seed state (every steel at
+/// Tsat(p_s)) and its basis.
+pub struct PzrPart {
+    pub system: PzrSystem,
+    pub y: Vec<f64>,
+    pub yp: Vec<f64>,
+    pub roof_pressure_pa: f64,
+    pub level_m: f64,
+    pub saturation_k: f64,
+}
+
+/// The PZR part from the input's network sections and `pzrMetal`: the
+/// stratified cell prepared at the packet's operating point exactly as the
+/// composition prepares it, the block composed at that cell's Tsat(p_s).
+fn prepare_pzr(
+    raw: &serde_json::Value,
+    section: &leitbild_operating_plant::joined::pzr::Section,
+) -> Result<PzrPart, Failure> {
+    let network_packet: NetworkPacket = serde_json::from_value(raw.clone())?;
+    let (network, _) = Network::new(&network_packet, If97, &PZR_PREPARATION).map_err(nf)?;
+    let cell = network.stratified().clone();
+    let point = &network_packet.preparation.operating_point;
+    let preparation = cell
+        .prepare(
+            &If97,
+            point.pzr_roof_pressure_pa,
+            point.pzr_level_m,
+            PZR_PREPARATION.pressure_tolerance_pa,
+            PZR_PREPARATION.max_passes,
+        )
+        .map_err(nf)?;
+    let saturation_k = preparation.saturation_temperature_k;
+    if saturation_k.to_bits() != network.pzr_saturation_temperature_k().to_bits() {
+        return Err("the PZR preparation's Tsat(p_s) is not the network's".into());
+    }
+    let block = Pzr::new(&cell, section, SteelPreparation::Saturation, saturation_k).map_err(nf)?;
+    let layout = block.layout().clone();
+    let n = layout.len();
+    let base = block.metal_base();
+    let masses: Vec<Option<f64>> = (0..base)
+        .map(|_| None)
+        .chain(
+            block
+                .heaters()
+                .segments()
+                .iter()
+                .map(|g| Some(g.steel_mass_kg)),
+        )
+        .chain(
+            block
+                .walls()
+                .elements()
+                .iter()
+                .map(|e| Some(e.steel_mass_kg)),
+        )
+        .collect();
+    if masses.len() != n {
+        return Err("the PZR block's layout is not its lift, rods and walls".into());
+    }
+    let y: Vec<f64> = block
+        .prepared()
+        .iter()
+        .zip(&layout.scales)
+        .map(|(v, sc)| v / sc)
+        .collect();
+    let mut system = PzrSystem {
+        block,
+        cell,
+        column: preparation.column,
+        caloric: section.caloric,
+        masses,
+        labels: layout.labels.clone(),
+        scales: layout.scales.clone(),
+        row_scales: layout.row_scales.clone(),
+        rows: vec![s(0.); n],
+        seed: vec![0.; n],
+    };
+    // Every row is differential: the derivative is each row's rate at the
+    // seed, so the start is consistent.
+    let zero = vec![0.; n];
+    system.physical_rows(&y, &zero, None, 0.).map_err(nf)?;
+    let yp = (0..n)
+        .map(|i| -system.rows[i].value / system.row_scales[i])
+        .collect();
+    Ok(PzrPart {
+        system,
+        y,
+        yp,
+        roof_pressure_pa: point.pzr_roof_pressure_pa,
+        level_m: point.pzr_level_m,
+        saturation_k,
+    })
+}
+
+/// One stock IDA run of the PZR block from Tsat(p_s) to the first checkpoint
+/// whose latest accepted step meets the store criterion.
+fn settle_pzr(part: PzrPart) -> Result<PzrSteady, Failure> {
+    let PzrPart {
+        system,
+        mut y,
+        mut yp,
+        roof_pressure_pa,
+        level_m,
+        saturation_k,
+    } = part;
+    let n = y.len();
+    let seed_energy: Vec<f64> = y.iter().zip(&system.scales).map(|(v, sc)| v * sc).collect();
+    let differential = vec![1.; n];
+    let atol = vec![ABSOLUTE_TOLERANCE_SCALED; n];
+    let marks = checkpoints();
+    let mut solver = Ida::new(
+        system,
+        Initial {
+            time: 0.,
+            y: &y,
+            yp: &yp,
+            differential: &differential,
+            absolute_tolerance: &atol,
+            relative_tolerance: RELATIVE_TOLERANCE,
+        },
+    )?;
+    solver.set_max_order(MAXIMUM_ORDER)?;
+    let (mut ys, mut yps) = (vec![0.; n], vec![0.; n]);
+    let mut observed = Vec::with_capacity(marks.len());
+    let mut reached = None;
+    for &t in &marks {
+        solver.advance(t, &mut y, &mut yp)?.reached()?;
+        let step_time = solver.current_state(&mut ys, &mut yps)?;
+        let system = solver.system_mut();
+        let zero = vec![0.; n];
+        system.physical_rows(&ys, &zero, None, 0.).map_err(nf)?;
+        let (mut worst_rate, mut worst_t, mut failing, mut stores) = ((0., 0), (0., 0), 0, 0);
+        for (i, yi) in ys.iter().enumerate() {
+            let rate = -system.rows[i].value;
+            let Some(temperature) = system.temperature(i, yi * system.scales[i])? else {
+                continue;
+            };
+            stores += 1;
+            if !store_passes(StoreRate {
+                rate_w: rate,
+                temperature_per_energy: temperature.direction,
+            }) {
+                failing += 1;
+            }
+            if rate.abs() > worst_rate.0 {
+                worst_rate = (rate.abs(), i);
+            }
+            let tr = (rate * temperature.direction).abs();
+            if tr > worst_t.0 {
+                worst_t = (tr, i);
+            }
+        }
+        let stats = solver.stats()?;
+        observed.push(Checkpoint {
+            time_s: t,
+            step_time_s: step_time,
+            steps: stats.steps,
+            worst_rate_w: worst_rate.0,
+            worst_temperature_rate_k_s: worst_t.0,
+            worst_surface_residual_w: 0.,
+            failing_stores: failing,
+        });
+        eprintln!(
+            "PZR t {t} s (step {step_time} s, {} steps): worst rate {:e} W, worst dT/dt {:e} K/s, failing {failing}",
+            stats.steps, worst_rate.0, worst_t.0
+        );
+        if failing == 0 {
+            reached = Some((step_time, stores, worst_rate, worst_t));
+            break;
+        }
+    }
+    let Some((reached_s, stores, worst_rate, worst_t)) = reached else {
+        return Err(format!(
+            "the PZR steel did not meet the steady criterion by the horizon {} s",
+            marks[marks.len() - 1]
+        )
+        .into());
+    };
+    let stats = solver.stats()?;
+    let system = solver.system_mut();
+    let zero = vec![0.; n];
+    system.physical_rows(&ys, &zero, None, 0.).map_err(nf)?;
+    let energy: Vec<f64> = ys
+        .iter()
+        .zip(&system.scales)
+        .map(|(v, sc)| v * sc)
+        .collect();
+    // The steady steel's ledger from the walls' and rods' own laws.
+    let base = system.block.metal_base();
+    let rods = system.block.heaters().segments().len();
+    let rod: Vec<Scalar> = (base..base + rods).map(|i| s(energy[i])).collect();
+    let wall: Vec<Scalar> = (base + rods..n).map(|i| s(energy[i])).collect();
+    let rates = system
+        .block
+        .walls()
+        .rates(
+            &system.cell,
+            &system.column,
+            system.block.heaters(),
+            &rod,
+            system.block.bank_power_w(),
+            &wall,
+            &If97,
+        )
+        .map_err(nf)?;
+    let joule_w = rates.rods.iter().map(|r| r.joule_w).sum::<f64>()
+        + rates.walls.iter().map(|w| w.joule_w.value).sum::<f64>();
+    let exterior_w: f64 = rates.walls.iter().map(|w| w.exterior_w.value).sum();
+    let law_temperature: Vec<f64> = rates
+        .rods
+        .iter()
+        .map(|r| r.temperature.value)
+        .chain(rates.walls.iter().map(|w| w.temperature.value))
+        .collect();
+    let mut out = Vec::with_capacity(n - base);
+    let mut range = [f64::INFINITY, f64::NEG_INFINITY];
+    for i in base..n {
+        let temperature = system
+            .temperature(i, energy[i])?
+            .ok_or("a PZR steel coordinate without its mass")?
+            .value;
+        let own = law_temperature[i - base];
+        if (own - temperature).abs() > 1e-9 * own {
+            return Err(format!(
+                "{}: the walls' law reads {own} K against its caloric {temperature} K",
+                system.labels[i]
+            )
+            .into());
+        }
+        range = [range[0].min(temperature), range[1].max(temperature)];
+        out.push(PzrStore {
+            id: system.labels[i].clone(),
+            temperature_k: temperature,
+            energy_j: energy[i],
+            saturation_energy_j: seed_energy[i],
+            rate_w: -system.rows[i].value,
+        });
+    }
+    let lift = if base == 1 { energy[0] } else { 0. };
+    if lift != 0. {
+        return Err(format!("the relief lift moved to {lift} at a closed demand").into());
+    }
+    let request = system.block.request_w();
+    Ok(PzrSteady {
+        frozen: vec![
+            "the stratified cell prepared at the packet's operating point (roof pressure and level), as the composition prepares and keeps it: its column, zones and saturation",
+            "the heater demand: P4's, the walls' exterior loss with every steel at the prepared Tsat(p_s), split over the banks",
+            "the relief: closed demand, lift on its seat",
+        ],
+        roof_pressure_pa,
+        level_m,
+        saturation_k,
+        heater_request_w: request,
+        joule_w,
+        exterior_w,
+        to_fluid_w: joule_w - exterior_w,
+        stored_energy_change_j: out.iter().map(|s| s.energy_j - s.saturation_energy_j).sum(),
+        temperature_k: range,
+        stores: out,
+        steady: PzrReached {
+            reached_s,
+            stores,
+            worst_rate_w: worst_rate.0,
+            worst_rate_store: system.labels[worst_rate.1].clone(),
+            worst_temperature_rate_k_s: worst_t.0,
+            worst_temperature_rate_store: system.labels[worst_t.1].clone(),
+            lift,
+        },
+        checkpoints: observed,
+        ida: IdaStats {
+            steps: stats.steps,
+            residuals: stats.residuals,
+            jacobians: stats.jacobians,
+            nonlinear_iterations: stats.nonlinear_iterations,
+            error_failures: stats.error_failures,
+            convergence_failures: stats.convergence_failures,
+            linear_setups: stats.linear_setups,
+            last_order: stats.last_order,
+            last_step_s: stats.last_step,
+            jacobian_nonzeros: n * n,
+        },
+    })
+}
+
+// ---------------------------------------------------------------------------
 // The observation of a state against the criterion.
 
 struct Observation {
@@ -750,6 +1214,8 @@ pub struct Prepared {
     pub system: SolidsSystem,
     pub y: Vec<f64>,
     pub yp: Vec<f64>,
+    /// The PZR steel's part (S3-D36), with the input's `pzrMetal`.
+    pub pzr: Option<PzrPart>,
 }
 
 /// The frozen basis, the solids system and its initial state (the packet's
@@ -963,6 +1429,16 @@ pub fn prepare(raw: &serde_json::Value) -> Result<Prepared, Failure> {
             *v = -system.rows[i].value / layout.row_scales[i];
         }
     }
+    // S3-D36: with the PZR owner's section, its steel too; the settle's
+    // input never carries a steady steel of its own.
+    if packet.pzr_steel.is_some() {
+        return Err("the settle's input already carries pzrSteel".into());
+    }
+    let pzr = packet
+        .pzr_metal
+        .as_ref()
+        .map(|section| prepare_pzr(raw, section))
+        .transpose()?;
     Ok(Prepared {
         basis: Basis {
             basis_power_w,
@@ -983,6 +1459,7 @@ pub fn prepare(raw: &serde_json::Value) -> Result<Prepared, Failure> {
         system,
         y,
         yp,
+        pzr,
     })
 }
 
@@ -998,6 +1475,7 @@ pub fn settle(p: Prepared) -> Result<Steady, Failure> {
         system,
         mut y,
         mut yp,
+        pzr,
     } = p;
     let layout = system.solids.layout().clone();
     let n = layout.len();
@@ -1346,6 +1824,7 @@ pub fn settle(p: Prepared) -> Result<Steady, Failure> {
             last_step_s: stats.last_step,
             jacobian_nonzeros,
         },
+        pzr: pzr.map(settle_pzr).transpose()?,
     };
     Ok(out)
 }
@@ -1533,6 +2012,10 @@ mod tests {
             .collect();
         raw["steady"] = serde_json::json!({"basisPower_W": total,
             "coreMassFlux_kg_m2_s": 3725.0, "sgPrimaryMassFlux_kg_m2_s": ids});
+        // A settle's input is the seed: never a steady PZR steel of its own.
+        if let Some(o) = raw.as_object_mut() {
+            o.remove("pzrSteel");
+        }
         raw
     }
 
@@ -1661,5 +2144,87 @@ mod tests {
         let mut raw = packet_input();
         raw["steady"]["extra"] = serde_json::json!(1);
         refuse(&raw, "unknown field");
+    }
+
+    /// S3-D36: the PZR steel settles to the declared criterion twice alike;
+    /// the joined block composed from the settled steel reproduces the
+    /// settle's own final rates bitwise; a steel record out of layout order
+    /// or off its energy's 304 temperature refuses; a settle input that
+    /// already carries pzrSteel refuses.
+    #[test]
+    #[ignore = "requires LD01_OPERATING_HOT_SPINE_PACKET (a joined packet with pzrMetal) and the SUNDIALS build"]
+    fn the_pzr_steel_settles_and_composes_from_its_steady_state() {
+        use leitbild_operating_plant::joined::pzr;
+        let raw = packet_input();
+        let section: pzr::Section =
+            serde_json::from_value(raw["pzrMetal"].clone()).expect("a packet with pzrMetal");
+        let part = prepare_pzr(&raw, &section).unwrap();
+        let (cell, column, t_sat) = (
+            part.system.cell.clone(),
+            part.system.column,
+            part.saturation_k,
+        );
+        let steady = settle_pzr(part).unwrap();
+        let again = settle_pzr(prepare_pzr(&raw, &section).unwrap()).unwrap();
+        assert_eq!(
+            serde_json::to_string(&steady).unwrap(),
+            serde_json::to_string(&again).unwrap()
+        );
+        assert_eq!(steady.checkpoints.last().unwrap().failing_stores, 0);
+        assert_eq!(steady.steady.lift, 0.);
+        let steel = pzr::Steel {
+            stores: steady
+                .stores
+                .iter()
+                .map(|s| pzr::SteelStore {
+                    id: s.id.clone(),
+                    energy_j: s.energy_j,
+                    temperature_k: s.temperature_k,
+                })
+                .collect(),
+            provenance: serde_json::json!({}),
+        };
+        let mut block = Pzr::new(&cell, &section, SteelPreparation::Steady(&steel), t_sat).unwrap();
+        let layout = block.layout().clone();
+        let n = layout.len();
+        let y: Vec<f64> = block
+            .prepared()
+            .iter()
+            .zip(&layout.scales)
+            .map(|(v, sc)| v / sc)
+            .collect();
+        let zero = vec![0.; n];
+        let x = Coordinates::new(&y, &zero, None, 0., &layout.scales).unwrap();
+        let mut rows = vec![s(0.); n];
+        block
+            .boundary(&If97, &cell, &column, x, &mut rows, false)
+            .unwrap();
+        let base = block.metal_base();
+        for (i, store) in steady.stores.iter().enumerate() {
+            assert_eq!(
+                (-rows[base + i].value).to_bits(),
+                store.rate_w.to_bits(),
+                "{}",
+                store.id
+            );
+        }
+        let mut swapped = steel.clone();
+        swapped.stores.swap(0, 1);
+        assert!(Pzr::new(&cell, &section, SteelPreparation::Steady(&swapped), t_sat).is_err());
+        let mut off = steel.clone();
+        off.stores[0].temperature_k += 1e-3;
+        assert!(Pzr::new(&cell, &section, SteelPreparation::Steady(&off), t_sat).is_err());
+        let mut short = steel.clone();
+        short.stores.pop();
+        assert!(Pzr::new(&cell, &section, SteelPreparation::Steady(&short), t_sat).is_err());
+        let mut carried = raw.clone();
+        carried["pzrSteel"] = serde_json::json!({"stores": [], "provenance": {}});
+        assert!(
+            prepare(&carried)
+                .err()
+                .expect("refused")
+                .to_string()
+                .contains("already carries pzrSteel")
+        );
     }
 }

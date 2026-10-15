@@ -40,7 +40,7 @@
       "constraint_rate_within_bound": true,
       "opening_transactions": 1,
       "placements": 0,
-      "projection_passes": 1,
+      "projection_passes": 0,
       "rate_passes": 1,
       "released_clusters": 52,
       "residual_within_bound": true,
@@ -53,13 +53,13 @@
       "jacobians": 456,
       "last_order": 2,
       "linear_setups": 456,
-      "nonlinear_iterations": 1982,
+      "nonlinear_iterations": 1983,
       "reached": true,
-      "residuals": 1982,
+      "residuals": 1983,
       "root_restarts": 1,
-      "steps": 1264,
+      "steps": 1265,
       "system_jacobians": 456,
-      "system_residuals": 3827
+      "system_residuals": 3830
     },
     "z1": {
       "constraint_rate_within_bound": true,
@@ -71,7 +71,7 @@
   "environment": {
     "if97_revision": "0be7b51f35c47e59e6f91f4f0f47108bf997e50c",
     "metastable_page_sha256": "f30533c1d9281904abb844180699614638585d69647c2dc5bc9847ec6fec6595",
-    "packet_sha256": "e2f918aa63d0ddc06405e2640fb9b14b780da0d0d206ee7190a301c330ff3373",
+    "packet_sha256": "303f0998da00160c6a4b6a7e37f9ac477bee43421e9a8d69d8bba54eb3dce041",
     "s1_gates_sha256": "708aca3b870d6b561a40fa1a6c1c923db8caed40bc5b3a2e72ebf17a86a4c91a",
     "sundials_version": "7.5.0",
     "water_adapter_sha256": "10252c286314f1822df32954170b496cc509c9bdb2899e66b64fb2d5631c6cdb"

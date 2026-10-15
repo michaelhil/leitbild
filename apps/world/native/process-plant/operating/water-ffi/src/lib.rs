@@ -561,7 +561,16 @@ fn invert_caloric(
         } else {
             (((branch, trial), edge), (stable, end))
         };
-        return newton(branch, p, target, kind, fields, low, high);
+        return newton(
+            branch,
+            p,
+            target,
+            kind,
+            fields,
+            low,
+            high,
+            line(stable, &end),
+        );
     }
     if target == kind.value(end) {
         return complete_fields(&end, fields);
@@ -570,7 +579,7 @@ fn invert_caloric(
     // inside the stable temperature range, clear of both of its limits, is
     // taken; otherwise the full bracket below re-solves, and alone decides a
     // refusal.
-    if let Some(q) = from_stable_end(branch, p, target, kind, &end, far.1) {
+    if let Some(q) = from_stable_end(branch, p, target, kind, &end, far.1, line(stable, &end)) {
         return complete_fields(&q, fields);
     }
     let far_state = caloric_state(far.0, p, far.1)?;
@@ -582,7 +591,22 @@ fn invert_caloric(
     if target < kind.value(low.1) || target > kind.value(high.1) {
         return Err(Error::Domain);
     }
-    newton(branch, p, target, kind, fields, low, high)
+    newton(branch, p, target, kind, fields, low, high, None)
+}
+
+/// The saturation line's temperature at `p` when the branch's stable end is
+/// its saturated endpoint (not region 1's 623.15 K limit).
+fn line((branch, _): End, end: &WaterPoint) -> Option<f64> {
+    matches!(branch, Branch::SaturatedLiquid | Branch::SaturatedVapor).then_some(end.temperature_k)
+}
+
+/// Whether a converged state lies within `END_MARGIN_K` of the saturation
+/// line, where the inverse continues to round-off (DR S3-REBIRTH): there a
+/// state accepted at the declared tolerance carries up to that tolerance in
+/// its density, about 1e-11 relative, varying from one target to the next,
+/// and a cell exhausted onto its endpoint is projected there to 1e-12.
+fn near_line(q: &WaterPoint, line: Option<f64>) -> bool {
+    line.is_some_and(|ts| (q.temperature_k - ts).abs() <= END_MARGIN_K)
 }
 
 /// The inverse's declared convergence test: the energy defect within 2e-12
@@ -601,7 +625,9 @@ fn converged(defect: f64, target: f64, ut: f64, t: f64) -> bool {
 /// exceeds the declared tolerance's temperature equivalent (at most about
 /// 4e-9 K on either branch) by more than five orders of magnitude, and keeps
 /// every iterate of the bracket for a root it admits away from either limit,
-/// so a state taken here is one the bracket recovers too.
+/// so a state taken here is one the bracket recovers too. Within the same
+/// margin of the saturation line the inverse continues Newton to round-off
+/// (`near_line`): the line's own neighbourhood is then smooth in p and u.
 const END_MARGIN_K: f64 = 1e-3;
 
 /// Newton on the stable side from the stable end, whose own Newton step is
@@ -612,7 +638,9 @@ const END_MARGIN_K: f64 = 1e-3;
 /// Returns `None`, never an error, when an iterate leaves the open stable
 /// temperature range, an iterate is refused, the partial is not positive,
 /// no iterate converges within 32, or the converged state is within
-/// `END_MARGIN_K` of either limit.
+/// `END_MARGIN_K` of either limit, except the saturation line `line`: there
+/// it continues while each Newton step strictly lowers the energy defect and
+/// returns the state of least defect, the root to round-off.
 fn from_stable_end(
     branch: Branch,
     p: f64,
@@ -620,6 +648,7 @@ fn from_stable_end(
     kind: Caloric,
     end: &WaterPoint,
     far_t: f64,
+    line: Option<f64>,
 ) -> Option<WaterPoint> {
     let liquid = matches!(branch, Branch::Liquid);
     let (low_t, high_t) = if liquid {
@@ -632,29 +661,50 @@ fn from_stable_end(
         return None;
     }
     let mut t = end.temperature_k + (target - kind.value(*end)) / ut;
+    let mut best: Option<WaterPoint> = None;
     for _ in 0..32 {
         if !(t > low_t && t < high_t) {
-            return None;
+            return best;
         }
-        let q = caloric_state(branch, p, t).ok()?;
+        let Some(q) = caloric_state(branch, p, t).ok() else {
+            return best;
+        };
         let defect = kind.value(q) - target;
         let (_, ut) = kind.partials(q);
         if !ut.is_finite() || ut <= 0. {
-            return None;
+            return best;
         }
-        if converged(defect, target, ut, q.temperature_k) {
+        if let Some(b) = best {
+            if defect.abs() >= (kind.value(b) - target).abs() {
+                return best;
+            }
+            best = Some(q);
+        } else if converged(defect, target, ut, q.temperature_k) {
             let clear =
                 q.temperature_k > low_t + END_MARGIN_K && q.temperature_k < high_t - END_MARGIN_K;
-            return clear.then_some(q);
+            if clear {
+                return Some(q);
+            }
+            if !near_line(&q, line) {
+                return None;
+            }
+            best = Some(q);
+        }
+        if defect == 0. && best.is_some() {
+            return best;
         }
         t -= defect / ut;
     }
-    None
+    best
 }
 
 /// Safeguarded Newton inside one bracket whose ends were evaluated as given.
 /// The returned point is the forward point at the selected end or
 /// temperature, completed with `fields` from the caloric state evaluated there.
+/// A converged state within `END_MARGIN_K` of the saturation line `line`
+/// continues while each step strictly lowers the energy defect; the state of
+/// least defect is returned.
+#[allow(clippy::too_many_arguments)] // The bracket's two ends and the line.
 fn newton(
     branch: Branch,
     p: f64,
@@ -663,6 +713,7 @@ fn newton(
     fields: i32,
     (_, mut low): (End, WaterPoint),
     (_, mut high): (End, WaterPoint),
+    line: Option<f64>,
 ) -> Result<WaterPoint, Error> {
     if target == kind.value(low) {
         return complete_fields(&low, fields);
@@ -676,16 +727,32 @@ fn newton(
     // Safeguarded Newton uses the actual thermodynamic partial. Bisection is
     // only a root-finding safeguard, never a replacement EOS value or state.
     // The bound is a numerical termination guard, not a simulation timestep.
+    let mut best: Option<WaterPoint> = None;
     for _ in 0..64 {
-        let q = caloric_state(branch, p, t)?;
+        let q = match (caloric_state(branch, p, t), best) {
+            (Ok(q), _) => q,
+            (Err(_), Some(b)) => return complete_fields(&b, fields),
+            (Err(e), None) => return Err(e),
+        };
         let defect = kind.value(q) - target;
         let (_, ut) = kind.partials(q);
         if !ut.is_finite() || ut <= 0. {
             return Err(Error::NativeFailure);
         }
-        // Use the local thermal energy scale as well as the energy value.
-        if converged(defect, target, ut, q.temperature_k) {
-            return complete_fields(&q, fields);
+        if let Some(b) = best {
+            if defect.abs() >= (kind.value(b) - target).abs() {
+                return complete_fields(&b, fields);
+            }
+            best = Some(q);
+            if defect == 0. {
+                return complete_fields(&q, fields);
+            }
+        } else if converged(defect, target, ut, q.temperature_k) {
+            // Use the local thermal energy scale as well as the energy value.
+            if !near_line(&q, line) || defect == 0. {
+                return complete_fields(&q, fields);
+            }
+            best = Some(q);
         }
         if defect < 0. {
             low = q;
@@ -699,7 +766,10 @@ fn newton(
             (low.temperature_k + high.temperature_k) / 2.
         };
     }
-    Err(Error::NativeFailure)
+    match best {
+        Some(b) => complete_fields(&b, fields),
+        None => Err(Error::NativeFailure),
+    }
 }
 
 /// The artifact's compiled `ld01-metastable-band` values, as the native
