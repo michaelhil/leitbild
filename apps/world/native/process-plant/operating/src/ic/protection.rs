@@ -42,6 +42,13 @@ struct ReportState {
     max_age_frames: u64,
     recovery_frames: u64,
 }
+/// A recorded vote (no cause, latch or output).
+struct Monitor {
+    id: String,
+    family: String,
+    side: Side,
+    frames: u64,
+}
 struct Function {
     spec: FunctionSpec,
     frames: u64,
@@ -52,6 +59,7 @@ pub struct Protection {
     families: Vec<FamilyState>,
     reports: Vec<ReportState>,
     functions: Vec<Function>,
+    monitors: Vec<Monitor>,
     pub divisions: [Division; 3],
     pub holding: Holding,
     interface: String,
@@ -176,6 +184,27 @@ impl Protection {
                 frames,
             });
         }
+        let mut monitors = Vec::new();
+        for m in &section.monitors {
+            match &m.rule {
+                Rule::Voted {
+                    family: id,
+                    side,
+                    qualification_s,
+                } if family(id) => monitors.push(Monitor {
+                    id: m.id.clone(),
+                    family: id.clone(),
+                    side: *side,
+                    frames: frame.frames_in(*qualification_s)?,
+                }),
+                _ => {
+                    return Err(format!(
+                        "monitor {}: a voted rule on a family of the section",
+                        m.id
+                    ));
+                }
+            }
+        }
         // The decision's evidence is what the previous acquisition frame
         // delivers: every channel must travel whole frames, at least one.
         for f in &families {
@@ -189,6 +218,7 @@ impl Protection {
             families,
             reports,
             functions,
+            monitors,
             divisions: [
                 Division::new(&h.divisions[0]),
                 Division::new(&h.divisions[1]),
@@ -399,6 +429,22 @@ impl Protection {
                     accepted.push((f.spec.id.clone(), f.spec.effects));
                 }
             }
+            // Recorded votes: the same per-division timers, keyed apart from
+            // the functions, recorded at their first qualification only.
+            for m in &self.monitors {
+                let i = family(&m.family).ok_or("family")?;
+                let condition = voted(i, m.side)? == Vote::Satisfied;
+                let key = format!("monitor {}", m.id);
+                if self.divisions[d].qualify(&key, k, condition, m.frames)
+                    && !self.divisions[d].monitors.contains_key(&m.id)
+                {
+                    self.divisions[d].monitors.insert(m.id.clone(), t);
+                    self.log.push(
+                        json!({"t_s": t, "frame": k, "division": self.divisions[d].supply,
+                        "event": "monitor qualified", "monitor": m.id}),
+                    );
+                }
+            }
             for (id, e) in accepted {
                 if self.divisions[d].accept(
                     &id,
@@ -448,6 +494,9 @@ mod tests {
     /// block's values and the turbine report (test copy; the compiled
     /// section is the authority).
     fn section(extra_functions: Value, extra_families: Value) -> Section {
+        section_with(extra_functions, extra_families, json!([]))
+    }
+    fn section_with(extra_functions: Value, extra_families: Value, monitors: Value) -> Section {
         let mut families = vec![json!({"id": "LD01.PZR.PT", "quantity": "pzr_roof_pressure",
             "channels": [{"id": "LD01.PZR.PT1", "supply": "I1"}, {"id": "LD01.PZR.PT2", "supply": "I2"},
                 {"id": "LD01.PZR.PT3", "supply": "I3"}],
@@ -475,6 +524,7 @@ mod tests {
             "reports": [{"id": "LD01.TG.TRIP.REPORT", "source": "turbine_retained_trip", "supply": "ACT.B",
                 "sample_s": 0.1, "transport_s": 0.1, "maximum_age_s": 0.3, "recovery_s": 1., "basis": "test"}],
             "functions": functions,
+            "monitors": monitors,
             "holding": {"interface": "LD01.TRIP.HOLD", "supply": "LD01.DC.ACT.A", "manual_interrupt": "LD01.TRIP.MANUAL",
                 "divisions": ["I1", "I2", "I3"], "contacts": ["LD01.TRIP.PERM.I1", "LD01.TRIP.PERM.I2", "LD01.TRIP.PERM.I3"]},
             "missing": [], "provenance": []
@@ -485,6 +535,7 @@ mod tests {
         move |q| match q {
             Quantity::PzrRoofPressure => Ok(p),
             Quantity::LoopFlow { .. } => Ok(1.),
+            Quantity::PzrLevel { .. } => Ok(6.0),
             _ => Ok(5.),
         }
     }
@@ -655,5 +706,55 @@ mod tests {
             prot.divisions[0].trip.as_ref().unwrap().function,
             "LOW_FLOW.A"
         );
+    }
+
+    #[test]
+    fn a_monitor_records_its_vote_and_trips_nothing() {
+        // The PZR LT family (test values shaped as the proposed blocks) and
+        // C2.N3's vote: <= 3.00 m for 0.5 s, recorded only.
+        let lt = json!([{"id": "LD01.PZR.LT", "quantity": {"pzr_level": {"calibration_pressure_pa": 15e6, "interface_span_pa": [0., 25e6]}},
+            "channels": [{"id": "LD01.PZR.LT1", "supply": "I1"}, {"id": "LD01.PZR.LT2", "supply": "I2"},
+                {"id": "LD01.PZR.LT3", "supply": "I3"}],
+            "channel": {"lag_s": 0.5, "min": -1., "max": 13., "quantum": 0.01, "indeterminate_band": null, "sample_s": 0.1, "transport_s": 0.1},
+            "maximum_age_s": 0.3, "recovery_s": 1.}]);
+        let monitor = json!([{"id": "C2.N3 PZR LT vote", "rule": {"voted": {"family": "LD01.PZR.LT",
+            "side": {"at_or_below": 3.0}, "qualification_s": 0.5}}, "basis": "test"}]);
+        let mut prot = Protection::new(
+            &section_with(json!([]), lt.clone(), monitor.clone()),
+            pressure(15.2e6),
+        )
+        .unwrap();
+        let level = Quantity::PzrLevel {
+            calibration_pressure_pa: 15e6,
+            interface_span_pa: [0., 25e6],
+        };
+        let mut lost = None;
+        for k in 5220..5260 {
+            if k > 5220 {
+                // Level falls to 2.0 m over the run (held per interval).
+                let l = if k < 5230 { 6.0 } else { 2.0 };
+                prot.advance(&level, 0.1, &[l]).unwrap();
+                prot.advance(&Quantity::PzrRoofPressure, 0.1, &[15.2e6])
+                    .unwrap();
+            }
+            lost = lost.or(prot.frame(k).unwrap());
+        }
+        assert_eq!(lost, None, "a monitor has no output");
+        assert!(
+            prot.divisions
+                .iter()
+                .all(|d| d.causes.is_empty() && d.trip.is_none())
+        );
+        let first = prot.divisions[0].monitors["C2.N3 PZR LT vote"];
+        // The level is 2.0 m from the interval ending at 5230: after n such
+        // intervals the 0.5 s lag reads 2 + 4 e^{-0.2 n}, at most 3.00 m from
+        // n = 7, acquired at 5236, delivered at 5237, qualified 0.5 s later
+        // at 5242.
+        assert_eq!(first, prot.frame_of().instant(5242));
+        assert!(prot.log.iter().any(|e| e["event"] == "monitor qualified"));
+        // A monitor must be a voted rule on a family of the section.
+        let bad = json!([{"id": "x", "rule": {"voted": {"family": "NONE", "side": {"at_or_below": 3.0},
+            "qualification_s": 0.5}}, "basis": "test"}]);
+        assert!(Protection::new(&section_with(json!([]), lt, bad), pressure(15.2e6)).is_err());
     }
 }

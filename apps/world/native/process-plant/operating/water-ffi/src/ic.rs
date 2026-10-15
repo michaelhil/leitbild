@@ -30,8 +30,8 @@ use leitbild_operating_plant::{
         protection::Protection,
     },
     joined::{block::Command, operator::Joined},
-    network::{PZR_PRESSURE, Properties},
-    thermal::WaterProperties,
+    network::{PZR_PRESSURE, Properties, ports::G, stratified},
+    thermal::{Scalar, WaterProperties},
 };
 use serde_json::{Value, json};
 
@@ -57,6 +57,16 @@ enum Observation {
         supports: Vec<(usize, f64, f64)>,
         nominal: f64,
     },
+    /// The PZR LT indication: the stratified cell's tap pressures from its
+    /// coordinates (`base`, `scales`), `L = a (p_low − p_high) + b`.
+    PzrLevel {
+        cell: Box<stratified::Cell>,
+        base: usize,
+        scales: Vec<f64>,
+        a: f64,
+        b: f64,
+        span: [f64; 2],
+    },
     /// The current proxy: per region (population index, scale, weight,
     /// supports as (fissile index, scale, `P / X_ref`)), and the factor
     /// `E_tot,ref / (Fref E_c,ref)`.
@@ -77,6 +87,33 @@ impl Observation {
                 nominal,
             } => Ok(mass_flow(y, *impulse, *from, *to, supports)? / nominal),
             Observation::Proxy { regions, factor } => Ok(factor * events(y, regions)),
+            Observation::PzrLevel {
+                cell,
+                base,
+                scales,
+                a,
+                b,
+                span,
+            } => {
+                let x: Vec<Scalar> = scales
+                    .iter()
+                    .enumerate()
+                    .map(|(i, s)| Scalar::constant(y[base + i] * s))
+                    .collect();
+                let x = stratified::Coordinates::from_slice(&x).map_err(|f| format!("{f:?}"))?;
+                let (low, high) = cell
+                    .level_tap_pressures(&x)
+                    .map_err(|f| format!("{f:?}"))?
+                    .ok_or("the PZR declares no LT pair")?;
+                for p in [low.value, high.value] {
+                    if !(span[0]..=span[1]).contains(&p) {
+                        return Err(format!(
+                            "PZR LT interface at {p} Pa outside its {span:?} Pa span (device overrange is not built in S3)"
+                        ));
+                    }
+                }
+                Ok(a * (low.value - high.value) + b)
+            }
         }
     }
     fn linear(&self) -> bool {
@@ -234,6 +271,40 @@ impl ProtectionClient {
                         to,
                         supports,
                         nominal,
+                    }
+                }
+                Quantity::PzrLevel {
+                    calibration_pressure_pa,
+                    interface_span_pa,
+                } => {
+                    let cell = net.stratified();
+                    let (low, high) = cell
+                        .parameters()
+                        .level_taps()
+                        .map_err(|f| format!("{f:?}"))?
+                        .ok_or("the PZR declares no LT pair")?;
+                    let saturation = WaterProperties::saturation(
+                        joined.properties(),
+                        Scalar::constant(*calibration_pressure_pa),
+                    )
+                    .map_err(|e| format!("LT calibration saturation: {e}"))?;
+                    let (rl, rg) = (
+                        saturation.liquid.density.value,
+                        saturation.vapor.density.value,
+                    );
+                    let a = 1. / ((rl - rg) * G);
+                    let b = -rg * G * (high - low) * a;
+                    references.insert(f.id.clone(), json!({"calibration_pressure_pa": calibration_pressure_pa,
+                        "liquid_density_kg_m3": rl, "vapor_density_kg_m3": rg, "tap_span_m": high - low,
+                        "basis": "fixed saturated-water calibration over the LT tap span (phase-dependent-measurements.md)"}));
+                    let base = net.pzr.base;
+                    Observation::PzrLevel {
+                        cell: Box::new(cell.clone()),
+                        base,
+                        scales: scales[base..base + stratified::COORDINATES].to_vec(),
+                        a,
+                        b,
+                        span: *interface_span_pa,
                     }
                 }
                 Quantity::CurrentProxy {

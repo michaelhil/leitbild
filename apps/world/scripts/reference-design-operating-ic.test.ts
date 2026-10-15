@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { compileOperatingIc, compileOperatingIcFrom, OPEN_ITEMS, OPERATING_IC_PAGES } from './reference-design-operating-ic'
+import { compileOperatingIc, compileOperatingIcFrom, compilePzrLevelFrom, OPEN_ITEMS, OPERATING_IC_PAGES } from './reference-design-operating-ic'
 
 const fence = (name: string, body: string) => '```' + name + '\n' + body + '\n```\n'
 const channel = '{"lag_s":0.2,"min_pa":0,"max_pa":20000000,"quantum_pa":1000,"sample_s":0.1,"transport_s":0.1}'
@@ -79,4 +79,24 @@ test.skipIf(!wiki || !joined)('the actual section from the wiki and the packet',
     const text = await Bun.file(join(root, name)).text()
     expect(s.provenance[i + 1]).toEqual({ name, sha256: createHash('sha256').update(text).digest('hex') })
   }
+})
+
+test('the PZR LT family and C2.N3 vote compile from the proposed blocks, and refuse without them', () => {
+  const levelChannels = '{"calibrationPressure_Pa":15000000,"lag_s":0.5,"interfaceSpan_Pa":[0,25000000],"indicatedSpan_m":[-1,13],"quantum_m":0.01,"supplies":["I1","I2","I3"]}'
+  const levelProtection = '{"lowLevel_m":3.0,"lowQualification_s":0.5,"highLevel_m":10.0,"highQualification_s":0.5,"unavailableQualification_s":1,"resetBand_m":[3.5,9.5],"resetDuration_s":5}'
+  const p = pages()
+  const texts = {
+    measurements: p['systems/instrumentation/phase-dependent-measurements.md'] + fence('ld01-pzr-level-channels', levelChannels),
+    observations: p['systems/instrumentation/operational-observations.md'],
+    protection: p['safety/source-and-primary-protection.md'] + fence('ld01-pzr-level-protection', levelProtection),
+  }
+  const { family, monitors } = compilePzrLevelFrom(texts)
+  expect(family.quantity).toEqual({ pzr_level: { calibration_pressure_pa: 15e6, interface_span_pa: [0, 25e6] } })
+  expect(family.channel).toEqual({ lag_s: 0.5, min: -1, max: 13, quantum: 0.01, indeterminate_band: null, sample_s: 0.1, transport_s: 0.1 })
+  expect(family.channels.map(c => c.id)).toEqual(['LD01.PZR.LT1', 'LD01.PZR.LT2', 'LD01.PZR.LT3'])
+  expect(monitors[0]!.rule).toEqual({ voted: { family: 'LD01.PZR.LT', side: { at_or_below: 3 }, qualification_s: 0.5 } })
+  expect(() => compilePzrLevelFrom({ ...texts, measurements: p['systems/instrumentation/phase-dependent-measurements.md'] }))
+    .toThrow('Expected one ld01-pzr-level-channels block')
+  // The main section carries no monitor until the blocks land.
+  expect(compileOperatingIcFrom(pages(), packet).monitors).toEqual([])
 })

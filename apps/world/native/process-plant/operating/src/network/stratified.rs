@@ -1872,6 +1872,34 @@ impl Cell {
     pub fn level(&self, v: Scalar) -> Scalar {
         self.geometry.level(v)
     }
+    /// S3 hook (IC-PROT, for KERN): the LT pair's tap pressures `(low,
+    /// high)` from the coordinates alone (the column's hydrostatics, no
+    /// property call), by the same piecewise law as [`Column::pressure_at`];
+    /// `None` for an instance without the LT pair. The acquired PZR level
+    /// reads it at the dense output's nodes.
+    pub fn level_tap_pressures(
+        &self,
+        x: &Coordinates,
+    ) -> Result<Option<(Scalar, Scalar)>, Failure> {
+        let Some((low, high)) = self.parameters.level_taps()? else {
+            return Ok(None);
+        };
+        let h = self.hydrostatics(x)?;
+        let top = self.parameters.top_m;
+        let at = |z: f64| {
+            let below = |boundary: Scalar| {
+                z < boundary.value || (z == boundary.value && boundary.direction > 0.)
+            };
+            if !below(h.mixture_elevation) {
+                x.roof_pressure + s(G) * h.vapor_density * (s(top) - s(z))
+            } else if !below(h.boundary_elevation) {
+                h.interface_pressure + s(G) * h.resident_density * (h.mixture_elevation - s(z))
+            } else {
+                h.boundary_pressure + s(G) * h.admitted_density * (h.boundary_elevation - s(z))
+            }
+        };
+        Ok(Some((at(low), at(high))))
+    }
     fn hydrostatics(&self, x: &Coordinates) -> Result<Hydrostatics, Failure> {
         let geometry = &self.geometry;
         let (bottom, top) = (s(self.parameters.bottom_m), s(self.parameters.top_m));
