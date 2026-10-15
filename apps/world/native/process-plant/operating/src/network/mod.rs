@@ -150,6 +150,11 @@ pub struct SprayLayout {
     pub check_closed: bool,
     /// The valve's sizing volume flow, the restriction row's scale.
     pub q_ref_m3_s: f64,
+    /// The spray port face's two phase paths under L1's unilateral law
+    /// while the network-wide L1 is not active (DR-P3-SPRAY): engaged at
+    /// the composition's prepared state ([`Network::engage_spray_tip`]),
+    /// `None` before.
+    pub tip: Option<[unilateral::Lock; 2]>,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct FaceLayout {
@@ -656,6 +661,7 @@ impl<P: Properties> Network<P> {
                     closed: true,
                     check_closed: false,
                     q_ref_m3_s: section.valve.sizing.flow_kg_s / section.valve.sizing.density_kg_m3,
+                    tip: None,
                 })
             }
         };

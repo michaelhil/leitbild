@@ -31,6 +31,7 @@ use super::{
     Failure, Network, PZR_ALGEBRAIC, PZR_COORDINATES, PZR_ENERGY, PZR_MASS, PZR_TRACER, Prepared,
     Properties, PzrPreparation, RotorState, Water,
     packet::{self, FacePacket, Packet},
+    spray::TipStage,
     stratified,
 };
 use crate::local_flow::Cell;
@@ -799,6 +800,11 @@ pub fn prepare<P: Properties>(
                 "the network cannot evaluate the prepared state: {e:?}"
             ))
         })?;
+    // DR-P3-SPRAY: the spray port's paths take L1's unilateral law from the
+    // prepared state at rest (the closed valve's and the check's locks are
+    // the composition's own).
+    let presence = network.stock_presence(&prepared.y);
+    network.engage_spray_tip(&presence, TipStage::Rest)?;
     prepared.differential = network.differential(&prepared.differential);
     let construction = Construction {
         root,
@@ -1018,6 +1024,11 @@ pub struct FlowReceipt {
     pub energy_change_j: f64,
     pub tracer_change_kg_eq: f64,
     pub representation_offset: usize,
+    /// DR-P3-SPRAY: the spray port's scoped L1 decisions, on the flows the
+    /// composition was given and at the composed state (absent without a
+    /// spray path).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spray_port: Option<Value>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct FlowFace {
@@ -1097,6 +1108,19 @@ pub fn compose_flows<P: Properties>(
         .collect();
     let excluded: Vec<usize> = spray.map(|s| s.valve_face).into_iter().collect();
     let tree = spanning_tree(faces, cells, &roots, &excluded)?;
+    // DR-P3-SPRAY: the spray port's paths decided by L1 on the flows about
+    // to be written (the hydraulic settle carries no L1): a path the settle
+    // moved toward the port's empty drop region locks and takes no current.
+    let tip_adopted = match spray {
+        Some(s) => {
+            let presence = network.stock_presence(y);
+            network.engage_spray_tip(
+                &presence,
+                TipStage::Adopted([volume_flows_m3_s[s.port_face], 0.]),
+            )?
+        }
+        None => None,
+    };
     let roof_index = network.pzr.base + stratified::ROOF_PRESSURE;
     let mut pressure: Vec<f64> = network
         .cell_layout
@@ -1150,7 +1174,14 @@ pub fn compose_flows<P: Properties>(
                 .sum();
             let liquid = network.face_layout[2 * j].index;
             let vapor = network.face_layout[2 * j + 1].index;
-            y[liquid] = inertance * volume_flows_m3_s[j] / scales[liquid];
+            // A locked path (the closed spray valve, the spray port's
+            // scoped L1) carries no current whatever the hydraulic
+            // settle's flow was (DR-P3-SPRAY).
+            y[liquid] = if network.path_locked(2 * j) {
+                0.
+            } else {
+                inertance * volume_flows_m3_s[j] / scales[liquid]
+            };
             y[vapor] = 0.;
         }
         let zero = vec![0.; y.len()];
@@ -1202,6 +1233,11 @@ pub fn compose_flows<P: Properties>(
             *p = *n / scale * scale;
         }
     }
+    // DR-P3-SPRAY: the spray port's scoped law again at the flowing state,
+    // each path from the lock the composition held (the line at rest below
+    // its port; a held lock stays, TipStage::Composed).
+    let presence = network.stock_presence(y);
+    let tip_composed = network.engage_spray_tip(&presence, TipStage::Composed)?;
     let flow_faces: Vec<FlowFace> = faces
         .iter()
         .enumerate()
@@ -1209,7 +1245,11 @@ pub fn compose_flows<P: Properties>(
             face: j,
             tree: tree.member[j],
             port: j == network.pzr.port_face || spray.is_some_and(|s| j == s.port_face),
-            volume_flow_m3_s: volume_flows_m3_s[j],
+            volume_flow_m3_s: if network.path_locked(2 * j) {
+                0.
+            } else {
+                volume_flows_m3_s[j]
+            },
             impulse_pa_s: value(y, network.face_layout[2 * j].index),
             drive_pa: network.face_drive(j, 0).value,
         })
@@ -1239,5 +1279,7 @@ pub fn compose_flows<P: Properties>(
         energy_change_j: after[1] - before[1],
         tracer_change_kg_eq: after[2] - before[2],
         representation_offset: written.iter().map(|w| w.offset).fold(0, usize::max),
+        spray_port: tip_adopted
+            .map(|adopted| json!({"adopted": adopted, "composed": tip_composed})),
     })
 }

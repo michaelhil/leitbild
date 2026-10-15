@@ -674,13 +674,52 @@ fn smoke() {
     let (mut ys, mut yps) = (y.clone(), yp.clone());
     let mut t = 0.;
     let mut failure = Value::Null;
+    // A located owner root restarts exactly (a composed spray port's scoped
+    // L1, DR-P3-SPRAY, releases within the settle).
+    let mut root_restarts = 0;
+    // Stock IDA's counters restart with every reinitialization: the
+    // segments before a restart are summed.
+    let mut before = [0_i64; 7];
+    let counted = |st: &leitbild_operating_water::ida::Stats| {
+        [
+            st.steps,
+            st.residuals,
+            st.jacobians,
+            st.nonlinear_iterations,
+            st.linear_setups,
+            st.error_failures,
+            st.convergence_failures,
+        ]
+    };
     while t < settle_s {
         let target = (t + ADVANCE_CHUNK_S).min(settle_s);
         match ida.advance(target, &mut ys, &mut yps) {
             Ok(Advance::Reached(time)) => t = time,
             Ok(Advance::Root { time, directions }) => {
-                failure = json!(format!("a root at {time} s: {directions:?}"));
-                break;
+                t = time;
+                let segment = counted(&ida.stats().unwrap());
+                for (b, v) in before.iter_mut().zip(segment) {
+                    *b += v;
+                }
+                match discrete_restart(
+                    &mut ida,
+                    t,
+                    Discrete::Roots(&directions),
+                    &mut ys,
+                    &network_ids,
+                    &atol,
+                    rtol,
+                    &restart,
+                ) {
+                    Ok(r) => {
+                        yps.copy_from_slice(&r.yp);
+                        root_restarts += 1;
+                    }
+                    Err(e) => {
+                        failure = json!(format!("a root restart at {time} s: {directions:?}: {e}"));
+                        break;
+                    }
+                }
             }
             Err(e) => {
                 failure = json!(e);
@@ -689,12 +728,16 @@ fn smoke() {
         }
     }
     let st = ida.stats().unwrap();
+    let mut n = counted(&st);
+    for (v, b) in n.iter_mut().zip(before) {
+        *v += b;
+    }
     let c = ida.system().joined.counters;
     let settle = json!({
-        "reached": t >= settle_s, "failure": failure,
-        "steps": st.steps, "residuals": st.residuals, "jacobians": st.jacobians,
-        "nonlinear_iterations": st.nonlinear_iterations, "linear_setups": st.linear_setups,
-        "error_failures": st.error_failures, "convergence_failures": st.convergence_failures,
+        "reached": t >= settle_s, "failure": failure, "root_restarts": root_restarts,
+        "steps": n[0], "residuals": n[1], "jacobians": n[2],
+        "nonlinear_iterations": n[3], "linear_setups": n[4],
+        "error_failures": n[5], "convergence_failures": n[6],
         "last_order": st.last_order,
         "system_residuals": c.residuals - evaluations_before.residuals,
         "system_jacobians": c.jacobians - evaluations_before.jacobians,

@@ -870,10 +870,12 @@ impl<P: Properties + WaterProperties> Joined<P> {
             + self.phase_mode_slots()
             + self.spray_slots()
     }
-    /// IC-CTRL (S3 spray path, S3-D25 (3), for KERN): the inlet check's one
-    /// root slot, last, while the spray path is composed.
+    /// IC-CTRL (S3 spray path, for KERN): three root slots, last, while the
+    /// spray path is composed: the inlet check's (S3-D25 (3)), then the
+    /// spray port's two phase paths under the scoped L1 (DR-P3-SPRAY;
+    /// disarmed constants once the network-wide L1 governs them).
     fn spray_slots(&self) -> usize {
-        usize::from(self.network.spray().is_some())
+        if self.network.spray().is_some() { 3 } else { 0 }
     }
     /// The phase modes' root slots: two per regular cell once declared,
     /// after L1's ([`Self::activate_phase_modes`]).
@@ -968,18 +970,24 @@ impl<P: Properties + WaterProperties> Joined<P> {
         }
         // L1: release rising, contact falling (`Root::direction`); a slot
         // with no root reports none.
-        let first = out.len() - self.phase_mode_slots() - self.unilateral_slots();
+        let first =
+            out.len() - self.spray_slots() - self.phase_mode_slots() - self.unilateral_slots();
         for r in self.network.unilateral_roots() {
             out[first + r.path()] = r.direction();
         }
-        // The spray inlet check: contact falling, release rising.
-        if self.spray_slots() == 1 {
-            let last = out.len() - 1;
-            out[last] = match self.network.spray_check_watch() {
+        // The spray inlet check: contact falling, release rising; then the
+        // spray port's scoped L1 slots (their own directions).
+        if self.spray_slots() == 3 {
+            let check = out.len() - 3;
+            out[check] = match self.network.spray_check_watch() {
                 Some(crate::network::spray::CheckRoot::Contact) => -1,
                 Some(crate::network::spray::CheckRoot::Release) => 1,
                 _ => 0,
             };
+            let tip = self.network.spray_tip_roots(&vec![0.; self.dimension()])?;
+            for (k, (_, d)) in tip.iter().enumerate() {
+                out[check + 1 + k] = *d;
+            }
         }
         // Phase modes: birth rising; exhaustion and dryout falling.
         if self.phase_modes {
@@ -1030,15 +1038,25 @@ impl<P: Properties + WaterProperties> Joined<P> {
         if out.len() != ns + nr + np + nl + nm + nk {
             return Err(fatal("root layout"));
         }
-        if nk == 1 {
-            // The inlet check's release root reads the valve path's drive of
-            // this state's value evaluation; its contact root the impulse.
-            if self.network.spray_check_watch() == Some(crate::network::spray::CheckRoot::Release) {
+        if nk == 3 {
+            // The inlet check's and the spray port's release roots read the
+            // drives of this state's value evaluation; their contact roots
+            // the coordinates.
+            if self.network.spray_check_watch() == Some(crate::network::spray::CheckRoot::Release)
+                || self.network.spray_tip_reads_drive()
+            {
                 self.evaluate(t, y, yp, None, 0., None)
-                    .map_err(|e| fatal(format!("spray check root evaluation: {e:?}")))?;
+                    .map_err(|e| fatal(format!("spray root evaluation: {e:?}")))?;
             }
-            let last = out.len() - 1;
-            out[last] = self.network.spray_check_root(y).map_or(1., |r| r.1);
+            let check = out.len() - 3;
+            out[check] = self.network.spray_check_root(y).map_or(1., |r| r.1);
+            let tip = self
+                .network
+                .spray_tip_roots(y)
+                .map_err(|e| fatal(format!("spray port roots: {e:?}")))?;
+            for (k, (v, _)) in tip.iter().enumerate() {
+                out[check + 1 + k] = *v;
+            }
         }
         if nm > 0 {
             let slots = &mut out[ns + nr + np + nl..ns + nr + np + nl + nm];
@@ -1202,17 +1220,31 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 done.push(l1);
             }
         }
-        // IC-CTRL (S3 spray path, S3-D25 (3)): the inlet check's transaction
-        // at its located root, last.
-        if self.spray_slots() == 1
-            && let Some(receipt) = self
-                .network
-                .spray_check_transaction(t, directions[directions.len() - 1])?
-        {
-            done.push(super::block::Transaction {
-                deposits: Vec::new(),
-                receipt,
-            });
+        // IC-CTRL (S3 spray path): the inlet check's transaction at its
+        // located root (S3-D25 (3)), then the spray port's scoped L1
+        // (DR-P3-SPRAY) on a value evaluation of the post-transaction state.
+        if self.spray_slots() == 3 {
+            let check = directions.len() - 3;
+            if let Some(receipt) = self.network.spray_check_transaction(t, directions[check])? {
+                done.push(super::block::Transaction {
+                    deposits: Vec::new(),
+                    receipt,
+                });
+            }
+            // Every root transaction decides the port's paths, as L1 decides
+            // all of its own (found at the transaction or at a located root).
+            let tip = [directions[check + 1], directions[check + 2]];
+            if self.network.unilateral().is_none() {
+                let zero = vec![0.; y.len()];
+                self.evaluate(t, y, &zero, None, 0., None)?;
+                let presence = self.network.declared_presence(y);
+                if let Some(receipt) = self.network.spray_tip_transaction(t, tip, y, &presence)? {
+                    done.push(super::block::Transaction {
+                        deposits: Vec::new(),
+                        receipt,
+                    });
+                }
+            }
         }
         Ok(done)
     }
