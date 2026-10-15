@@ -800,6 +800,9 @@ mod integrated {
         /// S3-D3's derived class of every equilibrium cell at this start
         /// (empty with every cell liquid).
         pub equilibrium_classes: Vec<serde_json::Value>,
+        /// The appended owners' changes at this restart (ELEC hook; empty
+        /// without appended coordinates).
+        pub appended: Vec<String>,
         pub yp: Vec<f64>,
         pub report: Report,
     }
@@ -851,16 +854,35 @@ mod integrated {
         ida: &mut Ida<S>,
         t: f64,
         discrete: Discrete<'_>,
-        y: &mut [f64],
+        y_all: &mut [f64],
         network_ids: &[f64],
-        absolute: &[f64],
+        absolute_all: &[f64],
         relative: f64,
         restart: &Restart,
     ) -> Result<Restarted, String> {
-        let integrated = ida.system_mut().integrated_mut();
-        if absolute.len() != y.len() {
+        if absolute_all.len() != y_all.len() {
             return Err("restart tolerances layout".into());
         }
+        // ELEC hook: appended coordinates (none on S1/S2 paths) take their
+        // owners' changes first, then the operator restarts on its own part.
+        let appended = ida.system().appended();
+        let m = y_all
+            .len()
+            .checked_sub(appended)
+            .ok_or("restart: appended layout")?;
+        let appended_done = if appended > 0 {
+            let command = match discrete {
+                Discrete::Command(c) => Some(c),
+                _ => None,
+            };
+            ida.system_mut()
+                .appended_events(t, command, &mut y_all[m..])?
+        } else {
+            Vec::new()
+        };
+        let (y, y_tail) = y_all.split_at_mut(m);
+        let absolute = &absolute_all[..m];
+        let integrated = ida.system_mut().integrated_mut();
         let message = |f: network::Failure| match f {
             network::Failure::Recoverable(r) | network::Failure::Fatal(r) => r,
         };
@@ -950,7 +972,18 @@ mod integrated {
             passes_allowed,
         )
         .map_err(message)?;
-        ida.reinitialize(t, y, &yp)?;
+        let (yp, ids) = if appended > 0 {
+            let mut tail = vec![0.; appended];
+            let tail_ids = ida.system_mut().appended_start(t, y_tail, &mut tail)?;
+            if tail_ids.len() != appended {
+                return Err("restart: appended identity layout".into());
+            }
+            effective.extend_from_slice(&absolute_all[m..]);
+            ([yp, tail].concat(), [ids, tail_ids].concat())
+        } else {
+            (yp, ids)
+        };
+        ida.reinitialize(t, y_all, &yp)?;
         ida.set_differential(&ids)?;
         restart.configure(ida)?;
         root_directions(ida)?;
@@ -970,6 +1003,7 @@ mod integrated {
             presence_changed,
             modes_changed,
             equilibrium_classes,
+            appended: appended_done,
             yp,
             report,
         })
@@ -1010,6 +1044,52 @@ mod integrated {
         type Properties: Properties + WaterProperties;
         fn integrated(&self) -> &Integrated<Self::Properties>;
         fn integrated_mut(&mut self) -> &mut Integrated<Self::Properties>;
+        // ELEC S3 hook (joined.rs, KERN-owned): coordinates a wrapper
+        // appends after the operator's (the electrical slice). The defaults
+        // append none, so every S1/S2 path is unchanged.
+        /// Number of coordinates appended after the operator's.
+        fn appended(&self) -> usize {
+            0
+        }
+        /// The appended owners' changes due exactly at `t`, before the
+        /// operator's transactions (they may set the operator's discrete
+        /// inputs, e.g. an RCP's supply), with the restart's command if any:
+        /// `y` is the appended part only.
+        fn appended_events(
+            &mut self,
+            _t: f64,
+            _command: Option<Command>,
+            _y: &mut [f64],
+        ) -> Result<Vec<String>, String> {
+            Ok(Vec::new())
+        }
+        /// The appended part's exact consistent start at `t` (its rates into
+        /// `yp`) and its differential identity.
+        fn appended_start(
+            &mut self,
+            _t: f64,
+            _y: &mut [f64],
+            _yp: &mut [f64],
+        ) -> Result<Vec<f64>, String> {
+            Ok(Vec::new())
+        }
+        /// The appended owners' earliest due time strictly after `t`.
+        fn appended_next_event(&self, _t: f64) -> Option<f64> {
+            None
+        }
+        /// The operator's and the appended owners' earliest time event.
+        fn next_time_event(&self, t: f64) -> Option<f64> {
+            let own = self.integrated().joined.next_time_event(t);
+            match (own, self.appended_next_event(t)) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            }
+        }
+        /// The whole differential identity: the operator's, then the
+        /// appended part's in its current mode.
+        fn differential_all(&self, network_ids: &[f64]) -> Vec<f64> {
+            self.integrated().joined.differential(network_ids)
+        }
     }
     impl<P: Properties + WaterProperties> JoinedSystem for Integrated<P> {
         type Properties = P;

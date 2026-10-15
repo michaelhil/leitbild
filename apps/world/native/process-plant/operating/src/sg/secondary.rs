@@ -143,6 +143,9 @@ pub struct Secondaries {
     prepared: Vec<f64>,
     valves: Vec<Vec<Valve>>,
     trip_s: Option<f64>,
+    /// S3-D12 (ELEC hook): the recorded feed flows only while the feed
+    /// pumps are supplied; `true` in the prepared state (S1/S2 unchanged).
+    feed_supported: bool,
     /// Largest relative chart defect of the supplied preparation.
     preparation_defect: f64,
     saturation: Vec<Option<([u64; 2], Saturation)>>,
@@ -263,6 +266,7 @@ impl Secondaries {
             layout,
             prepared,
             trip_s: None,
+            feed_supported: true,
             preparation_defect: defect,
             saturation: vec![None; n],
             nozzle: vec![None; n],
@@ -465,6 +469,24 @@ impl<P: Properties> Secondary<P> for Secondaries {
     fn layout(&self) -> &Layout {
         &self.layout
     }
+    // ELEC S3 hooks (SG owner): the turbine's admitted steam, the trip time
+    // and the S3-D12 feed gate.
+    fn admitted_steam_kg_s(&self, t: f64) -> Option<f64> {
+        let fraction = self.steam_fraction(t);
+        Some(
+            self.sgs
+                .iter()
+                .map(|g| g.steam_demand_kg_s * fraction)
+                .sum(),
+        )
+    }
+    fn turbine_trip_time(&self) -> Option<f64> {
+        self.trip_s
+    }
+    fn set_feed_supported(&mut self, supported: bool) -> Result<(), Failure> {
+        self.feed_supported = supported;
+        Ok(())
+    }
     fn account(&self) -> OwnerAccount {
         let h_feed = self.derived.feed_enthalpy_j_kg;
         let mut crossings = Vec::new();
@@ -618,8 +640,13 @@ impl<P: Properties> Secondary<P> for Secondaries {
                     x.rate(b + LIFTS + j) - self.relief.lift_rate(valve, p, *lift);
             }
             // F3 (a): the feed is exactly the withdrawn gas; x - x is exact.
+            // S3-D12: gated to zero while the feed pumps are unsupplied.
             let withdrawn = steam + relief;
-            let feed = withdrawn;
+            let feed = if self.feed_supported {
+                withdrawn
+            } else {
+                s(0.)
+            };
             let mass_receipt = feed - withdrawn;
             let energy_receipt = *heat + feed * s(self.derived.feed_enthalpy_j_kg) - withdrawn * hg;
             rows[b + MASS] = x.rate(b + MASS) - mass_receipt;

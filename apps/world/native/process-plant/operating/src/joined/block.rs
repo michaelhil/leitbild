@@ -399,6 +399,24 @@ pub trait Secondary<P> {
     /// feed entering and the steam and relief leaving (mass and energy at
     /// the enthalpies the rows used), and the metal heat the rows received.
     fn account(&self) -> OwnerAccount;
+    // ELEC S3 hook (block.rs, KERN-owned; defaults leave S1/S2 unchanged).
+    /// The admitted turbine steam of every SG together at `t` (kg/s), when
+    /// the owner's admission is a time-only boundary (S2/S3: demand times
+    /// the STOP's admission fraction); the electrical slice's turbine input.
+    fn admitted_steam_kg_s(&self, _t: f64) -> Option<f64> {
+        None
+    }
+    /// The latched turbine TRIP time, if any (the trip requests GCB OPEN).
+    fn turbine_trip_time(&self) -> Option<f64> {
+        None
+    }
+    /// S3-D12: the recorded feed (F3 (a)) gated by the feed pumps' supply.
+    /// A held input entering only the SG stocks' rates (class S, S3-D4).
+    fn set_feed_supported(&mut self, _supported: bool) -> Result<(), Failure> {
+        Err(Failure::Fatal(
+            "this secondary owner declares no feed gate".into(),
+        ))
+    }
 }
 
 /// The rod bodies (spider and bodies, H7), their guide passages (F1 (a),
