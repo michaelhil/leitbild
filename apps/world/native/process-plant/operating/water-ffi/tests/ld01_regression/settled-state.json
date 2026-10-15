@@ -1,10 +1,10 @@
 {
   "kind": "ld01-settled-state-pin",
-  "status": "Regression pin (NOT evidence; S2 is not declared): the exact consistent pair at the end of the S2-07 re-settle PREVIEW (settled at 522 s by revision 7's settling block, packet 91d85fc1, frozen app 0d8ad6a29 with the test-only run caaa8e9c4, wiki 4ee6f47), re-pinned 15 Oct 2026 by the S2-07 lane on the lead's brief (S2-D11 model freeze); replaces the provisional probe-4 pin",
-  "file": "settled-state-s2-07-522s-91d85fc1.bits.json.gz",
-  "sha256": "0d71168f26a8411353ad9ab27f28f69a627c21a6e8139988a13d4c20c36c74ef",
-  "bytes": 14086,
-  "packet_sha256": "91d85fc11a753e9fcb587f6d01bcb9d50561455fb72660506813c71f580333ac",
+  "status": "Regression pin (NOT evidence; S2 is not declared): the S2-07 re-settle PREVIEW's exact consistent pair (settled at 522 s, packet 91d85fc1, frozen app 0d8ad6a29 with the test-only run caaa8e9c4, wiki 4ee6f47), re-pinned 15 Oct 2026 by the RESTART lane on lead decision S3-D26 to packet 725bd0ad (91d85fc1 recompiled with the two-zone SG contact map; only the crown/pickup guards and the secondary exposure change). The exact consistent start reproduces the earlier pin's y and y' bit for bit and the digest is unchanged",
+  "file": "settled-state-s2-07-522s-725bd0ad.bits.json.gz",
+  "sha256": "0b6e2aa1133195ab2366d84e3f5bbedd00c689c472cdd7a527d103d1a569a364",
+  "bytes": 14097,
+  "packet_sha256": "725bd0ad65fe82ec283f07323a49f7321ec28baa3edb24fc6219873882357b50",
   "t_s": 522.0,
   "row_bound": 1e-10,
   "provisional": false,
@@ -12,11 +12,11 @@
   "digest": {
     "macos-aarch64": "0x0b1823da1c03b743"
   },
-  "made_by": "ld01_regression::settled_state_pin from operating-joined-spine-s2/resume-2026-10-14/s2-07/settle-91d85fc1-1/settled-state.json",
+  "made_by": "ld01_regression::settled_state_pin from restart/s3-d26/settled-state-s2-07-522s-on-725bd0ad.json (s2-07/settle-91d85fc1-1/settled-state.json naming packet 725bd0ad)",
   "source": {
-    "file": "operating-joined-spine-s2/resume-2026-10-14/s2-07/settle-91d85fc1-1/settled-state.json",
+    "file": "restart/s3-d26/settled-state-s2-07-522s-on-725bd0ad.json",
     "max_abs_scaled_row_as_settled": 2.411176736254576e-07,
-    "sha256": "9c073d00f8f43ebd9c9f6f7c3446c5543b9472cf908c5ad24d32f29e87c19228"
+    "sha256": "6f72539af234d0c3360fce335c1e8b2f96c8b2b359018b560dfa4e8ac2314075"
   },
   "start": {
     "constraint_rate": 9.269716816514249e-20,

@@ -231,6 +231,8 @@ pub struct Solids {
     all: Closed,
     /// The SG tube steel (`ld01-sg-contact`).
     steel: thermal::SteelContact,
+    /// The tube wetting's two-zone contact coordinate (S3-D26).
+    contact_map: thermal::ContactMap,
     /// Structural incidence and its inverse, compiled once.
     incidence: Incidence,
     inverse: Inverse,
@@ -425,6 +427,7 @@ impl Solids {
                 cp: s(c.steel_cp_j_kgk),
             },
         };
+        let contact_map = packet.secondary.exposure.contact_map().map_err(fatal)?;
         let helium_nr: Vec<f64> = t.helium.iter().map(|h| h.nr_j_k).collect();
         let passive_mass: Vec<f64> = t.passive_stores.iter().map(|p| p.mass_kg).collect();
         if helium_nr
@@ -540,6 +543,7 @@ impl Solids {
         };
         let mut solids = Self {
             steel,
+            contact_map,
             all,
             incidence: Incidence::default(),
             inverse: Inverse::default(),
@@ -1374,6 +1378,7 @@ impl Solids {
                 g.diameter,
                 self.steel,
                 view.steam_present,
+                self.contact_map,
             )
             .map_err(trial)?;
             receipts.heat(g.primary, -primary_to_metal)?;

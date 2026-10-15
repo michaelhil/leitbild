@@ -14,15 +14,16 @@ import {join} from 'node:path'
 import {z} from 'zod'
 import {parseBalanceBasis} from './reference-design-balance'
 import {parseCycleBasis} from './reference-design-cycle'
+import {parseHydraulicBasis} from './reference-design-hydraulics'
 import {parseInitializationBasis} from './reference-design-initialization'
 import {parseOperatingHotReference} from './reference-design-operating-fluid'
 import {ownedBlock} from './reference-design-operating-pzr'
 import {parseOperatingThermal} from './reference-design-operating-thermal'
-import {parsePrimaryMechanics} from './reference-design-primary-mechanics'
+import {foldedGeometry,parsePrimaryMechanics} from './reference-design-primary-mechanics'
 import {parseSgContact,sgContactOwner} from './reference-design-sg-contact-law'
 
 const positive=z.number().finite().positive()
-const exposureSchema=z.object({bottom_m:positive,top_m:positive,horizontalArea_m2:positive,crownTop_m:positive}).strict()
+const exposureSchema=z.object({bottom_m:positive,top_m:positive,crownTop_m:positive,upperZoneArea_m2:positive}).strict()
   .refine(e=>e.bottom_m<e.crownTop_m&&e.crownTop_m<e.top_m,'The crown must lie inside the contact span')
 const pickupSchema=z.object({pickupBottom_m:positive,pickupTop_m:positive}).strict()
   .refine(p=>p.pickupBottom_m<p.pickupTop_m,'The pickup span must be ordered')
@@ -51,10 +52,11 @@ export const sgOwners={
   travel:{page:'systems/steam-power/admission-and-protection.md',heading:'Flow law and nominal sizing',fence:'ld01-steam-valve-travel'},
 } as const
 export const sectionPages=['systems/steam-generation/thermodynamics.md','systems/steam-power/admission-and-protection.md',
-  'numerical-basis.md','systems/steam-power/cycle-basis.md'] as const
+  'numerical-basis.md','systems/steam-power/cycle-basis.md','model/primary-hydraulic-basis.md',
+  'systems/primary-coolant/mechanical-energy-and-geometry.md'] as const
 export const probePages=['systems/steam-generation/thermodynamics.md','numerical-basis.md','model/operating-hot-reference.md',
   'model/operating-thermal.md','systems/primary-coolant/mechanical-energy-and-geometry.md','model/connected-primary-initialization.md'] as const
-export type SectionSources={thermodynamics:string,admission:string,balance:string,cycle:string}
+export type SectionSources={thermodynamics:string,admission:string,balance:string,cycle:string,hydraulics:string,mechanics:string}
 export type ProbeSources={thermodynamics:string,balance:string,hot:string,thermal:string,mechanics:string,initialization:string}
 const SGS=['A','B'] as const
 
@@ -64,17 +66,40 @@ export const parseSgBoundaries=(thermodynamics:string)=>
 export const parseSteamValveTravel=(admission:string)=>travelSchema.parse(ownedBlock(admission,sgOwners.travel.heading,sgOwners.travel.fence))
 export {parseSgContact}
 
+/** The two-zone contact coordinate (S3-D26) of `ld01-sg-exposure` for the
+ * selected free volume: above the crown the free volume has the upper
+ * zone's area; the bundle zone below the crown holds the rest of the
+ * selected volume, uniformly over its height. */
+export function sgExposure(thermodynamics:string,volume_m3:number){
+  const e=exposureSchema.parse(ownedBlock(thermodynamics,sgOwners.exposure.heading,sgOwners.exposure.fence))
+  const bundleZoneVolume_m3=volume_m3-(e.top_m-e.crownTop_m)*e.upperZoneArea_m2
+  if(!(bundleZoneVolume_m3>0))throw Error('The upper zone leaves no bundle-zone volume below the crown')
+  return {bottom_m:e.bottom_m,crownTop_m:e.crownTop_m,top_m:e.top_m,bundleZoneVolume_m3,upperZoneArea_m2:e.upperZoneArea_m2}
+}
+/** The folded tube path the contact map wets: `reference-hydraulics` inlet
+ * port, crest and outlet port, `reference-primary-mechanics` developed
+ * length, realizable as straight legs and a semicircular crown. The
+ * exposure's bundle zone must span exactly the fold's start to its crest. */
+export function sgFold(hydraulics:string,mechanics:string,exposure:ReturnType<typeof sgExposure>){
+  const hb=parseHydraulicBasis(hydraulics),developedLength_m=parsePrimaryMechanics(mechanics).sgDevelopedLength_m
+  foldedGeometry(developedLength_m,hb.hotPort_m,hb.SGturn_m,hb.coldPort_m)
+  if(exposure.bottom_m!==hb.hotPort_m||exposure.crownTop_m!==hb.SGturn_m)
+    throw Error('The exposure bundle zone must span the fold start to its crest')
+  return {developedLength_m,inlet_m:hb.hotPort_m,crest_m:hb.SGturn_m,outlet_m:hb.coldPort_m}
+}
+/** Liquid volume whose contact surface is at `height`. */
+const contactLiquid=(x:ReturnType<typeof sgExposure>,height:number)=>height<=x.crownTop_m
+  ?x.bundleZoneVolume_m3*(height-x.bottom_m)/(x.crownTop_m-x.bottom_m)
+  :x.bundleZoneVolume_m3+(height-x.crownTop_m)*x.upperZoneArea_m2
+
 /** The guard volumes from the contact coordinate: the crown's first
- * uncovery and the pickup's first coverage. The contact span times its area
- * must be the selected free volume exactly. */
+ * uncovery and the pickup's first coverage, with the map they come from. */
 function guards(thermodynamics:string,volume_m3:number){
-  const exposure=exposureSchema.parse(ownedBlock(thermodynamics,sgOwners.exposure.heading,sgOwners.exposure.fence)),
+  const exposure=sgExposure(thermodynamics,volume_m3),
     pickup=pickupSchema.parse(ownedBlock(thermodynamics,sgOwners.pickup.heading,sgOwners.pickup.fence))
-  if((exposure.top_m-exposure.bottom_m)*exposure.horizontalArea_m2!==volume_m3)
-    throw Error('Contact coordinate span disagrees with the selected secondary volume')
-  if(!(exposure.bottom_m<pickup.pickupBottom_m&&pickup.pickupTop_m<=exposure.top_m))throw Error('Pickup outside the contact span')
-  const liquid=(height:number)=>(height-exposure.bottom_m)*exposure.horizontalArea_m2
-  return {crown_m3:liquid(exposure.crownTop_m),pickup_m3:liquid(pickup.pickupBottom_m)}
+  if(!(exposure.crownTop_m<pickup.pickupBottom_m&&pickup.pickupTop_m<=exposure.top_m))
+    throw Error('Pickup outside the upper zone of the contact span')
+  return {crown_m3:contactLiquid(exposure,exposure.crownTop_m),pickup_m3:contactLiquid(exposure,pickup.pickupBottom_m),exposure}
 }
 
 /** The joined packet's `secondary` section: per SG (the thermal
@@ -98,7 +123,9 @@ export function compileOperatingSecondary(d:SectionSources){
         fluid:relief.rating.fluid}},
     feed:{rule:boundaries.feedRule,pressure_Pa:feedPressure,temperature_K:cycle.feedInlet_C+273.15},
     steamAdmission:{stopTravel_s:travel.turbineStop_s},
-    contact:parseSgContact(d.thermodynamics)}
+    contact:parseSgContact(d.thermodynamics),
+    exposure:{fold:sgFold(d.hydraulics,d.mechanics,g.exposure),bundleZoneVolume_m3:g.exposure.bundleZoneVolume_m3,
+      upperZoneArea_m2:g.exposure.upperZoneArea_m2}}
 }
 
 /** Probe inputs of zero-time receipts and isolated probes only: the selected
@@ -130,8 +157,9 @@ async function read(wikiRoot:string,pages:readonly string[]){
 
 /** The joined packet's `secondary` section, read from a wiki checkout. */
 export async function prepareOperatingSecondary(wikiRoot:string){
-  const {docs,provenance}=await read(wikiRoot,sectionPages),[thermodynamics,admission,balance,cycle]=docs as [string,string,string,string]
-  return {...compileOperatingSecondary({thermodynamics,admission,balance,cycle}),provenance}
+  const {docs,provenance}=await read(wikiRoot,sectionPages),
+    [thermodynamics,admission,balance,cycle,hydraulics,mechanics]=docs as [string,string,string,string,string,string]
+  return {...compileOperatingSecondary({thermodynamics,admission,balance,cycle,hydraulics,mechanics}),provenance}
 }
 
 /** The probe section, read from a wiki checkout, with declared flows. */

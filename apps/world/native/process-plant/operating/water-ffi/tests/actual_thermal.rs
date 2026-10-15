@@ -22,6 +22,13 @@ const SG_STEEL: SteelContact = SteelContact {
         },
     },
 };
+/// The two-zone SG contact map of `ld01-sg-exposure` (S3-D26: 42 m³ in the
+/// bundle zone below the +12 m crest, 12 m² above it) over the 20 m fold
+/// from +2.5 m over the +12 m crest to +3 m, as the joined packet carries
+/// them.
+fn sg_contact_map() -> ContactMap {
+    ContactMap::new(FoldPath::new(20., 2.5, 12., 3.).unwrap(), 42., 12.).unwrap()
+}
 use std::collections::HashMap;
 
 fn n(v: &Value, key: &str) -> f64 {
@@ -281,6 +288,7 @@ fn actual_finite_thermal_package_consumes_maintained_water_and_closes_reciprocal
             n(metal, "thermal_diameter_m"),
             SG_STEEL,
             true,
+            sg_contact_map(),
         )
         .unwrap()
         .value;
@@ -302,6 +310,7 @@ fn actual_finite_thermal_package_consumes_maintained_water_and_closes_reciprocal
                 n(metal, "thermal_diameter_m"),
                 SG_STEEL,
                 true,
+                sg_contact_map(),
             )
             .unwrap();
             let probe = |offset: f64| {
@@ -319,6 +328,7 @@ fn actual_finite_thermal_package_consumes_maintained_water_and_closes_reciprocal
                     n(metal, "thermal_diameter_m"),
                     SG_STEEL,
                     true,
+                    sg_contact_map(),
                 )
                 .unwrap()
                 .value
