@@ -138,8 +138,10 @@ fn joined_census_against_table_1_1() {
     assert_eq!(row("Guide/plenum").composed, Some([1351, 0]));
     assert_eq!(row("SG metal").composed, Some([8, 0]));
     // Decision 0014 with amendment 6: the stratified cell has 19 coordinates.
-    assert_eq!(row("Network cells").composed, Some([152, 35]));
-    assert_eq!(row("Network faces").composed, Some([70, 0]));
+    // S3-D28: the regression packet composes the closed spray line (S3-D25):
+    // its cell (5 differential, 1 algebraic) and its two paths' 4 impulses.
+    assert_eq!(row("Network cells").composed, Some([157, 36]));
+    assert_eq!(row("Network faces").composed, Some([74, 0]));
     assert_eq!(row("RCP rotors").composed, Some([4, 0]));
     // G6: 3 heater rod segments, 5 shell bands and 2 heads, and the lift.
     let g6 = match &pzr {
@@ -152,8 +154,8 @@ fn joined_census_against_table_1_1() {
         }
         None => 0,
     };
-    assert_eq!(c.composed, [17242 + g6, 1193, 18435 + g6]);
-    assert_eq!(c.with_pending, [17302 + g6, 1301, 18603 + g6]);
+    assert_eq!(c.composed, [17251 + g6, 1194, 18445 + g6]);
+    assert_eq!(c.with_pending, [17311 + g6, 1302, 18613 + g6]);
     let histories = nuclear.histories();
     assert_eq!(histories.len(), 9650);
     let receipt = json!({
