@@ -639,6 +639,72 @@ fn case_clock(case: Case, spec: &Value, frame_s: f64) -> Result<(f64, Option<Com
     }
 }
 
+/// A case's declared event window (r3 §1.1, decision 0015 E2): its cap,
+/// its length and the restart receipt that starts it (the case's own
+/// command: C2's turbine trip, C3's RCP supply loss; C3's later operator
+/// trip does not start one). C1 has none: it runs uncapped.
+struct WindowCap {
+    max_step_s: f64,
+    window_s: f64,
+    starts: fn(&Value) -> bool,
+}
+
+/// S1's `eventWindow.maxStep_s` (the gate run checks it against the block).
+const WINDOW_MAX_STEP_S: f64 = 0.02;
+
+fn window_cap(case: Case, spec: &Value) -> Option<WindowCap> {
+    let window_s = spec["window_s"].as_f64()?;
+    let starts: fn(&Value) -> bool = match case {
+        Case::C1 => return None,
+        Case::C2 => |r| r["command"] == "TurbineTripAcquired",
+        Case::C3 => |r| r["command"] == "SupplyLoss",
+    };
+    Some(WindowCap {
+        max_step_s: WINDOW_MAX_STEP_S,
+        window_s,
+        starts,
+    })
+}
+
+/// Whether the cap comes off at the chunk bound `b`: the first bound at
+/// or after the window's end.
+fn cap_removed_at(b: f64, zero: f64, window_s: f64) -> bool {
+    b >= zero + window_s - 1e-9
+}
+
+#[test]
+fn the_window_cap_holds_only_inside_the_declared_window() {
+    let b = block();
+    // C1 declares no window: never capped.
+    assert!(window_cap(Case::C1, &b.whole("/cases/C1")).is_none());
+    // C2: 20 s from the trip, started by the trip's receipt only.
+    let c2 = window_cap(Case::C2, &b.whole("/cases/C2")).unwrap();
+    assert_eq!((c2.max_step_s, c2.window_s), (0.02, 20.));
+    assert!((c2.starts)(
+        &json!({"command": "TurbineTripAcquired", "owner": "secondary"})
+    ));
+    assert!(!(c2.starts)(
+        &json!({"command": "HoldingLoss", "owner": "secondary"})
+    ));
+    assert!(!(c2.starts)(
+        &json!({"event": "STOP ramp end", "owner": "secondary"})
+    ));
+    // C3: 30 s from the supply loss; the operator's later trip starts none.
+    let c3 = window_cap(Case::C3, &b.whole("/cases/C3")).unwrap();
+    assert_eq!(c3.window_s, 30.);
+    assert!((c3.starts)(
+        &json!({"command": "SupplyLoss", "owner": "network", "rotor": 0})
+    ));
+    assert!(!(c3.starts)(
+        &json!({"command": "TurbineTripAcquired", "owner": "secondary"})
+    ));
+    // Off at the first bound at or after the window's end, not before.
+    let zero = 548.05;
+    assert!(!cap_removed_at(zero + 19.95, zero, 20.));
+    assert!(cap_removed_at(zero + 20., zero, 20.));
+    assert!(cap_removed_at(548.1 + 20., zero, 20.));
+}
+
 /// The joined system the case run integrates: with stock IDAS, the S2
 /// ledgers ride on it as quadratures (rule D); without, the plain one.
 #[cfg(feature = "quadratures")]
@@ -823,16 +889,21 @@ fn drive(
         rule_i: observe::RuleI::default(),
         gates: gates_part,
     };
-    // S2's 20 ms event-window cap for an event case, from the start
-    // (options are refused mid-segment); a reference's own cap instead.
-    const WINDOW_MAX_STEP_S: f64 = 0.02;
-    let max_step = ask
-        .max_step
-        .or_else(|| command.is_some().then_some(WINDOW_MAX_STEP_S));
-    if let Some(h) = max_step {
+    // A reference's own cap (R1: S1's eventReference.maxStep_s) holds over
+    // its whole run, as S2's R1.
+    if let Some(h) = ask.max_step {
         ida.set_max_step(h).unwrap();
     }
     let mut driver = Driver::new(frame, Diagnostic::Jump, spine::z1::cpu_s, t0).unwrap();
+    // Decision 0015 E2: the 20 ms cap only inside the case's declared event
+    // window, set by the driver at the restart that starts it (C4's hook)
+    // and removed at the first chunk bound at or after its end.
+    let window_cap = window_cap(case, spec).filter(|_| ask.max_step.is_none());
+    if let Some(w) = &window_cap {
+        driver.restart_max_step = Some((w.max_step_s, w.starts));
+    }
+    let mut cap_intervals: Vec<Value> = Vec::new();
+    let max_step = ask.max_step;
     if cfg!(feature = "quadratures") && observer.gates.is_some() {
         let count = ida.system().quadrature_count();
         driver
@@ -924,6 +995,26 @@ fn drive(
             } else {
                 *b
             };
+            // The window's start disarms the hook (nothing later re-caps);
+            // its end removes the cap.
+            if let Some(w) = &window_cap
+                && r.is_ok()
+            {
+                if driver.restart_max_step.is_some() && *b >= zero - 1e-9 {
+                    driver.restart_max_step = None;
+                    cap_intervals.push(json!({"from_s": zero, "from_after_zero_s": 0., "set_by": "the driver at the restart that starts the window (C4 hook 75dd4632c)"}));
+                }
+                if let Some(last) = cap_intervals.last_mut()
+                    && last.get("removed_at_s").is_none()
+                    && cap_removed_at(*b, zero, w.window_s)
+                {
+                    if let Err(e) = ida.remove_max_step() {
+                        r = Err(format!("removing the window's cap at {b} s: {e}"));
+                    }
+                    last["removed_at_s"] = json!(*b);
+                    last["removed_after_zero_s"] = json!(*b - zero);
+                }
+            }
             marks.push((
                 reached - zero,
                 spine::z1::cpu_s()
@@ -1046,6 +1137,9 @@ fn drive(
         "configuration": {"span_after_zero_s": span, "zero_after_start_s": zero_after,
             "command": command.map(|c| format!("{c:?}")), "frame_s": frame.period_s(),
             "max_order": s3_unit::MAX_ORDER, "max_step_s": max_step,
+            "window_cap": window_cap.as_ref().map(|w| json!({"max_step_s": w.max_step_s, "window_s": w.window_s,
+                "rule": "0015 E2: the cap only inside the declared window, set at the restart that starts it, removed at the first chunk bound at or after its end",
+                "intervals": cap_intervals})),
             "tolerance_scaling": {"relative": ask.scaling.relative, "absolute": ask.scaling.absolute},
             "derived_tolerances": derived, "relative_tolerance": rtol,
             "integration": if cfg!(feature = "quadratures") { "frame driver: stock IDAS IDA_ONE_STEP (ledgers as quadratures, IDASetQuadErrCon false), observation from IDAGetDky, restarts by discrete_restart" } else { "frame driver: stock IDA_ONE_STEP, observation from IDAGetDky, restarts by discrete_restart" }},
@@ -1339,6 +1433,11 @@ fn s3_case_run() {
     if let Some(g) = gate.as_ref() {
         let og = run.observer.gates.as_ref().unwrap();
         let units_bound = g.s2.gates.number("/ledger/boundLocalToleranceUnits");
+        assert_eq!(
+            g.s2.shared.number("/eventWindow/maxStep_s"),
+            WINDOW_MAX_STEP_S,
+            "the window cap is S1's eventWindow.maxStep_s"
+        );
         families.insert(
             "D_conservation".into(),
             conservation_family(og, units_bound),
