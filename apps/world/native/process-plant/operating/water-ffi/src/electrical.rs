@@ -128,6 +128,19 @@ impl<S: JoinedSystem> Electrified<S> {
         if configuration.rotor_consumers.len() != inner.integrated().joined.network.rotor_count() {
             return Err("one routing consumer per network rotor".into());
         }
+        // S3-D27: the routing may close the S3-D12 feed gate, so the SG
+        // owner's structure must cover it (declared before compiling).
+        if !inner
+            .integrated()
+            .joined
+            .secondary()
+            .is_some_and(|s| s.feed_gate_declared())
+        {
+            return Err(
+                "S3-D27: declare the feed gate (Joined::declare_feed_gate) before compiling the structure the electrical slice integrates on"
+                    .into(),
+            );
+        }
         let field_bus = routing
             .bus_index(&configuration.field_bus)
             .ok_or("unknown field converter bus")?;

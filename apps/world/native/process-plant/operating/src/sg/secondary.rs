@@ -146,6 +146,9 @@ pub struct Secondaries {
     /// S3-D12 (ELEC hook): the recorded feed flows only while the feed
     /// pumps are supplied; `true` in the prepared state (S1/S2 unchanged).
     feed_supported: bool,
+    /// S3-D27: the feed gate is declared (the mass rows' structure covers
+    /// the gate closed); set before the structure is compiled.
+    feed_gate_declared: bool,
     /// Largest relative chart defect of the supplied preparation.
     preparation_defect: f64,
     saturation: Vec<Option<([u64; 2], Saturation)>>,
@@ -267,6 +270,7 @@ impl Secondaries {
             prepared,
             trip_s: None,
             feed_supported: true,
+            feed_gate_declared: false,
             preparation_defect: defect,
             saturation: vec![None; n],
             nozzle: vec![None; n],
@@ -484,8 +488,20 @@ impl<P: Properties> Secondary<P> for Secondaries {
         self.trip_s
     }
     fn set_feed_supported(&mut self, supported: bool) -> Result<(), Failure> {
+        if !supported && !self.feed_gate_declared {
+            return Err(fatal(
+                "S3-D27: the feed gate closes only when declared before the structure is compiled (Joined::declare_feed_gate)",
+            ));
+        }
         self.feed_supported = supported;
         Ok(())
+    }
+    fn declare_feed_gate(&mut self) -> Result<(), Failure> {
+        self.feed_gate_declared = true;
+        Ok(())
+    }
+    fn feed_gate_declared(&self) -> bool {
+        self.feed_gate_declared
     }
     fn account(&self) -> OwnerAccount {
         let h_feed = self.derived.feed_enthalpy_j_kg;
@@ -539,6 +555,11 @@ impl<P: Properties> Secondary<P> for Secondaries {
         let feed_supported = o["feed_supported"]
             .as_bool()
             .ok_or_else(|| fatal("secondary snapshot: feed_supported"))?;
+        if !feed_supported && !self.feed_gate_declared {
+            return Err(fatal(
+                "secondary snapshot: a closed feed gate into an owner that declares none (S3-D27)",
+            ));
+        }
         let sgs = o["valves"]
             .as_array()
             .filter(|a| a.len() == self.valves.len())
@@ -729,8 +750,17 @@ impl<P: Properties> Secondary<P> for Secondaries {
         for (k, g) in self.sgs.iter().enumerate() {
             let b = g.base;
             let lifts: Vec<usize> = (b + LIFTS..b + LIFTS + g.valves.len()).collect();
-            // The inventory-holding feed cancels the withdrawal exactly.
-            own[b + MASS] = vec![b + MASS];
+            // The inventory-holding feed cancels the withdrawal exactly; a
+            // declared feed gate (S3-D27) may close, and the withdrawal then
+            // reads the pressure and the relief lifts (structural zeros
+            // while the gate is open).
+            own[b + MASS] = if self.feed_gate_declared {
+                let mut mass = vec![b + MASS, b + PRESSURE];
+                mass.extend(&lifts);
+                mass
+            } else {
+                vec![b + MASS]
+            };
             let mut energy = vec![b + ENERGY, b + PRESSURE];
             energy.extend(&lifts);
             own[b + ENERGY] = energy;

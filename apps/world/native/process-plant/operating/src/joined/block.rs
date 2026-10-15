@@ -533,6 +533,20 @@ pub trait Secondary<P> {
             "this secondary owner declares no feed gate".into(),
         ))
     }
+    /// S3-D27: declare the S3-D12 feed gate before any Jacobian structure
+    /// is compiled. The SG mass rows then also read the pressure and the
+    /// relief lifts (structural zeros while the gate is open, the F3 (a)
+    /// cancellation), so the structure is the superset of both gate modes;
+    /// without the declaration the gate cannot close.
+    fn declare_feed_gate(&mut self) -> Result<(), Failure> {
+        Err(Failure::Fatal(
+            "this secondary owner declares no feed gate".into(),
+        ))
+    }
+    /// Whether [`Secondary::declare_feed_gate`] was declared.
+    fn feed_gate_declared(&self) -> bool {
+        false
+    }
 }
 
 /// The rod bodies (spider and bodies, H7), their guide passages (F1 (a),

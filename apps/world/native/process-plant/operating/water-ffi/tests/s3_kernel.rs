@@ -860,7 +860,9 @@ fn every_owners_discrete_state_survives_a_snapshot() {
     joined
         .command(0.2, &mut y, Command::HoldingLoss)
         .expect("holding loss");
-    // ELEC's S3-D12 feed gate (a held input of the SG owner).
+    // ELEC's S3-D12 feed gate (a held input of the SG owner), declared
+    // (S3-D27) in both compositions.
+    joined.declare_feed_gate().expect("the feed gate");
     joined
         .secondary_mut()
         .unwrap()
@@ -910,6 +912,7 @@ fn every_owners_discrete_state_survives_a_snapshot() {
     let snapshot = joined.discrete_state();
     // A fresh composition of the same packet takes the snapshot.
     let mut fresh = started_full_composition().joined;
+    fresh.declare_feed_gate().expect("the feed gate");
     fresh
         .restore_discrete_state(&snapshot)
         .expect("restore into a fresh composition");
@@ -1067,5 +1070,141 @@ fn an_rcp_supply_loss_restarts_through_the_frame_driver_with_c3s_cost_lines() {
         serde_json::json!({"rotor": lost, "t_loss_s": t_loss, "until_s": until,
             "observation": driver.observation_json(), "counts": driver.counts.json(),
             "instant": instant, "segments": driver.segments})
+    );
+}
+
+/// The block Jacobian at `(0, y, 0)` against the colored one: the worst
+/// entry difference over its column's scale (a colored entry outside the
+/// block pattern counts whole), where it is, and the block structure with
+/// its values. The block assembly itself refuses an entry outside its
+/// pattern.
+fn blocks_against_colored(
+    joined: &mut leitbild_operating_plant::joined::operator::Joined<If97>,
+    y: &[f64],
+) -> (f64, Value, JoinedJacobian, Vec<f64>) {
+    let n = y.len();
+    let structure = JoinedJacobian::compile_for(joined, 0., y, None).expect("structure");
+    let zero = vec![0.; n];
+    let cj = 20.;
+    let mut bv = vec![0.; structure.pattern.nonzeros()];
+    jacobian_blocks(joined, &structure, 0., cj, y, &zero, &mut bv, Classes::ALL)
+        .expect("joined block assembly");
+    let colored = joined.structure().unwrap().0.clone();
+    let mut cv = vec![0.; colored.nonzeros()];
+    joined
+        .jacobian(0., cj, y, &zero, &mut cv)
+        .expect("joined colored assembly");
+    let (mut worst, mut at) = (0_f64, serde_json::json!(null));
+    for j in 0..n {
+        let b = structure.pattern.pointers()[j]..structure.pattern.pointers()[j + 1];
+        let c = colored.pointers()[j]..colored.pointers()[j + 1];
+        let scale = b
+            .clone()
+            .map(|q| bv[q].abs())
+            .chain(c.clone().map(|q| cv[q].abs()))
+            .fold(0., f64::max);
+        if scale == 0. {
+            continue;
+        }
+        for q in b {
+            let row = structure.pattern.indices()[q];
+            let other = colored.position(row, j).map_or(0., |k| cv[k]);
+            let e = (bv[q] - other).abs() / scale;
+            if e > worst {
+                (worst, at) = (
+                    e,
+                    serde_json::json!({"row": row, "column": j, "blocks": bv[q], "colored": other}),
+                );
+            }
+        }
+        for q in c {
+            let row = colored.indices()[q];
+            if structure.pattern.position(row, j).is_none() && cv[q] != 0. {
+                (worst, at) = (
+                    f64::INFINITY,
+                    serde_json::json!({"row": row, "column": j, "blocks": null, "colored": cv[q]}),
+                );
+            }
+        }
+    }
+    (worst, at, structure, bv)
+}
+
+/// S3-D27 (lead): with the S3-D12 feed gate declared, the SG owner's mass
+/// rows read the pressure and the relief lifts, so at a gate-closed relief
+/// state (SG.A's first relief cracked and lifted) the block Jacobian lies
+/// inside the pattern and matches the colored one, and the new entries are
+/// structural zeros while the gate is open. Undeclared (S1/S2), the gate
+/// refuses to close and the structure is unchanged.
+#[test]
+#[ignore = "requires the joined packet, the wiki, IF97 and stock IDA/KLU"]
+fn a_declared_feed_gate_covers_the_closed_gate_at_a_relief_state() {
+    let Started {
+        mut joined, mut y, ..
+    } = started_full_composition();
+    assert!(
+        joined
+            .secondary_mut()
+            .unwrap()
+            .set_feed_supported(false)
+            .is_err(),
+        "an undeclared gate does not close"
+    );
+    let undeclared = joined.structure().unwrap().0.nonzeros();
+    joined.declare_feed_gate().expect("the feed gate");
+    let declared = joined.structure().unwrap().0.nonzeros();
+    let labels: Vec<String> = joined
+        .layouts()
+        .into_iter()
+        .flat_map(|(_, l)| l.labels)
+        .collect();
+    let at = |label: &str| {
+        labels
+            .iter()
+            .position(|l| l == label)
+            .unwrap_or_else(|| panic!("{label}"))
+    };
+    let (m, p) = (at("SG.A.M_s"), at("SG.A.p_s"));
+    let lift = (p..labels.len())
+        .find(|i| labels[*i].ends_with(".lift"))
+        .expect("SG.A's first relief lift");
+    let entry = |s: &JoinedJacobian, v: &[f64], row: usize, column: usize| {
+        s.pattern
+            .position(row, column)
+            .map(|q| v[q])
+            .expect("a declared entry")
+    };
+    // Gate open: the mass row's pressure and lift entries are structural zeros.
+    let (open_worst, open_at, s, v) = blocks_against_colored(&mut joined, &y);
+    assert_eq!(
+        (entry(&s, &v, m, p), entry(&s, &v, m, lift)),
+        (0., 0.),
+        "F3 (a)'s cancellation is exact with the gate open"
+    );
+    assert!(open_worst < 1e-12, "{open_worst} at {open_at}");
+    // Gate closed, SG.A's first relief cracked and half lifted.
+    joined
+        .secondary_mut()
+        .unwrap()
+        .set_feed_supported(false)
+        .expect("the declared gate closes");
+    let mut directions = vec![0; joined.root_count()];
+    directions[0] = 1;
+    joined
+        .transact(0., &directions, &mut y)
+        .expect("SG.A's first relief cracks");
+    y[lift] = 0.5 / joined.scales()[lift];
+    let (closed_worst, closed_at, s, v) = blocks_against_colored(&mut joined, &y);
+    let (dp, dl) = (entry(&s, &v, m, p), entry(&s, &v, m, lift));
+    assert!(
+        dp != 0. && dl != 0.,
+        "the closed gate's mass row reads p and the lift"
+    );
+    assert!(closed_worst < 1e-12, "{closed_worst} at {closed_at}");
+    println!(
+        "{}",
+        serde_json::json!({"colored_nonzeros": {"undeclared": undeclared, "declared": declared},
+            "open": {"worst": open_worst}, "closed": {"worst": closed_worst, "at": closed_at,
+            "mass_row_dp": dp, "mass_row_dlift": dl}})
     );
 }

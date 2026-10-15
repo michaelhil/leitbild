@@ -476,6 +476,22 @@ impl<P: Properties + WaterProperties> Joined<P> {
         Ok(joined)
     }
 
+    /// S3-D27: declare the SG owner's feed gate (ELEC's S3-D12) and
+    /// recompile the colored structure: the mass rows' pattern then covers
+    /// the gate closed. A block structure ([`super::blocks::JoinedJacobian`])
+    /// must be compiled after it.
+    pub fn declare_feed_gate(&mut self) -> Result<(), Failure> {
+        self.secondary_mut()
+            .ok_or_else(|| fatal("the feed gate needs the SG owner"))?
+            .declare_feed_gate()?;
+        let columns = self.structural_pattern()?;
+        let pattern = Pattern::from_columns(self.blocks.offsets.end, &columns).map_err(fatal)?;
+        let coloring = Coloring::greedy(&pattern);
+        coloring.verify(&pattern).map_err(fatal)?;
+        self.structure = Some((pattern, coloring));
+        Ok(())
+    }
+
     /// Both ports are composed owners: the operator may be integrated.
     pub fn integrable(&self) -> bool {
         matches!(self.blocks.secondary, SecondaryPort::Owner(_))

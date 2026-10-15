@@ -15,6 +15,7 @@ mod clock;
 #[path = "joined_spine.rs"]
 mod spine;
 
+use leitbild_operating_plant::joined::blocks::JoinedJacobian;
 use leitbild_operating_plant::{
     electrical::{
         breaker::{self, Breaker, Contact},
@@ -28,7 +29,9 @@ use leitbild_operating_water::{
     If97,
     electrical::{Configuration, Electrified, N, PROPOSED_BUDGET},
     ida::{Advance, Ida, Initial},
-    joined::{Discrete, Integrated, JoinedSystem, Restart, discrete_restart, root_directions},
+    joined::{
+        Analyses, Discrete, Integrated, JoinedSystem, Restart, discrete_restart, root_directions,
+    },
 };
 use serde_json::{Value, json};
 use spine::{DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, started_s3_composition};
@@ -88,7 +91,13 @@ fn initial(s: &spine::Started) -> (f64, Vec<f64>, Vec<f64>) {
 
 fn build(offsite_loss_after_s: Option<f64>) -> Case {
     let e = packet();
-    let (s, joined_derived) = started_s3_composition();
+    let (mut s, joined_derived) = started_s3_composition();
+    // S3-D27: the routing gates the feed, so the SG mass rows' structure
+    // covers the gate closed; the block structure is compiled after it.
+    s.joined.declare_feed_gate().expect("the feed gate");
+    s.structure = JoinedJacobian::compile_for(&mut s.joined, 0., &s.y, None)
+        .expect("the block structure with the feed gate");
+    s.analyses = Analyses::default();
     let (t0, y0, yp0) = initial(&s);
     let rotor_consumers: Vec<String> = (0..s.joined.network.rotor_count())
         .map(|r| ["LD01.P.A1", "LD01.P.A2", "LD01.P.B1", "LD01.P.B2"][r].to_string())
