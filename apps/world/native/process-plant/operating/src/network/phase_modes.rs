@@ -430,7 +430,13 @@ impl<P: Properties> Network<P> {
         let mut volume = [s(0.); 2];
         for k in 0..2 {
             let mass = get(l.mass[k]);
-            if mass.value != 0. {
+            // DR S3-REBIRTH (PHASE-L1, for KERN): an equilibrium cell's
+            // phase points are the saturated endpoints whatever its mass, so
+            // an exactly zero vapor mass with a direction (the newborn cell's
+            // seeded column, or its rate) keeps the vapor's volume and
+            // fraction terms: the rows are smooth in `M_g`, and dropping them
+            // gave the wrong flash rates and a zero drive rate at a birth.
+            if selected_phase(mass) {
                 current[k] = Some(points[k]);
                 let (q, dq) = points[k];
                 volume[k] = mass / rec(q.density_kg_m3, dq.density_kg_m3);
