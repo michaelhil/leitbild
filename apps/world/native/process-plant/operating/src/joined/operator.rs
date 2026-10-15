@@ -832,6 +832,12 @@ impl<P: Properties + WaterProperties> Joined<P> {
             + self.pzr().map_or(0, |b| b.root_count())
             + self.unilateral_slots()
             + self.phase_mode_slots()
+            + self.spray_slots()
+    }
+    /// IC-CTRL (S3 spray path, S3-D25 (3), for KERN): the inlet check's one
+    /// root slot, last, while the spray path is composed.
+    fn spray_slots(&self) -> usize {
+        usize::from(self.network.spray().is_some())
     }
     /// The phase modes' root slots: two per regular cell once declared,
     /// after L1's ([`Self::activate_phase_modes`]).
@@ -930,9 +936,18 @@ impl<P: Properties + WaterProperties> Joined<P> {
         for r in self.network.unilateral_roots() {
             out[first + r.path()] = r.direction();
         }
+        // The spray inlet check: contact falling, release rising.
+        if self.spray_slots() == 1 {
+            let last = out.len() - 1;
+            out[last] = match self.network.spray_check_watch() {
+                Some(crate::network::spray::CheckRoot::Contact) => -1,
+                Some(crate::network::spray::CheckRoot::Release) => 1,
+                _ => 0,
+            };
+        }
         // Phase modes: birth rising; exhaustion and dryout falling.
         if self.phase_modes {
-            let first = out.len() - self.phase_mode_slots();
+            let first = out.len() - self.phase_mode_slots() - self.spray_slots();
             for (c, mode) in self.network.cell_modes().iter().enumerate() {
                 let pair = match mode {
                     CellMode::Liquid => [1, 0],
@@ -975,11 +990,22 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let np = self.pzr().map_or(0, |b| b.root_count());
         let nl = self.unilateral_slots();
         let nm = self.phase_mode_slots();
-        if out.len() != ns + nr + np + nl + nm {
+        let nk = self.spray_slots();
+        if out.len() != ns + nr + np + nl + nm + nk {
             return Err(fatal("root layout"));
         }
+        if nk == 1 {
+            // The inlet check's release root reads the valve path's drive of
+            // this state's value evaluation; its contact root the impulse.
+            if self.network.spray_check_watch() == Some(crate::network::spray::CheckRoot::Release) {
+                self.evaluate(t, y, yp, None, 0., None)
+                    .map_err(|e| fatal(format!("spray check root evaluation: {e:?}")))?;
+            }
+            let last = out.len() - 1;
+            out[last] = self.network.spray_check_root(y).map_or(1., |r| r.1);
+        }
         if nm > 0 {
-            let slots = &mut out[ns + nr + np + nl..];
+            let slots = &mut out[ns + nr + np + nl..ns + nr + np + nl + nm];
             for c in 0..self.network.pzr.cell {
                 let pair = match self.network.cell_modes()[c] {
                     CellMode::Liquid => [
@@ -1129,7 +1155,8 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let nl = self.unilateral_slots();
         if self.phase_modes {
             let first = ns + nr + np + nl;
-            if let Some(m) = self.mode_transact(t, &directions[first..], y)? {
+            let nm = self.phase_mode_slots();
+            if let Some(m) = self.mode_transact(t, &directions[first..first + nm], y)? {
                 done.push(m);
             }
         }
@@ -1138,6 +1165,18 @@ impl<P: Properties + WaterProperties> Joined<P> {
             if let Some(l1) = self.unilateral_transact(t, &directions[first..first + nl], y)? {
                 done.push(l1);
             }
+        }
+        // IC-CTRL (S3 spray path, S3-D25 (3)): the inlet check's transaction
+        // at its located root, last.
+        if self.spray_slots() == 1
+            && let Some(receipt) = self
+                .network
+                .spray_check_transaction(t, directions[directions.len() - 1])?
+        {
+            done.push(super::block::Transaction {
+                deposits: Vec::new(),
+                receipt,
+            });
         }
         Ok(done)
     }
@@ -1385,13 +1424,65 @@ impl<P: Properties + WaterProperties> Joined<P> {
             }
         }
         self.deposit(&done, y)?;
+        // IC-CTRL (S3 spray path, for KERN): the spray stem's arrival at 0
+        // locks the valve path (class R; the identity follows the lock).
+        if let Some(receipt) = self.network.spray_event(t)? {
+            done.push(super::block::Transaction {
+                deposits: Vec::new(),
+                receipt,
+            });
+        }
         Ok(done)
+    }
+    /// IC-CTRL (S3 spray path, for KERN): put a normal PZR pressure control
+    /// frame's demands in force: the heater request into the PZR block, the
+    /// controlled-spray fraction into the network's valve stem when the
+    /// spray path is composed (without it a nonzero spray demand refuses in
+    /// the PZR block). Returns how the stem change enters (S3-D4: `Lock` is
+    /// class R, `Slope` class S, `None` nothing) and the receipts.
+    pub fn apply_pzr_control(
+        &mut self,
+        t: f64,
+        demand: &crate::control::pzr_pressure::Demand,
+    ) -> Result<
+        (
+            crate::control::spray_valve::StemChange,
+            Vec<serde_json::Value>,
+        ),
+        Failure,
+    > {
+        use crate::control::spray_valve::StemChange;
+        let composed = self.network.spray().is_some();
+        let heater = crate::control::pzr_pressure::Demand {
+            spray_target: if composed { 0. } else { demand.spray_target },
+            ..*demand
+        };
+        let applied = self
+            .blocks
+            .pzr
+            .as_mut()
+            .ok_or_else(|| fatal("no PZR block for the control frame"))?
+            .apply_control(t, &heater)?;
+        let mut receipts = vec![serde_json::to_value(&applied).map_err(|e| fatal(e.to_string()))?];
+        let change = if composed {
+            let (change, receipt) = self.network.issue_spray(t, demand.spray_target)?;
+            receipts.push(receipt);
+            change
+        } else {
+            StemChange::None
+        };
+        Ok((change, receipts))
     }
     /// The earliest declared time event of any owner strictly after `t`.
     pub fn next_time_event(&self, t: f64) -> Option<f64> {
         [
             self.secondary().and_then(|b| b.next_time_event(t)),
             self.rods().and_then(|b| b.next_time_event(t)),
+            // IC-CTRL (S3 spray path): only the closing arrival is an owner
+            // event (R); an open arrival is the controller's S stop.
+            self.network.spray_next_instant(t).and_then(|(a, c)| {
+                (c == crate::control::spray_valve::StemChange::Lock).then_some(a)
+            }),
         ]
         .into_iter()
         .flatten()

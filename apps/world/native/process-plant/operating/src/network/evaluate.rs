@@ -173,6 +173,11 @@ impl<P: Properties> Network<P> {
         // The stratified cell's column and the port view its port face reads.
         let column = self.stratified_column(y, seed, reuse.as_deref_mut())?;
         self.cells[self.pzr.cell] = self.stratified.port_view(&column, self.pzr_port()?)?;
+        // IC-CTRL (S3 spray path, for KERN): the spray port face reads the
+        // cell's spray-port view through its virtual cell.
+        if let Some(sp) = self.spray {
+            self.cells[sp.port_cell] = self.stratified.port_view(&column, sp.port)?;
+        }
         // Supports are regular cells only (validated at compile time).
         let phase_mass: [Vec<thermal::Scalar>; 2] = std::array::from_fn(|k| {
             (0..n)
@@ -206,7 +211,7 @@ impl<P: Properties> Network<P> {
             // The physical TOTAL-force limit is checked after source assembly;
             // a nonzero-I path always uses its retained impulse, not this value.
             // L1 (decision 0014): a locked path transports nothing.
-            let path = if self.unilateral_locked(li) {
+            let path = if self.path_locked(li) {
                 super::unilateral::held_path(inertance)
             } else if inertance.value == 0. && pi.value == 0. {
                 flow::PathKinematics {
@@ -248,6 +253,8 @@ impl<P: Properties> Network<P> {
         if let Some(coupling) = coupling.as_deref_mut() {
             self.couple(coupling, y, seed, &points, &phase_mass)?;
         }
+        // IC-CTRL (S3 spray path, S3-D25): the valve opening of this time.
+        self.spray_opening_at(t)?;
         self.compose_sections(y, yp, seed, cj, &points)?;
         self.compose_momentum(t, y, yp, seed, cj, &phase_mass)?;
         self.compose_stocks(y, yp, seed, cj, &points, reuse)?;
@@ -643,7 +650,7 @@ impl<P: Properties> Network<P> {
             // L1 (decision 0014): a locked path's
             // row is `Pi/s`, it transports nothing, and its drive is the
             // reported reaction.
-            let locked = self.unilateral_locked(li);
+            let locked = self.path_locked(li);
             let path = if locked {
                 super::unilateral::held_path(current.inertance_kg_m4)
             } else {
@@ -665,8 +672,26 @@ impl<P: Properties> Network<P> {
                 .map_err(|e| Failure::Recoverable(e.into()))?;
             self.charts[l.face][l.phase] = Some(chart);
             self.face_drive[l.face][l.phase] = force + chart.pressure_gravity_pa;
+            // IC-CTRL (S3 spray path, S3-D25 (1)): the open valve's liquid
+            // path is the restriction relation, algebraic.
+            let restriction = match self.spray {
+                Some(sp) if !locked && self.spray_algebraic(li) => {
+                    let rho = self.cells[sp.region].phase[0]
+                        .map(|p| p.density)
+                        .ok_or_else(|| Failure::Recoverable("spray line without liquid".into()))?;
+                    self.spray_restriction_row(
+                        li,
+                        chart.volume_flow_m3_s,
+                        force + chart.pressure_gravity_pa,
+                        rho,
+                    )?
+                }
+                _ => None,
+            };
             self.rows[l.index] = if locked {
                 pi / s(self.scales[l.index])
+            } else if let Some(row) = restriction {
+                row
             } else {
                 flow::momentum_residual(self.rate(yp, seed, cj, l.index), chart, force)
                     .map_err(|e| Failure::Recoverable(e.into()))?
@@ -798,13 +823,17 @@ impl<P: Properties> Network<P> {
     }
 
     /// The stratified cell's port receipts in its port order: the surge
-    /// port's is the liquid receipt `self.receipts[pzr]` of its face, and a
-    /// spray or relief port, which no face carries, receives none (the
-    /// relief's flow is the cell's own restriction). A vapor arrival through
-    /// the surge port is outside the composed cell and refuses.
+    /// port's is the liquid receipt `self.receipts[pzr]` of its face; a
+    /// composed spray port's is its face's total (both phase paths) from the
+    /// virtual cell, which the cell's own spray law takes (it splits a
+    /// withdrawal by its vapour region's volume share); an uncomposed spray
+    /// port and the relief receive none (the relief's flow is the cell's
+    /// own restriction). A vapor arrival through the surge port is outside
+    /// the composed cell and refuses.
     pub(super) fn pzr_receipts(
         &self,
         surge: [[thermal::Scalar; 3]; 2],
+        spray: Option<[[thermal::Scalar; 3]; 2]>,
     ) -> Result<Vec<stratified::Receipt>, Failure> {
         let [liquid, vapor] = surge;
         if vapor.iter().any(|q| q.value != 0. || q.direction != 0.) {
@@ -820,6 +849,13 @@ impl<P: Properties> Network<P> {
             enthalpy: liquid[1],
             boron: liquid[2],
         };
+        if let (Some(sp), Some([l, v])) = (self.spray, spray) {
+            receipts[sp.port] = stratified::Receipt {
+                mass: l[0] + v[0],
+                enthalpy: l[1] + v[1],
+                boron: l[2] + v[2],
+            };
+        }
         Ok(receipts)
     }
 
@@ -839,7 +875,10 @@ impl<P: Properties> Network<P> {
     ) -> Result<(), Failure> {
         let x = self.pzr_coordinates(|i| self.get(y, seed, i))?;
         let rate = self.pzr_coordinates(|i| self.rate(yp, seed, cj, i))?;
-        let receipts = self.pzr_receipts(self.receipts[self.pzr.cell])?;
+        let receipts = self.pzr_receipts(
+            self.receipts[self.pzr.cell],
+            self.spray.map(|sp| self.receipts[sp.port_cell]),
+        )?;
         let scales: [f64; PZR_COORDINATES] = self.scales[self.pzr.coordinates()]
             .try_into()
             .map_err(|_| Failure::Fatal("PZR scale layout".into()))?;

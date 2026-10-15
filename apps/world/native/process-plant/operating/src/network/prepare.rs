@@ -415,8 +415,15 @@ fn authored(
     Ok(state)
 }
 
-fn owners<P: Properties>(packet: &Packet, network: &Network<P>) -> Result<Vec<Owner>, Failure> {
-    let surge = network.cell_layout.len() - 1;
+fn owners<P: Properties>(
+    packet: &Packet,
+    network: &Network<P>,
+    compiled: &[f64],
+) -> Result<Vec<Owner>, Failure> {
+    // IC-CTRL (S3 spray path): SURGE precedes the spray line, whose stock is
+    // the network's compiled one (declared by p and T).
+    let spray = network.spray().map(|s| s.region);
+    let surge = network.cell_layout.len() - 1 - usize::from(spray.is_some());
     (0..network.cell_layout.len())
         .map(|node| {
             if network.cell_layout[node].phase != 0 {
@@ -431,7 +438,7 @@ fn owners<P: Properties>(packet: &Packet, network: &Network<P>) -> Result<Vec<Ow
                     w.energy_j,
                     packet.water_boron_amount_kg_eq[node],
                 )?
-            } else {
+            } else if node == surge {
                 let w = &packet.external_ports.surge_stock;
                 authored(
                     w.pressure_pa,
@@ -439,6 +446,21 @@ fn owners<P: Properties>(packet: &Packet, network: &Network<P>) -> Result<Vec<Ow
                     w.mass_kg,
                     w.internal_energy_j,
                     w.absorber_tracer_kg_eq,
+                )?
+            } else {
+                let w = packet
+                    .external_ports
+                    .spray_stock
+                    .as_ref()
+                    .ok_or_else(|| fatal("the spray line needs its stock"))?;
+                let l = network.cell_layout[node];
+                let v = |i: usize| compiled[i] * network.scales()[i];
+                authored(
+                    v(l.base),
+                    w.temperature_k,
+                    v(l.mass[0]),
+                    v(l.energy[0]),
+                    v(l.boron),
                 )?
             };
             Ok(Owner {
@@ -479,15 +501,22 @@ struct Tree {
 /// Breadth-first spanning tree over the regular cells' faces in compiled
 /// index order. Faces touching the PZR (`cells` and beyond) are not tree
 /// faces; the port face fixes the root instead.
-fn spanning_tree(faces: &[FacePacket], cells: usize, root: usize) -> Result<Tree, Failure> {
+fn spanning_tree(
+    faces: &[FacePacket],
+    cells: usize,
+    roots: &[usize],
+    excluded: &[usize],
+) -> Result<Tree, Failure> {
     let mut reached = vec![false; cells];
-    reached[root] = true;
-    let mut queue = VecDeque::from([root]);
+    for root in roots {
+        reached[*root] = true;
+    }
+    let mut queue: VecDeque<usize> = roots.iter().copied().collect();
     let mut order = Vec::with_capacity(cells - 1);
     let mut member = vec![false; faces.len()];
     while let Some(node) = queue.pop_front() {
         for (j, f) in faces.iter().enumerate() {
-            if f.from >= cells || f.to >= cells {
+            if f.from >= cells || f.to >= cells || excluded.contains(&j) {
                 continue;
             }
             let other = if f.from == node {
@@ -526,11 +555,12 @@ fn integrate(
     faces: &[FacePacket],
     tree: &Tree,
     mixture: &[f64],
-    root: usize,
-    root_pressure: f64,
+    roots: &[(usize, f64)],
 ) -> Vec<f64> {
     let mut pressure = vec![0.; mixture.len()];
-    pressure[root] = root_pressure;
+    for (root, root_pressure) in roots {
+        pressure[*root] = *root_pressure;
+    }
     for &(j, parent, child) in &tree.order {
         let f = &faces[j];
         let h = head(f, |region| mixture[region]);
@@ -678,13 +708,27 @@ pub fn prepare<P: Properties>(
     for (r, state) in rotors.iter().enumerate() {
         network.set_rotor_state(r, *state);
     }
+    let compiled = prepared.y.clone();
     let pzr = network.prepare_stratified(point, settings, &mut prepared.y)?;
-    let owners = owners(packet, &network)?;
+    let owners = owners(packet, &network, &compiled)?;
     let faces = &packet.mechanics.faces;
     let cells = network.cell_layout.len();
     let port = &faces[network.pzr.port_face];
     let root = port.from;
-    let tree = spanning_tree(faces, cells, root)?;
+    // IC-CTRL (S3 spray path): the spray line is a second root, at rest
+    // below the spray port (the roof: the port is the cell's top); its
+    // closed valve face is not a tree face.
+    let spray = network.spray().copied();
+    let roof = |y: &[f64]| {
+        let i = network.pzr.base + stratified::ROOF_PRESSURE;
+        y[i] * network.scales()[i]
+    };
+    let spray_root = spray.map(|s| (s.region, &faces[s.port_face], roof(&prepared.y)));
+    let roots: Vec<usize> = std::iter::once(root)
+        .chain(spray_root.map(|r| r.0))
+        .collect();
+    let excluded: Vec<usize> = spray.map(|s| s.valve_face).into_iter().collect();
+    let tree = spanning_tree(faces, cells, &roots, &excluded)?;
     let states_at = |pressure: &[f64]| {
         owners
             .iter()
@@ -701,7 +745,11 @@ pub fn prepare<P: Properties>(
             .map(|(_, water)| water.density_kg_m3)
             .collect();
         let root_pressure = pzr.port_pressure_pa + head(port, |region| mixture[region]);
-        let next = integrate(faces, &tree, &mixture, root, root_pressure);
+        let mut root_pressures = vec![(root, root_pressure)];
+        if let Some((line, face, port_pressure)) = spray_root {
+            root_pressures.push((line, port_pressure + head(face, |region| mixture[region])));
+        }
+        let next = integrate(faces, &tree, &mixture, &root_pressures);
         let (change, _) = largest(next.iter().zip(&pressure).map(|(a, b)| a - b));
         pass_changes_pa.push(change);
         pressure = next;
@@ -828,8 +876,14 @@ fn account<P: Properties>(
     let cells: Vec<Cell> = (0..network.cells())
         .map(|node| network.cell(node))
         .collect();
+    let spray = network.spray().copied();
     let mut faces = Vec::with_capacity(packet.mechanics.faces.len());
     for (j, f) in packet.mechanics.faces.iter().enumerate() {
+        // The spray port face reads the spray port's view (IC-CTRL, S3).
+        let to = match spray {
+            Some(s) if j == s.port_face => s.port_cell,
+            _ => f.to,
+        };
         let mut pressure_gravity_pa = [None; 2];
         for (k, term) in pressure_gravity_pa.iter_mut().enumerate() {
             let chart = network
@@ -843,10 +897,12 @@ fn account<P: Properties>(
             face: j,
             from: f.from,
             to: f.to,
-            // The port face fixes the root: part of the construction.
-            tree: tree.member[j] || j == network.pzr.port_face,
+            // The port faces fix the roots: part of the construction.
+            tree: tree.member[j]
+                || j == network.pzr.port_face
+                || spray.is_some_and(|s| j == s.port_face),
             rest_pa: cells[f.from].pressure.value
-                - cells[f.to].pressure.value
+                - cells[to].pressure.value
                 - head(f, |region| cell_mixture(&cells[region])),
             pressure_gravity_pa,
         });
@@ -1034,7 +1090,14 @@ pub fn compose_flows<P: Properties>(
     }
     let port = &faces[network.pzr.port_face];
     let root = port.from;
-    let tree = spanning_tree(faces, cells, root)?;
+    // IC-CTRL (S3 spray path): the line is a second root below its port.
+    let spray = network.spray().copied();
+    let roots: Vec<usize> = std::iter::once(root)
+        .chain(spray.map(|s| s.region))
+        .collect();
+    let excluded: Vec<usize> = spray.map(|s| s.valve_face).into_iter().collect();
+    let tree = spanning_tree(faces, cells, &roots, &excluded)?;
+    let roof_index = network.pzr.base + stratified::ROOF_PRESSURE;
     let mut pressure: Vec<f64> = network
         .cell_layout
         .iter()
@@ -1099,6 +1162,10 @@ pub fn compose_flows<P: Properties>(
             .collect();
         let mut next = pressure.clone();
         next[root] = port_pressure_pa + head(port, |region| mixture[region]);
+        if let Some(s) = spray {
+            next[s.region] =
+                value(y, roof_index) + head(&faces[s.port_face], |region| mixture[region]);
+        }
         for &(j, parent, child) in &tree.order {
             let f = &faces[j];
             let drive = network.face_drive(j, 0).value;
@@ -1141,7 +1208,7 @@ pub fn compose_flows<P: Properties>(
         .map(|(j, _)| FlowFace {
             face: j,
             tree: tree.member[j],
-            port: j == network.pzr.port_face,
+            port: j == network.pzr.port_face || spray.is_some_and(|s| j == s.port_face),
             volume_flow_m3_s: volume_flows_m3_s[j],
             impulse_pa_s: value(y, network.face_layout[2 * j].index),
             drive_pa: network.face_drive(j, 0).value,

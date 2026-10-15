@@ -5,3 +5,4 @@
 //! truth. Applying a demand to equipment is the composing frame driver's:
 //! a held-input change at a frame instant, class S or R under S3-D1.
 pub mod pzr_pressure;
+pub mod spray_valve;

@@ -18,6 +18,10 @@ pub struct Packet {
     pub pzr: Pzr,
     pub hydraulics: Hydraulics,
     pub preparation: Preparation,
+    /// The controlled-spray path's owner section (`pzrSpray`), present only
+    /// in a packet that composes the path (`reference-design-operating-spray-path.ts`).
+    #[serde(rename = "pzrSpray", default)]
+    pub pzr_spray: Option<crate::control::spray_valve::Section>,
 }
 #[derive(Debug, Deserialize)]
 pub struct Preparation {
@@ -89,6 +93,38 @@ pub struct WaterOwner {
 #[derive(Debug, Deserialize)]
 pub struct ExternalPorts {
     pub surge_stock: SurgeStock,
+    /// The spray line's initial stock and its path indices, present
+    /// together with `pzrSpray`.
+    #[serde(default)]
+    pub spray_stock: Option<SprayStock>,
+    #[serde(default)]
+    pub spray_path: Option<SprayPath>,
+}
+/// The spray line's declared initial state: pressure and temperature (the
+/// network prepares mass and energy by its property forward) and the
+/// absorber mass fraction.
+#[derive(Debug, Deserialize)]
+pub struct SprayStock {
+    pub id: String,
+    pub volume_m3: f64,
+    pub elevation_m: f64,
+    #[serde(rename = "pressure_Pa")]
+    pub pressure_pa: f64,
+    #[serde(rename = "temperature_K")]
+    pub temperature_k: f64,
+    #[serde(rename = "absorberMassFraction")]
+    pub absorber_mass_fraction: f64,
+    pub basis: String,
+}
+/// Where the composed spray path sits in the packet.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SprayPath {
+    pub region: usize,
+    pub valve_face: usize,
+    pub port_face: usize,
+    pub valve_section: usize,
+    pub distributor_section: usize,
 }
 #[derive(Debug, Deserialize)]
 pub struct SurgeStock {
