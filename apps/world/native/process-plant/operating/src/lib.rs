@@ -9,6 +9,7 @@ pub mod capture;
 pub mod control;
 pub mod heat_history;
 pub mod hydraulics;
+pub mod ic;
 pub mod initialization;
 pub mod joined;
 pub mod kinetics;

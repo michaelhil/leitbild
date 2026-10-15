@@ -823,7 +823,14 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 receipt: json!({"owner":"secondary","command":"ManualReactorTrip","t_s":t,
                     "steamDemand":"held at the constant A/B values (G7, declared boundary)"}),
             }),
-            Command::TurbineTrip => {
+            // S3 hook (IC-PROT, for KERN): the holding loss is not the
+            // steam owner's; the steam demand is unchanged by it.
+            Command::HoldingLoss => Ok(Transaction {
+                deposits: Vec::new(),
+                receipt: json!({"owner":"secondary","command":"HoldingLoss","t_s":t,
+                    "steamDemand":"unchanged (the holding circuit is not the steam owner's)"}),
+            }),
+            Command::TurbineTrip | Command::TurbineTripAcquired => {
                 if let Some(t0) = self.trip_s {
                     return Err(fatal(format!(
                         "the manual turbine TRIP is already latched since {t0} s"
@@ -835,7 +842,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 self.trip_s = Some(t);
                 Ok(Transaction {
                     deposits: Vec::new(),
-                    receipt: json!({"owner":"secondary","command":"TurbineTrip","t_s":t,
+                    receipt: json!({"owner":"secondary","command":command,"t_s":t,
                         "stopTravel_s":self.stop_travel_s,"rampEnd_s":t + self.stop_travel_s,
                         "steamDemand_kg_s":self.sgs.iter().map(|g| g.steam_demand_kg_s).collect::<Vec<_>>()}),
                 })
