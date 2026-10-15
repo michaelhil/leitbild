@@ -223,6 +223,12 @@ constexpr double band_pressure_low_pa=${band.pressureRange_Pa[0]},band_pressure_
 constexpr bool band_lower_exclusive=${band.lowerBoundExclusive};
 constexpr double trial_max_k=${band.trialMax_K},liquid_temperature_max_k=${band.liquidTemperatureMax_K};
 constexpr double liquid_ceiling_pa=${band.liquidPressureCeiling_Pa},vapor_ceiling_pa=${band.vaporPressureCeiling_Pa};
+// S4-D2 (owner decision F5, 15 Oct 2026): the adapter admits IF97's own
+// validity down to the triple-point pressure. The selected 0.1 MPa operating
+// floor stays with every owner that declares no low-pressure domain, at the
+// Rust boundary (water-ffi Domain::Operating); a declared low-pressure owner
+// (Domain::LowPressure) reaches this floor.
+constexpr double pressure_floor_pa=611.657;
 constexpr double liquid_superheat_max_k=${band.liquidSuperheatMax_K},vapor_subcooling_max_k=${band.vaporSubcoolingMax_K};
 constexpr double credited_max_k=${band.creditedMax_K};
 constexpr int TRIAL_BAND=4;
@@ -262,7 +268,7 @@ struct CaloricTuple {
 // equation, which is exactly what the stable path evaluates wherever its search
 // agrees: no band, no tolerance, and no admitted state changes.
 template<class Tuple> int branch_state(int branch,double p,double T,State& q,double& ts,bool metastable) {
- require(std::isfinite(p)&&p>=1e5&&p<=(branch==0||branch==2?liquid_ceiling_pa:vapor_ceiling_pa),
+ require(std::isfinite(p)&&p>=pressure_floor_pa&&p<=(branch==0||branch==2?liquid_ceiling_pa:vapor_ceiling_pa),
   "Operating water pressure domain");
  ts=r4.T_p(p);
  if(metastable&&metastable_side(branch,p,T,ts)){
@@ -460,7 +466,7 @@ int ld01_water_direction_exact(int branch,const OperatingWaterPoint* held,double
 int ld01_water_bracket(int branch,double p,int* stable_branch,double* stable_T,double* trial_T) noexcept {
  if(!stable_branch||!stable_T||!trial_T||(branch!=0&&branch!=1))return 2;
  try {
-  require(std::isfinite(p)&&p>=1e5&&p<=(branch==0?liquid_ceiling_pa:vapor_ceiling_pa),
+  require(std::isfinite(p)&&p>=pressure_floor_pa&&p<=(branch==0?liquid_ceiling_pa:vapor_ceiling_pa),
    "Operating water pressure domain");
   const double ts=r4.T_p(p),none=std::numeric_limits<double>::quiet_NaN();
   if(branch==0){

@@ -52,6 +52,39 @@ impl fmt::Display for Error {
 }
 impl std::error::Error for Error {}
 
+/// The pressure domain a water owner declares (S4-D2, owner decision F5,
+/// 15 Oct 2026). The adapter admits IF97's own validity down to the
+/// triple-point pressure; this boundary keeps the selected 0.1 MPa floor for
+/// every owner that does not declare a low-pressure domain, so the
+/// operating owners' checks are unchanged. The `*_in` entries and
+/// [`If97LowPressure`] take a declared domain; the others are `Operating`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Domain {
+    /// The selected operating domain: `p >= 0.1 MPa`.
+    Operating,
+    /// A declared low-pressure owner (feed, condensate, condenser,
+    /// containment): `p >= 611.657 Pa`, IF97's own validity.
+    LowPressure,
+}
+impl Domain {
+    /// The domain's pressure floor [Pa].
+    pub const fn floor_pa(self) -> f64 {
+        match self {
+            Self::Operating => 1e5,
+            Self::LowPressure => 611.657,
+        }
+    }
+    /// `Error::Domain` below the floor (or a pressure that is not finite),
+    /// before any native call.
+    fn admit(self, p: f64) -> Result<(), Error> {
+        if p.is_finite() && p >= self.floor_pa() {
+            Ok(())
+        } else {
+            Err(Error::Domain)
+        }
+    }
+}
+
 unsafe extern "C" {
     fn ld01_water_point(
         branch: i32,
@@ -136,6 +169,17 @@ unsafe extern "C" {
 }
 
 pub fn point(branch: Branch, pressure_pa: f64, temperature_k: f64) -> Result<WaterPoint, Error> {
+    point_in(Domain::Operating, branch, pressure_pa, temperature_k)
+}
+
+/// [`point`] in a declared pressure domain.
+pub fn point_in(
+    domain: Domain,
+    branch: Branch,
+    pressure_pa: f64,
+    temperature_k: f64,
+) -> Result<WaterPoint, Error> {
+    domain.admit(pressure_pa)?;
     let mut output = WaterPoint::default();
     // SAFETY: repr(C) contains only C int/doubles in declared order. Pointer
     // refers to a unique live stack allocation; C writes its complete tuple on
@@ -253,6 +297,16 @@ fn exact_held(branch: Branch, held: &WaterPoint, dp: f64, dt: f64) -> Result<Wat
 /// slope, compressibility, density and cp), so the endpoint needs neither its
 /// compressibility nor its slope, and every other direction is NaN.
 pub fn saturation_caloric(p: f64, dp: f64) -> Result<[(WaterPoint, WaterPoint); 2], Error> {
+    saturation_caloric_in(Domain::Operating, p, dp)
+}
+
+/// [`saturation_caloric`] in a declared pressure domain.
+pub fn saturation_caloric_in(
+    domain: Domain,
+    p: f64,
+    dp: f64,
+) -> Result<[(WaterPoint, WaterPoint); 2], Error> {
+    domain.admit(p)?;
     if !dp.is_finite() {
         return Err(Error::AbiArgument);
     }
@@ -297,6 +351,19 @@ pub fn directional(
     dp: f64,
     dt: f64,
 ) -> Result<(WaterPoint, WaterPoint), Error> {
+    directional_in(Domain::Operating, branch, p, t, dp, dt)
+}
+
+/// [`directional`] in a declared pressure domain.
+pub fn directional_in(
+    domain: Domain,
+    branch: Branch,
+    p: f64,
+    t: f64,
+    dp: f64,
+    dt: f64,
+) -> Result<(WaterPoint, WaterPoint), Error> {
+    domain.admit(p)?;
     let mut value = WaterPoint::default();
     let mut direction = WaterPoint::default();
     // SAFETY: same C-layout contract as point; outputs are distinct live unique
@@ -371,11 +438,26 @@ pub struct CaloricLinearization {
 }
 impl CaloricLinearization {
     pub fn internal_energy(branch: Branch, p: f64, u: f64) -> Result<Self, Error> {
-        Self::new(branch, p, u, Caloric::Internal, FIELDS_ALL)
+        Self::internal_energy_in(Domain::Operating, branch, p, u)
     }
 
     pub fn enthalpy(branch: Branch, p: f64, h: f64) -> Result<Self, Error> {
-        Self::new(branch, p, h, Caloric::Enthalpy, FIELDS_ALL)
+        Self::enthalpy_in(Domain::Operating, branch, p, h)
+    }
+
+    /// [`Self::internal_energy`] in a declared pressure domain.
+    pub fn internal_energy_in(
+        domain: Domain,
+        branch: Branch,
+        p: f64,
+        u: f64,
+    ) -> Result<Self, Error> {
+        Self::new(domain, branch, p, u, Caloric::Internal, FIELDS_ALL)
+    }
+
+    /// [`Self::enthalpy`] in a declared pressure domain.
+    pub fn enthalpy_in(domain: Domain, branch: Branch, p: f64, h: f64) -> Result<Self, Error> {
+        Self::new(domain, branch, p, h, Caloric::Enthalpy, FIELDS_ALL)
     }
 
     /// The same inverse (the same iterates and selected state) evaluating
@@ -388,15 +470,34 @@ impl CaloricLinearization {
         target: f64,
         enthalpy: bool,
     ) -> Result<Self, Error> {
+        Self::thermodynamic_in(Domain::Operating, branch, p, target, enthalpy)
+    }
+
+    /// [`Self::thermodynamic`] in a declared pressure domain.
+    pub fn thermodynamic_in(
+        domain: Domain,
+        branch: Branch,
+        p: f64,
+        target: f64,
+        enthalpy: bool,
+    ) -> Result<Self, Error> {
         let kind = if enthalpy {
             Caloric::Enthalpy
         } else {
             Caloric::Internal
         };
-        Self::new(branch, p, target, kind, FIELDS_THERMODYNAMIC)
+        Self::new(domain, branch, p, target, kind, FIELDS_THERMODYNAMIC)
     }
 
-    fn new(branch: Branch, p: f64, target: f64, kind: Caloric, fields: i32) -> Result<Self, Error> {
+    fn new(
+        domain: Domain,
+        branch: Branch,
+        p: f64,
+        target: f64,
+        kind: Caloric,
+        fields: i32,
+    ) -> Result<Self, Error> {
+        domain.admit(p)?;
         Ok(Self {
             branch,
             kind,
@@ -892,7 +993,7 @@ fn directional_caloric(
     if !dp.is_finite() || !dtarget.is_finite() {
         return Err(Error::Domain);
     }
-    let q = CaloricLinearization::new(branch, p, target, kind, FIELDS_ALL)?;
+    let q = CaloricLinearization::new(Domain::Operating, branch, p, target, kind, FIELDS_ALL)?;
     Ok((q.point(), q.directional(dp, dtarget)?))
 }
 
@@ -956,8 +1057,12 @@ pub fn surface_tension(t: f64, dt: f64) -> Result<(f64, f64), Error> {
     }
 }
 
-/// Actual property adapter consumed by the native thermal residual/JVP.
+/// Actual property adapter consumed by the native thermal residual/JVP: the
+/// operating domain (`p >= 0.1 MPa`).
 pub struct If97;
+/// The same adapter for an owner that declares a low-pressure domain
+/// (S4-D2, owner decision F5): `p >= 611.657 Pa` ([`Domain::LowPressure`]).
+pub struct If97LowPressure;
 fn thermal_point(q: WaterPoint, d: WaterPoint) -> leitbild_operating_plant::thermal::WaterPoint {
     use leitbild_operating_plant::thermal::{Scalar, WaterPoint as ThermalPoint};
     ThermalPoint {
@@ -969,65 +1074,72 @@ fn thermal_point(q: WaterPoint, d: WaterPoint) -> leitbild_operating_plant::ther
         enthalpy: Scalar::new(q.enthalpy_j_kg, d.enthalpy_j_kg),
     }
 }
-impl leitbild_operating_plant::thermal::WaterProperties for If97 {
-    fn liquid(
-        &self,
-        p: leitbild_operating_plant::thermal::Scalar,
-        t: leitbild_operating_plant::thermal::Scalar,
-    ) -> leitbild_operating_plant::thermal::Result<leitbild_operating_plant::thermal::WaterPoint>
-    {
-        let (q, d) = directional(Branch::Liquid, p.value, t.value, p.direction, t.direction)
-            .map_err(|_| "maintained IF97 liquid domain/derivative")?;
-        Ok(thermal_point(q, d))
-    }
-    fn vapor(
-        &self,
-        p: leitbild_operating_plant::thermal::Scalar,
-        t: leitbild_operating_plant::thermal::Scalar,
-    ) -> leitbild_operating_plant::thermal::Result<leitbild_operating_plant::thermal::WaterPoint>
-    {
-        let (q, d) = directional(Branch::Vapor, p.value, t.value, p.direction, t.direction)
-            .map_err(|_| "maintained IF97 vapor domain/derivative")?;
-        Ok(thermal_point(q, d))
-    }
-    fn saturation(
-        &self,
-        p: leitbild_operating_plant::thermal::Scalar,
-    ) -> leitbild_operating_plant::thermal::Result<leitbild_operating_plant::thermal::Saturation>
-    {
-        use leitbild_operating_plant::thermal::{Saturation, Scalar};
-        let (l, dl) = directional(Branch::SaturatedLiquid, p.value, 0., p.direction, 0.)
-            .map_err(|_| "maintained IF97 saturation liquid")?;
-        let (g, dg) = directional(Branch::SaturatedVapor, p.value, 0., p.direction, 0.)
-            .map_err(|_| "maintained IF97 saturation vapor")?;
-        let (sigma, dsigma) = surface_tension(l.temperature_k, dl.temperature_k)
-            .map_err(|_| "maintained IF97 surface tension")?;
-        Ok(Saturation {
-            temperature: Scalar::new(l.temperature_k, dl.temperature_k),
-            liquid: thermal_point(l, dl),
-            vapor: thermal_point(g, dg),
-            surface_tension: Scalar::new(sigma, dsigma),
-        })
-    }
-    fn saturated_vapor_density(
-        &self,
-        t: leitbild_operating_plant::thermal::Scalar,
-    ) -> leitbild_operating_plant::thermal::Result<leitbild_operating_plant::thermal::Scalar> {
-        let mut value = 0.;
-        let mut direction = 0.;
-        // SAFETY: unique scalar outputs, no retained pointer; checked native
-        // saturation call catches exceptions, using its actual inverse slope.
-        let status = unsafe {
-            ld01_water_vapor_sat_density(t.value, t.direction, &mut value, &mut direction)
-        };
-        if status != 0 {
-            return Err("maintained IF97 wall saturation density");
+/// The thermal water boundary of one declared pressure domain.
+macro_rules! thermal_water_properties {
+    ($water:ty, $domain:expr) => {
+        impl leitbild_operating_plant::thermal::WaterProperties for $water {
+            fn liquid(
+                &self,
+                p: leitbild_operating_plant::thermal::Scalar,
+                t: leitbild_operating_plant::thermal::Scalar,
+            ) -> leitbild_operating_plant::thermal::Result<leitbild_operating_plant::thermal::WaterPoint>
+            {
+                let (q, d) = directional_in($domain, Branch::Liquid, p.value, t.value, p.direction, t.direction)
+                    .map_err(|_| "maintained IF97 liquid domain/derivative")?;
+                Ok(thermal_point(q, d))
+            }
+            fn vapor(
+                &self,
+                p: leitbild_operating_plant::thermal::Scalar,
+                t: leitbild_operating_plant::thermal::Scalar,
+            ) -> leitbild_operating_plant::thermal::Result<leitbild_operating_plant::thermal::WaterPoint>
+            {
+                let (q, d) = directional_in($domain, Branch::Vapor, p.value, t.value, p.direction, t.direction)
+                    .map_err(|_| "maintained IF97 vapor domain/derivative")?;
+                Ok(thermal_point(q, d))
+            }
+            fn saturation(
+                &self,
+                p: leitbild_operating_plant::thermal::Scalar,
+            ) -> leitbild_operating_plant::thermal::Result<leitbild_operating_plant::thermal::Saturation>
+            {
+                use leitbild_operating_plant::thermal::{Saturation, Scalar};
+                let (l, dl) = directional_in($domain, Branch::SaturatedLiquid, p.value, 0., p.direction, 0.)
+                    .map_err(|_| "maintained IF97 saturation liquid")?;
+                let (g, dg) = directional_in($domain, Branch::SaturatedVapor, p.value, 0., p.direction, 0.)
+                    .map_err(|_| "maintained IF97 saturation vapor")?;
+                let (sigma, dsigma) = surface_tension(l.temperature_k, dl.temperature_k)
+                    .map_err(|_| "maintained IF97 surface tension")?;
+                Ok(Saturation {
+                    temperature: Scalar::new(l.temperature_k, dl.temperature_k),
+                    liquid: thermal_point(l, dl),
+                    vapor: thermal_point(g, dg),
+                    surface_tension: Scalar::new(sigma, dsigma),
+                })
+            }
+            fn saturated_vapor_density(
+                &self,
+                t: leitbild_operating_plant::thermal::Scalar,
+            ) -> leitbild_operating_plant::thermal::Result<leitbild_operating_plant::thermal::Scalar> {
+                let mut value = 0.;
+                let mut direction = 0.;
+                // SAFETY: unique scalar outputs, no retained pointer; checked native
+                // saturation call catches exceptions, using its actual inverse slope.
+                let status = unsafe {
+                    ld01_water_vapor_sat_density(t.value, t.direction, &mut value, &mut direction)
+                };
+                if status != 0 {
+                    return Err("maintained IF97 wall saturation density");
+                }
+                Ok(leitbild_operating_plant::thermal::Scalar::new(
+                    value, direction,
+                ))
+            }
         }
-        Ok(leitbild_operating_plant::thermal::Scalar::new(
-            value, direction,
-        ))
-    }
+    };
 }
+thermal_water_properties!(If97, Domain::Operating);
+thermal_water_properties!(If97LowPressure, Domain::LowPressure);
 
 impl WaterPoint {
     /// Exact thermodynamic first partials at this branch; viscosity/conductivity
