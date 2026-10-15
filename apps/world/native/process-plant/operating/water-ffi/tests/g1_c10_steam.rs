@@ -165,7 +165,17 @@ fn adiabat_drop<Q: Properties>(
     h0: Scalar,
     pb: Scalar,
 ) -> Result<Scalar, String> {
-    let ratio = (-0.02f64).exp();
+    adiabat_drop_step(pp, p0, h0, pb, 0.02)
+}
+/// The same RK4 path with a chosen step in ln p (cost/accuracy diagnostic only).
+fn adiabat_drop_step<Q: Properties>(
+    pp: &Q,
+    p0: Scalar,
+    h0: Scalar,
+    pb: Scalar,
+    step: f64,
+) -> Result<Scalar, String> {
+    let ratio = (-step).exp();
     let (mut p, mut h) = (p0, h0);
     while p.value > pb.value {
         let next = if p.value * ratio > pb.value {
@@ -1277,6 +1287,41 @@ fn g1_c10_zero_time_block() {
     let old_ratio = ms.area * flux(&If97, ports.p_sg[0], hg_sg, c(5.98e6)).unwrap().value
         / pr.model.flow_scale
         * 2.;
+    // Reversible-drop step diagnostic: the five interval drops at the prepared state
+    // with coarser RK4 steps in ln p, against the 0.02 the restriction law uses.
+    let mut drop_steps = Vec::new();
+    for step in [0.02, 0.05, 0.1, 0.2] {
+        let shared = props::Shared::new(&If97);
+        let t0 = cpu::thread_cpu_s();
+        let mut drops = Vec::new();
+        for b in m
+            .branches
+            .iter()
+            .filter(|b| matches!(b.law, Law::Interval { .. }))
+        {
+            let (End::Store(i, _), End::Store(o, _)) = (b.from, b.to) else {
+                unreachable!()
+            };
+            let d = adiabat_drop_step(
+                &shared,
+                c(y[6 * i + P]),
+                c(y[6 * i + H]),
+                c(y[6 * o + P]),
+                step,
+            )
+            .unwrap();
+            drops.push(d.value);
+        }
+        drop_steps.push((step, cpu::thread_cpu_s() - t0, drops));
+    }
+    let reference: Vec<f64> = drop_steps[0].2.clone();
+    let drop_steps: Vec<Value> = drop_steps
+        .iter()
+        .map(|(step, cpu_s, drops)| {
+            let worst = drops.iter().zip(&reference).map(|(d, r)| ((d - r) / r).abs()).fold(0., f64::max);
+            json!({"stepLnP": step, "cpu_s": cpu_s, "drops_J_kg": drops, "worstRelativeVsStep0.02": worst})
+        })
+        .collect();
     // Preparation rates (the declared nonsteady start) and branch flows.
     let rates_json: Vec<Value> = (0..N)
         .filter(|k| differential(*k) && f[*k] != 0.)
@@ -1305,6 +1350,7 @@ fn g1_c10_zero_time_block() {
             "coloredJacobian_s": jacobian_s, "coloredJacobianShared_s": jacobian_shared_s, "colours": colours,
             "loadavg": cpu::load_average()},
         "d2": {"oldHeaderMsFlowOverSizing": old_ratio},
+        "dropStepDiagnostic": drop_steps,
         "torque_Nm": e.torque.value, "aeroWork_W": e.aero_work.value,
         "sizing": pr.sizing, "flowsAtPreparation": flows, "preparationRates": rates_json,
     });
