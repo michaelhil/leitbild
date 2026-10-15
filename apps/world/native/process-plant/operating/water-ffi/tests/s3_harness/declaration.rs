@@ -49,6 +49,7 @@ impl Case {
                 "loop-flow acquisition: the protection client refuses Quantity::LoopFlow and the S3 ic section has no loop-flow family, so C2.N4 cannot be judged",
             ],
             Self::C3 => vec![
+                "the RCP supply loss is not routed through ELEC's AC routing: the composed unit refuses Command::SupplyLoss while the slice supplies the RCPs (KERN/ELEC)",
                 "loop-flow acquisition: the protection client refuses Quantity::LoopFlow and the S3 ic section has no loop-flow family, so C3.O1, C3.O2, C3.N1 and C3.N2 cannot be judged",
             ],
         }

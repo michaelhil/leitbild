@@ -506,7 +506,9 @@ fn s3_case_run() {
     let (zero_after, command) = case_clock(case, &spec, declared_frame_s).unwrap();
     let zero = t0 + zero_after;
     let joined = &ida.system().integrated().joined;
-    let mut protection = ProtectionClient::new(&section, joined, &y[..n]).expect("protection");
+    let mut protection = ProtectionClient::new(&section, joined, &y[..n])
+        .and_then(|p| p.with_system_dimension(y.len()))
+        .expect("protection");
     let implemented: Vec<String> = section.functions.iter().map(|f| f.id.clone()).collect();
     let scales = joined.scales();
     let labels: Vec<String> = joined

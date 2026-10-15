@@ -243,15 +243,30 @@ pub fn compose(inputs: &Inputs, state: &Value) -> Result<S3Unit, String> {
         return Err("the control frame is not the I&C frame".into());
     }
     let channel = pzr_control::channel_block(&inputs.control_wiki, &law);
-    // From the S2 state (KERN's settle): commissioned before L1 is armed.
-    let early = (!saved)
-        .then(|| pzr_control::commission(&mut joined, &law, channel, Class::S, None, t0, &y, &yp));
-    let l1 = joined
-        .activate_unilateral(t0, &y)
-        .map_err(|e| format!("L1: {e:?}"))?;
-    joined
-        .activate_phase_modes()
-        .map_err(|e| format!("phase modes: {e:?}"))?;
+    // From the S2 state (KERN's settle): commissioned, then L1 and the
+    // phase modes armed. From a saved S3 state: the operator's discrete
+    // state restored (it declares L1 from its locks and sets the phase
+    // modes, as KERN's snapshot round trip does), then the controller
+    // re-commissioned on the restored operator.
+    let (control, prepared_w, start_w, l1_changes) = if saved {
+        joined
+            .restore_discrete_state(&state["discrete_state"]["operator"])
+            .map_err(|e| format!("restore the operator's discrete state: {e:?}"))?;
+        let (c, p, s) =
+            pzr_control::commission(&mut joined, &law, channel, Class::S, None, t0, &y, &yp);
+        (c, p, s, None)
+    } else {
+        let (c, p, s) =
+            pzr_control::commission(&mut joined, &law, channel, Class::S, None, t0, &y, &yp);
+        let l1 = joined
+            .activate_unilateral(t0, &y)
+            .map_err(|e| format!("L1: {e:?}"))?;
+        joined
+            .activate_phase_modes()
+            .map_err(|e| format!("phase modes: {e:?}"))?;
+        (c, p, s, Some(l1.changes.len()))
+    };
+    let mut control = control;
     let ids = joined.differential(&network_ids);
     let n = joined.dimension();
     let nonnegative = joined.network.nonnegative_stocks();
@@ -263,6 +278,10 @@ pub fn compose(inputs: &Inputs, state: &Value) -> Result<S3Unit, String> {
     let (slice, breaker, routing, configuration, mut tail) = electrical(&e, rotors, t0);
     let mut unit = Electrified::new(integrated, slice, breaker, routing, configuration)
         .map_err(|e| format!("the electrical slice: {e:?}"))?;
+    if saved {
+        unit.restore_appended_discrete_state(&state["discrete_state"]["appended"])
+            .map_err(|e| format!("restore the slice's discrete state: {e}"))?;
+    }
     let mut tail_rates = [0.; N];
     let tail_ids = unit
         .appended_start(t0, &mut tail, &mut tail_rates)
@@ -336,25 +355,6 @@ pub fn compose(inputs: &Inputs, state: &Value) -> Result<S3Unit, String> {
     ida.constrain_nonnegative(&nonnegative)
         .map_err(|e| format!("{e:?}"))?;
     restart.configure(&mut ida).map_err(|e| format!("{e:?}"))?;
-    // A saved state: every owner's discrete state restored exactly, then the
-    // controller re-commissioned on the restored operator.
-    let (mut control, prepared_w, start_w) = match early {
-        Some(c) => c,
-        None => {
-            ida.system_mut()
-                .restore_system_discrete_state(&state["discrete_state"])?;
-            pzr_control::commission(
-                &mut ida.system_mut().integrated_mut().joined,
-                &law,
-                channel,
-                Class::S,
-                None,
-                t0,
-                &y,
-                &yp,
-            )
-        }
-    };
     root_directions(&mut ida).map_err(|e| format!("{e:?}"))?;
     let initial = discrete_restart(
         &mut ida,
@@ -373,7 +373,7 @@ pub fn compose(inputs: &Inputs, state: &Value) -> Result<S3Unit, String> {
         "composition": "S3-D28 (3): joined + spray closed + SG two-zone + feed gate declared + S2-D24r/S3-D16 + PZR control AUTO (S) + L1 + phase modes + ELEC slice connected",
         "from_saved_s3_state": saved, "t0_s": t0,
         "sections": {"ic": inputs.ic_path, "pzr_control": inputs.control_path, "control_wiki": inputs.control_wiki, "electrical": inputs.elec_path},
-        "l1_activation_changes": l1.changes.len(),
+        "l1_activation_changes": l1_changes,
         "pzr_control": {"class": "S (S3-D4)", "prepared_request_w": prepared_w, "start_request_w": start_w,
             "commissioned": if saved { "after restoring the saved discrete state" } else { "before L1 is armed (KERN's settle order)" }},
         "stator_rows": stator, "stator_budget": "S3-D23: 10 A, 1 MW",
