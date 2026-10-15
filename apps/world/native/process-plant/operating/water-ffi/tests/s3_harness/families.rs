@@ -413,9 +413,19 @@ pub fn electrical_e0(
                     .zip(&b[0][rb.clone()])
                     .map(|(p, q)| p - q)
                     .collect();
-                let value = max_abs(&zero_phase_lowpass(&raw, cutoff_hz, dt));
+                let filtered = zero_phase_lowpass(&raw, cutoff_hz, dt);
+                let value = max_abs(&filtered);
+                // Where the largest difference lies (s after `origin`).
+                let at = filtered
+                    .iter()
+                    .enumerate()
+                    .max_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
+                    .map(|(j, _)| from + j as f64 * dt);
                 within &= value <= budget;
-                metrics.insert(k.into(), json!({"value": value, "budget": budget}));
+                metrics.insert(
+                    k.into(),
+                    json!({"value": value, "budget": budget, "at_s": at}),
+                );
             }
             (a, b) => {
                 within = false;
