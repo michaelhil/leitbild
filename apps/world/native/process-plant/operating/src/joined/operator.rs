@@ -1218,8 +1218,10 @@ impl<P: Properties + WaterProperties> Joined<P> {
                     receipt,
                 });
             }
+            // Every root transaction decides the port's paths, as L1 decides
+            // all of its own (found at the transaction or at a located root).
             let tip = [directions[check + 1], directions[check + 2]];
-            if tip != [0, 0] {
+            if self.network.unilateral().is_none() {
                 let zero = vec![0.; y.len()];
                 self.evaluate(t, y, &zero, None, 0., None)?;
                 let presence = self.network.declared_presence(y);

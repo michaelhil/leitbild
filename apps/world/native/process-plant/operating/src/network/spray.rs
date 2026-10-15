@@ -40,6 +40,25 @@ use super::{
 use crate::{control::spray_valve::StemChange, thermal::Scalar};
 use serde_json::{Value, json};
 
+/// The composition's stages of the spray port's scoped L1
+/// ([`Network::engage_spray_tip`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TipStage {
+    /// The hydrostatic preparation: each path from free by the last value
+    /// evaluation (the line at rest).
+    Rest,
+    /// Before the flowing preparation writes the hydraulic settle's volume
+    /// flow `q[k]` into path `k`: each path from free by that flow (at
+    /// rest, by the drive). A path the settle moved toward an end holding
+    /// no phase locks and takes no current: that motion (the settle carries
+    /// no L1) is not adopted, so nothing is paid.
+    Adopted([f64; 2]),
+    /// The composed state: each path from its held lock by the last value
+    /// evaluation; a free path drawing from an empty end locks at rest, a
+    /// held lock stays.
+    Composed,
+}
+
 /// S3-D19: the spray path's discrete state: the stem's held trajectory and
 /// the valve's and the inlet check's locks.
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -157,28 +176,14 @@ impl<P: Properties> Network<P> {
     /// Engage the spray port's scoped unilateral law (DR-P3-SPRAY; decision
     /// 0014's L1 on the port face's two phase paths), by `presence` (the
     /// line holds liquid; the port holds the vapor region's vapor and, with
-    /// drops, liquid). Three uses, all by L1's [`decide`]:
-    /// - `adopted: None` at the hydrostatic preparation (the line at rest):
-    ///   each path from free, by the last value evaluation's drive; a path
-    ///   whose drive would draw from an end holding no phase locks at rest;
-    /// - `adopted: Some(q)` before the flowing preparation writes the
-    ///   hydraulic settle's volume flow `q[k]` into path `k`: each path from
-    ///   free, by that flow (at rest, by the drive). A path the settle moved
-    ///   toward an end holding no phase locks and the composition writes it
-    ///   no current: that motion (the settle's tier carries no L1) is not
-    ///   adopted, so there is nothing to pay;
-    /// - `adopted: None` at the composed state: each path from its held
-    ///   lock by the last value evaluation (a one-sided lock whose drive
-    ///   draws from its holding end is released, a free path drawing from an
-    ///   empty end locks at rest).
-    ///
-    /// A path moving toward an end holding no phase at an evaluated state is
-    /// refused, as L1's activation refuses. A network-wide L1 activation
-    /// supersedes this law.
+    /// drops, liquid), at one of the composition's three stages
+    /// ([`TipStage`]), every decision L1's [`decide`]. A path moving toward
+    /// an end holding no phase at an evaluated state is refused, as L1's
+    /// activation refuses. A network-wide L1 activation supersedes this law.
     pub fn engage_spray_tip(
         &mut self,
         presence: &Presence,
-        adopted: Option<[f64; 2]>,
+        stage: TipStage,
     ) -> Result<Option<Value>, Failure> {
         let Some(s) = self.spray else {
             return Ok(None);
@@ -189,32 +194,42 @@ impl<P: Properties> Network<P> {
         for (k, lock) in tip.iter_mut().enumerate() {
             let li = 2 * s.port_face + k;
             let mut view = self.path_view(li, presence)?;
-            let prior = match adopted {
-                Some(q) => {
+            let prior = match stage {
+                TipStage::Rest => Lock::Free,
+                TipStage::Adopted(q) => {
                     view.volume_flow_m3_s = q[k];
                     view.kinetic_j = 0.;
                     Lock::Free
                 }
-                None => held[k],
+                TipStage::Composed => held[k],
             };
             let d = decide(prior, view, None)?;
-            if adopted.is_none() && d.payment.is_some() {
+            if !matches!(stage, TipStage::Adopted(_)) && d.payment.is_some() {
                 return Err(Failure::Fatal(format!(
                     "spray port: face {} phase {k} carries {} m3/s toward an end holding no phase {k}",
                     s.port_face, view.volume_flow_m3_s
                 )));
             }
-            *lock = d.lock;
+            // At the composed state a held lock stays: the flowing
+            // preparation balances the line on its port, so the drive there
+            // is that construction's residue and the consistent start sets
+            // the run's own; a release is the located root's or found at
+            // the next transaction.
+            let kept = matches!(stage, TipStage::Composed)
+                && matches!(prior, Lock::Locked(_))
+                && d.lock == Lock::Free;
+            *lock = if kept { prior } else { d.lock };
             views.push(json!({"phase": k, "holding": format!("{:?}", view.holding),
                 "drive_pa": view.drive_pa, "volume_flow_m3_s": view.volume_flow_m3_s,
-                "adopted": adopted.is_none() || d.payment.is_none(),
-                "from": format!("{prior:?}"), "lock": format!("{:?}", d.lock)}));
+                "adopted": !matches!(stage, TipStage::Adopted(_)) || d.payment.is_none(),
+                "from": format!("{prior:?}"), "decided": format!("{:?}", d.lock),
+                "lock": format!("{:?}", *lock)}));
         }
         if let Some(sp) = self.spray.as_mut() {
             sp.tip = Some(tip);
         }
         Ok(Some(
-            json!({"owner": "spray port (scoped L1)", "paths": views}),
+            json!({"owner": "spray port (scoped L1)", "stage": format!("{stage:?}"), "paths": views}),
         ))
     }
     /// The spray port's two root slots while the network-wide L1 is not
@@ -267,12 +282,14 @@ impl<P: Properties> Network<P> {
                     .any(|l| matches!(l, Lock::Locked(h) if h.orientation().is_some()))
             })
     }
-    /// The spray port's scoped L1 transaction at its located roots
+    /// The spray port's scoped L1 transaction at a root-located instant
     /// (`directions` per path, IDAGetRootInfo), on the last value evaluation
-    /// at `(t, y, 0)` and `presence`: L1's [`decide`] per located path; a
-    /// contact sets `Π = 0` and pays the path's kinetic energy once into the
-    /// receiving end (L1's payment). A crossing against the watched
-    /// direction does not act and is reported. `None` when nothing crossed.
+    /// at `(t, y, 0)` and `presence`: as L1's own, every port path through
+    /// [`decide`], with its located root if it crossed in its watched
+    /// direction (a crossing against it is reported), the others as found
+    /// at the transaction; a contact sets `Π = 0` and pays the path's
+    /// kinetic energy once into the receiving end (L1's payment). `None`
+    /// when nothing changed or crossed.
     pub fn spray_tip_transaction(
         &mut self,
         t: f64,
@@ -283,7 +300,7 @@ impl<P: Properties> Network<P> {
         let Some(s) = self.spray else {
             return Ok(None);
         };
-        if self.unilateral().is_some() || directions == [0, 0] {
+        if self.unilateral().is_some() {
             if directions != [0, 0] {
                 return Err(Failure::Fatal(
                     "a spray-port slot crossed while L1 governs the port".into(),
@@ -296,22 +313,22 @@ impl<P: Properties> Network<P> {
             .ok_or_else(|| Failure::Fatal("the spray port's scoped L1 was never engaged".into()))?;
         let mut changes = Vec::new();
         for (k, d) in directions.into_iter().enumerate() {
-            if d == 0 {
-                continue;
-            }
             let li = 2 * s.port_face + k;
             let l = self.face_layout[li];
             let fired = match (tip[k], d) {
+                (_, 0) => None,
                 (Lock::Free, -1) => Some(Fired::Contact),
                 (Lock::Locked(_), 1) => Some(Fired::Release),
-                _ => None,
-            };
-            let Some(fired) = fired else {
-                changes.push(json!({"phase": k, "direction": d, "opposite": true}));
-                continue;
+                _ => {
+                    changes.push(json!({"phase": k, "direction": d, "opposite": true}));
+                    None
+                }
             };
             let view = self.path_view(li, presence)?;
-            let decision = decide(tip[k], view, Some(fired))?;
+            let decision = decide(tip[k], view, fired)?;
+            if decision.cause.is_none() {
+                continue;
+            }
             let mut paid = None;
             if let Some((end, energy)) = decision.payment {
                 let (from, to) = self.endpoints[l.face];
@@ -329,9 +346,8 @@ impl<P: Properties> Network<P> {
         if let Some(sp) = self.spray.as_mut() {
             sp.tip = Some(tip);
         }
-        Ok(Some(
-            json!({"owner": "spray port (scoped L1)", "t_s": t, "changes": changes}),
-        ))
+        Ok((!changes.is_empty())
+            .then(|| json!({"owner": "spray port (scoped L1)", "t_s": t, "changes": changes})))
     }
     /// Whether phase path `li` is the valve's liquid path, algebraic in
     /// every state (the restriction relation open, the lock closed).

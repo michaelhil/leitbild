@@ -31,6 +31,7 @@ use super::{
     Failure, Network, PZR_ALGEBRAIC, PZR_COORDINATES, PZR_ENERGY, PZR_MASS, PZR_TRACER, Prepared,
     Properties, PzrPreparation, RotorState, Water,
     packet::{self, FacePacket, Packet},
+    spray::TipStage,
     stratified,
 };
 use crate::local_flow::Cell;
@@ -803,7 +804,7 @@ pub fn prepare<P: Properties>(
     // prepared state at rest (the closed valve's and the check's locks are
     // the composition's own).
     let presence = network.stock_presence(&prepared.y);
-    network.engage_spray_tip(&presence, None)?;
+    network.engage_spray_tip(&presence, TipStage::Rest)?;
     prepared.differential = network.differential(&prepared.differential);
     let construction = Construction {
         root,
@@ -1113,7 +1114,10 @@ pub fn compose_flows<P: Properties>(
     let tip_adopted = match spray {
         Some(s) => {
             let presence = network.stock_presence(y);
-            network.engage_spray_tip(&presence, Some([volume_flows_m3_s[s.port_face], 0.]))?
+            network.engage_spray_tip(
+                &presence,
+                TipStage::Adopted([volume_flows_m3_s[s.port_face], 0.]),
+            )?
         }
         None => None,
     };
@@ -1231,9 +1235,9 @@ pub fn compose_flows<P: Properties>(
     }
     // DR-P3-SPRAY: the spray port's scoped law again at the flowing state,
     // each path from the lock the composition held (the line at rest below
-    // its port).
+    // its port; a held lock stays, TipStage::Composed).
     let presence = network.stock_presence(y);
-    let tip_composed = network.engage_spray_tip(&presence, None)?;
+    let tip_composed = network.engage_spray_tip(&presence, TipStage::Composed)?;
     let flow_faces: Vec<FlowFace> = faces
         .iter()
         .enumerate()
