@@ -44,6 +44,50 @@ pub struct RuleI {
     pub first_extended: Option<f64>,
     pub margin_failures: u64,
     pub exit: Option<Value>,
+    /// COST2: FNV-1a over every judgment's full result, bit for bit: the
+    /// state's time and region phases, then the admission (domain, margin
+    /// holds, pivots, operator, reactivity gains, water terms) or the
+    /// unsupported exit (domain, margin holds, exit): verdict equality
+    /// across builds is equality of this fingerprint and of `samples`.
+    pub verdicts: Fingerprint,
+    /// COST2: accepted states judged on the root call's value evaluation of
+    /// the same state ([`Joined::holds_value_evaluation`]) instead of a new one.
+    pub reused: u64,
+    /// COST2 cross-check (`LD01_S3_RULE_I_CROSSCHECK=1`): every reusable
+    /// state is evaluated anyway and rule I's inputs on the held evaluation
+    /// (nuclear feedback inputs, rods' travel, region phases) are compared
+    /// bit for bit with the new one's; `mismatches` counts differences.
+    pub crosscheck: Option<bool>,
+    pub crosschecked: u64,
+    pub mismatches: u64,
+    pub first_mismatch: Option<Value>,
+}
+
+/// COST2: rule I's inputs as bits (the nuclear block's feedback inputs, the
+/// rods' achieved travel and each core region's phase), for the cross-check.
+fn rule_i_inputs(joined: &Joined<If97>) -> Result<Vec<u64>, String> {
+    let f = joined.nuclear().feedback_inputs();
+    let mut bits: Vec<u64> = [
+        &f.neutrons,
+        &f.fuel_temperature_k,
+        &f.water_density_kg_m3,
+        &f.boron_ppm_eq,
+        &f.pressure_pa,
+        &f.moderator_temperature_k,
+        &f.fissile_atoms,
+        &f.xenon_atoms,
+        &f.samarium_atoms,
+        &f.capture_loss_change_m2,
+    ]
+    .into_iter()
+    .flat_map(|v| v.iter().map(|x| x.to_bits()))
+    .collect();
+    bits.extend(joined.travel().iter().map(|x| x.value.to_bits()));
+    for r in joined.region_phases().map_err(|e| format!("{e:?}"))? {
+        bits.push(r.saturation_departure_k.to_bits());
+        bits.push(r.vapor_kg.to_bits());
+    }
+    Ok(bits)
 }
 
 /// The label of a refused D3 (a) admission: B1's exit when `exit` is
@@ -69,21 +113,69 @@ impl RuleI {
         y: &[f64],
         yp: &[f64],
     ) -> Result<(), String> {
-        joined
-            .evaluate(t, y, yp, None, 0., None)
-            .map_err(|e| format!("rule I: the operator at {t} s: {e:?}"))?;
+        // COST2: the root call at this accepted state already evaluated it
+        // (bitwise the same `(t, y, y')`, nothing evaluated since): judge on
+        // that evaluation; otherwise evaluate the state, as before.
+        let crosscheck = *self.crosscheck.get_or_insert_with(|| {
+            std::env::var("LD01_S3_RULE_I_CROSSCHECK").is_ok_and(|v| v == "1")
+        });
+        let held = joined.holds_value_evaluation(t, y, yp);
+        let before = if held && crosscheck {
+            Some(rule_i_inputs(joined)?)
+        } else {
+            None
+        };
+        if held && !crosscheck {
+            self.reused += 1;
+        } else {
+            joined
+                .evaluate(t, y, yp, None, 0., None)
+                .map_err(|e| format!("rule I: the operator at {t} s: {e:?}"))?;
+        }
+        if let Some(before) = before {
+            self.crosschecked += 1;
+            let after = rule_i_inputs(joined)?;
+            if before != after {
+                self.mismatches += 1;
+                if self.first_mismatch.is_none() {
+                    let k = before.iter().zip(&after).position(|(a, b)| a != b);
+                    self.first_mismatch = Some(json!({"t_s": t, "index": k, "lengths": [before.len(), after.len()]}));
+                }
+            }
+        }
         self.samples += 1;
         let phase = joined
             .region_phases()
             .map_err(|e| format!("rule I: region phases at {t} s: {e:?}"))?;
-        let (label, verdict) = match post_trip_domain::admit_accepted(
+        let admitted = post_trip_domain::admit_accepted(
             joined.nuclear(),
             &phase,
             extension,
             joined.travel(),
             t,
             0.,
-        ) {
+        );
+        self.verdicts.fold(&[t]);
+        for r in &phase {
+            self.verdicts.fold(&[r.saturation_departure_k, r.vapor_kg]);
+        }
+        match &admitted {
+            Ok(a) => {
+                let m = &a.margin;
+                self.verdicts.fold(&[1., f64::from(u8::from(a.domain == Domain::Original)), f64::from(u8::from(m.holds))]);
+                for v in [&m.pivots, &m.operator, &m.reactivity_gain, &m.water_terms] {
+                    self.verdicts.fold(&[v.len() as f64]);
+                    self.verdicts.fold(v);
+                }
+            }
+            Err(e) => {
+                self.verdicts.fold(&[2.]);
+                for b in format!("{e:?}").bytes() {
+                    self.verdicts.fold(&[f64::from(b)]);
+                }
+            }
+        }
+        let (label, verdict) = match admitted {
             Ok(a) => {
                 self.margin_failures += u64::from(!a.margin.holds);
                 if a.domain != Domain::Original && self.first_extended.is_none() {
