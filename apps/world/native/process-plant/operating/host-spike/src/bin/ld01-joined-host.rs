@@ -218,14 +218,40 @@ fn identity(packet: &compose::PacketFile) -> Result<Value, String> {
 impl Unit {
     /// Compose afresh and build stock IDA at (t, y, yp) with the run's
     /// configuration; the caller then starts it exactly.
+    /// Compose with the declaration's derived tolerance classes (S2-D24r,
+    /// S3-D16) always applied: a declaration whose derived class is absent
+    /// or still open (the harness's labelled preview) is refused, so the
+    /// host never runs on G12's class or on a superseded basis.
     fn compose(d: &Declaration) -> Result<(Composed, Value), String> {
+        let declared = d
+            .gates
+            .value
+            .get("derivedTolerance")
+            .and_then(|v| v.get("value_kg_s"))
+            .and_then(Value::as_f64);
+        let Some(declared_kg_s) = declared else {
+            return Err(format!(
+                "{} declares no filled derivedTolerance.value_kg_s: the host applies only declared derived classes (S2-D24r, S3-D16), never G12's class or a preview",
+                gates::declaration_page()
+            ));
+        };
         let (c0, w0) = (clock::thread_s(), Instant::now());
         let c = compose::compose_from(&d.shared, Some(&d.gates), None);
+        let derived = &c.receipt["derived_tolerances"];
+        if derived["declared_value_kg_s"].as_f64() != Some(declared_kg_s) {
+            return Err(format!(
+                "the composition did not apply the declared derived class: {derived}"
+            ));
+        }
         let s1 = c.receipt["s1_settling"]["cpu_s"].as_f64();
         Ok((
             c,
             json!({"compose_cpu_s": clock::thread_s() - c0, "compose_wall_s": w0.elapsed().as_secs_f64(),
-                "of_which_s1_settle_export_cpu_s": s1}),
+                "of_which_s1_settle_export_cpu_s": s1,
+                "derived_tolerance": {"class": derived["class"], "rule": derived["rule"],
+                    "applied": derived["applied"], "applied_kg_s_range": derived["applied_kg_s_range"],
+                    "derived_kg_s_range": derived["derived_kg_s_range"], "coordinates": derived["coordinates"],
+                    "g12_value_kg_s": derived["g12_value_kg_s"]}}),
         ))
     }
     fn configure(&mut self) -> Result<(), String> {
