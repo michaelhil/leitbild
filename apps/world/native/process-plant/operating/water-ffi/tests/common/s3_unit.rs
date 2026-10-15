@@ -402,3 +402,27 @@ pub fn compose(inputs: &Inputs, state: &Value) -> Result<S3Unit, String> {
         reference,
     })
 }
+
+/// The S3 cases block (`ld01-s3-cases-c1c3`) of a page, as JSON.
+pub fn cases_block(page: &str) -> Result<Value, String> {
+    let open = "```ld01-s3-cases-c1c3\n";
+    let mut found = page.match_indices(open).map(|(i, _)| i);
+    let start = found.next().ok_or("no ld01-s3-cases-c1c3 block")? + open.len();
+    if found.next().is_some() {
+        return Err("more than one ld01-s3-cases-c1c3 block".into());
+    }
+    let end = start + page[start..].find("\n```").ok_or("unterminated block")?;
+    serde_json::from_str(&page[start..end]).map_err(|e| e.to_string())
+}
+
+/// S3-D35 (lead, 15 Oct; DR-P3-PT1-2): every S3 settle bounds IDA's step by
+/// the declared `settling.maxStep_s` of the S3 block (settling phase only),
+/// so the settling measure reads step-resolved outputs, not a long step's
+/// interpolant. Absent, nonpositive or nonfinite refuses.
+pub fn settle_max_step(block: &Value) -> Result<f64, String> {
+    match block.pointer("/settling/maxStep_s").and_then(Value::as_f64) {
+        Some(h) if h.is_finite() && h > 0. => Ok(h),
+        Some(h) => Err(format!("settling.maxStep_s {h} is not a positive step")),
+        None => Err("the S3 block declares no settling.maxStep_s (S3-D35)".into()),
+    }
+}

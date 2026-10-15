@@ -340,6 +340,22 @@ fn each_case_takes_its_clock_and_command_from_the_block() {
     );
 }
 
+#[test]
+fn the_s3_settle_reads_its_maximum_step_from_the_block() {
+    // S3-D35: settling.maxStep_s; r3.4 has none yet, so a settle refuses.
+    let mut v: Value = serde_json::from_str(C1C3_R3_4).unwrap();
+    assert!(s3_unit::settle_max_step(&v).is_err());
+    v["settling"] = json!({"maxStep_s": 2.0});
+    assert_eq!(s3_unit::settle_max_step(&v), Ok(2.));
+    v["settling"]["maxStep_s"] = json!(0.);
+    assert!(s3_unit::settle_max_step(&v).is_err());
+    // The block is found once in a page.
+    let page = format!("text\n```ld01-s3-cases-c1c3\n{C1C3_R3_4}\n```\nmore");
+    assert_eq!(s3_unit::cases_block(&page).unwrap()["revision"], "3.4");
+    let twice = format!("{page}\n```ld01-s3-cases-c1c3\n{{}}\n```");
+    assert!(s3_unit::cases_block(&twice).is_err());
+}
+
 // ------------------------------------------------------------ the case run
 
 /// The PZR roof pressure, SG pressures and rod travel range at each frame's
