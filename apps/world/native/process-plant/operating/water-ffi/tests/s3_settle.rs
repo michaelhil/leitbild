@@ -30,12 +30,21 @@
 //! `LD01_S2_GATES_SOURCE`, `LD01_S3_SETTLE_FROM` (the S2 settled state of
 //! this packet), `LD01_IC_SECTION`, `LD01_PZR_CONTROL_SECTION`,
 //! `LD01_PZR_CONTROL_WIKI`, `ELEC_PACKET`, `LD01_S3_SETTLE_CAP_S`,
-//! `LD01_S3_SETTLE_CPU_CAP_S` and `LD01_S3_SETTLE_DIR` (a new directory).
+//! `LD01_S3_SETTLE_CPU_CAP_S`, `LD01_S3_SETTLE_DIR` (a new directory) and
+//! `LD01_S3_DECLARATION` (the page holding the S3 cases block, whose
+//! `settling.maxStep_s` bounds the settle's step, S3-D35).
+//!
+//! S3-D35 (lead, 15 Oct; IC-CTRL's DR-P3-PT1-2): the settle's IDA step is
+//! bounded by the S3 block's declared maximum (settling phase only, recorded
+//! in the receipt), so the settling measure reads step-resolved outputs; the
+//! state handed on is the accepted step that ends at the settled sample.
 #![cfg(all(feature = "ida", target_os = "macos"))]
 #[path = "common/filter.rs"]
 mod filter;
 #[path = "common/pzr_control.rs"]
 mod pzr_control;
+#[path = "common/s3_unit.rs"]
+mod s3_unit;
 #[path = "joined_spine.rs"]
 mod spine;
 
@@ -484,6 +493,13 @@ fn s3_settle_state_for_c1() {
     ida.set_max_order(MAX_ORDER).unwrap();
     ida.constrain_nonnegative(&nonnegative).unwrap();
     restart.configure(&mut ida).unwrap();
+    // S3-D35: the settle's declared maximum step, from the S3 block.
+    let declaration_path = env("LD01_S3_DECLARATION");
+    let declaration_text = std::fs::read_to_string(&declaration_path).expect("the S3 declaration");
+    let settle_max_step_s = s3_unit::cases_block(&declaration_text)
+        .and_then(|b| s3_unit::settle_max_step(&b))
+        .unwrap_or_else(|e| panic!("S3-D35: {e}"));
+    ida.set_max_step(settle_max_step_s).unwrap();
     root_directions(&mut ida).unwrap();
     // The commissioned demand, L1's identity and the slice in force: the
     // exact consistent start at t0.
@@ -603,6 +619,16 @@ fn s3_settle_state_for_c1() {
     }
     driver.close_segment(&ida, t).ok();
     let total_cpu_s = z1::cpu_s() - started;
+    // The state handed on is the solver's own at the settled sample: the
+    // driver stops at every output time, so the last accepted step ends
+    // there (never an interpolant inside a longer step).
+    if failure.is_none() {
+        assert!(
+            (driver.solver_reached_s - t).abs() <= 1e-9 * t.abs().max(1.),
+            "the settle's state at {t} s is not the solver's (it reached {} s)",
+            driver.solver_reached_s
+        );
+    }
     let snapshot = ida.system().system_discrete_state();
     let state = json!({"t_s": t, "packet": packet_path, "packet_sha256": packet_sha256,
         "y": &y_all[..n], "yp": &yp_all[..n], "y_bits": bits(&y_all[..n]), "yp_bits": bits(&yp_all[..n]),
@@ -628,6 +654,9 @@ fn s3_settle_state_for_c1() {
         "sections": {"ic": ic_path, "pzr_control": control_path, "control_wiki": control_wiki, "electrical": elec_path},
         "gates": {"source": gates_path, "sha256": spine::sha256(gates_text.as_bytes()), "settling": settling, "outputInterval_s": output_s},
         "configuration": {"max_order": MAX_ORDER, "newton_coefficient": NEWTON_COEFFICIENT, "delta_cj_lsetup": DELTA_CJ_LSETUP,
+            "settle_max_step_s": settle_max_step_s,
+            "settle_max_step_rule": "S3-D35: the S3 block's settling.maxStep_s, settling phase only; the state handed on is the solver's at the settled sample",
+            "s3_declaration": {"path": declaration_path, "sha256": spine::sha256(declaration_text.as_bytes())},
             "first_step_s": FIRST_STEP_S, "relative_tolerance": rtol, "frame_s": ic.frame_s,
             "integration": "frame driver: stock IDA_ONE_STEP, observation from IDAGetDky, restarts by discrete_restart",
             "derived_tolerances": derived, "stator_rows": stator, "stator_budget": "S3-D23: 10 A, 1 MW",
