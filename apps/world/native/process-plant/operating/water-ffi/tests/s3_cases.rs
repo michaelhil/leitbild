@@ -741,9 +741,14 @@ struct Driven {
     zero: f64,
     exit_after_zero: Option<f64>,
     failure: Option<String>,
-    /// `(t − zero, the run thread's CPU less the gate observation)`.
-    /// `(t − zero, recurring CPU-s, recurring instructions)`.
-    marks: Vec<(f64, f64, f64)>,
+    /// Rule G's marks ([`s3_harness::families::Mark`]).
+    marks: Vec<s3_harness::families::Mark>,
+    /// `(t − zero, cumulative stock convergence failures)` (H1a).
+    convergence: Vec<(f64, f64)>,
+    /// Located seat time per rod cluster index (S2's timing comparison).
+    seats: std::collections::BTreeMap<usize, f64>,
+    /// The acquired reactor trip after zero (the first division's trip).
+    reactor_trip_after_zero: Option<f64>,
     repeat_record: Value,
     window_end_state: Option<(String, String)>,
     end_after_zero: f64,
@@ -759,6 +764,10 @@ struct Ask<'a> {
     credited_from: f64,
     /// Where the window-end state is written (C2/C3, rule K), if anywhere.
     window_state: Option<String>,
+    /// Whether the case's declared event window applies (decision 0015
+    /// E2's cap and E4/H1's window-end restart): the run, its repeat and
+    /// the cost drive; never a reference (R1 has its own cap, R2 none).
+    event_window: bool,
 }
 
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)] // One case: composition, run, judgement.
@@ -774,7 +783,7 @@ fn drive(
     ask: &Ask<'_>,
 ) -> Driven {
     use leitbild_operating_water::{
-        frame::{COUNTER_NAMES, Class, Client, Diagnostic, Driver, Setup},
+        frame::{Action, COUNTER_NAMES, Change, Class, Client, Diagnostic, Driver, Setup},
         ic::ProtectionClient,
         ida::System,
         joined::JoinedSystem,
@@ -860,7 +869,8 @@ fn drive(
             credited_from: zero + ask.credited_from,
             reader: outputs::Reader::new(joined, &g.network_packet, g.reference_travel_m)
                 .expect("credited output reader"),
-            rods: false,
+            // Event cases record the rods' travel for S2's timing check.
+            rods: case != Case::C1,
             credited: compare::Credited::default(),
             credited_error: None,
             plan,
@@ -890,6 +900,7 @@ fn drive(
         rule_i: observe::RuleI::default(),
         gates: gates_part,
         instructions: 0,
+        instructions_error: None,
     };
     // A reference's own cap (R1: S1's eventReference.maxStep_s) holds over
     // its whole run, as S2's R1.
@@ -900,7 +911,7 @@ fn drive(
     // Decision 0015 E2: the 20 ms cap only inside the case's declared event
     // window, set by the driver at the restart that starts it (C4's hook)
     // and removed at the first chunk bound at or after its end.
-    let window_cap = window_cap(case, spec).filter(|_| ask.max_step.is_none());
+    let window_cap = window_cap(case, spec).filter(|_| ask.event_window);
     if let Some(w) = &window_cap {
         driver.restart_max_step = Some((w.max_step_s, w.starts));
     }
@@ -914,6 +925,18 @@ fn drive(
     }
     if let Some(c) = command {
         driver.command(zero, c).unwrap();
+    }
+    // E4/H1: the window ends with a restart from the accepted state (the
+    // exact consistent start), then the cap is lifted (M1).
+    if let Some(w) = &window_cap {
+        driver
+            .decide(vec![Change {
+                due_s: zero + w.window_s,
+                class: Class::R,
+                kind: "H1 window-end restart (E4)".into(),
+                action: Action::Held(Box::new(|_| Ok(()))),
+            }])
+            .unwrap();
     }
     let setup = Setup {
         network_ids: &network_ids,
@@ -943,7 +966,8 @@ fn drive(
     bounds.retain(|b| *b > t0 && *b <= until);
     bounds.sort_by(f64::total_cmp);
     bounds.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
-    let mut marks: Vec<(f64, f64, f64)> = vec![(t0 - zero, 0., 0.)];
+    let mut marks: Vec<s3_harness::families::Mark> = vec![(t0 - zero, 0., 0., 0., 0.)];
+    let mut convergence: Vec<(f64, f64)> = vec![(t0 - zero, 0.)];
     let operator_trip = operator_trip_delay(case, spec).unwrap();
     let mut operator_trip_record = Value::Null;
     let mut window_end_state = None;
@@ -1018,16 +1042,26 @@ fn drive(
                     last["removed_after_zero_s"] = json!(*b - zero);
                 }
             }
+            // Rule G: CPU and instructions with rule I counted (S3-D46;
+            // in an ungated drive the observer is rule I alone) and without.
+            let cpu_with = spine::z1::cpu_s() - run_started - ledger_quadrature_cpu_s(ida.system());
+            let ins_with = match (&instructions0, s3_harness::counters::instructions()) {
+                (Ok(a), Ok(b)) if observer.instructions_error.is_none() => {
+                    b.saturating_sub(*a) as f64
+                }
+                _ => f64::NAN,
+            };
             marks.push((
                 reached - zero,
-                spine::z1::cpu_s()
-                    - run_started
-                    - driver.cpu.gate_s
-                    - ledger_quadrature_cpu_s(ida.system()),
-                (s3_harness::counters::instructions()
-                    .saturating_sub(instructions0)
-                    .saturating_sub(observer.instructions)) as f64,
+                cpu_with,
+                ins_with,
+                cpu_with - driver.cpu.gate_s,
+                ins_with - observer.instructions as f64,
             ));
+            let open_failures = ida
+                .stats()
+                .map_or(f64::NAN, |st| st.convergence_failures as f64);
+            convergence.push((reached - zero, driver.totals[5] as f64 + open_failures));
             // Rule K's post-event state: the window's end (C2, C3), the
             // solver's own state there (the frame stop), for SPECTRUM.
             if r.is_ok()
@@ -1171,8 +1205,8 @@ fn drive(
         "cpu": {"preparation_s": preparation_cpu_s, "run_s": run_cpu_s, "solver_s": driver.cpu.solver_s,
             "observation_s": driver.cpu.observation_s, "restart_s": driver.cpu.restart_s, "held_s": driver.cpu.held_s,
             "gate_observation_s": driver.cpu.gate_s, "ledger_quadrature_s": ledger_cpu_s,
-            "instructions": {"run": marks.last().map(|m| m.2), "observer": observer.instructions,
-                "note": "the process's instructions retired over the run less the observer's own calls; in a gated run the ledgers' integrands are not subtracted (the cost family reads the ungated cost drive)"},
+            "instructions": {"run_with_observer": marks.last().map(|m| m.2), "observer": observer.instructions, "error": observer.instructions_error,
+                "note": "the process's instructions retired over the run; the observer's own calls (rule I alone in an ungated drive) reported apart; the cost family reads an ungated drive"},
             "recurring_s": run_cpu_s - driver.cpu.gate_s - ledger_cpu_s,
             "worst_step": {"cpu_s": driver.cpu.worst_step.0, "reached_s": driver.cpu.worst_step.1},
             "run_per_simulated_s": if simulated > 0. { json!(run_cpu_s / simulated) } else { Value::Null },
@@ -1190,6 +1224,37 @@ fn drive(
         driver.counts.total(Class::S),
         driver.cpu.gate_s,
     );
+    // Seats by cluster index (the rods' layout labels), as S2's runner.
+    let cluster_index: std::collections::BTreeMap<String, usize> = ida
+        .system()
+        .integrated()
+        .joined
+        .layouts()
+        .iter()
+        .find(|(o, _)| *o == "rods")
+        .map(|(_, l)| {
+            l.labels
+                .iter()
+                .filter_map(|x| {
+                    x.strip_prefix("y[")
+                        .map(|v| v.trim_end_matches(']').to_string())
+                })
+                .enumerate()
+                .map(|(i, id)| (id, i))
+                .collect()
+        })
+        .unwrap_or_default();
+    let seats: std::collections::BTreeMap<usize, f64> = tl
+        .seats
+        .iter()
+        .filter_map(|(c, t)| cluster_index.get(c).map(|i| (*i, zero + *t)))
+        .collect();
+    let reactor_trip_after_zero = protection
+        .protection
+        .divisions
+        .iter()
+        .filter_map(|d| d.trip.as_ref().map(|c| c.at_s - zero))
+        .reduce(f64::min);
     Driven {
         record,
         observer,
@@ -1197,6 +1262,9 @@ fn drive(
         exit_after_zero,
         failure,
         marks,
+        convergence,
+        seats,
+        reactor_trip_after_zero,
         repeat_record,
         window_end_state,
         end_after_zero: end - zero,
@@ -1309,6 +1377,7 @@ fn rule_i_is_judged_at_every_accepted_step() {
             max_step: None,
             credited_from: 0.,
             window_state: None,
+            event_window: true,
         },
     );
     let steps = run.record["stock_totals"]["steps"].as_i64().unwrap();
@@ -1400,6 +1469,7 @@ fn s3_case_run() {
             max_step: None,
             credited_from: judged_from,
             window_state: window_state("run"),
+            event_window: true,
         },
     );
     if run.record["composition"]["spray_path"] != json!(true) {
@@ -1452,11 +1522,22 @@ fn s3_case_run() {
                 max_step: None,
                 credited_from: judged_from,
                 window_state: None,
+                event_window: true,
             },
         )
     });
     let cost_marks = cost_drive.as_ref().map_or(&run.marks, |c| &c.marks);
     let mut families = serde_json::Map::new();
+    // The trip average: C2 from the trip (zero); C3 from the acquired
+    // reactor trip.
+    let trip_from = match case {
+        Case::C1 => None,
+        Case::C2 => Some(0.),
+        Case::C3 => run.reactor_trip_after_zero,
+    };
+    let same_trajectory = cost_drive
+        .as_ref()
+        .map(|c| c.record["frames"] == run.record["frames"]);
     let mut g_cost = s3_harness::families::cost(
         case,
         &budgets_block,
@@ -1464,15 +1545,16 @@ fn s3_case_run() {
         end,
         spec["window_s"].as_f64(),
         recovery_s,
+        trip_from,
         quiet_ratio,
+        same_trajectory,
     );
     g_cost["measured_on"] = json!(if cost_drive.is_some() {
-        "the ungated cost drive (same trajectory; frames compared)"
+        "the ungated cost drive (same trajectory; frames compared, in the verdict)"
     } else {
         "the run"
     });
     if let Some(c) = &cost_drive {
-        g_cost["cost_drive_same_frames"] = json!(c.record["frames"] == run.record["frames"]);
         g_cost["cost_drive_cpu"] = c.record["cpu"].clone();
     }
     families.insert("G_cost".into(), g_cost);
@@ -1508,6 +1590,7 @@ fn s3_case_run() {
                     max_step: None,
                     credited_from: judged_from,
                     window_state: window_state("repeat"),
+                    event_window: true,
                 },
             );
             families.insert(
@@ -1585,6 +1668,7 @@ fn s3_case_run() {
                     max_step,
                     credited_from: from,
                     window_state: None,
+                    event_window: false,
                 },
             );
             let rg = r.observer.gates.as_ref().unwrap();
@@ -1625,14 +1709,84 @@ fn s3_case_run() {
             );
             references.push((name, r));
         }
-        let verdict = if comparisons.iter().all(|c| c["verdict"] == "pass") {
-            "pass"
-        } else if comparisons.iter().any(|c| c["verdict"] == "fail") {
-            "fail"
-        } else {
-            "incomplete"
-        };
-        families.insert("E_refinement".into(), json!({"family": "E refinement", "verdict": verdict,
+        // E3/H2: the cap cycle against R1 over the window; S2's rod timing
+        // against R1 and R2; H1a: the continuation's convergence failures.
+        let mut checks = serde_json::Map::new();
+        if let Some(w) = spec["window_s"].as_f64().filter(|_| case != Case::C1) {
+            let w_end = w.min(end);
+            let r1 = references.iter().find(|(n, _)| n == "R1");
+            checks.insert(
+                "cap_cycle".into(),
+                match r1 {
+                    Some((_, r)) => s3_harness::families::cap_cycle(
+                        &og.credited,
+                        &r.observer.gates.as_ref().unwrap().credited,
+                        run.zero,
+                        w_end,
+                        &g.budgets,
+                        g.s2.shared
+                            .number("/eventReference/capCycleUncreditedRmsRatioMax"),
+                        g.s2.shared
+                            .number("/eventReference/capCycleFloorBudgetFraction"),
+                    ),
+                    None => json!({"verdict": "not run", "reason": "R1 was not run"}),
+                },
+            );
+            let times = |c: &compare::Credited, seats: &std::collections::BTreeMap<usize, f64>| {
+                compare::insertion_times(
+                    c,
+                    run.zero,
+                    g.reference_travel_m,
+                    &g.budgets.insertion_fractions,
+                    seats,
+                )
+            };
+            let mut timing = serde_json::Map::new();
+            let mut timing_ok = true;
+            let mut timing_ran = 0;
+            for (name, r) in &references {
+                let pair = (
+                    times(&og.credited, &run.seats),
+                    times(&r.observer.gates.as_ref().unwrap().credited, &r.seats),
+                );
+                let v = match pair {
+                    (Ok(a), Ok(b)) if !run.seats.is_empty() => {
+                        compare::compare_timing(&a, &b, &g.budgets)
+                    }
+                    (a, b) => {
+                        json!({"within": false, "evaluable": false, "run": a.err(), "reference": b.err(), "seats": run.seats.len()})
+                    }
+                };
+                timing_ok &= v["within"] == json!(true);
+                timing_ran += 1;
+                timing.insert(name.clone(), v);
+            }
+            checks.insert("rod_timing".into(), json!({"verdict": if timing_ran == 0 { "not run" } else if timing_ok { "pass" } else { "fail" },
+                "threshold_source": "ld01-accuracy-contract thresholdTiming_s, ld01-s2-accuracy rodInsertionFractions", "references": timing}));
+            let post = g.s2.shared.number("/recovery/postWindow_s");
+            let mut h1a = s3_harness::families::convergence_failures(
+                &run.convergence,
+                w,
+                (w + post).min(end),
+                g.s2.shared.number("/recovery/maxConvergenceFailures"),
+            );
+            if end < w + post {
+                h1a["truncated_by_rule_i"] = json!(true);
+            }
+            checks.insert("h1a_convergence".into(), h1a);
+        }
+        let verdict = s3_harness::families::overall_of(
+            comparisons
+                .iter()
+                .map(|c| c["verdict"].as_str().unwrap_or("?"))
+                .chain(
+                    checks
+                        .values()
+                        .map(|c| c["verdict"].as_str().unwrap_or("?")),
+                ),
+        );
+        families.insert("E_refinement".into(), json!({"family": "E refinement", "verdict": verdict, "checks": checks,
+            "electrical_band": "S3-D47 (interim, disclosed): E′ reports raw and 2 Hz-filtered differences; the verdict reads decision 0015 E1's 2 Hz band until the owner decides S4-6",
             "threshold_source": "ld01-accuracy-contract + ld01-s2-accuracy (E0), ld01-s2-gates referenceToleranceFactor, ld01-s1-gates eventReference",
             "electrical_extension": "E′ (S3-D23) per comparison (electrical_e0): Ieq = |i_dq|/sqrt(3) against 10 A and terminal power against 1 MW, for the cases accuracyExtension.appliesTo names",
             "comparisons": comparisons}));
@@ -1806,17 +1960,6 @@ fn s3_case_run() {
             "C1 drift, SS-1 and SS-2 (a gate run)",
         ]);
     }
-    // A family the run could not exercise stays listed, with its reason.
-    let unexercised: Vec<Value> = families
-        .iter()
-        .filter(|(_, v)| {
-            matches!(
-                v["verdict"].as_str(),
-                Some("not executable" | "not executable as declared" | "not run")
-            )
-        })
-        .map(|(k, v)| json!({"family": k, "verdict": v["verdict"], "reason": v["reason"]}))
-        .collect();
     let failure = run.failure.clone();
     let evidence = refusals.is_empty() && !preview && failure.is_none();
     let status = if evidence {
@@ -1833,30 +1976,13 @@ fn s3_case_run() {
     } else {
         status
     };
-    let judged_families: Vec<(&String, &str)> = families
-        .iter()
-        .map(|(k, v)| (k, v["verdict"].as_str().unwrap_or("?")))
-        .collect();
-    let verdict = if failure.is_some() {
-        "FAIL: the run failed".to_string()
-    } else if !lines::all_pass(run.record["lines"].as_array().unwrap()) {
-        "lines not all passing".to_string()
-    } else if judged_families.iter().any(|(_, v)| *v == "fail") {
-        format!(
-            "lines PASS; families failing: {:?}",
-            judged_families
-                .iter()
-                .filter(|(_, v)| *v == "fail")
-                .map(|(k, _)| k)
-                .collect::<Vec<_>>()
-        )
-    } else if !unexercised.is_empty() || !not_implemented.is_empty() {
-        "lines PASS; families pass where executable (see gates_not_yet_implemented)".to_string()
-    } else {
-        "lines and every gate family PASS".to_string()
-    };
+    let (verdict, not_judged) = s3_harness::families::overall(
+        failure.is_some(),
+        lines::all_pass(run.record["lines"].as_array().unwrap()),
+        &families,
+    );
     let mut gates_not_yet: Vec<Value> = not_implemented.iter().map(|s| json!(s)).collect();
-    gates_not_yet.extend(unexercised);
+    gates_not_yet.extend(not_judged);
     let mut receipt = json!({
         "kind": if evidence { "s3-case-run" } else { "s3-case-preview" },
         "case": case.key(), "status": status, "verdict": verdict, "failure": failure,

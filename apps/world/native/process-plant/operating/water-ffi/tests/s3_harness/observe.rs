@@ -199,9 +199,22 @@ pub struct CaseObserver {
     pub extension: Extension,
     pub rule_i: RuleI,
     pub gates: Option<Gates>,
-    /// The instructions its own calls retired (the cost family subtracts
-    /// them, as the driver's `gate_s` CPU).
+    /// The instructions its own calls retired (the cost family reports
+    /// rule G without them, as the driver's `gate_s` CPU) ...
     pub instructions: u64,
+    /// ... or why the counter could not be read.
+    pub instructions_error: Option<String>,
+}
+
+impl CaseObserver {
+    fn count(&mut self, i0: Result<u64, String>) {
+        match (i0, super::counters::instructions()) {
+            (Ok(a), Ok(b)) => self.instructions += b.saturating_sub(a),
+            (Err(e), _) | (_, Err(e)) => {
+                self.instructions_error.get_or_insert(e);
+            }
+        }
+    }
 }
 
 fn grid_after(origin: f64, dt: f64, t: f64) -> f64 {
@@ -351,10 +364,22 @@ impl<J: JoinedSystem<Properties = If97>> Observer<Electrified<J>> for CaseObserv
         side: Side,
     ) -> Result<(), String> {
         let i0 = super::counters::instructions();
+        // Rule I on the restart's consistent start too (S2 judged both
+        // sides; a birth's exit is not taken a step late).
+        if side == Side::AfterRestart {
+            let n = self.n;
+            self.rule_i.judge(
+                &mut system.integrated_mut().joined,
+                &self.extension,
+                t,
+                &y[..n],
+                &yp[..n],
+            )?;
+        }
         if let Some(g) = self.gates.as_mut() {
             g.sample(system, self.n, t, y, yp, side);
         }
-        self.instructions += super::counters::instructions().saturating_sub(i0);
+        self.count(i0);
         Ok(())
     }
     fn accepted(
@@ -377,7 +402,7 @@ impl<J: JoinedSystem<Properties = If97>> Observer<Electrified<J>> for CaseObserv
         if let Some(g) = self.gates.as_mut() {
             g.accepted(system, n, t, y, q);
         }
-        self.instructions += super::counters::instructions().saturating_sub(i0);
+        self.count(i0);
         Ok(())
     }
 }
