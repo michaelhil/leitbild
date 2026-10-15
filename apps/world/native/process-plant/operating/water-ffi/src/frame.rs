@@ -598,7 +598,9 @@ impl<S: JoinedSystem> Driver<S> {
         let due = self.earliest_due().is_some_and(|d| Self::due_at(d, t))
             || self.commands.first().is_some_and(|c| Self::due_at(c.0, t));
         if due {
-            self.apply(ida, t, None, y, yp, clients, setup, None)?;
+            // Merge of C5X's hook onto S3GATES's observed `apply` (C5L; KERN2
+            // to reconcile): no gate observer here; a caller samples around it.
+            self.apply(ida, t, None, y, yp, clients, setup, None, None)?;
         }
         Ok(())
     }
