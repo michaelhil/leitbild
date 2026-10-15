@@ -81,9 +81,8 @@ impl<P: Properties> Network<P> {
             // exhaustion root's); beyond that it refuses like any stock.
             let stocks = self.phase_stocks(node, y);
             let equilibrium = self.cell_modes()[node] == super::CellMode::Equilibrium;
-            for k in 0..2 {
+            for (k, &(mass, energy)) in stocks.iter().enumerate() {
                 let (mi, ui) = self.stock_indices(node, k);
-                let (mass, energy) = stocks[k];
                 let residue = equilibrium
                     && k == 1
                     && mass < 0.

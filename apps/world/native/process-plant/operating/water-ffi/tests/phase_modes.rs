@@ -652,15 +652,18 @@ fn stats(ida: &Ida<Handle>) -> Value {
     }
 }
 
-/// The post-birth spectrum test at one state: index 1 (infinite eigenvalues
-/// equal the zero columns of `B`), every resolved growing mode with its
-/// growth rate, and the finite modes up to 12 Hz.
+/// The post-birth spectrum test at one state: index 1 (as Z6 judges it:
+/// infinite eigenvalues equal the algebraic coordinates of the current id
+/// vector, including each equilibrium cell's `p, M_g, U_g` and each held
+/// path), every resolved growing mode with its growth rate, and the finite
+/// modes up to 20 Hz.
 fn spectrum_test(
     case: &mut Case,
     t: f64,
     y: &[f64],
     yp: &[f64],
     names: &[String],
+    algebraic: usize,
 ) -> (Value, bool) {
     let (a, b) = match case.pencil_at(t, y, yp) {
         Ok(p) => p,
@@ -671,7 +674,7 @@ fn spectrum_test(
         Ok(s) => s,
         Err(e) => return (json!({"t":t,"error":format!("{e:?}")}), false),
     };
-    let index_one = spec.infinite.count == spec.infinite.algebraic_coordinates;
+    let index_one = spec.infinite.count == algebraic;
     let top = |m: usize| -> Vec<Value> {
         let shape = &spec.shapes[m].right;
         let mut idx: Vec<usize> = (0..n).collect();
@@ -689,25 +692,21 @@ fn spectrum_test(
         .modes
         .iter()
         .enumerate()
-        .filter(|(_, m)| m.frequency_hz > 0.1 && m.frequency_hz <= 12. && !m.marginal)
+        .filter(|(_, m)| m.frequency_hz > 0.1 && m.frequency_hz <= 20. && !m.marginal)
         .map(|(k, m)| json!({"hz":m.frequency_hz,"zeta":m.damping_ratio,"top":top(k)}))
         .collect();
     (
-        json!({"t":t,"index_one":index_one,"infinite":spec.infinite.count,"algebraic_columns":spec.infinite.algebraic_coordinates,
-            "finite":spec.modes.len(),"resolved_growing":growing,"oscillatory_0_1_to_12_hz":low}),
+        json!({"t":t,"index_one":index_one,"infinite":spec.infinite.count,"algebraic_coordinates":algebraic,"zero_columns_of_b":spec.infinite.algebraic_coordinates,
+            "finite":spec.modes.len(),"resolved_growing":growing,"oscillatory_0_1_to_20_hz":low}),
         index_one,
     )
 }
 
 fn labels(case: &Case, regions: &[String]) -> Vec<String> {
     let mut out = vec![String::new(); case.net.dimension()];
-    for c in 0..case.regular() {
+    for (c, region) in regions.iter().enumerate().take(case.regular()) {
         for (k, i) in slots(&case.net, c).iter().enumerate() {
-            out[*i] = format!(
-                "{}.{}",
-                regions[c],
-                ["p", "M_l", "U_l", "M_g", "U_g", "B"][k]
-            );
+            out[*i] = format!("{region}.{}", ["p", "M_l", "U_l", "M_g", "U_g", "B"][k]);
         }
     }
     for l in &case.net.face_layout {
@@ -850,7 +849,9 @@ fn phase_modes_relief_case() {
                     next_output = ((t / output_s).round() + 1.) * output_s;
                 }
                 if t >= next_spectrum - 1e-9 {
-                    let (v, ok) = spectrum_test(&mut case.borrow_mut(), t, &y, &yp, &names);
+                    let algebraic = ids.iter().filter(|d| **d == 0.).count();
+                    let (v, ok) =
+                        spectrum_test(&mut case.borrow_mut(), t, &y, &yp, &names, algebraic);
                     index_one_everywhere &= ok;
                     spectra.push(v);
                     next_spectrum += spectrum_every;

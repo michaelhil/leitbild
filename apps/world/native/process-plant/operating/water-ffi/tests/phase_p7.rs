@@ -24,6 +24,13 @@
 //!   where two-phase compliance moves the lumped modes;
 //! - `LD01_P7_SPECTRUM_HZ`: upper limit of the reported modes.
 #![cfg(all(feature = "ida", target_os = "macos"))]
+// A study copy of the PHASE spike: its loops and closures keep the spike's form.
+#![allow(
+    clippy::needless_range_loop,
+    clippy::too_many_arguments,
+    clippy::redundant_closure_call,
+    clippy::collapsible_if
+)]
 use leitbild_operating_plant::{
     network::{
         self, ConsistentSystem, Coupling, Fluid, Network, PZR_MASS, PZR_TRACER, Properties,
@@ -265,14 +272,18 @@ impl Spike {
                 let mass = y[m0] * sc[m0];
                 let u = y[e0] * sc[e0] / mass;
                 let props = self.net.properties();
-                let point = props.caloric(false, p, u, false).map_err(network::Failure::Fatal)?;
+                let point = props
+                    .caloric(false, p, u, false)
+                    .map_err(network::Failure::Fatal)?;
                 let q = props.values(&point);
                 let isentropic = q.compressibility_per_pa
                     - q.temperature_k * q.expansion_per_k.powi(2) / (q.density_kg_m3 * q.cp_j_kg_k);
                 let liquid = self.net.volume(c) * isentropic;
                 let saturated = flash(self.net.volume(c) * rf.value, 0.);
-                Ok(json!({"cell":c,"mode":"L","p_pa":p,"compliance_m3_pa":liquid,
-                    "flash_if_saturated_m3_pa":saturated,"ratio":saturated/liquid}))
+                Ok(
+                    json!({"cell":c,"mode":"L","p_pa":p,"compliance_m3_pa":liquid,
+                    "flash_if_saturated_m3_pa":saturated,"ratio":saturated/liquid}),
+                )
             }
         }
     }
@@ -801,7 +812,7 @@ fn credited(spike: &mut Spike, t: f64, y: &[f64], yp: &[f64], taps: &Taps) -> Va
         .iter()
         .map(|&c| {
             let l = net.cell_layout[c];
-            json!([y[l.base]*sc[l.base], y[l.mass[1]]*sc[l.mass[1]]])
+            json!([y[l.base] * sc[l.base], y[l.mass[1]] * sc[l.mass[1]]])
         })
         .collect();
     json!({"t":t,"pt1_pa":pzr.map(|p|p.pt1_pa.value),"level_m":pzr.map(|p|p.collapsed_level_m.value),
@@ -926,7 +937,11 @@ fn what_if_spectra(
     groups: &[Vec<String>],
     max_hz: f64,
 ) -> Value {
-    let saved = (spike.modes.clone(), spike.held.clone(), spike.orientation.clone());
+    let saved = (
+        spike.modes.clone(),
+        spike.held.clone(),
+        spike.orientation.clone(),
+    );
     let mut out = Vec::new();
     let mut ym = y.to_vec();
     let mut cumulative: Vec<String> = Vec::new();
@@ -963,7 +978,11 @@ fn what_if_spectra(
         let holds = spike.update_holds(t, &ym, yp, &[]);
         let compliance: Vec<Value> = (0..spike.modes.len())
             .filter(|c| spike.modes[*c] == Mode::Equilibrium)
-            .map(|c| spike.compliance(c, &ym).unwrap_or_else(|e| json!({"cell":c,"error":format!("{e:?}")})))
+            .map(|c| {
+                spike
+                    .compliance(c, &ym)
+                    .unwrap_or_else(|e| json!({"cell":c,"error":format!("{e:?}")}))
+            })
             .collect();
         let spectrum = spectrum_summary(spike, t, &ym, yp, names, max_hz);
         out.push(json!({"equilibrium_regions":cumulative.clone(),"converted":converted,
@@ -1002,7 +1021,11 @@ fn phase_p7_post_birth_cost() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(60.);
     let depressurize_cap_s = 150.;
-    let env_f = |k: &str| std::env::var(k).ok().map(|v| v.parse::<f64>().unwrap_or_else(|_| panic!("{k}")));
+    let env_f = |k: &str| {
+        std::env::var(k)
+            .ok()
+            .map(|v| v.parse::<f64>().unwrap_or_else(|_| panic!("{k}")))
+    };
     let after_birth_s = env_f("LD01_P7_AFTER_BIRTH_S").unwrap_or(20.);
     let cpu_cap_s = 900.;
     let output_s = 0.1;
@@ -1085,7 +1108,11 @@ fn phase_p7_post_birth_cost() {
             // The network part (leading block) of an exported joined state.
             let bytes = std::fs::read(&file).expect("state file");
             let state: Value = serde_json::from_slice(&bytes).expect("state json");
-            assert_eq!(state["packet"].as_str(), Some(packet_path.as_str()), "state packet");
+            assert_eq!(
+                state["packet"].as_str(),
+                Some(packet_path.as_str()),
+                "state packet"
+            );
             let bits = |k: &str| -> Vec<f64> {
                 state[k]
                     .as_array()
@@ -1219,7 +1246,10 @@ fn phase_p7_post_birth_cost() {
             .housing
             .iter()
             .chain(&watch)
-            .map(|c| sp.compliance(*c, &y).unwrap_or_else(|e| json!({"cell":c,"error":format!("{e:?}")})))
+            .map(|c| {
+                sp.compliance(*c, &y)
+                    .unwrap_or_else(|e| json!({"cell":c,"error":format!("{e:?}")}))
+            })
             .collect();
         let what = (!what_if.is_empty())
             .then(|| what_if_spectra(&mut sp, 0., &y, &yp, &names, &region_ids, &what_if, max_hz));
@@ -1232,7 +1262,13 @@ fn phase_p7_post_birth_cost() {
     let mut ida =
         new_segment(&spike, &config, t, &y, &yp, &ids, phase_end, false).expect("first segment");
     let mut segment_start = (t, cpu_s());
-    let grid = |t: f64| if t + 1e-12 >= observe_from_s { observe_s } else { output_s };
+    let grid = |t: f64| {
+        if t + 1e-12 >= observe_from_s {
+            observe_s
+        } else {
+            output_s
+        }
+    };
     let mut next_output: f64 = next_grid(0., grid(0.));
     let mut post_event_marks: Vec<(f64, usize)> = Vec::new();
     loop {
@@ -1267,7 +1303,11 @@ fn phase_p7_post_birth_cost() {
                                 .collect();
                             let compliance: Vec<Value> = e_cells
                                 .iter()
-                                .map(|c| sp.compliance(*c, &y).unwrap_or_else(|e| json!({"cell":c,"error":format!("{e:?}")})))
+                                .map(|c| {
+                                    sp.compliance(*c, &y).unwrap_or_else(
+                                        |e| json!({"cell":c,"error":format!("{e:?}")}),
+                                    )
+                                })
                                 .collect();
                             // Diagnostic what-if (NOT a trajectory): the same
                             // pencil with the named vapor paths held (Pi_g = 0).
@@ -1510,22 +1550,20 @@ fn phase_p7_post_birth_cost() {
                     event["consistent_start"] = json!({"cpu_s":start_s,"residual":pair.residual.value,"constraint_rate":pair.constraint_rate.value,"projection_wrms":pair.projection.as_ref().map(|p|p.correction_wrms),"projection_passes":pair.projection.as_ref().map(|p|p.passes)});
                     if births {
                         event["spectrum_before"] = pre_spectrum.clone().unwrap_or(Value::Null);
-                        event["spectrum_after"] = spectrum_summary(
-                            &mut spike.borrow_mut(),
-                            t,
-                            &y,
-                            &yp,
-                            &names,
-                            max_hz,
-                        );
+                        event["spectrum_after"] =
+                            spectrum_summary(&mut spike.borrow_mut(), t, &y, &yp, &names, max_hz);
                         let mut sp = spike.borrow_mut();
                         let e_cells: Vec<usize> = (0..sp.modes.len())
                             .filter(|c| sp.modes[*c] == Mode::Equilibrium)
                             .collect();
-                        event["compliance_after"] = json!(e_cells
-                            .iter()
-                            .map(|c| sp.compliance(*c, &y).unwrap_or_else(|e| json!({"cell":c,"error":format!("{e:?}")})))
-                            .collect::<Vec<_>>());
+                        event["compliance_after"] = json!(
+                            e_cells
+                                .iter()
+                                .map(|c| sp
+                                    .compliance(*c, &y)
+                                    .unwrap_or_else(|e| json!({"cell":c,"error":format!("{e:?}")})))
+                                .collect::<Vec<_>>()
+                        );
                         if !what_if.is_empty() && first_birth == Some(t) {
                             event["what_if_after"] = what_if_spectra(
                                 &mut sp,
@@ -1621,7 +1659,10 @@ fn phase_p7_post_birth_cost() {
         "samples":samples,
     });
     if let Some(file) = &observe_file {
-        assert!(!std::path::Path::new(file).exists(), "observations are never overwritten: {file}");
+        assert!(
+            !std::path::Path::new(file).exists(),
+            "observations are never overwritten: {file}"
+        );
         std::fs::write(file, &observed).expect("observations");
     }
     let text = serde_json::to_string_pretty(&receipt).unwrap();
@@ -1691,8 +1732,14 @@ fn phase_p7_settled_pencil_modes() {
     let receipt = json!({"kind":"ld01-phase-p7-settled-pencil-modes-NOT-EVIDENCE","dump_dir":dir,"pencils":out});
     let text = serde_json::to_string_pretty(&receipt).unwrap();
     if let Ok(path) = std::env::var("LD01_P7_DUMP_RECEIPT") {
-        assert!(!std::path::Path::new(&path).exists(), "receipts are never overwritten: {path}");
+        assert!(
+            !std::path::Path::new(&path).exists(),
+            "receipts are never overwritten: {path}"
+        );
         std::fs::write(&path, &text).unwrap();
     }
-    println!("{}", json!({"pencils":out.iter().map(|p|json!({"pencil":p["pencil"],"modes":p["modes"].as_array().map(|m|m.len())})).collect::<Vec<_>>()}));
+    println!(
+        "{}",
+        json!({"pencils":out.iter().map(|p|json!({"pencil":p["pencil"],"modes":p["modes"].as_array().map(|m|m.len())})).collect::<Vec<_>>()})
+    );
 }
