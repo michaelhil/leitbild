@@ -16,7 +16,7 @@ use leitbild_operating_plant::{
 use leitbild_operating_water::{
     If97,
     frame::{Action, Change, Class, Client, Dense, Frame},
-    joined::Integrated,
+    joined::{Integrated, JoinedSystem},
 };
 
 pub type System = Integrated<If97>;
@@ -158,7 +158,9 @@ impl PzrClient {
         Ok(sum)
     }
 }
-impl Client<System> for PzrClient {
+// Generic over the joined system (KERN, S3-D28): the S3 settle composes
+// the electrical slice around the operator.
+impl<S: JoinedSystem> Client<S> for PzrClient {
     fn name(&self) -> &str {
         "LD01.PZR normal pressure control"
     }
@@ -171,7 +173,7 @@ impl Client<System> for PzrClient {
         self.lag_at = to;
         Ok(())
     }
-    fn frame(&mut self, k: u64, t: f64, dense: &dyn Dense) -> Result<Vec<Change<System>>, String> {
+    fn frame(&mut self, k: u64, t: f64, dense: &dyn Dense) -> Result<Vec<Change<S>>, String> {
         if t != self.lag_at {
             return Err(format!("frame at {t} s with the lag at {} s", self.lag_at));
         }
@@ -201,8 +203,9 @@ impl Client<System> for PzrClient {
                 due_s: t,
                 class: self.class,
                 kind: "PZR heater request".into(),
-                action: Action::Held(Box::new(move |s: &mut System| {
-                    s.joined
+                action: Action::Held(Box::new(move |s: &mut S| {
+                    s.integrated_mut()
+                        .joined
                         .pzr_mut()
                         .ok_or("no PZR block")?
                         .apply_control(t, &demand)
