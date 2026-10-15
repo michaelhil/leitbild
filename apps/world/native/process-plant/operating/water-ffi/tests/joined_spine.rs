@@ -7,7 +7,13 @@
 //! The harness needs stock IDA/KLU (`--features ida`).
 #![cfg(feature = "ida")]
 use leitbild_operating_plant::{
-    joined::{self, census, nuclear::Nuclear, packet, pzr::Pzr, solids::Solids},
+    joined::{
+        self, census,
+        nuclear::Nuclear,
+        packet,
+        pzr::{Pzr, SteelPreparation},
+        solids::Solids,
+    },
     network::{Network, PzrPreparation, packet::Packet as NetworkPacket},
 };
 use leitbild_operating_water::If97;
@@ -88,6 +94,7 @@ fn joined_census_against_table_1_1() {
         Pzr::new(
             network.stratified(),
             section,
+            SteelPreparation::Steady(joined_packet.pzr_steel.as_ref().expect("pzrSteel")),
             network.pzr_saturation_temperature_k(),
         )
         .expect("PZR owner")

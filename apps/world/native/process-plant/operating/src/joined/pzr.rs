@@ -17,10 +17,15 @@
 //! backpressure); zone heat is zero, since every external heat into the
 //! zones reaches them through the metal.
 //!
-//! G6 with P4 (S2 design choices, 11 October): the steel is prepared at the
-//! composed cell's `Tsat(p_s)`, and the heater demand is the metal's
-//! exterior loss (shell bands and both heads) at that temperature, computed
-//! once. Without a controller it is held constant (S2).
+//! G6 with P4 (S2 design choices, 11 October): the heater demand is the
+//! metal's exterior loss (shell bands and both heads) at the composed cell's
+//! `Tsat(p_s)`, computed once. Without a controller it is held constant
+//! (S2). S3-D36 (G18's principle, S2-D2/D3): every steel store starts at the
+//! steady state of its own laws at the prepared cell, the demand and the
+//! exterior loss, from the stock-IDA steady solids settle
+//! (`prepare_steady_solids`), carried by the packet's `pzrSteel` section
+//! ([`Steel`]); `Tsat(p_s)` is only that settle's initial state
+//! ([`SteelPreparation::Saturation`]).
 //!
 //! S3 (IC-CTRL): the normal pressure controller (`control::pzr_pressure`)
 //! replaces the demand at frame instants through [`Pzr::apply_control`],
@@ -85,6 +90,37 @@ pub struct Section {
     pub relief_back_pressure_pa: f64,
     /// The compiler's consumed pages, for receipts only.
     pub provenance: serde_json::Value,
+}
+
+/// The packet's `pzrSteel` section (S3-D36): each steel coordinate's
+/// prepared energy at the steady state of its laws, in the block's layout
+/// order and by its census label, from the stock-IDA steady solids settle.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Steel {
+    pub stores: Vec<SteelStore>,
+    /// The settle's provenance and receipt, for receipts only.
+    pub provenance: serde_json::Value,
+}
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SteelStore {
+    pub id: String,
+    #[serde(rename = "energy_J")]
+    pub energy_j: f64,
+    #[serde(rename = "temperature_K")]
+    pub temperature_k: f64,
+}
+
+/// Where the block's prepared steel energies come from.
+#[derive(Clone, Copy, Debug)]
+pub enum SteelPreparation<'a> {
+    /// Every steel at the composed cell's `Tsat(p_s)`: only the steady
+    /// solids settle's initial state.
+    Saturation,
+    /// The steady state of the steel's laws (S3-D36), the packet's
+    /// `pzrSteel`.
+    Steady(&'a Steel),
 }
 
 /// The relief device and its discrete state, retained by the block.
@@ -194,7 +230,7 @@ pub struct Pzr {
     /// bank's delivered power.
     request_w: f64,
     bank_power_w: Vec<f64>,
-    /// `Tsat(p_s)` of the composed cell: the prepared steel temperature.
+    /// `Tsat(p_s)` of the composed cell: P4's demand temperature.
     saturation_temperature_k: f64,
     /// A travel root's lift farther than this from its stop (full strokes)
     /// is not that root; declared by the harness before any transaction.
@@ -208,14 +244,17 @@ pub struct Pzr {
 }
 
 impl Pzr {
-    /// Compose the block on the cell from the packet's section, with the
-    /// steel at `saturation_temperature_k`, the composed cell's
-    /// `Tsat(p_s)`. Refuses a relief port whose demand would not read the
-    /// roof pressure (PT1 below the roof), a nonpositive backpressure or a
-    /// heater demand outside the banks' range.
+    /// Compose the block on the cell from the packet's section, with P4's
+    /// demand at `saturation_temperature_k`, the composed cell's
+    /// `Tsat(p_s)`, and the steel as `steel` prepares it. Refuses a relief
+    /// port whose demand would not read the roof pressure (PT1 below the
+    /// roof), a nonpositive backpressure, a heater demand outside the banks'
+    /// range, and steady steel that is not one store per steel coordinate in
+    /// layout order with its energy's own 304 temperature.
     pub fn new(
         cell: &Cell,
         section: &Section,
+        steel: SteelPreparation<'_>,
         saturation_temperature_k: f64,
     ) -> Result<Self, Failure> {
         let contact = section.heater_contact;
@@ -276,8 +315,53 @@ impl Pzr {
             .map(|i| walls.exterior(i, steel_t).value)
             .sum::<f64>();
         let bank_power_w = heaters.bank_powers(request_w)?;
-        let mut energy = heaters.prepared_energy(saturation_temperature_k)?;
-        energy.extend(walls.prepared_energy(saturation_temperature_k)?);
+        let labels: Vec<String> = heaters
+            .census()
+            .coordinates
+            .into_iter()
+            .chain(walls.census().coordinates)
+            .collect();
+        let energy = match steel {
+            SteelPreparation::Saturation => {
+                let mut energy = heaters.prepared_energy(saturation_temperature_k)?;
+                energy.extend(walls.prepared_energy(saturation_temperature_k)?);
+                energy
+            }
+            SteelPreparation::Steady(steel) => {
+                let masses: Vec<f64> = heaters
+                    .segments()
+                    .iter()
+                    .map(|g| g.steel_mass_kg)
+                    .chain(walls.elements().iter().map(|e| e.steel_mass_kg))
+                    .collect();
+                if steel.stores.len() != labels.len() {
+                    return Err(fatal(format!(
+                        "pzrSteel lists {} stores for {} steel coordinates",
+                        steel.stores.len(),
+                        labels.len()
+                    )));
+                }
+                let mut energy = Vec::with_capacity(labels.len());
+                for ((store, label), mass) in steel.stores.iter().zip(&labels).zip(&masses) {
+                    if &store.id != label {
+                        return Err(fatal(format!(
+                            "pzrSteel store {} where the layout has {label}",
+                            store.id
+                        )));
+                    }
+                    let own = section.caloric.temperature(s(store.energy_j / mass))?.value;
+                    let gap = (own - store.temperature_k).abs();
+                    if !gap.is_finite() || gap > 1e-9 * own {
+                        return Err(fatal(format!(
+                            "pzrSteel {label}: {} K is not its energy's {own} K",
+                            store.temperature_k
+                        )));
+                    }
+                    energy.push(store.energy_j);
+                }
+                energy
+            }
+        };
         let mut layout = Layout::default();
         let mut prepared = Vec::new();
         if relief.is_some() {
@@ -290,12 +374,7 @@ impl Pzr {
             );
             prepared.push(0.);
         }
-        let labels = heaters
-            .census()
-            .coordinates
-            .into_iter()
-            .chain(walls.census().coordinates);
-        for (label, e) in labels.zip(&energy) {
+        for (label, e) in labels.into_iter().zip(&energy) {
             if !(e.is_finite() && *e > 0.) {
                 return Err(fatal(format!("{label}: prepared steel energy {e} J")));
             }
@@ -321,8 +400,8 @@ impl Pzr {
     pub fn layout(&self) -> &Layout {
         &self.layout
     }
-    /// Prepared physical coordinates: the lift on its seat, every steel at
-    /// the composed `Tsat(p_s)`.
+    /// Prepared physical coordinates: the lift on its seat, every steel as
+    /// its [`SteelPreparation`] prepared it.
     pub fn prepared(&self) -> &[f64] {
         &self.prepared
     }
