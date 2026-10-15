@@ -207,6 +207,15 @@ pub trait Client<S> {
     /// Frame `k` at its instant `t`, after `advance` reached `t`: sample the
     /// plant's left limit, run the logic, return changes due at or after `t`.
     fn frame(&mut self, k: u64, t: f64, dense: &dyn Dense) -> Result<Vec<Change<S>>, String>;
+    /// HOOK (ICFIELD; KERN to reconcile): equipment reports. Frame `k` at
+    /// its instant `t`, before `frame`: the system's discrete state there
+    /// is its left limit (discrete changes apply after the frames of their
+    /// instant). Not called for a frame at a segment start the driver
+    /// processes before any step ([`Driver::start`]): a client reads the
+    /// system's state there when it is constructed.
+    fn sample(&mut self, _k: u64, _t: f64, _system: &S) -> Result<(), String> {
+        Ok(())
+    }
     /// Whether the integrator must stop exactly at frame `k` (a class-S
     /// output may change there). Protection, whose outputs are R, says no.
     fn stop_at_frame(&self, _k: u64) -> bool {
@@ -561,6 +570,38 @@ impl<S: JoinedSystem> Driver<S> {
         self.commands.sort_by(|a, b| a.0.total_cmp(&b.0));
         Ok(())
     }
+    /// HOOK (C5X; KERN to reconcile): changes decided outside the clients at
+    /// the driver's time, due at or after it: the Grid's held boundary at an
+    /// exchange (C5, owners' decisions D1 + D2). The next [`Driver::run`]
+    /// applies those due now before its first step, by the same rules as a
+    /// client's (one instant, R if any is R, S checked by S3-D4's rule).
+    pub fn decide(&mut self, changes: Vec<Change<S>>) -> Result<(), String> {
+        let now = self.observed_to;
+        self.insert(changes, now)
+    }
+    /// HOOK (C5X; KERN to reconcile): apply every change and command due at
+    /// the driver's time now, as one instant, without a step, so the caller
+    /// can configure the segment a restart opened (an event window's step
+    /// cap, decision 0015 E2) before the next [`Driver::run`] steps. Nothing
+    /// due: no effect.
+    #[allow(clippy::too_many_arguments)] // One instant: handle, state, clients, setup.
+    pub fn apply_due(
+        &mut self,
+        ida: &mut Ida<S>,
+        y: &mut [f64],
+        yp: &mut [f64],
+        clients: &mut [&mut dyn Client<S>],
+        setup: &Setup<'_>,
+    ) -> Result<(), String> {
+        setup.check_derived()?;
+        let t = self.observed_to;
+        let due = self.earliest_due().is_some_and(|d| Self::due_at(d, t))
+            || self.commands.first().is_some_and(|c| Self::due_at(c.0, t));
+        if due {
+            self.apply(ida, t, None, y, yp, clients, setup, None)?;
+        }
+        Ok(())
+    }
     fn insert(&mut self, changes: Vec<Change<S>>, now: f64) -> Result<(), String> {
         for c in changes {
             if !(c.due_s.is_finite() && c.due_s >= now) {
@@ -582,6 +623,7 @@ impl<S: JoinedSystem> Driver<S> {
         &mut self,
         clients: &mut [&mut dyn Client<S>],
         dense: &dyn Dense,
+        system: &S,
         to: f64,
     ) -> Result<f64, String> {
         let started = (self.clock)();
@@ -599,6 +641,10 @@ impl<S: JoinedSystem> Driver<S> {
                     c.advance(dense, self.observed_to, tk)?;
                 }
                 self.observed_to = tk;
+            }
+            // HOOK (ICFIELD): equipment reports at the frame's left limit.
+            for c in clients.iter_mut() {
+                c.sample(k, tk, system)?;
             }
             let mut decided = Vec::new();
             for c in clients.iter_mut() {
@@ -859,7 +905,7 @@ impl<S: JoinedSystem> Driver<S> {
                     from: self.observed_to,
                     to: reached,
                 };
-                self.observe(clients, &dense, reached)?
+                self.observe(clients, &dense, ida.system(), reached)?
             };
             if let Some(o) = observer.as_deref_mut() {
                 self.gate_samples(ida, o, observed)?;
@@ -1004,6 +1050,18 @@ impl<S: JoinedSystem> Driver<S> {
             .is_some_and(|c| Self::due_at(c.due_s, t))
         {
             changes.push(self.pending.remove(0));
+        }
+        // HOOK (ICFIELD; KERN to reconcile): a command a client decided (the
+        // field controller's turbine trip) reaches the clients' own retained
+        // part as a declared command does (the turbine controls' trip memory).
+        for c in &changes {
+            if let Action::Command(command) = &c.action {
+                let mut decided = Vec::new();
+                for client in clients.iter_mut() {
+                    decided.extend(client.command(t, *command)?);
+                }
+                self.insert(decided, t)?;
+            }
         }
         let mut kinds: Vec<String> = commands.iter().map(|c| format!("command {c:?}")).collect();
         kinds.extend(changes.iter().map(|c| c.kind.clone()));

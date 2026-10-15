@@ -1,5 +1,5 @@
 import {expect,test} from 'bun:test'
-import {electricalOwners,parseDistribution,parseShaftDrag,parseSwitching,prepareOperatingElectrical} from './reference-design-operating-electrical'
+import {electricalOwners,exchangeOwner,parseCarrier,parseDistribution,parseExchange,parseFieldProtection,parseShaftDrag,parseSwitching,prepareOperatingElectrical} from './reference-design-operating-electrical'
 
 // Test-only owner texts in the shapes the compiler reads; not plant evidence.
 const fence=(name:string,value:unknown)=>'```'+name+'\n'+JSON.stringify(value)+'\n```'
@@ -27,6 +27,32 @@ test('drafted electrical blocks parse from their owning sections only, strictly'
   expect(()=>parseDistribution(page(di.heading,di.fence,{...routing,motorConsumers:{}}))).toThrow()
 })
 
+const carrier={angleReference:'continuousCarrier',rateInput:'heldPerInterval',reconciliation:'phaseErrorAsRateOverNextInterval',
+  boundaryConversion:'none',rateChangeClass:'S3-D4'}
+const exchange={quietInterval_s:1,windowInterval_s:.02,refinementInterval_s:.01,windowDeclaredBy:'Grid',receipt:'IDAS quadrature'}
+test('owner D2 carrier and D1 exchange blocks parse strictly from their owning sections',()=>{
+  const {carrier:ca}=electricalOwners
+  expect(parseCarrier(page(ca.heading,ca.fence,carrier))).toEqual(carrier as never)
+  // the replaced per-boundary conversion is not an accepted selection
+  expect(()=>parseCarrier(page(ca.heading,ca.fence,{...carrier,boundaryConversion:'thetaReferenceConversion'}))).toThrow()
+  expect(()=>parseCarrier(page(ca.heading,ca.fence,{...carrier,extra:1}))).toThrow()
+  expect(()=>parseCarrier(page('Elsewhere',ca.fence,carrier))).toThrow()
+  expect(parseExchange(page(exchangeOwner.heading,exchangeOwner.fence,exchange))).toEqual(exchange as never)
+  expect(()=>parseExchange(page(exchangeOwner.heading,exchangeOwner.fence,{...exchange,windowInterval_s:2}))).toThrow('ordered')
+  expect(()=>parseExchange(page(exchangeOwner.heading,exchangeOwner.fence,{...exchange,windowDeclaredBy:'Plant'}))).toThrow()
+})
+
+const fieldProtection={reportSample_s:.1,reportTransport_s:.1,reportMaximumAge_s:.3,additionalQualification_s:0,
+  connectionReportSample_s:.1,connectionReportTransport_s:.1,connectionReportMaximumAge_s:2}
+test('the field controller block parses strictly from its owning section, with no qualification delay',()=>{
+  const {fieldProtection:fp}=electricalOwners
+  expect(parseFieldProtection(page(fp.heading,fp.fence,fieldProtection))).toEqual(fieldProtection as never)
+  expect(()=>parseFieldProtection(page(fp.heading,fp.fence,{...fieldProtection,additionalQualification_s:.1}))).toThrow()
+  expect(()=>parseFieldProtection(page(fp.heading,fp.fence,{...fieldProtection,reportMaximumAge_s:.05}))).toThrow('maximum age')
+  expect(()=>parseFieldProtection(page(fp.heading,fp.fence,{...fieldProtection,extra:1}))).toThrow()
+  expect(()=>parseFieldProtection(page('Elsewhere',fp.fence,fieldProtection))).toThrow()
+})
+
 const patched=process.env.LD01_ELEC_WIKI_ROOT,python=process.env.LD01_RESEARCH_PYTHON,archive=process.env.LD01_WIKI_ROOT
 test.skipIf(!patched||!python)('the drafted blocks over the actual owners compile; the cycle reproduces the selected arms',async()=>{
   const p=await prepareOperatingElectrical(patched!,python!)
@@ -40,6 +66,8 @@ test.skipIf(!patched||!python)('the drafted blocks over the actual owners compil
   expect(p.prepared.fieldDemand_V).toBe(250)
   expect(p.distribution.consumers['LD01.FW.P2']).toBe('AC.B')
   expect(p.steamValveTravel.turbineStop_s).toBe(.3)
+  expect(p.carrier).toEqual(carrier as never)
+  expect(p.fieldProtection).toEqual(fieldProtection as never)
   expect(p.provenance.consumed).toHaveLength(5)
 },120000)
 test.skipIf(!archive||!python)('the unpatched archive refuses: the electrical numbers are still prose there',async()=>{
