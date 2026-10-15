@@ -460,9 +460,16 @@ fn s3_settle_state_for_c1() {
         1e-8 * tail[slice::BODY],
     ];
     // S3-D23 declares the electrical budgets (10 A, 1 MW) for S3-D16.
+    // DR-C2-IEQ: S3-D16 with the per-step errors' accumulation over the
+    // fastest credited transient, the STOP ramp, at the event window's cap.
+    let ramp_s = f(&e, &["steamValveTravel", "turbineStop_s"]);
+    let window_cap_s = spine::z1::s1_gates()["eventWindow"]["maxStep_s"]
+        .as_f64()
+        .expect("ld01-s1-gates eventWindow.maxStep_s");
     let budget = CreditedBudget {
         ieq_a: 10.,
         export_w: 1e6,
+        accumulation_steps: (ramp_s / window_cap_s).ceil(),
     };
     let stator = unit.derived_rows(n, &slice_atol, budget);
     for r in &stator {

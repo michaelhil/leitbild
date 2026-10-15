@@ -62,10 +62,18 @@ pub const N: usize = slice::N;
 pub struct CreditedBudget {
     pub ieq_a: f64,
     pub export_w: f64,
+    /// DR-C2-IEQ (lead, S3-D16 applied with accumulation): the number of
+    /// steps over which per-step local errors of the stator coordinates
+    /// accumulate into a credited output inside its fastest declared
+    /// transient: the STOP ramp (`steamValveTravel.turbineStop_s`) over the
+    /// event window's step cap (`ld01-s1-gates` `eventWindow.maxStep_s`),
+    /// both declared; 1 where no transient is credited.
+    pub accumulation_steps: f64,
 }
 pub const PROPOSED_BUDGET: CreditedBudget = CreditedBudget {
     ieq_a: 10.,
     export_w: 1e6,
+    accumulation_steps: 1.,
 };
 
 /// The wrapper's discrete configuration, compiled from the electrical packet.
@@ -310,7 +318,14 @@ impl<S: JoinedSystem> Electrified<S> {
         // determines, with |dx/d(output)|; the applied tolerance is the
         // tightest budget x sensitivity. Ieq = |i_dq|/sqrt(3), so
         // |di/dIeq| = sqrt(3); export P = -(v.i) with |v| = V_line, so
-        // |di/dP| >= 1/V_line; the linkages follow through L'd.
+        // |di/dP| >= 1/V_line; the linkages follow through L'd. A local
+        // error per step accumulates over the transient's steps, so the
+        // per-step class is the budget's share of one step: / K.
+        let steps = budget.accumulation_steps;
+        assert!(
+            steps.is_finite() && steps >= 1.,
+            "accumulation steps {steps}"
+        );
         let outputs = [
             ("LD01.TG.GEN.IEQ", budget.ieq_a, 3f64.sqrt()),
             (
@@ -323,11 +338,13 @@ impl<S: JoinedSystem> Electrified<S> {
             let mut determines: Vec<Determined> = outputs
                 .iter()
                 .map(|(output, b, di)| Determined {
-                    output: format!("{output} (S3-D16 budget PROPOSED, pending the lead)"),
+                    output: format!(
+                        "{output} (S3-D23 budget; S3-D16 with accumulation over {steps} steps, DR-C2-IEQ)"
+                    ),
                     budget: *b,
                     sensitivity: di * through,
                     column: format!("electrical/{label}"),
-                    tolerance: b * di * through,
+                    tolerance: b * di * through / steps,
                 })
                 .collect();
             determines.sort_by(|a, b| a.tolerance.total_cmp(&b.tolerance));
