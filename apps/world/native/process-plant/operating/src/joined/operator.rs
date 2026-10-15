@@ -1188,7 +1188,10 @@ impl<P: Properties + WaterProperties> Joined<P> {
         }
         self.deposit(&done, y)?;
         // The phase modes' transactions, then L1's on the post-mode state.
+        // L1's slots carry the roots armed for the segment that located
+        // this instant (an exhaustion may lock a path first: DR S3-EXHAUST).
         let nl = self.unilateral_slots();
+        let armed = self.network.unilateral_roots();
         if self.phase_modes {
             let first = ns + nr + np + nl;
             let nm = self.phase_mode_slots();
@@ -1198,7 +1201,9 @@ impl<P: Properties + WaterProperties> Joined<P> {
         }
         if self.network.unilateral().is_some() {
             let first = ns + nr + np;
-            if let Some(l1) = self.unilateral_transact(t, &directions[first..first + nl], y)? {
+            if let Some(l1) =
+                self.unilateral_transact(t, &directions[first..first + nl], y, armed)?
+            {
                 done.push(l1);
             }
         }
@@ -1238,6 +1243,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         }
         let mut events = Vec::new();
         let mut opposite = Vec::new();
+        let mut exhausted = Vec::new();
         for c in 0..self.network.pzr.cell {
             let [a, b] = [directions[2 * c], directions[2 * c + 1]];
             match self.network.cell_modes()[c] {
@@ -1265,7 +1271,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
                             .push(serde_json::json!({"cell": c, "root": "dryout", "direction": 1}));
                     }
                     match a {
-                        -1 => events.push(self.network.exhaustion(c, y)?),
+                        -1 => exhausted.push(c),
                         1 => opposite.push(
                             serde_json::json!({"cell": c, "root": "exhaustion", "direction": 1}),
                         ),
@@ -1274,9 +1280,26 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 }
             }
         }
+        // DR S3-EXHAUST (PHASE-P7, for KERN): the exhaustions with the vapor
+        // paths they empty, in one transaction on this instant's value
+        // evaluation before the exhaustion (`Network::exhaustion_with_paths`).
+        let mut contacts = serde_json::Value::Null;
+        if !exhausted.is_empty() {
+            if self.network.unilateral().is_some() {
+                let zero = vec![0.; y.len()];
+                self.evaluate(t, y, &zero, None, 0., None)?;
+            }
+            let (ex, tx) = self.network.exhaustion_with_paths(y, &exhausted)?;
+            events.extend(ex);
+            if !tx.changes.is_empty() {
+                contacts =
+                    serde_json::json!({"changes":tx.changes,"energyPaid_J":tx.energy_paid_j});
+            }
+        }
         Ok(Some(super::block::Transaction {
             deposits: Vec::new(),
             receipt: serde_json::json!({"owner":"phase modes","t_s":t,"events":events,
+                "vaporPathContacts":contacts,
                 "opposite":opposite,"stateChanged":!events.is_empty()}),
         }))
     }
@@ -1295,8 +1318,8 @@ impl<P: Properties + WaterProperties> Joined<P> {
         t: f64,
         directions: &[i32],
         y: &mut [f64],
+        roots: Vec<crate::network::phase_events::Root>,
     ) -> Result<Option<super::block::Transaction>, Failure> {
-        let roots = self.network.unilateral_roots();
         if directions.len() != self.unilateral_slots() {
             return Err(fatal("L1 root layout"));
         }
