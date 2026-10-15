@@ -816,7 +816,7 @@ impl Client<Unit> for Commands {
 /// later, requests GCB OPEN and the acquired turbine trip in one class-R
 /// instant; the trip latches the SG owner's STOP, reaches the clients'
 /// retained part (the driver's hook) and the GCB opens one travel later.
-/// Needs `ELEC_PACKET` with `fieldProtection` (wiki a17806c).
+/// Needs `ELEC_PACKET` with `fieldProtection` (S3-D44, wiki e522644).
 #[test]
 #[ignore = "requires the joined packet, the wiki, IF97, stock IDAS and ELEC_PACKET with fieldProtection"]
 fn a_loops_field_supply_loss_trips_the_turbine_through_the_field_controller() {
