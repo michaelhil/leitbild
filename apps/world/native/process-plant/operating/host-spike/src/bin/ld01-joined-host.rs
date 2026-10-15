@@ -40,13 +40,12 @@
 #[allow(dead_code)]
 #[path = "../../../water-ffi/tests/s2_harness/compose.rs"]
 mod compose;
-#[allow(dead_code, unsafe_code)]
+#[allow(unsafe_code)]
 #[path = "../../../water-ffi/tests/common/cpu.rs"]
 mod cpu;
 #[allow(dead_code)]
 #[path = "../../../water-ffi/tests/s2_harness/gates.rs"]
 mod gates;
-#[allow(dead_code)]
 #[path = "../../../water-ffi/tests/common/provenance.rs"]
 mod provenance;
 
@@ -237,7 +236,7 @@ impl Unit {
         };
         let (c0, w0) = (clock::thread_s(), Instant::now());
         let c = compose::compose_from(&d.shared, Some(&d.gates), None);
-        let derived = &c.receipt["derived_tolerances"];
+        let derived = c.receipt["derived_tolerances"].clone();
         if derived["declared_value_kg_s"].as_f64() != Some(declared_kg_s) {
             return Err(format!(
                 "the composition did not apply the declared derived class: {derived}"
