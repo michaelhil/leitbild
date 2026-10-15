@@ -263,6 +263,12 @@ impl Gates {
         match read {
             Ok(mut outputs) => {
                 outputs.push(("generator_power_w", vec![system.slice.export_w(&y[n..])]));
+                // ELEC's heating-current equivalent LD01.TG.GEN.IEQ =
+                // |i_dq| / sqrt(3) (the derived stator rows' definition).
+                outputs.push((
+                    "generator_ieq_a",
+                    vec![y[n + 3].hypot(y[n + 4]) / 3f64.sqrt()],
+                ));
                 if let Err(e) = self.credited.push(t, &outputs) {
                     self.credited_error = Some(e);
                 }

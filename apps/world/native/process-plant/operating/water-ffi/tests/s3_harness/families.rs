@@ -364,6 +364,72 @@ pub fn ss2(identities: &Value, ledger: &Value, slice: &Value, slice_bound_units:
         "slice": {"worst_units": slice_units, "bound_units": slice_bound_units, "pass": slice_pass}})
 }
 
+/// Rule E′ (S3-D23): the electrical credited outputs against a reference
+/// over `[from, to]` s after `origin`, each the largest |difference| low-passed
+/// as E0 (the declared filter at the credited band), against the block's
+/// `accuracyExtension` budgets: the generator protection current
+/// (`generator_ieq_a`) and the terminal power (`generator_power_w`). Only
+/// for the cases the extension names.
+#[allow(clippy::too_many_arguments)] // Two runs, their span, the grid and the declared extension.
+pub fn electrical_e0(
+    case: Case,
+    run: &crate::compare::Credited,
+    reference: &crate::compare::Credited,
+    origin: f64,
+    from: f64,
+    to: f64,
+    dt: f64,
+    cutoff_hz: f64,
+    extension: &Value,
+) -> Value {
+    let applies = extension["appliesTo"]
+        .as_array()
+        .is_some_and(|a| a.iter().any(|c| c == case.key()));
+    if !applies {
+        return json!({"verdict": "not applicable", "reason": format!("accuracyExtension.appliesTo does not name {}", case.key())});
+    }
+    let (Some(ieq), Some(power)) = (
+        extension["generatorProtectionCurrent_A"].as_f64(),
+        extension["generatorTerminalPower_W"].as_f64(),
+    ) else {
+        return json!({"verdict": "not executable", "reason": "accuracyExtension declares no budgets"});
+    };
+    let (ra, rb) = match (
+        run.grid(origin, from, to, dt),
+        reference.grid(origin, from, to, dt),
+    ) {
+        (Ok(a), Ok(b)) => (a, b),
+        (ea, eb) => {
+            return json!({"verdict": "unevaluable", "run": ea.err(), "reference": eb.err()});
+        }
+    };
+    let mut metrics = serde_json::Map::new();
+    let mut within = true;
+    for (k, budget) in [("generator_ieq_a", ieq), ("generator_power_w", power)] {
+        match (run.output(k), reference.output(k)) {
+            (Ok(a), Ok(b)) => {
+                let raw: Vec<f64> = a[0][ra.clone()]
+                    .iter()
+                    .zip(&b[0][rb.clone()])
+                    .map(|(p, q)| p - q)
+                    .collect();
+                let value = max_abs(&zero_phase_lowpass(&raw, cutoff_hz, dt));
+                within &= value <= budget;
+                metrics.insert(k.into(), json!({"value": value, "budget": budget}));
+            }
+            (a, b) => {
+                within = false;
+                metrics.insert(
+                    k.into(),
+                    json!({"evaluable": false, "run": a.err(), "reference": b.err()}),
+                );
+            }
+        }
+    }
+    json!({"verdict": if within { "pass" } else { "fail" }, "from_s": from, "to_s": to, "metrics": metrics,
+        "threshold_source": "ld01-s3-cases-c1c3 accuracyExtension (S3-D23)"})
+}
+
 /// The largest |value| of a series (for receipts).
 pub fn max_abs(x: &[f64]) -> f64 {
     x.iter().fold(0., |m, v| larger(m, v.abs()))
@@ -564,6 +630,39 @@ mod tests {
         let wide: Vec<f64> = (0..2000).map(|k| 570. + k as f64 * 1e-3).collect();
         let series = vec![("average_coolant_k".to_string(), true, wide)];
         assert_eq!(ss1(&spec, 3600., &series, 0.002, 2.)["verdict"], "fail");
+    }
+
+    #[test]
+    fn the_electrical_extension_judges_ieq_and_terminal_power_for_its_cases() {
+        let ext = json!({"generatorProtectionCurrent_A": 10, "generatorTerminalPower_W": 1e6, "appliesTo": ["C2", "C5"]});
+        let series = |ieq: f64, p: f64| {
+            let mut c = crate::compare::Credited::default();
+            for k in 0..=500 {
+                let t = 100. + k as f64 * 0.002;
+                c.push(
+                    t,
+                    &[
+                        ("generator_ieq_a", vec![ieq]),
+                        ("generator_power_w", vec![p]),
+                    ],
+                )
+                .unwrap();
+            }
+            c
+        };
+        let run = series(30_000., 1.0e9);
+        let close = series(30_005., 1.0e9 + 5e5);
+        let e = electrical_e0(Case::C2, &run, &close, 100., 0., 1., 0.002, 2., &ext);
+        assert_eq!(e["verdict"], "pass", "{e}");
+        let far = series(30_020., 1.0e9);
+        assert_eq!(
+            electrical_e0(Case::C2, &run, &far, 100., 0., 1., 0.002, 2., &ext)["verdict"],
+            "fail"
+        );
+        assert_eq!(
+            electrical_e0(Case::C1, &run, &far, 100., 0., 1., 0.002, 2., &ext)["verdict"],
+            "not applicable"
+        );
     }
 
     #[test]

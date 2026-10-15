@@ -1371,17 +1371,34 @@ fn s3_case_run() {
                 }
                 (a, b) => json!({"evaluable": false, "run": a, "reference": b, "within": false}),
             };
-            let verdict = if e0["within"] == json!(true) {
-                "pass"
-            } else if e0["evaluable"] == json!(false) {
-                "unevaluable"
-            } else {
-                "fail"
-            };
+            // E′ (S3-D23): the electrical outputs, for the cases it names.
+            let electrical = s3_harness::families::electrical_e0(
+                case,
+                &og.credited,
+                &rg.credited,
+                run.zero,
+                from,
+                to,
+                g.budgets.observation_s,
+                g.budgets.cutoff_hz,
+                &d.block.whole("/accuracyExtension"),
+            );
+            let electrical_ok = matches!(
+                electrical["verdict"].as_str(),
+                Some("pass" | "not applicable")
+            );
+            let verdict =
+                if e0["evaluable"] == json!(false) || electrical["verdict"] == "unevaluable" {
+                    "unevaluable"
+                } else if e0["within"] == json!(true) && electrical_ok {
+                    "pass"
+                } else {
+                    "fail"
+                };
             comparisons.push(
                 json!({"reference": name, "span_after_zero_s": [from, to], "verdict": verdict,
                 "reference_failure": r.failure, "reference_rule_i_exit": r.exit_after_zero,
-                "reference_cpu": r.record["cpu"], "e0": e0}),
+                "reference_cpu": r.record["cpu"], "e0": e0, "electrical_e0": electrical}),
             );
             references.push((name, r));
         }
@@ -1394,7 +1411,7 @@ fn s3_case_run() {
         };
         families.insert("E_refinement".into(), json!({"family": "E refinement", "verdict": verdict,
             "threshold_source": "ld01-accuracy-contract + ld01-s2-accuracy (E0), ld01-s2-gates referenceToleranceFactor, ld01-s1-gates eventReference",
-            "electrical_extension": if matches!(case, Case::C2) { json!({"verdict": "not implemented", "reason": "S3-D23's Ieq (10 A) and terminal power (1 MW) comparisons: the generator power is recorded; Ieq is not observed by the harness yet"}) } else { json!("not applicable (C2, C5 only)") },
+            "electrical_extension": "E′ (S3-D23) per comparison (electrical_e0): Ieq = |i_dq|/sqrt(3) against 10 A and terminal power against 1 MW, for the cases accuracyExtension.appliesTo names",
             "comparisons": comparisons}));
         // Rule F: the detector on every recorded credited signal.
         let series = credited_series(&og.credited);
