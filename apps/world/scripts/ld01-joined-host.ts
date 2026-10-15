@@ -150,7 +150,11 @@ async function four(binary:string,settled:string){
  r.loads=loads.map(l=>({cpu_s:l.cpu_s,wall_s:l.wall_s}))
  r.load_wall_s=(Bun.nanoseconds()-s0)*1e-9
  const t0=loads[0]!.t as number,span=80,dt=0.1
- const trips=hosts.map((_,k)=>t0+2+5*k)
+ // Trips staggered by LD01_FOUR_STAGGER_S (default 5 s; 0 = one grid event
+ // tripping every unit at once, S8's four-unit burst).
+ const stagger=Number(process.env.LD01_FOUR_STAGGER_S??'5')
+ if(!(stagger>=0))throw hostError('LD01_FOUR_STAGGER_S must be a nonnegative number')
+ const trips=hosts.map((_,k)=>t0+2+stagger*k)
  await Promise.all(hosts.map((h,k)=>h.command(trips[k]!,CommandKind.turbineTrip)))
  const cpu0=await Promise.all(hosts.map(h=>h.status()))
  const parent0=process.cpuUsage(),w0=Bun.nanoseconds()
@@ -180,6 +184,12 @@ async function four(binary:string,settled:string){
   max_rss_bytes:cpu1[i]!.max_rss_bytes,counts:cpu1[i]!.counts}))
  r.aggregate_cpu_s_per_simulated_s=(r.units as {cpu_s_per_simulated_s:number}[]).reduce((a,u)=>a+u.cpu_s_per_simulated_s,0)
  r.per_second=perSecond
+ // Real-time pacing replayed on the measured lockstep walls: the lag after
+ // each simulated second when every second may use at most one wall second
+ // plus the lag carried (no physics skipped).
+ let lag=0,maxLag=0
+ for(const p of perSecond){lag=Math.max(0,lag+p.wall_s-1);maxLag=Math.max(maxLag,lag)}
+ r.realtime_replay={max_lag_s:maxLag,final_lag_s:lag,rule:'lag_k = max(0, lag_{k-1} + wall_k - 1 s) over the lockstep per-second walls'}
  const worst=perSecond.reduce((a,p)=>p.wall_s>a.wall_s?p:a)
  r.worst_second={...worst}
  log(`four: ${span} s in ${wall.toFixed(1)} s wall (RT factor ${(span/wall).toFixed(2)}), aggregate ${(r.aggregate_cpu_s_per_simulated_s as number).toFixed(3)} CPU-s/s`)
