@@ -581,7 +581,8 @@ impl<S: JoinedSystem> Driver<S> {
             if let Some(c) = self.commands.first() {
                 stop = stop.min(c.0);
             }
-            if let Some(e) = ida.system().integrated().joined.next_time_event(t) {
+            // ELEC hook: the operator's and any appended owners' time events.
+            if let Some(e) = ida.system().next_time_event(t) {
                 stop = stop.min(e);
             }
             let next = self.frame.instant(self.next_frame);
@@ -815,7 +816,8 @@ impl<S: JoinedSystem> Driver<S> {
             system
                 .roots(t, y, yp, &mut roots)
                 .map_err(|f| format!("{f:?}"))?;
-            let identity = system.integrated().joined.differential(setup.network_ids);
+            // ELEC hook: the whole identity, appended coordinates included.
+            let identity = system.differential_all(setup.network_ids);
             Ok((residual, identity, roots))
         };
         let (before, identity_before, roots_before) = state(system)?;
@@ -870,9 +872,8 @@ impl<S: JoinedSystem> Driver<S> {
 /// Whether an owner time event is due exactly at `t` (the owners report
 /// their next event strictly after a time).
 fn due_owner_event<S: JoinedSystem>(ida: &Ida<S>, t: f64) -> bool {
+    // ELEC hook: the operator's and any appended owners' time events.
     ida.system()
-        .integrated()
-        .joined
         .next_time_event(t - (t.abs() + 1.) * f64::EPSILON)
         .is_some_and(|e| e <= t)
 }

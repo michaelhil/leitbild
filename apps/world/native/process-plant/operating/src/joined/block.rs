@@ -461,6 +461,24 @@ pub trait Secondary<P> {
     /// S5 snapshot hook: restore [`Secondary::discrete_state`] exactly;
     /// anything else (layout, unknown field) refuses fatally.
     fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure>;
+    // ELEC S3 hook (block.rs, KERN-owned; defaults leave S1/S2 unchanged).
+    /// The admitted turbine steam of every SG together at `t` (kg/s), when
+    /// the owner's admission is a time-only boundary (S2/S3: demand times
+    /// the STOP's admission fraction); the electrical slice's turbine input.
+    fn admitted_steam_kg_s(&self, _t: f64) -> Option<f64> {
+        None
+    }
+    /// The latched turbine TRIP time, if any (the trip requests GCB OPEN).
+    fn turbine_trip_time(&self) -> Option<f64> {
+        None
+    }
+    /// S3-D12: the recorded feed (F3 (a)) gated by the feed pumps' supply.
+    /// A held input entering only the SG stocks' rates (class S, S3-D4).
+    fn set_feed_supported(&mut self, _supported: bool) -> Result<(), Failure> {
+        Err(Failure::Fatal(
+            "this secondary owner declares no feed gate".into(),
+        ))
+    }
 }
 
 /// The rod bodies (spider and bodies, H7), their guide passages (F1 (a),

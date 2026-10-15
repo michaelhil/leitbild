@@ -920,6 +920,9 @@ impl WaterPoint {
     }
 }
 
+// ELEC S3 hook (lib.rs, shared): the electrical slice appended to a joined system.
+#[cfg(feature = "ida")]
+pub mod electrical;
 #[cfg(feature = "ida")]
 pub mod frame;
 #[cfg(feature = "ida")]
