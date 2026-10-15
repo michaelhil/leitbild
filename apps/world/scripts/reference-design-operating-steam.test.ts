@@ -1,5 +1,5 @@
 import {expect,test} from 'bun:test'
-import {compileOperatingSteam,parseBypass,parseCondenser,parseCondenserProtection,parseGovernor,parseMsrDrains,parseNoncondensables,
+import {compileOperatingSteam,parseBypass,parseCondenser,parseCondenserProtection,parseGovernor,parseMsrDrains,parseNoncondensables,parseSteamActuators,
   parseReceivers,parseSteamPreparation,parseSteamStocks,prepareOperatingSteam,steamOwners} from './reference-design-operating-steam'
 
 // Test-only owner texts in the shapes the compiler reads; the values are the
@@ -11,9 +11,12 @@ const blocks={
   preparation:{sgPrepared_Pa:6363140,mainSteamLoss_Pa:20000,stopAdmissionLoss_Pa:20000,stopAdmissionShare:0.5,hpExtraction_Pa:4000000,
     separator_Pa:800000,separatorLiquid_m3:10,reheaterProcess_Pa:800000,reheaterProcess_C:260,lpFirst_Pa:200000,lpSecond_Pa:50000,
     reheaterShellPressureFactor:0.995,reheaterShellLiquid_m3:5,separatorReheaterSizing:{flow_kg_s:978.730519,inlet_Pa:800000,outlet_Pa:796000,cdA_m2:5.382216}},
-  drains:{separatorDrain:{bias:0.5,gain_per_m:0.25,setpoint_m:2,sample_s:0.1,travel_s:2,sizingOpening:0.5,actuator:'ACT.A'},
-    separatorEmergencyDrain:{travel_s:2,actuator:'ACT.A',prepared:'CLOSED'},
-    reheaterDrain:{bias:0.5,gain:2,target:0.25,sample_s:0.1,travelRate_per_s:0.2,sizingOpening:0.5,actuator:'ACT.B'}},
+  drains:{separatorDrain:{bias:0.5,gain_per_m:0.25,setpoint_m:2,sample_s:0.1,travel_s:2,sizingOpening:0.5},
+    separatorEmergencyDrain:{travel_s:2,prepared:'CLOSED'},
+    reheaterDrain:{bias:0.5,gain:2,target:0.25,sample_s:0.1,travelRate_per_s:0.2,sizingOpening:0.5}},
+  actuators:{isolationMotion_W:100,openingMotion_W:100,springStockShare:0.5,holding_W:20,controllerElectronics_W:20,drainMotion_W:100,drainElectronics_W:20,
+    groups:{'MS.ISO.A':'ACT.A','MS.ISO.B':'ACT.B','TG.STOP':'ACT.B','TG.ADM':'ACT.B','TG.RH.ISO':'ACT.B','TG.BYP':'ACT.B','TG.SEP.DRAIN':'ACT.A','TG.SEP.EMERGENCY':'ACT.A','TG.RH.DRAIN':'ACT.B'},
+    springReturn:['TG.STOP','TG.ADM','TG.RH.ISO','TG.BYP'],retainOnSupplyLoss:['MS.ISO.A','MS.ISO.B','TG.SEP.DRAIN','TG.SEP.EMERGENCY','TG.RH.DRAIN']},
   governor:{sample_s:0.1,droop:0.05,setpointRamp_per_s:0.1,proportional:0.5,integral_per_s:0.2,base_W:1100000000,overspeed_pu:1.1},
   bypass:{bandStart_Pa:6050000,bandFull_Pa:6350000,sample_s:0.1,availableBelow_Pa:12000,headerEvidenceAge_s:0.5,
     rating:{fractionOfTotalSteam:0.5,inletPressure_Pa:6000000,fluid:'saturatedVapor',outlet:'nominalCondenser'}},
@@ -26,7 +29,7 @@ const blocks={
 } as const
 type Name=keyof typeof blocks
 const parsers:Record<Name,(t:string)=>unknown>={stocks:parseSteamStocks,preparation:parseSteamPreparation,drains:parseMsrDrains,
-  governor:parseGovernor,bypass:parseBypass,protection:parseCondenserProtection,condenser:parseCondenser,gases:parseNoncondensables}
+  governor:parseGovernor,bypass:parseBypass,protection:parseCondenserProtection,condenser:parseCondenser,gases:parseNoncondensables,actuators:parseSteamActuators}
 const page=(name:Name,value:unknown,heading:string=steamOwners[name].heading)=>
   `# Owner\n\n## Compact operating allocation (15 October 2026)\n\nText.\n\n### ${heading}\n\n${fence(steamOwners[name].fence,value)}\n\n## Next\n`
 const pageFor=(name:Name,value:unknown)=>steamOwners[name].heading==='Strict blocks'?page(name,value)
@@ -58,7 +61,7 @@ test('the compiler input refuses every missing value, at every depth',()=>{
       expect(()=>parsers[name](pageFor(name,without(blocks[name],path)))).toThrow()
       refused++
     }
-  expect(refused).toBe(97)
+  expect(refused).toBe(112)
   expect(()=>parseReceivers({h2Shell_Pa:199000,source:'x'})).toThrow()
 })
 
@@ -75,6 +78,8 @@ test('inconsistent values refuse rather than being repaired',()=>{
   expect(()=>parseBypass(pageFor('bypass',{...blocks.bypass,bandFull_Pa:6000000}))).toThrow('ordered')
   expect(()=>parseCondenserProtection(pageFor('protection',{...blocks.protection,resetBelow_Pa:20000}))).toThrow('ordered')
   expect(()=>parseGovernor(pageFor('governor',{...blocks.governor,overspeed_pu:0.9}))).toThrow()
+  expect(()=>parseSteamActuators(pageFor('actuators',{...blocks.actuators,springReturn:['TG.STOP','TG.ADM','TG.RH.ISO']}))).toThrow('exactly one')
+  expect(()=>parseSteamActuators(pageFor('actuators',{...blocks.actuators,retainOnSupplyLoss:[...blocks.actuators.retainOnSupplyLoss,'TG.BYP']}))).toThrow('exactly one')
 })
 
 // The actual cycle calculation output (reference-cycle through runCycle, iapws 1.5.5), only the fields the compiler reads.
@@ -91,7 +96,7 @@ const cycle={inputSha256:'fixture',calculationSha256:'fixture',
 } as never
 const texts={turbine:`# T\n\n## Compact operating allocation (15 October 2026)\n\n### Strict blocks\n\n`+
     (['stocks','preparation','drains','governor'] as const).map(n=>fence(steamOwners[n].fence,blocks[n])).join('\n\n')+'\n',
-  admission:`# A\n\n## Compact operating allocation (15 October 2026)\n\n${fence('ld01-bypass-control',blocks.bypass)}\n\n${fence('ld01-condenser-protection',blocks.protection)}\n\n`+
+  admission:`# A\n\n## Compact operating allocation (15 October 2026)\n\n${fence('ld01-bypass-control',blocks.bypass)}\n\n${fence('ld01-condenser-protection',blocks.protection)}\n\n${fence('ld01-steam-actuators',blocks.actuators)}\n\n`+
     `## Flow law and nominal sizing\n\n${fence('ld01-steam-valve-travel',{sgIsolation_s:2,turbineStop_s:0.3,reheaterIsolation_s:0.3,admission_s:1,bypass_s:2})}\n`,
   condenser:`# C\n\n## Compact operating allocation (15 October 2026)\n\n${fence('ld01-condenser',blocks.condenser)}\n\n${fence('ld01-noncondensable-gases',blocks.gases)}\n`,
   shaft:`# S\n\n## Rotor and loss connection\n\n${fence('ld01-shaft-drag',{dragPowerAtReference_W:500000,referenceSpeed_rpm:1500})}\n`,
