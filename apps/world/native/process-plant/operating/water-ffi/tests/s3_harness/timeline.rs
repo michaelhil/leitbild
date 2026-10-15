@@ -39,6 +39,11 @@ pub struct Timeline {
     /// The electrical slice's log (breaker, routing, contactors), when the
     /// slice is composed: `None` when it is not.
     pub electrical: Option<Vec<(f64, String)>>,
+    /// The compiled section's recorded monitors (voted rules with no output,
+    /// e.g. "C2.N3 PZR LT vote", S3-D38) ...
+    pub monitors_declared: Vec<String>,
+    /// ... and each division's first qualification: (monitor, division, t).
+    pub monitors: Vec<(String, usize, f64)>,
 }
 
 impl Timeline {
@@ -81,8 +86,16 @@ impl Timeline {
                     t: rel(&d["trip"]["t_s"], "a trip")?,
                 });
             }
+            for (id, at) in d["monitors"].as_object().into_iter().flatten() {
+                tl.monitors.push((id.clone(), i, rel(at, "a monitor")?));
+            }
             for r in d["requests"].as_array().into_iter().flatten() {
-                tl.requests.push((i, r.clone()));
+                // The request as written, with its time on the case clock.
+                let mut r = r.clone();
+                if let Some(at) = r["t_s"].as_f64() {
+                    r["t_case_s"] = Value::from(at - t0);
+                }
+                tl.requests.push((i, r));
             }
         }
         for e in log {
@@ -134,6 +147,62 @@ impl Timeline {
             }
         }
         Ok(tl)
+    }
+
+    /// The declared part of the run under rule I: every event at or before
+    /// `until` (case clock), the end moved there.
+    #[must_use]
+    pub fn truncated(&self, until: f64) -> Self {
+        let keep = |t: f64| t <= until + 1e-9;
+        Self {
+            end: self.end.min(until),
+            powered: self.powered.clone(),
+            causes: self.causes.iter().filter(|c| keep(c.t)).cloned().collect(),
+            trips: self.trips.iter().filter(|c| keep(c.t)).cloned().collect(),
+            requests: self
+                .requests
+                .iter()
+                .filter(|(_, r)| r["t_case_s"].as_f64().is_none_or(keep))
+                .cloned()
+                .collect(),
+            holding_lost: self.holding_lost.filter(|t| keep(*t)),
+            seats: self
+                .seats
+                .iter()
+                .filter(|(_, t)| keep(*t))
+                .cloned()
+                .collect(),
+            sg_relief: self
+                .sg_relief
+                .iter()
+                .filter(|x| keep(x.3))
+                .cloned()
+                .collect(),
+            pzr_relief_openings: self
+                .pzr_relief_openings
+                .iter()
+                .copied()
+                .filter(|t| keep(*t))
+                .collect(),
+            stop_ramp_end: self.stop_ramp_end.filter(|t| keep(*t)),
+            instants: self
+                .instants
+                .iter()
+                .filter(|x| keep(x.0))
+                .cloned()
+                .collect(),
+            electrical: self
+                .electrical
+                .as_ref()
+                .map(|l| l.iter().filter(|(t, _)| keep(*t)).cloned().collect()),
+            monitors_declared: self.monitors_declared.clone(),
+            monitors: self
+                .monitors
+                .iter()
+                .filter(|x| keep(x.2))
+                .cloned()
+                .collect(),
+        }
     }
 
     /// The electrical slice's log entries `(absolute t, what)`, on the case

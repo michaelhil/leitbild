@@ -164,24 +164,43 @@ fn judge_one(
             ))
         }
         (Case::C1, "N5") => {
+            // "No cause from the S3-implemented protection set": no accepted
+            // cause of any function the composed protection implements (the
+            // ic section's own list, so the loop-flow-evidence-unavailable
+            // causes the block names in prose are judged by their IDs); every
+            // ID the block lists must be implemented to be judged.
             kind(line, "mustNot")?;
+            names(line, "S3-implemented protection set")?;
             let listed: Vec<String> = line["mustNotCauses"]
                 .as_array()
                 .ok_or("no mustNotCauses list")?
                 .iter()
                 .filter_map(|c| c.as_str().map(str::to_string))
                 .collect();
-            let ids: Vec<&str> = listed
+            let ids: Vec<&str> = implemented.iter().map(String::as_str).collect();
+            let (v, mut evidence) = no_causes(tl, &ids, implemented);
+            let unimplemented: Vec<&String> = listed
                 .iter()
-                .map(String::as_str)
-                .filter(|c| c.starts_with("LD01."))
+                .filter(|c| c.starts_with("LD01.") && !implemented.contains(c))
                 .collect();
-            let prose: Vec<&String> = listed.iter().filter(|c| !c.starts_with("LD01.")).collect();
-            let (mut v, mut evidence) = no_causes(tl, &ids, implemented);
-            if v == "pass" && !prose.is_empty() {
-                v = "not executable".into();
-            }
-            evidence["listed_without_a_cause_id"] = json!(prose);
+            evidence["listed_ids_not_implemented"] = json!(unimplemented);
+            evidence["implemented_not_listed_by_id"] = json!(
+                implemented
+                    .iter()
+                    .filter(|f| !listed.contains(f))
+                    .collect::<Vec<_>>()
+            );
+            evidence["listed_without_a_cause_id"] = json!(
+                listed
+                    .iter()
+                    .filter(|c| !c.starts_with("LD01."))
+                    .collect::<Vec<_>>()
+            );
+            let v = if v == "pass" && !unimplemented.is_empty() {
+                "not executable".to_string()
+            } else {
+                v
+            };
             Ok((v, evidence))
         }
         (Case::C1, "M1") | (Case::C2, "M1") | (Case::C3, "M1") => {
@@ -342,9 +361,28 @@ fn judge_one(
         }
         (Case::C2, "N3") => {
             kind(line, "mustNot")?;
+            // S3-D38: the acquired PZR LT vote, recorded by the compiled
+            // section's monitor for this line (id "C2.N3 …"), the trip
+            // withheld; fail if any division qualified it.
+            let Some(monitor) = tl
+                .monitors_declared
+                .iter()
+                .find(|m| m.starts_with("C2.N3 "))
+            else {
+                return Ok((
+                    "not executable".into(),
+                    json!({"reason": "the compiled ic section carries no C2.N3 monitor (PZR LT vote)"}),
+                ));
+            };
+            let qualified: Vec<Value> = tl
+                .monitors
+                .iter()
+                .filter(|(m, _, _)| m == monitor)
+                .map(|(_, d, t)| json!({"division": d, "t_s": t}))
+                .collect();
             Ok((
-                "not executable".into(),
-                json!({"reason": "the PZR level causes are not implemented in S3 and the acquired LT vote is not observed by the composed protection (P-2c)"}),
+                verdict(qualified.is_empty()),
+                json!({"monitor": monitor, "qualified": qualified}),
             ))
         }
         (Case::C2, "N4") => {
@@ -352,8 +390,28 @@ fn judge_one(
             let ids = ["LD01.PROT.RCS.A.LOW_FLOW", "LD01.PROT.RCS.B.LOW_FLOW"];
             Ok(no_causes(tl, &ids, implemented))
         }
-        (Case::C3, "O1") | (Case::C3, "O2") => {
-            kind(line, if id == "O1" { "iff" } else { "must" })?;
+        (Case::C3, "O1") => {
+            kind(line, "iff")?;
+            let low = "LD01.PROT.RCS.A.LOW_FLOW";
+            names(line, low)?;
+            if !implemented.iter().any(|f| f == low) {
+                return Ok((
+                    "not executable".into(),
+                    json!({"reason": format!("{low} is not acquired by the composed protection (no loop-flow acquisition)")}),
+                ));
+            }
+            // The cause as accepted, recorded; the iff is the protection
+            // consistency gate (A'), not implemented here, and P-3b decides
+            // whether the line is must or may.
+            let accepted = tl.accepted(low);
+            Ok((
+                "recorded".into(),
+                json!({"accepted": accepted, "first_s": accepted.iter().map(|(_, t)| *t).fold(f64::INFINITY, f64::min),
+                    "note": "the iff (consistency gate A') is not implemented; P-3b decides must or may"}),
+            ))
+        }
+        (Case::C3, "O2") => {
+            kind(line, "must")?;
             let low = "LD01.PROT.RCS.A.LOW_FLOW";
             if !implemented.iter().any(|f| f == low) {
                 return Ok((
@@ -361,8 +419,27 @@ fn judge_one(
                     json!({"reason": format!("{low} is not acquired by the composed protection (no loop-flow acquisition)")}),
                 ));
             }
-            Err(format!(
-                "C3.{id} with loop-flow acquisition needs its judge"
+            let first = tl
+                .accepted(low)
+                .iter()
+                .map(|(_, t)| *t)
+                .fold(f64::INFINITY, f64::min);
+            if !first.is_finite() {
+                return Ok((
+                    "not applicable".into(),
+                    json!({"reason": "C3.O1 did not occur, so its trip cannot follow"}),
+                ));
+            }
+            let release = tl.holding_lost.filter(|t| *t >= first - 1e-9);
+            let mut seated: Vec<&String> = tl.seats.iter().map(|(c, _)| c).collect();
+            seated.sort();
+            seated.dedup();
+            let prhr = tl.requests.iter().any(|(_, r)| r["request"] == "PRHR");
+            Ok((
+                verdict(release.is_some() && seated.len() == clusters && prhr),
+                json!({"low_flow_s": first, "release_s": release, "seated": seated.len(), "clusters": clusters,
+                    "last_seat_s": tl.seats.iter().map(|(_, t)| *t).fold(f64::NEG_INFINITY, f64::max),
+                    "prhr_requested": prhr}),
             ))
         }
         (Case::C3, "N1") => {
@@ -372,17 +449,28 @@ fn judge_one(
         }
         (Case::C3, "N2") => {
             kind(line, "mustNot")?;
+            let low = "LD01.PROT.RCS.A.LOW_FLOW";
             let cmt = tl.requests.iter().any(|(_, r)| r["request"] == "CMT");
             let relief = !tl.pzr_relief_openings.is_empty();
+            let first = tl
+                .accepted(low)
+                .iter()
+                .map(|(_, t)| *t)
+                .fold(f64::INFINITY, f64::min);
+            let before: Vec<Value> = tl
+                .causes
+                .iter()
+                .filter(|c| c.function != low && c.t < first)
+                .map(|c| json!([c.division, c.function, c.t]))
+                .collect();
             let evidence = json!({"cmt_requested": cmt, "pzr_relief_openings": tl.pzr_relief_openings,
-                "causes": tl.causes.iter().map(|c| json!([c.division, c.function, c.t])).collect::<Vec<_>>()});
-            if cmt || relief {
+                "low_flow_s": if first.is_finite() { json!(first) } else { Value::Null },
+                "causes_before_low_flow": before});
+            if cmt || relief || !before.is_empty() {
                 return Ok(("fail".into(), evidence));
             }
-            // "No cause before C3.O1" needs O1's time: the acquired low-flow
-            // cause.
-            if implemented.iter().any(|f| f == "LD01.PROT.RCS.A.LOW_FLOW") {
-                Err("C3.N2 with loop-flow acquisition needs its judge".into())
+            if implemented.iter().any(|f| f == low) {
+                Ok(("pass".into(), evidence))
             } else {
                 Ok(("not executable".into(), evidence))
             }
