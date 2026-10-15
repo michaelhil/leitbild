@@ -10,7 +10,8 @@ const blocks={
     lpSecond_m3:1000,reheaterWall_J_K:200000000,separatorArea_m2:5,separatorPickup_m3:[20,22.5],drainPickupFraction:0.05},
   preparation:{sgPrepared_Pa:6363140,mainSteamLoss_Pa:20000,stopAdmissionLoss_Pa:20000,stopAdmissionShare:0.5,hpExtraction_Pa:4000000,
     separator_Pa:800000,separatorLiquid_m3:10,reheaterProcess_Pa:800000,reheaterProcess_C:260,lpFirst_Pa:200000,lpSecond_Pa:50000,
-    reheaterShellPressureFactor:0.995,reheaterShellLiquid_m3:5,separatorReheaterSizing:{flow_kg_s:978.730519,inlet_Pa:800000,outlet_Pa:796000,cdA_m2:5.382216}},
+    reheaterShellPressureFactor:0.995,reheaterShellLiquid_m3:5,separatorReheaterSizing:{flow_kg_s:978.730519,inlet_Pa:800000,outlet_Pa:796000,cdA_m2:5.382216},
+    preparedOpen:['MS.ISO.A','MS.ISO.B','TG.STOP','TG.ADM','TG.RH.ISO'],preparedClosed:['TG.BYP'],preparedDrainOpening:0.5},
   drains:{separatorDrain:{bias:0.5,gain_per_m:0.25,setpoint_m:2,sample_s:0.1,travel_s:2,sizingOpening:0.5},
     separatorEmergencyDrain:{travel_s:2,prepared:'CLOSED'},
     reheaterDrain:{bias:0.5,gain:2,target:0.25,sample_s:0.1,travelRate_per_s:0.2,sizingOpening:0.5}},
@@ -61,7 +62,7 @@ test('the compiler input refuses every missing value, at every depth',()=>{
       expect(()=>parsers[name](pageFor(name,without(blocks[name],path)))).toThrow()
       refused++
     }
-  expect(refused).toBe(112)
+  expect(refused).toBe(115)
   expect(()=>parseReceivers({h2Shell_Pa:199000,source:'x'})).toThrow()
 })
 
@@ -126,6 +127,8 @@ test('the compiler refuses an inconsistent cross-owner value',()=>{
   const wall={...texts,condenser:texts.condenser.replace('32.542217844','32.6')}
   expect(()=>compileOperatingSteam(wall,cycle,receivers)).toThrow('halfway')
   expect(()=>compileOperatingSteam(texts,cycle,{...receivers,h4Shell_Pa:7e6})).toThrow('below their donors')
+  const unlisted={...texts,turbine:texts.turbine.replace('"preparedClosed":["TG.BYP"]','"preparedClosed":[]')}
+  expect(()=>compileOperatingSteam(unlisted,cycle,receivers)).toThrow('exactly once')
 })
 
 const wiki=process.env.LD01_STEAM_WIKI_ROOT,python=process.env.LD01_RESEARCH_PYTHON,archive=process.env.LD01_WIKI_ROOT

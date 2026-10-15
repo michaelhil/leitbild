@@ -43,7 +43,8 @@ const stocksSchema=z.object({header_m3:pos,hpAdmission_m3:pos,hpExtraction_m3:po
 const preparationSchema=z.object({sgPrepared_Pa:pos,mainSteamLoss_Pa:pos,stopAdmissionLoss_Pa:pos,stopAdmissionShare:fraction,
   hpExtraction_Pa:pos,separator_Pa:pos,separatorLiquid_m3:pos,reheaterProcess_Pa:pos,reheaterProcess_C:finite,lpFirst_Pa:pos,
   lpSecond_Pa:pos,reheaterShellPressureFactor:fraction,reheaterShellLiquid_m3:pos,
-  separatorReheaterSizing:z.object({flow_kg_s:pos,inlet_Pa:pos,outlet_Pa:pos,cdA_m2:pos}).strict()}).strict()
+  separatorReheaterSizing:z.object({flow_kg_s:pos,inlet_Pa:pos,outlet_Pa:pos,cdA_m2:pos}).strict(),
+  preparedOpen:z.array(z.string()),preparedClosed:z.array(z.string()),preparedDrainOpening:fraction}).strict()
 const drainsSchema=z.object({
   separatorDrain:z.object({bias:fraction,gain_per_m:pos,setpoint_m:pos,sample_s:pos,travel_s:pos,sizingOpening:fraction}).strict(),
   separatorEmergencyDrain:z.object({travel_s:pos,prepared:z.literal('CLOSED')}).strict(),
@@ -93,6 +94,14 @@ export function compileOperatingSteam(texts:SteamTexts,cycle:Cycle,receivers:z.i
     travel=parseSteamValveTravel(texts.admission),cond=parseCondenser(texts.condenser),gases=parseNoncondensables(texts.condenser),
     drag=parseShaftDrag(texts.shaft),casing=parseTurbinePreparation(texts.casing),shells=parseReceivers(receivers),
     act=parseSteamActuators(texts.admission)
+  // Prepared positions: each isolation listed once; the emergency drain's CLOSED comes from its own block (the schema's literal).
+  const isolations=['MS.ISO.A','MS.ISO.B','TG.STOP','TG.ADM','TG.RH.ISO','TG.BYP']
+  const listed=[...prep.preparedOpen,...prep.preparedClosed]
+  if(listed.length!==isolations.length||!isolations.every(v=>listed.includes(v)))throw Error('Every prepared steam valve must be listed exactly once as open or closed')
+  if(prep.preparedDrainOpening!==drains.separatorDrain.bias||prep.preparedDrainOpening!==drains.reheaterDrain.bias)
+    throw Error('Prepared drain opening differs from the drain laws\' nominal opening')
+  if(prep.preparedOpen.includes('MS.ISO.A')!==prep.preparedOpen.includes('MS.ISO.B'))throw Error('Both MS isolations must share one prepared position')
+  const position=(id:string)=>prep.preparedOpen.includes(id)?1:0
   const actuator=(id:typeof valveIds[number])=>({actuator:act.groups[id],onSupplyLoss:act.springReturn.includes(id)?'springClose':'hold'})
   const b=cycle.basis,f=cycle.flows,pt=cycle.points,total=f.SG_total_kg_s
   // The page's retained cycle pressures must be the cycle's own (no second numeric owner).
@@ -154,17 +163,17 @@ export function compileOperatingSteam(texts:SteamTexts,cycle:Cycle,receivers:z.i
     nozzle('TG.ADM','TG.ADM.JUNCTION','TG.HP1',admitted,1,{sizingInlet:{...throttled,pressure_Pa:junction},sizingOutlet_Pa:admission,travel_s:travel.admission_s,...actuator('TG.ADM')}),
     nozzle('TG.RH.ISO','MS.HEADER','TG.RH.SHELL',f.reheat_fraction*total,1,{sizingOutlet_Pa:rhShell,travel_s:travel.reheaterIsolation_s,...actuator('TG.RH.ISO'),check:true}),
     nozzle('TG.BYP','MS.HEADER','LD01.COND',bypass.rating.fractionOfTotalSteam*total,1,{sizingInlet:{kind:'saturatedVapor',pressure_Pa:bypass.rating.inletPressure_Pa},
-      sizingOutlet_Pa:condenserNominal_Pa,travel_s:travel.bypass_s,...actuator('TG.BYP'),prepared:0}),
+      sizingOutlet_Pa:condenserNominal_Pa,travel_s:travel.bypass_s,...actuator('TG.BYP'),prepared:position('TG.BYP')}),
     interval('TG.HP.I1','TG.HP1','TG.HP2',0),interval('TG.HP.I2','TG.HP2','TG.SEP',1),interval('TG.LP.I1','TG.RH.PROCESS','TG.LP1',2),
     interval('TG.LP.I2','TG.LP1','TG.LP2',3),interval('TG.LP.I3','TG.LP2','LD01.COND',4),
     {id:'TG.SEP.RH',from:'TG.SEP',to:'TG.RH.PROCESS',law:'fixedArea',cdA_m2:prep.separatorReheaterSizing.cdA_m2,
       sizing:{flow_kg_s:prep.separatorReheaterSizing.flow_kg_s,inlet_Pa:prep.separatorReheaterSizing.inlet_Pa,outlet_Pa:prep.separatorReheaterSizing.outlet_Pa}},
     nozzle('TG.SEP.DRAIN','TG.SEP','FW.H2.SHELL',f.separator_drain_fraction*total,drains.separatorDrain.sizingOpening,
-      {sizingInlet:{kind:'saturatedLiquid',pressure_Pa:prep.separator_Pa},sizingOutlet_Pa:shells.h2Shell_Pa,travel_s:drains.separatorDrain.travel_s,...actuator('TG.SEP.DRAIN'),prepared:drains.separatorDrain.bias}),
+      {sizingInlet:{kind:'saturatedLiquid',pressure_Pa:prep.separator_Pa},sizingOutlet_Pa:shells.h2Shell_Pa,travel_s:drains.separatorDrain.travel_s,...actuator('TG.SEP.DRAIN'),prepared:prep.preparedDrainOpening}),
     nozzle('TG.SEP.EMERGENCY','TG.SEP','LD01.COND',f.separator_drain_fraction*total,drains.separatorDrain.sizingOpening,
       {sizingInlet:{kind:'saturatedLiquid',pressure_Pa:prep.separator_Pa},sizingOutlet_Pa:shells.h2Shell_Pa,areaOf:'TG.SEP.DRAIN',travel_s:drains.separatorEmergencyDrain.travel_s,...actuator('TG.SEP.EMERGENCY'),prepared:0}),
     nozzle('TG.RH.DRAIN','TG.RH.SHELL','FW.H4.SHELL',f.reheat_fraction*total,drains.reheaterDrain.sizingOpening,
-      {sizingInlet:{kind:'saturatedLiquid',pressure_Pa:rhShell},sizingOutlet_Pa:shells.h4Shell_Pa,travel_s:1/drains.reheaterDrain.travelRate_per_s,...actuator('TG.RH.DRAIN'),prepared:drains.reheaterDrain.bias}),
+      {sizingInlet:{kind:'saturatedLiquid',pressure_Pa:rhShell},sizingOutlet_Pa:shells.h4Shell_Pa,travel_s:1/drains.reheaterDrain.travelRate_per_s,...actuator('TG.RH.DRAIN'),prepared:prep.preparedDrainOpening}),
   ]
   const g=(i:number)=>2*cond.cellDuty_W/(cond.condensing_C-cond.cellPrepared_C[i]!)
   const bandDemand=Math.min(1,Math.max(0,(header-bypass.bandStart_Pa)/(bypass.bandFull_Pa-bypass.bandStart_Pa)))
@@ -190,7 +199,8 @@ export function compileOperatingSteam(texts:SteamTexts,cycle:Cycle,receivers:z.i
     actuatorDuties:{isolationMotion_W:act.isolationMotion_W,openingMotion_W:act.openingMotion_W,springStockShare:act.springStockShare,
       holding_W:act.holding_W,controllerElectronics_W:act.controllerElectronics_W,drainMotion_W:act.drainMotion_W,drainElectronics_W:act.drainElectronics_W},
     prepared:{sg_Pa:prep.sgPrepared_Pa,header_Pa:header,junction_Pa:junction,admission_Pa:admission,reheaterShell_Pa:rhShell,condenserNominal_Pa,
-      requests:{msIsolation:1,stop:1,admission:1,reheaterIsolation:1,bypass:0,separatorDrain:drains.separatorDrain.bias,separatorEmergency:0,reheaterDrain:drains.reheaterDrain.bias}},
+      requests:{msIsolation:position('MS.ISO.A'),stop:position('TG.STOP'),admission:position('TG.ADM'),reheaterIsolation:position('TG.RH.ISO'),
+        bypass:position('TG.BYP'),separatorDrain:prep.preparedDrainOpening,separatorEmergency:0,reheaterDrain:prep.preparedDrainOpening}},
     /** D2: the unchanged band evaluated at the re-anchored header. A demand above zero at full power is owner item S4-3. */
     disclosed:{bypassBandDemandAtPreparation:bandDemand,bypassBandConflict:bandDemand>0},
     receivers:shells,
