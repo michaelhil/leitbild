@@ -176,6 +176,10 @@ type HeldState = (Vec<f64>, Vec<f64>, Vec<f64>);
 /// A held-input change applied to the system at an exact stop.
 pub type HeldChange<S> = Box<dyn FnOnce(&mut S) -> Result<(), String>>;
 
+/// A declared event window's step cap and the predicate on a restart's
+/// transaction receipts that starts it ([`Driver::restart_max_step`]).
+pub type WindowCap = (f64, fn(&Value) -> bool);
+
 /// What a decided change does at its due instant.
 pub enum Action<S> {
     /// An owner command applied through `discrete_restart` (class R).
@@ -424,7 +428,7 @@ pub struct Driver<S> {
     /// (the predicate): stock keeps IDASetMaxStep across IDAReInit and takes
     /// a new bound only after a reinitialization, before the next step. The
     /// caller removes it at the window's end (`Ida::remove_max_step`).
-    pub restart_max_step: Option<(f64, fn(&Value) -> bool)>,
+    pub restart_max_step: Option<WindowCap>,
 }
 
 /// Names of [`Driver::totals`].
