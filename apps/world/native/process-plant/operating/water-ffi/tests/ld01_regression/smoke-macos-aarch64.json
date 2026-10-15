@@ -59,7 +59,7 @@
       "root_restarts": 1,
       "steps": 1265,
       "system_jacobians": 456,
-      "system_residuals": 3830
+      "system_residuals": 3831
     },
     "z1": {
       "constraint_rate_within_bound": true,
