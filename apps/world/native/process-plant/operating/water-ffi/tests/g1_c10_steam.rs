@@ -666,6 +666,8 @@ fn prepare(packet: &Value) -> Prepared {
         q_ref / (t_sat_rhs - t_w0),
         q_ref / (t_w0 - t_out),
     );
+    let reheater_sizing = json!({"referenceDuty_W": q_ref, "shellSaturation_K": t_sat_rhs, "wallPrepared_K": t_w0,
+        "shellConductance_W_K": rh_wall.1, "processConductance_W_K": rh_wall.2});
     y[SOLIDS] = rh_wall.0 * (t_w0 - 273.15);
     let mut casing = [(0., 0.); 4];
     for (k, i) in CASED.into_iter().enumerate() {
@@ -808,6 +810,7 @@ fn prepare(packet: &Value) -> Prepared {
             area,
         });
     }
+    sizing.push(json!({"id": "TG.RH.WALL", "sizing": reheater_sizing}));
     let held = &packet["heldPortsAtPreparation"];
     let ext = &held["extraction_kg_s"];
     let rec = &packet["receivers"];
