@@ -223,7 +223,11 @@ impl<P: leitbild_operating_plant::sg::Properties> Standalone<P> {
         let mut y: Vec<f64> = prepared.iter().zip(&scales).map(|(v, s)| v / s).collect();
         let (tube, segments): (Option<Tube>, Vec<Segment>) = match heat {
             Heat::Tube(_) => (
-                Some(Tube::new(&section.contact, probe.tube.thermal_diameter_m)?),
+                Some(Tube::new(
+                    &section.contact,
+                    probe.tube.thermal_diameter_m,
+                    &section.exposure,
+                )?),
                 probe.segments.iter().map(Segment::from).collect(),
             ),
             Heat::Schedule(_) => (None, Vec::new()),

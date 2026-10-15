@@ -1593,32 +1593,123 @@ pub fn helium_to_plenum(
     (s(area * factor / inner_radius) * k_he * (helium_t - plenum_t)).finite()
 }
 
-/// Exact submerged developed length of one selected 20m fold SEGMENT. Smooth
-/// interiors have their directional derivative; ordinary clip ties use the
-/// selected active branch. The inward crown cusp has NO finite derivative.
-/// Capacity is NEVER multiplied by the returned wet fraction.
-pub fn folded_wet_fraction(start: f64, end: f64, liquid_volume: Scalar) -> Result<Scalar> {
-    if !start.is_finite() || !end.is_finite() || start < 0. || end > 20. || start >= end {
+/// The folded SG tube path: a straight rise from `inlet_m` to the crown
+/// arc, a semicircular crown whose top is `crest_m`, and a straight descent
+/// to `outlet_m`, over `developed_length_m` (`reference-hydraulics` ports and
+/// crest, `reference-primary-mechanics` developed length). The crown radius
+/// takes the developed length the two straight legs leave.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FoldPath {
+    length: f64,
+    inlet: f64,
+    crest: f64,
+    radius: f64,
+    rise: f64,
+    arc: f64,
+}
+impl FoldPath {
+    pub fn new(developed_length_m: f64, inlet_m: f64, crest_m: f64, outlet_m: f64) -> Result<Self> {
+        let rise = crest_m - inlet_m;
+        let descent = crest_m - outlet_m;
+        let radius = (developed_length_m - rise - descent) / (PI - 2.);
+        if ![developed_length_m, inlet_m, crest_m, outlet_m]
+            .iter()
+            .all(|x| x.is_finite())
+            || !(radius > 0. && radius < rise.min(descent))
+        {
+            return Err("the SG fold cannot realize its straight legs and semicircular crown");
+        }
+        Ok(Self {
+            length: developed_length_m,
+            inlet: inlet_m,
+            crest: crest_m,
+            radius,
+            rise: rise - radius,
+            arc: PI * radius,
+        })
+    }
+}
+
+/// The SG secondary's two-zone contact coordinate (`ld01-sg-exposure`,
+/// S3-D26): the bundle zone holds `bundle_volume_m3` from the fold's start
+/// to its crest, uniformly; above the crest the free area is
+/// `upper_area_m2`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ContactMap {
+    fold: FoldPath,
+    bundle_volume_m3: f64,
+    bundle_area_m2: f64,
+    upper_area_m2: f64,
+}
+impl ContactMap {
+    pub fn new(fold: FoldPath, bundle_volume_m3: f64, upper_area_m2: f64) -> Result<Self> {
+        if !(bundle_volume_m3.is_finite() && bundle_volume_m3 > 0.)
+            || !(upper_area_m2.is_finite() && upper_area_m2 > 0.)
+        {
+            return Err("invalid SG contact map");
+        }
+        Ok(Self {
+            fold,
+            bundle_volume_m3,
+            bundle_area_m2: bundle_volume_m3 / (fold.crest - fold.inlet),
+            upper_area_m2,
+        })
+    }
+    /// The contact surface `H` (m) of liquid volume `liquid_volume` (m³):
+    /// exactly the fold's start at zero liquid and exactly its crest at the
+    /// bundle-zone volume (the crown cusp below is detected by equality),
+    /// where the direction takes the slope of the zone it moves into.
+    pub fn height(&self, liquid_volume: Scalar) -> Scalar {
+        let (v, d) = (liquid_volume.value, liquid_volume.direction);
+        if v == self.bundle_volume_m3 {
+            let area = if d < 0. {
+                self.bundle_area_m2
+            } else {
+                self.upper_area_m2
+            };
+            Scalar::new(self.fold.crest, d / area)
+        } else if v < self.bundle_volume_m3 {
+            s(self.fold.inlet) + liquid_volume / s(self.bundle_area_m2)
+        } else {
+            s(self.fold.crest) + (liquid_volume - s(self.bundle_volume_m3)) / s(self.upper_area_m2)
+        }
+    }
+}
+
+/// Exact submerged developed length of one selected fold SEGMENT under the
+/// contact surface of `map`. Smooth interiors have their directional
+/// derivative; ordinary clip ties use the selected active branch. The inward
+/// crown cusp has NO finite derivative. Capacity is NEVER multiplied by the
+/// returned wet fraction.
+pub fn folded_wet_fraction(
+    start: f64,
+    end: f64,
+    liquid_volume: Scalar,
+    map: ContactMap,
+) -> Result<Scalar> {
+    let fold = map.fold;
+    if !start.is_finite() || !end.is_finite() || start < 0. || end > fold.length || start >= end {
         return Err("invalid SG material segment");
     }
     liquid_volume.finite()?;
-    let r = 1.5 / (PI - 2.);
-    let up = 9.5 - r;
-    let arc = PI * r;
-    let zc = 12. - r;
-    let height = s(2.5) + liquid_volume / s(7.5);
-    // The arc crown is at up+pi*r/2 = 10.25m exactly. Only segments
-    // containing it have the square-root loss of wet length on uncovery.
-    if height.value == 12. && liquid_volume.direction < 0. && start <= 10.25 && end >= 10.25 {
+    let r = fold.radius;
+    let up = fold.rise;
+    let arc = fold.arc;
+    let zc = fold.crest - r;
+    let height = map.height(liquid_volume);
+    // The arc crown is at up+pi*r/2. Only segments containing it have the
+    // square-root loss of wet length on uncovery.
+    let top = up + 0.5 * arc;
+    if height.value == fold.crest && liquid_volume.direction < 0. && start <= top && end >= top {
         return Err("inward SG crown wetting derivative is unbounded");
     }
     let clip = |x: Scalar, lo: f64, hi: f64| x.max(s(lo)).min(s(hi));
-    let wet_up = clip(height - s(2.5), start.min(up), end.min(up)) - s(start.min(up));
+    let wet_up = clip(height - s(fold.inlet), start.min(up), end.min(up)) - s(start.min(up));
     let arc_lo = (start - up).max(0.).min(arc);
     let arc_hi = (end - up).max(0.).min(arc);
     let wet_arc = if arc_hi <= arc_lo || height.value <= zc {
         s(0.)
-    } else if height.value >= 12. {
+    } else if height.value >= fold.crest {
         s(arc_hi - arc_lo)
     } else {
         let x = (height - s(zc)) / s(r);
@@ -1751,11 +1842,12 @@ pub fn secondary_wall<P: WaterProperties>(
     diameter: f64,
     steel: SteelContact,
     steam_present: bool,
+    map: ContactMap,
 ) -> Result<Scalar> {
     if !area.is_finite() || area <= 0. {
         return Err("invalid SG thermal area");
     }
-    let wet = folded_wet_fraction(start, end, liquid_volume)?;
+    let wet = folded_wet_fraction(start, end, liquid_volume, map)?;
     let law = WallLaw {
         diameter_m: diameter,
         film: Film::External,

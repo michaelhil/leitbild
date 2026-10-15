@@ -38,6 +38,8 @@ pub struct Packet {
 #[derive(Debug, Deserialize)]
 pub struct SecondarySection {
     pub contact: crate::sg::packet::Contact,
+    /// The tube wetting's two-zone contact coordinate (S3-D26).
+    pub exposure: crate::sg::packet::Exposure,
 }
 
 #[derive(Debug, Deserialize)]

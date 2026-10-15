@@ -84,6 +84,8 @@ impl From<&packet::Segment> for Segment {
 #[derive(Clone, Copy, Debug)]
 pub struct Tube {
     law: WallLaw,
+    /// The tube wetting's two-zone contact coordinate (S3-D26).
+    contact_map: thermal::ContactMap,
 }
 
 /// The stationary local wall balance of one segment at a held primary and
@@ -106,7 +108,12 @@ pub struct Stationary {
 impl Tube {
     /// The tube film's law from the contact block's wall constants and the
     /// effective thermal diameter.
-    pub fn new(c: &packet::Contact, thermal_diameter_m: f64) -> Result<Self, Failure> {
+    pub fn new(
+        c: &packet::Contact,
+        thermal_diameter_m: f64,
+        exposure: &packet::Exposure,
+    ) -> Result<Self, Failure> {
+        let contact_map = exposure.contact_map().map_err(fatal)?;
         if ![
             thermal_diameter_m,
             c.exchange_area_m2,
@@ -121,6 +128,7 @@ impl Tube {
             return Err(fatal("SG tube law constants"));
         }
         Ok(Self {
+            contact_map,
             law: WallLaw {
                 diameter_m: thermal_diameter_m,
                 film: Film::Tube,
@@ -179,6 +187,7 @@ impl Tube {
                 material: self.law.material,
             },
             view.steam_present,
+            self.contact_map,
         )
         .map_err(|e| recoverable(format!("SG tube secondary contact: {e}")))?;
         Ok((-primary.heat * s(segment.area_m2), secondary))
