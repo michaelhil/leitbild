@@ -110,7 +110,7 @@ pub struct WallRead {
 /// Wall water a local refresh replaced: (slot, previous water).
 #[must_use = "restore the replaced wall water after the local call"]
 #[derive(Debug)]
-pub struct ReplacedWall(Vec<(usize, Option<WallWater>)>);
+pub struct ReplacedWall(Vec<(usize, Option<WallWater>, u64)>);
 
 /// Elements of one local evaluation, by index: core halves, passive
 /// contacts, plenum contacts and SG segments.
@@ -251,11 +251,17 @@ pub struct Solids {
     /// (halves' contacts in order, from `contact_base`), then per SG
     /// segment's primary film, the law's flux at the last undirected
     /// inputs (wall water, wall temperature, clad mean temperature), keyed
-    /// by their bits. The law is a pure function of those inputs and of
-    /// the contact's fixed geometry, so a hit is the law's result bit for
-    /// bit; a network column moves the water of a few cells only, and every
+    /// by the wall water's version (`wall_version`) and the temperatures'
+    /// bits. The law is a pure function of those inputs and of the
+    /// contact's fixed geometry, so a hit is the law's result bit for bit;
+    /// a network column moves the water of a few cells only, and every
     /// other contact of its scope reads undirected inputs.
     wall_memo: Vec<Option<(WallKey, thermal::WallFlux)>>,
+    /// Per wall slot: the version of its water, a fresh `wall_clock` tick
+    /// on every write (a local call's restore puts back the water and its
+    /// version together), so equal versions mean bit-identical water.
+    wall_version: Vec<u64>,
+    wall_clock: u64,
     /// Per half: its first contact's slot in `wall_memo`.
     contact_base: Vec<usize>,
     /// Per passive contact: its heat at the last undirected (store, water)
@@ -263,12 +269,23 @@ pub struct Solids {
     passive_memo: Vec<Option<([u64; 4], Scalar)>>,
 }
 
-/// The bits of a wall law's inputs: the wall water's 23 numbers, the wall
-/// temperature and the clad mean temperature (the core material), each
-/// value and direction.
-type WallKey = [u64; 50];
+/// A wall law's memo key: its wall water's version, then the wall
+/// temperature's and the clad mean temperature's (the core material's)
+/// value and direction bits.
+type WallKey = [u64; 5];
 
-fn wall_key(w: &WallWater, wall_t: Scalar, material_t: Scalar) -> WallKey {
+fn wall_key(version: u64, wall_t: Scalar, material_t: Scalar) -> WallKey {
+    [
+        version,
+        wall_t.value.to_bits(),
+        wall_t.direction.to_bits(),
+        material_t.value.to_bits(),
+        material_t.direction.to_bits(),
+    ]
+}
+
+/// Whether a wall water is undirected (every direction zero).
+fn undirected_water(w: &WallWater) -> bool {
     let point = |q: &WaterPoint| {
         [
             q.density,
@@ -279,30 +296,18 @@ fn wall_key(w: &WallWater, wall_t: Scalar, material_t: Scalar) -> WallKey {
             q.enthalpy,
         ]
     };
-    let mut key = [0; 50];
-    let mut k = 0;
-    let mut put = |x: Scalar| {
-        key[k] = x.value.to_bits();
-        key[k + 1] = x.direction.to_bits();
-        k += 2;
-    };
-    put(w.pressure);
-    put(w.temperature);
-    put(w.mass_flux);
-    for x in point(&w.bulk) {
-        put(x);
-    }
-    put(w.saturation.temperature);
-    put(w.saturation.surface_tension);
-    for x in point(&w.saturation.liquid) {
-        put(x);
-    }
-    for x in point(&w.saturation.vapor) {
-        put(x);
-    }
-    put(wall_t);
-    put(material_t);
-    key
+    [
+        w.pressure,
+        w.temperature,
+        w.mass_flux,
+        w.saturation.temperature,
+        w.saturation.surface_tension,
+    ]
+    .iter()
+    .chain(&point(&w.bulk))
+    .chain(&point(&w.saturation.liquid))
+    .chain(&point(&w.saturation.vapor))
+    .all(|x| x.direction == 0.)
 }
 
 /// The bits of a half's fuel-transfer inputs: seven temperatures' values
@@ -663,6 +668,8 @@ impl Solids {
             wall,
             fuel_memo: vec![None; a],
             wall_memo: Vec::new(),
+            wall_version: Vec::new(),
+            wall_clock: 0,
             contact_base: Vec::new(),
             passive_memo: Vec::new(),
         };
@@ -672,6 +679,7 @@ impl Solids {
             base += b.contacts.len();
         }
         solids.wall_memo = vec![None; base + solids.segments.len()];
+        solids.wall_version = vec![0; solids.wall.len()];
         solids.passive_memo = vec![None; solids.passive.len()];
         solids.compile_incidence(water_cells)?;
         Ok(solids)
@@ -932,7 +940,7 @@ impl Solids {
         let mut replaced = ReplacedWall(Vec::with_capacity(cells.len()));
         for cell in cells {
             if let Some(k) = self.wall_slot.get(*cell).copied().flatten() {
-                replaced.0.push((k, self.wall[k]));
+                replaced.0.push((k, self.wall[k], self.wall_version[k]));
                 if let Err(e) = self.wall_water_at_slot(properties, fluid, k) {
                     self.restore_wall_water(replaced);
                     return Err(e);
@@ -944,8 +952,9 @@ impl Solids {
 
     /// Put back the wall water a [`Solids::wall_water_local`] call replaced.
     pub fn restore_wall_water(&mut self, replaced: ReplacedWall) {
-        for (k, w) in replaced.0.into_iter().rev() {
+        for (k, w, version) in replaced.0.into_iter().rev() {
             self.wall[k] = w;
+            self.wall_version[k] = version;
         }
     }
 
@@ -983,6 +992,8 @@ impl Solids {
                 flow = flow + s(0.5) * fluid.liquid_mass_flow(face);
             }
         }
+        self.wall_clock += 1;
+        self.wall_version[k] = self.wall_clock;
         self.wall[k] = Some(WallWater {
             pressure,
             temperature: Scalar::new(q.temperature_k, d.temperature_k),
@@ -1002,6 +1013,8 @@ impl Solids {
             .copied()
             .flatten()
             .ok_or_else(|| fatal(format!("cell {cell} has no wall slot")))?;
+        self.wall_clock += 1;
+        self.wall_version[k] = self.wall_clock;
         self.wall[k] = Some(water);
         Ok(())
     }
@@ -1092,6 +1105,16 @@ impl Solids {
             );
         }
         Ok(out)
+    }
+
+    /// The version of `cell`'s wall water (0: never written, which no memo
+    /// key holds).
+    fn version_at(&self, cell: usize) -> u64 {
+        self.wall_slot
+            .get(cell)
+            .copied()
+            .flatten()
+            .map_or(0, |k| self.wall_version[k])
     }
 
     fn wall_at(&self, cell: usize) -> Result<WallWater, Failure> {
@@ -1364,12 +1387,12 @@ impl Solids {
             let clad_outer = x.value(self.surface(i, 2));
             let mut wall = s(0.);
             for (n, c) in b.contacts.iter().enumerate() {
-                let water = self.wall_at(c.water)?;
                 let slot = self.contact_base[i] + n;
-                let key = wall_key(&water, clad_outer, clad_mean);
+                let key = wall_key(self.version_at(c.water), clad_outer, clad_mean);
                 let q = match &self.wall_memo[slot] {
                     Some((k, q)) if *k == key => *q,
                     _ => {
+                        let water = self.wall_at(c.water)?;
                         let q = thermal::liquid_wall_current(
                             properties,
                             water.pressure,
@@ -1390,7 +1413,7 @@ impl Solids {
                             water.bulk,
                         )
                         .map_err(trial)?;
-                        if undirected_bits(&key) {
+                        if undirected_bits(&key[1..]) && undirected_water(&water) {
                             self.wall_memo[slot] = Some((key, q));
                         }
                         q
@@ -1494,13 +1517,13 @@ impl Solids {
         let m0 = self.metal0();
         for &i in &scope.segments {
             let g = self.segments[i];
-            let water = self.wall_at(g.primary)?;
             let metal_t = temperatures.metal[i];
             let slot = self.wall_memo.len() - self.segments.len() + i;
-            let key = wall_key(&water, metal_t, s(0.));
+            let key = wall_key(self.version_at(g.primary), metal_t, s(0.));
             let q = match &self.wall_memo[slot] {
                 Some((k, q)) if *k == key => *q,
                 _ => {
+                    let water = self.wall_at(g.primary)?;
                     let q = thermal::liquid_wall_current(
                         properties,
                         water.pressure,
@@ -1517,7 +1540,7 @@ impl Solids {
                         water.bulk,
                     )
                     .map_err(trial)?;
-                    if undirected_bits(&key) {
+                    if undirected_bits(&key[1..]) && undirected_water(&water) {
                         self.wall_memo[slot] = Some((key, q));
                     }
                     q
