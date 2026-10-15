@@ -425,7 +425,7 @@ impl<P: Properties> Blocks<'_, P> {
                 "signed nonzero phase masses cancelled face inertia; not an empty rest chart",
             ));
         }
-        // L1 hook (PHASE-L1 for KERN): as the residual, a locked path
+        // L1 (decision 0014): as the residual, a locked path
         // transports nothing.
         let path = if net.unilateral_locked(li) {
             super::unilateral::held_path(inertance)
@@ -561,7 +561,7 @@ impl<P: Properties> Blocks<'_, P> {
                 force = force + s(*w) * pass.section_drive[*section];
             }
         }
-        // L1 hook (PHASE-L1 for KERN): as the residual, a locked path's
+        // L1 (decision 0014): as the residual, a locked path's
         // row is `Pi/s`; it reads no onset.
         if net.unilateral_locked(li) {
             return Ok((self.get(seed, l.index) / s(net.scales[l.index]), false));

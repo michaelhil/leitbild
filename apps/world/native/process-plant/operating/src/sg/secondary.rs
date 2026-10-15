@@ -823,7 +823,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 receipt: json!({"owner":"secondary","command":"ManualReactorTrip","t_s":t,
                     "steamDemand":"held at the constant A/B values (G7, declared boundary)"}),
             }),
-            // S3 hook (IC-PROT, for KERN): the holding loss is not the
+            // S3 (C16): the holding loss is not the
             // steam owner's; the steam demand is unchanged by it.
             Command::HoldingLoss => Ok(Transaction {
                 deposits: Vec::new(),

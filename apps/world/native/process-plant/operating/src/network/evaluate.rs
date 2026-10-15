@@ -192,7 +192,7 @@ impl<P: Properties> Network<P> {
             // Source assembly first needs the exact empty-path rest value.
             // The physical TOTAL-force limit is checked after source assembly;
             // a nonzero-I path always uses its retained impulse, not this value.
-            // L1 hook (PHASE-L1 for KERN): a locked path transports nothing.
+            // L1 (decision 0014): a locked path transports nothing.
             let path = if self.unilateral_locked(li) {
                 super::unilateral::held_path(inertance)
             } else if inertance.value == 0. && pi.value == 0. {
@@ -565,7 +565,7 @@ impl<P: Properties> Network<P> {
             // network is not a generic disappearance/reappearance handler.
             // Cold I' uses assembled physical receipts, not an off-row yp.
             let pi = self.get(y, seed, l.index);
-            // L1 hook (PHASE-L1 for KERN, decision 0014): a locked path's
+            // L1 (decision 0014): a locked path's
             // row is `Pi/s`, it transports nothing, and its drive is the
             // reported reaction.
             let locked = self.unilateral_locked(li);

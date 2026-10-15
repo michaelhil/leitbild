@@ -1473,7 +1473,7 @@ impl<P> Rods<P> for RodBlock {
     fn command(&mut self, t: f64, command: Command) -> Result<Transaction, Failure> {
         match command {
             Command::ManualReactorTrip => self.open_holding_circuit(t),
-            // S3 hooks (IC-PROT, for KERN): with acquired protection the
+            // S3 (C16, acquired protection): with acquired protection the
             // turbine TRIP schedules nothing here; the protection's holding
             // path opens the circuit at its decided instant.
             Command::HoldingLoss => self.open_holding_circuit(t),

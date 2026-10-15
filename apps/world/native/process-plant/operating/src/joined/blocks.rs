@@ -428,7 +428,7 @@ pub fn nuclear_partials(
 /// `partials` fixes the nuclear structure, which no state changes; the
 /// pattern holds while every wall cell holds liquid only, which S2's wall
 /// laws require (a vapor-holding wall cell refuses). `vapor` is the vapor
-/// presence the donor reads follow (S3-D-P3 hook, PHASE-L1 for KERN).
+/// presence the donor reads follow (S3-D-P3).
 pub fn joined_pattern<P: Properties + WaterProperties>(
     joined: &Joined<P>,
     template: &LinearTemplate,
@@ -794,7 +794,7 @@ impl JoinedJacobian {
     }
     /// [`JoinedJacobian::compile`] with the donor reads following the
     /// declared vapor presence (the phase-mode owner's, S3-D-P3), or the
-    /// value state's own when `None` (S3-D-P3 hook, PHASE-L1 for KERN).
+    /// value state's own when `None` (S3-D-P3).
     pub fn compile_for<P: Properties + WaterProperties>(
         joined: &mut Joined<P>,
         t: f64,
