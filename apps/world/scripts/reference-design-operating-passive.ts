@@ -58,7 +58,7 @@ const cmtSchema = z.object({ waterTemperature_C: celsius, tracer_ppm: z.number()
   balance: z.object({ isolationLoss_Pa: positive, isolationArea_m2: positive, mainLength_m: positive, riserLength_m: positive,
     roofLength_m: positive, feedLength_m: positive, riserCells: count, travel_s: positive, motionPower_W: positive }).strict() }).strict()
 const dviSchema = z.object({ volume_m3: positive, bottom_m: finite, top_m: finite, area_m2: positive, port_m: finite,
-  neckVolume_m3: positive, neckMeterLoss_Pa: positive, neckMeterArea_m2: positive }).strict()
+  neckVolume_m3: positive, neckMeterLoss_Pa: positive, neckMeterArea_m2: positive, neckSideEntryLoss_Pa: positive, neckFormLoss_Pa: positive }).strict()
 const accSchema = z.object({ totalVolume_m3: positive, water_m3: positive, gas_m3: positive, temperature_C: celsius, interfacePressure_MPa: positive,
   interface_m: finite, bottom_m: finite, roof_m: finite, area_m2: positive, tracer_ppm: z.number().finite().nonnegative(),
   nitrogenGasConstant_J_kgK: positive, nitrogenCv_J_kgK: positive, referenceFlow_kg_s: positive, referenceLoss_MPa: positive, meterLoss_kPa: positive,
@@ -82,7 +82,7 @@ const sequenceSchema = z.object({ cmtLowLevel_m: positive, cmtLowLowLevel_m: pos
   pzrQualification_s: positive, lt: z.object({ span_m: z.tuple([z.number().finite(), positive]), lag_s: positive, resolution_m: positive,
     fullCold_m: positive, datum_m: finite, upperTap_m: finite }).strict() }).strict()
 const stateSchema = z.object({ pressure_MPa: positive, temperature_K: positive, elevation_m: finite }).strict()
-const boundarySchema = z.object({ hotAfter: stateSchema, sgOutlet: stateSchema, pzrRoof_Pa: positive, pzrRoof_m: finite }).strict()
+const boundarySchema = z.object({ hotAfter: stateSchema, sgOutlet: stateSchema, sgOutletVelocity_m_s: finite, pzrRoof_Pa: positive, pzrRoof_m: finite }).strict()
 const witnessSchema = z.object({ coldWitness: z.object({ pressure_Pa: positive, enthalpy_J_kg: positive, elevation_m: finite }).passthrough() }).passthrough()
 
 export type PassivePages = Record<keyof typeof passiveOwners | keyof typeof referencePages, string>
@@ -174,10 +174,11 @@ export function compileOperatingPassive(pages: PassivePages) {
   ]
   const balVolume = balanceCells.reduce((s, c) => s + c.volume_m3, 0)
   if (!near(balVolume, gb.balanceWater_m3, 5e-8)) throw Error(`The BAL cells hold ${balVolume} m3, not ${gb.balanceWater_m3} m3`)
-  const balancePaths = balanceCells.slice(1).map((to, i) => {
-    const from = balanceCells[i]!
-    return { from: from.id, to: to.id, length_m: (from.length_m + to.length_m) / 2, area_m2: A, bore_m: bal.bore_m, roughness_m: bal.roughness_m }
-  })
+  // Paths with their physical joint elevation: tap->RUN at the tap, RUN->RISER.1 at the riser foot, between riser cells, RISER->DIST at the roof connector.
+  const joints = [bal.headerElevation_m, ...Array.from({ length: cmt.balance.riserCells - 1 }, (_, i) => bal.headerElevation_m + (i + 1) * riserCell), gb.top_m]
+  const balancePaths = [{ from: 'COLD.TAP', to: 'BAL.RUN', length_m: cmt.balance.mainLength_m / 2, junction_m: bal.headerElevation_m, isolation: true },
+    ...balanceCells.slice(1).map((to, i) => ({ from: balanceCells[i]!.id, to: to.id, length_m: (balanceCells[i]!.length_m + to.length_m) / 2,
+      junction_m: joints[i]!, isolation: false }))].map(p => ({ ...p, area_m2: A, bore_m: bal.bore_m, roughness_m: bal.roughness_m }))
 
   // ---- Outlet: isolations at the mouth, one passage cell, path to DVI with meter, open check and discharge.
   const out = cmt.outlet
@@ -189,6 +190,9 @@ export function compileOperatingPassive(pages: PassivePages) {
   for (const a_ of [out.isolationArea_m2, out.checkArea_m2, out.meterArea_m2, cmt.balance.isolationArea_m2])
     if (!(a_ < A)) throw Error(`An effective area ${a_} m2 is not below the ${A} m2 bore`)
   const outletCell = { id: 'OUT', volume_m3: A * out.length_m, centroid_m: (g.mouth + delivery.dviPort_m) / 2, length_m: out.length_m }
+  // Tank->OUT carries the mouth isolations over the upper half pipe; OUT->DVI the lower half with meter, check body, discharge and check.
+  const outletPaths = [{ from: 'L1', to: 'OUT', length_m: out.length_m / 2, junction_m: g.mouth, losses: ['pipe', 'isolation'] },
+    { from: 'OUT', to: 'DVI', length_m: out.length_m / 2, junction_m: delivery.dviPort_m, losses: ['pipe', 'meter', 'openCheck', 'discharge', 'check'] }]
 
   // ---- DVI with the neck water.
   if (dvi.volume_m3 !== delivery.dviVolume_m3 || dvi.bottom_m !== delivery.dviBottom_m || dvi.top_m !== delivery.dviTop_m || dvi.port_m !== delivery.dviPort_m)
@@ -241,8 +245,8 @@ export function compileOperatingPassive(pages: PassivePages) {
   const links = (id: string, n: number): Owner => ({ owner: id, differential: 0, algebraic: 2 * n })
   const train = (t: string): Owner[] => [
     ...layers.map(l => cell(`CMT.${t}.${l.id}`)), paths(`CMT.${t}.INTERLAYER`, interfaces.length),
-    ...balanceCells.map(c => cell(`CMT.${t}.${c.id}`)), links(`CMT.${t}.BAL.ISO`, 1), paths(`CMT.${t}.BAL.PATHS`, balancePaths.length),
-    links(`CMT.${t}.RINGS`, rings.length), links(`CMT.${t}.OUTLET.ISO`, 1), cell(`CMT.${t}.OUT`), paths(`CMT.${t}.OUTLET.PATH`, 1),
+    ...balanceCells.map(c => cell(`CMT.${t}.${c.id}`)), paths(`CMT.${t}.BAL.PATHS`, balancePaths.length),
+    links(`CMT.${t}.RINGS`, rings.length), cell(`CMT.${t}.OUT`), paths(`CMT.${t}.OUTLET.PATHS`, outletPaths.length),
     cell(`DVI.${t}`, true), paths(`DVI.${t}.NECK`, 1),
     { owner: `ACC.${t}`, differential: 7, algebraic: 4 }, links(`ACC.${t}.OUTLET`, 1), links(`ACC.${t}.VENT`, 1),
     ...['GIV', 'RECIRC'].flatMap(c => [{ owner: `${c}.${t}`, differential: 5, algebraic: 2 }, links(`${c}.${t}.SOURCE`, 1), links(`${c}.${t}.TERMINAL`, 1)]),
@@ -259,14 +263,16 @@ export function compileOperatingPassive(pages: PassivePages) {
       layers, interfaces, rings: { holeDiameter_m: gb.holeDiameter_m, Cd: bal.Cd, Cv: bal.Cv, list: rings },
       balance: { tap_m: bal.headerElevation_m, bore_m: bal.bore_m, roughness_m: bal.roughness_m, cells: balanceCells, paths: balancePaths,
         isolation: { area_m2: cmt.balance.isolationArea_m2, referenceLoss_Pa: cmt.balance.isolationLoss_Pa, travel_s: cmt.balance.travel_s, motionPower_W: cmt.balance.motionPower_W } },
-      outlet: { cell: outletCell, bore_m: out.bore_m, roughness_m: delivery.roughness_m, referenceFlow_kg_s: out.referenceFlow_kg_s,
+      outlet: { cell: outletCell, paths: outletPaths, bore_m: out.bore_m, roughness_m: delivery.roughness_m, referenceFlow_kg_s: out.referenceFlow_kg_s,
         isolation: { count: out.isolations, area_m2: out.isolationArea_m2, opening_s: out.opening_s, closing_s: out.closing_s,
           holdPower_W: out.holdPower_W, closingPower_W: out.closingPower_W, springStock_J: out.springStock_J },
         check: { crack_Pa: out.checkCrack_Pa, area_m2: out.checkArea_m2 }, meter: { area_m2: out.meterArea_m2, referenceLoss_Pa: out.meterLoss_Pa },
         losses_Pa: { pipe: out.pipeLoss_Pa, discharge: out.dischargeLoss_Pa, meter: out.meterLoss_Pa, openCheck: out.openCheckLoss_Pa, isolation: out.isolationLoss_Pa } } },
     dvi: { volume_m3: dvi.volume_m3 + dvi.neckVolume_m3, manifold_m3: dvi.volume_m3, neck_m3: dvi.neckVolume_m3, elevation_m: dvi.port_m,
       neck: { length_m: bal.dviNeckLength_m, bore_m: bal.dviNeckBore_m, roughness_m: bal.roughness_m, referenceFlow_kg_s: bal.dviReferenceFlow_kg_s,
-        referenceLoss_Pa: bal.dviReferenceLoss_Pa, meterArea_m2: dvi.neckMeterArea_m2, meterLoss_Pa: dvi.neckMeterLoss_Pa } },
+        referenceLoss_Pa: bal.dviReferenceLoss_Pa, meterArea_m2: dvi.neckMeterArea_m2, meterLoss_Pa: dvi.neckMeterLoss_Pa,
+        sideEntryLoss_Pa: dvi.neckSideEntryLoss_Pa, formLoss_Pa: dvi.neckFormLoss_Pa, formVelocityHeads: dvi.neckFormLoss_Pa / dvi.neckSideEntryLoss_Pa,
+        referenceDensity_kg_m3: bal.coldDensity_kg_m3 } },
     acc: { area_m2: acc.area_m2, bottom_m: acc.bottom_m, roof_m: acc.roof_m, interface_m: acc.interface_m, interfacePressure_Pa: mega(acc.interfacePressure_MPa),
       temperature_K: kelvin(acc.temperature_C), tracer_kg_kg: ppm(acc.tracer_ppm), nitrogen: { R_J_kgK: acc.nitrogenGasConstant_J_kgK, cv_J_kgK: acc.nitrogenCv_J_kgK },
       outlet: { variableArea_m2: acc.variableArea_m2, meterArea_m2: acc.meterArea_m2, bore_m: acc.bore_m, checks: acc.checks, checkCrack_Pa: acc.checkCrack_Pa,
@@ -290,7 +296,7 @@ export function compileOperatingPassive(pages: PassivePages) {
     boundary: { coldWitness: { pressure_Pa: witness.pressure_Pa, enthalpy_J_kg: witness.enthalpy_J_kg, elevation_m: witness.elevation_m },
       hotAfter: { pressure_Pa: mega(boundary.hotAfter.pressure_MPa), temperature_K: boundary.hotAfter.temperature_K, elevation_m: boundary.hotAfter.elevation_m },
       sgOutlet: { pressure_Pa: mega(boundary.sgOutlet.pressure_MPa), temperature_K: boundary.sgOutlet.temperature_K, elevation_m: boundary.sgOutlet.elevation_m },
-      pzrRoof: { pressure_Pa: boundary.pzrRoof_Pa, elevation_m: boundary.pzrRoof_m } },
+      sgOutletVelocity_m_s: boundary.sgOutletVelocity_m_s, pzrRoof: { pressure_Pa: boundary.pzrRoof_Pa, elevation_m: boundary.pzrRoof_m } },
     census: { differential, algebraic, total: differential + algebraic, owners },
   }
 }
