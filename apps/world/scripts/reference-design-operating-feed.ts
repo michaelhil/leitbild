@@ -20,10 +20,18 @@
  *   temperature, bleed pressures and heater outlets, cross-checked;
  * - `ld01-sg-level-channels` (steam-generation/instrumentation.md): the NR span.
  *
- * Usage: bun reference-design-operating-feed.ts <wiki root> */
+ * - with a research Python, the cycle's own sizing calculation (`runCycle`
+ *   over `reference-cycle`, as the steam compiler uses it): the steady
+ *   extraction, reheat-condensate and separator-liquid fractions that size
+ *   the extraction and drain areas once ("Full steady extraction fractions are
+ *   used only for identifying the nominal areas"), and the extraction donors'
+ *   sizing states.
+ *
+ * Usage: bun reference-design-operating-feed.ts <wiki root> [<research python>] */
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { z } from 'zod'
+import { runCycle } from './reference-design-cycle'
 import { ownedBlock } from './reference-design-operating-pzr'
 
 export const feedOwners = {
@@ -170,18 +178,46 @@ export function compileOperatingFeed(pages: FeedPages) {
   }
 }
 
-export async function prepareOperatingFeed(wiki: string) {
+const cycleFlowsSchema = z.object({ SG_total_kg_s: pos, reheat_fraction: pos, high_heater_fraction: pos, separator_heater_fraction: pos,
+  low_heater_fraction: pos, lowest_heater_fraction: pos, separator_drain_fraction: pos, condenser_drains_fraction: pos }).passthrough()
+const pointSchema = z.object({ p_MPaAbs: pos, h_kJ_kg: z.number().finite() }).passthrough()
+const cyclePointsSchema = z.object({ HP_bleed: pointSchema, LP_bleed: pointSchema, LP_lowest_bleed: pointSchema }).passthrough()
+
+/** Heater sizing flows from the cycle's steady fractions (H1→H4): each shell
+ * drains its own extraction plus everything cascading from above; H4 also
+ * receives the RH condensate (the reheat supply) and H2 the separator liquid.
+ * The H1 drain must equal the cycle's combined condenser drains. */
+export function heaterSizing(flows: unknown, points: unknown) {
+  const f = cycleFlowsSchema.parse(flows), q = cyclePointsSchema.parse(points), total = f.SG_total_kg_s
+  const extraction = [f.lowest_heater_fraction, f.low_heater_fraction, f.separator_heater_fraction, f.high_heater_fraction].map(x => x * total)
+  const rhCondensate = f.reheat_fraction * total, separatorLiquid = f.separator_drain_fraction * total
+  const drainOut = [0, 0, 0, 0]
+  drainOut[3] = extraction[3]! + rhCondensate
+  drainOut[2] = drainOut[3]! + extraction[2]!
+  drainOut[1] = drainOut[2]! + extraction[1]! + separatorLiquid
+  drainOut[0] = drainOut[1]! + extraction[0]!
+  same('H1 drain is the combined condenser drains', drainOut[0]!, f.condenser_drains_fraction * total)
+  return { totalSteam_kg_s: total, extraction_kg_s: extraction, rhCondensate_kg_s: rhCondensate, separatorLiquid_kg_s: separatorLiquid, drainOut_kg_s: drainOut,
+    // Extraction donors: H1 LP_lowest_bleed, H2 LP_bleed, H3 saturated separator vapor (no cycle point; the block's 0.8 MPa), H4 HP_bleed.
+    donor: [q.LP_lowest_bleed, q.LP_bleed, null, q.HP_bleed].map(x => x && { pressure_Pa: x.p_MPaAbs * MPa, enthalpy_J_kg: x.h_kJ_kg * kPa }) }
+}
+
+export async function prepareOperatingFeed(wiki: string, python?: string) {
   const base = join(wiki, 'world/packs/process-plant/reference-designs/ld-01')
   const names = Object.entries(feedOwners) as [keyof typeof feedOwners, { page: string, fence: string }][]
   const pages = Object.fromEntries(await Promise.all(names.map(async ([k, o]) => [k, await Bun.file(join(base, o.page)).text()]))) as FeedPages
   const hash = (s: string) => createHash('sha256').update(s).digest('hex')
-  return { ...compileOperatingFeed(pages), provenance: {
+  const sizing = python ? await (async () => {
+    const cycle = await runCycle(pages.cycle, python)
+    return { ...heaterSizing(cycle.flows, cycle.points), cycleInputSha256: cycle.inputSha256, cycleCalculationSha256: cycle.calculationSha256 }
+  })() : undefined
+  return { ...compileOperatingFeed(pages), ...(sizing ? { heaterSizing: sizing } : {}), provenance: {
     consumed: names.map(([k, o]) => ({ page: o.page, fence: o.fence, sha256: hash(pages[k]) })),
     sourceSha256: hash(await Bun.file(import.meta.path).text()) } }
 }
 
 if (import.meta.main) {
-  const [wiki] = Bun.argv.slice(2)
-  if (!wiki || Bun.argv.length !== 3) throw Error('Usage: operating-feed <wiki root>')
-  console.log(JSON.stringify(await prepareOperatingFeed(wiki)))
+  const [wiki, python, ...extra] = Bun.argv.slice(2)
+  if (!wiki || extra.length) throw Error('Usage: operating-feed <wiki root> [<research python>]')
+  console.log(JSON.stringify(await prepareOperatingFeed(wiki, python)))
 }

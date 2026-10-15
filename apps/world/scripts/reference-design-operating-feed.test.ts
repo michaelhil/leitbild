@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { compileOperatingFeed, feedOwners, type FeedPages } from './reference-design-operating-feed'
+import { compileOperatingFeed, feedOwners, heaterSizing, type FeedPages } from './reference-design-operating-feed'
 
 // Test-only owner texts in the shapes the compiler reads; not plant evidence.
 const fence = (name: string, body: unknown) => '```' + name + '\n' + JSON.stringify(body) + '\n```\n'
@@ -76,4 +76,24 @@ test('refuses extra keys and disagreements between blocks that state one quantit
   expect(() => compileOperatingFeed(pages({ train: { ...blocks.train, pumpEye_m: .1 } }))).toThrow(/pump eye/)
   expect(() => compileOperatingFeed(pages({ condensate: { ...blocks.condensate, flow_kg_s: 1600 } }))).toThrow(/COND.P duty/)
   expect(() => compileOperatingFeed(pages({ train: { ...blocks.train, branchIsoOutletPressure_MPa: 7.3 } }))).toThrow(/FCV inlet/)
+})
+
+// Test-only cycle outputs in runCycle's shape (rounded fractions; not plant evidence).
+const flows = { SG_total_kg_s: 1000, reheat_fraction: .08, high_heater_fraction: .17, separator_heater_fraction: .05, low_heater_fraction: .04,
+  lowest_heater_fraction: .02, separator_drain_fraction: .1, condenser_drains_fraction: .46 }
+const point = (p: number, h: number) => ({ p_MPaAbs: p, T_C: 0, h_kJ_kg: h, rho_kg_m3: 1 })
+const points = { HP_bleed: point(4, 2718.5), LP_bleed: point(.2, 2722.2), LP_lowest_bleed: point(.05, 2521.6) }
+
+test('sizes the heater extractions and the drain cascade from the cycle fractions', () => {
+  const s = heaterSizing(flows, points)
+  expect(s.extraction_kg_s).toEqual([20, 40, 50, 170])
+  expect(s.drainOut_kg_s.map(x => Math.round(x * 1e9) / 1e9)).toEqual([460, 440, 300, 250])
+  expect(s.donor[3]).toEqual({ pressure_Pa: 4e6, enthalpy_J_kg: 2718500 })
+  expect(s.donor[2]).toBeNull()
+})
+
+test('refuses a missing fraction and a cascade that does not reach the condenser drains', () => {
+  const { reheat_fraction: _, ...missing } = flows
+  expect(() => heaterSizing(missing, points)).toThrow()
+  expect(() => heaterSizing({ ...flows, condenser_drains_fraction: .45 }, points)).toThrow(/combined condenser drains/)
 })
