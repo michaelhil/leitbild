@@ -1893,9 +1893,9 @@ fn g1_c11_prhr_prototype() {
         "differential slots agree with the compiler"
     );
     assert_eq!(
-        (n - slot_d - m.n_surf()) as f64,
+        (n - slot_d) as f64,
         ca,
-        "algebraic slots (before the added surface temperatures) agree"
+        "algebraic slots, the shared surface temperatures included (PRHR.SURFACES), agree"
     );
 
     // G1.3 (a): scaled zero-time residual with consistent y'.
