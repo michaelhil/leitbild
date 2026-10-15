@@ -969,7 +969,8 @@ impl<P: Properties + WaterProperties> Joined<P> {
             b.root_directions(&mut out[..ns])?;
         }
         // L1: release rising, contact falling (`Root::direction`); a slot
-        // with no root reports none.
+        // with no root reports none. L1's slots follow the PZR relief's and
+        // precede the phase modes' and the spray path's three ([`Self::roots`]).
         let first =
             out.len() - self.spray_slots() - self.phase_mode_slots() - self.unilateral_slots();
         for r in self.network.unilateral_roots() {
@@ -1213,7 +1214,39 @@ impl<P: Properties + WaterProperties> Joined<P> {
         if self.phase_modes {
             let first = ns + nr + np + nl;
             let nm = self.phase_mode_slots();
-            if let Some(m) = self.mode_transact(t, &directions[first..first + nm], y)? {
+            let mut modes = directions[first..first + nm].to_vec();
+            // DR S3-REBIRTH (PHASE-L1, for KERN): an L1 contact root located
+            // on a path drawing from an equilibrium cell is that cell's
+            // exhaustion root (the same function, the donor's vapor mass
+            // falling through zero, decision 0014's contact). The cell's own
+            // exhaustion root can start on the wrong side of a re-birth's
+            // projected root-size vapor and miss it, so the located contact
+            // exhausts the donor in this transaction, before L1 locks.
+            for r in &armed {
+                let crate::network::phase_events::Root::Contact(li) = *r else {
+                    continue;
+                };
+                if directions[ns + nr + np + li] != r.direction() {
+                    continue;
+                }
+                let l = self.network.face_layout[li];
+                let (from, to) = self.network.face_ends(l.face);
+                let flow = self.network.path_flow_sign(y, li);
+                let donor = if flow > 0. {
+                    from
+                } else if flow < 0. {
+                    to
+                } else {
+                    continue;
+                };
+                if donor < self.network.pzr.cell
+                    && self.network.cell_modes()[donor] == CellMode::Equilibrium
+                    && l.phase == 1
+                {
+                    modes[2 * donor] = -1;
+                }
+            }
+            if let Some(m) = self.mode_transact(t, &modes, y)? {
                 done.push(m);
             }
         }
@@ -1384,6 +1417,37 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 "located":fired.iter().map(|(p, f)| serde_json::json!({"path":p,"root":format!("{f:?}")})).collect::<Vec<_>>(),
                 "opposite":opposite,"changes":tx.changes,"energyPaid_J":tx.energy_paid_j,
                 "stateChanged":!tx.changes.is_empty()}),
+        }))
+    }
+    /// L1 at a segment start, after the restart's exact consistent start
+    /// (DR S3-REBIRTH, decision 0014): the drives and their rates along the
+    /// consistent rates `yp` from one value evaluation seeded along `yp`
+    /// (`cj = 0`, so a direction is `dF/dt`), then
+    /// [`Network::unilateral_release_at_start`]: a one-sided lock whose
+    /// drive draws from its holding end at `t0+` is released, its impulse
+    /// rate set to the free row's `F` in `yp`; no coordinate moves, so the
+    /// caller updates the id vector only. `None` while L1 is inactive or
+    /// no one-sided lock exists.
+    pub fn unilateral_release_at_start(
+        &mut self,
+        t: f64,
+        y: &[f64],
+        yp: &mut [f64],
+    ) -> Result<Option<super::block::Transaction>, Failure> {
+        if self.network.unilateral().is_none() {
+            return Ok(None);
+        }
+        let seed = yp.to_vec();
+        self.evaluate(t, y, yp, Some(&seed), 0., None)?;
+        let (tx, one_sided) = self.network.unilateral_release_at_start(yp)?;
+        if one_sided.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(super::block::Transaction {
+            deposits: Vec::new(),
+            receipt: serde_json::json!({"owner":"network L1 at the segment start","t_s":t,
+                "oneSided":one_sided.iter().map(|(p, f, r)| serde_json::json!({"path":p,"orientedDrive_Pa":f,"orientedRate_Pa_s":r})).collect::<Vec<_>>(),
+                "changes":tx.changes,"stateChanged":!tx.changes.is_empty()}),
         }))
     }
     /// A declared command to every composed owner, in order, followed by
