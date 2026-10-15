@@ -11,12 +11,15 @@ const flowChannel = '{"lag_s":0.25,"spanFractionOfNominal":[-1.5,1.5],"quantum_k
 const proxyPaths = '{"filter_s":0.2,"supplies":["I1","I2","I3"],"sample_s":0.1,"transport_s":0.1,"maximumAge_s":0.3,"recovery_s":1}'
 const sgProtection = '{"lowWarning_m":5.75,"lowActuation_m":5.0,"highWarning_m":8.0,"highActuation_m":8.5,"warningClearing_m":0.25,"demandQualification_s":1.0,"unavailableQualification_s":1.0,"recoveredChannelQualification_s":1.0,"resetBand_m":[5.25,8.25],"resetDuration_s":5.0}'
 const reference = '{"eventReferencePower_W":3e9,"eventEnergy_MeV":200,"Fref_events_per_s":9.36226e19,"convertedSpan_m":[0.95,1.05],"form":"proxy = (E_c/E_c_ref) * (E_tot_ref/Fref)"}'
+const levelChannelsBlock = '{"calibrationPressure_Pa":15000000,"lag_s":0.5,"interfaceSpan_Pa":[0,25000000],"indicatedSpan_m":[-1,13],"quantum_m":0.01,"supplies":["I1","I2","I3"]}'
+const levelProtectionBlock = '{"lowLevel_m":3.0,"lowQualification_s":0.5,"highLevel_m":10.0,"highQualification_s":0.5,"unavailableQualification_s":1,"resetBand_m":[3.5,9.5],"resetDuration_s":5}'
 const taps = '### PZR electronic differential level\n\n' + fence('ld01-pzr-taps', '{"pt1Elevation_m":18.5,"ltLowElevation_m":6.5,"ltHighElevation_m":18.5}')
 const pages = (over: Partial<Record<(typeof OPERATING_IC_PAGES)[number], string>> = {}) => ({
-  'safety/source-and-primary-protection.md': fence('reference-pzr-pressure-protection', protection) + fence('ld01-loop-low-flow-protection', lowFlow),
+  'safety/source-and-primary-protection.md': fence('reference-pzr-pressure-protection', protection) + fence('ld01-loop-low-flow-protection', lowFlow)
+    + fence('ld01-pzr-level-protection', levelProtectionBlock),
   'systems/instrumentation/operational-observations.md': fence('reference-pzr-pressure-channel', channel)
     + fence('ld01-loop-flow-channel', flowChannel) + fence('ld01-power-proxy-protective-paths', proxyPaths),
-  'systems/instrumentation/phase-dependent-measurements.md': taps,
+  'systems/instrumentation/phase-dependent-measurements.md': taps + fence('ld01-pzr-level-channels', levelChannelsBlock),
   'safety/reactor-trip-and-hold.md': fence('ld01-s2-holding-circuit', '{"turbineTripToOpening_s":0.2}')
     + fence('ld01-turbine-state-report', '{"sample_s":0.1,"transport_s":0.1,"maximumAge_s":0.3,"recovery_s":1}'),
   'safety/steam-generator-protection.md': fence('ld01-sg-level-protection', sgProtection)
@@ -36,17 +39,17 @@ const packet = {
 test('the section carries only strict-block values and the packet identities', () => {
   const s = compileOperatingIcFrom(pages(), packet)
   expect(s.frame_s).toBe(0.1)
-  expect(s.families.map(f => f.id)).toEqual(['LD01.PZR.PT', 'LD01.SG.A.LT.NR', 'LD01.SG.B.LT.NR', 'LD01.RCS.A.FT', 'LD01.RCS.B.FT', 'LD01.CORE.POWER.P'])
-  expect(s.families[1]!.quantity).toEqual({ sg_collapsed_level: { sg: 'A', area_m2: 12 } })
-  expect(s.families[1]!.channel).toMatchObject({ lag_s: 0.5, min: 4, max: 9, quantum: null })
-  expect(s.families[3]!.quantity).toEqual({ loop_flow: { loop_id: 'A', face: 1, face_id: 'RETURN.A->DOWN', nominal_kg_s: null, quantum_kg_s: 5, indeterminate_band_kg_s: 10 } })
-  expect(s.families[3]!.channels).toEqual([{ id: 'LD01.RCS.A.FT', supply: 'I1' }])
-  expect(s.families[4]!.channels).toEqual([{ id: 'LD01.RCS.B.FT', supply: 'I2' }])
-  const proxy = s.families[5]!.quantity as { current_proxy: { weights: number[], fref_events_per_s: number } }
+  expect(s.families.map(f => f.id)).toEqual(['LD01.PZR.PT', 'LD01.PZR.LT', 'LD01.SG.A.LT.NR', 'LD01.SG.B.LT.NR', 'LD01.RCS.A.FT', 'LD01.RCS.B.FT', 'LD01.CORE.POWER.P'])
+  expect(s.families[2]!.quantity).toEqual({ sg_collapsed_level: { sg: 'A', area_m2: 12 } })
+  expect(s.families[2]!.channel).toMatchObject({ lag_s: 0.5, min: 4, max: 9, quantum: null })
+  expect(s.families[4]!.quantity).toEqual({ loop_flow: { loop_id: 'A', face: 1, face_id: 'RETURN.A->DOWN', nominal_kg_s: null, quantum_kg_s: 5, indeterminate_band_kg_s: 10 } })
+  expect(s.families[4]!.channels).toEqual([{ id: 'LD01.RCS.A.FT', supply: 'I1' }])
+  expect(s.families[5]!.channels).toEqual([{ id: 'LD01.RCS.B.FT', supply: 'I2' }])
+  const proxy = s.families[6]!.quantity as { current_proxy: { weights: number[], fref_events_per_s: number } }
   // The span 0.95–1.05 m lies in the band 2/3–4/3 m of each sector.
   expect(proxy.current_proxy.weights.map((w, i) => w > 0 ? i : -1).filter(i => i >= 0)).toEqual([4, 10, 16, 22])
   expect(proxy.current_proxy.weights.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 14)
-  expect(s.families[5]!.channel).toMatchObject({ lag_s: 0.2, min: null, max: null, quantum: null })
+  expect(s.families[6]!.channel).toMatchObject({ lag_s: 0.2, min: null, max: null, quantum: null })
   const ids = s.functions.map(f => f.id)
   expect(ids).toEqual(['LD01.PROT.PZR.HIGH_PRESSURE', 'LD01.PROT.PZR.LOW_PRESSURE', 'LD01.PROT.PZR.PRESSURE.UNAVAILABLE',
     'LD01.PROT.TG.TRIP', 'LD01.PROT.SG.A.LOW', 'LD01.PROT.SG.A.UNAVAILABLE', 'LD01.PROT.SG.B.LOW', 'LD01.PROT.SG.B.UNAVAILABLE',
@@ -61,7 +64,8 @@ test('the section carries only strict-block values and the packet identities', (
 
 test('refusals: a duration off the frame, a missing face, a wrong Fref, a missing block', () => {
   expect(() => compileOperatingIcFrom(pages({ 'safety/source-and-primary-protection.md':
-    fence('reference-pzr-pressure-protection', protection) + fence('ld01-loop-low-flow-protection', lowFlow.replace('"lowFlowQualification_s":0.5', '"lowFlowQualification_s":0.55')) }), packet))
+    fence('reference-pzr-pressure-protection', protection) + fence('ld01-loop-low-flow-protection', lowFlow.replace('"lowFlowQualification_s":0.5', '"lowFlowQualification_s":0.55'))
+      + fence('ld01-pzr-level-protection', levelProtectionBlock) }), packet))
     .toThrow('not whole')
   expect(() => compileOperatingIcFrom(pages(), { ...packet, mechanics: { faces: [{ id: 'RETURN.A->DOWN' }] } })).toThrow('No face RETURN.B->DOWN')
   expect(() => compileOperatingIcFrom(pages({ 'systems/instrumentation/nuclear-observation-apparatus.md':
@@ -81,22 +85,22 @@ test.skipIf(!wiki || !joined)('the actual section from the wiki and the packet',
   }
 })
 
-test('the PZR LT family and C2.N3 vote compile from the proposed blocks, and refuse without them', () => {
-  const levelChannels = '{"calibrationPressure_Pa":15000000,"lag_s":0.5,"interfaceSpan_Pa":[0,25000000],"indicatedSpan_m":[-1,13],"quantum_m":0.01,"supplies":["I1","I2","I3"]}'
-  const levelProtection = '{"lowLevel_m":3.0,"lowQualification_s":0.5,"highLevel_m":10.0,"highQualification_s":0.5,"unavailableQualification_s":1,"resetBand_m":[3.5,9.5],"resetDuration_s":5}'
+test('the PZR LT family and C2.N3 vote compile from their blocks, and refuse without them', () => {
   const p = pages()
   const texts = {
-    measurements: p['systems/instrumentation/phase-dependent-measurements.md'] + fence('ld01-pzr-level-channels', levelChannels),
+    measurements: p['systems/instrumentation/phase-dependent-measurements.md'],
     observations: p['systems/instrumentation/operational-observations.md'],
-    protection: p['safety/source-and-primary-protection.md'] + fence('ld01-pzr-level-protection', levelProtection),
+    protection: p['safety/source-and-primary-protection.md'],
   }
   const { family, monitors } = compilePzrLevelFrom(texts)
   expect(family.quantity).toEqual({ pzr_level: { calibration_pressure_pa: 15e6, interface_span_pa: [0, 25e6] } })
   expect(family.channel).toEqual({ lag_s: 0.5, min: -1, max: 13, quantum: 0.01, indeterminate_band: null, sample_s: 0.1, transport_s: 0.1 })
   expect(family.channels.map(c => c.id)).toEqual(['LD01.PZR.LT1', 'LD01.PZR.LT2', 'LD01.PZR.LT3'])
   expect(monitors[0]!.rule).toEqual({ voted: { family: 'LD01.PZR.LT', side: { at_or_below: 3 }, qualification_s: 0.5 } })
-  expect(() => compilePzrLevelFrom({ ...texts, measurements: p['systems/instrumentation/phase-dependent-measurements.md'] }))
+  const s = compileOperatingIcFrom(p, packet)
+  expect(s.families[1]).toEqual(family)
+  expect(s.monitors).toEqual(monitors)
+  expect(() => compilePzrLevelFrom({ ...texts, measurements: taps })).toThrow('Expected one ld01-pzr-level-channels block')
+  expect(() => compileOperatingIcFrom(pages({ 'systems/instrumentation/phase-dependent-measurements.md': taps }), packet))
     .toThrow('Expected one ld01-pzr-level-channels block')
-  // The main section carries no monitor until the blocks land.
-  expect(compileOperatingIcFrom(pages(), packet).monitors).toEqual([])
 })

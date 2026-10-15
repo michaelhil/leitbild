@@ -206,6 +206,20 @@ pub struct Analog {
     powered: bool,
     pub faults: Faults,
     pub delivery: Delivery<Quality>,
+    /// An input stage outside its own span at this acquisition (the PZR
+    /// LT's pressure interfaces): the indication computed at that stage's
+    /// span limit is reported as a bound in this direction, never as an
+    /// exact value ("valid overrange retains range status").
+    pub input_overrange: Option<Overrange>,
+}
+
+/// The direction an out-of-span input stage moves the indication.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Overrange {
+    /// The actual indication lies above the computed one.
+    Above,
+    /// The actual indication lies below the computed one.
+    Below,
 }
 impl Analog {
     /// Balanced initialization: the retained response equals the plant
@@ -229,6 +243,7 @@ impl Analog {
             response: initial,
             powered: true,
             faults: Faults::default(),
+            input_overrange: None,
             delivery: Delivery::new(
                 frame.frames_in(config.sample_s)?,
                 frame.frames_in(config.transport_s)?,
@@ -263,6 +278,10 @@ impl Analog {
         Ok(match (c.min, c.max) {
             (Some(min), _) if raw < min => Quality::BelowRange(min),
             (_, Some(max)) if raw > max => Quality::AboveRange(max),
+            // An input stage at its span limit: the computed indication is a
+            // bound, assessed before rounding as every range is.
+            _ if self.input_overrange == Some(Overrange::Above) => Quality::AboveRange(raw),
+            _ if self.input_overrange == Some(Overrange::Below) => Quality::BelowRange(raw),
             _ => match c.indeterminate_band {
                 Some(band) if raw.abs() <= band => Quality::Indeterminate(band),
                 _ => Quality::Value(c.quantum.map_or(raw, |q| (raw / q).round() * q)),
@@ -438,6 +457,29 @@ mod tests {
             ..proxy
         };
         assert!(Analog::new("P1", "I1", bad, 0.1, 1.).is_err());
+    }
+
+    #[test]
+    fn an_input_stage_overrange_reports_a_bound_not_a_value() {
+        let lt = AnalogConfig {
+            lag_s: 0.5,
+            min: Some(-1.),
+            max: Some(13.),
+            quantum: Some(0.01),
+            indeterminate_band: None,
+            sample_s: 0.1,
+            transport_s: 0.1,
+        };
+        let mut a = Analog::new("LT1", "I1", lt, 0.1, 6.0049).unwrap();
+        assert_eq!(a.indication().unwrap(), Quality::Value(6.0));
+        a.input_overrange = Some(Overrange::Above);
+        assert_eq!(a.indication().unwrap(), Quality::AboveRange(6.0049));
+        a.input_overrange = Some(Overrange::Below);
+        assert_eq!(a.indication().unwrap(), Quality::BelowRange(6.0049));
+        // The indicated span's own status comes first.
+        let mut b = Analog::new("LT2", "I2", lt, 0.1, 14.).unwrap();
+        b.input_overrange = Some(Overrange::Below);
+        assert_eq!(b.indication().unwrap(), Quality::AboveRange(13.));
     }
 
     #[test]

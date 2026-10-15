@@ -312,24 +312,19 @@ fn s3_ic_prot_c3_rcp_supply_loss_through_acquired_protection() {
 /// The PZR LT pair's tap pressures from the coordinates alone
 /// (`stratified::Cell::level_tap_pressures`) equal the evaluated column's
 /// (`Network::pzr_taps`) bit for bit at the composition's start, and the
-/// acquired LT quantity is that difference through the calibration. The LT
-/// family is inserted with the proposed blocks' values (test only; the
-/// compiled section carries none until SPEC lands the blocks).
+/// acquired LT quantity is that difference through the calibration, with the
+/// compiled section's LT family (`ld01-pzr-level-channels`).
 #[test]
 #[ignore = "requires the joined packet, the ic section, the wiki, IF97 and stock IDA/KLU"]
 fn the_lt_tap_pressures_from_coordinates_equal_the_evaluated_column() {
     use leitbild_operating_plant::network::stratified;
     let section_path = std::env::var("LD01_IC_SECTION").expect("LD01_IC_SECTION");
-    let mut section: Value =
-        serde_json::from_slice(&std::fs::read(&section_path).expect("section")).expect("json");
-    section["families"].as_array_mut().unwrap().push(json!({"id": "LD01.PZR.LT",
-        "quantity": {"pzr_level": {"calibration_pressure_pa": 15e6, "interface_span_pa": [0., 25e6]}},
-        "channels": [{"id": "LD01.PZR.LT1", "supply": "I1"}, {"id": "LD01.PZR.LT2", "supply": "I2"},
-            {"id": "LD01.PZR.LT3", "supply": "I3"}],
-        "channel": {"lag_s": 0.5, "min": -1., "max": 13., "quantum": 0.01, "indeterminate_band": null,
-            "sample_s": 0.1, "transport_s": 0.1},
-        "maximum_age_s": 0.3, "recovery_s": 1.}));
-    let section: Section = serde_json::from_value(section).expect("section with LT");
+    let section: Section =
+        serde_json::from_slice(&std::fs::read(&section_path).expect("section")).expect("section");
+    assert!(
+        section.families.iter().any(|f| f.id == "LD01.PZR.LT"),
+        "the compiled section carries the LT family"
+    );
     let (
         Started {
             mut joined, y, yp, ..

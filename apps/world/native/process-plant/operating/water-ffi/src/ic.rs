@@ -26,6 +26,7 @@
 use crate::frame::{Action, Change, Class, Client, Dense};
 use leitbild_operating_plant::{
     ic::{
+        acquisition::Overrange,
         packet::{Quantity, Section},
         protection::Protection,
     },
@@ -87,39 +88,70 @@ impl Observation {
                 nominal,
             } => Ok(mass_flow(y, *impulse, *from, *to, supports)? / nominal),
             Observation::Proxy { regions, factor } => Ok(factor * events(y, regions)),
-            Observation::PzrLevel {
-                cell,
-                base,
-                scales,
-                a,
-                b,
-                span,
-            } => {
-                let x: Vec<Scalar> = scales
-                    .iter()
-                    .enumerate()
-                    .map(|(i, s)| Scalar::constant(y[base + i] * s))
-                    .collect();
-                let x = stratified::Coordinates::from_slice(&x).map_err(|f| format!("{f:?}"))?;
-                let (low, high) = cell
-                    .level_tap_pressures(&x)
-                    .map_err(|f| format!("{f:?}"))?
-                    .ok_or("the PZR declares no LT pair")?;
-                for p in [low.value, high.value] {
-                    if !(span[0]..=span[1]).contains(&p) {
-                        return Err(format!(
-                            "PZR LT interface at {p} Pa outside its {span:?} Pa span (device overrange is not built in S3)"
-                        ));
-                    }
-                }
-                Ok(a * (low.value - high.value) + b)
+            Observation::PzrLevel { a, b, span, .. } => {
+                let (low, high) = self.tap_pressures(y)?;
+                // Each interface reads at most its span limit (status below).
+                let clamp = |p: f64| p.clamp(span[0], span[1]);
+                Ok(a * (clamp(low) - clamp(high)) + b)
             }
         }
+    }
+    /// The LT pair's tap pressures at `y`.
+    fn tap_pressures(&self, y: &[f64]) -> Result<(f64, f64), String> {
+        let Observation::PzrLevel {
+            cell, base, scales, ..
+        } = self
+        else {
+            return Err("not a PZR level observation".into());
+        };
+        let x: Vec<Scalar> = scales
+            .iter()
+            .enumerate()
+            .map(|(i, s)| Scalar::constant(y[base + i] * s))
+            .collect();
+        let x = stratified::Coordinates::from_slice(&x).map_err(|f| format!("{f:?}"))?;
+        let (low, high) = cell
+            .level_tap_pressures(&x)
+            .map_err(|f| format!("{f:?}"))?
+            .ok_or("the PZR declares no LT pair")?;
+        Ok((low.value, high.value))
+    }
+    /// The input-stage status of a PZR level device at `y`: an interface
+    /// outside its span reads its span limit, and the indication is then a
+    /// bound ("Select interface pressure spans 0–25 MPa and final indicated
+    /// span −1 to 13 m, no clamp; valid overrange retains range status",
+    /// phase-dependent-measurements.md § PZR electronic differential
+    /// level). `None` for every other observation.
+    fn input_overrange(&self, y: &[f64]) -> Result<Option<Overrange>, String> {
+        let Observation::PzrLevel { span, .. } = self else {
+            return Ok(None);
+        };
+        let (low, high) = self.tap_pressures(y)?;
+        overrange_of(low, high, *span)
     }
     fn linear(&self) -> bool {
         matches!(self, Observation::Linear(_))
     }
 }
+/// The direction an LT device's indication moves past the one computed
+/// from interfaces held at their span limits: the bottom (LT.LOW) interface
+/// above its span or the top below raise the DP; the opposite lower it. Both
+/// senses at once need both interfaces outside their 0–25 MPa spans in
+/// opposite directions, beyond the maintained property domain (≤17 MPa,
+/// positive pressure); that is refused rather than given a direction.
+fn overrange_of(low: f64, high: f64, span: [f64; 2]) -> Result<Option<Overrange>, String> {
+    let up = low > span[1] || high < span[0];
+    let down = low < span[0] || high > span[1];
+    match (up, down) {
+        (false, false) => Ok(None),
+        (true, false) => Ok(Some(Overrange::Above)),
+        (false, true) => Ok(Some(Overrange::Below)),
+        (true, true) => Err(format!(
+            "PZR LT interfaces at {low} and {high} Pa leave their {span:?} Pa spans in opposite senses (outside the property domain)"
+        )),
+    }
+}
+
 fn mass_flow(
     y: &[f64],
     impulse: (usize, f64),
@@ -458,7 +490,21 @@ impl<S> Client<S> for ProtectionClient {
         }
         Ok(())
     }
-    fn frame(&mut self, k: u64, _t: f64, _dense: &dyn Dense) -> Result<Vec<Change<S>>, String> {
+    fn frame(&mut self, k: u64, t: f64, dense: &dyn Dense) -> Result<Vec<Change<S>>, String> {
+        // Input-stage status at the acquisition's left limit.
+        if self
+            .observed
+            .iter()
+            .any(|(q, _)| matches!(q, Quantity::PzrLevel { .. }))
+        {
+            dense.derivative(t, 0, &mut self.scratch)?;
+            for (q, o) in &self.observed {
+                if matches!(q, Quantity::PzrLevel { .. }) {
+                    let status = o.input_overrange(&self.scratch)?;
+                    self.protection.set_input_overrange(q, status);
+                }
+            }
+        }
         let frame = self.protection.frame_of();
         Ok(self
             .protection
@@ -483,6 +529,30 @@ impl<S> Client<S> for ProtectionClient {
 #[cfg(test)]
 mod tests {
     use super::derivatives_at_start;
+
+    #[test]
+    fn an_interface_outside_its_span_gives_the_bound_direction() {
+        use super::{Overrange, overrange_of};
+        let span = [0., 25e6];
+        assert_eq!(overrange_of(15.05e6, 15.0e6, span).unwrap(), None);
+        assert_eq!(
+            overrange_of(25.1e6, 15.0e6, span).unwrap(),
+            Some(Overrange::Above)
+        );
+        assert_eq!(
+            overrange_of(15.0e6, -1., span).unwrap(),
+            Some(Overrange::Above)
+        );
+        assert_eq!(
+            overrange_of(-1., 1e6, span).unwrap(),
+            Some(Overrange::Below)
+        );
+        assert_eq!(
+            overrange_of(15e6, 26e6, span).unwrap(),
+            Some(Overrange::Below)
+        );
+        assert!(overrange_of(26e6, 25.5e6, span).is_err());
+    }
 
     #[test]
     fn node_derivatives_recover_a_polynomial_of_the_node_degree() {

@@ -22,7 +22,7 @@
 //! delivered TRIPPED report (no qualification duration is selected).
 use super::{
     Frame,
-    acquisition::{Analog, AnalogConfig, Quality, Report},
+    acquisition::{Analog, AnalogConfig, Overrange, Quality, Report},
     division::Division,
     holding::Holding,
     packet::{Effects, Family, FunctionSpec, Quantity, ReportSource, ReportSpec, Rule, Section},
@@ -295,6 +295,19 @@ impl Protection {
                 )
             })
             .collect()
+    }
+    /// The input-stage status of every channel observing `quantity`, for
+    /// the next acquisition (see [`Analog::input_overrange`]).
+    pub fn set_input_overrange(&mut self, quantity: &Quantity, status: Option<Overrange>) {
+        for f in self
+            .families
+            .iter_mut()
+            .filter(|f| f.spec.quantity == *quantity)
+        {
+            for c in &mut f.channels {
+                c.input_overrange = status;
+            }
+        }
     }
     pub fn channel_mut(&mut self, id: &str) -> Option<&mut Analog> {
         self.families
