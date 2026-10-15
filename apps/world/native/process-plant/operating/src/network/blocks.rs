@@ -38,7 +38,8 @@
 //! composition. A response outside the compiled pattern, or a nonfinite
 //! one, refuses. Nothing falls back to another assembly.
 use super::{
-    Failure, Fluid, Network, PZR_COORDINATES, Properties, Receipts,
+    CellMode, Failure, Fluid, Network, PZR_COORDINATES, Properties, Receipts,
+    phase_modes::{saturated_with, view_slots},
     properties::{self as props, BandReport, MetastableBand, Reuse, Water},
     rec, s, selected_phase, stratified,
 };
@@ -86,6 +87,9 @@ pub struct BlockJacobian {
     profiled_by: Vec<Vec<usize>>,
     /// Per section: face layouts whose impulse row receives its force.
     forcing: Vec<Vec<usize>>,
+    /// Per section: the vapor face layouts its gas-phase drive forces and
+    /// whose volume flow its gas profile reads (S3-D-P8).
+    gas_layouts: Vec<Vec<usize>>,
     /// Section of each rotor.
     rotor_section: Vec<usize>,
     /// The stratified cell's port read by the port face.
@@ -239,6 +243,8 @@ struct Pass {
     charts: Vec<[Option<Chart>; 2]>,
     receipts: Vec<[[Scalar; 3]; 2]>,
     section_drive: Vec<Scalar>,
+    /// Each passive section's gas-phase drive (S3-D-P8), as the residual's.
+    section_gas_drive: Vec<Scalar>,
     rows: Vec<Scalar>,
     /// Base pass: the impulse row's path has exactly zero inertance.
     cold: Vec<bool>,
@@ -296,8 +302,31 @@ impl<P: Properties> Blocks<'_, P> {
         )
     }
 
+    /// An equilibrium cell's view slots for this column (S3-D-P1): the
+    /// liquid's mass and energy and the vapor's energy from its totals and
+    /// vapor mass at the held saturation of its seeded pressure,
+    /// round-tripped through the solver scaling as the residual's view
+    /// vector is; and that saturation.
+    fn view(
+        &self,
+        seed: Option<Seed>,
+        node: usize,
+    ) -> Result<([Scalar; 3], super::phase_modes::Saturated), Failure> {
+        let net = self.net;
+        let l = net.cell_layout[node];
+        let sat = saturated_with(self.held, self.get(seed, l.base))?;
+        let v = view_slots(self.get(seed, l.mass[0]), self.get(seed, l.mass[1]), &sat);
+        let slots = [l.mass[0], l.energy[0], l.energy[1]];
+        let out = std::array::from_fn(|k| {
+            let scale = net.scales[slots[k]];
+            rec(v[k].value / scale * scale, v[k].direction / scale * scale)
+        });
+        Ok((out, sat))
+    }
+
     /// A regular cell's caloric points, face view and EOS row, as the
-    /// residual's cell loop composes them.
+    /// residual's cell loop composes them; an equilibrium cell's from its
+    /// saturated endpoints through its view (S3-D-P1).
     fn cell(
         &mut self,
         node: usize,
@@ -306,6 +335,21 @@ impl<P: Properties> Blocks<'_, P> {
     ) -> Result<(Cell, [Point; 2], Scalar), Failure> {
         let net = self.net;
         let l = net.cell_layout[node];
+        if net.cell_modes()[node] == CellMode::Equilibrium {
+            let ([ml, ul, ug], sat) = self.view(seed, node)?;
+            let get = |i: usize| {
+                if i == l.mass[0] {
+                    ml
+                } else if i == l.energy[0] {
+                    ul
+                } else if i == l.energy[1] {
+                    ug
+                } else {
+                    self.get(seed, i)
+                }
+            };
+            return net.equilibrium_cell_from(node, &get, cell_volume, &sat);
+        }
         let p = self.get(seed, l.base);
         let mut cell = Cell {
             pressure: p,
@@ -464,7 +508,7 @@ impl<P: Properties> Blocks<'_, P> {
         pass: &Pass,
         seed: Option<Seed>,
         profile_of: &[(usize, f64)],
-    ) -> Result<(Scalar, Option<(usize, Scalar, Scalar)>), Failure> {
+    ) -> Result<(Scalar, Scalar, Option<(usize, Scalar, Scalar)>), Failure> {
         let net = self.net;
         let region = net.sections[j].region;
         let liquid = pass.cells[region].phase[0]
@@ -505,8 +549,45 @@ impl<P: Properties> Blocks<'_, P> {
                 e.value.pump_euler_pa - e.value.passive_loss_pa,
                 e.direction.pump_euler_pa - e.direction.passive_loss_pa,
             );
+        // The gas phase's passive loss on the same declared geometry
+        // (S3-D-P8), as the residual's `compose_sections`: none for a pump
+        // section or a region without gas.
+        let mut gas_drive = s(0.);
+        if net.sections[j].rotor.is_none()
+            && net.sections[j].section.pump.is_none()
+            && let (Some(gas), Some((qg, dqg))) =
+                (pass.cells[region].phase[1], pass.points[region][1])
+        {
+            let mut gas_profile = s(0.);
+            for (face, w) in profile_of {
+                gas_profile = gas_profile + s(*w) * pass.chart(2 * face + 1).volume_flow_m3_s;
+            }
+            let gas_current = gas.density * gas.fraction * gas_profile;
+            let g = net.sections[j]
+                .section
+                .evaluate(
+                    hydraulics::Input {
+                        massflow_kg_s: gas_current.value,
+                        density_kg_m3: qg.density_kg_m3,
+                        viscosity_pa_s: qg.viscosity_pa_s,
+                        pressure_drop_pa: 0.,
+                        omega_rad_s: 0.,
+                        gas_volume_fraction: gas.fraction.value,
+                    },
+                    hydraulics::Input {
+                        massflow_kg_s: gas_current.direction,
+                        density_kg_m3: dqg.density_kg_m3,
+                        viscosity_pa_s: dqg.viscosity_pa_s,
+                        pressure_drop_pa: 0.,
+                        omega_rad_s: 0.,
+                        gas_volume_fraction: gas.fraction.direction,
+                    },
+                )
+                .map_err(|e| recoverable(e.to_string()))?;
+            gas_drive = gas.fraction * rec(-g.value.passive_loss_pa, -g.direction.passive_loss_pa);
+        }
         let Some(r) = net.sections[j].rotor else {
-            return Ok((drive, None));
+            return Ok((drive, gas_drive, None));
         };
         let shaft = rec(e.value.shaft_power_w, e.direction.shaft_power_w);
         let index = net.rotor_index[r];
@@ -535,7 +616,7 @@ impl<P: Properties> Blocks<'_, P> {
                 residual_rad_s / s(net.drive.reference_omega_rad_s)
             }
         };
-        Ok((drive, Some((index, shaft, row))))
+        Ok((drive, gas_drive, Some((index, shaft, row))))
     }
 
     /// One impulse row and whether its path has exactly zero inertance.
@@ -559,6 +640,11 @@ impl<P: Properties> Blocks<'_, P> {
         if l.phase == 0 {
             for (section, w) in forced_by {
                 force = force + s(*w) * pass.section_drive[*section];
+            }
+        } else {
+            // The gas phase's passive loss (S3-D-P8), as the residual's.
+            for (section, w) in forced_by {
+                force = force + s(*w) * pass.section_gas_drive[*section];
             }
         }
         // L1 (decision 0014): as the residual, a locked path's
@@ -608,6 +694,20 @@ impl<P: Properties> Blocks<'_, P> {
         let l = net.cell_layout[node];
         let index = l.boron;
         let boron = (self.rate(seed, index) - pass.receipts[node][0][2]) / s(net.scales[index]);
+        if net.cell_modes()[node] == CellMode::Equilibrium {
+            // The residual's equilibrium rows, from the original coordinates
+            // (`compose_equilibrium_rows`).
+            let sat = saturated_with(self.held, self.get(seed, l.base))?;
+            let [m, u, split, vapor] = net.equilibrium_rows(
+                node,
+                &|i| self.get(seed, i),
+                &|i| self.rate(seed, i),
+                &pass.receipts[node],
+                pass.volume_rate[node],
+                &sat,
+            );
+            return Ok([boron, m, u, split, vapor]);
+        }
         let mut therm = [None; 2];
         let pressure = self.get(seed, l.base);
         let md: [Scalar; 2] = std::array::from_fn(|k| pass.receipts[node][k][0]);
@@ -823,6 +923,7 @@ impl<P: Properties> Network<P> {
         }
         let mut profiled_by = vec![Vec::new(); self.face_layout.len()];
         let mut forcing = vec![Vec::new(); self.sections.len()];
+        let mut gas_layouts = vec![Vec::new(); self.sections.len()];
         for (j, faces) in projection.profile.iter().enumerate() {
             for (face, _) in faces {
                 let li = 2 * face;
@@ -832,9 +933,19 @@ impl<P: Properties> Network<P> {
                 if forcing[j].last() != Some(&li) {
                     forcing[j].push(li);
                 }
+                // The gas phase's passive loss (S3-D-P8): the vapor path's
+                // volume flow is its profile, its impulse row its force.
+                if profiled_by[li + 1].last() != Some(&j) {
+                    profiled_by[li + 1].push(j);
+                }
+                gas_layouts[j].push(li + 1);
             }
         }
-        for list in profiled_by.iter_mut().chain(forcing.iter_mut()) {
+        for list in profiled_by
+            .iter_mut()
+            .chain(forcing.iter_mut())
+            .chain(gas_layouts.iter_mut())
+        {
             list.sort_unstable();
             list.dedup();
         }
@@ -853,6 +964,7 @@ impl<P: Properties> Network<P> {
             sections_of,
             profiled_by,
             forcing,
+            gas_layouts,
             rotor_section,
             port,
         })
@@ -1009,13 +1121,6 @@ impl<'a, P: Properties> Replay<'a, P> {
         if y.len() != n || yp.len() != n || structure.columns() != n {
             return Err(fatal("block replay layout"));
         }
-        // HOOK (PHASE-P7, S3-D-P1, for KERN): the replay does not compose
-        // equilibrium-mode cells yet; the colored assembly does.
-        if net.has_equilibrium_cells() {
-            return Err(fatal(
-                "the block replay does not compose equilibrium-mode cells (S3 phase branch: colored assembly only)",
-            ));
-        }
         let mut blocks = Blocks {
             net,
             held,
@@ -1169,15 +1274,32 @@ impl<'a, P: Properties> Replay<'a, P> {
                 if viewed {
                     w.charts.extend_from_slice(&structure.reading[node]);
                 }
-                match coordinate {
-                    Coordinate::Mass(k) => {
-                        pass.phase_mass[k][node] = blocks.get(seed, net.cell_layout[node].mass[k]);
-                        w.charts.extend_from_slice(&structure.supporting[k][node]);
+                if net.cell_modes()[node] == CellMode::Equilibrium {
+                    // The view's phase masses: the liquid's `M - M_g`, the
+                    // vapor's `M_g` (S3-D-P1).
+                    let ([ml, ..], _) = blocks.view(seed, node)?;
+                    let mg = blocks.get(seed, net.cell_layout[node].mass[1]);
+                    for (k, m) in [ml, mg].into_iter().enumerate() {
+                        if moved(m) {
+                            pass.phase_mass[k][node] = m;
+                            w.charts.extend_from_slice(&structure.supporting[k][node]);
+                        }
                     }
-                    Coordinate::Boron => {
+                    if coordinate == Coordinate::Boron {
                         pass.tracer[node] = blocks.get(seed, net.cell_layout[node].boron);
                     }
-                    Coordinate::Pressure | Coordinate::Energy(_) => {}
+                } else {
+                    match coordinate {
+                        Coordinate::Mass(k) => {
+                            pass.phase_mass[k][node] =
+                                blocks.get(seed, net.cell_layout[node].mass[k]);
+                            w.charts.extend_from_slice(&structure.supporting[k][node]);
+                        }
+                        Coordinate::Boron => {
+                            pass.tracer[node] = blocks.get(seed, net.cell_layout[node].boron);
+                        }
+                        Coordinate::Pressure | Coordinate::Energy(_) => {}
+                    }
                 }
                 w.cells.push(node);
                 w.receipts.push(node);
@@ -1312,8 +1434,12 @@ impl<'a, P: Properties> Replay<'a, P> {
         w.sections.sort_unstable();
         w.sections.dedup();
         for &k in &w.sections {
-            let (drive, rotor) = blocks.section(k, pass, seed, &projection.profile[k])?;
+            let (drive, gas, rotor) = blocks.section(k, pass, seed, &projection.profile[k])?;
             pass.section_drive[k] = drive;
+            pass.section_gas_drive[k] = gas;
+            if moved(gas) {
+                w.impulses.extend_from_slice(&structure.gas_layouts[k]);
+            }
             if let Some((index, shaft, row)) = rotor {
                 if moved(shaft) {
                     let region = net.sections[k].region;
@@ -1424,6 +1550,7 @@ impl<'a, P: Properties> Replay<'a, P> {
         }
         for &k in &w.sections {
             pass.section_drive[k] = base.section_drive[k];
+            pass.section_gas_drive[k] = base.section_gas_drive[k];
         }
         for &c in &w.receipts {
             pass.receipts[c] = base.receipts[c];
@@ -1471,11 +1598,17 @@ impl<P: Properties> Blocks<'_, P> {
         }
         let (column, view) = self.pzr(None, structure.port)?;
         cells.push(view);
-        let phase_mass: [Vec<Scalar>; 2] = std::array::from_fn(|k| {
+        let mut phase_mass: [Vec<Scalar>; 2] = std::array::from_fn(|k| {
             (0..n)
                 .map(|node| self.get(None, net.cell_layout[node].mass[k]))
                 .collect()
         });
+        // An equilibrium cell's liquid is its view's `M - M_g` (S3-D-P1).
+        for node in 0..n {
+            if net.cell_modes()[node] == CellMode::Equilibrium {
+                phase_mass[0][node] = self.view(None, node)?.0[0];
+            }
+        }
         let tracer: Vec<Scalar> = (0..n)
             .map(|node| self.get(None, net.cell_layout[node].boron))
             .collect();
@@ -1489,6 +1622,7 @@ impl<P: Properties> Blocks<'_, P> {
             charts: vec![[None; 2]; net.faces.len()],
             receipts: vec![[[s(0.); 3]; 2]; net.cells.len()],
             section_drive: vec![s(0.); net.sections.len()],
+            section_gas_drive: vec![s(0.); net.sections.len()],
             rows: vec![s(0.); net.dimension()],
             cold: vec![false; layouts],
             volume,
@@ -1528,8 +1662,9 @@ impl<P: Properties> Blocks<'_, P> {
             }
         }
         for j in 0..net.sections.len() {
-            let (drive, rotor) = self.section(j, &pass, None, &projection.profile[j])?;
+            let (drive, gas, rotor) = self.section(j, &pass, None, &projection.profile[j])?;
             pass.section_drive[j] = drive;
+            pass.section_gas_drive[j] = gas;
             if let Some((index, shaft, row)) = rotor {
                 let region = net.sections[j].region;
                 pass.receipts[region][0][1] = pass.receipts[region][0][1] + shaft;

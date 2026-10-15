@@ -245,18 +245,7 @@ impl<P: Properties> Network<P> {
 
     /// The saturated endpoints at one pressure (with its direction).
     fn saturated_at(&self, pressure: Scalar) -> Result<Saturated, Failure> {
-        let saturation = self
-            .properties
-            .saturation(pressure)
-            .map_err(Failure::Recoverable)?;
-        let liquid_energy = saturation.liquid.enthalpy - pressure / saturation.liquid.density;
-        let vapor_energy = saturation.vapor.enthalpy - pressure / saturation.vapor.density;
-        Ok(Saturated {
-            saturation,
-            pressure,
-            liquid_energy,
-            vapor_energy,
-        })
+        saturated_with(&self.properties, pressure)
     }
 
     /// Every equilibrium cell's saturated endpoints at `(y, seed)`; empty
@@ -298,9 +287,7 @@ impl<P: Properties> Network<P> {
             let l = self.cell_layout[node];
             let total = self.get(y, seed, l.mass[0]);
             let mg = self.get(y, seed, l.mass[1]);
-            let ml = total - mg;
-            let ul = ml * sat.liquid_energy;
-            let ug = mg * sat.vapor_energy;
+            let [ml, ul, ug] = view_slots(total, mg, sat);
             for (index, v) in [(l.mass[0], ml), (l.energy[0], ul), (l.energy[1], ug)] {
                 view[index] = v.value / self.scales[index];
                 if let Some(d) = seed_view.as_mut() {
@@ -322,6 +309,18 @@ impl<P: Properties> Network<P> {
         cell_volume: Scalar,
         sat: &Saturated,
     ) -> Result<(Cell, [Point; 2], Scalar), Failure> {
+        self.equilibrium_cell_from(node, &|i| self.get(y, seed, i), cell_volume, sat)
+    }
+
+    /// [`Self::equilibrium_cell`] on any reader of the view's coordinates
+    /// (the residual's, or the block replay's for one column).
+    pub(super) fn equilibrium_cell_from(
+        &self,
+        node: usize,
+        get: &dyn Fn(usize) -> Scalar,
+        cell_volume: Scalar,
+        sat: &Saturated,
+    ) -> Result<(Cell, [Point; 2], Scalar), Failure> {
         let l = self.cell_layout[node];
         let points = saturated_points(sat);
         let mut cell = Cell {
@@ -331,7 +330,7 @@ impl<P: Properties> Network<P> {
         let mut current: [Point; 2] = [None; 2];
         let mut volume = [s(0.); 2];
         for k in 0..2 {
-            let mass = self.get(y, seed, l.mass[k]);
+            let mass = get(l.mass[k]);
             if mass.value != 0. {
                 current[k] = Some(points[k]);
                 let (q, dq) = points[k];
@@ -340,7 +339,7 @@ impl<P: Properties> Network<P> {
         }
         let row = (volume[0] + volume[1] - cell_volume) / s(self.volumes[node]);
         for k in 0..2 {
-            let mass = self.get(y, seed, l.mass[k]);
+            let mass = get(l.mass[k]);
             if !selected_phase(mass) {
                 continue;
             }
@@ -356,7 +355,7 @@ impl<P: Properties> Network<P> {
                         "equilibrium cell {node} without liquid: dryout is mode G (S6)"
                     )));
                 }
-                self.get(y, seed, l.boron) / mass
+                get(l.boron) / mass
             } else {
                 s(0.)
             };
@@ -385,23 +384,82 @@ impl<P: Properties> Network<P> {
         for (node, sat) in saturated.iter().enumerate() {
             let Some(sat) = sat else { continue };
             let l = self.cell_layout[node];
-            let total_m = self.get(y, seed, l.mass[0]);
-            let total_u = self.get(y, seed, l.energy[0]);
-            let mg = self.get(y, seed, l.mass[1]);
-            let ug_slot = self.get(y, seed, l.energy[1]);
-            let r = self.receipts[node];
-            let mass_rate = r[0][0] + r[1][0];
-            let work = self.cell_volume_rate[node].map_or(s(0.), |rate| sat.pressure * rate);
-            let energy_rate = r[0][1] + r[1][1] - work;
-            let (m0, e0, e1) = (l.mass[0], l.energy[0], l.energy[1]);
-            self.rows[m0] = (self.rate(yp, seed, cj, m0) - mass_rate) / s(self.scales[m0]);
-            self.rows[e0] = (self.rate(yp, seed, cj, e0) - energy_rate) / s(self.scales[e0]);
-            self.rows[l.mass[1]] =
-                (total_u - (total_m - mg) * sat.liquid_energy - mg * sat.vapor_energy)
-                    / s(self.scales[e0]);
-            self.rows[e1] = (ug_slot - mg * sat.vapor_energy) / s(self.scales[e1]);
+            let rows = self.equilibrium_rows(
+                node,
+                &|i| self.get(y, seed, i),
+                &|i| self.rate(yp, seed, cj, i),
+                &self.receipts[node],
+                self.cell_volume_rate[node],
+                sat,
+            );
+            for (i, row) in [l.mass[0], l.energy[0], l.mass[1], l.energy[1]]
+                .into_iter()
+                .zip(rows)
+            {
+                self.rows[i] = row;
+            }
         }
     }
+
+    /// One equilibrium cell's mass, energy, split and vapor-energy rows, in
+    /// slot order `[M_l, U_l, M_g, U_g]`, from its original coordinates
+    /// (`coordinate`, totals in the liquid slots), their rates, the receipts
+    /// every face and owner assembled into it and its volume rate (the
+    /// residual's, or the block replay's for one column).
+    pub(super) fn equilibrium_rows(
+        &self,
+        node: usize,
+        coordinate: &dyn Fn(usize) -> Scalar,
+        rate: &dyn Fn(usize) -> Scalar,
+        receipts: &[[Scalar; 3]; 2],
+        volume_rate: Option<Scalar>,
+        sat: &Saturated,
+    ) -> [Scalar; 4] {
+        let l = self.cell_layout[node];
+        let total_m = coordinate(l.mass[0]);
+        let total_u = coordinate(l.energy[0]);
+        let mg = coordinate(l.mass[1]);
+        let ug_slot = coordinate(l.energy[1]);
+        let r = receipts;
+        let mass_rate = r[0][0] + r[1][0];
+        let work = volume_rate.map_or(s(0.), |rate| sat.pressure * rate);
+        let energy_rate = r[0][1] + r[1][1] - work;
+        let (m0, e0, e1) = (l.mass[0], l.energy[0], l.energy[1]);
+        [
+            (rate(m0) - mass_rate) / s(self.scales[m0]),
+            (rate(e0) - energy_rate) / s(self.scales[e0]),
+            (total_u - (total_m - mg) * sat.liquid_energy - mg * sat.vapor_energy)
+                / s(self.scales[e0]),
+            (ug_slot - mg * sat.vapor_energy) / s(self.scales[e1]),
+        ]
+    }
+}
+
+/// The saturated endpoints at one pressure through `properties` (the
+/// network's, or the block replay's held directions).
+pub(super) fn saturated_with<Q: Properties>(
+    properties: &Q,
+    pressure: Scalar,
+) -> Result<Saturated, Failure> {
+    let saturation = properties
+        .saturation(pressure)
+        .map_err(Failure::Recoverable)?;
+    let liquid_energy = saturation.liquid.enthalpy - pressure / saturation.liquid.density;
+    let vapor_energy = saturation.vapor.enthalpy - pressure / saturation.vapor.density;
+    Ok(Saturated {
+        saturation,
+        pressure,
+        liquid_energy,
+        vapor_energy,
+    })
+}
+
+/// An equilibrium cell's view slots from its totals and vapor mass: the
+/// liquid's mass `M - M_g`, the liquid's energy `(M - M_g) u_f` and the
+/// vapor's energy `M_g u_g`.
+pub(super) fn view_slots(total: Scalar, mg: Scalar, sat: &Saturated) -> [Scalar; 3] {
+    let ml = total - mg;
+    [ml, ml * sat.liquid_energy, mg * sat.vapor_energy]
 }
 
 /// Both saturated endpoints as network points (values, directions):

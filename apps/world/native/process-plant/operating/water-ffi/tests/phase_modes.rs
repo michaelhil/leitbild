@@ -300,6 +300,109 @@ fn phase_modes_equilibrium_cell() {
     );
 }
 
+/// KERN (S3 batch): the block replay composes an equilibrium (mode-E)
+/// cell and the gas phase's passive section loss as the residual does: at
+/// the flashed NECK state its Jacobian equals the colored assembly's entry
+/// by entry (the same structural pattern), with the base pass bitwise the
+/// residual's, with L1 active. Two stage coefficients, at rest and with
+/// every impulse moving (so the vapor paths' gas profile and drive are
+/// exercised).
+#[test]
+#[ignore = "S3 kernel check, NOT EVIDENCE: needs a joined packet (LD01_PHASE_PACKET), the wiki, the seam-fixed IF97 build"]
+fn phase_modes_block_replay_matches_the_colored_assembly() {
+    let i = inputs();
+    let (mut net, prepared) = prepared(&i);
+    let mut y = prepared.y.clone();
+    let neck = i.regions.iter().position(|r| r == "HOUSING.NECK").unwrap();
+    let [b, m0, e0, m1, e1, _] = slots(&net, neck);
+    let sc = net.scales().to_vec();
+    let p = y[b] * sc[b];
+    let sat = If97.saturation_caloric(s(p)).expect("saturation");
+    let (rf, rg) = (sat.liquid.density.value, sat.vapor.density.value);
+    let (uf, ug) = (
+        sat.liquid.enthalpy.value - p / rf,
+        sat.vapor.enthalpy.value - p / rg,
+    );
+    let v = net.volume(neck);
+    let mg = 2.;
+    let ml = (v - mg / rg) * rf;
+    y[m1] = 0.;
+    y[e1] = 0.;
+    net.birth(neck, &mut y).expect("birth");
+    y[m0] = (ml + mg) / sc[m0];
+    y[e0] = (ml * uf + mg * ug) / sc[e0];
+    y[m1] = mg / sc[m1];
+    y[e1] = mg * ug / sc[e1];
+    let yp = vec![0.; y.len()];
+    // L1 active, as every S3 run (decision 0014): a vapor path drawing
+    // from an end without vapor transports nothing, so no unsupported
+    // exact-zero onset is evaluated.
+    net.evaluate(0., &y, &yp, None, 0., None)
+        .expect("evaluation at the flashed state");
+    let presence = net.stock_presence(&y);
+    let activation = net.activate_unilateral(&presence).expect("L1");
+    let colored = net.sparse_jacobian().expect("colored structure");
+    let blocks = net.block_jacobian().expect("block structure");
+    assert_eq!(blocks.pattern, colored.pattern, "one pattern for both");
+    let pattern = &blocks.pattern;
+    // At rest, then with every phase path's impulse moving.
+    let impulses: Vec<usize> = (0..net.face_layout.len())
+        .map(|li| net.face_layout[li].index)
+        .collect();
+    let mut moving = y.clone();
+    for (k, &index) in impulses.iter().enumerate() {
+        moving[index] = if moving[index] != 0. {
+            moving[index] * 1.01
+        } else {
+            1e-3 * if k % 2 == 0 { 1. } else { -1. } / sc[index]
+        };
+    }
+    let mut report = Vec::new();
+    for (name, state, cj) in [("rest", &y, 20.), ("moving", &moving, 350.)] {
+        let mut cv = vec![0.; pattern.nonzeros()];
+        let mut bv = vec![0.; pattern.nonzeros()];
+        net.jacobian_colored(0., cj, state, &yp, &colored, &mut cv)
+            .expect("colored assembly");
+        net.jacobian_blocks(0., cj, state, &yp, &blocks, &mut bv)
+            .expect("block assembly (base pass bitwise the residual's)");
+        let (mut worst, mut at, mut bitwise) = (0_f64, json!(null), 0usize);
+        for j in 0..pattern.columns() {
+            let range = pattern.pointers()[j]..pattern.pointers()[j + 1];
+            let scale = range
+                .clone()
+                .map(|q| cv[q].abs().max(bv[q].abs()))
+                .fold(0., f64::max);
+            for q in range {
+                if cv[q] == bv[q] {
+                    bitwise += 1;
+                    continue;
+                }
+                let e = (cv[q] - bv[q]).abs() / scale;
+                if e > worst {
+                    worst = e;
+                    at = json!({"row": pattern.indices()[q], "column": j,
+                        "blocks": bv[q], "colored": cv[q]});
+                }
+            }
+        }
+        let neck_columns = [b, m0, e0, m1, e1];
+        report.push(
+            json!({"state": name, "cj": cj, "column_relative_max": worst,
+            "worst": at, "bitwise": bitwise, "entries": pattern.nonzeros(),
+            "neck_columns": neck_columns}),
+        );
+        assert!(
+            worst < 1e-10,
+            "{name}: block against colored {worst:e} at {at}"
+        );
+    }
+    println!(
+        "{}",
+        json!({"block_vs_colored": report, "l1_locked": net.unilateral().map(|l| l.locked()),
+            "l1_activation_changes": activation.changes.len()})
+    );
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum RootKind {
     Birth(usize),
