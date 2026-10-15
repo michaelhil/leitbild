@@ -17,11 +17,17 @@
 //!   `m=n*sqrt(1.25*dp0/(Klocal+Kcommon(x)+0.25*dp0/m0^2))`, jackets split by
 //!   reference flow, cooler/bypass by conductance; SW flow
 //!   `m=sqrt(n^2*a+b)` with the bay-level head in b, zero while not positive
-//!   (discharge check);
+//!   (discharge check); CW: two pumps on one algebraic header head s against
+//!   the condenser path and the letdown restriction, `m_tot=sqrt(s/K_eq)`;
+//! - intake bay: mass and `E=U+PE`, float `Q_in=C*clamp((6-h)/1,0,1)`,
+//!   `dE/dt=rho*Q_in*(h_src+g*6)-m_out*h_eye-p_atm*dV/dt`;
 //! - pump work (low-pressure continuation, fL=1):
 //!   `P=max(Puseful/eta_h, Puseful+0.01*P0*n^3)`, rotor
 //!   `J*w'=Tm-P/w-Td`, tracking drive `Tm=clamp(P/w+Td+J*(w_req-w)/3 s,0,cap)`;
-//! - walls, jackets, motor and oil stores: the owner's mixed-cell laws.
+//! - walls, jackets, motor and oil stores: the owner's mixed-cell laws;
+//! - lube circuit: main pump on the signed Euler law against the series
+//!   orifice and viscosity-dependent laminar return, standby stopped behind
+//!   its closed check, drive `tau0+K*(w0-w_acq)` with the acquired speed a port.
 #![cfg(any(target_os = "macos", target_os = "linux"))]
 // Dense test-only index arithmetic over rows and columns.
 #![allow(clippy::needless_range_loop)]
@@ -186,16 +192,83 @@ struct Oil {
     t0: f64,
 }
 
+struct Drive {
+    a: f64,
+    b: f64,
+    r: f64,
+    cd: f64,
+    tau0: f64,
+    gain: f64,
+    cap: f64,
+    j: f64,
+}
+impl Drive {
+    fn new(d: &Value) -> Self {
+        Drive {
+            a: get(d, "/a"),
+            b: get(d, "/beta"),
+            r: get(d, "/resistance"),
+            cd: get(d, "/dragCoefficient_N_m_s"),
+            tau0: get(d, "/torque0_N_m"),
+            gain: get(d, "/gain_N_m_s"),
+            cap: get(d, "/torqueLimit_N_m"),
+            j: get(d, "/inertia_kg_m2"),
+        }
+    }
+}
+
+struct Lube {
+    rho: f64,
+    omega0: f64,
+    ao: f64,
+    rlam: f64,
+    tref: f64,
+    slope: f64,
+    main: Drive,
+    standby: Drive,
+    w_m: usize,
+    w_s: usize,
+    q: usize,
+    tb: usize,
+    tc: usize,
+}
+
 #[derive(Clone)]
 struct Ports {
     motor_heat: Vec<Vec<f64>>, // per train, per jacket (0 for TG.OIL)
     oil_heat: f64,
-    oil_flow: f64,
+    oil_speed_acquired: f64,
+    oil_main_supported: bool,
     gen_metal: f64,
-    bay: f64,
-    bay_level: f64,
+    source: f64,
+    source_capacity: f64,
     ambient: f64,
     supported: [[bool; 2]; 2], // [train][CCW, SW]
+    cw_supported: [bool; 2],
+}
+
+struct Bay {
+    area: f64,
+    refill: f64,
+    span: f64,
+    mouth: f64,
+    volume0: f64,
+    t0: f64,
+    m: usize,
+    e: usize,
+    t: usize,
+}
+
+struct Cw {
+    pump: Pump,
+    motor: (f64, f64, f64),
+    kc: f64,
+    l0: f64,
+    s_l0: f64,
+    z_dis: f64,
+    w: [usize; 2],
+    tm: [usize; 2],
+    s: usize,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -206,6 +279,9 @@ enum Kind {
 
 struct Model {
     trains: Vec<Train>,
+    lube: Lube,
+    bay: Bay,
+    cw: Cw,
     oil: Oil,
     gen_g: f64,
     g: f64,
@@ -256,8 +332,51 @@ impl Model {
     fn new(packet: &Value) -> Self {
         let s5 = &packet["s5"];
         let o = &s5["oil"];
+        let (b, c) = (&s5["intake"], &s5["circulating"]);
+        let l = &s5["lube"];
         let mut m = Model {
             trains: vec![],
+            lube: Lube {
+                rho: get(o, "/density_kg_m3"),
+                omega0: get(l, "/omega0_rad_s"),
+                ao: get(l, "/orificeArea_m2"),
+                rlam: get(l, "/laminarResistance_Pa_s_m3"),
+                tref: get(l, "/viscosityReference_K"),
+                slope: get(l, "/viscositySlope_per_K"),
+                main: Drive::new(&l["main"]),
+                standby: Drive::new(&l["standby"]),
+                w_m: 0,
+                w_s: 0,
+                q: 0,
+                tb: 0,
+                tc: 0,
+            },
+            bay: Bay {
+                area: get(b, "/area_m2"),
+                refill: get(b, "/refillLevel_m"),
+                span: get(b, "/floatSpan_m"),
+                mouth: get(b, "/refillMouth_m"),
+                volume0: get(b, "/initialVolume_m3"),
+                t0: get(b, "/initial_K"),
+                m: 0,
+                e: 0,
+                t: 0,
+            },
+            cw: Cw {
+                pump: Pump::new(&c["pump"]),
+                motor: (
+                    get(c, "/motor/capacity_J_K"),
+                    get(c, "/motor/ambientConductance_W_K"),
+                    get(c, "/motor/initial_K"),
+                ),
+                kc: get(c, "/condenserK_Pa_per_kg2_s2"),
+                l0: get(c, "/letdown/referenceFlow_kg_s"),
+                s_l0: get(c, "/letdown/referenceHead_Pa"),
+                z_dis: get(c, "/dischargeElevation_m"),
+                w: [0; 2],
+                tm: [0; 2],
+                s: 0,
+            },
             oil: Oil {
                 k: get(o, "/density_kg_m3") * get(o, "/heatCapacity_J_kg_K"),
                 cb: get(o, "/bulkCapacity_J_K"),
@@ -423,7 +542,68 @@ impl Model {
             tr.m_s = m.push(n("SW.FLOW"), Kind::Alg, 0.);
             m.trains.push(tr);
         }
+        m.bay.m = m.push("BAY.M".into(), Kind::Diff, 1.);
+        m.bay.e = m.push("BAY.E".into(), Kind::Diff, 1.);
+        for i in 0..2 {
+            m.cw.w[i] = m.push(format!("CW.P{}.OMEGA", i + 1), Kind::Diff, m.cw.pump.j);
+            m.cw.tm[i] = m.push(format!("CW.P{}.MOTOR.T", i + 1), Kind::Diff, m.cw.motor.0);
+        }
+        let (tb, tc) = m
+            .trains
+            .iter()
+            .find_map(|tr| tr.oil)
+            .expect("one train carries the oil pair");
+        (m.lube.tb, m.lube.tc) = (tb, tc);
+        m.lube.w_m = m.push("TG.OIL.MAIN.P.OMEGA".into(), Kind::Diff, m.lube.main.j);
+        m.lube.w_s = m.push(
+            "TG.OIL.STANDBY.P.OMEGA".into(),
+            Kind::Diff,
+            m.lube.standby.j,
+        );
+        m.bay.t = m.push("BAY.T".into(), Kind::Alg, 0.);
+        m.lube.q = m.push("TG.OIL.FLOW".into(), Kind::Alg, 0.);
+        m.cw.s = m.push("CW.HEADER.S".into(), Kind::Alg, 0.);
         m
+    }
+
+    fn level(&self, y: &[f64]) -> f64 {
+        y[self.bay.m] / (self.rho0 * self.bay.area)
+    }
+
+    /// Float refill `C*clamp((refill-h)/span,0,1)` and d/dh; at the full-open
+    /// edge the prepared (full-open) side is taken.
+    fn refill(&self, level: f64, capacity: f64) -> (f64, f64) {
+        let r = (self.bay.refill - level) / self.bay.span;
+        if r >= 1. {
+            (capacity, 0.)
+        } else if r > 0. {
+            (capacity * r, -capacity / self.bay.span)
+        } else {
+            (0., 0.)
+        }
+    }
+
+    /// 1/sqrt(K_eq) of the condenser path in parallel with the letdown restriction.
+    fn cw_conductance(&self) -> f64 {
+        1. / self.cw.kc.sqrt() + self.cw.l0 / self.cw.s_l0.sqrt()
+    }
+
+    /// One CW pump's flow from the header head s, with partials (s, w, level).
+    fn cw_pump_flow(&self, s: f64, w: f64, level: f64) -> (f64, f64, f64, f64) {
+        let p = &self.cw.pump;
+        let n = w / p.omega0;
+        let arg = 1.25 * n * n * p.dp0 + self.rho0 * self.g * (level - self.cw.z_dis) - s;
+        if arg <= 0. {
+            return (0., 0., 0., 0.);
+        }
+        let m = p.m0 * (arg / (0.25 * p.dp0)).sqrt();
+        let dm = p.m0 / (2. * (0.25 * p.dp0 * arg).sqrt());
+        (
+            m,
+            -dm,
+            dm * 2.5 * n * p.dp0 / p.omega0,
+            dm * self.rho0 * self.g,
+        )
     }
 
     fn n(&self) -> usize {
@@ -455,19 +635,28 @@ impl Model {
     }
 
     /// SW flow target `sqrt(n^2 a + b)` (zero while not positive) and d/dw.
-    fn sw_flow(&self, tr: &Train, w: f64, level: f64) -> (f64, f64) {
+    fn sw_flow(&self, tr: &Train, w: f64, level: f64) -> (f64, f64, f64) {
         let p = &tr.ps;
         let n = w / p.omega0;
         let den = tr.ks + 0.25 * p.dp0 / (p.m0 * p.m0);
         let a = 1.25 * p.dp0 / den;
         let b = self.rho0 * self.g * (level - tr.z_dis) / den;
         let arg = n * n * a + b;
+        let b_level = self.rho0 * self.g / den;
         if arg <= 0. {
-            (0., 0.)
+            (0., 0., 0.)
         } else if b == 0. {
-            (n * a.sqrt(), a.sqrt() / p.omega0)
+            (
+                n * a.sqrt(),
+                a.sqrt() / p.omega0,
+                b_level / (2. * n * a.sqrt()),
+            )
         } else {
-            (arg.sqrt(), n * a / (arg.sqrt() * p.omega0))
+            (
+                arg.sqrt(),
+                n * a / (arg.sqrt() * p.omega0),
+                b_level / (2. * arg.sqrt()),
+            )
         }
     }
 
@@ -506,9 +695,19 @@ impl Model {
 
     fn eval(&self, y: &[f64], ports: &Ports, jac: bool) -> Out {
         let mut o = Out::new(self.n(), jac);
-        let h_bay = point(Branch::Liquid, self.atm, ports.bay)
-            .expect("IF97 bay")
-            .enthalpy_j_kg;
+        let level = self.level(y);
+        let level_m = 1. / (self.rho0 * self.bay.area); // d level / d M_bay
+        let p_eye = self.atm + self.rho0 * self.g * level;
+        let (eye, eye_t) = liquid(p_eye, y[self.bay.t]);
+        let eye_p = directional(Branch::Liquid, p_eye, y[self.bay.t], 1., 0.)
+            .expect("IF97 eye")
+            .1;
+        let h_bay = eye.enthalpy_j_kg;
+        let (hb_t, hb_m) = (
+            eye_t.enthalpy_j_kg,
+            eye_p.enthalpy_j_kg * self.rho0 * self.g * level_m,
+        );
+        let mut sw_out = 0.;
         for (ti, tr) in self.trains.iter().enumerate() {
             // water cells: u(p,T), h(p,T) and their T-derivatives
             let cell_state = |c: &Cell, t: usize| liquid(c.p, y[t]);
@@ -534,11 +733,13 @@ impl Model {
             o.d(tr.m_c, tr.m_c, 1.);
             o.d(tr.m_c, tr.w_c, -mc_w);
             o.d(tr.m_c, tr.x, -mc_x);
-            let (ms_t, ms_w) = self.sw_flow(tr, ws, ports.bay_level);
+            let (ms_t, ms_w, ms_l) = self.sw_flow(tr, ws, level);
             o.term(tr.m_s, ms);
             o.term(tr.m_s, -ms_t);
             o.d(tr.m_s, tr.m_s, 1.);
             o.d(tr.m_s, tr.w_s, -ms_w);
+            o.d(tr.m_s, self.bay.m, -ms_l * level_m);
+            sw_out += ms;
             let (hs, hr, hc) = (sp.enthalpy_j_kg, rp.enthalpy_j_kg, cp.enthalpy_j_kg);
             let (hs_t, hr_t, hc_t) = (sd.enthalpy_j_kg, rd.enthalpy_j_kg, cd.enthalpy_j_kg);
             // supply: f = c m h_C + (1-c) m h_R - m h_S ; G = -f
@@ -598,18 +799,28 @@ impl Model {
                     .find(|q| q.tm.is_none())
                     .expect("oil jacket")
                     .t;
-                let (k, q) = (self.oil.k, ports.oil_flow);
-                // bulk: Cb Tb' = Qoil - k q (Tb - Tc)
+                let lu = &self.lube;
+                let (k, q, w) = (self.oil.k, y[lu.q], y[lu.w_m]);
+                let d = &lu.main;
+                // pump shaft work and drag enter the bulk once (lubrication owner)
+                let shaft = lu.rho * q * w * (d.a * w - d.b * q) + d.cd * w * w;
+                let shaft_w = lu.rho * q * (2. * d.a * w - d.b * q) + 2. * d.cd * w;
+                let shaft_q = lu.rho * w * (d.a * w - 2. * d.b * q);
+                // bulk: Cb Tb' = Qturbine + shaft - k q (Tb - Tc)
                 o.term(b, -ports.oil_heat);
+                o.term(b, -shaft);
                 o.term(b, k * q * (y[b] - y[cc]));
                 o.d(b, b, k * q);
                 o.d(b, cc, -k * q);
+                o.d(b, lu.q, k * (y[b] - y[cc]) - shaft_q);
+                o.d(b, lu.w_m, -shaft_w);
                 // cooler: Cc Tc' = k q (Tb - Tc) - G (Tc - Tj)
                 o.term(cc, -(k * q * (y[b] - y[cc])));
                 o.term(cc, self.oil.g * (y[cc] - y[jo]));
                 o.d(cc, b, -k * q);
                 o.d(cc, cc, k * q + self.oil.g);
                 o.d(cc, jo, -self.oil.g);
+                o.d(cc, lu.q, -k * (y[b] - y[cc]));
             }
             // cooler water: f = c m (h_R - h_C) - Gc (T_C - T_w)
             let (gc, gs) = (tr.wall.1, tr.wall.2);
@@ -639,6 +850,8 @@ impl Model {
                 o.term(q.u, -(q.f * psw));
                 o.d(q.u, q.t, q.f * ms * hk_t);
                 o.d(q.u, tr.m_s, -q.f * (h_bay - hk) - q.f * psw_m);
+                o.d(q.u, self.bay.t, -q.f * ms * hb_t);
+                o.d(q.u, self.bay.m, -q.f * ms * hb_m);
                 o.d(q.u, tr.w_s, -q.f * psw_w);
                 if q.id == "HX" {
                     o.term(q.u, -(gs * (y[tr.t_wall] - y[q.t])));
@@ -683,7 +896,129 @@ impl Model {
             // known-time class-S change of this one rate.
             o.term(tr.x, 0.);
         }
+        // circulating water: header continuity, rotors and motor stores
+        let s = y[self.cw.s];
+        let k_eq = self.cw_conductance();
+        let m_tot = k_eq * s.sqrt();
+        let m_tot_s = k_eq / (2. * s.sqrt());
+        o.term(self.cw.s, -m_tot);
+        o.d(self.cw.s, self.cw.s, -m_tot_s);
+        let mut cw_power = 0.;
+        for i in 0..2 {
+            let (w_i, tm_i) = (self.cw.w[i], self.cw.tm[i]);
+            let (m, m_s, m_w, m_l) = self.cw_pump_flow(s, y[w_i], level);
+            o.term(self.cw.s, m);
+            o.d(self.cw.s, self.cw.s, m_s);
+            o.d(self.cw.s, w_i, m_w);
+            o.d(self.cw.s, self.bay.m, m_l * level_m);
+            cw_power += self.cw.pump.power(m, y[w_i]).0;
+            let ((r, r_m, r_w), (h, h_m, h_w)) =
+                Self::rotor(&self.cw.pump, m, y[w_i], ports.cw_supported[i]);
+            o.term(w_i, -r);
+            o.d(w_i, self.cw.s, -r_m * m_s);
+            o.d(w_i, w_i, -(r_w + r_m * m_w));
+            o.d(w_i, self.bay.m, -r_m * m_l * level_m);
+            o.term(tm_i, -h);
+            o.term(tm_i, self.cw.motor.1 * (y[tm_i] - ports.ambient));
+            o.d(tm_i, self.cw.s, -h_m * m_s);
+            o.d(tm_i, w_i, -(h_w + h_m * m_w));
+            o.d(tm_i, self.bay.m, -h_m * m_l * level_m);
+            o.d(tm_i, tm_i, self.cw.motor.1);
+        }
+        let _ = cw_power;
+        // lube: main-pump intersection, rotors (standby stopped behind its check)
+        {
+            let lu = &self.lube;
+            let (q, w, d) = (y[lu.q], y[lu.w_m], &lu.main);
+            assert!(
+                q >= 0. && w >= 0.,
+                "the S5 lube reduction admits forward main-pump flow only"
+            );
+            let mean = (y[lu.tb] + y[lu.tc]) / 2.;
+            let mu = (-lu.slope * (mean - lu.tref)).exp();
+            let rise = lu.rho * w * (d.a * w - d.b * q) - d.r * lu.rho * q * q;
+            let header = lu.rlam * mu * q + lu.rho * q * q / (2. * lu.ao * lu.ao);
+            o.term(lu.q, rise);
+            o.term(lu.q, -header);
+            o.d(
+                lu.q,
+                lu.q,
+                -lu.rho * w * d.b
+                    - 2. * d.r * lu.rho * q
+                    - lu.rlam * mu
+                    - lu.rho * q / (lu.ao * lu.ao),
+            );
+            o.d(lu.q, lu.w_m, lu.rho * (2. * d.a * w - d.b * q));
+            o.d(lu.q, lu.tb, lu.rlam * q * mu * lu.slope / 2.);
+            o.d(lu.q, lu.tc, lu.rlam * q * mu * lu.slope / 2.);
+            let tm = if ports.oil_main_supported {
+                (d.tau0 + d.gain * (lu.omega0 - ports.oil_speed_acquired)).clamp(0., d.cap)
+            } else {
+                0.
+            };
+            let tex = lu.rho * q * (d.a * w - d.b * q);
+            o.term(lu.w_m, -(tm - tex - d.cd * w));
+            o.d(lu.w_m, lu.w_m, lu.rho * q * d.a + d.cd);
+            o.d(lu.w_m, lu.q, lu.rho * (d.a * w - 2. * d.b * q));
+            let sb = &lu.standby;
+            o.term(lu.w_s, sb.cd * y[lu.w_s]);
+            o.d(lu.w_s, lu.w_s, sb.cd);
+        }
+        // bay: mass, E=U+PE and its temperature
+        let (q_in, q_l) = self.refill(level, ports.source_capacity);
+        let h_src = point(Branch::Liquid, self.atm, ports.source)
+            .expect("IF97 source")
+            .enthalpy_j_kg;
+        let m_out = m_tot + sw_out;
+        let (bm, be, bt) = (self.bay.m, self.bay.e, self.bay.t);
+        o.term(bm, -(self.rho0 * q_in));
+        o.term(bm, m_out);
+        o.d(bm, bm, -self.rho0 * q_l * level_m);
+        o.d(bm, self.cw.s, m_tot_s);
+        for tr in &self.trains {
+            o.d(bm, tr.m_s, 1.);
+        }
+        let inflow_h = h_src + self.g * self.bay.mouth;
+        o.term(be, -(self.rho0 * q_in * inflow_h));
+        o.term(be, m_out * h_bay);
+        o.term(be, self.atm * (q_in - m_out / self.rho0));
+        o.d(
+            be,
+            bm,
+            -(self.rho0 * inflow_h - self.atm) * q_l * level_m + m_out * hb_m,
+        );
+        o.d(be, bt, m_out * hb_t);
+        o.d(be, self.cw.s, (h_bay - self.atm / self.rho0) * m_tot_s);
+        for tr in &self.trains {
+            o.d(be, tr.m_s, h_bay - self.atm / self.rho0);
+        }
+        let (bp, bd) = liquid(self.atm, y[bt]);
+        let mass = y[bm];
+        o.term(bt, mass * bp.internal_energy_j_kg);
+        o.term(bt, self.g * mass * level / 2.);
+        o.term(bt, -y[be]);
+        o.d(bt, bt, mass * bd.internal_energy_j_kg);
+        o.d(bt, bm, bp.internal_energy_j_kg + self.g * level);
+        o.d(bt, be, -1.);
         o
+    }
+
+    /// CW header outputs at y: (s, condenser flow, letdown flow, pump flows, inlet Ht).
+    fn cw_outputs(&self, y: &[f64]) -> (f64, f64, f64, [f64; 2], f64) {
+        let (s, level) = (y[self.cw.s], self.level(y));
+        let m_cond = (s / self.cw.kc).sqrt();
+        let m_ld = self.cw.l0 * (s / self.cw.s_l0).sqrt();
+        let mut pumps = [0.; 2];
+        let mut power = 0.;
+        for i in 0..2 {
+            pumps[i] = self.cw_pump_flow(s, y[self.cw.w[i]], level).0;
+            power += self.cw.pump.power(pumps[i], y[self.cw.w[i]]).0;
+        }
+        let p_eye = self.atm + self.rho0 * self.g * level;
+        let h_eye = point(Branch::Liquid, p_eye, y[self.bay.t])
+            .expect("IF97")
+            .enthalpy_j_kg;
+        (s, m_cond, m_ld, pumps, h_eye + power / (m_cond + m_ld))
     }
 
     /// The prepared state: U from (p, T0), algebraic T = T0, flows from their laws.
@@ -729,8 +1064,43 @@ impl Model {
             y[tr.tm_s] = tr.motor[1].2;
             y[tr.x] = tr.x0;
             y[tr.m_c] = Self::ccw_flow(tr, y[tr.w_c], y[tr.x]).0;
-            y[tr.m_s] = self.sw_flow(tr, y[tr.w_s], ports.bay_level).0;
         }
+        let mass = self.rho0 * self.bay.volume0;
+        y[self.bay.m] = mass;
+        y[self.bay.t] = self.bay.t0;
+        let level = self.level(&y);
+        y[self.bay.e] = mass
+            * point(Branch::Liquid, self.atm, self.bay.t0)
+                .expect("IF97")
+                .internal_energy_j_kg
+            + self.g * mass * level / 2.;
+        for tr in &self.trains {
+            y[tr.m_s] = self.sw_flow(tr, y[tr.w_s], level).0;
+        }
+        let p = &self.cw.pump;
+        for i in 0..2 {
+            y[self.cw.w[i]] = p.omega0;
+            y[self.cw.tm[i]] = self.cw.motor.2;
+        }
+        // main oil pump at its reference speed on its intersection (closed form),
+        // standby at rest behind its closed check
+        let lu = &self.lube;
+        let d = &lu.main;
+        let mu = (-lu.slope * ((self.oil.t0 + self.oil.t0) / 2. - lu.tref)).exp();
+        let qa = d.r * lu.rho + lu.rho / (2. * lu.ao * lu.ao);
+        let qb = lu.rho * lu.omega0 * d.b + lu.rlam * mu;
+        let qc = lu.rho * d.a * lu.omega0 * lu.omega0;
+        y[lu.w_m] = lu.omega0;
+        y[lu.w_s] = 0.;
+        y[lu.q] = (-qb + (qb * qb + 4. * qa * qc).sqrt()) / (2. * qa);
+        // equal speeds, heads cancelling at the prepared level: closed form
+        assert!(
+            level == self.cw.z_dis,
+            "prepared bay level must equal the outfall head"
+        );
+        let k = self.cw_conductance();
+        y[self.cw.s] = 20. * p.m0 * p.m0 / (k * k + 16. * p.m0 * p.m0 / p.dp0);
+        let _ = ports;
         y
     }
 
@@ -791,7 +1161,7 @@ fn consistent_rates(m: &Model, y: &[f64], ports: &Ports) -> Vec<f64> {
     let mut z = y.to_vec();
     for tr in &m.trains {
         z[tr.m_c] = Model::ccw_flow(tr, z[tr.w_c], z[tr.x]).0;
-        z[tr.m_s] = m.sw_flow(tr, z[tr.w_s], ports.bay_level).0;
+        z[tr.m_s] = m.sw_flow(tr, z[tr.w_s], m.level(y)).0;
     }
     m.derivatives(&z, ports)
 }
@@ -823,12 +1193,14 @@ fn ports(packet: &Value, model: &Model) -> Ports {
             })
             .collect(),
         oil_heat: get(p, "/oilHeat_W"),
-        oil_flow: get(p, "/oilFlow_m3_s"),
+        oil_speed_acquired: get(p, "/oilSpeedAcquired_rad_s"),
+        oil_main_supported: true,
         gen_metal: get(p, "/generatorMetal_K"),
-        bay: get(p, "/bay_K"),
-        bay_level: get(p, "/bayLevel_m"),
+        source: get(p, "/source_K"),
+        source_capacity: get(p, "/sourceCapacity_m3_s"),
         ambient: get(p, "/ambient_K"),
         supported: [[true; 2]; 2],
+        cw_supported: [true; 2],
     }
 }
 
@@ -908,8 +1280,23 @@ fn g1_c12_support_zero_time() {
         dense[i * n + j] += v;
     }
     let mut fd = vec![0.; n * n];
+    let g0 = model.eval(&y, &ports0, false).g;
     for j in 0..n {
         let h = 1e-6 * y[j].abs().max(1.);
+        if j == model.bay.m {
+            // the float's full-open edge: one-sided (prepared side) Richardson
+            let back = |step: f64| {
+                let mut a = y.clone();
+                a[j] -= step;
+                let ga = model.eval(&a, &ports0, false).g;
+                (0..n).map(|i| (g0[i] - ga[i]) / step).collect::<Vec<_>>()
+            };
+            let (d1, d2) = (back(h), back(h / 2.));
+            for i in 0..n {
+                fd[i * n + j] = 2. * d2[i] - d1[i];
+            }
+            continue;
+        }
         let (mut a, mut b) = (y.clone(), y.clone());
         a[j] += h;
         b[j] -= h;
@@ -1004,24 +1391,34 @@ fn g1_c12_support_zero_time() {
         &y,
         &base,
     );
-    // oil flow carries no heat at the identical split; at a 1 K bulk excess it
-    // moves the pair with the declared signs
+    // the acquired drive speed reads high: less drive torque, the rotor slows
     let mut p = ports0.clone();
-    p.oil_flow *= 1. + 1e-6;
+    p.oil_speed_acquired += 1e-4;
     check(
-        "P5 oil flow (identical split)",
-        p.clone(),
-        vec![("B.TG.OIL.BULK.T", 0), ("B.TG.OIL.COOLER.T", 0)],
+        "P13a oil drive acquired speed",
+        p,
+        vec![("TG.OIL.MAIN.P.OMEGA", -1), ("TG.OIL.STANDBY.P.OMEGA", 0)],
         &y,
         &base,
     );
+    // main oil pump motive loss: the rotor decelerates
+    let mut p = ports0.clone();
+    p.oil_main_supported = false;
+    check(
+        "P11 TG.OIL.MAIN.P support lost",
+        p,
+        vec![("TG.OIL.MAIN.P.OMEGA", -1)],
+        &y,
+        &base,
+    );
+    // internal coupling: a 1 K hotter bulk transports heat to the cooler oil
     let mut y_split = y.clone();
     y_split[idx("B.TG.OIL.BULK.T")] += 1.;
-    let base_split = consistent_rates(&model, &y_split, &ports0);
+    let base_split = consistent_rates(&model, &y, &ports0);
     check(
-        "P5 oil flow (bulk +1 K)",
-        p,
-        vec![("B.TG.OIL.BULK.T", -1), ("B.TG.OIL.COOLER.T", 1)],
+        "oil bulk +1 K (state)",
+        ports0.clone(),
+        vec![("B.TG.OIL.COOLER.T", 1)],
         &y_split,
         &base_split,
     );
@@ -1035,21 +1432,45 @@ fn g1_c12_support_zero_time() {
         &base,
     );
     let mut p = ports0.clone();
-    p.bay += 1e-4;
+    p.source += 1e-4;
     check(
-        "P9 bay temperature",
+        "site source temperature",
         p,
-        vec![("A.SW.HX.U", 1), ("B.SW.HX.U", 1), ("B.SW.GEN.U", 1)],
+        vec![("BAY.E", 1), ("BAY.M", 0)],
         &y,
         &base,
     );
     let mut p = ports0.clone();
-    p.bay_level += 1e-4;
-    // more SW flow at a cooler inflow than the cells: the cells' rates fall;
-    // the tracking drive pays the extra torque (motor heat rises, rotor rate 0)
+    p.source_capacity *= 1. + 1e-6;
     check(
-        "P9 bay level",
+        "site source capacity (float full open)",
         p,
+        vec![("BAY.M", 1), ("BAY.E", 1)],
+        &y,
+        &base,
+    );
+    let mut p = ports0.clone();
+    p.cw_supported[0] = false;
+    check(
+        "P11 CW.P1 support lost",
+        p,
+        vec![
+            ("CW.P1.OMEGA", -1),
+            ("CW.P1.MOTOR.T", -1),
+            ("CW.P2.OMEGA", 0),
+        ],
+        &y,
+        &base,
+    );
+    // internal coupling: a higher bay level gives more SW flow at a cooler
+    // inflow than the cells, so their rates fall; the tracking drive pays the
+    // extra torque (motor heat rises, rotor rate 0)
+    let mut y_level = y.clone();
+    y_level[idx("BAY.M")] *= 1. + 1e-6;
+    let base_level = base.clone();
+    check(
+        "bay level (state)",
+        ports0.clone(),
         vec![
             ("A.SW.HX.U", -1),
             ("B.SW.HX.U", -1),
@@ -1058,8 +1479,8 @@ fn g1_c12_support_zero_time() {
             ("B.SW.P.MOTOR.T", 1),
             ("A.SW.P.OMEGA", 0),
         ],
-        &y,
-        &base,
+        &y_level,
+        &base_level,
     );
     let mut p = ports0.clone();
     p.ambient += 1e-4;
@@ -1129,6 +1550,12 @@ fn g1_c12_support_zero_time() {
             eos_worst = eos_worst.max((back - y[t]).abs());
         }
     }
+    let bay_level = model.level(&y);
+    let bay_u = (y[model.bay.e] - model.g * y[model.bay.m] * bay_level / 2.) / y[model.bay.m];
+    let bay_back = point_pu(Branch::Liquid, model.atm, bay_u)
+        .expect("IF97 inverse")
+        .temperature_k;
+    eos_worst = eos_worst.max((bay_back - y[model.bay.t]).abs());
     assert!(eos_worst <= 1e-9, "EOS round trip {eos_worst} K");
     let displaced = model.displaced(&y);
     for d in &displaced {
@@ -1151,6 +1578,20 @@ fn g1_c12_support_zero_time() {
     let jacobian_s = (cpu::thread_cpu_s() - t1) / reps as f64;
     assert!(sink.is_finite());
 
+    let (s_h, m_cond, m_ld, pumps, ht) = model.cw_outputs(&y);
+    let circulating = json!({"headerResidualHead_Pa": s_h, "condenser_kg_s": m_cond, "letdown_kg_s": m_ld, "pumps_kg_s": pumps,
+                "inletTotalEnthalpy_J_kg": ht, "bayLevel_m": model.level(&y),
+                "ownerNativeComparison": {"residualHead_Pa": 299247.633, "condenser_kg_s": 47778.846792, "letdown_kg_s": 99.874535,
+                    "source": "condenser-and-cooling.md#actual-letdown-cooling-water-branch (native wet reference; this reduction uses the sizing density)"}});
+    let lube = {
+        let lu = &model.lube;
+        let q = y[lu.q];
+        let mu = (-lu.slope * ((y[lu.tb] + y[lu.tc]) / 2. - lu.tref)).exp();
+        json!({"flow_m3_s": q, "referenceFlow_m3_s": get(&packet, "/s5/lube/main/referenceFlow_m3_s"),
+            "headerPressure_Pa": lu.rlam * mu * q + lu.rho * q * q / (2. * lu.ao * lu.ao),
+            "viscosityRatio": mu, "mainRotorRate_rad_s2": yp[lu.w_m],
+            "ownerComparison": "lubrication-and-turning.md#required-discriminating-evidence: header 0.289868 MPa, flow 0.082880 m3/s at bulk 80.24 / cooler 43.44 C"})
+    };
     let receipt = json!({
         "scope": "G1-C12 zero-time design prototype (test only; never joined, never a gate)",
         "packetSha256": packet["provenance"]["packetSha256"],
@@ -1166,6 +1607,8 @@ fn g1_c12_support_zero_time() {
         "preparedFlows": model.trains.iter().map(|tr| json!({"train": tr.id, "ccw_kg_s": y[tr.m_c], "calculator_kg_s": tr.prepared_flow,
             "sw_kg_s": y[tr.m_s], "bypass": y[tr.x]})).collect::<Vec<_>>(),
         "preparedRates": rates,
+        "circulating": circulating,
+        "lube": lube,
         "displacedVolume_m3": displaced, "displacedVolumeBound_m3": model.displaced_bound,
         "cost": {"residual_cpu_s": residual_s, "jacobian_cpu_s": jacobian_s, "repetitions": reps, "load": cpu::load_average()},
     });

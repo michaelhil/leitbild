@@ -23,7 +23,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { parseExpansion } from './reference-design-ccw-expansion'
 import { parseLetdownCoolingBranch } from './reference-design-letdown-cooling-branch'
-import { parseLubrication } from './reference-design-lubrication'
+import { lubricationParameters, parseLubrication } from './reference-design-lubrication'
 import { ownedBlock } from './reference-design-operating-pzr'
 import { runPrimaryStation } from './reference-design-primary-station'
 import { parseStationBasis } from './reference-design-station'
@@ -223,6 +223,19 @@ export function compileOperatingSupport(pages: SupportPages, prepared: StationPr
         // identical split of the prepared aggregate oil temperature (lubrication owner)
         initial_K: kelvin(B.metal_C) },
       generatorCooler: { conductance_W_K: trains.generatorCooler.conductance_MW_K * MW, storeCapacity_J_K: trains.generatorCooler.store_MJ_K * MW },
+      /** The lube circuit's hydraulics (C12-D4), from the lubrication owner's
+       * calculator over `reference-lubrication`: frozen pump coefficients, the
+       * series orifice and laminar return, the drives. */
+      lube: (() => {
+        const L = lubricationParameters(oil)
+        const drive = (k: 'main' | 'standby', gain: number, cap: number, inertia: number, energized: number) => ({
+          a: L[k].a, beta: L[k].beta, resistance: L[k].resistance, dragCoefficient_N_m_s: L[k].drag, torque0_N_m: L[k].torqueReference,
+          gain_N_m_s: gain, torqueLimit_N_m: cap, inertia_kg_m2: inertia, energizedLoss_W: energized, referenceFlow_m3_s: L[k].flow })
+        return { omega0_rad_s: oil.pumpSpeed_rad_s, orificeArea_m2: L.orificeArea, laminarResistance_Pa_s_m3: L.laminarResistance,
+          viscosityReference_K: oil.viscosityReference_K, viscositySlope_per_K: oil.viscositySlope_K_inverse, motorEfficiency: oil.motorEfficiency,
+          main: drive('main', oil.mainDriveGain_N_m_per_rad_s, oil.mainTorqueLimit_N_m, oil.mainInertia_kg_m2, oil.mainEnergizedLoss_W),
+          standby: drive('standby', oil.standbyDriveGain_N_m_per_rad_s, oil.standbyTorqueLimit_N_m, oil.standbyInertia_kg_m2, oil.standbyEnergizedLoss_W) }
+      })(),
       intake: { area_m2: intake.bayArea_m2, floor_m: intake.floor_m, refillLevel_m: intake.refillLevel_m, floatSpan_m: intake.floatSpan_m,
         refillMouth_m: intake.refillMouth_m, sourceCapacity_m3_s: intake.sourceCapacity_m3_s, initialVolume_m3: intake.initialVolume_m3,
         initial_K: kelvin(intake.initialTemperature_C), normalDepth_m: intake.normalDepth_m },
@@ -243,8 +256,10 @@ export function compileOperatingSupport(pages: SupportPages, prepared: StationPr
       ports: {
         motorHeat_W: Object.fromEntries([...prepared.A.branches, ...prepared.B.branches].filter(b => b.id !== 'TG.OIL').map(b => [b.id, b.heat_MW * MW])),
         oilHeat_W: B.heat_MW * MW,
-        // P5 belongs to C10's lube intersection; at the identical split it carries no heat at t=0
-        oilFlow_m3_s: oil.mainFlow_m3_s,
+        // the main oil pump's acquired encoder speed is C16's acquisition (its lag,
+        // sampling and resolution are prose only today); the prepared value here
+        // is the reference speed the drive tracks
+        oilSpeedAcquired_rad_s: oil.pumpSpeed_rad_s,
         generatorMetal_K: kelvin(generatorWater_C + prepared.generatorLoss_MW / trains.generatorCooler.conductance_MW_K),
         source_K: kelvin(intake.sourceTemperature_C),
         sourceCapacity_m3_s: intake.sourceCapacity_m3_s,
