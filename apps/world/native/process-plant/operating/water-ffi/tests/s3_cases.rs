@@ -552,6 +552,7 @@ fn s3_case_run() {
         "gates_not_yet_implemented": ["D conservation (S2 identities and ledgers plus heater, spray, relief, turbine, generator and Grid receipts)",
             "E refinement (2.5 ms-capped reference and BDF2 at rtol/100 over the window; rtol/10 for the hold)",
             "F smoothness (derivative-jump detector)", "H repeatability", "K post-event spectra",
+            "I kinetics domain: D3 (a) admission at every accepted state and rule I's end (the frame driver does not check it; a preview past the S2 trip's 24.3 s exit is outside the admitted domain)",
             "C1 drift, SS-1 and SS-2", "C2 directions (B)", "cost against the S3 and S2 budgets (counts and CPU are recorded)"],
         "protection_log": p.log, "divisions": divisions,
         "counts_by_class": driver.counts.json(), "stock_totals": totals, "segments": driver.segments,
