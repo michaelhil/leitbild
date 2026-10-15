@@ -901,6 +901,10 @@ fn drive(
         gates: gates_part,
         instructions: 0,
         instructions_error: None,
+        residuals: observe::AlgebraicResiduals::of(
+            &ida.system().integrated().joined,
+            network_ids.clone(),
+        ),
     };
     // A reference's own cap (R1: S1's eventReference.maxStep_s) holds over
     // its whole run, as S2's R1.
@@ -1188,6 +1192,7 @@ fn drive(
             "samples": domain.samples, "stock_steps": driver.totals[0],
             "note": "samples = stock steps less located-root returns and steps a late change rolled back", "first_extended_s": domain.first_extended, "margin_failures": domain.margin_failures,
             "exit": domain.exit, "exit_after_zero_s": exit_after_zero, "information_from_s": exit_after_zero},
+        "algebraic_residuals": observer.residuals.json(),
         "operator_turbine_trip": operator_trip_record,
         "labelled_end": labelled_end,
         "information": information.map(|l| json!({"note": "INFORMATION ONLY (past the rule-I exit): every line over the whole run", "lines": l})),
@@ -2003,6 +2008,7 @@ fn s3_case_run() {
     // The case record's own fields at the top level, as before.
     for k in [
         "lines",
+        "algebraic_residuals",
         "rule_i",
         "operator_turbine_trip",
         "labelled_end",
