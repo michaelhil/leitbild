@@ -23,6 +23,7 @@ mod evaluate;
 pub mod heaters;
 mod jacobian;
 pub mod packet;
+mod phase_modes;
 pub mod ports;
 pub mod prepare;
 pub mod properties;
@@ -37,6 +38,7 @@ pub use jacobian::{
     ConsistentPair, ConsistentSystem, CscOut, DensePattern, Largest, Placement, Projection,
     SparseJacobian, consistent_rates, consistent_start, place_on_bounds, project_constraints,
 };
+pub use phase_modes::CellMode;
 pub use ports::{CellVolume, Coupling, Fluid, Receipts};
 pub use properties::{Band, BandReport, MetastableBand, Properties, Reuse, Water};
 pub use tolerance::ToleranceClasses;
@@ -204,6 +206,9 @@ pub struct Network<P: Properties> {
     section_drive: Vec<Scalar>,
     /// HOOK (PHASE-P7, S3-D-P8): each passive section's gas-phase drive.
     section_gas_drive: Vec<Scalar>,
+    /// HOOK (PHASE-P7, S3-D-P1): each regular cell's phase mode
+    /// ([`phase_modes`]); every cell starts liquid.
+    modes: Vec<CellMode>,
     pub rotor_index: Vec<usize>,
     rotor_inertia: f64,
     drive: rotor::Parameters,
@@ -505,6 +510,7 @@ impl<P: Properties> Network<P> {
                 section_projection,
                 section_drive: vec![s(0.); section_count],
                 section_gas_drive: vec![s(0.); section_count],
+                modes: vec![CellMode::Liquid; pzr],
                 rotor_states: vec![None; rotor_index.len()],
                 motor: vec![None; rotor_index.len()],
                 rotor_index,
@@ -600,12 +606,18 @@ impl<P: Properties> Network<P> {
         (l.mass[k], l.energy[k])
     }
     /// Every retained mass and tracer coordinate, regular cells and the PZR:
-    /// the stocks an integrator constrains to be nonnegative.
+    /// the stocks an integrator constrains to be nonnegative. An equilibrium
+    /// cell's vapor mass is algebraic (the flash): its sign is the
+    /// exhaustion root's, not a constraint (HOOK PHASE-P7, S3-D-P1).
     pub fn nonnegative_stocks(&self) -> Vec<usize> {
         let mut stocks: Vec<usize> = self
             .cell_layout
             .iter()
-            .flat_map(|l| [l.mass[0], l.mass[1], l.boron])
+            .zip(&self.modes)
+            .flat_map(|(l, mode)| match mode {
+                CellMode::Liquid => vec![l.mass[0], l.mass[1], l.boron],
+                CellMode::Equilibrium => vec![l.mass[0], l.boron],
+            })
             .collect();
         stocks.extend(
             PZR_MASS
@@ -699,9 +711,17 @@ impl<P: Properties> Network<P> {
         y[index] = 0.;
         Ok(locking)
     }
-    /// Current IDA id vector: a locked rotor's speed row is algebraic.
+    /// Current IDA id vector: a locked rotor's speed row is algebraic, and
+    /// so are an equilibrium cell's vapor mass and energy (HOOK PHASE-P7,
+    /// S3-D-P1).
     pub fn differential(&self, prepared: &[f64]) -> Vec<f64> {
         let mut ids = prepared.to_vec();
+        for (l, mode) in self.cell_layout.iter().zip(&self.modes) {
+            if *mode == CellMode::Equilibrium {
+                ids[l.mass[1]] = 0.;
+                ids[l.energy[1]] = 0.;
+            }
+        }
         for (r, index) in self.rotor_index.iter().enumerate() {
             if matches!(
                 self.rotor_states[r],

@@ -149,10 +149,23 @@ impl<P: Properties> Network<P> {
         }
         self.receipts.fill([[s(0.); 3]; 2]);
         self.shaft_power = s(0.);
+        // HOOK (PHASE-P7, S3-D-P1/P6): equilibrium cells' saturated endpoints
+        // and the view every phase reader sees; empty when all are liquid.
+        let (y_coordinates, seed_coordinates) = (y, seed);
+        let saturated = self.saturated(y, seed)?;
+        let view = (!saturated.is_empty()).then(|| self.equilibrium_view(y, seed, &saturated));
+        let (y, seed) = match &view {
+            Some((v, d)) => (&v[..], d.as_deref()),
+            None => (y, seed),
+        };
         let mut points: Vec<[Point; 2]> = vec![[None; 2]; n];
         for (node, current_point) in points.iter_mut().enumerate() {
-            let (cell, point, row) =
-                self.regular_cell(node, y, seed, self.cell_volume[node], reuse.as_deref_mut())?;
+            let (cell, point, row) = match saturated.get(node).copied().flatten() {
+                Some(sat) => self.equilibrium_cell(node, y, seed, self.cell_volume[node], &sat)?,
+                None => {
+                    self.regular_cell(node, y, seed, self.cell_volume[node], reuse.as_deref_mut())?
+                }
+            };
             self.cells[node] = cell;
             *current_point = point;
             self.rows[self.cell_layout[node].base] = row;
@@ -235,6 +248,8 @@ impl<P: Properties> Network<P> {
         self.compose_sections(y, yp, seed, cj, &points)?;
         self.compose_momentum(t, y, yp, seed, cj, &phase_mass)?;
         self.compose_stocks(y, yp, seed, cj, &points, reuse)?;
+        // HOOK (PHASE-P7, S3-D-P1): equilibrium rows from the coordinates.
+        self.compose_equilibrium_rows(y_coordinates, yp, seed_coordinates, cj, &saturated);
         self.compose_stratified(column, y, yp, seed, cj, coupling)?;
         self.counters.evaluation_wall_s += started.elapsed().as_secs_f64();
         Ok(())
@@ -392,6 +407,10 @@ impl<P: Properties> Network<P> {
         let mut current = vec![none; n];
         let mut mass = [vec![none; n], vec![none; n]];
         let mut tracer = vec![none; n];
+        // HOOK (PHASE-P7, S3-D-P1/P6): equilibrium cells through their view.
+        let saturated = self.saturated(y, None)?;
+        let view = (!saturated.is_empty()).then(|| self.equilibrium_view(y, None, &saturated).0);
+        let y = view.as_deref().unwrap_or(y);
         for &node in cells {
             if node >= n {
                 return Err(Failure::Fatal(format!(
@@ -399,7 +418,10 @@ impl<P: Properties> Network<P> {
                 )));
             }
             let (volume, _) = self.evaluated_volume(node, volumes)?;
-            let (cell, point, _) = self.regular_cell(node, y, None, volume, None)?;
+            let (cell, point, _) = match saturated.get(node).copied().flatten() {
+                Some(sat) => self.equilibrium_cell(node, y, None, volume, &sat)?,
+                None => self.regular_cell(node, y, None, volume, None)?,
+            };
             states[node] = cell;
             points[node] = point;
             current[node] = volume;
@@ -654,6 +676,11 @@ impl<P: Properties> Network<P> {
             let index = l.boron;
             self.rows[index] = (self.rate(yp, seed, cj, index) - self.receipts[node][0][2])
                 / s(self.scales[index]);
+            // HOOK (PHASE-P7, S3-D-P1): an equilibrium cell's stock rows are
+            // its own (`compose_equilibrium_rows`), not the phase elimination.
+            if self.modes[node] == super::CellMode::Equilibrium {
+                continue;
+            }
             let mut therm = [None; 2];
             let pressure = self.get(y, seed, l.base);
             let md = std::array::from_fn(|k| self.receipts[node][k][0]);
