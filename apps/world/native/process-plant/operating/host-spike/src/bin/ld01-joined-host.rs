@@ -477,7 +477,7 @@ impl Unit {
         loop {
             if self.internal > target {
                 let (mut y, mut yp) = (self.y.clone(), self.yp.clone());
-                self.ida.dense(target, &mut y, &mut yp)?;
+                self.ida.dense_output(target, &mut y, &mut yp)?;
                 self.view = Some((target, y, yp));
                 break;
             }
@@ -496,7 +496,7 @@ impl Unit {
                 self.ida.stop_at(b)?;
             }
             let event = self.ida.system().joined.next_time_event(self.internal);
-            match self.ida.advance_one_step(tout, &mut self.y, &mut self.yp)? {
+            match self.ida.step(tout, &mut self.y, &mut self.yp)? {
                 Advance::Root { time, directions } => {
                     self.internal = time;
                     self.deferred = Some(Deferred::Roots(directions));
