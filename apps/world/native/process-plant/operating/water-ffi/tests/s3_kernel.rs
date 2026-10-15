@@ -578,7 +578,9 @@ fn an_equilibrium_cell_assembles_by_blocks_and_integrates_on_the_joined_spine() 
     // stops at the exhaustion and reports what was located before it.
     let (first_mode, first_l1) = {
         let joined = &ida.system().integrated().joined;
-        let first_mode = joined.root_count() - 2 * joined.network.pzr.cell;
+        // A composed spray path's three slots stay last (DR-P3-SPRAY).
+        let spray = 3 * usize::from(joined.network.spray().is_some());
+        let first_mode = joined.root_count() - spray - 2 * joined.network.pzr.cell;
         (first_mode, first_mode - joined.network.face_layout.len())
     };
     let label = |i: usize, d: i32| -> String {
@@ -1075,7 +1077,20 @@ fn an_rcp_supply_loss_restarts_through_the_frame_driver_with_c3s_cost_lines() {
             .contains("SupplyLoss"),
         "{instant}"
     );
-    assert_eq!(driver.counts.total(Class::R), 1);
+    // Beside the supply loss, only a composed spray port's scoped L1
+    // (DR-P3-SPRAY) restarts, at its located roots.
+    let port: Vec<&Value> = driver
+        .log
+        .iter()
+        .filter(|e| e["class"] == "R" && e["t_s"].as_f64() != Some(t_loss))
+        .collect();
+    assert!(
+        port.iter().all(|e| e["restart"]["transactions"]
+            .to_string()
+            .contains("spray port (scoped L1)")),
+        "{port:?}"
+    );
+    assert_eq!(driver.counts.total(Class::R), 1 + port.len() as u64);
     assert!(driver.observed_states > 0);
     assert_eq!(
         driver.donor_flips.observations as u64,

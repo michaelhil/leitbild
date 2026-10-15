@@ -598,8 +598,10 @@ fn the_spray_paths_discrete_state_survives_a_snapshot() {
         rows_differ,
         "an open valve's restriction row differs from the lock's"
     );
+    // The inlet check's slot precedes the port's two (DR-P3-SPRAY).
     let mut directions = vec![0; joined.root_count()];
-    *directions.last_mut().unwrap() = -1;
+    let check = directions.len() - 3;
+    directions[check] = -1;
     joined
         .transact(0.2, &directions, &mut y)
         .expect("the inlet check's contact");

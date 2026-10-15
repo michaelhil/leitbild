@@ -155,25 +155,50 @@ impl<P: Properties> Network<P> {
             })
     }
     /// Engage the spray port's scoped unilateral law (DR-P3-SPRAY; decision
-    /// 0014's L1 on the port face's two phase paths) at the state of the
-    /// last value evaluation, every path classified from free by `presence`
-    /// (the line holds liquid; the port holds the vapor region's vapor and,
-    /// with drops, liquid): a path whose drive would draw from an end
-    /// holding no phase is locked at rest. A path moving toward such an end
-    /// is refused, as L1's activation refuses. Called by the composition
-    /// (hydrostatic and flowing preparation); a network-wide L1 activation
-    /// supersedes it.
-    pub fn engage_spray_tip(&mut self, presence: &Presence) -> Result<Option<Value>, Failure> {
+    /// 0014's L1 on the port face's two phase paths), by `presence` (the
+    /// line holds liquid; the port holds the vapor region's vapor and, with
+    /// drops, liquid). Three uses, all by L1's [`decide`]:
+    /// - `adopted: None` at the hydrostatic preparation (the line at rest):
+    ///   each path from free, by the last value evaluation's drive; a path
+    ///   whose drive would draw from an end holding no phase locks at rest;
+    /// - `adopted: Some(q)` before the flowing preparation writes the
+    ///   hydraulic settle's volume flow `q[k]` into path `k`: each path from
+    ///   free, by that flow (at rest, by the drive). A path the settle moved
+    ///   toward an end holding no phase locks and the composition writes it
+    ///   no current: that motion (the settle's tier carries no L1) is not
+    ///   adopted, so there is nothing to pay;
+    /// - `adopted: None` at the composed state: each path from its held
+    ///   lock by the last value evaluation (a one-sided lock whose drive
+    ///   draws from its holding end is released, a free path drawing from an
+    ///   empty end locks at rest).
+    ///
+    /// A path moving toward an end holding no phase at an evaluated state is
+    /// refused, as L1's activation refuses. A network-wide L1 activation
+    /// supersedes this law.
+    pub fn engage_spray_tip(
+        &mut self,
+        presence: &Presence,
+        adopted: Option<[f64; 2]>,
+    ) -> Result<Option<Value>, Failure> {
         let Some(s) = self.spray else {
             return Ok(None);
         };
+        let held = s.tip.unwrap_or([Lock::Free; 2]);
         let mut tip = [Lock::Free; 2];
         let mut views = Vec::new();
         for (k, lock) in tip.iter_mut().enumerate() {
             let li = 2 * s.port_face + k;
-            let view = self.path_view(li, presence)?;
-            let d = decide(Lock::Free, view, None)?;
-            if d.payment.is_some() {
+            let mut view = self.path_view(li, presence)?;
+            let prior = match adopted {
+                Some(q) => {
+                    view.volume_flow_m3_s = q[k];
+                    view.kinetic_j = 0.;
+                    Lock::Free
+                }
+                None => held[k],
+            };
+            let d = decide(prior, view, None)?;
+            if adopted.is_none() && d.payment.is_some() {
                 return Err(Failure::Fatal(format!(
                     "spray port: face {} phase {k} carries {} m3/s toward an end holding no phase {k}",
                     s.port_face, view.volume_flow_m3_s
@@ -181,7 +206,9 @@ impl<P: Properties> Network<P> {
             }
             *lock = d.lock;
             views.push(json!({"phase": k, "holding": format!("{:?}", view.holding),
-                "drive_pa": view.drive_pa, "lock": format!("{:?}", d.lock)}));
+                "drive_pa": view.drive_pa, "volume_flow_m3_s": view.volume_flow_m3_s,
+                "adopted": adopted.is_none() || d.payment.is_none(),
+                "from": format!("{prior:?}"), "lock": format!("{:?}", d.lock)}));
         }
         if let Some(sp) = self.spray.as_mut() {
             sp.tip = Some(tip);
