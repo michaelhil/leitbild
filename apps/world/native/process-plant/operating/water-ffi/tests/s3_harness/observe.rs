@@ -199,6 +199,9 @@ pub struct CaseObserver {
     pub extension: Extension,
     pub rule_i: RuleI,
     pub gates: Option<Gates>,
+    /// The instructions its own calls retired (the cost family subtracts
+    /// them, as the driver's `gate_s` CPU).
+    pub instructions: u64,
 }
 
 fn grid_after(origin: f64, dt: f64, t: f64) -> f64 {
@@ -347,9 +350,11 @@ impl<J: JoinedSystem<Properties = If97>> Observer<Electrified<J>> for CaseObserv
         _q: &[f64],
         side: Side,
     ) -> Result<(), String> {
+        let i0 = super::counters::instructions();
         if let Some(g) = self.gates.as_mut() {
             g.sample(system, self.n, t, y, yp, side);
         }
+        self.instructions += super::counters::instructions().saturating_sub(i0);
         Ok(())
     }
     fn accepted(
@@ -360,6 +365,7 @@ impl<J: JoinedSystem<Properties = If97>> Observer<Electrified<J>> for CaseObserv
         yp: &[f64],
         q: &[f64],
     ) -> Result<(), String> {
+        let i0 = super::counters::instructions();
         let n = self.n;
         self.rule_i.judge(
             &mut system.integrated_mut().joined,
@@ -371,6 +377,7 @@ impl<J: JoinedSystem<Properties = If97>> Observer<Electrified<J>> for CaseObserv
         if let Some(g) = self.gates.as_mut() {
             g.accepted(system, n, t, y, q);
         }
+        self.instructions += super::counters::instructions().saturating_sub(i0);
         Ok(())
     }
 }

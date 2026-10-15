@@ -42,17 +42,24 @@ pub fn span_cpu(marks: &[(f64, f64)], from: f64, to: f64) -> Option<(f64, f64, f
 }
 
 /// Rule G against the block's budgets. `marks` are `(t − zero, recurring
-/// CPU)`, `end` the declared part's end after zero (rule I's exit or the
-/// run's end), `window` the declared window, `recovery` S1's post-window
-/// span.
+/// CPU-s, recurring instructions)`, `end` the declared part's end after zero
+/// (rule I's exit or the run's end), `window` the declared window,
+/// `recovery` S1's post-window span. Each span is reported both as raw
+/// thread CPU per simulated second and, with `quiet_ratio` (instructions
+/// per quiet CPU-s, the common rule), as quiet-equivalent CPU-s per
+/// simulated second; the verdict reads the quiet-equivalent when the ratio
+/// is given, else the raw value.
 pub fn cost(
     case: Case,
     budgets: &Value,
-    marks: &[(f64, f64)],
+    marks: &[(f64, f64, f64)],
     end: f64,
     window: Option<f64>,
     recovery: f64,
+    quiet_ratio: Option<(f64, String)>,
 ) -> Value {
+    let cpu: Vec<(f64, f64)> = marks.iter().map(|m| (m.0, m.1)).collect();
+    let ins: Vec<(f64, f64)> = marks.iter().map(|m| (m.0, m.2)).collect();
     let mut gates = Vec::new();
     let mut entry = |id: &str, key: &str, from: f64, to: f64, declared: f64| {
         let Some(bound) = budgets[key].as_f64() else {
@@ -67,16 +74,24 @@ pub fn cost(
         };
         let to_cut = to.min(end);
         let truncated = to_cut < declared - 1e-9;
-        match span_cpu(marks, from, to_cut) {
-            Some((a, b, rate)) => {
-                let verdict = if rate <= bound { "pass" } else { "fail" };
-                gates.push(json!({"id": id, "value": rate, "bound": bound, "verdict": verdict,
+        let source = format!("ld01-s3-cases-c1c3 budgets_cpu_s_per_s.{key}");
+        match span_cpu(&cpu, from, to_cut) {
+            Some((a, b, raw)) => {
+                let quiet = quiet_ratio.as_ref().and_then(|(r, _)| {
+                    span_cpu(&ins, from, to_cut).map(|(_, _, per_s)| per_s / r)
+                });
+                let value = quiet.unwrap_or(raw);
+                let verdict = if value <= bound { "pass" } else { "fail" };
+                gates.push(json!({"id": id, "value": value, "basis": if quiet.is_some() { "quiet-equivalent (instructions retired / quiet ratio)" } else { "raw thread CPU" },
+                    "raw_cpu_s_per_s": raw, "quiet_equivalent_cpu_s_per_s": quiet,
+                    "instructions_per_s": span_cpu(&ins, from, to_cut).map(|x| x.2),
+                    "bound": bound, "verdict": verdict,
                     "span_s": [a, b], "declared_span_s": [from, declared], "truncated_by_rule_i": truncated,
-                    "threshold_source": format!("ld01-s3-cases-c1c3 budgets_cpu_s_per_s.{key}"), "label": PROVISIONAL}));
+                    "threshold_source": source, "label": PROVISIONAL}));
             }
             None => gates.push(json!({"id": id, "value": null, "bound": bound, "verdict": if truncated { "truncated (rule I), not failed" } else { "not executable" },
                 "declared_span_s": [from, declared], "truncated_by_rule_i": truncated,
-                "threshold_source": format!("ld01-s3-cases-c1c3 budgets_cpu_s_per_s.{key}"), "label": PROVISIONAL})),
+                "threshold_source": source, "label": PROVISIONAL})),
         }
     };
     let last = marks.last().map_or(0., |m| m.0);
@@ -117,7 +132,8 @@ pub fn cost(
         "incomplete"
     };
     json!({"family": "G cost", "verdict": verdict, "label": PROVISIONAL,
-        "measure": "the run thread's CPU less the gate harness's instruments (its observer: rule I's admission, identities, credited outputs, ledger closures; the IDAS ledgers' integrands), per simulated second; the I&C clients' frames are recurring work",
+        "measure": "the run's thread CPU and the process's instructions retired, each less the gate harness's own observer (rule I's admission; and in a gated run the identities, credited outputs and ledger closures), per simulated second; the I&C clients' frames are recurring work. Only quiet-window CPU counts as evidence at the gate run",
+        "quiet_ratio": quiet_ratio.as_ref().map(|(r, src)| json!({"instructions_per_cpu_s": r, "source": src})),
         "gates": gates})
 }
 
@@ -416,15 +432,31 @@ pub fn electrical_e0(
                 let filtered = zero_phase_lowpass(&raw, cutoff_hz, dt);
                 let value = max_abs(&filtered);
                 // Where the largest difference lies (s after `origin`).
-                let at = filtered
-                    .iter()
-                    .enumerate()
-                    .max_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
-                    .map(|(j, _)| from + j as f64 * dt);
+                let argmax = |x: &[f64]| {
+                    x.iter()
+                        .enumerate()
+                        .max_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
+                        .map(|(j, v)| (from + j as f64 * dt, *v))
+                };
                 within &= value <= budget;
+                // The difference's history every 10 ms: (t, filtered,
+                // unfiltered, the run's own value), for its attribution.
+                let every = ((0.01 / dt).round() as usize).max(1);
+                let history: Vec<[f64; 4]> = (0..raw.len())
+                    .step_by(every)
+                    .map(|j| {
+                        [
+                            from + j as f64 * dt,
+                            filtered[j],
+                            raw[j],
+                            a[0][ra.start + j],
+                        ]
+                    })
+                    .collect();
                 metrics.insert(
                     k.into(),
-                    json!({"value": value, "budget": budget, "at_s": at}),
+                    json!({"value": value, "budget": budget, "at_s": argmax(&filtered),
+                    "unfiltered_max": argmax(&raw), "history_10ms": history}),
                 );
             }
             (a, b) => {
@@ -455,75 +487,106 @@ mod tests {
 
     #[test]
     fn cost_judges_each_declared_span_against_its_budget() {
+        // Instructions at 1.4e10 per raw CPU-s; the quiet ratio 1.4e10 makes
+        // quiet-equivalent equal raw, 2.8e10 halves it.
+        let marks = |rate: &dyn Fn(f64) -> f64, n: usize| -> Vec<(f64, f64, f64)> {
+            (0..=n)
+                .map(|k| {
+                    let t = k as f64 * 0.1;
+                    (t, rate(t), rate(t) * 1.4e10)
+                })
+                .collect()
+        };
+        let ratio = |r: f64| Some((r, "test".to_string()));
         // C1: 0.05 CPU-s/s over 600 s passes both; 0.2 fails the quiet.
-        let marks: Vec<(f64, f64)> = (0..=6000)
-            .map(|k| (k as f64 * 0.1, k as f64 * 0.1 * 0.05))
-            .collect();
-        let c = cost(Case::C1, &budgets(), &marks, 600., None, 10.);
+        let c = cost(
+            Case::C1,
+            &budgets(),
+            &marks(&|t| 0.05 * t, 6000),
+            600.,
+            None,
+            10.,
+            ratio(1.4e10),
+        );
         assert_eq!(c["verdict"], "pass", "{c}");
-        let marks: Vec<(f64, f64)> = (0..=6000)
-            .map(|k| (k as f64 * 0.1, k as f64 * 0.1 * 0.2))
-            .collect();
-        let c = cost(Case::C1, &budgets(), &marks, 600., None, 10.);
+        let slow = marks(&|t| 0.2 * t, 6000);
+        let c = cost(Case::C1, &budgets(), &slow, 600., None, 10., ratio(1.4e10));
         assert_eq!(c["verdict"], "fail");
         assert_eq!(c["gates"][1]["id"], "cost.s2_quiet");
         assert_eq!(c["gates"][1]["verdict"], "fail");
         assert_eq!(c["gates"][0]["verdict"], "pass");
+        // The verdict reads the quiet-equivalent: raw 0.2 at a loaded host,
+        // 0.1 quiet-equivalent, passes the 0.1 quiet budget; raw is reported.
+        let c = cost(Case::C1, &budgets(), &slow, 600., None, 10., ratio(2.8e10));
+        assert_eq!(c["gates"][1]["verdict"], "pass", "{c}");
+        assert!((c["gates"][1]["raw_cpu_s_per_s"].as_f64().unwrap() - 0.2).abs() < 1e-12);
+        // Without a ratio the raw value decides.
+        let c = cost(Case::C1, &budgets(), &slow, 600., None, 10., None);
+        assert_eq!(c["gates"][1]["basis"], "raw thread CPU");
+        assert_eq!(c["gates"][1]["verdict"], "fail");
         // C2: 0.8 in the 20 s window fails it; recovery and the rest pass.
-        let marks: Vec<(f64, f64)> = (0..=600)
-            .map(|k| {
-                let t = k as f64 * 0.1;
-                (
-                    t,
-                    if t <= 20. {
-                        0.8 * t
-                    } else {
-                        16. + 0.1 * (t - 20.)
-                    },
-                )
-            })
-            .collect();
-        let c = cost(Case::C2, &budgets(), &marks, 60., Some(20.), 10.);
-        let v = |id: &str| {
+        let c2 = marks(
+            &|t| {
+                if t <= 20. {
+                    0.8 * t
+                } else {
+                    16. + 0.1 * (t - 20.)
+                }
+            },
+            600,
+        );
+        let c = cost(
+            Case::C2,
+            &budgets(),
+            &c2,
+            60.,
+            Some(20.),
+            10.,
+            ratio(1.4e10),
+        );
+        let v = |c: &Value, id: &str| {
             c["gates"]
                 .as_array()
                 .unwrap()
                 .iter()
                 .find(|g| g["id"] == id)
-                .unwrap()["verdict"]
+                .unwrap()
                 .clone()
         };
-        assert_eq!(v("cost.s2_window"), "fail");
-        assert_eq!(v("cost.s2_recovery"), "pass");
-        assert_eq!(v("cost.s2_trip_average"), "pass", "(16 + 4) / 60 = 0.33");
+        assert_eq!(v(&c, "cost.s2_window")["verdict"], "fail");
+        assert_eq!(v(&c, "cost.s2_recovery")["verdict"], "pass");
+        assert_eq!(
+            v(&c, "cost.s2_trip_average")["verdict"],
+            "pass",
+            "(16 + 4) / 60 = 0.33"
+        );
         assert_eq!(c["verdict"], "fail");
         // Rule I's exit inside the window: judged to it, flagged truncated.
-        let c = cost(Case::C2, &budgets(), &marks[..=150], 15., Some(20.), 10.);
-        let w = c["gates"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|g| g["id"] == "cost.s2_window")
-            .unwrap()
-            .clone();
+        let c = cost(
+            Case::C2,
+            &budgets(),
+            &c2[..=150],
+            15.,
+            Some(20.),
+            10.,
+            ratio(1.4e10),
+        );
+        let w = v(&c, "cost.s2_window");
         assert_eq!(w["truncated_by_rule_i"], true);
         assert_eq!(w["span_s"][1], 15.);
-        let r = c["gates"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|g| g["id"] == "cost.s2_recovery")
-            .unwrap()
-            .clone();
-        assert_eq!(r["verdict"], "truncated (rule I), not failed");
+        assert_eq!(
+            v(&c, "cost.s2_recovery")["verdict"],
+            "truncated (rule I), not failed"
+        );
         // A budget the block does not declare is not executable.
         let c = cost(
             Case::C1,
             &json!({"s3UnitRecurringIncludingEvents": 0.5}),
-            &marks,
+            &c2,
             60.,
             None,
             10.,
+            None,
         );
         assert_eq!(c["verdict"], "incomplete");
     }

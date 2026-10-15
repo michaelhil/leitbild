@@ -742,7 +742,8 @@ struct Driven {
     exit_after_zero: Option<f64>,
     failure: Option<String>,
     /// `(t − zero, the run thread's CPU less the gate observation)`.
-    marks: Vec<(f64, f64)>,
+    /// `(t − zero, recurring CPU-s, recurring instructions)`.
+    marks: Vec<(f64, f64, f64)>,
     repeat_record: Value,
     window_end_state: Option<(String, String)>,
     end_after_zero: f64,
@@ -888,6 +889,7 @@ fn drive(
         extension,
         rule_i: observe::RuleI::default(),
         gates: gates_part,
+        instructions: 0,
     };
     // A reference's own cap (R1: S1's eventReference.maxStep_s) holds over
     // its whole run, as S2's R1.
@@ -923,6 +925,7 @@ fn drive(
     observe::start_sample(&mut observer, ida.system_mut(), t0, &y, &yp);
     let preparation_cpu_s = spine::z1::cpu_s() - started;
     let run_started = spine::z1::cpu_s();
+    let instructions0 = s3_harness::counters::instructions();
     let until = zero + span;
     // The run in chunks at every frame instant (the control client, class
     // S, stops there anyway, so the chunks add no stop): C3's operator
@@ -940,7 +943,7 @@ fn drive(
     bounds.retain(|b| *b > t0 && *b <= until);
     bounds.sort_by(f64::total_cmp);
     bounds.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
-    let mut marks: Vec<(f64, f64)> = vec![(t0 - zero, 0.)];
+    let mut marks: Vec<(f64, f64, f64)> = vec![(t0 - zero, 0., 0.)];
     let operator_trip = operator_trip_delay(case, spec).unwrap();
     let mut operator_trip_record = Value::Null;
     let mut window_end_state = None;
@@ -1021,6 +1024,9 @@ fn drive(
                     - run_started
                     - driver.cpu.gate_s
                     - ledger_quadrature_cpu_s(ida.system()),
+                (s3_harness::counters::instructions()
+                    .saturating_sub(instructions0)
+                    .saturating_sub(observer.instructions)) as f64,
             ));
             // Rule K's post-event state: the window's end (C2, C3), the
             // solver's own state there (the frame stop), for SPECTRUM.
@@ -1165,6 +1171,8 @@ fn drive(
         "cpu": {"preparation_s": preparation_cpu_s, "run_s": run_cpu_s, "solver_s": driver.cpu.solver_s,
             "observation_s": driver.cpu.observation_s, "restart_s": driver.cpu.restart_s, "held_s": driver.cpu.held_s,
             "gate_observation_s": driver.cpu.gate_s, "ledger_quadrature_s": ledger_cpu_s,
+            "instructions": {"run": marks.last().map(|m| m.2), "observer": observer.instructions,
+                "note": "the process's instructions retired over the run less the observer's own calls; in a gated run the ledgers' integrands are not subtracted (the cost family reads the ungated cost drive)"},
             "recurring_s": run_cpu_s - driver.cpu.gate_s - ledger_cpu_s,
             "worst_step": {"cpu_s": driver.cpu.worst_step.0, "reached_s": driver.cpu.worst_step.1},
             "run_per_simulated_s": if simulated > 0. { json!(run_cpu_s / simulated) } else { Value::Null },
@@ -1415,18 +1423,59 @@ fn s3_case_run() {
     let recovery_s = gate
         .as_ref()
         .map_or(10., |g| g.s2.shared.number("/recovery/postWindow_s"));
-    let mut families = serde_json::Map::new();
-    families.insert(
-        "G_cost".into(),
-        s3_harness::families::cost(
+    // The common cost rule's quiet ratio (instructions per quiet CPU-s,
+    // COST2's measurement), named by the caller with its source.
+    let quiet_ratio = std::env::var("LD01_S3_QUIET_RATIO").ok().map(|v| {
+        let r = v
+            .parse::<f64>()
+            .expect("LD01_S3_QUIET_RATIO is instructions per quiet CPU-s");
+        let src = std::env::var("LD01_S3_QUIET_RATIO_SOURCE")
+            .expect("LD01_S3_QUIET_RATIO_SOURCE names the ratio's measurement");
+        (r, src)
+    });
+    // Rule G on the plant's recurring work: in a gated run, a separate
+    // ungated drive of the same trajectory (no 2 ms observation, no IDAS
+    // ledgers), so only rule I's own calls are subtracted.
+    let cost_drive = gate.as_ref().map(|_| {
+        drive(
             case,
-            &budgets_block,
-            &run.marks,
-            end,
-            spec["window_s"].as_f64(),
-            recovery_s,
-        ),
+            &d,
+            &spec,
+            &inputs,
+            &state,
+            &state_path,
+            span,
+            None,
+            &Ask {
+                label: "cost",
+                scaling: s3_unit::Scaling::NONE,
+                max_step: None,
+                credited_from: judged_from,
+                window_state: None,
+            },
+        )
+    });
+    let cost_marks = cost_drive.as_ref().map_or(&run.marks, |c| &c.marks);
+    let mut families = serde_json::Map::new();
+    let mut g_cost = s3_harness::families::cost(
+        case,
+        &budgets_block,
+        cost_marks,
+        end,
+        spec["window_s"].as_f64(),
+        recovery_s,
+        quiet_ratio,
     );
+    g_cost["measured_on"] = json!(if cost_drive.is_some() {
+        "the ungated cost drive (same trajectory; frames compared)"
+    } else {
+        "the run"
+    });
+    if let Some(c) = &cost_drive {
+        g_cost["cost_drive_same_frames"] = json!(c.record["frames"] == run.record["frames"]);
+        g_cost["cost_drive_cpu"] = c.record["cpu"].clone();
+    }
+    families.insert("G_cost".into(), g_cost);
     let mut not_implemented: Vec<&str> = Vec::new();
     let mut repeat_driven = None;
     let mut references: Vec<(String, Driven)> = Vec::new();
