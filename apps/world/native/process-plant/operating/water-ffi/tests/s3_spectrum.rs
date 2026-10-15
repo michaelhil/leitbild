@@ -36,11 +36,16 @@
 //!
 //! # Pencils and predicates
 //!
-//! S2-D8's two gated restrictions of that Jacobian, each with the slice's
-//! coordinates kept: `restricted` (network, SG secondaries and metal, rods,
-//! PZR block; surfaces eliminated by the exact Schur complement; the rest
-//! held) and `coupled-nuclear-thermal` (plus the regional populations, fuel
-//! nodes and clad stores). Ungated: held walls and the network alone. The
+//! Gated: S2-D8's two restrictions of the joined block, exactly S2's:
+//! `restricted` (network, SG secondaries and metal, rods, PZR block;
+//! surfaces eliminated by the exact Schur complement; the rest held) and
+//! `coupled-nuclear-thermal` (plus the regional populations, fuel nodes and
+//! clad stores); and the slice's own block (`electrical-slice`). The blocks
+//! are decomposed apart: the Jacobian is block diagonal, so the union of
+//! their eigenvalues is the unit's, and each keeps its own error bounds (a
+//! first receipt with the slice inside S2's pencils, 8bdfe70c1, left 25
+//! modes of either block unresolved by the mixed norm alone). Ungated: held
+//! walls and the network alone. The
 //! predicates and thresholds are S2's (`ld01-s1-gates` `spectrum`, G14):
 //! infinite modes equal the pencil's algebraic coordinates; no resolved
 //! positive real part; every marginal mode tied to a null direction; no fast
@@ -99,6 +104,16 @@ fn vector(v: &Value) -> Vec<f64> {
 const SLICE_LABELS: [&str; slice::N] = [
     "lambda_d", "lambda_q", "lambda_f", "id", "iq", "if", "omega", "theta", "T_body",
 ];
+
+/// One linearization: its name, `A`, `B`, the differential flags and the
+/// named event forcings judged on it.
+type PencilAt<'a> = (
+    &'a str,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<(&'a str, Vec<f64>)>,
+);
 
 /// The S3 operator at a saved S3 state (see the module docs) and the
 /// tolerances the solver uses there.
@@ -325,13 +340,17 @@ fn s3_z6_at_a_saved_s3_state() {
     let y_all = [y.as_slice(), &elec.y].concat();
     let atol_all = [atol.as_slice(), &elec.atol].concat();
     let tolerance = spectrum::tolerance(rtol, &y_all, &atol_all).expect("tolerance");
-    // S2-D8's restrictions on the joined block, each with the slice kept.
+    // S2-D8's restrictions of the joined block, exactly S2's; the slice's
+    // block is its own gated pencil. The model's Jacobian is block diagonal,
+    // so the unit's eigenvalues are the union of the blocks' exactly; each
+    // block is decomposed alone so that its error bounds are its own (one
+    // dense pencil of both mixes the slice's volt and ampere rows into the
+    // joined block's norm and leaves resolved modes of either unresolved).
     let slice_rows: Vec<usize> = (n..ns).collect();
     let keep: Vec<usize> = (0..n)
         .filter(|&i| {
             i < o.nuclear || i >= o.secondary || (i >= o.solids && classes[i] == Class::MetalEnergy)
         })
-        .chain(slice_rows.iter().copied())
         .collect();
     let surfaces: Vec<usize> = (o.solids..o.secondary)
         .filter(|&i| classes[i] == Class::Surface)
@@ -344,7 +363,6 @@ fn s3_z6_at_a_saved_s3_state() {
                     Class::RegionalPopulation | Class::FuelEnergy | Class::CladEnergy
                 )
         })
-        .chain(slice_rows.iter().copied())
         .collect();
     let network_only: Vec<usize> = (0..o.nuclear).collect();
     let owner_of = |i: usize| {
@@ -381,7 +399,7 @@ fn s3_z6_at_a_saved_s3_state() {
     let f_state = [residual(&mut joined, t, &y, &yp).as_slice(), &f_slice].concat();
     let ids_held = [joined.differential(&network_ids).as_slice(), &slice_ids].concat();
     let (pointers, indices, a0, b0) = unit_pencil(&mut joined, t, &y, &yp, &elec);
-    let mut states: Vec<(&str, Vec<f64>, Vec<f64>, Vec<f64>, Vec<(&str, Vec<f64>)>)> = Vec::new();
+    let mut states: Vec<PencilAt<'_>> = Vec::new();
     let mut events = json!({"state_residual_max_over_tolerance": by_owner(&f_state)});
     if post_event {
         events["post_event"] = json!(
@@ -478,6 +496,11 @@ fn s3_z6_at_a_saved_s3_state() {
         eliminate: &[],
         ..restriction
     };
+    let slice_alone = z6::Restriction {
+        keep: &slice_rows,
+        eliminate: &[],
+        ..restriction
+    };
     let mut verdicts = Vec::new();
     let mut pencils = Vec::new();
     for (name, a, b, ids, evs) in &states {
@@ -493,9 +516,10 @@ fn s3_z6_at_a_saved_s3_state() {
             }
             pencils.push(verdict);
         };
-        run("restricted+slice", &restriction, true);
-        run("coupled-nuclear-thermal+slice", &coupled_restriction, true);
-        run("restricted-held-walls+slice", &held_walls, false);
+        run("restricted", &restriction, true);
+        run("coupled-nuclear-thermal", &coupled_restriction, true);
+        run("electrical-slice", &slice_alone, true);
+        run("restricted-held-walls", &held_walls, false);
         run("network-alone", &network_alone, false);
     }
     let go = verdicts.iter().all(|g| *g) && !verdicts.is_empty();
@@ -515,8 +539,9 @@ fn s3_z6_at_a_saved_s3_state() {
             "jacobian": "the model's own: the joined block colored (exact directional derivatives, S2's pencil) and the slice's dense block; block diagonal, the exact linearization block triangular (joined -> slice through the admitted steam), so its eigenvalues are the blocks'",
             "held_between_frames": "the PZR controller (frame client, class S) and the Grid exchange (D1 + D2) act on held inputs at frames and exchanges"},
         "gate": {"source": "ld01-s1-gates spectrum (G14), S2's Z6 predicate", "fastModeHz": gate.fast_mode_hz, "lightDamping": gate.light_damping, "maxExcitationRatio": gate.max_excitation_ratio},
-        "restriction": {"restricted": {"coordinates": keep.len(), "slice": slice::N, "eliminated_algebraic_surfaces": surfaces.len()},
-            "coupled_nuclear_thermal": {"coordinates": coupled.len(), "slice": slice::N}},
+        "restriction": {"restricted": {"coordinates": keep.len(), "eliminated_algebraic_surfaces": surfaces.len(), "as": "S2-D8 (S2's Z6), on the S3 operator (PZR block kept with the rods)"},
+            "coupled_nuclear_thermal": {"coordinates": coupled.len(), "as": "S2-D8 (critic M3), on the S3 operator"},
+            "electrical_slice": {"coordinates": slice::N, "as": "the slice's own block of the model's Jacobian (block diagonal with the joined block: the unit's eigenvalues are the union, each block decomposed alone so its error bounds are its own)"}},
         "events": events,
         "pencils": pencils,
         "verdict": if go { "GO: every gated Z6 predicate holds at this state" } else { "NO-GO: a gated Z6 predicate failed; see pencils[].predicates" },
