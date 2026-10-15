@@ -3,7 +3,7 @@ use leitbild_operating_plant::{
     network::{Properties, stratified::restriction_flux},
     thermal::Scalar,
 };
-use leitbild_operating_water::{Branch, If97, point};
+use leitbild_operating_water::{Branch, Domain, If97, If97LowPressure, point, point_in};
 #[test]
 #[ignore = "G1-C09 domain probe"]
 fn g1_c09_domain_probe() {
@@ -11,8 +11,16 @@ fn g1_c09_domain_probe() {
         let pt = point(Branch::Liquid, p, 313.15);
         let sat = <If97 as Properties>::saturation(&If97, Scalar::new(p, 0.));
         println!("p={p:>9} liquid40C={:?} sat={:?}", pt.map(|w| (w.density_kg_m3, w.saturation_departure_k)), sat.as_ref().map(|s| s.temperature.value));
-        // The maintained boundary's declared floor is 0.1 MPa (operating-phase-properties.md).
+        // The operating owners keep the declared 0.1 MPa floor (operating-phase-properties.md).
         assert_eq!(pt.is_ok() && sat.is_ok(), p >= 1e5, "domain at {p} Pa");
+        // S4-D2 hook (owner F5): C09's declared low-pressure owners (FW.TANK
+        // pickups and casings below the eye, NPSHa, COND.P, the H1 shell and
+        // its drains) are admitted down to 611.657 Pa; liquid at 40 °C is
+        // subcooled above psat(40 °C) = 7.38 kPa.
+        let low = point_in(Domain::LowPressure, Branch::Liquid, p, 313.15);
+        let low_sat = <If97LowPressure as Properties>::saturation(&If97LowPressure, Scalar::new(p, 0.));
+        assert!(low_sat.is_ok(), "low-pressure saturation at {p} Pa");
+        assert_eq!(low.is_ok(), p > 7.385e3, "low-pressure liquid at 40 °C, {p} Pa: {low:?}");
     }
 }
 /// A saturated-liquid donor at its own endpoint: restriction_flux from

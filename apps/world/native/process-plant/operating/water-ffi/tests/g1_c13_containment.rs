@@ -26,9 +26,11 @@
 //! liquid temperatures, occupied volume), PRHR (C11), releases (C06),
 //! capture heat and ROOM.B (C12) are held port inputs.
 //!
-//! IF97 calls below the operating 0.1 MPa floor (`p_sat(T)`, the 25°C vapor
-//! anchor, the saturated-vapor viscosity) use the lane's marked hooks; they
-//! stand only with the owner's decision on the property domain.
+//! The containment declares a low-pressure domain (S4-D2, owner decision
+//! F5): its water states use the bridge's `Domain::LowPressure` (down to
+//! 611.657 Pa), and `p_sat(T)`, the 25°C vapor anchor and the
+//! saturated-vapor viscosity use C13's three saturation entries by
+//! temperature.
 // Test-only dense-matrix loops and fixed four-pool tables.
 #![allow(
     clippy::too_many_arguments,
@@ -36,7 +38,7 @@
     clippy::useless_vec
 )]
 use leitbild_operating_water::{
-    Branch, directional, point, saturated_vapor_enthalpy, saturated_vapor_viscosity,
+    Branch, Domain, directional_in, point_in, saturated_vapor_enthalpy, saturated_vapor_viscosity,
     saturation_pressure,
 };
 use serde_json::{Value, json};
@@ -151,7 +153,7 @@ fn c(v: f64) -> D {
 // ------------------------------------------------- the single property boundary
 /// IF97 liquid at (p, T): density, specific internal energy, enthalpy.
 fn liquid(p: D, t: D) -> Result<(D, D, D), String> {
-    let (q, d) = directional(Branch::Liquid, p.v, t.v, p.d, t.d)
+    let (q, d) = directional_in(Domain::LowPressure, Branch::Liquid, p.v, t.v, p.d, t.d)
         .map_err(|e| format!("IF97 liquid at {} Pa, {} K: {e}", p.v, t.v))?;
     Ok((
         D::new(q.density_kg_m3, d.density_kg_m3),
@@ -161,8 +163,15 @@ fn liquid(p: D, t: D) -> Result<(D, D, D), String> {
 }
 /// IF97 saturated-liquid endpoint at p: density, internal energy, enthalpy.
 fn saturated_liquid(p: D) -> Result<(D, D, D), String> {
-    let (q, d) = directional(Branch::SaturatedLiquid, p.v, 0., p.d, 0.)
-        .map_err(|e| format!("IF97 saturated liquid at {} Pa: {e}", p.v))?;
+    let (q, d) = directional_in(
+        Domain::LowPressure,
+        Branch::SaturatedLiquid,
+        p.v,
+        0.,
+        p.d,
+        0.,
+    )
+    .map_err(|e| format!("IF97 saturated liquid at {} Pa: {e}", p.v))?;
     Ok((
         D::new(q.density_kg_m3, d.density_kg_m3),
         D::new(q.internal_energy_j_kg, d.internal_energy_j_kg),
@@ -182,8 +191,15 @@ fn mu_vapor(t: D) -> Result<D, String> {
 }
 /// IF97 saturation temperature at p.
 fn tsat(p: D) -> Result<D, String> {
-    let (q, d) = directional(Branch::SaturatedLiquid, p.v, 0., p.d, 0.)
-        .map_err(|e| format!("IF97 Tsat({}): {e}", p.v))?;
+    let (q, d) = directional_in(
+        Domain::LowPressure,
+        Branch::SaturatedLiquid,
+        p.v,
+        0.,
+        p.d,
+        0.,
+    )
+    .map_err(|e| format!("IF97 Tsat({}): {e}", p.v))?;
     Ok(D::new(q.temperature_k, d.temperature_k))
 }
 
@@ -438,7 +454,7 @@ fn load() -> (Prm, Value) {
     );
     let tank_t = num(x, "tank.temperature_K");
     let (rho_tank, _, h_tank) = liquid(c(p_amb), c(tank_t)).unwrap();
-    let h_vsat_amb = point(Branch::SaturatedVapor, p_amb, 0.)
+    let h_vsat_amb = point_in(Domain::LowPressure, Branch::SaturatedVapor, p_amb, 0.)
         .unwrap()
         .enthalpy_j_kg;
     let s = &v["shell"];

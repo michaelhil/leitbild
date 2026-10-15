@@ -27,7 +27,12 @@ use leitbild_operating_plant::{
     network::{Properties, ports::G, properties as props, stratified},
     thermal::{Saturation, Scalar},
 };
-use leitbild_operating_water::If97;
+// S4-D2 (owner decision F5): C10 declares a low-pressure domain for its
+// vacuum stores (TG.LP2 0.05 MPa, LD01.COND 7.38 kPa); the prototype's one
+// property object is the bridge's low-pressure owner (its Gate-1 evidence ran
+// on a library with IF97's own floor). Per-store scoping is for the joined
+// owner.
+use leitbild_operating_water::If97LowPressure;
 use serde_json::{Value, json};
 
 #[path = "common/cpu.rs"]
@@ -596,7 +601,7 @@ fn prepare(packet: &Value) -> Prepared {
         let p = num(pr, "pressure_Pa");
         let h = match pr["kind"].as_str().unwrap() {
             "throttledSaturatedVapor" => {
-                sat(&If97, c(num(pr, "fromSaturationPressure_Pa")))
+                sat(&If97LowPressure, c(num(pr, "fromSaturationPressure_Pa")))
                     .unwrap()
                     .vapor
                     .enthalpy
@@ -604,12 +609,12 @@ fn prepare(packet: &Value) -> Prepared {
             }
             "pressureEnthalpy" => num(pr, "enthalpy_J_kg"),
             "pressureTemperature" => {
-                Properties::forward(&If97, true, p, num(pr, "temperature_K"))
+                Properties::forward(&If97LowPressure, true, p, num(pr, "temperature_K"))
                     .unwrap()
                     .enthalpy_j_kg
             }
             "saturatedLiquidVolume" => {
-                let s = sat(&If97, c(p)).unwrap();
+                let s = sat(&If97LowPressure, c(p)).unwrap();
                 let vl = num(pr, "liquid_m3");
                 let (ml, mg) = (
                     s.liquid.density.value * vl,
@@ -621,18 +626,21 @@ fn prepare(packet: &Value) -> Prepared {
         };
         ph[i] = (p, h);
     }
-    let t_cond_sat = sat(&If97, c(ph[COND].0)).unwrap().temperature.value;
+    let t_cond_sat = sat(&If97LowPressure, c(ph[COND].0))
+        .unwrap()
+        .temperature
+        .value;
     let mut y = vec![0.; N];
     let mut temps = [0.; NS];
     for i in 0..NS {
         let (p, h) = ph[i];
-        let st = closure(&If97, c(p), c(h)).unwrap();
+        let st = closure(&If97LowPressure, c(p), c(h)).unwrap();
         let pr = &packet["stores"][i]["prepared"];
         // M and U from the preparation's own route (phase split or forward p-T), not from
         // the (p, h) closure the rows use, so the zero-time rows test that closure.
         let (m, mut e) = match pr["kind"].as_str().unwrap() {
             "saturatedLiquidVolume" => {
-                let s = sat(&If97, c(p)).unwrap();
+                let s = sat(&If97LowPressure, c(p)).unwrap();
                 let vl = num(pr, "liquid_m3");
                 let (rf, rg) = (s.liquid.density.value, s.vapor.density.value);
                 let (ml, mg) = (rf * vl, rg * (vol[i] - vl));
@@ -643,7 +651,8 @@ fn prepare(packet: &Value) -> Prepared {
                 )
             }
             "pressureTemperature" => {
-                let w = Properties::forward(&If97, true, p, num(pr, "temperature_K")).unwrap();
+                let w = Properties::forward(&If97LowPressure, true, p, num(pr, "temperature_K"))
+                    .unwrap();
                 let m = vol[i] * w.density_kg_m3;
                 (m, m * w.internal_energy_j_kg)
             }
@@ -667,7 +676,7 @@ fn prepare(packet: &Value) -> Prepared {
     // each side's conductance from the reference reheat duty.
     let rh = &packet["reheater"];
     let rz = &rh["sizing"];
-    let hg_sep = sat(&If97, c(num(&rz["processInlet"], "pressure_Pa")))
+    let hg_sep = sat(&If97LowPressure, c(num(&rz["processInlet"], "pressure_Pa")))
         .unwrap()
         .vapor
         .enthalpy
@@ -707,7 +716,8 @@ fn prepare(packet: &Value) -> Prepared {
         );
         y[SOLIDS + 5 + k] = cond_walls[k].0 * (num(w, "prepared_K") - 273.15);
         let cl = &cd["cells"][k];
-        let w = Properties::forward(&If97, false, p_cell[k], num(cl, "prepared_K")).unwrap();
+        let w =
+            Properties::forward(&If97LowPressure, false, p_cell[k], num(cl, "prepared_K")).unwrap();
         cells[k] = num(cl, "volume_m3") * w.density_kg_m3;
         y[CELLS + k] = cells[k] * w.internal_energy_j_kg;
     }
@@ -737,11 +747,14 @@ fn prepare(packet: &Value) -> Prepared {
         }
         let p = num(si, "pressure_Pa");
         match si["kind"].as_str().unwrap() {
-            "saturatedVapor" => (p, sat(&If97, c(p)).unwrap().vapor.enthalpy.value),
-            "saturatedLiquid" => (p, sat(&If97, c(p)).unwrap().liquid.enthalpy.value),
+            "saturatedVapor" => (p, sat(&If97LowPressure, c(p)).unwrap().vapor.enthalpy.value),
+            "saturatedLiquid" => (
+                p,
+                sat(&If97LowPressure, c(p)).unwrap().liquid.enthalpy.value,
+            ),
             "throttledSaturatedVapor" => (
                 p,
-                sat(&If97, c(num(si, "fromSaturationPressure_Pa")))
+                sat(&If97LowPressure, c(num(si, "fromSaturationPressure_Pa")))
                     .unwrap()
                     .vapor
                     .enthalpy
@@ -768,7 +781,7 @@ fn prepare(packet: &Value) -> Prepared {
             "nozzle" => {
                 let (p0, h0) = inlet(b, from_index);
                 let pb = num(b, "sizingOutlet_Pa");
-                let g = flux(&If97, c(p0), c(h0), c(pb)).unwrap().value;
+                let g = flux(&If97LowPressure, c(p0), c(h0), c(pb)).unwrap().value;
                 let area = match b["areaOf"].as_str() {
                     Some(other) => *areas.get(other).expect("areaOf precedes"),
                     None => num(b, "sizingFlow_kg_s") / (num(b, "sizingOpening") * g),
@@ -788,7 +801,7 @@ fn prepare(packet: &Value) -> Prepared {
                     _ => unreachable!(),
                 };
                 let pb = ph[to_index].0;
-                let g = flux(&If97, c(p0), c(h0), c(pb)).unwrap().value;
+                let g = flux(&If97LowPressure, c(p0), c(h0), c(pb)).unwrap().value;
                 let area = num(b, "sizingFlow_kg_s") / g;
                 (
                     Law::Interval {
@@ -805,9 +818,9 @@ fn prepare(packet: &Value) -> Prepared {
                 let sz = &b["sizing"];
                 let p0 = num(sz, "inlet_Pa");
                 let g = flux(
-                    &If97,
+                    &If97LowPressure,
                     c(p0),
-                    sat(&If97, c(p0)).unwrap().vapor.enthalpy,
+                    sat(&If97LowPressure, c(p0)).unwrap().vapor.enthalpy,
                     c(num(sz, "outlet_Pa")),
                 )
                 .unwrap()
@@ -836,7 +849,7 @@ fn prepare(packet: &Value) -> Prepared {
     let ext = &held["extraction_kg_s"];
     let rec = &packet["receivers"];
     let p_sg = num(&packet["prepared"], "sg_Pa");
-    let h1 = sat(&If97, c(num(rec, "h1Shell_Pa")))
+    let h1 = sat(&If97LowPressure, c(num(rec, "h1Shell_Pa")))
         .unwrap()
         .liquid
         .enthalpy
@@ -902,7 +915,7 @@ fn values(v: &[Scalar]) -> Vec<f64> {
 /// Rates f(y): the differential rows at y' = 0, negated; algebraic rows as they are.
 fn rates(m: &Model, y: &[f64], ports: &Ports) -> Vec<f64> {
     let e = m
-        .eval(&If97, &scalars(y, None), &vec![c(0.); N], ports)
+        .eval(&If97LowPressure, &scalars(y, None), &vec![c(0.); N], ports)
         .unwrap();
     e.rows.iter().map(|r| -r.value).collect()
 }
@@ -941,7 +954,9 @@ fn jacobians(m: &Model, y: &[f64], yp: &[f64], ports: &Ports) -> (Vec<Vec<f64>>,
     let mut a = vec![vec![0.; N]; N];
     let mut d = vec![vec![0.; N]; N];
     for j in 0..N {
-        let e = m.eval(&If97, &scalars(y, Some(j)), &ypc, ports).unwrap();
+        let e = m
+            .eval(&If97LowPressure, &scalars(y, Some(j)), &ypc, ports)
+            .unwrap();
         for (row, r) in a.iter_mut().zip(&e.rows) {
             row[j] = r.direction;
         }
@@ -957,12 +972,12 @@ fn jacobians(m: &Model, y: &[f64], yp: &[f64], ports: &Ports) -> (Vec<Vec<f64>>,
         up[j] += h;
         dn[j] -= h;
         let fu = values(
-            &m.eval(&If97, &scalars(&up, None), &ypc, ports)
+            &m.eval(&If97LowPressure, &scalars(&up, None), &ypc, ports)
                 .unwrap()
                 .rows,
         );
         let fd = values(
-            &m.eval(&If97, &scalars(&dn, None), &ypc, ports)
+            &m.eval(&If97LowPressure, &scalars(&dn, None), &ypc, ports)
                 .unwrap()
                 .rows,
         );
@@ -1043,8 +1058,9 @@ fn name(k: usize) -> String {
 fn g1_c10_zero_time_block() {
     let path = std::env::var("LD01_G1_C10_PACKET").expect("LD01_G1_C10_PACKET");
     let packet: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    // The vacuum stores (LP2 0.05 MPa, COND 7.38 kPa) need water states below 0.1 MPa.
-    if let Err(e) = sat(&If97, c(5e4)) {
+    // The vacuum stores (LP2 0.05 MPa, COND 7.38 kPa) need water states below
+    // 0.1 MPa: admitted by the declared low-pressure domain (S4-D2).
+    if let Err(e) = sat(&If97LowPressure, c(5e4)) {
         if let Ok(out) = std::env::var("LD01_G1_C10_RECEIPT") {
             let r = json!({"scope": "G1-C10 prototype on the maintained boundary", "blocker": "B1",
                 "refusal": e, "packetSha256": packet["provenance"]["packetSha256"]});
@@ -1067,7 +1083,9 @@ fn g1_c10_zero_time_block() {
         .map(|k| if differential(k) { f[k] } else { 0. })
         .collect();
     let ypc: Vec<Scalar> = yp.iter().map(|v| c(*v)).collect();
-    let e = m.eval(&If97, &scalars(y, None), &ypc, ports).unwrap();
+    let e = m
+        .eval(&If97LowPressure, &scalars(y, None), &ypc, ports)
+        .unwrap();
     let scaled: Vec<f64> = (0..N)
         .map(|k| e.rows[k].value.abs() / row_scale(k, y, flow))
         .collect();
@@ -1089,10 +1107,16 @@ fn g1_c10_zero_time_block() {
     let zero = vec![c(0.); N];
     // A choked drain does not see its receiver: its declared sign is zero.
     let choked = |donor: f64, receiver: f64| {
-        let s = sat(&If97, c(donor)).unwrap();
-        stratified::restriction_flux(&If97, false, c(donor), s.liquid.enthalpy, c(receiver))
-            .unwrap()
-            .choked
+        let s = sat(&If97LowPressure, c(donor)).unwrap();
+        stratified::restriction_flux(
+            &If97LowPressure,
+            false,
+            c(donor),
+            s.liquid.enthalpy,
+            c(receiver),
+        )
+        .unwrap()
+        .choked
     };
     let sep_choked = choked(y[6 * SEP + P], ports.p_shell[0].value);
     let rh_choked = choked(y[6 * RHS + P], ports.p_shell[1].value);
@@ -1137,18 +1161,33 @@ fn g1_c10_zero_time_block() {
     let mut port_worst: f64 = 0.;
     for (k, rows) in &declared {
         let ev = m
-            .eval(&If97, &scalars(y, None), &zero, &ports.seeded(*k, 1.))
+            .eval(
+                &If97LowPressure,
+                &scalars(y, None),
+                &zero,
+                &ports.seeded(*k, 1.),
+            )
             .unwrap();
         let dv = 1e-6 * ports.value(*k).abs().max(1.);
         let fu = values(
-            &m.eval(&If97, &scalars(y, None), &zero, &ports.shifted(*k, dv))
-                .unwrap()
-                .rows,
+            &m.eval(
+                &If97LowPressure,
+                &scalars(y, None),
+                &zero,
+                &ports.shifted(*k, dv),
+            )
+            .unwrap()
+            .rows,
         );
         let fd = values(
-            &m.eval(&If97, &scalars(y, None), &zero, &ports.shifted(*k, -dv))
-                .unwrap()
-                .rows,
+            &m.eval(
+                &If97LowPressure,
+                &scalars(y, None),
+                &zero,
+                &ports.shifted(*k, -dv),
+            )
+            .unwrap()
+            .rows,
         );
         for (row, sign) in rows {
             let analytic = -ev.rows[*row].direction;
@@ -1180,7 +1219,12 @@ fn g1_c10_zero_time_block() {
     // Shaft speed: the torque output falls with speed (C15's receiving row);
     // each receiving store's energy rate moves with sign(2 R omega - v) of its interval.
     let ev = m
-        .eval(&If97, &scalars(y, None), &zero, &ports.seeded(13, 1.))
+        .eval(
+            &If97LowPressure,
+            &scalars(y, None),
+            &zero,
+            &ports.seeded(13, 1.),
+        )
         .unwrap();
     assert!(
         ev.torque.direction < 0.,
@@ -1265,16 +1309,19 @@ fn g1_c10_zero_time_block() {
         (cpu::thread_cpu_s() - t0) / reps as f64
     };
     let residual_s = timed(&|| {
-        std::hint::black_box(m.eval(&If97, &scalars(y, None), &ypc, ports).unwrap());
+        std::hint::black_box(
+            m.eval(&If97LowPressure, &scalars(y, None), &ypc, ports)
+                .unwrap(),
+        );
     });
     let residual_shared_s = timed(&|| {
-        let shared = props::Shared::new(&If97);
+        let shared = props::Shared::new(&If97LowPressure);
         std::hint::black_box(m.eval(&shared, &scalars(y, None), &ypc, ports).unwrap());
     });
     let mut mref = prepare(&packet).model;
     mref.reference_drops = true;
     let residual_reference_drops_s = timed(&|| {
-        let shared = props::Shared::new(&If97);
+        let shared = props::Shared::new(&If97LowPressure);
         std::hint::black_box(mref.eval(&shared, &scalars(y, None), &ypc, ports).unwrap());
     });
     let jacobian = |shared: bool| {
@@ -1287,10 +1334,10 @@ fn g1_c10_zero_time_block() {
                     .map(|(j, v)| Scalar::new(*v, if colour[j] == col { 1. } else { 0. }))
                     .collect();
                 if shared {
-                    let cache = props::Shared::new(&If97);
+                    let cache = props::Shared::new(&If97LowPressure);
                     std::hint::black_box(m.eval(&cache, &seeded, &ypc, ports).unwrap());
                 } else {
-                    std::hint::black_box(m.eval(&If97, &seeded, &ypc, ports).unwrap());
+                    std::hint::black_box(m.eval(&If97LowPressure, &seeded, &ypc, ports).unwrap());
                 }
             }
         }
@@ -1305,7 +1352,7 @@ fn g1_c10_zero_time_block() {
         let mut ms = prepare(&packet).model;
         ms.drop_step = step;
         let r = timed(&|| {
-            let shared = props::Shared::new(&If97);
+            let shared = props::Shared::new(&If97LowPressure);
             std::hint::black_box(ms.eval(&shared, &scalars(y, None), &ypc, ports).unwrap());
         });
         let t0 = cpu::thread_cpu_s();
@@ -1316,13 +1363,13 @@ fn g1_c10_zero_time_block() {
                     .enumerate()
                     .map(|(j, v)| Scalar::new(*v, if colour[j] == col { 1. } else { 0. }))
                     .collect();
-                let cache = props::Shared::new(&If97);
+                let cache = props::Shared::new(&If97LowPressure);
                 std::hint::black_box(ms.eval(&cache, &seeded, &ypc, ports).unwrap());
             }
         }
         let jac = (cpu::thread_cpu_s() - t0) / 5.;
         let work = ms
-            .eval(&If97, &scalars(y, None), &ypc, ports)
+            .eval(&If97LowPressure, &scalars(y, None), &ypc, ports)
             .unwrap()
             .aero_work
             .value;
@@ -1331,15 +1378,18 @@ fn g1_c10_zero_time_block() {
     }
     // D2 check of the wiki's statement: the old 5.98 MPa header against the 6.36314 MPa SG.
     let ms = m.branches.iter().find(|b| b.id == "MS.ISO.A").unwrap();
-    let hg_sg = sat(&If97, ports.p_sg[0]).unwrap().vapor.enthalpy;
-    let old_ratio = ms.area * flux(&If97, ports.p_sg[0], hg_sg, c(5.98e6)).unwrap().value
+    let hg_sg = sat(&If97LowPressure, ports.p_sg[0]).unwrap().vapor.enthalpy;
+    let old_ratio = ms.area
+        * flux(&If97LowPressure, ports.p_sg[0], hg_sg, c(5.98e6))
+            .unwrap()
+            .value
         / pr.model.flow_scale
         * 2.;
     // Reversible-drop step diagnostic: the five interval drops at the prepared state
     // with coarser RK4 steps in ln p, against the 0.02 the restriction law uses.
     let mut drop_steps = Vec::new();
     for step in [0.02, 0.05, 0.1, 0.2] {
-        let shared = props::Shared::new(&If97);
+        let shared = props::Shared::new(&If97LowPressure);
         let t0 = cpu::thread_cpu_s();
         let mut drops = Vec::new();
         for b in m
