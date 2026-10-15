@@ -245,9 +245,14 @@ impl<P: Properties> Network<P> {
             })?;
             self.charts[l.face][l.phase] = Some(c);
             let flux = [c.mass_flow_kg_s, c.enthalpy_flow_w, c.boron_flow_kg_s];
+            // S3-D32: vapor at a liquid-mode end is that end's liquid.
+            let (pf, pt) = (
+                self.receipt_phase(f.from, l.phase),
+                self.receipt_phase(f.to, l.phase),
+            );
             for (k, q) in flux.into_iter().enumerate() {
-                self.receipts[f.from][l.phase][k] = self.receipts[f.from][l.phase][k] - q;
-                self.receipts[f.to][l.phase][k] = self.receipts[f.to][l.phase][k] + q;
+                self.receipts[f.from][pf][k] = self.receipts[f.from][pf][k] - q;
+                self.receipts[f.to][pt][k] = self.receipts[f.to][pt][k] + q;
             }
         }
         if let Some(coupling) = coupling.as_deref_mut() {

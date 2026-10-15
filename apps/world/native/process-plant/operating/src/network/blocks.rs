@@ -1411,9 +1411,14 @@ impl<'a, P: Properties> Replay<'a, P> {
                 chart.boron_flow_kg_s,
             ];
             if flux.iter().any(|q| moved(*q)) {
+                // S3-D32: vapor at a liquid-mode end is that end's liquid.
+                let (pf, pt) = (
+                    net.receipt_phase(f.from, l.phase),
+                    net.receipt_phase(f.to, l.phase),
+                );
                 for (k, q) in flux.into_iter().enumerate() {
-                    pass.receipts[f.from][l.phase][k].direction -= q.direction;
-                    pass.receipts[f.to][l.phase][k].direction += q.direction;
+                    pass.receipts[f.from][pf][k].direction -= q.direction;
+                    pass.receipts[f.to][pt][k].direction += q.direction;
                 }
                 w.receipts.extend([f.from, f.to]);
                 if l.phase == 0 {
@@ -1687,9 +1692,14 @@ impl<P: Properties> Blocks<'_, P> {
                 chart.enthalpy_flow_w,
                 chart.boron_flow_kg_s,
             ];
+            // S3-D32: vapor at a liquid-mode end is that end's liquid.
+            let (pf, pt) = (
+                net.receipt_phase(f.from, l.phase),
+                net.receipt_phase(f.to, l.phase),
+            );
             for (k, q) in flux.into_iter().enumerate() {
-                pass.receipts[f.from][l.phase][k] = pass.receipts[f.from][l.phase][k] - q;
-                pass.receipts[f.to][l.phase][k] = pass.receipts[f.to][l.phase][k] + q;
+                pass.receipts[f.from][pf][k] = pass.receipts[f.from][pf][k] - q;
+                pass.receipts[f.to][pt][k] = pass.receipts[f.to][pt][k] + q;
             }
         }
         if coupled {

@@ -87,6 +87,24 @@ impl<P: Properties> Network<P> {
         }
         presence
     }
+    /// S3-D32 (lead, 15 Oct): the phase whose receipts a phase-`k` face
+    /// flux enters at `cell`. Vapor at a liquid-mode regular cell is that
+    /// cell's liquid: the cell keeps no vapor inventory and its totals
+    /// `(M, U)` take the vapor's mass and enthalpy, so the vapor has
+    /// condensed (instantaneous equilibrium condensation, exact: the flux's
+    /// mass, enthalpy and boron leave one end and enter the other). If that
+    /// liquid reaches saturation, the cell is born into the equilibrium
+    /// mode by its existing root. Every other end keeps the flux's phase
+    /// (equilibrium cells hold both; the stratified cell's ports have
+    /// their own law). With no vapor flux anywhere (S1, S2) nothing
+    /// changes: the redirected flux is exactly zero.
+    pub(super) fn receipt_phase(&self, cell: usize, k: usize) -> usize {
+        if k == 1 && cell < self.modes.len() && self.modes[cell] == CellMode::Liquid {
+            0
+        } else {
+            k
+        }
+    }
     /// Whether any regular cell is in the equilibrium mode.
     pub fn has_equilibrium_cells(&self) -> bool {
         self.modes.contains(&CellMode::Equilibrium)

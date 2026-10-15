@@ -149,6 +149,11 @@ pub enum Cause {
     /// Locked at rest (`Q = 0`): the drive would draw from an empty end,
     /// or there is no drive and an end is empty. Nothing to pay.
     AtRest,
+    /// Locked in the phase-mode owner's exhaustion transaction: the path's
+    /// phase inertia lived only in cells that hold no phase k after the
+    /// exhaustion, so its retained impulse has no inertia left (DR
+    /// S3-EXHAUST; decision 0014's contact at the donor's exhaustion).
+    Exhaustion,
 }
 
 /// One path's view at a transaction: its ends' holding and its last value
@@ -307,6 +312,11 @@ pub struct Change {
     /// A contact's payment: the receiving cell, the coordinate it entered
     /// and the energy in J.
     pub payment: Option<(usize, usize, f64)>,
+    /// An exhaustion lock's model kinetic energy `½ Π Q` at the located
+    /// instant, reported and not paid: the path's inertia vanished with its
+    /// donor, so `½ Π²/I` is unbounded (DR S3-EXHAUST; see
+    /// [`Network::exhaustion_with_paths`]).
+    pub unpaid_kinetic_j: Option<f64>,
 }
 
 /// The outcome of one L1 transaction.
@@ -380,6 +390,105 @@ impl<P: Properties> Network<P> {
                 "no L1 payment coordinate for phase {k} of cell {cell}"
             )))
         }
+    }
+    /// The phase-mode owner's exhaustion of `cells` with the vapor paths it
+    /// empties, in one exact transaction at a located instant (lead DR
+    /// S3-EXHAUST). The caller evaluated the network's value state at this
+    /// instant, before the exhaustion. Every free vapor path whose inertia
+    /// supports hold no vapor once `cells` are exhausted (each support is one
+    /// of `cells` or a regular cell with no vapor stock) and that carries
+    /// impulse or flow in that evaluation is locked with `Π = 0`
+    /// (`Locked(holding after the exhaustion)`, so a re-birth releases it
+    /// through [`decide`]); then each cell is exhausted
+    /// ([`Network::exhaustion`]): its vapor slots, of root size, are zeroed
+    /// and its totals stay. No mass, energy or boron moves.
+    ///
+    /// **The path's kinetic energy is reported, not paid (PROPOSED, lead to
+    /// confirm).** Decision 0014 pays a contact's `½ Π Q` once. Here the
+    /// path's inertia `I` lives only in the exhausting donor, so `I ∝ M_g` is
+    /// of root size at the located instant while `Π` stays finite (every
+    /// force on the phase scales with its fraction and no advective momentum
+    /// outflux is composed), and `½ Π²/I` is unbounded and sign-indefinite:
+    /// in C2 it was -2.8e12 J. Paying it would create that energy. Without
+    /// L1 the cells are only exhausted.
+    pub fn exhaustion_with_paths(
+        &mut self,
+        y: &mut [f64],
+        cells: &[usize],
+    ) -> Result<(Vec<serde_json::Value>, Transaction), Failure> {
+        let mut out = Transaction::default();
+        let mut vanishing = Vec::new();
+        if let Some(locks) = &self.unilateral {
+            for li in 0..self.face_layout.len() {
+                let l = self.face_layout[li];
+                if l.phase != 1 || locks.paths[li] != Lock::Free {
+                    continue;
+                }
+                let face = &self.faces[l.face];
+                let empties = !face.supports.is_empty()
+                    && face.supports.iter().any(|s| cells.contains(&s.region))
+                    && face
+                        .supports
+                        .iter()
+                        .all(|s| cells.contains(&s.region) || self.end_mass(y, s.region, 1) == 0.);
+                if !empties {
+                    continue;
+                }
+                let chart = self.charts[l.face][1].ok_or_else(|| {
+                    Failure::Fatal(
+                        "an exhaustion with L1 needs the value evaluation's vapor charts".into(),
+                    )
+                })?;
+                let impulse = y[l.index] * self.scales[l.index];
+                let (q, kinetic) = (chart.volume_flow_m3_s.value, chart.kinetic_j.value);
+                if impulse == 0. && q == 0. {
+                    continue;
+                }
+                if ![impulse, q, kinetic].iter().all(|v| v.is_finite()) {
+                    return Err(Failure::Fatal(format!(
+                        "exhaustion contact on a nonfinite vapor path view (face {}, Π {impulse}, Q {q})",
+                        l.face
+                    )));
+                }
+                vanishing.push((li, impulse, q, kinetic, self.face_drive[l.face][1].value));
+            }
+        }
+        let mut events = Vec::new();
+        for c in cells {
+            events.push(self.exhaustion(*c, y)?);
+        }
+        if vanishing.is_empty() {
+            return Ok((events, out));
+        }
+        let presence = self.declared_presence(y);
+        let mut locks = self
+            .unilateral
+            .clone()
+            .ok_or_else(|| Failure::Fatal("L1 is not active".into()))?;
+        for (li, impulse, q, kinetic, drive) in vanishing {
+            let l = self.face_layout[li];
+            let (from, to) = self.endpoints[l.face];
+            let holding = Holding::of(presence.cells[from][1], presence.cells[to][1]);
+            let before = locks.paths[li];
+            let after = Lock::Locked(holding);
+            y[l.index] = 0.;
+            out.changes.push(Change {
+                path: li,
+                face: l.face,
+                phase: l.phase,
+                before,
+                after,
+                cause: Cause::Exhaustion,
+                drive_pa: drive,
+                impulse_pa_s: impulse,
+                volume_flow_m3_s: q,
+                payment: None,
+                unpaid_kinetic_j: Some(kinetic),
+            });
+            locks.paths[li] = after;
+        }
+        self.unilateral = Some(locks);
+        Ok((events, out))
     }
     /// Phase-`k` mass of one end in a coordinate view the network evaluated:
     /// a regular cell's stock, the stratified cell's surge-port layers
@@ -529,6 +638,7 @@ impl<P: Properties> Network<P> {
                 impulse_pa_s: impulse,
                 volume_flow_m3_s: view.volume_flow_m3_s,
                 payment,
+                unpaid_kinetic_j: None,
             });
             locks.paths[li] = decision.lock;
         }
