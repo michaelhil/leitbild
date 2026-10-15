@@ -59,19 +59,28 @@ pub struct Parameters {
     pub converter_efficiency: f64,
 }
 
-/// Held inputs of one integration segment.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// Held inputs of one integration segment (S3-D19: copyable exactly, real
+/// numbers as IEEE bits).
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Inputs {
     /// Breaker contact closed AND the stiff boundary joined.
     pub joined: bool,
+    #[serde(with = "crate::joined::block::snapshot_bits")]
     pub v_line: f64,
+    #[serde(with = "crate::joined::block::snapshot_bits")]
     pub f_grid_hz: f64,
+    #[serde(with = "crate::joined::block::snapshot_bits")]
     pub admitted_kg_s: f64,
     /// Field converter demand (V) times its delivered AC fraction; zero when
     /// the converter's motive supply is lost (field current is NOT zeroed).
+    #[serde(with = "crate::joined::block::snapshot_bits")]
     pub field_v: f64,
+    #[serde(with = "crate::joined::block::snapshot_bits")]
     pub room_k: f64,
+    #[serde(with = "crate::joined::block::snapshot_bits")]
     pub unit_draw_w: f64,
+    #[serde(with = "crate::joined::block::snapshot_bits")]
     pub reserve_draw_w: f64,
 }
 

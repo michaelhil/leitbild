@@ -94,6 +94,8 @@ pub struct BlockJacobian {
     rotor_section: Vec<usize>,
     /// The stratified cell's port read by the port face.
     port: usize,
+    /// IC-CTRL (S3 spray path): the spray port and its virtual cell.
+    spray_port: Option<(usize, usize)>,
 }
 impl BlockJacobian {
     pub fn columns(&self) -> usize {
@@ -471,7 +473,7 @@ impl<P: Properties> Blocks<'_, P> {
         }
         // L1 (decision 0014): as the residual, a locked path
         // transports nothing.
-        let path = if net.unilateral_locked(li) {
+        let path = if net.path_locked(li) {
             super::unilateral::held_path(inertance)
         } else if inertance.value == 0. && pi.value == 0. {
             flow::PathKinematics {
@@ -649,11 +651,32 @@ impl<P: Properties> Blocks<'_, P> {
         }
         // L1 (decision 0014): as the residual, a locked path's
         // row is `Pi/s`; it reads no onset.
-        if net.unilateral_locked(li) {
+        if net.path_locked(li) {
             return Ok((self.get(seed, l.index) / s(net.scales[l.index]), false));
         }
+        // IC-CTRL (S3 spray path, S3-D25 (1)): the open valve's liquid path
+        // is the restriction relation, as the residual's.
+        let restriction = |chart: flow::Chart| -> Result<Option<Scalar>, Failure> {
+            match net.spray {
+                Some(sp) if net.spray_algebraic(li) => {
+                    let rho = pass.cells[sp.region].phase[0]
+                        .map(|p| p.density)
+                        .ok_or_else(|| recoverable("spray line without liquid"))?;
+                    net.spray_restriction_row(
+                        li,
+                        chart.volume_flow_m3_s,
+                        force + chart.pressure_gravity_pa,
+                        rho,
+                    )
+                }
+                _ => Ok(None),
+            }
+        };
         let rate = self.rate(seed, l.index);
         if reuse_chart {
+            if let Some(row) = restriction(current)? {
+                return Ok((row, false));
+            }
             let row = flow::momentum_residual(rate, current, force).map_err(recoverable)?
                 / s(net.scales[l.index]);
             return Ok((row, false));
@@ -677,6 +700,9 @@ impl<P: Properties> Blocks<'_, P> {
         let cold = path.inertance_kg_m4.value == 0.;
         let chart = flow::chart_from_path(&net.faces[l.face], &pass.cells, l.phase, pi, path)
             .map_err(recoverable)?;
+        if let Some(row) = restriction(chart)? {
+            return Ok((row, cold));
+        }
         let row = flow::momentum_residual(rate, chart, force).map_err(recoverable)?
             / s(net.scales[l.index]);
         Ok((row, cold))
@@ -796,7 +822,10 @@ impl<P: Properties> Blocks<'_, P> {
         let net = self.net;
         let x = self.pzr_coordinates(|i| self.get(seed, i))?;
         let rate = self.pzr_coordinates(|i| self.rate(seed, i))?;
-        let receipts = net.pzr_receipts(pass.receipts[net.pzr.cell])?;
+        let receipts = net.pzr_receipts(
+            pass.receipts[net.pzr.cell],
+            net.spray.map(|s| pass.receipts[s.port_cell]),
+        )?;
         let scales: [f64; PZR_COORDINATES] = net.scales[net.pzr.coordinates()]
             .try_into()
             .map_err(|_| fatal("PZR scale layout"))?;
@@ -967,6 +996,7 @@ impl<P: Properties> Network<P> {
             gas_layouts,
             rotor_section,
             port,
+            spray_port: self.spray.map(|s| (s.port, s.port_cell)),
         })
     }
 
@@ -1311,6 +1341,10 @@ impl<'a, P: Properties> Replay<'a, P> {
                 pass.column = column;
                 pass.cells[pzr] = view;
                 w.charts.extend_from_slice(&structure.reading[pzr]);
+                if let Some((port, cell)) = structure.spray_port {
+                    pass.cells[cell] = net.stratified.port_view(&column, port)?;
+                    w.charts.extend_from_slice(&structure.reading[cell]);
+                }
                 pzr_seeded = true;
             }
             Some(Owner::Impulse(li)) => {
@@ -1493,7 +1527,14 @@ impl<'a, P: Properties> Replay<'a, P> {
             }
         }
         let external_boundary = external.and_then(|e| e.pzr_boundary.as_ref());
-        if pzr_seeded || w.receipts.binary_search(&pzr).is_ok() || external_boundary.is_some() {
+        let spray_received = structure
+            .spray_port
+            .is_some_and(|(_, cell)| w.receipts.binary_search(&cell).is_ok());
+        if pzr_seeded
+            || w.receipts.binary_search(&pzr).is_ok()
+            || spray_received
+            || external_boundary.is_some()
+        {
             // The boundary reads the cell's column and the owner's own
             // coordinates only: a moved column takes the coupled owner's
             // boundary on it, an owner column brings its own, and anything
@@ -1535,6 +1576,9 @@ impl<'a, P: Properties> Replay<'a, P> {
             Some(Owner::Pzr) => {
                 pass.column = base.column;
                 pass.cells[pzr] = base.cells[pzr];
+                if let Some((_, cell)) = structure.spray_port {
+                    pass.cells[cell] = base.cells[cell];
+                }
             }
             _ => {}
         }
@@ -1598,6 +1642,10 @@ impl<P: Properties> Blocks<'_, P> {
         }
         let (column, view) = self.pzr(None, structure.port)?;
         cells.push(view);
+        // IC-CTRL (S3 spray path): the spray port's view, its virtual cell.
+        if let Some((port, _)) = structure.spray_port {
+            cells.push(net.stratified.port_view(&column, port)?);
+        }
         let mut phase_mass: [Vec<Scalar>; 2] = std::array::from_fn(|k| {
             (0..n)
                 .map(|node| self.get(None, net.cell_layout[node].mass[k]))

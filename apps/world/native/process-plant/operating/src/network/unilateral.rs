@@ -36,7 +36,7 @@ use crate::{local_flow as flow, thermal::Scalar};
 use serde::Serialize;
 
 /// Which ends of a phase path hold that phase's mass.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub enum Holding {
     Neither,
     From,
@@ -86,7 +86,7 @@ impl End {
 }
 
 /// The L1 state of one phase path.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub enum Lock {
     /// The retained impulse is the path's differential momentum.
     Free,
@@ -99,7 +99,7 @@ pub enum Lock {
 
 /// The L1 state of every phase path, indexed as the network's face layout
 /// (`2 face + phase`): copyable discrete Run state.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub struct Locks {
     pub paths: Vec<Lock>,
 }
@@ -350,6 +350,12 @@ impl<P: Properties> Network<P> {
             .collect();
         let port = self.cells[self.pzr.cell].phase;
         cells.push([port[0].is_some(), port[1].is_some()]);
+        // IC-CTRL (S3 spray path): the spray port's virtual cell holds the
+        // vapor region's drops and vapor as its port view shows them.
+        if let Some(sp) = self.spray {
+            let view = self.cells[sp.port_cell].phase;
+            cells.push([view[0].is_some(), view[1].is_some()]);
+        }
         Presence { cells }
     }
     /// The energy coordinate a contact payment of phase `k` into `cell`
@@ -361,6 +367,9 @@ impl<P: Properties> Network<P> {
             Ok(self.cell_layout[cell].energy[k])
         } else if cell == self.pzr.cell && k == 0 {
             Ok(self.pzr.base + PZR_ENERGY[1])
+        } else if k == 1 && self.spray.is_some_and(|s| s.port_cell == cell) {
+            // The spray port's vapor is the vapor zone's.
+            Ok(self.pzr.base + super::stratified::VAPOR_ENERGY)
         } else {
             Err(Failure::Fatal(format!(
                 "no L1 payment coordinate for phase {k} of cell {cell}"
@@ -373,6 +382,15 @@ impl<P: Properties> Network<P> {
     pub(super) fn end_mass(&self, y: &[f64], cell: usize, k: usize) -> f64 {
         if cell < self.pzr.cell {
             let i = self.cell_layout[cell].mass[k];
+            y[i] * self.scales[i]
+        } else if self.spray.is_some_and(|s| s.port_cell == cell) {
+            // The spray port: the drop stock for liquid, the vapor zone.
+            let o = if k == 0 {
+                super::stratified::DROP_MASS
+            } else {
+                super::stratified::VAPOR_MASS
+            };
+            let i = self.pzr.base + o;
             y[i] * self.scales[i]
         } else if k == 0 {
             [PZR_MASS[1], PZR_MASS[2]]

@@ -37,11 +37,12 @@ const wiki=process.env.LD01_WIKI_ROOT
 test.skipIf(!wiki)('actual secondary and probe sections compile once; corrupted owners fail',async()=>{
   const section=await prepareOperatingSecondary(wiki!),probe=await prepareSgProbe(wiki!,{A:9167.294305,B:9167.309151})
   expect(section.steamGenerators.map(g=>[g.id,g.steamDemand_kg_s,g.crownLiquidVolume_m3,g.pickupLiquidVolume_m3,g.reliefs.length]))
-    .toEqual([['A',819.9495,71.25,108.75,2],['B',819.9455,71.25,108.75,2]])
+    .toEqual([['A',819.9495,42,102,2],['B',819.9455,42,102,2]])
   expect(section.feed).toEqual({rule:'inventoryHolding',pressure_Pa:7200000,temperature_K:493.15})
   expect(section.steamAdmission).toEqual({stopTravel_s:.3})
   expect(section.relief.seatLagTimeConstants).toBe(10)
   expect(section.contact).toEqual({exchangeArea_m2:5000,emissivity:.3,steelConductivity_W_mK:15,steelDensity_kg_m3:8000,steelCp_J_kgK:500})
+  expect(section.exposure).toEqual({fold:{developedLength_m:20,inlet_m:2.5,crest_m:12,outlet_m:3},bundleZoneVolume_m3:42,upperZoneArea_m2:12})
   expect(probe.tube).toEqual({thermalDiameter_m:.02})
   expect(section.relief.rating.massFlow_kg_s).toBeCloseTo(491.8913898,9)
   expect(section.provenance.consumed.map(c=>c.name.split('ld-01/')[1])).toEqual([...sectionPages])
@@ -51,15 +52,19 @@ test.skipIf(!wiki)('actual secondary and probe sections compile once; corrupted 
   expect(probe.provenance.consumed.map(c=>c.name.split('ld-01/')[1])).toEqual([...probePages])
   const base=join(wiki!,'world/packs/process-plant/reference-designs/ld-01'),
     read=(p:string)=>Bun.file(join(base,p)).text(),
-    [thermodynamics,admissionDoc,balance,cycle]=await Promise.all(sectionPages.map(read))
-  const sources={thermodynamics:thermodynamics!,admission:admissionDoc!,balance:balance!,cycle:cycle!}
+    [thermodynamics,admissionDoc,balance,cycle,hydraulics,mechanics]=await Promise.all(sectionPages.map(read))
+  const sources={thermodynamics:thermodynamics!,admission:admissionDoc!,balance:balance!,cycle:cycle!,hydraulics:hydraulics!,mechanics:mechanics!}
   expect(compileOperatingSecondary(sources)).toEqual({...section,provenance:undefined} as never)
   for(const [key,from,to] of [
-    ['thermodynamics','"horizontalArea_m2":7.5','"horizontalArea_m2":7.6'],
+    ['thermodynamics','"upperZoneArea_m2":12','"upperZoneArea_m2":20'],
+    ['thermodynamics','"upperZoneArea_m2":12','"upperZoneArea_m2":12,"horizontalArea_m2":7.5'],
     ['thermodynamics','"pickupBottom_m":17','"pickupBottom_m":19'],
-    ['thermodynamics','"crownTop_m":12','"crownTop_m":12.2'],
+    ['thermodynamics','"crownTop_m":12','"crownTop_m":16.5'],
     ['thermodynamics','"feedRule":"inventoryHolding"','"feedRule":"inventoryHolding","extra":1'],
     ['admission','"valvesPerSg":2','"valvesPerSg":0'],
+    ['hydraulics','"hotPort_m":2.5','"hotPort_m":2.0'],
+    ['hydraulics','"SGturn_m":12','"SGturn_m":12.5'],
+    ['mechanics','"sgDevelopedLength_m":20.0','"sgDevelopedLength_m":40.0'],
   ] as const){
     const text=sources[key]
     expect(text.includes(from)).toBe(true)

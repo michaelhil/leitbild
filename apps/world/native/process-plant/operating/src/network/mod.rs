@@ -28,6 +28,7 @@ mod phase_modes;
 pub mod ports;
 pub mod prepare;
 pub mod properties;
+pub mod spray;
 pub mod stratified;
 mod structure;
 mod tolerance;
@@ -127,6 +128,28 @@ impl PzrLayout {
     pub fn coordinates(&self) -> std::ops::Range<usize> {
         self.base..self.base + PZR_COORDINATES
     }
+}
+/// The controlled-spray path, when the packet composes it (IC-CTRL, S3):
+/// the line region, its valve and port faces, the valve's held-input
+/// section, the virtual cell index the port face ends at (the stratified
+/// cell's spray-port view, whose coordinates are the PZR cell's), the
+/// stratified port index, the valve law, its stem and whether its path is
+/// locked closed (a discrete state changed only by transactions).
+#[derive(Clone, Copy, Debug)]
+pub struct SprayLayout {
+    pub region: usize,
+    pub valve_face: usize,
+    pub port_face: usize,
+    pub valve_section: usize,
+    pub port_cell: usize,
+    pub port: usize,
+    pub valve: crate::control::spray_valve::Valve,
+    pub stem: crate::control::spray_valve::Stem,
+    pub closed: bool,
+    /// The inlet check (S3-D25 (3)): closed while it holds the valve path.
+    pub check_closed: bool,
+    /// The valve's sizing volume flow, the restriction row's scale.
+    pub q_ref_m3_s: f64,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct FaceLayout {
@@ -243,6 +266,12 @@ pub struct Network<P: Properties> {
     /// L1's lock table once a caller declares L1 active ([`unilateral`]);
     /// `None` composes every impulse row as before (S1, S2).
     unilateral: Option<unilateral::Locks>,
+    /// The controlled-spray path (IC-CTRL, S3); `None` composes S1/S2 as
+    /// before.
+    spray: Option<SprayLayout>,
+    /// The valve's opening at the last evaluation's time (the block replay
+    /// reuses it: it reads no coordinate).
+    spray_x: Option<f64>,
 }
 
 fn s(v: f64) -> Scalar {
@@ -278,13 +307,46 @@ impl<P: Properties> Network<P> {
                 "the stratified PZR cell must be the last compiled region, with its fluid volume",
             ));
         }
+        // The controlled-spray path is composed only with its section, its
+        // line stock and its indices together; the line is the region just
+        // before the PZR, after SURGE.
+        let spray_parts = match (
+            &packet.pzr_spray,
+            &packet.external_ports.spray_stock,
+            &packet.external_ports.spray_path,
+        ) {
+            (None, None, None) => None,
+            (Some(section), Some(stock), Some(path)) => Some((section, stock, *path)),
+            _ => {
+                return Err(bad(
+                    "the spray path needs its pzrSpray section, line stock and path indices together",
+                ));
+            }
+        };
         let surge = pzr
-            .checked_sub(1)
+            .checked_sub(if spray_parts.is_some() { 2 } else { 1 })
             .ok_or_else(|| bad("SURGE must precede the PZR"))?;
+        if let Some((section, stock, path)) = spray_parts
+            && (path.region != pzr - 1
+                || geometry.regions[path.region].id != stock.id
+                || stock.id != "SPRAY"
+                || volumes[path.region] != stock.volume_m3
+                || stock.volume_m3 != section.line.volume_m3
+                || geometry.regions[surge].id != "SURGE")
+        {
+            return Err(bad(
+                "the spray line must be the region SPRAY between SURGE and the PZR, with its stock's volume",
+            ));
+        }
         if packet.thermal.water.len() != surge || packet.water_boron_amount_kg_eq.len() < surge {
             return Err(bad("primary water owners must precede SURGE"));
         }
-        let faces: Vec<Face> = geometry
+        // The spray port face ends at a virtual cell after the PZR: the
+        // stratified cell's spray-port view, whose coordinates are the
+        // PZR's (`structure`), so the two PZR ports keep their own views and
+        // receipts.
+        let port_cell = cells_n;
+        let mut faces: Vec<Face> = geometry
             .faces
             .iter()
             .map(|f| Face {
@@ -297,6 +359,15 @@ impl<P: Properties> Network<P> {
             .collect();
         for f in &faces {
             f.validate(cells_n).map_err(bad)?;
+        }
+        if let Some((_, _, path)) = spray_parts {
+            let face = faces
+                .get_mut(path.port_face)
+                .ok_or_else(|| bad("spray port face index"))?;
+            if face.to != pzr {
+                return Err(bad("the spray port face must end at the PZR"));
+            }
+            face.to = port_cell;
         }
         if !geometry.force_projection.is_empty() {
             return Err(bad(
@@ -321,18 +392,52 @@ impl<P: Properties> Network<P> {
         let Some(port_face) = port.face else {
             return Err(bad("the surge port needs its face"));
         };
-        if cell
+        let spray_port = cell
             .ports
             .iter()
-            .any(|p| p.kind != stratified::PortKind::Surge && p.face.is_some())
-        {
+            .position(|p| p.kind == stratified::PortKind::Spray);
+        if cell.ports.iter().enumerate().any(|(i, p)| {
+            p.kind != stratified::PortKind::Surge
+                && p.face.is_some()
+                && !(Some(i) == spray_port
+                    && spray_parts.is_some_and(|(_, _, path)| p.face == Some(path.port_face)))
+        }) {
             return Err(bad(
-                "the network composes only the surge port's face; spray and relief ports take none",
+                "the network composes the surge port's face and a composed spray path's port face; otherwise spray and relief ports take none",
             ));
+        }
+        if let Some((_, _, path)) = spray_parts {
+            let line = path.region;
+            let only_line = |f: &Face| {
+                f.supports.iter().all(|s| s.region == line)
+                    && f.pressure_segments.iter().all(|s| s.region == line)
+            };
+            let (valve, port) = (&faces[path.valve_face], &faces[path.port_face]);
+            let at_line: Vec<usize> = (0..faces.len())
+                .filter(|j| faces[*j].from == line || faces[*j].to == line)
+                .collect();
+            if spray_port.and_then(|i| cell.ports[i].face) != Some(path.port_face)
+                || valve.to != line
+                || valve.from >= surge
+                || port.from != line
+                || !only_line(valve)
+                || !only_line(port)
+                || at_line != [path.valve_face, path.port_face]
+            {
+                return Err(bad(
+                    "the spray path is the valve face from a primary cell into SPRAY and the port face from SPRAY into the PZR's spray port, each supported by SPRAY only",
+                ));
+            }
         }
         let touching: Vec<usize> = (0..faces.len())
             .filter(|j| faces[*j].from == pzr || faces[*j].to == pzr)
             .collect();
+        if faces.iter().enumerate().any(|(j, f)| {
+            (f.from == port_cell || f.to == port_cell)
+                && spray_parts.is_none_or(|(_, _, p)| j != p.port_face)
+        }) {
+            return Err(bad("only the spray port face reaches the spray port"));
+        }
         if touching != [port_face]
             || faces[port_face].to != pzr
             || faces[port_face]
@@ -363,7 +468,7 @@ impl<P: Properties> Network<P> {
                     v.energy_j,
                     packet.water_boron_amount_kg_eq[node],
                 )
-            } else {
+            } else if node == surge {
                 let v = &packet.external_ports.surge_stock;
                 (
                     v.pressure_pa,
@@ -371,6 +476,26 @@ impl<P: Properties> Network<P> {
                     v.mass_kg,
                     v.internal_energy_j,
                     v.absorber_tracer_kg_eq,
+                )
+            } else {
+                // The spray line: declared by (p, T); mass and energy from
+                // the property owner's forward at its volume.
+                let (_, v, _) =
+                    spray_parts.ok_or_else(|| bad("a region between SURGE and the PZR"))?;
+                let q = properties
+                    .forward(false, v.pressure_pa, v.temperature_k)
+                    .map_err(bad)?;
+                let mass = q.density_kg_m3 * v.volume_m3;
+                let energy = mass * (q.enthalpy_j_kg - v.pressure_pa / q.density_kg_m3);
+                if !(v.absorber_mass_fraction.is_finite() && v.absorber_mass_fraction >= 0.) {
+                    return Err(bad("spray stock absorber fraction"));
+                }
+                (
+                    v.pressure_pa,
+                    v.temperature_k,
+                    mass,
+                    energy,
+                    v.absorber_mass_fraction * mass,
                 )
             };
             initial_points.push(properties.forward(false, p, t).map_err(bad)?);
@@ -410,12 +535,13 @@ impl<P: Properties> Network<P> {
         physical.extend(values);
         differential.extend([0.; PZR_ALGEBRAIC]);
         differential.extend([1.; PZR_COORDINATES - PZR_ALGEBRAIC]);
+        let cell_entries = cells_n + usize::from(spray_parts.is_some());
         let mut cells = vec![
             Cell {
                 pressure: s(0.),
                 phase: [None; 2]
             };
-            cells_n
+            cell_entries
         ];
         for node in 0..pzr {
             let l = cell_layout[node];
@@ -489,6 +615,50 @@ impl<P: Properties> Network<P> {
             }
             section_projection.push((p.face, p.section, p.coefficient));
         }
+        let spray = match spray_parts {
+            None => None,
+            Some((section, _, path)) => {
+                let valve = crate::control::spray_valve::Valve::new(section)?;
+                let projected = |face: usize| -> Vec<(usize, f64)> {
+                    section_projection
+                        .iter()
+                        .filter(|(f, _, _)| *f == face)
+                        .map(|(_, sec, w)| (*sec, *w))
+                        .collect()
+                };
+                let h = sections
+                    .get(path.valve_section)
+                    .ok_or_else(|| bad("spray valve section index"))?;
+                if projected(path.valve_face) != [(path.valve_section, 1.)]
+                    || projected(path.port_face) != [(path.distributor_section, 1.)]
+                    || h.region != path.region
+                    || h.section.form_loss != 0.
+                    || sections[path.distributor_section].section.form_loss
+                        != section.distributor.form_loss
+                {
+                    return Err(bad(
+                        "the spray faces must carry exactly their valve (held-input loss, compiled 0) and distributor sections",
+                    ));
+                }
+                Some(SprayLayout {
+                    region: path.region,
+                    valve_face: path.valve_face,
+                    port_face: path.port_face,
+                    valve_section: path.valve_section,
+                    port_cell,
+                    port: spray_port.ok_or_else(|| bad("spray port"))?,
+                    valve,
+                    // Commissioning: the controlled stem starts achieved 0.
+                    stem: crate::control::spray_valve::Stem::closed(
+                        0.,
+                        section.valve.strokes_per_second,
+                    )?,
+                    closed: true,
+                    check_closed: false,
+                    q_ref_m3_s: section.valve.sizing.flow_kg_s / section.valve.sizing.density_kg_m3,
+                })
+            }
+        };
         let size = scales.len();
         let y: Vec<f64> = physical.iter().zip(&scales).map(|(v, s)| v / s).collect();
         let face_count = faces.len();
@@ -523,7 +693,7 @@ impl<P: Properties> Network<P> {
                 drive,
                 charts: vec![[None; 2]; face_count],
                 face_drive: vec![[s(0.); 2]; face_count],
-                receipts: vec![[[s(0.); 3]; 2]; cells_n],
+                receipts: vec![[[s(0.); 3]; 2]; cell_entries],
                 rows: vec![s(0.); size],
                 scales,
                 leading_enthalpy: vec![[None; 2]; pzr],
@@ -539,6 +709,8 @@ impl<P: Properties> Network<P> {
                 coupled_tracer: vec![s(0.); pzr],
                 coupled_receipts: vec![[[s(0.); 3]; 2]; pzr],
                 unilateral: None,
+                spray,
+                spray_x: None,
             },
             Prepared {
                 y,
@@ -722,10 +894,16 @@ impl<P: Properties> Network<P> {
     /// vapor mass and energy (S3-D-P1) are algebraic.
     pub fn differential(&self, prepared: &[f64]) -> Vec<f64> {
         let mut ids = prepared.to_vec();
+        // An impulse is differential unless its path is locked (L1 or the
+        // closed spray valve); a released path's impulse returns to
+        // differential whatever identity the caller's prepared vector
+        // carried (IC-CTRL: a preparation with the valve closed).
         for (li, l) in self.face_layout.iter().enumerate() {
-            if self.unilateral_locked(li) {
-                ids[l.index] = 0.;
-            }
+            ids[l.index] = if self.path_locked(li) || self.spray_algebraic(li) {
+                0.
+            } else {
+                1.
+            };
         }
         for (l, mode) in self.cell_layout.iter().zip(&self.modes) {
             if *mode == CellMode::Equilibrium {

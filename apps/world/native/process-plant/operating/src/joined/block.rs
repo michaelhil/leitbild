@@ -257,6 +257,108 @@ pub enum Command {
     /// `cluster` is indexed as the source feedback's rods (the rod owner's
     /// cluster order); the harness names the highest-worth one.
     StuckCluster { cluster: usize },
+    /// C3's initiator: RCP `rotor` (the network's rotor order) loses its
+    /// supply at the command's time: its drive becomes unsupported with the
+    /// shaft free, so it coasts down on its own law; a class-R restart
+    /// (lead S3-D1; R3 lane's probe). ELEC's bus support feeds the same
+    /// change once composed. Refused for a rotor that is not supported.
+    SupplyLoss { rotor: usize },
+}
+
+/// S5 snapshot hook (PLATFORM, claude/ld01-s5-host; KERN reconciles): an
+/// optional owner time as its exact IEEE-754 bits, so a restored owner's
+/// time events are bitwise its source's.
+pub fn snapshot_time(t: Option<f64>) -> serde_json::Value {
+    t.map_or(serde_json::Value::Null, |t| {
+        serde_json::Value::String(format!("{:016x}", t.to_bits()))
+    })
+}
+/// The inverse of [`snapshot_time`]; anything but null or 16 hex digits
+/// refuses fatally.
+pub fn restored_time(v: &serde_json::Value) -> Result<Option<f64>, Failure> {
+    match v {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::String(h) if h.len() == 16 => u64::from_str_radix(h, 16)
+            .map(|b| Some(f64::from_bits(b)))
+            .map_err(|e| Failure::Fatal(format!("snapshot time {h}: {e}"))),
+        other => Err(Failure::Fatal(format!(
+            "snapshot time {other} is not 16 hex digits"
+        ))),
+    }
+}
+/// The object `v` with exactly the keys `keys`, refused otherwise.
+pub fn snapshot_object<'a>(
+    v: &'a serde_json::Value,
+    owner: &str,
+    keys: &[&str],
+) -> Result<&'a serde_json::Map<String, serde_json::Value>, Failure> {
+    let o = v
+        .as_object()
+        .ok_or_else(|| Failure::Fatal(format!("{owner} snapshot is not an object")))?;
+    let mut have: Vec<&str> = o.keys().map(String::as_str).collect();
+    let mut want = keys.to_vec();
+    have.sort_unstable();
+    want.sort_unstable();
+    if have != want {
+        return Err(Failure::Fatal(format!(
+            "{owner} snapshot keys {have:?}, expected {want:?}"
+        )));
+    }
+    Ok(o)
+}
+/// S3-D19: a real number in a snapshot as its 16 hex IEEE-754 bits (as
+/// [`snapshot_time`]), for `#[serde(with = "...")]` on an owner's discrete
+/// state: exact, where a decimal JSON number need not round-trip.
+pub mod snapshot_bits {
+    use serde::{Deserialize, Deserializer, Serializer, de::Error};
+    pub fn serialize<S: Serializer>(v: &f64, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&format!("{:016x}", v.to_bits()))
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+        parse(&String::deserialize(d)?).map_err(D::Error::custom)
+    }
+    pub(crate) fn parse(h: &str) -> Result<f64, String> {
+        if h.len() != 16 {
+            return Err(format!("snapshot number {h} is not 16 hex digits"));
+        }
+        u64::from_str_radix(h, 16)
+            .map(f64::from_bits)
+            .map_err(|e| format!("snapshot number {h}: {e}"))
+    }
+}
+/// [`snapshot_bits`] for an optional real number (null when absent).
+pub mod snapshot_bits_option {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+    pub fn serialize<S: Serializer>(v: &Option<f64>, s: S) -> Result<S::Ok, S::Error> {
+        v.map(|v| format!("{:016x}", v.to_bits())).serialize(s)
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<f64>, D::Error> {
+        Option::<String>::deserialize(d)?
+            .map(|h| super::snapshot_bits::parse(&h))
+            .transpose()
+            .map_err(D::Error::custom)
+    }
+}
+/// [`snapshot_bits`] for an optional `(value, time)` pair, such as a
+/// pending travel's target and end time.
+pub mod snapshot_bits_pair_option {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+    pub fn serialize<C: Serialize, S: Serializer>(
+        v: &Option<(C, f64)>,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        v.as_ref()
+            .map(|(c, t)| (c, format!("{:016x}", t.to_bits())))
+            .serialize(s)
+    }
+    pub fn deserialize<'de, C: Deserialize<'de>, D: Deserializer<'de>>(
+        d: D,
+    ) -> Result<Option<(C, f64)>, D::Error> {
+        Option::<(C, String)>::deserialize(d)?
+            .map(|(c, h)| super::snapshot_bits::parse(&h).map(|t| (c, t)))
+            .transpose()
+            .map_err(D::Error::custom)
+    }
 }
 
 /// Structural dependencies of one block, in its own indices, for the joined
@@ -406,6 +508,45 @@ pub trait Secondary<P> {
     /// feed entering and the steam and relief leaving (mass and energy at
     /// the enthalpies the rows used), and the metal heat the rows received.
     fn account(&self) -> OwnerAccount;
+    /// S5 snapshot hook (PLATFORM, claude/ld01-s5-host; KERN reconciles):
+    /// this owner's copyable discrete state — its modes, latches and armed
+    /// time events, never coordinates or caches — as plain data.
+    fn discrete_state(&self) -> serde_json::Value;
+    /// S5 snapshot hook: restore [`Secondary::discrete_state`] exactly;
+    /// anything else (layout, unknown field) refuses fatally.
+    fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure>;
+    // ELEC S3 hook (block.rs, KERN-owned; defaults leave S1/S2 unchanged).
+    /// The admitted turbine steam of every SG together at `t` (kg/s), when
+    /// the owner's admission is a time-only boundary (S2/S3: demand times
+    /// the STOP's admission fraction); the electrical slice's turbine input.
+    fn admitted_steam_kg_s(&self, _t: f64) -> Option<f64> {
+        None
+    }
+    /// The latched turbine TRIP time, if any (the trip requests GCB OPEN).
+    fn turbine_trip_time(&self) -> Option<f64> {
+        None
+    }
+    /// S3-D12: the recorded feed (F3 (a)) gated by the feed pumps' supply.
+    /// A held input entering only the SG stocks' rates (class S, S3-D4).
+    fn set_feed_supported(&mut self, _supported: bool) -> Result<(), Failure> {
+        Err(Failure::Fatal(
+            "this secondary owner declares no feed gate".into(),
+        ))
+    }
+    /// S3-D27: declare the S3-D12 feed gate before any Jacobian structure
+    /// is compiled. The SG mass rows then also read the pressure and the
+    /// relief lifts (structural zeros while the gate is open, the F3 (a)
+    /// cancellation), so the structure is the superset of both gate modes;
+    /// without the declaration the gate cannot close.
+    fn declare_feed_gate(&mut self) -> Result<(), Failure> {
+        Err(Failure::Fatal(
+            "this secondary owner declares no feed gate".into(),
+        ))
+    }
+    /// Whether [`Secondary::declare_feed_gate`] was declared.
+    fn feed_gate_declared(&self) -> bool {
+        false
+    }
 }
 
 /// The rod bodies (spider and bodies, H7), their guide passages (F1 (a),
@@ -476,6 +617,11 @@ pub trait Rods<P> {
         fluid: &Fluid<'_>,
         out: &mut [f64],
     ) -> Result<(), Failure>;
+    /// How many clusters' annulus volume current lies strictly inside R3's
+    /// blend band at these coordinates and this fluid state (R3, adopted 11
+    /// October; C3's cost line counts the accepted states with any). Reads
+    /// LOWER's liquid density only.
+    fn r3_band(&self, x: Coordinates<'_>, fluid: &Fluid<'_>) -> Result<usize, Failure>;
     /// Whether [`Rods::roots`] reads `fluid` in the owner's present modes;
     /// an owner that cannot tell answers `true`.
     fn roots_read_fluid(&self) -> bool {
@@ -517,4 +663,11 @@ pub trait Rods<P> {
     /// conservation account turns it on, around its own evaluation, so no
     /// residual or Jacobian evaluation pays for it.
     fn capture_account(&mut self, on: bool);
+    /// S5 snapshot hook (PLATFORM, claude/ld01-s5-host; KERN reconciles):
+    /// every cluster's mode and declared failed release, and the holding
+    /// circuit's opening time — never coordinates or caches.
+    fn discrete_state(&self) -> serde_json::Value;
+    /// S5 snapshot hook: restore [`Rods::discrete_state`] exactly; anything
+    /// else refuses fatally.
+    fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure>;
 }

@@ -47,7 +47,7 @@ use serde_json::{Value, json};
 use super::properties::Water;
 
 /// A regular cell's phase mode (S3-D-P1).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CellMode {
     /// S2's rows; the cell holds no vapor.
     Liquid,

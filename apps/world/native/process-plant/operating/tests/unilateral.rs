@@ -312,6 +312,7 @@ fn packet() -> Packet {
         },
     ];
     Packet {
+        pzr_spray: None,
         mechanics: Mechanics {
             regions,
             faces,
@@ -332,6 +333,8 @@ fn packet() -> Packet {
                 internal_energy_j: surge_mass * surge_water.internal_energy_j_kg,
                 absorber_tracer_kg_eq: TRACER_PER_KG * surge_mass,
             },
+            spray_stock: None,
+            spray_path: None,
         },
         pzr: Pzr {
             cell: PzrCell {

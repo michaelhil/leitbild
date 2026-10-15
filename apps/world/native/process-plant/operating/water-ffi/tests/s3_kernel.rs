@@ -819,3 +819,392 @@ fn the_phase_mode_transactions_move_no_stock() {
             "dryout": format!("{refused:?}")})
     );
 }
+
+/// S3-D19 (lead): every owner's discrete state is serialized. Every owner
+/// the joined operator composes (its layouts) has an entry in
+/// `Joined::discrete_state`, so a new owner without one fails here; and a
+/// unit driven into non-default discrete state by its owners' own commands
+/// and transactions (stuck cluster, acquired turbine trip, holding loss and
+/// its releases, a heater control frame, a relief crack, a phase birth, L1
+/// locks) restores into a freshly composed operator with the same snapshot,
+/// root count, identity, root directions, next time event, residual rows
+/// and root values, bit for bit. A discrete state left out of the snapshot
+/// shows as a difference.
+#[test]
+#[ignore = "requires the joined packet, the wiki, IF97 and stock IDA/KLU"]
+fn every_owners_discrete_state_survives_a_snapshot() {
+    use leitbild_operating_plant::{control::pzr_pressure::Demand, joined::block::Command};
+    let (
+        Started {
+            mut joined,
+            mut y,
+            yp,
+            network_ids,
+            ..
+        },
+        _,
+    ) = started_s3_phase_composition();
+    for (owner, _) in joined.layouts() {
+        assert!(
+            joined.discrete_state().get(owner).is_some(),
+            "S3-D19: owner {owner} has no discrete-state entry"
+        );
+    }
+    // Non-default discrete state through the owners' own interfaces.
+    joined
+        .command(0.1, &mut y, Command::StuckCluster { cluster: 0 })
+        .expect("stuck cluster");
+    joined
+        .command(0.1, &mut y, Command::TurbineTripAcquired)
+        .expect("acquired turbine trip");
+    joined
+        .command(0.2, &mut y, Command::HoldingLoss)
+        .expect("holding loss");
+    // ELEC's S3-D12 feed gate (a held input of the SG owner), declared
+    // (S3-D27) in both compositions.
+    joined.declare_feed_gate().expect("the feed gate");
+    joined
+        .secondary_mut()
+        .unwrap()
+        .set_feed_supported(false)
+        .expect("the feed gate");
+    // C3's initiator: the network's rotor state, no coordinate moved.
+    let lost = spine::z1::s1_gates()["supplyLoss"]["rotor"]
+        .as_u64()
+        .unwrap() as usize;
+    let unmoved = y.clone();
+    joined
+        .command(0.2, &mut y, Command::SupplyLoss { rotor: lost })
+        .expect("RCP supply loss");
+    assert_eq!(
+        unmoved.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+        y.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+        "a supply loss moves no coordinate"
+    );
+    let request = 0.5 * joined.pzr().expect("PZR block").request_w();
+    joined
+        .pzr_mut()
+        .unwrap()
+        .apply_control(
+            0.2,
+            &Demand {
+                heater_request_w: request,
+                spray_target: 0.,
+                withdrawn: None,
+            },
+        )
+        .expect("a heater control frame");
+    // SG.A's first relief valve cracks (its first root, rising).
+    let mut directions = vec![0; joined.root_count()];
+    directions[0] = 1;
+    joined
+        .transact(0.2, &directions, &mut y)
+        .expect("a relief crack");
+    // A phase birth at HOUSING.NECK (its vapor slots are zero).
+    let packet: Value = serde_json::from_slice(&spine::packet_bytes().1).unwrap();
+    let neck = packet["mechanics"]["regions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|r| r["id"] == "HOUSING.NECK")
+        .unwrap();
+    joined.network.birth(neck, &mut y).expect("birth");
+    let snapshot = joined.discrete_state();
+    // A fresh composition of the same packet takes the snapshot.
+    let mut fresh = started_full_composition().joined;
+    fresh.declare_feed_gate().expect("the feed gate");
+    fresh
+        .restore_discrete_state(&snapshot)
+        .expect("restore into a fresh composition");
+    assert_eq!(fresh.discrete_state(), snapshot, "round trip");
+    assert_eq!(fresh.root_count(), joined.root_count());
+    assert_eq!(
+        fresh.differential(&network_ids),
+        joined.differential(&network_ids)
+    );
+    assert_eq!(
+        fresh.root_directions().unwrap(),
+        joined.root_directions().unwrap()
+    );
+    assert_eq!(fresh.next_time_event(0.2), joined.next_time_event(0.2));
+    let t = 0.2;
+    joined.evaluate(t, &y, &yp, None, 0., None).unwrap();
+    fresh.evaluate(t, &y, &yp, None, 0., None).unwrap();
+    let bits = |j: &leitbild_operating_plant::joined::operator::Joined<If97>| {
+        j.rows()
+            .iter()
+            .map(|r| r.value.to_bits())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(bits(&fresh), bits(&joined), "residual rows");
+    let (mut a, mut b) = (vec![0.; joined.root_count()], vec![0.; fresh.root_count()]);
+    joined.roots(t, &y, &yp, &mut a).unwrap();
+    fresh.roots(t, &y, &yp, &mut b).unwrap();
+    assert_eq!(
+        a.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+        b.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+        "root values"
+    );
+    println!("{}", serde_json::json!({"snapshot": snapshot}));
+}
+
+/// C3 on the joined spine (R3 lane's hand-over): the RCP supply loss is a
+/// class-R command through the frame driver (`Joined::command` sets the
+/// rotor unsupported with its shaft free, then `discrete_restart`); the
+/// driver counts the network's donor flips (E2b: exact donor by flow sign)
+/// and the accepted states inside R3's rod-passage band at every accepted
+/// step, as class-O kinds. At power no cluster's annulus current is inside
+/// R3's band. The frame period is the IC section's (`LD01_IC_SECTION`).
+#[test]
+#[ignore = "requires the joined packet, the wiki, the ic section, IF97 and stock IDA/KLU"]
+fn an_rcp_supply_loss_restarts_through_the_frame_driver_with_c3s_cost_lines() {
+    use leitbild_operating_plant::{
+        ic::packet::Section,
+        joined::block::Command,
+        rotor::{Shaft, Support},
+    };
+    use leitbild_operating_water::frame::{Class, Client, Diagnostic, Driver, Frame, Setup};
+    let section_path = std::env::var("LD01_IC_SECTION").expect("LD01_IC_SECTION");
+    let section: Section = serde_json::from_slice(&std::fs::read(&section_path).expect("section"))
+        .expect("ic section");
+    let (
+        Started {
+            mut joined,
+            mut y,
+            mut yp,
+            ids,
+            network_ids,
+            atol,
+            rtol,
+            structure,
+            analyses,
+            ..
+        },
+        derived,
+    ) = spine::started_s3_composition();
+    let lost = spine::z1::s1_gates()["supplyLoss"]["rotor"]
+        .as_u64()
+        .unwrap() as usize;
+    assert!(matches!(
+        joined.network.rotor_state(lost).unwrap().support,
+        Support::Supported(_)
+    ));
+    assert_eq!(joined.r3_band_clusters(&y, &yp).unwrap(), 0, "at power");
+    let restart = Restart {
+        newton_coefficient: NEWTON_COEFFICIENT,
+        delta_cj_lsetup: DELTA_CJ_LSETUP,
+        first_step_s: FIRST_STEP_S,
+        start_bound: 1e-12,
+        start_passes: 2,
+        transaction_passes: 12,
+        bound_placement: 1e-12,
+    };
+    let nonnegative = joined.network.nonnegative_stocks();
+    let mut ida = Ida::new(
+        Integrated::from_blocks(joined, structure, analyses).expect("integrable"),
+        Initial {
+            time: 0.,
+            y: &y,
+            yp: &yp,
+            differential: &ids,
+            absolute_tolerance: &atol,
+            relative_tolerance: rtol,
+        },
+    )
+    .expect("stock IDA");
+    ida.set_max_order(2).unwrap();
+    ida.constrain_nonnegative(&nonnegative).unwrap();
+    restart.configure(&mut ida).unwrap();
+    ida.set_max_step(0.02).unwrap();
+    let frame = Frame::new(section.frame_s).unwrap();
+    let mut driver = Driver::new(frame, Diagnostic::Jump, spine::z1::cpu_s, 0.).unwrap();
+    let t_loss = 0.0537; // a non-integer instant, as C3's t0
+    driver
+        .command(t_loss, Command::SupplyLoss { rotor: lost })
+        .unwrap();
+    let setup = Setup {
+        network_ids: &network_ids,
+        absolute: &atol,
+        relative: rtol,
+        restart,
+        derived: &derived,
+    };
+    let until = 0.3;
+    let mut clients: Vec<&mut dyn Client<Integrated<If97>>> = Vec::new();
+    driver.start(&mut clients, 0., &y, &yp).unwrap();
+    driver
+        .run(&mut ida, 0., until, &mut y, &mut yp, &mut clients, &setup)
+        .expect("C3's initiator through the frame driver");
+    driver.close_segment(&ida, until).unwrap();
+    let joined = &ida.system().joined;
+    let state = joined.network.rotor_state(lost).unwrap();
+    assert_eq!(
+        (state.support, state.shaft),
+        (Support::Unsupported, Shaft::Free)
+    );
+    let instant = driver
+        .log
+        .iter()
+        .find(|e| e["class"] == "R" && e["t_s"].as_f64() == Some(t_loss))
+        .expect("the supply loss's class-R instant");
+    assert!(
+        instant["restart"]["transactions"]
+            .to_string()
+            .contains("SupplyLoss"),
+        "{instant}"
+    );
+    assert_eq!(driver.counts.total(Class::R), 1);
+    assert!(driver.observed_states > 0);
+    assert_eq!(
+        driver.donor_flips.observations as u64,
+        driver.observed_states
+    );
+    assert_eq!(
+        driver.counts.get(Class::O, "donor flip"),
+        driver.donor_flips.total() as u64
+    );
+    assert_eq!(driver.r3_band_states, 0, "no rod passage inside R3's band");
+    assert_eq!(driver.counts.get(Class::O, "R3 band state"), 0);
+    println!(
+        "{}",
+        serde_json::json!({"rotor": lost, "t_loss_s": t_loss, "until_s": until,
+            "observation": driver.observation_json(), "counts": driver.counts.json(),
+            "instant": instant, "segments": driver.segments})
+    );
+}
+
+/// The block Jacobian at `(0, y, 0)` against the colored one: the worst
+/// entry difference over its column's scale (a colored entry outside the
+/// block pattern counts whole), where it is, and the block structure with
+/// its values. The block assembly itself refuses an entry outside its
+/// pattern.
+fn blocks_against_colored(
+    joined: &mut leitbild_operating_plant::joined::operator::Joined<If97>,
+    y: &[f64],
+) -> (f64, Value, JoinedJacobian, Vec<f64>) {
+    let n = y.len();
+    let structure = JoinedJacobian::compile_for(joined, 0., y, None).expect("structure");
+    let zero = vec![0.; n];
+    let cj = 20.;
+    let mut bv = vec![0.; structure.pattern.nonzeros()];
+    jacobian_blocks(joined, &structure, 0., cj, y, &zero, &mut bv, Classes::ALL)
+        .expect("joined block assembly");
+    let colored = joined.structure().unwrap().0.clone();
+    let mut cv = vec![0.; colored.nonzeros()];
+    joined
+        .jacobian(0., cj, y, &zero, &mut cv)
+        .expect("joined colored assembly");
+    let (mut worst, mut at) = (0_f64, serde_json::json!(null));
+    for j in 0..n {
+        let b = structure.pattern.pointers()[j]..structure.pattern.pointers()[j + 1];
+        let c = colored.pointers()[j]..colored.pointers()[j + 1];
+        let scale = b
+            .clone()
+            .map(|q| bv[q].abs())
+            .chain(c.clone().map(|q| cv[q].abs()))
+            .fold(0., f64::max);
+        if scale == 0. {
+            continue;
+        }
+        for q in b {
+            let row = structure.pattern.indices()[q];
+            let other = colored.position(row, j).map_or(0., |k| cv[k]);
+            let e = (bv[q] - other).abs() / scale;
+            if e > worst {
+                (worst, at) = (
+                    e,
+                    serde_json::json!({"row": row, "column": j, "blocks": bv[q], "colored": other}),
+                );
+            }
+        }
+        for q in c {
+            let row = colored.indices()[q];
+            if structure.pattern.position(row, j).is_none() && cv[q] != 0. {
+                (worst, at) = (
+                    f64::INFINITY,
+                    serde_json::json!({"row": row, "column": j, "blocks": null, "colored": cv[q]}),
+                );
+            }
+        }
+    }
+    (worst, at, structure, bv)
+}
+
+/// S3-D27 (lead): with the S3-D12 feed gate declared, the SG owner's mass
+/// rows read the pressure and the relief lifts, so at a gate-closed relief
+/// state (SG.A's first relief cracked and lifted) the block Jacobian lies
+/// inside the pattern and matches the colored one, and the new entries are
+/// structural zeros while the gate is open. Undeclared (S1/S2), the gate
+/// refuses to close and the structure is unchanged.
+#[test]
+#[ignore = "requires the joined packet, the wiki, IF97 and stock IDA/KLU"]
+fn a_declared_feed_gate_covers_the_closed_gate_at_a_relief_state() {
+    let Started {
+        mut joined, mut y, ..
+    } = started_full_composition();
+    assert!(
+        joined
+            .secondary_mut()
+            .unwrap()
+            .set_feed_supported(false)
+            .is_err(),
+        "an undeclared gate does not close"
+    );
+    let undeclared = joined.structure().unwrap().0.nonzeros();
+    joined.declare_feed_gate().expect("the feed gate");
+    let declared = joined.structure().unwrap().0.nonzeros();
+    let labels: Vec<String> = joined
+        .layouts()
+        .into_iter()
+        .flat_map(|(_, l)| l.labels)
+        .collect();
+    let at = |label: &str| {
+        labels
+            .iter()
+            .position(|l| l == label)
+            .unwrap_or_else(|| panic!("{label}"))
+    };
+    let (m, p) = (at("SG.A.M_s"), at("SG.A.p_s"));
+    let lift = (p..labels.len())
+        .find(|i| labels[*i].ends_with(".lift"))
+        .expect("SG.A's first relief lift");
+    let entry = |s: &JoinedJacobian, v: &[f64], row: usize, column: usize| {
+        s.pattern
+            .position(row, column)
+            .map(|q| v[q])
+            .expect("a declared entry")
+    };
+    // Gate open: the mass row's pressure and lift entries are structural zeros.
+    let (open_worst, open_at, s, v) = blocks_against_colored(&mut joined, &y);
+    assert_eq!(
+        (entry(&s, &v, m, p), entry(&s, &v, m, lift)),
+        (0., 0.),
+        "F3 (a)'s cancellation is exact with the gate open"
+    );
+    assert!(open_worst < 1e-12, "{open_worst} at {open_at}");
+    // Gate closed, SG.A's first relief cracked and half lifted.
+    joined
+        .secondary_mut()
+        .unwrap()
+        .set_feed_supported(false)
+        .expect("the declared gate closes");
+    let mut directions = vec![0; joined.root_count()];
+    directions[0] = 1;
+    joined
+        .transact(0., &directions, &mut y)
+        .expect("SG.A's first relief cracks");
+    y[lift] = 0.5 / joined.scales()[lift];
+    let (closed_worst, closed_at, s, v) = blocks_against_colored(&mut joined, &y);
+    let (dp, dl) = (entry(&s, &v, m, p), entry(&s, &v, m, lift));
+    assert!(
+        dp != 0. && dl != 0.,
+        "the closed gate's mass row reads p and the lift"
+    );
+    assert!(closed_worst < 1e-12, "{closed_worst} at {closed_at}");
+    println!(
+        "{}",
+        serde_json::json!({"colored_nonzeros": {"undeclared": undeclared, "declared": declared},
+            "open": {"worst": open_worst}, "closed": {"worst": closed_worst, "at": closed_at,
+            "mass_row_dp": dp, "mass_row_dlift": dl}})
+    );
+}

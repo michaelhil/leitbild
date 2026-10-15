@@ -375,49 +375,118 @@ fn zero_reversed_flow_equal_and_cold_wall_limits_are_not_hidden_heat_floors() {
     assert!(cold.heat.value < 0.);
     assert_eq!(cold.vapor_mass.value, 0.);
 }
+/// The selected two-zone SG contact map (S3-D26: 42 m³ below the crown,
+/// 12 m² above it) and the earlier single 7.5 m² map, as `ContactMap`s.
+fn fold() -> FoldPath {
+    FoldPath::new(20., 2.5, 12., 3.).unwrap()
+}
+fn contact_map() -> ContactMap {
+    ContactMap::new(fold(), 42., 12.).unwrap()
+}
+fn single_area_map() -> ContactMap {
+    ContactMap::new(fold(), 71.25, 7.5).unwrap()
+}
+#[test]
+fn the_contact_map_takes_its_fold_and_zones_from_the_packet() {
+    // A fold whose legs leave no crown, or overrun it, is refused.
+    assert!(FoldPath::new(18.5, 2.5, 12., 3.).is_err());
+    assert!(FoldPath::new(40., 2.5, 12., 3.).is_err());
+    assert!(FoldPath::new(20., 2.5, f64::NAN, 3.).is_err());
+    assert!(ContactMap::new(fold(), 0., 12.).is_err());
+    assert!(ContactMap::new(fold(), 42., -1.).is_err());
+    // The surface is continuous at the crest and exact there; the
+    // single-area map is the earlier `2.5 + Vl/7.5`.
+    assert_eq!(contact_map().height(c(42.)).value, 12.);
+    assert_eq!(single_area_map().height(c(71.25)).value, 12.);
+    close(contact_map().height(c(72.)).value, 14.5, 1e-12);
+    assert_eq!(contact_map().height(c(0.)).value, 2.5);
+    assert_eq!(
+        contact_map().height(Scalar::new(42., -1.)).direction,
+        -1. / (42. / 9.5)
+    );
+    assert_eq!(
+        contact_map().height(Scalar::new(42., 1.)).direction,
+        1. / 12.
+    );
+    for v in [0., 40., 71.25] {
+        let h = single_area_map().height(Scalar::new(v, 1.));
+        assert_eq!((h.value, h.direction), (2.5 + v / 7.5, 1. / 7.5));
+    }
+    for v in [72., 100.] {
+        let h = single_area_map().height(Scalar::new(v, 1.));
+        close(h.value, 2.5 + v / 7.5, 1e-13);
+        assert_eq!(h.direction, 1. / 7.5);
+    }
+    // Another fold moves the crest and the crown segment with it.
+    let tall = ContactMap::new(FoldPath::new(22., 2.5, 13., 3.).unwrap(), 42., 12.).unwrap();
+    assert_eq!(tall.height(c(42.)).value, 13.);
+    assert!(folded_wet_fraction(10., 15., Scalar::new(42., -1.), tall).is_err());
+    assert!(folded_wet_fraction(0., 22., c(42.), tall).is_ok());
+    assert!(folded_wet_fraction(0., 22., c(42.), contact_map()).is_err());
+}
 #[test]
 fn folded_contact_integral_preserves_material_location_and_exposes_top_cusp() {
-    let all = (0..4)
-        .map(|i| {
-            folded_wet_fraction(5. * i as f64, 5. * (i + 1) as f64, Scalar::new(40., 1.)).unwrap()
-        })
-        .collect::<Vec<_>>();
-    close(
-        all.iter().map(|x| x.value).sum::<f64>() / 4.,
-        0.5083333333333333,
-        1e-12,
-    );
-    let h = 1e-4;
-    for (i, expected) in all.iter().enumerate() {
-        let p = folded_wet_fraction(5. * i as f64, 5. * (i + 1) as f64, c(40. + h)).unwrap();
-        let m = folded_wet_fraction(5. * i as f64, 5. * (i + 1) as f64, c(40. - h)).unwrap();
-        close((p.value - m.value) / (2. * h), expected.direction, 1e-8);
-    }
-    for i in 0..4 {
-        let full = folded_wet_fraction(5. * i as f64, 5. * (i + 1) as f64, Scalar::new(71.25, 1.))
+    for (map, expected_mean, crown) in [
+        (contact_map(), 0.8875684547743632, 42.),
+        (single_area_map(), 0.5083333333333333, 71.25),
+    ] {
+        let all = (0..4)
+            .map(|i| {
+                folded_wet_fraction(
+                    5. * i as f64,
+                    5. * (i + 1) as f64,
+                    Scalar::new(40., 1.),
+                    map,
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        close(
+            all.iter().map(|x| x.value).sum::<f64>() / 4.,
+            expected_mean,
+            1e-12,
+        );
+        let h = 1e-4;
+        for (i, expected) in all.iter().enumerate() {
+            let p =
+                folded_wet_fraction(5. * i as f64, 5. * (i + 1) as f64, c(40. + h), map).unwrap();
+            let m =
+                folded_wet_fraction(5. * i as f64, 5. * (i + 1) as f64, c(40. - h), map).unwrap();
+            close((p.value - m.value) / (2. * h), expected.direction, 1e-8);
+        }
+        for i in 0..4 {
+            let full = folded_wet_fraction(
+                5. * i as f64,
+                5. * (i + 1) as f64,
+                Scalar::new(crown, 1.),
+                map,
+            )
             .unwrap();
-        close(full.value, 1., 1e-12);
-        close(full.direction, 0., 1e-12);
+            close(full.value, 1., 1e-12);
+            close(full.direction, 0., 1e-12);
+        }
     }
     // At H=12m only the full-wet RIGHT derivative is finite. The left
     // derivative diverges; event localization must not call it smooth.
 }
 #[test]
 fn inward_crown_direction_is_unavailable_only_for_actual_crown_segments() {
-    for (start, end) in [(10., 15.), (0., 20.), (9., 10.25), (10.25, 11.)] {
-        assert_eq!(
-            folded_wet_fraction(start, end, Scalar::new(71.25, -1.)).unwrap_err(),
-            "inward SG crown wetting derivative is unbounded"
-        );
+    for (map, crown) in [(contact_map(), 42.), (single_area_map(), 71.25)] {
+        for (start, end) in [(10., 15.), (0., 20.), (9., 10.25), (10.25, 11.)] {
+            assert_eq!(
+                folded_wet_fraction(start, end, Scalar::new(crown, -1.), map).unwrap_err(),
+                "inward SG crown wetting derivative is unbounded"
+            );
+        }
+        for (start, end) in [(0., 5.), (5., 10.), (15., 20.), (10.3, 15.)] {
+            let q = folded_wet_fraction(start, end, Scalar::new(crown, -1.), map).unwrap();
+            close(q.value, 1., 1e-12);
+            close(q.direction, 0., 1e-12);
+        }
+        let prepared = folded_wet_fraction(10., 15., Scalar::new(72., -1.), map).unwrap();
+        close(prepared.value, 1., 1e-12);
+        close(prepared.direction, 0., 1e-12);
     }
-    for (start, end) in [(0., 5.), (5., 10.), (15., 20.), (10.3, 15.)] {
-        let q = folded_wet_fraction(start, end, Scalar::new(71.25, -1.)).unwrap();
-        close(q.value, 1., 1e-12);
-        close(q.direction, 0., 1e-12);
-    }
-    let prepared = folded_wet_fraction(10., 15., Scalar::new(72., -1.)).unwrap();
-    close(prepared.value, 1., 1e-12);
-    close(prepared.direction, 0., 1e-12);
 }
 #[test]
 fn finite_sg_and_guide_recipients_are_reciprocal_in_both_signs() {
@@ -454,6 +523,7 @@ fn finite_sg_and_guide_recipients_are_reciprocal_in_both_signs() {
             },
         },
         true,
+        contact_map(),
     )
     .unwrap();
     assert!(wet.value > 0.);
@@ -476,6 +546,7 @@ fn finite_sg_and_guide_recipients_are_reciprocal_in_both_signs() {
             },
         },
         false,
+        contact_map(),
     )
     .unwrap();
     close(dry.value, 1250. * 5. * 50., 1e-12);

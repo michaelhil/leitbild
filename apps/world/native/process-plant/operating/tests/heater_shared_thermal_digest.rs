@@ -234,6 +234,10 @@ fn shared_digest() -> (u64, [usize; 6], Vec<Case>) {
                             },
                         },
                         steam,
+                        // The earlier single 7.5 m² map keeps the baseline
+                        // digest's cases (S3-D26 changed only the map).
+                        ContactMap::new(FoldPath::new(20., 2.5, 12., 3.).unwrap(), 71.25, 7.5)
+                            .unwrap(),
                     );
                     d.outcome(&w, |d, x| d.scalar(*x));
                 }

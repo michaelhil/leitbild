@@ -476,6 +476,22 @@ impl<P: Properties + WaterProperties> Joined<P> {
         Ok(joined)
     }
 
+    /// S3-D27: declare the SG owner's feed gate (ELEC's S3-D12) and
+    /// recompile the colored structure: the mass rows' pattern then covers
+    /// the gate closed. A block structure ([`super::blocks::JoinedJacobian`])
+    /// must be compiled after it.
+    pub fn declare_feed_gate(&mut self) -> Result<(), Failure> {
+        self.secondary_mut()
+            .ok_or_else(|| fatal("the feed gate needs the SG owner"))?
+            .declare_feed_gate()?;
+        let columns = self.structural_pattern()?;
+        let pattern = Pattern::from_columns(self.blocks.offsets.end, &columns).map_err(fatal)?;
+        let coloring = Coloring::greedy(&pattern);
+        coloring.verify(&pattern).map_err(fatal)?;
+        self.structure = Some((pattern, coloring));
+        Ok(())
+    }
+
     /// Both ports are composed owners: the operator may be integrated.
     pub fn integrable(&self) -> bool {
         matches!(self.blocks.secondary, SecondaryPort::Owner(_))
@@ -551,6 +567,148 @@ impl<P: Properties + WaterProperties> Joined<P> {
     }
     pub fn pzr_mut(&mut self) -> Option<&mut Pzr> {
         self.blocks.pzr.as_mut()
+    }
+    /// S5 snapshot hook (PLATFORM, claude/ld01-s5-host; KERN reconciles):
+    /// the unit's copyable discrete state — the SG secondary's, the rods',
+    /// the PZR block's and the network's rotor states — as plain data. With
+    /// the coordinates and the packet it is the joined operator's whole
+    /// state; nothing here is a cache.
+    pub fn discrete_state(&self) -> serde_json::Value {
+        use crate::rotor::{Shaft, SpeedRequest, Support};
+        let rotors: Vec<serde_json::Value> = (0..self.network.rotor_count())
+            .map(|r| {
+                self.network.rotor_state(r).map_or(serde_json::Value::Null, |st| {
+                    let support = match st.support {
+                        Support::Supported(SpeedRequest::Zero) => serde_json::json!("supported-zero"),
+                        Support::Supported(SpeedRequest::Nominal) => serde_json::json!("supported-nominal"),
+                        Support::Supported(SpeedRequest::EngineeringTest { omega_rad_s }) => {
+                            serde_json::json!({"engineering_test_rad_s": super::block::snapshot_time(Some(omega_rad_s))})
+                        }
+                        Support::Unsupported => serde_json::json!("unsupported"),
+                        Support::OutsideSupplyEnvelope => serde_json::json!("outside-supply-envelope"),
+                    };
+                    let shaft = match st.shaft {
+                        Shaft::Free => "free",
+                        Shaft::Locked => "locked",
+                    };
+                    serde_json::json!({"support": support, "shaft": shaft})
+                })
+            })
+            .collect();
+        serde_json::json!({
+            "network": {
+                "unilateral": self.network.unilateral().map(|l| serde_json::to_value(l).expect("L1 locks serialize")),
+                "modes": serde_json::to_value(self.network.cell_modes()).expect("cell modes serialize"),
+                "spray": serde_json::to_value(self.network.spray_discrete_state()).expect("spray state serializes"),
+            },
+            // No discrete state: their rows read coordinates and the packet only.
+            "nuclear": serde_json::Value::Null,
+            "solids": serde_json::Value::Null,
+            "secondary": self.secondary().map(|b| b.discrete_state()),
+            "rods": self.rods().map(|b| b.discrete_state()),
+            "pzr": self.pzr().map(|b| b.discrete_state()),
+            "rotors": rotors,
+            "phase_modes": self.phase_modes,
+        })
+    }
+    /// S5 snapshot hook: restore [`Joined::discrete_state`] exactly into a
+    /// freshly composed operator of the same packet; any mismatch refuses.
+    pub fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure> {
+        use crate::{
+            network::RotorState,
+            rotor::{Shaft, SpeedRequest, Support},
+        };
+        let o = super::block::snapshot_object(
+            state,
+            "joined",
+            &[
+                "network",
+                "nuclear",
+                "solids",
+                "secondary",
+                "rods",
+                "pzr",
+                "rotors",
+                "phase_modes",
+            ],
+        )?;
+        if !(o["nuclear"].is_null() && o["solids"].is_null()) {
+            return Err(fatal(
+                "snapshot: the nuclear and solid blocks hold no discrete state",
+            ));
+        }
+        let network = super::block::snapshot_object(
+            &o["network"],
+            "network",
+            &["unilateral", "modes", "spray"],
+        )?;
+        let spray = serde_json::from_value(network["spray"].clone())
+            .map_err(|e| fatal(format!("snapshot: spray path: {e}")))?;
+        self.network.restore_spray_discrete_state(spray)?;
+        let modes: Vec<CellMode> = serde_json::from_value(network["modes"].clone())
+            .map_err(|e| fatal(format!("snapshot: cell modes: {e}")))?;
+        self.network.set_cell_modes(&modes)?;
+        match (&network["unilateral"], self.network.unilateral().is_some()) {
+            (serde_json::Value::Null, false) => {}
+            (v, false) if !v.is_null() => {
+                let locks = serde_json::from_value(v.clone())
+                    .map_err(|e| fatal(format!("snapshot: L1 locks: {e}")))?;
+                self.network.restore_unilateral(locks)?;
+            }
+            _ => {
+                return Err(fatal(
+                    "snapshot: restore into an operator with L1 not yet declared",
+                ));
+            }
+        }
+        self.phase_modes = o["phase_modes"]
+            .as_bool()
+            .ok_or_else(|| fatal("snapshot: phase_modes"))?;
+        match (self.secondary_mut(), &o["secondary"]) {
+            (Some(b), v) if !v.is_null() => b.restore_discrete_state(v)?,
+            (None, serde_json::Value::Null) => {}
+            _ => return Err(fatal("snapshot: secondary owner presence differs")),
+        }
+        match (self.rods_mut(), &o["rods"]) {
+            (Some(b), v) if !v.is_null() => b.restore_discrete_state(v)?,
+            (None, serde_json::Value::Null) => {}
+            _ => return Err(fatal("snapshot: rod owner presence differs")),
+        }
+        match (self.pzr_mut(), &o["pzr"]) {
+            (Some(b), v) => b.restore_discrete_state(v)?,
+            (None, serde_json::Value::Null) => {}
+            _ => return Err(fatal("snapshot: PZR block presence differs")),
+        }
+        let rotors = o["rotors"]
+            .as_array()
+            .filter(|a| a.len() == self.network.rotor_count())
+            .ok_or_else(|| fatal("snapshot: one state per rotor"))?;
+        for (r, v) in rotors.iter().enumerate() {
+            let f = super::block::snapshot_object(v, "rotor", &["support", "shaft"])?;
+            let support = match &f["support"] {
+                serde_json::Value::String(s) => match s.as_str() {
+                    "supported-zero" => Support::Supported(SpeedRequest::Zero),
+                    "supported-nominal" => Support::Supported(SpeedRequest::Nominal),
+                    "unsupported" => Support::Unsupported,
+                    "outside-supply-envelope" => Support::OutsideSupplyEnvelope,
+                    other => return Err(fatal(format!("snapshot: rotor support {other}"))),
+                },
+                serde_json::Value::Object(m) if m.len() == 1 => {
+                    let omega = super::block::restored_time(&m["engineering_test_rad_s"])?
+                        .ok_or_else(|| fatal("snapshot: engineering-test speed"))?;
+                    Support::Supported(SpeedRequest::EngineeringTest { omega_rad_s: omega })
+                }
+                other => return Err(fatal(format!("snapshot: rotor support {other}"))),
+            };
+            let shaft = match f["shaft"].as_str() {
+                Some("free") => Shaft::Free,
+                Some("locked") => Shaft::Locked,
+                other => return Err(fatal(format!("snapshot: rotor shaft {other:?}"))),
+            };
+            self.network
+                .set_rotor_state(r, RotorState { support, shaft });
+        }
+        Ok(())
     }
     /// The joined rows of the last evaluation (solver scaling).
     pub fn rows(&self) -> &[Scalar] {
@@ -697,6 +855,12 @@ impl<P: Properties + WaterProperties> Joined<P> {
             + self.pzr().map_or(0, |b| b.root_count())
             + self.unilateral_slots()
             + self.phase_mode_slots()
+            + self.spray_slots()
+    }
+    /// IC-CTRL (S3 spray path, S3-D25 (3), for KERN): the inlet check's one
+    /// root slot, last, while the spray path is composed.
+    fn spray_slots(&self) -> usize {
+        usize::from(self.network.spray().is_some())
     }
     /// The phase modes' root slots: two per regular cell once declared,
     /// after L1's ([`Self::activate_phase_modes`]).
@@ -795,9 +959,18 @@ impl<P: Properties + WaterProperties> Joined<P> {
         for r in self.network.unilateral_roots() {
             out[first + r.path()] = r.direction();
         }
+        // The spray inlet check: contact falling, release rising.
+        if self.spray_slots() == 1 {
+            let last = out.len() - 1;
+            out[last] = match self.network.spray_check_watch() {
+                Some(crate::network::spray::CheckRoot::Contact) => -1,
+                Some(crate::network::spray::CheckRoot::Release) => 1,
+                _ => 0,
+            };
+        }
         // Phase modes: birth rising; exhaustion and dryout falling.
         if self.phase_modes {
-            let first = out.len() - self.phase_mode_slots();
+            let first = out.len() - self.phase_mode_slots() - self.spray_slots();
             for (c, mode) in self.network.cell_modes().iter().enumerate() {
                 let pair = match mode {
                     CellMode::Liquid => [1, 0],
@@ -840,11 +1013,22 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let np = self.pzr().map_or(0, |b| b.root_count());
         let nl = self.unilateral_slots();
         let nm = self.phase_mode_slots();
-        if out.len() != ns + nr + np + nl + nm {
+        let nk = self.spray_slots();
+        if out.len() != ns + nr + np + nl + nm + nk {
             return Err(fatal("root layout"));
         }
+        if nk == 1 {
+            // The inlet check's release root reads the valve path's drive of
+            // this state's value evaluation; its contact root the impulse.
+            if self.network.spray_check_watch() == Some(crate::network::spray::CheckRoot::Release) {
+                self.evaluate(t, y, yp, None, 0., None)
+                    .map_err(|e| fatal(format!("spray check root evaluation: {e:?}")))?;
+            }
+            let last = out.len() - 1;
+            out[last] = self.network.spray_check_root(y).map_or(1., |r| r.1);
+        }
         if nm > 0 {
-            let slots = &mut out[ns + nr + np + nl..];
+            let slots = &mut out[ns + nr + np + nl..ns + nr + np + nl + nm];
             for c in 0..self.network.pzr.cell {
                 let pair = match self.network.cell_modes()[c] {
                     CellMode::Liquid => [
@@ -994,7 +1178,8 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let nl = self.unilateral_slots();
         if self.phase_modes {
             let first = ns + nr + np + nl;
-            if let Some(m) = self.mode_transact(t, &directions[first..], y)? {
+            let nm = self.phase_mode_slots();
+            if let Some(m) = self.mode_transact(t, &directions[first..first + nm], y)? {
                 done.push(m);
             }
         }
@@ -1003,6 +1188,18 @@ impl<P: Properties + WaterProperties> Joined<P> {
             if let Some(l1) = self.unilateral_transact(t, &directions[first..first + nl], y)? {
                 done.push(l1);
             }
+        }
+        // IC-CTRL (S3 spray path, S3-D25 (3)): the inlet check's transaction
+        // at its located root, last.
+        if self.spray_slots() == 1
+            && let Some(receipt) = self
+                .network
+                .spray_check_transaction(t, directions[directions.len() - 1])?
+        {
+            done.push(super::block::Transaction {
+                deposits: Vec::new(),
+                receipt,
+            });
         }
         Ok(done)
     }
@@ -1130,6 +1327,9 @@ impl<P: Properties + WaterProperties> Joined<P> {
         command: super::block::Command,
     ) -> Result<Vec<super::block::Transaction>, Failure> {
         let mut done = Vec::new();
+        if let super::block::Command::SupplyLoss { rotor } = command {
+            done.push(self.supply_loss(t, rotor)?);
+        }
         if let Some(b) = self.secondary_mut() {
             done.push(b.command(t, command)?);
         }
@@ -1142,6 +1342,72 @@ impl<P: Properties + WaterProperties> Joined<P> {
         self.deposit(&done, y)?;
         done.extend(self.time_events(t, y)?);
         Ok(done)
+    }
+    /// R3 on the joined spine (C3's cost line): how many rod clusters'
+    /// annulus volume current lies inside R3's blend band at the accepted
+    /// state `(t, y, y')`, on the cells the rod owner reads (as its roots
+    /// read them); 0 without a composed rod owner.
+    pub fn r3_band_clusters(&mut self, y: &[f64], yp: &[f64]) -> Result<usize, Failure> {
+        let o = self.blocks.offsets;
+        if !matches!(self.blocks.rods, RodPort::Owner(_)) {
+            return Ok(0);
+        }
+        self.blocks.pre_network(y, yp, None, 0.)?;
+        let Blocks {
+            rods,
+            rod_reads,
+            cell_volumes,
+            scales,
+            ..
+        } = &mut self.blocks;
+        let (RodPort::Owner(b), Some(reads)) = (rods, rod_reads.as_ref()) else {
+            return Err(fatal("R3 band without the rod owner's reads"));
+        };
+        let x = view(y, yp, None, 0., o.rods..o.pzr, &scales[3].coordinates)?;
+        self.network
+            .cells_fluid(&y[..o.nuclear], cell_volumes, &reads.read_cells, |fluid| {
+                b.r3_band(x, fluid)
+            })
+            .and_then(|r| r)
+    }
+    /// C3's initiator on the network: RCP `rotor` loses its supply, its drive
+    /// unsupported with the shaft free (it coasts down on its own law). No
+    /// coordinate moves; the caller restarts by the exact consistent start
+    /// (class R). A rotor that is not supported refuses.
+    fn supply_loss(&mut self, t: f64, rotor: usize) -> Result<super::block::Transaction, Failure> {
+        use crate::{
+            network::RotorState,
+            rotor::{Shaft, Support},
+        };
+        if rotor >= self.network.rotor_count() {
+            return Err(fatal(format!(
+                "supply loss of rotor {rotor}: no such rotor"
+            )));
+        }
+        let before = self.network.rotor_state(rotor).ok_or_else(|| {
+            fatal(format!(
+                "supply loss of rotor {rotor}: its state is undeclared"
+            ))
+        })?;
+        if !matches!(before.support, Support::Supported(_)) {
+            return Err(fatal(format!(
+                "supply loss of rotor {rotor} at {t} s: it is not supported ({:?})",
+                before.support
+            )));
+        }
+        self.network.set_rotor_state(
+            rotor,
+            RotorState {
+                support: Support::Unsupported,
+                shaft: Shaft::Free,
+            },
+        );
+        Ok(super::block::Transaction {
+            deposits: Vec::new(),
+            receipt: serde_json::json!({"owner":"network","command":"SupplyLoss","rotor":rotor,"t_s":t,
+                "before":{"support":format!("{:?}", before.support),"shaft":format!("{:?}", before.shaft)},
+                "after":{"support":"Unsupported","shaft":"Free"},"stateChanged":true}),
+        })
     }
     /// The owners' transactions of every time event due exactly at `t`: at
     /// a stop at [`Joined::next_time_event`] and after a command. Each owner
@@ -1181,13 +1447,65 @@ impl<P: Properties + WaterProperties> Joined<P> {
             }
         }
         self.deposit(&done, y)?;
+        // IC-CTRL (S3 spray path, for KERN): the spray stem's arrival at 0
+        // locks the valve path (class R; the identity follows the lock).
+        if let Some(receipt) = self.network.spray_event(t)? {
+            done.push(super::block::Transaction {
+                deposits: Vec::new(),
+                receipt,
+            });
+        }
         Ok(done)
+    }
+    /// IC-CTRL (S3 spray path, for KERN): put a normal PZR pressure control
+    /// frame's demands in force: the heater request into the PZR block, the
+    /// controlled-spray fraction into the network's valve stem when the
+    /// spray path is composed (without it a nonzero spray demand refuses in
+    /// the PZR block). Returns how the stem change enters (S3-D4: `Lock` is
+    /// class R, `Slope` class S, `None` nothing) and the receipts.
+    pub fn apply_pzr_control(
+        &mut self,
+        t: f64,
+        demand: &crate::control::pzr_pressure::Demand,
+    ) -> Result<
+        (
+            crate::control::spray_valve::StemChange,
+            Vec<serde_json::Value>,
+        ),
+        Failure,
+    > {
+        use crate::control::spray_valve::StemChange;
+        let composed = self.network.spray().is_some();
+        let heater = crate::control::pzr_pressure::Demand {
+            spray_target: if composed { 0. } else { demand.spray_target },
+            ..*demand
+        };
+        let applied = self
+            .blocks
+            .pzr
+            .as_mut()
+            .ok_or_else(|| fatal("no PZR block for the control frame"))?
+            .apply_control(t, &heater)?;
+        let mut receipts = vec![serde_json::to_value(&applied).map_err(|e| fatal(e.to_string()))?];
+        let change = if composed {
+            let (change, receipt) = self.network.issue_spray(t, demand.spray_target)?;
+            receipts.push(receipt);
+            change
+        } else {
+            StemChange::None
+        };
+        Ok((change, receipts))
     }
     /// The earliest declared time event of any owner strictly after `t`.
     pub fn next_time_event(&self, t: f64) -> Option<f64> {
         [
             self.secondary().and_then(|b| b.next_time_event(t)),
             self.rods().and_then(|b| b.next_time_event(t)),
+            // IC-CTRL (S3 spray path): only the closing arrival is an owner
+            // event (R); an open arrival is the controller's S stop.
+            self.network.spray_next_instant(t).and_then(|(a, c)| {
+                (c == crate::control::spray_valve::StemChange::Lock).then_some(a)
+            }),
         ]
         .into_iter()
         .flatten()

@@ -32,13 +32,13 @@
 //! crossing step can be taken and located; it is never admitted.
 use super::{
     packet,
-    relief::{Characteristic, Threshold, Transition, Valve},
+    relief::{Branch, Characteristic, Threshold, Transition, Valve},
 };
 use crate::{
     joined::{
         block::{
             Class, Command, Coordinates, Crossing, Layout, OwnerAccount, Secondary, SecondaryView,
-            Structure, Transaction,
+            Structure, Transaction, restored_time, snapshot_object, snapshot_time,
         },
         packet::SecondaryStock,
     },
@@ -143,6 +143,12 @@ pub struct Secondaries {
     prepared: Vec<f64>,
     valves: Vec<Vec<Valve>>,
     trip_s: Option<f64>,
+    /// S3-D12 (ELEC hook): the recorded feed flows only while the feed
+    /// pumps are supplied; `true` in the prepared state (S1/S2 unchanged).
+    feed_supported: bool,
+    /// S3-D27: the feed gate is declared (the mass rows' structure covers
+    /// the gate closed); set before the structure is compiled.
+    feed_gate_declared: bool,
     /// Largest relative chart defect of the supplied preparation.
     preparation_defect: f64,
     saturation: Vec<Option<([u64; 2], Saturation)>>,
@@ -263,6 +269,8 @@ impl Secondaries {
             layout,
             prepared,
             trip_s: None,
+            feed_supported: true,
+            feed_gate_declared: false,
             preparation_defect: defect,
             saturation: vec![None; n],
             nozzle: vec![None; n],
@@ -465,6 +473,36 @@ impl<P: Properties> Secondary<P> for Secondaries {
     fn layout(&self) -> &Layout {
         &self.layout
     }
+    // ELEC S3 hooks (SG owner): the turbine's admitted steam, the trip time
+    // and the S3-D12 feed gate.
+    fn admitted_steam_kg_s(&self, t: f64) -> Option<f64> {
+        let fraction = self.steam_fraction(t);
+        Some(
+            self.sgs
+                .iter()
+                .map(|g| g.steam_demand_kg_s * fraction)
+                .sum(),
+        )
+    }
+    fn turbine_trip_time(&self) -> Option<f64> {
+        self.trip_s
+    }
+    fn set_feed_supported(&mut self, supported: bool) -> Result<(), Failure> {
+        if !supported && !self.feed_gate_declared {
+            return Err(fatal(
+                "S3-D27: the feed gate closes only when declared before the structure is compiled (Joined::declare_feed_gate)",
+            ));
+        }
+        self.feed_supported = supported;
+        Ok(())
+    }
+    fn declare_feed_gate(&mut self) -> Result<(), Failure> {
+        self.feed_gate_declared = true;
+        Ok(())
+    }
+    fn feed_gate_declared(&self) -> bool {
+        self.feed_gate_declared
+    }
     fn account(&self) -> OwnerAccount {
         let h_feed = self.derived.feed_enthalpy_j_kg;
         let mut crossings = Vec::new();
@@ -498,6 +536,64 @@ impl<P: Properties> Secondary<P> for Secondaries {
     }
     fn differential(&self) -> Vec<f64> {
         self.layout.ids()
+    }
+    // S5 snapshot hook (PLATFORM, claude/ld01-s5-host; KERN reconciles):
+    // the latched TRIP time and every valve's branch, seat and closing state.
+    fn discrete_state(&self) -> serde_json::Value {
+        json!({
+            "trip_s": snapshot_time(self.trip_s),
+            "feed_supported": self.feed_supported,
+            "valves": self.valves.iter().map(|sg| sg.iter().map(|v| json!({
+                "branch": match v.branch { Branch::Ascending => "ascending", Branch::Descending => "descending" },
+                "seated": v.seated, "closing": v.closing,
+            })).collect::<Vec<_>>()).collect::<Vec<_>>(),
+        })
+    }
+    fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure> {
+        let o = snapshot_object(state, "secondary", &["trip_s", "feed_supported", "valves"])?;
+        let trip_s = restored_time(&o["trip_s"])?;
+        let feed_supported = o["feed_supported"]
+            .as_bool()
+            .ok_or_else(|| fatal("secondary snapshot: feed_supported"))?;
+        if !feed_supported && !self.feed_gate_declared {
+            return Err(fatal(
+                "secondary snapshot: a closed feed gate into an owner that declares none (S3-D27)",
+            ));
+        }
+        let sgs = o["valves"]
+            .as_array()
+            .filter(|a| a.len() == self.valves.len())
+            .ok_or_else(|| fatal("secondary snapshot: valves per SG"))?;
+        let mut valves = self.valves.clone();
+        for (k, sg) in sgs.iter().enumerate() {
+            let list = sg
+                .as_array()
+                .filter(|a| a.len() == valves[k].len())
+                .ok_or_else(|| fatal(format!("secondary snapshot: SG {k} valve count")))?;
+            for (j, v) in list.iter().enumerate() {
+                let f = snapshot_object(v, "secondary valve", &["branch", "seated", "closing"])?;
+                let flag = |key: &str| {
+                    f[key]
+                        .as_bool()
+                        .ok_or_else(|| fatal(format!("secondary snapshot: valve {key}")))
+                };
+                valves[k][j] = Valve {
+                    branch: match f["branch"].as_str() {
+                        Some("ascending") => Branch::Ascending,
+                        Some("descending") => Branch::Descending,
+                        other => {
+                            return Err(fatal(format!("secondary snapshot: branch {other:?}")));
+                        }
+                    },
+                    seated: flag("seated")?,
+                    closing: flag("closing")?,
+                };
+            }
+        }
+        self.trip_s = trip_s;
+        self.feed_supported = feed_supported;
+        self.valves = valves;
+        Ok(())
     }
     fn next_time_event(&self, t: f64) -> Option<f64> {
         self.ramp_end().filter(|end| *end > t)
@@ -618,8 +714,13 @@ impl<P: Properties> Secondary<P> for Secondaries {
                     x.rate(b + LIFTS + j) - self.relief.lift_rate(valve, p, *lift);
             }
             // F3 (a): the feed is exactly the withdrawn gas; x - x is exact.
+            // S3-D12: gated to zero while the feed pumps are unsupplied.
             let withdrawn = steam + relief;
-            let feed = withdrawn;
+            let feed = if self.feed_supported {
+                withdrawn
+            } else {
+                s(0.)
+            };
             let mass_receipt = feed - withdrawn;
             let energy_receipt = *heat + feed * s(self.derived.feed_enthalpy_j_kg) - withdrawn * hg;
             rows[b + MASS] = x.rate(b + MASS) - mass_receipt;
@@ -649,8 +750,17 @@ impl<P: Properties> Secondary<P> for Secondaries {
         for (k, g) in self.sgs.iter().enumerate() {
             let b = g.base;
             let lifts: Vec<usize> = (b + LIFTS..b + LIFTS + g.valves.len()).collect();
-            // The inventory-holding feed cancels the withdrawal exactly.
-            own[b + MASS] = vec![b + MASS];
+            // The inventory-holding feed cancels the withdrawal exactly; a
+            // declared feed gate (S3-D27) may close, and the withdrawal then
+            // reads the pressure and the relief lifts (structural zeros
+            // while the gate is open).
+            own[b + MASS] = if self.feed_gate_declared {
+                let mut mass = vec![b + MASS, b + PRESSURE];
+                mass.extend(&lifts);
+                mass
+            } else {
+                vec![b + MASS]
+            };
             let mut energy = vec![b + ENERGY, b + PRESSURE];
             energy.extend(&lifts);
             own[b + ENERGY] = energy;
@@ -823,6 +933,13 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 deposits: Vec::new(),
                 receipt: json!({"owner":"secondary","command":"StuckCluster","t_s":t,
                     "steamDemand":"unchanged (a rod malfunction)"}),
+            }),
+            // C3's RCP supply loss is the network's; the steam demand is
+            // untouched.
+            Command::SupplyLoss { rotor } => Ok(Transaction {
+                deposits: Vec::new(),
+                receipt: json!({"owner":"secondary","command":"SupplyLoss","rotor":rotor,"t_s":t,
+                    "steamDemand":"unchanged (an RCP supply loss)"}),
             }),
             // G7: the steam demand stays at its constant A/B values.
             Command::ManualReactorTrip => Ok(Transaction {

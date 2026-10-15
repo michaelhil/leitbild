@@ -138,8 +138,10 @@ fn joined_census_against_table_1_1() {
     assert_eq!(row("Guide/plenum").composed, Some([1351, 0]));
     assert_eq!(row("SG metal").composed, Some([8, 0]));
     // Decision 0014 with amendment 6: the stratified cell has 19 coordinates.
-    assert_eq!(row("Network cells").composed, Some([152, 35]));
-    assert_eq!(row("Network faces").composed, Some([70, 0]));
+    // S3-D28: the regression packet composes the closed spray line (S3-D25):
+    // its cell (5 differential, 1 algebraic) and its two paths' 4 impulses.
+    assert_eq!(row("Network cells").composed, Some([157, 36]));
+    assert_eq!(row("Network faces").composed, Some([74, 0]));
     assert_eq!(row("RCP rotors").composed, Some([4, 0]));
     // G6: 3 heater rod segments, 5 shell bands and 2 heads, and the lift.
     let g6 = match &pzr {
@@ -152,8 +154,8 @@ fn joined_census_against_table_1_1() {
         }
         None => 0,
     };
-    assert_eq!(c.composed, [17242 + g6, 1193, 18435 + g6]);
-    assert_eq!(c.with_pending, [17302 + g6, 1301, 18603 + g6]);
+    assert_eq!(c.composed, [17251 + g6, 1194, 18445 + g6]);
+    assert_eq!(c.with_pending, [17311 + g6, 1302, 18613 + g6]);
     let histories = nuclear.histories();
     assert_eq!(histories.len(), 9650);
     let receipt = json!({
@@ -1693,15 +1695,19 @@ fn the_pzr_relief_roots_and_stops_transact_on_the_joined_state() {
     let o = joined.offsets();
     let n = joined.root_count();
     let owners = joined.secondary().unwrap().root_count() + joined.rods().unwrap().root_count();
+    // The relief's demand and travel roots follow the owners'; a composed
+    // spray path's inlet check adds one slot after them (IC-CTRL, S3-D25).
+    let spray = usize::from(joined.network.spray().is_some());
     assert_eq!(
         n,
-        owners + 2,
-        "the relief's demand and travel roots come last"
+        owners + 2 + spray,
+        "the relief's demand and travel roots follow the owners'"
     );
+    let (demand_slot, travel_slot) = (owners, owners + 1);
     let roots = |joined: &mut Joined<If97>, y: &[f64]| {
         let mut out = vec![0.; n];
         joined.roots(0., y, &vec![0.; y.len()], &mut out).unwrap();
-        [out[n - 2], out[n - 1]]
+        [out[demand_slot], out[travel_slot]]
     };
     let roof = joined.network.pzr.base + PZR_PRESSURE;
     let p_roof = y[roof] * joined.network.scales()[roof];
@@ -1711,8 +1717,8 @@ fn the_pzr_relief_roots_and_stops_transact_on_the_joined_state() {
     );
     let crossing = |demand: i32, travel: i32| {
         let mut d = vec![0; n];
-        d[n - 2] = demand;
-        d[n - 1] = travel;
+        d[demand_slot] = demand;
+        d[travel_slot] = travel;
         d
     };
     let state = |joined: &Joined<If97>| {
@@ -1766,7 +1772,7 @@ fn the_pzr_relief_roots_and_stops_transact_on_the_joined_state() {
     println!(
         "{}",
         json!({"kind":"s2-g6-relief-transactions","status":"NOT-EVIDENCE zero-time check; declared crossings, no trajectory",
-            "roots":n,"relief_roots":[n - 2, n - 1],"p_roof_pa":p_roof,"restart":format!("{start:?}")})
+            "roots":n,"relief_roots":[demand_slot, travel_slot],"p_roof_pa":p_roof,"restart":format!("{start:?}")})
     );
 }
 

@@ -29,7 +29,7 @@ pub mod guide;
 use crate::{
     joined::block::{
         CellVolume, Class, Command, Coordinates, Fluid, Layout, OwnerAccount, Receipts, Rods,
-        Structure, Transaction,
+        Structure, Transaction, restored_time, snapshot_object, snapshot_time,
     },
     local_flow::Phase,
     network::{Failure, packet::Packet},
@@ -1192,6 +1192,52 @@ impl<P> Rods<P> for RodBlock {
             .flat_map(|mode| [1., if *mode == Mode::Free { 1. } else { 0. }, 0.])
             .collect()
     }
+    // S5 snapshot hook (PLATFORM, claude/ld01-s5-host; KERN reconciles):
+    // every cluster's mode and declared failed release, and the holding
+    // circuit's opening time.
+    fn discrete_state(&self) -> serde_json::Value {
+        json!({
+            "modes": self.modes.iter().map(|m| match m {
+                Mode::Held => "held", Mode::Free => "free", Mode::Seated => "seated",
+            }).collect::<Vec<_>>(),
+            "failed_release": self.failed_release,
+            "holding_open_at": snapshot_time(self.holding_open_at),
+        })
+    }
+    fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure> {
+        let o = snapshot_object(
+            state,
+            "rods",
+            &["modes", "failed_release", "holding_open_at"],
+        )?;
+        let n = self.clusters.len();
+        let modes = o["modes"]
+            .as_array()
+            .filter(|a| a.len() == n)
+            .ok_or_else(|| fatal("rods snapshot: one mode per cluster"))?
+            .iter()
+            .map(|m| match m.as_str() {
+                Some("held") => Ok(Mode::Held),
+                Some("free") => Ok(Mode::Free),
+                Some("seated") => Ok(Mode::Seated),
+                other => Err(fatal(format!("rods snapshot: mode {other:?}"))),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let failed = o["failed_release"]
+            .as_array()
+            .filter(|a| a.len() == n)
+            .ok_or_else(|| fatal("rods snapshot: one failed-release flag per cluster"))?
+            .iter()
+            .map(|f| {
+                f.as_bool()
+                    .ok_or_else(|| fatal("rods snapshot: failed-release flag"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.holding_open_at = restored_time(&o["holding_open_at"])?;
+        self.modes = modes;
+        self.failed_release = failed;
+        Ok(())
+    }
     fn next_time_event(&self, t: f64) -> Option<f64> {
         self.holding_open_at.filter(|open| *open > t)
     }
@@ -1425,6 +1471,21 @@ impl<P> Rods<P> for RodBlock {
     fn roots_read_fluid(&self) -> bool {
         self.modes.contains(&Mode::Seated)
     }
+    fn r3_band(&self, x: Coordinates<'_>, fluid: &Fluid<'_>) -> Result<usize, Failure> {
+        let rho_lower = fluid.cells[self.lower].phase[0]
+            .ok_or_else(|| recoverable("rods: LOWER holds no liquid"))?
+            .density
+            .value;
+        Ok((0..self.clusters.len())
+            .filter(|c| {
+                let (v, m) = (x.value(3 * c + 1).value, x.value(3 * c + 2).value);
+                // `forces`' reversal measure: the annulus volume current over
+                // the band's volume current.
+                let reversal = (m / rho_lower - self.body_area * v) / self.blend_volume_current;
+                reversal.abs() < 1.
+            })
+            .count())
+    }
     fn roots(
         &mut self,
         _: &P,
@@ -1516,6 +1577,12 @@ impl<P> Rods<P> for RodBlock {
     fn command(&mut self, t: f64, command: Command) -> Result<Transaction, Failure> {
         match command {
             Command::StuckCluster { cluster } => self.stick(t, cluster),
+            // C3's initiator is the network's (a rotor's supply); the rods
+            // schedule nothing for it.
+            Command::SupplyLoss { rotor } => Ok(Transaction {
+                deposits: Vec::new(),
+                receipt: json!({"supply_loss_rotor": rotor, "t_s": t, "holding": "unchanged"}),
+            }),
             Command::ManualReactorTrip => self.open_holding_circuit(t),
             // S3 (C16, acquired protection): with acquired protection the
             // turbine TRIP schedules nothing here; the protection's holding

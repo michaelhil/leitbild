@@ -23,8 +23,48 @@ pub struct Section {
     /// The SG contact law's exchange area and wall constants
     /// (`ld01-sg-contact`), read once for the joined solids' films.
     pub contact: Contact,
+    /// The two-zone contact coordinate (`ld01-sg-exposure`, S3-D26) of the
+    /// tube wetting, for the joined solids' secondary contact.
+    pub exposure: Exposure,
     /// Consumed pages and source hashes; not read by the block.
     pub provenance: Value,
+}
+
+/// The two-zone contact coordinate of `ld01-sg-exposure` (S3-D26), as the
+/// compiler derives it for the selected free volume: the bundle zone holds
+/// `bundleZoneVolume_m3` from the fold's start to its crest, uniformly;
+/// above the crest the free area is `upperZoneArea_m2`. The compiler checks
+/// that the exposure block's zone bounds are the fold's start and crest.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Exposure {
+    pub fold: Fold,
+    #[serde(rename = "bundleZoneVolume_m3")]
+    pub bundle_zone_volume_m3: f64,
+    #[serde(rename = "upperZoneArea_m2")]
+    pub upper_zone_area_m2: f64,
+}
+/// The folded tube path: `reference-primary-mechanics` developed length and
+/// the `reference-hydraulics` inlet port, crest and outlet port elevations.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Fold {
+    #[serde(rename = "developedLength_m")]
+    pub developed_length_m: f64,
+    pub inlet_m: f64,
+    pub crest_m: f64,
+    pub outlet_m: f64,
+}
+impl Exposure {
+    /// The kernel's contact map over the packet's fold.
+    pub fn contact_map(&self) -> Result<crate::thermal::ContactMap, &'static str> {
+        let f = self.fold;
+        crate::thermal::ContactMap::new(
+            crate::thermal::FoldPath::new(f.developed_length_m, f.inlet_m, f.crest_m, f.outlet_m)?,
+            self.bundle_zone_volume_m3,
+            self.upper_zone_area_m2,
+        )
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
