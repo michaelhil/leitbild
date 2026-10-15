@@ -356,6 +356,7 @@ const SOLVER_API: &[&str] = &[
     "operating_ida_solution_scaling",
     "operating_ida_stats",
     "operating_ida_step",
+    "operating_ida_tolerances",
     "operating_ida_stop_at",
     "operating_klu_analyze",
     "operating_klu_factor",

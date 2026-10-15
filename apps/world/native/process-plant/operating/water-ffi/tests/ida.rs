@@ -349,6 +349,36 @@ fn one_step_mode_takes_one_step_per_call_and_ends_at_the_boundary() {
     assert_eq!((y, yp), (cy, cyp));
 }
 
+/// Stock IDASVtolerances as a segment option: refused once a segment has
+/// started and for an invalid vector; after a reinitialization the new
+/// tolerances govern the next segment (looser tolerances take fewer steps
+/// over the same span).
+#[test]
+fn tolerances_change_only_at_a_segment_start_and_govern_the_next_segment() {
+    let (mut y, mut yp) = ([1., 2.], [-1., -2.]);
+    let mut ida = new(decay(), &y, &yp);
+    assert!(ida.set_tolerances(1e-8, &[1e-10; 1]).is_err());
+    assert!(ida.set_tolerances(0., &[1e-10; 2]).is_err());
+    assert!(ida.set_tolerances(1e-8, &[1e-10, 0.]).is_err());
+    ida.initialize(0.1, &mut y, &mut yp).unwrap();
+    ida.advance(1., &mut y, &mut yp).unwrap();
+    let tight = ida.stats().unwrap().steps;
+    assert!(
+        ida.set_tolerances(1e-4, &[1e-6; 2])
+            .unwrap_err()
+            .contains("only after")
+    );
+    ida.reinitialize(1., &y, &yp).unwrap();
+    ida.set_tolerances(1e-4, &[1e-6; 2]).unwrap();
+    ida.advance(2., &mut y, &mut yp).unwrap();
+    let loose = ida.stats().unwrap().steps;
+    assert!(
+        loose < tight,
+        "{loose} steps at 1e-4 against {tight} at 1e-8"
+    );
+    assert!((y[0] - (-2_f64).exp()).abs() < 1e-3, "{}", y[0]);
+}
+
 #[test]
 fn stock_constraints_reject_negative_inventory_without_rewriting_it() {
     let mut y = [-1., -2.];

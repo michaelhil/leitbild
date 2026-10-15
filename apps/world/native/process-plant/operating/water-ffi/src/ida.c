@@ -227,6 +227,12 @@ int operating_ida_stats(OperatingIDA *o,long *counts,int *orders,double *steps) 
     return code;
 }
 int operating_ida_max_order(OperatingIDA *o,int order) { return IDASetMaxOrd(o->ida,order); }
+/* Stock IDASVtolerances on the handle's own atol vector (a segment's
+   tolerances, e.g. a derived class at a phase-mode change). */
+int operating_ida_tolerances(OperatingIDA *o,double rtol,const double *atol) {
+    memcpy(N_VGetArrayPointer(o->atol),atol,N_VGetLength(o->atol)*sizeof(double));
+    return IDASVtolerances(o->ida,rtol,o->atol);
+}
 int operating_ida_max_step(OperatingIDA *o,double step) { return IDASetMaxStep(o->ida,step); }
 /* Stock IDASetInitStep: the first step; it persists across IDAReInit. */
 int operating_ida_init_step(OperatingIDA *o,double step) { return IDASetInitStep(o->ida,step); }

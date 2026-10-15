@@ -180,6 +180,7 @@ unsafe extern "C" {
         steps: *mut f64,
     ) -> c_int;
     fn operating_ida_max_order(ida: *mut c_void, order: c_int) -> c_int;
+    fn operating_ida_tolerances(ida: *mut c_void, rtol: f64, atol: *const f64) -> c_int;
     fn operating_ida_max_step(ida: *mut c_void, step: f64) -> c_int;
     fn operating_ida_init_step(ida: *mut c_void, step: f64) -> c_int;
     fn operating_ida_quadratures_linked() -> c_int;
@@ -633,6 +634,26 @@ impl<S: System> Ida<S> {
         let mut copy: Vec<c_int> = directions.to_vec();
         let code =
             unsafe { operating_ida_set_root_direction(self.handle.as_ptr(), copy.as_mut_ptr()) };
+        self.check(code)
+    }
+    /// Stock IDASVtolerances: the segment's relative and absolute
+    /// tolerances (finite, positive), a segment option like the others
+    /// (before `advance`); for a derived class that changes at a
+    /// reinitialization, such as an equilibrium cell's vapor class at a
+    /// phase-mode change (S3-D3).
+    pub fn set_tolerances(&mut self, relative: f64, absolute: &[f64]) -> Result<()> {
+        self.configurable("tolerances")?;
+        if absolute.len() != self.context.n
+            || !relative.is_finite()
+            || relative <= 0.
+            || absolute.iter().any(|a| !a.is_finite() || *a <= 0.)
+        {
+            return Err(
+                "IDA tolerances need a positive rtol and one positive atol per coordinate".into(),
+            );
+        }
+        let code =
+            unsafe { operating_ida_tolerances(self.handle.as_ptr(), relative, absolute.as_ptr()) };
         self.check(code)
     }
     /// IDASetMaxOrd; stock admits 1 through its allocated maximum order 5.
