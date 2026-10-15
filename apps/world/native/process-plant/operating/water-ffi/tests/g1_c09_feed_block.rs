@@ -82,7 +82,12 @@ fn liquid<P: Properties>(pr: &P, p: S, target: S, enthalpy: bool) -> Result<Liqu
 }
 /// `h(pb, s(pa, ha))` for a single-phase liquid stage, `pb >= pa`.
 fn adiabat<P: Properties>(pr: &P, pa: S, ha: S, pb: S) -> Result<(S, usize), String> {
-    adiabat_on(pr, pa, ha, pb, LOG_STEP)
+    // G1C09_STAGE_STEPS: the lead-decision candidate, a fixed number of RK4
+    // steps over the stage instead of the nozzle path's grid.
+    match std::env::var("G1C09_STAGE_STEPS").ok().and_then(|s| s.parse::<f64>().ok()) {
+        Some(steps) => adiabat_on(pr, pa, ha, pb, (pb.value / pa.value).ln() / steps * (1. + 1e-12)),
+        None => adiabat_on(pr, pa, ha, pb, LOG_STEP),
+    }
 }
 fn adiabat_on<P: Properties>(pr: &P, pa: S, ha: S, pb: S, log_step: f64) -> Result<(S, usize), String> {
     if pb.value < pa.value {
@@ -843,6 +848,19 @@ fn g1_c09_feed_block() {
         })
         .collect();
     report["stageGrid"] = json!({"nozzleGrid": {"logStep": LOG_STEP, "inversions": fine_calls, "hStar_J_kg": fine.value}, "coarser": coarse});
+    // Zero-flow conditioning of an algebraic restriction: dG/dp_back of the
+    // H1 inlet ISO as its drop vanishes (the T2 stagnation regime).
+    let h1 = &block.heaters[0];
+    let conditioning: Vec<Value> = [5e3, 50., 0.5, 5e-3, 5e-5]
+        .iter()
+        .map(|drop| {
+            let pb = S::new(block.junction[0] - drop, 1.);
+            let g = flux(&If97, k(block.junction[0]), k(h1.h_ref_in), pb).unwrap();
+            json!({"drop_Pa": drop, "flow_kg_s": h1.cda_in * g.value, "dFlow_dpBack_kg_s_Pa": h1.cda_in * g.direction})
+        })
+        .collect();
+    report["zeroFlowConditioning"] = json!(conditioning);
+    report["stageSteps"] = json!(std::env::var("G1C09_STAGE_STEPS").ok());
     report["cost"] = json!({"residual_cpu_s": residual_cpu, "denseJacobian_cpu_s": jacobian_cpu,
         "stageAdiabatInversionsPerResidual": stage_calls, "load": cpu::load_average()});
     println!("{}", serde_json::to_string_pretty(&report).unwrap());
