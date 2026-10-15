@@ -1151,6 +1151,14 @@ impl<P: Properties + WaterProperties> Joined<P> {
             }
         }
         self.deposit(&done, y)?;
+        // IC-CTRL (S3 spray path, for KERN): the spray stem's arrival at 0
+        // locks the valve path (class R; the identity follows the lock).
+        if let Some(receipt) = self.network.spray_event(t)? {
+            done.push(super::block::Transaction {
+                deposits: Vec::new(),
+                receipt,
+            });
+        }
         Ok(done)
     }
     /// The earliest declared time event of any owner strictly after `t`.
@@ -1158,6 +1166,11 @@ impl<P: Properties + WaterProperties> Joined<P> {
         [
             self.secondary().and_then(|b| b.next_time_event(t)),
             self.rods().and_then(|b| b.next_time_event(t)),
+            // IC-CTRL (S3 spray path): only the closing arrival is an owner
+            // event (R); an open arrival is the controller's S stop.
+            self.network.spray_next_instant(t).and_then(|(a, c)| {
+                (c == crate::control::spray_valve::StemChange::Lock).then_some(a)
+            }),
         ]
         .into_iter()
         .flatten()

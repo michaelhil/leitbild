@@ -796,7 +796,7 @@ impl<P: Properties> Blocks<'_, P> {
         let net = self.net;
         let x = self.pzr_coordinates(|i| self.get(seed, i))?;
         let rate = self.pzr_coordinates(|i| self.rate(seed, i))?;
-        let receipts = net.pzr_receipts(pass.receipts[net.pzr.cell])?;
+        let receipts = net.pzr_receipts(pass.receipts[net.pzr.cell], None)?;
         let scales: [f64; PZR_COORDINATES] = net.scales[net.pzr.coordinates()]
             .try_into()
             .map_err(|_| fatal("PZR scale layout"))?;
@@ -856,6 +856,14 @@ impl<P: Properties> Network<P> {
     /// Compile the structural pattern once (the colored assembly's) and the
     /// element incidence of every column.
     pub fn block_jacobian(&self) -> Result<BlockJacobian, Failure> {
+        // IC-CTRL (S3 spray path): the block replay does not yet replay the
+        // spray port's virtual cell, receipts and valve loss; refuse rather
+        // than assemble a wrong block Jacobian (the colored assembly is exact).
+        if self.spray.is_some() {
+            return Err(fatal(
+                "the block Jacobian does not yet compose the spray path; use the colored assembly",
+            ));
+        }
         let n = self.dimension();
         let pattern =
             Pattern::from_columns(n, &self.structural_pattern()).map_err(Failure::Fatal)?;

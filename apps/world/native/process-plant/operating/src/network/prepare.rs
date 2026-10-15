@@ -660,6 +660,13 @@ pub fn prepare<P: Properties>(
 ) -> Result<(Network<P>, Prepared, Receipt), Failure> {
     settings.validate()?;
     point.validate(&packet.pzr.cell, settings)?;
+    // IC-CTRL (S3 spray path): the hydrostatic preparation does not yet
+    // carry the spray line; refuse rather than prepare it outside its tree.
+    if packet.pzr_spray.is_some() {
+        return Err(Failure::Fatal(
+            "the hydrostatic preparation does not yet compose the spray path".into(),
+        ));
+    }
     let (mut network, mut prepared) = Network::new(
         packet,
         properties,
