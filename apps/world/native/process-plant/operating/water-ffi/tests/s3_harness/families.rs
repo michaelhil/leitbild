@@ -58,6 +58,32 @@ pub fn cost(
     recovery: f64,
     quiet_ratio: Option<(f64, String)>,
 ) -> Value {
+    cost_from(
+        case,
+        budgets,
+        marks,
+        end,
+        window,
+        recovery,
+        quiet_ratio,
+        None,
+    )
+}
+
+/// [`cost`] with C5's trip-average start (the holding loss after zero,
+/// C4's reading: S2's trip average from the reactor trip to the end).
+#[allow(clippy::too_many_arguments)] // The cost spans and their sources.
+pub fn cost_from(
+    case: Case,
+    budgets: &Value,
+    marks: &[(f64, f64, f64)],
+    end: f64,
+    window: Option<f64>,
+    recovery: f64,
+    quiet_ratio: Option<(f64, String)>,
+    trip_from: Option<f64>,
+) -> Value {
+    let quiet_ratio_c5 = quiet_ratio.clone();
     let cpu: Vec<(f64, f64)> = marks.iter().map(|m| (m.0, m.1)).collect();
     let ins: Vec<(f64, f64)> = marks.iter().map(|m| (m.0, m.2)).collect();
     let mut gates = Vec::new();
@@ -119,14 +145,57 @@ pub fn cost(
                 entry("cost.s2_trip_average", "s2TripAverage", 0., last, last);
             }
         }
+        Case::C5 => {
+            let first = marks.first().map_or(0., |m| m.0);
+            entry(
+                "cost.s3_unit_from_start",
+                "s3UnitRecurringIncludingEvents",
+                first,
+                last,
+                last,
+            );
+            if let Some(w) = window {
+                entry("cost.s2_window", "s2WindowAndRecovery", 0., w, w);
+                entry(
+                    "cost.s2_recovery",
+                    "s2WindowAndRecovery",
+                    w,
+                    w + recovery,
+                    w + recovery,
+                );
+            }
+            match trip_from {
+                Some(h) => entry("cost.s2_trip_average", "s2TripAverage", h, last, last),
+                None => gates.push(gate(
+                    "cost.s2_trip_average",
+                    Value::Null,
+                    budgets["s2TripAverage"].clone(),
+                    "not executable",
+                    "no holding loss",
+                )),
+            }
+        }
+    }
+    if case == Case::C5 {
+        // The span before the offsite loss: reported (the block names no
+        // budget for it).
+        let first = marks.first().map_or(0., |m| m.0);
+        let raw = span_cpu(&cpu, first, 0.);
+        let quiet = quiet_ratio_c5
+            .as_ref()
+            .and_then(|(r, _)| span_cpu(&ins, first, 0.).map(|(_, _, per_s)| per_s / r));
+        gates.push(json!({"id": "cost.before_loss", "verdict": "reported", "raw_cpu_s_per_s": raw.map(|x| x.2),
+            "quiet_equivalent_cpu_s_per_s": quiet, "span_s": raw.map(|x| [x.0, x.1]),
+            "threshold_source": "ld01-s3-cases-c5 gates.cost (reported)", "label": PROVISIONAL}));
     }
     let judged: Vec<&Value> = gates
         .iter()
         .filter(|g| g["verdict"] == "pass" || g["verdict"] == "fail")
         .collect();
+    let reported = gates.iter().filter(|g| g["verdict"] == "reported").count();
     let verdict = if judged.iter().any(|g| g["verdict"] == "fail") {
         "fail"
-    } else if judged.len() == gates.len() {
+    } else if judged.len() + reported == gates.len() {
         "pass"
     } else {
         "incomplete"
@@ -278,6 +347,8 @@ pub fn directions(
         Case::C1 => {
             json!({"family": "B directions", "verdict": "not applicable", "reason": "C1 is a hold: the block declares no direction"})
         }
+        Case::C5 => json!({"family": "B directions", "verdict": "not executable",
+            "reason": "C5's directions are judged by s3_harness::c5::directions"}),
         Case::C2 => json!({"family": "B directions", "verdict": "not executable",
             "reason": "the r3.7 block declares no C2 direction: the table (core power down, T_cold up then down, PT1 up to 14.922 MPa then down, ...) is prose in the r3 draft, with no machine-readable signal or shape predicate (\"then\", \"briefly\", \"stabilizes\"); SPEC to put it into the block"}),
         Case::C3 => {
