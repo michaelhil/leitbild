@@ -265,6 +265,9 @@ pub struct Network<P: Properties> {
     /// The controlled-spray path (IC-CTRL, S3); `None` composes S1/S2 as
     /// before.
     spray: Option<SprayLayout>,
+    /// The valve section's form loss of the last evaluation (the block
+    /// replay reuses it: it reads no coordinate).
+    spray_loss: Option<f64>,
 }
 
 fn s(v: f64) -> Scalar {
@@ -701,6 +704,7 @@ impl<P: Properties> Network<P> {
                 coupled_receipts: vec![[[s(0.); 3]; 2]; pzr],
                 unilateral: None,
                 spray,
+                spray_loss: None,
             },
             Prepared {
                 y,

@@ -41,6 +41,13 @@ impl<P: Properties> Network<P> {
         let x = s.stem.position(t)?;
         Ok(Some(s.valve.form_loss(x)?))
     }
+    /// The valve section's form loss of the last evaluation, for the block
+    /// replay of section `section`.
+    pub(super) fn spray_section_loss(&self, section: usize) -> Option<f64> {
+        self.spray
+            .filter(|s| s.valve_section == section)
+            .and(self.spray_loss)
+    }
     /// Issue the stem a new fraction at `t` (a control frame). Opening a
     /// closed valve releases its lock here: the caller restarts (class R).
     /// A slope change needs only an exact stop (class S, S3-D4).

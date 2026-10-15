@@ -507,6 +507,7 @@ impl<P: Properties> Network<P> {
             let mut section = self.sections[j].section;
             if let Some(k) = self.spray_form_loss(j, t)? {
                 section.form_loss = k;
+                self.spray_loss = Some(k);
             }
             let e = section
                 .evaluate(input, direction)

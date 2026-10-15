@@ -94,6 +94,8 @@ pub struct BlockJacobian {
     rotor_section: Vec<usize>,
     /// The stratified cell's port read by the port face.
     port: usize,
+    /// IC-CTRL (S3 spray path): the spray port and its virtual cell.
+    spray_port: Option<(usize, usize)>,
 }
 impl BlockJacobian {
     pub fn columns(&self) -> usize {
@@ -471,7 +473,7 @@ impl<P: Properties> Blocks<'_, P> {
         }
         // L1 (decision 0014): as the residual, a locked path
         // transports nothing.
-        let path = if net.unilateral_locked(li) {
+        let path = if net.path_locked(li) {
             super::unilateral::held_path(inertance)
         } else if inertance.value == 0. && pi.value == 0. {
             flow::PathKinematics {
@@ -540,8 +542,13 @@ impl<P: Properties> Blocks<'_, P> {
             omega_rad_s: omega.direction,
             gas_volume_fraction: gas_fraction.direction,
         };
-        let e = net.sections[j]
-            .section
+        // IC-CTRL (S3 spray path): the valve section's held-input loss of
+        // the network's evaluation (it reads no coordinate).
+        let mut law = net.sections[j].section;
+        if let Some(k) = net.spray_section_loss(j) {
+            law.form_loss = k;
+        }
+        let e = law
             .evaluate(input, direction)
             .map_err(|e| recoverable(e.to_string()))?;
         let drive = liquid.fraction
@@ -563,8 +570,7 @@ impl<P: Properties> Blocks<'_, P> {
                 gas_profile = gas_profile + s(*w) * pass.chart(2 * face + 1).volume_flow_m3_s;
             }
             let gas_current = gas.density * gas.fraction * gas_profile;
-            let g = net.sections[j]
-                .section
+            let g = law
                 .evaluate(
                     hydraulics::Input {
                         massflow_kg_s: gas_current.value,
@@ -649,7 +655,7 @@ impl<P: Properties> Blocks<'_, P> {
         }
         // L1 (decision 0014): as the residual, a locked path's
         // row is `Pi/s`; it reads no onset.
-        if net.unilateral_locked(li) {
+        if net.path_locked(li) {
             return Ok((self.get(seed, l.index) / s(net.scales[l.index]), false));
         }
         let rate = self.rate(seed, l.index);
@@ -796,7 +802,10 @@ impl<P: Properties> Blocks<'_, P> {
         let net = self.net;
         let x = self.pzr_coordinates(|i| self.get(seed, i))?;
         let rate = self.pzr_coordinates(|i| self.rate(seed, i))?;
-        let receipts = net.pzr_receipts(pass.receipts[net.pzr.cell], None)?;
+        let receipts = net.pzr_receipts(
+            pass.receipts[net.pzr.cell],
+            net.spray.map(|s| pass.receipts[s.port_cell]),
+        )?;
         let scales: [f64; PZR_COORDINATES] = net.scales[net.pzr.coordinates()]
             .try_into()
             .map_err(|_| fatal("PZR scale layout"))?;
@@ -856,14 +865,6 @@ impl<P: Properties> Network<P> {
     /// Compile the structural pattern once (the colored assembly's) and the
     /// element incidence of every column.
     pub fn block_jacobian(&self) -> Result<BlockJacobian, Failure> {
-        // IC-CTRL (S3 spray path): the block replay does not yet replay the
-        // spray port's virtual cell, receipts and valve loss; refuse rather
-        // than assemble a wrong block Jacobian (the colored assembly is exact).
-        if self.spray.is_some() {
-            return Err(fatal(
-                "the block Jacobian does not yet compose the spray path; use the colored assembly",
-            ));
-        }
         let n = self.dimension();
         let pattern =
             Pattern::from_columns(n, &self.structural_pattern()).map_err(Failure::Fatal)?;
@@ -975,6 +976,7 @@ impl<P: Properties> Network<P> {
             gas_layouts,
             rotor_section,
             port,
+            spray_port: self.spray.map(|s| (s.port, s.port_cell)),
         })
     }
 
@@ -1319,6 +1321,10 @@ impl<'a, P: Properties> Replay<'a, P> {
                 pass.column = column;
                 pass.cells[pzr] = view;
                 w.charts.extend_from_slice(&structure.reading[pzr]);
+                if let Some((port, cell)) = structure.spray_port {
+                    pass.cells[cell] = net.stratified.port_view(&column, port)?;
+                    w.charts.extend_from_slice(&structure.reading[cell]);
+                }
                 pzr_seeded = true;
             }
             Some(Owner::Impulse(li)) => {
@@ -1501,7 +1507,14 @@ impl<'a, P: Properties> Replay<'a, P> {
             }
         }
         let external_boundary = external.and_then(|e| e.pzr_boundary.as_ref());
-        if pzr_seeded || w.receipts.binary_search(&pzr).is_ok() || external_boundary.is_some() {
+        let spray_received = structure
+            .spray_port
+            .is_some_and(|(_, cell)| w.receipts.binary_search(&cell).is_ok());
+        if pzr_seeded
+            || w.receipts.binary_search(&pzr).is_ok()
+            || spray_received
+            || external_boundary.is_some()
+        {
             // The boundary reads the cell's column and the owner's own
             // coordinates only: a moved column takes the coupled owner's
             // boundary on it, an owner column brings its own, and anything
@@ -1543,6 +1556,9 @@ impl<'a, P: Properties> Replay<'a, P> {
             Some(Owner::Pzr) => {
                 pass.column = base.column;
                 pass.cells[pzr] = base.cells[pzr];
+                if let Some((_, cell)) = structure.spray_port {
+                    pass.cells[cell] = base.cells[cell];
+                }
             }
             _ => {}
         }
@@ -1606,6 +1622,10 @@ impl<P: Properties> Blocks<'_, P> {
         }
         let (column, view) = self.pzr(None, structure.port)?;
         cells.push(view);
+        // IC-CTRL (S3 spray path): the spray port's view, its virtual cell.
+        if let Some((port, _)) = structure.spray_port {
+            cells.push(net.stratified.port_view(&column, port)?);
+        }
         let mut phase_mass: [Vec<Scalar>; 2] = std::array::from_fn(|k| {
             (0..n)
                 .map(|node| self.get(None, net.cell_layout[node].mass[k]))
