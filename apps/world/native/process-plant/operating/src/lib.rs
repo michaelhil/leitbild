@@ -7,6 +7,7 @@
 
 pub mod capture;
 pub mod control;
+pub mod electrical;
 pub mod heat_history;
 pub mod hydraulics;
 pub mod ic;
@@ -26,3 +27,4 @@ pub mod sg;
 pub mod source_feedback;
 pub mod sparse;
 pub mod thermal;
+pub mod turbine;
