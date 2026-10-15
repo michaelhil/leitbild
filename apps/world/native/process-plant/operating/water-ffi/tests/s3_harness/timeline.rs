@@ -36,6 +36,9 @@ pub struct Timeline {
     pub stop_ramp_end: Option<f64>,
     /// Every instant: (t, class, kinds).
     pub instants: Vec<(f64, String, Vec<String>)>,
+    /// The electrical slice's log (breaker, routing, contactors), when the
+    /// slice is composed: `None` when it is not.
+    pub electrical: Option<Vec<(f64, String)>>,
 }
 
 impl Timeline {
@@ -131,6 +134,24 @@ impl Timeline {
             }
         }
         Ok(tl)
+    }
+
+    /// The electrical slice's log entries `(absolute t, what)`, on the case
+    /// clock.
+    #[must_use]
+    pub fn with_electrical(mut self, log: &[(f64, String)], t0: f64) -> Self {
+        self.electrical = Some(log.iter().map(|(t, w)| (*t - t0, w.clone())).collect());
+        self
+    }
+
+    /// The electrical events whose text contains `what`.
+    pub fn electrical_events(&self, what: &str) -> Option<Vec<(f64, String)>> {
+        self.electrical.as_ref().map(|log| {
+            log.iter()
+                .filter(|(_, w)| w.contains(what))
+                .cloned()
+                .collect()
+        })
     }
 
     /// The first time `function` was accepted in each division (by index).

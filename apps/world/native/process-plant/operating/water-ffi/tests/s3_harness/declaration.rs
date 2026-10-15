@@ -43,16 +43,13 @@ impl Case {
     pub fn missing_prerequisites(self) -> Vec<&'static str> {
         match self {
             Self::C1 => vec![
-                "prerequisite 10: the generator exporting through the Grid exchange is not composed in the joined operator (ELEC's slice runs stand-alone)",
+                "prerequisite 10 / request D: the generator exports into the electrical packet's fixed boundary (line voltage and frequency), not request D's Grid exchange (D1 + D2)",
             ],
             Self::C2 => vec![
-                "prerequisite 8: ELEC's slice (breaker, unit-to-reserve transfer, contactors) is not composed in the joined operator, so C2.O2's breaker, C2.O3 and C2.N5 cannot be judged",
-                "loop-flow acquisition: the protection client refuses Quantity::LoopFlow, so C2.N4 cannot be judged",
+                "loop-flow acquisition: the protection client refuses Quantity::LoopFlow and the S3 ic section has no loop-flow family, so C2.N4 cannot be judged",
             ],
             Self::C3 => vec![
-                "R3's pump-off donor law (PHASE-L1) is not in the model",
-                "no RCP supply-loss command on the joined spine (only S1's network-level set_rotor_state)",
-                "loop-flow acquisition: the protection client refuses Quantity::LoopFlow, so the low-flow cause cannot be acquired",
+                "loop-flow acquisition: the protection client refuses Quantity::LoopFlow and the S3 ic section has no loop-flow family, so C3.O1, C3.O2, C3.N1 and C3.N2 cannot be judged",
             ],
         }
     }
