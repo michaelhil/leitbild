@@ -29,7 +29,7 @@ pub mod guide;
 use crate::{
     joined::block::{
         CellVolume, Class, Command, Coordinates, Fluid, Layout, OwnerAccount, Receipts, Rods,
-        Structure, Transaction,
+        Structure, Transaction, restored_time, snapshot_object, snapshot_time,
     },
     local_flow::Phase,
     network::{Failure, packet::Packet},
@@ -1191,6 +1191,52 @@ impl<P> Rods<P> for RodBlock {
             .iter()
             .flat_map(|mode| [1., if *mode == Mode::Free { 1. } else { 0. }, 0.])
             .collect()
+    }
+    // S5 snapshot hook (PLATFORM, claude/ld01-s5-host; KERN reconciles):
+    // every cluster's mode and declared failed release, and the holding
+    // circuit's opening time.
+    fn discrete_state(&self) -> serde_json::Value {
+        json!({
+            "modes": self.modes.iter().map(|m| match m {
+                Mode::Held => "held", Mode::Free => "free", Mode::Seated => "seated",
+            }).collect::<Vec<_>>(),
+            "failed_release": self.failed_release,
+            "holding_open_at": snapshot_time(self.holding_open_at),
+        })
+    }
+    fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure> {
+        let o = snapshot_object(
+            state,
+            "rods",
+            &["modes", "failed_release", "holding_open_at"],
+        )?;
+        let n = self.clusters.len();
+        let modes = o["modes"]
+            .as_array()
+            .filter(|a| a.len() == n)
+            .ok_or_else(|| fatal("rods snapshot: one mode per cluster"))?
+            .iter()
+            .map(|m| match m.as_str() {
+                Some("held") => Ok(Mode::Held),
+                Some("free") => Ok(Mode::Free),
+                Some("seated") => Ok(Mode::Seated),
+                other => Err(fatal(format!("rods snapshot: mode {other:?}"))),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let failed = o["failed_release"]
+            .as_array()
+            .filter(|a| a.len() == n)
+            .ok_or_else(|| fatal("rods snapshot: one failed-release flag per cluster"))?
+            .iter()
+            .map(|f| {
+                f.as_bool()
+                    .ok_or_else(|| fatal("rods snapshot: failed-release flag"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.holding_open_at = restored_time(&o["holding_open_at"])?;
+        self.modes = modes;
+        self.failed_release = failed;
+        Ok(())
     }
     fn next_time_event(&self, t: f64) -> Option<f64> {
         self.holding_open_at.filter(|open| *open > t)

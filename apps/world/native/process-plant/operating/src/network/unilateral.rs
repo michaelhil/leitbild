@@ -36,7 +36,7 @@ use crate::{local_flow as flow, thermal::Scalar};
 use serde::Serialize;
 
 /// Which ends of a phase path hold that phase's mass.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub enum Holding {
     Neither,
     From,
@@ -86,7 +86,7 @@ impl End {
 }
 
 /// The L1 state of one phase path.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub enum Lock {
     /// The retained impulse is the path's differential momentum.
     Free,
@@ -99,7 +99,7 @@ pub enum Lock {
 
 /// The L1 state of every phase path, indexed as the network's face layout
 /// (`2 face + phase`): copyable discrete Run state.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub struct Locks {
     pub paths: Vec<Lock>,
 }

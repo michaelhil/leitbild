@@ -259,6 +259,48 @@ pub enum Command {
     StuckCluster { cluster: usize },
 }
 
+/// S5 snapshot hook (PLATFORM, claude/ld01-s5-host; KERN reconciles): an
+/// optional owner time as its exact IEEE-754 bits, so a restored owner's
+/// time events are bitwise its source's.
+pub fn snapshot_time(t: Option<f64>) -> serde_json::Value {
+    t.map_or(serde_json::Value::Null, |t| {
+        serde_json::Value::String(format!("{:016x}", t.to_bits()))
+    })
+}
+/// The inverse of [`snapshot_time`]; anything but null or 16 hex digits
+/// refuses fatally.
+pub fn restored_time(v: &serde_json::Value) -> Result<Option<f64>, Failure> {
+    match v {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::String(h) if h.len() == 16 => u64::from_str_radix(h, 16)
+            .map(|b| Some(f64::from_bits(b)))
+            .map_err(|e| Failure::Fatal(format!("snapshot time {h}: {e}"))),
+        other => Err(Failure::Fatal(format!(
+            "snapshot time {other} is not 16 hex digits"
+        ))),
+    }
+}
+/// The object `v` with exactly the keys `keys`, refused otherwise.
+pub fn snapshot_object<'a>(
+    v: &'a serde_json::Value,
+    owner: &str,
+    keys: &[&str],
+) -> Result<&'a serde_json::Map<String, serde_json::Value>, Failure> {
+    let o = v
+        .as_object()
+        .ok_or_else(|| Failure::Fatal(format!("{owner} snapshot is not an object")))?;
+    let mut have: Vec<&str> = o.keys().map(String::as_str).collect();
+    let mut want = keys.to_vec();
+    have.sort_unstable();
+    want.sort_unstable();
+    if have != want {
+        return Err(Failure::Fatal(format!(
+            "{owner} snapshot keys {have:?}, expected {want:?}"
+        )));
+    }
+    Ok(o)
+}
+
 /// Structural dependencies of one block, in its own indices, for the joined
 /// sparse pattern. It must contain every dependency any state can produce,
 /// including through modes and branches; a colored assembly refuses a
@@ -406,6 +448,13 @@ pub trait Secondary<P> {
     /// feed entering and the steam and relief leaving (mass and energy at
     /// the enthalpies the rows used), and the metal heat the rows received.
     fn account(&self) -> OwnerAccount;
+    /// S5 snapshot hook (PLATFORM, claude/ld01-s5-host; KERN reconciles):
+    /// this owner's copyable discrete state — its modes, latches and armed
+    /// time events, never coordinates or caches — as plain data.
+    fn discrete_state(&self) -> serde_json::Value;
+    /// S5 snapshot hook: restore [`Secondary::discrete_state`] exactly;
+    /// anything else (layout, unknown field) refuses fatally.
+    fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure>;
 }
 
 /// The rod bodies (spider and bodies, H7), their guide passages (F1 (a),
@@ -517,4 +566,11 @@ pub trait Rods<P> {
     /// conservation account turns it on, around its own evaluation, so no
     /// residual or Jacobian evaluation pays for it.
     fn capture_account(&mut self, on: bool);
+    /// S5 snapshot hook (PLATFORM, claude/ld01-s5-host; KERN reconciles):
+    /// every cluster's mode and declared failed release, and the holding
+    /// circuit's opening time — never coordinates or caches.
+    fn discrete_state(&self) -> serde_json::Value;
+    /// S5 snapshot hook: restore [`Rods::discrete_state`] exactly; anything
+    /// else refuses fatally.
+    fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure>;
 }

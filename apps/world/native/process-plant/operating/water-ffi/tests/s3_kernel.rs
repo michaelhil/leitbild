@@ -819,3 +819,109 @@ fn the_phase_mode_transactions_move_no_stock() {
             "dryout": format!("{refused:?}")})
     );
 }
+
+/// S3-D19 (lead): every owner's discrete state is serialized. Every owner
+/// the joined operator composes (its layouts) has an entry in
+/// `Joined::discrete_state`, so a new owner without one fails here; and a
+/// unit driven into non-default discrete state by its owners' own commands
+/// and transactions (stuck cluster, acquired turbine trip, holding loss and
+/// its releases, a heater control frame, a relief crack, a phase birth, L1
+/// locks) restores into a freshly composed operator with the same snapshot,
+/// root count, identity, root directions, next time event, residual rows
+/// and root values, bit for bit. A discrete state left out of the snapshot
+/// shows as a difference.
+#[test]
+#[ignore = "requires the joined packet, the wiki, IF97 and stock IDA/KLU"]
+fn every_owners_discrete_state_survives_a_snapshot() {
+    use leitbild_operating_plant::{control::pzr_pressure::Demand, joined::block::Command};
+    let (
+        Started {
+            mut joined,
+            mut y,
+            yp,
+            network_ids,
+            ..
+        },
+        _,
+    ) = started_s3_phase_composition();
+    for (owner, _) in joined.layouts() {
+        assert!(
+            joined.discrete_state().get(owner).is_some(),
+            "S3-D19: owner {owner} has no discrete-state entry"
+        );
+    }
+    // Non-default discrete state through the owners' own interfaces.
+    joined
+        .command(0.1, &mut y, Command::StuckCluster { cluster: 0 })
+        .expect("stuck cluster");
+    joined
+        .command(0.1, &mut y, Command::TurbineTripAcquired)
+        .expect("acquired turbine trip");
+    joined
+        .command(0.2, &mut y, Command::HoldingLoss)
+        .expect("holding loss");
+    let request = 0.5 * joined.pzr().expect("PZR block").request_w();
+    joined
+        .pzr_mut()
+        .unwrap()
+        .apply_control(
+            0.2,
+            &Demand {
+                heater_request_w: request,
+                spray_target: 0.,
+                withdrawn: None,
+            },
+        )
+        .expect("a heater control frame");
+    // SG.A's first relief valve cracks (its first root, rising).
+    let mut directions = vec![0; joined.root_count()];
+    directions[0] = 1;
+    joined
+        .transact(0.2, &directions, &mut y)
+        .expect("a relief crack");
+    // A phase birth at HOUSING.NECK (its vapor slots are zero).
+    let packet: Value = serde_json::from_slice(&spine::packet_bytes().1).unwrap();
+    let neck = packet["mechanics"]["regions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|r| r["id"] == "HOUSING.NECK")
+        .unwrap();
+    joined.network.birth(neck, &mut y).expect("birth");
+    let snapshot = joined.discrete_state();
+    // A fresh composition of the same packet takes the snapshot.
+    let mut fresh = started_full_composition().joined;
+    fresh
+        .restore_discrete_state(&snapshot)
+        .expect("restore into a fresh composition");
+    assert_eq!(fresh.discrete_state(), snapshot, "round trip");
+    assert_eq!(fresh.root_count(), joined.root_count());
+    assert_eq!(
+        fresh.differential(&network_ids),
+        joined.differential(&network_ids)
+    );
+    assert_eq!(
+        fresh.root_directions().unwrap(),
+        joined.root_directions().unwrap()
+    );
+    assert_eq!(fresh.next_time_event(0.2), joined.next_time_event(0.2));
+    let t = 0.2;
+    joined.evaluate(t, &y, &yp, None, 0., None).unwrap();
+    fresh.evaluate(t, &y, &yp, None, 0., None).unwrap();
+    let bits = |j: &leitbild_operating_plant::joined::operator::Joined<If97>| {
+        j.rows()
+            .iter()
+            .map(|r| r.value.to_bits())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(bits(&fresh), bits(&joined), "residual rows");
+    let (mut a, mut b) = (vec![0.; joined.root_count()], vec![0.; fresh.root_count()]);
+    joined.roots(t, &y, &yp, &mut a).unwrap();
+    fresh.roots(t, &y, &yp, &mut b).unwrap();
+    assert_eq!(
+        a.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+        b.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+        "root values"
+    );
+    println!("{}", serde_json::json!({"snapshot": snapshot}));
+}

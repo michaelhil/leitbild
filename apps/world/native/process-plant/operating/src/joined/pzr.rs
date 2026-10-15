@@ -37,7 +37,7 @@
 //! sets the lift exactly to 1 (open) or exactly to 0 (on the seat). The
 //! block always reports two roots, the demand threshold and the travel; a
 //! lift at rest reports the travel root as the constant [`DISARMED`].
-use super::block::{Class, Coordinates, Layout, Transaction};
+use super::block::{Class, Coordinates, Layout, Transaction, snapshot_object};
 use crate::{
     network::{
         Failure,
@@ -523,6 +523,74 @@ impl Pzr {
                 "lift_rate_per_s":relief.device.lift_rate(relief.motion),
                 "stateChanged":event.before != event.after}),
         })
+    }
+    /// The block's copyable discrete state (S5 snapshot, PLATFORM; S3-D19):
+    /// the heater demand in force and each bank's delivered power (a
+    /// control frame changes them, [`Pzr::apply_control`]), as exact IEEE
+    /// bits, and the relief's demand latch and motion (null without a
+    /// relief) — never coordinates or caches.
+    pub fn discrete_state(&self) -> serde_json::Value {
+        let bits = |v: f64| format!("{:016x}", v.to_bits());
+        json!({
+            "heater_request_w": bits(self.request_w),
+            "bank_power_w": self.bank_power_w.iter().map(|v| bits(*v)).collect::<Vec<_>>(),
+            "relief": self.relief.map_or(serde_json::Value::Null, |r| {
+                json!({"demand_open": r.demand_open, "motion": match r.motion {
+                    ReliefMotion::Closed => "closed", ReliefMotion::Opening => "opening",
+                    ReliefMotion::Open => "open", ReliefMotion::Closing => "closing",
+                }})
+            }),
+        })
+    }
+    /// Restore [`Pzr::discrete_state`] exactly; any layout or key mismatch
+    /// refuses.
+    pub fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure> {
+        let o = snapshot_object(
+            state,
+            "pzr",
+            &["heater_request_w", "bank_power_w", "relief"],
+        )?;
+        let bits = |v: &serde_json::Value| -> Result<f64, Failure> {
+            v.as_str()
+                .filter(|h| h.len() == 16)
+                .and_then(|h| u64::from_str_radix(h, 16).ok())
+                .map(f64::from_bits)
+                .ok_or_else(|| fatal(format!("snapshot: PZR power {v}")))
+        };
+        let request_w = bits(&o["heater_request_w"])?;
+        let banks = o["bank_power_w"]
+            .as_array()
+            .filter(|a| a.len() == self.bank_power_w.len())
+            .ok_or_else(|| fatal("snapshot: one power per heater bank"))?
+            .iter()
+            .map(bits)
+            .collect::<Result<Vec<f64>, Failure>>()?;
+        match (self.relief.as_mut(), &o["relief"]) {
+            (None, serde_json::Value::Null) => {}
+            (Some(relief), v) if !v.is_null() => {
+                let r = snapshot_object(v, "pzr relief", &["demand_open", "motion"])?;
+                let demand_open = r["demand_open"]
+                    .as_bool()
+                    .ok_or_else(|| fatal("snapshot: relief demand latch"))?;
+                let motion = match r["motion"].as_str() {
+                    Some("closed") => ReliefMotion::Closed,
+                    Some("opening") => ReliefMotion::Opening,
+                    Some("open") => ReliefMotion::Open,
+                    Some("closing") => ReliefMotion::Closing,
+                    other => return Err(fatal(format!("snapshot: relief motion {other:?}"))),
+                };
+                relief.demand_open = demand_open;
+                relief.motion = motion;
+            }
+            (_, other) => {
+                return Err(fatal(format!(
+                    "snapshot: relief state {other} against the block's relief presence"
+                )));
+            }
+        }
+        self.request_w = request_w;
+        self.bank_power_w = banks;
+        Ok(())
     }
     /// The heater demand changes only at control frames
     /// ([`Pzr::apply_control`]) and the relief answers its own demand: a

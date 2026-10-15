@@ -32,13 +32,13 @@
 //! crossing step can be taken and located; it is never admitted.
 use super::{
     packet,
-    relief::{Characteristic, Threshold, Transition, Valve},
+    relief::{Branch, Characteristic, Threshold, Transition, Valve},
 };
 use crate::{
     joined::{
         block::{
             Class, Command, Coordinates, Crossing, Layout, OwnerAccount, Secondary, SecondaryView,
-            Structure, Transaction,
+            Structure, Transaction, restored_time, snapshot_object, snapshot_time,
         },
         packet::SecondaryStock,
     },
@@ -498,6 +498,54 @@ impl<P: Properties> Secondary<P> for Secondaries {
     }
     fn differential(&self) -> Vec<f64> {
         self.layout.ids()
+    }
+    // S5 snapshot hook (PLATFORM, claude/ld01-s5-host; KERN reconciles):
+    // the latched TRIP time and every valve's branch, seat and closing state.
+    fn discrete_state(&self) -> serde_json::Value {
+        json!({
+            "trip_s": snapshot_time(self.trip_s),
+            "valves": self.valves.iter().map(|sg| sg.iter().map(|v| json!({
+                "branch": match v.branch { Branch::Ascending => "ascending", Branch::Descending => "descending" },
+                "seated": v.seated, "closing": v.closing,
+            })).collect::<Vec<_>>()).collect::<Vec<_>>(),
+        })
+    }
+    fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure> {
+        let o = snapshot_object(state, "secondary", &["trip_s", "valves"])?;
+        let trip_s = restored_time(&o["trip_s"])?;
+        let sgs = o["valves"]
+            .as_array()
+            .filter(|a| a.len() == self.valves.len())
+            .ok_or_else(|| fatal("secondary snapshot: valves per SG"))?;
+        let mut valves = self.valves.clone();
+        for (k, sg) in sgs.iter().enumerate() {
+            let list = sg
+                .as_array()
+                .filter(|a| a.len() == valves[k].len())
+                .ok_or_else(|| fatal(format!("secondary snapshot: SG {k} valve count")))?;
+            for (j, v) in list.iter().enumerate() {
+                let f = snapshot_object(v, "secondary valve", &["branch", "seated", "closing"])?;
+                let flag = |key: &str| {
+                    f[key]
+                        .as_bool()
+                        .ok_or_else(|| fatal(format!("secondary snapshot: valve {key}")))
+                };
+                valves[k][j] = Valve {
+                    branch: match f["branch"].as_str() {
+                        Some("ascending") => Branch::Ascending,
+                        Some("descending") => Branch::Descending,
+                        other => {
+                            return Err(fatal(format!("secondary snapshot: branch {other:?}")));
+                        }
+                    },
+                    seated: flag("seated")?,
+                    closing: flag("closing")?,
+                };
+            }
+        }
+        self.trip_s = trip_s;
+        self.valves = valves;
+        Ok(())
     }
     fn next_time_event(&self, t: f64) -> Option<f64> {
         self.ramp_end().filter(|end| *end > t)

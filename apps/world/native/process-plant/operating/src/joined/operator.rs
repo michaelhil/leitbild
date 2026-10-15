@@ -552,6 +552,141 @@ impl<P: Properties + WaterProperties> Joined<P> {
     pub fn pzr_mut(&mut self) -> Option<&mut Pzr> {
         self.blocks.pzr.as_mut()
     }
+    /// S5 snapshot hook (PLATFORM, claude/ld01-s5-host; KERN reconciles):
+    /// the unit's copyable discrete state — the SG secondary's, the rods',
+    /// the PZR block's and the network's rotor states — as plain data. With
+    /// the coordinates and the packet it is the joined operator's whole
+    /// state; nothing here is a cache.
+    pub fn discrete_state(&self) -> serde_json::Value {
+        use crate::rotor::{Shaft, SpeedRequest, Support};
+        let rotors: Vec<serde_json::Value> = (0..self.network.rotor_count())
+            .map(|r| {
+                self.network.rotor_state(r).map_or(serde_json::Value::Null, |st| {
+                    let support = match st.support {
+                        Support::Supported(SpeedRequest::Zero) => serde_json::json!("supported-zero"),
+                        Support::Supported(SpeedRequest::Nominal) => serde_json::json!("supported-nominal"),
+                        Support::Supported(SpeedRequest::EngineeringTest { omega_rad_s }) => {
+                            serde_json::json!({"engineering_test_rad_s": super::block::snapshot_time(Some(omega_rad_s))})
+                        }
+                        Support::Unsupported => serde_json::json!("unsupported"),
+                        Support::OutsideSupplyEnvelope => serde_json::json!("outside-supply-envelope"),
+                    };
+                    let shaft = match st.shaft {
+                        Shaft::Free => "free",
+                        Shaft::Locked => "locked",
+                    };
+                    serde_json::json!({"support": support, "shaft": shaft})
+                })
+            })
+            .collect();
+        serde_json::json!({
+            "network": {
+                "unilateral": self.network.unilateral().map(|l| serde_json::to_value(l).expect("L1 locks serialize")),
+                "modes": serde_json::to_value(self.network.cell_modes()).expect("cell modes serialize"),
+            },
+            // No discrete state: their rows read coordinates and the packet only.
+            "nuclear": serde_json::Value::Null,
+            "solids": serde_json::Value::Null,
+            "secondary": self.secondary().map(|b| b.discrete_state()),
+            "rods": self.rods().map(|b| b.discrete_state()),
+            "pzr": self.pzr().map(|b| b.discrete_state()),
+            "rotors": rotors,
+            "phase_modes": self.phase_modes,
+        })
+    }
+    /// S5 snapshot hook: restore [`Joined::discrete_state`] exactly into a
+    /// freshly composed operator of the same packet; any mismatch refuses.
+    pub fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure> {
+        use crate::{
+            network::RotorState,
+            rotor::{Shaft, SpeedRequest, Support},
+        };
+        let o = super::block::snapshot_object(
+            state,
+            "joined",
+            &[
+                "network",
+                "nuclear",
+                "solids",
+                "secondary",
+                "rods",
+                "pzr",
+                "rotors",
+                "phase_modes",
+            ],
+        )?;
+        if !(o["nuclear"].is_null() && o["solids"].is_null()) {
+            return Err(fatal(
+                "snapshot: the nuclear and solid blocks hold no discrete state",
+            ));
+        }
+        let network =
+            super::block::snapshot_object(&o["network"], "network", &["unilateral", "modes"])?;
+        let modes: Vec<CellMode> = serde_json::from_value(network["modes"].clone())
+            .map_err(|e| fatal(format!("snapshot: cell modes: {e}")))?;
+        self.network.set_cell_modes(&modes)?;
+        match (&network["unilateral"], self.network.unilateral().is_some()) {
+            (serde_json::Value::Null, false) => {}
+            (v, false) if !v.is_null() => {
+                let locks = serde_json::from_value(v.clone())
+                    .map_err(|e| fatal(format!("snapshot: L1 locks: {e}")))?;
+                self.network.restore_unilateral(locks)?;
+            }
+            _ => {
+                return Err(fatal(
+                    "snapshot: restore into an operator with L1 not yet declared",
+                ));
+            }
+        }
+        self.phase_modes = o["phase_modes"]
+            .as_bool()
+            .ok_or_else(|| fatal("snapshot: phase_modes"))?;
+        match (self.secondary_mut(), &o["secondary"]) {
+            (Some(b), v) if !v.is_null() => b.restore_discrete_state(v)?,
+            (None, serde_json::Value::Null) => {}
+            _ => return Err(fatal("snapshot: secondary owner presence differs")),
+        }
+        match (self.rods_mut(), &o["rods"]) {
+            (Some(b), v) if !v.is_null() => b.restore_discrete_state(v)?,
+            (None, serde_json::Value::Null) => {}
+            _ => return Err(fatal("snapshot: rod owner presence differs")),
+        }
+        match (self.pzr_mut(), &o["pzr"]) {
+            (Some(b), v) => b.restore_discrete_state(v)?,
+            (None, serde_json::Value::Null) => {}
+            _ => return Err(fatal("snapshot: PZR block presence differs")),
+        }
+        let rotors = o["rotors"]
+            .as_array()
+            .filter(|a| a.len() == self.network.rotor_count())
+            .ok_or_else(|| fatal("snapshot: one state per rotor"))?;
+        for (r, v) in rotors.iter().enumerate() {
+            let f = super::block::snapshot_object(v, "rotor", &["support", "shaft"])?;
+            let support = match &f["support"] {
+                serde_json::Value::String(s) => match s.as_str() {
+                    "supported-zero" => Support::Supported(SpeedRequest::Zero),
+                    "supported-nominal" => Support::Supported(SpeedRequest::Nominal),
+                    "unsupported" => Support::Unsupported,
+                    "outside-supply-envelope" => Support::OutsideSupplyEnvelope,
+                    other => return Err(fatal(format!("snapshot: rotor support {other}"))),
+                },
+                serde_json::Value::Object(m) if m.len() == 1 => {
+                    let omega = super::block::restored_time(&m["engineering_test_rad_s"])?
+                        .ok_or_else(|| fatal("snapshot: engineering-test speed"))?;
+                    Support::Supported(SpeedRequest::EngineeringTest { omega_rad_s: omega })
+                }
+                other => return Err(fatal(format!("snapshot: rotor support {other}"))),
+            };
+            let shaft = match f["shaft"].as_str() {
+                Some("free") => Shaft::Free,
+                Some("locked") => Shaft::Locked,
+                other => return Err(fatal(format!("snapshot: rotor shaft {other:?}"))),
+            };
+            self.network
+                .set_rotor_state(r, RotorState { support, shaft });
+        }
+        Ok(())
+    }
     /// The joined rows of the last evaluation (solver scaling).
     pub fn rows(&self) -> &[Scalar] {
         &self.rows
