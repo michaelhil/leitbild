@@ -7,14 +7,21 @@
 //! quadrature integrands are filled for any caller (the stock-IDAS test now,
 //! the joined operator through a KERN hook later). Nothing here integrates.
 //!
+//! spec: world/packs/process-plant/reference-designs/ld-01/systems/electrical/generator-and-synchronization.md#external-carrier-and-operating-grid-join
 //! Coordinates: `[lambda_d, lambda_q, lambda_f, id, iq, if, omega, theta, T_body]`.
-//! Held inputs (changed only at stops): the boundary (`v_line`, `f_grid`, and
-//! whether the stiff boundary is joined), the admitted steam flow, the field
-//! converter's delivered voltage fraction, room temperature and the auxiliary
-//! source draws. `theta` is the rotor angle relative to the carrier; the
-//! carrier's handling across exchange boundaries (per-boundary reference
-//! conversion, or a continuous carrier input) is the owner's open item:
-//! [`Slice::reference_conversion`] exists for the former and is not used here.
+//! Held inputs (changed only at stops): the boundary (`v_line`, the Grid
+//! frequency, the carrier rate, and whether the stiff boundary is joined),
+//! the admitted steam flow, the field converter's delivered voltage
+//! fraction, room temperature and the auxiliary source draws.
+//!
+//! **Carrier (owner decision D2, 15 Oct; `ld01-generator-carrier`).**
+//! `theta` is the rotor angle relative to the Grid-owned carrier, which
+//! enters as a continuous input: its phase is continuous and its rate
+//! `carrier_rad_s` is held over each exchange interval, `2*pi*f_grid(t0)`
+//! plus the Grid's accepted-minus-predicted phase spread over the interval
+//! ([`carrier_rate`]). Nothing writes `theta` at a boundary (the replaced
+//! per-boundary reference conversion). A changed rate enters only the angle's
+//! rate row: a held input of class S under S3-D4.
 use super::generator::{self, Machine, Mode};
 use crate::turbine::admission::ReferenceDropAdmission;
 use std::f64::consts::PI;
@@ -59,6 +66,71 @@ pub struct Parameters {
     pub converter_efficiency: f64,
 }
 
+/// Owner decision D2's selection as the electrical compiler emits it from
+/// the generator page's `ld01-generator-carrier` block (packet `carrier`).
+/// Each field accepts only the value this owner implements, so a packet
+/// without the selection, or with another one, is refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CarrierLaw {
+    pub angle_reference: AngleReference,
+    pub rate_input: RateInput,
+    pub reconciliation: Reconciliation,
+    pub boundary_conversion: BoundaryConversion,
+    pub rate_change_class: RateChangeClass,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+pub enum AngleReference {
+    #[serde(rename = "continuousCarrier")]
+    ContinuousCarrier,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+pub enum RateInput {
+    #[serde(rename = "heldPerInterval")]
+    HeldPerInterval,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+pub enum Reconciliation {
+    #[serde(rename = "phaseErrorAsRateOverNextInterval")]
+    PhaseErrorAsRateOverNextInterval,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+pub enum BoundaryConversion {
+    #[serde(rename = "none")]
+    None,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+pub enum RateChangeClass {
+    #[serde(rename = "S3-D4")]
+    S3D4,
+}
+
+/// D2: the carrier rate held over the exchange interval `[t0, t1)` of
+/// length `interval_s`: `2*pi*f_grid(t0) + e(t0)/interval_s`, with `e(t0)`
+/// the Grid's accepted carrier phase at `t0` less the phase the plant
+/// followed over the previous interval (the integral of the Grid's
+/// frequency deviation from its held value). The followed phase then meets
+/// the Grid's held prediction at `t1`. `e = 0` returns exactly
+/// `2*pi*f_grid`, so an exchange that agrees with the held prediction
+/// leaves the input's bits, and the residual, unchanged: no event.
+pub fn carrier_rate(f_grid_hz: f64, phase_error_rad: f64, interval_s: f64) -> Result<f64, String> {
+    if !(f_grid_hz.is_finite() && f_grid_hz > 0.)
+        || !phase_error_rad.is_finite()
+        || !(interval_s.is_finite() && interval_s > 0.)
+    {
+        return Err(format!(
+            "carrier: frequency {f_grid_hz} Hz, phase error {phase_error_rad} rad over {interval_s} s"
+        ));
+    }
+    Ok(2. * PI * f_grid_hz + phase_error_rad / interval_s)
+}
+
+/// The carrier of a boundary that agrees with its held prediction (no
+/// phase error): `2*pi*f_grid`, bit for bit [`carrier_rate`] with `e = 0`.
+pub fn prepared_carrier(f_grid_hz: f64) -> f64 {
+    2. * PI * f_grid_hz
+}
+
 /// Held inputs of one integration segment (S3-D19: copyable exactly, real
 /// numbers as IEEE bits).
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -68,8 +140,14 @@ pub struct Inputs {
     pub joined: bool,
     #[serde(with = "crate::joined::block::snapshot_bits")]
     pub v_line: f64,
+    /// The Grid's frequency at the boundary (Hz): the auxiliary sources'
+    /// state when the generator breaker closes onto the Grid.
     #[serde(with = "crate::joined::block::snapshot_bits")]
     pub f_grid_hz: f64,
+    /// D2: the held rate of the carrier the relative angle follows (rad/s),
+    /// [`carrier_rate`] of the Grid's boundary.
+    #[serde(with = "crate::joined::block::snapshot_bits")]
+    pub carrier_rad_s: f64,
     #[serde(with = "crate::joined::block::snapshot_bits")]
     pub admitted_kg_s: f64,
     /// Field converter demand (V) times its delivered AC fraction; zero when
@@ -150,8 +228,7 @@ impl Slice {
         );
         let (em, _, _, t) = self.torque_parts(y)?;
         out[OMEGA] = self.parameters.inertia_kg_m2 * yp[OMEGA] - (t.net_nm + em);
-        out[THETA] =
-            yp[THETA] - (self.parameters.generator.pole_pairs * y[OMEGA] - 2. * PI * i.f_grid_hz);
+        out[THETA] = yp[THETA] - (self.parameters.generator.pole_pairs * y[OMEGA] - i.carrier_rad_s);
         let b = self.parameters.body;
         out[BODY] = b.capacity_j_k * yp[BODY] + b.room_conductance_w_k * (y[BODY] - i.room_k);
         Ok(())
@@ -191,7 +268,7 @@ impl Slice {
         );
         let (em, _, _, t) = self.torque_parts(y)?;
         yp[OMEGA] = (t.net_nm + em) / self.parameters.inertia_kg_m2;
-        yp[THETA] = self.parameters.generator.pole_pairs * y[OMEGA] - 2. * PI * i.f_grid_hz;
+        yp[THETA] = self.parameters.generator.pole_pairs * y[OMEGA] - i.carrier_rad_s;
         let b = self.parameters.body;
         yp[BODY] = -b.room_conductance_w_k * (y[BODY] - i.room_k) / b.capacity_j_k;
         Ok(())
@@ -246,10 +323,38 @@ impl Slice {
     pub fn deposit(&self, y: &mut [f64], heat_j: f64) {
         y[BODY] += heat_j / self.parameters.body.capacity_j_k;
     }
-    /// The per-boundary relative-angle reference conversion
-    /// `theta_new = theta_old + phi_predicted - phi_accepted` as a state write.
-    /// Provided for the owner's option; a restart transaction when used.
-    pub fn reference_conversion(y: &mut [f64], phi_predicted: f64, phi_accepted: f64) {
-        y[THETA] += phi_predicted - phi_accepted;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn a_boundary_that_agrees_with_its_held_prediction_leaves_the_carrier_bits() {
+        for f in [50., 49.999, 50.000_123_4] {
+            for t in [1., 0.02, 0.01, 0.37] {
+                let held = carrier_rate(f, 0., t).unwrap();
+                assert_eq!(held.to_bits(), prepared_carrier(f).to_bits());
+                assert_eq!(carrier_rate(f, -0., t).unwrap().to_bits(), held.to_bits());
+            }
+        }
+        // a phase error is spread over the next interval as a rate
+        let w = carrier_rate(50., 1e-3, 0.02).unwrap();
+        assert!((w - prepared_carrier(50.) - 0.05).abs() < 1e-12);
+        assert!(carrier_rate(50., 0., 0.).is_err());
+        assert!(carrier_rate(0., 0., 1.).is_err());
+        assert!(carrier_rate(50., f64::NAN, 1.).is_err());
+    }
+    #[test]
+    fn only_owner_d2s_carrier_selection_is_accepted() {
+        let d2 = serde_json::json!({"angleReference": "continuousCarrier", "rateInput": "heldPerInterval",
+            "reconciliation": "phaseErrorAsRateOverNextInterval", "boundaryConversion": "none",
+            "rateChangeClass": "S3-D4"});
+        assert!(serde_json::from_value::<CarrierLaw>(d2.clone()).is_ok());
+        let mut other = d2.clone();
+        other["boundaryConversion"] = "thetaReferenceConversion".into();
+        assert!(serde_json::from_value::<CarrierLaw>(other).is_err());
+        let mut extra = d2;
+        extra["extra"] = 1.into();
+        assert!(serde_json::from_value::<CarrierLaw>(extra).is_err());
     }
 }

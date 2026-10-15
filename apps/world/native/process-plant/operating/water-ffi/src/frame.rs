@@ -492,6 +492,38 @@ impl<S: JoinedSystem> Driver<S> {
         self.commands.sort_by(|a, b| a.0.total_cmp(&b.0));
         Ok(())
     }
+    /// HOOK (C5X; KERN to reconcile): changes decided outside the clients at
+    /// the driver's time, due at or after it: the Grid's held boundary at an
+    /// exchange (C5, owners' decisions D1 + D2). The next [`Driver::run`]
+    /// applies those due now before its first step, by the same rules as a
+    /// client's (one instant, R if any is R, S checked by S3-D4's rule).
+    pub fn decide(&mut self, changes: Vec<Change<S>>) -> Result<(), String> {
+        let now = self.observed_to;
+        self.insert(changes, now)
+    }
+    /// HOOK (C5X; KERN to reconcile): apply every change and command due at
+    /// the driver's time now, as one instant, without a step, so the caller
+    /// can configure the segment a restart opened (an event window's step
+    /// cap, decision 0015 E2) before the next [`Driver::run`] steps. Nothing
+    /// due: no effect.
+    #[allow(clippy::too_many_arguments)] // One instant: handle, state, clients, setup.
+    pub fn apply_due(
+        &mut self,
+        ida: &mut Ida<S>,
+        y: &mut [f64],
+        yp: &mut [f64],
+        clients: &mut [&mut dyn Client<S>],
+        setup: &Setup<'_>,
+    ) -> Result<(), String> {
+        setup.check_derived()?;
+        let t = self.observed_to;
+        let due = self.earliest_due().is_some_and(|d| Self::due_at(d, t))
+            || self.commands.first().is_some_and(|c| Self::due_at(c.0, t));
+        if due {
+            self.apply(ida, t, None, y, yp, clients, setup, None)?;
+        }
+        Ok(())
+    }
     fn insert(&mut self, changes: Vec<Change<S>>, now: f64) -> Result<(), String> {
         for c in changes {
             if !(c.due_s.is_finite() && c.due_s >= now) {

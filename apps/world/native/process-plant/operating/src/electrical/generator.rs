@@ -20,9 +20,9 @@
 //! transaction [`Machine::arc_quench`]; it retains field linkage and deposits
 //! exactly `(Ls - M^2/Lf)*id^2/2 + Ls*iq^2/2` for the breaker body.
 //! The external boundary is an input (`v_line`, and the relative angle theta
-//! as the caller's state): how the carrier phase reaches theta (the per-
-//! boundary reference conversion or a continuous carrier input) is the
-//! owner's open choice and is not made here.
+//! as the caller's state). The carrier reaches theta as a continuous input
+//! through the caller's angle row (owner decision D2, [`super::slice`]);
+//! nothing here writes theta at a boundary.
 
 /// Machine constants, derived once from the page's strict block by the
 /// operating electrical compiler. Every field is required.
