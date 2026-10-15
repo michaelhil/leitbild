@@ -852,12 +852,17 @@ impl Column {
     }
 }
 
-/// Signed receipt of one port into the cell, in `Parameters::ports` order.
+/// Signed receipt of one port into the cell, in `Parameters::ports` order:
+/// its liquid (mass, enthalpy, boron) and, at the surge port only, the
+/// vapor arriving through it (S3-D30), which carries no boron.
 #[derive(Clone, Copy, Debug)]
 pub struct Receipt {
     pub mass: Scalar,
     pub enthalpy: Scalar,
     pub boron: Scalar,
+    /// Vapor entering through the surge port (kg/s, W); zero elsewhere.
+    pub vapor_mass: Scalar,
+    pub vapor_enthalpy: Scalar,
 }
 impl Receipt {
     pub fn zero() -> Self {
@@ -865,7 +870,15 @@ impl Receipt {
             mass: s(0.),
             enthalpy: s(0.),
             boron: s(0.),
+            vapor_mass: s(0.),
+            vapor_enthalpy: s(0.),
         }
+    }
+    /// A vapor part, value or direction.
+    pub fn carries_vapor(&self) -> bool {
+        [self.vapor_mass, self.vapor_enthalpy]
+            .iter()
+            .any(|v| v.value != 0. || v.direction != 0.)
     }
 }
 
@@ -1141,6 +1154,8 @@ pub struct Flows {
     pub transit_drift: [Scalar; 2],
     /// Vapor condensed onto arriving spray at entry, kg/s (negative flashes).
     pub spray_condensation: Scalar,
+    /// Vapor arriving through the surge port into b_A, kg/s (S3-D30).
+    pub surge_vapor: Scalar,
     /// The relief outflow, when a relief port is declared.
     pub relief: Option<ReliefFlow>,
     /// `p_s'` along the coordinate rates.
@@ -2255,6 +2270,7 @@ impl Cell {
         const RV: usize = 2;
         let mut bubbles = s(0.);
         let mut admitted_bubbles = s(0.);
+        let mut surge_vapor = s(0.);
         let mut drops = s(0.);
         let mut drop_boron = s(0.);
         let mut spray_condensation = s(0.);
@@ -2262,6 +2278,37 @@ impl Cell {
         for (port, rec) in self.parameters.ports.iter().zip(receipts) {
             for (total, v) in receipt.iter_mut().zip([rec.mass, rec.enthalpy, rec.boron]) {
                 *total = *total + finite(v, "port receipt")?;
+            }
+            if rec.carries_vapor() {
+                // S3-D30 (decision 0014 extended): vapor arriving through the
+                // surge port joins zone A's bubble stock b_A at the surge
+                // entry, saturated at p_s like every bubble; A pays the
+                // difference between the arriving enthalpy and h_g(p_s), as
+                // for the wall-born vapor it hosts. b_A then condenses and
+                // rises under K1's exchange and amendment 6's crossing. A
+                // withdrawal of vapor, or vapor at another port, is outside
+                // the composed cell.
+                let (w, h) = (
+                    finite(rec.vapor_mass, "surge vapor receipt")?,
+                    finite(rec.vapor_enthalpy, "surge vapor receipt")?,
+                );
+                if port.kind != PortKind::Surge {
+                    return Err(fatal(format!(
+                        "port {}: only the surge port receives vapor",
+                        port.id
+                    )));
+                }
+                if w.value < 0. || (w.value == 0. && w.direction < 0.) {
+                    return Err(fatal(format!(
+                        "port {}: a vapor withdrawal through the surge port is outside the composed cell",
+                        port.id
+                    )));
+                }
+                admitted_bubbles = admitted_bubbles + w;
+                energy[AV] = energy[AV] + h - w * hg;
+                receipt[0] = receipt[0] + w;
+                receipt[1] = receipt[1] + h;
+                surge_vapor = surge_vapor + w;
             }
             match port.kind {
                 PortKind::Surge => {
@@ -2709,6 +2756,7 @@ impl Cell {
                 drop,
                 transit_drift,
                 spray_condensation,
+                surge_vapor,
                 relief,
                 interface_pressure_rate,
                 interface,

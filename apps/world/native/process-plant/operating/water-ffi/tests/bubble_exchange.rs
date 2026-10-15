@@ -853,11 +853,13 @@ fn mass_energy_and_boron_close_at_roundoff_with_both_exchanges_active() {
                 mass: s(-31.7),
                 enthalpy: s(-31.7 * 1.6e6 - 2.9e5),
                 boron: s(-0.041),
+                ..Receipt::zero()
             },
             Receipt {
                 mass: s(18.3),
                 enthalpy: s(18.3 * 1.21e6),
                 boron: s(0.023),
+                ..Receipt::zero()
             },
         ] {
             let boundary = Boundary {
@@ -944,6 +946,7 @@ fn seeded_directions_match_central_differences_with_both_exchanges_active() {
         mass: s(-23.),
         enthalpy: s(-23. * 1.6e6),
         boron: s(-0.023),
+        ..Receipt::zero()
     };
     let heat = Heat {
         vapor: s(0.),
