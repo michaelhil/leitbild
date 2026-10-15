@@ -376,6 +376,12 @@ const SOLVER_API: &[&str] = &[
     "ld01_water_point",
     "ld01_water_surface",
     "ld01_water_vapor_sat_density",
+    // C13's three IF97 saturation entries by temperature (owner F5 / S4-D2,
+    // 15 Oct): p_sat(T) with its exact derivative, and the saturated-vapor
+    // enthalpy and viscosity at T on IF97's own saturation endpoint.
+    "ld01_water_saturated_vapor_enthalpy",
+    "ld01_water_saturated_vapor_viscosity",
+    "ld01_water_saturation_pressure",
     // LAPACK's generalized eigenproblem for the zero-time spectrum (spectrum.rs;
     // Accelerate on macOS). Not a solver of F(y) = 0.
     "dggev",
