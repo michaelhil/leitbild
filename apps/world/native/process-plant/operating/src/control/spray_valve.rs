@@ -18,10 +18,11 @@
 //!   the valve path between its restriction law and the closed path's lock
 //!   (`Π = 0`, the DAE identity): class R.
 //!
-//! **Restriction.** `CdA = x·CdA_full` (linear in the stem), as a form loss
-//! on the line area, `K_v(x) = (A/(x·CdA_full))²`, in series with the line's
-//! wall friction and the distributor's fixed `K_d` on the other half path.
-//! A closed valve has no restriction law: its path is locked, never an
+//! **Restriction.** `CdA = x·CdA_full` (linear in the stem). The network
+//! composes it as the quasi-steady capacity relation of its valve path
+//! (lead decision S3-D25, `network::spray`); [`Valve::form_loss`] states
+//! the same law as a form loss on the line area, `K_v(x) = (A/(x·CdA_full))²`,
+//! for an open stem only. A closed valve's path is locked, never an
 //! infinite or clipped coefficient.
 use crate::network::Failure;
 use serde::Deserialize;
