@@ -33,7 +33,7 @@ use leitbild_operating_water::{
 };
 use serde_json::{Value, json};
 use spine::{
-    DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, started_full_composition, z1,
+    DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, started_s3_composition, z1,
 };
 
 const MAX_ORDER: usize = 2;
@@ -116,16 +116,19 @@ fn s3_ic_prot_t1_turbine_trip_through_acquired_protection() {
         Some(packet_path.as_str()),
         "state of another packet"
     );
-    let Started {
-        joined,
-        ids,
-        network_ids,
-        atol,
-        rtol,
-        structure,
-        analyses,
-        ..
-    } = started_full_composition();
+    let (
+        Started {
+            joined,
+            ids,
+            network_ids,
+            atol,
+            rtol,
+            structure,
+            analyses,
+            ..
+        },
+        derived,
+    ) = started_s3_composition();
     let preparation_cpu_s = z1::cpu_s() - started;
     let vector = |k: &str| -> Vec<f64> {
         state[k]
@@ -209,6 +212,7 @@ fn s3_ic_prot_t1_turbine_trip_through_acquired_protection() {
         absolute: &atol,
         relative: rtol,
         restart,
+        derived: &derived,
     };
     let run_started = z1::cpu_s();
     let until = t1 + span;
@@ -280,7 +284,8 @@ fn s3_ic_prot_t1_turbine_trip_through_acquired_protection() {
             "max_step_note": "S2's 20 ms window cap, set from the settled time (options are refused mid-segment)",
             "newton_coefficient": NEWTON_COEFFICIENT, "delta_cj_lsetup": DELTA_CJ_LSETUP, "first_step_s": FIRST_STEP_S,
             "start_passes": 2, "transaction_passes": 12, "relative_tolerance": rtol,
-            "tolerance_class": "the composition's (G12 guide currents; S2-D24 not on this branch)",
+            "tolerance_class": "the composition's with the derived classes (S2-D24) applied at the composed state",
+            "derived_tolerances": derived,
             "integration": "frame driver: stock IDA_ONE_STEP, observation from IDAGetDky, restarts by discrete_restart",
             "smallness": {"fraction": 0.1, "newton_tolerance": NEWTON_COEFFICIENT}},
         "observed": protection.observed(),

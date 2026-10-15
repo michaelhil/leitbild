@@ -45,7 +45,7 @@
 //! `discrete_restart`.
 use crate::{
     ida::{Advance, Ida, System},
-    joined::{Discrete, JoinedSystem, Restart, Restarted, discrete_restart},
+    joined::{DerivedTolerances, Discrete, JoinedSystem, Restart, Restarted, discrete_restart},
     klu::SparseLu,
 };
 use leitbild_operating_plant::joined::block::{Command, Transaction};
@@ -205,11 +205,47 @@ impl Smallness {
 }
 
 /// The restart configuration the driver passes to `discrete_restart`.
+/// `derived` is what [`crate::joined::derived_tolerances`] applied to
+/// `absolute`: every S3 run path carries the derived tolerance classes
+/// (S2-D24 and its successors; lead, 15 Oct: the default, never an
+/// opt-in), and [`Driver::run`] refuses an `absolute` that does not.
 pub struct Setup<'a> {
     pub network_ids: &'a [f64],
     pub absolute: &'a [f64],
     pub relative: f64,
     pub restart: Restart,
+    pub derived: &'a DerivedTolerances,
+}
+impl Setup<'_> {
+    /// Refuse tolerances that do not carry the derived classes: every
+    /// derived coordinate's absolute tolerance and the relative tolerance
+    /// equal the derived record's to rounding (a reference run scales both
+    /// by its factor, [`DerivedTolerances::scaled`]).
+    pub fn check_derived(&self) -> Result<(), String> {
+        let same = |a: f64, b: f64| (a - b).abs() <= 4. * f64::EPSILON * b.abs();
+        if self.derived.rows.is_empty() {
+            return Err("the run's tolerances carry no derived class (S2-D24)".into());
+        }
+        if !same(self.relative, self.derived.relative) {
+            return Err(format!(
+                "the derived classes were made at rtol {}, the run uses {}",
+                self.derived.relative, self.relative
+            ));
+        }
+        for r in &self.derived.rows {
+            let a = *self
+                .absolute
+                .get(r.coordinate)
+                .ok_or("a derived row lies outside the run's coordinates")?;
+            if !same(a, r.applied_scaled) {
+                return Err(format!(
+                    "{}: the run's absolute tolerance {a} is not its derived class {} (S2-D24)",
+                    r.label, r.applied_scaled
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Counts by class and kind (S2 rev 7's counting rule, extended by class).
@@ -463,6 +499,7 @@ impl<S: JoinedSystem> Driver<S> {
         clients: &mut [&mut dyn Client<S>],
         setup: &Setup<'_>,
     ) -> Result<Reached, String> {
+        setup.check_derived()?;
         let n = y.len();
         let mut scratch = vec![0.; n];
         while t < until {

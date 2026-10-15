@@ -568,6 +568,167 @@ fn transacted_owners(
         .collect()
 }
 
+/// The derived absolute-tolerance classes (lead decision S2-D24, and the
+/// lead's 15 Oct rule that they are the default in every S3 run path, never
+/// an opt-in), as `owner/Class` of the joined layouts: an algebraic current
+/// set by pressure differences takes its absolute tolerance from the
+/// pressure class through its own sensitivity. S3-D3's mode-E `M_g`/`U_g`
+/// and ELEC's stator class join this list when their owners land.
+pub const DERIVED_CLASSES: &[&str] = &["rods/GuideCurrent"];
+/// The pressure class whose columns set a derived current.
+pub const DERIVED_PRESSURE_CLASS: &str = "network/CellPressure";
+
+/// One coordinate's derived absolute tolerance.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct DerivedRow {
+    pub coordinate: usize,
+    pub label: String,
+    pub class: String,
+    /// The class tolerance it replaces, and the applied one, solver scaling.
+    pub replaced_scaled: f64,
+    pub applied_scaled: f64,
+    /// The applied tolerance in physical units.
+    pub applied: f64,
+    /// `|∂m/∂p|` at the governing pressure column, physical units.
+    pub sensitivity: f64,
+    pub pressure_column: String,
+    /// `atol_p = rtol |p|` at that column, Pa.
+    pub atol_p_pa: f64,
+}
+
+/// What [`derived_tolerances`] applied: the evidence an S3 run path carries
+/// (the frame driver's setup requires it).
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct DerivedTolerances {
+    pub rule: &'static str,
+    pub classes: Vec<String>,
+    pub t_s: f64,
+    pub relative: f64,
+    pub rows: Vec<DerivedRow>,
+}
+
+impl DerivedTolerances {
+    /// The record of a reference run that scales every tolerance by
+    /// `factor` (an R2-style reference checks the derived class scaled with
+    /// the rest, PLAN §9).
+    pub fn scaled(&self, factor: f64) -> Self {
+        let mut out = self.clone();
+        out.relative *= factor;
+        for r in &mut out.rows {
+            r.applied_scaled *= factor;
+            r.applied *= factor;
+            r.atol_p_pa *= factor;
+        }
+        out
+    }
+}
+
+/// S2-D24 on `atol` (solver scaling) for every coordinate of
+/// [`DERIVED_CLASSES`]: from the block Jacobian `∂F/∂y` at `(t, y, y')`, a
+/// derived row `r`'s sensitivity to pressure column `j` is
+/// `∂m/∂p_j = −J[r,j] / J[r,r]`, and its absolute tolerance is
+/// `max_j (rtol |p_j|) |∂m/∂p_j|` over the pressure columns it reads, the
+/// basis S2-D24 declares (PLAN §11: `atol_p = rtol |p|`, RODCOST's V1). The
+/// rule HARNESS-B's S2 harness and RESTART's probe apply, evaluated at the
+/// state the caller names (the composed state, as S2 records it). A
+/// covered row without a finite nonzero diagonal or without a pressure
+/// column refuses; a composition with no covered coordinate refuses.
+#[allow(clippy::too_many_arguments)] // The operator, its structure, the state, the rule's rtol and atol.
+pub fn derived_tolerances<P: Properties + WaterProperties>(
+    joined: &mut Joined<P>,
+    structure: &JoinedJacobian,
+    t: f64,
+    y: &[f64],
+    yp: &[f64],
+    relative: f64,
+    atol: &mut [f64],
+) -> Result<DerivedTolerances, String> {
+    let layouts = joined.layouts();
+    let class_of: Vec<String> = layouts
+        .iter()
+        .flat_map(|(owner, l)| l.classes.iter().map(move |c| format!("{owner}/{c:?}")))
+        .collect();
+    let labels: Vec<String> = layouts
+        .iter()
+        .flat_map(|(owner, l)| l.labels.iter().map(move |x| format!("{owner}/{x}")))
+        .collect();
+    if class_of.len() != y.len() || atol.len() != y.len() {
+        return Err("derived tolerances: the layouts do not cover the coordinates".into());
+    }
+    let pressure: Vec<bool> = class_of
+        .iter()
+        .map(|c| c == DERIVED_PRESSURE_CLASS)
+        .collect();
+    let covered: Vec<usize> = (0..y.len())
+        .filter(|i| DERIVED_CLASSES.contains(&class_of[*i].as_str()))
+        .collect();
+    if covered.is_empty() {
+        return Err(format!(
+            "derived tolerances: no coordinate of {DERIVED_CLASSES:?}"
+        ));
+    }
+    let mut values = vec![0.; structure.pattern.nonzeros()];
+    jacobian_blocks(joined, structure, t, 0., y, yp, &mut values, Classes::ALL)
+        .map_err(|e| format!("derived tolerances: block Jacobian: {e:?}"))?;
+    let (pointers, indices) = (structure.pattern.pointers(), structure.pattern.indices());
+    let index: std::collections::BTreeMap<usize, usize> =
+        covered.iter().enumerate().map(|(k, r)| (*r, k)).collect();
+    let mut diagonal = vec![None; covered.len()];
+    let mut entries: Vec<Vec<(usize, f64)>> = vec![Vec::new(); covered.len()];
+    for j in 0..y.len() {
+        for position in pointers[j]..pointers[j + 1] {
+            if let Some(k) = index.get(&indices[position]) {
+                if indices[position] == j {
+                    diagonal[*k] = Some(values[position]);
+                } else if pressure[j] {
+                    entries[*k].push((j, values[position]));
+                }
+            }
+        }
+    }
+    let scales = joined.scales();
+    let mut rows = Vec::with_capacity(covered.len());
+    for (k, r) in covered.iter().enumerate() {
+        let d = diagonal[k]
+            .filter(|d| *d != 0. && d.is_finite())
+            .ok_or_else(|| {
+                format!(
+                    "derived tolerances: {} has no finite nonzero diagonal",
+                    labels[*r]
+                )
+            })?;
+        let (applied, sensitivity, j) = entries[k]
+            .iter()
+            .map(|(j, v)| (relative * y[*j].abs() * (v / d).abs(), (v / d).abs(), *j))
+            .max_by(|a, b| a.0.total_cmp(&b.0))
+            .ok_or_else(|| {
+                format!(
+                    "derived tolerances: {} reads no pressure column",
+                    labels[*r]
+                )
+            })?;
+        rows.push(DerivedRow {
+            coordinate: *r,
+            label: labels[*r].clone(),
+            class: class_of[*r].clone(),
+            replaced_scaled: atol[*r],
+            applied_scaled: applied,
+            applied: applied * scales[*r],
+            sensitivity: sensitivity * scales[*r] / scales[j],
+            pressure_column: labels[j].clone(),
+            atol_p_pa: relative * y[j].abs() * scales[j],
+        });
+        atol[*r] = applied;
+    }
+    Ok(DerivedTolerances {
+        rule: "S2-D24: atol_m = max_j (rtol |p_j|) |dm/dp_j|, dm/dp_j = -J[r,j]/J[r,r] from the block Jacobian dF/dy",
+        classes: DERIVED_CLASSES.iter().map(|c| c.to_string()).collect(),
+        t_s: t,
+        relative,
+        rows,
+    })
+}
+
 pub use integrated::{
     Assembly, Discrete, Integrated, JoinedSystem, Restart, Restarted, discrete_restart,
     root_directions,

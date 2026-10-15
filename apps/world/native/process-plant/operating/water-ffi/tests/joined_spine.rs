@@ -877,6 +877,27 @@ pub struct Started {
     pub analyses: leitbild_operating_water::joined::Analyses,
 }
 
+/// The full composition with the derived tolerance classes applied at the
+/// consistently started composed state (S2-D24 by
+/// `leitbild_operating_water::joined::derived_tolerances`): the
+/// composition of every S3 run path, which the frame driver's setup checks
+/// (lead, 15 Oct: the default, never an opt-in).
+#[allow(dead_code)] // Used by the S3 probes that include this module.
+pub fn started_s3_composition() -> (Started, leitbild_operating_water::joined::DerivedTolerances) {
+    let mut s = started_full_composition();
+    let derived = leitbild_operating_water::joined::derived_tolerances(
+        &mut s.joined,
+        &s.structure,
+        0.,
+        &s.y,
+        &s.yp,
+        s.rtol,
+        &mut s.atol,
+    )
+    .expect("S2-D24 derived tolerance classes at the composed state");
+    (s, derived)
+}
+
 /// The full composition at the hot reference, consistently started: memo
 /// §3 (A)-(D), the start on the block assembly (lead decision S2-D4).
 pub fn started_full_composition() -> Started {
