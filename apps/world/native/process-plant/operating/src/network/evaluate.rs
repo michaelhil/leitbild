@@ -149,10 +149,23 @@ impl<P: Properties> Network<P> {
         }
         self.receipts.fill([[s(0.); 3]; 2]);
         self.shaft_power = s(0.);
+        // HOOK (PHASE-P7, S3-D-P1/P6): equilibrium cells' saturated endpoints
+        // and the view every phase reader sees; empty when all are liquid.
+        let (y_coordinates, seed_coordinates) = (y, seed);
+        let saturated = self.saturated(y, seed)?;
+        let view = (!saturated.is_empty()).then(|| self.equilibrium_view(y, seed, &saturated));
+        let (y, seed) = match &view {
+            Some((v, d)) => (&v[..], d.as_deref()),
+            None => (y, seed),
+        };
         let mut points: Vec<[Point; 2]> = vec![[None; 2]; n];
         for (node, current_point) in points.iter_mut().enumerate() {
-            let (cell, point, row) =
-                self.regular_cell(node, y, seed, self.cell_volume[node], reuse.as_deref_mut())?;
+            let (cell, point, row) = match saturated.get(node).copied().flatten() {
+                Some(sat) => self.equilibrium_cell(node, y, seed, self.cell_volume[node], &sat)?,
+                None => {
+                    self.regular_cell(node, y, seed, self.cell_volume[node], reuse.as_deref_mut())?
+                }
+            };
             self.cells[node] = cell;
             *current_point = point;
             self.rows[self.cell_layout[node].base] = row;
@@ -238,6 +251,8 @@ impl<P: Properties> Network<P> {
         self.compose_sections(y, yp, seed, cj, &points)?;
         self.compose_momentum(t, y, yp, seed, cj, &phase_mass)?;
         self.compose_stocks(y, yp, seed, cj, &points, reuse)?;
+        // HOOK (PHASE-P7, S3-D-P1): equilibrium rows from the coordinates.
+        self.compose_equilibrium_rows(y_coordinates, yp, seed_coordinates, cj, &saturated);
         self.compose_stratified(column, y, yp, seed, cj, coupling)?;
         self.counters.evaluation_wall_s += started.elapsed().as_secs_f64();
         Ok(())
@@ -395,6 +410,10 @@ impl<P: Properties> Network<P> {
         let mut current = vec![none; n];
         let mut mass = [vec![none; n], vec![none; n]];
         let mut tracer = vec![none; n];
+        // HOOK (PHASE-P7, S3-D-P1/P6): equilibrium cells through their view.
+        let saturated = self.saturated(y, None)?;
+        let view = (!saturated.is_empty()).then(|| self.equilibrium_view(y, None, &saturated).0);
+        let y = view.as_deref().unwrap_or(y);
         for &node in cells {
             if node >= n {
                 return Err(Failure::Fatal(format!(
@@ -402,7 +421,10 @@ impl<P: Properties> Network<P> {
                 )));
             }
             let (volume, _) = self.evaluated_volume(node, volumes)?;
-            let (cell, point, _) = self.regular_cell(node, y, None, volume, None)?;
+            let (cell, point, _) = match saturated.get(node).copied().flatten() {
+                Some(sat) => self.equilibrium_cell(node, y, None, volume, &sat)?,
+                None => self.regular_cell(node, y, None, volume, None)?,
+            };
             states[node] = cell;
             points[node] = point;
             current[node] = volume;
@@ -483,6 +505,52 @@ impl<P: Properties> Network<P> {
                     e.value.pump_euler_pa - e.value.passive_loss_pa,
                     e.direction.pump_euler_pa - e.direction.passive_loss_pa,
                 );
+            // HOOK (PHASE-P7, S3-D-P8 gas-path loss; operating-hydraulics.md
+            // gas-phase passive loss): a passive section's own law on the
+            // same declared geometry, with the gas phase's current, density
+            // and viscosity, weighted by its fraction as the liquid's drive
+            // is. No pump head acts on gas; a pump section carries none. A
+            // region without gas composes nothing, so liquid-only states are
+            // unchanged.
+            self.section_gas_drive[j] = s(0.);
+            if self.sections[j].rotor.is_none()
+                && self.sections[j].section.pump.is_none()
+                && let (Some(gas), Some((qg, dqg))) =
+                    (self.cells[region].phase[1], points[region][1])
+            {
+                let mut gas_profile = s(0.);
+                for (face, section, w) in &self.section_projection {
+                    if *section == j
+                        && let Some(chart) = self.charts[*face][1]
+                    {
+                        gas_profile = gas_profile + s(*w) * chart.volume_flow_m3_s;
+                    }
+                }
+                let gas_current = gas.density * gas.fraction * gas_profile;
+                let g = self.sections[j]
+                    .section
+                    .evaluate(
+                        hydraulics::Input {
+                            massflow_kg_s: gas_current.value,
+                            density_kg_m3: qg.density_kg_m3,
+                            viscosity_pa_s: qg.viscosity_pa_s,
+                            pressure_drop_pa: 0.,
+                            omega_rad_s: 0.,
+                            gas_volume_fraction: gas.fraction.value,
+                        },
+                        hydraulics::Input {
+                            massflow_kg_s: gas_current.direction,
+                            density_kg_m3: dqg.density_kg_m3,
+                            viscosity_pa_s: dqg.viscosity_pa_s,
+                            pressure_drop_pa: 0.,
+                            omega_rad_s: 0.,
+                            gas_volume_fraction: gas.fraction.direction,
+                        },
+                    )
+                    .map_err(|e| Failure::Recoverable(e.to_string()))?;
+                self.section_gas_drive[j] =
+                    gas.fraction * rec(-g.value.passive_loss_pa, -g.direction.passive_loss_pa);
+            }
             if let Some(r) = self.sections[j].rotor {
                 let shaft = rec(e.value.shaft_power_w, e.direction.shaft_power_w);
                 self.shaft_power = self.shaft_power + shaft;
@@ -560,6 +628,13 @@ impl<P: Properties> Network<P> {
                         force = force + s(*w) * self.section_drive[*section];
                     }
                 }
+            } else {
+                // HOOK (PHASE-P7, S3-D-P8): the gas phase's passive loss.
+                for (face, section, w) in &self.section_projection {
+                    if *face == l.face {
+                        force = force + s(*w) * self.section_gas_drive[*section];
+                    }
+                }
             }
             // ProvenRest is the prepared all-zero-current case ONLY. This
             // network is not a generic disappearance/reappearance handler.
@@ -615,6 +690,11 @@ impl<P: Properties> Network<P> {
             let index = l.boron;
             self.rows[index] = (self.rate(yp, seed, cj, index) - self.receipts[node][0][2])
                 / s(self.scales[index]);
+            // HOOK (PHASE-P7, S3-D-P1): an equilibrium cell's stock rows are
+            // its own (`compose_equilibrium_rows`), not the phase elimination.
+            if self.modes[node] == super::CellMode::Equilibrium {
+                continue;
+            }
             let mut therm = [None; 2];
             let pressure = self.get(y, seed, l.base);
             let md = std::array::from_fn(|k| self.receipts[node][k][0]);

@@ -1009,6 +1009,13 @@ impl<'a, P: Properties> Replay<'a, P> {
         if y.len() != n || yp.len() != n || structure.columns() != n {
             return Err(fatal("block replay layout"));
         }
+        // HOOK (PHASE-P7, S3-D-P1, for KERN): the replay does not compose
+        // equilibrium-mode cells yet; the colored assembly does.
+        if net.has_equilibrium_cells() {
+            return Err(fatal(
+                "the block replay does not compose equilibrium-mode cells (S3 phase branch: colored assembly only)",
+            ));
+        }
         let mut blocks = Blocks {
             net,
             held,
