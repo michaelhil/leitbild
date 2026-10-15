@@ -130,6 +130,7 @@ fn build_with(offsite_loss_after_s: Option<f64>, quadratures: bool) -> Case {
             joined: true,
             v_line,
             f_grid_hz: f0,
+            carrier_rad_s: slice::prepared_carrier(f0),
             admitted_kg_s: 0.,
             field_v: f(&e, &["prepared", "fieldDemand_V"]),
             room_k: room,
