@@ -46,21 +46,22 @@ use s3_harness::{
 };
 use serde_json::{Value, json};
 
-const C1C3_R3_2: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c1c3-r3.2.json");
+/// The published block (wiki 272d83f), pinned by RP1-pin-s3-c1c3-r3.4.
+const C1C3_R3_4: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c1c3-r3.4.json");
 
 fn block() -> Block {
-    Block::from_json(declaration::FENCE, C1C3_R3_2).unwrap()
+    Block::from_json(declaration::FENCE, C1C3_R3_4).unwrap()
 }
 
 #[test]
 fn the_published_block_pins_and_its_open_values_refuse_their_cases() {
     let b = block();
-    // RP1-pin-s3-c1c3-r3.2's declared sha256.
+    // RP1-pin-s3-c1c3-r3.4's declared sha256.
     assert_eq!(
         guards::declared_sha256(&b).unwrap(),
-        "8b1f795e9bfefc5d344ab8b3dd95b169d3459c78ad0132197950fcd741af093e"
+        "c1f629b00411a6e288e8d041c29c84d7c315f2274a392ed7fab57c2278815729"
     );
-    let log = "| RP1-pin-s3-c1c3-r3.2 | 15 Oct | `ld01-s3-cases-c1c3` frozen; sha256 8b1f795e9bfefc5d344ab8b3dd95b169d3459c78ad0132197950fcd741af093e |\n";
+    let log = "| RP1-pin-s3-c1c3-r3.4 | 15 Oct | `ld01-s3-cases-c1c3` frozen; sha256 c1f629b00411a6e288e8d041c29c84d7c315f2274a392ed7fab57c2278815729 |\n";
     let pin = guards::pin_of(&b, Some(log), "log").unwrap();
     assert_eq!(pin["pinned"], json!(true), "{pin}");
     // The S2 gates' pin never reads the S3 row, nor the reverse.
@@ -330,9 +331,9 @@ fn each_case_takes_its_clock_and_command_from_the_block() {
         (z, cmd.map(|x| format!("{x:?}")))
     };
     assert_eq!(clock(Case::C1), (0., None));
-    // C2's trip half a frame after the frame-aligned start: non-frame.
+    // C2's trip 0.05 s after the frame-aligned start: mid-frame.
     assert_eq!(clock(Case::C2), (0.05, Some("TurbineTripAcquired".into())));
-    // C3: LD01.P.A1, the slice's first RCP, at 10.37 s.
+    // C3: LD01.P.A1, the slice's first RCP, at 10.37 s (0.07 s off).
     assert_eq!(
         clock(Case::C3),
         (10.37, Some("SupplyLoss { rotor: 0 }".into()))
@@ -379,21 +380,44 @@ impl<S> leitbild_operating_water::frame::Client<S> for Recorder {
     }
 }
 
-/// A case's events on the run clock: its t = 0 (s after the start state)
-/// and the command there. C1: the start, no command. C2: `LD01.TG` TRIP
-/// half a frame after the start, so t = 0 is not a frame instant (the
-/// block declares a non-frame trip; the start state is on the frame grid
-/// for the control channel). C3: the RCP the block names loses its supply
-/// at the block's `malfunctionTime_s` after the start.
+/// A case's t = 0 after its start (s) and the command there, from the
+/// block's frame alignment (r3.4: every case starts on a frame instant;
+/// event times relative to the start with their offset from the grid). C1:
+/// the start, no command. C2: `LD01.TG` TRIP `tripOffsetFromFrame_s` after
+/// the start. C3: the RCP the block names loses its supply at
+/// `malfunctionTime_s`, which must lie `malfunctionOffsetFromFrame_s` off
+/// the grid.
 fn case_clock(case: Case, spec: &Value, frame_s: f64) -> Result<(f64, Option<Command>), String> {
     use s3_unit::ROTOR_CONSUMERS;
+    let number = |k: &str| spec[k].as_f64().ok_or(format!("{} has no {k}", case.key()));
     match case {
-        Case::C1 => Ok((0., None)),
-        Case::C2 => Ok((frame_s / 2., Some(Command::TurbineTripAcquired))),
+        Case::C1 => {
+            if spec["startOnFrame"] != json!(true) {
+                return Err("C1 does not declare startOnFrame".into());
+            }
+            Ok((0., None))
+        }
+        Case::C2 => {
+            if spec["lineTimesFrom"] != json!("the trip") {
+                return Err(format!(
+                    "C2's line times are from {}, not the trip",
+                    spec["lineTimesFrom"]
+                ));
+            }
+            let at = number("tripOffsetFromFrame_s")?;
+            if !(at > 0. && at < frame_s) {
+                return Err(format!("C2's trip offset {at} s is not inside a frame"));
+            }
+            Ok((at, Some(Command::TurbineTripAcquired)))
+        }
         Case::C3 => {
-            let at = spec["malfunctionTime_s"]
-                .as_f64()
-                .ok_or("C3 has no malfunctionTime_s")?;
+            let at = number("malfunctionTime_s")?;
+            let off = number("malfunctionOffsetFromFrame_s")?;
+            if ((at / frame_s - (at / frame_s).floor()) * frame_s - off).abs() > 1e-9 {
+                return Err(format!(
+                    "C3's malfunction at {at} s is not {off} s off the {frame_s} s grid"
+                ));
+            }
             let text = spec["malfunction"]
                 .as_str()
                 .ok_or("C3 has no malfunction")?;
@@ -472,7 +496,14 @@ fn s3_case_run() {
         frame,
         receipt: composition,
     } = s3_unit::compose(&inputs, &state).unwrap_or_else(|e| panic!("{e}"));
-    let (zero_after, command) = case_clock(case, &spec, frame.period_s()).unwrap();
+    let declared_frame_s = d.block.number("/frameAlignment/frame_s");
+    d.block.text("/frameAlignment/rule");
+    assert_eq!(
+        declared_frame_s,
+        frame.period_s(),
+        "the block's frame is the I&C frame"
+    );
+    let (zero_after, command) = case_clock(case, &spec, declared_frame_s).unwrap();
     let zero = t0 + zero_after;
     let joined = &ida.system().integrated().joined;
     let mut protection = ProtectionClient::new(&section, joined, &y[..n]).expect("protection");
