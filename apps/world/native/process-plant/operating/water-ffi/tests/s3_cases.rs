@@ -13,20 +13,44 @@
 //!   is open, or the model lacks a prerequisite the case needs; with
 //!   `LD01_S3_PREVIEW=1` it runs anyway as a NOT-EVIDENCE preview with each
 //!   refusal recorded as a deviation (`LD01_S3_PREVIEW_SPAN_S` may shorten
-//!   it). C3 never runs: its prerequisites are not in the model.
+//!   it, `LD01_S3_PREVIEW_JUDGED_FROM_S` move C1's judged span).
+//! - Rule I (A4 with B1, r3.7) is judged at every accepted stock step.
+//! - `LD01_S3_GATES=1` (stock IDAS, feature `quadratures`) adds the gate
+//!   families beside the lines, each with its receipt section, verdict and
+//!   threshold source: D conservation, E refinement (with E′), F smoothness,
+//!   G cost, H repeatability (a repeat run; `LD01_S3_GATES_REPEAT=0` skips
+//!   it), K spectra (external Z6 receipts, `LD01_S3_Z6_RECEIPTS`), B
+//!   directions, and C1's drift, SS-1 and SS-2. The references are run in
+//!   the same invocation (`LD01_S3_GATES_REFERENCES` = a comma list of their
+//!   names limits them). A family a run cannot exercise is listed in
+//!   `gates_not_yet_implemented` with its reason.
 //!
 //! Environment: the joined spine's (packet, wiki, IF97, SUNDIALS, water),
 //! `LD01_S3_DECLARATION` / `LD01_S3_DECISION_LOG` (the page holding the
 //! block and its decision log), `LD01_S3_STATE` (a settled state of the
-//! packet), `LD01_IC_SECTION` (the compiled `ic` section) and
-//! `LD01_S3_CASE_RECEIPT` (a new receipt path).
+//! packet), `LD01_IC_SECTION` (the compiled `ic` section),
+//! `LD01_S3_CASE_RECEIPT` (a new receipt path) and, for a gate run,
+//! `LD01_S2_DECLARATION` (the page holding the S2 blocks the families read:
+//! identity and ledger bounds, the observation and output grids, the
+//! accuracy extension, the reference factors; else the wiki's page).
 #![cfg(all(feature = "ida", target_os = "macos"))]
+#[allow(dead_code)] // The S2 harness's comparisons; S3 uses E0 and the drift.
+#[path = "s2_harness/compare.rs"]
+mod compare;
+#[allow(dead_code)] // The S2 harness's conservation record.
+#[path = "s2_harness/conservation.rs"]
+mod conservation;
+#[path = "common/filter.rs"]
+mod filter;
 #[allow(dead_code)] // The S2 harness's declaration readers; S3 uses a subset.
 #[path = "s2_harness/gates.rs"]
 mod gates;
 #[allow(dead_code)] // The S2 harness's declaration readers; S3 uses a subset.
 #[path = "s2_harness/guards.rs"]
 mod guards;
+#[allow(dead_code)] // The S2 harness's credited outputs; S3 uses the reader.
+#[path = "s2_harness/outputs.rs"]
+mod outputs;
 #[path = "common/provenance.rs"]
 mod provenance;
 #[path = "common/pzr_control.rs"]
@@ -41,27 +65,27 @@ use gates::Block;
 use leitbild_operating_plant::joined::block::Command;
 use s3_harness::{
     declaration::{self, Case},
-    lines,
+    lines, observe,
     timeline::{Timeline, relief_sg},
 };
 use serde_json::{Value, json};
 
-/// The published block (wiki b6e74fe), pinned by RP1-pin-s3-c1c3-r3.6.
-const C1C3_R3_6: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c1c3-r3.6.json");
+/// The published block (wiki 0ccf579), pinned by RP1-pin-s3-c1c3-r3.7.
+const C1C3_R3_7: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c1c3-r3.7.json");
 
 fn block() -> Block {
-    Block::from_json(declaration::FENCE, C1C3_R3_6).unwrap()
+    Block::from_json(declaration::FENCE, C1C3_R3_7).unwrap()
 }
 
 #[test]
 fn the_published_block_pins_and_its_open_values_refuse_their_cases() {
     let b = block();
-    // RP1-pin-s3-c1c3-r3.6's declared sha256.
+    // RP1-pin-s3-c1c3-r3.7's declared sha256.
     assert_eq!(
         guards::declared_sha256(&b).unwrap(),
-        "2df5cd086a0dfe60ee71205f0cf493f23b17c815d522e1c8483c6ad6a79c3476"
+        "083df1253745f4c895a69b13e5579b2099e3e2271f06acef1ac309e0eb431d2d"
     );
-    let log = "| RP1-pin-s3-c1c3-r3.6 | 15 Oct | `ld01-s3-cases-c1c3` frozen; sha256 2df5cd086a0dfe60ee71205f0cf493f23b17c815d522e1c8483c6ad6a79c3476 |\n";
+    let log = "| RP1-pin-s3-c1c3-r3.7 | 15 Oct | `ld01-s3-cases-c1c3` frozen; sha256 083df1253745f4c895a69b13e5579b2099e3e2271f06acef1ac309e0eb431d2d |\n";
     let pin = guards::pin_of(&b, Some(log), "log").unwrap();
     assert_eq!(pin["pinned"], json!(true), "{pin}");
     // The S2 gates' pin never reads the S3 row, nor the reverse.
@@ -381,7 +405,7 @@ fn each_case_takes_its_clock_and_command_from_the_block() {
 #[test]
 fn the_s3_settle_reads_its_maximum_step_from_the_block() {
     // S3-D35: settling.maxStep_s, 2 s since r3.5; absent refuses.
-    let mut v: Value = serde_json::from_str(C1C3_R3_6).unwrap();
+    let mut v: Value = serde_json::from_str(C1C3_R3_7).unwrap();
     assert_eq!(s3_unit::settle_max_step(&v), Ok(2.));
     v.as_object_mut().unwrap().remove("settling");
     assert!(s3_unit::settle_max_step(&v).is_err());
@@ -390,8 +414,8 @@ fn the_s3_settle_reads_its_maximum_step_from_the_block() {
     v["settling"]["maxStep_s"] = json!(0.);
     assert!(s3_unit::settle_max_step(&v).is_err());
     // The block is found once in a page.
-    let page = format!("text\n```ld01-s3-cases-c1c3\n{C1C3_R3_6}\n```\nmore");
-    assert_eq!(s3_unit::cases_block(&page).unwrap()["revision"], "3.6");
+    let page = format!("text\n```ld01-s3-cases-c1c3\n{C1C3_R3_7}\n```\nmore");
+    assert_eq!(s3_unit::cases_block(&page).unwrap()["revision"], "3.7");
     let twice = format!("{page}\n```ld01-s3-cases-c1c3\n{{}}\n```");
     assert!(s3_unit::cases_block(&twice).is_err());
 }
@@ -486,83 +510,48 @@ impl<S> leitbild_operating_water::frame::Client<S> for Recorder {
     }
 }
 
-/// Rule I's record (S2's D3 (a) as `runner` keeps it): samples, the first
-/// extended state, margin failures and the first exit, labelled as S2
-/// labels it ("D3 (a) margin exit" or "D3 (a) source-domain exit").
-#[derive(Default)]
-struct RuleI {
-    samples: u64,
-    first_extended: Option<f64>,
-    margin_failures: u64,
-    exit: Option<Value>,
-}
-impl RuleI {
-    fn judge(
-        &mut self,
-        joined: &mut leitbild_operating_plant::joined::operator::Joined<
-            leitbild_operating_water::If97,
-        >,
-        extension: &leitbild_operating_plant::joined::post_trip_domain::Extension,
-        t: f64,
-        y: &[f64],
-        yp: &[f64],
-    ) -> Result<(), String> {
-        use leitbild_operating_plant::joined::post_trip_domain::{self, Domain, Error};
-        joined
-            .evaluate(t, y, yp, None, 0., None)
-            .map_err(|e| format!("rule I: the operator at {t} s: {e:?}"))?;
-        self.samples += 1;
-        // Owner answer B1: the regions' coolant phase at the same evaluation.
-        let phase = joined
-            .region_phases()
-            .map_err(|e| format!("rule I: region phases at {t} s: {e:?}"))?;
-        let (label, verdict) = match post_trip_domain::admit_accepted(
-            joined.nuclear(),
-            &phase,
-            extension,
-            joined.travel(),
-            t,
-            0.,
-        ) {
-            Ok(a) => {
-                self.margin_failures += u64::from(!a.margin.holds);
-                if a.domain != Domain::Original && self.first_extended.is_none() {
-                    self.first_extended = Some(t);
-                }
-                (
-                    None,
-                    format!("admitted {:?}, margin holds {}", a.domain, a.margin.holds),
-                )
-            }
-            Err(Error::Unsupported {
-                margin_holds, exit, ..
-            }) => (
-                Some(
-                    if matches!(
-                        exit,
-                        leitbild_operating_plant::source_feedback::Error::OutsideDomain(
-                            "phase absence",
-                            _
-                        )
-                    ) {
-                        "B1 phase-absence exit"
-                    } else if margin_holds {
-                        "D3 (a) source-domain exit"
-                    } else {
-                        "D3 (a) margin exit"
-                    },
-                ),
-                format!("unsupported: margin holds {margin_holds}, {exit:?}"),
-            ),
-            Err(e) => return Err(format!("D3 (a) at {t} s: {e}")),
-        };
-        if self.exit.is_none()
-            && let Some(label) = label
-        {
-            self.exit = Some(json!({"t_s": t, "label": label, "verdict": verdict}));
-        }
-        Ok(())
+/// Rule I and the kinetics floor as r3.7 declares them (owner request 5):
+/// A4 (R5-A) and B1 (R5-B), the only rules the harness implements. The
+/// floor's 8 MPa and the D3 (a) extension are the packet's compiled
+/// sections; B1's per-core-region phase-absence check is [`RuleI::judge`]'s
+/// admission. Any other declared text refuses.
+fn kinetics_rule(block: &Block) -> Result<Value, String> {
+    let rule_i = block.whole("/kineticsDomain/ruleI");
+    let floor = block.whole("/kineticsDomain/floor");
+    let (Some(rule_i), Some(floor)) = (rule_i.as_str(), floor.as_str()) else {
+        return Err("the block declares no kineticsDomain.ruleI and floor".into());
+    };
+    if !rule_i.starts_with("A4 (owner-approved, R5-A)") {
+        return Err(format!(
+            "rule I {rule_i:?}: the harness implements the owner's A4 (R5-A)"
+        ));
     }
+    if !floor.starts_with("B1 (owner-approved, R5-B)") {
+        return Err(format!(
+            "kinetics floor {floor:?}: the harness implements the owner's B1 (R5-B)"
+        ));
+    }
+    Ok(
+        json!({"ruleI": "A4", "floor": "B1", "ruleI_text": rule_i, "floor_text": floor,
+        "exits": ["D3 (a) margin exit", "D3 (a) source-domain exit", "B1 phase-absence exit"]}),
+    )
+}
+
+#[test]
+fn rule_i_is_read_as_the_owners_a4_and_b1() {
+    let b = block();
+    let k = kinetics_rule(&b).unwrap();
+    assert_eq!(
+        (k["ruleI"].as_str(), k["floor"].as_str()),
+        (Some("A4"), Some("B1"))
+    );
+    // r3.6's pre-answer defaults are not read (no legacy text).
+    let old = Block::from_json(
+        declaration::FENCE,
+        include_str!("s3_harness/fixtures/ld01-s3-cases-c1c3-r3.6.json"),
+    )
+    .unwrap();
+    assert!(kinetics_rule(&old).is_err());
 }
 
 /// S3-D39: C3's operator turbine-trip delay after the acquired reactor trip
@@ -650,46 +639,147 @@ fn case_clock(case: Case, spec: &Value, frame_s: f64) -> Result<(f64, Option<Com
     }
 }
 
+/// A case's declared event window (r3 §1.1, decision 0015 E2): its cap,
+/// its length and the restart receipt that starts it (the case's own
+/// command: C2's turbine trip, C3's RCP supply loss; C3's later operator
+/// trip does not start one). C1 has none: it runs uncapped.
+struct WindowCap {
+    max_step_s: f64,
+    window_s: f64,
+    starts: fn(&Value) -> bool,
+}
+
+/// S1's `eventWindow.maxStep_s` (the gate run checks it against the block).
+const WINDOW_MAX_STEP_S: f64 = 0.02;
+
+fn window_cap(case: Case, spec: &Value) -> Option<WindowCap> {
+    let window_s = spec["window_s"].as_f64()?;
+    let starts: fn(&Value) -> bool = match case {
+        Case::C1 => return None,
+        Case::C2 => |r| r["command"] == "TurbineTripAcquired",
+        Case::C3 => |r| r["command"] == "SupplyLoss",
+    };
+    Some(WindowCap {
+        max_step_s: WINDOW_MAX_STEP_S,
+        window_s,
+        starts,
+    })
+}
+
+/// Whether the cap comes off at the chunk bound `b`: the first bound at
+/// or after the window's end.
+fn cap_removed_at(b: f64, zero: f64, window_s: f64) -> bool {
+    b >= zero + window_s - 1e-9
+}
+
 #[test]
-#[ignore = "S3 case run: requires the S3 packets, KERN's settled S3 state, the sections, the S3 declaration, the wiki, IF97 and stock IDA/KLU"]
-#[allow(clippy::too_many_lines)] // One case: refusals, composition, run, judgement, receipt.
-fn s3_case_run() {
+fn the_window_cap_holds_only_inside_the_declared_window() {
+    let b = block();
+    // C1 declares no window: never capped.
+    assert!(window_cap(Case::C1, &b.whole("/cases/C1")).is_none());
+    // C2: 20 s from the trip, started by the trip's receipt only.
+    let c2 = window_cap(Case::C2, &b.whole("/cases/C2")).unwrap();
+    assert_eq!((c2.max_step_s, c2.window_s), (0.02, 20.));
+    assert!((c2.starts)(
+        &json!({"command": "TurbineTripAcquired", "owner": "secondary"})
+    ));
+    assert!(!(c2.starts)(
+        &json!({"command": "HoldingLoss", "owner": "secondary"})
+    ));
+    assert!(!(c2.starts)(
+        &json!({"event": "STOP ramp end", "owner": "secondary"})
+    ));
+    // C3: 30 s from the supply loss; the operator's later trip starts none.
+    let c3 = window_cap(Case::C3, &b.whole("/cases/C3")).unwrap();
+    assert_eq!(c3.window_s, 30.);
+    assert!((c3.starts)(
+        &json!({"command": "SupplyLoss", "owner": "network", "rotor": 0})
+    ));
+    assert!(!(c3.starts)(
+        &json!({"command": "TurbineTripAcquired", "owner": "secondary"})
+    ));
+    // Off at the first bound at or after the window's end, not before.
+    let zero = 548.05;
+    assert!(!cap_removed_at(zero + 19.95, zero, 20.));
+    assert!(cap_removed_at(zero + 20., zero, 20.));
+    assert!(cap_removed_at(548.1 + 20., zero, 20.));
+}
+
+/// The joined system the case run integrates: with stock IDAS, the S2
+/// ledgers ride on it as quadratures (rule D); without, the plain one.
+#[cfg(feature = "quadratures")]
+type Inner = leitbild_operating_water::joined_ledger::Ledgered<leitbild_operating_water::If97>;
+#[cfg(not(feature = "quadratures"))]
+type Inner = leitbild_operating_water::joined::Integrated<leitbild_operating_water::If97>;
+type CaseUnit = leitbild_operating_water::electrical::Electrified<Inner>;
+
+#[cfg(feature = "quadratures")]
+fn wrap(
+    i: leitbild_operating_water::joined::Integrated<leitbild_operating_water::If97>,
+) -> Result<Inner, String> {
+    leitbild_operating_water::joined_ledger::Ledgered::new(i, spine::z1::cpu_s)
+}
+#[cfg(not(feature = "quadratures"))]
+fn wrap(
+    i: leitbild_operating_water::joined::Integrated<leitbild_operating_water::If97>,
+) -> Result<Inner, String> {
+    Ok(i)
+}
+
+/// The gate observation's declared settings (a gate run).
+struct GateSetup {
+    s2: gates::Declaration,
+    budgets: compare::Budgets,
+    network_packet: leitbild_operating_plant::network::packet::Packet,
+    reference_travel_m: f64,
+}
+
+/// One driven run of a case: its record, observation and CPU marks.
+struct Driven {
+    record: Value,
+    observer: observe::CaseObserver,
+    zero: f64,
+    exit_after_zero: Option<f64>,
+    failure: Option<String>,
+    /// `(t − zero, the run thread's CPU less the gate observation)`.
+    /// `(t − zero, recurring CPU-s, recurring instructions)`.
+    marks: Vec<(f64, f64, f64)>,
+    repeat_record: Value,
+    window_end_state: Option<(String, String)>,
+    end_after_zero: f64,
+}
+
+/// What one run is asked: the run itself, its repeat or a reference.
+struct Ask<'a> {
+    label: &'a str,
+    scaling: s3_unit::Scaling,
+    /// A reference's own maximum step (S1's `eventReference.maxStep_s`).
+    max_step: Option<f64>,
+    /// Credited outputs from this time after zero (C1: `judgedFrom_s`).
+    credited_from: f64,
+    /// Where the window-end state is written (C2/C3, rule K), if anywhere.
+    window_state: Option<String>,
+}
+
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)] // One case: composition, run, judgement.
+fn drive(
+    case: Case,
+    d: &declaration::Declaration,
+    spec: &Value,
+    inputs: &s3_unit::Inputs,
+    state: &Value,
+    state_path: &str,
+    span: f64,
+    gate: Option<&GateSetup>,
+    ask: &Ask<'_>,
+) -> Driven {
     use leitbild_operating_water::{
         frame::{COUNTER_NAMES, Class, Client, Diagnostic, Driver, Setup},
         ic::ProtectionClient,
+        ida::System,
         joined::JoinedSystem,
     };
-    use s3_unit::Unit;
     let started = spine::z1::cpu_s();
-    let case = Case::parse(&std::env::var("LD01_S3_CASE").expect("LD01_S3_CASE")).unwrap();
-    let preview = std::env::var("LD01_S3_PREVIEW").as_deref() == Ok("1");
-    let receipt_path = std::env::var("LD01_S3_CASE_RECEIPT").expect("LD01_S3_CASE_RECEIPT");
-    assert!(
-        !std::path::Path::new(&receipt_path).exists(),
-        "receipts are never overwritten"
-    );
-    let d = declaration::Declaration::load().unwrap_or_else(|e| panic!("{e}"));
-    // A log the pin rule cannot read (e.g. an RP1 row naming two SHA-256
-    // values) leaves the block unpinned: a refusal, recorded with its reason.
-    let pin = d.pin().unwrap_or_else(
-        |e| json!({"pinned": false, "error": e, "declared_sha256": guards::declared_sha256(&d.block).ok()}),
-    );
-    let tbd = d.tbd().unwrap();
-    let mut refusals = declaration::case_refusals(case, &pin, &tbd);
-    let spec = d.case(case);
-    let declared_s = spec["duration_s"].as_f64().expect("duration_s");
-    let span = match std::env::var("LD01_S3_PREVIEW_SPAN_S") {
-        Ok(v) => {
-            assert!(preview, "a shortened span is a preview");
-            v.parse::<f64>().expect("LD01_S3_PREVIEW_SPAN_S")
-        }
-        Err(_) => declared_s,
-    };
-    // The full S3 composition (S3-D28) at KERN's settled S3 state.
-    let state_path = std::env::var("LD01_S3_STATE").expect("LD01_S3_STATE");
-    let state: Value =
-        serde_json::from_slice(&std::fs::read(&state_path).expect("state")).expect("state json");
-    let inputs = s3_unit::Inputs::from_env();
     let section = inputs.ic.clone();
     let s3_unit::S3Unit {
         mut ida,
@@ -706,24 +796,7 @@ fn s3_case_run() {
         frame,
         receipt: composition,
         reference,
-    } = s3_unit::compose(&inputs, &state).unwrap_or_else(|e| panic!("{e}"));
-    // S3-D28: every case starts from the full composition (the spray line
-    // composed closed) at KERN's settled S3 state.
-    if composition["spray_path"] != json!(true) {
-        refusals.push(
-            "preview, no spray path (DR-P1-SPRAY-REST open): the packet composes no spray line"
-                .into(),
-        );
-    }
-    if composition["from_saved_s3_state"] != json!(true) {
-        refusals.push(format!(
-            "the start is not a settled S3 state: {state_path} is composed into S3 at its own time"
-        ));
-    }
-    assert!(
-        preview || refusals.is_empty(),
-        "the S3 case run refuses (LD01_S3_PREVIEW=1 runs a NOT-EVIDENCE preview): {refusals:#?}"
-    );
+    } = s3_unit::compose_with(inputs, state, ask.scaling, wrap).unwrap_or_else(|e| panic!("{e}"));
     let declared_frame_s = d.block.number("/frameAlignment/frame_s");
     d.block.text("/frameAlignment/rule");
     assert_eq!(
@@ -731,14 +804,7 @@ fn s3_case_run() {
         frame.period_s(),
         "the block's frame is the I&C frame"
     );
-    let (zero_after, command) = case_clock(case, &spec, declared_frame_s).unwrap();
-    // Rule I: the block declares owner request A's default, A4.
-    let rule_i_text = d.block.text("/kineticsDomain/ruleI");
-    assert_eq!(
-        rule_i_text, "owner request A, default A4",
-        "rule I {rule_i_text:?}: the harness implements the declared default A4"
-    );
-    d.block.text("/kineticsDomain/floor");
+    let (zero_after, command) = case_clock(case, spec, declared_frame_s).unwrap();
     let packet_json: Value = serde_json::from_slice(&spine::packet_bytes().1).expect("packet json");
     let extension: leitbild_operating_plant::joined::post_trip_domain::Extension =
         serde_json::from_value(packet_json["post_trip_domain"].clone())
@@ -772,14 +838,80 @@ fn s3_case_run() {
         scratch: vec![0.; y.len()],
         rows: Vec::new(),
     };
-    // S2's 20 ms event-window cap for an event case, from the start
-    // (options are refused mid-segment).
-    const WINDOW_MAX_STEP_S: f64 = 0.02;
-    let max_step = command.is_some().then_some(WINDOW_MAX_STEP_S);
-    if let Some(h) = max_step {
+    // The gate observation: the ledgers count in the run's own (unscaled)
+    // tolerance units for a reference too (DR-P3-GATE-2).
+    let ledger_atol: Vec<f64> = atol.iter().map(|a| a / ask.scaling.absolute).collect();
+    let ledger_rtol = rtol / ask.scaling.relative;
+    let gates_part = gate.map(|g| {
+        let joined = &ida.system().integrated().joined;
+        let plan = leitbild_operating_plant::joined::account::Plan::new(joined)
+            .unwrap_or_else(|e| panic!("the account's plan: {e:?}"));
+        let held0 = observe::held_at(&plan, joined, &y[..n], &ledger_atol[..n], ledger_rtol)
+            .unwrap_or_else(|e| panic!("{e}"));
+        let ledgers = plan.ledger_names().len();
+        let conservation = cfg!(feature = "quadratures").then(|| {
+            conservation::Conservation::new(&g.s2.gates, plan.clone(), held0, vec![0.; ledgers])
+        });
+        let unit = ida.system();
+        observe::Gates {
+            origin: zero,
+            dt: g.budgets.observation_s,
+            output_s: g.budgets.output_s,
+            credited_from: zero + ask.credited_from,
+            reader: outputs::Reader::new(joined, &g.network_packet, g.reference_travel_m)
+                .expect("credited output reader"),
+            rods: false,
+            credited: compare::Credited::default(),
+            credited_error: None,
+            plan,
+            ledger_atol: ledger_atol.clone(),
+            ledger_rtol,
+            conservation,
+            conservation_error: None,
+            slice: observe::SliceLedger {
+                e0: unit.slice.stored_energy(&y[n..]),
+                deposits0: unit.mechanism_j,
+                atol: ledger_atol[n..].to_vec(),
+                rtol: ledger_rtol,
+                worst: None,
+                worst_units: -1.,
+                closures: 0,
+            },
+            pending: Vec::new(),
+            fingerprint: observe::Fingerprint::default(),
+            samples: 0,
+            rotors: Vec::new(),
+            last_receipts: None,
+        }
+    });
+    let mut observer = observe::CaseObserver {
+        n,
+        extension,
+        rule_i: observe::RuleI::default(),
+        gates: gates_part,
+        instructions: 0,
+    };
+    // A reference's own cap (R1: S1's eventReference.maxStep_s) holds over
+    // its whole run, as S2's R1.
+    if let Some(h) = ask.max_step {
         ida.set_max_step(h).unwrap();
     }
     let mut driver = Driver::new(frame, Diagnostic::Jump, spine::z1::cpu_s, t0).unwrap();
+    // Decision 0015 E2: the 20 ms cap only inside the case's declared event
+    // window, set by the driver at the restart that starts it (C4's hook)
+    // and removed at the first chunk bound at or after its end.
+    let window_cap = window_cap(case, spec).filter(|_| ask.max_step.is_none());
+    if let Some(w) = &window_cap {
+        driver.restart_max_step = Some((w.max_step_s, w.starts));
+    }
+    let mut cap_intervals: Vec<Value> = Vec::new();
+    let max_step = ask.max_step;
+    if cfg!(feature = "quadratures") && observer.gates.is_some() {
+        let count = ida.system().quadrature_count();
+        driver
+            .start_quadratures(&mut ida, vec![0.; count])
+            .unwrap_or_else(|e| panic!("the ledgers' quadratures: {e}"));
+    }
     if let Some(c) = command {
         driver.command(zero, c).unwrap();
     }
@@ -790,21 +922,20 @@ fn s3_case_run() {
         restart,
         derived: &derived,
     };
+    observe::start_sample(&mut observer, ida.system_mut(), t0, &y, &yp);
     let preparation_cpu_s = spine::z1::cpu_s() - started;
     let run_started = spine::z1::cpu_s();
+    let instructions0 = s3_harness::counters::instructions();
     let until = zero + span;
-    // The run in segments: to the case's t = 0, over its declared event
-    // window, then to the end, so the window's CPU is measured on its own
-    // (each boundary is one more stop, no restart).
-    let window_s = spec["window_s"].as_f64();
-    let mut bounds: Vec<f64> = vec![zero];
-    if let Some(w) = window_s.filter(|_| command.is_some()) {
+    // The run in chunks at every frame instant (the control client, class
+    // S, stops there anyway, so the chunks add no stop): C3's operator
+    // trip is scheduled at the first chunk after the reactor trip, and the
+    // CPU is marked at every chunk for the cost spans.
+    let window_s = spec["window_s"].as_f64().filter(|_| command.is_some());
+    let mut bounds: Vec<f64> = vec![zero, until];
+    if let Some(w) = window_s {
         bounds.push(zero + w);
     }
-    bounds.push(until);
-    // Rule I is evaluated at every frame instant (the control client, class
-    // S, stops the solver there anyway, so these chunks add no stop).
-    let marks = bounds.clone();
     let period = frame.period_s();
     let first = (t0 / period).floor() as i64 + 1;
     let last = (until / period).ceil() as i64;
@@ -812,15 +943,13 @@ fn s3_case_run() {
     bounds.retain(|b| *b > t0 && *b <= until);
     bounds.sort_by(f64::total_cmp);
     bounds.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
-    let mut cpu_at: Vec<(f64, f64)> = vec![(t0, run_started)];
-    let mut domain = RuleI::default();
-    // S3-D39 (C3): the operator trips the turbine a declared delay after the
-    // acquired reactor trip (the first accepted reactor-trip cause), as C2-M.
-    let operator_trip = operator_trip_delay(case, &spec).unwrap();
+    let mut marks: Vec<(f64, f64, f64)> = vec![(t0 - zero, 0., 0.)];
+    let operator_trip = operator_trip_delay(case, spec).unwrap();
     let mut operator_trip_record = Value::Null;
+    let mut window_end_state = None;
     let outcome = {
         let mut r = {
-            let mut clients: Vec<&mut dyn Client<Unit>> =
+            let mut clients: Vec<&mut dyn Client<CaseUnit>> =
                 vec![&mut protection, &mut recorder, &mut control];
             driver.start(&mut clients, t0, &y, &yp)
         };
@@ -848,43 +977,84 @@ fn s3_case_run() {
                 }
             }
             r = {
-                let mut clients: Vec<&mut dyn Client<Unit>> =
+                let mut clients: Vec<&mut dyn Client<CaseUnit>> =
                     vec![&mut protection, &mut recorder, &mut control];
                 driver
-                    .run(&mut ida, t, *b, &mut y, &mut yp, &mut clients, &setup)
+                    .run_observed(
+                        &mut ida,
+                        t,
+                        *b,
+                        &mut y,
+                        &mut yp,
+                        &mut clients,
+                        &setup,
+                        Some(&mut observer),
+                    )
                     .map(|_| ())
             };
             t = *b;
-            // A segment that fails ends where the solver reached.
             let reached = if r.is_err() {
                 driver.solver_reached_s
             } else {
                 *b
             };
-            if r.is_ok() {
-                // Rule I (D3 (a)) at the solver's state there, exactly as S2
-                // judges it (`runner::d3_exit`).
-                let joined = &mut ida.system_mut().integrated_mut().joined;
-                if let Err(e) = domain.judge(joined, &extension, *b, &y[..n], &yp[..n]) {
-                    r = Err(e);
+            // The window's start disarms the hook (nothing later re-caps);
+            // its end removes the cap.
+            if let Some(w) = &window_cap
+                && r.is_ok()
+            {
+                if driver.restart_max_step.is_some() && *b >= zero - 1e-9 {
+                    driver.restart_max_step = None;
+                    cap_intervals.push(json!({"from_s": zero, "from_after_zero_s": 0., "set_by": "the driver at the restart that starts the window (C4 hook 75dd4632c)"}));
+                }
+                if let Some(last) = cap_intervals.last_mut()
+                    && last.get("removed_at_s").is_none()
+                    && cap_removed_at(*b, zero, w.window_s)
+                {
+                    if let Err(e) = ida.remove_max_step() {
+                        r = Err(format!("removing the window's cap at {b} s: {e}"));
+                    }
+                    last["removed_at_s"] = json!(*b);
+                    last["removed_after_zero_s"] = json!(*b - zero);
                 }
             }
-            if marks.iter().any(|m| (*m - *b).abs() < 1e-9) || r.is_err() {
-                cpu_at.push((reached, spine::z1::cpu_s()));
+            marks.push((
+                reached - zero,
+                spine::z1::cpu_s()
+                    - run_started
+                    - driver.cpu.gate_s
+                    - ledger_quadrature_cpu_s(ida.system()),
+                (s3_harness::counters::instructions()
+                    .saturating_sub(instructions0)
+                    .saturating_sub(observer.instructions)) as f64,
+            ));
+            // Rule K's post-event state: the window's end (C2, C3), the
+            // solver's own state there (the frame stop), for SPECTRUM.
+            if r.is_ok()
+                && let (Some(w), Some(path)) = (window_s, ask.window_state.as_ref())
+                && (*b - (zero + w)).abs() < 1e-9
+            {
+                let snapshot = ida.system().system_discrete_state();
+                let s = json!({"t_s": *b, "packet": state["packet"], "packet_sha256": state["packet_sha256"],
+                    "y": &y[..n], "yp": &yp[..n],
+                    "appended": {"owner": "electrical slice (ELEC)", "y": &y[n..], "yp": &yp[n..]},
+                    "discrete_state": snapshot, "pzr_control": {"in_force_w": control.in_force_w},
+                    "composition": composition["composition"], "from": format!("{} window end ({} s after zero)", case.key(), w)});
+                let bytes = serde_json::to_vec(&s).unwrap();
+                assert!(
+                    !std::path::Path::new(path).exists(),
+                    "states are never overwritten"
+                );
+                std::fs::write(path, &bytes).unwrap();
+                window_end_state = Some((path.clone(), spine::sha256(&bytes)));
             }
         }
         r
     };
     let run_cpu_s = spine::z1::cpu_s() - run_started;
-    // The window from t = 0 to its declared end, or to where the run
-    // stopped inside it.
-    let window_cpu = window_s.filter(|_| command.is_some()).and_then(|w| {
-        let start = cpu_at.iter().find(|(b, _)| (*b - zero).abs() < 1e-9)?.1;
-        let (end_t, end_c) = *cpu_at.iter().find(|(b, _)| *b > zero + 1e-9)?;
-        let span = (end_t - zero).min(w);
-        Some(json!({"from_zero_s": 0., "to_s": span, "declared_window_s": w, "truncated": span < w - 1e-9,
-            "cpu_s": end_c - start, "cpu_s_per_s": (end_c - start) / span}))
-    });
+    // The ledgers' quadrature integrands (the account at each converged
+    // step) are rule D's instrument, not plant work.
+    let ledger_cpu_s = ledger_quadrature_cpu_s(ida.system());
     driver.close_segment(&ida, until).unwrap();
     let mut failure = outcome.as_ref().err().cloned();
     // S3-D39's labelled end (C3): a run that stops while the PZR's resident
@@ -921,8 +1091,6 @@ fn s3_case_run() {
             "trip": dv.trip.as_ref().map(|c| json!({"function": c.function, "t_s": c.at_s})),
             "requests": dv.requests, "monitors": dv.monitors}))
         .collect();
-    // A failed run ends where the solver last reached; its refusal is at
-    // the driver's last attempted instant (both recorded).
     let end = if outcome.is_err() {
         driver.solver_reached_s
     } else {
@@ -933,9 +1101,10 @@ fn s3_case_run() {
         .unwrap()
         .with_electrical(&electrical_log, zero);
     tl.monitors_declared = section.monitors.iter().map(|m| m.id.clone()).collect();
-    // Rule I, A4 (the block's declared default pending owner request A):
-    // the lines are judged on the declared part, up to the D3 (a) exit; the
-    // whole run is judged again for information only.
+    // Rule I, A4 (owner-approved, R5-A): the lines are judged on the
+    // declared part, up to the D3 (a) or B1 phase-absence exit; the whole
+    // run is judged again for information only.
+    let domain = &observer.rule_i;
     let exit_after_zero = domain
         .exit
         .as_ref()
@@ -950,6 +1119,705 @@ fn s3_case_run() {
         .zip(driver.totals)
         .map(|(k, v)| (k.to_string(), json!(v)))
         .collect();
+    let simulated = end - t0;
+    let mut end_fp = observe::Fingerprint::default();
+    end_fp.fold(&[end]);
+    end_fp.fold(&y);
+    end_fp.fold(&yp);
+    let instants_bytes = serde_json::to_vec(&driver.log).unwrap();
+    let repeat_record = json!({"fingerprint": observer.gates.as_ref().map(|g| g.fingerprint.hex()),
+        "samples": observer.gates.as_ref().map(|g| g.samples), "end_state_fingerprint": end_fp.hex(),
+        "instants": {"count": driver.log.len(), "sha256": spine::sha256(&instants_bytes)},
+        "counts_by_class": driver.counts.json()});
+    let record = json!({
+        "label": ask.label,
+        "failure": failure,
+        "failure_at": failure.as_ref().map(|_| json!({
+            "refusal_s": driver.attempt_s, "refusal_after_zero_s": driver.attempt_s.map(|a| a - zero),
+            "solver_reached_s": driver.solver_reached_s, "solver_reached_after_zero_s": driver.solver_reached_s - zero,
+            "last_logged_s": driver.log.last().and_then(|e| e["t_s"].as_f64()),
+            "note": "refusal_s is the driver's last attempted discrete instant; a failure inside a step is at or after solver_reached_s"})),
+        "start_state": {"path": state_path, "sha256": provenance::sha256_file(state_path).ok(), "t_s": t0},
+        "composition": composition,
+        "ic_section": {"path": inputs.ic_path, "implemented_causes": implemented},
+        "configuration": {"span_after_zero_s": span, "zero_after_start_s": zero_after,
+            "command": command.map(|c| format!("{c:?}")), "frame_s": frame.period_s(),
+            "max_order": s3_unit::MAX_ORDER, "max_step_s": max_step,
+            "window_cap": window_cap.as_ref().map(|w| json!({"max_step_s": w.max_step_s, "window_s": w.window_s,
+                "rule": "0015 E2: the cap only inside the declared window, set at the restart that starts it, removed at the first chunk bound at or after its end",
+                "intervals": cap_intervals})),
+            "tolerance_scaling": {"relative": ask.scaling.relative, "absolute": ask.scaling.absolute},
+            "derived_tolerances": derived, "relative_tolerance": rtol,
+            "integration": if cfg!(feature = "quadratures") { "frame driver: stock IDAS IDA_ONE_STEP (ledgers as quadratures, IDASetQuadErrCon false), observation from IDAGetDky, restarts by discrete_restart" } else { "frame driver: stock IDA_ONE_STEP, observation from IDAGetDky, restarts by discrete_restart" }},
+        "lines": judged,
+        "rule_i": {"evaluated_at": "every accepted stock step (B1: on accepted states), at the solver's state there",
+            "samples": domain.samples, "stock_steps": driver.totals[0],
+            "note": "samples = stock steps less located-root returns and steps a late change rolled back", "first_extended_s": domain.first_extended, "margin_failures": domain.margin_failures,
+            "exit": domain.exit, "exit_after_zero_s": exit_after_zero, "information_from_s": exit_after_zero},
+        "operator_turbine_trip": operator_trip_record,
+        "labelled_end": labelled_end,
+        "information": information.map(|l| json!({"note": "INFORMATION ONLY (past the rule-I exit): every line over the whole run", "lines": l})),
+        "timeline": {"zero_s": zero, "end_s": tl.end, "holding_lost_s": tl.holding_lost, "stop_ramp_end_s": tl.stop_ramp_end,
+            "seats": tl.seats.len(), "last_seat_s": tl.seats.iter().map(|(_, t)| *t).fold(f64::NEG_INFINITY, f64::max),
+            "sg_relief": tl.sg_relief.iter().map(|(v, th, d, t)| json!([v, th, d, t])).collect::<Vec<_>>(),
+            "pzr_relief_openings": tl.pzr_relief_openings,
+            "causes": tl.causes.iter().map(|c| json!([c.division, c.function, c.t])).collect::<Vec<_>>(),
+            "electrical": tl.electrical.as_ref().map(|l| l.iter().map(|(t, w)| json!([t, w])).collect::<Vec<_>>())},
+        "pzr_control": {"changes": control.schedule.len().saturating_sub(1), "final_request_w": control.in_force_w},
+        "protection_log": p.log, "divisions": divisions,
+        "counts_by_class": driver.counts.json(), "stock_totals": totals, "segments": driver.segments,
+        "instants": driver.log,
+        "observation_class_o": driver.observation_json(),
+        "cpu": {"preparation_s": preparation_cpu_s, "run_s": run_cpu_s, "solver_s": driver.cpu.solver_s,
+            "observation_s": driver.cpu.observation_s, "restart_s": driver.cpu.restart_s, "held_s": driver.cpu.held_s,
+            "gate_observation_s": driver.cpu.gate_s, "ledger_quadrature_s": ledger_cpu_s,
+            "instructions": {"run": marks.last().map(|m| m.2), "observer": observer.instructions,
+                "note": "the process's instructions retired over the run less the observer's own calls; in a gated run the ledgers' integrands are not subtracted (the cost family reads the ungated cost drive)"},
+            "recurring_s": run_cpu_s - driver.cpu.gate_s - ledger_cpu_s,
+            "worst_step": {"cpu_s": driver.cpu.worst_step.0, "reached_s": driver.cpu.worst_step.1},
+            "run_per_simulated_s": if simulated > 0. { json!(run_cpu_s / simulated) } else { Value::Null },
+            "recurring_per_simulated_s": if simulated > 0. { json!((run_cpu_s - driver.cpu.gate_s - ledger_cpu_s) / simulated) } else { Value::Null },
+            "restarts_r": driver.counts.total(Class::R), "s_instants": driver.counts.total(Class::S),
+            "label": s3_harness::families::PROVISIONAL},
+        "frames": recorder.rows,
+        "repeat_record": repeat_record,
+    });
+    eprintln!(
+        "{} [{}]: R {} S {}; run CPU {run_cpu_s:.2} s (gate obs {:.2}) over {simulated:.2} s; failure {failure:?}; rule I exit {exit_after_zero:?}",
+        case.key(),
+        ask.label,
+        driver.counts.total(Class::R),
+        driver.counts.total(Class::S),
+        driver.cpu.gate_s,
+    );
+    Driven {
+        record,
+        observer,
+        zero,
+        exit_after_zero,
+        failure,
+        marks,
+        repeat_record,
+        window_end_state,
+        end_after_zero: end - zero,
+    }
+}
+
+/// The CPU the IDAS ledgers' integrands took (zero without them).
+#[cfg(feature = "quadratures")]
+fn ledger_quadrature_cpu_s(unit: &CaseUnit) -> f64 {
+    unit.inner.counters.cpu_s
+}
+#[cfg(not(feature = "quadratures"))]
+fn ledger_quadrature_cpu_s(_: &CaseUnit) -> f64 {
+    0.
+}
+
+/// The run's `(key, is temperature, series)` for SS-1 and the detector.
+fn credited_series(c: &compare::Credited) -> Vec<(String, bool, Vec<f64>)> {
+    let mut out = Vec::new();
+    for (k, temperature) in [
+        (compare::key::AVERAGE_COOLANT_K, true),
+        (compare::key::CORE_POWER_W, false),
+        (compare::key::PZR_ROOF_PA, false),
+        (compare::key::SG_PRESSURE_PA, false),
+        (compare::key::LOOP_FLOW_KG_S, false),
+        ("generator_power_w", false),
+    ] {
+        if let Ok(series) = c.output(k) {
+            for (i, x) in series.iter().enumerate() {
+                out.push((format!("{k}[{i}]"), temperature, x.clone()));
+            }
+        }
+    }
+    out
+}
+
+/// Rule D on a run's observation: S2's identities and IDAS ledgers (heater,
+/// PZR relief and exterior loss, SG feed/steam/relief, motor work, event
+/// energy among them) and the ELEC slice's energy ledger (turbine and shaft
+/// work, generator terminal energy, field and copper losses, the Grid's
+/// signed export) in the S2 bound's local tolerance units.
+fn conservation_family(g: &observe::Gates, units_bound: f64) -> Value {
+    let Some(c) = g.conservation.as_ref() else {
+        return json!({"family": "D conservation", "verdict": "not executable",
+            "reason": "stock IDA without quadratures: the ledgers need the IDAS build (feature quadratures)"});
+    };
+    let identities = c.identities_json();
+    let mut ledger = c.ledger_json();
+    // The over-time rows are the receipt's bulk; the worst closures stay.
+    if let Some(o) = ledger.as_object_mut() {
+        o.remove("over_time");
+    }
+    let slice_pass = g.slice.worst_units >= 0. && g.slice.worst_units <= units_bound;
+    // Every named receipt at the last closure: heater Joule, PZR relief and
+    // exterior loss, SG feed/steam/relief, motor work, event energy, and the
+    // slice's aero work, export (the Grid's signed receipt), losses and the
+    // auxiliary draws.
+    let names: Vec<String> = g
+        .plan
+        .ledger_names()
+        .into_iter()
+        .chain(
+            leitbild_operating_plant::electrical::slice::QUADRATURES
+                .iter()
+                .map(|k| format!("slice.{k}_integral_J")),
+        )
+        .collect();
+    let receipts = g.last_receipts.as_ref().map(|(t, q)| {
+        let named: serde_json::Map<String, Value> = names
+            .iter()
+            .zip(q)
+            .map(|(k, v)| (k.clone(), json!(v)))
+            .collect();
+        json!({"t_s": t, "values": named})
+    });
+    let pass =
+        c.identities_pass() && c.ledger_pass() && slice_pass && g.conservation_error.is_none();
+    json!({"family": "D conservation", "verdict": if g.conservation_error.is_some() { "fail" } else if pass { "pass" } else { "fail" },
+        "threshold_source": "ld01-s2-gates identityRelative, ledger.boundLocalToleranceUnits",
+        "identities": identities, "ledger": ledger, "error": g.conservation_error,
+        "slice": {"rule": "stored energy (rotor kinetic + magnetic + breaker body) change = aero work - oil heat - export + field input - stator and field copper - body to room + mechanism deposits, in first-order local tolerance units of the stored energy",
+            "closures": g.slice.closures, "worst": g.slice.worst, "worst_units": g.slice.worst_units, "bound_units": units_bound, "pass": slice_pass},
+        "pzr_spray": "internal to the primary: closed by the primary mass, boron and unit energy identities",
+        "receipts_at_last_closure": receipts})
+}
+
+/// Critic item 2 (B1 on accepted states): rule I is judged at every
+/// accepted stock step of a short C1 span, not only at the 0.1 s frames.
+#[test]
+#[ignore = "requires the S3 packets, KERN's settled S3 state, the sections, the S3 declaration, the wiki, IF97 and stock IDA/KLU"]
+fn rule_i_is_judged_at_every_accepted_step() {
+    let d = declaration::Declaration::load().unwrap_or_else(|e| panic!("{e}"));
+    let spec = d.case(Case::C1);
+    let state_path = std::env::var("LD01_S3_STATE").expect("LD01_S3_STATE");
+    let state: Value =
+        serde_json::from_slice(&std::fs::read(&state_path).expect("state")).expect("state json");
+    let inputs = s3_unit::Inputs::from_env();
+    let run = drive(
+        Case::C1,
+        &d,
+        &spec,
+        &inputs,
+        &state,
+        &state_path,
+        1.,
+        None,
+        &Ask {
+            label: "rule I cadence",
+            scaling: s3_unit::Scaling::NONE,
+            max_step: None,
+            credited_from: 0.,
+            window_state: None,
+        },
+    );
+    let steps = run.record["stock_totals"]["steps"].as_i64().unwrap();
+    let frames = run.record["frames"].as_array().unwrap().len() as i64;
+    let samples = run.record["rule_i"]["samples"].as_i64().unwrap();
+    // C1 locates no root and rolls nothing back: every step is judged,
+    // and there are more steps than frames.
+    assert_eq!(run.record["counts_by_class"]["R"]["total"], 0);
+    assert_eq!(samples, steps, "rule I samples against stock steps");
+    assert!(steps > frames, "{steps} steps, {frames} frames");
+}
+
+#[test]
+#[ignore = "S3 case run: requires the S3 packets, KERN's settled S3 state, the sections, the S3 declaration, the wiki, IF97 and stock IDA/KLU (IDAS for the gates)"]
+#[allow(clippy::too_many_lines)] // One case: refusals, runs, families, receipt.
+fn s3_case_run() {
+    let case = Case::parse(&std::env::var("LD01_S3_CASE").expect("LD01_S3_CASE")).unwrap();
+    let preview = std::env::var("LD01_S3_PREVIEW").as_deref() == Ok("1");
+    let gates_on = std::env::var("LD01_S3_GATES").as_deref() == Ok("1");
+    let receipt_path = std::env::var("LD01_S3_CASE_RECEIPT").expect("LD01_S3_CASE_RECEIPT");
+    assert!(
+        !std::path::Path::new(&receipt_path).exists(),
+        "receipts are never overwritten"
+    );
+    let process0 = spine::z1::cpu_s();
+    let d = declaration::Declaration::load().unwrap_or_else(|e| panic!("{e}"));
+    let pin = d.pin().unwrap_or_else(
+        |e| json!({"pinned": false, "error": e, "declared_sha256": guards::declared_sha256(&d.block).ok()}),
+    );
+    let tbd = d.tbd().unwrap();
+    let mut refusals = declaration::case_refusals(case, &pin, &tbd);
+    let spec = d.case(case);
+    let declared_s = spec["duration_s"].as_f64().expect("duration_s");
+    let span = match std::env::var("LD01_S3_PREVIEW_SPAN_S") {
+        Ok(v) => {
+            assert!(preview, "a shortened span is a preview");
+            v.parse::<f64>().expect("LD01_S3_PREVIEW_SPAN_S")
+        }
+        Err(_) => declared_s,
+    };
+    // Rule I: the owner's answers A4 and B1 (r3.7).
+    let kinetics = kinetics_rule(&d.block).unwrap_or_else(|e| panic!("{e}"));
+    d.block.text("/kineticsDomain/ruleI");
+    let state_path = std::env::var("LD01_S3_STATE").expect("LD01_S3_STATE");
+    let state: Value =
+        serde_json::from_slice(&std::fs::read(&state_path).expect("state")).expect("state json");
+    let inputs = s3_unit::Inputs::from_env();
+    // The gate observation's declared settings: S2's blocks on the same page
+    // (identity and ledger bounds, the observation and output grids, the
+    // accuracy contract), read only for a gate run.
+    let gate = gates_on.then(|| {
+        let s2 = gates::Declaration::load().unwrap_or_else(|e| panic!("the S2 blocks: {e}"));
+        let budgets = compare::Budgets::from(&s2).unwrap_or_else(|e| panic!("{e}"));
+        let bytes = spine::packet_bytes().1;
+        let raw: Value = serde_json::from_slice(&bytes).unwrap();
+        GateSetup {
+            s2,
+            budgets,
+            network_packet: serde_json::from_slice(&bytes).expect("network packet"),
+            reference_travel_m: raw["rods"]["reference_travel_m"]
+                .as_f64()
+                .expect("reference travel"),
+        }
+    });
+    // A shortened preview may judge from an earlier time (NOT evidence).
+    let judged_from = match std::env::var("LD01_S3_PREVIEW_JUDGED_FROM_S") {
+        Ok(v) => {
+            assert!(preview, "a moved judged span is a preview");
+            v.parse::<f64>().expect("LD01_S3_PREVIEW_JUDGED_FROM_S")
+        }
+        Err(_) => spec["judgedFrom_s"].as_f64().unwrap_or(0.),
+    };
+    let window_state = |label: &str| {
+        (gates_on && case != Case::C1)
+            .then(|| format!("{receipt_path}.{label}-window-end-state.json"))
+    };
+    let run = drive(
+        case,
+        &d,
+        &spec,
+        &inputs,
+        &state,
+        &state_path,
+        span,
+        gate.as_ref(),
+        &Ask {
+            label: "run",
+            scaling: s3_unit::Scaling::NONE,
+            max_step: None,
+            credited_from: judged_from,
+            window_state: window_state("run"),
+        },
+    );
+    if run.record["composition"]["spray_path"] != json!(true) {
+        refusals.push(
+            "preview, no spray path (DR-P1-SPRAY-REST open): the packet composes no spray line"
+                .into(),
+        );
+    }
+    if run.record["composition"]["from_saved_s3_state"] != json!(true) {
+        refusals.push(format!(
+            "the start is not a settled S3 state: {state_path} is composed into S3 at its own time"
+        ));
+    }
+    assert!(
+        preview || refusals.is_empty(),
+        "the S3 case run refuses (LD01_S3_PREVIEW=1 runs a NOT-EVIDENCE preview): {refusals:#?}"
+    );
+    // The declared part's end after zero: rule I's exit or the run's end.
+    let end = run.exit_after_zero.unwrap_or(run.end_after_zero);
+    let budgets_block = d.block.whole("/budgets_cpu_s_per_s");
+    let recovery_s = gate
+        .as_ref()
+        .map_or(10., |g| g.s2.shared.number("/recovery/postWindow_s"));
+    // The common cost rule's quiet ratio (instructions per quiet CPU-s,
+    // COST2's measurement), named by the caller with its source.
+    let quiet_ratio = std::env::var("LD01_S3_QUIET_RATIO").ok().map(|v| {
+        let r = v
+            .parse::<f64>()
+            .expect("LD01_S3_QUIET_RATIO is instructions per quiet CPU-s");
+        let src = std::env::var("LD01_S3_QUIET_RATIO_SOURCE")
+            .expect("LD01_S3_QUIET_RATIO_SOURCE names the ratio's measurement");
+        (r, src)
+    });
+    // Rule G on the plant's recurring work: in a gated run, a separate
+    // ungated drive of the same trajectory (no 2 ms observation, no IDAS
+    // ledgers), so only rule I's own calls are subtracted.
+    let cost_drive = gate.as_ref().map(|_| {
+        drive(
+            case,
+            &d,
+            &spec,
+            &inputs,
+            &state,
+            &state_path,
+            span,
+            None,
+            &Ask {
+                label: "cost",
+                scaling: s3_unit::Scaling::NONE,
+                max_step: None,
+                credited_from: judged_from,
+                window_state: None,
+            },
+        )
+    });
+    let cost_marks = cost_drive.as_ref().map_or(&run.marks, |c| &c.marks);
+    let mut families = serde_json::Map::new();
+    let mut g_cost = s3_harness::families::cost(
+        case,
+        &budgets_block,
+        cost_marks,
+        end,
+        spec["window_s"].as_f64(),
+        recovery_s,
+        quiet_ratio,
+    );
+    g_cost["measured_on"] = json!(if cost_drive.is_some() {
+        "the ungated cost drive (same trajectory; frames compared)"
+    } else {
+        "the run"
+    });
+    if let Some(c) = &cost_drive {
+        g_cost["cost_drive_same_frames"] = json!(c.record["frames"] == run.record["frames"]);
+        g_cost["cost_drive_cpu"] = c.record["cpu"].clone();
+    }
+    families.insert("G_cost".into(), g_cost);
+    let mut not_implemented: Vec<&str> = Vec::new();
+    let mut repeat_driven = None;
+    let mut references: Vec<(String, Driven)> = Vec::new();
+    if let Some(g) = gate.as_ref() {
+        let og = run.observer.gates.as_ref().unwrap();
+        let units_bound = g.s2.gates.number("/ledger/boundLocalToleranceUnits");
+        assert_eq!(
+            g.s2.shared.number("/eventWindow/maxStep_s"),
+            WINDOW_MAX_STEP_S,
+            "the window cap is S1's eventWindow.maxStep_s"
+        );
+        families.insert(
+            "D_conservation".into(),
+            conservation_family(og, units_bound),
+        );
+        // Rule H: the same run again, bitwise.
+        if std::env::var("LD01_S3_GATES_REPEAT").as_deref() != Ok("0") {
+            let r = drive(
+                case,
+                &d,
+                &spec,
+                &inputs,
+                &state,
+                &state_path,
+                span,
+                Some(g),
+                &Ask {
+                    label: "repeat",
+                    scaling: s3_unit::Scaling::NONE,
+                    max_step: None,
+                    credited_from: judged_from,
+                    window_state: window_state("repeat"),
+                },
+            );
+            families.insert(
+                "H_repeatability".into(),
+                s3_harness::families::repeatability(&run.repeat_record, &r.repeat_record),
+            );
+            repeat_driven = Some(r);
+        } else {
+            families.insert("H_repeatability".into(), json!({"family": "H repeatability", "verdict": "not run", "reason": "LD01_S3_GATES_REPEAT=0"}));
+        }
+        // Rule E: the declared references (holds: rtol/10 with every atol
+        // /10, S2's hold reference; event windows: R1 capped at S1's
+        // eventReference.maxStep_s, R2 at rtol x secondRefinementToleranceFactor
+        // with every atol x referenceToleranceFactor, S2's R2).
+        let f = g.s2.gates.number("/referenceToleranceFactor");
+        let asks: Vec<(String, s3_unit::Scaling, Option<f64>, f64, f64)> = match case {
+            Case::C1 => vec![(
+                "rtol/10".into(),
+                s3_unit::Scaling {
+                    relative: f,
+                    absolute: f,
+                },
+                None,
+                judged_from,
+                end,
+            )],
+            Case::C2 | Case::C3 => {
+                let w = spec["window_s"].as_f64().unwrap();
+                let second =
+                    g.s2.shared
+                        .number("/eventReference/secondRefinementToleranceFactor");
+                vec![
+                    (
+                        "R1".into(),
+                        s3_unit::Scaling::NONE,
+                        Some(g.s2.shared.number("/eventReference/maxStep_s")),
+                        0.,
+                        w.min(end),
+                    ),
+                    (
+                        "R2".into(),
+                        s3_unit::Scaling {
+                            relative: second,
+                            absolute: f,
+                        },
+                        None,
+                        0.,
+                        end,
+                    ),
+                ]
+            }
+        };
+        let only = std::env::var("LD01_S3_GATES_REFERENCES").ok();
+        let mut comparisons = Vec::new();
+        for (name, scaling, max_step, from, to) in asks {
+            if only
+                .as_deref()
+                .is_some_and(|o| !o.split(',').any(|x| x == name))
+            {
+                comparisons.push(json!({"reference": name, "verdict": "not run", "reason": "LD01_S3_GATES_REFERENCES"}));
+                continue;
+            }
+            let r = drive(
+                case,
+                &d,
+                &spec,
+                &inputs,
+                &state,
+                &state_path,
+                span.min(to + 1.),
+                Some(g),
+                &Ask {
+                    label: &name,
+                    scaling,
+                    max_step,
+                    credited_from: from,
+                    window_state: None,
+                },
+            );
+            let rg = r.observer.gates.as_ref().unwrap();
+            let e0 = match (&og.credited_error, &rg.credited_error) {
+                (None, None) => {
+                    compare::compare(&og.credited, &rg.credited, run.zero, from, to, &g.budgets)
+                }
+                (a, b) => json!({"evaluable": false, "run": a, "reference": b, "within": false}),
+            };
+            // E′ (S3-D23): the electrical outputs, for the cases it names.
+            let electrical = s3_harness::families::electrical_e0(
+                case,
+                &og.credited,
+                &rg.credited,
+                run.zero,
+                from,
+                to,
+                g.budgets.observation_s,
+                g.budgets.cutoff_hz,
+                &d.block.whole("/accuracyExtension"),
+            );
+            let electrical_ok = matches!(
+                electrical["verdict"].as_str(),
+                Some("pass" | "not applicable")
+            );
+            let verdict =
+                if e0["evaluable"] == json!(false) || electrical["verdict"] == "unevaluable" {
+                    "unevaluable"
+                } else if e0["within"] == json!(true) && electrical_ok {
+                    "pass"
+                } else {
+                    "fail"
+                };
+            comparisons.push(
+                json!({"reference": name, "span_after_zero_s": [from, to], "verdict": verdict,
+                "reference_failure": r.failure, "reference_rule_i_exit": r.exit_after_zero,
+                "reference_cpu": r.record["cpu"], "e0": e0, "electrical_e0": electrical}),
+            );
+            references.push((name, r));
+        }
+        let verdict = if comparisons.iter().all(|c| c["verdict"] == "pass") {
+            "pass"
+        } else if comparisons.iter().any(|c| c["verdict"] == "fail") {
+            "fail"
+        } else {
+            "incomplete"
+        };
+        families.insert("E_refinement".into(), json!({"family": "E refinement", "verdict": verdict,
+            "threshold_source": "ld01-accuracy-contract + ld01-s2-accuracy (E0), ld01-s2-gates referenceToleranceFactor, ld01-s1-gates eventReference",
+            "electrical_extension": "E′ (S3-D23) per comparison (electrical_e0): Ieq = |i_dq|/sqrt(3) against 10 A and terminal power against 1 MW, for the cases accuracyExtension.appliesTo names",
+            "comparisons": comparisons}));
+        // Rule F: the detector on every recorded credited signal.
+        let series = credited_series(&og.credited);
+        let signals: Vec<(String, Vec<f64>)> = series
+            .iter()
+            .map(|(k, _, x)| (k.clone(), x.clone()))
+            .collect();
+        let instants: Vec<f64> = run.record["instants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|e| e["t_s"].as_f64())
+            .collect();
+        families.insert(
+            "F_smoothness".into(),
+            s3_harness::families::smoothness(
+                &d.block.value,
+                &spec,
+                &signals,
+                &og.credited.t,
+                &instants,
+            ),
+        );
+        // Rule K at the declared states.
+        let receipts: Value = std::env::var("LD01_S3_Z6_RECEIPTS")
+            .ok()
+            .map_or(json!({}), |m| {
+                let names: serde_json::Map<String, Value> =
+                    serde_json::from_str(&m).expect("LD01_S3_Z6_RECEIPTS is a JSON object");
+                names
+                    .into_iter()
+                    .map(|(k, p)| {
+                        let p = p.as_str().expect("a receipt path").to_string();
+                        (
+                            k,
+                            serde_json::from_slice(&std::fs::read(&p).expect("Z6 receipt"))
+                                .expect("Z6 receipt json"),
+                        )
+                    })
+                    .collect::<serde_json::Map<_, _>>()
+                    .into()
+            });
+        let start_sha = provenance::sha256_file(&state_path).ok();
+        let window_sha = run.window_end_state.as_ref().map(|(_, s)| s.clone());
+        let mut states: Vec<(&str, Option<String>)> = vec![("start (prerequisite 11)", start_sha)];
+        if case != Case::C1 {
+            states.push(("window end", window_sha));
+        }
+        let mut k = s3_harness::families::spectra(&states, &receipts);
+        if k["verdict"] == "not executable" {
+            k["reason"] = json!(
+                "Z6 on the S3 composition is SPECTRUM's P-7 (prerequisite 11), owed: no receipt names these states (LD01_S3_Z6_RECEIPTS); the harness judges them by S2's GO rule once they exist and writes each post-event state for it"
+            );
+        }
+        k["window_end_state"] = json!(run.window_end_state);
+        k["post_event"] = json!(if case == Case::C1 {
+            "not applicable: C1 has no event"
+        } else {
+            "the window's end state (C2, C3)"
+        });
+        families.insert("K_spectra".into(), k);
+        // Rule B.
+        let rotor = match case {
+            Case::C3 => case_clock(case, &spec, d.block.number("/frameAlignment/frame_s"))
+                .ok()
+                .and_then(|(_, c)| match c {
+                    Some(Command::SupplyLoss { rotor }) => Some(rotor),
+                    _ => None,
+                }),
+            _ => None,
+        };
+        families.insert(
+            "B_directions".into(),
+            s3_harness::families::directions(case, &spec, rotor, &og.rotors),
+        );
+        // C1's drift, SS-1 and SS-2.
+        if case == Case::C1 {
+            let gg = &g.s2.gates;
+            let mut ceilings = vec![
+                (
+                    compare::key::CORE_POWER_W,
+                    gg.number("/hold/driftCeiling/corePowerRelative"),
+                    true,
+                ),
+                (
+                    compare::key::AVERAGE_COOLANT_K,
+                    gg.number("/hold/driftCeiling/averageCoolant_K"),
+                    false,
+                ),
+                (
+                    compare::key::PZR_ROOF_PA,
+                    gg.number("/hold/driftCeiling/pzrRoofPressure_Pa"),
+                    false,
+                ),
+                (
+                    compare::key::SG_PRESSURE_PA,
+                    gg.number("/hold/driftCeiling/sgPressure_Pa"),
+                    false,
+                ),
+                (
+                    compare::key::SG_LIQUID_M3,
+                    gg.number("/hold/driftCeiling/sgLiquidVolume_m3"),
+                    false,
+                ),
+            ];
+            ceilings.push((
+                "generator_power_w",
+                spec["generatorPowerDriftRelative"]
+                    .as_f64()
+                    .expect("generatorPowerDriftRelative"),
+                true,
+            ));
+            let mut drift = compare::drift(
+                &og.credited,
+                run.zero,
+                judged_from,
+                &ceilings,
+                g.budgets.observation_s,
+                g.budgets.cutoff_hz,
+            );
+            let level = compare::drift(
+                &og.credited,
+                run.zero,
+                judged_from,
+                &[(compare::key::PZR_LEVEL_M, f64::INFINITY, false)],
+                g.budgets.observation_s,
+                g.budgets.cutoff_hz,
+            );
+            drift["pzr_level_reported_only"] = json!({"rule": "S3-D2: no charging or letdown; reported only", "value": level["outputs"][compare::key::PZR_LEVEL_M]["value"]});
+            let verdict = if og.credited_error.is_some() {
+                "unevaluable"
+            } else if drift["within"] == json!(true) {
+                "pass"
+            } else {
+                "fail"
+            };
+            families.insert("C1_drift".into(), json!({"family": "C1 drift", "verdict": verdict, "credited_error": og.credited_error,
+                "threshold_source": "ld01-s2-gates hold.driftCeiling (PZR level reported only, S3-D2); ld01-s3-cases-c1c3 cases.C1.generatorPowerDriftRelative",
+                "judged_from_s": judged_from, "record": drift}));
+            families.insert(
+                "C1_SS1".into(),
+                s3_harness::families::ss1(
+                    &spec,
+                    end,
+                    &credited_series(&og.credited),
+                    g.budgets.observation_s,
+                    g.budgets.cutoff_hz,
+                ),
+            );
+            let d_family = &families["D_conservation"];
+            families.insert(
+                "C1_SS2".into(),
+                s3_harness::families::ss2(
+                    &d_family["identities"],
+                    &d_family["ledger"],
+                    &d_family["slice"],
+                    units_bound,
+                ),
+            );
+        }
+    } else {
+        not_implemented.extend([
+            "D conservation (a gate run: LD01_S3_GATES=1 on the IDAS build)",
+            "E refinement (a gate run)",
+            "F smoothness (a gate run)",
+            "H repeatability (a gate run)",
+            "K post-event spectra (a gate run)",
+            "B directions (a gate run)",
+            "C1 drift, SS-1 and SS-2 (a gate run)",
+        ]);
+    }
+    // A family the run could not exercise stays listed, with its reason.
+    let unexercised: Vec<Value> = families
+        .iter()
+        .filter(|(_, v)| {
+            matches!(
+                v["verdict"].as_str(),
+                Some("not executable" | "not executable as declared" | "not run")
+            )
+        })
+        .map(|(k, v)| json!({"family": k, "verdict": v["verdict"], "reason": v["reason"]}))
+        .collect();
+    let failure = run.failure.clone();
     let evidence = refusals.is_empty() && !preview && failure.is_none();
     let status = if evidence {
         format!("{} run", case.key())
@@ -960,88 +1828,80 @@ fn s3_case_run() {
             refusals.len()
         )
     };
-    let status = if labelled_end["applies"] == json!(true) {
+    let status = if run.record["labelled_end"]["applies"] == json!(true) {
         format!("{status}; ended, labelled, at PZR zone-R exhaustion (S3-D39, a declared exit)")
     } else {
         status
     };
-
+    let judged_families: Vec<(&String, &str)> = families
+        .iter()
+        .map(|(k, v)| (k, v["verdict"].as_str().unwrap_or("?")))
+        .collect();
     let verdict = if failure.is_some() {
         "FAIL: the run failed".to_string()
-    } else if lines::all_pass(&judged) {
-        "lines PASS (other gates not yet implemented)".to_string()
-    } else {
+    } else if !lines::all_pass(run.record["lines"].as_array().unwrap()) {
         "lines not all passing".to_string()
+    } else if judged_families.iter().any(|(_, v)| *v == "fail") {
+        format!(
+            "lines PASS; families failing: {:?}",
+            judged_families
+                .iter()
+                .filter(|(_, v)| *v == "fail")
+                .map(|(k, _)| k)
+                .collect::<Vec<_>>()
+        )
+    } else if !unexercised.is_empty() || !not_implemented.is_empty() {
+        "lines PASS; families pass where executable (see gates_not_yet_implemented)".to_string()
+    } else {
+        "lines and every gate family PASS".to_string()
     };
-    let simulated = end - t0;
-    let rule_i_record = json!({"declared": rule_i_text, "applied": "A4 (the block's declared default, pending owner request A): a run ends, labelled, at the first state D3 (a) does not admit; continued to its end for information only",
-            "evaluated_at": "every frame instant, at the solver's state there", "samples": domain.samples,
-            "first_extended_s": domain.first_extended, "margin_failures": domain.margin_failures,
-            "exit": domain.exit, "exit_after_zero_s": exit_after_zero,
-            "information_from_s": exit_after_zero});
-    let information_record = information.map(|l| json!({"note": "INFORMATION ONLY (past the D3 (a) exit): every line over the whole run", "lines": l}));
-    let cpu_record = json!({"preparation_s": preparation_cpu_s, "run_s": run_cpu_s, "solver_s": driver.cpu.solver_s,
-            "observation_s": driver.cpu.observation_s, "restart_s": driver.cpu.restart_s, "held_s": driver.cpu.held_s,
-            "run_per_simulated_s": if simulated > 0. { json!(run_cpu_s / simulated) } else { Value::Null },
-            "restarts_r": driver.counts.total(Class::R), "s_instants": driver.counts.total(Class::S),
-            "event_window": window_cpu, "segments_cpu_s": cpu_at.iter().map(|(b, c)| json!([b - zero, c - run_started])).collect::<Vec<_>>()});
-    let timeline_record = json!({"zero_s": zero, "end_s": tl.end, "holding_lost_s": tl.holding_lost, "stop_ramp_end_s": tl.stop_ramp_end,
-            "seats": tl.seats.len(), "last_seat_s": tl.seats.iter().map(|(_, t)| *t).fold(f64::NEG_INFINITY, f64::max),
-            "sg_relief": tl.sg_relief.iter().map(|(v, th, d, t)| json!([v, th, d, t])).collect::<Vec<_>>(),
-            "pzr_relief_openings": tl.pzr_relief_openings,
-            "causes": tl.causes.iter().map(|c| json!([c.division, c.function, c.t])).collect::<Vec<_>>(),
-            "electrical": tl.electrical.as_ref().map(|l| l.iter().map(|(t, w)| json!([t, w])).collect::<Vec<_>>())});
-    let receipt = json!({
+    let mut gates_not_yet: Vec<Value> = not_implemented.iter().map(|s| json!(s)).collect();
+    gates_not_yet.extend(unexercised);
+    let mut receipt = json!({
         "kind": if evidence { "s3-case-run" } else { "s3-case-preview" },
         "case": case.key(), "status": status, "verdict": verdict, "failure": failure,
-        "failure_at": failure.as_ref().map(|_| json!({
-            "refusal_s": driver.attempt_s, "refusal_after_zero_s": driver.attempt_s.map(|a| a - zero),
-            "solver_reached_s": driver.solver_reached_s, "solver_reached_after_zero_s": driver.solver_reached_s - zero,
-            "last_logged_s": driver.log.last().and_then(|e| e["t_s"].as_f64()),
-            "note": "refusal_s is the driver's last attempted discrete instant; a failure inside a step is at or after solver_reached_s"})),
         "refusals_or_deviations": refusals,
-        "declaration": {"block": d.block.receipt(), "pin": pin, "tbd": tbd},
+        "declaration": {"block": d.block.receipt(), "pin": pin, "tbd": tbd, "kinetics": kinetics,
+            "s2_blocks": gate.as_ref().map(|g| g.s2.receipt())},
         "provenance": spine::provenance(),
         "packet": state["packet"], "packet_sha256": state["packet_sha256"],
-        "start_state": {"path": state_path, "sha256": provenance::sha256_file(&state_path).ok(), "t_s": t0},
-        "composition": composition,
-        "ic_section": {"path": inputs.ic_path, "implemented_causes": implemented},
-        "configuration": {"declared_duration_s": declared_s, "span_after_zero_s": span, "zero_after_start_s": zero_after,
-            "command": command.map(|c| format!("{c:?}")), "frame_s": frame.period_s(),
-            "max_order": s3_unit::MAX_ORDER, "max_step_s": max_step,
-            "derived_tolerances": derived, "relative_tolerance": rtol,
-            "integration": "frame driver: stock IDA_ONE_STEP, observation from IDAGetDky, restarts by discrete_restart"},
-        "lines": judged,
-        "rule_i": rule_i_record,
-        "operator_turbine_trip": operator_trip_record,
-        "labelled_end": labelled_end,
-        "information": information_record,
-        "timeline": timeline_record,
-        "pzr_control": {"changes": control.schedule.len().saturating_sub(1), "final_request_w": control.in_force_w},
-        "gates_not_yet_implemented": ["D conservation (S2 identities and ledgers plus heater, spray, relief, turbine, generator and Grid receipts)",
-            "E refinement (2.5 ms-capped reference and BDF2 at rtol/100 over the window; rtol/10 for the hold)",
-            "F smoothness (derivative-jump detector)", "H repeatability", "K post-event spectra",
-            "C1 drift, SS-1 and SS-2", "C2/C3 directions (B)", "cost against the S3 and S2 budgets (counts and CPU are recorded)"],
-        "protection_log": p.log, "divisions": divisions,
-        "counts_by_class": driver.counts.json(), "stock_totals": totals, "segments": driver.segments,
-        "instants": driver.log,
-        "cpu": cpu_record,
-        "frames": recorder.rows,
+        "configuration": {"declared_duration_s": declared_s, "span_after_zero_s": span, "gates": gates_on},
+        "families": families,
+        "gates_not_yet_implemented": gates_not_yet,
+        "run": run.record,
+        "repeat": repeat_driven.as_ref().map(|r| json!({"failure": r.failure, "cpu": r.record["cpu"], "record": r.repeat_record})),
+        "references": references.iter().map(|(n, r)| json!({"reference": n, "failure": r.failure, "rule_i_exit_after_zero_s": r.exit_after_zero,
+            "configuration": r.record["configuration"], "cpu": r.record["cpu"], "counts_by_class": r.record["counts_by_class"]})).collect::<Vec<_>>(),
+        "process_cpu_s": spine::z1::cpu_s() - process0,
     });
+    // The case record's own fields at the top level, as before.
+    for k in [
+        "lines",
+        "rule_i",
+        "operator_turbine_trip",
+        "labelled_end",
+        "information",
+        "timeline",
+        "cpu",
+        "counts_by_class",
+    ] {
+        receipt[k] = run.record[k].clone();
+    }
     std::fs::write(
         &receipt_path,
         serde_json::to_string_pretty(&receipt).unwrap(),
     )
     .unwrap();
     eprintln!(
-        "{}: {status}; {verdict}; R {} S {}; run CPU {run_cpu_s:.2} s over {simulated:.2} s; failure {failure:?}; attempted {:?} s, solver {:.4} s after zero",
+        "{}: {}; {}",
         case.key(),
-        driver.counts.total(Class::R),
-        driver.counts.total(Class::S),
-        driver.attempt_s.map(|a| a - zero),
-        driver.solver_reached_s - zero
+        receipt["status"],
+        receipt["verdict"]
     );
-    for l in &judged {
+    for l in run.record["lines"].as_array().unwrap() {
         eprintln!("  {} {}: {}", l["id"], l["kind"], l["verdict"]);
+    }
+    for (k, v) in receipt["families"].as_object().unwrap() {
+        eprintln!("  family {k}: {}", v["verdict"]);
     }
 }
