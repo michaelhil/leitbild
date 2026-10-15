@@ -77,7 +77,7 @@ pub enum End {
     To,
 }
 impl End {
-    fn other(self) -> Self {
+    pub(super) fn other(self) -> Self {
         match self {
             Self::From => Self::To,
             Self::To => Self::From,
@@ -404,8 +404,9 @@ impl<P: Properties> Network<P> {
             0.
         }
     }
-    /// One path's view from the last value evaluation and `presence`.
-    fn path_view(&self, li: usize, presence: &Presence) -> Result<PathView, Failure> {
+    /// One path's view from the last value evaluation and `presence`
+    /// (also the spray port's scoped law, DR-P3-SPRAY).
+    pub(super) fn path_view(&self, li: usize, presence: &Presence) -> Result<PathView, Failure> {
         let l = self.face_layout[li];
         let (from, to) = self.endpoints[l.face];
         let chart = self.charts[l.face][l.phase].ok_or_else(|| {

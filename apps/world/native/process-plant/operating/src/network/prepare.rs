@@ -799,6 +799,11 @@ pub fn prepare<P: Properties>(
                 "the network cannot evaluate the prepared state: {e:?}"
             ))
         })?;
+    // DR-P3-SPRAY: the spray port's paths take L1's unilateral law from the
+    // prepared state at rest (the closed valve's and the check's locks are
+    // the composition's own).
+    let presence = network.stock_presence(&prepared.y);
+    network.engage_spray_tip(&presence)?;
     prepared.differential = network.differential(&prepared.differential);
     let construction = Construction {
         root,
@@ -1150,7 +1155,14 @@ pub fn compose_flows<P: Properties>(
                 .sum();
             let liquid = network.face_layout[2 * j].index;
             let vapor = network.face_layout[2 * j + 1].index;
-            y[liquid] = inertance * volume_flows_m3_s[j] / scales[liquid];
+            // A locked path (the closed spray valve, the spray port's
+            // scoped L1) carries no current whatever the hydraulic
+            // settle's flow was (DR-P3-SPRAY).
+            y[liquid] = if network.path_locked(2 * j) {
+                0.
+            } else {
+                inertance * volume_flows_m3_s[j] / scales[liquid]
+            };
             y[vapor] = 0.;
         }
         let zero = vec![0.; y.len()];
@@ -1202,6 +1214,10 @@ pub fn compose_flows<P: Properties>(
             *p = *n / scale * scale;
         }
     }
+    // DR-P3-SPRAY: the spray port's scoped law again at the flowing state
+    // (the line at rest below its port).
+    let presence = network.stock_presence(y);
+    network.engage_spray_tip(&presence)?;
     let flow_faces: Vec<FlowFace> = faces
         .iter()
         .enumerate()

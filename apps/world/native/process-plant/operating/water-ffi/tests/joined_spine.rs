@@ -1696,8 +1696,9 @@ fn the_pzr_relief_roots_and_stops_transact_on_the_joined_state() {
     let n = joined.root_count();
     let owners = joined.secondary().unwrap().root_count() + joined.rods().unwrap().root_count();
     // The relief's demand and travel roots follow the owners'; a composed
-    // spray path's inlet check adds one slot after them (IC-CTRL, S3-D25).
-    let spray = usize::from(joined.network.spray().is_some());
+    // spray path adds three slots after them (its inlet check, S3-D25, and
+    // its port's two scoped-L1 paths, DR-P3-SPRAY).
+    let spray = 3 * usize::from(joined.network.spray().is_some());
     assert_eq!(
         n,
         owners + 2 + spray,
