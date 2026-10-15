@@ -1474,7 +1474,11 @@ fn path_volume<P: Properties>(
 /// `[p_back, p0]`. The path is integrated by RK4 on a geometric pressure
 /// grid of `PATH_LOG_STEP` in `ln p`, stopped two nodes past the maximum
 /// or at `p_back`; an interior maximum is refined by a parabola in `ln p`.
-/// The directions are those of the same discrete computation.
+/// The enthalpy drop `h0 − h` is accumulated step by step from the RK4
+/// increments, not formed by subtracting two absolute enthalpies (whose
+/// cancellation set a 1e-11 residual floor in C09's feed block); the path
+/// state is `h = h0 − drop`. The directions are those of the same discrete
+/// computation.
 pub fn restriction_flux<P: Properties>(
     properties: &P,
     vapor: bool,
@@ -1508,6 +1512,7 @@ pub fn restriction_flux<P: Properties>(
     let ratio = (-PATH_LOG_STEP).exp();
     let mut p = p0;
     let mut h = h0;
+    let mut drop = s(0.);
     let mut sat = sat_at(p, &mut saturation_calls)?;
     let mut v = path_volume(properties, vapor, p, h, &sat, &mut inversions)?;
     // Nodes (p, G) from the stagnation point, where G is zero.
@@ -1548,11 +1553,12 @@ pub fn restriction_flux<P: Properties>(
             &next_sat,
             &mut inversions,
         )?;
-        h = h + dp * (k1 + s(2.) * k2 + s(2.) * k3 + k4) / s(6.);
+        // dp < 0 along the expansion: the drop grows by -dp * v_mean.
+        drop = drop - dp * (k1 + s(2.) * k2 + s(2.) * k3 + k4) / s(6.);
+        h = h0 - drop;
         p = next;
         sat = next_sat;
         v = path_volume(properties, vapor, p, h, &sat, &mut inversions)?;
-        let drop = h0 - h;
         if drop.value <= 0. {
             return Err(recoverable("restriction path gained enthalpy on expansion"));
         }
