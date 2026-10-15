@@ -62,7 +62,7 @@ const NPORTS: usize = 46;
 fn is_differential(j: usize) -> bool {
     j < NDIFF || (47..56).contains(&j)
 }
-/// Shell side: H2–H4 (heater index 1..=3). H1's shell (0.04975 MPa) and the
+/// S4-D2 hook. Shell side: H2–H4 (heater index 1..=3). H1's shell (0.04975 MPa) and the
 /// H2→H1 and H1→COND drains lie below the property boundary's 0.1 MPa floor.
 const SHELLS: [usize; 3] = [1, 2, 3];
 
@@ -250,6 +250,9 @@ struct Ports {
     h2_drain_out: f64,
     a_ext: [f64; 3],
     u_drain: [f64; 2],
+    /// S4-D6 preparation: the FCV openings become unknowns and each branch
+    /// delivers this flow (coordinates N and N+1, rows N and N+1).
+    fcv_target: Option<f64>,
     /// Prototype stand-in for transients only: the casing is inert and the
     /// stage draws tank liquid at the held suction state (`p_eye`, `h_s`),
     /// because the suction link's impulse is the open G1.1 item.
@@ -523,6 +526,7 @@ impl Block {
             h2_drain_out: self.shells[0].m_drain0,
             a_ext: [1.; 3],
             u_drain: [0.5; 2],
+            fcv_target: None,
             suction_held: None,
         }
     }
@@ -539,9 +543,10 @@ impl Block {
         pseed: Option<usize>,
         calls: &mut usize,
     ) -> Result<Vec<S>, String> {
-        let ys: Vec<S> = (0..N).map(|j| S::new(y[j], if seed == Some(j) { 1. } else { 0. })).collect();
+        let n = y.len();
+        let ys: Vec<S> = (0..n).map(|j| S::new(y[j], if seed == Some(j) { 1. } else { 0. })).collect();
         let port = |id: usize| S::new(ports.get(id), if pseed == Some(id) { 1. } else { 0. });
-        let mut r = vec![k(0.); N];
+        let mut r = vec![k(0.); n];
         let pm = &self.pump;
         let p_d = ys[18];
         let mut h_recv = [k(0.); 2];
@@ -565,7 +570,7 @@ impl Block {
             let q = m_p / (c.rho * k(pm.q0));
             let dens = c.rho / k(pm.rho0);
             // F = 1: adequate NPSH and no gas (asserted below for the casing state).
-            // F = 1. NPSHa needs p_v(T_case) = psat(40 °C) = 7.38 kPa, below the
+            // S4-D2 hook. F = 1. NPSHa needs p_v(T_case) = psat(40 °C) = 7.38 kPa, below the
             // maintained boundary's 0.1 MPa floor (tests/g1_c09_domain_probe.rs):
             // the factor cannot be evaluated through it (G1.1 blocker). The
             // feed-pool receipt's 9.654367 m NPSHa against 5 m NPSHr at the
@@ -652,7 +657,11 @@ impl Block {
             let (m, p_mid) = (ys[43 + 2 * s], ys[44 + 2 * s]);
             r[42] = r[42] - m;
             r[43 + 2 * s] = m - port(26 + s) * k(self.cda_iso) * flux(pr, p_up, h_up, p_mid)?;
-            r[44 + 2 * s] = m - port(28 + s) * k(self.cda_fcv) * flux(pr, p_mid, h_up, port(12 + s))?;
+            let u = if n > N { ys[N + s] } else { port(28 + s) };
+            r[44 + 2 * s] = m - u * k(self.cda_fcv) * flux(pr, p_mid, h_up, port(12 + s))?;
+            if let Some(target) = ports.fcv_target {
+                r[N + s] = m - k(target);
+            }
         }
         // Shell side H2–H4: saturated chart, wall, extraction and drains.
         let sats: Vec<_> = (0..3).map(|s| pr.saturation(ys[56 + 2 * s])).collect::<Result<_, _>>()?;
@@ -698,15 +707,18 @@ impl Block {
         // 123 of 123 seeded refused, 0 of 123 value-only), so no Jacobian of a
         // drain row can be formed. A KERN finding; the law and its calibrated
         // area stay in this block for when it is fixed.
-        if std::env::var("G1C09_DRAIN_LAW").is_ok() {
-            for (row, donor, receiver, u) in [(65, 2, 1, 44), (66, 1, 0, 45)] {
-                let sh = &self.shells[donor];
-                r[row] = ys[row]
-                    - port(u) * k(sh.cda_drain) * flux_phase(pr, false, ys[56 + 2 * donor], sats[donor].liquid.enthalpy, ys[56 + 2 * receiver])?;
-            }
-        } else {
-            r[65] = ys[65] - k(self.shells[2].m_drain0);
-            r[66] = ys[66] - k(self.shells[1].m_drain0);
+        // The rebuilt water library (adapter 10252c28) admits the 3.98 MPa
+        // donor (H4→H3); below its 2 MPa metastable band the 0.796 MPa donor
+        // (H3→H2) still refuses, so that drain stays held (S4-D2 hook: the
+        // low-pressure domain decision or the band reopens it).
+        let all = std::env::var("G1C09_DRAIN_LAW").is_ok();
+        for (row, donor, receiver, u) in [(65, 2, 1, 44), (66, 1, 0, 45)] {
+            let sh = &self.shells[donor];
+            r[row] = if row == 65 || all {
+                ys[row] - port(u) * k(sh.cda_drain) * flux_phase(pr, false, ys[56 + 2 * donor], sats[donor].liquid.enthalpy, ys[56 + 2 * receiver])?
+            } else {
+                ys[row] - k(sh.m_drain0)
+            };
         }
         Ok(r)
     }
@@ -718,7 +730,7 @@ impl Block {
     fn partials(&self, y: &[f64], yp: &[f64], ports: &Ports) -> Result<Vec<Vec<f64>>, String> {
         let shared = Shared::new(&If97);
         let mut calls = 0;
-        (0..N)
+        (0..y.len())
             .map(|j| Ok(self.eval(&shared, y, yp, ports, Some(j), None, &mut calls)?.iter().map(|s| s.direction).collect()))
             .collect()
     }
@@ -729,7 +741,7 @@ impl Block {
     /// Row scales: kg/s, W, kg and N·m.
     fn row_scales(&self, y0: &[f64]) -> Vec<f64> {
         let (m0, e) = (self.pump.m0, self.pump.m0 * self.h_feed0);
-        (0..N)
+        (0..y0.len())
             .map(|r| match r {
                 0 | 2 | 6 | 8 | 10 | 12 => m0,
                 1 | 3 | 7 | 9 | 11 | 13 => e,
@@ -747,6 +759,7 @@ impl Block {
 }
 
 struct Sys {
+    n: usize,
     block: Block,
     ports: Ports,
     root_p1_fraction: Option<f64>,
@@ -758,10 +771,10 @@ fn fail(e: String) -> Failure {
 }
 impl System for Sys {
     fn dimension(&self) -> usize {
-        N
+        self.n
     }
     fn nonzeros(&self) -> usize {
-        N * N
+        self.n * self.n
     }
     fn root_count(&self) -> usize {
         usize::from(self.root_p1_fraction.is_some())
@@ -783,14 +796,15 @@ impl System for Sys {
     ) -> Result<(), Failure> {
         self.jacobians += 1;
         let columns = self.block.partials(y, yp, &self.ports).map_err(fail)?;
+        let n = self.n;
         for (j, column) in columns.iter().enumerate() {
-            pointers[j] = (j * N) as i64;
+            pointers[j] = (j * n) as i64;
             for (r, value) in column.iter().enumerate() {
-                rows[j * N + r] = r as i64;
-                data[j * N + r] = value + if r == j { cj * yp_coefficient(&self.block, r) } else { 0. };
+                rows[j * n + r] = r as i64;
+                data[j * n + r] = value + if r == j { cj * yp_coefficient(&self.block, r) } else { 0. };
             }
         }
-        pointers[N] = (N * N) as i64;
+        pointers[n] = (n * n) as i64;
         Ok(())
     }
     fn roots(&mut self, _: f64, y: &[f64], _: &[f64], out: &mut [f64]) -> Result<(), Failure> {
@@ -800,8 +814,8 @@ impl System for Sys {
         Ok(())
     }
 }
-fn differential() -> Vec<f64> {
-    (0..N).map(|j| if is_differential(j) { 1. } else { 0. }).collect()
+fn differential(n: usize) -> Vec<f64> {
+    (0..n).map(|j| if is_differential(j) { 1. } else { 0. }).collect()
 }
 fn tolerances(y0: &[f64]) -> Vec<f64> {
     y0.iter().enumerate().map(|(j, y)| 1e-10 * y.abs().max(if is_differential(j) { 1. } else { 1e3 })).collect()
@@ -811,8 +825,8 @@ fn consistent(block: &Block, ports: &Ports, y: &mut [f64], yp: &mut [f64]) -> Re
     for _ in 0..2 {
         let atol = tolerances(y);
         let mut ida = Ida::new(
-            Sys { block: block.clone(), ports: ports.clone(), root_p1_fraction: None, residuals: 0, jacobians: 0 },
-            Initial { time: 0., y, yp, differential: &differential(), absolute_tolerance: &atol, relative_tolerance: 1e-10 },
+            Sys { n: y.len(), block: block.clone(), ports: ports.clone(), root_p1_fraction: None, residuals: 0, jacobians: 0 },
+            Initial { time: 0., y, yp, differential: &differential(y.len()), absolute_tolerance: &atol, relative_tolerance: 1e-10 },
         )?;
         ida.initialize(1e-3, y, yp)?;
     }
@@ -842,9 +856,25 @@ fn g1_c09_feed_block() {
 
     // G1.3 (a): the prepared state, made consistent by stock IDACalcIC, at the
     // reference SG pressure (6.0 MPa) and at the emergent 6.36314 MPa (D2).
+    // S4-D6: at the prepared SG pressure (reference-operating-hot, S2-D18)
+    // the MANUAL FCV opening that delivers m0 per branch, the hardware
+    // unchanged; stock IDACalcIC with the two openings as unknowns.
+    let p_d2 = section()["branches"]["sgPreparedPressure_Pa"].as_f64().unwrap();
+    let mut prep = block.prepared_ports(p_d2);
+    prep.fcv_target = Some(block.pump.m0);
+    let mut yu = block.prepared();
+    yu.extend([0.7, 0.7]);
+    let mut ypu = vec![0.; N + 2];
+    consistent(&block, &prep, &mut yu, &mut ypu).unwrap();
+    let u_star = [yu[N], yu[N + 1]];
+    let prep_rows = block.values(&yu, &ypu, &prep).unwrap();
+    report["fcvPreparation_S4D6"] = json!({"sgPressure_Pa": p_d2, "targetFlow_kg_s": block.pump.m0, "openingA": u_star[0], "openingB": u_star[1],
+        "header_Pa": yu[42], "fcvInlet_Pa": [yu[44], yu[46]], "pumpFlows_kg_s": [yu[16], yu[17]], "discharge_Pa": yu[18],
+        "scaledMaxRow": scaled_max(&block, &yu, &prep_rows).0, "tubeH4_dMdt": ypu[12]});
     let mut states = Vec::new();
-    for (label, p_sg) in [("reference_6.0MPa", 6.0e6), ("emergent_6.36314MPa", 6.36314e6)] {
-        let ports = block.prepared_ports(p_sg);
+    for (label, p_sg, u) in [("reference_6.0MPa", 6.0e6, [0.7, 0.7]), ("prepared_D2_S4D6", p_d2, u_star)] {
+        let mut ports = block.prepared_ports(p_sg);
+        ports.u_fcv = u;
         let mut y = block.prepared();
         let mut yp = vec![0.; N];
         let y_guess = y.clone();
@@ -857,8 +887,15 @@ fn g1_c09_feed_block() {
         let algebraic: Value = (0..N).filter(|j| !is_differential(*j)).map(|j| (COORD_NAMES[j].to_string(), json!({"prepared": y[j], "guess": y_guess[j]}))).collect::<serde_json::Map<_, _>>().into();
         let rates: Value = (0..N).filter(|j| is_differential(*j)).map(|j| (COORD_NAMES[j].to_string(), json!(yp[j]))).collect::<serde_json::Map<_, _>>().into();
         report[label] = json!({"scaledMaxRow": worst, "meetsG13": worst <= 1e-12, "worstRow": COORD_NAMES[at], "algebraic": algebraic, "rates": rates,
-            "feed_kg_s": {"A": y[43], "B": y[45]}, "header_Pa": y[42], "discharge_Pa": y[18]});
+            "feed_kg_s": {"A": y[43], "B": y[45]}, "header_Pa": y[42], "discharge_Pa": y[18], "fcvOpening": u});
         states.push((label, ports, y, yp));
+    }
+    {
+        let ports = block.prepared_ports(p_d2);
+        let mut y = block.prepared();
+        let mut yp = vec![0.; N];
+        consistent(&block, &ports, &mut y, &mut yp).unwrap();
+        report["D2_at_MANUAL_0.70"] = json!({"feed_kg_s": {"A": y[43], "B": y[45]}, "header_Pa": y[42]});
     }
     let (_, ports, y0, yp0) = states[0].clone();
 
@@ -998,8 +1035,8 @@ fn g1_c09_feed_block() {
     let (mut y, mut yp) = (y0.clone(), yp0.clone());
     let atol = tolerances(&y);
     let mut ida = Ida::new(
-        Sys { block: block.clone(), ports: lost, root_p1_fraction: Some(0.05), residuals: 0, jacobians: 0 },
-        Initial { time: 0., y: &y, yp: &yp, differential: &differential(), absolute_tolerance: &atol, relative_tolerance: 1e-6 },
+        Sys { n: N, block: block.clone(), ports: lost, root_p1_fraction: Some(0.05), residuals: 0, jacobians: 0 },
+        Initial { time: 0., y: &y, yp: &yp, differential: &differential(N), absolute_tolerance: &atol, relative_tolerance: 1e-6 },
     )
     .unwrap();
     ida.initialize(1e-4, &mut y, &mut yp).unwrap();

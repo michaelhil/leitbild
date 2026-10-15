@@ -6,7 +6,7 @@ const fence = (name: string, body: unknown) => '```' + name + '\n' + JSON.string
 const blocks = {
   cascade: { levelSetpoint: .6, outerProportional: 1, outerIntegral_per_s: .025, requestRange: [0, 1.2], valveBias: .7, valveRange: [0, 1],
     innerProportional: .3, innerIntegral_per_s: .2, sample_s: .1, feedFlowLag_s: .25, feedFlowSpan: [0, 1.5], steamFlowLag_s: .25,
-    steamFlowSpan: [0, 1.5], controlChannel: 'LT.NR1', initialMode: 'MANUAL', initialDemand: .7 },
+    steamFlowSpan: [0, 1.5], controlChannel: 'LT.NR1', initialMode: 'MANUAL', initialDemandRule: 'nominalFlowAtPreparedSgPressure' },
   train: { pumpEye_m: 0, shutoffHeadRatio: 1.25, brakeFactor: 2, motorEfficiency: .96, coastdownScale_s: 5, torqueTracking_s: 3, torqueLimit: 1.5,
     dragFraction: .01, churnFloorFraction: .01, suctionExponent: 2, gasFactorFull: .02, gasFactorZero: .15, caseResidence_s: .05,
     caseConductance_W_K: 2000, branchIsoOutletPressure_MPa: 7, fcvReferenceOpening: .7, fcvStrokePerSecond: .1, isoStroke_s: 2,
@@ -31,6 +31,7 @@ const blocks = {
     condensatePumpMotorEfficiency: .95, highBleedPressure_MPaAbs: 4, separatorPressure_MPaAbs: .8, lowBleedPressure_MPaAbs: .2,
     lowestBleedPressure_MPaAbs: .05, heaterOutlet_C: [70, 110, 155] },
   level: { nrLag_s: .5, nrSpan_m: [4, 9], indicatedLevelArea_m2: 12 },
+  hot: { primaryPressure_Pa: 15200000, sgSecondaryPressure_Pa: 6363140, sgMetalSegments: 4 },
 } as const
 type Key = keyof typeof feedOwners
 function pages(over: Partial<Record<Key, unknown>> = {}): FeedPages {
@@ -39,20 +40,21 @@ function pages(over: Partial<Record<Key, unknown>> = {}): FeedPages {
   const shared = (keys: Key[]) => keys.map(page).join('\n')
   const equipment = shared(['train', 'pump', 'signed'])
   return { cascade: page('cascade'), train: equipment, pump: equipment, signed: equipment, pool: page('pool'), heaters: page('heaters'),
-    condensate: page('condensate'), cycle: page('cycle'), level: page('level') }
+    condensate: page('condensate'), cycle: page('cycle'), level: page('level'), hot: page('hot') }
 }
 const drop = <T extends object>(o: T, k: keyof T) => Object.fromEntries(Object.entries(o).filter(([key]) => key !== k))
 
 test('compiles the cascade, pumps, heaters and branches from their blocks', () => {
   const s = compileOperatingFeed(pages())
   expect(s.cascade).toMatchObject({ outerProportional: 1, outerIntegral_per_s: .025, innerProportional: .3, innerIntegral_per_s: .2,
-    narrowSpan_m: [4, 9], requestRange: [0, 1.2], initialMode: 'MANUAL', initialDemand: .7 })
+    narrowSpan_m: [4, 9], requestRange: [0, 1.2], initialMode: 'MANUAL',
+    initialDemand: { rule: 'nominalFlowAtPreparedSgPressure', sgPressure_Pa: 6363140, flow_kg_s: 819.818983 } })
   expect(s.feedPump.omega0_rad_s).toBeCloseTo(314.159265358979, 12)
   expect(s.condensatePump.omega0_rad_s).toBeCloseTo(157.079632679490, 12)
   expect(s.heaters.junctionPressure_Pa).toEqual([7.4e6, 7.35e6, 7.3e6, 7.25e6, 7.2e6])
   expect(s.heaters.tubePressure_Pa[0]).toBeCloseTo(7.395e6, 6)
   expect(s.heaters.lossAllocation_Pa).toEqual({ inletIso: 5000, channel: 40000, outletIso: 5000, bypass: 50000 })
-  expect(s.branches).toMatchObject({ headerPressure_Pa: 7.2e6, isoOutletPressure_Pa: 7e6, sgReferencePressure_Pa: 6e6, fcvReferenceOpening: .7 })
+  expect(s.branches).toMatchObject({ headerPressure_Pa: 7.2e6, isoOutletPressure_Pa: 7e6, sgReferencePressure_Pa: 6e6, sgPreparedPressure_Pa: 6363140, fcvReferenceOpening: .7 })
   expect(s.tank).toMatchObject({ rim_m: 1.6, pumpEye_m: 0, returnNozzle_m: -2.4 })
   expect(s.branches.feedTemperature_K).toBeCloseTo(493.15, 12)
 })
@@ -65,6 +67,8 @@ test('refuses every missing cascade gain and a missing value in each owner block
   expect(() => compileOperatingFeed(pages({ condensate: drop(blocks.condensate, 'eye_m') }))).toThrow()
   expect(() => compileOperatingFeed(pages({ pump: drop(blocks.pump, 'outletPressure_MPa') }))).toThrow()
   expect(() => compileOperatingFeed(pages({ level: drop(blocks.level, 'nrSpan_m') }))).toThrow()
+  expect(() => compileOperatingFeed(pages({ hot: drop(blocks.hot, 'sgSecondaryPressure_Pa') }))).toThrow()
+  expect(() => compileOperatingFeed(pages({ cascade: { ...drop(blocks.cascade, 'initialDemandRule'), initialDemand: .7 } }))).toThrow()
 })
 
 test('refuses extra keys and disagreements between blocks that state one quantity', () => {
