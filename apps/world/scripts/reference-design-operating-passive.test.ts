@@ -113,9 +113,9 @@ function edit<T>(block: T, path: (string | number)[], change: (parent: Record<st
 const without = <T>(block: T, path: (string | number)[]) => edit(block, path, (o, k) => { delete o[k] })
 const replaced = <T>(block: T, path: (string | number)[], value: unknown) => edit(block, path, (o, k) => { o[k] = value })
 
-test('compiles the passive owners: 409 + 137 coordinates, six CMT layers, three receiving rings, four BAL cells, 19 PRHR regions', () => {
+test('compiles the passive owners: 409 + 172 coordinates, six CMT layers, three receiving rings, four BAL cells, 19 PRHR regions', () => {
   const c = compileOperatingPassive(pages())
-  expect(c.census).toMatchObject({ differential: 409, algebraic: 137, total: 546 })
+  expect(c.census).toMatchObject({ differential: 409, algebraic: 172, total: 581 })
   expect(c.cmt.layers.map(l => l.id)).toEqual(['L1', 'L2', 'L3', 'L4', 'L5', 'L6'])
   expect(Math.abs(c.cmt.layers.reduce((s, l) => s + l.volume_m3, 0) - geometry.freeWater_m3)).toBeLessThanOrEqual(1e-9)
   expect(c.cmt.layers.every((l, i) => i === 0 || l.bottom_m === c.cmt.layers[i - 1]!.top_m)).toBe(true)

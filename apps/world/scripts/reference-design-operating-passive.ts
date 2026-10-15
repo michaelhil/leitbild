@@ -254,7 +254,10 @@ export function compileOperatingPassive(pages: PassivePages) {
   const owners: Owner[] = [...train('A'), ...train('B'),
     ...chambers.map(c => ({ owner: c.id, differential: 5, algebraic: 2 })), links('ADS.1-3.DEVICES', 2 * chambers.length), links('ADS.4', ads.paths),
     ...prhr.parts.map(p => cell(p.id)), { owner: 'PRHR.STEEL', differential: prhr.steel.length + prhr.disc.length, algebraic: 0 },
-    paths('PRHR.LINKS', prhr.links.filter(l => !l.seat).length), links('PRHR.SEAT', 1)]
+    paths('PRHR.LINKS', prhr.links.filter(l => !l.seat).length), links('PRHR.SEAT', 1),
+    // The selected series film law shares one surface temperature per contact: every region's inner contact,
+    // the two disc faces and every immersed region's pool contact (algebraic).
+    { owner: 'PRHR.SURFACES', differential: 0, algebraic: prhr.parts.length + prhr.disc.length + prhr.parts.filter(p => p.immersed).length }]
   const differential = owners.reduce((n, x) => n + x.differential, 0), algebraic = owners.reduce((n, x) => n + x.algebraic, 0)
 
   return {
