@@ -128,7 +128,7 @@ fn strict_block(page: &str, name: &str) -> Value {
     let end = start + page[start..].find("\n```").unwrap();
     serde_json::from_str(&page[start..end]).unwrap()
 }
-fn s1_gates() -> Value {
+pub(crate) fn s1_gates() -> Value {
     strict_block(&wiki_page("model/build-readiness.md"), "ld01-s1-gates")
 }
 fn classes(gates: &Value) -> ToleranceClasses {
@@ -141,7 +141,7 @@ fn classes(gates: &Value) -> ToleranceClasses {
         volume_flow_m3_s: f("volumeFlowAbsolute_m3_s"),
     }
 }
-fn cpu_s() -> f64 {
+pub(crate) fn cpu_s() -> f64 {
     #[repr(C)]
     struct Timespec {
         seconds: i64,
@@ -158,14 +158,14 @@ fn cpu_s() -> f64 {
     assert_eq!(unsafe { clock_gettime(12, &mut t) }, 0);
     t.seconds as f64 + 1e-9 * t.nanoseconds as f64
 }
-fn load_average() -> String {
+pub(crate) fn load_average() -> String {
     std::process::Command::new("sysctl")
         .args(["-n", "vm.loadavg"])
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_default()
 }
-fn sha256(bytes: &[u8]) -> String {
+pub(crate) fn sha256(bytes: &[u8]) -> String {
     let out = std::process::Command::new("shasum")
         .args(["-a", "256"])
         .stdin(std::process::Stdio::piped())
@@ -458,7 +458,12 @@ fn started() -> Started {
 
 /// `A = ∂F/∂y`, `B = ∂F/∂y'` on the joined structure pattern (colored, exact
 /// directional derivatives): the `cj = 0` assembly and its `cj = 1` change.
-fn pencil(joined: &mut Joined<If97>, t: f64, y: &[f64], yp: &[f64]) -> (Vec<f64>, Vec<f64>) {
+pub(crate) fn pencil(
+    joined: &mut Joined<If97>,
+    t: f64,
+    y: &[f64],
+    yp: &[f64],
+) -> (Vec<f64>, Vec<f64>) {
     let nnz = joined.structure().unwrap().0.nonzeros();
     let (mut a, mut ab) = (vec![0.; nnz], vec![0.; nnz]);
     joined.jacobian(t, 0., y, yp, &mut a).expect("A");
@@ -473,26 +478,26 @@ fn residual(joined: &mut Joined<If97>, t: f64, y: &[f64], yp: &[f64]) -> Vec<f64
 
 /// One dense pencil (column-major) and its coordinates' names, algebraic
 /// flags and tolerances.
-struct Dense {
-    n: usize,
-    a: Vec<f64>,
-    b: Vec<f64>,
-    labels: Vec<String>,
-    algebraic: usize,
-    tolerance: Vec<f64>,
+pub(crate) struct Dense {
+    pub(crate) n: usize,
+    pub(crate) a: Vec<f64>,
+    pub(crate) b: Vec<f64>,
+    pub(crate) labels: Vec<String>,
+    pub(crate) algebraic: usize,
+    pub(crate) tolerance: Vec<f64>,
 }
 
 /// The restricted pencil on `keep`, the coordinates in `eliminate` kept on
 /// their constraints by the exact Schur complement (KLU), and each forcing
 /// vector reduced the same way.
-struct Restriction<'a> {
-    pointers: &'a [usize],
-    indices: &'a [usize],
-    keep: &'a [usize],
-    eliminate: &'a [usize],
+pub(crate) struct Restriction<'a> {
+    pub(crate) pointers: &'a [usize],
+    pub(crate) indices: &'a [usize],
+    pub(crate) keep: &'a [usize],
+    pub(crate) eliminate: &'a [usize],
 }
 impl Restriction<'_> {
-    fn apply(
+    pub(crate) fn apply(
         &self,
         a: &[f64],
         b: &[f64],
@@ -614,7 +619,7 @@ impl Restriction<'_> {
 /// held block is triangular and its eigenvalues are its diagonal: `-A_ii`,
 /// the decay (and depletion) constants.
 #[allow(clippy::too_many_arguments)] // One pencil's CSC, its restriction and its names.
-fn held_linear_blocks(
+pub(crate) fn held_linear_blocks(
     pointers: &[usize],
     indices: &[usize],
     a: &[f64],
@@ -711,10 +716,10 @@ fn held_linear_blocks(
 }
 
 #[derive(Clone, Copy, Debug)]
-struct Gate {
-    fast_mode_hz: f64,
-    light_damping: f64,
-    max_excitation_ratio: f64,
+pub(crate) struct Gate {
+    pub(crate) fast_mode_hz: f64,
+    pub(crate) light_damping: f64,
+    pub(crate) max_excitation_ratio: f64,
 }
 
 /// Write one dense pencil for offline analysis into the directory named by
@@ -739,7 +744,12 @@ fn dump(name: &str, d: &Dense) {
 }
 
 /// Decompose one pencil, excite its events and evaluate the predicates.
-fn judge(name: &str, d: &Dense, events: &[(&str, Vec<f64>)], gate: Gate) -> (Value, bool) {
+pub(crate) fn judge(
+    name: &str,
+    d: &Dense,
+    events: &[(&str, Vec<f64>)],
+    gate: Gate,
+) -> (Value, bool) {
     dump(name, d);
     let started = cpu_s();
     let s = spectrum::decompose(d.n, &d.a, &d.b).unwrap_or_else(|e| panic!("{name}: {e}"));
