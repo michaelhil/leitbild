@@ -384,6 +384,32 @@ impl Distribution {
         });
         Ok(())
     }
+    /// A declared malfunction (C3's supply loss): `consumer` loses its own
+    /// supply at `t`, its contactor opening, and stays without it (the
+    /// routing restarts no motor). Buses, sources and the other consumers
+    /// are untouched. Refused for an unknown consumer or one already off.
+    pub fn lose_consumer_supply(&mut self, t: f64, consumer: &str) -> Result<(), String> {
+        self.advance(t)?;
+        let before = self.supports();
+        let m = self
+            .motors
+            .get_mut(consumer)
+            .ok_or_else(|| format!("unknown consumer {consumer}"))?;
+        if !m.contactor {
+            return Err(format!(
+                "{consumer} has no supply to lose at {t} s: its contactor is open"
+            ));
+        }
+        m.contactor = false;
+        m.lost_since = None;
+        let changed = before != self.supports();
+        self.records.push(Record {
+            time: t,
+            what: format!("{consumer} supply lost (declared malfunction)"),
+            support_changed: changed,
+        });
+        Ok(())
+    }
     /// The earliest internal due time after the present one, if any.
     pub fn next_event(&self) -> Option<f64> {
         let p = &self.parameters;
@@ -716,5 +742,20 @@ mod tests {
             f.restore_discrete_state(serde_json::from_str(&text).unwrap())
                 .is_err()
         );
+    }
+    /// C3's malfunction: one consumer loses its supply; nothing else moves
+    /// and nothing restarts it.
+    #[test]
+    fn a_consumer_supply_loss_opens_only_its_contactor() {
+        let mut d = Distribution::prepared(params(), [LIVE, LIVE], [true, true], 0.).unwrap();
+        d.lose_consumer_supply(10.37, "LD01.P.A1").unwrap();
+        let a1 = d.support("LD01.P.A1").unwrap();
+        assert!(a1.energized && !a1.contactor_closed);
+        assert!(d.support("LD01.P.B1").unwrap().contactor_closed);
+        assert!(d.records.last().unwrap().support_changed);
+        d.advance(60.).unwrap();
+        assert!(!d.support("LD01.P.A1").unwrap().contactor_closed);
+        assert!(d.lose_consumer_supply(61., "LD01.P.A1").is_err());
+        assert!(d.lose_consumer_supply(61., "LD01.P.X9").is_err());
     }
 }

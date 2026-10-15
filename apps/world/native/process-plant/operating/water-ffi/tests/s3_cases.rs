@@ -398,6 +398,7 @@ fn s3_case_run() {
             rtol,
             structure,
             analyses,
+            y: reference,
             ..
         },
         derived,
@@ -413,7 +414,8 @@ fn s3_case_run() {
     let (mut y, mut yp) = (vector("y"), vector("yp"));
     let t0 = state["t_s"].as_f64().unwrap();
     assert_eq!(y.len(), joined.dimension());
-    let mut protection = ProtectionClient::new(&section, &joined, &y).expect("protection");
+    let mut protection =
+        ProtectionClient::new(&section, &joined, &y, &reference).expect("protection");
     // C1: IC-CTRL's normal PZR pressure control in AUTO (S3-D5), heater
     // changes class S (S3-D4), commissioned at the start state before the
     // integrator is made; consistency is re-established at t0 below.

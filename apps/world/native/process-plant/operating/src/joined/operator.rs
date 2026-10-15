@@ -224,6 +224,10 @@ pub struct Joined<P: Properties> {
     /// composition from their strict blocks ([`Joined::declare_credited`]);
     /// empty until declared.
     credited: Vec<CreditedOutput>,
+    /// The RCP drives' support is the AC routing's (ELEC's slice composed,
+    /// S3-D9..D12): a supply loss is applied there first, and the network's
+    /// part of the command checks it (declared before any restart).
+    supply_routed: bool,
 }
 
 fn view<'a>(
@@ -467,6 +471,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             counters: Counters::default(),
             phase_modes: false,
             credited: Vec::new(),
+            supply_routed: false,
         };
         let columns = joined.structural_pattern()?;
         let pattern = Pattern::from_columns(offsets.end, &columns).map_err(fatal)?;
@@ -474,6 +479,14 @@ impl<P: Properties + WaterProperties> Joined<P> {
         coloring.verify(&pattern).map_err(fatal)?;
         joined.structure = Some((pattern, coloring));
         Ok(joined)
+    }
+
+    /// The RCP drives' support is set by the AC routing (ELEC's slice):
+    /// [`super::block::Command::SupplyLoss`] then reaches the routing first
+    /// and the network's part checks the rotor is unsupported. Declared by
+    /// the wrapper that composes the routing.
+    pub fn declare_supply_routing(&mut self) {
+        self.supply_routed = true;
     }
 
     /// S3-D27: declare the SG owner's feed gate (ELEC's S3-D12) and
@@ -1389,6 +1402,22 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 "supply loss of rotor {rotor}: its state is undeclared"
             ))
         })?;
+        if self.supply_routed {
+            // The AC routing applied the loss before the operator's part
+            // (its appended events come first); the network only checks it.
+            if before.support != Support::Unsupported {
+                return Err(fatal(format!(
+                    "supply loss of rotor {rotor} at {t} s: the AC routing owns its supply and left it {:?}",
+                    before.support
+                )));
+            }
+            return Ok(super::block::Transaction {
+                deposits: Vec::new(),
+                receipt: serde_json::json!({"owner":"network","command":"SupplyLoss","rotor":rotor,"t_s":t,
+                    "appliedBy":"the AC routing (ELEC): the RCP's supply lost there","support":"Unsupported",
+                    "shaft":format!("{:?}", before.shaft),"stateChanged":false}),
+            });
+        }
         if !matches!(before.support, Support::Supported(_)) {
             return Err(fatal(format!(
                 "supply loss of rotor {rotor} at {t} s: it is not supported ({:?})",

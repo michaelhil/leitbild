@@ -125,6 +125,7 @@ fn s3_ic_prot_t1_turbine_trip_through_acquired_protection() {
             rtol,
             structure,
             analyses,
+            y: reference,
             ..
         },
         derived,
@@ -142,7 +143,8 @@ fn s3_ic_prot_t1_turbine_trip_through_acquired_protection() {
     let t0 = state["t_s"].as_f64().unwrap();
     assert_eq!(y.len(), joined.dimension());
     // The protection, balanced at the settled state, and the recorder.
-    let mut protection = ProtectionClient::new(&section, &joined, &y).expect("protection");
+    let mut protection =
+        ProtectionClient::new(&section, &joined, &y, &reference).expect("protection");
     let scales = joined.scales();
     let labels: Vec<String> = joined
         .layouts()

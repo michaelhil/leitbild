@@ -726,6 +726,11 @@ impl<P: Properties> Network<P> {
     pub fn cells(&self) -> usize {
         self.cells.len()
     }
+    /// S3 hook (IC-PROT, for KERN): a face's compiled geometry (ends and
+    /// momentum supports), read by the acquired loop-flow observation.
+    pub fn face(&self, face: usize) -> Option<&Face> {
+        self.faces.get(face)
+    }
     pub fn face_count(&self) -> usize {
         self.faces.len()
     }
