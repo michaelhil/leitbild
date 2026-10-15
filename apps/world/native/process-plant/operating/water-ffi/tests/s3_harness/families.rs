@@ -168,7 +168,7 @@ pub fn cost(
 /// pass.
 pub fn overall_of<'a>(verdicts: impl Iterator<Item = &'a str>) -> &'static str {
     let v: Vec<&str> = verdicts.collect();
-    if v.iter().any(|x| *x == "fail") {
+    if v.contains(&"fail") {
         "fail"
     } else if v.iter().any(|x| x.starts_with("error")) {
         "error"
