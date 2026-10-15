@@ -1214,9 +1214,10 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 }
                 let l = self.network.face_layout[li];
                 let (from, to) = self.network.face_ends(l.face);
-                let donor = if y[l.index] > 0. {
+                let flow = self.network.path_flow_sign(y, li);
+                let donor = if flow > 0. {
                     from
-                } else if y[l.index] < 0. {
+                } else if flow < 0. {
                     to
                 } else {
                     continue;

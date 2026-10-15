@@ -334,6 +334,33 @@ pub struct Transaction {
 }
 
 impl<P: Properties> Network<P> {
+    /// The sign of path `li`'s volume flow `Q = Pi/I` in the coordinate
+    /// view `y`, with `I` the supports' phase mass per current volume (as
+    /// the charts compose it, from the last evaluation's volumes): `+1`
+    /// from `from`, `-1` from `to`, `0` at rest. A signed root-size phase
+    /// mass can make `I` negative, so the impulse's sign alone may name the
+    /// wrong donor (DR S3-REBIRTH).
+    pub fn path_flow_sign(&self, y: &[f64], li: usize) -> f64 {
+        let l = self.face_layout[li];
+        let pi = y[l.index];
+        if pi == 0. {
+            return 0.;
+        }
+        let inertance: f64 = self.faces[l.face]
+            .supports
+            .iter()
+            .map(|support| {
+                let i = self.cell_layout[support.region].mass[l.phase];
+                y[i] * self.scales[i] / self.cell_volume[support.region].value
+                    * support.inverse_area_length_per_m
+            })
+            .sum();
+        if inertance < 0. {
+            -pi.signum()
+        } else {
+            pi.signum()
+        }
+    }
     /// The `(from, to)` cells of face `face`.
     pub fn face_ends(&self, face: usize) -> (usize, usize) {
         self.endpoints[face]
