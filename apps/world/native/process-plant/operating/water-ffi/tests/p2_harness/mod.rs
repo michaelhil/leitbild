@@ -389,6 +389,7 @@ impl CellSystem {
                     mass: s(w),
                     enthalpy: s(w * f.enthalpy_j_kg),
                     boron: s(w * f.concentration),
+                    ..Receipt::zero()
                 }
             } else if w < 0. {
                 // The donor is the cell: the port view's φ-weighted liquid.
@@ -400,6 +401,7 @@ impl CellSystem {
                     mass: s(w),
                     enthalpy: s(w) * liquid.enthalpy,
                     boron: s(w) * liquid.boron_concentration,
+                    ..Receipt::zero()
                 }
             } else {
                 Receipt::zero()
@@ -416,6 +418,7 @@ impl CellSystem {
                 mass: s(w),
                 enthalpy: s(w * f.enthalpy_j_kg),
                 boron: s(w * f.concentration),
+                ..Receipt::zero()
             };
         }
         Ok(out)
