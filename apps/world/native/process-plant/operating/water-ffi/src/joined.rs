@@ -570,6 +570,7 @@ fn transacted_owners(
 
 pub use integrated::{
     Assembly, Discrete, Integrated, JoinedSystem, Restart, Restarted, discrete_restart,
+    root_directions,
 };
 
 mod integrated {
@@ -580,6 +581,7 @@ mod integrated {
             block::{Command, Transaction},
             blocks::{Classes, JoinedJacobian, jacobian_blocks},
             operator::Joined,
+            presence::{PatternCache, PresenceKey, VaporPresence, pattern_cells},
         },
         network::{self, Properties},
         thermal::WaterProperties,
@@ -626,6 +628,10 @@ mod integrated {
         /// The start's pass bound: `transaction_passes` after an owner
         /// transaction, `start_passes` otherwise.
         pub passes_allowed: usize,
+        /// The declared vapor presence's key changed, so the restart
+        /// switched the block structure (S3-D-P3; never without
+        /// [`Integrated::following_presence`]).
+        pub presence_changed: bool,
         pub yp: Vec<f64>,
         pub report: Report,
     }
@@ -657,6 +663,9 @@ mod integrated {
     /// 2. a nonnegative network stock below zero by less than the declared
     ///    roundoff is placed on its bound and reported; a larger violation
     ///    refuses;
+    ///    the vapor presence the stocks then declare is followed: a changed
+    ///    key switches the block structure (S3-D-P3, presence-following
+    ///    systems only);
     /// 3. the differential identity is recomputed from the owners' modes; an
     ///    owner whose transaction changed one of its differential
     ///    coordinates (a rod or relief seat) is transacted (S2-D21);
@@ -680,18 +689,14 @@ mod integrated {
         relative: f64,
         restart: &Restart,
     ) -> Result<Restarted, String> {
-        let Integrated {
-            joined,
-            assembly,
-            analyses,
-            ..
-        } = ida.system_mut().integrated_mut();
+        let integrated = ida.system_mut().integrated_mut();
         if absolute.len() != y.len() {
             return Err("restart tolerances layout".into());
         }
         let message = |f: network::Failure| match f {
             network::Failure::Recoverable(r) | network::Failure::Fatal(r) => r,
         };
+        let joined = &mut integrated.joined;
         let before = y.to_vec();
         let identity_before = joined.differential(network_ids);
         let mut done = match discrete {
@@ -700,6 +705,16 @@ mod integrated {
             Discrete::Command(c) => joined.command(t, y, c).map_err(message)?,
         };
         done.extend(joined.time_events(t, y).map_err(message)?);
+        // The vapor presence the stocks declare after the transactions: a
+        // changed presence key switches the block structure (S3-D-P3).
+        let declared = VaporPresence::of(&joined.network, &joined.network.stock_presence(y));
+        let presence_changed = integrated.follow_presence(t, y, &declared)?;
+        let Integrated {
+            joined,
+            assembly,
+            analyses,
+            ..
+        } = integrated;
         let nonnegative = joined.network.nonnegative_stocks();
         let placements = network::place_on_bounds(t, y, &nonnegative, restart.bound_placement)
             .map_err(message)?;
@@ -757,6 +772,7 @@ mod integrated {
             placements,
             transacted,
             passes_allowed,
+            presence_changed,
             yp,
             report,
         })
@@ -827,6 +843,18 @@ mod integrated {
         pointers: Vec<i64>,
         assembly: Assembly,
         analyses: Analyses,
+        /// The presence-keyed structures when the system follows a
+        /// declared vapor presence (S3-D-P3), else `None` (S1, S2).
+        presence: Option<Following>,
+    }
+
+    /// A presence-following block assembly (lead decision S3-D-P3): one
+    /// structure and its symbolic analyses per presence key, the key in
+    /// force, and the stock-IDA matrix capacity every key fits.
+    struct Following {
+        cache: PatternCache<(JoinedJacobian, Analyses)>,
+        key: PresenceKey,
+        capacity: usize,
     }
     impl<P: Properties + WaterProperties> Integrated<P> {
         /// On the colored assembly.
@@ -846,6 +874,7 @@ mod integrated {
                 pointers,
                 assembly: Assembly::Colored,
                 analyses: Analyses::default(),
+                presence: None,
             })
         }
         /// On the block assembly, compiled at the value state `(t, y, 0)`;
@@ -884,7 +913,133 @@ mod integrated {
                 pointers,
                 assembly: Assembly::Blocks(Box::new(structure)),
                 analyses,
+                presence: None,
             })
+        }
+        /// On the block assembly that follows the vapor presence its
+        /// owners declare (lead decision S3-D-P3): compiled at the value
+        /// state `(t, y, 0)` for `presence`, keyed by the cells the joined
+        /// pattern reads ([`pattern_cells`]), with the stock-IDA matrix
+        /// sized for the key in which every read cell holds vapor (compiled
+        /// once and kept), so a restart can switch keys on the same handle
+        /// ([`Self::follow_presence`]). S1 and S2 compose with
+        /// [`Self::with_blocks`] or [`Self::from_blocks`] (exact size).
+        pub fn following_presence(
+            mut joined: Joined<P>,
+            t: f64,
+            y: &[f64],
+            presence: &VaporPresence,
+        ) -> Result<Self, String> {
+            if !joined.integrable() {
+                return Err(
+                    "a joined operator with a prepared SG or rod port cannot be integrated".into(),
+                );
+            }
+            let message = |f: network::Failure| match f {
+                network::Failure::Recoverable(r) | network::Failure::Fatal(r) => r,
+            };
+            let cells = pattern_cells(&joined);
+            let mut cache = PatternCache::new(cells.clone());
+            let all = VaporPresence {
+                cells: (0..joined.network.pzr.cell)
+                    .map(|c| cells.contains(&c))
+                    .collect(),
+            };
+            let widest = cache.key(&all);
+            let (structure, analyses) = cache
+                .check_out(&widest, || {
+                    JoinedJacobian::compile_for(&mut joined, t, y, Some(&all))
+                        .map(|s| (s, Analyses::default()))
+                })
+                .map_err(message)?;
+            let capacity = structure.pattern.nonzeros();
+            cache
+                .check_in(&widest, (structure, analyses))
+                .map_err(message)?;
+            let key = cache.key(presence);
+            let (structure, analyses) = cache
+                .check_out(&key, || {
+                    JoinedJacobian::compile_for(&mut joined, t, y, Some(presence))
+                        .map(|s| (s, Analyses::default()))
+                })
+                .map_err(message)?;
+            let (pointers, rows) = structure.pattern.to_i64()?;
+            Ok(Self {
+                joined,
+                rows,
+                pointers,
+                assembly: Assembly::Blocks(Box::new(structure)),
+                analyses,
+                presence: Some(Following {
+                    cache,
+                    key,
+                    capacity,
+                }),
+            })
+        }
+        /// Follow a declared vapor presence at a restart, before its
+        /// consistent start: a changed key checks the structure in force and
+        /// its symbolic analyses back in and takes the new key's (compiled
+        /// at `(t, y, 0)` by `compile_for` on a miss), refusing a pattern
+        /// above the handle's capacity. Stock IDAReInit makes KLU analyse
+        /// the new pattern at its next setup. Returns whether the key
+        /// changed; a system that does not follow presence returns false.
+        pub fn follow_presence(
+            &mut self,
+            t: f64,
+            y: &[f64],
+            presence: &VaporPresence,
+        ) -> Result<bool, String> {
+            let Self {
+                joined,
+                rows,
+                pointers,
+                assembly,
+                analyses,
+                presence: following,
+            } = self;
+            let Some(f) = following else {
+                return Ok(false);
+            };
+            let key = f.cache.key(presence);
+            if key == f.key {
+                return Ok(false);
+            }
+            let message = |e: network::Failure| match e {
+                network::Failure::Recoverable(r) | network::Failure::Fatal(r) => r,
+            };
+            let Assembly::Blocks(current) = std::mem::replace(assembly, Assembly::Colored) else {
+                return Err("a presence-following system assembles by blocks".into());
+            };
+            f.cache
+                .check_in(&f.key, (*current, std::mem::take(analyses)))
+                .map_err(message)?;
+            let (structure, cached) = f
+                .cache
+                .check_out(&key, || {
+                    JoinedJacobian::compile_for(joined, t, y, Some(presence))
+                        .map(|s| (s, Analyses::default()))
+                })
+                .map_err(message)?;
+            if structure.pattern.nonzeros() > f.capacity {
+                return Err(format!(
+                    "presence key {key:?}: {} entries above the handle's capacity {}",
+                    structure.pattern.nonzeros(),
+                    f.capacity
+                ));
+            }
+            let (p, r) = structure.pattern.to_i64()?;
+            *pointers = p;
+            *rows = r;
+            *assembly = Assembly::Blocks(Box::new(structure));
+            *analyses = cached;
+            f.key = key;
+            Ok(true)
+        }
+        /// The presence key in force and the cache's statistics, when the
+        /// system follows presence.
+        pub fn presence_key(&self) -> Option<(&PresenceKey, usize)> {
+            self.presence.as_ref().map(|f| (&f.key, f.cache.keys()))
         }
         pub fn assembly(&self) -> &Assembly {
             &self.assembly
@@ -904,8 +1059,12 @@ mod integrated {
         fn klu_ordering(&self) -> KluOrdering {
             KluOrdering::Amd
         }
+        /// The pattern's entries, or for a presence-following system the
+        /// capacity every presence key fits.
         fn nonzeros(&self) -> usize {
-            self.rows.len()
+            self.presence
+                .as_ref()
+                .map_or(self.rows.len(), |f| f.capacity)
         }
         /// The owners' root functions, read once at construction.
         fn root_count(&self) -> usize {
@@ -945,8 +1104,13 @@ mod integrated {
             rows: &mut [i64],
             pointers: &mut [i64],
         ) -> Result<(), Failure> {
-            rows.copy_from_slice(&self.rows);
+            // The structure in force fills the first entries; a
+            // presence-following handle's capacity may hold more, which the
+            // column pointers leave unread.
+            let n = self.rows.len();
+            rows[..n].copy_from_slice(&self.rows);
             pointers.copy_from_slice(&self.pointers);
+            let data = &mut data[..n];
             match &self.assembly {
                 Assembly::Colored => self.joined.jacobian(time, cj, y, yp, data),
                 Assembly::Blocks(structure) => {

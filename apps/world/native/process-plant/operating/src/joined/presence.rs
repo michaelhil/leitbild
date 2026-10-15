@@ -19,7 +19,7 @@
 //!   structure between two users.
 use super::{blocks::JoinedJacobian, operator::Joined};
 use crate::{
-    network::{Failure, Network, Properties},
+    network::{Failure, Network, Properties, unilateral::Presence},
     thermal::WaterProperties,
 };
 use serde::Serialize;
@@ -37,6 +37,15 @@ impl VaporPresence {
         Self {
             cells: (0..network.pzr.cell)
                 .map(|c| network.cell(c).phase[1].is_some())
+                .collect(),
+        }
+    }
+    /// The regular cells' vapor flags of a full presence declaration (the
+    /// stratified cell's port, last in it, is not a regular cell).
+    pub fn of<P: Properties>(network: &Network<P>, presence: &Presence) -> Self {
+        Self {
+            cells: (0..network.pzr.cell)
+                .map(|c| presence.cells.get(c).is_some_and(|p| p[1]))
                 .collect(),
         }
     }
