@@ -1,10 +1,10 @@
 {
   "kind": "ld01-settled-state-pin",
-  "status": "Regression pin (NOT evidence; S2 is not declared): the S2 re-settle after S3-D36 (the PZR shell, heads and heater steel prepared at their steady state, SOLIDS 559504c57), settled at 455 s by r7.1's settling block with S3-D35's 2 s maximum step (DR-P2-SPRAYDROP open: default steps trip the drop coordinate's restart bound at 211 s); packet 303f0998 = wiki claude/ld01-s3-wiki-integ a6f3f7a, the spray line composed closed; water library adapter 10252c28; PHASE's saturated-line inverse (8794e1451); after DR-P2-SPRAYDROP's drop exhaustion at the port's contact (IC-CTRL e166d5fb1), which changes the capped settle's state at the same 455 s and 1,605 steps. On the window that starts at the pair every range holds (PT1 52 of 344 Pa)",
-  "file": "settled-state-s3d36-455s-303f0998-spraydrop.bits.json.gz",
-  "sha256": "ebd45a3ec3ac4d48250bc4bef4bb6d0c0f4c37e85e6d3218938ea82191f9a525",
+  "status": "Regression pin (NOT evidence; S2 is not declared): the S2 re-settle after S3-D36 (the PZR shell, heads and heater steel prepared at their steady state, SOLIDS 559504c57), settled at 455 s by r7.1's settling block with S3-D35's 2 s maximum step (DR-P2-SPRAYDROP open: default steps trip the drop coordinate's restart bound at 211 s); packet c7ce1c93 = wiki claude/ld01-s3-wiki-integ b6e74fe (303f0998's values; provenance only differs; the capped re-settle on it reproduces the 303f0998 pair bitwise at 455 s), the spray line composed closed; water library adapter 10252c28; PHASE's saturated-line inverse (8794e1451); after DR-P2-SPRAYDROP's drop exhaustion at the port's contact (IC-CTRL e166d5fb1), which changes the capped settle's state at the same 455 s and 1,605 steps. On the window that starts at the pair every range holds (PT1 52 of 344 Pa)",
+  "file": "settled-state-s3d37-455s-c7ce1c93.bits.json.gz",
+  "sha256": "67c48410a4ba7cddd130b963603deefd038bcad0b69e35f6d97b14ea14a40c92",
   "bytes": 13933,
-  "packet_sha256": "303f0998da00160c6a4b6a7e37f9ac477bee43421e9a8d69d8bba54eb3dce041",
+  "packet_sha256": "c7ce1c9379a5d6007f1ce8f3eb591cb8de0575d4aa4291858524f413ae8357dc",
   "t_s": 455.0,
   "row_bound": 1e-10,
   "provisional": false,
@@ -12,11 +12,11 @@
   "digest": {
     "macos-aarch64": "0xffc4d8ba19f49658"
   },
-  "made_by": "ld01_regression::settled_state_pin from kern/s3d36-a6f3f7a/s2-settle-303f0998-2/settled-state.json",
+  "made_by": "ld01_regression::settled_state_pin from kern/s3d37-b6e74fe/s2-settle-c7ce1c93-1/settled-state.json",
   "source": {
-    "file": "kern/s3d36-a6f3f7a/s2-settle-303f0998-2/settled-state.json",
+    "file": "kern/s3d37-b6e74fe/s2-settle-c7ce1c93-1/settled-state.json",
     "max_abs_scaled_row_as_settled": 4.371779360262451e-09,
-    "sha256": "44bc88ac3df13b7b8f166a6cd8e331f9e7d7a1f58a800800281e0d22ad824f0f"
+    "sha256": "91a8bddd4a1691f842a3ccc8276bdc7d4c836a254b9bd7b4bc053f2e99cbf20c"
   },
   "start": {
     "constraint_rate": 9.932784795536756e-20,
