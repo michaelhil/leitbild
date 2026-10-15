@@ -250,6 +250,13 @@ pub enum Command {
     /// permissive majority opened, `reactor-trip-and-hold.md`). Every
     /// healthy grip releases there (the armature's opening omitted, G3).
     HoldingLoss,
+    /// G7's stuck cluster, a declared malfunction: the named cluster's grip
+    /// stays closed when the holding circuit opens, and every other cluster
+    /// releases normally. It is declared while the cluster is still held,
+    /// before the trip that opens the circuit; it changes no coordinate.
+    /// `cluster` is indexed as the source feedback's rods (the rod owner's
+    /// cluster order); the harness names the highest-worth one.
+    StuckCluster { cluster: usize },
 }
 
 /// Structural dependencies of one block, in its own indices, for the joined
