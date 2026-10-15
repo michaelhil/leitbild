@@ -6,6 +6,8 @@
 //! Callers own plant coefficients, equipment mappings and constitutive inputs.
 
 pub mod capture;
+// ELEC S3 hook (lib.rs, shared): the two new module trees below.
+pub mod electrical;
 pub mod heat_history;
 pub mod hydraulics;
 pub mod initialization;
@@ -24,3 +26,4 @@ pub mod sg;
 pub mod source_feedback;
 pub mod sparse;
 pub mod thermal;
+pub mod turbine;
