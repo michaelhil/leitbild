@@ -342,6 +342,7 @@ mod tests {
             impulse_pa_s: 0.,
             volume_flow_m3_s: 0.,
             payment: None,
+            unpaid_kinetic_j: None,
         }
     }
 

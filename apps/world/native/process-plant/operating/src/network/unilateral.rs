@@ -312,6 +312,11 @@ pub struct Change {
     /// A contact's payment: the receiving cell, the coordinate it entered
     /// and the energy in J.
     pub payment: Option<(usize, usize, f64)>,
+    /// An exhaustion lock's model kinetic energy `½ Π Q` at the located
+    /// instant, reported and not paid: the path's inertia vanished with its
+    /// donor, so `½ Π²/I` is unbounded (DR S3-EXHAUST; see
+    /// [`Network::exhaustion_with_paths`]).
+    pub unpaid_kinetic_j: Option<f64>,
 }
 
 /// The outcome of one L1 transaction.
@@ -382,22 +387,25 @@ impl<P: Properties> Network<P> {
         }
     }
     /// The phase-mode owner's exhaustion of `cells` with the vapor paths it
-    /// empties, in one exact transaction at a located instant (decision
-    /// 0014's contact law at the donor's exhaustion; lead DR S3-EXHAUST). The
-    /// caller evaluated the network's value state at this instant, before
-    /// the exhaustion. Every free vapor path whose inertia supports hold no
-    /// vapor once `cells` are exhausted (each support is one of `cells` or
-    /// a regular cell with no vapor stock) and that carries impulse or flow
-    /// in that evaluation is locked with `Π = 0`, and its kinetic energy
-    /// `½ Π Q` of that evaluation is paid once into the end it was feeding:
-    /// a regular cell's vapor energy if it holds vapor, its liquid (total)
-    /// energy otherwise, or the stratified cell's admitted energy, where
-    /// every surge-port arrival is paid (S3-D30). Then each cell is
-    /// exhausted ([`Network::exhaustion`]): its vapor slots, of root size,
-    /// are zeroed and its totals stay. The lock is
-    /// `Locked(holding after the exhaustion)`, so a re-birth releases it
-    /// through [`decide`]. Mass and boron do not move; energy moves only by
-    /// the payments. Without L1 the cells are only exhausted.
+    /// empties, in one exact transaction at a located instant (lead DR
+    /// S3-EXHAUST). The caller evaluated the network's value state at this
+    /// instant, before the exhaustion. Every free vapor path whose inertia
+    /// supports hold no vapor once `cells` are exhausted (each support is one
+    /// of `cells` or a regular cell with no vapor stock) and that carries
+    /// impulse or flow in that evaluation is locked with `Π = 0`
+    /// (`Locked(holding after the exhaustion)`, so a re-birth releases it
+    /// through [`decide`]); then each cell is exhausted
+    /// ([`Network::exhaustion`]): its vapor slots, of root size, are zeroed
+    /// and its totals stay. No mass, energy or boron moves.
+    ///
+    /// **The path's kinetic energy is reported, not paid (PROPOSED, lead to
+    /// confirm).** Decision 0014 pays a contact's `½ Π Q` once. Here the
+    /// path's inertia `I` lives only in the exhausting donor, so `I ∝ M_g` is
+    /// of root size at the located instant while `Π` stays finite (every
+    /// force on the phase scales with its fraction and no advective momentum
+    /// outflux is composed), and `½ Π²/I` is unbounded and sign-indefinite:
+    /// in C2 it was -2.8e12 J. Paying it would create that energy. Without
+    /// L1 the cells are only exhausted.
     pub fn exhaustion_with_paths(
         &mut self,
         y: &mut [f64],
@@ -456,26 +464,9 @@ impl<P: Properties> Network<P> {
             let l = self.face_layout[li];
             let (from, to) = self.endpoints[l.face];
             let holding = Holding::of(presence.cells[from][1], presence.cells[to][1]);
-            let receiver = if q > 0. { to } else { from };
-            let index = if receiver < self.pzr.cell {
-                let cl = self.cell_layout[receiver];
-                if presence.cells[receiver][1] {
-                    cl.energy[1]
-                } else {
-                    cl.energy[0]
-                }
-            } else if receiver == self.pzr.cell {
-                self.pzr.base + PZR_ENERGY[1]
-            } else {
-                return Err(Failure::Fatal(format!(
-                    "no exhaustion payment coordinate for vapor into cell {receiver}"
-                )));
-            };
             let before = locks.paths[li];
             let after = Lock::Locked(holding);
-            y[index] += kinetic / self.scales[index];
             y[l.index] = 0.;
-            out.energy_paid_j += kinetic;
             out.changes.push(Change {
                 path: li,
                 face: l.face,
@@ -486,7 +477,8 @@ impl<P: Properties> Network<P> {
                 drive_pa: drive,
                 impulse_pa_s: impulse,
                 volume_flow_m3_s: q,
-                payment: Some((receiver, index, kinetic)),
+                payment: None,
+                unpaid_kinetic_j: Some(kinetic),
             });
             locks.paths[li] = after;
         }
@@ -640,6 +632,7 @@ impl<P: Properties> Network<P> {
                 impulse_pa_s: impulse,
                 volume_flow_m3_s: view.volume_flow_m3_s,
                 payment,
+                unpaid_kinetic_j: None,
             });
             locks.paths[li] = decision.lock;
         }
