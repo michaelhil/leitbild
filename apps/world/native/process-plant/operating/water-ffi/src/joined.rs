@@ -1013,6 +1013,20 @@ mod integrated {
             passes_allowed,
         )
         .map_err(message)?;
+        // L1 at the segment start (DR S3-REBIRTH, decision 0014): a lock
+        // whose drive is exactly zero and leaves zero toward its holding end
+        // along these consistent rates is released now; stock IDA would
+        // never report its root leaving zero. Only the id vector changes.
+        let ids = match joined
+            .unilateral_release_at_start(t, y, &yp)
+            .map_err(message)?
+        {
+            Some(release) => {
+                done.push(release);
+                joined.differential(network_ids)
+            }
+            None => ids,
+        };
         let (yp, ids) = if appended > 0 {
             let mut tail = vec![0.; appended];
             let tail_ids = ida.system_mut().appended_start(t, y_tail, &mut tail)?;

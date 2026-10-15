@@ -967,8 +967,10 @@ impl<P: Properties + WaterProperties> Joined<P> {
             b.root_directions(&mut out[..ns])?;
         }
         // L1: release rising, contact falling (`Root::direction`); a slot
-        // with no root reports none.
-        let first = out.len() - self.phase_mode_slots() - self.unilateral_slots();
+        // with no root reports none. L1's slots follow the PZR relief's and
+        // precede the phase modes' and the spray check's ([`Self::roots`]).
+        let first =
+            out.len() - self.spray_slots() - self.phase_mode_slots() - self.unilateral_slots();
         for r in self.network.unilateral_roots() {
             out[first + r.path()] = r.direction();
         }
@@ -1352,6 +1354,36 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 "located":fired.iter().map(|(p, f)| serde_json::json!({"path":p,"root":format!("{f:?}")})).collect::<Vec<_>>(),
                 "opposite":opposite,"changes":tx.changes,"energyPaid_J":tx.energy_paid_j,
                 "stateChanged":!tx.changes.is_empty()}),
+        }))
+    }
+    /// L1 at a segment start, after the restart's exact consistent start
+    /// (DR S3-REBIRTH, decision 0014): the drives' rates along the
+    /// consistent rates `yp` from one value evaluation seeded along `yp`
+    /// (`cj = 0`, so a direction is `dF/dt`), then
+    /// [`Network::unilateral_release_at_start`]. A one-sided lock whose
+    /// drive is exactly zero and leaves zero toward its holding end is
+    /// released; no coordinate or rate moves, so the caller only updates
+    /// the id vector. `None` while L1 is inactive or nothing sits at an
+    /// exactly zero drive.
+    pub fn unilateral_release_at_start(
+        &mut self,
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+    ) -> Result<Option<super::block::Transaction>, Failure> {
+        if self.network.unilateral().is_none() {
+            return Ok(None);
+        }
+        self.evaluate(t, y, yp, Some(yp), 0., None)?;
+        let (tx, zero) = self.network.unilateral_release_at_start()?;
+        if zero.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(super::block::Transaction {
+            deposits: Vec::new(),
+            receipt: serde_json::json!({"owner":"network L1 at the segment start","t_s":t,
+                "zeroDrive":zero.iter().map(|(p, r)| serde_json::json!({"path":p,"orientedRate_Pa_s":r})).collect::<Vec<_>>(),
+                "changes":tx.changes,"stateChanged":false}),
         }))
     }
     /// A declared command to every composed owner, in order, followed by
