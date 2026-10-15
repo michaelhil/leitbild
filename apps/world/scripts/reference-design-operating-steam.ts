@@ -14,6 +14,7 @@ import {createHash} from 'node:crypto'
 import {join} from 'node:path'
 import {z} from 'zod'
 import {runCycle} from './reference-design-cycle'
+import {generatorParameters,parseGenerator} from './reference-design-generator'
 import {parseShaftDrag} from './reference-design-operating-electrical'
 import {parseOperatingHotReference} from './reference-design-operating-fluid'
 import {ownedBlock} from './reference-design-operating-pzr'
@@ -34,7 +35,7 @@ export const steamOwners={
 } as const
 export const steamPages=['systems/steam-power/turbine-and-regeneration-dynamics.md','systems/steam-power/admission-and-protection.md',
   'systems/steam-power/condenser-and-cooling.md','systems/steam-power/shaft-torque-and-rolling.md','systems/steam-power/cycle-basis.md',
-  'systems/steam-power/cold-casing-and-admission.md','model/operating-hot-reference.md'] as const
+  'systems/steam-power/cold-casing-and-admission.md','model/operating-hot-reference.md','systems/electrical/generator-and-synchronization.md'] as const
 
 const pos=z.number().finite().positive(),fraction=pos.max(1),finite=z.number().finite()
 const stocksSchema=z.object({header_m3:pos,hpAdmission_m3:pos,hpExtraction_m3:pos,separator_m3:pos,reheaterProcess_m3:pos,
@@ -85,7 +86,24 @@ export const parseSteamActuators=(t:string)=>parse(actuatorsSchema,t,steamOwners
 export const parseReceivers=(v:unknown)=>receiversSchema.parse(v)
 
 type Cycle=Awaited<ReturnType<typeof runCycle>>
-export type SteamTexts={turbine:string,admission:string,condenser:string,shaft:string,casing:string,hot:string}
+export type SteamTexts={turbine:string,admission:string,condenser:string,shaft:string,casing:string,hot:string,generator:string}
+
+/** S4-D7: the machine's prepared phasor at the turbine's actual prepared net shaft power, with the
+ * generator owner's unity-power-factor sizing formulas and the hardware sized once at `referenceShaft`
+ * (generator-and-synchronization.md#prepared-shaft-balance-with-the-compact-turbine-s4-d7-15-october-2026). Closed form:
+ * `3 Rs I² + √3 V I = P_shaft`; at `P_shaft = referenceShaft` it is the owner's sizing phasor exactly.
+ * The runtime evaluates it at packet load from its own prepared turbine torque. */
+export function preparedMachinePhasor(h:{lineVoltage_V:number,frequency_Hz:number,resistance:number,statorInductance:number,
+  mutual:number,fieldInductance:number,fieldResistance:number},shaft_W:number){
+  const V=h.lineVoltage_V,we=2*Math.PI*h.frequency_Hz,X=h.statorInductance*we,Rs=h.resistance,Vph=V/Math.sqrt(3)
+  if(!(shaft_W>0&&Rs>0))throw Error('Prepared shaft power and stator resistance must be positive')
+  const I=(-Math.sqrt(3)*V+Math.sqrt(3*V*V+12*Rs*shaft_W))/(6*Rs)
+  const emf=Math.sqrt(3)*Math.hypot(Vph+Rs*I,X*I),field=emf/(we*h.mutual)
+  const delta=Math.atan2(X*I,Vph+Rs*I),id=-Math.sqrt(3)*I*Math.sin(delta),iq=-Math.sqrt(3)*I*Math.cos(delta)
+  return {phaseCurrent_A:I,fieldCurrent_A:field,fieldDemand_V:h.fieldResistance*field,angle_rad:delta-Math.PI/2,
+    initialFlux:[h.statorInductance*id+h.mutual*field,h.statorInductance*iq,h.mutual*id+h.fieldInductance*field],
+    export_W:Math.sqrt(3)*V*I}
+}
 const MPa=1e6,K=(c:number)=>c+273.15,close=(a:number,b:number,rel=1e-12)=>Math.abs(a-b)<=rel*Math.max(Math.abs(a),Math.abs(b))
 
 /** The pure compilation over the owners' texts, the cycle calculator's result and C09's receiving shells. */
@@ -96,7 +114,8 @@ export function compileOperatingSteam(texts:SteamTexts,cycle:Cycle,receivers:z.i
     drag=parseShaftDrag(texts.shaft),casing=parseTurbinePreparation(texts.casing),shells=parseReceivers(receivers),
     act=parseSteamActuators(texts.admission),
     // The SG preparation pressure has one numeric owner: the prepared-hot block (S2-D18); C10 holds no copy.
-    sgPrepared_Pa=parseOperatingHotReference(texts.hot).sgSecondaryPressure_Pa
+    sgPrepared_Pa=parseOperatingHotReference(texts.hot).sgSecondaryPressure_Pa,
+    machine=parseGenerator(texts.generator),hardware=generatorParameters(machine)
   // Prepared positions: each isolation listed once; the emergency drain's CLOSED comes from its own block (the schema's literal).
   const isolations=['MS.ISO.A','MS.ISO.B','TG.STOP','TG.ADM','TG.RH.ISO','TG.BYP']
   const listed=[...prep.preparedOpen,...prep.preparedClosed]
@@ -199,6 +218,12 @@ export function compileOperatingSteam(texts:SteamTexts,cycle:Cycle,receivers:z.i
     casing:{roomContact_W_K:casing.roomContact_W_K},
     noncondensables:gases,
     shaft:{referenceSpeed_rad_s:omega0,loadLossFraction:(1-b.shaftMechanicalEfficiency)-drag.dragPowerAtReference_W/reference,drag_Nm_per_rad_s:drag.dragPowerAtReference_W/omega0**2},
+    /** S4-D7: the runtime prepares the phasor from its own prepared net turbine shaft power with these
+     * fixed hardware values (preparedMachinePhasor); the owner's sizing point is the check at referenceShaft. */
+    generatorPreparation:{rule:'S4-D7 unity power factor at the prepared net turbine shaft power',
+      lineVoltage_V:machine.lineVoltage_V,frequency_Hz:machine.frequency_Hz,polePairs:machine.polePairs,
+      resistance_ohm:hardware.resistance,statorInductance_H:hardware.statorInductance,mutual_H:hardware.mutual,
+      fieldInductance_H:hardware.fieldInductance,fieldResistance_ohm:hardware.fieldResistance,referenceShaft_W:machine.referenceShaft_W},
     controllers:{governor,bypass,protection,drains},
     actuatorDuties:{isolationMotion_W:act.isolationMotion_W,openingMotion_W:act.openingMotion_W,springStockShare:act.springStockShare,
       holding_W:act.holding_W,controllerElectronics_W:act.controllerElectronics_W,drainMotion_W:act.drainMotion_W,drainElectronics_W:act.drainElectronics_W},
@@ -219,9 +244,9 @@ const hash=(s:string)=>createHash('sha256').update(s).digest('hex')
 export async function prepareOperatingSteam(wikiRoot:string,python:string,receivers:unknown){
   const root='world/packs/process-plant/reference-designs/ld-01/'
   const docs=await Promise.all(steamPages.map(p=>Bun.file(join(wikiRoot,root,p)).text()))
-  const [turbine,admission,condenser,shaft,cycleText,casing,hot]=docs as [string,string,string,string,string,string,string]
+  const [turbine,admission,condenser,shaft,cycleText,casing,hot,generator]=docs as [string,string,string,string,string,string,string,string]
   const cycle=await runCycle(cycleText,python)
-  const packet=compileOperatingSteam({turbine,admission,condenser,shaft,casing,hot},cycle,parseReceivers(receivers))
+  const packet=compileOperatingSteam({turbine,admission,condenser,shaft,casing,hot,generator},cycle,parseReceivers(receivers))
   const after=await Promise.all(steamPages.map(p=>Bun.file(join(wikiRoot,root,p)).text()))
   if(after.some((d,i)=>d!==docs[i]))throw Error('An owner page changed during compilation')
   return {...packet,provenance:{packetSha256:hash(JSON.stringify(packet)),sourceSha256:hash(await Bun.file(import.meta.path).text()),

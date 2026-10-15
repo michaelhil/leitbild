@@ -1,5 +1,6 @@
 import {expect,test} from 'bun:test'
-import {compileOperatingSteam,parseBypass,parseCondenser,parseCondenserProtection,parseGovernor,parseMsrDrains,parseNoncondensables,parseSteamActuators,
+import {generatorParameters,parseGenerator} from './reference-design-generator'
+import {compileOperatingSteam,preparedMachinePhasor,parseBypass,parseCondenser,parseCondenserProtection,parseGovernor,parseMsrDrains,parseNoncondensables,parseSteamActuators,
   parseReceivers,parseSteamPreparation,parseSteamStocks,prepareOperatingSteam,steamOwners} from './reference-design-operating-steam'
 
 // Test-only owner texts in the shapes the compiler reads; the values are the
@@ -104,7 +105,9 @@ const texts={turbine:`# T\n\n## Compact operating allocation (15 October 2026)\n
   casing:fence('reference-turbine-preparation',{hpCapacity_J_K:30000000,lpCapacity_J_K:150000000,hpContact_W_K:50000,lpContact_W_K:100000,roomContact_W_K:100,
     drainCdA_m2:0.0005,drainStroke_s:2,drainMotion_W:100,warmDifference_K:30,warmDuration_s:30,maximumLiquidFraction:0.01}),
   hot:fence('reference-operating-hot',{primaryPressure_Pa:15200000,achievedRodTravel_m:2.8,boronReference_ppmEq:1000,
-    gapAccommodationReferenceTemperature_K:650,sgSecondaryPressure_Pa:6363140,initialLoopMassflow_kg_s:0,sgMetalSegments:4})}
+    gapAccommodationReferenceTemperature_K:650,sgSecondaryPressure_Pa:6363140,initialLoopMassflow_kg_s:0,sgMetalSegments:4}),
+  generator:fence('reference-generator',{lineVoltage_V:10000,frequency_Hz:50,polePairs:2,base_VA:1100000000,referenceShaft_W:1025508905.915,
+    sizingConversion:0.985,reactance_pu:1.5,fieldCurrent_A:2000,fieldCopper_W:500000,inductanceMargin:2,fieldDump_Ohm:2,shaftInertia_s:5})}
 const receivers={h1Shell_Pa:49750,h2Shell_Pa:199000,h4Shell_Pa:3980000,source:'FIXTURE: 0.995 × (0.05/0.2/4) MPa from the turbine page preparation table, pending C09 block (A5)'}
 
 test('the compiled packet re-anchors D2, reproduces the arms and discloses the bypass band conflict',()=>{
@@ -140,9 +143,31 @@ const wiki=process.env.LD01_STEAM_WIKI_ROOT,python=process.env.LD01_RESEARCH_PYT
 test.skipIf(!wiki||!python)('the actual owner pages compile; the cycle reproduces the selected arms',async()=>{
   const p=await prepareOperatingSteam(wiki!,python!,receivers)
   expect(p.census).toEqual({differential:45,algebraic:19})
-  expect(p.provenance.consumed).toHaveLength(7)
+  expect(p.provenance.consumed).toHaveLength(8)
   expect(p.disclosed.bypassBandConflict).toBe(true)
 },120000)
 test.skipIf(!archive||!python)('the archived wiki refuses: its C10 numbers are still prose there',async()=>{
   await expect(prepareOperatingSteam(archive!,python!,receivers)).rejects.toThrow('Expected')
 },120000)
+
+test('S4-D7: the prepared phasor is the owner\'s sizing phasor at referenceShaft and balances the turbine elsewhere',()=>{
+  const basis=parseGenerator(texts.generator),g=generatorParameters(basis)
+  const hw={lineVoltage_V:basis.lineVoltage_V,frequency_Hz:basis.frequency_Hz,resistance:g.resistance,statorInductance:g.statorInductance,
+    mutual:g.mutual,fieldInductance:g.fieldInductance,fieldResistance:g.fieldResistance}
+  // at the sizing shaft power: the owner's phasor exactly (angle, linkages, 2000 A, 250 V)
+  const s0=preparedMachinePhasor(hw,basis.referenceShaft_W)
+  expect(s0.fieldCurrent_A).toBeCloseTo(2000,9)
+  expect(s0.fieldDemand_V).toBeCloseTo(250,9)
+  expect(s0.angle_rad).toBeCloseTo(g.angle,12)
+  s0.initialFlux.forEach((f,k)=>expect(Math.abs(f-g.initialFlux[k]!)).toBeLessThan(1e-12*Math.abs(g.initialFlux[k]!)+1e-15))
+  // at the prototype's prepared net shaft power: the dq law (as in generatorCalculation) is steady and the torque balances
+  const P=1037302510.3165614,s1=preparedMachinePhasor(hw,P)
+  const V=basis.lineVoltage_V,p=basis.polePairs,we=2*Math.PI*basis.frequency_Hz,w0=we/p,{statorInductance:Ls,mutual:M,fieldInductance:Lf,resistance:Rs,fieldResistance:Rf}=g
+  const D=Ls*Lf-M*M,[ld,lq,lf]=s1.initialFlux as [number,number,number],id=(Lf*ld-M*lf)/D,iq=lq/Ls,ifl=(Ls*lf-M*ld)/D
+  const vd=V*Math.cos(s1.angle_rad),vq=-V*Math.sin(s1.angle_rad)
+  const rates=[vd-Rs*id+p*w0*lq,vq-Rs*iq-p*w0*ld,s1.fieldDemand_V-Rf*ifl]
+  rates.forEach(r=>expect(Math.abs(r)).toBeLessThan(1e-6))
+  expect(Math.abs(P+p*M*ifl*iq*w0)/P).toBeLessThan(1e-12)
+  expect(s1.fieldCurrent_A).toBeCloseTo(2014.829285841,6)
+  expect(s1.export_W/1e6).toBeCloseTo(1021.5693815,4)
+})

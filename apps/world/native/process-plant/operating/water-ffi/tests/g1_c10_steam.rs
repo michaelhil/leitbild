@@ -334,8 +334,8 @@ struct Model {
     flow_scale: f64,
     /// Cost breakdown only: the interval drops held at their cycle references.
     reference_drops: bool,
-    /// RK4 step in ln p of the interval reversible drops (0.02, the restriction law's own;
-    /// coarser only in the G1.4 cost-option measurement).
+    /// RK4 step in ln p of the interval reversible drops: 0.1 by S4-D8 (the restriction
+    /// law's own 0.02 is kept for the flows and measured here as the comparison).
     drop_step: f64,
 }
 
@@ -884,7 +884,8 @@ fn prepare(packet: &Value) -> Prepared {
         eye: num(cd, "floor_m"),
         flow_scale: num(held, "condensate_kg_s"),
         reference_drops: false,
-        drop_step: 0.02,
+        // S4-D8: the interval reversible drops on RK4 step 0.1 in ln p.
+        drop_step: 0.1,
     };
     Prepared {
         model,
@@ -1306,7 +1307,7 @@ fn g1_c10_zero_time_block() {
     // G1.4 cost option: the interval drops on a coarser RK4 step (0.05 / 0.1 in ln p),
     // shared boundary; residual and colored Jacobian, and the prepared aero work.
     let mut step_options = Vec::new();
-    for step in [0.05, 0.1] {
+    for step in [0.02, 0.05] {
         let mut ms = prepare(&packet).model;
         ms.drop_step = step;
         let r = timed(&|| {
@@ -1332,7 +1333,7 @@ fn g1_c10_zero_time_block() {
             .aero_work
             .value;
         step_options.push(json!({"stepLnP": step, "residualShared_s": r, "coloredJacobianShared_s": jac,
-            "aeroWork_W": work, "aeroWorkRelativeVsStep0.02": (work - e.aero_work.value) / e.aero_work.value}));
+            "aeroWork_W": work, "aeroWorkRelativeVsDefaultStep0.1": (work - e.aero_work.value) / e.aero_work.value}));
     }
     // D2 check of the wiki's statement: the old 5.98 MPa header against the 6.36314 MPa SG.
     let ms = m.branches.iter().find(|b| b.id == "MS.ISO.A").unwrap();
@@ -1375,6 +1376,56 @@ fn g1_c10_zero_time_block() {
             json!({"stepLnP": step, "cpu_s": cpu_s, "drops_J_kg": drops, "worstRelativeVsStep0.02": worst})
         })
         .collect();
+    // S4-D7: the machine phasor prepared at this turbine's prepared net shaft power (closed form,
+    // the generator owner's unity-power-factor formulas, hardware fixed), checked on the dq law.
+    let gp = &packet["generatorPreparation"];
+    let sh = &packet["shaft"];
+    let omega0 = num(sh, "referenceSpeed_rad_s");
+    let tau_net =
+        e.torque.value * (1. - num(sh, "loadLossFraction")) - num(sh, "drag_Nm_per_rad_s") * omega0;
+    let p_shaft = tau_net * omega0;
+    let (v, rs, ls, mm, lf, rf, pp) = (
+        num(gp, "lineVoltage_V"),
+        num(gp, "resistance_ohm"),
+        num(gp, "statorInductance_H"),
+        num(gp, "mutual_H"),
+        num(gp, "fieldInductance_H"),
+        num(gp, "fieldResistance_ohm"),
+        num(gp, "polePairs"),
+    );
+    let we = 2. * std::f64::consts::PI * num(gp, "frequency_Hz");
+    let x = ls * we;
+    let s3 = 3f64.sqrt();
+    let i = (-s3 * v + (3. * v * v + 12. * rs * p_shaft).sqrt()) / (6. * rs);
+    let emf = s3 * (v / s3 + rs * i).hypot(x * i);
+    let ifield = emf / (we * mm);
+    let delta = (x * i).atan2(v / s3 + rs * i);
+    let theta = delta - std::f64::consts::FRAC_PI_2;
+    let (id, iq) = (-s3 * i * delta.sin(), -s3 * i * delta.cos());
+    let flux = [ls * id + mm * ifield, ls * iq, mm * id + lf * ifield];
+    let det = ls * lf - mm * mm;
+    let (cd, cq, cf) = (
+        (lf * flux[0] - mm * flux[2]) / det,
+        flux[1] / ls,
+        (ls * flux[2] - mm * flux[0]) / det,
+    );
+    let (vd, vq) = (v * theta.cos(), -v * theta.sin());
+    let flux_rates = [
+        vd - rs * cd + pp * omega0 * flux[1],
+        vq - rs * cq - pp * omega0 * flux[0],
+        rf * ifield - rf * cf,
+    ];
+    let balance = p_shaft + pp * mm * cf * cq * omega0;
+    assert!(
+        balance.abs() <= 1e-9 * p_shaft,
+        "S4-D7 shaft balance {balance} W"
+    );
+    assert!(
+        flux_rates.iter().all(|r| r.abs() < 1e-6),
+        "S4-D7 flux rates {flux_rates:?}"
+    );
+    let s4d7 = json!({"netShaft_W": p_shaft, "phaseCurrent_A": i, "fieldCurrent_A": ifield, "fieldDemand_V": rf * ifield,
+        "angle_rad": theta, "initialFlux": flux, "export_W": s3 * v * i, "balance_W": balance, "fluxRates_V": flux_rates});
     // Preparation rates (the declared nonsteady start) and branch flows.
     let rates_json: Vec<Value> = (0..N)
         .filter(|k| differential(*k) && f[*k] != 0.)
@@ -1406,6 +1457,7 @@ fn g1_c10_zero_time_block() {
         "d2": {"oldHeaderMsFlowOverSizing": old_ratio},
         "dropStepDiagnostic": drop_steps,
         "torque_Nm": e.torque.value, "aeroWork_W": e.aero_work.value,
+        "s4d7": s4d7,
         "sizing": pr.sizing, "flowsAtPreparation": flows, "preparationRates": rates_json,
     });
     if let Ok(out) = std::env::var("LD01_G1_C10_RECEIPT") {
