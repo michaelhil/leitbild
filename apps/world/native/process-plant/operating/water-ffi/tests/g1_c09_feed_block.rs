@@ -55,9 +55,16 @@ mod cpu;
 type S = Scalar;
 /// The nozzle path's `ln p` grid (`network::stratified`), reused for the stage.
 const LOG_STEP: f64 = 0.02;
-const N: usize = 47;
+const N: usize = 67;
+/// The feed path's differential coordinates are 0..14; the shell side's are 47..56.
 const NDIFF: usize = 14;
-const NPORTS: usize = 30;
+const NPORTS: usize = 46;
+fn is_differential(j: usize) -> bool {
+    j < NDIFF || (47..56).contains(&j)
+}
+/// Shell side: H2–H4 (heater index 1..=3). H1's shell (0.04975 MPa) and the
+/// H2→H1 and H1→COND drains lie below the property boundary's 0.1 MPa floor.
+const SHELLS: [usize; 3] = [1, 2, 3];
 
 fn k(v: f64) -> S {
     S::new(v, 0.)
@@ -122,6 +129,14 @@ fn flux<P: Properties>(pr: &P, p0: S, h0: S, pb: S) -> Result<S, String> {
         return Err("choked restriction is outside this prototype".into());
     }
     Ok(f.mass_flux)
+}
+/// A drain or extraction restriction: the same law, liquid or vapor donor,
+/// choking allowed (a choked flux does not read the receiver).
+fn flux_phase<P: Properties>(pr: &P, vapor: bool, p0: S, h0: S, pb: S) -> Result<S, String> {
+    if pb.value > p0.value {
+        return Err(format!("reverse restriction flow ({} > {}) is outside this prototype", pb.value, p0.value));
+    }
+    Ok(restriction_flux(pr, vapor, p0, h0, pb).map_err(text)?.mass_flux)
 }
 /// DEMONSTRATION ONLY (G1C09_DROP_FORM): the kernel's unchoked liquid
 /// restriction on the same RK4 `ln p` grid, accumulating the drop
@@ -188,6 +203,21 @@ struct Heater {
     t_ref: f64,
 }
 #[derive(Clone, Debug)]
+struct Shell {
+    v: f64,
+    c_wall: f64,
+    g_shell: f64,
+    g_tube: f64,
+    cda_ext: f64,
+    cda_drain: f64,
+    p0: f64,
+    vl0: f64,
+    tw0: f64,
+    m_ext0: f64,
+    m_drain0: f64,
+    donor: (f64, f64),
+}
+#[derive(Clone, Debug)]
 struct Block {
     pump: Pump,
     heaters: Vec<Heater>,
@@ -196,6 +226,8 @@ struct Block {
     cda_fcv: f64,
     h_feed0: f64,
     m_tot: f64,
+    shells: Vec<Shell>,
+    sizing: Value,
 }
 #[derive(Clone, Debug)]
 struct Ports {
@@ -211,6 +243,13 @@ struct Ports {
     a_byp: [f64; 4],
     a_iso: [f64; 2],
     u_fcv: [f64; 2],
+    ext_donor_p: [f64; 3],
+    ext_donor_h: [f64; 3],
+    sep: (f64, f64),
+    rh: (f64, f64),
+    h2_drain_out: f64,
+    a_ext: [f64; 3],
+    u_drain: [f64; 2],
     /// Prototype stand-in for transients only: the casing is inert and the
     /// stage draws tank liquid at the held suction state (`p_eye`, `h_s`),
     /// because the suction link's impulse is the open G1.1 item.
@@ -221,6 +260,9 @@ const PORT_NAMES: [&str; NPORTS] = [
     "Q_wall.H1", "Q_wall.H2", "Q_wall.H3", "Q_wall.H4", "p_SG.A", "p_SG.B", "a_inISO.H1", "a_inISO.H2",
     "a_inISO.H3", "a_inISO.H4", "a_outISO.H1", "a_outISO.H2", "a_outISO.H3", "a_outISO.H4", "a_bypass.H1",
     "a_bypass.H2", "a_bypass.H3", "a_bypass.H4", "a_ISO.A", "a_ISO.B", "u_FCV.A", "u_FCV.B",
+    "p_extDonor.H2(LP1)", "p_extDonor.H3(SEP)", "p_extDonor.H4(HP2)", "h_extDonor.H2", "h_extDonor.H3", "h_extDonor.H4",
+    "m_SEP.liquid→H2", "h_SEP.liquid", "m_RH.condensate→H4", "h_RH.condensate", "m_drain.H2→H1", "a_extISO.H2",
+    "a_extISO.H3", "a_extISO.H4", "u_drain.H4", "u_drain.H3",
 ];
 const COORD_NAMES: [&str; N] = [
     "M_case.P1", "U_case.P1", "M_case.P2", "U_case.P2", "omega.P1", "omega.P2", "M_tube.H1", "U_tube.H1",
@@ -228,7 +270,9 @@ const COORD_NAMES: [&str; N] = [
     "m.P1", "m.P2", "p.DISCHARGE", "p_tube.H1", "m_in.H1", "m_out.H1", "p_mid.H1", "m_byp.H1", "p_tube.H2",
     "m_in.H2", "m_out.H2", "p_mid.H2", "m_byp.H2", "p_tube.H3", "m_in.H3", "m_out.H3", "p_mid.H3", "m_byp.H3",
     "p_tube.H4", "m_in.H4", "m_out.H4", "p_mid.H4", "m_byp.H4", "p.J1", "p.J2", "p.J3", "p.HEADER", "m.A",
-    "p_mid.A", "m.B", "p_mid.B",
+    "p_mid.A", "m.B", "p_mid.B", "M_shell.H2", "U_shell.H2", "M_shell.H3", "U_shell.H3", "M_shell.H4", "U_shell.H4",
+    "E_wall.H2", "E_wall.H3", "E_wall.H4", "p_shell.H2", "V_l.H2", "p_shell.H3", "V_l.H3", "p_shell.H4", "V_l.H4",
+    "m_ext.H2", "m_ext.H3", "m_ext.H4", "m_drain.H4→H3", "m_drain.H3→H2",
 ];
 impl Ports {
     fn get(&self, id: usize) -> f64 {
@@ -243,7 +287,16 @@ impl Ports {
             18..=21 => self.a_out[id - 18],
             22..=25 => self.a_byp[id - 22],
             26 | 27 => self.a_iso[id - 26],
-            _ => self.u_fcv[id - 28],
+            28 | 29 => self.u_fcv[id - 28],
+            30..=32 => self.ext_donor_p[id - 30],
+            33..=35 => self.ext_donor_h[id - 33],
+            36 => self.sep.0,
+            37 => self.sep.1,
+            38 => self.rh.0,
+            39 => self.rh.1,
+            40 => self.h2_drain_out,
+            41..=43 => self.a_ext[id - 41],
+            _ => self.u_drain[id - 44],
         }
     }
 }
@@ -251,7 +304,7 @@ impl Ports {
 fn yp_coefficient(b: &Block, row: usize) -> f64 {
     match row {
         4 | 5 => b.pump.inertia,
-        r if r < NDIFF => 1.,
+        r if is_differential(r) => 1.,
         _ => 0.,
     }
 }
@@ -345,7 +398,57 @@ impl Block {
         let cda_fcv = m0
             / (f(br, "fcvReferenceOpening")
                 * flux(&If97, k(f(br, "isoOutletPressure_Pa")), k(h_feed0), k(f(br, "sgReferencePressure_Pa"))).unwrap().value);
-        Self { pump, heaters, junction, cda_iso, cda_fcv, h_feed0, m_tot }
+        // Shell side, from the heater block and the cycle's sizing flows.
+        let sizing = section["heaterSizing"].clone();
+        assert!(sizing.is_object(), "feed section compiled without the cycle's heater sizing (research python)");
+        let ext_p = arr(&hs["extractionPressure_Pa"]);
+        let shell_v = arr(&hs["shellVolume_m3"]);
+        let wall_c = arr(&hs["wallCapacity_J_K"]);
+        let fraction = f(hs, "shellPressureFraction");
+        let liquid0 = f(hs, "initialLiquidFraction");
+        let mid = f(hs, "wallMidpointFraction");
+        let drain_open = f(&hs["drain"], "sizingOpening");
+        let ext_flow = arr(&sizing["extraction_kg_s"]);
+        let drain_flow = arr(&sizing["drainOut_kg_s"]);
+        let sat = |p: f64| If97.saturation(k(p)).expect("prepared saturation");
+        let mut shells = Vec::new();
+        for i in SHELLS {
+            let p0 = fraction * ext_p[i];
+            let s0 = sat(p0);
+            let t_sat = s0.temperature.value;
+            let q = m_tot * (heaters[i].h_ref_out - heaters[i].h_ref_in);
+            let tw0 = t_sat + mid * (heaters[i].t_ref - t_sat);
+            let donor = match i {
+                2 => (ext_p[i], sat(ext_p[i]).vapor.enthalpy.value), // saturated separator vapor
+                _ => {
+                    let d = &sizing["donor"][i];
+                    (f(d, "pressure_Pa"), f(d, "enthalpy_J_kg"))
+                }
+            };
+            let cda_ext = ext_flow[i] / flux_phase(&If97, true, k(donor.0), k(donor.1), k(p0)).unwrap().value;
+            // Drains H4→H3 and H3→H2 (H2→H1 is held: its receiver lies below the domain floor).
+            let cda_drain = if i >= 2 {
+                let receiver = fraction * ext_p[i - 1];
+                drain_flow[i] / (drain_open * flux_phase(&If97, false, k(p0), s0.liquid.enthalpy, k(receiver)).unwrap().value)
+            } else {
+                0.
+            };
+            shells.push(Shell {
+                v: shell_v[i],
+                c_wall: wall_c[i],
+                g_shell: q / (t_sat - tw0),
+                g_tube: q / (tw0 - heaters[i].t_ref),
+                cda_ext,
+                cda_drain,
+                p0,
+                vl0: liquid0 * shell_v[i],
+                tw0,
+                m_ext0: ext_flow[i],
+                m_drain0: drain_flow[i],
+                donor,
+            });
+        }
+        Self { pump, heaters, junction, cda_iso, cda_fcv, h_feed0, m_tot, shells, sizing }
     }
 
     /// Prepared differential state and reference guesses for the algebraic state.
@@ -381,10 +484,24 @@ impl Block {
         y[44] = 7.0e6;
         y[45] = p.m0;
         y[46] = 7.0e6;
+        for (s, sh) in self.shells.iter().enumerate() {
+            let sat = If97.saturation(k(sh.p0)).unwrap();
+            let (rf, rg) = (sat.liquid.density.value, sat.vapor.density.value);
+            let (uf, ug) = (sat.liquid.enthalpy.value - sh.p0 / rf, sat.vapor.enthalpy.value - sh.p0 / rg);
+            y[47 + 2 * s] = sh.vl0 * rf + (sh.v - sh.vl0) * rg;
+            y[48 + 2 * s] = sh.vl0 * rf * uf + (sh.v - sh.vl0) * rg * ug;
+            y[53 + s] = sh.c_wall * (sh.tw0 - 273.15);
+            y[56 + 2 * s] = sh.p0;
+            y[57 + 2 * s] = sh.vl0;
+            y[62 + s] = sh.m_ext0;
+        }
+        y[65] = self.shells[2].m_drain0;
+        y[66] = self.shells[1].m_drain0;
         y
     }
     fn prepared_ports(&self, p_sg: f64) -> Ports {
         let p = &self.pump;
+        let f = |v: &Value, key: &str| v[key].as_f64().unwrap();
         Ports {
             m_s: [p.m0; 2],
             h_s: [p.h_in0; 2],
@@ -398,6 +515,14 @@ impl Block {
             a_byp: [0.; 4],
             a_iso: [1.; 2],
             u_fcv: [0.7; 2],
+            ext_donor_p: std::array::from_fn(|s| self.shells[s].donor.0),
+            ext_donor_h: std::array::from_fn(|s| self.shells[s].donor.1),
+            sep: (f(&self.sizing, "separatorLiquid_kg_s"), If97.saturation(k(0.8e6)).unwrap().liquid.enthalpy.value),
+            // The RH heating shell's prepared 0.995 × 5.98 MPa saturated liquid (C10's face).
+            rh: (f(&self.sizing, "rhCondensate_kg_s"), If97.saturation(k(0.995 * 5.98e6)).unwrap().liquid.enthalpy.value),
+            h2_drain_out: self.shells[0].m_drain0,
+            a_ext: [1.; 3],
+            u_drain: [0.5; 2],
             suction_held: None,
         }
     }
@@ -488,6 +613,7 @@ impl Block {
         let mut h_up = (ys[16] * h_recv[0] + ys[17] * h_recv[1]) / m_d;
         let mut p_up = p_d;
         let mut upstream_row = 18;
+        let mut tube_t = [k(0.); 3];
         r[18] = m_d;
         for (i, h) in self.heaters.iter().enumerate() {
             let b = 19 + 5 * i;
@@ -506,7 +632,15 @@ impl Block {
             };
             r[upstream_row] = r[upstream_row] - m_in - m_byp;
             r[6 + 2 * i] = k(yp[6 + 2 * i]) - (m_in - m_out);
-            r[7 + 2 * i] = k(yp[7 + 2 * i]) - (m_in * h_up - m_out * t.h + port(8 + i));
+            let q_tube = if i == 0 {
+                port(8)
+            } else {
+                let sh = &self.shells[i - 1];
+                let t_wall = ys[53 + i - 1] / k(sh.c_wall) + k(273.15);
+                tube_t[i - 1] = t.t;
+                k(sh.g_tube) * (t_wall - t.t)
+            };
+            r[7 + 2 * i] = k(yp[7 + 2 * i]) - (m_in * h_up - m_out * t.h + q_tube);
             let row = if i < 3 { 39 + i } else { 42 };
             r[row] = m_out + m_byp;
             h_up = (m_out * t.h + m_byp * h_up) / (m_out + m_byp);
@@ -519,6 +653,60 @@ impl Block {
             r[42] = r[42] - m;
             r[43 + 2 * s] = m - port(26 + s) * k(self.cda_iso) * flux(pr, p_up, h_up, p_mid)?;
             r[44 + 2 * s] = m - port(28 + s) * k(self.cda_fcv) * flux(pr, p_mid, h_up, port(12 + s))?;
+        }
+        // Shell side H2–H4: saturated chart, wall, extraction and drains.
+        let sats: Vec<_> = (0..3).map(|s| pr.saturation(ys[56 + 2 * s])).collect::<Result<_, _>>()?;
+        for (s, sh) in self.shells.iter().enumerate() {
+            let (m_sh, u_sh, e_w, p_sh, vl) = (ys[47 + 2 * s], ys[48 + 2 * s], ys[53 + s], ys[56 + 2 * s], ys[57 + 2 * s]);
+            let sat = &sats[s];
+            if !(vl.value > 0.05 * sh.v && vl.value < sh.v) {
+                return Err(format!("shell H{} liquid {} m3 left the covered drain range", s + 2, vl.value));
+            }
+            let (rf, rg, hf, hg) = (sat.liquid.density, sat.vapor.density, sat.liquid.enthalpy, sat.vapor.enthalpy);
+            let (uf, ug) = (hf - p_sh / rf, hg - p_sh / rg);
+            r[56 + 2 * s] = m_sh - (vl * rf + (k(sh.v) - vl) * rg);
+            r[57 + 2 * s] = u_sh - (vl * rf * uf + (k(sh.v) - vl) * rg * ug);
+            let t_wall = e_w / k(sh.c_wall) + k(273.15);
+            let q_shell = k(sh.g_shell) * (sat.temperature - t_wall);
+            let q_tube = k(sh.g_tube) * (t_wall - tube_t[s]);
+            r[53 + s] = k(yp[53 + s]) - (q_shell - q_tube);
+            let m_ext = ys[62 + s];
+            r[62 + s] = m_ext - port(41 + s) * k(sh.cda_ext) * flux_phase(pr, true, port(30 + s), port(33 + s), p_sh)?;
+            // Drain in from the shell above (H4 has none; it receives RH condensate), out to the one below.
+            let (m_in, h_in) = match s {
+                0 => (ys[66], sats[1].liquid.enthalpy),
+                1 => (ys[65], sats[2].liquid.enthalpy),
+                _ => (k(0.), k(0.)),
+            };
+            let m_out = match s {
+                0 => port(40),
+                1 => ys[66],
+                _ => ys[65],
+            };
+            let (m_c10, h_c10) = match s {
+                0 => (port(36), port(37)),
+                2 => (port(38), port(39)),
+                _ => (k(0.), k(0.)),
+            };
+            r[47 + 2 * s] = k(yp[47 + 2 * s]) - (m_ext + m_in + m_c10 - m_out);
+            r[48 + 2 * s] = k(yp[48 + 2 * s]) - (m_ext * port(33 + s) + m_in * h_in + m_c10 * h_c10 - m_out * hf - q_shell);
+        }
+        // Drains H4→H3 (row 65) and H3→H2 (row 66) are HELD at their sizing
+        // flows here: the kernel's restriction_flux refuses every seeded
+        // evaluation from a saturated-liquid donor at its own endpoint (the
+        // liquid inverse's direction is Domain there; tests/g1_c09_domain_probe.rs,
+        // 123 of 123 seeded refused, 0 of 123 value-only), so no Jacobian of a
+        // drain row can be formed. A KERN finding; the law and its calibrated
+        // area stay in this block for when it is fixed.
+        if std::env::var("G1C09_DRAIN_LAW").is_ok() {
+            for (row, donor, receiver, u) in [(65, 2, 1, 44), (66, 1, 0, 45)] {
+                let sh = &self.shells[donor];
+                r[row] = ys[row]
+                    - port(u) * k(sh.cda_drain) * flux_phase(pr, false, ys[56 + 2 * donor], sats[donor].liquid.enthalpy, ys[56 + 2 * receiver])?;
+            }
+        } else {
+            r[65] = ys[65] - k(self.shells[2].m_drain0);
+            r[66] = ys[66] - k(self.shells[1].m_drain0);
         }
         Ok(r)
     }
@@ -548,6 +736,10 @@ impl Block {
                 4 | 5 => self.pump.p0 / self.pump.omega0,
                 14 | 15 => y0[2 * (r - 14)],
                 b if (19..39).contains(&b) && (b - 19) % 5 == 0 => y0[6 + 2 * ((b - 19) / 5)],
+                47 | 49 | 51 => m0,
+                48 | 50 | 52 | 53 | 54 | 55 => e,
+                56 | 58 | 60 => y0[47 + (r - 56)],
+                57 | 59 | 61 => y0[48 + (r - 57)].abs(),
                 _ => m0,
             })
             .collect()
@@ -609,10 +801,10 @@ impl System for Sys {
     }
 }
 fn differential() -> Vec<f64> {
-    (0..N).map(|j| if j < NDIFF { 1. } else { 0. }).collect()
+    (0..N).map(|j| if is_differential(j) { 1. } else { 0. }).collect()
 }
 fn tolerances(y0: &[f64]) -> Vec<f64> {
-    y0.iter().enumerate().map(|(j, y)| 1e-10 * y.abs().max(if j < NDIFF { 1. } else { 1e3 })).collect()
+    y0.iter().enumerate().map(|(j, y)| 1e-10 * y.abs().max(if is_differential(j) { 1. } else { 1e3 })).collect()
 }
 /// Stock IDACalcIC (twice: the second pass starts from the first's state).
 fn consistent(block: &Block, ports: &Ports, y: &mut [f64], yp: &mut [f64]) -> Result<(), String> {
@@ -645,7 +837,8 @@ fn g1_c09_feed_block() {
         "calibration": block.pump.calibration.clone(),
         "heaters": block.heaters.iter().map(|h| json!({"cdaIn_m2": h.cda_in, "cdaChannel_m2": h.cda_ch, "cdaOut_m2": h.cda_out, "cdaBypass_m2": h.cda_byp})).collect::<Vec<_>>(),
         "branch": {"cdaIso_m2": block.cda_iso, "cdaFcvFull_m2": block.cda_fcv, "hFeed0_J_kg": block.h_feed0},
-        "census": {"differential": NDIFF, "algebraic": N - NDIFF, "ports": NPORTS} });
+        "census": {"differential": (0..N).filter(|j| is_differential(*j)).count(), "algebraic": (0..N).filter(|j| !is_differential(*j)).count(), "ports": NPORTS},
+        "shells": block.shells.iter().map(|s| json!({"gShell_W_K": s.g_shell, "gTube_W_K": s.g_tube, "cdaExtraction_m2": s.cda_ext, "cdaDrain_m2": s.cda_drain, "pPrepared_Pa": s.p0, "wallPrepared_K": s.tw0})).collect::<Vec<_>>() });
 
     // G1.3 (a): the prepared state, made consistent by stock IDACalcIC, at the
     // reference SG pressure (6.0 MPa) and at the emergent 6.36314 MPa (D2).
@@ -661,8 +854,8 @@ fn g1_c09_feed_block() {
         // Recorded, judged in the receipt: the restriction rows' own evaluation
         // floor (cancellation in h0 - h at a 5 kPa drop) is about 1e-11.
         assert!(worst <= 1e-9, "{label}: scaled residual {worst:e} at {}", COORD_NAMES[at]);
-        let algebraic: Value = (NDIFF..N).map(|j| (COORD_NAMES[j].to_string(), json!({"prepared": y[j], "guess": y_guess[j]}))).collect::<serde_json::Map<_, _>>().into();
-        let rates: Value = (0..NDIFF).map(|j| (COORD_NAMES[j].to_string(), json!(yp[j]))).collect::<serde_json::Map<_, _>>().into();
+        let algebraic: Value = (0..N).filter(|j| !is_differential(*j)).map(|j| (COORD_NAMES[j].to_string(), json!({"prepared": y[j], "guess": y_guess[j]}))).collect::<serde_json::Map<_, _>>().into();
+        let rates: Value = (0..N).filter(|j| is_differential(*j)).map(|j| (COORD_NAMES[j].to_string(), json!(yp[j]))).collect::<serde_json::Map<_, _>>().into();
         report[label] = json!({"scaledMaxRow": worst, "meetsG13": worst <= 1e-12, "worstRow": COORD_NAMES[at], "algebraic": algebraic, "rates": rates,
             "feed_kg_s": {"A": y[43], "B": y[45]}, "header_Pa": y[42], "discharge_Pa": y[18]});
         states.push((label, ports, y, yp));
@@ -695,7 +888,7 @@ fn g1_c09_feed_block() {
         // Steps: 1 Pa (the 5 kPa restriction drops bound the truncation), 1e-3 m0
         // for flows, 1e-4 of the value for stocks and speeds (the stocks reach
         // the restriction rows only through the donor enthalpy, a weak path).
-        let step = if pressure { 1. } else if COORD_NAMES[j].starts_with('m') { 1e-3 * column } else { 1e-4 * column };
+        let step = if COORD_NAMES[j].starts_with("p_shell") { 0.1 } else if pressure { 1. } else if COORD_NAMES[j].starts_with('m') { 1e-3 * column } else { 1e-4 * column };
         let (mut up, mut dn) = (y0.clone(), y0.clone());
         up[j] += step;
         dn[j] -= step;
@@ -741,12 +934,20 @@ fn g1_c09_feed_block() {
             2 | 3 => vec![(2 * (id - 2) + 1, -1.)],
             4 | 5 => vec![(2 * (id - 4) + 1, -1.)],
             6 | 7 => vec![(4 + id - 6, -1.)],
-            8..=11 => vec![(7 + 2 * (id - 8), -1.)],
+            8 => vec![(7, -1.)],
             12 | 13 => vec![(44 + 2 * (id - 12), 1.)],
             14..=17 => vec![(20 + 5 * (id - 14), -1.)],
             18..=21 => vec![(22 + 5 * (id - 18), -1.)],
             26 | 27 => vec![(43 + 2 * (id - 26), -1.)],
             28 | 29 => vec![(44 + 2 * (id - 28), -1.)],
+            30..=32 => vec![(62 + id - 30, -1.)],
+            33..=35 => vec![(62 + id - 33, 1.), (48 + 2 * (id - 33), -1.)],
+            36 => vec![(47, -1.), (48, -1.)],
+            37 => vec![(48, -1.)],
+            38 => vec![(51, -1.), (52, -1.)],
+            39 => vec![(52, -1.)],
+            40 => vec![(47, 1.), (48, 1.)],
+            41..=43 => vec![(62 + id - 41, -1.)],
             _ => vec![],
         }
     };
@@ -754,8 +955,13 @@ fn g1_c09_feed_block() {
     for id in 0..NPORTS {
         let expect = declared(id);
         if expect.is_empty() {
-            // Closed bypasses: the row is the closed valve's identity; opening is a class-R change.
-            directional.insert(PORT_NAMES[id].into(), json!("closed: identity row, opening is class R"));
+            // Closed bypasses: identity rows (opening is class R). H2–H4 wall heats: replaced by the wall law.
+            let note = match id {
+                9..=11 => "replaced by the H2–H4 wall law",
+                44 | 45 => "drain law held: saturated-liquid donor seeding refused by restriction_flux (KERN finding)",
+                _ => "closed: identity row, opening is class R",
+            };
+            directional.insert(PORT_NAMES[id].into(), json!(note));
             continue;
         }
         let d = block.port_partials(&y0, &yp0, &ports, id).unwrap();
