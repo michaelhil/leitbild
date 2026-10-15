@@ -1114,6 +1114,201 @@ fn an_rcp_supply_loss_restarts_through_the_frame_driver_with_c3s_cost_lines() {
     );
 }
 
+/// TEST-ONLY: stops at every frame as the PZR controller does (class S)
+/// and records each frame's index, instant and the dense interval it was
+/// read on (reading the state there).
+struct FrameProbe {
+    n: usize,
+    seen: Vec<(u64, f64, (f64, f64))>,
+}
+impl leitbild_operating_water::frame::Client<Integrated<If97>> for FrameProbe {
+    fn name(&self) -> &str {
+        "TEST-ONLY frame probe"
+    }
+    fn advance(
+        &mut self,
+        _: &dyn leitbild_operating_water::frame::Dense,
+        _: f64,
+        _: f64,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+    fn frame(
+        &mut self,
+        k: u64,
+        t: f64,
+        dense: &dyn leitbild_operating_water::frame::Dense,
+    ) -> Result<Vec<leitbild_operating_water::frame::Change<Integrated<If97>>>, String> {
+        let mut y = vec![0.; self.n];
+        dense.derivative(t, 0, &mut y)?;
+        self.seen.push((k, t, dense.interval()));
+        Ok(Vec::new())
+    }
+    fn stop_at_frame(&self, _: u64) -> bool {
+        true
+    }
+}
+
+/// One driven run for [`an_owner_time_event_on_a_frame_instant_is_one_instant`]:
+/// the acquired turbine trip at frame `command_frame`, then frame by frame
+/// to two frames past `event_frame`, each chunk started from the previous
+/// chunk's bound as the S3 cases' harness does.
+fn coincident_event_run(command_frame: u64, event_frame: u64) -> Value {
+    use leitbild_operating_plant::joined::block::Command;
+    use leitbild_operating_water::frame::{Class, Client, Diagnostic, Driver, Frame, Setup};
+    let (
+        Started {
+            joined,
+            mut y,
+            mut yp,
+            ids,
+            network_ids,
+            atol,
+            rtol,
+            structure,
+            analyses,
+            ..
+        },
+        derived,
+    ) = spine::started_s3_composition();
+    let restart = Restart {
+        newton_coefficient: NEWTON_COEFFICIENT,
+        delta_cj_lsetup: DELTA_CJ_LSETUP,
+        first_step_s: FIRST_STEP_S,
+        start_bound: 1e-12,
+        start_passes: 2,
+        transaction_passes: 12,
+        bound_placement: 1e-12,
+    };
+    let nonnegative = joined.network.nonnegative_stocks();
+    let mut ida = Ida::new(
+        Integrated::from_blocks(joined, structure, analyses).expect("integrable"),
+        Initial {
+            time: 0.,
+            y: &y,
+            yp: &yp,
+            differential: &ids,
+            absolute_tolerance: &atol,
+            relative_tolerance: rtol,
+        },
+    )
+    .expect("stock IDA");
+    ida.set_max_order(2).unwrap();
+    ida.constrain_nonnegative(&nonnegative).unwrap();
+    restart.configure(&mut ida).unwrap();
+    ida.set_max_step(0.02).unwrap();
+    let frame = Frame::new(0.1).unwrap();
+    let mut driver = Driver::new(frame, Diagnostic::None, spine::z1::cpu_s, 0.).unwrap();
+    let t_command = frame.instant(command_frame);
+    driver
+        .command(t_command, Command::TurbineTripAcquired)
+        .unwrap();
+    let setup = Setup {
+        network_ids: &network_ids,
+        absolute: &atol,
+        relative: rtol,
+        restart,
+        derived: &derived,
+    };
+    let mut probe = FrameProbe {
+        n: y.len(),
+        seen: Vec::new(),
+    };
+    let mut outcome = {
+        let mut clients: Vec<&mut dyn Client<Integrated<If97>>> = vec![&mut probe];
+        driver.start(&mut clients, 0., &y, &yp)
+    };
+    let mut t = 0.;
+    for k in 1..=event_frame + 2 {
+        if outcome.is_err() {
+            break;
+        }
+        let bound = frame.instant(k);
+        let mut clients: Vec<&mut dyn Client<Integrated<If97>>> = vec![&mut probe];
+        outcome = driver
+            .run(&mut ida, t, bound, &mut y, &mut yp, &mut clients, &setup)
+            .map(|_| ());
+        t = bound;
+    }
+    let event: Vec<Value> = driver
+        .log
+        .iter()
+        .filter(|e| e["kinds"].to_string().contains("owner time event"))
+        .cloned()
+        .collect();
+    serde_json::json!({"command_frame": command_frame, "t_command_s": t_command,
+        "event_frame": event_frame, "frame_instant_s": frame.instant(event_frame),
+        "outcome": outcome.err(), "solver_reached_s": driver.solver_reached_s,
+        "r": driver.counts.total(Class::R), "s": driver.counts.total(Class::S),
+        "owner_event_instants": event, "log": driver.log,
+        "frames": probe.seen.iter().map(|(k, t, (a, b))| serde_json::json!([k, t, a, b])).collect::<Vec<_>>()})
+}
+
+/// DR (GATE's C3 preview at 1e581c97, IDA_ILL_INPUT at +22.43 s): an owner
+/// time event that falls on a frame instant is one instant. The acquired
+/// turbine trip on a frame instant ends its STOP ramp 0.3 s later; by the
+/// same arithmetic as C3's 580.5 + 0.3 against 5808 · 0.1, the ramp end at
+/// 0.4 + 0.3 lies one ulp before frame 7's 7 · 0.1, and at
+/// 0.6000000000000001 + 0.3 one ulp after frame 9's 9 · 0.1. Driven frame by
+/// frame with a client stopping at every frame (the PZR controller's S
+/// stops), each run completes; the ramp end restarts once, at the owner's
+/// own time; the coinciding frame is observed once, on the step that ends
+/// at that instant (the plant's left limit, before the change); every frame
+/// is observed exactly once.
+#[test]
+#[ignore = "requires the joined packet, the wiki, IF97 and stock IDA/KLU"]
+fn an_owner_time_event_on_a_frame_instant_is_one_instant() {
+    let runs: Vec<Value> = [(4, 7), (6, 9)]
+        .into_iter()
+        .map(|(c, e)| coincident_event_run(c, e))
+        .collect();
+    for r in &runs {
+        println!(
+            "{}",
+            serde_json::json!({"command_frame": r["command_frame"], "t_command_s": r["t_command_s"],
+            "frame_instant_s": r["frame_instant_s"], "outcome": r["outcome"], "solver_reached_s": r["solver_reached_s"],
+            "r": r["r"], "s": r["s"], "r_instants": r["log"].as_array().unwrap().iter()
+                .filter(|e| e["class"] == "R").map(|e| serde_json::json!([e["t_s"], e["kinds"]])).collect::<Vec<_>>(),
+            "owner_event_instants": r["owner_event_instants"],
+            "frames": r["frames"]})
+        );
+    }
+    for r in &runs {
+        assert!(r["outcome"].is_null(), "the run stops: {}", r["outcome"]);
+        let instants = r["owner_event_instants"].as_array().unwrap();
+        assert_eq!(
+            instants.len(),
+            1,
+            "one owner time event instant: {instants:?}"
+        );
+        let receipt = instants[0]["restart"]["transactions"].to_string();
+        assert!(receipt.contains("STOP ramp end"), "{receipt}");
+        let e = instants[0]["t_s"].as_f64().unwrap();
+        let f = r["frame_instant_s"].as_f64().unwrap();
+        let ulps = (e - f).abs() / (f64::EPSILON * f);
+        assert!(
+            e != f && ulps <= 2.,
+            "the ramp end {e} s and the frame {f} s are one ulp apart"
+        );
+        let frames = r["frames"].as_array().unwrap();
+        let k_event = r["event_frame"].as_u64().unwrap();
+        let ks: Vec<u64> = frames.iter().map(|x| x[0].as_u64().unwrap()).collect();
+        let expected: Vec<u64> = (0..=k_event + 2).collect();
+        assert_eq!(ks, expected, "every frame observed exactly once");
+        let at: Vec<&Value> = frames
+            .iter()
+            .filter(|x| x[0].as_u64() == Some(k_event))
+            .collect();
+        // Read on the step ending at the instant: before its restart.
+        assert_eq!(
+            at[0][3].as_f64(),
+            Some(e),
+            "frame {k_event} read on {:?}",
+            at[0]
+        );
+    }
+}
+
 /// The block Jacobian at `(0, y, 0)` against the colored one: the worst
 /// entry difference over its column's scale (a colored entry outside the
 /// block pattern counts whole), where it is, and the block structure with

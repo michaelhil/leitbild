@@ -36,6 +36,18 @@
 //! instant, R if any is R. Commands first, then located roots, then the
 //! owners' time events (`discrete_restart`).
 //!
+//! **One instant.** Times that stock IDA cannot separate are one instant
+//! ([`same_instant`]): a frame instant `k · period`, an owner's event at
+//! `t + travel`, a command, a decided change and a caller's bound may name
+//! the same instant by different products and differ in the last ulp. The
+//! driver then stops once, at the owner's own event time when an owner
+//! event is among them (owners fire their events at exactly that time),
+//! otherwise at the earliest of them; the frame is read at its instant
+//! within the step that ends there (or at the step's end when its instant
+//! lies an ulp beyond), before the changes, and every change and command
+//! of the instant applies in that one stop or restart. A caller's start
+//! within the instant is the driver's own time.
+//!
 //! **Late discovery.** A client may decide a class-R change whose due time
 //! the last step already passed (a long quiet step over several frames).
 //! The driver then restarts at the due time from the dense-output state of
@@ -263,6 +275,15 @@ pub fn storage_rate_only(
         ));
     }
     Ok(delta.iter().filter(|d| **d != 0.).count())
+}
+
+/// Whether stock IDA can separate two instants: no, within
+/// `100 u (|a| + |b|)` (u the unit roundoff), the width at which stock
+/// identifies a step's end with its stop time, and wider than stock's
+/// refusal of a segment's first output time closer than `2 u (|t0| + |tout|)`
+/// to its start (`IDASolve`: "tout too close to t0").
+pub fn same_instant(a: f64, b: f64) -> bool {
+    (a - b).abs() <= 100. * f64::EPSILON * (a.abs() + b.abs())
 }
 
 /// The restart configuration the driver passes to `discrete_restart`.
@@ -495,10 +516,15 @@ impl<S: JoinedSystem> Driver<S> {
         to: f64,
     ) -> Result<f64, String> {
         let started = (self.clock)();
-        let mut limit = self.earliest_due().map_or(to, |d| d.min(to));
-        while self.frame.instant(self.next_frame) <= limit {
+        let mut limit = self.limit(to);
+        loop {
             let k = self.next_frame;
-            let tk = self.frame.instant(k);
+            let instant = self.frame.instant(k);
+            if !(instant <= limit || same_instant(instant, limit)) {
+                break;
+            }
+            // A frame one ulp beyond the limit is the limit's instant.
+            let tk = instant.min(limit);
             if tk > self.observed_to {
                 for c in clients.iter_mut() {
                     c.advance(dense, self.observed_to, tk)?;
@@ -512,7 +538,7 @@ impl<S: JoinedSystem> Driver<S> {
             self.counts.record(Class::O, "frame");
             self.insert(decided, tk)?;
             self.next_frame += 1;
-            limit = self.earliest_due().map_or(to, |d| d.min(to));
+            limit = self.limit(to);
         }
         if limit > self.observed_to {
             for c in clients.iter_mut() {
@@ -526,6 +552,16 @@ impl<S: JoinedSystem> Driver<S> {
     }
     fn earliest_due(&self) -> Option<f64> {
         self.pending.first().map(|c| c.due_s)
+    }
+    /// Where observation of a step ending at `to` stops: the earliest due
+    /// change inside the step, or `to` when that change is `to`'s instant.
+    fn limit(&self, to: f64) -> f64 {
+        self.earliest_due()
+            .map_or(to, |d| if same_instant(d, to) { to } else { d.min(to) })
+    }
+    /// Whether a due time is due at the instant `t`.
+    fn due_at(due: f64, t: f64) -> bool {
+        due <= t || same_instant(due, t)
     }
 
     /// Start the handle's IDAS quadratures from `q0` at the driver's
@@ -606,7 +642,7 @@ impl<S: JoinedSystem> Driver<S> {
         y: &[f64],
         yp: &[f64],
     ) -> Result<(), String> {
-        if self.frame.instant(self.next_frame) == t {
+        if same_instant(self.frame.instant(self.next_frame), t) {
             let point = PointDense { t, y, yp };
             let mut decided = Vec::new();
             for c in clients.iter_mut() {
@@ -635,32 +671,56 @@ impl<S: JoinedSystem> Driver<S> {
         setup: &Setup<'_>,
     ) -> Result<Reached, String> {
         setup.check_derived()?;
+        // The integrator stands where the driver left it; a start stock
+        // cannot separate from that is that instant (a caller's bound by
+        // another product).
+        if t != self.observed_to {
+            if !same_instant(t, self.observed_to) {
+                return Err(format!(
+                    "run from {t} s, but the driver stands at {} s",
+                    self.observed_to
+                ));
+            }
+            t = self.observed_to;
+        }
         let n = y.len();
         let mut scratch = vec![0.; n];
-        while t < until {
+        while t < until && !same_instant(t, until) {
             // Anything due now (decided at a frame at this instant, or a
             // command declared here) applies before the next step.
-            let due_now = self.earliest_due().is_some_and(|d| d <= t)
-                || self.commands.first().is_some_and(|c| c.0 <= t);
+            let due_now = self.earliest_due().is_some_and(|d| Self::due_at(d, t))
+                || self.commands.first().is_some_and(|c| Self::due_at(c.0, t));
             if due_now {
                 self.apply(ida, t, None, y, yp, clients, setup, None)?;
                 continue;
             }
-            let mut stop = until;
-            if let Some(d) = self.earliest_due() {
-                stop = stop.min(d);
-            }
-            if let Some(c) = self.commands.first() {
-                stop = stop.min(c.0);
-            }
             // ELEC hook: the operator's and any appended owners' time events.
-            if let Some(e) = ida.system().next_time_event(t) {
-                stop = stop.min(e);
-            }
+            let event = ida.system().next_time_event(t);
             let next = self.frame.instant(self.next_frame);
-            if next > t && clients.iter().any(|c| c.stop_at_frame(self.next_frame)) {
-                stop = stop.min(next);
+            if let Some(e) = event.filter(|e| same_instant(*e, t)) {
+                return Err(format!(
+                    "an owner time event at {e} s lies within stock's resolution of the integrator's {t} s, which no step reaches"
+                ));
             }
+            if next > t && same_instant(next, t) {
+                return Err(format!(
+                    "frame {} at {next} s lies within stock's resolution of the integrator's {t} s and was not observed",
+                    self.next_frame
+                ));
+            }
+            let mut candidates = vec![until];
+            candidates.extend(self.earliest_due());
+            candidates.extend(self.commands.first().map(|c| c.0));
+            candidates.extend(event);
+            if next > t && clients.iter().any(|c| c.stop_at_frame(self.next_frame)) {
+                candidates.push(next);
+            }
+            let first = candidates.iter().copied().fold(f64::INFINITY, f64::min);
+            // One instant: at an owner's event among them, its own time.
+            let stop = match event {
+                Some(e) if same_instant(e, first) => e,
+                _ => first,
+            };
             ida.stop_at(stop)?;
             let started = (self.clock)();
             let outcome = ida.step(stop, y, yp);
@@ -713,8 +773,8 @@ impl<S: JoinedSystem> Driver<S> {
             }
             t = reached;
             let event = due_owner_event(ida, t);
-            let due = self.earliest_due().is_some_and(|d| d <= t)
-                || self.commands.first().is_some_and(|c| c.0 <= t);
+            let due = self.earliest_due().is_some_and(|d| Self::due_at(d, t))
+                || self.commands.first().is_some_and(|c| Self::due_at(c.0, t));
             if roots.is_some() || event || due {
                 self.apply(ida, t, roots, y, yp, clients, setup, None)?;
             }
@@ -740,7 +800,7 @@ impl<S: JoinedSystem> Driver<S> {
     ) -> Result<(), String> {
         self.attempt_s = Some(t);
         let mut commands: Vec<Command> = Vec::new();
-        while self.commands.first().is_some_and(|c| c.0 <= t) {
+        while self.commands.first().is_some_and(|c| Self::due_at(c.0, t)) {
             commands.push(self.commands.remove(0).1);
         }
         // The clients' own part of each command (e.g. the turbine controls'
@@ -753,7 +813,11 @@ impl<S: JoinedSystem> Driver<S> {
             self.insert(decided, t)?;
         }
         let mut changes: Vec<Change<S>> = Vec::new();
-        while self.pending.first().is_some_and(|c| c.due_s <= t) {
+        while self
+            .pending
+            .first()
+            .is_some_and(|c| Self::due_at(c.due_s, t))
+        {
             changes.push(self.pending.remove(0));
         }
         let mut kinds: Vec<String> = commands.iter().map(|c| format!("command {c:?}")).collect();
