@@ -361,10 +361,13 @@ impl Distribution {
         }
         while let Some(due) = self.next_event().filter(|d| *d <= t + 1e-12) {
             let before = self.supports();
+            let logged = self.records.len();
             self.time = due;
             self.step(due);
             let changed = before != self.supports();
-            if let Some(r) = self.records.last_mut().filter(|r| r.time == due) {
+            // Every record of this instant carries the instant's support
+            // change (both buses' transfers complete together).
+            for r in &mut self.records[logged..] {
                 r.support_changed |= changed;
             }
         }
@@ -599,6 +602,15 @@ mod tests {
             }
         }
         assert!((t - 10.87).abs() < 1e-9, "restored at {t}");
+        // Both buses were on the unit source and both transfers are recorded
+        // as support changes at the same instant.
+        let done: Vec<&str> = d
+            .records
+            .iter()
+            .filter(|r| r.support_changed && r.what.contains("transfer to Reserve complete"))
+            .map(|r| r.what.as_str())
+            .collect();
+        assert_eq!(done.len(), 2, "{done:?}");
         let s = d.support("LD01.P.A2").unwrap();
         assert!(s.energized && s.contactor_closed);
         d.advance(30.).unwrap();
