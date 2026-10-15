@@ -51,6 +51,25 @@ use leitbild_operating_water::{
 use serde_json::{Value, json};
 
 pub type Unit = Electrified<Integrated<If97>>;
+/// The S3 unit with the S2 joined ledgers as IDAS quadratures (the gate
+/// harness's conservation family, rule D; stock IDAS only).
+pub type LedgeredUnit = Electrified<leitbild_operating_water::joined_ledger::Ledgered<If97>>;
+
+/// A reference run's tolerance scaling: the relative tolerance by
+/// `relative`, every absolute tolerance (derived classes included) by
+/// `absolute` (S2's references: rtol/10 with atol/10 for a hold, rtol/100
+/// with atol/10 for R2; 1, 1 for the run itself).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Scaling {
+    pub relative: f64,
+    pub absolute: f64,
+}
+impl Scaling {
+    pub const NONE: Self = Self {
+        relative: 1.,
+        absolute: 1.,
+    };
+}
 /// S2's configuration (BDF order at most 2).
 pub const MAX_ORDER: usize = 2;
 /// The RCPs in the electrical slice's consumer order (KERN's settle).
@@ -103,8 +122,8 @@ impl Inputs {
 }
 
 /// A composed S3 unit at its consistent start.
-pub struct S3Unit {
-    pub ida: Ida<Unit>,
+pub struct S3Unit<J: JoinedSystem = Integrated<If97>> {
+    pub ida: Ida<Electrified<J>>,
     pub t0: f64,
     pub y: Vec<f64>,
     pub yp: Vec<f64>,
@@ -184,8 +203,20 @@ fn electrical(
 
 /// The S3 composition at `state` (`{t_s, packet, y, yp}` of the packet,
 /// with `appended` and `discrete_state` when it is a saved S3 state).
-#[allow(clippy::too_many_lines)] // One composition, step by step as KERN's settle.
 pub fn compose(inputs: &Inputs, state: &Value) -> Result<S3Unit, String> {
+    compose_with(inputs, state, Scaling::NONE, Ok)
+}
+
+/// [`compose`] with every tolerance scaled by `scaling` (a reference run)
+/// and the integrated operator wrapped by `wrap` before the slice is
+/// appended (the ledgered unit for the gate harness).
+#[allow(clippy::too_many_lines)] // One composition, step by step as KERN's settle.
+pub fn compose_with<J: JoinedSystem>(
+    inputs: &Inputs,
+    state: &Value,
+    scaling: Scaling,
+    wrap: impl FnOnce(Integrated<If97>) -> Result<J, String>,
+) -> Result<S3Unit<J>, String> {
     let (packet_path, _) = spine::packet_bytes();
     if state["packet"].as_str() != Some(packet_path.as_str()) {
         return Err(format!(
@@ -278,6 +309,7 @@ pub fn compose(inputs: &Inputs, state: &Value) -> Result<S3Unit, String> {
     let presence = VaporPresence::of(&joined.network, &joined.network.declared_presence(&y));
     let integrated = Integrated::following_presence(joined, t0, &y, &presence)
         .map_err(|e| format!("integrable: {e:?}"))?;
+    let integrated = wrap(integrated)?;
     let e = read_json(&inputs.elec_path);
     let rotors = integrated.integrated().joined.network.rotor_count();
     let (slice, breaker, routing, configuration, mut tail) = electrical(&e, rotors, t0);
@@ -334,7 +366,20 @@ pub fn compose(inputs: &Inputs, state: &Value) -> Result<S3Unit, String> {
     let mut y_all = [y.as_slice(), &tail].concat();
     let mut yp_all = [yp.as_slice(), &tail_rates].concat();
     let ids_all = [ids.as_slice(), &tail_ids].concat();
-    let atol_all = [atol.as_slice(), &slice_atol].concat();
+    // A reference scales every tolerance, derived classes included (the
+    // record the frame driver checks is scaled the same way).
+    let rtol = rtol * scaling.relative;
+    let atol_all: Vec<f64> = [atol.as_slice(), &slice_atol]
+        .concat()
+        .iter()
+        .map(|a| a * scaling.absolute)
+        .collect();
+    let mut derived = derived;
+    derived.relative *= scaling.relative;
+    for r in &mut derived.rows {
+        r.applied_scaled *= scaling.absolute;
+        r.applied *= scaling.absolute;
+    }
     let restart = Restart {
         newton_coefficient: NEWTON_COEFFICIENT,
         delta_cj_lsetup: DELTA_CJ_LSETUP,
@@ -376,6 +421,7 @@ pub fn compose(inputs: &Inputs, state: &Value) -> Result<S3Unit, String> {
     control.scratch = vec![0.; y_all.len()];
     let receipt = json!({
         "composition": "S3-D28 (3): joined + spray closed + SG two-zone + feed gate declared + S2-D24r/S3-D16 + PZR control AUTO (S) + L1 + phase modes + ELEC slice connected",
+        "tolerance_scaling": {"relative": scaling.relative, "absolute": scaling.absolute},
         "from_saved_s3_state": saved, "t0_s": t0, "spray_path": spray_path,
         "sections": {"ic": inputs.ic_path, "pzr_control": inputs.control_path, "control_wiki": inputs.control_wiki, "electrical": inputs.elec_path},
         "l1_activation_changes": l1_changes,

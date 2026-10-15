@@ -8,10 +8,17 @@
 //!   causes, divisions' trips and requests, the holding loss, rod seats, SG
 //!   and PZR relief, the STOP ramp end), from the driver's and the
 //!   protection's own logs;
+//! - [`observe`]: rule I on every accepted step and the gate observation
+//!   (identities, ledgers, credited outputs, fingerprint) through the
+//!   frame driver's observer hook;
+//! - [`families`]: the gate families beside the lines (cost, smoothness,
+//!   repeatability, spectra, directions, SS-1, SS-2);
 //! - [`lines`]: every sequence line of a case judged on its timeline, with
 //!   its window read from the block; a declared line the harness cannot
 //!   judge is reported as such, never passed.
 #![allow(dead_code)] // The unit tests and the case run use different subsets.
 pub mod declaration;
+pub mod families;
 pub mod lines;
+pub mod observe;
 pub mod timeline;
