@@ -27,6 +27,10 @@
 //! - `LD01_S2_SETTLE_CAP_S` and `LD01_S2_SETTLE_CPU_CAP_S`: the lead's caps
 //!   for this run (simulated s, process CPU s);
 //! - `LD01_S2_SETTLE_CHECKPOINT_S`: the spacing of y/y' checkpoints (s);
+//! - `LD01_S2_SETTLE_MAX_STEP_S`: IDA's maximum step for the settle, in s,
+//!   or `none` for S2-07's procedure (no bound); recorded in the receipt
+//!   (the regression settles on the spray packet use S3-D35's 2 s while
+//!   DR-P2-SPRAYDROP is open);
 //! - `LD01_S2_SETTLE_DIR`: a new directory for the log, the checkpoints,
 //!   the settled state and the receipt.
 #![cfg(all(feature = "ida", target_os = "macos"))]
@@ -273,6 +277,15 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
     let cap_s = env_f64("LD01_S2_SETTLE_CAP_S");
     let cpu_cap_s = env_f64("LD01_S2_SETTLE_CPU_CAP_S");
     let checkpoint_s = env_f64("LD01_S2_SETTLE_CHECKPOINT_S");
+    let max_step_s: Option<f64> = match env("LD01_S2_SETTLE_MAX_STEP_S").as_str() {
+        "none" => None,
+        v => Some(
+            v.parse::<f64>()
+                .ok()
+                .filter(|h| h.is_finite() && *h > 0.)
+                .expect("LD01_S2_SETTLE_MAX_STEP_S: a positive number of seconds or none"),
+        ),
+    };
     let dir = PathBuf::from(env("LD01_S2_SETTLE_DIR"));
     assert!(!dir.exists(), "never overwritten: {}", dir.display());
     std::fs::create_dir_all(&dir).unwrap();
@@ -339,6 +352,9 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
     ida.set_max_order(MAX_ORDER).unwrap();
     ida.constrain_nonnegative(&nonnegative).unwrap();
     restart.configure(&mut ida).unwrap();
+    if let Some(h) = max_step_s {
+        ida.set_max_step(h).unwrap();
+    }
 
     let (mut y, mut yp) = (y, yp);
     let mut t = 0.;
@@ -551,7 +567,7 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
             "measure": {"filter": filter::DECLARED_FILTER, "cutoff_hz": CREDITED_BAND_HZ, "sampled_s": output_s, "window_s": window_s,
                 "checked": "every 1 s once a full window exists; the worst instance per quantity"},
             "caps": {"simulated_s": cap_s, "process_cpu_s": cpu_cap_s, "source": "lead's S2-07 brief"},
-            "checkpoint_s": checkpoint_s},
+            "checkpoint_s": checkpoint_s, "max_step_s": max_step_s},
         "verdict": verdict,
         "failure": failure,
         "reached_s": t,
