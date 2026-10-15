@@ -751,6 +751,187 @@ fn the_s3_phase_composition_starts_and_advances_with_l1_and_the_modes() {
     );
 }
 
+/// DR-C3-BIRTH05 (owner decision G1): SURGE composed as liquid at the
+/// band's credited superheat over saturation at its pressure, born by its
+/// located root through `discrete_restart`. The birth moves no stock, and
+/// the flash at SURGE's unchanged totals is a finite step: its volume row
+/// starts near 3e-3 and its pressure rises. Newton reaches about 3e-10 after
+/// the 2 passes of an ordinary restart (C3's stop at 576.32 s), so a birth
+/// takes S2-D21's transaction pass bound (12). No coordinate leaves the
+/// WRMS guard, and the 1e-12 bound is unchanged. The state handed to the
+/// restart is on the manifold (its entry constraint within the bound), and
+/// the result is the honest flash: pressure risen by about 0.1 MPa, at least
+/// 0.01 kg of vapor (DR-C3-BIRTH05 round 2: C3's 8.8e-5 kg came from an
+/// entry state off the manifold), constraints within the bound, and the
+/// restart's birth record in physical units.
+#[test]
+#[ignore = "requires the joined packet, the wiki, IF97 and stock IDA/KLU"]
+fn a_birth_at_the_credited_superheat_is_a_finite_flash_the_start_completes() {
+    let (
+        Started {
+            mut joined,
+            mut y,
+            network_ids,
+            atol,
+            rtol,
+            structure,
+            ..
+        },
+        _,
+    ) = started_s3_phase_composition();
+    let packet: Value = serde_json::from_slice(&spine::packet_bytes().1).unwrap();
+    let surge = packet["mechanics"]["regions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|r| r["id"] == "SURGE")
+        .expect("SURGE");
+    let l = joined.network.cell_layout[surge];
+    let sc = joined.scales();
+    let (m0, e0, m1, e1) = (l.mass[0], l.energy[0], l.mass[1], l.energy[1]);
+    let p0 = y[l.base] * sc[l.base];
+    let band = If97.metastable_band().expect("band");
+    assert!(
+        p0 > band.pressure_range_pa[0] && p0 <= band.pressure_range_pa[1],
+        "SURGE at {p0} Pa lies in the band's pressure range"
+    );
+    let sat = If97
+        .saturation_caloric(Scalar::constant(p0))
+        .expect("saturation");
+    let superheated = If97
+        .forward(
+            false,
+            p0,
+            sat.temperature.value + band.credited_max_k,
+        )
+        .expect("liquid at the credited superheat");
+    let v = joined.network.volume(surge);
+    let mass = superheated.density_kg_m3 * v;
+    y[m0] = mass / sc[m0];
+    y[e0] = mass * superheated.internal_energy_j_kg / sc[e0];
+    let ids = joined.differential(&network_ids);
+    let weights: Vec<f64> = y
+        .iter()
+        .zip(&atol)
+        .map(|(v, a)| 1. / (rtol * v.abs() + a))
+        .collect();
+    let mut analyses = Analyses::default();
+    let (mut yp, _) = consistent_start(
+        &mut joined,
+        Matrices::Blocks {
+            structure: &structure,
+            analyses: &mut analyses,
+        },
+        0.,
+        &mut y,
+        &ids,
+        &weights,
+        1e-12,
+        2,
+    )
+    .expect("exact start with SURGE superheated");
+    let root = joined.network.birth_root(surge, &y).expect("birth root");
+    assert!(root.abs() < 1e-6, "SURGE on its birth root: {root} K");
+    let p_liquid = y[l.base] * sc[l.base];
+    let totals = (y[m0].to_bits(), y[e0].to_bits());
+    let liquid = VaporPresence::liquid(&joined.network);
+    let mut ida = Ida::new(
+        Integrated::following_presence(joined, 0., &y, &liquid).unwrap(),
+        Initial {
+            time: 0.,
+            y: &y,
+            yp: &yp,
+            differential: &ids,
+            absolute_tolerance: &atol,
+            relative_tolerance: rtol,
+        },
+    )
+    .unwrap();
+    let restart = Restart {
+        newton_coefficient: NEWTON_COEFFICIENT,
+        delta_cj_lsetup: DELTA_CJ_LSETUP,
+        first_step_s: FIRST_STEP_S,
+        start_bound: 1e-12,
+        start_passes: 2,
+        transaction_passes: 12,
+        bound_placement: 1e-12,
+    };
+    ida.set_max_order(2).unwrap();
+    restart.configure(&mut ida).unwrap();
+    root_directions(&mut ida).unwrap();
+    let mut directions = {
+        let joined = &ida.system().integrated().joined;
+        let spray = 3 * usize::from(joined.network.spray().is_some());
+        let first_mode = joined.root_count() - spray - 2 * joined.network.pzr.cell;
+        let mut d = vec![0; joined.root_count()];
+        d[first_mode + 2 * surge] = 1;
+        d
+    };
+    directions.resize(ida.system().root_count(), 0);
+    let restarted = discrete_restart(
+        &mut ida,
+        0.,
+        Discrete::Roots(&directions),
+        &mut y,
+        &network_ids,
+        &atol,
+        rtol,
+        &restart,
+    )
+    .unwrap_or_else(|e| panic!("the birth's restart: {e}"));
+    yp.copy_from_slice(&restarted.yp);
+    let joined = &ida.system().integrated().joined;
+    assert_eq!(joined.network.cell_modes()[surge], CellMode::Equilibrium);
+    assert!(restarted.modes_changed);
+    assert!(restarted.transacted.is_empty());
+    assert_eq!(restarted.passes_allowed, 12);
+    assert!(
+        restarted.constraint_at_entry.value <= 1e-12,
+        "the state handed to the birth is on the manifold: {:?}",
+        restarted.constraint_at_entry
+    );
+    let report = &restarted.report;
+    assert!(
+        report.projection_passes > restart.start_passes,
+        "the finite flash needs more than an ordinary restart's passes: {report:?}"
+    );
+    assert!(report.constraint_after.value <= 1e-12, "{report:?}");
+    assert!(report.exempt.is_none(), "no coordinate is exempt: {report:?}");
+    assert!(report.correction_wrms <= 1., "{report:?}");
+    assert_eq!(
+        (y[m0].to_bits(), y[e0].to_bits()),
+        totals,
+        "a birth moves no stock"
+    );
+    let p = y[l.base] * sc[l.base];
+    let (mg, ug) = (y[m1] * sc[m1], y[e1] * sc[e1]);
+    assert!(mg >= 0.01 && ug > 0., "vapor at the flash: {mg} kg, {ug} J");
+    assert!(p > p_liquid, "the flash raises SURGE's pressure: {p_liquid} -> {p}");
+    let [record] = restarted.births.as_slice() else {
+        panic!("one birth record: {:?}", restarted.births)
+    };
+    assert_eq!(record["cell"], surge);
+    assert_eq!(record["p_entry_pa"].as_f64(), Some(p_liquid));
+    assert_eq!(record["p_flash_pa"].as_f64(), Some(p));
+    assert_eq!(record["vapor_kg"].as_f64(), Some(mg));
+    // The constant-pressure estimate of the flashed vapor, for the receipt:
+    // superheat x M x c_p / h_fg.
+    let h_fg = sat.vapor.enthalpy.value - sat.liquid.enthalpy.value;
+    let isobaric = band.credited_max_k * mass * superheated.cp_j_kg_k / h_fg;
+    println!(
+        "{}",
+        serde_json::json!({"surge": surge, "volume_m3": v, "mass_kg": mass,
+            "superheat_k": band.credited_max_k, "p_liquid_pa": p_liquid, "p_flash_pa": p,
+            "dp_pa": p - p_liquid, "vapor_kg": mg, "vapor_j": ug, "isobaric_estimate_kg": isobaric,
+            "constraint_before": [report.constraint_before.value, report.constraint_before.row],
+            "constraint_after": [report.constraint_after.value, report.constraint_after.row],
+            "passes": report.projection_passes, "wrms": report.correction_wrms,
+            "constraint_at_entry": [restarted.constraint_at_entry.value, restarted.constraint_at_entry.row],
+            "births": restarted.births,
+            "transactions": restarted.transactions.iter().map(|x| x.receipt.clone()).collect::<Vec<_>>()})
+    );
+}
+
 /// The phase-mode owner's transactions through `Joined::transact` (S3-D-P1):
 /// at the flashed NECK with L1 and the modes active, a located exhaustion
 /// (its slot falling) makes NECK liquid with its vapor slots zeroed and its

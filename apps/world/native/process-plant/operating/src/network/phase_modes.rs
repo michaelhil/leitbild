@@ -143,6 +143,48 @@ impl<P: Properties> Network<P> {
         Ok(json!({"birth":node,"vapor_slots":[mg,ug]}))
     }
 
+    /// Every cell born since `before` (the mode table copied before this
+    /// instant's transactions), in cell order; empty when no cell was born,
+    /// as on every S1/S2 path.
+    ///
+    /// DR-C3-BIRTH05 (owner decision G1): a birth at the band's credited
+    /// superheat leaves the cell's totals unchanged, but its algebraic rows
+    /// become the flash at those totals (fixed `M, U, V`). The metastable
+    /// liquid's pressure and zero vapor miss that flash by a finite step
+    /// (about +0.1 MPa and a vapor quality near 1e-4 at 14-15 MPa), which
+    /// the restart's exact consistent start completes. A birth at
+    /// saturation, outside the band's pressure range, is consistent at its
+    /// root already.
+    pub fn born_cells(&self, before: &[CellMode]) -> Result<Vec<usize>, Failure> {
+        if before.len() != self.modes.len() {
+            return Err(bad(format!(
+                "{} modes before for {} regular cells",
+                before.len(),
+                self.modes.len()
+            )));
+        }
+        Ok(before
+            .iter()
+            .zip(&self.modes)
+            .enumerate()
+            .filter(|(_, (b, a))| **b == CellMode::Liquid && **a == CellMode::Equilibrium)
+            .map(|(node, _)| node)
+            .collect())
+    }
+
+    /// A born cell's flash for the restart's receipt, in physical units:
+    /// its pressure before (`entry`, the state handed to the restart) and
+    /// after the consistent start (`y`), the step, and the vapor it holds.
+    pub fn birth_flash(&self, node: usize, entry: &[f64], y: &[f64]) -> Result<Value, Failure> {
+        self.regular(node)?;
+        let l = self.cell_layout[node];
+        let at = |v: &[f64], i: usize| v[i] * self.scales[i];
+        let (before, after) = (at(entry, l.base), at(y, l.base));
+        Ok(json!({"cell": node, "p_entry_pa": before, "p_flash_pa": after,
+            "dp_pa": after - before, "vapor_kg": at(y, l.mass[1]),
+            "vapor_energy_j": at(y, l.energy[1]), "mass_kg": at(y, l.mass[0])}))
+    }
+
     /// Exhaustion transaction (equilibrium → liquid) at a located root: the
     /// algebraic vapor slots are zeroed; the totals stay in the liquid's
     /// slots, so the last vapor's material and energy join the liquid
