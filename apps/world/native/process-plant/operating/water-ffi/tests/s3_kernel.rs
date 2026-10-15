@@ -756,11 +756,14 @@ fn the_s3_phase_composition_starts_and_advances_with_l1_and_the_modes() {
 /// located root through `discrete_restart`. The birth moves no stock, and
 /// the flash at SURGE's unchanged totals is a finite step: its volume row
 /// starts near 3e-3 and its pressure rises. Newton reaches about 3e-10 after
-/// the 2 passes of an ordinary restart (C3's stop at 576.32 s), so the birth
-/// is the phase-mode owner's S2-D21 transaction. The start then takes up to
-/// 12 passes, the born cell's `p, M_g, U_g` are exempt from its WRMS guard
-/// and reported, and the 1e-12 bound is unchanged. The result is the flash:
-/// vapor present, pressure risen, constraints within the bound.
+/// the 2 passes of an ordinary restart (C3's stop at 576.32 s), so a birth
+/// takes S2-D21's transaction pass bound (12). No coordinate leaves the
+/// WRMS guard, and the 1e-12 bound is unchanged. The state handed to the
+/// restart is on the manifold (its entry constraint within the bound), and
+/// the result is the honest flash: pressure risen by about 0.1 MPa, at least
+/// 0.01 kg of vapor (DR-C3-BIRTH05 round 2: C3's 8.8e-5 kg came from an
+/// entry state off the manifold), constraints within the bound, and the
+/// restart's birth record in physical units.
 #[test]
 #[ignore = "requires the joined packet, the wiki, IF97 and stock IDA/KLU"]
 fn a_birth_at_the_credited_superheat_is_a_finite_flash_the_start_completes() {
@@ -880,16 +883,21 @@ fn a_birth_at_the_credited_superheat_is_a_finite_flash_the_start_completes() {
     let joined = &ida.system().integrated().joined;
     assert_eq!(joined.network.cell_modes()[surge], CellMode::Equilibrium);
     assert!(restarted.modes_changed);
-    assert_eq!(restarted.transacted, vec!["phase modes"]);
+    assert!(restarted.transacted.is_empty());
     assert_eq!(restarted.passes_allowed, 12);
+    assert!(
+        restarted.constraint_at_entry.value <= 1e-12,
+        "the state handed to the birth is on the manifold: {:?}",
+        restarted.constraint_at_entry
+    );
     let report = &restarted.report;
     assert!(
         report.projection_passes > restart.start_passes,
         "the finite flash needs more than an ordinary restart's passes: {report:?}"
     );
     assert!(report.constraint_after.value <= 1e-12, "{report:?}");
-    let exempt = report.exempt.expect("the born cell's coordinates reported");
-    assert_eq!(exempt.coordinates, 3);
+    assert!(report.exempt.is_none(), "no coordinate is exempt: {report:?}");
+    assert!(report.correction_wrms <= 1., "{report:?}");
     assert_eq!(
         (y[m0].to_bits(), y[e0].to_bits()),
         totals,
@@ -897,8 +905,15 @@ fn a_birth_at_the_credited_superheat_is_a_finite_flash_the_start_completes() {
     );
     let p = y[l.base] * sc[l.base];
     let (mg, ug) = (y[m1] * sc[m1], y[e1] * sc[e1]);
-    assert!(mg > 0. && ug > 0., "vapor at the flash: {mg} kg, {ug} J");
+    assert!(mg >= 0.01 && ug > 0., "vapor at the flash: {mg} kg, {ug} J");
     assert!(p > p_liquid, "the flash raises SURGE's pressure: {p_liquid} -> {p}");
+    let [record] = restarted.births.as_slice() else {
+        panic!("one birth record: {:?}", restarted.births)
+    };
+    assert_eq!(record["cell"], surge);
+    assert_eq!(record["p_entry_pa"].as_f64(), Some(p_liquid));
+    assert_eq!(record["p_flash_pa"].as_f64(), Some(p));
+    assert_eq!(record["vapor_kg"].as_f64(), Some(mg));
     // The constant-pressure estimate of the flashed vapor, for the receipt:
     // superheat x M x c_p / h_fg.
     let h_fg = sat.vapor.enthalpy.value - sat.liquid.enthalpy.value;
@@ -911,8 +926,8 @@ fn a_birth_at_the_credited_superheat_is_a_finite_flash_the_start_completes() {
             "constraint_before": [report.constraint_before.value, report.constraint_before.row],
             "constraint_after": [report.constraint_after.value, report.constraint_after.row],
             "passes": report.projection_passes, "wrms": report.correction_wrms,
-            "exempt": {"coordinates": exempt.coordinates, "wrms": exempt.wrms,
-                "max": [exempt.max.value, exempt.max.row]},
+            "constraint_at_entry": [restarted.constraint_at_entry.value, restarted.constraint_at_entry.row],
+            "births": restarted.births,
             "transactions": restarted.transactions.iter().map(|x| x.receipt.clone()).collect::<Vec<_>>()})
     );
 }

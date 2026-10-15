@@ -136,7 +136,7 @@ const ALLOWED: &[(&str, &str, &str, usize, &str)] = &[
         "consistent_start_exempting",
         "iteration",
         2,
-        "declared exact consistent start of the joined residual: KLU constraint projection passes and rate passes (lead decision S2-D21: up to 12 passes after an owner transaction)",
+        "declared exact consistent start of the joined residual: KLU constraint projection passes and rate passes (lead decision S2-D21: up to 12 passes after an owner transaction, and after a phase birth: DR-C3-BIRTH05, proposed S3-D41)",
     ),
     (
         "water-ffi/src/lib.rs",
