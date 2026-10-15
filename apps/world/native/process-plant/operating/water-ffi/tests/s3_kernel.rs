@@ -479,19 +479,23 @@ fn an_equilibrium_cell_assembles_by_blocks_and_integrates_on_the_joined_spine() 
     // The identity, S3-D3's class and the exact start at the flashed state.
     let ids = joined.differential(&network_ids);
     assert_eq!((ids[m1], ids[e1]), (0., 0.));
-    // S3-D16: the contract's credited outputs read no NECK pressure, so a
-    // NECK equilibrium cell's vapor class is undeclared and refuses. This
-    // test declares, for the kernel's mechanics only, one output on NECK's
-    // pressure with the contract's PT1 sample-noise budget (labelled
-    // test-only; the S3 declaration owns the real mapping).
+    // S3-D16b: the contract's credited outputs read no NECK pressure, so a
+    // NECK equilibrium cell determines none and takes rtol·|p| through its
+    // flash sensitivity, recorded with that rule. This test then declares,
+    // for the kernel's mechanics only, one output on NECK's pressure with
+    // the contract's PT1 sample-noise budget (labelled test-only; the S3
+    // declaration owns the real mapping).
     let nn = joined.offsets().nuclear;
     let contract = credited_outputs(&joined);
     let undeclared = joined
         .network
-        .equilibrium_credited_tolerances(&y[..nn], &contract, &mut atol.clone()[..nn])
-        .unwrap_err();
+        .equilibrium_credited_tolerances(&y[..nn], &contract, rtol, &mut atol.clone()[..nn])
+        .expect("S3-D16b");
+    assert_eq!(undeclared.len(), 1);
     assert!(
-        format!("{undeclared:?}").contains("S3-D16"),
+        undeclared[0]["rule"]
+            .as_str()
+            .is_some_and(|r| r.starts_with("S3-D16b")),
         "{undeclared:?}"
     );
     let mut credited = contract;
@@ -503,7 +507,7 @@ fn an_equilibrium_cell_assembles_by_blocks_and_integrates_on_the_joined_spine() 
     joined.declare_credited(credited.clone()).unwrap();
     let classes = joined
         .network
-        .equilibrium_credited_tolerances(&y[..nn], &credited, &mut atol[..nn])
+        .equilibrium_credited_tolerances(&y[..nn], &credited, rtol, &mut atol[..nn])
         .expect("S3-D16");
     assert_eq!(classes.len(), 1);
     let weights: Vec<f64> = y

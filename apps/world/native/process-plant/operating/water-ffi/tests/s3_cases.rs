@@ -586,13 +586,10 @@ fn s3_case_run() {
             "trip": dv.trip.as_ref().map(|c| json!({"function": c.function, "t_s": c.at_s})),
             "requests": dv.requests}))
         .collect();
-    // A failed run ends at its last recorded instant (the driver's log).
+    // A failed run ends where the solver last reached; its refusal is at
+    // the driver's last attempted instant (both recorded).
     let end = if failure.is_some() {
-        driver
-            .log
-            .last()
-            .and_then(|e| e["t_s"].as_f64())
-            .unwrap_or(t0)
+        driver.solver_reached_s
     } else {
         until
     };
@@ -627,6 +624,11 @@ fn s3_case_run() {
     let receipt = json!({
         "kind": if evidence { "s3-case-run" } else { "s3-case-preview" },
         "case": case.key(), "status": status, "verdict": verdict, "failure": failure,
+        "failure_at": failure.as_ref().map(|_| json!({
+            "refusal_s": driver.attempt_s, "refusal_after_zero_s": driver.attempt_s.map(|a| a - zero),
+            "solver_reached_s": driver.solver_reached_s, "solver_reached_after_zero_s": driver.solver_reached_s - zero,
+            "last_logged_s": driver.log.last().and_then(|e| e["t_s"].as_f64()),
+            "note": "refusal_s is the driver's last attempted discrete instant; a failure inside a step is at or after solver_reached_s"})),
         "refusals_or_deviations": refusals,
         "declaration": {"block": d.block.receipt(), "pin": pin, "tbd": tbd},
         "provenance": spine::provenance(),
@@ -667,10 +669,12 @@ fn s3_case_run() {
     )
     .unwrap();
     eprintln!(
-        "{}: {status}; {verdict}; R {} S {}; run CPU {run_cpu_s:.2} s over {simulated:.2} s; failure {failure:?}",
+        "{}: {status}; {verdict}; R {} S {}; run CPU {run_cpu_s:.2} s over {simulated:.2} s; failure {failure:?}; attempted {:?} s, solver {:.4} s after zero",
         case.key(),
         driver.counts.total(Class::R),
-        driver.counts.total(Class::S)
+        driver.counts.total(Class::S),
+        driver.attempt_s.map(|a| a - zero),
+        driver.solver_reached_s - zero
     );
     for l in &judged {
         eprintln!("  {} {}: {}", l["id"], l["kind"], l["verdict"]);
