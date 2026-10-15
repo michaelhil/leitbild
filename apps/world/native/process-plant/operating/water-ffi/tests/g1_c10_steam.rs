@@ -845,8 +845,9 @@ fn prepare(packet: &Value) -> Prepared {
         m_cw: c(num(&cd["preparedPort"], "cwFlow_kg_s")),
         t_cw: c(num(&cd["preparedPort"], "cwInlet_K")),
         omega: c(num(&packet["shaft"], "referenceSpeed_rad_s")),
-        // FIXTURE: ROOM.B belongs to C12's thermal owner (pending); 25 °C.
-        t_room: c(298.15),
+        // Held port: C12's ROOM.B preparation, `ld01-support-rooms.initialB_C` 25.634 °C
+        // (C12 wiki 349d4ed); in S5 the room is a labelled ledger (C12 port P17).
+        t_room: c(273.15 + 25.634),
     };
     let sep = &packet["separator"];
     let pickup = sep["pickup_m3"].as_array().unwrap();
