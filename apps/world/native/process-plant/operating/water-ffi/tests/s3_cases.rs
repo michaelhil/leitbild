@@ -766,6 +766,17 @@ struct Driven {
     seats: std::collections::BTreeMap<usize, f64>,
     /// The acquired reactor trip after zero (the first division's trip).
     reactor_trip_after_zero: Option<f64>,
+    /// Rule F's absolute classes and their record (S3-D49).
+    f_tolerances: Option<(std::collections::BTreeMap<String, Vec<f64>>, Value)>,
+    /// The run's relative tolerance.
+    rtol: f64,
+    /// Every logged instant (R, S) and donor flip, absolute (rule F).
+    instants: Vec<f64>,
+    donor_flips: usize,
+    /// After zero: the generator breaker's opening and each SG relief
+    /// opening (+1) and closing (-1) (rule B).
+    gcb_open_after_zero: Option<f64>,
+    sg_relief: Vec<(String, i64, f64)>,
     repeat_record: Value,
     window_end_state: Option<(String, String)>,
     end_after_zero: f64,
@@ -785,6 +796,12 @@ struct Ask<'a> {
     /// E2's cap and E4/H1's window-end restart): the run, its repeat and
     /// the cost drive; never a reference (R1 has its own cap, R2 none).
     event_window: bool,
+    /// The gate observation grid when not S1's comparison grid (SS-1: the
+    /// 0.1 s output grid, S3-D51).
+    observation_s: Option<f64>,
+    /// Whether rule F's absolute classes are propagated at the start
+    /// (S3-D49; the run only).
+    f_tolerances: bool,
 }
 
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)] // One case: composition, run, judgement.
@@ -879,9 +896,41 @@ fn drive(
             conservation::Conservation::new(&g.s2.gates, plan.clone(), held0, vec![0.; ledgers])
         });
         let unit = ida.system();
+        let names = |v: Vec<String>| v;
+        let regions = names(
+            g.network_packet
+                .mechanics
+                .regions
+                .iter()
+                .map(|r| r.id.clone())
+                .collect(),
+        );
+        let faces = names(
+            g.network_packet
+                .mechanics
+                .faces
+                .iter()
+                .map(|f| f.id.clone())
+                .collect(),
+        );
+        // C3's idle branch: the supply-lost pump's discharge face (S3-D50).
+        let idle_face = match command {
+            Some(Command::SupplyLoss { rotor }) => s3_unit::ROTOR_CONSUMERS[rotor]
+                .strip_prefix("LD01.P.")
+                .map(|p| format!("PUMP.{p}->COLD.{}", &p[..1])),
+            _ => None,
+        };
+        let extra = observe::Extra::of(
+            &regions,
+            &faces,
+            &plan.ledger_names(),
+            plan.generators(),
+            idle_face.as_deref(),
+        )
+        .unwrap_or_else(|e| panic!("the extra signals: {e}"));
         observe::Gates {
             origin: zero,
-            dt: g.budgets.observation_s,
+            dt: ask.observation_s.unwrap_or(g.budgets.observation_s),
             output_s: g.budgets.output_s,
             credited_from: zero + ask.credited_from,
             reader: outputs::Reader::new(joined, &g.network_packet, g.reference_travel_m)
@@ -909,6 +958,7 @@ fn drive(
             samples: 0,
             rotors: Vec::new(),
             last_receipts: None,
+            extra: Some(extra),
         }
     });
     let mut observer = observe::CaseObserver {
@@ -965,6 +1015,14 @@ fn drive(
         relative: rtol,
         restart,
         derived: &derived,
+    };
+    // S3-D49: rule F's absolute classes at the start state (the run only).
+    let f_tolerances = match (&observer.gates, ask.f_tolerances) {
+        (Some(g), true) => Some(
+            observe::signal_tolerances(g, ida.system_mut(), t0, &y, &yp, n, &atol)
+                .unwrap_or_else(|e| panic!("rule F's classes: {e}")),
+        ),
+        _ => None,
     };
     observe::start_sample(&mut observer, ida.system_mut(), t0, &y, &yp);
     let preparation_cpu_s = spine::z1::cpu_s() - started;
@@ -1286,6 +1344,26 @@ fn drive(
         convergence,
         seats,
         reactor_trip_after_zero,
+        f_tolerances,
+        rtol,
+        instants: driver
+            .log
+            .iter()
+            .filter_map(|e| e["t_s"].as_f64())
+            .chain(driver.donor_flips.events.iter().map(|(t, _)| *t))
+            .collect(),
+        donor_flips: driver.donor_flips.total(),
+        gcb_open_after_zero: tl
+            .electrical
+            .as_ref()
+            .and_then(|l| l.iter().find(|(_, w)| w == "GCB Open").map(|(t, _)| *t)),
+        sg_relief: tl
+            .sg_relief
+            .iter()
+            .filter_map(|(v, _, d, t)| {
+                s3_harness::timeline::relief_sg(v).map(|sg| (sg.to_string(), *d, *t))
+            })
+            .collect(),
         repeat_record,
         window_end_state,
         end_after_zero: end - zero,
@@ -1300,26 +1378,6 @@ fn ledger_quadrature_cpu_s(unit: &CaseUnit) -> f64 {
 #[cfg(not(feature = "quadratures"))]
 fn ledger_quadrature_cpu_s(_: &CaseUnit) -> f64 {
     0.
-}
-
-/// The run's `(key, is temperature, series)` for SS-1 and the detector.
-fn credited_series(c: &compare::Credited) -> Vec<(String, bool, Vec<f64>)> {
-    let mut out = Vec::new();
-    for (k, temperature) in [
-        (compare::key::AVERAGE_COOLANT_K, true),
-        (compare::key::CORE_POWER_W, false),
-        (compare::key::PZR_ROOF_PA, false),
-        (compare::key::SG_PRESSURE_PA, false),
-        (compare::key::LOOP_FLOW_KG_S, false),
-        ("generator_power_w", false),
-    ] {
-        if let Ok(series) = c.output(k) {
-            for (i, x) in series.iter().enumerate() {
-                out.push((format!("{k}[{i}]"), temperature, x.clone()));
-            }
-        }
-    }
-    out
 }
 
 /// Rule D on a run's observation: S2's identities and IDAS ledgers (heater,
@@ -1399,6 +1457,8 @@ fn rule_i_is_judged_at_every_accepted_step() {
             credited_from: 0.,
             window_state: None,
             event_window: true,
+            observation_s: None,
+            f_tolerances: false,
         },
     );
     let steps = run.record["stock_totals"]["steps"].as_i64().unwrap();
@@ -1488,9 +1548,13 @@ fn s3_case_run() {
             label: "run",
             scaling: s3_unit::Scaling::NONE,
             max_step: None,
-            credited_from: judged_from,
+            // Rule F reads the whole declared part (S3-D49); E and the drift
+            // take their own spans from it.
+            credited_from: 0.,
             window_state: window_state("run"),
             event_window: true,
+            observation_s: None,
+            f_tolerances: gates_on,
         },
     );
     if run.record["composition"]["spray_path"] != json!(true) {
@@ -1544,6 +1608,8 @@ fn s3_case_run() {
                 credited_from: judged_from,
                 window_state: None,
                 event_window: true,
+                observation_s: None,
+                f_tolerances: false,
             },
         )
     });
@@ -1612,6 +1678,8 @@ fn s3_case_run() {
                     credited_from: judged_from,
                     window_state: window_state("repeat"),
                     event_window: true,
+                    observation_s: None,
+                    f_tolerances: false,
                 },
             );
             families.insert(
@@ -1690,6 +1758,8 @@ fn s3_case_run() {
                     credited_from: from,
                     window_state: None,
                     event_window: false,
+                    observation_s: None,
+                    f_tolerances: false,
                 },
             );
             let rg = r.observer.gates.as_ref().unwrap();
@@ -1817,28 +1887,41 @@ fn s3_case_run() {
             "threshold_source": "ld01-accuracy-contract + ld01-s2-accuracy (E0), ld01-s2-gates referenceToleranceFactor, ld01-s1-gates eventReference",
             "electrical_extension": "E′ (S3-D23) per comparison (electrical_e0): Ieq = |i_dq|/sqrt(3) against 10 A and terminal power against 1 MW, for the cases accuracyExtension.appliesTo names",
             "comparisons": comparisons}));
-        // Rule F: the detector on every recorded credited signal.
-        let series = credited_series(&og.credited);
-        let signals: Vec<(String, Vec<f64>)> = series
-            .iter()
-            .map(|(k, _, x)| (k.clone(), x.clone()))
-            .collect();
-        let instants: Vec<f64> = run.record["instants"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter_map(|e| e["t_s"].as_f64())
-            .collect();
-        families.insert(
-            "F_smoothness".into(),
-            s3_harness::families::smoothness(
-                &d.block.value,
-                &spec,
-                &signals,
-                &og.credited.t,
-                &instants,
-            ),
-        );
+        // Rule F (S3-D49) on the run's raw samples over its declared part.
+        let f_family = match &run.f_tolerances {
+            Some((a, record)) => {
+                let (lo, hi) = (run.zero - 1e-9, run.zero + end + 1e-9);
+                let keep: Vec<usize> = (0..og.credited.t.len())
+                    .filter(|k| og.credited.t[*k] >= lo && og.credited.t[*k] <= hi)
+                    .collect();
+                let t: Vec<f64> = keep.iter().map(|k| og.credited.t[*k]).collect();
+                let mut signals: Vec<(String, Vec<f64>, f64)> = Vec::new();
+                for key in observe::F_SIGNALS {
+                    let (Ok(series), Some(classes)) = (og.credited.output(key), a.get(key)) else {
+                        continue;
+                    };
+                    for (j, (x, ax)) in series.iter().zip(classes).enumerate() {
+                        signals.push((
+                            format!("{key}[{j}]"),
+                            keep.iter().map(|k| x[*k]).collect(),
+                            *ax,
+                        ));
+                    }
+                }
+                let mut f =
+                    s3_harness::families::smoothness_signed(&t, &signals, run.rtol, &run.instants);
+                f["classes"] = record.clone();
+                if og.credited_error.is_some() {
+                    f["verdict"] = json!("unevaluable");
+                    f["credited_error"] = json!(og.credited_error);
+                }
+                f
+            }
+            None => {
+                json!({"family": "F smoothness", "verdict": "not executable", "reason": "no absolute classes (the run did not propagate them)"})
+            }
+        };
+        families.insert("F_smoothness".into(), f_family);
         // Rule K at the declared states.
         let receipts: Value = std::env::var("LD01_S3_Z6_RECEIPTS")
             .ok()
@@ -1877,19 +1960,31 @@ fn s3_case_run() {
             "the window's end state (C2, C3)"
         });
         families.insert("K_spectra".into(), k);
-        // Rule B.
-        let rotor = match case {
-            Case::C3 => case_clock(case, &spec, d.block.number("/frameAlignment/frame_s"))
-                .ok()
-                .and_then(|(_, c)| match c {
-                    Some(Command::SupplyLoss { rotor }) => Some(rotor),
-                    _ => None,
-                }),
-            _ => None,
+        // Rule B (S3-D50), with the chattering criterion as data (owner
+        // request 7: LD01_S3_CHATTER_RULE swaps it without code changes).
+        let chatter_rule: Value = serde_json::from_str(
+            &std::env::var("LD01_S3_CHATTER_RULE")
+                .unwrap_or_else(|_| s3_harness::families::DEFAULT_CHATTER_RULE.to_string()),
+        )
+        .expect("LD01_S3_CHATTER_RULE is a JSON rule");
+        let chatter = s3_harness::families::chattering(
+            run.record["instants"].as_array().unwrap(),
+            &chatter_rule,
+        );
+        let direction_inputs = s3_harness::families::DirectionInputs {
+            credited: &og.credited,
+            zero: run.zero,
+            end,
+            reactor_trip: run.reactor_trip_after_zero,
+            gcb_open: run.gcb_open_after_zero,
+            sg_relief: run.sg_relief.clone(),
+            rotors: &og.rotors,
+            chatter,
+            donor_flips: run.donor_flips,
         };
         families.insert(
             "B_directions".into(),
-            s3_harness::families::directions(case, &spec, rotor, &og.rotors),
+            s3_harness::families::directions(case, &spec, &direction_inputs),
         );
         // C1's drift, SS-1 and SS-2.
         if case == Case::C1 {
@@ -1955,16 +2050,67 @@ fn s3_case_run() {
             families.insert("C1_drift".into(), json!({"family": "C1 drift", "verdict": verdict, "credited_error": og.credited_error,
                 "threshold_source": "ld01-s2-gates hold.driftCeiling (PZR level reported only, S3-D2); ld01-s3-cases-c1c3 cases.C1.generatorPowerDriftRelative",
                 "judged_from_s": judged_from, "record": drift}));
-            families.insert(
-                "C1_SS1".into(),
-                s3_harness::families::ss1(
+            // SS-1 (S3-D51): its own drive over ss1Duration_s on the 0.1 s
+            // output grid, provisional on this Mac (F1).
+            let ss1 = if std::env::var("LD01_S3_SS1").as_deref() == Ok("0") {
+                json!({"family": "C1 SS-1", "verdict": "not run", "reason": "LD01_S3_SS1=0"})
+            } else {
+                let declared = spec["ss1Duration_s"].as_f64().expect("ss1Duration_s");
+                // A preview may shorten it (then not executable as declared).
+                let duration = match std::env::var("LD01_S3_PREVIEW_SS1_S") {
+                    Ok(v) => {
+                        assert!(preview, "a shortened SS-1 is a preview");
+                        v.parse::<f64>().expect("LD01_S3_PREVIEW_SS1_S")
+                    }
+                    Err(_) => declared,
+                };
+                let r = drive(
+                    case,
+                    &d,
                     &spec,
-                    end,
-                    &credited_series(&og.credited),
-                    g.budgets.observation_s,
+                    &inputs,
+                    &state,
+                    &state_path,
+                    duration,
+                    Some(g),
+                    &Ask {
+                        label: "SS-1",
+                        scaling: s3_unit::Scaling::NONE,
+                        max_step: None,
+                        credited_from: 0.,
+                        window_state: None,
+                        event_window: true,
+                        observation_s: Some(g.budgets.output_s),
+                        f_tolerances: false,
+                    },
+                );
+                let rg = r.observer.gates.as_ref().unwrap();
+                let series: Vec<(String, bool, Vec<f64>)> = s3_harness::families::SS1_SIGNALS
+                    .iter()
+                    .flat_map(|(k, temperature)| {
+                        rg.credited.output(k).map_or(Vec::new(), |inst| {
+                            inst.iter()
+                                .enumerate()
+                                .map(|(j, x)| (format!("{k}[{j}]"), *temperature, x.clone()))
+                                .collect()
+                        })
+                    })
+                    .collect();
+                let mut v = s3_harness::families::ss1(
+                    &spec,
+                    r.end_after_zero,
+                    &series,
+                    g.budgets.output_s,
                     g.budgets.cutoff_hz,
-                ),
-            );
+                );
+                v["drive"] = json!({"failure": r.failure, "cpu": r.record["cpu"], "credited_error": rg.credited_error,
+                    "rule_i_exit_after_zero_s": r.exit_after_zero, "counts_by_class": r.record["counts_by_class"]});
+                if r.failure.is_some() || rg.credited_error.is_some() {
+                    v["verdict"] = json!("unevaluable");
+                }
+                v
+            };
+            families.insert("C1_SS1".into(), ss1);
             let d_family = &families["D_conservation"];
             families.insert(
                 "C1_SS2".into(),

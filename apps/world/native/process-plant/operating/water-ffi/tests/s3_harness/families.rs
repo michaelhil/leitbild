@@ -8,17 +8,18 @@
 //!   declared spans, against `budgets_cpu_s_per_s`: S3's unit budget over
 //!   the run; S2's quiet budget (C1), trip average (C2), window and
 //!   recovery (C2, C3). Every value is provisional (macOS, owner F1).
-//! - **F smoothness** ([`jumps`], [`smoothness`]): a second-difference
-//!   detector on each recorded signal, each flagged jump mapped to a
-//!   logged instant. It is judged only with a declared threshold.
+//! - **F smoothness** ([`smoothness_signed`], S3-D49): the raw second
+//!   difference of each credited signal against 4 tau_x, each flag mapped
+//!   to a logged instant within one sample.
 //! - **H repeatability** ([`repeatability`]): the sampled trajectory's
 //!   fingerprint and the end state, bitwise, between two runs on one host.
 //! - **K post-event spectra** ([`spectra`]): Z6's predicate as S2 judges it
 //!   (an external SPECTRUM receipt whose verdict is GO), at the start state
 //!   and at each declared post-event state.
-//! - **B directions** ([`directions`]): the sign statements the block
-//!   declares for a case.
-//! - **C1 SS-1** ([`ss1`]): the filtered ranges over the declared duration.
+//! - **B directions** ([`directions`], S3-D50): C2's and C3's signed
+//!   checks, chattering by a rule given as data ([`chattering`]).
+//! - **C1 SS-1** ([`ss1`], S3-D51): the filtered ranges of the named
+//!   signals on the 0.1 s output grid over the declared duration.
 //! - **C1 SS-2** ([`ss2`]): the conservation record's balances.
 use crate::filter::{larger, zero_phase_lowpass};
 use crate::s3_harness::declaration::Case;
@@ -299,76 +300,46 @@ pub fn convergence_failures(marks: &[(f64, f64)], from: f64, to: f64, max: f64) 
     }
 }
 
-/// Rule F's detector on one signal sampled at `t`: the second difference
-/// `x[k+1] - 2 x[k] + x[k-1]` over the local step², flagged where its
-/// magnitude exceeds `threshold` (the signal's units per s²).
-pub fn jumps(t: &[f64], x: &[f64], threshold: f64) -> Vec<(f64, f64)> {
-    let mut out = Vec::new();
-    for k in 1..x.len().saturating_sub(1) {
-        let (h0, h1) = (t[k] - t[k - 1], t[k + 1] - t[k]);
-        if h0 <= 0. || h1 <= 0. {
-            continue;
-        }
-        let d2 = 2. * ((x[k + 1] - x[k]) / h1 - (x[k] - x[k - 1]) / h0) / (h0 + h1);
-        if d2.abs() > threshold {
-            out.push((t[k], d2));
-        }
-    }
-    out
-}
-
-/// Each flagged jump mapped to a logged instant within `reach` s; the
-/// unmapped ones.
-pub fn unmapped(flagged: &[(f64, f64)], instants: &[f64], reach: f64) -> Vec<(f64, f64)> {
-    flagged
-        .iter()
-        .filter(|(t, _)| !instants.iter().any(|i| (i - t).abs() <= reach))
-        .copied()
-        .collect()
-}
-
-/// Rule F as the block declares it: judged only with a declared detector
-/// (`smoothness` in the case or the block: threshold per signal, reach).
-pub fn smoothness(
-    block: &Value,
-    case: &Value,
-    signals: &[(String, Vec<f64>)],
+/// Rule F as signed (S3-D49): on each signal instance's raw samples x_k at
+/// `t`, flag k where |x_{k+1} - 2 x_k + x_{k-1}| > 4 tau_x(k), tau_x(k) =
+/// `rtol` |x_k| + a_x; a flag maps when a logged instant lies in
+/// [t_{k-1}, t_{k+1}]; every unmapped flag fails F.
+pub fn smoothness_signed(
     t: &[f64],
+    signals: &[(String, Vec<f64>, f64)],
+    rtol: f64,
     instants: &[f64],
 ) -> Value {
-    let declared = case.get("smoothness").or_else(|| block.get("smoothness"));
-    let Some(d) = declared else {
-        return json!({"family": "F smoothness", "verdict": "not executable",
-            "reason": "rule F (\"a derivative-jump detector on every recorded signal; each flagged jump maps to a declared event or transaction\") declares no detector: no threshold per signal, derivative order or mapping reach in the r3 draft or the r3.7 block; the harness's detector (second difference over the observation grid) waits for the declared values (SPEC/lead)",
-            "signals_recorded": signals.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>(), "logged_instants": instants.len()});
-    };
-    let reach = d["reach_s"].as_f64();
     let mut out = serde_json::Map::new();
-    let mut verdict = "pass";
-    for (k, x) in signals {
-        let Some(threshold) = d["threshold"][k].as_f64() else {
-            verdict = "incomplete";
-            out.insert(
-                k.clone(),
-                json!({"verdict": "not executable", "reason": "no declared threshold"}),
-            );
-            continue;
-        };
-        let flagged = jumps(t, x, threshold);
-        let left = reach.map(|r| unmapped(&flagged, instants, r));
-        let v = match &left {
-            Some(l) if l.is_empty() => "pass",
-            Some(_) => "fail",
-            None => "not executable",
-        };
-        if v == "fail" {
-            verdict = "fail";
-        } else if v != "pass" && verdict == "pass" {
-            verdict = "incomplete";
+    let mut unmapped_total = 0usize;
+    let mut flagged_total = 0usize;
+    for (name, x, a) in signals {
+        let mut flagged = 0usize;
+        let mut unmapped: Vec<Value> = Vec::new();
+        let mut worst = 0_f64;
+        for k in 1..x.len().saturating_sub(1) {
+            let d2 = (x[k + 1] - 2. * x[k] + x[k - 1]).abs();
+            let tau = rtol * x[k].abs() + a;
+            let ratio = d2 / (4. * tau);
+            worst = worst.max(ratio);
+            if ratio > 1. {
+                flagged += 1;
+                let (lo, hi) = (t[k - 1], t[k + 1]);
+                let fuzz = 1e-9 * hi.abs().max(1.);
+                if !instants.iter().any(|i| *i >= lo - fuzz && *i <= hi + fuzz) {
+                    if unmapped.len() < 20 {
+                        unmapped.push(json!({"t_s": t[k], "second_difference": d2, "tau": tau}));
+                    }
+                    unmapped_total += 1;
+                }
+            }
         }
-        out.insert(k.clone(), json!({"verdict": v, "threshold": threshold, "flagged": flagged.len(), "unmapped": left}));
+        flagged_total += flagged;
+        out.insert(name.clone(), json!({"a_x": a, "flagged": flagged, "worst_ratio_to_4tau": worst, "unmapped_first": unmapped}));
     }
-    json!({"family": "F smoothness", "verdict": verdict, "declared": d, "signals": out})
+    json!({"family": "F smoothness", "verdict": if signals.is_empty() { "not executable" } else if unmapped_total == 0 { "pass" } else { "fail" },
+        "rule": "S3-D49: raw samples on the 2 ms grid, flag |x[k+1] - 2 x[k] + x[k-1]| > 4 (rtol |x[k]| + a_x), a flag maps to a logged instant (R, S, donor flip) in [t[k-1], t[k+1]]",
+        "rtol": rtol, "instants": instants.len(), "flagged": flagged_total, "unmapped": unmapped_total, "signals": out})
 }
 
 /// Rule H on one host: two runs' records bitwise equal.
@@ -425,61 +396,375 @@ pub fn spectra(states: &[(&str, Option<String>)], receipts: &Value) -> Value {
     json!({"family": "K spectra", "verdict": verdict, "predicate": "S2's Z6 (both named restrictions GO: infinite modes = algebraic, no resolved positive real part, marginal modes tied to null directions, no excited light fast mode)", "states": out})
 }
 
-/// Rule B for the case: the block's declared signs. C3's
-/// `networkProbeDirections`: the idle pump slows and never reverses
-/// (`reverseRotation: false`), judged on its angular momentum; the idle
-/// branch's reversal names no face, so it is not executable; values are
-/// magnitudes (rule C, reported).
-pub fn directions(
-    case: Case,
-    spec: &Value,
-    rotor: Option<usize>,
-    momenta: &[(f64, Vec<f64>)],
-) -> Value {
-    match case {
-        Case::C1 => {
-            json!({"family": "B directions", "verdict": "not applicable", "reason": "C1 is a hold: the block declares no direction"})
-        }
-        Case::C2 => json!({"family": "B directions", "verdict": "not executable",
-            "reason": "the r3.7 block declares no C2 direction: the table (core power down, T_cold up then down, PT1 up to 14.922 MPa then down, ...) is prose in the r3 draft, with no machine-readable signal or shape predicate (\"then\", \"briefly\", \"stabilizes\"); SPEC to put it into the block"}),
-        Case::C3 => {
-            let d = &spec["networkProbeDirections"];
-            if d.is_null() {
-                return json!({"family": "B directions", "verdict": "not executable", "reason": "no networkProbeDirections"});
+/// The chattering criterion (S3-D50: C4's N4 as the owner finally defines
+/// it, owner request 7), as data so its definition can change without code:
+/// `{"criterion": "relock_after_release", "max_relocks": n, "within_s":
+/// s|null, "source": ...}` (a path locked again after a release, counted
+/// when the relock follows the release within `within_s`, any time when
+/// null; the case fails above `max_relocks`).
+pub const DEFAULT_CHATTER_RULE: &str = r#"{"criterion": "relock_after_release", "max_relocks": 0, "within_s": null, "source": "C4 N4 r1 (claude/ld01-s3-c4-wiki 7201bcd): an L1 path locked again after a release; owner request 7 pending"}"#;
+
+/// Chattering on a run's logged L1 changes (every transaction receipt's
+/// `changes` with `path` and `after`) under `rule`.
+pub fn chattering(log: &[Value], rule: &Value) -> Value {
+    if rule["criterion"] != "relock_after_release" {
+        return json!({"verdict": "not executable", "reason": format!("criterion {} is not implemented", rule["criterion"]), "rule": rule});
+    }
+    let Some(max) = rule["max_relocks"].as_u64() else {
+        return json!({"verdict": "not executable", "reason": "the rule has no max_relocks", "rule": rule});
+    };
+    let within = rule["within_s"].as_f64();
+    let mut paths: std::collections::BTreeMap<u64, Vec<(f64, bool)>> =
+        std::collections::BTreeMap::new();
+    for e in log {
+        let t = e["t_s"].as_f64().unwrap_or(f64::NAN);
+        for tr in e["restart"]["transactions"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            for c in tr["changes"].as_array().into_iter().flatten() {
+                let (Some(path), after) = (c["path"].as_u64(), &c["after"]) else {
+                    continue;
+                };
+                let locked = after.get("Locked").is_some();
+                paths.entry(path).or_default().push((t, locked));
             }
-            let Some(r) = rotor else {
-                return json!({"family": "B directions", "verdict": "not executable", "reason": "the malfunction names no rotor"});
-            };
-            let series: Vec<f64> = momenta
-                .iter()
-                .filter_map(|(_, m)| m.get(r).copied())
-                .collect();
-            if series.len() < 2 {
-                return json!({"family": "B directions", "verdict": "not executable", "reason": "no rotor record"});
-            }
-            let slows = series.last().unwrap() < series.first().unwrap();
-            let reverse = series.iter().any(|v| *v < 0.);
-            let mut lines = vec![
-                json!({"id": "idle pump slows", "declared": d["idlePumpSpeed_rad_s"], "first": series[0], "last": series.last(), "verdict": if slows { "pass" } else { "fail" }}),
-            ];
-            let declared_reverse = d["reverseRotation"].as_bool();
-            lines.push(json!({"id": "no reverse rotation", "declared": d["reverseRotation"], "minimum": series.iter().copied().fold(f64::INFINITY, f64::min),
-                "verdict": match declared_reverse { Some(false) => if reverse { "fail" } else { "pass" }, Some(true) => if reverse { "pass" } else { "fail" }, None => "not executable" }}));
-            lines.push(json!({"id": "idle branch reverses", "declared_s": d["idleBranchReversal_s"], "verdict": "not executable", "reason": "the block names no idle-branch face"}));
-            lines.push(json!({"id": "donor flips, chattering", "declared": [d["donorFlips"], d["chattering"]], "verdict": "reported", "reason": "magnitudes (rule C); chattering has no declared criterion"}));
-            let verdict = if lines.iter().any(|l| l["verdict"] == "fail") {
-                "fail"
-            } else {
-                "incomplete"
-            };
-            json!({"family": "B directions", "verdict": verdict, "basis": "angular momentum (sign and trend of the speed; inertia > 0)", "lines": lines})
         }
     }
+    let mut relocks = 0u64;
+    let mut listed = Vec::new();
+    for (path, changes) in &paths {
+        let n = changes
+            .windows(2)
+            .filter(|w| !w[0].1 && w[1].1 && within.is_none_or(|s| w[1].0 - w[0].0 <= s))
+            .count() as u64;
+        if n > 0 {
+            listed.push(json!({"path": path, "relocks": n}));
+        }
+        relocks += n;
+    }
+    json!({"verdict": if relocks <= max { "pass" } else { "fail" }, "relocks": relocks, "paths_changed": paths.len(), "chattering_paths": listed, "rule": rule})
 }
 
-/// C1's SS-1: over `ss1Duration_s`, each 2 Hz-filtered output's range
-/// against its bound (temperatures in K, the rest relative to the mean).
-/// Shorter runs are not executable as declared; their ranges are reported.
+/// The signals and events rule B reads (S3-D50).
+pub struct DirectionInputs<'a> {
+    pub credited: &'a crate::compare::Credited,
+    pub zero: f64,
+    /// The declared part's end after zero (rule I).
+    pub end: f64,
+    pub reactor_trip: Option<f64>,
+    pub gcb_open: Option<f64>,
+    /// Each SG's relief openings and closings after zero: (SG, +1/-1, t).
+    pub sg_relief: Vec<(String, i64, f64)>,
+    /// Every rotor's angular momentum at each output (t absolute).
+    pub rotors: &'a [(f64, Vec<f64>)],
+    pub chatter: Value,
+    pub donor_flips: usize,
+}
+
+/// One instance's (t after zero, x) over [from, to].
+fn span_series(i: &DirectionInputs, key: &str, k: usize, from: f64, to: f64) -> Vec<(f64, f64)> {
+    let Ok(series) = i.credited.output(key) else {
+        return Vec::new();
+    };
+    let Some(x) = series.get(k) else {
+        return Vec::new();
+    };
+    i.credited
+        .t
+        .iter()
+        .zip(x)
+        .map(|(t, v)| (t - i.zero, *v))
+        .filter(|(t, _)| *t >= from - 1e-9 && *t <= to + 1e-9)
+        .collect()
+}
+fn at(s: &[(f64, f64)], t: f64) -> Option<f64> {
+    s.iter()
+        .rev()
+        .find(|(u, _)| *u <= t + 1e-9)
+        .or(s.first())
+        .map(|p| p.1)
+}
+fn line(id: &str, ok: Option<bool>, detail: Value) -> Value {
+    json!({"id": id, "verdict": match ok { Some(true) => "pass", Some(false) => "fail", None => "not executable" }, "detail": detail})
+}
+fn falls(s: &[(f64, f64)]) -> Option<bool> {
+    Some(s.last()?.1 < s.first()?.1)
+}
+fn rises_then_falls(s: &[(f64, f64)]) -> Option<bool> {
+    if s.len() < 3 {
+        return None;
+    }
+    let max = s[1..s.len() - 1]
+        .iter()
+        .map(|p| p.1)
+        .fold(f64::NEG_INFINITY, f64::max);
+    Some(max > s[0].1 && s[s.len() - 1].1 < max)
+}
+fn dips_then_recovers(s: &[(f64, f64)]) -> Option<bool> {
+    if s.len() < 3 {
+        return None;
+    }
+    let min = s[1..s.len() - 1]
+        .iter()
+        .map(|p| p.1)
+        .fold(f64::INFINITY, f64::min);
+    Some(min < s[0].1 && s[s.len() - 1].1 > min)
+}
+fn instances(i: &DirectionInputs, key: &str) -> usize {
+    i.credited.output(key).map_or(0, Vec::len)
+}
+
+/// Rule B as signed (S3-D50): C2's r3 rows and C3's block statements as
+/// signed checks over the declared part; magnitudes and the rows S3-D50
+/// keeps reported (PZR level "stabilizes", loop flow "then ≈") are reported.
+pub fn directions(case: Case, spec: &Value, i: &DirectionInputs) -> Value {
+    let e = i.end;
+    let mut lines: Vec<Value> = Vec::new();
+    match case {
+        Case::C1 => {
+            return json!({"family": "B directions", "verdict": "not applicable", "reason": "C1 is a hold: no direction is declared"});
+        }
+        Case::C2 => {
+            let s = |k: &str, j: usize| span_series(i, k, j, 0., e);
+            lines.push(line(
+                "core power falls",
+                falls(&s("core_power_w", 0)),
+                json!(null),
+            ));
+            for j in 0..instances(i, "hot_leg_k") {
+                lines.push(line(
+                    &format!("T_hot[{j}] falls"),
+                    falls(&s("hot_leg_k", j)),
+                    json!(null),
+                ));
+            }
+            let fuel: Vec<Option<bool>> = (0..instances(i, "fuel_doppler_k"))
+                .map(|j| falls(&s("fuel_doppler_k", j)))
+                .collect();
+            lines.push(line(
+                "fuel temperature falls (every region)",
+                if fuel.is_empty() {
+                    None
+                } else {
+                    Some(fuel.iter().all(|f| *f == Some(true)))
+                },
+                json!({"regions": fuel.len()}),
+            ));
+            lines.push(line(
+                "T_avg falls",
+                falls(&s("average_coolant_k", 0)),
+                json!(null),
+            ));
+            for j in 0..instances(i, "cold_leg_k") {
+                lines.push(line(
+                    &format!("T_cold[{j}] rises then falls"),
+                    rises_then_falls(&s("cold_leg_k", j)),
+                    json!(null),
+                ));
+            }
+            let pt1 = s("pzr_roof_pa", 0);
+            let peak =
+                pt1.iter().copied().fold(
+                    (0., f64::NEG_INFINITY),
+                    |a, p| if p.1 > a.1 { p } else { a },
+                );
+            lines.push(line("PT1 rises then falls", rises_then_falls(&pt1), json!({"peak_pa": peak.1, "at_s": peak.0, "probe": "14.922 MPa at +1.45 s (reported)"})));
+            let level = s("pzr_level_m", 0);
+            let quarter = |q0: f64, q1: f64| {
+                let w: Vec<&(f64, f64)> = level
+                    .iter()
+                    .filter(|(t, _)| *t >= q0 * e && *t <= q1 * e)
+                    .collect();
+                (w.len() > 1)
+                    .then(|| (w[w.len() - 1].1 - w[0].1).abs() / (w[w.len() - 1].0 - w[0].0))
+            };
+            lines.push(line("PZR level falls", falls(&level), json!({"stabilizes (reported, S3-D50)": {"first_quarter_mean_abs_slope_m_s": quarter(0., 0.25), "last_quarter_mean_abs_slope_m_s": quarter(0.75, 1.)}})));
+            for j in 0..instances(i, "sg_pressure_pa") {
+                let sg = ["A", "B", "C", "D"][j.min(3)];
+                let first_crack = i
+                    .sg_relief
+                    .iter()
+                    .filter(|(g, d, _)| g == sg && *d > 0)
+                    .map(|r| r.2)
+                    .fold(f64::INFINITY, f64::min);
+                let closes = i
+                    .sg_relief
+                    .iter()
+                    .filter(|(g, d, _)| g == sg && *d < 0)
+                    .count();
+                let up = span_series(i, "sg_pressure_pa", j, 0., first_crack.min(e));
+                let rose = up.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max)
+                    > up.first().map_or(f64::INFINITY, |p| p.1);
+                let ok = first_crack.is_finite().then_some(rose && closes > 0);
+                lines.push(line(&format!("SG {sg} pressure rises to relief and cycles"), ok, json!({"first_crack_s": first_crack, "closings": closes, "range": "6.6-7.0 MPa reported"})));
+            }
+            for j in 0..instances(i, "sg_liquid_m3") {
+                lines.push(line(
+                    &format!("SG[{j}] collapsed volume falls, partial recovery"),
+                    dips_then_recovers(&s("sg_liquid_m3", j)),
+                    json!(null),
+                ));
+            }
+            let o3 = spec["lines"]["O3"]["window_s"]
+                .as_array()
+                .and_then(|w| Some((w.first()?.as_f64()?, w.get(1)?.as_f64()?)));
+            for j in 0..instances(i, "loop_flow_kg_s") {
+                let ok = o3.map(|(a, b)| {
+                    let w = span_series(i, "loop_flow_kg_s", j, a, b);
+                    let start = at(&span_series(i, "loop_flow_kg_s", j, 0., e), a);
+                    let min = w.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+                    start.is_some_and(|x0| min < x0)
+                });
+                lines.push(line(
+                    &format!("loop flow[{j}] dips during the transfer"),
+                    ok,
+                    json!({"window_s": o3, "then ≈": "reported (S3-D50)"}),
+                ));
+            }
+            let speed = s("turbine_speed_rad_s", 0);
+            let t20 = e.min(20.);
+            lines.push(line(
+                "turbine speed falls",
+                match (at(&speed, t20), speed.first()) {
+                    (Some(x), Some(x0)) => Some(x < x0.1),
+                    _ => None,
+                },
+                json!({"at_s": t20}),
+            ));
+            let power = s("generator_power_w", 0);
+            let ok = i.gcb_open.map(|g| {
+                power
+                    .iter()
+                    .filter(|(t, _)| *t < g - 1e-9)
+                    .all(|(_, x)| *x > 0.)
+                    && power
+                        .iter()
+                        .filter(|(t, _)| *t > g + 1e-9)
+                        .all(|(_, x)| *x == 0.)
+            });
+            lines.push(line(
+                "generator export -> 0 at the breaker",
+                ok,
+                json!({"gcb_open_s": i.gcb_open}),
+            ));
+        }
+        Case::C3 => {
+            let d = &spec["networkProbeDirections"];
+            let trip = i.reactor_trip;
+            let idle = span_series(i, "idle_branch_kg_s", 0, 0., e);
+            let reversal = idle.iter().find(|(_, x)| *x < 0.).map(|p| p.0);
+            lines.push(line("idle branch reverses", idle.first().map(|f| f.1 > 0. && reversal.is_some()), json!({"face": "PUMP.A1->COLD.A", "reversal_s": reversal, "probe_s": d["idleBranchReversal_s"]})));
+            let rotor: Vec<(f64, f64)> = i
+                .rotors
+                .iter()
+                .map(|(t, m)| (t - i.zero, m.first().copied().unwrap_or(f64::NAN)))
+                .filter(|(t, _)| *t >= -1e-9 && *t <= e + 1e-9)
+                .collect();
+            lines.push(line(
+                "idle pump slows",
+                falls(&rotor),
+                json!({"probe_rad_s": d["idlePumpSpeed_rad_s"]}),
+            ));
+            lines.push(line(
+                "no reverse rotation",
+                (!rotor.is_empty()).then(|| rotor.iter().all(|(_, x)| *x >= 0.)),
+                json!(null),
+            ));
+            lines.push(json!({"id": "no chattering", "verdict": i.chatter["verdict"], "detail": i.chatter}));
+            lines.push(json!({"id": "donor flips", "verdict": "reported", "detail": {"run": i.donor_flips, "probe": d["donorFlips"]}}));
+            let t_end = trip.unwrap_or(e).min(e);
+            let upto = |k: &str, j: usize| span_series(i, k, j, 0., t_end);
+            lines.push(line(
+                "loop A falls (to the trip)",
+                falls(&upto("loop_flow_kg_s", 0)),
+                json!(null),
+            ));
+            lines.push(line(
+                "loop B rises (to the trip)",
+                falls(&upto("loop_flow_kg_s", 1)).map(|f| !f),
+                json!({"slightly": "reported"}),
+            ));
+            let core: Vec<(f64, f64)> = upto("loop_flow_kg_s", 0)
+                .iter()
+                .zip(upto("loop_flow_kg_s", 1))
+                .map(|(a, b)| (a.0, a.1 + b.1))
+                .collect();
+            lines.push(line(
+                "core flow falls (sum of the loop flows, S3-D50)",
+                falls(&core),
+                json!(null),
+            ));
+            for j in 0..instances(i, "hot_leg_k") {
+                lines.push(line(
+                    &format!("T_hot[{j}] rises before the trip"),
+                    falls(&upto("hot_leg_k", j)).map(|f| !f),
+                    json!(null),
+                ));
+            }
+            let dt: Vec<(f64, f64)> = upto("core_outlet_k", 0)
+                .iter()
+                .zip(upto("core_inlet_k", 0))
+                .map(|(a, b)| (a.0, a.1 - b.1))
+                .collect();
+            lines.push(line(
+                "core dT rises before the trip",
+                falls(&dt).map(|f| !f),
+                json!(null),
+            ));
+            let duty: Vec<(f64, f64)> = upto("sg_metal_heat_w", 0)
+                .iter()
+                .zip(upto("sg_metal_heat_w", 1))
+                .map(|(a, b)| (a.0, a.1 / b.1))
+                .collect();
+            lines.push(line(
+                "SG-A duty falls against SG-B",
+                falls(&duty),
+                json!(null),
+            ));
+            for (k, name) in [("core_power_w", "power"), ("average_coolant_k", "T_avg")] {
+                let after = trip.map(|t| span_series(i, k, 0, t, e));
+                lines.push(match after {
+                    Some(s) => line(&format!("{name} falls after the trip"), falls(&s), json!(null)),
+                    None => json!({"id": format!("{name} falls after the trip"), "verdict": "not applicable", "detail": "no reactor trip"}),
+                });
+            }
+        }
+    }
+    let verdict = overall_of(
+        lines
+            .iter()
+            .map(|l| l["verdict"].as_str().unwrap_or("?"))
+            .filter(|v| *v != "reported"),
+    );
+    json!({"family": "B directions", "verdict": verdict, "rule": "S3-D50: the signed draft (lanes/s3gates/b-directions-draft.md) over the declared part [0, rule I's end]; magnitudes reported", "lines": lines})
+}
+
+/// SS-1's signal set as S3-D51 names it: (credited key, is a temperature).
+pub const SS1_SIGNALS: [(&str, bool); 11] = [
+    ("hot_leg_k", true),
+    ("cold_leg_k", true),
+    ("average_coolant_k", true),
+    ("core_power_w", false),
+    ("pzr_roof_pa", false),
+    ("sg_pressure_pa", false),
+    ("loop_flow_kg_s", false),
+    ("steam_flow_kg_s", false),
+    ("generator_power_w", false),
+    // Reported beside the judged set (r3 names it; S3-D51 does not).
+    ("core_outlet_k", true),
+    ("core_inlet_k", true),
+];
+
+/// C1's SS-1 (S3-D51): over `ss1Duration_s` on the 0.1 s output grid, the
+/// range of each 2 Hz-filtered signal against its bound (temperatures:
+/// `ss1TemperatureRange_K`; the rest: `ss1OtherRangeFractionOfMean` of the
+/// mean). Judged on S3-D51's named signals (per-loop hot and cold legs,
+/// average coolant, core power, PT1, each SG pressure, each loop flow, each
+/// steam flow at the main-steam pickup, generator power); the core outlet
+/// and inlet are reported. A missing signal or a shorter run is not
+/// executable. Provisional (this Mac, F1).
 pub fn ss1(
     spec: &Value,
     run_s: f64,
@@ -494,9 +779,12 @@ pub fn ss1(
     ) else {
         return json!({"family": "C1 SS-1", "verdict": "not executable", "reason": "the block declares no SS-1 bounds"});
     };
+    let judged: Vec<&str> = SS1_SIGNALS[..9].iter().map(|(k, _)| *k).collect();
     let mut out = serde_json::Map::new();
     let mut within = true;
+    let mut missing: Vec<&str> = judged.clone();
     for (k, is_temperature, x) in series {
+        let key = k.split('[').next().unwrap_or(k);
         if x.len() < 3 {
             continue;
         }
@@ -512,23 +800,25 @@ pub fn ss1(
         } else {
             ((hi - lo) / mean.abs(), other)
         };
-        within &= value <= bound;
-        out.insert(
-            k.clone(),
-            json!({"range": value, "bound": bound, "relative": !is_temperature}),
-        );
+        let is_judged = judged.contains(&key);
+        if is_judged {
+            within &= value <= bound;
+            missing.retain(|m| *m != key);
+        }
+        out.insert(k.clone(), json!({"range": value, "bound": bound, "relative": !is_temperature, "judged": is_judged, "samples": x.len()}));
     }
-    let complete = declared.is_some_and(|d| run_s >= d - 1e-9);
-    // The declared temperatures (core outlet, hot and cold legs) and the
-    // steam flows have no declared signal: SS-1 is not executable until
-    // they do, whatever the duration.
-    let mapped = false;
-    json!({"family": "C1 SS-1", "verdict": if !complete || !mapped { "not executable as declared" } else if within { "pass" } else { "fail" },
-        "unmapped_declared_signals": ["core outlet temperature", "hot-leg temperature", "cold-leg temperature", "each steam flow"],
-        "declared_duration_s": declared, "run_s": run_s, "within_over_the_run": within,
-        "reason": if !complete { "SS-1 is declared over 3,600 s (on the Linux host, owner F1 open); the ranges over this run are reported" } else { "the declared core outlet, hot-leg and cold-leg temperatures and steam flows have no declared signal (no credited output); the mapped ranges are reported" },
-        "unmapped": "core outlet, hot-leg and cold-leg temperatures and the steam flows are not credited outputs (no declared signal map); reported: average coolant, core power, PT1, SG pressures, loop flows, generator power",
-        "threshold_source": "ld01-s3-cases-c1c3 cases.C1.ss1*", "outputs": out})
+    let complete = declared.is_some_and(|d| run_s >= d - 1e-6);
+    let verdict = if !complete || !missing.is_empty() {
+        "not executable as declared"
+    } else if within {
+        "pass"
+    } else {
+        "fail"
+    };
+    json!({"family": "C1 SS-1", "verdict": verdict, "label": PROVISIONAL,
+        "rule": "S3-D51: 2 Hz-filtered ranges on the 0.1 s output grid over ss1Duration_s; temperatures in K, the rest relative to the mean",
+        "declared_duration_s": declared, "run_s": run_s, "grid_s": dt, "missing_signals": missing, "within": within,
+        "threshold_source": "ld01-s3-cases-c1c3 cases.C1.ss1*; signals S3-D51", "outputs": out})
 }
 
 /// C1's SS-2 on the conservation record: the identities closing the heat
@@ -985,40 +1275,6 @@ mod tests {
     }
 
     #[test]
-    fn the_jump_detector_flags_kinks_and_maps_them_to_instants() {
-        let t: Vec<f64> = (0..101).map(|k| k as f64 * 0.01).collect();
-        // A ramp with a slope change at 0.5 s: one flagged sample there.
-        let x: Vec<f64> = t
-            .iter()
-            .map(|s| if *s <= 0.5 { *s } else { 0.5 + 3. * (s - 0.5) })
-            .collect();
-        let f = jumps(&t, &x, 50.);
-        assert_eq!(f.len(), 1);
-        assert!((f[0].0 - 0.5).abs() < 1e-12, "{f:?}");
-        // A smooth parabola is never flagged at a threshold above 2.
-        let p: Vec<f64> = t.iter().map(|s| s * s).collect();
-        assert!(jumps(&t, &p, 2.5).is_empty());
-        assert!(unmapped(&f, &[0.505], 0.01).is_empty());
-        assert_eq!(unmapped(&f, &[0.7], 0.01).len(), 1);
-        // Without a declared detector, rule F is not executable; with one
-        // and an unmapped jump it fails.
-        let signals = vec![("x".to_string(), x.clone())];
-        assert_eq!(
-            smoothness(&json!({}), &json!({}), &signals, &t, &[])["verdict"],
-            "not executable"
-        );
-        let declared = json!({"smoothness": {"threshold": {"x": 50.}, "reach_s": 0.01}});
-        assert_eq!(
-            smoothness(&declared, &json!({}), &signals, &t, &[0.7])["verdict"],
-            "fail"
-        );
-        assert_eq!(
-            smoothness(&declared, &json!({}), &signals, &t, &[0.5])["verdict"],
-            "pass"
-        );
-    }
-
-    #[test]
     fn repeatability_is_bitwise_on_one_host() {
         let a = json!({"fingerprint": "00ff", "samples": 3, "end_state_fingerprint": "aa", "instants": [1], "counts_by_class": {}});
         assert_eq!(repeatability(&a, &a)["verdict"], "pass");
@@ -1051,58 +1307,276 @@ mod tests {
         assert_eq!(s["verdict"], "not executable");
     }
 
+    type Signals = [(&'static str, Vec<Box<dyn Fn(f64) -> f64>>)];
+
+    /// A synthetic credited record on a 0.1 s grid from `zero`.
+    fn record(zero: f64, n: usize, signals: &Signals) -> crate::compare::Credited {
+        let mut c = crate::compare::Credited::default();
+        for k in 0..=n {
+            let t = k as f64 * 0.1;
+            let sample: Vec<(&str, Vec<f64>)> = signals
+                .iter()
+                .map(|(key, fs)| (*key, fs.iter().map(|f| f(t)).collect()))
+                .collect();
+            c.push(zero + t, &sample).unwrap();
+        }
+        c
+    }
+    fn f(g: impl Fn(f64) -> f64 + 'static) -> Box<dyn Fn(f64) -> f64> {
+        Box::new(g)
+    }
+
     #[test]
-    fn c3_directions_judge_the_declared_signs_only() {
-        let spec = json!({"networkProbeDirections": {"idlePumpSpeed_rad_s": [157, 29.3], "reverseRotation": false, "idleBranchReversal_s": 21.6, "donorFlips": 10, "chattering": false}});
-        let slowing: Vec<(f64, Vec<f64>)> = (0..10)
-            .map(|k| (k as f64, vec![100. - 9. * k as f64, 50.]))
+    fn rule_f_flags_a_kink_and_maps_it_to_a_logged_instant() {
+        let t: Vec<f64> = (0..=1000).map(|k| k as f64 * 0.002).collect();
+        // A pressure ramp whose slope steps by 10 kPa/s at 1.0 s: second
+        // difference 10e3 * 0.002 = 20 Pa against 4 tau = 4 (1e-5 * 1.5e7 * 0 + 2) = 8 Pa.
+        let x: Vec<f64> = t
+            .iter()
+            .map(|s| 1.5e7 + if *s > 1. { 1e4 * (s - 1.) } else { 0. })
             .collect();
-        let d = directions(Case::C3, &spec, Some(0), &slowing);
-        assert_eq!(d["lines"][0]["verdict"], "pass");
-        assert_eq!(d["lines"][1]["verdict"], "pass");
+        let sig = vec![("pzr_roof_pa".to_string(), x.clone(), 2.)];
+        let r = smoothness_signed(&t, &sig, 0., &[1.0]);
+        assert_eq!(r["verdict"], "pass", "{r}");
+        assert_eq!(r["flagged"], 1);
+        let r = smoothness_signed(&t, &sig, 0., &[1.5]);
+        assert_eq!(r["verdict"], "fail");
+        assert_eq!(r["unmapped"], 1);
+        // Within 4 tau (the relative class at 1e-5 * 1.5e7 = 150 Pa) nothing flags.
+        assert_eq!(smoothness_signed(&t, &sig, 1e-5, &[])["flagged"], 0);
+        // A smooth parabola (second difference 2 h^2 = 8e-6) flags only
+        // below its class: none at a_x = 1e-5, every sample at 1e-6.
+        let p: Vec<f64> = t.iter().map(|s| s * s).collect();
         assert_eq!(
-            d["verdict"], "incomplete",
-            "the branch reversal is not executable"
+            smoothness_signed(&t, &[("q".into(), p.clone(), 1e-5)], 0., &[])["verdict"],
+            "pass"
         );
-        let reversing: Vec<(f64, Vec<f64>)> = (0..10)
-            .map(|k| (k as f64, vec![10. - 3. * k as f64]))
-            .collect();
         assert_eq!(
-            directions(Case::C3, &spec, Some(0), &reversing)["verdict"],
+            smoothness_signed(&t, &[("q".into(), p, 1e-6)], 0., &[])["verdict"],
             "fail"
         );
         assert_eq!(
-            directions(Case::C2, &spec, None, &[])["verdict"],
+            smoothness_signed(&t, &[], 1e-5, &[])["verdict"],
             "not executable"
         );
+    }
+
+    #[test]
+    fn chattering_follows_its_rule_as_data() {
+        let change = |t: f64, path: u64, locked: bool| json!({"t_s": t, "restart": {"transactions": [{"changes": [{"path": path, "after": if locked { json!({"Locked": "To"}) } else { json!("Free") }}]}]}});
+        let log = vec![
+            change(1., 5, true),
+            change(2., 5, false),
+            change(4., 5, true),
+            change(3., 7, true),
+        ];
+        let rule: Value = serde_json::from_str(DEFAULT_CHATTER_RULE).unwrap();
+        let c = chattering(&log, &rule);
+        assert_eq!(c["verdict"], "fail", "{c}");
+        assert_eq!(c["relocks"], 1);
+        // The same log under a swapped definition: relocks within 1 s only.
+        let within =
+            json!({"criterion": "relock_after_release", "max_relocks": 0, "within_s": 1.0});
+        assert_eq!(chattering(&log, &within)["verdict"], "pass");
+        // Or a tolerance of one relock.
+        let tolerant =
+            json!({"criterion": "relock_after_release", "max_relocks": 1, "within_s": null});
+        assert_eq!(chattering(&log, &tolerant)["verdict"], "pass");
+        assert_eq!(chattering(&log[..1], &rule)["verdict"], "pass");
         assert_eq!(
-            directions(Case::C1, &spec, None, &[])["verdict"],
+            chattering(&log, &json!({"criterion": "other"}))["verdict"],
+            "not executable"
+        );
+    }
+
+    #[test]
+    fn c2_directions_are_signed_checks_on_the_signals() {
+        let zero = 500.;
+        let good = record(
+            zero,
+            300,
+            &[
+                ("core_power_w", vec![f(|t| 3e9 * (-t).exp() + 1e8)]),
+                ("hot_leg_k", vec![f(|t| 600. - t), f(|t| 600. - t)]),
+                ("fuel_doppler_k", vec![f(|t| 900. - t)]),
+                ("average_coolant_k", vec![f(|t| 575. - 0.5 * t)]),
+                (
+                    "cold_leg_k",
+                    vec![f(|t| 560. + t * (5. - t)), f(|t| 560. + t * (5. - t))],
+                ),
+                ("pzr_roof_pa", vec![f(|t| 1.5e7 + 1e5 * t * (3. - t))]),
+                ("pzr_level_m", vec![f(|t| 4. + 1. / (1. + t))]),
+                (
+                    "sg_pressure_pa",
+                    vec![
+                        f(|t| 6.3e6 + 1e5 * t.min(5.)),
+                        f(|t| 6.3e6 + 1e5 * t.min(5.)),
+                    ],
+                ),
+                (
+                    "sg_liquid_m3",
+                    vec![
+                        f(|t| 100. - 10. * t * (-t / 3.).exp()),
+                        f(|t| 100. - 10. * t * (-t / 3.).exp()),
+                    ],
+                ),
+                (
+                    "loop_flow_kg_s",
+                    vec![f(|t| {
+                        if (0.4..0.8).contains(&t) {
+                            9000.
+                        } else {
+                            9300.
+                        }
+                    })],
+                ),
+                ("turbine_speed_rad_s", vec![f(|t| 157. - 0.1 * t)]),
+                (
+                    "generator_power_w",
+                    vec![f(|t| if t <= 0.3 { 1e9 } else { 0. })],
+                ),
+            ],
+        );
+        let rotors: Vec<(f64, Vec<f64>)> = Vec::new();
+        let inputs = DirectionInputs {
+            credited: &good,
+            zero,
+            end: 30.,
+            reactor_trip: Some(0.15),
+            gcb_open: Some(0.3),
+            sg_relief: vec![
+                ("A".into(), 1, 1.6),
+                ("A".into(), -1, 2.5),
+                ("B".into(), 1, 1.6),
+                ("B".into(), -1, 2.6),
+            ],
+            rotors: &rotors,
+            chatter: json!({"verdict": "pass"}),
+            donor_flips: 0,
+        };
+        let spec = json!({"lines": {"O3": {"window_s": [0.3, 0.85]}}});
+        let d = directions(Case::C2, &spec, &inputs);
+        let failing: Vec<&Value> = d["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|l| l["verdict"] != "pass")
+            .collect();
+        assert!(failing.is_empty(), "{failing:?}");
+        assert_eq!(d["verdict"], "pass");
+        // Core power that rises fails.
+        let bad = record(zero, 300, &[("core_power_w", vec![f(|t| 3e9 + t)])]);
+        let inputs = DirectionInputs {
+            credited: &bad,
+            ..inputs
+        };
+        let d = directions(Case::C2, &spec, &inputs);
+        assert_eq!(d["verdict"], "fail");
+        assert_eq!(
+            directions(Case::C1, &spec, &inputs)["verdict"],
             "not applicable"
         );
     }
 
     #[test]
-    fn ss1_is_judged_only_over_its_declared_duration() {
+    fn c3_directions_include_the_idle_branch_and_the_chatter_rule() {
+        let zero = 10.;
+        let c = record(
+            zero,
+            300,
+            &[
+                ("idle_branch_kg_s", vec![f(|t| 4600. - 400. * t)]),
+                (
+                    "loop_flow_kg_s",
+                    vec![f(|t| 9300. - 100. * t), f(|t| 9300. + 10. * t)],
+                ),
+                (
+                    "hot_leg_k",
+                    vec![f(|t| 593. + 0.1 * t), f(|t| 593. + 0.1 * t)],
+                ),
+                ("core_outlet_k", vec![f(|t| 595. + 0.2 * t)]),
+                ("core_inlet_k", vec![f(|_| 563.)]),
+                (
+                    "sg_metal_heat_w",
+                    vec![f(|t| 1.5e9 - 1e7 * t), f(|_| 1.5e9)],
+                ),
+                (
+                    "core_power_w",
+                    vec![f(|t| if t < 12. { 3e9 } else { 3e8 - t })],
+                ),
+                (
+                    "average_coolant_k",
+                    vec![f(|t| if t < 12. { 578. } else { 578. - t })],
+                ),
+            ],
+        );
+        let rotors: Vec<(f64, Vec<f64>)> = (0..=300)
+            .map(|k| (zero + k as f64 * 0.1, vec![1000. - 3. * k as f64]))
+            .collect();
+        let spec = json!({"networkProbeDirections": {"idleBranchReversal_s": 21.6, "idlePumpSpeed_rad_s": [157, 29.3], "donorFlips": 10}});
+        let inputs = DirectionInputs {
+            credited: &c,
+            zero,
+            end: 30.,
+            reactor_trip: Some(12.),
+            gcb_open: None,
+            sg_relief: Vec::new(),
+            rotors: &rotors,
+            chatter: json!({"verdict": "pass"}),
+            donor_flips: 3,
+        };
+        let d = directions(Case::C3, &spec, &inputs);
+        let failing: Vec<&Value> = d["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|l| !matches!(l["verdict"].as_str(), Some("pass" | "reported")))
+            .collect();
+        assert!(failing.is_empty(), "{failing:?}");
+        assert_eq!(d["verdict"], "pass");
+        // Chattering fails the case; a reversing rotor fails it too.
+        let inputs2 = DirectionInputs {
+            chatter: json!({"verdict": "fail"}),
+            ..inputs
+        };
+        assert_eq!(directions(Case::C3, &spec, &inputs2)["verdict"], "fail");
+        let spinning: Vec<(f64, Vec<f64>)> = (0..=300)
+            .map(|k| (zero + k as f64 * 0.1, vec![100. - 3. * k as f64]))
+            .collect();
+        let inputs3 = DirectionInputs {
+            rotors: &spinning,
+            chatter: json!({"verdict": "pass"}),
+            ..inputs2
+        };
+        assert_eq!(directions(Case::C3, &spec, &inputs3)["verdict"], "fail");
+    }
+
+    #[test]
+    fn ss1_judges_the_named_signals_over_its_declared_duration() {
         let spec = json!({"ss1Duration_s": 3600, "ss1TemperatureRange_K": 0.6, "ss1OtherRangeFractionOfMean": 0.02});
-        let flat: Vec<f64> = vec![570.; 2000];
-        let series = vec![
-            ("average_coolant_k".to_string(), true, flat.clone()),
-            ("core_power_w".to_string(), false, vec![3e9; 2000]),
-        ];
-        let s = ss1(&spec, 600., &series, 0.002, 2.);
-        assert_eq!(s["verdict"], "not executable as declared");
-        assert_eq!(s["within_over_the_run"], true);
-        // Unmapped declared signals keep it not executable at 3,600 s too.
+        let flat = |v: f64| vec![v; 2000];
+        let mut series: Vec<(String, bool, Vec<f64>)> = SS1_SIGNALS
+            .iter()
+            .map(|(k, temperature)| {
+                (
+                    format!("{k}[0]"),
+                    *temperature,
+                    flat(if *temperature { 570. } else { 1e6 }),
+                )
+            })
+            .collect();
+        assert_eq!(ss1(&spec, 3600., &series, 0.1, 2.)["verdict"], "pass");
         assert_eq!(
-            ss1(&spec, 3600., &series, 0.002, 2.)["verdict"],
+            ss1(&spec, 600., &series, 0.1, 2.)["verdict"],
             "not executable as declared"
         );
-        let wide: Vec<f64> = (0..2000).map(|k| 570. + k as f64 * 1e-3).collect();
-        let series = vec![("average_coolant_k".to_string(), true, wide)];
-        assert_eq!(
-            ss1(&spec, 3600., &series, 0.002, 2.)["within_over_the_run"],
-            false
-        );
+        // A cold leg wandering 1 K fails; a missing steam flow is not executable.
+        series[1].2 = (0..2000).map(|k| 570. + k as f64 * 5e-4).collect();
+        assert_eq!(ss1(&spec, 3600., &series, 0.1, 2.)["verdict"], "fail");
+        series.retain(|(k, _, _)| !k.starts_with("steam_flow"));
+        let r = ss1(&spec, 3600., &series, 0.1, 2.);
+        assert_eq!(r["verdict"], "not executable as declared");
+        assert_eq!(r["missing_signals"], json!(["steam_flow_kg_s"]));
     }
 
     #[test]
