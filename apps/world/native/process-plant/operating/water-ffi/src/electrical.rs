@@ -28,8 +28,8 @@
 //!   class R by S3-D4 (a command and a breaker request at one instant).
 //!
 //! No exchange law (the Grid side's): the boundary is the held stiff bus of
-//! the slice's inputs, and the carrier a continuous input of its angle row
-//! (owner decision D2).
+//! the slice's inputs, and the carrier a continuous, smooth input of its
+//! angle row (owner decisions D2 and R6-K SW-1).
 use crate::{
     frame::{Action, Change, Class, Client, Dense},
     ida::{Failure, KluOrdering, System},
@@ -447,7 +447,7 @@ impl<S: JoinedSystem> System for Electrified<S> {
         self.inner.residual(t, &y[..n], &yp[..n], &mut out[..n])?;
         self.admitted(t).map_err(Failure::Fatal)?;
         self.slice
-            .rows(&y[n..], &yp[n..], &mut out[n..])
+            .rows(t, &y[n..], &yp[n..], &mut out[n..])
             .map_err(Failure::Fatal)
     }
     #[allow(clippy::too_many_arguments)]
@@ -617,7 +617,7 @@ impl<S: JoinedSystem> JoinedSystem for Electrified<S> {
         yp: &mut [f64],
     ) -> Result<Vec<f64>, String> {
         self.admitted(t)?;
-        self.slice.consistent(y, yp)?;
+        self.slice.consistent(t, y, yp)?;
         Ok(self.slice.differential().to_vec())
     }
     fn appended_next_event(&self, t: f64) -> Option<f64> {

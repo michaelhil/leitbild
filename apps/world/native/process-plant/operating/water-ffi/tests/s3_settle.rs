@@ -278,6 +278,8 @@ fn electrical(
             v_line,
             f_grid_hz: f0,
             carrier_rad_s: slice::prepared_carrier(f0),
+            carrier_accel_rad_s2: 0.,
+            carrier_from_s: t0,
             admitted_kg_s: 0.,
             field_v: f(e, &["prepared", "fieldDemand_V"]),
             room_k: room,

@@ -23,7 +23,7 @@ const positive=z.number().finite().positive()
 export const electricalOwners={
   generator:{page:'systems/electrical/generator-and-synchronization.md'},
   switching:{page:'systems/electrical/generator-and-synchronization.md',heading:'Breaker movement and passive opening',fence:'ld01-generator-switching'},
-  /** Owner decision D2 (15 Oct 2026): the carrier as a continuous input, no per-boundary angle conversion. */
+  /** Owner decisions D2 and R6-K SW-1 (15 Oct 2026): the carrier as a continuous, smooth input (frequency and its rate held per interval), no per-boundary angle conversion. */
   carrier:{page:'systems/electrical/generator-and-synchronization.md',heading:'External carrier and operating Grid join',fence:'ld01-generator-carrier'},
   /** The field controller's field-supply-loss protection (generator OPEN plus turbine trip): its reports' timing. */
   fieldProtection:{page:'systems/electrical/generator-and-synchronization.md',heading:'Field-supply loss and control-power failure',fence:'ld01-generator-field-protection'},
@@ -40,7 +40,7 @@ const switchingSchema=z.object({breakerTravel_s:positive,breakerClosingWork_J:po
   fieldConverterEfficiency:positive.max(1)}).strict()
   .refine(s=>s.breakerSpringStock_J<=s.breakerClosingWork_J,'The stocked spring energy cannot exceed the closing work')
 /** D2's selection: the native machine owner implements exactly these values and refuses a packet without them. */
-const carrierSchema=z.object({angleReference:z.literal('continuousCarrier'),rateInput:z.literal('heldPerInterval'),
+const carrierSchema=z.object({angleReference:z.literal('continuousCarrier'),rateInput:z.literal('frequencyAndRatePerInterval'),
   reconciliation:z.literal('phaseErrorAsRateOverNextInterval'),boundaryConversion:z.literal('none'),rateChangeClass:z.literal('S3-D4')}).strict()
 /** Whole-frame report timing on the I&C's 0.1 s frame is the runtime's check; here: positive sampling/transport,
  * an age at least one transport, and no additional qualification (the page selects none). */

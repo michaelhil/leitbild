@@ -395,7 +395,7 @@ fn s3_z6_at_a_saved_s3_state() {
     // The held pencil and the state's residual (the slice's own rows).
     let mut f_slice = vec![0.; slice::N];
     elec.slice
-        .rows(&elec.y, &elec.yp, &mut f_slice)
+        .rows(t, &elec.y, &elec.yp, &mut f_slice)
         .expect("slice rows");
     let f_state = [residual(&mut joined, t, &y, &yp).as_slice(), &f_slice].concat();
     let ids_held = [joined.differential(&network_ids).as_slice(), &slice_ids].concat();

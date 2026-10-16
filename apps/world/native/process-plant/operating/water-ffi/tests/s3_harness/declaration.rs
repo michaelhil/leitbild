@@ -1,6 +1,8 @@
-//! The S3 cases' declaration (`ld01-s3-cases-c1c3`) as data: the block, its
-//! pin against the decision log's last RP1 row naming it, the TBD register,
-//! and the refusals of one case.
+//! The S3 cases' declaration (`ld01-s3-cases-c1c3`; C5's own
+//! `ld01-s3-cases-c5`, C5L) as data: the block, its pin against the
+//! decision log's last RP1 row naming it, the TBD register, and the
+//! refusals of one case. C5's block holds the common rules under
+//! `commonRules` ([`Declaration::common`]).
 //!
 //! The page is `LD01_S3_DECLARATION` (a markdown file holding the block),
 //! else the wiki's `build-readiness.md` under `LD01_WIKI_ROOT`; the log is
@@ -18,6 +20,7 @@ pub enum Case {
     C1,
     C2,
     C3,
+    C5,
 }
 
 impl Case {
@@ -26,7 +29,8 @@ impl Case {
             "C1" => Ok(Self::C1),
             "C2" => Ok(Self::C2),
             "C3" => Ok(Self::C3),
-            other => Err(format!("case {other}: C1, C2 or C3")),
+            "C5" => Ok(Self::C5),
+            other => Err(format!("case {other}: C1, C2, C3 or C5")),
         }
     }
     pub fn key(self) -> &'static str {
@@ -34,6 +38,14 @@ impl Case {
             Self::C1 => "C1",
             Self::C2 => "C2",
             Self::C3 => "C3",
+            Self::C5 => "C5",
+        }
+    }
+    /// The block that declares the case.
+    pub fn fence(self) -> &'static str {
+        match self {
+            Self::C5 => super::c5::FENCE,
+            _ => FENCE,
         }
     }
 
@@ -49,6 +61,10 @@ impl Case {
             // a section without it leaves its lines not executable, judged
             // per line from the protection's own function list.
             Self::C2 | Self::C3 => Vec::new(),
+            // C5's exchange partner is the test-only Grid stand-in (owner
+            // R5-F4), its C5 plan reproduced in-process (disclosed in the
+            // receipt, not a model prerequisite).
+            Self::C5 => Vec::new(),
         }
     }
 }
@@ -62,12 +78,21 @@ pub struct Declaration {
 
 impl Declaration {
     pub fn load() -> Result<Self, String> {
+        Self::load_fence(FENCE)
+    }
+
+    /// The declaration of `case` (its own block for C5).
+    pub fn load_case(case: Case) -> Result<Self, String> {
+        Self::load_fence(case.fence())
+    }
+
+    fn load_fence(fence: &str) -> Result<Self, String> {
         let page = std::env::var("LD01_S3_DECLARATION")
             .unwrap_or_else(|_| format!("{}/build-readiness.md", wiki_model()));
         let log_page = std::env::var("LD01_S3_DECISION_LOG")
             .unwrap_or_else(|_| format!("{}/decision-log.md", wiki_model()));
         Ok(Self {
-            block: Block::from_page(&page, FENCE)?,
+            block: Block::from_page(&page, fence)?,
             log: std::fs::read_to_string(&log_page).ok(),
             log_page,
         })
@@ -90,6 +115,15 @@ impl Declaration {
         Ok(case_refusals(case, &pin, &tbd))
     }
 
+    /// A common rule's pointer: C5's block holds them under `commonRules`.
+    pub fn common(&self, pointer: &str) -> String {
+        if self.block.fence == super::c5::FENCE {
+            format!("/commonRules{pointer}")
+        } else {
+            pointer.to_string()
+        }
+    }
+
     /// The case's section of the block (`cases.<C>`).
     pub fn case(&self, case: Case) -> Value {
         self.block.whole(&format!("/cases/{}", case.key()))
@@ -101,8 +135,10 @@ pub fn case_refusals(case: Case, pin: &Value, tbd: &Value) -> Vec<String> {
     let mut out = Vec::new();
     if pin["pinned"] != json!(true) {
         out.push(format!(
-            "{FENCE} is not pinned: declared sha256 {} against the frozen {}",
-            pin["declared_sha256"], pin["frozen_sha256"]
+            "{} is not pinned: declared sha256 {} against the frozen {}",
+            case.fence(),
+            pin["declared_sha256"],
+            pin["frozen_sha256"]
         ));
     }
     let own = format!("cases.{}.", case.key());

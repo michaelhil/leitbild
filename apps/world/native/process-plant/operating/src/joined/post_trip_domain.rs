@@ -180,26 +180,36 @@ fn static_operator(
     let n = model.state_dimension();
     let mut nn = vec![0.; r * r];
     let mut decay = vec![0.; n - r];
-    let mut births: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n - r];
-    let mut returns: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n - r];
+    // HOOK (COST2, for KERN2): each precursor's births (its row from a
+    // neutron column) and returns (a neutron row from its column) kept flat
+    // in emission order, then grouped per precursor by a stable counting
+    // pass (no per-precursor vectors). Every sum below takes the same terms
+    // in the same order as the per-precursor lists did: bitwise the same
+    // operator.
+    // One birth and one return per support and delayed group.
+    let entries = model.support_count() * kinetics::DELAYED_GROUPS;
+    let mut births: Vec<(usize, usize, f64)> = Vec::with_capacity(entries);
+    let mut returns: Vec<(usize, usize, f64)> = Vec::with_capacity(entries);
     let mut coupled = false;
     model.state_jacobian_entries(inputs, |row, column, value| match (row < r, column < r) {
         (true, true) => nn[column * r + row] += value,
-        (false, true) => births[row - r].push((column, value)),
-        (true, false) => returns[column - r].push((row, value)),
+        (false, true) => births.push((row - r, column, value)),
+        (true, false) => returns.push((column - r, row, value)),
         (false, false) if row == column => decay[row - r] += value,
         (false, false) => coupled = true,
     })?;
     if coupled {
         return Err(Error::Operator("precursor rows couple to each other"));
     }
-    for c in 0..n - r {
-        let lambda = -decay[c];
+    let births = grouped(n - r, &births);
+    let returns = grouped(n - r, &returns);
+    for (c, d) in decay.iter().enumerate() {
+        let lambda = -d;
         if !(lambda.is_finite() && lambda > 0.) {
             return Err(Error::Operator("precursor without a positive decay"));
         }
-        for &(i, w) in &returns[c] {
-            for &(j, b) in &births[c] {
+        for &(i, w) in returns.of(c) {
+            for &(j, b) in births.of(c) {
                 nn[j * r + i] += w * b / lambda;
             }
         }
@@ -215,6 +225,34 @@ fn static_operator(
         }
     }
     Ok(nn)
+}
+
+/// HOOK (COST2): entries `(group, index, value)` grouped by `group` in
+/// their original order within each group (a stable counting sort).
+struct Grouped {
+    start: Vec<usize>,
+    entries: Vec<(usize, f64)>,
+}
+impl Grouped {
+    fn of(&self, group: usize) -> &[(usize, f64)] {
+        &self.entries[self.start[group]..self.start[group + 1]]
+    }
+}
+fn grouped(groups: usize, flat: &[(usize, usize, f64)]) -> Grouped {
+    let mut start = vec![0usize; groups + 1];
+    for &(g, _, _) in flat {
+        start[g + 1] += 1;
+    }
+    for g in 0..groups {
+        start[g + 1] += start[g];
+    }
+    let mut next = start.clone();
+    let mut entries = vec![(0usize, 0.); flat.len()];
+    for &(g, k, v) in flat {
+        entries[next[g]] = (k, v);
+        next[g] += 1;
+    }
+    Grouped { start, entries }
 }
 
 /// Pivots of the Z-matrix `-m` (column-major `r x r`) by elimination without
