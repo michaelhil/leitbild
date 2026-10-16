@@ -128,7 +128,19 @@ pub fn cost(
     );
     match case {
         Case::C1 => entry("cost.s2_quiet", "s2Quiet", 0., last, last),
-        Case::C2 | Case::C3 | Case::C4 => {
+        Case::C2 | Case::C3 | Case::C4 | Case::C5 => {
+            if case == Case::C5 {
+                // C5L: the run from its start (the 10.37 s before the
+                // offsite loss included), beside S3GATES's span from zero.
+                let first = marks.first().map_or(0., |m| m.0);
+                entry(
+                    "cost.s3_unit_from_start",
+                    "s3UnitRecurringIncludingEvents",
+                    first,
+                    last,
+                    last,
+                );
+            }
             if let Some(w) = window {
                 entry("cost.s2_window", "s2WindowAndRecovery", 0., w, w);
                 // S2's H1: each event window plus its recovery.
@@ -525,6 +537,10 @@ pub fn directions(case: Case, spec: &Value, i: &DirectionInputs) -> Value {
     match case {
         Case::C1 => {
             return json!({"family": "B directions", "verdict": "not applicable", "reason": "C1 is a hold: no direction is declared"});
+        }
+        Case::C5 => {
+            return json!({"family": "B directions", "verdict": "not executable",
+                "reason": "C5's directions are judged by s3_harness::c5::directions"});
         }
         Case::C4 => {
             return json!({"family": "B directions", "verdict": "not executable",

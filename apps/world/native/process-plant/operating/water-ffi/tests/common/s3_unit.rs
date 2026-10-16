@@ -339,18 +339,9 @@ pub fn compose_with<J: JoinedSystem>(
         1e-8 * tail[slice::BODY],
     ];
     // S3-D23 declares the electrical budgets (10 A, 1 MW) for S3-D16.
-    // DR-C2-IEQ: S3-D16 with the per-step errors' accumulation over the
-    // fastest credited transient, the STOP ramp, at the event window's cap.
-    let ramp_s = f(&e, &["steamValveTravel", "turbineStop_s"]);
-    let window_cap_s = spine::z1::s1_gates()["eventWindow"]["maxStep_s"]
-        .as_f64()
-        .expect("ld01-s1-gates eventWindow.maxStep_s");
     let budget = CreditedBudget {
         ieq_a: 10.,
         export_w: 1e6,
-        accumulation_steps: (ramp_s / window_cap_s).ceil(),
-        // Stock IDA's WRMS norm over every integrated coordinate.
-        wrms_coordinates: (n + N) as f64,
     };
     let stator = unit.derived_rows(n, &slice_atol, budget);
     for r in &stator {
@@ -436,7 +427,7 @@ pub fn compose_with<J: JoinedSystem>(
         "l1_activation_changes": l1_changes,
         "pzr_control": {"class": "S (S3-D4)", "prepared_request_w": prepared_w, "start_request_w": start_w,
             "commissioned": if saved { "after restoring the saved discrete state" } else { "before L1 is armed (KERN's settle order)" }},
-        "stator_rows": stator, "stator_budget": format!("S3-D23: 10 A, 1 MW; S3-D16 with accumulation (DR-C2-IEQ): K = ceil(steamValveTravel.turbineStop_s {ramp_s} s / ld01-s1-gates eventWindow.maxStep_s {window_cap_s} s) = {}; stock IDA's WRMS norm over N = {} coordinates: / sqrt(N)", budget.accumulation_steps, budget.wrms_coordinates),
+        "stator_rows": stator, "stator_budget": "S3-D23: 10 A, 1 MW",
         "start": {"projection_passes": initial.report.projection_passes, "residual": initial.report.residual.value,
             "correction_wrms": initial.report.correction_wrms, "appended": initial.appended},
     });
