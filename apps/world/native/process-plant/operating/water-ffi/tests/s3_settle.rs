@@ -470,6 +470,8 @@ fn s3_settle_state_for_c1() {
         ieq_a: 10.,
         export_w: 1e6,
         accumulation_steps: (ramp_s / window_cap_s).ceil(),
+        // Stock IDA's WRMS norm over every integrated coordinate.
+        wrms_coordinates: (n + N) as f64,
     };
     let stator = unit.derived_rows(n, &slice_atol, budget);
     for r in &stator {
