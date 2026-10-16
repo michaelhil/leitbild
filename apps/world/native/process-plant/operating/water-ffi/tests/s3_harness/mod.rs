@@ -1,5 +1,6 @@
 //! spec: world/packs/process-plant/reference-designs/ld-01/model/build-readiness.md#s3-declaration-a3-pilot
-//! The S3 case harness (C1–C3), included by `s3_cases.rs`.
+//! The S3 case harness (C1–C3, and C5 from its own block: [`c5`]), included
+//! by `s3_cases.rs`.
 //!
 //! - [`declaration`]: the pinned `ld01-s3-cases-c1c3` block read as data, the
 //!   pin, the TBD register and each case's refusals (open values, missing
@@ -17,6 +18,7 @@
 //!   its window read from the block; a declared line the harness cannot
 //!   judge is reported as such, never passed.
 #![allow(dead_code)] // The unit tests and the case run use different subsets.
+pub mod c5;
 pub mod counters;
 pub mod declaration;
 pub mod families;
