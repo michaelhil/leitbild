@@ -17,6 +17,7 @@
 //!   its window read from the block; a declared line the harness cannot
 //!   judge is reported as such, never passed.
 #![allow(dead_code)] // The unit tests and the case run use different subsets.
+pub mod c4;
 pub mod counters;
 pub mod declaration;
 pub mod families;

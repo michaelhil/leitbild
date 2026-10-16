@@ -128,7 +128,7 @@ pub fn cost(
     );
     match case {
         Case::C1 => entry("cost.s2_quiet", "s2Quiet", 0., last, last),
-        Case::C2 | Case::C3 => {
+        Case::C2 | Case::C3 | Case::C4 => {
             if let Some(w) = window {
                 entry("cost.s2_window", "s2WindowAndRecovery", 0., w, w);
                 // S2's H1: each event window plus its recovery.
@@ -525,6 +525,11 @@ pub fn directions(case: Case, spec: &Value, i: &DirectionInputs) -> Value {
     match case {
         Case::C1 => {
             return json!({"family": "B directions", "verdict": "not applicable", "reason": "C1 is a hold: no direction is declared"});
+        }
+        Case::C4 => {
+            return json!({"family": "B directions", "verdict": "not executable",
+                "reason": "C4's direction table (ld01-s3-cases-c4 r1 directions) has no signal map in the harness yet (S3-D50 maps C2 and C3); the C4 section reports PT1, relief flow, the PZR column and the birth cells per frame",
+                "declared": spec["directions"]});
         }
         Case::C2 => {
             let s = |k: &str, j: usize| span_series(i, k, j, 0., e);

@@ -12,12 +12,15 @@ use crate::{
 use serde_json::{Value, json};
 
 pub const FENCE: &str = "ld01-s3-cases-c1c3";
+/// C4's own block (wiki 7201bcd, merged into integ3).
+pub const C4_FENCE: &str = "ld01-s3-cases-c4";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Case {
     C1,
     C2,
     C3,
+    C4,
 }
 
 impl Case {
@@ -26,7 +29,8 @@ impl Case {
             "C1" => Ok(Self::C1),
             "C2" => Ok(Self::C2),
             "C3" => Ok(Self::C3),
-            other => Err(format!("case {other}: C1, C2 or C3")),
+            "C4" => Ok(Self::C4),
+            other => Err(format!("case {other}: C1, C2, C3 or C4")),
         }
     }
     pub fn key(self) -> &'static str {
@@ -34,6 +38,7 @@ impl Case {
             Self::C1 => "C1",
             Self::C2 => "C2",
             Self::C3 => "C3",
+            Self::C4 => "C4",
         }
     }
 
@@ -48,7 +53,7 @@ impl Case {
             // Loop-flow acquisition is now the ic section's (KERN 53ae7c05);
             // a section without it leaves its lines not executable, judged
             // per line from the protection's own function list.
-            Self::C2 | Self::C3 => Vec::new(),
+            Self::C2 | Self::C3 | Self::C4 => Vec::new(),
         }
     }
 }
@@ -58,6 +63,10 @@ pub struct Declaration {
     pub block: Block,
     pub log: Option<String>,
     pub log_page: String,
+    /// C4's own pinned block (`ld01-s3-cases-c4`, RP1-pin-s3-c4), read beside
+    /// the C1–C3 block whose common rules it copies verbatim; the case's
+    /// pin, TBD register and section are this block's.
+    pub case_block: Option<Block>,
 }
 
 impl Declaration {
@@ -70,15 +79,34 @@ impl Declaration {
             block: Block::from_page(&page, FENCE)?,
             log: std::fs::read_to_string(&log_page).ok(),
             log_page,
+            case_block: None,
         })
     }
 
+    /// The declaration one case reads: C4 adds its own block, from
+    /// `LD01_S3_C4_DECLARATION` or else the same page.
+    pub fn load_for(case: Case) -> Result<Self, String> {
+        let mut d = Self::load()?;
+        if case == Case::C4 {
+            let page = std::env::var("LD01_S3_C4_DECLARATION")
+                .or_else(|_| std::env::var("LD01_S3_DECLARATION"))
+                .unwrap_or_else(|_| format!("{}/build-readiness.md", wiki_model()));
+            d.case_block = Some(Block::from_page(&page, C4_FENCE)?);
+        }
+        Ok(d)
+    }
+
+    /// The block that declares the case's lines: C4's own, else C1–C3's.
+    pub fn case_block(&self) -> &Block {
+        self.case_block.as_ref().unwrap_or(&self.block)
+    }
+
     pub fn pin(&self) -> Result<Value, String> {
-        guards::pin_of(&self.block, self.log.as_deref(), &self.log_page)
+        guards::pin_of(self.case_block(), self.log.as_deref(), &self.log_page)
     }
 
     pub fn tbd(&self) -> Result<Value, String> {
-        guards::tbd_state(&self.block, self.log.as_deref())
+        guards::tbd_state(self.case_block(), self.log.as_deref())
     }
 
     /// Why a case may not run as evidence: the block not pinned, any of the
@@ -92,7 +120,7 @@ impl Declaration {
 
     /// The case's section of the block (`cases.<C>`).
     pub fn case(&self, case: Case) -> Value {
-        self.block.whole(&format!("/cases/{}", case.key()))
+        self.case_block().whole(&format!("/cases/{}", case.key()))
     }
 }
 
@@ -100,8 +128,9 @@ impl Declaration {
 pub fn case_refusals(case: Case, pin: &Value, tbd: &Value) -> Vec<String> {
     let mut out = Vec::new();
     if pin["pinned"] != json!(true) {
+        let fence = if case == Case::C4 { C4_FENCE } else { FENCE };
         out.push(format!(
-            "{FENCE} is not pinned: declared sha256 {} against the frozen {}",
+            "{fence} is not pinned: declared sha256 {} against the frozen {}",
             pin["declared_sha256"], pin["frozen_sha256"]
         ));
     }
