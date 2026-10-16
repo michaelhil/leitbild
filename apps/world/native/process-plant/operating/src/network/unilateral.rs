@@ -420,12 +420,24 @@ impl<P: Properties> Network<P> {
         Presence { cells }
     }
     /// The energy coordinate a contact payment of phase `k` into `cell`
-    /// enters: a regular cell's phase-k energy stock, or the stratified
-    /// cell's admitted layer, which receives every surge-port inflow, the
-    /// vapor's too (S3-D30: its bubbles' enthalpy is A's to pay).
+    /// enters: the differential energy stock that cell's phase-k receipts
+    /// enter, or the stratified cell's admitted layer, which receives every
+    /// surge-port inflow, the vapor's too (S3-D30: its bubbles' enthalpy is
+    /// A's to pay).
+    ///
+    /// DR-L1-PAY: a liquid-mode regular cell's phase-k energy stock is its
+    /// own slot. An equilibrium cell's slot `U_l` holds its total `U`, which
+    /// both phases' receipts enter (`U' = H_l + H_g`), while its slot `U_g`
+    /// is algebraic (`U_g = M_g u_g(p)`): a payment there is read by no
+    /// stock and the next consistent start projects it away. Either phase's
+    /// payment enters the total, and the flash shares it out.
     pub fn payment_coordinate(&self, cell: usize, k: usize) -> Result<usize, Failure> {
         if cell < self.pzr.cell {
-            Ok(self.cell_layout[cell].energy[k])
+            let l = self.cell_layout[cell];
+            Ok(match self.modes[cell] {
+                super::CellMode::Liquid => l.energy[k],
+                super::CellMode::Equilibrium => l.energy[0],
+            })
         } else if cell == self.pzr.cell {
             Ok(self.pzr.base + PZR_ENERGY[1])
         } else if k == 1 && self.spray.is_some_and(|s| s.port_cell == cell) {
