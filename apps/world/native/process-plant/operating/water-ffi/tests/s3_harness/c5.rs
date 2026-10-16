@@ -164,7 +164,7 @@ fn judge_one(id: &str, line: &Value, r: &Record<'_>, zero: f64) -> Result<(Strin
             kind(line, "must")?;
             let lost = elec("offsite connection lost").first().map(|(t, _)| *t);
             let at_zero = lost.is_some_and(|t| same(t, 0., zero));
-            let before = r.receipts.iter().filter(|q| q.to <= 1e-9).next_back();
+            let before = r.receipts.iter().rfind(|q| q.to <= 1e-9);
             let after: Vec<&Receipt> = r.receipts.iter().filter(|q| q.from >= -1e-9).collect();
             let step = before.is_some_and(|q| q.export_j > 0.)
                 && !after.is_empty()
