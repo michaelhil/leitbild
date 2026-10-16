@@ -228,6 +228,45 @@ pub struct Joined<P: Properties> {
     /// S3-D9..D12): a supply loss is applied there first, and the network's
     /// part of the command checks it (declared before any restart).
     supply_routed: bool,
+    /// HOOK (COST2, for KERN): the state `(t, y, y')` of the value
+    /// evaluation a root call left in the operator (seed none, `cj` 0, no
+    /// reuse), so a reader of an accepted state (rule I) takes it instead of
+    /// evaluating that state again ([`Joined::holds_value_evaluation`]).
+    /// Cleared by every evaluation and root call; set only at the end of a
+    /// root call whose value evaluation completed. It is valid for a reader
+    /// between that root call and the next change of the operator, which
+    /// the frame driver's accepted-state observer is: no transaction runs
+    /// between a step and its observer.
+    value_state: ValueState,
+}
+
+/// HOOK (COST2): the bits of one value evaluation's state.
+#[derive(Debug, Default)]
+struct ValueState {
+    held: bool,
+    /// The current root call evaluated its state.
+    evaluated: bool,
+    t: u64,
+    y: Vec<f64>,
+    yp: Vec<f64>,
+}
+impl ValueState {
+    fn holds(&self, t: f64, y: &[f64], yp: &[f64]) -> bool {
+        self.held
+            && self.t == t.to_bits()
+            && self.y.len() == y.len()
+            && self.yp.len() == yp.len()
+            && self.y.iter().zip(y).all(|(a, b)| a.to_bits() == b.to_bits())
+            && self.yp.iter().zip(yp).all(|(a, b)| a.to_bits() == b.to_bits())
+    }
+    fn set(&mut self, t: f64, y: &[f64], yp: &[f64]) {
+        self.t = t.to_bits();
+        self.y.clear();
+        self.y.extend_from_slice(y);
+        self.yp.clear();
+        self.yp.extend_from_slice(yp);
+        self.held = true;
+    }
 }
 
 fn view<'a>(
@@ -481,6 +520,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             phase_modes: false,
             credited: Vec::new(),
             supply_routed: false,
+            value_state: ValueState::default(),
         };
         let columns = joined.structural_pattern()?;
         let pattern = Pattern::from_columns(offsets.end, &columns).map_err(fatal)?;
@@ -553,6 +593,14 @@ impl<P: Properties + WaterProperties> Joined<P> {
     /// evaluation (the region water above): the liquid's departure from
     /// saturation at its own pressure and its owner cell's vapour mass.
     /// Read on accepted states only, never inside a residual.
+    /// HOOK (COST2, for KERN): whether the operator holds the value
+    /// evaluation of exactly `(t, y, y')` (bitwise), left by the last root
+    /// call with nothing evaluated since: a reader of that accepted state
+    /// (rule I) may then read [`Self::nuclear`], [`Self::travel`] and
+    /// [`Self::region_phases`] without evaluating it again.
+    pub fn holds_value_evaluation(&self, t: f64, y: &[f64], yp: &[f64]) -> bool {
+        self.value_state.holds(t, y, yp)
+    }
     pub fn region_phases(&self) -> Result<Vec<crate::source_feedback::RegionPhase>, Failure> {
         self.blocks
             .water
@@ -843,6 +891,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
     ) -> Result<(), Failure> {
         let started = Instant::now();
         let o = self.blocks.offsets;
+        self.value_state.held = false; // HOOK (COST2)
         if y.len() != o.end || yp.len() != o.end || seed.is_some_and(|d| d.len() != o.end) {
             return Err(fatal("stage length"));
         }
@@ -1045,7 +1094,16 @@ impl<P: Properties + WaterProperties> Joined<P> {
     }
     pub fn roots(&mut self, t: f64, y: &[f64], yp: &[f64], out: &mut [f64]) -> Result<(), Failure> {
         let started = Instant::now();
+        self.value_state.held = false; // HOOK (COST2)
         let result = self.root_values(t, y, yp, out);
+        // HOOK (COST2): a root call whose value evaluation completed leaves
+        // that state's evaluation in the operator; everything the call does
+        // after it reads the same `(y, y')` (the rods' moving volumes and
+        // read cells are recomputed from them bit for bit).
+        if result.is_ok() && self.value_state.evaluated {
+            self.value_state.set(t, y, yp);
+        }
+        self.value_state.evaluated = false;
         self.counters.roots += 1;
         self.counters.root_wall_s += started.elapsed().as_secs_f64();
         result
@@ -1076,6 +1134,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             {
                 self.evaluate(t, y, yp, None, 0., None)
                     .map_err(|e| fatal(format!("spray root evaluation: {e:?}")))?;
+                self.value_state.evaluated = true; // HOOK (COST2)
             }
             let check = out.len() - 3;
             out[check] = self.network.spray_check_root(y).map_or(1., |r| r.1);
@@ -1115,6 +1174,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             if release_roots(&roots) {
                 self.evaluate(t, y, yp, None, 0., None)
                     .map_err(|e| fatal(format!("L1 root evaluation: {e:?}")))?;
+                self.value_state.evaluated = true; // HOOK (COST2)
             }
             let mut values = vec![0.; roots.len()];
             self.network
