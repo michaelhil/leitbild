@@ -1,10 +1,10 @@
 {
   "kind": "ld01-settled-state-pin",
-  "status": "Regression pin (NOT evidence; S2 is not declared): the S2 re-settle after S3-D36 (the PZR shell, heads and heater steel prepared at their steady state, SOLIDS 559504c57), settled at 455 s by r7.1's settling block with S3-D35's 2 s maximum step (DR-P2-SPRAYDROP open: default steps trip the drop coordinate's restart bound at 211 s); packet 200f31a0 = wiki claude/ld01-wiki-integ3 33e6f95 (0ccf579 + the S3 lanes' and Gate-1 wiki commits; 130700cb's values: page hashes, the steady-solids binary at ac332e17c and its input hash differ only, and the capped re-settle on it reproduces the 130700cb pair bitwise at 455 s; 130700cb carried owner answer B1: the source pressure domain [8, 16] MPa and the D3 (a) pressureMin 8 MPa), the spray line composed closed; water library adapter 4bc25801 (F5, S4-D2: the operating bridge unchanged above 0.1 MPa); PHASE's saturated-line inverse (8794e1451); after DR-P2-SPRAYDROP's drop exhaustion at the port's contact (IC-CTRL e166d5fb1), which changes the capped settle's state at the same 455 s and 1,605 steps. On the window that starts at the pair every range holds (PT1 52 of 344 Pa)",
-  "file": "settled-state-s3d42-455s-200f31a0.bits.json.gz",
-  "sha256": "189ffd018a3b4e0abde08004e34e86fd4e265c016e954891b6a0d552154f6a4f",
-  "bytes": 13933,
-  "packet_sha256": "200f31a09cb613cd05fb81636b2d3325f07ce450ba48dfcee8d958011af400df",
+  "status": "Regression pin (NOT evidence; S2 is not declared): the S2 re-settle after S3-D36 (the PZR shell, heads and heater steel prepared at their steady state, SOLIDS 559504c57), settled at 455 s by r7.1's settling block with S3-D35's 2 s maximum step (DR-P2-SPRAYDROP open: default steps trip the drop coordinate's restart bound at 211 s); packet 69fe9d4f = wiki claude/ld01-s3-wiki-integ4 80274ec (integ3 33e6f95 + C5X's SW-1 page b532848 + C5's block 341ab8c; 130700cb's values: page hashes, the steady-solids binary at 111388001 and its input hash differ only, and the capped re-settle on it reproduces the 130700cb pair bitwise at 455 s; 130700cb carried owner answer B1: the source pressure domain [8, 16] MPa and the D3 (a) pressureMin 8 MPa), the spray line composed closed; water library adapter 4bc25801 (F5, S4-D2: the operating bridge unchanged above 0.1 MPa); PHASE's saturated-line inverse (8794e1451); after DR-P2-SPRAYDROP's drop exhaustion at the port's contact (IC-CTRL e166d5fb1), which changes the capped settle's state at the same 455 s and 1,605 steps. On the window that starts at the pair every range holds (PT1 52 of 344 Pa)",
+  "file": "settled-state-s3d44-455s-69fe9d4f.bits.json.gz",
+  "sha256": "3d1488255c8a1b4a382ee58070279ddd31ac06acc1789082e0369a047ea03797",
+  "bytes": 13932,
+  "packet_sha256": "69fe9d4f1593eebc4e62c791bca7341342032a3fb30dee97b5afcce5fe54a27e",
   "t_s": 455.0,
   "row_bound": 1e-10,
   "provisional": false,
@@ -12,11 +12,11 @@
   "digest": {
     "macos-aarch64": "0xffc4d8ba19f49658"
   },
-  "made_by": "ld01_regression::settled_state_pin from kern/s3d42-33e6f95/s2-settle-200f31a0-1/settled-state.json",
+  "made_by": "ld01_regression::settled_state_pin from kern/s3d44-80274ec/s2-settle-69fe9d4f-1/settled-state.json",
   "source": {
-    "file": "kern/s3d42-33e6f95/s2-settle-200f31a0-1/settled-state.json",
+    "file": "kern/s3d44-80274ec/s2-settle-69fe9d4f-1/settled-state.json",
     "max_abs_scaled_row_as_settled": 4.371779360262451e-09,
-    "sha256": "bf3419ab46d86ae31b021a44538d5bc17c9b9cc978fbd115513f634f50779c4e"
+    "sha256": "7b7eb7c71a1c4653cdbab0ef04f5c21da7921a29486403362c669810bdc12f38"
   },
   "start": {
     "constraint_rate": 9.932784795536756e-20,
