@@ -10,7 +10,8 @@
 //!
 //! `LD01_S3_SPECTRUM_STATE` names a saved S3 state: the settled S3 start
 //! state (`LD01_S3_SPECTRUM_KIND=start`) or a case's post-event state the
-//! case harness writes at its window's end (`window-end`). The operator is
+//! case harness writes at its declared part's end, the window's end or rule
+//! I's end, whichever first (S3-D52; `post-event`). The operator is
 //! composed as `s3_unit::compose` composes it, step by step (the joined
 //! spine, the feed gate, the colored and block structures, the S2-D24r /
 //! S3-D16 derived classes, the credited outputs, the saved discrete state
@@ -55,9 +56,9 @@
 //! turbine trip (E1, the demand step; E2, the holding release, on the
 //! released pencil, as S2's Z6) and C3's supply loss of `LD01.P.A1` (E3, the
 //! residual change of the loss at the unchanged state, on the held pencil,
-//! from a second composition). At a window's end (post-event) no event
-//! follows inside the case's window: the excitation predicate has no event
-//! and holds vacuously; the other three are judged.
+//! from a second composition). At the declared part's end (post-event) no
+//! event follows inside the case's window: the excitation predicate has no
+//! event and holds vacuously; the other three are judged.
 //!
 //! A receipt is written only to a new path (`LD01_S3_SPECTRUM_RECEIPT`). It
 //! names the state's sha256 (the bytes of `LD01_S3_SPECTRUM_STATE`), as rule
@@ -298,10 +299,10 @@ fn s3_z6_at_a_saved_s3_state() {
     let kind = env("LD01_S3_SPECTRUM_KIND");
     let from = state["from"].as_str().unwrap_or("");
     let post_event = match kind.as_str() {
-        "start" if !from.contains("window end") => false,
-        "window-end" if from.contains("window end") => true,
+        "start" if !from.contains("window end") && !from.contains("rule I end") => false,
+        "post-event" if from.contains("window end") || from.contains("rule I end") => true,
         other => panic!(
-            "LD01_S3_SPECTRUM_KIND={other} does not name this state (from: {from:?}): start | window-end"
+            "LD01_S3_SPECTRUM_KIND={other} does not name this state (from: {from:?}): start | post-event"
         ),
     };
     let elec_path = env("ELEC_PACKET");
@@ -403,7 +404,7 @@ fn s3_z6_at_a_saved_s3_state() {
     let mut events = json!({"state_residual_max_over_tolerance": by_owner(&f_state)});
     if post_event {
         events["post_event"] = json!(
-            "the window's end: no event follows inside the case's window; the excitation predicate has no event (vacuous), the other three are judged"
+            "the declared part's end (S3-D52): no event follows inside the case's window; the excitation predicate has no event (vacuous), the other three are judged"
         );
         states.push(("held", a0, b0, ids_held, Vec::new()));
     } else {
@@ -566,4 +567,101 @@ fn s3_z6_at_a_saved_s3_state() {
             p["predicates"]
         );
     }
+}
+
+/// Lead S3-D53 (3): the coupling between the plant and ELEC's slice in the
+/// S3 unit's continuous residual, by forward differences of the unit's own
+/// residual at the state (the composed S3 unit, `s3_unit::compose`, at the
+/// saved start state): the plant -> ELEC block `dF_slice/dy_plant` and the
+/// ELEC -> plant block `dF_plant/dy_slice`. The union of the two blocks'
+/// spectra is the unit's exactly when one of them is zero (block
+/// triangular). Each column takes `h = sqrt(eps) max(|y|, atol/rtol)`.
+/// Written to `LD01_S3_COUPLING_RECEIPT` (never over a file).
+#[test]
+#[ignore = "zero-time receipt (S3-D53): requires the S3 packet and sections, a saved S3 start state, the wiki, maintained IF97 and stock IDA/KLU"]
+fn s3_unit_coupling_blocks() {
+    use leitbild_operating_water::{ida::System, joined::JoinedSystem};
+    let cpu0 = z6::cpu_s();
+    let state_path = env("LD01_S3_SPECTRUM_STATE");
+    let bytes = std::fs::read(&state_path).expect("state file");
+    let state: Value = serde_json::from_slice(&bytes).expect("state json");
+    let inputs = s3_unit::Inputs::from_env();
+    let mut u = s3_unit::compose(&inputs, &state).unwrap_or_else(|e| panic!("{e}"));
+    let (n, t) = (u.n, u.t0);
+    let (y, yp) = (u.y.clone(), u.yp.clone());
+    let total = y.len();
+    let labels: Vec<String> = u
+        .ida
+        .system()
+        .integrated()
+        .joined
+        .layouts()
+        .into_iter()
+        .flat_map(|(owner, l)| l.labels.into_iter().map(move |x| format!("{owner}/{x}")))
+        .chain(SLICE_LABELS.iter().map(|x| format!("electrical slice/{x}")))
+        .collect();
+    let sys = u.ida.system_mut();
+    let mut f0 = vec![0.; total];
+    sys.residual(t, &y, &yp, &mut f0)
+        .expect("residual at the state");
+    let mut f1 = vec![0.; total];
+    // (sum of squares, max |entry|, its row, its column, nonzeros)
+    let mut blocks = [(0f64, 0f64, 0usize, 0usize, 0usize); 3];
+    let mut failures = Vec::new();
+    for j in 0..total {
+        let h = f64::EPSILON.sqrt() * y[j].abs().max(u.atol[j] / u.rtol);
+        let mut yj = y.clone();
+        yj[j] += h;
+        let h = yj[j] - y[j];
+        if let Err(e) = sys.residual(t, &yj, &yp, &mut f1) {
+            failures.push(json!({"column": labels[j], "error": format!("{e:?}")}));
+            continue;
+        }
+        let rows = if j < n { n..total } else { 0..n };
+        // 0: plant -> ELEC, 1: ELEC -> plant, 2: the slice's own block.
+        let mut account = |k: usize, rows: std::ops::Range<usize>| {
+            for i in rows {
+                let d = (f1[i] - f0[i]) / h;
+                if d != 0. {
+                    let b = &mut blocks[k];
+                    b.0 += d * d;
+                    b.4 += 1;
+                    if d.abs() > b.1 {
+                        b.1 = d.abs();
+                        b.2 = i;
+                        b.3 = j;
+                    }
+                }
+            }
+        };
+        if j < n {
+            account(0, rows);
+        } else {
+            account(1, rows);
+            account(2, n..total);
+        }
+    }
+    let block = |b: &(f64, f64, usize, usize, usize)| {
+        json!({"frobenius": b.0.sqrt(), "max_abs": b.1, "nonzeros": b.4,
+            "max_at": if b.4 > 0 { json!({"row": labels[b.2], "column": labels[b.3]}) } else { Value::Null }})
+    };
+    let receipt = json!({
+        "kind": "s3-unit-coupling-blocks", "decision": "lead S3-D53 (3)",
+        "state": {"file": state_path, "sha256": z6::sha256(&bytes), "t_s": t},
+        "method": "forward differences of the S3 unit's own residual (s3_unit::compose at the state: consistent start, controller commissioned) in solver units; h = sqrt(eps) max(|y_j|, atol_j/rtol)",
+        "plant_to_elec": block(&blocks[0]), "elec_to_plant": block(&blocks[1]), "slice_own_block": block(&blocks[2]),
+        "block_triangular": blocks[0].4 == 0 || blocks[1].4 == 0,
+        "failures": failures, "cpu_s": z6::cpu_s() - cpu0,
+    });
+    let path = env("LD01_S3_COUPLING_RECEIPT");
+    assert!(
+        !std::path::Path::new(&path).exists(),
+        "receipts are never overwritten: {path}"
+    );
+    std::fs::write(&path, serde_json::to_vec_pretty(&receipt).unwrap()).unwrap();
+    println!(
+        "{}",
+        json!({"plant_to_elec": receipt["plant_to_elec"], "elec_to_plant": receipt["elec_to_plant"],
+            "slice_own_block": receipt["slice_own_block"], "block_triangular": receipt["block_triangular"], "failures": receipt["failures"].as_array().map(Vec::len)})
+    );
 }

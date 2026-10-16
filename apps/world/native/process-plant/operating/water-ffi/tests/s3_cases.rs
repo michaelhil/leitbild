@@ -751,6 +751,10 @@ struct GateSetup {
     reference_travel_m: f64,
 }
 
+/// A frame stop's state for rule K (S3-D52): time, `y`, `y'`, the system's
+/// discrete state and the PZR heater demand in force.
+type FrameState = (f64, Vec<f64>, Vec<f64>, Value, f64);
+
 /// One driven run of a case: its record, observation and CPU marks.
 struct Driven {
     record: Value,
@@ -767,7 +771,10 @@ struct Driven {
     /// The acquired reactor trip after zero (the first division's trip).
     reactor_trip_after_zero: Option<f64>,
     repeat_record: Value,
-    window_end_state: Option<(String, String)>,
+    /// Rule K's post-event state (S3-D52): the declared part's end, the
+    /// window's end or rule I's end, whichever first: `(path, sha256,
+    /// which)`.
+    declared_end_state: Option<(String, String, &'static str)>,
     end_after_zero: f64,
 }
 
@@ -779,7 +786,8 @@ struct Ask<'a> {
     max_step: Option<f64>,
     /// Credited outputs from this time after zero (C1: `judgedFrom_s`).
     credited_from: f64,
-    /// Where the window-end state is written (C2/C3, rule K), if anywhere.
+    /// The path prefix of rule K's post-event state (C2/C3), if written:
+    /// `<prefix>-window-end-state.json` or `<prefix>-rule-i-end-state.json`.
     window_state: Option<String>,
     /// Whether the case's declared event window applies (decision 0015
     /// E2's cap and E4/H1's window-end restart): the run, its repeat and
@@ -991,7 +999,11 @@ fn drive(
     let mut convergence: Vec<(f64, f64)> = vec![(t0 - zero, 0.)];
     let operator_trip = operator_trip_delay(case, spec).unwrap();
     let mut operator_trip_record = Value::Null;
-    let mut window_end_state = None;
+    let mut declared_end_state: Option<(String, String, &'static str)> = None;
+    // S3-D52: the last frame stop that rule I admits, kept while the window
+    // runs, for a rule-I end before the window's end (A4 admits no state
+    // after rule I's exit).
+    let mut last_admitted: Option<FrameState> = None;
     let outcome = {
         let mut r = {
             let mut clients: Vec<&mut dyn Client<CaseUnit>> =
@@ -1080,25 +1092,82 @@ fn drive(
                 .stats()
                 .map_or(f64::NAN, |st| st.convergence_failures as f64);
             convergence.push((reached - zero, driver.totals[5] as f64 + open_failures));
-            // Rule K's post-event state: the window's end (C2, C3), the
-            // solver's own state there (the frame stop), for SPECTRUM.
+            // Rule K's post-event state (S3-D52): the declared part's end,
+            // the window's end or rule I's end, whichever first, the
+            // solver's own state at a frame stop, for SPECTRUM. A rule-I
+            // exit inside the window takes the last frame stop rule I
+            // admitted (A4 admits no state after its exit).
             if r.is_ok()
-                && let (Some(w), Some(path)) = (window_s, ask.window_state.as_ref())
-                && (*b - (zero + w)).abs() < 1e-9
+                && declared_end_state.is_none()
+                && let (Some(w), Some(prefix)) = (window_s, ask.window_state.as_ref())
             {
-                let snapshot = ida.system().system_discrete_state();
-                let s = json!({"t_s": *b, "packet": state["packet"], "packet_sha256": state["packet_sha256"],
-                    "y": &y[..n], "yp": &yp[..n],
-                    "appended": {"owner": "electrical slice (ELEC)", "y": &y[n..], "yp": &yp[n..]},
-                    "discrete_state": snapshot, "pzr_control": {"in_force_w": control.in_force_w},
-                    "composition": composition["composition"], "from": format!("{} window end ({} s after zero)", case.key(), w)});
-                let bytes = serde_json::to_vec(&s).unwrap();
-                assert!(
-                    !std::path::Path::new(path).exists(),
-                    "states are never overwritten"
-                );
-                std::fs::write(path, &bytes).unwrap();
-                window_end_state = Some((path.clone(), spine::sha256(&bytes)));
+                let write = |path: String,
+                             (t_s, ys, yps, discrete, in_force_w): (
+                    f64,
+                    &[f64],
+                    &[f64],
+                    &Value,
+                    f64,
+                ),
+                             from: String|
+                 -> (String, String) {
+                    let s = json!({"t_s": t_s, "packet": state["packet"], "packet_sha256": state["packet_sha256"],
+                        "y": &ys[..n], "yp": &yps[..n],
+                        "appended": {"owner": "electrical slice (ELEC)", "y": &ys[n..], "yp": &yps[n..]},
+                        "discrete_state": discrete, "pzr_control": {"in_force_w": in_force_w},
+                        "composition": composition["composition"], "from": from});
+                    let bytes = serde_json::to_vec(&s).unwrap();
+                    assert!(
+                        !std::path::Path::new(&path).exists(),
+                        "states are never overwritten"
+                    );
+                    std::fs::write(&path, &bytes).unwrap();
+                    let sha = spine::sha256(&bytes);
+                    (path, sha)
+                };
+                let exit_s = observer
+                    .rule_i
+                    .exit
+                    .as_ref()
+                    .and_then(|x| x["t_s"].as_f64());
+                if let Some(x) = exit_s.filter(|x| *x <= zero + w + 1e-9) {
+                    if let Some((ta, ya, ypa, da, wa)) = last_admitted.take() {
+                        let (path, sha) = write(
+                            format!("{prefix}-rule-i-end-state.json"),
+                            (ta, ya.as_slice(), ypa.as_slice(), &da, wa),
+                            format!(
+                                "{} rule I end: the last frame stop rule I admits ({} s after zero), before its exit at {} s after zero (inside the {} s window)",
+                                case.key(),
+                                ta - zero,
+                                x - zero,
+                                w
+                            ),
+                        );
+                        declared_end_state = Some((path, sha, "rule I end"));
+                    }
+                } else if (*b - (zero + w)).abs() < 1e-9 {
+                    let snapshot = ida.system().system_discrete_state();
+                    let (path, sha) = write(
+                        format!("{prefix}-window-end-state.json"),
+                        (
+                            *b,
+                            y.as_slice(),
+                            yp.as_slice(),
+                            &snapshot,
+                            control.in_force_w,
+                        ),
+                        format!("{} window end ({} s after zero)", case.key(), w),
+                    );
+                    declared_end_state = Some((path, sha, "window end"));
+                } else if *b < zero + w {
+                    last_admitted = Some((
+                        *b,
+                        y.clone(),
+                        yp.clone(),
+                        ida.system().system_discrete_state(),
+                        control.in_force_w,
+                    ));
+                }
             }
         }
         r
@@ -1285,7 +1354,7 @@ fn drive(
         seats,
         reactor_trip_after_zero,
         repeat_record,
-        window_end_state,
+        declared_end_state,
         end_after_zero: end - zero,
     }
 }
@@ -1469,10 +1538,8 @@ fn s3_case_run() {
         }
         Err(_) => spec["judgedFrom_s"].as_f64().unwrap_or(0.),
     };
-    let window_state = |label: &str| {
-        (gates_on && case != Case::C1)
-            .then(|| format!("{receipt_path}.{label}-window-end-state.json"))
-    };
+    let window_state =
+        |label: &str| (gates_on && case != Case::C1).then(|| format!("{receipt_path}.{label}"));
     let run = drive(
         case,
         &d,
@@ -1851,10 +1918,15 @@ fn s3_case_run() {
                     .into()
             });
         let start_sha = provenance::sha256_file(&state_path).ok();
-        let window_sha = run.window_end_state.as_ref().map(|(_, s)| s.clone());
+        let end_sha = run.declared_end_state.as_ref().map(|(_, s, _)| s.clone());
         let mut states: Vec<(&str, Option<String>)> = vec![("start (prerequisite 11)", start_sha)];
         if case != Case::C1 {
-            states.push(("window end", window_sha));
+            states.push((
+                run.declared_end_state
+                    .as_ref()
+                    .map_or("declared part end", |(_, _, which)| *which),
+                end_sha,
+            ));
         }
         let mut k = s3_harness::families::spectra(&states, &receipts);
         if k["verdict"] == "not executable" {
@@ -1862,11 +1934,11 @@ fn s3_case_run() {
                 "Z6 on the S3 composition is SPECTRUM's P-7 (prerequisite 11), owed: no receipt names these states (LD01_S3_Z6_RECEIPTS); the harness judges them by S2's GO rule once they exist and writes each post-event state for it"
             );
         }
-        k["window_end_state"] = json!(run.window_end_state);
+        k["declared_end_state"] = json!(run.declared_end_state);
         k["post_event"] = json!(if case == Case::C1 {
             "not applicable: C1 has no event"
         } else {
-            "the window's end state (C2, C3)"
+            "S3-D52: the declared part's end state, the window's end or rule I's end, whichever first (C2, C3); A4 admits no state after rule I's exit"
         });
         families.insert("K_spectra".into(), k);
         // Rule B.
