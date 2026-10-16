@@ -7,7 +7,6 @@
 //! quadrature integrands are filled for any caller (the stock-IDAS test now,
 //! the joined operator through a KERN hook later). Nothing here integrates.
 //!
-//! spec: world/packs/process-plant/reference-designs/ld-01/systems/electrical/generator-and-synchronization.md#external-carrier-and-operating-grid-join
 //! Coordinates: `[lambda_d, lambda_q, lambda_f, id, iq, if, omega, theta, T_body]`.
 //! Held inputs (changed only at stops): the boundary (`v_line`, the Grid
 //! frequency, the carrier rate, and whether the stiff boundary is joined),
