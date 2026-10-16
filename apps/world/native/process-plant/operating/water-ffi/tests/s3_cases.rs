@@ -1783,12 +1783,18 @@ fn s3_case_run() {
             checks.insert("rod_timing".into(), json!({"verdict": if timing_ran == 0 { "not run" } else if timing_ok { "pass" } else { "fail" },
                 "threshold_source": "ld01-accuracy-contract thresholdTiming_s, ld01-s2-accuracy rodInsertionFractions", "references": timing}));
             let post = g.s2.shared.number("/recovery/postWindow_s");
-            let mut h1a = s3_harness::families::convergence_failures(
-                &run.convergence,
-                w,
-                (w + post).min(end),
-                g.s2.shared.number("/recovery/maxConvergenceFailures"),
-            );
+            // A4: a run that ends inside its window has no continuation:
+            // recorded as truncated, not failed (never a pass).
+            let mut h1a = if end <= w {
+                json!({"verdict": "truncated (rule I), not failed", "reason": "the declared part ends inside the window"})
+            } else {
+                s3_harness::families::convergence_failures(
+                    &run.convergence,
+                    w,
+                    (w + post).min(end),
+                    g.s2.shared.number("/recovery/maxConvergenceFailures"),
+                )
+            };
             if end < w + post {
                 h1a["truncated_by_rule_i"] = json!(true);
             }
