@@ -1725,7 +1725,9 @@ fn drive(
             }
             // Rule K's post-event state: the window's end (C2, C3), the
             // solver's own state there (the frame stop), for SPECTRUM.
+            // (C4's states are its own: 1 s after each phase change, S3-D52.)
             if r.is_ok()
+                && case != Case::C4
                 && let (Some(w), Some(path)) = (window_s, ask.window_state.as_ref())
                 && (*b - (zero + w)).abs() < 1e-9
             {
