@@ -64,7 +64,8 @@ pub struct RuleI {
 }
 
 /// COST2: rule I's inputs as bits (the nuclear block's feedback inputs, the
-/// rods' achieved travel and each core region's phase), for the cross-check.
+/// rods' achieved travel, every joined row's value and each core region's
+/// phase), for the cross-check.
 fn rule_i_inputs(joined: &Joined<If97>) -> Result<Vec<u64>, String> {
     let f = joined.nuclear().feedback_inputs();
     let mut bits: Vec<u64> = [
@@ -83,6 +84,9 @@ fn rule_i_inputs(joined: &Joined<If97>) -> Result<Vec<u64>, String> {
     .flat_map(|v| v.iter().map(|x| x.to_bits()))
     .collect();
     bits.extend(joined.travel().iter().map(|x| x.value.to_bits()));
+    // Every joined row's value of the same evaluation (a reader of the
+    // accepted state's rows, e.g. an algebraic-residual record, sees them).
+    bits.extend(joined.rows().iter().map(|x| x.value.to_bits()));
     for r in joined.region_phases().map_err(|e| format!("{e:?}"))? {
         bits.push(r.saturation_departure_k.to_bits());
         bits.push(r.vapor_kg.to_bits());
