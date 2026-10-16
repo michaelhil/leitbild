@@ -28,8 +28,8 @@
 //!   class R by S3-D4 (a command and a breaker request at one instant).
 //!
 //! No exchange law (the Grid side's): the boundary is the held stiff bus of
-//! the slice's inputs, and the carrier a continuous input of its angle row
-//! (owner decision D2).
+//! the slice's inputs, and the carrier a continuous, smooth input of its
+//! angle row (owner decisions D2 and R6-K SW-1).
 use crate::{
     frame::{Action, Change, Class, Client, Dense},
     ida::{Failure, KluOrdering, System},
@@ -62,10 +62,25 @@ pub const N: usize = slice::N;
 pub struct CreditedBudget {
     pub ieq_a: f64,
     pub export_w: f64,
+    /// DR-C2-IEQ (lead, S3-D16 applied with accumulation): the number of
+    /// steps over which per-step local errors of the stator coordinates
+    /// accumulate into a credited output inside its fastest declared
+    /// transient: the STOP ramp (`steamValveTravel.turbineStop_s`) over the
+    /// event window's step cap (`ld01-s1-gates` `eventWindow.maxStep_s`),
+    /// both declared; 1 where no transient is credited.
+    pub accumulation_steps: f64,
+    /// The number of coordinates in stock IDA's error test (its WRMS norm
+    /// `sqrt(sum((e_i/w_i)^2)/N) <= 1`): one coordinate's local error can
+    /// reach `sqrt(N) * w_i` while the step passes, so a class that must
+    /// bound that coordinate's own error is the budget's share divided by
+    /// `sqrt(N)` (DR-C2-IEQ); 1 for the S2-D24r reading (no norm factor).
+    pub wrms_coordinates: f64,
 }
 pub const PROPOSED_BUDGET: CreditedBudget = CreditedBudget {
     ieq_a: 10.,
     export_w: 1e6,
+    accumulation_steps: 1.,
+    wrms_coordinates: 1.,
 };
 
 /// The wrapper's discrete configuration, compiled from the electrical packet.
@@ -310,7 +325,16 @@ impl<S: JoinedSystem> Electrified<S> {
         // determines, with |dx/d(output)|; the applied tolerance is the
         // tightest budget x sensitivity. Ieq = |i_dq|/sqrt(3), so
         // |di/dIeq| = sqrt(3); export P = -(v.i) with |v| = V_line, so
-        // |di/dP| >= 1/V_line; the linkages follow through L'd.
+        // |di/dP| >= 1/V_line; the linkages follow through L'd. A local
+        // error per step accumulates over the transient's steps, so the
+        // per-step class is the budget's share of one step: / K.
+        let steps = budget.accumulation_steps;
+        let norm = budget.wrms_coordinates.sqrt();
+        assert!(
+            steps.is_finite() && steps >= 1. && norm.is_finite() && norm >= 1.,
+            "accumulation steps {steps}, WRMS coordinates {}",
+            budget.wrms_coordinates
+        );
         let outputs = [
             ("LD01.TG.GEN.IEQ", budget.ieq_a, 3f64.sqrt()),
             (
@@ -323,11 +347,13 @@ impl<S: JoinedSystem> Electrified<S> {
             let mut determines: Vec<Determined> = outputs
                 .iter()
                 .map(|(output, b, di)| Determined {
-                    output: format!("{output} (S3-D16 budget PROPOSED, pending the lead)"),
+                    output: format!(
+                        "{output} (S3-D23 budget; S3-D16 / (accumulation {steps} steps x sqrt(WRMS N) {norm}), DR-C2-IEQ)"
+                    ),
                     budget: *b,
                     sensitivity: di * through,
                     column: format!("electrical/{label}"),
-                    tolerance: b * di * through,
+                    tolerance: b * di * through / (steps * norm),
                 })
                 .collect();
             determines.sort_by(|a, b| a.tolerance.total_cmp(&b.tolerance));
@@ -447,7 +473,7 @@ impl<S: JoinedSystem> System for Electrified<S> {
         self.inner.residual(t, &y[..n], &yp[..n], &mut out[..n])?;
         self.admitted(t).map_err(Failure::Fatal)?;
         self.slice
-            .rows(&y[n..], &yp[n..], &mut out[n..])
+            .rows(t, &y[n..], &yp[n..], &mut out[n..])
             .map_err(Failure::Fatal)
     }
     #[allow(clippy::too_many_arguments)]
@@ -617,7 +643,7 @@ impl<S: JoinedSystem> JoinedSystem for Electrified<S> {
         yp: &mut [f64],
     ) -> Result<Vec<f64>, String> {
         self.admitted(t)?;
-        self.slice.consistent(y, yp)?;
+        self.slice.consistent(t, y, yp)?;
         Ok(self.slice.differential().to_vec())
     }
     fn appended_next_event(&self, t: f64) -> Option<f64> {

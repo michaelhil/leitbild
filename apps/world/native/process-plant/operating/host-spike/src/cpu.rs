@@ -74,3 +74,30 @@ pub fn max_rss_bytes() -> u64 {
         rss
     }
 }
+
+#[cfg(target_os = "macos")]
+unsafe extern "C" {
+    fn proc_pid_rusage(pid: i32, flavor: i32, buffer: *mut u64) -> i32;
+    fn getpid() -> i32;
+}
+
+/// Instructions retired and cycles of this whole process so far (macOS
+/// `proc_pid_rusage`, RUSAGE_INFO_V4: `ri_instructions`, `ri_cycles`), the
+/// load-independent cost measure of COST2 (`/usr/bin/time -l` reads the
+/// same counters). Measurement only; `None` where the counters are absent.
+#[cfg(target_os = "macos")]
+pub fn instructions_cycles() -> Option<(u64, u64)> {
+    // rusage_info_v4: a 16-byte uuid, then u64 fields; ri_instructions is
+    // the 30th (index 29: 10 v0 + 6 v1 + 2 v2 + 9 v3 + logical_writes +
+    // lifetime_max_phys_footprint), ri_cycles the next. 64 words cover the
+    // whole v4 record (312 bytes).
+    let mut buffer = [0u64; 64];
+    // SAFETY: a live, 8-byte-aligned buffer larger than rusage_info_v4; the
+    // C library writes at most that record and keeps no pointer.
+    let status = unsafe { proc_pid_rusage(getpid(), 4, buffer.as_mut_ptr()) };
+    (status == 0).then(|| (buffer[2 + 29], buffer[2 + 30]))
+}
+#[cfg(not(target_os = "macos"))]
+pub fn instructions_cycles() -> Option<(u64, u64)> {
+    None
+}

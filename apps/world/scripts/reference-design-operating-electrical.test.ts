@@ -27,7 +27,7 @@ test('drafted electrical blocks parse from their owning sections only, strictly'
   expect(()=>parseDistribution(page(di.heading,di.fence,{...routing,motorConsumers:{}}))).toThrow()
 })
 
-const carrier={angleReference:'continuousCarrier',rateInput:'heldPerInterval',reconciliation:'phaseErrorAsRateOverNextInterval',
+const carrier={angleReference:'continuousCarrier',rateInput:'frequencyAndRatePerInterval',reconciliation:'phaseErrorAsRateOverNextInterval',
   boundaryConversion:'none',rateChangeClass:'S3-D4'}
 const exchange={quietInterval_s:1,windowInterval_s:.02,refinementInterval_s:.01,windowDeclaredBy:'Grid',receipt:'IDAS quadrature'}
 test('owner D2 carrier and D1 exchange blocks parse strictly from their owning sections',()=>{
@@ -36,6 +36,8 @@ test('owner D2 carrier and D1 exchange blocks parse strictly from their owning s
   // the replaced per-boundary conversion is not an accepted selection
   expect(()=>parseCarrier(page(ca.heading,ca.fence,{...carrier,boundaryConversion:'thetaReferenceConversion'}))).toThrow()
   expect(()=>parseCarrier(page(ca.heading,ca.fence,{...carrier,extra:1}))).toThrow()
+  // D2's held-frequency-only rate is superseded by SW-1 (owner R6-K)
+  expect(()=>parseCarrier(page(ca.heading,ca.fence,{...carrier,rateInput:'heldPerInterval'}))).toThrow()
   expect(()=>parseCarrier(page('Elsewhere',ca.fence,carrier))).toThrow()
   expect(parseExchange(page(exchangeOwner.heading,exchangeOwner.fence,exchange))).toEqual(exchange as never)
   expect(()=>parseExchange(page(exchangeOwner.heading,exchangeOwner.fence,{...exchange,windowInterval_s:2}))).toThrow('ordered')

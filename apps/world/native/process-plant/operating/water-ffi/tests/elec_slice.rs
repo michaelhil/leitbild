@@ -57,7 +57,7 @@ impl System for Sys {
     }
     fn residual(&mut self, t: f64, y: &[f64], yp: &[f64], out: &mut [f64]) -> Result<(), Failure> {
         self.admit(t);
-        self.slice.rows(y, yp, out).map_err(fail)
+        self.slice.rows(t, y, yp, out).map_err(fail)
     }
     fn jacobian(
         &mut self,
@@ -154,6 +154,8 @@ fn run(packet: &Packet, name: &str, actions: &[(f64, Action)], horizon: f64) -> 
         v_line,
         f_grid_hz: f0,
         carrier_rad_s: slice::prepared_carrier(f0),
+        carrier_accel_rad_s2: 0.,
+        carrier_from_s: 0.,
         admitted_kg_s: m0,
         field_v: field_demand,
         room_k: room,
@@ -171,7 +173,7 @@ fn run(packet: &Packet, name: &str, actions: &[(f64, Action)], horizon: f64) -> 
     y[OMEGA] = packet.f(&["prepared", "speed_rad_s"]);
     y[slice::THETA] = packet.f(&["prepared", "angle_rad"]);
     y[slice::BODY] = room;
-    sys.slice.consistent(&mut y, &mut yp).unwrap();
+    sys.slice.consistent(0., &mut y, &mut yp).unwrap();
     let e0 = sys.slice.stored_energy(&y);
     let ids = sys.slice.differential();
     let s_flux = v_line / (2. * std::f64::consts::PI * f0);
@@ -367,7 +369,7 @@ fn run(packet: &Packet, name: &str, actions: &[(f64, Action)], horizon: f64) -> 
                 s.admit(t);
             }
             let sl = ida.system().slice.clone();
-            sl.consistent(&mut y, &mut yp).unwrap();
+            sl.consistent(t, &mut y, &mut yp).unwrap();
             let ids = sl.differential();
             ida.reinitialize(t, &y, &yp).unwrap();
             ida.set_differential(&ids).unwrap();
