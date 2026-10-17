@@ -14,7 +14,8 @@ use leitbild_operating_plant::{
     hydraulics::{Pump as Impeller, Section, WallLaw},
     local_flow::{MomentumSupport, PressureSegment},
     network::{
-        Band, BandReport, MetastableBand, Network, Properties, RotorState, Water,
+        Band, BandReport, CellMode, ConsistentSystem, Failure, MetastableBand, Network, Properties,
+        RotorState, Tolerances, Water, consistent_start,
         packet::*,
         phase_events::{Ledger, Root, located},
         prepare::{OperatingPoint, Settings, prepare},
@@ -945,5 +946,261 @@ fn a_one_sided_lock_drawing_from_its_holding_end_at_the_start_is_released_with_i
             assert!(tx.changes.is_empty());
             assert_eq!(yp[l.index], 0.);
         }
+    }
+}
+
+/// The restart's exact consistent start on the network alone
+/// (`network::consistent_start`: the projection moves algebraic coordinates
+/// only, then the rates), with a dense pencil.
+struct Start<'a>(&'a mut Network<Analytic>);
+impl ConsistentSystem for Start<'_> {
+    fn system_dimension(&self) -> usize {
+        self.0.dimension()
+    }
+    fn rows_at(&mut self, t: f64, y: &[f64], yp: &[f64]) -> Result<Vec<f64>, Failure> {
+        self.0.evaluate(t, y, yp, None, 0., None)?;
+        Ok(self.0.rows().iter().map(|r| r.value).collect())
+    }
+    fn pencil_at(
+        &mut self,
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+    ) -> Result<(Vec<f64>, Vec<f64>), Failure> {
+        let n = self.0.dimension();
+        let signs = self.0.column_signs(y);
+        let mut dense = |cj: f64| -> Result<Vec<f64>, Failure> {
+            let mut out = vec![0.; n * n];
+            let mut seed = vec![0.; n];
+            for col in 0..n {
+                seed[col] = signs[col];
+                let done = self.0.evaluate(t, y, yp, Some(&seed), cj, None);
+                seed[col] = 0.;
+                done?;
+                for (row, r) in self.0.rows().iter().enumerate() {
+                    out[col * n + row] = r.direction / signs[col];
+                }
+            }
+            Ok(out)
+        };
+        let a = dense(0.)?;
+        let ab = dense(1.)?;
+        Ok((a.clone(), ab.iter().zip(&a).map(|(x, y)| x - y).collect()))
+    }
+}
+
+/// A regular cell made an equilibrium cell at its pressure (S3-D-P1):
+/// saturated vapor `vapor_kg` and saturated liquid filling the rest of its
+/// volume, totals in the liquid slots, through the birth transaction.
+fn saturated_two_phase(network: &mut Network<Analytic>, y: &mut [f64], node: usize, vapor_kg: f64) {
+    let sc = network.scales().to_vec();
+    let l = network.cell_layout[node];
+    let p = y[l.base] * sc[l.base];
+    let sat = Analytic.saturation(Scalar::constant(p)).unwrap();
+    let (rf, rg) = (sat.liquid.density.value, sat.vapor.density.value);
+    let (uf, ug) = (
+        sat.liquid.enthalpy.value - p / rf,
+        sat.vapor.enthalpy.value - p / rg,
+    );
+    let ml = (network.volume(node) - vapor_kg / rg) * rf;
+    y[l.mass[1]] = 0.;
+    y[l.energy[1]] = 0.;
+    network.birth(node, y).expect("birth");
+    y[l.mass[0]] = (ml + vapor_kg) / sc[l.mass[0]];
+    y[l.energy[0]] = (ml * uf + vapor_kg * ug) / sc[l.energy[0]];
+    y[l.mass[1]] = vapor_kg / sc[l.mass[1]];
+    y[l.energy[1]] = vapor_kg * ug / sc[l.energy[1]];
+}
+
+/// The account's accepted fluid energy and mass (`Network::inventory`: each
+/// regular cell through its mode, the stratified cell's zones).
+fn account(network: &Network<Analytic>, y: &[f64]) -> (f64, f64) {
+    let absolute = vec![1e-8; y.len()];
+    let (total, _) = network
+        .inventory(
+            y,
+            Tolerances {
+                relative: 1e-5,
+                absolute: &absolute,
+            },
+        )
+        .unwrap_or_else(|e| panic!("{e:?}"));
+    (total[2], total[0])
+}
+
+/// One contact of DR-L1-PAY's sequence and the restart after it.
+struct Contact {
+    /// The account's fluid energy and mass before the transactions.
+    before: (f64, f64),
+    /// The same after the restart's exact consistent start, or its refusal.
+    after: Result<(f64, f64), String>,
+    /// The start's projection WRMS with the integrator's weights.
+    wrms: Option<f64>,
+    paid: f64,
+    coordinate: usize,
+    network: Network<Analytic>,
+    y: Vec<f64>,
+}
+
+/// One run of DR-L1-PAY's sequence at C4's located instant, as
+/// `Joined::transact` orders it: CORE (the donor, root-size vapor) and HOT
+/// (the receiver, `receiver_vapor_kg`) are equilibrium cells, face 0's
+/// vapor path CORE -> HOT is free and carries `payment_j` of kinetic energy
+/// toward HOT; at the instant CORE's vapor exhausts (the phase-mode owner's
+/// transaction), L1's located contact root locks face 0 and pays into HOT,
+/// and the restart's exact consistent start follows (its differential
+/// coordinates bitwise fixed).
+fn contact_into_a_two_phase_cell(receiver_vapor_kg: f64, payment_j: f64) -> Contact {
+    let (mut network, mut y, _, prepared_ids) = prepared_ids();
+    let (core, hot, li) = (0, 1, 1);
+    saturated_two_phase(&mut network, &mut y, core, 1e-9);
+    saturated_two_phase(&mut network, &mut y, hot, receiver_vapor_kg);
+    let zero = vec![0.; y.len()];
+    // L1 active: face 0's vapor path has both ends holding, so it is free.
+    network.evaluate(0., &y, &zero, None, 0., None).unwrap();
+    let presence = network.declared_presence(&y);
+    network.activate_unilateral(&presence).expect("activation");
+    assert_eq!(network.unilateral().unwrap().paths[li], Lock::Free);
+    // Its impulse, toward HOT, carrying `payment_j` (½ Π²/I).
+    let l = network.face_layout[li];
+    let inertance = network.chart(0, 1).unwrap().inertance_kg_m4.value;
+    let sc = network.scales().to_vec();
+    y[l.index] = (2. * inertance * payment_j).sqrt() / sc[l.index];
+    // The exact start before the instant: the state is consistent.
+    let weights: Vec<f64> = y.iter().map(|v| 1. / (1e-5 * v.abs() + 1e-8)).collect();
+    let ids = network.differential(&prepared_ids);
+    consistent_start(
+        &mut Start(&mut network),
+        0.,
+        &mut y,
+        &ids,
+        &weights,
+        1e-12,
+        2,
+    )
+    .unwrap_or_else(|e| panic!("start before: {e:?}"));
+    let before = account(&network, &y);
+    // The located instant: CORE's exhaustion, then L1 on the post-mode state.
+    network.evaluate(0., &y, &zero, None, 0., None).unwrap();
+    let chart = network.chart(0, 1).unwrap();
+    assert!(chart.volume_flow_m3_s.value > 0., "toward HOT");
+    let (_, exhausted) = network.exhaustion_with_paths(&mut y, &[core]).unwrap();
+    assert!(exhausted.changes.is_empty(), "HOT's vapor supports face 0");
+    assert_eq!(network.cell_modes()[core], CellMode::Liquid);
+    network.evaluate(0., &y, &zero, None, 0., None).unwrap();
+    let presence = network.declared_presence(&y);
+    let tx = network
+        .unilateral_transaction(&mut y, &presence, &[(li, Fired::Contact)], None)
+        .expect("contact");
+    let change = tx.changes.iter().find(|c| c.path == li).unwrap();
+    assert_eq!(change.cause, Cause::ContactRoot);
+    let (receiver, coordinate, paid) = change.payment.expect("a payment");
+    assert_eq!(receiver, hot);
+    assert_eq!(paid, tx.energy_paid_j);
+    // The restart's exact consistent start: algebraic coordinates only.
+    let ids = network.differential(&prepared_ids);
+    let entry = y.clone();
+    let start = consistent_start(
+        &mut Start(&mut network),
+        0.,
+        &mut y,
+        &ids,
+        &weights,
+        1e-12,
+        4,
+    );
+    let wrms = start
+        .as_ref()
+        .ok()
+        .and_then(|(_, pair)| pair.projection.as_ref().map(|p| p.correction_wrms));
+    let after = match start {
+        Ok(_) => {
+            for (i, (a, b)) in entry.iter().zip(&y).enumerate() {
+                if ids[i] != 0. {
+                    assert_eq!(
+                        a.to_bits(),
+                        b.to_bits(),
+                        "differential coordinate {i} moved"
+                    );
+                }
+            }
+            Ok(account(&network, &y))
+        }
+        Err(e) => Err(format!("{e:?}")),
+    };
+    Contact {
+        before,
+        after,
+        wrms,
+        paid,
+        coordinate,
+        network,
+        y,
+    }
+}
+
+#[test]
+fn a_contact_payment_into_a_two_phase_cell_survives_the_restart_exactly() {
+    // DR-L1-PAY: the payment enters the equilibrium receiver's total U
+    // (the slot both phases' receipts enter), never its algebraic U_g,
+    // which the restart's projection resets to M_g u_g(p) (before the fix
+    // every payment here was lost whole, and the 1e3 J ones into 1 g of
+    // vapor or less were refused by the start's WRMS guard). C4's baseline
+    // payments were up to 0.51 J. The receiver's vapor ranges from a filled
+    // cell to the near-zero limit, where U_g = M_g u_g is comparable to or
+    // smaller than the payment, while the flash at the paid totals keeps
+    // vapor: heating a nearly solid rigid cell condenses vapor (the liquid
+    // swells), so a payment larger than about M_g / |dM_g/dU| would exhaust
+    // the receiver (DR-L1-PAY report, the vanishing-inertia family).
+    let mut runs = Vec::new();
+    for (receiver_vapor_kg, payment_j) in [
+        (10., 0.51),
+        (10., 1e3),
+        (1e-3, 0.51),
+        (1e-3, 1e3),
+        (1e-6, 0.51),
+        (1e-9, 1e-3),
+    ] {
+        {
+            let c = contact_into_a_two_phase_cell(receiver_vapor_kg, payment_j);
+            let hot = c.network.cell_layout[1];
+            let closure = c.after.as_ref().map(|a| (a.0 - c.before.0) - c.paid);
+            println!(
+                "{}",
+                serde_json::json!({"receiver_vapor_kg": receiver_vapor_kg, "paid_j": c.paid,
+                    "coordinate": c.coordinate, "total_u_slot": hot.energy[0], "u_g_slot": hot.energy[1],
+                    "energy_before_j": c.before.0, "after": format!("{:?}", c.after),
+                    "closure_j": closure.as_ref().ok(), "start_wrms": c.wrms,
+                    "receiver_vapor_after_kg": c.y[hot.mass[1]] * c.network.scales()[hot.mass[1]]})
+            );
+            runs.push((receiver_vapor_kg, payment_j, c));
+        }
+    }
+    for (receiver_vapor_kg, payment_j, c) in &runs {
+        let hot = c.network.cell_layout[1];
+        assert_eq!(c.coordinate, hot.energy[0], "the receiver's total U");
+        // ½ Π²/I on the inertia left after the donor's exhaustion.
+        assert!(
+            c.paid >= *payment_j && c.paid.is_finite(),
+            "{} vs {payment_j}",
+            c.paid
+        );
+        let after = c.after.as_ref().unwrap_or_else(|e| panic!("restart: {e}"));
+        // Mass bitwise; energy grows by exactly what was paid, to the
+        // rounding of the total's additions.
+        assert_eq!(after.1.to_bits(), c.before.1.to_bits());
+        let closure = (after.0 - c.before.0) - c.paid;
+        assert!(
+            closure.abs() <= 4. * f64::EPSILON * c.before.0.abs(),
+            "vapor {receiver_vapor_kg} kg, paid {} J: closure {closure} J of {} J",
+            c.paid,
+            c.before.0
+        );
+        // The start's flash at the paid totals keeps the receiver two-phase.
+        let mg = c.y[hot.mass[1]] * c.network.scales()[hot.mass[1]];
+        assert!(
+            mg > 0.,
+            "vapor {receiver_vapor_kg} kg: {mg} kg after the start"
+        );
     }
 }

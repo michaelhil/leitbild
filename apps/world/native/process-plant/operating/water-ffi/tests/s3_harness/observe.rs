@@ -44,7 +44,7 @@ pub struct RuleI {
     pub first_extended: Option<f64>,
     pub margin_failures: u64,
     pub exit: Option<Value>,
-    /// COST2: FNV-1a over every judgment's full result, bit for bit: the
+    /// COST2: FNV-1a (over 64-bit words) of every judgment's full result, bit for bit: the
     /// state's time and region phases, then the admission (domain, margin
     /// holds, pivots, operator, reactivity gains, water terms) or the
     /// unsupported exit (domain, margin holds, exit): verdict equality
@@ -159,23 +159,23 @@ impl RuleI {
             t,
             0.,
         );
-        self.verdicts.fold(&[t]);
+        self.verdicts.fold_words(&[t]);
         for r in &phase {
-            self.verdicts.fold(&[r.saturation_departure_k, r.vapor_kg]);
+            self.verdicts.fold_words(&[r.saturation_departure_k, r.vapor_kg]);
         }
         match &admitted {
             Ok(a) => {
                 let m = &a.margin;
-                self.verdicts.fold(&[1., f64::from(u8::from(a.domain == Domain::Original)), f64::from(u8::from(m.holds))]);
+                self.verdicts.fold_words(&[1., f64::from(u8::from(a.domain == Domain::Original)), f64::from(u8::from(m.holds))]);
                 for v in [&m.pivots, &m.operator, &m.reactivity_gain, &m.water_terms] {
-                    self.verdicts.fold(&[v.len() as f64]);
-                    self.verdicts.fold(v);
+                    self.verdicts.fold_words(&[v.len() as f64]);
+                    self.verdicts.fold_words(v);
                 }
             }
             Err(e) => {
-                self.verdicts.fold(&[2.]);
+                self.verdicts.fold_words(&[2.]);
                 for b in format!("{e:?}").bytes() {
-                    self.verdicts.fold(&[f64::from(b)]);
+                    self.verdicts.fold_words(&[f64::from(b)]);
                 }
             }
         }
@@ -223,6 +223,15 @@ impl Fingerprint {
                 self.0 ^= u64::from(b);
                 self.0 = self.0.wrapping_mul(0x0100_0000_01b3);
             }
+        }
+    }
+    /// COST2: FNV-1a over whole 64-bit words (each value's IEEE bits), one
+    /// multiply per value instead of eight: rule I's verdict fingerprint is
+    /// folded at every accepted step, and S3-D46 counts it in the cost.
+    pub fn fold_words(&mut self, values: &[f64]) {
+        for v in values {
+            self.0 ^= v.to_bits();
+            self.0 = self.0.wrapping_mul(0x0100_0000_01b3);
         }
     }
     pub fn hex(self) -> String {

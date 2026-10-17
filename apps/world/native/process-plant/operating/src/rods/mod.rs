@@ -1583,6 +1583,12 @@ impl<P> Rods<P> for RodBlock {
                 deposits: Vec::new(),
                 receipt: json!({"supply_loss_rotor": rotor, "t_s": t, "holding": "unchanged"}),
             }),
+            // HOOK (C4 lane): C4's relief malfunction is the PZR owner's;
+            // the rods schedule nothing for it.
+            Command::ReliefStuckOpen => Ok(Transaction {
+                deposits: Vec::new(),
+                receipt: json!({"relief_stuck_open": true, "t_s": t, "holding": "unchanged"}),
+            }),
             Command::ManualReactorTrip => self.open_holding_circuit(t),
             // S3 (C16, acquired protection): with acquired protection the
             // turbine TRIP schedules nothing here; the protection's holding

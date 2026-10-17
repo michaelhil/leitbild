@@ -44,26 +44,33 @@ pub fn exchange_bounds(
     quiet_s: f64,
 ) -> Vec<(f64, bool)> {
     let we = te + window_s;
-    let mut out = Vec::new();
-    let mut t = t0;
-    while t < te - 1e-9 {
-        let t1 = (t0 + ((t - t0) / quiet_s + 1.).round() * quiet_s).min(te);
-        out.push((t1, false));
-        t = t1;
-    }
-    let mut k = 1.;
-    while t < we.min(end) - 1e-9 {
-        let t1 = (te + k * quiet_s).min(we).min(end);
-        out.push((t1, true));
-        t = t1;
-        k += 1.;
-    }
-    while t < end - 1e-9 {
-        let t1 = (t0 + ((t - t0) / quiet_s + 1e-9 + 1.).floor() * quiet_s).min(end);
-        out.push((t1, false));
-        t = t1;
-    }
-    out
+    // Each segment's next end follows from its previous end alone, until
+    // the segment's end is reached (a time grid, not an iterate).
+    let quiet: Vec<f64> = std::iter::successors(Some(t0), |&t| {
+        (t < te - 1e-9).then(|| (t0 + ((t - t0) / quiet_s + 1.).round() * quiet_s).min(te))
+    })
+    .skip(1)
+    .collect();
+    let from = quiet.last().copied().unwrap_or(t0);
+    let window: Vec<f64> = std::iter::successors(Some((from, 0.)), |&(t, k): &(f64, f64)| {
+        (t < we.min(end) - 1e-9).then(|| ((te + (k + 1.) * quiet_s).min(we).min(end), k + 1.))
+    })
+    .skip(1)
+    .map(|(t, _)| t)
+    .collect();
+    let from = window.last().copied().unwrap_or(from);
+    let after: Vec<f64> = std::iter::successors(Some(from), |&t| {
+        (t < end - 1e-9)
+            .then(|| (t0 + ((t - t0) / quiet_s + 1e-9 + 1.).floor() * quiet_s).min(end))
+    })
+    .skip(1)
+    .collect();
+    quiet
+        .into_iter()
+        .map(|t| (t, false))
+        .chain(window.into_iter().map(|t| (t, true)))
+        .chain(after.into_iter().map(|t| (t, false)))
+        .collect()
 }
 
 /// One exchange interval's receipt on the case clock (s after the loss):
