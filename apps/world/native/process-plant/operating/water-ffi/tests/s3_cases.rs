@@ -597,21 +597,26 @@ fn rule_i_is_read_as_the_owners_a4_and_b1() {
 /// (`operatorTurbineTripDelay_s`, with its `operatorTurbineTripFrom` and
 /// `operatorTurbineTripBasis`); `None` for the other cases.
 fn operator_trip_delay(case: Case, spec: &Value) -> Result<Option<f64>, String> {
-    if case != Case::C3 {
-        return Ok(None);
-    }
+    // C4 (r1) declares the same operator trip; its labelled ends are `ends`.
+    let end_key = match case {
+        Case::C3 => "labelledEnd",
+        Case::C4 => "ends",
+        Case::C1 | Case::C2 | Case::C5 => return Ok(None),
+    };
     let delay = spec["operatorTurbineTripDelay_s"]
         .as_f64()
         .filter(|d| d.is_finite() && *d > 0.)
-        .ok_or("C3 declares no positive operatorTurbineTripDelay_s (S3-D39)")?;
-    for k in [
-        "operatorTurbineTripFrom",
-        "operatorTurbineTripBasis",
-        "labelledEnd",
-    ] {
+        .ok_or(format!(
+            "{} declares no positive operatorTurbineTripDelay_s (S3-D39)",
+            case.key()
+        ))?;
+    for k in ["operatorTurbineTripFrom", "operatorTurbineTripBasis"] {
         spec[k]
             .as_str()
-            .ok_or(format!("C3 declares no {k} (S3-D39)"))?;
+            .ok_or(format!("{} declares no {k} (S3-D39)", case.key()))?;
+    }
+    if spec[end_key].is_null() {
+        return Err(format!("{} declares no {end_key}", case.key()));
     }
     Ok(Some(delay))
 }
@@ -675,6 +680,24 @@ fn case_clock(case: Case, spec: &Value, frame_s: f64) -> Result<(f64, Option<Com
                 )),
             }
         }
+        // C4 (r1): the relief fails open at `malfunctionTime_s` after the
+        // frame-aligned start, `malfunctionOffsetFromFrame_s` off the grid.
+        Case::C4 => {
+            if spec["startOnFrame"] != json!(true) {
+                return Err("C4 does not declare startOnFrame".into());
+            }
+            let at = number("malfunctionTime_s")?;
+            let off = number("malfunctionOffsetFromFrame_s")?;
+            if ((at / frame_s - (at / frame_s).floor()) * frame_s - off).abs() > 1e-9 {
+                return Err(format!(
+                    "C4's malfunction at {at} s is not {off} s off the {frame_s} s grid"
+                ));
+            }
+            if spec["malfunctions"]["pzrRelief"].is_null() {
+                return Err("C4 declares no pzrRelief malfunction".into());
+            }
+            Ok((at, Some(Command::ReliefStuckOpen)))
+        }
         // C5: S3-D10's offsite loss at `malfunctionTime_s`, off the grid by
         // `malfunctionOffsetFromFrame_s`; the Grid stand-in declares it at
         // its exchange (no command: a held change through `Driver::decide`).
@@ -694,10 +717,11 @@ fn case_clock(case: Case, spec: &Value, frame_s: f64) -> Result<(f64, Option<Com
     }
 }
 
-/// A case's declared event window length (C5's block nests it in `windows`).
+/// A case's declared event window length (C4's and C5's blocks nest it in
+/// `windows`; C4 declares one such window per event, this is its length).
 fn case_window(case: Case, spec: &Value) -> Option<f64> {
     match case {
-        Case::C5 => spec["windows"]["window_s"].as_f64(),
+        Case::C4 | Case::C5 => spec["windows"]["window_s"].as_f64(),
         _ => spec["window_s"].as_f64(),
     }
 }
@@ -716,16 +740,23 @@ struct WindowCap {
 const WINDOW_MAX_STEP_S: f64 = 0.02;
 
 fn window_cap(case: Case, spec: &Value) -> Option<WindowCap> {
-    let window_s = spec["window_s"].as_f64()?;
-    let starts: fn(&Value) -> bool = match case {
+    let (window_s, starts): (Option<f64>, fn(&Value) -> bool) = match case {
         // C5's cap is set by the case after the offsite loss's restart.
         Case::C1 | Case::C5 => return None,
-        Case::C2 => |r| r["command"] == "TurbineTripAcquired",
-        Case::C3 => |r| r["command"] == "SupplyLoss",
+        Case::C2 => (spec["window_s"].as_f64(), |r| {
+            r["command"] == "TurbineTripAcquired"
+        }),
+        Case::C3 => (spec["window_s"].as_f64(), |r| r["command"] == "SupplyLoss"),
+        // C4 (r1 `windows`): one window from each of the relief malfunction,
+        // the reactor trip and every birth, each started by its restart.
+        Case::C4 => (
+            spec["windows"]["window_s"].as_f64(),
+            s3_harness::c4::starts_window,
+        ),
     };
     Some(WindowCap {
         max_step_s: WINDOW_MAX_STEP_S,
-        window_s,
+        window_s: window_s?,
         starts,
     })
 }
@@ -827,6 +858,57 @@ fn the_window_cap_holds_only_inside_the_declared_window() {
     assert!(cap_removed_at(548.1 + 20., zero, 20.));
 }
 
+/// C4's block (wiki 7201bcd, in integ3), pinned by RP1-pin-s3-c4.
+const C4_R1: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r1.json");
+
+#[test]
+fn c4s_clock_windows_and_operator_trip_are_read_from_its_block() {
+    let b = Block::from_json(s3_harness::c4::FENCE, C4_R1).unwrap();
+    let spec = b.whole("/cases/C4");
+    // The relief fails open at the frame-aligned start.
+    let (zero, command) = case_clock(Case::C4, &spec, 0.1).unwrap();
+    assert_eq!((zero, command), (0., Some(Command::ReliefStuckOpen)));
+    // 20 s windows from the malfunction, the reactor trip and each birth.
+    let w = window_cap(Case::C4, &spec).unwrap();
+    assert_eq!((w.max_step_s, w.window_s), (0.02, 20.));
+    assert!((w.starts)(
+        &json!({"owner": "pzr", "command": "ReliefStuckOpen", "stuck_open": true})
+    ));
+    assert!((w.starts)(
+        &json!({"owner": "secondary", "command": "HoldingLoss"})
+    ));
+    assert!((w.starts)(
+        &json!({"owner": "phase modes", "events": [{"birth": 26}]})
+    ));
+    assert!(!(w.starts)(
+        &json!({"owner": "phase modes", "events": [{"exhaustion": 26}]})
+    ));
+    assert!(!(w.starts)(
+        &json!({"owner": "secondary", "command": "TurbineTripAcquired"})
+    ));
+    // The operator trips the turbine 10 s after the reactor trip.
+    assert_eq!(operator_trip_delay(Case::C4, &spec), Ok(Some(10.)));
+    let mut no_ends = spec.clone();
+    no_ends.as_object_mut().unwrap().remove("ends");
+    assert!(operator_trip_delay(Case::C4, &no_ends).is_err());
+    // C4's pin and register are its own block's.
+    let sha = guards::declared_sha256(&b).unwrap();
+    assert_eq!(
+        sha,
+        "76dfe5c84f7c5909828d008db7ba079643febd66a8d36e15b2e181907dc09b27"
+    );
+    let log = format!("| RP1-pin-s3-c4 | 15 Oct | `ld01-s3-cases-c4`; sha256 {sha} |\n");
+    let pin = guards::pin_of(&b, Some(&log), "log").unwrap();
+    let tbd = guards::tbd_state(&b, Some(&log)).unwrap();
+    let refusals = declaration::case_refusals(Case::C4, &pin, &tbd);
+    assert_eq!(
+        refusals.iter().filter(|r| r.starts_with("TBD(")).count(),
+        9,
+        "{refusals:?}"
+    );
+    assert!(refusals.iter().all(|r| !r.contains("not pinned")));
+}
+
 /// The joined system the case run integrates: with stock IDAS, the S2
 /// ledgers ride on it as quadratures (rule D); without, the plain one.
 #[cfg(feature = "quadratures")]
@@ -871,9 +953,24 @@ struct Driven {
     seats: std::collections::BTreeMap<usize, f64>,
     /// The acquired reactor trip after zero (the first division's trip).
     reactor_trip_after_zero: Option<f64>,
+    /// Rule F's absolute classes and their record (S3-D49).
+    f_tolerances: Option<(std::collections::BTreeMap<String, Vec<f64>>, Value)>,
+    /// The run's relative tolerance.
+    rtol: f64,
+    /// Every logged instant (R, S) and donor flip, absolute (rule F).
+    instants: Vec<f64>,
+    donor_flips: usize,
+    /// After zero: the generator breaker's opening and each SG relief
+    /// opening (+1) and closing (-1) (rule B).
+    gcb_open_after_zero: Option<f64>,
+    sg_relief: Vec<(String, i64, f64)>,
     repeat_record: Value,
     window_end_state: Option<(String, String)>,
     end_after_zero: f64,
+    /// C4: rule K's states (1 s after each phase change, the declared end)
+    /// and the first birth after zero.
+    c4_states: Vec<Value>,
+    first_birth_after_zero: Option<f64>,
 }
 
 /// What one run is asked: the run itself, its repeat or a reference.
@@ -890,6 +987,12 @@ struct Ask<'a> {
     /// E2's cap and E4/H1's window-end restart): the run, its repeat and
     /// the cost drive; never a reference (R1 has its own cap, R2 none).
     event_window: bool,
+    /// The gate observation grid when not S1's comparison grid (SS-1: the
+    /// 0.1 s output grid, S3-D51).
+    observation_s: Option<f64>,
+    /// Whether rule F's absolute classes are propagated at the start
+    /// (S3-D49; the run only).
+    f_tolerances: bool,
 }
 
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)] // One case: composition, run, judgement.
@@ -1009,9 +1112,41 @@ fn drive(
             conservation::Conservation::new(&g.s2.gates, plan.clone(), held0, vec![0.; ledgers])
         });
         let unit = ida.system();
+        let names = |v: Vec<String>| v;
+        let regions = names(
+            g.network_packet
+                .mechanics
+                .regions
+                .iter()
+                .map(|r| r.id.clone())
+                .collect(),
+        );
+        let faces = names(
+            g.network_packet
+                .mechanics
+                .faces
+                .iter()
+                .map(|f| f.id.clone())
+                .collect(),
+        );
+        // C3's idle branch: the supply-lost pump's discharge face (S3-D50).
+        let idle_face = match command {
+            Some(Command::SupplyLoss { rotor }) => s3_unit::ROTOR_CONSUMERS[rotor]
+                .strip_prefix("LD01.P.")
+                .map(|p| format!("PUMP.{p}->COLD.{}", &p[..1])),
+            _ => None,
+        };
+        let extra = observe::Extra::of(
+            &regions,
+            &faces,
+            &plan.ledger_names(),
+            plan.generators(),
+            idle_face.as_deref(),
+        )
+        .unwrap_or_else(|e| panic!("the extra signals: {e}"));
         observe::Gates {
             origin: zero,
-            dt: g.budgets.observation_s,
+            dt: ask.observation_s.unwrap_or(g.budgets.observation_s),
             output_s: g.budgets.output_s,
             credited_from: zero + ask.credited_from,
             reader: outputs::Reader::new(joined, &g.network_packet, g.reference_travel_m)
@@ -1039,6 +1174,7 @@ fn drive(
             samples: 0,
             rotors: Vec::new(),
             last_receipts: None,
+            extra: Some(extra),
         }
     });
     let mut observer = observe::CaseObserver {
@@ -1068,6 +1204,32 @@ fn drive(
     }
     let mut cap_intervals: Vec<Value> = Vec::new();
     let max_step = ask.max_step;
+    // C4 (C4 lane, r1): its own observation on the run (relief, PZR column,
+    // the cells' departures, the acquired PT for rule A′), its ends, and
+    // rule K's states 1 s after each phase change and at the declared end.
+    if case == Case::C4 {
+        assert_eq!(
+            spec["windows"]["maxStep_s"].as_f64(),
+            Some(WINDOW_MAX_STEP_S),
+            "C4's window cap is S1's eventWindow.maxStep_s"
+        );
+    }
+    let c4_observe = case == Case::C4 && ask.label == "run";
+    let c4_classes = (case == Case::C4).then(|| {
+        s3_harness::c4::Classes::from_block(&spec["volumeClasses"], &packet_json)
+            .unwrap_or_else(|e| panic!("C4's volume classes: {e}"))
+    });
+    let c4_after_birth_s = spec["ends"]["firstBirthPlus_s"].as_f64();
+    let c4_pt_setup = (case == Case::C4).then(|| c4_pt_setup(&inputs.ic_path, frame.period_s()));
+    let c4_lift = o.pzr;
+    if case == Case::C4 {
+        assert!(
+            labels[c4_lift].contains("relief"),
+            "the PZR block's first coordinate is the relief lift: {}",
+            labels[c4_lift]
+        );
+    }
+    let mut c4 = C4Run::default();
     if cfg!(feature = "quadratures") && observer.gates.is_some() {
         let count = ida.system().quadrature_count();
         driver
@@ -1110,6 +1272,14 @@ fn drive(
         relative: rtol,
         restart,
         derived: &derived,
+    };
+    // S3-D49: rule F's absolute classes at the start state (the run only).
+    let f_tolerances = match (&observer.gates, ask.f_tolerances) {
+        (Some(g), true) => Some(
+            observe::signal_tolerances(g, ida.system_mut(), t0, &y, &yp, n, &atol)
+                .unwrap_or_else(|e| panic!("rule F's classes: {e}")),
+        ),
+        _ => None,
     };
     observe::start_sample(&mut observer, ida.system_mut(), t0, &y, &yp);
     let preparation_cpu_s = spine::z1::cpu_s() - started;
@@ -1220,11 +1390,50 @@ fn drive(
             } else {
                 *b
             };
-            // The window's start disarms the hook (nothing later re-caps);
-            // its end removes the cap.
-            if let Some(w) = &window_cap
+            // C4: every declared window (relief, reactor trip, each birth)
+            // caps from its restart; each later window also ends with E4's
+            // restart; the cap comes off at the first bound at or after the
+            // last open window's end, and the hook stays armed.
+            if case == Case::C4
+                && let Some(w) = &window_cap
                 && r.is_ok()
             {
+                for start in s3_harness::c4::window_starts(&driver.log[c4.seen_windows..], zero) {
+                    let until_w = start + w.window_s;
+                    if c4.cap_until.is_none() {
+                        cap_intervals.push(json!({"from_after_zero_s": start, "set_by": "the driver at the restart that starts the window (restart_max_step)"}));
+                    }
+                    if start > 1e-9 {
+                        let decided = driver.decide(vec![Change {
+                            due_s: zero + until_w,
+                            class: Class::R,
+                            kind: "H1 window-end restart (E4)".into(),
+                            action: Action::Held(Box::new(|_| Ok(()))),
+                        }]);
+                        if let Err(e) = decided {
+                            r = Err(e);
+                        }
+                    }
+                    c4.cap_until = Some(c4.cap_until.map_or(until_w, |u| u.max(until_w)));
+                }
+                c4.seen_windows = driver.log.len();
+                if let Some(u) = c4.cap_until
+                    && *b - zero >= u - 1e-9
+                {
+                    if let Err(e) = ida.remove_max_step() {
+                        r = Err(format!("removing the window's cap at {b} s: {e}"));
+                    }
+                    if let Some(last) = cap_intervals.last_mut() {
+                        last["window_end_after_zero_s"] = json!(u);
+                        last["removed_after_zero_s"] = json!(*b - zero);
+                    }
+                    c4.cap_until = None;
+                }
+            } else if let Some(w) = &window_cap
+                && r.is_ok()
+            {
+                // The window's start disarms the hook (nothing later re-caps);
+                // its end removes the cap.
                 if driver.restart_max_step.is_some() && *b >= zero - 1e-9 {
                     driver.restart_max_step = None;
                     cap_intervals.push(json!({"from_s": zero, "from_after_zero_s": 0., "set_by": "the driver at the restart that starts the window (C4 hook 75dd4632c)"}));
@@ -1260,6 +1469,116 @@ fn drive(
                 .stats()
                 .map_or(f64::NAN, |st| st.convergence_failures as f64);
             convergence.push((reached - zero, driver.totals[5] as f64 + open_failures));
+            // C4: its observation, phase changes, rule K states and ends.
+            if case == Case::C4 && r.is_ok() {
+                let s0 = spine::z1::cpu_s();
+                let classes = c4_classes.as_ref().unwrap();
+                if c4_observe {
+                    match c4_frame(
+                        &mut ida,
+                        n,
+                        classes,
+                        zero,
+                        roof,
+                        &scales,
+                        &recorder.sg,
+                        c4_lift,
+                        *b,
+                        &y,
+                        &yp,
+                    ) {
+                        Ok((f, row)) => {
+                            c4.frames.push(f);
+                            c4.rows.push(row);
+                        }
+                        Err(e) => r = Err(e),
+                    }
+                    if let Some(setup) = &c4_pt_setup {
+                        c4.pt
+                            .push(c4_acquired(&protection, setup, frame.period_s(), *b, zero));
+                    }
+                }
+                for e in &driver.log[c4.seen_changes..] {
+                    let t = e["t_s"].as_f64().unwrap_or(f64::NAN);
+                    for x in e["restart"]["transactions"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                    {
+                        if x["owner"] != "phase modes" {
+                            continue;
+                        }
+                        for ev in x["events"].as_array().into_iter().flatten() {
+                            if let Some(cell) = ev["birth"].as_u64() {
+                                c4.changes
+                                    .push((t, format!("birth {}", classes.name(cell as usize))));
+                                c4.first_birth.get_or_insert(t);
+                            }
+                            if let Some(cell) = ev["exhaustion"].as_u64() {
+                                c4.changes.push((
+                                    t,
+                                    format!("exhaustion {}", classes.name(cell as usize)),
+                                ));
+                            }
+                        }
+                    }
+                }
+                c4.seen_changes = driver.log.len();
+                // Rule K (S3-D52): the state 1 s after each phase change, at
+                // the first frame bound at or after it (the run only).
+                if let Some(path) = ask.window_state.as_ref() {
+                    let due: Vec<(f64, String)> = c4.changes[c4.written..]
+                        .iter()
+                        .take_while(|(t, _)| *b >= t + 1. - 1e-9)
+                        .cloned()
+                        .collect();
+                    if !due.is_empty() {
+                        c4.written += due.len();
+                        let file = format!("{path}.c4-phase-{}.json", c4.states.len() + 1);
+                        let changes: Vec<Value> = due
+                            .iter()
+                            .map(|(t, what)| json!({"change": what, "at_after_zero_s": t - zero, "written_after_change_s": *b - t}))
+                            .collect();
+                        let from = format!(
+                            "C4: 1 s after {} phase change(s), at the first frame bound at or after",
+                            due.len()
+                        );
+                        let sha = c4_state(
+                            &ida,
+                            state,
+                            &composition,
+                            control.in_force_w,
+                            *b,
+                            &y,
+                            &yp,
+                            n,
+                            &from,
+                            &file,
+                        );
+                        c4.states.push(json!({"label": format!("1 s after {}", due.iter().map(|d| d.1.clone()).collect::<Vec<_>>().join(", ")),
+                            "t_s": *b, "after_zero_s": *b - zero, "changes": changes, "path": file, "sha256": sha}));
+                    }
+                }
+                c4.obs_s += spine::z1::cpu_s() - s0;
+                // r1 `ends`: rule I's exit and the first birth + 120 s stop
+                // the run there (labelled); the named refusals end it below.
+                if let Some(x) = &observer.rule_i.exit {
+                    c4.end = Some(
+                        json!({"end": "ruleI", "label": x["label"], "t_s": x["t_s"].as_f64().map(|t| t - zero), "stopped_after_zero_s": *b - zero}),
+                    );
+                    c4.stopped_at = Some(*b);
+                    break;
+                }
+                if let (Some(fb), Some(after)) = (c4.first_birth, c4_after_birth_s)
+                    && *b >= fb + after - 1e-9
+                {
+                    c4.end = Some(
+                        json!({"end": "firstBirthPlus_s", "t_s": *b - zero, "first_birth_after_zero_s": fb - zero}),
+                    );
+                    c4.stopped_at = Some(*b);
+                    break;
+                }
+            }
             // C5's exchange after the mark: the offsite loss's restart
             // counts in the event window's span.
             if c5 && r.is_ok() {
@@ -1406,7 +1725,9 @@ fn drive(
             }
             // Rule K's post-event state: the window's end (C2, C3), the
             // solver's own state there (the frame stop), for SPECTRUM.
+            // (C4's states are its own: 1 s after each phase change, S3-D52.)
             if r.is_ok()
+                && case != Case::C4
                 && let (Some(w), Some(path)) = (window_s, ask.window_state.as_ref())
                 && (*b - (zero + w)).abs() < 1e-9
             {
@@ -1458,6 +1779,61 @@ fn drive(
             }
         }
     }
+    // C4 (r1 `ends`): the kernel's named refusals end the run, labelled, at
+    // the last accepted step; rule K's state at the declared part's end.
+    if case == Case::C4 {
+        let mut ys = vec![0.; y.len()];
+        let mut yps = vec![0.; y.len()];
+        if let Some(fail) = failure.clone()
+            && let Some(label) = s3_harness::c4::labelled_end(&fail)
+        {
+            let t_last = ida.current_state(&mut ys, &mut yps).ok();
+            labelled_end = json!({"declared": spec["ends"][label], "end": label, "applies": true,
+                "last_accepted_s": t_last, "last_accepted_after_zero_s": t_last.map(|t| t - zero), "refusal": fail});
+            c4.end = Some(json!({"end": label, "t_s": t_last.map(|t| t - zero), "refusal": fail}));
+            failure = None;
+            if let (Some(path), Some(t)) = (ask.window_state.as_ref(), t_last) {
+                let file = format!("{path}.c4-end.json");
+                let sha = c4_state(
+                    &ida,
+                    state,
+                    &composition,
+                    control.in_force_w,
+                    t,
+                    &ys,
+                    &yps,
+                    n,
+                    &format!("C4: the declared part's end ({label}), the last accepted step"),
+                    &file,
+                );
+                c4.states.push(json!({"label": format!("declared end ({label})"), "t_s": t, "after_zero_s": t - zero, "path": file, "sha256": sha}));
+            }
+        } else if failure.is_none() {
+            if c4.end.is_none() {
+                c4.end = Some(json!({"end": "cap_s", "t_s": span}));
+            }
+            if let Some(path) = ask.window_state.as_ref() {
+                let t = c4.stopped_at.unwrap_or(until);
+                let file = format!("{path}.c4-end.json");
+                let sha = c4_state(
+                    &ida,
+                    state,
+                    &composition,
+                    control.in_force_w,
+                    t,
+                    &y,
+                    &yp,
+                    n,
+                    &format!(
+                        "C4: the declared part's end ({})",
+                        c4.end.as_ref().unwrap()["end"]
+                    ),
+                    &file,
+                );
+                c4.states.push(json!({"label": "declared end", "t_s": t, "after_zero_s": t - zero, "path": file, "sha256": sha}));
+            }
+        }
+    }
     let p = &protection.protection;
     let divisions: Vec<Value> = p
         .divisions
@@ -1470,7 +1846,7 @@ fn drive(
     let end = if outcome.is_err() {
         driver.solver_reached_s
     } else {
-        until
+        c4.stopped_at.unwrap_or(until)
     };
     let electrical_log = ida.system().log.clone();
     let mut tl = Timeline::from_logs(&driver.log, &divisions, p.holding.lost_at, zero, end)
@@ -1555,18 +1931,91 @@ fn drive(
             zero,
         )
     };
-    let judged = if c5 {
-        c5_judge(&declared_tl)
-    } else {
-        lines::judge(case, &spec["lines"], &declared_tl, &implemented, clusters)
-    };
-    let information = exit_after_zero.map(|_| {
-        if c5 {
-            c5_judge(&tl)
+    let (judged, information) = if case == Case::C4 {
+        // C4's own judges (s3_harness::c4) on its events and observation.
+        let events = s3_harness::c4::Events::from_log(&driver.log, zero).unwrap();
+        let joined = &ida.system().integrated().joined;
+        let setup = c4_pt_setup.as_ref().unwrap();
+        let run_c4 = s3_harness::c4::Run {
+            end: end - zero,
+            events: &events,
+            classes: c4_classes.as_ref().unwrap(),
+            divisions: &divisions,
+            holding_lost: p.holding.lost_at.map(|t| t - zero),
+            operator_trip: operator_trip_record["turbine_trip_after_zero_s"].as_f64(),
+            frames: &c4.frames,
+            clusters,
+            low_pa: setup.low_pa,
+            high_pa: setup.high_pa,
+            sg_crack_pa: packet_json["secondary"]["relief"]["crackPressure_Pa"]
+                .as_f64()
+                .expect("SG crack"),
+            full_travel_s: spec["malfunctions"]["pzrRelief"]["fullTravel_s"]
+                .as_f64()
+                .expect("fullTravel_s"),
+            birth_threshold_k: {
+                use leitbild_operating_plant::network::Properties;
+                joined
+                    .network
+                    .properties()
+                    .metastable_band()
+                    .expect("band")
+                    .credited_max_k
+            },
+            l1_active: joined.network.unilateral().is_some(),
+            pt: &c4.pt,
+            low_frames: setup.low_frames,
+            high_frames: setup.high_frames,
+        };
+        let judged = if c4_observe {
+            s3_harness::c4::judge(&spec["lines"], &run_c4, zero)
         } else {
-            lines::judge(case, &spec["lines"], &tl, &implemented, clusters)
-        }
-    });
+            vec![
+                json!({"id": "C4", "verdict": "not judged", "reason": "C4's lines are judged on the run only"}),
+            ]
+        };
+        let per_cell: serde_json::Map<String, Value> = {
+            let mut cells: std::collections::BTreeMap<String, Vec<Value>> =
+                std::collections::BTreeMap::new();
+            for (tb, c, _, _) in &events.births {
+                let next = events
+                    .exhaustions
+                    .iter()
+                    .find(|(te, x)| x == c && *te >= *tb)
+                    .map(|e| e.0);
+                cells.entry(run_c4.classes.name(*c)).or_default().push(
+                    json!({"birth_s": tb, "exhaustion_s": next, "lifetime_s": next.map(|e| e - tb)}),
+                );
+            }
+            cells.into_iter().map(|(k, v)| (k, json!(v))).collect()
+        };
+        c4.summary = json!({"end": c4.end, "events": {
+                "births": events.births.iter().map(|(t, c, k, r)| json!({"t_s": t, "cell": run_c4.classes.name(*c),
+                    "side": run_c4.classes.of(*c).name(), "class": k, "presence_changed": r["presence_changed"],
+                    "modes_changed": r["modes_changed"]})).collect::<Vec<_>>(),
+                "exhaustions": events.exhaustions.iter().map(|(t, c)| json!([t, run_c4.classes.name(*c)])).collect::<Vec<_>>(),
+                "per_cell": per_cell, "l1_changes": events.l1.len(), "chattering": events.chattering(),
+                "sg_relief": events.sg_relief.iter().map(|(t, v, th, d)| json!([t, v, th, d])).collect::<Vec<_>>(),
+                "relief": events.relief.iter().map(|(t, x)| json!([t, x])).collect::<Vec<_>>()},
+            "rule_k_states": c4.states, "observation_cpu_s": c4.obs_s,
+            "pt_setup": {"channels": setup.ids, "max_age_frames": setup.max_age_frames, "low_frames": setup.low_frames, "high_frames": setup.high_frames},
+            "frames": c4.rows});
+        (judged, None)
+    } else {
+        let judged = if c5 {
+            c5_judge(&declared_tl)
+        } else {
+            lines::judge(case, &spec["lines"], &declared_tl, &implemented, clusters)
+        };
+        let information = exit_after_zero.map(|_| {
+            if c5 {
+                c5_judge(&tl)
+            } else {
+                lines::judge(case, &spec["lines"], &tl, &implemented, clusters)
+            }
+        });
+        (judged, information)
+    };
     let totals: serde_json::Map<String, Value> = COUNTER_NAMES
         .iter()
         .zip(driver.totals)
@@ -1625,6 +2074,7 @@ fn drive(
             "routing_records": routing.iter().map(|(t, w)| json!([t, w])).collect::<Vec<_>>(),
             "field_controller": field.as_ref().map(|f| json!({"initiated": f.protection.initiated.as_ref().map(|i| json!({"cause": i.cause, "frame": i.frame, "t_s": i.at_s, "t_after_zero_s": i.at_s - zero})), "log": f.protection.log}))}) } else { Value::Null },
         "labelled_end": labelled_end,
+        "c4": if case == Case::C4 { c4.summary.clone() } else { Value::Null },
         "information": information.map(|l| json!({"note": "INFORMATION ONLY (past the rule-I exit): every line over the whole run", "lines": l})),
         "timeline": {"zero_s": zero, "end_s": tl.end, "holding_lost_s": tl.holding_lost, "stop_ramp_end_s": tl.stop_ramp_end,
             "seats": tl.seats.len(), "last_seat_s": tl.seats.iter().map(|(_, t)| *t).fold(f64::NEG_INFINITY, f64::max),
@@ -1700,10 +2150,230 @@ fn drive(
         convergence,
         seats,
         reactor_trip_after_zero,
+        f_tolerances,
+        rtol,
+        instants: driver
+            .log
+            .iter()
+            .filter_map(|e| e["t_s"].as_f64())
+            .chain(driver.donor_flips.events.iter().map(|(t, _)| *t))
+            .collect(),
+        donor_flips: driver.donor_flips.total(),
+        gcb_open_after_zero: tl
+            .electrical
+            .as_ref()
+            .and_then(|l| l.iter().find(|(_, w)| w == "GCB Open").map(|(t, _)| *t)),
+        sg_relief: tl
+            .sg_relief
+            .iter()
+            .filter_map(|(v, _, d, t)| {
+                s3_harness::timeline::relief_sg(v).map(|sg| (sg.to_string(), *d, *t))
+            })
+            .collect(),
         repeat_record,
         window_end_state,
         end_after_zero: end - zero,
+        c4_states: c4.states,
+        first_birth_after_zero: c4.first_birth.map(|t| t - zero),
     }
+}
+
+/// C4's run state in a drive (C4 lane).
+#[derive(Default)]
+struct C4Run {
+    frames: Vec<s3_harness::c4::Frame>,
+    rows: Vec<Value>,
+    pt: Vec<s3_harness::c4::Acquired>,
+    obs_s: f64,
+    first_birth: Option<f64>,
+    end: Option<Value>,
+    stopped_at: Option<f64>,
+    seen_windows: usize,
+    seen_changes: usize,
+    cap_until: Option<f64>,
+    changes: Vec<(f64, String)>,
+    written: usize,
+    states: Vec<Value>,
+    summary: Value,
+}
+
+/// The acquired PZR PT family and the voted pressure functions, from the
+/// compiled `ic` section (rule A′ and C4's margins).
+struct C4PtSetup {
+    ids: Vec<String>,
+    max_age_frames: u64,
+    low_pa: f64,
+    high_pa: f64,
+    low_frames: usize,
+    high_frames: usize,
+}
+
+fn c4_pt_setup(ic_path: &str, frame_s: f64) -> C4PtSetup {
+    let section: Value =
+        serde_json::from_slice(&std::fs::read(ic_path).expect("ic section")).expect("ic json");
+    let family = section["families"]
+        .as_array()
+        .and_then(|f| f.iter().find(|x| x["id"] == "LD01.PZR.PT"))
+        .expect("the ic section's LD01.PZR.PT family");
+    let frames_of = |s: f64| (s / frame_s).round() as u64;
+    let voted = |function: &str| -> (f64, usize) {
+        let rule = section["functions"]
+            .as_array()
+            .and_then(|f| f.iter().find(|x| x["id"] == function))
+            .map(|x| x["rule"]["voted"].clone())
+            .unwrap_or_else(|| panic!("the ic section declares no {function}"));
+        let setpoint = rule["side"]["at_or_below"]
+            .as_f64()
+            .or(rule["side"]["at_or_above"].as_f64())
+            .unwrap_or_else(|| panic!("{function} declares no setpoint"));
+        let q = rule["qualification_s"]
+            .as_f64()
+            .unwrap_or_else(|| panic!("{function} declares no qualification"));
+        (setpoint, frames_of(q) as usize)
+    };
+    let (low_pa, low_frames) = voted("LD01.PROT.PZR.LOW_PRESSURE");
+    let (high_pa, high_frames) = voted("LD01.PROT.PZR.HIGH_PRESSURE");
+    C4PtSetup {
+        ids: family["channels"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["id"].as_str().unwrap().to_string())
+            .collect(),
+        max_age_frames: frames_of(family["maximum_age_s"].as_f64().expect("maximum_age_s")),
+        low_pa,
+        high_pa,
+        low_frames,
+        high_frames,
+    }
+}
+
+/// The delivered PT samples the divisions' decision at frame `k + 1` votes
+/// on, after frame `k` (the bound `b`) was processed.
+fn c4_acquired(
+    protection: &leitbild_operating_water::ic::ProtectionClient,
+    setup: &C4PtSetup,
+    frame_s: f64,
+    b: f64,
+    zero: f64,
+) -> s3_harness::c4::Acquired {
+    use leitbild_operating_plant::ic::acquisition::Quality;
+    let k = (b / frame_s).round() as u64;
+    let delivered = protection.protection.delivered();
+    s3_harness::c4::Acquired {
+        t: (k + 1) as f64 * frame_s - zero,
+        channels: setup
+            .ids
+            .iter()
+            .map(|id| {
+                delivered
+                    .iter()
+                    .find(|(c, _)| c == id)
+                    .and_then(|(_, s)| *s)
+                    .and_then(|(at, q)| match q {
+                        Quality::Value(v) if k + 1 - at <= setup.max_age_frames => Some(v),
+                        _ => None,
+                    })
+            })
+            .collect(),
+    }
+}
+
+/// C4's frame record at the bound `t`: the roof and SG pressures, the
+/// relief's lift and flow, the PZR column, each core region's departure and
+/// vapour (B1's reading) and the hot-side or two-phase cells.
+#[allow(clippy::too_many_arguments)] // One observation: handle, layout, state.
+fn c4_frame(
+    ida: &mut leitbild_operating_water::ida::Ida<CaseUnit>,
+    n: usize,
+    classes: &s3_harness::c4::Classes,
+    zero: f64,
+    roof: usize,
+    scales: &[f64],
+    sg: &[(String, usize, f64)],
+    lift: usize,
+    t: f64,
+    y: &[f64],
+    yp: &[f64],
+) -> Result<(s3_harness::c4::Frame, Value), String> {
+    use leitbild_operating_plant::network::CellMode;
+    use leitbild_operating_water::joined::JoinedSystem;
+    let joined = &mut ida.system_mut().integrated_mut().joined;
+    joined
+        .evaluate(t, &y[..n], &yp[..n], None, 0., None)
+        .map_err(|e| format!("C4 frame at {t} s: {e:?}"))?;
+    let phase = joined
+        .region_phases()
+        .map_err(|e| format!("C4 region phases at {t} s: {e:?}"))?;
+    let nuclear = joined.offsets().nuclear;
+    let net = &joined.network;
+    let ev = net.pzr_evaluation().ok_or("no PZR evaluation")?;
+    let relief = ev
+        .flows
+        .relief
+        .as_ref()
+        .map_or(0., |r| r.vapor_kg_s.value + r.drop_kg_s.value);
+    let mut cells = Vec::new();
+    for (c, m) in net.cell_modes().iter().enumerate() {
+        if *m == CellMode::Equilibrium {
+            let (mg, ml) = net
+                .equilibrium_masses(c, &y[..nuclear])
+                .map_err(|e| format!("{e:?}"))?;
+            cells.push(json!([classes.name(c), "E", mg, ml]));
+        } else if classes.of(c) == s3_harness::c4::Side::Hot {
+            let d = net
+                .liquid_departure(c, &y[..nuclear])
+                .map_err(|e| format!("{e:?}"))?;
+            cells.push(json!([classes.name(c), "L", d]));
+        }
+    }
+    let f = s3_harness::c4::Frame {
+        t: t - zero,
+        roof_pa: y[roof] * scales[roof],
+        sg_pa: sg.iter().map(|(_, i, s)| y[*i] * s).collect(),
+        lift: y[lift] * scales[lift],
+        relief_kg_s: relief,
+        core_departure_k: phase.iter().map(|r| r.saturation_departure_k).collect(),
+        core_vapor_kg: phase.iter().map(|r| r.vapor_kg).collect(),
+    };
+    let col = &ev.column;
+    let row = json!({"t_s": f.t, "pzr_roof_pa": f.roof_pa, "sg_pressure_pa": f.sg_pa, "relief_lift": f.lift,
+        "relief_kg_s": relief, "pzr_collapsed_m": col.collapsed_elevation.value, "pzr_mixture_m": col.mixture_elevation.value,
+        "pzr_vapor_zone_kg": col.vapor.mass.value,
+        "core_departure_k_max": f.core_departure_k.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        "core_vapor_kg": f.core_vapor_kg.iter().sum::<f64>(), "cells": cells});
+    Ok((f, row))
+}
+
+/// A C4 state for rule K (SPECTRUM's Z6), in the window-end state's form;
+/// returns its sha256. States are never overwritten.
+#[allow(clippy::too_many_arguments)] // One state: handle, provenance, coordinates.
+fn c4_state(
+    ida: &leitbild_operating_water::ida::Ida<CaseUnit>,
+    state: &Value,
+    composition: &Value,
+    in_force_w: f64,
+    t: f64,
+    y: &[f64],
+    yp: &[f64],
+    n: usize,
+    from: &str,
+    path: &str,
+) -> String {
+    use leitbild_operating_water::joined::JoinedSystem;
+    let snapshot = ida.system().system_discrete_state();
+    let s = json!({"t_s": t, "packet": state["packet"], "packet_sha256": state["packet_sha256"],
+        "y": &y[..n], "yp": &yp[..n],
+        "appended": {"owner": "electrical slice (ELEC)", "y": &y[n..], "yp": &yp[n..]},
+        "discrete_state": snapshot, "pzr_control": {"in_force_w": in_force_w},
+        "composition": composition["composition"], "from": from});
+    let bytes = serde_json::to_vec(&s).unwrap();
+    assert!(
+        !std::path::Path::new(path).exists(),
+        "states are never overwritten"
+    );
+    std::fs::write(path, &bytes).unwrap();
+    spine::sha256(&bytes)
 }
 
 /// The CPU the IDAS ledgers' integrands took (zero without them).
@@ -1816,26 +2486,6 @@ fn c5_directions(
     b
 }
 
-/// The run's `(key, is temperature, series)` for SS-1 and the detector.
-fn credited_series(c: &compare::Credited) -> Vec<(String, bool, Vec<f64>)> {
-    let mut out = Vec::new();
-    for (k, temperature) in [
-        (compare::key::AVERAGE_COOLANT_K, true),
-        (compare::key::CORE_POWER_W, false),
-        (compare::key::PZR_ROOF_PA, false),
-        (compare::key::SG_PRESSURE_PA, false),
-        (compare::key::LOOP_FLOW_KG_S, false),
-        ("generator_power_w", false),
-    ] {
-        if let Ok(series) = c.output(k) {
-            for (i, x) in series.iter().enumerate() {
-                out.push((format!("{k}[{i}]"), temperature, x.clone()));
-            }
-        }
-    }
-    out
-}
-
 /// Rule D on a run's observation: S2's identities and IDAS ledgers (heater,
 /// PZR relief and exterior loss, SG feed/steam/relief, motor work, event
 /// energy among them) and the ELEC slice's energy ledger (turbine and shaft
@@ -1913,6 +2563,8 @@ fn rule_i_is_judged_at_every_accepted_step() {
             credited_from: 0.,
             window_state: None,
             event_window: true,
+            observation_s: None,
+            f_tolerances: false,
         },
     );
     let steps = run.record["stock_totals"]["steps"].as_i64().unwrap();
@@ -1945,7 +2597,11 @@ fn s3_case_run() {
     let tbd = d.tbd().unwrap();
     let mut refusals = declaration::case_refusals(case, &pin, &tbd);
     let spec = d.case(case);
-    let declared_s = spec["duration_s"].as_f64().expect("duration_s");
+    // C4 (r1) declares no duration: its last end is `ends.cap_s`.
+    let declared_s = spec["duration_s"]
+        .as_f64()
+        .or(spec["ends"]["cap_s"].as_f64())
+        .expect("duration_s");
     let span = match std::env::var("LD01_S3_PREVIEW_SPAN_S") {
         Ok(v) => {
             assert!(preview, "a shortened span is a preview");
@@ -2002,9 +2658,13 @@ fn s3_case_run() {
             label: "run",
             scaling: s3_unit::Scaling::NONE,
             max_step: None,
-            credited_from: judged_from,
+            // Rule F reads the whole declared part (S3-D49); E and the drift
+            // take their own spans from it.
+            credited_from: 0.,
             window_state: window_state("run"),
             event_window: true,
+            observation_s: None,
+            f_tolerances: gates_on,
         },
     );
     if run.record["composition"]["spray_path"] != json!(true) {
@@ -2058,6 +2718,8 @@ fn s3_case_run() {
                 credited_from: judged_from,
                 window_state: None,
                 event_window: true,
+                observation_s: None,
+                f_tolerances: false,
             },
         )
     });
@@ -2068,8 +2730,11 @@ fn s3_case_run() {
     let trip_from = match case {
         Case::C1 => None,
         Case::C2 => Some(0.),
-        Case::C3 | Case::C5 => run.reactor_trip_after_zero,
+        Case::C3 | Case::C4 | Case::C5 => run.reactor_trip_after_zero,
     };
+    // C4's first window (the relief malfunction's, from zero) is the
+    // family's window; its later windows are judged the same way below.
+    let first_window = case_window(case, &spec);
     let same_trajectory = cost_drive
         .as_ref()
         .map(|c| c.record["frames"] == run.record["frames"]);
@@ -2081,9 +2746,76 @@ fn s3_case_run() {
         case_window(case, &spec),
         recovery_s,
         trip_from,
-        quiet_ratio,
+        quiet_ratio.clone(),
         same_trajectory,
     );
+    // C4: each later window (the reactor trip, every birth) and its
+    // recovery, on the same marks shifted to the window's start.
+    if case == Case::C4
+        && let Some(w) = first_window
+    {
+        let cost_events = cost_drive.as_ref().map_or(&run.record, |c| &c.record);
+        let starts = s3_harness::c4::window_starts(
+            cost_events["instants"]
+                .as_array()
+                .map_or(&[][..], |v| v.as_slice()),
+            run.zero,
+        );
+        let mut later = Vec::new();
+        for start in starts.into_iter().filter(|s| *s > 1e-9 && *s < end) {
+            let shifted: Vec<s3_harness::families::Mark> = cost_marks
+                .iter()
+                .filter(|m| m.0 >= start - 1e-9)
+                .map(|m| (m.0 - start, m.1, m.2, m.3, m.4))
+                .collect();
+            let base = shifted.first().copied().unwrap_or((0., 0., 0., 0., 0.));
+            let shifted: Vec<s3_harness::families::Mark> = shifted
+                .iter()
+                .map(|m| (m.0, m.1 - base.1, m.2 - base.2, m.3 - base.3, m.4 - base.4))
+                .collect();
+            let mut v = s3_harness::families::cost(
+                case,
+                &budgets_block,
+                &shifted,
+                end - start,
+                Some(w),
+                recovery_s,
+                None,
+                quiet_ratio.clone(),
+                None,
+            );
+            // Only the window entries: the run's own and trip average are above.
+            let entries: Vec<Value> = v["gates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|g| {
+                    g["id"]
+                        .as_str()
+                        .is_some_and(|i| i.starts_with("cost.s2_window"))
+                })
+                .cloned()
+                .collect();
+            v = json!({"window_start_after_zero_s": start, "gates": entries});
+            later.push(v);
+        }
+        let verdicts: Vec<String> = later
+            .iter()
+            .flat_map(|v| {
+                v["gates"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|g| g["verdict"].as_str().unwrap_or("?").to_string())
+            })
+            .collect();
+        let overall = s3_harness::families::overall_of(
+            std::iter::once(g_cost["verdict"].as_str().unwrap_or("?"))
+                .chain(verdicts.iter().map(String::as_str)),
+        );
+        g_cost["c4_later_windows"] = json!(later);
+        g_cost["verdict"] = json!(overall);
+    }
     g_cost["measured_on"] = json!(if cost_drive.is_some() {
         "the ungated cost drive (same trajectory; frames compared, in the verdict)"
     } else {
@@ -2126,6 +2858,8 @@ fn s3_case_run() {
                     credited_from: judged_from,
                     window_state: window_state("repeat"),
                     event_window: true,
+                    observation_s: None,
+                    f_tolerances: false,
                 },
             );
             families.insert(
@@ -2152,6 +2886,36 @@ fn s3_case_run() {
                 judged_from,
                 end,
             )],
+            // C4 (r1 gates.refinement): R1 around the first birth over its
+            // window (from zero without one), R2 to the declared end.
+            Case::C4 => {
+                let w = first_window.unwrap();
+                let second =
+                    g.s2.shared
+                        .number("/eventReference/secondRefinementToleranceFactor");
+                let (from, to) = run
+                    .first_birth_after_zero
+                    .map_or((0., w.min(end)), |b| (b, (b + w).min(end)));
+                vec![
+                    (
+                        "R1".into(),
+                        s3_unit::Scaling::NONE,
+                        Some(g.s2.shared.number("/eventReference/maxStep_s")),
+                        from,
+                        to,
+                    ),
+                    (
+                        "R2".into(),
+                        s3_unit::Scaling {
+                            relative: second,
+                            absolute: f,
+                        },
+                        None,
+                        0.,
+                        end,
+                    ),
+                ]
+            }
             Case::C2 | Case::C3 | Case::C5 => {
                 let w = case_window(case, &spec).unwrap();
                 let second =
@@ -2204,6 +2968,8 @@ fn s3_case_run() {
                     credited_from: from,
                     window_state: None,
                     event_window: false,
+                    observation_s: None,
+                    f_tolerances: false,
                 },
             );
             let rg = r.observer.gates.as_ref().unwrap();
@@ -2223,7 +2989,12 @@ fn s3_case_run() {
                 to,
                 g.budgets.observation_s,
                 g.budgets.cutoff_hz,
-                &d.block.whole(&d.common("/accuracyExtension")),
+                // C4 (r1) declares no accuracy extension: E′ names C2 and C5.
+                &if case == Case::C4 {
+                    Value::Null
+                } else {
+                    d.block.whole(&d.common("/accuracyExtension"))
+                },
             );
             let electrical_ok = matches!(
                 electrical["verdict"].as_str(),
@@ -2247,7 +3018,7 @@ fn s3_case_run() {
         // E3/H2: the cap cycle against R1 over the window; S2's rod timing
         // against R1 and R2; H1a: the continuation's convergence failures.
         let mut checks = serde_json::Map::new();
-        if let Some(w) = spec["window_s"].as_f64().filter(|_| case != Case::C1) {
+        if let Some(w) = first_window.filter(|_| case != Case::C1) {
             let w_end = w.min(end);
             let r1 = references.iter().find(|(n, _)| n == "R1");
             checks.insert(
@@ -2331,28 +3102,41 @@ fn s3_case_run() {
             "threshold_source": "ld01-accuracy-contract + ld01-s2-accuracy (E0), ld01-s2-gates referenceToleranceFactor, ld01-s1-gates eventReference",
             "electrical_extension": "E′ (S3-D23) per comparison (electrical_e0): Ieq = |i_dq|/sqrt(3) against 10 A and terminal power against 1 MW, for the cases accuracyExtension.appliesTo names",
             "comparisons": comparisons}));
-        // Rule F: the detector on every recorded credited signal.
-        let series = credited_series(&og.credited);
-        let signals: Vec<(String, Vec<f64>)> = series
-            .iter()
-            .map(|(k, _, x)| (k.clone(), x.clone()))
-            .collect();
-        let instants: Vec<f64> = run.record["instants"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter_map(|e| e["t_s"].as_f64())
-            .collect();
-        families.insert(
-            "F_smoothness".into(),
-            s3_harness::families::smoothness(
-                &d.block.value,
-                &spec,
-                &signals,
-                &og.credited.t,
-                &instants,
-            ),
-        );
+        // Rule F (S3-D49) on the run's raw samples over its declared part.
+        let f_family = match &run.f_tolerances {
+            Some((a, record)) => {
+                let (lo, hi) = (run.zero - 1e-9, run.zero + end + 1e-9);
+                let keep: Vec<usize> = (0..og.credited.t.len())
+                    .filter(|k| og.credited.t[*k] >= lo && og.credited.t[*k] <= hi)
+                    .collect();
+                let t: Vec<f64> = keep.iter().map(|k| og.credited.t[*k]).collect();
+                let mut signals: Vec<(String, Vec<f64>, f64)> = Vec::new();
+                for key in observe::F_SIGNALS {
+                    let (Ok(series), Some(classes)) = (og.credited.output(key), a.get(key)) else {
+                        continue;
+                    };
+                    for (j, (x, ax)) in series.iter().zip(classes).enumerate() {
+                        signals.push((
+                            format!("{key}[{j}]"),
+                            keep.iter().map(|k| x[*k]).collect(),
+                            *ax,
+                        ));
+                    }
+                }
+                let mut f =
+                    s3_harness::families::smoothness_signed(&t, &signals, run.rtol, &run.instants);
+                f["classes"] = record.clone();
+                if og.credited_error.is_some() {
+                    f["verdict"] = json!("unevaluable");
+                    f["credited_error"] = json!(og.credited_error);
+                }
+                f
+            }
+            None => {
+                json!({"family": "F smoothness", "verdict": "not executable", "reason": "no absolute classes (the run did not propagate them)"})
+            }
+        };
+        families.insert("F_smoothness".into(), f_family);
         // Rule K at the declared states.
         let receipts: Value = std::env::var("LD01_S3_Z6_RECEIPTS")
             .ok()
@@ -2375,8 +3159,22 @@ fn s3_case_run() {
         let start_sha = provenance::sha256_file(&state_path).ok();
         let window_sha = run.window_end_state.as_ref().map(|(_, s)| s.clone());
         let mut states: Vec<(&str, Option<String>)> = vec![("start (prerequisite 11)", start_sha)];
-        if case != Case::C1 {
+        if matches!(case, Case::C2 | Case::C3) {
             states.push(("window end", window_sha));
+        }
+        // C4 (S3-D52): 1 s after each phase change and the declared end.
+        let c4_labels: Vec<(String, Option<String>)> = run
+            .c4_states
+            .iter()
+            .map(|x| {
+                (
+                    x["label"].as_str().unwrap_or("?").to_string(),
+                    x["sha256"].as_str().map(str::to_string),
+                )
+            })
+            .collect();
+        for (label, sha) in &c4_labels {
+            states.push((label.as_str(), sha.clone()));
         }
         let mut k = s3_harness::families::spectra(&states, &receipts);
         if k["verdict"] == "not executable" {
@@ -2385,26 +3183,41 @@ fn s3_case_run() {
             );
         }
         k["window_end_state"] = json!(run.window_end_state);
-        k["post_event"] = json!(if case == Case::C1 {
-            "not applicable: C1 has no event"
-        } else {
-            "the window's end state (C2, C3, C5)"
+        k["post_event"] = json!(match case {
+            Case::C1 => "not applicable: C1 has no event",
+            Case::C2 | Case::C3 | Case::C5 => "the window's end state (C2, C3, C5)",
+            Case::C4 => "1 s after each phase change and at the declared part's end (C4, S3-D52)",
         });
+        if case == Case::C4 {
+            k["c4_states"] = json!(run.c4_states);
+        }
         families.insert("K_spectra".into(), k);
-        // Rule B.
-        let rotor = match case {
-            Case::C3 => case_clock(case, &spec, d.block.number("/frameAlignment/frame_s"))
-                .ok()
-                .and_then(|(_, c)| match c {
-                    Some(Command::SupplyLoss { rotor }) => Some(rotor),
-                    _ => None,
-                }),
-            _ => None,
+        // Rule B (S3-D50), with the chattering criterion as data (owner
+        // request 7: LD01_S3_CHATTER_RULE swaps it without code changes).
+        let chatter_rule: Value = serde_json::from_str(
+            &std::env::var("LD01_S3_CHATTER_RULE")
+                .unwrap_or_else(|_| s3_harness::families::DEFAULT_CHATTER_RULE.to_string()),
+        )
+        .expect("LD01_S3_CHATTER_RULE is a JSON rule");
+        let chatter = s3_harness::families::chattering(
+            run.record["instants"].as_array().unwrap(),
+            &chatter_rule,
+        );
+        let direction_inputs = s3_harness::families::DirectionInputs {
+            credited: &og.credited,
+            zero: run.zero,
+            end,
+            reactor_trip: run.reactor_trip_after_zero,
+            gcb_open: run.gcb_open_after_zero,
+            sg_relief: run.sg_relief.clone(),
+            rotors: &og.rotors,
+            chatter,
+            donor_flips: run.donor_flips,
         };
         let b_family = if case == Case::C5 {
             c5_directions(&spec, og, &g.network_packet, &run)
         } else {
-            s3_harness::families::directions(case, &spec, rotor, &og.rotors)
+            s3_harness::families::directions(case, &spec, &direction_inputs)
         };
         families.insert("B_directions".into(), b_family);
         // C1's drift, SS-1 and SS-2.
@@ -2471,16 +3284,67 @@ fn s3_case_run() {
             families.insert("C1_drift".into(), json!({"family": "C1 drift", "verdict": verdict, "credited_error": og.credited_error,
                 "threshold_source": "ld01-s2-gates hold.driftCeiling (PZR level reported only, S3-D2); ld01-s3-cases-c1c3 cases.C1.generatorPowerDriftRelative",
                 "judged_from_s": judged_from, "record": drift}));
-            families.insert(
-                "C1_SS1".into(),
-                s3_harness::families::ss1(
+            // SS-1 (S3-D51): its own drive over ss1Duration_s on the 0.1 s
+            // output grid, provisional on this Mac (F1).
+            let ss1 = if std::env::var("LD01_S3_SS1").as_deref() == Ok("0") {
+                json!({"family": "C1 SS-1", "verdict": "not run", "reason": "LD01_S3_SS1=0"})
+            } else {
+                let declared = spec["ss1Duration_s"].as_f64().expect("ss1Duration_s");
+                // A preview may shorten it (then not executable as declared).
+                let duration = match std::env::var("LD01_S3_PREVIEW_SS1_S") {
+                    Ok(v) => {
+                        assert!(preview, "a shortened SS-1 is a preview");
+                        v.parse::<f64>().expect("LD01_S3_PREVIEW_SS1_S")
+                    }
+                    Err(_) => declared,
+                };
+                let r = drive(
+                    case,
+                    &d,
                     &spec,
-                    end,
-                    &credited_series(&og.credited),
-                    g.budgets.observation_s,
+                    &inputs,
+                    &state,
+                    &state_path,
+                    duration,
+                    Some(g),
+                    &Ask {
+                        label: "SS-1",
+                        scaling: s3_unit::Scaling::NONE,
+                        max_step: None,
+                        credited_from: 0.,
+                        window_state: None,
+                        event_window: true,
+                        observation_s: Some(g.budgets.output_s),
+                        f_tolerances: false,
+                    },
+                );
+                let rg = r.observer.gates.as_ref().unwrap();
+                let series: Vec<(String, bool, Vec<f64>)> = s3_harness::families::SS1_SIGNALS
+                    .iter()
+                    .flat_map(|(k, temperature)| {
+                        rg.credited.output(k).map_or(Vec::new(), |inst| {
+                            inst.iter()
+                                .enumerate()
+                                .map(|(j, x)| (format!("{k}[{j}]"), *temperature, x.clone()))
+                                .collect()
+                        })
+                    })
+                    .collect();
+                let mut v = s3_harness::families::ss1(
+                    &spec,
+                    r.end_after_zero,
+                    &series,
+                    g.budgets.output_s,
                     g.budgets.cutoff_hz,
-                ),
-            );
+                );
+                v["drive"] = json!({"failure": r.failure, "cpu": r.record["cpu"], "credited_error": rg.credited_error,
+                    "rule_i_exit_after_zero_s": r.exit_after_zero, "counts_by_class": r.record["counts_by_class"]});
+                if r.failure.is_some() || rg.credited_error.is_some() {
+                    v["verdict"] = json!("unevaluable");
+                }
+                v
+            };
+            families.insert("C1_SS1".into(), ss1);
             let d_family = &families["D_conservation"];
             families.insert(
                 "C1_SS2".into(),
@@ -2514,7 +3378,9 @@ fn s3_case_run() {
             refusals.len()
         )
     };
-    let status = if run.record["labelled_end"]["applies"] == json!(true) {
+    let status = if case == Case::C4 {
+        format!("{status}; C4 ended {}", run.record["c4"]["end"]["end"])
+    } else if run.record["labelled_end"]["applies"] == json!(true) {
         format!("{status}; ended, labelled, at PZR zone-R exhaustion (S3-D39, a declared exit)")
     } else {
         status
@@ -2546,6 +3412,7 @@ fn s3_case_run() {
     // The case record's own fields at the top level, as before.
     for k in [
         "lines",
+        "c4",
         "algebraic_residuals",
         "rule_i",
         "operator_turbine_trip",
