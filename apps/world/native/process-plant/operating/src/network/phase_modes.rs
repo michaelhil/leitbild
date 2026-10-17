@@ -180,9 +180,11 @@ impl<P: Properties> Network<P> {
         let l = self.cell_layout[node];
         let at = |v: &[f64], i: usize| v[i] * self.scales[i];
         let (before, after) = (at(entry, l.base), at(y, l.base));
-        Ok(json!({"cell": node, "p_entry_pa": before, "p_flash_pa": after,
+        Ok(
+            json!({"cell": node, "p_entry_pa": before, "p_flash_pa": after,
             "dp_pa": after - before, "vapor_kg": at(y, l.mass[1]),
-            "vapor_energy_j": at(y, l.energy[1]), "mass_kg": at(y, l.mass[0])}))
+            "vapor_energy_j": at(y, l.energy[1]), "mass_kg": at(y, l.mass[0])}),
+        )
     }
 
     /// Exhaustion transaction (equilibrium → liquid) at a located root: the

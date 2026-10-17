@@ -437,7 +437,11 @@ impl<P: WaterProperties> WaterProperties for Shared<'_, P> {
         // HOOK (COST2): the owner's answer to the same key from an earlier
         // evaluation (a pure function of the key's bits).
         if let Some(h) = self.held
-            && let Some(v) = h.0.lock().map_err(|_| "turnover store poisoned")?.get(key).copied()
+            && let Some(v) =
+                h.0.lock()
+                    .map_err(|_| "turnover store poisoned")?
+                    .get(key)
+                    .copied()
         {
             self.turnover.borrow_mut().push((key.to_vec(), v));
             return Ok(v);
