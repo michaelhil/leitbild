@@ -341,6 +341,21 @@ pub struct Shared<'a, P: WaterProperties> {
     saturation: std::cell::RefCell<Vec<([u64; 2], Saturation)>>,
     vapor_density: std::cell::RefCell<Vec<([u64; 2], Scalar)>>,
     turnover: std::cell::RefCell<Vec<(Vec<u64>, f64)>>,
+    /// HOOK (COST2): the owner's turnover answers held across its
+    /// evaluations ([`TurnoverHeld`]), when the owner supplies them.
+    held: Option<&'a TurnoverHeld>,
+}
+/// HOOK (COST2, for KERN2): wet/film turnover answers held by their owner
+/// (one solid block, one PZR block) across its evaluations. A turnover
+/// answer is a pure function of its key's exact bits (values and
+/// directions, [`WaterProperties::turnover`]), so an answer held from an
+/// earlier evaluation is bitwise the one its solve returns again: the
+/// bisection runs once per distinct key, not once per evaluation. Bounded:
+/// the store starts over when full (which changes no answer).
+#[derive(Debug, Default)]
+pub struct TurnoverHeld(std::sync::Mutex<std::collections::HashMap<Vec<u64>, f64>>);
+impl TurnoverHeld {
+    const MOST: usize = 1 << 12;
 }
 impl<'a, P: WaterProperties> Shared<'a, P> {
     pub fn new(inner: &'a P) -> Self {
@@ -351,6 +366,15 @@ impl<'a, P: WaterProperties> Shared<'a, P> {
             saturation: Default::default(),
             vapor_density: Default::default(),
             turnover: Default::default(),
+            held: None,
+        }
+    }
+    /// HOOK (COST2): [`Self::new`] whose turnovers also consult and keep the
+    /// owner's answers held across evaluations.
+    pub fn with_held(inner: &'a P, held: &'a TurnoverHeld) -> Self {
+        Self {
+            held: Some(held),
+            ..Self::new(inner)
         }
     }
     /// Turnover endpoints solved so far.
@@ -410,9 +434,24 @@ impl<P: WaterProperties> WaterProperties for Shared<'_, P> {
         if let Some((_, v)) = self.turnover.borrow().iter().find(|(k, _)| k == key) {
             return Ok(*v);
         }
+        // HOOK (COST2): the owner's answer to the same key from an earlier
+        // evaluation (a pure function of the key's bits).
+        if let Some(h) = self.held
+            && let Some(v) = h.0.lock().map_err(|_| "turnover store poisoned")?.get(key).copied()
+        {
+            self.turnover.borrow_mut().push((key.to_vec(), v));
+            return Ok(v);
+        }
         // The solve queries this boundary's properties; no borrow is held.
         let v = solve()?;
         self.turnover.borrow_mut().push((key.to_vec(), v));
+        if let Some(h) = self.held {
+            let mut m = h.0.lock().map_err(|_| "turnover store poisoned")?;
+            if m.len() >= TurnoverHeld::MOST {
+                m.clear();
+            }
+            m.insert(key.to_vec(), v);
+        }
         Ok(v)
     }
 }
