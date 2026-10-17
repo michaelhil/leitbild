@@ -544,9 +544,16 @@ fn z1_probe(full: bool) {
     };
     let started = z1::cpu_s();
     let (path, bytes) = packet_bytes();
-    let network_packet: NetworkPacket = serde_json::from_slice(&bytes).expect("network packet");
+    let mut network_packet: NetworkPacket =
+        serde_json::from_slice(&bytes).expect("network packet");
     let joined_packet: packet::Packet = serde_json::from_slice(&bytes).expect("joined packet");
     let raw: Value = serde_json::from_slice(&bytes).expect("packet json");
+    // HOOK (OU-C P2 -> OU-B builder): the rod bores' water leaves the sector
+    // inventory before the network is compiled.
+    let rods: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
+    let carved = full.then(|| {
+        leitbild_operating_plant::rods::carve(&rods, &mut network_packet).expect("rods carve")
+    });
     let gates = z1::s1_gates();
     let (flows, momenta, s1) = z1::s1_settled_flows(&network_packet, &gates);
     let (network, y_network, network_ids, flowing) =
@@ -554,14 +561,20 @@ fn z1_probe(full: bool) {
     let (secondary, rods) = if full {
         let section: SecondarySection =
             serde_json::from_value(raw["secondary"].clone()).expect("secondary section");
-        let rods: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
         (
             SecondaryPort::Owner(Box::new(
                 Secondaries::new(&section, &joined_packet.thermal.secondaries, &If97)
                     .expect("SG secondary owner"),
             )),
             RodPort::Owner(Box::new(
-                RodBlock::from_packet(&rods, &network_packet).expect("rod owner"),
+                RodBlock::from_packet(
+                    &rods,
+                    &network_packet,
+                    carved.as_ref().expect("carved"),
+                    &If97,
+                    &[],
+                )
+                .expect("rod owner"),
             )),
         )
     } else {
@@ -986,16 +999,21 @@ pub fn started_full_composition() -> Started {
         sg::{packet::Section as SecondarySection, secondary::Secondaries},
     };
     let (path, bytes) = packet_bytes();
-    let network_packet: NetworkPacket = serde_json::from_slice(&bytes).expect("network packet");
+    let mut network_packet: NetworkPacket =
+        serde_json::from_slice(&bytes).expect("network packet");
     let joined_packet: packet::Packet = serde_json::from_slice(&bytes).expect("joined packet");
     let raw: Value = serde_json::from_slice(&bytes).expect("packet json");
+    // HOOK (OU-C P2 -> OU-B builder): the rod bores' water leaves the sector
+    // inventory before the network is compiled.
+    let rods: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
+    let carved =
+        leitbild_operating_plant::rods::carve(&rods, &mut network_packet).expect("rods carve");
     let gates = z1::s1_gates();
     let (flows, momenta, s1) = z1::s1_settled_flows(&network_packet, &gates);
     let (network, y_network, network_ids, flowing) =
         z1::composed(&network_packet, &flows, &momenta);
     let section: SecondarySection =
         serde_json::from_value(raw["secondary"].clone()).expect("secondary section");
-    let rods: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
     let mut joined = Joined::new(
         network,
         &network_packet,
@@ -1006,7 +1024,7 @@ pub fn started_full_composition() -> Started {
                 .expect("SG secondary owner"),
         )),
         RodPort::Owner(Box::new(
-            RodBlock::from_packet(&rods, &network_packet).expect("rod owner"),
+            RodBlock::from_packet(&rods, &network_packet, &carved, &If97, &[]).expect("rod owner"),
         )),
     )
     .expect("joined operator");
