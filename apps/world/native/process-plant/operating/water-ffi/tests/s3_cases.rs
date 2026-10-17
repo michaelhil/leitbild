@@ -2519,11 +2519,7 @@ fn drive(
                 .collect()
         })
         .unwrap_or_default();
-    let seats: std::collections::BTreeMap<usize, f64> = tl
-        .seats
-        .iter()
-        .filter_map(|(c, t)| cluster_index.get(c).map(|i| (*i, zero + *t)))
-        .collect();
+    let seats = first_seats(&tl.seats, &cluster_index, zero);
     let reactor_trip_after_zero = protection
         .protection
         .divisions
@@ -2568,6 +2564,42 @@ fn drive(
         c4_states: c4.states,
         first_birth_after_zero: c4.first_birth.map(|t| t - zero),
     }
+}
+
+/// Each cluster's first seat by cluster index, absolute (S2's G9 and rule
+/// E's rod timing): a body that lifts off and seats again (C4, after the
+/// hot births) keeps its first seat time. `seats` is the timeline's, in log
+/// order, on the case clock.
+fn first_seats(
+    seats: &[(String, f64)],
+    cluster_index: &std::collections::BTreeMap<String, usize>,
+    zero: f64,
+) -> std::collections::BTreeMap<usize, f64> {
+    let mut out = std::collections::BTreeMap::new();
+    for (c, t) in seats {
+        if let Some(i) = cluster_index.get(c) {
+            out.entry(*i).or_insert(zero + *t);
+        }
+    }
+    out
+}
+
+#[test]
+fn a_reseated_body_keeps_its_first_seat_time() {
+    let index: std::collections::BTreeMap<String, usize> = [
+        ("LD01.CR.001".to_string(), 0),
+        ("LD01.CR.002".to_string(), 1),
+    ]
+    .into();
+    let seats = vec![
+        ("LD01.CR.001".to_string(), 22.1),
+        ("LD01.CR.002".to_string(), 22.2),
+        ("LD01.CR.001".to_string(), 40.03),
+        ("LD01.CR.999".to_string(), 1.),
+    ];
+    let first = first_seats(&seats, &index, 548.);
+    assert_eq!(first.len(), 2);
+    assert!((first[&0] - 570.1).abs() < 1e-9 && (first[&1] - 570.2).abs() < 1e-9);
 }
 
 /// C4's run state in a drive (C4 lane).
@@ -3375,7 +3407,10 @@ fn s3_case_run() {
                     label: &name,
                     scaling,
                     max_step,
-                    credited_from: from,
+                    // C4: R1's comparison starts at the first birth, but the
+                    // reference records from zero, so the rods' insertion
+                    // (rule E's rod timing) is in its record as in C2/C3.
+                    credited_from: if case == Case::C4 { 0. } else { from },
                     window_state: None,
                     event_window: false,
                     observation_s: None,
