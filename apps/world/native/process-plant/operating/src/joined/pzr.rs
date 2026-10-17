@@ -275,6 +275,9 @@ pub struct Pzr {
     /// turns it on), and the last value evaluation's record.
     capture: bool,
     captured: Option<Ledger>,
+    /// HOOK (COST2): the heaters' and walls' wet/film turnovers held across
+    /// evaluations (exact: pure functions of their keys).
+    turnovers: crate::thermal::TurnoverHeld,
 }
 
 impl Pzr {
@@ -429,6 +432,7 @@ impl Pzr {
             prepared,
             capture: false,
             captured: None,
+            turnovers: crate::thermal::TurnoverHeld::default(),
         })
     }
 
@@ -539,6 +543,9 @@ impl Pzr {
         let segments = self.heaters.segments().len();
         let rod: Vec<Scalar> = (base..base + segments).map(|i| x.value(i)).collect();
         let wall: Vec<Scalar> = (base + segments..n).map(|i| x.value(i)).collect();
+        // HOOK (COST2): one property boundary for the call, its turnovers
+        // held across calls (every answer the one a fresh query returns).
+        let shared = crate::thermal::Shared::with_held(properties, &self.turnovers);
         let rates = self.walls.rates(
             cell,
             column,
@@ -546,7 +553,7 @@ impl Pzr {
             &rod,
             &self.bank_power_w,
             &wall,
-            properties,
+            &shared,
         )?;
         let sources = rates
             .rod_metal_rates()
