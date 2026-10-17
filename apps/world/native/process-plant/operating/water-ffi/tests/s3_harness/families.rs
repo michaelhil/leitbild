@@ -2601,6 +2601,7 @@ mod tests {
             reactor_trip: Some(1.),
             gcb_open: None,
             sg_relief: Vec::new(),
+            sg_relief_law: None,
             rotors: &rotors,
             chatter: json!(null),
             donor_flips: 0,
