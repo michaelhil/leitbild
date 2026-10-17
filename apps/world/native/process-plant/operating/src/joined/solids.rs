@@ -272,6 +272,9 @@ pub struct Solids {
     /// Per passive contact: its heat at the last undirected (store, water)
     /// temperatures, keyed by their bits (the same rule).
     passive_memo: Vec<Option<([u64; 4], Scalar)>>,
+    /// HOOK (COST2): the wall contacts' wet/film turnovers held across
+    /// evaluations (exact: pure functions of their keys).
+    turnovers: std::sync::Arc<thermal::TurnoverHeld>,
 }
 
 /// A wall law's memo key: its wall water's version, then the wall
@@ -679,6 +682,7 @@ impl Solids {
             directions_only: false,
             contact_base: Vec::new(),
             passive_memo: Vec::new(),
+            turnovers: Default::default(),
         };
         let mut base = 0;
         for b in &solids.bands {
@@ -1432,8 +1436,10 @@ impl Solids {
         }
         // One property boundary for this scope's evaluation: each query and
         // wet/film turnover at bit-identical inputs is answered once, with
-        // the answer a fresh query returns; nothing outlives the call.
-        let shared = thermal::Shared::new(properties);
+        // the answer a fresh query returns. HOOK (COST2): the turnovers are
+        // also held across evaluations (pure functions of their keys).
+        let turnovers = std::sync::Arc::clone(&self.turnovers);
+        let shared = thermal::Shared::with_held(properties, &turnovers);
         let properties = &shared;
         heat.secondary_w.clear();
         heat.secondary_w.resize(self.secondaries, s(0.));
