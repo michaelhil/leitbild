@@ -95,15 +95,16 @@ pub struct Valve {
     pub id: String,
 }
 
+/// The SG spring valves (`ld01-sg-relief`, owner R12-B2): per valve
+/// position, in each SG's valve order, its role and absolute settings; the
+/// lag, seat, receiver, branch rule and rating are common.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Relief {
-    #[serde(rename = "crackPressure_Pa")]
-    pub crack_pressure_pa: f64,
-    #[serde(rename = "fullLiftPressure_Pa")]
-    pub full_lift_pressure_pa: f64,
-    #[serde(rename = "reseatPressure_Pa")]
-    pub reseat_pressure_pa: f64,
+    pub valves: Vec<ValveSetting>,
+    /// The declared SG (steam-side) design pressure, Pa.
+    #[serde(rename = "designPressure_Pa")]
+    pub design_pressure_pa: f64,
     #[serde(rename = "liftLag_s")]
     pub lift_lag_s: f64,
     /// A closing disc seats when its lift falls to `exp(-n)` of full lift,
@@ -118,6 +119,27 @@ pub struct Relief {
     pub rating: Rating,
 }
 
+/// One valve position's settings.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ValveSetting {
+    pub role: ValveRole,
+    #[serde(rename = "crackPressure_Pa")]
+    pub crack_pressure_pa: f64,
+    #[serde(rename = "fullLiftPressure_Pa")]
+    pub full_lift_pressure_pa: f64,
+    #[serde(rename = "reseatPressure_Pa")]
+    pub reseat_pressure_pa: f64,
+}
+/// AP1000's two functions: the relief (PORV) between no-load pressure and
+/// the safety valves, and the safety valves (DCD Table 10.3.2-1/-2).
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+pub enum ValveRole {
+    #[serde(rename = "relief")]
+    Relief,
+    #[serde(rename = "safety")]
+    Safety,
+}
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 pub enum DescendingSwitch {
     #[serde(rename = "inletAtFullLift")]

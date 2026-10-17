@@ -32,13 +32,23 @@ const boundariesSchema=z.object({steamDemand_kg_s:z.object({A:positive,B:positiv
   steamDonor:z.literal('pickupGas'),feedRule:z.literal('inventoryHolding')}).strict()
 const travelSchema=z.object({sgIsolation_s:positive,turbineStop_s:positive,reheaterIsolation_s:positive,
   admission_s:positive,bypass_s:positive}).strict()
-const reliefSchema=z.object({valvesPerSg:z.number().int().positive(),crackPressure_Pa:positive,fullLiftPressure_Pa:positive,
-  reseatPressure_Pa:positive,liftLag_s:positive,seatLagTimeConstants:positive,backPressure_Pa:positive,descendingSwitch:z.literal('inletAtFullLift'),
+/** R12-B2: one relief, then one safety valve per SG, each with its own
+ * absolute settings, and the declared SG design pressure. */
+const valveSettingSchema=z.object({role:z.enum(['relief','safety']),crackPressure_Pa:positive,fullLiftPressure_Pa:positive,
+  reseatPressure_Pa:positive}).strict()
+const reliefSchema=z.object({valves:z.array(valveSettingSchema),designPressure_Pa:positive,
+  liftLag_s:positive,seatLagTimeConstants:positive,backPressure_Pa:positive,descendingSwitch:z.literal('inletAtFullLift'),
   rating:z.object({fractionOfNominalFlow:positive.max(1),nominalFlow_kg_s:positive,fluid:z.literal('saturatedVapor'),
     inletPressure_Pa:positive}).strict()}).strict()
   .superRefine((r,c)=>{
-    if(!(r.backPressure_Pa<r.reseatPressure_Pa&&r.reseatPressure_Pa<r.crackPressure_Pa&&r.crackPressure_Pa<r.fullLiftPressure_Pa))
-      c.addIssue({code:'custom',message:'Relief needs receiver < reseat < crack < full lift'})
+    for(const v of r.valves)
+      if(!(r.backPressure_Pa<v.reseatPressure_Pa&&v.reseatPressure_Pa<v.crackPressure_Pa&&v.crackPressure_Pa<v.fullLiftPressure_Pa))
+        c.addIssue({code:'custom',message:'Relief needs receiver < reseat < crack < full lift'})
+    if(r.valves.map(v=>v.role).join()!=='relief,safety')c.addIssue({code:'custom',message:'One relief, then one safety valve per SG'})
+    else if(!(r.valves[0]!.crackPressure_Pa<r.valves[1]!.crackPressure_Pa&&r.valves[1]!.crackPressure_Pa<=r.designPressure_Pa))
+      c.addIssue({code:'custom',message:'The relief cracks below the safety valve, the safety valve at or below design pressure'})
+    if(!r.valves.every(v=>v.fullLiftPressure_Pa<=1.1*r.designPressure_Pa))
+      c.addIssue({code:'custom',message:'Every full lift within 110% of the design pressure'})
     if(!(r.rating.inletPressure_Pa>r.backPressure_Pa))c.addIssue({code:'custom',message:'Relief rating inlet must exceed the receiver'})
   })
 
@@ -123,17 +133,20 @@ export function compileOperatingSecondary(d:SectionSources){
     prepared=balance.secondaryLiquidVolume_m3,feedPressure=cycle.feedHeaderPressure_MPaAbs*1e6
   if(balance.steamGenerators!==2||cycle.steamGenerators!==2)throw Error('Two steam generators expected')
   if(!(g.crown_m3<prepared&&prepared<g.pickup_m3))throw Error('Prepared liquid volume outside the crown/pickup guard band')
-  return {scope:'S2 SG secondaries: one bulk-equilibrium volume per SG with the constant A/B demand and its STOP ramp, the inventory-holding feed and two spring reliefs per SG, and after the turbine trip the bypass no-load pressure mode (R12-B1 stand-in); Rust owns the laws and derivations, the joined solids the metal and films',
+  const bypass=bypassNoLoad(d.admission)
+  if(!(bypass.noLoadPressure_Pa+bypass.bandWidth_Pa<relief.valves[0]!.crackPressure_Pa))
+    throw Error('The bypass must open fully below the SG relief crack (R12-B1, R12-B2)')
+  return {scope:'S2 SG secondaries: one bulk-equilibrium volume per SG with the constant A/B demand and its STOP ramp, the inventory-holding feed and a spring relief and a spring safety valve per SG (R12-B2), and after the turbine trip the bypass no-load pressure mode (R12-B1 stand-in); Rust owns the laws and derivations, the joined solids the metal and films',
     steamGenerators:SGS.map(id=>({id,volume_m3:balance.secondaryVolume_m3,steamDemand_kg_s:boundaries.steamDemand_kg_s[id],
       crownLiquidVolume_m3:g.crown_m3,pickupLiquidVolume_m3:g.pickup_m3,
-      reliefs:Array.from({length:relief.valvesPerSg},(_,i)=>({id:`SG.${id}.RELIEF.${i+1}`}))})),
-    relief:{crackPressure_Pa:relief.crackPressure_Pa,fullLiftPressure_Pa:relief.fullLiftPressure_Pa,reseatPressure_Pa:relief.reseatPressure_Pa,
+      reliefs:relief.valves.map((_,i)=>({id:`SG.${id}.RELIEF.${i+1}`}))})),
+    relief:{valves:relief.valves,designPressure_Pa:relief.designPressure_Pa,
       liftLag_s:relief.liftLag_s,seatLagTimeConstants:relief.seatLagTimeConstants,backPressure_Pa:relief.backPressure_Pa,descendingSwitch:relief.descendingSwitch,
       rating:{massFlow_kg_s:relief.rating.fractionOfNominalFlow*relief.rating.nominalFlow_kg_s,inletPressure_Pa:relief.rating.inletPressure_Pa,
         fluid:relief.rating.fluid}},
     feed:{rule:boundaries.feedRule,pressure_Pa:feedPressure,temperature_K:cycle.feedInlet_C+273.15},
     steamAdmission:{stopTravel_s:travel.turbineStop_s},
-    bypass:bypassNoLoad(d.admission),
+    bypass,
     contact:parseSgContact(d.thermodynamics),
     exposure:{fold:sgFold(d.hydraulics,d.mechanics,g.exposure),bundleZoneVolume_m3:g.exposure.bundleZoneVolume_m3,
       upperZoneArea_m2:g.exposure.upperZoneArea_m2}}

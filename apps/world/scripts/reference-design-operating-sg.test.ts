@@ -7,7 +7,8 @@ import {bypassNoLoad,compileOperatingSecondary,compileSgProbe,parseSgBoundaries,
 
 // Test-only owner texts in the shapes the compiler reads; not plant evidence.
 const fence=(name:string,value:unknown)=>'```'+name+'\n'+JSON.stringify(value)+'\n```'
-const relief={valvesPerSg:2,crackPressure_Pa:6800000,fullLiftPressure_Pa:7000000,reseatPressure_Pa:6600000,liftLag_s:.1,seatLagTimeConstants:10,
+const relief={valves:[{role:'relief',crackPressure_Pa:7947559,fullLiftPressure_Pa:8147559,reseatPressure_Pa:7747559},
+  {role:'safety',crackPressure_Pa:8271613,fullLiftPressure_Pa:8595666,reseatPressure_Pa:8071613}],designPressure_Pa:8273709,liftLag_s:.1,seatLagTimeConstants:10,
   backPressure_Pa:101325,descendingSwitch:'inletAtFullLift',
   rating:{fractionOfNominalFlow:.6,nominalFlow_kg_s:819.818983,fluid:'saturatedVapor',inletPressure_Pa:7000000}} as const
 const travel={sgIsolation_s:2,turbineStop_s:.3,reheaterIsolation_s:.3,admission_s:1,bypass_s:2}
@@ -24,7 +25,11 @@ test('relief, travel and S2 boundaries parse from their owners only, strictly',(
   expect(parseSgRelief(admission())).toEqual(relief)
   expect(parseSteamValveTravel(admission()).turbineStop_s).toBe(.3)
   const edit=(from:string,to:string)=>admission().replace(from,to)
-  expect(()=>parseSgRelief(edit('"reseatPressure_Pa":6600000','"reseatPressure_Pa":6900000'))).toThrow('reseat')
+  expect(()=>parseSgRelief(edit('"reseatPressure_Pa":7747559','"reseatPressure_Pa":7990000'))).toThrow('reseat')
+  // R12-B2: order, roles, design pressure and 110 %.
+  expect(()=>parseSgRelief(edit('"role":"relief"','"role":"safety"'))).toThrow('One relief')
+  expect(()=>parseSgRelief(edit('"designPressure_Pa":8273709','"designPressure_Pa":8000000'))).toThrow()
+  expect(()=>parseSgRelief(edit('"fullLiftPressure_Pa":8595666','"fullLiftPressure_Pa":9200000'))).toThrow('110%')
   expect(()=>parseSgRelief(edit('"inletAtFullLift"','"holdLiftOnReversal"'))).toThrow()
   expect(()=>parseSgRelief(edit('"liftLag_s":0.1','"liftLag_s":0.1,"area_m2":0.05'))).toThrow()
   expect(()=>parseSgRelief(edit('## Turbine trip and reset semantics','## Elsewhere'))).toThrow()
@@ -71,7 +76,7 @@ test.skipIf(!wiki)('actual secondary and probe sections compile once; corrupted 
     ['thermodynamics','"pickupBottom_m":17','"pickupBottom_m":19'],
     ['thermodynamics','"crownTop_m":12','"crownTop_m":16.5'],
     ['thermodynamics','"feedRule":"inventoryHolding"','"feedRule":"inventoryHolding","extra":1'],
-    ['admission','"valvesPerSg":2','"valvesPerSg":0'],
+    ['admission','"designPressure_Pa":8273709','"designPressure_Pa":8000000'],
     ['hydraulics','"hotPort_m":2.5','"hotPort_m":2.0'],
     ['hydraulics','"SGturn_m":12','"SGturn_m":12.5'],
     ['mechanics','"sgDevelopedLength_m":20.0','"sgDevelopedLength_m":40.0'],

@@ -149,7 +149,8 @@ struct Nozzle {
 #[derive(Clone, Debug)]
 pub struct Secondaries {
     sgs: Vec<SteamGenerator>,
-    relief: Characteristic,
+    /// One characteristic per valve position (R12-B2: relief, safety).
+    reliefs: Vec<Characteristic>,
     back_pressure_pa: f64,
     stop_travel_s: f64,
     /// The bypass no-load pressure mode (R12-B1).
@@ -193,7 +194,7 @@ impl Secondaries {
         stocks: &[SecondaryStock],
         props: &P,
     ) -> Result<Self, Failure> {
-        let (mut sgs, relief) = compile(section)?;
+        let (mut sgs, reliefs) = compile(section)?;
         let derived = derive(section, props)?;
         if stocks.len() != sgs.len() {
             return Err(fatal("one prepared stock per SG"));
@@ -214,7 +215,7 @@ impl Secondaries {
                 && positive(x.pressure_pa)
                 && x.liquid_volume_m3 > g.crown_liquid_volume_m3
                 && x.liquid_volume_m3 < g.pickup_liquid_volume_m3
-                && relief.admits(SEATED, x.pressure_pa, 0.))
+                && reliefs.iter().all(|r| r.admits(SEATED, x.pressure_pa, 0.)))
             {
                 return Err(fatal(format!(
                     "SG.{} preparation is not a two-phase start inside the guards below full lift",
@@ -279,7 +280,7 @@ impl Secondaries {
                 })
                 .collect(),
             sgs,
-            relief,
+            reliefs,
             back_pressure_pa: section.relief.back_pressure_pa,
             stop_travel_s: section.steam_admission.stop_travel_s,
             bypass: section.bypass.clone(),
@@ -330,8 +331,9 @@ impl Secondaries {
     pub fn derived(&self) -> Derived {
         self.derived
     }
-    pub fn relief(&self) -> Characteristic {
-        self.relief
+    /// Valve position `valve`'s characteristic (R12-B2).
+    pub fn relief(&self, valve: usize) -> Characteristic {
+        self.reliefs[valve]
     }
     pub fn back_pressure_pa(&self) -> f64 {
         self.back_pressure_pa
@@ -352,7 +354,7 @@ impl Secondaries {
         p_pa: f64,
         lift: f64,
     ) -> Result<(), Failure> {
-        if !self.relief.admits(state, p_pa, lift) {
+        if !self.reliefs[valve].admits(state, p_pa, lift) {
             return Err(fatal(format!(
                 "SG.{} relief {valve}: {state:?} contradicts the rule at {p_pa} Pa, lift {lift}",
                 self.sgs[sg].id
@@ -421,7 +423,8 @@ impl Secondaries {
             let lifts = &y[b + LIFTS..b + LIFTS + g.valves.len()];
             if !(positive(m) && vl > g.crown_liquid_volume_m3 && vl < g.pickup_liquid_volume_m3)
                 || lifts.iter().any(|l| !(l.is_finite() && *l >= 0.))
-                || (0..g.valves.len()).any(|j| !self.relief.admits(self.valves[k][j], p, lifts[j]))
+                || (0..g.valves.len())
+                    .any(|j| !self.reliefs[j].admits(self.valves[k][j], p, lifts[j]))
             {
                 return Err(fatal(format!(
                     "SG.{} accepted state refused: M {m} kg, p {p} Pa, V_l {vl} m³, lifts {lifts:?}",
@@ -751,9 +754,9 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 };
                 relief = relief + m;
                 report.relief_kg_s[j] = m;
-                report.targets[j] = self.relief.target(valve.branch, p);
+                report.targets[j] = self.reliefs[j].target(valve.branch, p);
                 rows[b + LIFTS + j] =
-                    x.rate(b + LIFTS + j) - self.relief.lift_rate(valve, p, *lift);
+                    x.rate(b + LIFTS + j) - self.reliefs[j].lift_rate(valve, p, *lift);
             }
             // F3 (a): the feed is exactly the withdrawn gas; x - x is exact.
             // S3-D12: gated to zero while the feed pumps are unsupplied.
@@ -855,7 +858,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 let lift = x.value(g.base + LIFTS + j).value;
                 for threshold in THRESHOLDS {
                     out[i] = if armed.contains(&threshold) {
-                        self.relief.root(threshold, p, lift)
+                        self.reliefs[j].root(threshold, p, lift)
                     } else {
                         DISARMED
                     };
@@ -941,8 +944,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
                         )));
                     }
                     let lift = y[g.base + LIFTS + j];
-                    let x: Transition = self
-                        .relief
+                    let x: Transition = self.reliefs[j]
                         .transition(current, threshold, d, lift)
                         .map_err(fatal)?;
                     self.valves[k][j] = x.after;
@@ -1042,22 +1044,56 @@ impl<P: Properties> Secondary<P> for Secondaries {
 }
 
 /// Validate the section's shapes and selections.
-fn compile(section: &packet::Section) -> Result<(Vec<SteamGenerator>, Characteristic), Failure> {
+fn compile(
+    section: &packet::Section,
+) -> Result<(Vec<SteamGenerator>, Vec<Characteristic>), Failure> {
     let r = &section.relief;
     if !(r.seat_lag_time_constants.is_finite() && r.seat_lag_time_constants > 0.) {
         return Err(fatal(
             "SG relief seat needs a positive number of lag time constants",
         ));
     }
-    let relief = Characteristic::new(
-        r.crack_pressure_pa,
-        r.full_lift_pressure_pa,
-        r.reseat_pressure_pa,
-        r.lift_lag_s,
-        (-r.seat_lag_time_constants).exp(),
-    )
-    .map_err(fatal)?;
-    if !(positive(r.back_pressure_pa) && r.back_pressure_pa < r.reseat_pressure_pa)
+    let reliefs = r
+        .valves
+        .iter()
+        .map(|v| {
+            Characteristic::new(
+                v.crack_pressure_pa,
+                v.full_lift_pressure_pa,
+                v.reseat_pressure_pa,
+                r.lift_lag_s,
+                (-r.seat_lag_time_constants).exp(),
+            )
+            .map_err(fatal)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    // R12-B2: the relief below the safety valve (AP1000: between no-load
+    // pressure and the lowest safety set, DCD 10.3.2.2.3), the safety
+    // valve opening at or below the declared design pressure, and every full
+    // lift inside 110 % of it (DCD 10.3.2.2.2).
+    let roles: Vec<packet::ValveRole> = r.valves.iter().map(|v| v.role).collect();
+    let (relief, safety) = match roles.as_slice() {
+        [packet::ValveRole::Relief, packet::ValveRole::Safety] => (r.valves[0], r.valves[1]),
+        _ => return Err(fatal("SG valves: one relief, then one safety valve")),
+    };
+    if !(positive(r.design_pressure_pa)
+        && relief.crack_pressure_pa < safety.crack_pressure_pa
+        && safety.crack_pressure_pa <= r.design_pressure_pa
+        && r.valves
+            .iter()
+            .all(|v| v.full_lift_pressure_pa <= 1.1 * r.design_pressure_pa))
+    {
+        return Err(fatal(
+            "SG valves: relief below the safety valve, safety at or below design, full lifts within 110 % of design",
+        ));
+    }
+    // R12-B1 with R12-B2: the bypass opens fully below the relief.
+    let b = &section.bypass;
+    if !(b.no_load_pressure_pa + b.band_width_pa < relief.crack_pressure_pa) {
+        return Err(fatal("SG bypass full opening must lie below the relief crack"));
+    }
+    if !(positive(r.back_pressure_pa)
+        && r.valves.iter().all(|v| r.back_pressure_pa < v.reseat_pressure_pa))
         || r.descending_switch != packet::DescendingSwitch::InletAtFullLift
         || r.rating.fluid != packet::RatingFluid::SaturatedVapor
         || !(positive(r.rating.mass_flow_kg_s) && r.rating.inlet_pressure_pa > r.back_pressure_pa)
@@ -1117,8 +1153,13 @@ fn compile(section: &packet::Section) -> Result<(Vec<SteamGenerator>, Characteri
             }
             valves.push(v.id.clone());
         }
-        if valves.is_empty() {
-            return Err(fatal(format!("SG.{} has no relief", g.id)));
+        if valves.len() != reliefs.len() {
+            return Err(fatal(format!(
+                "SG.{} has {} valves, the settings {}",
+                g.id,
+                valves.len(),
+                reliefs.len()
+            )));
         }
         sgs.push(SteamGenerator {
             id: g.id.clone(),
@@ -1130,7 +1171,7 @@ fn compile(section: &packet::Section) -> Result<(Vec<SteamGenerator>, Characteri
             base: 0,
         });
     }
-    Ok((sgs, relief))
+    Ok((sgs, reliefs))
 }
 
 /// The feed enthalpy at the recorded state and each valve's effective area
