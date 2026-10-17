@@ -478,34 +478,24 @@ pub struct CaseObserver {
     /// integrator's own units and, with a free vapour path, every free
     /// vapour path's drive tolerance at that state.
     pub entries: Vec<Value>,
-    /// The integrator's units the driver handed at the current restart's
-    /// left side: `(t, (1 / (rtol |y_n| + atol), y_n))`.
+    /// The integrator's absolute tolerances the driver handed at the
+    /// current restart's left side: `(t, atol)` (S3-D67).
     pub units: Option<(f64, leitbild_operating_water::frame::IntegratorUnits)>,
 }
 
-/// The integrator's own tolerance unit `rtol |y| + atol` at `y` (S3-D61):
-/// `atol` as the integrator uses it (derived classes included), recovered
-/// from stock's reciprocal error weights `w = 1 / (rtol |y_n| + atol)` at its
-/// current solution `y_n`.
-pub fn integrator_unit(
-    y: &[f64],
-    weights: &[f64],
-    yn: &[f64],
-    rtol: f64,
-) -> Result<Vec<f64>, String> {
-    if weights.len() != y.len() || yn.len() != y.len() {
-        return Err("the integrator's weights are not the state's layout".into());
+/// The integrator's own tolerance unit `rtol |y| + atol` at `y` (S3-D61,
+/// S3-D67): `atol` the vector stock was last given, derived classes
+/// included ([`leitbild_operating_water::ida::Ida::absolute_tolerances`]).
+pub fn integrator_unit(y: &[f64], atol: &[f64], rtol: f64) -> Result<Vec<f64>, String> {
+    if atol.len() != y.len() {
+        return Err("the integrator's tolerances are not the state's layout".into());
     }
     (0..y.len())
         .map(|i| {
-            let atol = 1. / weights[i] - rtol * yn[i].abs();
-            if atol.is_finite() && atol > 0. {
-                Ok(rtol * y[i].abs() + atol)
+            if atol[i].is_finite() && atol[i] > 0. {
+                Ok(rtol * y[i].abs() + atol[i])
             } else {
-                Err(format!(
-                    "coordinate {i}: no positive atol from the weight {} at y_n {}",
-                    weights[i], yn[i]
-                ))
+                Err(format!("coordinate {i}: atol {} is not positive", atol[i]))
             }
         })
         .collect()
@@ -637,7 +627,8 @@ pub fn entry_consistency<S: leitbild_operating_water::ida::System + JoinedSystem
     let mut d: Vec<f64> = alg.iter().map(|i| f[*i]).collect();
     let max_row = d.iter().fold(0_f64, |m, v| m.max(v.abs()));
     lu.solve(&mut d).map_err(|e| e.to_string())?;
-    let (mut worst, mut at_coordinate, mut over) = (0_f64, None, 0usize);
+    let (mut worst, mut at_coordinate, mut over, mut squares) = (0_f64, None, 0usize, 0_f64);
+    let mut largest: Vec<(f64, usize)> = Vec::with_capacity(alg.len());
     for (k, i) in alg.iter().enumerate() {
         let units = d[k].abs() / unit[*i];
         if units > 1. {
@@ -647,10 +638,19 @@ pub fn entry_consistency<S: leitbild_operating_water::ida::System + JoinedSystem
             worst = units;
             at_coordinate = Some(*i);
         }
+        squares += units * units;
+        largest.push((units, *i));
     }
+    largest.sort_by(|a, b| b.0.total_cmp(&a.0));
+    largest.truncate(5);
+    // The solver's own acceptance measure: the WRMS norm of the correction
+    // over every coordinate (zero on the differential ones), and over the
+    // algebraic ones alone (S3-D67).
     Ok(
         json!({"t_s": t, "max_units": worst, "coordinate": at_coordinate, "rows_over_one_unit": over,
-        "algebraic_rows": alg.len(), "max_abs_row": max_row}),
+        "algebraic_rows": alg.len(), "max_abs_row": max_row,
+        "wrms_all": (squares / n as f64).sqrt(), "wrms_algebraic": (squares / alg.len().max(1) as f64).sqrt(),
+        "largest_units": largest.iter().map(|(u, i)| json!([i, u])).collect::<Vec<_>>()}),
     )
 }
 
@@ -919,13 +919,13 @@ impl<J: JoinedSystem<Properties = If97>> Observer<Electrified<J>> for CaseObserv
         if side == Side::BeforeRestart
             && let Some(rtol) = self.n4_rtol
         {
-            let units = match self.units.take() {
-                Some((tu, units)) if tu == t => units,
-                Some((tu, _)) => Err(format!("the integrator's units are from {tu} s")),
-                None => Err("the driver handed no integrator units".into()),
+            let atol = match self.units.take() {
+                Some((tu, atol)) if tu == t => Ok(atol),
+                Some((tu, _)) => Err(format!("the integrator's tolerances are from {tu} s")),
+                None => Err("the driver handed no integrator tolerances".into()),
             };
-            let entry = units
-                .and_then(|(w, yn)| integrator_unit(y, &w, &yn, rtol))
+            let entry = atol
+                .and_then(|atol| integrator_unit(y, &atol, rtol))
                 .and_then(|unit| {
                     let mut e =
                         entry_consistency(system, t, y, yp, &self.residuals.network_ids, &unit)?;
@@ -1116,25 +1116,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_integrator_unit_takes_the_atol_stock_uses_from_its_weights() {
-        // atol with a derived class at coordinate 1; stock's weights at y_n.
-        let (rtol, atol, yn) = (1e-5, [1e-8, 3e-12, 1e-6], [2.0, -0.5, 0.0]);
-        let w: Vec<f64> = (0..3)
-            .map(|i| 1. / (rtol * f64::abs(yn[i]) + atol[i]))
-            .collect();
-        let y = [2.1, -0.4, 1.0];
-        let unit = integrator_unit(&y, &w, &yn, rtol).unwrap();
+    fn the_integrator_unit_is_rtol_y_plus_the_atol_stock_was_given() {
+        // atol with a derived class at coordinate 1.
+        let (rtol, atol, y) = (1e-5, [1e-8, 3e-12, 1e-6], [2.1, -0.4, 1.0]);
+        let unit = integrator_unit(&y, &atol, rtol).unwrap();
         for i in 0..3 {
-            let expected = rtol * f64::abs(y[i]) + atol[i];
-            assert!(
-                (unit[i] - expected).abs() <= 1e-9 * expected,
-                "{i}: {} vs {expected}",
-                unit[i]
-            );
+            assert_eq!(unit[i], rtol * f64::abs(y[i]) + atol[i]);
         }
-        // A weight that leaves no positive atol, or another layout, refuses.
-        assert!(integrator_unit(&y, &[1. / (rtol * 2.), w[1], w[2]], &yn, rtol).is_err());
-        assert!(integrator_unit(&y, &w[..2], &yn, rtol).is_err());
+        // A nonpositive atol, or another layout, refuses.
+        assert!(integrator_unit(&y, &[1e-8, 0., 1e-6], rtol).is_err());
+        assert!(integrator_unit(&y, &atol[..2], rtol).is_err());
     }
 
     #[test]
