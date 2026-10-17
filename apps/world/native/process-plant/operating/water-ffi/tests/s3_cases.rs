@@ -3299,9 +3299,13 @@ fn s3_case_run() {
                 let second =
                     g.s2.shared
                         .number("/eventReference/secondRefinementToleranceFactor");
-                let (from, to) = run
-                    .first_birth_after_zero
-                    .map_or((0., w.min(end)), |b| (b, (b + w).min(end)));
+                // The comparison runs on the observation grid from zero: the
+                // birth's window starts at the grid sample at or before it.
+                let dt = g.budgets.observation_s;
+                let (from, to) = run.first_birth_after_zero.map_or((0., w.min(end)), |b| {
+                    let on_grid = (b / dt).floor() * dt;
+                    (on_grid, (on_grid + w).min(end))
+                });
                 vec![
                     (
                         "R1".into(),
