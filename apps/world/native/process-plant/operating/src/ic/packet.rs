@@ -76,6 +76,11 @@ pub enum Quantity {
         weights: Vec<f64>,
         fref_events_per_s: f64,
     },
+    /// An RCP's shaft speed as a fraction of the drive's reference speed
+    /// (owner R12-D2): rotor `rotor` in the network's rotor order (the
+    /// hydraulic sections with a pump, in packet order), `rotor_id` its
+    /// section. Linear in the rotor's angular-momentum coordinate.
+    PumpSpeed { rotor: usize, rotor_id: String },
 }
 
 #[derive(Clone, Debug, Deserialize)]

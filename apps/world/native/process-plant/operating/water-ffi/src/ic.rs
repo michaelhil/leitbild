@@ -385,6 +385,21 @@ impl ProtectionClient {
                     );
                     Observation::Proxy { regions, factor }
                 }
+                // R12-D2: ω/ω_ref = L / (J ω_ref), L the rotor's coordinate.
+                Quantity::PumpSpeed { rotor, rotor_id } => {
+                    if *rotor >= net.rotor_count() {
+                        return Err(format!("{rotor_id}: rotor {rotor} of {}", net.rotor_count()));
+                    }
+                    let i = net.rotor_index[*rotor];
+                    let reference = net.rotor_inertia() * net.drive().reference_omega_rad_s;
+                    if !(reference.is_finite() && reference > 0.) {
+                        return Err(format!("{rotor_id}: reference angular momentum {reference}"));
+                    }
+                    references.insert(f.id.clone(), json!({"rotor": rotor, "section": rotor_id,
+                        "reference_omega_rad_s": net.drive().reference_omega_rad_s,
+                        "basis": "the RCP drive's reference speed (R12-D2)"}));
+                    Observation::Linear(vec![(i, scales[i] / reference)])
+                }
             };
             if !observed.iter().any(|(q, _)| *q == f.quantity) {
                 observed.push((f.quantity.clone(), observation));
