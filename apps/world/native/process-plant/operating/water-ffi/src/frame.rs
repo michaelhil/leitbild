@@ -1237,12 +1237,19 @@ impl<S: JoinedSystem> Driver<S> {
             self.quadratures = Some((t, q));
         }
         // HOOK (C4 lane): a window starting at this restart caps its steps.
+        // HOOK (C5X RC-1, KERN to reconcile): the appended owners' records
+        // at this restart count too, each as `{"appended": record}` (the
+        // slice's "GCB Open" ends C2's fast electrical ramp).
         if let Some((h, starts)) = self.restart_max_step
-            && restarted
+            && (restarted
                 .transactions
                 .iter()
                 .chain(&before)
                 .any(|x| starts(&x.receipt))
+                || restarted
+                    .appended
+                    .iter()
+                    .any(|a| starts(&json!({ "appended": a }))))
         {
             ida.set_max_step(h)?;
         }
