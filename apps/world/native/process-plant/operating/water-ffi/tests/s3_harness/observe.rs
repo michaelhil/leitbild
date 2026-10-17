@@ -345,21 +345,11 @@ impl Extra {
     }
 }
 
-/// A regular cell's liquid temperature and mass from `(p, U, M)` (the
-/// credited reader's rule).
+/// A regular cell's temperature and mass per its phase mode (the credited
+/// reader's rule, [`crate::outputs::cell_state`]).
 fn cell_temperature(joined: &Joined<If97>, y: &[f64], c: usize) -> Result<(f64, f64), String> {
-    use leitbild_operating_plant::network::Properties;
-    let net = &joined.network;
-    let scales = net.scales();
-    let l = &net.cell_layout[c];
-    let p = y[l.base] * scales[l.base];
-    let m = y[l.mass[0]] * scales[l.mass[0]];
-    let u = y[l.energy[0]] * scales[l.energy[0]];
-    let q = net
-        .properties()
-        .caloric(false, p, u / m, false)
-        .map_err(|e| format!("cell {c} caloric: {e:?}"))?;
-    Ok((net.properties().values(&q).temperature_k, m))
+    // Per the cell's phase mode, as the credited outputs read it.
+    crate::outputs::cell_temperature(&joined.network, y, c)
 }
 
 /// The mass-weighted mean temperature of `cells`.
