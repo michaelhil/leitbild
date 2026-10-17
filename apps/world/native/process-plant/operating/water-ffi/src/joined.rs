@@ -803,7 +803,7 @@ pub fn split_credited_groups(keys: &[String], credited: &[bool], max: usize) -> 
 
 pub use integrated::{
     Assembly, Discrete, Integrated, JoinedSystem, Restart, Restarted, census_groups,
-    discrete_restart, root_directions,
+    credited_coordinates, discrete_restart, root_directions,
 };
 
 mod integrated {
@@ -1195,17 +1195,7 @@ mod integrated {
                 keys.len()
             ));
         }
-        let mut credited: Vec<bool> = keys
-            .iter()
-            .map(|k| super::DERIVED_CLASSES.contains(&k.as_str()))
-            .collect();
-        for o in system.integrated().joined.credited() {
-            for j in &o.columns {
-                *credited
-                    .get_mut(*j)
-                    .ok_or("census groups: a credited output reads outside the operator")? = true;
-            }
-        }
+        let mut credited = credited_coordinates(system)?;
         keys.extend((0..system.appended()).map(|_| "appended".to_string()));
         credited.resize(keys.len(), true);
         if keys.len() != system.dimension() {
@@ -1216,6 +1206,34 @@ mod integrated {
         }
         let keys = super::split_credited_groups(&keys, &credited, super::CREDITED_GROUP_MAX);
         Ok(WeightGroups::from_keys(&keys))
+    }
+
+    /// N1: the operator's credited coordinates, census order: every
+    /// coordinate of a derived class (S2-D24r/S3-D16, [`super::DERIVED_CLASSES`])
+    /// and every coordinate a declared credited output reads. The appended
+    /// coordinates are not included (the caller decides for them).
+    pub fn credited_coordinates<S: JoinedSystem>(system: &S) -> Result<Vec<bool>, String> {
+        let joined = &system.integrated().joined;
+        let mut credited: Vec<bool> = joined
+            .layouts()
+            .iter()
+            .flat_map(|(owner, l)| {
+                l.classes.iter().map(move |c| {
+                    super::DERIVED_CLASSES.contains(&format!("{owner}/{c:?}").as_str())
+                })
+            })
+            .collect();
+        if credited.len() != joined.dimension() {
+            return Err("credited coordinates: the layouts do not cover the operator".into());
+        }
+        for o in joined.credited() {
+            for j in &o.columns {
+                *credited.get_mut(*j).ok_or(
+                    "credited coordinates: a credited output reads outside the operator",
+                )? = true;
+            }
+        }
+        Ok(credited)
     }
 
     /// Stock IDASetRootDirection from the owners' current state
