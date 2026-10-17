@@ -15,7 +15,7 @@ mod gates;
 #[allow(dead_code)] // The S2 harness's declaration readers; C4 uses a subset.
 #[path = "s2_harness/guards.rs"]
 mod guards;
-#[allow(dead_code)] // The S2 declaration readers' file hashes.
+// The S2 declaration readers' file hashes (dead code allowed inside).
 #[path = "common/provenance.rs"]
 mod provenance;
 
@@ -470,4 +470,230 @@ fn kinetics_rule(block: &Block) -> Result<Value, String> {
 #[test]
 fn rule_i_is_read_as_the_owners_a4_and_b1() {
     assert_eq!(kinetics_rule(&block()).unwrap()["floor"], "B1");
+}
+
+// Rule B (S3-D65): each signed C4 row passes and fails on synthetic
+// records.
+
+fn b_row(t: f64, relief: f64, roof: f64, cells: Value) -> Value {
+    json!({"t_s": t, "relief_kg_s": relief, "pzr_roof_pa": roof, "cells": cells})
+}
+
+/// Frames every 0.1 s to 10 s: NECK liquid (departure rising to 0.4 K)
+/// until its birth at 5.05 s, mode E (M_g growing) after it.
+fn b_frames() -> Vec<Value> {
+    (1..=100)
+        .map(|k| {
+            let t = f64::from(k) * 0.1;
+            let neck = if t < 5.05 {
+                json!(["NECK", "L", -20. + 4.08 * t])
+            } else {
+                json!(["NECK", "E", 0.5 * (t - 5.05), 900.])
+            };
+            b_row(t, 100. - 2. * t, 1.55e7 - 1e5 * t, json!([neck]))
+        })
+        .collect()
+}
+
+fn b_log(zero: f64, slots: Value, exhaustion: Option<f64>) -> Vec<Value> {
+    let tx = |t: f64, ev: Value| json!({"t_s": zero + t, "restart": {"transactions": [{"owner": "phase modes", "events": [ev]}]}});
+    let mut log = vec![tx(5.05, json!({"birth": 1, "vapor_slots": slots}))];
+    if let Some(x) = exhaustion {
+        log.push(tx(x, json!({"exhaustion": 1})));
+    }
+    log
+}
+
+fn b_conservation(change: f64, attribution: f64, max_units: f64) -> Value {
+    json!({"family": "D conservation", "verdict": "pass", "error": null,
+        "ledger": {"bound_local_tolerance_units": 1.0,
+            "closures": {"primary_mass_kg": {"max_units": max_units, "at_t_s": 600.}},
+            "final": {"t_s": 610., "closures": [{"name": "primary_mass_kg", "inventory_change": change, "ledger": change, "closure": 0., "tolerance": 2.0, "units": 0.}]}},
+        "receipts_at_last_closure": {"t_s": 610., "values": {"primary_mass_kg": attribution, "pzr_relief_attribution_kg": attribution}}})
+}
+
+#[test]
+fn rule_b_pt1_falls_within_the_noise_budget_and_fails_a_larger_rise() {
+    // A 1e5 Pa/s fall with one sample bumped above the one before it.
+    let bumped = |bump: f64| -> Vec<(f64, f64)> {
+        (0..=100)
+            .map(|k| {
+                let t = f64::from(k) * 0.1;
+                (t, 1.55e7 - 1e5 * t + if k == 50 { bump } else { 0. })
+            })
+            .collect()
+    };
+    // 150 Pa above the running minimum is within the 200 Pa budget.
+    let (ok, d) = c4::pt1_monotone(&bumped(1e4 + 150.), 200.);
+    assert_eq!(ok, Some(true), "{d}");
+    let (ok, d) = c4::pt1_monotone(&bumped(1e4 + 500.), 200.);
+    assert_eq!(ok, Some(false), "{d}");
+    assert!((d["at_s"].as_f64().unwrap() - 5.0).abs() < 1e-9, "{d}");
+    assert!((d["largest_rise_above_running_min_pa"].as_f64().unwrap() - 500.).abs() < 1e-6);
+    assert_eq!(c4::pt1_monotone(&bumped(0.)[..1], 200.).0, None);
+    assert_eq!(c4::pt1_monotone(&[(0., f64::NAN), (0.1, 1.)], 200.).0, None);
+}
+
+#[test]
+fn rule_b_level_falls_after_the_trip_and_rises_after_saturation() {
+    let level = |rise: bool| -> Vec<(f64, f64)> {
+        (0..=100)
+            .map(|k| {
+                let t = f64::from(k) * 0.1;
+                let x = if t < 1. {
+                    5.
+                } else if t < 5. {
+                    5. - 0.1 * (t - 1.)
+                } else if rise {
+                    4.6 + 0.05 * (t - 5.)
+                } else {
+                    4.6 - 0.01 * (t - 5.)
+                };
+                (t, x)
+            })
+            .collect()
+    };
+    let (ok, d) = c4::level_direction(&level(true), Some(1.), Some(5.05), 10.);
+    assert_eq!(ok, Some(true), "{d}");
+    assert_eq!(
+        c4::level_direction(&level(false), Some(1.), Some(5.05), 10.).0,
+        Some(false)
+    );
+    assert_eq!(
+        c4::level_direction(&level(true), Some(1.), None, 10.).0,
+        None
+    );
+    assert_eq!(
+        c4::level_direction(&level(true), None, Some(5.05), 10.).0,
+        None
+    );
+    assert_eq!(
+        c4::level_direction(&level(true), Some(6.), Some(5.05), 10.).0,
+        None
+    );
+    // Core power, T_hot and T_avg: x(end) < x(t_rt).
+    let up: Vec<(f64, f64)> = (0..=10).map(|k| (f64::from(k), f64::from(k))).collect();
+    let down: Vec<(f64, f64)> = up.iter().map(|&(t, x)| (t, -x)).collect();
+    assert_eq!(c4::falls_after(&down, Some(1.), 10.).0, Some(true));
+    assert_eq!(c4::falls_after(&up, Some(1.), 10.).0, Some(false));
+    assert_eq!(c4::falls_after(&up, None, 10.).0, None);
+}
+
+#[test]
+fn rule_b_relief_falls_end_to_end_and_reports_the_framewise_rise() {
+    let mut frames = b_frames();
+    let (ok, d) = c4::relief_falls(&frames, Some(0.05), 10.);
+    assert_eq!(ok, Some(true), "{d}");
+    assert!((d["at_full_lift"]["frame_s"].as_f64().unwrap() - 0.1).abs() < 1e-9);
+    assert_eq!(
+        d["framewise_rise_while_pt1_falls (reported, S3-D65)"]["frames"],
+        0
+    );
+    // A frame-wise rise while PT1 falls is reported, not judged.
+    frames[40]["relief_kg_s"] = json!(95.);
+    let (ok, d) = c4::relief_falls(&frames, Some(0.05), 10.);
+    assert_eq!(ok, Some(true), "{d}");
+    assert_eq!(
+        d["framewise_rise_while_pt1_falls (reported, S3-D65)"]["frames"],
+        1
+    );
+    // The flow at the end above the flow at full lift fails.
+    frames[99]["relief_kg_s"] = json!(120.);
+    assert_eq!(c4::relief_falls(&frames, Some(0.05), 10.).0, Some(false));
+    assert_eq!(c4::relief_falls(&frames, None, 10.).0, None);
+}
+
+#[test]
+fn rule_b_departure_rises_to_the_threshold_without_exceeding_it() {
+    let mut frames = b_frames();
+    let (ok, d) = c4::departure_rises(&frames, "NECK", 5.05, 0.5);
+    assert_eq!(ok, Some(true), "{d}");
+    assert!((d["last_frame_before_t_b"][1].as_f64().unwrap() - 0.4).abs() < 1e-9);
+    // A frame above the credited band before the birth fails.
+    frames[30]["cells"] = json!([["NECK", "L", 0.6]]);
+    assert_eq!(
+        c4::departure_rises(&frames, "NECK", 5.05, 0.5).0,
+        Some(false)
+    );
+    // A departure that falls to the birth fails.
+    let falling: Vec<Value> = b_frames()
+        .into_iter()
+        .map(|mut f| {
+            if f["cells"][0][1] == "L" {
+                let d = f["cells"][0][2].as_f64().unwrap();
+                f["cells"][0][2] = json!(-d - 40.);
+            }
+            f
+        })
+        .collect();
+    assert_eq!(
+        c4::departure_rises(&falling, "NECK", 5.05, 0.5).0,
+        Some(false)
+    );
+    assert_eq!(c4::departure_rises(&frames, "MAIN", 5.05, 0.5).0, None);
+}
+
+#[test]
+fn rule_b_vapour_mass_starts_at_zero_and_stays_positive_per_interval() {
+    let zero = 500.;
+    let names = vec!["SURGE".to_string(), "NECK".to_string()];
+    let frames = b_frames();
+    let log = b_log(zero, json!([0.0, 0.0]), None);
+    let (ok, d) = c4::vapour_mass(&frames, &log, zero, &names, "NECK", 10.);
+    assert_eq!(ok, Some(true), "{d}");
+    assert_eq!(d["intervals"][0]["frames"], 50);
+    // A birth that carries vapour fails.
+    let paid = b_log(zero, json!([1e-12, 0.0]), None);
+    assert_eq!(
+        c4::vapour_mass(&frames, &paid, zero, &names, "NECK", 10.).0,
+        Some(false)
+    );
+    // Mode E past a logged exhaustion fails; a re-birth reopens it.
+    let exhausted = b_log(zero, json!([0.0, 0.0]), Some(7.05));
+    let (ok, d) = c4::vapour_mass(&frames, &exhausted, zero, &names, "NECK", 10.);
+    assert_eq!(ok, Some(false), "{d}");
+    let mut liquid_after: Vec<Value> = frames.clone();
+    for f in liquid_after.iter_mut().skip(70) {
+        f["cells"] = json!([["NECK", "L", -1.]]);
+    }
+    assert_eq!(
+        c4::vapour_mass(&liquid_after, &exhausted, zero, &names, "NECK", 10.).0,
+        Some(true)
+    );
+    // M_g not positive inside the interval fails.
+    let mut empty = frames.clone();
+    empty[60]["cells"] = json!([["NECK", "E", 0.0, 900.]]);
+    assert_eq!(
+        c4::vapour_mass(&empty, &log, zero, &names, "NECK", 10.).0,
+        Some(false)
+    );
+    assert_eq!(
+        c4::vapour_mass(&frames, &[], zero, &names, "NECK", 10.).0,
+        None
+    );
+}
+
+#[test]
+fn rule_b_primary_mass_falls_by_the_integrated_relief_flow_within_d() {
+    let (ok, d) = c4::primary_mass(&b_conservation(-3925.4, -3925.6, 0.3));
+    assert_eq!(ok, Some(true), "{d}");
+    // More than one tolerance unit (2 kg) from the integrated relief flow.
+    assert_eq!(
+        c4::primary_mass(&b_conservation(-3925.4, -3930., 0.3)).0,
+        Some(false)
+    );
+    // D's own closure outside its bound.
+    assert_eq!(
+        c4::primary_mass(&b_conservation(-3925.4, -3925.6, 1.2)).0,
+        Some(false)
+    );
+    // A primary mass that rises.
+    assert_eq!(
+        c4::primary_mass(&b_conservation(1., 1., 0.3)).0,
+        Some(false)
+    );
+    assert_eq!(
+        c4::primary_mass(&json!({"verdict": "not executable", "reason": "stock IDA"})).0,
+        None
+    );
 }

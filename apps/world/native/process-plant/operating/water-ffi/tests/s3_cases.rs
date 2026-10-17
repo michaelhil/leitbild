@@ -3667,6 +3667,38 @@ fn s3_case_run() {
             &chatter_rule,
             &run.entries,
         );
+        // C4's rule B (S3-D65): its frame record, the log's phase-mode
+        // receipts, C4.O1's full lift, C4.O4′'s instant and rule D's record.
+        let c4_names: Vec<String> = g
+            .network_packet
+            .mechanics
+            .regions
+            .iter()
+            .map(|r| r.id.clone())
+            .collect();
+        let c4_conservation = families.get("D_conservation").cloned().unwrap_or_else(
+            || json!({"verdict": "not executable", "reason": "rule D was not judged"}),
+        );
+        let c4_numbers = |id: &str| {
+            run.record["lines"]
+                .as_array()
+                .and_then(|l| l.iter().find(|x| x["id"] == id))
+                .map(|x| &x["numbers"])
+        };
+        let c4_record = match (case, run.record["c4"]["frames"].as_array()) {
+            (Case::C4, Some(frames)) => Some(s3_harness::c4::DirectionRecord {
+                frames,
+                log: run.record["instants"].as_array().unwrap(),
+                names: &c4_names,
+                o4: c4_numbers("C4.O4"),
+                full_lift_s: c4_numbers("C4.O1").and_then(|n| n["full_lift_s"].as_f64()),
+                conservation: &c4_conservation,
+                pt1_noise_pa: g.budgets.roof_noise_pa,
+                cutoff_hz: g.budgets.cutoff_hz,
+                observation_s: og.dt,
+            }),
+            _ => None,
+        };
         let direction_inputs = s3_harness::families::DirectionInputs {
             credited: &og.credited,
             zero: run.zero,
@@ -3677,6 +3709,7 @@ fn s3_case_run() {
             rotors: &og.rotors,
             chatter,
             donor_flips: run.donor_flips,
+            c4: c4_record,
         };
         let b_family = if case == Case::C5 {
             c5_directions(&spec, og, &g.network_packet, &run)

@@ -799,3 +799,435 @@ pub fn labelled_end(failure: &str) -> Option<&'static str> {
         None
     }
 }
+
+/// Rule B's C4 record (S3-D65): what the signed rows read beside the
+/// credited outputs, from the run's own record.
+#[derive(Clone, Copy)]
+pub struct DirectionRecord<'a> {
+    /// C4's frame record: one row per 0.1 s frame instant (`t_s` on the
+    /// case clock, `pzr_roof_pa`, `relief_kg_s`, `cells`).
+    pub frames: &'a [Value],
+    /// The frame driver's log (absolute `t_s`) with each restart's
+    /// phase-mode receipts.
+    pub log: &'a [Value],
+    /// The network's cells by name (the log's cell indices).
+    pub names: &'a [String],
+    /// C4.O4′'s judged numbers (`t_s`, `cell`, `located`,
+    /// `birth_threshold_k`), when O4′ was judged.
+    pub o4: Option<&'a Value>,
+    /// C4.O1's travel stop at full lift (case clock).
+    pub full_lift_s: Option<f64>,
+    /// Rule D's family as the harness writes it.
+    pub conservation: &'a Value,
+    /// `ld01-accuracy-contract`: the PT1 sample-noise budget (Pa) and the
+    /// credited band (Hz); the observation interval (s) of the credited grid.
+    pub pt1_noise_pa: f64,
+    pub cutoff_hz: f64,
+    pub observation_s: f64,
+}
+
+/// One rule-B row: pass/fail (`None`: not executable) and its numbers.
+pub type Row = (Option<bool>, Value);
+
+/// The instant tolerance of rule B's comparisons on the case clock.
+const EPS_S: f64 = 1e-9;
+
+/// t_b, "the primary saturates" (S3-D65): the first classified birth,
+/// O4′'s instant, and its cell.
+pub fn saturation(o4: Option<&Value>) -> Option<(f64, String)> {
+    let o = o4?;
+    Some((o["t_s"].as_f64()?, o["cell"].as_str()?.to_string()))
+}
+
+/// The last sample at or before `t`.
+fn sample_at(s: &[(f64, f64)], t: f64) -> Option<(f64, f64)> {
+    s.iter().rev().find(|(u, _)| *u <= t + EPS_S).copied()
+}
+
+/// The largest rise of a series above its running minimum before each
+/// sample on (first, last]: (rise, t).
+pub fn largest_rise(s: &[(f64, f64)]) -> Option<(f64, f64)> {
+    let (first, rest) = s.split_first()?;
+    if rest.is_empty() {
+        return None;
+    }
+    let mut min = first.1;
+    let mut worst = (f64::NEG_INFINITY, first.0);
+    for &(t, x) in rest {
+        if x - min > worst.0 {
+            worst = (x - min, t);
+        }
+        min = min.min(x);
+    }
+    Some(worst)
+}
+
+/// "PZR pressure (PT1) falls monotonically" (S3-D65): on the 2 Hz
+/// zero-phase filtered credited band over [0, end], no sample exceeds the
+/// running minimum before it by more than the accuracy contract's PT1
+/// sample-noise budget. The largest rise and its time are reported.
+pub fn pt1_monotone(filtered: &[(f64, f64)], noise_pa: f64) -> Row {
+    if filtered.iter().any(|p| !p.1.is_finite()) {
+        return (None, json!({"reason": "a non-finite filtered PT1 sample"}));
+    }
+    match largest_rise(filtered) {
+        None => (
+            None,
+            json!({"reason": "fewer than two filtered PT1 samples"}),
+        ),
+        Some((rise, t)) => (
+            Some(rise <= noise_pa),
+            json!({"largest_rise_above_running_min_pa": rise, "at_s": t, "tolerance_pa": noise_pa,
+                "tolerance_source": "ld01-accuracy-contract pzrRoofPressureSampleNoise_Pa",
+                "band": "2 Hz zero-phase filtered credited band (decision 0015 E1)",
+                "samples": filtered.len(),
+                "fall_pa": filtered.first().zip(filtered.last()).map(|(a, b)| a.1 - b.1)}),
+        ),
+    }
+}
+
+/// "PZR level falls after the trip, then rises once the primary
+/// saturates" (S3-D65): min over [t_rt, t_b] < x(t_rt) and x(end) > x(t_b).
+pub fn level_direction(level: &[(f64, f64)], t_rt: Option<f64>, t_b: Option<f64>, end: f64) -> Row {
+    let Some(t_rt) = t_rt else {
+        return (None, json!({"reason": "no reactor trip"}));
+    };
+    let Some(t_b) = t_b else {
+        return (
+            None,
+            json!({"reason": "no classified birth: t_b is absent"}),
+        );
+    };
+    if t_b <= t_rt {
+        return (
+            None,
+            json!({"reason": "the first classified birth precedes the reactor trip: [t_rt, t_b] is empty", "t_rt_s": t_rt, "t_b_s": t_b}),
+        );
+    }
+    let min = level
+        .iter()
+        .filter(|(t, _)| *t >= t_rt - EPS_S && *t <= t_b + EPS_S)
+        .copied()
+        .fold(None, |m: Option<(f64, f64)>, p| match m {
+            Some(m) if m.1 <= p.1 => Some(m),
+            _ => Some(p),
+        });
+    let (Some(x_rt), Some(x_b), Some(x_end), Some(min)) = (
+        sample_at(level, t_rt),
+        sample_at(level, t_b),
+        sample_at(level, end),
+        min,
+    ) else {
+        return (
+            None,
+            json!({"reason": "the level series has no sample at t_rt, t_b or the end"}),
+        );
+    };
+    (
+        Some(min.1 < x_rt.1 && x_end.1 > x_b.1),
+        json!({"t_rt": x_rt, "min_over_trip_to_saturation": min, "t_b": x_b, "end": x_end,
+            "fall_m": x_rt.1 - min.1, "rise_m": x_end.1 - x_b.1}),
+    )
+}
+
+/// "falls after the trip" (S3-D65): x(end) < x(t_rt).
+pub fn falls_after(s: &[(f64, f64)], t_rt: Option<f64>, end: f64) -> Row {
+    let Some(t_rt) = t_rt else {
+        return (None, json!({"reason": "no reactor trip"}));
+    };
+    match (sample_at(s, t_rt), sample_at(s, end)) {
+        (Some(a), Some(b)) => (
+            Some(b.1 < a.1),
+            json!({"t_rt": a, "end": b, "change": b.1 - a.1}),
+        ),
+        _ => (None, json!({"reason": "no sample at the trip or the end"})),
+    }
+}
+
+/// The frame record's rows up to `end`: (t, row).
+fn frames_to(frames: &[Value], end: f64) -> Vec<(f64, &Value)> {
+    frames
+        .iter()
+        .filter_map(|f| f["t_s"].as_f64().map(|t| (t, f)))
+        .filter(|(t, _)| *t <= end + EPS_S)
+        .collect()
+}
+
+/// "relief flow falls with pressure" (S3-D65): relief(end) < relief at
+/// full lift (the travel stop, O1), on C4's frame record: the first frame
+/// at or after the stop and the last frame of the declared part. The
+/// frame-to-frame rises of the relief flow while PT1 falls at that frame
+/// are reported only.
+pub fn relief_falls(frames: &[Value], full_lift_s: Option<f64>, end: f64) -> Row {
+    let Some(lift) = full_lift_s else {
+        return (
+            None,
+            json!({"reason": "O1 found no travel stop at full lift"}),
+        );
+    };
+    let rows: Vec<(f64, f64, f64)> = frames_to(frames, end)
+        .into_iter()
+        .filter(|(t, _)| *t >= lift - EPS_S)
+        .filter_map(|(t, f)| Some((t, f["relief_kg_s"].as_f64()?, f["pzr_roof_pa"].as_f64()?)))
+        .collect();
+    if rows.len() < 2 {
+        return (
+            None,
+            json!({"reason": "the frame record holds fewer than two frames from full lift to the end", "full_lift_s": lift}),
+        );
+    }
+    let (a, b) = (rows[0], rows[rows.len() - 1]);
+    let rises: Vec<(f64, f64)> = rows
+        .windows(2)
+        .filter(|w| w[1].1 > w[0].1 && w[1].2 < w[0].2)
+        .map(|w| (w[1].0, w[1].1 - w[0].1))
+        .collect();
+    let largest = rises
+        .iter()
+        .copied()
+        .fold(None, |m: Option<(f64, f64)>, r| match m {
+            Some(m) if m.1 >= r.1 => Some(m),
+            _ => Some(r),
+        });
+    (
+        Some(b.1 < a.1),
+        json!({"full_lift_s": lift, "at_full_lift": {"frame_s": a.0, "relief_kg_s": a.1},
+            "at_end": {"frame_s": b.0, "relief_kg_s": b.1},
+            "framewise_rise_while_pt1_falls (reported, S3-D65)": {"frames": rises.len(), "largest": largest.map(|r| json!({"at_s": r.0, "rise_kg_s": r.1}))}}),
+    )
+}
+
+/// A cell's entry on one frame row: ("L", departure) or ("E", M_g).
+fn cell_entry<'a>(row: &'a Value, cell: &str) -> Option<(&'a str, f64)> {
+    row["cells"]
+        .as_array()?
+        .iter()
+        .find(|c| c[0].as_str() == Some(cell))
+        .and_then(|c| Some((c[1].as_str()?, c[2].as_f64()?)))
+}
+
+/// "birth cell's liquid departure from saturation rises to the birth
+/// threshold (G1)" (S3-D65): for O4′'s cell on C4's frame record while it
+/// is in mode L, the departure at the last frame before t_b exceeds its
+/// value at the record's first frame (the first frame instant after
+/// zero), and no frame before t_b exceeds the threshold
+/// (`ld01-metastable-band.creditedMax_K`).
+pub fn departure_rises(frames: &[Value], cell: &str, t_b: f64, threshold_k: f64) -> Row {
+    let liquid: Vec<(f64, f64)> = frames
+        .iter()
+        .filter_map(|f| Some((f["t_s"].as_f64()?, f)))
+        .filter(|(t, _)| *t < t_b - EPS_S)
+        .filter_map(|(t, f)| match cell_entry(f, cell) {
+            Some(("L", d)) => Some((t, d)),
+            _ => None,
+        })
+        .collect();
+    if liquid.len() < 2 {
+        return (
+            None,
+            json!({"reason": format!("the frame record holds fewer than two liquid-mode departures of {cell} before t_b"), "t_b_s": t_b}),
+        );
+    }
+    let (first, last) = (liquid[0], liquid[liquid.len() - 1]);
+    let over: Vec<(f64, f64)> = liquid
+        .iter()
+        .copied()
+        .filter(|(_, d)| !d.is_finite() || *d > threshold_k)
+        .collect();
+    let max =
+        liquid.iter().copied().fold(
+            (f64::NAN, f64::NEG_INFINITY),
+            |m, p| if p.1 > m.1 { p } else { m },
+        );
+    (
+        Some(last.1 > first.1 && over.is_empty()),
+        json!({"cell": cell, "t_b_s": t_b, "first_frame": first, "last_frame_before_t_b": last,
+            "max_before_t_b": max, "threshold_k": threshold_k, "frames_over_threshold": over,
+            "liquid_frames": liquid.len(), "threshold_source": "ld01-metastable-band creditedMax_K"}),
+    )
+}
+
+/// One cell's births (t, vapour slots) and exhaustions (t) from the log, on
+/// the case clock.
+fn cell_events(log: &[Value], zero: f64, cell: usize) -> (Vec<(f64, Value)>, Vec<f64>) {
+    let (mut births, mut exhaustions) = (Vec::new(), Vec::new());
+    for instant in log {
+        let t = instant["t_s"].as_f64().unwrap_or(f64::NAN) - zero;
+        for x in instant["restart"]["transactions"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|x| x["owner"] == "phase modes")
+        {
+            let at = x["t_s"].as_f64().map_or(t, |a| a - zero);
+            for ev in x["events"].as_array().into_iter().flatten() {
+                if ev["birth"].as_u64() == Some(cell as u64) {
+                    births.push((at, ev["vapor_slots"].clone()));
+                }
+                if ev["exhaustion"].as_u64() == Some(cell as u64) {
+                    exhaustions.push(at);
+                }
+            }
+        }
+    }
+    (births, exhaustions)
+}
+
+/// "birth cell's vapour mass: 0, then positive and continuous" (S3-D65),
+/// on C4's frame record for O4′'s cell, each mode-E interval (birth to its
+/// exhaustion or the end; re-births included) judged separately: the
+/// phase-mode owner's birth receipt carries vapour slots exactly 0; M_g > 0
+/// at every frame inside an interval; and the cell is in mode E on the
+/// record only inside its logged intervals, so M_g changes discontinuously
+/// only at a logged instant of that cell. The largest frame-to-frame M_g
+/// change per interval is reported (no declared jump tolerance on the
+/// 0.1 s record).
+pub fn vapour_mass(
+    frames: &[Value],
+    log: &[Value],
+    zero: f64,
+    names: &[String],
+    cell: &str,
+    end: f64,
+) -> Row {
+    let Some(index) = names.iter().position(|n| n == cell) else {
+        return (
+            None,
+            json!({"reason": format!("no network cell named {cell}")}),
+        );
+    };
+    let (births, exhaustions) = cell_events(log, zero, index);
+    if births.is_empty() {
+        return (
+            None,
+            json!({"reason": format!("the log records no birth of {cell}")}),
+        );
+    }
+    let zero_slots = |s: &Value| {
+        s.as_array()
+            .is_some_and(|a| !a.is_empty() && a.iter().all(|x| x.as_f64() == Some(0.)))
+    };
+    let unpaid: Vec<Value> = births
+        .iter()
+        .filter(|(_, s)| !zero_slots(s))
+        .map(|(t, s)| json!([t, s]))
+        .collect();
+    // Each birth's interval runs to that cell's next exhaustion (none: to
+    // the end of the declared part).
+    let intervals: Vec<(f64, Option<f64>)> = births
+        .iter()
+        .map(|(b, _)| {
+            let e = exhaustions
+                .iter()
+                .copied()
+                .filter(|x| *x >= *b)
+                .fold(f64::INFINITY, f64::min);
+            (*b, e.is_finite().then_some(e))
+        })
+        .collect();
+    let logged = |t: f64, x: f64| (t - x).abs() <= EPS_S;
+    let rows = frames_to(frames, end);
+    let mut violations = Vec::new();
+    let mut per: Vec<Vec<(f64, f64)>> = vec![Vec::new(); intervals.len()];
+    for (t, row) in &rows {
+        // A frame at one of the cell's logged instants is on both sides.
+        if intervals
+            .iter()
+            .any(|(b, e)| logged(*t, *b) || e.is_some_and(|e| logged(*t, e)))
+        {
+            continue;
+        }
+        let inside = intervals
+            .iter()
+            .position(|(b, e)| *t > *b && e.is_none_or(|e| *t < e));
+        match (inside, cell_entry(row, cell)) {
+            (Some(k), Some(("E", mg))) if mg > 0. => per[k].push((*t, mg)),
+            (Some(_), entry) => violations.push(json!({"t_s": t, "entry": entry.map(|e| json!(e)), "reason": "inside a mode-E interval without positive M_g"})),
+            (None, Some(("E", mg))) => violations.push(json!({"t_s": t, "m_g_kg": mg, "reason": "mode E outside the cell's logged intervals"})),
+            (None, _) => {}
+        }
+    }
+    let reports: Vec<Value> = intervals
+        .iter()
+        .zip(&per)
+        .map(|((b, e), s)| {
+            let step = s
+                .windows(2)
+                .map(|w| (w[1].0, (w[1].1 - w[0].1).abs()))
+                .fold(None, |m: Option<(f64, f64)>, r| match m {
+                    Some(m) if m.1 >= r.1 => Some(m),
+                    _ => Some(r),
+                });
+            json!({"birth_s": b, "exhaustion_s": e, "frames": s.len(), "first": s.first(),
+                "min_m_g_kg": s.iter().map(|p| p.1).fold(f64::INFINITY, f64::min),
+                "largest_framewise_change (reported)": step.map(|r| json!({"at_s": r.0, "kg": r.1}))})
+        })
+        .collect();
+    (
+        Some(unpaid.is_empty() && violations.is_empty()),
+        json!({"cell": cell, "births": births.len(), "exhaustions": exhaustions,
+            "birth_slots_not_zero": unpaid, "violations": violations, "intervals": reports}),
+    )
+}
+
+/// "primary mass falls by exactly the integrated relief flow" (S3-D65),
+/// "exactly" read as rule D's bound on D's own record: the primary mass
+/// closure (inventory change against the network's receipts) within
+/// `ledger.boundLocalToleranceUnits` at every output, the inventory change
+/// at D's last closure negative, and that change against the integrated
+/// relief flow (the ledger `pzr_relief_attribution_kg`) within the same
+/// bound in the inventory's tolerance units.
+pub fn primary_mass(d: &Value) -> Row {
+    if d["verdict"] == "not executable" {
+        return (None, json!({"reason": d["reason"]}));
+    }
+    if !d["error"].is_null() {
+        return (
+            Some(false),
+            json!({"reason": "rule D's ledgers stopped", "error": d["error"]}),
+        );
+    }
+    let ledger = &d["ledger"];
+    let worst = &ledger["closures"]["primary_mass_kg"];
+    let last = ledger["final"]["closures"]
+        .as_array()
+        .and_then(|c| c.iter().find(|x| x["name"] == "primary_mass_kg"));
+    let receipts = &d["receipts_at_last_closure"];
+    let (Some(bound), Some(worst_units), Some(last), Some(attribution), Some(t), Some(tr)) = (
+        ledger["bound_local_tolerance_units"].as_f64(),
+        worst["max_units"].as_f64(),
+        last,
+        receipts["values"]["pzr_relief_attribution_kg"].as_f64(),
+        ledger["final"]["t_s"].as_f64(),
+        receipts["t_s"].as_f64(),
+    ) else {
+        return (
+            None,
+            json!({"reason": "rule D's record holds no primary mass closure or relief attribution"}),
+        );
+    };
+    let (Some(change), Some(tolerance)) = (
+        last["inventory_change"].as_f64(),
+        last["tolerance"].as_f64(),
+    ) else {
+        return (
+            None,
+            json!({"reason": "rule D's last primary mass closure has no inventory change"}),
+        );
+    };
+    if (t - tr).abs() > EPS_S * (1. + t.abs()) {
+        return (
+            None,
+            json!({"reason": "rule D's last closure and its receipts are at different instants", "closure_t_s": t, "receipts_t_s": tr}),
+        );
+    }
+    let relief_units = (change - attribution).abs() / tolerance;
+    (
+        Some(worst_units <= bound && change < 0. && relief_units <= bound),
+        json!({"bound_units": bound, "bound_source": "ld01-s2-gates ledger.boundLocalToleranceUnits",
+            "closure_max_units": worst_units, "closure_at_t_s": worst["at_t_s"],
+            "last_closure_t_s": t, "inventory_change_kg": change, "integrated_relief_kg": attribution,
+            "against_relief_units": relief_units, "tolerance_kg": tolerance,
+            "span": "rule D's ledgers from the run's start (q0 = 0) to its last closure"}),
+    )
+}
