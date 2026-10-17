@@ -209,6 +209,9 @@ struct RodReads {
 
 pub struct Joined<P: Properties> {
     pub network: Network<P>,
+    /// MR-1 (R7-P), the packet's `matrixRebuild` section, for the S3 frame
+    /// driver; `None` for a packet compiled before the block.
+    matrix_rebuild: Option<super::packet::MatrixRebuild>,
     blocks: Blocks<P>,
     faces: Vec<Face>,
     rows: Vec<Scalar>,
@@ -512,6 +515,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         };
         let mut joined = Self {
             network,
+            matrix_rebuild: packet.matrix_rebuild.clone(),
             blocks,
             faces,
             rows: vec![s(0.); offsets.end],
@@ -528,6 +532,13 @@ impl<P: Properties + WaterProperties> Joined<P> {
         coloring.verify(&pattern).map_err(fatal)?;
         joined.structure = Some((pattern, coloring));
         Ok(joined)
+    }
+
+    /// MR-1 (owner, request 7 R7-P): the packet's forced matrix-rebuild
+    /// section, `None` for a packet compiled before
+    /// `ld01-joined-matrix-rebuild`.
+    pub fn matrix_rebuild(&self) -> Option<&super::packet::MatrixRebuild> {
+        self.matrix_rebuild.as_ref()
     }
 
     /// The RCP drives' support is set by the AC routing (ELEC's slice):

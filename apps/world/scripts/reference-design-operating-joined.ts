@@ -7,9 +7,11 @@
  *
  * Sections: `secondary` (the SG secondary owner, prepareOperatingSecondary),
  * `rods` (the rod owner, compileOperatingRods), `post_trip_domain` (D3 (a),
- * compileOperatingPostTripDomain) and `pzrMetal` (the PZR metal and relief
+ * compileOperatingPostTripDomain), `pzrMetal` (the PZR metal and relief
  * owner, G6, joinedPzrSections), whose cell gains the spray and relief
- * ports.
+ * ports, and `matrixRebuild` (MR-1, owner request 7 R7-P: the joined solve's
+ * forced iteration-matrix rebuild, operating-equations §6's
+ * `ld01-joined-matrix-rebuild`, read by the S3 frame driver).
  *
  * The spine is compiled in two passes around the stock-IDA steady solids
  * settle (G18); `settle` produces that steady state. The settle's input
@@ -19,6 +21,7 @@
  * Usage: bun reference-design-operating-joined.ts <wiki root> <pinned IF97 directory> <prepare_steady_solids executable> */
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
+import { z } from 'zod'
 import { ownedBlock } from './reference-design-operating-pzr'
 import { caseSetSections, equipmentOwners, parsePzrHeaterBanks, parsePzrRelief, parsePzrSpray } from './reference-design-operating-pzr-cases'
 import { compileOperatingRods } from './reference-design-operating-rods'
@@ -51,6 +54,29 @@ export function joinedPzrSections<Cell extends Parameters<typeof caseSetSections
     caloric304: ownedBlock(pages.equipment, 'Fixed metal and complementary contact', 'reference-304-caloric'),
     shell: ownedBlock(pages.thermal, 'Shell and head metal', 'ld01-pzr-shell'),
     reliefBackPressure_Pa: relief.calibration.backPressure_Pa } }
+}
+
+/** MR-1's owner page and block (owner request 7 R7-P, 17 Oct). */
+export const matrixRebuildOwner = {
+  page: 'model/operating-equations.md',
+  heading: 'Forced iteration-matrix rebuild (owner, R7-P)',
+  fence: 'ld01-joined-matrix-rebuild',
+} as const
+const matrixRebuildSchema = z.object({
+  decision: z.string().min(1),
+  appliesFrom: z.literal('S3'),
+  rebuildEverySteps: z.number().int().positive(),
+  mechanism: z.string().min(1),
+  adoption: z.string().min(1),
+  guard: z.string().min(1),
+}).strict()
+/** The packet's `matrixRebuild`: the owner's block verbatim (strict), with
+ * the page it was read from. Rust's `joined::packet::MatrixRebuild` admits it
+ * strictly; the S3 frame driver sets stock IDAS check points every
+ * `rebuildEverySteps` steps from it. */
+export function matrixRebuildSection(page: string) {
+  const block = matrixRebuildSchema.parse(ownedBlock(page, matrixRebuildOwner.heading, matrixRebuildOwner.fence))
+  return { ...block, provenance: { consumed: [{ name: matrixRebuildOwner.page, sha256: createHash('sha256').update(page).digest('hex') }] } }
 }
 
 /** The packet's `pzrSteel` (S3-D36): each PZR steel coordinate's steady
@@ -89,11 +115,12 @@ export async function prepareOperatingJoined(wiki: string, if97: string, settle:
   const hash = (s: string) => createHash('sha256').update(s).digest('hex')
   const consumed = names.map(([k, name]) => ({ name, sha256: hash(pages[k as keyof typeof pzrMetalPages]) }))
   const g6 = joinedPzrSections(spine.pzr.cell, pages)
-  return { ...spine, identity: 'LD01-JOINED-SPINE-1', secondary, rods, post_trip_domain: await compileOperatingPostTripDomain(wiki),
+  const matrixRebuild = matrixRebuildSection(await Bun.file(join(base, matrixRebuildOwner.page)).text())
+  return { ...spine, identity: 'LD01-JOINED-SPINE-1', secondary, rods, post_trip_domain: await compileOperatingPostTripDomain(wiki), matrixRebuild,
     pzr: { ...spine.pzr, cell: g6.cell, provenance: { ...spine.pzr.provenance, consumed: [...spine.pzr.provenance.consumed, ...consumed] } },
     pzrMetal: { ...g6.pzrMetal, provenance: { consumed } }, pzrSteel: steel,
     provenance: { ...spine.provenance, joinedSourceSha256: hash(await Bun.file(import.meta.path).text()) },
-    scope: 'Joined S2 inputs: the compact spine packet, its PZR cell with the spray and relief ports (G6), with the SG secondary, rod, D3 (a) post-trip domain and PZR metal and relief owners\' strict sections, and the PZR steel at its steady state (S3-D36). No trajectory admission.' }
+    scope: 'Joined S2 inputs: the compact spine packet, its PZR cell with the spray and relief ports (G6), with the SG secondary, rod, D3 (a) post-trip domain and PZR metal and relief owners\' strict sections, the PZR steel at its steady state (S3-D36), and MR-1\'s forced matrix-rebuild interval (R7-P). No trajectory admission.' }
 }
 
 if (import.meta.main) {
