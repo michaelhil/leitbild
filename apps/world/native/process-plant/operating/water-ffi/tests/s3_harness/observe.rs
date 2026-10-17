@@ -272,6 +272,163 @@ pub fn energy_unit(e: &dyn Fn(&[f64]) -> f64, y: &[f64], atol: &[f64], rtol: f64
         .sum()
 }
 
+/// The direction (S3-D50) and SS-1 (S3-D51) signals beyond the credited
+/// outputs, located by the packet's names.
+#[derive(Clone, Debug, Default)]
+pub struct Extra {
+    /// Per loop (A, B): the hot-side leg cells (`HOT.A*`, `HOT.B*`) and the
+    /// cold-leg cells (`COLD.A`, `COLD.B`), mass-weighted.
+    pub hot: Vec<Vec<usize>>,
+    pub cold: Vec<Vec<usize>>,
+    /// The core outlet (UPPER) and inlet (LOWER) cells.
+    pub upper: usize,
+    pub lower: usize,
+    /// C3's idle branch face (`PUMP.A1->COLD.A`), its chart's mass flow.
+    pub idle_face: Option<usize>,
+    /// Per SG, the account boundary indices of its steam and relief mass
+    /// rates (the main-steam pickup's flow, S4-D10 b).
+    pub steam: Vec<(usize, usize)>,
+}
+
+impl Extra {
+    /// From the network packet's region and face names and the account's
+    /// ledger names.
+    pub fn of(
+        regions: &[String],
+        faces: &[String],
+        ledger_names: &[String],
+        sgs: &[String],
+        idle_face: Option<&str>,
+    ) -> Result<Self, String> {
+        let cells = |p: &str| -> Vec<usize> {
+            regions
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| r.starts_with(p))
+                .map(|(i, _)| i)
+                .collect()
+        };
+        let one = |id: &str| {
+            regions
+                .iter()
+                .position(|r| r == id)
+                .ok_or(format!("no region {id}"))
+        };
+        let hot = vec![cells("HOT.A"), cells("HOT.B")];
+        let cold = vec![cells("COLD.A"), cells("COLD.B")];
+        if hot.iter().chain(&cold).any(Vec::is_empty) {
+            return Err("a loop has no HOT or COLD cell".into());
+        }
+        let idle_face = match idle_face {
+            Some(f) => Some(
+                faces
+                    .iter()
+                    .position(|x| x == f)
+                    .ok_or(format!("no face {f}"))?,
+            ),
+            None => None,
+        };
+        let at = |k: String| {
+            ledger_names
+                .iter()
+                .position(|n| *n == k)
+                .ok_or(format!("no ledger {k}"))
+        };
+        let steam = sgs
+            .iter()
+            .map(|id| {
+                Ok((
+                    at(format!("SG.{id}.steam_kg"))?,
+                    at(format!("SG.{id}.relief_kg"))?,
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(Self {
+            hot,
+            cold,
+            upper: one("UPPER")?,
+            lower: one("LOWER")?,
+            idle_face,
+            steam,
+        })
+    }
+}
+
+/// A regular cell's temperature and mass per its phase mode (the credited
+/// reader's rule, [`crate::outputs::cell_state`]).
+fn cell_temperature(joined: &Joined<If97>, y: &[f64], c: usize) -> Result<(f64, f64), String> {
+    // Per the cell's phase mode, as the credited outputs read it.
+    crate::outputs::cell_temperature(&joined.network, y, c)
+}
+
+/// The mass-weighted mean temperature of `cells`.
+fn weighted(joined: &Joined<If97>, y: &[f64], cells: &[usize]) -> Result<f64, String> {
+    let (mut mt, mut m) = (0., 0.);
+    for c in cells {
+        let (t, mass) = cell_temperature(joined, y, *c)?;
+        mt += mass * t;
+        m += mass;
+    }
+    Ok(mt / m)
+}
+
+/// The extra signals at one sample (after the account's evaluation there).
+fn extra_signals(
+    x: &Extra,
+    joined: &Joined<If97>,
+    y: &[f64],
+    n: usize,
+    flows: Option<&(Vec<f64>, Vec<f64>)>,
+) -> Result<Vec<(&'static str, Vec<f64>)>, String> {
+    let (boundary, metal) = flows.ok_or("no account at this sample")?;
+    let mut out = vec![
+        (
+            "hot_leg_k",
+            x.hot
+                .iter()
+                .map(|c| weighted(joined, y, c))
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        (
+            "cold_leg_k",
+            x.cold
+                .iter()
+                .map(|c| weighted(joined, y, c))
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        (
+            "core_outlet_k",
+            vec![cell_temperature(joined, y, x.upper)?.0],
+        ),
+        (
+            "core_inlet_k",
+            vec![cell_temperature(joined, y, x.lower)?.0],
+        ),
+        // Leaving the secondary: the account's boundary enters positive.
+        (
+            "steam_flow_kg_s",
+            x.steam
+                .iter()
+                .map(|(s, r)| -(boundary[*s] + boundary[*r]))
+                .collect(),
+        ),
+        ("sg_metal_heat_w", metal.clone()),
+        (
+            "turbine_speed_rad_s",
+            vec![y[n + leitbild_operating_plant::electrical::slice::OMEGA]],
+        ),
+    ];
+    if let Some(f) = x.idle_face {
+        let flow = joined
+            .network
+            .chart(f, 0)
+            .map(|c| c.mass_flow_kg_s.value)
+            .ok_or(format!("no chart on face {f}"))?;
+        out.push(("idle_branch_kg_s", vec![flow]));
+    }
+    Ok(out)
+}
+
 /// The gate parts of the observation (a gate run only).
 pub struct Gates {
     pub origin: f64,
@@ -296,6 +453,8 @@ pub struct Gates {
     /// The carried quadratures at the last closure: every named receipt
     /// (the joined ledgers, then the slice's), for the receipt.
     pub last_receipts: Option<(f64, Vec<f64>)>,
+    /// The direction and SS-1 signals (recorded beside the credited ones).
+    pub extra: Option<Extra>,
 }
 
 /// The run's observer: rule I always, the gate parts when asked.
@@ -312,6 +471,76 @@ pub struct CaseObserver {
     /// The largest |algebraic row| per row family over the accepted steps
     /// (a reported quantity in every S3 receipt; JACAGE's metric).
     pub residuals: AlgebraicResiduals,
+    /// The run's own absolute tolerances (solver scaling) and relative
+    /// tolerance: N4′'s integrator tolerance unit.
+    pub tolerances: Option<(Vec<f64>, f64)>,
+    /// Each restart's pre-transaction consistency (N4′, S3-D58).
+    pub entries: Vec<Value>,
+}
+
+/// N4′'s consistent state (S3-D58, JACAGE's units) at a restart's left
+/// side `(t, y, y')`: the one-pass projection correction of the algebraic
+/// rows, `J_aa δ = F_a` with `J = ∂F/∂y` (differential coordinates held),
+/// each in its integrator tolerance unit `rtol |y| + atol`; the largest,
+/// its coordinate and how many exceed one unit.
+#[allow(clippy::too_many_arguments)] // The system, the state and its tolerances.
+pub fn entry_consistency<S: leitbild_operating_water::ida::System + JoinedSystem>(
+    system: &mut S,
+    t: f64,
+    y: &[f64],
+    yp: &[f64],
+    network_ids: &[f64],
+    atol: &[f64],
+    rtol: f64,
+) -> Result<Value, String> {
+    use leitbild_operating_water::klu::SparseLu;
+    let n = y.len();
+    let mut f = vec![0.; n];
+    system
+        .residual(t, y, yp, &mut f)
+        .map_err(|e| format!("residual: {e:?}"))?;
+    let identity = system.differential_all(network_ids);
+    let nnz = system.nonzeros();
+    let (mut data, mut rows, mut pointers) = (vec![0.; nnz], vec![0i64; nnz], vec![0i64; n + 1]);
+    system
+        .jacobian(t, 0., y, yp, &mut data, &mut rows, &mut pointers)
+        .map_err(|e| format!("Jacobian: {e:?}"))?;
+    let alg: Vec<usize> = (0..n).filter(|i| identity[*i] == 0.).collect();
+    let mut at = vec![usize::MAX; n];
+    for (k, i) in alg.iter().enumerate() {
+        at[*i] = k;
+    }
+    let (mut p2, mut r2, mut v2) = (vec![0i64], Vec::new(), Vec::new());
+    for j in &alg {
+        for p in pointers[*j] as usize..pointers[*j + 1] as usize {
+            let i = rows[p] as usize;
+            if at[i] != usize::MAX {
+                r2.push(at[i] as i64);
+                v2.push(data[p]);
+            }
+        }
+        p2.push(r2.len() as i64);
+    }
+    let mut lu = SparseLu::analyze(alg.len(), &p2, &r2).map_err(|e| e.to_string())?;
+    lu.factor(&v2).map_err(|e| e.to_string())?;
+    let mut d: Vec<f64> = alg.iter().map(|i| f[*i]).collect();
+    let max_row = d.iter().fold(0_f64, |m, v| m.max(v.abs()));
+    lu.solve(&mut d).map_err(|e| e.to_string())?;
+    let (mut worst, mut at_coordinate, mut over) = (0_f64, None, 0usize);
+    for (k, i) in alg.iter().enumerate() {
+        let units = d[k].abs() / (rtol * y[*i].abs() + atol[*i]);
+        if units > 1. {
+            over += 1;
+        }
+        if units.is_nan() || units > worst {
+            worst = units;
+            at_coordinate = Some(*i);
+        }
+    }
+    Ok(
+        json!({"t_s": t, "max_units": worst, "coordinate": at_coordinate, "rows_over_one_unit": over,
+        "algebraic_rows": alg.len(), "max_abs_row": max_row}),
+    )
 }
 
 /// The largest |residual| of the algebraic rows, in solver row units (the
@@ -420,6 +649,9 @@ impl Gates {
         side: Side,
     ) {
         let joined = &mut system.integrated_mut().joined;
+        // The account's boundary and each SG's metal heat (for the extra
+        // signals at this sample).
+        let mut flows: Option<(Vec<f64>, Vec<f64>)> = None;
         match joined.account(&self.plan, t, &y[..n], &yp[..n]) {
             Ok(account) => {
                 if let Some(c) = self.conservation.as_mut() {
@@ -428,6 +660,18 @@ impl Gates {
                         c.restarted(t);
                     }
                 }
+                let metal: Vec<f64> = account
+                    .handovers
+                    .iter()
+                    .filter(|h| h.name.ends_with("metal_heat_handover"))
+                    .filter_map(|h| {
+                        h.terms
+                            .iter()
+                            .find(|(k, _)| k == "received by the secondary")
+                            .map(|(_, v)| *v)
+                    })
+                    .collect();
+                flows = Some((account.boundary.clone(), metal));
             }
             Err(e) => {
                 self.conservation_error
@@ -455,6 +699,10 @@ impl Gates {
         }
         // The account's evaluation at (t, y, y') serves the reader.
         let read = self.reader.read(joined, &y[..n], self.rods);
+        let more = self
+            .extra
+            .as_ref()
+            .map(|x| extra_signals(x, joined, y, n, flows.as_ref()));
         match read {
             Ok(mut outputs) => {
                 outputs.push(("generator_power_w", vec![system.slice.export_w(&y[n..])]));
@@ -464,6 +712,14 @@ impl Gates {
                     "generator_ieq_a",
                     vec![y[n + 3].hypot(y[n + 4]) / 3f64.sqrt()],
                 ));
+                match more {
+                    Some(Ok(mut extra)) => outputs.append(&mut extra),
+                    Some(Err(e)) => {
+                        self.credited_error = Some(format!("extra signals at {t} s: {e}"));
+                        return;
+                    }
+                    None => {}
+                }
                 if let Err(e) = self.credited.push(t, &outputs) {
                     self.credited_error = Some(e);
                 }
@@ -540,6 +796,14 @@ impl<J: JoinedSystem<Properties = If97>> Observer<Electrified<J>> for CaseObserv
         side: Side,
     ) -> Result<(), String> {
         let i0 = super::counters::instructions();
+        // N4′: the restart's pre-transaction consistency in tolerance units.
+        if side == Side::BeforeRestart
+            && let Some((atol, rtol)) = &self.tolerances
+        {
+            let e = entry_consistency(system, t, y, yp, &self.residuals.network_ids, atol, *rtol)
+                .unwrap_or_else(|e| json!({"t_s": t, "error": e}));
+            self.entries.push(e);
+        }
         // Rule I on the restart's consistent start too (S2 judged both
         // sides; a birth's exit is not taken a step late).
         if side == Side::AfterRestart {
@@ -583,6 +847,113 @@ impl<J: JoinedSystem<Properties = If97>> Observer<Electrified<J>> for CaseObserv
         self.count(i0);
         Ok(())
     }
+}
+
+/// The credited signals rule F reads (S3-D49): S2's credited outputs and
+/// the generator's terminal power and Ieq.
+pub const F_SIGNALS: [&str; 14] = [
+    "core_power_w",
+    "regional_fraction",
+    "fuel_doppler_k",
+    "core_cell_k",
+    "average_coolant_k",
+    "pzr_roof_pa",
+    "pzr_level_m",
+    "core_dp_pa",
+    "loop_flow_kg_s",
+    "sg_pressure_pa",
+    "sg_liquid_m3",
+    "rod_travel_m",
+    "generator_power_w",
+    "generator_ieq_a",
+];
+
+/// The pseudo-signal of every face's phase drives (Pa, `face * 2 + phase`)
+/// in [`signal_tolerances`]' result: N4′'s drive tolerances (S3-D58).
+pub const DRIVES: &str = "__face_drives_pa";
+
+/// S3-D49's absolute class a_x of every F signal instance at `(t, y, y')`:
+/// the first-order propagation sum_i |x(y + atol_i e_i) - x(y)| over every
+/// coordinate, the operator's through one evaluation and the credited
+/// reader each, the slice's through its own outputs. The operator is
+/// evaluated at `(t, y, y')` again afterwards. Returns the classes by key
+/// and a record (coordinates, refused evaluations).
+#[allow(clippy::too_many_arguments)] // The gates, the unit, the state and the tolerances.
+pub fn signal_tolerances<J: JoinedSystem<Properties = If97>>(
+    g: &Gates,
+    system: &mut Electrified<J>,
+    t: f64,
+    y: &[f64],
+    yp: &[f64],
+    n: usize,
+    atol: &[f64],
+) -> Result<(std::collections::BTreeMap<String, Vec<f64>>, Value), String> {
+    let read =
+        |system: &mut Electrified<J>, z: &[f64]| -> Result<Vec<(&'static str, Vec<f64>)>, String> {
+            let joined = &mut system.integrated_mut().joined;
+            joined
+                .evaluate(t, &z[..n], &yp[..n], None, 0., None)
+                .map_err(|e| format!("{e:?}"))?;
+            let mut out = g.reader.read(joined, &z[..n], g.rods)?;
+            // N4′ (S3-D58): every face's phase drives, for their propagated
+            // tolerance (rule F's construction).
+            let net = &joined.network;
+            let drives: Vec<f64> = (0..net.face_count())
+                .flat_map(|f| [net.face_drive(f, 0).value, net.face_drive(f, 1).value])
+                .collect();
+            out.push((DRIVES, drives));
+            out.push(("generator_power_w", vec![system.slice.export_w(&z[n..])]));
+            out.push((
+                "generator_ieq_a",
+                vec![z[n + 3].hypot(z[n + 4]) / 3f64.sqrt()],
+            ));
+            Ok(out
+                .into_iter()
+                .filter(|(k, _)| F_SIGNALS.contains(k) || *k == DRIVES)
+                .collect())
+        };
+    let base = read(system, y)?;
+    let mut a: std::collections::BTreeMap<String, Vec<f64>> = base
+        .iter()
+        .map(|(k, v)| (k.to_string(), vec![0.; v.len()]))
+        .collect();
+    let mut z = y.to_vec();
+    let mut refused = 0usize;
+    let mut first_refusal: Option<String> = None;
+    let mut backward = 0usize;
+    for i in 0..y.len() {
+        z[i] = y[i] + atol[i];
+        // A coordinate whose forward perturbation leaves a property band
+        // (an IF97 trial band at a phase boundary) is taken backward.
+        let mut x = read(system, &z);
+        if x.is_err() {
+            z[i] = y[i] - atol[i];
+            x = read(system, &z);
+            backward += usize::from(x.is_ok());
+        }
+        match x {
+            Ok(x) => {
+                for ((k, v), (_, v0)) in x.iter().zip(&base) {
+                    let acc = a.get_mut(*k).expect("same keys");
+                    for (j, (p, q)) in v.iter().zip(v0).enumerate() {
+                        acc[j] += (p - q).abs();
+                    }
+                }
+            }
+            Err(e) => {
+                refused += 1;
+                first_refusal.get_or_insert(format!("coordinate {i}: {e}"));
+            }
+        }
+        z[i] = y[i];
+    }
+    // The operator's caches back at the start state.
+    read(system, y)?;
+    Ok((
+        a,
+        json!({"rule": "S3-D49: a_x = sum_i |x(y + atol_i e_i) - x(y)| over every coordinate (operator through one evaluation each, slice through its outputs), at the run's start state",
+        "coordinates": y.len(), "taken_backward": backward, "refused": refused, "first_refusal": first_refusal}),
+    ))
 }
 
 /// The start sample of a gate run (the consistent start, before any step).
