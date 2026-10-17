@@ -283,17 +283,16 @@ pub trait Observer<S> {
     ) -> Result<(), String> {
         Ok(())
     }
-    /// HOOK (S3GATES, N4′ S3-D61; KERN to reconcile): at a restart's left
-    /// side, before its sample, the integrator's own units: stock IDA's
-    /// reciprocal error weights `1 / (rtol |y_n| + atol)` of the segment's
-    /// history and its current solution `y_n` (`Err` when stock reports
-    /// none). Reading them changes no history.
+    /// HOOK (S3GATES, N4′ S3-D61, S3-D67; KERN to reconcile): at a
+    /// restart's left side, before its sample, the absolute tolerance vector
+    /// the integrator uses there (derived classes included), for the unit
+    /// `rtol |y| + atol`.
     fn integrator_units(&mut self, _t: f64, _units: IntegratorUnits) {}
 }
 
-/// HOOK (S3GATES, N4′ S3-D61): stock IDA's reciprocal error weights and its
-/// current solution `y_n` at a restart's left side, or why stock has none.
-pub type IntegratorUnits = Result<(Vec<f64>, Vec<f64>), String>;
+/// HOOK (S3GATES, S3-D67): the integrator's absolute tolerance vector at a
+/// restart's left side ([`Ida::absolute_tolerances`]).
+pub type IntegratorUnits = Vec<f64>;
 
 /// The reported diagnostic of a class-S instant (S3-D4): the Newton
 /// correction the held changes alone ask for, `J(cj)^-1 ΔF` in IDA's WRMS
@@ -1075,14 +1074,7 @@ impl<S: JoinedSystem> Driver<S> {
             None => Vec::new(),
         };
         if side == Side::BeforeRestart {
-            let n = y.len();
-            let (mut errors, mut weights) = (vec![0.; n], vec![0.; n]);
-            let (mut yn, mut ypn) = (vec![0.; n], vec![0.; n]);
-            let units = ida
-                .error_diagnostics(&mut errors, &mut weights)
-                .and_then(|_| ida.current_state(&mut yn, &mut ypn))
-                .map(|_| (weights, yn));
-            observer.integrator_units(t, units);
+            observer.integrator_units(t, ida.absolute_tolerances().to_vec());
         }
         observer.sample(ida.system_mut(), t, y, yp, &q, side)?;
         self.cpu.gate_s += (self.clock)() - started;
