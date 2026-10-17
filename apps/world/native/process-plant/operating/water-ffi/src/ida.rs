@@ -409,6 +409,9 @@ pub struct Ida<S: System> {
     failed: bool,
     /// Set by the first `advance` after construction or reinitialization.
     started: bool,
+    /// HOOK (S3GATES, S3-D67; KERN to reconcile): the absolute tolerance
+    /// vector stock was last given (construction or `set_tolerances`).
+    absolute: Vec<f64>,
 }
 impl<S: System> Ida<S> {
     pub fn new(system: S, initial: Initial<'_>) -> Result<Self> {
@@ -486,7 +489,13 @@ impl<S: System> Ida<S> {
             time: initial.time,
             failed: false,
             started: false,
+            absolute: initial.absolute_tolerance.to_vec(),
         })
+    }
+    /// HOOK (S3GATES, S3-D67): the absolute tolerances stock uses now, as
+    /// last given (derived classes included).
+    pub fn absolute_tolerances(&self) -> &[f64] {
+        &self.absolute
     }
     fn buffers(&self, y: &[f64], yp: &[f64]) -> Result<()> {
         if y.len() != self.context.n || yp.len() != self.context.n {
@@ -666,7 +675,9 @@ impl<S: System> Ida<S> {
         }
         let code =
             unsafe { operating_ida_tolerances(self.handle.as_ptr(), relative, absolute.as_ptr()) };
-        self.check(code)
+        self.check(code)?;
+        self.absolute.copy_from_slice(absolute);
+        Ok(())
     }
     /// IDASetMaxOrd; stock admits 1 through its allocated maximum order 5.
     pub fn set_max_order(&mut self, order: usize) -> Result<()> {
