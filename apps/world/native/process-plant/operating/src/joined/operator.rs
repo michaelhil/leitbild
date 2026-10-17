@@ -1171,7 +1171,11 @@ impl<P: Properties + WaterProperties> Joined<P> {
             // L1's release roots read the drives of this state's value
             // evaluation; its contact roots read the coordinates alone.
             let roots = self.network.unilateral_roots();
-            if release_roots(&roots) {
+            // HOOK (COST2): the spray roots' value evaluation of this same
+            // state, earlier in this call (nothing since mutates the
+            // operator: the spray and phase-mode roots only read), is the
+            // one L1's release roots read; it is not repeated.
+            if release_roots(&roots) && !self.value_state.evaluated {
                 self.evaluate(t, y, yp, None, 0., None)
                     .map_err(|e| fatal(format!("L1 root evaluation: {e:?}")))?;
                 self.value_state.evaluated = true; // HOOK (COST2)
