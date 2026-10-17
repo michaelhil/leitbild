@@ -15,9 +15,10 @@
 //! `post-event`). The operator is
 //! composed as `s3_unit::compose` composes it, step by step (the joined
 //! spine, the feed gate, the colored and block structures, the S2-D24r /
-//! S3-D16 derived classes, the credited outputs, the saved discrete state
-//! restored: L1, phase modes, spray, the SG, rod and PZR owners, the
-//! rotors), with two differences, both because Z6 linearizes the model at
+//! S3-D16 derived classes, the credited outputs; the saved discrete state
+//! (L1, phase modes, spray, the SG, rod and PZR owners, the rotors) is
+//! restored before the first evaluation at the state, S3-D69), with two
+//! differences, both because Z6 linearizes the model at
 //! the saved state itself, as S2's Z6 does:
 //! - no exact consistent start: the state is the solver's own accepted
 //!   state; its residual is reported per owner;
@@ -160,6 +161,16 @@ fn operator_at(state: &Value) -> Result<Operator, String> {
     joined
         .declare_feed_gate()
         .map_err(|e| format!("feed gate: {e:?}"))?;
+    // S3-D69: the saved discrete state (cell phase modes, L1 locks, spray,
+    // the owners, the rotors) is restored before anything evaluates the
+    // operator at the saved state: a cell born in the case is two-phase in
+    // the state, and evaluating it in its composed liquid-only mode fails
+    // (the 17 Oct gate run: IF97 TrialBand at C4's later states). The
+    // colored pattern is structural (every cell coordinate), so the feed
+    // gate's recompile before the restore holds for any mode.
+    joined
+        .restore_discrete_state(&state["discrete_state"]["operator"])
+        .map_err(|e| format!("restore the operator's discrete state: {e:?}"))?;
     let structure = JoinedJacobian::compile_for(&mut joined, t, &y, None)
         .map_err(|e| format!("structure: {e:?}"))?;
     let credited = spine::credited_outputs(&joined);
@@ -177,9 +188,6 @@ fn operator_at(state: &Value) -> Result<Operator, String> {
     joined
         .declare_credited(credited)
         .map_err(|e| format!("credited: {e:?}"))?;
-    joined
-        .restore_discrete_state(&state["discrete_state"]["operator"])
-        .map_err(|e| format!("restore the operator's discrete state: {e:?}"))?;
     Ok(Operator {
         joined,
         t,
@@ -675,5 +683,46 @@ fn s3_unit_coupling_blocks() {
         "{}",
         json!({"plant_to_elec": receipt["plant_to_elec"], "elec_to_plant": receipt["elec_to_plant"],
             "slice_own_block": receipt["slice_own_block"], "block_triangular": receipt["block_triangular"], "failures": receipt["failures"].as_array().map(Vec::len)})
+    );
+}
+
+/// S3-D69: the Z6 operator composes at a saved state in which cells born
+/// during the case carry vapour (C4's later post-event states: the
+/// 17 Oct gate run's c4-phase-9 and c4-phase-10 did not compose before the
+/// fix), with the saved cell modes in force. The state's residual is
+/// reported (per row against its coordinate's tolerance, as Z6's receipt
+/// reports it; not a convergence measure).
+#[test]
+#[ignore = "requires the S3 packet, a saved S3 state with a two-phase cell (LD01_S3_SPECTRUM_STATE), the wiki, maintained IF97 and stock IDA/KLU"]
+fn the_z6_operator_composes_at_a_saved_two_phase_state() {
+    let path = env("LD01_S3_SPECTRUM_STATE");
+    let state = read_json(&path);
+    let saved = &state["discrete_state"]["operator"]["network"]["modes"];
+    let two_phase = saved
+        .as_array()
+        .expect("the saved cell modes")
+        .iter()
+        .filter(|m| m.as_str() != Some("Liquid"))
+        .count();
+    assert!(two_phase > 0, "the state has no two-phase cell: {saved}");
+    let mut op = operator_at(&state).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(
+        &serde_json::to_value(op.joined.network.cell_modes()).unwrap(),
+        saved,
+        "the saved cell modes are in force"
+    );
+    let f = residual(&mut op.joined, op.t, &op.y, &op.yp);
+    let tolerance = spectrum::tolerance(op.rtol, &op.y, &op.atol).expect("tolerance");
+    let worst = f
+        .iter()
+        .zip(&tolerance)
+        .map(|(r, t)| r.abs() / t)
+        .fold(0., f64::max);
+    assert!(
+        worst.is_finite(),
+        "the residual at the saved state is not finite"
+    );
+    println!(
+        "{path}: {two_phase} two-phase cell(s); state residual {worst:.3e} (row / coordinate tolerance)"
     );
 }
