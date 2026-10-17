@@ -1910,18 +1910,21 @@ fn drive(
                 c4.obs_s += spine::z1::cpu_s() - s0;
                 // r1 `ends`: rule I's exit and the first birth + 120 s stop
                 // the run there (labelled); the named refusals end it below.
-                if let Some(x) = &observer.rule_i.exit {
-                    c4.end = Some(
-                        json!({"end": "ruleI", "label": x["label"], "t_s": x["t_s"].as_f64().map(|t| t - zero), "stopped_after_zero_s": *b - zero}),
-                    );
+                let rule_i_end = observer.rule_i.exit.as_ref().map(|x| {
+                    json!({"end": "ruleI", "label": x["label"], "t_s": x["t_s"].as_f64().map(|t| t - zero), "stopped_after_zero_s": *b - zero})
+                });
+                if rule_i_end.is_some() {
+                    c4.end = rule_i_end;
                     c4.stopped_at = Some(*b);
                     break;
                 }
-                if let (Some(fb), Some(after)) = (c4.first_birth, c4_after_birth_s)
-                    && *b >= fb + after - 1e-9
-                {
+                let birth_stop = c4
+                    .first_birth
+                    .zip(c4_after_birth_s)
+                    .map(|(fb, after)| fb + after);
+                if birth_stop.is_some_and(|stop| c4_reached(*b, stop)) {
                     c4.end = Some(
-                        json!({"end": "firstBirthPlus_s", "t_s": *b - zero, "first_birth_after_zero_s": fb - zero}),
+                        json!({"end": "firstBirthPlus_s", "t_s": *b - zero, "first_birth_after_zero_s": c4.first_birth.map(|fb| fb - zero)}),
                     );
                     c4.stopped_at = Some(*b);
                     break;
@@ -2600,6 +2603,13 @@ fn a_reseated_body_keeps_its_first_seat_time() {
     let first = first_seats(&seats, &index, 548.);
     assert_eq!(first.len(), 2);
     assert!((first[&0] - 570.1).abs() < 1e-9 && (first[&1] - 570.2).abs() < 1e-9);
+}
+
+/// A frame bound `b` at or after the instant `t` (absolute s), at the
+/// case clock's resolution: C4's labelled end "first birth + 120 s" stops
+/// the drive at the first such bound (r1 `ends`).
+fn c4_reached(b: f64, t: f64) -> bool {
+    b >= t - 1e-9
 }
 
 /// C4's run state in a drive (C4 lane).
