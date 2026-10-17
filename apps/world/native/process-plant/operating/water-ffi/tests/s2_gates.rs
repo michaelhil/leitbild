@@ -512,6 +512,88 @@ fn d3_a_ends_a_run_only_where_the_predicate_does_not_admit_the_state() {
         exit: "pressure".into(),
     };
     assert_eq!(d3_exit(&outside), Some("D3 (a) source-domain exit"));
+    // Owner answer B1's phase absence: its own label, as the S3 cases write
+    // it, and an exit that is not D3 (a)'s (S2-D41).
+    for margin_holds in [false, true] {
+        let vapour = D3::PhaseAbsence {
+            region: 3,
+            margin_holds,
+        };
+        assert_eq!(d3_exit(&vapour), Some("B1 phase-absence exit"));
+        assert_eq!(vapour.exit(), Some(runner::DomainExit::B1));
+    }
+    assert_eq!(runner::B1_EXIT, "B1 phase-absence exit");
+    assert_eq!(failed.exit(), Some(runner::DomainExit::D3));
+    assert_eq!(outside.exit(), Some(runner::DomainExit::D3));
+}
+
+#[test]
+fn only_a_d3_a_exit_completes_the_trip_under_a4_and_a_b1_phase_absence_exit_never_does() {
+    use runner::DomainExit::{B1, D3};
+    use sequence::{RuleI, TripEnd};
+    let trip = |exit, exited| TripEnd {
+        declared_s: 60.,
+        duration_s: 60.,
+        exit,
+        failed: false,
+        exited,
+        reached_s: 60.,
+    };
+    // The S2 close full-length trip: D3 (a)'s density-ratio exit at 53.058 s.
+    assert_eq!(
+        RuleI::A4.completion(&trip(Some((53.058, D3)), true)),
+        (53.058, true, true)
+    );
+    // A core region with vapour at 40 s: labelled B1, judged to the duration
+    // (its declared part ends at the exit), incomplete under every rule.
+    for rule in [RuleI::A0, RuleI::A1, RuleI::A3, RuleI::A4] {
+        assert_eq!(
+            rule.completion(&trip(Some((40., B1)), true)),
+            (60., false, false),
+            "{rule:?}"
+        );
+    }
+    // A D3 (a) exit under the other rules leaves it incomplete, as before.
+    for rule in [RuleI::A0, RuleI::A1, RuleI::A3] {
+        assert_eq!(
+            rule.completion(&trip(Some((24.274, D3)), true)),
+            (60., false, false),
+            "{rule:?}"
+        );
+    }
+    // No exit and the declared duration reached: complete; a failure never.
+    assert_eq!(RuleI::A4.completion(&trip(None, false)), (60., false, true));
+    let failed = TripEnd {
+        failed: true,
+        ..trip(Some((53.058, D3)), true)
+    };
+    assert_eq!(RuleI::A4.completion(&failed), (53.058, true, false));
+}
+
+#[test]
+fn a_packet_without_owner_answer_b1_is_refused_by_name() {
+    let packet = |floor: f64, minimum: f64| {
+        json!({"feedback_metadata": {"parameters": {"domains": {"pressure_pa": {"minimum": floor, "maximum": 16e6}}}},
+            "post_trip_domain": {"pressure_minimum_pa": minimum}})
+    };
+    assert_eq!(compose::carries_b1(&packet(8e6, 8e6)), Ok(()));
+    // fcf1f86's packet: the 14 MPa floor and D3 (a)'s 12.5 MPa.
+    let old = compose::carries_b1(&packet(14e6, 12.5e6)).unwrap_err();
+    assert!(
+        old.contains("the kinetics base floor") && old.contains("14000000"),
+        "{old}"
+    );
+    let minimum = compose::carries_b1(&packet(8e6, 12.5e6)).unwrap_err();
+    assert!(
+        minimum.contains("D3 (a)'s pressureMin") && minimum.contains("12500000"),
+        "{minimum}"
+    );
+    let missing = compose::carries_b1(&json!({"feedback_metadata": {"parameters": {"domains": {"pressure_pa": {"minimum": 8e6}}}}}))
+        .unwrap_err();
+    assert!(
+        missing.contains("post_trip_domain.pressure_minimum_pa") && missing.contains("None"),
+        "{missing}"
+    );
 }
 
 #[test]
@@ -568,9 +650,16 @@ fn the_windows_external_receipts_are_checked_by_kind_and_charged() {
         "z6-no.json",
         json!({"verdict": "NO-GO: a resolved positive real part"}),
     );
+    // The S2-15 envelope's shape: the doubled-term margin positive but
+    // under 1 % at a point, the nominal one holding everywhere.
+    let point = |doubled: f64, nominal: bool| {
+        json!({"water_term_doubled": {"margin_dk_k": doubled, "margin_holds": doubled >= 0.01},
+            "water_term_nominal": {"margin_dk_k": 0.021, "margin_holds": nominal}})
+    };
     let z3 = file(
         "z3.json",
-        json!({"z3_envelope": {"every_point_holds_with_water_term_doubled": false}}),
+        json!({"z3_envelope": {"every_point_holds_with_water_term_doubled": false,
+            "points": [point(0.0037, true), point(0.012, true)]}}),
     );
     let mut nogo = manifest.clone();
     nogo.insert(
@@ -599,7 +688,7 @@ fn the_windows_external_receipts_are_checked_by_kind_and_charged() {
         "composed": {"z1": {"residual": 2e-14, "constraint_rate": 1e-14, "bound": 1e-12}},
         "settled": {"z1": {"residual": 3e-13, "constraint_rate": 2e-12, "bound": 1e-12}},
         "external_phase1": {"Z7": z7}, "external_phase2": {"Z3settled": out["Z3settled"].clone()}});
-    let gates = sequence::zero_time_gates(&zero_time);
+    let gates = sequence::zero_time_gates(&zero_time, sequence::RuleI::A0);
     let verdict = |id: &str| {
         gates
             .iter()
@@ -624,7 +713,54 @@ fn the_windows_external_receipts_are_checked_by_kind_and_charged() {
         Some((json!(false), json!(true)))
     );
     assert_eq!(verdict("zero_time.Z2"), Some((json!(false), json!(false))));
+    // Rule I: Z3 under each answer to request A, from the same receipt.
+    let z3_under = |rule| {
+        sequence::zero_time_gates(&zero_time, rule)
+            .into_iter()
+            .find(|g| g["id"] == "zero_time.Z3.settled")
+            .map(|g| (g["pass"].clone(), g["judged"].clone()))
+            .unwrap()
+    };
+    assert_eq!(
+        z3_under(sequence::RuleI::A4),
+        (json!(false), json!(false)),
+        "A4: informational"
+    );
+    assert_eq!(
+        z3_under(sequence::RuleI::A1),
+        (json!(true), json!(true)),
+        "A1: nominal holds, doubled > 0"
+    );
+    assert_eq!(z3_under(sequence::RuleI::A3), (json!(true), json!(true)));
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn rule_i_ends_the_judged_trip_at_the_d3_exit_only_under_a4() {
+    use runner::DomainExit::{B1, D3};
+    use sequence::RuleI;
+    // S2-15 run 3: the D3 (a) exit at 24.274 s of a 60 s trip.
+    assert_eq!(RuleI::A4.end(60., Some((24.274, D3))), (24.274, true));
+    for rule in [RuleI::A0, RuleI::A1, RuleI::A3] {
+        assert_eq!(rule.end(60., Some((24.274, D3))), (60., false), "{rule:?}");
+    }
+    // A B1 phase-absence exit never ends it (S2-D41).
+    assert_eq!(RuleI::A4.end(60., Some((24.274, B1))), (60., false));
+    // No exit, or one at or after the run's own end: the duration.
+    assert_eq!(RuleI::A4.end(60., None), (60., false));
+    assert_eq!(RuleI::A4.end(26., Some((26., D3))), (26., false));
+    // The rule is read from the block and refuses anything else.
+    // r7.2's form: the answer with A4's stated consequences.
+    let with_rule = |v: &str| {
+        let mut g: Value = serde_json::from_str(GATES_R7_1).unwrap();
+        g["trip"]["ruleI"] = json!({"answer": v, "completion": "60 s, or until D3 (a) ends the trip, labelled",
+            "d3": "as approved", "recoveryJudged": "from the window end to the D3 (a) end",
+            "tripAverageTo": "the D3 (a) end", "r2ComparisonTo": "the D3 (a) end",
+            "contraryTo": "their own D3 exit", "postTripExtension": "S3 obligation"});
+        RuleI::from(&Block::from_json("ld01-s2-gates", &g.to_string()).unwrap())
+    };
+    assert_eq!(with_rule("A4"), Ok(RuleI::A4));
+    assert!(with_rule("A2").is_err());
 }
 
 #[test]
@@ -1582,7 +1718,8 @@ fn s2_gate_run() {
             &mut comparisons,
         ));
     }
-    gates_out.extend(sequence::zero_time_gates(&zero_time));
+    let rule = sequence::RuleI::from(&h.d.gates).unwrap_or_else(|e| panic!("{e}"));
+    gates_out.extend(sequence::zero_time_gates(&zero_time, rule));
     let passed = gates_out
         .iter()
         .filter(|g| g["judged"] == json!(true))
@@ -1805,6 +1942,15 @@ fn a_run_end_hands_on_the_accepted_step_never_an_interpolant() {
     assert!(refused.is_err_and(|e| e.contains("DR-P3-GATE-3")));
     assert!(!dir.join("state.json").exists());
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_run_stopped_between_samples_is_compared_to_its_last_sample() {
+    // S2 close dry run: R2 stopped by its total guard at 24.3879 s, its last
+    // sample at 24.386 s; the span ends at the sample.
+    assert_eq!(sequence::compared_reach(24.3879, Some(24.386)), 24.386);
+    assert_eq!(sequence::compared_reach(26., Some(26.)), 26.);
+    assert_eq!(sequence::compared_reach(3., None), 0.);
 }
 
 #[test]

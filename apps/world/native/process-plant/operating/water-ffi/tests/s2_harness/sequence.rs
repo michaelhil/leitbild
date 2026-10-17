@@ -26,7 +26,7 @@ use super::{
     outputs::{Reader, admit, extension, reference_densities},
     receipt::{self, gate},
     run::RunSpec,
-    runner::{Run, Start, advance},
+    runner::{DomainExit, Run, Start, advance},
 };
 use crate::{
     cpu,
@@ -79,6 +79,7 @@ impl Harness {
         let raw: Value = serde_json::from_slice(&packet.bytes).map_err(|e| e.to_string())?;
         let network_packet: NetworkPacket =
             serde_json::from_slice(&packet.bytes).map_err(|e| e.to_string())?;
+        compose::carries_b1(&raw)?;
         let (extension, extension_source) = extension(&raw)?;
         let reference_travel_m = raw["rods"]["reference_travel_m"]
             .as_f64()
@@ -673,6 +674,115 @@ fn cap_cycle(h: &Harness, trip: &Run, r1: &Run, window: f64) -> (Value, bool) {
 }
 
 /// The trip's gates against R0, R1 and R2.
+/// Rule I: the owner's answer to request A as the gates block declares it
+/// (`trip.ruleI`), the kinetics-domain rule a trip-type run is judged by.
+/// - **A0:** D3 (a) and the 60 s exit kept; a D3 (a) end before the declared
+///   duration leaves the trip incomplete (red), as revision 7.1 judged it.
+/// - **A1:** D3 (a) relaxed to nominal margin ≥ the minimum with the doubled
+///   term > 0; **A3:** nominal margin only. The trip runs its declared
+///   duration (the packet's extension carries the predicate); Z3 is judged
+///   by that predicate over the envelope.
+/// - **A4:** D3 (a) kept; the trip runs "60 s, or until D3 (a) ends it".
+///   Completion, H1/H1a recovery (window end to the end), G1's trip average
+///   and the references' comparisons are judged up to that end; an end
+///   inside the window leaves the remaining window recorded truncated, not
+///   failed; Z3 is informational. Only a D3 (a) exit ends the trip so
+///   (S2-D41): owner answer B1's phase-absence exit is an exit that leaves
+///   the trip incomplete under every rule, its gates judged up to it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RuleI {
+    A0,
+    A1,
+    A3,
+    A4,
+}
+
+impl RuleI {
+    /// From `trip.ruleI` (r7.2): the owner's `answer`, and for A4 the
+    /// consequences the block states with it (each read, so none is left
+    /// unread; the harness implements them as listed on [`RuleI`]).
+    pub fn from(g: &super::gates::Block) -> Result<Self, String> {
+        let rule = match g.text("/trip/ruleI/answer").as_str() {
+            "A0" => Self::A0,
+            "A1" => Self::A1,
+            "A3" => Self::A3,
+            "A4" => Self::A4,
+            other => return Err(format!("trip.ruleI.answer {other}: A0, A1, A3 or A4")),
+        };
+        if rule == Self::A4 {
+            for k in [
+                "completion",
+                "d3",
+                "recoveryJudged",
+                "tripAverageTo",
+                "r2ComparisonTo",
+                "contraryTo",
+                "postTripExtension",
+            ] {
+                g.text(&format!("/trip/ruleI/{k}"));
+            }
+        }
+        Ok(rule)
+    }
+
+    /// The trip's judged end (s from its start) and whether D3 (a) set it:
+    /// under A4 its D3 (a) exit when that comes before the run's duration,
+    /// otherwise the duration. A B1 phase-absence exit never sets it
+    /// (S2-D41).
+    pub fn end(self, duration_s: f64, exit: Option<(f64, DomainExit)>) -> (f64, bool) {
+        match (self, exit) {
+            (Self::A4, Some((x, DomainExit::D3))) if x < duration_s => (x, true),
+            _ => (duration_s, false),
+        }
+    }
+
+    /// trip.completion: the judged end, whether D3 (a) set it, and whether
+    /// the trip completed: no failure, and either D3 (a) ended it under A4
+    /// or it reached its declared duration with no exit. Any other exit
+    /// (a D3 (a) exit under A0, A1 or A3, B1's phase-absence exit under
+    /// every rule, a declared limit) leaves it incomplete.
+    pub fn completion(self, trip: &TripEnd) -> (f64, bool, bool) {
+        let (end, d3_end) = self.end(trip.duration_s, trip.exit);
+        let completed = !trip.failed
+            && (d3_end
+                || (!trip.exited
+                    && trip.reached_s >= trip.duration_s - 1e-9
+                    && trip.duration_s >= trip.declared_s));
+        (end, d3_end, completed)
+    }
+
+    /// Z3 under this rule from the envelope receipt's points: `(judged,
+    /// pass)`. A0: the doubled term holds everywhere; A1: nominal holds and
+    /// the doubled margin is positive everywhere; A3: nominal holds
+    /// everywhere; A4: informational (the A0 value, not judged).
+    pub fn z3(self, margins: &Value) -> (bool, bool) {
+        let at = |k: &str| margins[k].as_bool() == Some(true);
+        match self {
+            Self::A0 => (true, at("doubled_holds_everywhere")),
+            Self::A1 => (
+                true,
+                at("nominal_holds_everywhere") && at("doubled_positive_everywhere"),
+            ),
+            Self::A3 => (true, at("nominal_holds_everywhere")),
+            Self::A4 => (false, at("doubled_holds_everywhere")),
+        }
+    }
+}
+
+/// What trip.completion reads of a trip.
+#[derive(Clone, Copy, Debug)]
+pub struct TripEnd {
+    pub declared_s: f64,
+    pub duration_s: f64,
+    /// The first kinetics-domain exit (s from the start) where the run
+    /// continued past it for information, and which exit it was.
+    pub exit: Option<(f64, DomainExit)>,
+    pub failed: bool,
+    /// Whether the run's record carries an exit.
+    pub exited: bool,
+    pub reached_s: f64,
+}
+
 pub fn judge_trip(
     h: &Harness,
     trip: &Run,
@@ -689,16 +799,28 @@ pub fn judge_trip(
     let window = g.number("/trip/window_s").min(duration);
     let post = s.number("/recovery/postWindow_s");
     let mut out = Vec::new();
-    let completed = trip.record.failure.is_none()
-        && trip.record.exit.is_none()
-        && trip.record.reached_s >= duration - 1e-9;
+    let rule = RuleI::from(g).unwrap_or_else(|e| panic!("{e}"));
+    let exit = trip
+        .information_from
+        .zip(trip.domain_exit)
+        .map(|(x, kind)| (x - trip.origin, kind));
+    let (end, d3_end, completed) = rule.completion(&TripEnd {
+        declared_s: declared,
+        duration_s: duration,
+        exit,
+        failed: trip.record.failure.is_some(),
+        exited: trip.record.exit.is_some(),
+        reached_s: trip.record.reached_s,
+    });
     out.push(gate(
         "trip.completion",
-        json!({"reached_s": trip.record.reached_s, "failure": trip.record.failure, "exit": trip.record.exit}),
+        json!({"reached_s": trip.record.reached_s, "failure": trip.record.failure, "exit": trip.record.exit,
+            "rule_i": format!("{rule:?}"), "judged_end_s": end, "ended_by_d3": d3_end,
+            "domain_exit": trip.domain_exit.map(|k| format!("{k:?}"))}),
         json!(declared),
-        completed && duration >= declared,
+        completed,
         judged,
-        "trip.duration_s with no no-go",
+        "trip.duration_s with no no-go (rule I: under A4, or until D3 (a) ends it; a B1 phase-absence exit leaves it incomplete, S2-D41)",
     ));
     // Cost: window, recovery, whole trip, step trigger.
     let solver_at = |t: f64| mark_at(trip, t).map(|m| m.solver_s);
@@ -712,20 +834,32 @@ pub fn judge_trip(
         judged,
         &format!("trip.windowBudget_cpu_s_per_s over {window} s"),
     ));
-    let recovery = solver_at(window + post).map(|c| c / (window + post));
+    // H1/H1a over the window plus its recovery; under A4 an earlier D3 (a)
+    // end closes the recovery span at the last output before it, and an end
+    // inside the window leaves it truncated (recorded, not failed).
+    let recovery_end = if d3_end && end < window + post {
+        trip.marks.last().filter(|m| m.t - trip.origin > window)
+    } else {
+        mark_at(trip, window + post)
+    };
+    let truncated = d3_end && end <= window;
+    let recovery = recovery_end.map(|m| m.solver_s / (m.t - trip.origin));
     let failures = trip
         .record
         .window_counts
-        .zip(mark_at(trip, window + post))
+        .zip(recovery_end)
         .map(|(w, m)| m.counts.since(w).convergence_failures);
     let max_failures = s.count("/recovery/maxConvergenceFailures") as i64;
     out.push(gate(
         "trip.recovery",
-        json!({"cpu_s_per_s": recovery, "convergence_failures": failures}),
+        json!({"cpu_s_per_s": recovery, "convergence_failures": failures,
+            "span_s": [0., recovery_end.map(|m| m.t - trip.origin)], "truncated": truncated}),
         json!({"cpu_s_per_s": window_budget, "convergence_failures": max_failures}),
-        recovery.is_some_and(|c| c <= window_budget) && failures.is_some_and(|f| f <= max_failures),
+        truncated
+            || (recovery.is_some_and(|c| c <= window_budget)
+                && failures.is_some_and(|f| f <= max_failures)),
         judged,
-        "H1, H1a: window plus recovery.postWindow_s",
+        "H1, H1a: window plus recovery.postWindow_s (rule I A4: up to the D3 (a) end)",
     ));
     let whole_budget = g.number("/trip/wholeTripBudget_cpu_s_per_s");
     let whole = trip.marks.last().map(|m| m.solver_s / (m.t - trip.origin));
@@ -733,9 +867,9 @@ pub fn judge_trip(
         "trip.whole_trip_cost",
         json!(whole),
         json!(whole_budget),
-        whole.is_some_and(|c| c <= whole_budget) && duration >= declared,
+        whole.is_some_and(|c| c <= whole_budget) && (d3_end || duration >= declared),
         judged,
-        "trip.wholeTripBudget_cpu_s_per_s (G1)",
+        "trip.wholeTripBudget_cpu_s_per_s (G1; rule I A4: up to the D3 (a) end)",
     ));
     let steps = mark_at(trip, window).map(|m| m.counts.steps);
     let step_cpu = solver_at(window).zip(steps).map(|(c, n)| c / n as f64);
@@ -771,7 +905,14 @@ pub fn judge_trip(
         );
         within
     };
-    let reached = |r: &Run| r.record.reached_s;
+    // A run is compared up to its last credited sample: a run stopped by a
+    // guard or failure between samples has reached further than its series.
+    let reached = |r: &Run| {
+        compared_reach(
+            r.record.reached_s,
+            r.credited.t.last().map(|t| t - r.origin),
+        )
+    };
     let mut accuracy = true;
     let mut evaluated = 0;
     for (name, reference, after_window) in [("R1", r1, false), ("R2", r2, true)] {
@@ -892,6 +1033,13 @@ pub fn judge_trip(
     out
 }
 
+/// How far a run can be compared: its reach, or its last credited sample
+/// when that is earlier (a run stopped between samples); no sample, no
+/// span beyond 0.
+pub fn compared_reach(reached_s: f64, last_sample_s: Option<f64>) -> f64 {
+    last_sample_s.map_or(0., |s| s.min(reached_s))
+}
+
 /// The trip's comparison spans against one reference (`referenceSpans`:
 /// R1 over the window, R2 over the window and after it), each within the
 /// part both runs reached: a declared part ends at its own run's D3 (a)
@@ -912,7 +1060,7 @@ pub fn reference_spans(
 }
 
 /// A run's declared part: everything up to `until` (absolute time), its
-/// D3 (a) exit when it continued past it for information.
+/// kinetics-domain exit when it continued past it for information.
 pub fn truncated(run: &Run, until: f64) -> Run {
     let mut r = run.clone();
     let keep = r
@@ -960,7 +1108,7 @@ pub fn judge_trip_declared_and_information(
         for mut g in judge_trip(h, trip, r0, r1, r2, &mut info) {
             let id = format!("information.{}", g["id"].as_str().unwrap_or(""));
             let basis = format!(
-                "INFORMATION ONLY (past the D3 (a) exit): {}",
+                "INFORMATION ONLY (past the kinetics-domain exit): {}",
                 g["basis"].as_str().unwrap_or("")
             );
             g["id"] = json!(id);
@@ -1149,21 +1297,38 @@ pub fn check_external(
         if let Some(c) = cpu.filter(|_| !reused) {
             charges.push((name.to_string(), c));
         }
-        out.insert(
-            name.to_string(),
-            json!({"receipt": path, "sha256": crate::provenance::sha256_file(path).ok(),
-                "kind": r["kind"], "verdict": r["verdict"], "status": r["status"],
-                "process_cpu_s": cpu, "reused": reused, "pass": pass}),
-        );
+        let mut entry = json!({"receipt": path, "sha256": crate::provenance::sha256_file(path).ok(),
+            "kind": r["kind"], "verdict": r["verdict"], "status": r["status"],
+            "process_cpu_s": cpu, "reused": reused, "pass": pass});
+        if name.starts_with("Z3") {
+            entry["z3_margins"] = z3_margins(&r);
+        }
+        out.insert(name.to_string(), entry);
     }
     (out, charges, refusals)
+}
+
+/// A Z3 envelope receipt's margins over every point, for rule I: whether
+/// the doubled-term margin holds, the nominal one holds, and the doubled
+/// margin is positive everywhere.
+pub fn z3_margins(r: &Value) -> Value {
+    let points = r
+        .pointer("/z3_envelope/points")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let all = |f: &dyn Fn(&Value) -> bool| !points.is_empty() && points.iter().all(f);
+    json!({"points": points.len(),
+        "doubled_holds_everywhere": all(&|p| p["water_term_doubled"]["margin_holds"] == json!(true)),
+        "nominal_holds_everywhere": all(&|p| p["water_term_nominal"]["margin_holds"] == json!(true)),
+        "doubled_positive_everywhere": all(&|p| p["water_term_doubled"]["margin_dk_k"].as_f64().is_some_and(|m| m > 0.))})
 }
 
 /// r7's zero-time gates as verdict entries: Z1 at each state (the exact
 /// start's residual and constraint rate within the start bound), Z3's
 /// margin and both Z6 pencils at both states, Z7, and S1 run 6 (a
 /// prerequisite); Z2, Z4 and Z5 are reported (`judged` false).
-pub fn zero_time_gates(zero_time: &Value) -> Vec<Value> {
+pub fn zero_time_gates(zero_time: &Value, rule: RuleI) -> Vec<Value> {
     let mut out = Vec::new();
     for state in ["composed", "settled"] {
         let z1 = &zero_time[state]["z1"];
@@ -1234,7 +1399,14 @@ pub fn zero_time_gates(zero_time: &Value) -> Vec<Value> {
         ),
     ] {
         let entry = find(name);
-        let pass = entry.as_ref().is_some_and(|e| e["pass"] == json!(true));
+        let mut pass = entry.as_ref().is_some_and(|e| e["pass"] == json!(true));
+        let mut judged = judged;
+        if name.starts_with("Z3") {
+            let margins = entry
+                .as_ref()
+                .map_or(Value::Null, |e| e["z3_margins"].clone());
+            (judged, pass) = rule.z3(&margins);
+        }
         out.push(gate(
             id,
             entry.map_or(Value::Null, |e| json!({"receipt": e["receipt"], "sha256": e["sha256"], "verdict": e["verdict"], "pass": e["pass"]})),
