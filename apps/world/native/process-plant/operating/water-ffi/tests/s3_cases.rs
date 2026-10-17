@@ -1032,51 +1032,6 @@ fn window_cap(case: Case, spec: &Value, ramp: Option<Ramp>) -> Option<WindowCap>
     })
 }
 
-/// C1 and C5: the Grid stand-in's energized boundary for `[t0, t1)`
-/// decided at `t0` (the driver's time), as the C5 host's `boundary()`: the
-/// stand-in's stiff bus at the packet's nominal voltage and frequency with
-/// no phase error and no frequency rate, so the carrier rate held over the
-/// interval is `2*pi*f` with a zero slope (D2, SW-1, `slice::carrier_rate`).
-/// Agreeing bitwise with the held inputs (and a zero held slope) is no
-/// event; anything else is a held input, class S by S3-D4's rule, checked
-/// by the driver.
-fn energized_boundary(
-    driver: &mut leitbild_operating_water::frame::Driver<CaseUnit>,
-    unit: &CaseUnit,
-    t0: f64,
-    t1: f64,
-    v_line: f64,
-    f_hz: f64,
-) -> Result<&'static str, String> {
-    use leitbild_operating_water::frame::{Action, Change, Class};
-    if !(v_line.is_finite() && v_line > 0.) {
-        return Err(format!("the stand-in's boundary voltage {v_line} V"));
-    }
-    let carrier = leitbild_operating_plant::electrical::slice::carrier_rate(f_hz, 0., t1 - t0)?;
-    let i = unit.slice.inputs;
-    if i.v_line.to_bits() == v_line.to_bits()
-        && i.f_grid_hz.to_bits() == f_hz.to_bits()
-        && i.carrier_rad_s.to_bits() == carrier.to_bits()
-        && i.carrier_accel_rad_s2 == 0.
-    {
-        return Ok("none (agrees with the held prediction)");
-    }
-    driver.decide(vec![Change {
-        due_s: t0,
-        class: Class::S,
-        kind: "Grid boundary (held voltage/carrier and slope, D2 + SW-1)".into(),
-        action: Action::Held(Box::new(move |u: &mut CaseUnit| {
-            u.slice.inputs.v_line = v_line;
-            u.slice.inputs.f_grid_hz = f_hz;
-            u.slice.inputs.carrier_rad_s = carrier;
-            u.slice.inputs.carrier_accel_rad_s2 = 0.;
-            u.slice.inputs.carrier_from_s = t0;
-            Ok(())
-        })),
-    }])?;
-    Ok("S: held boundary")
-}
-
 /// S3-D39's operator turbine trip: once any division's acquired reactor
 /// trip exists, its earliest time and the declared delay to the operator's
 /// turbine trip (None before that, or for a case without one).
@@ -1389,14 +1344,13 @@ fn drive(
     ask: &Ask<'_>,
 ) -> Driven {
     use leitbild_operating_water::{
-        electrical::FieldClient,
         frame::{
-            Action, COUNTER_NAMES, Change, Class, Client, Diagnostic, Driver, Observer, Setup,
-            Side, same_instant,
+            Action, COUNTER_NAMES, Change, Class, Client, Diagnostic, Observer, Setup, Side,
+            same_instant,
         },
-        ic::ProtectionClient,
         ida::System,
         joined::JoinedSystem,
+        unit::plant::{self, Boundary, Plant},
     };
     let c5 = case == Case::C5;
     // C1 and C5 exchange with the test-only Grid stand-in (owner D1 + D2,
@@ -1405,22 +1359,8 @@ fn drive(
     let exchanging = c5 || case == Case::C1;
     let started = process_cpu_s();
     let section = inputs.ic.clone();
-    let s3::S3Unit {
-        mut ida,
-        t0,
-        mut y,
-        mut yp,
-        n,
-        network_ids,
-        atol,
-        rtol,
-        derived,
-        restart,
-        mut control,
-        frame,
-        receipt: composition,
-        reference,
-    } = s3::compose_with(inputs, state, ask.scaling, wrap).unwrap_or_else(|e| panic!("{e}"));
+    let unit = s3::compose_with(inputs, state, ask.scaling, wrap).unwrap_or_else(|e| panic!("{e}"));
+    let (t0, n, rtol, frame) = (unit.t0, unit.n, unit.rtol, unit.frame);
     let declared_frame_s = d.block.number(&d.common("/frameAlignment/frame_s"));
     d.block.text(&d.common("/frameAlignment/rule"));
     assert_eq!(
@@ -1429,16 +1369,11 @@ fn drive(
         "the block's frame is the I&C frame"
     );
     let (zero_after, command) = case_clock(case, spec, declared_frame_s).unwrap();
-    let packet_json: Value =
-        serde_json::from_slice(&common::packet_bytes().1).expect("packet json");
+    let packet_json: Value = inputs.spine.packet_json().expect("packet json");
     let extension: leitbild_operating_plant::joined::post_trip_domain::Extension =
         serde_json::from_value(packet_json["post_trip_domain"].clone())
             .expect("the packet's post_trip_domain section (D3 (a))");
     let zero = t0 + zero_after;
-    let joined = &ida.system().integrated().joined;
-    let mut protection = ProtectionClient::new(&section, joined, &y[..n], &reference)
-        .and_then(|p| p.with_system_dimension(y.len()))
-        .expect("protection");
     let implemented: Vec<String> = section.functions.iter().map(|f| f.id.clone()).collect();
     // C5 (ICFIELD): the generator page's ACT.B field controller, a client,
     // with its timing from the ELEC packet's `fieldProtection`
@@ -1447,19 +1382,53 @@ fn drive(
     let elec_packet: Value =
         serde_json::from_slice(&std::fs::read(&inputs.elec_path).expect("the electrical packet"))
             .expect("the electrical packet json");
-    let mut field = c5.then(|| {
-        let parameters: leitbild_operating_plant::electrical::field::Parameters =
+    let field_parameters: Option<leitbild_operating_plant::electrical::field::Parameters> =
+        c5.then(|| {
             serde_json::from_value(elec_packet["fieldProtection"].clone()).expect(
                 "C5: the electrical packet carries no field controller timing (ld01-generator-field-protection)",
-            );
-        FieldClient::new(&parameters, frame, ida.system()).expect("the field controller")
-    });
+            )
+        });
+    // The frame-driven unit (IC-PROT's driver, residual-jump diagnostic at
+    // class-S stops): the acquired protection, the PZR control and C5's
+    // field controller, in the unit library's order.
+    let mut plant = Plant::new(
+        unit,
+        &section,
+        field_parameters.as_ref(),
+        Diagnostic::Jump,
+        process_cpu_s,
+    )
+    .unwrap_or_else(|e| panic!("the frame-driven unit: {e}"));
+    let Plant {
+        ida,
+        y,
+        yp,
+        network_ids,
+        atol,
+        derived,
+        restart,
+        driver,
+        protection,
+        control,
+        field,
+        composition,
+        ..
+    } = &mut plant;
+    let joined = &ida.system().integrated().joined;
     let v_nominal = elec_packet["boundary"]["lineVoltage_V"]
         .as_f64()
         .unwrap_or(f64::NAN);
     let f_nominal = elec_packet["boundary"]["frequency_Hz"]
         .as_f64()
         .unwrap_or(f64::NAN);
+    // The stand-in's stiff bus at the packet's nominal line voltage and
+    // frequency, no phase error and no frequency rate (D2, SW-1).
+    let steady_bus = Boundary::Energized {
+        voltage_v: v_nominal,
+        frequency_hz: f_nominal,
+        phase_error_rad: 0.,
+        frequency_rate_hz_s: 0.,
+    };
     let scales = joined.scales();
     let labels: Vec<String> = joined
         .layouts()
@@ -1584,7 +1553,6 @@ fn drive(
     if let Some(h) = ask.max_step {
         ida.set_max_step(h).unwrap();
     }
-    let mut driver = Driver::new(frame, Diagnostic::Jump, process_cpu_s, t0).unwrap();
     // Decision 0015 E2: the 20 ms cap only inside the case's declared event
     // window, set by the driver at the restart that starts it (C4's hook)
     // and removed at the first chunk bound at or after its end.
@@ -1633,7 +1601,7 @@ fn drive(
     if cfg!(feature = "quadratures") && observer.gates.is_some() {
         let count = ida.system().quadrature_count();
         driver
-            .start_quadratures(&mut ida, vec![0.; count])
+            .start_quadratures(ida, vec![0.; count])
             .unwrap_or_else(|e| panic!("the ledgers' quadratures: {e}"));
     }
     if let Some(c) = command {
@@ -1667,21 +1635,21 @@ fn drive(
             .unwrap();
     }
     let setup = Setup {
-        network_ids: &network_ids,
-        absolute: &atol,
+        network_ids: network_ids.as_slice(),
+        absolute: atol.as_slice(),
         relative: rtol,
-        restart,
-        derived: &derived,
+        restart: *restart,
+        derived: &*derived,
     };
     // S3-D49: rule F's absolute classes at the start state (the run only).
     let f_tolerances = match (&observer.gates, ask.f_tolerances) {
         (Some(g), true) => Some(
-            observe::signal_tolerances(g, ida.system_mut(), t0, &y, &yp, n, &atol)
+            observe::signal_tolerances(g, ida.system_mut(), t0, y, yp, n, atol)
                 .unwrap_or_else(|e| panic!("rule F's classes: {e}")),
         ),
         _ => None,
     };
-    observe::start_sample(&mut observer, ida.system_mut(), t0, &y, &yp);
+    observe::start_sample(&mut observer, ida.system_mut(), t0, y, yp);
     let preparation_cpu_s = process_cpu_s() - started;
     let run_started = process_cpu_s();
     let instructions0 = s3_harness::counters::instructions();
@@ -1742,12 +1710,9 @@ fn drive(
     let mut feed_after: Option<bool> = None;
     let outcome = {
         let mut r = {
-            let mut clients: Vec<&mut dyn Client<CaseUnit>> =
-                vec![&mut protection, &mut recorder, &mut control];
-            if let Some(f) = field.as_mut() {
-                clients.push(f);
-            }
-            driver.start(&mut clients, t0, &y, &yp)
+            let mut extra: [&mut dyn Client<CaseUnit>; 1] = [&mut recorder];
+            let mut clients = plant::clients(protection, control, field, &mut extra);
+            driver.start(&mut clients, t0, y, yp)
         };
         let mut t = t0;
         // C5: the stand-in's boundary for the first interval, decided at
@@ -1755,7 +1720,7 @@ fn drive(
         // prediction is no event).
         if exchanging && r.is_ok() {
             let t1 = exchanges.first().map_or(until, |e| e.0);
-            r = energized_boundary(&mut driver, ida.system(), t0, t1, v_nominal, f_nominal)
+            r = plant::boundary(driver, ida.system(), t0, t1, steady_bus)
                 .map(|k| exchange_log.push(json!({"t_s": t0, "decided": k})));
         }
         for b in &bounds {
@@ -1763,7 +1728,7 @@ fn drive(
                 break;
             }
             let operator_trip_now = if operator_trip_record.is_null() {
-                operator_trip_at(&protection, operator_trip)
+                operator_trip_at(protection, operator_trip)
             } else {
                 None
             };
@@ -1778,22 +1743,10 @@ fn drive(
                 break;
             }
             r = {
-                let mut clients: Vec<&mut dyn Client<CaseUnit>> =
-                    vec![&mut protection, &mut recorder, &mut control];
-                if let Some(f) = field.as_mut() {
-                    clients.push(f);
-                }
+                let mut extra: [&mut dyn Client<CaseUnit>; 1] = [&mut recorder];
+                let mut clients = plant::clients(protection, control, field, &mut extra);
                 driver
-                    .run_observed(
-                        &mut ida,
-                        t,
-                        *b,
-                        &mut y,
-                        &mut yp,
-                        &mut clients,
-                        &setup,
-                        Some(&mut observer),
-                    )
+                    .run_observed(ida, t, *b, y, yp, &mut clients, &setup, Some(&mut observer))
                     .map(|_| ())
             };
             t = *b;
@@ -1922,7 +1875,7 @@ fn drive(
                 let classes = c4_classes.as_ref().unwrap();
                 if c4_observe {
                     match c4_frame(
-                        &mut ida,
+                        ida,
                         n,
                         classes,
                         zero,
@@ -1931,8 +1884,8 @@ fn drive(
                         &recorder.sg,
                         c4_lift,
                         *b,
-                        &y,
-                        &yp,
+                        y,
+                        yp,
                     ) {
                         Ok((f, row)) => {
                             c4.frames.push(f);
@@ -1942,7 +1895,7 @@ fn drive(
                     }
                     if let Some(setup) = &c4_pt_setup {
                         c4.pt
-                            .push(c4_acquired(&protection, setup, frame.period_s(), *b, zero));
+                            .push(c4_acquired(protection, setup, frame.period_s(), *b, zero));
                     }
                 }
                 for e in &driver.log[c4.seen_changes..] {
@@ -1991,13 +1944,13 @@ fn drive(
                             due.len()
                         );
                         let sha = c4_state(
-                            &ida,
+                            ida,
                             state,
-                            &composition,
+                            composition,
                             control.in_force_w,
                             *b,
-                            &y,
-                            &yp,
+                            y,
+                            yp,
                             n,
                             &from,
                             &file,
@@ -2046,7 +1999,7 @@ fn drive(
                 // slice's quadratures, when the driver carries them).
                 if let Some(k) = exchanges.iter().position(|(e, _)| same_instant(*e, b)) {
                     if carried {
-                        match driver.quadratures_at(&ida, b) {
+                        match driver.quadratures_at(ida, b) {
                             Ok(q1) => {
                                 let off = q1.len()
                                     - leitbild_operating_plant::electrical::slice::QUADRATURES
@@ -2071,49 +2024,32 @@ fn drive(
                         // now with the gate observation on both sides, then
                         // the plant's own event-window cap on the segment the
                         // restart opened (0015 E2, EW-1), as the C5 host does.
-                        let loss = Change {
-                            due_s: b,
-                            class: Class::R,
-                            kind: "Grid: bus dead (S3-D10 offsite loss)".into(),
-                            action: Action::Held(Box::new(move |u: &mut CaseUnit| {
-                                u.offsite_loss_s = Some(b);
-                                Ok(())
-                            })),
-                        };
                         let q = if carried {
-                            driver.quadratures_at(&ida, b).unwrap_or_default()
+                            driver.quadratures_at(ida, b).unwrap_or_default()
                         } else {
                             Vec::new()
                         };
                         let gate0 = process_cpu_s();
-                        let mut step = driver.decide(vec![loss]).and_then(|()| {
-                            observer.sample(ida.system_mut(), b, &y, &yp, &q, Side::BeforeRestart)
-                        });
+                        let mut step = plant::boundary(driver, ida.system(), b, b, Boundary::Dead)
+                            .and_then(|_| {
+                                observer.sample(ida.system_mut(), b, y, yp, &q, Side::BeforeRestart)
+                            });
                         driver.cpu.gate_s += process_cpu_s() - gate0;
                         if step.is_ok() {
-                            let mut clients: Vec<&mut dyn Client<CaseUnit>> =
-                                vec![&mut protection, &mut recorder, &mut control];
-                            if let Some(f) = field.as_mut() {
-                                clients.push(f);
-                            }
-                            step =
-                                driver.apply_due(&mut ida, &mut y, &mut yp, &mut clients, &setup);
+                            let mut extra: [&mut dyn Client<CaseUnit>; 1] = [&mut recorder];
+                            let mut clients =
+                                plant::clients(protection, control, field, &mut extra);
+                            step = driver.apply_due(ida, y, yp, &mut clients, &setup);
                         }
                         if step.is_ok() {
                             let gate1 = process_cpu_s();
                             let q = if carried {
-                                driver.quadratures_at(&ida, b).unwrap_or_default()
+                                driver.quadratures_at(ida, b).unwrap_or_default()
                             } else {
                                 Vec::new()
                             };
-                            step = observer.sample(
-                                ida.system_mut(),
-                                b,
-                                &y,
-                                &yp,
-                                &q,
-                                Side::AfterRestart,
-                            );
+                            step =
+                                observer.sample(ida.system_mut(), b, y, yp, &q, Side::AfterRestart);
                             driver.cpu.gate_s += process_cpu_s() - gate1;
                         }
                         if step.is_ok() && ask.event_window {
@@ -2147,14 +2083,7 @@ fn drive(
                     } else if (!c5 || b < zero)
                         && let Some(t1) = next
                     {
-                        match energized_boundary(
-                            &mut driver,
-                            ida.system(),
-                            b,
-                            t1,
-                            v_nominal,
-                            f_nominal,
-                        ) {
+                        match plant::boundary(driver, ida.system(), b, t1, steady_bus) {
                             Ok(k) => exchange_log.push(json!({"t_s": b, "decided": k})),
                             Err(e) => r = Err(e),
                         }
@@ -2259,7 +2188,7 @@ fn drive(
     // The ledgers' quadrature integrands (the account at each converged
     // step) are rule D's instrument, not plant work.
     let ledger_cpu_s = ledger_quadrature_cpu_s(ida.system());
-    driver.close_segment(&ida, until).unwrap();
+    driver.close_segment(ida, until).unwrap();
     let mut failure = outcome.as_ref().err().cloned();
     // S3-D39's labelled end (C3): a run that stops while the PZR's resident
     // zone R drains to exhaustion within the step the solver attempts next
@@ -2302,9 +2231,9 @@ fn drive(
             if let (Some(path), Some(t)) = (ask.window_state.as_ref(), t_last) {
                 let file = format!("{path}.c4-end.json");
                 let sha = c4_state(
-                    &ida,
+                    ida,
                     state,
-                    &composition,
+                    composition,
                     control.in_force_w,
                     t,
                     &ys,
@@ -2323,13 +2252,13 @@ fn drive(
                 let t = c4.stopped_at.unwrap_or(until);
                 let file = format!("{path}.c4-end.json");
                 let sha = c4_state(
-                    &ida,
+                    ida,
                     state,
-                    &composition,
+                    composition,
                     control.in_force_w,
                     t,
-                    &y,
-                    &yp,
+                    y,
+                    yp,
                     n,
                     &format!(
                         "C4: the declared part's end ({})",
@@ -2557,8 +2486,8 @@ fn drive(
     let simulated = end - t0;
     let mut end_fp = observe::Fingerprint::default();
     end_fp.fold(&[end]);
-    end_fp.fold(&y);
-    end_fp.fold(&yp);
+    end_fp.fold(y);
+    end_fp.fold(yp);
     let instants_bytes = serde_json::to_vec(&driver.log).unwrap();
     let repeat_record = json!({"fingerprint": observer.gates.as_ref().map(|g| g.fingerprint.hex()),
         "samples": observer.gates.as_ref().map(|g| g.samples), "end_state_fingerprint": end_fp.hex(),

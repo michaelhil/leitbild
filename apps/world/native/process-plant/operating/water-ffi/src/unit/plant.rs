@@ -137,7 +137,7 @@ impl<J: JoinedSystem> Plant<J> {
             yp,
             ..
         } = self;
-        let mut clients = plant_clients(protection, control, field, observers);
+        let mut clients = clients(protection, control, field, observers);
         driver.start(&mut clients, *t0, y, yp)
     }
 
@@ -173,7 +173,7 @@ impl<J: JoinedSystem> Plant<J> {
             restart: *restart,
             derived,
         };
-        let mut clients = plant_clients(protection, control, field, observers);
+        let mut clients = clients(protection, control, field, observers);
         driver.run_observed(ida, t, until, y, yp, &mut clients, &setup, observer)
     }
 
@@ -204,98 +204,105 @@ impl<J: JoinedSystem> Plant<J> {
             restart: *restart,
             derived,
         };
-        let mut clients = plant_clients(protection, control, field, observers);
+        let mut clients = clients(protection, control, field, observers);
         driver.apply_due(ida, y, yp, &mut clients, &setup)
     }
 
-    /// The Grid stand-in's boundary for `[t0, t1)`, decided at `t0` (the
-    /// driver's time) through the driver:
-    /// - energized, agreeing bitwise with the held inputs (same voltage,
-    ///   frequency and carrier, no slope held or given): no event;
-    /// - energized otherwise: the held voltage, carrier and slope, a held
-    ///   input entering only the angle's rate row, class S by S3-D4's rule
-    ///   (checked by the driver at the stop);
-    /// - dead, the first time: S3-D10's offsite loss, class R;
-    /// - dead again: no change; energized after a loss: refused (no
-    ///   restoration in S3).
-    ///
-    /// Returns the decision as the receipts name it.
-    pub fn boundary(
-        &mut self,
-        t0: f64,
-        t1: f64,
-        boundary: Boundary,
-    ) -> Result<&'static str, String> {
-        let lost = self.ida.system().offsite_loss_s.is_some();
-        match (boundary, lost) {
-            (Boundary::Dead, false) => {
-                self.driver.decide(vec![Change {
-                    due_s: t0,
-                    class: Class::R,
-                    kind: "Grid: bus dead (S3-D10 offsite loss)".into(),
-                    action: Action::Held(Box::new(move |u: &mut Electrified<J>| {
-                        u.offsite_loss_s = Some(t0);
-                        Ok(())
-                    })),
-                }])?;
-                Ok("R: offsite loss")
+    /// The Grid stand-in's boundary for `[t0, t1)`, decided at `t0` through
+    /// the driver ([`boundary`]).
+    pub fn boundary(&mut self, t0: f64, t1: f64, b: Boundary) -> Result<&'static str, String> {
+        boundary(&mut self.driver, self.ida.system(), t0, t1, b)
+    }
+}
+
+/// The Grid stand-in's boundary for `[t0, t1)`, decided at `t0` (the
+/// driver's time) through the driver:
+/// - energized, agreeing bitwise with the held inputs (same voltage,
+///   frequency and carrier, no slope held or given): no event;
+/// - energized otherwise: the held voltage, carrier and slope, a held
+///   input entering only the angle's rate row, class S by S3-D4's rule
+///   (checked by the driver at the stop);
+/// - dead, the first time: S3-D10's offsite loss, class R;
+/// - dead again: no change; energized after a loss: refused (no
+///   restoration in S3).
+///
+/// Returns the decision as the receipts name it.
+pub fn boundary<J: JoinedSystem>(
+    driver: &mut Driver<Electrified<J>>,
+    unit: &Electrified<J>,
+    t0: f64,
+    t1: f64,
+    boundary: Boundary,
+) -> Result<&'static str, String> {
+    let lost = unit.offsite_loss_s.is_some();
+    match (boundary, lost) {
+        (Boundary::Dead, false) => {
+            driver.decide(vec![Change {
+                due_s: t0,
+                class: Class::R,
+                kind: "Grid: bus dead (S3-D10 offsite loss)".into(),
+                action: Action::Held(Box::new(move |u: &mut Electrified<J>| {
+                    u.offsite_loss_s = Some(t0);
+                    Ok(())
+                })),
+            }])?;
+            Ok("R: offsite loss")
+        }
+        (Boundary::Dead, true) => Ok("dead (unchanged)"),
+        (Boundary::Energized { .. }, true) => Err(
+            "restoration of a lost offsite connection is not in the S3 slice (S3-D10): refused"
+                .into(),
+        ),
+        (
+            Boundary::Energized {
+                voltage_v,
+                frequency_hz,
+                phase_error_rad,
+                frequency_rate_hz_s,
+            },
+            false,
+        ) => {
+            if !(voltage_v.is_finite() && voltage_v > 0.) {
+                return Err(format!("the Grid boundary's voltage {voltage_v} V"));
             }
-            (Boundary::Dead, true) => Ok("dead (unchanged)"),
-            (Boundary::Energized { .. }, true) => Err(
-                "restoration of a lost offsite connection is not in the S3 slice (S3-D10): refused"
-                    .into(),
-            ),
-            (
-                Boundary::Energized {
-                    voltage_v,
-                    frequency_hz,
-                    phase_error_rad,
-                    frequency_rate_hz_s,
-                },
-                false,
-            ) => {
-                if !(voltage_v.is_finite() && voltage_v > 0.) {
-                    return Err(format!("the Grid boundary's voltage {voltage_v} V"));
-                }
-                // D2: the carrier rate at t0; SW-1: its held slope over [t0, t1).
-                let carrier = slice::carrier_rate(frequency_hz, phase_error_rad, t1 - t0)?;
-                if !frequency_rate_hz_s.is_finite() {
-                    return Err(format!(
-                        "the Grid boundary's frequency rate {frequency_rate_hz_s} Hz/s"
-                    ));
-                }
-                let accel = 2. * std::f64::consts::PI * frequency_rate_hz_s;
-                let i = self.ida.system().slice.inputs;
-                if i.v_line.to_bits() == voltage_v.to_bits()
-                    && i.f_grid_hz.to_bits() == frequency_hz.to_bits()
-                    && i.carrier_rad_s.to_bits() == carrier.to_bits()
-                    && accel == 0.
-                    && i.carrier_accel_rad_s2 == 0.
-                {
-                    return Ok("none (agrees with the held prediction)");
-                }
-                self.driver.decide(vec![Change {
-                    due_s: t0,
-                    class: Class::S,
-                    kind: "Grid boundary (held voltage/carrier and slope, D2 + SW-1)".into(),
-                    action: Action::Held(Box::new(move |u: &mut Electrified<J>| {
-                        u.slice.inputs.v_line = voltage_v;
-                        u.slice.inputs.f_grid_hz = frequency_hz;
-                        u.slice.inputs.carrier_rad_s = carrier;
-                        u.slice.inputs.carrier_accel_rad_s2 = accel;
-                        u.slice.inputs.carrier_from_s = t0;
-                        Ok(())
-                    })),
-                }])?;
-                Ok("S: held boundary")
+            // D2: the carrier rate at t0; SW-1: its held slope over [t0, t1).
+            let carrier = slice::carrier_rate(frequency_hz, phase_error_rad, t1 - t0)?;
+            if !frequency_rate_hz_s.is_finite() {
+                return Err(format!(
+                    "the Grid boundary's frequency rate {frequency_rate_hz_s} Hz/s"
+                ));
             }
+            let accel = 2. * std::f64::consts::PI * frequency_rate_hz_s;
+            let i = unit.slice.inputs;
+            if i.v_line.to_bits() == voltage_v.to_bits()
+                && i.f_grid_hz.to_bits() == frequency_hz.to_bits()
+                && i.carrier_rad_s.to_bits() == carrier.to_bits()
+                && accel == 0.
+                && i.carrier_accel_rad_s2 == 0.
+            {
+                return Ok("none (agrees with the held prediction)");
+            }
+            driver.decide(vec![Change {
+                due_s: t0,
+                class: Class::S,
+                kind: "Grid boundary (held voltage/carrier and slope, D2 + SW-1)".into(),
+                action: Action::Held(Box::new(move |u: &mut Electrified<J>| {
+                    u.slice.inputs.v_line = voltage_v;
+                    u.slice.inputs.f_grid_hz = frequency_hz;
+                    u.slice.inputs.carrier_rad_s = carrier;
+                    u.slice.inputs.carrier_accel_rad_s2 = accel;
+                    u.slice.inputs.carrier_from_s = t0;
+                    Ok(())
+                })),
+            }])?;
+            Ok("S: held boundary")
         }
     }
 }
 
 /// The plant's clients in the driver's order (protection, PZR control,
 /// field controller), then the caller's observation-only clients.
-fn plant_clients<'a, J: JoinedSystem>(
+pub fn clients<'a, J: JoinedSystem>(
     protection: &'a mut ProtectionClient,
     control: &'a mut super::pzr_control::PzrClient,
     field: &'a mut Option<FieldClient>,
