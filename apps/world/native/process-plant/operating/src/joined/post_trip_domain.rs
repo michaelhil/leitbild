@@ -175,6 +175,7 @@ pub struct Margin {
 fn static_operator(
     model: &kinetics::Model,
     inputs: kinetics::Inputs<'_>,
+    mut diagonal_products: Option<&mut Vec<(usize, f64)>>,
 ) -> Result<Vec<f64>, Error> {
     let r = model.region_count();
     let n = model.state_dimension();
@@ -210,7 +211,14 @@ fn static_operator(
         }
         for &(i, w) in returns.of(c) {
             for &(j, b) in births.of(c) {
-                nn[j * r + i] += w * b / lambda;
+                let product = w * b / lambda;
+                nn[j * r + i] += product;
+                // HOOK (COST2): a diagonal's precursor terms in assembly order.
+                if i == j
+                    && let Some(d) = diagonal_products.as_deref_mut()
+                {
+                    d.push((i, product));
+                }
             }
         }
     }
@@ -225,6 +233,43 @@ fn static_operator(
         }
     }
     Ok(nn)
+}
+
+/// HOOK (COST2, for KERN2): the static operators at `plain` and at
+/// `shifted`, two inputs that differ only in the regions' reactivities (the
+/// margin check's operator and its inserted-margin twin). Reactivity enters
+/// only the neutron diagonal (`rho_i / Lambda_i`, the kinetics block's
+/// first emission per region), so the twin is the plain operator with each
+/// diagonal re-summed: the twin's own diagonal emissions in emission order
+/// (its trial inputs validated and its values checked as before), then the
+/// plain assembly's precursor terms on that diagonal in their order. Every
+/// entry is bitwise the one a second [`static_operator`] call computes; the
+/// off-diagonals (the plain operator's) already passed the Metzler check.
+fn static_operators(
+    model: &kinetics::Model,
+    plain: kinetics::Inputs<'_>,
+    shifted: kinetics::Inputs<'_>,
+) -> Result<(Vec<f64>, Vec<f64>), Error> {
+    let r = model.region_count();
+    let mut products = Vec::new();
+    let operator = static_operator(model, plain, Some(&mut products))?;
+    let mut diagonal = vec![0.; r];
+    model.state_jacobian_entries(shifted, |row, column, value| {
+        if row == column && row < r {
+            diagonal[row] += value;
+        }
+    })?;
+    for &(i, product) in &products {
+        diagonal[i] += product;
+    }
+    let mut twin = operator.clone();
+    for (i, d) in diagonal.iter().enumerate() {
+        twin[i * r + i] = *d;
+    }
+    if twin.iter().any(|v| !v.is_finite()) {
+        return Err(Error::Operator("nonfinite operator"));
+    }
+    Ok((operator, twin))
 }
 
 /// HOOK (COST2): entries `(group, index, value)` grouped by `group` in
@@ -313,15 +358,13 @@ pub fn shutdown_margin(
     };
     let m = extension.shutdown_margin_minimum;
     let (plain, inserted) = (with(0.), with(m));
-    let operator = static_operator(
+    // HOOK (COST2): one assembly for both (they differ only in reactivity).
+    let (operator, shifted) = static_operators(
         model,
         kinetics::Inputs {
             regions: &plain,
             ..inputs
         },
-    )?;
-    let shifted = static_operator(
-        model,
         kinetics::Inputs {
             regions: &inserted,
             ..inputs
