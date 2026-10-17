@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { prepareOperatingHot } from './reference-design-operating-hot'
-import { compileOperatingPostTripDomain, compileOperatingSource, evaluateOperatingSource, operatingPostTripDomainNative, operatingReferenceFissions,
+import { compileOperatingPostTripDomain, compileOperatingSource, operatingHotStandbyNative, parseOperatingHotStandby, evaluateOperatingSource, operatingPostTripDomainNative, operatingReferenceFissions,
   operatingSourceDirection, operatingSourceNativeMetadata, operatingSourceFreshFuelAtoms, parseOperatingPostTripDomain, parseOperatingSource,
   validateOperatingSourceAccepted,
   type OperatingSourceCoefficients, type OperatingSourceConditions, type OperatingSourceConstruction, type OperatingSourceDirection } from './reference-design-operating-source'
@@ -161,6 +161,24 @@ describe('D3 (a) post-trip domain extension', () => {
   test.skipIf(!process.env.LD01_WIKI_ROOT)('the actual kinetics owner page compiles the joined packet section', async () => {
     expect(await compileOperatingPostTripDomain(process.env.LD01_WIKI_ROOT!)).toEqual({ density_ratio_maximum: 1.125,
       pressure_minimum_pa: 8000000, shutdown_margin_minimum: 0.01, margin_water_term_factor: 2, extrapolation_sensitivity: [0.5, 1, 2] })
+  })
+})
+
+describe('P1 hot-standby kinetics (owner R11)', () => {
+  const block = { identity: 'LD01-HOT-STANDBY-1', densityRatioMax: 1.125, pressureMin_Pa: 8000000,
+    reportedWaterTermFactors: [1, 1.53, 2.24], referenceMargin_dk_k: 0.016 }
+  const page = (d: object) => '```reference-operating-source\n' + JSON.stringify(p) + '\n```\n\n```ld01-hot-standby-kinetics\n' + JSON.stringify(d) + '\n```\n'
+  test('one strict block widens the domains, orders the reported factors and crosses to the native HotStandby', () => {
+    expect(parseOperatingHotStandby(page(block), p)).toEqual(block as never)
+    expect(operatingHotStandbyNative(parseOperatingHotStandby(page(block), p))).toEqual({ density_ratio_maximum: 1.125,
+      pressure_minimum_pa: 8000000, reported_water_term_factors: [1, 1.53, 2.24], reference_margin_dk_k: 0.016 })
+    expect(() => parseOperatingHotStandby(page(block) + page(block), p)).toThrow('one')
+    expect(() => parseOperatingHotStandby(page({ ...block, extra: 1 }), p)).toThrow()
+    expect(() => parseOperatingHotStandby(page({ ...block, identity: 'X' }), p)).toThrow()
+    expect(() => parseOperatingHotStandby(page({ ...block, densityRatioMax: 1.09 }), p)).toThrow('widen')
+    expect(() => parseOperatingHotStandby(page({ ...block, pressureMin_Pa: 14.5e6 }), p)).toThrow('widen')
+    expect(() => parseOperatingHotStandby(page({ ...block, reportedWaterTermFactors: [1.53, 1, 2.24] }), p)).toThrow('nominal')
+    expect(() => parseOperatingHotStandby(page({ ...block, referenceMargin_dk_k: 1 }), p)).toThrow('margin')
   })
 })
 
