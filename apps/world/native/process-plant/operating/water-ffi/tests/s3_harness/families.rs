@@ -128,7 +128,7 @@ pub fn cost(
     );
     match case {
         Case::C1 => entry("cost.s2_quiet", "s2Quiet", 0., last, last),
-        Case::C2 | Case::C3 | Case::C5 => {
+        Case::C2 | Case::C3 | Case::C4 | Case::C5 => {
             if case == Case::C5 {
                 // C5L: the run from its start (the 10.37 s before the
                 // offsite loss included), beside S3GATES's span from zero.
@@ -841,6 +841,11 @@ pub fn directions(case: Case, spec: &Value, i: &DirectionInputs) -> Value {
         }
         Case::C1 => {
             return json!({"family": "B directions", "verdict": "not applicable", "reason": "C1 is a hold: no direction is declared"});
+        }
+        Case::C4 => {
+            return json!({"family": "B directions", "verdict": "not executable",
+                "reason": "C4's direction table (ld01-s3-cases-c4 directions) has no signal map in the harness yet (S3-D50 maps C2 and C3); the C4 section reports PT1, relief flow, the PZR column and the birth cells per frame",
+                "declared": spec["directions"]});
         }
         Case::C2 => {
             let s = |k: &str, j: usize| span_series(i, k, j, 0., e);
