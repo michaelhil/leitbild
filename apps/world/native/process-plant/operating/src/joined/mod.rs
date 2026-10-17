@@ -134,15 +134,21 @@ pub fn pending_secondary() -> census::Pending {
 }
 
 /// The rod owner's declared counts at the prepared hold (bodies HELD: their
-/// velocity rows algebraic), per memo §4 and Table 1.1, while it is pending.
+/// velocity rows algebraic), per memo §4 and Table 1.1, with P2's two mouth
+/// currents per cluster and the LD-01 packet's eight bore groups (no single
+/// declared), while it is pending.
 pub fn pending_rods() -> census::Pending {
     census::Pending {
         owner: "rods",
-        by: "S2-RODS (block::Rods)",
+        by: "S2-RODS (block::Rods), P2 bores",
         classes: vec![
             (Class::RodPosition, [52, 0]),
             (Class::RodVelocity, [0, 52]),
-            (Class::GuideCurrent, [0, 52]),
+            (Class::GuideCurrent, [0, 104]),
+            (Class::PhaseMass, [8, 0]),
+            (Class::PhaseEnergy, [8, 0]),
+            (Class::Tracer, [8, 0]),
+            (Class::CellPressure, [0, 8]),
         ],
     }
 }

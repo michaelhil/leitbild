@@ -6,7 +6,8 @@
 //! body tips the bores are clear (Churchill Darcy with the 2 um roughness);
 //! from the tips to the upper mouth each body moves inside its bore (the
 //! exact concentric moving-inner-wall solution). Each open mouth has its
-//! selected dimensionless loss on the local area. The annulus applies the
+//! selected dimensionless loss on the local area, on the density of the
+//! water passing it (the donor of the mouth's signed current, P2). The annulus applies the
 //! selected enhancement `chi = max(1, f(Re) Re / C_ann)` to the exact laminar
 //! gradient and wall traction alike, `chi = 1` at zero motion. Nothing is
 //! floored or clipped; the only branch points are the selected ones (the
@@ -177,7 +178,8 @@ pub struct Passage {
 
 impl Passage {
     /// The moving annulus of `length` (m) at mass current `m` (kg/s), body
-    /// speed `v` (m/s) and donor water `rho, mu`, with the upper mouth.
+    /// speed `v` (m/s) and the annulus water `rho, mu`, with the upper mouth
+    /// on the density `mouth` of the water passing it.
     pub fn annulus(
         &self,
         m: Scalar,
@@ -185,6 +187,7 @@ impl Passage {
         rho: Scalar,
         mu: Scalar,
         length: Scalar,
+        mouth: Scalar,
     ) -> AnnulusFlow {
         let a = &self.annulus;
         let q = m / rho;
@@ -207,18 +210,27 @@ impl Passage {
             if raw.value > 1. { raw } else { s(1.) }
         };
         let mouth_loss =
-            s(self.upper_mouth_loss) * signed_square(m) / (s(2.) * rho * s(a.area * a.area));
+            s(self.upper_mouth_loss) * signed_square(m) / (s(2.) * mouth * s(a.area * a.area));
         AnnulusFlow {
             loss: chi * gradient * length + mouth_loss,
             wall_force: chi * wall,
             chi,
-            dissipation: chi * dissipation + mouth_loss * q,
+            dissipation: chi * dissipation + mouth_loss * m / mouth,
         }
     }
 
-    /// The clear bores below the tips over `length` (m), with the lower
-    /// mouth, at mass current `m`: pressure drop less hydrostatic head, Pa.
-    pub fn clear(&self, m: Scalar, rho: Scalar, mu: Scalar, length: Scalar) -> Scalar {
+    /// The clear bores below the tips over `length` (m) in the bores' water
+    /// `rho, mu`, with the lower mouth on the density `mouth` of the water
+    /// passing it, at mass current `m`: pressure drop less hydrostatic head,
+    /// Pa.
+    pub fn clear(
+        &self,
+        m: Scalar,
+        rho: Scalar,
+        mu: Scalar,
+        length: Scalar,
+        mouth: Scalar,
+    ) -> Scalar {
         let (area, diameter) = (self.clear_area, self.bore_diameter);
         let dynamic = signed_square(m) / (s(2.) * rho * s(area * area));
         let re_value = m.value.abs() * diameter / (area * mu.value);
@@ -229,7 +241,7 @@ impl Passage {
             let re = abs(m) * s(diameter / area) / mu;
             exp(log_darcy(re, self.roughness / diameter)) * length / s(diameter) * dynamic
         };
-        friction + s(self.lower_mouth_loss) * dynamic
+        friction + s(self.lower_mouth_loss) * signed_square(m) / (s(2.) * mouth * s(area * area))
     }
 }
 
@@ -269,7 +281,7 @@ mod tests {
         let p = passage(0.);
         for m in [-1.4, -0.2, 0., 0.3, 1.3] {
             for v in [-2., -0.5, 0., 0.4] {
-                let r = p.annulus(s(m), s(v), s(745.7), s(9.2e-5), s(4.));
+                let r = p.annulus(s(m), s(v), s(745.7), s(9.2e-5), s(4.), s(745.7));
                 // Pressure work of the current less the wall work on the body
                 // is the positive dissipation.
                 let work = r.loss.value * m / 745.7 - r.wall_force.value * v;
@@ -282,7 +294,7 @@ mod tests {
             }
         }
         // Zero motion is chi = 1 and exactly no force or loss.
-        let rest = passage(0.5).annulus(s(0.), s(0.), s(745.7), s(9.2e-5), s(4.));
+        let rest = passage(0.5).annulus(s(0.), s(0.), s(745.7), s(9.2e-5), s(4.), s(745.7));
         assert_eq!(
             (rest.chi.value, rest.loss.value, rest.wall_force.value),
             (1., 0., 0.)
@@ -291,18 +303,18 @@ mod tests {
     #[test]
     fn passage_directions_match_central_differences() {
         let p = passage(0.5);
-        let base = [1.31, -1.2, 745.7, 9.24e-5, 1.85];
-        let dir = [0.3, -0.7, 2.1, 1e-6, -0.4];
-        let eval = |x: [f64; 5], dx: [f64; 5]| {
-            let [m, v, rho, mu, l] = [0, 1, 2, 3, 4].map(|i| d(x[i], dx[i]));
-            let r = p.annulus(m, v, rho, mu, l);
-            let c = p.clear(m, rho, mu, s(4.65) - l);
+        let base = [1.31, -1.2, 745.7, 9.24e-5, 1.85, 676.2];
+        let dir = [0.3, -0.7, 2.1, 1e-6, -0.4, 1.3];
+        let eval = |x: [f64; 6], dx: [f64; 6]| {
+            let [m, v, rho, mu, l, mouth] = [0, 1, 2, 3, 4, 5].map(|i| d(x[i], dx[i]));
+            let r = p.annulus(m, v, rho, mu, l, mouth);
+            let c = p.clear(m, rho, mu, s(4.65) - l, mouth);
             [r.loss, r.wall_force, c]
         };
         let exact = eval(base, dir);
         let h = 1e-7;
         let shift = |sg: f64| std::array::from_fn(|i| base[i] + sg * h * dir[i]);
-        let (p, q) = (eval(shift(1.), [0.; 5]), eval(shift(-1.), [0.; 5]));
+        let (p, q) = (eval(shift(1.), [0.; 6]), eval(shift(-1.), [0.; 6]));
         for k in 0..3 {
             let fd = (p[k].value - q[k].value) / (2. * h);
             assert!(

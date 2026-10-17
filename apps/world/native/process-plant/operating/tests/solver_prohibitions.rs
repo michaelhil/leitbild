@@ -86,13 +86,6 @@ const ALLOWED: &[(&str, &str, &str, usize, &str)] = &[
         1,
         "SG tube stationary wall temperature: bracketed scalar Newton to 1e-12 (zero-time preparation diagnostic)",
     ),
-    (
-        "src/rods/mod.rs",
-        "passage_current",
-        "iteration",
-        3,
-        "rod guide passage current: bracket expansion (two loops) and bracketed scalar Newton on a monotone balance to 1e-12 of its row scale",
-    ),
     // The declared exact consistent start (operating-hot-spine.md, "Exact
     // consistent start"): Newton on the algebraic constraints g(y) = 0 with
     // the system's own dg/dy_a, differential coordinates bitwise fixed, the

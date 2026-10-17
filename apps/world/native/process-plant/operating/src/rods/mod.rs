@@ -1,28 +1,47 @@
 //! spec: world/packs/process-plant/reference-designs/ld-01/systems/reactor/control-absorber-and-guide-water.md#s2-operating-rod-block
+//! spec: world/packs/process-plant/reference-designs/ld-01/systems/reactor/control-absorber-and-guide-water.md#rod-bore-water-state
 //! spec: world/packs/process-plant/reference-designs/ld-01/systems/reactor/control-absorber-and-guide-water.md#grip-manual-disconnect-and-achieved-motion
 //! spec: world/packs/process-plant/reference-designs/ld-01/safety/reactor-trip-and-hold.md#s2-holding-circuit-boundary
-//! The S2 rod block: 52 moving spider-and-bodies (H7), their steady guide
-//! passages (F1 (a), H4) and the network cell volumes they displace.
+//! The rod block: 52 moving spider-and-bodies (H7), the water of their guide
+//! bores as its own state (P2), the bores' two open mouths and the network
+//! cell volumes the bodies displace above the bores.
 //!
 //! Per cluster, in this order: achieved travel `y` (m), body velocity `v`
-//! (m/s, upward positive) and the guide passage's upward mass current `m`
-//! (kg/s). `y' = v` always. A FREE body obeys
+//! (m/s, upward positive), the lower mouth's upward mass current `m_lo` and
+//! the upper mouth's `m_up` (kg/s). `y' = v` always. A FREE body obeys
 //! `M v' = F_end + F_wall + B_spider + F_drag - M g`; a HELD or SEATED body
-//! has the algebraic row `v = 0`. The passage row is its steady series
-//! balance from LOWER through the lower mouth, the clear bores below the tips,
-//! the moving annulus and the upper mouth into UPPER, on the donor water of
-//! the current's sign; it sets the tip pressure the end faces see and the
-//! annulus current of the wall law. The current carries mass, enthalpy and
-//! tracer from its donor into the other plenum; the wall and spider-drag work
-//! the bodies do on the water enter the swept cells through the single heat
-//! port, and the network pays the boundary work `-p V'` of the displaced
-//! volumes through its own rate closure. The stem stays with the drive line
-//! (H7): it is not moved and is not part of the body mass. The holding circuit
-//! opens at the declared delay after the manual turbine TRIP (H6); grip
-//! release is then immediate, the armature's opening being the disclosed
-//! omission G3. A seated body's arrival energy is deposited once into its
-//! fuel assembly's top fitting. Every value comes from the compiled `rods`
-//! section; nothing is defaulted, clipped or floored.
+//! has the algebraic row `v = 0`. The two mouth rows are steady: LOWER's
+//! mouth pressure less the bores' at the lower mouth less the lower mouth and
+//! the clear bores below the tips, and the bores' pressure at the upper
+//! mouth less UPPER's less the moving annulus and the upper mouth.
+//!
+//! The bores' water is one well-mixed water region per bore group: the
+//! clusters with the same sector shares (exchangeable in every law here),
+//! each cluster declared at composition kept singly (the stuck cluster of
+//! G7). A group owns its water's mass `M`, internal energy `U` and boron
+//! amount `B` (differential, the native mass, energy and species laws) and
+//! its pressure `p` at the bores' fixed reference elevation (algebraic, the
+//! network's EOS row `M/rho(p, U/M) - V = 0` on the maintained caloric
+//! point). `V` is its members' bore volume less their inserted bodies, so
+//! the water a falling body displaces leaves through the mouths by the
+//! group's own mass balance (R2 is its consequence). The column, the clear
+//! bores and the annulus use the bores' own water; each mouth's loss uses
+//! the water passing it (its donor by sign, R3's C1 blend over the band at
+//! the upper, annulus mouth). Transport is exact donor by each mouth's sign.
+//! The bodies' wall work and the boundary work `-p V'` enter the bores'
+//! energy; the spider's drag work enters the plena it occupies through the
+//! single heat port, and the network pays `-p V'` of the plena volumes the
+//! bodies and spider displace above the bores. The bores' water is not in
+//! the sector inventory: [`carve`] removes it from the network packet once,
+//! before the network is compiled. The stem stays with the drive line (H7).
+//! The holding circuit opens at the declared delay after the manual turbine
+//! TRIP (H6); grip release is then immediate (G3). A seated body's arrival
+//! energy is deposited once into its fuel assembly's top fitting. Every
+//! value comes from the compiled `rods` section and the network packet;
+//! nothing is defaulted, clipped or floored, and nothing is iterated here:
+//! the prepared bore water is LOWER's prepared water (its specific internal
+//! energy and boron) at the bores' reference, the currents start at zero, and the joined exact consistent
+//! start solves the algebraic coordinates (DR13-ROD).
 pub mod geometry;
 pub mod guide;
 
@@ -32,7 +51,7 @@ use crate::{
         Structure, Transaction, restored_time, snapshot_object, snapshot_time,
     },
     local_flow::Phase,
-    network::{Failure, packet::Packet},
+    network::{Failure, Properties, Water, packet::Packet},
     thermal::Scalar,
 };
 use geometry::{Branch, overlap};
@@ -98,8 +117,9 @@ pub struct Guide {
     pub roughness_m: f64,
     pub lower_mouth_loss: f64,
     pub upper_mouth_loss: f64,
-    /// R3's blend band, as an annulus speed: the passage's water is blended
-    /// over |annulus volume current| below this speed times the annulus area.
+    /// R3's blend band, as an annulus speed: the upper mouth's donor water
+    /// is blended over |annulus volume current| below this speed times the
+    /// annulus area.
     pub blend_speed_m_s: f64,
 }
 #[derive(Clone, Debug, Deserialize)]
@@ -163,24 +183,72 @@ pub struct Region<'a> {
     pub elevation_m: f64,
 }
 
+/// Offsets of one cluster's coordinates.
+pub const TRAVEL: usize = 0;
+pub const VELOCITY: usize = 1;
+pub const LOWER_CURRENT: usize = 2;
+pub const UPPER_CURRENT: usize = 3;
+pub const CLUSTER_COORDINATES: usize = 4;
+/// Offsets of one bore group's coordinates, after every cluster's.
+pub const BORE_MASS: usize = 0;
+pub const BORE_ENERGY: usize = 1;
+pub const BORE_BORON: usize = 2;
+pub const BORE_PRESSURE: usize = 3;
+pub const GROUP_COORDINATES: usize = 4;
+
+/// LOWER's prepared water, the bores' prepared water at their reference.
+#[derive(Clone, Copy, Debug)]
+pub struct LowerWater {
+    pub pressure_pa: f64,
+    pub density_kg_m3: f64,
+    pub internal_energy_j_kg: f64,
+    /// Boron amount per kg of water (kg_eq/kg).
+    pub boron_concentration: f64,
+}
+
+/// What [`carve`] removed: per swept cell (network index), the bores' free
+/// water volume at the prepared travel and the cell's volume after.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct Carve {
+    pub cells: Vec<(usize, f64, f64)>,
+}
+
 #[derive(Clone, Debug)]
 struct Cluster {
     id: String,
     fuel_assembly: String,
+    group: usize,
 }
-/// One rod-swept network cell: index, axial span, and per cluster the share
-/// of the body area it takes (1 in a plenum, the sector share in the core).
 #[derive(Clone, Debug)]
-struct SweptCell {
+struct Group {
+    members: Vec<usize>,
+    single: bool,
+}
+/// One network plenum the bodies and spider move through above the bores:
+/// index and axial span.
+#[derive(Clone, Debug)]
+struct Plenum {
     index: usize,
     bottom: f64,
     top: f64,
-    weights: Vec<f64>,
-    /// The spider's steel enters the plena only (it never reaches the core).
-    spider: bool,
 }
 
-/// Every force of one cluster in one evaluation (physical, upward positive).
+/// The bores' water of one group in one evaluation.
+#[derive(Clone, Copy, Debug)]
+pub struct Bore {
+    /// Pressure at the bores' reference elevation.
+    pub pressure: Scalar,
+    pub mass: Scalar,
+    pub density: Scalar,
+    pub enthalpy: Scalar,
+    pub viscosity: Scalar,
+    pub boron_concentration: Scalar,
+    /// The members' free bore volume.
+    pub volume: Scalar,
+}
+
+/// Every force and mouth balance of one cluster in one evaluation
+/// (physical, upward positive).
 #[derive(Clone, Copy, Debug)]
 pub struct Forces {
     pub tip_pressure: Scalar,
@@ -191,20 +259,26 @@ pub struct Forces {
     pub spider_drag: Scalar,
     /// `F_end + F_wall + B_spider + F_drag - M g`.
     pub net: Scalar,
-    pub passage_residual: Scalar,
+    /// The lower and the upper mouth's steady balances (Pa).
+    pub lower_residual: Scalar,
+    pub upper_residual: Scalar,
     pub chi: Scalar,
     pub annulus_dissipation: Scalar,
-    /// The annulus mass current in the bores' water, the passage current
-    /// plus the displacement (R2), kg/s.
-    pub annulus_current: Scalar,
-    /// The plenum whose water the bores mostly hold (R2: the annulus
-    /// current's source; R3: the blend weight's side).
-    pub donor: usize,
-    /// R3's blend weight on LOWER's water: 1 above the band, 0 below.
-    pub blend_weight: Scalar,
-    pub donor_density: Scalar,
-    pub donor_viscosity: Scalar,
+    /// The mouths' upward mass currents (kg/s).
+    pub lower_current: Scalar,
+    pub upper_current: Scalar,
+    /// R3's weight on the bores' water at the upper mouth: 1 above the band,
+    /// 0 below it.
+    pub upper_mouth_weight: Scalar,
+    /// The densities of the water passing the lower and the upper mouth.
+    pub lower_mouth_density: Scalar,
+    pub upper_mouth_density: Scalar,
+    pub bore: Bore,
 }
+
+/// One member cluster of a bore group in one evaluation: its index, forces
+/// and mouth transport.
+type Member = (usize, Forces, [(usize, [Scalar; 3]); 2]);
 
 /// R3's C1 weight on the annulus volume current over its band, `x`:
 /// `1/2 + 3x/4 - x^3/4` on `|x| < 1`, with zero slope at both edges.
@@ -218,11 +292,91 @@ fn fatal(reason: impl Into<String>) -> Failure {
 fn recoverable(reason: impl Into<String>) -> Failure {
     Failure::Recoverable(reason.into())
 }
+fn scalar(w: &Water, d: &Water, field: fn(&Water) -> f64) -> Scalar {
+    Scalar::new(field(w), field(d))
+}
+
+/// The swept cells holding the bores, in [`carve`]'s order: LOWER, the
+/// eight core cells (sector by sector, lower band first), UPPER; each with
+/// its axial span and, per cluster, its share of the cluster's bores.
+fn bore_cells(section: &Section) -> Vec<(&Span, Vec<f64>)> {
+    let n = section.clusters.len();
+    let mut cells = vec![(&section.cells.lower, vec![1.; n])];
+    for (k, sector) in section.cells.core.iter().enumerate() {
+        for band in sector {
+            cells.push((
+                band,
+                section
+                    .clusters
+                    .iter()
+                    .map(|c| c.sector_shares[k])
+                    .collect(),
+            ));
+        }
+    }
+    cells.push((&section.cells.upper, vec![1.; n]));
+    cells
+}
+
+/// Remove the 52 clusters' bore water from the sector inventory of the
+/// network packet, once, before the network is compiled: each swept cell
+/// loses the bores' free volume it holds at the prepared travel (its share
+/// of the 24 bores over its span less the bodies inside them), and its
+/// prepared mass, energy and boron scale with its volume, so its prepared
+/// water keeps its state. The returned record is what [`RodBlock::from_packet`]
+/// checks the network packet against.
+pub fn carve(section: &Section, packet: &mut Packet) -> Result<Carve, Failure> {
+    let g = &section.guide;
+    let b = &section.bodies;
+    let clear_area = b.count as f64 * PI * g.bore_radius_m * g.bore_radius_m;
+    let body_area = b.count as f64 * PI * b.radius_m * b.radius_m;
+    let tip = b.seated_bottom_m + section.reference_travel_m;
+    let length = |lo: f64, hi: f64, bottom: f64, top: f64| (hi.min(top) - lo.max(bottom)).max(0.);
+    let mut out = Vec::new();
+    for (span, weights) in bore_cells(section) {
+        let index = packet
+            .mechanics
+            .regions
+            .iter()
+            .position(|r| r.id == span.region)
+            .ok_or_else(|| fatal(format!("rods carve: no network region {}", span.region)))?;
+        let bore = length(span.bottom_m, span.top_m, g.lower_mouth_m, g.upper_mouth_m);
+        let body = length(span.bottom_m, span.top_m, tip, g.upper_mouth_m);
+        let removed: f64 = weights.iter().sum::<f64>() * (clear_area * bore - body_area * body);
+        let region = &mut packet.mechanics.regions[index];
+        let before = region.volume_m3;
+        let after = before - removed;
+        if !(removed >= 0. && after > 0. && after.is_finite()) {
+            return Err(fatal(format!(
+                "rods carve: {} cannot give {removed} m3 of bore water from {before} m3",
+                span.region
+            )));
+        }
+        region.volume_m3 = after;
+        let ratio = after / before;
+        let water =
+            packet.thermal.water.get_mut(index).ok_or_else(|| {
+                fatal(format!("rods carve: {} has no prepared water", span.region))
+            })?;
+        water.mass_kg *= ratio;
+        water.energy_j *= ratio;
+        let boron = packet
+            .water_boron_amount_kg_eq
+            .get_mut(index)
+            .ok_or_else(|| fatal(format!("rods carve: {} has no prepared boron", span.region)))?;
+        *boron *= ratio;
+        out.push((index, removed, after));
+    }
+    Ok(Carve { cells: out })
+}
 
 pub struct RodBlock {
     clusters: Vec<Cluster>,
+    groups: Vec<Group>,
     regular: usize,
-    cells: Vec<SweptCell>,
+    /// The plena the bodies' upper parts and the spiders move through:
+    /// UPPER above the bores, then HOUSING.MAIN.
+    plena: [Plenum; 2],
     lower: usize,
     upper: usize,
     main: usize,
@@ -232,6 +386,8 @@ pub struct RodBlock {
     z_main: f64,
     /// The UPPER/HOUSING.MAIN plane.
     z_interface: f64,
+    /// The bores' reference elevation: the guides' mid-height.
+    z_bore: f64,
     body_area: f64,
     body_bottom: f64,
     body_top: f64,
@@ -242,6 +398,8 @@ pub struct RodBlock {
     mass: f64,
     guide_bottom: f64,
     guide_top: f64,
+    /// One cluster's bore volume from mouth to mouth, m3.
+    bore_volume: f64,
     passage: Passage,
     /// R3's band in annulus volume current, m3/s.
     blend_volume_current: f64,
@@ -250,9 +408,9 @@ pub struct RodBlock {
     span: (f64, f64),
     spider_drag: SpiderDrag,
     holding_delay: f64,
-    /// Displaced volume of each cluster in each swept cell at the prepared
+    /// Displaced volume of each cluster in each plenum at the prepared
     /// travel, which the compiled cell volumes already exclude.
-    reference_displacement: Vec<Vec<f64>>,
+    reference_displacement: [Vec<f64>; 2],
     layout: Layout,
     prepared: Vec<f64>,
     modes: Vec<Mode>,
@@ -263,16 +421,38 @@ pub struct RodBlock {
     /// the bodies' power ledger, which no residual or Jacobian pays for.
     capture: bool,
     /// The recorded power ledger summed over the clusters: the bodies'
-    /// fluid-force power, the heat paid to the swept water and the boundary
-    /// work the network pays through `-p V'` (W).
+    /// fluid-force power, the heat paid to the water and the boundary work
+    /// the network and the bores pay through `-p V'` (W).
     captured: Option<[f64; 3]>,
 }
 
 impl RodBlock {
-    /// Compile the block from its section and the network packet it moves:
-    /// its region identities and elevations, and the prepared LOWER water
-    /// density that sets the passage scales.
-    pub fn from_packet(section: &Section, network: &Packet) -> Result<Self, Failure> {
+    /// Compile the block from its section and the carved network packet it
+    /// moves ([`carve`], whose record it checks): its region identities and
+    /// elevations, and LOWER's prepared water, which prepares the bores'.
+    /// `singles` are the clusters kept in their own bore group (a declared
+    /// stuck cluster).
+    pub fn from_packet<P: Properties>(
+        section: &Section,
+        network: &Packet,
+        carved: &Carve,
+        properties: &P,
+        singles: &[usize],
+    ) -> Result<Self, Failure> {
+        let expected = bore_cells(section).len();
+        if carved.cells.len() != expected
+            || carved.cells.iter().any(|(i, _, after)| {
+                network
+                    .mechanics
+                    .regions
+                    .get(*i)
+                    .is_none_or(|r| r.volume_m3.to_bits() != after.to_bits())
+            })
+        {
+            return Err(fatal(
+                "rods: the network packet is not the one carve() removed the bores' water from",
+            ));
+        }
         let regions: Vec<Region<'_>> = network
             .mechanics
             .regions
@@ -291,20 +471,40 @@ impl RodBlock {
             .water
             .get(lower)
             .ok_or_else(|| fatal("rods: LOWER has no prepared water owner"))?;
-        let density = water.mass_kg / network.mechanics.regions[lower].volume_m3;
-        Self::new(section, &regions, network.pzr.cell.index, density)
+        let boron = network
+            .water_boron_amount_kg_eq
+            .get(lower)
+            .ok_or_else(|| fatal("rods: LOWER has no prepared boron"))?;
+        let lower_water = LowerWater {
+            pressure_pa: water.pressure_pa,
+            density_kg_m3: water.mass_kg / network.mechanics.regions[lower].volume_m3,
+            internal_energy_j_kg: water.energy_j / water.mass_kg,
+            boron_concentration: boron / water.mass_kg,
+        };
+        Self::new(
+            section,
+            &regions,
+            network.pzr.cell.index,
+            &lower_water,
+            properties,
+            singles,
+        )
     }
 
     /// Compile the block over the network's regions (packet order; the first
-    /// `regular` are regular cells) with the prepared LOWER water density
-    /// that sets the passage scales. The guide currents of the prepared hold
-    /// are solved by [`RodBlock::prepare_currents`] at the composed at-power
-    /// fluid state; until then they are zero.
-    pub fn new(
+    /// `regular` are regular cells) with LOWER's prepared water. Each bore
+    /// group's prepared water is LOWER's water carried to the bores'
+    /// reference elevation on LOWER's density, at LOWER's specific internal
+    /// energy and boron concentration (the network's own caloric target);
+    /// the mouth currents start at zero and the joined consistent start
+    /// solves them with the bores' pressures.
+    pub fn new<P: Properties>(
         section: &Section,
         regions: &[Region<'_>],
         regular: usize,
-        lower_density: f64,
+        lower_water: &LowerWater,
+        properties: &P,
+        singles: &[usize],
     ) -> Result<Self, Failure> {
         let index = |id: &str| {
             regions
@@ -341,8 +541,16 @@ impl RodBlock {
             ("lower mouth loss", g.lower_mouth_loss),
             ("upper mouth loss", g.upper_mouth_loss),
             ("passage blend speed", g.blend_speed_m_s),
+            ("prepared LOWER pressure", lower_water.pressure_pa),
+            ("prepared LOWER density", lower_water.density_kg_m3),
         ] {
             positive(name, v)?;
+        }
+        if !(lower_water.internal_energy_j_kg.is_finite()
+            && lower_water.boron_concentration.is_finite()
+            && lower_water.boron_concentration >= 0.)
+        {
+            return Err(fatal("rods: prepared LOWER water"));
         }
         if n == 0
             || b.count == 0
@@ -353,59 +561,68 @@ impl RodBlock {
             || b.seated_bottom_m != g.lower_mouth_m
             || b.seated_bottom_m + b.length_m < g.upper_mouth_m
             || section.reference_travel_m > section.normal_travel_m
+            || sp.seated_bottom_m < g.upper_mouth_m
         {
             return Err(fatal(
-                "rods: the bodies must be seated at the guides' lower mouths and span them",
+                "rods: the bodies must be seated at the guides' lower mouths and span them, the spider above the bores",
             ));
         }
         if let SpiderDrag::EnvelopeDisk { coefficient } = section.spider_drag {
             positive("spider drag coefficient", coefficient)?;
         }
+        if singles.iter().any(|c| *c >= n) {
+            return Err(fatal("rods: a single cluster outside the block"));
+        }
+        // Bore groups: equal sector shares (bitwise), first appearance first;
+        // a declared single in its own group.
+        let mut groups: Vec<Group> = Vec::new();
+        let mut shares_of: Vec<Option<[u64; 4]>> = Vec::new();
         let mut clusters = Vec::with_capacity(n);
-        for c in &section.clusters {
-            if c.sector_shares.iter().any(|w| !(0. ..=1.).contains(w))
-                || (c.sector_shares.iter().sum::<f64>() - 1.).abs() > 1e-14
+        for (c, cs) in section.clusters.iter().enumerate() {
+            if cs.sector_shares.iter().any(|w| !(0. ..=1.).contains(w))
+                || (cs.sector_shares.iter().sum::<f64>() - 1.).abs() > 1e-14
             {
                 return Err(fatal(format!(
                     "rods: {} sector shares {:?} do not close",
-                    c.id, c.sector_shares
+                    cs.id, cs.sector_shares
                 )));
             }
+            let key = cs.sector_shares.map(f64::to_bits);
+            let single = singles.contains(&c);
+            let group = match (!single)
+                .then(|| shares_of.iter().position(|k| *k == Some(key)))
+                .flatten()
+            {
+                Some(k) => {
+                    groups[k].members.push(c);
+                    k
+                }
+                None => {
+                    groups.push(Group {
+                        members: vec![c],
+                        single,
+                    });
+                    shares_of.push((!single).then_some(key));
+                    groups.len() - 1
+                }
+            };
             clusters.push(Cluster {
-                id: c.id.clone(),
-                fuel_assembly: c.fuel_assembly.clone(),
+                id: cs.id.clone(),
+                fuel_assembly: cs.fuel_assembly.clone(),
+                group,
             });
         }
         let cl = &section.cells;
-        let plenum = |span: &Span| -> Result<SweptCell, Failure> {
-            Ok(SweptCell {
+        let plenum = |span: &Span| -> Result<Plenum, Failure> {
+            Ok(Plenum {
                 index: index(&span.region)?,
                 bottom: span.bottom_m,
                 top: span.top_m,
-                weights: vec![1.; n],
-                spider: true,
             })
         };
-        let mut cells = vec![plenum(&cl.lower)?];
-        for (k, sector) in cl.core.iter().enumerate() {
-            for band in sector {
-                cells.push(SweptCell {
-                    index: index(&band.region)?,
-                    bottom: band.bottom_m,
-                    top: band.top_m,
-                    weights: section
-                        .clusters
-                        .iter()
-                        .map(|c| c.sector_shares[k])
-                        .collect(),
-                    spider: false,
-                });
-            }
-        }
-        cells.push(plenum(&cl.upper)?);
-        cells.push(plenum(&cl.housing_main)?);
-        // The plena tile the axis: LOWER below the core, the four sector
-        // columns over the core, UPPER, then HOUSING.MAIN.
+        // The bores' spans tile the axis below the spiders: LOWER below the
+        // core, the four sector columns over the core, UPPER, then
+        // HOUSING.MAIN, whose plena take the bodies above the bores.
         let core = &cl.core[0];
         if !(cl.lower.top_m == core[0].bottom_m
             && cl.core.iter().all(|s| {
@@ -415,34 +632,56 @@ impl RodBlock {
             })
             && core[1].top_m == cl.upper.bottom_m
             && cl.upper.top_m == cl.housing_main.bottom_m
-            && cells.iter().all(|c| c.top > c.bottom))
+            && cl.lower.bottom_m <= g.lower_mouth_m
+            && cl.upper.bottom_m <= g.upper_mouth_m
+            && cl.upper.top_m > g.upper_mouth_m)
         {
             return Err(fatal("rods: swept cell spans do not tile the axis"));
         }
-        let mut seen: Vec<usize> = cells.iter().map(|c| c.index).collect();
+        let mut seen: Vec<usize> = std::iter::once(&cl.lower)
+            .chain(cl.core.iter().flatten())
+            .chain([&cl.upper, &cl.housing_main])
+            .map(|s| index(&s.region))
+            .collect::<Result<_, _>>()?;
         seen.sort_unstable();
         seen.dedup();
-        if seen.len() != cells.len() || cells.iter().any(|c| c.index >= regular) {
+        if seen.len() != 11 || seen.iter().any(|c| *c >= regular) {
             return Err(fatal("rods: swept cells must be distinct regular cells"));
         }
-        let (lower, upper, main) = (
-            cells[0].index,
-            cells[cells.len() - 2].index,
-            cells[cells.len() - 1].index,
-        );
+        let plena = [plenum(&cl.upper)?, plenum(&cl.housing_main)?];
+        let (lower, upper, main) = (index(&cl.lower.region)?, plena[0].index, plena[1].index);
         let elevation = |i: usize| regions[i].elevation_m;
         let annulus = Annulus::new(g.bore_radius_m, b.radius_m, b.count as f64).map_err(fatal)?;
-        let density = positive("prepared LOWER density", lower_density)?;
-        let head = density * section.gravity_m_s2 * (g.upper_mouth_m - g.lower_mouth_m);
+        let head =
+            lower_water.density_kg_m3 * section.gravity_m_s2 * (g.upper_mouth_m - g.lower_mouth_m);
         let clear_area = b.count as f64 * PI * g.bore_radius_m * g.bore_radius_m;
+        let body_area = b.count as f64 * PI * b.radius_m * b.radius_m;
         // Scales: the admitted travel, the free-fall speed over it, the guide's
         // hydrostatic head, and the current a free jet would carry under it.
         let travel_scale = section.normal_travel_m;
         let speed_scale = (2. * section.gravity_m_s2 * travel_scale).sqrt();
-        let current_scale = clear_area * (2. * density * head).sqrt();
+        let current_scale = clear_area * (2. * lower_water.density_kg_m3 * head).sqrt();
         positive("guide head scale", head)?;
+        // The bores' prepared water: LOWER's carried to the bores' reference.
+        let z_bore = 0.5 * (g.lower_mouth_m + g.upper_mouth_m);
+        let bore_pressure = lower_water.pressure_pa
+            + lower_water.density_kg_m3 * section.gravity_m_s2 * (elevation(lower) - z_bore);
+        let point = properties
+            .caloric(
+                false,
+                bore_pressure,
+                lower_water.internal_energy_j_kg,
+                false,
+            )
+            .map_err(|e| fatal(format!("rods: prepared bore water: {e}")))?;
+        let bore_water = properties.values(&point);
+        let bore_volume = clear_area * (g.upper_mouth_m - g.lower_mouth_m);
+        let inserted = g.upper_mouth_m - (b.seated_bottom_m + section.reference_travel_m);
+        let free = bore_volume - body_area * inserted;
+        positive("prepared free bore volume", free)?;
         let mut layout = Layout::default();
-        let mut prepared = Vec::with_capacity(3 * n);
+        let mut prepared =
+            Vec::with_capacity(CLUSTER_COORDINATES * n + GROUP_COORDINATES * groups.len());
         for c in &clusters {
             layout.push(
                 format!("y[{}]", c.id),
@@ -459,17 +698,56 @@ impl RodBlock {
                 speed_scale,
             );
             layout.push(
-                format!("m_guide[{}]", c.id),
+                format!("m_lower[{}]", c.id),
                 Class::GuideCurrent,
                 false,
                 current_scale,
                 head,
             );
-            prepared.extend([section.reference_travel_m, 0., 0.]);
+            layout.push(
+                format!("m_upper[{}]", c.id),
+                Class::GuideCurrent,
+                false,
+                current_scale,
+                head,
+            );
+            prepared.extend([section.reference_travel_m, 0., 0., 0.]);
+        }
+        for (k, grp) in groups.iter().enumerate() {
+            let volume = free * grp.members.len() as f64;
+            let mass = bore_water.density_kg_m3 * volume;
+            let energy = mass * bore_water.internal_energy_j_kg;
+            let boron = mass * lower_water.boron_concentration;
+            let label = format!("bore{k}[{}]", clusters[grp.members[0]].id);
+            layout.push(format!("M_{label}"), Class::PhaseMass, true, mass, mass);
+            layout.push(
+                format!("U_{label}"),
+                Class::PhaseEnergy,
+                true,
+                energy.abs(),
+                energy.abs(),
+            );
+            let boron_scale = if boron == 0. { mass * 0.001 } else { boron };
+            layout.push(
+                format!("B_{label}"),
+                Class::Tracer,
+                true,
+                boron_scale,
+                boron_scale,
+            );
+            layout.push(
+                format!("p_{label}"),
+                Class::CellPressure,
+                false,
+                bore_pressure,
+                volume,
+            );
+            prepared.extend([mass, energy, boron, bore_pressure]);
         }
         layout.validate("rods")?;
         let mut block = Self {
             clusters,
+            groups,
             regular,
             lower,
             upper,
@@ -478,7 +756,8 @@ impl RodBlock {
             z_upper: elevation(upper),
             z_main: elevation(main),
             z_interface: cl.upper.top_m,
-            body_area: b.count as f64 * PI * b.radius_m * b.radius_m,
+            z_bore,
+            body_area,
             body_bottom: b.seated_bottom_m,
             body_top: b.seated_bottom_m + b.length_m,
             spider_bottom: sp.seated_bottom_m,
@@ -488,6 +767,7 @@ impl RodBlock {
             mass: b.mass_kg + sp.mass_kg,
             guide_bottom: g.lower_mouth_m,
             guide_top: g.upper_mouth_m,
+            bore_volume,
             passage: Passage {
                 annulus,
                 clear_area,
@@ -502,8 +782,8 @@ impl RodBlock {
             span: (cl.lower.bottom_m, cl.housing_main.top_m),
             spider_drag: section.spider_drag,
             holding_delay: section.holding.turbine_trip_to_opening_s,
-            reference_displacement: Vec::new(),
-            cells,
+            reference_displacement: [Vec::new(), Vec::new()],
+            plena,
             layout,
             prepared,
             modes: vec![Mode::Held; n],
@@ -517,47 +797,49 @@ impl RodBlock {
                 "rods: HOUSING.MAIN's reference lies below its bottom plane",
             ));
         }
-        block.reference_displacement = (0..block.cells.len())
-            .map(|k| {
-                (0..n)
-                    .map(|c| {
-                        block
-                            .displacement(k, c, section.reference_travel_m, Branch::Insertion)
-                            .0
-                    })
-                    .collect()
-            })
-            .collect();
+        block.reference_displacement = [0, 1].map(|k| {
+            (0..n)
+                .map(|_| {
+                    block
+                        .displacement(k, section.reference_travel_m, Branch::Insertion)
+                        .0
+                })
+                .collect()
+        });
         Ok(block)
     }
 
-    /// Displaced volume of cluster `c` in swept cell `k` at travel `y`, and
-    /// its one-sided slope in `y`.
-    fn displacement(&self, k: usize, c: usize, y: f64, branch: Branch) -> (f64, f64) {
-        let cell = &self.cells[k];
-        let w = cell.weights[c];
+    fn base(c: usize) -> usize {
+        CLUSTER_COORDINATES * c
+    }
+    fn group_base(&self, g: usize) -> usize {
+        CLUSTER_COORDINATES * self.clusters.len() + GROUP_COORDINATES * g
+    }
+
+    /// Displaced volume of one cluster in plenum `k` at travel `y`: its
+    /// bodies above the bores and its spider, with the one-sided slope in
+    /// `y`.
+    fn displacement(&self, k: usize, y: f64, branch: Branch) -> (f64, f64) {
+        let cell = &self.plena[k];
         let (body, body_slope) = overlap(
-            cell.bottom,
+            cell.bottom.max(self.guide_top),
             cell.top,
             (self.body_bottom + y, 1.),
             (self.body_top + y, 1.),
             branch,
         );
-        let mut value = w * self.body_area * body;
-        let mut slope = w * self.body_area * body_slope;
-        if cell.spider {
-            let density = self.spider_volume / self.spider_height;
-            let (spider, spider_slope) = overlap(
-                cell.bottom,
-                cell.top,
-                (self.spider_bottom + y, 1.),
-                (self.spider_bottom + self.spider_height + y, 1.),
-                branch,
-            );
-            value += density * spider;
-            slope += density * spider_slope;
-        }
-        (value, slope)
+        let density = self.spider_volume / self.spider_height;
+        let (spider, spider_slope) = overlap(
+            cell.bottom,
+            cell.top,
+            (self.spider_bottom + y, 1.),
+            (self.spider_bottom + self.spider_height + y, 1.),
+            branch,
+        );
+        (
+            self.body_area * body + density * spider,
+            self.body_area * body_slope + density * spider_slope,
+        )
     }
 
     fn admit_travel(&self, c: usize, y: f64) -> Result<(), Failure> {
@@ -582,18 +864,33 @@ impl RodBlock {
     pub fn set_mode(&mut self, c: usize, mode: Mode) {
         self.modes[c] = mode;
     }
-    /// The contrary case's stuck cluster (G7): its grip never releases.
-    pub fn set_failed_release(&mut self, c: usize) {
+    /// The contrary case's stuck cluster (G7): its grip never releases. Only
+    /// a cluster kept in its own bore group can be stuck.
+    pub fn set_failed_release(&mut self, c: usize) -> Result<(), Failure> {
+        self.require_single(c)?;
         self.failed_release[c] = true;
+        Ok(())
     }
     /// Whether cluster `c`'s grip is declared stuck (G7).
     pub fn failed_release(&self, c: usize) -> bool {
         self.failed_release[c]
     }
+    fn require_single(&self, c: usize) -> Result<(), Failure> {
+        let g = &self.groups[self.clusters[c].group];
+        if !g.single {
+            return Err(fatal(format!(
+                "rods: {} shares its bore water with {} clusters; a stuck cluster is kept singly at composition",
+                self.clusters[c].id,
+                g.members.len()
+            )));
+        }
+        Ok(())
+    }
     /// G7's declared malfunction ([`Command::StuckCluster`]): cluster `c`'s
     /// grip stays closed when the holding circuit opens. Only a held cluster
-    /// whose release is not yet due can be declared, and only once; nothing
-    /// moves, so no coordinate or differential identity changes.
+    /// whose release is not yet due and that was kept singly at composition
+    /// can be declared, and only once; nothing moves, so no coordinate or
+    /// differential identity changes.
     fn stick(&mut self, t: f64, c: usize) -> Result<Transaction, Failure> {
         let n = self.clusters.len();
         let Some(cluster) = self.clusters.get(c) else {
@@ -601,7 +898,7 @@ impl RodBlock {
                 "rods: stuck cluster {c} is not one of the {n} clusters"
             )));
         };
-        let id = &cluster.id;
+        let id = cluster.id.clone();
         if !t.is_finite() {
             return Err(fatal("rods: stuck-cluster command time"));
         }
@@ -621,7 +918,7 @@ impl RodBlock {
         if self.failed_release[c] {
             return Err(fatal(format!("rods: {id} is already declared stuck")));
         }
-        self.failed_release[c] = true;
+        self.set_failed_release(c)?;
         Ok(Transaction {
             deposits: Vec::new(),
             receipt: json!({"owner": "rods", "command": "StuckCluster", "t_s": t, "cluster": id, "index": c,
@@ -659,10 +956,106 @@ impl RodBlock {
     pub fn reference_travel(&self) -> f64 {
         self.reference_travel
     }
-    /// Network cell indices of the swept cells: LOWER, the eight core cells
-    /// (sector by sector, lower band first), UPPER and HOUSING.MAIN.
+    /// Network cell indices whose volume the bodies and spiders move: UPPER
+    /// and HOUSING.MAIN.
     pub fn swept_cells(&self) -> Vec<usize> {
-        self.cells.iter().map(|c| c.index).collect()
+        self.plena.iter().map(|c| c.index).collect()
+    }
+    /// The bore groups' members, cluster indices.
+    pub fn bore_groups(&self) -> Vec<Vec<usize>> {
+        self.groups.iter().map(|g| g.members.clone()).collect()
+    }
+    /// The bore group of cluster `c`.
+    pub fn group_of(&self, c: usize) -> usize {
+        self.clusters[c].group
+    }
+    /// Index of cluster `c`'s coordinate `offset` in the block's layout.
+    pub fn cluster_index(c: usize, offset: usize) -> usize {
+        Self::base(c) + offset
+    }
+    /// Index of bore group `g`'s coordinate `offset` in the block's layout.
+    pub fn group_index(&self, g: usize, offset: usize) -> usize {
+        self.group_base(g) + offset
+    }
+
+    /// The group's free bore volume at these travels: its members' bores
+    /// less their inserted bodies (the tips lie inside the bores).
+    fn bore_volume_at(&self, g: usize, x: &Coordinates<'_>) -> Scalar {
+        let mut volume = s(0.);
+        for &c in &self.groups[g].members {
+            let tip = s(self.body_bottom) + x.value(Self::base(c) + TRAVEL);
+            volume = volume + s(self.bore_volume) - s(self.body_area) * (s(self.guide_top) - tip);
+        }
+        volume
+    }
+    /// The group's free volume rate: its members' travel rates.
+    fn bore_volume_rate(&self, g: usize, x: &Coordinates<'_>) -> Scalar {
+        let mut rate = s(0.);
+        for &c in &self.groups[g].members {
+            rate = rate + s(self.body_area) * x.rate(Self::base(c) + TRAVEL);
+        }
+        rate
+    }
+
+    /// The bores' water of group `g` at these coordinates: its maintained
+    /// liquid caloric point at its pressure and specific internal energy.
+    pub fn bore<P: Properties>(
+        &self,
+        properties: &P,
+        g: usize,
+        x: &Coordinates<'_>,
+    ) -> Result<Bore, Failure> {
+        let base = self.group_base(g);
+        let (mass, energy, boron, pressure) = (
+            x.value(base + BORE_MASS),
+            x.value(base + BORE_ENERGY),
+            x.value(base + BORE_BORON),
+            x.value(base + BORE_PRESSURE),
+        );
+        if !(mass.value > 0. && mass.value.is_finite() && pressure.value > 0.) {
+            return Err(recoverable(format!(
+                "rods: bore group {g} trial mass {} kg at {} Pa",
+                mass.value, pressure.value
+            )));
+        }
+        let specific = energy / mass;
+        let point = properties
+            .caloric(false, pressure.value, specific.value, false)
+            .map_err(|e| recoverable(format!("rods: bore group {g} water: {e}")))?;
+        let w = properties.values(&point);
+        let d = if pressure.direction == 0. && specific.direction == 0. {
+            Water::default()
+        } else {
+            properties
+                .direction(&point, pressure.direction, specific.direction)
+                .map_err(|e| recoverable(format!("rods: bore group {g} water direction: {e}")))?
+        };
+        Ok(Bore {
+            pressure,
+            mass,
+            density: scalar(&w, &d, |w| w.density_kg_m3),
+            enthalpy: scalar(&w, &d, |w| w.enthalpy_j_kg),
+            viscosity: scalar(&w, &d, |w| w.viscosity_pa_s),
+            boron_concentration: boron / mass,
+            volume: self.bore_volume_at(g, x),
+        })
+    }
+
+    /// Every group's bores' water at these coordinates.
+    fn bores<P: Properties>(
+        &self,
+        properties: &P,
+        x: &Coordinates<'_>,
+    ) -> Result<Vec<Bore>, Failure> {
+        (0..self.groups.len())
+            .map(|g| self.bore(properties, g, x))
+            .collect()
+    }
+
+    /// The bores' pressure at elevation `z`, about their reference with
+    /// their own density.
+    fn bore_pressure_at(&self, bore: &Bore, z: Scalar) -> Scalar {
+        bore.pressure + bore.density * s(self.gravity) * (s(self.z_bore) - z)
     }
 
     /// Network static pressure at elevation `z` (with its direction) along
@@ -699,9 +1092,8 @@ impl RodBlock {
         y: Scalar,
         branch: Branch,
     ) -> [(usize, Scalar, Scalar); 2] {
-        let k_upper = self.cells.len() - 2;
-        [k_upper, k_upper + 1].map(|k| {
-            let cell = &self.cells[k];
+        [0, 1].map(|k| {
+            let cell = &self.plena[k];
             let (value, slope) = overlap(
                 cell.bottom,
                 cell.top,
@@ -714,68 +1106,51 @@ impl RodBlock {
         })
     }
 
-    /// Every force of cluster `c` at these coordinates and this fluid state.
+    fn liquid(fluid: &Fluid<'_>, cell: usize) -> Result<Phase, Failure> {
+        fluid.cells[cell].phase[0]
+            .ok_or_else(|| recoverable(format!("rods: guide plenum cell {cell} has no liquid")))
+    }
+
+    /// Every force and mouth balance of cluster `c` at these coordinates,
+    /// this fluid state and its group's bores' water.
     pub fn forces(
         &self,
         c: usize,
         x: &Coordinates<'_>,
         fluid: &Fluid<'_>,
+        bore: &Bore,
     ) -> Result<Forces, Failure> {
-        let (y, v, m) = (x.value(3 * c), x.value(3 * c + 1), x.value(3 * c + 2));
+        let base = Self::base(c);
+        let (y, v, m_lo, m_up) = (
+            x.value(base + TRAVEL),
+            x.value(base + VELOCITY),
+            x.value(base + LOWER_CURRENT),
+            x.value(base + UPPER_CURRENT),
+        );
         self.admit_travel(c, y.value)?;
-        let branch = Branch::of_rate(x.rate(3 * c).value);
-        // R2: the bores' displaced water joins the passage current in the
-        // annulus, D = -A_b v upward (a dashpot current while falling). The
-        // bores hold the water of the annulus current's source: LOWER's while
-        // it flows up, whatever the clear current's sign, UPPER's when it
-        // flows down (F1 (a)'s donor at rest). R3: within one band of the
-        // annulus volume current's reversal, the two plena's density and
-        // viscosity are blended by one C1 weight, so the balance is
-        // continuous and strictly decreasing there.
-        let displacement = -s(self.body_area) * v;
-        let water = |cell: usize| -> Result<(Scalar, Scalar), Failure> {
-            let phase = fluid.cells[cell].phase[0].ok_or_else(|| {
-                recoverable(format!("rods: guide plenum cell {cell} has no liquid"))
-            })?;
-            let (point, direction) = fluid.points[cell][0].ok_or_else(|| {
-                recoverable(format!(
-                    "rods: guide plenum cell {cell} has no liquid point"
-                ))
-            })?;
-            Ok((
-                phase.density,
-                Scalar::new(point.viscosity_pa_s, direction.viscosity_pa_s),
-            ))
-        };
-        let (rho_lower, mu_lower) = water(self.lower)?;
-        let reversal = (m / rho_lower + displacement) / s(self.blend_volume_current);
-        let (rho, mu, weight) = if reversal.value >= 1. {
-            (rho_lower, mu_lower, s(1.))
-        } else {
-            let (rho_upper, mu_upper) = water(self.upper)?;
-            if reversal.value <= -1. {
-                (rho_upper, mu_upper, s(0.))
-            } else {
-                if rho_upper.value > rho_lower.value {
-                    return Err(recoverable(format!(
-                        "rods: {} passage current {} kg/s lies in the R3 blend band with UPPER denser than LOWER ({} > {} kg/m3): an inverted column has no unique passage state",
-                        self.clusters[c].id, m.value, rho_upper.value, rho_lower.value
-                    )));
-                }
-                let w = blend(reversal);
-                (
-                    w * rho_lower + (s(1.) - w) * rho_upper,
-                    w * mu_lower + (s(1.) - w) * mu_upper,
-                    w,
-                )
-            }
-        };
-        let donor = if weight.value >= 0.5 {
-            self.lower
-        } else {
-            self.upper
-        };
+        let branch = Branch::of_rate(x.rate(base + TRAVEL).value);
         let g = s(self.gravity);
+        let (lower_liquid, upper_liquid) = (
+            Self::liquid(fluid, self.lower)?,
+            Self::liquid(fluid, self.upper)?,
+        );
+        // Each mouth's loss on the water passing it: LOWER's entering, the
+        // bores' leaving; at the upper (annulus) mouth R3's C1 blend of the
+        // bores' and UPPER's water over the band of the annulus volume current.
+        let lower_mouth_density = if m_lo.value > 0. {
+            lower_liquid.density
+        } else {
+            bore.density
+        };
+        let reversal = m_up / bore.density / s(self.blend_volume_current);
+        let weight = if reversal.value >= 1. {
+            s(1.)
+        } else if reversal.value <= -1. {
+            s(0.)
+        } else {
+            blend(reversal)
+        };
+        let upper_mouth_density = weight * bore.density + (s(1.) - weight) * upper_liquid.density;
         let lower_mouth = fluid.cells[self.lower].pressure
             + fluid.mixture_density(self.lower) * g * s(self.z_lower - self.guide_bottom);
         let upper_mouth = fluid.cells[self.upper].pressure
@@ -783,17 +1158,26 @@ impl RodBlock {
         let tip = s(self.body_bottom) + y;
         let clear_length = tip - s(self.guide_bottom);
         let annulus_length = s(self.guide_top) - tip;
-        let annulus_current = m + rho * displacement;
-        let clear = self.passage.clear(m, rho, mu, clear_length);
-        let ann = self
-            .passage
-            .annulus(annulus_current, v, rho, mu, annulus_length);
-        let passage = lower_mouth
-            - upper_mouth
-            - rho * g * s(self.guide_top - self.guide_bottom)
-            - clear
-            - ann.loss;
-        let tip_pressure = lower_mouth - rho * g * clear_length - clear;
+        let clear = self.passage.clear(
+            m_lo,
+            bore.density,
+            bore.viscosity,
+            clear_length,
+            lower_mouth_density,
+        );
+        let ann = self.passage.annulus(
+            m_up,
+            v,
+            bore.density,
+            bore.viscosity,
+            annulus_length,
+            upper_mouth_density,
+        );
+        let lower_residual =
+            lower_mouth - self.bore_pressure_at(bore, s(self.guide_bottom)) - clear;
+        let upper_residual =
+            self.bore_pressure_at(bore, s(self.guide_top)) - upper_mouth - ann.loss;
+        let tip_pressure = self.bore_pressure_at(bore, tip);
         let top_pressure = self.column_pressure(fluid, s(self.body_top) + y);
         let end_face = s(self.body_area) * (tip_pressure - top_pressure);
         // Mixture density over the spider's height, cell by cell.
@@ -817,267 +1201,92 @@ impl RodBlock {
             spider_buoyancy,
             spider_drag,
             net,
-            passage_residual: passage,
+            lower_residual,
+            upper_residual,
             chi: ann.chi,
             annulus_dissipation: ann.dissipation,
-            annulus_current,
-            donor,
-            blend_weight: weight,
-            donor_density: rho,
-            donor_viscosity: mu,
+            lower_current: m_lo,
+            upper_current: m_up,
+            upper_mouth_weight: weight,
+            lower_mouth_density,
+            upper_mouth_density,
+            bore: *bore,
         })
     }
 
-    /// Solve every passage's steady series balance at the bodies' current
-    /// travel and rest, at this fluid state, and keep the currents as the
-    /// prepared ones. The balance is monotone in the current, so a bracketed
-    /// Newton finds its unique root. A donor-density gap, where the upward
-    /// current's balance is negative at zero and the downward one's positive,
-    /// has no steady passage state and is refused.
-    pub fn prepare_currents(&mut self, fluid: &Fluid<'_>) -> Result<Vec<f64>, Failure> {
-        self.prepare_currents_at(fluid, self.reference_travel)
-    }
-
-    /// [`RodBlock::prepare_currents`] with every body held at `travel`, which
-    /// becomes the prepared travel.
-    pub fn prepare_currents_at(
-        &mut self,
-        fluid: &Fluid<'_>,
-        travel: f64,
-    ) -> Result<Vec<f64>, Failure> {
-        let n = self.clusters.len();
-        for c in 0..n {
-            self.admit_travel(c, travel)?;
-            self.prepared[3 * c] = travel;
-            self.prepared[3 * c + 1] = 0.;
-        }
-        let mut currents = Vec::with_capacity(n);
-        for c in 0..n {
-            let m = self.passage_current(c, fluid, travel, 0.)?;
-            self.prepared[3 * c + 2] = m;
-            currents.push(m);
-        }
-        Ok(currents)
-    }
-
-    /// The steady passage current of cluster `c` at `travel` and body speed
-    /// `speed` in this fluid state: the unique root of its strictly
-    /// decreasing series balance (R3's blend makes it continuous through the
-    /// annulus current's reversal), by a bracketed Newton. An inverted
-    /// column, UPPER denser than LOWER, is refused. Convergence is declared
-    /// at `1e-12` of the row scale plus the balance's rounding floor between
-    /// the plena pressures.
-    pub fn passage_current(
-        &self,
-        c: usize,
-        fluid: &Fluid<'_>,
-        travel: f64,
-        speed: f64,
-    ) -> Result<f64, Failure> {
-        let n = self.clusters.len();
-        self.admit_travel(c, travel)?;
-        let residual = |m: f64, dm: f64| -> Result<Scalar, Failure> {
-            let mut yv = vec![0.; 3 * n];
-            let mut seed = vec![0.; 3 * n];
-            yv[3 * c] = travel / self.layout.scales[3 * c];
-            yv[3 * c + 1] = speed / self.layout.scales[3 * c + 1];
-            yv[3 * c + 2] = m / self.layout.scales[3 * c + 2];
-            seed[3 * c + 2] = dm / self.layout.scales[3 * c + 2];
-            let yp = vec![0.; 3 * n];
-            let x = Coordinates::new(&yv, &yp, Some(&seed), 0., &self.layout.scales)?;
-            Ok(self.forces(c, &x, fluid)?.passage_residual)
-        };
-        // R3: with LOWER no lighter than UPPER the blended balance is
-        // continuous and strictly decreasing, so it has exactly one root.
-        // Bracket it on the blend band around the annulus current's reversal,
-        // then outward by doubling.
-        let density = |cell: usize| -> Result<f64, Failure> {
-            Ok(fluid.cells[cell].phase[0]
-                .ok_or_else(|| fatal("rods: a plenum has no liquid to prepare the passages"))?
-                .density
-                .value)
-        };
-        let (rho_lower, rho_upper) = (density(self.lower)?, density(self.upper)?);
-        if rho_upper > rho_lower {
-            return Err(fatal(format!(
-                "rods: {} has no unique passage state: UPPER is denser than LOWER ({rho_upper} > {rho_lower} kg/m3), an inverted column (R3)",
-                self.clusters[c].id
-            )));
-        }
-        let centre = rho_lower * self.body_area * speed;
-        let half = rho_lower * self.blend_volume_current;
-        let (mut lo, mut hi) = (centre - half, centre + half);
-        let (at_lo, at_hi) = (residual(lo, 0.)?.value, residual(hi, 0.)?.value);
-        if at_hi > 0. {
-            let mut step = half;
-            lo = hi;
-            hi = lo + step;
-            while residual(hi, 0.)?.value > 0. {
-                if step > 1e6 * half.max(1.) {
-                    return Err(fatal(format!(
-                        "rods: {} passage balance stays positive up to {hi} kg/s",
-                        self.clusters[c].id
-                    )));
-                }
-                lo = hi;
-                step *= 2.;
-                hi = lo + step;
-            }
-        } else if at_lo < 0. {
-            let mut step = half;
-            hi = lo;
-            lo = hi - step;
-            while residual(lo, 0.)?.value < 0. {
-                if step > 1e6 * half.max(1.) {
-                    return Err(fatal(format!(
-                        "rods: {} passage balance stays negative down to {lo} kg/s",
-                        self.clusters[c].id
-                    )));
-                }
-                hi = lo;
-                step *= 2.;
-                lo = hi - step;
-            }
-        }
-        // Declared convergence: 1e-12 of the passage's row scale, above the
-        // rounding floor of a balance taken between ~15 MPa plenum pressures.
-        let plena = fluid.cells[self.lower].pressure.value.abs()
-            + fluid.cells[self.upper].pressure.value.abs();
-        let tolerance = 1e-12 * self.layout.row_scales[3 * c + 2] + 8. * f64::EPSILON * plena;
-        let mut m = 0.5 * (lo + hi);
-        for _ in 0..200 {
-            let r = residual(m, 1.)?;
-            if r.value.abs() <= tolerance {
-                return Ok(m);
-            }
-            // The balance decreases with the current.
-            if r.value > 0. {
-                lo = m;
-            } else {
-                hi = m;
-            }
-            let newton = m - r.value / r.direction;
-            m = if r.direction < 0. && newton > lo && newton < hi {
-                newton
-            } else {
-                0.5 * (lo + hi)
-            };
-        }
-        let (below, above) = (residual(lo, 0.)?.value, residual(hi, 0.)?.value);
-        Err(fatal(format!(
-            "rods: {} passage balance did not close to {tolerance} Pa on [{lo}, {hi}] kg/s ({below} to {above} Pa)",
-            self.clusters[c].id
-        )))
-    }
-
-    /// The swept cells holding cluster `c`'s body tips, with each one's share
-    /// of the tips (the side the tips move into at a plane).
-    fn tip_cells(&self, c: usize, y: f64, branch: Branch) -> Vec<(usize, f64)> {
-        let tip = self.body_bottom + y;
-        self.cells
-            .iter()
-            .filter_map(|cell| {
-                // The half-line above the tips loses length as they rise.
-                let (_, slope) = overlap(cell.bottom, cell.top, (tip, 1.), (cell.top, 0.), branch);
-                let share = -slope * cell.weights[c];
-                (share != 0.).then_some((cell.index, share))
-            })
-            .collect()
-    }
-
-    /// Cluster `c`'s guide transport, per network cell `[mass, enthalpy,
-    /// tracer]` into the cell. The clear current `m` joins, at the tips, the
-    /// water the bodies displace from the cells holding the tips (R2: their
-    /// own water leaves as their free volume shrinks), and the annulus
-    /// carries the sum into UPPER. The tip junction has no storage: what
-    /// flows out carries the mixture of what flows in, so mass, enthalpy and
-    /// tracer are conserved exactly. Each stream's source follows its sign.
+    /// Cluster `c`'s mouth transport into the network, `(cell, [mass,
+    /// enthalpy, tracer])` entering the cell, each mouth's stream from its
+    /// donor by its sign: LOWER loses `m_lo`, UPPER receives `m_up`.
     #[allow(clippy::type_complexity)]
     fn transport(
         &self,
-        c: usize,
-        x: &Coordinates<'_>,
+        f: &Forces,
         fluid: &Fluid<'_>,
-    ) -> Result<Vec<(usize, [Scalar; 3])>, Failure> {
-        let (y, v, m) = (x.value(3 * c), x.value(3 * c + 1), x.value(3 * c + 2));
-        let branch = Branch::of_rate(x.rate(3 * c).value);
-        let liquid = |cell: usize| {
-            fluid.cells[cell].phase[0]
-                .ok_or_else(|| recoverable(format!("rods: guide cell {cell} has no liquid")))
+    ) -> Result<[(usize, [Scalar; 3]); 2], Failure> {
+        let (lower, upper) = (
+            Self::liquid(fluid, self.lower)?,
+            Self::liquid(fluid, self.upper)?,
+        );
+        let bore = (f.bore.enthalpy, f.bore.boron_concentration);
+        let (m_lo, m_up) = (f.lower_current, f.upper_current);
+        let (h_lo, c_lo) = if m_lo.value > 0. {
+            (lower.enthalpy, lower.boron_concentration)
+        } else {
+            bore
         };
-        // Streams into the junction (positive) or out of it, with the cell
-        // they come from or go to and that cell's water.
-        let mut streams: Vec<(usize, Scalar, Phase)> = vec![(self.lower, m, liquid(self.lower)?)];
-        let mut displaced = s(0.);
-        for (cell, share) in self.tip_cells(c, y.value, branch) {
-            let water = liquid(cell)?;
-            let mass = water.density * s(self.body_area * share) * -v;
-            displaced = displaced + mass;
-            streams.push((cell, mass, water));
-        }
-        // The annulus takes the sum into UPPER: an outflow of the junction.
-        streams.push((self.upper, -(m + displaced), liquid(self.upper)?));
-        let (mut inflow, mut enthalpy, mut tracer) = (s(0.), s(0.), s(0.));
-        for (_, mass, water) in &streams {
-            if mass.value > 0. {
-                inflow = inflow + *mass;
-                enthalpy = enthalpy + *mass * water.enthalpy;
-                tracer = tracer + *mass * water.boron_concentration;
-            }
-        }
-        if inflow.value == 0. {
-            return Ok(Vec::new());
-        }
-        let (mix_h, mix_c) = (enthalpy / inflow, tracer / inflow);
-        Ok(streams
-            .into_iter()
-            .map(|(cell, mass, water)| {
-                // Into the junction is out of the cell, at the cell's water.
-                let (h, b) = if mass.value > 0. {
-                    (water.enthalpy, water.boron_concentration)
-                } else {
-                    (mix_h, mix_c)
-                };
-                (cell, [-mass, -mass * h, -mass * b])
-            })
-            .collect())
+        let (h_up, c_up) = if m_up.value > 0. {
+            bore
+        } else {
+            (upper.enthalpy, upper.boron_concentration)
+        };
+        Ok([
+            (self.lower, [-m_lo, -m_lo * h_lo, -m_lo * c_lo]),
+            (self.upper, [m_up, m_up * h_up, m_up * c_up]),
+        ])
     }
 
     /// The moving bodies' mechanical and fluid power ledger of one cluster
-    /// (W): bodies' fluid-force power, heat paid to the swept water, and the
-    /// boundary work the network pays through `-p V'` on the cell pressures.
+    /// (W): bodies' fluid-force power, heat paid to the water (wall work to
+    /// the bores, spider drag to the plena), and the boundary work the
+    /// plena and the bores pay through `-p V'` on their pressures.
     pub fn power(
         &self,
         c: usize,
         x: &Coordinates<'_>,
         fluid: &Fluid<'_>,
+        bore: &Bore,
     ) -> Result<[f64; 3], Failure> {
-        let f = self.forces(c, x, fluid)?;
-        let v = x.value(3 * c + 1).value;
+        let f = self.forces(c, x, fluid, bore)?;
+        let base = Self::base(c);
+        let v = x.value(base + VELOCITY).value;
         let fluid_force = f.net.value + self.mass * self.gravity;
         let heat = -(f.wall.value + f.spider_drag.value) * v;
-        let branch = Branch::of_rate(x.rate(3 * c).value);
-        let rate = x.rate(3 * c).value;
-        let mut boundary = 0.;
-        for (k, cell) in self.cells.iter().enumerate() {
-            let (_, slope) = self.displacement(k, c, x.value(3 * c).value, branch);
+        let rate = x.rate(base + TRAVEL).value;
+        let branch = Branch::of_rate(rate);
+        // -p V' of the bores (V' = A_b y') and of the plena (V' = -dD/dy y').
+        let mut boundary = -bore.pressure.value * self.body_area * rate;
+        for (k, cell) in self.plena.iter().enumerate() {
+            let (_, slope) = self.displacement(k, x.value(base + TRAVEL).value, branch);
             boundary += fluid.cells[cell.index].pressure.value * slope * rate;
         }
         Ok([fluid_force * v, heat, boundary])
     }
 
-    /// Cluster `c`'s rows (physical: travel rate, motion or rest, passage
-    /// balance) and its guide receipts, as [`Rods::rows`] composes them.
+    /// Cluster `c`'s rows (physical: travel rate, motion or rest, the two
+    /// mouth balances), its mouth transport and the spider's drag work into
+    /// the plena, as [`Rods::rows`] composes them; and its forces.
     fn cluster_rows(
         &self,
         c: usize,
         x: &Coordinates<'_>,
         fluid: &Fluid<'_>,
+        bore: &Bore,
         receipts: &mut Receipts<'_>,
-    ) -> Result<[Scalar; 3], Failure> {
-        let f = self.forces(c, x, fluid)?;
-        let (y, v) = (x.value(3 * c), x.value(3 * c + 1));
-        let travel = x.rate(3 * c) - v;
+    ) -> Result<([Scalar; 4], Forces), Failure> {
+        let f = self.forces(c, x, fluid, bore)?;
+        let base = Self::base(c);
+        let (y, v) = (x.value(base + TRAVEL), x.value(base + VELOCITY));
+        let travel = x.rate(base + TRAVEL) - v;
         let motion = match self.modes[c] {
             Mode::Free => {
                 if self.spider_drag == SpiderDrag::Pending {
@@ -1085,39 +1294,94 @@ impl RodBlock {
                         "rods: a free body needs the S2 spider-drag selection, which is pending (envelope disk or declared omission)",
                     ));
                 }
-                x.rate(3 * c + 1) - f.net / s(self.mass)
+                x.rate(base + VELOCITY) - f.net / s(self.mass)
             }
             Mode::Held | Mode::Seated => v,
         };
-        for (cell, [mass, enthalpy, tracer]) in self.transport(c, x, fluid)? {
+        for (cell, [mass, enthalpy, tracer]) in self.transport(&f, fluid)? {
             receipts.add(cell, 0, mass, enthalpy, tracer)?;
         }
-        // Wall work over the annulus span, by swept length and share.
-        let branch = Branch::of_rate(x.rate(3 * c).value);
-        let wall_work = -f.wall * v;
-        let tip = self.body_bottom + y.value;
-        let length = s(self.guide_top) - (s(self.body_bottom) + y);
-        for cell in &self.cells {
-            let (value, slope) = overlap(
-                cell.bottom,
-                cell.top,
-                (tip, 1.),
-                (self.guide_top, 0.),
-                branch,
-            );
-            if value == 0. && slope == 0. {
-                continue;
-            }
-            let share = s(cell.weights[c]) * Scalar::new(value, slope * y.direction) / length;
-            receipts.heat(cell.index, share * wall_work)?;
-        }
+        let branch = Branch::of_rate(x.rate(base + TRAVEL).value);
         let drag_work = -f.spider_drag * v;
         for (cell, _, fraction) in self.spider_cells(fluid, y, branch) {
             if fraction.value != 0. || fraction.direction != 0. {
                 receipts.heat(cell, fraction * drag_work)?;
             }
         }
-        Ok([travel, motion, f.passage_residual])
+        Ok(([travel, motion, f.lower_residual, f.upper_residual], f))
+    }
+
+    /// Group `g`'s rows (physical): its water's mass, energy and boron
+    /// balances over its members' mouths, with the bodies' wall work and the
+    /// boundary work `-p V'`, and its EOS row `M/rho - V`.
+    fn group_rows(
+        &self,
+        g: usize,
+        x: &Coordinates<'_>,
+        bore: &Bore,
+        members: &[Member],
+    ) -> [Scalar; 4] {
+        let base = self.group_base(g);
+        let (mut mass, mut energy, mut boron) = (s(0.), s(0.), s(0.));
+        for (c, f, [(_, lower), (_, upper)]) in members {
+            // Into the bores: what leaves LOWER and what UPPER does not get.
+            mass = mass - lower[0] - upper[0];
+            energy = energy - lower[1] - upper[1];
+            boron = boron - lower[2] - upper[2];
+            let v = x.value(Self::base(*c) + VELOCITY);
+            energy = energy - f.wall * v;
+        }
+        energy = energy - bore.pressure * self.bore_volume_rate(g, x);
+        [
+            x.rate(base + BORE_MASS) - mass,
+            x.rate(base + BORE_ENERGY) - energy,
+            x.rate(base + BORE_BORON) - boron,
+            bore.mass / bore.density - bore.volume,
+        ]
+    }
+
+    /// The rows of the listed local units (cluster `u < n`, bore group
+    /// `u - n`), `(own row, value)`, with only the clusters' receipts.
+    fn unit_rows<P: Properties>(
+        &self,
+        properties: &P,
+        x: &Coordinates<'_>,
+        fluid: &Fluid<'_>,
+        units: &[usize],
+        receipts: &mut Receipts<'_>,
+        out: &mut Vec<(usize, Scalar)>,
+    ) -> Result<(), Failure> {
+        let n = self.clusters.len();
+        let mut bores: Vec<Option<Bore>> = vec![None; self.groups.len()];
+        let mut bore = |g: usize| -> Result<Bore, Failure> {
+            if let Some(b) = bores[g] {
+                return Ok(b);
+            }
+            let b = self.bore(properties, g, x)?;
+            bores[g] = Some(b);
+            Ok(b)
+        };
+        for &u in units {
+            if u < n {
+                let b = bore(self.clusters[u].group)?;
+                let (r, _) = self.cluster_rows(u, x, fluid, &b, receipts)?;
+                out.extend((0..CLUSTER_COORDINATES).map(|k| (Self::base(u) + k, r[k])));
+            } else if u - n < self.groups.len() {
+                let g = u - n;
+                let b = bore(g)?;
+                let mut members = Vec::with_capacity(self.groups[g].members.len());
+                for &c in &self.groups[g].members {
+                    let f = self.forces(c, x, fluid, &b)?;
+                    let t = self.transport(&f, fluid)?;
+                    members.push((c, f, t));
+                }
+                let r = self.group_rows(g, x, &b, &members);
+                out.extend((0..GROUP_COORDINATES).map(|k| (self.group_base(g) + k, r[k])));
+            } else {
+                return Err(fatal(format!("rods: unit {u} outside the block")));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1150,7 +1414,7 @@ fn moved(fluid: &Fluid<'_>, cell: usize) -> bool {
         })
 }
 
-impl<P> Rods<P> for RodBlock {
+impl<P: Properties> Rods<P> for RodBlock {
     fn layout(&self) -> &Layout {
         &self.layout
     }
@@ -1163,14 +1427,15 @@ impl<P> Rods<P> for RodBlock {
         }
         let (mut energy, mut rate) = (0., 0.);
         for c in 0..self.clusters.len() {
-            let (y, v) = (x.value(3 * c).value, x.value(3 * c + 1).value);
+            let base = Self::base(c);
+            let (y, v) = (x.value(base + TRAVEL).value, x.value(base + VELOCITY).value);
             energy += 0.5 * self.mass * v * v + self.mass * self.gravity * y;
             // The rows' own rates: y' = v always; v' = F_net / M for a free
             // body, whose row is v' - F_net/M. A held or seated body's row
             // is the constraint v = 0 and pays no kinetic rate.
-            let travel = x.rate(3 * c).value - rows[3 * c].value;
+            let travel = x.rate(base + TRAVEL).value - rows[base + TRAVEL].value;
             let acceleration = match self.modes[c] {
-                Mode::Free => x.rate(3 * c + 1).value - rows[3 * c + 1].value,
+                Mode::Free => x.rate(base + VELOCITY).value - rows[base + VELOCITY].value,
                 Mode::Held | Mode::Seated => 0.,
             };
             rate += self.mass * v * acceleration + self.mass * self.gravity * travel;
@@ -1187,10 +1452,15 @@ impl<P> Rods<P> for RodBlock {
         self.prepared.clone()
     }
     fn differential(&self) -> Vec<f64> {
-        self.modes
+        let mut ids: Vec<f64> = self
+            .modes
             .iter()
-            .flat_map(|mode| [1., if *mode == Mode::Free { 1. } else { 0. }, 0.])
-            .collect()
+            .flat_map(|mode| [1., if *mode == Mode::Free { 1. } else { 0. }, 0., 0.])
+            .collect();
+        for _ in &self.groups {
+            ids.extend([1., 1., 1., 0.]);
+        }
+        ids
     }
     // S5 snapshot hook (PLATFORM, claude/ld01-s5-host; KERN reconciles):
     // every cluster's mode and declared failed release, and the holding
@@ -1233,6 +1503,11 @@ impl<P> Rods<P> for RodBlock {
                     .ok_or_else(|| fatal("rods snapshot: failed-release flag"))
             })
             .collect::<Result<Vec<_>, _>>()?;
+        for (c, stuck) in failed.iter().enumerate() {
+            if *stuck {
+                self.require_single(c)?;
+            }
+        }
         self.holding_open_at = restored_time(&o["holding_open_at"])?;
         self.modes = modes;
         self.failed_release = failed;
@@ -1254,11 +1529,14 @@ impl<P> Rods<P> for RodBlock {
         }
         Rods::<P>::transact(self, p, t, &directions, y).map(Some)
     }
-    fn prepare(&mut self, _: &P, fluid: &Fluid<'_>) -> Result<Transaction, Failure> {
-        let currents = self.prepare_currents(fluid)?;
+    /// Startup: nothing is solved here (DR13-ROD). The bores' prepared water
+    /// and zero mouth currents are the composition's; the joined exact
+    /// consistent start solves the currents and the bores' pressures.
+    fn prepare(&mut self, _: &P, _: &Fluid<'_>) -> Result<Transaction, Failure> {
         Ok(Transaction {
             deposits: Vec::new(),
-            receipt: json!({"prepared_guide_currents_kg_s": currents}),
+            receipt: json!({"rods": "bore water prepared as LOWER's at the bores' reference; mouth currents zero; the joined consistent start solves the algebraic coordinates (DR13-ROD)",
+                "bore_groups": self.bore_groups()}),
         })
     }
     fn clusters(&self) -> usize {
@@ -1269,7 +1547,7 @@ impl<P> Rods<P> for RodBlock {
             return Err(fatal("rods: travel layout"));
         }
         for (c, t) in out.iter_mut().enumerate() {
-            *t = x.value(3 * c);
+            *t = x.value(Self::base(c) + TRAVEL);
         }
         Ok(())
     }
@@ -1292,15 +1570,15 @@ impl<P> Rods<P> for RodBlock {
             };
         }
         for c in 0..self.clusters.len() {
-            self.admit_travel(c, x.value(3 * c).value)?;
+            self.admit_travel(c, x.value(Self::base(c) + TRAVEL).value)?;
         }
-        for (k, cell) in self.cells.iter().enumerate() {
+        for (k, cell) in self.plena.iter().enumerate() {
             let mut volume = s(compiled_m3[cell.index]);
             let mut rate = s(0.);
             for c in 0..self.clusters.len() {
-                let y = x.value(3 * c);
-                let r = x.rate(3 * c);
-                let (d, slope) = self.displacement(k, c, y.value, Branch::of_rate(r.value));
+                let y = x.value(Self::base(c) + TRAVEL);
+                let r = x.rate(Self::base(c) + TRAVEL);
+                let (d, slope) = self.displacement(k, y.value, Branch::of_rate(r.value));
                 // V = V_compiled + D(y_ref) - D(y); V' = -dD/dy y'.
                 volume = volume
                     + Scalar::new(self.reference_displacement[k][c] - d, -slope * y.direction);
@@ -1315,7 +1593,7 @@ impl<P> Rods<P> for RodBlock {
     }
     fn rows(
         &mut self,
-        _: &P,
+        properties: &P,
         _: f64,
         x: Coordinates<'_>,
         fluid: &Fluid<'_>,
@@ -1325,9 +1603,20 @@ impl<P> Rods<P> for RodBlock {
         if rows.len() != self.layout.len() || x.len() != self.layout.len() {
             return Err(fatal("rods: row layout"));
         }
-        for c in 0..self.clusters.len() {
-            let r = self.cluster_rows(c, &x, fluid, receipts)?;
-            rows[3 * c..3 * c + 3].copy_from_slice(&r);
+        let n = self.clusters.len();
+        let bores = self.bores(properties, &x)?;
+        let mut members: Vec<Vec<Member>> = vec![Vec::new(); self.groups.len()];
+        for c in 0..n {
+            let g = self.clusters[c].group;
+            let (r, f) = self.cluster_rows(c, &x, fluid, &bores[g], receipts)?;
+            rows[Self::base(c)..Self::base(c) + CLUSTER_COORDINATES].copy_from_slice(&r);
+            let t = self.transport(&f, fluid)?;
+            members[g].push((c, f, t));
+        }
+        for (g, bore) in bores.iter().enumerate() {
+            let r = self.group_rows(g, &x, bore, &members[g]);
+            let base = self.group_base(g);
+            rows[base..base + GROUP_COORDINATES].copy_from_slice(&r);
         }
         // A value evaluation replaces the record: the captured ledger is
         // always the last value evaluation's, or none.
@@ -1335,8 +1624,9 @@ impl<P> Rods<P> for RodBlock {
             self.captured = None;
             if self.capture {
                 let mut ledger = [0.; 3];
-                for c in 0..self.clusters.len() {
-                    for (sum, part) in ledger.iter_mut().zip(self.power(c, &x, fluid)?) {
+                for c in 0..n {
+                    let b = &bores[self.clusters[c].group];
+                    for (sum, part) in ledger.iter_mut().zip(self.power(c, &x, fluid, b)?) {
                         *sum += part;
                     }
                 }
@@ -1347,7 +1637,7 @@ impl<P> Rods<P> for RodBlock {
     }
     fn rows_local(
         &mut self,
-        _: &P,
+        properties: &P,
         _: f64,
         x: Coordinates<'_>,
         fluid: &Fluid<'_>,
@@ -1359,15 +1649,11 @@ impl<P> Rods<P> for RodBlock {
         if x.len() != self.layout.len() {
             return Err(fatal("rods: row layout"));
         }
-        for &c in clusters {
-            if c >= self.clusters.len() {
-                return Err(fatal(format!("rods: cluster {c} outside the block")));
-            }
-            let r = self.cluster_rows(c, &x, fluid, receipts)?;
-            out.extend((0..3).map(|k| (3 * c + k, r[k])));
-        }
-        Ok(())
+        self.unit_rows(properties, &x, fluid, clusters, receipts, out)
     }
+    /// The local units (cluster `u < n`, bore group `u - n`) whose rows or
+    /// receipts read a listed moved cell: every unit reads LOWER, UPPER or
+    /// HOUSING.MAIN, and no unit reads another cell.
     fn readers(
         &self,
         x: Coordinates<'_>,
@@ -1380,86 +1666,85 @@ impl<P> Rods<P> for RodBlock {
         if x.len() != self.layout.len() {
             return Err(fatal("rods: reader layout"));
         }
-        // A cluster's rows read the three plena (its forces, its passage and
-        // its spider); its receipts read them and the cells holding its tips
-        // (the R2 junction). No face chart is read.
-        let moved_cells: Vec<usize> = cells
-            .iter()
-            .copied()
-            .filter(|c| *c < self.regular && moved(fluid, *c))
-            .collect();
-        if moved_cells.is_empty() {
-            return Ok(());
-        }
-        let n = self.clusters.len();
-        if moved_cells
-            .iter()
-            .any(|c| [self.lower, self.upper, self.main].contains(c))
-        {
-            out.extend(0..n);
-            return Ok(());
-        }
-        for c in 0..n {
-            let branch = Branch::of_rate(x.rate(3 * c).value);
-            if self
-                .tip_cells(c, x.value(3 * c).value, branch)
-                .iter()
-                .any(|(cell, _)| moved_cells.contains(cell))
-            {
-                out.push(c);
-            }
+        if cells.iter().any(|c| {
+            *c < self.regular && [self.lower, self.upper, self.main].contains(c) && moved(fluid, *c)
+        }) {
+            out.extend(0..self.clusters.len() + self.groups.len());
         }
         Ok(())
     }
+    /// The local units reading own coordinate `i`: a cluster's are read by
+    /// itself and its bore group, a group's by itself and its members.
     fn coordinate_readers(&self, i: usize, out: &mut Vec<usize>) -> Result<(), Failure> {
         out.clear();
         if i >= self.layout.len() {
             return Err(fatal(format!("rods: coordinate {i} outside the block")));
         }
-        // Each cluster's rows, receipts, travel and volumes read its own
-        // three coordinates only.
-        out.push(i / 3);
+        let n = self.clusters.len();
+        let cluster_end = CLUSTER_COORDINATES * n;
+        if i < cluster_end {
+            let c = i / CLUSTER_COORDINATES;
+            out.extend([c, n + self.clusters[c].group]);
+        } else {
+            let g = (i - cluster_end) / GROUP_COORDINATES;
+            out.push(n + g);
+            out.extend(self.groups[g].members.iter().copied());
+        }
         Ok(())
     }
     fn structure(&self) -> Structure {
         let n = self.clusters.len();
         let plena = vec![self.lower, self.upper, self.main];
+        let rows = self.layout.len();
         let mut st = Structure {
-            own: Vec::with_capacity(3 * n),
-            cells: Vec::with_capacity(3 * n),
-            faces: vec![Vec::new(); 3 * n],
-            heat: vec![Vec::new(); 3 * n],
+            own: Vec::with_capacity(rows),
+            cells: Vec::with_capacity(rows),
+            faces: vec![Vec::new(); rows],
+            heat: vec![Vec::new(); rows],
             receipts: Vec::new(),
             volumes: Vec::new(),
-            outputs: (0..n).map(|c| vec![3 * c]).collect(),
+            outputs: (0..n).map(|c| vec![Self::base(c) + TRAVEL]).collect(),
+        };
+        let group_state = |g: usize| -> Vec<usize> {
+            (0..GROUP_COORDINATES)
+                .map(|k| self.group_base(g) + k)
+                .collect()
         };
         for c in 0..n {
-            let own = vec![3 * c, 3 * c + 1, 3 * c + 2];
-            st.own.push(vec![3 * c, 3 * c + 1]);
+            let base = Self::base(c);
+            let own: Vec<usize> = (0..CLUSTER_COORDINATES)
+                .map(|k| base + k)
+                .chain(group_state(self.clusters[c].group))
+                .collect();
+            st.own.push(vec![base + TRAVEL, base + VELOCITY]);
             st.cells.push(Vec::new());
-            st.own.push(own.clone());
-            st.cells.push(plena.clone());
-            st.own.push(own);
-            st.cells.push(plena.clone());
+            for _ in 1..CLUSTER_COORDINATES {
+                st.own.push(own.clone());
+                st.cells.push(plena.clone());
+            }
         }
-        // Receipts read the plena and, through the tip junction (R2), the
-        // water of every cell a tip can be in.
-        let read: Vec<usize> = self.cells.iter().map(|c| c.index).collect();
-        for cell in &self.cells {
-            let writers: Vec<usize> = (0..n)
-                .filter(|c| cell.weights[*c] != 0.)
-                .flat_map(|c| [3 * c, 3 * c + 1, 3 * c + 2])
+        for (g, group) in self.groups.iter().enumerate() {
+            let own: Vec<usize> = group
+                .members
+                .iter()
+                .flat_map(|c| (0..CLUSTER_COORDINATES).map(move |k| Self::base(*c) + k))
+                .chain(group_state(g))
                 .collect();
-            if !writers.is_empty() {
-                st.receipts.push((cell.index, writers, read.clone()));
+            for _ in 0..GROUP_COORDINATES {
+                st.own.push(own.clone());
+                st.cells.push(plena.clone());
             }
-            let movers: Vec<usize> = (0..n)
-                .filter(|c| cell.weights[*c] != 0.)
-                .map(|c| 3 * c)
-                .collect();
-            if !movers.is_empty() {
-                st.volumes.push((cell.index, movers));
-            }
+        }
+        // Receipts: the mouths' transport into LOWER and UPPER and the
+        // spiders' drag work into UPPER and HOUSING.MAIN, each reading its
+        // cluster and its bore group, and the plena.
+        let writers: Vec<usize> = (0..rows).collect();
+        for cell in [self.lower, self.upper, self.main] {
+            st.receipts.push((cell, writers.clone(), plena.clone()));
+        }
+        for cell in &self.plena {
+            st.volumes
+                .push((cell.index, (0..n).map(|c| Self::base(c) + TRAVEL).collect()));
         }
         st
     }
@@ -1471,24 +1756,23 @@ impl<P> Rods<P> for RodBlock {
     fn roots_read_fluid(&self) -> bool {
         self.modes.contains(&Mode::Seated)
     }
-    fn r3_band(&self, x: Coordinates<'_>, fluid: &Fluid<'_>) -> Result<usize, Failure> {
-        let rho_lower = fluid.cells[self.lower].phase[0]
-            .ok_or_else(|| recoverable("rods: LOWER holds no liquid"))?
-            .density
-            .value;
+    /// The clusters whose upper (annulus) mouth's volume current lies
+    /// strictly inside R3's band, on the bores' density `M/V` (their EOS
+    /// row's value at a solved state).
+    fn r3_band(&self, x: Coordinates<'_>, _: &Fluid<'_>) -> Result<usize, Failure> {
         Ok((0..self.clusters.len())
-            .filter(|c| {
-                let (v, m) = (x.value(3 * c + 1).value, x.value(3 * c + 2).value);
-                // `forces`' reversal measure: the annulus volume current over
-                // the band's volume current.
-                let reversal = (m / rho_lower - self.body_area * v) / self.blend_volume_current;
-                reversal.abs() < 1.
+            .filter(|&c| {
+                let g = self.clusters[c].group;
+                let density = x.value(self.group_base(g) + BORE_MASS).value
+                    / self.bore_volume_at(g, &x).value;
+                let m_up = x.value(Self::base(c) + UPPER_CURRENT).value;
+                (m_up / density / self.blend_volume_current).abs() < 1.
             })
             .count())
     }
     fn roots(
         &mut self,
-        _: &P,
+        properties: &P,
         t: f64,
         x: Coordinates<'_>,
         fluid: &Fluid<'_>,
@@ -1505,9 +1789,12 @@ impl<P> Rods<P> for RodBlock {
                     _ => 1.,
                 },
                 // Seat at zero travel.
-                Mode::Free => x.value(3 * c).value,
+                Mode::Free => x.value(Self::base(c) + TRAVEL).value,
                 // Lift-off when the seat would have to pull.
-                Mode::Seated => -self.forces(c, &x, fluid)?.net.value,
+                Mode::Seated => {
+                    let bore = self.bore(properties, self.clusters[c].group, &x)?;
+                    -self.forces(c, &x, fluid, &bore)?.net.value
+                }
             };
         }
         Ok(())
@@ -1524,11 +1811,12 @@ impl<P> Rods<P> for RodBlock {
         }
         let mut deposits = Vec::new();
         let mut events = Vec::new();
-        for c in 0..self.clusters.len() {
-            if directions[c] == 0 {
+        for (c, &direction) in directions.iter().enumerate() {
+            if direction == 0 {
                 continue;
             }
             let id = &self.clusters[c].id;
+            let base = Self::base(c);
             match self.modes[c] {
                 Mode::Held => {
                     let open = self.holding_open_at.ok_or_else(|| {
@@ -1542,26 +1830,26 @@ impl<P> Rods<P> for RodBlock {
                         )));
                     }
                     self.modes[c] = Mode::Free;
-                    events.push(json!({"cluster": id, "event": "grip release", "t_s": t, "travel_m": y[3 * c]}));
+                    events.push(json!({"cluster": id, "event": "grip release", "t_s": t, "travel_m": y[base + TRAVEL]}));
                 }
                 Mode::Free => {
-                    if directions[c] > 0 {
+                    if direction > 0 {
                         return Err(fatal(format!("rods: {id} crossed its seat upward")));
                     }
                     // Fully inelastic seat: the arrival energy enters the
                     // contacted fitting once; the body rests on the seat.
-                    let speed = y[3 * c + 1];
+                    let speed = y[base + VELOCITY];
                     let energy = 0.5 * self.mass * speed * speed;
-                    let residue = y[3 * c];
-                    y[3 * c] = 0.;
-                    y[3 * c + 1] = 0.;
+                    let residue = y[base + TRAVEL];
+                    y[base + TRAVEL] = 0.;
+                    y[base + VELOCITY] = 0.;
                     self.modes[c] = Mode::Seated;
                     let store = format!("{}/top-fitting", self.clusters[c].fuel_assembly);
                     deposits.push((store.clone(), energy));
                     events.push(json!({"cluster": id, "event": "seat", "t_s": t, "arrival_speed_m_s": speed, "arrival_energy_j": energy, "fitting": store, "located_travel_residue_m": residue, "potential_energy_residue_j": self.mass * self.gravity * residue}));
                 }
                 Mode::Seated => {
-                    if directions[c] > 0 {
+                    if direction > 0 {
                         return Err(fatal(format!("rods: {id} seat reaction rose through zero")));
                     }
                     self.modes[c] = Mode::Free;
