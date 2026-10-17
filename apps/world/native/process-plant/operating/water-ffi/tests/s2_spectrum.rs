@@ -332,9 +332,15 @@ fn started() -> Started {
     let path = std::env::var("LD01_OPERATING_HOT_SPINE_PACKET")
         .expect("LD01_OPERATING_HOT_SPINE_PACKET names the joined packet");
     let bytes = std::fs::read(&path).expect("packet");
-    let network_packet: NetworkPacket = serde_json::from_slice(&bytes).expect("network packet");
+    let mut network_packet: NetworkPacket =
+        serde_json::from_slice(&bytes).expect("network packet");
     let joined_packet: packet::Packet = serde_json::from_slice(&bytes).expect("joined packet");
     let raw: Value = serde_json::from_slice(&bytes).expect("packet json");
+    // HOOK (OU-C P2 -> OU-B builder): the rod bores' water leaves the sector
+    // inventory before the network is compiled.
+    let rods: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
+    let carved =
+        leitbild_operating_plant::rods::carve(&rods, &mut network_packet).expect("rods carve");
     let gates = s1_gates();
     let (flows, momenta, s1) = s1_settled_flows(&network_packet, &gates);
     let point = OperatingPoint::from(&network_packet.preparation.operating_point);
@@ -354,7 +360,6 @@ fn started() -> Started {
     let network: Network<If97> = network;
     let section: SecondarySection =
         serde_json::from_value(raw["secondary"].clone()).expect("secondary section");
-    let rods: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
     let mut joined = Joined::new(
         network,
         &network_packet,
@@ -365,7 +370,7 @@ fn started() -> Started {
                 .expect("SG secondary owner"),
         )),
         RodPort::Owner(Box::new(
-            RodBlock::from_packet(&rods, &network_packet).expect("rod owner"),
+            RodBlock::from_packet(&rods, &network_packet, &carved, &If97, &[]).expect("rod owner"),
         )),
     )
     .expect("joined operator");

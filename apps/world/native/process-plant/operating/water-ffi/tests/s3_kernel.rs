@@ -1067,9 +1067,15 @@ fn every_owners_discrete_state_survives_a_snapshot() {
         );
     }
     // Non-default discrete state through the owners' own interfaces.
-    joined
-        .command(0.1, &mut y, Command::StuckCluster { cluster: 0 })
-        .expect("stuck cluster");
+    // HOOK (OU-C P2): a stuck cluster must be kept singly at composition
+    // (it shares its bores' water otherwise), so this composition refuses it;
+    // the holding loss below still gives the rods a non-default state.
+    assert!(
+        joined
+            .command(0.1, &mut y, Command::StuckCluster { cluster: 0 })
+            .is_err(),
+        "a grouped cluster cannot be stuck"
+    );
     joined
         .command(0.1, &mut y, Command::TurbineTripAcquired)
         .expect("acquired turbine trip");

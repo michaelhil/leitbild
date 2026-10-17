@@ -202,20 +202,6 @@ const ALLOWED: &[(&str, &str, &str, usize, &str)] = &[
         "Z2 probe: SG duty-balance pressure by bisection to 1e-4 Pa (a reported sweep)",
     ),
     (
-        "water-ffi/tests/s2_rods_z4.rs",
-        "terminal",
-        "iteration",
-        1,
-        "Z4 probe: rod terminal velocity by bisection (a reported force balance)",
-    ),
-    (
-        "water-ffi/tests/s2_rods_z4.rs",
-        "z4_zero_time_rod_force_balance",
-        "iteration",
-        1,
-        "Z4 probe: analytic oscillator crossing time by bisection",
-    ),
-    (
         "water-ffi/tests/heater_rods.rs",
         "boundary",
         "iteration",

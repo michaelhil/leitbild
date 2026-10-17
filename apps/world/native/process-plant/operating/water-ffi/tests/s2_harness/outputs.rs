@@ -40,7 +40,8 @@ pub struct Reader {
     sg_pressure: Vec<(usize, f64)>,
     sg_liquid: Vec<(usize, f64)>,
     /// First rod coordinate, clusters, and the travel scales.
-    rods: (usize, usize, Vec<f64>),
+    /// Each cluster's travel coordinate (global) and scale.
+    rods: (Vec<usize>, usize, Vec<f64>),
     pub reference_travel_m: f64,
     supports: Vec<(usize, usize)>,
     regions: usize,
@@ -100,10 +101,22 @@ impl Reader {
             ));
         }
         let o = joined.offsets();
-        // The rods' block ends where the PZR block (G6) begins.
-        let clusters = (o.pzr - o.rods) / 3;
+        // HOOK (OU-C P2): each cluster's travel coordinate is the rod owner's
+        // travel output (the layout has two mouth currents per cluster and
+        // the bore groups after the clusters).
+        let travel: Vec<usize> = joined
+            .rods()
+            .map(|b| {
+                b.structure()
+                    .outputs
+                    .iter()
+                    .map(|t| o.rods + t[0])
+                    .collect::<Vec<usize>>()
+            })
+            .unwrap_or_default();
+        let clusters = travel.len();
         let scales = joined.scales();
-        let travel_scales = (0..clusters).map(|c| scales[o.rods + 3 * c]).collect();
+        let travel_scales = travel.iter().map(|i| scales[*i]).collect();
         let nuclear = joined.nuclear();
         Ok(Self {
             cells,
@@ -112,7 +125,7 @@ impl Reader {
             upper: region("UPPER")?,
             sg_pressure,
             sg_liquid,
-            rods: (o.rods, clusters, travel_scales),
+            rods: (travel, clusters, travel_scales),
             reference_travel_m,
             supports: nuclear
                 .supports()
@@ -223,12 +236,10 @@ impl Reader {
             ),
         ];
         if rods {
-            let (offset, clusters, scales) = &self.rods;
+            let (travel, clusters, scales) = &self.rods;
             out.push((
                 key::ROD_TRAVEL_M,
-                (0..*clusters)
-                    .map(|c| y[offset + 3 * c] * scales[c])
-                    .collect(),
+                (0..*clusters).map(|c| y[travel[c]] * scales[c]).collect(),
             ));
         }
         Ok(out)
