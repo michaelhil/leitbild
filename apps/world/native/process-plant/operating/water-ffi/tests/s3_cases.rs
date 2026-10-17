@@ -147,7 +147,7 @@ fn the_c5_block_pins_before_any_run_and_reads_its_common_rules_under_common_rule
     .unwrap();
     assert_eq!((at, command.is_none()), (10.37, true));
     assert_eq!(case_window(Case::C5, &spec), Some(30.));
-    assert!(window_cap(Case::C5, &spec).is_none());
+    assert!(window_cap(Case::C5, &spec, None).is_none());
     assert_eq!(spec["lines"]["O3"]["window_s"], json!([0, 0.3]));
 }
 
@@ -751,13 +751,73 @@ fn cap_in_force(w: &WindowCap, after_zero: f64, ramp_end: Option<f64>) -> Option
 /// S1's `eventWindow.maxStep_s` (the gate run checks it against the block).
 const WINDOW_MAX_STEP_S: f64 = 0.02;
 
-/// RC-1's ramp cap (owner R7-S, 17 Oct): 5 ms over a declared fast
-/// electrical ramp. PENDING WIKI-R7: the strict block WIKI-R7 adds to
-/// decision 0015's page replaces this constant (its key to be read here
-/// when it lands; until then this named constant is the declared value).
-const RAMP_MAX_STEP_S: f64 = 0.005;
+/// RC-1's strict block (owner R7-S, 17 Oct; decision 0015 E2 amended):
+/// `ld01-event-window-ramp-cap` on decision 0015's page, its own block
+/// because S1's harness reads `ld01-s1-gates` strictly.
+const RAMP_CAP_FENCE: &str = "ld01-event-window-ramp-cap";
+const DECISION_0015: &str = "world/packs/process-plant/reference-designs/engineering/development/decisions/0015-credited-band-and-event-windows.md";
 
-fn window_cap(case: Case, spec: &Value) -> Option<WindowCap> {
+/// The ramp-cap block of the wiki named by `LD01_WIKI_ROOT`: exactly one,
+/// strict JSON; absent refuses (RC-1 applies from S3, no default).
+fn ramp_cap_block() -> Result<Value, String> {
+    let wiki = std::env::var("LD01_WIKI_ROOT").map_err(|_| "LD01_WIKI_ROOT".to_string())?;
+    let page = format!("{wiki}/{DECISION_0015}");
+    let text = std::fs::read_to_string(&page).map_err(|e| format!("{page}: {e}"))?;
+    ramp_cap_from(&text)
+}
+fn ramp_cap_from(text: &str) -> Result<Value, String> {
+    let open = format!("```{RAMP_CAP_FENCE}\n");
+    let mut found = text.match_indices(&open).map(|(i, _)| i);
+    let start = found.next().ok_or(format!("no {RAMP_CAP_FENCE} block"))? + open.len();
+    if found.next().is_some() {
+        return Err(format!("more than one {RAMP_CAP_FENCE} block"));
+    }
+    let end = start + text[start..].find("\n```").ok_or("unterminated ramp-cap block")?;
+    let block: Value = serde_json::from_str(&text[start..end]).map_err(|e| e.to_string())?;
+    let keys = ["amends", "appliesFrom", "rampMaxStep_s", "elsewhereInWindow", "ramps", "rule"];
+    match block.as_object() {
+        Some(o) if o.len() == keys.len() && keys.iter().all(|k| o.contains_key(*k)) => Ok(block),
+        _ => Err(format!("{RAMP_CAP_FENCE}: exactly the keys {keys:?}")),
+    }
+}
+
+/// The block's ramp for `case`, bound to the harness's records: C2's ramp
+/// starts at the case command LD01.TG TRIP (the window's start) and ends at
+/// the generator breaker's opening, the slice's "GCB Open" record. A listed
+/// ramp the harness cannot bind refuses.
+fn declared_ramp(case: Case, block: &Value) -> Result<Option<Ramp>, String> {
+    let h = block["rampMaxStep_s"]
+        .as_f64()
+        .filter(|h| h.is_finite() && *h > 0.)
+        .ok_or(format!("{RAMP_CAP_FENCE}.rampMaxStep_s"))?;
+    let listed: Vec<&Value> = block["ramps"]
+        .as_array()
+        .ok_or(format!("{RAMP_CAP_FENCE}.ramps"))?
+        .iter()
+        .filter(|r| r["case"] == case.key())
+        .collect();
+    match (case, listed.as_slice()) {
+        (_, []) => Ok(None),
+        (Case::C2, [r])
+            if r["from"].as_str().is_some_and(|f| f.contains("LD01.TG TRIP"))
+                && r["to"]
+                    .as_str()
+                    .is_some_and(|t| t.contains("generator breaker opening")) =>
+        {
+            Ok(Some(Ramp {
+                max_step_s: h,
+                ends: |r| r["appended"] == "GCB Open",
+                declared: "ld01-event-window-ramp-cap (RC-1, owner R7-S): C2's turbine stop-valve ramp, from the trip command to the generator breaker's opening record",
+            }))
+        }
+        _ => Err(format!(
+            "{RAMP_CAP_FENCE}: {} lists a ramp the harness cannot bind",
+            case.key()
+        )),
+    }
+}
+
+fn window_cap(case: Case, spec: &Value, ramp: Option<Ramp>) -> Option<WindowCap> {
     let window_s = spec["window_s"].as_f64()?;
     let starts: fn(&Value) -> bool = match case {
         // C5's cap is set by the case after the offsite loss's restart.
@@ -765,13 +825,6 @@ fn window_cap(case: Case, spec: &Value) -> Option<WindowCap> {
         Case::C2 => |r| r["command"] == "TurbineTripAcquired",
         Case::C3 => |r| r["command"] == "SupplyLoss",
     };
-    // RC-1: C2's turbine stop-valve ramp, from the trip command to the
-    // generator breaker's opening (the slice's "GCB Open" record).
-    let ramp = (case == Case::C2).then_some(Ramp {
-        max_step_s: RAMP_MAX_STEP_S,
-        ends: |r| r["appended"] == "GCB Open",
-        declared: "RC-1 (owner R7-S): C2's turbine stop-valve ramp, from the trip command to the generator breaker's opening record",
-    });
     Some(WindowCap {
         max_step_s: WINDOW_MAX_STEP_S,
         window_s,
@@ -844,10 +897,35 @@ fn cap_removed_at(b: f64, zero: f64, window_s: f64) -> bool {
     b >= zero + window_s - 1e-9
 }
 
+/// The published block (wiki claude/ld01-r7-wiki e2e26fd, decision 0015's page).
+const RAMP_CAP_E2E26FD: &str = "```ld01-event-window-ramp-cap\n{\"amends\":\"decision 0015 E2 (owner request 7 S, RC-1, 17 October 2026)\",\"appliesFrom\":\"S3\",\"rampMaxStep_s\":0.005,\"elsewhereInWindow\":\"ld01-s1-gates eventWindow.maxStep_s\",\"ramps\":[{\"case\":\"C2\",\"ramp\":\"the turbine stop-valve (STOP) ramp with the generator connected\",\"from\":\"the case command LD01.TG TRIP, which starts C2's event window\",\"to\":\"the generator breaker opening at the STOP ramp's end (C2.O2, 0.30 s after the trip)\"}],\"rule\":\"the 5 ms cap holds only over a ramp listed here; a ramp is listed before the first gated run of its case (RP1)\"}\n```\n";
+fn ramp_fixture() -> Value {
+    ramp_cap_from(RAMP_CAP_E2E26FD).unwrap()
+}
+
+#[test]
+fn the_ramp_cap_block_is_read_strictly_and_binds_only_c2s_ramp() {
+    let b = ramp_fixture();
+    assert_eq!(b["rampMaxStep_s"].as_f64().unwrap().to_bits(), 0.005f64.to_bits());
+    assert!(declared_ramp(Case::C2, &b).unwrap().is_some());
+    assert!(declared_ramp(Case::C3, &b).unwrap().is_none());
+    assert!(declared_ramp(Case::C1, &b).unwrap().is_none());
+    // Two blocks, an extra key, or a ramp the harness cannot bind refuse.
+    assert!(ramp_cap_from(&format!("{RAMP_CAP_E2E26FD}{RAMP_CAP_E2E26FD}")).is_err());
+    assert!(ramp_cap_from(&RAMP_CAP_E2E26FD.replace("\"rule\"", "\"extra\":1,\"rule\"")).is_err());
+    assert!(ramp_cap_from("no block").is_err());
+    let mut unbound = b.clone();
+    unbound["ramps"][0]["to"] = "the reactor trip".into();
+    assert!(declared_ramp(Case::C2, &unbound).is_err());
+    let mut c3 = b.clone();
+    c3["ramps"][0]["case"] = "C3".into();
+    assert!(declared_ramp(Case::C3, &c3).is_err());
+}
+
 #[test]
 fn the_ramp_cap_holds_only_inside_the_ramp() {
     let b = block();
-    let c2 = window_cap(Case::C2, &b.whole("/cases/C2")).unwrap();
+    let c2 = window_cap(Case::C2, &b.whole("/cases/C2"), declared_ramp(Case::C2, &ramp_fixture()).unwrap()).unwrap();
     // Before the trip, at and after the window's end: no cap.
     assert_eq!(cap_in_force(&c2, -0.01, None), None);
     assert_eq!(cap_in_force(&c2, 20., Some(0.3)), None);
@@ -859,7 +937,7 @@ fn the_ramp_cap_holds_only_inside_the_ramp() {
     assert_eq!(cap_in_force(&c2, 0.3, Some(0.3)), Some(0.02));
     assert_eq!(cap_in_force(&c2, 19.99, Some(0.3)), Some(0.02));
     // C3 declares no ramp: 20 ms over its whole window.
-    let c3 = window_cap(Case::C3, &b.whole("/cases/C3")).unwrap();
+    let c3 = window_cap(Case::C3, &b.whole("/cases/C3"), declared_ramp(Case::C3, &ramp_fixture()).unwrap()).unwrap();
     assert_eq!(cap_in_force(&c3, 0., None), Some(0.02));
     assert_eq!(cap_in_force(&c3, 29.99, None), Some(0.02));
 }
@@ -868,9 +946,9 @@ fn the_ramp_cap_holds_only_inside_the_ramp() {
 fn the_window_cap_holds_only_inside_the_declared_window() {
     let b = block();
     // C1 declares no window: never capped.
-    assert!(window_cap(Case::C1, &b.whole("/cases/C1")).is_none());
+    assert!(window_cap(Case::C1, &b.whole("/cases/C1"), None).is_none());
     // C2: 20 s from the trip, started by the trip's receipt only.
-    let c2 = window_cap(Case::C2, &b.whole("/cases/C2")).unwrap();
+    let c2 = window_cap(Case::C2, &b.whole("/cases/C2"), declared_ramp(Case::C2, &ramp_fixture()).unwrap()).unwrap();
     assert_eq!((c2.max_step_s, c2.window_s), (0.02, 20.));
     assert!((c2.starts)(
         &json!({"command": "TurbineTripAcquired", "owner": "secondary"})
@@ -882,7 +960,7 @@ fn the_window_cap_holds_only_inside_the_declared_window() {
         &json!({"event": "STOP ramp end", "owner": "secondary"})
     ));
     // C3: 30 s from the supply loss; the operator's later trip starts none.
-    let c3 = window_cap(Case::C3, &b.whole("/cases/C3")).unwrap();
+    let c3 = window_cap(Case::C3, &b.whole("/cases/C3"), declared_ramp(Case::C3, &ramp_fixture()).unwrap()).unwrap();
     assert_eq!(c3.window_s, 30.);
     assert!((c3.starts)(
         &json!({"command": "SupplyLoss", "owner": "network", "rotor": 0})
@@ -1140,7 +1218,10 @@ fn drive(
     // Decision 0015 E2: the 20 ms cap only inside the case's declared event
     // window, set by the driver at the restart that starts it (C4's hook)
     // and removed at the first chunk bound at or after its end.
-    let window_cap = window_cap(case, spec).filter(|_| ask.event_window);
+    // RC-1: the case's declared fast electrical ramp, from the wiki's block.
+    let ramp_block = ramp_cap_block().unwrap_or_else(|e| panic!("RC-1: {e}"));
+    let ramp = declared_ramp(case, &ramp_block).unwrap_or_else(|e| panic!("RC-1: {e}"));
+    let window_cap = window_cap(case, spec, ramp).filter(|_| ask.event_window);
     if let Some(w) = &window_cap {
         driver.restart_max_step = Some((w.start_cap(), w.starts));
     }
@@ -1718,7 +1799,8 @@ fn drive(
             "max_order": s3_unit::MAX_ORDER, "max_step_s": max_step,
             "window_cap": window_cap.as_ref().map(|w| json!({"max_step_s": w.max_step_s, "window_s": w.window_s,
                 "ramp": w.ramp.as_ref().map(|r| json!({"max_step_s": r.max_step_s, "declared": r.declared,
-                    "value": "RAMP_MAX_STEP_S, pending WIKI-R7's block on decision 0015's page", "end_after_zero_s": ramp_end})),
+                    "value": format!("{RAMP_CAP_FENCE}.rampMaxStep_s ({DECISION_0015})"),
+                    "block_sha256": spine::sha256(ramp_block.to_string().as_bytes()), "end_after_zero_s": ramp_end})),
                 "observed": {"chunk_steps_checked": cap_checks.0, "max_last_step_over_cap": cap_checks.1, "max_last_step_in_ramp_s": cap_checks.2},
                 "rule": "0015 E2: the cap only inside the declared window, set at the restart that starts it, removed at the first chunk bound at or after its end",
                 "intervals": cap_intervals})),
