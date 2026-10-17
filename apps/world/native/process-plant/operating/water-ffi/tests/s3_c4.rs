@@ -9,15 +9,15 @@
 #[allow(dead_code)] // The case run in s3_cases.rs uses the rest.
 #[path = "s3_harness/c4.rs"]
 mod c4;
-#[allow(dead_code)] // The S2 declaration readers' file hashes.
-#[path = "common/provenance.rs"]
-mod provenance;
 #[allow(dead_code)] // The S2 harness's declaration readers; C4 uses a subset.
 #[path = "s2_harness/gates.rs"]
 mod gates;
 #[allow(dead_code)] // The S2 harness's declaration readers; C4 uses a subset.
 #[path = "s2_harness/guards.rs"]
 mod guards;
+#[allow(dead_code)] // The S2 declaration readers' file hashes.
+#[path = "common/provenance.rs"]
+mod provenance;
 
 use c4::{Classes, Events, Frame, Run, Side};
 use gates::Block;
@@ -246,6 +246,21 @@ fn c4s_lines_are_judged_on_the_runs_own_events() {
     ] {
         assert_eq!(v(id), "pass", "{id}: {}", j[id]);
     }
+    // A seated body that lifts off and seats again is one body (S2's G9).
+    let mut reseat = log.clone();
+    reseat.push(reseat[3].clone());
+    reseat.last_mut().unwrap()["t_s"] = json!(541.);
+    for r in reseat.last_mut().unwrap()["restart"]["transactions"][0]["rods"]
+        .as_array_mut()
+        .unwrap()
+    {
+        r["t_s"] = json!(541.);
+    }
+    let jr = judged(&reseat, &divisions, &f);
+    assert_eq!(jr["C4.O2"]["verdict"], "pass", "{}", jr["C4.O2"]);
+    assert_eq!(jr["C4.O2"]["numbers"]["seats"], json!(52));
+    assert_eq!(jr["C4.O2"]["numbers"]["reseat_records"], json!(52));
+    assert!((jr["C4.O2"]["numbers"]["last_seat_s"].as_f64().unwrap() - 14.6).abs() < 1e-9);
     // A release of path 65 and a contact of path 64: no relock, no chattering.
     assert_eq!(v("C4.N4"), "pass", "{}", j["C4.N4"]);
     for id in ["C4.M1", "C4.M2", "C4.M3"] {

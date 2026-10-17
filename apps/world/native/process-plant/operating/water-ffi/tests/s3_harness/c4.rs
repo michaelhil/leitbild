@@ -531,11 +531,19 @@ pub fn judge(lines: &Value, run: &Run<'_>, zero: f64) -> Vec<Value> {
                 let all_low = powered.iter().all(|i| low.iter().any(|(j, _)| j == i));
                 let hold_ok =
                     matches!((run.holding_lost, first_trip), (Some(h), Some(t)) if same(h, t));
-                let seated = ev.seats.len();
-                let last_seat = ev
-                    .seats
-                    .iter()
-                    .map(|(_, t)| *t)
+                // S2's G9 counts bodies: each cluster's first seat. A seated
+                // body that lifts off and seats again (a later "seat" record
+                // of the same cluster) is reported, not a second body.
+                let mut first_seat: std::collections::BTreeMap<&str, f64> =
+                    std::collections::BTreeMap::new();
+                for (c, t) in &ev.seats {
+                    first_seat.entry(c.as_str()).or_insert(*t);
+                }
+                let seated = first_seat.len();
+                let reseats = ev.seats.len() - seated;
+                let last_seat = first_seat
+                    .values()
+                    .copied()
                     .fold(f64::NEG_INFINITY, f64::max);
                 let lowest = run
                     .pt
@@ -560,7 +568,7 @@ pub fn judge(lines: &Value, run: &Run<'_>, zero: f64) -> Vec<Value> {
                     spec,
                     if ok { "pass" } else { "fail" },
                     json!({"low_pressure_causes": low, "powered_divisions": powered, "first_trip_s": first_trip,
-                        "holding_lost_s": run.holding_lost, "seats": seated, "clusters": run.clusters,
+                        "holding_lost_s": run.holding_lost, "seats": seated, "reseat_records": reseats, "clusters": run.clusters,
                         "last_seat_s": last_seat, "release_to_last_seat_s": run.holding_lost.map(|h| last_seat - h),
                         "consistency_iff": a_prime, "lowest_voted_pt_pa": lowest, "acquired_pt1_at_zero_pa": pt1_0,
                         "margin_basis": "the voted acquired PT (2-of-3 on the delivered PT1-3 samples at each decision)",
