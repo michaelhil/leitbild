@@ -663,22 +663,43 @@ pub struct AlgebraicResiduals {
     pub network_ids: Vec<f64>,
     /// Each operator coordinate's family.
     pub families: Vec<String>,
-    /// family -> (largest |row|, its time, its row, steps judged).
-    pub worst: std::collections::BTreeMap<String, (f64, f64, usize, u64)>,
+    /// COST2: the families' names in order, and each coordinate's index
+    /// into them (built once, so a step clones and compares no names).
+    names: Vec<String>,
+    ids: Vec<usize>,
+    /// family index -> (largest |row|, its time, its row, steps judged).
+    worst: Vec<Option<(f64, f64, usize, u64)>>,
+    /// The step that last counted each family (COST2: no per-step set).
+    counted: Vec<u64>,
+    step: u64,
 }
 
 impl AlgebraicResiduals {
     /// The families from the operator's layouts.
     pub fn of(joined: &Joined<If97>, network_ids: Vec<f64>) -> Self {
-        let families = joined
+        let families: Vec<String> = joined
             .layouts()
             .into_iter()
             .flat_map(|(owner, l)| l.classes.into_iter().map(move |c| format!("{owner}/{c:?}")))
             .collect();
+        let names: Vec<String> = families
+            .iter()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let ids = families
+            .iter()
+            .map(|f| names.binary_search(f).expect("a family of the layouts"))
+            .collect();
         Self {
             network_ids,
             families,
-            worst: std::collections::BTreeMap::new(),
+            worst: vec![None; names.len()],
+            counted: vec![0; names.len()],
+            names,
+            ids,
+            step: 0,
         }
     }
     /// One accepted step, after the operator's evaluation there.
@@ -688,15 +709,16 @@ impl AlgebraicResiduals {
         }
         let identity = joined.differential(&self.network_ids);
         let rows = joined.rows();
-        let mut seen = std::collections::BTreeSet::new();
+        self.step += 1;
         for (i, (d, r)) in identity.iter().zip(rows).enumerate() {
             if *d != 0. {
                 continue;
             }
-            let f = &self.families[i];
+            let f = self.ids[i];
             let v = r.value.abs();
-            let e = self.worst.entry(f.clone()).or_insert((-1., t, i, 0));
-            if seen.insert(f.clone()) {
+            let e = self.worst[f].get_or_insert((-1., t, i, 0));
+            if self.counted[f] != self.step {
+                self.counted[f] = self.step;
                 e.3 += 1;
             }
             if v.is_nan() || v > e.0 {
@@ -708,13 +730,16 @@ impl AlgebraicResiduals {
     }
     pub fn json(&self) -> Value {
         let families: serde_json::Map<String, Value> = self
-            .worst
+            .names
             .iter()
-            .map(|(k, (v, t, i, n))| {
-                (
-                    k.clone(),
-                    json!({"max_abs_row": v, "at_t_s": t, "row": i, "steps": n}),
-                )
+            .zip(&self.worst)
+            .filter_map(|(k, w)| {
+                w.map(|(v, t, i, n)| {
+                    (
+                        k.clone(),
+                        json!({"max_abs_row": v, "at_t_s": t, "row": i, "steps": n}),
+                    )
+                })
             })
             .collect();
         json!({"metric": "largest |residual| of the algebraic rows (identity in force) in solver row units, per row family (owner/class of the operator's layouts), over every accepted stock step at the solver's state; reported only (JACAGE defines the metric; the appended ELEC slice's rows are not included)",
