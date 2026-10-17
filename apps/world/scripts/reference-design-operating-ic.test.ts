@@ -14,6 +14,7 @@ const reference = '{"eventReferencePower_W":3e9,"eventEnergy_MeV":200,"Fref_even
 const levelChannelsBlock = '{"calibrationPressure_Pa":15000000,"lag_s":0.5,"interfaceSpan_Pa":[0,25000000],"indicatedSpan_m":[-1,13],"quantum_m":0.01,"supplies":["I1","I2","I3"]}'
 const levelProtectionBlock = '{"lowLevel_m":3.0,"lowQualification_s":0.5,"highLevel_m":10.0,"highQualification_s":0.5,"unavailableQualification_s":1,"resetBand_m":[3.5,9.5],"resetDuration_s":5}'
 const prhrActuation = '{"onAcceptedReactorTrip":false,"onCmtActuation":true,"causes":["LD01.PROT.PZR.HIGH_LEVEL"]}'
+const interlock = '{"cause":"LD01.TG.REACTOR_TRIP","delay_s":5,"initiation":"LD01.TRIP.HOLD loss"}'
 const taps = '### PZR electronic differential level\n\n' + fence('ld01-pzr-taps', '{"pt1Elevation_m":18.5,"ltLowElevation_m":6.5,"ltHighElevation_m":18.5}')
 const pages = (over: Partial<Record<(typeof OPERATING_IC_PAGES)[number], string>> = {}) => ({
   'safety/source-and-primary-protection.md': fence('reference-pzr-pressure-protection', protection) + fence('ld01-loop-low-flow-protection', lowFlow)
@@ -28,6 +29,7 @@ const pages = (over: Partial<Record<(typeof OPERATING_IC_PAGES)[number], string>
   'systems/steam-generation/instrumentation.md': fence('ld01-sg-level-channels', '{"nrLag_s":0.5,"nrSpan_m":[4,9],"indicatedLevelArea_m2":12}'),
   'systems/instrumentation/nuclear-observation-apparatus.md': fence('ld01-regional-current-reference', reference),
   'safety/engineered-safety-actuation.md': fence('ld01-prhr-actuation', prhrActuation),
+  'safety/protection-and-command-precedence.md': fence('ld01-reactor-trip-turbine-trip', interlock),
   ...over,
 })
 // Four sectors of six axial bands over -2..2 m, as the packet's source regions.
@@ -67,6 +69,8 @@ test('the section carries only strict-block values and the packet identities', (
   expect(s.functions[9]!.rule).toEqual({ armed_unavailable: { family: 'LD01.RCS.A.FT', qualification_s: 0.5,
     arming_family: 'LD01.CORE.POWER.P', arming: { above: 0.2 } } })
   expect(s.missing).toBe(OPEN_ITEMS)
+  // R12-A2: the interlock's cause and delay come from its block.
+  expect(s.turbine_trip_on_reactor_trip).toMatchObject({ cause: 'LD01.TG.REACTOR_TRIP', delay_s: 5 })
 })
 
 test('refusals: a duration off the frame, a missing face, a wrong Fref, a missing block', () => {
@@ -83,6 +87,8 @@ test('refusals: a duration off the frame, a missing face, a wrong Fref, a missin
     fence('ld01-prhr-actuation', prhrActuation.replace('"onAcceptedReactorTrip":false', '"onAcceptedReactorTrip":true')) }), packet)).toThrow()
   expect(() => compileOperatingIcFrom(pages({ 'safety/engineered-safety-actuation.md':
     fence('ld01-prhr-actuation', prhrActuation.replace('PZR.HIGH_LEVEL', 'SG.A.WR_LOW')) }), packet)).toThrow('not compiled')
+  expect(() => compileOperatingIcFrom(pages({ 'safety/protection-and-command-precedence.md':
+    fence('ld01-reactor-trip-turbine-trip', interlock.replace('"delay_s":5', '"delay_s":5.05')) }), packet)).toThrow('not whole')
 })
 
 const wiki = process.env.LD01_WIKI_ROOT, joined = process.env.LD01_OPERATING_HOT_SPINE_PACKET

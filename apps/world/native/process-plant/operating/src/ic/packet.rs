@@ -23,6 +23,9 @@ pub struct Section {
     /// no protective function, e.g. C2.N3's PZR LT vote).
     pub monitors: Vec<MonitorSpec>,
     pub holding: HoldingSpec,
+    /// The reactor-trip → turbine-trip interlock (`ld01-reactor-trip-turbine-trip`,
+    /// owner R12-A2).
+    pub turbine_trip_on_reactor_trip: TurbineTripOnReactorTrip,
     /// Needed values without a strict block (compiler's list; not consumed).
     pub missing: Vec<Value>,
     pub provenance: Vec<Value>,
@@ -202,6 +205,20 @@ pub struct HoldingSpec {
     pub divisions: [String; 3],
     /// Their permissive contacts, in division order.
     pub contacts: [String; 3],
+}
+
+/// The turbine controls' trip on the reactor trip (owner R12-A2): the
+/// `LD01.TRIP.HOLD` loss requests the existing turbine trip (`LD01.TG`
+/// TRIP) `delay_s` later, a whole number of I&C frames, unless the turbine
+/// is already tripped. AP1000: "Turbine trip occurs 5 seconds following a
+/// reactor trip condition being reached" (DCD Rev. 19 Tier 2 §15.0.14).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TurbineTripOnReactorTrip {
+    /// The named turbine-trip cause, recorded with the request.
+    pub cause: String,
+    pub delay_s: f64,
+    pub basis: String,
 }
 
 /// A recorded vote: `rule` must be `voted`; `basis` names its blocks.

@@ -23,6 +23,7 @@ export const OPERATING_IC_PAGES = [
   'systems/steam-generation/instrumentation.md',
   'systems/instrumentation/nuclear-observation-apparatus.md',
   'safety/engineered-safety-actuation.md',
+  'safety/protection-and-command-precedence.md',
 ] as const
 type Page = (typeof OPERATING_IC_PAGES)[number]
 type Pages = Readonly<Record<Page, string>>
@@ -69,6 +70,13 @@ export const parsePowerProxyPaths = (text: string) => z.object({
 export const parsePrhrActuation = (text: string) => z.object({
   onAcceptedReactorTrip: z.literal(false), onCmtActuation: z.literal(true), causes: z.array(z.string()).min(1),
 }).strict().parse(configurationBlock(text, 'ld01-prhr-actuation'))
+
+/** The reactor-trip → turbine-trip interlock (`ld01-reactor-trip-turbine-trip`,
+ * owner R12-A2): the holding loss requests the existing turbine trip after
+ * the delay, under the named cause. */
+export const parseReactorTripTurbineTrip = (text: string) => z.object({
+  cause: z.string().min(1), delay_s: positive, initiation: z.literal('LD01.TRIP.HOLD loss'),
+}).strict().parse(configurationBlock(text, 'ld01-reactor-trip-turbine-trip'))
 
 /** The PZR LT devices (`ld01-pzr-level-channels`, S3-D37/S3-D38): the fixed
  * saturated-water calibration pressure, the device lag, the interface span,
@@ -164,6 +172,7 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
   const pzrLevel = compilePzrLevelFrom({ measurements: texts['systems/instrumentation/phase-dependent-measurements.md'],
     observations: texts['systems/instrumentation/operational-observations.md'], protection: texts['safety/source-and-primary-protection.md'] })
   const prhrActuation = parsePrhrActuation(texts['safety/engineered-safety-actuation.md'])
+  const interlock = parseReactorTripTurbineTrip(texts['safety/protection-and-command-precedence.md'])
   const pt1 = taps.find(t => t.id === 'PT1')
   if (!pt1) throw Error('No PT1 tap')
   const frame_s = channel.sample_s
@@ -177,7 +186,7 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
     ['SG reset', sgProtection.resetDuration_s], ['low flow', lowFlow.lowFlowQualification_s],
     ['flow unavailable', lowFlow.unavailableQualification_s], ['flow reset', lowFlow.resetDuration_s],
     ['proxy sampling', proxyPaths.sample_s], ['proxy transport', proxyPaths.transport_s], ['proxy age', proxyPaths.maximumAge_s],
-    ['proxy recovery', proxyPaths.recovery_s]] as const) wholeFrames(name, v, frame_s)
+    ['proxy recovery', proxyPaths.recovery_s], ['turbine trip on reactor trip', interlock.delay_s]] as const) wholeFrames(name, v, frame_s)
   if (Math.abs(report.sample_s + report.transport_s - s2.turbineTripToOpening_s) > 1e-12)
     throw Error('S2 holding boundary disagrees with the turbine-state report')
   // Fref is the ORIGINAL event reference: check the block's arithmetic.
@@ -287,6 +296,8 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
       interface: 'LD01.TRIP.HOLD', supply: 'LD01.DC.ACT.A', manual_interrupt: 'LD01.TRIP.MANUAL',
       divisions: [...supplies], contacts: supplies.map(s => `LD01.TRIP.PERM.${s}`),
     },
+    turbine_trip_on_reactor_trip: { cause: interlock.cause, delay_s: interlock.delay_s,
+      basis: 'ld01-reactor-trip-turbine-trip (protection-and-command-precedence.md, R12-A2): LD01.TRIP.HOLD loss requests LD01.TG TRIP after delay_s; AP1000 DCD Rev. 19 Tier 2 15.0.14' },
     missing: OPEN_ITEMS,
     provenance: [{ pt1_tap_elevation_m: pt1.elevation_m, pt1_reads: 'the stratified cell roof pressure (operational-observations.md)',
       s2_holding_boundary_replaced_s: s2.turbineTripToOpening_s, converter_region_weights: weights,

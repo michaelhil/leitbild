@@ -22,7 +22,9 @@
 //! fissions). Both references (the loop's installed nominal and `E_ref`) are
 //! taken at the packet's prepared hot reference, the composition's start.
 //! The holding loss the path decides becomes the class-R command
-//! `HoldingLoss` at its frame instant.
+//! `HoldingLoss` at its frame instant; the interlock's turbine trip that
+//! follows it (owner R12-A2) becomes the declared `TurbineTripAcquired` at
+//! its own frame instant.
 use crate::frame::{Action, Change, Class, Client, Dense};
 use leitbild_operating_plant::{
     ic::{
@@ -506,7 +508,7 @@ impl<S> Client<S> for ProtectionClient {
             }
         }
         let frame = self.protection.frame_of();
-        Ok(self
+        let mut changes: Vec<Change<S>> = self
             .protection
             .frame(k)?
             .map(|lost| Change {
@@ -516,7 +518,18 @@ impl<S> Client<S> for ProtectionClient {
                 action: Action::Command(Command::HoldingLoss),
             })
             .into_iter()
-            .collect())
+            .collect();
+        // R12-A2: the turbine controls' trip on the reactor trip, decided for
+        // the next frame as the holding loss is.
+        if let Some((due, cause)) = self.protection.turbine_trip_due(k + 1) {
+            changes.push(Change {
+                due_s: frame.instant(due),
+                class: Class::R,
+                kind: format!("{cause}: turbine trip"),
+                action: Action::Command(Command::TurbineTripAcquired),
+            });
+        }
+        Ok(changes)
     }
     fn command(&mut self, t: f64, command: Command) -> Result<Vec<Change<S>>, String> {
         if command == Command::TurbineTripAcquired {
