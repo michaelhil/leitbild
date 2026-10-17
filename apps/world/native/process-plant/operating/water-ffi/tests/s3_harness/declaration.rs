@@ -2,7 +2,8 @@
 //! `ld01-s3-cases-c5`, C5L) as data: the block, its pin against the
 //! decision log's last RP1 row naming it, the TBD register, and the
 //! refusals of one case. C5's block holds the common rules under
-//! `commonRules` ([`Declaration::common`]).
+//! `commonRules` ([`Declaration::common`]), as C4's own block
+//! (`ld01-s3-cases-c4`, C4 lane) does.
 //!
 //! The page is `LD01_S3_DECLARATION` (a markdown file holding the block),
 //! else the wiki's `build-readiness.md` under `LD01_WIKI_ROOT`; the log is
@@ -20,6 +21,7 @@ pub enum Case {
     C1,
     C2,
     C3,
+    C4,
     C5,
 }
 
@@ -29,8 +31,9 @@ impl Case {
             "C1" => Ok(Self::C1),
             "C2" => Ok(Self::C2),
             "C3" => Ok(Self::C3),
+            "C4" => Ok(Self::C4),
             "C5" => Ok(Self::C5),
-            other => Err(format!("case {other}: C1, C2, C3 or C5")),
+            other => Err(format!("case {other}: C1, C2, C3, C4 or C5")),
         }
     }
     pub fn key(self) -> &'static str {
@@ -38,12 +41,15 @@ impl Case {
             Self::C1 => "C1",
             Self::C2 => "C2",
             Self::C3 => "C3",
+            Self::C4 => "C4",
             Self::C5 => "C5",
         }
     }
     /// The block that declares the case.
     pub fn fence(self) -> &'static str {
         match self {
+            // C4 (C4 lane): its own block, `ld01-s3-cases-c4` r1.
+            Self::C4 => super::c4::FENCE,
             Self::C5 => super::c5::FENCE,
             _ => FENCE,
         }
@@ -65,6 +71,7 @@ impl Case {
             // R5-F4), its C5 plan reproduced in-process (disclosed in the
             // receipt, not a model prerequisite).
             Self::C5 => Vec::new(),
+            Self::C4 => Vec::new(),
         }
     }
 }
@@ -117,7 +124,7 @@ impl Declaration {
 
     /// A common rule's pointer: C5's block holds them under `commonRules`.
     pub fn common(&self, pointer: &str) -> String {
-        if self.block.fence == super::c5::FENCE {
+        if self.block.fence == super::c5::FENCE || self.block.fence == super::c4::FENCE {
             format!("/commonRules{pointer}")
         } else {
             pointer.to_string()
