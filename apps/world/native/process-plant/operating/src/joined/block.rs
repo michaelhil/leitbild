@@ -263,6 +263,14 @@ pub enum Command {
     /// (lead S3-D1; R3 lane's probe). ELEC's bus support feeds the same
     /// change once composed. Refused for a rotor that is not supported.
     SupplyLoss { rotor: usize },
+    /// HOOK (C4 lane, for KERN/G6): S3 case C4's declared malfunction, the
+    /// independent PZR relief fails open at the command's time. Its
+    /// mechanical demand is held open whatever PT1 reads (the demand root
+    /// disarmed); the lift travels at the device's own rate and sticks at
+    /// full lift (`pressure-and-inventory.md#independent-relief-candidate`:
+    /// finite travel, sticking constrains motion). The PZR owner applies it;
+    /// no coordinate moves (class R by its root arming and lift rate).
+    ReliefStuckOpen,
 }
 
 /// S5 snapshot hook (PLATFORM, claude/ld01-s5-host; KERN reconciles): an

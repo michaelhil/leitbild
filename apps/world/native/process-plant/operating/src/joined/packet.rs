@@ -1,4 +1,5 @@
 //! spec: world/packs/process-plant/reference-designs/ld-01/model/operating-hot-spine.md#one-actual-package-not-another-plant-definition
+//! spec: world/packs/process-plant/reference-designs/ld-01/model/operating-equations.md#forced-iteration-matrix-rebuild-owner-r7-p
 //! Typed subset of the compiled spine packet consumed by the joined blocks.
 //!
 //! The TypeScript compilers own every value. This boundary decodes the hot
@@ -34,6 +35,26 @@ pub struct Packet {
     /// owner refuses without it), absent without it.
     #[serde(rename = "pzrSteel")]
     pub pzr_steel: Option<super::pzr::Steel>,
+    /// MR-1 (owner, request 7 R7-P): the joined solve's forced
+    /// iteration-matrix rebuild, operating-equations §6's
+    /// `ld01-joined-matrix-rebuild`. A packet compiled before the block has
+    /// none; the S3 frame driver then refuses to run (S1/S2 never read it).
+    #[serde(rename = "matrixRebuild")]
+    pub matrix_rebuild: Option<MatrixRebuild>,
+}
+
+/// The owner's MR-1 block as compiled (strict): stock IDAS check points
+/// every `rebuild_every_steps` steps from `applies_from` on.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct MatrixRebuild {
+    pub decision: String,
+    pub applies_from: String,
+    pub rebuild_every_steps: usize,
+    pub mechanism: String,
+    pub adoption: String,
+    pub guard: String,
+    pub provenance: serde_json::Value,
 }
 
 /// The SG owner's section, read here only for its contact record

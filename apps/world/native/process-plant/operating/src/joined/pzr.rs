@@ -134,6 +134,10 @@ pub struct Relief {
     /// The demand's state: open above the opening pressure until the roof
     /// pressure falls through the reseat pressure.
     pub demand_open: bool,
+    /// HOOK (C4 lane, for KERN/G6): the declared fails-open malfunction
+    /// ([`super::block::Command::ReliefStuckOpen`]): the demand is held open
+    /// and its root disarmed; the travel root still stops the lift at 1.
+    pub stuck_open: bool,
 }
 
 /// What one relief transaction did, for its receipt.
@@ -153,7 +157,34 @@ impl Relief {
         let r = self
             .device
             .roots(s(roof_pressure_pa), s(lift), self.demand_open, self.motion);
-        [r.demand.value, r.travel.map_or(DISARMED, |t| t.value)]
+        // HOOK (C4 lane): a stuck-open demand never crosses.
+        let demand = if self.stuck_open {
+            DISARMED
+        } else {
+            r.demand.value
+        };
+        [demand, r.travel.map_or(DISARMED, |t| t.value)]
+    }
+    /// HOOK (C4 lane, for KERN/G6): the fails-open malfunction. The demand
+    /// is held open from now on and its root disarmed; a closed or closing
+    /// lift starts opening at the device's rate, and the mechanical stop at
+    /// full lift keeps it there. Refused once stuck.
+    pub fn stick_open(&mut self) -> Result<ReliefEvent, Failure> {
+        if self.stuck_open {
+            return Err(fatal("the relief is already stuck open"));
+        }
+        let before = (self.demand_open, self.motion);
+        self.stuck_open = true;
+        self.demand_open = true;
+        self.motion = match self.motion {
+            ReliefMotion::Closed | ReliefMotion::Closing => ReliefMotion::Opening,
+            m => m,
+        };
+        Ok(ReliefEvent {
+            before,
+            after: (self.demand_open, self.motion),
+            stop: None,
+        })
     }
     /// The transaction at located roots, `[demand, travel]` directions as
     /// IDAGetRootInfo. The travel root first: the mechanical stop sets the
@@ -176,6 +207,9 @@ impl Relief {
             let report = self.device.stop(self.motion, lift, root_bound)?;
             self.motion = report.motion_after;
             stop = Some(report);
+        }
+        if directions[0] != 0 && self.stuck_open {
+            return Err(fatal("a stuck-open relief's disarmed demand root crossed"));
         }
         if directions[0] != 0 {
             let expected = if self.demand_open { -1 } else { 1 };
@@ -302,6 +336,7 @@ impl Pzr {
                     back_pressure_pa: back,
                     motion: ReliefMotion::Closed,
                     demand_open: false,
+                    stuck_open: false,
                 })
             }
         };
@@ -614,10 +649,15 @@ impl Pzr {
             "heater_request_w": bits(self.request_w),
             "bank_power_w": self.bank_power_w.iter().map(|v| bits(*v)).collect::<Vec<_>>(),
             "relief": self.relief.map_or(serde_json::Value::Null, |r| {
-                json!({"demand_open": r.demand_open, "motion": match r.motion {
+                let mut v = json!({"demand_open": r.demand_open, "motion": match r.motion {
                     ReliefMotion::Closed => "closed", ReliefMotion::Opening => "opening",
                     ReliefMotion::Open => "open", ReliefMotion::Closing => "closing",
-                }})
+                }});
+                // HOOK (C4 lane): the declared malfunction, only once declared.
+                if r.stuck_open {
+                    v["stuck_open"] = json!(true);
+                }
+                v
             }),
         })
     }
@@ -647,7 +687,20 @@ impl Pzr {
         match (self.relief.as_mut(), &o["relief"]) {
             (None, serde_json::Value::Null) => {}
             (Some(relief), v) if !v.is_null() => {
-                let r = snapshot_object(v, "pzr relief", &["demand_open", "motion"])?;
+                // HOOK (C4 lane): a declared fails-open malfunction is the
+                // third key, present only once declared and only as true.
+                let stuck_open = v.get("stuck_open").is_some();
+                let keys: &[&str] = if stuck_open {
+                    &["demand_open", "motion", "stuck_open"]
+                } else {
+                    &["demand_open", "motion"]
+                };
+                let r = snapshot_object(v, "pzr relief", keys)?;
+                if stuck_open && r["stuck_open"] != json!(true) {
+                    return Err(fatal(
+                        "snapshot: relief stuck_open must be true when present",
+                    ));
+                }
                 let demand_open = r["demand_open"]
                     .as_bool()
                     .ok_or_else(|| fatal("snapshot: relief demand latch"))?;
@@ -660,6 +713,7 @@ impl Pzr {
                 };
                 relief.demand_open = demand_open;
                 relief.motion = motion;
+                relief.stuck_open = stuck_open;
             }
             (_, other) => {
                 return Err(fatal(format!(
@@ -674,12 +728,35 @@ impl Pzr {
     /// The heater demand changes only at control frames
     /// ([`Pzr::apply_control`]) and the relief answers its own demand: a
     /// command changes nothing here.
-    pub fn command(&self, t: f64, command: super::block::Command) -> Transaction {
-        Transaction {
+    ///
+    /// HOOK (C4 lane, for KERN/G6): [`super::block::Command::ReliefStuckOpen`]
+    /// is the relief's own malfunction ([`Relief::stick_open`]); a block
+    /// without a relief refuses it.
+    pub fn command(
+        &mut self,
+        t: f64,
+        command: super::block::Command,
+    ) -> Result<Transaction, Failure> {
+        if command == super::block::Command::ReliefStuckOpen {
+            let relief = self
+                .relief
+                .as_mut()
+                .ok_or_else(|| fatal("ReliefStuckOpen: the block composes no relief"))?;
+            let event = relief.stick_open()?;
+            return Ok(Transaction {
+                deposits: Vec::new(),
+                receipt: json!({"owner":"pzr","t_s":t,"command":command,
+                    "before":{"demand_open":event.before.0,"motion":format!("{:?}",event.before.1)},
+                    "after":{"demand_open":event.after.0,"motion":format!("{:?}",event.after.1)},
+                    "stuck_open":true,"lift_rate_per_s":relief.device.lift_rate(relief.motion),
+                    "stateChanged":true}),
+            });
+        }
+        Ok(Transaction {
             deposits: Vec::new(),
             receipt: json!({"owner":"pzr","t_s":t,"command":command,
                 "heaterDemand_W":self.request_w,"note":"heater demand in force; it changes only at control frames"}),
-        }
+        })
     }
 }
 
@@ -699,7 +776,29 @@ mod tests {
             back_pressure_pa: 101_325.,
             motion: ReliefMotion::Closed,
             demand_open: false,
+            stuck_open: false,
         }
+    }
+
+    #[test]
+    fn a_stuck_open_relief_opens_at_its_rate_and_never_reseats() {
+        // HOOK (C4 lane): the declared fails-open malfunction.
+        let mut r = relief();
+        let e = r.stick_open().unwrap();
+        assert_eq!(e.before, (false, ReliefMotion::Closed));
+        assert_eq!(e.after, (true, ReliefMotion::Opening));
+        // Demand disarmed far below the reseat pressure; travel armed.
+        let roots = r.roots(10e6, 0.5);
+        assert_eq!(roots[0], DISARMED);
+        assert!((roots[1] - 0.5).abs() < 1e-15);
+        // The stop at full lift leaves it open with the demand held.
+        let mut lift = 1.;
+        let e = r.transact([0, 1], &mut lift, 1e-6).unwrap();
+        assert_eq!(e.after, (true, ReliefMotion::Open));
+        assert_eq!(r.roots(10e6, 1.), [DISARMED, DISARMED]);
+        // A crossing of the disarmed demand refuses; a second stick refuses.
+        assert!(r.transact([-1, 0], &mut lift, 1e-6).is_err());
+        assert!(r.stick_open().is_err());
     }
 
     #[test]

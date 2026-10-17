@@ -209,6 +209,9 @@ struct RodReads {
 
 pub struct Joined<P: Properties> {
     pub network: Network<P>,
+    /// MR-1 (R7-P), the packet's `matrixRebuild` section, for the S3 frame
+    /// driver; `None` for a packet compiled before the block.
+    matrix_rebuild: Option<super::packet::MatrixRebuild>,
     blocks: Blocks<P>,
     faces: Vec<Face>,
     rows: Vec<Scalar>,
@@ -512,6 +515,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         };
         let mut joined = Self {
             network,
+            matrix_rebuild: packet.matrix_rebuild.clone(),
             blocks,
             faces,
             rows: vec![s(0.); offsets.end],
@@ -528,6 +532,13 @@ impl<P: Properties + WaterProperties> Joined<P> {
         coloring.verify(&pattern).map_err(fatal)?;
         joined.structure = Some((pattern, coloring));
         Ok(joined)
+    }
+
+    /// MR-1 (owner, request 7 R7-P): the packet's forced matrix-rebuild
+    /// section, `None` for a packet compiled before
+    /// `ld01-joined-matrix-rebuild`.
+    pub fn matrix_rebuild(&self) -> Option<&super::packet::MatrixRebuild> {
+        self.matrix_rebuild.as_ref()
     }
 
     /// The RCP drives' support is set by the AC routing (ELEC's slice):
@@ -1171,7 +1182,11 @@ impl<P: Properties + WaterProperties> Joined<P> {
             // L1's release roots read the drives of this state's value
             // evaluation; its contact roots read the coordinates alone.
             let roots = self.network.unilateral_roots();
-            if release_roots(&roots) {
+            // HOOK (COST2): the spray roots' value evaluation of this same
+            // state, earlier in this call (nothing since mutates the
+            // operator: the spray and phase-mode roots only read), is the
+            // one L1's release roots read; it is not repeated.
+            if release_roots(&roots) && !self.value_state.evaluated {
                 self.evaluate(t, y, yp, None, 0., None)
                     .map_err(|e| fatal(format!("L1 root evaluation: {e:?}")))?;
                 self.value_state.evaluated = true; // HOOK (COST2)
@@ -1556,8 +1571,9 @@ impl<P: Properties + WaterProperties> Joined<P> {
         if let Some(b) = self.rods_mut() {
             done.push(b.command(t, command)?);
         }
-        if let Some(b) = self.pzr() {
-            done.push(b.command(t, command));
+        // HOOK (C4 lane): the PZR owner may change its relief's state.
+        if let Some(b) = self.pzr_mut() {
+            done.push(b.command(t, command)?);
         }
         self.deposit(&done, y)?;
         done.extend(self.time_events(t, y)?);

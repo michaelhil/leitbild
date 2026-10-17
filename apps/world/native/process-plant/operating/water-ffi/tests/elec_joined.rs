@@ -644,9 +644,12 @@ fn the_frame_driver_carries_the_slices_quadratures_across_its_restarts() {
         .map(|k| r["quadratures"][*k].as_f64().unwrap())
         .collect();
 
-    // The same TRIP through the frame driver, no clients.
+    // The same TRIP through the frame driver, no clients, on stock matrix
+    // management as run()'s loop is (a mechanics comparison; MR-1's forced
+    // rebuild is guarded in tests/matrix_rebuild.rs).
     let mut c = build_with(None, false);
     let mut driver = Driver::new(frame, Diagnostic::None, clock::thread_cpu_s, c.t0).unwrap();
+    driver.matrix_rebuild = leitbild_operating_water::frame::MatrixRebuild::Stock;
     driver
         .start_quadratures(&mut c.ida, vec![0.; QUADRATURES.len()])
         .unwrap();

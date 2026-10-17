@@ -54,9 +54,9 @@ impl Case {
     /// and a disclosed deviation in a preview.
     pub fn missing_prerequisites(self) -> Vec<&'static str> {
         match self {
-            Self::C1 => vec![
-                "prerequisite 10 / request D: the generator exports into the electrical packet's fixed boundary (line voltage and frequency), not request D's Grid exchange (D1 + D2)",
-            ],
+            // C1 exchanges with the test-only Grid stand-in under D1 + D2
+            // (C5L; owner R5-F4: no live Grid), as C5 does.
+            Self::C1 => Vec::new(),
             // Loop-flow acquisition is now the ic section's (KERN 53ae7c05);
             // a section without it leaves its lines not executable, judged
             // per line from the protection's own function list.

@@ -283,7 +283,17 @@ pub trait Observer<S> {
     ) -> Result<(), String> {
         Ok(())
     }
+    /// HOOK (S3GATES, N4′ S3-D61; KERN to reconcile): at a restart's left
+    /// side, before its sample, the integrator's own units: stock IDA's
+    /// reciprocal error weights `1 / (rtol |y_n| + atol)` of the segment's
+    /// history and its current solution `y_n` (`Err` when stock reports
+    /// none). Reading them changes no history.
+    fn integrator_units(&mut self, _t: f64, _units: IntegratorUnits) {}
 }
+
+/// HOOK (S3GATES, N4′ S3-D61): stock IDA's reciprocal error weights and its
+/// current solution `y_n` at a restart's left side, or why stock has none.
+pub type IntegratorUnits = Result<(Vec<f64>, Vec<f64>), String>;
 
 /// The reported diagnostic of a class-S instant (S3-D4): the Newton
 /// correction the held changes alone ask for, `J(cj)^-1 ΔF` in IDA's WRMS
@@ -499,6 +509,29 @@ pub struct Driver<S> {
     /// a new bound only after a reinitialization, before the next step. The
     /// caller removes it at the window's end (`Ida::remove_max_step`).
     pub restart_max_step: Option<WindowCap>,
+    /// MR-1 (owner, request 7 R7-P): the joined solve's forced
+    /// iteration-matrix rebuild, stock IDAS check points every
+    /// `rebuildEverySteps` steps of the packet's `matrixRebuild` section
+    /// (operating-equations §6, `ld01-joined-matrix-rebuild`), set on the
+    /// handle at the first run ([`Ida::rebuild_matrix_every`]). S3 onward it
+    /// is [`MatrixRebuild::Packet`]; a packet without the section is refused.
+    /// [`MatrixRebuild::Stock`] keeps stock matrix management (a mechanics
+    /// test on plain IDA) and refuses a handle that has MR-1 on.
+    pub matrix_rebuild: MatrixRebuild,
+}
+
+/// The most IDAS check points held before stock IDAAdjReInit frees them
+/// (≈0.45 MB each on the S3 unit; restarts free them too). A memory bound of
+/// this wrapper only: check points feed no forward computation.
+pub const MATRIX_REBUILD_HELD: usize = 16;
+
+/// MR-1's source on a driver ([`Driver::matrix_rebuild`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MatrixRebuild {
+    /// The packet's `matrixRebuild` interval (R7-P), S3 onward.
+    Packet,
+    /// Stock IDA's own matrix management (no forced rebuild).
+    Stock,
 }
 
 /// Names of [`Driver::totals`].
@@ -560,6 +593,7 @@ impl<S: JoinedSystem> Driver<S> {
             quadratures: None,
             gate_observed_to: t0,
             restart_max_step: None,
+            matrix_rebuild: MatrixRebuild::Packet,
         })
     }
     pub fn frame(&self) -> Frame {
@@ -808,6 +842,35 @@ impl<S: JoinedSystem> Driver<S> {
         mut observer: Option<&mut (dyn Observer<S> + 'o)>,
     ) -> Result<Reached, String> {
         setup.check_derived()?;
+        // MR-1 on the handle before its first step here (once per handle).
+        let on = ida.rebuild().steps;
+        match self.matrix_rebuild {
+            MatrixRebuild::Packet => {
+                let section = ida.system().integrated().joined.matrix_rebuild().ok_or(
+                    "the packet has no matrixRebuild section (ld01-joined-matrix-rebuild, MR-1 R7-P): recompile it",
+                )?;
+                if section.applies_from != "S3" {
+                    return Err(format!(
+                        "the packet's matrix rebuild applies from {}, not S3",
+                        section.applies_from
+                    ));
+                }
+                let steps = section.rebuild_every_steps;
+                if on == 0 {
+                    ida.rebuild_matrix_every(steps, MATRIX_REBUILD_HELD)?;
+                } else if on != steps as i64 {
+                    return Err(format!(
+                        "the handle rebuilds every {on} steps, the packet declares {steps}"
+                    ));
+                }
+            }
+            MatrixRebuild::Stock if on != 0 => {
+                return Err(format!(
+                    "the driver asks stock matrix management, but the handle has MR-1 on ({on} steps)"
+                ));
+            }
+            MatrixRebuild::Stock => {}
+        }
         // The integrator stands where the driver left it; a start stock
         // cannot separate from that is that instant (a caller's bound by
         // another product).
@@ -1011,6 +1074,16 @@ impl<S: JoinedSystem> Driver<S> {
             Some(_) => self.quadratures_at(ida, t)?,
             None => Vec::new(),
         };
+        if side == Side::BeforeRestart {
+            let n = y.len();
+            let (mut errors, mut weights) = (vec![0.; n], vec![0.; n]);
+            let (mut yn, mut ypn) = (vec![0.; n], vec![0.; n]);
+            let units = ida
+                .error_diagnostics(&mut errors, &mut weights)
+                .and_then(|_| ida.current_state(&mut yn, &mut ypn))
+                .map(|_| (weights, yn));
+            observer.integrator_units(t, units);
+        }
         observer.sample(ida.system_mut(), t, y, yp, &q, side)?;
         self.cpu.gate_s += (self.clock)() - started;
         Ok(())
@@ -1184,12 +1257,19 @@ impl<S: JoinedSystem> Driver<S> {
             self.quadratures = Some((t, q));
         }
         // HOOK (C4 lane): a window starting at this restart caps its steps.
+        // HOOK (C5X RC-1, KERN to reconcile): the appended owners' records
+        // at this restart count too, each as `{"appended": record}` (the
+        // slice's "GCB Open" ends C2's fast electrical ramp).
         if let Some((h, starts)) = self.restart_max_step
-            && restarted
+            && (restarted
                 .transactions
                 .iter()
                 .chain(&before)
                 .any(|x| starts(&x.receipt))
+                || restarted
+                    .appended
+                    .iter()
+                    .any(|a| starts(&json!({ "appended": a }))))
         {
             ida.set_max_step(h)?;
         }
@@ -1322,7 +1402,10 @@ fn summary((r, before): &(Restarted, Vec<Transaction>)) -> Value {
         "births": r.births,
         "projection_passes": rep.projection_passes, "rate_passes": rep.rate_passes,
         "correction_wrms": rep.correction_wrms, "exempt": exempt, "residual": rep.residual.value,
-        "analyses_made": rep.analyses, "assemblies": rep.jacobian_s.len()})
+        "analyses_made": rep.analyses, "assemblies": rep.jacobian_s.len(),
+        // HOOK (C4 lane, receipts only; KERN to reconcile): C4.O4 judges the
+        // birth's restart on the presence-keyed recompile and the mode change.
+        "presence_changed": r.presence_changed, "modes_changed": r.modes_changed})
 }
 
 #[cfg(test)]

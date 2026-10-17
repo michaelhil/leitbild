@@ -147,7 +147,7 @@ fn the_c5_block_pins_before_any_run_and_reads_its_common_rules_under_common_rule
     .unwrap();
     assert_eq!((at, command.is_none()), (10.37, true));
     assert_eq!(case_window(Case::C5, &spec), Some(30.));
-    assert!(window_cap(Case::C5, &spec).is_none());
+    assert!(window_cap(Case::C5, &spec, None).is_none());
     assert_eq!(spec["lines"]["O3"]["window_s"], json!([0, 0.3]));
 }
 
@@ -544,6 +544,88 @@ impl<S> leitbild_operating_water::frame::Client<S> for Recorder {
     }
 }
 
+/// The pinned C4 block revision 2 (wiki e2e26fd), RP1-pin-s3-c4-r2.
+const C4_R2: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r2.json");
+/// RP1-pin-s3-c4-r2's declared sha256.
+const C4_R2_SHA256: &str = "2fe73e08f2414d84a843c5c5bd48464c3f3a6f23345f33773d2b34dac18abd5d";
+/// N4′'s rule and terms as the owner (R7-Q, CH-1) and the lead (S3-D58)
+/// state them: the texts the harness implements, compared verbatim.
+const N4_RULE: &str = "No numerical chattering: every vapour-path re-closing must follow a located exhaustion or a located flow reversal \u{2014} a consistent state before it, for a reversal a drive toward the emptying end beyond its tolerance, its cause recorded; such closings are counted and reported.";
+const N4_CONSISTENT: &str = "every row's pre-transaction residual at most 1 integrator tolerance unit, rtol\u{b7}|y| + atol (JACAGE's units) (S3-D58)";
+const N4_DRIVE: &str = "|drive| above the drive's first-order propagated tolerance, rule F's construction of a_x (S3-D58)";
+
+/// C3's chattering rule read from the pinned C4 block (its N4 `judgesAlso`
+/// names C3, S3-D45): the block must be RP1-pin-s3-c4-r2 and N4's rule and
+/// terms the texts the harness implements; the rule's parameters are the
+/// harness's reading of those texts (the kernel's L1 causes for a located
+/// exhaustion and a located flow reversal; one tolerance unit).
+fn n4_rule(c4: &Block, pin: &Value) -> Result<Value, String> {
+    if pin["pinned"] != json!(true) || guards::declared_sha256(c4)? != C4_R2_SHA256 {
+        return Err(format!("the C4 block is not RP1-pin-s3-c4-r2: {pin}"));
+    }
+    let n4 = c4.whole("/cases/C4/lines/N4");
+    let text = |v: &Value| v.as_str().unwrap_or_default().to_string();
+    if text(&n4["rule"]) != N4_RULE {
+        return Err(format!(
+            "C4.N4's rule is not the one implemented: {}",
+            n4["rule"]
+        ));
+    }
+    if text(&n4["terms"]["consistentState"]) != N4_CONSISTENT
+        || text(&n4["terms"]["driveBeyondTolerance"]) != N4_DRIVE
+    {
+        return Err(format!(
+            "C4.N4's terms are not the ones implemented: {}",
+            n4["terms"]
+        ));
+    }
+    if !text(&n4["judgesAlso"]).contains("C3") {
+        return Err("C4.N4 does not name C3's chattering check".into());
+    }
+    let mut rule: Value = serde_json::from_str(s3_harness::families::N4_PRIME_READING).unwrap();
+    rule["declared"] = json!({"block": "ld01-s3-cases-c4 r2", "pin": C4_R2_SHA256, "rule": n4["rule"], "terms": n4["terms"], "judgesAlso": n4["judgesAlso"]});
+    Ok(rule)
+}
+
+/// [`n4_rule`] on the S3 declaration's page and decision log (the pages
+/// the cases' own block is read from).
+fn n4_rule_of_the_wiki() -> Result<Value, String> {
+    let page = std::env::var("LD01_S3_DECLARATION")
+        .unwrap_or_else(|_| format!("{}/build-readiness.md", gates::wiki_model()));
+    let log = std::env::var("LD01_S3_DECISION_LOG")
+        .unwrap_or_else(|_| format!("{}/decision-log.md", gates::wiki_model()));
+    let c4 = Block::from_page(&page, "ld01-s3-cases-c4")?;
+    let pin = guards::pin_of(&c4, std::fs::read_to_string(&log).ok().as_deref(), &log)?;
+    n4_rule(&c4, &pin)
+}
+
+#[test]
+#[ignore = "requires the S3 declaration page and decision log (LD01_S3_DECLARATION, LD01_S3_DECISION_LOG)"]
+fn the_wikis_c4_block_gives_c3s_chattering_rule() {
+    let rule = n4_rule_of_the_wiki().unwrap();
+    assert_eq!(rule["criterion"], "n4prime");
+    println!("{rule}");
+}
+
+#[test]
+fn c3s_chattering_rule_is_read_from_the_pinned_c4_block() {
+    let c4 = Block::from_json("ld01-s3-cases-c4", C4_R2).unwrap();
+    assert_eq!(guards::declared_sha256(&c4).unwrap(), C4_R2_SHA256);
+    let log = format!(
+        "| RP1-pin-s3-c4-r2 | 17 Oct | `ld01-s3-cases-c4` frozen; sha256 {C4_R2_SHA256} |\n"
+    );
+    let pin = guards::pin_of(&c4, Some(&log), "log").unwrap();
+    let rule = n4_rule(&c4, &pin).unwrap();
+    assert_eq!(rule["criterion"], "n4prime");
+    // Unpinned, or another rule text, refuses.
+    assert!(n4_rule(&c4, &guards::pin_of(&c4, Some(""), "log").unwrap()).is_err());
+    let mut v: Value = serde_json::from_str(C4_R2).unwrap();
+    v["cases"]["C4"]["lines"]["N4"]["rule"] = json!("no chattering");
+    let changed = Block::from_json("ld01-s3-cases-c4", &v.to_string()).unwrap();
+    let pin = guards::pin_of(&changed, Some(&log), "log").unwrap();
+    assert!(n4_rule(&changed, &pin).is_err());
+}
+
 /// Rule I and the kinetics floor as r3.7 declares them (owner request 5):
 /// A4 (R5-A) and B1 (R5-B), the only rules the harness implements. The
 /// floor's 8 MPa and the D3 (a) extension are the packet's compiled
@@ -710,12 +792,114 @@ struct WindowCap {
     max_step_s: f64,
     window_s: f64,
     starts: fn(&Value) -> bool,
+    /// RC-1: a declared fast electrical ramp at the window's start, capped
+    /// tighter until the record that ends it.
+    ramp: Option<Ramp>,
+}
+
+/// A declared fast electrical ramp (owner R7-S, RC-1; decision 0015 E2
+/// amended): from the window's start (the case's command) to the record
+/// that ends it, the steps are capped at `max_step_s`; the window's own
+/// cap holds after it.
+struct Ramp {
+    max_step_s: f64,
+    /// The restart record that ends the ramp (a transaction receipt, or an
+    /// appended owner's record as `{"appended": record}`).
+    ends: fn(&Value) -> bool,
+    declared: &'static str,
+}
+
+impl WindowCap {
+    /// The cap the window's starting restart sets.
+    fn start_cap(&self) -> f64 {
+        self.ramp.as_ref().map_or(self.max_step_s, |r| r.max_step_s)
+    }
+}
+
+/// The cap in force `after_zero` s after the window's start, with the ramp
+/// ending at `ramp_end` (s after the start) once its record exists: the
+/// ramp's cap inside the ramp, the window's after it, none outside.
+fn cap_in_force(w: &WindowCap, after_zero: f64, ramp_end: Option<f64>) -> Option<f64> {
+    if !(0. ..w.window_s).contains(&after_zero) {
+        return None;
+    }
+    match (&w.ramp, ramp_end) {
+        (Some(r), None) => Some(r.max_step_s),
+        (Some(r), Some(end)) if after_zero < end => Some(r.max_step_s),
+        _ => Some(w.max_step_s),
+    }
 }
 
 /// S1's `eventWindow.maxStep_s` (the gate run checks it against the block).
 const WINDOW_MAX_STEP_S: f64 = 0.02;
 
-fn window_cap(case: Case, spec: &Value) -> Option<WindowCap> {
+/// RC-1's strict block (owner R7-S, 17 Oct; decision 0015 E2 amended):
+/// `ld01-event-window-ramp-cap` on decision 0015's page, its own block
+/// because S1's harness reads `ld01-s1-gates` strictly.
+const RAMP_CAP_FENCE: &str = "ld01-event-window-ramp-cap";
+const DECISION_0015: &str = "world/packs/process-plant/reference-designs/engineering/development/decisions/0015-credited-band-and-event-windows.md";
+
+/// The ramp-cap block of the wiki named by `LD01_WIKI_ROOT`: exactly one,
+/// strict JSON; absent refuses (RC-1 applies from S3, no default).
+fn ramp_cap_block() -> Result<Value, String> {
+    let wiki = std::env::var("LD01_WIKI_ROOT").map_err(|_| "LD01_WIKI_ROOT".to_string())?;
+    let page = format!("{wiki}/{DECISION_0015}");
+    let text = std::fs::read_to_string(&page).map_err(|e| format!("{page}: {e}"))?;
+    ramp_cap_from(&text)
+}
+fn ramp_cap_from(text: &str) -> Result<Value, String> {
+    let open = format!("```{RAMP_CAP_FENCE}\n");
+    let mut found = text.match_indices(&open).map(|(i, _)| i);
+    let start = found.next().ok_or(format!("no {RAMP_CAP_FENCE} block"))? + open.len();
+    if found.next().is_some() {
+        return Err(format!("more than one {RAMP_CAP_FENCE} block"));
+    }
+    let end = start + text[start..].find("\n```").ok_or("unterminated ramp-cap block")?;
+    let block: Value = serde_json::from_str(&text[start..end]).map_err(|e| e.to_string())?;
+    let keys = ["amends", "appliesFrom", "rampMaxStep_s", "elsewhereInWindow", "ramps", "rule"];
+    match block.as_object() {
+        Some(o) if o.len() == keys.len() && keys.iter().all(|k| o.contains_key(*k)) => Ok(block),
+        _ => Err(format!("{RAMP_CAP_FENCE}: exactly the keys {keys:?}")),
+    }
+}
+
+/// The block's ramp for `case`, bound to the harness's records: C2's ramp
+/// starts at the case command LD01.TG TRIP (the window's start) and ends at
+/// the generator breaker's opening, the slice's "GCB Open" record. A listed
+/// ramp the harness cannot bind refuses.
+fn declared_ramp(case: Case, block: &Value) -> Result<Option<Ramp>, String> {
+    let h = block["rampMaxStep_s"]
+        .as_f64()
+        .filter(|h| h.is_finite() && *h > 0.)
+        .ok_or(format!("{RAMP_CAP_FENCE}.rampMaxStep_s"))?;
+    let listed: Vec<&Value> = block["ramps"]
+        .as_array()
+        .ok_or(format!("{RAMP_CAP_FENCE}.ramps"))?
+        .iter()
+        .filter(|r| r["case"] == case.key())
+        .collect();
+    match (case, listed.as_slice()) {
+        (_, []) => Ok(None),
+        (Case::C2, [r])
+            if r["from"].as_str().is_some_and(|f| f.contains("LD01.TG TRIP"))
+                && r["to"]
+                    .as_str()
+                    .is_some_and(|t| t.contains("generator breaker opening")) =>
+        {
+            Ok(Some(Ramp {
+                max_step_s: h,
+                ends: |r| r["appended"] == "GCB Open",
+                declared: "ld01-event-window-ramp-cap (RC-1, owner R7-S): C2's turbine stop-valve ramp, from the trip command to the generator breaker's opening record",
+            }))
+        }
+        _ => Err(format!(
+            "{RAMP_CAP_FENCE}: {} lists a ramp the harness cannot bind",
+            case.key()
+        )),
+    }
+}
+
+fn window_cap(case: Case, spec: &Value, ramp: Option<Ramp>) -> Option<WindowCap> {
     let window_s = spec["window_s"].as_f64()?;
     let starts: fn(&Value) -> bool = match case {
         // C5's cap is set by the case after the offsite loss's restart.
@@ -727,14 +911,16 @@ fn window_cap(case: Case, spec: &Value) -> Option<WindowCap> {
         max_step_s: WINDOW_MAX_STEP_S,
         window_s,
         starts,
+        ramp,
     })
 }
 
-/// C5: the Grid stand-in's energized boundary for `[t0, t1)` decided at
-/// `t0` (the driver's time), as the C5 host's `boundary()`: the stand-in's
-/// stiff bus at the packet's nominal voltage and frequency with no phase
-/// error, so the carrier rate held over the interval is `2*pi*f` (D2,
-/// `slice::carrier_rate`). Agreeing bitwise with the held inputs is no
+/// C1 and C5: the Grid stand-in's energized boundary for `[t0, t1)`
+/// decided at `t0` (the driver's time), as the C5 host's `boundary()`: the
+/// stand-in's stiff bus at the packet's nominal voltage and frequency with
+/// no phase error and no frequency rate, so the carrier rate held over the
+/// interval is `2*pi*f` with a zero slope (D2, SW-1, `slice::carrier_rate`).
+/// Agreeing bitwise with the held inputs (and a zero held slope) is no
 /// event; anything else is a held input, class S by S3-D4's rule, checked
 /// by the driver.
 fn energized_boundary(
@@ -754,17 +940,20 @@ fn energized_boundary(
     if i.v_line.to_bits() == v_line.to_bits()
         && i.f_grid_hz.to_bits() == f_hz.to_bits()
         && i.carrier_rad_s.to_bits() == carrier.to_bits()
+        && i.carrier_accel_rad_s2 == 0.
     {
         return Ok("none (agrees with the held prediction)");
     }
     driver.decide(vec![Change {
         due_s: t0,
         class: Class::S,
-        kind: "Grid boundary (held voltage/carrier, D2)".into(),
+        kind: "Grid boundary (held voltage/carrier and slope, D2 + SW-1)".into(),
         action: Action::Held(Box::new(move |u: &mut CaseUnit| {
             u.slice.inputs.v_line = v_line;
             u.slice.inputs.f_grid_hz = f_hz;
             u.slice.inputs.carrier_rad_s = carrier;
+            u.slice.inputs.carrier_accel_rad_s2 = 0.;
+            u.slice.inputs.carrier_from_s = t0;
             Ok(())
         })),
     }])?;
@@ -788,19 +977,73 @@ fn operator_trip_at(
     Some((trip, delay))
 }
 
+/// D1's quiet exchange interval, from the `ld01-electrical-exchange` block
+/// on the handoff page (`LD01_WIKI_ROOT`).
+fn exchange_quiet_s() -> f64 {
+    let page = format!("{}/operating-scale-realization.md", gates::wiki_model());
+    Block::from_page(&page, "ld01-electrical-exchange")
+        .unwrap_or_else(|e| panic!("the D1 exchange block: {e}"))
+        .number("/quietInterval_s")
+}
+
 /// Whether the cap comes off at the chunk bound `b`: the first bound at
 /// or after the window's end.
 fn cap_removed_at(b: f64, zero: f64, window_s: f64) -> bool {
     b >= zero + window_s - 1e-9
 }
 
+/// The published block (wiki claude/ld01-r7-wiki e2e26fd, decision 0015's page).
+const RAMP_CAP_E2E26FD: &str = "```ld01-event-window-ramp-cap\n{\"amends\":\"decision 0015 E2 (owner request 7 S, RC-1, 17 October 2026)\",\"appliesFrom\":\"S3\",\"rampMaxStep_s\":0.005,\"elsewhereInWindow\":\"ld01-s1-gates eventWindow.maxStep_s\",\"ramps\":[{\"case\":\"C2\",\"ramp\":\"the turbine stop-valve (STOP) ramp with the generator connected\",\"from\":\"the case command LD01.TG TRIP, which starts C2's event window\",\"to\":\"the generator breaker opening at the STOP ramp's end (C2.O2, 0.30 s after the trip)\"}],\"rule\":\"the 5 ms cap holds only over a ramp listed here; a ramp is listed before the first gated run of its case (RP1)\"}\n```\n";
+fn ramp_fixture() -> Value {
+    ramp_cap_from(RAMP_CAP_E2E26FD).unwrap()
+}
+
+#[test]
+fn the_ramp_cap_block_is_read_strictly_and_binds_only_c2s_ramp() {
+    let b = ramp_fixture();
+    assert_eq!(b["rampMaxStep_s"].as_f64().unwrap().to_bits(), 0.005f64.to_bits());
+    assert!(declared_ramp(Case::C2, &b).unwrap().is_some());
+    assert!(declared_ramp(Case::C3, &b).unwrap().is_none());
+    assert!(declared_ramp(Case::C1, &b).unwrap().is_none());
+    // Two blocks, an extra key, or a ramp the harness cannot bind refuse.
+    assert!(ramp_cap_from(&format!("{RAMP_CAP_E2E26FD}{RAMP_CAP_E2E26FD}")).is_err());
+    assert!(ramp_cap_from(&RAMP_CAP_E2E26FD.replace("\"rule\"", "\"extra\":1,\"rule\"")).is_err());
+    assert!(ramp_cap_from("no block").is_err());
+    let mut unbound = b.clone();
+    unbound["ramps"][0]["to"] = "the reactor trip".into();
+    assert!(declared_ramp(Case::C2, &unbound).is_err());
+    let mut c3 = b.clone();
+    c3["ramps"][0]["case"] = "C3".into();
+    assert!(declared_ramp(Case::C3, &c3).is_err());
+}
+
+#[test]
+fn the_ramp_cap_holds_only_inside_the_ramp() {
+    let b = block();
+    let c2 = window_cap(Case::C2, &b.whole("/cases/C2"), declared_ramp(Case::C2, &ramp_fixture()).unwrap()).unwrap();
+    // Before the trip, at and after the window's end: no cap.
+    assert_eq!(cap_in_force(&c2, -0.01, None), None);
+    assert_eq!(cap_in_force(&c2, 20., Some(0.3)), None);
+    // Inside the ramp (the GCB-open record not yet, or later than t): 5 ms.
+    assert_eq!(cap_in_force(&c2, 0., None), Some(0.005));
+    assert_eq!(cap_in_force(&c2, 0.15, None), Some(0.005));
+    assert_eq!(cap_in_force(&c2, 0.299, Some(0.3)), Some(0.005));
+    // From the record to the window's end: the window's 20 ms.
+    assert_eq!(cap_in_force(&c2, 0.3, Some(0.3)), Some(0.02));
+    assert_eq!(cap_in_force(&c2, 19.99, Some(0.3)), Some(0.02));
+    // C3 declares no ramp: 20 ms over its whole window.
+    let c3 = window_cap(Case::C3, &b.whole("/cases/C3"), declared_ramp(Case::C3, &ramp_fixture()).unwrap()).unwrap();
+    assert_eq!(cap_in_force(&c3, 0., None), Some(0.02));
+    assert_eq!(cap_in_force(&c3, 29.99, None), Some(0.02));
+}
+
 #[test]
 fn the_window_cap_holds_only_inside_the_declared_window() {
     let b = block();
     // C1 declares no window: never capped.
-    assert!(window_cap(Case::C1, &b.whole("/cases/C1")).is_none());
+    assert!(window_cap(Case::C1, &b.whole("/cases/C1"), None).is_none());
     // C2: 20 s from the trip, started by the trip's receipt only.
-    let c2 = window_cap(Case::C2, &b.whole("/cases/C2")).unwrap();
+    let c2 = window_cap(Case::C2, &b.whole("/cases/C2"), declared_ramp(Case::C2, &ramp_fixture()).unwrap()).unwrap();
     assert_eq!((c2.max_step_s, c2.window_s), (0.02, 20.));
     assert!((c2.starts)(
         &json!({"command": "TurbineTripAcquired", "owner": "secondary"})
@@ -812,7 +1055,7 @@ fn the_window_cap_holds_only_inside_the_declared_window() {
         &json!({"event": "STOP ramp end", "owner": "secondary"})
     ));
     // C3: 30 s from the supply loss; the operator's later trip starts none.
-    let c3 = window_cap(Case::C3, &b.whole("/cases/C3")).unwrap();
+    let c3 = window_cap(Case::C3, &b.whole("/cases/C3"), declared_ramp(Case::C3, &ramp_fixture()).unwrap()).unwrap();
     assert_eq!(c3.window_s, 30.);
     assert!((c3.starts)(
         &json!({"command": "SupplyLoss", "owner": "network", "rotor": 0})
@@ -820,6 +1063,14 @@ fn the_window_cap_holds_only_inside_the_declared_window() {
     assert!(!(c3.starts)(
         &json!({"command": "TurbineTripAcquired", "owner": "secondary"})
     ));
+    // RC-1: C2's ramp, 5 ms from the trip to the GCB-open record; C3 none.
+    let ramp = c2.ramp.as_ref().unwrap();
+    assert_eq!((c2.start_cap(), ramp.max_step_s), (0.005, 0.005));
+    assert!((ramp.ends)(&json!({"appended": "GCB Open"})));
+    assert!(!(ramp.ends)(&json!({"appended": "GCB Closed"})));
+    assert!(!(ramp.ends)(&json!({"event": "STOP ramp end", "owner": "secondary"})));
+    assert!(!(ramp.ends)(&json!({"command": "TurbineTripAcquired", "owner": "secondary"})));
+    assert!(c3.ramp.is_none() && c3.start_cap() == 0.02);
     // Off at the first bound at or after the window's end, not before.
     let zero = 548.05;
     assert!(!cap_removed_at(zero + 19.95, zero, 20.));
@@ -875,6 +1126,19 @@ struct Driven {
     seats: std::collections::BTreeMap<usize, f64>,
     /// The acquired reactor trip after zero (the first division's trip).
     reactor_trip_after_zero: Option<f64>,
+    /// Rule F's absolute classes and their record (S3-D49).
+    f_tolerances: Option<(std::collections::BTreeMap<String, Vec<f64>>, Value)>,
+    /// The run's relative tolerance.
+    rtol: f64,
+    /// Each restart's pre-transaction consistency (N4′).
+    entries: Vec<Value>,
+    /// Every logged instant (R, S) and donor flip, absolute (rule F).
+    instants: Vec<f64>,
+    donor_flips: usize,
+    /// After zero: the generator breaker's opening and each SG relief
+    /// opening (+1) and closing (-1) (rule B).
+    gcb_open_after_zero: Option<f64>,
+    sg_relief: Vec<(String, i64, f64)>,
     repeat_record: Value,
     /// Rule K's post-event state (S3-D52): the declared part's end, the
     /// window's end or rule I's end, whichever first: `(path, sha256,
@@ -898,6 +1162,12 @@ struct Ask<'a> {
     /// E2's cap and E4/H1's window-end restart): the run, its repeat and
     /// the cost drive; never a reference (R1 has its own cap, R2 none).
     event_window: bool,
+    /// The gate observation grid when not S1's comparison grid (SS-1: the
+    /// 0.1 s output grid, S3-D51).
+    observation_s: Option<f64>,
+    /// Whether rule F's absolute classes are propagated at the start
+    /// (S3-D49; the run only).
+    f_tolerances: bool,
 }
 
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)] // One case: composition, run, judgement.
@@ -923,6 +1193,10 @@ fn drive(
         joined::JoinedSystem,
     };
     let c5 = case == Case::C5;
+    // C1 and C5 exchange with the test-only Grid stand-in (owner D1 + D2,
+    // R5-F4): C1 as a connected unit on a steady bus, every interval quiet
+    // (S3-D42: no grid event, no grid window).
+    let exchanging = c5 || case == Case::C1;
     let started = spine::z1::cpu_s();
     let section = inputs.ic.clone();
     let s3_unit::S3Unit {
@@ -1017,9 +1291,41 @@ fn drive(
             conservation::Conservation::new(&g.s2.gates, plan.clone(), held0, vec![0.; ledgers])
         });
         let unit = ida.system();
+        let names = |v: Vec<String>| v;
+        let regions = names(
+            g.network_packet
+                .mechanics
+                .regions
+                .iter()
+                .map(|r| r.id.clone())
+                .collect(),
+        );
+        let faces = names(
+            g.network_packet
+                .mechanics
+                .faces
+                .iter()
+                .map(|f| f.id.clone())
+                .collect(),
+        );
+        // C3's idle branch: the supply-lost pump's discharge face (S3-D50).
+        let idle_face = match command {
+            Some(Command::SupplyLoss { rotor }) => s3_unit::ROTOR_CONSUMERS[rotor]
+                .strip_prefix("LD01.P.")
+                .map(|p| format!("PUMP.{p}->COLD.{}", &p[..1])),
+            _ => None,
+        };
+        let extra = observe::Extra::of(
+            &regions,
+            &faces,
+            &plan.ledger_names(),
+            plan.generators(),
+            idle_face.as_deref(),
+        )
+        .unwrap_or_else(|e| panic!("the extra signals: {e}"));
         observe::Gates {
             origin: zero,
-            dt: g.budgets.observation_s,
+            dt: ask.observation_s.unwrap_or(g.budgets.observation_s),
             output_s: g.budgets.output_s,
             credited_from: zero + ask.credited_from,
             reader: outputs::Reader::new(joined, &g.network_packet, g.reference_travel_m)
@@ -1047,6 +1353,7 @@ fn drive(
             samples: 0,
             rotors: Vec::new(),
             last_receipts: None,
+            extra: Some(extra),
         }
     });
     let mut observer = observe::CaseObserver {
@@ -1060,6 +1367,10 @@ fn drive(
             &ida.system().integrated().joined,
             network_ids.clone(),
         ),
+        // N4′'s restart entries on the gated run only (judge-time work).
+        n4_rtol: ask.f_tolerances.then_some(rtol),
+        entries: Vec::new(),
+        units: None,
     };
     // A reference's own cap (R1: S1's eventReference.maxStep_s) holds over
     // its whole run, as S2's R1.
@@ -1070,11 +1381,21 @@ fn drive(
     // Decision 0015 E2: the 20 ms cap only inside the case's declared event
     // window, set by the driver at the restart that starts it (C4's hook)
     // and removed at the first chunk bound at or after its end.
-    let window_cap = window_cap(case, spec).filter(|_| ask.event_window);
+    // RC-1: the case's declared fast electrical ramp, from the wiki's block.
+    let ramp_block = ramp_cap_block().unwrap_or_else(|e| panic!("RC-1: {e}"));
+    let ramp = declared_ramp(case, &ramp_block).unwrap_or_else(|e| panic!("RC-1: {e}"));
+    let window_cap = window_cap(case, spec, ramp).filter(|_| ask.event_window);
     if let Some(w) = &window_cap {
-        driver.restart_max_step = Some((w.max_step_s, w.starts));
+        driver.restart_max_step = Some((w.start_cap(), w.starts));
     }
     let mut cap_intervals: Vec<Value> = Vec::new();
+    // RC-1: the ramp's end hook is armed after the window's start, and its
+    // end (the record's time, s after zero) once the hook has fired.
+    let mut ramp_armed = false;
+    let mut ramp_end: Option<f64> = None;
+    // The cap observed: each chunk's last step against the cap in force at
+    // its middle (RC-1's check that the cap holds only where declared).
+    let mut cap_checks = (0u64, 0f64, 0f64);
     let max_step = ask.max_step;
     if cfg!(feature = "quadratures") && observer.gates.is_some() {
         let count = ida.system().quadrature_count();
@@ -1119,6 +1440,14 @@ fn drive(
         restart,
         derived: &derived,
     };
+    // S3-D49: rule F's absolute classes at the start state (the run only).
+    let f_tolerances = match (&observer.gates, ask.f_tolerances) {
+        (Some(g), true) => Some(
+            observe::signal_tolerances(g, ida.system_mut(), t0, &y, &yp, n, &atol)
+                .unwrap_or_else(|e| panic!("rule F's classes: {e}")),
+        ),
+        _ => None,
+    };
     observe::start_sample(&mut observer, ida.system_mut(), t0, &y, &yp);
     let preparation_cpu_s = spine::z1::cpu_s() - started;
     let run_started = spine::z1::cpu_s();
@@ -1133,13 +1462,21 @@ fn drive(
     if let Some(w) = window_s {
         bounds.push(zero + w);
     }
-    // C5: the stand-in's exchange intervals (D1, S3-D42) are chunk bounds,
-    // as the C5 host stops at each exchange's t1.
-    let quiet_s = spec["exchange"]["quietInterval_s"]
-        .as_f64()
-        .unwrap_or(f64::NAN);
+    // C1, C5: the stand-in's exchange intervals (D1, S3-D42) are chunk
+    // bounds, as the C5 host stops at each exchange's t1. C5's block copies
+    // the quiet interval; C1 reads it from the D1 block itself.
+    let quiet_s = if c5 {
+        spec["exchange"]["quietInterval_s"]
+            .as_f64()
+            .unwrap_or(f64::NAN)
+    } else {
+        exchange_quiet_s()
+    };
     let exchanges: Vec<(f64, bool)> = if c5 {
         s3_harness::c5::exchange_bounds(t0, zero, window_s.unwrap_or(f64::NAN), until, quiet_s)
+    } else if exchanging {
+        // A connected unit, no grid event: quiet intervals to the end.
+        s3_harness::c5::exchange_bounds(t0, until, 0., until, quiet_s)
     } else {
         Vec::new()
     };
@@ -1183,7 +1520,7 @@ fn drive(
         // C5: the stand-in's boundary for the first interval, decided at
         // the unit's start (an energized bus agreeing with the held
         // prediction is no event).
-        if c5 && r.is_ok() {
+        if exchanging && r.is_ok() {
             let t1 = exchanges.first().map_or(until, |e| e.0);
             r = energized_boundary(&mut driver, ida.system(), t0, t1, v_nominal, f_nominal)
                 .map(|k| exchange_log.push(json!({"t_s": t0, "decided": k})));
@@ -1237,9 +1574,44 @@ fn drive(
             if let Some(w) = &window_cap
                 && r.is_ok()
             {
-                if driver.restart_max_step.is_some() && *b >= zero - 1e-9 {
+                if driver.restart_max_step.is_some() && *b >= zero - 1e-9 && !ramp_armed {
                     driver.restart_max_step = None;
-                    cap_intervals.push(json!({"from_s": zero, "from_after_zero_s": 0., "set_by": "the driver at the restart that starts the window (C4 hook 75dd4632c)"}));
+                    cap_intervals.push(json!({"from_s": zero, "from_after_zero_s": 0., "max_step_s": w.start_cap(),
+                        "set_by": "the driver at the restart that starts the window (C4 hook 75dd4632c)"}));
+                    if let Some(ramp) = &w.ramp {
+                        // The ramp's end record sets the window's cap at its
+                        // restart (the hook sees appended records, C5X RC-1).
+                        driver.restart_max_step = Some((w.max_step_s, ramp.ends));
+                        ramp_armed = true;
+                    }
+                }
+                if ramp_armed && ramp_end.is_none() {
+                    let opened = ida
+                        .system()
+                        .log
+                        .iter()
+                        .find(|(at, what)| *at >= zero - 1e-9 && what == "GCB Open")
+                        .map(|(at, _)| *at);
+                    if let Some(at) = opened {
+                        driver.restart_max_step = None;
+                        ramp_end = Some(at - zero);
+                        if let Some(last) = cap_intervals.last_mut() {
+                            last["ramp_end_s"] = json!(at);
+                            last["ramp_end_after_zero_s"] = json!(at - zero);
+                        }
+                        cap_intervals.push(json!({"from_s": at, "from_after_zero_s": at - zero, "max_step_s": w.max_step_s,
+                            "set_by": "the driver at the ramp's end record's restart (GCB Open; C5X RC-1 hook)"}));
+                    }
+                }
+                if let Ok(st) = ida.stats()
+                    && st.last_step > 0.
+                    && let Some(cap) = cap_in_force(w, *b - zero - st.last_step / 2., ramp_end)
+                {
+                    cap_checks.0 += 1;
+                    cap_checks.1 = cap_checks.1.max(st.last_step / cap);
+                    if ramp_end.is_none_or(|e| *b - zero <= e + 1e-9) && w.ramp.is_some() {
+                        cap_checks.2 = cap_checks.2.max(st.last_step);
+                    }
                 }
                 if let Some(last) = cap_intervals.last_mut()
                     && last.get("removed_at_s").is_none()
@@ -1274,7 +1646,7 @@ fn drive(
             convergence.push((reached - zero, driver.totals[5] as f64 + open_failures));
             // C5's exchange after the mark: the offsite loss's restart
             // counts in the event window's span.
-            if c5 && r.is_ok() {
+            if exchanging && r.is_ok() {
                 let b = *b;
                 let rel = b - zero;
                 if let Some(s) = ida
@@ -1309,7 +1681,7 @@ fn drive(
                     }
                     last_exchange = b;
                     let next = exchanges.get(k + 1).map(|e| e.0);
-                    if same_instant(b, zero) {
+                    if c5 && same_instant(b, zero) {
                         // The stand-in's dead bus (S3-D10), class R, applied
                         // now with the gate observation on both sides, then
                         // the plant's own event-window cap on the segment the
@@ -1387,7 +1759,7 @@ fn drive(
                         if let Err(e) = step {
                             r = Err(e);
                         }
-                    } else if b < zero
+                    } else if (!c5 || b < zero)
                         && let Some(t1) = next
                     {
                         match energized_boundary(
@@ -1651,6 +2023,9 @@ fn drive(
         "samples": observer.gates.as_ref().map(|g| g.samples), "end_state_fingerprint": end_fp.hex(),
         "instants": {"count": driver.log.len(), "sha256": spine::sha256(&instants_bytes)},
         "counts_by_class": driver.counts.json()});
+    // MR-1 (R7-P): the handle's counts and the packet's section, for the receipt.
+    let rebuild_counts = ida.rebuild();
+    let rebuild_section = ida.system().integrated().joined.matrix_rebuild().map(|m| json!({"rebuildEverySteps": m.rebuild_every_steps, "appliesFrom": m.applies_from, "decision": m.decision}));
     let record = json!({
         "label": ask.label,
         "failure": failure,
@@ -1665,7 +2040,16 @@ fn drive(
         "configuration": {"span_after_zero_s": span, "zero_after_start_s": zero_after,
             "command": command.map(|c| format!("{c:?}")), "frame_s": frame.period_s(),
             "max_order": s3_unit::MAX_ORDER, "max_step_s": max_step,
+            "matrix_rebuild": {"rule": "MR-1 (owner, request 7 R7-P): stock IDAS check points every `steps` steps force an iteration-matrix setup; freed at restarts and above `held`",
+                "source": format!("{:?}", driver.matrix_rebuild),
+                "packet_section": rebuild_section,
+                "held_max": leitbild_operating_water::frame::MATRIX_REBUILD_HELD,
+                "counts": {"steps": rebuild_counts.steps, "held": rebuild_counts.held, "most_held": rebuild_counts.most_held, "drops": rebuild_counts.drops}},
             "window_cap": window_cap.as_ref().map(|w| json!({"max_step_s": w.max_step_s, "window_s": w.window_s,
+                "ramp": w.ramp.as_ref().map(|r| json!({"max_step_s": r.max_step_s, "declared": r.declared,
+                    "value": format!("{RAMP_CAP_FENCE}.rampMaxStep_s ({DECISION_0015})"),
+                    "block_sha256": spine::sha256(ramp_block.to_string().as_bytes()), "end_after_zero_s": ramp_end})),
+                "observed": {"chunk_steps_checked": cap_checks.0, "max_last_step_over_cap": cap_checks.1, "max_last_step_in_ramp_s": cap_checks.2},
                 "rule": "0015 E2: the cap only inside the declared window, set at the restart that starts it, removed at the first chunk bound at or after its end",
                 "intervals": cap_intervals})),
             "c5_window_cap": if c5 { json!({"max_step_s": WINDOW_MAX_STEP_S, "window_s": window_s,
@@ -1682,8 +2066,12 @@ fn drive(
             "verdict_fingerprint": domain.verdicts.hex(), "reuse": {"reused": domain.reused, "crosscheck": domain.crosscheck, "crosschecked": domain.crosschecked,
                 "mismatches": domain.mismatches, "first_mismatch": domain.first_mismatch}},
         "algebraic_residuals": observer.residuals.json(),
+        "restart_entries": {"rule": "N4′ (S3-D58, S3-D61): each restart's pre-transaction projection correction of the algebraic rows in the integrator's own units (rtol |y| + atol, atol as stock IDA uses it, from its error weights); with a free vapour path, each free vapour path's drive tolerance by rule F's a_x construction at that state (judge-time cost, not plant work)",
+            "judge_cpu_s": observer.entries.iter().filter_map(|e| e["drives"]["judge_cpu_s"].as_f64()).sum::<f64>(),
+            "entries": observer.entries},
         "operator_turbine_trip": operator_trip_record,
-        "exchange": if c5 { json!({"stand_in": "the test-only Grid stand-in's C5 plan (C5X ld01-grid-standin.ts boundaries() under D1 with S3-D42's connected-only window; no frequency event), reproduced in-process: the same interval ends and the same boundary decisions as the C5 host (Driver::decide at each exchange), not over the child-process pipe (R5-F4: no live Grid)",
+        "exchange": if exchanging { json!({"stand_in": if c5 { "the test-only Grid stand-in's C5 plan (C5X ld01-grid-standin.ts boundaries() under D1 with S3-D42's connected-only window; no frequency event), reproduced in-process: the same interval ends and the same boundary decisions as the C5 host (Driver::decide at each exchange), not over the child-process pipe (R5-F4: no live Grid)" } else { "C1 (C5L): the test-only Grid stand-in's plan for a connected unit on its steady 50 Hz bus (D1 quiet intervals from the ld01-electrical-exchange block, no grid event, S3-D42), in-process as C5's: Driver::decide at each exchange, receipts from the slice's quadratures (R5-F4: no live Grid)" },
+            "quiet_interval_s": quiet_s,
             "intervals": exchanges.len(), "decisions": exchange_log,
             "receipts": receipts.iter().map(|q| json!([q.from, q.to, q.export_j, q.unit_draw_j, q.reserve_draw_j])).collect::<Vec<_>>(),
             "receipt_columns": ["from_after_zero_s", "to_after_zero_s", "export_J", "unit_draw_J", "reserve_draw_J"],
@@ -1759,6 +2147,7 @@ fn drive(
         .iter()
         .filter_map(|d| d.trip.as_ref().map(|c| c.at_s - zero))
         .reduce(f64::min);
+    let entries = observer.entries.clone();
     Driven {
         record,
         observer,
@@ -1769,6 +2158,27 @@ fn drive(
         convergence,
         seats,
         reactor_trip_after_zero,
+        f_tolerances,
+        rtol,
+        entries,
+        instants: driver
+            .log
+            .iter()
+            .filter_map(|e| e["t_s"].as_f64())
+            .chain(driver.donor_flips.events.iter().map(|(t, _)| *t))
+            .collect(),
+        donor_flips: driver.donor_flips.total(),
+        gcb_open_after_zero: tl
+            .electrical
+            .as_ref()
+            .and_then(|l| l.iter().find(|(_, w)| w == "GCB Open").map(|(t, _)| *t)),
+        sg_relief: tl
+            .sg_relief
+            .iter()
+            .filter_map(|(v, _, d, t)| {
+                s3_harness::timeline::relief_sg(v).map(|sg| (sg.to_string(), *d, *t))
+            })
+            .collect(),
         repeat_record,
         declared_end_state,
         end_after_zero: end - zero,
@@ -1885,26 +2295,6 @@ fn c5_directions(
     b
 }
 
-/// The run's `(key, is temperature, series)` for SS-1 and the detector.
-fn credited_series(c: &compare::Credited) -> Vec<(String, bool, Vec<f64>)> {
-    let mut out = Vec::new();
-    for (k, temperature) in [
-        (compare::key::AVERAGE_COOLANT_K, true),
-        (compare::key::CORE_POWER_W, false),
-        (compare::key::PZR_ROOF_PA, false),
-        (compare::key::SG_PRESSURE_PA, false),
-        (compare::key::LOOP_FLOW_KG_S, false),
-        ("generator_power_w", false),
-    ] {
-        if let Ok(series) = c.output(k) {
-            for (i, x) in series.iter().enumerate() {
-                out.push((format!("{k}[{i}]"), temperature, x.clone()));
-            }
-        }
-    }
-    out
-}
-
 /// Rule D on a run's observation: S2's identities and IDAS ledgers (heater,
 /// PZR relief and exterior loss, SG feed/steam/relief, motor work, event
 /// energy among them) and the ELEC slice's energy ledger (turbine and shaft
@@ -1982,6 +2372,8 @@ fn rule_i_is_judged_at_every_accepted_step() {
             credited_from: 0.,
             window_state: None,
             event_window: true,
+            observation_s: None,
+            f_tolerances: false,
         },
     );
     let steps = run.record["stock_totals"]["steps"].as_i64().unwrap();
@@ -2001,6 +2393,12 @@ fn s3_case_run() {
     let case = Case::parse(&std::env::var("LD01_S3_CASE").expect("LD01_S3_CASE")).unwrap();
     let preview = std::env::var("LD01_S3_PREVIEW").as_deref() == Ok("1");
     let gates_on = std::env::var("LD01_S3_GATES").as_deref() == Ok("1");
+    // N4′: C3's chattering rule is the pinned C4 block's; a rule in
+    // LD01_S3_CHATTER_RULE is a diagnostic of an ungated preview only.
+    assert!(
+        std::env::var("LD01_S3_CHATTER_RULE").is_err() || (!gates_on && preview),
+        "LD01_S3_CHATTER_RULE is a diagnostic: refused in a gated or evidence run"
+    );
     let receipt_path = std::env::var("LD01_S3_CASE_RECEIPT").expect("LD01_S3_CASE_RECEIPT");
     assert!(
         !std::path::Path::new(&receipt_path).exists(),
@@ -2069,9 +2467,13 @@ fn s3_case_run() {
             label: "run",
             scaling: s3_unit::Scaling::NONE,
             max_step: None,
-            credited_from: judged_from,
+            // Rule F reads the whole declared part (S3-D49); E and the drift
+            // take their own spans from it.
+            credited_from: 0.,
             window_state: window_state("run"),
             event_window: true,
+            observation_s: None,
+            f_tolerances: gates_on,
         },
     );
     if run.record["composition"]["spray_path"] != json!(true) {
@@ -2125,6 +2527,8 @@ fn s3_case_run() {
                 credited_from: judged_from,
                 window_state: None,
                 event_window: true,
+                observation_s: None,
+                f_tolerances: false,
             },
         )
     });
@@ -2193,6 +2597,8 @@ fn s3_case_run() {
                     credited_from: judged_from,
                     window_state: window_state("repeat"),
                     event_window: true,
+                    observation_s: None,
+                    f_tolerances: false,
                 },
             );
             families.insert(
@@ -2271,6 +2677,8 @@ fn s3_case_run() {
                     credited_from: from,
                     window_state: None,
                     event_window: false,
+                    observation_s: None,
+                    f_tolerances: false,
                 },
             );
             let rg = r.observer.gates.as_ref().unwrap();
@@ -2398,28 +2806,41 @@ fn s3_case_run() {
             "threshold_source": "ld01-accuracy-contract + ld01-s2-accuracy (E0), ld01-s2-gates referenceToleranceFactor, ld01-s1-gates eventReference",
             "electrical_extension": "E′ (S3-D23) per comparison (electrical_e0): Ieq = |i_dq|/sqrt(3) against 10 A and terminal power against 1 MW, for the cases accuracyExtension.appliesTo names",
             "comparisons": comparisons}));
-        // Rule F: the detector on every recorded credited signal.
-        let series = credited_series(&og.credited);
-        let signals: Vec<(String, Vec<f64>)> = series
-            .iter()
-            .map(|(k, _, x)| (k.clone(), x.clone()))
-            .collect();
-        let instants: Vec<f64> = run.record["instants"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter_map(|e| e["t_s"].as_f64())
-            .collect();
-        families.insert(
-            "F_smoothness".into(),
-            s3_harness::families::smoothness(
-                &d.block.value,
-                &spec,
-                &signals,
-                &og.credited.t,
-                &instants,
-            ),
-        );
+        // Rule F (S3-D49) on the run's raw samples over its declared part.
+        let f_family = match &run.f_tolerances {
+            Some((a, record)) => {
+                let (lo, hi) = (run.zero - 1e-9, run.zero + end + 1e-9);
+                let keep: Vec<usize> = (0..og.credited.t.len())
+                    .filter(|k| og.credited.t[*k] >= lo && og.credited.t[*k] <= hi)
+                    .collect();
+                let t: Vec<f64> = keep.iter().map(|k| og.credited.t[*k]).collect();
+                let mut signals: Vec<(String, Vec<f64>, f64)> = Vec::new();
+                for key in observe::F_SIGNALS {
+                    let (Ok(series), Some(classes)) = (og.credited.output(key), a.get(key)) else {
+                        continue;
+                    };
+                    for (j, (x, ax)) in series.iter().zip(classes).enumerate() {
+                        signals.push((
+                            format!("{key}[{j}]"),
+                            keep.iter().map(|k| x[*k]).collect(),
+                            *ax,
+                        ));
+                    }
+                }
+                let mut f =
+                    s3_harness::families::smoothness_signed(&t, &signals, run.rtol, &run.instants);
+                f["classes"] = record.clone();
+                if og.credited_error.is_some() {
+                    f["verdict"] = json!("unevaluable");
+                    f["credited_error"] = json!(og.credited_error);
+                }
+                f
+            }
+            None => {
+                json!({"family": "F smoothness", "verdict": "not executable", "reason": "no absolute classes (the run did not propagate them)"})
+            }
+        };
+        families.insert("F_smoothness".into(), f_family);
         // Rule K at the declared states.
         let receipts: Value = std::env::var("LD01_S3_Z6_RECEIPTS")
             .ok()
@@ -2463,20 +2884,41 @@ fn s3_case_run() {
             "S3-D52: the declared part's end state, the window's end or rule I's end, whichever first (C2, C3, C5); A4 admits no state after rule I's exit"
         });
         families.insert("K_spectra".into(), k);
-        // Rule B.
-        let rotor = match case {
-            Case::C3 => case_clock(case, &spec, d.block.number("/frameAlignment/frame_s"))
-                .ok()
-                .and_then(|(_, c)| match c {
-                    Some(Command::SupplyLoss { rotor }) => Some(rotor),
-                    _ => None,
-                }),
-            _ => None,
+        // Rule B (S3-D50), with the chattering criterion as data.
+        // C3's chattering rule from the pinned C4 block (N4′); a rule given
+        // in LD01_S3_CHATTER_RULE is a diagnostic only, refused in a gated
+        // or evidence run.
+        let chatter_rule: Value = match std::env::var("LD01_S3_CHATTER_RULE") {
+            Ok(r) => {
+                assert!(
+                    !gates_on && preview,
+                    "LD01_S3_CHATTER_RULE is a diagnostic: refused in a gated or evidence run"
+                );
+                serde_json::from_str(&r).expect("LD01_S3_CHATTER_RULE is a JSON rule")
+            }
+            Err(_) => n4_rule_of_the_wiki()
+                .unwrap_or_else(|e| json!({"criterion": "unavailable", "reason": e})),
+        };
+        let chatter = s3_harness::families::chattering(
+            run.record["instants"].as_array().unwrap(),
+            &chatter_rule,
+            &run.entries,
+        );
+        let direction_inputs = s3_harness::families::DirectionInputs {
+            credited: &og.credited,
+            zero: run.zero,
+            end,
+            reactor_trip: run.reactor_trip_after_zero,
+            gcb_open: run.gcb_open_after_zero,
+            sg_relief: run.sg_relief.clone(),
+            rotors: &og.rotors,
+            chatter,
+            donor_flips: run.donor_flips,
         };
         let b_family = if case == Case::C5 {
             c5_directions(&spec, og, &g.network_packet, &run)
         } else {
-            s3_harness::families::directions(case, &spec, rotor, &og.rotors)
+            s3_harness::families::directions(case, &spec, &direction_inputs)
         };
         families.insert("B_directions".into(), b_family);
         // C1's drift, SS-1 and SS-2.
@@ -2543,16 +2985,67 @@ fn s3_case_run() {
             families.insert("C1_drift".into(), json!({"family": "C1 drift", "verdict": verdict, "credited_error": og.credited_error,
                 "threshold_source": "ld01-s2-gates hold.driftCeiling (PZR level reported only, S3-D2); ld01-s3-cases-c1c3 cases.C1.generatorPowerDriftRelative",
                 "judged_from_s": judged_from, "record": drift}));
-            families.insert(
-                "C1_SS1".into(),
-                s3_harness::families::ss1(
+            // SS-1 (S3-D51): its own drive over ss1Duration_s on the 0.1 s
+            // output grid, provisional on this Mac (F1).
+            let ss1 = if std::env::var("LD01_S3_SS1").as_deref() == Ok("0") {
+                json!({"family": "C1 SS-1", "verdict": "not run", "reason": "LD01_S3_SS1=0"})
+            } else {
+                let declared = spec["ss1Duration_s"].as_f64().expect("ss1Duration_s");
+                // A preview may shorten it (then not executable as declared).
+                let duration = match std::env::var("LD01_S3_PREVIEW_SS1_S") {
+                    Ok(v) => {
+                        assert!(preview, "a shortened SS-1 is a preview");
+                        v.parse::<f64>().expect("LD01_S3_PREVIEW_SS1_S")
+                    }
+                    Err(_) => declared,
+                };
+                let r = drive(
+                    case,
+                    &d,
                     &spec,
-                    end,
-                    &credited_series(&og.credited),
-                    g.budgets.observation_s,
+                    &inputs,
+                    &state,
+                    &state_path,
+                    duration,
+                    Some(g),
+                    &Ask {
+                        label: "SS-1",
+                        scaling: s3_unit::Scaling::NONE,
+                        max_step: None,
+                        credited_from: 0.,
+                        window_state: None,
+                        event_window: true,
+                        observation_s: Some(g.budgets.output_s),
+                        f_tolerances: false,
+                    },
+                );
+                let rg = r.observer.gates.as_ref().unwrap();
+                let series: Vec<(String, bool, Vec<f64>)> = s3_harness::families::SS1_SIGNALS
+                    .iter()
+                    .flat_map(|(k, temperature)| {
+                        rg.credited.output(k).map_or(Vec::new(), |inst| {
+                            inst.iter()
+                                .enumerate()
+                                .map(|(j, x)| (format!("{k}[{j}]"), *temperature, x.clone()))
+                                .collect()
+                        })
+                    })
+                    .collect();
+                let mut v = s3_harness::families::ss1(
+                    &spec,
+                    r.end_after_zero,
+                    &series,
+                    g.budgets.output_s,
                     g.budgets.cutoff_hz,
-                ),
-            );
+                );
+                v["drive"] = json!({"failure": r.failure, "cpu": r.record["cpu"], "credited_error": rg.credited_error,
+                    "rule_i_exit_after_zero_s": r.exit_after_zero, "counts_by_class": r.record["counts_by_class"]});
+                if r.failure.is_some() || rg.credited_error.is_some() {
+                    v["verdict"] = json!("unevaluable");
+                }
+                v
+            };
+            families.insert("C1_SS1".into(), ss1);
             let d_family = &families["D_conservation"];
             families.insert(
                 "C1_SS2".into(),
