@@ -1259,7 +1259,8 @@ pub struct Taps {
 #[derive(Clone, Copy, Debug)]
 pub struct Inventory {
     pub mass_kg: Scalar,
-    /// Zone internal energy plus transit energy at `h_g`/`h_f(p_s)`.
+    /// Zone internal energy plus transit internal energy: `h_g`/`h_f(p_s)`
+    /// per kg less `p_s` times the transit volumes.
     pub energy_j: Scalar,
     pub boron_kg: Scalar,
 }
@@ -3053,7 +3054,13 @@ impl Cell {
         })
     }
 
-    /// Total mass, energy and boron of the cell for conservation accounting.
+    /// Total mass, internal energy and boron of the cell for conservation
+    /// accounting. The transit stocks b, b_A and d hold `u_sat(p_s)` per kg:
+    /// every transfer carries `h_g`/`h_f(p_s)`, but the flow work `p_s V` of
+    /// their volumes is not stored (the zones pay it as volume work), so it
+    /// is taken off at their volume coordinates. The rows change this energy
+    /// by the port receipts and heat less the hydrostatic remainder
+    /// [`Balance::volume_work_w`].
     pub fn inventory(&self, x: &Coordinates, column: &Column) -> Inventory {
         let sat = &column.interface_saturation;
         Inventory {
@@ -3067,7 +3074,9 @@ impl Cell {
                 + x.admitted_energy
                 + x.resident_energy
                 + (x.bubble_mass + x.admitted_bubble_mass) * sat.vapor.enthalpy
-                + x.drop_mass * sat.liquid.enthalpy,
+                + x.drop_mass * sat.liquid.enthalpy
+                - column.interface_pressure
+                    * (x.bubble_volume + x.drop_volume + x.admitted_bubble_volume),
             boron_kg: x.admitted_boron + x.resident_boron + x.drop_boron,
         }
     }

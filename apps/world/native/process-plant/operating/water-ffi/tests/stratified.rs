@@ -570,6 +570,99 @@ fn arbitrary_receipts_are_conserved_exactly_by_the_assembled_rows() {
     }
 }
 
+/// The conservation inventory is the cell's internal energy: along the
+/// cell's own rates it changes by the port receipts and heat less the
+/// hydrostatic remainder (`Balance::volume_work_w`), with b, b_A and d on
+/// their volume rows. The one other part is the transit drift law's slope:
+/// it takes `dTsat/dp` from the tuple's Clapeyron relation, which IF97's
+/// saturation line (the `h_sat(p_s)` the inventory reads) matches to about
+/// 1e-4. Transit held at `h_sat(p_s)` instead also carries its flow work
+/// `p_s V_t`, which no row pays: C4's swell (43.8 m³ of bubbles at 10.05 MPa)
+/// made it a 440 MJ unit-energy ledger miss (LEDGER4).
+#[test]
+fn inventory_energy_changes_by_the_receipts_less_the_hydrostatic_remainder() {
+    let p = prepared();
+    let mut v = active(&p);
+    v[st::ADMITTED_BUBBLE_MASS] = 6.;
+    v[st::ADMITTED_BUBBLE_VOLUME] = 0.06;
+    let mut rate = active_rates();
+    rate[st::ADMITTED_BUBBLE_VOLUME] = 0.003;
+    let heat = Heat {
+        vapor: s(1.3e4),
+        admitted: s(2.4e5),
+        resident: s(7.7e4),
+    };
+    let receipt = Receipt {
+        mass: s(-31.7),
+        enthalpy: s(-31.7 * 1.6e6 - 2.9e5),
+        boron: s(-0.041),
+        ..Receipt::zero()
+    };
+    let transit = [st::BUBBLE_VOLUME, st::DROP_VOLUME, st::ADMITTED_BUBBLE_VOLUME];
+    // The transit volumes on their rows at p_s (which moves with them), and
+    // stock rates that zero every stock row (masses settle first: p_s' and
+    // so the drift read the mass rates).
+    for _ in 0..6 {
+        let ev = evaluate(&p, &v, &rate, receipt, heat).unwrap();
+        for i in transit {
+            v[i] -= ev.rows[i].value * p.scales[i];
+        }
+        for (i, r) in rate.iter_mut().enumerate().skip(st::VAPOR_MASS) {
+            *r -= ev.rows[i].value * p.scales[i];
+        }
+    }
+    let ev = evaluate(&p, &v, &rate, receipt, heat).unwrap();
+    let rows = |i: &[usize]| i.iter().map(|&i| ev.rows[i].value.abs()).fold(0., f64::max);
+    let stocks: Vec<usize> = (st::VAPOR_MASS..st::COORDINATES).collect();
+    assert!(
+        rows(&transit) <= 1e-15 && rows(&stocks) <= 1e-15,
+        "transit volume rows {:e}, stock rows {:e}",
+        rows(&transit),
+        rows(&stocks)
+    );
+    // The inventory's rate along the same rates, by its seeded direction.
+    let seeded: Vec<Scalar> = (0..st::COORDINATES)
+        .map(|i| Scalar::new(v[i], rate[i]))
+        .collect();
+    let x = Coordinates::from_slice(&seeded).unwrap();
+    let column = p.cell.column(&If97, &x, None).unwrap();
+    let inventory_rate = p.cell.inventory(&x, &column).energy_j.direction;
+    let b = &ev.balance;
+    let f = &ev.flows;
+    // The drift law's slope part: M (dh_sat/dt - (v (1 - T alpha) + c_p
+    // Clapeyron) p_s'), with p_s' the law's own rate.
+    let sat = &column.interface_saturation;
+    let p_s = column.interface_pressure;
+    assert_eq!(p_s.direction, f.interface_pressure_rate.value);
+    let tsat = sat.temperature.value;
+    let clapeyron = tsat * (1. / sat.vapor.density.value - 1. / sat.liquid.density.value)
+        / (sat.vapor.enthalpy.value - sat.liquid.enthalpy.value);
+    let law = |w: &leitbild_operating_plant::thermal::WaterPoint| {
+        w.enthalpy.direction
+            - (1. / w.density.value * (1. - tsat * w.expansion.value) + w.cp.value * clapeyron)
+                * p_s.direction
+    };
+    let slope = (v[st::BUBBLE_MASS] + v[st::ADMITTED_BUBBLE_MASS]) * law(&sat.vapor)
+        + v[st::DROP_MASS] * law(&sat.liquid);
+    let expected = b.receipt_energy_w.value - b.volume_work_w.value + slope;
+    let terms = b.receipt_energy_w.value.abs() + b.volume_work_w.value.abs() + slope.abs();
+    // What transit held at h_sat(p_s) adds: d(p_s V_t)/dt.
+    let volume: f64 = transit.iter().map(|&i| v[i]).sum();
+    let volume_rate: f64 = transit.iter().map(|&i| rate[i]).sum();
+    let flow_work_rate = p_s.direction * volume + p_s.value * volume_rate;
+    let bound = 1e-12 * terms;
+    println!(
+        "inventory rate {inventory_rate:e} W, receipts less the hydrostatic remainder {:e} W, drift slope part {slope:e} W, difference {:e} W (bound {bound:e}); transit flow-work rate {flow_work_rate:e} W",
+        expected - slope,
+        inventory_rate - expected
+    );
+    assert!(flow_work_rate.abs() > 1e6 * bound && slope.abs() < 1e-3 * flow_work_rate.abs());
+    assert!(
+        (inventory_rate - expected).abs() <= bound,
+        "inventory rate {inventory_rate:e} W against the receipts less the hydrostatic remainder plus the drift's slope part {expected:e} W"
+    );
+}
+
 #[test]
 fn admitted_layer_follows_the_analytic_lower_bound_under_a_long_outsurge() {
     let p = prepared();
