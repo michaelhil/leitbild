@@ -1777,10 +1777,11 @@ impl<P: Properties + WaterProperties> Joined<P> {
         Ok(())
     }
 
-    /// Startup only: let the composed owners prepare their algebraic
-    /// coordinates on the fluid state of one value evaluation at `(t, y, 0)`
-    /// (the rods' steady guide currents), then write their prepared
-    /// coordinates into `y`. No differential coordinate of any block moves.
+    /// Startup only: let the composed owners prepare their coordinates on
+    /// the fluid state of one value evaluation at `(t, y, 0)`, then write
+    /// their prepared coordinates into `y`. No differential coordinate of
+    /// any block moves except the stocks an owner declares it prepares at
+    /// the composed state (HOOK OU-C P2: the rod bores' water).
     pub fn prepare_owners(
         &mut self,
         t: f64,
@@ -1794,6 +1795,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let o = self.blocks.offsets;
         if let RodPort::Owner(b) = &self.blocks.rods {
             let ids = b.differential();
+            let stocks = b.prepared_stocks();
             for (i, (v, scale)) in b
                 .prepared()
                 .iter()
@@ -1801,7 +1803,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 .enumerate()
             {
                 let new = v / scale;
-                if ids[i] != 0. && new != y[o.rods + i] {
+                if ids[i] != 0. && new != y[o.rods + i] && !stocks.contains(&i) {
                     return Err(fatal(format!(
                         "the rod owner's preparation moved differential coordinate {i}"
                     )));

@@ -1529,15 +1529,48 @@ impl<P: Properties> Rods<P> for RodBlock {
         }
         Rods::<P>::transact(self, p, t, &directions, y).map(Some)
     }
-    /// Startup: nothing is solved here (DR13-ROD). The bores' prepared water
-    /// and zero mouth currents are the composition's; the joined exact
-    /// consistent start solves the currents and the bores' pressures.
-    fn prepare(&mut self, _: &P, _: &Fluid<'_>) -> Result<Transaction, Failure> {
+    /// Startup: the bores' water is prepared as LOWER's composed water
+    /// carried to the bores' reference on LOWER's density, at LOWER's
+    /// specific internal energy and boron, each group at its free volume at
+    /// the prepared travel; the mouth currents stay zero. Nothing is solved
+    /// here (DR13-ROD): the joined exact consistent start solves the
+    /// currents and the bores' pressures.
+    fn prepare(&mut self, properties: &P, fluid: &Fluid<'_>) -> Result<Transaction, Failure> {
+        let liquid = Self::liquid(fluid, self.lower)?;
+        let (point, _) = fluid.points[self.lower][0]
+            .ok_or_else(|| fatal("rods: LOWER has no liquid point to prepare the bores"))?;
+        let pressure = fluid.cells[self.lower].pressure.value
+            + liquid.density.value * self.gravity * (self.z_lower - self.z_bore);
+        let w = properties
+            .caloric(false, pressure, point.internal_energy_j_kg, false)
+            .map_err(|e| fatal(format!("rods: prepared bore water: {e}")))?;
+        let w = properties.values(&w);
+        let inserted = self.guide_top - (self.body_bottom + self.reference_travel);
+        let free = self.bore_volume - self.body_area * inserted;
+        let mut groups = Vec::with_capacity(self.groups.len());
+        for g in 0..self.groups.len() {
+            let volume = free * self.groups[g].members.len() as f64;
+            let mass = w.density_kg_m3 * volume;
+            let base = self.group_base(g);
+            self.prepared[base + BORE_MASS] = mass;
+            self.prepared[base + BORE_ENERGY] = mass * w.internal_energy_j_kg;
+            self.prepared[base + BORE_BORON] = mass * liquid.boron_concentration.value;
+            self.prepared[base + BORE_PRESSURE] = pressure;
+            groups.push(json!({"members": self.groups[g].members, "mass_kg": mass}));
+        }
         Ok(Transaction {
             deposits: Vec::new(),
-            receipt: json!({"rods": "bore water prepared as LOWER's at the bores' reference; mouth currents zero; the joined consistent start solves the algebraic coordinates (DR13-ROD)",
-                "bore_groups": self.bore_groups()}),
+            receipt: json!({"rods": "bore water prepared as LOWER's composed water at the bores' reference; mouth currents zero; the joined consistent start solves the algebraic coordinates (DR13-ROD)",
+                "bore_pressure_pa": pressure, "bore_density_kg_m3": w.density_kg_m3, "bore_groups": groups}),
         })
+    }
+    fn prepared_stocks(&self) -> Vec<usize> {
+        (0..self.groups.len())
+            .flat_map(|g| {
+                let base = self.group_base(g);
+                [base + BORE_MASS, base + BORE_ENERGY, base + BORE_BORON]
+            })
+            .collect()
     }
     fn clusters(&self) -> usize {
         self.clusters.len()
