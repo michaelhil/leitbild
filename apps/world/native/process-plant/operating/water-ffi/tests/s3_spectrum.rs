@@ -11,7 +11,8 @@
 //! `LD01_S3_SPECTRUM_STATE` names a saved S3 state: the settled S3 start
 //! state (`LD01_S3_SPECTRUM_KIND=start`) or a case's post-event state the
 //! case harness writes at its declared part's end, the window's end or rule
-//! I's end, whichever first (S3-D52; `post-event`). The operator is
+//! I's end, whichever first, and C4's 1 s after each phase change (S3-D52;
+//! `post-event`). The operator is
 //! composed as `s3_unit::compose` composes it, step by step (the joined
 //! spine, the feed gate, the colored and block structures, the S2-D24r /
 //! S3-D16 derived classes, the credited outputs, the saved discrete state
@@ -298,9 +299,20 @@ fn s3_z6_at_a_saved_s3_state() {
     let state_sha256 = z6::sha256(&bytes);
     let kind = env("LD01_S3_SPECTRUM_KIND");
     let from = state["from"].as_str().unwrap_or("");
+    // The case harness's post-event states (S3-D52): C2, C3, C5 at the
+    // window's end or rule I's end; C4 1 s after each phase change and at
+    // its declared part's end.
+    let post_event_state = [
+        "window end",
+        "rule I end",
+        "C4: 1 s after",
+        "C4: the declared part's end",
+    ]
+    .iter()
+    .any(|m| from.contains(m));
     let post_event = match kind.as_str() {
-        "start" if !from.contains("window end") && !from.contains("rule I end") => false,
-        "post-event" if from.contains("window end") || from.contains("rule I end") => true,
+        "start" if !post_event_state => false,
+        "post-event" if post_event_state => true,
         other => panic!(
             "LD01_S3_SPECTRUM_KIND={other} does not name this state (from: {from:?}): start | post-event"
         ),
