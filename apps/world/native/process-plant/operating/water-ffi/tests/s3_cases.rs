@@ -833,11 +833,12 @@ fn window_cap(case: Case, spec: &Value, ramp: Option<Ramp>) -> Option<WindowCap>
     })
 }
 
-/// C5: the Grid stand-in's energized boundary for `[t0, t1)` decided at
-/// `t0` (the driver's time), as the C5 host's `boundary()`: the stand-in's
-/// stiff bus at the packet's nominal voltage and frequency with no phase
-/// error, so the carrier rate held over the interval is `2*pi*f` (D2,
-/// `slice::carrier_rate`). Agreeing bitwise with the held inputs is no
+/// C1 and C5: the Grid stand-in's energized boundary for `[t0, t1)`
+/// decided at `t0` (the driver's time), as the C5 host's `boundary()`: the
+/// stand-in's stiff bus at the packet's nominal voltage and frequency with
+/// no phase error and no frequency rate, so the carrier rate held over the
+/// interval is `2*pi*f` with a zero slope (D2, SW-1, `slice::carrier_rate`).
+/// Agreeing bitwise with the held inputs (and a zero held slope) is no
 /// event; anything else is a held input, class S by S3-D4's rule, checked
 /// by the driver.
 fn energized_boundary(
@@ -857,17 +858,20 @@ fn energized_boundary(
     if i.v_line.to_bits() == v_line.to_bits()
         && i.f_grid_hz.to_bits() == f_hz.to_bits()
         && i.carrier_rad_s.to_bits() == carrier.to_bits()
+        && i.carrier_accel_rad_s2 == 0.
     {
         return Ok("none (agrees with the held prediction)");
     }
     driver.decide(vec![Change {
         due_s: t0,
         class: Class::S,
-        kind: "Grid boundary (held voltage/carrier, D2)".into(),
+        kind: "Grid boundary (held voltage/carrier and slope, D2 + SW-1)".into(),
         action: Action::Held(Box::new(move |u: &mut CaseUnit| {
             u.slice.inputs.v_line = v_line;
             u.slice.inputs.f_grid_hz = f_hz;
             u.slice.inputs.carrier_rad_s = carrier;
+            u.slice.inputs.carrier_accel_rad_s2 = 0.;
+            u.slice.inputs.carrier_from_s = t0;
             Ok(())
         })),
     }])?;
@@ -889,6 +893,15 @@ fn operator_trip_at(
         .filter_map(|d| d.trip.as_ref().map(|c| c.at_s))
         .reduce(f64::min)?;
     Some((trip, delay))
+}
+
+/// D1's quiet exchange interval, from the `ld01-electrical-exchange` block
+/// on the handoff page (`LD01_WIKI_ROOT`).
+fn exchange_quiet_s() -> f64 {
+    let page = format!("{}/operating-scale-realization.md", gates::wiki_model());
+    Block::from_page(&page, "ld01-electrical-exchange")
+        .unwrap_or_else(|e| panic!("the D1 exchange block: {e}"))
+        .number("/quietInterval_s")
 }
 
 /// Whether the cap comes off at the chunk bound `b`: the first bound at
@@ -1071,6 +1084,10 @@ fn drive(
         joined::JoinedSystem,
     };
     let c5 = case == Case::C5;
+    // C1 and C5 exchange with the test-only Grid stand-in (owner D1 + D2,
+    // R5-F4): C1 as a connected unit on a steady bus, every interval quiet
+    // (S3-D42: no grid event, no grid window).
+    let exchanging = c5 || case == Case::C1;
     let started = spine::z1::cpu_s();
     let section = inputs.ic.clone();
     let s3_unit::S3Unit {
@@ -1291,13 +1308,21 @@ fn drive(
     if let Some(w) = window_s {
         bounds.push(zero + w);
     }
-    // C5: the stand-in's exchange intervals (D1, S3-D42) are chunk bounds,
-    // as the C5 host stops at each exchange's t1.
-    let quiet_s = spec["exchange"]["quietInterval_s"]
-        .as_f64()
-        .unwrap_or(f64::NAN);
+    // C1, C5: the stand-in's exchange intervals (D1, S3-D42) are chunk
+    // bounds, as the C5 host stops at each exchange's t1. C5's block copies
+    // the quiet interval; C1 reads it from the D1 block itself.
+    let quiet_s = if c5 {
+        spec["exchange"]["quietInterval_s"]
+            .as_f64()
+            .unwrap_or(f64::NAN)
+    } else {
+        exchange_quiet_s()
+    };
     let exchanges: Vec<(f64, bool)> = if c5 {
         s3_harness::c5::exchange_bounds(t0, zero, window_s.unwrap_or(f64::NAN), until, quiet_s)
+    } else if exchanging {
+        // A connected unit, no grid event: quiet intervals to the end.
+        s3_harness::c5::exchange_bounds(t0, until, 0., until, quiet_s)
     } else {
         Vec::new()
     };
@@ -1337,7 +1362,7 @@ fn drive(
         // C5: the stand-in's boundary for the first interval, decided at
         // the unit's start (an energized bus agreeing with the held
         // prediction is no event).
-        if c5 && r.is_ok() {
+        if exchanging && r.is_ok() {
             let t1 = exchanges.first().map_or(until, |e| e.0);
             r = energized_boundary(&mut driver, ida.system(), t0, t1, v_nominal, f_nominal)
                 .map(|k| exchange_log.push(json!({"t_s": t0, "decided": k})));
@@ -1463,7 +1488,7 @@ fn drive(
             convergence.push((reached - zero, driver.totals[5] as f64 + open_failures));
             // C5's exchange after the mark: the offsite loss's restart
             // counts in the event window's span.
-            if c5 && r.is_ok() {
+            if exchanging && r.is_ok() {
                 let b = *b;
                 let rel = b - zero;
                 if let Some(s) = ida
@@ -1498,7 +1523,7 @@ fn drive(
                     }
                     last_exchange = b;
                     let next = exchanges.get(k + 1).map(|e| e.0);
-                    if same_instant(b, zero) {
+                    if c5 && same_instant(b, zero) {
                         // The stand-in's dead bus (S3-D10), class R, applied
                         // now with the gate observation on both sides, then
                         // the plant's own event-window cap on the segment the
@@ -1576,7 +1601,7 @@ fn drive(
                         if let Err(e) = step {
                             r = Err(e);
                         }
-                    } else if b < zero
+                    } else if (!c5 || b < zero)
                         && let Some(t1) = next
                     {
                         match energized_boundary(
@@ -1827,7 +1852,8 @@ fn drive(
                 "mismatches": domain.mismatches, "first_mismatch": domain.first_mismatch}},
         "algebraic_residuals": observer.residuals.json(),
         "operator_turbine_trip": operator_trip_record,
-        "exchange": if c5 { json!({"stand_in": "the test-only Grid stand-in's C5 plan (C5X ld01-grid-standin.ts boundaries() under D1 with S3-D42's connected-only window; no frequency event), reproduced in-process: the same interval ends and the same boundary decisions as the C5 host (Driver::decide at each exchange), not over the child-process pipe (R5-F4: no live Grid)",
+        "exchange": if exchanging { json!({"stand_in": if c5 { "the test-only Grid stand-in's C5 plan (C5X ld01-grid-standin.ts boundaries() under D1 with S3-D42's connected-only window; no frequency event), reproduced in-process: the same interval ends and the same boundary decisions as the C5 host (Driver::decide at each exchange), not over the child-process pipe (R5-F4: no live Grid)" } else { "C1 (C5L): the test-only Grid stand-in's plan for a connected unit on its steady 50 Hz bus (D1 quiet intervals from the ld01-electrical-exchange block, no grid event, S3-D42), in-process as C5's: Driver::decide at each exchange, receipts from the slice's quadratures (R5-F4: no live Grid)" },
+            "quiet_interval_s": quiet_s,
             "intervals": exchanges.len(), "decisions": exchange_log,
             "receipts": receipts.iter().map(|q| json!([q.from, q.to, q.export_j, q.unit_draw_j, q.reserve_draw_j])).collect::<Vec<_>>(),
             "receipt_columns": ["from_after_zero_s", "to_after_zero_s", "export_J", "unit_draw_J", "reserve_draw_J"],
