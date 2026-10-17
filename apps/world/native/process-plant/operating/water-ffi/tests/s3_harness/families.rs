@@ -17,7 +17,9 @@
 //!   (an external SPECTRUM receipt whose verdict is GO), at the start state
 //!   and at each declared post-event state.
 //! - **B directions** ([`directions`], S3-D50): C2's and C3's signed
-//!   checks, chattering by a rule given as data ([`chattering`]).
+//!   checks, chattering by a rule given as data ([`chattering`]); C4's
+//!   signed rows (S3-D65) on the credited outputs and C4's frame record
+//!   (`s3_harness::c4`'s row judges).
 //! - **C1 SS-1** ([`ss1`], S3-D51): the filtered ranges of the named
 //!   signals on the 0.1 s output grid over the declared duration.
 //! - **C1 SS-2** ([`ss2`]): the conservation record's balances.
@@ -128,7 +130,7 @@ pub fn cost(
     );
     match case {
         Case::C1 => entry("cost.s2_quiet", "s2Quiet", 0., last, last),
-        Case::C2 | Case::C3 | Case::C5 => {
+        Case::C2 | Case::C3 | Case::C4 | Case::C5 => {
             if case == Case::C5 {
                 // C5L: the run from its start (the 10.37 s before the
                 // offsite loss included), beside S3GATES's span from zero.
@@ -773,6 +775,9 @@ pub struct DirectionInputs<'a> {
     pub rotors: &'a [(f64, Vec<f64>)],
     pub chatter: Value,
     pub donor_flips: usize,
+    /// C4's frame record, log and judged lines (S3-D65); `None` for every
+    /// other case or a C4 run without its frame record.
+    pub c4: Option<crate::s3_harness::c4::DirectionRecord<'a>>,
 }
 
 /// One instance's (t after zero, x) over [from, to].
@@ -831,6 +836,11 @@ fn instances(i: &DirectionInputs, key: &str) -> usize {
 /// Rule B as signed (S3-D50): C2's r3 rows and C3's block statements as
 /// signed checks over the declared part; magnitudes and the rows S3-D50
 /// keeps reported (PZR level "stabilizes", loop flow "then ≈") are reported.
+/// C4 (S3-D65): the r2 block's direction table, t_b the first classified
+/// birth (O4′), PT1 on the 2 Hz band within the contract's PT1 noise
+/// budget, the relief flow end to end (its frame-wise rise reported), the
+/// birth cell's departure and vapour mass on C4's frame record, and the
+/// primary mass against the integrated relief flow within rule D's bound.
 pub fn directions(case: Case, spec: &Value, i: &DirectionInputs) -> Value {
     let e = i.end;
     let mut lines: Vec<Value> = Vec::new();
@@ -841,6 +851,95 @@ pub fn directions(case: Case, spec: &Value, i: &DirectionInputs) -> Value {
         }
         Case::C1 => {
             return json!({"family": "B directions", "verdict": "not applicable", "reason": "C1 is a hold: no direction is declared"});
+        }
+        Case::C4 => {
+            use crate::s3_harness::c4;
+            let Some(r) = i.c4 else {
+                return json!({"family": "B directions", "verdict": "not executable",
+                    "reason": "no C4 frame record (the run did not observe C4's frames)",
+                    "declared": spec["directions"]});
+            };
+            let s = |k: &str, j: usize| span_series(i, k, j, 0., e);
+            let t_rt = i.reactor_trip;
+            let saturation = c4::saturation(r.o4);
+            let t_b = saturation.as_ref().map(|x| x.0);
+            let mut push = |id: &str, row: c4::Row| lines.push(line(id, row.0, row.1));
+            let pt1 = s("pzr_roof_pa", 0);
+            push(
+                "PZR pressure (PT1) falls monotonically",
+                if pt1.len() < 3 {
+                    (
+                        None,
+                        json!({"reason": "fewer than three credited PT1 samples"}),
+                    )
+                } else {
+                    let x: Vec<f64> = pt1.iter().map(|p| p.1).collect();
+                    let f = zero_phase_lowpass(&x, r.cutoff_hz, r.observation_s);
+                    let filtered: Vec<(f64, f64)> =
+                        pt1.iter().zip(f).map(|(p, v)| (p.0, v)).collect();
+                    c4::pt1_monotone(&filtered, r.pt1_noise_pa)
+                },
+            );
+            push(
+                "PZR level falls after the trip, then rises once the primary saturates",
+                c4::level_direction(&s("pzr_level_m", 0), t_rt, t_b, e),
+            );
+            push(
+                "relief flow falls with pressure",
+                c4::relief_falls(r.frames, r.full_lift_s, e),
+            );
+            push(
+                "core power falls after the trip",
+                c4::falls_after(&s("core_power_w", 0), t_rt, e),
+            );
+            for j in 0..instances(i, "hot_leg_k") {
+                let lp = ["A", "B"].get(j).copied().unwrap_or("?");
+                push(
+                    &format!("T_hot (loop {lp}) falls after the trip"),
+                    c4::falls_after(&s("hot_leg_k", j), t_rt, e),
+                );
+            }
+            push(
+                "T_avg falls after the trip",
+                c4::falls_after(&s("average_coolant_k", 0), t_rt, e),
+            );
+            let threshold = r.o4.and_then(|o| o["birth_threshold_k"].as_f64());
+            push(
+                "birth cell's liquid departure from saturation rises to the birth threshold (G1)",
+                match (&saturation, threshold) {
+                    (Some((t, cell)), Some(k)) => {
+                        let mut row = c4::departure_rises(r.frames, cell, *t, k);
+                        row.1["birth_root"] =
+                            json!({"t_s": t, "located": r.o4.map(|o| o["located"].clone())});
+                        row
+                    }
+                    (None, _) => (
+                        None,
+                        json!({"reason": "no classified birth: t_b is absent"}),
+                    ),
+                    (Some(_), None) => (None, json!({"reason": "O4′ reports no birth threshold"})),
+                },
+            );
+            push(
+                "birth cell's vapour mass: 0, then positive and continuous",
+                match &saturation {
+                    Some((_, cell)) => c4::vapour_mass(r.frames, r.log, i.zero, r.names, cell, e),
+                    None => (
+                        None,
+                        json!({"reason": "no classified birth: t_b is absent"}),
+                    ),
+                },
+            );
+            push(
+                "primary mass falls by exactly the integrated relief flow",
+                c4::primary_mass(r.conservation),
+            );
+            let verdict = overall_of(lines.iter().map(|l| l["verdict"].as_str().unwrap_or("?")));
+            return json!({"family": "B directions", "verdict": verdict,
+                "rule": "S3-D65: the signed C4 draft (lanes/c4/b-directions-draft.md) over the declared part [0, rule I's end]; t_b = the first classified birth (O4′); magnitudes reported",
+                "events": {"t_rt_s": t_rt, "t_rt": "the first accepted reactor-trip cause (the divisions' trip latch)",
+                    "t_b_s": t_b, "t_b_cell": saturation.as_ref().map(|x| x.1.clone())},
+                "lines": lines});
         }
         Case::C2 => {
             let s = |k: &str, j: usize| span_series(i, k, j, 0., e);
@@ -1906,6 +2005,7 @@ mod tests {
             rotors: &rotors,
             chatter: json!({"verdict": "pass"}),
             donor_flips: 0,
+            c4: None,
         };
         let spec = json!({"lines": {"O3": {"window_s": [0.3, 0.85]}}});
         let d = directions(Case::C2, &spec, &inputs);
@@ -1929,6 +2029,108 @@ mod tests {
             directions(Case::C1, &spec, &inputs)["verdict"],
             "not applicable"
         );
+    }
+
+    #[test]
+    fn c4_directions_are_the_signed_rows_on_the_signals_and_the_frame_record() {
+        let zero = 500.;
+        let signals = |power: Box<dyn Fn(f64) -> f64>| -> crate::compare::Credited {
+            record(
+                zero,
+                100,
+                &[
+                    ("pzr_roof_pa", vec![f(|t| 1.55e7 - 1e5 * t)]),
+                    (
+                        "pzr_level_m",
+                        vec![f(|t| {
+                            if t < 1. {
+                                5.
+                            } else if t < 5. {
+                                5. - 0.1 * (t - 1.)
+                            } else {
+                                4.6 + 0.05 * (t - 5.)
+                            }
+                        })],
+                    ),
+                    ("core_power_w", vec![power]),
+                    ("hot_leg_k", vec![f(|t| 600. - t), f(|t| 600. - t)]),
+                    ("average_coolant_k", vec![f(|t| 575. - 0.5 * t)]),
+                ],
+            )
+        };
+        let good = signals(f(|t| 3e9 * (-t).exp() + 1e8));
+        // NECK liquid (departure rising to 0.4 K) until its birth at 5.05 s,
+        // mode E with growing vapour after it.
+        let frames: Vec<Value> = (1..=100)
+            .map(|k| {
+                let t = f64::from(k) * 0.1;
+                let neck = if t < 5.05 {
+                    json!(["NECK", "L", -20. + 4.08 * t])
+                } else {
+                    json!(["NECK", "E", 0.5 * (t - 5.05), 900.])
+                };
+                json!({"t_s": t, "relief_kg_s": 100. - 2. * t, "pzr_roof_pa": 1.55e7 - 1e5 * t, "cells": [neck]})
+            })
+            .collect();
+        let log = vec![
+            json!({"t_s": zero + 5.05, "restart": {"transactions": [{"owner": "phase modes", "events": [{"birth": 1, "vapor_slots": [0.0, 0.0]}]}]}}),
+        ];
+        let names = vec!["SURGE".to_string(), "NECK".to_string()];
+        let o4 = json!({"verdict": "pass", "t_s": 5.05, "cell": "NECK", "located": true, "birth_threshold_k": 0.5});
+        let d = json!({"verdict": "pass", "error": null,
+            "ledger": {"bound_local_tolerance_units": 1.0,
+                "closures": {"primary_mass_kg": {"max_units": 0.2, "at_t_s": 505.}},
+                "final": {"t_s": 510., "closures": [{"name": "primary_mass_kg", "inventory_change": -19.9, "tolerance": 1.0}]}},
+            "receipts_at_last_closure": {"t_s": 510., "values": {"pzr_relief_attribution_kg": -20.}}});
+        let c4 = crate::s3_harness::c4::DirectionRecord {
+            frames: &frames,
+            log: &log,
+            names: &names,
+            o4: Some(&o4),
+            full_lift_s: Some(0.05),
+            conservation: &d,
+            pt1_noise_pa: 200.,
+            cutoff_hz: 2.,
+            observation_s: 0.1,
+        };
+        let rotors: Vec<(f64, Vec<f64>)> = Vec::new();
+        let inputs = |credited, c4| DirectionInputs {
+            credited,
+            zero,
+            end: 10.,
+            reactor_trip: Some(1.),
+            gcb_open: None,
+            sg_relief: Vec::new(),
+            rotors: &rotors,
+            chatter: json!(null),
+            donor_flips: 0,
+            c4,
+        };
+        let spec = json!({"directions": []});
+        let b = directions(Case::C4, &spec, &inputs(&good, Some(c4)));
+        let lines = b["lines"].as_array().unwrap();
+        assert_eq!(lines.len(), 10, "{b}");
+        let failing: Vec<&Value> = lines.iter().filter(|l| l["verdict"] != "pass").collect();
+        assert!(failing.is_empty(), "{failing:?}");
+        assert_eq!(b["verdict"], "pass");
+        assert_eq!(b["events"]["t_b_cell"], "NECK");
+        // Core power that rises after the trip fails the family.
+        let bad = signals(f(|t| 3e9 + t));
+        assert_eq!(
+            directions(Case::C4, &spec, &inputs(&bad, Some(c4)))["verdict"],
+            "fail"
+        );
+        // Without a classified birth the saturation rows are not executable.
+        let none = json!({"verdict": "fail", "reason": "no birth among the classified cells"});
+        let unborn = crate::s3_harness::c4::DirectionRecord {
+            o4: Some(&none),
+            ..c4
+        };
+        let b = directions(Case::C4, &spec, &inputs(&good, Some(unborn)));
+        assert_eq!(b["verdict"], "incomplete", "{b}");
+        // Without the frame record the family is not executable.
+        let b = directions(Case::C4, &spec, &inputs(&good, None));
+        assert_eq!(b["verdict"], "not executable");
     }
 
     #[test]
@@ -1977,6 +2179,7 @@ mod tests {
             rotors: &rotors,
             chatter: json!({"verdict": "pass"}),
             donor_flips: 3,
+            c4: None,
         };
         let d = directions(Case::C3, &spec, &inputs);
         let failing: Vec<&Value> = d["lines"]
