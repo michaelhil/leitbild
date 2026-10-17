@@ -200,6 +200,11 @@ pub struct Plan {
     sg_mass: Vec<usize>,
     sg_energy: Vec<usize>,
     sg_names: Vec<String>,
+    /// HOOK (OU-C P2): the rod bores' water stocks (global): mass, internal
+    /// energy and boron of every bore group.
+    bore_mass: Vec<usize>,
+    bore_energy: Vec<usize>,
+    bore_boron: Vec<usize>,
 }
 
 impl Plan {
@@ -227,6 +232,9 @@ impl Plan {
             sg_mass: Vec::new(),
             sg_energy: Vec::new(),
             sg_names: Vec::new(),
+            bore_mass: Vec::new(),
+            bore_energy: Vec::new(),
+            bore_boron: Vec::new(),
         };
         for (i, (category, _)) in joined.network.labels().iter().enumerate() {
             match *category {
@@ -255,6 +263,9 @@ impl Plan {
                     ("nuclear", Class::RegionalPopulation) => plan.populations.push(global),
                     ("nuclear", Class::Precursor) => plan.precursors.push(global),
                     ("pzr", Class::PzrMetal) => plan.pzr_metal.push(global),
+                    ("rods", Class::PhaseMass) => plan.bore_mass.push(global),
+                    ("rods", Class::PhaseEnergy) => plan.bore_energy.push(global),
+                    ("rods", Class::Tracer) => plan.bore_boron.push(global),
                     ("secondary", Class::SecondaryStock) => {
                         let label = &layout.labels[i];
                         if let Some(id) = label
@@ -299,6 +310,9 @@ impl Plan {
             .chain(&plan.sg_mass)
             .chain(&plan.sg_energy)
             .chain(&plan.pzr_metal)
+            .chain(&plan.bore_mass)
+            .chain(&plan.bore_energy)
+            .chain(&plan.bore_boron)
         {
             if differential[i] != 1. || plan.scales[i] != plan.row_scales[i] {
                 return Err(fatal(format!(
@@ -497,6 +511,10 @@ impl Plan {
         e.store("history reservoirs", histories, histories_abs);
         let (sg_u, sg_u_abs) = self.rates(rows, yp, &self.sg_energy);
         e.store("SG secondary energies", sg_u, sg_u_abs);
+        if !self.bore_energy.is_empty() {
+            let (u, u_abs) = self.rates(rows, yp, &self.bore_energy);
+            e.store("rod bores' water energies", u, u_abs);
+        }
         e.store(
             "rod bodies kinetic and potential",
             rods.mechanical_rate_w,
@@ -542,6 +560,10 @@ impl Plan {
             b("mass_receipt_sum_kg_s")?,
             b("mass_receipt_abs_sum_kg_s")?,
         );
+        if !self.bore_mass.is_empty() {
+            let (r, r_abs) = self.rates(rows, yp, &self.bore_mass);
+            m.store("rod bores' water", r, r_abs);
+        }
         if pzr.is_some() {
             m.boundary("PZR relief outflow", -relief[0]);
         }
@@ -552,6 +574,10 @@ impl Plan {
             b("boron_receipt_sum_kg_eq_s")?,
             b("boron_receipt_abs_sum_kg_eq_s")?,
         );
+        if !self.bore_boron.is_empty() {
+            let (r, r_abs) = self.rates(rows, yp, &self.bore_boron);
+            bo.store("rod bores' boron", r, r_abs);
+        }
         if pzr.is_some() {
             bo.boundary("PZR relief outflow", -relief[2]);
         }
