@@ -356,6 +356,262 @@ pub fn smoothness_signed(
         "rtol": rtol, "instants": instants.len(), "flagged": flagged_total, "unmapped": unmapped_total, "signals": out})
 }
 
+/// The selected laws' own corners rule F maps (owner R8-E1-a, S3-D68):
+/// the source feedback's piecewise-linear rod overlap kinks wherever a rod
+/// end crosses a source-region boundary. Read from the packet's
+/// `feedback_metadata`: the rod bottom is `inserted_active_bottom_m +
+/// travel`, the top the bottom plus `rod_active_length_m`, and the
+/// boundaries every region's `z0_m` and `z1_m`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CornerLaw {
+    pub bottom_offset_m: f64,
+    pub length_m: f64,
+    pub boundaries_m: Vec<f64>,
+}
+
+impl CornerLaw {
+    pub fn from_packet(raw: &Value) -> Result<Self, String> {
+        let fm = &raw["feedback_metadata"];
+        let number = |v: &Value, what: &str| {
+            v.as_f64()
+                .filter(|x| x.is_finite())
+                .ok_or_else(|| format!("the packet has no {what}"))
+        };
+        let mut boundaries = Vec::new();
+        for r in fm["regions"]
+            .as_array()
+            .ok_or("the packet has no feedback_metadata.regions")?
+        {
+            boundaries.push(number(&r["z0_m"], "region z0_m")?);
+            boundaries.push(number(&r["z1_m"], "region z1_m")?);
+        }
+        boundaries.sort_by(f64::total_cmp);
+        boundaries.dedup();
+        Ok(Self {
+            bottom_offset_m: number(
+                &fm["parameters"]["inserted_active_bottom_m"],
+                "inserted_active_bottom_m",
+            )?,
+            length_m: number(
+                &fm["parameters"]["rod_active_length_m"],
+                "rod_active_length_m",
+            )?,
+            boundaries_m: boundaries,
+        })
+    }
+
+    /// The corner instants of the run's rod travel samples (one series per
+    /// cluster on the grid `t`): each rod end's crossing of a boundary,
+    /// linearly interpolated between the samples around it.
+    pub fn corners(&self, t: &[f64], travel: &[Vec<f64>]) -> Vec<f64> {
+        let mut out = Vec::new();
+        for x in travel {
+            for i in 1..x.len().min(t.len()) {
+                for end in [self.bottom_offset_m, self.bottom_offset_m + self.length_m] {
+                    let (a, b) = (end + x[i - 1], end + x[i]);
+                    for z in &self.boundaries_m {
+                        let (da, db) = (a - z, b - z);
+                        if da * db < 0. || (db == 0. && da != 0.) {
+                            out.push(t[i - 1] + (t[i] - t[i - 1]) * da / (da - db));
+                        }
+                    }
+                }
+            }
+        }
+        out.sort_by(f64::total_cmp);
+        out.dedup();
+        out
+    }
+}
+
+/// One run of 1–2 consecutive candidates that is isolated (S3-D68).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Spike {
+    first: usize,
+    last: usize,
+    peak: usize,
+    ratio: f64,
+}
+
+/// S3-D68's spikes of the second differences `d` (`None` where a sample
+/// is missing) against `4 tau`: candidates `|D_k| > 4 tau_k`; a spike is a
+/// run of 1–2 consecutive candidates, isolated when on each side both
+/// neighbouring second differences exist and are at most `|D_peak| / 4`.
+/// Returns the isolated spikes and the other candidates (resolved
+/// curvature: count, largest ratio).
+fn isolated_spikes(d: &[Option<f64>], tau: &[f64]) -> (Vec<Spike>, usize, f64) {
+    let candidate = |k: usize| d[k].is_some_and(|v| v.abs() > 4. * tau[k]);
+    let ratio = |k: usize| d[k].map_or(0., |v| v.abs() / (4. * tau[k]));
+    let (mut spikes, mut curvature, mut curvature_max) = (Vec::new(), 0usize, 0_f64);
+    let mut k = 0;
+    while k < d.len() {
+        if !candidate(k) {
+            k += 1;
+            continue;
+        }
+        let first = k;
+        while k + 1 < d.len() && candidate(k + 1) {
+            k += 1;
+        }
+        let last = k;
+        k += 1;
+        let peak = (first..=last)
+            .max_by(|a, b| ratio(*a).total_cmp(&ratio(*b)))
+            .unwrap_or(first);
+        let dp = d[peak].map_or(0., f64::abs);
+        let neighbours = [
+            first.checked_sub(1),
+            first.checked_sub(2),
+            Some(last + 1),
+            Some(last + 2),
+        ];
+        let isolated = last - first < 2
+            && neighbours.iter().all(|j| {
+                j.and_then(|j| d.get(j).copied().flatten())
+                    .is_some_and(|v| v.abs() <= dp / 4.)
+            });
+        if isolated {
+            spikes.push(Spike {
+                first,
+                last,
+                peak,
+                ratio: ratio(peak),
+            });
+        } else {
+            curvature += last - first + 1;
+            curvature_max = (first..=last).map(ratio).fold(curvature_max, f64::max);
+        }
+    }
+    (spikes, curvature, curvature_max)
+}
+
+/// The second differences of `x` (`None` at the ends or where a sample of
+/// the stencil is missing).
+fn second_differences(x: &[Option<f64>]) -> Vec<Option<f64>> {
+    (0..x.len())
+        .map(|k| {
+            if k == 0 || k + 1 >= x.len() {
+                return None;
+            }
+            Some(x[k + 1]? - 2. * x[k]? + x[k - 1]?)
+        })
+        .collect()
+}
+
+/// A reference's sample times and its signals by instance name.
+pub type ReferenceSeries<'a> = (&'a [f64], &'a std::collections::BTreeMap<String, Vec<f64>>);
+
+/// Rule F as the owner approved it (R8-E1-a, lead S3-D68): S3-D49's raw
+/// 2 ms samples and classes, flags only at isolated spikes (the corner
+/// signature, [`isolated_spikes`]); a spike maps when a logged instant or
+/// a selected law's corner ([`CornerLaw`]) lies in `[t_first-1,
+/// t_last+1]`. An unmapped spike that the tighter reference (R2, its
+/// samples on the same grid by time) reproduces — an isolated spike by
+/// the same definition and the run's `tau`, within one sample of the run's
+/// — fails; one R2 does not reproduce is numerical (reported); one without
+/// R2's samples there leaves the family not executable. Candidates that are
+/// no isolated spike are resolved curvature (reported).
+pub fn smoothness_corners(
+    t: &[f64],
+    signals: &[(String, Vec<f64>, f64)],
+    rtol: f64,
+    instants: &[f64],
+    corners: &[f64],
+    reference: Option<ReferenceSeries<'_>>,
+) -> Value {
+    let within = |list: &[f64], lo: f64, hi: f64| {
+        let fuzz = 1e-9 * hi.abs().max(1.);
+        list.iter().any(|i| *i >= lo - fuzz && *i <= hi + fuzz)
+    };
+    // The reference's samples at the run's grid times.
+    let aligned = |series: &[f64], tr: &[f64]| -> Vec<Option<f64>> {
+        t.iter()
+            .map(|tk| {
+                let fuzz = 1e-9 * tk.abs().max(1.);
+                let i = tr.partition_point(|u| *u < tk - fuzz);
+                (i < tr.len() && (tr[i] - tk).abs() <= fuzz).then(|| series[i])
+            })
+            .collect()
+    };
+    let mut out = serde_json::Map::new();
+    let (mut failures, mut numerical, mut no_reference, mut spikes_total) = (0, 0, 0, 0);
+    let (mut to_instants, mut to_corners, mut curvature_total) = (0, 0, 0);
+    for (name, x, a) in signals {
+        let tau: Vec<f64> = x.iter().map(|v| rtol * v.abs() + a).collect();
+        let d = second_differences(&x.iter().map(|v| Some(*v)).collect::<Vec<_>>());
+        let (spikes, curvature, curvature_max) = isolated_spikes(&d, &tau);
+        let reference_spikes = reference.and_then(|(tr, series)| {
+            series.get(name).map(|r| {
+                let dr = second_differences(&aligned(r, tr));
+                let (s, _, _) = isolated_spikes(&dr, &tau);
+                (dr, s)
+            })
+        });
+        let (mut mapped_i, mut mapped_c) = (0, 0);
+        let mut fail_list = Vec::new();
+        let (mut num, mut none) = (0, 0);
+        for sp in &spikes {
+            let (lo, hi) = (t[sp.first - 1], t[sp.last + 1]);
+            if within(instants, lo, hi) {
+                mapped_i += 1;
+                continue;
+            }
+            if within(corners, lo, hi) {
+                mapped_c += 1;
+                continue;
+            }
+            let entry = json!({"t_s": t[sp.peak], "samples": sp.last - sp.first + 1, "ratio_to_4tau": sp.ratio});
+            match &reference_spikes {
+                Some((dr, rs)) => {
+                    let need_lo = sp.first.saturating_sub(3);
+                    let need_hi = (sp.last + 3).min(dr.len() - 1);
+                    if sp.first < 3
+                        || sp.last + 3 >= dr.len()
+                        || dr[need_lo..=need_hi].iter().any(Option::is_none)
+                    {
+                        none += 1;
+                    } else if rs
+                        .iter()
+                        .any(|r| r.first <= sp.last + 1 && r.last + 1 >= sp.first)
+                    {
+                        if fail_list.len() < 20 {
+                            fail_list.push(entry);
+                        }
+                        failures += 1;
+                    } else {
+                        num += 1;
+                    }
+                }
+                None => none += 1,
+            }
+        }
+        spikes_total += spikes.len();
+        to_instants += mapped_i;
+        to_corners += mapped_c;
+        curvature_total += curvature;
+        numerical += num;
+        no_reference += none;
+        out.insert(name.clone(), json!({"a_x": a, "isolated_spikes": spikes.len(), "mapped_to_instants": mapped_i,
+            "mapped_to_law_corners": mapped_c, "failing": fail_list, "numerical": num, "no_reference_samples": none,
+            "resolved_curvature": {"candidates": curvature, "largest_ratio_to_4tau": curvature_max}}));
+    }
+    let verdict = if signals.is_empty() {
+        "not executable"
+    } else if failures > 0 {
+        "fail"
+    } else if no_reference > 0 {
+        "not executable"
+    } else {
+        "pass"
+    };
+    json!({"family": "F smoothness", "verdict": verdict,
+        "rule": "owner R8-E1-a, lead S3-D68: S3-D49's 2 ms samples and classes; candidates |D_k| > 4 tau_k; a spike = a run of 1-2 consecutive candidates, isolated when on each side both neighbouring second differences exist and are <= |D_peak| / 4; it maps to a logged instant or a law corner (rod ends crossing the source-region boundaries) in [t_first-1, t_last+1]; an unmapped spike R2 reproduces (same definition and tau, within one sample) fails, one R2 does not reproduce is numerical, one without R2's samples is not executable; other candidates are resolved curvature (reported)",
+        "rtol": rtol, "instants": instants.len(), "law_corners": corners.len(), "isolated_spikes": spikes_total,
+        "mapped_to_instants": to_instants, "mapped_to_law_corners": to_corners, "failing": failures,
+        "numerical": numerical, "no_reference_samples": no_reference, "resolved_curvature_candidates": curvature_total,
+        "reference": if reference.is_some() { "R2" } else { "none" }, "signals": out})
+}
+
 /// Rule H on one host: two runs' records bitwise equal.
 pub fn repeatability(a: &Value, b: &Value) -> Value {
     let keys = [
@@ -422,7 +678,7 @@ pub fn spectra(states: &[(&str, Option<String>)], receipts: &Value) -> Value {
 /// causes that are a located exhaustion and a located flow reversal, the
 /// vapour phase, one tolerance unit. Used only once the pinned block's
 /// texts are verified (`n4_rule` in `s3_cases.rs`); never a default.
-pub const N4_PRIME_READING: &str = r#"{"criterion": "n4prime", "phase": 1, "consistency_units": 1.0, "exhaustion_causes": ["ContactRoot", "ContactAtTransaction", "Exhaustion"], "reversal_causes": ["AtRest"], "source": "N4' (owner CH-1, R7-Q; S3-D58): re-closings follow a located exhaustion or a located flow reversal; consistent pre-state <= 1 integrator tolerance unit (rtol|y| + atol, JACAGE's units); a reversal's |drive| above its first-order propagated tolerance (rule F's a_x)"}"#;
+pub const N4_PRIME_READING: &str = r#"{"criterion": "n4prime", "phase": 1, "consistency_units": 1.0, "consistency_measure": "wrms_all", "exhaustion_causes": ["ContactRoot", "ContactAtTransaction", "Exhaustion"], "reversal_causes": ["AtRest"], "source": "N4' (owner CH-1, R7-Q; S3-D58, S3-D61): re-closings follow a located exhaustion or a located flow reversal; a reversal's |drive| above its first-order propagated tolerance at that state (rule F's a_x); consistent pre-state = the solver's own measure, the WRMS norm of the restart's correction in the integrator's units <= 1 (owner R8-E4-a), the largest single row reported beside it (S3-D58's every-row reading kept beside the verdict)"}"#;
 
 /// One logged L1 change.
 struct Closing<'a> {
@@ -478,6 +734,19 @@ fn l1_changes(log: &[Value]) -> std::collections::BTreeMap<u64, Vec<Closing<'_>>
 /// tolerance at that state, [`super::observe::free_vapour_drive_tolerances`],
 /// S3-D61).
 pub fn chattering(log: &[Value], rule: &Value, entries: &[Value]) -> Value {
+    let mut out = chattering_under(log, rule, entries);
+    // R8-E4-a: S3-D58's every-row reading stays beside the verdict.
+    if rule["criterion"] == "n4prime" && rule["consistency_measure"] != "max_units" {
+        let mut every_row = rule.clone();
+        every_row["consistency_measure"] = json!("max_units");
+        let o = chattering_under(log, &every_row, entries);
+        out["s3_d58_every_row"] = json!({"verdict": o["verdict"], "reclosings_satisfied": o["reclosings_satisfied"],
+            "failing": o["failing"], "rule": "S3-D58 (the r2 block's text): every row's pre-transaction correction at most 1 integrator tolerance unit"});
+    }
+    out
+}
+
+fn chattering_under(log: &[Value], rule: &Value, entries: &[Value]) -> Value {
     let paths = l1_changes(log);
     match rule["criterion"].as_str() {
         Some("relock_after_release") => {
@@ -504,6 +773,9 @@ pub fn chattering(log: &[Value], rule: &Value, entries: &[Value]) -> Value {
         Some("n4prime") => {
             let phase = rule["phase"].as_u64();
             let units = rule["consistency_units"].as_f64().unwrap_or(1.);
+            let Some(measure) = rule["consistency_measure"].as_str() else {
+                return json!({"verdict": "not executable", "reason": "the rule names no consistency measure", "rule": rule});
+            };
             let names = |k: &str| -> Vec<String> {
                 rule[k]
                     .as_array()
@@ -543,7 +815,8 @@ pub fn chattering(log: &[Value], rule: &Value, entries: &[Value]) -> Value {
                         "other"
                     };
                     let entry = entry_at(c.t);
-                    let consistency = entry.and_then(|e| e["max_units"].as_f64());
+                    let consistency = entry.and_then(|e| e[measure].as_f64());
+                    let largest_row = entry.and_then(|e| e["max_units"].as_f64());
                     let drive = c.change["drive_pa"].as_f64();
                     let tol = entry.and_then(|e| {
                         e["drives"]["paths"]
@@ -568,9 +841,9 @@ pub fn chattering(log: &[Value], rule: &Value, entries: &[Value]) -> Value {
                     }
                     match consistency {
                         Some(u) if u <= units => {}
-                        Some(u) => {
-                            reasons.push(format!("pre-state {u:.3e} tolerance units > {units}"))
-                        }
+                        Some(u) => reasons.push(format!(
+                            "pre-state {measure} {u:.3e} tolerance units > {units}"
+                        )),
                         None => evaluable = false,
                     }
                     if kind == "reversal" {
@@ -604,7 +877,7 @@ pub fn chattering(log: &[Value], rule: &Value, entries: &[Value]) -> Value {
                         }
                     }
                     if !reasons.is_empty() {
-                        failing.push(json!({"t_s": c.t, "path": path, "face": c.change["face"], "cause": cause, "pre_state_units": consistency, "drive_pa": drive, "drive_tolerance_pa": tol, "reasons": reasons}));
+                        failing.push(json!({"t_s": c.t, "path": path, "face": c.change["face"], "cause": cause, "pre_state_units": consistency, "pre_state_measure": measure, "largest_row_units": largest_row, "drive_pa": drive, "drive_tolerance_pa": tol, "reasons": reasons}));
                     } else if evaluable {
                         ok += 1;
                     } else {
@@ -769,8 +1042,11 @@ pub struct DirectionInputs<'a> {
     pub end: f64,
     pub reactor_trip: Option<f64>,
     pub gcb_open: Option<f64>,
-    /// Each SG's relief openings and closings after zero: (SG, +1/-1, t).
-    pub sg_relief: Vec<(String, i64, f64)>,
+    /// Each SG's relief threshold crossings after zero: (SG, threshold
+    /// (Crack, FullLift, Reseat, Seat), +1/-1, t).
+    pub sg_relief: Vec<(String, String, i64, f64)>,
+    /// The packet's SG relief law (Pa): crack, full lift, reseat.
+    pub sg_relief_law: Option<[f64; 3]>,
     /// Every rotor's angular momentum at each output (t absolute).
     pub rotors: &'a [(f64, Vec<f64>)],
     pub chatter: Value,
@@ -998,29 +1274,66 @@ pub fn directions(case: Case, spec: &Value, i: &DirectionInputs) -> Value {
             lines.push(line("PZR level falls", falls(&level), json!({"stabilizes (reported, S3-D50)": {"first_quarter_mean_abs_slope_m_s": quarter(0., 0.25), "last_quarter_mean_abs_slope_m_s": quarter(0.75, 1.)}})));
             for j in 0..instances(i, "sg_pressure_pa") {
                 let sg = ["A", "B", "C", "D"][j.min(3)];
-                let first_crack = i
-                    .sg_relief
-                    .iter()
-                    .filter(|(g, d, _)| g == sg && *d > 0)
-                    .map(|r| r.2)
-                    .fold(f64::INFINITY, f64::min);
+                let of = |th: &str, dir: i64| -> Vec<f64> {
+                    i.sg_relief
+                        .iter()
+                        .filter(|(g, h, d, _)| g == sg && (th.is_empty() || h == th) && *d == dir)
+                        .map(|r| r.3)
+                        .collect()
+                };
+                // The first opening (S3-D50's reading: any rising crossing).
+                let first_crack = of("", 1).into_iter().fold(f64::INFINITY, f64::min);
                 let closes = i
                     .sg_relief
                     .iter()
-                    .filter(|(g, d, _)| g == sg && *d < 0)
+                    .filter(|(g, _, d, _)| g == sg && *d < 0)
                     .count();
                 let up = span_series(i, "sg_pressure_pa", j, 0., first_crack.min(e));
                 let rose = up.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max)
                     > up.first().map_or(f64::INFINITY, |p| p.1);
-                let ok = first_crack.is_finite().then_some(rose && closes > 0);
-                lines.push(line(&format!("SG {sg} pressure rises to relief and cycles"), ok, json!({"first_crack_s": first_crack, "closings": closes, "range": "6.6-7.0 MPa reported"})));
+                // S3-D50's reading (r3 prose "cycling 6.6-7.0"), kept beside.
+                let s3_d50 = first_crack.is_finite().then_some(rose && closes > 0);
+                // R8-E2-a: the wiki's modulating law. After cracking the
+                // pressure stays within the lift range [crack, full lift],
+                // after a full lift within [reseat, full lift]; a reseat only
+                // after a full lift.
+                let full_lifts = of("FullLift", 1);
+                let reseats = of("Reseat", -1);
+                let held = i.sg_relief_law.and_then(|[crack, full, reseat]| {
+                    first_crack.is_finite().then(|| {
+                        let after = span_series(i, "sg_pressure_pa", j, first_crack, e);
+                        let first_full = full_lifts.iter().copied().fold(f64::INFINITY, f64::min);
+                        let outside: Vec<(f64, f64)> = after
+                            .iter()
+                            .filter(|(t, _)| *t > first_crack + 1e-9)
+                            .filter(|(t, p)| {
+                                let low = if *t >= first_full { reseat } else { crack };
+                                *p < low || *p > full
+                            })
+                            .copied()
+                            .collect();
+                        let early_reseat = reseats.iter().any(|r| *r < first_full);
+                        let (lo, hi) = after.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| (a.0.min(p.1), a.1.max(p.1)));
+                        (outside.is_empty() && !early_reseat, json!({"after_crack_range_pa": [lo, hi], "outside_first": outside.first(),
+                            "outside_samples": outside.len(), "full_lifts": full_lifts.len(), "reseats": reseats.len(), "reseat_before_full_lift": early_reseat}))
+                    })
+                });
+                let ok = held.as_ref().map(|h| rose && h.0);
+                lines.push(line(&format!("SG {sg} pressure rises to relief and is held in its lift range"), ok,
+                    json!({"rule": "owner R8-E2-a: after cracking, pressure stays within the valve's lift range (crack to full lift; reseat only after full lift)",
+                        "law_pa": i.sg_relief_law, "first_crack_s": first_crack, "rose": rose, "held": held.map(|h| h.1),
+                        "s3_d50": {"verdict": match s3_d50 { Some(true) => "pass", Some(false) => "fail", None => "not executable" }, "closings": closes, "range": "6.6-7.0 MPa reported"}})));
             }
             for j in 0..instances(i, "sg_liquid_m3") {
-                lines.push(line(
-                    &format!("SG[{j}] collapsed volume falls, partial recovery"),
-                    dips_then_recovers(&s("sg_liquid_m3", j)),
-                    json!(null),
-                ));
+                // R8-E3-a: reported, not judged; S3-D50's verdict beside.
+                let v = s("sg_liquid_m3", j);
+                let old = dips_then_recovers(&v);
+                let (lo, hi) = v.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| {
+                    (a.0.min(p.1), a.1.max(p.1))
+                });
+                lines.push(json!({"id": format!("SG[{j}] collapsed volume falls, partial recovery"), "verdict": "reported",
+                    "detail": {"rule": "owner R8-E3-a: reported, not judged", "at_zero_m3": v.first().map(|p| p.1), "range_m3": [lo, hi], "end_m3": v.last().map(|p| p.1),
+                        "s3_d50": {"verdict": match old { Some(true) => "pass", Some(false) => "fail", None => "not executable" }}}}));
             }
             let o3 = spec["lines"]["O3"]["window_s"]
                 .as_array()
@@ -1742,6 +2055,120 @@ mod tests {
     }
 
     #[test]
+    fn rule_f_r8_flags_only_unmapped_isolated_spikes_r2_reproduces() {
+        let t: Vec<f64> = (0..=1000).map(|k| k as f64 * 0.002).collect();
+        // A slope step of 1e4 Pa/s at 1.001 s, between two samples: two
+        // second differences of 10 Pa against 4 tau = 8 Pa (rtol 0, a_x 2),
+        // zero on each side: an isolated spike.
+        let corner = |s: f64| 1.5e7 + if s > 1.001 { 1e4 * (s - 1.001) } else { 0. };
+        let x: Vec<f64> = t.iter().map(|s| corner(*s)).collect();
+        let sig = vec![("pzr_roof_pa".to_string(), x.clone(), 2.)];
+        let r2 = |series: Vec<f64>| {
+            let mut m = std::collections::BTreeMap::new();
+            m.insert("pzr_roof_pa".to_string(), series);
+            m
+        };
+        let same = r2(x.clone());
+        let f = smoothness_corners(&t, &sig, 0., &[], &[], Some((&t, &same)));
+        assert_eq!(f["verdict"], "fail", "{f}");
+        assert_eq!(
+            (f["isolated_spikes"].as_u64(), f["failing"].as_u64()),
+            (Some(1), Some(1))
+        );
+        // Mapped to a law corner or a logged instant within [t_first-1, t_last+1].
+        let f = smoothness_corners(&t, &sig, 0., &[], &[1.001], Some((&t, &same)));
+        assert_eq!(
+            (f["verdict"].as_str(), f["mapped_to_law_corners"].as_u64()),
+            (Some("pass"), Some(1))
+        );
+        assert_eq!(
+            smoothness_corners(&t, &sig, 0., &[0.998], &[], Some((&t, &same)))["verdict"],
+            "pass"
+        );
+        assert_eq!(
+            smoothness_corners(&t, &sig, 0., &[0.990], &[], Some((&t, &same)))["verdict"],
+            "fail"
+        );
+        // R2 without the spike: numerical, reported; without R2: not executable.
+        let smooth = r2(t.iter().map(|_| 1.5e7).collect());
+        let f = smoothness_corners(&t, &sig, 0., &[], &[], Some((&t, &smooth)));
+        assert_eq!(
+            (f["verdict"].as_str(), f["numerical"].as_u64()),
+            (Some("pass"), Some(1))
+        );
+        assert_eq!(
+            smoothness_corners(&t, &sig, 0., &[], &[], None)["verdict"],
+            "not executable"
+        );
+        // R2 one sample late still reproduces; three samples late does not.
+        let shifted = |dt: f64| r2(t.iter().map(|s| corner(s - dt)).collect());
+        assert_eq!(
+            smoothness_corners(&t, &sig, 0., &[], &[], Some((&t, &shifted(0.002))))["verdict"],
+            "fail"
+        );
+        assert_eq!(
+            smoothness_corners(&t, &sig, 0., &[], &[], Some((&t, &shifted(0.006))))["verdict"],
+            "pass"
+        );
+        // Curvature above 4 tau everywhere (a parabola, 2 c h^2 = 20 Pa) is
+        // resolved curvature, never a flag; a corner on it whose
+        // neighbours exceed |D_peak| / 4 is not isolated.
+        let p: Vec<f64> = t.iter().map(|s| 1.5e7 + 2.5e6 * s * s).collect();
+        let f = smoothness_corners(
+            &t,
+            &[("pzr_roof_pa".into(), p.clone(), 2.)],
+            0.,
+            &[],
+            &[],
+            None,
+        );
+        assert_eq!(
+            (f["verdict"].as_str(), f["isolated_spikes"].as_u64()),
+            (Some("pass"), Some(0))
+        );
+        assert!(f["resolved_curvature_candidates"].as_u64().unwrap() > 900);
+        let pc: Vec<f64> = t
+            .iter()
+            .zip(&p)
+            .map(|(s, v)| v + corner(*s) - 1.5e7)
+            .collect();
+        let f = smoothness_corners(&t, &[("pzr_roof_pa".into(), pc, 2.)], 0., &[], &[], None);
+        assert_eq!(f["isolated_spikes"], 0);
+        // A spike of three consecutive candidates is not a corner's.
+        let mut w = x.clone();
+        w[700] += 12.;
+        w[701] += 12.;
+        let f = smoothness_corners(
+            &t,
+            &[("pzr_roof_pa".into(), w, 2.)],
+            0.,
+            &[],
+            &[1.001],
+            None,
+        );
+        assert_eq!(f["isolated_spikes"], 1, "{f}");
+        assert!(f["resolved_curvature_candidates"].as_u64().unwrap() >= 3);
+    }
+
+    #[test]
+    fn the_law_corners_are_the_rod_ends_crossing_the_source_regions() {
+        let raw = json!({"feedback_metadata": {"parameters": {"inserted_active_bottom_m": -2., "rod_active_length_m": 4.},
+            "regions": (0..6).map(|k| json!({"z0_m": -2. + k as f64 * 4. / 6., "z1_m": -2. + (k + 1) as f64 * 4. / 6.})).collect::<Vec<_>>()}});
+        let law = CornerLaw::from_packet(&raw).unwrap();
+        assert_eq!(law.boundaries_m.len(), 7);
+        // A rod inserting linearly from 2.8 m to 0 over 2.8 s.
+        let t: Vec<f64> = (0..=1400).map(|k| k as f64 * 0.002).collect();
+        let travel = vec![t.iter().map(|s| 2.8 - s).collect::<Vec<f64>>()];
+        let c = law.corners(&t, &travel);
+        let expected = [2.8 - 8. / 3., 0.8, 2.8 - 4. / 3., 2.8 - 2. / 3., 2.8];
+        assert_eq!(c.len(), expected.len(), "{c:?}");
+        for (a, b) in c.iter().zip(expected) {
+            assert!((a - b).abs() < 1e-9, "{c:?}");
+        }
+        assert!(CornerLaw::from_packet(&json!({})).is_err());
+    }
+
+    #[test]
     fn rule_f_flags_a_kink_and_maps_it_to_a_logged_instant() {
         let t: Vec<f64> = (0..=1000).map(|k| k as f64 * 0.002).collect();
         // A pressure ramp whose slope steps by 10 kPa/s at 1.0 s: second
@@ -1870,7 +2297,7 @@ mod tests {
         ];
         // Each restart's entry: its consistency and its free vapour paths'
         // drive tolerances at that state (S3-D61).
-        let entry = |t: f64, u: f64, tol: f64| json!({"t_s": t, "max_units": u, "drives": {"paths": [{"path": 5, "face": 3, "phase": 1, "tolerance_pa": tol}]}});
+        let entry = |t: f64, u: f64, tol: f64| json!({"t_s": t, "max_units": u, "wrms_all": u, "drives": {"paths": [{"path": 5, "face": 3, "phase": 1, "tolerance_pa": tol}]}});
         let with = |u4: f64, u6: f64, tol: f64| vec![entry(4., u4, tol), entry(6., u6, tol)];
         let entries = |u4: f64, u6: f64| with(u4, u6, 10.);
         let n4: Value = serde_json::from_str(N4_PRIME_READING).unwrap();
@@ -1886,6 +2313,26 @@ mod tests {
         let c = chattering(&log, &n4, &entries(1.5, 0.9));
         assert_eq!(c["verdict"], "fail");
         assert_eq!(c["failing"][0]["t_s"], 4.);
+        // R8-E4-a: the solver's own measure judges; one row above a unit
+        // with the WRMS of the correction below it passes, S3-D58's
+        // every-row reading beside it fails.
+        let mut one_row = entries(0.5, 0.9);
+        one_row[0]["max_units"] = json!(2.37);
+        one_row[0]["wrms_all"] = json!(0.017);
+        let c = chattering(&log, &n4, &one_row);
+        assert_eq!(c["verdict"], "pass", "{c}");
+        assert_eq!(c["s3_d58_every_row"]["verdict"], "fail");
+        one_row[0]["wrms_all"] = json!(1.2);
+        assert_eq!(chattering(&log, &n4, &one_row)["verdict"], "fail");
+        let mut unnamed = n4.clone();
+        unnamed
+            .as_object_mut()
+            .unwrap()
+            .remove("consistency_measure");
+        assert_eq!(
+            chattering(&log, &unnamed, &one_row)["verdict"],
+            "not executable"
+        );
         // A reversal's drive within its tolerance at that state fails.
         assert_eq!(
             chattering(&log, &n4, &with(0.5, 0.9, 80.))["verdict"],
@@ -1944,6 +2391,14 @@ mod tests {
     #[test]
     fn c2_directions_are_signed_checks_on_the_signals() {
         let zero = 500.;
+        // To crack (6.8 MPa) at 1.6 s, then held below full lift (7.0 MPa).
+        let sg_held = |t: f64| {
+            if t <= 1.6 {
+                6.3e6 + 3.125e5 * t
+            } else {
+                6.8e6 + 1e5 * (1. - (-(t - 1.6)).exp())
+            }
+        };
         let good = record(
             zero,
             300,
@@ -1958,13 +2413,7 @@ mod tests {
                 ),
                 ("pzr_roof_pa", vec![f(|t| 1.5e7 + 1e5 * t * (3. - t))]),
                 ("pzr_level_m", vec![f(|t| 4. + 1. / (1. + t))]),
-                (
-                    "sg_pressure_pa",
-                    vec![
-                        f(|t| 6.3e6 + 1e5 * t.min(5.)),
-                        f(|t| 6.3e6 + 1e5 * t.min(5.)),
-                    ],
-                ),
+                ("sg_pressure_pa", vec![f(sg_held), f(sg_held)]),
                 (
                     "sg_liquid_m3",
                     vec![
@@ -1997,11 +2446,10 @@ mod tests {
             reactor_trip: Some(0.15),
             gcb_open: Some(0.3),
             sg_relief: vec![
-                ("A".into(), 1, 1.6),
-                ("A".into(), -1, 2.5),
-                ("B".into(), 1, 1.6),
-                ("B".into(), -1, 2.6),
+                ("A".into(), "Crack".into(), 1, 1.6),
+                ("B".into(), "Crack".into(), 1, 1.6),
             ],
+            sg_relief_law: Some([6.8e6, 7.0e6, 6.6e6]),
             rotors: &rotors,
             chatter: json!({"verdict": "pass"}),
             donor_flips: 0,
@@ -2013,10 +2461,62 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .filter(|l| l["verdict"] != "pass")
+            .filter(|l| !matches!(l["verdict"].as_str(), Some("pass" | "reported")))
             .collect();
         assert!(failing.is_empty(), "{failing:?}");
         assert_eq!(d["verdict"], "pass");
+        let row = |d: &Value, id: &str| {
+            d["lines"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|l| l["id"].as_str().is_some_and(|x| x.starts_with(id)))
+                .cloned()
+                .unwrap()
+        };
+        // R8-E2-a: held in the lift range passes; S3-D50's cycling reading
+        // (no reseat) stays beside it as a fail. R8-E3-a: the SG volume is
+        // reported, its S3-D50 verdict beside.
+        let relief = row(&d, "SG A pressure");
+        assert_eq!(relief["detail"]["s3_d50"]["verdict"], "fail");
+        assert_eq!(row(&d, "SG[0] collapsed")["verdict"], "reported");
+        assert_eq!(
+            row(&d, "SG[0] collapsed")["detail"]["s3_d50"]["verdict"],
+            "pass"
+        );
+        // A reseat before any full lift fails the row, as does a pressure
+        // above full lift.
+        let early = DirectionInputs {
+            sg_relief: vec![
+                ("A".into(), "Crack".into(), 1, 1.6),
+                ("A".into(), "Reseat".into(), -1, 2.5),
+                ("B".into(), "Crack".into(), 1, 1.6),
+            ],
+            ..inputs
+        };
+        let d = directions(Case::C2, &spec, &early);
+        assert_eq!(row(&d, "SG A pressure")["verdict"], "fail");
+        assert_eq!(row(&d, "SG B pressure")["verdict"], "pass");
+        let high = record(
+            zero,
+            300,
+            &[(
+                "sg_pressure_pa",
+                vec![f(move |t| sg_held(t) + if t > 5. { 3e5 } else { 0. })],
+            )],
+        );
+        let over = DirectionInputs {
+            credited: &high,
+            sg_relief: vec![("A".into(), "Crack".into(), 1, 1.6)],
+            ..early
+        };
+        let d = directions(Case::C2, &spec, &over);
+        assert_eq!(row(&d, "SG A pressure")["verdict"], "fail");
+        let inputs = DirectionInputs {
+            credited: &good,
+            sg_relief: Vec::new(),
+            ..over
+        };
         // Core power that rises fails.
         let bad = record(zero, 300, &[("core_power_w", vec![f(|t| 3e9 + t)])]);
         let inputs = DirectionInputs {
@@ -2176,6 +2676,7 @@ mod tests {
             reactor_trip: Some(12.),
             gcb_open: None,
             sg_relief: Vec::new(),
+            sg_relief_law: None,
             rotors: &rotors,
             chatter: json!({"verdict": "pass"}),
             donor_flips: 3,

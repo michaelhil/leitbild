@@ -1221,6 +1221,10 @@ struct GateSetup {
     budgets: compare::Budgets,
     network_packet: leitbild_operating_plant::network::packet::Packet,
     reference_travel_m: f64,
+    /// Rule F's law corners (owner R8-E1-a, S3-D68) from the packet.
+    corner_law: Result<s3_harness::families::CornerLaw, String>,
+    /// The packet's SG relief law (Pa): crack, full lift, reseat (R8-E2-a).
+    sg_relief_law: Option<[f64; 3]>,
 }
 
 /// A frame stop's state for rule K (S3-D52): time, `y`, `y'`, the system's
@@ -1254,7 +1258,7 @@ struct Driven {
     /// After zero: the generator breaker's opening and each SG relief
     /// opening (+1) and closing (-1) (rule B).
     gcb_open_after_zero: Option<f64>,
-    sg_relief: Vec<(String, i64, f64)>,
+    sg_relief: Vec<(String, String, i64, f64)>,
     repeat_record: Value,
     /// Rule K's post-event state (S3-D52): the declared part's end, the
     /// window's end or rule I's end, whichever first: `(path, sha256,
@@ -2626,8 +2630,8 @@ fn drive(
         sg_relief: tl
             .sg_relief
             .iter()
-            .filter_map(|(v, _, d, t)| {
-                s3_harness::timeline::relief_sg(v).map(|sg| (sg.to_string(), *d, *t))
+            .filter_map(|(v, th, d, t)| {
+                s3_harness::timeline::relief_sg(v).map(|sg| (sg.to_string(), th.clone(), *d, *t))
             })
             .collect(),
         repeat_record,
@@ -3148,6 +3152,18 @@ fn s3_case_run() {
             reference_travel_m: raw["rods"]["reference_travel_m"]
                 .as_f64()
                 .expect("reference travel"),
+            corner_law: s3_harness::families::CornerLaw::from_packet(&raw),
+            sg_relief_law: {
+                let r = &raw["secondary"]["relief"];
+                match (
+                    r["crackPressure_Pa"].as_f64(),
+                    r["fullLiftPressure_Pa"].as_f64(),
+                    r["reseatPressure_Pa"].as_f64(),
+                ) {
+                    (Some(c), Some(f), Some(rs)) => Some([c, f, rs]),
+                    _ => None,
+                }
+            },
         }
     });
     // A shortened preview may judge from an earlier time (NOT evidence).
@@ -3645,7 +3661,54 @@ fn s3_case_run() {
                         ));
                     }
                 }
-                let mut f =
+                // R8-E1-a (S3-D68): the law corners from the run's rod
+                // travel samples, and R2's samples of the same signals.
+                let (corners, corner_record) = match (
+                    &g.corner_law,
+                    og.credited.output(compare::key::ROD_TRAVEL_M),
+                ) {
+                    (Ok(law), Ok(travel)) => {
+                        let tr: Vec<Vec<f64>> = travel
+                            .iter()
+                            .map(|x| keep.iter().map(|k| x[*k]).collect())
+                            .collect();
+                        let c = law.corners(&t, &tr);
+                        let record = json!({"law": {"bottom_offset_m": law.bottom_offset_m, "length_m": law.length_m, "boundaries_m": law.boundaries_m}, "instants_after_zero": c.iter().map(|x| x - run.zero).collect::<Vec<_>>()});
+                        (c, record)
+                    }
+                    (Ok(_), Err(_)) => (
+                        Vec::new(),
+                        json!({"instants_after_zero": [], "reason": "no rod travel output (no trip)"}),
+                    ),
+                    (Err(e), _) => (Vec::new(), json!({"error": e})),
+                };
+                let r2 = references
+                    .iter()
+                    .find(|(n, _)| n == "R2")
+                    .and_then(|(_, r)| r.observer.gates.as_ref())
+                    .filter(|rg| rg.credited_error.is_none())
+                    .map(|rg| {
+                        let mut m = std::collections::BTreeMap::new();
+                        for key in observe::F_SIGNALS {
+                            if let Ok(series) = rg.credited.output(key) {
+                                for (j, x) in series.iter().enumerate() {
+                                    m.insert(format!("{key}[{j}]"), x.clone());
+                                }
+                            }
+                        }
+                        (rg.credited.t.clone(), m)
+                    });
+                let mut f = s3_harness::families::smoothness_corners(
+                    &t,
+                    &signals,
+                    run.rtol,
+                    &run.instants,
+                    &corners,
+                    r2.as_ref().map(|(tr, m)| (tr.as_slice(), m)),
+                );
+                f["law_corners_record"] = corner_record;
+                // S3-D49's verdict, kept beside (R8-E1-a).
+                f["s3_d49"] =
                     s3_harness::families::smoothness_signed(&t, &signals, run.rtol, &run.instants);
                 f["classes"] = record.clone();
                 if og.credited_error.is_some() {
@@ -3778,6 +3841,7 @@ fn s3_case_run() {
             reactor_trip: run.reactor_trip_after_zero,
             gcb_open: run.gcb_open_after_zero,
             sg_relief: run.sg_relief.clone(),
+            sg_relief_law: g.sg_relief_law,
             rotors: &og.rotors,
             chatter,
             donor_flips: run.donor_flips,
