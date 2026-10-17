@@ -1461,9 +1461,8 @@ impl Solids {
             let clad_inner = x.value(self.surface(i, 1));
             let clad_outer = x.value(self.surface(i, 2));
             let mut wall = s(0.);
-            let skip_undirected = self.directions_only
-                && clad_outer.direction == 0.
-                && clad_mean.direction == 0.;
+            let skip_undirected =
+                self.directions_only && clad_outer.direction == 0. && clad_mean.direction == 0.;
             for (n, c) in b.contacts.iter().enumerate() {
                 if skip_undirected && self.undirected_at(c.water) {
                     continue;
@@ -1484,11 +1483,8 @@ impl Solids {
                                 diameter_m: c.diameter,
                                 film: thermal::Film::Core,
                                 emissivity: b.geometry.clad_emissivity,
-                                material: thermal::core_wall_material(
-                                    clad_mean,
-                                    b.clad_density,
-                                )
-                                .map_err(trial)?,
+                                material: thermal::core_wall_material(clad_mean, b.clad_density)
+                                    .map_err(trial)?,
                             },
                             water.saturation,
                             water.bulk,
