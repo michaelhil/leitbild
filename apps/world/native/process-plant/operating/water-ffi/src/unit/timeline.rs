@@ -1,3 +1,4 @@
+//! spec: world/packs/process-plant/reference-designs/ld-01/model/build-readiness.md#s3-declaration-a3-pilot
 //! A frame-driven run's events on the case clock (s from the case's t = 0),
 //! read from the frame driver's log (one record per instant, with each
 //! restart's transaction receipts) and the protection's divisions. Nothing

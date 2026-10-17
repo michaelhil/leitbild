@@ -532,7 +532,10 @@ pub fn free_vapour_drive_tolerances<J: JoinedSystem<Properties = If97>>(
     if free.is_empty() {
         return Ok(None);
     }
-    let started = (crate::spine::z1::cpu_s(), super::counters::instructions());
+    let started = (
+        leitbild_operating_water::unit::clock::process_cpu_s(),
+        super::counters::instructions(),
+    );
     let drives = |system: &mut Electrified<J>, z: &[f64]| -> Result<Vec<f64>, String> {
         let joined = &mut system.integrated_mut().joined;
         joined
@@ -577,7 +580,7 @@ pub fn free_vapour_drive_tolerances<J: JoinedSystem<Properties = If97>>(
     Ok(Some(json!({
         "paths": free.iter().zip(base.iter().zip(&a)).map(|((li, f, k), (d, tol))| json!({"path": li, "face": f, "phase": k, "drive_pa": d, "tolerance_pa": tol})).collect::<Vec<_>>(),
         "coordinates": n, "taken_backward": backward, "refused": refused, "first_refusal": first_refusal,
-        "judge_cpu_s": crate::spine::z1::cpu_s() - started.0, "judge_instructions": instructions})))
+        "judge_cpu_s": leitbild_operating_water::unit::clock::process_cpu_s() - started.0, "judge_instructions": instructions})))
 }
 
 /// N4′'s consistent state (S3-D58, JACAGE's units) at a restart's left

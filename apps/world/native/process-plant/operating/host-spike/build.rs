@@ -4,8 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[path = "src/sha256.rs"]
-mod sha256;
+use leitbild_operating_plant::digest::sha256;
 
 fn sources(directory: &Path, out: &mut Vec<PathBuf>) {
     let mut entries: Vec<PathBuf> = std::fs::read_dir(directory)
@@ -81,12 +80,11 @@ fn main() {
             .to_string();
         digest_input.extend_from_slice(relative.as_bytes());
         digest_input.push(0);
-        digest_input
-            .extend_from_slice(sha256::hex(&std::fs::read(&file).expect("source")).as_bytes());
+        digest_input.extend_from_slice(sha256(&std::fs::read(&file).expect("source")).as_bytes());
         digest_input.push(b'\n');
     }
     println!(
         "cargo:rustc-env=LD01_KERNEL_SOURCE_SHA256={}",
-        sha256::hex(&digest_input)
+        sha256(&digest_input)
     );
 }

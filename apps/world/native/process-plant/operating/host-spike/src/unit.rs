@@ -5,7 +5,8 @@
 //! behind a narrow load / advance / command / observe / snapshot / restore
 //! surface. TEST-ONLY integration spike; it adds no physics, solver option
 //! or fallback, and it is never registered as a live runtime.
-use crate::{cpu, sha256};
+use crate::cpu;
+use leitbild_operating_plant::digest::sha256;
 use leitbild_operating_plant::{
     network::{
         ConsistentPair, Network, PzrPreparation, RotorState, ToleranceClasses, consistent_start,
@@ -282,8 +283,8 @@ fn declared(config: &Config, kernel: &str) -> Result<Declared, String> {
     let gates: Gates =
         serde_json::from_str(&gates_text).map_err(|e| format!("S1 gates block: {e}"))?;
     let identity = Identity {
-        packet_sha256: sha256::hex(&bytes),
-        gates_sha256: sha256::hex(gates_text.as_bytes()),
+        packet_sha256: sha256(&bytes),
+        gates_sha256: sha256(gates_text.as_bytes()),
         water_library_sha256: water_library_sha256()?,
         kernel: kernel.to_string(),
     };

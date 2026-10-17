@@ -19,25 +19,18 @@ path = "src/bin/ld01-host-spike.rs"
 # Stock IDAS of the same release (the S2 gate's declared build); the joined
 # host's trajectories are bit-identical on IDA (S2-15 Step A).
 quadratures = ["ida", "leitbild-operating-water/quadratures"]
-# The included harness modules compile under `ida` (water-ffi is always
-# linked with its `ida` feature here).
+# water-ffi is always linked with its `ida` feature here (the unit library).
 ida = []
-# The S5 joined host composes through integ's S2 gate harness
-# (claude/ld01-s5-host); on the S3 kernel the harness's API moved on and
-# `ld01-c5-host` (the S3 composition) supersedes it, so it builds only
-# when asked for.
-s2-joined-host = []
-
-[[bin]]
-name = "ld01-joined-host"
-path = "src/bin/ld01-joined-host.rs"
-required-features = ["s2-joined-host"]
 
 [dependencies]
 leitbild-operating-plant = { path = ".." }
 leitbild-operating-water = { path = "../water-ffi", features = ["ida"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
+
+# The kernel source digest (build.rs) is the operating crate's one SHA-256.
+[build-dependencies]
+leitbild-operating-plant = { path = ".." }
 
 [lints.rust]
 # The operating crate forbids unsafe code. This spike denies it too and

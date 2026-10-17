@@ -13,10 +13,13 @@
 //!   stratified cell's zone energy and mass rates, the surge and spray port
 //!   mass flows, and stock IDA's step.
 #![cfg(all(feature = "ida", target_os = "macos"))]
-#[path = "common/filter.rs"]
-mod filter;
-#[path = "joined_spine.rs"]
-mod spine;
+mod common;
+use common::filter;
+use leitbild_operating_water::unit::{
+    clock::process_cpu_s,
+    profile::{DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT},
+    spine::{Started, started_full_composition},
+};
 
 use leitbild_operating_plant::{
     joined::operator::Joined,
@@ -28,9 +31,6 @@ use leitbild_operating_water::{
     joined::{Discrete, Integrated, Restart, discrete_restart},
 };
 use serde_json::{Map, Value, json};
-use spine::{
-    DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, started_full_composition, z1,
-};
 use std::{io::Write, path::PathBuf};
 
 /// BDF order at most 2 (revision 7, Configuration).
@@ -279,7 +279,7 @@ fn bits(v: &[f64]) -> Vec<String> {
 #[test]
 #[ignore = "DR-P3-PT1-2 probe: S2-07 re-settle (PREVIEW, NOT evidence): requires the joined packet, the wiki, IF97, stock IDA/KLU and the run's environment"]
 fn dr_pt1_drift_probe() {
-    let started = z1::cpu_s();
+    let started = process_cpu_s();
     let gates_path = env("LD01_S2_GATES_SOURCE");
     let gates_text = std::fs::read_to_string(&gates_path).expect("declaration draft");
     let gates = gates_block(&gates_text);
@@ -312,8 +312,8 @@ fn dr_pt1_drift_probe() {
         "the window is a whole number of outputs"
     );
     let checkpoint_every = (checkpoint_s / output_s).round() as usize;
-    let (packet_path, packet_bytes) = spine::packet_bytes();
-    let packet_sha256 = spine::sha256(&packet_bytes);
+    let (packet_path, packet_bytes) = common::packet_bytes();
+    let packet_sha256 = leitbild_operating_plant::digest::sha256(&packet_bytes);
     let network_packet: NetworkPacket =
         serde_json::from_slice(&packet_bytes).expect("network packet");
     let face = |id: &str| {
@@ -338,8 +338,8 @@ fn dr_pt1_drift_probe() {
         structure,
         analyses,
         ..
-    } = started_full_composition();
-    let preparation_cpu_s = z1::cpu_s() - started;
+    } = started_full_composition(&common::spine()).expect("the S2 composition");
+    let preparation_cpu_s = process_cpu_s() - started;
     let (credited0, cells0) = observe(&mut joined, &network_packet, &loops, 0., &y, &yp);
     let nonnegative = joined.network.nonnegative_stocks();
     let restart = Restart {
@@ -402,10 +402,10 @@ fn dr_pt1_drift_probe() {
         )
         .unwrap();
         std::fs::write(&path, &bytes).unwrap();
-        json!({"file": name, "t_s": t, "sha256": spine::sha256(&bytes)})
+        json!({"file": name, "t_s": t, "sha256": leitbild_operating_plant::digest::sha256(&bytes)})
     };
     loop {
-        let cpu = z1::cpu_s() - started;
+        let cpu = process_cpu_s() - started;
         if cpu > cpu_cap_s {
             failure = Some(format!("CPU cap {cpu_cap_s} s reached at t = {t} s"));
             break;
@@ -421,7 +421,7 @@ fn dr_pt1_drift_probe() {
                 t = time;
                 if (t - next_output).abs() <= 1e-9 * next_output.max(1.) {
                     k += 1;
-                    let timer = z1::cpu_s();
+                    let timer = process_cpu_s();
                     let (c, cells) = observe(
                         &mut ida.system_mut().joined,
                         &network_packet,
@@ -451,7 +451,7 @@ fn dr_pt1_drift_probe() {
                         let line = json!({"t_s": t, "credited": CREDITED.iter().zip(&c).map(|(q, v)| (q.name.to_string(), json!(v))).collect::<Map<String, Value>>(),
                             "ranges_20s": CREDITED.iter().zip(&rs).map(|(q, r)| (q.name.to_string(), json!([r.0, r.1, r.2]))).collect::<Map<String, Value>>(),
                             "cells_k": cells, "ida": named(&cumulative), "last_step_s": st.last_step, "order": st.last_order,
-                            "cpu_s": z1::cpu_s() - started});
+                            "cpu_s": process_cpu_s() - started});
                         writeln!(log, "{}", serde_json::to_string(&line).unwrap()).unwrap();
                         log.flush().unwrap();
                         if k.is_multiple_of(LOG_EVERY * 10) {
@@ -462,7 +462,7 @@ fn dr_pt1_drift_probe() {
                             c[0][0],
                             c[4],
                             cumulative[0],
-                            z1::cpu_s() - started
+                            process_cpu_s() - started
                         );
                         if full {
                             last_ranges = rs.clone();
@@ -480,7 +480,7 @@ fn dr_pt1_drift_probe() {
                             &yp,
                         ));
                     }
-                    observation_cpu_s += z1::cpu_s() - timer;
+                    observation_cpu_s += process_cpu_s() - timer;
                     // DR-P3-PT1-2: continue past the first verdict.
                     if !verdict.is_null() {
                         if first_verdict.is_null() {
@@ -504,7 +504,7 @@ fn dr_pt1_drift_probe() {
                     // restarts exactly (S2-D21) and is reported.
                     let st = ida.stats().unwrap();
                     add(&mut totals, &st);
-                    let timer = z1::cpu_s();
+                    let timer = process_cpu_s();
                     match discrete_restart(
                         &mut ida,
                         t,
@@ -526,14 +526,14 @@ fn dr_pt1_drift_probe() {
                             break;
                         }
                     }
-                    restart_cpu_s += z1::cpu_s() - timer;
+                    restart_cpu_s += process_cpu_s() - timer;
                 }
             }
             Ok(Advance::Root { time, directions }) => {
                 t = time;
                 let st = ida.stats().unwrap();
                 add(&mut totals, &st);
-                let timer = z1::cpu_s();
+                let timer = process_cpu_s();
                 let roots: Vec<Value> = directions
                     .iter()
                     .enumerate()
@@ -561,7 +561,7 @@ fn dr_pt1_drift_probe() {
                         break;
                     }
                 }
-                restart_cpu_s += z1::cpu_s() - timer;
+                restart_cpu_s += process_cpu_s() - timer;
             }
             Err(e) => {
                 failure = Some(format!("stock IDA at {t} s: {e}"));
@@ -571,7 +571,7 @@ fn dr_pt1_drift_probe() {
     }
     let st = ida.stats().unwrap();
     add(&mut totals, &st);
-    let total_cpu_s = z1::cpu_s() - started;
+    let total_cpu_s = process_cpu_s() - started;
     let settled_state = write_state("settled-state.json", t, &y, &yp);
     let (final_credited, final_cells) = observe(
         &mut ida.system_mut().joined,
@@ -586,9 +586,9 @@ fn dr_pt1_drift_probe() {
     let receipt = json!({
         "kind": "dr-p3-pt1-2-probe (s2-07 resettle procedure)",
         "status": "PREVIEW (critic H4), NOT evidence: S2 is not declared. Results recorded before any TBD fill.",
-        "provenance": spine::provenance(),
+        "provenance": common::spine_provenance(),
         "packet": packet_path, "packet_sha256": packet_sha256,
-        "gates": {"source": gates_path, "sha256": spine::sha256(gates_text.as_bytes()), "settling": settling, "outputInterval_s": output_s},
+        "gates": {"source": gates_path, "sha256": leitbild_operating_plant::digest::sha256(gates_text.as_bytes()), "settling": settling, "outputInterval_s": output_s},
         "preparation": preparation,
         "configuration": {"max_order": MAX_ORDER, "newton_coefficient": NEWTON_COEFFICIENT, "delta_cj_lsetup": DELTA_CJ_LSETUP,
             "first_step_s": FIRST_STEP_S, "relative_tolerance": rtol, "jacobian": "block, cached KLU analyses (S2-D4)", "klu_ordering": "AMD",

@@ -10,10 +10,8 @@
 //!   (it can never pass);
 //! - `not implemented` for a declared line the harness has no judge for
 //!   (it can never pass either, so no declared line passes silently).
-use super::{
-    declaration::Case,
-    timeline::{Timeline, relief_sg},
-};
+use super::declaration::Case;
+use leitbild_operating_water::unit::timeline::{Timeline, relief_sg};
 use serde_json::{Value, json};
 
 /// The judged lines of `case` from its block section `lines` (an object of

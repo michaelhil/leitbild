@@ -9,5 +9,4 @@
 pub const KERNEL_SOURCE_SHA256: &str = env!("LD01_KERNEL_SOURCE_SHA256");
 pub mod cpu;
 pub mod ffi;
-pub mod sha256;
 pub mod unit;

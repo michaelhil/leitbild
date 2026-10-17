@@ -35,14 +35,15 @@
 //! accuracy extension, the reference factors; else the wiki's page).
 #![cfg(all(feature = "ida", target_os = "macos"))]
 #![recursion_limit = "256"]
+mod common;
+use common::{filter, provenance};
+use leitbild_operating_water::unit::{clock::process_cpu_s, profile, s3};
 #[allow(dead_code)] // The S2 harness's comparisons; S3 uses E0 and the drift.
 #[path = "s2_harness/compare.rs"]
 mod compare;
 #[allow(dead_code)] // The S2 harness's conservation record.
 #[path = "s2_harness/conservation.rs"]
 mod conservation;
-#[path = "common/filter.rs"]
-mod filter;
 #[allow(dead_code)] // The S2 harness's declaration readers; S3 uses a subset.
 #[path = "s2_harness/gates.rs"]
 mod gates;
@@ -52,22 +53,14 @@ mod guards;
 #[allow(dead_code)] // The S2 harness's credited outputs; S3 uses the reader.
 #[path = "s2_harness/outputs.rs"]
 mod outputs;
-#[path = "common/provenance.rs"]
-mod provenance;
-#[path = "common/pzr_control.rs"]
-mod pzr_control;
 mod s3_harness;
-#[path = "common/s3_unit.rs"]
-mod s3_unit;
-#[path = "joined_spine.rs"]
-mod spine;
 
 use gates::Block;
 use leitbild_operating_plant::joined::block::Command;
+use leitbild_operating_water::unit::timeline::{Timeline, relief_sg};
 use s3_harness::{
     declaration::{self, Case},
     lines, observe,
-    timeline::{Timeline, relief_sg},
 };
 use serde_json::{Value, json};
 
@@ -441,18 +434,18 @@ fn each_case_takes_its_clock_and_command_from_the_block() {
 fn the_s3_settle_reads_its_maximum_step_from_the_block() {
     // S3-D35: settling.maxStep_s, 2 s since r3.5; absent refuses.
     let mut v: Value = serde_json::from_str(C1C3_R3_7).unwrap();
-    assert_eq!(s3_unit::settle_max_step(&v), Ok(2.));
+    assert_eq!(s3::settle_max_step(&v), Ok(2.));
     v.as_object_mut().unwrap().remove("settling");
-    assert!(s3_unit::settle_max_step(&v).is_err());
+    assert!(s3::settle_max_step(&v).is_err());
     v["settling"] = json!({"maxStep_s": 2.0});
-    assert_eq!(s3_unit::settle_max_step(&v), Ok(2.));
+    assert_eq!(s3::settle_max_step(&v), Ok(2.));
     v["settling"]["maxStep_s"] = json!(0.);
-    assert!(s3_unit::settle_max_step(&v).is_err());
+    assert!(s3::settle_max_step(&v).is_err());
     // The block is found once in a page.
     let page = format!("text\n```ld01-s3-cases-c1c3\n{C1C3_R3_7}\n```\nmore");
-    assert_eq!(s3_unit::cases_block(&page).unwrap()["revision"], "3.7");
+    assert_eq!(s3::cases_block(&page).unwrap()["revision"], "3.7");
     let twice = format!("{page}\n```ld01-s3-cases-c1c3\n{{}}\n```");
-    assert!(s3_unit::cases_block(&twice).is_err());
+    assert!(s3::cases_block(&twice).is_err());
 }
 
 #[test]
@@ -798,7 +791,7 @@ fn zone_r_exhausts_within(m: f64, rate: f64, step: f64) -> bool {
 /// `malfunctionTime_s`, which must lie `malfunctionOffsetFromFrame_s` off
 /// the grid.
 fn case_clock(case: Case, spec: &Value, frame_s: f64) -> Result<(f64, Option<Command>), String> {
-    use s3_unit::ROTOR_CONSUMERS;
+    use s3::ROTOR_CONSUMERS;
     let number = |k: &str| spec[k].as_f64().ok_or(format!("{} has no {k}", case.key()));
     match case {
         Case::C1 => {
@@ -1295,7 +1288,7 @@ type CaseUnit = leitbild_operating_water::electrical::Electrified<Inner>;
 fn wrap(
     i: leitbild_operating_water::joined::Integrated<leitbild_operating_water::If97>,
 ) -> Result<Inner, String> {
-    leitbild_operating_water::joined_ledger::Ledgered::new(i, spine::z1::cpu_s)
+    leitbild_operating_water::joined_ledger::Ledgered::new(i, process_cpu_s)
 }
 #[cfg(not(feature = "quadratures"))]
 fn wrap(
@@ -1363,7 +1356,7 @@ struct Driven {
 /// What one run is asked: the run itself, its repeat or a reference.
 struct Ask<'a> {
     label: &'a str,
-    scaling: s3_unit::Scaling,
+    scaling: s3::Scaling,
     /// A reference's own maximum step (S1's `eventReference.maxStep_s`).
     max_step: Option<f64>,
     /// Credited outputs from this time after zero (C1: `judgedFrom_s`).
@@ -1388,7 +1381,7 @@ fn drive(
     case: Case,
     d: &declaration::Declaration,
     spec: &Value,
-    inputs: &s3_unit::Inputs,
+    inputs: &leitbild_operating_water::unit::inputs::Inputs,
     state: &Value,
     state_path: &str,
     span: f64,
@@ -1410,9 +1403,9 @@ fn drive(
     // R5-F4): C1 as a connected unit on a steady bus, every interval quiet
     // (S3-D42: no grid event, no grid window).
     let exchanging = c5 || case == Case::C1;
-    let started = spine::z1::cpu_s();
+    let started = process_cpu_s();
     let section = inputs.ic.clone();
-    let s3_unit::S3Unit {
+    let s3::S3Unit {
         mut ida,
         t0,
         mut y,
@@ -1427,7 +1420,7 @@ fn drive(
         frame,
         receipt: composition,
         reference,
-    } = s3_unit::compose_with(inputs, state, ask.scaling, wrap).unwrap_or_else(|e| panic!("{e}"));
+    } = s3::compose_with(inputs, state, ask.scaling, wrap).unwrap_or_else(|e| panic!("{e}"));
     let declared_frame_s = d.block.number(&d.common("/frameAlignment/frame_s"));
     d.block.text(&d.common("/frameAlignment/rule"));
     assert_eq!(
@@ -1436,7 +1429,8 @@ fn drive(
         "the block's frame is the I&C frame"
     );
     let (zero_after, command) = case_clock(case, spec, declared_frame_s).unwrap();
-    let packet_json: Value = serde_json::from_slice(&spine::packet_bytes().1).expect("packet json");
+    let packet_json: Value =
+        serde_json::from_slice(&common::packet_bytes().1).expect("packet json");
     let extension: leitbild_operating_plant::joined::post_trip_domain::Extension =
         serde_json::from_value(packet_json["post_trip_domain"].clone())
             .expect("the packet's post_trip_domain section (D3 (a))");
@@ -1523,7 +1517,7 @@ fn drive(
         );
         // C3's idle branch: the supply-lost pump's discharge face (S3-D50).
         let idle_face = match command {
-            Some(Command::SupplyLoss { rotor }) => s3_unit::ROTOR_CONSUMERS[rotor]
+            Some(Command::SupplyLoss { rotor }) => s3::ROTOR_CONSUMERS[rotor]
                 .strip_prefix("LD01.P.")
                 .map(|p| format!("PUMP.{p}->COLD.{}", &p[..1])),
             _ => None,
@@ -1590,7 +1584,7 @@ fn drive(
     if let Some(h) = ask.max_step {
         ida.set_max_step(h).unwrap();
     }
-    let mut driver = Driver::new(frame, Diagnostic::Jump, spine::z1::cpu_s, t0).unwrap();
+    let mut driver = Driver::new(frame, Diagnostic::Jump, process_cpu_s, t0).unwrap();
     // Decision 0015 E2: the 20 ms cap only inside the case's declared event
     // window, set by the driver at the restart that starts it (C4's hook)
     // and removed at the first chunk bound at or after its end.
@@ -1688,8 +1682,8 @@ fn drive(
         _ => None,
     };
     observe::start_sample(&mut observer, ida.system_mut(), t0, &y, &yp);
-    let preparation_cpu_s = spine::z1::cpu_s() - started;
-    let run_started = spine::z1::cpu_s();
+    let preparation_cpu_s = process_cpu_s() - started;
+    let run_started = process_cpu_s();
     let instructions0 = s3_harness::counters::instructions();
     let until = zero + span;
     // The run in chunks at every frame instant (the control client, class
@@ -1904,7 +1898,7 @@ fn drive(
             }
             // Rule G: CPU and instructions with rule I counted (S3-D46;
             // in an ungated drive the observer is rule I alone) and without.
-            let cpu_with = spine::z1::cpu_s() - run_started - ledger_quadrature_cpu_s(ida.system());
+            let cpu_with = process_cpu_s() - run_started - ledger_quadrature_cpu_s(ida.system());
             let ins_with = match (&instructions0, s3_harness::counters::instructions()) {
                 (Ok(a), Ok(b)) if observer.instructions_error.is_none() => {
                     b.saturating_sub(*a) as f64
@@ -1924,7 +1918,7 @@ fn drive(
             convergence.push((reached - zero, driver.totals[5] as f64 + open_failures));
             // C4: its observation, phase changes, rule K states and ends.
             if case == Case::C4 && r.is_ok() {
-                let s0 = spine::z1::cpu_s();
+                let s0 = process_cpu_s();
                 let classes = c4_classes.as_ref().unwrap();
                 if c4_observe {
                     match c4_frame(
@@ -2012,7 +2006,7 @@ fn drive(
                             "t_s": *b, "after_zero_s": *b - zero, "changes": changes, "path": file, "sha256": sha}));
                     }
                 }
-                c4.obs_s += spine::z1::cpu_s() - s0;
+                c4.obs_s += process_cpu_s() - s0;
                 // r1 `ends`: rule I's exit and the first birth + 120 s stop
                 // the run there (labelled); the named refusals end it below.
                 let rule_i_end = observer.rule_i.exit.as_ref().map(|x| {
@@ -2091,11 +2085,11 @@ fn drive(
                         } else {
                             Vec::new()
                         };
-                        let gate0 = spine::z1::cpu_s();
+                        let gate0 = process_cpu_s();
                         let mut step = driver.decide(vec![loss]).and_then(|()| {
                             observer.sample(ida.system_mut(), b, &y, &yp, &q, Side::BeforeRestart)
                         });
-                        driver.cpu.gate_s += spine::z1::cpu_s() - gate0;
+                        driver.cpu.gate_s += process_cpu_s() - gate0;
                         if step.is_ok() {
                             let mut clients: Vec<&mut dyn Client<CaseUnit>> =
                                 vec![&mut protection, &mut recorder, &mut control];
@@ -2106,7 +2100,7 @@ fn drive(
                                 driver.apply_due(&mut ida, &mut y, &mut yp, &mut clients, &setup);
                         }
                         if step.is_ok() {
-                            let gate1 = spine::z1::cpu_s();
+                            let gate1 = process_cpu_s();
                             let q = if carried {
                                 driver.quadratures_at(&ida, b).unwrap_or_default()
                             } else {
@@ -2120,7 +2114,7 @@ fn drive(
                                 &q,
                                 Side::AfterRestart,
                             );
-                            driver.cpu.gate_s += spine::z1::cpu_s() - gate1;
+                            driver.cpu.gate_s += process_cpu_s() - gate1;
                         }
                         if step.is_ok() && ask.event_window {
                             step = ida.set_max_step(WINDOW_MAX_STEP_S);
@@ -2211,7 +2205,7 @@ fn drive(
                         "states are never overwritten"
                     );
                     std::fs::write(&path, &bytes).unwrap();
-                    let sha = spine::sha256(&bytes);
+                    let sha = leitbild_operating_plant::digest::sha256(&bytes);
                     (path, sha)
                 };
                 let exit_s = observer
@@ -2261,7 +2255,7 @@ fn drive(
         }
         r
     };
-    let run_cpu_s = spine::z1::cpu_s() - run_started;
+    let run_cpu_s = process_cpu_s() - run_started;
     // The ledgers' quadrature integrands (the account at each converged
     // step) are rule D's instrument, not plant work.
     let ledger_cpu_s = ledger_quadrature_cpu_s(ida.system());
@@ -2568,7 +2562,7 @@ fn drive(
     let instants_bytes = serde_json::to_vec(&driver.log).unwrap();
     let repeat_record = json!({"fingerprint": observer.gates.as_ref().map(|g| g.fingerprint.hex()),
         "samples": observer.gates.as_ref().map(|g| g.samples), "end_state_fingerprint": end_fp.hex(),
-        "instants": {"count": driver.log.len(), "sha256": spine::sha256(&instants_bytes)},
+        "instants": {"count": driver.log.len(), "sha256": leitbild_operating_plant::digest::sha256(&instants_bytes)},
         "counts_by_class": driver.counts.json()});
     // MR-1 (R7-P): the handle's counts and the packet's section, for the receipt.
     let rebuild_counts = ida.rebuild();
@@ -2586,7 +2580,7 @@ fn drive(
         "ic_section": {"path": inputs.ic_path, "implemented_causes": implemented},
         "configuration": {"span_after_zero_s": span, "zero_after_start_s": zero_after,
             "command": command.map(|c| format!("{c:?}")), "frame_s": frame.period_s(),
-            "max_order": s3_unit::MAX_ORDER, "max_step_s": max_step,
+            "max_order": profile::MAX_ORDER, "max_step_s": max_step,
             "matrix_rebuild": {"rule": "MR-1 (owner, request 7 R7-P): stock IDAS check points every `steps` steps force an iteration-matrix setup; freed at restarts and above `held`",
                 "source": format!("{:?}", driver.matrix_rebuild),
                 "packet_section": rebuild_section,
@@ -2595,7 +2589,7 @@ fn drive(
             "window_cap": window_cap.as_ref().map(|w| json!({"max_step_s": w.max_step_s, "window_s": w.window_s,
                 "ramp": w.ramp.as_ref().map(|r| json!({"max_step_s": r.max_step_s, "declared": r.declared,
                     "value": format!("{RAMP_CAP_FENCE}.rampMaxStep_s ({DECISION_0015})"),
-                    "block_sha256": spine::sha256(ramp_block.to_string().as_bytes()), "end_after_zero_s": ramp_end})),
+                    "block_sha256": leitbild_operating_plant::digest::sha256(ramp_block.to_string().as_bytes()), "end_after_zero_s": ramp_end})),
                 "observed": {"chunk_steps_checked": cap_checks.0, "max_last_step_over_cap": cap_checks.1, "max_last_step_in_ramp_s": cap_checks.2},
                 "rule": "0015 E2: the cap only inside the declared window, set at the restart that starts it, removed at the first chunk bound at or after its end",
                 "intervals": cap_intervals})),
@@ -2719,9 +2713,7 @@ fn drive(
         sg_relief: tl
             .sg_relief
             .iter()
-            .filter_map(|(v, th, d, t)| {
-                s3_harness::timeline::relief_sg(v).map(|sg| (sg.to_string(), th.clone(), *d, *t))
-            })
+            .filter_map(|(v, th, d, t)| relief_sg(v).map(|sg| (sg.to_string(), th.clone(), *d, *t)))
             .collect(),
         repeat_record,
         declared_end_state,
@@ -2969,7 +2961,7 @@ fn c4_state(
         "states are never overwritten"
     );
     std::fs::write(path, &bytes).unwrap();
-    spine::sha256(&bytes)
+    leitbild_operating_plant::digest::sha256(&bytes)
 }
 
 /// The CPU the IDAS ledgers' integrands took (zero without them).
@@ -3142,7 +3134,7 @@ fn rule_i_is_judged_at_every_accepted_step() {
     let state_path = std::env::var("LD01_S3_STATE").expect("LD01_S3_STATE");
     let state: Value =
         serde_json::from_slice(&std::fs::read(&state_path).expect("state")).expect("state json");
-    let inputs = s3_unit::Inputs::from_env();
+    let inputs = common::inputs();
     let run = drive(
         Case::C1,
         &d,
@@ -3154,7 +3146,7 @@ fn rule_i_is_judged_at_every_accepted_step() {
         None,
         &Ask {
             label: "rule I cadence",
-            scaling: s3_unit::Scaling::NONE,
+            scaling: s3::Scaling::NONE,
             max_step: None,
             credited_from: 0.,
             window_state: None,
@@ -3191,7 +3183,7 @@ fn s3_case_run() {
         !std::path::Path::new(&receipt_path).exists(),
         "receipts are never overwritten"
     );
-    let process0 = spine::z1::cpu_s();
+    let process0 = process_cpu_s();
     let d = declaration::Declaration::load_case(case).unwrap_or_else(|e| panic!("{e}"));
     // The r8 wiki: C1–C3 at r3.8; r3.7 (and C4 r2) refused by name.
     refuse_superseded(&d.block).unwrap_or_else(|e| panic!("{e}"));
@@ -3227,14 +3219,14 @@ fn s3_case_run() {
     let state_path = std::env::var("LD01_S3_STATE").expect("LD01_S3_STATE");
     let state: Value =
         serde_json::from_slice(&std::fs::read(&state_path).expect("state")).expect("state json");
-    let inputs = s3_unit::Inputs::from_env();
+    let inputs = common::inputs();
     // The gate observation's declared settings: S2's blocks on the same page
     // (identity and ledger bounds, the observation and output grids, the
     // accuracy contract), read only for a gate run.
     let gate = gates_on.then(|| {
         let s2 = gates::Declaration::load().unwrap_or_else(|e| panic!("the S2 blocks: {e}"));
         let budgets = compare::Budgets::from(&s2).unwrap_or_else(|e| panic!("{e}"));
-        let bytes = spine::packet_bytes().1;
+        let bytes = common::packet_bytes().1;
         let raw: Value = serde_json::from_slice(&bytes).unwrap();
         GateSetup {
             s2,
@@ -3278,7 +3270,7 @@ fn s3_case_run() {
         gate.as_ref(),
         &Ask {
             label: "run",
-            scaling: s3_unit::Scaling::NONE,
+            scaling: s3::Scaling::NONE,
             max_step: None,
             // Rule F reads the whole declared part (S3-D49); E and the drift
             // take their own spans from it.
@@ -3335,7 +3327,7 @@ fn s3_case_run() {
             None,
             &Ask {
                 label: "cost",
-                scaling: s3_unit::Scaling::NONE,
+                scaling: s3::Scaling::NONE,
                 max_step: None,
                 credited_from: judged_from,
                 window_state: None,
@@ -3475,7 +3467,7 @@ fn s3_case_run() {
                 Some(g),
                 &Ask {
                     label: "repeat",
-                    scaling: s3_unit::Scaling::NONE,
+                    scaling: s3::Scaling::NONE,
                     max_step: None,
                     credited_from: judged_from,
                     window_state: window_state("repeat"),
@@ -3497,10 +3489,10 @@ fn s3_case_run() {
         // eventReference.maxStep_s, R2 at rtol x secondRefinementToleranceFactor
         // with every atol x referenceToleranceFactor, S2's R2).
         let f = g.s2.gates.number("/referenceToleranceFactor");
-        let asks: Vec<(String, s3_unit::Scaling, Option<f64>, f64, f64)> = match case {
+        let asks: Vec<(String, s3::Scaling, Option<f64>, f64, f64)> = match case {
             Case::C1 => vec![(
                 "rtol/10".into(),
-                s3_unit::Scaling {
+                s3::Scaling {
                     relative: f,
                     absolute: f,
                 },
@@ -3525,14 +3517,14 @@ fn s3_case_run() {
                 vec![
                     (
                         "R1".into(),
-                        s3_unit::Scaling::NONE,
+                        s3::Scaling::NONE,
                         Some(g.s2.shared.number("/eventReference/maxStep_s")),
                         from,
                         to,
                     ),
                     (
                         "R2".into(),
-                        s3_unit::Scaling {
+                        s3::Scaling {
                             relative: second,
                             absolute: f,
                         },
@@ -3550,14 +3542,14 @@ fn s3_case_run() {
                 vec![
                     (
                         "R1".into(),
-                        s3_unit::Scaling::NONE,
+                        s3::Scaling::NONE,
                         Some(g.s2.shared.number("/eventReference/maxStep_s")),
                         0.,
                         w.min(end),
                     ),
                     (
                         "R2".into(),
-                        s3_unit::Scaling {
+                        s3::Scaling {
                             relative: second,
                             absolute: f,
                         },
@@ -4034,7 +4026,7 @@ fn s3_case_run() {
                     Some(g),
                     &Ask {
                         label: "SS-1",
-                        scaling: s3_unit::Scaling::NONE,
+                        scaling: s3::Scaling::NONE,
                         max_step: None,
                         credited_from: 0.,
                         window_state: None,
@@ -4123,7 +4115,7 @@ fn s3_case_run() {
         "refusals_or_deviations": refusals,
         "declaration": {"block": d.block.receipt(), "pin": pin, "tbd": tbd, "kinetics": kinetics,
             "s2_blocks": gate.as_ref().map(|g| g.s2.receipt())},
-        "provenance": spine::provenance(),
+        "provenance": common::spine_provenance(),
         "packet": state["packet"], "packet_sha256": state["packet_sha256"],
         "configuration": {"declared_duration_s": declared_s, "span_after_zero_s": span, "gates": gates_on},
         "families": families,
@@ -4132,7 +4124,7 @@ fn s3_case_run() {
         "repeat": repeat_driven.as_ref().map(|r| json!({"failure": r.failure, "cpu": r.record["cpu"], "record": r.repeat_record})),
         "references": references.iter().map(|(n, r)| json!({"reference": n, "failure": r.failure, "rule_i_exit_after_zero_s": r.exit_after_zero,
             "configuration": r.record["configuration"], "cpu": r.record["cpu"], "counts_by_class": r.record["counts_by_class"]})).collect::<Vec<_>>(),
-        "process_cpu_s": spine::z1::cpu_s() - process0,
+        "process_cpu_s": process_cpu_s() - process0,
     });
     // The case record's own fields at the top level, as before.
     for k in [

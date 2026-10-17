@@ -66,12 +66,11 @@
 //! names the state's sha256 (the bytes of `LD01_S3_SPECTRUM_STATE`), as rule
 //! K reads it.
 #![cfg(all(feature = "ida", target_os = "macos"))]
-#[path = "common/pzr_control.rs"]
-mod pzr_control;
-#[path = "common/s3_unit.rs"]
-mod s3_unit;
-#[path = "joined_spine.rs"]
-mod spine;
+mod common;
+use leitbild_operating_water::unit::{
+    s3,
+    spine::{Started, credited_outputs, started_full_composition},
+};
 #[allow(dead_code)] // S2's Z6 (its own tests compile here too, ignored).
 #[path = "s2_spectrum.rs"]
 mod z6;
@@ -132,7 +131,7 @@ struct Operator {
 }
 
 fn operator_at(state: &Value) -> Result<Operator, String> {
-    let (packet_path, _) = spine::packet_bytes();
+    let (packet_path, _) = common::packet_bytes();
     if state["packet"].as_str() != Some(packet_path.as_str()) {
         return Err(format!(
             "the state is of another packet: {}",
@@ -144,13 +143,13 @@ fn operator_at(state: &Value) -> Result<Operator, String> {
     }
     let (y, yp) = (vector(&state["y"]), vector(&state["yp"]));
     let t = state["t_s"].as_f64().ok_or("the state has no t_s")?;
-    let spine::Started {
+    let Started {
         mut joined,
         network_ids,
         mut atol,
         rtol,
         ..
-    } = spine::started_full_composition();
+    } = started_full_composition(&common::spine()).expect("the S2 composition");
     if y.len() != joined.dimension() {
         return Err(format!(
             "{} coordinates against {}",
@@ -173,7 +172,7 @@ fn operator_at(state: &Value) -> Result<Operator, String> {
         .map_err(|e| format!("restore the operator's discrete state: {e:?}"))?;
     let structure = JoinedJacobian::compile_for(&mut joined, t, &y, None)
         .map_err(|e| format!("structure: {e:?}"))?;
-    let credited = spine::credited_outputs(&joined);
+    let credited = credited_outputs(&joined, &common::spine()).expect("the credited outputs");
     let derived = derived_tolerances(
         &mut joined,
         &structure,
@@ -605,8 +604,8 @@ fn s3_unit_coupling_blocks() {
     let state_path = env("LD01_S3_SPECTRUM_STATE");
     let bytes = std::fs::read(&state_path).expect("state file");
     let state: Value = serde_json::from_slice(&bytes).expect("state json");
-    let inputs = s3_unit::Inputs::from_env();
-    let mut u = s3_unit::compose(&inputs, &state).unwrap_or_else(|e| panic!("{e}"));
+    let inputs = common::inputs();
+    let mut u = s3::compose(&inputs, &state).unwrap_or_else(|e| panic!("{e}"));
     let (n, t) = (u.n, u.t0);
     let (y, yp) = (u.y.clone(), u.yp.clone());
     let total = y.len();

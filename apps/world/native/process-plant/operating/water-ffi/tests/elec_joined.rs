@@ -10,10 +10,12 @@
 //! `ELEC_PACKET`, the electrical packet compiled by
 //! `reference-design-operating-electrical.ts`.
 #![cfg(all(feature = "quadratures", target_os = "macos"))]
-#[path = "common/cpu.rs"]
-mod clock;
-#[path = "joined_spine.rs"]
-mod spine;
+mod common;
+use common::cpu;
+use leitbild_operating_water::unit::{
+    profile::{DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT},
+    spine::{Started, started_s3_composition},
+};
 
 use leitbild_operating_plant::joined::blocks::JoinedJacobian;
 use leitbild_operating_plant::{
@@ -37,7 +39,6 @@ use leitbild_operating_water::{
     },
 };
 use serde_json::{Value, json};
-use spine::{DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, started_s3_composition};
 use std::collections::BTreeMap;
 
 type Unit = Electrified<Integrated<If97>>;
@@ -73,7 +74,7 @@ struct Case {
 /// The joined state to start from: the settled state named by
 /// `LD01_S3_STATE` (`{t_s, y, yp, packet}`, as the IC-PROT probe), else the
 /// composed state at t = 0 (whose first second is the impulsive transient).
-fn initial(s: &spine::Started) -> (f64, Vec<f64>, Vec<f64>) {
+fn initial(s: &Started) -> (f64, Vec<f64>, Vec<f64>) {
     match std::env::var("LD01_S3_STATE") {
         Ok(path) => {
             let state: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -87,7 +88,7 @@ fn initial(s: &spine::Started) -> (f64, Vec<f64>, Vec<f64>) {
             };
             assert_eq!(
                 state["packet"].as_str(),
-                Some(spine::packet_bytes().0.as_str())
+                Some(common::packet_bytes().0.as_str())
             );
             (state["t_s"].as_f64().unwrap(), v("y"), v("yp"))
         }
@@ -103,7 +104,8 @@ fn build(offsite_loss_after_s: Option<f64>) -> Case {
 /// (`quadratures`) or left for the frame driver to start.
 fn build_with(offsite_loss_after_s: Option<f64>, quadratures: bool) -> Case {
     let e = packet();
-    let (mut s, joined_derived) = started_s3_composition();
+    let (mut s, joined_derived) =
+        started_s3_composition(&common::spine()).expect("the S3 composition");
     // S3-D27: the routing gates the feed, so the SG mass rows' structure
     // covers the gate closed; the block structure is compiled after it.
     s.joined.declare_feed_gate().expect("the feed gate");
@@ -259,7 +261,7 @@ fn run(c: &mut Case, commands: &[(f64, Command)], span: f64) -> Value {
     let mut supports: Vec<Value> = Vec::new();
     let (mut steps, mut jac) = (0i64, 0i64);
     let mut domain_exit: Option<Value> = None;
-    let cpu0 = clock::thread_cpu_s();
+    let cpu0 = cpu::thread_cpu_s();
     while t < horizon - 1e-12 {
         let mut stop = horizon;
         if let Some(e) = c.ida.system().next_time_event(t) {
@@ -343,7 +345,7 @@ fn run(c: &mut Case, commands: &[(f64, Command)], span: f64) -> Value {
     steps += st.steps;
     jac += st.jacobians;
     c.ida.quadratures(&mut q).unwrap();
-    let cpu = clock::thread_cpu_s() - cpu0;
+    let cpu = cpu::thread_cpu_s() - cpu0;
     let unit = c.ida.system();
     let tail = &c.y[c.n..];
     let deposits = unit.mechanism_j;
@@ -368,7 +370,7 @@ fn kind_name(roots: &Option<Vec<i32>>, command: Option<Command>) -> String {
 #[test]
 #[ignore = "requires the joined packet, the wiki, IF97, stock IDAS and ELEC_PACKET"]
 fn the_generator_joins_the_spine_through_a_turbine_trip_and_an_offsite_loss() {
-    clock::prefer_performance_core();
+    cpu::prefer_performance_core();
     // TRIP: the manual turbine trip at 0.5 s; GCB OPEN at its travel end,
     // the unit→reserve transfer, the RCPs and feed without supply for 0.5 s.
     eprintln!("== TRIP");
@@ -511,9 +513,7 @@ fn the_electrical_discrete_state_survives_a_snapshot() {
 #[ignore = "requires the joined packet, the wiki, IF97, stock IDAS and ELEC_PACKET"]
 fn an_rcp_supply_loss_is_routed_through_the_ac_routing() {
     let mut c = build(None);
-    let lost = spine::z1::s1_gates()["supplyLoss"]["rotor"]
-        .as_u64()
-        .unwrap() as usize;
+    let lost = common::s1_gates()["supplyLoss"]["rotor"].as_u64().unwrap() as usize;
     let rotor = |c: &Case, r: usize| {
         let net = &c.ida.system().integrated().joined.network;
         let i = net.rotor_index[r];
@@ -600,13 +600,13 @@ impl Client<Unit> for LateRestart {
 #[test]
 #[ignore = "requires the joined packet, the wiki, IF97, stock IDAS and ELEC_PACKET"]
 fn the_frame_driver_carries_the_slices_quadratures_across_its_restarts() {
-    clock::prefer_performance_core();
+    cpu::prefer_performance_core();
     let frame = Frame::new(0.1).unwrap();
     let span = 2.;
     let trip_after_s = 0.5;
     // Started outside the driver: refused at the first restart.
     let mut c = build(None);
-    let mut driver = Driver::new(frame, Diagnostic::None, clock::thread_cpu_s, c.t0).unwrap();
+    let mut driver = Driver::new(frame, Diagnostic::None, cpu::thread_cpu_s, c.t0).unwrap();
     driver.command(c.t0 + 0.05, Command::TurbineTrip).unwrap();
     let setup = Setup {
         network_ids: &c.network_ids,
@@ -648,7 +648,7 @@ fn the_frame_driver_carries_the_slices_quadratures_across_its_restarts() {
     // management as run()'s loop is (a mechanics comparison; MR-1's forced
     // rebuild is guarded in tests/matrix_rebuild.rs).
     let mut c = build_with(None, false);
-    let mut driver = Driver::new(frame, Diagnostic::None, clock::thread_cpu_s, c.t0).unwrap();
+    let mut driver = Driver::new(frame, Diagnostic::None, cpu::thread_cpu_s, c.t0).unwrap();
     driver.matrix_rebuild = leitbild_operating_water::frame::MatrixRebuild::Stock;
     driver
         .start_quadratures(&mut c.ida, vec![0.; QUADRATURES.len()])
@@ -685,7 +685,7 @@ fn the_frame_driver_carries_the_slices_quadratures_across_its_restarts() {
 
     // TRIP with a late class-R decision at a frame, receipts every 0.25 s.
     let mut c = build_with(None, false);
-    let mut driver = Driver::new(frame, Diagnostic::None, clock::thread_cpu_s, c.t0).unwrap();
+    let mut driver = Driver::new(frame, Diagnostic::None, cpu::thread_cpu_s, c.t0).unwrap();
     driver
         .start_quadratures(&mut c.ida, vec![0.; QUADRATURES.len()])
         .unwrap();
@@ -825,7 +825,7 @@ impl Client<Unit> for Commands {
 #[test]
 #[ignore = "requires the joined packet, the wiki, IF97, stock IDAS and ELEC_PACKET with fieldProtection"]
 fn a_loops_field_supply_loss_trips_the_turbine_through_the_field_controller() {
-    clock::prefer_performance_core();
+    cpu::prefer_performance_core();
     let frame = Frame::new(0.1).unwrap();
     let loss_after_s = 0.6789;
     let params: field::Parameters = serde_json::from_value(packet()["fieldProtection"].clone())
@@ -833,7 +833,7 @@ fn a_loops_field_supply_loss_trips_the_turbine_through_the_field_controller() {
     let mut c = build_with(Some(loss_after_s), false);
     let mut controller = FieldClient::new(&params, frame, c.ida.system()).unwrap();
     let mut recorder = Commands { seen: Vec::new() };
-    let mut driver = Driver::new(frame, Diagnostic::None, clock::thread_cpu_s, c.t0).unwrap();
+    let mut driver = Driver::new(frame, Diagnostic::None, cpu::thread_cpu_s, c.t0).unwrap();
     driver
         .start_quadratures(&mut c.ida, vec![0.; QUADRATURES.len()])
         .unwrap();

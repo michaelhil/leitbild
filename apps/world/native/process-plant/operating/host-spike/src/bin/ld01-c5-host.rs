@@ -60,18 +60,6 @@
 //! | 13 REPORT | `f64 zero` (the case's t = 0) | JSON (counts, instants, protection, timeline, rule I) |
 //! | 7 PING, 9 CLOSE, 10 STATUS | as the other hosts | |
 #![allow(dead_code)]
-#[allow(unsafe_code)]
-#[path = "../../../water-ffi/tests/common/cpu.rs"]
-mod clock;
-#[path = "../../../water-ffi/tests/common/pzr_control.rs"]
-mod pzr_control;
-#[path = "../../../water-ffi/tests/common/s3_unit.rs"]
-mod s3_unit;
-#[allow(unsafe_code, unused_imports)]
-#[path = "../../../water-ffi/tests/joined_spine.rs"]
-mod spine;
-#[path = "../../../water-ffi/tests/s3_harness/timeline.rs"]
-mod timeline;
 
 use leitbild_ld01_host_spike::{KERNEL_SOURCE_SHA256, cpu as time};
 use leitbild_operating_plant::{
@@ -89,8 +77,12 @@ use leitbild_operating_water::{
     ida::Ida,
     joined::{DerivedTolerances, JoinedSystem, Restart},
 };
-use pzr_control::PzrClient;
-use s3_unit::Unit;
+use leitbild_operating_water::unit::{
+    inputs::Inputs,
+    pzr_control::PzrClient,
+    s3::{self, Unit},
+    timeline,
+};
 use serde_json::{Value, json};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::time::Instant;
@@ -257,7 +249,7 @@ impl Host {
         if event_window.is_some() && max_step_s.is_some() {
             return Err("an event window's cap and a reference's max_step_s exclude each other".into());
         }
-        let inputs = s3_unit::Inputs::from_env();
+        let inputs = Inputs::from_env()?;
         let section = inputs.ic.clone();
         let e = read_json(&inputs.elec_path)?;
         // D2: the packet must carry the generator page's carrier selection.
@@ -272,7 +264,7 @@ impl Host {
             .as_f64()
             .ok_or("electrical packet: boundary.lineVoltage_V")?;
         let state = read_json(state_path)?;
-        let u = s3_unit::compose(&inputs, &state)?;
+        let u = s3::compose(&inputs, &state)?;
         if u.receipt["from_saved_s3_state"] != json!(true) || u.receipt["spray_path"] != json!(true) {
             return Err(format!(
                 "C5 starts from a saved S3 state with the spray path: {}",
@@ -280,10 +272,10 @@ impl Host {
             ));
         }
         let packet_json: Value =
-            serde_json::from_slice(&spine::packet_bytes().1).map_err(|x| x.to_string())?;
+            serde_json::from_slice(&inputs.spine.packet).map_err(|x| x.to_string())?;
         let extension: Extension = serde_json::from_value(packet_json["post_trip_domain"].clone())
             .map_err(|x| format!("the packet's post_trip_domain section (D3 (a)): {x}"))?;
-        let s3_unit::S3Unit {
+        let s3::S3Unit {
             mut ida,
             t0,
             y,

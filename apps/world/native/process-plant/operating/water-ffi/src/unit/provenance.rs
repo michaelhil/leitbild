@@ -1,19 +1,19 @@
-//! Wiki provenance for receipts: the git tree hash of the wiki directory
-//! read, and the commit it is verified to be. The same rules as
+//! spec: world/packs/process-plant/reference-designs/ld-01/model/operating-hot-spine.md#joined-spine-at-power
+//! App and wiki provenance of a receipt: the app commit and whether its
+//! worktree was dirty, and the wiki directory read with its git tree hash and
+//! the commit it is verified to be. The same rules as
 //! `apps/world/scripts/reference-design-wiki-provenance.ts`:
 //!
-//! - `LD01_WIKI_COMMIT` names a commit; it is accepted only when its tree,
-//!   resolved in `LD01_WIKI_REPOSITORY` (or the root itself when it is a
-//!   checkout), equals the directory's tree hash. Otherwise the receipt
-//!   refuses: a `git archive` extraction carries no commit of its own.
-//! - A checkout without `LD01_WIKI_COMMIT` is its HEAD, and the receipt
-//!   says whether its files match HEAD's tree.
-//! - Otherwise the commit is null and the tree hash identifies the content.
+//! - a named commit is accepted only when its tree, resolved in the wiki
+//!   repository (or the root itself when it is a checkout), equals the
+//!   directory's tree hash; otherwise the receipt refuses: a `git archive`
+//!   extraction carries no commit of its own;
+//! - a checkout without a named commit is its HEAD, and the receipt says
+//!   whether its files match HEAD's tree;
+//! - otherwise the commit is null and the tree hash identifies the content.
 //!
 //! The tree hash is git's own (`git write-tree` over the directory in a
 //! throwaway repository, ignore rules and line-ending conversion off).
-//! Include with `#[path = "ld01_regression/wiki.rs"] mod wiki;`.
-#![allow(dead_code)] // Each test crate uses its own subset.
 use serde_json::{Value, json};
 use std::path::Path;
 use std::process::Command;
@@ -78,16 +78,8 @@ pub fn tree_hash(root: &Path) -> Result<String, String> {
     result
 }
 
-/// The wiki provenance of `root` under `LD01_WIKI_COMMIT` and
-/// `LD01_WIKI_REPOSITORY`; `Err` when a named commit cannot be verified.
-pub fn provenance(root: &Path) -> Result<Value, String> {
-    provenance_with(
-        root,
-        std::env::var("LD01_WIKI_COMMIT").ok().as_deref(),
-        std::env::var("LD01_WIKI_REPOSITORY").ok().as_deref(),
-    )
-}
-/// [`provenance`] with the commit and repository given.
+/// The wiki provenance of `root` with the commit `named` and the wiki
+/// `repository` given; `Err` when a named commit cannot be verified.
 pub fn provenance_with(
     root: &Path,
     named: Option<&str>,
@@ -155,4 +147,28 @@ pub fn provenance_with(
     Ok(
         json!({"root": root_s, "tree": tree, "commit": null, "basis": "no commit named: the tree identifies the content"}),
     )
+}
+
+/// A receipt's `provenance` object: the app commit and whether its
+/// worktree is dirty (`git` in the working directory), the wiki root and its
+/// verified provenance ([`provenance_with`]).
+pub fn receipt(spine: &super::inputs::Spine) -> Result<Value, String> {
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .args(args)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default()
+    };
+    let wiki = provenance_with(
+        Path::new(&spine.wiki_root),
+        spine.wiki_commit.as_deref(),
+        spine.wiki_repository.as_deref(),
+    )?;
+    Ok(json!({
+        "app_commit": git(&["rev-parse", "HEAD"]),
+        "app_worktree_dirty": !git(&["status", "--porcelain"]).is_empty(),
+        "wiki": spine.wiki_root,
+        "wiki_provenance": wiki,
+    }))
 }
