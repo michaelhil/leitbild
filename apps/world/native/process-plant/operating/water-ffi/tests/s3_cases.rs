@@ -544,24 +544,74 @@ impl<S> leitbild_operating_water::frame::Client<S> for Recorder {
     }
 }
 
-/// The pinned C4 block revision 2 (wiki e2e26fd), RP1-pin-s3-c4-r2.
-const C4_R2: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r2.json");
-/// RP1-pin-s3-c4-r2's declared sha256.
-const C4_R2_SHA256: &str = "2fe73e08f2414d84a843c5c5bd48464c3f3a6f23345f33773d2b34dac18abd5d";
-/// N4′'s rule and terms as the owner (R7-Q, CH-1) and the lead (S3-D58)
-/// state them: the texts the harness implements, compared verbatim.
+/// The gate-run wiki's blocks (claude/ld01-r8-wiki 27128d1): C1–C3 at
+/// revision 3.8 (RP1-pin-s3-c1c3-r3.8) and C4 at revision 3
+/// (RP1-pin-s3-c4-r3), every probe value filled.
+const C1C3_R3_8: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c1c3-r3.8.json");
+const C1C3_R3_8_SHA256: &str = "7291821074f5f28193491ecef597deb6ff42cdb2118db4a74649ea584951f3e7";
+const C4_R3: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r3.json");
+const C4_R3_SHA256: &str = "6b4958c8aff62554f88ee90e4143df86336a36df049d873335673e5874bdc261";
+/// The revisions the r8 wiki supersedes, refused by name.
+const SUPERSEDED: [(&str, &str, &str); 2] = [
+    (
+        "ld01-s3-cases-c1c3",
+        "083df1253745f4c895a69b13e5579b2099e3e2271f06acef1ac309e0eb431d2d",
+        "RP1-pin-s3-c1c3-r3.7",
+    ),
+    (
+        "ld01-s3-cases-c4",
+        "2fe73e08f2414d84a843c5c5bd48464c3f3a6f23345f33773d2b34dac18abd5d",
+        "RP1-pin-s3-c4-r2",
+    ),
+];
+/// The pin a block must carry for a gate run on the r8 wiki, by fence.
+const REQUIRED: [(&str, &str, &str); 2] = [
+    (
+        "ld01-s3-cases-c1c3",
+        C1C3_R3_8_SHA256,
+        "RP1-pin-s3-c1c3-r3.8",
+    ),
+    ("ld01-s3-cases-c4", C4_R3_SHA256, "RP1-pin-s3-c4-r3"),
+];
+
+/// Refuses a superseded block revision by name, and any C1–C3 or C4 block
+/// other than the r8 wiki's.
+fn refuse_superseded(block: &Block) -> Result<(), String> {
+    let sha = guards::declared_sha256(block)?;
+    if let Some((_, _, row)) = SUPERSEDED
+        .iter()
+        .find(|(f, s, _)| *f == block.fence && *s == sha)
+    {
+        return Err(format!(
+            "{} is {row}, superseded on the r8 wiki (claude/ld01-r8-wiki 27128d1)",
+            block.fence
+        ));
+    }
+    match REQUIRED.iter().find(|(f, _, _)| *f == block.fence) {
+        Some((_, want, row)) if *want != sha => Err(format!(
+            "{} declares sha256 {sha}, not {row} ({want})",
+            block.fence
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// N4′'s rule and terms as the owner (R7-Q, CH-1; R8-E4) and the lead
+/// (S3-D58, S3-D61, S3-D67) state them in C4 revision 3: the texts the
+/// harness implements, compared verbatim.
 const N4_RULE: &str = "No numerical chattering: every vapour-path re-closing must follow a located exhaustion or a located flow reversal \u{2014} a consistent state before it, for a reversal a drive toward the emptying end beyond its tolerance, its cause recorded; such closings are counted and reported.";
-const N4_CONSISTENT: &str = "every row's pre-transaction residual at most 1 integrator tolerance unit, rtol\u{b7}|y| + atol (JACAGE's units) (S3-D58)";
+const N4_CONSISTENT: &str = "the stock solver's own measure: the weighted RMS norm of the restart's correction, in integrator tolerance units (rtol\u{b7}|y| + atol, IDA's own error weights; S3-D61, S3-D67), at most 1, with the largest single row's correction in those units reported beside it (owner R8-E4, 17 October 2026, re-declared after result (RP1); it replaces S3-D58's every-row reading, whose verdicts stay on record)";
 const N4_DRIVE: &str = "|drive| above the drive's first-order propagated tolerance, rule F's construction of a_x (S3-D58)";
 
 /// C3's chattering rule read from the pinned C4 block (its N4 `judgesAlso`
-/// names C3, S3-D45): the block must be RP1-pin-s3-c4-r2 and N4's rule and
+/// names C3, S3-D45): the block must be RP1-pin-s3-c4-r3 and N4's rule and
 /// terms the texts the harness implements; the rule's parameters are the
 /// harness's reading of those texts (the kernel's L1 causes for a located
 /// exhaustion and a located flow reversal; one tolerance unit).
 fn n4_rule(c4: &Block, pin: &Value) -> Result<Value, String> {
-    if pin["pinned"] != json!(true) || guards::declared_sha256(c4)? != C4_R2_SHA256 {
-        return Err(format!("the C4 block is not RP1-pin-s3-c4-r2: {pin}"));
+    refuse_superseded(c4)?;
+    if pin["pinned"] != json!(true) || guards::declared_sha256(c4)? != C4_R3_SHA256 {
+        return Err(format!("the C4 block is not RP1-pin-s3-c4-r3: {pin}"));
     }
     let n4 = c4.whole("/cases/C4/lines/N4");
     let text = |v: &Value| v.as_str().unwrap_or_default().to_string();
@@ -583,7 +633,7 @@ fn n4_rule(c4: &Block, pin: &Value) -> Result<Value, String> {
         return Err("C4.N4 does not name C3's chattering check".into());
     }
     let mut rule: Value = serde_json::from_str(s3_harness::families::N4_PRIME_READING).unwrap();
-    rule["declared"] = json!({"block": "ld01-s3-cases-c4 r2", "pin": C4_R2_SHA256, "rule": n4["rule"], "terms": n4["terms"], "judgesAlso": n4["judgesAlso"]});
+    rule["declared"] = json!({"block": "ld01-s3-cases-c4 r3", "pin": C4_R3_SHA256, "rule": n4["rule"], "terms": n4["terms"], "judgesAlso": n4["judgesAlso"]});
     Ok(rule)
 }
 
@@ -609,21 +659,51 @@ fn the_wikis_c4_block_gives_c3s_chattering_rule() {
 
 #[test]
 fn c3s_chattering_rule_is_read_from_the_pinned_c4_block() {
-    let c4 = Block::from_json("ld01-s3-cases-c4", C4_R2).unwrap();
-    assert_eq!(guards::declared_sha256(&c4).unwrap(), C4_R2_SHA256);
+    let c4 = Block::from_json("ld01-s3-cases-c4", C4_R3).unwrap();
+    assert_eq!(guards::declared_sha256(&c4).unwrap(), C4_R3_SHA256);
     let log = format!(
-        "| RP1-pin-s3-c4-r2 | 17 Oct | `ld01-s3-cases-c4` frozen; sha256 {C4_R2_SHA256} |\n"
+        "| RP1-pin-s3-c4-r3 | 17 Oct | `ld01-s3-cases-c4` frozen; sha256 {C4_R3_SHA256} |\n"
     );
     let pin = guards::pin_of(&c4, Some(&log), "log").unwrap();
     let rule = n4_rule(&c4, &pin).unwrap();
     assert_eq!(rule["criterion"], "n4prime");
+    assert_eq!(rule["consistency_measure"], "wrms_all");
     // Unpinned, or another rule text, refuses.
     assert!(n4_rule(&c4, &guards::pin_of(&c4, Some(""), "log").unwrap()).is_err());
-    let mut v: Value = serde_json::from_str(C4_R2).unwrap();
+    let mut v: Value = serde_json::from_str(C4_R3).unwrap();
     v["cases"]["C4"]["lines"]["N4"]["rule"] = json!("no chattering");
     let changed = Block::from_json("ld01-s3-cases-c4", &v.to_string()).unwrap();
     let pin = guards::pin_of(&changed, Some(&log), "log").unwrap();
     assert!(n4_rule(&changed, &pin).is_err());
+    // Revision 2 is refused by name, pinned or not.
+    let r2 = Block::from_json(
+        "ld01-s3-cases-c4",
+        include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r2.json"),
+    )
+    .unwrap();
+    let log2 = "| RP1-pin-s3-c4-r2 | 17 Oct | `ld01-s3-cases-c4` frozen; sha256 2fe73e08f2414d84a843c5c5bd48464c3f3a6f23345f33773d2b34dac18abd5d |\n";
+    let e = n4_rule(&r2, &guards::pin_of(&r2, Some(log2), "log").unwrap()).unwrap_err();
+    assert!(e.contains("RP1-pin-s3-c4-r2"), "{e}");
+}
+
+#[test]
+fn the_r8_wikis_c1c3_block_is_r3_8_with_every_probe_filled_and_r3_7_is_refused_by_name() {
+    let b = Block::from_json("ld01-s3-cases-c1c3", C1C3_R3_8).unwrap();
+    assert_eq!(guards::declared_sha256(&b).unwrap(), C1C3_R3_8_SHA256);
+    assert!(refuse_superseded(&b).is_ok());
+    let tbd = guards::tbd_state(&b, None).unwrap();
+    assert_eq!(tbd["open"], json!([]), "{tbd}");
+    // Every probe the register names carries its fill.
+    for key in b.value["tbd"].as_object().unwrap().keys() {
+        let pointer = format!("/{}", key.replace('.', "/"));
+        assert!(!b.value.pointer(&pointer).unwrap().is_null(), "{key}");
+    }
+    let r37 = Block::from_json("ld01-s3-cases-c1c3", C1C3_R3_7).unwrap();
+    let e = refuse_superseded(&r37).unwrap_err();
+    assert!(e.contains("RP1-pin-s3-c1c3-r3.7"), "{e}");
+    let c4 = Block::from_json("ld01-s3-cases-c4", C4_R3).unwrap();
+    assert!(refuse_superseded(&c4).is_ok());
+    assert_eq!(guards::tbd_state(&c4, None).unwrap()["open"], json!([]));
 }
 
 /// Rule I and the kinetics floor as r3.7 declares them (owner request 5):
@@ -2341,6 +2421,8 @@ fn s3_case_run() {
     );
     let process0 = spine::z1::cpu_s();
     let d = declaration::Declaration::load_case(case).unwrap_or_else(|e| panic!("{e}"));
+    // The r8 wiki: C1–C3 at r3.8; r3.7 (and C4 r2) refused by name.
+    refuse_superseded(&d.block).unwrap_or_else(|e| panic!("{e}"));
     let pin = d.pin().unwrap_or_else(
         |e| json!({"pinned": false, "error": e, "declared_sha256": guards::declared_sha256(&d.block).ok()}),
     );

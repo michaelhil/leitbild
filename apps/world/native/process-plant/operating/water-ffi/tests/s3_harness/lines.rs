@@ -38,8 +38,19 @@ pub fn judge(
                 Ok(x) => x,
                 Err(e) => ("not implemented".to_string(), json!({"reason": e})),
             };
+            // The block's filled probe values, read as data and reported
+            // beside the verdict (r3.8: no TBD left).
+            let declared: serde_json::Map<String, Value> =
+                ["probe", "marginFraction", "jointSpineConfirmation"]
+                    .iter()
+                    .filter_map(|k| {
+                        line.get(*k)
+                            .filter(|v| !v.is_null())
+                            .map(|v| ((*k).to_string(), v.clone()))
+                    })
+                    .collect();
             json!({"id": format!("{}.{id}", case.key()), "kind": line["kind"], "verdict": verdict,
-                "evidence": evidence})
+                "evidence": evidence, "declared": declared})
         })
         .collect()
 }

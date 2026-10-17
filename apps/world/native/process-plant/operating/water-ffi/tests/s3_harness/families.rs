@@ -1162,7 +1162,11 @@ pub fn directions(case: Case, spec: &Value, i: &DirectionInputs) -> Value {
                     (0., f64::NEG_INFINITY),
                     |a, p| if p.1 > a.1 { p } else { a },
                 );
-            lines.push(line("PT1 rises then falls", rises_then_falls(&pt1), json!({"peak_pa": peak.1, "at_s": peak.0, "probe": "14.922 MPa at +1.45 s (reported)"})));
+            lines.push(line(
+                "PT1 rises then falls",
+                rises_then_falls(&pt1),
+                json!({"peak_pa": peak.1, "at_s": peak.0, "probe": spec["lines"]["N1"]["probe"]}),
+            ));
             let level = s("pzr_level_m", 0);
             let quarter = |q0: f64, q1: f64| {
                 let w: Vec<&(f64, f64)> = level
