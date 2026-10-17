@@ -849,7 +849,10 @@ mod integrated {
         pub constraint_at_entry: super::Largest,
         /// Every cell born at this restart: its pressure at entry and after
         /// the consistent start, the step, and its vapor (physical units,
-        /// [`network::Network::birth_flash`]).
+        /// [`network::Network::birth_flash`]), with the correction of its
+        /// `p, M_g, U_g` in the integrator's tolerance units (weighted, as
+        /// the WRMS guard reads them; those coordinates are exempt from it,
+        /// lead decision S3-D64).
         pub births: Vec<serde_json::Value>,
         pub yp: Vec<f64>,
         pub report: Report,
@@ -897,8 +900,9 @@ mod integrated {
     ///    owners' algebraic coordinates, whose correction it reports; the
     ///    constraint and rate bounds are unchanged (S2-D21). A birth's
     ///    flash at the born cell's unchanged totals is finite at G1's
-    ///    credited superheat, so it also takes up to `transaction_passes`,
-    ///    with no coordinate exempt (DR-C3-BIRTH05);
+    ///    credited superheat, so it also takes up to `transaction_passes`
+    ///    (S3-D41), and the born cells' `p, M_g, U_g`, only at their birth
+    ///    instant, are exempt and reported (S3-D64, DR-C3-BIRTH05);
     /// 5. IDAReInit with the consistent rates and the segment configuration.
     #[allow(clippy::too_many_arguments)] // One restart: event, state, identity and tolerances.
     pub fn discrete_restart<S: JoinedSystem>(
@@ -1010,29 +1014,41 @@ mod integrated {
         let o = joined.offsets();
         let owners = super::owner_ranges(o);
         let transacted = transacted_owners(&owners, &before, y, &identity_before);
-        let exempt: Vec<bool> = if transacted.is_empty() {
-            Vec::new()
-        } else {
-            (0..y.len())
-                .map(|i| {
-                    ids[i] == 0.
-                        && owners
-                            .iter()
-                            .any(|(name, range)| transacted.contains(name) && range.contains(&i))
-                })
-                .collect()
-        };
         // HOOK (BIRTH05, DR-C3-BIRTH05; KERN to reconcile): a birth at the
         // band's credited superheat (owner decision G1) keeps the cell's
         // totals, but its algebraic rows become the flash at those totals,
         // which the metastable liquid misses by a finite step (about
         // +0.1 MPa): the start takes up to `transaction_passes` (lead
-        // decision S2-D21's pass bound, proposed S3-D41). No coordinate
-        // leaves the WRMS guard and the bound is unchanged.
+        // decision S2-D21's pass bound, S3-D41), and (lead decision S3-D64,
+        // BIRTH05 r3) the born cells' p, M_g, U_g, and only theirs, leave
+        // its WRMS guard at this instant, reported with their correction in
+        // tolerance units (`Report::exempt`, `Restarted::births`). C3's R2
+        // reference (rtol x 0.01, atol x 0.1) otherwise refuses the honest
+        // +104 kPa flash at +18.93 s (WRMS 13.9). The bound is unchanged.
         let born = joined
             .network
             .born_cells(&modes_before)
             .map_err(message)?;
+        let flash: Vec<usize> = born
+            .iter()
+            .flat_map(|c| {
+                let l = joined.network.cell_layout[*c];
+                [l.base, l.mass[1], l.energy[1]]
+            })
+            .collect();
+        let exempt: Vec<bool> = if transacted.is_empty() && flash.is_empty() {
+            Vec::new()
+        } else {
+            (0..y.len())
+                .map(|i| {
+                    ids[i] == 0.
+                        && (flash.contains(&i)
+                            || owners.iter().any(|(name, range)| {
+                                transacted.contains(name) && range.contains(&i)
+                            }))
+                })
+                .collect()
+        };
         let passes_allowed = if transacted.is_empty() && born.is_empty() {
             restart.start_passes
         } else {
@@ -1059,8 +1075,16 @@ mod integrated {
         .map_err(message)?;
         let births = born
             .iter()
-            .map(|c| joined.network.birth_flash(*c, &before, y))
-            .collect::<Result<Vec<_>, _>>()
+            .map(|c| {
+                let mut record = joined.network.birth_flash(*c, &before, y)?;
+                let l = joined.network.cell_layout[*c];
+                let units = |i: usize| (y[i] - before[i]) * weights[i];
+                record["correction_tolerance_units"] = serde_json::json!({
+                    "p": units(l.base), "vapor_mass": units(l.mass[1]),
+                    "vapor_energy": units(l.energy[1])});
+                Ok(record)
+            })
+            .collect::<Result<Vec<_>, network::Failure>>()
             .map_err(message)?;
         // L1 at the segment start (DR S3-REBIRTH, decision 0014): a lock
         // whose drive draws from its holding end at t0+ (at the consistent

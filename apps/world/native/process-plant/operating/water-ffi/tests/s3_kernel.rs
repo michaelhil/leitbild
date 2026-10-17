@@ -757,8 +757,10 @@ fn the_s3_phase_composition_starts_and_advances_with_l1_and_the_modes() {
 /// the flash at SURGE's unchanged totals is a finite step: its volume row
 /// starts near 3e-3 and its pressure rises. Newton reaches about 3e-10 after
 /// the 2 passes of an ordinary restart (C3's stop at 576.32 s), so a birth
-/// takes S2-D21's transaction pass bound (12). No coordinate leaves the
-/// WRMS guard, and the 1e-12 bound is unchanged. The state handed to the
+/// takes S2-D21's transaction pass bound (12, S3-D41). The born cell's
+/// `p, M_g, U_g`, and nothing else, leave the WRMS guard at the birth
+/// instant and are reported (S3-D64), and the 1e-12 bound is unchanged. The
+/// state handed to the
 /// restart is on the manifold (its entry constraint within the bound), and
 /// the result is the honest flash: pressure risen by about 0.1 MPa, at least
 /// 0.01 kg of vapor (DR-C3-BIRTH05 round 2: C3's 8.8e-5 kg came from an
@@ -896,7 +898,9 @@ fn a_birth_at_the_credited_superheat_is_a_finite_flash_the_start_completes() {
         "the finite flash needs more than an ordinary restart's passes: {report:?}"
     );
     assert!(report.constraint_after.value <= 1e-12, "{report:?}");
-    assert!(report.exempt.is_none(), "no coordinate is exempt: {report:?}");
+    let exempt = report.exempt.expect("the born cell's coordinates are reported");
+    assert_eq!(exempt.coordinates, 3, "only the born cell's p, M_g, U_g: {exempt:?}");
+    assert_eq!(exempt.max.row, l.base, "{exempt:?}");
     assert!(report.correction_wrms <= 1., "{report:?}");
     assert_eq!(
         (y[m0].to_bits(), y[e0].to_bits()),
@@ -914,6 +918,9 @@ fn a_birth_at_the_credited_superheat_is_a_finite_flash_the_start_completes() {
     assert_eq!(record["p_entry_pa"].as_f64(), Some(p_liquid));
     assert_eq!(record["p_flash_pa"].as_f64(), Some(p));
     assert_eq!(record["vapor_kg"].as_f64(), Some(mg));
+    let units = &record["correction_tolerance_units"];
+    assert_eq!(units["p"].as_f64().map(f64::abs), Some(exempt.max.value), "{units}");
+    assert!(units["vapor_mass"].as_f64().is_some_and(f64::is_finite), "{units}");
     // The constant-pressure estimate of the flashed vapor, for the receipt:
     // superheat x M x c_p / h_fg.
     let h_fg = sat.vapor.enthalpy.value - sat.liquid.enthalpy.value;
