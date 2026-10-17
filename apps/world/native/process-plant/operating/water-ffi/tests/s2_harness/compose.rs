@@ -351,10 +351,10 @@ pub fn compose_from(
     let atol = joined_tolerances(&joined, &y, classes);
     // G6: the PZR relief lift's absolute tolerance (the scaled floor at its
     // unit scale, G12) bounds its distance from a stop at a travel root.
-    if let Some(b) = joined.pzr_mut() {
-        b.declare_lift_root_bound(classes.stock_scaled)
-            .expect("lift root bound");
-    }
+    joined
+        .pzr_mut()
+        .declare_lift_root_bound(classes.stock_scaled)
+        .expect("lift root bound");
     let weights = error_weights(&y, classes.relative, &atol);
     let compile_cpu = process_cpu_s();
     let structure = JoinedJacobian::compile(&mut joined, 0., &y).expect("block structure");

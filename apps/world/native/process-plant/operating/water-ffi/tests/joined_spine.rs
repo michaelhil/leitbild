@@ -89,17 +89,15 @@ fn joined_census_against_table_1_1() {
     );
     assert_eq!(n_ids, ids(&network_layout), "network identity");
     // G6: the PZR owner from the packet's pzrMetal section, at the prepared
-    // cell's Tsat(p_s); a packet compiled before G6 has none.
-    let pzr = joined_packet.pzr_metal.as_ref().map(|section| {
-        Pzr::new(
-            network.stratified(),
-            section,
-            SteelPreparation::Steady(joined_packet.pzr_steel.as_ref().expect("pzrSteel")),
-            network.pzr_saturation_temperature_k(),
-        )
-        .expect("PZR owner")
-    });
-    let p_ids = pzr.as_ref().map(|b| b.differential());
+    // cell's Tsat(p_s).
+    let pzr = Pzr::new(
+        network.stratified(),
+        &joined_packet.pzr_metal,
+        SteelPreparation::Steady(joined_packet.pzr_steel.as_ref().expect("pzrSteel")),
+        network.pzr_saturation_temperature_k(),
+    )
+    .expect("PZR owner");
+    let p_ids = pzr.differential();
     let mut composed = vec![
         census::Composed {
             owner: "network",
@@ -117,13 +115,11 @@ fn joined_census_against_table_1_1() {
             differential: &s_ids,
         },
     ];
-    if let (Some(b), Some(ids)) = (&pzr, &p_ids) {
-        composed.push(census::Composed {
-            owner: "pzr",
-            layout: b.layout(),
-            differential: ids,
-        });
-    }
+    composed.push(census::Composed {
+        owner: "pzr",
+        layout: pzr.layout(),
+        differential: &p_ids,
+    });
     let c = census::census(
         &composed,
         &[joined::pending_secondary(), joined::pending_rods()],
@@ -151,15 +147,12 @@ fn joined_census_against_table_1_1() {
     assert_eq!(row("Network faces").composed, Some([74, 0]));
     assert_eq!(row("RCP rotors").composed, Some([4, 0]));
     // G6: 3 heater rod segments, 5 shell bands and 2 heads, and the lift.
-    let g6 = match &pzr {
-        Some(b) => {
-            let relief = usize::from(b.relief().is_some());
-            let metal = b.layout().len() - relief;
-            assert_eq!(row("PZR heater rod").composed, Some([metal, 0]));
-            assert_eq!(row("PZR relief lift").composed, Some([relief, 0]));
-            metal + relief
-        }
-        None => 0,
+    let g6 = {
+        let relief = usize::from(pzr.relief().is_some());
+        let metal = pzr.layout().len() - relief;
+        assert_eq!(row("PZR heater rod").composed, Some([metal, 0]));
+        assert_eq!(row("PZR relief lift").composed, Some([relief, 0]));
+        metal + relief
     };
     assert_eq!(c.composed, [17251 + g6, 1194, 18445 + g6]);
     assert_eq!(c.with_pending, [17311 + g6, 1302, 18613 + g6]);
@@ -182,10 +175,10 @@ fn joined_census_against_table_1_1() {
             ]
         },
         "network": {"dimension": network.dimension(), "regular_cells": cells, "faces": network.face_count(), "rotors": network.rotor_count()},
-        "pzr": pzr.as_ref().map(|b| json!({"coordinates": b.layout().labels, "steel_temperature_k": b.saturation_temperature_k(),
-            "heater_demand_w": b.request_w(), "bank_power_w": b.bank_power_w(),
-            "relief": b.relief().map(|r| json!({"port": r.port, "opening_pa": r.device.opening_pa, "reseat_pa": r.device.reseat_pa,
-                "full_strokes_per_s": r.device.full_strokes_per_s, "back_pressure_pa": r.back_pressure_pa}))})),
+        "pzr": json!({"coordinates": pzr.layout().labels, "steel_temperature_k": pzr.saturation_temperature_k(),
+            "heater_demand_w": pzr.request_w(), "bank_power_w": pzr.bank_power_w(),
+            "relief": pzr.relief().map(|r| json!({"port": r.port, "opening_pa": r.device.opening_pa, "reseat_pa": r.device.reseat_pa,
+                "full_strokes_per_s": r.device.full_strokes_per_s, "back_pressure_pa": r.back_pressure_pa}))}),
     });
     println!("{}", serde_json::to_string(&receipt).unwrap());
     write_receipt(&receipt);
@@ -800,11 +793,7 @@ fn z1_probe(full: bool) {
         json!({"history_prepared_release_w": released, "rcp_once_paid_shaft_power_w": shaft,
             "feed_enthalpy_j_kg": h_feed, "steam_demand_kg_s": demand,
             "at_prepared_sg_pressure": at(prepared_p), "at_z2_emergent_sg_pressure": at(6.3631e6),
-            "other_heat": if joined.pzr().is_some() {
-                "the PZR metal's heater demand (P4) equals its exterior loss at the composed Tsat(p_s); relief closed; no other sink or source in the composition"
-            } else {
-                "PZR boundary closed (no heater, wall loss or relief composed); no other sink or source in the composition"
-            },
+            "other_heat": "the PZR metal's heater demand (P4) equals its exterior loss at the composed Tsat(p_s); relief closed; no other sink or source in the composition",
             "confirmed_above": 2e-3})
     } else {
         Value::Null
@@ -848,21 +837,18 @@ fn z1_probe(full: bool) {
 
 /// The PZR owner of a composition (G6), for receipts.
 fn pzr_receipt(joined: &leitbild_operating_plant::joined::operator::Joined<If97>) -> Value {
-    match joined.pzr() {
-        Some(b) => json!({
-            "composed": true,
-            "coordinates": b.layout().labels,
-            "steel_temperature_k": b.saturation_temperature_k(),
-            "heater_demand_w": b.request_w(),
-            "bank_power_w": b.bank_power_w(),
-            "heater_demand_basis": "P4 (S2 design choices, 11 October): the metal's exterior loss at the composed Tsat(p_s), computed once and held constant; it stands in for the pressure controller's steady output (S3)",
-            "relief": b.relief().map(|r| json!({"opening_pa": r.device.opening_pa, "reseat_pa": r.device.reseat_pa,
-                "full_strokes_per_s": r.device.full_strokes_per_s, "receiver_back_pressure_pa": r.back_pressure_pa,
-                "motion": format!("{:?}", r.motion), "demand_open": r.demand_open})),
-        }),
-        None => json!({"composed": false,
-            "boundary": "closed: a packet compiled before G6 (no pzrMetal section): no heater, shell metal or relief"}),
-    }
+    let b = joined.pzr();
+    json!({
+        "composed": true,
+        "coordinates": b.layout().labels,
+        "steel_temperature_k": b.saturation_temperature_k(),
+        "heater_demand_w": b.request_w(),
+        "bank_power_w": b.bank_power_w(),
+        "heater_demand_basis": "P4 (S2 design choices, 11 October): the metal's exterior loss at the composed Tsat(p_s), computed once and held constant; it stands in for the pressure controller's steady output (S3)",
+        "relief": b.relief().map(|r| json!({"opening_pa": r.device.opening_pa, "reseat_pa": r.device.reseat_pa,
+            "full_strokes_per_s": r.device.full_strokes_per_s, "receiver_back_pressure_pa": r.back_pressure_pa,
+            "motion": format!("{:?}", r.motion), "demand_open": r.demand_open})),
+    })
 }
 
 /// The full composition at the hot reference, consistently started.
@@ -1036,10 +1022,10 @@ pub fn started_full_composition() -> Started {
     atol.resize(y.len(), classes.stock_scaled);
     // G12: the lift's absolute tolerance (the scaled floor at its unit
     // scale) bounds its distance from a stop at a travel root.
-    if let Some(b) = joined.pzr_mut() {
-        b.declare_lift_root_bound(classes.stock_scaled)
-            .expect("lift root bound");
-    }
+    joined
+        .pzr_mut()
+        .declare_lift_root_bound(classes.stock_scaled)
+        .expect("lift root bound");
     let weights: Vec<f64> = y
         .iter()
         .zip(&atol)
@@ -1182,7 +1168,7 @@ fn the_holding_opening_releases_the_held_clusters_at_its_stop_and_restarts_exact
     let trip = joined.command(0., &mut y, Command::TurbineTrip).unwrap();
     assert_eq!(
         trip.len(),
-        2 + usize::from(joined.pzr().is_some()),
+        3,
         "every composed owner takes the command; nothing is due at once"
     );
     let open = joined.next_time_event(0.).expect("the holding opening");
@@ -1325,7 +1311,7 @@ fn the_stuck_cluster_command_keeps_its_grip_at_the_opening_and_the_rest_release(
     let declared = joined
         .command(0., &mut y, Command::StuckCluster { cluster: stuck })
         .unwrap();
-    assert_eq!(declared.len(), 2 + usize::from(joined.pzr().is_some()));
+    assert_eq!(declared.len(), 3);
     assert_eq!(y, before, "the declaration moves no coordinate");
     assert_eq!(joined.differential(&network_ids), ids);
     assert_eq!(joined.next_time_event(0.), None);
@@ -1697,7 +1683,7 @@ fn the_pzr_relief_roots_and_stops_transact_on_the_joined_state() {
     } = started_full_composition();
     let relief = joined
         .pzr()
-        .and_then(|b| b.relief())
+        .relief()
         .expect("a G6 packet composes the PZR relief");
     let o = joined.offsets();
     let n = joined.root_count();
@@ -1730,7 +1716,7 @@ fn the_pzr_relief_roots_and_stops_transact_on_the_joined_state() {
         d
     };
     let state = |joined: &Joined<If97>| {
-        let r = joined.pzr().unwrap().relief().unwrap();
+        let r = joined.pzr().relief().unwrap();
         (r.demand_open, r.motion)
     };
     let mut y = y;

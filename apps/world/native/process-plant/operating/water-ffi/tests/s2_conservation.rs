@@ -124,7 +124,8 @@ fn s2_identities_close_and_a_dropped_term_is_caught() {
     // G6: a dropped PZR exterior loss, the top head's steel row without it
     // (the row is U' - (Joule - fluid - exchange - exterior)/scale): the unit
     // identity misses by that loss.
-    let pzr_exterior = c.joined.pzr().map(|b| {
+    let pzr_exterior = {
+        let b = c.joined.pzr();
         let o = c.joined.offsets();
         let head = o.end - 1;
         let loss = b.walls().exterior(
@@ -140,7 +141,7 @@ fn s2_identities_close_and_a_dropped_term_is_caught() {
             mutated.unit_energy.json()
         );
         json!({"exterior_loss_w": loss.value, "unit_energy": mutated.unit_energy.json()})
-    });
+    };
     let receipt = json!({
         "kind": "s2-conservation-identities-NOT-EVIDENCE",
         "provenance": provenance::git_provenance(),

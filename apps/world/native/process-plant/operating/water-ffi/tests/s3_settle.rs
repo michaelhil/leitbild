@@ -546,13 +546,7 @@ fn s3_settle_state_for_c1() {
     let mut last_ranges: Vec<(f64, f64, bool)> = Vec::new();
     let mut history: Vec<Value> = Vec::new();
     let checks_every = (1. / output_s).round() as u64;
-    let heater = |ida: &Ida<Unit>| {
-        ida.system()
-            .integrated()
-            .joined
-            .pzr()
-            .map_or(f64::NAN, |b| b.request_w())
-    };
+    let heater = |ida: &Ida<Unit>| ida.system().integrated().joined.pzr().request_w();
     {
         let mut clients: Vec<&mut dyn Client<Unit>> = vec![&mut control];
         if let Err(e) = driver.start(&mut clients, t0, &y_all, &yp_all) {

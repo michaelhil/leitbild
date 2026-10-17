@@ -65,7 +65,7 @@ fn the_spray_valve_opens_delivers_and_closes_on_its_locks() {
         _derived,
     ) = started_s3_composition();
     let spray = *joined.network.spray().expect("a spray packet");
-    let heater = joined.pzr().unwrap().request_w();
+    let heater = joined.pzr().request_w();
     let nonnegative = joined.network.nonnegative_stocks();
     let mut ida = Ida::new(
         Integrated::from_blocks(joined, structure, analyses).unwrap(),
@@ -577,7 +577,7 @@ fn the_spray_paths_discrete_state_survives_a_snapshot() {
             unrestored.0 != driven.0,
         )
     };
-    let heater = joined.pzr().unwrap().request_w();
+    let heater = joined.pzr().request_w();
     let (change, _) = joined
         .apply_pzr_control(
             0.1,

@@ -321,7 +321,7 @@ fn joined_blocks_against_colored() {
         .map(|v| v.parse::<f64>().expect("LD01_JAC_PZR_LIFT"));
     let mut y = y;
     if let Some(lift) = lift {
-        let relief = joined.pzr().and_then(|b| b.relief());
+        let relief = joined.pzr().relief();
         assert!(
             relief.is_some(),
             "LD01_JAC_PZR_LIFT needs a composed PZR relief"

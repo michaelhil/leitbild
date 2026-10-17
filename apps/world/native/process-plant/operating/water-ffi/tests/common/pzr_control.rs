@@ -207,7 +207,6 @@ impl<S: JoinedSystem> Client<S> for PzrClient {
                     s.integrated_mut()
                         .joined
                         .pzr_mut()
-                        .ok_or("no PZR block")?
                         .apply_control(t, &demand)
                         .map(|_| ())
                         .map_err(|f| format!("{f:?}"))
@@ -270,10 +269,7 @@ pub fn commission(
     y: &[f64],
     yp: &[f64],
 ) -> (PzrClient, f64, f64) {
-    let prepared_w = joined
-        .pzr()
-        .expect("a G6 packet composes the PZR block")
-        .request_w();
+    let prepared_w = joined.pzr().request_w();
     let probe = Probe::new(joined, t0, y, yp);
     let lag = probe.roof_pa(y);
     // Commissioning: lag at the roof pressure, first sample acquired now.
@@ -313,7 +309,7 @@ pub fn commission(
         spray_target: 0.,
         withdrawn: None,
     };
-    joined.pzr_mut().unwrap().apply_control(t0, &start).unwrap();
+    joined.pzr_mut().apply_control(t0, &start).unwrap();
     // The controller and the client hold the start demand in force, so the
     // start frame reports no change.
     client.controller = Controller::new(law.clone(), start_w, 0.).unwrap();

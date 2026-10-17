@@ -125,16 +125,12 @@ fn observe(
     y: &[f64],
     yp: &[f64],
 ) -> (Vec<Vec<f64>>, Map<String, Value>) {
-    if let Some(b) = joined.pzr_mut() {
-        b.capture_account(true);
-    }
+    joined.pzr_mut().capture_account(true);
     joined
         .evaluate(t, y, yp, None, 0., None)
         .expect("observed state");
-    let ledger = joined.pzr().and_then(|b| b.captured());
-    if let Some(b) = joined.pzr_mut() {
-        b.capture_account(false);
-    }
+    let ledger = joined.pzr().captured();
+    joined.pzr_mut().capture_account(false);
     let released = joined.heats().nuclear.released_w.value;
     let net = &joined.network;
     let regions = &packet.mechanics.regions;
@@ -205,7 +201,8 @@ fn observe(
             "spray_port_kg_s": net.spray().and_then(|s| net.chart(s.port_face, 0)).map(|c| c.mass_flow_kg_s.value),
             "ledger": ledger.map(|l| json!({"joule_w": l.joule_w, "exterior_w": l.exterior_w})),
         });
-        if let (Some(o), Some(b)) = (pzr_offset, joined.pzr()) {
+        if let Some(o) = pzr_offset {
+            let b = joined.pzr();
             let m = o + b.metal_base();
             let rods = b.heaters().segments().len();
             let end = o + b.layout().labels.len();

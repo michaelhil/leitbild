@@ -1097,10 +1097,9 @@ fn every_owners_discrete_state_survives_a_snapshot() {
         y.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
         "a supply loss moves no coordinate"
     );
-    let request = 0.5 * joined.pzr().expect("PZR block").request_w();
+    let request = 0.5 * joined.pzr().request_w();
     joined
         .pzr_mut()
-        .unwrap()
         .apply_control(
             0.2,
             &Demand {
