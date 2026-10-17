@@ -408,55 +408,358 @@ pub fn spectra(states: &[(&str, Option<String>)], receipts: &Value) -> Value {
     json!({"family": "K spectra", "verdict": verdict, "predicate": "S2's Z6 (both named restrictions GO: infinite modes = algebraic, no resolved positive real part, marginal modes tied to null directions, no excited light fast mode)", "states": out})
 }
 
-/// The chattering criterion (S3-D50: C4's N4 as the owner finally defines
-/// it, owner request 7), as data so its definition can change without code:
-/// `{"criterion": "relock_after_release", "max_relocks": n, "within_s":
-/// s|null, "source": ...}` (a path locked again after a release, counted
-/// when the relock follows the release within `within_s`, any time when
-/// null; the case fails above `max_relocks`).
-pub const DEFAULT_CHATTER_RULE: &str = r#"{"criterion": "relock_after_release", "max_relocks": 0, "within_s": null, "source": "C4 N4 r1 (claude/ld01-s3-c4-wiki 7201bcd): an L1 path locked again after a release; owner request 7 pending"}"#;
+/// N4′ as decided (owner CH-1, R7-Q; terms S3-D58), the default chattering
+/// rule: every vapour-path re-closing follows a located exhaustion or a
+/// located flow reversal, from a consistent state (every row's
+/// pre-transaction residual at most one integrator tolerance unit), a
+/// reversal with a drive beyond its first-order propagated tolerance, its
+/// cause recorded; closings counted and reported. As data, so a definition
+/// can be swapped without code (`LD01_S3_CHATTER_RULE`); the pinned r1
+/// criterion stays selectable (`relock_after_release`).
+/// The harness's reading of C4.N4 r2 (N4′) as rule data: the kernel's L1
+/// causes that are a located exhaustion and a located flow reversal, the
+/// vapour phase, one tolerance unit. Used only once the pinned block's
+/// texts are verified (`n4_rule` in `s3_cases.rs`); never a default.
+pub const N4_PRIME_READING: &str = r#"{"criterion": "n4prime", "phase": 1, "consistency_units": 1.0, "exhaustion_causes": ["ContactRoot", "ContactAtTransaction", "Exhaustion"], "reversal_causes": ["AtRest"], "source": "N4' (owner CH-1, R7-Q; S3-D58): re-closings follow a located exhaustion or a located flow reversal; consistent pre-state <= 1 integrator tolerance unit (rtol|y| + atol, JACAGE's units); a reversal's |drive| above its first-order propagated tolerance (rule F's a_x)"}"#;
 
-/// Chattering on a run's logged L1 changes (every transaction receipt's
-/// `changes` with `path` and `after`) under `rule`.
-pub fn chattering(log: &[Value], rule: &Value) -> Value {
-    if rule["criterion"] != "relock_after_release" {
-        return json!({"verdict": "not executable", "reason": format!("criterion {} is not implemented", rule["criterion"]), "rule": rule});
-    }
-    let Some(max) = rule["max_relocks"].as_u64() else {
-        return json!({"verdict": "not executable", "reason": "the rule has no max_relocks", "rule": rule});
-    };
-    let within = rule["within_s"].as_f64();
-    let mut paths: std::collections::BTreeMap<u64, Vec<(f64, bool)>> =
+/// One logged L1 change.
+struct Closing<'a> {
+    t: f64,
+    locked: bool,
+    change: &'a Value,
+    kinds: Vec<String>,
+}
+
+fn l1_changes(log: &[Value]) -> std::collections::BTreeMap<u64, Vec<Closing<'_>>> {
+    let mut paths: std::collections::BTreeMap<u64, Vec<Closing<'_>>> =
         std::collections::BTreeMap::new();
     for e in log {
         let t = e["t_s"].as_f64().unwrap_or(f64::NAN);
+        let kinds: Vec<String> = e["kinds"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|k| k.as_str().map(String::from))
+            .collect();
         for tr in e["restart"]["transactions"]
             .as_array()
             .into_iter()
             .flatten()
         {
-            for c in tr["changes"].as_array().into_iter().flatten() {
-                let (Some(path), after) = (c["path"].as_u64(), &c["after"]) else {
+            // L1's own changes and the phase-mode owner's exhaustion locks
+            // (DR S3-EXHAUST: `vaporPathContacts`).
+            for c in tr["changes"]
+                .as_array()
+                .into_iter()
+                .chain(tr["vaporPathContacts"]["changes"].as_array())
+                .flatten()
+            {
+                let Some(path) = c["path"].as_u64() else {
                     continue;
                 };
-                let locked = after.get("Locked").is_some();
-                paths.entry(path).or_default().push((t, locked));
+                paths.entry(path).or_default().push(Closing {
+                    t,
+                    locked: c["after"].get("Locked").is_some(),
+                    change: c,
+                    kinds: kinds.clone(),
+                });
             }
         }
     }
-    let mut relocks = 0u64;
-    let mut listed = Vec::new();
-    for (path, changes) in &paths {
-        let n = changes
-            .windows(2)
-            .filter(|w| !w[0].1 && w[1].1 && within.is_none_or(|s| w[1].0 - w[0].0 <= s))
-            .count() as u64;
-        if n > 0 {
-            listed.push(json!({"path": path, "relocks": n}));
+    paths
+}
+
+/// Chattering on a run's logged L1 changes under `rule` (N4′ from the pinned C4 block,
+/// or r1's relock count), with each restart's pre-transaction consistency
+/// (`entries`, [`super::observe::entry_consistency`]) and the drives'
+/// propagated tolerances (`face * 2 + phase`).
+pub fn chattering(
+    log: &[Value],
+    rule: &Value,
+    entries: &[Value],
+    drive_tolerance: Option<&[f64]>,
+) -> Value {
+    let paths = l1_changes(log);
+    match rule["criterion"].as_str() {
+        Some("relock_after_release") => {
+            let Some(max) = rule["max_relocks"].as_u64() else {
+                return json!({"verdict": "not executable", "reason": "the rule has no max_relocks", "rule": rule});
+            };
+            let within = rule["within_s"].as_f64();
+            let mut relocks = 0u64;
+            let mut listed = Vec::new();
+            for (path, changes) in &paths {
+                let n = changes
+                    .windows(2)
+                    .filter(|w| {
+                        !w[0].locked && w[1].locked && within.is_none_or(|s| w[1].t - w[0].t <= s)
+                    })
+                    .count() as u64;
+                if n > 0 {
+                    listed.push(json!({"path": path, "relocks": n}));
+                }
+                relocks += n;
+            }
+            json!({"verdict": if relocks <= max { "pass" } else { "fail" }, "relocks": relocks, "paths_changed": paths.len(), "chattering_paths": listed, "rule": rule})
         }
-        relocks += n;
+        Some("n4prime") => {
+            let phase = rule["phase"].as_u64();
+            let units = rule["consistency_units"].as_f64().unwrap_or(1.);
+            let names = |k: &str| -> Vec<String> {
+                rule[k]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            };
+            let (exhaustion, reversal) = (names("exhaustion_causes"), names("reversal_causes"));
+            let entry_at = |t: f64| {
+                entries.iter().find(|e| {
+                    e["t_s"]
+                        .as_f64()
+                        .is_some_and(|x| (x - t).abs() <= 1e-9 * t.abs().max(1.))
+                })
+            };
+            let (mut closings, mut reclosings, mut ok, mut unevaluable) =
+                (0usize, 0usize, 0usize, 0usize);
+            let mut failing = Vec::new();
+            for (path, changes) in &paths {
+                for (k, c) in changes.iter().enumerate() {
+                    if !c.locked || phase.is_some_and(|p| c.change["phase"].as_u64() != Some(p)) {
+                        continue;
+                    }
+                    closings += 1;
+                    if !changes[..k].iter().any(|x| !x.locked) {
+                        continue; // a first closing, not a re-closing
+                    }
+                    reclosings += 1;
+                    let cause = c.change["cause"].as_str().unwrap_or("");
+                    let located = c.kinds.iter().any(|k| k.contains("located roots"));
+                    let kind = if exhaustion.iter().any(|x| x == cause) {
+                        "exhaustion"
+                    } else if reversal.iter().any(|x| x == cause) {
+                        "reversal"
+                    } else {
+                        "other"
+                    };
+                    let entry = entry_at(c.t);
+                    let consistency = entry.and_then(|e| e["max_units"].as_f64());
+                    let drive = c.change["drive_pa"].as_f64();
+                    let tol = c.change["face"]
+                        .as_u64()
+                        .zip(c.change["phase"].as_u64())
+                        .and_then(|(f, p)| {
+                            drive_tolerance
+                                .and_then(|d| d.get((f * 2 + p) as usize))
+                                .copied()
+                        });
+                    let mut reasons: Vec<String> = Vec::new();
+                    let mut evaluable = true;
+                    if cause.is_empty() {
+                        reasons.push("no cause recorded".into());
+                    }
+                    if !located {
+                        reasons.push("not at a located root".into());
+                    }
+                    if kind == "other" {
+                        reasons.push(format!(
+                            "cause {cause} is neither an exhaustion nor a flow reversal"
+                        ));
+                    }
+                    match consistency {
+                        Some(u) if u <= units => {}
+                        Some(u) => {
+                            reasons.push(format!("pre-state {u:.3e} tolerance units > {units}"))
+                        }
+                        None => evaluable = false,
+                    }
+                    if kind == "reversal" {
+                        // Toward the emptying end: the drive draws from an
+                        // end holding no phase (`orientation × F < 0` for a
+                        // one-sided lock, any drive when neither end holds).
+                        let holding = c.change["after"]["Locked"].as_str();
+                        let toward_empty = match (holding, drive) {
+                            (Some("From"), Some(d)) => Some(d < 0.),
+                            (Some("To"), Some(d)) => Some(d > 0.),
+                            (Some("Neither"), Some(d)) => Some(d != 0.),
+                            (Some("Both"), Some(_)) => Some(false),
+                            _ => None,
+                        };
+                        match toward_empty {
+                            Some(true) => {}
+                            Some(false) => reasons.push(format!(
+                                "the drive {:.3e} Pa draws from the holding end ({})",
+                                drive.unwrap_or(f64::NAN),
+                                holding.unwrap_or("?")
+                            )),
+                            None => evaluable = false,
+                        }
+                        match (drive, tol) {
+                            (Some(d), Some(tl)) if d.abs() > tl => {}
+                            (Some(d), Some(tl)) => reasons.push(format!(
+                                "|drive| {:.3e} Pa within its tolerance {tl:.3e} Pa",
+                                d.abs()
+                            )),
+                            _ => evaluable = false,
+                        }
+                    }
+                    if !reasons.is_empty() {
+                        failing.push(json!({"t_s": c.t, "path": path, "face": c.change["face"], "cause": cause, "pre_state_units": consistency, "drive_pa": drive, "drive_tolerance_pa": tol, "reasons": reasons}));
+                    } else if evaluable {
+                        ok += 1;
+                    } else {
+                        unevaluable += 1;
+                    }
+                }
+            }
+            let verdict = if !failing.is_empty() {
+                "fail"
+            } else if unevaluable > 0 {
+                "not executable"
+            } else {
+                "pass"
+            };
+            json!({"verdict": verdict, "closings": closings, "reclosings": reclosings, "reclosings_satisfied": ok, "reclosings_unevaluable": unevaluable,
+                "failing": failing, "paths_changed": paths.len(), "rule": rule})
+        }
+        _ => {
+            json!({"verdict": "not executable", "reason": format!("criterion {} is not implemented", rule["criterion"]), "rule": rule})
+        }
     }
-    json!({"verdict": if relocks <= max { "pass" } else { "fail" }, "relocks": relocks, "paths_changed": paths.len(), "chattering_paths": listed, "rule": rule})
+}
+
+/// C4.O4′ (block r2, S3-D57): the first birth among the classified cells
+/// (`sides[cell]` "hot" or "cold"; SURGE and PZR "excluded", every other
+/// "neither", as C4's volume classes) is in a hot-side cell, as a located
+/// birth root with the phase-mode owner's birth transaction and its counted
+/// class-R restart, with L1 deciding every vapour path at that instant (L1
+/// composed: its transaction runs at every located instant, on the declared
+/// presence); the restart follows the new presence key exactly when a cell
+/// the joined pattern reads (`read_set`, the presence cache's cell list,
+/// `presence::pattern_cells`) changed its presence at that instant, and
+/// otherwise reports `presence_changed` false. `log` is the frame driver's
+/// log, `zero` the case's t = 0, `names` the cells' names.
+pub fn first_classified_birth(
+    log: &[Value],
+    zero: f64,
+    sides: &[&str],
+    names: &[String],
+    read_set: &[usize],
+    l1_active: bool,
+) -> Value {
+    let name = |c: usize| names.get(c).cloned().unwrap_or_else(|| format!("cell {c}"));
+    let side = |c: usize| sides.get(c).copied().unwrap_or("unknown");
+    // Every birth and exhaustion by instant, in log order.
+    let mut births: Vec<(f64, usize, &Value)> = Vec::new();
+    for e in log {
+        let t = e["t_s"].as_f64().unwrap_or(f64::NAN) - zero;
+        for tr in e["restart"]["transactions"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            if tr["owner"] != "phase modes" {
+                continue;
+            }
+            for ev in tr["events"].as_array().into_iter().flatten() {
+                if let Some(c) = ev["birth"].as_u64() {
+                    births.push((t, c as usize, e));
+                }
+            }
+        }
+    }
+    let listed: Vec<Value> = births
+        .iter()
+        .map(|(t, c, _)| json!([t, name(*c), side(*c)]))
+        .collect();
+    let Some(&(t, cell, instant)) = births
+        .iter()
+        .find(|(_, c, _)| matches!(side(*c), "hot" | "cold"))
+    else {
+        return json!({"verdict": "fail", "reason": "no birth among the classified cells", "births": listed});
+    };
+    let restart = &instant["restart"];
+    // Every cell whose presence changed at that instant: its births and its
+    // exhaustions in the phase-mode owner's transactions.
+    let mut changed: Vec<usize> = Vec::new();
+    let mut l1_changes = Vec::new();
+    for tr in restart["transactions"].as_array().into_iter().flatten() {
+        if tr["owner"] == "phase modes" {
+            for ev in tr["events"].as_array().into_iter().flatten() {
+                if let Some(c) = ev["birth"].as_u64().or_else(|| ev["exhaustion"].as_u64()) {
+                    changed.push(c as usize);
+                }
+            }
+        }
+        if tr["owner"] == "network L1" {
+            l1_changes.extend(
+                tr["changes"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|c| json!({"path": c["path"], "after": c["after"], "cause": c["cause"]})),
+            );
+        }
+    }
+    let reads: Vec<String> = changed
+        .iter()
+        .filter(|c| read_set.contains(c))
+        .map(|c| name(*c))
+        .collect();
+    let presence_due = !reads.is_empty();
+    let located = instant["kinds"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|k| k == "located roots");
+    let mut reasons: Vec<String> = Vec::new();
+    let mut evaluable = true;
+    if side(cell) != "hot" {
+        reasons.push(format!(
+            "the first classified birth, {}, is {}-side",
+            name(cell),
+            side(cell)
+        ));
+    }
+    if !located {
+        reasons.push("the birth is not at a located root".into());
+    }
+    if instant["class"] != "R" {
+        reasons.push(format!(
+            "its instant is class {}, not a counted R restart",
+            instant["class"]
+        ));
+    }
+    if !l1_active {
+        reasons.push("L1 is not composed and active: it decides no vapour path".into());
+    }
+    match restart["modes_changed"].as_bool() {
+        Some(true) => {}
+        Some(false) => reasons.push("the restart reports no phase-mode change".into()),
+        None => evaluable = false,
+    }
+    match restart["presence_changed"].as_bool() {
+        Some(p) if p == presence_due => {}
+        Some(p) => reasons.push(format!(
+            "presence_changed {p}, but a read cell changed presence: {presence_due} ({reads:?})"
+        )),
+        None => evaluable = false,
+    }
+    let verdict = if !reasons.is_empty() {
+        "fail"
+    } else if evaluable {
+        "pass"
+    } else {
+        "not executable"
+    };
+    json!({"verdict": verdict, "reasons": reasons, "t_s": t, "cell": name(cell), "side": side(cell),
+        "class": instant["class"], "located": located, "l1_active": l1_active, "l1_changes": l1_changes,
+        "presence_changed": restart["presence_changed"], "modes_changed": restart["modes_changed"],
+        "born_cell_read": read_set.contains(&cell), "presence_changes_in_read_set": reads,
+        "read_set": read_set.iter().map(|c| name(*c)).collect::<Vec<_>>(),
+        "births": listed,
+        "unevaluable": (!evaluable).then_some("the restart reports no presence_changed or modes_changed")})
 }
 
 /// The signals and events rule B reads (S3-D50).
@@ -1378,29 +1681,174 @@ mod tests {
     }
 
     #[test]
-    fn chattering_follows_its_rule_as_data() {
-        let change = |t: f64, path: u64, locked: bool| json!({"t_s": t, "restart": {"transactions": [{"changes": [{"path": path, "after": if locked { json!({"Locked": "To"}) } else { json!("Free") }}]}]}});
-        let log = vec![
-            change(1., 5, true),
-            change(2., 5, false),
-            change(4., 5, true),
-            change(3., 7, true),
+    fn o4_prime_judges_the_first_classified_birth() {
+        let birth = |t: f64, cell: u64, class: &str, located: bool, presence: Option<bool>| {
+            let mut r = json!({"transactions": [{"owner": "phase modes", "events": [{"birth": cell}]},
+                {"owner": "network L1", "changes": [{"path": 2 * cell + 1, "after": "Free", "cause": "Birth"}]}],
+                "modes_changed": true});
+            if let Some(p) = presence {
+                r["presence_changed"] = json!(p);
+            }
+            json!({"t_s": 100. + t, "class": class, "kinds": if located { json!(["located roots"]) } else { json!(["frame"]) }, "restart": r})
+        };
+        // Cells: 0 SURGE (excluded), 1 NECK (hot, outside the read set),
+        // 2 MAIN (hot, read), 3 a cold leg (read).
+        let sides = ["excluded", "hot", "hot", "cold"];
+        let names: Vec<String> = ["SURGE", "HOUSING.NECK", "HOUSING.MAIN", "COLD.A1"]
+            .map(String::from)
+            .to_vec();
+        let reads = [2, 3];
+        let run = vec![
+            birth(24.5, 0, "R", true, Some(false)),
+            birth(39.17, 1, "R", true, Some(false)),
+            birth(39.7, 2, "R", true, Some(true)),
         ];
-        let rule: Value = serde_json::from_str(DEFAULT_CHATTER_RULE).unwrap();
-        let c = chattering(&log, &rule);
-        assert_eq!(c["verdict"], "fail", "{c}");
-        assert_eq!(c["relocks"], 1);
-        // The same log under a swapped definition: relocks within 1 s only.
-        let within =
-            json!({"criterion": "relock_after_release", "max_relocks": 0, "within_s": 1.0});
-        assert_eq!(chattering(&log, &within)["verdict"], "pass");
-        // Or a tolerance of one relock.
-        let tolerant =
-            json!({"criterion": "relock_after_release", "max_relocks": 1, "within_s": null});
-        assert_eq!(chattering(&log, &tolerant)["verdict"], "pass");
-        assert_eq!(chattering(&log[..1], &rule)["verdict"], "pass");
+        let o = first_classified_birth(&run, 100., &sides, &names, &reads, true);
+        assert_eq!(o["verdict"], "pass", "{o}");
+        assert_eq!(o["cell"], "HOUSING.NECK");
+        assert_eq!(o["born_cell_read"], false);
+        assert!((o["t_s"].as_f64().unwrap() - 39.17).abs() < 1e-9);
+        // The read set is data: NECK read, its restart must recompile.
         assert_eq!(
-            chattering(&log, &json!({"criterion": "other"}))["verdict"],
+            first_classified_birth(&run, 100., &sides, &names, &[1, 2], true)["verdict"],
+            "fail"
+        );
+        // A recompile for a cell outside the read set fails.
+        let mut v = run.clone();
+        v[1] = birth(39.17, 1, "R", true, Some(true));
+        assert_eq!(
+            first_classified_birth(&v, 100., &sides, &names, &reads, true)["verdict"],
+            "fail"
+        );
+        // A cold-side first classified birth, an unlocated birth, a class-S
+        // instant, or L1 not deciding, each fails.
+        let mut cold = run.clone();
+        cold.insert(1, birth(30., 3, "R", true, Some(true)));
+        let c = first_classified_birth(&cold, 100., &sides, &names, &reads, true);
+        assert_eq!(
+            (c["verdict"].as_str(), c["side"].as_str()),
+            (Some("fail"), Some("cold"))
+        );
+        let mut v = run.clone();
+        v[1] = birth(39.17, 1, "R", false, Some(false));
+        assert_eq!(
+            first_classified_birth(&v, 100., &sides, &names, &reads, true)["verdict"],
+            "fail"
+        );
+        let mut v = run.clone();
+        v[1] = birth(39.17, 1, "S", true, Some(false));
+        assert_eq!(
+            first_classified_birth(&v, 100., &sides, &names, &reads, true)["verdict"],
+            "fail"
+        );
+        assert_eq!(
+            first_classified_birth(&run, 100., &sides, &names, &reads, false)["verdict"],
+            "fail"
+        );
+        // A restart that does not report its presence is not executable;
+        // only excluded births fail.
+        let mut v = run.clone();
+        v[1] = birth(39.17, 1, "R", true, None);
+        assert_eq!(
+            first_classified_birth(&v, 100., &sides, &names, &reads, true)["verdict"],
+            "not executable"
+        );
+        assert_eq!(
+            first_classified_birth(&run[..1], 100., &sides, &names, &reads, true)["verdict"],
+            "fail"
+        );
+    }
+
+    #[test]
+    fn chattering_follows_its_rule_as_data() {
+        let change = |t: f64, path: u64, locked: bool, cause: &str, drive: f64| {
+            json!({"t_s": t, "kinds": ["located roots"], "restart": {"transactions": [{"changes": [{"path": path, "face": 3, "phase": 1, "cause": cause, "drive_pa": drive,
+                "after": if locked { json!({"Locked": "To"}) } else { json!("Free") }}]}]}})
+        };
+        let log = vec![
+            change(1., 5, true, "ContactRoot", 0.),
+            change(2., 5, false, "DriveRoot", 0.),
+            change(4., 5, true, "ContactRoot", 0.),
+            change(5., 5, false, "DriveRoot", 0.),
+            change(6., 5, true, "AtRest", 50.),
+        ];
+        let entries = |u4: f64, u6: f64| {
+            vec![
+                json!({"t_s": 4., "max_units": u4}),
+                json!({"t_s": 6., "max_units": u6}),
+            ]
+        };
+        let tol = vec![0.; 6]
+            .into_iter()
+            .chain([0., 10.])
+            .collect::<Vec<f64>>();
+        let n4: Value = serde_json::from_str(N4_PRIME_READING).unwrap();
+        // Both re-closings follow a located exhaustion / reversal from a
+        // consistent state; the reversal's drive (50 Pa) beyond 10 Pa.
+        let c = chattering(&log, &n4, &entries(0.5, 0.9), Some(&tol));
+        assert_eq!(c["verdict"], "pass", "{c}");
+        assert_eq!(
+            (c["closings"].as_u64(), c["reclosings"].as_u64()),
+            (Some(3), Some(2))
+        );
+        // An inconsistent pre-state fails.
+        let c = chattering(&log, &n4, &entries(1.5, 0.9), Some(&tol));
+        assert_eq!(c["verdict"], "fail");
+        assert_eq!(c["failing"][0]["t_s"], 4.);
+        // A reversal's drive within its tolerance fails.
+        let tight = vec![0.; 6]
+            .into_iter()
+            .chain([0., 80.])
+            .collect::<Vec<f64>>();
+        assert_eq!(
+            chattering(&log, &n4, &entries(0.5, 0.9), Some(&tight))["verdict"],
+            "fail"
+        );
+        // A reversal whose drive draws from the holding end (To) fails.
+        let mut away = log.clone();
+        away[4] = change(6., 5, true, "AtRest", -50.);
+        let c = chattering(&away, &n4, &entries(0.5, 0.9), Some(&tol));
+        assert_eq!(c["verdict"], "fail", "{c}");
+        assert_eq!(c["failing"][0]["t_s"], 6.);
+        // A re-closing at an unlocated transaction, or with another cause,
+        // fails.
+        let mut unlocated = log.clone();
+        unlocated[2]["kinds"] = json!(["frame"]);
+        assert_eq!(
+            chattering(&unlocated, &n4, &entries(0.5, 0.9), Some(&tol))["verdict"],
+            "fail"
+        );
+        let mut other = log.clone();
+        other[2] = change(4., 5, true, "DriveAtStart", 0.);
+        assert_eq!(
+            chattering(&other, &n4, &entries(0.5, 0.9), Some(&tol))["verdict"],
+            "fail"
+        );
+        // The phase-mode owner's exhaustion locks (`vaporPathContacts`)
+        // are re-closings too.
+        let mut exhausted = log.clone();
+        exhausted[2] = json!({"t_s": 4., "kinds": ["located roots"], "restart": {"transactions": [{"owner": "phase modes",
+            "vaporPathContacts": {"changes": [{"path": 5, "face": 3, "phase": 1, "cause": "Exhaustion", "drive_pa": 0., "after": {"Locked": "To"}}]}}]}});
+        let c = chattering(&exhausted, &n4, &entries(0.5, 0.9), Some(&tol));
+        assert_eq!(
+            (c["verdict"].as_str(), c["reclosings"].as_u64()),
+            (Some("pass"), Some(2)),
+            "{c}"
+        );
+        // Without the drive tolerances the reversal is not executable.
+        assert_eq!(
+            chattering(&log, &n4, &entries(0.5, 0.9), None)["verdict"],
+            "not executable"
+        );
+        // The pinned r1 criterion, swapped in as data: two relocks fail.
+        let r1 = json!({"criterion": "relock_after_release", "max_relocks": 0, "within_s": null});
+        assert_eq!(chattering(&log, &r1, &[], None)["relocks"], 2);
+        assert_eq!(chattering(&log, &r1, &[], None)["verdict"], "fail");
+        let within =
+            json!({"criterion": "relock_after_release", "max_relocks": 0, "within_s": 0.5});
+        assert_eq!(chattering(&log, &within, &[], None)["verdict"], "pass");
+        assert_eq!(
+            chattering(&log, &json!({"criterion": "other"}), &[], None)["verdict"],
             "not executable"
         );
     }

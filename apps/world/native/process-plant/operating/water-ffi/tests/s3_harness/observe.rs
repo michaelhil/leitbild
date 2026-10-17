@@ -472,6 +472,76 @@ pub struct CaseObserver {
     /// The largest |algebraic row| per row family over the accepted steps
     /// (a reported quantity in every S3 receipt; JACAGE's metric).
     pub residuals: AlgebraicResiduals,
+    /// The run's own absolute tolerances (solver scaling) and relative
+    /// tolerance: N4′'s integrator tolerance unit.
+    pub tolerances: Option<(Vec<f64>, f64)>,
+    /// Each restart's pre-transaction consistency (N4′, S3-D58).
+    pub entries: Vec<Value>,
+}
+
+/// N4′'s consistent state (S3-D58, JACAGE's units) at a restart's left
+/// side `(t, y, y')`: the one-pass projection correction of the algebraic
+/// rows, `J_aa δ = F_a` with `J = ∂F/∂y` (differential coordinates held),
+/// each in its integrator tolerance unit `rtol |y| + atol`; the largest,
+/// its coordinate and how many exceed one unit.
+#[allow(clippy::too_many_arguments)] // The system, the state and its tolerances.
+pub fn entry_consistency<S: leitbild_operating_water::ida::System + JoinedSystem>(
+    system: &mut S,
+    t: f64,
+    y: &[f64],
+    yp: &[f64],
+    network_ids: &[f64],
+    atol: &[f64],
+    rtol: f64,
+) -> Result<Value, String> {
+    use leitbild_operating_water::klu::SparseLu;
+    let n = y.len();
+    let mut f = vec![0.; n];
+    system
+        .residual(t, y, yp, &mut f)
+        .map_err(|e| format!("residual: {e:?}"))?;
+    let identity = system.differential_all(network_ids);
+    let nnz = system.nonzeros();
+    let (mut data, mut rows, mut pointers) = (vec![0.; nnz], vec![0i64; nnz], vec![0i64; n + 1]);
+    system
+        .jacobian(t, 0., y, yp, &mut data, &mut rows, &mut pointers)
+        .map_err(|e| format!("Jacobian: {e:?}"))?;
+    let alg: Vec<usize> = (0..n).filter(|i| identity[*i] == 0.).collect();
+    let mut at = vec![usize::MAX; n];
+    for (k, i) in alg.iter().enumerate() {
+        at[*i] = k;
+    }
+    let (mut p2, mut r2, mut v2) = (vec![0i64], Vec::new(), Vec::new());
+    for j in &alg {
+        for p in pointers[*j] as usize..pointers[*j + 1] as usize {
+            let i = rows[p] as usize;
+            if at[i] != usize::MAX {
+                r2.push(at[i] as i64);
+                v2.push(data[p]);
+            }
+        }
+        p2.push(r2.len() as i64);
+    }
+    let mut lu = SparseLu::analyze(alg.len(), &p2, &r2).map_err(|e| e.to_string())?;
+    lu.factor(&v2).map_err(|e| e.to_string())?;
+    let mut d: Vec<f64> = alg.iter().map(|i| f[*i]).collect();
+    let max_row = d.iter().fold(0_f64, |m, v| m.max(v.abs()));
+    lu.solve(&mut d).map_err(|e| e.to_string())?;
+    let (mut worst, mut at_coordinate, mut over) = (0_f64, None, 0usize);
+    for (k, i) in alg.iter().enumerate() {
+        let units = d[k].abs() / (rtol * y[*i].abs() + atol[*i]);
+        if units > 1. {
+            over += 1;
+        }
+        if units.is_nan() || units > worst {
+            worst = units;
+            at_coordinate = Some(*i);
+        }
+    }
+    Ok(
+        json!({"t_s": t, "max_units": worst, "coordinate": at_coordinate, "rows_over_one_unit": over,
+        "algebraic_rows": alg.len(), "max_abs_row": max_row}),
+    )
 }
 
 /// The largest |residual| of the algebraic rows, in solver row units (the
@@ -727,6 +797,14 @@ impl<J: JoinedSystem<Properties = If97>> Observer<Electrified<J>> for CaseObserv
         side: Side,
     ) -> Result<(), String> {
         let i0 = super::counters::instructions();
+        // N4′: the restart's pre-transaction consistency in tolerance units.
+        if side == Side::BeforeRestart
+            && let Some((atol, rtol)) = &self.tolerances
+        {
+            let e = entry_consistency(system, t, y, yp, &self.residuals.network_ids, atol, *rtol)
+                .unwrap_or_else(|e| json!({"t_s": t, "error": e}));
+            self.entries.push(e);
+        }
         // Rule I on the restart's consistent start too (S2 judged both
         // sides; a birth's exit is not taken a step late).
         if side == Side::AfterRestart {
@@ -791,6 +869,10 @@ pub const F_SIGNALS: [&str; 14] = [
     "generator_ieq_a",
 ];
 
+/// The pseudo-signal of every face's phase drives (Pa, `face * 2 + phase`)
+/// in [`signal_tolerances`]' result: N4′'s drive tolerances (S3-D58).
+pub const DRIVES: &str = "__face_drives_pa";
+
 /// S3-D49's absolute class a_x of every F signal instance at `(t, y, y')`:
 /// the first-order propagation sum_i |x(y + atol_i e_i) - x(y)| over every
 /// coordinate, the operator's through one evaluation and the credited
@@ -814,6 +896,13 @@ pub fn signal_tolerances<J: JoinedSystem<Properties = If97>>(
                 .evaluate(t, &z[..n], &yp[..n], None, 0., None)
                 .map_err(|e| format!("{e:?}"))?;
             let mut out = g.reader.read(joined, &z[..n], g.rods)?;
+            // N4′ (S3-D58): every face's phase drives, for their propagated
+            // tolerance (rule F's construction).
+            let net = &joined.network;
+            let drives: Vec<f64> = (0..net.face_count())
+                .flat_map(|f| [net.face_drive(f, 0).value, net.face_drive(f, 1).value])
+                .collect();
+            out.push((DRIVES, drives));
             out.push(("generator_power_w", vec![system.slice.export_w(&z[n..])]));
             out.push((
                 "generator_ieq_a",
@@ -821,7 +910,7 @@ pub fn signal_tolerances<J: JoinedSystem<Properties = If97>>(
             ));
             Ok(out
                 .into_iter()
-                .filter(|(k, _)| F_SIGNALS.contains(k))
+                .filter(|(k, _)| F_SIGNALS.contains(k) || *k == DRIVES)
                 .collect())
         };
     let base = read(system, y)?;
