@@ -20,6 +20,9 @@ pub struct Section {
     pub feed: Feed,
     #[serde(rename = "steamAdmission")]
     pub steam_admission: SteamAdmission,
+    /// The steam bypass's no-load pressure mode after the turbine trip
+    /// (`ld01-bypass-no-load`, owner R12-B1), the G1 stand-in.
+    pub bypass: Bypass,
     /// The SG contact law's exchange area and wall constants
     /// (`ld01-sg-contact`), read once for the joined solids' films.
     pub contact: Contact,
@@ -162,6 +165,33 @@ pub enum FeedRule {
 pub struct SteamAdmission {
     #[serde(rename = "stopTravel_s")]
     pub stop_travel_s: f64,
+}
+
+/// The bypass stand-in after the turbine trip (owner R12-B1): each SG
+/// passes `fraction × its nominal demand × u` to the condenser at `h_g(p)`,
+/// `u` rising linearly from 0 at the no-load pressure to 1 one band width
+/// above it. The no-load pressure is IF97's saturation pressure at the
+/// designed no-load average temperature (compiled with its derivation; the
+/// block checks it natively against the runtime saturation, once).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Bypass {
+    pub mode: BypassMode,
+    #[serde(rename = "noLoadAverageTemperature_K")]
+    pub no_load_average_temperature_k: f64,
+    #[serde(rename = "noLoadPressure_Pa")]
+    pub no_load_pressure_pa: f64,
+    #[serde(rename = "bandWidth_Pa")]
+    pub band_width_pa: f64,
+    #[serde(rename = "fractionOfNominalSteam")]
+    pub fraction_of_nominal_steam: f64,
+}
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+pub enum BypassMode {
+    /// The no-load pressure mode from the turbine trip on; closed before it
+    /// (the at-power band does not open at the full-power header).
+    #[serde(rename = "noLoadPressureAfterTurbineTrip")]
+    NoLoadPressureAfterTurbineTrip,
 }
 
 /// The SG contact law's exchange area per SG and its wall constants.

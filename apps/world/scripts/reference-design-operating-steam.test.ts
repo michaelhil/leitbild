@@ -1,6 +1,7 @@
 import {expect,test} from 'bun:test'
 import {generatorParameters,parseGenerator} from './reference-design-generator'
-import {compileOperatingSteam,parseC12Circulating,preparedMachinePhasor,parseBypass,parseCondenser,parseCondenserProtection,parseGovernor,parseMsrDrains,parseNoncondensables,parseSteamActuators,
+import {parseBypassControl as parseBypass} from './reference-design-bypass'
+import {compileOperatingSteam,parseC12Circulating,preparedMachinePhasor,parseCondenser,parseCondenserProtection,parseGovernor,parseMsrDrains,parseNoncondensables,parseSteamActuators,
   parseReceivers,parseSteamPreparation,parseSteamStocks,prepareOperatingSteam,steamOwners} from './reference-design-operating-steam'
 
 // Test-only owner texts in the shapes the compiler reads; the values are the

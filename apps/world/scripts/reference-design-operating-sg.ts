@@ -13,6 +13,7 @@ import {createHash} from 'node:crypto'
 import {join} from 'node:path'
 import {z} from 'zod'
 import {parseBalanceBasis} from './reference-design-balance'
+import {parseBypassControl,parseBypassNoLoad} from './reference-design-bypass'
 import {parseCycleBasis} from './reference-design-cycle'
 import {parseHydraulicBasis} from './reference-design-hydraulics'
 import {parseInitializationBasis} from './reference-design-initialization'
@@ -102,6 +103,15 @@ function guards(thermodynamics:string,volume_m3:number){
   return {crown_m3:contactLiquid(exposure,exposure.crownTop_m),pickup_m3:contactLiquid(exposure,pickup.pickupBottom_m),exposure}
 }
 
+/** R12-B1's G1 stand-in: the bypass's no-load pressure mode after the
+ * turbine trip, with the selected band width and rating fraction of
+ * `ld01-bypass-control` (one numeric owner each). */
+export function bypassNoLoad(admission:string){
+  const noLoad=parseBypassNoLoad(admission),control=parseBypassControl(admission)
+  return {mode:noLoad.mode,noLoadAverageTemperature_K:noLoad.noLoadAverageTemperature_K,noLoadPressure_Pa:noLoad.noLoadPressure_Pa,
+    bandWidth_Pa:control.bandFull_Pa-control.bandStart_Pa,fractionOfNominalSteam:control.rating.fractionOfTotalSteam}
+}
+
 /** The joined packet's `secondary` section: per SG (the thermal
  * secondaries' A/B order) its volume, constant demand, guard volumes and
  * valves; the relief characteristic, seat and rating; the feed boundary; the
@@ -113,7 +123,7 @@ export function compileOperatingSecondary(d:SectionSources){
     prepared=balance.secondaryLiquidVolume_m3,feedPressure=cycle.feedHeaderPressure_MPaAbs*1e6
   if(balance.steamGenerators!==2||cycle.steamGenerators!==2)throw Error('Two steam generators expected')
   if(!(g.crown_m3<prepared&&prepared<g.pickup_m3))throw Error('Prepared liquid volume outside the crown/pickup guard band')
-  return {scope:'S2 SG secondaries: one bulk-equilibrium volume per SG with the constant A/B demand and its STOP ramp, the inventory-holding feed and two spring reliefs per SG; Rust owns the laws and derivations, the joined solids the metal and films',
+  return {scope:'S2 SG secondaries: one bulk-equilibrium volume per SG with the constant A/B demand and its STOP ramp, the inventory-holding feed and two spring reliefs per SG, and after the turbine trip the bypass no-load pressure mode (R12-B1 stand-in); Rust owns the laws and derivations, the joined solids the metal and films',
     steamGenerators:SGS.map(id=>({id,volume_m3:balance.secondaryVolume_m3,steamDemand_kg_s:boundaries.steamDemand_kg_s[id],
       crownLiquidVolume_m3:g.crown_m3,pickupLiquidVolume_m3:g.pickup_m3,
       reliefs:Array.from({length:relief.valvesPerSg},(_,i)=>({id:`SG.${id}.RELIEF.${i+1}`}))})),
@@ -123,6 +133,7 @@ export function compileOperatingSecondary(d:SectionSources){
         fluid:relief.rating.fluid}},
     feed:{rule:boundaries.feedRule,pressure_Pa:feedPressure,temperature_K:cycle.feedInlet_C+273.15},
     steamAdmission:{stopTravel_s:travel.turbineStop_s},
+    bypass:bypassNoLoad(d.admission),
     contact:parseSgContact(d.thermodynamics),
     exposure:{fold:sgFold(d.hydraulics,d.mechanics,g.exposure),bundleZoneVolume_m3:g.exposure.bundleZoneVolume_m3,
       upperZoneArea_m2:g.exposure.upperZoneArea_m2}}

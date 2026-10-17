@@ -19,6 +19,7 @@ import {parseShaftDrag} from './reference-design-operating-electrical'
 import {parseOperatingHotReference} from './reference-design-operating-fluid'
 import {ownedBlock} from './reference-design-operating-pzr'
 import {parseSteamValveTravel} from './reference-design-operating-sg'
+import {bypassOwners,parseBypassControl} from './reference-design-bypass'
 import {parseTurbinePreparation} from './reference-design-turbine-preparation'
 
 const compact='Compact operating allocation (15 October 2026)'
@@ -27,7 +28,7 @@ export const steamOwners={
   preparation:{page:'systems/steam-power/turbine-and-regeneration-dynamics.md',heading:'Strict blocks',fence:'ld01-steam-preparation'},
   drains:{page:'systems/steam-power/turbine-and-regeneration-dynamics.md',heading:'Strict blocks',fence:'ld01-msr-drain-control'},
   governor:{page:'systems/steam-power/turbine-and-regeneration-dynamics.md',heading:'Strict blocks',fence:'ld01-governor'},
-  bypass:{page:'systems/steam-power/admission-and-protection.md',heading:compact,fence:'ld01-bypass-control'},
+  bypass:bypassOwners.control,
   protection:{page:'systems/steam-power/admission-and-protection.md',heading:compact,fence:'ld01-condenser-protection'},
   actuators:{page:'systems/steam-power/admission-and-protection.md',heading:compact,fence:'ld01-steam-actuators'},
   condenser:{page:'systems/steam-power/condenser-and-cooling.md',heading:compact,fence:'ld01-condenser'},
@@ -53,9 +54,6 @@ const drainsSchema=z.object({
   reheaterDrain:z.object({bias:fraction,gain:pos,target:fraction,sample_s:pos,travelRate_per_s:pos,sizingOpening:fraction}).strict(),
 }).strict()
 const governorSchema=z.object({sample_s:pos,droop:fraction,setpointRamp_per_s:pos,proportional:pos,integral_per_s:pos,base_W:pos,overspeed_pu:pos.gt(1)}).strict()
-const bypassSchema=z.object({bandStart_Pa:pos,bandFull_Pa:pos,sample_s:pos,availableBelow_Pa:pos,headerEvidenceAge_s:pos,
-  rating:z.object({fractionOfTotalSteam:fraction,inletPressure_Pa:pos,fluid:z.literal('saturatedVapor'),outlet:z.literal('nominalCondenser')}).strict()}).strict()
-  .refine(b=>b.bandStart_Pa<b.bandFull_Pa,'Bypass band must be ordered')
 const protectionSchema=z.object({backpressureTrip_Pa:pos,backpressurePersistence_s:pos,unavailableTrip_s:pos,resetBelow_Pa:pos,resetHold_s:pos,
   channel:z.object({rangeMin_Pa:z.number().finite().nonnegative(),rangeMax_Pa:pos,lag_s:pos,sample_s:pos,transport_s:pos,maxAge_s:pos}).strict()}).strict()
   .refine(p=>p.resetBelow_Pa<p.backpressureTrip_Pa&&p.backpressureTrip_Pa<p.channel.rangeMax_Pa,'Reset, trip and range must be ordered')
@@ -80,7 +78,6 @@ export const parseSteamStocks=(t:string)=>parse(stocksSchema,t,steamOwners.stock
 export const parseSteamPreparation=(t:string)=>parse(preparationSchema,t,steamOwners.preparation)
 export const parseMsrDrains=(t:string)=>parse(drainsSchema,t,steamOwners.drains)
 export const parseGovernor=(t:string)=>parse(governorSchema,t,steamOwners.governor)
-export const parseBypass=(t:string)=>parse(bypassSchema,t,steamOwners.bypass)
 export const parseCondenserProtection=(t:string)=>parse(protectionSchema,t,steamOwners.protection)
 export const parseCondenser=(t:string)=>parse(condenserSchema,t,steamOwners.condenser)
 export const parseNoncondensables=(t:string)=>parse(gasesSchema,t,steamOwners.gases)
@@ -121,7 +118,7 @@ const MPa=1e6,K=(c:number)=>c+273.15,close=(a:number,b:number,rel=1e-12)=>Math.a
 /** The pure compilation over the owners' texts, the cycle calculator's result and C09's receiving shells. */
 export function compileOperatingSteam(texts:SteamTexts,cycle:Cycle,receivers:z.infer<typeof receiversSchema>,cw:ReturnType<typeof parseC12Circulating>){
   const stocks=parseSteamStocks(texts.turbine),prep=parseSteamPreparation(texts.turbine),drains=parseMsrDrains(texts.turbine),
-    governor=parseGovernor(texts.turbine),bypass=parseBypass(texts.admission),protection=parseCondenserProtection(texts.admission),
+    governor=parseGovernor(texts.turbine),bypass=parseBypassControl(texts.admission),protection=parseCondenserProtection(texts.admission),
     travel=parseSteamValveTravel(texts.admission),cond=parseCondenser(texts.condenser),gases=parseNoncondensables(texts.condenser),
     drag=parseShaftDrag(texts.shaft),casing=parseTurbinePreparation(texts.casing),shells=parseReceivers(receivers),
     act=parseSteamActuators(texts.admission),
