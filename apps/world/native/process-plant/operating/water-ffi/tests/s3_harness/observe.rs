@@ -471,27 +471,138 @@ pub struct CaseObserver {
     /// The largest |algebraic row| per row family over the accepted steps
     /// (a reported quantity in every S3 receipt; JACAGE's metric).
     pub residuals: AlgebraicResiduals,
-    /// The run's own absolute tolerances (solver scaling) and relative
-    /// tolerance: N4′'s integrator tolerance unit.
-    pub tolerances: Option<(Vec<f64>, f64)>,
-    /// Each restart's pre-transaction consistency (N4′, S3-D58).
+    /// The run's relative tolerance, when N4′'s restart entries are taken
+    /// (S3-D58, S3-D61).
+    pub n4_rtol: Option<f64>,
+    /// Each restart's pre-transaction entry (N4′): its consistency in the
+    /// integrator's own units and, with a free vapour path, every free
+    /// vapour path's drive tolerance at that state.
     pub entries: Vec<Value>,
+    /// The integrator's units the driver handed at the current restart's
+    /// left side: `(t, (1 / (rtol |y_n| + atol), y_n))`.
+    pub units: Option<(f64, leitbild_operating_water::frame::IntegratorUnits)>,
+}
+
+/// The integrator's own tolerance unit `rtol |y| + atol` at `y` (S3-D61):
+/// `atol` as the integrator uses it (derived classes included), recovered
+/// from stock's reciprocal error weights `w = 1 / (rtol |y_n| + atol)` at its
+/// current solution `y_n`.
+pub fn integrator_unit(
+    y: &[f64],
+    weights: &[f64],
+    yn: &[f64],
+    rtol: f64,
+) -> Result<Vec<f64>, String> {
+    if weights.len() != y.len() || yn.len() != y.len() {
+        return Err("the integrator's weights are not the state's layout".into());
+    }
+    (0..y.len())
+        .map(|i| {
+            let atol = 1. / weights[i] - rtol * yn[i].abs();
+            if atol.is_finite() && atol > 0. {
+                Ok(rtol * y[i].abs() + atol)
+            } else {
+                Err(format!(
+                    "coordinate {i}: no positive atol from the weight {} at y_n {}",
+                    weights[i], yn[i]
+                ))
+            }
+        })
+        .collect()
+}
+
+/// N4′'s drive tolerance (S3-D61) of each free vapour path at a restart's
+/// pre-transaction state, by rule F's a_x construction at that state:
+/// `sum_i |drive(y + atol_i e_i) - drive(y)|` over every joined coordinate
+/// (`atol` the integrator's own, backward where the forward point refuses),
+/// one joined value evaluation each; the slice's coordinates are not read
+/// by a drive. `None` with no free vapour path (nothing can re-close).
+pub fn free_vapour_drive_tolerances<J: JoinedSystem<Properties = If97>>(
+    system: &mut Electrified<J>,
+    t: f64,
+    y: &[f64],
+    yp: &[f64],
+    n: usize,
+    atol: &[f64],
+) -> Result<Option<Value>, String> {
+    use leitbild_operating_plant::network::unilateral::Lock;
+    let free: Vec<(usize, usize, usize)> = {
+        let net = &system.integrated().joined.network;
+        let Some(locks) = net.unilateral() else {
+            return Ok(None);
+        };
+        locks
+            .paths
+            .iter()
+            .enumerate()
+            .filter(|(li, lock)| net.face_layout[*li].phase == 1 && matches!(lock, Lock::Free))
+            .map(|(li, _)| (li, net.face_layout[li].face, net.face_layout[li].phase))
+            .collect()
+    };
+    if free.is_empty() {
+        return Ok(None);
+    }
+    let started = (crate::spine::z1::cpu_s(), super::counters::instructions());
+    let drives = |system: &mut Electrified<J>, z: &[f64]| -> Result<Vec<f64>, String> {
+        let joined = &mut system.integrated_mut().joined;
+        joined
+            .evaluate(t, &z[..n], &yp[..n], None, 0., None)
+            .map_err(|e| format!("{e:?}"))?;
+        Ok(free
+            .iter()
+            .map(|(_, f, k)| joined.network.face_drive(*f, *k).value)
+            .collect())
+    };
+    let base = drives(system, y)?;
+    let mut a = vec![0.; free.len()];
+    let mut z = y.to_vec();
+    let (mut refused, mut backward, mut first_refusal) = (0usize, 0usize, None);
+    for i in 0..n {
+        z[i] = y[i] + atol[i];
+        let mut d = drives(system, &z);
+        if d.is_err() {
+            z[i] = y[i] - atol[i];
+            d = drives(system, &z);
+            backward += usize::from(d.is_ok());
+        }
+        match d {
+            Ok(d) => {
+                for (acc, (v, v0)) in a.iter_mut().zip(d.iter().zip(&base)) {
+                    *acc += (v - v0).abs();
+                }
+            }
+            Err(e) => {
+                refused += 1;
+                first_refusal.get_or_insert(format!("coordinate {i}: {e}"));
+            }
+        }
+        z[i] = y[i];
+    }
+    // The operator's caches back at the judged state.
+    drives(system, y)?;
+    let instructions = match (started.1, super::counters::instructions()) {
+        (Ok(a), Ok(b)) => json!(b.saturating_sub(a)),
+        (Err(e), _) | (_, Err(e)) => json!({"error": e}),
+    };
+    Ok(Some(json!({
+        "paths": free.iter().zip(base.iter().zip(&a)).map(|((li, f, k), (d, tol))| json!({"path": li, "face": f, "phase": k, "drive_pa": d, "tolerance_pa": tol})).collect::<Vec<_>>(),
+        "coordinates": n, "taken_backward": backward, "refused": refused, "first_refusal": first_refusal,
+        "judge_cpu_s": crate::spine::z1::cpu_s() - started.0, "judge_instructions": instructions})))
 }
 
 /// N4′'s consistent state (S3-D58, JACAGE's units) at a restart's left
 /// side `(t, y, y')`: the one-pass projection correction of the algebraic
 /// rows, `J_aa δ = F_a` with `J = ∂F/∂y` (differential coordinates held),
-/// each in its integrator tolerance unit `rtol |y| + atol`; the largest,
-/// its coordinate and how many exceed one unit.
-#[allow(clippy::too_many_arguments)] // The system, the state and its tolerances.
+/// each in its integrator tolerance unit `unit` (`rtol |y| + atol` as the
+/// integrator uses it, [`integrator_unit`], S3-D61); the largest, its
+/// coordinate and how many exceed one unit.
 pub fn entry_consistency<S: leitbild_operating_water::ida::System + JoinedSystem>(
     system: &mut S,
     t: f64,
     y: &[f64],
     yp: &[f64],
     network_ids: &[f64],
-    atol: &[f64],
-    rtol: f64,
+    unit: &[f64],
 ) -> Result<Value, String> {
     use leitbild_operating_water::klu::SparseLu;
     let n = y.len();
@@ -528,7 +639,7 @@ pub fn entry_consistency<S: leitbild_operating_water::ida::System + JoinedSystem
     lu.solve(&mut d).map_err(|e| e.to_string())?;
     let (mut worst, mut at_coordinate, mut over) = (0_f64, None, 0usize);
     for (k, i) in alg.iter().enumerate() {
-        let units = d[k].abs() / (rtol * y[*i].abs() + atol[*i]);
+        let units = d[k].abs() / unit[*i];
         if units > 1. {
             over += 1;
         }
@@ -786,6 +897,13 @@ impl<J: JoinedSystem<Properties = If97>> Observer<Electrified<J>> for CaseObserv
     fn next_after(&self, t: f64) -> Option<f64> {
         self.gates.as_ref().map(|g| grid_after(g.origin, g.dt, t))
     }
+    fn integrator_units(
+        &mut self,
+        t: f64,
+        units: leitbild_operating_water::frame::IntegratorUnits,
+    ) {
+        self.units = Some((t, units));
+    }
     fn sample(
         &mut self,
         system: &mut Electrified<J>,
@@ -796,13 +914,35 @@ impl<J: JoinedSystem<Properties = If97>> Observer<Electrified<J>> for CaseObserv
         side: Side,
     ) -> Result<(), String> {
         let i0 = super::counters::instructions();
-        // N4′: the restart's pre-transaction consistency in tolerance units.
+        // N4′: the restart's pre-transaction consistency in the integrator's
+        // own units, and every free vapour path's drive tolerance there.
         if side == Side::BeforeRestart
-            && let Some((atol, rtol)) = &self.tolerances
+            && let Some(rtol) = self.n4_rtol
         {
-            let e = entry_consistency(system, t, y, yp, &self.residuals.network_ids, atol, *rtol)
-                .unwrap_or_else(|e| json!({"t_s": t, "error": e}));
-            self.entries.push(e);
+            let units = match self.units.take() {
+                Some((tu, units)) if tu == t => units,
+                Some((tu, _)) => Err(format!("the integrator's units are from {tu} s")),
+                None => Err("the driver handed no integrator units".into()),
+            };
+            let entry = units
+                .and_then(|(w, yn)| integrator_unit(y, &w, &yn, rtol))
+                .and_then(|unit| {
+                    let mut e =
+                        entry_consistency(system, t, y, yp, &self.residuals.network_ids, &unit)?;
+                    let atol: Vec<f64> = unit
+                        .iter()
+                        .zip(y)
+                        .map(|(u, v)| u - rtol * v.abs())
+                        .collect();
+                    e["drives"] =
+                        match free_vapour_drive_tolerances(system, t, y, yp, self.n, &atol)? {
+                            Some(d) => d,
+                            None => json!("no free vapour path"),
+                        };
+                    Ok(e)
+                });
+            self.entries
+                .push(entry.unwrap_or_else(|e| json!({"t_s": t, "error": e})));
         }
         // Rule I on the restart's consistent start too (S2 judged both
         // sides; a birth's exit is not taken a step late).
@@ -868,10 +1008,6 @@ pub const F_SIGNALS: [&str; 14] = [
     "generator_ieq_a",
 ];
 
-/// The pseudo-signal of every face's phase drives (Pa, `face * 2 + phase`)
-/// in [`signal_tolerances`]' result: N4′'s drive tolerances (S3-D58).
-pub const DRIVES: &str = "__face_drives_pa";
-
 /// S3-D49's absolute class a_x of every F signal instance at `(t, y, y')`:
 /// the first-order propagation sum_i |x(y + atol_i e_i) - x(y)| over every
 /// coordinate, the operator's through one evaluation and the credited
@@ -895,13 +1031,6 @@ pub fn signal_tolerances<J: JoinedSystem<Properties = If97>>(
                 .evaluate(t, &z[..n], &yp[..n], None, 0., None)
                 .map_err(|e| format!("{e:?}"))?;
             let mut out = g.reader.read(joined, &z[..n], g.rods)?;
-            // N4′ (S3-D58): every face's phase drives, for their propagated
-            // tolerance (rule F's construction).
-            let net = &joined.network;
-            let drives: Vec<f64> = (0..net.face_count())
-                .flat_map(|f| [net.face_drive(f, 0).value, net.face_drive(f, 1).value])
-                .collect();
-            out.push((DRIVES, drives));
             out.push(("generator_power_w", vec![system.slice.export_w(&z[n..])]));
             out.push((
                 "generator_ieq_a",
@@ -909,7 +1038,7 @@ pub fn signal_tolerances<J: JoinedSystem<Properties = If97>>(
             ));
             Ok(out
                 .into_iter()
-                .filter(|(k, _)| F_SIGNALS.contains(k) || *k == DRIVES)
+                .filter(|(k, _)| F_SIGNALS.contains(k))
                 .collect())
         };
     let base = read(system, y)?;
@@ -985,6 +1114,28 @@ pub fn held_at(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_integrator_unit_takes_the_atol_stock_uses_from_its_weights() {
+        // atol with a derived class at coordinate 1; stock's weights at y_n.
+        let (rtol, atol, yn) = (1e-5, [1e-8, 3e-12, 1e-6], [2.0, -0.5, 0.0]);
+        let w: Vec<f64> = (0..3)
+            .map(|i| 1. / (rtol * f64::abs(yn[i]) + atol[i]))
+            .collect();
+        let y = [2.1, -0.4, 1.0];
+        let unit = integrator_unit(&y, &w, &yn, rtol).unwrap();
+        for i in 0..3 {
+            let expected = rtol * f64::abs(y[i]) + atol[i];
+            assert!(
+                (unit[i] - expected).abs() <= 1e-9 * expected,
+                "{i}: {} vs {expected}",
+                unit[i]
+            );
+        }
+        // A weight that leaves no positive atol, or another layout, refuses.
+        assert!(integrator_unit(&y, &[1. / (rtol * 2.), w[1], w[2]], &yn, rtol).is_err());
+        assert!(integrator_unit(&y, &w[..2], &yn, rtol).is_err());
+    }
 
     #[test]
     fn the_b1_label_is_the_phase_checks_own_error_not_its_text() {

@@ -1186,8 +1186,10 @@ fn drive(
             &ida.system().integrated().joined,
             network_ids.clone(),
         ),
-        tolerances: Some((atol.clone(), rtol)),
+        // N4′'s restart entries on the gated run only (judge-time work).
+        n4_rtol: ask.f_tolerances.then_some(rtol),
         entries: Vec::new(),
+        units: None,
     };
     // A reference's own cap (R1: S1's eventReference.maxStep_s) holds over
     // its whole run, as S2's R1.
@@ -1757,7 +1759,9 @@ fn drive(
             "verdict_fingerprint": domain.verdicts.hex(), "reuse": {"reused": domain.reused, "crosscheck": domain.crosscheck, "crosschecked": domain.crosschecked,
                 "mismatches": domain.mismatches, "first_mismatch": domain.first_mismatch}},
         "algebraic_residuals": observer.residuals.json(),
-        "restart_entries": {"rule": "N4′ (S3-D58): each restart's pre-transaction projection correction of the algebraic rows in integrator tolerance units (rtol |y| + atol, JACAGE's units)", "entries": observer.entries},
+        "restart_entries": {"rule": "N4′ (S3-D58, S3-D61): each restart's pre-transaction projection correction of the algebraic rows in the integrator's own units (rtol |y| + atol, atol as stock IDA uses it, from its error weights); with a free vapour path, each free vapour path's drive tolerance by rule F's a_x construction at that state (judge-time cost, not plant work)",
+            "judge_cpu_s": observer.entries.iter().filter_map(|e| e["drives"]["judge_cpu_s"].as_f64()).sum::<f64>(),
+            "entries": observer.entries},
         "operator_turbine_trip": operator_trip_record,
         "exchange": if c5 { json!({"stand_in": "the test-only Grid stand-in's C5 plan (C5X ld01-grid-standin.ts boundaries() under D1 with S3-D42's connected-only window; no frequency event), reproduced in-process: the same interval ends and the same boundary decisions as the C5 host (Driver::decide at each exchange), not over the child-process pipe (R5-F4: no live Grid)",
             "intervals": exchanges.len(), "decisions": exchange_log,
@@ -2584,15 +2588,10 @@ fn s3_case_run() {
             Err(_) => n4_rule_of_the_wiki()
                 .unwrap_or_else(|e| json!({"criterion": "unavailable", "reason": e})),
         };
-        let drive_tolerances: Option<Vec<f64>> = run
-            .f_tolerances
-            .as_ref()
-            .and_then(|(a, _)| a.get(observe::DRIVES).cloned());
         let chatter = s3_harness::families::chattering(
             run.record["instants"].as_array().unwrap(),
             &chatter_rule,
             &run.entries,
-            drive_tolerances.as_deref(),
         );
         let direction_inputs = s3_harness::families::DirectionInputs {
             credited: &og.credited,

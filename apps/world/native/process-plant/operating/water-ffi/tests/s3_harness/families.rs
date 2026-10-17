@@ -470,15 +470,12 @@ fn l1_changes(log: &[Value]) -> std::collections::BTreeMap<u64, Vec<Closing<'_>>
 }
 
 /// Chattering on a run's logged L1 changes under `rule` (N4′ from the pinned C4 block,
-/// or r1's relock count), with each restart's pre-transaction consistency
-/// (`entries`, [`super::observe::entry_consistency`]) and the drives'
-/// propagated tolerances (`face * 2 + phase`).
-pub fn chattering(
-    log: &[Value],
-    rule: &Value,
-    entries: &[Value],
-    drive_tolerance: Option<&[f64]>,
-) -> Value {
+/// or r1's relock count), with each restart's pre-transaction entry
+/// (`entries`: its consistency in the integrator's units,
+/// [`super::observe::entry_consistency`], and every free vapour path's drive
+/// tolerance at that state, [`super::observe::free_vapour_drive_tolerances`],
+/// S3-D61).
+pub fn chattering(log: &[Value], rule: &Value, entries: &[Value]) -> Value {
     let paths = l1_changes(log);
     match rule["criterion"].as_str() {
         Some("relock_after_release") => {
@@ -546,14 +543,14 @@ pub fn chattering(
                     let entry = entry_at(c.t);
                     let consistency = entry.and_then(|e| e["max_units"].as_f64());
                     let drive = c.change["drive_pa"].as_f64();
-                    let tol = c.change["face"]
-                        .as_u64()
-                        .zip(c.change["phase"].as_u64())
-                        .and_then(|(f, p)| {
-                            drive_tolerance
-                                .and_then(|d| d.get((f * 2 + p) as usize))
-                                .copied()
-                        });
+                    let tol = entry.and_then(|e| {
+                        e["drives"]["paths"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .find(|d| d["path"].as_u64() == Some(*path))
+                            .and_then(|d| d["tolerance_pa"].as_f64())
+                    });
                     let mut reasons: Vec<String> = Vec::new();
                     let mut evaluable = true;
                     if cause.is_empty() {
@@ -1772,42 +1769,33 @@ mod tests {
             change(5., 5, false, "DriveRoot", 0.),
             change(6., 5, true, "AtRest", 50.),
         ];
-        let entries = |u4: f64, u6: f64| {
-            vec![
-                json!({"t_s": 4., "max_units": u4}),
-                json!({"t_s": 6., "max_units": u6}),
-            ]
-        };
-        let tol = vec![0.; 6]
-            .into_iter()
-            .chain([0., 10.])
-            .collect::<Vec<f64>>();
+        // Each restart's entry: its consistency and its free vapour paths'
+        // drive tolerances at that state (S3-D61).
+        let entry = |t: f64, u: f64, tol: f64| json!({"t_s": t, "max_units": u, "drives": {"paths": [{"path": 5, "face": 3, "phase": 1, "tolerance_pa": tol}]}});
+        let with = |u4: f64, u6: f64, tol: f64| vec![entry(4., u4, tol), entry(6., u6, tol)];
+        let entries = |u4: f64, u6: f64| with(u4, u6, 10.);
         let n4: Value = serde_json::from_str(N4_PRIME_READING).unwrap();
         // Both re-closings follow a located exhaustion / reversal from a
         // consistent state; the reversal's drive (50 Pa) beyond 10 Pa.
-        let c = chattering(&log, &n4, &entries(0.5, 0.9), Some(&tol));
+        let c = chattering(&log, &n4, &entries(0.5, 0.9));
         assert_eq!(c["verdict"], "pass", "{c}");
         assert_eq!(
             (c["closings"].as_u64(), c["reclosings"].as_u64()),
             (Some(3), Some(2))
         );
         // An inconsistent pre-state fails.
-        let c = chattering(&log, &n4, &entries(1.5, 0.9), Some(&tol));
+        let c = chattering(&log, &n4, &entries(1.5, 0.9));
         assert_eq!(c["verdict"], "fail");
         assert_eq!(c["failing"][0]["t_s"], 4.);
-        // A reversal's drive within its tolerance fails.
-        let tight = vec![0.; 6]
-            .into_iter()
-            .chain([0., 80.])
-            .collect::<Vec<f64>>();
+        // A reversal's drive within its tolerance at that state fails.
         assert_eq!(
-            chattering(&log, &n4, &entries(0.5, 0.9), Some(&tight))["verdict"],
+            chattering(&log, &n4, &with(0.5, 0.9, 80.))["verdict"],
             "fail"
         );
         // A reversal whose drive draws from the holding end (To) fails.
         let mut away = log.clone();
         away[4] = change(6., 5, true, "AtRest", -50.);
-        let c = chattering(&away, &n4, &entries(0.5, 0.9), Some(&tol));
+        let c = chattering(&away, &n4, &entries(0.5, 0.9));
         assert_eq!(c["verdict"], "fail", "{c}");
         assert_eq!(c["failing"][0]["t_s"], 6.);
         // A re-closing at an unlocated transaction, or with another cause,
@@ -1815,13 +1803,13 @@ mod tests {
         let mut unlocated = log.clone();
         unlocated[2]["kinds"] = json!(["frame"]);
         assert_eq!(
-            chattering(&unlocated, &n4, &entries(0.5, 0.9), Some(&tol))["verdict"],
+            chattering(&unlocated, &n4, &entries(0.5, 0.9))["verdict"],
             "fail"
         );
         let mut other = log.clone();
         other[2] = change(4., 5, true, "DriveAtStart", 0.);
         assert_eq!(
-            chattering(&other, &n4, &entries(0.5, 0.9), Some(&tol))["verdict"],
+            chattering(&other, &n4, &entries(0.5, 0.9))["verdict"],
             "fail"
         );
         // The phase-mode owner's exhaustion locks (`vaporPathContacts`)
@@ -1829,26 +1817,27 @@ mod tests {
         let mut exhausted = log.clone();
         exhausted[2] = json!({"t_s": 4., "kinds": ["located roots"], "restart": {"transactions": [{"owner": "phase modes",
             "vaporPathContacts": {"changes": [{"path": 5, "face": 3, "phase": 1, "cause": "Exhaustion", "drive_pa": 0., "after": {"Locked": "To"}}]}}]}});
-        let c = chattering(&exhausted, &n4, &entries(0.5, 0.9), Some(&tol));
+        let c = chattering(&exhausted, &n4, &entries(0.5, 0.9));
         assert_eq!(
             (c["verdict"].as_str(), c["reclosings"].as_u64()),
             (Some("pass"), Some(2)),
             "{c}"
         );
-        // Without the drive tolerances the reversal is not executable.
-        assert_eq!(
-            chattering(&log, &n4, &entries(0.5, 0.9), None)["verdict"],
-            "not executable"
-        );
+        // Without its state's drive tolerance the reversal is not executable.
+        let bare = vec![
+            json!({"t_s": 4., "max_units": 0.5}),
+            json!({"t_s": 6., "max_units": 0.9, "drives": "no free vapour path"}),
+        ];
+        assert_eq!(chattering(&log, &n4, &bare)["verdict"], "not executable");
         // The pinned r1 criterion, swapped in as data: two relocks fail.
         let r1 = json!({"criterion": "relock_after_release", "max_relocks": 0, "within_s": null});
-        assert_eq!(chattering(&log, &r1, &[], None)["relocks"], 2);
-        assert_eq!(chattering(&log, &r1, &[], None)["verdict"], "fail");
+        assert_eq!(chattering(&log, &r1, &[])["relocks"], 2);
+        assert_eq!(chattering(&log, &r1, &[])["verdict"], "fail");
         let within =
             json!({"criterion": "relock_after_release", "max_relocks": 0, "within_s": 0.5});
-        assert_eq!(chattering(&log, &within, &[], None)["verdict"], "pass");
+        assert_eq!(chattering(&log, &within, &[])["verdict"], "pass");
         assert_eq!(
-            chattering(&log, &json!({"criterion": "other"}), &[], None)["verdict"],
+            chattering(&log, &json!({"criterion": "other"}), &[])["verdict"],
             "not executable"
         );
     }
