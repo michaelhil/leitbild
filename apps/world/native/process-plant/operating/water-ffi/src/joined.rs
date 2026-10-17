@@ -802,7 +802,7 @@ pub fn split_credited_groups(keys: &[String], credited: &[bool], max: usize) -> 
 }
 
 pub use integrated::{
-    Assembly, Discrete, Integrated, JoinedSystem, Restart, Restarted, census_groups,
+    Assembly, Discrete, FirstStep, Integrated, JoinedSystem, Restart, Restarted, census_groups,
     credited_coordinates, discrete_restart, root_directions,
 };
 
@@ -876,6 +876,10 @@ mod integrated {
         /// The appended owners' changes at this restart (ELEC hook; empty
         /// without appended coordinates).
         pub appended: Vec<String>,
+        /// N3: the first step this restart set, and the last step stock
+        /// accepted before the event.
+        pub first_step_s: f64,
+        pub last_step_s: f64,
         /// The largest algebraic row of the state handed to the restart,
         /// before any transaction, under the identity before it
         /// (DR-C3-BIRTH05).
@@ -955,6 +959,9 @@ mod integrated {
         // owners' changes first, then the operator restarts on its own part.
         let appended = ida.system().appended();
         let rule = ida.weight_rule();
+        // N3: the last step stock accepted before this event (0 before any).
+        let last_step = ida.stats()?.last_step;
+        let first_step_policy = ida.system().integrated().first_step;
         let m = y_all
             .len()
             .checked_sub(appended)
@@ -1146,6 +1153,14 @@ mod integrated {
         ida.reinitialize(t, y_all, &yp)?;
         ida.set_differential(&ids)?;
         restart.configure(ida)?;
+        let first_step_s = match first_step_policy {
+            FirstStep::LastStep { divisor } if last_step > 0. => {
+                let h = last_step / divisor;
+                ida.set_init_step(h)?;
+                h
+            }
+            _ => restart.first_step_s,
+        };
         root_directions(ida)?;
         if retune {
             // A phase-mode change or an equilibrium cell: the segment's
@@ -1165,6 +1180,8 @@ mod integrated {
             equilibrium_classes,
             appended: appended_done,
             constraint_at_entry: entry,
+            first_step_s,
+            last_step_s: last_step,
             births,
             yp,
             report,
@@ -1391,6 +1408,20 @@ mod integrated {
         /// The presence-keyed structures when the system follows a
         /// declared vapor presence (S3-D-P3), else `None` (S1, S2).
         presence: Option<Following>,
+        /// N3: the first step a discrete restart sets ([`FirstStep`]).
+        first_step: FirstStep,
+    }
+
+    /// N3 (Operable Unit plan, R1 S4): the first step stock IDA takes after
+    /// a discrete restart. `Declared` is the segment configuration's own
+    /// (`Restart::first_step_s`, G13's 1e-4 s), the composition's default.
+    /// `LastStep` is the last step stock accepted before the event divided
+    /// by `divisor` (stock IDASetInitStep; it falls back to the declared
+    /// step at a segment with no accepted step yet, the composed start).
+    #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
+    pub enum FirstStep {
+        Declared,
+        LastStep { divisor: f64 },
     }
 
     /// A presence-following block assembly (lead decision S3-D-P3): one
@@ -1420,6 +1451,7 @@ mod integrated {
                 assembly: Assembly::Colored,
                 analyses: Analyses::default(),
                 presence: None,
+                first_step: FirstStep::Declared,
             })
         }
         /// On the block assembly, compiled at the value state `(t, y, 0)`;
@@ -1459,6 +1491,7 @@ mod integrated {
                 assembly: Assembly::Blocks(Box::new(structure)),
                 analyses,
                 presence: None,
+                first_step: FirstStep::Declared,
             })
         }
         /// On the block assembly that follows the vapor presence its
@@ -1515,6 +1548,7 @@ mod integrated {
                 pointers,
                 assembly: Assembly::Blocks(Box::new(structure)),
                 analyses,
+                first_step: FirstStep::Declared,
                 presence: Some(Following {
                     cache,
                     key,
@@ -1542,6 +1576,7 @@ mod integrated {
                 assembly,
                 analyses,
                 presence: following,
+                ..
             } = self;
             let Some(f) = following else {
                 return Ok(false);
@@ -1583,6 +1618,21 @@ mod integrated {
         }
         /// The presence key in force and the cache's statistics, when the
         /// system follows presence.
+        /// N3: the first step later discrete restarts set.
+        pub fn set_first_step(&mut self, first_step: FirstStep) -> Result<(), String> {
+            if let FirstStep::LastStep { divisor } = first_step
+                && !(divisor.is_finite() && divisor >= 1.)
+            {
+                return Err(format!(
+                    "N3 first step: divisor {divisor} must be finite and >= 1"
+                ));
+            }
+            self.first_step = first_step;
+            Ok(())
+        }
+        pub fn first_step(&self) -> FirstStep {
+            self.first_step
+        }
         pub fn presence_key(&self) -> Option<(&PresenceKey, usize)> {
             self.presence.as_ref().map(|f| (&f.key, f.cache.keys()))
         }
