@@ -1289,3 +1289,56 @@ fn cost_per_evaluation() {
     );
     assert!(value < 1e-3 && seeded < 1e-3);
 }
+
+#[test]
+fn a_converted_state_holds_lower_water_at_the_balancing_bore_pressure() {
+    let water = z4_field(0.);
+    let mut b = block(SpiderDrag::Omitted);
+    let current = 1.315701;
+    let stocks = b
+        .bore_stocks_at(
+            &Liquid,
+            &leitbild_operating_plant::rods::LowerField {
+                pressure_pa: p_lower(),
+                density_kg_m3: RHO_L,
+                viscosity_pa_s: MU_L,
+                internal_energy_j_kg: u_lower(),
+                boron_concentration: 1e-3,
+            },
+            &[2.8; N],
+            &[current; N],
+        )
+        .unwrap();
+    let mut physical = Rods::<Liquid>::prepared(&b);
+    for c in 0..N {
+        physical[ci(c, LOWER_CURRENT)] = current;
+        physical[ci(c, UPPER_CURRENT)] = current;
+    }
+    for (g, s) in stocks.iter().enumerate() {
+        for (k, v) in [BORE_MASS, BORE_ENERGY, BORE_BORON, BORE_PRESSURE]
+            .iter()
+            .zip(s)
+        {
+            physical[b.group_index(g, *k)] = *v;
+        }
+    }
+    let y = solver(&b, &physical);
+    let yp = vec![0.; y.len()];
+    let (rows, _, _) = evaluate(&mut b, &y, &yp, None, 0., &water);
+    for g in 0..stocks.len() {
+        // The EOS row holds; the mouths close to the bores' 3e-5 lighter
+        // column (a few pascals), for the consistent start to remove.
+        assert!(rows[b.group_index(g, BORE_PRESSURE)].value.abs() < 1e-12);
+        let c = b.bore_groups()[g][0];
+        assert!(
+            rows[ci(c, LOWER_CURRENT)].value.abs() < 1.,
+            "lower {}",
+            rows[ci(c, LOWER_CURRENT)].value
+        );
+        assert!(
+            rows[ci(c, UPPER_CURRENT)].value.abs() < 4.,
+            "upper {}",
+            rows[ci(c, UPPER_CURRENT)].value
+        );
+    }
+}

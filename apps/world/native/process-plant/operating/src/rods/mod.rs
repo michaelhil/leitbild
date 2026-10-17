@@ -206,6 +206,18 @@ pub struct LowerWater {
     pub boron_concentration: f64,
 }
 
+/// LOWER's liquid in a state being converted to the bores' state
+/// ([`RodBlock::bore_stocks_at`]): pressure at LOWER's reference and the
+/// liquid's density, viscosity, specific internal energy and boron.
+#[derive(Clone, Copy, Debug)]
+pub struct LowerField {
+    pub pressure_pa: f64,
+    pub density_kg_m3: f64,
+    pub viscosity_pa_s: f64,
+    pub internal_energy_j_kg: f64,
+    pub boron_concentration: f64,
+}
+
 /// What [`carve`] removed: per swept cell (network index), the bores' free
 /// water volume at the prepared travel and the cell's volume after.
 #[derive(Clone, Debug, serde::Serialize)]
@@ -976,6 +988,63 @@ impl RodBlock {
     /// Index of bore group `g`'s coordinate `offset` in the block's layout.
     pub fn group_index(&self, g: usize, offset: usize) -> usize {
         self.group_base(g) + offset
+    }
+
+    /// State conversion (P2): each bore group's `[M, U, B, p]` for the
+    /// clusters' travels and lower-mouth currents of a state whose LOWER
+    /// liquid is `lower`. The bores hold LOWER's water (its specific internal
+    /// energy and boron) at the pressure that closes the group's first
+    /// member's lower mouth balance at its current, the clear-bore loss on
+    /// LOWER's water: explicit, nothing iterated. The joined exact
+    /// consistent start then removes the bores' own density difference.
+    pub fn bore_stocks_at<P: Properties>(
+        &self,
+        properties: &P,
+        lower: &LowerField,
+        travel: &[f64],
+        lower_current: &[f64],
+    ) -> Result<Vec<[f64; 4]>, Failure> {
+        let n = self.clusters.len();
+        if travel.len() != n || lower_current.len() != n {
+            return Err(fatal("rods: one travel and one lower current per cluster"));
+        }
+        let rho = s(lower.density_kg_m3);
+        let mouth = lower.pressure_pa
+            + lower.density_kg_m3 * self.gravity * (self.z_lower - self.guide_bottom);
+        let mut out = Vec::with_capacity(self.groups.len());
+        for group in &self.groups {
+            let c = group.members[0];
+            self.admit_travel(c, travel[c])?;
+            let clear_length = self.body_bottom + travel[c] - self.guide_bottom;
+            let clear = self.passage.clear(
+                s(lower_current[c]),
+                rho,
+                s(lower.viscosity_pa_s),
+                s(clear_length),
+                rho,
+            );
+            let pressure = mouth
+                - clear.value
+                - lower.density_kg_m3 * self.gravity * (self.z_bore - self.guide_bottom);
+            let point = properties
+                .caloric(false, pressure, lower.internal_energy_j_kg, false)
+                .map_err(|e| fatal(format!("rods: converted bore water: {e}")))?;
+            let w = properties.values(&point);
+            let mut volume = 0.;
+            for &m in &group.members {
+                self.admit_travel(m, travel[m])?;
+                volume += self.bore_volume
+                    - self.body_area * (self.guide_top - (self.body_bottom + travel[m]));
+            }
+            let mass = w.density_kg_m3 * volume;
+            out.push([
+                mass,
+                mass * lower.internal_energy_j_kg,
+                mass * lower.boron_concentration,
+                pressure,
+            ]);
+        }
+        Ok(out)
     }
 
     /// The group's free bore volume at these travels: its members' bores
