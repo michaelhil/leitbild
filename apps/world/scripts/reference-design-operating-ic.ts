@@ -22,6 +22,7 @@ export const OPERATING_IC_PAGES = [
   'safety/steam-generator-protection.md',
   'systems/steam-generation/instrumentation.md',
   'systems/instrumentation/nuclear-observation-apparatus.md',
+  'safety/engineered-safety-actuation.md',
 ] as const
 type Page = (typeof OPERATING_IC_PAGES)[number]
 type Pages = Readonly<Record<Page, string>>
@@ -62,6 +63,13 @@ export const parsePowerProxyPaths = (text: string) => z.object({
   transport_s: positive, maximumAge_s: positive, recovery_s: positive,
 }).strict().parse(configurationBlock(text, 'ld01-power-proxy-protective-paths'))
 
+/** PRHR actuation (`ld01-prhr-actuation`, owner R12-A1): AP1000's signal set
+ * only, never the accepted reactor trip itself. `causes` names the compiled
+ * functions that request PRHR besides CMT actuation. */
+export const parsePrhrActuation = (text: string) => z.object({
+  onAcceptedReactorTrip: z.literal(false), onCmtActuation: z.literal(true), causes: z.array(z.string()).min(1),
+}).strict().parse(configurationBlock(text, 'ld01-prhr-actuation'))
+
 /** The PZR LT devices (`ld01-pzr-level-channels`, S3-D37/S3-D38): the fixed
  * saturated-water calibration pressure, the device lag, the interface span,
  * the indicated span and resolution, and the I-group supplies. */
@@ -96,12 +104,21 @@ export function compilePzrLevelFrom(texts: { measurements: string, observations:
       quantum: levelChannels.quantum_m, indeterminate_band: null, sample_s: channel.sample_s, transport_s: channel.transport_s },
     maximum_age_s: timing.maximum_age_s, recovery_s: timing.recovery_s,
   }
+  // LD01.PROT.PZR.HIGH_LEVEL (the owner table's high-level function, the
+  // AP1000 high-3 level's place in PRHR's signal set, R12-A1): reactor trip;
+  // its ordinary-charging stop has no actuator in S3 (S3-D2).
+  wholeFrames('LT high-level qualification', levelProtection.highQualification_s, channel.sample_s)
+  const highLevel = {
+    id: 'LD01.PROT.PZR.HIGH_LEVEL',
+    rule: { voted: { family: 'LD01.PZR.LT', side: { at_or_above: levelProtection.highLevel_m }, qualification_s: levelProtection.highQualification_s } },
+    reset: { band: levelProtection.resetBand_m, duration_s: levelProtection.resetDuration_s },
+  }
   const monitors = [{
     id: 'C2.N3 PZR LT vote',
     rule: { voted: { family: 'LD01.PZR.LT', side: { at_or_below: levelProtection.lowLevel_m }, qualification_s: levelProtection.lowQualification_s } },
     basis: 'ld01-pzr-level-protection lowLevel_m/lowQualification_s; recorded only: LD01.PROT.PZR.LOW_LEVEL is not implemented in S3 (S3-D21)',
   }]
-  return { family, monitors }
+  return { family, monitors, highLevel }
 }
 
 /** What the section reads from the joined packet it is compiled against. */
@@ -119,6 +136,8 @@ export const OPEN_ITEMS = [
   { item: 'ld01-power-proxy-protective-paths', note: 'proposed by IC-PROT on claude/ld01-s3-ic-prot2-wiki (prose values only); needs the lead\'s decision row' },
   { item: 'loop FT protective timing', note: 'compiled as the page-wide protective timing of source-and-primary-protection.md (reference-pzr-pressure-channel sample/transport, reference-pzr-pressure-protection age/recovery), as ld01-turbine-state-report states for its report; the lead to confirm' },
   { item: 'installed nominal loop flow', note: 'resolved natively as the loop cold-return mass flow at the packet\'s prepared hot reference (S3-D7\'s reference state); no strict block holds a kg/s value' },
+  { item: 'PRHR on low SG wide-range level (R12-A1)', note: 'selected by ld01-prhr-actuation\'s page; LD01.SG.*.LT.WR has no protective acquisition and no setting is selected (AP1000: 55,000 lbm, T15.0-4a): Phase 2 (SG-LEVEL, J-CTRL)' },
+  { item: 'PRHR on low SG narrow-range level with low feed flow (R12-A1)', note: 'selected by ld01-prhr-actuation\'s page; no low-feed-flow setting is selected and feed is a recorded boundary until J-FEED: Phase 2 (J-FEED, J-CTRL)' },
 ] as const
 
 function wholeFrames(name: string, v: number, frame: number) {
@@ -144,6 +163,7 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
   const reference = parseRegionalCurrentReference(texts['systems/instrumentation/nuclear-observation-apparatus.md'])
   const pzrLevel = compilePzrLevelFrom({ measurements: texts['systems/instrumentation/phase-dependent-measurements.md'],
     observations: texts['systems/instrumentation/operational-observations.md'], protection: texts['safety/source-and-primary-protection.md'] })
+  const prhrActuation = parsePrhrActuation(texts['safety/engineered-safety-actuation.md'])
   const pt1 = taps.find(t => t.id === 'PT1')
   if (!pt1) throw Error('No PT1 tap')
   const frame_s = channel.sample_s
@@ -184,6 +204,9 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
   const pressureReset = { band: [protection.reset_low_pa, protection.reset_high_pa], duration_s: protection.reset_qualification_s }
   const sgReset = { band: sgProtection.resetBand_m, duration_s: sgProtection.resetDuration_s }
   const flowReset = { band: [lowFlow.resetFlowFractionOfNominal, flowChannel.spanFractionOfNominal[1]], duration_s: lowFlow.resetDuration_s }
+  // R12-A1: PRHR follows CMT actuation and the block's named causes only.
+  const effects = (id: string, e: { reactor_trip: boolean, cmt_injection: boolean, heater_isolation: boolean }) =>
+    ({ ...e, prhr: (prhrActuation.onCmtActuation && e.cmt_injection) || prhrActuation.causes.includes(id) })
   const trip = { reactor_trip: true, cmt_injection: false, heater_isolation: false }
   const sgFamilies = sgs.map(sg => ({
     id: `LD01.SG.${sg}.LT.NR`, quantity: { sg_collapsed_level: { sg, area_m2: sgChannels.indicatedLevelArea_m2 } },
@@ -210,6 +233,39 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
       sample_s: proxyPaths.sample_s, transport_s: proxyPaths.transport_s },
     maximum_age_s: proxyPaths.maximumAge_s, recovery_s: proxyPaths.recovery_s,
   }
+  const rawFunctions = [
+    { id: 'LD01.PROT.PZR.HIGH_PRESSURE',
+      rule: { voted: { family: 'LD01.PZR.PT', side: { at_or_above: protection.high_pa }, qualification_s: protection.high_qualification_s } },
+      effects: { reactor_trip: true, cmt_injection: false, heater_isolation: true }, reset: pressureReset },
+    { id: 'LD01.PROT.PZR.LOW_PRESSURE',
+      rule: { voted: { family: 'LD01.PZR.PT', side: { at_or_below: protection.low_pa }, qualification_s: protection.low_qualification_s } },
+      effects: { reactor_trip: true, cmt_injection: true, heater_isolation: false }, reset: pressureReset },
+    { id: 'LD01.PROT.PZR.PRESSURE.UNAVAILABLE',
+      rule: { unavailable: { family: 'LD01.PZR.PT', qualification_s: protection.unavailable_qualification_s } },
+      effects: { reactor_trip: true, cmt_injection: false, heater_isolation: true }, reset: pressureReset },
+    { id: 'LD01.PROT.TG.TRIP', rule: { report: { report: 'LD01.TG.TRIP.REPORT' } }, effects: trip, reset: null },
+    ...sgs.flatMap(sg => [
+      { id: `LD01.PROT.SG.${sg}.LOW`,
+        rule: { voted: { family: `LD01.SG.${sg}.LT.NR`, side: { at_or_below: sgProtection.lowActuation_m }, qualification_s: sgProtection.demandQualification_s } },
+        effects: trip, reset: sgReset },
+      { id: `LD01.PROT.SG.${sg}.UNAVAILABLE`,
+        rule: { unavailable: { family: `LD01.SG.${sg}.LT.NR`, qualification_s: sgProtection.unavailableQualification_s } },
+        effects: trip, reset: sgReset },
+    ]),
+    ...loops.flatMap(loop => [
+      { id: `LD01.PROT.RCS.${loop}.LOW_FLOW`,
+        rule: { armed: { family: `LD01.RCS.${loop}.FT`, side: { at_or_below: lowFlow.lowFlowFractionOfNominal },
+          qualification_s: lowFlow.lowFlowQualification_s, arming_family: 'LD01.CORE.POWER.P', arming: { above: lowFlow.armingProxyFraction } } },
+        effects: trip, reset: flowReset },
+      { id: `LD01.PROT.RCS.${loop}.FLOW.UNAVAILABLE`,
+        rule: { armed_unavailable: { family: `LD01.RCS.${loop}.FT`, qualification_s: lowFlow.unavailableQualification_s,
+          arming_family: 'LD01.CORE.POWER.P', arming: { above: lowFlow.armingProxyFraction } } },
+        effects: trip, reset: flowReset },
+    ]),
+    { ...pzrLevel.highLevel, effects: trip },
+  ]
+  const functions = rawFunctions.map(f => ({ ...f, effects: effects(f.id, f.effects) }))
+  for (const c of prhrActuation.causes) if (!functions.some(f => f.id === c)) throw Error(`ld01-prhr-actuation names ${c}, which is not compiled`)
   return {
     identity: 'ld01-s3-ic',
     frame_s,
@@ -225,36 +281,7 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
       sample_s: report.sample_s, transport_s: report.transport_s, maximum_age_s: report.maximumAge_s, recovery_s: report.recovery_s,
       basis: 'ld01-turbine-state-report (reactor-trip-and-hold.md); no qualification duration is selected for LD01.PROT.TG.TRIP',
     }],
-    functions: [
-      { id: 'LD01.PROT.PZR.HIGH_PRESSURE',
-        rule: { voted: { family: 'LD01.PZR.PT', side: { at_or_above: protection.high_pa }, qualification_s: protection.high_qualification_s } },
-        effects: { reactor_trip: true, cmt_injection: false, heater_isolation: true }, reset: pressureReset },
-      { id: 'LD01.PROT.PZR.LOW_PRESSURE',
-        rule: { voted: { family: 'LD01.PZR.PT', side: { at_or_below: protection.low_pa }, qualification_s: protection.low_qualification_s } },
-        effects: { reactor_trip: true, cmt_injection: true, heater_isolation: false }, reset: pressureReset },
-      { id: 'LD01.PROT.PZR.PRESSURE.UNAVAILABLE',
-        rule: { unavailable: { family: 'LD01.PZR.PT', qualification_s: protection.unavailable_qualification_s } },
-        effects: { reactor_trip: true, cmt_injection: false, heater_isolation: true }, reset: pressureReset },
-      { id: 'LD01.PROT.TG.TRIP', rule: { report: { report: 'LD01.TG.TRIP.REPORT' } }, effects: trip, reset: null },
-      ...sgs.flatMap(sg => [
-        { id: `LD01.PROT.SG.${sg}.LOW`,
-          rule: { voted: { family: `LD01.SG.${sg}.LT.NR`, side: { at_or_below: sgProtection.lowActuation_m }, qualification_s: sgProtection.demandQualification_s } },
-          effects: trip, reset: sgReset },
-        { id: `LD01.PROT.SG.${sg}.UNAVAILABLE`,
-          rule: { unavailable: { family: `LD01.SG.${sg}.LT.NR`, qualification_s: sgProtection.unavailableQualification_s } },
-          effects: trip, reset: sgReset },
-      ]),
-      ...loops.flatMap(loop => [
-        { id: `LD01.PROT.RCS.${loop}.LOW_FLOW`,
-          rule: { armed: { family: `LD01.RCS.${loop}.FT`, side: { at_or_below: lowFlow.lowFlowFractionOfNominal },
-            qualification_s: lowFlow.lowFlowQualification_s, arming_family: 'LD01.CORE.POWER.P', arming: { above: lowFlow.armingProxyFraction } } },
-          effects: trip, reset: flowReset },
-        { id: `LD01.PROT.RCS.${loop}.FLOW.UNAVAILABLE`,
-          rule: { armed_unavailable: { family: `LD01.RCS.${loop}.FT`, qualification_s: lowFlow.unavailableQualification_s,
-            arming_family: 'LD01.CORE.POWER.P', arming: { above: lowFlow.armingProxyFraction } } },
-          effects: trip, reset: flowReset },
-      ]),
-    ],
+    functions,
     monitors: pzrLevel.monitors,
     holding: {
       interface: 'LD01.TRIP.HOLD', supply: 'LD01.DC.ACT.A', manual_interrupt: 'LD01.TRIP.MANUAL',
@@ -263,7 +290,8 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
     missing: OPEN_ITEMS,
     provenance: [{ pt1_tap_elevation_m: pt1.elevation_m, pt1_reads: 'the stratified cell roof pressure (operational-observations.md)',
       s2_holding_boundary_replaced_s: s2.turbineTripToOpening_s, converter_region_weights: weights,
-      fref_check_events_per_s: fref, flow_reset_band_upper: 'the FT span top (the reset needs only FT above 0.80 nominal)' }],
+      fref_check_events_per_s: fref, flow_reset_band_upper: 'the FT span top (the reset needs only FT above 0.80 nominal)',
+      prhr_actuation: 'ld01-prhr-actuation (R12-A1): CMT actuation and ' + prhrActuation.causes.join(', ') + '; not the reactor trip' }],
   }
 }
 

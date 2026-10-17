@@ -167,6 +167,10 @@ pub struct Effects {
     pub reactor_trip: bool,
     pub cmt_injection: bool,
     pub heater_isolation: bool,
+    /// `LD01.PROT.PRHR.REQUEST` from this cause: only the AP1000 signal set
+    /// (`ld01-prhr-actuation`, owner R12-A1), never from the reactor trip
+    /// itself.
+    pub prhr: bool,
 }
 
 /// A cause's reset evidence: all three usable channels inside the band for

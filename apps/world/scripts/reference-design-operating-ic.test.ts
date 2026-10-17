@@ -13,6 +13,7 @@ const sgProtection = '{"lowWarning_m":5.75,"lowActuation_m":5.0,"highWarning_m":
 const reference = '{"eventReferencePower_W":3e9,"eventEnergy_MeV":200,"Fref_events_per_s":9.36226e19,"convertedSpan_m":[0.95,1.05],"form":"proxy = (E_c/E_c_ref) * (E_tot_ref/Fref)"}'
 const levelChannelsBlock = '{"calibrationPressure_Pa":15000000,"lag_s":0.5,"interfaceSpan_Pa":[0,25000000],"indicatedSpan_m":[-1,13],"quantum_m":0.01,"supplies":["I1","I2","I3"]}'
 const levelProtectionBlock = '{"lowLevel_m":3.0,"lowQualification_s":0.5,"highLevel_m":10.0,"highQualification_s":0.5,"unavailableQualification_s":1,"resetBand_m":[3.5,9.5],"resetDuration_s":5}'
+const prhrActuation = '{"onAcceptedReactorTrip":false,"onCmtActuation":true,"causes":["LD01.PROT.PZR.HIGH_LEVEL"]}'
 const taps = '### PZR electronic differential level\n\n' + fence('ld01-pzr-taps', '{"pt1Elevation_m":18.5,"ltLowElevation_m":6.5,"ltHighElevation_m":18.5}')
 const pages = (over: Partial<Record<(typeof OPERATING_IC_PAGES)[number], string>> = {}) => ({
   'safety/source-and-primary-protection.md': fence('reference-pzr-pressure-protection', protection) + fence('ld01-loop-low-flow-protection', lowFlow)
@@ -26,6 +27,7 @@ const pages = (over: Partial<Record<(typeof OPERATING_IC_PAGES)[number], string>
     + fence('ld01-sg-level-protective-acquisition', '{"sample_s":0.1,"transport_s":0.1,"maximumAge_s":0.3}'),
   'systems/steam-generation/instrumentation.md': fence('ld01-sg-level-channels', '{"nrLag_s":0.5,"nrSpan_m":[4,9],"indicatedLevelArea_m2":12}'),
   'systems/instrumentation/nuclear-observation-apparatus.md': fence('ld01-regional-current-reference', reference),
+  'safety/engineered-safety-actuation.md': fence('ld01-prhr-actuation', prhrActuation),
   ...over,
 })
 // Four sectors of six axial bands over -2..2 m, as the packet's source regions.
@@ -53,7 +55,12 @@ test('the section carries only strict-block values and the packet identities', (
   const ids = s.functions.map(f => f.id)
   expect(ids).toEqual(['LD01.PROT.PZR.HIGH_PRESSURE', 'LD01.PROT.PZR.LOW_PRESSURE', 'LD01.PROT.PZR.PRESSURE.UNAVAILABLE',
     'LD01.PROT.TG.TRIP', 'LD01.PROT.SG.A.LOW', 'LD01.PROT.SG.A.UNAVAILABLE', 'LD01.PROT.SG.B.LOW', 'LD01.PROT.SG.B.UNAVAILABLE',
-    'LD01.PROT.RCS.A.LOW_FLOW', 'LD01.PROT.RCS.A.FLOW.UNAVAILABLE', 'LD01.PROT.RCS.B.LOW_FLOW', 'LD01.PROT.RCS.B.FLOW.UNAVAILABLE'])
+    'LD01.PROT.RCS.A.LOW_FLOW', 'LD01.PROT.RCS.A.FLOW.UNAVAILABLE', 'LD01.PROT.RCS.B.LOW_FLOW', 'LD01.PROT.RCS.B.FLOW.UNAVAILABLE',
+    'LD01.PROT.PZR.HIGH_LEVEL'])
+  // R12-A1: PRHR on CMT actuation (the low-pressure cause) and the high level only, never on the reactor trip.
+  expect(s.functions.filter(f => f.effects.prhr).map(f => f.id)).toEqual(['LD01.PROT.PZR.LOW_PRESSURE', 'LD01.PROT.PZR.HIGH_LEVEL'])
+  expect(s.functions.every(f => f.effects.reactor_trip)).toBe(true)
+  expect(s.functions[12]!.rule).toEqual({ voted: { family: 'LD01.PZR.LT', side: { at_or_above: 10 }, qualification_s: 0.5 } })
   expect(s.functions[4]!.rule).toEqual({ voted: { family: 'LD01.SG.A.LT.NR', side: { at_or_below: 5 }, qualification_s: 1 } })
   expect(s.functions[8]!.rule).toEqual({ armed: { family: 'LD01.RCS.A.FT', side: { at_or_below: 0.7 }, qualification_s: 0.5,
     arming_family: 'LD01.CORE.POWER.P', arming: { above: 0.2 } } })
@@ -72,12 +79,16 @@ test('refusals: a duration off the frame, a missing face, a wrong Fref, a missin
     fence('ld01-regional-current-reference', reference.replace('9.36226e19', '9.4e19')) }), packet)).toThrow('Fref')
   expect(() => compileOperatingIcFrom(pages({ 'systems/steam-generation/instrumentation.md': 'no block' }), packet))
     .toThrow('Expected one ld01-sg-level-channels block')
+  expect(() => compileOperatingIcFrom(pages({ 'safety/engineered-safety-actuation.md':
+    fence('ld01-prhr-actuation', prhrActuation.replace('"onAcceptedReactorTrip":false', '"onAcceptedReactorTrip":true')) }), packet)).toThrow()
+  expect(() => compileOperatingIcFrom(pages({ 'safety/engineered-safety-actuation.md':
+    fence('ld01-prhr-actuation', prhrActuation.replace('PZR.HIGH_LEVEL', 'SG.A.WR_LOW')) }), packet)).toThrow('not compiled')
 })
 
 const wiki = process.env.LD01_WIKI_ROOT, joined = process.env.LD01_OPERATING_HOT_SPINE_PACKET
 test.skipIf(!wiki || !joined)('the actual section from the wiki and the packet', async () => {
   const s = await compileOperatingIc(wiki!, joined!)
-  expect(s.functions).toHaveLength(12)
+  expect(s.functions).toHaveLength(13)
   const root = join(wiki!, 'world/packs/process-plant/reference-designs/ld-01')
   for (const [i, name] of OPERATING_IC_PAGES.entries()) {
     const text = await Bun.file(join(root, name)).text()

@@ -459,14 +459,7 @@ impl Protection {
                 }
             }
             for (id, e) in accepted {
-                if self.divisions[d].accept(
-                    &id,
-                    k,
-                    t,
-                    e.reactor_trip,
-                    e.cmt_injection,
-                    e.heater_isolation,
-                ) {
+                if self.divisions[d].accept(&id, k, t, e) {
                     self.log.push(
                         json!({"t_s": t, "frame": k, "division": self.divisions[d].supply,
                         "event": "cause accepted", "function": id}),
@@ -520,15 +513,15 @@ mod tests {
         let mut functions = vec![
             json!({"id": "LD01.PROT.PZR.HIGH_PRESSURE", "rule": {"voted": {"family": "LD01.PZR.PT",
                 "side": {"at_or_above": 15.5e6}, "qualification_s": 0.2}},
-                "effects": {"reactor_trip": true, "cmt_injection": false, "heater_isolation": true}, "reset": reset}),
+                "effects": {"reactor_trip": true, "cmt_injection": false, "heater_isolation": true, "prhr": false}, "reset": reset}),
             json!({"id": "LD01.PROT.PZR.LOW_PRESSURE", "rule": {"voted": {"family": "LD01.PZR.PT",
                 "side": {"at_or_below": 13e6}, "qualification_s": 0.5}},
-                "effects": {"reactor_trip": true, "cmt_injection": true, "heater_isolation": false}, "reset": reset}),
+                "effects": {"reactor_trip": true, "cmt_injection": true, "heater_isolation": false, "prhr": true}, "reset": reset}),
             json!({"id": "LD01.PROT.PZR.PRESSURE.UNAVAILABLE", "rule": {"unavailable": {"family": "LD01.PZR.PT",
                 "qualification_s": 1.}},
-                "effects": {"reactor_trip": true, "cmt_injection": false, "heater_isolation": true}, "reset": reset}),
+                "effects": {"reactor_trip": true, "cmt_injection": false, "heater_isolation": true, "prhr": false}, "reset": reset}),
             json!({"id": "LD01.PROT.TG.TRIP", "rule": {"report": {"report": "LD01.TG.TRIP.REPORT"}},
-                "effects": {"reactor_trip": true, "cmt_injection": false, "heater_isolation": false},
+                "effects": {"reactor_trip": true, "cmt_injection": false, "heater_isolation": false, "prhr": false},
                 "reset": null}),
         ];
         functions.extend(extra_functions.as_array().unwrap().iter().cloned());
@@ -588,7 +581,8 @@ mod tests {
         for d in &prot.divisions {
             let c = d.trip.as_ref().unwrap();
             assert_eq!((c.function.as_str(), c.frame), ("LD01.PROT.TG.TRIP", 5222));
-            assert_eq!(d.requests[0]["request"], "PRHR");
+            // R12-A1: a turbine-trip reactor trip requests no PRHR.
+            assert!(d.requests.is_empty(), "{:?}", d.requests);
         }
         assert_eq!(prot.holding.lost_at, Some(522.2));
         // A trip exactly at a frame instant is seen by the next acquisition
@@ -611,6 +605,8 @@ mod tests {
             "LD01.PROT.PZR.LOW_PRESSURE"
         );
         assert!(d.requests.iter().any(|r| r["request"] == "CMT injection"));
+        // R12-A1: CMT actuation requests PRHR.
+        assert!(d.requests.iter().any(|r| r["request"] == "PRHR"));
         // High pressure needs 0.2 s: from 15.6 MPa, true at 5221, at 5223.
         let mut prot = Protection::new(&section(json!([]), json!([])), pressure(15.6e6)).unwrap();
         assert_eq!(run(&mut prot, 5220, 5240, |_| 15.6e6), Some(5223));
@@ -692,7 +688,7 @@ mod tests {
             "maximum_age_s": 0.3, "recovery_s": 1.}]);
         let low = json!([{"id": "LOW_FLOW.A", "rule": {"armed": {"family": "FT.A", "side": {"at_or_below": 0.7},
             "qualification_s": 0.5, "arming_family": "LD01.PZR.PT", "arming": {"at_or_above": 1e6}}},
-            "effects": {"reactor_trip": true, "cmt_injection": false, "heater_isolation": false},
+            "effects": {"reactor_trip": true, "cmt_injection": false, "heater_isolation": false, "prhr": false},
             "reset": {"band": [0.8, 1.5], "duration_s": 5.}}]);
         let ft: Quantity = serde_json::from_value(flow[0]["quantity"].clone()).unwrap();
         // Unresolved nominal: refused.
