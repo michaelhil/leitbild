@@ -1582,6 +1582,9 @@ fn drive(
         "samples": observer.gates.as_ref().map(|g| g.samples), "end_state_fingerprint": end_fp.hex(),
         "instants": {"count": driver.log.len(), "sha256": spine::sha256(&instants_bytes)},
         "counts_by_class": driver.counts.json()});
+    // MR-1 (R7-P): the handle's counts and the packet's section, for the receipt.
+    let rebuild_counts = ida.rebuild();
+    let rebuild_section = ida.system().integrated().joined.matrix_rebuild().map(|m| json!({"rebuildEverySteps": m.rebuild_every_steps, "appliesFrom": m.applies_from, "decision": m.decision}));
     let record = json!({
         "label": ask.label,
         "failure": failure,
@@ -1596,6 +1599,11 @@ fn drive(
         "configuration": {"span_after_zero_s": span, "zero_after_start_s": zero_after,
             "command": command.map(|c| format!("{c:?}")), "frame_s": frame.period_s(),
             "max_order": s3_unit::MAX_ORDER, "max_step_s": max_step,
+            "matrix_rebuild": {"rule": "MR-1 (owner, request 7 R7-P): stock IDAS check points every `steps` steps force an iteration-matrix setup; freed at restarts and above `held`",
+                "source": format!("{:?}", driver.matrix_rebuild),
+                "packet_section": rebuild_section,
+                "held_max": leitbild_operating_water::frame::MATRIX_REBUILD_HELD,
+                "counts": {"steps": rebuild_counts.steps, "held": rebuild_counts.held, "most_held": rebuild_counts.most_held, "drops": rebuild_counts.drops}},
             "window_cap": window_cap.as_ref().map(|w| json!({"max_step_s": w.max_step_s, "window_s": w.window_s,
                 "rule": "0015 E2: the cap only inside the declared window, set at the restart that starts it, removed at the first chunk bound at or after its end",
                 "intervals": cap_intervals})),

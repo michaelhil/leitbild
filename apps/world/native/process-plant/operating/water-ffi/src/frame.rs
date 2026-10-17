@@ -499,6 +499,29 @@ pub struct Driver<S> {
     /// a new bound only after a reinitialization, before the next step. The
     /// caller removes it at the window's end (`Ida::remove_max_step`).
     pub restart_max_step: Option<WindowCap>,
+    /// MR-1 (owner, request 7 R7-P): the joined solve's forced
+    /// iteration-matrix rebuild, stock IDAS check points every
+    /// `rebuildEverySteps` steps of the packet's `matrixRebuild` section
+    /// (operating-equations §6, `ld01-joined-matrix-rebuild`), set on the
+    /// handle at the first run ([`Ida::rebuild_matrix_every`]). S3 onward it
+    /// is [`MatrixRebuild::Packet`]; a packet without the section is refused.
+    /// [`MatrixRebuild::Stock`] keeps stock matrix management (a mechanics
+    /// test on plain IDA) and refuses a handle that has MR-1 on.
+    pub matrix_rebuild: MatrixRebuild,
+}
+
+/// The most IDAS check points held before stock IDAAdjReInit frees them
+/// (≈0.45 MB each on the S3 unit; restarts free them too). A memory bound of
+/// this wrapper only: check points feed no forward computation.
+pub const MATRIX_REBUILD_HELD: usize = 16;
+
+/// MR-1's source on a driver ([`Driver::matrix_rebuild`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MatrixRebuild {
+    /// The packet's `matrixRebuild` interval (R7-P), S3 onward.
+    Packet,
+    /// Stock IDA's own matrix management (no forced rebuild).
+    Stock,
 }
 
 /// Names of [`Driver::totals`].
@@ -560,6 +583,7 @@ impl<S: JoinedSystem> Driver<S> {
             quadratures: None,
             gate_observed_to: t0,
             restart_max_step: None,
+            matrix_rebuild: MatrixRebuild::Packet,
         })
     }
     pub fn frame(&self) -> Frame {
@@ -808,6 +832,35 @@ impl<S: JoinedSystem> Driver<S> {
         mut observer: Option<&mut (dyn Observer<S> + 'o)>,
     ) -> Result<Reached, String> {
         setup.check_derived()?;
+        // MR-1 on the handle before its first step here (once per handle).
+        let on = ida.rebuild().steps;
+        match self.matrix_rebuild {
+            MatrixRebuild::Packet => {
+                let section = ida.system().integrated().joined.matrix_rebuild().ok_or(
+                    "the packet has no matrixRebuild section (ld01-joined-matrix-rebuild, MR-1 R7-P): recompile it",
+                )?;
+                if section.applies_from != "S3" {
+                    return Err(format!(
+                        "the packet's matrix rebuild applies from {}, not S3",
+                        section.applies_from
+                    ));
+                }
+                let steps = section.rebuild_every_steps;
+                if on == 0 {
+                    ida.rebuild_matrix_every(steps, MATRIX_REBUILD_HELD)?;
+                } else if on != steps as i64 {
+                    return Err(format!(
+                        "the handle rebuilds every {on} steps, the packet declares {steps}"
+                    ));
+                }
+            }
+            MatrixRebuild::Stock if on != 0 => {
+                return Err(format!(
+                    "the driver asks stock matrix management, but the handle has MR-1 on ({on} steps)"
+                ));
+            }
+            MatrixRebuild::Stock => {}
+        }
         // The integrator stands where the driver left it; a start stock
         // cannot separate from that is that instant (a caller's bound by
         // another product).

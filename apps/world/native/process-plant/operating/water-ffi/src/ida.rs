@@ -184,6 +184,8 @@ unsafe extern "C" {
     fn operating_ida_max_step(ida: *mut c_void, step: f64) -> c_int;
     fn operating_ida_init_step(ida: *mut c_void, step: f64) -> c_int;
     fn operating_ida_quadratures_linked() -> c_int;
+    fn operating_ida_rebuild_every(ida: *mut c_void, steps: c_long, held: c_long) -> c_int;
+    fn operating_ida_rebuild_counts(ida: *mut c_void, counts: *mut c_long) -> c_int;
     #[cfg(feature = "quadratures")]
     fn operating_ida_quadrature_init(
         ida: *mut c_void,
@@ -386,6 +388,17 @@ pub fn quadratures_linked() -> bool {
         "the IDA glue and the quadratures feature disagree; rebuild"
     );
     linked
+}
+/// MR-1's counts on one handle ([`Ida::rebuild_matrix_every`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Rebuild {
+    /// The check-point interval in steps (0: stock IDASolve).
+    pub steps: i64,
+    /// Check points held now, the most ever held, and how often stock
+    /// IDAAdjReInit freed them at the held bound (restarts not counted).
+    pub held: i64,
+    pub most_held: i64,
+    pub drops: i64,
 }
 #[cfg(not(feature = "quadratures"))]
 const NO_QUADRATURES: &str = "stock IDA has no quadratures: this build links IDA, not IDAS (build with the quadratures feature)";
@@ -963,6 +976,51 @@ impl<S: System> Ida<S> {
         let result = self.check(code);
         self.failed = result.is_err();
         result
+    }
+    /// MR-1 (owner, request 7 R7-P, 17 Oct): stock IDAS check points every
+    /// `steps` steps, i.e. IDAAdjInit(steps, IDA_HERMITE) and IDASolveF in
+    /// place of IDASolve. Each check point sets stock's own forceSetup, so
+    /// the iteration matrix is set up again at least every `steps` steps
+    /// although step size and order stay fixed (stock never does so at a
+    /// constant cj); step, order and history are untouched and no backward
+    /// pass is run. Check points are freed by stock IDAAdjReInit at every
+    /// `reinitialize` and whenever more than `held` are held, so memory is
+    /// the interpolation store, (steps + 1) x 2 vectors, plus at most `held`
+    /// check points. Set once per handle, at any time; refused under plain
+    /// IDA, which has no check points (no fallback: build with the
+    /// `quadratures` feature, stock IDAS).
+    pub fn rebuild_matrix_every(&mut self, steps: usize, held: usize) -> Result<()> {
+        if !quadratures_linked() {
+            return Err(
+                "MR-1 needs stock IDAS check points: this build links plain IDA (build with the quadratures feature)"
+                    .into(),
+            );
+        }
+        let (Ok(n), Ok(h)) = (c_long::try_from(steps), c_long::try_from(held)) else {
+            return Err("MR-1 interval or held bound out of range".into());
+        };
+        if n < 1 || h < 1 {
+            return Err("MR-1 interval and held bound must be at least 1".into());
+        }
+        let code = unsafe { operating_ida_rebuild_every(self.handle.as_ptr(), n, h) };
+        if code < 0 {
+            return Err(format!(
+                "stock IDAAdjInit refused MR-1 ({code}; set once per handle)"
+            ));
+        }
+        Ok(())
+    }
+    /// MR-1's counts on this handle (all zero when it is off).
+    #[allow(clippy::unnecessary_cast)] // C long varies by host ABI.
+    pub fn rebuild(&self) -> Rebuild {
+        let mut c = [0 as c_long; 4];
+        unsafe { operating_ida_rebuild_counts(self.handle.as_ptr(), c.as_mut_ptr()) };
+        Rebuild {
+            steps: c[0] as i64,
+            held: c[1] as i64,
+            most_held: c[2] as i64,
+            drops: c[3] as i64,
+        }
     }
     #[allow(clippy::unnecessary_cast)] // C long varies by host ABI.
     pub fn stats(&self) -> Result<Stats> {

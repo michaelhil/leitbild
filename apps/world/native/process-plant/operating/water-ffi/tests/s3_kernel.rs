@@ -1227,6 +1227,9 @@ fn an_rcp_supply_loss_restarts_through_the_frame_driver_with_c3s_cost_lines() {
     ida.set_max_step(0.02).unwrap();
     let frame = Frame::new(section.frame_s).unwrap();
     let mut driver = Driver::new(frame, Diagnostic::None, spine::z1::cpu_s, 0.).unwrap();
+    // The driver's event mechanics on stock IDA/KLU (plain IDA builds);
+    // MR-1's forced rebuild is guarded in tests/matrix_rebuild.rs.
+    driver.matrix_rebuild = leitbild_operating_water::frame::MatrixRebuild::Stock;
     let t_loss = 0.0537; // a non-integer instant, as C3's t0
     driver
         .command(t_loss, Command::SupplyLoss { rotor: lost })
@@ -1380,6 +1383,9 @@ fn coincident_event_run(command_frame: u64, event_frame: u64) -> Value {
     ida.set_max_step(0.02).unwrap();
     let frame = Frame::new(0.1).unwrap();
     let mut driver = Driver::new(frame, Diagnostic::None, spine::z1::cpu_s, 0.).unwrap();
+    // The driver's event mechanics on stock IDA/KLU (plain IDA builds);
+    // MR-1's forced rebuild is guarded in tests/matrix_rebuild.rs.
+    driver.matrix_rebuild = leitbild_operating_water::frame::MatrixRebuild::Stock;
     let t_command = frame.instant(command_frame);
     driver
         .command(t_command, Command::TurbineTripAcquired)

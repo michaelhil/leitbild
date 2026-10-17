@@ -43,6 +43,10 @@ typedef struct {
     Roots roots;
     Quadrature quadrature;
     double time;
+    /* MR-1 (owner, request 7 R7-P): the stock IDAS check-point interval in
+       steps (0: stock IDASolve, no forced setup), the most check points
+       held before stock IDAAdjReInit frees them, and the counts. */
+    long rebuild_steps, rebuild_held_max, rebuild_held, rebuild_most, rebuild_drops;
 } OperatingIDA;
 static int residual(double t, N_Vector y, N_Vector yp, N_Vector r, void *v) {
     OperatingIDA *o = v;
@@ -118,8 +122,34 @@ int operating_ida_initialize(OperatingIDA *o,double horizon,double *y,double *yp
     }
     return code;
 }
+/* One stock solve call. Under MR-1 (owner R7-P, 17 Oct): stock IDAS
+   IDASolveF in place of IDASolve. IDASolveF takes the same steps and makes a
+   check point at every rebuild_steps-th step, which sets stock's own
+   forceSetup, so the next step sets the iteration matrix up again (idaa.c
+   IDASolveF, idas.c IDANls); step size, order and history are untouched and
+   no backward pass is ever run. Check points serve nothing else here: once
+   more than rebuild_held_max are held, stock IDAAdjReInit frees them. */
+static int solve(OperatingIDA *o,double target,int task) {
+#ifdef OPERATING_IDAS
+    if (o->rebuild_steps>0) {
+        int ncheck=0;
+        int code=IDASolveF(o->ida,target,&o->time,o->y,o->yp,task,&ncheck);
+        if (code<0) return code;
+        o->rebuild_held=ncheck;
+        if (ncheck>o->rebuild_most) o->rebuild_most=ncheck;
+        if (ncheck>o->rebuild_held_max) {
+            int freed=IDAAdjReInit(o->ida);
+            if (freed<0) return freed;
+            o->rebuild_held=0;
+            o->rebuild_drops++;
+        }
+        return code;
+    }
+#endif
+    return IDASolve(o->ida,target,&o->time,o->y,o->yp,task);
+}
 int operating_ida_advance(OperatingIDA *o,double target,double *time,double *y,double *yp) {
-    int code=IDASolve(o->ida,target,&o->time,o->y,o->yp,IDA_NORMAL);
+    int code=solve(o,target,IDA_NORMAL);
     *time=o->time;
     if (code>=0) {
         memcpy(y,N_VGetArrayPointer(o->y),N_VGetLength(o->y)*sizeof(double));
@@ -167,7 +197,7 @@ int operating_ida_current_state(OperatingIDA *o,double *time,double *y,double *y
    dense output instead of IDASolve calls at the observation rate (S3-D1 #7;
    IC-PROT's frame driver). */
 int operating_ida_step(OperatingIDA *o,double target,double *time,double *y,double *yp) {
-    int code=IDASolve(o->ida,target,&o->time,o->y,o->yp,IDA_ONE_STEP);
+    int code=solve(o,target,IDA_ONE_STEP);
     *time=o->time;
     if (code>=0) {
         memcpy(y,N_VGetArrayPointer(o->y),N_VGetLength(o->y)*sizeof(double));
@@ -244,6 +274,29 @@ int operating_ida_quadratures_linked(void) {
     return 0;
 #endif
 }
+/* MR-1 (owner R7-P): stock IDAAdjInit(steps, IDA_HERMITE) once per handle;
+   its interpolation store, (steps + 1) x 2 vectors, is allocated here.
+   Refused under plain IDA (no check points) and when already set. */
+int operating_ida_rebuild_every(OperatingIDA *o,long steps,long held) {
+#ifdef OPERATING_IDAS
+    if (steps<1 || held<1 || o->rebuild_steps>0) return IDA_ILL_INPUT;
+    int code=IDAAdjInit(o->ida,steps,IDA_HERMITE);
+    if (code<0) return code;
+    o->rebuild_steps=steps;
+    o->rebuild_held_max=held;
+    return code;
+#else
+    (void)o; (void)steps; (void)held;
+    return IDA_ILL_INPUT;
+#endif
+}
+int operating_ida_rebuild_counts(OperatingIDA *o,long *counts) {
+    counts[0]=o->rebuild_steps;
+    counts[1]=o->rebuild_held;
+    counts[2]=o->rebuild_most;
+    counts[3]=o->rebuild_drops;
+    return 0;
+}
 int operating_ida_solution_scaling(OperatingIDA *o,int enabled) {
     return IDASetLinearSolutionScaling(o->ida,enabled?SUNTRUE:SUNFALSE);
 }
@@ -267,6 +320,13 @@ int operating_ida_reinitialize(OperatingIDA *o,double t,const double *y,const do
     memcpy(N_VGetArrayPointer(o->y),y,N_VGetLength(o->y)*sizeof(double));
     memcpy(N_VGetArrayPointer(o->yp),yp,N_VGetLength(o->yp)*sizeof(double));
     int code=IDAReInit(o->ida,t,o->y,o->yp);
+#ifdef OPERATING_IDAS
+    /* MR-1: a restart frees every check point (stock IDAAdjReInit). */
+    if (code>=0 && o->rebuild_steps>0) {
+        code=IDAAdjReInit(o->ida);
+        o->rebuild_held=0;
+    }
+#endif
     if (code>=0) o->time=t;
     return code;
 }

@@ -288,6 +288,13 @@ const SOLVER_API: &[&str] = &[
     "IDA_NORMAL",
     "IDA_ONE_STEP",
     "IDA_YA_YDP_INIT",
+    // MR-1 (owner, request 7 R7-P, 17 Oct): the joined solve's forced
+    // iteration-matrix rebuild through stock IDAS check points, and nothing
+    // else of the adjoint module (no backward problem, no IDASolveB).
+    "IDAAdjInit",
+    "IDAAdjReInit",
+    "IDASolveF",
+    "IDA_HERMITE",
     // Stock N_Vector, SUNContext, SUNMatrix and SUNLinSol_KLU (ida.c).
     "N_VClone",
     "N_VDestroy",
@@ -350,6 +357,9 @@ const SOLVER_API: &[&str] = &[
     "operating_ida_quadrature_init",
     "operating_ida_quadrature_reinit",
     "operating_ida_quadratures_linked",
+    // MR-1 (R7-P): the check-point interval and its counts.
+    "operating_ida_rebuild_counts",
+    "operating_ida_rebuild_every",
     "operating_ida_reinitialize",
     "operating_ida_root_directions",
     "operating_ida_set_root_direction",
