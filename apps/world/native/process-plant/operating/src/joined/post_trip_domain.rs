@@ -663,6 +663,9 @@ pub struct HotStandby {
     pub density_ratio_maximum: f64,
     /// Lowest admitted pressure (Pa).
     pub pressure_minimum_pa: f64,
+    /// Highest admitted pressure (Pa): the laws read pressure only through
+    /// the liquid density, so the stable-liquid property ceiling.
+    pub pressure_maximum_pa: f64,
     /// Water-term factors of the reported margins: nominal first, then
     /// increasing (the rodded measured and design-limit coefficients).
     pub reported_water_term_factors: [f64; 3],
@@ -678,6 +681,7 @@ impl HotStandby {
         if ![
             self.density_ratio_maximum,
             self.pressure_minimum_pa,
+            self.pressure_maximum_pa,
             self.reference_margin_dk_k,
             nominal,
             middle,
@@ -695,6 +699,9 @@ impl HotStandby {
             && self.pressure_minimum_pa <= original.pressure_pa.minimum)
         {
             return Err(Error::Extension("pressure minimum narrows the domain"));
+        }
+        if self.pressure_maximum_pa < original.pressure_pa.maximum {
+            return Err(Error::Extension("pressure maximum narrows the domain"));
         }
         if !(nominal == 1. && nominal < middle && middle < high) {
             return Err(Error::Extension(
@@ -715,7 +722,7 @@ impl HotStandby {
             },
             pressure_pa: sf::Bounds {
                 minimum: self.pressure_minimum_pa,
-                maximum: original.pressure_pa.maximum,
+                maximum: self.pressure_maximum_pa,
             },
             ..original
         }

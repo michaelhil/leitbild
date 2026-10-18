@@ -565,6 +565,7 @@ fn hot_standby() -> leitbild_operating_plant::joined::post_trip_domain::HotStand
     leitbild_operating_plant::joined::post_trip_domain::HotStandby {
         density_ratio_maximum: 1.125,
         pressure_minimum_pa: 8e6,
+        pressure_maximum_pa: 17e6,
         reported_water_term_factors: [1., 1.53, 2.24],
         reference_margin_dk_k: 0.016,
     }
@@ -636,6 +637,15 @@ fn p1_reports_the_margin_at_every_factor_and_never_gates_the_domain() {
     );
     let low = admit_p1(&State::new(0., 1.12, 8e6), &hot_standby()).unwrap();
     assert_eq!(low.margins.len(), 3);
+    // Above the source's 16 MPa up to the record's 17 MPa ceiling: admitted;
+    // beyond it a labelled pressure exit.
+    let high = admit_p1(&State::new(0., 1.12, 16.8e6), &hot_standby()).unwrap();
+    assert_eq!(high.margins.len(), 3);
+    assert!(admit_p1(&State::new(0., 1.12, 17e6), &hot_standby()).is_ok());
+    assert_eq!(
+        exit(admit_p1(&State::new(0., 1.12, 17.1e6), &hot_standby())),
+        (Domain::HotStandby, true, "pressure")
+    );
 }
 
 #[test]
@@ -650,5 +660,11 @@ fn a_hot_standby_record_must_widen_and_order_its_factors() {
     assert!(r.validate(&original).is_err());
     let mut r = hot_standby();
     r.reference_margin_dk_k = 0.;
+    assert!(r.validate(&original).is_err());
+    let mut r = hot_standby();
+    r.pressure_maximum_pa = original.pressure_pa.maximum - 1.;
+    assert!(r.validate(&original).is_err());
+    let mut r = hot_standby();
+    r.pressure_maximum_pa = f64::NAN;
     assert!(r.validate(&original).is_err());
 }
