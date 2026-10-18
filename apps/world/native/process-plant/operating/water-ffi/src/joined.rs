@@ -50,6 +50,18 @@ fn largest(values: impl Iterator<Item = (usize, f64)>) -> Largest {
     })
 }
 
+/// The declared factor on the unit roundoff of the per-row bound
+/// (lead, 17 October 2026, with DR13-ROD-A): a row is held to
+/// `max(bound, ROUNDOFF_FACTOR * eps * sum |terms|)`, where `sum |terms|` is
+/// the magnitude of the terms the row subtracts at the state, from the
+/// row's own linearization: `sum_j |dF_r/dy_j y_j| + |dF_r/dy'_j y'_j|` for
+/// a residual, `sum_j |dg_r/dy_j y'_j|` for a constraint rate. One rule for
+/// every row; where the terms are small the declared bound holds unchanged.
+pub const ROUNDOFF_FACTOR: f64 = 8.;
+fn row_bound(bound: f64, magnitude: f64) -> f64 {
+    bound.max(ROUNDOFF_FACTOR * f64::EPSILON * magnitude)
+}
+
 /// What the start did, with its timings.
 #[derive(Clone, Debug, Default)]
 pub struct Report {
@@ -66,6 +78,10 @@ pub struct Report {
     /// Passes of the rate solve on the one factorization (the first exact,
     /// later ones removing round-off only).
     pub rate_passes: usize,
+    /// Rows accepted above `bound` under their own roundoff bound
+    /// ([`ROUNDOFF_FACTOR`]): the projection's constraints, the residual and
+    /// the constraint rates, each the largest such row over its bound.
+    pub roundoff_rows: [Largest; 3],
     /// The projection's correction of the coordinates exempt from the WRMS
     /// guard (lead decision S2-D21: a transacted owner's algebraic
     /// coordinates), reported, never bounded; `None` when none is exempt.
@@ -423,7 +439,7 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
         rows = rows_at(joined, y, &zero)?;
         report.constraint_after = constraint(&rows);
     }
-    if report.constraint_after.value.is_nan() || report.constraint_after.value > bound {
+    if report.constraint_after.value.is_nan() {
         return Err(fatal(format!(
             "constraints miss their bound after projection: {:?}",
             report.constraint_after
@@ -441,6 +457,48 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     assemble(joined, &matrices, t, 0., y, &mut a, &mut report)?;
     let mut ab = vec![0.; nnz];
     assemble(joined, &matrices, t, 1., y, &mut ab, &mut report)?;
+    // Each row's magnitude of terms from its linearization at the state:
+    // `sum_j |dF/dy_ij y_j|`, and with rates `sum_j |dF/dy'_ij y'_j|`.
+    let magnitude = |matrix: &dyn Fn(usize) -> f64, v: &[f64]| {
+        let mut m = vec![0.; n];
+        for j in 0..n {
+            for position in pointers[j]..pointers[j + 1] {
+                m[indices[position]] += (matrix(position) * v[j]).abs();
+            }
+        }
+        m
+    };
+    let of_y = magnitude(&|p| a[p], y);
+    // The projection's constraints, each under its own roundoff bound.
+    let over = |values: &[f64], magnitudes: &[f64], only_algebraic: bool| {
+        largest(
+            values
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| !only_algebraic || algebraic[*i])
+                .filter(|(i, v)| v.abs() > bound && v.abs() > row_bound(bound, magnitudes[*i]))
+                .map(|(i, v)| (i, *v)),
+        )
+    };
+    let accepted_above = |values: &[f64], only_algebraic: bool| {
+        largest(
+            values
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| !only_algebraic || algebraic[*i])
+                .filter(|(_, v)| v.abs() > bound)
+                .map(|(i, v)| (i, *v)),
+        )
+    };
+    let missed = over(&rows, &of_y, true);
+    if missed.value.is_nan() || missed.value > 0. {
+        return Err(fatal(format!(
+            "constraints miss their bound after projection: {:?} (row bound {})",
+            report.constraint_after,
+            row_bound(bound, of_y[missed.row])
+        )));
+    }
+    report.roundoff_rows[0] = accepted_above(&rows, true);
     let matrix: Vec<f64> = (0..nnz)
         .map(|p| {
             if algebraic[indices[p]] {
@@ -533,16 +591,31 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
             break;
         }
     }
+    // Each row under its own roundoff bound: the residual's terms at
+    // (y, y'), the constraint rate's at y'.
+    let of_rates = magnitude(&|p| ab[p] - a[p], &yp);
+    let of_residual: Vec<f64> = of_y.iter().zip(&of_rates).map(|(a, b)| a + b).collect();
+    let of_constraint_rate = magnitude(&|p| a[p], &yp);
+    let rate = constraint_rate(&yp);
+    let (missed_residual, missed_rate) = (
+        over(&residual, &of_residual, false),
+        over(&rate, &of_constraint_rate, true),
+    );
     if report.residual.value.is_nan()
-        || report.residual.value > bound
         || report.constraint_rate.value.is_nan()
-        || report.constraint_rate.value > bound
+        || missed_residual.value > 0.
+        || missed_rate.value > 0.
     {
         return Err(fatal(format!(
-            "the consistent-rate solve missed its bound: residual {:?}, constraint rate {:?}",
-            report.residual, report.constraint_rate
+            "the consistent-rate solve missed its bound: residual {:?}, constraint rate {:?} (row bounds {} and {})",
+            report.residual,
+            report.constraint_rate,
+            row_bound(bound, of_residual[missed_residual.row]),
+            row_bound(bound, of_constraint_rate[missed_rate.row])
         )));
     }
+    report.roundoff_rows[1] = accepted_above(&residual, false);
+    report.roundoff_rows[2] = accepted_above(&rate, true);
     Ok((yp, report))
 }
 
@@ -770,7 +843,7 @@ pub fn derived_tolerances<P: Properties + WaterProperties>(
 
 pub use integrated::{
     Assembly, Discrete, Integrated, JoinedSystem, Restart, Restarted, discrete_restart,
-    root_directions,
+    root_directions, stock_initial_conditions,
 };
 
 mod integrated {
@@ -1025,10 +1098,7 @@ mod integrated {
         // tolerance units (`Report::exempt`, `Restarted::births`). C3's R2
         // reference (rtol x 0.01, atol x 0.1) otherwise refuses the honest
         // +104 kPa flash at +18.93 s (WRMS 13.9). The bound is unchanged.
-        let born = joined
-            .network
-            .born_cells(&modes_before)
-            .map_err(message)?;
+        let born = joined.network.born_cells(&modes_before).map_err(message)?;
         let flash: Vec<usize> = born
             .iter()
             .flat_map(|c| {
@@ -1584,11 +1654,117 @@ mod integrated {
             .map_err(failure)
         }
     }
+    /// One borrowed handle on an [`Integrated`] system, for a stock solve
+    /// that must hand the composition back (DR13-ROD-A).
+    struct Borrowed<'a, P: Properties>(&'a mut Integrated<P>);
+    impl<P: Properties + WaterProperties> System for Borrowed<'_, P> {
+        fn dimension(&self) -> usize {
+            self.0.dimension()
+        }
+        fn nonzeros(&self) -> usize {
+            self.0.nonzeros()
+        }
+        fn root_count(&self) -> usize {
+            self.0.root_count()
+        }
+        fn klu_ordering(&self) -> KluOrdering {
+            self.0.klu_ordering()
+        }
+        fn residual(
+            &mut self,
+            time: f64,
+            y: &[f64],
+            yp: &[f64],
+            out: &mut [f64],
+        ) -> Result<(), Failure> {
+            self.0.residual(time, y, yp, out)
+        }
+        fn jacobian(
+            &mut self,
+            time: f64,
+            cj: f64,
+            y: &[f64],
+            yp: &[f64],
+            data: &mut [f64],
+            rows: &mut [i64],
+            pointers: &mut [i64],
+        ) -> Result<(), Failure> {
+            self.0.jacobian(time, cj, y, yp, data, rows, pointers)
+        }
+        fn roots(
+            &mut self,
+            time: f64,
+            y: &[f64],
+            yp: &[f64],
+            out: &mut [f64],
+        ) -> Result<(), Failure> {
+            self.0.roots(time, y, yp, out)
+        }
+    }
+
+    /// Lead decision DR13-ROD-A (17 October 2026): at a zero-time
+    /// composition, stock IDACalcIC (`IDA_YA_YDP_INIT`, through the pinned
+    /// [`Ida::initialize`]) makes the algebraic coordinates consistent with
+    /// the held differential ones (the rod owner's mouth currents start at
+    /// zero) before the declared exact consistent start, which then only
+    /// refines. Preparation only: `y` keeps every differential coordinate,
+    /// the rates are not kept, and the composition is handed back.
+    /// `horizon` is stock's first output time after `t`.
+    pub fn stock_initial_conditions<P: Properties + WaterProperties>(
+        joined: Joined<P>,
+        t: f64,
+        y: &mut [f64],
+        differential: &[f64],
+        absolute: &[f64],
+        relative: f64,
+        horizon: f64,
+    ) -> Result<Joined<P>, String> {
+        let mut integrated = Integrated::new(joined)?;
+        let held: Vec<f64> = y.to_vec();
+        let mut yp = vec![0.; y.len()];
+        {
+            let mut ida = Ida::new(
+                Borrowed(&mut integrated),
+                crate::ida::Initial {
+                    time: t,
+                    y,
+                    yp: &yp,
+                    differential,
+                    absolute_tolerance: absolute,
+                    relative_tolerance: relative,
+                },
+            )
+            .map_err(|e| format!("stock IDA for the initial conditions: {e}"))?;
+            ida.initialize(horizon, y, &mut yp)
+                .map_err(|e| format!("stock IDACalcIC: {e}"))?;
+        }
+        if held
+            .iter()
+            .zip(y.iter())
+            .zip(differential)
+            .any(|((a, b), d)| *d != 0. && a.to_bits() != b.to_bits())
+        {
+            return Err("stock IDACalcIC moved a differential coordinate".into());
+        }
+        Ok(integrated.joined)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{correction_wrms, owner_ranges, transacted_owners};
+    use super::{ROUNDOFF_FACTOR, correction_wrms, owner_ranges, row_bound, transacted_owners};
+
+    #[test]
+    fn a_row_is_held_to_the_declared_bound_or_its_own_roundoff() {
+        // Small terms: the declared bound.
+        assert_eq!(row_bound(1e-12, 1.), 1e-12);
+        // A balance of ~3e4 in scaled units (two 15 MPa pressures over a
+        // 34 kPa head scale, or the bores' pressure rate after a seat): its
+        // last bit is 2^-37 = 7.3e-12, held to 8 eps x 3e4 = 5.3e-11.
+        let b = row_bound(1e-12, 3e4);
+        assert!((b - ROUNDOFF_FACTOR * f64::EPSILON * 3e4).abs() < 1e-24);
+        assert!(b > 2f64.powi(-37));
+    }
     use leitbild_operating_plant::joined::operator::Offsets;
 
     #[test]
