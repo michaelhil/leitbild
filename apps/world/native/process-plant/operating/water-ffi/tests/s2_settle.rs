@@ -50,7 +50,7 @@ use leitbild_operating_water::{
 };
 use serde_json::{Map, Value, json};
 use spine::{
-    DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, started_full_composition, z1,
+    DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, started_s3_composition, z1,
 };
 use std::{io::Write, path::PathBuf};
 
@@ -310,6 +310,10 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
     };
     let loops = [face("RETURN.A->DOWN"), face("RETURN.B->DOWN")];
 
+    // Decision 32: the S2 settle composes with S2-D24r as r7.1 and S3 do
+    // (the existing derived class and credited outputs; no new class). The
+    // derived rows are recorded in the receipt.
+    let (composition, derived) = started_s3_composition();
     let Started {
         mut joined,
         y,
@@ -322,7 +326,7 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
         structure,
         analyses,
         ..
-    } = started_full_composition();
+    } = composition;
     let preparation_cpu_s = z1::cpu_s() - started;
     let (credited0, cells0) = observe(&mut joined, &network_packet, &loops, 0., &y, &yp);
     let nonnegative = joined.network.nonnegative_stocks();
@@ -561,6 +565,10 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
         "packet": packet_path, "packet_sha256": packet_sha256,
         "gates": {"source": gates_path, "sha256": spine::sha256(gates_text.as_bytes()), "settling": settling, "outputInterval_s": output_s},
         "preparation": preparation,
+        "derived_tolerances": {
+            "reason": "decision 32: S2 settle composes with S2-D24r as r7.1 and S3 do",
+            "record": derived,
+        },
         "configuration": {"max_order": MAX_ORDER, "newton_coefficient": NEWTON_COEFFICIENT, "delta_cj_lsetup": DELTA_CJ_LSETUP,
             "first_step_s": FIRST_STEP_S, "relative_tolerance": rtol, "jacobian": "block, cached KLU analyses (S2-D4)", "klu_ordering": "AMD",
             "restart": {"start_passes": 2, "transaction_passes": 12, "rule": "S2-D21"},
