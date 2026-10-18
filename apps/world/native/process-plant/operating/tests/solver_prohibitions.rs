@@ -295,6 +295,10 @@ const SOLVER_API: &[&str] = &[
     "IDAAdjReInit",
     "IDASolveF",
     "IDA_HERMITE",
+    // N1 (owner R11-2, 17 Oct: group-normalised error weights through stock
+    // IDAWFtolerances): the caller's weight rule replaces stock's
+    // rtol|y| + atol weights for the error test, Newton and h0.
+    "IDAWFtolerances",
     // Stock N_Vector, SUNContext, SUNMatrix and SUNLinSol_KLU (ida.c).
     "N_VClone",
     "N_VDestroy",
@@ -367,6 +371,8 @@ const SOLVER_API: &[&str] = &[
     "operating_ida_stats",
     "operating_ida_step",
     "operating_ida_tolerances",
+    // N1 (owner R11-2): the weight rule's registration.
+    "operating_ida_weight_function",
     "operating_ida_stop_at",
     "operating_klu_analyze",
     "operating_klu_factor",
