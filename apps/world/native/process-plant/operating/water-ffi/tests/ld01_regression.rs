@@ -949,6 +949,9 @@ fn credited(
 /// window start's bound placements (the restart rule: a nonnegative
 /// coordinate below zero by roundoff starts the window on its bound,
 /// reported). A root or a failure inside the window refuses.
+/// Each credited settling rate: (name, worst 20 s range, threshold, holds).
+type SettlingRates = Vec<(&'static str, f64, f64, bool)>;
+
 #[allow(clippy::too_many_arguments)] // The operator, its packet, the pair and its tolerance classes.
 fn settling_window(
     joined: Joined<If97>,
@@ -959,7 +962,7 @@ fn settling_window(
     ids: &[f64],
     atol: &[f64],
     rtol: f64,
-) -> Result<(Vec<(&'static str, f64, f64, bool)>, Value), String> {
+) -> Result<(SettlingRates, Value), String> {
     let nonnegative = joined.network.nonnegative_stocks();
     let mut start = y.to_vec();
     let placed =
