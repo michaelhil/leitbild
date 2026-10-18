@@ -22,16 +22,8 @@
 //! prefix): every S2 run integrates its conservation ledgers as stock
 //! quadratures (K2).
 #![cfg(feature = "quadratures")]
-#[path = "common/counts.rs"]
-mod counts;
-#[path = "common/cpu.rs"]
-mod cpu;
-#[path = "common/filter.rs"]
-mod filter;
-#[path = "common/observe.rs"]
-mod observe;
-#[path = "common/provenance.rs"]
-mod provenance;
+mod common;
+use common::{cpu, provenance};
 mod s2_harness;
 pub use s2_harness::{
     compare, compose, conservation, gates, guards, meter, outputs, receipt, run, runner, sequence,

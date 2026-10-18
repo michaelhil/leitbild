@@ -17,8 +17,8 @@ use leitbild_operating_water::ida::{Failure, Ida, Initial, System};
 use serde_json::{Value, json};
 use std::{f64::consts::PI, io::Write};
 
-#[path = "common/cpu.rs"]
-mod clock;
+mod common;
+use common::cpu;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Mode {
@@ -500,7 +500,7 @@ fn run(
     let mut acc = [0i64; 6]; // completed-segment totals: steps, errf, setups, newton, res, convf
     let mut last = [0i64; 6];
     let mut h_trace: Vec<(f64, f64, i32)> = vec![];
-    let cpu0 = clock::thread_cpu_s();
+    let cpu0 = cpu::thread_cpu_s();
     let mut cpu_event = 0.;
     let mut t = 0.;
     // output grid (IDA interpolation, no extra steps); finer for the tight reference so
@@ -596,7 +596,7 @@ fn run(
         } else if !applied && (t - t_event).abs() < 1e-12 {
             // apply the event as a restart (class R): ordered state write,
             // exact consistent start, IDAReInit.
-            cpu_event = clock::thread_cpu_s();
+            cpu_event = cpu::thread_cpu_s();
             for k in 0..6 {
                 acc[k] += cur[k];
             }
@@ -623,7 +623,7 @@ fn run(
             applied = true;
         }
     }
-    let cpu = clock::thread_cpu_s() - cpu0;
+    let cpu = cpu::thread_cpu_s() - cpu0;
     // quiet time: first time after which every step is >= 5 ms (20 ms cap counts as quiet)
     let quiet = |limit: f64| {
         let mut tq = 0.;
@@ -647,7 +647,7 @@ fn run(
         "class_peak_wrms2_share": {"stator_flux": class_peak[0], "stator_current": class_peak[1], "field": class_peak[2], "mechanical": class_peak[3]},
         "max_ieq_after_event_A": max_ieq, "export_energy_trapezoid_J": energy,
         "end": {"t": t, "w": y[3], "th": y[4], "P": ida.system().export_w(&y)},
-        "cpu_s": cpu, "cpu_after_event_s": if has_event { clock::thread_cpu_s() - cpu_event } else { 0. },
+        "cpu_s": cpu, "cpu_after_event_s": if has_event { cpu::thread_cpu_s() - cpu_event } else { 0. },
         "class_s_updates": update_count,
     })
 }
@@ -655,7 +655,7 @@ fn run(
 #[test]
 #[ignore = "ELEC spike: run with ELEC_GENERATOR_PARAMS and ELEC_SPIKE_OUT"]
 fn elec_generator_stiffness_spike() {
-    clock::prefer_performance_core();
+    cpu::prefer_performance_core();
     let path = std::env::var("ELEC_GENERATOR_PARAMS").expect("ELEC_GENERATOR_PARAMS");
     let out = std::env::var("ELEC_SPIKE_OUT").expect("ELEC_SPIKE_OUT");
     let horizon: f64 = std::env::var("ELEC_SPIKE_HORIZON").map_or(61., |s| s.parse().unwrap());
@@ -884,7 +884,7 @@ fn elec_generator_stiffness_spike() {
         "solver": {"maxOrder": 2, "newtonCoefficient": 0.33, "dcj": 0.1, "initStep_s": 1e-4, "eventClass": "R (IDAReInit + exact consistent start)"},
         "padding": "extra coordinates y'=0: zero local error, only N in the WRMS norm",
         "horizon_s": horizon, "event_s": 1.0,
-        "load": clock::load_average(),
+        "load": cpu::load_average(),
         "results": results,
     });
     std::fs::write(&out, serde_json::to_string_pretty(&receipt).unwrap()).unwrap();

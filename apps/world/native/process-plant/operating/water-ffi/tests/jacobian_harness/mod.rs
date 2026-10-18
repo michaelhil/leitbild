@@ -28,10 +28,8 @@ use std::{
 
 // Thread CPU (CLOCK_THREAD_CPUTIME_ID), the performance-core request (macOS
 // QOS_CLASS_USER_INTERACTIVE; changes no computation) and the load average.
-#[path = "../common/cpu.rs"]
-pub mod clock;
 #[allow(unused_imports)] // Each test crate uses its own subset.
-pub use clock::{load_average, prefer_performance_core, thread_cpu_s as cpu};
+pub use crate::common::cpu::{load_average, prefer_performance_core, thread_cpu_s as cpu};
 pub fn command(program: &str, args: &[&str]) -> String {
     std::process::Command::new(program)
         .args(args)

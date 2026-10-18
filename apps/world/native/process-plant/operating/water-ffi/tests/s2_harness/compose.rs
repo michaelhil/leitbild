@@ -9,7 +9,8 @@
 //! The tolerance classes are S1's (`ld01-s1-gates`, shared by S2): the
 //! network's own classes and the scaled stock floor for every new coordinate
 //! class (G12).
-use crate::{cpu::process_cpu_s, gates::Block, provenance::sha256_file};
+use super::gates::Block;
+use crate::common::{cpu::process_cpu_s, provenance::sha256_file};
 use leitbild_operating_plant::{
     joined::{
         blocks::{Classes, JoinedJacobian, jacobian_blocks},
@@ -309,7 +310,7 @@ impl DerivedRule {
     /// derived class. The budgets are the credited blocks' own
     /// (`ld01-accuracy-contract`, `ld01-s2-accuracy`), read as the
     /// comparison reads them.
-    pub fn from(d: &crate::gates::Declaration) -> Result<Option<Self>, String> {
+    pub fn from(d: &super::gates::Declaration) -> Result<Option<Self>, String> {
         if d.gates.value.get("derivedTolerance").is_none() {
             return Ok(None);
         }

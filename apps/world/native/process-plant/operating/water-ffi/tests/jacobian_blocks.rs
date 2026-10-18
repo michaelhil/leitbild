@@ -11,6 +11,7 @@
 //! - the S1 settling run advanced by stock IDA with each assembly, compared
 //!   in the integrator's own error weights.
 #![cfg(all(feature = "ida", target_os = "macos"))]
+mod common;
 mod jacobian_harness;
 use jacobian_harness::*;
 use leitbild_operating_plant::{

@@ -71,8 +71,6 @@ use leitbild_operating_water::unit::{
     s3,
     spine::{Started, credited_outputs, started_full_composition},
 };
-#[allow(dead_code)] // S2's Z6 (its own tests compile here too, ignored).
-#[path = "s2_spectrum.rs"]
 mod z6;
 
 use leitbild_operating_plant::{
@@ -299,11 +297,11 @@ fn unit_pencil(
 #[allow(clippy::too_many_lines)] // One receipt: composition, events, four pencils per state.
 fn s3_z6_at_a_saved_s3_state() {
     let wall = Instant::now();
-    let cpu0 = z6::cpu_s();
+    let cpu0 = leitbild_operating_water::unit::clock::process_cpu_s();
     let state_path = env("LD01_S3_SPECTRUM_STATE");
     let bytes = std::fs::read(&state_path).expect("state file");
     let state: Value = serde_json::from_slice(&bytes).expect("state json");
-    let state_sha256 = z6::sha256(&bytes);
+    let state_sha256 = leitbild_operating_plant::digest::sha256(&bytes);
     let kind = env("LD01_S3_SPECTRUM_KIND");
     let from = state["from"].as_str().unwrap_or("");
     // The case harness's post-event states (S3-D52): C2, C3, C5 at the
@@ -325,7 +323,7 @@ fn s3_z6_at_a_saved_s3_state() {
         ),
     };
     let elec_path = env("ELEC_PACKET");
-    let gates = z6::s1_gates();
+    let gates = common::s1_gates();
     let gate = z6::Gate {
         fast_mode_hz: gates["spectrum"]["fastModeHz"].as_f64().unwrap(),
         light_damping: gates["spectrum"]["lightDamping"].as_f64().unwrap(),
@@ -342,7 +340,7 @@ fn s3_z6_at_a_saved_s3_state() {
         derived,
     } = operator_at(&state).unwrap_or_else(|e| panic!("{e}"));
     let elec = electrical_at(&state, &elec_path).unwrap_or_else(|e| panic!("{e}"));
-    let composed_cpu = z6::cpu_s() - cpu0;
+    let composed_cpu = leitbild_operating_water::unit::clock::process_cpu_s() - cpu0;
     let o = joined.offsets();
     let n = joined.dimension();
     let ns = n + slice::N;
@@ -565,7 +563,7 @@ fn s3_z6_at_a_saved_s3_state() {
         "events": events,
         "pencils": pencils,
         "verdict": if go { "GO: every gated Z6 predicate holds at this state" } else { "NO-GO: a gated Z6 predicate failed; see pencils[].predicates" },
-        "cost": {"composition_cpu_s": composed_cpu, "total_cpu_s": z6::cpu_s() - cpu0, "wall_s": wall.elapsed().as_secs_f64(), "load_average_end": z6::load_average()},
+        "cost": {"composition_cpu_s": composed_cpu, "total_cpu_s": leitbild_operating_water::unit::clock::process_cpu_s() - cpu0, "wall_s": wall.elapsed().as_secs_f64(), "load_average_end": common::cpu::load_average()},
     });
     let path = env("LD01_S3_SPECTRUM_RECEIPT");
     assert!(
@@ -600,7 +598,7 @@ fn s3_z6_at_a_saved_s3_state() {
 #[ignore = "zero-time receipt (S3-D53): requires the S3 packet and sections, a saved S3 start state, the wiki, maintained IF97 and stock IDA/KLU"]
 fn s3_unit_coupling_blocks() {
     use leitbild_operating_water::{ida::System, joined::JoinedSystem};
-    let cpu0 = z6::cpu_s();
+    let cpu0 = leitbild_operating_water::unit::clock::process_cpu_s();
     let state_path = env("LD01_S3_SPECTRUM_STATE");
     let bytes = std::fs::read(&state_path).expect("state file");
     let state: Value = serde_json::from_slice(&bytes).expect("state json");
@@ -666,11 +664,11 @@ fn s3_unit_coupling_blocks() {
     };
     let receipt = json!({
         "kind": "s3-unit-coupling-blocks", "decision": "lead S3-D53 (3)",
-        "state": {"file": state_path, "sha256": z6::sha256(&bytes), "t_s": t},
+        "state": {"file": state_path, "sha256": leitbild_operating_plant::digest::sha256(&bytes), "t_s": t},
         "method": "forward differences of the S3 unit's own residual (s3_unit::compose at the state: consistent start, controller commissioned) in solver units; h = sqrt(eps) max(|y_j|, atol_j/rtol)",
         "plant_to_elec": block(&blocks[0]), "elec_to_plant": block(&blocks[1]), "slice_own_block": block(&blocks[2]),
         "block_triangular": blocks[0].4 == 0 || blocks[1].4 == 0,
-        "failures": failures, "cpu_s": z6::cpu_s() - cpu0,
+        "failures": failures, "cpu_s": leitbild_operating_water::unit::clock::process_cpu_s() - cpu0,
     });
     let path = env("LD01_S3_COUPLING_RECEIPT");
     assert!(

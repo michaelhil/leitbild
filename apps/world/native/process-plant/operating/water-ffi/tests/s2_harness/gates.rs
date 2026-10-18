@@ -12,7 +12,7 @@
 //! The declaration page is `LD01_S2_DECLARATION` (a markdown file holding
 //! both S2 blocks: the research draft until revision 7 is published), else
 //! the wiki's `build-readiness.md` under `LD01_WIKI_ROOT`.
-use crate::provenance::sha256_file;
+use crate::common::provenance::sha256_file;
 use serde_json::{Value, json};
 use std::{cell::RefCell, collections::BTreeSet};
 

@@ -2,8 +2,8 @@
 //! harnesses (S1, P2, Jacobian, S2). Measurement support only; nothing here
 //! is a production path and nothing changes a computation.
 //!
-//! Include it from a test crate with `#[path = "common/cpu.rs"] mod cpu;`
-//! (from a harness directory's `mod.rs`: `#[path = "../common/cpu.rs"]`).
+//! Declared once in `tests/common/mod.rs` (`mod common;` in a test crate;
+//! a harness directory's `mod.rs` reads it as `crate::common::cpu`).
 //!
 //! | Clock / call | macOS | Linux |
 //! | --- | --- | --- |

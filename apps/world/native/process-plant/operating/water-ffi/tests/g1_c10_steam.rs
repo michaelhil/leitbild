@@ -35,8 +35,8 @@ use leitbild_operating_plant::{
 use leitbild_operating_water::If97LowPressure;
 use serde_json::{Value, json};
 
-#[path = "common/cpu.rs"]
-mod cpu;
+mod common;
+use common::cpu;
 
 const NS: usize = 9;
 const MW: usize = 0;

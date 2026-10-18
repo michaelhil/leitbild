@@ -38,22 +38,11 @@
 mod common;
 use common::{filter, provenance};
 use leitbild_operating_water::unit::{clock::process_cpu_s, profile, s3};
-#[allow(dead_code)] // The S2 harness's comparisons; S3 uses E0 and the drift.
-#[path = "s2_harness/compare.rs"]
-mod compare;
-#[allow(dead_code)] // The S2 harness's conservation record.
-#[path = "s2_harness/conservation.rs"]
-mod conservation;
-#[allow(dead_code)] // The S2 harness's declaration readers; S3 uses a subset.
-#[path = "s2_harness/gates.rs"]
-mod gates;
-#[allow(dead_code)] // The S2 harness's declaration readers; S3 uses a subset.
-#[path = "s2_harness/guards.rs"]
-mod guards;
-#[allow(dead_code)] // The S2 harness's credited outputs; S3 uses the reader.
-#[path = "s2_harness/outputs.rs"]
-mod outputs;
+// The S2 harness's comparisons (S3 uses E0 and the drift), conservation
+// record, declaration readers and credited outputs; S3 uses a subset.
+mod s2_harness;
 mod s3_harness;
+use s2_harness::{compare, conservation, gates, guards, outputs};
 
 use gates::Block;
 use leitbild_operating_plant::joined::block::Command;

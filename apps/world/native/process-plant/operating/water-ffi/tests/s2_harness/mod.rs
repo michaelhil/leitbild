@@ -15,9 +15,13 @@ pub mod compose;
 pub mod conservation;
 pub mod gates;
 pub mod guards;
+#[cfg(feature = "quadratures")] // The S2 run path (stock IDAS ledgers).
 pub mod meter;
 pub mod outputs;
 pub mod receipt;
+#[cfg(feature = "quadratures")] // The S2 run path (stock IDAS ledgers).
 pub mod run;
+#[cfg(feature = "quadratures")] // The S2 run path (stock IDAS ledgers).
 pub mod runner;
+#[cfg(feature = "quadratures")] // The S2 run path (stock IDAS ledgers).
 pub mod sequence;

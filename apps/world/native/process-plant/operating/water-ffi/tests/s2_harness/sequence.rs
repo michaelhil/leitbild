@@ -28,7 +28,7 @@ use super::{
     run::RunSpec,
     runner::{DomainExit, Run, Start, advance},
 };
-use crate::{
+use crate::common::{
     cpu,
     filter::{CAP_CYCLE_RULE, EXCESS_SPECTRUM_METHOD, cap_cycle_output, content_above_band},
     provenance::{WATER_BUILD, WATER_LIB_DIR, git_provenance, water_build},
@@ -1298,7 +1298,7 @@ pub fn check_external(
         if let Some(c) = cpu.filter(|_| !reused) {
             charges.push((name.to_string(), c));
         }
-        let mut entry = json!({"receipt": path, "sha256": crate::provenance::sha256_file(path).ok(),
+        let mut entry = json!({"receipt": path, "sha256": crate::common::provenance::sha256_file(path).ok(),
             "kind": r["kind"], "verdict": r["verdict"], "status": r["status"],
             "process_cpu_s": cpu, "reused": reused, "pass": pass});
         if name.starts_with("Z3") {

@@ -12,7 +12,7 @@
 //!   fill `identities` and `ledger`;
 //! - CPU attribution fills [`CpuBuckets`].
 use super::receipt::{RUN_SCHEMA, missing};
-use crate::counts::Counts;
+use crate::common::counts::Counts;
 use leitbild_operating_plant::joined::block::Command;
 use serde_json::{Value, json};
 

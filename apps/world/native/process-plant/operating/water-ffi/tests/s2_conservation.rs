@@ -8,16 +8,8 @@
 //! bounds are the declaration's (`identityRelative`, `ledger`), read as
 //! data, and a receipt is written only to a new file.
 #![cfg(feature = "quadratures")]
-#[path = "common/counts.rs"]
-mod counts;
-#[path = "common/cpu.rs"]
-mod cpu;
-#[path = "common/filter.rs"]
-mod filter;
-#[path = "common/observe.rs"]
-mod observe;
-#[path = "common/provenance.rs"]
-mod provenance;
+mod common;
+use common::{cpu, provenance};
 mod s2_harness;
 use conservation::Conservation;
 pub use s2_harness::{compose, conservation, gates, receipt, run};

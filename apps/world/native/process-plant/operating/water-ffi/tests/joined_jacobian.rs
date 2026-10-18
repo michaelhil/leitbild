@@ -6,6 +6,7 @@
 //! (one exact seeded joined evaluation per color, the operator's own loop)
 //! is the reference matrix; stock KLU is timed on it with nnz(L+U) (Z5).
 #![cfg(all(feature = "ida", target_os = "macos"))]
+mod common;
 mod jacobian_harness;
 use jacobian_harness::*;
 use leitbild_operating_plant::sparse::{self, Coloring, Pattern};

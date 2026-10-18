@@ -29,8 +29,10 @@
 //!   2 × the run's CPU to `t_fit`. Every fit's inputs are returned.
 //! - **Drift (hold):** each filtered output's largest departure from its
 //!   value at `measuredFrom_s`, against its ceiling.
-use crate::filter::{DECLARED_FILTER, deviation, larger, max_abs, mean, zero_phase_lowpass};
-use crate::gates::Declaration;
+use super::gates::Declaration;
+use crate::common::filter::{
+    DECLARED_FILTER, deviation, larger, max_abs, mean, zero_phase_lowpass,
+};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, VecDeque};
 

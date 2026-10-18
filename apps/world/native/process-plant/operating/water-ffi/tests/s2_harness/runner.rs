@@ -44,7 +44,7 @@ use super::{
     outputs::{Reader, admit, d3_point},
     run::{CpuBuckets, RunRecord, RunSpec},
 };
-use crate::{
+use crate::common::{
     counts::Counts,
     cpu::{process_cpu_s, thread_cpu_s},
 };

@@ -4,7 +4,7 @@
 //! content above the credited band, H2's per-output cap-cycle judgement
 //! and its Welch excess-spectrum diagnostic.
 //!
-//! Include it with `#[path = "common/filter.rs"] mod filter;`.
+//! Declared once in `tests/common/mod.rs` (`mod common;` in a test crate).
 #![allow(dead_code)] // Each test crate uses its own subset.
 use serde_json::{Value, json};
 use std::f64::consts::PI;

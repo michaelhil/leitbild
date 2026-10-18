@@ -6,18 +6,14 @@
 //! chattering rule. The case itself runs in `s3_cases.rs`
 //! (`LD01_S3_CASE=C4`) through the gate families as C1–C3.
 #![cfg(all(feature = "ida", target_os = "macos"))]
-#[allow(dead_code)] // The case run in s3_cases.rs uses the rest.
-#[path = "s3_harness/c4.rs"]
-mod c4;
-#[allow(dead_code)] // The S2 harness's declaration readers; C4 uses a subset.
-#[path = "s2_harness/gates.rs"]
-mod gates;
-#[allow(dead_code)] // The S2 harness's declaration readers; C4 uses a subset.
-#[path = "s2_harness/guards.rs"]
-mod guards;
-// The S2 declaration readers' file hashes (dead code allowed inside).
-#[path = "common/provenance.rs"]
-mod provenance;
+// C4's own readers (the case run in s3_cases.rs uses the rest) and the S2
+// declaration readers, on the shared harness modules.
+mod common;
+mod s2_harness;
+mod s3_harness;
+use common::filter;
+use s2_harness::{compare, conservation, gates, guards, outputs};
+use s3_harness::c4;
 
 use c4::{Classes, Events, Frame, Run, Side};
 use gates::Block;

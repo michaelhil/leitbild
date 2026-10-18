@@ -13,42 +13,41 @@ pub mod filter;
 pub mod observe;
 pub mod provenance;
 
+// The unit library's inputs from the environment (the joined spine's
+// packet and wiki, the S3 sections), refused loudly when one is missing.
 #[cfg(feature = "ida")]
-pub use env::*;
-
-/// The unit library's inputs from the environment (the joined spine's
-/// packet and wiki, the S3 sections), refused loudly when one is missing.
+use leitbild_operating_water::unit::inputs::{Inputs, Spine};
 #[cfg(feature = "ida")]
-mod env {
-    use leitbild_operating_water::unit::{
-        inputs::{Inputs, Spine},
-        provenance,
-    };
-    use serde_json::Value;
+use serde_json::Value;
 
-    /// `LD01_OPERATING_HOT_SPINE_PACKET` and `LD01_WIKI_ROOT` (with
-    /// `LD01_WIKI_COMMIT` and `LD01_WIKI_REPOSITORY` for provenance).
-    pub fn spine() -> Spine {
-        Spine::from_env().unwrap_or_else(|e| panic!("the joined spine's inputs: {e}"))
-    }
-    /// The S3 composition's inputs: the spine and `LD01_IC_SECTION`,
-    /// `LD01_PZR_CONTROL_SECTION`, `LD01_PZR_CONTROL_WIKI`, `ELEC_PACKET`.
-    pub fn inputs() -> Inputs {
-        Inputs::from_env().unwrap_or_else(|e| panic!("the S3 composition's inputs: {e}"))
-    }
-    /// The packet's path and bytes.
-    pub fn packet_bytes() -> (String, Vec<u8>) {
-        let s = spine();
-        (s.packet_path, s.packet)
-    }
-    /// A receipt's app and wiki provenance.
-    pub fn spine_provenance() -> Value {
-        provenance::receipt(&spine()).unwrap_or_else(|e| panic!("provenance: {e}"))
-    }
-    /// `ld01-s1-gates` of the spine's wiki.
-    pub fn s1_gates() -> Value {
-        spine()
-            .s1_gates()
-            .unwrap_or_else(|e| panic!("ld01-s1-gates: {e}"))
-    }
+/// `LD01_OPERATING_HOT_SPINE_PACKET` and `LD01_WIKI_ROOT` (with
+/// `LD01_WIKI_COMMIT` and `LD01_WIKI_REPOSITORY` for provenance).
+#[cfg(feature = "ida")]
+pub fn spine() -> Spine {
+    Spine::from_env().unwrap_or_else(|e| panic!("the joined spine's inputs: {e}"))
+}
+/// The S3 composition's inputs: the spine and `LD01_IC_SECTION`,
+/// `LD01_PZR_CONTROL_SECTION`, `LD01_PZR_CONTROL_WIKI`, `ELEC_PACKET`.
+#[cfg(feature = "ida")]
+pub fn inputs() -> Inputs {
+    Inputs::from_env().unwrap_or_else(|e| panic!("the S3 composition's inputs: {e}"))
+}
+/// The packet's path and bytes.
+#[cfg(feature = "ida")]
+pub fn packet_bytes() -> (String, Vec<u8>) {
+    let s = spine();
+    (s.packet_path, s.packet)
+}
+/// A receipt's app and wiki provenance.
+#[cfg(feature = "ida")]
+pub fn spine_provenance() -> Value {
+    leitbild_operating_water::unit::provenance::receipt(&spine())
+        .unwrap_or_else(|e| panic!("provenance: {e}"))
+}
+/// `ld01-s1-gates` of the spine's wiki.
+#[cfg(feature = "ida")]
+pub fn s1_gates() -> Value {
+    spine()
+        .s1_gates()
+        .unwrap_or_else(|e| panic!("ld01-s1-gates: {e}"))
 }
