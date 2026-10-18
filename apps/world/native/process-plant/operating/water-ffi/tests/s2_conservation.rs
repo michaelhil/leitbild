@@ -29,6 +29,7 @@ use leitbild_operating_plant::{
     },
     thermal::Scalar,
 };
+use leitbild_operating_water::unit::profile;
 use leitbild_operating_water::{
     If97,
     ida::{Advance, Ida, Initial},
@@ -200,11 +201,11 @@ fn s2_ledgers_close_over_a_settle_segment_and_carry_across_restarts() {
         newton_coefficient: g.number("/newtonCoefficient"),
         delta_cj_lsetup: g.number("/deltaCjLSetup"),
         first_step_s: g.number("/restartInitialStep_s"),
-        start_bound: compose::START_BOUND,
+        start_bound: profile::START_BOUND,
         start_passes: 2,
         // Lead decision S2-D21: P_tx after an owner transaction.
         transaction_passes: 12,
-        bound_placement: compose::START_BOUND,
+        bound_placement: profile::START_BOUND,
     };
     let max_order = g.count("/maxOrder") as usize;
     // The start: the composed pair, or a saved state restarted exactly.
@@ -215,7 +216,7 @@ fn s2_ledgers_close_over_a_settle_segment_and_carry_across_restarts() {
         };
         let (t_saved, y, _) = compose::saved_state(path, &c.packet, c.y.len());
         let mut y = y;
-        let weights = compose::error_weights(&y, c.rtol, &c.atol);
+        let weights = profile::error_weights(&y, c.rtol, &c.atol);
         let started = cpu::process_cpu_s();
         let (yp, report) = consistent_start(
             &mut c.joined,
@@ -227,7 +228,7 @@ fn s2_ledgers_close_over_a_settle_segment_and_carry_across_restarts() {
             &mut y,
             &c.ids,
             &weights,
-            compose::START_BOUND,
+            profile::START_BOUND,
             3,
         )
         .expect("exact consistent start at the saved state");

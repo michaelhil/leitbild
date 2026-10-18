@@ -137,7 +137,8 @@ fn composed(bytes: &[u8], gates: &Value) -> Composed {
     let (network_packet, _, _) = spine::packets(bytes).expect("packet");
     let settled =
         spine::s1_settled_flows(&network_packet, &s1, clock::process_cpu_s).expect("S1 settling");
-    let p = spine::prepare(bytes, &settled, s1.classes).expect("steps (B)-(C)");
+    let p =
+        spine::prepare(bytes, &settled.flows, &settled.momenta, s1.classes).expect("steps (B)-(C)");
     let counts = json!({
         "s1_settling": {
             "settled": settled.settled_at_s.is_some(),

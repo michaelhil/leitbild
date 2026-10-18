@@ -37,7 +37,7 @@
 //! - **CPU.** [`super::meter::Attribution`] per call (see its module).
 use super::{
     compare::Credited,
-    compose::{Composed, START_BOUND, error_weights},
+    compose::Composed,
     conservation::Conservation,
     gates::Declaration,
     meter::{Attribution, Metered, Tally, jacobian_by_kind},
@@ -60,6 +60,7 @@ use leitbild_operating_water::{
         discrete_restart,
     },
     joined_ledger::{self, Ledgered, Segment},
+    unit::profile::{START_BOUND, error_weights},
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;

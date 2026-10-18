@@ -37,6 +37,7 @@ use leitbild_operating_plant::{
     joined::{block::Command, post_trip_domain::Extension},
     network::{MetastableBand, packet::Packet as NetworkPacket},
 };
+use leitbild_operating_water::unit::profile;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -1127,7 +1128,7 @@ pub fn judge_trip_declared_and_information(
 pub fn state_receipt(h: &mut Harness, start: &Start, item: &str) -> Value {
     let mut c = h.compose(item);
     let mut y = start.y.clone();
-    let weights = compose::error_weights(&y, c.rtol, &c.atol);
+    let weights = profile::error_weights(&y, c.rtol, &c.atol);
     let started = cpu::process_cpu_s();
     let result = leitbild_operating_water::joined::consistent_start(
         &mut c.joined,
@@ -1139,7 +1140,7 @@ pub fn state_receipt(h: &mut Harness, start: &Start, item: &str) -> Value {
         &mut y,
         &c.ids,
         &weights,
-        compose::START_BOUND,
+        profile::START_BOUND,
         3,
     );
     let cpu_s = cpu::process_cpu_s() - started;
@@ -1158,7 +1159,7 @@ pub fn state_receipt(h: &mut Harness, start: &Start, item: &str) -> Value {
             json!({"from": start.from, "t_s": start.t,
                 "z1": {"residual": report.residual.value, "constraint_rate": report.constraint_rate.value,
                     "correction_wrms": report.correction_wrms, "projection_passes": report.projection_passes,
-                    "rate_passes": report.rate_passes, "cpu_s": cpu_s, "bound": compose::START_BOUND},
+                    "rate_passes": report.rate_passes, "cpu_s": cpu_s, "bound": profile::START_BOUND},
                 "d3_at_state": d3})
         }
         Err(e) => json!({"from": start.from, "refused": format!("{e:?}")}),

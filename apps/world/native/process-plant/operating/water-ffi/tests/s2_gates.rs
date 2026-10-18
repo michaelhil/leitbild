@@ -39,6 +39,7 @@ pub use s2_harness::{
 
 use compare::{Credited, key};
 use gates::{Block, Declaration};
+use leitbild_operating_water::unit::profile;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -1804,7 +1805,7 @@ fn s2_z5_unit_costs() {
         cpu::thread_cpu_s() - t0
     };
     // The exact consistent start (cached analyses, as at a restart).
-    let weights = compose::error_weights(&y, rtol, &atol);
+    let weights = profile::error_weights(&y, rtol, &atol);
     let mut starts = Vec::new();
     for _ in 0..rounds {
         let mut y1 = y.clone();
@@ -1819,7 +1820,7 @@ fn s2_z5_unit_costs() {
                 &mut y1,
                 &ids,
                 &weights,
-                compose::START_BOUND,
+                profile::START_BOUND,
                 2,
             )
             .expect("consistent start");

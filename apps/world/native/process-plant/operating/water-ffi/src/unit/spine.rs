@@ -308,19 +308,21 @@ pub fn packets(bytes: &[u8]) -> Result<(NetworkPacket, packet::Packet, Value), S
     ))
 }
 
-/// Steps (B)-(C) on step (A)'s export: the composed network, the joined
+/// Steps (B)-(C) on step (A)'s export (every face's settled volume flow and
+/// the rotors' momenta): the composed network, the joined
 /// operator with its SG secondary and rod owners, the owners' prepared
 /// algebraic coordinates, the initialized surfaces, S1's tolerance classes
 /// (G12) and the PZR relief lift's root bound (G6: its absolute tolerance,
 /// the scaled floor at its unit scale, bounds its distance from a stop).
 pub fn prepare(
     bytes: &[u8],
-    settled: &Settled,
+    flows: &[f64],
+    momenta: &[f64],
     classes: ToleranceClasses,
 ) -> Result<Prepared, String> {
     let (network_packet, joined_packet, raw) = packets(bytes)?;
     let (network, y_network, network_ids, flowing) =
-        composed_network(&network_packet, &settled.flows, &settled.momenta)?;
+        composed_network(&network_packet, flows, momenta)?;
     let section: SecondarySection = serde_json::from_value(raw["secondary"].clone())
         .map_err(|e| format!("secondary section: {e}"))?;
     let rods: RodSection =
@@ -451,7 +453,7 @@ pub fn started_full_composition(spine: &Spine) -> Result<Started, String> {
     let s1 = S1Settling::from_gates(&gates)?;
     let (network_packet, _, _) = packets(&spine.packet)?;
     let settled = s1_settled_flows(&network_packet, &s1, clock)?;
-    let mut p = prepare(&spine.packet, &settled, s1.classes)?;
+    let mut p = prepare(&spine.packet, &settled.flows, &settled.momenta, s1.classes)?;
     let start = start(&mut p, clock)?;
     let r = &start.report;
     let receipt = json!({
