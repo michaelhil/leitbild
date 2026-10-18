@@ -448,8 +448,8 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     (report.correction_wrms, report.exempt) = correction_wrms(y, &start, weights, exempt);
     if report.correction_wrms.is_nan() || report.correction_wrms > 1. {
         return Err(fatal(format!(
-            "the projection exceeds the solver's error scale: WRMS {}",
-            report.correction_wrms
+            "the projection exceeds the solver's error scale: WRMS {} (largest scaled correction {:?})",
+            report.correction_wrms, report.correction
         )));
     }
     // 2. The consistent rates: differential rows dF/dy', algebraic rows dg/dy.

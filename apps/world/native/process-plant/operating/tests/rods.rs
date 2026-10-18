@@ -1326,12 +1326,14 @@ fn a_converted_state_holds_lower_water_at_the_balancing_bore_pressure() {
     let yp = vec![0.; y.len()];
     let (rows, _, _) = evaluate(&mut b, &y, &yp, None, 0., &water);
     for g in 0..stocks.len() {
-        // The EOS row holds; the mouths close to the bores' 3e-5 lighter
-        // column (a few pascals), for the consistent start to remove.
+        // The EOS row holds; the lower mouth closes on the bores' own water
+        // (to its density's change between the two evaluations), the upper
+        // to their 3e-5 lighter column (a few pascals), for the consistent
+        // start to remove.
         assert!(rows[b.group_index(g, BORE_PRESSURE)].value.abs() < 1e-12);
         let c = b.bore_groups()[g][0];
         assert!(
-            rows[ci(c, LOWER_CURRENT)].value.abs() < 1.,
+            rows[ci(c, LOWER_CURRENT)].value.abs() < 1e-2,
             "lower {}",
             rows[ci(c, LOWER_CURRENT)].value
         );

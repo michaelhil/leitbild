@@ -994,9 +994,13 @@ impl RodBlock {
     /// clusters' travels and lower-mouth currents of a state whose LOWER
     /// liquid is `lower`. The bores hold LOWER's water (its specific internal
     /// energy and boron) at the pressure that closes the group's first
-    /// member's lower mouth balance at its current, the clear-bore loss on
-    /// LOWER's water: explicit, nothing iterated. The joined exact
-    /// consistent start then removes the bores' own density difference.
+    /// member's lower mouth balance at its current: a first estimate with
+    /// the column and the clear bores on LOWER's water, then the same
+    /// balance on the bores' water at that estimate (its density and
+    /// viscosity), the lower mouth's loss on its donor as the rows take it.
+    /// Two explicit evaluations, nothing iterated; what remains (the
+    /// density's change between them, about 1e-6 kg/m3) the joined exact
+    /// consistent start removes.
     pub fn bore_stocks_at<P: Properties>(
         &self,
         properties: &P,
@@ -1008,28 +1012,36 @@ impl RodBlock {
         if travel.len() != n || lower_current.len() != n {
             return Err(fatal("rods: one travel and one lower current per cluster"));
         }
-        let rho = s(lower.density_kg_m3);
         let mouth = lower.pressure_pa
             + lower.density_kg_m3 * self.gravity * (self.z_lower - self.guide_bottom);
+        let water = |pressure: f64| -> Result<Water, Failure> {
+            let point = properties
+                .caloric(false, pressure, lower.internal_energy_j_kg, false)
+                .map_err(|e| fatal(format!("rods: converted bore water: {e}")))?;
+            Ok(properties.values(&point))
+        };
         let mut out = Vec::with_capacity(self.groups.len());
         for group in &self.groups {
             let c = group.members[0];
             self.admit_travel(c, travel[c])?;
-            let clear_length = self.body_bottom + travel[c] - self.guide_bottom;
-            let clear = self.passage.clear(
-                s(lower_current[c]),
-                rho,
-                s(lower.viscosity_pa_s),
-                s(clear_length),
-                rho,
-            );
-            let pressure = mouth
-                - clear.value
-                - lower.density_kg_m3 * self.gravity * (self.z_bore - self.guide_bottom);
-            let point = properties
-                .caloric(false, pressure, lower.internal_energy_j_kg, false)
-                .map_err(|e| fatal(format!("rods: converted bore water: {e}")))?;
-            let w = properties.values(&point);
+            let clear_length = s(self.body_bottom + travel[c] - self.guide_bottom);
+            let current = s(lower_current[c]);
+            // The balance with the column and the clear bores on `(rho, mu)`
+            // and the lower mouth on its donor.
+            let closing = |rho: f64, mu: f64| {
+                let donor = if current.value > 0. {
+                    lower.density_kg_m3
+                } else {
+                    rho
+                };
+                let clear = self
+                    .passage
+                    .clear(current, s(rho), s(mu), clear_length, s(donor));
+                mouth - clear.value - rho * self.gravity * (self.z_bore - self.guide_bottom)
+            };
+            let first = water(closing(lower.density_kg_m3, lower.viscosity_pa_s))?;
+            let pressure = closing(first.density_kg_m3, first.viscosity_pa_s);
+            let w = water(pressure)?;
             let mut volume = 0.;
             for &m in &group.members {
                 self.admit_travel(m, travel[m])?;
