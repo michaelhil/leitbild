@@ -163,7 +163,10 @@ fn s3_ic_prot_t1_turbine_trip_through_acquired_protection() {
             .map(|(i, l)| (l.clone(), i, scales[i]))
             .collect(),
         rods: (0..clusters)
-            .map(|c| (o.rods + 3 * c, scales[o.rods + 3 * c]))
+            .map(|c| {
+                let b = o.rods + leitbild_operating_plant::rods::CLUSTER_COORDINATES * c;
+                (b, scales[b])
+            })
             .collect(),
         scratch: vec![0.; y.len()],
         every: 1,

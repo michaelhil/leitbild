@@ -162,7 +162,9 @@ fn joined_census_against_table_1_1() {
         None => 0,
     };
     assert_eq!(c.composed, [17251 + g6, 1194, 18445 + g6]);
-    assert_eq!(c.with_pending, [17311 + g6, 1302, 18613 + g6]);
+    // P2 (OU-P2): the rods add their bore groups' water (8 x (M, U, B)
+    // differential, 8 pressures) and each cluster's upper-mouth current.
+    assert_eq!(c.with_pending, [17335 + g6, 1362, 18697 + g6]);
     let histories = nuclear.histories();
     assert_eq!(histories.len(), 9650);
     let receipt = json!({
@@ -544,9 +546,15 @@ fn z1_probe(full: bool) {
     };
     let started = z1::cpu_s();
     let (path, bytes) = packet_bytes();
-    let network_packet: NetworkPacket = serde_json::from_slice(&bytes).expect("network packet");
+    let mut network_packet: NetworkPacket = serde_json::from_slice(&bytes).expect("network packet");
     let joined_packet: packet::Packet = serde_json::from_slice(&bytes).expect("joined packet");
     let raw: Value = serde_json::from_slice(&bytes).expect("packet json");
+    // HOOK (OU-C P2 -> OU-B builder): the rod bores' water leaves the sector
+    // inventory before the network is compiled.
+    let rods: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
+    let carved = full.then(|| {
+        leitbild_operating_plant::rods::carve(&rods, &mut network_packet).expect("rods carve")
+    });
     let gates = z1::s1_gates();
     let (flows, momenta, s1) = z1::s1_settled_flows(&network_packet, &gates);
     let (network, y_network, network_ids, flowing) =
@@ -554,14 +562,20 @@ fn z1_probe(full: bool) {
     let (secondary, rods) = if full {
         let section: SecondarySection =
             serde_json::from_value(raw["secondary"].clone()).expect("secondary section");
-        let rods: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
         (
             SecondaryPort::Owner(Box::new(
                 Secondaries::new(&section, &joined_packet.thermal.secondaries, &If97)
                     .expect("SG secondary owner"),
             )),
             RodPort::Owner(Box::new(
-                RodBlock::from_packet(&rods, &network_packet).expect("rod owner"),
+                RodBlock::from_packet(
+                    &rods,
+                    &network_packet,
+                    carved.as_ref().expect("carved"),
+                    &If97,
+                    &[],
+                )
+                .expect("rod owner"),
             )),
         )
     } else {
@@ -640,6 +654,22 @@ fn z1_probe(full: bool) {
         .unwrap();
     // G12: S1's scaled 1e-8 absolute floor for every new coordinate class.
     atol.resize(y.len(), classes.stock_scaled);
+    // Lead decision DR13-ROD-A: with the owners composed, stock IDACalcIC
+    // makes the algebraic coordinates consistent (the rod owner's mouth
+    // currents start at zero) before the declared exact start; G13's first
+    // step is its horizon.
+    if full {
+        joined = leitbild_operating_water::joined::stock_initial_conditions(
+            joined,
+            0.,
+            &mut y,
+            &ids,
+            &atol,
+            classes.relative,
+            1e-4,
+        )
+        .expect("stock IDACalcIC");
+    }
     let weights: Vec<f64> = y
         .iter()
         .zip(&atol)
@@ -979,6 +1009,12 @@ pub fn started_s3_phase_composition()
 /// The full composition at the hot reference, consistently started: memo
 /// §3 (A)-(D), the start on the block assembly (lead decision S2-D4).
 pub fn started_full_composition() -> Started {
+    started_full_composition_with_singles(&[])
+}
+
+/// [`started_full_composition`] with the clusters `singles` keeping their
+/// bore water singly (P2: a cluster declared stuck must be one).
+pub fn started_full_composition_with_singles(singles: &[usize]) -> Started {
     use leitbild_operating_plant::{
         initialization::SurfacePolicy,
         joined::operator::{Joined, RodPort, SecondaryPort},
@@ -986,16 +1022,20 @@ pub fn started_full_composition() -> Started {
         sg::{packet::Section as SecondarySection, secondary::Secondaries},
     };
     let (path, bytes) = packet_bytes();
-    let network_packet: NetworkPacket = serde_json::from_slice(&bytes).expect("network packet");
+    let mut network_packet: NetworkPacket = serde_json::from_slice(&bytes).expect("network packet");
     let joined_packet: packet::Packet = serde_json::from_slice(&bytes).expect("joined packet");
     let raw: Value = serde_json::from_slice(&bytes).expect("packet json");
+    // HOOK (OU-C P2 -> OU-B builder): the rod bores' water leaves the sector
+    // inventory before the network is compiled.
+    let rods: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
+    let carved =
+        leitbild_operating_plant::rods::carve(&rods, &mut network_packet).expect("rods carve");
     let gates = z1::s1_gates();
     let (flows, momenta, s1) = z1::s1_settled_flows(&network_packet, &gates);
     let (network, y_network, network_ids, flowing) =
         z1::composed(&network_packet, &flows, &momenta);
     let section: SecondarySection =
         serde_json::from_value(raw["secondary"].clone()).expect("secondary section");
-    let rods: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
     let mut joined = Joined::new(
         network,
         &network_packet,
@@ -1006,7 +1046,8 @@ pub fn started_full_composition() -> Started {
                 .expect("SG secondary owner"),
         )),
         RodPort::Owner(Box::new(
-            RodBlock::from_packet(&rods, &network_packet).expect("rod owner"),
+            RodBlock::from_packet(&rods, &network_packet, &carved, &If97, singles)
+                .expect("rod owner"),
         )),
     )
     .expect("joined operator");
@@ -1040,6 +1081,19 @@ pub fn started_full_composition() -> Started {
         b.declare_lift_root_bound(classes.stock_scaled)
             .expect("lift root bound");
     }
+    // Lead decision DR13-ROD-A: stock IDACalcIC makes the algebraic
+    // coordinates consistent (the rod owner's mouth currents start at zero)
+    // before the declared exact start; G13's first step is its horizon.
+    let mut joined = leitbild_operating_water::joined::stock_initial_conditions(
+        joined,
+        0.,
+        &mut y,
+        &ids,
+        &atol,
+        classes.relative,
+        1e-4,
+    )
+    .expect("stock IDACalcIC");
     let weights: Vec<f64> = y
         .iter()
         .zip(&atol)
@@ -1296,6 +1350,8 @@ fn the_holding_opening_releases_the_held_clusters_at_its_stop_and_restarts_exact
 #[test]
 #[ignore = "NOT-EVIDENCE zero-time check: requires the joined packet, the wiki, IF97 and stock IDA/KLU"]
 fn the_stuck_cluster_command_keeps_its_grip_at_the_opening_and_the_rest_release() {
+    // The last of the 52 clusters, kept singly at composition (P2).
+    const STUCK: usize = 51;
     use leitbild_operating_plant::joined::block::Command;
     use leitbild_operating_water::{
         ida::{Ida, Initial},
@@ -1312,11 +1368,12 @@ fn the_stuck_cluster_command_keeps_its_grip_at_the_opening_and_the_rest_release(
         structure,
         analyses,
         ..
-    } = started_full_composition();
+    } = started_full_composition_with_singles(&[STUCK]);
     let algebraic = |ids: &[f64]| ids.iter().filter(|v| **v == 0.).count();
     let held = algebraic(&ids);
     let clusters = joined.rods().unwrap().clusters();
     let stuck = clusters - 1;
+    assert_eq!(stuck, STUCK, "the last cluster is the stuck one");
     let mut y = y;
     let before = y.clone();
     // G7's declared malfunction through every composed owner: no
@@ -1386,7 +1443,11 @@ fn the_stuck_cluster_command_keeps_its_grip_at_the_opening_and_the_rest_release(
     let ids_open = ida.system().joined.differential(&network_ids);
     assert_eq!(algebraic(&ids_open), held - (clusters - 1));
     let o = ida.system().joined.offsets();
-    assert_eq!(ids_open[o.rods + 3 * stuck + 1], 0., "the stuck speed row");
+    assert_eq!(
+        ids_open[o.rods + leitbild_operating_plant::rods::CLUSTER_COORDINATES * stuck + 1],
+        0.,
+        "the stuck speed row"
+    );
     assert!(report.residual.value <= 1e-12 && report.constraint_rate.value <= 1e-12);
     assert!(restarted.yp.iter().all(|v| v.is_finite()));
     // Nothing more is due at the opening, and a declaration after it is

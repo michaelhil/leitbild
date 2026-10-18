@@ -587,7 +587,7 @@ fn trip(duration_s: f64) -> Value {
     let groups = |y: &[f64]| -> Vec<Vec<usize>> {
         let mut by: BTreeMap<(u64, u64), Vec<usize>> = BTreeMap::new();
         for c in 0..clusters {
-            let b = o.rods + 3 * c;
+            let b = o.rods + leitbild_operating_plant::rods::CLUSTER_COORDINATES * c;
             by.entry((y[b].to_bits(), y[b + 1].to_bits()))
                 .or_default()
                 .push(c);
@@ -845,10 +845,19 @@ fn trip(duration_s: f64) -> Value {
                     let j = &mut ida.system_mut().joined;
                     j.evaluate(t, &y, &yp, None, 0., None).unwrap();
                     let travel: Vec<f64> = (0..clusters)
-                        .map(|c| y[o.rods + 3 * c] * scales[o.rods + 3 * c])
+                        .map(|c| {
+                            let b =
+                                o.rods + leitbild_operating_plant::rods::CLUSTER_COORDINATES * c;
+                            y[b] * scales[b]
+                        })
                         .collect();
                     let speed: Vec<f64> = (0..clusters)
-                        .map(|c| y[o.rods + 3 * c + 1] * scales[o.rods + 3 * c + 1])
+                        .map(|c| {
+                            let b = o.rods
+                                + leitbild_operating_plant::rods::CLUSTER_COORDINATES * c
+                                + 1;
+                            y[b] * scales[b]
+                        })
                         .collect();
                     let spread = |v: &[f64]| {
                         v.iter().cloned().fold(f64::NEG_INFINITY, f64::max)

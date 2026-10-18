@@ -245,11 +245,14 @@ fn joined(bytes: &[u8]) -> leitbild_operating_plant::joined::operator::Joined<If
         rods::{RodBlock, Section as RodSection},
         sg::{packet::Section as SecondarySection, secondary::Secondaries},
     };
-    let network_packet: Packet = serde_json::from_slice(bytes).unwrap();
+    let mut network_packet: Packet = serde_json::from_slice(bytes).unwrap();
     let joined_packet: packet::Packet = serde_json::from_slice(bytes).unwrap();
     let raw: Value = serde_json::from_slice(bytes).unwrap();
     let section: SecondarySection = serde_json::from_value(raw["secondary"].clone()).unwrap();
     let rods: RodSection = serde_json::from_value(raw["rods"].clone()).unwrap();
+    // HOOK (OU-C P2 -> OU-B builder): the rod bores' water leaves the sector
+    // inventory before the network is compiled.
+    let carved = leitbild_operating_plant::rods::carve(&rods, &mut network_packet).unwrap();
     Joined::new(
         composed(&network_packet),
         &network_packet,
@@ -259,7 +262,7 @@ fn joined(bytes: &[u8]) -> leitbild_operating_plant::joined::operator::Joined<If
             Secondaries::new(&section, &joined_packet.thermal.secondaries, &If97).unwrap(),
         )),
         RodPort::Owner(Box::new(
-            RodBlock::from_packet(&rods, &network_packet).unwrap(),
+            RodBlock::from_packet(&rods, &network_packet, &carved, &If97, &[]).unwrap(),
         )),
     )
     .expect("joined operator")

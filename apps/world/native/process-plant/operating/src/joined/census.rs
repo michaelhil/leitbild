@@ -24,8 +24,10 @@ pub struct MemoRow {
 }
 
 /// Table 1.1 of the memo, in its order, then the two rows of G6 (S2 design
-/// choices, 11 October), which the memo predates: its counts are zero.
-pub const TABLE_1_1: [MemoRow; 18] = [
+/// choices, 11 October) and the rod bores' water (P2, 17 October), which
+/// the memo predates: their counts are zero. A row counts its owner's
+/// coordinates of its classes only.
+pub const TABLE_1_1: [MemoRow; 19] = [
     MemoRow {
         row: "Regional N, 24 regions",
         owner: "nuclear",
@@ -150,7 +152,19 @@ pub const TABLE_1_1: [MemoRow; 18] = [
         owner: "rods",
         classes: &[Class::GuideCurrent],
         memo: [0, 52],
-        rows: "steady series balance of the guide passage",
+        rows: "steady balance of each open mouth (P2: lower and upper)",
+    },
+    MemoRow {
+        row: "Rod bores' water, per bore group (M, U, B; p) (P2)",
+        owner: "rods",
+        classes: &[
+            Class::PhaseMass,
+            Class::PhaseEnergy,
+            Class::Tracer,
+            Class::CellPressure,
+        ],
+        memo: [0, 0],
+        rows: "mass, energy and boron balances over the mouths; EOS volume row",
     },
     MemoRow {
         row: "PZR heater rod segments, shell bands and heads (G6)",
@@ -230,6 +244,12 @@ fn difference(row: &str) -> Option<&'static str> {
         "Rods 52 x (y, v) of the spider and bodies" => {
             "a held or seated body's v row is algebraic (memo §4): 52 move to algebraic at the hold"
         }
+        "Guide passages, 1 per cluster" => {
+            "P2 (owner R11): the bores' water is its own state, so each cluster's guide has two steady mouth balances (lower and upper) on either side of it"
+        }
+        "Rod bores' water, per bore group (M, U, B; p) (P2)" => {
+            "P2 (owner R11): one well-mixed water region per bore group (equal sector shares; a declared stuck cluster singly), replacing R3's donor column; the memo predates it"
+        }
         "PZR heater rod segments, shell bands and heads (G6)" | "PZR relief lift (G6)" => {
             "G6 (S2 design choices, 11 October): the PZR shell, heads, heater metal and relief join S2 after the memo's allocation"
         }
@@ -247,6 +267,9 @@ pub fn census(composed: &[Composed<'_>], pending: &[Pending]) -> Census {
         let mut counted = [0usize; 2];
         let mut found = false;
         for block in composed {
+            if block.owner != memo.owner {
+                continue;
+            }
             for (i, class) in block.layout.classes.iter().enumerate() {
                 if memo.classes.contains(class) {
                     found = true;
@@ -270,7 +293,7 @@ pub fn census(composed: &[Composed<'_>], pending: &[Pending]) -> Census {
                 let mut d = [0usize; 2];
                 let mut any = false;
                 for (class, n) in &p.classes {
-                    if memo.classes.contains(class) {
+                    if p.owner == memo.owner && memo.classes.contains(class) {
                         any = true;
                         d[0] += n[0];
                         d[1] += n[1];

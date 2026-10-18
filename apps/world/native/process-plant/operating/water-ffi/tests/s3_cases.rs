@@ -1483,8 +1483,11 @@ fn drive(
             .filter(|(_, l)| l.ends_with(".p_s"))
             .map(|(i, l)| (l.clone(), i, scales[i]))
             .collect(),
-        rods: (0..clusters)
-            .map(|c| (o.rods + 3 * c, scales[o.rods + 3 * c]))
+        // HOOK (OU-C P2): each cluster's travel coordinate is the rod
+        // owner's travel output.
+        rods: joined.rods().expect("rod owner").structure().outputs[..clusters]
+            .iter()
+            .map(|t| (o.rods + t[0], scales[o.rods + t[0]]))
             .collect(),
         scratch: vec![0.; y.len()],
         rows: Vec::new(),

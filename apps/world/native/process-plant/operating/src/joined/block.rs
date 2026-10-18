@@ -655,10 +655,16 @@ pub trait Rods<P> {
         t: f64,
         y: &mut [f64],
     ) -> Result<Option<Transaction>, Failure>;
-    /// Startup only: solve the owner's algebraic coordinates at the composed
-    /// fluid state (the guide passages' steady currents), after which
-    /// `prepared()` holds them. No differential coordinate changes.
+    /// Startup only: prepare the owner's coordinates at the composed fluid
+    /// state, after which `prepared()` holds them. No differential
+    /// coordinate changes except those [`Rods::prepared_stocks`] names.
     fn prepare(&mut self, properties: &P, fluid: &Fluid<'_>) -> Result<Transaction, Failure>;
+    /// HOOK (OU-C P2, for OU-B): the owner's differential coordinates that
+    /// its startup preparation sets at the composed fluid state (the rod
+    /// bores' water, prepared as LOWER's composed water); none by default.
+    fn prepared_stocks(&self) -> Vec<usize> {
+        Vec::new()
+    }
     /// The conservation account at these coordinates and the owner's own
     /// physical rows of the same evaluation: the bodies' kinetic and
     /// potential energy and its rate as the rows imply it, and the power

@@ -1,74 +1,73 @@
 {
   "kind": "ld01-settled-state-pin",
-  "status": "Regression pin (NOT evidence; S2 is not declared): the S2 re-settle after S3-D36 (the PZR shell, heads and heater steel prepared at their steady state, SOLIDS 559504c57), settled at 455 s by r7.1's settling block with S3-D35's 2 s maximum step (DR-P2-SPRAYDROP open: default steps trip the drop coordinate's restart bound at 211 s); packet d1b68fe3 = wiki claude/ld01-r7-wiki e2e26fd (integ4 80274ec + owner request 7's blocks: ld01-joined-matrix-rebuild, which the packet carries as matrixRebuild for the S3 frame driver and S1/S2 never read, and ld01-event-window-ramp-cap; 130700cb's values otherwise: page hashes, the steady-solids binary at 19bbbff55 and its input hash differ, and the capped re-settle on it reproduces the 130700cb pair bitwise at 455 s; 130700cb carried owner answer B1: the source pressure domain [8, 16] MPa and the D3 (a) pressureMin 8 MPa), the spray line composed closed; water library adapter 4bc25801 (F5, S4-D2: the operating bridge unchanged above 0.1 MPa); PHASE's saturated-line inverse (8794e1451); after DR-P2-SPRAYDROP's drop exhaustion at the port's contact (IC-CTRL e166d5fb1), which changes the capped settle's state at the same 455 s and 1,605 steps. On the window that starts at the pair every range holds (PT1 52 of 344 Pa)",
-  "file": "settled-state-s3d48-455s-d1b68fe3.bits.json.gz",
-  "sha256": "0753dd76995035d1e3be28a7f6cb3255d24a7158fba73e6c29794c9f0e05b9ca",
-  "bytes": 13933,
+  "status": "Regression pin (NOT evidence): the S2 settled state of packet d1b68fe3 at 455 s converted to the P2 rod layout under P2-FIX-1 (each mouth's friction over its own path to the bores' reference height; water-ffi/tests/p2_state_conversion.rs at dda5e2393), then the exact consistent start. Re-pinned with the lead's reason (P2-FIX-1, 18 Oct): \"P2-FIX-1: mouth paths to the bores' reference\"; the held bores' reference pressure is 187 Pa higher (the clear segment between the reference and the tips at the 1.29 kg/s bypass leaves the lower path). Previous pin: settled-state-p2-455s-d1b68fe3.bits.json.gz, digest 0xef6c5bf2aa99d364. Its status: Regression pin (NOT evidence): the S2 settled state of packet d1b68fe3 at 455 s (status below as before) converted to the P2 rod layout (18,624 -> 18,708: 52 x [y, v, m_lo, m_up] + 8 bore groups x [M, U, B, p]; water-ffi/tests/p2_state_conversion.rs at 40854c88a), then the exact consistent start. Re-pinned with the lead's reason (DR13-ROD-A, 17 Oct): \"P2 layout 18,624 -> 18,708; zero-time prep\". Previous pin: settled-state-s3d48-455s-d1b68fe3.bits.json.gz, digest 0xffc4d8ba19f49658. Its status: Regression pin (NOT evidence; S2 is not declared): the S2 re-settle after S3-D36 (the PZR shell, heads and heater steel prepared at their steady state, SOLIDS 559504c57), settled at 455 s by r7.1's settling block with S3-D35's 2 s maximum step (DR-P2-SPRAYDROP open: default steps trip the drop coordinate's restart bound at 211 s); packet d1b68fe3 = wiki claude/ld01-r7-wiki e2e26fd (integ4 80274ec + owner request 7's blocks: ld01-joined-matrix-rebuild, which the packet carries as matrixRebuild for the S3 frame driver and S1/S2 never read, and ld01-event-window-ramp-cap; 130700cb's values otherwise: page hashes, the steady-solids binary at 19bbbff55 and its input hash differ, and the capped re-settle on it reproduces the 130700cb pair bitwise at 455 s; 130700cb carried owner answer B1: the source pressure domain [8, 16] MPa and the D3 (a) pressureMin 8 MPa), the spray line composed closed; water library adapter 4bc25801 (F5, S4-D2: the operating bridge unchanged above 0.1 MPa); PHASE's saturated-line inverse (8794e1451); after DR-P2-SPRAYDROP's drop exhaustion at the port's contact (IC-CTRL e166d5fb1), which changes the capped settle's state at the same 455 s and 1,605 steps. On the window that starts at the pair every range holds (PT1 52 of 344 Pa)",
+  "file": "settled-state-p2fix1-455s-d1b68fe3.bits.json.gz",
+  "sha256": "d87d9e6878dbadf6634f02d2bfcb42b7d8a942ab7fadaa1d4800b5abba61cdb7",
+  "bytes": 14135,
   "packet_sha256": "d1b68fe3cf9af402f7b8ec0379ed7d0e3b86dd91fb2d120a7c66ecfcc8982f00",
   "t_s": 455.0,
   "row_bound": 1e-10,
   "provisional": false,
   "known_misses": [],
   "digest": {
-    "macos-aarch64": "0xffc4d8ba19f49658"
+    "macos-aarch64": "0x5ec57a7c0cfd9784"
   },
-  "made_by": "ld01_regression::settled_state_pin from kern/s3d48-e2e26fd/s2-settle-d1b68fe3-1/settled-state.json",
+  "made_by": "ld01_regression::settled_state_pin from ou-c/p2/s2-settled-p2-dda5e2393.json (p2_state_conversion at dda5e2393 of kern/s3d48-e2e26fd/s2-settle-d1b68fe3-1/settled-state.json)",
   "source": {
-    "file": "kern/s3d48-e2e26fd/s2-settle-d1b68fe3-1/settled-state.json",
-    "max_abs_scaled_row_as_settled": 4.371779360262451e-09,
-    "sha256": "37f2df4033435f4b5f6bb51a02a87fc62a5e8e361f899ebff28826e9133f3478"
+    "file": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/ou-c/p2/s2-settled-p2-dda5e2393.json",
+    "max_abs_scaled_row_as_settled": 4.630092530754949e-05,
+    "sha256": "6c2813f4e35ed2a1804633937c94923efc9bbbd16c3d6d4f6ae1bd9ffcae0ae4"
   },
   "start": {
-    "constraint_rate": 9.932784795536756e-20,
-    "correction_wrms": 2.034965389610763e-06,
-    "projection_passes": 1,
+    "constraint_rate": 4.163336342344337e-17,
+    "correction_wrms": 0.04045978392352561,
+    "projection_passes": 2,
     "rate_passes": 1,
-    "residual": 4.7928662198002943e-14
+    "residual": 2.809657345926456e-14
   },
   "at_pin": {
-    "max_abs_scaled_row": 4.7928662198002943e-14,
+    "max_abs_scaled_row": 2.809657345926456e-14,
     "settling_window_20_s": {
       "average_coolant_k": {
         "holds": true,
-        "range": 3.7711036839027656e-05,
+        "range": 3.619591723236226e-05,
         "threshold": 0.0034
       },
       "core_cell_liquid_k": {
         "holds": true,
-        "range": 9.419018033440807e-05,
+        "range": 9.374980072607286e-05,
         "threshold": 0.01
       },
       "core_power": {
         "holds": true,
-        "range": 4.581194091836031e-06,
+        "range": 4.478096887249815e-06,
         "threshold": 6.8e-05
       },
       "loop_flow": {
         "holds": true,
-        "range": 1.798345011031553e-07,
+        "range": 1.8540253734607106e-07,
         "threshold": 0.0005
       },
       "pt1_pa": {
         "holds": true,
-        "range": 52.4436316434294,
+        "range": 53.81172840297222,
         "threshold": 344.0
       },
       "pzr_level_m": {
         "holds": true,
-        "range": 3.3780489800072644e-05,
+        "range": 3.4520169274188106e-05,
         "threshold": 0.00068
       },
       "sg_liquid_m3": {
         "holds": true,
-        "range": 5.2805053769588994e-06,
+        "range": 4.811371837831757e-06,
         "threshold": 0.0034
       },
       "sg_pressure_pa": {
         "holds": true,
-        "range": 3.607510161586106,
+        "range": 3.287009574472904,
         "threshold": 344.0
       }
-    },
-    "window_start_placements": []
+    }
   }
 }

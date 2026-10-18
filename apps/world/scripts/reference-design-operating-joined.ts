@@ -7,7 +7,8 @@
  *
  * Sections: `secondary` (the SG secondary owner, prepareOperatingSecondary),
  * `rods` (the rod owner, compileOperatingRods), `post_trip_domain` (D3 (a),
- * compileOperatingPostTripDomain), `pzrMetal` (the PZR metal and relief
+ * compileOperatingPostTripDomain), `hot_standby_kinetics` (P1, owner R11,
+ * compileOperatingHotStandby), `pzrMetal` (the PZR metal and relief
  * owner, G6, joinedPzrSections), whose cell gains the spray and relief
  * ports, and `matrixRebuild` (MR-1, owner request 7 R7-P: the joined solve's
  * forced iteration-matrix rebuild, operating-equations §6's
@@ -26,7 +27,7 @@ import { ownedBlock } from './reference-design-operating-pzr'
 import { caseSetSections, equipmentOwners, parsePzrHeaterBanks, parsePzrRelief, parsePzrSpray } from './reference-design-operating-pzr-cases'
 import { compileOperatingRods } from './reference-design-operating-rods'
 import { prepareOperatingSecondary } from './reference-design-operating-sg'
-import { compileOperatingPostTripDomain } from './reference-design-operating-source'
+import { compileOperatingHotStandby, compileOperatingPostTripDomain } from './reference-design-operating-source'
 import type { SteadySolids } from './reference-design-operating-fluid'
 import { nativeSteadySolids, prepareOperatingSpine, type SteadySolidsSettle } from './reference-design-operating-spine'
 
@@ -116,7 +117,8 @@ export async function prepareOperatingJoined(wiki: string, if97: string, settle:
   const consumed = names.map(([k, name]) => ({ name, sha256: hash(pages[k as keyof typeof pzrMetalPages]) }))
   const g6 = joinedPzrSections(spine.pzr.cell, pages)
   const matrixRebuild = matrixRebuildSection(await Bun.file(join(base, matrixRebuildOwner.page)).text())
-  return { ...spine, identity: 'LD01-JOINED-SPINE-1', secondary, rods, post_trip_domain: await compileOperatingPostTripDomain(wiki), matrixRebuild,
+  return { ...spine, identity: 'LD01-JOINED-SPINE-1', secondary, rods, post_trip_domain: await compileOperatingPostTripDomain(wiki),
+    hot_standby_kinetics: await compileOperatingHotStandby(wiki), matrixRebuild,
     pzr: { ...spine.pzr, cell: g6.cell, provenance: { ...spine.pzr.provenance, consumed: [...spine.pzr.provenance.consumed, ...consumed] } },
     pzrMetal: { ...g6.pzrMetal, provenance: { consumed } }, pzrSteel: steel,
     provenance: { ...spine.provenance, joinedSourceSha256: hash(await Bun.file(import.meta.path).text()) },

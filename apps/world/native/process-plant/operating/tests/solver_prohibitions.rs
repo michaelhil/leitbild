@@ -86,13 +86,6 @@ const ALLOWED: &[(&str, &str, &str, usize, &str)] = &[
         1,
         "SG tube stationary wall temperature: bracketed scalar Newton to 1e-12 (zero-time preparation diagnostic)",
     ),
-    (
-        "src/rods/mod.rs",
-        "passage_current",
-        "iteration",
-        3,
-        "rod guide passage current: bracket expansion (two loops) and bracketed scalar Newton on a monotone balance to 1e-12 of its row scale",
-    ),
     // The declared exact consistent start (operating-hot-spine.md, "Exact
     // consistent start"): Newton on the algebraic constraints g(y) = 0 with
     // the system's own dg/dy_a, differential coordinates bitwise fixed, the
@@ -207,20 +200,6 @@ const ALLOWED: &[(&str, &str, &str, usize, &str)] = &[
         "iteration",
         1,
         "Z2 probe: SG duty-balance pressure by bisection to 1e-4 Pa (a reported sweep)",
-    ),
-    (
-        "water-ffi/tests/s2_rods_z4.rs",
-        "terminal",
-        "iteration",
-        1,
-        "Z4 probe: rod terminal velocity by bisection (a reported force balance)",
-    ),
-    (
-        "water-ffi/tests/s2_rods_z4.rs",
-        "z4_zero_time_rod_force_balance",
-        "iteration",
-        1,
-        "Z4 probe: analytic oscillator crossing time by bisection",
     ),
     (
         "water-ffi/tests/heater_rods.rs",

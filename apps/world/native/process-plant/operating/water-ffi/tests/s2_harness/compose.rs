@@ -298,11 +298,18 @@ pub fn compose_from(
 ) -> Composed {
     let started = process_cpu_s();
     let packet = packet_file();
-    let network_packet: NetworkPacket =
+    let mut network_packet: NetworkPacket =
         serde_json::from_slice(&packet.bytes).expect("network packet");
     let joined_packet: packet::Packet =
         serde_json::from_slice(&packet.bytes).expect("joined packet");
     let raw: Value = serde_json::from_slice(&packet.bytes).expect("packet json");
+    // HOOK (OU-C P2 -> OU-B builder): the rod bores' water leaves the sector
+    // inventory before the network is compiled. No cluster is kept singly:
+    // G7's stuck-cluster run needs its selected cluster declared single at
+    // this composition (the StuckCluster command refuses a grouped one).
+    let rods: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
+    let carved =
+        leitbild_operating_plant::rods::carve(&rods, &mut network_packet).expect("rods carve");
     let (flows, momenta, s1) = match settled {
         Some((flows, momenta, s1)) => (
             flows.clone(),
@@ -315,7 +322,6 @@ pub fn compose_from(
         composed_network(&network_packet, &flows, &momenta);
     let section: SecondarySection =
         serde_json::from_value(raw["secondary"].clone()).expect("secondary section");
-    let rods: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
     let mut joined = Joined::new(
         network,
         &network_packet,
@@ -326,7 +332,7 @@ pub fn compose_from(
                 .expect("SG secondary owner"),
         )),
         RodPort::Owner(Box::new(
-            RodBlock::from_packet(&rods, &network_packet).expect("rod owner"),
+            RodBlock::from_packet(&rods, &network_packet, &carved, &If97, &[]).expect("rod owner"),
         )),
     )
     .expect("joined operator");
@@ -355,6 +361,20 @@ pub fn compose_from(
         b.declare_lift_root_bound(classes.stock_scaled)
             .expect("lift root bound");
     }
+    // Lead decision DR13-ROD-A (HOOK OU-C P2 -> OU-B builder): stock
+    // IDACalcIC makes the algebraic coordinates consistent (the rod owner's
+    // mouth currents start at zero) before the declared exact start; G13's
+    // first step is its horizon.
+    let mut joined = leitbild_operating_water::joined::stock_initial_conditions(
+        joined,
+        0.,
+        &mut y,
+        &ids,
+        &atol,
+        classes.relative,
+        1e-4,
+    )
+    .expect("stock IDACalcIC");
     let weights = error_weights(&y, classes.relative, &atol);
     let compile_cpu = process_cpu_s();
     let structure = JoinedJacobian::compile(&mut joined, 0., &y).expect("block structure");

@@ -1,4 +1,5 @@
 //! spec: world/packs/process-plant/reference-designs/ld-01/systems/reactor/kinetics.md#post-trip-domain-extension
+//! spec: world/packs/process-plant/reference-designs/ld-01/systems/reactor/kinetics.md#hot-standby-kinetics
 //! D3 (a): the post-trip kinetics domain, checked on accepted states.
 //!
 //! The `ld01-post-trip-domain` block widens two source-feedback domains, the
@@ -33,6 +34,11 @@
 //! verdict is the sign of the pivots.
 //!
 //! The predicate judges; it changes no state, coefficient or tolerance.
+//!
+//! P1 (owner R11): [`HotStandby`] admits the hot liquid laws over the
+//! hot-standby range on published evidence and reports the margin at its
+//! declared water-term factors ([`admit_hot_standby_accepted`]); there the
+//! margin is an output and never a gate.
 use super::nuclear::Nuclear;
 use crate::{kinetics, source_feedback as sf, thermal::Scalar};
 use std::fmt;
@@ -62,6 +68,9 @@ pub enum Domain {
     Original,
     /// The D3 (a) extension, while the checked margin holds.
     Extended,
+    /// P1's hot-standby domain (owner R11), admitted on the published
+    /// evidence; the margin is reported, never a domain gate.
+    HotStandby,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -338,6 +347,24 @@ pub fn shutdown_margin(
     water_terms: &[f64],
     extension: &Extension,
 ) -> Result<Margin, Error> {
+    margin_with(
+        model,
+        inputs,
+        water_terms,
+        extension.margin_water_term_factor,
+        extension.shutdown_margin_minimum,
+    )
+}
+
+/// The margin check with the water term at `factor` and `minimum` (Δk/k,
+/// positive) inserted.
+fn margin_with(
+    model: &kinetics::Model,
+    inputs: kinetics::Inputs<'_>,
+    water_terms: &[f64],
+    factor: f64,
+    minimum: f64,
+) -> Result<Margin, Error> {
     let r = model.region_count();
     if inputs.regions.len() != r || water_terms.len() != r {
         return Err(Error::Length("regions"));
@@ -351,12 +378,15 @@ pub fn shutdown_margin(
             .iter()
             .zip(water_terms)
             .map(|(x, w)| kinetics::RegionInput {
-                reactivity: x.reactivity + (extension.margin_water_term_factor - 1.) * w + inserted,
+                reactivity: x.reactivity + (factor - 1.) * w + inserted,
                 external_source_per_s: 0.,
             })
             .collect()
     };
-    let m = extension.shutdown_margin_minimum;
+    let m = minimum;
+    if !(m.is_finite() && m > 0. && factor.is_finite()) {
+        return Err(Error::Extension("margin minimum or factor"));
+    }
     let (plain, inserted) = (with(0.), with(m));
     // HOOK (COST2): one assembly for both (they differ only in reactivity).
     let (operator, shifted) = static_operators(
@@ -409,6 +439,29 @@ pub fn margin_at(
     conditions: sf::Conditions<'_>,
     extension: &Extension,
 ) -> Result<Margin, Error> {
+    margins_at(
+        feedback,
+        kinetics,
+        fixed,
+        neutrons,
+        conditions,
+        &[extension.margin_water_term_factor],
+        extension.shutdown_margin_minimum,
+    )
+    .map(|mut m| m.remove(0))
+}
+
+/// [`margin_at`] at each water-term factor of `factors`, with `minimum`
+/// inserted, on one evaluation of the feedback.
+fn margins_at(
+    feedback: &sf::Model,
+    kinetics: &kinetics::Model,
+    fixed: Fixed<'_>,
+    neutrons: &[Scalar],
+    conditions: sf::Conditions<'_>,
+    factors: &[f64],
+    minimum: f64,
+) -> Result<Vec<Margin>, Error> {
     let r = feedback.region_count();
     let mut terms = vec![sf::ReactivityTerms::default(); r];
     feedback
@@ -432,18 +485,24 @@ pub fn margin_at(
         .map(|g| g.value)
         .collect();
     let water: Vec<f64> = terms.iter().map(|t| t.water_density).collect();
-    shutdown_margin(
-        kinetics,
-        kinetics::Inputs {
-            regions: &regions,
-            transfer_rates_per_s: fixed.transfer_rates_per_s,
-            fissions_per_population_s: &production,
-            emission_fractions: fixed.emission_fractions,
-            outside_fractions: fixed.outside_fractions,
-        },
-        &water,
-        extension,
-    )
+    factors
+        .iter()
+        .map(|factor| {
+            margin_with(
+                kinetics,
+                kinetics::Inputs {
+                    regions: &regions,
+                    transfer_rates_per_s: fixed.transfer_rates_per_s,
+                    fissions_per_population_s: &production,
+                    emission_fractions: fixed.emission_fractions,
+                    outside_fractions: fixed.outside_fractions,
+                },
+                &water,
+                *factor,
+                minimum,
+            )
+        })
+        .collect()
 }
 
 /// D3 (a) at one accepted state from its source-feedback conditions: the
@@ -585,6 +644,189 @@ pub fn admit_accepted(
     sf::phase_absence(phase).map_err(|exit| Error::Unsupported {
         domain: admission.domain,
         margin_holds: admission.margin.holds,
+        exit,
+    })?;
+    Ok(admission)
+}
+
+/// P1 (owner R11, 17 October 2026): the `ld01-hot-standby-kinetics` record,
+/// as the source compiler emits it (the joined packet's top-level
+/// `hot_standby_kinetics` section). It widens the density-ratio and pressure
+/// domains of the hot liquid laws on the published comparison
+/// (`kinetics.md`, "Hot-standby kinetics"), and names the water-term factors
+/// at which the shutdown margin is reported and the margin it is reported
+/// against. The margin never selects the domain and never ends a run.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct HotStandby {
+    /// Largest admitted `rho_H2O/rho_ref`.
+    pub density_ratio_maximum: f64,
+    /// Lowest admitted pressure (Pa).
+    pub pressure_minimum_pa: f64,
+    /// Highest admitted pressure (Pa): the laws read pressure only through
+    /// the liquid density, so the stable-liquid property ceiling.
+    pub pressure_maximum_pa: f64,
+    /// Water-term factors of the reported margins: nominal first, then
+    /// increasing (the rodded measured and design-limit coefficients).
+    pub reported_water_term_factors: [f64; 3],
+    /// The margin (Δk/k) each reported margin is checked against.
+    pub reference_margin_dk_k: f64,
+}
+
+impl HotStandby {
+    /// A widening of `original` with a nominal first factor, increasing
+    /// factors and a reference margin in (0, 1).
+    pub fn validate(&self, original: &sf::Domains) -> Result<(), Error> {
+        let [nominal, middle, high] = self.reported_water_term_factors;
+        if ![
+            self.density_ratio_maximum,
+            self.pressure_minimum_pa,
+            self.pressure_maximum_pa,
+            self.reference_margin_dk_k,
+            nominal,
+            middle,
+            high,
+        ]
+        .iter()
+        .all(|v| v.is_finite())
+        {
+            return Err(Error::Extension("nonfinite"));
+        }
+        if self.density_ratio_maximum < original.density_ratio.maximum {
+            return Err(Error::Extension("density ratio maximum narrows the domain"));
+        }
+        if !(self.pressure_minimum_pa > 0.
+            && self.pressure_minimum_pa <= original.pressure_pa.minimum)
+        {
+            return Err(Error::Extension("pressure minimum narrows the domain"));
+        }
+        if self.pressure_maximum_pa < original.pressure_pa.maximum {
+            return Err(Error::Extension("pressure maximum narrows the domain"));
+        }
+        if !(nominal == 1. && nominal < middle && middle < high) {
+            return Err(Error::Extension(
+                "reported factors are not nominal then increasing",
+            ));
+        }
+        if !(self.reference_margin_dk_k > 0. && self.reference_margin_dk_k < 1.) {
+            return Err(Error::Extension("reference margin outside (0, 1)"));
+        }
+        Ok(())
+    }
+    /// The compiled domains widened by this record.
+    pub fn domains(&self, original: sf::Domains) -> sf::Domains {
+        sf::Domains {
+            density_ratio: sf::Bounds {
+                minimum: original.density_ratio.minimum,
+                maximum: self.density_ratio_maximum,
+            },
+            pressure_pa: sf::Bounds {
+                minimum: self.pressure_minimum_pa,
+                maximum: self.pressure_maximum_pa,
+            },
+            ..original
+        }
+    }
+}
+
+/// One reported margin of a hot-standby state.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct ReportedMargin {
+    pub factor: f64,
+    /// The source-free operator with the water term at the factor is not
+    /// supercritical (no return to criticality at this factor).
+    pub subcritical: bool,
+    /// The check against the record's reference margin, with the operator
+    /// and gains whose pencil gives the margin's value (S2-D13's dggev).
+    pub margin: Margin,
+}
+
+/// One accepted state's hot-standby admission: its reported margins.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct HotStandbyAdmission {
+    pub margins: Vec<ReportedMargin>,
+}
+
+/// P1 at one state from its source-feedback conditions: the reported
+/// margins, then the hot-standby domains. The margin is an output; only
+/// leaving the domains is an unsupported result.
+pub fn admit_hot_standby(
+    feedback: &sf::Model,
+    kinetics: &kinetics::Model,
+    fixed: Fixed<'_>,
+    neutrons: &[Scalar],
+    conditions: sf::Conditions<'_>,
+    additional_reference_exposure_s: f64,
+    record: &HotStandby,
+) -> Result<HotStandbyAdmission, Error> {
+    let original = feedback.domains();
+    record.validate(&original)?;
+    let checks = margins_at(
+        feedback,
+        kinetics,
+        fixed,
+        neutrons,
+        conditions,
+        &record.reported_water_term_factors,
+        record.reference_margin_dk_k,
+    )?;
+    let r = feedback.region_count();
+    let margins: Vec<ReportedMargin> = record
+        .reported_water_term_factors
+        .iter()
+        .zip(checks)
+        .map(|(factor, margin)| ReportedMargin {
+            factor: *factor,
+            subcritical: m_matrix(r, &margin.operator).0,
+            margin,
+        })
+        .collect();
+    let mut out = sf::Output::new(r, feedback.material_count(), feedback.support_count());
+    match feedback.validate_accepted_within(
+        neutrons,
+        conditions,
+        additional_reference_exposure_s,
+        &mut out,
+        record.domains(original),
+    ) {
+        Ok(()) => Ok(HotStandbyAdmission { margins }),
+        Err(exit @ sf::Error::OutsideDomain(..)) => Err(Error::Unsupported {
+            domain: Domain::HotStandby,
+            margin_holds: margins[0].margin.holds,
+            exit,
+        }),
+        Err(e) => Err(Error::Feedback(e)),
+    }
+}
+
+/// P1 at one accepted state of the joined operator, as [`admit_accepted`]:
+/// call it after the joined evaluation AT that state; `phase` is each core
+/// region's coolant phase of the same evaluation (owner answer B1's
+/// phase-absence exit stays).
+pub fn admit_hot_standby_accepted(
+    nuclear: &Nuclear,
+    phase: &[sf::RegionPhase],
+    record: &HotStandby,
+    travel: &[Scalar],
+    t: f64,
+    additional_reference_exposure_s: f64,
+) -> Result<HotStandbyAdmission, Error> {
+    if phase.len() != nuclear.regions() {
+        return Err(Error::Length("phase"));
+    }
+    let at = AcceptedConditions::of(nuclear, travel, t);
+    let admission = admit_hot_standby(
+        nuclear.feedback(),
+        nuclear.kinetics(),
+        fixed(nuclear),
+        &at.neutrons,
+        at.conditions(),
+        additional_reference_exposure_s,
+        record,
+    )?;
+    sf::phase_absence(phase).map_err(|exit| Error::Unsupported {
+        domain: Domain::HotStandby,
+        margin_holds: admission.margins[0].margin.holds,
         exit,
     })?;
     Ok(admission)
