@@ -162,7 +162,9 @@ fn joined_census_against_table_1_1() {
         None => 0,
     };
     assert_eq!(c.composed, [17251 + g6, 1194, 18445 + g6]);
-    assert_eq!(c.with_pending, [17311 + g6, 1302, 18613 + g6]);
+    // P2 (OU-P2): the rods add their bore groups' water (8 x (M, U, B)
+    // differential, 8 pressures) and each cluster's upper-mouth current.
+    assert_eq!(c.with_pending, [17335 + g6, 1362, 18697 + g6]);
     let histories = nuclear.histories();
     assert_eq!(histories.len(), 9650);
     let receipt = json!({
@@ -1007,6 +1009,12 @@ pub fn started_s3_phase_composition()
 /// The full composition at the hot reference, consistently started: memo
 /// §3 (A)-(D), the start on the block assembly (lead decision S2-D4).
 pub fn started_full_composition() -> Started {
+    started_full_composition_with_singles(&[])
+}
+
+/// [`started_full_composition`] with the clusters `singles` keeping their
+/// bore water singly (P2: a cluster declared stuck must be one).
+pub fn started_full_composition_with_singles(singles: &[usize]) -> Started {
     use leitbild_operating_plant::{
         initialization::SurfacePolicy,
         joined::operator::{Joined, RodPort, SecondaryPort},
@@ -1038,7 +1046,8 @@ pub fn started_full_composition() -> Started {
                 .expect("SG secondary owner"),
         )),
         RodPort::Owner(Box::new(
-            RodBlock::from_packet(&rods, &network_packet, &carved, &If97, &[]).expect("rod owner"),
+            RodBlock::from_packet(&rods, &network_packet, &carved, &If97, singles)
+                .expect("rod owner"),
         )),
     )
     .expect("joined operator");
@@ -1341,6 +1350,8 @@ fn the_holding_opening_releases_the_held_clusters_at_its_stop_and_restarts_exact
 #[test]
 #[ignore = "NOT-EVIDENCE zero-time check: requires the joined packet, the wiki, IF97 and stock IDA/KLU"]
 fn the_stuck_cluster_command_keeps_its_grip_at_the_opening_and_the_rest_release() {
+    // The last of the 52 clusters, kept singly at composition (P2).
+    const STUCK: usize = 51;
     use leitbild_operating_plant::joined::block::Command;
     use leitbild_operating_water::{
         ida::{Ida, Initial},
@@ -1357,11 +1368,12 @@ fn the_stuck_cluster_command_keeps_its_grip_at_the_opening_and_the_rest_release(
         structure,
         analyses,
         ..
-    } = started_full_composition();
+    } = started_full_composition_with_singles(&[STUCK]);
     let algebraic = |ids: &[f64]| ids.iter().filter(|v| **v == 0.).count();
     let held = algebraic(&ids);
     let clusters = joined.rods().unwrap().clusters();
     let stuck = clusters - 1;
+    assert_eq!(stuck, STUCK, "the last cluster is the stuck one");
     let mut y = y;
     let before = y.clone();
     // G7's declared malfunction through every composed owner: no
@@ -1431,7 +1443,11 @@ fn the_stuck_cluster_command_keeps_its_grip_at_the_opening_and_the_rest_release(
     let ids_open = ida.system().joined.differential(&network_ids);
     assert_eq!(algebraic(&ids_open), held - (clusters - 1));
     let o = ida.system().joined.offsets();
-    assert_eq!(ids_open[o.rods + 3 * stuck + 1], 0., "the stuck speed row");
+    assert_eq!(
+        ids_open[o.rods + leitbild_operating_plant::rods::CLUSTER_COORDINATES * stuck + 1],
+        0.,
+        "the stuck speed row"
+    );
     assert!(report.residual.value <= 1e-12 && report.constraint_rate.value <= 1e-12);
     assert!(restarted.yp.iter().all(|v| v.is_finite()));
     // Nothing more is due at the opening, and a declaration after it is
