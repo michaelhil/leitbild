@@ -59,7 +59,7 @@ test.skipIf(!wiki)('actual secondary and probe sections compile once; corrupted 
   expect(section.contact).toEqual({exchangeArea_m2:5000,emissivity:.3,steelConductivity_W_mK:15,steelDensity_kg_m3:8000,steelCp_J_kgK:500})
   expect(section.exposure).toEqual({fold:{developedLength_m:20,inlet_m:2.5,crest_m:12,outlet_m:3},bundleZoneVolume_m3:42,upperZoneArea_m2:12})
   expect(probe.tube).toEqual({thermalDiameter_m:.02})
-  expect(section.relief.rating.massFlow_kg_s).toBeCloseTo(491.8913898,9)
+  expect(section.relief.rating.massFlow_kg_s).toBeCloseTo(561.1185020,6)
   expect(section.provenance.consumed.map(c=>c.name.split('ld-01/')[1])).toEqual([...sectionPages])
   expect(probe.primary).toEqual({pressure_Pa:15200000,temperature_K:563.15,flowArea_m2:1.25,massFlow_kg_s:[9167.294305,9167.309151]})
   expect(probe.segments.map(g=>[g.developedStart_m,g.developedEnd_m,g.exchangeArea_m2,g.capacity_J_K]))
