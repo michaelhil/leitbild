@@ -71,6 +71,13 @@ export const parsePrhrActuation = (text: string) => z.object({
   onAcceptedReactorTrip: z.literal(false), onCmtActuation: z.literal(true), causes: z.array(z.string()).min(1),
 }).strict().parse(configurationBlock(text, 'ld01-prhr-actuation'))
 
+/** CMT on AP1000's basis (`ld01-cmt-actuation`, owner R12-B3): the "S" signal on
+ * low PZR pressure and the low-2 PZR level request CMT injection; the 13 MPa
+ * low-pressure trip no longer does. */
+export const parseCmtActuation = (text: string) => z.object({
+  sPressure_Pa: positive, sQualification_s: positive, low2Level_m: finite, low2Qualification_s: positive,
+}).strict().parse(configurationBlock(text, 'ld01-cmt-actuation'))
+
 /** RCP underspeed (`ld01-rcp-underspeed-protection`, owner R12-D2): per RCP a
  * single shaft-speed channel in fractions of the drive's reference speed,
  * armed by the protective proxy (AP1000's P-10); the chain lag + sampling +
@@ -187,6 +194,8 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
   const prhrActuation = parsePrhrActuation(texts['safety/engineered-safety-actuation.md'])
   const interlock = parseReactorTripTurbineTrip(texts['safety/protection-and-command-precedence.md'])
   const underspeed = parseRcpUnderspeed(texts['safety/source-and-primary-protection.md'])
+  const cmt = parseCmtActuation(texts['safety/source-and-primary-protection.md'])
+  if (!(cmt.sPressure_Pa < protection.low_pa)) throw Error('The "S" pressure must lie below the low-pressure trip (R12-B3)')
   const pt1 = taps.find(t => t.id === 'PT1')
   if (!pt1) throw Error('No PT1 tap')
   const frame_s = channel.sample_s
@@ -201,7 +210,8 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
     ['flow unavailable', lowFlow.unavailableQualification_s], ['flow reset', lowFlow.resetDuration_s],
     ['proxy sampling', proxyPaths.sample_s], ['proxy transport', proxyPaths.transport_s], ['proxy age', proxyPaths.maximumAge_s],
     ['proxy recovery', proxyPaths.recovery_s], ['turbine trip on reactor trip', interlock.delay_s], ['underspeed', underspeed.qualification_s],
-    ['underspeed reset', underspeed.resetDuration_s]] as const) wholeFrames(name, v, frame_s)
+    ['underspeed reset', underspeed.resetDuration_s], ['S pressure', cmt.sQualification_s],
+    ['low-2 level', cmt.low2Qualification_s]] as const) wholeFrames(name, v, frame_s)
   // R12-D2: the chain reproduces AP1000's total delay exactly.
   if (Math.abs(underspeed.speedLag_s + channel.sample_s + channel.transport_s + underspeed.qualification_s - underspeed.totalDelay_s) > 1e-12)
     throw Error('RCP underspeed chain (lag + sample + transport + qualification) disagrees with its total delay')
@@ -280,6 +290,10 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
       effects: { reactor_trip: true, cmt_injection: false, heater_isolation: true }, reset: pressureReset },
     { id: 'LD01.PROT.PZR.LOW_PRESSURE',
       rule: { voted: { family: 'LD01.PZR.PT', side: { at_or_below: protection.low_pa }, qualification_s: protection.low_qualification_s } },
+      effects: { reactor_trip: true, cmt_injection: false, heater_isolation: false }, reset: pressureReset },
+    // R12-B3: CMT on the "S" signal (low PZR pressure), not the 13 MPa trip.
+    { id: 'LD01.PROT.PZR.S_PRESSURE',
+      rule: { voted: { family: 'LD01.PZR.PT', side: { at_or_below: cmt.sPressure_Pa }, qualification_s: cmt.sQualification_s } },
       effects: { reactor_trip: true, cmt_injection: true, heater_isolation: false }, reset: pressureReset },
     { id: 'LD01.PROT.PZR.PRESSURE.UNAVAILABLE',
       rule: { unavailable: { family: 'LD01.PZR.PT', qualification_s: protection.unavailable_qualification_s } },
@@ -304,6 +318,10 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
         effects: trip, reset: flowReset },
     ]),
     { ...pzrLevel.highLevel, effects: trip },
+    // R12-B3: CMT on the low-2 PZR level (0 % of the tap span).
+    { id: 'LD01.PROT.PZR.LOW_2_LEVEL',
+      rule: { voted: { family: 'LD01.PZR.LT', side: { at_or_below: cmt.low2Level_m }, qualification_s: cmt.low2Qualification_s } },
+      effects: { reactor_trip: true, cmt_injection: true, heater_isolation: false }, reset: pzrLevel.highLevel.reset },
     ...speedFamilies.map(f => ({
       id: `LD01.PROT.RCS.${f.id.split('.')[2]}.UNDERSPEED`,
       rule: { armed: { family: f.id, side: { at_or_below: underspeed.underspeedFractionOfNominal }, qualification_s: underspeed.qualification_s,
