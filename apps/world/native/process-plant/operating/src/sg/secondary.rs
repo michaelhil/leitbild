@@ -1023,10 +1023,15 @@ impl<P: Properties> Secondary<P> for Secondaries {
                     "steamDemand":"unchanged (the holding circuit is not the steam owner's)"}),
             }),
             Command::TurbineTrip | Command::TurbineTripAcquired => {
+                // R12-A2: with the reactor-trip interlock a second trip
+                // demand (an operator's, the field controller's) can reach a
+                // latched turbine; the trip memory absorbs it unchanged.
                 if let Some(t0) = self.trip_s {
-                    return Err(fatal(format!(
-                        "the manual turbine TRIP is already latched since {t0} s"
-                    )));
+                    return Ok(Transaction {
+                        deposits: Vec::new(),
+                        receipt: json!({"owner":"secondary","command":command,"t_s":t,
+                            "latchedSince_s":t0,"steamDemand":"unchanged (the TRIP is already latched)"}),
+                    });
                 }
                 if !t.is_finite() {
                     return Err(fatal("turbine TRIP time"));
