@@ -7,7 +7,10 @@
 //!
 //! - Full power (the composed state as composed): the margin with every
 //!   cluster at the reference travel, all out and all seated; the held worth
-//!   at the reference travel against all out (T4.3-3 item 1 allows 2.00 %).
+//!   at the reference travel against all out (T4.3-3 item 1 allows 2.00 %);
+//!   and the fuel's excess reactivity, minus the margin with every cluster
+//!   out and no boron (R14-A1-C keeps it from the 2.8 m / 1,000 ppm_eq
+//!   reference).
 //! - Hot standby (P1's points: uniform water at `(T, 15.5 MPa)` on IF97,
 //!   fuel at `T`, the composed xenon and stocks) at the packet's prepared
 //!   boron and at listed comparison borons, at the reported water-term
@@ -139,9 +142,19 @@ fn rod_position_and_shutdown_margins() {
         hfp(&all(full_out)),
         hfp(&all(0.)),
     );
+    let excess = -margin(
+        &f.water_density_kg_m3,
+        &f.pressure_pa,
+        &f.moderator_temperature_k,
+        &f.fuel_temperature_k,
+        &vec![0.; regions],
+        &all(full_out),
+        1.,
+    );
     let full_power = json!({"margin_composed_travel": h_composed, "margin_all_at_reference": h_reference,
         "margin_all_out": h_out, "margin_all_seated": h_seated,
-        "held_worth_at_reference_dk_k": h_reference - h_out, "all_in_worth_dk_k": h_seated - h_out});
+        "held_worth_at_reference_dk_k": h_reference - h_out, "all_in_worth_dk_k": h_seated - h_out,
+        "excess_all_out_zero_boron_dk_k": excess});
     let worst = |m: &dyn Fn(&[f64]) -> f64, at: f64| -> (f64, usize) {
         let mut best = (f64::INFINITY, 0);
         for c in 0..clusters {
