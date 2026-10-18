@@ -10,10 +10,12 @@
 //! (m/s, upward positive), the lower mouth's upward mass current `m_lo` and
 //! the upper mouth's `m_up` (kg/s). `y' = v` always. A FREE body obeys
 //! `M v' = F_end + F_wall + B_spider + F_drag - M g`; a HELD or SEATED body
-//! has the algebraic row `v = 0`. The two mouth rows are steady: LOWER's
-//! mouth pressure less the bores' at the lower mouth less the lower mouth and
-//! the clear bores below the tips, and the bores' pressure at the upper
-//! mouth less UPPER's less the moving annulus and the upper mouth.
+//! has the algebraic row `v = 0`. The two mouth rows are steady, each over
+//! its own path to the bores' reference height where its hydrostatics end
+//! (P2-FIX-1, [`RodBlock::mouth_paths`]): LOWER's mouth pressure less the
+//! bores' at the lower mouth less the lower mouth and the clear and annular
+//! segments of `[z_lo, z_ref]`, and the bores' pressure at the upper mouth
+//! less UPPER's less the segments of `[z_ref, z_up]` and the upper mouth.
 //!
 //! The bores' water is one well-mixed water region per bore group: the
 //! clusters with the same sector shares (exchangeable in every law here),
@@ -274,7 +276,10 @@ pub struct Forces {
     /// The lower and the upper mouth's steady balances (Pa).
     pub lower_residual: Scalar,
     pub upper_residual: Scalar,
+    /// The annulus enhancement on the upper and the lower mouth's path.
     pub chi: Scalar,
+    pub lower_chi: Scalar,
+    /// Both annulus segments' dissipation and the upper mouth's, W.
     pub annulus_dissipation: Scalar,
     /// The mouths' upward mass currents (kg/s).
     pub lower_current: Scalar,
@@ -286,6 +291,17 @@ pub struct Forces {
     pub lower_mouth_density: Scalar,
     pub upper_mouth_density: Scalar,
     pub bore: Bore,
+}
+
+/// The lengths (m) of the clear and annular segments on each mouth's path
+/// to the bores' reference height (P2-FIX-1). Their sums over both paths are
+/// the bores' clear and annular lengths.
+#[derive(Clone, Copy, Debug)]
+pub struct MouthPaths {
+    pub lower_clear: Scalar,
+    pub lower_annulus: Scalar,
+    pub upper_clear: Scalar,
+    pub upper_annulus: Scalar,
 }
 
 /// One member cluster of a bore group in one evaluation: its index, forces
@@ -991,11 +1007,12 @@ impl RodBlock {
     }
 
     /// State conversion (P2): each bore group's `[M, U, B, p]` for the
-    /// clusters' travels and lower-mouth currents of a state whose LOWER
-    /// liquid is `lower`. The bores hold LOWER's water (its specific internal
-    /// energy and boron) at the pressure that closes the group's first
-    /// member's lower mouth balance at its current: a first estimate with
-    /// the column and the clear bores on LOWER's water, then the same
+    /// clusters' travels, velocities and lower-mouth currents of a state
+    /// whose LOWER liquid is `lower`. The bores hold LOWER's water (its
+    /// specific internal energy and boron) at the pressure that closes the
+    /// group's first member's lower mouth balance at its current: a first
+    /// estimate with the column and the lower path's segments (P2-FIX-1) on
+    /// LOWER's water, then the same
     /// balance on the bores' water at that estimate (its density and
     /// viscosity), the lower mouth's loss on its donor as the rows take it.
     /// Two explicit evaluations, nothing iterated; what remains (the
@@ -1006,11 +1023,14 @@ impl RodBlock {
         properties: &P,
         lower: &LowerField,
         travel: &[f64],
+        velocity: &[f64],
         lower_current: &[f64],
     ) -> Result<Vec<[f64; 4]>, Failure> {
         let n = self.clusters.len();
-        if travel.len() != n || lower_current.len() != n {
-            return Err(fatal("rods: one travel and one lower current per cluster"));
+        if travel.len() != n || velocity.len() != n || lower_current.len() != n {
+            return Err(fatal(
+                "rods: one travel, one velocity and one lower current per cluster",
+            ));
         }
         let mouth = lower.pressure_pa
             + lower.density_kg_m3 * self.gravity * (self.z_lower - self.guide_bottom);
@@ -1024,20 +1044,26 @@ impl RodBlock {
         for group in &self.groups {
             let c = group.members[0];
             self.admit_travel(c, travel[c])?;
-            let clear_length = s(self.body_bottom + travel[c] - self.guide_bottom);
-            let current = s(lower_current[c]);
-            // The balance with the column and the clear bores on `(rho, mu)`
-            // and the lower mouth on its donor.
+            let path = self.mouth_paths(
+                s(self.body_bottom + travel[c]),
+                Branch::of_rate(velocity[c]),
+            );
+            let (current, speed) = (s(lower_current[c]), s(velocity[c]));
+            // The balance with the column and the lower path's segments on
+            // `(rho, mu)` and the lower mouth on its donor.
             let closing = |rho: f64, mu: f64| {
                 let donor = if current.value > 0. {
                     lower.density_kg_m3
                 } else {
                     rho
                 };
-                let clear = self
-                    .passage
-                    .clear(current, s(rho), s(mu), clear_length, s(donor));
-                mouth - clear.value - rho * self.gravity * (self.z_bore - self.guide_bottom)
+                let loss = self.passage.lower_mouth(current, s(donor))
+                    + self.passage.clear(current, s(rho), s(mu), path.lower_clear)
+                    + self
+                        .passage
+                        .annulus(current, speed, s(rho), s(mu), path.lower_annulus)
+                        .loss;
+                mouth - loss.value - rho * self.gravity * (self.z_bore - self.guide_bottom)
             };
             let first = water(closing(lower.density_kg_m3, lower.viscosity_pa_s))?;
             let pressure = closing(first.density_kg_m3, first.viscosity_pa_s);
@@ -1131,6 +1157,34 @@ impl RodBlock {
         (0..self.groups.len())
             .map(|g| self.bore(properties, g, x))
             .collect()
+    }
+
+    /// The segments of each mouth's path to the bores' reference height
+    /// `z_bore` at the tip elevation `tip` (P2-FIX-1). The lower path is the
+    /// clear bore up to the tip or the reference, whichever is lower, and
+    /// the annulus from a tip below the reference up to it; the upper path
+    /// the clear bore from the reference up to a tip above it and the
+    /// annulus from the higher of the two to the guide top. A tip at the
+    /// reference takes the travel direction's side (insertion and rest:
+    /// below), as the moving volumes' kinks do.
+    pub fn mouth_paths(&self, tip: Scalar, branch: Branch) -> MouthPaths {
+        let below =
+            tip.value < self.z_bore || (tip.value == self.z_bore && branch == Branch::Insertion);
+        if below {
+            MouthPaths {
+                lower_clear: tip - s(self.guide_bottom),
+                lower_annulus: s(self.z_bore) - tip,
+                upper_clear: s(0.),
+                upper_annulus: s(self.guide_top - self.z_bore),
+            }
+        } else {
+            MouthPaths {
+                lower_clear: s(self.z_bore - self.guide_bottom),
+                lower_annulus: s(0.),
+                upper_clear: tip - s(self.z_bore),
+                upper_annulus: s(self.guide_top) - tip,
+            }
+        }
     }
 
     /// The bores' pressure at elevation `z`, about their reference with
@@ -1237,28 +1291,30 @@ impl RodBlock {
         let upper_mouth = fluid.cells[self.upper].pressure
             + fluid.mixture_density(self.upper) * g * s(self.z_upper - self.guide_top);
         let tip = s(self.body_bottom) + y;
-        let clear_length = tip - s(self.guide_bottom);
-        let annulus_length = s(self.guide_top) - tip;
-        let clear = self.passage.clear(
-            m_lo,
-            bore.density,
-            bore.viscosity,
-            clear_length,
-            lower_mouth_density,
-        );
-        let ann = self.passage.annulus(
-            m_up,
-            v,
-            bore.density,
-            bore.viscosity,
-            annulus_length,
-            upper_mouth_density,
-        );
+        // P2-FIX-1: each mouth's friction over its own path to the bores'
+        // reference height, where its hydrostatics end: the clear and
+        // annular segments of [guide bottom, z_bore] for the lower mouth,
+        // of [z_bore, guide top] for the upper.
+        let path = self.mouth_paths(tip, branch);
+        let (rho, mu) = (bore.density, bore.viscosity);
+        let ann_lo = self.passage.annulus(m_lo, v, rho, mu, path.lower_annulus);
+        let ann_up = self.passage.annulus(m_up, v, rho, mu, path.upper_annulus);
+        let (upper_mouth_loss, upper_mouth_dissipation) =
+            self.passage.upper_mouth(m_up, upper_mouth_density);
+        let lower_loss = self.passage.lower_mouth(m_lo, lower_mouth_density)
+            + self.passage.clear(m_lo, rho, mu, path.lower_clear)
+            + ann_lo.loss;
+        let clear_up = self.passage.clear(m_up, rho, mu, path.upper_clear);
+        let upper_loss = ann_up.loss + clear_up + upper_mouth_loss;
         let lower_residual =
-            lower_mouth - self.bore_pressure_at(bore, s(self.guide_bottom)) - clear;
+            lower_mouth - self.bore_pressure_at(bore, s(self.guide_bottom)) - lower_loss;
         let upper_residual =
-            self.bore_pressure_at(bore, s(self.guide_top)) - upper_mouth - ann.loss;
-        let tip_pressure = self.bore_pressure_at(bore, tip);
+            self.bore_pressure_at(bore, s(self.guide_top)) - upper_mouth - upper_loss;
+        let wall = ann_lo.wall_force + ann_up.wall_force;
+        // The pressure the end faces see, on the path between the reference
+        // and the tips: above the lower path's annulus below the reference,
+        // below the upper path's clear bore above it.
+        let tip_pressure = self.bore_pressure_at(bore, tip) + ann_lo.loss - clear_up;
         let top_pressure = self.column_pressure(fluid, s(self.body_top) + y);
         let end_face = s(self.body_area) * (tip_pressure - top_pressure);
         // Mixture density over the spider's height, cell by cell.
@@ -1273,19 +1329,20 @@ impl RodBlock {
             }
             SpiderDrag::Omitted | SpiderDrag::Pending => s(0.),
         };
-        let net = end_face + ann.wall_force + spider_buoyancy + spider_drag - s(self.mass) * g;
+        let net = end_face + wall + spider_buoyancy + spider_drag - s(self.mass) * g;
         Ok(Forces {
             tip_pressure,
             top_pressure,
             end_face,
-            wall: ann.wall_force,
+            wall,
             spider_buoyancy,
             spider_drag,
             net,
             lower_residual,
             upper_residual,
-            chi: ann.chi,
-            annulus_dissipation: ann.dissipation,
+            chi: ann_up.chi,
+            lower_chi: ann_lo.chi,
+            annulus_dissipation: ann_lo.dissipation + ann_up.dissipation + upper_mouth_dissipation,
             lower_current: m_lo,
             upper_current: m_up,
             upper_mouth_weight: weight,

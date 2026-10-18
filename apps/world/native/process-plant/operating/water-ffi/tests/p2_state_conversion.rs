@@ -63,6 +63,7 @@ fn convert_a_saved_state_to_the_p2_layout() {
     y[o.pzr..].copy_from_slice(&old_y[o.pzr - shift..]);
     yp[o.pzr..].copy_from_slice(&old_yp[o.pzr - shift..]);
     let mut travel = vec![0.; clusters];
+    let mut velocity = vec![0.; clusters];
     let mut current = vec![0.; clusters];
     for c in 0..clusters {
         let (old, new) = (o.rods + 3 * c, o.rods + 4 * c);
@@ -74,6 +75,7 @@ fn convert_a_saved_state_to_the_p2_layout() {
         y[new + 2] = old_y[old + 2];
         y[new + 3] = old_y[old + 2];
         travel[c] = y[new] * scales[new];
+        velocity[c] = y[new + 1] * scales[new + 1];
         current[c] = y[new + 2] * scales[new + 2];
     }
     // LOWER's liquid of the saved state, on the carved scales.
@@ -95,7 +97,7 @@ fn convert_a_saved_state_to_the_p2_layout() {
         boron_concentration: b / m,
     };
     let stocks = block
-        .bore_stocks_at(&If97, &field, &travel, &current)
+        .bore_stocks_at(&If97, &field, &travel, &velocity, &current)
         .unwrap();
     for (g, s) in stocks.iter().enumerate() {
         for (k, v) in [BORE_MASS, BORE_ENERGY, BORE_BORON, BORE_PRESSURE]

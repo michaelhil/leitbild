@@ -12,7 +12,7 @@ use leitbild_operating_plant::{
     rods::{
         BORE_BORON, BORE_ENERGY, BORE_MASS, BORE_PRESSURE, Bodies, CLUSTER_COORDINATES, Cells,
         ClusterSection, Guide, Holding, LOWER_CURRENT, LowerWater, Mode, Region, RodBlock, Section,
-        Span, Spider, SpiderDrag, TRAVEL, UPPER_CURRENT, VELOCITY,
+        Span, Spider, SpiderDrag, TRAVEL, UPPER_CURRENT, VELOCITY, geometry::Branch,
     },
     sparse::{Coloring, Pattern, compare_with_dense, scatter},
     thermal::{Saturation, Scalar},
@@ -389,6 +389,15 @@ fn evaluate(
 /// value there (explicit: one linear correction of a near-linear balance
 /// and one forward property evaluation, no iteration).
 fn steady_bores(b: &RodBlock, physical: &mut [f64], water: &[Water1]) {
+    // Two explicit corrections: since P2-FIX-1 a pose below the reference
+    // puts the lower path's annulus (tens of kPa) into the first, whose
+    // column compressibility (2e-5 of it) the second removes.
+    for _ in 0..2 {
+        steady_bores_once(b, physical, water);
+    }
+}
+
+fn steady_bores_once(b: &RodBlock, physical: &mut [f64], water: &[Water1]) {
     let d = fluid_data(water);
     let f = fluid(&d);
     for (g, members) in b.bore_groups().iter().enumerate() {
@@ -523,11 +532,17 @@ fn z4_force_balance_and_insertion_margins_are_reproduced() {
                 forces.lower_residual.value,
                 forces.upper_residual.value
             );
-            // One explicit correction: the column's compressibility leaves
-            // 3e-2 Pa (1.2 kPa of correction times kappa rho g 2.3 m).
+            // Two explicit corrections close the lower balance.
             assert!(forces.lower_residual.value.abs() < 0.1, "{travel}: lower");
+            // Z4's current closes the series balance to its own pascal; since
+            // P2-FIX-1 a pose below the reference also shifts the bores'
+            // reference pressure by the lower path's annulus (about 40 kPa at
+            // 1.25 m), and the bores' density with it (kappa rho 40 kPa,
+            // 5e-5), which changes the annulus volume current's loss by about
+            // 7 Pa: Z4's current is then the steady one to 5e-5 of itself.
+            // Bound: 1e-4 of the bores' pressure drop, about 15 Pa.
             assert!(
-                forces.upper_residual.value.abs() < 3.,
+                forces.upper_residual.value.abs() < 1e-4 * (tip - top),
                 "{travel}: upper {}",
                 forces.upper_residual.value
             );
@@ -1306,6 +1321,7 @@ fn a_converted_state_holds_lower_water_at_the_balancing_bore_pressure() {
                 boron_concentration: 1e-3,
             },
             &[2.8; N],
+            &[0.; N],
             &[current; N],
         )
         .unwrap();
@@ -1342,5 +1358,51 @@ fn a_converted_state_holds_lower_water_at_the_balancing_bore_pressure() {
             "upper {}",
             rows[ci(c, UPPER_CURRENT)].value
         );
+    }
+}
+
+/// P2-FIX-1: a seated body's tip sits at the lower mouth, and the lower
+/// path still runs up the annulus to the bores' reference height, so at rest
+/// the lower balance keeps the annulus's laminar slope in its current (the
+/// bare mouth loss alone has none: `m|m|`). The seated post-trip -4 of the
+/// joint P2 + N1 C3 run came from that missing slope.
+#[test]
+fn a_seated_lower_balance_keeps_a_laminar_slope_at_rest() {
+    let water = z4_field(0.);
+    let mut b = block(SpiderDrag::Omitted);
+    let mut physical = held(&mut b, &water, 0., 0.);
+    for c in 0..N {
+        b.set_mode(c, Mode::Seated);
+    }
+    let d = fluid_data(&water);
+    let f = fluid(&d);
+    let scales = layout(&b).scales.clone();
+    let lower = |physical: &[f64]| -> f64 {
+        let y = solver(&b, physical);
+        let yp = vec![0.; y.len()];
+        let x = Coordinates::new(&y, &yp, None, 0., &scales).unwrap();
+        let bore = b.bore(&Liquid, b.group_of(0), &x).unwrap();
+        b.forces(0, &x, &f, &bore).unwrap().lower_residual.value
+    };
+    let h = 1e-6;
+    physical[ci(0, LOWER_CURRENT)] = h;
+    let up = lower(&physical);
+    physical[ci(0, LOWER_CURRENT)] = -h;
+    let down = lower(&physical);
+    let slope = (up - down) / (2. * h);
+    // The exact laminar annulus over the reference's 2.325 m: of the order of
+    // the Z4 annulus's 1e5 Pa per kg/s over its whole length.
+    let paths = b.mouth_paths(Scalar::constant(-2.25), Branch::Insertion);
+    assert!((paths.lower_annulus.value - 2.325).abs() < 1e-12 && paths.lower_clear.value == 0.);
+    assert!((paths.upper_annulus.value - 2.325).abs() < 1e-12 && paths.upper_clear.value == 0.);
+    assert!(slope < -1e4, "seated lower slope {slope} Pa per kg/s");
+    // The paths tile the guide at any pose: total clear and annular lengths
+    // are the tip's.
+    for tip in [-2.25, -1., 0.075, 0.55, 1.75] {
+        for branch in [Branch::Insertion, Branch::Withdrawal] {
+            let p = b.mouth_paths(Scalar::constant(tip), branch);
+            assert!(((p.lower_clear + p.upper_clear).value - (tip + 2.25)).abs() < 1e-12);
+            assert!(((p.lower_annulus + p.upper_annulus).value - (2.4 - tip)).abs() < 1e-12);
+        }
     }
 }
