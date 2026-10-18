@@ -69,6 +69,7 @@ export const parsePowerProxyPaths = (text: string) => z.object({
  * functions that request PRHR besides CMT actuation. */
 export const parsePrhrActuation = (text: string) => z.object({
   onAcceptedReactorTrip: z.literal(false), onCmtActuation: z.literal(true), causes: z.array(z.string()).min(1),
+  high3Timer_s: positive,
 }).strict().parse(configurationBlock(text, 'ld01-prhr-actuation'))
 
 /** CMT on AP1000's basis (`ld01-cmt-actuation`, owner R12-B3): the "S" signal on
@@ -211,7 +212,7 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
     ['proxy sampling', proxyPaths.sample_s], ['proxy transport', proxyPaths.transport_s], ['proxy age', proxyPaths.maximumAge_s],
     ['proxy recovery', proxyPaths.recovery_s], ['turbine trip on reactor trip', interlock.delay_s], ['underspeed', underspeed.qualification_s],
     ['underspeed reset', underspeed.resetDuration_s], ['S pressure', cmt.sQualification_s],
-    ['low-2 level', cmt.low2Qualification_s]] as const) wholeFrames(name, v, frame_s)
+    ['low-2 level', cmt.low2Qualification_s], ['high-3 PRHR timer', prhrActuation.high3Timer_s]] as const) wholeFrames(name, v, frame_s)
   // R12-D2: the chain reproduces AP1000's total delay exactly.
   if (Math.abs(underspeed.speedLag_s + channel.sample_s + channel.transport_s + underspeed.qualification_s - underspeed.totalDelay_s) > 1e-12)
     throw Error('RCP underspeed chain (lag + sample + transport + qualification) disagrees with its total delay')
@@ -318,6 +319,12 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
         effects: trip, reset: flowReset },
     ]),
     { ...pzrLevel.highLevel, effects: trip },
+    // CRED-FIX-A2: PRHR on the high-3 level after AP1000's 15 s timer, the
+    // high-level setting held for its qualification plus the timer; PRHR only.
+    { id: 'LD01.PROT.PZR.HIGH_3_PRHR',
+      rule: { voted: { family: 'LD01.PZR.LT', side: pzrLevel.highLevel.rule.voted.side,
+        qualification_s: pzrLevel.highLevel.rule.voted.qualification_s + prhrActuation.high3Timer_s } },
+      effects: { reactor_trip: false, cmt_injection: false, heater_isolation: false }, reset: pzrLevel.highLevel.reset },
     // R12-B3: CMT on the low-2 PZR level (0 % of the tap span).
     { id: 'LD01.PROT.PZR.LOW_2_LEVEL',
       rule: { voted: { family: 'LD01.PZR.LT', side: { at_or_below: cmt.low2Level_m }, qualification_s: cmt.low2Qualification_s } },

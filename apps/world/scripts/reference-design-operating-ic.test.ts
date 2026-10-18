@@ -13,7 +13,7 @@ const sgProtection = '{"lowWarning_m":5.75,"lowActuation_m":5.0,"highWarning_m":
 const reference = '{"eventReferencePower_W":3e9,"eventEnergy_MeV":200,"Fref_events_per_s":9.36226e19,"convertedSpan_m":[0.95,1.05],"form":"proxy = (E_c/E_c_ref) * (E_tot_ref/Fref)"}'
 const levelChannelsBlock = '{"calibrationPressure_Pa":15000000,"lag_s":0.5,"interfaceSpan_Pa":[0,25000000],"indicatedSpan_m":[-1,13],"quantum_m":0.01,"supplies":["I1","I2","I3"]}'
 const levelProtectionBlock = '{"lowLevel_m":3.0,"lowQualification_s":0.5,"highLevel_m":10.0,"highQualification_s":0.5,"unavailableQualification_s":1,"resetBand_m":[3.5,9.5],"resetDuration_s":5}'
-const prhrActuation = '{"onAcceptedReactorTrip":false,"onCmtActuation":true,"causes":["LD01.PROT.PZR.HIGH_LEVEL"]}'
+const prhrActuation = '{"onAcceptedReactorTrip":false,"onCmtActuation":true,"causes":["LD01.PROT.PZR.HIGH_3_PRHR"],"high3Timer_s":15}'
 const underspeed = '{"underspeedFractionOfNominal":0.9,"qualification_s":0.5,"speedLag_s":0.067,"spanFractionOfNominal":[0,1.5],"armingProxyFraction":0.1,"supply":{"A":"I1","B":"I2"},"resetFractionOfNominal":0.97,"resetDuration_s":5,"totalDelay_s":0.767}'
 const cmtBlock = '{"sPressure_Pa":12477415,"sQualification_s":0.5,"low2Level_m":0.0,"low2Qualification_s":0.5}'
 const interlock = '{"cause":"LD01.TG.REACTOR_TRIP","delay_s":5,"initiation":"LD01.TRIP.HOLD loss"}'
@@ -66,16 +66,20 @@ test('the section carries only strict-block values and the packet identities', (
   expect(ids).toEqual(['LD01.PROT.PZR.HIGH_PRESSURE', 'LD01.PROT.PZR.LOW_PRESSURE', 'LD01.PROT.PZR.S_PRESSURE', 'LD01.PROT.PZR.PRESSURE.UNAVAILABLE',
     'LD01.PROT.TG.TRIP', 'LD01.PROT.SG.A.LOW', 'LD01.PROT.SG.A.UNAVAILABLE', 'LD01.PROT.SG.B.LOW', 'LD01.PROT.SG.B.UNAVAILABLE',
     'LD01.PROT.RCS.A.LOW_FLOW', 'LD01.PROT.RCS.A.FLOW.UNAVAILABLE', 'LD01.PROT.RCS.B.LOW_FLOW', 'LD01.PROT.RCS.B.FLOW.UNAVAILABLE',
-    'LD01.PROT.PZR.HIGH_LEVEL', 'LD01.PROT.PZR.LOW_2_LEVEL', 'LD01.PROT.RCS.A1.UNDERSPEED', 'LD01.PROT.RCS.A2.UNDERSPEED', 'LD01.PROT.RCS.B1.UNDERSPEED',
+    'LD01.PROT.PZR.HIGH_LEVEL', 'LD01.PROT.PZR.HIGH_3_PRHR', 'LD01.PROT.PZR.LOW_2_LEVEL', 'LD01.PROT.RCS.A1.UNDERSPEED', 'LD01.PROT.RCS.A2.UNDERSPEED', 'LD01.PROT.RCS.B1.UNDERSPEED',
     'LD01.PROT.RCS.B2.UNDERSPEED'])
-  expect(s.functions[15]!.rule).toEqual({ armed: { family: 'LD01.RCP.A1.SPEED', side: { at_or_below: 0.9 }, qualification_s: 0.5,
+  expect(s.functions[16]!.rule).toEqual({ armed: { family: 'LD01.RCP.A1.SPEED', side: { at_or_below: 0.9 }, qualification_s: 0.5,
     arming_family: 'LD01.CORE.POWER.P', arming: { above: 0.1 } } })
   // R12-A1: PRHR on CMT actuation (the low-pressure cause) and the high level only, never on the reactor trip.
-  expect(s.functions.filter(f => f.effects.prhr).map(f => f.id)).toEqual(['LD01.PROT.PZR.S_PRESSURE', 'LD01.PROT.PZR.HIGH_LEVEL', 'LD01.PROT.PZR.LOW_2_LEVEL'])
+  expect(s.functions.filter(f => f.effects.prhr).map(f => f.id)).toEqual(['LD01.PROT.PZR.S_PRESSURE', 'LD01.PROT.PZR.HIGH_3_PRHR', 'LD01.PROT.PZR.LOW_2_LEVEL'])
+  // CRED-FIX-A2: the high-3 PRHR signal holds the high level 0.5 + 15 s and trips nothing.
+  const high3 = s.functions.find(f => f.id === 'LD01.PROT.PZR.HIGH_3_PRHR')!
+  expect(high3.rule).toEqual({ voted: { family: 'LD01.PZR.LT', side: { at_or_above: 10 }, qualification_s: 15.5 } })
+  expect(high3.effects).toEqual({ reactor_trip: false, cmt_injection: false, heater_isolation: false, prhr: true })
   // R12-B3: CMT only on the "S" pressure and the low-2 level.
   expect(s.functions.filter(f => f.effects.cmt_injection).map(f => f.id)).toEqual(['LD01.PROT.PZR.S_PRESSURE', 'LD01.PROT.PZR.LOW_2_LEVEL'])
   expect(s.functions[2]!.rule).toEqual({ voted: { family: 'LD01.PZR.PT', side: { at_or_below: 12477415 }, qualification_s: 0.5 } })
-  expect(s.functions.every(f => f.effects.reactor_trip)).toBe(true)
+  expect(s.functions.filter(f => !f.effects.reactor_trip).map(f => f.id)).toEqual(['LD01.PROT.PZR.HIGH_3_PRHR'])
   expect(s.functions[13]!.rule).toEqual({ voted: { family: 'LD01.PZR.LT', side: { at_or_above: 10 }, qualification_s: 0.5 } })
   expect(s.functions[5]!.rule).toEqual({ voted: { family: 'LD01.SG.A.LT.NR', side: { at_or_below: 5 }, qualification_s: 1 } })
   expect(s.functions[9]!.rule).toEqual({ armed: { family: 'LD01.RCS.A.FT', side: { at_or_below: 0.7 }, qualification_s: 0.5,
@@ -100,7 +104,7 @@ test('refusals: a duration off the frame, a missing face, a wrong Fref, a missin
   expect(() => compileOperatingIcFrom(pages({ 'safety/engineered-safety-actuation.md':
     fence('ld01-prhr-actuation', prhrActuation.replace('"onAcceptedReactorTrip":false', '"onAcceptedReactorTrip":true')) }), packet)).toThrow()
   expect(() => compileOperatingIcFrom(pages({ 'safety/engineered-safety-actuation.md':
-    fence('ld01-prhr-actuation', prhrActuation.replace('PZR.HIGH_LEVEL', 'SG.A.WR_LOW')) }), packet)).toThrow('not compiled')
+    fence('ld01-prhr-actuation', prhrActuation.replace('PZR.HIGH_3_PRHR', 'SG.A.WR_LOW')) }), packet)).toThrow('not compiled')
   expect(() => compileOperatingIcFrom(pages({ 'safety/protection-and-command-precedence.md':
     fence('ld01-reactor-trip-turbine-trip', interlock.replace('"delay_s":5', '"delay_s":5.05')) }), packet)).toThrow('not whole')
   expect(() => compileOperatingIcFrom(pages({ 'safety/source-and-primary-protection.md': fence('reference-pzr-pressure-protection', protection)
@@ -111,7 +115,7 @@ test('refusals: a duration off the frame, a missing face, a wrong Fref, a missin
 const wiki = process.env.LD01_WIKI_ROOT, joined = process.env.LD01_OPERATING_HOT_SPINE_PACKET
 test.skipIf(!wiki || !joined)('the actual section from the wiki and the packet', async () => {
   const s = await compileOperatingIc(wiki!, joined!)
-  expect(s.functions).toHaveLength(19)
+  expect(s.functions).toHaveLength(20)
   const root = join(wiki!, 'world/packs/process-plant/reference-designs/ld-01')
   for (const [i, name] of OPERATING_IC_PAGES.entries()) {
     const text = await Bun.file(join(root, name)).text()
