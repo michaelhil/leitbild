@@ -40,7 +40,7 @@
       "constraint_rate_within_bound": true,
       "opening_transactions": 1,
       "placements": 0,
-      "projection_passes": 0,
+      "projection_passes": 1,
       "rate_passes": 1,
       "released_clusters": 52,
       "residual_within_bound": true,
@@ -48,22 +48,22 @@
     },
     "settle": {
       "convergence_failures": 8,
-      "error_failures": 59,
+      "error_failures": 61,
       "failure": null,
-      "jacobians": 329,
+      "jacobians": 328,
       "last_order": 2,
-      "linear_setups": 329,
-      "nonlinear_iterations": 2973,
+      "linear_setups": 328,
+      "nonlinear_iterations": 2997,
       "reached": true,
-      "residuals": 2974,
+      "residuals": 2998,
       "root_restarts": 1,
-      "steps": 2426,
-      "system_jacobians": 329,
-      "system_residuals": 5850
+      "steps": 2453,
+      "system_jacobians": 328,
+      "system_residuals": 5898
     },
     "z1": {
       "constraint_rate_within_bound": true,
-      "projection_passes": 1,
+      "projection_passes": 0,
       "rate_passes": 1,
       "residual_within_bound": true
     }
