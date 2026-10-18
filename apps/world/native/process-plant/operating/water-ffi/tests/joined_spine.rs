@@ -544,8 +544,7 @@ fn z1_probe(full: bool) {
     };
     let started = z1::cpu_s();
     let (path, bytes) = packet_bytes();
-    let mut network_packet: NetworkPacket =
-        serde_json::from_slice(&bytes).expect("network packet");
+    let mut network_packet: NetworkPacket = serde_json::from_slice(&bytes).expect("network packet");
     let joined_packet: packet::Packet = serde_json::from_slice(&bytes).expect("joined packet");
     let raw: Value = serde_json::from_slice(&bytes).expect("packet json");
     // HOOK (OU-C P2 -> OU-B builder): the rod bores' water leaves the sector
@@ -653,6 +652,22 @@ fn z1_probe(full: bool) {
         .unwrap();
     // G12: S1's scaled 1e-8 absolute floor for every new coordinate class.
     atol.resize(y.len(), classes.stock_scaled);
+    // Lead decision DR13-ROD-A: with the owners composed, stock IDACalcIC
+    // makes the algebraic coordinates consistent (the rod owner's mouth
+    // currents start at zero) before the declared exact start; G13's first
+    // step is its horizon.
+    if full {
+        joined = leitbild_operating_water::joined::stock_initial_conditions(
+            joined,
+            0.,
+            &mut y,
+            &ids,
+            &atol,
+            classes.relative,
+            1e-4,
+        )
+        .expect("stock IDACalcIC");
+    }
     let weights: Vec<f64> = y
         .iter()
         .zip(&atol)
@@ -999,8 +1014,7 @@ pub fn started_full_composition() -> Started {
         sg::{packet::Section as SecondarySection, secondary::Secondaries},
     };
     let (path, bytes) = packet_bytes();
-    let mut network_packet: NetworkPacket =
-        serde_json::from_slice(&bytes).expect("network packet");
+    let mut network_packet: NetworkPacket = serde_json::from_slice(&bytes).expect("network packet");
     let joined_packet: packet::Packet = serde_json::from_slice(&bytes).expect("joined packet");
     let raw: Value = serde_json::from_slice(&bytes).expect("packet json");
     // HOOK (OU-C P2 -> OU-B builder): the rod bores' water leaves the sector
@@ -1058,6 +1072,19 @@ pub fn started_full_composition() -> Started {
         b.declare_lift_root_bound(classes.stock_scaled)
             .expect("lift root bound");
     }
+    // Lead decision DR13-ROD-A: stock IDACalcIC makes the algebraic
+    // coordinates consistent (the rod owner's mouth currents start at zero)
+    // before the declared exact start; G13's first step is its horizon.
+    let mut joined = leitbild_operating_water::joined::stock_initial_conditions(
+        joined,
+        0.,
+        &mut y,
+        &ids,
+        &atol,
+        classes.relative,
+        1e-4,
+    )
+    .expect("stock IDACalcIC");
     let weights: Vec<f64> = y
         .iter()
         .zip(&atol)

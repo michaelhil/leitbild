@@ -361,6 +361,20 @@ pub fn compose_from(
         b.declare_lift_root_bound(classes.stock_scaled)
             .expect("lift root bound");
     }
+    // Lead decision DR13-ROD-A (HOOK OU-C P2 -> OU-B builder): stock
+    // IDACalcIC makes the algebraic coordinates consistent (the rod owner's
+    // mouth currents start at zero) before the declared exact start; G13's
+    // first step is its horizon.
+    let mut joined = leitbild_operating_water::joined::stock_initial_conditions(
+        joined,
+        0.,
+        &mut y,
+        &ids,
+        &atol,
+        classes.relative,
+        1e-4,
+    )
+    .expect("stock IDACalcIC");
     let weights = error_weights(&y, classes.relative, &atol);
     let compile_cpu = process_cpu_s();
     let structure = JoinedJacobian::compile(&mut joined, 0., &y).expect("block structure");

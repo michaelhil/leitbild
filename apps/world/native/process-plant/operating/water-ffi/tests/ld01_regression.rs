@@ -382,6 +382,20 @@ fn composed(bytes: &[u8], gates: &Value) -> Composed {
         .unwrap();
     // G12: S1's scaled absolute floor for every new coordinate class.
     atol.resize(y.len(), classes.stock_scaled);
+    // Lead decision DR13-ROD-A (HOOK OU-C P2 -> OU-B builder): stock
+    // IDACalcIC makes the algebraic coordinates consistent (the rod owner's
+    // mouth currents start at zero) before the declared exact start; G13's
+    // first step is its horizon.
+    let joined = leitbild_operating_water::joined::stock_initial_conditions(
+        joined,
+        0.,
+        &mut y,
+        &ids,
+        &atol,
+        classes.relative,
+        1e-4,
+    )
+    .expect("stock IDACalcIC");
     let counts = json!({
         "s1_settling": s1,
         "dimension": y.len(),
