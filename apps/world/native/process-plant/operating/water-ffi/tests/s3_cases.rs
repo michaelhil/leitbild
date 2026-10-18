@@ -515,6 +515,10 @@ struct Recorder {
     rods: Vec<(usize, f64)>,
     scratch: Vec<f64>,
     rows: Vec<Value>,
+    /// HOOK (OU-A U5 lag projection): the process's instructions retired
+    /// at each frame, when LD01_OU_FRAME_COST=1 (never in `frames`, whose
+    /// digest the tiers pin).
+    cost: Option<Vec<(f64, u64)>>,
 }
 impl<S> leitbild_operating_water::frame::Client<S> for Recorder {
     fn name(&self) -> &str {
@@ -534,6 +538,9 @@ impl<S> leitbild_operating_water::frame::Client<S> for Recorder {
         t: f64,
         dense: &dyn leitbild_operating_water::frame::Dense,
     ) -> Result<Vec<leitbild_operating_water::frame::Change<S>>, String> {
+        if let Some(c) = self.cost.as_mut() {
+            c.push((t, s3_harness::counters::instructions()?));
+        }
         dense.derivative(t, 0, &mut self.scratch)?;
         let y = &self.scratch;
         let travel: Vec<f64> = self.rods.iter().map(|(i, s)| y[*i] * s).collect();
@@ -1491,6 +1498,7 @@ fn drive(
             .collect(),
         scratch: vec![0.; y.len()],
         rows: Vec::new(),
+        cost: (std::env::var("LD01_OU_FRAME_COST").as_deref() == Ok("1")).then(Vec::new),
     };
     // The gate observation: the ledgers count in the run's own (unscaled)
     // tolerance units for a reference too (DR-P3-GATE-2).
@@ -2657,6 +2665,7 @@ fn drive(
             "restarts_r": driver.counts.total(Class::R), "s_instants": driver.counts.total(Class::S),
             "label": s3_harness::families::PROVISIONAL},
         "frames": recorder.rows,
+        "ou_frame_instructions": recorder.cost.as_ref().map(|c| c.iter().map(|(t, i)| json!([t, i])).collect::<Vec<_>>()),
         "repeat_record": repeat_record,
     });
     eprintln!(
