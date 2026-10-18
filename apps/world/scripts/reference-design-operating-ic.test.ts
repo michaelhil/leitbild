@@ -13,10 +13,14 @@ const sgProtection = '{"lowWarning_m":5.75,"lowActuation_m":5.0,"highWarning_m":
 const reference = '{"eventReferencePower_W":3e9,"eventEnergy_MeV":200,"Fref_events_per_s":9.36226e19,"convertedSpan_m":[0.95,1.05],"form":"proxy = (E_c/E_c_ref) * (E_tot_ref/Fref)"}'
 const levelChannelsBlock = '{"calibrationPressure_Pa":15000000,"lag_s":0.5,"interfaceSpan_Pa":[0,25000000],"indicatedSpan_m":[-1,13],"quantum_m":0.01,"supplies":["I1","I2","I3"]}'
 const levelProtectionBlock = '{"lowLevel_m":3.0,"lowQualification_s":0.5,"highLevel_m":10.0,"highQualification_s":0.5,"unavailableQualification_s":1,"resetBand_m":[3.5,9.5],"resetDuration_s":5}'
+const prhrActuation = '{"onAcceptedReactorTrip":false,"onCmtActuation":true,"causes":["LD01.PROT.PZR.HIGH_3_PRHR"],"high3Timer_s":15}'
+const underspeed = '{"underspeedFractionOfNominal":0.9,"qualification_s":0.5,"speedLag_s":0.067,"spanFractionOfNominal":[0,1.5],"armingProxyFraction":0.1,"supply":{"A":"I1","B":"I2"},"resetFractionOfNominal":0.97,"resetDuration_s":5,"totalDelay_s":0.767}'
+const cmtBlock = '{"sPressure_Pa":12477415,"sQualification_s":0.5,"low2Level_m":0.0,"low2Qualification_s":0.5}'
+const interlock = '{"cause":"LD01.TG.REACTOR_TRIP","delay_s":5,"initiation":"LD01.TRIP.HOLD loss"}'
 const taps = '### PZR electronic differential level\n\n' + fence('ld01-pzr-taps', '{"pt1Elevation_m":18.5,"ltLowElevation_m":6.5,"ltHighElevation_m":18.5}')
 const pages = (over: Partial<Record<(typeof OPERATING_IC_PAGES)[number], string>> = {}) => ({
   'safety/source-and-primary-protection.md': fence('reference-pzr-pressure-protection', protection) + fence('ld01-loop-low-flow-protection', lowFlow)
-    + fence('ld01-pzr-level-protection', levelProtectionBlock),
+    + fence('ld01-pzr-level-protection', levelProtectionBlock) + fence('ld01-rcp-underspeed-protection', underspeed) + fence('ld01-cmt-actuation', cmtBlock),
   'systems/instrumentation/operational-observations.md': fence('reference-pzr-pressure-channel', channel)
     + fence('ld01-loop-flow-channel', flowChannel) + fence('ld01-power-proxy-protective-paths', proxyPaths),
   'systems/instrumentation/phase-dependent-measurements.md': taps + fence('ld01-pzr-level-channels', levelChannelsBlock),
@@ -26,12 +30,15 @@ const pages = (over: Partial<Record<(typeof OPERATING_IC_PAGES)[number], string>
     + fence('ld01-sg-level-protective-acquisition', '{"sample_s":0.1,"transport_s":0.1,"maximumAge_s":0.3}'),
   'systems/steam-generation/instrumentation.md': fence('ld01-sg-level-channels', '{"nrLag_s":0.5,"nrSpan_m":[4,9],"indicatedLevelArea_m2":12}'),
   'systems/instrumentation/nuclear-observation-apparatus.md': fence('ld01-regional-current-reference', reference),
+  'safety/engineered-safety-actuation.md': fence('ld01-prhr-actuation', prhrActuation),
+  'safety/protection-and-command-precedence.md': fence('ld01-reactor-trip-turbine-trip', interlock),
   ...over,
 })
 // Four sectors of six axial bands over -2..2 m, as the packet's source regions.
 const bands = [-2, -4 / 3, -2 / 3, 0, 2 / 3, 4 / 3, 2]
 const packet = {
   mechanics: { faces: [{ id: 'SG.A.PRIMARY->PUMP.A1' }, { id: 'RETURN.A->DOWN' }, { id: 'RETURN.B->DOWN' }] },
+  hydraulics: { sections: ['DOWN', 'PUMP.A1', 'PUMP.A2', 'COLD.A', 'PUMP.B1', 'PUMP.B2'].map(id => ({ id, parameters: { pump: id.startsWith('PUMP') ? {} : null } })) },
   secondary: { steamGenerators: [{ id: 'A' }, { id: 'B' }] },
   feedback_metadata: { regions: Array.from({ length: 24 }, (_, i) => ({ z0_m: bands[i % 6]!, z1_m: bands[i % 6 + 1]! })) },
 }
@@ -39,7 +46,12 @@ const packet = {
 test('the section carries only strict-block values and the packet identities', () => {
   const s = compileOperatingIcFrom(pages(), packet)
   expect(s.frame_s).toBe(0.1)
-  expect(s.families.map(f => f.id)).toEqual(['LD01.PZR.PT', 'LD01.PZR.LT', 'LD01.SG.A.LT.NR', 'LD01.SG.B.LT.NR', 'LD01.RCS.A.FT', 'LD01.RCS.B.FT', 'LD01.CORE.POWER.P'])
+  expect(s.families.map(f => f.id)).toEqual(['LD01.PZR.PT', 'LD01.PZR.LT', 'LD01.SG.A.LT.NR', 'LD01.SG.B.LT.NR', 'LD01.RCS.A.FT', 'LD01.RCS.B.FT', 'LD01.CORE.POWER.P',
+    'LD01.RCP.A1.SPEED', 'LD01.RCP.A2.SPEED', 'LD01.RCP.B1.SPEED', 'LD01.RCP.B2.SPEED'])
+  // R12-D2: one speed channel per RCP, in rotor order, on its loop's supply.
+  expect(s.families[9]!.quantity).toEqual({ pump_speed: { rotor: 2, rotor_id: 'PUMP.B1' } })
+  expect(s.families[9]!.channels).toEqual([{ id: 'LD01.RCP.B1.SPEED', supply: 'I2' }])
+  expect(s.families[9]!.channel).toMatchObject({ lag_s: 0.067, min: 0, max: 1.5, sample_s: 0.1, transport_s: 0.1 })
   expect(s.families[2]!.quantity).toEqual({ sg_collapsed_level: { sg: 'A', area_m2: 12 } })
   expect(s.families[2]!.channel).toMatchObject({ lag_s: 0.5, min: 4, max: 9, quantum: null })
   expect(s.families[4]!.quantity).toEqual({ loop_flow: { loop_id: 'A', face: 1, face_id: 'RETURN.A->DOWN', nominal_kg_s: null, quantum_kg_s: 5, indeterminate_band_kg_s: 10 } })
@@ -51,33 +63,59 @@ test('the section carries only strict-block values and the packet identities', (
   expect(proxy.current_proxy.weights.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 14)
   expect(s.families[6]!.channel).toMatchObject({ lag_s: 0.2, min: null, max: null, quantum: null })
   const ids = s.functions.map(f => f.id)
-  expect(ids).toEqual(['LD01.PROT.PZR.HIGH_PRESSURE', 'LD01.PROT.PZR.LOW_PRESSURE', 'LD01.PROT.PZR.PRESSURE.UNAVAILABLE',
+  expect(ids).toEqual(['LD01.PROT.PZR.HIGH_PRESSURE', 'LD01.PROT.PZR.LOW_PRESSURE', 'LD01.PROT.PZR.S_PRESSURE', 'LD01.PROT.PZR.PRESSURE.UNAVAILABLE',
     'LD01.PROT.TG.TRIP', 'LD01.PROT.SG.A.LOW', 'LD01.PROT.SG.A.UNAVAILABLE', 'LD01.PROT.SG.B.LOW', 'LD01.PROT.SG.B.UNAVAILABLE',
-    'LD01.PROT.RCS.A.LOW_FLOW', 'LD01.PROT.RCS.A.FLOW.UNAVAILABLE', 'LD01.PROT.RCS.B.LOW_FLOW', 'LD01.PROT.RCS.B.FLOW.UNAVAILABLE'])
-  expect(s.functions[4]!.rule).toEqual({ voted: { family: 'LD01.SG.A.LT.NR', side: { at_or_below: 5 }, qualification_s: 1 } })
-  expect(s.functions[8]!.rule).toEqual({ armed: { family: 'LD01.RCS.A.FT', side: { at_or_below: 0.7 }, qualification_s: 0.5,
+    'LD01.PROT.RCS.A.LOW_FLOW', 'LD01.PROT.RCS.A.FLOW.UNAVAILABLE', 'LD01.PROT.RCS.B.LOW_FLOW', 'LD01.PROT.RCS.B.FLOW.UNAVAILABLE',
+    'LD01.PROT.PZR.HIGH_LEVEL', 'LD01.PROT.PZR.HIGH_3_PRHR', 'LD01.PROT.PZR.LOW_2_LEVEL', 'LD01.PROT.RCS.A1.UNDERSPEED', 'LD01.PROT.RCS.A2.UNDERSPEED', 'LD01.PROT.RCS.B1.UNDERSPEED',
+    'LD01.PROT.RCS.B2.UNDERSPEED'])
+  expect(s.functions[16]!.rule).toEqual({ armed: { family: 'LD01.RCP.A1.SPEED', side: { at_or_below: 0.9 }, qualification_s: 0.5,
+    arming_family: 'LD01.CORE.POWER.P', arming: { above: 0.1 } } })
+  // R12-A1: PRHR on CMT actuation (the low-pressure cause) and the high level only, never on the reactor trip.
+  expect(s.functions.filter(f => f.effects.prhr).map(f => f.id)).toEqual(['LD01.PROT.PZR.S_PRESSURE', 'LD01.PROT.PZR.HIGH_3_PRHR', 'LD01.PROT.PZR.LOW_2_LEVEL'])
+  // CRED-FIX-A2: the high-3 PRHR signal holds the high level 0.5 + 15 s and trips nothing.
+  const high3 = s.functions.find(f => f.id === 'LD01.PROT.PZR.HIGH_3_PRHR')!
+  expect(high3.rule).toEqual({ voted: { family: 'LD01.PZR.LT', side: { at_or_above: 10 }, qualification_s: 15.5 } })
+  expect(high3.effects).toEqual({ reactor_trip: false, cmt_injection: false, heater_isolation: false, prhr: true })
+  // R12-B3: CMT only on the "S" pressure and the low-2 level.
+  expect(s.functions.filter(f => f.effects.cmt_injection).map(f => f.id)).toEqual(['LD01.PROT.PZR.S_PRESSURE', 'LD01.PROT.PZR.LOW_2_LEVEL'])
+  expect(s.functions[2]!.rule).toEqual({ voted: { family: 'LD01.PZR.PT', side: { at_or_below: 12477415 }, qualification_s: 0.5 } })
+  expect(s.functions.filter(f => !f.effects.reactor_trip).map(f => f.id)).toEqual(['LD01.PROT.PZR.HIGH_3_PRHR'])
+  expect(s.functions[13]!.rule).toEqual({ voted: { family: 'LD01.PZR.LT', side: { at_or_above: 10 }, qualification_s: 0.5 } })
+  expect(s.functions[5]!.rule).toEqual({ voted: { family: 'LD01.SG.A.LT.NR', side: { at_or_below: 5 }, qualification_s: 1 } })
+  expect(s.functions[9]!.rule).toEqual({ armed: { family: 'LD01.RCS.A.FT', side: { at_or_below: 0.7 }, qualification_s: 0.5,
     arming_family: 'LD01.CORE.POWER.P', arming: { above: 0.2 } } })
-  expect(s.functions[9]!.rule).toEqual({ armed_unavailable: { family: 'LD01.RCS.A.FT', qualification_s: 0.5,
+  expect(s.functions[10]!.rule).toEqual({ armed_unavailable: { family: 'LD01.RCS.A.FT', qualification_s: 0.5,
     arming_family: 'LD01.CORE.POWER.P', arming: { above: 0.2 } } })
   expect(s.missing).toBe(OPEN_ITEMS)
+  // R12-A2: the interlock's cause and delay come from its block.
+  expect(s.turbine_trip_on_reactor_trip).toMatchObject({ cause: 'LD01.TG.REACTOR_TRIP', delay_s: 5 })
 })
 
 test('refusals: a duration off the frame, a missing face, a wrong Fref, a missing block', () => {
   expect(() => compileOperatingIcFrom(pages({ 'safety/source-and-primary-protection.md':
     fence('reference-pzr-pressure-protection', protection) + fence('ld01-loop-low-flow-protection', lowFlow.replace('"lowFlowQualification_s":0.5', '"lowFlowQualification_s":0.55'))
-      + fence('ld01-pzr-level-protection', levelProtectionBlock) }), packet))
+      + fence('ld01-pzr-level-protection', levelProtectionBlock) + fence('ld01-rcp-underspeed-protection', underspeed) + fence('ld01-cmt-actuation', cmtBlock) }), packet))
     .toThrow('not whole')
   expect(() => compileOperatingIcFrom(pages(), { ...packet, mechanics: { faces: [{ id: 'RETURN.A->DOWN' }] } })).toThrow('No face RETURN.B->DOWN')
   expect(() => compileOperatingIcFrom(pages({ 'systems/instrumentation/nuclear-observation-apparatus.md':
     fence('ld01-regional-current-reference', reference.replace('9.36226e19', '9.4e19')) }), packet)).toThrow('Fref')
   expect(() => compileOperatingIcFrom(pages({ 'systems/steam-generation/instrumentation.md': 'no block' }), packet))
     .toThrow('Expected one ld01-sg-level-channels block')
+  expect(() => compileOperatingIcFrom(pages({ 'safety/engineered-safety-actuation.md':
+    fence('ld01-prhr-actuation', prhrActuation.replace('"onAcceptedReactorTrip":false', '"onAcceptedReactorTrip":true')) }), packet)).toThrow()
+  expect(() => compileOperatingIcFrom(pages({ 'safety/engineered-safety-actuation.md':
+    fence('ld01-prhr-actuation', prhrActuation.replace('PZR.HIGH_3_PRHR', 'SG.A.WR_LOW')) }), packet)).toThrow('not compiled')
+  expect(() => compileOperatingIcFrom(pages({ 'safety/protection-and-command-precedence.md':
+    fence('ld01-reactor-trip-turbine-trip', interlock.replace('"delay_s":5', '"delay_s":5.05')) }), packet)).toThrow('not whole')
+  expect(() => compileOperatingIcFrom(pages({ 'safety/source-and-primary-protection.md': fence('reference-pzr-pressure-protection', protection)
+    + fence('ld01-loop-low-flow-protection', lowFlow) + fence('ld01-pzr-level-protection', levelProtectionBlock)
+    + fence('ld01-rcp-underspeed-protection', underspeed.replace('"totalDelay_s":0.767', '"totalDelay_s":0.8')) + fence('ld01-cmt-actuation', cmtBlock) }), packet)).toThrow('total delay')
 })
 
 const wiki = process.env.LD01_WIKI_ROOT, joined = process.env.LD01_OPERATING_HOT_SPINE_PACKET
 test.skipIf(!wiki || !joined)('the actual section from the wiki and the packet', async () => {
   const s = await compileOperatingIc(wiki!, joined!)
-  expect(s.functions).toHaveLength(12)
+  expect(s.functions).toHaveLength(20)
   const root = join(wiki!, 'world/packs/process-plant/reference-designs/ld-01')
   for (const [i, name] of OPERATING_IC_PAGES.entries()) {
     const text = await Bun.file(join(root, name)).text()

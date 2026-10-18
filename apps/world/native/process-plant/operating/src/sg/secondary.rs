@@ -13,7 +13,11 @@
 //!
 //! The steam leaves at the constant A/B demand through the pickup gas at
 //! `h_g(p)`; after the manual turbine TRIP the demand ramps linearly to zero
-//! over the stop valve's travel (G2). The reliefs discharge the same gas
+//! over the stop valve's travel (G2). From the TRIP on, the bypass's no-load
+//! pressure mode (owner R12-B1, the G1 stand-in) also passes
+//! `fraction × demand × u(p)` per SG at `h_g(p)`, `u` linear from 0 at the
+//! no-load pressure to 1 one band width above it; it is not turbine
+//! admission, and the account counts it in the SG's steam port. The reliefs discharge the same gas
 //! through the existing equilibrium-nozzle restriction, `lift x area x G`,
 //! with the area derived once from the rating by that same law. The feed
 //! equals steam plus relief outflow at the recorded state's IF97 enthalpy
@@ -22,7 +26,9 @@
 //!
 //! Roots: each valve's crack, full-lift, reseat and seat thresholds, armed
 //! only by the valve state that owns them and otherwise a constant +1 (a
-//! disarmed root never crosses), so the root count never changes. A closing
+//! disarmed root never crosses), so the root count never changes. After the
+//! guards, the bypass band's two kinks (no-load pressure and full opening),
+//! armed from the TRIP on: a crossing changes no state. A closing
 //! disc seats at its declared seat lift: the transaction sets the lift to
 //! exactly zero and the seated valve has neither flow nor nozzle evaluation
 //! until crack reopens it. Then the crown's first
@@ -70,6 +76,8 @@ pub const THRESHOLDS: [Threshold; 4] = [
 pub const SEATED: Valve = Valve::SEATED;
 /// Value of a root its branch does not arm: it never crosses zero.
 pub const DISARMED: f64 = 1.;
+/// Per SG, after the guards: the bypass band's start and full opening.
+pub const BYPASS_ROOTS: usize = 2;
 
 fn s(v: f64) -> Scalar {
     Scalar::constant(v)
@@ -105,12 +113,18 @@ pub struct Derived {
     pub rating_flux_kg_m2_s: f64,
     pub rating_throat_pa: f64,
     pub rating_choked: bool,
+    /// The runtime saturation temperature at the compiled no-load pressure
+    /// (R12-B1), checked against the designed no-load temperature.
+    pub no_load_saturation_k: f64,
 }
 
 /// One SG's boundary flows of the last `rows` evaluation, with directions.
 #[derive(Clone, Debug)]
 pub struct Boundary {
+    /// All steam leaving through the pickup: turbine admission plus bypass.
     pub steam_kg_s: Scalar,
+    /// The bypass stand-in's part of `steam_kg_s` (R12-B1).
+    pub bypass_kg_s: Scalar,
     pub relief_kg_s: Vec<Scalar>,
     pub feed_kg_s: Scalar,
     pub steam_enthalpy_j_kg: Scalar,
@@ -135,9 +149,12 @@ struct Nozzle {
 #[derive(Clone, Debug)]
 pub struct Secondaries {
     sgs: Vec<SteamGenerator>,
-    relief: Characteristic,
+    /// One characteristic per valve position (R12-B2: relief, safety).
+    reliefs: Vec<Characteristic>,
     back_pressure_pa: f64,
     stop_travel_s: f64,
+    /// The bypass no-load pressure mode (R12-B1).
+    bypass: packet::Bypass,
     derived: Derived,
     layout: Layout,
     prepared: Vec<f64>,
@@ -177,7 +194,7 @@ impl Secondaries {
         stocks: &[SecondaryStock],
         props: &P,
     ) -> Result<Self, Failure> {
-        let (mut sgs, relief) = compile(section)?;
+        let (mut sgs, reliefs) = compile(section)?;
         let derived = derive(section, props)?;
         if stocks.len() != sgs.len() {
             return Err(fatal("one prepared stock per SG"));
@@ -198,7 +215,7 @@ impl Secondaries {
                 && positive(x.pressure_pa)
                 && x.liquid_volume_m3 > g.crown_liquid_volume_m3
                 && x.liquid_volume_m3 < g.pickup_liquid_volume_m3
-                && relief.admits(SEATED, x.pressure_pa, 0.))
+                && reliefs.iter().all(|r| r.admits(SEATED, x.pressure_pa, 0.)))
             {
                 return Err(fatal(format!(
                     "SG.{} preparation is not a two-phase start inside the guards below full lift",
@@ -251,6 +268,7 @@ impl Secondaries {
                 .iter()
                 .map(|g| Boundary {
                     steam_kg_s: s(0.),
+                    bypass_kg_s: s(0.),
                     relief_kg_s: vec![s(0.); g.valves.len()],
                     feed_kg_s: s(0.),
                     steam_enthalpy_j_kg: s(0.),
@@ -262,9 +280,10 @@ impl Secondaries {
                 })
                 .collect(),
             sgs,
-            relief,
+            reliefs,
             back_pressure_pa: section.relief.back_pressure_pa,
             stop_travel_s: section.steam_admission.stop_travel_s,
+            bypass: section.bypass.clone(),
             derived,
             layout,
             prepared,
@@ -312,8 +331,9 @@ impl Secondaries {
     pub fn derived(&self) -> Derived {
         self.derived
     }
-    pub fn relief(&self) -> Characteristic {
-        self.relief
+    /// Valve position `valve`'s characteristic (R12-B2).
+    pub fn relief(&self, valve: usize) -> Characteristic {
+        self.reliefs[valve]
     }
     pub fn back_pressure_pa(&self) -> f64 {
         self.back_pressure_pa
@@ -334,7 +354,7 @@ impl Secondaries {
         p_pa: f64,
         lift: f64,
     ) -> Result<(), Failure> {
-        if !self.relief.admits(state, p_pa, lift) {
+        if !self.reliefs[valve].admits(state, p_pa, lift) {
             return Err(fatal(format!(
                 "SG.{} relief {valve}: {state:?} contradicts the rule at {p_pa} Pa, lift {lift}",
                 self.sgs[sg].id
@@ -364,6 +384,27 @@ impl Secondaries {
             Some(t0) => (1. - (t - t0) / self.stop_travel_s).max(0.),
         }
     }
+    /// The bypass stand-in's opening at `t` and SG pressure `p` (R12-B1):
+    /// zero before the TRIP, then linear from the no-load pressure over one
+    /// band width, closed below and fully open above.
+    pub fn bypass_opening(&self, t: f64, p: Scalar) -> Scalar {
+        if !self.trip_s.is_some_and(|t0| t >= t0) {
+            return s(0.);
+        }
+        let b = &self.bypass;
+        let u = (p - s(b.no_load_pressure_pa)) / s(b.band_width_pa);
+        if u.value <= 0. {
+            s(0.)
+        } else if u.value >= 1. {
+            s(1.)
+        } else {
+            u
+        }
+    }
+    /// The bypass parameters (R12-B1).
+    pub fn bypass(&self) -> &packet::Bypass {
+        &self.bypass
+    }
     /// Boundary flows of the last `rows` evaluation, per SG.
     pub fn boundaries(&self) -> &[Boundary] {
         &self.boundary
@@ -382,7 +423,8 @@ impl Secondaries {
             let lifts = &y[b + LIFTS..b + LIFTS + g.valves.len()];
             if !(positive(m) && vl > g.crown_liquid_volume_m3 && vl < g.pickup_liquid_volume_m3)
                 || lifts.iter().any(|l| !(l.is_finite() && *l >= 0.))
-                || (0..g.valves.len()).any(|j| !self.relief.admits(self.valves[k][j], p, lifts[j]))
+                || (0..g.valves.len())
+                    .any(|j| !self.reliefs[j].admits(self.valves[k][j], p, lifts[j]))
             {
                 return Err(fatal(format!(
                     "SG.{} accepted state refused: M {m} kg, p {p} Pa, V_l {vl} m³, lifts {lifts:?}",
@@ -463,7 +505,7 @@ impl Secondaries {
         let per = THRESHOLDS.len();
         let before: usize = self.sgs[..sg]
             .iter()
-            .map(|g| per * g.valves.len() + 2)
+            .map(|g| per * g.valves.len() + 2 + BYPASS_ROOTS)
             .sum();
         before + per * valve + threshold
     }
@@ -679,7 +721,10 @@ impl<P: Properties> Secondary<P> for Secondaries {
             let hg = sat.vapor.enthalpy;
             rows[b + PRESSURE] = mass - chart_mass;
             rows[b + LIQUID_VOLUME] = energy - chart_energy;
-            let steam = s(g.steam_demand_kg_s * fraction);
+            // R12-B1: the bypass stand-in joins the turbine admission.
+            let bypass = s(self.bypass.fraction_of_nominal_steam * g.steam_demand_kg_s)
+                * self.bypass_opening(t, p);
+            let steam = s(g.steam_demand_kg_s * fraction) + bypass;
             let lifts: Vec<Scalar> = (0..g.valves.len())
                 .map(|j| x.value(b + LIFTS + j))
                 .collect();
@@ -709,9 +754,9 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 };
                 relief = relief + m;
                 report.relief_kg_s[j] = m;
-                report.targets[j] = self.relief.target(valve.branch, p);
+                report.targets[j] = self.reliefs[j].target(valve.branch, p);
                 rows[b + LIFTS + j] =
-                    x.rate(b + LIFTS + j) - self.relief.lift_rate(valve, p, *lift);
+                    x.rate(b + LIFTS + j) - self.reliefs[j].lift_rate(valve, p, *lift);
             }
             // F3 (a): the feed is exactly the withdrawn gas; x - x is exact.
             // S3-D12: gated to zero while the feed pumps are unsupplied.
@@ -726,6 +771,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
             rows[b + MASS] = x.rate(b + MASS) - mass_receipt;
             rows[b + ENERGY] = x.rate(b + ENERGY) - energy_receipt;
             report.steam_kg_s = steam;
+            report.bypass_kg_s = bypass;
             report.feed_kg_s = feed;
             report.steam_enthalpy_j_kg = hg;
             report.heat_w = *heat;
@@ -789,7 +835,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
     fn root_count(&self) -> usize {
         self.sgs
             .iter()
-            .map(|g| THRESHOLDS.len() * g.valves.len() + 2)
+            .map(|g| THRESHOLDS.len() * g.valves.len() + 2 + BYPASS_ROOTS)
             .sum()
     }
 
@@ -812,7 +858,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 let lift = x.value(g.base + LIFTS + j).value;
                 for threshold in THRESHOLDS {
                     out[i] = if armed.contains(&threshold) {
-                        self.relief.root(threshold, p, lift)
+                        self.reliefs[j].root(threshold, p, lift)
                     } else {
                         DISARMED
                     };
@@ -822,6 +868,12 @@ impl<P: Properties> Secondary<P> for Secondaries {
             out[i] = vl - g.crown_liquid_volume_m3;
             out[i + 1] = vl - g.pickup_liquid_volume_m3;
             i += 2;
+            // R12-B1: the bypass band's kinks, armed from the TRIP on.
+            let armed = self.trip_s.is_some();
+            let (p0, w) = (self.bypass.no_load_pressure_pa, self.bypass.band_width_pa);
+            out[i] = if armed { p - p0 } else { DISARMED };
+            out[i + 1] = if armed { p - (p0 + w) } else { DISARMED };
+            i += BYPASS_ROOTS;
         }
         if out.iter().any(|v| !v.is_finite()) {
             return Err(fatal("nonfinite SG root"));
@@ -846,7 +898,9 @@ impl<P: Properties> Secondary<P> for Secondaries {
             }
             out[i] = 0;
             out[i + 1] = 0;
-            i += 2;
+            out[i + 2] = 0;
+            out[i + 3] = 0;
+            i += 2 + BYPASS_ROOTS;
         }
         Ok(())
     }
@@ -890,8 +944,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
                         )));
                     }
                     let lift = y[g.base + LIFTS + j];
-                    let x: Transition = self
-                        .relief
+                    let x: Transition = self.reliefs[j]
                         .transition(current, threshold, d, lift)
                         .map_err(fatal)?;
                     self.valves[k][j] = x.after;
@@ -915,6 +968,14 @@ impl<P: Properties> Secondary<P> for Secondaries {
                         g.id,
                         y[g.base + LIQUID_VOLUME]
                     )));
+                }
+            }
+            // R12-B1: a bypass kink is a located crossing with no state change.
+            for (offset, name) in [(2, "bypass band start"), (3, "bypass full opening")] {
+                let d = directions[guard + offset];
+                if d != 0 {
+                    events.push(json!({"bypass": format!("SG.{}", g.id), "threshold": name,
+                        "direction": d, "pressure_Pa": p}));
                 }
             }
         }
@@ -962,10 +1023,15 @@ impl<P: Properties> Secondary<P> for Secondaries {
                     "steamDemand":"unchanged (the holding circuit is not the steam owner's)"}),
             }),
             Command::TurbineTrip | Command::TurbineTripAcquired => {
+                // R12-A2: with the reactor-trip interlock a second trip
+                // demand (an operator's, the field controller's) can reach a
+                // latched turbine; the trip memory absorbs it unchanged.
                 if let Some(t0) = self.trip_s {
-                    return Err(fatal(format!(
-                        "the manual turbine TRIP is already latched since {t0} s"
-                    )));
+                    return Ok(Transaction {
+                        deposits: Vec::new(),
+                        receipt: json!({"owner":"secondary","command":command,"t_s":t,
+                            "latchedSince_s":t0,"steamDemand":"unchanged (the TRIP is already latched)"}),
+                    });
                 }
                 if !t.is_finite() {
                     return Err(fatal("turbine TRIP time"));
@@ -983,22 +1049,61 @@ impl<P: Properties> Secondary<P> for Secondaries {
 }
 
 /// Validate the section's shapes and selections.
-fn compile(section: &packet::Section) -> Result<(Vec<SteamGenerator>, Characteristic), Failure> {
+fn compile(
+    section: &packet::Section,
+) -> Result<(Vec<SteamGenerator>, Vec<Characteristic>), Failure> {
     let r = &section.relief;
     if !(r.seat_lag_time_constants.is_finite() && r.seat_lag_time_constants > 0.) {
         return Err(fatal(
             "SG relief seat needs a positive number of lag time constants",
         ));
     }
-    let relief = Characteristic::new(
-        r.crack_pressure_pa,
-        r.full_lift_pressure_pa,
-        r.reseat_pressure_pa,
-        r.lift_lag_s,
-        (-r.seat_lag_time_constants).exp(),
-    )
-    .map_err(fatal)?;
-    if !(positive(r.back_pressure_pa) && r.back_pressure_pa < r.reseat_pressure_pa)
+    let reliefs = r
+        .valves
+        .iter()
+        .map(|v| {
+            Characteristic::new(
+                v.crack_pressure_pa,
+                v.full_lift_pressure_pa,
+                v.reseat_pressure_pa,
+                r.lift_lag_s,
+                (-r.seat_lag_time_constants).exp(),
+            )
+            .map_err(fatal)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    // R12-B2: the relief below the safety valve (AP1000: between no-load
+    // pressure and the lowest safety set, DCD 10.3.2.2.3), the safety
+    // valve opening at or below the declared design pressure, and every full
+    // lift inside 110 % of it (DCD 10.3.2.2.2).
+    let roles: Vec<packet::ValveRole> = r.valves.iter().map(|v| v.role).collect();
+    let (relief, safety) = match roles.as_slice() {
+        [packet::ValveRole::Relief, packet::ValveRole::Safety] => (r.valves[0], r.valves[1]),
+        _ => return Err(fatal("SG valves: one relief, then one safety valve")),
+    };
+    if !(positive(r.design_pressure_pa)
+        && relief.crack_pressure_pa < safety.crack_pressure_pa
+        && safety.crack_pressure_pa <= r.design_pressure_pa
+        && r.valves
+            .iter()
+            .all(|v| v.full_lift_pressure_pa <= 1.1 * r.design_pressure_pa))
+    {
+        return Err(fatal(
+            "SG valves: relief below the safety valve, safety at or below design, full lifts within 110 % of design",
+        ));
+    }
+    // R12-B1 with R12-B2: the bypass opens fully below the relief.
+    let b = &section.bypass;
+    // (both finite: validated above and by the characteristic)
+    if b.no_load_pressure_pa + b.band_width_pa >= relief.crack_pressure_pa {
+        return Err(fatal(
+            "SG bypass full opening must lie below the relief crack",
+        ));
+    }
+    if !(positive(r.back_pressure_pa)
+        && r.valves
+            .iter()
+            .all(|v| r.back_pressure_pa < v.reseat_pressure_pa))
         || r.descending_switch != packet::DescendingSwitch::InletAtFullLift
         || r.rating.fluid != packet::RatingFluid::SaturatedVapor
         || !(positive(r.rating.mass_flow_kg_s) && r.rating.inlet_pressure_pa > r.back_pressure_pa)
@@ -1011,6 +1116,19 @@ fn compile(section: &packet::Section) -> Result<(Vec<SteamGenerator>, Characteri
         || !positive(section.steam_admission.stop_travel_s)
     {
         return Err(fatal("SG feed boundary or steam admission travel"));
+    }
+    let b = &section.bypass;
+    if b.mode != packet::BypassMode::NoLoadPressureAfterTurbineTrip
+        || ![
+            b.no_load_average_temperature_k,
+            b.no_load_pressure_pa,
+            b.band_width_pa,
+        ]
+        .into_iter()
+        .all(positive)
+        || !(b.fraction_of_nominal_steam > 0. && b.fraction_of_nominal_steam <= 1.)
+    {
+        return Err(fatal("SG bypass no-load mode"));
     }
     let c = &section.contact;
     if ![
@@ -1049,8 +1167,13 @@ fn compile(section: &packet::Section) -> Result<(Vec<SteamGenerator>, Characteri
             }
             valves.push(v.id.clone());
         }
-        if valves.is_empty() {
-            return Err(fatal(format!("SG.{} has no relief", g.id)));
+        if valves.len() != reliefs.len() {
+            return Err(fatal(format!(
+                "SG.{} has {} valves, the settings {}",
+                g.id,
+                valves.len(),
+                reliefs.len()
+            )));
         }
         sgs.push(SteamGenerator {
             id: g.id.clone(),
@@ -1062,7 +1185,7 @@ fn compile(section: &packet::Section) -> Result<(Vec<SteamGenerator>, Characteri
             base: 0,
         });
     }
-    Ok((sgs, relief))
+    Ok((sgs, reliefs))
 }
 
 /// The feed enthalpy at the recorded state and each valve's effective area
@@ -1086,11 +1209,25 @@ fn derive<P: Properties>(section: &packet::Section, props: &P) -> Result<Derived
     if !positive(flux.mass_flux.value) || !feed.enthalpy_j_kg.is_finite() {
         return Err(fatal("SG derived feed enthalpy or relief flux"));
     }
+    // R12-B1: the compiled no-load pressure is the saturation pressure at
+    // the designed no-load temperature, by the runtime law (1 mK).
+    let b = &section.bypass;
+    let no_load = WaterProperties::saturation(props, s(b.no_load_pressure_pa))
+        .map_err(|e| fatal(format!("SG bypass no-load saturation: {e}")))?
+        .temperature
+        .value;
+    if !no_load.is_finite() || (no_load - b.no_load_average_temperature_k).abs() > 1e-3 {
+        return Err(fatal(format!(
+            "SG bypass no-load pressure {} Pa saturates at {no_load} K, not the no-load {} K",
+            b.no_load_pressure_pa, b.no_load_average_temperature_k
+        )));
+    }
     Ok(Derived {
         feed_enthalpy_j_kg: feed.enthalpy_j_kg,
         relief_area_m2: r.rating.mass_flow_kg_s / flux.mass_flux.value,
         rating_flux_kg_m2_s: flux.mass_flux.value,
         rating_throat_pa: flux.throat_pressure_pa.value,
         rating_choked: flux.choked,
+        no_load_saturation_k: no_load,
     })
 }

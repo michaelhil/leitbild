@@ -31,8 +31,8 @@ export const pzrControlOwners = {
  * when the block is missing. */
 export const lawValues = [
   { key: 'setpoint_Pa', prose: 'systems/primary-coolant/pressurizer-thermal-state.md#acquisition-and-initial-intent ("Retain the pressure setpoint 14,864,186.8055 Pa")' },
-  { key: 'sprayStartAboveSetpoint_Pa', prose: 'systems/primary-coolant/pressure-and-inventory.md#ordinary-pressure-regulation ("spray begins 0.02 MPa above target")' },
-  { key: 'sprayFullAboveSetpoint_Pa', prose: 'systems/primary-coolant/pressure-and-inventory.md#ordinary-pressure-regulation ("reaches full at +0.10 MPa")' },
+  { key: 'sprayStartAboveSetpoint_Pa', prose: 'systems/primary-coolant/pressure-and-inventory.md#ordinary-pressure-regulation ("spray begins 0.172369 MPa above target", R12-D3)' },
+  { key: 'sprayFullAboveSetpoint_Pa', prose: 'systems/primary-coolant/pressure-and-inventory.md#ordinary-pressure-regulation ("reaches full at +0.517107 MPa", R12-D3)' },
   { key: 'freshness_s', prose: 'systems/primary-coolant/pressure-and-inventory.md#ordinary-pressure-regulation ("the shared 2 s simulation-time freshness rule")' },
 ] as const
 

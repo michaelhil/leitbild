@@ -25,27 +25,29 @@ fn rel(a: f64, b: f64) -> f64 {
 }
 
 /// A nonsteady two-phase state with lifts on both branches: SG pressure
-/// 6.9 MPa, liquid 72.8 m³ on the chart, lifts 0.35 (ascending) and 0.8
+/// 8.1 MPa, liquid 72.8 m³ on the chart, lifts 0.35 (ascending) and 0.8
 /// (descending), metal across the segments. Synthetic, not a plant state.
 fn lifted<P: leitbild_operating_plant::sg::Properties>(sys: &mut Standalone<P>, y: &mut [f64]) {
-    let sat = WaterProperties::saturation(&If97, s(6.9e6)).unwrap();
+    // R12-B2: between the relief's crack and full lift (ascending) and the
+    // safety valve's reseat and full lift (descending).
+    let sat = WaterProperties::saturation(&If97, s(8.1e6)).unwrap();
     let n_sg = sys.secondary.steam_generators().len();
     for k in 0..n_sg {
         let g = sys.secondary.steam_generators()[k].clone();
-        let (m, u) = chart(g.volume_m3, s(72.8), s(6.9e6), &sat);
+        let (m, u) = chart(g.volume_m3, s(72.8), s(8.1e6), &sat);
         let b = g.base;
         let sc = &sys.scales;
         y[b] = m.value / sc[b];
         y[b + 1] = u.value / sc[b + 1];
-        y[b + 2] = 6.9e6 / sc[b + 2];
+        y[b + 2] = 8.1e6 / sc[b + 2];
         y[b + 3] = 72.8 / sc[b + 3];
         y[b + 4] = 0.35;
         y[b + 5] = 0.8;
         sys.secondary
-            .set_valve(k, 0, Valve::open(Branch::Ascending), 6.9e6, 0.35)
+            .set_valve(k, 0, Valve::open(Branch::Ascending), 8.1e6, 0.35)
             .unwrap();
         sys.secondary
-            .set_valve(k, 1, Valve::open(Branch::Descending), 6.9e6, 0.8)
+            .set_valve(k, 1, Valve::open(Branch::Descending), 8.1e6, 0.8)
             .unwrap();
         for i in 0..sys.segments.len() {
             let m = sys.secondary_len + k * sys.segments.len() + i;
@@ -92,7 +94,8 @@ fn preparation_and_derivations_reproduce_their_owners() {
             .count(),
         4
     );
-    assert_eq!(Secondary::<If97>::root_count(&block), 20);
+    // 4 thresholds per valve, 2 guards and (R12-B1) 2 bypass kinks per SG.
+    assert_eq!(Secondary::<If97>::root_count(&block), 24);
     assert_eq!(block.seated(), 4);
     eprintln!(
         "{}",
@@ -192,12 +195,25 @@ fn rows_close_mass_and_energy_and_the_trip_ramps_the_demand() {
             "{t}"
         );
         sys.evaluate(t, &y, &yp, None, 0.).unwrap();
-        let steam = sys.secondary.boundaries()[0].steam_kg_s.value;
+        // R12-B1: from the TRIP on, the bypass no-load mode adds its share;
+        // at 8.1 MPa it is fully open (above the no-load pressure plus the
+        // band width).
+        let demand = sys.secondary.steam_generators()[0].steam_demand_kg_s;
+        let bypass = if t >= 1. {
+            sys.secondary.bypass().fraction_of_nominal_steam * demand
+        } else {
+            0.
+        };
+        let b = &sys.secondary.boundaries()[0];
         assert!(
-            (steam - fraction * sys.secondary.steam_generators()[0].steam_demand_kg_s).abs() < 1e-9
+            (b.steam_kg_s.value - (fraction * demand + bypass)).abs() < 1e-9,
+            "{t}"
         );
+        assert!((b.bypass_kg_s.value - bypass).abs() < 1e-9, "{t}");
     }
-    assert!(Secondary::<If97>::command(&mut sys.secondary, 2., Command::TurbineTrip).is_err());
+    // R12-A2: a second TRIP on the latched turbine is absorbed unchanged.
+    let tx = Secondary::<If97>::command(&mut sys.secondary, 2., Command::TurbineTrip).unwrap();
+    assert_eq!(tx.receipt["latchedSince_s"], json!(1.));
 }
 
 #[test]

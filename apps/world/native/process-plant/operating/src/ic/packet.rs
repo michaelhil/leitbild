@@ -23,6 +23,9 @@ pub struct Section {
     /// no protective function, e.g. C2.N3's PZR LT vote).
     pub monitors: Vec<MonitorSpec>,
     pub holding: HoldingSpec,
+    /// The reactor-trip → turbine-trip interlock (`ld01-reactor-trip-turbine-trip`,
+    /// owner R12-A2).
+    pub turbine_trip_on_reactor_trip: TurbineTripOnReactorTrip,
     /// Needed values without a strict block (compiler's list; not consumed).
     pub missing: Vec<Value>,
     pub provenance: Vec<Value>,
@@ -73,6 +76,11 @@ pub enum Quantity {
         weights: Vec<f64>,
         fref_events_per_s: f64,
     },
+    /// An RCP's shaft speed as a fraction of the drive's reference speed
+    /// (owner R12-D2): rotor `rotor` in the network's rotor order (the
+    /// hydraulic sections with a pump, in packet order), `rotor_id` its
+    /// section. Linear in the rotor's angular-momentum coordinate.
+    PumpSpeed { rotor: usize, rotor_id: String },
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -167,6 +175,10 @@ pub struct Effects {
     pub reactor_trip: bool,
     pub cmt_injection: bool,
     pub heater_isolation: bool,
+    /// `LD01.PROT.PRHR.REQUEST` from this cause: only the AP1000 signal set
+    /// (`ld01-prhr-actuation`, owner R12-A1), never from the reactor trip
+    /// itself.
+    pub prhr: bool,
 }
 
 /// A cause's reset evidence: all three usable channels inside the band for
@@ -198,6 +210,20 @@ pub struct HoldingSpec {
     pub divisions: [String; 3],
     /// Their permissive contacts, in division order.
     pub contacts: [String; 3],
+}
+
+/// The turbine controls' trip on the reactor trip (owner R12-A2): the
+/// `LD01.TRIP.HOLD` loss requests the existing turbine trip (`LD01.TG`
+/// TRIP) `delay_s` later, a whole number of I&C frames, unless the turbine
+/// is already tripped. AP1000: "Turbine trip occurs 5 seconds following a
+/// reactor trip condition being reached" (DCD Rev. 19 Tier 2 §15.0.14).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TurbineTripOnReactorTrip {
+    /// The named turbine-trip cause, recorded with the request.
+    pub cause: String,
+    pub delay_s: f64,
+    pub basis: String,
 }
 
 /// A recorded vote: `rule` must be `voted`; `basis` names its blocks.

@@ -20,6 +20,9 @@ pub struct Section {
     pub feed: Feed,
     #[serde(rename = "steamAdmission")]
     pub steam_admission: SteamAdmission,
+    /// The steam bypass's no-load pressure mode after the turbine trip
+    /// (`ld01-bypass-no-load`, owner R12-B1), the G1 stand-in.
+    pub bypass: Bypass,
     /// The SG contact law's exchange area and wall constants
     /// (`ld01-sg-contact`), read once for the joined solids' films.
     pub contact: Contact,
@@ -92,15 +95,16 @@ pub struct Valve {
     pub id: String,
 }
 
+/// The SG spring valves (`ld01-sg-relief`, owner R12-B2): per valve
+/// position, in each SG's valve order, its role and absolute settings; the
+/// lag, seat, receiver, branch rule and rating are common.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Relief {
-    #[serde(rename = "crackPressure_Pa")]
-    pub crack_pressure_pa: f64,
-    #[serde(rename = "fullLiftPressure_Pa")]
-    pub full_lift_pressure_pa: f64,
-    #[serde(rename = "reseatPressure_Pa")]
-    pub reseat_pressure_pa: f64,
+    pub valves: Vec<ValveSetting>,
+    /// The declared SG (steam-side) design pressure, Pa.
+    #[serde(rename = "designPressure_Pa")]
+    pub design_pressure_pa: f64,
     #[serde(rename = "liftLag_s")]
     pub lift_lag_s: f64,
     /// A closing disc seats when its lift falls to `exp(-n)` of full lift,
@@ -115,6 +119,27 @@ pub struct Relief {
     pub rating: Rating,
 }
 
+/// One valve position's settings.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ValveSetting {
+    pub role: ValveRole,
+    #[serde(rename = "crackPressure_Pa")]
+    pub crack_pressure_pa: f64,
+    #[serde(rename = "fullLiftPressure_Pa")]
+    pub full_lift_pressure_pa: f64,
+    #[serde(rename = "reseatPressure_Pa")]
+    pub reseat_pressure_pa: f64,
+}
+/// AP1000's two functions: the relief (PORV) between no-load pressure and
+/// the safety valves, and the safety valves (DCD Table 10.3.2-1/-2).
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+pub enum ValveRole {
+    #[serde(rename = "relief")]
+    Relief,
+    #[serde(rename = "safety")]
+    Safety,
+}
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 pub enum DescendingSwitch {
     #[serde(rename = "inletAtFullLift")]
@@ -162,6 +187,33 @@ pub enum FeedRule {
 pub struct SteamAdmission {
     #[serde(rename = "stopTravel_s")]
     pub stop_travel_s: f64,
+}
+
+/// The bypass stand-in after the turbine trip (owner R12-B1): each SG
+/// passes `fraction × its nominal demand × u` to the condenser at `h_g(p)`,
+/// `u` rising linearly from 0 at the no-load pressure to 1 one band width
+/// above it. The no-load pressure is IF97's saturation pressure at the
+/// designed no-load average temperature (compiled with its derivation; the
+/// block checks it natively against the runtime saturation, once).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Bypass {
+    pub mode: BypassMode,
+    #[serde(rename = "noLoadAverageTemperature_K")]
+    pub no_load_average_temperature_k: f64,
+    #[serde(rename = "noLoadPressure_Pa")]
+    pub no_load_pressure_pa: f64,
+    #[serde(rename = "bandWidth_Pa")]
+    pub band_width_pa: f64,
+    #[serde(rename = "fractionOfNominalSteam")]
+    pub fraction_of_nominal_steam: f64,
+}
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+pub enum BypassMode {
+    /// The no-load pressure mode from the turbine trip on; closed before it
+    /// (the at-power band does not open at the full-power header).
+    #[serde(rename = "noLoadPressureAfterTurbineTrip")]
+    NoLoadPressureAfterTurbineTrip,
 }
 
 /// The SG contact law's exchange area per SG and its wall constants.

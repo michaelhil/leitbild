@@ -8,6 +8,7 @@
 //! (initiating function and time) and requests its permissive contact
 //! open. Latches are retained through power loss; an unpowered division
 //! evaluates nothing, accrues no duration and makes no record.
+use super::packet::Effects;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -135,17 +136,16 @@ impl Division {
             .qualify(k, condition, frames)
     }
     /// Latch a newly qualified cause (once per function) with its selected
-    /// requests; a reactor-trip cause latches the division trip and
-    /// records the PRHR request of every accepted reactor-trip initiation.
-    pub fn accept(
-        &mut self,
-        function: &str,
-        k: u64,
-        at_s: f64,
-        reactor_trip: bool,
-        cmt_injection: bool,
-        heater_isolation: bool,
-    ) -> bool {
+    /// requests; a reactor-trip cause latches the division trip. The PRHR
+    /// request follows only a cause with the `prhr` effect (the AP1000 signal
+    /// set, owner R12-A1), never the reactor trip itself.
+    pub fn accept(&mut self, function: &str, k: u64, at_s: f64, effects: Effects) -> bool {
+        let Effects {
+            reactor_trip,
+            cmt_injection,
+            heater_isolation,
+            prhr,
+        } = effects;
         if self.latched(function) {
             return false;
         }
@@ -155,10 +155,10 @@ impl Division {
             at_s,
         };
         self.causes.push(cause.clone());
-        if reactor_trip {
-            if self.trip.is_none() {
-                self.trip = Some(cause);
-            }
+        if reactor_trip && self.trip.is_none() {
+            self.trip = Some(cause);
+        }
+        if prhr {
             self.requests
                 .push(json!({"request": "PRHR", "by": function, "t_s": at_s}));
         }
@@ -217,15 +217,44 @@ mod tests {
 
     #[test]
     fn causes_latch_once_and_survive_power_loss() {
+        let effects = |reactor_trip, cmt_injection, prhr| Effects {
+            reactor_trip,
+            cmt_injection,
+            heater_isolation: false,
+            prhr,
+        };
         let mut d = Division::new("I1");
-        assert!(d.accept("LD01.PROT.PZR.LOW_PRESSURE", 7, 0.7, true, true, false));
-        assert!(!d.accept("LD01.PROT.PZR.LOW_PRESSURE", 8, 0.8, true, true, false));
-        assert!(d.accept("LD01.PROT.TG.TRIP", 9, 0.9, true, false, false));
+        assert!(d.accept(
+            "LD01.PROT.PZR.LOW_PRESSURE",
+            7,
+            0.7,
+            effects(true, true, true)
+        ));
+        assert!(!d.accept(
+            "LD01.PROT.PZR.LOW_PRESSURE",
+            8,
+            0.8,
+            effects(true, true, true)
+        ));
+        assert!(d.accept("LD01.PROT.TG.TRIP", 9, 0.9, effects(true, false, false)));
         assert_eq!(
             d.trip.as_ref().unwrap().function,
             "LD01.PROT.PZR.LOW_PRESSURE"
         );
-        assert_eq!(d.requests.len(), 3, "PRHR, CMT, then PRHR again");
+        // R12-A1: the CMT cause requests PRHR; the turbine-trip reactor trip
+        // requests none.
+        let requests: Vec<_> = d
+            .requests
+            .iter()
+            .map(|r| (r["request"].clone(), r["by"].clone()))
+            .collect();
+        assert_eq!(
+            requests,
+            [
+                (json!("PRHR"), json!("LD01.PROT.PZR.LOW_PRESSURE")),
+                (json!("CMT injection"), json!("LD01.PROT.PZR.LOW_PRESSURE"))
+            ]
+        );
         d.qualify("X", 1, true, 5);
         d.usable("PT1", 1, true, 10);
         d.set_powered(false);

@@ -15,6 +15,12 @@
 //! testing page's order: support and service state, channel standing,
 //! predicates and qualification, initiation, then the holding chain.
 //!
+//! **Turbine trip on the reactor trip (owner R12-A2).** The holding
+//! loss decided at frame `k` requests the turbine trip at frame
+//! `k + delay` (`turbine_trip_on_reactor_trip`), unless the turbine
+//! controls already retain a trip: the driver learns it one frame ahead, as
+//! the holding loss, and applies it as the declared `LD01.TG` TRIP.
+//!
 //! **Turbine-trip request.** The ACT.B turbine controls' retained trip
 //! memory is set by the declared `LD01.TG` TRIP command at its time; its
 //! report is sampled and transported like a protective channel and each
@@ -65,6 +71,12 @@ pub struct Protection {
     interface: String,
     /// The turbine controls' retained trip memory (time set).
     turbine_trip_s: Option<f64>,
+    /// R12-A2: the interlock's cause and delay in frames.
+    turbine_on_trip: (String, u64),
+    /// The frame the holding loss was decided at.
+    holding_lost_frame: Option<u64>,
+    /// The frame the interlock requested the turbine trip at.
+    turbine_trip_requested: Option<u64>,
     /// The last decided frame.
     decided: Option<u64>,
     /// Events in order: accepted causes, contact changes, holding loss.
@@ -213,6 +225,11 @@ impl Protection {
             }
         }
         let h = &section.holding;
+        let interlock = &section.turbine_trip_on_reactor_trip;
+        let turbine_on_trip = (interlock.cause.clone(), frame.frames_in(interlock.delay_s)?);
+        if turbine_on_trip.1 == 0 {
+            return Err(format!("{}: zero delay", interlock.cause));
+        }
         Ok(Self {
             frame,
             families,
@@ -231,6 +248,9 @@ impl Protection {
             ]),
             interface: h.interface.clone(),
             turbine_trip_s: None,
+            turbine_on_trip,
+            holding_lost_frame: None,
+            turbine_trip_requested: None,
             decided: None,
             log: Vec::new(),
         })
@@ -270,6 +290,25 @@ impl Protection {
     /// The declared `LD01.TG` TRIP at `t`: the turbine controls retain it.
     pub fn turbine_trip(&mut self, t: f64) {
         self.turbine_trip_s.get_or_insert(t);
+    }
+    /// R12-A2: whether the interlock requests the turbine trip at frame `k`
+    /// (the frame after the one just observed): the holding loss was
+    /// decided `delay` frames before `k` and the turbine controls retain no
+    /// trip. Requested at most once, and logged with its cause.
+    pub fn turbine_trip_due(&mut self, k: u64) -> Option<(u64, String)> {
+        let lost = self.holding_lost_frame?;
+        if self.turbine_trip_s.is_some()
+            || self.turbine_trip_requested.is_some()
+            || k != lost + self.turbine_on_trip.1
+        {
+            return None;
+        }
+        self.turbine_trip_requested = Some(k);
+        let cause = self.turbine_on_trip.0.clone();
+        self.log
+            .push(json!({"t_s": self.frame.instant(k), "frame": k,
+            "event": "turbine trip requested", "cause": cause, "holding_lost_frame": lost}));
+        Some((k, cause))
     }
     /// Injected support state of division `i` (its processor, its contact's
     /// coil and the channels on its supply group), applied from frame `k`.
@@ -459,14 +498,7 @@ impl Protection {
                 }
             }
             for (id, e) in accepted {
-                if self.divisions[d].accept(
-                    &id,
-                    k,
-                    t,
-                    e.reactor_trip,
-                    e.cmt_injection,
-                    e.heater_isolation,
-                ) {
+                if self.divisions[d].accept(&id, k, t, e) {
                     self.log.push(
                         json!({"t_s": t, "frame": k, "division": self.divisions[d].supply,
                         "event": "cause accepted", "function": id}),
@@ -489,6 +521,7 @@ impl Protection {
             }
         }
         Ok(self.holding.update(t).map(|_| {
+            self.holding_lost_frame = Some(k);
             self.log.push(
                 json!({"t_s": t, "frame": k, "event": format!("{} loss", self.interface),
                 "closed_contacts": self.holding.closed_contacts()}),
@@ -520,15 +553,15 @@ mod tests {
         let mut functions = vec![
             json!({"id": "LD01.PROT.PZR.HIGH_PRESSURE", "rule": {"voted": {"family": "LD01.PZR.PT",
                 "side": {"at_or_above": 15.5e6}, "qualification_s": 0.2}},
-                "effects": {"reactor_trip": true, "cmt_injection": false, "heater_isolation": true}, "reset": reset}),
+                "effects": {"reactor_trip": true, "cmt_injection": false, "heater_isolation": true, "prhr": false}, "reset": reset}),
             json!({"id": "LD01.PROT.PZR.LOW_PRESSURE", "rule": {"voted": {"family": "LD01.PZR.PT",
                 "side": {"at_or_below": 13e6}, "qualification_s": 0.5}},
-                "effects": {"reactor_trip": true, "cmt_injection": true, "heater_isolation": false}, "reset": reset}),
+                "effects": {"reactor_trip": true, "cmt_injection": true, "heater_isolation": false, "prhr": true}, "reset": reset}),
             json!({"id": "LD01.PROT.PZR.PRESSURE.UNAVAILABLE", "rule": {"unavailable": {"family": "LD01.PZR.PT",
                 "qualification_s": 1.}},
-                "effects": {"reactor_trip": true, "cmt_injection": false, "heater_isolation": true}, "reset": reset}),
+                "effects": {"reactor_trip": true, "cmt_injection": false, "heater_isolation": true, "prhr": false}, "reset": reset}),
             json!({"id": "LD01.PROT.TG.TRIP", "rule": {"report": {"report": "LD01.TG.TRIP.REPORT"}},
-                "effects": {"reactor_trip": true, "cmt_injection": false, "heater_isolation": false},
+                "effects": {"reactor_trip": true, "cmt_injection": false, "heater_isolation": false, "prhr": false},
                 "reset": null}),
         ];
         functions.extend(extra_functions.as_array().unwrap().iter().cloned());
@@ -540,6 +573,7 @@ mod tests {
             "monitors": monitors,
             "holding": {"interface": "LD01.TRIP.HOLD", "supply": "LD01.DC.ACT.A", "manual_interrupt": "LD01.TRIP.MANUAL",
                 "divisions": ["I1", "I2", "I3"], "contacts": ["LD01.TRIP.PERM.I1", "LD01.TRIP.PERM.I2", "LD01.TRIP.PERM.I3"]},
+            "turbine_trip_on_reactor_trip": {"cause": "LD01.TG.REACTOR_TRIP", "delay_s": 5., "basis": "test"},
             "missing": [], "provenance": []
         }))
         .unwrap()
@@ -588,7 +622,8 @@ mod tests {
         for d in &prot.divisions {
             let c = d.trip.as_ref().unwrap();
             assert_eq!((c.function.as_str(), c.frame), ("LD01.PROT.TG.TRIP", 5222));
-            assert_eq!(d.requests[0]["request"], "PRHR");
+            // R12-A1: a turbine-trip reactor trip requests no PRHR.
+            assert!(d.requests.is_empty(), "{:?}", d.requests);
         }
         assert_eq!(prot.holding.lost_at, Some(522.2));
         // A trip exactly at a frame instant is seen by the next acquisition
@@ -611,9 +646,34 @@ mod tests {
             "LD01.PROT.PZR.LOW_PRESSURE"
         );
         assert!(d.requests.iter().any(|r| r["request"] == "CMT injection"));
+        // R12-A1: CMT actuation requests PRHR.
+        assert!(d.requests.iter().any(|r| r["request"] == "PRHR"));
         // High pressure needs 0.2 s: from 15.6 MPa, true at 5221, at 5223.
         let mut prot = Protection::new(&section(json!([]), json!([])), pressure(15.6e6)).unwrap();
         assert_eq!(run(&mut prot, 5220, 5240, |_| 15.6e6), Some(5223));
+    }
+
+    #[test]
+    fn the_reactor_trip_requests_the_turbine_trip_five_seconds_later_once() {
+        // R12-A2. High pressure from the start: holding lost at 5223, so the
+        // turbine trip is due at 5273 (50 frames), learned when 5272 is
+        // observed, once.
+        let mut prot = Protection::new(&section(json!([]), json!([])), pressure(15.6e6)).unwrap();
+        assert_eq!(run(&mut prot, 5220, 5224, |_| 15.6e6), Some(5223));
+        let due: Vec<_> = (5224..5300)
+            .filter_map(|k| prot.turbine_trip_due(k))
+            .collect();
+        assert_eq!(due, vec![(5273, "LD01.TG.REACTOR_TRIP".to_string())]);
+        assert_eq!(prot.turbine_trip_due(5273), None, "requested once");
+        // A turbine already tripped (C2's order): no request.
+        let mut prot = Protection::new(&section(json!([]), json!([])), pressure(15.2e6)).unwrap();
+        prot.turbine_trip(522.05);
+        assert_eq!(run(&mut prot, 5220, 5230, |_| 15.2e6), Some(5222));
+        assert!((5222..5400).all(|k| prot.turbine_trip_due(k).is_none()));
+        // No holding loss: never.
+        let mut prot = Protection::new(&section(json!([]), json!([])), pressure(15.2e6)).unwrap();
+        run(&mut prot, 5220, 5300, |_| 15.2e6);
+        assert!((5220..5400).all(|k| prot.turbine_trip_due(k).is_none()));
     }
 
     #[test]
@@ -692,7 +752,7 @@ mod tests {
             "maximum_age_s": 0.3, "recovery_s": 1.}]);
         let low = json!([{"id": "LOW_FLOW.A", "rule": {"armed": {"family": "FT.A", "side": {"at_or_below": 0.7},
             "qualification_s": 0.5, "arming_family": "LD01.PZR.PT", "arming": {"at_or_above": 1e6}}},
-            "effects": {"reactor_trip": true, "cmt_injection": false, "heater_isolation": false},
+            "effects": {"reactor_trip": true, "cmt_injection": false, "heater_isolation": false, "prhr": false},
             "reset": {"band": [0.8, 1.5], "duration_s": 5.}}]);
         let ft: Quantity = serde_json::from_value(flow[0]["quantity"].clone()).unwrap();
         // Unresolved nominal: refused.
