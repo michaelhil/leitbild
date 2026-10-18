@@ -25,7 +25,7 @@
 //! sections, ELEC's packet).
 use super::{
     inputs::Inputs,
-    profile::{MAX_ORDER, RESTART},
+    profile::{MAX_ORDER, RESTART, Weights},
     pzr_control::{self, PzrClient},
     spine::{Started, credited_outputs, started_full_composition},
 };
@@ -187,8 +187,8 @@ fn electrical(e: &Value, rotors: usize, t0: f64) -> Result<SlicePieces, String> 
 
 /// The S3 composition at `state` (`{t_s, packet, y, yp}` of the packet,
 /// with `appended` and `discrete_state` when it is a saved S3 state).
-pub fn compose(inputs: &Inputs, state: &Value) -> Result<S3Unit, String> {
-    compose_with(inputs, state, Scaling::NONE, Ok)
+pub fn compose(inputs: &Inputs, state: &Value, weights: Weights) -> Result<S3Unit, String> {
+    compose_with(inputs, state, Scaling::NONE, weights, Ok)
 }
 
 /// [`compose`] with every tolerance scaled by `scaling` (a reference run)
@@ -199,6 +199,7 @@ pub fn compose_with<J: JoinedSystem>(
     inputs: &Inputs,
     state: &Value,
     scaling: Scaling,
+    weights: Weights,
     wrap: impl FnOnce(Integrated<If97>) -> Result<J, String>,
 ) -> Result<S3Unit<J>, String> {
     let packet_path = &inputs.spine.packet_path;
@@ -378,6 +379,7 @@ pub fn compose_with<J: JoinedSystem>(
     )
     .map_err(|e| format!("stock IDA: {e:?}"))?;
     ida.set_max_order(MAX_ORDER).map_err(|e| format!("{e:?}"))?;
+    weights.apply(&mut ida)?;
     ida.constrain_nonnegative(&nonnegative)
         .map_err(|e| format!("{e:?}"))?;
     restart.configure(&mut ida).map_err(|e| format!("{e:?}"))?;
@@ -398,6 +400,7 @@ pub fn compose_with<J: JoinedSystem>(
     let receipt = json!({
         "composition": "S3-D28 (3): joined + spray closed + SG two-zone + feed gate declared + S2-D24r/S3-D16 + PZR control AUTO (S) + L1 + phase modes + ELEC slice connected",
         "tolerance_scaling": {"relative": scaling.relative, "absolute": scaling.absolute},
+        "weights": weights, "weight_groups": ida.weight_groups().map(|g| g.sizes().len()),
         "from_saved_s3_state": saved, "t0_s": t0, "spray_path": spray_path,
         "sections": {"ic": inputs.ic_path, "pzr_control": inputs.control_path, "control_wiki": inputs.control_wiki, "electrical": inputs.elec_path},
         "l1_activation_changes": l1_changes,

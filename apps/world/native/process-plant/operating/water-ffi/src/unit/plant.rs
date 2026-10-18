@@ -11,7 +11,10 @@ use super::s3::S3Unit;
 use crate::{
     If97,
     electrical::{Electrified, FieldClient},
-    frame::{Action, Change, Class, Client, Diagnostic, Driver, Frame, Observer, Reached, Setup},
+    frame::{
+        Action, Change, Class, Client, Diagnostic, Driver, Frame, MatrixRebuild, Observer, Reached,
+        Setup,
+    },
     ic::ProtectionClient,
     ida::Ida,
     joined::{DerivedTolerances, Integrated, JoinedSystem, Restart},
@@ -47,6 +50,18 @@ pub struct Plant<J: JoinedSystem = Integrated<If97>> {
     pub reference: Vec<f64>,
 }
 
+/// The frame-driven unit's explicit configuration, recorded by its callers'
+/// receipts: the field controller's timing (when composed), the driver's
+/// residual-jump diagnostic at class-S stops, its matrix management (MR-1's
+/// packet interval or stock's own) and its CPU clock.
+#[derive(Clone, Copy)]
+pub struct Config<'a> {
+    pub field: Option<&'a field::Parameters>,
+    pub diagnostic: Diagnostic,
+    pub matrix_rebuild: MatrixRebuild,
+    pub clock: fn() -> f64,
+}
+
 /// The Grid stand-in's boundary for an interval `[t0, t1)` (D1, D2 + SW-1).
 #[derive(Clone, Copy, Debug)]
 pub enum Boundary {
@@ -65,15 +80,9 @@ pub enum Boundary {
 
 impl<J: JoinedSystem> Plant<J> {
     /// The composed `unit` with the protection of `section`, the field
-    /// controller when `field` is given, and the frame driver (its
-    /// diagnostic and CPU clock are the caller's).
-    pub fn new(
-        unit: S3Unit<J>,
-        section: &IcSection,
-        field: Option<&field::Parameters>,
-        diagnostic: Diagnostic,
-        clock: fn() -> f64,
-    ) -> Result<Self, String> {
+    /// controller when the configuration gives its timing, and the frame
+    /// driver as configured.
+    pub fn new(unit: S3Unit<J>, section: &IcSection, config: Config<'_>) -> Result<Self, String> {
         let S3Unit {
             ida,
             t0,
@@ -97,10 +106,12 @@ impl<J: JoinedSystem> Plant<J> {
             &reference,
         )
         .and_then(|p| p.with_system_dimension(y.len()))?;
-        let field = field
+        let field = config
+            .field
             .map(|p| FieldClient::new(p, frame, ida.system()))
             .transpose()?;
-        let driver = Driver::new(frame, diagnostic, clock, t0)?;
+        let mut driver = Driver::new(frame, config.diagnostic, config.clock, t0)?;
+        driver.matrix_rebuild = config.matrix_rebuild;
         Ok(Self {
             ida,
             t0,

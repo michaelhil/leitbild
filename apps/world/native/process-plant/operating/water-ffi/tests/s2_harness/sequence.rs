@@ -37,7 +37,7 @@ use leitbild_operating_plant::{
     joined::{block::Command, post_trip_domain::Extension},
     network::{MetastableBand, packet::Packet as NetworkPacket},
 };
-use leitbild_operating_water::unit::profile;
+use leitbild_operating_water::unit::profile::{self, Weights};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -182,6 +182,12 @@ impl Harness {
                     "trip" | "R0" | "R1" | "R2" | "noTurbineTrip" | "stuckCluster"
                 )
             },
+            // N1: `LD01_S2_WEIGHTS` (stock | grouped; unset: stock, as S2
+            // closed), recorded in the run's spec.
+            weights: Weights::parse(
+                &std::env::var("LD01_S2_WEIGHTS").unwrap_or_else(|_| "stock".into()),
+            )
+            .unwrap_or_else(|e| panic!("LD01_S2_WEIGHTS: {e}")),
         };
         let window = g.number("/trip/window_s").min(duration_s);
         let trip = |spec: &mut RunSpec| {

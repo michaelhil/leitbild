@@ -1297,6 +1297,45 @@ struct Driven {
     first_birth_after_zero: Option<f64>,
 }
 
+/// The case run's explicit configuration, read once by `s3_case_run` and
+/// recorded in every drive's receipt: the error-weight rule (N1; stock until
+/// G1-INTEG sets grouped), the driver's matrix management (MR-1's packet
+/// interval or stock's own) and whether RC-1's declared ramp cap applies.
+#[derive(Clone, Copy, Debug)]
+struct CaseConfig {
+    weights: leitbild_operating_water::unit::profile::Weights,
+    matrix_rebuild: leitbild_operating_water::frame::MatrixRebuild,
+    ramp_cap: bool,
+}
+impl CaseConfig {
+    /// `LD01_S3_WEIGHTS` (stock | grouped), `LD01_S3_MR1` (packet | stock)
+    /// and `LD01_S3_RC1` (on | off); unset: stock, packet, on. Any other
+    /// value refuses.
+    fn from_env() -> Result<Self, String> {
+        use leitbild_operating_water::{frame::MatrixRebuild, unit::profile::Weights};
+        let var = |name: &str, unset: &str| std::env::var(name).unwrap_or_else(|_| unset.into());
+        let weights = Weights::parse(&var("LD01_S3_WEIGHTS", "stock"))?;
+        let matrix_rebuild = match var("LD01_S3_MR1", "packet").as_str() {
+            "packet" => MatrixRebuild::Packet,
+            "stock" => MatrixRebuild::Stock,
+            v => return Err(format!("LD01_S3_MR1={v}: packet or stock")),
+        };
+        let ramp_cap = match var("LD01_S3_RC1", "on").as_str() {
+            "on" => true,
+            "off" => false,
+            v => return Err(format!("LD01_S3_RC1={v}: on or off")),
+        };
+        Ok(Self {
+            weights,
+            matrix_rebuild,
+            ramp_cap,
+        })
+    }
+    fn json(&self) -> Value {
+        json!({"weights": self.weights, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap})
+    }
+}
+
 /// What one run is asked: the run itself, its repeat or a reference.
 struct Ask<'a> {
     label: &'a str,
@@ -1318,6 +1357,8 @@ struct Ask<'a> {
     /// Whether rule F's absolute classes are propagated at the start
     /// (S3-D49; the run only).
     f_tolerances: bool,
+    /// The case run's configuration.
+    config: CaseConfig,
 }
 
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)] // One case: composition, run, judgement.
@@ -1348,7 +1389,8 @@ fn drive(
     let exchanging = c5 || case == Case::C1;
     let started = process_cpu_s();
     let section = inputs.ic.clone();
-    let unit = s3::compose_with(inputs, state, ask.scaling, wrap).unwrap_or_else(|e| panic!("{e}"));
+    let unit = s3::compose_with(inputs, state, ask.scaling, ask.config.weights, wrap)
+        .unwrap_or_else(|e| panic!("{e}"));
     let (t0, n, rtol, frame) = (unit.t0, unit.n, unit.rtol, unit.frame);
     let declared_frame_s = d.block.number(&d.common("/frameAlignment/frame_s"));
     d.block.text(&d.common("/frameAlignment/rule"));
@@ -1383,9 +1425,12 @@ fn drive(
     let mut plant = Plant::new(
         unit,
         &section,
-        field_parameters.as_ref(),
-        Diagnostic::Jump,
-        process_cpu_s,
+        plant::Config {
+            field: field_parameters.as_ref(),
+            diagnostic: Diagnostic::Jump,
+            matrix_rebuild: ask.config.matrix_rebuild,
+            clock: process_cpu_s,
+        },
     )
     .unwrap_or_else(|e| panic!("the frame-driven unit: {e}"));
     let Plant {
@@ -1547,7 +1592,9 @@ fn drive(
     // and removed at the first chunk bound at or after its end.
     // RC-1: the case's declared fast electrical ramp, from the wiki's block.
     let ramp_block = ramp_cap_block().unwrap_or_else(|e| panic!("RC-1: {e}"));
-    let ramp = declared_ramp(case, &ramp_block).unwrap_or_else(|e| panic!("RC-1: {e}"));
+    let ramp = declared_ramp(case, &ramp_block)
+        .unwrap_or_else(|e| panic!("RC-1: {e}"))
+        .filter(|_| ask.config.ramp_cap);
     let window_cap = window_cap(case, spec, ramp).filter(|_| ask.event_window);
     if let Some(w) = &window_cap {
         driver.restart_max_step = Some((w.start_cap(), w.starts));
@@ -2497,6 +2544,7 @@ fn drive(
         "composition": composition,
         "ic_section": {"path": inputs.ic_path, "implemented_causes": implemented},
         "configuration": {"span_after_zero_s": span, "zero_after_start_s": zero_after,
+            "case_configuration": ask.config.json(),
             "command": command.map(|c| format!("{c:?}")), "frame_s": frame.period_s(),
             "max_order": profile::MAX_ORDER, "max_step_s": max_step,
             "matrix_rebuild": {"rule": "MR-1 (owner, request 7 R7-P): stock IDAS check points every `steps` steps force an iteration-matrix setup; freed at restarts and above `held`",
@@ -3053,6 +3101,7 @@ fn rule_i_is_judged_at_every_accepted_step() {
     let state: Value =
         serde_json::from_slice(&std::fs::read(&state_path).expect("state")).expect("state json");
     let inputs = common::inputs();
+    let config = CaseConfig::from_env().unwrap_or_else(|e| panic!("{e}"));
     let run = drive(
         Case::C1,
         &d,
@@ -3071,6 +3120,7 @@ fn rule_i_is_judged_at_every_accepted_step() {
             event_window: true,
             observation_s: None,
             f_tolerances: false,
+            config,
         },
     );
     let steps = run.record["stock_totals"]["steps"].as_i64().unwrap();
@@ -3088,6 +3138,7 @@ fn rule_i_is_judged_at_every_accepted_step() {
 #[allow(clippy::too_many_lines)] // One case: refusals, runs, families, receipt.
 fn s3_case_run() {
     let case = Case::parse(&std::env::var("LD01_S3_CASE").expect("LD01_S3_CASE")).unwrap();
+    let config = CaseConfig::from_env().unwrap_or_else(|e| panic!("{e}"));
     let preview = std::env::var("LD01_S3_PREVIEW").as_deref() == Ok("1");
     let gates_on = std::env::var("LD01_S3_GATES").as_deref() == Ok("1");
     // N4′: C3's chattering rule is the pinned C4 block's; a rule in
@@ -3197,6 +3248,7 @@ fn s3_case_run() {
             event_window: true,
             observation_s: None,
             f_tolerances: gates_on,
+            config,
         },
     );
     if run.record["composition"]["spray_path"] != json!(true) {
@@ -3252,6 +3304,7 @@ fn s3_case_run() {
                 event_window: true,
                 observation_s: None,
                 f_tolerances: false,
+                config,
             },
         )
     });
@@ -3392,6 +3445,7 @@ fn s3_case_run() {
                     event_window: true,
                     observation_s: None,
                     f_tolerances: false,
+                    config,
                 },
             );
             families.insert(
@@ -3509,6 +3563,7 @@ fn s3_case_run() {
                     event_window: false,
                     observation_s: None,
                     f_tolerances: false,
+                    config,
                 },
             );
             let rg = r.observer.gates.as_ref().unwrap();
@@ -3951,6 +4006,7 @@ fn s3_case_run() {
                         event_window: true,
                         observation_s: Some(g.budgets.output_s),
                         f_tolerances: false,
+                        config,
                     },
                 );
                 let rg = r.observer.gates.as_ref().unwrap();

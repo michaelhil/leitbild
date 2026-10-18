@@ -68,6 +68,7 @@
 #![cfg(all(feature = "ida", target_os = "macos"))]
 mod common;
 use leitbild_operating_water::unit::{
+    profile::Weights,
     s3,
     spine::{Started, credited_outputs, started_full_composition},
 };
@@ -603,7 +604,8 @@ fn s3_unit_coupling_blocks() {
     let bytes = std::fs::read(&state_path).expect("state file");
     let state: Value = serde_json::from_slice(&bytes).expect("state json");
     let inputs = common::inputs();
-    let mut u = s3::compose(&inputs, &state).unwrap_or_else(|e| panic!("{e}"));
+    // Z6 at a saved S3 state on the stock error weights (S2's Z6 rule).
+    let mut u = s3::compose(&inputs, &state, Weights::Stock).unwrap_or_else(|e| panic!("{e}"));
     let (n, t) = (u.n, u.t0);
     let (y, yp) = (u.y.clone(), u.yp.clone());
     let total = y.len();

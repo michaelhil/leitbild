@@ -173,6 +173,7 @@ fn complete_receipt() -> Value {
             caps_report_only: true,
             rods_observed: false,
             domain_exit_stops: true,
+            weights: profile::Weights::Stock,
         }),
         process_cpu_s: 1.,
         ..run::RunRecord::default()
@@ -942,6 +943,7 @@ fn a_references_ledger_counts_in_the_contracts_tolerance_units_and_a_declared_li
         caps_report_only: false,
         rods_observed: false,
         domain_exit_stops: true,
+        weights: profile::Weights::Stock,
     };
     let contract = vec![1e-8, 2e-8];
     let tight: Vec<f64> = contract.iter().map(|a| a * 0.1).collect();

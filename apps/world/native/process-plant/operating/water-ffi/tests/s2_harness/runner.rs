@@ -516,6 +516,11 @@ pub fn advance(
     )
     .expect("stock IDAS");
     ida.set_max_order(spec.max_order).unwrap();
+    // N1's rule on the fresh handle, before the first step (the t0 start
+    // above runs on stock weights at the settled state).
+    spec.weights
+        .apply(&mut ida)
+        .unwrap_or_else(|e| panic!("error weights: {e}"));
     ida.constrain_nonnegative(&nonnegative).unwrap();
     restart.configure(&mut ida).unwrap();
     ida.set_nonlinear_convergence_coefficient(spec.newton_coefficient)

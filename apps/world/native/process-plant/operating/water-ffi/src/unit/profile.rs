@@ -3,7 +3,10 @@
 //! start's bounds and the preparations' controls the S1, S2 and S3 harnesses
 //! declared, each in one place. S1's tolerance classes are read from
 //! `ld01-s1-gates`, never written here.
-use crate::joined::Restart;
+use crate::{
+    ida::{Ida, System},
+    joined::{JoinedSystem, Restart, census_groups},
+};
 use leitbild_operating_plant::{
     initialization::SurfacePolicy,
     network::{PzrPreparation, RotorState, ToleranceClasses, prepare::Settings},
@@ -86,4 +89,39 @@ pub fn error_weights(y: &[f64], rtol: f64, atol: &[f64]) -> Vec<f64> {
         .zip(atol)
         .map(|(v, a)| 1. / (rtol * v.abs() + a))
         .collect()
+}
+
+/// The error-weight rule of a unit's stock IDA handle (N1, owner R11-2), an
+/// explicit configuration value every composition receipt records.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Weights {
+    /// Stock IDA's error weights `1 / (rtol |y| + atol)`.
+    Stock,
+    /// Group-normalised weights on the operator's census groups (credited
+    /// groups split to at most 9) through stock IDAWFtolerances
+    /// ([`census_groups`], [`Ida::group_weights`]).
+    Grouped,
+}
+impl Weights {
+    /// `stock` or `grouped`; anything else refuses.
+    pub fn parse(name: &str) -> Result<Self, String> {
+        match name {
+            "stock" => Ok(Self::Stock),
+            "grouped" => Ok(Self::Grouped),
+            other => Err(format!("weights {other}: stock or grouped")),
+        }
+    }
+    /// The rule on a fresh handle, right after `Ida::new` and before its
+    /// first consistent start or step, so the start's guard and every later
+    /// step use it.
+    pub fn apply<S: JoinedSystem + System>(self, ida: &mut Ida<S>) -> Result<(), String> {
+        match self {
+            Self::Stock => Ok(()),
+            Self::Grouped => {
+                let groups = census_groups(ida.system())?;
+                ida.group_weights(groups)
+            }
+        }
+    }
 }
