@@ -961,7 +961,11 @@ mod integrated {
         let rule = ida.weight_rule();
         // N3: the last step stock accepted before this event (0 before any).
         let last_step = ida.stats()?.last_step;
-        let first_step_policy = ida.system().integrated().first_step;
+        let first_step_policy = match (ida.system().integrated().first_step, discrete) {
+            (FirstStep::LastStepUnlessRoots { .. }, Discrete::Roots(_)) => FirstStep::Declared,
+            (FirstStep::LastStepUnlessRoots { divisor }, _) => FirstStep::LastStep { divisor },
+            (policy, _) => policy,
+        };
         let m = y_all
             .len()
             .checked_sub(appended)
@@ -1421,7 +1425,15 @@ mod integrated {
     #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
     pub enum FirstStep {
         Declared,
-        LastStep { divisor: f64 },
+        LastStep {
+            divisor: f64,
+        },
+        /// `LastStep` after a declared command or an owner time event, the
+        /// declared step after located roots (a located root is where the
+        /// mode-changing events of the surge and phase owners sit).
+        LastStepUnlessRoots {
+            divisor: f64,
+        },
     }
 
     /// A presence-following block assembly (lead decision S3-D-P3): one
@@ -1620,7 +1632,8 @@ mod integrated {
         /// system follows presence.
         /// N3: the first step later discrete restarts set.
         pub fn set_first_step(&mut self, first_step: FirstStep) -> Result<(), String> {
-            if let FirstStep::LastStep { divisor } = first_step
+            if let FirstStep::LastStep { divisor } | FirstStep::LastStepUnlessRoots { divisor } =
+                first_step
                 && !(divisor.is_finite() && divisor >= 1.)
             {
                 return Err(format!(
