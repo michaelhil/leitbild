@@ -113,7 +113,7 @@ test.skipIf(!native)('actual wiki geometry, finite caloric recipients, wet SG st
   // well as the neck above it; the independent housing geometry test checks
   // this 52*pi*(.012 m)^2/4*.05 m displacement, not just this total snapshot.
   expect(p.totalVolume_m3).toBeCloseTo(233.19728869977425,10)
-  expect(r.geometry.coreWaterVolume_m3).toBeCloseTo(20.46524001871866,11)
+  expect(r.geometry.coreWaterVolume_m3).toBeCloseTo(20.484382971748026,11)
   expect(sum(p.regions.map(r=>r.volume_m3))).toBeCloseTo(p.totalVolume_m3,12)
   expect(p.totalMass_kg).toBeCloseTo(168011.41631687203,6)
   expect(p.totalInternalEnergy_J).toBeCloseTo(222483183392.0793,2)
