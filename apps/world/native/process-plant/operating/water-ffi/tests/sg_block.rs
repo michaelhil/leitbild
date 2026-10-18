@@ -92,7 +92,8 @@ fn preparation_and_derivations_reproduce_their_owners() {
             .count(),
         4
     );
-    assert_eq!(Secondary::<If97>::root_count(&block), 20);
+    // 4 thresholds per valve, 2 guards and (R12-B1) 2 bypass kinks per SG.
+    assert_eq!(Secondary::<If97>::root_count(&block), 24);
     assert_eq!(block.seated(), 4);
     eprintln!(
         "{}",
