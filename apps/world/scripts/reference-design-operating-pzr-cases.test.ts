@@ -35,7 +35,7 @@ test('heater banks and the relief device parse from their owners and agree with 
     relief={openingPressure_Pa:15800000,reseatPressure_Pa:15600000,fullStrokesPerSecond:20,effectiveAreaPerLift_m2:.00411672057382,
       calibration:{massFlow_kg_s:100,fluid:'saturatedSteam',inletPressure_Pa:15800000,backPressure_Pa:101325},bore_m:.15,elevation_m:18.5},
     spray={elevation_m:18.5,exitCount:16,exitBore_m:.012,ringRadius_m:.6,effectiveAreaPerExit_m2:.0000625,aggregateEffectiveArea_m2:.001},
-    inventory='### Independent relief candidate\n\n'+fence('ld01-pzr-relief-device',relief)+'\n\n## Controlled-spray material path\n\n'+fence('ld01-pzr-spray-port',spray)+'\n'
+    inventory='### Independent relief candidate\n\n'+fence('ld01-rcs-design-pressure',{designPressure_Pa:17234662})+'\n\n'+fence('ld01-pzr-relief-device',relief)+'\n\n## Controlled-spray material path\n\n'+fence('ld01-pzr-spray-port',spray)+'\n'
   expect(parsePzrHeaterBanks(equipment).map(b=>b.id)).toEqual(['normal','backup'])
   expect(parsePzrRelief(inventory)).toEqual(relief)
   expect(parsePzrSpray(inventory)).toEqual(spray)
@@ -47,6 +47,8 @@ test('heater banks and the relief device parse from their owners and agree with 
   expect(()=>parsePzrHeaterBanks(edit('"steelMass_kg":79.620524','"steelMass_kg":79.620524,"extra":1'))).toThrow()
   expect(()=>parsePzrHeaterBanks(edit('[[0,1],[1,3]]','[[0,1],[1.5,3]]'))).toThrow('tile')
   expect(()=>parsePzrRelief(inventory.replace('15600000','15900000'))).toThrow('reseat')
+  // CRED-FIX-A2 (I2): a relief above the RCS design pressure is refused.
+  expect(()=>parsePzrRelief(inventory.replace('17234662','15700000'))).toThrow('design pressure')
   // Case-set sections: ports appended, siblings on the plant datum, surge port kept.
   const cell=compileOperatingPzr(pzrSources(),hot).cell,
     added=caseSetSections(cell,parsePzrHeaterBanks(equipment),parsePzrRelief(inventory),{relief:{elevation_m:18.5},spray:{elevation_m:18,bore_m:.1}})
