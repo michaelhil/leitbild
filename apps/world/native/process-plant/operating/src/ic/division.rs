@@ -224,8 +224,18 @@ mod tests {
             prhr,
         };
         let mut d = Division::new("I1");
-        assert!(d.accept("LD01.PROT.PZR.LOW_PRESSURE", 7, 0.7, effects(true, true, true)));
-        assert!(!d.accept("LD01.PROT.PZR.LOW_PRESSURE", 8, 0.8, effects(true, true, true)));
+        assert!(d.accept(
+            "LD01.PROT.PZR.LOW_PRESSURE",
+            7,
+            0.7,
+            effects(true, true, true)
+        ));
+        assert!(!d.accept(
+            "LD01.PROT.PZR.LOW_PRESSURE",
+            8,
+            0.8,
+            effects(true, true, true)
+        ));
         assert!(d.accept("LD01.PROT.TG.TRIP", 9, 0.9, effects(true, false, false)));
         assert_eq!(
             d.trip.as_ref().unwrap().function,
@@ -233,7 +243,11 @@ mod tests {
         );
         // R12-A1: the CMT cause requests PRHR; the turbine-trip reactor trip
         // requests none.
-        let requests: Vec<_> = d.requests.iter().map(|r| (r["request"].clone(), r["by"].clone())).collect();
+        let requests: Vec<_> = d
+            .requests
+            .iter()
+            .map(|r| (r["request"].clone(), r["by"].clone()))
+            .collect();
         assert_eq!(
             requests,
             [

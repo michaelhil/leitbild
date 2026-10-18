@@ -1089,11 +1089,16 @@ fn compile(
     }
     // R12-B1 with R12-B2: the bypass opens fully below the relief.
     let b = &section.bypass;
-    if !(b.no_load_pressure_pa + b.band_width_pa < relief.crack_pressure_pa) {
-        return Err(fatal("SG bypass full opening must lie below the relief crack"));
+    // (both finite: validated above and by the characteristic)
+    if b.no_load_pressure_pa + b.band_width_pa >= relief.crack_pressure_pa {
+        return Err(fatal(
+            "SG bypass full opening must lie below the relief crack",
+        ));
     }
     if !(positive(r.back_pressure_pa)
-        && r.valves.iter().all(|v| r.back_pressure_pa < v.reseat_pressure_pa))
+        && r.valves
+            .iter()
+            .all(|v| r.back_pressure_pa < v.reseat_pressure_pa))
         || r.descending_switch != packet::DescendingSwitch::InletAtFullLift
         || r.rating.fluid != packet::RatingFluid::SaturatedVapor
         || !(positive(r.rating.mass_flow_kg_s) && r.rating.inlet_pressure_pa > r.back_pressure_pa)
@@ -1109,9 +1114,13 @@ fn compile(
     }
     let b = &section.bypass;
     if b.mode != packet::BypassMode::NoLoadPressureAfterTurbineTrip
-        || ![b.no_load_average_temperature_k, b.no_load_pressure_pa, b.band_width_pa]
-            .into_iter()
-            .all(positive)
+        || ![
+            b.no_load_average_temperature_k,
+            b.no_load_pressure_pa,
+            b.band_width_pa,
+        ]
+        .into_iter()
+        .all(positive)
         || !(b.fraction_of_nominal_steam > 0. && b.fraction_of_nominal_steam <= 1.)
     {
         return Err(fatal("SG bypass no-load mode"));
@@ -1202,7 +1211,7 @@ fn derive<P: Properties>(section: &packet::Section, props: &P) -> Result<Derived
         .map_err(|e| fatal(format!("SG bypass no-load saturation: {e}")))?
         .temperature
         .value;
-    if !((no_load - b.no_load_average_temperature_k).abs() <= 1e-3) {
+    if !no_load.is_finite() || (no_load - b.no_load_average_temperature_k).abs() > 1e-3 {
         return Err(fatal(format!(
             "SG bypass no-load pressure {} Pa saturates at {no_load} K, not the no-load {} K",
             b.no_load_pressure_pa, b.no_load_average_temperature_k

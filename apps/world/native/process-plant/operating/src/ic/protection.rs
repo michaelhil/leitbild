@@ -305,7 +305,8 @@ impl Protection {
         }
         self.turbine_trip_requested = Some(k);
         let cause = self.turbine_on_trip.0.clone();
-        self.log.push(json!({"t_s": self.frame.instant(k), "frame": k,
+        self.log
+            .push(json!({"t_s": self.frame.instant(k), "frame": k,
             "event": "turbine trip requested", "cause": cause, "holding_lost_frame": lost}));
         Some((k, cause))
     }
@@ -659,7 +660,9 @@ mod tests {
         // observed, once.
         let mut prot = Protection::new(&section(json!([]), json!([])), pressure(15.6e6)).unwrap();
         assert_eq!(run(&mut prot, 5220, 5224, |_| 15.6e6), Some(5223));
-        let due: Vec<_> = (5224..5300).filter_map(|k| prot.turbine_trip_due(k)).collect();
+        let due: Vec<_> = (5224..5300)
+            .filter_map(|k| prot.turbine_trip_due(k))
+            .collect();
         assert_eq!(due, vec![(5273, "LD01.TG.REACTOR_TRIP".to_string())]);
         assert_eq!(prot.turbine_trip_due(5273), None, "requested once");
         // A turbine already tripped (C2's order): no request.
