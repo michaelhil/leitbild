@@ -143,6 +143,7 @@ type Jacobian = unsafe extern "C" fn(
 type Roots = unsafe extern "C" fn(*mut c_void, f64, *const f64, *const f64, *mut f64) -> c_int;
 #[cfg(feature = "quadratures")]
 type Quadrature = unsafe extern "C" fn(*mut c_void, f64, *const f64, *const f64, *mut f64) -> c_int;
+type Weights = unsafe extern "C" fn(*mut c_void, *const f64, *mut f64) -> c_int;
 const IDA_SUCCESS: c_int = 0;
 const IDA_TSTOP_RETURN: c_int = 1;
 const IDA_ROOT_RETURN: c_int = 2;
@@ -181,6 +182,7 @@ unsafe extern "C" {
     ) -> c_int;
     fn operating_ida_max_order(ida: *mut c_void, order: c_int) -> c_int;
     fn operating_ida_tolerances(ida: *mut c_void, rtol: f64, atol: *const f64) -> c_int;
+    fn operating_ida_weight_function(ida: *mut c_void, w: Weights) -> c_int;
     fn operating_ida_max_step(ida: *mut c_void, step: f64) -> c_int;
     fn operating_ida_init_step(ida: *mut c_void, step: f64) -> c_int;
     fn operating_ida_quadratures_linked() -> c_int;
@@ -241,6 +243,132 @@ struct Context<S> {
     quadratures: usize,
     fatal: Option<String>,
     last_trial: Option<String>,
+    /// N1: the grouped error-weight rule in force, if any.
+    grouped: Option<Grouped>,
+}
+/// The grouped rule's per-coordinate factor and the tolerances it divides.
+struct Grouped {
+    groups: WeightGroups,
+    factor: Vec<f64>,
+    relative: f64,
+    absolute: Vec<f64>,
+}
+/// N1 (Operable Unit plan, R1 S1): every coordinate in exactly one named
+/// group. Under [`Ida::group_weights`] coordinate `i` of group `g` (`n_g`
+/// coordinates of `N`) is weighted `w_i = sqrt(N / n_g) / (rtol |y_i| +
+/// atol_i)` through stock IDAWFtolerances, so stock's WRMS norm becomes
+/// `sqrt(sum_g RMS_g^2)`, `RMS_g` the group's root mean square in its
+/// declared tolerances: a norm at most 1 holds every group's RMS within its
+/// tolerance whatever the group's size, and no weight is below stock's.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WeightGroups {
+    names: Vec<String>,
+    of: Vec<usize>,
+    sizes: Vec<usize>,
+}
+impl WeightGroups {
+    /// Groups named by each coordinate's key, in order of first appearance.
+    pub fn from_keys<K: AsRef<str>>(keys: &[K]) -> Self {
+        let mut index = std::collections::HashMap::<&str, usize>::new();
+        let mut names = Vec::new();
+        let mut sizes = Vec::new();
+        let of = keys
+            .iter()
+            .map(|k| {
+                let g = *index.entry(k.as_ref()).or_insert_with(|| {
+                    names.push(k.as_ref().to_string());
+                    sizes.push(0);
+                    names.len() - 1
+                });
+                sizes[g] += 1;
+                g
+            })
+            .collect();
+        Self { names, of, sizes }
+    }
+    pub fn len(&self) -> usize {
+        self.of.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.of.is_empty()
+    }
+    /// Group names, sizes and each coordinate's group.
+    pub fn names(&self) -> &[String] {
+        &self.names
+    }
+    pub fn sizes(&self) -> &[usize] {
+        &self.sizes
+    }
+    pub fn group_of(&self) -> &[usize] {
+        &self.of
+    }
+    /// `sqrt(N / n_g)` per coordinate.
+    pub fn factors(&self) -> Vec<f64> {
+        let n = self.of.len() as f64;
+        self.of
+            .iter()
+            .map(|g| (n / self.sizes[*g] as f64).sqrt())
+            .collect()
+    }
+}
+/// A handle's error-weight rule ([`Ida::weight_rule`]): stock's
+/// `1 / (rtol |y| + atol)`, times `sqrt(N / n_g)` under weight groups (N1).
+/// The guard of the exact consistent start reads its weights here, while the
+/// handle's system is borrowed, so it measures in stock's own norm.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WeightRule {
+    factor: Option<Vec<f64>>,
+}
+impl WeightRule {
+    /// Whether the rule is grouped (N1) rather than stock's.
+    pub fn grouped(&self) -> bool {
+        self.factor.is_some()
+    }
+    /// The weights of the handle's first `y.len()` coordinates at `y` for
+    /// the tolerances `relative`, `absolute` (a segment's, which may not be
+    /// set on the handle yet).
+    pub fn weights(
+        &self,
+        y: &[f64],
+        relative: f64,
+        absolute: &[f64],
+        out: &mut [f64],
+    ) -> Result<()> {
+        if absolute.len() != y.len()
+            || out.len() != y.len()
+            || self.factor.as_ref().is_some_and(|f| f.len() < y.len())
+        {
+            return Err("IDA weights dimension".into());
+        }
+        let factor = self.factor.as_ref().map(|f| &f[..y.len()]);
+        if weight_rule(factor, relative, absolute, y, out) {
+            Ok(())
+        } else {
+            Err("an error weight is not finite and positive".into())
+        }
+    }
+}
+/// The one weight rule of a handle at `y` under `relative`, `absolute`
+/// (and the group factors when grouped): stock's `1 / (rtol |y| + atol)`
+/// times the factor. `false` when a weight is not finite and positive.
+fn weight_rule(
+    factor: Option<&[f64]>,
+    relative: f64,
+    absolute: &[f64],
+    y: &[f64],
+    out: &mut [f64],
+) -> bool {
+    for (i, w) in out.iter_mut().enumerate() {
+        let stock = 1. / (relative * y[i].abs() + absolute[i]);
+        *w = match factor {
+            Some(f) => f[i] * stock,
+            None => stock,
+        };
+        if !(w.is_finite() && *w > 0.) {
+            return false;
+        }
+    }
+    true
 }
 impl<S> Context<S> {
     fn status(&mut self, result: std::thread::Result<std::result::Result<(), Failure>>) -> c_int {
@@ -354,6 +482,33 @@ unsafe extern "C" fn roots<S: System>(
     }));
     c.root_status(result, out)
 }
+/// Stock IDAWFtolerances' rule (N1): the grouped weights at `y`. A
+/// weight that is not finite and positive is a fatal model error.
+unsafe extern "C" fn weights<S: System>(user: *mut c_void, y: *const f64, ewt: *mut f64) -> c_int {
+    // SAFETY: as for residual; stock passes vectors of the handle's length.
+    let c = unsafe { &mut *user.cast::<Context<S>>() };
+    if c.fatal.is_some() {
+        return -1;
+    }
+    let Some(g) = &c.grouped else {
+        c.fatal
+            .get_or_insert("stock asked for grouped weights without a rule".into());
+        return -1;
+    };
+    let (y, out) = unsafe {
+        (
+            std::slice::from_raw_parts(y, c.n),
+            std::slice::from_raw_parts_mut(ewt, c.n),
+        )
+    };
+    if weight_rule(Some(&g.factor), g.relative, &g.absolute, y, out) {
+        0
+    } else {
+        c.fatal
+            .get_or_insert("a grouped error weight is not finite and positive".into());
+        -1
+    }
+}
 #[cfg(feature = "quadratures")]
 unsafe extern "C" fn quadrature<S: System>(
     user: *mut c_void,
@@ -412,6 +567,8 @@ pub struct Ida<S: System> {
     /// HOOK (S3GATES, S3-D67; KERN to reconcile): the absolute tolerance
     /// vector stock was last given (construction or `set_tolerances`).
     absolute: Vec<f64>,
+    /// The relative tolerance last given.
+    relative: f64,
 }
 impl<S: System> Ida<S> {
     pub fn new(system: S, initial: Initial<'_>) -> Result<Self> {
@@ -452,6 +609,7 @@ impl<S: System> Ida<S> {
             quadratures: 0,
             fatal: None,
             last_trial: None,
+            grouped: None,
         });
         let mut status = 0;
         let handle = unsafe {
@@ -490,7 +648,51 @@ impl<S: System> Ida<S> {
             failed: false,
             started: false,
             absolute: initial.absolute_tolerance.to_vec(),
+            relative: initial.relative_tolerance,
         })
+    }
+    /// N1: group-normalised error weights ([`WeightGroups`]) through stock
+    /// IDAWFtolerances on the tolerances in force, from the next step on: one
+    /// rule for stock's error test, its Newton convergence test and its
+    /// initial step, and the weights [`Self::weights`] gives the exact
+    /// consistent start's guard. A segment option (before `advance`); given
+    /// again at a later segment start it replaces the groups (a mode change
+    /// that changes a coordinate's class). Once set, stock's own
+    /// `rtol |y| + atol` weights do not return on this handle.
+    pub fn group_weights(&mut self, groups: WeightGroups) -> Result<()> {
+        self.configurable("weight groups")?;
+        if groups.len() != self.context.n {
+            return Err(format!(
+                "weight groups cover {} coordinates, the handle has {}",
+                groups.len(),
+                self.context.n
+            ));
+        }
+        let first = self.context.grouped.is_none();
+        self.context.grouped = Some(Grouped {
+            factor: groups.factors(),
+            groups,
+            relative: self.relative,
+            absolute: self.absolute.clone(),
+        });
+        if first {
+            let code = unsafe { operating_ida_weight_function(self.handle.as_ptr(), weights::<S>) };
+            if let Err(e) = self.check(code) {
+                self.context.grouped = None;
+                return Err(e);
+            }
+        }
+        Ok(())
+    }
+    /// The weight groups in force, if any (N1).
+    pub fn weight_groups(&self) -> Option<&WeightGroups> {
+        self.context.grouped.as_ref().map(|g| &g.groups)
+    }
+    /// This handle's error-weight rule, apart from the handle (N1).
+    pub fn weight_rule(&self) -> WeightRule {
+        WeightRule {
+            factor: self.context.grouped.as_ref().map(|g| g.factor.clone()),
+        }
     }
     /// HOOK (S3GATES, S3-D67): the absolute tolerances stock uses now, as
     /// last given (derived classes included).
@@ -661,7 +863,8 @@ impl<S: System> Ida<S> {
     /// tolerances (finite, positive), a segment option like the others
     /// (before `advance`); for a derived class that changes at a
     /// reinitialization, such as an equilibrium cell's vapor class at a
-    /// phase-mode change (S3-D3).
+    /// phase-mode change (S3-D3). Under [`Self::group_weights`] the grouped
+    /// rule takes the new tolerances instead (N1).
     pub fn set_tolerances(&mut self, relative: f64, absolute: &[f64]) -> Result<()> {
         self.configurable("tolerances")?;
         if absolute.len() != self.context.n
@@ -673,10 +876,19 @@ impl<S: System> Ida<S> {
                 "IDA tolerances need a positive rtol and one positive atol per coordinate".into(),
             );
         }
-        let code =
-            unsafe { operating_ida_tolerances(self.handle.as_ptr(), relative, absolute.as_ptr()) };
-        self.check(code)?;
+        if let Some(g) = self.context.grouped.as_mut() {
+            // N1: the grouped rule reads the tolerances at each weight
+            // evaluation; stock IDASVtolerances would replace the rule.
+            g.relative = relative;
+            g.absolute.copy_from_slice(absolute);
+        } else {
+            let code = unsafe {
+                operating_ida_tolerances(self.handle.as_ptr(), relative, absolute.as_ptr())
+            };
+            self.check(code)?;
+        }
         self.absolute.copy_from_slice(absolute);
+        self.relative = relative;
         Ok(())
     }
     /// IDASetMaxOrd; stock admits 1 through its allocated maximum order 5.

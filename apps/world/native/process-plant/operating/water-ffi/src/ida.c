@@ -30,6 +30,7 @@ typedef int (*Residual)(void*, double, const double*, const double*, double*);
 typedef int (*Jacobian)(void*, double, double, const double*, const double*, double*, int64_t*, int64_t*);
 typedef int (*Roots)(void*, double, const double*, const double*, double*);
 typedef int (*Quadrature)(void*, double, const double*, const double*, double*);
+typedef int (*Weights)(void*, const double*, double*);
 typedef struct {
     SUNContext ctx;
     N_Vector y, yp, atol, ids, q;
@@ -42,6 +43,9 @@ typedef struct {
     Jacobian jacobian;
     Roots roots;
     Quadrature quadrature;
+    /* N1: the caller's error-weight rule (stock IDAWFtolerances), or none
+       (stock IDASVtolerances on rtol and atol). */
+    Weights weights;
     double time;
     /* MR-1 (owner, request 7 R7-P): the stock IDAS check-point interval in
        steps (0: stock IDASolve, no forced setup), the most check points
@@ -58,6 +62,10 @@ static int jacobian(double t, double cj, N_Vector y, N_Vector yp, N_Vector r,
     OperatingIDA *o = v;
     return o->jacobian(o->user,t,cj,N_VGetArrayPointer(y),N_VGetArrayPointer(yp),
         SUNSparseMatrix_Data(j),SUNSparseMatrix_IndexValues(j),SUNSparseMatrix_IndexPointers(j));
+}
+static int error_weights(N_Vector y, N_Vector ewt, void *v) {
+    OperatingIDA *o = v;
+    return o->weights(o->user,N_VGetArrayPointer(y),N_VGetArrayPointer(ewt));
 }
 static int root_values(double t, N_Vector y, N_Vector yp, double *g, void *v) {
     OperatingIDA *o = v;
@@ -258,10 +266,22 @@ int operating_ida_stats(OperatingIDA *o,long *counts,int *orders,double *steps) 
 }
 int operating_ida_max_order(OperatingIDA *o,int order) { return IDASetMaxOrd(o->ida,order); }
 /* Stock IDASVtolerances on the handle's own atol vector (a segment's
-   tolerances, e.g. a derived class at a phase-mode change). */
+   tolerances, e.g. a derived class at a phase-mode change). Refused while
+   the caller's weight rule is in force: it would replace that rule. */
 int operating_ida_tolerances(OperatingIDA *o,double rtol,const double *atol) {
+    if (o->weights) return IDA_ILL_INPUT;
     memcpy(N_VGetArrayPointer(o->atol),atol,N_VGetLength(o->atol)*sizeof(double));
     return IDASVtolerances(o->ida,rtol,o->atol);
+}
+/* N1 (OU plan, R1 S1): stock IDAWFtolerances. Stock calls the rule for the
+   error weights wherever it would compute rtol|y| + atol from the tolerances
+   (its error test, the Newton convergence test and the initial step), with
+   the user data as its data (IDAInitialSetup). Once set, it stays. */
+int operating_ida_weight_function(OperatingIDA *o,Weights w) {
+    if (!w || o->weights) return IDA_ILL_INPUT;
+    int code=IDAWFtolerances(o->ida,error_weights);
+    if (code>=0) o->weights=w;
+    return code;
 }
 int operating_ida_max_step(OperatingIDA *o,double step) { return IDASetMaxStep(o->ida,step); }
 /* Stock IDASetInitStep: the first step; it persists across IDAReInit. */

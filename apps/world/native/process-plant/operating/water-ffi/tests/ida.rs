@@ -1,5 +1,5 @@
 #![cfg(feature = "ida")]
-use leitbild_operating_water::ida::{Advance, Failure, Ida, Initial, System};
+use leitbild_operating_water::ida::{Advance, Failure, Ida, Initial, System, WeightGroups};
 use std::f64::consts::LN_2;
 struct Decay {
     panic: bool,
@@ -65,6 +65,76 @@ fn decay() -> Decay {
         panic: false,
         fatal: false,
     }
+}
+/// N1: stock IDAWFtolerances with group-normalised weights. Stock's own
+/// weights (IDAGetErrWeights) of a step are sqrt(N/n_g) times
+/// 1/(rtol|y| + atol) at the state the step starts from, bitwise the
+/// handle's rule there; one
+/// group of every coordinate is stock's rule; the groups must cover the
+/// handle; SV tolerances never replace the rule; a later set_tolerances
+/// reaches it.
+#[test]
+fn grouped_weights_are_the_group_factor_times_stocks_through_stock_wf_tolerances() {
+    let groups = WeightGroups::from_keys(&["a", "b"]);
+    assert_eq!(groups.sizes(), &[1, 1]);
+    assert_eq!(groups.group_of(), &[0, 1]);
+    let run = |groups: Option<WeightGroups>, relative: f64| {
+        let mut y = [1., 2.];
+        let mut yp = [-1., 0.];
+        let mut ida = new(decay(), &y, &yp);
+        if let Some(g) = groups {
+            ida.group_weights(g).unwrap();
+            assert!(ida.weight_rule().grouped());
+        }
+        ida.set_tolerances(relative, &[1e-10; 2]).unwrap();
+        ida.advance(0.05, &mut y, &mut yp).unwrap();
+        // Stock sets the weights before each step from the state the step
+        // starts at: after one more step they are the rule at that state.
+        // (The first one-step call returns the internal endpoint, past the
+        // interpolated output, without a step.)
+        let (mut ty, mut typ) = ([0.; 2], [0.; 2]);
+        ida.current_state(&mut ty, &mut typ).unwrap();
+        let before = ida.stats().unwrap().steps;
+        ida.step(1., &mut y, &mut yp).unwrap();
+        if ida.stats().unwrap().steps == before {
+            ida.step(1., &mut y, &mut yp).unwrap();
+        }
+        assert_eq!(ida.stats().unwrap().steps, before + 1);
+        let (mut e, mut w) = ([0.; 2], [0.; 2]);
+        ida.error_diagnostics(&mut e, &mut w).unwrap();
+        let mut rule = [0.; 2];
+        ida.weight_rule()
+            .weights(&ty, relative, &[1e-10; 2], &mut rule)
+            .unwrap();
+        (w, rule, ty, ida.stats().unwrap().steps)
+    };
+    // Two groups of one coordinate each: factor sqrt(2) on both.
+    let (w, rule, y, _) = run(Some(WeightGroups::from_keys(&["a", "b"])), 1e-8);
+    for i in 0..2 {
+        let stock = 1. / (1e-8 * y[i].abs() + 1e-10);
+        assert!(
+            (w[i] / stock - 2f64.sqrt()).abs() < 1e-12,
+            "{i}: {} {stock}",
+            w[i]
+        );
+        assert_eq!(
+            w[i].to_bits(),
+            rule[i].to_bits(),
+            "{i}: stock's weights are the rule's"
+        );
+    }
+    // One group of both: factor 1, stock's own weights and trajectory.
+    let (w1, _, y1, steps1) = run(Some(WeightGroups::from_keys(&["a", "a"])), 1e-8);
+    let (w0, r0, y0, steps0) = run(None, 1e-8);
+    assert_eq!((w1, y1, steps1), (w0, y0, steps0));
+    assert_eq!(w0, r0);
+    // The tighter grouped norm takes at least as many steps.
+    let (_, _, _, grouped) = run(Some(WeightGroups::from_keys(&["a", "b"])), 1e-8);
+    assert!(grouped >= steps0, "{grouped} < {steps0}");
+    // The groups must cover the handle.
+    let mut ida = new(decay(), &[1., 2.], &[-1., 0.]);
+    assert!(ida.group_weights(WeightGroups::from_keys(&["a"])).is_err());
+    assert!(ida.weight_groups().is_none());
 }
 #[test]
 fn stock_ida_initializes_and_advances_an_index_one_system_without_resetting_stock() {

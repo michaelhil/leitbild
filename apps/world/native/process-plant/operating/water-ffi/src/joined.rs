@@ -768,14 +768,47 @@ pub fn derived_tolerances<P: Properties + WaterProperties>(
     })
 }
 
+/// N1 (lead, 17 Oct): the most coordinates in a weight group that holds a
+/// credited row. Under group-normalised weights stock's WRMS^2 is
+/// `sum_g RMS_g^2`, so WRMS <= 1 holds every row of a group of `n_g`
+/// coordinates within `sqrt(n_g)` of its declared tolerance: 3 units here.
+pub const CREDITED_GROUP_MAX: usize = 9;
+
+/// N1: weight-group keys from census keys (one per coordinate, census
+/// order). Every key that a `credited` coordinate carries is split, in
+/// census order, into consecutive groups of at most `max` coordinates,
+/// keyed `key#k`; every other key stays one group. No hand list: the
+/// split follows from the census and the credited coordinates.
+pub fn split_credited_groups(keys: &[String], credited: &[bool], max: usize) -> Vec<String> {
+    let split: std::collections::HashSet<&str> = keys
+        .iter()
+        .zip(credited)
+        .filter(|(_, c)| **c)
+        .map(|(k, _)| k.as_str())
+        .collect();
+    let mut seen = std::collections::HashMap::<&str, usize>::new();
+    keys.iter()
+        .map(|k| {
+            if split.contains(k.as_str()) {
+                let n = seen.entry(k.as_str()).or_default();
+                let key = format!("{k}#{}", *n / max.max(1));
+                *n += 1;
+                key
+            } else {
+                k.clone()
+            }
+        })
+        .collect()
+}
+
 pub use integrated::{
-    Assembly, Discrete, Integrated, JoinedSystem, Restart, Restarted, discrete_restart,
-    root_directions,
+    Assembly, Discrete, Integrated, JoinedSystem, Restart, Restarted, census_groups,
+    discrete_restart, root_directions,
 };
 
 mod integrated {
     use super::{Analyses, Matrices, Report, transacted_owners};
-    use crate::ida::{Failure, Ida, KluOrdering, System};
+    use crate::ida::{Failure, Ida, KluOrdering, System, WeightGroups};
     use leitbild_operating_plant::{
         joined::{
             block::{Command, Transaction},
@@ -921,6 +954,7 @@ mod integrated {
         // ELEC hook: appended coordinates (none on S1/S2 paths) take their
         // owners' changes first, then the operator restarts on its own part.
         let appended = ida.system().appended();
+        let rule = ida.weight_rule();
         let m = y_all
             .len()
             .checked_sub(appended)
@@ -1006,11 +1040,10 @@ mod integrated {
             Vec::new()
         };
         let retune = modes_changed || !equilibrium_classes.is_empty();
-        let weights: Vec<f64> = y
-            .iter()
-            .zip(&effective)
-            .map(|(v, a)| 1. / (relative * v.abs() + a))
-            .collect();
+        // The handle's own weight rule (stock's, or N1's groups) on this
+        // segment's tolerances, so the guard measures in stock's norm.
+        let mut weights = vec![0.; y.len()];
+        rule.weights(y, relative, &effective, &mut weights)?;
         let o = joined.offsets();
         let owners = super::owner_ranges(o);
         let transacted = transacted_owners(&owners, &before, y, &identity_before);
@@ -1025,10 +1058,7 @@ mod integrated {
         // tolerance units (`Report::exempt`, `Restarted::births`). C3's R2
         // reference (rtol x 0.01, atol x 0.1) otherwise refuses the honest
         // +104 kPa flash at +18.93 s (WRMS 13.9). The bound is unchanged.
-        let born = joined
-            .network
-            .born_cells(&modes_before)
-            .map_err(message)?;
+        let born = joined.network.born_cells(&modes_before).map_err(message)?;
         let flash: Vec<usize> = born
             .iter()
             .flat_map(|c| {
@@ -1139,6 +1169,53 @@ mod integrated {
             yp,
             report,
         })
+    }
+
+    /// N1 (Operable Unit plan, R1 S1: groups = census classes): the weight
+    /// groups of a joined system, each operator coordinate in its
+    /// `owner/class` group of the operator's layouts (the census of
+    /// `operating-hot-spine.md`), the coordinates a wrapper appends (ELEC's
+    /// slice, whose stator rows are credited) in a group of their own. Every
+    /// group holding a credited row (a coordinate a declared credited output
+    /// reads, a coordinate of a derived class, an appended coordinate) is
+    /// split in census order into groups of at most
+    /// [`super::CREDITED_GROUP_MAX`] ([`super::split_credited_groups`]), so a
+    /// stock WRMS of at most 1 holds every credited row within 3 of its
+    /// declared tolerance units. For [`Ida::group_weights`].
+    pub fn census_groups<S: JoinedSystem>(system: &S) -> Result<WeightGroups, String> {
+        let layouts = system.integrated().joined.layouts();
+        let mut keys: Vec<String> = layouts
+            .iter()
+            .flat_map(|(owner, l)| l.classes.iter().map(move |c| format!("{owner}/{c:?}")))
+            .collect();
+        let operator = system.integrated().joined.dimension();
+        if keys.len() != operator {
+            return Err(format!(
+                "census groups: the layouts cover {} of {operator} coordinates",
+                keys.len()
+            ));
+        }
+        let mut credited: Vec<bool> = keys
+            .iter()
+            .map(|k| super::DERIVED_CLASSES.contains(&k.as_str()))
+            .collect();
+        for o in system.integrated().joined.credited() {
+            for j in &o.columns {
+                *credited
+                    .get_mut(*j)
+                    .ok_or("census groups: a credited output reads outside the operator")? = true;
+            }
+        }
+        keys.extend((0..system.appended()).map(|_| "appended".to_string()));
+        credited.resize(keys.len(), true);
+        if keys.len() != system.dimension() {
+            return Err(
+                "census groups: the system's dimension is not the operator's and the appended"
+                    .into(),
+            );
+        }
+        let keys = super::split_credited_groups(&keys, &credited, super::CREDITED_GROUP_MAX);
+        Ok(WeightGroups::from_keys(&keys))
     }
 
     /// Stock IDASetRootDirection from the owners' current state
@@ -1588,7 +1665,76 @@ mod integrated {
 
 #[cfg(test)]
 mod tests {
-    use super::{correction_wrms, owner_ranges, transacted_owners};
+    use super::{
+        CREDITED_GROUP_MAX, correction_wrms, owner_ranges, split_credited_groups, transacted_owners,
+    };
+    use crate::ida::WeightGroups;
+
+    /// N1's bound by construction: under group-normalised weights a vector
+    /// at grouped WRMS 1 (in declared tolerance units u) has no credited row
+    /// above sqrt(9) = 3, whatever its shape; the uncredited class keeps one
+    /// group and may carry more.
+    #[test]
+    fn a_credited_row_stays_within_three_units_at_grouped_wrms_one() {
+        let mut keys: Vec<String> = Vec::new();
+        keys.extend((0..52).map(|_| "rods/GuideCurrent".to_string()));
+        keys.extend((0..29).map(|_| "network/CellPressure".to_string()));
+        keys.extend((0..2316).map(|_| "nuclear/Precursor".to_string()));
+        let mut credited = vec![false; keys.len()];
+        credited[..52].fill(true);
+        credited[52 + 3] = true; // one pressure a credited output reads
+        let split = split_credited_groups(&keys, &credited, CREDITED_GROUP_MAX);
+        let groups = WeightGroups::from_keys(&split);
+        assert!(
+            groups.sizes().iter().take(6 + 4).all(|n| *n <= 9),
+            "{:?}",
+            groups.sizes()
+        );
+        assert_eq!(groups.sizes().len(), 6 + 4 + 1);
+        assert_eq!(split[0], "rods/GuideCurrent#0");
+        assert_eq!(split[51], "rods/GuideCurrent#5");
+        assert_eq!(split[52 + 28], "network/CellPressure#3");
+        assert_eq!(split[52 + 29], "nuclear/Precursor");
+        let factor = groups.factors();
+        let n = keys.len() as f64;
+        let grouped = |u: &[f64]| {
+            (u.iter()
+                .zip(&factor)
+                .map(|(u, f)| (u * f) * (u * f))
+                .sum::<f64>()
+                / n)
+                .sqrt()
+        };
+        // The worst case: all error on one credited row.
+        for i in [0, 47, 52 + 3, 52 + 28] {
+            let mut u = vec![0.; keys.len()];
+            u[i] = 1.;
+            let at_one = u[i] / grouped(&u);
+            assert!(at_one <= 3. + 1e-12, "row {i}: {at_one}");
+        }
+        // Deterministic pseudo-random shapes, scaled to grouped WRMS 1.
+        let mut x = 0x9e37_79b9_7f4a_7c15u64;
+        for _ in 0..200 {
+            let u: Vec<f64> = (0..keys.len())
+                .map(|_| {
+                    x ^= x << 13;
+                    x ^= x >> 7;
+                    x ^= x << 17;
+                    (x >> 11) as f64 / (1u64 << 53) as f64 - 0.5
+                })
+                .collect();
+            let s = grouped(&u);
+            let worst = (0..keys.len())
+                .filter(|i| credited[*i] || split[*i].starts_with("network/CellPressure"))
+                .map(|i| (u[i] / s).abs())
+                .fold(0f64, f64::max);
+            assert!(worst <= 3. + 1e-12, "{worst}");
+        }
+        // The uncredited class (one group of 2,316) is not bounded by 3.
+        let mut u = vec![0.; keys.len()];
+        u[52 + 29] = 1.;
+        assert!(u[52 + 29] / grouped(&u) > 40.);
+    }
     use leitbild_operating_plant::joined::operator::Offsets;
 
     #[test]
