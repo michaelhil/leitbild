@@ -329,9 +329,9 @@ test.skipIf(!wiki || !if97)('actual single hot packet rebases every recipient, f
   expect(sum(h.map(r => r.mass_kg))).toBeCloseTo(15 * 679.3368894359069, 8)
   expect(p.hot.fluid.primary_mass_kg).toBeCloseTo(sum(p.thermal.water.map(r => r.mass_kg)), 8)
   expect(p.hot.fluid.primary_energy_j).toBeCloseTo(sum(p.thermal.water.map(r => r.energy_j)), 3)
-  expect(sum(p.water_boron_amount_kg_eq)).toBeCloseTo(p.hot.fluid.primary_mass_kg / 1000, 9)
+  expect(sum(p.water_boron_amount_kg_eq)).toBeCloseTo(p.hot.fluid.primary_mass_kg * 1538 / 1e6, 9) // R14-A1: 1,538 ppm_eq
   expect(p.external_ports.surge_stock.volume_m3).toBeCloseTo(p.pzr.surge.route.liquidVolume_m3, 13)
-  expect(p.external_ports.surge_stock.absorberTracer_kgEq).toBeCloseTo(p.external_ports.surge_stock.mass_kg / 1000, 12)
+  expect(p.external_ports.surge_stock.absorberTracer_kgEq).toBeCloseTo(p.external_ports.surge_stock.mass_kg * 1538 / 1e6, 12) // R14-A1
   expect(p.thermal.water[p.external_ports.primary_to_surge.primary_water]!.id).toBe('HOT.A.JUNCTION')
   type Any = typeof p.hydraulics.sections[number]
   const channels = p.hydraulics.sections.filter((s: Any): s is Section => !('kind' in s)),

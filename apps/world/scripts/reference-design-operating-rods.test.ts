@@ -41,7 +41,7 @@ test.skipIf(!wiki)('the actual rods section is the footprint, its record and the
   expect(s.cells.upper.top_m).toBe(s.cells.housing_main.bottom_m)
   expect(s.guide.upper_mouth_m - s.guide.lower_mouth_m).toBeCloseTo(s.bodies.length_m, 12)
   expect(s.holding.turbine_trip_to_opening_s).toBe(0.2)
-  expect(s.reference_travel_m).toBe(2.8)
+  expect(s.reference_travel_m).toBe(3.4839)
   // R1: the page's envelope-disk law, its coefficient read from its own record.
   expect(s.spider_drag).toEqual({ selection: 'envelope-disk', coefficient: 1.28 })
   // R3: the passage blend band's speed.
