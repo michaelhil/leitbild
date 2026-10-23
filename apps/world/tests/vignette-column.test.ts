@@ -277,8 +277,8 @@ describe('value words (W4.4)', () => {
   })
 
   test('outside its validity a reading names what it waits for; a value only the simulator computes reads SIM', () => {
-    expect(look({ invalidWhile: 'Source-range HV off' }, { value: null, quality: 'not-applicable' })).toMatchObject({ text: '— (Source-range HV off)', value: null, unit: '' })
-    expect(look({}, { value: null, quality: 'not-applicable' }).text).toBe('—')
+    expect(look({ invalidWhile: 'Source-range HV off' }, { value: null, quality: 'not-applicable' })).toMatchObject({ text: '—', reason: 'Source-range HV off', value: null, unit: '' })
+    expect(look({}, { value: null, quality: 'not-applicable' })).toMatchObject({ text: '—', reason: null })
     expect(look({ simulated: true }, { value: 3 }).sim).toBe(true)
     expect(look({}, { value: 3 }).sim).toBe(false)
   })

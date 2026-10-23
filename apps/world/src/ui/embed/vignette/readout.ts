@@ -83,6 +83,8 @@ export interface ReadingLook {
   readonly offSpan: 'below' | 'above' | 'wider' | null
   /** Only its simulator computes it: its row reads SIM. */
   readonly sim: boolean
+  /** Outside its validity, what it waits for, written beside its "—": "— (Source-range HV off)". */
+  readonly reason: string | null
 }
 
 /**
@@ -125,7 +127,7 @@ export const readingLook = (label: string, valueType: Observable['valueType'], s
   // A valve's position at the ends of its travel reads as its drawing words it; its opening in percent between them.
   const travel = reading !== null && end === null && input.travel !== undefined ? (reading < input.travel.below ? input.travel.low : reading > input.travel.above ? input.travel.high : 'opening') : null
   const opening = travel === 'opening' && reading !== null ? (input.unit === '%' ? reading : reading * 100) : null
-  const word = quality === 'not-applicable' ? (input.invalidWhile === undefined ? '—' : `— (${input.invalidWhile})`) : unknown ? '?'
+  const word = quality === 'not-applicable' ? '—' : unknown ? '?'
     : wider !== undefined ? `${wider.word} ${numberText(wider.value, input.unit, input.quantity, decades)}`
       // The span's end as declared, never padded to the value's decimals: "<0 %", ">100 %".
       : end !== null ? `${end === 'below' ? '<' : '>'}${Number(numberText(end === 'below' ? input.span!.min : input.span!.max, input.unit, input.quantity, decades))}`
@@ -148,6 +150,7 @@ export const readingLook = (label: string, valueType: Observable['valueType'], s
     doubtful: quality === 'uncertain' || quality === 'stale' || (end !== null && wider === undefined),
     offSpan: wider !== undefined ? 'wider' : end,
     sim: input.simulated === true,
+    reason: quality === 'not-applicable' ? input.invalidWhile ?? null : null,
     fill: unknown ? 'unknown' : input.demand !== true && activeState(value, states) === true ? 'filled' : 'hollow',
     chip: passed === undefined || quality === 'not-applicable' ? null : { word: orderWord(passed), text: `${orderWord(passed)} ${numberText(passed.value, input.unit, input.quantity, decades)}${passed.consequence === undefined ? '' : ` · ${passed.consequence}`}`, tone },
     note,
@@ -160,7 +163,7 @@ const criterionLook = (label: string, input: ReadingInput): ReadingLook => {
   const words = criterionWords(input.criterion ?? [], input.value === undefined && input.quality === undefined ? undefined : { quality: input.quality ?? 'good', ...(input.checks === undefined ? {} : { checks: input.checks }) })
   return {
     kind: 'criterion', text: words.text, detail: words.detail, value: null, decimals: 0, unit: '', tone: null, emphasis: false, doubtful: false,
-    fill: words.met === true ? 'filled' : 'hollow', chip: null, note: null, offSpan: null, sim: false,
+    fill: words.met === true ? 'filled' : 'hollow', chip: null, note: null, offSpan: null, sim: false, reason: null,
     title: [label, words.detail ?? '', input.why ?? ''].filter(part => part !== '').join(' · '),
   }
 }

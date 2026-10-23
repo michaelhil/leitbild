@@ -77,8 +77,13 @@
           alert={look.tone === null ? false : { status: ALERT_TYPE[look.tone], type: 'regular', thickness: 'small', mode: 'acked-active', showIcon: false, showAlertCategoryIcon: false }}
         ></obc-readout-list-item>
         <span class="chip-cell">{#if look.chip !== null}<span class={`chip ${look.chip.tone ?? 'neutral'}`} title={look.chip.text}>{look.chip.word}</span>{/if}</span>
-        <span class="rate" title={row.rate === null ? undefined : `${row.rate.startsWith('▲') ? 'Rising' : 'Falling'} ${row.rate.slice(2).replace('/min', '')} ${row.look.unit} a minute: the last 30 s and the last 2 min agree`}>{row.rate ?? ''}</span>
-        {#if row.recorded}<Sparkline series={row.series} {now} windowMs={SPARK_WINDOW_MS} size={SPARK} tone={look.tone} text={sparkText(row)} doubtful={look.doubtful} />{:else}<span></span>{/if}
+        {#if look.reason !== null}
+          <!-- Outside its validity: what it waits for, beside its "—", over the rate's and the sparkline's room (W4.4). -->
+          <span class="reason" title={look.reason} use:wholeWords={`(${look.reason})`}></span>
+        {:else}
+          <span class="rate" title={row.rate === null ? undefined : `${row.rate.startsWith('▲') ? 'Rising' : 'Falling'} ${row.rate.slice(2).replace('/min', '')} ${row.look.unit} a minute: the last 30 s and the last 2 min agree`}>{row.rate ?? ''}</span>
+          {#if row.recorded}<Sparkline series={row.series} {now} windowMs={SPARK_WINDOW_MS} size={SPARK} tone={look.tone} text={sparkText(row)} doubtful={look.doubtful} />{:else}<span></span>{/if}
+        {/if}
       </div>
     {/if}
   {/each}
@@ -106,5 +111,6 @@
   .chip.warning { background: var(--display-warning-fill); color: var(--display-on-warning); border-color: var(--alert-warning-color); }
   .chip.alarm { background: var(--display-alarm-fill); color: var(--display-on-alarm); border-color: var(--alert-alarm-color); }
   .chip.critical { background: var(--display-critical-fill); color: var(--display-on-critical); border-color: var(--alert-critical-color); }
+  .reason { grid-column: 4 / 6; min-width: 0; overflow: hidden; font-size: 12px; color: var(--element-neutral-color); }
   .rate { font-size: 12px; text-align: right; color: var(--element-neutral-color); font-variant-numeric: tabular-nums; overflow: hidden; }
 </style>
