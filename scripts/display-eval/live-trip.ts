@@ -22,15 +22,23 @@
  *                     scrolls (a column scrolled out of a narrow window)
  *       no-overrun    throughout: no drawn value running past the room its drawing reserved for it (W0.6)
  *       no-frozen     throughout, while playing, the frame never says FROZEN
- *   R2  trip-line     the frame (not its alerts list) says TRIP
- *       rods-on-bottom  the drawing writes "Rods on bottom"
+ *   R2  trip-line     within one sample of the trip, a line of the frame outside the alerts list and the drawing
+ *                     (the trip line under the title row) names it ("RX TRIP", "1st …"), on screen, and keeps it
+ *       rods-on-bottom  within one sample of the rods reaching the bottom (≤ 4 s after the trip: one sample and the
+ *                     rods' drop), the core writes "Rods on bottom" with its flux on the instrument in range, on screen
  *       rods-in       the core's rods are drawn fully inserted
- *       expected      the alerts list folds the expected alerts into an aggregate ("expected")
+ *       expected      within one sample of the first alert World's sample marks expected after a first-out
+ *                     (AlertRow.expected, W2.3), the list shows the aggregate row ("N expected after RX TRIP"), and
+ *                     keeps it while expected alerts stand
+ *       viewport      at the end: every lead value, the alert count and 3 alert rows on screen (§5.5's rule, here
+ *                     through a live trip; at 1046 with the chat open it is the R2 layout's test)
  * "Within one sample": by the display's own Run clock, at most 2 s after the event (a sample a second, written to
  * the second). Writes <out>/<label>-live-trip.json and shots. Loopback only; no model is called. */
 import { join } from 'node:path'
 import { ensureChrome, loopbackOrigin, openPage, options, sleep, type Page } from './browser.ts'
-import { openUnitDisplay, readDisplay, type DisplayState } from './display-dom.ts'
+import { onScreen, openUnitDisplay, readDisplay, readScreen, type DisplayState, type Screen } from './display-dom.ts'
+import { sizeSpec } from './display-press.ts'
+import { viewport } from './matrix.ts'
 import { createStackApi, type StackApi } from './stack-api.ts'
 
 const ONE_SAMPLE_S = 2
@@ -50,7 +58,7 @@ const leadLabels = (view: any): ReadonlyArray<string> => {
 }
 const sameList = (a: ReadonlyArray<string>, b: ReadonlyArray<string>): boolean => a.length === b.length && a.every((entry, index) => entry === b[index])
 
-interface Poll { readonly wall: number; readonly simMs: number | null; readonly state: DisplayState }
+interface Poll { readonly wall: number; readonly simMs: number | null; readonly state: DisplayState; readonly screen: Screen }
 
 /** The display's Run clock ("sim 04:02:21") on the Run's date. */
 const simOf = (state: DisplayState, day: string): number | null => {
@@ -116,9 +124,13 @@ const runSize = async (config: {
     const atPowerExpected = fresh === null ? null : leadLabels(fresh.view)
     // The unit's mode as World samples it; a sample that fails is counted, and the next read tries again.
     let modeReadsFailed = 0
+    // The first alert World's sample marks expected after a first-out (AlertRow.expected, W2.3), by its raised time.
+    let firstExpectedMs: number | null = null
     const modeOf = async (): Promise<string | null> => {
       if (fresh === null) return null
       const sample = await api.sample(copy, fresh.state).catch(() => { modeReadsFailed += 1; return null })
+      const expected = (sample?.alerts ?? []).filter((row: any) => row.expected !== undefined)
+      if (firstExpectedMs === null && expected.length > 0) firstExpectedMs = Date.parse((await api.presence(copy)).execution.currentSimulationTime)
       const mode = sample?.observations?.find((entry: any) => String(entry.ref).endsWith('#mode'))
       return mode === undefined ? null : JSON.stringify(mode.value ?? mode.text ?? null)
     }
@@ -138,8 +150,9 @@ const runSize = async (config: {
     const firstAfter: Record<string, boolean> = {}
     while (Date.now() < stopAt) {
       const state = await page.eval<DisplayState>(readDisplay())
+      const screen = await page.eval<Screen>(readScreen())
       const simMs = simOf(state, day)
-      polls.push({ wall: Date.now(), simMs, state })
+      polls.push({ wall: Date.now(), simMs, state, screen })
       if (Date.now() - lastApi > 1_000) {
         lastApi = Date.now()
         const plant = (await api.objects(copy)).find(object => object.id === subject)
@@ -147,9 +160,9 @@ const runSize = async (config: {
         if (upsetMs === null && raised.length > 0) upsetMs = Math.min(...raised.map((alert: any) => Date.parse(alert.raisedAt)))
         const trips = raised.filter((alert: any) => alert.kind === 'trip')
         if (tripMs === null && trips.length > 0) tripMs = Math.min(...trips.map((alert: any) => Date.parse(alert.raisedAt)))
-        if (modeMs === null && upsetMs !== null) {
+        if (upsetMs !== null && (modeMs === null || firstExpectedMs === null)) {
           const mode = await modeOf()
-          if (mode !== null && mode !== modeAtPower) modeMs = Date.parse((await api.presence(copy)).execution.currentSimulationTime)
+          if (modeMs === null && mode !== null && mode !== modeAtPower) modeMs = Date.parse((await api.presence(copy)).execution.currentSimulationTime)
         }
         if (fresh !== null) {
           const labels = leadLabels((await api.defaultView(copy, subject)).view)
@@ -219,7 +232,23 @@ const runSize = async (config: {
       const read = worstRead(status)
       return read === undefined ? '' : read.state.values.filter(value => value.status === status).slice(0, 8).map(value => `${value.where} "${value.label}" ${value.text} by ${value.by} ${value.px} px`).join('; ')
     }
-    const frameText = (state: DisplayState) => (state.alerts?.rows ?? []).reduce((text, row) => text.replace(row, ' '), state.text)
+    // R2: the trip line, "Rods on bottom" and the expected aggregate, as a person sees them (on screen).
+    const tripLineOf = (poll: Poll) => onScreen(poll.screen, /\bRX TRIP\b|\b1st\b.*TRIP|reactor trip/i).filter(line => line.region !== 'alerts' && line.region !== 'drawing')
+    const rodsOf = (poll: Poll) => onScreen(poll.screen, /rods on bottom/i).filter(line => /\d(\.\d+)?\s*(×10[⁻⁰¹²³⁴⁵⁶⁷⁸⁹]+\s*A|%|cps)/.test(line.text))
+    const aggregateOf = (poll: Poll) => onScreen(poll.screen, /\d+\s+expected\b/i, ['alerts', 'column', 'body', 'trip'])
+    const lagScreen = (condition: (poll: Poll) => boolean, from: number | null) => {
+      if (from === null) return { lagS: null as number | null, kept: null as number | null }
+      const later = polls.filter(poll => poll.simMs !== null && poll.simMs >= from)
+      const first = later.find(condition)
+      if (first === undefined) return { lagS: null, kept: null }
+      const rest = later.filter(poll => poll.wall >= first.wall)
+      return { lagS: (first.simMs! - from) / 1000, kept: rest.filter(condition).length / rest.length }
+    }
+    const tripLine = lagScreen(poll => tripLineOf(poll).length > 0, tripMs ?? upsetMs)
+    const rodsLine = lagScreen(poll => rodsOf(poll).length > 0, tripMs ?? upsetMs)
+    const aggregate = lagScreen(poll => aggregateOf(poll).length > 0, firstExpectedMs)
+    const lastPoll = polls.at(-1)!
+    const endViewport = viewport(last, lastPoll.screen, sizeSpec(String(size)))
     const checks: Check[] = [
       { id: 'alerts-rows', release: 'R1', pass: upsetMs === null ? null : held(rowsLag), detail: upsetMs === null ? 'no upset seen' : `first rows ${rowsLag.lagS === null ? 'never' : `${rowsLag.lagS} s`} after the upset, kept in ${kept(rowsLag)} of reads after; at the end ${last.alerts === null ? 'no alerts section' : `"${last.alerts.heading}", ${last.alerts.rows.length} rows${last.alerts.more ? `, ${last.alerts.more}` : ''}`}`, shot: shots['1-first-sample-after-upset'] },
       { id: 'frames', release: 'R1', pass: upsetMs === null ? null : held(framesLag) && unframed.length === 0, detail: `first frame ${framesLag.lagS === null ? 'never' : `${framesLag.lagS} s`} after the upset, kept in ${kept(framesLag)} of reads after; at the end ${last.framed.length} drawn items marked (${last.framedSymbols} symbols framed); ${alerted.size} drawn elements carry an active plant alert of caution or worse${nodes.length === 0 ? ' (no World topology to name the drawn elements: the pre-swap mimic)' : ''}${unframed.length === 0 ? '' : `, unframed: ${unframed.join(', ')}`}`, shot: shots['2-upset+10s'] },
@@ -233,15 +262,16 @@ const runSize = async (config: {
       },
       {
         id: 'no-clipped', release: 'R1', pass: statusPolls('clipped').length === 0 && statusPolls('scrolled-x').length === 0,
-        detail: `${statusPolls('clipped').length} of ${polls.length} reads had values clipped${statusPolls('clipped').length === 0 ? '' : ` (the worst: ${listed('clipped')})`}; ${statusPolls('scrolled-x').length} had values hidden sideways in a scrolling box${statusPolls('scrolled-x').length === 0 ? '' : ` (the worst: ${listed('scrolled-x')})`}`,
+        detail: `${statusPolls('clipped').length} of ${polls.length} reads had values clipped${statusPolls('clipped').length === 0 ? '' : ` (the worst: ${listed('clipped')})`}; ${statusPolls('scrolled-x').length} had values hidden sideways in a scrolling box${statusPolls('scrolled-x').length === 0 ? '' : ` (the worst: ${listed('scrolled-x')})`}${statusPolls('affordance').length === 0 ? '' : `; ${statusPolls('affordance').length} had drawing readings behind the drawing's scroll affordance (reachable, not failed; the most: ${worstRead('affordance')!.state.values.filter(value => value.status === 'affordance').length})`}`,
         shot: shots.end,
       },
       { id: 'no-overrun', release: 'R1', pass: statusPolls('overrun').length === 0, detail: statusPolls('overrun').length === 0 ? `no drawn value past its room in ${polls.length} reads` : `${statusPolls('overrun').length} of ${polls.length} reads had drawn values past the room their drawing reserved; the worst: ${listed('overrun')}`, shot: shots.end },
       { id: 'no-frozen', release: 'R1', pass: frozen.length === 0, detail: frozen.length === 0 ? `never FROZEN in ${polls.length} reads` : `FROZEN in ${frozen.length} of ${polls.length} reads`, shot: shots.end },
-      { id: 'trip-line', release: 'R2', pass: afterUpset.length === 0 ? null : /\bTRIP\b/.test(frameText(last)), detail: `frame text outside the alerts list ${/\bTRIP\b/.test(frameText(last)) ? 'says TRIP' : 'does not say TRIP'}`, shot: shots.end },
-      { id: 'rods-on-bottom', release: 'R2', pass: afterUpset.length === 0 ? null : /Rods on bottom/i.test(last.text), detail: /Rods on bottom/i.test(last.text) ? 'written' : 'not written', shot: shots.end },
+      { id: 'trip-line', release: 'R2', pass: afterUpset.length === 0 ? null : held(tripLine), detail: `${tripLine.lagS === null ? 'no trip line on screen outside the alerts list and the drawing' : `on screen ${tripLine.lagS} s after the trip, kept in ${kept(tripLine)} of reads`}; at the end: ${tripLineOf(lastPoll).map(line => `"${line.text.slice(0, 120)}"`).join(', ') || '-'}`, shot: shots['1-first-sample-after-upset'] },
+      { id: 'rods-on-bottom', release: 'R2', pass: afterUpset.length === 0 ? null : rodsLine.lagS !== null && rodsLine.lagS <= ONE_SAMPLE_S + 2 && (rodsLine.kept ?? 0) >= 0.95, detail: `${rodsLine.lagS === null ? '"Rods on bottom" with its flux never on screen' : `on screen ${rodsLine.lagS} s after the trip, kept in ${kept(rodsLine)} of reads`}; at the end: ${rodsOf(lastPoll).map(line => `"${line.text.slice(0, 80)}"`).join(', ') || onScreen(lastPoll.screen, /^core\b/i, ['drawing']).map(line => `core "${line.text}"`).join(', ') || '-'}`, shot: shots['2-upset+10s'] },
       { id: 'rods-in', release: 'R2', pass: rods === null ? null : rods.bars > 0 && rods.withdrawnBars === 0 && rods.unknownBars === 0 && rods.insertedShares.every(share => share >= 0.95), detail: rods === null ? 'no core vessel drawn' : `${rods.bars} rods, inserted shares ${rods.insertedShares.join(', ')}, ${rods.withdrawnBars} drawn withdrawn, ${rods.unknownBars} unknown`, shot: shots.end },
-      { id: 'expected', release: 'R2', pass: afterUpset.length === 0 ? null : /expected/i.test((last.alerts?.rows ?? []).join(' ') + (last.alerts?.heading ?? '')), detail: `alerts list ${/expected/i.test((last.alerts?.rows ?? []).join(' ')) ? 'has' : 'has no'} expected aggregate`, shot: shots.end },
+      { id: 'expected', release: 'R2', pass: afterUpset.length === 0 ? null : firstExpectedMs !== null && held(aggregate), detail: `${firstExpectedMs === null ? "World's sample marks no alert expected (AlertRow.expected)" : `first alert marked expected at ${new Date(firstExpectedMs).toISOString().slice(11, 19)}`}; aggregate ${aggregate.lagS === null ? (polls.some(poll => aggregateOf(poll).length > 0) ? 'shown, but not after a marked alert' : 'never on screen') : `on screen ${aggregate.lagS} s after, kept in ${kept(aggregate)} of reads`}; at the end: ${aggregateOf(lastPoll).map(line => `"${line.text}"`).join(', ') || '-'}`, shot: shots['3-upset+60s'] },
+      { id: 'viewport', release: 'R2', pass: endViewport.pass, detail: endViewport.detail, shot: shots.end },
     ]
     return {
       size, copy, displayWidth: atPower.frame?.width ?? null, generation: atPower.generation,
