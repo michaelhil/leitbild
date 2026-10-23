@@ -377,7 +377,7 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   const chips = chipped.filter(ref => readableChips.has(ref))
   // The frame: title and footer, the trip line's row of a view about one object that can trip (keepsTripLine: empty at
   // rest, so nothing moves when one trips), an answer's notice line (W8.2).
-  const frameRows = FRAME_ROWS + (await keepsTripLine(run, views) ? 1 : 0) + (by === 'assistant' ? 1 : 0)
+  const frameRows = FRAME_ROWS + (await keepsTripLine(run, fitted) ? 1 : 0) + (by === 'assistant' ? 1 : 0)
   const stacked = (): number => fitted.reduce((sum, view) => sum + view.rows, 0)
   // In a window, a flow drawing taller than the stack leaves stands beside a column of every other view (Q20).
   const left = fitted.find(view => view.kind === 'topology' && flows.has(view))
