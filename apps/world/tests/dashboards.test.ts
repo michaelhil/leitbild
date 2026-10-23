@@ -265,5 +265,22 @@ describe('T5: the four units\' steam generator levels side by side, and a person
     const pinned = await dashboard('read', { scope: 'run' })
     expect(pinned).toMatchObject({ revision: 2, stored: true })
     expect(pinned.sections.map((section: any) => [section.title, section.refused === undefined])).toEqual(units.sections.map((section: any) => [section.title, true]))
+
+    // After the trip (5 min into the fault) each unit has alarms at caution and above: its section adds no alerts list, as
+    // the dashboard's run frame shows them (744 px, 31 rows, before; 480 px, 20 rows, now).
+    await runtime.runMaximumPace(new Date(Date.parse(runtime.snapshot().clock!.currentTime) + 270_000).toISOString() as IsoTimestamp, { shouldStop: () => false })
+    const tripped = await displayRunOf(plants, runtime, person, new Set())
+    const after = async (kind: 'read' | 'update', body: unknown) => (await (await handleDashboard(kind, body, { registry: plants, runtime, run: tripped, by: 'person' })).json() as any).result
+    expect(runtime.snapshot().objects.find(object => object.id === 'plant:halden-1')!.alerts.some(alert => ['caution', 'warning', 'alarm', 'emergency'].includes(alert.priority ?? ''))).toBe(true)
+    for (const section of (await after('read', { scope: { of: { category: 'process-plants' } } })).sections) {
+      expect(JSON.parse(section.view.state).views.map((view: any) => view.kind)).toEqual(['values', 'values'])
+      expect(section.view.height).toBe(480)
+    }
+    // A pin composed for the dashboard gets no alerts list either; an alerts view its spec asks for stays.
+    const spec = (views: ReadonlyArray<unknown>) => ({ spec: { title: 'Unit 1 SG A', question: 'Is SG A fed?', subjects: ['plant:halden-1#sgA.levelPercent'], views } })
+    const changed = await after('update', { scope: { subject: 'plant:halden-1' }, expectedRevision: 0, pin: [spec([{ kind: 'values' }]), spec([{ kind: 'values' }, { kind: 'alerts' }])] })
+    expect(changed.revision).toBe(1)
+    const pins = (await plants.dashboards(runtime.id).read()).dashboards.find(entry => entry.scope !== 'run')!.pins
+    expect(pins.map(pin => pin.spec.views.map(view => view.kind))).toEqual([['values'], ['values', 'alerts']])
   })
 })

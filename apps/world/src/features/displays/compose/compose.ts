@@ -213,14 +213,15 @@ const WATCHED_ALERT_LINES = 4
 
 /** Where a vignette is shown: a chat answer stacks its views in 40 rows; a window may stand a tall drawing beside them (Q20). */
 type Frame = 'chat' | 'window'
-const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefined, subjects: ReadonlyArray<Subject>, drafts: ReadonlyArray<DraftView>, kept: Kept, frame: Frame, chipped: ReadonlyArray<string> = [], why?: string): Promise<ComposeOutcome> => {
+/** `onDashboard`: a dashboard section's (A4), whose run frame carries the Run's alerts: completion adds no alerts view, and one asked for stays. */
+const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefined, subjects: ReadonlyArray<Subject>, drafts: ReadonlyArray<DraftView>, kept: Kept, frame: Frame, chipped: ReadonlyArray<string> = [], why?: string, onDashboard?: true): Promise<ComposeOutcome> => {
   const adjusted: DisplayCardAdjustment[] = []
   /** What the fit leaves out, counted on the card (Q15: never silent). */
   let dropped = 0
   const views = drafts.map(view => structuredClone(view) as DraftView)
-  // Completion: the subjects' alerts at caution or above.
+  // Completion: the subjects' alerts at caution or above, but on a dashboard, whose run frame shows them.
   const subjectIds = [...new Set(subjects.flatMap(subjectObjects))].filter(id => visibleObject(run, id) !== undefined)
-  const pressing = subjectIds.flatMap(id => visibleObject(run, id)!.alerts.filter(alert => atLeastCaution(alert.priority)))
+  const pressing = onDashboard === true ? [] : subjectIds.flatMap(id => visibleObject(run, id)!.alerts.filter(alert => atLeastCaution(alert.priority)))
   if (pressing.length > 0 && !views.some(view => view.kind === 'alerts')) {
     if (views.length < 4) views.push({ kind: 'alerts', objectIds: subjectIds.filter(id => visibleObject(run, id)!.alerts.length > 0) })
     else { dropped += pressing.length; countAdjustment(adjusted, { kind: 'layout', text: `${pressing.length} alerts at caution or above not shown` }) }
@@ -511,7 +512,8 @@ const cardOf = async (run: ComposeRun, state: VignetteState, kept: Kept, fitted:
   return assembleCard(state.at, items, adjusted, hidden)
 }
 
-export const composeVignette = async (run: ComposeRun, spec: DisplaySpec): Promise<ComposeOutcome> => {
+/** `onDashboard`: composed to pin on a dashboard (A4), so completion adds no alerts view (finish). */
+export const composeVignette = async (run: ComposeRun, spec: DisplaySpec, onDashboard?: true): Promise<ComposeOutcome> => {
   const subjects: Subject[] = []
   const issues: ComposeIssue[] = []
   for (const [index, name] of spec.subjects.entries()) {
@@ -524,7 +526,7 @@ export const composeVignette = async (run: ComposeRun, spec: DisplaySpec): Promi
   if (spec.views.length === 0) {
     const defaults = await Promise.all(subjects.map(async subject => answered(run, await defaultViews(run, subject))))
     const quiet = (view: DraftView): boolean => view.kind === 'alerts' && view.objectIds !== 'run' && alertsOf(run, { ...view, rows: 1 }).length === 0
-    return finish(run, spec.title, 'assistant', subjects, mergeDefaults(defaults, quiet), kept, 'chat', await chipsOf(run, subjects), whyOf(spec))
+    return finish(run, spec.title, 'assistant', subjects, mergeDefaults(defaults, quiet), kept, 'chat', await chipsOf(run, subjects), whyOf(spec), onDashboard)
   }
   const views: DraftView[] = []
   for (const [index, view] of spec.views.entries()) {
@@ -532,7 +534,7 @@ export const composeVignette = async (run: ComposeRun, spec: DisplaySpec): Promi
     if (isIssue(resolved)) issues.push(resolved)
     else { if (view.kind === 'topology' && (view.from ?? view.to ?? view.around ?? view.media) !== undefined) kept.explicit.add(views.length); views.push(resolved) }
   }
-  return issues.length > 0 ? refuse(issues) : finish(run, spec.title, 'assistant', subjects, views, kept, 'chat', [], whyOf(spec))
+  return issues.length > 0 ? refuse(issues) : finish(run, spec.title, 'assistant', subjects, views, kept, 'chat', [], whyOf(spec), onDashboard)
 }
 
 /** Why an answer's vignette was composed: its question, and its need where given (W8.2). */
@@ -548,13 +550,14 @@ export const composeDefault = async (run: ComposeRun, name: string | Extract<Dis
 
 /**
  * An object's leads as a dashboard shows them (A4): what its Pack leads with each sample, then each list of `parts`
- * (its parts' readings) as values, framed as a window frames a default.
+ * (its parts' readings) as values, framed as a window frames a default; no alerts view, as the dashboard's run frame
+ * shows them.
  */
 export const composeLeads = async (run: ComposeRun, objectId: ObjectId, parts: ReadonlyArray<ReadonlyArray<string>>): Promise<ComposeOutcome> => {
   const subject = await resolveSubject(run, objectId, 'subject')
   if (isIssue(subject)) return refuse([subject])
   const drafts: DraftView[] = [{ kind: 'values', lead: { objectId } }, ...parts.slice(0, 3).map((refs): DraftView => ({ kind: 'values', refs: [...refs] }))]
-  return finish(run, await titleOf(run, subject), undefined, [subject], drafts, { refs: new Set(), explicit: new Set() }, 'window')
+  return finish(run, await titleOf(run, subject), undefined, [subject], drafts, { refs: new Set(), explicit: new Set() }, 'window', [], undefined, true)
 }
 
 /** The rows a fitted state takes, its frame counted as finish counts it: a stored dashboard pin's. */

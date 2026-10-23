@@ -75,15 +75,15 @@ const partsOf = async (run: ComposeRun, objectId: ObjectId): Promise<ReadonlyArr
   const overview = graph === null ? null : overviewOf(graph)
   const declaration = overview === null ? null : await declarationOf(run, objectId)
   if (graph === null || overview === null || declaration === null) return []
-  const byClass = new Map<string, { parts: number; refs: string[] }>()
+  const byClass = new Map<string, Array<ReadonlyArray<string>>>()
   for (const node of graph.nodes) {
     if (!overview.nodes.includes(node.id) || node.class === 'switch' || node.class === 'mover') continue
     const element = declaration.elements.find(entry => entry.id === (node.element ?? node.id))
     if (element?.group === undefined) continue
-    const parts = byClass.get(element.class) ?? { parts: 0, refs: [] }
-    byClass.set(element.class, { parts: parts.parts + 1, refs: [...parts.refs, ...node.bindings.map(binding => binding.ref)] })
+    byClass.set(element.class, [...byClass.get(element.class) ?? [], [...new Set(node.bindings.map(binding => binding.ref))]])
   }
-  return [...byClass.values()].filter(entry => entry.parts > 1).map(entry => [...new Set(entry.refs)].slice(0, 16))
+  return [...byClass.values()].filter(parts => parts.length > 1)
+    .map(parts => [...new Set(parts.flat())].slice(0, 16))
 }
 
 const sectionOf = (title: string, outcome: ComposeOutcome): Built => outcome.ok
@@ -195,7 +195,7 @@ export const changeDashboard = async (run: ComposeRun, file: DashboardFile, by: 
   const pinned: DashboardPin[] = []
   for (const [index, pin] of change.pin.entries()) {
     if ('spec' in pin) {
-      const outcome = await composeVignette(run, pin.spec)
+      const outcome = await composeVignette(run, pin.spec, true)
       if (!outcome.ok) return refusal(422, outcome.issues[0]!.code, outcome.issues.map(issue => `pin.${index}.spec.${issue.path}: ${issue.message}`).join('; '), { issues: outcome.issues })
       // The composer marks what it composes as the Assistant's; a spec a person pins is not.
       const { by: _composer, ...state } = outcome.state
