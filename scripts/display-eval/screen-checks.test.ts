@@ -129,6 +129,11 @@ describe('what a press opened', () => {
     expect(classify(home, screen([line('Halden Unit 1', 'header', 100), line('sim 04:05:03', 'footer', 1037)]), [], []).kind).toBe('nothing')
     expect(classify(home, screen([...home.lines, line('Nothing opened: no display window takes it here', 'body', 140)]), [], []).kind).toBe('changed')
   })
+  test('a press that narrows the list (a count or a tile filtering it) is a change', () => {
+    const list = screen([...home.lines, line('UNACK RCP A not running NOT RUN · ALM · 2:57', 'alerts', 600), line('UNACK Main feedwater pump unavailable NOT RUN · ALM · 2:57', 'alerts', 624)])
+    const narrowed = classify(list, screen([...home.lines, line('UNACK RCP A not running NOT RUN · ALM · 2:57', 'alerts', 600)]), [], [])
+    expect(narrowed.kind).toBe('changed')
+  })
   test('a dialog on the Run page (a tag dialog) is a page dialog', () => {
     expect(classify(home, home, [], ['DG-A emergency diesel generator A status'])).toEqual({ kind: 'page-dialog', label: 'DG-A emergency diesel generator A status' })
   })

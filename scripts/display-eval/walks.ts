@@ -488,7 +488,7 @@ const t9 = async (ctx: Ctx): Promise<TaskResult> => {
 const t10 = async (ctx: Ctx, t8Result: TaskResult | undefined, t6Result: TaskResult | undefined): Promise<TaskResult> => {
   // The plant side: every drawn item and alert row a person presses opens content (the E-0 sweep counts them all;
   // here the overview's items and rows once each), then the other Packs (grid: T6; Einsatz tables: no such Run here).
-  const { home } = await session(ctx, 'T10', sizeSpec('1920'))
+  const { home, reopen } = await session(ctx, 'T10', sizeSpec('1920'))
   const targets = (await targetsOf(ctx.page)).filter(target => ['item', 'label', 'row', 'more'].includes(target.kind) && !OPERATES.test(target.name))
   let opened = 0, dead = 0
   const nothing: string[] = []
@@ -496,7 +496,7 @@ const t10 = async (ctx: Ctx, t8Result: TaskResult | undefined, t6Result: TaskRes
   for (const target of targets) {
     const result = await press(ctx.page, target)
     if (result.outcome.kind === 'nothing') { dead += 1; nothing.push(`${target.kind} "${target.name.slice(0, 30)}"`) } else { opened += 1; if (result.latencyMs !== null) latencies.push(result.latencyMs) }
-    if (result.outcome.kind !== 'nothing') await goHome(ctx.page, home)
+    if (result.outcome.kind !== 'nothing') { const back = await goHome(ctx.page, home); if (!back.home || result.outcome.kind === 'changed') await reopen() }
   }
   const plantOk = dead === 0
   return {

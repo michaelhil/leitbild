@@ -55,6 +55,9 @@ export const classify = (before: Screen, after: Screen, pageBefore: ReadonlyArra
   if (shapeOf(before) !== shapeOf(after)) {
     const added = after.lines.filter(line => line.on && !before.lines.some(old => old.on && shape(old.text) === shape(line.text))).map(line => line.text)
     if (added.length > 0) return { kind: 'changed', what: added.slice(0, 3).join(' | ').slice(0, 200) }
+    // A press that narrows what shows (a count or a tile filtering the list) removes lines and adds none.
+    const removed = before.lines.filter(line => line.on && !after.lines.some(next => next.on && shape(next.text) === shape(line.text))).map(line => line.text)
+    if (removed.length > 0) return { kind: 'changed', what: `narrowed: ${removed.length} lines left, e.g. ${removed.slice(0, 2).join(' | ')}`.slice(0, 200) }
   }
   return { kind: 'nothing' }
 }
