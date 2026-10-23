@@ -92,9 +92,12 @@ describe('plant observation read (P3)', () => {
     const evidence = `plant at 10:00:10: ${JSON.stringify(facts.atPowerPlant)}`
     expect(facts.atPower, evidence).toHaveLength(refs.length)
     // Off good only where nothing is there to read: the source range, its high voltage off above P-6, measures nothing
-    // (meaningfulWhile), and an accumulator's discharge isolation valve reads "position not measured".
+    // (meaningfulWhile), an accumulator's discharge isolation valve reads "position not measured", and no check of a
+    // criterion applies at power (the trip's and the heat sink's once a trip is demanded, natural circulation's with
+    // no coolant pump running).
     expect(facts.atPower.filter((observation: Observation) => observation.quality === 'not-applicable').map(path))
-      .toEqual(['core.sourceRangeCountRateCps', 'core.sourceRangeStartupRateDpm', ...['A', 'B', 'C', 'D'].map(loop => `safetyAccumulator${loop}.dischargeIsolationValve.state`)])
+      .toEqual(['core.sourceRangeCountRateCps', 'core.sourceRangeStartupRateDpm', ...['A', 'B', 'C', 'D'].map(loop => `safetyAccumulator${loop}.dischargeIsolationValve.state`),
+        'csf.subcriticality.checks', 'csf.core-cooling.checks', 'csf.heat-sink.checks'])
     expect(facts.atPower.filter((observation: Observation) => observation.priority !== 'none' || (observation.quality !== 'good' && observation.quality !== 'not-applicable'))
       .map((observation: Observation) => ({ ref: path(observation), value: observation.value, priority: observation.priority, quality: observation.quality, why: observation.why, at: observation.at })), evidence).toEqual([])
     expect(facts.atPower.filter((observation: Observation) => observation.clock !== 'simulation' || observation.at !== '2026-01-01T10:00:10.000Z')

@@ -9,6 +9,7 @@ import { plantAlarmPriority } from '../ic/alarm-philosophy.ts'
 import { isDemand, readsAsMeasured } from '../ic/key-values.ts'
 import { icThresholdsForSignal, type ComposedDisplayThreshold } from '../ic/thresholds.ts'
 import { logarithmicSpan } from '../quantity-text.ts'
+import { criterionObservables, elementCriteria, elementTables } from './criteria.ts'
 import { derivedObservables } from './derived.ts'
 import { elementLeads, elementStops, leadDigest } from './leads.ts'
 
@@ -183,6 +184,9 @@ const thresholdsOf = (plant: CompiledProcessPlant, thresholds: ReadonlyArray<Com
   })
 }
 
+/** A signal's quantity and unit as World reads them. */
+const unitOf = (binding: ProcessSignalBinding): Pick<Observable, 'quantity' | 'unit'> => ({ quantity: quantityOf(binding), unit: unitCodes[binding.unit] })
+
 /** One declared signal. */
 const observableOf = (objectId: ObjectId, plant: CompiledProcessPlant, recording: PlantRecording, binding: ProcessSignalBinding): Observable => {
   const thresholds = icThresholdsForSignal(plant, binding.path).thresholds
@@ -243,8 +247,11 @@ export const plantDeclaration = (objectId: ObjectId, plant: CompiledProcessPlant
     const observables = [
       ...graph.signalBindings.filter(binding => declares(plant, recording, binding)).map(binding => observableOf(objectId, plant, recording, binding)),
       ...derivedObservables(objectId, plant),
+      ...criterionObservables(objectId, plant, unitOf),
     ]
     const declared = new Set(observables.map(observable => observable.ref))
+    // What an energy end's detail judges it by and the table of its loops (criteria.ts, W1.4).
+    const [criteria, tables] = [elementCriteria(objectId, plant, unitOf), elementTables(objectId, plant, path => declared.has(`${objectId}#${path}`))]
     const leads: ReadonlyMap<string, ReadonlyArray<string>> = mode === undefined ? new Map() : elementLeads(plant, mode)
     // What a component's detail leads with, as declared values only, each once, at most 16.
     const leadOf = (id: string): Array<string> => [...new Set((leads.get(id) ?? []).map(path => `${objectId}#${path}`).filter(ref => declared.has(ref)))].slice(0, 16)
@@ -270,6 +277,8 @@ export const plantDeclaration = (objectId: ObjectId, plant: CompiledProcessPlant
             ...(component.metadata?.loopId === undefined ? {} : { group: component.metadata.loopId }),
             ...(lead.length === 0 ? {} : { lead }),
             ...(stopped === undefined ? {} : { stopped }),
+            ...(criteria.has(String(component.id)) ? { criteria: [...criteria.get(String(component.id))!] } : {}),
+            ...(tables.has(String(component.id)) ? { table: tables.get(String(component.id))! } : {}),
           }
         }),
         // A device its equipment bundles (the pressurizer's relief and block valves) is an element of its own, drawn on its line.

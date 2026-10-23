@@ -76,7 +76,8 @@ describe('a display opened at power and left open through a trip (W0.5)', () => 
     const turbine = opened[`${plantId}#turbine`]!
     // Each holds a lead request and reserves its rows; no ref is fixed as it opens.
     expect(unit.state.views[0]).toMatchObject({ kind: 'values', lead: { objectId: plantId }, rows: 8 })
-    expect(core.state.views[0]).toMatchObject({ kind: 'values', lead: { objectId: plantId, element: 'core' }, rows: 8 })
+    // The core reserves a row for each criterion it is judged by (W1.4: the trip, natural circulation) and its loop table's.
+    expect(core.state.views[0]).toMatchObject({ kind: 'values', lead: { objectId: plantId, element: 'core' }, table: true, rows: 8 + 2 + 5 })
     expect(turbine.state.views[0]).toMatchObject({ kind: 'values', lead: { objectId: plantId, element: 'turbine' } })
     for (const { state } of Object.values(opened)) expect(state.views[0]?.kind === 'values' && state.views[0].refs).toBeUndefined()
     // At power: the unit leads with reactor power and makes electrical output; the core with its power range.
@@ -110,9 +111,10 @@ describe('a display opened at power and left open through a trip (W0.5)', () => 
     const post = valuesOf(drawn[plantId]!)
     expect(post.slice(0, 3)).toEqual(['vessel.subcoolingMarginC', 'core.coreExitTemperatureC', 'auxFeedwaterHeader.outletFlowKgPerS'])
     expect(post).not.toContain('turbine.electricMw')
-    // The core: rods on the bottom, both trip breakers, rod steps, then its flux on the power and intermediate ranges.
-    expect(valuesOf(drawn[`${plantId}#core`]!).slice(0, 7)).toEqual([
-      'core.rodsOnBottom', 'reactorTripBreakerA.closedState', 'reactorTripBreakerB.closedState', 'core.rodStepsWithdrawn',
+    // The core: the trip's checks (W1.4; natural circulation's apply only with no coolant pump running), rods on the
+    // bottom, both trip breakers, rod steps, then its flux on the power and intermediate ranges.
+    expect(valuesOf(drawn[`${plantId}#core`]!).slice(0, 8)).toEqual([
+      'csf.subcriticality.checks', 'core.rodsOnBottom', 'reactorTripBreakerA.closedState', 'reactorTripBreakerB.closedState', 'core.rodStepsWithdrawn',
       'core.powerRangePercent', 'core.intermediateRangeCurrentAmps', 'core.intermediateRangeStartupRateDpm',
     ])
     // The turbine: its output breaker, its stop valve, its output, then its speed among the rest.

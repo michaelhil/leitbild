@@ -8,6 +8,7 @@ import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { processPlantSignalQuality } from '../signals.ts'
 import { evaluateSafetyFunctions, type SafetyFunctionEvaluation } from '../safety-functions.ts'
 import { declaredObservable, qualifiedReadings, type PlantRecording } from './declarations.ts'
+import { readCriterion } from './criteria.ts'
 import { readDerived } from './derived.ts'
 
 // A Plant's values as World reads them (plan v3.1 §2.2): the value and its
@@ -74,6 +75,8 @@ export const readPlant = (context: PlantReadContext, paths: ReadonlyArray<string
     const declared = declaredObservable(context.objectId, plant, recording, path)
     if (declared === null) return null
     const binding = plant.graph.signalBindingByPath.get(path as VariablePath)
+    const criterion = binding === undefined ? readCriterion(plant, path, safetyFunctions) : null
+    if (criterion !== null) return { ref: declared.ref, ...criterion, at: context.simulationTime, clock: 'simulation' }
     if (binding === undefined) return { ref: declared.ref, ...readDerived(system, path, safetyFunctions), at: context.simulationTime, clock: 'simulation' }
     // A reading the model qualifies measures nothing while its flag is off: no value, not applicable, never a colour.
     const qualified = qualifiedReadings(plant).get(path)
