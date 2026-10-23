@@ -44,6 +44,8 @@
   let failure = $state<string | null>(null)
   // A proposal used as a draft: CONTROL opens with its command selected, as this person's own.
   let draft = $state.raw<{ readonly write: Write; readonly at: number } | null>(null)
+  // Folded controls open on a person's press or on a draft, and stay open: each read redraws the line, never closes it.
+  let unfolded = $state(false)
 
   const messageOf = (error: unknown): string => error instanceof Error ? error.message : String(error)
 
@@ -132,7 +134,7 @@
       approve={() => decide(proposal, 'approve')}
       reject={reason => decide(proposal, 'reject', reason)}
       extend={() => decide(proposal, 'extend')}
-      useAsDraft={() => { if (proposal.write !== undefined) draft = { write: proposal.write, at: Date.now() } }}
+      useAsDraft={() => { if (proposal.write !== undefined) { draft = { write: proposal.write, at: Date.now() }; unfolded = true } }}
     />
   {/if}
   {#if shown}
@@ -141,7 +143,7 @@
       {#if parts.open !== null}<ControlSection view={parts.open} {now} {stale} {validate} {execute} {reset} draft={draft?.write ?? null} {acceptedAt} />{/if}
       {#if parts.folded !== null}
         <!-- Folded controls stay one line until a person opens them; a draft taken from a proposal opens them. -->
-        <details class="folded" open={draft !== null}>
+        <details class="folded" bind:open={unfolded}>
           <summary>Controls ({parts.count})</summary>
           <ControlSection view={parts.folded} {now} {stale} {validate} {execute} {reset} draft={draft?.write ?? null} {acceptedAt} />
         </details>
