@@ -169,7 +169,7 @@ export const sweep = async (page: Page, config: { readonly checks: ReadonlyArray
       for (const id of fresh) firstHits[id] = entries.length
     }
     const back = outcome.kind === 'nothing' ? { home: true, via: [] } : await goHome(page, home)
-    entries.push({ target: { key: target.key, kind: target.kind, name: target.name, item: target.item, reaches: target.reaches, visible: target.visible }, outcome, ms, homeVia: back.via, satisfies, evidence: Object.fromEntries(judged.map(entry => [entry.id, entry.evidence])), ...(shot ? { shot } : {}) })
+    entries.push({ target: { key: target.key, kind: target.kind, name: target.name, item: target.item, reaches: target.reaches, visible: target.visible, pressable: target.pressable }, outcome, ms, homeVia: back.via, satisfies, evidence: Object.fromEntries(judged.map(entry => [entry.id, entry.evidence])), ...(shot ? { shot } : {}) })
     config.log?.(`  ${String(index).padStart(2)} ${target.kind.padEnd(9)} ${target.name.slice(0, 50).padEnd(50)} → ${outcome.kind}${'title' in outcome && outcome.title ? ` "${outcome.title}"` : 'label' in outcome ? ` "${outcome.label.slice(0, 40)}"` : ''}${satisfies.length > 0 ? `  ✔ ${satisfies.join(', ')}` : ''}`)
     if (!back.home) { config.log?.('    (not home after Esc and Back: reopening)'); homeScreen = await config.reopen() }
   }

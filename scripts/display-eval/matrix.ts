@@ -83,8 +83,11 @@ export const presses = async (page: Page, config: { readonly api: StackApi; read
   const { home, reopen } = config
   const restore = async () => { const back = await goHome(page, home); if (!back.home) await reopen() }
   const checks: MatrixCheck[] = []
-  // Chips: each CSF or mode chip opens its target (W4.1: the deciding element).
-  const chips = (await targetsOf(page)).filter(target => target.kind === 'chip' && CSF.test(target.name))
+  // Chips: each CSF or mode chip drawn as a button opens its target (W4.1: the deciding element). A chip with no
+  // deciding element (the mode) is a plain chip, not a button (a refused default is not a button): reported apart.
+  const allChips = (await targetsOf(page)).filter(target => target.kind === 'chip' && CSF.test(target.name))
+  const chips = allChips.filter(target => target.pressable)
+  const plain = allChips.filter(target => !target.pressable)
   const chipResults: string[] = []
   let chipsOpen = 0
   for (const chip of chips) {
@@ -94,7 +97,7 @@ export const presses = async (page: Page, config: { readonly api: StackApi; read
     chipResults.push(`"${chip.name.slice(0, 20)}" → ${describe(outcome)}`)
     if (outcome.kind !== 'nothing') await restore()
   }
-  checks.push({ id: 'press-chips', release: 'R2', pass: chips.length > 0 && chipsOpen === chips.length, detail: `${chipsOpen} of ${chips.length} chips open a target: ${chipResults.slice(0, 7).join('; ')}` })
+  checks.push({ id: 'press-chips', release: 'R2', pass: chips.length > 0 && chipsOpen === chips.length, detail: `${chipsOpen} of ${chips.length} button chips open a target: ${chipResults.slice(0, 7).join('; ')}; ${plain.length} plain chips, not buttons (no deciding element)${plain.length === 0 ? '' : `: ${plain.map(chip => `"${chip.name.slice(0, 24)}"`).join(', ')}`}` })
   // A label press opens its item (as its body press does).
   const targets = await targetsOf(page)
   const label = targets.find(target => target.kind === 'label' && /^SG A$|^Steam Generator A$/i.test(target.name)) ?? targets.find(target => target.kind === 'label' && target.item !== null && targets.some(other => other.kind === 'item' && other.item === target.item))

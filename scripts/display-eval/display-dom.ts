@@ -475,6 +475,8 @@ export interface PressTarget {
   readonly reaches: boolean
   /** Some of it shows on screen; one scrolled out of view is pressed after scrolling it in (reveal). */
   readonly visible: boolean
+  /** It is a control itself (a button, a link, a role=button…), not text a person presses anyway. */
+  readonly pressable: boolean
 }
 
 /** An expression for `Page.eval`: scrolls the target (by kind and name, as readTargets lists it) into the middle of its
@@ -501,13 +503,13 @@ export const readTargets = (): string => `((() => {${SCREEN_HELPERS}
   const doc = shown.doc, win = doc.defaultView
   const out = []
   const seen = new Set()
-  const add = (el, kind, name, item) => {
+  const add = (el, kind, name, item, pressable = false) => {
     if (seen.has(el)) return
     seen.add(el)
     const p = pointOf(el, shown.frame)
     const r = el.getBoundingClientRect()
     if (r.width <= 0 || r.height <= 0) return
-    out.push({ kind, name: name.slice(0, 120), item, x: Math.round(p.x), y: Math.round(p.y), w: Math.round(p.w), h: Math.round(p.h), reaches: p.reaches, visible: p.visible })
+    out.push({ kind, name: name.slice(0, 120), item, x: Math.round(p.x), y: Math.round(p.y), w: Math.round(p.w), h: Math.round(p.h), reaches: p.reaches, visible: p.visible, pressable })
   }
   // The drawn item a control belongs to: its own data-item or data-magnifier, else (a symbol's body, R2) the text block
   // that stands just right of it on its rows.
@@ -536,7 +538,7 @@ export const readTargets = (): string => `((() => {${SCREEN_HELPERS}
     else if (region === 'alerts' && /^\\+\\s*\\d+|more\\b/i.test(name)) kind = 'more'
     else if (region === 'alerts' || region === 'trip') kind = 'row'
     else if (region === 'faceplate') kind = 'control'
-    add(el, kind, kind === 'item' || kind === 'magnifier' ? bare(name) : name, itemOf(el))
+    add(el, kind, kind === 'item' || kind === 'magnifier' ? bare(name) : name, itemOf(el), true)
   }
   // Drawn items' text blocks: a person presses the label too.
   for (const el of doc.querySelectorAll('.flow .text, [data-item] .text, [data-item] .label')) {
