@@ -164,6 +164,10 @@ describe('the room a faceplate stands in (spike must-fix 1–3)', () => {
     const covers = moved.x < item.x + item.width && moved.x + 380 > item.x && moved.y < item.y + item.height && moved.y + 280 > item.y
     expect(covers).toBe(false)
     expect(replacedOverlays([kept], () => ({ item: null, height: 280 }), wide, 1)).toEqual([kept])
+    // An item the narrowed room no longer shows (scrolled out to the right) has no room beside it: the card stays inside.
+    const gone = replacedOverlays([{ ...sgA, item: 'sgD', x: 1316 }], () => ({ item: { x: 1222, y: 468, width: 86, height: 47 }, height: 280 }), narrow, 1)[0]!
+    expect(gone.x).toBeGreaterThanOrEqual(narrow.x)
+    expect(gone.x + 380).toBeLessThanOrEqual(narrow.x + narrow.width)
   })
 
 })

@@ -70,12 +70,14 @@ export const faceplatePlacement = (item: Box, size: { readonly width: number; re
   const [left, top, right, bottom] = [room.x + margin, room.y + margin, room.x + room.width - margin, room.y + room.height - margin]
   const clampX = (x: number): number => Math.min(Math.max(left, x), Math.max(left, right - width))
   const clampY = (y: number): number => Math.min(Math.max(top, y), Math.max(top, bottom - height))
+  // A place fits where the whole card stands inside the room (an item scrolled out of view has no room beside it).
+  const inside = (x: number, y: number): boolean => x >= left && x + width <= right && y >= top && y + height <= bottom
   const candidates = [
-    { x: item.x + item.width + gap, y: clampY(item.y), fits: item.x + item.width + gap + width <= right },
-    { x: item.x - gap - width, y: clampY(item.y), fits: item.x - gap - width >= left },
-    { x: clampX(item.x), y: item.y + item.height + gap, fits: item.y + item.height + gap + height <= bottom },
-    { x: clampX(item.x), y: item.y - gap - height, fits: item.y - gap - height >= top },
-  ]
+    { x: item.x + item.width + gap, y: clampY(item.y) },
+    { x: item.x - gap - width, y: clampY(item.y) },
+    { x: clampX(item.x), y: item.y + item.height + gap },
+    { x: clampX(item.x), y: item.y - gap - height },
+  ].map(candidate => ({ ...candidate, fits: inside(candidate.x, candidate.y) }))
   // Where it fits, it also keeps clear of the faceplates already pinned there.
   const clear = (candidate: { readonly x: number; readonly y: number }): boolean => avoid.every(other =>
     candidate.x >= other.x + other.width || candidate.x + width <= other.x || candidate.y >= other.y + other.height || candidate.y + height <= other.y)
@@ -154,8 +156,9 @@ export const resizedOverlay = (
 /**
  * The overlays after the room changed (the window narrowed, the chat opened):
  * each one that no longer stands wholly inside it goes beside its item again
- * (faceplatePlacement, never over it), and is only pushed inside where its
- * item is gone; one that still fits stays where the person put it.
+ * (faceplatePlacement, never over it, clear of the others where it can be),
+ * and is only pushed inside where its item is gone; one that still fits stays
+ * where the person put it.
  */
 export const replacedOverlays = (
   overlays: ReadonlyArray<PinnedOverlay>,
@@ -164,16 +167,19 @@ export const replacedOverlays = (
   scale: number,
 ): ReadonlyArray<PinnedOverlay> => {
   let changed = false
-  const next = overlays.map(overlay => {
-    const { item, height } = sized(overlay)
+  const next = overlays.map(overlay => ({ overlay, height: sized(overlay).height }))
+  const boxOf = (entry: { readonly overlay: PinnedOverlay; readonly height: number }): Box => ({ x: entry.overlay.x, y: entry.overlay.y, width: entry.overlay.width / scale, height: entry.height / scale })
+  next.forEach((entry, at) => {
+    const { overlay, height } = entry
     const inside = overlay.x >= room.x && overlay.y >= room.y && overlay.x + overlay.width / scale <= room.x + room.width && overlay.y + height / scale <= room.y + room.height
-    if (inside) return overlay
+    if (inside) return
     changed = true
-    if (item === null) return keptInRoom(overlay, height, room, scale)
-    const place = faceplatePlacement(item, { width: overlay.width, height }, room, scale)
-    return { ...overlay, ...place }
+    const item = sized(overlay).item
+    // Beside its item, clear of the other overlays where it can be.
+    const others = next.filter((_, other) => other !== at).map(boxOf)
+    next[at] = { overlay: item === null ? keptInRoom(overlay, height, room, scale) : { ...overlay, ...faceplatePlacement(item, { width: overlay.width, height }, room, scale, others) }, height }
   })
-  return changed ? next : overlays
+  return changed ? next.map(entry => entry.overlay) : overlays
 }
 
 /** Pins live with their display for the browser session, by the display's key (its state's digest) and the item each was opened on. */
