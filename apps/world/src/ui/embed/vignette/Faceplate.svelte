@@ -183,8 +183,31 @@
     if (event.shiftKey && event.altKey) onoverlay({ kind: 'resize', travel: { dx: (20 * arrow[0]) / zoom, dy: (arrow[1] * FACEPLATE_ROW) / zoom }, end: true, available: available() }, height)
     else onoverlay({ kind: 'move', travel: { dx: arrow[0] * (event.shiftKey ? 24 : 8), dy: arrow[1] * (event.shiftKey ? 24 : 8) }, end: true }, height)
   }
-  // A narrowed card says less, never cuts its name or its state: the words that open the detail give way first.
-  const detailWord = $derived(offer === 'actions' ? (width < 360 ? 'Detail ›' : 'Open detail ›') : width < 400 ? 'In window ›' : 'Open in the display window ›')
+  // A header with no room for all its words says less, never cuts its name or its state: the words that open the
+  // detail give way first ('short'), and only where it still has no room does it wrap ('wrap'). Measured as drawn,
+  // again whenever its width or its words change.
+  let headerFit = $state<'full' | 'short' | 'wrap'>('full')
+  const detailWord = $derived(offer === 'actions' ? (headerFit === 'full' ? 'Open detail ›' : 'Detail ›') : headerFit === 'full' ? 'Open in the display window ›' : 'In window ›')
+  const fitted = (node: HTMLElement, words: string) => {
+    let frame = 0
+    let last = ''
+    const check = (): void => {
+      frame = requestAnimationFrame(() => {
+        if (node.scrollWidth <= node.clientWidth + 1 || headerFit === 'wrap') return
+        headerFit = headerFit === 'full' ? 'short' : 'wrap'
+        check()
+      })
+    }
+    const update = (next: string): void => {
+      if (next === last) return
+      last = next
+      cancelAnimationFrame(frame)
+      headerFit = 'full'
+      check()
+    }
+    update(words)
+    return { update, destroy: () => cancelAnimationFrame(frame) }
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -198,7 +221,7 @@
     <div class="body">
       <!-- Pinned, the header is the overlay's handle: focusable, moved by the arrow keys. -->
       <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_static_element_interactions -->
-      <header bind:this={header} tabindex="0" title={pinned !== null ? 'Drag to move (arrow keys: 8 px, Shift: 24 px); Shift+Alt+arrows resize' : undefined} onpointerdown={headerDown} onkeydown={headerKey}>
+      <header bind:this={header} class:wrap={headerFit === 'wrap'} use:fitted={`${width}|${name}|${word ?? ''}|${worst?.kind ?? ''}|${offer}`} tabindex="0" title={pinned !== null ? 'Drag to move (arrow keys: 8 px, Shift: 24 px); Shift+Alt+arrows resize' : undefined} onpointerdown={headerDown} onkeydown={headerKey}>
         {#if pinned !== null}<span class="handle" aria-hidden="true"><obi-drag-horizontal usecsscolor></obi-drag-horizontal></span>{/if}
         <span class="name">{name}</span>
         {#if word !== null}<span class="word">{word}</span>{/if}
@@ -269,7 +292,8 @@
   obc-card { display: flex; flex: 1 1 auto; min-height: 0; }
   .body { display: flex; flex-direction: column; width: 100%; min-height: 0; max-height: inherit; }
   /* Its name, state word and chip never shrink; where a narrowed card has no room for them all, the header wraps. */
-  header { display: flex; flex-wrap: wrap; align-items: center; column-gap: 6px; flex: none; min-height: 40px; padding: 0 0 0 8px; border-bottom: 1px solid var(--border-divider-color); white-space: nowrap; }
+  header { display: flex; flex-wrap: nowrap; align-items: center; column-gap: 6px; flex: none; min-height: 40px; padding: 0 0 0 8px; border-bottom: 1px solid var(--border-divider-color); white-space: nowrap; overflow: hidden; }
+  header.wrap { flex-wrap: wrap; overflow: visible; }
   .pinned header { cursor: move; touch-action: none; padding-left: 0; }
   header:focus-visible { outline: 2px solid var(--border-focus-color); outline-offset: -2px; }
   .handle { display: inline-flex; flex: none; width: 24px; height: 40px; align-items: center; justify-content: center; color: var(--element-neutral-color); }
