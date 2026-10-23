@@ -37,3 +37,5 @@ import '@oicl/openbridge-webcomponents/dist/icons/icon-transformer-01-off.js'
 import '@oicl/openbridge-webcomponents/dist/icons/icon-sources-01.js'
 import '@oicl/openbridge-webcomponents/dist/icons/icon-sources-01-on.js'
 import '@oicl/openbridge-webcomponents/dist/icons/icon-sources-01-off.js'
+// Option A's magnifier after an item's name (plan v5 §3).
+import '@oicl/openbridge-webcomponents/dist/icons/icon-search.js'

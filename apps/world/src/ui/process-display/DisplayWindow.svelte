@@ -403,6 +403,13 @@
     extents = withoutKey(extents, key)
   }
 
+  // A display that opened another from inside its frame, or stepped Back, had the keys: the one shown now takes them,
+  // so its Esc steps Back in turn (DisplayFrame focuses its frame once its page listens).
+  let frameFocus = $state.raw<{ readonly key: string; readonly sequence: number } | null>(null)
+  const focusShown = (): void => {
+    if (current !== null) frameFocus = { key: current.key, sequence: (frameFocus?.sequence ?? 0) + 1 }
+  }
+
   // A display shown after another, its Back returning to the one it came from.
   const openAfter = (from: DeckEntry, listing: EmbeddedViewListing): void => {
     const entry = requestedDeckEntry(deck, runId, { kind: 'listing', listing })
@@ -424,6 +431,7 @@
       return
     }
     openAfter(from.entry, listing)
+    focusShown()
   }
 
   // A subject's World default (a proposal's element), on this Run or the one chat names: composed for the person, shown
@@ -450,6 +458,7 @@
     if (back === null) return
     returnTo = back.returns
     showEntry(back.to)
+    focusShown()
   }
 
   const frameProblem = (_key: string, problem: string): void => {
@@ -976,6 +985,7 @@
           onZoomRequest={receiveZoomRequest}
           onProblem={frameProblem}
           back={returnTo.get(mounted.entry.key)?.title ?? null}
+          focus={frameFocus?.key === mounted.entry.key ? frameFocus.sequence : 0}
           onOpen={frameOpen}
           onBack={frameBack}
           onMap={bounds => focusMap({ kind: 'bounds', bounds })}

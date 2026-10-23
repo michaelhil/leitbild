@@ -37,6 +37,8 @@
     readonly extent: DisplayExtent | null
     /** For a display the window opened from another: that one's title, which the display's Back returns to. */
     readonly back: string | null
+    /** A request (a new number each time, 0 for none) that the frame take the keys once shown and listening. */
+    readonly focus: number
     /** The frame's page listens (or loaded): it can be shown without leaving a blank. */
     readonly onUp: (key: string) => void
     /** The frame went away; its extent and readiness go with it. */
@@ -52,7 +54,7 @@
     readonly onMap: (bounds: DisplayFrameMap['bounds']) => void
   }
 
-  let { entryKey, envelope, title, shown, zoom, kind, extent, back, onUp, onDown, onExtent, onZoomRequest, onProblem, onOpen, onBack, onMap }: Props = $props()
+  let { entryKey, envelope, title, shown, zoom, kind, extent, back, focus, onUp, onDown, onExtent, onZoomRequest, onProblem, onOpen, onBack, onMap }: Props = $props()
 
   // A frame's page is fixed for its life; a new envelope is a new entry.
   const source = untrack(() => `${embeddedViewPath(envelope)}${embeddedViewFragment(envelope)}`)
@@ -91,6 +93,14 @@
     void zoom
     void back
     if (ready) untrack(present)
+  })
+
+  // The keys move into the frame once per request, when it is shown and its page listens.
+  let focused = 0
+  $effect(() => {
+    if (focus === 0 || focus === focused || !shown || !ready || frame === null) return
+    focused = focus
+    frame.focus()
   })
 
   const toExtent = (message: DisplayFrameExtent): DisplayExtent => ({

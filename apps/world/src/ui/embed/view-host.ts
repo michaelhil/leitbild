@@ -362,9 +362,25 @@ const forwardZoomGestures = (host: ViewHost): (() => void) => {
 }
 
 /**
+ * Esc is the display's Back (plan v5 §3, W3.1): once nothing inside the
+ * display claimed it (a selected command, an open faceplate, a menu each take
+ * theirs first and cancel it), it returns to the display this one was opened
+ * from, where the window says there is one.
+ */
+export const escapeGoesBack = (host: Pick<ViewHost, 'back'>, target: Pick<Window, 'addEventListener' | 'removeEventListener'>): (() => void) => {
+  const key = (event: Event): void => {
+    if ((event as KeyboardEvent).key !== 'Escape' || event.defaultPrevented) return
+    host.back()
+  }
+  target.addEventListener('keydown', key)
+  return () => target.removeEventListener('keydown', key)
+}
+
+/**
  * Hosts an embedded display in the window that frames it, from mount to the
  * returned cleanup: the display samples only while it can be seen, tells the
- * window the room its content needs, and passes zoom gestures to the window.
+ * window the room its content needs, passes zoom gestures to the window, and
+ * steps Back on Esc.
  */
 export const hostDisplayFrame = (config: {
   readonly kind: 'advice' | 'generated'
@@ -405,7 +421,7 @@ export const hostDisplayFrame = (config: {
     }),
     followPresentation({ host, presented: config.presented }),
     host.whenPresented(() => {
-      windowStops.push(forwardZoomGestures(host), observeDisplayExtent({ kind: config.kind, card, drawing: config.drawing, report: host.reportExtent }))
+      windowStops.push(forwardZoomGestures(host), escapeGoesBack(host, window), observeDisplayExtent({ kind: config.kind, card, drawing: config.drawing, report: host.reportExtent }))
     }),
     host.listen(),
   ]

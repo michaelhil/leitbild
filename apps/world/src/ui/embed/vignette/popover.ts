@@ -1,4 +1,7 @@
 import type { EmbeddedViewEnvelope } from '@leitbild/contracts'
+import type { SimulationRunId } from '../../../core/model/index.ts'
+import { defaultDisplayEnvelope, readDefaultDisplay } from '../../process-display/default-display.ts'
+import { activeWorkspaceId } from '../../workspace-context.ts'
 import { openedListing } from '../opened-display.ts'
 import type { DisplayOpening, ViewHost } from '../view-host.ts'
 
@@ -127,3 +130,12 @@ export interface OpenedFrom {
  */
 export const openElementDefault = (host: Pick<ViewHost, 'openDisplay'>, from: OpenedFrom, envelope: EmbeddedViewEnvelope): boolean =>
   host.openDisplay({ state: envelope.state, title: envelope.title, listing: () => openedListing({ ...from, envelope }, { state: envelope.state, title: envelope.title }) })
+
+/**
+ * An element's detail (L3): World composes its default (`<objectId>#<elementId>`) and the display it is opened from
+ * opens it after itself (openElementDefault). False where nothing opens it; a default World refuses throws its words.
+ */
+export const openElementDetail = async (host: Pick<ViewHost, 'openDisplay'>, runId: SimulationRunId, from: OpenedFrom, objectId: string, elementId: string): Promise<boolean> => {
+  const view = await readDefaultDisplay(runId, `${objectId}#${elementId}`)
+  return openElementDefault(host, from, defaultDisplayEnvelope({ workspaceId: activeWorkspaceId(), simulationRunId: runId, view }))
+}
