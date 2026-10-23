@@ -7,6 +7,7 @@
  * colour or coordinate. Rows are units of the renderer's grid.
  */
 import { z } from 'zod'
+import type { DeclaredCategory } from '../alerts/census.ts'
 import type { AlertRow } from '../alerts/rows.ts'
 import { observableRefSchema, type AlertSeverity, type Priority } from '../../../core/model/alerts.ts'
 import { objectIdSchema } from '../../../core/model/ids.ts'
@@ -184,6 +185,8 @@ export interface VignetteSample {
   readonly observations: ReadonlyArray<Observation>
   /** The rows of every alerts section, in each section's order (alertsOf), then those of each drawn topology's object (its frames), each row once. */
   readonly alerts: ReadonlyArray<AlertRow>
+  /** By object id: the categories its Pack declares its alerts under, for the tiles of each object an alerts section lists or a drawing draws (W2.2). */
+  readonly categories?: Readonly<Record<string, ReadonlyArray<DeclaredCategory>>>
   /** By section index: an entity section's rows, sorted and capped, and how many more there are. */
   readonly entities: Readonly<Record<number, { readonly rows: ReadonlyArray<EntityRow>; readonly more: number }>>
   /** By object id: each slot's value now. */

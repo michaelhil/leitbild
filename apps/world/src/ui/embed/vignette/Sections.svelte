@@ -101,7 +101,7 @@
       {:else if section.kind === 'trend'}
         <TrendStrip {section} title={view.title} series={snapshot.series} {observations} {now} setPoints={view.by !== 'assistant'} {frozen} />
       {:else if section.kind === 'alerts'}
-        <AlertsSection rows={latest?.alerts ?? []} {section} room={rows ?? section.rows} />
+        <AlertsSection rows={latest?.alerts ?? []} categories={latest?.categories} {section} room={rows ?? section.rows} />
       {:else if section.kind === 'entity'}
         <EntityTable {section} rows={latest?.entities[index]?.rows ?? []} more={latest?.entities[index]?.more ?? 0} />
       {:else if section.kind === 'slots'}

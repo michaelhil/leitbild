@@ -377,9 +377,12 @@ export const backFrom = (returns: DeckReturns, deck: ReadonlyArray<DeckEntry>, k
   return { to: deck.find(entry => entry.key === target.key) ?? target, returns: rest }
 }
 
-/** Opening the window: on an asset's display (rail), on a listed display (chat), or on a subject's default (a proposal's element, Q23). */
+/**
+ * Opening the window: on an asset's display (rail; from an alarm strip's group row, `select` the element of its
+ * first-out, W2.8), on a listed display (chat), or on a subject's default (a proposal's element, Q23).
+ */
 export type DisplayWindowTarget =
-  | { readonly kind: 'asset'; readonly objectId: string }
+  | { readonly kind: 'asset'; readonly objectId: string; readonly select?: string }
   | { readonly kind: 'listing'; readonly listing: EmbeddedViewListing }
   | { readonly kind: 'subject'; readonly runId: string; readonly subject: string; readonly title: string }
 

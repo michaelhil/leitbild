@@ -9,12 +9,16 @@
   // The read-only alarm strip above the operational map (plan v3.1 §2.7; lead
   // ruling R14), shown while the Run has active or returned-unacknowledged
   // alerts. One row per group, the cap on rows: a unit's row names its
-  // first-out and counts its others, which head the group's opened list. It acknowledges,
+  // first-out and counts its others, which head the group's opened list; a
+  // unit with a process display has "open ›" beside its row, which opens that
+  // display with its first-out selected (W2.8). It acknowledges,
   // shelves and suppresses nothing. Whether the viewer keeps it folded is that
   // viewer's own convenience, in browser storage.
-  let { objects, categoryOf, theme, belowRoles, railWidth, clear }: {
+  let { objects, categoryOf, openDisplay, theme, belowRoles, railWidth, clear }: {
     objects: ReadonlyArray<OperationalObject>
     categoryOf: (object: OperationalObject) => string
+    /** What opens an object's process display, selecting this element of it; undefined where it has none. */
+    openDisplay: (objectId: string) => ((elementId: string | undefined) => void) | undefined
     theme: 'light' | 'dark'
     belowRoles: boolean
     /** The control rail's width, 0 where it is collapsed or absent: the strip lies beside it, never over it. */
@@ -63,11 +67,18 @@
     {#if !folded}
       {#each strip.groups.filter(group => !group.collapsed) as group (group.key)}
         {@const others = otherFirstOuts(group)}
-        <details>
-          <summary><AlertList lines={[lineOf(group)]} {palette} /></summary>
-          <AlertList lines={[...others, ...group.rows.slice(1).filter(row => !others.includes(row))].map(row => ({ row, firstOut: others.includes(row) }))} {palette} />
-          <p class="rule">{rule}</p>
-        </details>
+        {@const opens = openDisplay(group.rows[0]!.objectId)}
+        {@const firstOut = group.firstOut?.alert.subject !== undefined && 'element' in group.firstOut.alert.subject ? group.firstOut.alert.subject.element : undefined}
+        <div class="group">
+          <details>
+            <summary><AlertList lines={[lineOf(group)]} {palette} /></summary>
+            <AlertList lines={[...others, ...group.rows.slice(1).filter(row => !others.includes(row))].map(row => ({ row, firstOut: others.includes(row) }))} {palette} />
+            <p class="rule">{rule}</p>
+          </details>
+          {#if opens !== undefined}
+            <button type="button" class="open" title={firstOut === undefined ? `Open the process display of ${group.label}` : `Open the process display of ${group.label}, its first-out selected`} onclick={() => opens(firstOut)}>open ›</button>
+          {/if}
+        </div>
       {/each}
       {#if strip.collapsed !== null}
         {@const worst = strip.collapsed.worst}
@@ -88,6 +99,9 @@
   @media (max-width: 599px) { .alert-strip { max-height: min(70vh, calc(100vh - var(--strip-top) - 12px)); } }
   header { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 650; }
   header button { min-height: 24px; padding: 0 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--text); font-size: 12px; cursor: pointer; }
+  /* A group's row, and beside it what opens its unit's display. */
+  .group { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; column-gap: 6px; }
+  .open { min-height: 22px; padding: 0 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--text); font-size: 12px; white-space: nowrap; cursor: pointer; }
   summary { cursor: pointer; list-style: none; }
   summary::-webkit-details-marker { display: none; }
   details[open] > summary { margin-bottom: 2px; }

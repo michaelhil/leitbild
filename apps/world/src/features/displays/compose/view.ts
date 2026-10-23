@@ -346,18 +346,30 @@ export const sampleVignette = async (run: ViewRun, state: VignetteState, history
     return Object.fromEntries([...declared.values()].flatMap(entry => entry.observable.series === null ? []
       : [[entry.observable.series.seriesId, run.series(entry.observable.series.seriesId, new Date(history.fromMs).toISOString(), at.at)] as const]))
   })()
-  return { at, observations, alerts: await annunciate(run, [...alerts.values()], at), entities, slots, maps, ...(series === undefined ? {} : { series }), ...(led.size === 0 ? {} : { leads }) }
+  const shown = state.views.flatMap(view => view.kind === 'alerts' && view.objectIds !== 'run' ? view.objectIds : view.kind === 'topology' ? [view.objectId] : [])
+  const annunciated = await annunciate(run, [...alerts.values()], at, shown)
+  return {
+    at, observations, alerts: annunciated.rows, ...(annunciated.categories === undefined ? {} : { categories: annunciated.categories }), entities, slots, maps,
+    ...(series === undefined ? {} : { series }), ...(led.size === 0 ? {} : { leads }),
+  }
 }
 
-/** Alert rows as their Packs annunciate them now (annunciated.ts): from each object's declaration, read once per request. */
-const annunciate = async (run: ComposeRun, rows: ReadonlyArray<AlertRow>, at: VignetteSample['at']): Promise<ReadonlyArray<AlertRow>> => {
-  const objectIds = [...new Set(rows.map(row => row.objectId))]
-  const declared = new Map(await Promise.all(objectIds.map(async id => [id, { annunciation: (await declarationOf(run, id))?.annunciation, own: new Set(await ownStates(run, id)) }] as const)))
+/**
+ * Alert rows as their Packs annunciate them now (annunciated.ts), and the categories the Packs of the `shown` objects
+ * declare (their tiles): from each object's declaration, read once per request.
+ */
+const annunciate = async (run: ComposeRun, rows: ReadonlyArray<AlertRow>, at: VignetteSample['at'], shown: ReadonlyArray<string>): Promise<{ readonly rows: ReadonlyArray<AlertRow>; readonly categories?: VignetteSample['categories'] }> => {
+  const objectIds = [...new Set([...rows.map(row => row.objectId), ...shown])].filter(id => visibleObject(run, id) !== undefined)
+  const declared = new Map(await Promise.all(objectIds.map(async id => [id, { annunciation: (await declarationOf(run, id))?.annunciation, own: new Set(await ownStates(run, id as ObjectId)) }] as const)))
   const objectRows = new Map<string, ReadonlyArray<AlertRow>>()
-  return annunciatedRows(rows, {
-    annunciation: id => declared.get(id as ObjectId)?.annunciation,
-    objectRows: id => objectRows.get(id) ?? objectRows.set(id, alertsOf(run, { kind: 'alerts', objectIds: [id as ObjectId], rows: 1 })).get(id)!,
-    ownStates: id => declared.get(id as ObjectId)?.own ?? new Set(),
-    nowMs: at.clock === 'simulation' ? Date.parse(at.at) : null,
-  })
+  const categories = Object.fromEntries(shown.flatMap(id => (declared.get(id)?.annunciation?.categories.length ?? 0) > 0 ? [[id, declared.get(id)!.annunciation!.categories] as const] : []))
+  return {
+    rows: annunciatedRows(rows, {
+      annunciation: id => declared.get(id)?.annunciation,
+      objectRows: id => objectRows.get(id) ?? objectRows.set(id, alertsOf(run, { kind: 'alerts', objectIds: [id as ObjectId], rows: 1 })).get(id)!,
+      ownStates: id => declared.get(id)?.own ?? new Set(),
+      nowMs: at.clock === 'simulation' ? Date.parse(at.at) : null,
+    }),
+    ...(Object.keys(categories).length === 0 ? {} : { categories }),
+  }
 }

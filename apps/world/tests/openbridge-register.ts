@@ -152,19 +152,6 @@ export interface Deviation {
 
 export const deviations: ReadonlyArray<Deviation> = [
   {
-    id: 'alert-icon-steady-unacknowledged',
-    does: 'Draws every alert icon in the vignette (its alerts sections in the window, in pop-overs and in chat) in OpenBridge\'s acknowledged form, a returned one rectified, so none flashes; an unacknowledged row and its section\'s counts carry the word UNACK.',
-    sites: [
-      { file: 'ui/embed/vignette/alerts.ts', mark: 'return { type, acknowledged: true, active:' },
-      { file: 'ui/embed/vignette/AlertRowLine.svelte', mark: '<span class="unack">{UNACK_WORD}</span>' },
-    ],
-    component: 'obc-alert-icon',
-    reason: 'No one can acknowledge in a vignette until W2.7 (D-B1), and a flash asks for acknowledgement (EEMUA 191, ISA-18.2): every unacknowledged icon flashed for ever, 29 on a tripped unit (UX audit H11, F18). OpenBridge 2.0.0 draws no steady unacknowledged icon, so the word carries the state (red team C6).',
-    evidence: 'obc-alert-icon 2.0.0 (dist/components/alert-icon/alert-icon.js): resolvedFlashingSpeed is fixed only when acknowledged, and at the fixed tempo render() draws nothing for an unacknowledged alarm. Measured on Run A at 04:05 (paused): the five icons on screen changed pixels between shots 300 ms apart.',
-    decision: { owner: 'approved', ref: 'Plan v5 W0.9, approved 22 Oct: a deviation until W2.7' },
-    until: 'W2.7',
-  },
-  {
     id: 'own-state-emergency-as-alarm',
     does: 'Draws a state at emergency priority as alarm, OpenBridge\'s worst status, not in D9\'s emergency magenta: a state word in obc-status-indicator, and an object\'s own state as a chip on the title row (its safety functions, its mode).',
     sites: [

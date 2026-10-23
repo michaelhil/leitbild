@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import type { AlertState } from '../src/core/model/alerts.ts'
 import type { ObjectId } from '../src/core/model/ids.ts'
-import { ageText, categoryGroups, firstOutMark, fitLines, listLines, listOrder, listPart, passes, tripLine, type ListLine } from '../src/features/displays/alerts/list.ts'
+import { alertTiles } from '../src/features/displays/alerts/census.ts'
+import { ageText, firstOutMark, fitLines, listLines, listOrder, listPart, passes, tripLine, type ListLine } from '../src/features/displays/alerts/list.ts'
 import type { AlertRow } from '../src/features/displays/alerts/rows.ts'
 
 // The alerts organisation (plan v5 W2.4–W2.6) over the alert rows a sample
@@ -42,16 +43,19 @@ describe('the list (W2.5)', () => {
     expect([firstOutMark(rows[1]!), firstOutMark(row('x', 1, { firstOut: { group: 'g', rank: 1 } })), firstOutMark(rows[2]!)]).toEqual(['1st RX TRIP', 'FIRST OUT', null])
   })
 
-  test('what does not fit its room is counted on "+N more", the closing aggregates keeping their lines; a row on two lines costs two', () => {
+  test('what does not fit its room is counted on "+N more", the closing aggregates keeping their lines', () => {
     const lines = listLines(rows, new Set())
-    expect(fitLines(lines, 20, () => 1)).toEqual({ shown: lines, pinned: [], hidden: [] })
-    const tight = fitLines(lines, 6, () => 1)
+    expect(fitLines(lines, 20)).toEqual({ shown: lines, pinned: [], hidden: [] })
+    const tight = fitLines(lines, 6)
     // Two aggregates and "+N more" take three rows; three rows are left for the list's head.
     expect([shown(tight.shown), shown(tight.pinned), tight.hidden.map(entry => entry.alert.id)]).toEqual([['turb-trip', 'rx-trip', 'csf-heat-sink'], ['[3 expected after RX TRIP ▸]', '[1 standing ▸]'], ['loop', 'rcp-a', 'bus-a']])
-    const stacked = fitLines(lines, 6, line => line.kind === 'row' ? 2 : 1)
-    expect([shown(stacked.shown), stacked.hidden.length]).toEqual([['turb-trip'], 5])
+    // Where the list's counts say what its aggregates fold, they give way before the list shows fewer than three rows.
+    const counted = fitLines(lines, 5, true)
+    expect([shown(counted.shown), counted.pinned, counted.hidden.map(entry => entry.alert.id)]).toEqual([['turb-trip', 'rx-trip', 'csf-heat-sink', 'loop'], [], ['rcp-a', 'bus-a']])
+    expect(shown(fitLines(lines, 7, true).shown)).toEqual(['turb-trip', 'rx-trip', 'csf-heat-sink', 'loop'])
+    expect(shown(fitLines(lines, 6, true).shown)).toEqual(['turb-trip', 'rx-trip', 'csf-heat-sink'])
     // An opened aggregate stays in view with as many of its rows as half the room holds; the rows before it give way.
-    const opened = fitLines(listLines(rows, new Set(['expected:RX TRIP'])), 8, () => 1)
+    const opened = fitLines(listLines(rows, new Set(['expected:RX TRIP'])), 8)
     expect([shown(opened.shown), shown(opened.pinned), opened.hidden.map(entry => entry.alert.id)]).toEqual([
       ['turb-trip', 'rx-trip', 'csf-heat-sink', 'loop'], ['[3 expected after RX TRIP ▾]', 'pzr-low', '[1 standing ▸]'], ['rcp-a', 'bus-a', 'sg-b-low', 'sg-a-low'],
     ])
@@ -95,8 +99,12 @@ describe('the full alerts view (W2.6)', () => {
       { ...row('grid', 2), objectId: 'grid' as ObjectId, objectLabel: 'Grid', key: 'grid|grid', group: { objectId: 'grid' as ObjectId } },
       row('standing', 0, { standing: true, acknowledged: true }, { state: 'active-ack', category: { id: 'sg', label: 'Steam generators', order: 2 } }),
     ]
-    expect(categoryGroups(rows).map(group => [group.label, group.rows.map(entry => entry.alert.id)])).toEqual([
-      ['Reactor coolant system', ['rcs', 'rcs-old']], ['Steam generators', ['sg', 'standing']], ['Grid', ['grid']],
+    // Several objects: a tile, and a group, per object.
+    expect(alertTiles(rows).map(group => [group.label, group.rows.map(entry => entry.alert.id)])).toEqual([['Unit 1', ['rcs', 'sg', 'rcs-old', 'standing']], ['Grid', ['grid']]])
+    // One object: by its categories in their order, the rest by object.
+    const unit = rows.filter(entry => entry.objectId === 'unit')
+    expect(alertTiles(unit).map(group => [group.label, group.rows.map(entry => entry.alert.id)])).toEqual([
+      ['Reactor coolant system', ['rcs', 'rcs-old']], ['Steam generators', ['sg', 'standing']],
     ])
     const ids = (filter: Parameters<typeof passes>[0]) => rows.filter(entry => passes(filter, entry)).map(entry => entry.alert.id)
     expect(ids('active')).toEqual(['sg', 'rcs', 'grid', 'standing'])

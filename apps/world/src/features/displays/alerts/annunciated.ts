@@ -1,12 +1,14 @@
 import type { Annunciation } from '../../../core/observation/annunciation.ts'
 import { simulationMs, type AlertRow } from './rows.ts'
 
-// Alert rows as their Pack annunciates them (plan v5 W2.3–W2.6), per sample from
+// Alert rows as their Pack annunciates them (plan v5 W2.3–W2.7), per sample from
 // the alert slot's facets and the Pack's static annunciation, nothing stored:
 // each row's tag, the first-out group it is annunciated in by its label, its
-// category, whether it is on one of its object's own states, and whether it
-// is expected after a first-out. An alarm is expected after a first-out group
-// where its Pack declares that group's actuation brings it in (expectedAfter):
+// category, whether it is on one of its object's own states, whether it is
+// expected after a first-out, and, while unacknowledged, the command a person
+// acknowledges it by, where its Pack declares one for it. An alarm is expected
+// after a first-out group where its Pack declares that group's actuation
+// brings it in (expectedAfter):
 // it is not first out itself, it came in after the group's first-out, or with
 // it on other equipment, within the declared time, and that time has not run
 // out since the first-out, past which one still standing is news again (the
@@ -63,6 +65,10 @@ export const annunciatedRows = (rows: ReadonlyArray<AlertRow>, context: Annuncia
   const expected = window !== undefined && context.nowMs !== null && expectedAfterFirstOut(row, context.objectRows(row.objectId), window, context.nowMs)
     ? index!.groups.get(window.group)!.label : undefined
   const ownState = row.alert.observable !== undefined && context.ownStates(row.objectId).has(row.alert.observable)
+  const acknowledge = declared?.acknowledge === undefined || alert === undefined || row.state === 'active-ack' ? undefined : {
+    capabilityId: declared.acknowledge.capabilityId,
+    input: { ...declared.acknowledge.input, [declared.acknowledge.objectField]: row.objectId, [declared.acknowledge.alertField]: row.alert.id },
+  }
   return {
     ...row,
     ...(alert?.tag === undefined ? {} : { tag: alert.tag }),
@@ -70,5 +76,6 @@ export const annunciatedRows = (rows: ReadonlyArray<AlertRow>, context: Annuncia
     ...(category === undefined ? {} : { category: { id: alert!.category!, ...category } }),
     ...(expected === undefined ? {} : { expected: { after: expected } }),
     ...(ownState ? { ownState: true as const } : {}),
+    ...(acknowledge === undefined ? {} : { acknowledge }),
   }
 })

@@ -8,6 +8,7 @@
     type DisplayFrameOpen,
     type DisplayFramePresentation,
     type DisplayFrameRoom,
+    type DisplayFrameSelect,
     type DisplayFrameZoomRequest,
   } from '../embed/display-frame-protocol.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
@@ -40,6 +41,8 @@
     readonly back: string | null
     /** A request (a new number each time, 0 for none) that the frame take the keys once shown and listening. */
     readonly focus: number
+    /** A request (a new number each time) that the display select an element once shown and listening (W2.8); null for none. */
+    readonly select: { readonly sequence: number; readonly objectId: string; readonly elementId: string } | null
     /** How far the window's resize handles reach over the body's left, right and bottom edges (0 maximised). */
     readonly handles: number
     /** The display asks for the body's whole height: the frame is given it meanwhile. */
@@ -61,7 +64,7 @@
     readonly onMap: (bounds: DisplayFrameMap['bounds']) => void
   }
 
-  let { entryKey, envelope, title, shown, zoom, kind, extent, back, focus, handles, fill, onFill, onUp, onDown, onExtent, onZoomRequest, onProblem, onOpen, onBack, onMap }: Props = $props()
+  let { entryKey, envelope, title, shown, zoom, kind, extent, back, focus, select, handles, fill, onFill, onUp, onDown, onExtent, onZoomRequest, onProblem, onOpen, onBack, onMap }: Props = $props()
 
   // A frame's page is fixed for its life; a new envelope is a new entry.
   const source = untrack(() => `${embeddedViewPath(envelope)}${embeddedViewFragment(envelope)}`)
@@ -132,6 +135,15 @@
     if (focus === 0 || focus === focused || !shown || !ready || frame === null) return
     focused = focus
     frame.focus()
+  })
+
+  // The display selects an element once per request, when it is shown and its page listens.
+  let selected = 0
+  $effect(() => {
+    if (select === null || select.sequence === selected || !shown || !ready || !frame?.contentWindow) return
+    selected = select.sequence
+    const message: DisplayFrameSelect = { type: 'world:display-select', objectId: select.objectId, elementId: select.elementId }
+    frame.contentWindow.postMessage(message, location.origin)
   })
 
   const toExtent = (message: DisplayFrameExtent): DisplayExtent => ({
