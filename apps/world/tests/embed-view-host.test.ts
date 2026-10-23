@@ -70,6 +70,20 @@ describe('a view framed by the display window', () => {
     expect(page.listening()).toBe(false)
   })
 
+  test('hears an element its window asks it to select, from its own window only (W2.8); a malformed ask is refused', () => {
+    const page = framedPage()
+    const selected: Array<{ readonly objectId: string; readonly elementId: string }> = []
+    page.host.subscribeSelect(select => { selected.push(select) })
+    page.host.listen()
+    page.fromWindow({ type: 'world:display-select', objectId: 'plant:halden-1', elementId: 'turbine' })
+    page.deliver({ origin: 'https://elsewhere.test', source: page.parent, data: { type: 'world:display-select', objectId: 'plant:halden-1', elementId: 'core' } })
+    page.fromWindow({ type: 'world:display-select', objectId: 'plant:halden-1' })
+    expect(selected).toEqual([{ objectId: 'plant:halden-1', elementId: 'turbine' }])
+    expect(page.refused).toEqual([{ type: 'world:display-select', objectId: 'plant:halden-1' }])
+    // Selecting changes nothing of its presentation.
+    expect(page.host.current()).toEqual({ shown: true, zoom: 1 })
+  })
+
   test('takes its presentation only from its own window on its own origin, and says when that window sends something unreadable', () => {
     const page = framedPage()
     page.host.listen()

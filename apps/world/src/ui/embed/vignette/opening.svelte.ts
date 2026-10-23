@@ -19,7 +19,8 @@ import { requestElement } from './selection.ts'
 // through the page that frames the vignette (view-host.ts): nowhere where
 // none does, so what would open nothing is no button there. In the display
 // window, and only there, a person acknowledges alerts through their Packs'
-// commands, as the screen's own actor.
+// commands, as the screen's own actor. The window may ask it to select an
+// element once (W2.8), which its drawing does once drawn.
 
 export interface VignetteOpening {
   /** Where this vignette opens a display: its window, the Workspace's window through the page framing it, or nowhere. */
@@ -45,6 +46,9 @@ const KEY = Symbol('vignette-opening')
  */
 const ALERTS_VIEW_ROWS = 12
 
+/** How long a display the window opened to select an element waits for its drawing to show it. */
+const SELECT_WAIT_MS = 15_000
+
 /** The opening of the vignette that calls it, for its parts to read (vignetteOpening); call while it is set up. Returns it and its stop. */
 export const provideOpening = (config: {
   readonly runId: () => SimulationRunId
@@ -54,7 +58,18 @@ export const provideOpening = (config: {
 }): { readonly opening: VignetteOpening; readonly stop: () => void } => {
   let where = $state<DisplayOpening | null>(null)
   const host = embeddedDisplayFrame()
-  const stop = host.subscribeOpening(next => { where = next })
+  const stopOpening = host.subscribeOpening(next => { where = next })
+  // The window asks for an element to be selected (an alarm strip's group row, W2.8): asked again until a drawing of
+  // this display, drawn once its first sample is in, shows it, for at most SELECT_WAIT_MS.
+  let selecting: ReturnType<typeof setInterval> | undefined
+  const stopSelect = host.subscribeSelect(select => {
+    clearInterval(selecting)
+    const until = Date.now() + SELECT_WAIT_MS
+    const ask = (): void => { if (requestElement({ ...select, how: 'select' }) || Date.now() > until) clearInterval(selecting) }
+    selecting = setInterval(ask, 250)
+    ask()
+  })
+  const stop = (): void => { stopOpening(); stopSelect(); clearInterval(selecting) }
   const from = () => ({ key: config.envelope().state, title: config.envelope().title })
   const opening: VignetteOpening = {
     get where() { return where },
