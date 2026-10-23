@@ -9,7 +9,7 @@
   import type { DisplayOpening } from '../view-host.ts'
   import AlertsSection from './AlertsSection.svelte'
   import { worstChip } from './alerts.ts'
-  import { FACEPLATE_ALERTS, FACEPLATE_READINGS, ownAlerts, readingLabel, shownReadings, type FaceplateReadings } from './faceplate.ts'
+  import { FACEPLATE_ALERTS, FACEPLATE_READINGS, ownAlerts, readingLabel, shortOfRoom, shownReadings, type FaceplateReadings } from './faceplate.ts'
   import { VIGNETTE_ROW_PX } from './grid.ts'
   import { elementOffer, faceplateHeight, faceplatePlacement, FACEPLATE_ROW, FACEPLATE_WIDTH, type Box, type OverlayChange, type PinnedOverlay } from './popover.ts'
   import { toneOf, valueLook, type ReadingLook } from './readout.ts'
@@ -90,6 +90,8 @@
   const worst = $derived(worstChip(readings === null ? [] : readings.observations.filter(observation => readings!.values.some(value => value.ref === observation.ref)), own))
   // Its readings: whole rows from the top, as many as keep it at its height at rest or as a person resized it.
   let readingsBox: HTMLElement | undefined = $state()
+  /** Its controls fold to keep its readings (shortOfRoom), decided once its controls and readings have drawn. */
+  let short = $state(false)
   let rest = $state(0)
   const fit = $derived(shownReadings(readings?.values.length ?? 0, { rest, row: FACEPLATE_ROW, pending, rows: pinned?.rows ?? null }))
   const listed = $derived(readings === null ? [] : readings.values.slice(0, fit.shown))
@@ -125,6 +127,8 @@
       if (card === undefined) return
       height = card.offsetHeight
       rest = card.offsetHeight - (readingsBox?.offsetHeight ?? 0)
+      // Short of room at rest beside its controls as they stand: they fold behind one line, for as long as it is open.
+      if (!short && Actions !== null && readings !== null && shortOfRoom(readings.values.length, { rest, row: FACEPLATE_ROW, pending, rows: pinned?.rows ?? null })) short = true
       onsize(height)
     })
     // Focus moves in on its header once OpenBridge's card has drawn its slot: a Tab goes on to its first control.
@@ -242,7 +246,7 @@
       </header>
       <div class="content" bind:this={contentBox}>
         {#if offer === 'actions' && Actions !== null}
-          <div class="actions"><Actions {runId} objectId={objectIdSchema.parse(objectId)} {elementId} {frozen} pinned={pinned !== null} /></div>
+          <div class="actions"><Actions {runId} objectId={objectIdSchema.parse(objectId)} {elementId} {frozen} pinned={pinned !== null} {short} /></div>
         {/if}
         {#if failure !== null}<p class="status" role="status">{failure}</p>{/if}
         {#if group}

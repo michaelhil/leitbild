@@ -177,13 +177,15 @@ export interface ItemControlView {
 /**
  * How an item's controls stand in its faceplate (plan v5 W3.2, W3.3): those `open` show, those `folded` sit behind one
  * "Controls (n)" line a person opens. In a pinned overlay all of them fold: a monitoring overlay offers no command at a
- * glance. Otherwise, while no proposal waits, its protective pushbuttons (trips, actuations, blocks) and the RESETs of
- * the actuations holding it fold, so the faceplate stays short; with a proposal pending nothing folds. Either part is
- * null where it holds nothing.
+ * glance; so do they in a faceplate short of room at rest while no proposal waits (`short`: its readings would give
+ * way below the few it keeps). Otherwise, while no proposal waits, its protective pushbuttons (trips, actuations,
+ * blocks) and the RESETs of the actuations holding it fold, so the faceplate stays short; with a proposal pending
+ * nothing folds. Either part is null where it holds nothing.
  */
-export const faceplateControls = (view: ItemControlView, context: { readonly pinned: boolean; readonly proposalPending: boolean }): { readonly open: ItemControlView | null; readonly folded: ItemControlView | null; readonly count: number } => {
+export const faceplateControls = (view: ItemControlView, context: { readonly pinned: boolean; readonly short: boolean; readonly proposalPending: boolean }): { readonly open: ItemControlView | null; readonly folded: ItemControlView | null; readonly count: number } => {
   const empty = (part: ItemControlView): boolean => part.controls.length === 0 && part.resets.length === 0 && part.auto.length === 0 && part.withheld.length === 0 && part.position === null
-  if (context.pinned) return { open: null, folded: empty(view) ? null : view, count: view.controls.length + view.resets.length }
+  // A faceplate short of room folds every control while no proposal waits, as a pinned overlay always does.
+  if (context.pinned || (context.short && !context.proposalPending)) return { open: null, folded: empty(view) ? null : view, count: view.controls.length + view.resets.length }
   // A trip's or an actuation's RESET is protection's too: it folds with them.
   const folds = (control: ControlView): boolean => !context.proposalPending && control.protection !== undefined
   const resetsFold = !context.proposalPending && view.resets.length > 0

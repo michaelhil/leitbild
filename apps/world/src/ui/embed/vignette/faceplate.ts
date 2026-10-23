@@ -1,10 +1,11 @@
 // What an element's faceplate (L2, plan v5 §3, W3.2) shows besides its Pack's
 // proposal and controls: at most six of the element's readings, its lead
-// values as its Pack judges them each sample, and at most three of its own
-// alerts. One sample a second serves every faceplate a drawing has open or
-// pinned: their elements' lead requests in one state, read through World's
-// display routes as the person (a state names lead requests, never free refs,
-// and shows no more than the caller may see), four to a state.
+// values as its Pack judges them each sample (a host's own before its bundled
+// devices'), and at most three of its own alerts. One sample a second serves
+// every faceplate a drawing has open or pinned: their elements' lead requests
+// in one state, read through World's display routes as the person (a state
+// names lead requests, never free refs, and shows no more than the caller may
+// see), four to a state.
 import type { Observation } from '../../../core/observation/model.ts'
 import type { AlertRow } from '../../../features/displays/alerts/rows.ts'
 import type { VignetteElement, VignetteSample, VignetteView, VignetteValue } from '../../../features/displays/compose/model.ts'
@@ -15,6 +16,27 @@ export const FACEPLATE_READINGS = 6
 export const FACEPLATE_ALERTS = 3
 /** How tall a faceplate stands at rest, no proposal pending (W3.2): its readings give way to keep it so, whole rows from the bottom. */
 export const FACEPLATE_HEIGHT_AT_REST = 300
+/** The lead values a faceplate reads: more than it shows, so a host's own can lead before the readings of the devices it bundles. */
+export const FACEPLATE_LEAD_ROWS = 8
+/** The readings a faceplate keeps at rest: where fewer would fit beside its controls, its controls fold (shortOfRoom). */
+export const FACEPLATE_READINGS_AT_REST = 3
+
+/**
+ * A host's readings in its faceplate: its own and its lines' first, in the lead's order, then those of the devices it
+ * bundles (declared with it as their parent), which the faceplate also lists as links of their own (W3.2, W3.5).
+ */
+export const hostFirst = (values: ReadonlyArray<VignetteValue>, elementId: string): ReadonlyArray<VignetteValue> => {
+  const bundled = (value: VignetteValue): boolean => value.element?.parent === elementId
+  return [...values.filter(value => !bundled(value)), ...values.filter(bundled)]
+}
+
+/**
+ * Whether a faceplate at rest is short of room: beside its controls as they stand, fewer readings than it keeps at rest
+ * (or than it has) would fit. Then its controls fold behind one line too, so its readings show. Never with a proposal
+ * pending, nor for one a person resized.
+ */
+export const shortOfRoom = (count: number, context: { readonly rest: number; readonly row: number; readonly pending: boolean; readonly rows: number | null }): boolean =>
+  !context.pending && context.rows === null && shownReadings(count, context).shown < Math.min(FACEPLATE_READINGS_AT_REST, count)
 
 /**
  * How many readings a faceplate shows, and how many give way: all, up to six, where they fit the height at rest
@@ -48,7 +70,7 @@ export const faceplateStates = (objectId: string, elements: ReadonlyArray<string
       state: JSON.stringify({
         title: 'Faceplates',
         at: { at, clock: 'wall' },
-        views: named.map(element => ({ kind: 'values', lead: { objectId, element }, rows: FACEPLATE_READINGS })),
+        views: named.map(element => ({ kind: 'values', lead: { objectId, element }, rows: FACEPLATE_LEAD_ROWS })),
       }),
     }
   })
@@ -60,7 +82,7 @@ export const readingsOf = (elements: ReadonlyArray<string>, view: VignetteView |
   return new Map(elements.flatMap((element, index) => {
     const section = view.sections[index]
     if (section === undefined || section.kind !== 'values') return []
-    return [[element, { values: section.values.slice(0, FACEPLATE_READINGS), observations: sample.observations, devices: section.devices ?? [] }] as const]
+    return [[element, { values: hostFirst(section.values, element).slice(0, FACEPLATE_READINGS), observations: sample.observations, devices: section.devices ?? [] }] as const]
   }))
 }
 
