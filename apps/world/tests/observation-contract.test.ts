@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { defineObservationCapability, OBSERVATION_READ_REFS, observationDeclarationSchema, observationShapes } from '../src/core/observation/capabilities.ts'
 import {
-  decimalsFor, numberShown, numberText, observableSchema, observationSchema, quantitySchema, quantityUnits, stampSchema, thresholdSchema, unitDecimals, unitSymbol,
+  criterionWords, decimalsFor, numberShown, numberText, observableSchema, observationSchema, quantitySchema, quantityUnits, stampSchema, thresholdSchema, unitDecimals, unitSymbol,
 } from '../src/core/observation/model.ts'
 import { displaySpecSchema, selectorSchema, viewSchema } from '../src/core/observation/spec.ts'
 import { topologyGraphSchema } from '../src/core/observation/topology.ts'
@@ -103,6 +103,55 @@ describe('observation model', () => {
     // Not declared so: a value below its step reads 0, a leak rate's noise among them; a deviation a step's tenth off zero reads 0.0.
     expect([numberText(4.4e-8, 'A'), numberText(2.3e-12, 'kg/s'), numberText(0.6, 'A')]).toEqual(['0', '0', '1'])
     expect([numberText(-0.04, '%'), numberText(0.004, 'degC')]).toEqual(['0.0', '0.0'])
+  })
+})
+
+describe('criteria (W1.4)', () => {
+  const checks = [
+    { label: 'Natural circulation: subcooling above 16.7 °C', shortLabel: 'subcooling' },
+    { label: 'Natural circulation: steam generator pressures stable or falling', shortLabel: 'SG pressures' },
+    { label: 'Natural circulation: core exit stable or falling' },
+  ]
+  const criterion = { ref: 'unit-2#csf.core-cooling.checks', label: 'Natural circulation', quantity: 'count', unit: '1', valueType: 'criterion', series: null, checks } as const
+
+  test('a criterion, and only a criterion, declares its checks; it counts them met and sets no limit of its own', () => {
+    expect(observableSchema.safeParse(criterion).success).toBe(true)
+    expect(observableSchema.safeParse({ ...criterion, checks: undefined }).success).toBe(false)
+    expect(observableSchema.safeParse({ ...observable, checks }).success).toBe(false)
+    expect(observableSchema.safeParse({ ...criterion, quantity: 'state', unit: '' }).success).toBe(false)
+    expect(observableSchema.safeParse({ ...criterion, thresholds: [threshold] }).success).toBe(false)
+    expect(observationSchema.safeParse({ ...at, ref: criterion.ref, value: 1, quality: 'good', priority: 'none', checks: [{ check: 0, met: 'yes', measured: 32.3 }, { check: 1, met: 'no' }] }).success).toBe(true)
+    expect(observationSchema.safeParse({ ...at, ref: criterion.ref, value: 1, quality: 'good', priority: 'none', checks: [{ check: 16, met: 'yes' }] }).success).toBe(false)
+  })
+
+  test('a criterion reads as how many of its checks that apply are met, naming those not yet met; "—" while none applies', () => {
+    const read = (entries: ReadonlyArray<{ check: number; met: 'yes' | 'no' | 'unknown'; measured?: number }>, quality: 'good' | 'not-applicable' = 'good') => criterionWords(checks, { quality, checks: entries })
+    expect(read([{ check: 0, met: 'yes' }, { check: 1, met: 'no' }, { check: 2, met: 'no' }])).toEqual({
+      text: '1/3', detail: 'not yet met: SG pressures, Natural circulation: core exit stable or falling', met: false, numbers: [{ value: 1, decimals: 0 }, { value: 3, decimals: 0 }],
+    })
+    expect(read([{ check: 0, met: 'yes' }, { check: 1, met: 'unknown' }])).toMatchObject({ text: '1/2', detail: 'not known: SG pressures', met: false })
+    expect(read([{ check: 0, met: 'yes' }, { check: 1, met: 'yes' }])).toMatchObject({ text: '2/2', detail: null, met: true })
+    expect(criterionWords(checks, { quality: 'not-applicable' })).toEqual({ text: '—', detail: null, met: null, numbers: [] })
+    expect(criterionWords(checks, undefined).text).toBe('?')
+  })
+
+  test('a comparing check that alone applies reads as its comparison stands, a true statement either way, its limit as declared', () => {
+    const feed = [{ label: 'Heat sink: total feed flow at least 27.8 kg/s', compares: { operator: '>=', value: 27.8, unit: 'kg/s', quantity: 'flow' } }] as const
+    expect(criterionWords(feed, { quality: 'good', checks: [{ check: 0, met: 'yes', measured: 112.9 }] })).toEqual({
+      text: '113 ≥ 27.8 kg/s', detail: null, met: true, numbers: [{ value: 113, decimals: 0 }, { value: 27.8, decimals: 1 }], unit: 'kg/s',
+    })
+    expect(criterionWords(feed, { quality: 'good', checks: [{ check: 0, met: 'no', measured: 20.2 }] })).toMatchObject({ text: '20 < 27.8 kg/s', detail: 'not met', met: false })
+    // Not known, it reads as a count does: what it compares is not there to write.
+    expect(criterionWords(feed, { quality: 'good', checks: [{ check: 0, met: 'unknown' }] })).toMatchObject({ text: '0/1', detail: 'not known: Heat sink: total feed flow at least 27.8 kg/s' })
+  })
+
+  test('an element may name the criteria its detail judges it by and declare one table of its parts', () => {
+    const element = { id: 'core', class: 'reactorCore', label: 'Core' }
+    const table = { columns: ['Thot', 'Tcold'], lines: [{ label: 'A', refs: ['unit-2#a.hot', 'unit-2#a.cold'] }, { label: 'B', refs: ['unit-2#b.hot', null] }] }
+    const declaration = (extra: Record<string, unknown>) => ({ objectId: 'unit-2', revision: 'r1', observables: [criterion], elements: [{ ...element, ...extra }] })
+    expect(observationDeclarationSchema.safeParse(declaration({ criteria: [criterion.ref], table })).success).toBe(true)
+    expect(observationDeclarationSchema.safeParse(declaration({ table: { ...table, lines: [table.lines[0]] } })).success).toBe(false)
+    expect(observationDeclarationSchema.safeParse(declaration({ table: { ...table, lines: [...table.lines, { label: 'C', refs: ['unit-2#c.hot'] }] } })).success).toBe(false)
   })
 })
 

@@ -28,9 +28,9 @@ const observable = (path: string) => declaration.observables.find(candidate => c
 describe('plant observation declarations (P2)', () => {
   test('T12: every published or recorded signal is declared and parses against core\'s quantity list and unit codes', () => {
     expect(observationDeclarationSchema.parse(declaration)).toEqual(declaration)
-    // 1,002 signals (none a fault the scenario injects, nor the model's truth about one), 81 items' states, 8 rod banks' travel, 6 safety functions and the operating mode.
-    expect(declaration.observables).toHaveLength(1098)
-    expect(plantDeclaration(objectId, plant, null).observables).toHaveLength(777)
+    // 1,002 signals (none a fault the scenario injects, nor the model's truth about one), 81 items' states, 8 rod banks' travel, 6 safety functions, the operating mode and 3 functions' criteria.
+    expect(declaration.observables).toHaveLength(1101)
+    expect(plantDeclaration(objectId, plant, null).observables).toHaveLength(780)
     expect(declaration.revision).toBe(`${plant.modelDigest}:1000ms:721`)
   })
 
@@ -95,8 +95,9 @@ describe('plant observation declarations (P2)', () => {
     expect(observable('pressurizer-relief-to-tank.flowKgPerS')).toMatchObject({ element: 'pressurizer-relief-to-tank' })
     expect(observable('pressurizer-relief-to-tank.flowKgPerS').tag).toBeUndefined()
     const elements = new Set(declaration.elements.map(element => element.id))
-    // A safety function and the operating mode are the unit's, measured on no equipment.
-    expect(declaration.observables.filter(entry => entry.element === undefined).map(entry => entry.ref)).toEqual([...plant.automation.safetyFunctions.map(entry => `${objectId}#csf.${entry.id}`), `${objectId}#mode`])
+    // A safety function, the operating mode and a function's criterion are the unit's, measured on no equipment.
+    expect(declaration.observables.filter(entry => entry.element === undefined).map(entry => entry.ref)).toEqual([...plant.automation.safetyFunctions.map(entry => `${objectId}#csf.${entry.id}`), `${objectId}#mode`,
+      ...['subcriticality', 'core-cooling', 'heat-sink'].map(id => `${objectId}#csf.${id}.checks`)])
     expect(declaration.observables.filter(entry => entry.element !== undefined && !elements.has(entry.element)).map(entry => entry.ref)).toEqual([])
   })
 

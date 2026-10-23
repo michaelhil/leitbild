@@ -10,7 +10,7 @@
  */
 import { DISPLAY_CARD_MAX_ITEMS, DISPLAY_CARD_MAX_TEXT, displayCardSchema, displayCardTextLength, type DisplayCard, type DisplayCardAdjustment, type DisplayCardItem } from '@leitbild/contracts'
 import { priorityLevels } from '../../../core/model/alerts.ts'
-import { distanceParts, durationParts, numberShown, numberText, unitSymbol, type Observation, type Quantity } from '../../../core/observation/model.ts'
+import { criterionWords, distanceParts, durationParts, numberShown, numberText, unitSymbol, type Observation, type Quantity } from '../../../core/observation/model.ts'
 import type { AlertRow } from '../alerts/rows.ts'
 import type { Declared } from './declared.ts'
 import type { EntityRow, SlotDeclaration, VignetteSample } from './model.ts'
@@ -31,6 +31,14 @@ const atLeastCaution = (priority: string | null | undefined): boolean => priorit
 
 export const valueItem = ({ observable, object }: Declared, observation: Observation | undefined): Item => {
   const label = `${object.label} · ${observable.label}`.slice(0, 80)
+  // A criterion reads as a row writes it: how many of its checks that apply are met and those not yet met, or its comparison.
+  if (observable.checks !== undefined) {
+    const words = criterionWords(observable.checks, observation)
+    return {
+      label, reading: [words.text, ...(words.detail === null ? [] : [words.detail])].join(' · ').slice(0, 120), ...(words.unit === undefined ? {} : { unit: words.unit }),
+      numbers: [...words.numbers], ...(observation === undefined ? {} : { priority: observation.priority }), subject: { ref: observable.ref },
+    }
+  }
   const value = observation?.value ?? null
   const numbers: Shown[] = []
   // A reading that measures nothing now (meaningfulWhile off) reads "—", as a readout shows it.

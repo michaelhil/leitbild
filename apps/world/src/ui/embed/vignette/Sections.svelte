@@ -9,6 +9,7 @@
   import { valueLook } from './readout.ts'
   import type { VignetteSnapshot } from './vignette-client.ts'
   import AlertsSection from './AlertsSection.svelte'
+  import CriterionRow from './CriterionRow.svelte'
   import EntityTable from './EntityTable.svelte'
   import FlowTopology from './FlowTopology.svelte'
   import GroupedValues from './GroupedValues.svelte'
@@ -47,8 +48,9 @@
       {#if section.kind === 'values'}
         {#each section.values as value (value.ref)}
           {@const look = valueLook(value, observations, value.ref)}
-          {#if look.kind === 'state'}<StateWord {look} label={underTitle(value.label, view.title)} />{:else}<Readout {look} label={underTitle(value.label, view.title)} />{/if}
+          {#if look.kind === 'criterion'}<CriterionRow {look} label={underTitle(value.label, view.title)} />{:else if look.kind === 'state'}<StateWord {look} label={underTitle(value.label, view.title)} />{:else}<Readout {look} label={underTitle(value.label, view.title)} />{/if}
         {/each}
+        {#if section.table !== undefined}<GroupedValues section={section.table} {observations} />{/if}
       {:else if section.kind === 'grouped'}
         <GroupedValues {section} {observations} />
       {:else if section.kind === 'trend'}

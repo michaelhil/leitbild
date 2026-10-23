@@ -39,9 +39,13 @@ export const leadRequestSchema = z.object({ objectId: objectIdSchema, element: z
 export type LeadRequest = z.output<typeof leadRequestSchema>
 
 export const resolvedViewSchema = z.discriminatedUnion('kind', [
-  /** Named values (`refs`) first, then what a lead request leads with now, in the `rows` it reserves. */
-  z.object({ kind: z.literal('values'), refs: z.array(observableRefSchema).min(1).max(16).optional(), lead: leadRequestSchema.optional(), rows }).strict()
-    .refine(view => view.refs !== undefined || view.lead !== undefined, { message: 'a values view names refs or a lead request' }),
+  /**
+   * Named values (`refs`) first, then what a lead request leads with now, in the `rows` it reserves; `table`: then its
+   * element's declared table of its parallel parts, in the rows after those.
+   */
+  z.object({ kind: z.literal('values'), refs: z.array(observableRefSchema).min(1).max(16).optional(), lead: leadRequestSchema.optional(), table: z.literal(true).optional(), rows }).strict()
+    .refine(view => view.refs !== undefined || view.lead !== undefined, { message: 'a values view names refs or a lead request' })
+    .refine(view => view.table === undefined || view.lead?.element !== undefined, { message: 'only an element\'s lead request shows its table' }),
   z.object({ kind: z.literal('trend'), refs: z.array(observableRefSchema).min(1).max(12), horizon: z.enum(['2m', '10m', '30m']), rows }).strict(),
   /** The objects' alerts, or only those on these elements or observables; `lead`: those first, then the objects' lead alerts (leadsObject). */
   z.object({
@@ -83,10 +87,10 @@ export const vignetteStateSchema = z.object({
 export type VignetteState = z.output<typeof vignetteStateSchema>
 
 /** A declared element an observable is measured on, as a vignette names it: never what it leads with. */
-export type VignetteElement = Omit<ObservationDeclaration['elements'][number], 'lead' | 'stopped'>
+export type VignetteElement = Omit<ObservationDeclaration['elements'][number], 'lead' | 'stopped' | 'criteria' | 'table'>
 
 /** A declared observable as a vignette names it: its label qualified with its object's ("<object> · <observable>", R25). */
-export type VignetteValue = Pick<Observable, 'ref' | 'quantity' | 'unit' | 'valueType' | 'states' | 'thresholds' | 'series' | 'decades'> & {
+export type VignetteValue = Pick<Observable, 'ref' | 'quantity' | 'unit' | 'valueType' | 'states' | 'thresholds' | 'series' | 'decades' | 'checks'> & {
   readonly label: string
   readonly element?: VignetteElement
 }
@@ -113,11 +117,19 @@ export interface TopologyNodeView extends Pick<TopologyNode, 'id' | 'label' | 's
   readonly bindings: ReadonlyArray<TopologyBinding>
 }
 
+/** Parallel values: one line per element (or per line of an element's declared table), one column per quantity. */
+export interface GroupedSection {
+  readonly kind: 'grouped'; readonly rows: number; readonly quantities: ReadonlyArray<{ readonly label: string; readonly unit: string }>
+  readonly lines: ReadonlyArray<{ readonly element: VignetteElement; readonly values: ReadonlyArray<VignetteValue | null> }>
+}
+
 export type VignetteSection =
-  /** `lead`: the index of the state's view whose lead request it shows; its values now are the sample's `leads[lead]`. */
-  | { readonly kind: 'values'; readonly rows: number; readonly values: ReadonlyArray<VignetteValue>; readonly lead?: number }
-  /** Parallel values: one line per element, one column per quantity. */
-  | { readonly kind: 'grouped'; readonly rows: number; readonly quantities: ReadonlyArray<{ readonly label: string; readonly unit: string }>; readonly lines: ReadonlyArray<{ readonly element: VignetteElement; readonly values: ReadonlyArray<VignetteValue | null> }> }
+  /**
+   * `lead`: the index of the state's view whose lead request it shows; its values now are the sample's `leads[lead]`,
+   * in its rows but its table's. `table`: its element's declared table, in its last rows, its values the sample's.
+   */
+  | { readonly kind: 'values'; readonly rows: number; readonly values: ReadonlyArray<VignetteValue>; readonly lead?: number; readonly table?: GroupedSection }
+  | GroupedSection
   /** Pens drawn together share a strip: at most four strips of at most four pens. */
   | { readonly kind: 'trend'; readonly rows: number; readonly horizonMs: number; readonly strips: ReadonlyArray<ReadonlyArray<VignetteValue>> }
   | { readonly kind: 'alerts'; readonly rows: number; readonly objectIds: ReadonlyArray<string> | 'run'; readonly elements?: ReadonlyArray<string>; readonly refs?: ReadonlyArray<string>; readonly lead?: true }

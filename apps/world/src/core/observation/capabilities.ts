@@ -29,6 +29,12 @@ export const stoppedLeadSchema = z.object({
 }).strict()
   .refine(stopped => new Set(stopped.lead).size === stopped.lead.length, { message: 'a stop leads with each value once', path: ['lead'] })
 
+export const elementTableSchema = z.object({
+  columns: z.array(z.string().min(1).max(24)).min(1).max(4),
+  lines: z.array(z.object({ label: z.string().min(1).max(24), refs: z.array(observableRefSchema.nullable()).min(1).max(4) }).strict()).min(2).max(8),
+}).strict().refine(table => table.lines.every(line => line.refs.length === table.columns.length), { message: 'a table line has a ref, or null, for each column', path: ['lines'] })
+export type ElementTable = z.output<typeof elementTableSchema>
+
 export const observationElementSchema = z.object({
   id: z.string().min(1).max(200),
   class: z.string().min(1).max(60),
@@ -43,6 +49,10 @@ export const observationElementSchema = z.object({
    */
   lead: z.array(observableRefSchema).min(1).max(16).optional(),
   stopped: stoppedLeadSchema.optional(),
+  /** The criteria its detail judges it by (criterion observables, D-E), in order: it leads with each while one of its checks applies. */
+  criteria: z.array(observableRefSchema).min(1).max(8).optional(),
+  /** Parallel values its detail shows as one table (its parallel parts): a line per part, a column per reading, null where a part has none. */
+  table: elementTableSchema.optional(),
 }).strict()
   .refine(element => element.parent !== element.id, { message: 'an element is not its own parent', path: ['parent'] })
   .refine(element => element.lead === undefined || new Set(element.lead).size === element.lead.length, { message: 'an element leads with each value once', path: ['lead'] })

@@ -6,8 +6,10 @@ import { annunciating, colours, expectedAfterGroup, pendingActions, plantAlarmPr
 import { overviewCandidates, overviewKeyValues, plantNowOf } from '../ic/key-values.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { processPlantSignalQuality } from '../signals.ts'
-import { evaluateSafetyFunctions, type SafetyFunctionEvaluation } from '../safety-functions.ts'
+import type { ProcessPlantIcSafetyFunction } from '../runtime/index.ts'
+import { evaluateSafetyFunction, evaluateSafetyFunctions, type SafetyFunctionEvaluation } from '../safety-functions.ts'
 import { declaredObservable, qualifiedReadings, type PlantRecording } from './declarations.ts'
+import { readCriterion } from './criteria.ts'
 import { readDerived } from './derived.ts'
 
 // A Plant's values as World reads them (plan v3.1 §2.2): the value and its
@@ -70,10 +72,16 @@ export const readPlant = (context: PlantReadContext, paths: ReadonlyArray<string
   const pending = snapshot === undefined ? [] : pendingActions(plant, snapshot, system.runtime.elapsedMs())
   let judged: ReadonlyArray<SafetyFunctionEvaluation> | undefined
   const safetyFunctions = () => judged ??= evaluateSafetyFunctions(plant, system.runtime)
+  // A criterion judges its own function only (a detail's sample reads no status of the others).
+  const one = new Map<string, SafetyFunctionEvaluation>()
+  const safetyFunction = (declared: ProcessPlantIcSafetyFunction): SafetyFunctionEvaluation =>
+    judged?.find(evaluation => evaluation.id === declared.id) ?? one.get(declared.id) ?? one.set(declared.id, evaluateSafetyFunction({ system: plant, runtime: system.runtime, safetyFunction: declared })).get(declared.id)!
   return paths.map(path => {
     const declared = declaredObservable(context.objectId, plant, recording, path)
     if (declared === null) return null
     const binding = plant.graph.signalBindingByPath.get(path as VariablePath)
+    const criterion = binding === undefined ? readCriterion(plant, path, safetyFunction) : null
+    if (criterion !== null) return { ref: declared.ref, ...criterion, at: context.simulationTime, clock: 'simulation' }
     if (binding === undefined) return { ref: declared.ref, ...readDerived(system, path, safetyFunctions), at: context.simulationTime, clock: 'simulation' }
     // A reading the model qualifies measures nothing while its flag is off: no value, not applicable, never a colour.
     const qualified = qualifiedReadings(plant).get(path)
