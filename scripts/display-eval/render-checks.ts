@@ -157,7 +157,7 @@ export const readTrends = (): string => String.raw`((() => {${SHOWN}
 export interface ColumnRead {
   /** Each lead row: its label, whether it draws a sparkline (an svg or canvas drawn in the row, with a path or pixels),
    * and the row's text. */
-  readonly rows: ReadonlyArray<{ readonly label: string; readonly text: string; readonly spark: { readonly tag: string; readonly w: number; readonly h: number; readonly pieces: number } | null }>
+  readonly rows: ReadonlyArray<{ readonly label: string; readonly full: string; readonly text: string; readonly spark: { readonly tag: string; readonly w: number; readonly h: number; readonly pieces: number } | null }>
   /** Lines anywhere in the display that read as a margin to a limit ("0.66 above LO 14.8 MPa"). */
   readonly margins: ReadonlyArray<string>
 }
@@ -167,9 +167,9 @@ export interface ColumnRead {
 export const readColumn = (): string => String.raw`((() => {${SHOWN}
   if (!shown) return { rows: [], margins: [] }
   const doc = shown.doc
-  const ROWS = ':scope > .readout, :scope > .state, :scope > .values > .readout, :scope > .values > .state, :scope obc-readout-list-item, :scope .lead, :scope [data-lead]'
+  const ROWS = ':scope > .readout, :scope > .state, :scope > .values > .readout, :scope > .values > .state, :scope > .values > obc-readout-list > .row'
   const section = [...doc.querySelectorAll('.section')].find(s => !s.closest('.popover, [role=dialog]') && s.querySelector(ROWS))
-  const rows = section ? [...section.querySelectorAll(ROWS)].filter(row => !row.parentElement.closest('obc-readout-list-item')) : []
+  const rows = section ? [...section.querySelectorAll(ROWS)] : []
   const sparkOf = row => {
     const candidates = [...row.querySelectorAll('svg, canvas')].concat(row.shadowRoot ? [...row.shadowRoot.querySelectorAll('svg, canvas')] : [])
     for (const el of candidates) {
@@ -179,6 +179,13 @@ export const readColumn = (): string => String.raw`((() => {${SHOWN}
       const bar = (/bar|limit|span|indicator/i.test(label) && !/spark|min/i.test(label)) || el.closest('obc-bar-horizontal, obc-bar-vertical, .bar, .span')
       if (bar || r.width < 24 || r.height < 6) continue
       if (el.tagName === 'CANVAS') return { tag: 'canvas', w: Math.round(r.width), h: Math.round(r.height), pieces: 1 }
+      // The registered sparkline (R3: svg.spark, its trace path.line): one, drawn where its path holds points.
+      if (el.classList.contains('spark')) {
+        const line = el.querySelector('path.line, path:not(.frame)')
+        const d = line ? line.getAttribute('d') || '' : ''
+        if ((d.match(/[LHVCSQT]/gi) || []).length >= 1) return { tag: 'svg.spark', w: Math.round(r.width), h: Math.round(r.height), pieces: (d.match(/M/gi) || []).length }
+        continue
+      }
       // A trace: a path of a few pieces that draws onward (two or more line commands), not a hatch of many strokes.
       const paths = [...el.querySelectorAll('path, polyline')].filter(p => !p.closest('pattern, defs')).filter(p => {
         const d = p.getAttribute('d') || ''
@@ -190,8 +197,10 @@ export const readColumn = (): string => String.raw`((() => {${SHOWN}
     }
     return null
   }
-  const out = rows.map(row => ({ label: textOf(row.querySelector('.label, [slot=label], .name') || row).slice(0, 80), text: textOf(row).slice(0, 120), spark: sparkOf(row) }))
-  const margins = [...doc.querySelectorAll('p, span, div, li')].filter(el => el.children.length === 0 || [...el.children].every(c => c.tagName === 'SPAN')).map(textOf).filter(t => /\b\d[\d.,]*\s*(\S+\s+)?(above|below|from|to)\s+(LO-LO|HI-HI|LO|HI|LOW|HIGH|TRIP)\b/i.test(t) && t.length < 160)
+  const out = rows.map(row => ({ label: (textOf(row.querySelector(':scope > .label')) || textOf(row.querySelector(':scope > .full, .label, [slot=label], .name') || row)).slice(0, 80), full: textOf(row.querySelector(':scope > .full')).slice(0, 120), text: textOf(row).slice(0, 120), spark: sparkOf(row) }))
+  // Margin lines: R3's .margin paragraphs (who, and what in words), else any short line that reads as a margin to a limit.
+  const marginEls = [...doc.querySelectorAll('p.margin')].filter(el => !el.closest('.popover, [role=dialog]'))
+  const margins = marginEls.length > 0 ? marginEls.map(el => { const what = el.querySelector('.what'); return (textOf(el.querySelector('.who')) + ' ' + (what ? what.getAttribute('aria-label') || textOf(what) : '')).trim() }) : [...doc.querySelectorAll('p, span, div, li')].filter(el => el.children.length === 0 || [...el.children].every(c => c.tagName === 'SPAN')).map(textOf).filter(t => /\b\d[\d.,]*\s*(\S+\s+)?(above|below|from|to)\s+(LO-LO|HI-HI|LO|HI|LOW|HIGH|TRIP)\b/i.test(t) && t.length < 160)
   return { rows: out, margins: [...new Set(margins)].slice(0, 20) }
 })())`
 

@@ -153,11 +153,19 @@ const judgeView = async (ctx: { readonly page: Page; readonly scratch: Page; rea
 
   // Drawn content: sparklines on lead rows with a series; the margin line; LIVE/DEAD stubs; "<0 %" and WR.
   if (column.rows.length > 0) {
-    const leadValues: ReadonlyArray<any> = Object.values(sample?.leads ?? {}).flat() as any[]
-    const withSeries = new Set(leadValues.filter(value => value?.series !== undefined).map(value => String(value.label).split(' · ').slice(-2).join(' · ')))
-    const seriesOf = (label: string) => [...withSeries].some(full => full.includes(label.replace(/\s*\.\.\.$|…$/, '')) || label.includes(full.split(' · ')[0]!))
-    const missing = column.rows.filter(row => row.spark === null && (withSeries.size === 0 || seriesOf(row.label)))
-    checks.push(check('sparklines', missing.length === 0, `${column.rows.length} lead rows, ${column.rows.filter(row => row.spark !== null).length} with a sparkline; ${withSeries.size} lead values with a series; without one${listed(missing.map(row => `"${row.label}"`), 6) || ': none'}`))
+    // The sample's lead values of the first values section (W0.5: the leads each sample re-reads), row by row when the
+    // display draws as many rows; else matched by label.
+    const leadSets = Object.entries(sample?.leads ?? {}).sort(([a], [b]) => Number(a) - Number(b)).map(([, values]) => values as any[])
+    const leadValues: ReadonlyArray<any> = leadSets[0] ?? []
+    const byIndex = leadValues.length === column.rows.length
+    const seriesOf = (row: ColumnRead['rows'][number], index: number): boolean => {
+      if (byIndex) return leadValues[index]?.series !== undefined
+      const value = leadValues.find(entry => { const label = String(entry?.label ?? ''); return (row.full !== '' && label.includes(row.full.split(' · ')[0]!)) || label.includes(row.label) })
+      return value?.series !== undefined
+    }
+    const missing = column.rows.filter((row, index) => row.spark === null && seriesOf(row, index))
+    const withSeries = { size: column.rows.filter((row, index) => seriesOf(row, index)).length }
+    checks.push(check('sparklines', missing.length === 0, `${column.rows.length} lead rows, ${column.rows.filter(row => row.spark !== null).length} with a sparkline; ${withSeries.size} of them with a series (${byIndex ? 'row by row' : 'by label'}); with a series but no sparkline${listed(missing.map(row => `"${row.label}"`), 6) || ': none'}`))
   }
   if (run === 'A' && view === 'overview') checks.push(check('margin-line', column.margins.length > 0, column.margins.length > 0 ? `"${column.margins.slice(0, 3).join('" · "')}"` : 'no margin line ("… above/below LO … ") in the display'))
   const live = words.filter(word => word.where === 'drawing' && /\b(LIVE|DEAD)\b/.test(word.text))
