@@ -2,7 +2,8 @@
   import { ageText, tripLine } from '../../../features/displays/alerts/list.ts'
   import type { AlertRow } from '../../../features/displays/alerts/rows.ts'
   import type { VignetteView } from '../../../features/displays/compose/model.ts'
-  import { elementOf, wordsThatFit } from './alerts.ts'
+  import { elementOf } from './alerts.ts'
+  import { wholeWords } from './fit-words.ts'
   import { vignetteOpening } from './opening.svelte.ts'
 
   // The trip line under a vignette's title row (plan v5 W2.4): for the one
@@ -33,20 +34,6 @@
   const can = $derived(opening !== undefined && opening.where !== null)
   const show = (elementId: string | undefined): (() => void) | undefined =>
     !can || elementId === undefined || objectId === null ? undefined : () => { void opening!.element(objectId, elementId) }
-
-  const fitted = (node: HTMLElement, text: string) => {
-    let full = text
-    const fit = (): void => {
-      node.textContent = wordsThatFit(full, candidate => {
-        node.textContent = candidate
-        return node.scrollWidth <= node.clientWidth
-      })
-    }
-    fit()
-    const resized = new ResizeObserver(fit)
-    resized.observe(node)
-    return { update: (next: string) => { full = next; fit() }, destroy: () => resized.disconnect() }
-  }
 </script>
 
 {#snippet label(text: string, opens: (() => void) | undefined, what: string)}
@@ -60,9 +47,9 @@
       <span class="lead">
         {#if lead.label !== undefined}{@render label(lead.label, show(lead.ends[0]), lead.label)}{/if}
         {#if show(elementOf(lead.row)) === undefined}
-          <span class="message" aria-hidden="true" use:fitted={lead.row.alert.message}></span>
+          <span class="message" aria-hidden="true" use:wholeWords={lead.row.alert.message}></span>
         {:else}
-          <button type="button" class="message" aria-label={`${lead.row.alert.message}: open`} title={`${lead.row.alert.message}: open`} onclick={show(elementOf(lead.row))} use:fitted={lead.row.alert.message}></button>
+          <button type="button" class="message" aria-label={`${lead.row.alert.message}: open`} title={`${lead.row.alert.message}: open`} onclick={show(elementOf(lead.row))} use:wholeWords={lead.row.alert.message}></button>
         {/if}
         {#if show(elementOf(lead.row)) === undefined}<span class="full">{lead.row.alert.message}</span>{/if}
         {#if ageText(nowMs, lead.row) !== null}<span class="age" title={`${lead.row.raised?.at.slice(11, 19) ?? ''} UTC`}>{ageText(nowMs, lead.row)}</span>{/if}

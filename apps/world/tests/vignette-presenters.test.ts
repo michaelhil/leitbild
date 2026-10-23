@@ -267,7 +267,7 @@ describe('alerts', () => {
     expect(rule('.detail')).toContain('flex: none;')
     expect(rule('.icon')).toContain('flex: none;')
     expect(source).toMatch(/strong, \.mark, \.unack \{ flex: none;/)
-    expect(source).toContain('use:fitted={parts.message}')
+    expect(source).toContain('use:wholeWords={parts.message}')
   })
 
   test('a row is written on one line where it fits whole, else on two', () => {
