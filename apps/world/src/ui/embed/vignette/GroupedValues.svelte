@@ -7,8 +7,9 @@
 
   // Parallel values as one table (architecture B): a column per quantity, a
   // line per element, as the composer grouped them; each cell reads as its
-  // own readout or state, its limit chip shortened to the order word.
-  let { section, observations }: { section: Extract<VignetteSection, { kind: 'grouped' }>; observations: ReadonlyArray<Observation> } = $props()
+  // own readout or state, its limit chip shortened to the order word; in the
+  // low-integrity style while its display is frozen.
+  let { section, observations, frozen }: { section: Extract<VignetteSection, { kind: 'grouped' }>; observations: ReadonlyArray<Observation>; frozen: boolean } = $props()
 </script>
 
 <table class="grouped" style:--columns={section.quantities.length}>
@@ -22,7 +23,8 @@
         {#each line.values as value, index (index)}
           <td>
             {#if value !== null}
-              {@const look = valueLook(value, observations, value.ref)}
+              {@const read = valueLook(value, observations, value.ref)}
+              {@const look = frozen ? { ...read, doubtful: true } : read}
               {#if look.kind === 'state'}<StateWord {look} />{:else}<Readout look={{ ...look, unit: '' }} />{/if}
             {/if}
           </td>

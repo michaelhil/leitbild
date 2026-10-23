@@ -9,7 +9,7 @@
   import { underTitle } from './format.ts'
   import { frameLayout, standsBeside, VIGNETTE_ROW_PX } from './grid.ts'
   import { drawingScale } from './network.ts'
-  import { valueLook } from './readout.ts'
+  import { valueLook, type ReadingLook } from './readout.ts'
   import type { VignetteSnapshot } from './vignette-client.ts'
   import AlertsSection from './AlertsSection.svelte'
   import EntityTable from './EntityTable.svelte'
@@ -29,7 +29,8 @@
   // its size, scaled to the width or scrolled sideways under an edge fade
   // that says it continues; or in an element's pop-over (ElementPopover.svelte),
   // which leaves out its topologies: it stands beside the drawing it opened
-  // from.
+  // from. Frozen, values, trends and alerts read in OpenBridge's low-integrity
+  // style: they no longer follow the Run.
   let { view, snapshot, palette, frozen, runId, from, drawings = true }: {
     view: VignetteView
     snapshot: VignetteSnapshot
@@ -46,6 +47,8 @@
   const now = $derived(latest === undefined ? Number.NaN : Date.parse(latest.at.at))
   /** The flow drawing a window frame stands beside its column; -1 without one. */
   const drawing = $derived(view.sections.findIndex(section => section.kind === 'topology' && section.family === 'flow'))
+  /** A frozen display's readings are doubtful: they are the last it had. */
+  const shown = (look: ReadingLook): ReadingLook => (frozen ? { ...look, doubtful: true } : look)
 
   // The one width the layout follows: the frame's, at the window's zoom.
   let width = $state(0)
@@ -74,19 +77,19 @@
 
 {#snippet one(section: VignetteSection, index: number, rows: number | null = section.rows, fit: number = 1)}
   {#if drawings || section.kind !== 'topology'}
-    <div class="section" style:height={rows === null ? undefined : `${rows * VIGNETTE_ROW_PX}px`}>
+    <div class="section" class:frozen={frozen && (section.kind === 'alerts' || section.kind === 'entity')} style:height={rows === null ? undefined : `${rows * VIGNETTE_ROW_PX}px`}>
       {#if section.kind === 'values'}
         <div class="values">
           {#each section.values as value (value.ref)}
-            {@const look = valueLook(value, observations, value.ref)}
+            {@const look = shown(valueLook(value, observations, value.ref))}
             {#if look.kind === 'state'}<StateWord {look} label={underTitle(value.label, view.title)} />{:else}<Readout {look} label={underTitle(value.label, view.title)} />{/if}
           {/each}
         </div>
       {:else if section.kind === 'grouped'}
-        <GroupedValues {section} {observations} />
+        <GroupedValues {section} {observations} {frozen} />
       {:else if section.kind === 'trend'}
         {#each section.strips as pens, strip (strip)}
-          <TrendStrip {pens} title={view.title} series={snapshot.series} {observations} {now} horizonMs={section.horizonMs} rows={Math.max(3, pens.length)} axis={strip === section.strips.length - 1} />
+          <TrendStrip {pens} title={view.title} series={snapshot.series} {observations} {now} horizonMs={section.horizonMs} rows={Math.max(3, pens.length)} axis={strip === section.strips.length - 1} {frozen} />
         {/each}
       {:else if section.kind === 'alerts'}
         <AlertsSection rows={latest?.alerts ?? []} {section} room={rows ?? section.rows} />
@@ -96,7 +99,7 @@
         <div class="values">
           {#each section.slots as slot (slot.key)}
             <!-- Core slots and telemetry carry no observation priority: they read neutral. -->
-            {@const look = slotLook(slot, latest?.slots[section.objectId]?.[slot.key])}
+            {@const look = shown(slotLook(slot, latest?.slots[section.objectId]?.[slot.key]))}
             {#if look.kind === 'state'}<StateWord {look} label={underTitle(slot.label, view.title)} />{:else}<Readout {look} label={underTitle(slot.label, view.title)} />{/if}
           {/each}
         </div>
@@ -151,6 +154,8 @@
   .section { overflow: hidden; }
   /* A block of values reads label beside value: never stretched across a wide frame (U-06). */
   .values { max-width: 480px; }
+  /* Alerts and tables of a frozen display: OpenBridge's low-integrity colours around what they last showed, a little outside it so no word moves. */
+  .section.frozen { background: var(--alert-low-integrity-background-color); box-shadow: 0 0 0 4px var(--alert-low-integrity-background-color), 0 0 0 5px var(--alert-low-integrity-border-color); }
   .beside { display: flex; gap: 16px; align-items: flex-start; }
   .drawing { flex: none; }
   .column { flex: 0 0 360px; min-width: 0; }

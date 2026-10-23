@@ -29,7 +29,8 @@
   // the Run is gone or not loaded, or its samples fail), with the Run's
   // time, and what it is: generated from the model or AI-composed, never an
   // operating display (provenanceMark), in the window, inline in chat and in
-  // a procedure tag's dialog alike.
+  // a procedure tag's dialog alike. Frozen, its values, trends and alerts read
+  // in the low-integrity style and assistive technology is told.
   let { envelope }: { envelope: EmbeddedViewEnvelope } = $props()
 
   let snapshot = $state.raw<VignetteSnapshot>({ phase: 'connecting', series: new Map(), sampleError: null })
@@ -59,8 +60,9 @@
     })
     const stopOpening = embeddedDisplayFrame().subscribeOpening(where => { opening = where })
     session.start()
-    // Staleness is judged on the wall clock, so it shows even while no sample arrives.
-    const tick = setInterval(() => { wallNow = Date.now() }, 1_000)
+    // Staleness is judged on the wall clock, so it shows even while no sample arrives: a quarter-second tick freezes
+    // the display within 5.25 s of its last sample (W8.1), not up to a second later.
+    const tick = setInterval(() => { wallNow = Date.now() }, 250)
     // The embedding page's theme choice changes the palette live (main.ts).
     const theme = new MutationObserver(() => { palette = readPalette() })
     theme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-obc-theme'] })
@@ -110,9 +112,9 @@
       <!-- The worst it shows, then the object's own states (an operating mode first), right-aligned; they wrap, never cut. -->
       <div class="states" role="list" aria-label="States">
         {#if worst?.kind === 'priority'}
-          <span role="listitem" class={`chip ${toneOf(worst.priority)}`}>{severityTable[worst.priority].word}</span>
+          <span role="listitem" class={['chip', toneOf(worst.priority), { doubtful: frozen }]}>{severityTable[worst.priority].word}</span>
         {:else if worst?.kind === 'undeclared'}
-          <span role="listitem" class="chip neutral">{severityStyle(null, worst.severity)!.word}</span>
+          <span role="listitem" class={['chip neutral', { doubtful: frozen }]}>{severityStyle(null, worst.severity)!.word}</span>
         {/if}
         {#each chips as chip (chip.ref)}
           <StateChip look={stateChipLook(chip, latest?.observations.find(observation => observation.ref === chip.ref), view?.title ?? envelope.title, frozen)} open={opener(chip)} />
@@ -139,6 +141,8 @@
     {#if footer.why !== undefined}<span class="why">{footer.why}</span>{/if}
     <span class="mark">{provenanceMark(view)}</span>
   </footer>
+  <!-- Said once when the display freezes and once when it is live again: what is drawn has stopped following the Run. -->
+  <p class="announce" role="status">{frozen ? `Display frozen${footer.why === undefined ? '' : `: ${footer.why}`}. Values, trends and alerts are the last received${latest === undefined ? '' : `, at ${clockText(latest.at.at)}`}.` : ''}</p>
 </article>
 
 <style>
@@ -156,6 +160,8 @@
   .chip.warning { background: var(--display-warning-fill); color: var(--display-on-warning); border-color: var(--alert-warning-color); }
   .chip.alarm { background: var(--display-alarm-fill); color: var(--display-on-alarm); border-color: var(--alert-alarm-color); }
   .chip.critical { background: var(--display-critical-fill); color: var(--display-on-critical); border-color: var(--alert-critical-color); }
+  /* Frozen: the worst it last showed, in OpenBridge's low-integrity colours. */
+  .chip.doubtful { background: var(--alert-low-integrity-background-color); color: var(--element-active-color); border-color: var(--alert-low-integrity-border-color); }
   .status { margin: 0; padding: 4px 0; color: var(--element-neutral-color); }
   footer { font-size: 12px; color: var(--element-neutral-color); font-variant-numeric: tabular-nums; }
   .clock { font-weight: 700; letter-spacing: 0.04em; color: var(--element-active-color); }
@@ -163,4 +169,6 @@
   /* Where the row is short, the reason a sample froze gives way before the mark does. */
   .why { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .mark { flex: 0 1 auto; min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; }
+  /* Read by assistive technology, not shown. */
+  .announce { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 </style>

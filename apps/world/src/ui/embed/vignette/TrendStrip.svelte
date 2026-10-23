@@ -10,8 +10,9 @@
   // time before the record starts hatched; the limits all of them share;
   // beside it a legend row per pen with its value now, never wider than a
   // block of values (U-06). The last strip of a trend carries the time axis on
-  // the row below it.
-  let { pens, title, series, observations, now, horizonMs, rows, axis }: {
+  // the row below it. Frozen, its plot and its values now read in OpenBridge's
+  // low-integrity colours: they no longer follow the Run.
+  let { pens, title, series, observations, now, horizonMs, rows, axis, frozen }: {
     pens: ReadonlyArray<VignetteValue>
     /** The vignette's title: a pen's name drops the object it names. */
     title: string
@@ -22,6 +23,7 @@
     /** The plot's rows (at least one per pen); the axis takes one more. */
     rows: number
     axis: boolean
+    frozen: boolean
   } = $props()
 
   const id = $props.id()
@@ -38,7 +40,7 @@
   })
 </script>
 
-<div class="strip" style:--plot-rows={rows}>
+<div class="strip" class:frozen style:--plot-rows={rows}>
   <div class="plot" bind:clientWidth={width} bind:clientHeight={height}>
     {#if drawing === null}
       <p class="empty">No recorded values in this window yet</p>
@@ -99,6 +101,9 @@
   .name { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--element-neutral-color); }
   .now { flex: none; font-variant-numeric: tabular-nums; }
   .now.caution, .now.warning, .now.alarm, .now.critical { font-weight: 700; color: var(--display-alert-text); }
+  .frozen .plot { border-color: var(--alert-low-integrity-border-color); background: var(--alert-low-integrity-background-color); }
+  .frozen .tick { stroke: var(--alert-low-integrity-background-color); }
+  .frozen .now { padding: 0 3px; border-radius: 3px; outline: 1px solid var(--alert-low-integrity-border-color); background: var(--alert-low-integrity-background-color); }
   .axis { position: relative; height: var(--row); color: var(--element-neutral-color); font-size: 12px; }
   .axis span { position: absolute; top: 4px; white-space: nowrap; }
 </style>
