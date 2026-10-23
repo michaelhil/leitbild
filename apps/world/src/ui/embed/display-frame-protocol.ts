@@ -93,6 +93,20 @@ export interface DisplayFrameFill {
   readonly fill: boolean
 }
 
+/**
+ * Window -> frame: select this element where the display draws it, once (an alarm strip's group row opens its unit's
+ * display with its first-out selected, W2.8): its item outlined and its faceplate open.
+ */
+export interface DisplayFrameSelect {
+  readonly type: 'world:display-select'
+  readonly objectId: string
+  readonly elementId: string
+}
+
+export const parseDisplayFrameSelect = (value: unknown): DisplayFrameSelect | null =>
+  isRecord(value) && value.type === 'world:display-select' && hasKeys(value, ['type', 'objectId', 'elementId']) && text(value.objectId, 200) && text(value.elementId, 200)
+    ? { type: 'world:display-select', objectId: value.objectId, elementId: value.elementId } : null
+
 export type DisplayFrameMessage = DisplayFrameReady | DisplayFrameExtent | DisplayFrameZoomRequest | DisplayFrameOpen | DisplayFrameMap | DisplayFrameBack | DisplayFrameFill
 
 /** The longest state and title an open request carries (a detail's state is far shorter). */

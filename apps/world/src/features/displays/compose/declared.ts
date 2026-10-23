@@ -18,6 +18,8 @@ export interface Declared {
   readonly observable: Observable
   readonly object: OperationalObject
   readonly element?: VignetteElement
+  /** Its object declares what its instruments measure: a value only its simulator computes is no reading there. */
+  readonly measured?: true
 }
 
 /** Two names alike once folded: case, marks, æ/ø/å and punctuation aside. */
@@ -54,12 +56,13 @@ export const declaredRefs = async (run: SearchRun, refs: ReadonlyArray<string>):
     const object = visibleObject(run, objectId)
     const base = await declarationOf(run, objectId)
     if (object === undefined || base === null) continue
+    const measured = measuredOf(base)
     const add = (declaration: ObservationDeclaration): void => {
       const index = indexOf(declaration)
       const hits = [...asking].flatMap(ref => (found.has(ref) ? [] : index.get(ref) ?? [])).sort((left, right) => left.at - right.at)
       for (const { observable } of hits) {
         const element = elementOf(declaration, observable.element) ?? elementOf(base, observable.element)
-        found.set(observable.ref, { observable, object, ...(element === undefined ? {} : { element }) })
+        found.set(observable.ref, { observable, object, ...(element === undefined ? {} : { element }), ...(measured ? { measured: true } : {}) })
       }
     }
     add(base)
@@ -73,8 +76,13 @@ export const declaredRefs = async (run: SearchRun, refs: ReadonlyArray<string>):
   return found
 }
 
+// Whether each declaration names an instrument reading, found once per declaration.
+const measuring = new WeakMap<ObservationDeclaration, boolean>()
+const measuredOf = (declaration: ObservationDeclaration): boolean => measuring.get(declaration)
+  ?? measuring.set(declaration, declaration.observables.some(observable => observable.basis === 'instrument')).get(declaration)!
+
 /** A declared observable as a vignette names it (R25). */
-export const valueOf = ({ observable, object, element }: Declared): VignetteValue => ({
+export const valueOf = ({ observable, object, element, measured }: Declared): VignetteValue => ({
   ref: observable.ref, label: `${object.label} · ${observable.label}`.slice(0, 80), quantity: observable.quantity, unit: observable.unit,
   valueType: observable.valueType, thresholds: observable.thresholds, series: observable.series,
   ...(observable.states === undefined ? {} : { states: observable.states }), ...(observable.decades === true ? { decades: true } : {}),
@@ -82,6 +90,9 @@ export const valueOf = ({ observable, object, element }: Declared): VignetteValu
   ...(observable.shortLabel === undefined ? {} : { shortLabel: observable.shortLabel }),
   ...(observable.decidingElement === undefined ? {} : { decidingElement: observable.decidingElement }),
   ...(observable.basis === undefined ? {} : { basis: observable.basis }), ...(element === undefined ? {} : { element: named(element) }),
+  ...(observable.invalidWhile === undefined ? {} : { invalidWhile: observable.invalidWhile }), ...(observable.span === undefined ? {} : { span: observable.span }),
+  ...(observable.wider === undefined ? {} : { wider: observable.wider }), ...(observable.travel === undefined ? {} : { travel: observable.travel }),
+  ...(measured === true && observable.basis === 'model' ? { simulated: true } : {}),
 })
 /** An element as a value names it: what it leads with stays in its declaration. */
 const named = ({ id, class: kind, label, shortLabel, group, parent }: VignetteElement): VignetteElement =>

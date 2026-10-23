@@ -40,6 +40,8 @@ export interface AlertRow {
   readonly category?: { readonly id: string; readonly label: string; readonly order: number }
   /** On one of its object's own states (a safety function's status, its mode): a challenge to the object as a whole. */
   readonly ownState?: true
+  /** Unacknowledged and its Pack lets a person acknowledge it: the command that does (W2.7). */
+  readonly acknowledge?: { readonly capabilityId: string; readonly input: Readonly<Record<string, string | number | boolean>> }
 }
 
 export type AlertObject = Pick<OperationalObject, 'id' | 'packId' | 'lifecycle' | 'alerts'>
@@ -86,6 +88,9 @@ export const simulationMs = (row: AlertRow): number | null => row.raised?.clock 
 
 /** Standing alarms and advisories never ask for attention (R43): they never count as unacknowledged nor hold a row. */
 export const asksAttention = (row: AlertRow): boolean => row.alert.standing !== true && row.alert.advisory !== true
+
+/** Whether a row is unacknowledged and asks for attention: standing alarms and advisories never count as unacknowledged (R43). */
+export const unacknowledged = (row: AlertRow): boolean => row.state !== 'active-ack' && asksAttention(row)
 
 /** Worst first (R12): what asks no attention last, then by priority, then the latest raised, unknown times after known ones. */
 export const worstFirst = (left: AlertRow, right: AlertRow): number =>

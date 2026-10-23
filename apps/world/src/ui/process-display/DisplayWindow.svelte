@@ -406,6 +406,8 @@
   // A display that opened another from inside its frame, or stepped Back, had the keys: the one shown now takes them,
   // so its Esc steps Back in turn (DisplayFrame focuses its frame once its page listens).
   let frameFocus = $state.raw<{ readonly key: string; readonly sequence: number } | null>(null)
+  let frameSelect = $state.raw<{ readonly key: string; readonly sequence: number; readonly objectId: string; readonly elementId: string } | null>(null)
+  let selectSequence = 0
   const focusShown = (): void => {
     if (current !== null) frameFocus = { key: current.key, sequence: (frameFocus?.sequence ?? 0) + 1 }
   }
@@ -533,6 +535,9 @@
     const entry = requestedDeckEntry(deck, runId, next.target)
     // A display chat opens that the window does not list (equipment named on an answer's display) returns to what it showed.
     if (entry !== null && entry.source === 'answer' && !entry.listed && current !== null) returnTo = openedAfter(returnTo, entry, current)
+    // An alarm strip's group row asks its unit's display to select its first-out (W2.8); any other request asks none.
+    frameSelect = entry !== null && next.target.kind === 'asset' && next.target.select !== undefined
+      ? { key: entry.key, sequence: ++selectSequence, objectId: next.target.objectId, elementId: next.target.select } : null
     if (entry !== null) showEntry(entry)
     else {
       notice = 'That asset is not in this Run.'
@@ -1004,6 +1009,7 @@
           onProblem={frameProblem}
           back={returnTo.get(mounted.entry.key)?.title ?? null}
           focus={frameFocus?.key === mounted.entry.key ? frameFocus.sequence : 0}
+          select={frameSelect?.key === mounted.entry.key ? frameSelect : null}
           handles={maximised ? 0 : RESIZE_HANDLE_REACH}
           fill={filling.has(mounted.entry.key)}
           onFill={frameFill}

@@ -15,11 +15,12 @@ import { bundledDevices, declarationOf, declaredRefs, valueOf, visibleObject, ty
 import { ownStates, planLead, readLeads, tableRows, type LeadPlan } from './defaults.ts'
 import {
   ENTITY_COLUMNS, horizonMs, type Collection, type EntityRow, type GroupedSection, type RecordedSeries, type ResolvedView, type SlotDeclaration, type VignetteSample,
-  type VignetteSection, type VignetteState, type VignetteValue, type VignetteView,
+  type VignetteSection, type VignetteState, type VignetteValue, type VignetteView, zoneRows,
 } from './model.ts'
 import { presentedOf } from './present.ts'
+import { stripsOf } from './strips.ts'
 import type { ComposeRun } from './resolve.ts'
-import { bindingRefs, drawingOf, scopeWithin, topologyOf, topologySection } from './topology.ts'
+import { bindingRefs, drawingOf, scopeWithin, topologyOf, topologySection, tracedRefs } from './topology.ts'
 
 /** A Run's record of one series between two instants and up to its hold before them (the value held into `from`), Run time ascending, with that hold. */
 export type SeriesPort = (seriesId: string, from: string, to: string) => RecordedSeries
@@ -65,6 +66,18 @@ const bindingsOf = async (run: ComposeRun, state: VignetteState): Promise<Readon
   return binding
 }
 
+/** The readings a state's drawings trace with their items (W6.6). */
+const tracesOf = async (run: ComposeRun, state: VignetteState): Promise<ReadonlyArray<string>> => {
+  const traced: string[] = []
+  for (const view of state.views) {
+    if (view.kind !== 'topology') continue
+    const graph = await topologyOf(run, view.objectId)
+    const scoped = graph === null ? null : scopeWithin(graph, view.request)
+    if (scoped?.ok === true) traced.push(...tracedRefs(scoped.scoped))
+  }
+  return traced
+}
+
 /**
  * A state read now in one read (R1 perf: a sample asks each object once): what its views name and its drawings bind,
  * and what its lead requests read (an object's lead; an element's values and its stop's commands), so a display
@@ -84,7 +97,7 @@ export const readNow = async (run: ComposeRun, state: VignetteState): Promise<St
   const { observations, led } = await readLeads(run, [...plans.values()], [...readsOf(state).refs, ...bound, ...tabled])
   const leads = new Map([...plans.keys()].map((index, at) => {
     const view = state.views[index] as ValuesView
-    return [index, [...new Set([...view.refs ?? [], ...led[at]!.refs])].slice(0, view.rows - tableRows(tables.get(index)))] as const
+    return [index, [...new Set([...view.refs ?? [], ...led[at]!.refs])].slice(0, view.rows - tableRows(tables.get(index)) - zoneRows(view))] as const
   }))
   const refs = [...new Set([...readsOf(state, leads).refs, ...tabled, ...bound])].filter(ref => visibleObject(run, refObjectId(ref)) !== undefined)
   const values = new Map(observations.map(observation => [observation.ref, observation] as const))
@@ -116,13 +129,6 @@ export const groupValues = (values: ReadonlyArray<VignetteValue>): Extract<Vigne
     lines: elements.map(element => ({ element, values: columns.map(column => cell(element.id, column)[0] ?? null) })),
   }
 }
-
-/** Pens by unit, at most four to a strip. */
-export const stripsOf = (values: ReadonlyArray<VignetteValue>): ReadonlyArray<ReadonlyArray<VignetteValue>> =>
-  [...new Set(values.map(value => value.unit))].flatMap(unit => {
-    const pens = values.filter(value => value.unit === unit)
-    return Array.from({ length: Math.ceil(pens.length / 4) }, (_, at) => pens.slice(at * 4, at * 4 + 4))
-  })
 
 const worstAlert = (object: OperationalObject): AlertRow | undefined => contextOrder({ objects: [object] }, alertRows([object], () => ({ label: object.label, categoryId: '' }))).rows[0]
 const positionAge = (run: ComposeRun, object: OperationalObject): number | undefined =>
@@ -210,7 +216,7 @@ export const compileVignette = async (run: ComposeRun, state: VignetteState): Pr
     if (view.kind === 'values' && leads.has(index)) {
       const table = tables.get(index)
       const devices = view.lead?.element === undefined ? [] : await bundledDevices(run, view.lead.objectId, view.lead.element)
-      sections.push({ kind: 'values', rows: view.rows, values: values(leads.get(index)!), lead: index, ...(table === undefined ? {} : { table: tableSection(view.lead!.element!, table, declared) }), ...(devices.length === 0 ? {} : { devices }) })
+      sections.push({ kind: 'values', rows: view.rows, values: values(leads.get(index)!), lead: index, ...(table === undefined ? {} : { table: tableSection(view.lead!.element!, table, declared) }), ...(devices.length === 0 ? {} : { devices }), ...(view.zones === true ? { zones: true } : {}) })
     }
     else if (view.kind === 'values') sections.push(groupValues(values(view.refs ?? [])) ?? { kind: 'values', rows: view.rows, values: values(view.refs ?? []) })
     else if (view.kind === 'trend') sections.push({ kind: 'trend', rows: view.rows, horizonMs: horizonMs(view.horizon), strips: stripsOf(values(view.refs).filter(value => value.series !== null)).slice(0, 4) })
@@ -229,7 +235,7 @@ export const compileVignette = async (run: ComposeRun, state: VignetteState): Pr
     } else if (view.kind === 'topology') {
       const graph = await topologyOf(run, view.objectId)
       const scoped = graph === null ? null : scopeWithin(graph, view.request)
-      const drawing = scoped?.ok === true ? await drawingOf(scoped.scoped) : null
+      const drawing = scoped?.ok === true ? await drawingOf(run, scoped.scoped) : null
       if (scoped?.ok === true && drawing !== null) {
         const units = await declaredRefs(run, bindingRefs(scoped.scoped))
         sections.push(topologySection(view.objectId, visibleObject(run, view.objectId)!.packId, scoped.scoped, drawing, view.rows, ref => units.get(ref)?.observable))
@@ -286,12 +292,23 @@ export const ALERT_LINES_AT_LEAST = 8
 
 /**
  * Everything a state's views read now, in one read (readNow), each lead request read again (its values now in `leads`,
- * so a display opened before an upset leads as its Pack does after it, within one sample); history (from `fromMs`,
- * Run time) only when asked, on open and after a gap.
+ * so a display opened before an upset leads as its Pack does after it, within one sample); the records its trends and
+ * values rows draw (from `fromMs`, Run time) only when asked: on open, after a gap, and those of `refs` alone for a row
+ * that appeared.
  */
-export const sampleVignette = async (run: ViewRun, state: VignetteState, history?: { readonly fromMs: number }): Promise<VignetteSample> => {
-  const { leads: led, observations } = await readNow(run, state)
+export const sampleVignette = async (run: ViewRun, state: VignetteState, history?: { readonly fromMs: number; readonly refs?: ReadonlyArray<string> | undefined }): Promise<VignetteSample> => {
+  const { leads: led, observations: read } = await readNow(run, state)
   const leadDeclared = led.size === 0 ? new Map<string, Declared>() : await declaredRefs(run, [...led.values()].flat())
+  // A lead row at an end of its span reads its wider range instead (W4.4): read only then, so a sample at rest asks its
+  // Pack once.
+  const value = (ref: string) => read.find(observation => observation.ref === ref)?.value
+  const wider = [...leadDeclared.values()].flatMap(({ observable }) => {
+    const reading = value(observable.ref)
+    const span = observable.span
+    return observable.wider === undefined || span === undefined || typeof reading !== 'number' || (reading > span.min && reading < span.max)
+      || read.some(observation => observation.ref === observable.wider!.ref) ? [] : [observable.wider.ref]
+  })
+  const observations = wider.length === 0 ? read : [...read, ...(await run.port.read({ refs: wider })).observations]
   const leads = Object.fromEntries([...led].map(([index, list]) => [index, list.flatMap(ref => leadDeclared.has(ref) ? [valueOf(leadDeclared.get(ref)!)] : [])] as const))
   const alerts = new Map<string, AlertRow>()
   const entities: Record<number, { rows: ReadonlyArray<EntityRow>; more: number }> = {}
@@ -321,22 +338,38 @@ export const sampleVignette = async (run: ViewRun, state: VignetteState, history
   })
   const at = run.clock === undefined ? { at: new Date().toISOString(), clock: 'wall' as const, paused: false } : { at: run.clock.currentTime, clock: 'simulation' as const, paused: run.clock.paused }
   const series = history === undefined ? undefined : await (async () => {
-    const declared = await declaredRefs(run, state.views.flatMap(view => view.kind === 'trend' ? view.refs : []))
+    // Each trend pen's record and each values row's now (its sparkline, W4.2), each reading a drawing traces (W6.6),
+    // or only those asked for: a row that appeared when its lead changed (W8.5).
+    const traced = await tracesOf(run, state)
+    const drawn = [...state.views.flatMap((view, index) => view.kind === 'trend' ? view.refs : view.kind === 'values' ? led.get(index) ?? view.refs ?? [] : []), ...traced]
+    const declared = await declaredRefs(run, history.refs === undefined ? drawn : drawn.filter(ref => history.refs!.includes(ref)))
     return Object.fromEntries([...declared.values()].flatMap(entry => entry.observable.series === null ? []
       : [[entry.observable.series.seriesId, run.series(entry.observable.series.seriesId, new Date(history.fromMs).toISOString(), at.at)] as const]))
   })()
-  return { at, observations, alerts: await annunciate(run, [...alerts.values()], at), entities, slots, maps, ...(series === undefined ? {} : { series }), ...(led.size === 0 ? {} : { leads }) }
+  const shown = state.views.flatMap(view => view.kind === 'alerts' && view.objectIds !== 'run' ? view.objectIds : view.kind === 'topology' ? [view.objectId] : [])
+  const annunciated = await annunciate(run, [...alerts.values()], at, shown)
+  return {
+    at, observations, alerts: annunciated.rows, ...(annunciated.categories === undefined ? {} : { categories: annunciated.categories }), entities, slots, maps,
+    ...(series === undefined ? {} : { series }), ...(led.size === 0 ? {} : { leads }),
+  }
 }
 
-/** Alert rows as their Packs annunciate them now (annunciated.ts): from each object's declaration, read once per request. */
-const annunciate = async (run: ComposeRun, rows: ReadonlyArray<AlertRow>, at: VignetteSample['at']): Promise<ReadonlyArray<AlertRow>> => {
-  const objectIds = [...new Set(rows.map(row => row.objectId))]
-  const declared = new Map(await Promise.all(objectIds.map(async id => [id, { annunciation: (await declarationOf(run, id))?.annunciation, own: new Set(await ownStates(run, id)) }] as const)))
+/**
+ * Alert rows as their Packs annunciate them now (annunciated.ts), and the categories the Packs of the `shown` objects
+ * declare (their tiles): from each object's declaration, read once per request.
+ */
+const annunciate = async (run: ComposeRun, rows: ReadonlyArray<AlertRow>, at: VignetteSample['at'], shown: ReadonlyArray<string>): Promise<{ readonly rows: ReadonlyArray<AlertRow>; readonly categories?: VignetteSample['categories'] }> => {
+  const objectIds = [...new Set([...rows.map(row => row.objectId), ...shown])].filter(id => visibleObject(run, id) !== undefined)
+  const declared = new Map(await Promise.all(objectIds.map(async id => [id, { annunciation: (await declarationOf(run, id))?.annunciation, own: new Set(await ownStates(run, id as ObjectId)) }] as const)))
   const objectRows = new Map<string, ReadonlyArray<AlertRow>>()
-  return annunciatedRows(rows, {
-    annunciation: id => declared.get(id as ObjectId)?.annunciation,
-    objectRows: id => objectRows.get(id) ?? objectRows.set(id, alertsOf(run, { kind: 'alerts', objectIds: [id as ObjectId], rows: 1 })).get(id)!,
-    ownStates: id => declared.get(id as ObjectId)?.own ?? new Set(),
-    nowMs: at.clock === 'simulation' ? Date.parse(at.at) : null,
-  })
+  const categories = Object.fromEntries(shown.flatMap(id => (declared.get(id)?.annunciation?.categories.length ?? 0) > 0 ? [[id, declared.get(id)!.annunciation!.categories] as const] : []))
+  return {
+    rows: annunciatedRows(rows, {
+      annunciation: id => declared.get(id)?.annunciation,
+      objectRows: id => objectRows.get(id) ?? objectRows.set(id, alertsOf(run, { kind: 'alerts', objectIds: [id as ObjectId], rows: 1 })).get(id)!,
+      ownStates: id => declared.get(id)?.own ?? new Set(),
+      nowMs: at.clock === 'simulation' ? Date.parse(at.at) : null,
+    }),
+    ...(Object.keys(categories).length === 0 ? {} : { categories }),
+  }
 }

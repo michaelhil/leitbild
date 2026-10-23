@@ -13,7 +13,7 @@ import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-res
 import { createSimulationRunRegistry, type SimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
 import { composeDefault, composeVignette } from '../src/features/displays/compose/compose.ts'
-import type { VignetteSection, VignetteView } from '../src/features/displays/compose/model.ts'
+import { zoneRows, type VignetteSection, type VignetteView } from '../src/features/displays/compose/model.ts'
 import { compileVignette, sampleVignette, type ViewRun } from '../src/features/displays/compose/view.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { builtinScenarioDefinitions } from '../src/scenarios/definitions.ts'
@@ -74,7 +74,7 @@ describe('criterion rows and the loop table (W1.4)', () => {
   test('at power: no criterion applies, so none takes a row; the core shows its four loops as one table and reserves the rows its criteria may take', async () => {
     const core = await detail(`${plantId}#core`)
     expect(criteria(core.rows)).toEqual([])
-    expect(core.state.views[0]).toMatchObject({ kind: 'values', lead: { objectId: plantId, element: 'core' }, table: true, rows: 8 + 2 + 5 })
+    expect(core.state.views[0]).toMatchObject({ kind: 'values', lead: { objectId: plantId, element: 'core' }, table: true, rows: 8 + 2 + 5 + zoneRows({ zones: true }) })
     const table = tableOf(core.view)!
     expect(table.quantities).toEqual([{ label: 'Thot', unit: 'degC' }, { label: 'Tcold', unit: 'degC' }, { label: 'ΔT', unit: 'degC' }, { label: 'Flow', unit: 'kg/s' }])
     expect(table.lines.map(line => line.element.label)).toEqual(['A', 'B', 'C', 'D'])
@@ -97,7 +97,7 @@ describe('criterion rows and the loop table (W1.4)', () => {
     expect(criteria(core.rows)).toEqual(['Reactor trip 4/4', 'Natural circulation 2/5 · not yet met: SG pressures, hot legs, core exit'])
     expect(core.rows.find(row => row.ref === 'csf.subcriticality.checks')!.look.fill).toBe('filled')
     expect(core.rows.find(row => row.ref === 'csf.core-cooling.checks')!.look).toMatchObject({ fill: 'hollow', tone: null })
-    expect(core.values.rows).toBe(15)
+    expect(core.values.rows).toBe(15 + zoneRows({ zones: true }))
     expect(tableOf(core.view)!.lines).toHaveLength(4)
     const sg = await detail(`${plantId}#sgA`)
     expect(sg.rows[0]!.ref).toBe('csf.heat-sink.checks')

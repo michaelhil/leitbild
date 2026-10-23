@@ -1,4 +1,4 @@
-import { asksAttention, groupKey, priorityRank, simulationMs, type AlertRow } from './rows.ts'
+import { asksAttention, priorityRank, simulationMs, unacknowledged, type AlertRow } from './rows.ts'
 
 // An alert list as an operator reads it (plan v5 W2.4–W2.6), over the rows a
 // sample carries, generic for every Pack: first the first-outs, in the order
@@ -41,14 +41,15 @@ export type ListLine =
   /** What several rows fold into: those expected after one first-out, or the standing and advisory ones. */
   | { readonly kind: 'aggregate'; readonly key: string; readonly part: 'expected' | 'quiet'; readonly label: string; readonly rows: ReadonlyArray<AlertRow>; readonly open: boolean }
 
-/** A list's lines in order, each aggregate whose key is in `open` followed by its rows. */
-export const listLines = (rows: ReadonlyArray<AlertRow>, open: ReadonlySet<string>): ReadonlyArray<ListLine> => {
+/** A list's lines in order, each aggregate whose key is in `open` (every one: 'all') followed by its rows. */
+export const listLines = (rows: ReadonlyArray<AlertRow>, open: ReadonlySet<string> | 'all'): ReadonlyArray<ListLine> => {
   const sorted = [...rows].sort(listOrder)
   const lines: ListLine[] = sorted.filter(row => listPart(row) !== 'expected' && listPart(row) !== 'quiet').map(row => ({ kind: 'row', row, part: listPart(row) }))
   const fold = (key: string, part: 'expected' | 'quiet', label: string, members: ReadonlyArray<AlertRow>): void => {
     if (members.length === 0) return
-    lines.push({ kind: 'aggregate', key, part, label, rows: members, open: open.has(key) })
-    if (open.has(key)) lines.push(...members.map(row => ({ kind: 'row' as const, row, part })))
+    const opened = open === 'all' || open.has(key)
+    lines.push({ kind: 'aggregate', key, part, label, rows: members, open: opened })
+    if (opened) lines.push(...members.map(row => ({ kind: 'row' as const, row, part })))
   }
   // One line per first-out, in the order their first expected alerts came in.
   const expected = sorted.filter(row => listPart(row) === 'expected')
@@ -67,32 +68,40 @@ export const listLines = (rows: ReadonlyArray<AlertRow>, open: ReadonlySet<strin
 /** The rows a line stands for: a row itself, an aggregate those it folds (shown under it when open). */
 const rowsOf = (line: ListLine): ReadonlyArray<AlertRow> => line.kind === 'row' ? [line.row] : line.open ? [] : line.rows
 
+/** The fewest rows a list shows before its aggregates where its counts already say what they fold (plan v5 §5.5: three). */
+export const ROWS_BEFORE_AGGREGATES = 3
+
 /**
- * The lines that fit `room` grid rows, each costing what `cost` says (a row written on two lines costs two). Where
- * they do not all fit, a row says how many more there are ("+N more"), and the aggregates that end the list keep
- * their lines (`pinned`, shown after it), as they say what most of the list is; an opened one keeps the rows it
- * opened to as far as half the room, or what the rows before it leave. `hidden`: the alerts not shown.
+ * The lines that fit `room` grid rows, one each. Where they do not all fit, a row says how many more there are ("+N
+ * more"), and the aggregates that end the list keep their lines (`pinned`, shown after it), as they say what most of
+ * the list is; an opened one keeps the rows it opened to as far as half the room, or what the rows before it leave.
+ * Where the list's counts say what the aggregates fold (`counted`: "15 expected" heads it) and keeping them would leave
+ * fewer than ROWS_BEFORE_AGGREGATES rows, they give way to rows, and "+N more" counts only the rows before them.
+ * `hidden`: the alerts not shown, the counted ones aside.
  */
-export const fitLines = (lines: ReadonlyArray<ListLine>, room: number, cost: (line: ListLine) => number): {
+export const fitLines = (lines: ReadonlyArray<ListLine>, room: number, counted = false): {
   readonly shown: ReadonlyArray<ListLine>; readonly pinned: ReadonlyArray<ListLine>; readonly hidden: ReadonlyArray<AlertRow>
 } => {
-  const sum = (part: ReadonlyArray<ListLine>): number => part.reduce((total, line) => total + cost(line), 0)
-  if (sum(lines) <= room) return { shown: lines, pinned: [], hidden: [] }
+  if (lines.length <= room) return { shown: lines, pinned: [], hidden: [] }
+  const tail = lines.findIndex(line => line.kind === 'aggregate')
+  if (counted && tail > 0 && room - 1 - lines.slice(tail).filter(line => line.kind === 'aggregate').length < ROWS_BEFORE_AGGREGATES) {
+    const head = lines.slice(0, tail)
+    const shown = head.length <= room ? head : head.slice(0, Math.max(1, room - 1))
+    return { shown, pinned: [], hidden: head.slice(shown.length).flatMap(rowsOf) }
+  }
+  return fitWithAggregates(lines, room)
+}
+
+const fitWithAggregates = (lines: ReadonlyArray<ListLine>, room: number): ReturnType<typeof fitLines> => {
   const tail = lines.findIndex(line => line.kind === 'aggregate')
   const [head, end] = tail < 0 ? [lines, []] : [lines.slice(0, tail), lines.slice(tail)]
   const budget = room - 1
   // The aggregate lines first, then the rows an opened one shows, in order, within the tail's room.
-  const kept = new Set<ListLine>()
-  let used = 0
-  for (const line of end.filter(entry => entry.kind === 'aggregate')) if (used + cost(line) <= budget) { kept.add(line); used += cost(line) }
-  const tailRoom = Math.max(used, budget - sum(head), Math.floor(budget / 2))
-  for (const line of end.filter(entry => entry.kind === 'row')) if (used + cost(line) <= tailRoom) { kept.add(line); used += cost(line) } else break
-  const shown: ListLine[] = []
-  for (const line of head) {
-    if (used + cost(line) > budget) break
-    shown.push(line)
-    used += cost(line)
-  }
+  const aggregates = end.filter(entry => entry.kind === 'aggregate').slice(0, Math.max(0, budget))
+  const tailRoom = Math.max(aggregates.length, budget - head.length, Math.floor(budget / 2))
+  const opened = end.filter(entry => entry.kind === 'row').slice(0, Math.max(0, tailRoom - aggregates.length))
+  const kept = new Set<ListLine>([...aggregates, ...opened])
+  const shown = head.slice(0, Math.max(0, budget - kept.size))
   const pinned = end.filter(line => kept.has(line))
   return { shown, pinned, hidden: [...head.slice(shown.length), ...end.filter(line => !kept.has(line))].flatMap(rowsOf) }
 }
@@ -143,20 +152,5 @@ export type ListFilter = (typeof LIST_FILTERS)[number]['value']
 export const passes = (filter: ListFilter, row: AlertRow): boolean =>
   filter === 'all' ? true
     : filter === 'active' ? row.state !== 'returned-unack'
-      : filter === 'unacknowledged' ? row.state !== 'active-ack' && asksAttention(row)
+      : filter === 'unacknowledged' ? unacknowledged(row)
         : row.alert.standing === true || row.alert.advisory === true
-
-/**
- * The full list's groups: by category where its Pack declares one, in the declared order, else by object (and subject
- * group) in the order they come; each group's rows in list order.
- */
-export const categoryGroups = (rows: ReadonlyArray<AlertRow>): ReadonlyArray<{ readonly key: string; readonly label: string; readonly rows: ReadonlyArray<AlertRow> }> => {
-  const groups = new Map<string, { key: string; label: string; order: number; rows: AlertRow[] }>()
-  for (const [at, row] of rows.entries()) {
-    const key = row.category === undefined ? `object:${groupKey(row)}` : `category:${row.category.id}`
-    const group = groups.get(key) ?? { key, label: row.category?.label ?? row.objectLabel, order: row.category === undefined ? 1_000 + at : row.category.order, rows: [] }
-    group.rows.push(row)
-    groups.set(key, group)
-  }
-  return [...groups.values()].sort((left, right) => left.order - right.order).map(group => ({ key: group.key, label: group.label, rows: [...group.rows].sort(listOrder) }))
-}

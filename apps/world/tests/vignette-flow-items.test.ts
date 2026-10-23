@@ -28,7 +28,7 @@ const declared = new Map(declaration.observables.map(observable => [observable.r
 const elements = new Set(declaration.elements.map(element => element.id))
 const sectionOf = (request: TopologyRequest | 'overview'): Topology => {
   const scoped = request === 'overview' ? overviewOf(graph)! : (() => { const result = scopeWithin(graph, request); if (!result.ok) throw new Error(result.reason); return result.scoped })()
-  return topologySection(objectId, 'process-plant', scoped, flowLayout(scoped, FLOW_ROOM)!, 38, ref => declared.get(ref)) as Topology
+  return topologySection(objectId, 'process-plant', scoped, flowLayout(scoped, FLOW_ROOM, ref => declared.get(ref))!, 38, ref => declared.get(ref)) as Topology
 }
 const at = '2026-10-22T12:00:00.000Z'
 const row = (element: string, priority: 'alarm' | 'warning', expected: boolean): AlertRow => ({
@@ -59,7 +59,8 @@ describe('what a press on a drawn item opens (W6.1)', () => {
     }
     // The overview's stops each open the equipment they name; its groups their members; the bundled PORV its own element.
     const overview = flowDrawing(sectionOf('overview'), [], [], false)
-    expect(overview.texts.find(text => text.lines[0]!.text === 'ACC check valve ×4 +4 more')!.targets.map(target => target.element)).toEqual([
+    // Its loops' stops write "from" on a line over what they name (W6.5).
+    expect(overview.texts.find(text => text.lines.map(line => line.text).join(' ') === 'from ACC check valve ×4 +4 more')!.targets.map(target => target.element)).toEqual([
       'safetyAccumulatorA.checkValve', 'safetyAccumulatorB.checkValve', 'safetyAccumulatorC.checkValve', 'safetyAccumulatorD.checkValve', 'chargingPump', 'chargingPumpB', 'rhrIsolationValve', 'safetyInjectionHeader',
     ])
     expect(overview.texts.find(text => text.lines[0]!.text === 'MFW A/B')!.targets.map(target => target.element)).toEqual(['mainFeedwaterPumpA', 'mainFeedwaterPumpB'])

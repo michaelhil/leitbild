@@ -3,7 +3,8 @@ import type { Observable, Observation } from '../../../core/observation/model.ts
 import type { PackRuntimeRecordedHistory } from '../../../simulation/protocol.ts'
 import type { VariablePath } from '../graph/index.ts'
 import { annunciating, colours, expectedAfterGroup, pendingActions, plantAlarmPriority, priorityOrder } from '../ic/alarm-philosophy.ts'
-import { overviewCandidates, overviewKeyValues, plantNowOf } from '../ic/key-values.ts'
+import { overviewCandidates, overviewKeyValues, plantNowOf, type PlantNow } from '../ic/key-values.ts'
+import { icThresholdsForSignal, type LimitGate } from '../ic/thresholds.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { processPlantSignalQuality } from '../signals.ts'
 import type { ProcessPlantIcSafetyFunction } from '../runtime/index.ts'
@@ -21,7 +22,9 @@ import { readDerived } from './derived.ts'
 // consequence of a first-out (a steam generator's shrink after a reactor
 // trip); since when a discrete value holds, from the Run's record; the time
 // left where a named delay runs down to one of its limits; the limit it is
-// past (`past`). An operated item's state and a safety function's status are
+// past (`past`); the limits that do not act now (`idle`: a rule of other
+// operating modes, or one whose other conditions do not hold), which a trend
+// draws faint. An operated item's state and a safety function's status are
 // read in derived.ts. Reads only: nothing here is journalled.
 
 /** How far back a discrete value's last change is looked for in the Run's record. */
@@ -62,6 +65,30 @@ const limitsOf = (observable: Observable): ReadonlyMap<string, ReadonlyArray<Lim
   return index
 })()
 
+const holds = (value: number, operator: '<' | '<=' | '>' | '>=', limit: number): boolean =>
+  operator === '<' ? value < limit : operator === '<=' ? value <= limit : operator === '>' ? value > limit : value >= limit
+
+/** Whether a limit's other condition holds now: an on/off state as it reads, another value past its own limit, any or all of several. */
+const gateHolds = (gate: LimitGate, read: PlantNow['read']): boolean => {
+  if ('any' in gate) return gate.any.some(child => gateHolds(child, read))
+  if ('all' in gate) return gate.all.every(child => gateHolds(child, read))
+  const value = read(gate.path)
+  return 'on' in gate ? value === gate.on : typeof value === 'number' && holds(value, gate.operator, gate.value)
+}
+
+/** The ids of a value's declared limits that do not act now: those of other operating modes, or whose other conditions do not hold. */
+const idleLimits = (plant: ProcessPlantRuntimeInstance['plant'], declared: Observable, path: string, now: () => PlantNow): ReadonlyArray<string> => {
+  if (declared.thresholds.length === 0) return []
+  // Declared in the order the I&C names them (declarations.ts thresholdsOf).
+  const limits = icThresholdsForSignal(plant, path as VariablePath).thresholds
+  return declared.thresholds.filter((_, at) => {
+    const limit = limits[at]
+    if (limit === undefined || (limit.modeIds === undefined && limit.gates === undefined)) return false
+    const { mode, read } = now()
+    return (limit.modeIds !== undefined && (mode === null || !limit.modeIds.includes(mode))) || !(limit.gates ?? []).every(gate => gateHolds(gate, read))
+  }).map(limit => limit.id)
+}
+
 /** The Plant's values at these paths; null for a path it does not declare. */
 export const readPlant = (context: PlantReadContext, paths: ReadonlyArray<string>): ReadonlyArray<Observation | null> => {
   const { system, recording } = context
@@ -71,6 +98,8 @@ export const readPlant = (context: PlantReadContext, paths: ReadonlyArray<string
   const all = snapshot === undefined ? [] : [...snapshot.alarms, ...snapshot.trips]
   const pending = snapshot === undefined ? [] : pendingActions(plant, snapshot, system.runtime.elapsedMs())
   let judged: ReadonlyArray<SafetyFunctionEvaluation> | undefined
+  let plantNow: PlantNow | undefined
+  const now = (): PlantNow => plantNow ??= plantNowOf(system)
   const safetyFunctions = () => judged ??= evaluateSafetyFunctions(plant, system.runtime)
   // A criterion judges its own function only (a detail's sample reads no status of the others).
   const one = new Map<string, SafetyFunctionEvaluation>()
@@ -106,6 +135,7 @@ export const readPlant = (context: PlantReadContext, paths: ReadonlyArray<string
     const due = pending.filter(entry => limits.has(entry.rule.id)).sort((left, right) => left.leftMs - right.leftMs)[0]
     const value = typeof variable.value === 'number' && !Number.isFinite(variable.value) ? null : declared.valueType === 'enum' ? String(variable.value) : variable.value
     const since = declared.series !== null && declared.valueType !== 'number' ? sinceOf(context, declared.series.seriesId, variable.value) : undefined
+    const idle = idleLimits(plant, declared, path, now)
     return {
       ref: declared.ref,
       value,
@@ -116,6 +146,7 @@ export const readPlant = (context: PlantReadContext, paths: ReadonlyArray<string
       ...(expected === undefined ? {} : { expected: { after: expected.after!.label } }),
       ...(since === undefined ? {} : { since }),
       ...(past === undefined ? {} : { past: past.id }),
+      ...(idle.length === 0 ? {} : { idle: [...idle] }),
       ...(due === undefined ? {} : { timeToAct: { threshold: due.rule.id, seconds: due.leftMs / 1_000 } }),
       ...(colouring !== undefined ? { why: colouring.lifecycle.title } : expected !== undefined ? { why: `${expected.lifecycle.title}, expected after ${expected.after!.label}` } : {}),
     }

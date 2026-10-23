@@ -1022,6 +1022,12 @@
     requestDisplayWindow({ kind: 'asset', objectId: object.id }, true)
   }
 
+  /** An alarm strip group's unit display, its first-out selected (W2.8); undefined where the object has none. */
+  const openStripDisplay = (objectId: string): ((elementId: string | undefined) => void) | undefined =>
+    observedAssetObjects.some(asset => asset.id === objectId)
+      ? elementId => requestDisplayWindow({ kind: 'asset', objectId, ...(elementId === undefined ? {} : { select: elementId }) }, true)
+      : undefined
+
   const openDroneControl = (object: OperationalObject): void => {
     if (object.packId !== 'drone') return
     droneControlWindows = [
@@ -2273,7 +2279,7 @@
         </section>
       {/if}
       {#if activePack}
-        <AlertStrip {objects} categoryOf={object => presentationFor(object).categoryId} {theme} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: guidanceOverlayVisible && scenarioState?.guidance ? guidanceBottom : 0 }} />
+        <AlertStrip {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: guidanceOverlayVisible && scenarioState?.guidance ? guidanceBottom : 0 }} />
       {/if}
       <WorldStatusLine {clock} execution={executionState} feedback={commandFeedback.line} />
       {#if runRoles && heldRoleIds}

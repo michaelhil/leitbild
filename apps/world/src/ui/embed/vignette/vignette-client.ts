@@ -3,15 +3,18 @@
 // A values section that holds a lead request takes its values from each
 // sample, in the rows it reserved, so the lead follows its Pack's mode and
 // nothing else in the view moves.
-// The trend history is read with the first sample, and again with the first
-// after a gap (hidden, slow, or the Run reset), so no line is drawn across
-// time it did not see. It never loads a Run: one that is not loaded is asked
-// about again until someone loads it.
+// The records it draws (trend pens, values rows' sparklines: kept-series.ts)
+// are read with the first sample, and again with the first after a gap
+// (hidden, slow, or the Run reset), so no line is drawn across time it did not
+// see; a row that appears when its lead changes has its record read once with
+// the next sample (W8.5); every sample extends them. It never loads a Run: one
+// that is not loaded is asked about again until someone loads it.
 import type { SimulationRunId } from '../../../core/model/index.ts'
 import { withActiveRoleSet } from '../../roles/role-session.ts'
 import { workspaceApiPath } from '../../workspace-context.ts'
-import type { VignetteSample, VignetteView } from '../../../features/displays/compose/model.ts'
-import { appendPoint, type DrawnSeries } from './trend.ts'
+import { zoneRows, type VignetteSample, type VignetteView } from '../../../features/displays/compose/model.ts'
+import { keptAfter, shownSeries, unkept, widestWindow } from './kept-series.ts'
+import type { DrawnSeries } from './trend.ts'
 
 export interface RunPresence {
   readonly loaded: boolean
@@ -23,7 +26,8 @@ export interface VignetteRoutes {
   /** null when the Run no longer exists. Never loads it. */
   readonly presence: (runId: SimulationRunId) => Promise<RunPresence | null>
   readonly view: (runId: SimulationRunId, state: string) => Promise<VignetteView>
-  readonly sample: (runId: SimulationRunId, state: string, history?: { readonly fromMs: number }) => Promise<VignetteSample>
+  /** `history`: each record it draws from `fromMs`, or only those of `refs`. */
+  readonly sample: (runId: SimulationRunId, state: string, history?: { readonly fromMs: number; readonly refs?: ReadonlyArray<string> }) => Promise<VignetteSample>
 }
 
 export type VignettePhase = 'connecting' | 'live' | 'inactive' | 'missing' | 'failed'
@@ -33,7 +37,7 @@ export interface VignetteSnapshot {
   readonly failure?: string
   readonly view?: VignetteView
   readonly latest?: VignetteSample
-  /** Each trend pen's record by ref, within its trend's horizon, with the hold the Historian served it with. */
+  /** Each record it draws by ref (a trend pen's, a values row's), within its window, with the hold the Historian served it with. */
   readonly series: ReadonlyMap<string, DrawnSeries>
   /** The last sample's failure; null once one succeeds again. */
   readonly sampleError: string | null
@@ -72,18 +76,13 @@ export const viewWithLeads = (view: VignetteView, sample: VignetteSample): Vigne
   if (leads === undefined) return view
   let changed = false
   const sections = view.sections.map(section => {
-    const now = section.kind === 'values' && section.lead !== undefined ? leads[section.lead]?.slice(0, section.rows - (section.table?.rows ?? 0)) : undefined
+    const now = section.kind === 'values' && section.lead !== undefined ? leads[section.lead]?.slice(0, section.rows - (section.table?.rows ?? 0) - zoneRows(section)) : undefined
     if (section.kind !== 'values' || now === undefined || (now.length === section.values.length && now.every((value, at) => value.ref === section.values[at]!.ref))) return section
     changed = true
     return { ...section, values: now }
   })
   return changed ? { ...view, sections } : view
 }
-
-/** Every trend pen with its horizon, by ref. */
-const pensOf = (view: VignetteView): ReadonlyArray<{ readonly ref: string; readonly seriesId: string; readonly horizonMs: number }> =>
-  view.sections.flatMap(section => section.kind !== 'trend' ? [] : section.strips.flat().flatMap(pen =>
-    pen.series === null ? [] : [{ ref: pen.ref, seriesId: pen.series.seriesId, horizonMs: section.horizonMs }]))
 
 export const createVignetteSession = (config: {
   readonly runId: SimulationRunId
@@ -124,21 +123,13 @@ export const createVignetteSession = (config: {
     return presence
   }
 
-  const absorb = (view: VignetteView, sample: VignetteSample, withHistory: boolean): void => {
-    const at = Date.parse(sample.at.at)
-    const series = new Map(withHistory ? [] : snapshot.series)
-    for (const pen of pensOf(view)) {
-      // A pen whose record was not served draws nothing: its hold comes with its record, never guessed.
-      const recorded: DrawnSeries | undefined = withHistory ? sample.series?.[pen.seriesId] : series.get(pen.ref)
-      if (recorded === undefined) continue
-      // A reading that is bad or outside its declared validity measures nothing: no point, and the trace breaks there,
-      // its last value held no further than this sample, until it measures again.
-      const observation = sample.observations.find(entry => entry.ref === pen.ref)
-      const value = observation?.quality === 'bad' || observation?.quality === 'not-applicable' ? undefined : observation?.value
-      series.set(pen.ref, typeof value === 'number' ? { holdMs: recorded.holdMs, points: appendPoint(recorded.points, { t: at, v: value }, at - pen.horizonMs) }
-        : { ...recorded, silentFrom: recorded.silentFrom ?? at })
-    }
-    update({ phase: 'live', view: viewWithLeads(view, sample), latest: sample, series, sampleError: null, lastSampleWallMs: wallNow() })
+  /** Refs whose record was asked for once since the last full read: a record the Run could not serve is not asked for again. */
+  let asked = new Set<string>()
+
+  const absorb = (view: VignetteView, sample: VignetteSample, fresh: boolean): void => {
+    const drawn = viewWithLeads(view, sample)
+    const series = keptAfter(snapshot.series, shownSeries(drawn), sample, fresh)
+    update({ phase: 'live', view: drawn, latest: sample, series, sampleError: null, lastSampleWallMs: wallNow() })
   }
 
   const sampleOnce = async (view: VignetteView, known: RunPresence | undefined): Promise<void> => {
@@ -149,17 +140,25 @@ export const createVignetteSession = (config: {
       if (now === null) return
       presence = now
     }
-    const horizon = Math.max(0, ...pensOf(view).map(pen => pen.horizonMs))
-    const withHistory = (historyDue || gap) && horizon > 0 && presence !== undefined
-    const sample = await config.routes.sample(config.runId, config.state, withHistory ? { fromMs: Date.parse(presence!.at) - horizon } : undefined)
+    // The records it draws now (its lead rows as the last sample drew them): all of them on open or after a gap, else
+    // only those not kept yet and not asked for (a row that appeared when its lead changed).
+    const shown = shownSeries(snapshot.view ?? view)
+    const horizon = widestWindow(shown)
+    const whole = (historyDue || gap) && horizon > 0 && presence !== undefined
+    const missing = whole ? [] : unkept(shown, snapshot.series).filter(ref => !asked.has(ref))
+    const at = presence?.at ?? snapshot.latest?.at.at
+    const history = whole ? { fromMs: Date.parse(presence!.at) - horizon } : missing.length > 0 && at !== undefined ? { fromMs: Date.parse(at) - horizon, refs: missing } : undefined
+    const sample = await config.routes.sample(config.runId, config.state, history)
     if (closed) return
     // The Run's time going back is a reset: what was drawn is no longer its history.
     const reset = snapshot.latest !== undefined && Date.parse(sample.at.at) < Date.parse(snapshot.latest.at.at)
     samples += 1
     lastSampleWall = wallNow()
-    if (reset && !withHistory) { historyDue = true; update({ series: new Map() }); return }
+    if (reset && !whole) { historyDue = true; asked = new Set(); update({ series: new Map() }); return }
     historyDue = false
-    absorb(view, sample, withHistory)
+    if (whole) asked = new Set()
+    for (const ref of history?.refs ?? []) asked.add(ref)
+    absorb(view, sample, whole)
   }
 
   const step = async (): Promise<void> => {

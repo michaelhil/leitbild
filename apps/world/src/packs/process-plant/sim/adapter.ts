@@ -568,7 +568,12 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
               ...(payload.data.reason === undefined ? {} : { reason: payload.data.reason }),
               ...(payload.data.shelveDurationMs === undefined ? {} : { shelveDurationMs: payload.data.shelveDurationMs }),
             })
-            emitPackRuntimeEvents(handlers, events)
+            // What a person acknowledged shows at once, the Run paused or playing: its Plant's objects project again now.
+            const projected = processPlantProjectionEvents({
+              objectsById, plants, at: nowIso(), simulationTime: new Date(lastSimulationMs).toISOString() as IsoTimestamp, connectedPlantIds,
+              provenance: { source: 'simulator', adapterId: processPlantSimAdapterId },
+            })
+            emitPackRuntimeEvents(handlers, [...events, ...projected])
             await persistence.saveNow()
             return { ok: true, commandId: command.id, acceptedAt }
           } catch (err) {

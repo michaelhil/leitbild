@@ -3,6 +3,7 @@ import { energyEnds, type CompiledPlantGraph, type ProcessSignalBinding } from '
 import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import { processPlantIcLifecycleIdFor, type ProcessPlantIcCondition, type ProcessPlantIcRule } from '../runtime/index.ts'
 import { resolveProcessPlantSignalBinding } from '../signals.ts'
+import { processPlantIcLifecycleCommandKind } from '../command-kinds.ts'
 import { automaticActions } from '../ic/actuations.ts'
 import { ruleLimits } from '../ic/alarm-philosophy.ts'
 import { icRuleKind, icThresholdsForSignal, UNDECLARED_ACTION } from '../ic/thresholds.ts'
@@ -15,7 +16,7 @@ import { icRuleKind, icThresholdsForSignal, UNDECLARED_ACTION } from '../ic/thre
 //   the turbine), which lead the trip line and which its label opens; a group
 //   that stops none (AFW START starts pumps) is listed as actuated;
 // - its annunciator systems, in declared order, the categories alerts are
-//   listed under;
+//   listed under and a display's tiles, each by its label and short label;
 // - each alarm and trip, by the id of its alert: its tag, as a chip and a
 //   trend line name its limit, its order and what it annunciates does ("LO-LO ·
 //   RX TRIP": the reactor trip safety injection causes is a reactor trip, its
@@ -23,7 +24,8 @@ import { icRuleKind, icThresholdsForSignal, UNDECLARED_ACTION } from '../ic/thre
 //   limit words ("NOT RUN · ALM", "L LO & F LO · ALM", never a bare ALM), or
 //   for a trip with none, what it does; the group it is annunciated in; its
 //   system; and the first-out group whose actuation brings it in as expected,
-//   within how long (expectedAfter).
+//   within how long (expectedAfter);
+// - how a person acknowledges one: the Plant's lifecycle command (D-B1, D-E).
 
 /** LO, LO-LO, LO-3; HI, HI-HI: a limit's direction once per order away from normal. */
 const orderName = (threshold: { readonly direction: 'low' | 'high'; readonly order: number }): string => {
@@ -70,10 +72,26 @@ const discreteWords = (graph: CompiledPlantGraph, binding: ProcessSignalBinding,
           : (value ? flag : `NOT ${flag}`)
 }
 
+/**
+ * Where every condition is an on/off reading and some read the alerted equipment's own state, those alone: what is
+ * wrong with it ("NOT RUN" for a pump commanded to run, its bus live, that does not run), not the command and the
+ * permissives that make it wrong.
+ */
+const ownStateLeaves = (plant: CompiledProcessPlant, condition: ProcessPlantIcCondition, equipment: string | undefined): ReadonlyArray<Extract<ProcessPlantIcCondition, { type: 'comparison' }>> | null => {
+  const all = leaves(condition)
+  if (condition.type !== 'all' || equipment === undefined || all.length < 2 || all.some(leaf => typeof leaf.value !== 'boolean')) return null
+  const own = all.filter(leaf => {
+    const binding = resolveProcessPlantSignalBinding(plant.graph, leaf.signal)
+    const owner = binding.owner.type === 'component' ? plant.graph.components[binding.owner.componentIndex]! : undefined
+    return owner !== undefined && String(owner.id) === equipment && owner.semantics.aspects.some(aspect => aspect.state?.path === binding.path)
+  })
+  return own.length === 0 ? null : own
+}
+
 /** What a rule with no limit on one value watches, as its words name it: "L LO & F LO", "NOT RUN", "DEAD". */
-const watches = (plant: CompiledProcessPlant, rule: ProcessPlantIcRule): string => {
+const watches = (plant: CompiledProcessPlant, rule: ProcessPlantIcRule, equipment: string | undefined): string => {
   const gated = gatedLeaf(rule.condition)
-  const words = [...new Set((gated === null ? leaves(rule.condition) : [gated]).map(leaf => {
+  const words = [...new Set((gated === null ? ownStateLeaves(plant, rule.condition, equipment) ?? leaves(rule.condition) : [gated]).map(leaf => {
     const binding = resolveProcessPlantSignalBinding(plant.graph, leaf.signal)
     if (typeof leaf.value === 'boolean') return discreteWords(plant.graph, binding, leaf.operator === '!=' ? !leaf.value : leaf.value)
     const low = leaf.operator === '<' || leaf.operator === '<='
@@ -113,7 +131,7 @@ export const plantAnnunciation = (plant: CompiledProcessPlant): Annunciation => 
       const annunciator = effect.annunciator
       // What it does is its own group's, not its rule's.
       const action = effect.type === 'alarm.enter' ? 'ALM' : label.get(annunciator?.firstOutGroup ?? '') ?? UNDECLARED_ACTION
-      const tag = threshold !== undefined ? `${orderName(threshold)} · ${action}` : effect.type === 'alarm.enter' ? `${watches(plant, rule)} · ${action}` : action
+      const tag = threshold !== undefined ? `${orderName(threshold)} · ${action}` : effect.type === 'alarm.enter' ? `${watches(plant, rule, annunciator?.equipmentId)} · ${action}` : action
       return [{
         id: processPlantIcLifecycleIdFor(effect.type === 'alarm.enter' ? 'alarm' : 'trip', rule.id, effect.id),
         tag: tag.length <= 48 ? tag : action,
@@ -124,8 +142,10 @@ export const plantAnnunciation = (plant: CompiledProcessPlant): Annunciation => 
     })
   })
   const annunciation: Annunciation = {
+    // A person acknowledges an alarm or a trip through the Plant's lifecycle command, by its lifecycle (the alert's id).
+    acknowledge: { capabilityId: processPlantIcLifecycleCommandKind, input: { action: 'acknowledge' }, objectField: 'plantId', alertField: 'lifecycleId' },
     groups,
-    categories: plant.automation.annunciatorSystems.map(system => ({ id: system.id, label: system.label })),
+    categories: plant.automation.annunciatorSystems.map(system => ({ id: system.id, label: system.label, ...(system.shortLabel === undefined ? {} : { short: system.shortLabel }) })),
     alerts,
   }
   annunciationByPlant.set(plant, annunciation)

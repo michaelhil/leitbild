@@ -13,7 +13,7 @@ import { createSimulationRunRegistry, type SimulationRunRegistry } from '../src/
 import type { SimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
 import { composeDefault } from '../src/features/displays/compose/compose.ts'
 import { leadRefs } from '../src/features/displays/compose/defaults.ts'
-import type { VignetteState, VignetteView } from '../src/features/displays/compose/model.ts'
+import { zoneRows, type VignetteState, type VignetteView } from '../src/features/displays/compose/model.ts'
 import { compileVignette, sampleVignette, type ViewRun } from '../src/features/displays/compose/view.ts'
 import { OBSERVATION_READ_REFS } from '../src/core/observation/capabilities.ts'
 import { requestPort, type ObservationPort } from '../src/features/displays/observation/port.ts'
@@ -75,9 +75,10 @@ describe('a display opened at power and left open through a trip (W0.5)', () => 
     const core = opened[`${plantId}#core`]!
     const turbine = opened[`${plantId}#turbine`]!
     // Each holds a lead request and reserves its rows; no ref is fixed as it opens.
-    expect(unit.state.views[0]).toMatchObject({ kind: 'values', lead: { objectId: plantId }, rows: 8 })
+    // A window default's lead rows stand under a heading, with their margin lines after them (W4.2).
+    expect(unit.state.views[0]).toMatchObject({ kind: 'values', lead: { objectId: plantId }, zones: true, rows: 8 + zoneRows({ zones: true }) })
     // The core reserves a row for each criterion it is judged by (W1.4: the trip, natural circulation) and its loop table's.
-    expect(core.state.views[0]).toMatchObject({ kind: 'values', lead: { objectId: plantId, element: 'core' }, table: true, rows: 8 + 2 + 5 })
+    expect(core.state.views[0]).toMatchObject({ kind: 'values', lead: { objectId: plantId, element: 'core' }, table: true, rows: 8 + 2 + 5 + zoneRows({ zones: true }) })
     expect(turbine.state.views[0]).toMatchObject({ kind: 'values', lead: { objectId: plantId, element: 'turbine' } })
     for (const { state } of Object.values(opened)) expect(state.views[0]?.kind === 'values' && state.views[0].refs).toBeUndefined()
     // At power: the unit leads with reactor power and makes electrical output; the core with its power range.
@@ -111,6 +112,12 @@ describe('a display opened at power and left open through a trip (W0.5)', () => 
     const post = valuesOf(drawn[plantId]!)
     expect(post.slice(0, 3)).toEqual(['vessel.subcoolingMarginC', 'core.coreExitTemperatureC', 'auxFeedwaterHeader.outletFlowKgPerS'])
     expect(post).not.toContain('turbine.electricMw')
+    // Each lead row named as crews say it, never cut (W4.2; OLD process-plant-overview's post-trip heat path, re-expressed):
+    // at power reactor power and the pressurizer's pressure lead; after the trip the heat path.
+    const named = (view: VignetteView) => { const section = view.sections.find(entry => entry.kind === 'values'); return section?.kind === 'values' ? section.values.map(value => value.shortLabel) : [] }
+    expect(named(unit.view).slice(0, 3)).toEqual(['Reactor power', 'PZR pressure', 'Subcooling'])
+    expect(named(drawn[plantId]!).slice(0, 3)).toEqual(['Subcooling', 'CET', 'AFW flow'])
+    expect(named(drawn[plantId]!).every(label => label !== undefined && label.length <= 24)).toBe(true)
     // The core: the trip's checks (W1.4; natural circulation's apply only with no coolant pump running), rods on the
     // bottom, both trip breakers, rod steps, then its flux on the power and intermediate ranges.
     expect(valuesOf(drawn[`${plantId}#core`]!).slice(0, 8)).toEqual([

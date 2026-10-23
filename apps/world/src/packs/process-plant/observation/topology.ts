@@ -200,6 +200,24 @@ const withDevices = (objectId: ObjectId, graph: CompiledPlantGraph, topology: To
 const served = new WeakMap<CompiledProcessPlant, TopologyGraph>()
 
 /**
+ * What a drawing traces over its last ten minutes with an item (W6.6; the old mimic's vessel trends): a tank's or a
+ * heat exchanger's level, and a heat source's own readings outside what its instruments read in turn (a core's exit
+ * temperature); and the program a level is held to (a pressurizer's level program), which the drawing marks on it.
+ */
+const withTraces = (objectId: ObjectId, graph: CompiledPlantGraph, component: CompiledComponent, kind: TopologyGraph['nodes'][number]['class'], bindings: Bindings, turns: Bindings): Bindings => {
+  if (kind === 'store' || kind === 'transfer') {
+    const level = bindings.find(binding => binding.role === 'level')
+    if (level === undefined) return bindings
+    const program = component.semantics.programs.find(entry => `${objectId}#${entry.reading}` === level.ref)?.program
+    const programmed = program !== undefined && graph.signalBindingByPath.get(program)?.published === true ? [{ role: 'program' as const, ref: `${objectId}#${program}` }] : []
+    return [...bindings.map(binding => (binding === level ? { ...binding, trace: true as const } : binding)), ...programmed]
+  }
+  if (kind !== 'source') return bindings
+  const own = bindings.filter(binding => binding.role === 'value' && !turns.some(turn => turn.ref === binding.ref))
+  return own.length === 0 ? bindings : bindings.map(binding => (own.includes(binding) ? { ...binding, trace: true as const } : binding))
+}
+
+/**
  * The topology the Plant serves World: its graph's, with the devices its
  * equipment bundles drawn on their lines; each item that runs, is live, or
  * opens and shuts bound to its state observable (derived.ts) for running or
@@ -231,7 +249,9 @@ export const servedPlantTopology = (objectId: ObjectId, plant: CompiledProcessPl
     const kept = node.bindings.filter(binding => (state === undefined || binding.role !== state.role) && !turns.some(turn => turn.ref === binding.ref))
     // What it inserts (a core's rod banks), each part at the share of its range it stands inserted (1 fully in), in its group.
     const positions = (parts.get(node.id) ?? []).flatMap((group, at) => group.map(path => ({ role: 'position' as const, ref: `${objectId}#${path}`, group: String(at + 1) })))
-    return stated.length === 0 && turns.length === 0 && positions.length === 0 ? node : { ...node, bindings: [...stated, ...turns, ...kept, ...positions] }
+    const bindings = stated.length === 0 && turns.length === 0 && positions.length === 0 ? node.bindings : [...stated, ...turns, ...kept, ...positions]
+    const traced = index === undefined ? bindings : withTraces(objectId, plant.graph, plant.graph.components[index]!, node.class, bindings, turns)
+    return traced === node.bindings ? node : { ...node, bindings: traced }
   }) }
   served.set(plant, bound)
   return bound
