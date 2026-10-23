@@ -62,14 +62,14 @@
     return ticks.filter((_, index) => (ticks.length - 1 - index) % every === 0)
   })
 
-  /** The object every pen names first ("Halden Unit 1 · …"), which the names leave out alike; none where they differ. */
+  /** The object every pen names first ("<object> · …"), which the names leave out alike; none where they differ. */
   const shared = $derived.by(() => {
     const objects = new Set(section.strips.flat().map(pen => (pen.label.includes(' · ') ? pen.label.slice(0, pen.label.indexOf(' · ')) : '')))
     return objects.size === 1 && !objects.has('') ? [...objects][0]! : null
   })
   /**
    * A pen's names, longest first: as the vignette's title leaves it (without the object all pens name), without the
-   * element it closes on ("· PZR → Relief header"), and its short label.
+   * element it closes on (" · <element>"), and its short label.
    */
   const namesOf = (pen: VignetteValue): ReadonlyArray<string> => {
     const under = underTitle(pen.label, title)
