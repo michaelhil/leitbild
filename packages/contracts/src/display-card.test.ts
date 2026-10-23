@@ -17,6 +17,13 @@ describe('display card', () => {
     expect(priorityLevels).toEqual(['none', 'notice', 'caution', 'warning', 'alarm', 'emergency'])
   })
 
+  test('an item may name the object its label begins with, so a reader names the object once', () => {
+    expect(displayCardItemSchema.parse({ ...item, object: 'Unit 2' }).object).toBe('Unit 2')
+    expect(displayCardItemSchema.safeParse({ ...item, label: 'Unit 2', object: 'Unit 2' }).success).toBe(true)
+    expect(displayCardItemSchema.safeParse({ ...item, object: 'Unit 3' }).success).toBe(false)
+    expect(displayCardItemSchema.safeParse({ ...item, object: 'Unit' }).success).toBe(false)
+  })
+
   test('an item stands for an observable, an object or one alert of an object, and nothing else', () => {
     for (const subject of [{ objectId: 'incident-7' }, { objectId: 'grid:halden', alertId: 'alert-3' }]) expect(displayCardItemSchema.safeParse({ ...item, subject }).success).toBe(true)
     for (const subject of [{ eventId: 'e-9', at }, { featureId: 'line-420', attribution: '© OpenStreetMap contributors' }, { lon: 11.3 }, { ref: 'unit-2#A', objectId: 'unit-2' }]) {

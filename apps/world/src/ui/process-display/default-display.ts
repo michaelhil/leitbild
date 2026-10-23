@@ -1,5 +1,6 @@
 import { embeddedViewEnvelopeSchema, type EmbeddedViewEnvelope } from '@leitbild/contracts'
 import type { SimulationRunId } from '../../core/model/index.ts'
+import { withActiveRoleSet } from '../roles/role-session.ts'
 import { workspaceApiPath } from '../workspace-context.ts'
 
 // World's default display of a subject (an asset, `<asset>#<ref>` or
@@ -18,7 +19,7 @@ export interface DefaultDisplayView {
 
 /** World's default display of a subject; a refusal throws with World's words. */
 export const readDefaultDisplay = async (simulationRunId: SimulationRunId, subject: string): Promise<DefaultDisplayView> => {
-  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/displays/default`), {
+  const response = await fetch(withActiveRoleSet(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/displays/default`)), {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ subject }),
   })
   const body = await response.json() as { readonly result?: { readonly view: DefaultDisplayView }; readonly error?: { readonly message?: string } }

@@ -10,6 +10,8 @@ import type { Observation } from '../../../core/observation/model.ts'
 import type { AlertRow } from '../../../features/displays/alerts/rows.ts'
 import type { VignetteElement, VignetteSample, VignetteView, VignetteValue } from '../../../features/displays/compose/model.ts'
 import { underTitle } from './format.ts'
+import type { DrawnSeries } from './trend.ts'
+import { valueRows, type ValueRow } from './value-rows.ts'
 
 /** The most readings and own alerts a faceplate shows (W3.2). */
 export const FACEPLATE_READINGS = 6
@@ -56,6 +58,9 @@ export const FACEPLATES_PER_STATE = 4
 export interface FaceplateReadings {
   readonly values: ReadonlyArray<VignetteValue>
   readonly observations: ReadonlyArray<Observation>
+  /** The records its readings' sparklines draw (the session keeps them, kept-series.ts), and the sample's Run time. */
+  readonly series: ReadonlyMap<string, DrawnSeries>
+  readonly now: number
   /** The devices the element bundles (declared with it as their parent): a host lists them (W3.5). */
   readonly devices: ReadonlyArray<VignetteElement>
 }
@@ -76,14 +81,28 @@ export const faceplateStates = (objectId: string, elements: ReadonlyArray<string
   })
 }
 
-/** Each element's readings from its state's view and latest sample, by element; none before the view is read. */
-export const readingsOf = (elements: ReadonlyArray<string>, view: VignetteView | undefined, sample: VignetteSample | undefined): ReadonlyMap<string, FaceplateReadings> => {
+/** Each element's readings from its state's view, latest sample and kept records, by element; none before the view is read. */
+export const readingsOf = (elements: ReadonlyArray<string>, view: VignetteView | undefined, sample: VignetteSample | undefined, series: ReadonlyMap<string, DrawnSeries> = new Map()): ReadonlyMap<string, FaceplateReadings> => {
   if (view === undefined || sample === undefined) return new Map()
+  const now = sample.at === undefined ? Number.NaN : Date.parse(sample.at.at)
   return new Map(elements.flatMap((element, index) => {
     const section = view.sections[index]
     if (section === undefined || section.kind !== 'values') return []
-    return [[element, { values: hostFirst(section.values, element).slice(0, FACEPLATE_READINGS), observations: sample.observations, devices: section.devices ?? [] }] as const]
+    return [[element, { values: hostFirst(section.values, element).slice(0, FACEPLATE_READINGS), observations: sample.observations, series, now, devices: section.devices ?? [] }] as const]
   }))
+}
+
+/**
+ * A faceplate's reading rows as the column's lead rows read (value-rows.ts, D-C): value and unit aligned, the chip
+ * past a limit, the rate, and the registered 10-min sparkline where the reading has a record. Each is named by its
+ * Pack's short label without its element's own name, else by its label without the display's object and that name.
+ */
+export const faceplateRows = (readings: FaceplateReadings, shown: number, context: { readonly title: string; readonly elementId: string; readonly frozen: boolean }): ReadonlyArray<ValueRow> => {
+  const values = readings.values.slice(0, shown)
+  const element = values.map(value => value.element).find(entry => entry?.id === context.elementId)
+  const title = element === undefined ? context.title : `${context.title} · ${element.label}`
+  return valueRows({ values, observations: readings.observations, series: readings.series, now: readings.now, title, frozen: context.frozen })
+    .map((row, at) => values[at]!.shortLabel === undefined ? { ...row, label: readingLabel(values[at]!, context.title, context.elementId) } : row)
 }
 
 /** A reading's label in its element's faceplate: without the object the display is titled by, nor the element's own name. */

@@ -177,6 +177,8 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
     plantElapsedMs: z.number(),
     proposals: z.array(z.object({
       proposal: processPlantProposalSchema,
+      /** The drawn item's label, as a person reads it there. */
+      label: z.string().min(1),
       review: z.object({
         permitted: z.boolean(),
         refusal: z.string().optional(),

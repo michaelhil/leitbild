@@ -251,3 +251,22 @@ describe('T04a: Pack colour and tone never reach the alert read model, and a gro
     expect(colourCarriers({ key: 'plant:u2', label: 'Unit 2', worst: 'alarm', badge: { background: '#e30019' } })).toEqual(['.badge.background'])
   })
 })
+
+describe('W8.6: the display window\'s status dot follows the rail\'s colour rule', () => {
+  test('the window draws its asset\'s status as the rail row does, from the same presentation', () => {
+    const window = readFileSync(join(src, 'ui/process-display/DisplayWindow.svelte'), 'utf8')
+    const route = readFileSync(join(src, 'ui/routes/ControlSurfaceRoute.svelte'), 'utf8')
+    const row = readFileSync(join(src, 'ui/ObjectRow.svelte'), 'utf8')
+    const section = readFileSync(join(src, 'ui/CategorySection.svelte'), 'utf8')
+    // The rail: each row's StatusIndicator from statusPresentationFor; the window is handed that very function.
+    expect(section).toContain('statusPresentation={entry.status}')
+    expect(route).toContain('status: statusPresentationFor(object),')
+    expect(row).toContain('<StatusIndicator tone={statusPresentation.tone}')
+    expect(route).toContain('statusOf={statusPresentationFor}')
+    expect(window).toContain('const assetStatus = $derived(assetObject === null ? null : statusOf(assetObject))')
+    expect(window).toContain('<StatusIndicator tone={assetStatus.tone} label={`${assetObject.label}: ${assetStatus.label}`} indicator={assetStatus.indicator} />')
+    // Its own priority-to-colour mapping (critical alone red, else green) is gone.
+    expect(window).not.toContain('statusToneColor')
+    expect(window).not.toContain("operational.priority === 'critical'")
+  })
+})

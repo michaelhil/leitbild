@@ -89,6 +89,35 @@ describe('grid observation declarations (N2)', () => {
     expect(Math.max(...labels.map(label => label.length))).toBeLessThanOrEqual(80)
   })
 
+  test('an unnamed substation is named by where it is, in every label built on it (W9.1; UX T6, T10, F29)', () => {
+    const declaration = valid(declareGrid(halden, operations))
+    const ids = declaration.elements.filter(element => element.class !== 'island').map(element => element.id)
+    const labels = [...declaration.elements.map(element => element.label), ...declaration.observables.map(observable => observable.label)]
+    for (let at = 0; at < ids.length; at += 256) labels.push(...valid(declareGrid(halden, operations, ids.slice(at, at + 256))).observables.map(observable => observable.label))
+    expect(halden.definition.model.buses.filter(bus => bus.label.startsWith('Unnamed substation ')).length).toBeGreaterThan(50)
+    expect(labels.filter(label => label.includes('Unnamed substation'))).toEqual([])
+    // The two ends of the Sylling–Tegneby fjord cable, from the nearest named substation, told apart by their distance.
+    const label = (id: string) => declaration.elements.find(element => element.id === id)!.label
+    expect([label('bus:osm-way-114318078@420'), label('bus:osm-way-114318083@420')]).toEqual(['Substation 5.4 km NE of Tofte 420 kV', 'Substation 5.1 km NE of Tofte 420 kV'])
+    // Within a kilometre it stands at the named one; a branch named after it takes its name too.
+    expect(label('bus:osm-relation-9032385@300')).toBe('Substation at Smestad 300 kV')
+    expect(halden.definition.model.branches.find(branch => branch.label.startsWith('Unnamed substation way/100651279 132 kV – '))).toBeDefined()
+    expect(declaration.elements.filter(element => element.class === 'branch' && element.label.startsWith('Substation at Herøya 3 132 kV – '))).not.toEqual([])
+    // Elements sharing a name are labelled as their values and alert messages name them, so a drawing and its detail agree.
+    const branches = declaration.elements.filter(element => element.class === 'branch')
+    expect(new Set(branches.map(element => element.label)).size).toBe(branches.length)
+    expect([label('branch:osm-1022cbf125eebbb4'), label('branch:osm-f916b2661f890d86')]).toEqual(['Sylling - Tegneby (1)', 'Sylling - Tegneby (2)'])
+  })
+
+  test('a loading spans none to the branch protection\'s instantaneous pickup, so it draws a span bar (W4.2, W9.3)', () => {
+    const protection = halden.definition.automation.branchProtection
+    expect(protection.enabled).toBe(true)
+    const pickup = protection.enabled ? protection.instantaneousPercentOfRating : Number.NaN
+    expect(byRef(valid(declareGrid(halden, operations, ['branch:osm-1022cbf125eebbb4'])), 'branch:osm-1022cbf125eebbb4.loading')!.span).toEqual({ min: 0, max: pickup })
+    expect(byRef(valid(declareGrid(halden, operations)), 'grid.maximum-branch-loading')!.span).toEqual({ min: 0, max: pickup })
+    expect(byRef(valid(declareGrid(halden, operations, ['branch:osm-1022cbf125eebbb4'])), 'branch:osm-1022cbf125eebbb4.flow')!.span).toBeUndefined()
+  })
+
   test('every declared series is one the Grid\'s recording plan describes; per-asset ones only with the engineering profile', () => {
     for (const selection of [operations, engineering]) {
       const { grid } = steppedGrid(corridorDefinition())

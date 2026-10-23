@@ -841,6 +841,10 @@ export const compilePlantGraph = (
   validateSignalMetadata(variables)
   assertVariableSemantics(variables)
   assertNamesUnambiguous(components, variables)
+  // A line's short names name its own variables, as a component's do (assertPresentationTargets).
+  for (const link of links) for (const local of Object.keys(link.metadata?.presentation?.shortNames ?? {})) {
+    if (!variables.some(variable => variable.path === processLinkVariablePathFor(link.id, local as never))) throw new Error(`connection ${link.id} names a reading ${local}, which is not one of its variables`)
+  }
   assertPushbuttonsMomentary(components, variables)
   assertNotOfferedCommands(components, variables)
   validateValveControllerBindings(components, variables)

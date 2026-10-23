@@ -25,7 +25,7 @@ import type { Room } from '../core/types/room.ts'
 import type { AIAgent, RequestedTurn, Team } from '../core/types/agent.ts'
 import { PROCEDURE_RUNNER_SKILL, PROPOSAL_RESUME_CAUSE } from '../core/proposal-resume.ts'
 import { collectTurnOperations, type TurnOperation } from './operation-claims.ts'
-import { PROPOSALS_OPERATION_ID, proposedOperationsOf, type ProposalCardReader, type ProposedOperation, type WorldProposal } from './proposal-cards.ts'
+import { actorWords, PROPOSALS_OPERATION_ID, proposedOperationsOf, type ProposalCardReader, type ProposedOperation, type WorldProposal } from './proposal-cards.ts'
 import { asAIAgent } from './shared.ts'
 
 /** Operations of a procedure Run (World); a turn that calls one works a procedure. */
@@ -76,17 +76,18 @@ interface Watch {
   approved: Approved[]
 }
 
-/** A person or agent as an actor id names them: "actor:human:hilde" → "hilde". */
-const actorName = (actorId: string): string => actorId.replace(/^actor:(?:human|ai|system|anonymous):/, '')
-
 /** What was approved, as World words the control: "TRIP RX-TRIP", "RESET Manual safety injection". */
 const actionWords = (approved: Approved): string =>
   approved.operation.reset === true ? approved.proposal.word : `${approved.proposal.word} ${approved.operation.target}`
 
 const approverOf = (approved: ReadonlyArray<Approved>): string => {
   const actors = [...new Set(approved.map(entry => entry.proposal.closed?.actorId).filter((actor): actor is string => actor !== undefined))]
-  return actors.length === 0 ? 'A person' : actors.map(actorName).join(' and ')
+  return actors.length === 0 ? 'a person' : [...new Set(actors.map(actorWords))].join(' and ')
 }
+
+/** Who approved, opening a sentence: a kind of actor capitalised ("An operator"); a person's name as it is. */
+const approverOpening = (approved: ReadonlyArray<Approved>): string =>
+  approverOf(approved).replace(/^(a|an|the) /, first => `${first.charAt(0).toUpperCase()}${first.slice(1)}`)
 
 /** The reply's cause: who approved what. */
 const proposalResumeCause = (approved: ReadonlyArray<Approved>): RequestedTurn['cause'] =>
@@ -98,7 +99,7 @@ const proposalResumeInstruction = (approved: ReadonlyArray<Approved>, answerId: 
     const step = entry.operation.procedureStep === undefined ? '' : ` for ${entry.operation.procedureStep}`
     return `${actionWords(entry)} on Plant ${entry.operation.plantId}${step}`
   })
-  return `[Proposal approved] ${approverOf(approved)} approved your ${items.length === 1 ? 'proposal' : 'proposals'} `
+  return `[Proposal approved] ${approverOpening(approved)} approved your ${items.length === 1 ? 'proposal' : 'proposals'} `
     + `${items.join('; ')} (your answer, messageId "${answerId}") in the display window, and World executed it. `
     // This turn starts seconds after the decision, before the plant has
     // responded (probe 2026-10-13: power still 5 % and subcriticality red

@@ -8,7 +8,7 @@
 // way, never one a value is past or heading for. An element's own trend marks its control set points faint ("CTL").
 // Pens are told apart by dash, colour is kept for alerts.
 import { priorityLevels } from '../../../core/model/alerts.ts'
-import { decimalsFor, numberText, unitSymbol, type Observable, type Observation, type Quantity } from '../../../core/observation/model.ts'
+import { decadeParts, numberShown, numberStep, numberText, shownFactor, unitSymbol, type Observable, type Observation, type Quantity } from '../../../core/observation/model.ts'
 import type { RecordedSeries, SeriesPoint, VignetteValue } from '../../../features/displays/compose/model.ts'
 import { drawsAsLimit } from '../../../features/displays/compose/strips.ts'
 import { orderWord, toneOf, type AlertTone } from './readout.ts'
@@ -215,8 +215,8 @@ export const labelRows = (runs: ReadonlyArray<LabelRun>, room: number, measure: 
   return rows
 }
 
-/** A limit name's row (TrendStrip.svelte): 12 px text with its line's room, so the boxes of two rows never meet. */
-export const LABEL_LINE = 16
+/** A limit name's row (TrendStrip.svelte): 12 px Noto Sans, whose glyph box is about 16.3 px tall, so the boxes of two rows never meet. */
+export const LABEL_LINE = 17
 /** A name's inset from the plot, after its leader; continued rows indent further. */
 export const LABEL_GAP = 8
 export const LABEL_INDENT = 8
@@ -261,13 +261,19 @@ const readStrip = (input: StripInput) => {
   if (shown.length === 0) return null
   const recordStart = Math.max(window.start, Math.min(...held.flatMap(points => (points.length === 0 ? [] : [points[0]!.t]))))
   const { unit, quantity, decades } = input.pens[0]!
-  const seen = { min: Math.min(...shown), max: Math.max(...shown) }
+  // A strip is scaled in the unit its values are shown in (pascals in kilopascals); one of values read over decades by
+  // their powers of ten, at least two decades tall, a value of none at its foot.
+  const factor = shownFactor(unit)
+  const scaled = (value: number): number => (decades !== true ? value * factor : value > 0 ? Math.log10(value) : -Infinity)
+  const seenScaled = shown.map(scaled).filter(Number.isFinite)
+  if (seenScaled.length === 0) return null
+  const seen = { min: Math.min(...seenScaled), max: Math.max(...seenScaled) }
   const lines = sharedLines(input.pens)
-  const domain = stripDomain(seen, lines.map(line => line.value), decimalsFor(unit, (seen.min + seen.max) / 2, quantity))
+  const domain = stripDomain(seen, lines.map(line => scaled(line.value)).filter(Number.isFinite), decades === true ? 1 : numberShown(Math.max(...shown.map(Math.abs)), unit, quantity).decimals)
   const observed = input.pens.map(pen => input.observations.find(observation => observation.ref === pen.ref))
   const idle = (pen: number, limit: Threshold): boolean => observed[pen]?.idle?.includes(limit.id) === true
   const valueNow = (pen: number): number | undefined => (typeof observed[pen]?.value === 'number' ? observed[pen]!.value as number : undefined)
-  const step = 10 ** -decimalsFor(unit, seen.max, quantity)
+  const step = numberStep(Math.max(...shown.map(Math.abs)), unit, quantity)
   const rates = input.pens.map(pen => { const recorded = input.series.get(pen.ref); return recorded === undefined ? null : rateNow(recorded, input.now, step) })
   const number = (value: number): string => numberText(value, unit, quantity, decades === true)
   // A value heads for the nearest limit ahead in the way it moves; held steady, for the nearest on either side.
@@ -279,11 +285,11 @@ const readStrip = (input: StripInput) => {
     const rate = rates[pen] ?? null
     return (rate === null ? [above, below] : rate > 0 ? [above] : [below]).flatMap(line => line?.key ?? [])
   }))
-  const inside = (value: number): boolean => value >= domain.min && value <= domain.max
+  const inside = (value: number): boolean => scaled(value) >= domain.min && scaled(value) <= domain.max
   // Beyond the scale, each edge names the limit nearest it: the one the value would meet next.
   const beyond = new Set([
-    ...lines.filter(line => line.value > domain.max).sort((left, right) => left.value - right.value).slice(0, 1),
-    ...lines.filter(line => line.value < domain.min).sort((left, right) => right.value - left.value).slice(0, 1),
+    ...lines.filter(line => scaled(line.value) > domain.max).sort((left, right) => left.value - right.value).slice(0, 1),
+    ...lines.filter(line => scaled(line.value) < domain.min).sort((left, right) => right.value - left.value).slice(0, 1),
   ])
   const named: Named[] = lines.filter(line => inside(line.value) || beyond.has(line)).map(line => {
     const members = line.byPen.flatMap((limits, pen) => limits.map(limit => ({ limit, idle: idle(pen, limit) })))
@@ -296,7 +302,7 @@ const readStrip = (input: StripInput) => {
     }))
     const consequences = [...new Map([...members].sort((left, right) => Number(left.idle) - Number(right.idle)).flatMap(member => member.limit.consequence === undefined ? [] : [[member.limit.consequence, member.idle] as const])).entries()]
       .map(([text]) => ({ text, idle: members.filter(member => member.limit.consequence === text).every(member => member.idle) }))
-    const edge = inside(line.value) ? null : line.value > domain.max ? 'top' as const : 'bottom' as const
+    const edge = inside(line.value) ? null : scaled(line.value) > domain.max ? 'top' as const : 'bottom' as const
     const head = `${edge === null ? '' : edge === 'top' ? '▲ ' : '▼ '}${orderWord(line.byPen[0]![0]!)} ${number(line.value)}`
     const runs: LabelRun[] = [
       ...(tone === null ? [] : [{ text: '■ ', idle: false, tone, mark: true as const }]),
@@ -315,7 +321,15 @@ const readStrip = (input: StripInput) => {
   })
   // Control set points the element's own trend marks, inside its scale only: they never widen it.
   const setPoints = input.setPoints ? sharedLines(input.pens, true).filter(line => inside(line.value)) : []
-  return { window, held, recordStart, domain, named, setPoints, number }
+  return { window, held, recordStart, domain, scaled, decades: decades === true, named, setPoints, number }
+}
+
+/** Gridlines of a strip over decades: its whole powers of ten, written "10⁻⁶". */
+const decadeTicks = (domain: Domain): ReadonlyArray<{ readonly value: number; readonly label: string }> => {
+  const step = Math.max(1, Math.round(niceStep(domain.max - domain.min, 3)))
+  const ticks: Array<{ value: number; label: string }> = []
+  for (let power = Math.ceil(domain.min / step) * step; power <= domain.max; power += step) ticks.push({ value: power, label: decadeParts(10 ** power).text.replace(/^1\.0×/, '') })
+  return ticks
 }
 
 /** The widest one-row name a strip writes beside its plot (0 without any): the strips of one trend share the widest as their margin. */
@@ -344,7 +358,8 @@ export const stripDrawing = (input: StripInput & { readonly width: number; reado
   if (read === null) return null
   const { window, domain, named } = read
   const x = (t: number): number => ((t - window.start) / input.horizonMs) * input.width
-  const y = (v: number): number => INSET + (1 - (v - domain.min) / (domain.max - domain.min)) * (input.height - 2 * INSET)
+  const at = (position: number): number => INSET + (1 - (position - domain.min) / (domain.max - domain.min)) * (input.height - 2 * INSET)
+  const y = (v: number): number => Math.min(input.height - INSET, at(read.scaled(v)))
   const rows = new Map(named.map(entry => [entry.key, labelRows(entry.runs, input.room - LABEL_GAP, input.measure)] as const))
   const ranked = named.map((_, index) => index).sort((left, right) => compareRanks(named[left]!.rank, named[right]!.rank))
   const placed = stackLabels(named.map((entry, index) => {
@@ -353,8 +368,8 @@ export const stripDrawing = (input: StripInput & { readonly width: number; reado
   }), { min: 0, max: input.height })
   const byKey = new Map(named.map(entry => [entry.key, entry] as const))
   const taken = placed.map(label => [label.start, label.start + rows.get(label.key)!.length * LABEL_LINE] as [number, number])
-  const ticks = valueTicks(domain)
-  const top = Math.min(...ticks.map(tick => y(tick.value)))
+  const ticks = read.decades ? decadeTicks(domain) : valueTicks(domain)
+  const top = Math.min(...ticks.map(tick => at(tick.value)))
   const unit = unitSymbol(input.pens[0]!.unit)
   return {
     pens: input.pens.map((pen, index) => {
@@ -372,20 +387,20 @@ export const stripDrawing = (input: StripInput & { readonly width: number; reado
       return { key: label.key, lineY: entry.edge === null ? y(entry.value) : null, y: label.start + LABEL_LINE / 2, rows: rows.get(label.key)!, title: entry.title }
     }),
     setPoints: read.setPoints.map(line => {
-      const at = y(line.value)
+      const level = y(line.value)
       // A set point's name takes only room no limit's name stands in, at its own line: it never moves one.
-      const start = at - LABEL_LINE / 2
+      const start = level - LABEL_LINE / 2
       const free = start >= 0 && start + LABEL_LINE <= input.height && !taken.some(([from, to]) => start < to && from < start + LABEL_LINE)
       if (free) taken.push([start, start + LABEL_LINE])
       return {
-        key: line.key, y: at, label: `CTL ${read.number(line.value)}`, labelY: free ? at : null,
+        key: line.key, y: level, label: `CTL ${read.number(line.value)}`, labelY: free ? level : null,
         title: `CTL ${read.number(line.value)}${[...new Set(line.byPen.flat().flatMap(limit => limit.consequence === undefined || limit.consequence === 'CTL' ? [] : [limit.consequence]))].map(text => ` · ${text}`).join('')}: control set point`,
       }
     }),
     // The top value names the unit; a value too near the top is written under its line, so none leaves the plot.
     values: ticks.map(tick => {
-      const at = y(tick.value)
-      return { y: at, labelY: at - 3 < 14 ? at + 12 : at - 3, label: at === top && unit !== '' ? `${tick.label} ${unit}` : tick.label }
+      const level = at(tick.value)
+      return { y: level, labelY: level - 3 < 14 ? level + 12 : level - 3, label: level === top && unit !== '' ? `${tick.label} ${unit}` : tick.label }
     }),
     unrecorded: read.recordStart > window.start ? { width: x(read.recordStart) } : null,
   }

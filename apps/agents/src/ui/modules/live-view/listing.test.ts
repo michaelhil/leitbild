@@ -3,8 +3,9 @@ import { EMBEDDED_VIEW_LISTING_MAX, embeddedViewsMessageSchema, newWorkspaceId }
 import type { UIMessage } from '../render/render-types.ts'
 import {
   answerCaption,
-  findPostedAnswer,
+  answerMessage,
   postedAnswerOf,
+  presentedViewRefs,
   roomViewFences,
   viewFenceBodies,
   viewFenceKey,
@@ -47,8 +48,14 @@ describe('display fences in posted answers', () => {
     expect(postedAnswerOf({ ...answer('tr_1', 'x'), generationTraceId: undefined })).toBeNull()
     expect(postedAnswerOf({ ...answer('tr_1', 'x'), type: 'pass' })).toBeNull()
     expect(postedAnswerOf({ ...answer('tr_1', 'x'), roomId: undefined })).toBeNull()
-    expect(findPostedAnswer([answer('tr_1', 'a'), answer('tr_2', 'b', at(9, 0, 0))], 'tr_2')).toMatchObject({ turnId: 'tr_2', caption: 'Answer 09:00:00' })
-    expect(findPostedAnswer([answer('tr_1', 'a')], 'tr_9')).toBeNull()
+    expect(answerMessage([answer('tr_1', 'a'), answer('tr_2', 'b', at(9, 0, 0))], 'tr_2')).toMatchObject({ generationTraceId: 'tr_2', content: 'b' })
+    expect(answerMessage([answer('tr_1', 'a')], 'tr_9')).toBeNull()
+    expect(answerMessage([{ ...answer('tr_1', 'a'), type: 'pass' }], 'tr_1')).toBeNull()
+  })
+
+  test('the displays an answer presents are its valid fences, each once, as viewRefs', () => {
+    expect([...presentedViewRefs(['See ⟦k1⟧.', fence('call_1_0/sg%20a'), fence('call_1_0/sg%20a'), fence('call_2_1/trend'), fence('not a ref')].join('\n\n'))])
+      .toEqual(['call_1_0/sg%20a', 'call_2_1/trend'])
   })
 
   test('finds the fences the renderer turns into chips, and no others', () => {

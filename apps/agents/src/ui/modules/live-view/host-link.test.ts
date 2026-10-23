@@ -3,6 +3,7 @@ import { embeddedViewOpenMessageSchema, embeddedViewSubjectOpenMessageSchema, em
 import {
   createViewListPublisher,
   createViewListSync,
+  inlineHeightRequest,
   inlineHostAnnouncement,
   inlineOpenRequest,
   isViewHostAnnouncement,
@@ -53,6 +54,18 @@ describe('messages Agents builds for the Host', () => {
     expect(inlineOpenRequest(request, { ...page, workspaceId: newWorkspaceId() })).toBeNull()
     expect(inlineOpenRequest({ ...request, data: { type: 'leitbild:view-open' } }, page)).toBeNull()
     expect(inlineHostAnnouncement()).toEqual({ type: 'leitbild:view-host' })
+  })
+
+  test('an inline display\'s height is heard only from a frame this page made, on this origin, as the contract words it (W7.3)', () => {
+    const frame = { name: 'inline display' }
+    const page = { origin: 'https://leitbild.app', inlineFrames: [frame] }
+    const said = { origin: 'https://leitbild.app', source: frame, data: { type: 'leitbild:view-height', height: 412 } }
+    // A drawing too wide for a 480 px chat gave way to "View drawing ›": the frame takes the 412 px it shows, not 912.
+    expect(inlineHeightRequest(said, page)).toBe(412)
+    expect(inlineHeightRequest({ ...said, source: { name: 'another frame' } }, page)).toBeNull()
+    expect(inlineHeightRequest({ ...said, origin: 'https://evil.example' }, page)).toBeNull()
+    expect(inlineHeightRequest({ ...said, data: { type: 'leitbild:view-height', height: 412.5 } }, page)).toBeNull()
+    expect(inlineHeightRequest({ ...said, data: { type: 'leitbild:view-height', height: 20_000 } }, page)).toBeNull()
   })
 
   test('an open request carries the whole listing and passes the contract', () => {

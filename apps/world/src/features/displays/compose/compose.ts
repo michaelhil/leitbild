@@ -8,7 +8,8 @@ import type { DisplayCard, DisplayCardAdjustment } from '@leitbild/contracts'
 import { priorityLevels, refObjectId } from '../../../core/model/alerts.ts'
 import type { ObjectId } from '../../../core/model/index.ts'
 import type { DisplaySpec, View } from '../../../core/observation/spec.ts'
-import { alertItem, assembleCard, entityItem, slotItems, valueItem } from './card.ts'
+import { alertItem, assembleCard, cardAlerts, entityItem, onSubjects, slotItems, valueItem, type CardSubjects } from './card.ts'
+import { blockRows, elementBlocks } from './element-groups.ts'
 import { declarationOf, declaredRefs, same, valueOf, visibleObject } from './declared.ts'
 import { defaultViews, elementRefs, LEAD_ROWS, leadNow, leadRefs, ownStates, planLead, readLeads, recordedOf, tableRows, type DraftView } from './defaults.ts'
 import { FRAME_ROWS, VIGNETTE_MAX_ROWS, vignetteStateSchema, zoneRows, type ComposeIssue, type ResolvedView, type VignetteState } from './model.ts'
@@ -16,7 +17,7 @@ import { isIssue, resolveSubject, subjectObjects, type ComposeRun, type Subject 
 import { TOPOLOGY_REACH } from '../topology/scope.ts'
 import { drawingOf, scopeWithin, topologyOf } from './topology.ts'
 import { stripsOf, trendRows } from './strips.ts'
-import { ALERT_LINES_AT_LEAST, alertRowsFor, alertsOf, entityRows, groupValues, readNow, readsOf, slotsOf } from './view.ts'
+import { ALERT_LINES_AT_LEAST, alertRowsFor, alertsOf, entityRows, groupValues, keepsTripLine, readNow, readsOf, slotsOf } from './view.ts'
 
 export type ComposeOutcome =
   | { readonly ok: true; readonly state: VignetteState; readonly card: DisplayCard; readonly rows: number }
@@ -44,7 +45,7 @@ const signalRefs = async (run: ComposeRun, names: ReadonlyArray<string>, path: s
     const found = subject.kind === 'element' ? await elementRefs(run, subject.objectId, subject.elementId)
       : subject.kind === 'object' && subject.observed ? await leadRefs(run, subject.objectId) : null
     if (found === null) return notObserved(`${path}.${index}`, `"${name}" names no measured values; name it as a subject for its default`)
-    refs.push(...(recorded ? await recordedOf(run, found, 4) : found))
+    refs.push(...(recorded ? await recordedOf(run, found, 4, subject.kind === 'element' ? subject.elementId : undefined) : found))
   }
   if (recorded) {
     const declared = await declaredRefs(run, refs)
@@ -203,6 +204,8 @@ const covers = (views: ReadonlyArray<ResolvedView>, subject: Subject): boolean =
 
 const atLeastCaution = (priority: string | undefined): boolean => priority !== undefined && priorityLevels.indexOf(priority as never) >= priorityLevels.indexOf('caution')
 const countAdjustment = (adjusted: DisplayCardAdjustment[], adjustment: DisplayCardAdjustment): void => { if (adjusted.length < MAX_ADJUSTMENTS) adjusted.push(adjustment) }
+/** "1 pen", "3 pens": a count with its noun. */
+const counted = (count: number, noun: string): string => `${count} ${count === 1 ? noun : `${noun}s`}`
 
 /** Completion, fit, card and state: the shared second half of a composed vignette and a World default. */
 /** The alert lines a World default's own alerts view keeps though none are raised yet, so an upset's first alerts show as they come. */
@@ -210,7 +213,7 @@ const WATCHED_ALERT_LINES = 4
 
 /** Where a vignette is shown: a chat answer stacks its views in 40 rows; a window may stand a tall drawing beside them (Q20). */
 type Frame = 'chat' | 'window'
-const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefined, subjects: ReadonlyArray<Subject>, drafts: ReadonlyArray<DraftView>, kept: Kept, frame: Frame, chipped: ReadonlyArray<string> = []): Promise<ComposeOutcome> => {
+const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefined, subjects: ReadonlyArray<Subject>, drafts: ReadonlyArray<DraftView>, kept: Kept, frame: Frame, chipped: ReadonlyArray<string> = [], why?: string): Promise<ComposeOutcome> => {
   const adjusted: DisplayCardAdjustment[] = []
   /** What the fit leaves out, counted on the card (Q15: never silent). */
   let dropped = 0
@@ -238,15 +241,17 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   const fitted: ResolvedView[] = []
   /** The fitted views that draw a flow topology. */
   const flows = new Set<ResolvedView>()
+  /** Each fitted alerts view's rows for the alerts it has now (its head, every alert up to eight, "+N more"). */
+  const alertsNeed = new Map<ResolvedView, number>()
   const declared = await declaredRefs(run, views.flatMap(view => view.kind === 'values' || view.kind === 'trend' ? view.refs ?? [] : []))
   const trim = (path: string, refs: ReadonlyArray<string>, cap: number, what: string): ReadonlyArray<string> => {
     const readable = refs.filter(ref => declared.has(ref))
     const hidden = refs.length - readable.length
     if (hidden > 0) countAdjustment(adjusted, { kind: 'access', text: `${hidden} values this caller may not read are not shown` })
     const named = readable.filter(ref => kept.refs.has(ref))
-    if (named.length > cap) { issues.push(unfit(path, `${named.length} named ${what} exceed the ${cap} one view shows`)); return [] }
+    if (named.length > cap) { issues.push(unfit(path, `${named.length} named ${what}s exceed the ${cap} one view shows`)); return [] }
     const keep = [...named, ...readable.filter(ref => !kept.refs.has(ref))].slice(0, cap)
-    if (readable.length > keep.length) { dropped += readable.length - keep.length; countAdjustment(adjusted, { kind: 'layout', text: `${readable.length - keep.length} ${what} not shown` }) }
+    if (readable.length > keep.length) { dropped += readable.length - keep.length; countAdjustment(adjusted, { kind: 'layout', text: `${counted(readable.length - keep.length, what)} not shown` }) }
     return readable.filter(ref => keep.includes(ref))
   }
   for (const [index, view] of views.entries()) {
@@ -255,7 +260,7 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
       // A lead request reserves its rows now for whatever it leads with later: its named values, then as many as it
       // may lead with (stopped or not), at most its own cap or the column's eight.
       // Each criterion it may lead with takes a row beyond the column's eight; its element's table its own rows after them.
-      const refs = trim(path, view.refs ?? [], 16, 'values')
+      const refs = trim(path, view.refs ?? [], 16, 'value')
       const plan = await planLead(run, view.lead)
       const led = (await readLeads(run, [plan])).led[0]!
       const pool = led.pool.filter(ref => !refs.includes(ref))
@@ -266,17 +271,20 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
       const zones = frame === 'window' && view.rows === undefined ? zoneRows({ zones: true }) : 0
       if (rows > 0) fitted.push({ kind: 'values', ...(refs.length === 0 ? {} : { refs: [...refs] }), lead: view.lead, ...(table > 0 ? { table: true } : {}), ...(zones > 0 ? { zones: true } : {}), rows: rows + table + zones })
     } else if (view.kind === 'values') {
-      const refs = trim(path, view.refs ?? [], 16, 'values')
+      const refs = trim(path, view.refs ?? [], 16, 'value')
       const values = refs.map(ref => declared.get(ref)!)
-      if (refs.length > 0) fitted.push({ kind: 'values', refs: [...refs], rows: groupValues(values.map(valueOf))?.rows ?? refs.length })
+      // Rows as they are drawn: one table of parallel values, or values grouped by element (W7.4), or a row each.
+      const named = values.map(valueOf)
+      const blocks = elementBlocks(named)
+      if (refs.length > 0) fitted.push({ kind: 'values', refs: [...refs], rows: groupValues(named)?.rows ?? (blocks === null ? refs.length : blockRows(blocks)) })
     } else if (view.kind === 'trend') {
       const recorded = view.refs.filter(ref => declared.get(ref)?.observable.series != null)
-      const refs = trim(path, recorded, 12, 'pens')
+      const refs = trim(path, recorded, 12, 'pen')
       const strips = stripsOf(refs.map(ref => valueOf(declared.get(ref)!)))
       const inStrips = strips.slice(0, 4).flat().map(value => value.ref)
       if (refs.some(ref => kept.refs.has(ref) && !inStrips.includes(ref))) issues.push(unfit(path, 'the named pens need more than four strips of four'))
       else if (inStrips.length > 0) {
-        if (inStrips.length < refs.length) { dropped += refs.length - inStrips.length; countAdjustment(adjusted, { kind: 'layout', text: `${refs.length - inStrips.length} pens not shown` }) }
+        if (inStrips.length < refs.length) { dropped += refs.length - inStrips.length; countAdjustment(adjusted, { kind: 'layout', text: `${counted(refs.length - inStrips.length, 'pen')} not shown` }) }
         fitted.push({ ...view, refs: inStrips, rows: trendRows(strips.slice(0, 4)) })
       }
     } else if (view.kind === 'alerts') {
@@ -293,7 +301,9 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
       }
       const needed = alertRowsFor(run, { ...view, objectIds, rows: 1 })
       // A World default is watched: its alerts keep room for the first of those still to come (an element's, an observable's too).
-      fitted.push({ ...view, objectIds, rows: frame === 'window' ? Math.max(1 + WATCHED_ALERT_LINES, needed) : needed })
+      const watched: ResolvedView = { ...view, objectIds, rows: frame === 'window' ? Math.max(1 + WATCHED_ALERT_LINES, needed) : needed }
+      alertsNeed.set(watched, needed)
+      fitted.push(watched)
     } else if (view.kind === 'slots') {
       const object = visibleObject(run, view.objectId)
       if (object !== undefined) fitted.push({ ...view, rows: Math.max(1, slotsOf(run, object).length) })
@@ -366,48 +376,57 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   }
   if (issues.length > 0) return refuse(issues)
   // Rows: alerts and tables give way first, then the frame does not fit and compose refuses.
-  // The chips: the object's own states the caller can read, in declared order, on the title row (W4.1). A whole object
-  // with chips keeps one row under the title for its trip line (W2.4), empty at rest, so nothing moves when one trips.
+  // The chips: the object's own states the caller can read, in declared order, on the title row (W4.1).
   const readableChips = await declaredRefs(run, chipped)
   const chips = chipped.filter(ref => readableChips.has(ref))
+  // The frame: title and footer, the trip line's row of a view about one object that can trip (keepsTripLine: empty at
+  // rest, so nothing moves when one trips), an answer's notice line (W8.2).
+  const frameRows = FRAME_ROWS + (await keepsTripLine(run, fitted) ? 1 : 0) + (by === 'assistant' ? 1 : 0)
   const stacked = (): number => fitted.reduce((sum, view) => sum + view.rows, 0)
   // In a window, a flow drawing taller than the stack leaves stands beside a column of every other view (Q20).
   const left = fitted.find(view => view.kind === 'topology' && flows.has(view))
   const sideBySide = (): number => Math.max(left?.rows ?? 0, fitted.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0))
-  const beside = frame === 'window' && left !== undefined && FRAME_ROWS + (chips.length > 0 ? 1 : 0) + stacked() > VIGNETTE_MAX_ROWS
-  const total = (): number => FRAME_ROWS + (chips.length > 0 ? 1 : 0) + (beside ? sideBySide() : stacked())
+  const beside = frame === 'window' && left !== undefined && frameRows + stacked() > VIGNETTE_MAX_ROWS
+  const total = (): number => frameRows + (beside ? sideBySide() : stacked())
   // A window's alerts keep a head, eight alerts and "+N more" (W2.5): its drawing is scaled first.
   const alertsFloor = frame === 'window' ? 2 + ALERT_LINES_AT_LEAST : 3
   for (const view of fitted) if (total() > VIGNETTE_MAX_ROWS && (view.kind === 'alerts' || view.kind === 'entity' || view.kind === 'collection')) (view as { rows: number }).rows = Math.min(view.rows, view.kind === 'alerts' ? alertsFloor : 5)
-  // A trend gives way a strip at a time from its last while `overflows`, keeping one and every strip with a named pen:
-  // a strip keeps its five rows (W5.4), and what it leaves out is counted.
-  const trendsGiveWay = (overflows: () => boolean): void => {
+  // A trend gives way a strip at a time from its last while the frame is `over` its rows, keeping one and every strip
+  // with a named pen: a strip keeps its five rows (W5.4), and what it leaves out is counted. Before a pen drops, a
+  // watched alerts list gives the empty lines it keeps beyond the alerts it has now, where they are enough to keep it:
+  // every alert it has still shows, each on its row.
+  const trendsGiveWay = (over: () => number): void => {
+    const spare = (): number => [...alertsNeed].reduce((sum, [list, need]) => sum + Math.max(0, list.rows - need), 0)
     for (const view of fitted) {
       if (view.kind !== 'trend') continue
       let strips = stripsOf(view.refs.map(ref => valueOf(declared.get(ref)!)))
-      while (overflows() && strips.length > 1 && !strips.at(-1)!.some(pen => kept.refs.has(pen.ref))) {
-        const cut = strips.at(-1)!.length
+      let cut = 0
+      while (over() > 0 && strips.length > 1 && !strips.at(-1)!.some(pen => kept.refs.has(pen.ref))) {
+        if (spare() >= over()) {
+          for (const [list, need] of alertsNeed) (list as { rows: number }).rows -= Math.min(over(), Math.max(0, list.rows - need))
+          break
+        }
+        cut += strips.at(-1)!.length
         strips = strips.slice(0, -1)
         Object.assign(view, { refs: strips.flat().map(pen => pen.ref), rows: trendRows(strips) })
-        dropped += cut
-        countAdjustment(adjusted, { kind: 'layout', text: `${cut} pens not shown` })
       }
+      if (cut > 0) { dropped += cut; countAdjustment(adjusted, { kind: 'layout', text: `${counted(cut, 'pen')} not shown` }) }
     }
   }
   // Beside a drawing, a column too tall for the frame gives way first, whatever the drawing's size.
-  if (beside) trendsGiveWay(() => FRAME_ROWS + (chips.length > 0 ? 1 : 0) + fitted.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0) > VIGNETTE_MAX_ROWS)
+  if (beside) trendsGiveWay(() => frameRows + fitted.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0) - VIGNETTE_MAX_ROWS)
   // Then a drawing is scaled to the rows left, never below a third of its height or eight rows, and the card says so.
   for (const view of fitted) {
     if (total() <= VIGNETTE_MAX_ROWS || view.kind !== 'topology') continue
     const natural = view.rows
     const rows = Math.max(8, Math.ceil((natural - 1) / 3) + 1, natural - (total() - VIGNETTE_MAX_ROWS))
-    if (beside && view === left && fitted.reduce((sum, other) => sum + (other === left ? 0 : other.rows), 0) + FRAME_ROWS + (chips.length > 0 ? 1 : 0) > VIGNETTE_MAX_ROWS) continue
+    if (beside && view === left && fitted.reduce((sum, other) => sum + (other === left ? 0 : other.rows), 0) + frameRows > VIGNETTE_MAX_ROWS) continue
     if (rows >= natural) continue
     ;(view as { rows: number }).rows = rows
     countAdjustment(adjusted, { kind: 'layout', text: `drawing scaled to ${Math.round(100 * (rows - 1) / (natural - 1))} % to fit` })
   }
   // Stacked, a trend gives way only after the drawing is scaled.
-  trendsGiveWay(() => total() > VIGNETTE_MAX_ROWS)
+  trendsGiveWay(() => total() - VIGNETTE_MAX_ROWS)
   // Beside a drawing, the column's alerts take the rows it leaves under the other views: the list fills its frame (W2.5).
   const list = beside ? fitted.find(view => view.kind === 'alerts') : undefined
   const column = fitted.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0)
@@ -417,34 +436,61 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   if (fitted.length === 0 || uncovered >= 0) return refuse([unfit(uncovered >= 0 ? `subjects.${uncovered}` : 'views', 'nothing this vignette can show is about this subject')])
 
   const at = run.clock === undefined ? { at: new Date().toISOString(), clock: 'wall' as const } : { at: run.clock.currentTime, clock: 'simulation' as const }
-  const state = vignetteStateSchema.parse({ title: title.slice(0, 80), ...(by === undefined ? {} : { by }), at, ...(chips.length === 0 ? {} : { chips }), ...(beside ? { beside: true } : {}), views: fitted })
+  // An answer's vignette keeps the model each object it reads or draws had (its topology's revision, which changes only
+  // with the model, never with a mode or a sample), to say when it changed after the answer (W8.2).
+  const modelled = [...new Set(fitted.flatMap(view => view.kind === 'values' ? [...(view.refs ?? []).map(refObjectId), ...view.lead === undefined ? [] : [view.lead.objectId]]
+    : view.kind === 'trend' ? view.refs.map(refObjectId) : view.kind === 'topology' || view.kind === 'slots' ? [view.objectId] : []))]
+  const models = by !== 'assistant' ? {} : Object.fromEntries((await Promise.all(modelled.map(async objectId => [objectId, (await topologyOf(run, objectId))?.revision] as const)))
+    .filter((entry): entry is readonly [ObjectId, string] => entry[1] !== undefined))
+  const state = vignetteStateSchema.parse({
+    title: title.slice(0, 80), ...(by === undefined ? {} : { by }), at, ...(chips.length === 0 ? {} : { chips }), ...(beside ? { beside: true } : {}),
+    ...(why === undefined ? {} : { why }), ...(Object.keys(models).length === 0 ? {} : { models }), views: fitted,
+  })
   if (JSON.stringify(state).length > MAX_STATE) return refuse([unfit('views', `the vignette names more than its ${MAX_STATE}-character state holds`)])
-  return { ok: true, state, card: await cardOf(run, state, kept, adjusted, dropped), rows: total() }
+  const about: CardSubjects = {
+    elements: subjects.flatMap(subject => subject.kind === 'element' ? [{ objectId: subject.objectId, elementId: subject.elementId }] : []),
+    refs: subjects.flatMap(subject => subject.kind === 'observable' ? [subject.ref] : []),
+  }
+  return { ok: true, state, card: await cardOf(run, state, kept, adjusted, dropped, about), rows: total() }
 }
 
-/** The card of a fitted state: every value it reads, the alerts and table rows its rows hold; each one a section leaves out is counted and said. */
-const cardOf = async (run: ComposeRun, state: VignetteState, kept: Kept, fitted: ReadonlyArray<DisplayCardAdjustment>, dropped: number): Promise<DisplayCard> => {
-  // Named values first, then the chips' and the views' own values; what a drawing binds comes after the alerts and tables.
+/**
+ * The card of a fitted state: every value it reads, the alerts and table rows its rows hold; each one a section leaves
+ * out is counted and said. The subjects' readings come before alerts, and past readings, alerts past the worst three
+ * are a count (W7.2).
+ */
+const cardOf = async (run: ComposeRun, state: VignetteState, kept: Kept, fitted: ReadonlyArray<DisplayCardAdjustment>, dropped: number, about: CardSubjects): Promise<DisplayCard> => {
+  // Named values first, then the chips' and the views' own values, then what a drawing binds on the subjects; the rest
+  // of what a drawing binds comes after the alerts and tables.
   const { leads, refs: read, observations } = await readNow(run, state)
   const own = readsOf(state, leads).refs
-  const refs = [...new Set([...read.filter(ref => kept.refs.has(ref)), ...own])].filter(ref => read.includes(ref))
-  const bound = read.filter(ref => !refs.includes(ref))
   const declared = await declaredRefs(run, read)
+  const named = [...new Set([...read.filter(ref => kept.refs.has(ref)), ...own])].filter(ref => read.includes(ref))
+  const refs = [...named, ...read.filter(ref => !named.includes(ref) && onSubjects(about, declared.get(ref)))]
+  const bound = read.filter(ref => !refs.includes(ref))
+  // The devices each alerts view's objects bundle: an alert on a subject element's device is the subject's own.
+  const parents = new Map<string, ReadonlyMap<string, string>>()
+  for (const objectId of new Set(state.views.flatMap(view => view.kind === 'alerts' && view.objectIds !== 'run' ? view.objectIds : []))) {
+    parents.set(objectId, new Map(((await declarationOf(run, objectId))?.elements ?? []).flatMap(element => element.parent === undefined ? [] : [[element.id, element.parent] as const])))
+  }
+  const parentOf = (objectId: string, elementId: string): string | undefined => parents.get(objectId)?.get(elementId)
   const valueItems = (list: ReadonlyArray<string>) => list.flatMap(ref => declared.has(ref) ? [valueItem(declared.get(ref)!, observations.find(observation => observation.ref === ref))] : [])
   const adjusted = [...fitted]
   let hidden = dropped
-  const left = (count: number, total: number, what: string): void => {
+  const left = (count: number, total: number, what: string, where = 'not shown'): void => {
     if (count <= 0) return
     hidden += count
-    countAdjustment(adjusted, { kind: 'layout', text: `${count} of ${total} ${what} not shown` })
+    countAdjustment(adjusted, { kind: 'layout', text: `${count} of ${total} ${what} ${where}` })
   }
   const items = [
     ...valueItems(refs),
     ...state.views.flatMap(view => {
       if (view.kind !== 'alerts') return []
       const rows = alertsOf(run, view)
-      left(rows.length - (view.rows - 1), rows.length, 'alerts')
-      return rows.slice(0, view.rows - 1).map(alertItem)
+      const listed = cardAlerts(rows, view.rows - 1, refs.length > 0, about, parentOf)
+      // Past readings the card lists three of the alerts its display shows; alone, what its list shows.
+      left(rows.length - listed.length, rows.length, 'alerts', refs.length > 0 ? 'not on the card' : 'not shown')
+      return listed.map(alertItem)
     }),
     ...state.views.flatMap(view => {
       if (view.kind === 'entity' || view.kind === 'collection') {
@@ -478,7 +524,7 @@ export const composeVignette = async (run: ComposeRun, spec: DisplaySpec): Promi
   if (spec.views.length === 0) {
     const defaults = await Promise.all(subjects.map(async subject => answered(run, await defaultViews(run, subject))))
     const quiet = (view: DraftView): boolean => view.kind === 'alerts' && view.objectIds !== 'run' && alertsOf(run, { ...view, rows: 1 }).length === 0
-    return finish(run, spec.title, 'assistant', subjects, mergeDefaults(defaults, quiet), kept, 'chat', await chipsOf(run, subjects))
+    return finish(run, spec.title, 'assistant', subjects, mergeDefaults(defaults, quiet), kept, 'chat', await chipsOf(run, subjects), whyOf(spec))
   }
   const views: DraftView[] = []
   for (const [index, view] of spec.views.entries()) {
@@ -486,8 +532,11 @@ export const composeVignette = async (run: ComposeRun, spec: DisplaySpec): Promi
     if (isIssue(resolved)) issues.push(resolved)
     else { if (view.kind === 'topology' && (view.from ?? view.to ?? view.around ?? view.media) !== undefined) kept.explicit.add(views.length); views.push(resolved) }
   }
-  return issues.length > 0 ? refuse(issues) : finish(run, spec.title, 'assistant', subjects, views, kept, 'chat')
+  return issues.length > 0 ? refuse(issues) : finish(run, spec.title, 'assistant', subjects, views, kept, 'chat', [], whyOf(spec))
 }
+
+/** Why an answer's vignette was composed: its question, and its need where given (W8.2). */
+const whyOf = (spec: DisplaySpec): string => spec.need === undefined ? spec.question : `${spec.question} — ${spec.need}`
 
 /** A subject's World default: what a person opens from the map, a procedure tag or the display window. */
 export const composeDefault = async (run: ComposeRun, name: string | Extract<DisplaySpec['subjects'][number], { of: unknown }>): Promise<ComposeOutcome> => {
@@ -508,8 +557,15 @@ export const composeLeads = async (run: ComposeRun, objectId: ObjectId, parts: R
   return finish(run, await titleOf(run, subject), undefined, [subject], drafts, { refs: new Set(), explicit: new Set() }, 'window')
 }
 
+/** The rows a fitted state takes, its frame counted as finish counts it: a stored dashboard pin's. */
+export const stateRows = async (run: ComposeRun, state: VignetteState): Promise<number> => {
+  const left = state.beside === true ? state.views.find(view => view.kind === 'topology') : undefined
+  const column = state.views.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0)
+  return FRAME_ROWS + (await keepsTripLine(run, state.views) ? 1 : 0) + (state.by === 'assistant' ? 1 : 0) + Math.max(left?.rows ?? 0, column)
+}
+
 /** A state's card as it reads now: a stored dashboard pin's. */
-export const cardOfState = (run: ComposeRun, state: VignetteState): Promise<DisplayCard> => cardOf(run, state, { refs: new Set(), explicit: new Set() }, [], 0)
+export const cardOfState = (run: ComposeRun, state: VignetteState): Promise<DisplayCard> => cardOf(run, state, { refs: new Set(), explicit: new Set() }, [], 0, { elements: [], refs: [] })
 
 /** A whole-object default's chips: each declared object's own states, at most eight. */
 const chipsOf = async (run: ComposeRun, subjects: ReadonlyArray<Subject>): Promise<ReadonlyArray<string>> =>

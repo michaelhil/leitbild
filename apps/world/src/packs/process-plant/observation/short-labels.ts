@@ -27,6 +27,8 @@ export const shortLabelOf = (plant: CompiledProcessPlant, binding: ProcessSignal
   const fits = (text: string): string | undefined => (text.length <= MOST ? text : undefined)
   if (binding.owner.type === 'link') {
     const link = graph.links[binding.owner.linkIndex]!
+    const named = link.metadata?.presentation?.shortNames?.[String(binding.path).slice(String(link.id).length + 1)]
+    if (named !== undefined) return named
     const loop = link.metadata?.loopId
     if (name !== undefined) return fits(loop === undefined ? name : `${name} ${loop}`)
     // A line's flow by what feeds it ("AFW valve A flow"); another reading by its ends and what it measures ("PZR →
@@ -52,7 +54,8 @@ export const shortLabelOf = (plant: CompiledProcessPlant, binding: ProcessSignal
   const words = binding.label.split(' ').filter(word => word !== 'effective')
   let at = 0
   while (at < words.length - 1 && own.has(words[at]!.toLowerCase())) at += 1
-  const rest = words.slice(at).join(' ')
+  // A valve's flags read as crews say them: "AFW valve A auto-open", "MSIV A isolation".
+  const rest = words.slice(at).join(' ').replace('automatic opening active', 'auto-open').replace('isolation signal', 'isolation')
   // The label's first word reads lower case after the short name, unless it is an acronym ("RCS leak rate").
   const lower = at > 0 || /^.[A-Z]/.test(rest) ? rest : `${rest.charAt(0).toLowerCase()}${rest.slice(1)}`
   const named = short.toLowerCase().includes(rest.toLowerCase()) ? short : `${short} ${lower}`

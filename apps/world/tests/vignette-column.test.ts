@@ -265,15 +265,19 @@ describe('value words (W4.4)', () => {
     expect(look({ unit: 'Pa', quantity: 'pressure' }, { value: 7534 })).toMatchObject({ text: '7.5', value: 7.5, unit: 'kPa', decimals: 1 })
   })
 
-  test('at an end of its span a reading reads only that it is there, in the low-integrity style; its wider range stands in where it has one', () => {
+  test('beyond its span a reading reads only that it is there, in the low-integrity style; at an end it reads its value; its wider range stands in at or beyond an end where it has one', () => {
     const span = { min: 0, max: 100 }
-    expect(look({ span }, { value: 0 })).toMatchObject({ text: '<0', value: '<0', unit: '%', doubtful: true, offSpan: 'below' })
-    expect(look({ span }, { value: 100 })).toMatchObject({ text: '>100', offSpan: 'above', doubtful: true })
+    expect(look({ span }, { value: -0.4 })).toMatchObject({ text: '<0', value: '<0', unit: '%', doubtful: true, offSpan: 'below' })
+    expect(look({ span }, { value: 100.3 })).toMatchObject({ text: '>100', offSpan: 'above', doubtful: true })
     expect(look({ span }, { value: 37.2 })).toMatchObject({ text: '37.2', offSpan: null, doubtful: false })
+    // Exactly at an end (an open line at 0 % loading, a full tank at 100 %) it reads its value, never "<0 %".
+    expect(look({ span, quantity: 'loading' }, { value: 0 })).toMatchObject({ text: '0.0', value: 0, unit: '%', doubtful: false, offSpan: null })
+    expect(look({ span }, { value: 100 })).toMatchObject({ text: '100.0', offSpan: null, doubtful: false })
     const wide: Observation = { ref: 'u#wr', value: 24.04, quality: 'good', priority: 'none', at: new Date(now).toISOString(), clock: 'simulation' }
     expect(look({ span, wider: { ref: 'u#wr', word: 'WR' } }, { value: 0 }, [wide])).toMatchObject({ text: 'WR 24.0', value: 'WR 24.0', unit: '%', doubtful: false, offSpan: 'wider' })
-    // A wider range not read, or not good, leaves the pinned end.
-    expect(look({ span, wider: { ref: 'u#wr', word: 'WR' } }, { value: 0 }, [{ ...wide, quality: 'bad' }]).text).toBe('<0')
+    // A wider range not read, or not good, leaves its value at the end, or pinned beyond it.
+    expect(look({ span, wider: { ref: 'u#wr', word: 'WR' } }, { value: 0 }, [{ ...wide, quality: 'bad' }]).text).toBe('0.0')
+    expect(look({ span, wider: { ref: 'u#wr', word: 'WR' } }, { value: -1 }, [{ ...wide, quality: 'bad' }]).text).toBe('<0')
   })
 
   test('outside its validity a reading names what it waits for; a value only the simulator computes reads SIM', () => {
@@ -295,6 +299,30 @@ describe('value words (W4.4)', () => {
     // Read over decades, the intermediate range declares no span to pin to.
     expect(observable('core.intermediateRangeCurrentAmps').span).toBeUndefined()
   })
+
+  test('every Plant reading a detail, a faceplate or the overview can lead with has a short label of at most 24 characters', () => {
+    const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:short', loopCount: 4 }))
+    const recording = { seriesIds: new Set(recordedPlantVariables(plant, 'operations').map(variable => recordingSeriesIdFor(plant.id, variable.path))), intervalMs: 1_000 }
+    const missing = new Set<string>()
+    for (const mode of [null, ...plant.automation.operatingModes.map(entry => entry.id)]) {
+      const declaration = plantDeclaration('plant:short' as ObjectId, plant, recording, undefined, mode)
+      const byRef = new Map(declaration.observables.map(entry => [entry.ref, entry]))
+      const leads = declaration.elements.flatMap(element => [...element.lead ?? [], ...element.stopped?.lead ?? []])
+      const own = declaration.observables.filter(entry => entry.element !== undefined && (entry.basis === 'instrument' || entry.quantity === 'state')).map(entry => entry.ref)
+      for (const ref of [...leads, ...own]) {
+        const observable = byRef.get(ref)!
+        // The Plant's signals, never a demand (a row never shows one); an item's derived state is named by its item.
+        if (observable.basis === 'command' || !plant.graph.signalBindingByPath.has(ref.slice(ref.indexOf('#') + 1) as never)) continue
+        if (observable.shortLabel === undefined || observable.shortLabel.length > 24) missing.add(`${ref.slice(ref.indexOf('#') + 1)} (${observable.label})`)
+      }
+    }
+    expect([...missing]).toEqual([])
+    const declared = plantDeclaration('plant:short' as ObjectId, plant, recording)
+    const short = (path: string) => declared.observables.find(entry => entry.ref === `plant:short#${path}`)!.shortLabel
+    // The faceplate's three that cut before ("Pressurizer PORV…", "Pressurizer level…", "Pressurizer backup…").
+    expect([short('pressurizer-relief-to-tank.temperatureC'), short('pressurizer.levelDeviationPercent'), short('pressurizer.backupHeaterDemandMw')])
+      .toEqual(['PORV tailpipe temp', 'PZR level deviation', 'Backup heater demand'])
+  })
 })
 
 describe('the column moves nothing (W8.4)', () => {
@@ -315,6 +343,10 @@ describe('a row\'s name in its element\'s own detail', () => {
     expect(ownLabel(value, 'Halden Unit 1')).toBe('SG A narrow-range level')
     expect(ownLabel({ ...value, shortLabel: 'AFW valve A flow', element: { ...element, id: 'auxFeedwaterValveA', label: 'Auxiliary Feedwater Valve A', shortLabel: 'AFW valve A' } }, 'Halden Unit 1 · Steam Generator A')).toBe('AFW valve A flow')
     expect(ownLabel({ label: 'Halden Unit 1 · Pressurizer pressure' }, 'Halden Unit 1')).toBe('Pressurizer pressure')
+    // A value with no short label drops its element's name in that element's own detail.
+    const valves = { id: 'turbineStopValve', class: 'steamValve', label: 'Turbine Stop Valve', shortLabel: 'Turbine stop valves' }
+    expect(ownLabel({ label: 'Halden Unit 1 · State · Turbine stop valves', element: valves }, 'Halden Unit 1 · Turbine Stop Valve')).toBe('State')
+    expect(ownLabel({ label: 'Halden Unit 1 · State · Turbine stop valves', element: valves }, 'Halden Unit 1')).toBe('State · Turbine stop valves')
   })
 })
 

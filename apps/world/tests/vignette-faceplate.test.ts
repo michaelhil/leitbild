@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { embeddedViewOpenMessageSchema, newWorkspaceId, type EmbeddedViewOpenMessage } from '@leitbild/contracts'
+import { embeddedViewOpenMessageSchema, newWorkspaceId, type EmbeddedViewHeightMessage, type EmbeddedViewOpenMessage } from '@leitbild/contracts'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { SimulationRunId } from '../src/core/model/index.ts'
@@ -8,7 +8,7 @@ import type { VignetteSample, VignetteValue, VignetteView } from '../src/feature
 import { defaultDisplayEnvelope } from '../src/ui/process-display/default-display.ts'
 import type { DisplayFrameMessage } from '../src/ui/embed/display-frame-protocol.ts'
 import { createViewHost, type ReceivedMessage } from '../src/ui/embed/view-host.ts'
-import { FACEPLATE_HEIGHT_AT_REST, FACEPLATE_LEAD_ROWS, faceplateStates, FACEPLATES_PER_STATE, hostFirst, ownAlerts, readingLabel, readingsOf, shortOfRoom, shownReadings } from '../src/ui/embed/vignette/faceplate.ts'
+import { FACEPLATE_HEIGHT_AT_REST, FACEPLATE_LEAD_ROWS, faceplateRows, faceplateStates, FACEPLATES_PER_STATE, hostFirst, ownAlerts, readingLabel, readingsOf, shortOfRoom, shownReadings, type FaceplateReadings } from '../src/ui/embed/vignette/faceplate.ts'
 import {
   elementOffer, FACEPLATE_CLOSED, FACEPLATE_MARGIN, FACEPLATE_ROW, FACEPLATE_WIDTH, faceplateHeight, faceplatePlacement, keptInRoom, movedOverlay, nextFaceplate,
   openElementDefault, OVERLAY_WIDTH, raisedOverlay, readPins, replacedOverlays, resizedOverlay, togglePinned, writePins, type PinnedOverlay,
@@ -24,8 +24,8 @@ const workspaceId = newWorkspaceId()
 const runId = 'run-1' as SimulationRunId
 
 const framed = () => {
-  const posted: Array<DisplayFrameMessage | EmbeddedViewOpenMessage> = []
-  const parent = { postMessage: (message: DisplayFrameMessage | EmbeddedViewOpenMessage) => { posted.push(message) } }
+  const posted: Array<DisplayFrameMessage | EmbeddedViewOpenMessage | EmbeddedViewHeightMessage> = []
+  const parent = { postMessage: (message: DisplayFrameMessage | EmbeddedViewOpenMessage | EmbeddedViewHeightMessage) => { posted.push(message) } }
   let receive: ((message: ReceivedMessage) => void) | null = null
   const host = createViewHost({ parent, origin, listen: next => { receive = next; return () => { receive = null } }, refused: () => {} })
   let opening: Parameters<typeof elementOffer>[0] = null
@@ -210,6 +210,21 @@ describe('what a faceplate reads', () => {
     expect(readingsOf(['pressurizer'], undefined, sample).size).toBe(0)
   })
 
+  test('its rows are the column\'s lead rows: a record draws the registered sparkline, a short label names it without its element (D-C)', () => {
+    const element = { id: 'sgA', class: 'steamGenerator', label: 'Steam Generator A', shortLabel: 'SG A' }
+    const number = (ref: string, label: string, shortLabel: string | undefined, series: boolean) => ({ ref, label, ...(shortLabel === undefined ? {} : { shortLabel }), quantity: 'level', unit: '%', valueType: 'number', thresholds: [], series: series ? { seriesId: ref, intervalMs: 1000 } : null, element }) as unknown as VignetteValue
+    const values = [number('plant:a#nr', 'Halden Unit 1 · Steam generator narrow-range level · SG A', 'SG A NR level', true), number('plant:a#flow', 'Halden Unit 1 · Feedwater inflow · SG A', undefined, false)]
+    const kept = new Map([['plant:a#nr', { holdMs: 1000, points: [{ t: 0, v: 27 }, { t: 60_000, v: 27 }] }]])
+    const readings = { values, observations: [{ ref: 'plant:a#nr', value: 27, quality: 'good', priority: 'none' }, { ref: 'plant:a#flow', value: 28, quality: 'good', priority: 'none' }], series: kept, now: 60_000, devices: [] } as unknown as FaceplateReadings
+    const rows = faceplateRows(readings, 6, { title: 'Halden Unit 1', elementId: 'sgA', frozen: false })
+    expect(rows.map(row => [row.label, row.recorded, row.series !== undefined])).toEqual([['NR level', true, true], ['Feedwater inflow', false, false]])
+    // Frozen, every row is doubtful (low-integrity), its last value kept.
+    expect(faceplateRows(readings, 6, { title: 'Halden Unit 1', elementId: 'sgA', frozen: true }).every(row => row.look.doubtful)).toBe(true)
+    // The records come with the session's sample (kept-series.ts), passed through by element.
+    const view = { title: 'Faceplates', sections: [{ kind: 'values', rows: 6, values, lead: 0 }] } as unknown as VignetteView
+    expect(readingsOf(['sgA'], view, { at: { at: new Date(60_000).toISOString(), clock: 'wall' }, observations: [] } as unknown as VignetteSample, kept).get('sgA')!).toMatchObject({ series: kept, now: 60_000 })
+  })
+
   test('a reading is labelled without its display\'s object and its own element\'s name', () => {
     const element = { id: 'sgA', class: 'steamGenerator', label: 'Steam Generator A', shortLabel: 'SG A' }
     expect(readingLabel({ label: 'Halden Unit 1 · Steam generator narrow-range level · SG A', element }, 'Halden Unit 1', 'sgA')).toBe('Steam generator narrow-range level')
@@ -280,8 +295,11 @@ describe('what a faceplate reads', () => {
 
   test('a frozen display\'s faceplate keeps its last readings, in the low-integrity style, never "?"', () => {
     const source = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Faceplate.svelte'), 'utf8')
-    expect(source).toContain('const observations = $derived(readings === null ? [] : readings.observations)')
-    expect(source).toContain('const shown = (look: ReadingLook): ReadingLook => (frozen ? { ...look, doubtful: true } : look)')
-    expect(source).toContain('{@const look = shown(valueLook(value, observations, value.ref))}')
+    // Its rows are the column's (value-rows.ts), which a frozen display marks doubtful: low-integrity, last values kept.
+    expect(source).toContain('const rows = $derived(readings === null ? [] : faceplateRows(readings, fit.shown, { title, elementId, frozen }))')
+    expect(source).toContain('<ValueRows {rows} now={readings.now} />')
+    // Its header says no state word while frozen: the drawing's word is then "?" ("RCP A ?").
+    expect(source).toContain('const stateWord = $derived(frozen ? null : word)')
+    expect(source).toContain('{#if stateWord !== null}<span class="word">{stateWord}</span>{/if}')
   })
 })

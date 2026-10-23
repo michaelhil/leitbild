@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { workspaceResourceReferenceSchema } from '@leitbild/contracts'
 import type { ProposalCard, WorldProposal } from '../../../agents/proposal-cards.ts'
-import { actorName, proposalCardView, proposedInTurn } from './model.ts'
+import { actorWords } from '../../../agents/proposal-cards.ts'
+import { proposalCardView, proposedInTurn } from './model.ts'
 
 // Demo beat 4 as the answer's card shows it: the agent proposed SHUT
 // MOV-8000A; the card follows World's status until a person decides.
@@ -13,13 +14,13 @@ const proposal = (status: WorldProposal['status'], closed?: WorldProposal['close
   ...(closed === undefined ? {} : { closed }),
 })
 const recorded = (status: WorldProposal['status'], closed?: WorldProposal['closed'], review?: Extract<ProposalCard['outcome'], { kind: 'recorded' }>['review']): ProposalCard =>
-  ({ ...proposed, outcome: { kind: 'recorded', proposalId: 'command:p1', resource: run, plantElapsedMs: 60_000, proposal: proposal(status, closed), ...(review === undefined ? {} : { review }) } })
+  ({ ...proposed, outcome: { kind: 'recorded', proposalId: 'command:p1', resource: run, plantElapsedMs: 60_000, proposal: proposal(status, closed), label: 'PZR block valve', ...(review === undefined ? {} : { review }) } })
 
 describe('an answer\'s proposal card', () => {
   test('a pending proposal awaits a person in the display window, with World\'s check and how the plant moved', () => {
     expect(proposalCardView(recorded('pending', undefined, { permitted: true, evidence: [{ tagId: 'PT-455', then: 15.26, now: 15.17 }], changed: true }), 'Shift advisor')).toEqual({
       action: 'SHUT MOV-8000A',
-      item: 'pressurizer.blockValve',
+      item: 'PZR block valve',
       proposer: 'Shift advisor',
       tone: 'pending',
       status: 'Awaiting a person\'s approval in the display window',
@@ -52,15 +53,23 @@ describe('an answer\'s proposal card', () => {
   test('an actuation\'s reset reads as World words it, or by its rule id before World has', () => {
     const reset = { ...proposed, target: 'safety-injection-manual', reset: true as const, value: undefined }
     const word = { ...proposal('pending'), item: 'safetyInjection.trainA', word: 'RESET Manual safety injection' }
-    expect(proposalCardView({ ...reset, outcome: { kind: 'recorded', proposalId: 'command:r1', plantElapsedMs: 60_000, proposal: word } }, 'Shift advisor'))
-      .toMatchObject({ action: 'RESET Manual safety injection', item: 'safetyInjection.trainA', tone: 'pending' })
+    expect(proposalCardView({ ...reset, outcome: { kind: 'recorded', proposalId: 'command:r1', plantElapsedMs: 60_000, proposal: word, label: 'SI train A' } } as ProposalCard, 'Shift advisor'))
+      .toMatchObject({ action: 'RESET Manual safety injection', item: 'SI train A', tone: 'pending' })
     expect(proposalCardView({ ...reset, outcome: { kind: 'refused', reason: 'RESET Manual safety injection is not offered: it may be reset 60 s after it acted: 12 s to go' } }, 'Shift advisor'))
       .toMatchObject({ action: 'RESET safety-injection-manual', tone: 'refused' })
   })
 
-  test('names people and agents by the id their actor carries', () => {
-    expect(actorName('actor:human:hilde')).toBe('hilde')
-    expect(actorName('operator:evidence')).toBe('operator:evidence')
+  test('names a person by the name their actor carries, anyone else by kind, never by a raw id (W7.4)', () => {
+    expect(actorWords('actor:human:hilde')).toBe('hilde')
+    expect(actorWords('actor:operator')).toBe('an operator')
+    expect(actorWords('actor:ai:agent-7')).toBe('an AI agent')
+    expect(actorWords('actor:system')).toBe('the Run')
+    expect(actorWords('actor:scenario-timeline:t1')).toBe('the Run')
+  })
+
+  test('the window\'s operator approves as "an operator", and the item reads by its label', () => {
+    expect(proposalCardView(recorded('approved', { atElapsedMs: 65_000, actorId: 'actor:operator', commandId: 'command:d1' }), 'Shift advisor'))
+      .toMatchObject({ item: 'PZR block valve', status: 'Approved by an operator · executed' })
   })
 })
 

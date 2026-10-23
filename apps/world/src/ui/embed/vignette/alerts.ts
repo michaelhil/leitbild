@@ -13,7 +13,7 @@ import type { Priority } from '../../../core/model/alerts.ts'
 import type { Observation } from '../../../core/observation/model.ts'
 import type { VignetteSection, VignetteView } from '../../../features/displays/compose/model.ts'
 import { ageText, firstOutMark, listPart } from '../../../features/displays/alerts/list.ts'
-import { asksAttention, priorityRank, stateWords, unacknowledged, type AlertRow } from '../../../features/displays/alerts/rows.ts'
+import { asksAttention, priorityRank, stateWords, subjectOf, unacknowledged, type AlertRow } from '../../../features/displays/alerts/rows.ts'
 import { severityStyle } from '../../displays/severity.ts'
 
 export type IconType = 'level-critical' | 'alarm' | 'warning' | 'caution'
@@ -123,7 +123,8 @@ type AlertsSection = Pick<Extract<VignetteSection, { kind: 'alerts' }>, 'objectI
 export const inSection = (section: AlertsSection) => (row: AlertRow): boolean => {
   if (section.objectIds !== 'run' && !section.objectIds.includes(row.objectId)) return false
   if (section.elements === undefined && section.refs === undefined) return true
-  return (elementOf(row) !== undefined && (section.elements ?? []).includes(elementOf(row)!)) || (row.alert.observable !== undefined && (section.refs ?? []).includes(row.alert.observable))
+  // A row on an element, or on a group its Pack declares as an element (a Grid island), is that element's.
+  return (subjectOf(row) !== undefined && (section.elements ?? []).includes(subjectOf(row)!)) || (row.alert.observable !== undefined && (section.refs ?? []).includes(row.alert.observable))
 }
 
 /** The element an alert is on, where its record names one: what its row opens. */

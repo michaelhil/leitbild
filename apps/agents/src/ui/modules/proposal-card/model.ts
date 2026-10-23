@@ -5,7 +5,7 @@
 // offers the default display of the proposal's element on its Run, where the
 // element's pop-over carries the proposal (Q23). Pure: no DOM, no network.
 import type { WorkspaceResourceReference } from '@leitbild/contracts'
-import type { ProposalCard } from '../../../agents/proposal-cards.ts'
+import { actorWords, type ProposalCard } from '../../../agents/proposal-cards.ts'
 import { PROPOSE_OPERATION_ID } from '../../../agents/operation-claims.ts'
 import type { UIMessage } from '../render/render-types.ts'
 
@@ -19,7 +19,7 @@ export type ProposalTone = 'pending' | 'executed' | 'closed' | 'refused' | 'unkn
 export interface ProposalCardView {
   /** What it does, as World words the control: "SHUT MOV-8000A", "RESET Manual safety injection". */
   readonly action: string
-  /** The equipment it is on, as World names the drawn item: "pressurizer.blockValve". */
+  /** The equipment it is on, as World labels the drawn item: "PZR block valve". */
   readonly item?: string
   readonly proposer: string
   readonly tone: ProposalTone
@@ -32,8 +32,7 @@ export interface ProposalCardView {
   readonly reviewAt?: { readonly resource: WorkspaceResourceReference; readonly subject: string; readonly title: string }
 }
 
-/** A person or agent as an actor id names them: "actor:human:hilde" → "hilde". */
-export const actorName = (actorId: string): string => actorId.replace(/^actor:(?:human|ai|system|anonymous):/, '')
+
 
 const valueWords = (value: unknown): string => typeof value === 'number' || typeof value === 'boolean' ? String(value) : JSON.stringify(value)
 
@@ -50,8 +49,8 @@ export const proposalCardView = (card: ProposalCard, proposerName: string): Prop
   }
   const proposal = outcome.proposal
   // A reset's word names its actuation ("RESET Manual safety injection"); a write's names the control's action, so the target follows.
-  const base = { action: card.reset === true ? proposal.word : `${proposal.word} ${card.target}`, item: proposal.item, proposer: proposerName }
-  const by = proposal.closed?.actorId === undefined ? '' : ` by ${actorName(proposal.closed.actorId)}`
+  const base = { action: card.reset === true ? proposal.word : `${proposal.word} ${card.target}`, item: outcome.label, proposer: proposerName }
+  const by = proposal.closed?.actorId === undefined ? '' : ` by ${actorWords(proposal.closed.actorId)}`
   const why = proposal.closed?.reason === undefined ? '' : `: ${proposal.closed.reason}`
   switch (proposal.status) {
     case 'pending': {

@@ -77,6 +77,8 @@ const unitSymbols: Readonly<Partial<Record<UnitCode, string>>> = { degC: '°C', 
 export const unitSymbol = (unit: string): string => unitSymbols[unit as UnitCode] ?? unit
 /** Codes read in a larger unit (W4.4, #45): a condenser's 7534 Pa reads 7.5 kPa, at that unit's decimals. */
 const readIn: Readonly<Partial<Record<UnitCode, { readonly factor: number; readonly decimals: number }>>> = { Pa: { factor: 1e-3, decimals: 1 } }
+/** What a value in a unit code is multiplied by to read in the unit it is shown in (unitSymbol): 1e-3 for pascals, else 1. */
+export const shownFactor = (unit: string): number => readIn[unit as UnitCode]?.factor ?? 1
 const SUPERSCRIPTS: Readonly<Record<string, string>> = { '-': '⁻', 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹' }
 /** A value read over decades: two significant digits and its power of ten, "4.4×10⁻⁸". */
 export const decadeParts = (value: number): { readonly text: string; readonly value: number; readonly decimals: number } => {

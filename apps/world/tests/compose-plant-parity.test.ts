@@ -15,10 +15,10 @@ import type { SimulationRunRuntime } from '../src/core/simulation-runs/runtime.t
 import { composeDefault, composeVignette } from '../src/features/displays/compose/compose.ts'
 import { FLOW_ROOM, overviewOf, scopeWithin, topologyOf } from '../src/features/displays/compose/topology.ts'
 import { resolveSubject } from '../src/features/displays/compose/resolve.ts'
-import { visibleObject } from '../src/features/displays/compose/declared.ts'
+import { declaredRefs, visibleObject } from '../src/features/displays/compose/declared.ts'
 import { zoneRows, type VignetteView } from '../src/features/displays/compose/model.ts'
 import { SPARK_WINDOW_MS } from '../src/ui/sparkline.ts'
-import { compileVignette, sampleVignette, type ViewRun } from '../src/features/displays/compose/view.ts'
+import { alertsOf, compileVignette, sampleVignette, type ViewRun } from '../src/features/displays/compose/view.ts'
 import { overlaps } from './helpers/network-layout-measure.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { builtinScenarioDefinitions } from '../src/scenarios/definitions.ts'
@@ -168,6 +168,42 @@ describe('P9: an equipment default carries what the detail display carries', () 
     expect(listed.length).toBeLessThanOrEqual(alerts!.rows - 1)
     expect(listed.filter(reading => !/steam generator A/i.test(reading))).toEqual([])
     console.log(`SG A default: rows ${state.views.map(entry => `${entry.kind} ${entry.rows}`).join(', ')}; ${drawing.layout.width} x ${drawing.layout.height}, ${drawing.layout.crossings} crossings; card ${card.items.length} items + ${card.more}; ${card.adjusted.map(entry => entry.text).join('; ')}`)
+  })
+
+  test('a detail trends what it measures: its own measured values first, then other elements\', counts, and states last, in its Pack\'s order within each (W5.2)', async () => {
+    const trendOf = async (element: string) => {
+      const { state, card } = await opened(`${plantId}#${element}`)
+      const trend = state.views.find(entry => entry.kind === 'trend')
+      const declared = await declaredRefs(run, trend?.kind === 'trend' ? trend.refs : [])
+      const kinds = (trend?.kind === 'trend' ? trend.refs : []).map(ref => {
+        const { observable } = declared.get(ref)!
+        return observable.valueType !== 'number' ? 'state' : observable.quantity === 'count' ? 'count' : observable.element === element ? 'own' : 'other'
+      })
+      // Every alert the detail has now keeps its row: a watched list gives only its empty lines to a pen.
+      const alerts = state.views.find(entry => entry.kind === 'alerts')
+      if (alerts?.kind !== 'alerts') throw new Error(`${element} lists no alerts`)
+      const has = alertsOf(run, alerts).length
+      expect(alerts.rows).toBeGreaterThanOrEqual(1 + Math.min(has, 8))
+      return { refs: trend?.kind === 'trend' ? trend.refs.map(ref => ref.slice(ref.indexOf('#') + 1)) : [], kinds, adjusted: card.adjusted.map(entry => entry.text), alerts: `${has} alerts in ${alerts.rows} rows` }
+    }
+    const order = ['own', 'other', 'count', 'state']
+    for (const element of ['pressurizer', 'core', 'sgA']) {
+      const { refs, kinds, adjusted, alerts } = await trendOf(element)
+      expect(kinds).toEqual([...kinds].sort((left, right) => order.indexOf(left) - order.indexOf(right)))
+      expect(adjusted.filter(text => /^1 \w+s not shown$/.test(text))).toEqual([])
+      console.log(`${element} trend: ${refs.join(', ')} (${kinds.join(', ')}); ${alerts}; ${adjusted.join('; ')}`)
+    }
+    // The pressurizer its pressure and level, not its relief line's temperature; the tripped core its flux, not its rod steps.
+    const pressurizer = await trendOf('pressurizer')
+    expect(pressurizer.refs[0]).toBe('pressurizer.pressureMPa')
+    expect(pressurizer.refs).toContain('pressurizer.levelPercent')
+    expect(pressurizer.kinds).not.toContain('state')
+    const core = await trendOf('core')
+    expect(core.refs[0]).toBe('core.powerRangePercent')
+    expect(core.kinds.filter(kind => kind === 'own').length).toBeGreaterThan(0)
+    // The steam generator keeps its third strip: its list's empty line gives way before the pen does (its pressure,
+    // fourth, needs six rows more than the frame has; the column's row carries its 10-min sparkline).
+    expect((await trendOf('sgA')).refs).toEqual(['sgA.levelPercent', 'sgA.wideRangeLevelPercent', 'sgA.secondaryRadiationMSvPerH'])
   })
 
   test('a block valve between the drawn pressurizer and its drawn PORV is drawn, not named at a stop on each side', async () => {

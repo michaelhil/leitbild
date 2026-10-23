@@ -40,8 +40,10 @@ describe('weather observation declarations (N5)', () => {
   })
 
   test('the severity ladder is each quantity\'s thresholds (mutation), and the presentation severity reads the same rules', () => {
-    expect(of(declare(probe.id), 'visibilityM').thresholds.map(threshold => [threshold.id, threshold.direction, threshold.value, threshold.priority]))
-      .toEqual([['hazard-visibilityM', 'low', 800, 'warning'], ['adverse-visibilityM', 'low', 2000, 'caution']])
+    // Ordered by their step from normal (W9.3): a trend names adverse 2000 m LO and hazard 800 m LO-LO, never the reverse.
+    expect(of(declare(probe.id), 'visibilityM').thresholds.map(threshold => [threshold.id, threshold.direction, threshold.value, threshold.priority, threshold.order]))
+      .toEqual([['adverse-visibilityM', 'low', 2000, 'caution', 1], ['hazard-visibilityM', 'low', 800, 'warning', 2]])
+    expect(of(declare(probe.id), 'ice').thresholds.map(threshold => [threshold.value, threshold.order])).toEqual([[0.25, 1], [0.55, 2]])
     expect(of(declare(probe.id), 'wetness').thresholds.map(threshold => [threshold.value, threshold.priority])).toEqual([[0.2, 'notice']])
     expect(declare(probe.id).observables.flatMap(observable => observable.thresholds).every(threshold => threshold.effect === 'advisory')).toBe(true)
     const ladder = weatherSeverityLadder as Array<(typeof weatherSeverityLadder)[number]>
@@ -49,7 +51,7 @@ describe('weather observation declarations (N5)', () => {
     const state = weatherPackDataSchema.parse(foggy(probe).packData).sample.state
     try {
       ladder.splice(ladder.findIndex(rule => rule.severity === 'hazard' && rule.quantity === 'visibilityM'), 1, { severity: 'hazard', quantity: 'visibilityM', direction: 'low', limit: 400 })
-      expect(of(declare(probe.id), 'visibilityM').thresholds[0]).toMatchObject({ id: 'hazard-visibilityM', value: 400 })
+      expect(of(declare(probe.id), 'visibilityM').thresholds[1]).toMatchObject({ id: 'hazard-visibilityM', value: 400, order: 2 })
       expect(weatherPresentationSeverityForState(state)).toBe('adverse')
       ladder.splice(ladder.findIndex(rule => rule.quantity === 'windSpeedMps'), 1)
       expect(of(declare(probe.id), 'windSpeedMps').thresholds).toEqual([])

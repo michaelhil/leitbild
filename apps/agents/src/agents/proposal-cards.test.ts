@@ -76,21 +76,21 @@ describe('where World says a proposal stands', () => {
   test('reads the Plant\'s proposals through the Host as the proposing agent, and gives each card World\'s record', async () => {
     const requests: Array<{ url: string; body: Record<string, unknown> }> = []
     const cards = await reader(() => Response.json({ result: { plantId: 'plant:halden-1', plantElapsedMs: 70_000, proposals: [
-      { proposal: worldProposal('approved', { atElapsedMs: 65_000, actorId: 'actor:human:hilde', commandId: 'command:d1' }) },
+      { proposal: worldProposal('approved', { atElapsedMs: 65_000, actorId: 'actor:human:hilde', commandId: 'command:d1' }), label: 'PZR block valve' },
     ] } }), requests).read(proposedOperationsOf([proposed, refused]), agent)
     expect(requests).toEqual([{
       url: `http://127.0.0.1:4000/api/workspaces/${workspaceId}/capabilities/${PROPOSALS_OPERATION_ID}/invoke`,
       body: { resource: run, input: { plantId: 'plant:halden-1' }, actor: { kind: 'ai', id: 'agent-7', displayName: 'Shift advisor' } },
     }])
     expect(cards.map(card => card.outcome)).toEqual([
-      { kind: 'recorded', proposalId: 'command:p1', resource: run, plantElapsedMs: 70_000, proposal: expect.objectContaining({ status: 'approved', word: 'SHUT', closed: { atElapsedMs: 65_000, actorId: 'actor:human:hilde', commandId: 'command:d1' } }) },
+      { kind: 'recorded', proposalId: 'command:p1', resource: run, plantElapsedMs: 70_000, proposal: expect.objectContaining({ status: 'approved', word: 'SHUT', closed: { atElapsedMs: 65_000, actorId: 'actor:human:hilde', commandId: 'command:d1' } }), label: 'PZR block valve' },
       { kind: 'refused', reason: 'Not offered to operators: An RCP start needs seal injection and oil lift' },
     ])
   })
 
   test('a pending proposal carries World\'s review; one the Plant no longer keeps, or a refused read, is unreadable with why', async () => {
     const review = { permitted: true, evidence: [{ tagId: 'PT-455', then: 15.26, now: 15.17 }], changed: true }
-    const pending = await reader(() => Response.json({ result: { plantId: 'plant:halden-1', plantElapsedMs: 50_000, proposals: [{ proposal: worldProposal('pending'), review }] } }))
+    const pending = await reader(() => Response.json({ result: { plantId: 'plant:halden-1', plantElapsedMs: 50_000, proposals: [{ proposal: worldProposal('pending'), label: 'PZR block valve', review }] } }))
       .read(proposedOperationsOf([proposed]), agent)
     expect(pending[0]!.outcome).toMatchObject({ kind: 'recorded', proposal: { status: 'pending' }, review })
     const gone = await reader(() => Response.json({ result: { plantId: 'plant:halden-1', plantElapsedMs: 50_000, proposals: [] } })).read(proposedOperationsOf([proposed]), agent)
