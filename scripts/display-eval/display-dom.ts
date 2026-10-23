@@ -426,7 +426,7 @@ export interface Screen {
   /** Text lines of the shown display, the faceplates and choosers inside it, in reading order. */
   readonly lines: ReadonlyArray<ScreenLine>
   /** Dialogs shown over the display (a faceplate, a chooser, a tag dialog), with their own lines. */
-  readonly dialogs: ReadonlyArray<{ readonly label: string; readonly where: 'display' | 'page'; readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly pinned: boolean; readonly arrow?: boolean }>
+  readonly dialogs: ReadonlyArray<{ readonly label: string; readonly where: 'display' | 'page'; readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly pinned: boolean; readonly arrow?: boolean; readonly arrowParts?: ReadonlyArray<string> }>
 }
 
 /** An expression for `Page.eval`: what the display window shows on screen now (see Screen). */
@@ -446,9 +446,13 @@ export const readScreen = (): string => `((() => {${SCREEN_HELPERS}
   for (const el of shown.doc.querySelectorAll('[role=dialog], [role=menu], [role=listbox], .popover, .faceplate')) {
     if (!lb.shown(el) || dialogs.some(d => d.el.contains(el))) continue
     const r = el.getBoundingClientRect()
-    // An arrow pointing at its opener: any part of it (through shadow roots) named so, drawn.
-    const arrow = (() => { const walk = root => { for (const n of root.querySelectorAll('*')) { const cls = (n.getAttribute('class') || '') + ' ' + (n.getAttribute('part') || ''); if (/arrow|caret|beak/i.test(cls) && lb.shown(n)) return true; if (n.shadowRoot && walk(n.shadowRoot)) return true } return false }; return walk(el) || (el.shadowRoot ? walk(el.shadowRoot) : false) })()
-    dialogs.push({ el, label: nameOf(el).slice(0, 120), where: 'display', x: Math.round(box.ox + r.left), y: Math.round(box.oy + r.top), w: Math.round(r.width), h: Math.round(r.height), pinned: !!el.closest('[data-pinned], .pinned') || /pinned/i.test(el.className + '') || !!el.querySelector('[aria-pressed=true][aria-label*="pin" i], [aria-pressed=true][title*="pin" i]'), arrow })
+    // An arrow pointing at its opener: a small part named so (through shadow roots), drawn at the card's edge (touching
+    // or past it). A rate arrow or a fold caret inside the card is no pointer; every named part is listed as evidence.
+    const parts = []
+    const walk = root => { for (const n of root.querySelectorAll('*')) { const cls = ((n.getAttribute('class') || '') + ' ' + (n.getAttribute('part') || '')).trim(); if (/arrow|caret|beak/i.test(cls) && lb.shown(n)) { const q = n.getBoundingClientRect(); const edge = q.width <= 32 && q.height <= 32 && (q.left < r.left + 2 || q.right > r.right - 2 || q.top < r.top + 2 || q.bottom > r.bottom - 2); parts.push((n.tagName.toLowerCase() + '.' + cls.split(/\\s+/).filter(c => !/^svelte-/.test(c)).join('.')).slice(0, 60) + (edge ? ' (at the edge)' : '')) } if (n.shadowRoot) walk(n.shadowRoot) } }
+    walk(el); if (el.shadowRoot) walk(el.shadowRoot)
+    const arrow = parts.some(part => part.endsWith('(at the edge)'))
+    dialogs.push({ el, label: nameOf(el).slice(0, 120), where: 'display', x: Math.round(box.ox + r.left), y: Math.round(box.oy + r.top), w: Math.round(r.width), h: Math.round(r.height), pinned: !!el.closest('[data-pinned], .pinned') || /pinned/i.test(el.className + '') || !!el.querySelector('[aria-pressed=true][aria-label*="pin" i], [aria-pressed=true][title*="pin" i]'), arrow, arrowParts: [...new Set(parts)].slice(0, 6) })
   }
   return { frame: { x: Math.round(box.ox), y: Math.round(box.oy), w: Math.round(fr.width), h: Math.round(fr.height), visibleW: Math.round(box.vis.r - box.vis.l), visibleH: Math.round(box.vis.b - box.vis.t) }, window: windowState, lines, dialogs: dialogs.map(({ el, ...d }) => d) }
 })())`
