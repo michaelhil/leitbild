@@ -27,6 +27,8 @@
   let plant = $state.raw<WindowPlant | null>(null)
   let unavailable = $state<string | null>(null)
   let proposals = $state.raw<ReadonlyArray<ProposalListEntry>>([])
+  // A failed read of the proposals stays with the chip that reads them, never over the display, until a read succeeds.
+  let proposalsFailure = $state<string | null>(null)
   let menuOpen = $state(false)
   let actionsOpen = $state(false)
   let logOpen = $state(false)
@@ -45,6 +47,7 @@
     plant = null
     unavailable = null
     proposals = []
+    proposalsFailure = null
     readWindowPlant(runId, plantId).then(
       read => { if (!disposed && objectId === plantId) plant = read },
       err => { if (!disposed && objectId === plantId) unavailable = `The Plant cannot be read: ${errorText(err)}` },
@@ -55,8 +58,9 @@
       reading = true
       try {
         proposals = await readPendingProposals(runId, plantId)
+        proposalsFailure = null
       } catch (err) {
-        notice = { text: `Pending proposals cannot be read: ${errorText(err)}`, tone: 'error' }
+        proposalsFailure = `Pending proposals cannot be read: ${errorText(err)}`
       } finally {
         reading = false
       }
@@ -133,7 +137,7 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div class="display-window-plant" role="group" aria-label="Plant" onkeydown={keydown}>
-  <ProposalsChip entries={proposals} open={entry => openDisplay(reviewSubject(objectId, entry))} />
+  <ProposalsChip entries={proposals} failure={proposalsFailure} open={entry => openDisplay(reviewSubject(objectId, entry))} />
   <button
     bind:this={logButton}
     type="button"

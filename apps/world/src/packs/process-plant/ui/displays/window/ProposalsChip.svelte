@@ -4,12 +4,16 @@
   // The display window's pending proposals (plan §4.3, QA-10): one chip in
   // the window's toolbar, beside its position, for every display it shows;
   // absent when none waits. Its list puts the one that lapses first first,
-  // then the oldest; each opens its item's
-  // popover on its own detail, where a person decides. Part of the window's
-  // chrome, it is drawn with the window's own buttons, as its "New ›" is.
+  // then the oldest; each opens its item's detail with the proposal's
+  // faceplate pinned on the item, where a person decides. Part of the
+  // window's chrome, it is drawn with the window's own buttons, as its "New ›"
+  // is. A read that fails is said here, muted, until one succeeds, never over
+  // the display (F23, H18).
 
-  let { entries, open }: {
+  let { entries, failure, open }: {
     entries: ReadonlyArray<ProposalListEntry>
+    /** Why the last read of the proposals failed, until one succeeds: said by the chip, in its own place. */
+    failure: string | null
     /** Opens the item's own detail with its popover pinned on the proposal. */
     open: (entry: ProposalListEntry) => void
   } = $props()
@@ -30,6 +34,9 @@
   }
 </script>
 
+{#if failure !== null}
+  <span class="unread" role="status" title={failure}>Proposals ?</span>
+{/if}
 {#if entries.length > 0}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="proposals" onkeydown={keydown}>
@@ -61,4 +68,6 @@
   .list li + li { margin-top: 4px; }
   .entry { width: 100%; height: auto; min-height: 30px; padding: 4px 8px; justify-content: flex-start; text-align: left; white-space: normal; color: var(--text); }
   .who { font-weight: 700; color: var(--accent); }
+  /* The proposals could not be read: the chip's own place says so, muted, its reason in the title. */
+  .unread { flex: none; padding: 0 6px; white-space: nowrap; font-size: 12px; color: var(--muted); border: 1px dashed var(--border); border-radius: 6px; }
 </style>

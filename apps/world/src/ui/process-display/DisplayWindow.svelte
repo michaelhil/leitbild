@@ -439,7 +439,13 @@
   // A subject's World default (a proposal's element), on this Run or the one chat names: composed for the person, shown
   // after the shown display with Back to it, or on its own where the window shows none yet.
   const openDefaultAfter = async (subject: string, on: { readonly runId: string; readonly title?: string } = { runId }): Promise<void> => {
-    const from = current
+    // Opened while the window shows nothing yet (chat's "Review in display"): the subject's own asset overview first, so
+    // its default has a Back and, opened after another, pins the faceplate of the proposal it draws (W3.6).
+    const asset = current === null && on.runId === runId && subject.includes('#')
+      ? deck.find(entry => entry.source === 'asset' && entry.asset.objectId === subject.slice(0, subject.indexOf('#'))) ?? null
+      : null
+    if (asset !== null) showEntry(asset)
+    const from = asset ?? current
     let listing: EmbeddedViewListing
     try {
       const envelope = defaultDisplayEnvelope({ workspaceId: activeWorkspaceId(), simulationRunId: on.runId as SimulationRunId, view: await readDefaultDisplay(on.runId as SimulationRunId, subject) })

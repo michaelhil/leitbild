@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { DisplayFrameMessage } from '../src/ui/embed/display-frame-protocol.ts'
 import { createViewHost, escapeGoesBack, type ReceivedMessage } from '../src/ui/embed/view-host.ts'
 import { MAGNIFIER, magnifierAt } from '../src/ui/embed/vignette/magnifier.ts'
+import { onElementRequest, requestElement } from '../src/ui/embed/vignette/selection.ts'
 
 // Option A (plan v5 §3, owner ruling D-A): a press on an item's body opens its detail (L3) as the next display, Back
 // and Esc return; OpenBridge's 16 px magnifier after the item's name opens its faceplate (L2), with a 40 px hit area
@@ -92,3 +93,28 @@ describe('the drawing\'s grammar', () => {
     expect(source.match(/\{@render magnifier\((item|device)\.id\)\}/g)).toHaveLength(2)
   })
 })
+
+describe('a request to show an element (selection.ts, contract 1)', () => {
+  test('a drawing that draws the element answers, and shows it; none answers for one no drawing draws', () => {
+    const shown: string[] = []
+    const stop = onElementRequest(request => {
+      if (request.objectId !== 'plant:a' || request.elementId !== 'sgA') return false
+      shown.push(request.how)
+      return true
+    })
+    expect(requestElement({ objectId: 'plant:a', elementId: 'sgA', how: 'select' })).toBe(true)
+    expect(requestElement({ objectId: 'plant:a', elementId: 'sgA', how: 'detail' })).toBe(true)
+    expect(requestElement({ objectId: 'plant:a', elementId: 'rcpA', how: 'select' })).toBe(false)
+    stop()
+    expect(requestElement({ objectId: 'plant:a', elementId: 'sgA', how: 'select' })).toBe(false)
+    expect(shown).toEqual(['select', 'detail'])
+  })
+
+  test('the flow drawing listens while mounted: a select opens the item\'s faceplate, a detail its default', () => {
+    const source = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/FlowTopology.svelte'), 'utf8')
+    expect(source).toContain('const stopRequests = onElementRequest(request => {')
+    expect(source).toContain("if (request.how === 'detail') void openDetail(request.elementId, id)")
+    expect(source).toContain('stopRequests()')
+  })
+})
+

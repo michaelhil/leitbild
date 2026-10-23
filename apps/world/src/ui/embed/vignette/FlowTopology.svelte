@@ -5,7 +5,9 @@
   import type { AlertRow } from '../../../features/displays/alerts/rows.ts'
   import type { VignetteSection } from '../../../features/displays/compose/model.ts'
   import type { Palette } from '../../displays/severity.ts'
+  import type { PackElementMarks } from '../../../core/packs/protocol.ts'
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
+  import { loadEmbedPack } from '../pack-embed-loader.ts'
   import { embeddedDisplayFrame, UNFRAMED_PRESENTATION, visibleRoom, type DisplayOpening, type DisplayPresentation } from '../view-host.ts'
   import Faceplate from './Faceplate.svelte'
   import { faceplateStates, readingsOf, type FaceplateReadings } from './faceplate.ts'
@@ -14,11 +16,12 @@
   import { paintLines } from './lines.ts'
   import { magnifierAt, MAGNIFIER } from './magnifier.ts'
   import {
-    FACEPLATE_CLOSED, FACEPLATE_WIDTH, movedOverlay, nextFaceplate, openElementDetail, raisedOverlay, readPins, replacedOverlays, resizedOverlay, togglePinned, writePins,
+    FACEPLATE_CLOSED, FACEPLATE_WIDTH, faceplatePlacement, keptInRoom, movedOverlay, nextFaceplate, openElementDetail, raisedOverlay, readPins, replacedOverlays, resizedOverlay, togglePinned, writePins,
     type Box, type FaceplateState, type OpenedFrom, type OverlayChange, type PinnedOverlay,
   } from './popover.ts'
   import type { AlertTone } from './readout.ts'
   import { VIGNETTE_ROW_PX } from './grid.ts'
+  import { onElementRequest } from './selection.ts'
   import { createVignetteSession, vignetteRoutes, type VignetteSession } from './vignette-client.ts'
   import Vessel from './Vessel.svelte'
   import './openbridge.ts'
@@ -36,8 +39,12 @@
   // or a tag's dialog, which have no window to walk in, it opens the
   // faceplate. OpenBridge's 16 px magnifier after the item's name opens the
   // faceplate (L2, Faceplate.svelte): it shows on hover and focus and always
-  // on touch, it is its own tab stop straight after its item, and Shift+Enter
-  // on the item does the same. One faceplate opens at a time; pinned ones
+  // on touch and on items the Pack offers controls on or a proposal waits on,
+  // it is its own tab stop straight after its item, and Shift+Enter on the
+  // item does the same. An item a proposal waits on carries OpenBridge's
+  // command request badge, and a display the window opened after another pins
+  // the faceplate of the one that lapses first, once each time it is shown
+  // (W3.6). One faceplate opens at a time; pinned ones
   // stay, by the item they were opened on, for the browser session
   // (popover.ts readPins). One sample a second reads every faceplate's
   // readings (faceplate.ts).
@@ -62,6 +69,8 @@
   /** Where a faceplate may stand: the part of the frame the window shows, else the page. */
   const room = $derived(visibleRoom(presentation, viewport))
 
+  /** How often the drawing asks its Pack what waits on its items. */
+  const MARKS_EVERY_MS = 2_000
   /** A device symbol's two grid cells. */
   const SYMBOL_PX = 2 * VIGNETTE_ROW_PX
   /** OpenBridge's alert type for each priority drawn in colour; emergency is its critical level. */
@@ -191,6 +200,12 @@
     show({ overlays: overlays.map(overlay => (overlay.item === key ? next : overlay)) })
     if (change.end) dragging = null
   }
+  // A card's height changed (its readings came, a proposal opened): a pinned one that now reaches past the room moves back inside it.
+  const grown = (key: string, overlay: PinnedOverlay | null, height: number): void => {
+    if (heights[key] === height) return
+    heights = { ...heights, [key]: height }
+    if (overlay !== null) show({ overlays: overlays.map(entry => (entry.item === key ? keptInRoom(entry, height, room, zoom) : entry)) })
+  }
   // The room narrowed or moved (the window resized, the chat opened, the body scrolled): an overlay no longer wholly in
   // it goes beside its item again, pushed inside only where its item is not drawn.
   const roomChanged = (): void => {
@@ -214,6 +229,51 @@
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
     bodyPress(id)
+  }
+
+  // --- What the Pack marks on the items: offered controls, pending proposals (W3.6) ------------------------------------
+  let marks = $state.raw<PackElementMarks>({ operated: [], pending: [] })
+  const operated = $derived(new Set(marks.operated))
+  const pendingBy = $derived(new Map(marks.pending.map(entry => [entry.element, entry])))
+  /** The elements an item stands for: a group's members, else its own. */
+  const elementsOf = (key: string): ReadonlyArray<string> => key.startsWith('#') ? [key.slice(1)] : membersOf(key).map(member => member.element)
+  const pendingOf = (key: string): { readonly ai: boolean } | undefined => elementsOf(key).map(element => pendingBy.get(element)).find(entry => entry !== undefined)
+  /** The drawn item that stands for an element: its own, or the group it is a member of. */
+  const itemOf = (element: string): string | undefined => [...items.keys()].find(id => elementsOf(id).includes(element))
+  // A display the window opened after another (an item's detail, a proposal to review) pins the faceplate of the
+  // pending proposal it draws that lapses first, once each time it is shown, never over the person's own pins.
+  let showing = 0
+  let reviewed = -1
+  const review = (): void => {
+    if (presentation.back === undefined || reviewed === showing) return
+    reviewed = showing
+    const id = marks.pending.map(entry => itemOf(entry.element)).find(found => found !== undefined)
+    const box = id === undefined ? null : itemBox(id)
+    if (id === undefined || box === null || pinned(id)) return
+    const place = faceplatePlacement(box, { width: FACEPLATE_WIDTH, height: heights[id] ?? 300 }, room, zoom, overlays.map(entry => ({ x: entry.x, y: entry.y, width: entry.width / zoom, height: (heights[entry.item] ?? 160) / zoom })))
+    show({ overlays: togglePinned(overlays, { item: id, ...place, width: FACEPLATE_WIDTH, rows: null }), ...(faceplate.kind === 'open' && faceplate.item === id ? { faceplate: FACEPLATE_CLOSED } : {}) })
+  }
+  let markReader: ((runId: SimulationRunId, objectId: never) => Promise<PackElementMarks>) | null | undefined
+  let marking = false
+  const readMarks = async (): Promise<void> => {
+    if (marking || opening !== 'window' || !presentation.shown) return
+    marking = true
+    try {
+      markReader ??= (await (await loadEmbedPack(section.packId))?.elementMarks?.())?.read as typeof markReader ?? null
+      if (markReader === null || markReader === undefined) return
+      marks = await markReader(runId, section.objectId as never)
+      review()
+    } catch (error) {
+      notice = `What waits on this display cannot be read: ${error instanceof Error ? error.message : String(error)}`
+    } finally {
+      marking = false
+    }
+  }
+  /** Shows an element's item: its faceplate open beside it (raised where pinned), the item scrolled into view. */
+  const selectItem = (id: string): void => {
+    buttons.get(id)?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    if (pinned(id)) show({ overlays: raisedOverlay(overlays, id) })
+    else if (!(faceplate.kind === 'open' && faceplate.item === id)) openFaceplate(id)
   }
 
   // --- The magnifier --------------------------------------------------------------------------------------------------
@@ -245,7 +305,7 @@
   let hovered = $state<string | null>(null)
   let focused = $state<string | null>(null)
   const activated = (id: string): boolean => (faceplate.kind === 'open' && faceplate.item === id) || pinned(id)
-  const shown = (id: string): boolean => hovered === id || focused === id || activated(id)
+  const shown = (id: string): boolean => hovered === id || focused === id || activated(id) || elementsOf(id).some(element => operated.has(element)) || pendingOf(id) !== undefined
   const hover = (id: string) => ({ onpointerenter: () => { hovered = id }, onpointerleave: () => { if (hovered === id) hovered = null } })
   const focus = (id: string) => ({ onfocus: () => { focused = id }, onblur: () => { if (focused === id) focused = null } })
 
@@ -257,6 +317,7 @@
     const stops = [
       host.subscribe(next => {
         const moved = !sameRoom(next, presentation)
+        if (next.shown && !presentation.shown) showing += 1
         presentation = next
         for (const session of sessions) session.setVisible(next.shown)
         // The display put away (another one shown in the window): an open faceplate closes; pinned ones stay with it.
@@ -274,12 +335,26 @@
       show({ faceplate: FACEPLATE_CLOSED })
     }
     const blurred = (): void => { if (faceplate.kind === 'open') show({ faceplate: FACEPLATE_CLOSED }) }
+    // What waits on the items, read every MARKS_EVERY_MS while the window shows the display.
+    void readMarks()
+    const marking = setInterval(() => { void readMarks() }, MARKS_EVERY_MS)
+    // An alert row, a chip or a tile asks to show an element this drawing draws (selection.ts).
+    const stopRequests = onElementRequest(request => {
+      if (request.objectId !== section.objectId) return false
+      const id = itemOf(request.elementId)
+      if (id === undefined) return false
+      if (request.how === 'detail') void openDetail(request.elementId, id)
+      else selectItem(id)
+      return true
+    })
     const resized = (): void => { viewport = { width: window.innerWidth, height: window.innerHeight }; roomChanged() }
     document.addEventListener('pointerdown', down, { capture: true })
     window.addEventListener('blur', blurred)
     window.addEventListener('resize', resized)
     return () => {
       for (const stop of stops) stop()
+      stopRequests()
+      clearInterval(marking)
       for (const session of sessions) session.close()
       document.removeEventListener('pointerdown', down, { capture: true })
       window.removeEventListener('blur', blurred)
@@ -317,14 +392,19 @@
   {/if}
 {/snippet}
 
+{#snippet waiting(pending: { readonly ai: boolean })}
+  <!-- A proposal waits on it: OpenBridge's command request glyph, an AI's pending glyph where an AI agent proposed it. -->
+  {#if pending.ai}<obi-ai-pending usecsscolor></obi-ai-pending>{:else}<obi-command-request usecsscolor></obi-command-request>{/if}
+{/snippet}
+
 {#snippet card(key: string, overlay: PinnedOverlay | null)}
   {@const element = elementOf(key)}
   {@const group = groupKey(key)}
   <Faceplate {runId} objectId={section.objectId} packId={section.packId} elementId={element} name={faceplateName(key)} word={wordOf(key)} title={from.title}
     readings={group ? null : readings.get(element) ?? null} {alerts} alertElements={group ? membersOf(key).map(member => member.element) : [element]} {group} related={relatedOf(key)}
-    anchor={overlay === null ? (key.startsWith('#') ? null : anchor) : null} at={overlay === null ? openedAt : null} avoid={overlay === null ? overlays.map(entry => ({ x: entry.x, y: entry.y, width: entry.width / zoom, height: (heights[entry.item] ?? 160) / zoom })) : []} {zoom} {room} {frozen} {opening} pending={false} pinned={overlay}
+    anchor={overlay === null ? (key.startsWith('#') ? null : anchor) : null} at={overlay === null ? openedAt : null} avoid={overlay === null ? overlays.map(entry => ({ x: entry.x, y: entry.y, width: entry.width / zoom, height: (heights[entry.item] ?? 160) / zoom })) : []} {zoom} {room} {frozen} {opening} pending={pendingOf(key) !== undefined} pinned={overlay}
     onclose={closeFaceplate} onpin={place => pin(key, place)} onoverlay={(change, height) => changeOverlay(key, change, height)} ontouched={() => { if (overlay !== null) show({ overlays: raisedOverlay(overlays, key) }) }}
-    onsize={height => { if (heights[key] !== height) heights = { ...heights, [key]: height } }}
+    onsize={height => grown(key, overlay, height)}
     ondetail={target => { if (overlay === null) closeFaceplate(false); void openDetail(target, null) }}
     onfaceplate={(target, name) => { elementNames = { ...elementNames, [`#${target}`]: name }; openFaceplate(`#${target}`, cardPlace(key, overlay)) }} />
 {/snippet}
@@ -340,9 +420,9 @@
       <div class="placed box" class:hovered={hovered === item.id} class:activated={activated(item.id)} role="button" tabindex="0" aria-label={`Open ${item.title}`} title={item.title} use:button={item.id} style:left={`${item.x}px`} style:top={`${item.y}px`} style:width={`${item.width}px`} style:height={`${item.height}px`}
         onclick={() => bodyPress(item.id)} onkeydown={bodyKey(item.id)} {...hover(item.id)} {...focus(item.id)}>
         {#if item.kind === 'tank'}
-          <obc-automation-tank type="generic" orientation="vertical" positioning="button" compact medium="normal" max={100} value={item.level ?? 0} static={item.unknown || item.level === null} showTrendSymbol={false} clickable={false} tag="" alert={item.tone !== null} alertFrameStatus={item.tone === null ? 'caution' : ALERT_TYPE[item.tone]} alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false} style:width="100%" style:height="100%"><span slot="readout"></span></obc-automation-tank>
+          <obc-automation-tank type="generic" orientation="vertical" positioning="button" compact medium="normal" max={100} value={item.level ?? 0} static={item.unknown || item.level === null} showTrendSymbol={false} clickable={false} tag="" alert={item.tone !== null} alertFrameStatus={item.tone === null ? 'caution' : ALERT_TYPE[item.tone]} alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false} style:width="100%" style:height="100%"><span slot="readout"></span>{#if pendingOf(item.id) !== undefined}<obc-automation-badge slot="badges" mode="enhanced" title="A proposal waits on it">{@render waiting(pendingOf(item.id)!)}</obc-automation-badge>{/if}</obc-automation-tank>
         {:else if item.kind === 'exchanger'}
-          <obc-heat-exchanger positioning="button" medium="graphic" static={item.unknown} clickable={false} showIcon tag="" alert={item.tone !== null} alertFrameStatus={item.tone === null ? 'caution' : ALERT_TYPE[item.tone]} alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false} style:width="100%" style:height="100%"></obc-heat-exchanger>
+          <obc-heat-exchanger positioning="button" medium="graphic" static={item.unknown} clickable={false} showIcon tag="" alert={item.tone !== null} alertFrameStatus={item.tone === null ? 'caution' : ALERT_TYPE[item.tone]} alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false} style:width="100%" style:height="100%">{#if pendingOf(item.id) !== undefined}<obc-automation-badge slot="badges" mode="enhanced" title="A proposal waits on it">{@render waiting(pendingOf(item.id)!)}</obc-automation-badge>{/if}</obc-heat-exchanger>
         {:else if item.drawing !== undefined}
           <Vessel id={item.id} width={item.width} height={item.height} origin={{ x: item.x, y: item.y }} drawing={item.drawing} level={item.level} parts={item.parts ?? []} />
         {/if}
@@ -358,6 +438,7 @@
           {:else if device.glyph !== null}
             <svelte:element this={device.glyph.tag} slot="icon" usecsscolor></svelte:element>
           {/if}
+          {#if pendingOf(device.id) !== undefined}<obc-automation-badge slot="badge-top-right" mode="enhanced" title="A proposal waits on it">{@render waiting(pendingOf(device.id)!)}</obc-automation-badge>{/if}
         </obc-automation-button></div>
       </div>
       {@render magnifier(device.id)}

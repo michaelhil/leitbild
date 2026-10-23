@@ -689,6 +689,8 @@ export interface PackSurfaceLayout {
 export interface PackEmbedContribution {
   /** The panel a display's element faceplate shows for this Pack's elements (proposal, controls, resets); World places it, the Pack implements it. */
   readonly elementActions?: () => Promise<{ readonly default: Component<PackElementActionsProps> }>
+  /** Reads what a drawing in the display window marks on an object's items; the drawing asks every few seconds while shown. */
+  readonly elementMarks?: () => Promise<{ readonly read: (runId: SimulationRunId, objectId: ObjectId) => Promise<PackElementMarks> }>
 }
 
 /** What a Pack's element-actions panel is mounted with: the element a display's faceplate shows. */
@@ -702,6 +704,16 @@ export interface PackElementActionsProps {
   readonly frozen: boolean
   /** Pinned as an overlay: a monitoring overlay offers no command at a glance, its controls fold (W3.3). */
   readonly pinned: boolean
+}
+
+/**
+ * What a drawing marks on its items for a Pack's object (W3.6): the elements it offers controls on, whose magnifier
+ * always shows, and those with a pending proposal, the one that lapses first first, each carrying OpenBridge's command
+ * request badge (`ai`: an AI agent proposed it).
+ */
+export interface PackElementMarks {
+  readonly operated: ReadonlyArray<string>
+  readonly pending: ReadonlyArray<{ readonly element: string; readonly ai: boolean }>
 }
 
 /** What a Pack's display-window tools are mounted with: the Run and the object whose display the window shows. */

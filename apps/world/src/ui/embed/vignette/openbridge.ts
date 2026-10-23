@@ -45,3 +45,7 @@ import '@oicl/openbridge-webcomponents/dist/icons/icon-pin-google.js'
 import '@oicl/openbridge-webcomponents/dist/icons/icon-pin-selected-google.js'
 import '@oicl/openbridge-webcomponents/dist/icons/icon-drag-horizontal.js'
 import '@oicl/openbridge-webcomponents/dist/icons/icon-resize-corner.js'
+// What waits on an item (W3.6): OpenBridge's automation badge with its command request and AI pending glyphs.
+import '@oicl/openbridge-webcomponents/dist/automation/automation-badge/automation-badge.js'
+import '@oicl/openbridge-webcomponents/dist/icons/icon-command-request.js'
+import '@oicl/openbridge-webcomponents/dist/icons/icon-ai-pending.js'
