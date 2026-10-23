@@ -25,6 +25,26 @@ export interface ValueRow {
   readonly written: Written
   readonly rate: string | null
   readonly margin: Margin | null
+  /**
+   * Where it has no record to draw (W4.2, W9.3: no sparkline without history), a level, a loading or a position whose
+   * Pack declares its instrument's span: a span bar, its ends the span's, a tick at each alarm and trip limit in it.
+   */
+  readonly bar: SpanBar | null
+}
+
+export interface SpanBar { readonly min: number; readonly max: number; readonly value: number; readonly ticks: ReadonlyArray<number> }
+
+/** The quantities a span bar reads well for: a fill of a known span. */
+const SPANNED: ReadonlySet<VignetteValue['quantity']> = new Set(['level', 'loading'])
+
+/** A value's span bar (SpanBar), or null: recorded values draw their sparkline instead. */
+export const spanBar = (value: Pick<VignetteValue, 'span' | 'quantity' | 'travel' | 'thresholds'>, reading: number, recorded: boolean): SpanBar | null => {
+  const span = value.span
+  if (recorded || span === undefined || !(SPANNED.has(value.quantity) || value.travel !== undefined)) return null
+  return {
+    min: span.min, max: span.max, value: Math.min(span.max, Math.max(span.min, reading)),
+    ticks: [...new Set(value.thresholds.filter(threshold => (threshold.effect === 'alarm' || threshold.effect === 'trip') && threshold.value > span.min && threshold.value < span.max).map(threshold => threshold.value))],
+  }
 }
 
 /**
@@ -58,16 +78,18 @@ export const valueRows = (input: {
   const number = look.kind === 'number' && !look.doubtful && look.offSpan === null && typeof observation?.value === 'number' && observation.quality === 'good'
   const tendency = number && series !== undefined && Number.isFinite(input.now) ? tendencyOf(series.points, input.now, series.holdMs, numberStep(observation!.value as number, value.unit, value.quantity)) : null
   const written = { unit: value.unit, quantity: value.quantity, ...(value.decades === true ? { decades: true as const } : {}) }
+  const recorded = value.series !== null && (value.valueType === 'number' || value.valueType === 'duration')
   return {
     ref: value.ref,
     label: ownLabel(value, input.title),
     full: value.label,
     look,
     series,
-    recorded: value.series !== null && (value.valueType === 'number' || value.valueType === 'duration'),
+    recorded,
     written,
     rate: tendency?.rate === null || tendency === null ? null : rateText(tendency.rate, value.unit, value.quantity),
-    margin: !number ? null : marginOf(observation!.value as number, value.thresholds, observation!.past, tendency ?? { short: null, long: null, rate: null }, written),
+    margin: !number ? null : marginOf(observation!.value as number, value.thresholds, observation!.past, tendency ?? { short: null, long: null, rate: null }, { ...written, ...(value.span === undefined ? {} : { span: value.span }) }),
+    bar: look.kind === 'number' && typeof observation?.value === 'number' && (observation.quality === 'good' || observation.quality === 'uncertain' || observation.quality === 'stale') ? spanBar(value, observation.value, recorded) : null,
   }
 })
 

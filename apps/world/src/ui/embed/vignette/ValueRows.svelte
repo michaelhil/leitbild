@@ -15,7 +15,9 @@
   // is past, only then, in a column every row keeps while one has one; its
   // rate per minute where the 30 s and 2 min slopes agree; its 10-min
   // sparkline where its reading has a series. States and criteria take the
-  // whole row in their own words. The list re-aligns after each sample: it
+  // whole row in their own words. A value with no record but a declared
+  // span (a grid line's loading) draws its span bar there instead. The list
+  // re-aligns after each sample: it
   // only sees its rows' attributes change, and these are properties.
   let { rows, now, heading }: {
     rows: ReadonlyArray<ValueRow>
@@ -82,7 +84,13 @@
           <span class="reason" title={look.reason} use:wholeWords={`(${look.reason})`}></span>
         {:else}
           <span class="rate" title={row.rate === null ? undefined : `${row.rate.startsWith('▲') ? 'Rising' : 'Falling'} ${row.rate.slice(2).replace('/min', '')} ${row.look.unit} a minute: the last 30 s and the last 2 min agree`}>{row.rate ?? ''}</span>
-          {#if row.recorded}<Sparkline series={row.series} {now} windowMs={SPARK_WINDOW_MS} size={SPARK} tone={look.tone} text={sparkText(row)} doubtful={look.doubtful} />{:else}<span></span>{/if}
+          {#if row.recorded}<Sparkline series={row.series} {now} windowMs={SPARK_WINDOW_MS} size={SPARK} tone={look.tone} text={sparkText(row)} doubtful={look.doubtful} />
+          {:else if row.bar !== null}
+            <!-- No record to draw: where it stands in its declared span, a tick at each alarm and trip limit (OpenBridge's bar). -->
+            <span class="span" role="img" aria-label={`${row.label}: ${look.text} ${look.unit} in its span ${row.bar.min} to ${row.bar.max}`.replace('  ', ' ')}>
+              <obc-bar-horizontal width={SPARK.width} minValue={row.bar.min} maxValue={row.bar.max} value={row.bar.value} hasBar={true} hasScale={row.bar.ticks.length > 0} showLabels={false} mainTickmarks={row.bar.ticks} side="top" barThickness={6} tickThickness={6} paddingLeft={0} paddingRight={0}></obc-bar-horizontal>
+            </span>
+          {:else}<span></span>{/if}
         {/if}
       </div>
     {/if}
@@ -111,6 +119,8 @@
   .chip.warning { background: var(--display-warning-fill); color: var(--display-on-warning); border-color: var(--alert-warning-color); }
   .chip.alarm { background: var(--display-alarm-fill); color: var(--display-on-alarm); border-color: var(--alert-alarm-color); }
   .chip.critical { background: var(--display-critical-fill); color: var(--display-on-critical); border-color: var(--alert-critical-color); }
+  .span { display: block; width: 52px; }
+  .span obc-bar-horizontal { display: block; }
   .reason { grid-column: 4 / 6; min-width: 0; overflow: hidden; font-size: 12px; color: var(--element-neutral-color); }
   .rate { font-size: 11px; text-align: right; color: var(--element-neutral-color); font-variant-numeric: tabular-nums; overflow: hidden; }
 </style>

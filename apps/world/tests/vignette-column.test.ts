@@ -9,7 +9,7 @@ import { keptAfter, shownSeries, unkept } from '../src/ui/embed/vignette/kept-se
 import { marginOf, slopePerMinute, tendencyOf } from '../src/ui/embed/vignette/margin.ts'
 import { rateNow, rateText } from '../src/ui/embed/vignette/trend.ts'
 import { SPARK_WINDOW_MS, sparkline } from '../src/ui/sparkline.ts'
-import { marginLines, ownLabel, valueRows } from '../src/ui/embed/vignette/value-rows.ts'
+import { marginLines, ownLabel, spanBar, valueRows } from '../src/ui/embed/vignette/value-rows.ts'
 import { createVignetteSession, type VignetteSnapshot } from '../src/ui/embed/vignette/vignette-client.ts'
 import { valueLook } from '../src/ui/embed/vignette/readout.ts'
 import { recordingSeriesIdFor, type ObjectId } from '../src/core/model/index.ts'
@@ -315,5 +315,21 @@ describe('a row\'s name in its element\'s own detail', () => {
     expect(ownLabel(value, 'Halden Unit 1')).toBe('SG A narrow-range level')
     expect(ownLabel({ ...value, shortLabel: 'AFW valve A flow', element: { ...element, id: 'auxFeedwaterValveA', label: 'Auxiliary Feedwater Valve A', shortLabel: 'AFW valve A' } }, 'Halden Unit 1 · Steam Generator A')).toBe('AFW valve A flow')
     expect(ownLabel({ label: 'Halden Unit 1 · Pressurizer pressure' }, 'Halden Unit 1')).toBe('Pressurizer pressure')
+  })
+})
+
+describe('a declared span bar (W4.2, W9.3)', () => {
+  const loading = { quantity: 'loading' as const, span: { min: 0, max: 150 }, thresholds: [
+    { id: 'high', direction: 'high' as const, value: 90, order: 1, effect: 'alarm' as const, priority: 'caution' as const },
+    { id: 'rating', direction: 'high' as const, value: 100, order: 1, effect: 'rating' as const, priority: 'notice' as const },
+    { id: 'trip', direction: 'high' as const, value: 120, order: 2, effect: 'trip' as const, priority: 'alarm' as const },
+  ] }
+  test('only where a level, a loading or a position has no record: its span\'s ends, the value held in them, a tick at each alarm and trip limit', () => {
+    expect(spanBar(loading, 130.7, false)).toEqual({ min: 0, max: 150, value: 130.7, ticks: [90, 120] })
+    expect(spanBar(loading, 170, false)!.value).toBe(150)
+    // A record draws its sparkline instead; no span, no bar; a pressure is no fill of a span.
+    expect(spanBar(loading, 50, true)).toBeNull()
+    expect(spanBar({ ...loading, span: undefined }, 50, false)).toBeNull()
+    expect(spanBar({ ...loading, quantity: 'pressure' }, 50, false)).toBeNull()
   })
 })

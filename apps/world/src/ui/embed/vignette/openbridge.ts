@@ -6,6 +6,8 @@
 import '@oicl/openbridge-webcomponents/dist/openbridge.css'
 import '@oicl/openbridge-webcomponents/dist/icons/icon-ai.js'
 import '@oicl/openbridge-webcomponents/dist/building-blocks/readout-block/readout-block.js'
+// A values row's declared span bar where it has no record (W4.2, W9.3).
+import '@oicl/openbridge-webcomponents/dist/building-blocks/bar-horizontal/bar-horizontal.js'
 // A values section's rows (W4.2): OpenBridge's readout list aligns their values and units.
 import '@oicl/openbridge-webcomponents/dist/navigation-instruments/readout-list/readout-list.js'
 import '@oicl/openbridge-webcomponents/dist/navigation-instruments/readout-list-item/readout-list-item.js'
