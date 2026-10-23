@@ -1,6 +1,6 @@
 /**
- * T03 (plan v3.1 Appendix F): saved Runs captured from a local stack at
- * bacf7a115, restored by today's code. A fixture is a Run directory as World
+ * T03 (plan v3.1 Appendix F): saved Runs captured from a local stack (each
+ * meta.json names its commit), restored by today's code. A fixture is a Run directory as World
  * persisted it, every file gzipped, without its Historian database (Historian
  * v1 is frozen; restore is about the Run's own state). meta.json names the
  * Workspace and Run the files belong to.

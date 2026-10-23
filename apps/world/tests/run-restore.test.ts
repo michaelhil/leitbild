@@ -17,9 +17,11 @@ import { guardPlantTests } from './plant-hang-guard.ts'
 
 guardPlantTests()
 
-// T03 (plan v3.1 Appendix F): Runs saved at bacf7a115 restore with today's code: the four-unit Halden loss of offsite
-// power and an Einsatz supply Run. Their journals carry no simulationTime; the plant runtime state is v1. A change that
-// alters what a saved Run holds must keep these restoring (D4); a new stored field is listed and owner-signed.
+// T03 (plan v3.1 Appendix F): saved Runs restore with today's code: the four-unit Halden loss of offsite power
+// (recaptured at R2, 37e4431bb, once the owner accepted that the pump fail-to-start fault's 20 plant variables end the
+// restore of PWR Runs saved before it) and an Einsatz supply Run saved at bacf7a115. Their journals carry no
+// simulationTime; the plant runtime state is v1. A change that alters what a saved Run holds must keep these restoring
+// (D4); a new stored field is listed and owner-signed.
 
 const routing = createDirectRoutingAdapter()
 const assembly = createWorldApplicationAssembly({ routing })
