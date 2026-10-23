@@ -54,14 +54,18 @@ const setTheme = async (page: Page, origin: string, theme: Theme): Promise<void>
   await page.eval(`localStorage.setItem('leitbild.theme', ${JSON.stringify(theme === 'dusk' ? 'dark' : 'light')})`)
 }
 
-/** The composer's width for a drawn text line: its own function where the worktree exports one, else its per-character width. */
-const composerWidth = async (): Promise<{ readonly how: string; readonly of: (text: string, size: number, weight: number) => number }> => {
-  const sizing: any = await import(`${WORKTREE}apps/world/src/features/displays/topology/flow-sizing.ts`)
-  for (const name of ['textWidth', 'flowTextWidth', 'measureText', 'widthOf']) {
-    if (typeof sizing[name] === 'function') return { how: `flow-sizing.${name}`, of: (text, size, weight) => Number(sizing[name](text, size, weight)) }
+/** The composer's width for a drawn text line: its own measure where the worktree has one (R3 W6.5: topology/text.ts
+ * textWidth(text, style), Noto Sans advances), else flow-sizing's per-character width. */
+const composerWidth = async (): Promise<{ readonly how: string; readonly of: (text: string, size: number, weight: number, kind: string) => number }> => {
+  const text: any = await import(`${WORKTREE}apps/world/src/features/displays/topology/text.ts`).catch(() => null)
+  if (text !== null && typeof text.textWidth === 'function') {
+    const styles = new Set(Object.keys(text.FLOW_TEXT ?? {}))
+    const styleOf = (kind: string, size: number) => kind === 'reading' && size >= 16 && styles.has('vesselReading') ? 'vesselReading' : styles.has(kind) ? kind : 'reading'
+    return { how: 'topology/text.ts textWidth (Noto Sans advances)', of: (line, size, _weight, kind) => Number(text.textWidth(line, styleOf(kind, size))) }
   }
+  const sizing: any = await import(`${WORKTREE}apps/world/src/features/displays/topology/flow-sizing.ts`)
   const per = Number(sizing.FLOW_TEXT_LINE?.perCharacter ?? 8)
-  return { how: `flow-sizing FLOW_TEXT_LINE.perCharacter ${per} px`, of: text => text.length * per }
+  return { how: `flow-sizing FLOW_TEXT_LINE.perCharacter ${per} px`, of: line => line.length * per }
 }
 
 interface ViewResult {
@@ -144,7 +148,7 @@ const judgeView = async (ctx: { readonly page: Page; readonly scratch: Page; rea
     const noto = fonts.faces.some(face => /noto sans/i.test(face.family) && face.status === 'loaded')
     const renders = [fonts.families.drawingName, fonts.families.drawingReading].every(family => family != null && /noto sans/i.test(family))
     checks.push(check('font-noto', noto && renders, `Noto Sans ${noto ? 'loaded' : 'not loaded'} (faces: ${[...new Set(fonts.faces.filter(face => face.status === 'loaded').map(face => face.family))].join(', ') || 'none loaded'}); drawing names in ${fonts.families.drawingName ?? '?'}, readings in ${fonts.families.drawingReading ?? '?'}`))
-    const ratios = fonts.widths.map(line => ({ ...line, estimate: ctx.width.of(line.text, line.size, line.weight) })).filter(line => line.estimate > 0).map(line => ({ ...line, ratio: line.px / line.estimate }))
+    const ratios = fonts.widths.map(line => ({ ...line, estimate: ctx.width.of(line.text, line.size, line.weight, line.kind) })).filter(line => line.estimate > 0).map(line => ({ ...line, ratio: line.px / line.estimate }))
     const wider = ratios.filter(line => line.ratio > 1.05)
     const sorted = [...ratios].sort((a, b) => a.ratio - b.ratio)
     const median = sorted.length === 0 ? null : sorted[Math.floor(sorted.length / 2)]!.ratio
