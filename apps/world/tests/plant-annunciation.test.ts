@@ -59,14 +59,14 @@ describe('the reference PWR\'s annunciation', () => {
 
 describe('what the reference PWR declares expected after a reactor trip, and for how long', () => {
   const declared = plant.automation.rules.flatMap(rule => rule.effects.flatMap(effect => effect.type === 'trip.enter' || effect.type === 'alarm.enter' ? [{ rule, effect }] : []))
-  const expectedAfterOf = (ruleId: string) => declared.filter(entry => entry.rule.id === ruleId).map(entry => entry.effect.type === 'writeSignal' ? undefined : entry.effect.annunciator?.expectedAfter)
+  const expectedAfterOf = (ruleId: string) => declared.filter(entry => entry.rule.id === ruleId).map(entry => entry.effect.annunciator?.expectedAfter)
   const window = { firstOutGroup: 'reactor-trip', withinMs: 300_000 }
 
   test('every reactor trip but its first out, and the turbine trip on P-4, are expected after the reactor trip; the SI actuation never is', () => {
     // A first-out panel shows every reactor trip after the first as subsequent: it comes in on a reactor already tripping.
     const reactorTrips = declared.filter(({ effect }) => effect.type === 'trip.enter' && effect.annunciator?.firstOutGroup === 'reactor-trip')
     expect(reactorTrips.length).toBeGreaterThan(10)
-    expect(reactorTrips.filter(({ effect }) => effect.type === 'writeSignal' || effect.annunciator?.expectedAfter === undefined).map(({ rule }) => rule.id)).toEqual([])
+    expect(reactorTrips.filter(({ effect }) => effect.annunciator?.expectedAfter === undefined).map(({ rule }) => rule.id)).toEqual([])
     expect(expectedAfterOf('reactor-trip-turbine-trip')).toEqual([window])
     expect(expectedAfterOf('safety-injection-low-pzr-pressure')).toEqual([undefined, window, undefined, undefined])
     // What a LOOP takes out is not a reactor trip's consequence, and stays news: the RCPs, the feed pumps, the buses.
