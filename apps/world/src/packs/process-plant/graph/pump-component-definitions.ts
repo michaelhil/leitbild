@@ -82,11 +82,13 @@ export const pumpComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
        */
       flowDemandPath: variablePathSchema.optional(),
     }),
-    // A pump runs while it is commanded to run and its motor has power, from the step it is commanded.
+    // A pump runs while it is commanded to run and its motor has power, from the step it is commanded, unless the
+    // instructor has failed it to start (startFailureActive, a fault the scenario injects): stopped, it stays stopped.
     semantics: fixedSemantics({ aspects: [aspect('running', { variable: 'runningState', reading: 'true' }, 'running', undefined, { onS: 0, offS: 0 })], ratedOutflow: [{ port: 'outlet', parameter: 'nominalFlowKgPerS' }] }),
     variables: [
       variable({ path: 'running', label: 'Run command', kind: 'discrete', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'command', quantity: 'boolean', unit: 'boolean' }),
       variable({ path: 'runningState', label: 'Running', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'boolean', unit: 'boolean' }),
+      variable({ path: 'startFailureActive', label: 'Fails to start', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'faultInjection', quantity: 'boolean', unit: 'boolean' }),
       variable({ path: 'speedFraction', label: 'Speed', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'command', measurand: 'speed', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
       variable({ path: 'speedRpm', label: 'Rotational speed', kind: 'derived', discipline: 'control', writable: false, publish: 'telemetry', quantity: 'rotationalSpeed', unit: 'rpm' }),
       variable({ path: 'flowKgPerS', label: 'Flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
