@@ -215,8 +215,8 @@ export const labelRows = (runs: ReadonlyArray<LabelRun>, room: number, measure: 
   return rows
 }
 
-/** A limit name's row (TrendStrip.svelte): 12 px text with its line's room, so the boxes of two rows never meet. */
-export const LABEL_LINE = 16
+/** A limit name's row (TrendStrip.svelte): 12 px Noto Sans, whose glyph box is about 16.3 px tall, so the boxes of two rows never meet. */
+export const LABEL_LINE = 17
 /** A name's inset from the plot, after its leader; continued rows indent further. */
 export const LABEL_GAP = 8
 export const LABEL_INDENT = 8
