@@ -326,7 +326,7 @@ export const CITATION_RUNS = ['halden-normal-operation', 'halden-offsite-power-r
 /** The cards of one frozen Run: the first two observed assets' lead values, and states with their `since`. */
 export const cardsOf = async (frozen: FrozenRun) => {
   const assets = frozen.context.text.split('\n').filter(line => / · lead: /.test(line)).map(line => line.slice(2).split(' · ')[0]!)
-  const leadOf = async (objectId: string) => [...(await frozen.searchRun.port.read({ lead: { objectId: objectId as never, count: 8 } })).observations].map(observation => observation.ref)
+  const leadOf = async (objectId: string) => [...(await frozen.searchRun.port.read({ leads: [{ objectId: objectId as never, count: 8 }] })).leads[0] ?? []]
   const first = assets[0]!
   // The second card: an asset of another pack where there is one, else the next asset; a Run with one asset has none.
   const packOf = (objectId: string) => frozen.searchRun.objects.find(object => object.id === objectId)?.packId
