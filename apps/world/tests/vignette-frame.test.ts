@@ -1,9 +1,68 @@
 import { describe, expect, test } from 'bun:test'
+import type { Observation } from '../src/core/observation/model.ts'
+import type { VignetteValue } from '../src/features/displays/compose/model.ts'
 import { safetyFunctionReading } from '../src/packs/process-plant/observation/safety-function-reading.ts'
 import type { SafetyFunctionEvaluation } from '../src/packs/process-plant/safety-functions.ts'
+import { chipOrder, stateChipLook } from '../src/ui/embed/vignette/state-chip.ts'
 
-// A vignette's frame (plan v5 W4.1): the per-sample pointer and path the
-// Plant reads its safety functions' states with.
+// A vignette's frame (plan v5 W4.1): an object's own states as compact chips
+// on its title row, and the per-sample pointer and path the Plant reads them
+// with.
+
+const at = '2026-10-22T10:00:00.000Z'
+const observation = (ref: string, value: Observation['value'], extra: Partial<Observation> = {}): Observation =>
+  ({ ref, at, clock: 'simulation', value, quality: 'good', priority: 'none', ...extra })
+
+const statuses = ['green', 'yellow', 'orange', 'red', 'unknown', 'not-monitored'].map(value => ({ value, label: value === 'not-monitored' ? 'NOT JUDGED' : value.toUpperCase() }))
+const heatSink: VignetteValue = {
+  ref: 'unit-1#csf.heat-sink', label: 'Unit 1 · Heat sink (CSF)', shortLabel: 'HEAT SINK', quantity: 'state', unit: '', valueType: 'enum',
+  states: statuses, thresholds: [], series: null, decidingElement: 'sgA',
+}
+const mode: VignetteValue = {
+  ref: 'unit-1#mode', label: 'Unit 1 · Operating mode', quantity: 'state', unit: '', valueType: 'enum',
+  states: [{ value: 'hotStandby', label: 'Hot standby' }], thresholds: [], series: null,
+}
+
+describe('own-state chips (W4.1)', () => {
+  test('satisfied, a chip is its short label alone, neutral; its title says what it reads and why', () => {
+    const look = stateChipLook(heatSink, observation(heatSink.ref, 'green', { why: 'GREEN: the heat sink is satisfied.' }), 'Unit 1', false)
+    expect(look).toMatchObject({ text: 'HEAT SINK', tone: null, mark: null, doubtful: false, emphasis: false, label: 'Heat sink (CSF): GREEN' })
+    expect(look.title).toBe('Heat sink (CSF): GREEN\nGREEN: the heat sink is satisfied.')
+  })
+
+  test('challenged, it is filled at its priority and names where it sends people, else its state word: colour is never the only cue', () => {
+    expect(stateChipLook(heatSink, observation(heatSink.ref, 'red', { priority: 'alarm', note: 'FR-H.1' }), 'Unit 1', false))
+      .toMatchObject({ text: 'HEAT SINK · FR-H.1', tone: 'alarm', label: 'Heat sink (CSF): RED · FR-H.1' })
+    expect(stateChipLook(heatSink, observation(heatSink.ref, 'yellow', { priority: 'caution' }), 'Unit 1', false)).toMatchObject({ text: 'HEAT SINK · YELLOW', tone: 'caution' })
+    // Emergency draws as alarm: OpenBridge's status indicator has none (register deviation own-state-emergency-as-alarm).
+    expect(stateChipLook(heatSink, observation(heatSink.ref, 'red', { priority: 'emergency' }), 'Unit 1', false).tone).toBe('alarm')
+    // A notice is bold without a hue, and says its word.
+    expect(stateChipLook(heatSink, observation(heatSink.ref, 'yellow', { priority: 'notice' }), 'Unit 1', false)).toMatchObject({ text: 'HEAT SINK · YELLOW', tone: null, emphasis: true })
+  })
+
+  test('not known reads dashed with "?"; outside its validity dashed with "—"; neither takes a colour or a pointer', () => {
+    expect(stateChipLook(heatSink, observation(heatSink.ref, 'unknown', { quality: 'uncertain', note: 'FR-H.1', priority: 'alarm' }), 'Unit 1', false))
+      .toMatchObject({ text: 'HEAT SINK ?', mark: 'unknown', tone: null, label: 'Heat sink (CSF): not known' })
+    expect(stateChipLook(heatSink, undefined, 'Unit 1', false)).toMatchObject({ text: 'HEAT SINK ?', mark: 'unknown' })
+    expect(stateChipLook(heatSink, observation(heatSink.ref, 'not-monitored', { quality: 'not-applicable' }), 'Unit 1', false))
+      .toMatchObject({ text: 'HEAT SINK —', mark: 'outside', tone: null, label: 'Heat sink (CSF): —' })
+  })
+
+  test('a state that declares no short label reads as its word alone (an operating mode), its name in the title', () => {
+    expect(stateChipLook(mode, observation(mode.ref, 'hotStandby'), 'Unit 1', false)).toMatchObject({ text: 'Hot standby', tone: null, label: 'Operating mode: Hot standby' })
+    expect(stateChipLook(mode, undefined, 'Unit 1', false)).toMatchObject({ text: 'Operating mode ?', mark: 'unknown' })
+  })
+
+  test('stale, or its display frozen, it is doubtful (the low-integrity style) and keeps its words', () => {
+    expect(stateChipLook(heatSink, observation(heatSink.ref, 'red', { priority: 'alarm', note: 'FR-H.1' }), 'Unit 1', true)).toMatchObject({ text: 'HEAT SINK · FR-H.1', doubtful: true })
+    expect(stateChipLook(heatSink, observation(heatSink.ref, 'green', { quality: 'stale' }), 'Unit 1', false)).toMatchObject({ doubtful: true, title: 'Heat sink (CSF): GREEN\nquality: stale' })
+  })
+
+  test('the states that read as their word alone stand first, the others as declared', () => {
+    const subcrit = { ...heatSink, ref: 'unit-1#csf.subcriticality', shortLabel: 'SUBCRIT' }
+    expect(chipOrder([subcrit, heatSink, mode]).map(chip => chip.ref)).toEqual([mode.ref, subcrit.ref, heatSink.ref])
+  })
+})
 
 describe('the safety function reading (W4.1, per sample)', () => {
   const step = (question: string, answer: 'yes' | 'no', signal: string, value: number) =>
