@@ -133,7 +133,7 @@ export const goHome = async (page: Page, home: Home): Promise<{ readonly home: b
   const via: string[] = []
   const settledHome = async () => atHome(await screenOf(page), home) && (await pageDialogs(page)).length === 0
   for (let i = 0; i < 4; i += 1) {
-    if (await settledHome()) return { home: true, via }
+    if (await settledHome()) { if (via.length > 0) await waitForContent(page, 10_000); return { home: true, via } }
     await page.key('Escape')
     via.push('Esc')
     await sleep(500)
@@ -147,7 +147,8 @@ export const goHome = async (page: Page, home: Home): Promise<{ readonly home: b
     await sleep(600)
   }
   for (let i = 0; i < 4; i += 1) {
-    if (await settledHome()) return { home: true, via }
+    // Home again after a Back: wait for the display to have drawn its content, so the next press lands on it.
+    if (await settledHome()) { if (via.length > 0) await waitForContent(page, 10_000); return { home: true, via } }
     const back = await page.find({ sel: 'button', text: 'Back' }) ?? await page.find({ sel: 'button', text: 'Previous display' })
     if (back === null) break
     await page.click(back)
