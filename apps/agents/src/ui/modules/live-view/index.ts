@@ -9,8 +9,9 @@ import { addPostRenderProcessor } from '../extensions/post-render-registry.ts'
 import { apiFetch, currentWorkspaceId } from '../api-client.ts'
 import { $roomMessages, $selectedRoomId } from '../stores.ts'
 import { VIEW_FENCE_LANGUAGE, viewRefFor } from '../../../core/render-validators/view-fence.ts'
-import { createTurnCardsReader, frozenCard } from './cards.ts'
-import { findPostedAnswer, roomViewFences, viewFenceOf, viewListingOf, type ViewFence } from './listing.ts'
+import { proposedInTurn } from '../proposal-card/model.ts'
+import { citedKeys, createTurnCardsReader, frozenCard } from './cards.ts'
+import { answerMessage, postedAnswerOf, presentedViewRefs, roomViewFences, viewFenceOf, viewListingOf, type ViewFence } from './listing.ts'
 import { createViewResolutionCache, resolveViewReference } from './resolve.ts'
 import { openView } from './open.ts'
 import {
@@ -83,8 +84,9 @@ const refreshViewList = (): void => {
 
 const settleChip = async (host: HTMLElement, roomId: string, turnId: string, body: string): Promise<void> => {
   // renderMessage renders only messages of the room store, so the answer is there.
-  const answer = findPostedAnswer($roomMessages.get()[roomId] ?? [], turnId)
-  if (answer === null) {
+  const message = answerMessage($roomMessages.get()[roomId] ?? [], turnId)
+  const answer = message === null ? null : postedAnswerOf(message)
+  if (message === null || answer === null) {
     showRefused(host, 'view_answer_missing', 'the answer that composed this display is not loaded')
     return
   }
@@ -102,9 +104,11 @@ const settleChip = async (host: HTMLElement, roomId: string, turnId: string, bod
   // A vignette's chip shows its card; a display that returned none (a Pack's own) keeps the plain chip.
   const read = await turnCards(roomId, turnId)
   const entry = read.kind === 'cards' ? read.cards.find(candidate => candidate.viewRef === viewRefFor(parsed.fence.ref.callId, parsed.fence.ref.key)) : undefined
-  const card: ChipCard | undefined = read.kind === 'refused' ? { refused: read.message } : entry === undefined ? undefined : frozenCard(entry.card)
-  if (hosted) showAvailable(host, listing, chipActions, card)
-  else showUnhosted(host, listing, workspaceRoomHref(currentWorkspaceId(), roomId), chipActions, card)
+  // The lines the answer cites lead its card; an answer that proposed an operation reviews it first (its proposal card).
+  const card: ChipCard | undefined = read.kind === 'refused' ? { refused: read.message } : entry === undefined ? undefined : frozenCard(entry.card, citedKeys(message.content))
+  const context = { proposal: proposedInTurn(message) }
+  if (hosted) showAvailable(host, listing, chipActions, card, context)
+  else showUnhosted(host, listing, workspaceRoomHref(currentWorkspaceId(), roomId), chipActions, card, context)
 }
 
 // Each ⟦k⟧ of a posted answer becomes a chip for the line it cites, from the answer's own turn.
@@ -112,7 +116,8 @@ const renderCitedKeys = async (container: HTMLElement): Promise<void> => {
   const roomId = container.dataset.viewRoom
   const turnId = container.dataset.viewTurn
   if (roomId === undefined || turnId === undefined || container.textContent?.includes('⟦k') !== true) return
-  citeKeys(container, await turnCards(roomId, turnId))
+  const message = answerMessage($roomMessages.get()[roomId] ?? [], turnId)
+  citeKeys(container, await turnCards(roomId, turnId), presentedViewRefs(message?.content ?? ''))
 }
 
 const renderViewBlocks = async (container: HTMLElement): Promise<void> => {

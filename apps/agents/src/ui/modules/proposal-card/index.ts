@@ -1,10 +1,11 @@
 // The proposal card under an AI answer whose turn proposed a plant operation
 // (plan C1 §4.4): the action, its target, who proposed it and World's live
-// status, read again while a person has yet to decide. "Review in display"
-// opens the default display of the proposal's element in the window (Q23),
-// where the element's pop-over carries the pending proposal with its approve
-// and decline; there is no Approve here. Neutral and
-// accent colours only: a proposal is not a process alarm.
+// status, read again while a person has yet to decide. "Review proposal ›",
+// the answer's primary action (W7.1), opens the default display of the
+// proposal's element in the window (Q23), where the element's faceplate
+// carries the pending proposal with its approve and decline; there is no
+// Approve here. Neutral and accent colours only: a proposal is not a process
+// alarm.
 import { apiFetch } from '../api-client.ts'
 import { openSubjectDefault } from '../live-view/open.ts'
 import type { UIMessage } from '../render/render-types.ts'
@@ -45,8 +46,8 @@ const cardElement = (view: ProposalCardView): HTMLElement => {
   if (view.tone === 'pending' && reviewAt !== undefined) {
     const review = document.createElement('button')
     review.type = 'button'
-    review.className = 'self-start mt-1 inline-flex items-center min-h-[32px] px-3 rounded-md border border-border bg-surface text-xs font-medium text-text-muted interactive cursor-pointer hover:bg-surface-strong hover:border-accent hover:text-accent'
-    review.textContent = 'Review in display ›'
+    review.className = 'self-start mt-1 inline-flex items-center h-8 px-3 rounded-md text-xs font-medium bg-accent text-white interactive cursor-pointer hover:bg-accent-hover'
+    review.textContent = 'Review proposal ›'
     review.onclick = () => {
       if (openSubjectDefault(reviewAt.resource, reviewAt.subject, reviewAt.title)) return
       review.replaceWith(line('text-[11.5px] text-text-subtle', 'No display window here: open the Workspace display window at the equipment.'))
