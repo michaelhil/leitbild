@@ -8,7 +8,7 @@ import type { DisplayCard, DisplayCardAdjustment } from '@leitbild/contracts'
 import { priorityLevels, refObjectId } from '../../../core/model/alerts.ts'
 import type { ObjectId } from '../../../core/model/index.ts'
 import type { DisplaySpec, View } from '../../../core/observation/spec.ts'
-import { alertItem, assembleCard, entityItem, slotItems, valueItem } from './card.ts'
+import { alertItem, assembleCard, cardAlerts, entityItem, onSubjects, slotItems, valueItem, type CardSubjects } from './card.ts'
 import { declarationOf, declaredRefs, same, valueOf, visibleObject } from './declared.ts'
 import { defaultViews, elementRefs, LEAD_ROWS, leadNow, leadRefs, ownStates, planLead, readLeads, recordedOf, tableRows, type DraftView } from './defaults.ts'
 import { FRAME_ROWS, VIGNETTE_MAX_ROWS, vignetteStateSchema, type ComposeIssue, type ResolvedView, type VignetteState } from './model.ts'
@@ -396,32 +396,50 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   const at = run.clock === undefined ? { at: new Date().toISOString(), clock: 'wall' as const } : { at: run.clock.currentTime, clock: 'simulation' as const }
   const state = vignetteStateSchema.parse({ title: title.slice(0, 80), ...(by === undefined ? {} : { by }), at, ...(chips.length === 0 ? {} : { chips }), ...(beside ? { beside: true } : {}), views: fitted })
   if (JSON.stringify(state).length > MAX_STATE) return refuse([unfit('views', `the vignette names more than its ${MAX_STATE}-character state holds`)])
-  return { ok: true, state, card: await cardOf(run, state, kept, adjusted, dropped), rows: total() }
+  const about: CardSubjects = {
+    elements: subjects.flatMap(subject => subject.kind === 'element' ? [{ objectId: subject.objectId, elementId: subject.elementId }] : []),
+    refs: subjects.flatMap(subject => subject.kind === 'observable' ? [subject.ref] : []),
+  }
+  return { ok: true, state, card: await cardOf(run, state, kept, adjusted, dropped, about), rows: total() }
 }
 
-/** The card of a fitted state: every value it reads, the alerts and table rows its rows hold; each one a section leaves out is counted and said. */
-const cardOf = async (run: ComposeRun, state: VignetteState, kept: Kept, fitted: ReadonlyArray<DisplayCardAdjustment>, dropped: number): Promise<DisplayCard> => {
-  // Named values first, then the chips' and the views' own values; what a drawing binds comes after the alerts and tables.
+/**
+ * The card of a fitted state: every value it reads, the alerts and table rows its rows hold; each one a section leaves
+ * out is counted and said. The subjects' readings come before alerts, and past readings, alerts past the worst three
+ * are a count (W7.2).
+ */
+const cardOf = async (run: ComposeRun, state: VignetteState, kept: Kept, fitted: ReadonlyArray<DisplayCardAdjustment>, dropped: number, about: CardSubjects): Promise<DisplayCard> => {
+  // Named values first, then the chips' and the views' own values, then what a drawing binds on the subjects; the rest
+  // of what a drawing binds comes after the alerts and tables.
   const { leads, refs: read, observations } = await readNow(run, state)
   const own = readsOf(state, leads).refs
-  const refs = [...new Set([...read.filter(ref => kept.refs.has(ref)), ...own])].filter(ref => read.includes(ref))
-  const bound = read.filter(ref => !refs.includes(ref))
   const declared = await declaredRefs(run, read)
+  const named = [...new Set([...read.filter(ref => kept.refs.has(ref)), ...own])].filter(ref => read.includes(ref))
+  const refs = [...named, ...read.filter(ref => !named.includes(ref) && onSubjects(about, declared.get(ref)))]
+  const bound = read.filter(ref => !refs.includes(ref))
+  // The devices each alerts view's objects bundle: an alert on a subject element's device is the subject's own.
+  const parents = new Map<string, ReadonlyMap<string, string>>()
+  for (const objectId of new Set(state.views.flatMap(view => view.kind === 'alerts' && view.objectIds !== 'run' ? view.objectIds : []))) {
+    parents.set(objectId, new Map(((await declarationOf(run, objectId))?.elements ?? []).flatMap(element => element.parent === undefined ? [] : [[element.id, element.parent] as const])))
+  }
+  const parentOf = (objectId: string, elementId: string): string | undefined => parents.get(objectId)?.get(elementId)
   const valueItems = (list: ReadonlyArray<string>) => list.flatMap(ref => declared.has(ref) ? [valueItem(declared.get(ref)!, observations.find(observation => observation.ref === ref))] : [])
   const adjusted = [...fitted]
   let hidden = dropped
-  const left = (count: number, total: number, what: string): void => {
+  const left = (count: number, total: number, what: string, where = 'not shown'): void => {
     if (count <= 0) return
     hidden += count
-    countAdjustment(adjusted, { kind: 'layout', text: `${count} of ${total} ${what} not shown` })
+    countAdjustment(adjusted, { kind: 'layout', text: `${count} of ${total} ${what} ${where}` })
   }
   const items = [
     ...valueItems(refs),
     ...state.views.flatMap(view => {
       if (view.kind !== 'alerts') return []
       const rows = alertsOf(run, view)
-      left(rows.length - (view.rows - 1), rows.length, 'alerts')
-      return rows.slice(0, view.rows - 1).map(alertItem)
+      const listed = cardAlerts(rows, view.rows - 1, refs.length > 0, about, parentOf)
+      // Past readings the card lists three of the alerts its display shows; alone, what its list shows.
+      left(rows.length - listed.length, rows.length, 'alerts', refs.length > 0 ? 'not on the card' : 'not shown')
+      return listed.map(alertItem)
     }),
     ...state.views.flatMap(view => {
       if (view.kind === 'entity' || view.kind === 'collection') {
