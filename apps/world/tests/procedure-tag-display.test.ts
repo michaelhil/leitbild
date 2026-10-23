@@ -30,9 +30,12 @@ describe("a clicked procedure tag's display", () => {
       .toEqual({ kind: 'unchecked', message: "Not checked against this unit's plant model" })
   })
 
-  test("draws World's default display of the signal the tag names on its unit (P4)", () => {
-    expect(procedureTagDisplayPlan('plant:a', 'PT-455', resolved)).toEqual({ kind: 'display', subject: 'plant:a#pressurizer.pressureMPa' })
-    const { signal: _signal, ...unbound } = resolved
+  test("draws World's default display of the element the tag is measured on (W3.1), else of the signal it names", () => {
+    expect(procedureTagDisplayPlan('plant:a', 'PT-455', resolved)).toEqual({ kind: 'display', subject: 'plant:a#pressurizer' })
+    expect(procedureTagDisplayPlan('plant:a', 'PORV-456A', { ...resolved, id: 'PORV-456A', measuredOn: 'pressurizer.reliefValve' })).toEqual({ kind: 'display', subject: 'plant:a#pressurizer.reliefValve' })
+    const { measuredOn: _measuredOn, ...nowhere } = resolved
+    expect(procedureTagDisplayPlan('plant:a', 'PT-455', nowhere)).toEqual({ kind: 'display', subject: 'plant:a#pressurizer.pressureMPa' })
+    const { signal: _signal, ...unbound } = nowhere
     expect(procedureTagDisplayPlan('plant:a', 'PT-455', unbound)).toEqual({ kind: 'display', subject: 'plant:a#PT-455' })
   })
 

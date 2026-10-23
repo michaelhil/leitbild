@@ -10,7 +10,7 @@ import {
   processPlantSignalView,
   isInjectedFault,
   readableProcessPlantSignalBinding,
-  signalMeasuredOn,
+  signalMeasuredOnElement,
 } from '../signals.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { paginateProcessPlantSearch, processPlantSearchPaginationShape, requirePlant } from './common.ts'
@@ -87,7 +87,7 @@ interface ProcessPlantProcedureTagValidation {
   readonly id: string
   readonly status: 'resolved' | 'resolved-with-warnings' | 'missing'
   readonly signal?: ReturnType<typeof processPlantSignalView>
-  /** The component id the signal is measured on (signalMeasuredOn); its equipmentId is metadata and may name none. */
+  /** The declared element the signal is measured on (signalMeasuredOnElement): a bundled device, else its component; its equipmentId is metadata and may name none. */
   readonly measuredOn?: string
   readonly warnings: ReadonlyArray<string>
 }
@@ -130,7 +130,7 @@ const validateProcedureTags = (
     id: tag.id,
     status: warnings.length === 0 ? 'resolved' : 'resolved-with-warnings',
     signal,
-    measuredOn: String(signalMeasuredOn(system.plant.graph, binding.owner).id),
+    measuredOn: signalMeasuredOnElement(system.plant.graph, binding),
     warnings,
   }
 })

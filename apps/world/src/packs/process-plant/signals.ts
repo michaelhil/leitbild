@@ -112,6 +112,20 @@ export const signalMeasuredOn = (
 ): CompiledComponent =>
   graph.components[owner.type === 'component' ? owner.componentIndex : graph.links[owner.linkIndex]!.toComponentIndex]!
 
+/**
+ * The declared element a signal is measured on, as a procedure tag opens it (plan v5 W3.1, D-E): the device its
+ * component bundles where the signal is one of that device's variables (the pressurizer's PORV for PORV-456A), named
+ * `<component>.<device>` as the observation declaration names it, else the component it is measured on.
+ */
+export const signalMeasuredOnElement = (
+  graph: CompiledPlantGraph,
+  binding: Pick<ProcessSignalBinding, 'owner' | 'path'>,
+): string => {
+  const component = signalMeasuredOn(graph, binding.owner)
+  const device = binding.owner.type === 'component' ? component.semantics.embedded.find(entry => entry.variables.includes(binding.path)) : undefined
+  return device === undefined ? String(component.id) : `${component.id}.${device.id}`
+}
+
 export const resolveProcessPlantSignalPath = (
   graph: CompiledPlantGraph,
   reference: ProcessPlantSignalReference,

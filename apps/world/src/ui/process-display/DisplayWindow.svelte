@@ -207,6 +207,9 @@
   let returnTo = $state.raw<DeckReturns>(new Map())
   let bodySize = $state.raw<DisplaySize | null>(null)
   let popover = $state<Popover | null>(null)
+  // In front of the other floating windows (the procedure windows among them) once asked for with focus, as a procedure
+  // tag's "Open in display window" asks (W3.1, F4), until a press elsewhere on the page; a press in it brings it back.
+  let raised = $state(false)
   let listActiveIndex = $state(0)
   let sectionElement = $state<HTMLElement | null>(null)
   let bodyElement = $state<HTMLElement | null>(null)
@@ -528,7 +531,7 @@
     appliedRequest = next.sequence
     if (next.target.kind === 'subject') {
       void openDefaultAfter(next.target.subject, { runId: next.target.runId, title: next.target.title })
-      if (next.focus) void focusWindow()
+      if (next.focus) { raised = true; void focusWindow() }
       return
     }
     const entry = requestedDeckEntry(deck, runId, next.target)
@@ -539,7 +542,7 @@
       notice = 'That asset is not in this Run.'
       if (shown === null && deck[0]) showEntry(deck[0])
     }
-    if (next.focus) void focusWindow()
+    if (next.focus) { raised = true; void focusWindow() }
   }
 
   // Requests come from the rail and, through the Host, from chat.
@@ -721,6 +724,8 @@
 
   const openProcedures = (summary?: ProcedureRunSummary): void => {
     popover = null
+    // The procedure window opens in front of this one.
+    raised = false
     if (assetObject !== null) openProcedureSystemAt(assetObject, summary)
   }
 
@@ -729,15 +734,17 @@
       viewport = currentViewport()
     }
     const outside = (event: PointerEvent): void => {
-      if (popover === null) return
       const target = event.target
       if (!(target instanceof Node)) return
+      raised = sectionElement?.contains(target) === true
+      if (popover === null) return
       if (popoverElement?.contains(target) || popoverTrigger(popover)?.contains(target)) return
       popover = null
     }
-    // Focus moving into a display frame leaves no pointer event here.
+    // Focus moving into a display frame leaves no pointer event here: it brings the window forward, as a press in it would.
     const blurred = (): void => {
       popover = null
+      setTimeout(() => { if (sectionElement?.contains(document.activeElement) === true) raised = true }, 0)
     }
     const observer = new ResizeObserver(entries => {
       const box = entries[0]?.contentRect
@@ -763,7 +770,8 @@
   })
 </script>
 
-<div class="process-display-window-layer">
+<!-- Raised: above the procedure windows' layer (style.css .procedure-window-layer, z-index 92). -->
+<div class="process-display-window-layer" style:z-index={raised ? 93 : undefined}>
   <!-- Zoom keys and Esc act while focus is anywhere in the window: the section delegates them from its controls. -->
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <section

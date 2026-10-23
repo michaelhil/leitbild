@@ -789,7 +789,7 @@ export interface PackProcedureTagValidation {
   readonly id: string
   readonly status: 'resolved' | 'resolved-with-warnings' | 'missing'
   readonly signal?: Record<string, unknown>
-  /** The Pack's id for the equipment a resolved tag is measured on, where it names one. */
+  /** The declared element (its observation declaration's id) a resolved tag is measured on, where it names one: the tag opens its default. */
   readonly measuredOn?: string
   readonly warnings: ReadonlyArray<string>
 }

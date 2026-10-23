@@ -16,9 +16,11 @@
   } from './procedure-tag-display.ts'
   import { defaultDisplayEnvelope, readDefaultDisplay } from '../process-display/default-display.ts'
 
-  // A clicked procedure tag: World's live default display of the tag on its
-  // unit, framed read-only over the procedure, with the tag's reading above
-  // it. Where no display can be drawn, the dialog says why.
+  // A clicked procedure tag: World's live default display of the equipment the
+  // tag is measured on, framed read-only over the procedure, with the tag's
+  // reading above it. Where no display can be drawn, the dialog says why.
+  // "Open in display window" shows it there, the window in front, and closes
+  // the dialog.
 
   interface Props {
     readonly simulationRunId: SimulationRunId
@@ -174,7 +176,8 @@
       </div>
       <div class="procedure-tag-display-actions">
         {#if openInDisplayWindow && shown}
-          <button type="button" onclick={() => { if (shown) openInDisplayWindow(shown.envelope) }}>Open in display window</button>
+          <!-- The window comes forward with the display; the dialog closes, so what opened is in view (W3.1, F4). -->
+          <button type="button" onclick={() => { if (shown) { openInDisplayWindow(shown.envelope); close() } }}>Open in display window</button>
         {/if}
         <button type="button" class="procedure-tag-display-close" aria-label="Close" onclick={close}>×</button>
       </div>
