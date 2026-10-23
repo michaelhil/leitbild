@@ -1,7 +1,7 @@
 import type { SimulationRunId } from '../../../core/model/index.ts'
 import { workspaceApiPath } from '../../../ui/workspace-context.ts'
 import { displayValue, formatQuantity, formatValue } from '../quantity-text.ts'
-import { sparkline as drawnSparkline, type Sparkline } from '../../../ui/embed/vignette/sparkline.ts'
+import { sparkline as drawnSparkline, type Sparkline } from '../../../ui/sparkline.ts'
 
 // A Plant card's energy lines: the Run's recorded points of a rate, how a
 // line extends with the projection's readings, and the sparkline it draws,
@@ -32,9 +32,9 @@ export const readHistory = async (runId: SimulationRunId, seriesId: string, wind
     .sort((left, right) => left.t - right.t)
 }
 
-export type { Sparkline } from '../../../ui/embed/vignette/sparkline.ts'
+export type { Sparkline } from '../../../ui/sparkline.ts'
 
-/** The registered sparkline (World's one geometry, ui/embed/vignette/sparkline.ts) over one window ending now, a value held across the Historian's hold; null where nothing recorded reaches into it. */
+/** The registered sparkline (World's one geometry, ui/sparkline.ts) over one window ending now, a value held across the Historian's hold; null where nothing recorded reaches into it. */
 export const sparkline = (points: ReadonlyArray<TrendPoint>, now: number, windowMs: number, size: { readonly width: number; readonly height: number }): Sparkline | null =>
   drawnSparkline(points, now, windowMs, size, HOLD_GAP_MS)
 

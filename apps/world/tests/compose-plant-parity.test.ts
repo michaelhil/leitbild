@@ -17,7 +17,7 @@ import { FLOW_ROOM, overviewOf, scopeWithin, topologyOf } from '../src/features/
 import { resolveSubject } from '../src/features/displays/compose/resolve.ts'
 import { visibleObject } from '../src/features/displays/compose/declared.ts'
 import { zoneRows, type VignetteView } from '../src/features/displays/compose/model.ts'
-import { SPARK_WINDOW_MS } from '../src/ui/embed/vignette/sparkline.ts'
+import { SPARK_WINDOW_MS } from '../src/ui/sparkline.ts'
 import { compileVignette, sampleVignette, type ViewRun } from '../src/features/displays/compose/view.ts'
 import { overlaps } from './helpers/network-layout-measure.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'

@@ -84,7 +84,7 @@ export const customShapes: ReadonlyArray<CustomShape> = [
   // The Plant's operating panel (embed only).
   {
     id: 'sparkline',
-    draws: 'A reading\'s recent trend as a hand-drawn sparkline, standing in for OpenBridge\'s mini graph: the last ten minutes of each values row\'s reading in a vignette (W4.2, D-C) and of a proposal\'s cited reading beside its margin to its limit; one geometry (ui/embed/vignette/sparkline.ts).',
+    draws: 'A reading\'s recent trend as a hand-drawn sparkline, standing in for OpenBridge\'s mini graph: the last ten minutes of each values row\'s reading in a vignette (W4.2, D-C) and of a proposal\'s cited reading beside its margin to its limit; one geometry (ui/sparkline.ts).',
     sites: [
       { file: 'packs/process-plant/ui/displays/operation/ProposalSection.svelte', mark: '<svg class="spark"', drawn: 'svg' },
       { file: 'ui/embed/vignette/Sparkline.svelte', mark: "<svg class={['spark'", drawn: 'svg' },

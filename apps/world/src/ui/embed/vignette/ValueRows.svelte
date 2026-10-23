@@ -2,7 +2,7 @@
   import { wholeWords } from './fit-words.ts'
   import type { AlertTone } from './readout.ts'
   import type { ValueRow } from './value-rows.ts'
-  import { SPARK_WINDOW_MS } from './sparkline.ts'
+  import { SPARK_WINDOW_MS } from '../../sparkline.ts'
   import { numberText, unitSymbol } from '../../../core/observation/model.ts'
   import CriterionRow from './CriterionRow.svelte'
   import Sparkline from './Sparkline.svelte'

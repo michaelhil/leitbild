@@ -6,7 +6,7 @@
 // or outside its declared validity measures nothing: the trace breaks there,
 // its last value held no further than the sample, until it measures again.
 import type { RecordedSeries, VignetteSample, VignetteView } from '../../../features/displays/compose/model.ts'
-import { SPARK_WINDOW_MS } from './sparkline.ts'
+import { SPARK_WINDOW_MS } from '../../sparkline.ts'
 import { appendPoint, type DrawnSeries } from './trend.ts'
 
 /** A record a view draws: its ref, its series and the widest window it is drawn over. */
