@@ -9,12 +9,11 @@
   import type { DisplayOpening } from '../view-host.ts'
   import AlertsSection from './AlertsSection.svelte'
   import { worstChip } from './alerts.ts'
-  import { FACEPLATE_ALERTS, FACEPLATE_READINGS, ownAlerts, readingLabel, shortOfRoom, shownReadings, type FaceplateReadings } from './faceplate.ts'
+  import { FACEPLATE_ALERTS, FACEPLATE_READINGS, faceplateRows, ownAlerts, shortOfRoom, shownReadings, type FaceplateReadings } from './faceplate.ts'
   import { VIGNETTE_ROW_PX } from './grid.ts'
   import { elementOffer, faceplateHeight, faceplatePlacement, FACEPLATE_ROW, FACEPLATE_WIDTH, type Box, type OverlayChange, type PinnedOverlay } from './popover.ts'
-  import { toneOf, valueLook, type ReadingLook } from './readout.ts'
-  import Readout from './Readout.svelte'
-  import StateWord from './StateWord.svelte'
+  import { toneOf } from './readout.ts'
+  import ValueRows from './ValueRows.svelte'
 
   // An element's faceplate (L2, plan v5 §3, W3.2): a card in OpenBridge's card
   // look, no arrow, beside its item and never over it. Its header names the
@@ -37,7 +36,8 @@
     objectId: string
     packId: string
     elementId: string
-    /** The element's short name and its state word as the drawing writes them; null where it has none. */
+    /** The element's short name and its state word as the drawing writes them; null where it has none. FROZEN, the
+     *  drawing writes "?" for a state it no longer knows: the header then says no word, its readings keep theirs. */
     name: string
     word: string | null
     /** The display's title: readings are labelled under it. */
@@ -81,6 +81,8 @@
   } = $props()
 
   const offer = $derived(elementOffer(opening))
+  /** The header's state word: none while FROZEN, where the drawing's word is no longer known. */
+  const stateWord = $derived(frozen ? null : word)
   let Actions = $state.raw<Component<PackElementActionsProps> | null>(null)
   let card: HTMLElement | undefined = $state()
   let height = $state(160)
@@ -90,14 +92,15 @@
   const worst = $derived(worstChip(readings === null ? [] : readings.observations.filter(observation => readings!.values.some(value => value.ref === observation.ref)), own))
   // Its readings: whole rows from the top, as many as keep it at its height at rest or as a person resized it.
   let readingsBox: HTMLElement | undefined = $state()
-  /** Its controls fold to keep its readings (shortOfRoom), decided once its controls and readings have drawn. */
+  /** Its controls fold to keep its readings (shortOfRoom), decided once, at rest, when its controls and readings have
+   *  first drawn: a command a person selects grows them afterwards and must not fold them away. */
   let short = $state(false)
+  let actionsBox: HTMLElement | undefined = $state()
+  let decided = false
   let rest = $state(0)
   const fit = $derived(shownReadings(readings?.values.length ?? 0, { rest, row: FACEPLATE_ROW, pending, rows: pinned?.rows ?? null }))
-  const listed = $derived(readings === null ? [] : readings.values.slice(0, fit.shown))
-  const observations = $derived(readings === null ? [] : readings.observations)
-  /** A frozen display's readings are the last it had: shown in OpenBridge's low-integrity style, as the display's own values. */
-  const shown = (look: ReadingLook): ReadingLook => (frozen ? { ...look, doubtful: true } : look)
+  /** Its readings as the column's lead rows read, sparklines included (D-C); frozen, the last it had, low-integrity. */
+  const rows = $derived(readings === null ? [] : faceplateRows(readings, fit.shown, { title, elementId, frozen }))
   const width = $derived(pinned?.width ?? FACEPLATE_WIDTH)
   const place = $derived(pinned !== null ? { x: pinned.x, y: pinned.y } : anchor !== null ? faceplatePlacement(anchor, { width, height }, room, zoom, avoid)
     : faceplatePlacement({ ...(at ?? { x: room.x, y: room.y }), width: 0, height: 0 }, { width, height }, room, zoom, avoid))
@@ -127,14 +130,18 @@
       if (card === undefined) return
       height = card.offsetHeight
       rest = card.offsetHeight - (readingsBox?.offsetHeight ?? 0)
-      // Short of room at rest beside its controls as they stand: they fold behind one line, for as long as it is open.
-      if (!short && Actions !== null && readings !== null && shortOfRoom(readings.values.length, { rest, row: FACEPLATE_ROW, pending, rows: pinned?.rows ?? null })) short = true
+      // Short of room at rest beside its controls as they first stand: they fold behind one line, for as long as it is open.
+      if (!decided && Actions !== null && readings !== null && (actionsBox?.offsetHeight ?? 0) > 0) {
+        decided = true
+        short = shortOfRoom(readings.values.length, { rest, row: FACEPLATE_ROW, pending, rows: pinned?.rows ?? null })
+      }
       onsize(height)
     })
     // Focus moves in on its header once OpenBridge's card has drawn its slot: a Tab goes on to its first control.
     if (card !== undefined) {
       sized.observe(card)
-      if (pinned === null) { card.focus(); requestAnimationFrame(() => { if (card?.contains(document.activeElement) === true) header?.focus() }) }
+      // Without scrolling: the page around the display keeps where it stands (a focus would scroll it to the card).
+      if (pinned === null) { card.focus({ preventScroll: true }); requestAnimationFrame(() => { if (card?.contains(document.activeElement) === true) header?.focus({ preventScroll: true }) }) }
     }
     if (readingsBox !== undefined) sized.observe(readingsBox)
     return () => {
@@ -228,10 +235,10 @@
     <div class="body">
       <!-- Pinned, the header is the overlay's handle: focusable, moved by the arrow keys. -->
       <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_static_element_interactions -->
-      <header bind:this={header} class:wrap={headerFit === 'wrap'} use:fitted={`${width}|${name}|${word ?? ''}|${worst?.kind ?? ''}|${offer}`} tabindex="0" title={pinned !== null ? 'Drag to move (arrow keys: 8 px, Shift: 24 px); Shift+Alt+arrows resize' : undefined} onpointerdown={headerDown} onkeydown={headerKey}>
+      <header bind:this={header} class:wrap={headerFit === 'wrap'} use:fitted={`${width}|${name}|${stateWord ?? ''}|${worst?.kind ?? ''}|${offer}`} tabindex="0" title={pinned !== null ? 'Drag to move (arrow keys: 8 px, Shift: 24 px); Shift+Alt+arrows resize' : undefined} onpointerdown={headerDown} onkeydown={headerKey}>
         {#if pinned !== null}<span class="handle" aria-hidden="true"><obi-drag-horizontal usecsscolor></obi-drag-horizontal></span>{/if}
         <span class="name">{name}</span>
-        {#if word !== null}<span class="word">{word}</span>{/if}
+        {#if stateWord !== null}<span class="word">{stateWord}</span>{/if}
         {#if worst?.kind === 'priority'}
           <span class={`chip ${toneOf(worst.priority)}`}>{severityTable[worst.priority].word}</span>
         {:else if worst?.kind === 'undeclared'}
@@ -246,7 +253,7 @@
       </header>
       <div class="content" bind:this={contentBox}>
         {#if offer === 'actions' && Actions !== null}
-          <div class="actions"><Actions {runId} objectId={objectIdSchema.parse(objectId)} {elementId} {frozen} pinned={pinned !== null} {short} /></div>
+          <div class="actions" bind:this={actionsBox}><Actions {runId} objectId={objectIdSchema.parse(objectId)} {elementId} {frozen} pinned={pinned !== null} {short} /></div>
         {/if}
         {#if failure !== null}<p class="status" role="status">{failure}</p>{/if}
         {#if group}
@@ -254,12 +261,9 @@
         {:else if readings === null}
           <p class="status">Reading {name}…</p>
         {:else}
-          <!-- Its readings, one row each; the sparkline slot is the row's right (D-C, R3). -->
+          <!-- Its readings, one row each, as the column's lead rows: its 10-min sparkline at the row's right (D-C). -->
           <div class="readings" bind:this={readingsBox}>
-            {#each listed as value (value.ref)}
-              {@const look = shown(valueLook(value, observations, value.ref))}
-              {#if look.kind === 'state'}<StateWord {look} label={readingLabel(value, title, elementId)} />{:else}<Readout {look} label={readingLabel(value, title, elementId)} />{/if}
-            {/each}
+            <ValueRows {rows} now={readings.now} />
             {#if fit.more > 0}
               {#if offer === 'nothing'}<p class="more">+{fit.more} more in its detail</p>
               {:else}<button type="button" class="more" onclick={() => ondetail(elementId)}>+{fit.more} more in its detail ›</button>{/if}
@@ -325,6 +329,8 @@
   .more { display: block; height: var(--row); margin: 0; padding: 0; border: none; background: none; font: inherit; font-size: 12px; line-height: var(--row); text-align: left; color: var(--element-neutral-color); }
   button.more { cursor: pointer; color: var(--element-active-color); }
   button.more:hover { text-decoration: underline; }
+  /* On a touch screen its press target reaches 40 px, an unseen margin round its one row (W8.3). */
+  @media (pointer: coarse) { button.more { position: relative; } button.more::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 40px; transform: translateY(-50%); } }
   .related { display: flex; flex-wrap: wrap; gap: 0 12px; margin: 0; padding: 0; list-style: none; }
   .related li { display: inline-flex; align-items: center; }
   .related button { height: 40px; padding: 0 4px; border: none; background: none; font: inherit; color: var(--element-active-color); cursor: pointer; }

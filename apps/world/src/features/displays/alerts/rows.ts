@@ -18,7 +18,8 @@ export interface AlertRow {
   readonly objectLabel: string
   readonly packId: string
   readonly categoryId: string
-  readonly group: { readonly objectId: ObjectId; readonly subjectGroup?: string }
+  /** `label`: the subject group's name where its Pack declares the group as one of its object's elements (a sample adds it). */
+  readonly group: { readonly objectId: ObjectId; readonly subjectGroup?: string; readonly label?: string }
   /** Unmodified, facets included. */
   readonly alert: AlertState
   /** null: "priority not declared"; nothing derives one from `severity` (R1). */
@@ -40,6 +41,8 @@ export interface AlertRow {
   readonly category?: { readonly id: string; readonly label: string; readonly order: number }
   /** On one of its object's own states (a safety function's status, its mode): a challenge to the object as a whole. */
   readonly ownState?: true
+  /** Unacknowledged and its Pack lets a person acknowledge it: the command that does (W2.7). */
+  readonly acknowledge?: { readonly capabilityId: string; readonly input: Readonly<Record<string, string | number | boolean>> }
 }
 
 export type AlertObject = Pick<OperationalObject, 'id' | 'packId' | 'lifecycle' | 'alerts'>
@@ -76,6 +79,9 @@ export const alertRows = <T extends AlertObject>(objects: ReadonlyArray<T>, pres
     })
   })
 
+/** The element or group a row's alert is on, as its record names it. */
+export const subjectOf = (row: AlertRow): string | undefined => row.alert.subject === undefined ? undefined : 'element' in row.alert.subject ? row.alert.subject.element : row.alert.subject.group
+
 export const groupKey = (row: AlertRow): string => row.group.subjectGroup === undefined ? row.group.objectId : `${row.group.objectId}|${row.group.subjectGroup}`
 
 /** Undeclared lowest: no rule ranks an alert by its `severity` (R1). */
@@ -86,6 +92,9 @@ export const simulationMs = (row: AlertRow): number | null => row.raised?.clock 
 
 /** Standing alarms and advisories never ask for attention (R43): they never count as unacknowledged nor hold a row. */
 export const asksAttention = (row: AlertRow): boolean => row.alert.standing !== true && row.alert.advisory !== true
+
+/** Whether a row is unacknowledged and asks for attention: standing alarms and advisories never count as unacknowledged (R43). */
+export const unacknowledged = (row: AlertRow): boolean => row.state !== 'active-ack' && asksAttention(row)
 
 /** Worst first (R12): what asks no attention last, then by priority, then the latest raised, unknown times after known ones. */
 export const worstFirst = (left: AlertRow, right: AlertRow): number =>

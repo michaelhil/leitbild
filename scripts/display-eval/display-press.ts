@@ -16,7 +16,7 @@ export type Outcome =
   | { readonly kind: 'changed'; readonly what: string }
   | { readonly kind: 'nothing' }
 
-export interface Press { readonly target: PressTarget; readonly outcome: Outcome; readonly ms: number }
+export interface Press { readonly target: PressTarget; readonly outcome: Outcome; readonly ms: number; readonly latencyMs: number | null }
 
 /** An in-page read, tried again while a frame is between documents (a deck switch, a detail loading). */
 const settled = async <T>(page: Page, expression: string): Promise<T> => {
@@ -59,9 +59,13 @@ export const classify = (before: Screen, after: Screen, pageBefore: ReadonlyArra
   return { kind: 'nothing' }
 }
 
-/** Presses a target at its centre (a real mouse press) and waits for what it opens to settle: up to `waitMs` for
- * any change, then until the screen holds still for 500 ms (a faceplate reads its element first). */
-export const press = async (page: Page, given: Pick<PressTarget, 'x' | 'y' | 'name'> & Partial<PressTarget>, waitMs = 2_500, modifiers = 0): Promise<{ outcome: Outcome; ms: number; after: Screen }> => {
+/** The least a press waits for its first change: under load (load average 20+) a detail takes over 2 s to show. */
+export const PRESS_WAIT_MS = 3_500
+
+/** Presses a target at its centre (a real mouse press) and waits for what it opens to settle: polls up to `waitMs`
+ * (at least PRESS_WAIT_MS) for the first change, then until the screen holds still for 500 ms (a faceplate reads its
+ * element first). `latencyMs`: from the press to the first change seen, null where nothing changed. */
+export const press = async (page: Page, given: Pick<PressTarget, 'x' | 'y' | 'name'> & Partial<PressTarget>, waitMs = PRESS_WAIT_MS, modifiers = 0): Promise<{ outcome: Outcome; ms: number; latencyMs: number | null; after: Screen }> => {
   let target = given
   // Scrolled out of view (a 1046 px window scrolls its drawing): scroll it in first, as a person does.
   if (given.visible === false && given.kind !== undefined) {
@@ -76,11 +80,12 @@ export const press = async (page: Page, given: Pick<PressTarget, 'x' | 'y' | 'na
   await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: target.x, y: target.y, button: 'left', clickCount: 1, modifiers })
   await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: target.x, y: target.y, button: 'left', clickCount: 1, modifiers })
   let after = before
-  const deadline = Date.now() + waitMs
+  let latencyMs: number | null = null
+  const deadline = Date.now() + Math.max(waitMs, PRESS_WAIT_MS)
   while (Date.now() < deadline) {
     await sleep(150)
     after = await screenOf(page)
-    if (signature(after) !== signature(before) || shapeOf(after) !== shapeOf(before)) break
+    if (signature(after) !== signature(before) || shapeOf(after) !== shapeOf(before) || (await pageDialogs(page)).length !== pageBefore.length) { latencyMs = Date.now() - started; break }
   }
   // Settle: the new view reads its element and draws.
   let last = signature(after) + shapeOf(after)
@@ -92,7 +97,24 @@ export const press = async (page: Page, given: Pick<PressTarget, 'x' | 'y' | 'na
     last = sig
     after = now
   }
-  return { outcome: classify(before, after, pageBefore, await pageDialogs(page)), ms: Date.now() - started, after }
+  return { outcome: classify(before, after, pageBefore, await pageDialogs(page)), ms: Date.now() - started, latencyMs, after }
+}
+
+/** Waits until the shown display has drawn its content (after a deck step or an open): drawing lines or its column's
+ * values on screen, and no "Connecting to the Run…" or "Reading …" line. Resolves with the ms it took, or null after
+ * `timeoutMs` (a perf observation under load, not a failure of the reading itself). */
+export const waitForContent = async (page: Page, timeoutMs = 20_000): Promise<number | null> => {
+  const started = Date.now()
+  while (Date.now() - started < timeoutMs) {
+    const screen = await screenOf(page).catch(() => null)
+    if (screen !== null && screen.window !== null) {
+      const text = textOf(screen)
+      const drawn = screen.lines.filter(line => line.on && (line.region === 'drawing' || line.region === 'column')).length
+      if (drawn >= 3 && !/Connecting to the Run|Reading the element|Reading [^\n]{1,40}…|Loading|Composing/i.test(text)) return Date.now() - started
+    }
+    await sleep(300)
+  }
+  return null
 }
 
 /** The screen a walk starts from: its window header and no dialog open. */
@@ -106,24 +128,42 @@ const atHome = (screen: Screen, home: Home) => screen.window !== null && screen.
  * "Previous display" while the position differs. True when home. Records how it got there. */
 export const goHome = async (page: Page, home: Home): Promise<{ readonly home: boolean; readonly via: ReadonlyArray<string> }> => {
   const via: string[] = []
+  const settledHome = async () => atHome(await screenOf(page), home) && (await pageDialogs(page)).length === 0
   for (let i = 0; i < 4; i += 1) {
-    const screen = await screenOf(page)
-    if (atHome(screen, home) && (await pageDialogs(page)).length === 0) return { home: true, via }
+    if (await settledHome()) return { home: true, via }
     await page.key('Escape')
     via.push('Esc')
     await sleep(500)
   }
+  // A page window Esc does not close (the procedure window): its own close control, as a person closes it.
+  for (let i = 0; i < 3 && (await pageDialogs(page)).length > 0; i += 1) {
+    const close = await page.eval<{ x: number; y: number; label: string } | null>(PAGE_DIALOG_CLOSE)
+    if (close === null) break
+    for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased'] as const) await page.send('Input.dispatchMouseEvent', { type, x: close.x, y: close.y, ...(type === 'mouseMoved' ? {} : { button: 'left', clickCount: 1 }) })
+    via.push(close.label.slice(0, 30))
+    await sleep(600)
+  }
   for (let i = 0; i < 4; i += 1) {
-    const screen = await screenOf(page)
-    if (atHome(screen, home)) return { home: true, via }
+    if (await settledHome()) return { home: true, via }
     const back = await page.find({ sel: 'button', text: 'Back' }) ?? await page.find({ sel: 'button', text: 'Previous display' })
     if (back === null) break
     await page.click(back)
     via.push(back.label.slice(0, 30))
     await sleep(800)
   }
-  return { home: atHome(await screenOf(page), home), via }
+  return { home: await settledHome(), via }
 }
+/** The close control of a dialog on the Run page outside the display (its button named "Close …"), at its centre. */
+const PAGE_DIALOG_CLOSE = `(() => {
+  const dialogs = lb.everything().map(([el]) => el).filter(el => el.getAttribute && el.getAttribute('role') === 'dialog' && lb.shown(el) && !/\\/world\\/embed\\//.test(el.ownerDocument.location.pathname))
+  for (const dialog of dialogs.reverse()) {
+    const button = [...dialog.querySelectorAll('button')].find(b => lb.shown(b) && /^close\\b/i.test((b.getAttribute('aria-label') || b.getAttribute('title') || b.innerText || '').trim()))
+    if (!button) continue
+    const r = lb.toTop(button)
+    return { x: r.x + r.w / 2, y: r.y + r.h / 2, label: button.getAttribute('aria-label') || button.getAttribute('title') || 'Close' }
+  }
+  return null
+})()`
 
 /** A screen size of the rendering matrix (§5.5): the viewport and whether the Assistant's chat is open. The legacy
  * names stay: 1920 (1920 × 1080), 1046 (1920 × 1080 with the chat open, which leaves the display 1046 px), 1440

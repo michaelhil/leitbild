@@ -50,6 +50,29 @@ describe('E-0 at a glance', () => {
   test("R2's trip line, rods on bottom, STOP · CMD RUN, short chips and aggregate pass", () => {
     for (const id of ['reactor-tripped', 'turbine-tripped', 'si-actuated', 'afw-total', 'rcps-tripped', 'pzr-trend', 'csf', 'alarm-picture']) expect([id, judge(id, r2).pass]).toEqual([id, true])
   })
+  test("R2's two-line rows with m:ss ages count, and their first-outs are named by group", () => {
+    const rendered = screen([
+      line('Alerts · 29 · 29 UNACK', 'alerts', 581), line('1st TURB TRIP: Turbine trip on loss of load', 'alerts', 604), line('UNACK 2:59', 'alerts', 628),
+      line('1st RX TRIP: Reactor trip on turbine trip', 'alerts', 652), line('UNACK LO · RX TRIP · 2:58', 'alerts', 676),
+      line('UNACK Loss of offsite power', 'alerts', 700), line('LO-LO · ALM · 2:58', 'alerts', 700, { x: 300 }),
+      line('15 expected after RX TRIP 15 UNACK', 'alerts', 724),
+    ])
+    const judged = judge('alarm-picture', rendered)
+    expect(judged.pass).toBe(true)
+    expect(judged.evidence).toContain('3 rows on screen; first-outs 2 (2 named by group)')
+  })
+  test("R3's column: short labels, the AFW total and PZR's own sparkline pass checks 5 and 8; a graphic is no reading", () => {
+    const r3 = screen([
+      line('Subcooling 32.3 °C ▼ 1.3', 'column', 195), line('AFW flow 113 kg/s ▼ 1', 'column', 219), line('PZR pressure 13.66 MPa', 'column', 243),
+      line('PZR level 34.0 % ▲ 2.0', 'column', 267), line('⟨graphic⟩ PZR pressure, last 10 min: 13.6 to 15.4 MPa', 'column', 243, { x: 400 }),
+    ])
+    expect(judge('afw-total', r3).pass).toBe(true)
+    expect(judge('pzr-trend', r3).pass).toBe(true)
+    const noSpark = screen([line('PZR pressure 13.66 MPa', 'column', 243), line('PZR level 34.0 %', 'column', 267)])
+    expect(judge('pzr-trend', noSpark).pass).toBe(false)
+    const graphicOnly = screen([line('⟨graphic⟩ PZR level, last 10 min: 33 to 35 %', 'column', 267), line('PZR pressure 13.66 MPa', 'column', 243), line('⟨graphic⟩ PZR pressure, last 10 min: 13.6 to 15.4 MPa', 'column', 243, { x: 400 })])
+    expect(judge('pzr-trend', graphicOnly).pass).toBe(false)
+  })
   test('a turbine trip named only in an alert row is no turbine state', () => {
     const rowOnly = screen([line('first out Reactor trip on turbine trip 04:02:02 UTC', 'alerts', 628)])
     expect(judge('turbine-tripped', rowOnly).pass).toBe(false)

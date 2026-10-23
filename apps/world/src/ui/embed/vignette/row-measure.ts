@@ -1,13 +1,17 @@
 import type { RowFont } from './alerts.ts'
 
 // How wide an alert row's parts are written (AlertRowLine.svelte's fonts), measured once per text on a canvas in the
-// page's own font, so a list knows which rows fit one line before it lays them out. Marks are bold 12 px spaced
-// 0.03 em; the detail is 12 px; the message the vignette's 13 px.
+// page's own font, so a list knows which parts stand on a row's one line before it lays them out. Marks are bold
+// 12 px spaced 0.03 em; the detail is 12 px; the message the vignette's 13 px, an icon's word bold 13 px; a tile's
+// label and a badge's number OpenBridge's active body text (16 px, weight 670).
 
 const FONTS: Readonly<Record<RowFont, { readonly size: number; readonly weight: number; readonly spacing: number }>> = {
   message: { size: 13, weight: 400, spacing: 0 },
   mark: { size: 12, weight: 700, spacing: 0.03 },
   detail: { size: 12, weight: 400, spacing: 0 },
+  word: { size: 13, weight: 700, spacing: 0 },
+  tile: { size: 16, weight: 670, spacing: 0 },
+  badge: { size: 16, weight: 670, spacing: 0 },
 }
 
 /** A measure of row parts in px; where the page has no canvas, a width by characters that never says a long row fits. */

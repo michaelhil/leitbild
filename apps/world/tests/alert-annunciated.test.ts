@@ -65,4 +65,18 @@ describe('expected after a first-out, inside its declared window (W2.3)', () => 
     // An annunciation naming a group or category it does not declare is refused.
     expect(() => annunciationSchema.parse({ groups: [], categories: [], alerts: [{ id: 'a', group: 'nowhere' }] })).toThrow()
   })
+
+  test('an unacknowledged alert its Pack declares carries the command a person acknowledges it by (W2.7, D-E); an acknowledged one, or one it does not declare, none', () => {
+    const annunciation: Annunciation = annunciationSchema.parse({
+      groups: [], categories: [], alerts: [{ id: 'alarm:rcp-a' }, { id: 'alarm:afw-a' }],
+      acknowledge: { capabilityId: 'world.fixture.lifecycle', input: { action: 'acknowledge' }, objectField: 'plantId', alertField: 'lifecycleId' },
+    })
+    const rows = [row('alarm:rcp-a', 10), { ...row('alarm:afw-a', 20, { acknowledged: true }), state: 'active-ack' as const }, row('csf', 30), { ...row('alarm:afw-a', 40, { returned: true }), state: 'returned-unack' as const }]
+    const marked = annunciatedRows(rows, { annunciation: () => annunciation, objectRows: () => rows, ownStates: () => new Set(), nowMs: t0 })
+    expect(marked.map(entry => entry.acknowledge)).toEqual([
+      { capabilityId: 'world.fixture.lifecycle', input: { action: 'acknowledge', plantId: 'unit', lifecycleId: 'alarm:rcp-a' } },
+      undefined, undefined,
+      { capabilityId: 'world.fixture.lifecycle', input: { action: 'acknowledge', plantId: 'unit', lifecycleId: 'alarm:afw-a' } },
+    ])
+  })
 })

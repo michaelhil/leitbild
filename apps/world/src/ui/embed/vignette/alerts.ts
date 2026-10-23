@@ -3,36 +3,60 @@
 // OpenBridge's own alert icon (register #23: the OpenBridge-free twin stays in
 // the main app's strip), in list order (features/displays/alerts/list.ts); a
 // row without a priority is shown by its severity word, "priority not
-// declared", and never ranks as a priority (R1).
-// Nothing here can acknowledge an alert yet (W2.7), so no icon flashes: each
-// is drawn steady, and the word UNACK carries the state (register deviation
-// alert-icon-steady-unacknowledged).
+// declared", and never ranks as a priority (R1). People acknowledge alerts
+// in the display window (W2.7), so an icon is drawn as its record stands:
+// an unacknowledged alarm that asks for attention flashes until a person
+// acknowledges it, and what asks none now (expected after a first-out,
+// standing, advisory) shows its priority steady, the word UNACK saying it is
+// not yet acknowledged.
+import type { Priority } from '../../../core/model/alerts.ts'
 import type { Observation } from '../../../core/observation/model.ts'
 import type { VignetteSection, VignetteView } from '../../../features/displays/compose/model.ts'
-import { ageText, firstOutMark } from '../../../features/displays/alerts/list.ts'
-import { asksAttention, priorityRank, stateWords, type AlertRow } from '../../../features/displays/alerts/rows.ts'
+import { ageText, firstOutMark, listPart } from '../../../features/displays/alerts/list.ts'
+import { asksAttention, priorityRank, stateWords, subjectOf, unacknowledged, type AlertRow } from '../../../features/displays/alerts/rows.ts'
 import { severityStyle } from '../../displays/severity.ts'
 
+export type IconType = 'level-critical' | 'alarm' | 'warning' | 'caution'
+
 /**
- * OpenBridge's alert icon for a row (obc-alert-icon): its alert type by the
- * declared priority (emergency is OpenBridge's critical level), drawn steady
- * in OpenBridge's acknowledged form whatever the record says, since nothing
- * here acknowledges (OpenBridge 2.0.0 flashes every unacknowledged icon and
- * has no steady unacknowledged form); a returned alarm is its steady
- * rectified icon. Notice has no icon and an undeclared priority none: both
- * read as their word.
+ * What a row is drawn with:
+ * - OpenBridge's alert icon (obc-alert-icon) in its record's state: its type by the declared priority (emergency is
+ *   OpenBridge's critical level), acknowledged steady, unacknowledged flashing at OpenBridge's tempo, returned
+ *   rectified (flashing slowly until acknowledged);
+ * - its priority alone, steady (obc-badge), while it is unacknowledged but asks no attention now: expected after a
+ *   first-out, standing or advisory (R43), so only what is news flashes;
+ * - its word, where it has no icon: notice, or a priority not declared.
  */
-export const alertIcon = (row: AlertRow): { readonly type: 'level-critical' | 'alarm' | 'warning' | 'caution'; readonly acknowledged: true; readonly active: boolean } | { readonly word: string } => {
+export type RowIcon =
+  | { readonly kind: 'icon'; readonly type: IconType; readonly acknowledged: boolean; readonly active: boolean }
+  | { readonly kind: 'badge'; readonly type: IconType }
+  | { readonly kind: 'word'; readonly word: string }
+
+export const alertIcon = (row: AlertRow): RowIcon => {
   const type = row.priority === 'emergency' ? 'level-critical' : row.priority === 'alarm' || row.priority === 'warning' || row.priority === 'caution' ? row.priority : null
-  if (type === null) return { word: severityStyle(row.priority, row.alert.severity)?.word ?? 'Notice' }
-  return { type, acknowledged: true, active: row.state !== 'returned-unack' }
+  if (type === null) return { kind: 'word', word: severityStyle(row.priority, row.alert.severity)?.word ?? 'Notice' }
+  if (row.state === 'active-ack') return { kind: 'icon', type, acknowledged: true, active: true }
+  if (listPart(row) === 'expected' || !asksAttention(row)) return { kind: 'badge', type }
+  return { kind: 'icon', type, acknowledged: false, active: row.state !== 'returned-unack' }
 }
 
-/** The word an unacknowledged alert's row and its section's count carry, its steady icon not saying so. */
-export const UNACK_WORD = 'UNACK'
+/**
+ * A priority's count as obc-alert-counter-item takes it (emergency is OpenBridge's critical level, notice its
+ * diagnostic one); null for none or a priority not declared, which OpenBridge has no count for and a word says.
+ */
+export const counterCounts = (priority: Priority | null, count: number): Readonly<Record<string, number>> | null =>
+  priority === 'emergency' ? { countLevelCritical: count } : priority === 'alarm' ? { countAlarm: count } : priority === 'warning' ? { countWarning: count }
+    : priority === 'caution' ? { countCaution: count } : priority === 'notice' ? { countLevelDiagnostic: count } : null
 
-/** Whether a row is unacknowledged and asks for attention: standing alarms and advisories never count as unacknowledged (R43). */
-export const unacknowledged = (row: AlertRow): boolean => row.state !== 'active-ack' && asksAttention(row)
+/** A priority's obc-badge type, as obc-alert-counter-item draws it; a neutral badge for none or a priority not declared. */
+export const badgeType = (priority: Priority | null): string =>
+  priority === 'emergency' ? 'level-critical' : priority === 'alarm' || priority === 'warning' || priority === 'caution' ? priority : priority === 'notice' ? 'level-diagnostic' : 'regular'
+
+/** A priority in words: "alarm", "priority not declared". */
+export const priorityWords = (priority: Priority | null): string => priority === null ? 'priority not declared' : priority === 'none' ? 'no priority' : priority
+
+/** The word an unacknowledged alert's row and its section's count carry, beside its icon or its steady priority. */
+export const UNACK_WORD = 'UNACK'
 
 /**
  * The most of a label that fits where `fits` says: the whole of it, else its first whole words with "…" (a trailing
@@ -59,16 +83,35 @@ export const wordsThatFit = (text: string, fits: (shown: string) => boolean): st
   return cut(first.slice(0, most(first.length - 1, count => cut(first.slice(0, count)))))
 }
 
-/** What a row says after its message: its tag, what it is expected after, its marks, its state where UNACK does not, its age in Run time (else its clock time). */
-export const alertDetail = (row: AlertRow, nowMs: number): string => [
-  // A first-out's tag that only names its group says nothing its mark does not ("1st TURB TRIP").
-  ...(row.tag === undefined || (firstOutMark(row) !== null && row.tag === row.action?.label) ? [] : [row.tag]),
-  ...(row.expected === undefined ? [] : [`after ${row.expected.after}`]),
-  ...(row.alert.standing === true ? ['standing'] : []),
-  ...(row.alert.advisory === true ? ['advisory'] : []),
-  ...(unacknowledged(row) ? (row.state === 'returned-unack' ? ['returned'] : []) : row.state === 'active-unack' ? [] : [stateWords(row)]),
-  ageText(nowMs, row) ?? (row.raised === null ? 'time unknown' : `${row.raised.at.slice(11, 19)} UTC`),
-].join(' · ')
+/**
+ * What a row says after its message, by part: its tag; its notes (what it is expected after, standing or advisory, its
+ * state where UNACK does not say it); its age in Run time, else its clock time.
+ */
+export interface RowDetail { readonly tag?: string; readonly notes: ReadonlyArray<string>; readonly age: string }
+
+/** A first-out's tag less the group its mark names ("LO · RX TRIP" under "1st RX TRIP" is "LO"); none where it only names it. */
+const ownLimit = (tag: string, group: string): string | undefined =>
+  tag === group ? undefined : tag.endsWith(` · ${group}`) ? tag.slice(0, -` · ${group}`.length) : tag
+
+export const rowDetail = (row: AlertRow, nowMs: number): RowDetail => {
+  const tag = row.tag === undefined ? undefined : firstOutMark(row) !== null && row.action !== undefined ? ownLimit(row.tag, row.action.label) : row.tag
+  return {
+    ...(tag === undefined ? {} : { tag }),
+    notes: [
+      ...(row.expected === undefined ? [] : [`after ${row.expected.after}`]),
+      ...(row.alert.standing === true ? ['standing'] : []),
+      ...(row.alert.advisory === true ? ['advisory'] : []),
+      ...(unacknowledged(row) ? (row.state === 'returned-unack' ? ['returned'] : []) : row.state === 'active-unack' ? [] : [stateWords(row)]),
+    ],
+    age: ageText(nowMs, row) ?? (row.raised === null ? 'time unknown' : `${row.raised.at.slice(11, 19)} UTC`),
+  }
+}
+
+/** A row's detail as it is written: "LO-LO · ALM · after RX TRIP · 2:58". */
+export const detailText = (detail: RowDetail): string => [...(detail.tag === undefined ? [] : [detail.tag]), ...detail.notes, detail.age].join(' · ')
+
+/** What a row says after its message, whole: as its title and assistive technology read it. */
+export const alertDetail = (row: AlertRow, nowMs: number): string => detailText(rowDetail(row, nowMs))
 
 /** A row's full words, as its title and assistive technology read them: its object, state, mark, message, detail and clock time. */
 export const alertTitle = (row: AlertRow, nowMs: number): string =>
@@ -80,28 +123,69 @@ type AlertsSection = Pick<Extract<VignetteSection, { kind: 'alerts' }>, 'objectI
 export const inSection = (section: AlertsSection) => (row: AlertRow): boolean => {
   if (section.objectIds !== 'run' && !section.objectIds.includes(row.objectId)) return false
   if (section.elements === undefined && section.refs === undefined) return true
-  return (elementOf(row) !== undefined && (section.elements ?? []).includes(elementOf(row)!)) || (row.alert.observable !== undefined && (section.refs ?? []).includes(row.alert.observable))
+  // A row on an element, or on a group its Pack declares as an element (a Grid island), is that element's.
+  return (subjectOf(row) !== undefined && (section.elements ?? []).includes(subjectOf(row)!)) || (row.alert.observable !== undefined && (section.refs ?? []).includes(row.alert.observable))
 }
 
 /** The element an alert is on, where its record names one: what its row opens. */
 export const elementOf = (row: AlertRow): string | undefined => row.alert.subject !== undefined && 'element' in row.alert.subject ? row.alert.subject.element : undefined
 
-/** The parts of a row a line lays out, besides its icon, in the fonts they are written in. */
-export interface RowParts { readonly unack: boolean; readonly heading?: string; readonly mark: string | null; readonly message: string; readonly detail: string }
-export const rowParts = (row: AlertRow, nowMs: number, heading?: string | undefined): RowParts =>
-  ({ unack: unacknowledged(row), ...(heading === undefined ? {} : { heading }), mark: firstOutMark(row), message: row.alert.message, detail: alertDetail(row, nowMs) })
+/** The parts of a row a line lays out, in the fonts they are written in; `word`: the icon's word where it has no icon; `ack`: its acknowledge button. */
+export interface RowParts {
+  readonly word?: string
+  readonly ack?: true
+  readonly unack: boolean
+  readonly heading?: string
+  readonly mark: string | null
+  readonly message: string
+  readonly detail: RowDetail
+}
+export const rowParts = (row: AlertRow, nowMs: number, heading?: string | undefined, ack = false): RowParts => {
+  const icon = alertIcon(row)
+  // Its ACK says what UNACK would.
+  return { ...(icon.kind === 'word' ? { word: icon.word } : {}), ...(ack ? { ack: true as const } : {}), unack: unacknowledged(row) && !ack, ...(heading === undefined ? {} : { heading }), mark: firstOutMark(row), message: row.alert.message, detail: rowDetail(row, nowMs) }
+}
 
-/** A row's icon and the gaps between its parts, in px (AlertRowLine.svelte). */
+/** A row's icon, its acknowledge button and the gaps between its parts, in px (AlertRowLine.svelte). */
 export const ROW_ICON_PX = 20
+export const ROW_ACK_PX = 40
 export const ROW_GAP_PX = 6
-/** The fonts a row writes its parts in (AlertRowLine.svelte): its message, its marks (UNACK, 1st RX TRIP, a heading), its detail. */
-export type RowFont = 'message' | 'mark' | 'detail'
+/** The fonts a row writes its parts in (AlertRowLine.svelte): its message, its marks (UNACK, 1st RX TRIP, a heading), its detail, an icon's word; a tile's label and a badge's number (AlertTiles.svelte). */
+export type RowFont = 'message' | 'mark' | 'detail' | 'word' | 'tile' | 'badge'
 
-/** How wide a row is on one line, its message whole, given how wide each part is written (`measure`). */
-export const rowWidth = (parts: RowParts, measure: (text: string, font: RowFont) => number): number => {
-  const widths = [ROW_ICON_PX, ...(parts.unack ? [measure(UNACK_WORD, 'mark')] : []), ...(parts.heading === undefined ? [] : [measure(parts.heading, 'mark')]),
-    ...(parts.mark === null ? [] : [measure(`${parts.mark}:`, 'mark')]), measure(parts.message, 'message'), measure(parts.detail, 'detail')]
+/** How wide a row is on its one line with `message` shown (its whole message by default), given how wide each part is written (`measure`). */
+export const rowWidth = (parts: RowParts, measure: (text: string, font: RowFont) => number, message = parts.message): number => {
+  const widths = [parts.word === undefined ? ROW_ICON_PX : measure(parts.word, 'word'), ...(parts.unack ? [measure(UNACK_WORD, 'mark')] : []),
+    ...(parts.heading === undefined ? [] : [measure(parts.heading, 'mark')]), ...(parts.mark === null ? [] : [measure(`${parts.mark}:`, 'mark')]),
+    message === '' ? 0 : measure(message, 'message'), measure(detailText(parts.detail), 'detail'), ...(parts.ack === true ? [ROW_ACK_PX] : [])]
   return widths.reduce((sum, width) => sum + width, 0) + ROW_GAP_PX * (widths.length - 1)
+}
+
+/** Room a row leaves unused, in px, against the few a canvas and the page's layout may round apart. */
+const ROW_SLACK_PX = 4
+
+/**
+ * The parts of a row that stand on its one line in `width` px (plan §2 rule 2: nothing cut but by whole words,
+ * nothing drawn over anything). Its notes go first, the last first ("acknowledged", then "after RX TRIP": its icon and
+ * its aggregate say them), while its message does not fit whole; then its message gives way by whole words
+ * (AlertRowLine's wholeWords) to its first word, then to nothing; then the tag goes, then the heading. The icon,
+ * UNACK, a first-out mark, the age and ACK always stand. What goes stays in the row's title and for assistive
+ * technology.
+ */
+export const fitRow = (parts: RowParts, width: number, measure: (text: string, font: RowFont) => number): RowParts => {
+  const room = width - ROW_SLACK_PX
+  const first = parts.message.split(' ')[0]!
+  const least = first === parts.message ? first : `${first.replace(/[\s,;:·]+$/, '')}…`
+  const notes = parts.detail.notes
+  for (let kept = notes.length; kept >= 0; kept -= 1) {
+    const tried = kept === notes.length ? parts : { ...parts, detail: { ...parts.detail, notes: notes.slice(0, kept) } }
+    if (rowWidth(tried, measure) <= room) return tried
+  }
+  const bare: RowParts = { ...parts, detail: { ...parts.detail, notes: [] } }
+  if (rowWidth(bare, measure, least) <= room || rowWidth(bare, measure, '') <= room) return bare
+  const untagged: RowParts = { ...bare, detail: { notes: [], age: parts.detail.age } }
+  if (rowWidth(untagged, measure, '') <= room || untagged.heading === undefined) return untagged
+  return { ...(parts.word === undefined ? {} : { word: parts.word }), ...(parts.ack === true ? { ack: true as const } : {}), unack: parts.unack, mark: parts.mark, message: parts.message, detail: untagged.detail }
 }
 
 /**

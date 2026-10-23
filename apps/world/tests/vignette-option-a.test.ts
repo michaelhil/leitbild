@@ -102,8 +102,22 @@ describe('the drawing\'s grammar', () => {
     expect(source).toContain("if (event.key === 'Enter' && event.shiftKey) { event.preventDefault(); if (texts.get(id)?.kind !== 'stop') openFaceplate(id); return }")
   })
 
-  test('each magnifier is rendered straight after its item, so it follows the item in tab order', () => {
-    expect(source.match(/\{@render magnifier\((item|device|text)\.id\)\}/g)).toHaveLength(3)
+  test('with a mouse the magnifier shows on hover and keyboard focus; at rest only on touch and where a proposal waits', () => {
+    expect(source).toContain('const shown = (id: string): boolean => hovered === id || focused === id || faceplated(id) || pendingOf(id) !== undefined')
+    expect(source).toContain("onfocus: (event: FocusEvent) => { if ((event.currentTarget as Element).matches(':focus-visible')) focused = id }")
+    expect(source).toContain('@media (pointer: coarse) { .magnifier { opacity: 1; } }')
+    expect(source).not.toContain('operated')
+  })
+
+  test('each magnifier is rendered straight after its item, the items in reading order, so Tab walks the drawing as it reads (W8.3)', () => {
+    expect(source.match(/\{@render magnifier\([a-z.]+\)\}/g)).toEqual(['{@render magnifier(entry.id)}'])
+    expect(source).toContain('{#each ordered as entry (entry.id)}')
+    expect(source).toContain('].sort((left, right) => Math.round(left.y / VIGNETTE_ROW_PX) - Math.round(right.y / VIGNETTE_ROW_PX) || left.x - right.x))')
+  })
+
+  test('on a touch screen an area\'s and a magnifier\'s press targets reach 40 px on screen, whatever the drawing\'s scale (W8.3)', () => {
+    expect(source).toContain('style:--unscale={1 / scale}')
+    expect(source).toContain(".area::before, .magnifier::before { content: ''; position: absolute; left: 50%; top: 50%; width: max(100%, calc(40px * var(--unscale))); height: max(100%, calc(40px * var(--unscale)));")
   })
 
   test('every named item that opens something is a button, its text part of it; a refused default stays plain (W6.1)', () => {
@@ -111,7 +125,7 @@ describe('the drawing\'s grammar', () => {
     expect(source).toContain("const body = (id: string, title: string): Record<string, unknown> => !opens(id) ? {} : {")
     expect(source).toContain("onclick={opens(text.id) ? () => bodyPress(text.id) : undefined}")
     // A line's, a bar's or a stop's box is its button; a stop has no magnifier; several targets open a chooser.
-    expect(source).toContain('{#if opens(text.id) && !symbols.has(text.id)}')
+    expect(source).toContain('...drawing.texts.filter(text => opens(text.id) && !symbols.has(text.id)).map(item => ({ kind: \'area\' as const')
     expect(source).toContain("!opens(text.id) || text.kind === 'stop' ? []")
     expect(source).toContain('else if (targets.length > 1) openChooser(id)')
   })
@@ -141,3 +155,29 @@ describe('a request to show an element (selection.ts, contract 1)', () => {
   })
 })
 
+
+describe('the network drawing\'s grammar (W9.1: grid elements open content, T6, T10)', () => {
+  const source = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/NetworkTopology.svelte'), 'utf8')
+
+  test('an item bound to what it measures is a button opening its element\'s default; a stop its far ends, several a chooser', () => {
+    // Its default leads with what the item is bound to (defaults.ts elementPlan): unbound, it would open an empty one.
+    expect(source).toContain('return node?.element === undefined || node.bindings.length === 0 ? [] : [{ element: node.element, name: node.label }]')
+    expect(source).toContain('if (node?.stop !== undefined) return node.stop.far.flatMap(end => end.element === undefined ? [] : [{ element: end.element, name: end.label }])')
+    expect(source).toContain("void opening?.element(section.objectId, element, 'detail')")
+    expect(source).toContain('if (targets.length === 1) open(targets[0]!.element, targets[0]!.name)')
+    expect(source).toContain('<Chooser name={named.get(id) ?? id} entries={targetsOf(id)}')
+    expect(source).toContain('role="group" aria-label="Network topology"')
+  })
+
+  test('nothing is a button where no page can open a display', () => {
+    expect(source).toContain('const items = $derived(opening === undefined || opening.where === null ? [] :')
+  })
+
+  test('the symbols\' own OpenBridge buttons are no tab stops in either drawing: their wrappers are inert (W8.3)', () => {
+    const flow = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/FlowTopology.svelte'), 'utf8')
+    expect(flow).toContain('<div class="point" inert><obc-automation-button')
+    expect(source).toContain('<div class="placed" inert style:left={`${device.x}px`}')
+    // Its items in reading order too.
+    expect(source).toContain('}).sort((left, right) => Math.round(left.y / VIGNETTE_ROW_PX) - Math.round(right.y / VIGNETTE_ROW_PX) || left.x - right.x))')
+  })
+})

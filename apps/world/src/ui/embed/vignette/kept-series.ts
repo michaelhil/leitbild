@@ -1,5 +1,6 @@
 // What a vignette keeps of the records it draws (plan v5 W8.5): each trend
-// pen's over its trend's window and each values row's over its sparkline's,
+// pen's over its trend's window and each values row's and each drawing's
+// traced reading's (W6.6) over its sparkline's,
 // read once with a sample (on open, after a gap, or for a row that appears
 // when its lead changes, such as after a trip), then extended by every sample
 // from its reading, so no sample reads a record again. A reading that is bad
@@ -23,6 +24,8 @@ export const shownSeries = (view: VignetteView): ReadonlyArray<ShownSeries> => {
     if (section.kind === 'trend') for (const pen of section.strips.flat()) { if (pen.series !== null) add(pen.ref, pen.series.seriesId, section.horizonMs) }
     // A values row draws a sparkline of a number only: a state or a criterion takes its whole row in words.
     if (section.kind === 'values') for (const value of section.values) { if (value.series !== null && (value.valueType === 'number' || value.valueType === 'duration')) add(value.ref, value.series.seriesId, SPARK_WINDOW_MS) }
+    // A drawing's traced readings, over a sparkline's window (W6.6).
+    if (section.kind === 'topology') for (const node of section.nodes) for (const binding of node.bindings) { if (binding.series !== undefined) add(binding.ref, binding.series.seriesId, SPARK_WINDOW_MS) }
   }
   return [...shown.values()]
 }

@@ -49,12 +49,12 @@ describe('built World UI', () => {
   // A source can import an element's module bare (openbridge-usage.test.ts) and the
   // bundler still drop it, should OpenBridge ever declare its modules free of side
   // effects: the built embed must define each element itself. A definition is its
-  // class decorated with the tag, `[x(\`obc-…\`)]`; a mere use is not.
+  // class decorated with the tag, `[x(\`obc-…\`)]` (other decorators may follow it, `[x(\`obc-…\`),y()]`); a mere use is not.
   test('defines every OpenBridge element the embedded view draws in a chunk the embed loads', async () => {
     const code = (await chunksOf('embed.html')).map(chunk => chunk.code).join('\n')
     const tags = [...new Set(embedDrawnTags.map(drawn => drawn.tag))].sort()
     expect(tags).toContain('obc-heat-exchanger')
-    expect(tags.filter(tag => !new RegExp(`\\[[A-Za-z_$][\\w$]*\\(\`${tag}\`\\)\\]`).test(code))).toEqual([])
+    expect(tags.filter(tag => !new RegExp(`\\[[A-Za-z_$][\\w$]*\\(\`${tag}\`\\)[,\\]]`).test(code))).toEqual([])
   }, 120_000)
 
   test('keeps OpenBridge out of every chunk the World application loads (D-03: embed bundles only)', async () => {

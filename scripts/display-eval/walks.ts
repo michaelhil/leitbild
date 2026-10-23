@@ -31,7 +31,7 @@
 import { join } from 'node:path'
 import { ensureChrome, loopbackOrigin, openPage, options, sleep, type Page } from './browser.ts'
 import { onScreen, type PressTarget, type Screen } from './display-dom.ts'
-import { goHome, homeOf, openOverview, pageDialogs, press, screenOf, sizeSpec, targetsOf, type Home, type Outcome, type SizeSpec } from './display-press.ts'
+import { goHome, homeOf, openOverview, pageDialogs, press, screenOf, sizeSpec, targetsOf, waitForContent, type Home, type Outcome, type SizeSpec } from './display-press.ts'
 import { createStackApi, type StackApi } from './stack-api.ts'
 
 type Verdict = '✔' | '◐' | '✖' | 'R3' | 'n/a'
@@ -176,24 +176,50 @@ const t1 = async (ctx: Ctx, live: boolean): Promise<TaskResult> => {
 
 const t2 = async (ctx: Ctx): Promise<TaskResult> => {
   const { runId, home, reopen } = await session(ctx, 'T2', sizeSpec('1920'), false, true)
-  // A view with the PORV's OPEN command: a faceplate or control section naming the PORV, with an OPEN option.
+  // A view with the PORV's own OPEN command: a faceplate or detail of the PORV itself (PORV-456A), not its block
+  // valve (the block's faceplate names PORV too, and its OPEN is disabled while the block stands open), with OPEN.
+  const porvItself = (text: string) => /\bPORV\b(?!\s*block)|PORV-456A|power-operated relief valve(?!\s*block)/i.test(text) && !/\bblock\b/i.test(text)
+  // Reached: the PORV's own faceplate (its controls, folded or not), or its detail with OPEN in its body.
   const goal = (screen: Screen) => {
-    const porv = onScreen(screen, /\bPORV\b|relief valve/i, ['faceplate', 'body', 'column', 'drawing', 'header']).length > 0
-    return porv && onScreen(screen, /^OPEN\b/, ['faceplate', 'body']).length > 0 ? 'PORV control with OPEN' : null
+    const faceplate = screen.dialogs.find(dialog => porvItself(dialog.label))
+    if (faceplate !== undefined) return `the PORV's own faceplate (${faceplate.label.slice(0, 60)})`
+    return porvItself(screen.window?.title ?? '') && onScreen(screen, /^OPEN\b/, ['body']).length > 0 ? `the PORV's detail with OPEN (${screen.window!.title!.slice(0, 60)})` : null
   }
-  const found = await search(ctx, { home, reopen, goal, width: [10, 6, 4], rank: keywords([/\bPORV\b|relief/i, 10], [/\bPZR\b|pressuri[sz]er/i, 6], [/safety valve|block/i, 3]) })
+  // Stops ("to PORV") are items: a stop opens its far end (W6.1). The PORV itself first, its block valve after.
+  const found = await search(ctx, { home, reopen, goal, width: [10, 6, 4], rank: keywords([/\bPORV\b(?!\s*block)|PORV-456A/i, 12], [/\bPZR\b|pressuri[sz]er/i, 6], [/\bPORV block\b/i, 3], [/relief|safety valve/i, 1]) })
   if (found.path === null) {
     return { id: 'T2', title: '"OPEN PORV-456A" in ≤ 5 actions from the overview', verdict: '✖', budget: 5, clicks: null, path: [], deadEnds: found.deadEnds, searched: found.searched, detail: `no PORV control within 3 presses: ${found.tried.slice(0, 10).join('; ')}`, shots: [await shotOf(ctx, 'T2')] }
   }
   // Operate on this walk's own copy: OPEN, then the command's own execute button.
   const steps = [...stepsOf(found.path)]
-  const open = (await targetsOf(ctx.page)).find(target => /^OPEN\b/.test(target.name) && target.kind !== 'item')
+  // Its OPEN, enabled (a disabled control is not listed), in the PORV's own faceplate or detail; where the faceplate
+  // folds its controls ("Controls (n) ▸", W3.2), unfolding them is one more action.
+  const openOf = async () => (await targetsOf(ctx.page)).find(target => /^OPEN\b/.test(target.name) && target.kind !== 'item' && target.pressable && target.reaches)
+  let open = await openOf()
+  if (open === undefined) {
+    const fold = (await targetsOf(ctx.page)).find(target => target.kind === 'control' && /^Controls\b/i.test(target.name))
+    if (fold !== undefined) {
+      const unfolded = await press(ctx.page, fold)
+      steps.push({ press: fold.name, kind: fold.kind, outcome: describe(unfolded.outcome) })
+      open = await openOf()
+    }
+  }
   let opened = false, detail = ''
   if (open !== undefined) {
     const selected = await press(ctx.page, open)
     steps.push({ press: open.name, kind: open.kind, outcome: describe(selected.outcome) })
     await sleep(1_500)
-    const execute = (await targetsOf(ctx.page)).find(target => /OPEN PORV|PORV-456A/i.test(target.name) && target.name !== open.name)
+    const executeOf = async () => (await targetsOf(ctx.page)).find(target => target.pressable && target.reaches && target.name !== open!.name && (/OPEN PORV|PORV-456A/i.test(target.name) || (target.kind === 'control' && /^(send|execute|confirm|apply)\b/i.test(target.name))))
+    let execute = await executeOf()
+    // A selection the faceplate folded away ("Controls (n) ▸" after OPEN): unfolding it is one more action.
+    if (execute === undefined) {
+      const fold = (await targetsOf(ctx.page)).find(target => target.kind === 'control' && /^Controls\b/i.test(target.name))
+      if (fold !== undefined) {
+        const unfolded = await press(ctx.page, fold)
+        steps.push({ press: fold.name, kind: fold.kind, outcome: describe(unfolded.outcome) })
+        execute = await executeOf()
+      }
+    }
     if (execute !== undefined) {
       const sent = await press(ctx.page, execute, 3_000)
       steps.push({ press: execute.name, kind: execute.kind, outcome: describe(sent.outcome) })
@@ -201,8 +227,8 @@ const t2 = async (ctx: Ctx): Promise<TaskResult> => {
       const status = onScreen(await screenOf(ctx.page), /accepted|travelling|done|OPEN since|refused|not followed/i, ['faceplate', 'body'])
       opened = status.some(line => !/refused|not followed/i.test(line.text))
       detail = status.map(line => line.text).join(' | ').slice(0, 200) || 'no feedback on screen'
-    } else detail = 'OPEN selected, but no execute button naming PORV-456A on screen'
-  } else detail = 'the PORV view offers no OPEN control on screen'
+    } else detail = `OPEN selected, but no execute button naming PORV-456A on screen (controls: ${(await targetsOf(ctx.page)).filter(target => target.kind === 'control').map(target => target.name.slice(0, 30)).slice(0, 12).join(' | ')})`
+  } else detail = `the PORV's faceplate offers no enabled OPEN (controls: ${(await targetsOf(ctx.page)).filter(target => target.kind === 'control').map(target => target.name.slice(0, 30)).slice(0, 12).join(' | ')})`
   const clicks = steps.length
   const shots = [await shotOf(ctx, 'T2')]
   await ctx.api.pause(runId).catch(() => undefined)
@@ -256,10 +282,9 @@ const t3 = async (ctx: Ctx, sizeName: string): Promise<TaskResult> => {
     const approveOnScreen = async () => ctx.page.eval<{ whole: boolean; reaches: boolean } | null>(`(() => {
       const el = lb.everything().map(([e]) => e).find(e => e.getAttribute && /^approve\\b/i.test((e.getAttribute('aria-label') || e.innerText || '').trim()) && lb.shown(e))
       if (!el) return null
-      let ox = 0, oy = 0
-      for (let f = el.ownerDocument.defaultView.frameElement; f; f = f.ownerDocument.defaultView.frameElement) { const r = f.getBoundingClientRect(); ox += r.left + f.clientLeft; oy += r.top + f.clientTop }
+      const t = lb.toTop(el)
       const r = el.getBoundingClientRect()
-      const whole = ox + r.left >= 0 && oy + r.top >= 0 && ox + r.right <= innerWidth && oy + r.bottom <= innerHeight
+      const whole = t.x >= 0 && t.y >= 0 && t.x + t.w <= innerWidth && t.y + t.h <= innerHeight
       const hit = el.ownerDocument.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
       return { whole, reaches: !!hit && (hit === el || el.contains(hit) || (el.shadowRoot && el.shadowRoot.contains(hit))) }
     })()`)
@@ -348,7 +373,12 @@ const t5 = async (ctx: Ctx): Promise<TaskResult> => {
   await session(ctx, 'T5', sizeSpec('1920'))
   const steps: Step[] = []
   const levels: string[] = []
+  // Under load a unit's display takes seconds to draw after "Next display": wait for its content (≤ 20 s), and report
+  // each unit's time to content apart, as a performance observation.
+  const toContent: string[] = []
   for (let unit = 1; unit <= 4; unit += 1) {
+    const waited = await waitForContent(ctx.page)
+    toContent.push(waited === null ? 'no content in 20 s' : `${(waited / 1000).toFixed(1)} s`)
     const screen = await screenOf(ctx.page)
     const sg = ['A', 'B', 'C', 'D'].map(letter => onScreen(screen, new RegExp(`^SG ${letter}\\b.*%`), ['drawing'])[0]?.text.match(/(\d+(\.\d+)?)\s*%/)?.[1] ?? '?')
     levels.push(`${screen.window?.title?.split(' · ')[0] ?? `unit ${unit}`}: ${sg.join(' / ')} %`)
@@ -359,7 +389,7 @@ const t5 = async (ctx: Ctx): Promise<TaskResult> => {
     steps.push({ press: 'Next display', kind: 'window', outcome: describe(pressed.outcome) })
   }
   const read = levels.filter(entry => !entry.includes('?')).length
-  return { id: 'T5', title: "Compare the four units' SG levels", verdict: read === 4 ? '◐' : '✖', budget: null, clicks: steps.length, path: steps, deadEnds: 0, searched: 0, detail: `read one unit at a time, from memory (a side-by-side view is R4): ${levels.join('; ')}`, shots: [await shotOf(ctx, 'T5')] }
+  return { id: 'T5', title: "Compare the four units' SG levels", verdict: read === 4 ? '◐' : '✖', budget: null, clicks: steps.length, path: steps, deadEnds: 0, searched: 0, detail: `read one unit at a time, from memory (a side-by-side view is R4): ${levels.join('; ')}; time to content after each deck step: ${toContent.join(', ')}`, shots: [await shotOf(ctx, 'T5')] }
 }
 
 const t6 = async (ctx: Ctx): Promise<TaskResult> => {
@@ -371,8 +401,9 @@ const t6 = async (ctx: Ctx): Promise<TaskResult> => {
     const next = await ctx.page.find({ sel: 'button', text: 'Next display' })
     if (next === null) break
     const pressed = await press(ctx.page, { x: next.x + next.w / 2, y: next.y + next.h / 2, name: 'Next display' })
-    steps.push({ press: 'Next display', kind: 'window', outcome: describe(pressed.outcome) })
-    screen = pressed.after
+    const waited = await waitForContent(ctx.page)
+    steps.push({ press: 'Next display', kind: 'window', outcome: `${describe(pressed.outcome)}; content ${waited === null ? 'not in 20 s' : `in ${(waited / 1000).toFixed(1)} s`}` })
+    screen = await screenOf(ctx.page)
   }
   if (!/grid/i.test(screen.window?.title ?? '')) return { id: 'T6', title: 'Why a grid line alarms', verdict: '✖', budget: null, clicks: steps.length, path: steps, deadEnds: 0, searched: 0, detail: `no grid display in the deck (last: "${screen.window?.title ?? ''}")`, shots: [await shotOf(ctx, 'T6')] }
   const gridHome = homeOf(screen)
@@ -430,8 +461,9 @@ const t9 = async (ctx: Ctx): Promise<TaskResult> => {
     const body = targets.find(target => target.kind === 'item' && name.test(target.name)) ?? targets.find(target => target.kind === 'label' && name.test(target.name))
     if (body === undefined) { steps.push({ press: String(name), kind: '-', outcome: 'not on screen' }); return false }
     const result = await press(ctx.page, body)
-    steps.push({ press: body.name.slice(0, 60), kind: body.kind, outcome: describe(result.outcome) })
-    return result.outcome.kind === 'detail' && titleIs(result.after, want)
+    steps.push({ press: body.name.slice(0, 60), kind: body.kind, outcome: `${describe(result.outcome)}${result.latencyMs === null ? '' : ` (${result.latencyMs} ms)`}` })
+    if (result.outcome.kind === 'detail') await waitForContent(ctx.page)
+    return result.outcome.kind === 'detail' && titleIs(await screenOf(ctx.page), want)
   }
   const first = await hop(/^(SG A|Steam Generator A)\b/i, /\bSG A\b|Steam Generator A/i)
   const second = first && await hop(/^(AFW header|Auxiliary Feedwater Header)\b/i, /AFW header|Auxiliary Feedwater Header/i)
@@ -439,10 +471,12 @@ const t9 = async (ctx: Ctx): Promise<TaskResult> => {
   if (first) {
     for (const want of second ? [/\bSG A\b|Steam Generator A/i, /Overview/] : [/Overview/]) {
       await ctx.page.key('Escape')
-      await sleep(1_200)
-      const screen = await screenOf(ctx.page)
+      // Esc = Back: poll up to 3.5 s for the window to show the display it came from.
+      const started = Date.now()
+      let screen = await screenOf(ctx.page)
+      while (!titleIs(screen, want) && Date.now() - started < 3_500) { await sleep(200); screen = await screenOf(ctx.page) }
       if (titleIs(screen, want)) escBack += 1
-      steps.push({ press: 'Esc', kind: 'key', outcome: `window "${screen.window?.title ?? ''}"` })
+      steps.push({ press: 'Esc', kind: 'key', outcome: `window "${screen.window?.title ?? ''}"${titleIs(screen, want) ? ` (${Date.now() - started} ms)` : ''}` })
     }
   }
   const shots = [await shotOf(ctx, 'T9')]
@@ -458,22 +492,23 @@ const t10 = async (ctx: Ctx, t8Result: TaskResult | undefined, t6Result: TaskRes
   const targets = (await targetsOf(ctx.page)).filter(target => ['item', 'label', 'row', 'more'].includes(target.kind) && !OPERATES.test(target.name))
   let opened = 0, dead = 0
   const nothing: string[] = []
+  const latencies: number[] = []
   for (const target of targets) {
-    const result = await press(ctx.page, target, 1_800)
-    if (result.outcome.kind === 'nothing') { dead += 1; nothing.push(`${target.kind} "${target.name.slice(0, 30)}"`) } else opened += 1
+    const result = await press(ctx.page, target)
+    if (result.outcome.kind === 'nothing') { dead += 1; nothing.push(`${target.kind} "${target.name.slice(0, 30)}"`) } else { opened += 1; if (result.latencyMs !== null) latencies.push(result.latencyMs) }
     if (result.outcome.kind !== 'nothing') await goHome(ctx.page, home)
   }
   const plantOk = dead === 0
   return {
     id: 'T10', title: 'The same gesture everywhere: drawn items, labels, alert rows; grid elements', verdict: plantOk ? (t6Result?.verdict === '✔' ? '✔' : '◐') : '✖', budget: 1, clicks: 1, path: [], deadEnds: dead, searched: targets.length,
-    detail: `plant overview: ${opened} of ${targets.length} items, labels and rows open content${dead > 0 ? `; open nothing: ${nothing.slice(0, 12).join(', ')}${nothing.length > 12 ? ` (+${nothing.length - 12})` : ''}` : ''}; alert row → ${t8Result?.detail.split(';')[0] ?? '(T8 not run)'}; grid: ${t6Result?.detail ?? '(T6 not run)'} (W9.1, R3); Einsatz table rows: no Einsatz Run on this stack (W9.2, R3)`,
+    detail: `plant overview: ${opened} of ${targets.length} items, labels and rows open content${latencies.length === 0 ? '' : ` (first change ${[...latencies].sort((a, b) => a - b)[Math.floor(latencies.length / 2)]} ms median, ${Math.max(...latencies)} ms most)`}${dead > 0 ? `; open nothing: ${nothing.slice(0, 12).join(', ')}${nothing.length > 12 ? ` (+${nothing.length - 12})` : ''}` : ''}; alert row → ${t8Result?.detail.split(';')[0] ?? '(T8 not run)'}; grid: ${t6Result?.detail ?? '(T6 not run)'} (W9.1, R3); Einsatz table rows: no Einsatz Run on this stack (W9.2, R3)`,
     shots: [],
   }
 }
 
 const t7 = (): TaskResult => ({
   id: 'T7', title: '"Anything to worry about?": every cited key resolves', verdict: 'R3', budget: null, clicks: null, path: [], deadEnds: 0, searched: 0,
-  detail: 'needs an Assistant answer with a vignette; no stored answer exists on these stacks and a paid call is not allowed here. Key resolution is W7.1 (R3); the paired eval at R3 (≤ USD 4) runs it',
+  detail: 'needs an Assistant answer with a vignette: chat-cards.ts judges T7 (every cited key resolves) on the paired AI eval\'s answers (R3, ≤ USD 4)',
   shots: [],
 })
 
@@ -485,7 +520,7 @@ if (import.meta.main) {
   const workspaceId = argv.get('workspace'), runA = argv.get('run'), out = argv.get('out')
   if (workspaceId === undefined || runA === undefined || out === undefined) throw new Error('usage: walks.ts --origin=… --workspace=<id> --run=<Run A> --out=<dir> (see the header)')
   const label = argv.get('label') ?? new URL(origin).port
-  const port = Number(argv.get('port') ?? 44336)
+  const port = Number(argv.get('port') ?? 44324)
   const wanted = (argv.get('tasks') ?? TASKS.join(',')).split(',')
   const chrome = await ensureChrome({ port, profile: join(out, `chrome-${port}`) })
   const api = createStackApi(origin, workspaceId)

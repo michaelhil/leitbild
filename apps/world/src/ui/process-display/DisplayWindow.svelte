@@ -15,7 +15,8 @@
   } from 'lucide-svelte'
   import type { EmbeddedViewEnvelope, EmbeddedViewListing } from '@leitbild/contracts'
   import type { OperationalObject, SimulationRunId } from '../../core/model/index.ts'
-  import type { PackWindowToolsProps } from '../../core/packs/protocol.ts'
+  import type { PackObjectStatusPresentation, PackWindowToolsProps } from '../../core/packs/protocol.ts'
+  import StatusIndicator from '../components/StatusIndicator.svelte'
   import type { MapFocusTarget } from '../map-view.ts'
   import { DISPLAY_ZOOM_MAX, DISPLAY_ZOOM_MIN, type DisplayFrameOpen, type DisplayFrameZoomRequest } from '../embed/display-frame-protocol.ts'
   import { openedListing } from '../embed/opened-display.ts'
@@ -23,7 +24,6 @@
   import { loadUiPack } from '../pack-loader.ts'
   import ProcedureRunBadges from '../procedures/ProcedureRunBadges.svelte'
   import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from '../procedures/procedure-run-selectors.ts'
-  import { statusToneColor } from '../status-presentation.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import {
     floatingWindowBoundsForDrag,
@@ -102,6 +102,8 @@
     readonly runJoin: DeckRunJoin
     /** The assets the Run observes, in rail order: the window opens each one's World default. */
     readonly assetObjects: ReadonlyArray<OperationalObject>
+    /** An asset's status as its rail row shows it: the window's status dot follows the rail's colour rule. */
+    readonly statusOf: (object: OperationalObject) => PackObjectStatusPresentation
     /** The conversation's displays, oldest first, as the Host relays them. */
     readonly listings: ReadonlyArray<EmbeddedViewListing>
     readonly request: DisplayWindowRequest
@@ -118,6 +120,7 @@
     simulationRunId,
     runJoin,
     assetObjects,
+    statusOf,
     listings,
     request,
     runsProcedures,
@@ -243,15 +246,7 @@
   // The procedures control shows for an asset that runs procedures, and, disabled with its reason, while the shown display names none.
   const proceduresShown = $derived(assetObject === null ? assetUnavailable !== null : runsProcedures(assetObject))
   const procedureSummaries = $derived(assetObject !== null && runsProcedures(assetObject) ? procedureSummariesFor(assetObject) : emptyProcedureRunSummaries)
-  const statusColor = $derived(assetObject === null ? null : statusToneColor(
-    assetObject.operational.priority === 'critical'
-      ? 'error'
-      : assetObject.operational.priority === 'high'
-        ? 'working'
-        : assetObject.operational.status === 'normal'
-          ? 'ready'
-          : 'idle',
-  ))
+  const assetStatus = $derived(assetObject === null ? null : statusOf(assetObject))
   const currentZoom = $derived(current === null ? null : zoomStates.get(current.key) ?? null)
   const zoomPercent = $derived(currentZoom === null ? 100 : displayZoomPercent(currentZoom.zoom))
   const scaled = $derived(currentZoom !== null && !isActualSize(currentZoom.zoom))
@@ -411,6 +406,8 @@
   // A display that opened another from inside its frame, or stepped Back, had the keys: the one shown now takes them,
   // so its Esc steps Back in turn (DisplayFrame focuses its frame once its page listens).
   let frameFocus = $state.raw<{ readonly key: string; readonly sequence: number } | null>(null)
+  let frameSelect = $state.raw<{ readonly key: string; readonly sequence: number; readonly objectId: string; readonly elementId: string } | null>(null)
+  let selectSequence = 0
   const focusShown = (): void => {
     if (current !== null) frameFocus = { key: current.key, sequence: (frameFocus?.sequence ?? 0) + 1 }
   }
@@ -538,6 +535,9 @@
     const entry = requestedDeckEntry(deck, runId, next.target)
     // A display chat opens that the window does not list (equipment named on an answer's display) returns to what it showed.
     if (entry !== null && entry.source === 'answer' && !entry.listed && current !== null) returnTo = openedAfter(returnTo, entry, current)
+    // An alarm strip's group row asks its unit's display to select its first-out (W2.8); any other request asks none.
+    frameSelect = entry !== null && next.target.kind === 'asset' && next.target.select !== undefined
+      ? { key: entry.key, sequence: ++selectSequence, objectId: next.target.objectId, elementId: next.target.select } : null
     if (entry !== null) showEntry(entry)
     else {
       notice = 'That asset is not in this Run.'
@@ -855,12 +855,11 @@
         onpointercancel={finishWindowDrag}
         ondblclick={() => setMaximised(!maximised)}
       >
-        <span
-          class="process-display-asset-dot"
-          class:unknown={statusColor === null}
-          style:background={statusColor}
-          title={assetObject === null ? (assetUnavailable ?? '') : `${assetObject.label}: ${assetObject.operational.status}`}
-        ></span>
+        {#if assetObject !== null && assetStatus !== null}
+          <StatusIndicator tone={assetStatus.tone} label={`${assetObject.label}: ${assetStatus.label}`} indicator={assetStatus.indicator} />
+        {:else}
+          <span class="process-display-asset-dot" title={assetUnavailable ?? ''}></span>
+        {/if}
         <strong id={windowLabelId}>{current?.title ?? 'Displays'}</strong>
         {#if current !== null && tier !== 'narrow' && tier !== 'tiny'}
           <span class="display-window-caption">· {current.caption}</span>
@@ -1010,6 +1009,7 @@
           onProblem={frameProblem}
           back={returnTo.get(mounted.entry.key)?.title ?? null}
           focus={frameFocus?.key === mounted.entry.key ? frameFocus.sequence : 0}
+          select={frameSelect?.key === mounted.entry.key ? frameSelect : null}
           handles={maximised ? 0 : RESIZE_HANDLE_REACH}
           fill={filling.has(mounted.entry.key)}
           onFill={frameFill}

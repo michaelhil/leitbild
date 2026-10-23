@@ -51,12 +51,16 @@ export interface DisplayState {
   readonly sim: string | null
   readonly worst: string | null
   readonly chips: ReadonlyArray<{ readonly label: string; readonly value: string }>
-  readonly leads: ReadonlyArray<{ readonly label: string; readonly value: string }>
+  /** `full`: the row's whole label where it writes a short one (R3: the visually hidden .full). */
+  readonly leads: ReadonlyArray<{ readonly label: string; readonly value: string; readonly full?: string }>
   readonly alerts: { readonly heading: string; readonly rows: ReadonlyArray<string>; readonly more: string | null } | null
   /** Drawn items framed or marked by an alert: their item ids, by tone. */
   readonly framed: ReadonlyArray<{ readonly item: string; readonly tone: string; readonly name: string }>
   /** Drawn symbols (devices, tanks, exchangers) drawing OpenBridge's alert frame. */
   readonly framedSymbols: number
+  /** Drawn items outlined, not framed (R2, W2.3): "expected" (dashed: its active alerts are all expected after a
+   * first-out), "abnormal" (a command not followed; it takes the place of the expected outline), "low-integrity". */
+  readonly outlined: ReadonlyArray<{ readonly item: string; readonly kind: string; readonly name: string }>
   readonly values: ReadonlyArray<ValueBox>
   /** The drawing's and the frame's own text, for text checks (a trip line, "Rods on bottom"). */
   readonly text: string
@@ -73,7 +77,7 @@ const READER = `(scope) => {
   // The display window's frame: the largest shown embed (a chat card or a dialog is smaller).
   const area = d => { const r = d.frame.getBoundingClientRect(); return r.width * r.height }
   const shown = docs.sort((a, b) => area(b) - area(a))[0]
-  const empty = { generation: 'none', frame: null, title: null, word: null, sim: null, worst: null, chips: [], leads: [], alerts: null, framed: [], values: [], text: '', popover: null }
+  const empty = { generation: 'none', frame: null, title: null, word: null, sim: null, worst: null, chips: [], leads: [], alerts: null, framed: [], framedSymbols: 0, outlined: [], values: [], text: '', popover: null }
   if (!shown) return empty
   const doc = shown.doc
   const win = doc.defaultView
@@ -157,9 +161,11 @@ const READER = `(scope) => {
     const pop = [...doc.querySelectorAll('.faceplate[role=dialog], .popover[role=dialog], [role=dialog]')].filter(el => lb.shown(el)).at(-1) ?? null
     const root = scope === 'popover' ? pop : article
     if (!root) return { ...empty, generation: 'vignette' }
-    const labelOf = el => text(el.closest('.readout, .state')?.querySelector(':scope > .label'))
+    // A row's label as a person reads it: its visible (short, whole-word) label, else its full one (R3's readout-list
+    // rows keep the full label visually hidden beside the short one).
+    const labelOf = el => { const row = el.closest('.readout, .state, .values .row'); return text(row?.querySelector(':scope > .label, :scope > .name > .label')) || text(row?.querySelector(':scope > .full')) }
     const values = []
-    for (const el of root.querySelectorAll('.readout > .reading, .state > obc-status-indicator, .state > .unknown')) {
+    for (const el of root.querySelectorAll('.readout > .reading, .state > obc-status-indicator, .state > .unknown, .values .row > obc-readout-list-item')) {
       if (scope === 'window' && el.closest('.popover, [role=dialog]')) continue
       values.push(valueBox(el, whereOf(el), labelOf(el)))
     }
@@ -170,13 +176,20 @@ const READER = `(scope) => {
     }
     const sections = [...article.querySelectorAll('.section')].filter(s => !s.closest('.popover, [role=dialog]'))
     // Lead rows: a values section's rows, directly in it (R1) or in its .values block (R2's frame).
-    const ROWS = ':scope > .readout, :scope > .state, :scope > .values > .readout, :scope > .values > .state'
+    // R3's column: obc-readout-list rows (.row) in the .values block.
+    const ROWS = ':scope > .readout, :scope > .state, :scope > .values > .readout, :scope > .values > .state, :scope > .values > obc-readout-list > .row:not(.head)'
     const leadSection = sections.find(s => s.querySelector(ROWS))
-    const leads = leadSection ? [...leadSection.querySelectorAll(ROWS)].map(row => ({ label: text(row.querySelector(':scope > .label')), value: deepText(row.querySelector(':scope > .reading, :scope > obc-status-indicator, :scope > .unknown') ?? doc.createElement('i')) })) : []
+    const leads = leadSection ? [...leadSection.querySelectorAll(ROWS)].map(row => ({ full: (row.querySelector(':scope > .full')?.textContent || '').replace(/\\s+/g, ' ').trim() || undefined, label: text(row.querySelector(':scope > .label, :scope > .name > .label')) || text(row.querySelector(':scope > .full')) || text(row).slice(0, 60), value: deepText(row.querySelector(':scope > .reading, :scope > obc-status-indicator, :scope > .unknown, :scope > obc-readout-list-item') ?? row.querySelector('obc-readout-list-item, obc-status-indicator, .reading') ?? doc.createElement('i')) })) : []
     const alertsSection = [...article.querySelectorAll('section.alerts')].find(s => !s.closest('.popover, [role=dialog]'))
     const framed = [...article.querySelectorAll('.flow .text')].filter(t => ['caution', 'warning', 'alarm', 'critical'].some(c => t.classList.contains(c)))
       .map(t => ({ item: t.dataset.item, tone: ['critical', 'alarm', 'warning', 'caution'].find(c => t.classList.contains(c)), name: text(t.firstElementChild) }))
     const framedSymbols = [...article.querySelectorAll('.flow obc-automation-button, .flow obc-automation-tank, .flow obc-heat-exchanger')].filter(el => el.alert === true).length
+    // An item's outline is drawn right after its text block (FlowTopology): the block names the item.
+    const outlined = [...article.querySelectorAll('.flow div.outline')].map(outline => {
+      const block = outline.previousElementSibling
+      if (!block || !block.matches('.text[data-item]')) return null
+      return { item: block.dataset.item, kind: ['expected', 'abnormal', 'low-integrity'].find(c => outline.classList.contains(c)) || 'other', name: text(block.firstElementChild) }
+    }).filter(Boolean)
     const clock = footer?.querySelector('.clock')
     const sim = [...(footer?.querySelectorAll(':scope > span') ?? [])].map(text).find(t => /^(sim|wall) /.test(t)) ?? null
     return {
@@ -185,15 +198,17 @@ const READER = `(scope) => {
       title: text(article.querySelector(':scope > header h1')),
       word: clock ? text(clock) : null,
       sim,
-      // The worst chip: the header's chip that names no state (R2's own-state chips carry an aria-label "name: state").
-      worst: text(article.querySelector(':scope > header .chip:not([aria-label]):not(button)')) || null,
+      // The worst chip: the header's chip that names no state (own-state chips carry an aria-label "name: state"). R2
+      // draws it as a button (it opens every alert, by category) inside a listitem of .states; a frame with no alert
+      // press draws it as a span.
+      worst: text(article.querySelector(':scope > header .chip:not([aria-label])')) || null,
       chips: [
         ...[...article.querySelectorAll(':scope > .chips > .state')].map(chip => ({ label: text(chip.querySelector('.label')), value: deepText(chip.querySelector('obc-status-indicator, .unknown') ?? doc.createElement('i')) })),
         ...[...article.querySelectorAll(':scope > header .chip[aria-label]')].map(chip => ({ label: (chip.getAttribute('aria-label') || '').split(':')[0].trim(), value: text(chip) })),
       ],
       leads,
       alerts: alertsSection ? { heading: text(alertsSection.querySelector('h2')), rows: [...alertsSection.querySelectorAll('li')].map(text), more: text(alertsSection.querySelector('.more')) || null } : null,
-      framed, framedSymbols,
+      framed, framedSymbols, outlined,
       values,
       text: text(article),
       popover: pop ? { title: pop.getAttribute('aria-label') || '', ready: pop.querySelector('.section') !== null } : null,
@@ -228,7 +243,7 @@ const READER = `(scope) => {
       chips: [...card.querySelectorAll('.csf')].map(chip => ({ label: chip.getAttribute('aria-label') || '', value: text(chip) })),
       leads,
       alerts: alarms ? { heading: text(alarms.querySelector('h2')) || text(alarms.querySelector('.empty')), rows: [...alarms.querySelectorAll('li')].map(text), more: text(alarms.querySelector('.more')) || null } : null,
-      framed, framedSymbols: framed.length,
+      framed, framedSymbols: framed.length, outlined: [],
       values,
       text: text(card),
       popover: look ? { title: look.getAttribute('aria-label') || '', ready: look.querySelector('section') !== null } : null,
@@ -254,19 +269,46 @@ const SCREEN_HELPERS = String.raw`
   const areaOf = d => { const r = d.frame.getBoundingClientRect(); return r.width * r.height }
   // The display window's frame: the largest shown embed that is not inside a dialog (a tag dialog or a chat card is smaller).
   const windowDoc = () => embedDocs().sort((a, b) => areaOf(b) - areaOf(a))[0] || null
-  // A frame's offset on the top page, and the part of the top viewport it shows (intersected up the frame chain).
+  // A frame's document on the top page: top x = ox + s * (its viewport x), s its frames' scales (a zoomed display
+  // window scales its frame with transform: scale), and the part of the top viewport it shows (up the frame chain).
   const frameBox = frame => {
-    let ox = 0, oy = 0
+    let ox = 0, oy = 0, sc = 1
     let vis = { l: 0, t: 0, r: window.innerWidth, b: window.innerHeight }
     const chain = []
     for (let f = frame; f; f = f.ownerDocument.defaultView.frameElement) chain.unshift(f)
     for (const f of chain) {
+      // The boxes in the frame's own document that clip it (a window body that scrolls): what they hide is not shown.
+      const fwin = f.ownerDocument.defaultView
+      for (let a = f.parentElement; a && a !== f.ownerDocument.documentElement; a = a.parentElement) {
+        const s = fwin.getComputedStyle(a)
+        if (s.overflowX === 'visible' && s.overflowY === 'visible') continue
+        const q = a.getBoundingClientRect()
+        const as = a.offsetWidth > 0 ? q.width / a.offsetWidth : 1
+        const al = ox + sc * (q.left + a.clientLeft * as), at = oy + sc * (q.top + a.clientTop * as)
+        if (s.overflowX !== 'visible') vis = { ...vis, l: Math.max(vis.l, al), r: Math.min(vis.r, al + sc * as * a.clientWidth) }
+        if (s.overflowY !== 'visible') vis = { ...vis, t: Math.max(vis.t, at), b: Math.min(vis.b, at + sc * as * a.clientHeight) }
+      }
       const r = f.getBoundingClientRect()
-      const l = ox + r.left + f.clientLeft, t = oy + r.top + f.clientTop
-      vis = { l: Math.max(vis.l, l), t: Math.max(vis.t, t), r: Math.min(vis.r, l + f.clientWidth), b: Math.min(vis.b, t + f.clientHeight) }
+      const fs = lb.scaleOf(f)
+      const l = ox + sc * (r.left + f.clientLeft * fs), t = oy + sc * (r.top + f.clientTop * fs)
+      sc *= fs
+      vis = { l: Math.max(vis.l, l), t: Math.max(vis.t, t), r: Math.min(vis.r, l + sc * f.clientWidth), b: Math.min(vis.b, t + sc * f.clientHeight) }
       ox = l; oy = t
     }
-    return { ox, oy, vis }
+    return { ox, oy, s: sc, vis }
+  }
+  // What a press at a point of the top page lands on, through the frames (a window toolbar or a page dialog over the
+  // display takes the press, not the display under it).
+  const deepHit = (x, y) => {
+    let doc = document, px = x, py = y, hit = doc.elementFromPoint(px, py)
+    while (hit && hit.tagName === 'IFRAME' && hit.contentDocument) {
+      const r = hit.getBoundingClientRect()
+      const fs = lb.scaleOf(hit)
+      px = (px - r.left) / fs - hit.clientLeft; py = (py - r.top) / fs - hit.clientTop
+      doc = hit.contentDocument
+      hit = doc.elementFromPoint(px, py)
+    }
+    return hit
   }
   const parentOf = (n, win) => n.assignedSlot || (n.parentNode instanceof win.ShadowRoot ? n.parentNode.host : n.parentNode)
   // The visible part of a rectangle (page coordinates) through the ancestors of node that clip or scroll it, as CSS
@@ -282,9 +324,10 @@ const SCREEN_HELPERS = String.raw`
       escaping = s.position === 'absolute' ? 'absolute' : s.position === 'fixed' ? 'fixed' : null
       if (s.display === 'contents' || root) continue
       const r = el.getBoundingClientRect()
-      const l = box.ox + r.left + el.clientLeft, t = box.oy + r.top + el.clientTop
-      if (s.overflowX !== 'visible') v = { ...v, l: Math.max(v.l, l), r: Math.min(v.r, l + el.clientWidth) }
-      if (s.overflowY !== 'visible') v = { ...v, t: Math.max(v.t, t), b: Math.min(v.b, t + el.clientHeight) }
+      const es = el.offsetWidth > 0 ? r.width / el.offsetWidth : 1
+      const l = box.ox + box.s * (r.left + el.clientLeft * es), t = box.oy + box.s * (r.top + el.clientTop * es)
+      if (s.overflowX !== 'visible') v = { ...v, l: Math.max(v.l, l), r: Math.min(v.r, l + box.s * es * el.clientWidth) }
+      if (s.overflowY !== 'visible') v = { ...v, t: Math.max(v.t, t), b: Math.min(v.b, t + box.s * es * el.clientHeight) }
     }
     return v
   }
@@ -316,7 +359,7 @@ const SCREEN_HELPERS = String.raw`
     const range = node.ownerDocument.createRange()
     range.selectNodeContents(node)
     const r = range.getBoundingClientRect()
-    return r.width > 0 && r.height > 0 ? { l: box.ox + r.left, t: box.oy + r.top, r: box.ox + r.right, b: box.oy + r.bottom } : null
+    return r.width > 0 && r.height > 0 ? { l: box.ox + box.s * r.left, t: box.oy + box.s * r.top, r: box.ox + box.s * r.right, b: box.oy + box.s * r.bottom } : null
   }
   const closestUp = (el, sel, win) => { for (let n = el; n && n.nodeType === 1; n = parentOf(n, win)) { if (n.matches && n.matches(sel)) return n } return null }
   const ROW = 'li, tr, dt, dd, h1, h2, h3, h4, p, button, a, label, figcaption, summary, [role=button], [role=row], [role=listitem], [role=option], [role=menuitem], [role=status], [role=heading], .readout, .state, .text, .row, .line, .chip'
@@ -345,7 +388,7 @@ const SCREEN_HELPERS = String.raw`
   // whether all of it is on screen.
   const linesOf = (doc, frame) => {
     const win = doc.defaultView
-    const box = frame ? frameBox(frame) : { ox: 0, oy: 0, vis: { l: 0, t: 0, r: window.innerWidth, b: window.innerHeight } }
+    const box = frame ? frameBox(frame) : { ox: 0, oy: 0, s: 1, vis: { l: 0, t: 0, r: window.innerWidth, b: window.innerHeight } }
     const rows = new Map()
     for (const node of textNodesOf(doc.body || doc.documentElement, win)) {
       const rect = nodeRect(node, box)
@@ -364,7 +407,7 @@ const SCREEN_HELPERS = String.raw`
         entry.cut += 1
         // Sideways only, in the drawing's scroller while its affordance shows: reachable by that scroll.
         const scroller = affordanceScroller(node, win)
-        if (scroller) { const sr = scroller.getBoundingClientRect(); const top = box.oy + sr.top, bottom = top + scroller.clientHeight; if (rect.t >= top - 3 && rect.b <= bottom + 3) entry.behind += 1 }
+        if (scroller) { const sr = scroller.getBoundingClientRect(); const top = box.oy + box.s * sr.top, bottom = top + box.s * scroller.clientHeight; if (rect.t >= top - 3 && rect.b <= bottom + 3) entry.behind += 1 }
       }
       // A value: a number, or a state word in capitals ("OPEN", "STOP · CMD RUN"), not a label that holds an acronym.
       if (cut && (/\d/.test(node.textContent) || /^[A-Z][A-Z0-9 .·\/%-]{1,30}$/.test(node.textContent.trim()))) entry.valueOn = false
@@ -377,20 +420,20 @@ const SCREEN_HELPERS = String.raw`
   }
   // A control's page rectangle and whether a press at its centre reaches it (nothing on top of it, on screen).
   const pointOf = (el, frame) => {
-    const box = frame ? frameBox(frame) : { ox: 0, oy: 0, vis: { l: 0, t: 0, r: window.innerWidth, b: window.innerHeight } }
+    const box = frame ? frameBox(frame) : { ox: 0, oy: 0, s: 1, vis: { l: 0, t: 0, r: window.innerWidth, b: window.innerHeight } }
     const r = el.getBoundingClientRect()
-    const rect = { l: box.ox + r.left, t: box.oy + r.top, r: box.ox + r.right, b: box.oy + r.bottom }
+    const rect = { l: box.ox + box.s * r.left, t: box.oy + box.s * r.top, r: box.ox + box.s * r.right, b: box.oy + box.s * r.bottom }
     const v = visiblePart(el, rect, box, el.ownerDocument.defaultView)
     const cx = (Math.max(rect.l, v.l) + Math.min(rect.r, v.r)) / 2, cy = (Math.max(rect.t, v.t) + Math.min(rect.b, v.b)) / 2
     const visible = v.r - v.l > 2 && v.b - v.t > 2
     let reaches = false
     if (visible) {
-      const hit = el.ownerDocument.elementFromPoint(cx - box.ox, cy - box.oy)
+      const hit = deepHit(cx, cy)
       for (let n = hit; n; n = n.parentNode instanceof el.ownerDocument.defaultView.ShadowRoot ? n.parentNode.host : n.parentNode) { if (n === el) { reaches = true; break } }
       if (!reaches && hit && el.contains && el.contains(hit)) reaches = true
       if (!reaches && hit && hit.shadowRoot && el.getRootNode && el.getRootNode() === hit.shadowRoot) reaches = true
     }
-    return { x: cx, y: cy, w: r.width, h: r.height, visible, reaches, whole: whole(rect, v) }
+    return { x: cx, y: cy, w: box.s * r.width, h: box.s * r.height, visible, reaches, whole: whole(rect, v) }
   }
   const nameOf = el => ((el.getAttribute('aria-label') || el.getAttribute('title') || el.innerText || el.textContent || '') + '').replace(/\s+/g, ' ').trim()
   const PRESSABLE = 'button, a[href], [role=button], [role=link], [role=menuitem], [role=menuitemradio], [role=option], [role=tab], [role=switch], summary, obc-button, obc-toggle-button-option, obc-icon-button, obc-automation-button, [tabindex="0"]'
@@ -415,13 +458,13 @@ export interface Screen {
   /** Text lines of the shown display, the faceplates and choosers inside it, in reading order. */
   readonly lines: ReadonlyArray<ScreenLine>
   /** Dialogs shown over the display (a faceplate, a chooser, a tag dialog), with their own lines. */
-  readonly dialogs: ReadonlyArray<{ readonly label: string; readonly where: 'display' | 'page'; readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly pinned: boolean; readonly arrow?: boolean }>
+  readonly dialogs: ReadonlyArray<{ readonly label: string; readonly where: 'display' | 'page'; readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly pinned: boolean; readonly arrow?: boolean; readonly arrowParts?: ReadonlyArray<string> }>
 }
 
 /** An expression for `Page.eval`: what the display window shows on screen now (see Screen). */
 export const readScreen = (): string => `((() => {${SCREEN_HELPERS}
   const shown = windowDoc()
-  const header = lb.everything().map(([el]) => el).find(el => el.className && typeof el.className === 'string' && /(^|\s)display-window-header(\s|$)/.test(el.className) && lb.shown(el))
+  const header = lb.everything().map(([el]) => el).find(el => el.className && typeof el.className === 'string' && /(^|\\s)display-window-header(\\s|$)/.test(el.className) && lb.shown(el))
   const position = header && header.querySelector('.display-window-position')
   const title = header && header.querySelector('.display-window-title')
   const back = !!(header && [...header.querySelectorAll('button, [role=button]')].some(b => lb.shown(b) && /^back\\b|go back|‹ /i.test((b.getAttribute('aria-label') || b.getAttribute('title') || b.innerText || '').trim())))
@@ -430,22 +473,40 @@ export const readScreen = (): string => `((() => {${SCREEN_HELPERS}
   const box = frameBox(shown.frame)
   const fr = shown.frame.getBoundingClientRect()
   const lines = linesOf(shown.doc, shown.frame)
+  // Graphics a person reads (sparklines and traces: svg role=img with their words), as lines of their own, marked.
+  for (const el of shown.doc.querySelectorAll('svg[role=img][aria-label]')) {
+    if (!lb.shown(el)) continue
+    const r = el.getBoundingClientRect()
+    const rect = { l: box.ox + box.s * r.left, t: box.oy + box.s * r.top, r: box.ox + box.s * r.right, b: box.oy + box.s * r.bottom }
+    const v = visiblePart(el, rect, box, shown.doc.defaultView)
+    const on = whole(rect, v)
+    lines.push({ text: '⟨graphic⟩ ' + el.getAttribute('aria-label'), region: regionOf(el, shown.doc.defaultView), on, valueOn: on, x: Math.round(rect.l), y: Math.round(rect.t), w: Math.round(rect.r - rect.l), h: Math.round(rect.b - rect.t) })
+  }
   // Dialogs: inside the display (faceplates, choosers) and on the Run page over it (a tag dialog, the procedures).
   const dialogs = []
   for (const el of shown.doc.querySelectorAll('[role=dialog], [role=menu], [role=listbox], .popover, .faceplate')) {
     if (!lb.shown(el) || dialogs.some(d => d.el.contains(el))) continue
     const r = el.getBoundingClientRect()
-    // An arrow pointing at its opener: any part of it (through shadow roots) named so, drawn.
-    const arrow = (() => { const walk = root => { for (const n of root.querySelectorAll('*')) { const cls = (n.getAttribute('class') || '') + ' ' + (n.getAttribute('part') || ''); if (/arrow|caret|beak/i.test(cls) && lb.shown(n)) return true; if (n.shadowRoot && walk(n.shadowRoot)) return true } return false }; return walk(el) || (el.shadowRoot ? walk(el.shadowRoot) : false) })()
-    dialogs.push({ el, label: nameOf(el).slice(0, 120), where: 'display', x: Math.round(box.ox + r.left), y: Math.round(box.oy + r.top), w: Math.round(r.width), h: Math.round(r.height), pinned: !!el.closest('[data-pinned], .pinned') || /pinned/i.test(el.className + '') || !!el.querySelector('[aria-pressed=true][aria-label*="pin" i], [aria-pressed=true][title*="pin" i]'), arrow })
+    // An arrow pointing at its opener: a small part named so (through shadow roots), drawn at the card's edge (touching
+    // or past it). A rate arrow or a fold caret inside the card is no pointer; every named part is listed as evidence.
+    const parts = []
+    const walk = root => { for (const n of root.querySelectorAll('*')) { const cls = ((n.getAttribute('class') || '') + ' ' + (n.getAttribute('part') || '')).trim(); if (/arrow|caret|beak/i.test(cls) && lb.shown(n)) { const q = n.getBoundingClientRect(); const edge = q.width <= 32 && q.height <= 32 && (q.left < r.left + 2 || q.right > r.right - 2 || q.top < r.top + 2 || q.bottom > r.bottom - 2); parts.push((n.tagName.toLowerCase() + '.' + cls.split(/\\s+/).filter(c => !/^svelte-/.test(c)).join('.')).slice(0, 60) + (edge ? ' (at the edge)' : '')) } if (n.shadowRoot) walk(n.shadowRoot) } }
+    walk(el); if (el.shadowRoot) walk(el.shadowRoot)
+    const arrow = parts.some(part => part.endsWith('(at the edge)'))
+    dialogs.push({ el, label: nameOf(el).slice(0, 120), where: 'display', x: Math.round(box.ox + box.s * r.left), y: Math.round(box.oy + box.s * r.top), w: Math.round(box.s * r.width), h: Math.round(box.s * r.height), pinned: !!el.closest('[data-pinned], .pinned') || /pinned/i.test(el.className + '') || !!el.querySelector('[aria-pressed=true][aria-label*="pin" i], [aria-pressed=true][title*="pin" i]'), arrow, arrowParts: [...new Set(parts)].slice(0, 6) })
   }
   return { frame: { x: Math.round(box.ox), y: Math.round(box.oy), w: Math.round(fr.width), h: Math.round(fr.height), visibleW: Math.round(box.vis.r - box.vis.l), visibleH: Math.round(box.vis.b - box.vis.t) }, window: windowState, lines, dialogs: dialogs.map(({ el, ...d }) => d) }
 })())`
 
 /** Lines whose values show on screen, or stand behind the drawing's scroll affordance, and whose text matches, in the
  * regions given (all when none). */
+/** A graphic's line (a sparkline's or trace's own words, its aria-label), as readScreen lists it beside the text. */
+export const GRAPHIC = '⟨graphic⟩ '
 export const onScreen = (screen: Screen, pattern: RegExp, regions?: ReadonlyArray<string>): ReadonlyArray<ScreenLine> =>
-  screen.lines.filter(line => (line.valueOn || line.behind === true) && pattern.test(line.text) && (regions === undefined || regions.includes(line.region)))
+  screen.lines.filter(line => !line.text.startsWith(GRAPHIC) && (line.valueOn || line.behind === true) && pattern.test(line.text) && (regions === undefined || regions.includes(line.region)))
+/** The graphics on screen (sparklines, traces) whose words match, in the regions given. */
+export const graphicsOnScreen = (screen: Screen, pattern: RegExp, regions?: ReadonlyArray<string>): ReadonlyArray<ScreenLine> =>
+  screen.lines.filter(line => line.text.startsWith(GRAPHIC) && line.on && pattern.test(line.text.slice(GRAPHIC.length)) && (regions === undefined || regions.includes(line.region)))
 /** Of these lines, the ones that need the drawing's scroll (behind its affordance), for evidence. */
 export const behindAffordance = (lines: ReadonlyArray<ScreenLine>): ReadonlyArray<ScreenLine> => lines.filter(line => !line.valueOn && line.behind === true)
 
@@ -464,6 +525,8 @@ export interface PressTarget {
   readonly reaches: boolean
   /** Some of it shows on screen; one scrolled out of view is pressed after scrolling it in (reveal). */
   readonly visible: boolean
+  /** It is a control itself (a button, a link, a role=button…), not text a person presses anyway. */
+  readonly pressable: boolean
 }
 
 /** An expression for `Page.eval`: scrolls the target (by kind and name, as readTargets lists it) into the middle of its
@@ -490,13 +553,13 @@ export const readTargets = (): string => `((() => {${SCREEN_HELPERS}
   const doc = shown.doc, win = doc.defaultView
   const out = []
   const seen = new Set()
-  const add = (el, kind, name, item) => {
+  const add = (el, kind, name, item, pressable = false) => {
     if (seen.has(el)) return
     seen.add(el)
     const p = pointOf(el, shown.frame)
     const r = el.getBoundingClientRect()
     if (r.width <= 0 || r.height <= 0) return
-    out.push({ kind, name: name.slice(0, 120), item, x: Math.round(p.x), y: Math.round(p.y), w: Math.round(p.w), h: Math.round(p.h), reaches: p.reaches, visible: p.visible })
+    out.push({ kind, name: name.slice(0, 120), item, x: Math.round(p.x), y: Math.round(p.y), w: Math.round(p.w), h: Math.round(p.h), reaches: p.reaches, visible: p.visible, pressable })
   }
   // The drawn item a control belongs to: its own data-item or data-magnifier, else (a symbol's body, R2) the text block
   // that stands just right of it on its rows.
@@ -511,7 +574,8 @@ export const readTargets = (): string => `((() => {${SCREEN_HELPERS}
       .sort((a, b) => (a.r.left - r.right) - (b.r.left - r.right))[0]
     return near ? near.id : null
   }
-  const bare = name => name.replace(/^(Open|Faceplate:|Quick look:?)\s+/i, '')
+  // Written \\s: this template is not raw, and a lone \s would reach the page as "s".
+  const bare = name => name.replace(/^(Open|Faceplate:|Quick look:?)\\s+/i, '')
   const small = el => { const r = el.getBoundingClientRect(); return r.width <= 44 && r.height <= 44 }
   for (const el of doc.querySelectorAll(PRESSABLE)) {
     if (!lb.shown(el) || el.closest('[aria-hidden=true]') || el.matches('[disabled], [aria-disabled=true]')) continue
@@ -524,7 +588,7 @@ export const readTargets = (): string => `((() => {${SCREEN_HELPERS}
     else if (region === 'alerts' && /^\\+\\s*\\d+|more\\b/i.test(name)) kind = 'more'
     else if (region === 'alerts' || region === 'trip') kind = 'row'
     else if (region === 'faceplate') kind = 'control'
-    add(el, kind, kind === 'item' || kind === 'magnifier' ? bare(name) : name, itemOf(el))
+    add(el, kind, kind === 'item' || kind === 'magnifier' ? bare(name) : name, itemOf(el), true)
   }
   // Drawn items' text blocks: a person presses the label too.
   for (const el of doc.querySelectorAll('.flow .text, [data-item] .text, [data-item] .label')) {

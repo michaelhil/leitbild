@@ -7,6 +7,7 @@
  * colour or coordinate. Rows are units of the renderer's grid.
  */
 import { z } from 'zod'
+import type { DeclaredCategory } from '../alerts/census.ts'
 import type { AlertRow } from '../alerts/rows.ts'
 import { observableRefSchema, type AlertSeverity, type Priority } from '../../../core/model/alerts.ts'
 import { objectIdSchema } from '../../../core/model/ids.ts'
@@ -119,13 +120,14 @@ export interface EntityRow {
 export interface SlotDeclaration { readonly key: string; readonly label: string; readonly unit: string }
 
 /** A binding the caller reads, with its observable's declared quantity, unit, states (a state marked `active` reads as on) and decades, so a drawing writes the reading as the card does. */
-export type TopologyBinding = TopologyNode['bindings'][number] & Pick<Observable, 'quantity' | 'unit' | 'states' | 'decades'>
+/** A drawing's binding with its declared unit and words; a traced one with its record's series. */
+export type TopologyBinding = TopologyNode['bindings'][number] & Pick<Observable, 'quantity' | 'unit' | 'states' | 'decades'> & { readonly series?: NonNullable<Observable['series']> }
 export interface TopologyNodeView extends Pick<TopologyNode, 'id' | 'label' | 'shortLabel' | 'element'> {
   /** A stop's label says "to" or "from" and names its far ends (topology/stops.ts). */
   readonly class: TopologyNode['class'] | 'stop'
   readonly bindings: ReadonlyArray<TopologyBinding>
-  /** A stop: whether flow leaves through it (`out`) or comes in, and each far end with its element and its state's binding where the stop writes it. */
-  readonly stop?: { readonly direction: 'in' | 'out'; readonly far: ReadonlyArray<{ readonly id: string; readonly label: string; readonly element?: string; readonly bindings: ReadonlyArray<TopologyBinding> }> }
+  /** A stop: whether flow leaves through it (`out`) or comes in, the lines its label is set in, and each far end with its element and its state's binding where the stop writes it. */
+  readonly stop?: { readonly direction: 'in' | 'out'; readonly lines: ReadonlyArray<string>; readonly far: ReadonlyArray<{ readonly id: string; readonly label: string; readonly element?: string; readonly bindings: ReadonlyArray<TopologyBinding> }> }
 }
 
 /** Parallel values: one line per element (or per line of an element's declared table), one column per quantity. */
@@ -158,7 +160,8 @@ export type VignetteSection =
     /** `packId` is the object's Pack: the pop-over loads that Pack's element actions. */
     readonly kind: 'topology'; readonly rows: number; readonly objectId: string; readonly packId: string; readonly family: 'flow' | 'network'; readonly layout: TopologyLayout
     readonly nodes: ReadonlyArray<TopologyNodeView>
-    readonly edges: ReadonlyArray<{ readonly id: string; readonly mediumKind: TopologyGraph['media'][number]['kind']; readonly bindings: ReadonlyArray<TopologyBinding> }>
+    /** `auxiliary`: a line outside the principal equipment its graph declares (its overview), drawn small. */
+    readonly edges: ReadonlyArray<{ readonly id: string; readonly mediumKind: TopologyGraph['media'][number]['kind']; readonly bindings: ReadonlyArray<TopologyBinding>; readonly auxiliary?: true }>
     readonly attribution?: string
   }
   /** Its counts are the sample's `maps[section]`. */
@@ -182,6 +185,8 @@ export interface VignetteSample {
   readonly observations: ReadonlyArray<Observation>
   /** The rows of every alerts section, in each section's order (alertsOf), then those of each drawn topology's object (its frames), each row once. */
   readonly alerts: ReadonlyArray<AlertRow>
+  /** By object id: the categories its Pack declares its alerts under, for the tiles of each object an alerts section lists or a drawing draws (W2.2). */
+  readonly categories?: Readonly<Record<string, ReadonlyArray<DeclaredCategory>>>
   /** By section index: an entity section's rows, sorted and capped, and how many more there are. */
   readonly entities: Readonly<Record<number, { readonly rows: ReadonlyArray<EntityRow>; readonly more: number }>>
   /** By object id: each slot's value now. */

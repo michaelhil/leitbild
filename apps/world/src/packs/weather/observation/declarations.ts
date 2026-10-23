@@ -12,6 +12,9 @@ import { weatherQuantities, weatherRecordingProfiles } from '../quantities.ts'
 
 export type WeatherObjects = ReadonlyMap<string, OperationalObject>
 
+/** The severities in their steps from normal. */
+const SEVERITY_STEPS = ['notice', 'adverse', 'hazard'] as const
+
 /** A weather object's data, or a refusal naming where object ids come from. */
 export const weatherObjectData = (objects: WeatherObjects, objectId: string): WeatherPackData => {
   const object = objects.get(objectId)
@@ -24,7 +27,8 @@ export const declareWeather = (objectId: string, data: WeatherPackData, recordin
     ref: `${objectId}#${quantity.id}`, label: quantity.title, quantity: quantity.quantity, unit: quantity.unit, basis: 'model',
     valueType: quantity.quantity === 'state' ? 'enum' : 'number',
     ...(quantity.quantity === 'state' ? { states: precipitationTypeSchema.options.map(value => ({ value, label: value.replaceAll('_', ' ') })) } : {}),
-    thresholds: weatherSeverityLadder.filter(rule => rule.quantity === quantity.id).map((rule, order) => ({
+    // A limit's order is its step from normal (1 first): notice, then adverse, then hazard, whatever the ladder's order.
+    thresholds: weatherSeverityLadder.filter(rule => rule.quantity === quantity.id).sort((left, right) => SEVERITY_STEPS.indexOf(left.severity) - SEVERITY_STEPS.indexOf(right.severity)).map((rule, order) => ({
       id: `${rule.severity}-${rule.quantity}`, direction: rule.direction, value: rule.limit, order: order + 1, effect: 'advisory', priority: weatherLevelPriority[rule.severity],
     })),
     series: data.definition.type === 'weather_probe' && intervalMs !== undefined ? { seriesId: recordingSeriesIdFor(objectId, quantity.id), intervalMs } : null,

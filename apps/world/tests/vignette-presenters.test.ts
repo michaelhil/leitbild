@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import type { AlertState } from '../src/core/model/alerts.ts'
 import type { ObjectId } from '../src/core/model/ids.ts'
 import type { Observable, Observation } from '../src/core/observation/model.ts'
-import type { AlertRow } from '../src/features/displays/alerts/rows.ts'
-import { alertDetail, alertIcon, alertsTarget, alertTitle, inSection, rowParts, rowWidth, UNACK_WORD, unacknowledged, wordsThatFit, worstChip } from '../src/ui/embed/vignette/alerts.ts'
+import { unacknowledged, type AlertRow } from '../src/features/displays/alerts/rows.ts'
+import { alertDetail, alertIcon, alertsTarget, alertTitle, detailText, fitRow, inSection, rowParts, rowWidth, UNACK_WORD, wordsThatFit, worstChip } from '../src/ui/embed/vignette/alerts.ts'
 import { provenanceMark, provenanceMarks, quantityText } from '../src/ui/embed/vignette/format.ts'
 import type { VignetteValue } from '../src/features/displays/compose/model.ts'
 import { activeState, orderWord, readingLook, valueLook } from '../src/ui/embed/vignette/readout.ts'
@@ -312,13 +312,17 @@ describe('alerts', () => {
     expect(worstChip([{ priority: 'notice' }], [])).toBeNull()
   })
 
-  test('each row takes OpenBridge\'s alert icon by its declared priority, drawn steady: acknowledged, or rectified once returned; notice and an undeclared priority read as words', () => {
-    // Nothing in a vignette acknowledges (W2.7): an unacknowledged icon would flash for ever (UX audit H11).
-    expect(alertIcon(row('a', 'one', 'emergency'))).toEqual({ type: 'level-critical', acknowledged: true, active: true })
-    expect(alertIcon({ ...row('a', 'one', 'warning'), state: 'active-ack' })).toEqual({ type: 'warning', acknowledged: true, active: true })
-    expect(alertIcon({ ...row('a', 'one', 'alarm'), state: 'returned-unack' })).toEqual({ type: 'alarm', acknowledged: true, active: false })
-    expect(alertIcon(row('a', 'one', 'notice'))).toEqual({ word: 'Notice' })
-    expect(alertIcon(row('a', 'one', null))).toEqual({ word: 'Warning · priority not declared' })
+  test('each row takes OpenBridge\'s alert icon as its record stands, so only unacknowledged news flashes; what asks no attention shows its priority steady; notice and an undeclared priority read as words', () => {
+    // People acknowledge in the display window (W2.7): an unacknowledged alarm flashes until they do (H11, F18).
+    expect(alertIcon(row('a', 'one', 'emergency'))).toEqual({ kind: 'icon', type: 'level-critical', acknowledged: false, active: true })
+    expect(alertIcon({ ...row('a', 'one', 'warning'), state: 'active-ack' })).toEqual({ kind: 'icon', type: 'warning', acknowledged: true, active: true })
+    expect(alertIcon({ ...row('a', 'one', 'alarm'), state: 'returned-unack' })).toEqual({ kind: 'icon', type: 'alarm', acknowledged: false, active: false })
+    // Expected after a first-out, standing, advisory: unacknowledged, steady, its priority alone.
+    expect(alertIcon({ ...row('a', 'one', 'alarm'), expected: { after: 'RX TRIP' } })).toEqual({ kind: 'badge', type: 'alarm' })
+    expect(alertIcon(row('a', 'one', 'caution', { standing: true }))).toEqual({ kind: 'badge', type: 'caution' })
+    expect(alertIcon({ ...row('a', 'one', 'alarm', { firstOut: { group: 'g', rank: 1 } }), expected: { after: 'RX TRIP' } })).toEqual({ kind: 'icon', type: 'alarm', acknowledged: false, active: true })
+    expect(alertIcon(row('a', 'one', 'notice'))).toEqual({ kind: 'word', word: 'Notice' })
+    expect(alertIcon(row('a', 'one', null))).toEqual({ kind: 'word', word: 'Warning · priority not declared' })
     // Before a sample's time is known a row says its clock time; then its age in Run time.
     expect(alertDetail({ ...row('a', 'one', 'caution', { standing: true, acknowledged: true, acknowledgedBy: 'ai' }), state: 'active-ack' }, Number.NaN)).toBe('standing · acknowledged by Assistant · 10:00:00 UTC')
     expect(alertDetail(row('a', 'one', 'caution'), Date.parse(at) + 179_000)).toBe('2:59')
@@ -374,11 +378,44 @@ describe('alerts', () => {
     expect(source).toContain('use:wholeWords={parts.message}')
   })
 
-  test('a row is written on one line where it fits whole, else on two', () => {
-    const parts = rowParts({ ...row('a', 'one', 'alarm', { firstOut: { group: 'g', rank: 1 } }), action: { label: 'RX TRIP' }, tag: 'LO · RX TRIP' }, Date.parse(at) + 1_000)
-    expect(parts).toMatchObject({ unack: true, mark: '1st RX TRIP', message: 'a', detail: 'LO · RX TRIP · 0:01' })
-    // A character 6 px wide: icon 20, UNACK 30, "1st RX TRIP:" 72, "a" 6, the detail 114, four gaps of 6.
-    expect(rowWidth(parts, text => text.length * 6)).toBe(20 + 30 + 72 + 6 + 114 + 4 * 6)
+  test('a row stands on one line: its notes give way before its message, its message by whole words, then its tag; the icon, UNACK, the mark and the age stand', () => {
+    const now = Date.parse(at) + 1_000
+    // A character 6 px wide.
+    const measure = (text: string): number => text.length * 6
+    const first = rowParts({ ...row('Reactor trip on turbine trip', 'one', 'alarm', { firstOut: { group: 'g', rank: 1 } }), action: { label: 'RX TRIP' }, tag: 'LO · RX TRIP' }, now)
+    // Its mark names its group, so its tag keeps only its limit.
+    expect(first).toMatchObject({ unack: true, mark: '1st RX TRIP', message: 'Reactor trip on turbine trip', detail: { tag: 'LO', notes: [], age: '0:01' } })
+    // Icon 20, UNACK 30, "1st RX TRIP:" 72, the message 168, "LO · 0:01" 54, four gaps of 6.
+    expect(rowWidth(first, measure)).toBe(20 + 30 + 72 + 168 + 54 + 4 * 6)
+    expect(fitRow(first, 400, measure)).toBe(first)
+    // Narrower, the message gives way on the row itself (wholeWords): it has no notes, and its tag stands while its first word fits.
+    expect(fitRow(first, 260, measure)).toEqual(first)
+    const expected = rowParts({ ...row('SG A level low-low', 'one', 'alarm', { acknowledged: true }), state: 'active-ack', tag: 'LO-LO · AFW START', expected: { after: 'RX TRIP' } }, now)
+    expect(detailText(expected.detail)).toBe('LO-LO · AFW START · after RX TRIP · acknowledged · 0:01')
+    expect(fitRow(expected, 500, measure)).toBe(expected)
+    // To keep its message whole, the notes go, the last first; then the message gives way ("SG…", then nothing); then the tag; the age stands.
+    expect(detailText(fitRow(expected, 440, measure).detail)).toBe('LO-LO · AFW START · after RX TRIP · 0:01')
+    expect(detailText(fitRow(expected, 300, measure).detail)).toBe('LO-LO · AFW START · 0:01')
+    expect(detailText(fitRow(expected, 200, measure).detail)).toBe('LO-LO · AFW START · 0:01')
+    expect(detailText(fitRow(expected, 150, measure).detail)).toBe('0:01')
+    // An object's name in a list of several goes last.
+    const named = rowParts(row('Loss of offsite power', 'one', 'alarm'), now, 'Halden Unit 1')
+    expect(fitRow(named, 120, measure)).toMatchObject({ unack: true, mark: null, detail: { notes: [], age: '0:01' } })
+    expect(fitRow(named, 120, measure).heading).toBeUndefined()
+    expect(fitRow(named, 240, measure).heading).toBe('Halden Unit 1')
+  })
+
+  test('people acknowledge in the display window only (D-B1, Q19): no ACK in a chat answer or a dialog, each through its row\'s command', () => {
+    const source = (file: string): string => readFileSync(join(import.meta.dir, `../src/ui/embed/vignette/${file}`), 'utf8')
+    const opening = source('opening.svelte.ts')
+    expect(opening).toContain("get acknowledges() { return where === 'window' }")
+    expect(opening).toContain("if (where !== 'window') return 'alerts are acknowledged in the display window'")
+    expect(opening).toContain('invokeSimulationRunCapability(config.runId(), { capabilityId: row.acknowledge.capabilityId, input: row.acknowledge.input })')
+    for (const file of ['AlertsSection.svelte', 'AlertsView.svelte']) expect(source(file)).toContain('const acks = $derived(opening?.acknowledges === true)')
+    expect(source('acknowledging.svelte.ts')).toContain('if (by === undefined || !by.acknowledges || asked.length === 0) return')
+    expect(source('AlertRowLine.svelte')).toContain('{#if parts.ack === true && onack !== undefined}')
+    // The column's rows open their element; its aggregates and an element's own rows (its faceplate) acknowledge.
+    expect(source('AlertsSection.svelte')).toContain('acks && !whole && row.acknowledge !== undefined')
   })
 
   test('a section narrowed to elements or observables shows only the alerts on them', () => {
