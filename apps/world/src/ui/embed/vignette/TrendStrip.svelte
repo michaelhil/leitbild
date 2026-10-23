@@ -55,7 +55,7 @@
   const x = (t: number): number => ((t - start) / section.horizonMs) * plotWidth
 
   // A narrow plot names every second or third time, always "now", so no two names touch.
-  const AXIS_LABEL_PX = 56
+  const AXIS_LABEL_PX = 72
   const times = $derived.by(() => {
     const ticks = ready ? timeTicks(now, section.horizonMs) : []
     const every = Math.max(1, Math.ceil(AXIS_LABEL_PX / (plotWidth / Math.max(1, ticks.length - 1))))
