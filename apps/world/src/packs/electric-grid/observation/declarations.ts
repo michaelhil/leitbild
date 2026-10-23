@@ -133,13 +133,23 @@ const thresholds = (grid: GridRuntimeInstance, signal: GridSignal, branchId?: st
   return []
 }
 
+/**
+ * A loading's span (W4.2, W9.3: its span bar where it has no record): none to the branch protection's instantaneous
+ * pickup, past which a branch trips at once, so no loading stands beyond it. Without branch protection a branch carries
+ * any flow: no span is declared, and nothing is pinned at an end.
+ */
+const loadingSpan = (grid: GridRuntimeInstance, signal: GridSignal): Pick<Observable, 'span'> => {
+  const protection = grid.definition.automation.branchProtection
+  return signal.bands === 'loading' && protection.enabled ? { span: { min: 0, max: protection.instantaneousPercentOfRating } } : {}
+}
+
 const observable = (grid: GridRuntimeInstance, recording: ScenarioRecordingSelection | undefined, signalId: string, signal: GridSignal, label: string, element?: Element): Observable => {
   const recorded = signal.recorded === 'operations' || (signal.recorded === 'engineering' && recording?.profileId === 'engineering' && !grid.hvdcTerminals.has(element?.id ?? ''))
   const interval = recording?.intervalMs ?? electricGridRecordingProfiles.find(profile => profile.id === recording?.profileId)?.defaultIntervalMs
   return {
     ref: `${grid.definition.gridId}#${signalId}`, label, quantity: signal.quantity, unit: signal.unit,
     valueType: signal.states ? 'enum' : signal.quantity === 'state' ? 'boolean' : 'number', ...(signal.states ? { states: signal.states.map(value => ({ value, label: value, ...(value === signal.active ? { active: true as const } : {}) })) } : {}),
-    thresholds: thresholds(grid, signal, element?.class === 'branch' ? element.id : undefined), basis: 'model',
+    thresholds: thresholds(grid, signal, element?.class === 'branch' ? element.id : undefined), basis: 'model', ...loadingSpan(grid, signal),
     series: recorded && recording !== undefined && interval !== undefined ? { seriesId: recordingSeriesIdFor(grid.definition.gridId, signalId), intervalMs: interval } : null,
     ...(element === undefined ? {} : { element: element.id }),
     ...(signal.lead === undefined ? {} : { lead: signal.lead }),

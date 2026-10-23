@@ -109,6 +109,15 @@ describe('grid observation declarations (N2)', () => {
     expect([label('branch:osm-1022cbf125eebbb4'), label('branch:osm-f916b2661f890d86')]).toEqual(['Sylling - Tegneby (1)', 'Sylling - Tegneby (2)'])
   })
 
+  test('a loading spans none to the branch protection\'s instantaneous pickup, so it draws a span bar (W4.2, W9.3)', () => {
+    const protection = halden.definition.automation.branchProtection
+    expect(protection.enabled).toBe(true)
+    const pickup = protection.enabled ? protection.instantaneousPercentOfRating : Number.NaN
+    expect(byRef(valid(declareGrid(halden, operations, ['branch:osm-1022cbf125eebbb4'])), 'branch:osm-1022cbf125eebbb4.loading')!.span).toEqual({ min: 0, max: pickup })
+    expect(byRef(valid(declareGrid(halden, operations)), 'grid.maximum-branch-loading')!.span).toEqual({ min: 0, max: pickup })
+    expect(byRef(valid(declareGrid(halden, operations, ['branch:osm-1022cbf125eebbb4'])), 'branch:osm-1022cbf125eebbb4.flow')!.span).toBeUndefined()
+  })
+
   test('every declared series is one the Grid\'s recording plan describes; per-asset ones only with the engineering profile', () => {
     for (const selection of [operations, engineering]) {
       const { grid } = steppedGrid(corridorDefinition())
