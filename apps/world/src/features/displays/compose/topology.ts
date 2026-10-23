@@ -140,7 +140,7 @@ export const topologyOf = async (run: SearchRun, objectId: ObjectId): Promise<To
 }
 
 /** What the renderer draws: the layout, every drawn node (stops as `s<n>`, with their far ends) and edge with its medium's kind, and bindings the caller reads, with their declared units. */
-export const topologySection = (objectId: string, packId: string, scoped: ScopedTopology, drawing: Drawing, rows: number, declaredOf: (ref: string) => Pick<Observable, 'quantity' | 'unit' | 'states' | 'decades'> | undefined): VignetteSection => {
+export const topologySection = (objectId: string, packId: string, scoped: ScopedTopology, drawing: Drawing, rows: number, declaredOf: (ref: string) => Pick<Observable, 'quantity' | 'unit' | 'states' | 'decades'> & Partial<Pick<Observable, 'series'>> | undefined): VignetteSection => {
   const { graph } = scoped
   const [nodes, edges] = [new Set(scoped.nodes), new Set(scoped.edges)]
   const kindOf = (medium: string) => graph.media.find(entry => entry.id === medium)!.kind
@@ -149,7 +149,9 @@ export const topologySection = (objectId: string, packId: string, scoped: Scoped
   const auxiliary = (lines: ReadonlyArray<string>): boolean => graph.overview !== undefined && !lines.some(line => principal.has(line))
   const bound = (bindings: TopologyGraph['nodes'][number]['bindings']) => bindings.flatMap(binding => {
     const declared = declaredOf(binding.ref)
-    return declared === undefined ? [] : [{ ...binding, quantity: declared.quantity, unit: declared.unit, ...(declared.states === undefined ? {} : { states: declared.states }), ...(declared.decades === true ? { decades: true as const } : {}) }]
+    // A traced reading carries its record's series, which the samples serve (W6.6).
+    const series = binding.trace === true ? declared?.series ?? null : null
+    return declared === undefined ? [] : [{ ...binding, quantity: declared.quantity, unit: declared.unit, ...(declared.states === undefined ? {} : { states: declared.states }), ...(declared.decades === true ? { decades: true as const } : {}), ...(series === null ? {} : { series }) }]
   })
   return {
     kind: 'topology', rows, objectId, packId, family: graph.family, layout: drawing.layout,
@@ -166,6 +168,12 @@ export const topologySection = (objectId: string, packId: string, scoped: Scoped
     ],
     ...(graph.attribution === undefined ? {} : { attribution: graph.attribution }),
   }
+}
+
+/** The readings a drawing traces with its drawn items (W6.6): their records are served with its samples' history. */
+export const tracedRefs = (scoped: ScopedTopology): ReadonlyArray<string> => {
+  const nodes = new Set(scoped.nodes)
+  return [...new Set(scoped.graph.nodes.filter(node => nodes.has(node.id)).flatMap(node => node.bindings.filter(binding => binding.trace === true).map(binding => binding.ref)))]
 }
 
 /** The values a drawing binds: every drawn node's and edge's binding refs, the flags a reading in turn stands in `while`, and what its stops read. */

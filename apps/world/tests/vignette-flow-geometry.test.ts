@@ -8,8 +8,7 @@ import type { TopologyRequest } from '../src/features/displays/topology/scope.ts
 import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
 import { plantDeclaration } from '../src/packs/process-plant/observation/declarations.ts'
 import { servedPlantTopology } from '../src/packs/process-plant/observation/topology.ts'
-import { FLOW_TEXT } from '../src/features/displays/topology/text.ts'
-import { flowDrawing, SILHOUETTE, toSilhouette } from '../src/ui/embed/vignette/flow-symbols.ts'
+import { flowDrawing, lineHeight, SILHOUETTE, toSilhouette } from '../src/ui/embed/vignette/flow-symbols.ts'
 import { legendKeys } from '../src/ui/embed/vignette/flow-legend.ts'
 import { STUB_STRAIGHT } from '../src/ui/embed/vignette/pipe-segments.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
@@ -63,7 +62,7 @@ describe('pipe ends (W6.3, owner finding 4, U-18)', () => {
       const chevrons = drawing.segments.filter(segment => segment.kind === 'direction')
       expect(chevrons.length).toBeGreaterThan(0)
       const boxes = [
-        ...drawing.texts.map(text => ({ x: text.x, y: text.y, width: text.width, height: text.lines.reduce((sum, line) => sum + FLOW_TEXT[line.style].line, 0) })),
+        ...drawing.texts.map(text => ({ x: text.x, y: text.y, width: text.width, height: text.lines.reduce((sum, line) => sum + lineHeight(line), 0) })),
         ...drawing.devices.map(device => ({ x: device.x - 24, y: device.y - 24, width: 48, height: 48 })),
         ...drawing.vessels,
       ]
@@ -88,7 +87,7 @@ describe('text (W6.5): clear of pipes, symbols and other text', () => {
     for (const [name, section] of cases) {
       const drawing = flowDrawing(section, flowing(section), [], false)
       // Each text block at its lines' height; the symbols at their drawn boxes (a device its two cells round its centre).
-      const texts = drawing.texts.map(text => ({ id: text.id, x: text.x, y: text.y, width: text.width, height: text.lines.reduce((sum, line) => sum + FLOW_TEXT[line.style].line, 0) }))
+      const texts = drawing.texts.map(text => ({ id: text.id, x: text.x, y: text.y, width: text.width, height: text.lines.reduce((sum, line) => sum + lineHeight(line), 0) }))
       const symbols = [...drawing.devices.map(device => ({ id: device.id, x: device.x - 24, y: device.y - 24, width: 48, height: 48 })), ...drawing.vessels]
       // A pipe as the band its outline takes (6 px wide).
       const pipes = drawing.segments.flatMap(segment => (segment.kind !== 'straight' ? []

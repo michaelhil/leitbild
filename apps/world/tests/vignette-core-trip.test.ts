@@ -59,7 +59,9 @@ describe('the core on the unit overview (W1.2)', () => {
     expect(lines[0]).toBe('name:Core')
     expect(lines[1]).toMatch(/^reading:PWR 10\d\.\d %$/)
     expect(lines[2]).toMatch(/^reading:3\d\d\.\d °C$/)
-    expect(lines).toHaveLength(3)
+    // Then CET's last ten minutes (W6.6, D-C).
+    expect(lines[3]).toBe('trace:')
+    expect(lines).toHaveLength(4)
     expect(text.outline).toBeNull()
     expect(vessel.parts).toEqual([[0, 0, 0, 0], [expect.any(Number), expect.any(Number), expect.any(Number), expect.any(Number)]])
     expect(vessel.parts![0]!.every(part => part === 0)).toBe(true)

@@ -21,7 +21,7 @@ import { flowPlan, type FlowSizing } from './flow.ts'
 import { groupName, itemText, type TopologyLayout } from './layout.ts'
 import type { ScopedTopology } from './scope.ts'
 import { farState, stopLabel, stopLines, stopStated, type DrawnStop, type StopWords } from './stops.ts'
-import { FLOW_TEXT, TEXT_INSET, textFigures, textWidth, type FlowTextStyle } from './text.ts'
+import { FLOW_TEXT, FLOW_TRACE, TEXT_INSET, textFigures, textWidth, type FlowTextStyle } from './text.ts'
 
 /**
  * The renderer's grid pitch and its text lines, each as high and as wide as Noto Sans sets it (text.ts) at its
@@ -135,6 +135,8 @@ export const flowSizing = (graph: TopologyGraph, declaredOf: DeclaredOf, words: 
           // The command to stop an item that says it stopped is reserved as long as the words that say so ("CMD trip").
           : written.state.role === 'stopped' ? [line(widest([...labels(written.state), ...UNKNOWN_WORDS], 'word'), true)] : [command([written.state], positioned)])]),
         ...written.readings.map(chain => line(reading(chain, style), false, style)),
+        // What it traces, under its readings; an exchanger traces in its tile.
+        ...(item.node.class !== 'transfer' && item.node.bindings.some(binding => binding.trace === true) ? [{ width: TEXT_INSET + FLOW_TRACE.width, height: FLOW_TRACE.line, required: false }] : []),
       ])]
       const cells = vessel || TALL.has(item.node.class) ? { width: 2, height: 4 } : { width: 2, height: 2 }
       return { label: text, node: { cells, portInset: 0, text: { lines }, frameable: false, ...(vessel ? { ends: VESSEL_ENDS } : {}) }, keep: null }

@@ -19,7 +19,7 @@ import {
 } from './model.ts'
 import { presentedOf } from './present.ts'
 import type { ComposeRun } from './resolve.ts'
-import { bindingRefs, drawingOf, scopeWithin, topologyOf, topologySection } from './topology.ts'
+import { bindingRefs, drawingOf, scopeWithin, topologyOf, topologySection, tracedRefs } from './topology.ts'
 
 /** A Run's record of one series between two instants and up to its hold before them (the value held into `from`), Run time ascending, with that hold. */
 export type SeriesPort = (seriesId: string, from: string, to: string) => RecordedSeries
@@ -63,6 +63,18 @@ const bindingsOf = async (run: ComposeRun, state: VignetteState): Promise<Readon
     if (scoped?.ok === true) binding.push(...bindingRefs(scoped.scoped))
   }
   return binding
+}
+
+/** The readings a state's drawings trace with their items (W6.6). */
+const tracesOf = async (run: ComposeRun, state: VignetteState): Promise<ReadonlyArray<string>> => {
+  const traced: string[] = []
+  for (const view of state.views) {
+    if (view.kind !== 'topology') continue
+    const graph = await topologyOf(run, view.objectId)
+    const scoped = graph === null ? null : scopeWithin(graph, view.request)
+    if (scoped?.ok === true) traced.push(...tracedRefs(scoped.scoped))
+  }
+  return traced
 }
 
 /**
@@ -332,9 +344,10 @@ export const sampleVignette = async (run: ViewRun, state: VignetteState, history
   })
   const at = run.clock === undefined ? { at: new Date().toISOString(), clock: 'wall' as const, paused: false } : { at: run.clock.currentTime, clock: 'simulation' as const, paused: run.clock.paused }
   const series = history === undefined ? undefined : await (async () => {
-    // Each trend pen's record and each values row's now (its sparkline, W4.2), or only those asked for: a row that
-    // appeared when its lead changed (W8.5).
-    const drawn = state.views.flatMap((view, index) => view.kind === 'trend' ? view.refs : view.kind === 'values' ? led.get(index) ?? view.refs ?? [] : [])
+    // Each trend pen's record and each values row's now (its sparkline, W4.2), each reading a drawing traces (W6.6),
+    // or only those asked for: a row that appeared when its lead changed (W8.5).
+    const traced = await tracesOf(run, state)
+    const drawn = [...state.views.flatMap((view, index) => view.kind === 'trend' ? view.refs : view.kind === 'values' ? led.get(index) ?? view.refs ?? [] : []), ...traced]
     const declared = await declaredRefs(run, history.refs === undefined ? drawn : drawn.filter(ref => history.refs!.includes(ref)))
     return Object.fromEntries([...declared.values()].flatMap(entry => entry.observable.series === null ? []
       : [[entry.observable.series.seriesId, run.series(entry.observable.series.seriesId, new Date(history.fromMs).toISOString(), at.at)] as const]))

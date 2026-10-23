@@ -25,6 +25,13 @@ export const FLOW_TEXT: Readonly<Record<FlowTextStyle, { readonly size: number; 
 /** Every character the table measures, and the subset of Noto Sans the embed ships: printable ASCII and the signs readings write. */
 export const FLOW_TEXT_CHARACTERS = ` !"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_\`abcdefghijklmnopqrstuvwxyz{|}~×⁻⁰¹²³⁴⁵⁶⁷⁸⁹°·µ−–—…`
 
+/**
+ * A reading a drawing traces with its item (W6.6): the registered sparkline (ui/embed/vignette/Sparkline.svelte) of its
+ * last ten minutes, as a values row draws it, on a line of its own under the item's readings; an exchanger draws it in
+ * its tile instead.
+ */
+export const FLOW_TRACE = { width: 56, height: 20, line: 24 } as const
+
 /** Between an item's symbol and its text: OpenBridge's alert frame reaches the edge of the symbol's box, and its text keeps clear of it (U-14). */
 export const TEXT_INSET = 4
 

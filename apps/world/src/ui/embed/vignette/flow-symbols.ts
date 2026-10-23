@@ -24,7 +24,7 @@ import type { AlertRow } from '../../../features/displays/alerts/rows.ts'
 import type { TopologyBinding, VignetteSection } from '../../../features/displays/compose/model.ts'
 import { groupName, itemText } from '../../../features/displays/topology/layout.ts'
 import { farState } from '../../../features/displays/topology/stops.ts'
-import { TEXT_INSET, type FlowTextStyle } from '../../../features/displays/topology/text.ts'
+import { FLOW_TEXT, FLOW_TRACE, TEXT_INSET, type FlowTextStyle } from '../../../features/displays/topology/text.ts'
 import { VIGNETTE_ROW_PX } from './grid.ts'
 import { chevronSegment, endStraight, pipeSegments, pipeValue, stubEndSegment, type PipeLook } from './pipe-segments.ts'
 import { stub } from './network.ts'
@@ -90,7 +90,10 @@ export const glyphOf = (symbol: FlowSymbol, state: DeviceState, vertical: boolea
  * A line of an item's text: its name, its state word (or a group's count, or the word that says it stopped), the
  * command it does not follow, a reading; and the style it is set in (topology/text.ts), a vessel's readings larger.
  */
-export interface FlowLine { readonly text: string; readonly kind: 'name' | 'word' | 'command' | 'reading'; readonly style: FlowTextStyle }
+export interface FlowLine { readonly text: string; readonly kind: 'name' | 'word' | 'command' | 'reading' | 'trace'; readonly style: FlowTextStyle; readonly ref?: string }
+
+/** A line's height as drawn: its style's, or a trace's (topology/text.ts). */
+export const lineHeight = (line: FlowLine): number => (line.kind === 'trace' ? FLOW_TRACE.line : FLOW_TEXT[line.style].line)
 
 const DEVICES: ReadonlySet<FlowSymbol> = new Set(['mover', 'generator', 'valve', 'breaker', 'transformer', 'source'])
 
@@ -127,8 +130,15 @@ export interface FlowDrawing {
   /** Each at its symbol's centre (OpenBridge's `point` positioning). */
   /** `orientation`: OpenBridge's turn of a vertical symbol (a mover's glyph turns itself). */
   readonly devices: ReadonlyArray<{ readonly id: string; readonly element: string; readonly glyph: Glyph | null; readonly x: number; readonly y: number; readonly on: boolean; readonly unknown: boolean; readonly vertical: boolean; readonly orientation: 'horizontal' | 'verticalRight'; readonly tone: AlertTone | null; readonly title: string }>
-  /** A tank's or the vessel's level in percent, null where not known; a vessel's parts each inserted 0..1, null where not known, in their groups. */
-  readonly vessels: ReadonlyArray<Box & { readonly id: string; readonly element: string; readonly kind: 'tank' | 'exchanger' | 'vessel'; readonly level: number | null; readonly unknown: boolean; readonly tone: AlertTone | null; readonly title: string; readonly drawing?: VesselDrawing; readonly parts?: ReadonlyArray<ReadonlyArray<number | null>> }>
+  /**
+   * A tank's or the vessel's level in percent, null where not known, and the program it is held to (null where none or
+   * not known); the reading an exchanger traces in its tile; a vessel's parts each inserted 0..1, null where not known,
+   * in their groups.
+   */
+  readonly vessels: ReadonlyArray<Box & {
+    readonly id: string; readonly element: string; readonly kind: 'tank' | 'exchanger' | 'vessel'; readonly level: number | null; readonly unknown: boolean; readonly tone: AlertTone | null; readonly title: string
+    readonly program: number | null; readonly trace: string | null; readonly drawing?: VesselDrawing; readonly parts?: ReadonlyArray<ReadonlyArray<number | null>>
+  }>
   readonly buses: ReadonlyArray<Box & { readonly id: string; readonly vertical: boolean; readonly title: string }>
   /** Each named item: its text, and what it is to a person (plan v5 contract 3). */
   readonly texts: ReadonlyArray<FlowItem>
@@ -341,11 +351,14 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
           // A share says what it reads (its Pack's word, "LVL", "PWR"), in the room the sizing reserved for the word beside the value.
           return { text: binding.word === undefined ? value : `${binding.word} ${value}`, kind: 'reading' as const, style: readingStyle }
         }),
+        // What it traces over its last ten minutes, under its readings (W6.6); an exchanger traces in its tile.
+        ...(view.class === 'transfer' ? [] : view.bindings.filter(binding => binding.trace === true).slice(0, 1).map(binding => ({ text: '', kind: 'trace' as const, style: readingStyle, ref: binding.ref }))),
       ]
-    const lines = sized.filter(line => line.text !== '')
-    const title = [view.label, ...lines.slice(1).map(line => line.text)].join(' · ')
+    const drawnLine = (line: FlowLine): boolean => line.text !== '' || line.kind === 'trace'
+    const lines = sized.filter(drawnLine)
+    const title = [view.label, ...lines.slice(1).filter(line => line.kind !== 'trace').map(line => line.text)].join(' · ')
     if (node.text !== undefined) {
-      const shown = sized.slice(0, Math.max(view.stop?.lines.length ?? 1, node.text.lines)).filter(line => line.text !== '')
+      const shown = sized.slice(0, Math.max(view.stop?.lines.length ?? 1, node.text.lines)).filter(drawnLine)
       // A command not followed is outlined, else alerts all expected, where no alarm frames the item; the frame says more.
       const outline = frozen ? (last !== null || expectedAt(members) ? 'low-integrity' as const : null)
         : tone !== null ? null : lines.some(line => line.kind === 'command') ? 'abnormal' as const : expectedAt(members) ? 'expected' as const : null
@@ -375,8 +388,12 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
       const positions = view.bindings.filter(binding => binding.role === 'position')
       const parts = [...new Set(positions.map(binding => binding.group))].map(group => positions.filter(binding => binding.group === group).map(binding => { const value = percent(binding); return value === null ? null : value / 100 }))
       const nozzles = Object.values(node.ports).map(port => ({ x: px(port.x), y: px(port.y), face: port.face as Face }))
+      // The program its level is held to, marked on it as OpenBridge's set point; an exchanger's traced level, in its tile (W6.6).
+      const program = view.bindings.find(binding => binding.role === 'program')
+      const traced = symbol === 'exchanger' ? view.bindings.find(binding => binding.trace === true) : undefined
       drawing.vessels.push({
         id: node.id, element, kind: symbol, ...box, level: level === undefined ? null : percent(level), unknown: level !== undefined && percent(level) === null, tone, title,
+        program: program === undefined ? null : percent(program), trace: traced?.ref ?? null,
         ...(symbol === 'vessel' ? { drawing: { span: { x: 0, width: box.width }, nozzles, core: parts.length > 0 ? 'overlap' as const : null }, parts } : {}),
       })
     } else if (symbol === 'bus' || symbol === 'header') {
