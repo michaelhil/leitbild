@@ -146,7 +146,7 @@ export const E0_CHECKS: ReadonlyArray<E0Check> = [
   },
 ]
 
-export interface SweepEntry { readonly target: Omit<PressTarget, 'x' | 'y' | 'w' | 'h'>; readonly outcome: Outcome; readonly ms: number; readonly homeVia: ReadonlyArray<string>; readonly satisfies: ReadonlyArray<string>; readonly evidence: Readonly<Record<string, string>>; readonly shot?: string }
+export interface SweepEntry { readonly target: Omit<PressTarget, 'x' | 'y' | 'w' | 'h'>; readonly outcome: Outcome; readonly ms: number; readonly latencyMs: number | null; readonly homeVia: ReadonlyArray<string>; readonly satisfies: ReadonlyArray<string>; readonly evidence: Readonly<Record<string, string>>; readonly shot?: string }
 
 /** Presses every target of the home view once, judging each one-click check on what opened, and restores the view. */
 export const sweep = async (page: Page, config: { readonly checks: ReadonlyArray<E0Check>; readonly reopen: () => Promise<Screen>; readonly shotDir: string; readonly tag: string; readonly log?: (line: string) => void }): Promise<{ readonly entries: ReadonlyArray<SweepEntry>; readonly firstHits: Record<string, number> }> => {
@@ -158,7 +158,7 @@ export const sweep = async (page: Page, config: { readonly checks: ReadonlyArray
   for (const [index, target] of targets.entries()) {
     // Re-read the target where it stands now (a sample may have moved the text a little).
     const now = (await targetsOf(page)).find(candidate => candidate.key === target.key) ?? target
-    const { outcome, ms, after } = await press(page, now, 2_000)
+    const { outcome, ms, latencyMs, after } = await press(page, now)
     const judged = outcome.kind === 'nothing' ? [] : config.checks.map(check => ({ id: check.id, ...check.judge(after) })).filter(entry => entry.pass)
     const satisfies = judged.map(entry => entry.id)
     const fresh = satisfies.filter(id => firstHits[id] === undefined)
@@ -169,7 +169,7 @@ export const sweep = async (page: Page, config: { readonly checks: ReadonlyArray
       for (const id of fresh) firstHits[id] = entries.length
     }
     const back = outcome.kind === 'nothing' ? { home: true, via: [] } : await goHome(page, home)
-    entries.push({ target: { key: target.key, kind: target.kind, name: target.name, item: target.item, reaches: target.reaches, visible: target.visible, pressable: target.pressable }, outcome, ms, homeVia: back.via, satisfies, evidence: Object.fromEntries(judged.map(entry => [entry.id, entry.evidence])), ...(shot ? { shot } : {}) })
+    entries.push({ target: { key: target.key, kind: target.kind, name: target.name, item: target.item, reaches: target.reaches, visible: target.visible, pressable: target.pressable }, outcome, ms, latencyMs, homeVia: back.via, satisfies, evidence: Object.fromEntries(judged.map(entry => [entry.id, entry.evidence])), ...(shot ? { shot } : {}) })
     config.log?.(`  ${String(index).padStart(2)} ${target.kind.padEnd(9)} ${target.name.slice(0, 50).padEnd(50)} → ${outcome.kind}${'title' in outcome && outcome.title ? ` "${outcome.title}"` : 'label' in outcome ? ` "${outcome.label.slice(0, 40)}"` : ''}${satisfies.length > 0 ? `  ✔ ${satisfies.join(', ')}` : ''}`)
     if (!back.home) { config.log?.('    (not home after Esc and Back: reopening)'); homeScreen = await config.reopen() }
   }

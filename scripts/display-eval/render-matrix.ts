@@ -26,7 +26,7 @@ import { join } from 'node:path'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { ensureChrome, loopbackOrigin, openPage, options, sleep, type Page } from './browser.ts'
 import { readDisplay, readScreen, type DisplayState, type Screen } from './display-dom.ts'
-import { goHome, homeOf, openOverview, press, sizeSpec, targetsOf, type SizeSpec } from './display-press.ts'
+import { goHome, homeOf, openOverview, press, sizeSpec, targetsOf, waitForContent, type SizeSpec } from './display-press.ts'
 import { judgeDrawing, topologyOf, type GeometryResult } from './drawing-geometry.ts'
 import { csfRow, viewport, type MatrixCheck } from './matrix.ts'
 import { colourScan } from './pixels.ts'
@@ -224,8 +224,8 @@ if (import.meta.main) {
             // "deck:<n>": the n-th display after the unit's overview in the window's deck (deck:4 is the grid).
             const deck = name.match(/^deck:(\d+)$/)
             if (deck !== null) {
-              for (let i = 0; i < Number(deck[1]); i += 1) { await page.click({ sel: 'button', text: 'Next display' }); await sleep(1_200) }
-              await sleep(3_000)
+              for (let i = 0; i < Number(deck[1]); i += 1) { await page.click({ sel: 'button', text: 'Next display' }); await waitForContent(page) }
+              await sleep(1_000)
               log(await judgeView({ ...ctx, view: `deck ${deck[1]}` }))
               await save()
               const back = await goHome(page, home)
@@ -236,7 +236,8 @@ if (import.meta.main) {
             if (target === undefined) { console.log(`${label} ${size.name} ${theme} ${run} ${name}: no item to press`); continue }
             const { outcome } = await press(page, target, 6_000)
             if (outcome.kind !== 'detail') { console.log(`${label} ${size.name} ${theme} ${run} ${name}: the body press opened ${outcome.kind}, not its detail`); await goHome(page, home); continue }
-            await sleep(1_500)
+            await waitForContent(page)
+            await sleep(1_000)
             log(await judgeView({ ...ctx, view: name }))
             await save()
             const back = await goHome(page, home)
