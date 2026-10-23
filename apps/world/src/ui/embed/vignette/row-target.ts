@@ -4,16 +4,24 @@ import type { AlertRow } from '../../../features/displays/alerts/rows.ts'
 // is on (a drawing of the display selects it, else its detail opens after the display), the group it is on as its
 // object's element, the observable it judges (its trend or its values), and in a list of several objects' alerts the
 // object it is on (its default). A row on the display's own object with none of these opens nothing, and is no
-// button.
+// button. A row on the element (or group) whose own alerts the list is, the display's subject, never opens that
+// display again: it selects the element in place, where a drawing of the display draws it (`in-place`).
 
 export type RowTarget =
   | { readonly kind: 'element'; readonly objectId: string; readonly elementId: string }
+  | { readonly kind: 'in-place'; readonly objectId: string; readonly elementId: string }
   | { readonly kind: 'subject'; readonly subject: string }
 
-/** `spansObjects`: the list holds several objects' alerts (the Run's, a collection's), not one object's own. */
-export const alertRowTarget = (row: AlertRow, spansObjects: boolean): RowTarget | null => {
+/**
+ * `spansObjects`: the list holds several objects' alerts (the Run's, a collection's), not one object's own. `own`: the
+ * elements the list is narrowed to, whose own alerts it shows (an element's default, a faceplate).
+ */
+export const alertRowTarget = (row: AlertRow, spansObjects: boolean, own: ReadonlyArray<string> = []): RowTarget | null => {
   const on = row.alert.subject
-  if (on !== undefined) return { kind: 'element', objectId: row.objectId, elementId: 'element' in on ? on.element : on.group }
+  if (on !== undefined) {
+    const elementId = 'element' in on ? on.element : on.group
+    return own.includes(elementId) ? { kind: 'in-place', objectId: row.objectId, elementId } : { kind: 'element', objectId: row.objectId, elementId }
+  }
   if (row.alert.observable !== undefined) return { kind: 'subject', subject: row.alert.observable }
   return spansObjects ? { kind: 'subject', subject: row.objectId } : null
 }

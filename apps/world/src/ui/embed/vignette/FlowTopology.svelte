@@ -445,7 +445,7 @@
       const id = itemOf(request.elementId)
       if (id === undefined) return false
       if (request.how === 'detail') openDetail(request.elementId, id)
-      else selectItem(id)
+      else if (request.how === 'select') selectItem(id)
       return true
     })
     const stopMarks = onElementMarks(marks => {
