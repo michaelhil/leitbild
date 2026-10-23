@@ -1,12 +1,61 @@
 import { describe, expect, test } from 'bun:test'
+import { annunciationSchema } from '../src/core/observation/annunciation.ts'
 import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
 import { expectedAfterGroup } from '../src/packs/process-plant/ic/alarm-philosophy.ts'
+import { plantAnnunciation } from '../src/packs/process-plant/observation/annunciation.ts'
+import { plantDeclaration } from '../src/packs/process-plant/observation/declarations.ts'
 import { processPlantIcLifecycleStateSchema, type ProcessPlantIcLifecycleState } from '../src/packs/process-plant/runtime/index.ts'
 
-// What the reference PWR declares expected after a first-out, and the window
-// past which an expected alarm still standing is news again (plan v5 W2.3).
+// How the reference PWR annunciates its alarms and trips to World (plan v5
+// W2.3–W2.6, D-E: static, in its observation declaration), from what its I&C
+// declares, never from ids or titles. OLD's annunciation test
+// (process-plant-composed-display.test.ts, "come from the first-out groups and
+// limits the I&C declares", at 724ae2ac8) is re-expressed here.
 
 const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:annunciation', loopCount: 4 }))
+const annunciation = plantAnnunciation(plant)
+const of = (ruleId: string) => annunciation.alerts.filter(alert => alert.id.split(':')[1] === ruleId)
+const tagsOf = (ruleId: string) => of(ruleId).map(alert => alert.tag)
+
+describe('the reference PWR\'s annunciation', () => {
+  test('is a valid declaration, carried by the Plant\'s observation declaration, one entry per alarm and trip its rules annunciate', () => {
+    expect(() => annunciationSchema.parse(annunciation)).not.toThrow()
+    expect(plantDeclaration('plant:annunciation' as never, plant, null).annunciation).toBe(annunciation)
+    const annunciated = plant.automation.rules.filter(rule => rule.enabled).flatMap(rule => rule.effects.flatMap(effect => effect.type === 'alarm.enter' || effect.type === 'trip.enter' ? [`${effect.type === 'alarm.enter' ? 'alarm' : 'trip'}:${rule.id}:${effect.id}`] : []))
+    expect(annunciation.alerts.map(alert => alert.id).sort()).toEqual([...annunciated].sort())
+  })
+
+  test('first-out groups by their short labels; only the reactor trip and the turbine trip stop an energy end, which their labels open', () => {
+    expect(annunciation.groups.map(group => [group.label, group.ends ?? []])).toEqual([
+      ['RX TRIP', ['core']], ['SI', []], ['AFW START', []], ['FWI', []], ['TURB TRIP', ['turbine']], ['MSI', []], ['CS', []], ['BUS DEAD', []], ['BUS DEGR', []],
+    ])
+  })
+
+  test('tags name a limit by its order and what the alert annunciates does, or what a rule with no limit watches, never a bare ALM', () => {
+    // QA review of run 22: the reactor trip safety injection causes is a reactor trip, not "LO-LO · SI".
+    expect([
+      tagsOf('sg-b-level-low-low-reactor-trip'), tagsOf('safety-injection-low-pzr-pressure'), tagsOf('pzr-pressure-low'),
+      tagsOf('reactor-overtemperature-delta-t-trip'), tagsOf('loss-of-offsite-power'), tagsOf('safety-bus-a-loss-alarm'),
+    ]).toEqual([['LO-LO · RX TRIP'], ['LO-3 · SI', 'LO-3 · RX TRIP', 'LO-3 · FWI', 'LO-3 · AFW START'], ['LO · ALM'], ['RX TRIP'], ['LO-LO · ALM'], ['DEAD · ALM']])
+    // HMI review of run 23: a pump not running, a level low with low feed flow, as a drawing's words name them.
+    expect([tagsOf('rcp-a-trip'), tagsOf('sg-b-feedwater-low'), tagsOf('pzr-porv-flow')]).toEqual([['NOT RUN · ALM'], ['L LO & F LO · ALM'], ['RELIEF VALVE FLOWING · ALM']])
+    expect(tagsOf('reactor-trip-low-tavg-feedwater-isolation')).toEqual(['LO · FWI'])
+    expect(annunciation.alerts.map(alert => alert.tag)).not.toContain('ALM')
+    expect(of('safety-injection-low-pzr-pressure').map(alert => alert.group)).toEqual(['safety-injection', 'reactor-trip', 'feedwater-isolation', 'auxiliary-feedwater'])
+  })
+
+  test('every alert names one of the declared annunciator systems, listed in their declared order', () => {
+    expect(annunciation.categories.map(category => category.id)).toEqual(plant.automation.annunciatorSystems.map(system => system.id))
+    expect(annunciation.alerts.filter(alert => alert.category === undefined)).toEqual([])
+  })
+
+  test('each alert\'s expected window is its annunciator\'s', () => {
+    const window = { group: 'reactor-trip', withinMs: 300_000 }
+    expect(of('reactor-trip-turbine-trip').map(alert => alert.expectedAfter)).toEqual([window])
+    expect(of('safety-injection-low-pzr-pressure').map(alert => alert.expectedAfter)).toEqual([undefined, window, undefined, undefined])
+    expect(of('sg-a-feedwater-low').map(alert => alert.expectedAfter)).toEqual([window])
+  })
+})
 
 describe('what the reference PWR declares expected after a reactor trip, and for how long', () => {
   const declared = plant.automation.rules.flatMap(rule => rule.effects.flatMap(effect => effect.type === 'trip.enter' || effect.type === 'alarm.enter' ? [{ rule, effect }] : []))

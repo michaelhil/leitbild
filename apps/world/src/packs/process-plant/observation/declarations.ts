@@ -9,6 +9,7 @@ import { plantAlarmPriority } from '../ic/alarm-philosophy.ts'
 import { isDemand, readsAsMeasured } from '../ic/key-values.ts'
 import { icThresholdsForSignal, type ComposedDisplayThreshold } from '../ic/thresholds.ts'
 import { logarithmicSpan } from '../quantity-text.ts'
+import { plantAnnunciation } from './annunciation.ts'
 import { derivedObservables } from './derived.ts'
 import { elementLeads, elementStops, leadDigest } from './leads.ts'
 
@@ -291,6 +292,8 @@ export const plantDeclaration = (objectId: ObjectId, plant: CompiledProcessPlant
           }
         }),
       ],
+      // How its alarms and trips are annunciated (annunciation.ts).
+      annunciation: plantAnnunciation(plant),
     }
     known.set(revision, declaration)
     return declaration
