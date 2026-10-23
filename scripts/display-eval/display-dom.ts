@@ -148,7 +148,7 @@ const READER = `(scope) => {
     }
     return { where, label, text: deepText(el), status: worst.status, ...(worst.by ? { by: worst.by, px: Math.round(worst.px * 10) / 10 } : {}) }
   }
-  const whereOf = el => el.closest('.popover, [role=dialog]') ? 'popover' : el.closest('.flow') ? 'drawing' : el.closest('.chips') ? 'chips' : el.closest('.legend') ? 'trend' : el.closest('table.grouped') ? 'grouped' : el.closest('.column, .band') ? 'column' : 'section'
+  const whereOf = el => el.closest('.popover, [role=dialog]') ? 'popover' : el.closest('.flow') ? 'drawing' : el.closest('.chips') ? 'chips' : el.closest('.legend') ? 'trend' : el.closest('.grouped') ? 'grouped' : el.closest('.column, .band') ? 'column' : 'section'
 
   if (doc.querySelector('article.vignette')) {
     const article = doc.querySelector('article.vignette')

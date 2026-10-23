@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Observation } from '../src/core/observation/model.ts'
 import type { VignetteValue } from '../src/features/displays/compose/model.ts'
 import { safetyFunctionReading } from '../src/packs/process-plant/observation/safety-function-reading.ts'
@@ -116,5 +118,24 @@ describe('the window frame by its width (W4.3)', () => {
     // At the window's 92 % its 12 px text is already 11 px: any further scale would go below the floor.
     expect(frameLayout({ width: 1400, drawingWidth: 1488, zoom: 0.917 })).toEqual({ kind: 'band', drawing: 'scrolled' })
     expect(frameLayout({ width: 1030, drawingWidth: 1488, zoom: 1 })).toEqual({ kind: 'band', drawing: 'scrolled' })
+  })
+})
+
+describe('a table of parallel values (W1.4 table, plan v5 §2 rule 2)', () => {
+  const source = (file: string): string => readFileSync(join(import.meta.dir, '../src/ui/embed/vignette', file), 'utf8')
+
+  test('its values take their room first and are never cut; names, headings and chips give way; it stands exactly in its rows', () => {
+    const table = source('GroupedValues.svelte')
+    // Each value column at least as wide as its widest value, the names' column what the values leave.
+    expect(table).toContain('grid-template-columns: minmax(0, max-content) repeat(var(--columns), minmax(min-content, 1fr))')
+    // A heading never widens its column: its name over its unit, the name giving way by whole words, the whole in its title.
+    expect(table).toMatch(/\.heading \{ contain: inline-size;/)
+    expect(table).toContain('use:wholeWords={heading.name}')
+    expect(table).toContain('title={whole} aria-label={whole}')
+    // A hairline inside its line, never a border: the table is its rows' height.
+    expect(table).toContain('box-shadow: inset 0 1px 0 var(--border-divider-color)')
+    expect(table).not.toMatch(/border-(top|bottom)/)
+    // In a cell the value stands at the right and its chip, left of it, wraps out of the row where both do not fit.
+    expect(source('Readout.svelte')).toMatch(/\.cell \{ flex-direction: row-reverse; flex-wrap: wrap;[^}]*overflow: hidden; \}\n\s*\.cell \.reading \{ order: -1; \}/)
   })
 })
