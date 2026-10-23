@@ -11,6 +11,7 @@ import type { VignetteValue } from '../src/features/displays/compose/model.ts'
 import { activeState, limitBar, orderWord, readingLook, valueLook } from '../src/ui/embed/vignette/readout.ts'
 import { appendPoint, limitLabelYs, sharedLimits, stepPath, stripDrawing, stripDomain, timeTicks } from '../src/ui/embed/vignette/trend.ts'
 import { recordedHoldMs } from '../src/features/historian/policy.ts'
+import { stripRows, stripsOf, trendRows } from '../src/features/displays/compose/strips.ts'
 
 // The vignette renderer's presenters (architecture B1): the limit chip, the
 // step-and-hold trace, the limits a strip shares, neutral values without an
@@ -155,6 +156,28 @@ describe('trend strip', () => {
     expect(sharedLimits([level, other]).map(limit => limit.id)).toEqual(['lo', 'hi'])
     expect(sharedLimits([level]).map(limit => limit.id)).toEqual(['lo', 'lolo', 'hi'])
     expect(sharedLimits([level, { ...level, thresholds: [] }])).toEqual([])
+  })
+
+  test('one quantity per strip: pens share one only in one unit and within a factor of three of scale; states read as bands after them (W5.2)', () => {
+    const pen = (ref: string, quantity: VignetteValue['quantity'], unit: string, limits: ReadonlyArray<number>, extra: Partial<VignetteValue> = {}): VignetteValue =>
+      ({ ...level, ref, label: ref, quantity, unit, thresholds: limits.map((value, at) => threshold(`${ref}-${at}`, 'high', at + 1, value)), ...extra })
+    const cet = pen('cet', 'temperature', 'degC', [343])
+    const subcooling = pen('subcooling', 'temperature-difference', 'degC', [16.7])
+    const pzr = pen('pzr', 'pressure', 'MPa', [16.55, 12.7])
+    const sg = pen('sg', 'pressure', 'MPa', [8.1])
+    const afw = pen('afw', 'flow', 'kg/s', [60])
+    const mfw = pen('mfw', 'flow', 'kg/s', [600])
+    const unlimited = pen('steam', 'flow', 'kg/s', [])
+    const running = pen('running', 'count', '1', [], { valueType: 'boolean' })
+    const strips = (pens: ReadonlyArray<VignetteValue>) => stripsOf(pens).map(strip => strip.map(entry => entry.ref))
+    // Subcooling never shares CET's axis (H8); pressurizer and steam generator pressures, within a factor of three, share one.
+    expect(strips([cet, subcooling, pzr, sg])).toEqual([['cet'], ['subcooling'], ['pzr', 'sg']])
+    // A tenfold scale apart; a pen that declares no limit shares the first strip of its quantity; a state is a band, last.
+    expect(strips([running, afw, mfw, unlimited])).toEqual([['afw', 'steam'], ['mfw'], ['running']])
+    // At most four to a strip.
+    expect(strips(['a', 'b', 'c', 'd', 'e'].map(ref => pen(ref, 'level', '%', [80])))).toEqual([['a', 'b', 'c', 'd'], ['e']])
+    // A plot of five rows and a legend row per pen; a band a row; the time axis once.
+    expect([stripRows([pzr, sg]), stripRows([running]), trendRows([[pzr, sg], [cet], [running]])]).toEqual([7, 1, 7 + 6 + 1 + 1])
   })
 
   test('the scale widens a steady value and reaches limits within reach only', () => {
