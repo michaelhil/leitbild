@@ -120,7 +120,12 @@ const judgeView = async (ctx: { readonly page: Page; readonly scratch: Page; rea
   if (run === 'B' && themeRead.frame !== null) {
     const hits = await colourScan(scratch, png, themeRead.frame, themeRead.colours)
     const found = hits.filter(hit => hit.pixels > 3)
-    checks.push(check('colour-at-rest', Object.keys(themeRead.colours).length === 0 ? null : found.length === 0, Object.keys(themeRead.colours).length === 0 ? 'the theme names no alert colours' : `${themeRead.theme ?? '?'} theme; ${hits.map(hit => `${hit.colour.replace(/^alert-|-color$/g, '')} ${hit.pixels} px`).join(', ')}${found.length === 0 ? '' : `; where: ${found.map(hit => `${hit.colour.replace(/^alert-|-color$/g, '')} at ${hit.cells.slice(0, 4).map(cell => `(${cell.x},${cell.y}) ${cell.pixels}`).join(' ')}`).join('; ')}`}`))
+    // At rest: a view whose own sample holds no active alert of caution or worse that is news. One in alarm (the grid
+    // overloads in Run B) may draw its alarm colours: reported, not judged.
+    const PRIORITY = ['caution', 'warning', 'alarm', 'critical', 'emergency']
+    const news = (sample?.alerts ?? []).filter((row: any) => row.expected === undefined && PRIORITY.includes(String(row.priority)) && String(row.state).startsWith('active'))
+    if (news.length > 0) checks.push(check('colour-at-rest', null, `not at rest: ${news.length} active alerts in this view (${[...new Set(news.map((row: any) => row.priority))].join(', ')}); ${hits.map(hit => `${hit.colour.replace(/^alert-|-color$/g, '')} ${hit.pixels} px`).join(', ')}`))
+    else checks.push(check('colour-at-rest', Object.keys(themeRead.colours).length === 0 ? null : found.length === 0, Object.keys(themeRead.colours).length === 0 ? 'the theme names no alert colours' : `${themeRead.theme ?? '?'} theme; ${hits.map(hit => `${hit.colour.replace(/^alert-|-color$/g, '')} ${hit.pixels} px`).join(', ')}${found.length === 0 ? '' : `; where: ${found.map(hit => `${hit.colour.replace(/^alert-|-color$/g, '')} at ${hit.cells.slice(0, 4).map(cell => `(${cell.x},${cell.y}) ${cell.pixels}`).join(' ')}`).join('; ')}`}`))
   }
 
   // Trends: pieces per pen (Run B), limit names in value order, no collisions or clipped texts, no legend name cut.
