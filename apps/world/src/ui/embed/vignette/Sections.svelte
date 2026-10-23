@@ -88,9 +88,7 @@
       {:else if section.kind === 'grouped'}
         <GroupedValues {section} {observations} {frozen} />
       {:else if section.kind === 'trend'}
-        {#each section.strips as pens, strip (strip)}
-          <TrendStrip {pens} title={view.title} series={snapshot.series} {observations} {now} horizonMs={section.horizonMs} rows={Math.max(3, pens.length)} axis={strip === section.strips.length - 1} {frozen} />
-        {/each}
+        <TrendStrip {section} title={view.title} series={snapshot.series} {observations} {now} setPoints={view.by !== 'assistant'} {frozen} />
       {:else if section.kind === 'alerts'}
         <AlertsSection rows={latest?.alerts ?? []} {section} room={rows ?? section.rows} />
       {:else if section.kind === 'entity'}

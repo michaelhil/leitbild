@@ -134,7 +134,8 @@ export const createVignetteSession = (config: {
       // its last value held no further than this sample, until it measures again.
       const observation = sample.observations.find(entry => entry.ref === pen.ref)
       const value = observation?.quality === 'bad' || observation?.quality === 'not-applicable' ? undefined : observation?.value
-      series.set(pen.ref, typeof value === 'number' ? { holdMs: recorded.holdMs, points: appendPoint(recorded.points, { t: at, v: value }, at - pen.horizonMs) }
+      // A state's band reads on as 1, off as 0, as its record does (display-capabilities.ts).
+      series.set(pen.ref, typeof value === 'number' || typeof value === 'boolean' ? { holdMs: recorded.holdMs, points: appendPoint(recorded.points, { t: at, v: Number(value) }, at - pen.horizonMs) }
         : { ...recorded, silentFrom: recorded.silentFrom ?? at })
     }
     update({ phase: 'live', view: viewWithLeads(view, sample), latest: sample, series, sampleError: null, lastSampleWallMs: wallNow() })
