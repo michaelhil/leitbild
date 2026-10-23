@@ -67,6 +67,12 @@ const isHeader = (node: TopologyNode): boolean => node.class === 'junction' && n
 const TALL: ReadonlySet<string> = new Set(['store'])
 
 /** `directions`: whether a stop writes "to" or "from" before what it names (flowLayout drops them where they find no room). */
+/** A name without its last word, the one alike items differ by ("Cond pump A" → "Cond pump"); a one-word name whole. */
+export const nameStem = (name: string): string => {
+  const words = name.trim().split(/\s+/)
+  return words.length < 2 ? name.trim() : words.slice(0, -1).join(' ')
+}
+
 export const flowSizing = (graph: TopologyGraph, directions = true): FlowSizing<null> => {
   const classOf = new Map(graph.nodes.map(node => [node.id, node.class]))
   // A bus joins more than two lines; one with fewer (a battery, an inverter, a load at the end of a line) is an item on its line.
@@ -76,12 +82,14 @@ export const flowSizing = (graph: TopologyGraph, directions = true): FlowSizing<
   const label = (node: TopologyNode): string => node.shortLabel ?? node.label
   const line = (characters: number, required: boolean) => ({ width: Math.max(GRID, characters * FLOW_TEXT_LINE.perCharacter), height: FLOW_TEXT_LINE.height, required })
   return {
-    key: 'vignette-flow-11',
+    key: 'vignette-flow-12',
     visible: () => true,
     silent: edge => ['sink', 'boundary'].includes(classOf.get(edge.to.node) ?? '') && !leaving.has(edge.to.node),
     bar: node => (node.class === 'bus' && (lines.get(node.id) ?? 0) > 2) || isHeader(node),
     infersLane: node => node.class === 'switch',
-    groupKey: node => node.kind,
+    // Only alike items are drawn as one (W3.5): one kind and one name but for its last word ("MD AFW A", "MD AFW B"),
+    // so a group never hides a different pump among its members ("TD AFW", "HHSI A").
+    groupKey: node => `${node.kind}|${nameStem(label(node))}`,
     chain: () => [],
     itemId: node => node.id,
     edgeId: edge => edge.id,

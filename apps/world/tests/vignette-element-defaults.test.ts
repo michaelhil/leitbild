@@ -15,6 +15,7 @@ import type { VignetteView } from '../src/features/displays/compose/model.ts'
 import { compileVignette, type ViewRun } from '../src/features/displays/compose/view.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { builtinScenarioDefinitions } from '../src/scenarios/definitions.ts'
+import { nameStem } from '../src/features/displays/topology/flow-sizing.ts'
 import { standsBeside } from '../src/ui/embed/vignette/grid.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 
@@ -89,4 +90,18 @@ describe('element defaults on four-loop Halden', () => {
     expect(devices('pressurizer')).toEqual(expect.arrayContaining(['pressurizer.reliefValve', 'pressurizer.blockValve', 'pressurizer.safetyValves']))
     expect(devices('sgA')).toEqual([])
   })
+
+  test('only alike items are drawn as one: a group never hides another kind of pump among its members (W3.5)', () => {
+    const groups = [...views].flatMap(([id, view]) => view.sections.flatMap(section => {
+      if (section.kind !== 'topology') return []
+      const label = new Map(section.nodes.map(node => [node.id, node.shortLabel ?? node.label]))
+      return section.layout.nodes.flatMap(node => (node.members === undefined ? [] : [{ id, members: node.members.map(member => label.get(member) ?? member) }]))
+    }))
+    expect(groups.filter(group => new Set(group.members.map(nameStem)).size > 1)).toEqual([])
+    // SG A's neighbourhood draws the motor-driven AFW pumps as one and the turbine-driven one on its own.
+    const sgA = groups.filter(group => group.id === 'sgA').map(group => group.members.join(' / '))
+    expect(sgA).toContain('MD AFW A / MD AFW B')
+    expect(sgA.some(group => group.includes('TD AFW'))).toBe(false)
+  })
 })
+
