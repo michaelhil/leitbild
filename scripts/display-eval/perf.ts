@@ -259,14 +259,18 @@ const measure = async (origin: string, workspaceId: string, runId: string, out: 
     await api.pause(runId)
     const traceFile = argv.get('trace')
     if (traceFile !== undefined) await Bun.write(traceFile, JSON.stringify(events))
-    const sampled = await page.eval<{ records: any[]; timings: any[] }>(`(() => {
+    const sampled = await page.eval<{ records: any[]; timings: any[]; hidden: { frames: number; samples: number } }>(`(() => {
       const shown = ${SHOWN_EMBED}
       const win = shown.doc.defaultView
       const records = (win.__lbSamples ?? []).filter(record => record.start >= ${windowStart} && record.start <= ${windowEnd})
       const timings = win.performance.getEntriesByType('resource').filter(entry => new RegExp(${JSON.stringify(SAMPLE_URL)}).test(entry.name))
         .map(entry => ({ at: win.performance.timeOrigin + entry.startTime, ttfb: entry.responseStart - entry.requestStart, duration: entry.duration, bytes: entry.decodedBodySize }))
         .filter(entry => entry.at >= ${windowStart} && entry.at <= ${windowEnd})
-      return { records, timings }
+      // The deck's hidden frames (kept for an instant Back) must ask the Run nothing while hidden (vignette-client setVisible).
+      const hidden = lb.documents().filter(d => d.frame && d.doc && d.frame !== shown.frame && /\\/world\\/embed\\//.test(d.frame.getAttribute('src') || '') && !lb.shown(d.frame))
+      const hiddenSamples = hidden.map(d => d.doc.defaultView.performance.getEntriesByType('resource').filter(entry => new RegExp(${JSON.stringify(SAMPLE_URL)}).test(entry.name))
+        .filter(entry => { const at = d.doc.defaultView.performance.timeOrigin + entry.startTime; return at >= ${windowStart} && at <= ${windowEnd} }).length)
+      return { records, timings, hidden: { frames: hidden.length, samples: hiddenSamples.reduce((sum, n) => sum + n, 0) } }
     })()`)
     const busy = mainThread(events, origin)
     const samplesPerSecond = sampled.records.length / ((windowEnd - windowStart) / 1000)
@@ -278,6 +282,8 @@ const measure = async (origin: string, workspaceId: string, runId: string, out: 
       requestMs: stats(sampled.timings.map(entry => entry.duration)),
       applyMs: stats(sampled.records.filter(record => record.painted !== undefined).map(record => record.painted - record.headers)),
       responseBytes: stats(sampled.timings.map(entry => entry.bytes)),
+      /** Sample requests from the deck's hidden frames in the same window: 0 is right (a hidden frame asks nothing). */
+      hiddenFrames: sampled.hidden,
     }
     result.mainThread = {
       ...busy,
