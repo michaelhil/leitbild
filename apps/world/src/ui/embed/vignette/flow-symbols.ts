@@ -11,7 +11,9 @@
 // An item takes OpenBridge's alert frame at the worst priority of its bound
 // readings and of the active alerts on its element the sample carries, those
 // expected after a first-out aside: an item whose every active alert is
-// expected is outlined dashed instead (W2.3). Every named item says what a
+// expected is outlined dashed instead (W2.3). A frozen sample shows no alert
+// colour: an item that had an alert is outlined in OpenBridge's low-integrity
+// colours instead, the last it showed (W8.1). Every named item says what a
 // press opens (W6.1): its element, a group's members, a stop's far ends. A
 // reading that is missing, bad or stale, or a frozen sample, reads as
 // unknown: a static device or tank, a dashed pipe; never as off or empty. One
@@ -111,7 +113,8 @@ export interface FlowDrawing {
  * it opens, one for an item, its members for a group, the equipment a stop names; none where it carries no element),
  * the box its symbol and text cover (`area`, what a press and an outline take), and its `outline`: `abnormal` where
  * it does not follow a command (told to run, it stopped; a trip has not stopped it), `expected` where every active
- * alert on it is expected after a first-out, where no alarm frames it.
+ * alert on it is expected after a first-out, where no alarm frames it; `low-integrity` in place of any of them while
+ * the sample is frozen and an alert stood on it: no frame, no alarm colour, nothing that reads as current (W8.1).
  */
 export interface FlowItem {
   readonly id: string
@@ -124,7 +127,7 @@ export interface FlowItem {
   readonly title: string
   readonly targets: ReadonlyArray<{ readonly element: string; readonly label: string }>
   readonly area: Box
-  readonly outline: 'abnormal' | 'expected' | null
+  readonly outline: 'abnormal' | 'expected' | 'low-integrity' | null
 }
 
 export const flowDrawing = (section: Topology, observations: ReadonlyArray<Observation>, alerts: ReadonlyArray<AlertRow>, frozen: boolean): FlowDrawing => {
@@ -218,7 +221,9 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
     if (view === undefined || symbol === undefined) continue
     const box = boxes.get(node.id)!
     const members = (node.members ?? [node.id]).flatMap(id => byId.get(id) ?? [])
-    const tone = toneAt(members)
+    // Frozen, no alarm colour: the alert it last had shows as its low-integrity outline.
+    const last = toneAt(members)
+    const tone = frozen ? null : last
     const element = view.element ?? view.id
     const name = members.length > 1 ? groupName(members.map(member => member.shortLabel ?? member.label)) : view.shortLabel ?? view.label
     // A group says how many of its members are in its state's word ("RUN 1/2", "STOP 2/2"), a lone item its state word
@@ -286,7 +291,8 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
     if (node.text !== undefined) {
       const shown = sized.slice(0, Math.max(1, node.text.lines)).filter(line => line.text !== '')
       // A command not followed is outlined, else alerts all expected, where no alarm frames the item; the frame says more.
-      const outline = tone !== null ? null : lines.some(line => line.kind === 'command') ? 'abnormal' as const : expectedAt(members) ? 'expected' as const : null
+      const outline = frozen ? (last !== null || expectedAt(members) ? 'low-integrity' as const : null)
+        : tone !== null ? null : lines.some(line => line.kind === 'command') ? 'abnormal' as const : expectedAt(members) ? 'expected' as const : null
       // What a press opens: a stop the equipment it names, a group its members, an item its element; nothing without one.
       const targets = view.stop !== undefined ? view.stop.far.flatMap(end => (end.element === undefined ? [] : [{ element: end.element, label: end.label }]))
         : members.flatMap(member => (member.element === undefined ? [] : [{ element: member.element, label: member.label }]))

@@ -90,4 +90,18 @@ describe('an item\'s outline', () => {
     expect(outline([row('rcpA', 'warning', true)], [stopped])('rcpA')).toEqual([null, 'abnormal'])
     expect(outline([row('rcpA', 'alarm', false)], [stopped])('rcpA')).toEqual(['alarm', null])
   })
+  test('frozen (W8.1): no alarm colour anywhere; where an alert stood, a low-integrity outline; nothing reads as a command not followed', () => {
+    const rcp = section.nodes.find(node => node.id === 'rcpA')!.bindings.find(binding => binding.role === 'running')!
+    const stopped: Observation = { ref: rcp.ref, at, clock: 'simulation', value: 'off', quality: 'good', priority: 'none', why: 'CMD RUN' }
+    const level = section.nodes.find(node => node.id === 'sgA')!.bindings.find(binding => binding.role === 'level')!
+    const low: Observation = { ref: level.ref, at, clock: 'simulation', value: 12, quality: 'good', priority: 'alarm' }
+    const rows = [row('sgB', 'alarm', false), row('sgC', 'warning', true), row('rcpA', 'warning', false)]
+    const live = flowDrawing(section, [stopped, low], rows, false)
+    const frozen = flowDrawing(section, [stopped, low], rows, true)
+    expect(['sgA', 'sgB', 'sgC', 'rcpA'].map(id => live.texts.find(text => text.id === id)!.tone)).toEqual(['alarm', 'alarm', null, 'warning'])
+    // Live, those frames; frozen, none, in the drawing's items, symbols and texts alike.
+    expect([...frozen.devices, ...frozen.vessels, ...frozen.texts].filter(item => item.tone !== null)).toEqual([])
+    expect(['sgA', 'sgB', 'sgC', 'rcpA', 'sgD'].map(id => frozen.texts.find(text => text.id === id)!.outline)).toEqual(['low-integrity', 'low-integrity', 'low-integrity', 'low-integrity', null])
+    expect(frozen.texts.flatMap(text => text.lines).filter(line => line.kind === 'command')).toEqual([])
+  })
 })
