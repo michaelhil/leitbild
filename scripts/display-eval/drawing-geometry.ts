@@ -12,11 +12,14 @@ type Segment =
   | { readonly kind: 'endpoint'; readonly connectionId: string; readonly x: number; readonly y: number; readonly size?: string }
   | { readonly kind: 'arrow'; readonly connectionId: string; readonly x: number; readonly y: number; readonly size?: string }
   | { readonly kind: 'direction'; readonly connectionId: string; readonly x: number; readonly y: number; readonly size?: string }
+/** flowDrawing's boxes are { x, y, width, height }. */
+interface ModelBox { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+const boxOf = (b: ModelBox): Box => ({ x: b.x, y: b.y, w: b.width, h: b.height })
 interface Drawing {
   readonly segments: ReadonlyArray<Segment>
   readonly devices: ReadonlyArray<{ readonly id: string; readonly x: number; readonly y: number }>
-  readonly vessels: ReadonlyArray<Box & { readonly id: string; readonly kind: string; readonly trace?: string | null; readonly title?: string }>
-  readonly buses: ReadonlyArray<Box & { readonly id: string }>
+  readonly vessels: ReadonlyArray<ModelBox & { readonly id: string; readonly kind: string; readonly trace?: string | null; readonly title?: string }>
+  readonly buses: ReadonlyArray<ModelBox & { readonly id: string }>
   readonly texts: ReadonlyArray<{ readonly id: string; readonly title?: string; readonly lines?: ReadonlyArray<{ readonly kind: string; readonly ref?: string }> }>
 }
 
@@ -84,11 +87,11 @@ export const judgeDrawing = async (section: unknown, sample: { readonly observat
   const textAgainstPipe: string[] = []
   for (const line of lines) {
     const hits = pieces.filter(piece => overlap(ink(line), piece.box) > 4)
-    const bars = drawing.buses.filter(bus => overlap(ink(line), bus) > 4)
+    const bars = drawing.buses.filter(bus => overlap(ink(line), boxOf(bus)) > 4)
     if (hits.length + bars.length > 0) textAgainstPipe.push(`${name(line)} × ${[...new Set(hits.map(hit => `${hit.segment.kind} ${hit.segment.connectionId}`))].slice(0, 3).join(', ')}${bars.length > 0 ? `${hits.length > 0 ? ', ' : ''}bus ${bars.map(bus => bus.id).join(', ')}` : ''}`)
   }
   // Text against a symbol: a device's disc, a vessel's drawn silhouette (else its box).
-  const silhouettes: ReadonlyArray<Box & { readonly tag: string }> = rendered.silhouettes.length > 0 ? rendered.silhouettes : drawing.vessels.map(vessel => ({ ...vessel, tag: vessel.kind }))
+  const silhouettes: ReadonlyArray<Box & { readonly tag: string }> = rendered.silhouettes.length > 0 ? rendered.silhouettes : drawing.vessels.map(vessel => ({ ...boxOf(vessel), tag: vessel.kind }))
   const textAgainstSymbol: string[] = []
   for (const line of lines) {
     const discs = drawing.devices.filter(device => circleHits(ink(line), device.x, device.y, DEVICE_RADIUS))
@@ -128,7 +131,8 @@ export const judgeDrawing = async (section: unknown, sample: { readonly observat
     const name = (vessel.title ?? vessel.id).split(' · ')[0]!
     const tile = vessel.trace !== undefined && vessel.trace !== null
     const text = traceLines.has(vessel.id)
-    const drawn = rendered.traces.some(trace => trace.drawn && (trace.item === vessel.id || (trace.where === 'tile' && trace.x >= vessel.x - 1 && trace.x + trace.w <= vessel.x + vessel.w + 1 && trace.y >= vessel.y - 1 && trace.y + trace.h <= vessel.y + vessel.h + 1)))
+    const box = boxOf(vessel)
+    const drawn = rendered.traces.some(trace => trace.drawn && (trace.item === vessel.id || (trace.where === 'tile' && trace.x >= box.x - 1 && trace.x + trace.w <= box.x + box.w + 1 && trace.y >= box.y - 1 && trace.y + trace.h <= box.y + box.h + 1)))
     return { id: vessel.id, kind: vessel.kind, name, modelled: tile || text, drawn }
   })
   return {
