@@ -362,7 +362,8 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   }
   if (issues.length > 0) return refuse(issues)
   // Rows: alerts and tables give way first, then the frame does not fit and compose refuses.
-  // The chips: the object's own states the caller can read, in declared order, one row under the title.
+  // The chips: the object's own states the caller can read, in declared order, on the title row (W4.1). A whole object
+  // with chips keeps one row under the title for its trip line (W2.4), empty at rest, so nothing moves when one trips.
   const readableChips = await declaredRefs(run, chipped)
   const chips = chipped.filter(ref => readableChips.has(ref))
   const stacked = (): number => fitted.reduce((sum, view) => sum + view.rows, 0)

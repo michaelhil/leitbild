@@ -83,7 +83,8 @@ export const stub = (end: Point, to: Point, box: Box): ReadonlyArray<Point> => {
 
 const READING_ROLES: ReadonlyArray<TopologyBinding['role']> = ['loading', 'flow', 'level', 'value']
 
-export const networkDrawing = (section: Topology, observations: ReadonlyArray<Observation>): NetworkDrawing => {
+/** A network drawing; `frozen`: the sample no longer follows the Run, so no alert colour and no reading shows (W8.1). */
+export const networkDrawing = (section: Topology, observations: ReadonlyArray<Observation>, frozen = false): NetworkDrawing => {
   const px = (grid: number): number => grid * VIGNETTE_ROW_PX
   const byId = new Map(section.nodes.map(node => [node.id, node]))
   const read = (binding: TopologyBinding): Observation | undefined => observations.find(observation => observation.ref === binding.ref)
@@ -105,8 +106,8 @@ export const networkDrawing = (section: Topology, observations: ReadonlyArray<Ob
     if (node === undefined) continue
     const bound = node.bindings.map(binding => ({ binding, observation: read(binding) }))
     const tones = bound.map(entry => toneOf(entry.observation?.priority)).filter(tone => tone !== null)
-    const tone = (['critical', 'alarm', 'warning', 'caution'] as const).find(level => tones.includes(level)) ?? null
-    const lead = READING_ROLES.flatMap(role => bound.filter(entry => entry.binding.role === role && typeof entry.observation?.value === 'number'))[0]
+    const tone = frozen ? null : (['critical', 'alarm', 'warning', 'caution'] as const).find(level => tones.includes(level)) ?? null
+    const lead = frozen ? undefined : READING_ROLES.flatMap(role => bound.filter(entry => entry.binding.role === role && typeof entry.observation?.value === 'number'))[0]
     const look = lead === undefined ? null : readingLook(node.label, 'number', undefined, { value: lead.observation!.value, unit: lead.binding.unit, thresholds: [] })
     const reading = look === null ? null : `${look.text}${look.unit === '' ? '' : ` ${look.unit}`}`
     const name = node.shortLabel ?? node.label

@@ -120,7 +120,7 @@
     {/if}
   </header>
   {#if unopened !== null}<p class="status" role="alert">Nothing opened: {unopened}</p>{/if}
-  {#if view !== undefined && latest !== undefined}<TripLine {view} rows={latest.alerts} />{/if}
+  {#if view !== undefined}<TripLine {view} rows={latest?.alerts ?? []} reserve={view.chips !== undefined} />{/if}
 
   {#if view === undefined}
     <p class="status">

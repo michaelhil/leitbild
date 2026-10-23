@@ -15,8 +15,10 @@
   // stops, a message and an actuation the element its alert is on (a drawing
   // here selects it, else its default opens after this display). Only the
   // messages give way, by whole words; labels and ages are never cut. Nothing
-  // shows while nothing has tripped or actuated.
-  let { view, rows }: { view: VignetteView; rows: ReadonlyArray<AlertRow> } = $props()
+  // shows while nothing has tripped or actuated; where the composer keeps the
+  // row (`reserve`: a whole object, with its chips), the row stays, empty, so
+  // nothing below it moves when a trip comes in.
+  let { view, rows, reserve = false }: { view: VignetteView; rows: ReadonlyArray<AlertRow>; reserve?: boolean } = $props()
 
   const opening = vignetteOpening()
   /** The object it is about: the one its drawing draws, else the one its alerts list. */
@@ -71,6 +73,8 @@
       <span class="actuated"><span class="word">ACTUATED:</span>{#each line.actuated as actuated, index (actuated.label)}{#if index > 0}<span class="sep" aria-hidden="true">·</span>{/if}{@render label(actuated.label, show(elementOf(actuated.row)), actuated.row.alert.message)}{/each}</span>
     {/if}
   </div>
+{:else if reserve}
+  <div class="trip" aria-hidden="true"></div>
 {/if}
 
 <style>

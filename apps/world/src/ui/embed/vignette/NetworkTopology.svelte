@@ -16,9 +16,9 @@
   // one grid unit a row, scrolled sideways where it is wider than its frame,
   // and scaled as the composer scaled it where its rows are fewer than its
   // height (a chat column). Its attribution closes it.
-  let { section, observations, palette }: { section: Extract<VignetteSection, { kind: 'topology' }>; observations: ReadonlyArray<Observation>; palette: Palette } = $props()
+  let { section, observations, palette, frozen = false }: { section: Extract<VignetteSection, { kind: 'topology' }>; observations: ReadonlyArray<Observation>; palette: Palette; frozen?: boolean } = $props()
 
-  const drawing = $derived(networkDrawing(section, observations))
+  const drawing = $derived(networkDrawing(section, observations, frozen))
   const scale = $derived(drawingScale(section))
   let zoom = $state(1)
   runOnMount(() => embeddedDisplayFrame().subscribe(presentation => { zoom = presentation.zoom }))

@@ -106,7 +106,7 @@
       {:else if section.family === 'flow'}
         <FlowTopology {section} {observations} alerts={latest?.alerts ?? []} {palette} {frozen} {runId} {from} {fit} />
       {:else}
-        <NetworkTopology {section} {observations} {palette} />
+        <NetworkTopology {section} {observations} {palette} {frozen} />
       {/if}
     </div>
 {/snippet}
