@@ -5,7 +5,7 @@ import type { AlertState } from '../src/core/model/alerts.ts'
 import type { ObjectId } from '../src/core/model/ids.ts'
 import type { Observable, Observation } from '../src/core/observation/model.ts'
 import type { AlertRow } from '../src/features/displays/alerts/rows.ts'
-import { alertDetail, alertIcon, alertsTarget, alertTitle, inSection, rowParts, rowWidth, UNACK_WORD, unacknowledged, wordsThatFit, worstChip } from '../src/ui/embed/vignette/alerts.ts'
+import { alertDetail, alertIcon, alertsTarget, alertTitle, detailText, fitRow, inSection, rowParts, rowWidth, UNACK_WORD, unacknowledged, wordsThatFit, worstChip } from '../src/ui/embed/vignette/alerts.ts'
 import { provenanceMark, quantityText } from '../src/ui/embed/vignette/format.ts'
 import type { VignetteValue } from '../src/features/displays/compose/model.ts'
 import { activeState, limitBar, orderWord, readingLook, valueLook } from '../src/ui/embed/vignette/readout.ts'
@@ -270,11 +270,30 @@ describe('alerts', () => {
     expect(source).toContain('use:wholeWords={parts.message}')
   })
 
-  test('a row is written on one line where it fits whole, else on two', () => {
-    const parts = rowParts({ ...row('a', 'one', 'alarm', { firstOut: { group: 'g', rank: 1 } }), action: { label: 'RX TRIP' }, tag: 'LO · RX TRIP' }, Date.parse(at) + 1_000)
-    expect(parts).toMatchObject({ unack: true, mark: '1st RX TRIP', message: 'a', detail: 'LO · RX TRIP · 0:01' })
-    // A character 6 px wide: icon 20, UNACK 30, "1st RX TRIP:" 72, "a" 6, the detail 114, four gaps of 6.
-    expect(rowWidth(parts, text => text.length * 6)).toBe(20 + 30 + 72 + 6 + 114 + 4 * 6)
+  test('a row stands on one line: its message gives way by whole words, its notes before its first word, then its tag; the icon, UNACK, the mark and the age stand', () => {
+    const now = Date.parse(at) + 1_000
+    // A character 6 px wide.
+    const measure = (text: string): number => text.length * 6
+    const first = rowParts({ ...row('Reactor trip on turbine trip', 'one', 'alarm', { firstOut: { group: 'g', rank: 1 } }), action: { label: 'RX TRIP' }, tag: 'LO · RX TRIP' }, now)
+    // Its mark names its group, so its tag keeps only its limit.
+    expect(first).toMatchObject({ unack: true, mark: '1st RX TRIP', message: 'Reactor trip on turbine trip', detail: { tag: 'LO', notes: [], age: '0:01' } })
+    // Icon 20, UNACK 30, "1st RX TRIP:" 72, the message 168, "LO · 0:01" 54, four gaps of 6.
+    expect(rowWidth(first, measure)).toBe(20 + 30 + 72 + 168 + 54 + 4 * 6)
+    expect(fitRow(first, 400, measure)).toBe(first)
+    // Narrower, the message gives way on the row itself (wholeWords); nothing else does while its first word fits.
+    expect(fitRow(first, 260, measure)).toBe(first)
+    const expected = rowParts({ ...row('SG A level low-low', 'one', 'alarm', { acknowledged: true }), state: 'active-ack', tag: 'LO-LO · AFW START', expected: { after: 'RX TRIP' } }, now)
+    expect(detailText(expected.detail)).toBe('LO-LO · AFW START · after RX TRIP · acknowledged · 0:01')
+    expect(fitRow(expected, 500, measure)).toBe(expected)
+    // To keep "SG…", the notes go, the last first; then the message goes and the tag with it; the age stands.
+    expect(detailText(fitRow(expected, 300, measure).detail)).toBe('LO-LO · AFW START · after RX TRIP · 0:01')
+    expect(detailText(fitRow(expected, 200, measure).detail)).toBe('LO-LO · AFW START · 0:01')
+    expect(detailText(fitRow(expected, 150, measure).detail)).toBe('0:01')
+    // An object's name in a list of several goes last.
+    const named = rowParts(row('Loss of offsite power', 'one', 'alarm'), now, 'Halden Unit 1')
+    expect(fitRow(named, 120, measure)).toMatchObject({ unack: true, mark: null, detail: { notes: [], age: '0:01' } })
+    expect(fitRow(named, 120, measure).heading).toBeUndefined()
+    expect(fitRow(named, 240, measure).heading).toBe('Halden Unit 1')
   })
 
   test('a section narrowed to elements or observables shows only the alerts on them', () => {

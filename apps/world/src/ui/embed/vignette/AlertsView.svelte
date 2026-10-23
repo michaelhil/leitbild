@@ -2,7 +2,7 @@
   import { categoryGroups, listPart, LIST_FILTERS, passes, type ListFilter } from '../../../features/displays/alerts/list.ts'
   import type { AlertRow } from '../../../features/displays/alerts/rows.ts'
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
-  import { rowParts, rowWidth, UNACK_WORD, unacknowledged } from './alerts.ts'
+  import { fitRow, rowParts, UNACK_WORD, unacknowledged, type RowParts } from './alerts.ts'
   import AlertRowLine from './AlertRowLine.svelte'
   import { rowMeasure } from './row-measure.ts'
 
@@ -33,7 +33,10 @@
   const measure = rowMeasure()
   const counts = $derived(Object.fromEntries(LIST_FILTERS.map(option => [option.value, rows.filter(row => passes(option.value, row)).length])) as Record<ListFilter, number>)
   const groups = $derived(categoryGroups(rows.filter(row => passes(filter, row))))
-  const stacked = (row: AlertRow): boolean => width !== null && rowWidth(rowParts(row, nowMs, several ? row.objectLabel : undefined), measure) > width
+  const fitted = (row: AlertRow): RowParts => {
+    const parts = rowParts(row, nowMs, several ? row.objectLabel : undefined)
+    return width === null ? parts : fitRow(parts, width, measure)
+  }
 </script>
 
 <section class="all" aria-label="All alerts" bind:this={root}>
@@ -51,7 +54,7 @@
       <h3>{group.label} · {group.rows.length}{#if asking > 0}{' · '}<span class="unack">{asking} {UNACK_WORD}</span>{/if}</h3>
       <ul>
         {#each group.rows as row (row.key)}
-          <li><AlertRowLine {row} {nowMs} heading={several ? row.objectLabel : undefined} stacked={stacked(row)} faded={listPart(row) === 'expected'} onopen={press(row)} /></li>
+          <li><AlertRowLine {row} parts={fitted(row)} {nowMs} faded={listPart(row) === 'expected'} onopen={press(row)} /></li>
         {/each}
       </ul>
     {/each}

@@ -59,16 +59,35 @@ export const wordsThatFit = (text: string, fits: (shown: string) => boolean): st
   return cut(first.slice(0, most(first.length - 1, count => cut(first.slice(0, count)))))
 }
 
-/** What a row says after its message: its tag, what it is expected after, its marks, its state where UNACK does not, its age in Run time (else its clock time). */
-export const alertDetail = (row: AlertRow, nowMs: number): string => [
-  // A first-out's tag that only names its group says nothing its mark does not ("1st TURB TRIP").
-  ...(row.tag === undefined || (firstOutMark(row) !== null && row.tag === row.action?.label) ? [] : [row.tag]),
-  ...(row.expected === undefined ? [] : [`after ${row.expected.after}`]),
-  ...(row.alert.standing === true ? ['standing'] : []),
-  ...(row.alert.advisory === true ? ['advisory'] : []),
-  ...(unacknowledged(row) ? (row.state === 'returned-unack' ? ['returned'] : []) : row.state === 'active-unack' ? [] : [stateWords(row)]),
-  ageText(nowMs, row) ?? (row.raised === null ? 'time unknown' : `${row.raised.at.slice(11, 19)} UTC`),
-].join(' · ')
+/**
+ * What a row says after its message, by part: its tag; its notes (what it is expected after, standing or advisory, its
+ * state where UNACK does not say it); its age in Run time, else its clock time.
+ */
+export interface RowDetail { readonly tag?: string; readonly notes: ReadonlyArray<string>; readonly age: string }
+
+/** A first-out's tag less the group its mark names ("LO · RX TRIP" under "1st RX TRIP" is "LO"); none where it only names it. */
+const ownLimit = (tag: string, group: string): string | undefined =>
+  tag === group ? undefined : tag.endsWith(` · ${group}`) ? tag.slice(0, -` · ${group}`.length) : tag
+
+export const rowDetail = (row: AlertRow, nowMs: number): RowDetail => {
+  const tag = row.tag === undefined ? undefined : firstOutMark(row) !== null && row.action !== undefined ? ownLimit(row.tag, row.action.label) : row.tag
+  return {
+    ...(tag === undefined ? {} : { tag }),
+    notes: [
+      ...(row.expected === undefined ? [] : [`after ${row.expected.after}`]),
+      ...(row.alert.standing === true ? ['standing'] : []),
+      ...(row.alert.advisory === true ? ['advisory'] : []),
+      ...(unacknowledged(row) ? (row.state === 'returned-unack' ? ['returned'] : []) : row.state === 'active-unack' ? [] : [stateWords(row)]),
+    ],
+    age: ageText(nowMs, row) ?? (row.raised === null ? 'time unknown' : `${row.raised.at.slice(11, 19)} UTC`),
+  }
+}
+
+/** A row's detail as it is written: "LO-LO · ALM · after RX TRIP · 2:58". */
+export const detailText = (detail: RowDetail): string => [...(detail.tag === undefined ? [] : [detail.tag]), ...detail.notes, detail.age].join(' · ')
+
+/** What a row says after its message, whole: as its title and assistive technology read it. */
+export const alertDetail = (row: AlertRow, nowMs: number): string => detailText(rowDetail(row, nowMs))
 
 /** A row's full words, as its title and assistive technology read them: its object, state, mark, message, detail and clock time. */
 export const alertTitle = (row: AlertRow, nowMs: number): string =>
@@ -86,22 +105,58 @@ export const inSection = (section: AlertsSection) => (row: AlertRow): boolean =>
 /** The element an alert is on, where its record names one: what its row opens. */
 export const elementOf = (row: AlertRow): string | undefined => row.alert.subject !== undefined && 'element' in row.alert.subject ? row.alert.subject.element : undefined
 
-/** The parts of a row a line lays out, besides its icon, in the fonts they are written in. */
-export interface RowParts { readonly unack: boolean; readonly heading?: string; readonly mark: string | null; readonly message: string; readonly detail: string }
-export const rowParts = (row: AlertRow, nowMs: number, heading?: string | undefined): RowParts =>
-  ({ unack: unacknowledged(row), ...(heading === undefined ? {} : { heading }), mark: firstOutMark(row), message: row.alert.message, detail: alertDetail(row, nowMs) })
+/** The parts of a row a line lays out, in the fonts they are written in; `word`: the icon's word where it has no icon. */
+export interface RowParts {
+  readonly word?: string
+  readonly unack: boolean
+  readonly heading?: string
+  readonly mark: string | null
+  readonly message: string
+  readonly detail: RowDetail
+}
+export const rowParts = (row: AlertRow, nowMs: number, heading?: string | undefined): RowParts => {
+  const icon = alertIcon(row)
+  return { ...('word' in icon ? { word: icon.word } : {}), unack: unacknowledged(row), ...(heading === undefined ? {} : { heading }), mark: firstOutMark(row), message: row.alert.message, detail: rowDetail(row, nowMs) }
+}
 
 /** A row's icon and the gaps between its parts, in px (AlertRowLine.svelte). */
 export const ROW_ICON_PX = 20
 export const ROW_GAP_PX = 6
-/** The fonts a row writes its parts in (AlertRowLine.svelte): its message, its marks (UNACK, 1st RX TRIP, a heading), its detail. */
-export type RowFont = 'message' | 'mark' | 'detail'
+/** The fonts a row writes its parts in (AlertRowLine.svelte): its message, its marks (UNACK, 1st RX TRIP, a heading), its detail, an icon's word. */
+export type RowFont = 'message' | 'mark' | 'detail' | 'word'
 
-/** How wide a row is on one line, its message whole, given how wide each part is written (`measure`). */
-export const rowWidth = (parts: RowParts, measure: (text: string, font: RowFont) => number): number => {
-  const widths = [ROW_ICON_PX, ...(parts.unack ? [measure(UNACK_WORD, 'mark')] : []), ...(parts.heading === undefined ? [] : [measure(parts.heading, 'mark')]),
-    ...(parts.mark === null ? [] : [measure(`${parts.mark}:`, 'mark')]), measure(parts.message, 'message'), measure(parts.detail, 'detail')]
+/** How wide a row is on its one line with `message` shown (its whole message by default), given how wide each part is written (`measure`). */
+export const rowWidth = (parts: RowParts, measure: (text: string, font: RowFont) => number, message = parts.message): number => {
+  const widths = [parts.word === undefined ? ROW_ICON_PX : measure(parts.word, 'word'), ...(parts.unack ? [measure(UNACK_WORD, 'mark')] : []),
+    ...(parts.heading === undefined ? [] : [measure(parts.heading, 'mark')]), ...(parts.mark === null ? [] : [measure(`${parts.mark}:`, 'mark')]),
+    message === '' ? 0 : measure(message, 'message'), measure(detailText(parts.detail), 'detail')]
   return widths.reduce((sum, width) => sum + width, 0) + ROW_GAP_PX * (widths.length - 1)
+}
+
+/** Room a row leaves unused, in px, against the few a canvas and the page's layout may round apart. */
+const ROW_SLACK_PX = 4
+
+/**
+ * The parts of a row that stand on its one line in `width` px (plan §2 rule 2: nothing cut but by whole words,
+ * nothing drawn over anything). Its message gives way by whole words (AlertRowLine's wholeWords); to keep at least its
+ * first word, its notes go first, the last first ("after RX TRIP" last); then the message gives way to nothing; then
+ * the tag, then the heading. The icon, UNACK, a first-out mark and the age always stand. What goes stays in the row's
+ * title and for assistive technology.
+ */
+export const fitRow = (parts: RowParts, width: number, measure: (text: string, font: RowFont) => number): RowParts => {
+  const room = width - ROW_SLACK_PX
+  const first = parts.message.split(' ')[0]!
+  const least = first === parts.message ? first : `${first.replace(/[\s,;:·]+$/, '')}…`
+  const notes = parts.detail.notes
+  for (let kept = notes.length; kept >= 0; kept -= 1) {
+    const tried = kept === notes.length ? parts : { ...parts, detail: { ...parts.detail, notes: notes.slice(0, kept) } }
+    if (rowWidth(tried, measure, least) <= room) return tried
+  }
+  const bare: RowParts = { ...parts, detail: { ...parts.detail, notes: [] } }
+  if (rowWidth(bare, measure, '') <= room) return bare
+  const untagged: RowParts = { ...bare, detail: { notes: [], age: parts.detail.age } }
+  if (rowWidth(untagged, measure, '') <= room || untagged.heading === undefined) return untagged
+  return { ...(parts.word === undefined ? {} : { word: parts.word }), unack: parts.unack, mark: parts.mark, message: parts.message, detail: untagged.detail }
 }
 
 /**

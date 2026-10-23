@@ -42,16 +42,14 @@ describe('the list (W2.5)', () => {
     expect([firstOutMark(rows[1]!), firstOutMark(row('x', 1, { firstOut: { group: 'g', rank: 1 } })), firstOutMark(rows[2]!)]).toEqual(['1st RX TRIP', 'FIRST OUT', null])
   })
 
-  test('what does not fit its room is counted on "+N more", the closing aggregates keeping their lines; a row on two lines costs two', () => {
+  test('what does not fit its room is counted on "+N more", the closing aggregates keeping their lines', () => {
     const lines = listLines(rows, new Set())
-    expect(fitLines(lines, 20, () => 1)).toEqual({ shown: lines, pinned: [], hidden: [] })
-    const tight = fitLines(lines, 6, () => 1)
+    expect(fitLines(lines, 20)).toEqual({ shown: lines, pinned: [], hidden: [] })
+    const tight = fitLines(lines, 6)
     // Two aggregates and "+N more" take three rows; three rows are left for the list's head.
     expect([shown(tight.shown), shown(tight.pinned), tight.hidden.map(entry => entry.alert.id)]).toEqual([['turb-trip', 'rx-trip', 'csf-heat-sink'], ['[3 expected after RX TRIP ▸]', '[1 standing ▸]'], ['loop', 'rcp-a', 'bus-a']])
-    const stacked = fitLines(lines, 6, line => line.kind === 'row' ? 2 : 1)
-    expect([shown(stacked.shown), stacked.hidden.length]).toEqual([['turb-trip'], 5])
     // An opened aggregate stays in view with as many of its rows as half the room holds; the rows before it give way.
-    const opened = fitLines(listLines(rows, new Set(['expected:RX TRIP'])), 8, () => 1)
+    const opened = fitLines(listLines(rows, new Set(['expected:RX TRIP'])), 8)
     expect([shown(opened.shown), shown(opened.pinned), opened.hidden.map(entry => entry.alert.id)]).toEqual([
       ['turb-trip', 'rx-trip', 'csf-heat-sink', 'loop'], ['[3 expected after RX TRIP ▾]', 'pzr-low', '[1 standing ▸]'], ['rcp-a', 'bus-a', 'sg-b-low', 'sg-a-low'],
     ])

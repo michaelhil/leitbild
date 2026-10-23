@@ -68,31 +68,24 @@ export const listLines = (rows: ReadonlyArray<AlertRow>, open: ReadonlySet<strin
 const rowsOf = (line: ListLine): ReadonlyArray<AlertRow> => line.kind === 'row' ? [line.row] : line.open ? [] : line.rows
 
 /**
- * The lines that fit `room` grid rows, each costing what `cost` says (a row written on two lines costs two). Where
- * they do not all fit, a row says how many more there are ("+N more"), and the aggregates that end the list keep
- * their lines (`pinned`, shown after it), as they say what most of the list is; an opened one keeps the rows it
- * opened to as far as half the room, or what the rows before it leave. `hidden`: the alerts not shown.
+ * The lines that fit `room` grid rows, one each. Where they do not all fit, a row says how many more there are ("+N
+ * more"), and the aggregates that end the list keep their lines (`pinned`, shown after it), as they say what most of
+ * the list is; an opened one keeps the rows it opened to as far as half the room, or what the rows before it leave.
+ * `hidden`: the alerts not shown.
  */
-export const fitLines = (lines: ReadonlyArray<ListLine>, room: number, cost: (line: ListLine) => number): {
+export const fitLines = (lines: ReadonlyArray<ListLine>, room: number): {
   readonly shown: ReadonlyArray<ListLine>; readonly pinned: ReadonlyArray<ListLine>; readonly hidden: ReadonlyArray<AlertRow>
 } => {
-  const sum = (part: ReadonlyArray<ListLine>): number => part.reduce((total, line) => total + cost(line), 0)
-  if (sum(lines) <= room) return { shown: lines, pinned: [], hidden: [] }
+  if (lines.length <= room) return { shown: lines, pinned: [], hidden: [] }
   const tail = lines.findIndex(line => line.kind === 'aggregate')
   const [head, end] = tail < 0 ? [lines, []] : [lines.slice(0, tail), lines.slice(tail)]
   const budget = room - 1
   // The aggregate lines first, then the rows an opened one shows, in order, within the tail's room.
-  const kept = new Set<ListLine>()
-  let used = 0
-  for (const line of end.filter(entry => entry.kind === 'aggregate')) if (used + cost(line) <= budget) { kept.add(line); used += cost(line) }
-  const tailRoom = Math.max(used, budget - sum(head), Math.floor(budget / 2))
-  for (const line of end.filter(entry => entry.kind === 'row')) if (used + cost(line) <= tailRoom) { kept.add(line); used += cost(line) } else break
-  const shown: ListLine[] = []
-  for (const line of head) {
-    if (used + cost(line) > budget) break
-    shown.push(line)
-    used += cost(line)
-  }
+  const aggregates = end.filter(entry => entry.kind === 'aggregate').slice(0, Math.max(0, budget))
+  const tailRoom = Math.max(aggregates.length, budget - head.length, Math.floor(budget / 2))
+  const opened = end.filter(entry => entry.kind === 'row').slice(0, Math.max(0, tailRoom - aggregates.length))
+  const kept = new Set<ListLine>([...aggregates, ...opened])
+  const shown = head.slice(0, Math.max(0, budget - kept.size))
   const pinned = end.filter(line => kept.has(line))
   return { shown, pinned, hidden: [...head.slice(shown.length), ...end.filter(line => !kept.has(line))].flatMap(rowsOf) }
 }
