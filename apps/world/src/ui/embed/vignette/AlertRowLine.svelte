@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { AlertRow } from '../../../features/displays/alerts/rows.ts'
-  import { alertIcon, alertTitle, rowParts, UNACK_WORD, wordsThatFit } from './alerts.ts'
+  import { alertIcon, alertTitle, rowParts, UNACK_WORD } from './alerts.ts'
+  import { wholeWords } from './fit-words.ts'
   import './openbridge.ts'
 
   // One alert row (plan v5 W2.5): OpenBridge's alert icon drawn steady (until
@@ -24,21 +25,6 @@
 
   const parts = $derived(rowParts(row, nowMs, heading))
   const icon = $derived(alertIcon(row))
-
-  /** A message as many of its whole words as its room shows, fitted again when its room or its text changes. */
-  const fitted = (node: HTMLElement, text: string) => {
-    let full = text
-    const fit = (): void => {
-      node.textContent = wordsThatFit(full, candidate => {
-        node.textContent = candidate
-        return node.scrollWidth <= node.clientWidth
-      })
-    }
-    fit()
-    const resized = new ResizeObserver(fit)
-    resized.observe(node)
-    return { update: (next: string) => { full = next; fit() }, destroy: () => resized.disconnect() }
-  }
 </script>
 
 {#snippet content()}
@@ -49,7 +35,7 @@
       <span class="word">{icon.word}</span>
     {/if}
     {#if parts.mark !== null}<span class="mark">{parts.mark}:</span>{/if}
-    <span class="message" aria-hidden="true" use:fitted={parts.message}></span>
+    <span class="message" aria-hidden="true" use:wholeWords={parts.message}></span>
     <span class="full">{parts.message}</span>
   </span>
   <span class="meta">
