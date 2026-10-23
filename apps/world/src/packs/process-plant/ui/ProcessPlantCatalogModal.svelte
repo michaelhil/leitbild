@@ -95,7 +95,7 @@
 </script>
 
 <div class="process-artifact-backdrop" role="presentation">
-  <section class="process-artifact-modal process-catalog-modal" aria-label="Process plant catalog">
+  <div class="process-artifact-modal process-catalog-modal" role="dialog" aria-modal="true" tabindex="-1" aria-label="Process plant catalog">
     <header class="process-artifact-header">
       <div>
         <strong>Process plant catalog</strong>
@@ -163,5 +163,5 @@
         </div>
       {/if}
     </div>
-  </section>
+  </div>
 </div>

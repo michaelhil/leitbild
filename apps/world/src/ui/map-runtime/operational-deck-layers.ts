@@ -40,7 +40,7 @@ export interface OperationalDeckLayerConfig {
   readonly disksPick: boolean
   /**
    * Objects whose whole disk takes a mouse click and hover on every surface,
-   * not only while it picks targets: those a click opens a card for
+   * not only while it picks targets: those a click opens a display for
    * (`OperationalMap.svelte`, `takesDiskClicks`). Every other disk picks only
    * as `disksPick` says, so it never takes a ground, placement or Pack feature
    * click that used to pass between a glyph's strokes. Null for a finger or
@@ -463,7 +463,7 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
         getFillColor: snapshot.revisions.points,
       },
     }),
-    // The disks of objects a click opens a card for, drawn transparent and
+    // The disks of objects a click opens a display for, drawn transparent and
     // picked: a click anywhere on such a disk is its object's. Not needed
     // while every disk picks.
     ...(diskClickPoints.length > 0

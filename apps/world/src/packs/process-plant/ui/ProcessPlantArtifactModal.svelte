@@ -410,7 +410,7 @@
 </script>
 
 <div class="process-artifact-backdrop" role="presentation">
-  <section class="process-artifact-modal" aria-label="Process plant artifact">
+  <div class="process-artifact-modal" role="dialog" aria-modal="true" tabindex="-1" aria-label="Process plant artifact">
     <header class="process-artifact-header">
       <div>
         <strong>{data?.title ?? (artifact === 'authored-spec' ? 'Plant specification source' : 'Full component graph')}</strong>
@@ -534,7 +534,7 @@
         <div class="process-display-error">Plant artifact did not load.</div>
       {/if}
     </div>
-  </section>
+  </div>
   {#if componentSource}
     <div
       class="process-component-source-backdrop"

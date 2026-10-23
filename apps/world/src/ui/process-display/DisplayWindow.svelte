@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick, untrack, type Component } from 'svelte'
+  import { tick, untrack, type Component, type Snippet } from 'svelte'
   import {
     Check,
     ChevronDown,
@@ -14,7 +14,7 @@
     X,
   } from 'lucide-svelte'
   import type { EmbeddedViewEnvelope, EmbeddedViewListing } from '@leitbild/contracts'
-  import type { OperationalObject, SimulationRunId } from '../../core/model/index.ts'
+  import type { OperationalObject, ProcedureId, SimulationRunId } from '../../core/model/index.ts'
   import type { PackWindowToolsProps } from '../../core/packs/protocol.ts'
   import type { MapFocusTarget } from '../map-view.ts'
   import { DISPLAY_ZOOM_MAX, DISPLAY_ZOOM_MIN, type DisplayFrameOpen, type DisplayFrameZoomRequest } from '../embed/display-frame-protocol.ts'
@@ -22,7 +22,7 @@
   import { zoomStepOfKey } from '../embed/view-host.ts'
   import { loadUiPack } from '../pack-loader.ts'
   import ProcedureRunBadges from '../procedures/ProcedureRunBadges.svelte'
-  import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from '../procedures/procedure-run-selectors.ts'
+  import type { ProcedureRunSummaryGroup } from '../procedures/procedure-run-selectors.ts'
   import { statusToneColor } from '../status-presentation.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import {
@@ -108,7 +108,12 @@
     /** Whether an asset runs computer-based procedures (its Pack scopes them to it). */
     readonly runsProcedures: (object: OperationalObject) => boolean
     readonly procedureSummariesFor: (object: OperationalObject) => ProcedureRunSummaryGroup
-    readonly openProcedureSystemAt: (object: OperationalObject, summary?: ProcedureRunSummary) => void
+    /** Opens an asset's procedure window, at one of its procedures where named. */
+    readonly openProcedureWindowAt: (object: OperationalObject, procedureId?: ProcedureId) => void
+    /** This screen plays the Run's controller: the asset's Pack tools offer what orders the Run only then. */
+    readonly controller: boolean
+    /** Opens the Run's Assistant room, which the asset's Pack tools offer; null where the Host offers none. */
+    readonly openAssistant: (() => void) | null
     /** Frames the page's live map (a vignette's "Show on map"). */
     readonly focusMap: (target: MapFocusTarget) => void
     readonly close: () => void
@@ -122,7 +127,9 @@
     request,
     runsProcedures,
     procedureSummariesFor,
-    openProcedureSystemAt,
+    openProcedureWindowAt,
+    controller,
+    openAssistant,
     focusMap,
     close,
   }: Props = $props()
@@ -727,12 +734,15 @@
     })()
   })
   const Tools = $derived(toolsPack === null ? null : toolsByPack.get(toolsPack) ?? null)
+  // Short of room, the tools' labels give way; with none, they keep their chips in the header and list the rest in More.
+  const toolsRoom = $derived<PackWindowToolsProps['room']>(tier === 'wide' ? 'wide' : tier === 'medium' ? 'short' : 'folded')
+  let toolsMenu = $state.raw<Snippet<[done: () => void]> | null>(null)
 
-  const openProcedures = (summary?: ProcedureRunSummary): void => {
+  const openProcedures = (procedureId?: ProcedureId): void => {
     popover = null
     // The procedure window opens in front of this one.
     raised = false
-    if (assetObject !== null) openProcedureSystemAt(assetObject, summary)
+    if (assetObject !== null) openProcedureWindowAt(assetObject, procedureId)
   }
 
   runOnMount(() => {
@@ -941,7 +951,7 @@
 
       {#if (tier === 'wide' || tier === 'medium') && proceduresShown}
         <div class="display-window-procedures" role="group" aria-label="Procedures">
-          <ProcedureRunBadges summaries={procedureSummaries} onOpen={openProcedures} />
+          <ProcedureRunBadges summaries={procedureSummaries} onOpen={summary => openProcedures(summary.procedureId)} />
           <button
             type="button"
             class="display-window-button"
@@ -954,10 +964,19 @@
           </button>
         </div>
       {/if}
-      {#if Tools !== null && assetTarget.ok}
-        {@const asset = assetTarget.asset}
-        {#key asset.objectId}
-          <Tools runId={runId} objectId={asset.objectId} openDisplay={(subject: string) => { void openDefaultAfter(subject) }} />
+      {#if Tools !== null && assetObject !== null}
+        {#key assetObject.id}
+          <Tools
+            runId={runId}
+            object={assetObject}
+            openDisplay={(subject: string) => { void openDefaultAfter(subject) }}
+            {controller}
+            {openAssistant}
+            runningProcedures={procedureSummaries.active.map(summary => summary.procedureId)}
+            openProcedure={openProcedures}
+            room={toolsRoom}
+            menu={items => { toolsMenu = items }}
+          />
         {/key}
       {/if}
       {#if tier === 'wide' || tier === 'medium'}
@@ -975,7 +994,7 @@
           bind:this={moreButton}
           type="button"
           class="display-window-button display-window-more"
-          aria-label={proceduresShown ? 'More: procedures, maximise' : 'More: maximise'}
+          aria-label={`More: ${[...(proceduresShown ? ['procedures'] : []), ...(toolsMenu !== null ? ['tools'] : []), 'maximise'].join(', ')}`}
           title="More"
           aria-haspopup="true"
           aria-expanded={popover === 'more'}
@@ -1122,7 +1141,7 @@
     {:else if popover === 'more'}
       <div bind:this={popoverElement} class="display-window-popover more" role="group" aria-label="More">
         {#if proceduresShown}
-          <ProcedureRunBadges summaries={procedureSummaries} onOpen={openProcedures} />
+          <ProcedureRunBadges summaries={procedureSummaries} onOpen={summary => openProcedures(summary.procedureId)} />
           <button
             type="button"
             class="display-window-menu-item"
@@ -1133,6 +1152,9 @@
             <ClipboardList size={16} aria-hidden="true" />
             <span>{assetObject !== null ? `Procedures for ${assetObject.label}` : `Procedures: ${assetUnavailable ?? ''}`}</span>
           </button>
+        {/if}
+        {#if toolsMenu !== null}
+          {@render toolsMenu(() => closePopover(true))}
         {/if}
         <button
           type="button"
