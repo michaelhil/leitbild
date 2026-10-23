@@ -461,6 +461,24 @@ export interface Screen {
   readonly lines: ReadonlyArray<ScreenLine>
   /** Dialogs shown over the display (a faceplate, a chooser, a tag dialog), with their own lines. */
   readonly dialogs: ReadonlyArray<{ readonly label: string; readonly where: 'display' | 'page'; readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly pinned: boolean; readonly arrow?: boolean; readonly arrowParts?: ReadonlyArray<string> }>
+  /** The display lays its column out as a band (R2 W4.3: leads, counts and the first alert rows above the drawing). */
+  readonly band?: boolean
+}
+
+/**
+ * How the display gathers the alerts expected after a first-out (W2.3): the list's aggregate row ("15 expected after
+ * RX TRIP"), or, in the band, which drops that row for a compact tile row (alarms2, 23 Oct), the head's count filter
+ * ("15 expected"). The count stands in for the row only in the band. `index` is the aggregate's place among the
+ * list's lines (-1 for the count).
+ */
+export const expectedGathering = (screen: Screen, onScreenOnly = false): { readonly how: 'aggregate' | 'count'; readonly count: number; readonly index: number; readonly text: string } | null => {
+  const alerts = screen.lines.filter(line => line.region === 'alerts' && (!onScreenOnly || line.valueOn))
+  const list = alerts.filter(line => !/^alerts\b/i.test(line.text))
+  const index = list.findIndex(line => /\d+\s+expected after\b/i.test(line.text))
+  if (index >= 0) return { how: 'aggregate', count: Number(list[index]!.text.match(/(\d+)\s+expected after/i)![1]), index, text: list[index]!.text }
+  if (screen.band !== true) return null
+  const head = alerts.find(line => /\b\d+\s+expected\b(?!\s+after)/i.test(line.text))
+  return head === undefined ? null : { how: 'count', count: Number(head.text.match(/\b(\d+)\s+expected\b(?!\s+after)/i)![1]), index: -1, text: head.text }
 }
 
 /** An expression for `Page.eval`: what the display window shows on screen now (see Screen). */
@@ -471,7 +489,7 @@ export const readScreen = (): string => `((() => {${SCREEN_HELPERS}
   const title = header && header.querySelector('.display-window-title')
   const back = !!(header && [...header.querySelectorAll('button, [role=button]')].some(b => lb.shown(b) && /^back\\b|go back|‹ /i.test((b.getAttribute('aria-label') || b.getAttribute('title') || b.innerText || '').trim())))
   const windowState = header ? { position: position ? (position.innerText || '').replace(/\\s+/g, ' ').trim() : null, title: title ? (title.innerText || '').replace(/\\s+/g, ' ').trim() : null, back, src: shown ? (shown.frame.getAttribute('src') || '').slice(0, 400) : null } : null
-  if (!shown) return { frame: null, window: windowState, lines: [], dialogs: [] }
+  if (!shown) return { frame: null, window: windowState, lines: [], dialogs: [], band: false }
   const box = frameBox(shown.frame)
   const fr = shown.frame.getBoundingClientRect()
   const lines = linesOf(shown.doc, shown.frame)
@@ -497,7 +515,7 @@ export const readScreen = (): string => `((() => {${SCREEN_HELPERS}
     const arrow = parts.some(part => part.endsWith('(at the edge)'))
     dialogs.push({ el, label: nameOf(el).slice(0, 120), where: 'display', x: Math.round(box.ox + box.s * r.left), y: Math.round(box.oy + box.s * r.top), w: Math.round(box.s * r.width), h: Math.round(box.s * r.height), pinned: !!el.closest('[data-pinned], .pinned') || /pinned/i.test(el.className + '') || !!el.querySelector('[aria-pressed=true][aria-label*="pin" i], [aria-pressed=true][title*="pin" i]'), arrow, arrowParts: [...new Set(parts)].slice(0, 6) })
   }
-  return { frame: { x: Math.round(box.ox), y: Math.round(box.oy), w: Math.round(fr.width), h: Math.round(fr.height), visibleW: Math.round(box.vis.r - box.vis.l), visibleH: Math.round(box.vis.b - box.vis.t) }, window: windowState, lines, dialogs: dialogs.map(({ el, ...d }) => d) }
+  return { frame: { x: Math.round(box.ox), y: Math.round(box.oy), w: Math.round(fr.width), h: Math.round(fr.height), visibleW: Math.round(box.vis.r - box.vis.l), visibleH: Math.round(box.vis.b - box.vis.t) }, window: windowState, lines, dialogs: dialogs.map(({ el, ...d }) => d), band: [...shown.doc.querySelectorAll('.band-alerts')].some(el => lb.shown(el)) }
 })())`
 
 /** Lines whose values show on screen, or stand behind the drawing's scroll affordance, and whose text matches, in the

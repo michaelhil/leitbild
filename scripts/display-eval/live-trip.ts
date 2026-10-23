@@ -41,7 +41,7 @@
  * the second). Writes <out>/<label>-live-trip.json and shots. Loopback only; no model is called. */
 import { join } from 'node:path'
 import { ensureChrome, loopbackOrigin, openPage, options, sleep, type Page } from './browser.ts'
-import { onScreen, openUnitDisplay, readDisplay, readScreen, type DisplayState, type Screen } from './display-dom.ts'
+import { expectedGathering, onScreen, openUnitDisplay, readDisplay, readScreen, type DisplayState, type Screen } from './display-dom.ts'
 import { sizeSpec } from './display-press.ts'
 import { viewport } from './matrix.ts'
 import { createStackApi, type StackApi } from './stack-api.ts'
@@ -267,7 +267,13 @@ const runSize = async (config: {
     // R2: the trip line, "Rods on bottom" and the expected aggregate, as a person sees them (on screen).
     const tripLineOf = (poll: Poll) => onScreen(poll.screen, /\bRX TRIP\b|\b1st\b.*TRIP|reactor trip/i).filter(line => line.region !== 'alerts' && line.region !== 'drawing')
     const rodsOf = (poll: Poll) => onScreen(poll.screen, /rods on bottom/i).filter(line => /\d(\.\d+)?\s*(×10[⁻⁰¹²³⁴⁵⁶⁷⁸⁹]+\s*A|%|cps)/.test(line.text))
-    const aggregateOf = (poll: Poll) => onScreen(poll.screen, /\d+\s+expected after\b/i, ['alerts', 'column', 'body', 'trip'])
+    // The aggregate row; in the band, which drops it for a compact tile row, the head's "N expected" count.
+    const aggregateOf = (poll: Poll): ReadonlyArray<string> => {
+      const row = onScreen(poll.screen, /\d+\s+expected after\b/i, ['alerts', 'column', 'body', 'trip'])
+      if (row.length > 0) return row.map(line => line.text)
+      const gathered = expectedGathering(poll.screen, true)
+      return gathered?.how === 'count' ? [`${gathered.text} (the band's count)`] : []
+    }
     const lagScreen = (condition: (poll: Poll) => boolean, from: number | null) => {
       if (from === null) return { lagS: null as number | null, kept: null as number | null }
       const later = polls.filter(poll => poll.simMs !== null && poll.simMs >= from)
@@ -308,7 +314,7 @@ const runSize = async (config: {
       { id: 'trip-line', release: 'R2', pass: afterUpset.length === 0 ? null : held(tripLine), detail: `${tripLine.lagS === null ? 'no trip line on screen outside the alerts list and the drawing' : `on screen ${tripLine.lagS} s after the trip, kept in ${kept(tripLine)} of reads`}; at the end: ${tripLineOf(lastPoll).map(line => `"${line.text.slice(0, 120)}"`).join(', ') || '-'}`, shot: shots['1-first-sample-after-upset'] },
       { id: 'rods-on-bottom', release: 'R2', pass: afterUpset.length === 0 ? null : rodsLine.lagS !== null && rodsLine.lagS <= ONE_SAMPLE_S + 2 && (rodsLine.kept ?? 0) >= 0.95, detail: `${rodsLine.lagS === null ? '"Rods on bottom" with its flux never on screen' : `on screen ${rodsLine.lagS} s after the trip, kept in ${kept(rodsLine)} of reads`}; at the end: ${rodsOf(lastPoll).map(line => `"${line.text.slice(0, 80)}"`).join(', ') || onScreen(lastPoll.screen, /^core\b/i, ['drawing']).map(line => `core "${line.text}"`).join(', ') || '-'}`, shot: shots['2-upset+10s'] },
       { id: 'rods-in', release: 'R2', pass: rods === null ? null : rods.bars > 0 && rods.withdrawnBars === 0 && rods.unknownBars === 0 && rods.insertedShares.every(share => share >= 0.95), detail: rods === null ? 'no core vessel drawn' : `${rods.bars} rods, inserted shares ${rods.insertedShares.join(', ')}, ${rods.withdrawnBars} drawn withdrawn, ${rods.unknownBars} unknown`, shot: shots.end },
-      { id: 'expected', release: 'R2', pass: afterUpset.length === 0 ? null : firstExpectedMs !== null && held(aggregate), detail: `${firstExpectedMs === null ? "World's sample marks no alert expected (AlertRow.expected)" : `first alert marked expected at ${new Date(firstExpectedMs).toISOString().slice(11, 19)}`}; aggregate ${aggregate.lagS === null ? (polls.some(poll => aggregateOf(poll).length > 0) ? 'shown, but not after a marked alert' : 'never on screen') : `on screen ${aggregate.lagS} s after, kept in ${kept(aggregate)} of reads`}; at the end: ${aggregateOf(lastPoll).map(line => `"${line.text}"`).join(', ') || '-'}`, shot: shots['3-upset+60s'] },
+      { id: 'expected', release: 'R2', pass: afterUpset.length === 0 ? null : firstExpectedMs !== null && held(aggregate), detail: `${firstExpectedMs === null ? "World's sample marks no alert expected (AlertRow.expected)" : `first alert marked expected at ${new Date(firstExpectedMs).toISOString().slice(11, 19)}`}; aggregate ${aggregate.lagS === null ? (polls.some(poll => aggregateOf(poll).length > 0) ? 'shown, but not after a marked alert' : 'never on screen') : `on screen ${aggregate.lagS} s after, kept in ${kept(aggregate)} of reads`}; at the end: ${aggregateOf(lastPoll).map(text => `"${text}"`).join(', ') || '-'}`, shot: shots['3-upset+60s'] },
       { id: 'viewport', release: 'R2', pass: endViewport.pass, detail: endViewport.detail, shot: shots.end },
       {
         // R3 (W2.1): the counts within one sample of the upset and kept; at the end, UNACK equals World's sample.
