@@ -112,6 +112,10 @@ const judgeView = async (ctx: { readonly page: Page; readonly scratch: Page; rea
       const against = [...geometry.textAgainstText.map(entry => `text × text ${entry}`), ...geometry.textAgainstPipe.map(entry => `text × pipe ${entry}`), ...geometry.textAgainstSymbol.map(entry => `text × symbol ${entry}`)]
       checks.push(check('overlap', against.length === 0, `${geometry.lines} drawn text lines (scale ${Math.round(rendered.scale * 100)} %): ${geometry.textAgainstText.length} against text, ${geometry.textAgainstPipe.length} against a pipe or bar, ${geometry.textAgainstSymbol.length} against a symbol${listed(against)}`))
       checks.push(check('stubs', geometry.stubs.short.length === 0, `${geometry.stubs.ends} stopped pipes, ${geometry.stubs.short.length} ending on less than ${geometry.stubs.stubStraight} px of straight${listed(geometry.stubs.short)}`))
+      if (geometry.traces.length > 0) {
+        const untraced = geometry.traces.filter(trace => !trace.modelled), undrawn = geometry.traces.filter(trace => trace.modelled && !trace.drawn)
+        checks.push(check('vessel-traces', untraced.length === 0 && undrawn.length === 0, `${geometry.traces.length} vessels, tanks and exchangers: ${geometry.traces.filter(trace => trace.drawn).length} trace their reading on screen (W6.6)${untraced.length === 0 ? '' : `; traced by nothing: ${untraced.map(trace => `${trace.kind} ${trace.name}`).join(', ')}`}${undrawn.length === 0 ? '' : `; traced but drawn without a line: ${undrawn.map(trace => `${trace.kind} ${trace.name}`).join(', ')}`}`))
+      }
       checks.push(check('vessel-gap', geometry.drawn.silhouettes === 0 ? null : geometry.vesselGaps.length === 0, geometry.drawn.silhouettes === 0 ? 'no vessel, tank or exchanger silhouette found in the drawing' : `${geometry.drawn.silhouettes} vessel silhouettes; ${geometry.vesselGaps.length} pipe ends stop more than 1 px short${listed(geometry.vesselGaps.map(gap => `${gap.silhouette} ${gap.gap} px at ${gap.at}`))}`))
     }
   } else if (view !== 'overview' || rendered.found) checks.push(check('overlap', null, rendered.found ? 'the view carries no topology section' : 'no flow drawing in this view'))

@@ -42,12 +42,15 @@ export interface RenderedDrawing {
   readonly silhouettes: ReadonlyArray<{ readonly tag: string; readonly x: number; readonly y: number; readonly w: number; readonly h: number }>
   /** The drawing's text size as rendered: the computed font of its first name and first reading. */
   readonly font: { readonly name: string | null; readonly reading: string | null }
+  /** Vessel traces as drawn (W6.6): a text block's trace line (span.trace) or an exchanger tile's (.tile-trace), each
+   * with whether its sparkline draws a line, and where (drawing coordinates). */
+  readonly traces: ReadonlyArray<{ readonly where: 'text' | 'tile'; readonly item: string | null; readonly drawn: boolean; readonly label: string; readonly x: number; readonly y: number; readonly w: number; readonly h: number }>
 }
 
 /** The first flow drawing of the shown display (a vignette draws one per topology section; the first is the one a
  * unit overview and an element default draw). */
 export const readDrawing = (): string => String.raw`((() => {${SHOWN}
-  const none = { found: false, scale: 1, width: 0, height: 0, lines: [], silhouettes: [], font: { name: null, reading: null } }
+  const none = { found: false, scale: 1, width: 0, height: 0, lines: [], silhouettes: [], traces: [], font: { name: null, reading: null } }
   if (!shown) return none
   const doc = shown.doc, win = doc.defaultView
   const flow = doc.querySelector('.flow')
@@ -90,7 +93,12 @@ export const readDrawing = (): string => String.raw`((() => {${SHOWN}
     silhouettes.push({ tag: el.tagName.toLowerCase() + (clean(el) ? '.' + clean(el) : ''), ...toDrawing(box) })
   }
   const fontOf = el => { if (!el) return null; const s = win.getComputedStyle(el); return s.fontSize + ' ' + s.fontWeight + ' ' + s.fontFamily }
-  return { found: true, scale, width: drawing.offsetWidth, height: drawing.offsetHeight, lines, silhouettes, font: { name: fontOf(drawing.querySelector('.text[data-item] .name')), reading: fontOf(drawing.querySelector('.text[data-item] .reading')) } }
+  const drawnSpark = el => { const svg = el.querySelector('svg.spark, svg'); const line = svg && svg.querySelector('path.line, path:not(.frame)'); return !!line && ((line.getAttribute('d') || '').match(/[LHVCSQT]/gi) || []).length >= 1 }
+  const traces = [
+    ...[...drawing.querySelectorAll('.text[data-item] span.trace')].map(el => ({ where: 'text', item: el.closest('.text[data-item]').getAttribute('data-item'), el })),
+    ...[...drawing.querySelectorAll('.tile-trace')].map(el => ({ where: 'tile', item: (el.closest('[data-item]') || { getAttribute: () => null }).getAttribute('data-item'), el })),
+  ].map(({ where, item, el }) => { const r = el.getBoundingClientRect(); const svg = el.querySelector('svg'); return { where, item, drawn: drawnSpark(el), label: svg ? (svg.getAttribute('aria-label') || '').slice(0, 90) : '', ...toDrawing({ l: r.left, t: r.top, r: r.right, b: r.bottom }) } })
+  return { found: true, scale, width: drawing.offsetWidth, height: drawing.offsetHeight, lines, silhouettes, traces, font: { name: fontOf(drawing.querySelector('.text[data-item] .name')), reading: fontOf(drawing.querySelector('.text[data-item] .reading')) } }
 })())`
 
 export interface FontsRead {

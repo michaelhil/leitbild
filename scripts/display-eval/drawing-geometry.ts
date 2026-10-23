@@ -15,9 +15,9 @@ type Segment =
 interface Drawing {
   readonly segments: ReadonlyArray<Segment>
   readonly devices: ReadonlyArray<{ readonly id: string; readonly x: number; readonly y: number }>
-  readonly vessels: ReadonlyArray<Box & { readonly id: string; readonly kind: string }>
+  readonly vessels: ReadonlyArray<Box & { readonly id: string; readonly kind: string; readonly trace?: string | null; readonly title?: string }>
   readonly buses: ReadonlyArray<Box & { readonly id: string }>
-  readonly texts: ReadonlyArray<{ readonly id: string }>
+  readonly texts: ReadonlyArray<{ readonly id: string; readonly title?: string; readonly lines?: ReadonlyArray<{ readonly kind: string; readonly ref?: string }> }>
 }
 
 const WORKTREE = new URL('../../', import.meta.url).pathname
@@ -60,6 +60,9 @@ export interface GeometryResult {
   readonly stubs: { readonly ends: number; readonly stubStraight: number; readonly short: ReadonlyArray<string> }
   readonly vesselGaps: ReadonlyArray<{ readonly silhouette: string; readonly at: string; readonly gap: number }>
   readonly drawn: { readonly segments: number; readonly devices: number; readonly vessels: number; readonly silhouettes: number }
+  /** Vessel traces (W6.6): each drawn vessel, tank or exchanger, whether the display's model traces it (a tile trace, or
+   * a trace line in its text) and whether the page drew that trace's line. */
+  readonly traces: ReadonlyArray<{ readonly id: string; readonly kind: string; readonly name: string; readonly modelled: boolean; readonly drawn: boolean }>
 }
 
 /** Judges one drawing: the topology section of the view, the sample's observations and alerts, and what the page drew. */
@@ -118,7 +121,18 @@ export const judgeDrawing = async (section: unknown, sample: { readonly observat
       }
     }
   }
+  // Vessel traces: the model's (a tile trace on an exchanger, a trace line in a vessel's or tank's text) against the
+  // page's drawn ones (a tile trace inside the vessel's box, a text trace in its block).
+  const traceLines = new Set(drawing.texts.filter(text => (text.lines ?? []).some(line => line.kind === 'trace')).map(text => text.id))
+  const traces = drawing.vessels.map(vessel => {
+    const name = (vessel.title ?? vessel.id).split(' · ')[0]!
+    const tile = vessel.trace !== undefined && vessel.trace !== null
+    const text = traceLines.has(vessel.id)
+    const drawn = rendered.traces.some(trace => trace.drawn && (trace.item === vessel.id || (trace.where === 'tile' && trace.x >= vessel.x - 1 && trace.x + trace.w <= vessel.x + vessel.w + 1 && trace.y >= vessel.y - 1 && trace.y + trace.h <= vessel.y + vessel.h + 1)))
+    return { id: vessel.id, kind: vessel.kind, name, modelled: tile || text, drawn }
+  })
   return {
+    traces,
     lines: lines.length, textAgainstText, textAgainstPipe, textAgainstSymbol,
     stubs: { ends: ends.length, stubStraight, short },
     vesselGaps,
