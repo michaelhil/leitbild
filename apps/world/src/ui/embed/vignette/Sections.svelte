@@ -8,7 +8,7 @@
   import type { OpenedFrom } from './popover.ts'
   import { underTitle } from './format.ts'
   import { frameLayout, standsBeside, VIGNETTE_ROW_PX } from './grid.ts'
-  import { wholeParts } from './fit-words.ts'
+  import { wholeParts, wholeWords } from './fit-words.ts'
   import { marginLines, valueRows } from './value-rows.ts'
   import { drawingScale } from './network.ts'
   import { vignetteOpening } from './opening.svelte.ts'
@@ -111,7 +111,7 @@
           <!-- Their rows kept while none is near, so nothing under them moves when one comes near, in the band too. -->
           <div class="margins" style:min-height={`${MARGIN_LINES * VIGNETTE_ROW_PX}px`}>
             {#each lines as line (line.ref)}
-              <p class="margin" class:past={line.margin.past} title={`${line.full}: ${line.margin.text}`}><span class="who">{line.label}</span><span class="what" aria-label={line.margin.text} use:wholeParts={line.margin}></span></p>
+              <p class="margin" class:past={line.margin.past} title={`${line.full}: ${line.margin.text}`}><span class="who" aria-label={line.label} use:wholeWords={line.label}></span><span class="what" aria-label={line.margin.text} use:wholeParts={line.margin}></span></p>
             {/each}
           </div>
         {/if}
@@ -203,8 +203,9 @@
   /* A margin line: its row's short label, then how far from which limit, giving way by whole parts (wholeParts). */
   .margin { display: flex; gap: 6px; max-width: 480px; margin: 0; height: var(--row); line-height: var(--row); white-space: nowrap; color: var(--element-active-color); }
   .margin.past .what { font-weight: 600; }
-  .margin .who { flex: none; color: var(--element-neutral-color); }
-  .margin .what { flex: 1 1 0; min-width: 0; overflow: hidden; font-variant-numeric: tabular-nums; }
+  /* The name gives way first, by whole words; then the margin by whole parts; a value or a limit is never cut. */
+  .margin .who { flex: 0 1000 auto; min-width: 0; overflow: hidden; color: var(--element-neutral-color); }
+  .margin .what { flex: 0 1 auto; min-width: 0; overflow: hidden; font-variant-numeric: tabular-nums; }
   /* Alerts and tables of a frozen display: OpenBridge's low-integrity colours around what they last showed, a little outside it so no word moves. */
   .section.frozen { background: var(--alert-low-integrity-background-color); box-shadow: 0 0 0 4px var(--alert-low-integrity-background-color), 0 0 0 5px var(--alert-low-integrity-border-color); }
   .beside { display: flex; gap: 16px; align-items: flex-start; }

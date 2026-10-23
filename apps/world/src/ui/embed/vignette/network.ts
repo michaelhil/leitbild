@@ -7,6 +7,7 @@
 // priorities; "on" only from a boolean or a state declared active (ruling Q8).
 import type { Segment } from '@oicl/connector-diagram'
 import type { Observation } from '../../../core/observation/model.ts'
+import { wholeWordsThatFit } from './fit-words.ts'
 import { endStraight, pipeSegments, stubEndSegment } from './pipe-segments.ts'
 import { VIGNETTE_ROW_PX } from './grid.ts'
 import type { TopologyBinding, VignetteSection } from '../../../features/displays/compose/model.ts'
@@ -45,10 +46,16 @@ export interface NetworkDrawing {
  */
 export const drawingScale = (section: Pick<Topology, 'rows' | 'layout'>): number => Math.min(1, (section.rows - 1) / Math.max(1, Math.ceil(section.layout.height)))
 
-/** A name shortened to whole characters that fit its room, ending in "…". */
+/**
+ * A name shortened to the whole words that fit its room, ending in "…" (plan v5 §2 rule 2: "Sylling trafostasjon 420/…"
+ * cut a word); where not one whole word fits, its first word whole.
+ */
 export const fitName = (name: string, roomPx: number): string => {
   const most = Math.max(1, Math.floor(roomPx / CHAR_PX))
-  return name.length <= most ? name : `${name.slice(0, Math.max(1, most - 1))}…`
+  if (name.length <= most) return name
+  const shown = wholeWordsThatFit(name, candidate => candidate.length <= most)
+  const first = name.split(' ')[0]!
+  return shown !== '' ? shown : first === name ? name : `${first}…`
 }
 
 /**

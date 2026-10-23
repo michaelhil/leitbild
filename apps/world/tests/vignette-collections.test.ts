@@ -66,7 +66,10 @@ describe('network drawing', () => {
 
   test('a name keeps the whole characters that fit its room', () => {
     expect(fitName('Halden 420 kV', 13 * CHAR_PX)).toBe('Halden 420 kV')
-    expect(fitName('Halden 420 kV', 8 * CHAR_PX)).toBe('Halden …')
+    // Whole words only (plan v5 §2 rule 2): never "Sylling trafostasjon 420/…".
+    expect(fitName('Halden 420 kV', 8 * CHAR_PX)).toBe('Halden…')
+    expect(fitName('Sylling trafostasjon 420/300 kV', 26 * CHAR_PX)).toBe('Sylling trafostasjon…')
+    expect(fitName('Trafostasjon', 4 * CHAR_PX)).toBe('Trafostasjon')
   })
 
   test('each class is drawn by its OpenBridge element; a line element is a line; "on" only where declared (Q8); an open line is empty', () => {
