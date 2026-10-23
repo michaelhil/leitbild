@@ -8,7 +8,6 @@
   import type { OpenedFrom } from './popover.ts'
   import { underTitle } from './format.ts'
   import { frameLayout, standsBeside, VIGNETTE_ROW_PX } from './grid.ts'
-  import { stripRows } from '../../../features/displays/compose/strips.ts'
   import { drawingScale } from './network.ts'
   import { valueLook, type ReadingLook } from './readout.ts'
   import type { VignetteSnapshot } from './vignette-client.ts'
@@ -89,9 +88,7 @@
       {:else if section.kind === 'grouped'}
         <GroupedValues {section} {observations} {frozen} />
       {:else if section.kind === 'trend'}
-        {#each section.strips as pens, strip (strip)}
-          <TrendStrip {pens} title={view.title} series={snapshot.series} {observations} {now} horizonMs={section.horizonMs} rows={stripRows(pens)} axis={strip === section.strips.length - 1} {frozen} />
-        {/each}
+        <TrendStrip {section} title={view.title} series={snapshot.series} {observations} {now} setPoints={view.by !== 'assistant'} {frozen} />
       {:else if section.kind === 'alerts'}
         <AlertsSection rows={latest?.alerts ?? []} {section} room={rows ?? section.rows} />
       {:else if section.kind === 'entity'}

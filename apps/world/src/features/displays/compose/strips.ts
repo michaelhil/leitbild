@@ -1,10 +1,11 @@
 /**
  * How a trend's pens share strips (W5.2), and the rows a trend takes (W5.4), for the composer that fits a trend and the
  * renderer that draws it (TrendStrip.svelte). One quantity on each strip: pens share one only where they measure one
- * quantity in one unit, alike read over decades or not, on scales within a factor of three, at most four to a strip;
- * a state (on/off, a word) is never put on a numeric axis: states read as bands, after the strips. A pen's scale is
- * what its Pack declares, the largest of its limits, so a trend strips alike however its values move; a pen that
- * declares none shares the first strip of its quantity.
+ * quantity in one unit, alike read over decades or not, on scales within a factor of three, and draw the same limits
+ * (a strip draws only the limits all its pens declare, so a pen whose limits differ gets its own and keeps them), at
+ * most four to a strip; a state (on/off, a word) is never put on a numeric axis: states read as bands, after the
+ * strips. A pen's scale is what its Pack declares, the largest of its limits, so a trend strips alike however its
+ * values move.
  */
 import type { Observable } from '../../../core/observation/model.ts'
 import type { VignetteValue } from './model.ts'
@@ -25,10 +26,13 @@ const scaleOf = (pen: Pen): number | undefined => {
   return largest > 0 ? largest : undefined
 }
 
-/** Pens drawn on one scale share a strip: one quantity, one unit, alike over decades, and scales within a factor of three. */
+/** The limits a pen draws, by direction and value. */
+const drawnLimits = (pen: Pen): string => [...new Set(pen.thresholds.filter(drawsAsLimit).map(limit => `${limit.direction} ${limit.value}`))].sort().join('|')
+
+/** Pens drawn on one scale share a strip: one quantity, one unit, alike over decades, the same limits, and scales within a factor of three. */
 const SCALE_FACTOR = 3
 const shareStrip = (left: Pen, right: Pen): boolean => {
-  if (left.quantity !== right.quantity || left.unit !== right.unit || (left.decades === true) !== (right.decades === true)) return false
+  if (left.quantity !== right.quantity || left.unit !== right.unit || (left.decades === true) !== (right.decades === true) || drawnLimits(left) !== drawnLimits(right)) return false
   const [a, b] = [scaleOf(left), scaleOf(right)]
   return a === undefined || b === undefined || Math.max(a, b) <= SCALE_FACTOR * Math.min(a, b)
 }
