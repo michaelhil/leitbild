@@ -447,14 +447,21 @@ const t8 = async (ctx: Ctx): Promise<TaskResult> => {
     rowDetail = `row "${row.name.slice(0, 50)}" → ${describe(result.outcome)}`
     await goHome(ctx.page, home)
   }
-  const more = (await targetsOf(ctx.page)).find(target => target.kind === 'more')
-  let list = false, moreDetail = 'no "+N more" on screen'
+  let more = (await targetsOf(ctx.page)).find(target => target.kind === 'more')
+  let list = false, moreDetail = 'no "+N more" on screen', where = '1920'
+  // The window may hold every row at 1920 (no "+N more" then); look where the list is short: 1046 + chat.
+  if (more === undefined) {
+    const narrow = await session(ctx, 'T8', sizeSpec('1046'))
+    more = (await targetsOf(ctx.page)).find(target => target.kind === 'more')
+    where = '1046 + chat'
+    if (more === undefined) { await narrow.reopen(); moreDetail = 'no "+N more" on screen at 1920 (every row fits) or at 1046 + chat' }
+  }
   if (more !== undefined) {
     const result = await press(ctx.page, more)
     steps.push({ press: more.name, kind: 'more', outcome: describe(result.outcome) })
     list = result.outcome.kind === 'detail' && /alert/i.test(result.outcome.title ?? '')
     const rows = result.after.lines.filter(line => line.region === 'alerts' && line.valueOn).length
-    moreDetail = `"${more.name}" → ${describe(result.outcome)}${list ? `, ${rows} rows on screen` : ''}`
+    moreDetail = `${where === '1920' ? '' : 'every row fits at 1920; at 1046 + chat '}"${more.name}" → ${describe(result.outcome)}${list ? `, ${rows} rows on screen` : ''}`
   }
   const shots = [await shotOf(ctx, 'T8')]
   const back = await goHome(ctx.page, home)

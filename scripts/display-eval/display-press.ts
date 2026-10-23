@@ -122,8 +122,10 @@ export const press = async (page: Page, given: Pick<PressTarget, 'x' | 'y' | 'na
   return { outcome: classify(before, after, pageBefore, await pageDialogs(page)), ms: Date.now() - started, latencyMs, after }
 }
 
+/** A reading drawn before the display's first sample: a lone "?" where its value goes. */
+const VALUE_PLACEHOLDER = /(^|\s)\?(\s|$)/
 /** Waits until the shown display has drawn its content (after a deck step or an open): drawing lines or its column's
- * values on screen, and no "Connecting to the Run…" or "Reading …" line. Resolves with the ms it took, or null after
+ * values on screen with their readings (at most two "?"), and no "Connecting to the Run…" or "Reading …" line. Resolves with the ms it took, or null after
  * `timeoutMs` (a perf observation under load, not a failure of the reading itself). */
 export const waitForContent = async (page: Page, timeoutMs = 20_000): Promise<number | null> => {
   const started = Date.now()
@@ -131,8 +133,10 @@ export const waitForContent = async (page: Page, timeoutMs = 20_000): Promise<nu
     const screen = await screenOf(page).catch(() => null)
     if (screen !== null && screen.window !== null) {
       const text = textOf(screen)
-      const drawn = screen.lines.filter(line => line.on && (line.region === 'drawing' || line.region === 'column')).length
-      if (drawn >= 3 && !/Connecting to the Run|Reading the element|Reading [^\n]{1,40}…|Loading|Composing/i.test(text)) return Date.now() - started
+      const lines = screen.lines.filter(line => line.on && (line.region === 'drawing' || line.region === 'column'))
+      // Before its first sample a display draws its readings as "?" (SG A "LVL ? ?"): not content yet.
+      const unread = lines.filter(line => VALUE_PLACEHOLDER.test(line.text)).length
+      if (lines.length >= 3 && unread <= 2 && !/Connecting to the Run|Reading the element|Reading [^\n]{1,40}…|Loading|Composing/i.test(text)) return Date.now() - started
     }
     await sleep(300)
   }
