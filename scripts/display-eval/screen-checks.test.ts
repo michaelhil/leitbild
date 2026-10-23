@@ -50,6 +50,17 @@ describe('E-0 at a glance', () => {
   test("R2's trip line, rods on bottom, STOP · CMD RUN, short chips and aggregate pass", () => {
     for (const id of ['reactor-tripped', 'turbine-tripped', 'si-actuated', 'afw-total', 'rcps-tripped', 'pzr-trend', 'csf', 'alarm-picture']) expect([id, judge(id, r2).pass]).toEqual([id, true])
   })
+  test("R2's two-line rows with m:ss ages count, and their first-outs are named by group", () => {
+    const rendered = screen([
+      line('Alerts · 29 · 29 UNACK', 'alerts', 581), line('1st TURB TRIP: Turbine trip on loss of load', 'alerts', 604), line('UNACK 2:59', 'alerts', 628),
+      line('1st RX TRIP: Reactor trip on turbine trip', 'alerts', 652), line('UNACK LO · RX TRIP · 2:58', 'alerts', 676),
+      line('UNACK Loss of offsite power', 'alerts', 700), line('LO-LO · ALM · 2:58', 'alerts', 700, { x: 300 }),
+      line('15 expected after RX TRIP 15 UNACK', 'alerts', 724),
+    ])
+    const judged = judge('alarm-picture', rendered)
+    expect(judged.pass).toBe(true)
+    expect(judged.evidence).toContain('3 rows on screen; first-outs 2 (2 named by group)')
+  })
   test('a turbine trip named only in an alert row is no turbine state', () => {
     const rowOnly = screen([line('first out Reactor trip on turbine trip 04:02:02 UTC', 'alerts', 628)])
     expect(judge('turbine-tripped', rowOnly).pass).toBe(false)
