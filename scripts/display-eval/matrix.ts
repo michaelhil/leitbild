@@ -218,7 +218,8 @@ export const presses = async (page: Page, config: { readonly api: StackApi; read
       for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased'] as const) await page.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, ...(type === 'mouseMoved' ? {} : { button: 'left', clickCount: 1 }) })
       await sleep(700)
     }
-    checks.push({ id: 'press-tiles', release: 'R3', pass: tiles.length === 0 ? false : pressable.length > 0 && good === Math.min(6, pressable.length), detail: tiles.length === 0 ? 'no alert tiles in the display' : `${tiles.length} tiles, ${pressable.length} with alerts (buttons); ${good} of ${Math.min(6, pressable.length)} pressed narrow the list to rows: ${results.join('; ')}` })
+    // The band at a narrow width (W4.3: leads, counts, first rows) may leave the tiles to the full list: not judged there.
+    checks.push({ id: 'press-tiles', release: 'R3', pass: tiles.length === 0 ? (config.chatOpen ? null : false) : pressable.length > 0 && good === Math.min(6, pressable.length), detail: tiles.length === 0 ? `no alert tiles in the display${config.chatOpen ? ' (the band with the chat open: the full list holds them)' : ''}` : `${tiles.length} tiles, ${pressable.length} with alerts (buttons); ${good} of ${Math.min(6, pressable.length)} pressed narrow the list to rows: ${results.join('; ')}` })
     await restore()
   }
   // A refused default is no button: every drawn element whose default World refuses must draw no button.
