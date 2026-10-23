@@ -11,16 +11,18 @@ import { embeddedDisplayFrame, type DisplayOpening } from '../view-host.ts'
 import { openElementDefault } from './popover.ts'
 import { requestElement } from './selection.ts'
 
-// What a vignette's alerts, trip line and worst chip open (plan v5 W2.4–W2.7):
-// an element, which a drawing of this vignette selects where it draws it
-// (selection.ts) and which otherwise opens as its default after this display,
-// as an element's pop-over opens it in the display window; and the full
-// alerts view (L4) of some objects, after this display, with Back. Both open
-// through the page that frames the vignette (view-host.ts): nowhere where
-// none does, so what would open nothing is no button there. In the display
-// window, and only there, a person acknowledges alerts through their Packs'
-// commands, as the screen's own actor. The window may ask it to select an
-// element once (W2.8), which its drawing does once drawn.
+// What a vignette's alerts, trip line, worst chip, entity rows and drawings
+// open (plan v5 W2.4–W2.7, W9.1, W9.2): an element, which a drawing of this
+// vignette selects where it draws it (selection.ts) and which otherwise opens
+// as its default after this display, as an element's pop-over opens it in the
+// display window; any other subject's default (an object, an observable)
+// after this display; and the full alerts view (L4) of some objects, after
+// this display, with Back. All open through the page that frames the
+// vignette (view-host.ts): nowhere where none does, so what would open
+// nothing is no button there. In the display window, and only there, a
+// person acknowledges alerts through their Packs' commands, as the screen's
+// own actor. The window may ask it to select an element once (W2.8), which
+// its drawing does once drawn.
 
 export interface VignetteOpening {
   /** Where this vignette opens a display: its window, the Workspace's window through the page framing it, or nowhere. */
@@ -29,6 +31,8 @@ export interface VignetteOpening {
   readonly now: number
   /** Shows the element (selects it where drawn, or opens its detail); resolves to why it cannot be opened, or null once it is shown. */
   readonly element: (objectId: string, elementId: string, how?: 'select' | 'detail') => Promise<string | null>
+  /** Opens a subject's default after this display (an object id, or an observable's ref); resolves as `element` does. */
+  readonly subject: (subject: string) => Promise<string | null>
   /** Opens the full alerts view of these objects (or the Run's) after this display. */
   readonly alerts: (objectIds: ReadonlyArray<string> | 'run', title: string) => boolean
   /** Whether a person acknowledges alerts here: in the display window only (D-B1, Q19), never in a chat answer or a dialog. */
@@ -71,20 +75,21 @@ export const provideOpening = (config: {
   })
   const stop = (): void => { stopOpening(); stopSelect(); clearInterval(selecting) }
   const from = () => ({ key: config.envelope().state, title: config.envelope().title })
+  const openDefault = async (subject: string): Promise<string | null> => {
+    if (where === null) return 'no display window can show it from here'
+    try {
+      const view = await readDefaultDisplay(config.runId(), subject)
+      const envelope = defaultDisplayEnvelope({ workspaceId: activeWorkspaceId(), simulationRunId: config.runId(), view })
+      return openElementDefault(host, from(), envelope) ? null : 'no display window can show it from here'
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error)
+    }
+  }
   const opening: VignetteOpening = {
     get where() { return where },
     get now() { const at = config.at(); return at === undefined ? Number.NaN : Date.parse(at.at) },
-    element: async (objectId, elementId, how = 'select') => {
-      if (requestElement({ objectId, elementId, how })) return null
-      if (where === null) return 'no display window can show it from here'
-      try {
-        const view = await readDefaultDisplay(config.runId(), `${objectId}#${elementId}`)
-        const envelope = defaultDisplayEnvelope({ workspaceId: activeWorkspaceId(), simulationRunId: config.runId(), view })
-        return openElementDefault(host, from(), envelope) ? null : 'no display window can show it from here'
-      } catch (error) {
-        return error instanceof Error ? error.message : String(error)
-      }
-    },
+    element: async (objectId, elementId, how = 'select') => requestElement({ objectId, elementId, how }) ? null : openDefault(`${objectId}#${elementId}`),
+    subject: openDefault,
     get acknowledges() { return where === 'window' },
     acknowledge: async rows => {
       if (where !== 'window') return 'alerts are acknowledged in the display window'

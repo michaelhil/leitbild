@@ -75,7 +75,7 @@ export const alertTiles = (rows: ReadonlyArray<AlertRow>, declared?: ReadonlyArr
   const groups = new Map<string, { label: string; rows: AlertRow[] }>(categories.map(category => [`category:${category.id}`, { label: category.label, rows: [] }]))
   for (const row of rows) {
     const key = keyOf(row)
-    const group = groups.get(key) ?? groups.set(key, { label: row.group.subjectGroup ?? row.objectLabel, rows: [] }).get(key)!
+    const group = groups.get(key) ?? groups.set(key, { label: row.group.label ?? row.group.subjectGroup ?? row.objectLabel, rows: [] }).get(key)!
     group.rows.push(row)
   }
   if (categories.length === 0 && groups.size <= 1) return []

@@ -15,6 +15,7 @@
   import { markElements } from './selection.ts'
   import { tileLayout, tilesHeight } from './tile-fit.ts'
   import { vignetteOpening } from './opening.svelte.ts'
+  import { alertRowTarget } from './row-target.ts'
 
   // A vignette's alerts (plan v5 W2.1, W2.2, W2.5, W2.7): its objects' alert rows
   // (or the whole Run's), or only those on its elements or observables, in
@@ -29,10 +30,11 @@
   // width (fitRow); what does not fit is counted on "+N more", which opens the
   // full alerts view (L4) after this display, and the closing aggregates keep
   // their lines. A row on an element opens it: its drawing here selects it,
-  // else its default opens after this display (opening.svelte.ts). In the
-  // display window a person acknowledges what an aggregate folds ("ACK 15")
-  // and, in an element's own alerts (its faceplate), each row. The full view
-  // itself is AlertsView.
+  // else its default opens after this display (opening.svelte.ts); a row on a
+  // group, an observable, or in a list of several objects its object, opens
+  // that (row-target.ts). In the display window a person acknowledges what an
+  // aggregate folds ("ACK 15") and, in an element's own alerts (its
+  // faceplate), each row. The full view itself is AlertsView.
   let { rows, categories, section, room }: {
     rows: ReadonlyArray<AlertRow>
     /** By object: the categories its Pack declares (the sample's), its tiles. */
@@ -103,10 +105,12 @@
     markElements(tile === undefined ? null : { objectId: tile.rows[0]!.objectId, elementIds: tile.rows.flatMap(row => elementOf(row) ?? []) })
   }
   const toggle = (key: string): void => { open = open.has(key) ? new Set([...open].filter(entry => entry !== key)) : new Set([...open, key]) }
+  /** What a row opens (row-target.ts): its element, group or observable, or in a list of several objects its object. */
   const press = (row: AlertRow): (() => void) | undefined => {
-    const element = elementOf(row)
-    if (opening === undefined || element === undefined || opening.where === null) return undefined
-    return () => { void opening.element(row.objectId, element).then(reason => { failure = reason === null ? null : `${row.alert.message} cannot be opened: ${reason}` }) }
+    const target = alertRowTarget(row, section.objectIds === 'run' || section.objectIds.length > 1)
+    if (opening === undefined || target === null || opening.where === null) return undefined
+    const opened = (): Promise<string | null> => target.kind === 'element' ? opening.element(target.objectId, target.elementId) : opening.subject(target.subject)
+    return () => { void opened().then(reason => { failure = reason === null ? null : `${row.alert.message} cannot be opened: ${reason}` }) }
   }
   const more = (): void => { opening?.alerts(section.objectIds, title.replace(/ · $/, '')) }
 </script>

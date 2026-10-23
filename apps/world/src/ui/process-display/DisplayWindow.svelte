@@ -15,7 +15,8 @@
   } from 'lucide-svelte'
   import type { EmbeddedViewEnvelope, EmbeddedViewListing } from '@leitbild/contracts'
   import type { OperationalObject, SimulationRunId } from '../../core/model/index.ts'
-  import type { PackWindowToolsProps } from '../../core/packs/protocol.ts'
+  import type { PackObjectStatusPresentation, PackWindowToolsProps } from '../../core/packs/protocol.ts'
+  import StatusIndicator from '../components/StatusIndicator.svelte'
   import type { MapFocusTarget } from '../map-view.ts'
   import { DISPLAY_ZOOM_MAX, DISPLAY_ZOOM_MIN, type DisplayFrameOpen, type DisplayFrameZoomRequest } from '../embed/display-frame-protocol.ts'
   import { openedListing } from '../embed/opened-display.ts'
@@ -23,7 +24,6 @@
   import { loadUiPack } from '../pack-loader.ts'
   import ProcedureRunBadges from '../procedures/ProcedureRunBadges.svelte'
   import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from '../procedures/procedure-run-selectors.ts'
-  import { statusToneColor } from '../status-presentation.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import {
     floatingWindowBoundsForDrag,
@@ -102,6 +102,8 @@
     readonly runJoin: DeckRunJoin
     /** The assets the Run observes, in rail order: the window opens each one's World default. */
     readonly assetObjects: ReadonlyArray<OperationalObject>
+    /** An asset's status as its rail row shows it: the window's status dot follows the rail's colour rule. */
+    readonly statusOf: (object: OperationalObject) => PackObjectStatusPresentation
     /** The conversation's displays, oldest first, as the Host relays them. */
     readonly listings: ReadonlyArray<EmbeddedViewListing>
     readonly request: DisplayWindowRequest
@@ -118,6 +120,7 @@
     simulationRunId,
     runJoin,
     assetObjects,
+    statusOf,
     listings,
     request,
     runsProcedures,
@@ -243,15 +246,7 @@
   // The procedures control shows for an asset that runs procedures, and, disabled with its reason, while the shown display names none.
   const proceduresShown = $derived(assetObject === null ? assetUnavailable !== null : runsProcedures(assetObject))
   const procedureSummaries = $derived(assetObject !== null && runsProcedures(assetObject) ? procedureSummariesFor(assetObject) : emptyProcedureRunSummaries)
-  const statusColor = $derived(assetObject === null ? null : statusToneColor(
-    assetObject.operational.priority === 'critical'
-      ? 'error'
-      : assetObject.operational.priority === 'high'
-        ? 'working'
-        : assetObject.operational.status === 'normal'
-          ? 'ready'
-          : 'idle',
-  ))
+  const assetStatus = $derived(assetObject === null ? null : statusOf(assetObject))
   const currentZoom = $derived(current === null ? null : zoomStates.get(current.key) ?? null)
   const zoomPercent = $derived(currentZoom === null ? 100 : displayZoomPercent(currentZoom.zoom))
   const scaled = $derived(currentZoom !== null && !isActualSize(currentZoom.zoom))
@@ -860,12 +855,11 @@
         onpointercancel={finishWindowDrag}
         ondblclick={() => setMaximised(!maximised)}
       >
-        <span
-          class="process-display-asset-dot"
-          class:unknown={statusColor === null}
-          style:background={statusColor}
-          title={assetObject === null ? (assetUnavailable ?? '') : `${assetObject.label}: ${assetObject.operational.status}`}
-        ></span>
+        {#if assetObject !== null && assetStatus !== null}
+          <StatusIndicator tone={assetStatus.tone} label={`${assetObject.label}: ${assetStatus.label}`} indicator={assetStatus.indicator} />
+        {:else}
+          <span class="process-display-asset-dot" title={assetUnavailable ?? ''}></span>
+        {/if}
         <strong id={windowLabelId}>{current?.title ?? 'Displays'}</strong>
         {#if current !== null && tier !== 'narrow' && tier !== 'tiny'}
           <span class="display-window-caption">· {current.caption}</span>

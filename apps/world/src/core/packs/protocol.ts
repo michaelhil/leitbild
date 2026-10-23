@@ -709,12 +709,11 @@ export interface PackElementActionsProps {
 }
 
 /**
- * What a drawing marks on its items for a Pack's object (W3.6): the elements it offers controls on, whose magnifier
- * always shows, and those with a pending proposal, the one that lapses first first, each carrying OpenBridge's command
- * request badge (`ai`: an AI agent proposed it).
+ * What a drawing marks on its items for a Pack's object (W3.6): the elements with a pending proposal, the one that
+ * lapses first first, each carrying OpenBridge's command request badge (`ai`: an AI agent proposed it) and its
+ * magnifier at rest.
  */
 export interface PackElementMarks {
-  readonly operated: ReadonlyArray<string>
   readonly pending: ReadonlyArray<{ readonly element: string; readonly ai: boolean }>
 }
 

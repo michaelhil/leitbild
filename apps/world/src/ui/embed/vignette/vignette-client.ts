@@ -10,6 +10,7 @@
 // the next sample (W8.5); every sample extends them. It never loads a Run: one
 // that is not loaded is asked about again until someone loads it.
 import type { SimulationRunId } from '../../../core/model/index.ts'
+import { withActiveRoleSet } from '../../roles/role-session.ts'
 import { workspaceApiPath } from '../../workspace-context.ts'
 import { zoneRows, type VignetteSample, type VignetteView } from '../../../features/displays/compose/model.ts'
 import { keptAfter, shownSeries, unkept, widestWindow } from './kept-series.ts'
@@ -204,7 +205,8 @@ export const createVignetteSession = (config: {
 
 export type VignetteSession = ReturnType<typeof createVignetteSession>
 
-const runPath = (runId: SimulationRunId, suffix: string): string => workspaceApiPath(`/simulation-runs/${encodeURIComponent(runId)}${suffix}` as `/${string}`)
+/** A Run's World-direct path, with the role set this view plays where its Run declares roles (ui/embed/main.ts). */
+const runPath = (runId: SimulationRunId, suffix: string): string => withActiveRoleSet(workspaceApiPath(`/simulation-runs/${encodeURIComponent(runId)}${suffix}` as `/${string}`))
 
 const read = async <T>(response: Response, action: string): Promise<T> => {
   const text = await response.text()
