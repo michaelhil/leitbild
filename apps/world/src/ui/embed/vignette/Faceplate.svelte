@@ -90,8 +90,11 @@
   const worst = $derived(worstChip(readings === null ? [] : readings.observations.filter(observation => readings!.values.some(value => value.ref === observation.ref)), own))
   // Its readings: whole rows from the top, as many as keep it at its height at rest or as a person resized it.
   let readingsBox: HTMLElement | undefined = $state()
-  /** Its controls fold to keep its readings (shortOfRoom), decided once its controls and readings have drawn. */
+  /** Its controls fold to keep its readings (shortOfRoom), decided once, at rest, when its controls and readings have
+   *  first drawn: a command a person selects grows them afterwards and must not fold them away. */
   let short = $state(false)
+  let actionsBox: HTMLElement | undefined = $state()
+  let decided = false
   let rest = $state(0)
   const fit = $derived(shownReadings(readings?.values.length ?? 0, { rest, row: FACEPLATE_ROW, pending, rows: pinned?.rows ?? null }))
   const listed = $derived(readings === null ? [] : readings.values.slice(0, fit.shown))
@@ -127,14 +130,18 @@
       if (card === undefined) return
       height = card.offsetHeight
       rest = card.offsetHeight - (readingsBox?.offsetHeight ?? 0)
-      // Short of room at rest beside its controls as they stand: they fold behind one line, for as long as it is open.
-      if (!short && Actions !== null && readings !== null && shortOfRoom(readings.values.length, { rest, row: FACEPLATE_ROW, pending, rows: pinned?.rows ?? null })) short = true
+      // Short of room at rest beside its controls as they first stand: they fold behind one line, for as long as it is open.
+      if (!decided && Actions !== null && readings !== null && (actionsBox?.offsetHeight ?? 0) > 0) {
+        decided = true
+        short = shortOfRoom(readings.values.length, { rest, row: FACEPLATE_ROW, pending, rows: pinned?.rows ?? null })
+      }
       onsize(height)
     })
     // Focus moves in on its header once OpenBridge's card has drawn its slot: a Tab goes on to its first control.
     if (card !== undefined) {
       sized.observe(card)
-      if (pinned === null) { card.focus(); requestAnimationFrame(() => { if (card?.contains(document.activeElement) === true) header?.focus() }) }
+      // Without scrolling: the page around the display keeps where it stands (a focus would scroll it to the card).
+      if (pinned === null) { card.focus({ preventScroll: true }); requestAnimationFrame(() => { if (card?.contains(document.activeElement) === true) header?.focus({ preventScroll: true }) }) }
     }
     if (readingsBox !== undefined) sized.observe(readingsBox)
     return () => {
@@ -246,7 +253,7 @@
       </header>
       <div class="content" bind:this={contentBox}>
         {#if offer === 'actions' && Actions !== null}
-          <div class="actions"><Actions {runId} objectId={objectIdSchema.parse(objectId)} {elementId} {frozen} pinned={pinned !== null} {short} /></div>
+          <div class="actions" bind:this={actionsBox}><Actions {runId} objectId={objectIdSchema.parse(objectId)} {elementId} {frozen} pinned={pinned !== null} {short} /></div>
         {/if}
         {#if failure !== null}<p class="status" role="status">{failure}</p>{/if}
         {#if group}
