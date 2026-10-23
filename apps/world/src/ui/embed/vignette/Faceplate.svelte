@@ -37,7 +37,8 @@
     objectId: string
     packId: string
     elementId: string
-    /** The element's short name and its state word as the drawing writes them; null where it has none. */
+    /** The element's short name and its state word as the drawing writes them; null where it has none. FROZEN, the
+     *  drawing writes "?" for a state it no longer knows: the header then says no word, its readings keep theirs. */
     name: string
     word: string | null
     /** The display's title: readings are labelled under it. */
@@ -81,6 +82,8 @@
   } = $props()
 
   const offer = $derived(elementOffer(opening))
+  /** The header's state word: none while FROZEN, where the drawing's word is no longer known. */
+  const stateWord = $derived(frozen ? null : word)
   let Actions = $state.raw<Component<PackElementActionsProps> | null>(null)
   let card: HTMLElement | undefined = $state()
   let height = $state(160)
@@ -228,10 +231,10 @@
     <div class="body">
       <!-- Pinned, the header is the overlay's handle: focusable, moved by the arrow keys. -->
       <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_static_element_interactions -->
-      <header bind:this={header} class:wrap={headerFit === 'wrap'} use:fitted={`${width}|${name}|${word ?? ''}|${worst?.kind ?? ''}|${offer}`} tabindex="0" title={pinned !== null ? 'Drag to move (arrow keys: 8 px, Shift: 24 px); Shift+Alt+arrows resize' : undefined} onpointerdown={headerDown} onkeydown={headerKey}>
+      <header bind:this={header} class:wrap={headerFit === 'wrap'} use:fitted={`${width}|${name}|${stateWord ?? ''}|${worst?.kind ?? ''}|${offer}`} tabindex="0" title={pinned !== null ? 'Drag to move (arrow keys: 8 px, Shift: 24 px); Shift+Alt+arrows resize' : undefined} onpointerdown={headerDown} onkeydown={headerKey}>
         {#if pinned !== null}<span class="handle" aria-hidden="true"><obi-drag-horizontal usecsscolor></obi-drag-horizontal></span>{/if}
         <span class="name">{name}</span>
-        {#if word !== null}<span class="word">{word}</span>{/if}
+        {#if stateWord !== null}<span class="word">{stateWord}</span>{/if}
         {#if worst?.kind === 'priority'}
           <span class={`chip ${toneOf(worst.priority)}`}>{severityTable[worst.priority].word}</span>
         {:else if worst?.kind === 'undeclared'}

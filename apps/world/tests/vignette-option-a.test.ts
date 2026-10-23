@@ -102,6 +102,13 @@ describe('the drawing\'s grammar', () => {
     expect(source).toContain("if (event.key === 'Enter' && event.shiftKey) { event.preventDefault(); if (texts.get(id)?.kind !== 'stop') openFaceplate(id); return }")
   })
 
+  test('with a mouse the magnifier shows on hover and keyboard focus; at rest only on touch and where a proposal waits', () => {
+    expect(source).toContain('const shown = (id: string): boolean => hovered === id || focused === id || activated(id) || pendingOf(id) !== undefined')
+    expect(source).toContain("onfocus: (event: FocusEvent) => { if ((event.currentTarget as Element).matches(':focus-visible')) focused = id }")
+    expect(source).toContain('@media (pointer: coarse) { .magnifier { opacity: 1; } }')
+    expect(source).not.toContain('operated')
+  })
+
   test('each magnifier is rendered straight after its item, so it follows the item in tab order', () => {
     expect(source.match(/\{@render magnifier\((item|device|text)\.id\)\}/g)).toHaveLength(3)
   })

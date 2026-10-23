@@ -38,10 +38,11 @@
   // next display in the window (Back, and Esc, return here); in a chat answer
   // or a tag's dialog, which have no window to walk in, it opens the
   // faceplate. OpenBridge's 16 px magnifier after the item's name opens the
-  // faceplate (L2, Faceplate.svelte): it shows on hover and focus and always
-  // on touch and on items the Pack offers controls on or a proposal waits on,
-  // it is its own tab stop straight after its item, and Shift+Enter on the
-  // item does the same. An item a proposal waits on carries OpenBridge's
+  // faceplate (L2, Faceplate.svelte): with a mouse it shows on hover and
+  // keyboard focus, at rest only on touch screens and on the items a proposal
+  // waits on (which carry the badge besides), so the drawing stays calm; it is
+  // its own tab stop straight after its item, and Shift+Enter on the item
+  // does the same. An item a proposal waits on carries OpenBridge's
   // command request badge, and a display the window opened after another pins
   // the faceplate of the one that lapses first, once each time it is shown
   // (W3.6). One faceplate opens at a time; pinned ones
@@ -282,9 +283,8 @@
     return {}
   }
 
-  // --- What the Pack marks on the items: offered controls, pending proposals (W3.6) ------------------------------------
-  let marks = $state.raw<PackElementMarks>({ operated: [], pending: [] })
-  const operated = $derived(new Set(marks.operated))
+  // --- What the Pack marks on the items: pending proposals (W3.6) ----------------------------------------------------
+  let marks = $state.raw<PackElementMarks>({ pending: [] })
   const pendingBy = $derived(new Map(marks.pending.map(entry => [entry.element, entry])))
   /** The elements an item stands for: a group's members, else its own. */
   const elementsOf = (key: string): ReadonlyArray<string> => key.startsWith('#') ? [key.slice(1)] : membersOf(key).map(member => member.element)
@@ -363,9 +363,10 @@
   let hovered = $state<string | null>(null)
   let focused = $state<string | null>(null)
   const activated = (id: string): boolean => (faceplate.kind === 'open' && faceplate.item === id) || pinned(id)
-  const shown = (id: string): boolean => hovered === id || focused === id || activated(id) || elementsOf(id).some(element => operated.has(element)) || pendingOf(id) !== undefined
+  const shown = (id: string): boolean => hovered === id || focused === id || activated(id) || pendingOf(id) !== undefined
   const hover = (id: string) => ({ onpointerenter: () => { hovered = id }, onpointerleave: () => { if (hovered === id) hovered = null } })
-  const focus = (id: string) => ({ onfocus: () => { focused = id }, onblur: () => { if (focused === id) focused = null } })
+  /** Keyboard focus, not a press's, shows the magnifier. */
+  const focus = (id: string) => ({ onfocus: (event: FocusEvent) => { if ((event.currentTarget as Element).matches(':focus-visible')) focused = id }, onblur: () => { if (focused === id) focused = null } })
 
   // --- Lifecycle: the window's presentation, the close rules, the room --------------------------------------------------
   runOnMount(() => {
@@ -596,7 +597,7 @@
   .text.warning .name { text-decoration-color: var(--display-warning-mark); }
   .text.alarm .name { text-decoration-color: var(--display-alarm-mark); }
   .text.critical .name { text-decoration-color: var(--display-critical-mark); }
-  /* The magnifier: a transparent 40 px square, only its 16 px glyph drawn; seen on hover and focus, always on touch. */
+  /* The magnifier: a transparent 40 px square, only its 16 px glyph drawn; seen on hover and focus, at rest on touch screens and where a proposal waits. */
   .magnifier { position: absolute; z-index: 1; width: var(--magnifier-hit); height: var(--magnifier-hit); padding: 0; border: none; background: none; cursor: pointer; opacity: 0; color: var(--element-neutral-color); }
   .magnifier .glyph { position: absolute; left: var(--glyph-x); top: var(--glyph-y); display: block; width: var(--magnifier-glyph); height: var(--magnifier-glyph); border-radius: 3px; }
   .magnifier obi-search { display: block; width: var(--magnifier-glyph); height: var(--magnifier-glyph); }

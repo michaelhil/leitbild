@@ -269,5 +269,8 @@ describe('what a faceplate reads', () => {
     expect(source).toContain('const observations = $derived(readings === null ? [] : readings.observations)')
     expect(source).toContain('const shown = (look: ReadingLook): ReadingLook => (frozen ? { ...look, doubtful: true } : look)')
     expect(source).toContain('{@const look = shown(valueLook(value, observations, value.ref))}')
+    // Its header says no state word while frozen: the drawing's word is then "?" ("RCP A ?").
+    expect(source).toContain('const stateWord = $derived(frozen ? null : word)')
+    expect(source).toContain('{#if stateWord !== null}<span class="word">{stateWord}</span>{/if}')
   })
 })
