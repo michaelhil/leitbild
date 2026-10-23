@@ -9,7 +9,8 @@
  * gallery). Reads only; no model is called.
  *
  *   bun scripts/display-eval/chat-cards.ts --origin=http://127.0.0.1:<port> --runs=<probe output dir> --out=<dir>
- *       [--label=<stack>] [--width=480] [--height=900] [--port=<CDP port>] [--limit=<rooms>]
+ *       [--label=<stack>] [--width=480] [--height=900] [--port=<CDP port>] [--limit=<rooms>] [--window]
+ * --window: also opens each answer's display in the window at 1920 × 1080 and shoots it (<label>-answer-<n>-window.png).
  */
 import { join } from 'node:path'
 import { readdirSync } from 'node:fs'
@@ -129,6 +130,18 @@ if (import.meta.main) {
         cards: read.cards.length, lines: read.cards.reduce((n, card) => n + card.lines.filter(line => line.shown).length, 0),
         card480: { pass: read.cards.length === 0 ? null : cut.length === 0 && toggles.length === 0 && read.cards.every(card => card.toggle !== null), cut, toggles, noToggle: read.cards.filter(card => card.toggle === null).map(card => card.title) },
         t7: { pass: keys.length === 0 ? null : keys.every(key => key.resolves), keys },
+      }
+      // The answer's display opened in the window at 1920 × 1080 (for the HMI rubric's AI displays and the gallery).
+      if (argv.has('window') && read.cards.length + read.keys.length > 0) {
+        await page.size(1920, 1080)
+        await sleep(1_500)
+        const open = await page.find({ sel: 'button', text: 'Open live display in the display window' })
+        if (open !== null) {
+          await page.click(open)
+          await sleep(6_000)
+          await page.shot(join(out, `${label}-answer-${String(index).padStart(2, '0')}-window.png`))
+        }
+        await page.size(width, height)
       }
       results.push(result)
       console.log(`${label} ${row.stage} ${row.id}: ${read.cards.length} cards, ${result.lines} lines shown; card-480 ${result.card480.pass === null ? 'n/a' : result.card480.pass ? 'PASS' : 'FAIL'}${cut.length + toggles.length > 0 ? ` (${[...cut, ...toggles].slice(0, 3).join('; ')})` : ''}; T7 ${result.t7.pass === null ? 'n/a (no key cited)' : result.t7.pass ? 'PASS' : 'FAIL'} ${keys.filter(key => key.resolves).length}/${keys.length}${keys.some(key => !key.resolves) ? ` (${keys.filter(key => !key.resolves).slice(0, 4).map(key => `${key.key}: ${key.why}`).join('; ')})` : ''}`)
