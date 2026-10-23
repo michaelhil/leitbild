@@ -2,7 +2,7 @@
   import { wholeWords } from './fit-words.ts'
   import type { AlertTone } from './readout.ts'
   import type { ValueRow } from './value-rows.ts'
-  import { SPARK_WINDOW_MS } from './sparkline.ts'
+  import { SPARK_WINDOW_MS } from '../../sparkline.ts'
   import { numberText, unitSymbol } from '../../../core/observation/model.ts'
   import CriterionRow from './CriterionRow.svelte'
   import Sparkline from './Sparkline.svelte'
@@ -15,19 +15,21 @@
   // is past, only then, in a column every row keeps while one has one; its
   // rate per minute where the 30 s and 2 min slopes agree; its 10-min
   // sparkline where its reading has a series. States and criteria take the
-  // whole row in their own words. The list re-aligns after each sample: it
+  // whole row in their own words. A value with no record but a declared
+  // span (a grid line's loading) draws its span bar there instead. The list
+  // re-aligns after each sample: it
   // only sees its rows' attributes change, and these are properties.
   let { rows, now, heading }: {
     rows: ReadonlyArray<ValueRow>
     /** The latest sample's Run time: where each sparkline ends. */
     now: number
-    /** A window default's lead rows stand under their heading, which names the rate's and the sparklines' units over their columns. */
+    /** A window default's lead rows stand under their heading, which names the sparklines' window over their column. */
     heading?: string
   } = $props()
 
   /** OpenBridge's alert type for each priority drawn in colour; emergency is its critical level. */
   const ALERT_TYPE: Readonly<Record<AlertTone, string>> = { caution: 'caution', warning: 'warning', alarm: 'alarm', critical: 'level-critical' }
-  const SPARK = { width: 56, height: 20 }
+  const SPARK = { width: 52, height: 20 }
   /** The chip column, as wide as the longest chip of any row, while one has one. */
   const chipChars = $derived(Math.max(0, ...rows.map(row => (row.look.kind === 'number' ? row.look.chip?.word.length ?? 0 : 0))))
 
@@ -50,7 +52,7 @@
 </script>
 
 {#if heading !== undefined}
-  <h2 class="row head" style:--chip={chipChars === 0 ? '0px' : `calc(${chipChars}ch + 10px)`}><span>{heading}</span><span></span><span></span><span class="unit" title="Rate per minute, shown where the last 30 s and the last 2 min agree on the way it goes">/min</span><span class="unit window" title="Each sparkline: the reading's last 10 min, scaled to its own range">10 min</span></h2>
+  <h2 class="row head" style:--chip={chipChars === 0 ? '0px' : `calc(${chipChars}ch + 10px)`}><span>{heading}</span><span></span><span></span><span></span><span class="unit" title="Each sparkline: the reading's last 10 min, scaled to its own range">10 min</span></h2>
 {/if}
 <obc-readout-list class="rows" use:aligned={rows} style:--chip={chipChars === 0 ? '0px' : `calc(${chipChars}ch + 10px)`}>
   {#each rows as row (row.ref)}
@@ -77,8 +79,19 @@
           alert={look.tone === null ? false : { status: ALERT_TYPE[look.tone], type: 'regular', thickness: 'small', mode: 'acked-active', showIcon: false, showAlertCategoryIcon: false }}
         ></obc-readout-list-item>
         <span class="chip-cell">{#if look.chip !== null}<span class={`chip ${look.chip.tone ?? 'neutral'}`} title={look.chip.text}>{look.chip.word}</span>{/if}</span>
-        <span class="rate" title={row.rate === null ? undefined : `${row.rate.startsWith('▲') ? 'Rising' : 'Falling'} ${row.rate.slice(2)} ${row.look.unit} a minute: the last 30 s and the last 2 min agree`}>{row.rate ?? ''}</span>
-        {#if row.recorded}<Sparkline series={row.series} {now} windowMs={SPARK_WINDOW_MS} size={SPARK} tone={look.tone} text={sparkText(row)} doubtful={look.doubtful} />{:else}<span></span>{/if}
+        {#if look.reason !== null}
+          <!-- Outside its validity: what it waits for, beside its "—", over the rate's and the sparkline's room (W4.4). -->
+          <span class="reason" title={look.reason} use:wholeWords={`(${look.reason})`}></span>
+        {:else}
+          <span class="rate" title={row.rate === null ? undefined : `${row.rate.startsWith('▲') ? 'Rising' : 'Falling'} ${row.rate.slice(2).replace('/min', '')} ${row.look.unit} a minute: the last 30 s and the last 2 min agree`}>{row.rate ?? ''}</span>
+          {#if row.recorded}<Sparkline series={row.series} {now} windowMs={SPARK_WINDOW_MS} size={SPARK} tone={look.tone} text={sparkText(row)} doubtful={look.doubtful} />
+          {:else if row.bar !== null}
+            <!-- No record to draw: where it stands in its declared span, a tick at each alarm and trip limit (OpenBridge's bar). -->
+            <span class="span" role="img" aria-label={`${row.label}: ${look.text} ${look.unit} in its span ${row.bar.min} to ${row.bar.max}`.replace('  ', ' ')}>
+              <obc-bar-horizontal width={SPARK.width} minValue={row.bar.min} maxValue={row.bar.max} value={row.bar.value} hasBar={true} hasScale={row.bar.ticks.length > 0} showLabels={false} mainTickmarks={row.bar.ticks} side="top" barThickness={6} tickThickness={6} paddingLeft={0} paddingRight={0}></obc-bar-horizontal>
+            </span>
+          {:else}<span></span>{/if}
+        {/if}
       </div>
     {/if}
   {/each}
@@ -88,12 +101,11 @@
   /* One row a grid row: the list's 8 px default gap (room for two alarm frames) would make each 28 px. */
   .rows { display: block; --obc-readout-list-row-gap: 0px; }
   /* Label, value and unit (the list's columns, equal on every row), chip, rate, sparkline: every row's columns line up. */
-  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto var(--chip) 48px 56px; align-items: center; column-gap: 4px; height: var(--row); min-width: 0; white-space: nowrap; }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto var(--chip) 60px 52px; align-items: center; column-gap: 3px; height: var(--row); min-width: 0; white-space: nowrap; }
   .row.whole { display: block; }
   /* The heading, as the alerts' (AlertsSection), its units over the rate's and the sparklines' columns. */
   .head { margin: 0; font-size: 12px; font-weight: 600; color: var(--element-neutral-color); text-transform: uppercase; letter-spacing: 0.04em; overflow: hidden; }
-  .head .unit { font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; text-align: right; }
-  .head .window { text-align: left; }
+  .head .unit { font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; }
   .name { display: flex; align-items: center; gap: 4px; min-width: 0; }
   .label { flex: 1 1 0; min-width: 0; overflow: hidden; color: var(--element-neutral-color); }
   /* A value only the simulator computes (W4.4, #67): never cut, the label gives way first. */
@@ -107,5 +119,8 @@
   .chip.warning { background: var(--display-warning-fill); color: var(--display-on-warning); border-color: var(--alert-warning-color); }
   .chip.alarm { background: var(--display-alarm-fill); color: var(--display-on-alarm); border-color: var(--alert-alarm-color); }
   .chip.critical { background: var(--display-critical-fill); color: var(--display-on-critical); border-color: var(--alert-critical-color); }
-  .rate { font-size: 12px; text-align: right; color: var(--element-neutral-color); font-variant-numeric: tabular-nums; overflow: hidden; }
+  .span { display: block; width: 52px; }
+  .span obc-bar-horizontal { display: block; }
+  .reason { grid-column: 4 / 6; min-width: 0; overflow: hidden; font-size: 12px; color: var(--element-neutral-color); }
+  .rate { font-size: 11px; text-align: right; color: var(--element-neutral-color); font-variant-numeric: tabular-nums; overflow: hidden; }
 </style>

@@ -48,3 +48,18 @@ export const wholeParts = (node: HTMLElement, line: { readonly parts: ReadonlyAr
   resized.observe(node)
   return { update: (next: typeof line) => { current = next; fit() }, destroy: () => resized.disconnect() }
 }
+
+/**
+ * A Svelte action: the node shows the first of `texts` (each a whole statement, the longest first) that fits its room,
+ * else the last's whole words (wordsThatFit), fitted again whenever its room or the texts change. The first belongs in
+ * its title or its accessible name.
+ */
+export const firstFitting = (node: HTMLElement, texts: ReadonlyArray<string>) => {
+  let current = texts
+  const fits = (candidate: string): boolean => { node.textContent = candidate; return node.scrollWidth <= node.clientWidth }
+  const fit = (): void => { node.textContent = current.find(fits) ?? wordsThatFit(current.at(-1) ?? '', fits) }
+  fit()
+  const resized = new ResizeObserver(fit)
+  resized.observe(node)
+  return { update: (next: ReadonlyArray<string>) => { current = next; fit() }, destroy: () => resized.disconnect() }
+}

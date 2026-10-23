@@ -6,9 +6,10 @@ import type { Observable, Observation } from '../src/core/observation/model.ts'
 import type { SeriesPoint, VignetteSample, VignetteValue, VignetteView } from '../src/features/displays/compose/model.ts'
 import { partsThatFit } from '../src/ui/embed/vignette/fit-words.ts'
 import { keptAfter, shownSeries, unkept } from '../src/ui/embed/vignette/kept-series.ts'
-import { marginOf, rateText, slopePerMinute, tendencyOf } from '../src/ui/embed/vignette/margin.ts'
-import { SPARK_WINDOW_MS, sparkline } from '../src/ui/embed/vignette/sparkline.ts'
-import { marginLines, valueRows } from '../src/ui/embed/vignette/value-rows.ts'
+import { marginOf, slopePerMinute, tendencyOf } from '../src/ui/embed/vignette/margin.ts'
+import { rateNow, rateText } from '../src/ui/embed/vignette/trend.ts'
+import { SPARK_WINDOW_MS, sparkline } from '../src/ui/sparkline.ts'
+import { marginLines, ownLabel, spanBar, valueRows } from '../src/ui/embed/vignette/value-rows.ts'
 import { createVignetteSession, type VignetteSnapshot } from '../src/ui/embed/vignette/vignette-client.ts'
 import { valueLook } from '../src/ui/embed/vignette/readout.ts'
 import { recordingSeriesIdFor, type ObjectId } from '../src/core/model/index.ts'
@@ -105,46 +106,48 @@ describe('rate and margin (#47, #48)', () => {
     expect(slopePerMinute(falling, now, 30_000, HOLD)).toBeCloseTo(-0.3, 2)
   })
 
-  test('a rate shows only where the 30 s and the 2 min slopes agree, at the value\'s decimals', () => {
-    expect(rateText(tendencyOf(falling, now, HOLD), mpa)).toBe('▼ 0.30')
+  test('a row states the trends\' rate (trend.ts rateNow): only where the 30 s and the 2 min changes agree, at the value\'s decimals', () => {
+    const rate = (points: ReadonlyArray<SeriesPoint>) => tendencyOf(points, now, HOLD, 0.01).rate
+    expect(rateText(rate(falling)!, 'MPa', 'pressure')).toBe('▼ 0.30/min')
+    expect(rate(falling)).toBe(rateNow({ points: falling, holdMs: HOLD }, now, 0.01))
     // Just turned: 2 min falling, the last 30 s rising.
     const turned = [...every(1_000, now - 180_000, now - 30_000, t => 15.4 - (0.3 * (t - (now - 180_000))) / 60_000), ...every(1_000, now - 29_000, now, t => 14.65 + (0.2 * (t - (now - 30_000))) / 60_000)]
-    expect(rateText(tendencyOf(turned, now, HOLD), mpa)).toBeNull()
+    expect(rate(turned)).toBeNull()
     // Too steady to read at its decimals.
-    expect(rateText(tendencyOf(every(1_000, now - 180_000, now, () => 15.5), now, HOLD), mpa)).toBeNull()
+    expect(rate(every(1_000, now - 180_000, now, () => 15.5))).toBeNull()
     // Two minutes not yet recorded (a Run 90 s old): no rate.
-    expect(rateText(tendencyOf(every(1_000, now - 60_000, now, t => 15 - (t - now) / 60_000), now, HOLD), mpa)).toBeNull()
+    expect(rate(every(1_000, now - 60_000, now, t => 15 - (t - now) / 60_000))).toBeNull()
   })
 
   test('the margin test: approaching a limit in force, how far, what it does, which way, and the time only where the trend is established', () => {
     // 15.46 MPa falling 0.3 MPa/min: 0.66 above LO 14.80 MPa · ALM, about 2 min off.
     const value = falling.at(-1)!.v + 0.96
     const shifted = falling.map(point => ({ t: point.t, v: point.v + 0.96 }))
-    const margin = marginOf(value, pressure, undefined, tendencyOf(shifted, now, HOLD), mpa)!
+    const margin = marginOf(value, pressure, undefined, tendencyOf(shifted, now, HOLD, 0.01), mpa)!
     expect(margin.text).toBe('0.66 above LO 14.80 MPa · ALM · falling · ≈2 min')
     expect(margin.past).toBe(false)
     // The trip at power only is not named: World reads no condition, so a limit with one is in force only where the Pack says it is past it.
     expect(margin.text).not.toContain('RX TRIP')
     // Slowing: the last 30 s fall at half the 2 min rate or less.
     const slowing = [...every(1_000, now - 180_000, now - 30_000, t => 16.9 - (0.6 * (t - (now - 180_000))) / 60_000), ...every(1_000, now - 29_000, now, t => 15.4 - (0.1 * (t - (now - 30_000))) / 60_000)]
-    expect(marginOf(slowing.at(-1)!.v, pressure, undefined, tendencyOf(slowing, now, HOLD), mpa)!.text).toBe('0.55 above LO 14.80 MPa · ALM · falling, slowing · ≈5 min')
+    expect(marginOf(slowing.at(-1)!.v, pressure, undefined, tendencyOf(slowing, now, HOLD, 0.01), mpa)!.text).toBe('0.55 above LO 14.80 MPa · ALM · falling, slowing · ≈6 min')
     // Steady at power, 0.5 MPa under the high alarm: not near.
-    expect(marginOf(15.5, pressure, undefined, tendencyOf(every(1_000, now - 180_000, now, () => 15.5), now, HOLD), mpa)).toBeNull()
+    expect(marginOf(15.5, pressure, undefined, tendencyOf(every(1_000, now - 180_000, now, () => 15.5), now, HOLD, 0.01), mpa)).toBeNull()
     // Within a hundredth of the limit while steady, no time: near.
-    expect(marginOf(14.9, pressure, undefined, { short: 0, long: 0 }, mpa)!.text).toBe('0.10 above LO 14.80 MPa · ALM · steady')
+    expect(marginOf(14.9, pressure, undefined, { short: 0, long: 0, rate: null }, mpa)!.text).toBe('0.10 above LO 14.80 MPa · ALM · steady')
   })
 
   test('past a limit: how far below, and back above in the time the established trend gives', () => {
     const rising = every(1_000, now - 180_000, now, t => 13.5 + (0.3 * (t - (now - 180_000))) / 60_000)
     const value = rising.at(-1)!.v
-    const margin = marginOf(value, pressure, 'alarm-low', tendencyOf(rising, now, HOLD), mpa)!
+    const margin = marginOf(value, pressure, 'alarm-low', tendencyOf(rising, now, HOLD, 0.01), mpa)!
     expect(margin).toMatchObject({ past: true, text: '0.40 below LO 14.80 MPa · ALM · rising · back above in ≈80 s' })
     // Without a record, only how far and what it does.
-    expect(marginOf(value, pressure, 'alarm-low', { short: null, long: null }, mpa)!.text).toBe('0.40 below LO 14.80 MPa · ALM')
+    expect(marginOf(value, pressure, 'alarm-low', { short: null, long: null, rate: null }, mpa)!.text).toBe('0.40 below LO 14.80 MPa · ALM')
   })
 
   test('a margin line gives way by whole parts where room is short: which way it goes first, then what the limit does, then the time', () => {
-    const margin = marginOf(14.4, pressure, 'alarm-low', { short: 0.3, long: 0.3 }, mpa)!
+    const margin = marginOf(14.4, pressure, 'alarm-low', { short: 0.3, long: 0.3, rate: 0.3 }, mpa)!
     expect(margin.parts).toEqual(['0.40 below LO 14.80 MPa', 'ALM', 'rising', 'back above in ≈80 s'])
     const fitting = (room: number) => partsThatFit(margin.parts, margin.giving, shown => shown.length <= room)
     expect(fitting(80)).toBe(margin.text)
@@ -169,7 +172,7 @@ describe('a values section\'s rows', () => {
       series: new Map([['u#pzr', { holdMs: HOLD, points: rising }]]),
       now, title: 'Unit 1', frozen: false,
     })
-    expect(rows.map(row => [row.label, row.recorded, row.rate])).toEqual([['PZR pressure', true, '▲ 0.30'], ['prt', false, null], ['far', true, null]])
+    expect(rows.map(row => [row.label, row.recorded, row.rate])).toEqual([['PZR pressure', true, '▲ 0.30/min'], ['prt', false, null], ['far', true, null]])
     expect(rows[0]!.look.chip?.word).toBe('LO')
     expect(marginLines(rows, 3).map(row => row.label)).toEqual(['PZR pressure', 'prt'])
     // Frozen: no rate, no margin, every value doubtful.
@@ -274,8 +277,8 @@ describe('value words (W4.4)', () => {
   })
 
   test('outside its validity a reading names what it waits for; a value only the simulator computes reads SIM', () => {
-    expect(look({ invalidWhile: 'Source-range HV off' }, { value: null, quality: 'not-applicable' })).toMatchObject({ text: '— (Source-range HV off)', value: null, unit: '' })
-    expect(look({}, { value: null, quality: 'not-applicable' }).text).toBe('—')
+    expect(look({ invalidWhile: 'Source-range HV off' }, { value: null, quality: 'not-applicable' })).toMatchObject({ text: '—', reason: 'Source-range HV off', value: null, unit: '' })
+    expect(look({}, { value: null, quality: 'not-applicable' })).toMatchObject({ text: '—', reason: null })
     expect(look({ simulated: true }, { value: 3 }).sim).toBe(true)
     expect(look({}, { value: 3 }).sim).toBe(false)
   })
@@ -301,5 +304,32 @@ describe('the column moves nothing (W8.4)', () => {
       const style = readFileSync(join(dir, file), 'utf8').match(/<style>([\s\S]*)<\/style>/)?.[1] ?? ''
       expect(style, file).not.toMatch(/\b(animation|transition)\s*:/)
     }
+  })
+})
+
+describe('a row\'s name in its element\'s own detail', () => {
+  test('drops the element\'s short name the title already says, and keeps every other', () => {
+    const element = { id: 'sgA', class: 'steamGenerator', label: 'Steam Generator A', shortLabel: 'SG A' }
+    const value = { label: 'Halden Unit 1 · Steam generator narrow-range level · SG A', shortLabel: 'SG A narrow-range level', element }
+    expect(ownLabel(value, 'Halden Unit 1 · Steam Generator A')).toBe('Narrow-range level')
+    expect(ownLabel(value, 'Halden Unit 1')).toBe('SG A narrow-range level')
+    expect(ownLabel({ ...value, shortLabel: 'AFW valve A flow', element: { ...element, id: 'auxFeedwaterValveA', label: 'Auxiliary Feedwater Valve A', shortLabel: 'AFW valve A' } }, 'Halden Unit 1 · Steam Generator A')).toBe('AFW valve A flow')
+    expect(ownLabel({ label: 'Halden Unit 1 · Pressurizer pressure' }, 'Halden Unit 1')).toBe('Pressurizer pressure')
+  })
+})
+
+describe('a declared span bar (W4.2, W9.3)', () => {
+  const loading = { quantity: 'loading' as const, span: { min: 0, max: 150 }, thresholds: [
+    { id: 'high', direction: 'high' as const, value: 90, order: 1, effect: 'alarm' as const, priority: 'caution' as const },
+    { id: 'rating', direction: 'high' as const, value: 100, order: 1, effect: 'rating' as const, priority: 'notice' as const },
+    { id: 'trip', direction: 'high' as const, value: 120, order: 2, effect: 'trip' as const, priority: 'alarm' as const },
+  ] }
+  test('only where a level, a loading or a position has no record: its span\'s ends, the value held in them, a tick at each alarm and trip limit', () => {
+    expect(spanBar(loading, 130.7, false)).toEqual({ min: 0, max: 150, value: 130.7, ticks: [90, 120] })
+    expect(spanBar(loading, 170, false)!.value).toBe(150)
+    // A record draws its sparkline instead; no span, no bar; a pressure is no fill of a span.
+    expect(spanBar(loading, 50, true)).toBeNull()
+    expect(spanBar({ ...loading, span: undefined }, 50, false)).toBeNull()
+    expect(spanBar({ ...loading, quantity: 'pressure' }, 50, false)).toBeNull()
   })
 })

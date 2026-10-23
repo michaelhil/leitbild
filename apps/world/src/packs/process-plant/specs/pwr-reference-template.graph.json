@@ -679,7 +679,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "SG A"
+          "shortLabel": "SG A",
+          "shortNames": { "levelPercent": "SG A NR level", "wideRangeLevelPercent": "SG A WR level", "secondaryRadiationMSvPerH": "SG A N-16", "feedwaterFlowKgPerS": "SG A feed flow" }
         }
       }
     },
@@ -763,7 +764,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "SG B"
+          "shortLabel": "SG B",
+          "shortNames": { "levelPercent": "SG B NR level", "wideRangeLevelPercent": "SG B WR level", "secondaryRadiationMSvPerH": "SG B N-16", "feedwaterFlowKgPerS": "SG B feed flow" }
         }
       }
     },
@@ -847,7 +849,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "SG C"
+          "shortLabel": "SG C",
+          "shortNames": { "levelPercent": "SG C NR level", "wideRangeLevelPercent": "SG C WR level", "secondaryRadiationMSvPerH": "SG C N-16", "feedwaterFlowKgPerS": "SG C feed flow" }
         }
       }
     },
@@ -931,7 +934,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "SG D"
+          "shortLabel": "SG D",
+          "shortNames": { "levelPercent": "SG D NR level", "wideRangeLevelPercent": "SG D WR level", "secondaryRadiationMSvPerH": "SG D N-16", "feedwaterFlowKgPerS": "SG D feed flow" }
         }
       }
     },
@@ -1015,7 +1019,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "SG E"
+          "shortLabel": "SG E",
+          "shortNames": { "levelPercent": "SG E NR level", "wideRangeLevelPercent": "SG E WR level", "secondaryRadiationMSvPerH": "SG E N-16", "feedwaterFlowKgPerS": "SG E feed flow" }
         }
       }
     },
@@ -1099,7 +1104,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "SG F"
+          "shortLabel": "SG F",
+          "shortNames": { "levelPercent": "SG F NR level", "wideRangeLevelPercent": "SG F WR level", "secondaryRadiationMSvPerH": "SG F N-16", "feedwaterFlowKgPerS": "SG F feed flow" }
         }
       }
     },

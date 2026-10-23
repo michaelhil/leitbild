@@ -7,7 +7,7 @@
 // or outside its declared validity measures nothing: the trace breaks there,
 // its last value held no further than the sample, until it measures again.
 import type { RecordedSeries, VignetteSample, VignetteView } from '../../../features/displays/compose/model.ts'
-import { SPARK_WINDOW_MS } from './sparkline.ts'
+import { SPARK_WINDOW_MS } from '../../sparkline.ts'
 import { appendPoint, type DrawnSeries } from './trend.ts'
 
 /** A record a view draws: its ref, its series and the widest window it is drawn over. */
@@ -22,7 +22,8 @@ export const shownSeries = (view: VignetteView): ReadonlyArray<ShownSeries> => {
   }
   for (const section of view.sections) {
     if (section.kind === 'trend') for (const pen of section.strips.flat()) { if (pen.series !== null) add(pen.ref, pen.series.seriesId, section.horizonMs) }
-    if (section.kind === 'values') for (const value of section.values) { if (value.series !== null && value.valueType !== 'criterion') add(value.ref, value.series.seriesId, SPARK_WINDOW_MS) }
+    // A values row draws a sparkline of a number only: a state or a criterion takes its whole row in words.
+    if (section.kind === 'values') for (const value of section.values) { if (value.series !== null && (value.valueType === 'number' || value.valueType === 'duration')) add(value.ref, value.series.seriesId, SPARK_WINDOW_MS) }
     // A drawing's traced readings, over a sparkline's window (W6.6).
     if (section.kind === 'topology') for (const node of section.nodes) for (const binding of node.bindings) { if (binding.series !== undefined) add(binding.ref, binding.series.seriesId, SPARK_WINDOW_MS) }
   }

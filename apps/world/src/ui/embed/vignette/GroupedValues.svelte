@@ -13,8 +13,9 @@
   // display is frozen. It stands in exactly the rows reserved for it, its
   // heading row then a row a line, and is never wider than a block of values.
   // Its values take the room they need first: a value is never cut (plan v5
-  // §2 rule 2). The lines' names take what is left, up to the longest name,
-  // then the values share the rest, where their chips show; a heading is its
+  // §2 rule 2). The lines' names (their short labels) take what is left, up
+  // to the longest name, giving way by whole words; then the values share the
+  // rest, where their chips show; a heading is its
   // name over its unit and never widens its column, its name giving way by
   // whole words, its unit kept; the whole heading stays in its title.
   let { section, observations, frozen }: { section: Extract<VignetteSection, { kind: 'grouped' }>; observations: ReadonlyArray<Observation>; frozen: boolean } = $props()
@@ -33,8 +34,10 @@
     {/each}
   </div>
   {#each section.lines as line (line.element.id)}
+    {@const name = line.element.shortLabel ?? line.element.label}
     <div class="line" role="row">
-      <span class="element" role="rowheader" title={line.element.label}>{line.element.shortLabel ?? line.element.label}</span>
+      <!-- Its name as long as the column lets it be (the sizer asks for the whole), giving way by whole words. -->
+      <span class="element" role="rowheader" title={line.element.label} aria-label={name}><span class="sizer" aria-hidden="true">{name}</span><span class="shown" aria-hidden="true" use:wholeWords={name}></span></span>
       {#each line.values as value, index (index)}
         <span class="cell" role="cell">
           {#if value !== null}
@@ -50,15 +53,19 @@
 
 <style>
   /*
-   * Columns: each value's at least as wide as its widest value, the names' as wide as the longest name (at most twelve
-   * characters) where the values leave room, then the room left shared among the values, where a limit chip shows.
+   * Columns: each value's at least as wide as its widest value, the names' as wide as the longest name where the values
+   * leave room (a name gives way by whole words, never cut while room remains), then the room left shared among the
+   * values, where a limit chip shows.
    */
   .grouped { display: grid; grid-template-columns: minmax(0, max-content) repeat(var(--columns), minmax(min-content, 1fr)); max-width: 480px; }
   .line { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; height: var(--row); }
   /* A hairline inside the top of each line after the first: the table stands exactly in its rows. */
   .line + .line + .line { box-shadow: inset 0 1px 0 var(--border-divider-color); }
   .line > * { display: flex; align-items: center; min-width: 0; padding: 0 6px; white-space: nowrap; overflow: hidden; }
-  .element { display: block; max-width: calc(12ch + 12px); line-height: var(--row); text-overflow: ellipsis; color: var(--element-neutral-color); }
+  .element { display: block; line-height: var(--row); color: var(--element-neutral-color); }
+  /* The whole name sets how wide the names' column asks to be; the name shown fits the width it gets. */
+  .sizer { display: block; height: 0; visibility: hidden; }
+  .shown { display: block; overflow: hidden; }
   .cell { justify-content: flex-end; }
   /* A heading in its row, right-aligned over its values: the name over the unit (a unitless name centred), never widening its column. */
   .heading { contain: inline-size; flex-direction: column; align-items: stretch; justify-content: center; line-height: 12px; text-align: right; color: var(--element-neutral-color); }
