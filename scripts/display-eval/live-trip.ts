@@ -35,6 +35,8 @@
  *                     keeps it while expected alerts stand
  *       viewport      at the end: every lead value, the alert count and 3 alert rows on screen (§5.5's rule, here
  *                     through a live trip; at 1046 with the chat open it is the R2 layout's test)
+ *   R3  counts        the alert counts (W2.1) within one sample of the upset, kept; at the end the UNACK count equals the
+ *                     unacknowledged rows of World's sample
  * "Within one sample": by the display's own Run clock, at most 2 s after the event (a sample a second, written to
  * the second). Writes <out>/<label>-live-trip.json and shots. Loopback only; no model is called. */
 import { join } from 'node:path'
@@ -61,7 +63,19 @@ const leadLabels = (view: any): ReadonlyArray<string> => {
 }
 const sameList = (a: ReadonlyArray<string>, b: ReadonlyArray<string>): boolean => a.length === b.length && a.every((entry, index) => entry === b[index])
 
-interface Poll { readonly wall: number; readonly simMs: number | null; readonly state: DisplayState; readonly screen: Screen }
+interface Counts { readonly shown: boolean; readonly entries: ReadonlyArray<string>; readonly unacknowledged: number | null }
+interface Poll { readonly wall: number; readonly simMs: number | null; readonly state: DisplayState; readonly screen: Screen; readonly counts: Counts }
+/** The alert counts (W2.1, R3: .counts button.count, each titled "<n> <what>: show only these") of the shown display. */
+const COUNTS = String.raw`(() => {
+  const docs = lb.documents().filter(d => d.frame && /\/world\/embed\//.test(d.frame.getAttribute('src') || '') && lb.shown(d.frame))
+  const area = d => { const r = d.frame.getBoundingClientRect(); return r.width * r.height }
+  const shown = docs.sort((a, b) => area(b) - area(a))[0]
+  const group = shown && [...shown.doc.querySelectorAll('.counts')].find(el => lb.shown(el) && !el.closest('.popover, [role=dialog]'))
+  if (!group) return { shown: false, entries: [], unacknowledged: null }
+  const entries = [...group.querySelectorAll('.count')].map(el => (el.getAttribute('title') || el.textContent || '').replace(/: show only these$/, '').trim())
+  const unack = entries.find(entry => /unacknowledged/i.test(entry))
+  return { shown: entries.length > 0, entries, unacknowledged: unack ? Number((unack.match(/^(\d+)/) || [])[1]) : null }
+})()`
 
 /** The display's Run clock ("sim 04:02:21") on the Run's date. */
 const simOf = (state: DisplayState, day: string): number | null => {
@@ -91,7 +105,7 @@ const coreRods = (page: Page): Promise<{ bars: number; insertedShares: number[];
   return { bars: bars.length, insertedShares: bars, withdrawnBars: svg.querySelectorAll('rect.bar-out').length, unknownBars: svg.querySelectorAll('rect.bar-unknown').length }
 })()`)
 
-interface Check { readonly id: string; readonly release: 'R1' | 'R2'; readonly pass: boolean | null; readonly detail: string; readonly shot: string | undefined }
+interface Check { readonly id: string; readonly release: 'R1' | 'R2' | 'R3'; readonly pass: boolean | null; readonly detail: string; readonly shot: string | undefined }
 
 const runSize = async (config: {
   readonly api: StackApi; readonly origin: string; readonly workspaceId: string; readonly from: string; readonly port: number
@@ -155,7 +169,8 @@ const runSize = async (config: {
       const state = await page.eval<DisplayState>(readDisplay())
       const screen = await page.eval<Screen>(readScreen())
       const simMs = simOf(state, day)
-      polls.push({ wall: Date.now(), simMs, state, screen })
+      const counts = await page.eval<Counts>(COUNTS).catch(() => ({ shown: false, entries: [], unacknowledged: null }))
+      polls.push({ wall: Date.now(), simMs, state, screen, counts })
       if (Date.now() - lastApi > 1_000) {
         lastApi = Date.now()
         const plant = (await api.objects(copy)).find(object => object.id === subject)
@@ -261,6 +276,8 @@ const runSize = async (config: {
     const tripLine = lagScreen(poll => tripLineOf(poll).length > 0, tripMs ?? upsetMs)
     const rodsLine = lagScreen(poll => rodsOf(poll).length > 0, tripMs ?? upsetMs)
     const aggregate = lagScreen(poll => aggregateOf(poll).length > 0, firstExpectedMs)
+    const countsLag = lagScreen(poll => poll.counts.shown, upsetMs)
+    const endUnack = endSample === null ? null : (endSample.alerts ?? []).filter((row: any) => row.state === 'active-unack' || row.state === 'returned-unack').length
     const lastPoll = polls.at(-1)!
     const endViewport = viewport(last, lastPoll.screen, sizeSpec(String(size)))
     const checks: Check[] = [
@@ -290,6 +307,12 @@ const runSize = async (config: {
       { id: 'rods-in', release: 'R2', pass: rods === null ? null : rods.bars > 0 && rods.withdrawnBars === 0 && rods.unknownBars === 0 && rods.insertedShares.every(share => share >= 0.95), detail: rods === null ? 'no core vessel drawn' : `${rods.bars} rods, inserted shares ${rods.insertedShares.join(', ')}, ${rods.withdrawnBars} drawn withdrawn, ${rods.unknownBars} unknown`, shot: shots.end },
       { id: 'expected', release: 'R2', pass: afterUpset.length === 0 ? null : firstExpectedMs !== null && held(aggregate), detail: `${firstExpectedMs === null ? "World's sample marks no alert expected (AlertRow.expected)" : `first alert marked expected at ${new Date(firstExpectedMs).toISOString().slice(11, 19)}`}; aggregate ${aggregate.lagS === null ? (polls.some(poll => aggregateOf(poll).length > 0) ? 'shown, but not after a marked alert' : 'never on screen') : `on screen ${aggregate.lagS} s after, kept in ${kept(aggregate)} of reads`}; at the end: ${aggregateOf(lastPoll).map(line => `"${line.text}"`).join(', ') || '-'}`, shot: shots['3-upset+60s'] },
       { id: 'viewport', release: 'R2', pass: endViewport.pass, detail: endViewport.detail, shot: shots.end },
+      {
+        // R3 (W2.1): the counts within one sample of the upset and kept; at the end, UNACK equals World's sample.
+        id: 'counts', release: 'R3', pass: afterUpset.length === 0 ? null : held(countsLag) && (endUnack === null || lastPoll.counts.unacknowledged === endUnack),
+        detail: `${countsLag.lagS === null ? 'no counts shown after the upset' : `counts on screen ${countsLag.lagS} s after the upset, kept in ${kept(countsLag)} of reads`}; at the end: ${lastPoll.counts.entries.join(' · ') || '-'}${endUnack === null ? '' : `; World's sample: ${endUnack} unacknowledged`}`,
+        shot: shots['1-first-sample-after-upset'],
+      },
     ]
     return {
       size, copy, displayWidth: atPower.frame?.width ?? null, generation: atPower.generation,
