@@ -295,6 +295,30 @@ describe('value words (W4.4)', () => {
     // Read over decades, the intermediate range declares no span to pin to.
     expect(observable('core.intermediateRangeCurrentAmps').span).toBeUndefined()
   })
+
+  test('every Plant reading a detail, a faceplate or the overview can lead with has a short label of at most 24 characters', () => {
+    const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:short', loopCount: 4 }))
+    const recording = { seriesIds: new Set(recordedPlantVariables(plant, 'operations').map(variable => recordingSeriesIdFor(plant.id, variable.path))), intervalMs: 1_000 }
+    const missing = new Set<string>()
+    for (const mode of [null, ...plant.automation.operatingModes.map(entry => entry.id)]) {
+      const declaration = plantDeclaration('plant:short' as ObjectId, plant, recording, undefined, mode)
+      const byRef = new Map(declaration.observables.map(entry => [entry.ref, entry]))
+      const leads = declaration.elements.flatMap(element => [...element.lead ?? [], ...element.stopped?.lead ?? []])
+      const own = declaration.observables.filter(entry => entry.element !== undefined && (entry.basis === 'instrument' || entry.quantity === 'state')).map(entry => entry.ref)
+      for (const ref of [...leads, ...own]) {
+        const observable = byRef.get(ref)!
+        // The Plant's signals, never a demand (a row never shows one); an item's derived state is named by its item.
+        if (observable.basis === 'command' || !plant.graph.signalBindingByPath.has(ref.slice(ref.indexOf('#') + 1) as never)) continue
+        if (observable.shortLabel === undefined || observable.shortLabel.length > 24) missing.add(`${ref.slice(ref.indexOf('#') + 1)} (${observable.label})`)
+      }
+    }
+    expect([...missing]).toEqual([])
+    const declared = plantDeclaration('plant:short' as ObjectId, plant, recording)
+    const short = (path: string) => declared.observables.find(entry => entry.ref === `plant:short#${path}`)!.shortLabel
+    // The faceplate's three that cut before ("Pressurizer PORV…", "Pressurizer level…", "Pressurizer backup…").
+    expect([short('pressurizer-relief-to-tank.temperatureC'), short('pressurizer.levelDeviationPercent'), short('pressurizer.backupHeaterDemandMw')])
+      .toEqual(['PORV tailpipe temp', 'PZR level deviation', 'Backup heater demand'])
+  })
 })
 
 describe('the column moves nothing (W8.4)', () => {
@@ -315,6 +339,10 @@ describe('a row\'s name in its element\'s own detail', () => {
     expect(ownLabel(value, 'Halden Unit 1')).toBe('SG A narrow-range level')
     expect(ownLabel({ ...value, shortLabel: 'AFW valve A flow', element: { ...element, id: 'auxFeedwaterValveA', label: 'Auxiliary Feedwater Valve A', shortLabel: 'AFW valve A' } }, 'Halden Unit 1 · Steam Generator A')).toBe('AFW valve A flow')
     expect(ownLabel({ label: 'Halden Unit 1 · Pressurizer pressure' }, 'Halden Unit 1')).toBe('Pressurizer pressure')
+    // A value with no short label drops its element's name in that element's own detail.
+    const valves = { id: 'turbineStopValve', class: 'steamValve', label: 'Turbine Stop Valve', shortLabel: 'Turbine stop valves' }
+    expect(ownLabel({ label: 'Halden Unit 1 · State · Turbine stop valves', element: valves }, 'Halden Unit 1 · Turbine Stop Valve')).toBe('State')
+    expect(ownLabel({ label: 'Halden Unit 1 · State · Turbine stop valves', element: valves }, 'Halden Unit 1')).toBe('State · Turbine stop valves')
   })
 })
 

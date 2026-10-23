@@ -53,10 +53,16 @@ export const spanBar = (value: Pick<VignetteValue, 'span' | 'quantity' | 'travel
  */
 export const ownLabel = (value: Pick<VignetteValue, 'shortLabel' | 'label' | 'element'>, title: string): string => {
   const short = value.shortLabel
-  if (short === undefined) return underTitle(value.label, title)
   const element = value.element
+  const own = element !== undefined && title.endsWith(` · ${element.label}`)
+  if (short === undefined) {
+    // Without a short label, its label under the title, its element's name dropped in that element's own detail ("State").
+    const label = underTitle(value.label, title)
+    const suffix = element === undefined ? undefined : ` · ${element.shortLabel ?? element.label}`
+    return own && suffix !== undefined && label.endsWith(suffix) && label.length > suffix.length ? label.slice(0, -suffix.length) : label
+  }
   const prefix = element?.shortLabel === undefined ? undefined : `${element.shortLabel} `
-  if (element === undefined || prefix === undefined || !title.endsWith(` · ${element.label}`) || !short.toLowerCase().startsWith(prefix.toLowerCase()) || short.length === prefix.length) return short
+  if (element === undefined || prefix === undefined || !own || !short.toLowerCase().startsWith(prefix.toLowerCase()) || short.length === prefix.length) return short
   const rest = short.slice(prefix.length)
   return `${rest.charAt(0).toUpperCase()}${rest.slice(1)}`
 }

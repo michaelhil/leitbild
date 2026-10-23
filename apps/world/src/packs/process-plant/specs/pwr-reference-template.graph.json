@@ -276,7 +276,7 @@
         "presentation": {
           "shortLabel": "Core",
           "names": { "coreExitTemperatureC": "CET", "powerRangePercent": "reactor power" },
-          "shortNames": { "intermediateRangeCurrentAmps": "IR current", "sourceRangeCountRateCps": "SR count rate", "intermediateRangeStartupRateDpm": "IR startup rate", "sourceRangeStartupRateDpm": "SR startup rate", "rodStepsWithdrawn": "Rod steps" },
+          "shortNames": { "intermediateRangeCurrentAmps": "IR current", "sourceRangeCountRateCps": "SR count rate", "intermediateRangeStartupRateDpm": "IR startup rate", "sourceRangeStartupRateDpm": "SR startup rate", "rodStepsWithdrawn": "Rod steps" , "sourceRangeEnergized": "SR HV", "aboveP6": "P-6", "aboveP10": "P-10", "averageTemperatureDeviationC": "Tavg − Tref", "referenceAverageTemperatureC": "Tref", "coolantInletTemperatureC": "Core inlet temp", "coolantOutletTemperatureC": "Core outlet temp", "averageHotLegFlowKgPerS": "Hot-leg flow", "shutdownBankAStepsWithdrawn": "Bank SA steps", "shutdownBankBStepsWithdrawn": "Bank SB steps", "shutdownBankCStepsWithdrawn": "Bank SC steps", "shutdownBankDStepsWithdrawn": "Bank SD steps" },
           "states": {
             "sourceRangeEnergized": { "on": "Source-range HV on", "off": "Source-range HV off" },
             "aboveP6": { "on": "Above P-6", "off": "Below P-6" },
@@ -373,7 +373,7 @@
         "presentation": {
           "shortLabel": "RV",
           "names": { "meanPrimaryCoolantTemperatureC": "Tavg" },
-          "shortNames": { "subcoolingMarginC": "Subcooling", "collapsedLiquidLevelPercent": "RVLIS level" }
+          "shortNames": { "subcoolingMarginC": "Subcooling", "collapsedLiquidLevelPercent": "RVLIS level" , "safetyInjectionFlowKgPerS": "RCS SI flow", "boronConcentrationPpm": "RCS boron" }
         }
       }
     },
@@ -520,6 +520,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "levelDeviationPercent": "PZR level deviation", "backupHeaterDemandMw": "Backup heater demand", "reliefValveFlowing": "PORV flow monitor", "safetyValvesOpen": "Safety valves open", "heatersCutOff": "Heater cut-off", "reliefValveEffectivePositionFraction": "PORV position", "blockValveEffectivePositionFraction": "PORV block position", "safetyValvesLiftFraction": "Safety valve lift" },
           "shortLabel": "PZR",
           "embedded": {
             "reliefValve": "PORV",
@@ -680,7 +681,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "SG A",
-          "shortNames": { "levelPercent": "SG A NR level", "wideRangeLevelPercent": "SG A WR level", "secondaryRadiationMSvPerH": "SG A N-16", "feedwaterFlowKgPerS": "SG A feed flow" }
+          "shortNames": { "levelPercent": "SG A NR level", "wideRangeLevelPercent": "SG A WR level", "secondaryRadiationMSvPerH": "SG A N-16", "feedwaterFlowKgPerS": "SG A feed flow" , "collapsedLevelPercent": "SG A collapsed level", "primaryInletTemperatureC": "SG A primary inlet", "primaryOutletTemperatureC": "SG A primary outlet" }
         }
       }
     },
@@ -765,7 +766,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "SG B",
-          "shortNames": { "levelPercent": "SG B NR level", "wideRangeLevelPercent": "SG B WR level", "secondaryRadiationMSvPerH": "SG B N-16", "feedwaterFlowKgPerS": "SG B feed flow" }
+          "shortNames": { "levelPercent": "SG B NR level", "wideRangeLevelPercent": "SG B WR level", "secondaryRadiationMSvPerH": "SG B N-16", "feedwaterFlowKgPerS": "SG B feed flow" , "collapsedLevelPercent": "SG B collapsed level", "primaryInletTemperatureC": "SG B primary inlet", "primaryOutletTemperatureC": "SG B primary outlet" }
         }
       }
     },
@@ -850,7 +851,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "SG C",
-          "shortNames": { "levelPercent": "SG C NR level", "wideRangeLevelPercent": "SG C WR level", "secondaryRadiationMSvPerH": "SG C N-16", "feedwaterFlowKgPerS": "SG C feed flow" }
+          "shortNames": { "levelPercent": "SG C NR level", "wideRangeLevelPercent": "SG C WR level", "secondaryRadiationMSvPerH": "SG C N-16", "feedwaterFlowKgPerS": "SG C feed flow" , "collapsedLevelPercent": "SG C collapsed level", "primaryInletTemperatureC": "SG C primary inlet", "primaryOutletTemperatureC": "SG C primary outlet" }
         }
       }
     },
@@ -935,7 +936,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "SG D",
-          "shortNames": { "levelPercent": "SG D NR level", "wideRangeLevelPercent": "SG D WR level", "secondaryRadiationMSvPerH": "SG D N-16", "feedwaterFlowKgPerS": "SG D feed flow" }
+          "shortNames": { "levelPercent": "SG D NR level", "wideRangeLevelPercent": "SG D WR level", "secondaryRadiationMSvPerH": "SG D N-16", "feedwaterFlowKgPerS": "SG D feed flow" , "collapsedLevelPercent": "SG D collapsed level", "primaryInletTemperatureC": "SG D primary inlet", "primaryOutletTemperatureC": "SG D primary outlet" }
         }
       }
     },
@@ -1020,7 +1021,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "SG E",
-          "shortNames": { "levelPercent": "SG E NR level", "wideRangeLevelPercent": "SG E WR level", "secondaryRadiationMSvPerH": "SG E N-16", "feedwaterFlowKgPerS": "SG E feed flow" }
+          "shortNames": { "levelPercent": "SG E NR level", "wideRangeLevelPercent": "SG E WR level", "secondaryRadiationMSvPerH": "SG E N-16", "feedwaterFlowKgPerS": "SG E feed flow" , "collapsedLevelPercent": "SG E collapsed level", "primaryInletTemperatureC": "SG E primary inlet", "primaryOutletTemperatureC": "SG E primary outlet" }
         }
       }
     },
@@ -1105,7 +1106,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "SG F",
-          "shortNames": { "levelPercent": "SG F NR level", "wideRangeLevelPercent": "SG F WR level", "secondaryRadiationMSvPerH": "SG F N-16", "feedwaterFlowKgPerS": "SG F feed flow" }
+          "shortNames": { "levelPercent": "SG F NR level", "wideRangeLevelPercent": "SG F WR level", "secondaryRadiationMSvPerH": "SG F N-16", "feedwaterFlowKgPerS": "SG F feed flow" , "collapsedLevelPercent": "SG F collapsed level", "primaryInletTemperatureC": "SG F primary inlet", "primaryOutletTemperatureC": "SG F primary outlet" }
         }
       }
     },
@@ -1537,6 +1538,7 @@
       },
       "metadata": {
         "presentation": {
+          "shortNames": { "inletControlFraction": "FW tank inlet valve" },
           "shortLabel": "FW tank"
         }
       },
@@ -1562,6 +1564,7 @@
       "parameters": {},
       "metadata": {
         "presentation": {
+          "shortNames": { "mixedPressureMPa": "MFW header pressure", "mixedTemperatureC": "MFW header temp" },
           "shortLabel": "MFW header"
         }
       }
@@ -1971,7 +1974,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "AFW header",
-          "shortNames": { "outletFlowKgPerS": "AFW flow" }
+          "shortNames": { "outletFlowKgPerS": "AFW flow" , "mixedPressureMPa": "AFW header pressure", "mixedTemperatureC": "AFW header temp" }
         }
       }
     },
@@ -2629,6 +2632,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "mixedPressureMPa": "Steam header pressure", "mixedTemperatureC": "Steam header temp" },
           "shortLabel": "Steam header"
         }
       }
@@ -2644,7 +2648,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "Turbine stop valves",
-          "shortNames": { "effectivePositionFraction": "Stop valves position" }
+          "shortNames": { "effectivePositionFraction": "Stop valves position" , "autoOpenActive": "Stop valves auto-open", "isolationSignal": "Stop valves isolation" }
         }
       },
       "variables": [
@@ -2762,6 +2766,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "impulseLoadPercent": "Turbine load", "speedRpm": "Turbine speed", "steamAvailabilityFraction": "Steam availability", "outputBreakerClosed": "Output breaker" },
           "shortLabel": "Turbine",
           "states": {
             "outputBreakerClosed": {
@@ -2807,7 +2812,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "Condenser",
-          "shortNames": { "condensateLevelPercent": "Hotwell level" }
+          "shortNames": { "condensateLevelPercent": "Hotwell level" , "coolingWaterFlowKgPerS": "CW flow", "coolingWaterInletTemperatureC": "CW inlet temp", "coolingWaterOutletTemperatureC": "CW outlet temp", "coolingWaterAvailabilityFraction": "CW availability", "coolingWaterHeatCapacityMw": "CW heat capacity", "availableCondensateOutletFlowKgPerS": "Condensate available" }
         }
       }
     },
@@ -3522,6 +3527,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "radiationSourceTermMSvPerH": "CTMT radiation" },
           "shortLabel": "CTMT"
         }
       }
@@ -3554,6 +3560,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "availableInjectionHeadMPa": "ACC A injection head" },
           "shortLabel": "ACC A",
           "states": {
             "dischargeIsolationOpen": { "on": "Isolation CMD OPEN", "off": "Isolation CMD SHUT" }
@@ -3589,6 +3596,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "availableInjectionHeadMPa": "ACC B injection head" },
           "shortLabel": "ACC B",
           "states": {
             "dischargeIsolationOpen": { "on": "Isolation CMD OPEN", "off": "Isolation CMD SHUT" }
@@ -3624,6 +3632,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "availableInjectionHeadMPa": "ACC C injection head" },
           "shortLabel": "ACC C",
           "states": {
             "dischargeIsolationOpen": { "on": "Isolation CMD OPEN", "off": "Isolation CMD SHUT" }
@@ -3659,6 +3668,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "availableInjectionHeadMPa": "ACC D injection head" },
           "shortLabel": "ACC D",
           "states": {
             "dischargeIsolationOpen": { "on": "Isolation CMD OPEN", "off": "Isolation CMD SHUT" }
@@ -3694,6 +3704,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "availableInjectionHeadMPa": "ACC E injection head" },
           "shortLabel": "ACC E",
           "states": {
             "dischargeIsolationOpen": { "on": "Isolation CMD OPEN", "off": "Isolation CMD SHUT" }
@@ -3729,6 +3740,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "availableInjectionHeadMPa": "ACC F injection head" },
           "shortLabel": "ACC F",
           "states": {
             "dischargeIsolationOpen": { "on": "Isolation CMD OPEN", "off": "Isolation CMD SHUT" }
@@ -3745,6 +3757,7 @@
       },
       "metadata": {
         "presentation": {
+          "shortNames": { "releaseFlowKgPerS": "Release flow", "releasedMassKg": "Mass released" },
           "shortLabel": "ATM"
         }
       }
@@ -4407,6 +4420,7 @@
       "variables": [],
       "metadata": {
         "presentation": {
+          "shortNames": { "energized": "Inverter A energized" },
           "shortLabel": "Inverter A"
         }
       }
@@ -4422,6 +4436,7 @@
       "variables": [],
       "metadata": {
         "presentation": {
+          "shortNames": { "energized": "Inverter B energized" },
           "shortLabel": "Inverter B"
         }
       }
@@ -4493,6 +4508,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "armed": "SEQ A armed" },
           "shortLabel": "SEQ A"
         }
       }
@@ -4628,6 +4644,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "armed": "SEQ B armed" },
           "shortLabel": "SEQ B"
         }
       }
@@ -4885,6 +4902,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "overtemperatureMarginC": "OTΔT margin A", "overtemperatureSetpointC": "OTΔT setpoint A", "overpowerSetpointC": "OPΔT setpoint A" },
           "shortLabel": "dT channel A",
           "names": { "averageTemperatureC": "Tavg" },
           "states": {
@@ -4968,6 +4986,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "overtemperatureMarginC": "OTΔT margin B", "overtemperatureSetpointC": "OTΔT setpoint B", "overpowerSetpointC": "OPΔT setpoint B" },
           "shortLabel": "dT channel B",
           "names": { "averageTemperatureC": "Tavg" },
           "states": {
@@ -5051,6 +5070,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "overtemperatureMarginC": "OTΔT margin C", "overtemperatureSetpointC": "OTΔT setpoint C", "overpowerSetpointC": "OPΔT setpoint C" },
           "shortLabel": "dT channel C",
           "names": { "averageTemperatureC": "Tavg" },
           "states": {
@@ -5134,6 +5154,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "overtemperatureMarginC": "OTΔT margin D", "overtemperatureSetpointC": "OTΔT setpoint D", "overpowerSetpointC": "OPΔT setpoint D" },
           "shortLabel": "dT channel D",
           "names": { "averageTemperatureC": "Tavg" },
           "states": {
@@ -5217,6 +5238,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "overtemperatureMarginC": "OTΔT margin E", "overtemperatureSetpointC": "OTΔT setpoint E", "overpowerSetpointC": "OPΔT setpoint E" },
           "shortLabel": "dT channel E",
           "names": { "averageTemperatureC": "Tavg" },
           "states": {
@@ -5300,6 +5322,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "overtemperatureMarginC": "OTΔT margin F", "overtemperatureSetpointC": "OTΔT setpoint F", "overpowerSetpointC": "OPΔT setpoint F" },
           "shortLabel": "dT channel F",
           "names": { "averageTemperatureC": "Tavg" },
           "states": {
@@ -5391,6 +5414,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "blocked": "SI blocked", "belowP11": "P-11", "blockPushbutton": "SI block" },
           "shortLabel": "SI block logic",
           "states": {
             "blockPushbutton": { "on": "BLOCK SI", "off": "SI block released" },
@@ -5862,6 +5886,7 @@
     },
     {
       "id": "pressurizer-relief-to-tank",
+      "metadata": { "presentation": { "shortNames": { "temperatureC": "PORV tailpipe temp" } } },
       "from": "pressurizer.reliefOutlet",
       "to": "pressurizerReliefHeader.inletA",
       "connectionKind": "fluidFlow",
@@ -5900,6 +5925,7 @@
     },
     {
       "id": "pressurizer-safety-valves-to-tank",
+      "metadata": { "presentation": { "shortNames": { "temperatureC": "Safety tailpipe temp" } } },
       "from": "pressurizer.safetyOutlet",
       "to": "pressurizerReliefHeader.inletA",
       "connectionKind": "fluidFlow",
@@ -5938,6 +5964,7 @@
     },
     {
       "id": "pressurizer-relief-header-to-tank",
+      "metadata": { "presentation": { "shortNames": { "temperatureC": "Relief header temp" } } },
       "from": "pressurizerReliefHeader.outletA",
       "to": "pressurizerReliefTank.inlet",
       "connectionKind": "fluidFlow",
@@ -7816,6 +7843,7 @@
     },
     {
       "id": "msiv-a-to-main-steam-header",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "MSIV A outlet pressure" } } },
       "from": "mainSteamIsolationValveA.outlet",
       "to": "mainSteamHeader.inletA",
       "connectionKind": "fluidFlow",
@@ -8038,6 +8066,7 @@
     },
     {
       "id": "msiv-b-to-main-steam-header",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "MSIV B outlet pressure" } } },
       "from": "mainSteamIsolationValveB.outlet",
       "to": "mainSteamHeader.inletB",
       "connectionKind": "fluidFlow",
@@ -8260,6 +8289,7 @@
     },
     {
       "id": "msiv-c-to-main-steam-header",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "MSIV C outlet pressure" } } },
       "from": "mainSteamIsolationValveC.outlet",
       "to": "mainSteamHeader.inletC",
       "connectionKind": "fluidFlow",
@@ -8836,6 +8866,7 @@
     },
     {
       "id": "msiv-d-to-main-steam-header",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "MSIV D outlet pressure" } } },
       "from": "mainSteamIsolationValveD.outlet",
       "to": "mainSteamHeader.inletD",
       "connectionKind": "fluidFlow",
@@ -8881,6 +8912,7 @@
     },
     {
       "id": "msiv-e-to-main-steam-header",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "MSIV E outlet pressure" } } },
       "from": "mainSteamIsolationValveE.outlet",
       "to": "mainSteamHeader.inletE",
       "connectionKind": "fluidFlow",
@@ -8926,6 +8958,7 @@
     },
     {
       "id": "msiv-f-to-main-steam-header",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "MSIV F outlet pressure" } } },
       "from": "mainSteamIsolationValveF.outlet",
       "to": "mainSteamHeader.inletF",
       "connectionKind": "fluidFlow",
@@ -8971,6 +9004,7 @@
     },
     {
       "id": "main-steam-header-to-turbine-stop-valve",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "Stop valves inlet press." } } },
       "from": "mainSteamHeader.outletA",
       "to": "turbineStopValve.inlet",
       "connectionKind": "fluidFlow",
@@ -9016,6 +9050,7 @@
     },
     {
       "id": "main-steam-header-to-turbine-bypass-valve",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "Bypass inlet pressure" } } },
       "from": "mainSteamHeader.outletC",
       "to": "turbineBypassValve.inlet",
       "connectionKind": "fluidFlow",
@@ -9061,6 +9096,7 @@
     },
     {
       "id": "turbine-bypass-valve-to-condenser",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "Bypass outlet pressure" } } },
       "from": "turbineBypassValve.outlet",
       "to": "condenser.steamInlet",
       "connectionKind": "fluidFlow",
@@ -9106,6 +9142,7 @@
     },
     {
       "id": "turbine-stop-valve-to-turbine",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "Turbine inlet pressure" } } },
       "from": "turbineStopValve.outlet",
       "to": "turbine.steamInlet",
       "connectionKind": "fluidFlow",
@@ -10046,6 +10083,7 @@
     },
     {
       "id": "boric-acid-injection-to-charging-pump",
+      "metadata": { "presentation": { "shortNames": { "soluteConcentrationPpm": "Boration boron" } } },
       "from": "boricAcidInjectionValve.outlet",
       "to": "chargingPump.inlet",
       "connectionKind": "fluidFlow",
@@ -10097,6 +10135,7 @@
     },
     {
       "id": "charging-pump-to-cold-leg-a",
+      "metadata": { "presentation": { "shortNames": { "soluteConcentrationPpm": "Charging A boron" } } },
       "from": "chargingPump.outlet",
       "to": "core.coldLegA",
       "connectionKind": "fluidFlow",
@@ -10185,6 +10224,7 @@
     },
     {
       "id": "letdown-to-vct",
+      "metadata": { "presentation": { "shortNames": { "soluteConcentrationPpm": "Letdown boron" } } },
       "from": "letdownValve.outlet",
       "to": "volumeControlTank.inlet",
       "connectionKind": "fluidFlow",
@@ -10341,6 +10381,7 @@
     },
     {
       "id": "charging-pump-b-to-cold-leg-b",
+      "metadata": { "presentation": { "shortNames": { "soluteConcentrationPpm": "Charging B boron" } } },
       "from": "chargingPumpB.outlet",
       "to": "core.coldLegB",
       "connectionKind": "fluidFlow",
@@ -12243,6 +12284,7 @@
     },
     {
       "id": "circulating-water-pump-to-condenser",
+      "metadata": { "presentation": { "shortNames": { "temperatureC": "CW inlet temp" } } },
       "from": "circulatingWaterPump.outlet",
       "to": "condenser.coolingWater",
       "connectionKind": "fluidFlow",
@@ -12288,6 +12330,7 @@
     },
     {
       "id": "condenser-to-cooling-water-discharge",
+      "metadata": { "presentation": { "shortNames": { "temperatureC": "CW outlet temp" } } },
       "from": "condenser.coolingWaterOutlet",
       "to": "coolingWaterDischarge.inlet",
       "connectionKind": "fluidFlow",
