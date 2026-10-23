@@ -34,8 +34,8 @@ export const distanceText = (metres: number): string => { const parts = distance
  */
 export const provenanceMark = (view: { readonly by?: 'assistant' } | undefined): string => provenanceMarks(view)[0]
 
-/** The mark in its words, then the same said shorter, for a footer too narrow for the first (a 360 px chat answer): never cut. */
-export const provenanceMarks = (view: { readonly by?: 'assistant' } | undefined): readonly [string, string] =>
+/** The mark in its words, then the same said shorter, for a footer too narrow for the first (a 360 or 300 px chat answer): never cut. */
+export const provenanceMarks = (view: { readonly by?: 'assistant' } | undefined): readonly [string, ...string[]] =>
   view === undefined ? ['not an operating display', 'not for operating']
-    : view.by === 'assistant' ? ['AI-composed view · not an operating display', 'AI view · not for operating']
-      : ['Generated from the model · not an operating display', 'Model view · not for operating']
+    : view.by === 'assistant' ? ['AI-composed view · not an operating display', 'AI view · not for operating', 'AI · not for operating']
+      : ['Generated from the model · not an operating display', 'Model view · not for operating', 'Model · not for operating']

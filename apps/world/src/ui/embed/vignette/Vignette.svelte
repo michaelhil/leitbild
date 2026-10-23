@@ -109,7 +109,7 @@
 
 <article class="vignette" class:fill={fills} style:min-height={fills && room !== null ? `${room}px` : undefined} style:--row={`${VIGNETTE_ROW_PX}px`} aria-label={view?.title ?? envelope.title}>
   <header>
-    <h1 title={view?.title ?? envelope.title}>{view?.title ?? envelope.title}</h1>
+    <h1 title={view?.title ?? envelope.title} use:wholeWords={view?.title ?? envelope.title}></h1>
     {#if view?.by === 'assistant'}<span class="ai" title="Composed by the Assistant from what the Run declares"><obi-ai></obi-ai>Assistant</span>{/if}
     {#if worst !== null || chips.length > 0}
       <!-- The worst it shows (a press opens every alert, by category), then the object's own states (an operating mode first), right-aligned; they wrap, never cut. -->
@@ -159,9 +159,9 @@
   .vignette.fill > :global(.sections) { grid-row: 4; }
   .vignette.fill > footer { grid-row: 5; }
   footer { display: flex; align-items: center; gap: 8px; height: var(--row); min-width: 0; white-space: nowrap; }
-  /* The title gives way first, down to a few words; then the states wrap onto rows of their own under it. */
+  /* The title gives way first, by whole words (the whole in its title), down to a few; then the states wrap onto rows of their own under it. */
   header { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; min-height: var(--row); min-width: 0; }
-  h1 { flex: 1 1 12em; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: var(--row); font-size: 14px; font-weight: 600; }
+  h1 { flex: 1 1 12em; min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; line-height: var(--row); font-size: 14px; font-weight: 600; }
   .ai { flex: none; display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--element-neutral-color); }
   .ai obi-ai { width: 16px; height: 16px; }
   .states { flex: 0 1 auto; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 2px 3px; min-width: 0; margin-left: auto; padding: 2px 0; }
