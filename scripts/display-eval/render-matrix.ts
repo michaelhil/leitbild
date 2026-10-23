@@ -179,7 +179,9 @@ const judgeView = async (ctx: { readonly page: Page; readonly scratch: Page; rea
     const stateRows = column.rows.filter((row, index) => { const value = valueOf(row, index); return value?.series != null && value?.valueType !== undefined && value.valueType !== 'number' })
     const missing = column.rows.filter((row, index) => row.spark === null && seriesOf(row, index))
     const withSeries = { size: column.rows.filter((row, index) => seriesOf(row, index)).length }
-    checks.push(check('sparklines', missing.length === 0, `${column.rows.length} lead rows, ${column.rows.filter(row => row.spark !== null).length} with a sparkline; ${withSeries.size} numbers with a series (${byIndex ? 'row by row' : 'by label'}); with a series but no sparkline${listed(missing.map(row => `"${row.label}"`), 6) || ': none'}${stateRows.length === 0 ? '' : `; state rows with a series (not judged): ${stateRows.map(row => `"${row.label}"${row.spark === null ? '' : ' (sparkline)'}`).join(', ')}`}`))
+    // Rows matched to no lead value of the sample (an older sample's leads, other labels): not judged.
+    const matched = byIndex || column.rows.some((row, index) => valueOf(row, index) !== undefined)
+    checks.push(check('sparklines', !matched ? null : missing.length === 0, `${column.rows.length} lead rows, ${column.rows.filter(row => row.spark !== null).length} with a sparkline;${matched ? '' : ' no row matched to a lead value of the sample (not judged);'} ${withSeries.size} numbers with a series (${byIndex ? 'row by row' : 'by label'}); with a series but no sparkline${listed(missing.map(row => `"${row.label}"`), 6) || ': none'}${stateRows.length === 0 ? '' : `; state rows with a series (not judged): ${stateRows.map(row => `"${row.label}"${row.spark === null ? '' : ' (sparkline)'}`).join(', ')}`}`))
   }
   if (run === 'A' && view === 'overview') checks.push(check('margin-line', column.margins.length > 0, column.margins.length > 0 ? `"${column.margins.slice(0, 3).join('" · "')}"` : 'no margin line ("… above/below LO … ") in the display'))
   const live = words.filter(word => word.where === 'drawing' && /\b(LIVE|DEAD)\b/.test(word.text))
