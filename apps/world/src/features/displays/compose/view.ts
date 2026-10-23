@@ -207,6 +207,19 @@ export const framedBy = (run: ComposeRun, view: Extract<ResolvedView, { kind: 'm
     && routeDistanceMeters(around, object.spatial.position.point) <= distanceBands[view.within ?? '5km'])
 }
 
+/**
+ * Whether a vignette keeps a row under its title for its trip line (W2.4): it is about one object (the one its drawing
+ * draws, else the one its alerts list, as the trip line takes it) whose Pack declares first-out groups. The row stands
+ * empty at rest, so nothing moves when one trips; the composer counts it and the view says so (`tripLine`).
+ */
+export const keepsTripLine = async (run: ComposeRun, views: ReadonlyArray<ResolvedView>): Promise<boolean> => {
+  const drawn = views.find(view => view.kind === 'topology')
+  const listed = [...new Set(views.flatMap(view => view.kind === 'alerts' && view.objectIds !== 'run' ? view.objectIds : []))]
+  const objectId = drawn?.kind === 'topology' ? drawn.objectId : listed.length === 1 ? listed[0]! : undefined
+  if (objectId === undefined || visibleObject(run, objectId) === undefined) return false
+  return ((await declarationOf(run, objectId))?.annunciation?.groups.length ?? 0) > 0
+}
+
 export const compileVignette = async (run: ComposeRun, state: VignetteState): Promise<VignetteView> => {
   const { leads, tables } = await readNow(run, state)
   const declared = await declaredRefs(run, [...readsOf(state, leads).refs, ...[...tables.values()].flatMap(table => table.lines.flatMap(line => line.refs.flatMap(ref => ref ?? [])))])
@@ -261,7 +274,7 @@ export const compileVignette = async (run: ComposeRun, state: VignetteState): Pr
   const answer = state.by !== 'assistant' ? undefined : { ...(state.why === undefined ? {} : { why: state.why }), at: state.at, ...(changed.includes(true) ? { modelChanged: true as const } : {}) }
   return {
     title: state.title, ...(state.by === undefined ? {} : { by: state.by }), ...(chips.length === 0 ? {} : { chips }), ...(state.beside === undefined ? {} : { beside: true }), sections,
-    ...(subject === undefined ? {} : { subject }), ...(answer === undefined ? {} : { answer }),
+    ...(subject === undefined ? {} : { subject }), ...(answer === undefined ? {} : { answer }), ...(await keepsTripLine(run, state.views) ? { tripLine: true as const } : {}),
   }
 }
 

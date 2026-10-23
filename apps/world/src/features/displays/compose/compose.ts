@@ -17,7 +17,7 @@ import { isIssue, resolveSubject, subjectObjects, type ComposeRun, type Subject 
 import { TOPOLOGY_REACH } from '../topology/scope.ts'
 import { drawingOf, scopeWithin, topologyOf } from './topology.ts'
 import { stripsOf, trendRows } from './strips.ts'
-import { ALERT_LINES_AT_LEAST, alertRowsFor, alertsOf, entityRows, groupValues, readNow, readsOf, slotsOf } from './view.ts'
+import { ALERT_LINES_AT_LEAST, alertRowsFor, alertsOf, entityRows, groupValues, keepsTripLine, readNow, readsOf, slotsOf } from './view.ts'
 
 export type ComposeOutcome =
   | { readonly ok: true; readonly state: VignetteState; readonly card: DisplayCard; readonly rows: number }
@@ -370,12 +370,12 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   }
   if (issues.length > 0) return refuse(issues)
   // Rows: alerts and tables give way first, then the frame does not fit and compose refuses.
-  // The chips: the object's own states the caller can read, in declared order, on the title row (W4.1). A whole object
-  // with chips keeps one row under the title for its trip line (W2.4), empty at rest, so nothing moves when one trips.
+  // The chips: the object's own states the caller can read, in declared order, on the title row (W4.1).
   const readableChips = await declaredRefs(run, chipped)
   const chips = chipped.filter(ref => readableChips.has(ref))
-  // The frame: title and footer, the trip line under a whole object's chips, an answer's notice line (W8.2).
-  const frameRows = FRAME_ROWS + (chips.length > 0 ? 1 : 0) + (by === 'assistant' ? 1 : 0)
+  // The frame: title and footer, the trip line's row of a view about one object that can trip (keepsTripLine: empty at
+  // rest, so nothing moves when one trips), an answer's notice line (W8.2).
+  const frameRows = FRAME_ROWS + (await keepsTripLine(run, views) ? 1 : 0) + (by === 'assistant' ? 1 : 0)
   const stacked = (): number => fitted.reduce((sum, view) => sum + view.rows, 0)
   // In a window, a flow drawing taller than the stack leaves stands beside a column of every other view (Q20).
   const left = fitted.find(view => view.kind === 'topology' && flows.has(view))
@@ -401,7 +401,7 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
     }
   }
   // Beside a drawing, a column too tall for the frame gives way first, whatever the drawing's size.
-  if (beside) trendsGiveWay(() => FRAME_ROWS + (chips.length > 0 ? 1 : 0) + fitted.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0) > VIGNETTE_MAX_ROWS)
+  if (beside) trendsGiveWay(() => frameRows + fitted.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0) > VIGNETTE_MAX_ROWS)
   // Then a drawing is scaled to the rows left, never below a third of its height or eight rows, and the card says so.
   for (const view of fitted) {
     if (total() <= VIGNETTE_MAX_ROWS || view.kind !== 'topology') continue

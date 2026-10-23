@@ -22,7 +22,7 @@
   // what they hold in the title and for assistive technology; a label or an
   // age is never cut, and the first lead always stands. Nothing shows while
   // nothing has tripped or actuated; where the composer keeps the row
-  // (`reserve`: a whole object, with its chips), the row stays, empty, so
+  // (`reserve`: a view about one object whose Pack declares first-out groups, keepsTripLine), the row stays, empty, so
   // nothing below it moves when a trip comes in.
   let { view, rows, reserve = false }: { view: VignetteView; rows: ReadonlyArray<AlertRow>; reserve?: boolean } = $props()
 

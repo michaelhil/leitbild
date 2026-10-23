@@ -183,6 +183,8 @@ export type VignetteSection =
  */
 export interface VignetteView {
   readonly title: string; readonly by?: 'assistant'; readonly chips?: ReadonlyArray<VignetteValue>; readonly beside?: true; readonly sections: ReadonlyArray<VignetteSection>
+  /** It keeps a row under its title for its trip line, empty at rest (keepsTripLine, W2.4): never stored, read from what it is about. */
+  readonly tripLine?: true
   /** The one object every part is on, by its label, and the one element every value is on, as labels name it: a label drops them (W7.3). */
   readonly subject?: { readonly object: string; readonly element?: string }
   /** An answer's vignette: why it was composed, when, and whether a drawn object's model changed since (W8.2). */

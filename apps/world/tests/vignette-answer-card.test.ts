@@ -152,9 +152,11 @@ describe('an answer\'s view (W7.3, W7.4, W8.2)', () => {
     const outcome = await compose(e0)
     expect(outcome.state.why).toBe(`${e0.question} — ${e0.need}`)
     expect(Object.keys(outcome.state.models ?? {})).toEqual([plantId])
-    // The frame keeps a row for the notice: title, notice, footer and the views.
-    expect(outcome.rows).toBe(FRAME_ROWS + 1 + outcome.state.views.reduce((sum, view) => sum + view.rows, 0))
+    // The frame keeps a row for the notice and, about one Plant that can trip, one for its trip line (keepsTripLine):
+    // title, trip line, notice, footer and the views.
+    expect(outcome.rows).toBe(FRAME_ROWS + 1 + 1 + outcome.state.views.reduce((sum, view) => sum + view.rows, 0))
     const view = await compileVignette(await runNow(), outcome.state)
+    expect(view.tripLine).toBe(true)
     expect(view.answer).toEqual({ why: outcome.state.why!, at: outcome.state.at })
   }, 120_000)
 
