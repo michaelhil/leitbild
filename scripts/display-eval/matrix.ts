@@ -80,6 +80,40 @@ export const navigation = async (page: Page, home: ReturnType<typeof homeOf>, re
   return { id: 'navigation', release: 'R2', pass, detail: `SG A body press → ${describe(outcome)}${outcome.kind === 'detail' ? `; ${drawing > 0 ? `with its drawing (${drawing} drawn lines)` : 'no drawing'}; ${next ? `a new deck entry (${outcome.kind === 'detail' ? outcome.position : ''} from ${before})` : `not the next entry (from ${before})`}; Esc → "${escTitle ?? '?'}"${escaped ? ' (Back)' : ''}` : ''}`, shot: shotPath }
 }
 
+/** The shown display's alert tiles (W2.2): each tile's title ("<label>: n alarms, …"), whether it is a button, its badge. */
+export const TILES = String.raw`(() => {
+  const docs = lb.documents().filter(d => d.frame && /\/world\/embed\//.test(d.frame.getAttribute('src') || '') && lb.shown(d.frame))
+  const area = d => { const r = d.frame.getBoundingClientRect(); return r.width * r.height }
+  const shown = docs.sort((a, b) => area(b) - area(a))[0]
+  if (!shown) return []
+  return [...shown.doc.querySelectorAll('.tiles .tile')].filter(t => lb.shown(t) && !t.closest('.popover, [role=dialog]')).map(t => {
+    const badge = t.querySelector('obc-badge')
+    return { title: (t.getAttribute('title') || '').replace(/: show only these$/, ''), button: t.tagName === 'BUTTON', badge: badge ? { type: badge.type || badge.getAttribute('type') || null, count: Number(badge.number ?? badge.getAttribute('number') ?? 0) } : null }
+  })
+})()`
+const TILE_POINT = (title: string) => String.raw`(() => {
+  const docs = lb.documents().filter(d => d.frame && /\/world\/embed\//.test(d.frame.getAttribute('src') || '') && lb.shown(d.frame))
+  for (const d of docs) for (const t of d.doc.querySelectorAll('.tiles button.tile')) {
+    if ((t.getAttribute('title') || '').replace(/: show only these$/, '') !== ${JSON.stringify(title)}) continue
+    t.scrollIntoView({ block: 'nearest' })
+    const r = lb.toTop(t)
+    return { x: r.x + r.w / 2, y: r.y + r.h / 2 }
+  }
+  return null
+})()`
+/** The alert list's rows and the drawing's marked items, and whether a tile stands pressed. */
+const LIST_STATE = String.raw`(() => {
+  const docs = lb.documents().filter(d => d.frame && /\/world\/embed\//.test(d.frame.getAttribute('src') || '') && lb.shown(d.frame))
+  const area = d => { const r = d.frame.getBoundingClientRect(); return r.width * r.height }
+  const shown = docs.sort((a, b) => area(b) - area(a))[0]
+  if (!shown) return { rows: 0, marked: 0, pressed: 0 }
+  const doc = shown.doc
+  const rows = [...doc.querySelectorAll('section.alerts .row, section.alerts li, .alerts .row')].filter(r => lb.shown(r) && !/\d+\s+expected/i.test(r.textContent || '')).length
+  const marked = doc.querySelectorAll('.flow .activated').length + [...doc.querySelectorAll('.flow obc-automation-button')].filter(b => b.activated === true).length
+  const pressed = doc.querySelectorAll('.tiles button.tile[aria-pressed="true"]').length
+  return { rows, marked, pressed }
+})()`
+
 /** A point on the app's top bar (the Host page's own, 20 px down), outside the display window, on no control and no
  * frame: scanned along the bar from the middle outward, each candidate checked with elementFromPoint. */
 const TOP_BAR_POINT = `(() => {
@@ -163,6 +197,29 @@ export const presses = async (page: Page, config: { readonly api: StackApi; read
         await restore()
       }
     }
+  }
+  // Tiles (W2.2, R3): a press on a tile with alerts narrows the list to them (never to 0 rows), marks the drawn items it
+  // names, and a second press widens the list again.
+  {
+    const tiles = await page.eval<ReadonlyArray<{ title: string; button: boolean }>>(TILES)
+    const pressable = tiles.filter(tile => tile.button)
+    const results: string[] = []
+    let good = 0
+    for (const tile of pressable.slice(0, 6)) {
+      const before = await page.eval<{ rows: number; marked: number }>(LIST_STATE)
+      const at = await page.eval<{ x: number; y: number } | null>(TILE_POINT(tile.title))
+      if (at === null) { results.push(`"${tile.title.split(':')[0]}" not on screen`); continue }
+      for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased'] as const) await page.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, ...(type === 'mouseMoved' ? {} : { button: 'left', clickCount: 1 }) })
+      await sleep(900)
+      const after = await page.eval<{ rows: number; marked: number; pressed: number }>(LIST_STATE)
+      const ok = after.pressed > 0 && after.rows > 0 && after.rows <= before.rows
+      if (ok) good += 1
+      results.push(`"${tile.title.split(':')[0]}" → ${after.rows} rows (from ${before.rows}), ${after.marked} drawn items marked${after.pressed > 0 ? '' : ', not pressed'}`)
+      for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased'] as const) await page.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, ...(type === 'mouseMoved' ? {} : { button: 'left', clickCount: 1 }) })
+      await sleep(700)
+    }
+    checks.push({ id: 'press-tiles', release: 'R3', pass: tiles.length === 0 ? false : pressable.length > 0 && good === Math.min(6, pressable.length), detail: tiles.length === 0 ? 'no alert tiles in the display' : `${tiles.length} tiles, ${pressable.length} with alerts (buttons); ${good} of ${Math.min(6, pressable.length)} pressed narrow the list to rows: ${results.join('; ')}` })
+    await restore()
   }
   // A refused default is no button: every drawn element whose default World refuses must draw no button.
   {
