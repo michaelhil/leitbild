@@ -1,13 +1,13 @@
-import type { ObjectId, Priority } from '../../../core/model/index.ts'
+import type { ObjectId } from '../../../core/model/index.ts'
 import type { Observable, Observation } from '../../../core/observation/model.ts'
 import { NO_FLOW_FRACTION } from '../equipment/link-flow.ts'
 import type { CompiledStateAspect, VariablePath } from '../graph/index.ts'
-import { challengePriority } from '../ic/alarm-philosophy.ts'
 import { aspectStateWords, followAllowanceMs, plantControlsFor } from '../operations/controls.ts'
 import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { processPlantOperatingMode } from '../runtime/index.ts'
-import { safetyFunctionStatusWords, safetyFunctionText, type SafetyFunctionEvaluation } from '../safety-functions.ts'
+import { safetyFunctionStatusWords, type SafetyFunctionEvaluation } from '../safety-functions.ts'
+import { safetyFunctionReading } from './safety-function-reading.ts'
 
 // What a Plant declares beside its signals (plan v4 D1): each item of its
 // equipment that runs, is live, or opens and shuts, its state as one word, in
@@ -183,7 +183,7 @@ export const readDerived = (
   system: ProcessPlantRuntimeInstance,
   path: string,
   safetyFunctions: () => ReadonlyArray<SafetyFunctionEvaluation>,
-): Pick<Observation, 'value' | 'quality' | 'priority' | 'why'> => {
+): Pick<Observation, 'value' | 'quality' | 'priority' | 'note' | 'why'> => {
   const state = itemStates(system.plant).get(path)
   if (state !== undefined && !state.measured) return { value: null, quality: 'not-applicable', priority: 'none', why: 'position not measured' }
   if (state !== undefined) {
@@ -203,6 +203,5 @@ export const readDerived = (
   }
   const evaluation = safetyFunctions().find(candidate => safetyFunctionRef(candidate.id) === path)
   if (evaluation === undefined) throw new Error(`${path} is neither an item's state, a safety function nor the mode of the Plant`)
-  const priority: Priority = challengePriority[evaluation.status] ?? 'none'
-  return { value: evaluation.status, quality: evaluation.status === 'unknown' ? 'uncertain' : 'good', priority, why: safetyFunctionText(evaluation) }
+  return safetyFunctionReading(evaluation)
 }

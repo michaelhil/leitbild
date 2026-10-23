@@ -10,6 +10,7 @@ import { isDemand, readsAsMeasured } from '../ic/key-values.ts'
 import { icThresholdsForSignal, type ComposedDisplayThreshold } from '../ic/thresholds.ts'
 import { logarithmicSpan } from '../quantity-text.ts'
 import { derivedObservables } from './derived.ts'
+import { withDecidingElements } from './deciding.ts'
 import { elementLeads, elementStops, leadDigest } from './leads.ts'
 
 // What a Plant declares to World's observation layer (plan v3.1 §2.2, A1):
@@ -240,10 +241,10 @@ export const plantDeclaration = (objectId: ObjectId, plant: CompiledProcessPlant
   declarationCache.set(plant, known)
   const whole = known.get(revision) ?? (() => {
     const graph = plant.graph
-    const observables = [
+    const observables = withDecidingElements(plant, [
       ...graph.signalBindings.filter(binding => declares(plant, recording, binding)).map(binding => observableOf(objectId, plant, recording, binding)),
       ...derivedObservables(objectId, plant),
-    ]
+    ])
     const declared = new Set(observables.map(observable => observable.ref))
     const leads: ReadonlyMap<string, ReadonlyArray<string>> = mode === undefined ? new Map() : elementLeads(plant, mode)
     // What a component's detail leads with, as declared values only, each once, at most 16.

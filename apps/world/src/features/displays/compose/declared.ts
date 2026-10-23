@@ -78,6 +78,8 @@ export const valueOf = ({ observable, object, element }: Declared): VignetteValu
   ref: observable.ref, label: `${object.label} · ${observable.label}`.slice(0, 80), quantity: observable.quantity, unit: observable.unit,
   valueType: observable.valueType, thresholds: observable.thresholds, series: observable.series,
   ...(observable.states === undefined ? {} : { states: observable.states }), ...(observable.decades === true ? { decades: true } : {}),
+  ...(observable.shortLabel === undefined ? {} : { shortLabel: observable.shortLabel }),
+  ...(observable.decidingElement === undefined ? {} : { decidingElement: observable.decidingElement }),
   ...(element === undefined ? {} : { element: named(element) }),
 })
 /** An element as a value names it: what it leads with stays in its declaration. */

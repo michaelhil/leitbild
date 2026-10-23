@@ -141,6 +141,8 @@ export const observableSchema = z.object({
   lead: z.number().int().positive().optional(),
   /** Read over decades (an intermediate-range current): below the step its decimals show, written as a power of ten, never as 0. */
   decades: z.literal(true).optional(),
+  /** An object's own state (no `element`): the declared element that decides it, which a press on its chip opens. */
+  decidingElement: z.string().min(1).max(200).optional(),
 }).strict().refine(observable => (quantityUnits[observable.quantity] as ReadonlyArray<string>).includes(observable.unit), {
   path: ['unit'], message: 'the unit is not a code listed for this quantity',
 })
@@ -160,6 +162,8 @@ export const observationSchema = stampSchema.extend({
   /** Read only, never journalled. */
   timeToAct: z.object({ threshold: z.string().min(1), seconds: z.number().nonnegative() }).strict().optional(),
   why: z.string().max(300).optional(),
+  /** Where the state sends people now, in at most 16 characters ("FR-H.3"): its chip writes it beside its short label. */
+  note: z.string().min(1).max(16).optional(),
 }).strict()
 
 export type Observable = z.output<typeof observableSchema>

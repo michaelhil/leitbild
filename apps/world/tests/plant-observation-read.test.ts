@@ -91,7 +91,7 @@ describe('plant observation read (P3)', () => {
     // Off good only where nothing is there to read: the source range, its high voltage off above P-6, measures nothing
     // (meaningfulWhile), and an accumulator's discharge isolation valve reads "position not measured".
     expect(facts.atPower.filter((observation: Observation) => observation.quality === 'not-applicable').map(path))
-      .toEqual(['core.sourceRangeCountRateCps', 'core.sourceRangeStartupRateDpm', ...['A', 'B', 'C', 'D'].map(loop => `safetyAccumulator${loop}.dischargeIsolationValve.state`)])
+      .toEqual(['core.sourceRangeCountRateCps', 'core.sourceRangeStartupRateDpm', ...['A', 'B', 'C', 'D'].map(loop => `safetyAccumulator${loop}.dischargeIsolationValve.state`), 'csf.subcriticality'])
     expect(facts.atPower.filter((observation: Observation) => observation.priority !== 'none' || (observation.quality !== 'good' && observation.quality !== 'not-applicable'))
       .map((observation: Observation) => ({ ref: path(observation), value: observation.value, priority: observation.priority, quality: observation.quality, why: observation.why, at: observation.at })), evidence).toEqual([])
     expect(facts.atPower.filter((observation: Observation) => observation.clock !== 'simulation' || observation.at !== '2026-01-01T10:00:10.000Z')
@@ -170,10 +170,14 @@ describe('plant observation read (P3)', () => {
     expect(mode(facts.tripped)?.value).not.toBe('powerOperation')
   })
 
-  test('D1: a safety function reads its status with its procedure and where its tree ends; satisfied, it is neutral', () => {
+  test('D1: a safety function reads its status, its tree\'s path with the readings that answered it, and where it ends; satisfied, it is neutral; not judged, outside its validity', () => {
     const read = (of: string) => facts.atPower.find((observation: Observation) => path(observation) === of)
-    expect(read('csf.heat-sink')).toMatchObject({ value: 'green', priority: 'none', quality: 'good', why: expect.stringMatching(/^Heat sink: /) })
-    expect(read('csf.subcriticality')).toMatchObject({ value: 'not-monitored', priority: 'none', why: expect.stringMatching(/^Subcriticality: Judged once a reactor trip is demanded/) })
+    // Within its 300 characters the earliest questions give way first, so what the path ends in is always there.
+    const why: unknown = read('csf.heat-sink')?.why
+    expect(typeof why === 'string' && why.length <= 300 && /: yes \(SG-A-LVL-NR [\d.]+ %, SG-B-LVL-NR [\d.]+ %, .* · GREEN: /.test(why)).toBe(true)
+    expect(read('csf.heat-sink')).toMatchObject({ value: 'green', priority: 'none', quality: 'good' })
+    expect(read('csf.heat-sink')?.note).toBeUndefined()
+    expect(read('csf.subcriticality')).toMatchObject({ value: 'not-monitored', priority: 'none', quality: 'not-applicable', why: expect.stringMatching(/^NOT JUDGED: Judged once a reactor trip is demanded/) })
   })
 
   test('expected.after: an alarm the trip brings in leaves its value neutral and says so', () => {
