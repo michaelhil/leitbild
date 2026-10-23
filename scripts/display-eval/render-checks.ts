@@ -74,7 +74,11 @@ export const readDrawing = (): string => String.raw`((() => {${SHOWN}
   const near = (a, b) => a.length === 3 && b.length === 3 && a.every((v, i) => Math.abs(v - b[i]) <= 16)
   const shapesOf = root => {
     const out = []
-    const walk = node => { for (const el of node.querySelectorAll('path, rect, circle, ellipse, polygon, polyline, line')) { const s = win.getComputedStyle(el); const unstroked = s.stroke === 'none' || Number.parseFloat(s.strokeWidth) === 0; if (s.display === 'none' || s.visibility === 'hidden' || (s.fill === 'none' && unstroked) || (unstroked && (near(rgb(s.fill), bg) || Number(s.fillOpacity) === 0))) continue; const q = el.getBoundingClientRect(); if (q.width > 0 || q.height > 0) out.push(q) } for (const el of node.querySelectorAll('*')) if (el.shadowRoot) walk(el.shadowRoot) }
+    // An HTML part that draws (a bordered or filled box in the symbol's shadow tree: OpenBridge draws a tile's outline so).
+    const drawsBox = el => { if (el instanceof win.SVGElement) return false; const s = win.getComputedStyle(el); if (s.display === 'none' || s.visibility === 'hidden' || Number(s.opacity) === 0) return false; const bordered = ['Top', 'Right', 'Bottom', 'Left'].some(side => Number.parseFloat(s['border' + side + 'Width']) > 0 && s['border' + side + 'Style'] !== 'none' && !clear(s['border' + side + 'Color'])); const filled = !clear(s.backgroundColor) && !near(rgb(s.backgroundColor), bg); return bordered || filled }
+    const clear = c => !c || c === 'none' || c === 'transparent' || /rgba\([^)]*,\s*0(\.0+)?\)$/.test(c)
+    const walk = node => { for (const el of node.querySelectorAll('*')) { if (el.tagName && !/^(path|rect|circle|ellipse|polygon|polyline|line|svg|g|title|defs|pattern|style|slot)$/i.test(el.tagName) && drawsBox(el)) { const q = el.getBoundingClientRect(); if (q.width > 0 && q.height > 0) out.push(q) } }
+      for (const el of node.querySelectorAll('path, rect, circle, ellipse, polygon, polyline, line')) { const s = win.getComputedStyle(el); const unstroked = clear(s.stroke) || Number.parseFloat(s.strokeWidth) === 0 || Number(s.strokeOpacity) === 0; const unfilled = clear(s.fill) || Number(s.fillOpacity) === 0; if (s.display === 'none' || s.visibility === 'hidden' || Number(s.opacity) === 0 || (unfilled && unstroked) || (unstroked && near(rgb(s.fill), bg))) continue; const q = el.getBoundingClientRect(); if (q.width > 0 || q.height > 0) out.push(q) } for (const el of node.querySelectorAll('*')) if (el.shadowRoot) walk(el.shadowRoot) }
     walk(root); if (root.shadowRoot) walk(root.shadowRoot)
     return out
   }
@@ -167,7 +171,7 @@ export interface ColumnRead {
 export const readColumn = (): string => String.raw`((() => {${SHOWN}
   if (!shown) return { rows: [], margins: [] }
   const doc = shown.doc
-  const ROWS = ':scope > .readout, :scope > .state, :scope > .values > .readout, :scope > .values > .state, :scope > .values > obc-readout-list > .row'
+  const ROWS = ':scope > .readout, :scope > .state, :scope > .values > .readout, :scope > .values > .state, :scope > .values > obc-readout-list > .row:not(.head)'
   const section = [...doc.querySelectorAll('.section')].find(s => !s.closest('.popover, [role=dialog]') && s.querySelector(ROWS))
   const rows = section ? [...section.querySelectorAll(ROWS)] : []
   const sparkOf = row => {
@@ -197,7 +201,7 @@ export const readColumn = (): string => String.raw`((() => {${SHOWN}
     }
     return null
   }
-  const out = rows.map(row => ({ label: (textOf(row.querySelector(':scope > .label')) || textOf(row.querySelector(':scope > .full, .label, [slot=label], .name') || row)).slice(0, 80), full: textOf(row.querySelector(':scope > .full')).slice(0, 120), text: textOf(row).slice(0, 120), spark: sparkOf(row) }))
+  const out = rows.map(row => ({ label: (textOf(row.querySelector(':scope > .label, :scope > .name > .label')) || textOf(row.querySelector(':scope > .full, .label, [slot=label], .name') || row)).slice(0, 80), full: textOf(row.querySelector(':scope > .full')).slice(0, 120), text: textOf(row).slice(0, 120), spark: sparkOf(row) }))
   // Margin lines: R3's .margin paragraphs (who, and what in words), else any short line that reads as a margin to a limit.
   const marginEls = [...doc.querySelectorAll('p.margin')].filter(el => !el.closest('.popover, [role=dialog]'))
   const margins = marginEls.length > 0 ? marginEls.map(el => { const what = el.querySelector('.what'); return (textOf(el.querySelector('.who')) + ' ' + (what ? what.getAttribute('aria-label') || textOf(what) : '')).trim() }) : [...doc.querySelectorAll('p, span, div, li')].filter(el => el.children.length === 0 || [...el.children].every(c => c.tagName === 'SPAN')).map(textOf).filter(t => /\b\d[\d.,]*\s*(\S+\s+)?(above|below|from|to)\s+(LO-LO|HI-HI|LO|HI|LOW|HIGH|TRIP)\b/i.test(t) && t.length < 160)

@@ -162,7 +162,7 @@ const READER = `(scope) => {
     if (!root) return { ...empty, generation: 'vignette' }
     // A row's label as a person reads it: its visible (short, whole-word) label, else its full one (R3's readout-list
     // rows keep the full label visually hidden beside the short one).
-    const labelOf = el => { const row = el.closest('.readout, .state, .values .row'); return text(row?.querySelector(':scope > .label')) || text(row?.querySelector(':scope > .full')) }
+    const labelOf = el => { const row = el.closest('.readout, .state, .values .row'); return text(row?.querySelector(':scope > .label, :scope > .name > .label')) || text(row?.querySelector(':scope > .full')) }
     const values = []
     for (const el of root.querySelectorAll('.readout > .reading, .state > obc-status-indicator, .state > .unknown, .values .row > obc-readout-list-item')) {
       if (scope === 'window' && el.closest('.popover, [role=dialog]')) continue
@@ -176,9 +176,9 @@ const READER = `(scope) => {
     const sections = [...article.querySelectorAll('.section')].filter(s => !s.closest('.popover, [role=dialog]'))
     // Lead rows: a values section's rows, directly in it (R1) or in its .values block (R2's frame).
     // R3's column: obc-readout-list rows (.row) in the .values block.
-    const ROWS = ':scope > .readout, :scope > .state, :scope > .values > .readout, :scope > .values > .state, :scope > .values > obc-readout-list > .row'
+    const ROWS = ':scope > .readout, :scope > .state, :scope > .values > .readout, :scope > .values > .state, :scope > .values > obc-readout-list > .row:not(.head)'
     const leadSection = sections.find(s => s.querySelector(ROWS))
-    const leads = leadSection ? [...leadSection.querySelectorAll(ROWS)].map(row => ({ label: text(row.querySelector(':scope > .label')) || text(row.querySelector(':scope > .full')) || text(row).slice(0, 60), value: deepText(row.querySelector(':scope > .reading, :scope > obc-status-indicator, :scope > .unknown, :scope > obc-readout-list-item') ?? row.querySelector('obc-readout-list-item, obc-status-indicator, .reading') ?? doc.createElement('i')) })) : []
+    const leads = leadSection ? [...leadSection.querySelectorAll(ROWS)].map(row => ({ label: text(row.querySelector(':scope > .label, :scope > .name > .label')) || text(row.querySelector(':scope > .full')) || text(row).slice(0, 60), value: deepText(row.querySelector(':scope > .reading, :scope > obc-status-indicator, :scope > .unknown, :scope > obc-readout-list-item') ?? row.querySelector('obc-readout-list-item, obc-status-indicator, .reading') ?? doc.createElement('i')) })) : []
     const alertsSection = [...article.querySelectorAll('section.alerts')].find(s => !s.closest('.popover, [role=dialog]'))
     const framed = [...article.querySelectorAll('.flow .text')].filter(t => ['caution', 'warning', 'alarm', 'critical'].some(c => t.classList.contains(c)))
       .map(t => ({ item: t.dataset.item, tone: ['critical', 'alarm', 'warning', 'caution'].find(c => t.classList.contains(c)), name: text(t.firstElementChild) }))
