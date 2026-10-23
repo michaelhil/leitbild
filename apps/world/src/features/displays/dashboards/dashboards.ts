@@ -12,9 +12,9 @@ import { refObjectId } from '../../../core/model/alerts.ts'
 import type { ObjectId, OperationalObject } from '../../../core/model/index.ts'
 import { selectorSchema, type DisplaySpec } from '../../../core/observation/spec.ts'
 import { assembleCard } from '../compose/card.ts'
-import { cardOfState, composeDefault, composeLeads, composeVignette, type ComposeOutcome } from '../compose/compose.ts'
+import { cardOfState, composeDefault, composeLeads, composeVignette, stateRows, type ComposeOutcome } from '../compose/compose.ts'
 import { declarationOf, declaredRefs, visibleObject } from '../compose/declared.ts'
-import { FRAME_ROWS, type ComposeIssue, type ComposeIssueCode, type VignetteState } from '../compose/model.ts'
+import type { ComposeIssue, ComposeIssueCode, VignetteState } from '../compose/model.ts'
 import { isIssue, resolveSubject, type ComposeRun, type Subject } from '../compose/resolve.ts'
 import { overviewOf, scopeWithin, topologyOf } from '../compose/topology.ts'
 import { membersOf, readsOf } from '../compose/view.ts'
@@ -68,22 +68,23 @@ const resolveScope = async (run: ComposeRun, input: ScopeInput): Promise<Dashboa
 /**
  * What an object's drawing writes on its parallel parts, which its Pack keeps on their symbols and out of its leads: the
  * parts its declared overview draws that stand in declared groups, but those whose symbol draws their state (a switch,
- * a mover). One list a class, each part's readings, so the composer sets each as a table of a line a part.
+ * a mover). One list a class, the composer sets each as a table of a line a part; column by column (each part's first
+ * reading, then each one's second), so a card that cannot hold the table keeps its first column whole.
  */
 const partsOf = async (run: ComposeRun, objectId: ObjectId): Promise<ReadonlyArray<ReadonlyArray<string>>> => {
   const graph = await topologyOf(run, objectId)
   const overview = graph === null ? null : overviewOf(graph)
   const declaration = overview === null ? null : await declarationOf(run, objectId)
   if (graph === null || overview === null || declaration === null) return []
-  const byClass = new Map<string, { parts: number; refs: string[] }>()
+  const byClass = new Map<string, Array<ReadonlyArray<string>>>()
   for (const node of graph.nodes) {
     if (!overview.nodes.includes(node.id) || node.class === 'switch' || node.class === 'mover') continue
     const element = declaration.elements.find(entry => entry.id === (node.element ?? node.id))
     if (element?.group === undefined) continue
-    const parts = byClass.get(element.class) ?? { parts: 0, refs: [] }
-    byClass.set(element.class, { parts: parts.parts + 1, refs: [...parts.refs, ...node.bindings.map(binding => binding.ref)] })
+    byClass.set(element.class, [...byClass.get(element.class) ?? [], [...new Set(node.bindings.map(binding => binding.ref))]])
   }
-  return [...byClass.values()].filter(entry => entry.parts > 1).map(entry => [...new Set(entry.refs)].slice(0, 16))
+  return [...byClass.values()].filter(parts => parts.length > 1)
+    .map(parts => [...new Set(Array.from({ length: Math.max(...parts.map(part => part.length)) }, (_, column) => parts.flatMap(part => part[column] ?? [])).flat())].slice(0, 16))
 }
 
 const sectionOf = (title: string, outcome: ComposeOutcome): Built => outcome.ok
@@ -108,13 +109,6 @@ const defaultsOf = async (run: ComposeRun, scope: DashboardScope, input: ScopeIn
   const sections: Built[] = []
   for (const object of shown.slice(0, DASHBOARD_MAX_PINS)) sections.push(await leadsOf(run, object))
   return { sections, more: objects.length - sections.length }
-}
-
-/** The rows a state takes, its frame included, as the composer fitted it. */
-const stateRows = (state: VignetteState): number => {
-  const left = state.beside === true ? state.views.find(view => view.kind === 'topology') : undefined
-  const column = state.views.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0)
-  return FRAME_ROWS + (state.chips === undefined ? 0 : 1) + Math.max(left?.rows ?? 0, column)
 }
 
 /**
@@ -146,7 +140,7 @@ export const unresolved = async (run: ComposeRun, state: VignetteState): Promise
 const pinnedOf = async (run: ComposeRun, pin: DashboardPin): Promise<Built> => {
   const issue = await unresolved(run, pin.spec)
   return issue === null
-    ? { id: pin.id, by: pin.by, title: pin.spec.title, state: pin.spec, rows: stateRows(pin.spec), card: await cardOfState(run, pin.spec) }
+    ? { id: pin.id, by: pin.by, title: pin.spec.title, state: pin.spec, rows: await stateRows(run, pin.spec), card: await cardOfState(run, pin.spec) }
     : { id: pin.id, by: pin.by, title: pin.spec.title, refused: { code: issue.code, message: issue.message } }
 }
 
@@ -202,7 +196,7 @@ export const changeDashboard = async (run: ComposeRun, file: DashboardFile, by: 
   const pinned: DashboardPin[] = []
   for (const [index, pin] of change.pin.entries()) {
     if ('spec' in pin) {
-      const outcome = await composeVignette(run, pin.spec)
+      const outcome = await composeVignette(run, pin.spec, true)
       if (!outcome.ok) return refusal(422, outcome.issues[0]!.code, outcome.issues.map(issue => `pin.${index}.spec.${issue.path}: ${issue.message}`).join('; '), { issues: outcome.issues })
       // The composer marks what it composes as the Assistant's; a spec a person pins is not.
       const { by: _composer, ...state } = outcome.state

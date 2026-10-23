@@ -250,14 +250,17 @@ describe('T5: the four units\' steam generator levels side by side, and a person
       const state = JSON.parse(section.view.state)
       // Its leads as its Pack ranks them each sample, then what its drawing writes on its steam generators.
       expect(state.views[0]).toMatchObject({ kind: 'values', lead: { objectId: unit } })
-      expect(state.views[1].refs).toEqual(['A', 'B', 'C', 'D'].flatMap(letter => [`${unit}#sg${letter}.levelPercent`, `${unit}#sg${letter}.pressureMPa`]))
+      // Column by column: each steam generator's level, then each one's pressure.
+      expect(state.views[1].refs).toEqual(['levelPercent', 'pressureMPa'].flatMap(reading => ['A', 'B', 'C', 'D'].map(letter => `${unit}#sg${letter}.${reading}`)))
       const table = (await compileVignette(run, state)).sections.find(entry => entry.kind === 'grouped')
       expect(table).toMatchObject({ kind: 'grouped', rows: 5, quantities: [{ unit: '%' }, { unit: 'MPa' }] })
       expect(table?.kind === 'grouped' && table.lines.map(line => line.element.shortLabel)).toEqual(['SG A', 'SG B', 'SG C', 'SG D'])
       const read = (await sampleVignette(run, state)).observations.map(observation => observation.ref)
       expect(['A', 'B', 'C', 'D'].every(letter => read.includes(`${unit}#sg${letter}.levelPercent`))).toBe(true)
     }
-    // The one card leaves each unit its leading items, side by side: the cap never starves the last.
+    // The one card leads with the comparison: every unit's four levels before any lead, within the card's cap (T5).
+    const levels = [1, 2, 3, 4].flatMap(unit => ['A', 'B', 'C', 'D'].map(letter => `plant:halden-${unit}#sg${letter}.levelPercent`))
+    expect(units.card.items.slice(0, 16).map((item: any) => item.subject.ref).sort()).toEqual([...levels].sort())
     expect(units.card.items.slice(0, 4).map((item: any) => item.subject.ref.split('#')[0])).toEqual(units.sections.map((_: unknown, index: number) => `plant:halden-${index + 1}`))
     // A person pins the four of them on the Run's dashboard, two a change.
     const first = await dashboard('update', { scope: 'run', expectedRevision: 0, pin: units.sections.slice(0, 2).map((section: any) => ({ state: section.view.state })) })
@@ -265,5 +268,22 @@ describe('T5: the four units\' steam generator levels side by side, and a person
     const pinned = await dashboard('read', { scope: 'run' })
     expect(pinned).toMatchObject({ revision: 2, stored: true })
     expect(pinned.sections.map((section: any) => [section.title, section.refused === undefined])).toEqual(units.sections.map((section: any) => [section.title, true]))
+
+    // After the trip (5 min into the fault) each unit has alarms at caution and above: its section adds no alerts list, as
+    // the dashboard's run frame shows them (744 px, 31 rows, before; 480 px, 20 rows, now).
+    await runtime.runMaximumPace(new Date(Date.parse(runtime.snapshot().clock!.currentTime) + 270_000).toISOString() as IsoTimestamp, { shouldStop: () => false })
+    const tripped = await displayRunOf(plants, runtime, person, new Set())
+    const after = async (kind: 'read' | 'update', body: unknown) => (await (await handleDashboard(kind, body, { registry: plants, runtime, run: tripped, by: 'person' })).json() as any).result
+    expect(runtime.snapshot().objects.find(object => object.id === 'plant:halden-1')!.alerts.some(alert => ['caution', 'warning', 'alarm', 'emergency'].includes(alert.priority ?? ''))).toBe(true)
+    for (const section of (await after('read', { scope: { of: { category: 'process-plants' } } })).sections) {
+      expect(JSON.parse(section.view.state).views.map((view: any) => view.kind)).toEqual(['values', 'values'])
+      expect(section.view.height).toBe(480)
+    }
+    // A pin composed for the dashboard gets no alerts list either; an alerts view its spec asks for stays.
+    const spec = (views: ReadonlyArray<unknown>) => ({ spec: { title: 'Unit 1 SG A', question: 'Is SG A fed?', subjects: ['plant:halden-1#sgA.levelPercent'], views } })
+    const changed = await after('update', { scope: { subject: 'plant:halden-1' }, expectedRevision: 0, pin: [spec([{ kind: 'values' }]), spec([{ kind: 'values' }, { kind: 'alerts' }])] })
+    expect(changed.revision).toBe(1)
+    const pins = (await plants.dashboards(runtime.id).read()).dashboards.find(entry => entry.scope !== 'run')!.pins
+    expect(pins.map(pin => pin.spec.views.map(view => view.kind))).toEqual([['values'], ['values', 'alerts']])
   })
 })
