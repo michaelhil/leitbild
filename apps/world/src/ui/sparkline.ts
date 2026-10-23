@@ -3,10 +3,13 @@
 // record, broken beyond it, scaled to its own range with no axes, a dot where
 // it ends while its last value still holds now. It stands in for
 // obc-graph-mini, which cannot break its line where nothing was recorded.
-// One geometry for every site: a values row's (Sparkline.svelte) and a
-// Pack's cards, which call it.
-import type { SeriesPoint } from '../../../features/displays/compose/model.ts'
-import { stepPath } from './trend.ts'
+// One geometry for every site: a vignette's values rows (embed,
+// ui/embed/vignette/Sparkline.svelte) and a Pack's cards in the main app,
+// which call it. It stands outside the vignette renderer and imports none of
+// it, so the main app reaches no vignette module and no OpenBridge (T28).
+
+/** A recorded point: Run time in epoch ms and the value then. */
+interface SeriesPoint { readonly t: number; readonly v: number }
 
 /** A sparkline's window: what a values row draws of its reading's record. */
 export const SPARK_WINDOW_MS = 600_000
@@ -26,6 +29,21 @@ const INSET_END = 4
 /** A scale spans at least this share of the value, and one unit for values of one or more, so a steady value reads flat, not as noise. */
 const MIN_SPAN_FRACTION = 0.04
 const PAD_FRACTION = 0.08
+
+/** Step and hold: each point holds until the next, its hold, the reading's going silent or the window's end, and breaks where the next comes after its hold. */
+const stepPath = (points: ReadonlyArray<SeriesPoint>, x: (t: number) => number, y: (v: number) => number, window: { readonly start: number; readonly end: number }, holdMs: number, silentFrom?: number): string => {
+  const commands: string[] = []
+  let open = false
+  points.forEach((point, index) => {
+    const next = points[index + 1]
+    const holdEnd = Math.min(next?.t ?? (silentFrom !== undefined && silentFrom >= point.t ? silentFrom : window.end), point.t + holdMs, window.end)
+    if (holdEnd < window.start || point.t > window.end) { open = false; return }
+    const level = y(point.v).toFixed(1)
+    commands.push(`${open ? 'L' : 'M'}${x(Math.max(point.t, window.start)).toFixed(1)} ${level}`, `L${x(holdEnd).toFixed(1)} ${level}`)
+    open = next !== undefined && next.t <= point.t + holdMs
+  })
+  return commands.join(' ')
+}
 
 /**
  * The points a line draws the same as all of them (W8.5: a record a second over ten minutes is 600 points in 52 px):

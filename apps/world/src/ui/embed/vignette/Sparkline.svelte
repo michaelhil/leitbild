@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { DrawnSeries } from './trend.ts'
-  import { sparkline } from './sparkline.ts'
+  import { sparkline } from '../../sparkline.ts'
   import type { AlertTone } from './readout.ts'
 
   // A reading's last ten minutes beside its value (D-C; register `sparkline`):

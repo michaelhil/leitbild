@@ -61,8 +61,8 @@
     const flow = view.sections[drawing] as Extract<VignetteSection, { kind: 'topology' }>
     return frameLayout({ width, drawingWidth: flow.layout.width * VIGNETTE_ROW_PX * drawingScale(flow), zoom })
   })
-  /** The band's alerts: their head, three rows and the count of the rest. */
-  const BAND_ALERT_ROWS = 5
+  /** The band's alerts: their head, three rows, the count of the rest and the expected aggregate (§5.5 viewport: 3 alert rows). */
+  const BAND_ALERT_ROWS = 6
 
   /** Which ends of a scrolled drawing are out of sight, judged on every scroll and every change of its or its drawing's size. */
   let more = $state({ left: false, right: false })
@@ -92,9 +92,12 @@
           {@const lines = marginLines(rows, MARGIN_LINES)}
           <!-- Then the margins of those near or past a limit in force, the most urgent first. -->
           <h2 class="zone"><span>Margins{#if lines.length === 0}<span class="quiet">{' · none near a limit'}</span>{/if}</span></h2>
-          {#each lines as line (line.ref)}
-            <p class="margin" class:past={line.margin.past} title={`${line.full}: ${line.margin.text}`}><span class="who">{line.label}</span><span class="what" aria-label={line.margin.text} use:wholeParts={line.margin}></span></p>
-          {/each}
+          <!-- Their rows kept while none is near, so nothing under them moves when one comes near, in the band too. -->
+          <div class="margins" style:min-height={`${MARGIN_LINES * VIGNETTE_ROW_PX}px`}>
+            {#each lines as line (line.ref)}
+              <p class="margin" class:past={line.margin.past} title={`${line.full}: ${line.margin.text}`}><span class="who">{line.label}</span><span class="what" aria-label={line.margin.text} use:wholeParts={line.margin}></span></p>
+            {/each}
+          </div>
         {/if}
       {:else if section.kind === 'grouped'}
         <GroupedValues {section} {observations} {frozen} />

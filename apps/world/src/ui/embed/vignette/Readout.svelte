@@ -35,7 +35,7 @@
     ></obc-readout-block>
     {#if look.unit !== ''}<span class="unit">{look.unit}</span>{/if}
   </span>
-  {#if look.note !== null && label !== undefined}<span class="note">{look.note}</span>{/if}
+  {#if look.reason !== null && label !== undefined}<span class="note" title={look.reason}>({look.reason})</span>{:else if look.note !== null && label !== undefined}<span class="note">{look.note}</span>{/if}
 </span>
 
 <style>

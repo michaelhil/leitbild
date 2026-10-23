@@ -28,7 +28,7 @@
   import { createVignetteSession, vignetteRoutes, type VignetteSession } from './vignette-client.ts'
   import Vessel from './Vessel.svelte'
   import Sparkline from './Sparkline.svelte'
-  import { SPARK_WINDOW_MS } from './sparkline.ts'
+  import { SPARK_WINDOW_MS } from '../../sparkline.ts'
   import type { DrawnSeries } from './trend.ts'
   import { numberText, unitSymbol } from '../../../core/observation/model.ts'
   import './openbridge.ts'
