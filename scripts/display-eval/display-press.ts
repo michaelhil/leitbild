@@ -34,6 +34,25 @@ export const targetsOf = (page: Page): Promise<ReadonlyArray<PressTarget>> => se
 const PAGE_DIALOGS = `lb.everything().map(([el]) => el).filter(el => el.getAttribute && el.getAttribute('role') === 'dialog' && lb.shown(el) && !/\\/world\\/embed\\//.test(el.ownerDocument.location.pathname)).map(el => (el.getAttribute('aria-label') || el.innerText || '').replace(/\\s+/g, ' ').slice(0, 100))`
 export const pageDialogs = (page: Page): Promise<ReadonlyArray<string>> => page.eval<ReadonlyArray<string>>(PAGE_DIALOGS)
 
+/** Whether the display window is in front: what a press at its title lands on, through the frames, is the window's
+ * own header; otherwise what covers it (a dialog's label, or the element). A dialog shown elsewhere does not count. */
+export const windowOnTop = (page: Page): Promise<{ readonly onTop: boolean; readonly over: string | null } | null> => page.eval(String.raw`(() => {
+  const title = lb.everything().map(([el]) => el).find(el => el.classList && el.classList.contains('display-window-title') && lb.shown(el))
+  if (!title) return null
+  const box = lb.toTop(title)
+  let doc = document, x = box.x + box.w / 2, y = box.y + box.h / 2, hit = doc.elementFromPoint(x, y)
+  while (hit && hit.tagName === 'IFRAME' && hit.contentDocument) {
+    const r = hit.getBoundingClientRect(), fs = lb.scaleOf(hit)
+    x = (x - r.left) / fs - hit.clientLeft; y = (y - r.top) / fs - hit.clientTop
+    doc = hit.contentDocument; hit = doc.elementFromPoint(x, y)
+  }
+  const header = title.closest('.display-window-header') || title.parentElement
+  if (hit && (hit === title || title.contains(hit) || (header && header.contains(hit)))) return { onTop: true, over: null }
+  const dialog = hit && hit.closest('[role=dialog]')
+  const label = dialog ? (dialog.getAttribute('aria-label') || dialog.innerText || '') : hit ? hit.tagName.toLowerCase() + '.' + String(hit.className || '').split(' ')[0] : '(nothing)'
+  return { onTop: false, over: label.replace(/\s+/g, ' ').trim().slice(0, 80) }
+})()`)
+
 const signature = (screen: Screen) => JSON.stringify({ w: screen.window && { p: screen.window.position, t: screen.window.title, s: screen.window.src }, d: screen.dialogs.map(d => d.label) })
 const textOf = (screen: Screen) => screen.lines.filter(line => line.on).map(line => line.text).join('\n')
 /** The screen's text with its numbers masked: what a press changed, not what a sample moved. */

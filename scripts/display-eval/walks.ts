@@ -33,7 +33,7 @@
 import { join } from 'node:path'
 import { ensureChrome, loopbackOrigin, openPage, options, sleep, type Page } from './browser.ts'
 import { onScreen, type PressTarget, type Screen } from './display-dom.ts'
-import { goHome, homeOf, openOverview, pageDialogs, press, screenOf, sizeSpec, targetsOf, waitForContent, type Home, type Outcome, type SizeSpec } from './display-press.ts'
+import { goHome, homeOf, openOverview, press, windowOnTop, screenOf, sizeSpec, targetsOf, waitForContent, type Home, type Outcome, type SizeSpec } from './display-press.ts'
 import { colourBlobs } from './pixels.ts'
 import { createStackApi, type StackApi } from './stack-api.ts'
 
@@ -355,14 +355,17 @@ const t4 = async (ctx: Ctx): Promise<TaskResult> => {
   const shots = [await shotOf(ctx, 'T4-tag')]
   // "Open in display window": the window then shows it, in front (no dialog over it).
   const openIn = await ctx.page.find({ sel: 'button', text: 'Open in display window' }) ?? await ctx.page.find({ sel: 'button', text: 'Open in the display window' })
-  let forward = false, windowTitle: string | null = null
+  let forward = false, windowTitle: string | null = null, cover: string | null = null
   if (openIn !== null) {
     await ctx.page.click(openIn)
     steps.push({ press: openIn.label.slice(0, 40), kind: 'dialog', outcome: 'pressed' })
     await sleep(3_000)
     const screen = await screenOf(ctx.page)
     windowTitle = screen.window?.title ?? null
-    forward = (await pageDialogs(ctx.page)).length === 0
+    // In front: a press at the window's title lands on the window (a dialog shown behind it does not count).
+    const top = await windowOnTop(ctx.page)
+    forward = top?.onTop === true
+    cover = top === null ? 'no window title' : top.over
     shots.push(await shotOf(ctx, 'T4-window'))
   }
   const ok = shown !== undefined && element(shown.title)
@@ -370,7 +373,7 @@ const t4 = async (ctx: Ctx): Promise<TaskResult> => {
   const about = shown !== undefined && /Emergency Diesel Generator A|\bEDG A\b/.test(shown.title)
   return {
     id: 'T4', title: 'A procedure tag opens the element it is measured on', verdict: ok && forward ? '✔' : ok || about ? '◐' : '✖', budget: null, clicks: steps.length, path: steps, deadEnds: 0, searched: 0,
-    detail: `the tag shows "${shown?.title ?? '(no display)'}" (World's element default: "${expected}"); "Open in display window" ${openIn === null ? 'not offered' : `→ window "${windowTitle ?? '?'}", ${forward ? 'in front' : 'still behind a dialog'}`}`,
+    detail: `the tag shows "${shown?.title ?? '(no display)'}" (World's element default: "${expected}"); "Open in display window" ${openIn === null ? 'not offered' : `→ window "${windowTitle ?? '?'}", ${forward ? 'in front (a press at its title lands on it)' : `not in front: a press at its title lands on ${cover ?? '?'}`}`}`,
     shots,
   }
 }
