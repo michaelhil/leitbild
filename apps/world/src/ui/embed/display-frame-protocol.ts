@@ -18,6 +18,18 @@ export interface DisplayFramePresentation {
   readonly zoom: number
   /** For a display the window opened from another: the title of that one, which Back returns to. */
   readonly back?: string
+  /**
+   * The part of the frame a person sees, in the frame's own px: the window scrolls a display taller or wider than
+   * its body, and keeps clear of its own resize handles at the body's edges. A faceplate stands inside it.
+   */
+  readonly visible?: DisplayFrameRoom
+}
+
+export interface DisplayFrameRoom {
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
 }
 
 /** Frame -> window: listening; the window answers with the presentation. */
@@ -71,7 +83,16 @@ export interface DisplayFrameBack {
   readonly type: 'world:display-back'
 }
 
-export type DisplayFrameMessage = DisplayFrameReady | DisplayFrameExtent | DisplayFrameZoomRequest | DisplayFrameOpen | DisplayFrameMap | DisplayFrameBack
+/**
+ * Frame -> window: whether a faceplate stands open or pinned on the display. Meanwhile the window gives the frame its
+ * body's whole height (a short display's faceplate is not cut at the frame's foot while the window has room, W3.4).
+ */
+export interface DisplayFrameFaceplate {
+  readonly type: 'world:display-faceplate'
+  readonly open: boolean
+}
+
+export type DisplayFrameMessage = DisplayFrameReady | DisplayFrameExtent | DisplayFrameZoomRequest | DisplayFrameOpen | DisplayFrameMap | DisplayFrameBack | DisplayFrameFaceplate
 
 /** The longest state and title an open request carries (a detail's state is far shorter). */
 const OPEN_STATE_MAX = 4_096
@@ -89,13 +110,22 @@ const hasKeys = (record: Record<string, unknown>, keys: ReadonlyArray<string>): 
 
 const text = (value: unknown, most: number): value is string => typeof value === 'string' && value.length > 0 && value.length <= most
 
+const room = (value: unknown): value is DisplayFrameRoom => isRecord(value) && hasKeys(value, ['x', 'y', 'width', 'height'])
+  && [value.x, value.y].every(number => typeof number === 'number' && Number.isFinite(number)) && [value.width, value.height].every(number => typeof number === 'number' && Number.isFinite(number) && number >= 0)
+
 export const parseDisplayFramePresentation = (value: unknown): DisplayFramePresentation | null => {
   if (!isRecord(value) || value.type !== 'world:display-frame') return null
-  if (!hasKeys(value, ['type', 'shown', 'zoom']) && !hasKeys(value, ['type', 'shown', 'zoom', 'back'])) return null
+  const optional = ['back', 'visible'].filter(key => key in value)
+  if (!hasKeys(value, ['type', 'shown', 'zoom', ...optional])) return null
   if (typeof value.shown !== 'boolean' || !finitePositive(value.zoom)) return null
   if (value.zoom < DISPLAY_ZOOM_MIN || value.zoom > DISPLAY_ZOOM_MAX) return null
   if ('back' in value && !text(value.back, OPEN_TITLE_MAX)) return null
-  return { type: 'world:display-frame', shown: value.shown, zoom: value.zoom, ...(typeof value.back === 'string' ? { back: value.back } : {}) }
+  if ('visible' in value && !room(value.visible)) return null
+  return {
+    type: 'world:display-frame', shown: value.shown, zoom: value.zoom,
+    ...(typeof value.back === 'string' ? { back: value.back } : {}),
+    ...(room(value.visible) ? { visible: { x: value.visible.x, y: value.visible.y, width: value.visible.width, height: value.visible.height } } : {}),
+  }
 }
 
 export const parseDisplayFrameMessage = (value: unknown): DisplayFrameMessage | null => {
@@ -127,5 +157,6 @@ export const parseDisplayFrameMessage = (value: unknown): DisplayFrameMessage | 
     return { type: 'world:display-map', bounds: [[southWest[0], southWest[1]], [northEast[0], northEast[1]]] }
   }
   if (value.type === 'world:display-back') return hasKeys(value, ['type']) ? { type: 'world:display-back' } : null
+  if (value.type === 'world:display-faceplate') return hasKeys(value, ['type', 'open']) && typeof value.open === 'boolean' ? { type: 'world:display-faceplate', open: value.open } : null
   return null
 }

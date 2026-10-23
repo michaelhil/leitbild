@@ -129,8 +129,9 @@ export type VignetteSection =
   /**
    * `lead`: the index of the state's view whose lead request it shows; its values now are the sample's `leads[lead]`,
    * in its rows but its table's. `table`: its element's declared table, in its last rows, its values the sample's.
+   * `devices`: an element's lead request's, the devices the element bundles (declared with it as their parent, W3.5).
    */
-  | { readonly kind: 'values'; readonly rows: number; readonly values: ReadonlyArray<VignetteValue>; readonly lead?: number; readonly table?: GroupedSection }
+  | { readonly kind: 'values'; readonly rows: number; readonly values: ReadonlyArray<VignetteValue>; readonly lead?: number; readonly table?: GroupedSection; readonly devices?: ReadonlyArray<VignetteElement> }
   | GroupedSection
   /** Pens drawn together share a strip: at most four strips of at most four pens. */
   | { readonly kind: 'trend'; readonly rows: number; readonly horizonMs: number; readonly strips: ReadonlyArray<ReadonlyArray<VignetteValue>> }

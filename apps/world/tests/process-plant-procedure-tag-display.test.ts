@@ -61,7 +61,7 @@ describe('the component a signal is measured on', () => {
 describe('procedure tags validated against a Plant', () => {
   const validated = ask('world.process-plant.procedure-tags.validate', {
     plantId: system.plant.id,
-    tags: [{ id: 'PT-455' }, { id: 'NIS-PR-AVG' }, { id: 'TRIP-BKR-A' }, { id: 'DG-A' }, { id: 'SI-SIG' }],
+    tags: [{ id: 'PT-455' }, { id: 'NIS-PR-AVG' }, { id: 'TRIP-BKR-A' }, { id: 'DG-A' }, { id: 'SI-SIG' }, { id: 'PORV-456A' }],
   }) as { readonly tags: ReadonlyArray<PackProcedureTagValidation> }
   const row = (id: string): PackProcedureTagValidation => validated.tags.find(tag => tag.id === id)!
 
@@ -72,6 +72,8 @@ describe('procedure tags validated against a Plant', () => {
       ['TRIP-BKR-A', 'reactorTripBreakerA'],
       ['DG-A', 'dieselGeneratorA'],
       ['SI-SIG', undefined],
+      // A device its component bundles is the element it is measured on (W3.1): the PORV, not the pressurizer.
+      ['PORV-456A', 'pressurizer.reliefValve'],
     ])
     expect(row('SI-SIG')).toEqual({ id: 'SI-SIG', status: 'missing', warnings: [] })
   })

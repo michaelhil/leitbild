@@ -86,3 +86,7 @@ export const valueOf = ({ observable, object, element }: Declared): VignetteValu
 /** An element as a value names it: what it leads with stays in its declaration. */
 const named = ({ id, class: kind, label, shortLabel, group, parent }: VignetteElement): VignetteElement =>
   ({ id, class: kind, label, ...(shortLabel === undefined ? {} : { shortLabel }), ...(group === undefined ? {} : { group }), ...(parent === undefined ? {} : { parent }) })
+
+/** The devices an element bundles (a vessel's relief and block valves): the declared elements naming it as their parent. */
+export const bundledDevices = async (run: SearchRun, objectId: string, elementId: string): Promise<ReadonlyArray<VignetteElement>> =>
+  ((await declarationOf(run, objectId))?.elements ?? []).filter(element => element.parent === elementId).map(named)

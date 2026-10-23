@@ -15,6 +15,7 @@ import type { VignetteView } from '../src/features/displays/compose/model.ts'
 import { compileVignette, type ViewRun } from '../src/features/displays/compose/view.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { builtinScenarioDefinitions } from '../src/scenarios/definitions.ts'
+import { nameStem } from '../src/features/displays/topology/flow-sizing.ts'
 import { standsBeside } from '../src/ui/embed/vignette/grid.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 
@@ -72,15 +73,31 @@ describe('element defaults on four-loop Halden', () => {
     expect(failures).toEqual([])
   }, 240_000)
 
-  test('in an element\'s pop-over every default stacks its views at the pop-over\'s width: none keeps the window\'s 360 px column, so no value falls outside it', () => {
-    // UX audit H3: SG A's default, beside its drawing in the window, kept that column inside the 304 px pop-over and
-    // lost 4 of its 8 values, AFW flow to SG A among them.
+  test('a window frame stands every flow default\'s drawing beside its column, and every values view has a row for each value', () => {
     const beside = [...views].filter(([, view]) => view.beside === true)
     expect(beside.map(([id]) => id)).toEqual(expect.arrayContaining(['sgA']))
-    expect(beside.filter(([, view]) => !standsBeside(view, true)).map(([id]) => id)).toEqual([])
-    expect([...views].filter(([, view]) => standsBeside(view, false)).map(([id]) => id)).toEqual([])
-    // Stacked, each values view has a row for each of its values (the pop-over draws every section but its drawings).
+    expect(beside.filter(([, view]) => !standsBeside(view)).map(([id]) => id)).toEqual([])
     const short = [...views].flatMap(([id, view]) => view.sections.flatMap(section => (section.kind === 'values' && section.rows < section.values.length ? [`${id}: ${section.values.length} values in ${section.rows} rows`] : [])))
     expect(short).toEqual([])
   })
+
+  test('a host\'s values name the devices it bundles, from their declared parent link, so its faceplate reaches them (W3.5)', () => {
+    const devices = (id: string) => views.get(id)?.sections.flatMap(section => (section.kind === 'values' ? section.devices ?? [] : []).map(device => device.id)) ?? []
+    expect(devices('pressurizer')).toEqual(expect.arrayContaining(['pressurizer.reliefValve', 'pressurizer.blockValve', 'pressurizer.safetyValves']))
+    expect(devices('sgA')).toEqual([])
+  })
+
+  test('only alike items are drawn as one: a group never hides another kind of pump among its members (W3.5)', () => {
+    const groups = [...views].flatMap(([id, view]) => view.sections.flatMap(section => {
+      if (section.kind !== 'topology') return []
+      const label = new Map(section.nodes.map(node => [node.id, node.shortLabel ?? node.label]))
+      return section.layout.nodes.flatMap(node => (node.members === undefined ? [] : [{ id, members: node.members.map(member => label.get(member) ?? member) }]))
+    }))
+    expect(groups.filter(group => new Set(group.members.map(nameStem)).size > 1)).toEqual([])
+    // SG A's neighbourhood draws the motor-driven AFW pumps as one and the turbine-driven one on its own.
+    const sgA = groups.filter(group => group.id === 'sgA').map(group => group.members.join(' / '))
+    expect(sgA).toContain('MD AFW A / MD AFW B')
+    expect(sgA.some(group => group.includes('TD AFW'))).toBe(false)
+  })
 })
+

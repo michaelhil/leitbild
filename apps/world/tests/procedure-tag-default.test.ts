@@ -20,11 +20,11 @@ import { guardPlantTests } from './plant-hang-guard.ts'
 
 guardPlantTests()
 
-// T39 P4, re-baselined at the swap: a clicked procedure tag opens World's default display of the tag on its unit
-// (displays/default for <unit>#<signal the tag resolved to>), composed as the person reads it. On four-loop Halden Unit 2, the eight tags T01
-// recorded: each tag the unit's model holds opens on the very signal it names; one it lacks says so before anything is
-// composed. Listed difference: the reactor trip breaker's tag now opens (its default is the signal's), where the old
-// detail around the breaker refused it as connected to no equipment.
+// T39 P4, re-baselined at the swap and again in R2 (plan v5 W3.1, D-E): a clicked procedure tag opens World's default
+// display of the element its Pack declares the tag measured on (displays/default for <unit>#<element>), composed as
+// the person reads it: the equipment, its lead values, trend, own alerts and drawing, never the demand's own default.
+// On four-loop Halden Unit 2, the eight tags T01 recorded: each tag the unit's model holds opens its equipment; one it
+// lacks says so before anything is composed. The reactor trip breaker joins no line the Plant draws: no drawing.
 
 const routing = createDirectRoutingAdapter()
 const assembly = createWorldApplicationAssembly({ routing })
@@ -53,20 +53,19 @@ beforeAll(async () => {
     if (plan.kind !== 'display') { facts[tag.id] = { plan: plan.kind }; continue }
     const outcome = await composeDefault(run, plan.subject)
     facts[tag.id] = outcome.ok
-      ? { opens: outcome.state.views.map(view => view.kind), first: outcome.card.items.flatMap(item => item.subject !== undefined && 'ref' in item.subject ? [item.subject.ref] : [])[0] === plan.subject }
+      ? { element: plan.subject.slice(plan.subject.indexOf('#') + 1), opens: outcome.state.views.map(view => view.kind) }
       : { subject: plan.subject, refused: outcome.issues.map(issue => issue.code) }
   }
 })
 afterAll(async () => { await registry.shutdown(); await rm(dataDir, { recursive: true, force: true }) })
 
-describe('P4: a procedure tag opens the default display of the signal it names', () => {
-  test('each of the eight tags: its trend and its equipment drawn, the signal it names first; one the model lacks composes nothing', () => {
-    // Each with its alerts on the signal, "none" until there are some (plan §2 rule 3).
-    const opened = { opens: ['trend', 'alerts', 'topology'], first: true }
+describe('P4: a procedure tag opens the default display of the element it is measured on', () => {
+  test('each of the eight tags: its equipment\'s values, trend, alerts and drawing; one the model lacks composes nothing', () => {
+    const opened = (element: string) => ({ element, opens: ['values', 'trend', 'alerts', 'topology'] })
     expect(facts).toEqual({
-      'PT-455': opened, 'NIS-PR-AVG': opened, 'SG-B-LVL-NR': opened, 'AFW-FLOW': opened, 'MSIV-A-POS': opened, 'DG-A': opened,
-      // The trip breaker joins no line the Plant draws: its trend alone.
-      'TRIP-BKR-A': { opens: ['trend', 'alerts'], first: true },
+      'PT-455': opened('pressurizer'), 'NIS-PR-AVG': opened('core'), 'SG-B-LVL-NR': opened('sgB'), 'AFW-FLOW': opened('auxFeedwaterHeader'),
+      'MSIV-A-POS': opened('mainSteamIsolationValveA'), 'DG-A': opened('dieselGeneratorA'),
+      'TRIP-BKR-A': { element: 'reactorTripBreakerA', opens: ['values', 'trend', 'alerts'] },
       'SI-SIG': { plan: 'not-in-model' },
     })
   })

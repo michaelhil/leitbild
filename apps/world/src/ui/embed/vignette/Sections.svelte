@@ -28,19 +28,16 @@
   // (grid.ts frameLayout) the column first, as a band over the drawing: its
   // values in columns, then its alerts' head and first rows, the drawing at
   // its size, scaled to the width or scrolled sideways under an edge fade
-  // that says it continues; or in an element's pop-over (ElementPopover.svelte),
-  // which leaves out its topologies: it stands beside the drawing it opened
-  // from. Frozen, values, trends and alerts read in OpenBridge's low-integrity
-  // style: they no longer follow the Run.
-  let { view, snapshot, palette, frozen, runId, from, drawings = true }: {
+  // that says it continues. Frozen, values, trends and alerts read in
+  // OpenBridge's low-integrity style: they no longer follow the Run.
+  let { view, snapshot, palette, frozen, runId, from }: {
     view: VignetteView
     snapshot: VignetteSnapshot
     palette: Palette
     frozen: boolean
     runId: SimulationRunId
-    /** The display these sections stand in, as an element's pop-over names it when it opens the element elsewhere. */
+    /** The display these sections stand in, as an element's detail opened from it names it. */
     from: OpenedFrom
-    drawings?: boolean
   } = $props()
 
   const latest = $derived(snapshot.latest)
@@ -56,7 +53,7 @@
   let zoom = $state(1)
   runOnMount(() => embeddedDisplayFrame().subscribe(presentation => { zoom = presentation.zoom }))
   const layout = $derived.by(() => {
-    if (!standsBeside(view, drawings)) return null
+    if (!standsBeside(view)) return null
     const flow = view.sections[drawing] as Extract<VignetteSection, { kind: 'topology' }>
     return frameLayout({ width, drawingWidth: flow.layout.width * VIGNETTE_ROW_PX * drawingScale(flow), zoom })
   })
@@ -77,7 +74,6 @@
 </script>
 
 {#snippet one(section: VignetteSection, index: number, rows: number | null = section.rows, fit: number = 1)}
-  {#if drawings || section.kind !== 'topology'}
     <div class="section" class:frozen={frozen && (section.kind === 'alerts' || section.kind === 'entity')} style:height={rows === null ? undefined : `${rows * VIGNETTE_ROW_PX}px`}>
       {#if section.kind === 'values'}
         <div class="values">
@@ -86,7 +82,7 @@
             {#if look.kind === 'criterion'}<CriterionRow {look} label={underTitle(value.label, view.title)} />{:else if look.kind === 'state'}<StateWord {look} label={underTitle(value.label, view.title)} />{:else}<Readout {look} label={underTitle(value.label, view.title)} />{/if}
           {/each}
         </div>
-        {#if section.table !== undefined}<GroupedValues section={section.table} {observations} />{/if}
+        {#if section.table !== undefined}<GroupedValues section={section.table} {observations} {frozen} />{/if}
       {:else if section.kind === 'grouped'}
         <GroupedValues {section} {observations} {frozen} />
       {:else if section.kind === 'trend'}
@@ -113,7 +109,6 @@
         <NetworkTopology {section} {observations} {palette} />
       {/if}
     </div>
-  {/if}
 {/snippet}
 
 <div class="sections" bind:clientWidth={width}>
@@ -170,7 +165,7 @@
   /* The drawing scrolls sideways in the frame's width, an edge fading where it continues; the window body scrolls down. */
   .scroll-wrap { position: relative; }
   .scroll { overflow-x: auto; overflow-y: hidden; }
-  /* Its own section only: an element's pop-over inside the drawing holds sections of its own. */
+  /* Its own section only, never a section nested inside the drawing. */
   .scroll > .section { width: max-content; }
   .scroll-wrap.more-left::before, .scroll-wrap.more-right::after { content: ''; position: absolute; top: 0; bottom: 0; width: 32px; pointer-events: none; }
   .scroll-wrap.more-left::before { left: 0; background: linear-gradient(to left, transparent, var(--container-background-color)); }

@@ -11,7 +11,7 @@ import type { ElementTable } from '../../../core/observation/capabilities.ts'
 import type { Observation } from '../../../core/observation/model.ts'
 import { alertRows, priorityRank, worstFirst, type AlertRow } from '../alerts/rows.ts'
 import { annunciatedRows } from '../alerts/annunciated.ts'
-import { declarationOf, declaredRefs, valueOf, visibleObject, type Declared } from './declared.ts'
+import { bundledDevices, declarationOf, declaredRefs, valueOf, visibleObject, type Declared } from './declared.ts'
 import { ownStates, planLead, readLeads, tableRows, type LeadPlan } from './defaults.ts'
 import {
   ENTITY_COLUMNS, horizonMs, type Collection, type EntityRow, type GroupedSection, type RecordedSeries, type ResolvedView, type SlotDeclaration, type VignetteSample,
@@ -209,7 +209,8 @@ export const compileVignette = async (run: ComposeRun, state: VignetteState): Pr
     // A lead request's rows keep their places whatever it leads with (never grouped); each sample brings its values now.
     if (view.kind === 'values' && leads.has(index)) {
       const table = tables.get(index)
-      sections.push({ kind: 'values', rows: view.rows, values: values(leads.get(index)!), lead: index, ...(table === undefined ? {} : { table: tableSection(view.lead!.element!, table, declared) }) })
+      const devices = view.lead?.element === undefined ? [] : await bundledDevices(run, view.lead.objectId, view.lead.element)
+      sections.push({ kind: 'values', rows: view.rows, values: values(leads.get(index)!), lead: index, ...(table === undefined ? {} : { table: tableSection(view.lead!.element!, table, declared) }), ...(devices.length === 0 ? {} : { devices }) })
     }
     else if (view.kind === 'values') sections.push(groupValues(values(view.refs ?? [])) ?? { kind: 'values', rows: view.rows, values: values(view.refs ?? []) })
     else if (view.kind === 'trend') sections.push({ kind: 'trend', rows: view.rows, horizonMs: horizonMs(view.horizon), strips: stripsOf(values(view.refs).filter(value => value.series !== null)).slice(0, 4) })

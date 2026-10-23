@@ -161,6 +161,8 @@
   ]
 
   const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], inactive: [] }
+  /** How far the resize handles reach over the body's edges (style.css: 10 px edges, 18 px corners): a faceplate keeps clear. */
+  const RESIZE_HANDLE_REACH = 18
   const windowConstraints = { minWidth: 320, minHeight: 200, margin: 12 } as const
   const zoomWriteDelayMs = 400
   const runId = untrack(() => simulationRunId)
@@ -205,6 +207,9 @@
   let returnTo = $state.raw<DeckReturns>(new Map())
   let bodySize = $state.raw<DisplaySize | null>(null)
   let popover = $state<Popover | null>(null)
+  // In front of the other floating windows (the procedure windows among them) once asked for with focus, as a procedure
+  // tag's "Open in display window" asks (W3.1, F4), until a press elsewhere on the page; a press in it brings it back.
+  let raised = $state(false)
   let listActiveIndex = $state(0)
   let sectionElement = $state<HTMLElement | null>(null)
   let bodyElement = $state<HTMLElement | null>(null)
@@ -403,6 +408,13 @@
     extents = withoutKey(extents, key)
   }
 
+  // A display that opened another from inside its frame, or stepped Back, had the keys: the one shown now takes them,
+  // so its Esc steps Back in turn (DisplayFrame focuses its frame once its page listens).
+  let frameFocus = $state.raw<{ readonly key: string; readonly sequence: number } | null>(null)
+  const focusShown = (): void => {
+    if (current !== null) frameFocus = { key: current.key, sequence: (frameFocus?.sequence ?? 0) + 1 }
+  }
+
   // A display shown after another, its Back returning to the one it came from.
   const openAfter = (from: DeckEntry, listing: EmbeddedViewListing): void => {
     const entry = requestedDeckEntry(deck, runId, { kind: 'listing', listing })
@@ -424,12 +436,19 @@
       return
     }
     openAfter(from.entry, listing)
+    focusShown()
   }
 
   // A subject's World default (a proposal's element), on this Run or the one chat names: composed for the person, shown
   // after the shown display with Back to it, or on its own where the window shows none yet.
   const openDefaultAfter = async (subject: string, on: { readonly runId: string; readonly title?: string } = { runId }): Promise<void> => {
-    const from = current
+    // Opened while the window shows nothing yet (chat's "Review in display"): the subject's own asset overview first, so
+    // its default has a Back and, opened after another, pins the faceplate of the proposal it draws (W3.6).
+    const asset = current === null && on.runId === runId && subject.includes('#')
+      ? deck.find(entry => entry.source === 'asset' && entry.asset.objectId === subject.slice(0, subject.indexOf('#'))) ?? null
+      : null
+    if (asset !== null) showEntry(asset)
+    const from = asset ?? current
     let listing: EmbeddedViewListing
     try {
       const envelope = defaultDisplayEnvelope({ workspaceId: activeWorkspaceId(), simulationRunId: on.runId as SimulationRunId, view: await readDefaultDisplay(on.runId as SimulationRunId, subject) })
@@ -450,6 +469,14 @@
     if (back === null) return
     returnTo = back.returns
     showEntry(back.to)
+    focusShown()
+  }
+
+  // Displays with a faceplate standing on them: each is given the body's whole height meanwhile (W3.4).
+  let faceplates = $state.raw<ReadonlySet<string>>(new Set())
+  const frameFaceplate = (key: string, open: boolean): void => {
+    if (faceplates.has(key) === open) return
+    faceplates = open ? new Set([...faceplates, key]) : new Set([...faceplates].filter(candidate => candidate !== key))
   }
 
   const frameProblem = (_key: string, problem: string): void => {
@@ -504,7 +531,7 @@
     appliedRequest = next.sequence
     if (next.target.kind === 'subject') {
       void openDefaultAfter(next.target.subject, { runId: next.target.runId, title: next.target.title })
-      if (next.focus) void focusWindow()
+      if (next.focus) { raised = true; void focusWindow() }
       return
     }
     const entry = requestedDeckEntry(deck, runId, next.target)
@@ -515,7 +542,7 @@
       notice = 'That asset is not in this Run.'
       if (shown === null && deck[0]) showEntry(deck[0])
     }
-    if (next.focus) void focusWindow()
+    if (next.focus) { raised = true; void focusWindow() }
   }
 
   // Requests come from the rail and, through the Host, from chat.
@@ -697,6 +724,8 @@
 
   const openProcedures = (summary?: ProcedureRunSummary): void => {
     popover = null
+    // The procedure window opens in front of this one.
+    raised = false
     if (assetObject !== null) openProcedureSystemAt(assetObject, summary)
   }
 
@@ -705,15 +734,17 @@
       viewport = currentViewport()
     }
     const outside = (event: PointerEvent): void => {
-      if (popover === null) return
       const target = event.target
       if (!(target instanceof Node)) return
+      raised = sectionElement?.contains(target) === true
+      if (popover === null) return
       if (popoverElement?.contains(target) || popoverTrigger(popover)?.contains(target)) return
       popover = null
     }
-    // Focus moving into a display frame leaves no pointer event here.
+    // Focus moving into a display frame leaves no pointer event here: it brings the window forward, as a press in it would.
     const blurred = (): void => {
       popover = null
+      setTimeout(() => { if (sectionElement?.contains(document.activeElement) === true) raised = true }, 0)
     }
     const observer = new ResizeObserver(entries => {
       const box = entries[0]?.contentRect
@@ -739,7 +770,8 @@
   })
 </script>
 
-<div class="process-display-window-layer">
+<!-- Raised: above the procedure windows' layer (style.css .procedure-window-layer, z-index 92). -->
+<div class="process-display-window-layer" style:z-index={raised ? 93 : undefined}>
   <!-- Zoom keys and Esc act while focus is anywhere in the window: the section delegates them from its controls. -->
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <section
@@ -976,6 +1008,10 @@
           onZoomRequest={receiveZoomRequest}
           onProblem={frameProblem}
           back={returnTo.get(mounted.entry.key)?.title ?? null}
+          focus={frameFocus?.key === mounted.entry.key ? frameFocus.sequence : 0}
+          handles={maximised ? 0 : RESIZE_HANDLE_REACH}
+          fill={faceplates.has(mounted.entry.key)}
+          onFaceplate={frameFaceplate}
           onOpen={frameOpen}
           onBack={frameBack}
           onMap={bounds => focusMap({ kind: 'bounds', bounds })}

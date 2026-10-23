@@ -177,6 +177,12 @@
     if (drafted !== undefined && option !== undefined) void select(drafted, option)
   })
 
+  /** A command a control does not offer (the model's limits), then what the item withholds besides, each with why. */
+  const notOffered = $derived([
+    ...view.controls.flatMap(control => control.withheldOptions.map(withheld => ({ name: `${withheld.word} ${control.target}`, reason: withheld.reason }))),
+    ...view.withheld,
+  ])
+
   const keydown = (event: KeyboardEvent): void => {
     if (event.key !== 'Escape' || selection === null) return
     // The first Esc clears the selection; the next closes the popover.
@@ -191,7 +197,8 @@
   {#if stale}<p class="stale" role="status">{STALE_CONTROLS}</p>{/if}
   {#each view.controls as control (control.path)}
     {@const expanded = selection?.path === control.path}
-    <div class="row" class:expanded>
+    <!-- A two-state control stands on one line beside its name where they fit, so a faceplate stays short. -->
+    <div class="row" class:expanded class:inline={control.form === 'twoState' && control.throttled.length === 0}>
       <div class="head">
         <span class="target">{control.target}</span>
         {#if control.now !== null}<span class="now">Now: {control.now}{#if control.commanded !== null} · {control.commanded}{/if}</span>{/if}
@@ -275,7 +282,6 @@
           {/if}
         {/each}
       {/if}
-      {#each control.withheldOptions as withheld (withheld.word)}<p class="withheld">{withheld.word} not offered: {withheld.reason}</p>{/each}
       {#if control.form !== 'pushbutton'}
         <!-- An option a standing protection actuation holds against is not offered: it reads so, in World's words. -->
         {#each control.options.filter(option => option.heldBy !== null) as held (held.key)}<p class="held">{held.word} not offered: {held.heldBy}</p>{/each}
@@ -340,10 +346,11 @@
     <!-- What a controller holds, read-only, and what operating it by hand would take. -->
     <ul class="auto">{#each view.auto as line (line.text)}<li><span class="auto-line">{line.text}</span> <span class="manual">{line.manual}</span></li>{/each}</ul>
   {/if}
-  {#if view.withheld.length > 0}
+  {#if notOffered.length > 0}
+    <!-- What the model does not offer here, and why: one line until a person opens it, so a faceplate stays short. -->
     <details class="withheld-list">
-      <summary>Not operated here ({view.withheld.length})</summary>
-      <ul>{#each view.withheld as entry (entry.name)}<li><span class="name">{entry.name}</span> {entry.reason}</li>{/each}</ul>
+      <summary>Not offered here ({notOffered.length})</summary>
+      <ul>{#each notOffered as entry (entry.name)}<li><span class="name">{entry.name}</span> {entry.reason}</li>{/each}</ul>
     </details>
   {/if}
 </section>
@@ -352,13 +359,17 @@
   .control { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
   .row { display: flex; flex-direction: column; gap: 4px; padding: 4px 0; border-bottom: 1px solid var(--border-divider-color); }
   .row:last-of-type { border-bottom: 0; }
+  .row.inline { flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: 8px; }
+  .row.inline .head { flex: 1 1 auto; flex-direction: column; align-items: flex-start; gap: 0; }
+  .row.inline obc-toggle-button-group { flex: 0 1 auto; }
+  .row.inline > :not(.head):not(obc-toggle-button-group) { flex: 1 0 100%; }
   .head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
   .target { font-weight: 600; color: var(--element-active-color); }
   .now { color: var(--element-neutral-color); white-space: nowrap; }
   .selected { display: flex; flex-direction: column; gap: 3px; padding-left: 6px; border-left: 2px solid var(--border-outline-color); }
   p { margin: 0; }
   /* Neutral: the I&C allows it, which is no endorsement (QA-9). */
-  .allowed, .checking, .note, .consequence, .opposing, .withheld { color: var(--element-neutral-color); }
+  .allowed, .checking, .note, .consequence, .opposing { color: var(--element-neutral-color); }
   .refused { color: var(--element-active-color); font-weight: 600; }
   .slide-what { font-weight: 600; color: var(--element-active-color); }
   .demand-ends { display: flex; align-items: center; justify-content: space-between; gap: 6px; }

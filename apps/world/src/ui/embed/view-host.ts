@@ -11,7 +11,7 @@
 // itself, it asks that page to open a display there (the contract's view-open
 // message).
 import { embeddedViewHostMessageSchema, type EmbeddedViewListing, type EmbeddedViewOpenMessage } from '@leitbild/contracts'
-import { parseDisplayFramePresentation, type DisplayFrameMap, type DisplayFrameMessage } from './display-frame-protocol.ts'
+import { parseDisplayFramePresentation, type DisplayFrameMap, type DisplayFrameMessage, type DisplayFrameRoom } from './display-frame-protocol.ts'
 import { observeDisplayExtent, type DisplayExtent } from './display-extent.ts'
 
 export interface DisplayPresentation {
@@ -19,7 +19,16 @@ export interface DisplayPresentation {
   readonly zoom: number
   /** For a display its window opened from another: that one's title, which Back returns to. */
   readonly back?: string
+  /** The part of the page a person sees, where the window says (it scrolls a tall display); else the whole page. */
+  readonly visible?: DisplayFrameRoom
 }
+
+const sameRoom = (left: DisplayFrameRoom | undefined, right: DisplayFrameRoom | undefined): boolean =>
+  left === right || (left !== undefined && right !== undefined && left.x === right.x && left.y === right.y && left.width === right.width && left.height === right.height)
+
+/** Where a faceplate may stand: the part of the page the window shows, else the page's own viewport. */
+export const visibleRoom = (presentation: DisplayPresentation, viewport: { readonly width: number; readonly height: number }): DisplayFrameRoom =>
+  presentation.visible ?? { x: 0, y: 0, width: viewport.width, height: viewport.height }
 
 /** Where a view opens a display it names: its window, or the Workspace's window through the page that frames it (a chat answer's, a procedure tag dialog's). */
 export type DisplayOpening = 'window' | 'relay'
@@ -50,6 +59,7 @@ export const createViewHost = (ports: ViewHostPorts) => {
   let presentedByWindow = false
   let relayed = false
   let reported: string | null = null
+  let faceplate = false
   const subscribers = new Set<(presentation: DisplayPresentation) => void>()
   const onWindow = new Set<() => void>()
   const openingSubscribers = new Set<(opening: DisplayOpening | null) => void>()
@@ -80,8 +90,8 @@ export const createViewHost = (ports: ViewHostPorts) => {
       onWindow.clear()
       openingChanged()
     }
-    if (next.shown === presentation.shown && next.zoom === presentation.zoom && next.back === presentation.back) return
-    presentation = { shown: next.shown, zoom: next.zoom, ...(next.back === undefined ? {} : { back: next.back }) }
+    if (next.shown === presentation.shown && next.zoom === presentation.zoom && next.back === presentation.back && sameRoom(next.visible, presentation.visible)) return
+    presentation = { shown: next.shown, zoom: next.zoom, ...(next.back === undefined ? {} : { back: next.back }), ...(next.visible === undefined ? {} : { visible: next.visible }) }
     for (const subscriber of [...subscribers]) subscriber(presentation)
   }
 
@@ -140,6 +150,12 @@ export const createViewHost = (ports: ViewHostPorts) => {
       if (!presentedByWindow) return false
       post({ type: 'world:display-map', bounds })
       return true
+    },
+    /** Tells the window whether a faceplate stands on the display, when that changed: it gives the frame room meanwhile. */
+    reportFaceplate: (open: boolean): void => {
+      if (!presentedByWindow || open === faceplate) return
+      faceplate = open
+      post({ type: 'world:display-faceplate', open })
     },
     /** Back to the display the window opened this one from (DisplayPresentation.back). */
     back: (): void => {
@@ -362,9 +378,25 @@ const forwardZoomGestures = (host: ViewHost): (() => void) => {
 }
 
 /**
+ * Esc is the display's Back (plan v5 §3, W3.1): once nothing inside the
+ * display claimed it (a selected command, an open faceplate, a menu each take
+ * theirs first and cancel it), it returns to the display this one was opened
+ * from, where the window says there is one.
+ */
+export const escapeGoesBack = (host: Pick<ViewHost, 'back'>, target: Pick<Window, 'addEventListener' | 'removeEventListener'>): (() => void) => {
+  const key = (event: Event): void => {
+    if ((event as KeyboardEvent).key !== 'Escape' || event.defaultPrevented) return
+    host.back()
+  }
+  target.addEventListener('keydown', key)
+  return () => target.removeEventListener('keydown', key)
+}
+
+/**
  * Hosts an embedded display in the window that frames it, from mount to the
  * returned cleanup: the display samples only while it can be seen, tells the
- * window the room its content needs, and passes zoom gestures to the window.
+ * window the room its content needs, passes zoom gestures to the window, and
+ * steps Back on Esc.
  */
 export const hostDisplayFrame = (config: {
   readonly kind: 'advice' | 'generated'
@@ -405,7 +437,7 @@ export const hostDisplayFrame = (config: {
     }),
     followPresentation({ host, presented: config.presented }),
     host.whenPresented(() => {
-      windowStops.push(forwardZoomGestures(host), observeDisplayExtent({ kind: config.kind, card, drawing: config.drawing, report: host.reportExtent }))
+      windowStops.push(forwardZoomGestures(host), escapeGoesBack(host, window), observeDisplayExtent({ kind: config.kind, card, drawing: config.drawing, report: host.reportExtent }))
     }),
     host.listen(),
   ]
