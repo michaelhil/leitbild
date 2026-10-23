@@ -25,7 +25,7 @@ const objectId = 'plant:core-trip' as ObjectId
 const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: objectId, loopCount: 4 }))
 const scoped = overviewOf(servedPlantTopology(objectId, plant))!
 const declared = new Map(plantDeclaration(objectId, plant, null).observables.map(observable => [observable.ref, observable]))
-const section = topologySection(objectId, 'process-plant', scoped, flowLayout(scoped, FLOW_ROOM)!, 38, ref => declared.get(ref)) as Topology
+const section = topologySection(objectId, 'process-plant', scoped, flowLayout(scoped, FLOW_ROOM, ref => declared.get(ref))!, 38, ref => declared.get(ref)) as Topology
 
 const started = () => {
   const runtime = createProcessPlantRuntime({ system: plant })

@@ -4,6 +4,8 @@
 // each by a bare import, which is what defines it. A type or enum import
 // beside one never stands in for it.
 import '@oicl/openbridge-webcomponents/dist/openbridge.css'
+// Its font, the subset whose widths the composer reserves text by.
+import './noto-sans.ts'
 import '@oicl/openbridge-webcomponents/dist/icons/icon-ai.js'
 import '@oicl/openbridge-webcomponents/dist/building-blocks/readout-block/readout-block.js'
 import '@oicl/openbridge-webcomponents/dist/building-blocks/bar-horizontal/bar-horizontal.js'

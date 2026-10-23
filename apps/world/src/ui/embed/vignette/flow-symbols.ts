@@ -24,6 +24,7 @@ import type { AlertRow } from '../../../features/displays/alerts/rows.ts'
 import type { TopologyBinding, VignetteSection } from '../../../features/displays/compose/model.ts'
 import { groupName, itemText } from '../../../features/displays/topology/layout.ts'
 import { farState } from '../../../features/displays/topology/stops.ts'
+import { TEXT_INSET, type FlowTextStyle } from '../../../features/displays/topology/text.ts'
 import { VIGNETTE_ROW_PX } from './grid.ts'
 import { chevronSegment, endStraight, pipeSegments, pipeValue, stubEndSegment, type PipeLook } from './pipe-segments.ts'
 import { stub } from './network.ts'
@@ -85,8 +86,11 @@ export const glyphOf = (symbol: FlowSymbol, state: DeviceState, vertical: boolea
   }
 }
 
-/** A line of an item's text: its name, its state word (or a group's count, or the word that says it stopped), the command it does not follow, a reading. */
-export interface FlowLine { readonly text: string; readonly kind: 'name' | 'word' | 'command' | 'reading' }
+/**
+ * A line of an item's text: its name, its state word (or a group's count, or the word that says it stopped), the
+ * command it does not follow, a reading; and the style it is set in (topology/text.ts), a vessel's readings larger.
+ */
+export interface FlowLine { readonly text: string; readonly kind: 'name' | 'word' | 'command' | 'reading'; readonly style: FlowTextStyle }
 
 const DEVICES: ReadonlySet<FlowSymbol> = new Set(['mover', 'generator', 'valve', 'breaker', 'transformer', 'source'])
 /** A text line of the stacks the engine kept (flow-sizing.ts). */
@@ -128,6 +132,8 @@ export interface FlowItem {
   readonly targets: ReadonlyArray<{ readonly element: string; readonly label: string }>
   readonly area: Box
   readonly outline: 'abnormal' | 'expected' | 'low-integrity' | null
+  /** Where its text stands beside its symbol: its first line keeps clear of the symbol's alert frame there. */
+  readonly side: 'top' | 'right' | 'bottom' | 'left'
 }
 
 export const flowDrawing = (section: Topology, observations: ReadonlyArray<Observation>, alerts: ReadonlyArray<AlertRow>, frozen: boolean): FlowDrawing => {
@@ -248,12 +254,12 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
     const stateLines = (binding: TopologyBinding, commanded: boolean): ReadonlyArray<FlowLine> => {
       const word = binding.states === undefined ? '' : readingOf(binding, 'enum').text
       const why = usable(binding)?.why
-      const command: ReadonlyArray<FlowLine> = commanded ? [{ text: why ?? '', kind: 'command' }] : []
-      if (binding.role !== 'stopped') return [{ text: word, kind: 'word' }, ...command]
+      const command: ReadonlyArray<FlowLine> = commanded ? [{ text: why ?? '', kind: 'command', style: 'command' }] : []
+      if (binding.role !== 'stopped') return [{ text: word, kind: 'word', style: 'word' }, ...command]
       // The word that says it stopped while it holds; while a command to stop it stands unmet its other word, with that
       // command; else nothing ("?" or "—" where it is not known, or outside its validity).
       const stopped = activeState(usable(binding)?.value, binding.states)
-      return [{ text: stopped === true || usable(binding) === null || why !== undefined ? word : '', kind: 'word' }, ...command]
+      return [{ text: stopped === true || usable(binding) === null || why !== undefined ? word : '', kind: 'word', style: 'word' }, ...command]
     }
     const groupLines = (): ReadonlyArray<FlowLine> => {
       const states = members.flatMap(member => itemText(member.bindings).state ?? [])
@@ -263,7 +269,7 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
       const running = looks.filter(state => passing(state)).length
       const count = looks.some(state => state.kind === 'unknown') ? `${on ?? ''} ?/${members.length}` : running > 0 || off === undefined ? `${on ?? ''} ${running}/${members.length}` : `${off} ${members.length}/${members.length}`
       const why = states.flatMap(state => usable(state)?.why ?? [])[0]
-      return [{ text: count.trim(), kind: 'word' }, ...(members.some(member => itemText(member.bindings).commanded) ? [{ text: why ?? '', kind: 'command' as const }] : [])]
+      return [{ text: count.trim(), kind: 'word', style: 'word' }, ...(members.some(member => itemText(member.bindings).commanded) ? [{ text: why ?? '', kind: 'command' as const, style: 'command' as const }] : [])]
     }
     // A stop on a power line writes the state of what it names, in their words: all of them ("LIVE"), none ("DEAD"),
     // or how many ("LIVE 1/2"); "?" while one is not known. Never the line's own, which its pipe draws.
@@ -285,35 +291,40 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
       }
       return reading[0]!
     }
-    const sized: ReadonlyArray<FlowLine> = view.stop !== undefined ? [{ text: name, kind: 'name' }, ...((node.text?.lines ?? 1) > 1 ? [{ text: stopWord(), kind: 'word' as const }] : [])]
-      : members.length > 1 ? [{ text: name, kind: 'name' }, ...groupLines()]
+    // A vessel (a tank, an exchanger, the lanes' hub) writes its readings larger.
+    const readingStyle: FlowTextStyle = symbol === 'tank' || symbol === 'exchanger' || symbol === 'vessel' ? 'vesselReading' : 'reading'
+    const sized: ReadonlyArray<FlowLine> = view.stop !== undefined
+      ? [...view.stop.lines.map(text => ({ text, kind: 'name' as const, style: 'name' as const })), ...((node.text?.lines ?? 1) > view.stop.lines.length ? [{ text: stopWord(), kind: 'word' as const, style: 'word' as const }] : [])]
+      : members.length > 1 ? [{ text: name, kind: 'name', style: 'name' }, ...groupLines()]
       : [
-        { text: name, kind: 'name' },
+        { text: name, kind: 'name', style: 'name' },
         ...(written.state === null ? [] : stateLines(written.state, written.commanded)),
         ...written.readings.map(reading => {
           const binding = inRange(reading)
-          if (binding === null) return { text: '?', kind: 'reading' as const }
+          if (binding === null) return { text: '?', kind: 'reading' as const, style: readingStyle }
           const look = readingOf(binding, 'number')
           const value = look.unit === '' ? look.text : `${look.text} ${look.unit}`
           // A share says what it reads (its Pack's word, "LVL", "PWR"), in the room the sizing reserved for the word beside the value.
-          return { text: binding.word === undefined ? value : `${binding.word} ${value}`, kind: 'reading' as const }
+          return { text: binding.word === undefined ? value : `${binding.word} ${value}`, kind: 'reading' as const, style: readingStyle }
         }),
       ]
     const lines = sized.filter(line => line.text !== '')
     const title = [view.label, ...lines.slice(1).map(line => line.text)].join(' · ')
     if (node.text !== undefined) {
-      const shown = sized.slice(0, Math.max(1, node.text.lines)).filter(line => line.text !== '')
+      const shown = sized.slice(0, Math.max(view.stop?.lines.length ?? 1, node.text.lines)).filter(line => line.text !== '')
       // A command not followed is outlined, else alerts all expected, where no alarm frames the item; the frame says more.
       const outline = frozen ? (last !== null || expectedAt(members) ? 'low-integrity' as const : null)
         : tone !== null ? null : lines.some(line => line.kind === 'command') ? 'abnormal' as const : expectedAt(members) ? 'expected' as const : null
       // What a press opens: a stop the equipment it names, a group its members, an item its element; nothing without one.
       const targets = view.stop !== undefined ? view.stop.far.flatMap(end => (end.element === undefined ? [] : [{ element: end.element, label: end.label }]))
         : members.flatMap(member => (member.element === undefined ? [] : [{ element: member.element, label: member.label }]))
-      const text = { x: px(node.text.x), y: px(node.text.y), width: px(node.text.width), height: px(node.text.height) }
+      const laid = { x: px(node.text.x), y: px(node.text.y), width: px(node.text.width), height: px(node.text.height) }
+      // Its lines keep clear of the alert frame round its symbol by the inset the sizing reserved on that side (U-14).
+      const text = node.text.side === 'right' ? { ...laid, x: laid.x + TEXT_INSET, width: laid.width - TEXT_INSET } : node.text.side === 'left' ? { ...laid, width: laid.width - TEXT_INSET } : laid
       // A device's symbol is its two cells at its centre; anything else covers its box.
       const drawn = DEVICES.has(symbol) ? { x: box.x + box.width / 2 - VIGNETTE_ROW_PX, y: box.y + box.height / 2 - VIGNETTE_ROW_PX, width: 2 * VIGNETTE_ROW_PX, height: 2 * VIGNETTE_ROW_PX } : box
       const area = { x: Math.min(drawn.x, text.x), y: Math.min(drawn.y, text.y), width: Math.max(drawn.x + drawn.width, text.x + text.width) - Math.min(drawn.x, text.x), height: Math.max(drawn.y + drawn.height, text.y + text.height) - Math.min(drawn.y, text.y) }
-      drawing.texts.push({ id: node.id, kind: view.stop !== undefined ? 'stop' : members.length > 1 ? 'group' : 'item', x: text.x, y: text.y, width: text.width, lines: shown, tone, title, targets, area, outline })
+      drawing.texts.push({ id: node.id, kind: view.stop !== undefined ? 'stop' : members.length > 1 ? 'group' : 'item', x: text.x, y: text.y, width: text.width, lines: shown, tone, title, targets, area, outline, side: node.text.side })
     }
     const counted = members.map(stateOf)
     const state: DeviceState = members.length > 1

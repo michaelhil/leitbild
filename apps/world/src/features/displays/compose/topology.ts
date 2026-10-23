@@ -14,6 +14,7 @@ import { networkLayout, type NetworkSizing } from '../topology/network.ts'
 import { drawingStops, scopeTopology, TOPOLOGY_REACH, withOtherMediaStopped, type ScopedTopology, type TopologyRequest } from '../topology/scope.ts'
 import { stopRefs, stopViews } from '../topology/stops.ts'
 import type { SearchRun } from '../observation/search.ts'
+import { declaredRefs } from './declared.ts'
 import type { VignetteSection } from './model.ts'
 
 export const TOPOLOGY_MAX_NODES = 60
@@ -22,8 +23,10 @@ export const TOPOLOGY_MAX_NODES = 60
  * 60 × 33 within it, so the window frame fits 1920 px beside its 360 px column; a narrower frame scrolls sideways).
  * R2 (W1.2, W1.3): the core's "Rods off bottom" and a line under each commanded item's state for the command it does
  * not follow take the four-loop overview to 64 × 37; with its attribution and frame, the 40 rows a vignette holds.
+ * R3 (W6.5): its text measured in Noto Sans, it lays out at 62 columns, so the window frame holds it whole beside its
+ * column at 1920 px, and a row more lets its loops' stops write "from" over what they name.
  */
-export const FLOW_ROOM = { columns: 64, rows: 37 } as const
+export const FLOW_ROOM = { columns: 62, rows: 38 } as const
 
 const labelOf = (graph: TopologyGraph, id: string): string => {
   const node = graph.nodes.find(entry => entry.id === id)
@@ -116,13 +119,18 @@ const scopeByReach = (graph: TopologyGraph, request: TopologyRequest): Scoped =>
 
 export interface Drawing { readonly layout: TopologyLayout; readonly stops: DrawnStops }
 const drawings = drawingCache<Promise<Drawing | null>>(64)
-export const drawingOf = (scoped: ScopedTopology): Promise<Drawing | null> => drawings.get(drawingKey(scoped, scoped.graph.family), async () => {
-  if (scoped.graph.family === 'flow') return flowLayout(scoped, FLOW_ROOM)
+/** A scope's drawing, kept by its graph's revision; a flow drawing sizes its text by what its bindings declare (their words and units), static for a revision. */
+export const drawingOf = (run: SearchRun, scoped: ScopedTopology): Promise<Drawing | null> => drawings.get(drawingKey(scoped, scoped.graph.family), async () => {
+  if (scoped.graph.family === 'flow') {
+    const declared = await declaredRefs(run, bindingRefs(scoped))
+    return flowLayout(scoped, FLOW_ROOM, ref => declared.get(ref)?.observable)
+  }
   const layout = await networkLayout(scoped, networkSizing(scoped.graph))
   const mediumOf = (edge: string): string => scoped.graph.edges.find(entry => entry.id === edge)!.medium
-  return { layout, stops: Object.fromEntries(scoped.stubs.map((stop, at) => [`s${at}`, {
-    direction: stop.direction, label: stopLabel(stop.others.map(other => labelOf(scoped.graph, other.node))), far: [...new Set(stop.others.map(other => other.node))], edges: stop.edges, medium: mediumOf(stop.edges[0]!),
-  }])) }
+  return { layout, stops: Object.fromEntries(scoped.stubs.map((stop, at) => {
+    const label = stopLabel(stop.others.map(other => labelOf(scoped.graph, other.node)))
+    return [`s${at}`, { direction: stop.direction, label, lines: [label], far: [...new Set(stop.others.map(other => other.node))], edges: stop.edges, medium: mediumOf(stop.edges[0]!) }]
+  })) }
 })
 
 export const topologyOf = async (run: SearchRun, objectId: ObjectId): Promise<TopologyGraph | null> => {

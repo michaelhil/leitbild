@@ -115,8 +115,8 @@ export interface TopologyNodeView extends Pick<TopologyNode, 'id' | 'label' | 's
   /** A stop's label says "to" or "from" and names its far ends (topology/stops.ts). */
   readonly class: TopologyNode['class'] | 'stop'
   readonly bindings: ReadonlyArray<TopologyBinding>
-  /** A stop: whether flow leaves through it (`out`) or comes in, and each far end with its element and its state's binding where the stop writes it. */
-  readonly stop?: { readonly direction: 'in' | 'out'; readonly far: ReadonlyArray<{ readonly id: string; readonly label: string; readonly element?: string; readonly bindings: ReadonlyArray<TopologyBinding> }> }
+  /** A stop: whether flow leaves through it (`out`) or comes in, the lines its label is set in, and each far end with its element and its state's binding where the stop writes it. */
+  readonly stop?: { readonly direction: 'in' | 'out'; readonly lines: ReadonlyArray<string>; readonly far: ReadonlyArray<{ readonly id: string; readonly label: string; readonly element?: string; readonly bindings: ReadonlyArray<TopologyBinding> }> }
 }
 
 /** Parallel values: one line per element (or per line of an element's declared table), one column per quantity. */

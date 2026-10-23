@@ -11,6 +11,7 @@
   import { embeddedDisplayFrame, UNFRAMED_PRESENTATION, visibleRoom, type DisplayOpening, type DisplayPresentation } from '../view-host.ts'
   import Faceplate from './Faceplate.svelte'
   import { faceplateStates, readingsOf, type FaceplateReadings } from './faceplate.ts'
+  import { FLOW_TEXT } from '../../../features/displays/topology/text.ts'
   import { FLOW_LINE_PX, flowDrawing } from './flow-symbols.ts'
   import { drawingScale } from './network.ts'
   import { paintLines } from './lines.ts'
@@ -525,9 +526,9 @@
       {/if}
       <!-- An item's text is part of its body: a press on it opens the item's detail, as a press on its symbol does. -->
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class={`text ${text.tone ?? ''}`} class:body={opens(text.id)} data-item={text.id} use:textBlock={text.id} use:nameWidth={{ id: text.id, name: text.lines[0]?.text ?? '', scale }} style:left={`${text.x}px`} style:top={`${text.y}px`} style:width={`${text.width}px`} style:--line={`${FLOW_LINE_PX}px`} title={text.title}
+      <div class={`text ${text.tone ?? ''}`} class:body={opens(text.id)} class:framed={symbols.has(text.id)} data-item={text.id} use:textBlock={text.id} use:nameWidth={{ id: text.id, name: text.lines[0]?.text ?? '', scale }} style:left={`${text.x}px`} style:top={`${text.y}px`} style:width={`${text.width}px`} style:--line={`${FLOW_LINE_PX}px`} title={text.title}
         onclick={opens(text.id) ? () => bodyPress(text.id) : undefined} {...(opens(text.id) ? hover(text.id) : {})}>
-        {#each text.lines as line, at (at)}<span class={line.kind}>{line.text}</span>{/each}
+        {#each text.lines as line, at (at)}<span class={line.kind} style:font-size={`${FLOW_TEXT[line.style].size}px`} style:line-height={`${FLOW_TEXT[line.style].line}px`}>{line.text}</span>{/each}
       </div>
       {#if text.outline !== null}<div class={`outline ${text.outline}`} aria-hidden="true" style:left={`${text.area.x - 2}px`} style:top={`${text.area.y - 2}px`} style:width={`${text.area.width + 4}px`} style:height={`${text.area.height + 4}px`}></div>{/if}
     {/each}
@@ -579,19 +580,21 @@
   .chooser button { display: block; width: 100%; height: 40px; padding: 0 12px; border: none; background: none; font: inherit; font-size: 13px; text-align: left; color: var(--element-active-color); cursor: pointer; }
   .chooser button:hover { background: var(--flat-hover-background-color); }
   .chooser button:focus-visible { outline: 2px solid var(--border-focus-color); outline-offset: -2px; }
-  /* A line may run a few pixels past the width the sizing reserved (8 px a character; capitals are wider): the layout keeps text clear of other items by more. */
-  .text { position: absolute; display: flex; flex-direction: column; font-size: 12px; line-height: var(--line); white-space: nowrap; pointer-events: none; }
+  /* Set in Noto Sans at the sizes the composer reserved each line's room for (topology/text.ts). */
+  .text { position: absolute; display: flex; flex-direction: column; line-height: var(--line); white-space: nowrap; pointer-events: none; }
   /* The body's ink (its symbol and its text lines, each as wide as written) stands above the magnifier's hit area:
      a press on the item opens its detail, a press on the room round the glyph its faceplate. */
   .device, .box { z-index: 2; }
   .text.body { z-index: 2; align-items: flex-start; }
   .text.body span { pointer-events: auto; cursor: pointer; }
-  .text span { color: var(--element-neutral-color); font-variant-numeric: tabular-nums; }
-  .text .name, .text .word { color: var(--element-active-color); }
-  .text .word { font-weight: 600; }
-  /* A command the item does not follow: bold, as today's display writes its CMD word. */
-  .text .command { color: var(--element-active-color); font-weight: 700; }
-  .text.caution .name, .text.warning .name, .text.alarm .name, .text.critical .name { font-weight: 700; text-decoration: underline 2px; text-underline-offset: 2px; }
+  /* Its state and readings in the active colour, its name neutral (U-12). */
+  .text span { color: var(--element-active-color); font-weight: 400; font-variant-numeric: tabular-nums; }
+  .text .name { color: var(--element-neutral-color); }
+  /* A command the item does not follow: bold, the one bold word at rest. */
+  .text .command { font-weight: 700; }
+  /* An alert on the item: its name bold in the active colour; underlined in its colour only where no frame marks the item (U-27). */
+  .text.caution .name, .text.warning .name, .text.alarm .name, .text.critical .name { font-weight: 700; color: var(--element-active-color); }
+  .text:not(.framed):is(.caution, .warning, .alarm, .critical) .name { text-decoration: underline 2px; text-underline-offset: 2px; }
   .text.caution .name { text-decoration-color: var(--display-caution-mark); }
   .text.warning .name { text-decoration-color: var(--display-warning-mark); }
   .text.alarm .name { text-decoration-color: var(--display-alarm-mark); }

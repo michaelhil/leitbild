@@ -29,7 +29,7 @@ const graph = servedPlantTopology(objectId, plant)
 const declared = new Map(plantDeclaration(objectId, plant, null).observables.map(observable => [observable.ref, observable]))
 const drawn = (request: TopologyRequest | 'overview') => {
   const scoped = request === 'overview' ? overviewOf(graph)! : (() => { const result = scopeWithin(graph, request); if (!result.ok) throw new Error(result.reason); return result.scoped })()
-  const layout = flowLayout(scoped, FLOW_ROOM)!
+  const layout = flowLayout(scoped, FLOW_ROOM, ref => declared.get(ref))!
   return { scoped, section: topologySection(objectId, 'process-plant', scoped, layout, 38, ref => declared.get(ref)) as Topology }
 }
 

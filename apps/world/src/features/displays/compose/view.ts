@@ -229,7 +229,7 @@ export const compileVignette = async (run: ComposeRun, state: VignetteState): Pr
     } else if (view.kind === 'topology') {
       const graph = await topologyOf(run, view.objectId)
       const scoped = graph === null ? null : scopeWithin(graph, view.request)
-      const drawing = scoped?.ok === true ? await drawingOf(scoped.scoped) : null
+      const drawing = scoped?.ok === true ? await drawingOf(run, scoped.scoped) : null
       if (scoped?.ok === true && drawing !== null) {
         const units = await declaredRefs(run, bindingRefs(scoped.scoped))
         sections.push(topologySection(view.objectId, visibleObject(run, view.objectId)!.packId, scoped.scoped, drawing, view.rows, ref => units.get(ref)?.observable))
