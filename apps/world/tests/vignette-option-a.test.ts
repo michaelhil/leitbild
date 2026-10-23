@@ -103,7 +103,7 @@ describe('the drawing\'s grammar', () => {
   })
 
   test('with a mouse the magnifier shows on hover and keyboard focus; at rest only on touch and where a proposal waits', () => {
-    expect(source).toContain('const shown = (id: string): boolean => hovered === id || focused === id || activated(id) || pendingOf(id) !== undefined')
+    expect(source).toContain('const shown = (id: string): boolean => hovered === id || focused === id || faceplated(id) || pendingOf(id) !== undefined')
     expect(source).toContain("onfocus: (event: FocusEvent) => { if ((event.currentTarget as Element).matches(':focus-visible')) focused = id }")
     expect(source).toContain('@media (pointer: coarse) { .magnifier { opacity: 1; } }')
     expect(source).not.toContain('operated')

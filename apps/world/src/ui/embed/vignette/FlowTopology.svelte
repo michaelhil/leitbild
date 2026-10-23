@@ -398,8 +398,11 @@
   let focused = $state<string | null>(null)
   /** The items an alert tile points out (W2.2), drawn activated like an open faceplate's. */
   let marked = $state<ReadonlySet<string>>(new Set())
-  const activated = (id: string): boolean => (faceplate.kind === 'open' && faceplate.item === id) || pinned(id) || marked.has(id)
-  const shown = (id: string): boolean => hovered === id || focused === id || activated(id) || pendingOf(id) !== undefined
+  /** Its faceplate stands, open or pinned. */
+  const faceplated = (id: string): boolean => (faceplate.kind === 'open' && faceplate.item === id) || pinned(id)
+  const activated = (id: string): boolean => faceplated(id) || marked.has(id)
+  /** A tile's marks outline items without their magnifiers, so the drawing stays calm. */
+  const shown = (id: string): boolean => hovered === id || focused === id || faceplated(id) || pendingOf(id) !== undefined
   const hover = (id: string) => ({ onpointerenter: () => { hovered = id }, onpointerleave: () => { if (hovered === id) hovered = null } })
   /** Keyboard focus, not a press's, shows the magnifier. */
   const focus = (id: string) => ({ onfocus: (event: FocusEvent) => { if ((event.currentTarget as Element).matches(':focus-visible')) focused = id }, onblur: () => { if (focused === id) focused = null } })
@@ -486,7 +489,7 @@
   {@const at = magnifiers.get(id)}
   {#if at !== undefined}
     <!-- Its own tab stop straight after its item; the 40 px square is the press target, the 16 px glyph its ink. -->
-    <button type="button" class="magnifier" class:shown={shown(id)} data-magnifier={id} aria-label={`Faceplate: ${nameOf(id)}`} aria-expanded={activated(id)} title={`Faceplate: ${nameOf(id)}`}
+    <button type="button" class="magnifier" class:shown={shown(id)} data-magnifier={id} aria-label={`Faceplate: ${nameOf(id)}`} aria-expanded={faceplated(id)} title={`Faceplate: ${nameOf(id)}`}
       style:left={`${at.hit.x}px`} style:top={`${at.hit.y}px`} style:--glyph-x={`${at.glyph.x - at.hit.x}px`} style:--glyph-y={`${at.glyph.y - at.hit.y}px`}
       onclick={() => openFaceplate(id)} {...hover(id)} {...focus(id)}>
       <span class="glyph"><obi-search usecsscolor></obi-search></span>
