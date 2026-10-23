@@ -35,6 +35,8 @@
  *                     keeps it while expected alerts stand
  *       viewport      at the end: every lead value, the alert count and 3 alert rows on screen (§5.5's rule, here
  *                     through a live trip; at 1046 with the chat open it is the R2 layout's test)
+ *   R3  counts        the alert counts (W2.1) within one sample of the upset, kept; at the end the UNACK count equals the
+ *                     unacknowledged rows of World's sample
  * "Within one sample": by the display's own Run clock, at most 2 s after the event (a sample a second, written to
  * the second). Writes <out>/<label>-live-trip.json and shots. Loopback only; no model is called. */
 import { join } from 'node:path'
@@ -60,8 +62,23 @@ const leadLabels = (view: any): ReadonlyArray<string> => {
   return (section?.values ?? []).map((value: any) => underTitle(String(value.label), String(view.title)))
 }
 const sameList = (a: ReadonlyArray<string>, b: ReadonlyArray<string>): boolean => a.length === b.length && a.every((entry, index) => entry === b[index])
+/** The lead rows a display shows, named as World's view names them: R3 rows write a short label and keep the whole one
+ * (`full`), which reads under the title as World's does; R1/R2 rows write that already. */
+const shownLeads = (state: DisplayState): ReadonlyArray<string> => state.leads.map(lead => lead.full !== undefined ? underTitle(lead.full, state.title ?? '') : lead.label)
 
-interface Poll { readonly wall: number; readonly simMs: number | null; readonly state: DisplayState; readonly screen: Screen }
+interface Counts { readonly shown: boolean; readonly entries: ReadonlyArray<string>; readonly unacknowledged: number | null }
+interface Poll { readonly wall: number; readonly simMs: number | null; readonly state: DisplayState; readonly screen: Screen; readonly counts: Counts }
+/** The alert counts (W2.1, R3: .counts button.count, each titled "<n> <what>: show only these") of the shown display. */
+const COUNTS = String.raw`(() => {
+  const docs = lb.documents().filter(d => d.frame && /\/world\/embed\//.test(d.frame.getAttribute('src') || '') && lb.shown(d.frame))
+  const area = d => { const r = d.frame.getBoundingClientRect(); return r.width * r.height }
+  const shown = docs.sort((a, b) => area(b) - area(a))[0]
+  const group = shown && [...shown.doc.querySelectorAll('.counts')].find(el => lb.shown(el) && !el.closest('.popover, [role=dialog]'))
+  if (!group) return { shown: false, entries: [], unacknowledged: null }
+  const entries = [...group.querySelectorAll('.count')].map(el => (el.getAttribute('title') || el.textContent || '').replace(/: show only these$/, '').trim())
+  const unack = entries.find(entry => /unacknowledged/i.test(entry))
+  return { shown: entries.length > 0, entries, unacknowledged: unack ? Number((unack.match(/^(\d+)/) || [])[1]) : null }
+})()`
 
 /** The display's Run clock ("sim 04:02:21") on the Run's date. */
 const simOf = (state: DisplayState, day: string): number | null => {
@@ -91,7 +108,7 @@ const coreRods = (page: Page): Promise<{ bars: number; insertedShares: number[];
   return { bars: bars.length, insertedShares: bars, withdrawnBars: svg.querySelectorAll('rect.bar-out').length, unknownBars: svg.querySelectorAll('rect.bar-unknown').length }
 })()`)
 
-interface Check { readonly id: string; readonly release: 'R1' | 'R2'; readonly pass: boolean | null; readonly detail: string; readonly shot: string | undefined }
+interface Check { readonly id: string; readonly release: 'R1' | 'R2' | 'R3'; readonly pass: boolean | null; readonly detail: string; readonly shot: string | undefined }
 
 const runSize = async (config: {
   readonly api: StackApi; readonly origin: string; readonly workspaceId: string; readonly from: string; readonly port: number
@@ -155,7 +172,8 @@ const runSize = async (config: {
       const state = await page.eval<DisplayState>(readDisplay())
       const screen = await page.eval<Screen>(readScreen())
       const simMs = simOf(state, day)
-      polls.push({ wall: Date.now(), simMs, state, screen })
+      const counts = await page.eval<Counts>(COUNTS).catch(() => ({ shown: false, entries: [], unacknowledged: null }))
+      polls.push({ wall: Date.now(), simMs, state, screen, counts })
       if (Date.now() - lastApi > 1_000) {
         lastApi = Date.now()
         const plant = (await api.objects(copy)).find(object => object.id === subject)
@@ -232,13 +250,13 @@ const runSize = async (config: {
     // Each change of World's lead set: how long until the display showed it (World's read lands up to a second
     // after the change, so a display read up to 1 s before it counts).
     const leadChanges = worldLeads.slice(1).map(change => {
-      const shown = polls.find(poll => poll.simMs !== null && poll.simMs >= change.simMs - 1_000 && sameList(poll.state.leads.map(lead => lead.label), change.labels))
+      const shown = polls.find(poll => poll.simMs !== null && poll.simMs >= change.simMs - 1_000 && sameList(shownLeads(poll.state), change.labels))
       return { at: new Date(change.simMs).toISOString().slice(11, 19), labels: change.labels, lagS: shown === undefined ? null : Math.max(0, (shown.simMs! - change.simMs) / 1000) }
     })
     const leadsFollow = leadChanges.length > 0 && leadChanges.every(change => change.lagS !== null && change.lagS <= ONE_SAMPLE_S)
     // Without World's oracle (the pre-swap display): only whether, and when, the lead rows left the at-power set.
-    const atPowerLabels = atPower.leads.map(lead => lead.label)
-    const switchLag = lagOf(state => state.leads.length > 0 && !sameList(state.leads.map(lead => lead.label), atPowerLabels), upsetMs)
+    const atPowerLabels = shownLeads(atPower)
+    const switchLag = lagOf(state => state.leads.length > 0 && !sameList(shownLeads(state), atPowerLabels), upsetMs)
     const frozen = polls.filter(poll => poll.state.word === 'FROZEN')
     const statusPolls = (status: string) => polls.filter(poll => poll.state.values.some(value => value.status === status))
     const worstRead = (status: string) => statusPolls(status).sort((a, b) => b.state.values.filter(value => value.status === status).length - a.state.values.filter(value => value.status === status).length)[0]
@@ -249,7 +267,7 @@ const runSize = async (config: {
     // R2: the trip line, "Rods on bottom" and the expected aggregate, as a person sees them (on screen).
     const tripLineOf = (poll: Poll) => onScreen(poll.screen, /\bRX TRIP\b|\b1st\b.*TRIP|reactor trip/i).filter(line => line.region !== 'alerts' && line.region !== 'drawing')
     const rodsOf = (poll: Poll) => onScreen(poll.screen, /rods on bottom/i).filter(line => /\d(\.\d+)?\s*(×10[⁻⁰¹²³⁴⁵⁶⁷⁸⁹]+\s*A|%|cps)/.test(line.text))
-    const aggregateOf = (poll: Poll) => onScreen(poll.screen, /\d+\s+expected\b/i, ['alerts', 'column', 'body', 'trip'])
+    const aggregateOf = (poll: Poll) => onScreen(poll.screen, /\d+\s+expected after\b/i, ['alerts', 'column', 'body', 'trip'])
     const lagScreen = (condition: (poll: Poll) => boolean, from: number | null) => {
       if (from === null) return { lagS: null as number | null, kept: null as number | null }
       const later = polls.filter(poll => poll.simMs !== null && poll.simMs >= from)
@@ -261,6 +279,8 @@ const runSize = async (config: {
     const tripLine = lagScreen(poll => tripLineOf(poll).length > 0, tripMs ?? upsetMs)
     const rodsLine = lagScreen(poll => rodsOf(poll).length > 0, tripMs ?? upsetMs)
     const aggregate = lagScreen(poll => aggregateOf(poll).length > 0, firstExpectedMs)
+    const countsLag = lagScreen(poll => poll.counts.shown, upsetMs)
+    const endUnack = endSample === null ? null : (endSample.alerts ?? []).filter((row: any) => row.state === 'active-unack' || row.state === 'returned-unack').length
     const lastPoll = polls.at(-1)!
     const endViewport = viewport(last, lastPoll.screen, sizeSpec(String(size)))
     const checks: Check[] = [
@@ -273,9 +293,9 @@ const runSize = async (config: {
       { id: 'worst-chip', release: 'R1', pass: upsetMs === null ? null : held(chipLag), detail: `worst chip ${chipLag.lagS === null ? 'never' : `${chipLag.lagS} s`} after the upset, kept in ${kept(chipLag)} of reads after; at the end "${last.worst ?? '-'}"`, shot: shots['1-first-sample-after-upset'] },
       {
         id: 'leads', release: 'R1',
-        pass: leadsTarget === null ? (atPower.generation === 'old' && atPowerLabels.length > 0 ? switchLag.lagS !== null : null) : leadsFollow && sameList(last.leads.map(lead => lead.label), leadsTarget),
+        pass: leadsTarget === null ? (atPower.generation === 'old' && atPowerLabels.length > 0 ? switchLag.lagS !== null : null) : leadsFollow && sameList(shownLeads(last), leadsTarget),
         detail: leadsTarget === null ? `${atPower.generation === 'old' ? 'the pre-swap display composes its own leads (no World oracle)' : 'World composes no default here'}; the lead rows left the at-power set ${switchLag.lagS === null ? 'never' : `${switchLag.lagS} s after the upset`}; at power: ${atPowerLabels.join(' | ') || '(none in the DOM at this size)'}; at the end: ${last.leads.map(lead => lead.label).join(' | ') || '(none in the DOM at this size)'}`
-          : `mode changed ${modeMs === null || upsetMs === null ? '(not seen)' : `${(modeMs - upsetMs) / 1000} s after the upset`}; World's lead set changed ${leadChanges.length} times while the Run played${leadChanges.map(change => ` (at ${change.at}, shown ${change.lagS === null ? 'never' : `${change.lagS} s after`})`).join(',')}; at power: ${atPower.leads.map(lead => lead.label).join(' | ')}; World at the end: ${leadsTarget.join(' | ')}; display at the end: ${last.leads.map(lead => lead.label).join(' | ')}`,
+          : `mode changed ${modeMs === null || upsetMs === null ? '(not seen)' : `${(modeMs - upsetMs) / 1000} s after the upset`}; World's lead set changed ${leadChanges.length} times while the Run played${leadChanges.map(change => ` (at ${change.at}, shown ${change.lagS === null ? 'never' : `${change.lagS} s after`})`).join(',')}; at power: ${atPower.leads.map(lead => lead.label).join(' | ')}; World at the end: ${leadsTarget.join(' | ')}; display at the end: ${shownLeads(last).join(' | ')}`,
         shot: shots['2-upset+10s'],
       },
       {
@@ -290,6 +310,12 @@ const runSize = async (config: {
       { id: 'rods-in', release: 'R2', pass: rods === null ? null : rods.bars > 0 && rods.withdrawnBars === 0 && rods.unknownBars === 0 && rods.insertedShares.every(share => share >= 0.95), detail: rods === null ? 'no core vessel drawn' : `${rods.bars} rods, inserted shares ${rods.insertedShares.join(', ')}, ${rods.withdrawnBars} drawn withdrawn, ${rods.unknownBars} unknown`, shot: shots.end },
       { id: 'expected', release: 'R2', pass: afterUpset.length === 0 ? null : firstExpectedMs !== null && held(aggregate), detail: `${firstExpectedMs === null ? "World's sample marks no alert expected (AlertRow.expected)" : `first alert marked expected at ${new Date(firstExpectedMs).toISOString().slice(11, 19)}`}; aggregate ${aggregate.lagS === null ? (polls.some(poll => aggregateOf(poll).length > 0) ? 'shown, but not after a marked alert' : 'never on screen') : `on screen ${aggregate.lagS} s after, kept in ${kept(aggregate)} of reads`}; at the end: ${aggregateOf(lastPoll).map(line => `"${line.text}"`).join(', ') || '-'}`, shot: shots['3-upset+60s'] },
       { id: 'viewport', release: 'R2', pass: endViewport.pass, detail: endViewport.detail, shot: shots.end },
+      {
+        // R3 (W2.1): the counts within one sample of the upset and kept; at the end, UNACK equals World's sample.
+        id: 'counts', release: 'R3', pass: afterUpset.length === 0 ? null : held(countsLag) && (endUnack === null || lastPoll.counts.unacknowledged === endUnack),
+        detail: `${countsLag.lagS === null ? 'no counts shown after the upset' : `counts on screen ${countsLag.lagS} s after the upset, kept in ${kept(countsLag)} of reads`}; at the end: ${lastPoll.counts.entries.join(' · ') || '-'}${endUnack === null ? '' : `; World's sample: ${endUnack} unacknowledged`}`,
+        shot: shots['1-first-sample-after-upset'],
+      },
     ]
     return {
       size, copy, displayWidth: atPower.frame?.width ?? null, generation: atPower.generation,

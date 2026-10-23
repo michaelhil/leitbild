@@ -61,6 +61,18 @@ describe('E-0 at a glance', () => {
     expect(judged.pass).toBe(true)
     expect(judged.evidence).toContain('3 rows on screen; first-outs 2 (2 named by group)')
   })
+  test("R3's column: short labels, the AFW total and PZR's own sparkline pass checks 5 and 8; a graphic is no reading", () => {
+    const r3 = screen([
+      line('Subcooling 32.3 °C ▼ 1.3', 'column', 195), line('AFW flow 113 kg/s ▼ 1', 'column', 219), line('PZR pressure 13.66 MPa', 'column', 243),
+      line('PZR level 34.0 % ▲ 2.0', 'column', 267), line('⟨graphic⟩ PZR pressure, last 10 min: 13.6 to 15.4 MPa', 'column', 243, { x: 400 }),
+    ])
+    expect(judge('afw-total', r3).pass).toBe(true)
+    expect(judge('pzr-trend', r3).pass).toBe(true)
+    const noSpark = screen([line('PZR pressure 13.66 MPa', 'column', 243), line('PZR level 34.0 %', 'column', 267)])
+    expect(judge('pzr-trend', noSpark).pass).toBe(false)
+    const graphicOnly = screen([line('⟨graphic⟩ PZR level, last 10 min: 33 to 35 %', 'column', 267), line('PZR pressure 13.66 MPa', 'column', 243), line('⟨graphic⟩ PZR pressure, last 10 min: 13.6 to 15.4 MPa', 'column', 243, { x: 400 })])
+    expect(judge('pzr-trend', graphicOnly).pass).toBe(false)
+  })
   test('a turbine trip named only in an alert row is no turbine state', () => {
     const rowOnly = screen([line('first out Reactor trip on turbine trip 04:02:02 UTC', 'alerts', 628)])
     expect(judge('turbine-tripped', rowOnly).pass).toBe(false)
