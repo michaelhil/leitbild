@@ -11,7 +11,7 @@ import type { DisplaySpec, View } from '../../../core/observation/spec.ts'
 import { alertItem, assembleCard, entityItem, slotItems, valueItem } from './card.ts'
 import { declarationOf, declaredRefs, same, valueOf, visibleObject } from './declared.ts'
 import { defaultViews, elementRefs, LEAD_ROWS, leadNow, leadRefs, ownStates, planLead, readLeads, recordedOf, tableRows, type DraftView } from './defaults.ts'
-import { FRAME_ROWS, VIGNETTE_MAX_ROWS, vignetteStateSchema, type ComposeIssue, type ResolvedView, type VignetteState } from './model.ts'
+import { FRAME_ROWS, VIGNETTE_MAX_ROWS, vignetteStateSchema, zoneRows, type ComposeIssue, type ResolvedView, type VignetteState } from './model.ts'
 import { isIssue, resolveSubject, subjectObjects, type ComposeRun, type Subject } from './resolve.ts'
 import { TOPOLOGY_REACH } from '../topology/scope.ts'
 import { drawingOf, scopeWithin, topologyOf } from './topology.ts'
@@ -260,7 +260,10 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
       const pool = led.pool.filter(ref => !refs.includes(ref))
       const rows = Math.min(view.rows ?? refs.length + LEAD_ROWS + led.criteria.length, refs.length + pool.length)
       const table = view.table === true ? tableRows(plan.table) : 0
-      if (rows > 0) fitted.push({ kind: 'values', ...(refs.length === 0 ? {} : { refs: [...refs] }), lead: view.lead, ...(table > 0 ? { table: true } : {}), rows: rows + table })
+      // A window default's lead rows stand under a heading, with the margins of those near or past a limit after them
+      // (W4.2); a few values beside one named (an observable's default, its rows given) stand without.
+      const zones = frame === 'window' && view.rows === undefined ? zoneRows({ zones: true }) : 0
+      if (rows > 0) fitted.push({ kind: 'values', ...(refs.length === 0 ? {} : { refs: [...refs] }), lead: view.lead, ...(table > 0 ? { table: true } : {}), ...(zones > 0 ? { zones: true } : {}), rows: rows + table + zones })
     } else if (view.kind === 'values') {
       const refs = trim(path, view.refs ?? [], 16, 'values')
       const values = refs.map(ref => declared.get(ref)!)

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { SimulationRunId } from '../../../core/model/index.ts'
-  import type { VignetteSection, VignetteView } from '../../../features/displays/compose/model.ts'
+  import { MARGIN_LINES, zoneRows, type VignetteSection, type VignetteView } from '../../../features/displays/compose/model.ts'
   import type { Palette } from '../../displays/severity.ts'
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
   import { embeddedDisplayFrame } from '../view-host.ts'
@@ -8,11 +8,12 @@
   import type { OpenedFrom } from './popover.ts'
   import { underTitle } from './format.ts'
   import { frameLayout, standsBeside, VIGNETTE_ROW_PX } from './grid.ts'
+  import { wholeParts } from './fit-words.ts'
+  import { marginLines, valueRows } from './value-rows.ts'
   import { drawingScale } from './network.ts'
-  import { valueLook, type ReadingLook } from './readout.ts'
+  import type { ReadingLook } from './readout.ts'
   import type { VignetteSnapshot } from './vignette-client.ts'
   import AlertsSection from './AlertsSection.svelte'
-  import CriterionRow from './CriterionRow.svelte'
   import EntityTable from './EntityTable.svelte'
   import FlowTopology from './FlowTopology.svelte'
   import GroupedValues from './GroupedValues.svelte'
@@ -21,6 +22,7 @@
   import Readout from './Readout.svelte'
   import StateWord from './StateWord.svelte'
   import TrendStrip from './TrendStrip.svelte'
+  import ValueRows from './ValueRows.svelte'
 
   // A vignette's sections, each within the rows the composer allotted: in its
   // frame (Vignette.svelte), stacked, or in a window frame (`beside`, Q20) its
@@ -78,13 +80,23 @@
 {#snippet one(section: VignetteSection, index: number, rows: number | null = section.rows, fit: number = 1)}
     <div class="section" class:frozen={frozen && (section.kind === 'alerts' || section.kind === 'entity')} style:height={rows === null || fills ? undefined : `${rows * VIGNETTE_ROW_PX}px`} style:min-height={rows !== null && fills ? `${rows * VIGNETTE_ROW_PX}px` : undefined}>
       {#if section.kind === 'values'}
-        <div class="values">
-          {#each section.values as value (value.ref)}
-            {@const look = shown(valueLook(value, observations, value.ref))}
-            {#if look.kind === 'criterion'}<CriterionRow {look} label={underTitle(value.label, view.title)} />{:else if look.kind === 'state'}<StateWord {look} label={underTitle(value.label, view.title)} />{:else}<Readout {look} label={underTitle(value.label, view.title)} />{/if}
-          {/each}
-        </div>
+        {@const rows = valueRows({ values: section.values, observations, series: snapshot.series, now, title: view.title, frozen })}
+        {#if section.zones === true}
+          <!-- A window's column, top down (W4.2): its lead rows under their heading, which spans their sparklines' window once. -->
+          <h2 class="zone"><span>Lead values</span><span class="window" title="Each sparkline: the reading's last 10 min, scaled to its own range">10 min</span></h2>
+          <div class="values" style:height={`${(section.rows - zoneRows(section) - (section.table?.rows ?? 0)) * VIGNETTE_ROW_PX}px`}><ValueRows {rows} {now} /></div>
+        {:else}
+          <div class="values"><ValueRows {rows} {now} /></div>
+        {/if}
         {#if section.table !== undefined}<GroupedValues section={section.table} {observations} {frozen} />{/if}
+        {#if section.zones === true}
+          {@const lines = marginLines(rows, MARGIN_LINES)}
+          <!-- Then the margins of those near or past a limit in force, the most urgent first. -->
+          <h2 class="zone"><span>Margins{#if lines.length === 0}<span class="quiet">{' · none near a limit'}</span>{/if}</span></h2>
+          {#each lines as line (line.ref)}
+            <p class="margin" class:past={line.margin.past} title={`${line.full}: ${line.margin.text}`}><span class="who">{line.label}</span><span class="what" aria-label={line.margin.text} use:wholeParts={line.margin}></span></p>
+          {/each}
+        {/if}
       {:else if section.kind === 'grouped'}
         <GroupedValues {section} {observations} {frozen} />
       {:else if section.kind === 'trend'}
@@ -156,16 +168,29 @@
   .sections.fill > .section { flex: 1 1 auto; }
   /* A block of values reads label beside value: never stretched across a wide frame (U-06). */
   .values { max-width: 480px; }
+  /* Each zone's heading, as the alerts' (AlertsSection): the lead rows' names their sparklines' window over them. */
+  .zone { display: flex; justify-content: space-between; align-items: center; max-width: 480px; margin: 0; height: var(--row); font-size: 12px; font-weight: 600; color: var(--element-neutral-color); text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; }
+  .zone .quiet { font-weight: 400; text-transform: none; letter-spacing: 0; }
+  .window { flex: none; font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; }
+  /* A margin line: its row's short label, then how far from which limit, giving way by whole parts (wholeParts). */
+  .margin { display: flex; gap: 6px; max-width: 480px; margin: 0; height: var(--row); line-height: var(--row); white-space: nowrap; color: var(--element-active-color); }
+  .margin.past .what { font-weight: 600; }
+  .margin .who { flex: none; color: var(--element-neutral-color); }
+  .margin .what { flex: 1 1 0; min-width: 0; overflow: hidden; font-variant-numeric: tabular-nums; }
   /* Alerts and tables of a frozen display: OpenBridge's low-integrity colours around what they last showed, a little outside it so no word moves. */
   .section.frozen { background: var(--alert-low-integrity-background-color); box-shadow: 0 0 0 4px var(--alert-low-integrity-background-color), 0 0 0 5px var(--alert-low-integrity-border-color); }
   .beside { display: flex; gap: 16px; align-items: flex-start; }
   .drawing { flex: none; }
   .column { flex: 0 0 360px; min-width: 0; }
-  /* The band: values in columns of 300 px or more, read down each, the alerts beside them where the width holds both, else under them. */
+  /* The band: values in columns of 340 px or more, read down each, the alerts beside them where the width holds both, else under them. */
   .band { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 24px; margin-bottom: 8px; }
-  .band-values { flex: 2 1 600px; min-width: 0; }
-  .band-values > .section > .values { max-width: none; column-width: 300px; column-gap: 24px; }
-  .band-values > .section > .values > :global(*) { break-inside: avoid; }
+  /* Two columns of rows (340 px each, room for a short label, its value, rate and sparkline) beside the alerts, else the alerts under them. */
+  .band-values { flex: 2 1 704px; min-width: 0; }
+  .band-values > .section > .values { max-width: none; height: auto !important; }
+  .band-values > .section > .values :global(.rows::part(list)) { display: block; column-width: 340px; column-gap: 24px; }
+  /* Over columns of rows one window label would stand over no sparkline. */
+  .band-values .window { display: none; }
+  .band-values > .section > .values :global(.row) { break-inside: avoid; max-width: 420px; }
   .band-alerts { flex: 1 1 320px; min-width: 0; max-width: 720px; }
   /* The drawing scrolls sideways in the frame's width, an edge fading where it continues; the window body scrolls down. */
   .scroll-wrap { position: relative; }

@@ -6,7 +6,9 @@
 import '@oicl/openbridge-webcomponents/dist/openbridge.css'
 import '@oicl/openbridge-webcomponents/dist/icons/icon-ai.js'
 import '@oicl/openbridge-webcomponents/dist/building-blocks/readout-block/readout-block.js'
-import '@oicl/openbridge-webcomponents/dist/building-blocks/bar-horizontal/bar-horizontal.js'
+// A values section's rows (W4.2): OpenBridge's readout list aligns their values and units.
+import '@oicl/openbridge-webcomponents/dist/navigation-instruments/readout-list/readout-list.js'
+import '@oicl/openbridge-webcomponents/dist/navigation-instruments/readout-list-item/readout-list-item.js'
 import '@oicl/openbridge-webcomponents/dist/components/status-indicator/status-indicator.js'
 import '@oicl/openbridge-webcomponents/dist/components/button/button.js'
 import '@oicl/openbridge-webcomponents/dist/components/alert-icon/alert-icon.js'

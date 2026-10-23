@@ -1,6 +1,6 @@
-// How one value reads (architecture B): a number with its limit bar and the
-// chip of the limit it is past, or a state as a word, in OpenBridge's
-// readout block, bar and status indicator. Colour comes only from the
+// How one value reads (architecture B): a number with the chip of the limit
+// it is past, or a state as a word, in OpenBridge's readout and status
+// indicator. Colour comes only from the
 // observation's own priority; a value without one (an entity's telemetry, a
 // core slot) is neutral, whatever its source calls it.
 import type { Priority } from '../../../core/model/alerts.ts'
@@ -42,39 +42,6 @@ export interface ReadingInput {
 export const orderWord = (threshold: Pick<Threshold, 'direction' | 'order'>): string =>
   Array.from({ length: threshold.order }, () => (threshold.direction === 'low' ? 'LO' : 'HI')).join('-')
 
-/** An `obc-bar-horizontal`: its scale, the value, and each limit as an advice zone beyond it (OpenBridge's LinearAdvice). */
-export interface LimitBar {
-  readonly min: number
-  readonly max: number
-  readonly value: number
-  /** Hinted until the value is past that limit. */
-  readonly advices: ReadonlyArray<{ readonly min: number; readonly max: number; readonly type: 'caution'; readonly hinted: boolean }>
-}
-
-const BAR_PAD = 0.15
-
-/** The bar spans the limits, padded, and reaches the value only where it lies beyond them; no limits, no bar. */
-export const limitBar = (value: number, thresholds: ReadonlyArray<Threshold>, past?: string): LimitBar | null => {
-  if (thresholds.length === 0) return null
-  const limits = thresholds.map(threshold => threshold.value)
-  const low = Math.min(value, ...limits)
-  const high = Math.max(value, ...limits)
-  const span = high > low ? high - low : Math.max(Math.abs(low), 1)
-  const min = low - span * BAR_PAD
-  const max = high + span * BAR_PAD
-  return {
-    min,
-    max,
-    value,
-    advices: thresholds.map(threshold => ({
-      min: threshold.direction === 'high' ? threshold.value : min,
-      max: threshold.direction === 'high' ? max : threshold.value,
-      type: 'caution' as const,
-      hinted: threshold.id !== past,
-    })),
-  }
-}
-
 export interface ReadingLook {
   /** A criterion: how many of its checks that apply are met ("2/5"), or its comparison ("113 ≥ 27.8 kg/s"), with `detail`. */
   readonly kind: 'number' | 'state' | 'criterion'
@@ -100,7 +67,6 @@ export interface ReadingLook {
   /** The limit the value is past: its order word alone in a table cell, with value and consequence on a row. */
   readonly chip: { readonly word: string; readonly text: string; readonly tone: AlertTone | null } | null
   readonly note: string | null
-  readonly bar: LimitBar | null
   readonly title: string
 }
 
@@ -157,7 +123,6 @@ export const readingLook = (label: string, valueType: Observable['valueType'], s
     fill: unknown ? 'unknown' : input.demand !== true && activeState(value, states) === true ? 'filled' : 'hollow',
     chip: passed === undefined || quality === 'not-applicable' ? null : { word: orderWord(passed), text: `${orderWord(passed)} ${numberText(passed.value, input.unit, input.quantity, decades)}${passed.consequence === undefined ? '' : ` · ${passed.consequence}`}`, tone },
     note,
-    bar: typeof value === 'number' && !unknown && quality !== 'not-applicable' ? limitBar(value, input.thresholds, input.past) : null,
     title: [label, quality === 'good' ? '' : `quality: ${quality}`, input.why ?? ''].filter(part => part !== '').join(' · '),
   }
 }
@@ -167,7 +132,7 @@ const criterionLook = (label: string, input: ReadingInput): ReadingLook => {
   const words = criterionWords(input.criterion ?? [], input.value === undefined && input.quality === undefined ? undefined : { quality: input.quality ?? 'good', ...(input.checks === undefined ? {} : { checks: input.checks }) })
   return {
     kind: 'criterion', text: words.text, detail: words.detail, value: null, decimals: 0, unit: '', tone: null, emphasis: false, doubtful: false,
-    fill: words.met === true ? 'filled' : 'hollow', chip: null, note: null, bar: null,
+    fill: words.met === true ? 'filled' : 'hollow', chip: null, note: null,
     title: [label, words.detail ?? '', input.why ?? ''].filter(part => part !== '').join(' · '),
   }
 }

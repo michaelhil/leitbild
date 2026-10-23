@@ -15,7 +15,7 @@ import { bundledDevices, declarationOf, declaredRefs, valueOf, visibleObject, ty
 import { ownStates, planLead, readLeads, tableRows, type LeadPlan } from './defaults.ts'
 import {
   ENTITY_COLUMNS, horizonMs, type Collection, type EntityRow, type GroupedSection, type RecordedSeries, type ResolvedView, type SlotDeclaration, type VignetteSample,
-  type VignetteSection, type VignetteState, type VignetteValue, type VignetteView,
+  type VignetteSection, type VignetteState, type VignetteValue, type VignetteView, zoneRows,
 } from './model.ts'
 import { presentedOf } from './present.ts'
 import type { ComposeRun } from './resolve.ts'
@@ -84,7 +84,7 @@ export const readNow = async (run: ComposeRun, state: VignetteState): Promise<St
   const { observations, led } = await readLeads(run, [...plans.values()], [...readsOf(state).refs, ...bound, ...tabled])
   const leads = new Map([...plans.keys()].map((index, at) => {
     const view = state.views[index] as ValuesView
-    return [index, [...new Set([...view.refs ?? [], ...led[at]!.refs])].slice(0, view.rows - tableRows(tables.get(index)))] as const
+    return [index, [...new Set([...view.refs ?? [], ...led[at]!.refs])].slice(0, view.rows - tableRows(tables.get(index)) - zoneRows(view))] as const
   }))
   const refs = [...new Set([...readsOf(state, leads).refs, ...tabled, ...bound])].filter(ref => visibleObject(run, refObjectId(ref)) !== undefined)
   const values = new Map(observations.map(observation => [observation.ref, observation] as const))
@@ -210,7 +210,7 @@ export const compileVignette = async (run: ComposeRun, state: VignetteState): Pr
     if (view.kind === 'values' && leads.has(index)) {
       const table = tables.get(index)
       const devices = view.lead?.element === undefined ? [] : await bundledDevices(run, view.lead.objectId, view.lead.element)
-      sections.push({ kind: 'values', rows: view.rows, values: values(leads.get(index)!), lead: index, ...(table === undefined ? {} : { table: tableSection(view.lead!.element!, table, declared) }), ...(devices.length === 0 ? {} : { devices }) })
+      sections.push({ kind: 'values', rows: view.rows, values: values(leads.get(index)!), lead: index, ...(table === undefined ? {} : { table: tableSection(view.lead!.element!, table, declared) }), ...(devices.length === 0 ? {} : { devices }), ...(view.zones === true ? { zones: true } : {}) })
     }
     else if (view.kind === 'values') sections.push(groupValues(values(view.refs ?? [])) ?? { kind: 'values', rows: view.rows, values: values(view.refs ?? []) })
     else if (view.kind === 'trend') sections.push({ kind: 'trend', rows: view.rows, horizonMs: horizonMs(view.horizon), strips: stripsOf(values(view.refs).filter(value => value.series !== null)).slice(0, 4) })
@@ -286,10 +286,11 @@ export const ALERT_LINES_AT_LEAST = 8
 
 /**
  * Everything a state's views read now, in one read (readNow), each lead request read again (its values now in `leads`,
- * so a display opened before an upset leads as its Pack does after it, within one sample); history (from `fromMs`,
- * Run time) only when asked, on open and after a gap.
+ * so a display opened before an upset leads as its Pack does after it, within one sample); the records its trends and
+ * values rows draw (from `fromMs`, Run time) only when asked: on open, after a gap, and those of `refs` alone for a row
+ * that appeared.
  */
-export const sampleVignette = async (run: ViewRun, state: VignetteState, history?: { readonly fromMs: number }): Promise<VignetteSample> => {
+export const sampleVignette = async (run: ViewRun, state: VignetteState, history?: { readonly fromMs: number; readonly refs?: ReadonlyArray<string> | undefined }): Promise<VignetteSample> => {
   const { leads: led, observations } = await readNow(run, state)
   const leadDeclared = led.size === 0 ? new Map<string, Declared>() : await declaredRefs(run, [...led.values()].flat())
   const leads = Object.fromEntries([...led].map(([index, list]) => [index, list.flatMap(ref => leadDeclared.has(ref) ? [valueOf(leadDeclared.get(ref)!)] : [])] as const))
@@ -321,7 +322,10 @@ export const sampleVignette = async (run: ViewRun, state: VignetteState, history
   })
   const at = run.clock === undefined ? { at: new Date().toISOString(), clock: 'wall' as const, paused: false } : { at: run.clock.currentTime, clock: 'simulation' as const, paused: run.clock.paused }
   const series = history === undefined ? undefined : await (async () => {
-    const declared = await declaredRefs(run, state.views.flatMap(view => view.kind === 'trend' ? view.refs : []))
+    // Each trend pen's record and each values row's now (its sparkline, W4.2), or only those asked for: a row that
+    // appeared when its lead changed (W8.5).
+    const drawn = state.views.flatMap((view, index) => view.kind === 'trend' ? view.refs : view.kind === 'values' ? led.get(index) ?? view.refs ?? [] : [])
+    const declared = await declaredRefs(run, history.refs === undefined ? drawn : drawn.filter(ref => history.refs!.includes(ref)))
     return Object.fromEntries([...declared.values()].flatMap(entry => entry.observable.series === null ? []
       : [[entry.observable.series.seriesId, run.series(entry.observable.series.seriesId, new Date(history.fromMs).toISOString(), at.at)] as const]))
   })()
