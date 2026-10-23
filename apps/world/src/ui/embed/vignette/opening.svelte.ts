@@ -2,7 +2,7 @@ import type { EmbeddedViewEnvelope } from '@leitbild/contracts'
 import { getContext, setContext } from 'svelte'
 import type { ObjectId, SimulationRunId } from '../../../core/model/index.ts'
 import type { AlertRow } from '../../../features/displays/alerts/rows.ts'
-import { FRAME_ROWS, VIGNETTE_MAX_ROWS, type VignetteState } from '../../../features/displays/compose/model.ts'
+import type { VignetteState } from '../../../features/displays/compose/model.ts'
 import { defaultDisplayEnvelope, readDefaultDisplay } from '../../process-display/default-display.ts'
 import { invokeSimulationRunCapability } from '../../simulation-run-client.ts'
 import { activeWorkspaceId } from '../../workspace-context.ts'
@@ -37,6 +37,13 @@ export interface VignetteOpening {
 }
 
 const KEY = Symbol('vignette-opening')
+
+/**
+ * The full alerts view's composed rows: its counts, a row of tiles and a few alerts. The display window gives an
+ * alerts-only view its whole height (Vignette.svelte's fill) and its list scrolls in it, so it fits the window at any
+ * height instead of standing taller than it and being zoomed out.
+ */
+const ALERTS_VIEW_ROWS = 12
 
 /** The opening of the vignette that calls it, for its parts to read (vignetteOpening); call while it is set up. Returns it and its stop. */
 export const provideOpening = (config: {
@@ -81,7 +88,7 @@ export const provideOpening = (config: {
     alerts: (objectIds, title) => {
       const sampled = config.at()
       const at = sampled === undefined ? { at: new Date().toISOString(), clock: 'wall' as const } : { at: sampled.at, clock: sampled.clock }
-      const state: VignetteState = { title: title.slice(0, 80), at, views: [{ kind: 'alerts', objectIds: objectIds === 'run' ? 'run' : [...objectIds] as ObjectId[], rows: VIGNETTE_MAX_ROWS - FRAME_ROWS, all: true }] }
+      const state: VignetteState = { title: title.slice(0, 80), at, views: [{ kind: 'alerts', objectIds: objectIds === 'run' ? 'run' : [...objectIds] as ObjectId[], rows: ALERTS_VIEW_ROWS, all: true }] }
       const text = JSON.stringify(state)
       return host.openDisplay({ state: text, title: state.title, listing: () => openedListing({ ...from(), envelope: config.envelope() }, { state: text, title: state.title }) })
     },
