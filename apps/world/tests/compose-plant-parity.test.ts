@@ -16,7 +16,8 @@ import { composeDefault, composeVignette } from '../src/features/displays/compos
 import { FLOW_ROOM, overviewOf, scopeWithin, topologyOf } from '../src/features/displays/compose/topology.ts'
 import { resolveSubject } from '../src/features/displays/compose/resolve.ts'
 import { declaredRefs, visibleObject } from '../src/features/displays/compose/declared.ts'
-import type { VignetteView } from '../src/features/displays/compose/model.ts'
+import { zoneRows, type VignetteView } from '../src/features/displays/compose/model.ts'
+import { SPARK_WINDOW_MS } from '../src/ui/sparkline.ts'
 import { compileVignette, sampleVignette, type ViewRun } from '../src/features/displays/compose/view.ts'
 import { overlaps } from './helpers/network-layout-measure.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
@@ -77,9 +78,10 @@ const shownIn = (view: VignetteView): ReadonlyArray<string> => {
 }
 
 describe('P9: the plant default carries what the Unit Overview carries', () => {
-  test('its own states as chips under the title, its lead values with trends, its alarms with the trip first out, and the whole-plant drawing beside them (Q20)', async () => {
+  test('its own states as chips under the title, its lead values each with its 10-min sparkline, its alarms with the trip first out, and the whole-plant drawing beside them (Q20)', async () => {
     const { state, view, card, sample } = await opened(plantId)
-    expect(state.views.map(entry => entry.kind)).toEqual(['values', 'trend', 'alerts', 'topology'])
+    // No trend under the lead rows: each row draws its own last ten minutes (W4.2, D-C).
+    expect(state.views.map(entry => entry.kind)).toEqual(['values', 'alerts', 'topology'])
     const [declaration] = await run.port.declarations([plantId])
     if (declaration === undefined || 'refused' in declaration) throw new Error('the Plant declares nothing')
     const own = declaration.observables.filter(observable => observable.quantity === 'state' && observable.element === undefined).map(observable => observable.ref)
@@ -89,14 +91,19 @@ describe('P9: the plant default carries what the Unit Overview carries', () => {
     expect(state.chips).toEqual(own)
     expect(view.chips?.map(value => value.ref)).toEqual(own)
     // Its lead values are a lead request, read each sample, never refs fixed as it opened (H1).
-    expect(state.views[0]).toEqual({ kind: 'values', lead: { objectId: plantId }, rows: 8 })
+    expect(state.views[0]).toEqual({ kind: 'values', lead: { objectId: plantId }, zones: true, rows: 8 + zoneRows({ zones: true }) })
     expect(shownIn(view).length > 0 && shownIn(view).every(ref => !own.includes(ref))).toBe(true)
     expect(card.items.slice(0, own.length).map(item => item.subject)).toEqual(own.map(ref => ({ ref })))
     // A window stands the drawing beside a column of the other views: rows count as the taller of the two, within 40.
     expect(state.beside).toBe(true)
     expect(view.beside).toBe(true)
-    const trend = view.sections[1]
-    expect(trend?.kind === 'trend' && trend.strips.flat().length).toBeGreaterThan(0)
+    // Each lead row the Run records has its ten-minute sparkline (OLD process-plant-overview, re-expressed): a sample that
+    // asks for history serves the record of every one.
+    const values = view.sections[0]
+    const recorded = values?.kind === 'values' ? values.values.filter(value => value.series !== null) : []
+    expect(recorded.length).toBeGreaterThan(3)
+    const history = await sampleVignette(run, state, { fromMs: Date.parse(sample.at.at) - SPARK_WINDOW_MS })
+    expect(recorded.filter(value => history.series?.[value.series!.seriesId] === undefined).map(value => value.ref)).toEqual([])
     expect(card.items.some(item => item.reading.includes('Reactor trip') && item.reading.includes('first out'))).toBe(true)
     const drawing = view.sections.find(section => section.kind === 'topology')
     expect(drawing?.kind === 'topology' && drawing.family).toBe('flow')
@@ -110,7 +117,7 @@ describe('P9: the plant default carries what the Unit Overview carries', () => {
     expect(sample.observations.some(observation => observation.ref.includes('#csf.'))).toBe(true)
     // Its alerts fill the column down to the drawing's foot (W2.5): no "+N more" over an empty column.
     const rowsOf = (kind: string) => state.views.find(entry => entry.kind === kind)!.rows
-    expect(rowsOf('alerts')).toBe(rowsOf('topology') - rowsOf('values') - rowsOf('trend'))
+    expect(rowsOf('alerts')).toBe(rowsOf('topology') - rowsOf('values'))
     console.log(`plant default: rows ${state.views.map(entry => `${entry.kind} ${entry.rows}`).join(', ')}; drawing ${drawing?.kind === 'topology' ? `${drawing.layout.width}×${drawing.layout.height}, ${drawing.layout.crossings} crossings` : '-'}; card ${card.items.length} items + ${card.more}; ${card.adjusted.map(entry => entry.text).join('; ')}`)
   })
 })

@@ -11,7 +11,7 @@ import type { DisplaySpec, View } from '../../../core/observation/spec.ts'
 import { alertItem, assembleCard, entityItem, slotItems, valueItem } from './card.ts'
 import { declarationOf, declaredRefs, same, valueOf, visibleObject } from './declared.ts'
 import { defaultViews, elementRefs, LEAD_ROWS, leadNow, leadRefs, ownStates, planLead, readLeads, recordedOf, tableRows, type DraftView } from './defaults.ts'
-import { FRAME_ROWS, VIGNETTE_MAX_ROWS, vignetteStateSchema, type ComposeIssue, type ResolvedView, type VignetteState } from './model.ts'
+import { FRAME_ROWS, VIGNETTE_MAX_ROWS, vignetteStateSchema, zoneRows, type ComposeIssue, type ResolvedView, type VignetteState } from './model.ts'
 import { isIssue, resolveSubject, subjectObjects, type ComposeRun, type Subject } from './resolve.ts'
 import { TOPOLOGY_REACH } from '../topology/scope.ts'
 import { drawingOf, scopeWithin, topologyOf } from './topology.ts'
@@ -263,7 +263,10 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
       const pool = led.pool.filter(ref => !refs.includes(ref))
       const rows = Math.min(view.rows ?? refs.length + LEAD_ROWS + led.criteria.length, refs.length + pool.length)
       const table = view.table === true ? tableRows(plan.table) : 0
-      if (rows > 0) fitted.push({ kind: 'values', ...(refs.length === 0 ? {} : { refs: [...refs] }), lead: view.lead, ...(table > 0 ? { table: true } : {}), rows: rows + table })
+      // A window default's lead rows stand under a heading, with the margins of those near or past a limit after them
+      // (W4.2); a few values beside one named (an observable's default, its rows given) stand without.
+      const zones = frame === 'window' && view.rows === undefined ? zoneRows({ zones: true }) : 0
+      if (rows > 0) fitted.push({ kind: 'values', ...(refs.length === 0 ? {} : { refs: [...refs] }), lead: view.lead, ...(table > 0 ? { table: true } : {}), ...(zones > 0 ? { zones: true } : {}), rows: rows + table + zones })
     } else if (view.kind === 'values') {
       const refs = trim(path, view.refs ?? [], 16, 'value')
       const values = refs.map(ref => declared.get(ref)!)
@@ -308,13 +311,13 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
       const graph = await topologyOf(run, view.objectId)
       let request = view.request
       let scoped = graph === null ? null : scopeWithin(graph, request)
-      let drawing = scoped?.ok === true ? await drawingOf(scoped.scoped) : null
+      let drawing = scoped?.ok === true ? await drawingOf(run, scoped.scoped) : null
       // A one-ended or around request whose drawing does not verify draws nearer, a link less at a time, as named otherwise.
       if (graph !== null && drawing === null && scoped?.ok === true && request.overview !== true && !(request.from !== undefined && request.to !== undefined)) {
         for (let reach = (scoped.reach ?? request.reach ?? TOPOLOGY_REACH) - 1; reach >= 1; reach -= 1) {
           const asked = { ...request, reach }
           const narrowed = scopeWithin(graph, asked)
-          const drawn = narrowed.ok ? await drawingOf(narrowed.scoped) : null
+          const drawn = narrowed.ok ? await drawingOf(run, narrowed.scoped) : null
           if (!narrowed.ok || drawn === null) continue
           countAdjustment(adjusted, { kind: 'scope', text: `drawn ${reach} ${reach === 1 ? 'link' : 'links'} out to fit` })
           ;[request, scoped, drawing] = [asked, { ok: true, scoped: narrowed.scoped }, drawn]
@@ -333,7 +336,7 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
         for (const step of ladder) {
           const asked = { ...request, media: [...step.media], reach: step.reach }
           const narrowed = scopeWithin(graph, asked)
-          const drawn = narrowed.ok ? await drawingOf(narrowed.scoped) : null
+          const drawn = narrowed.ok ? await drawingOf(run, narrowed.scoped) : null
           if (!narrowed.ok || drawn === null) continue
           if (step.media.length < services.length) countAdjustment(adjusted, { kind: 'scope', text: `drawn for ${name(step.media[0]!)} only; also: ${services.filter(other => other !== step.media[0]).map(name).join(', ')}`.slice(0, 200) })
           const reach = narrowed.reach ?? step.reach

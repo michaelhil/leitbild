@@ -5,7 +5,8 @@ import { decimalsFor, unitSymbol, type Observable, type Observation } from '../s
 import type { TopologyGraph } from '../src/core/observation/topology.ts'
 import type { VignetteSection } from '../src/features/displays/compose/model.ts'
 import { FLOW_ROOM, overviewOf, topologySection } from '../src/features/displays/compose/topology.ts'
-import { FLOW_TEXT_LINE, flowLayout, READING_CHARACTERS } from '../src/features/displays/topology/flow-sizing.ts'
+import { flowLayout, IN_TURN_FIGURES, VALUE_FIGURES } from '../src/features/displays/topology/flow-sizing.ts'
+import { textWidth } from '../src/features/displays/topology/text.ts'
 import { groupName, itemText, type TopologyLayout } from '../src/features/displays/topology/layout.ts'
 import { scopeTopology, type TopologyRequest } from '../src/features/displays/topology/scope.ts'
 import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
@@ -30,6 +31,11 @@ guardPlantTests()
 // topology, and what the renderer draws from the layout and the sample.
 
 const ROOM = FLOW_ROOM
+/** What a Plant's drawing is sized by: its declared observables (their words and units). */
+const declaredBy = (objectId: string, model: ReturnType<typeof compileProcessPlant>) => {
+  const declared = new Map(plantDeclaration(objectId as never, model, null).observables.map(observable => [observable.ref, observable]))
+  return (ref: string) => declared.get(ref)
+}
 const overlapping = (layout: TopologyLayout): ReadonlyArray<string> => {
   const texts = layout.nodes.flatMap(node => (node.text === undefined ? [] : [{ id: `${node.id}:text`, ...node.text }]))
   return overlaps({ ...layout, nodes: [...layout.nodes, ...texts].map(box => ({ ...box, ports: {} })) })
@@ -49,7 +55,7 @@ describe('flow layout', () => {
     }
     const scoped = scopeTopology(graph, { from: ['tank'], to: ['engine'] })
     if (!scoped.ok) throw new Error(scoped.refusal.code)
-    const drawn = flowLayout(scoped.scoped, ROOM)!
+    const drawn = flowLayout(scoped.scoped, ROOM, () => undefined)!
     expect(drawn.layout.crossings).toBe(0)
     expect(overlapping(drawn.layout)).toEqual([])
     expect(drawnIds(drawn.layout)).toEqual(['engine', 'tank'])
@@ -57,11 +63,12 @@ describe('flow layout', () => {
 
   const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:flow', loopCount: 4 }))
   const graph = servedPlantTopology('plant:flow' as never, plant)
+  const plantDeclared = declaredBy('plant:flow', plant)
   const media = (ids: ReadonlyArray<string>): ReadonlyArray<string> => graph.media.filter(medium => ids.includes(medium.id)).map(medium => medium.id)
   const layoutOf = (request: TopologyRequest) => {
     const scoped = scopeTopology(graph, request)
     if (!scoped.ok) throw new Error(scoped.refusal.code)
-    return flowLayout(scoped.scoped, ROOM)
+    return flowLayout(scoped.scoped, ROOM, plantDeclared)
   }
 
   test('the whole Plant\'s declared overview at two to four loops: within the overview\'s twelve crossings, no overlap, in its room', () => {
@@ -70,7 +77,7 @@ describe('flow layout', () => {
       const served = servedPlantTopology('plant:overview' as never, model)
       expect(served.overview).toBeDefined()
       const scoped = overviewOf(served)!
-      const drawn = flowLayout(scoped, ROOM)!
+      const drawn = flowLayout(scoped, ROOM, declaredBy('plant:overview', model))!
       expect(drawn.layout.crossings).toBeLessThanOrEqual(12)
       expect(overlapping(drawn.layout)).toEqual([])
       expect(drawn.layout.width).toBeLessThanOrEqual(ROOM.columns)
@@ -174,11 +181,12 @@ describe('flow symbols', () => {
   })
 
   test('four loops: around a bus, the movers it drives draw as movers and only its diesel generator as a generator', () => {
-    const graph = servedPlantTopology('plant:flow' as never, compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:flow', loopCount: 4 })))
+    const model = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:flow', loopCount: 4 }))
+    const graph = servedPlantTopology('plant:flow' as never, model)
     for (const around of ['safetyBusA', 'unitBusA']) {
       const scoped = scopeTopology(graph, { around: [around], reach: 1 })
       if (!scoped.ok) throw new Error(scoped.refusal.code)
-      const drawn = flowLayout(scoped.scoped, ROOM)!
+      const drawn = flowLayout(scoped.scoped, ROOM, declaredBy('plant:flow', model))!
       const drawing = flowDrawing(topologySection('plant:flow', 'process-plant', scoped.scoped, drawn, 30, () => undefined) as Topology, [], [], false)
       const generators = drawing.devices.filter(device => device.glyph?.tag.startsWith('obi-electric-generator') === true).map(device => device.id)
       expect(generators).toEqual(around === 'safetyBusA' ? ['dieselGeneratorA'] : [])
@@ -278,24 +286,23 @@ describe('flow symbols', () => {
 })
 
 describe('text room (UX audit #68; plan §5.5, containment)', () => {
-  // Every line a drawn item writes stays inside the box its layout kept for it, at the sizing's width a character:
-  // its name; its state word, or the word that says it stopped ("Rods off bottom"), and under it the command it does
-  // not follow ("commanded RUN" ran 32 px past the RCPs' boxes on Run A); each reading at the longest value the sizing
-  // reserves for it: a share full with its word before it ("LVL 100.0 %" ran one character past its box), a quantity
-  // read in turn on each of its instruments ("8.8×10⁻¹¹ A", "PWR 100.0 %"); and every reading the layout kept a line
-  // for is written, so no room taken for a word costs a drawing its readings. Generic: every item of the declared
-  // overview at two to four loops and of the neighbourhoods an element's default draws.
+  // Every line a drawn item writes stays inside the box its layout kept for it, as wide as Noto Sans sets it in its
+  // style (W6.5): its name; its state word, or the word that says it stopped ("Rods off bottom"), and under it the
+  // command it does not follow ("commanded RUN" ran 32 px past the RCPs' boxes on Run A); each reading at the longest
+  // value the sizing reserves for it: a share full with its word before it ("LVL 100.0 %" ran one character past its
+  // box), a quantity read in turn on each of its instruments ("8.8×10⁻¹¹ A", "PWR 100.0 %"); and every reading the
+  // layout kept a line for is written, so no room taken for a word costs a drawing its readings. Generic: every item
+  // of the declared overview at two to four loops and of the neighbourhoods an element's default draws.
   type Binding = Topology['nodes'][number]['bindings'][number]
-  /** A value whose reading takes all of these characters. */
-  const widest = (declared: Pick<Observable, 'quantity' | 'unit'>, characters: number): number => {
-    const symbol = unitSymbol(declared.unit)
+  /** A value whose figures, its point among them, fill the room the sizing keeps: nines to its decimals. */
+  const widest = (declared: Pick<Observable, 'quantity' | 'unit'>, figures: number): number => {
     const decimals = decimalsFor(declared.unit, 10 ** 6, declared.quantity)
-    const digits = characters - (symbol === '' ? 0 : symbol.length + 1) - (decimals === 0 ? 0 : decimals + 1)
+    const digits = figures - (decimals === 0 ? 0 : decimals + 1)
     return Number(`${'9'.repeat(Math.max(1, digits))}${decimals === 0 ? '' : `.${'9'.repeat(decimals)}`}`)
   }
-  /** A reading at its longest: a share full (its word says it is one), one over decades at a two-digit power of ten, else every character its room keeps. */
+  /** A reading at its longest: a share full (its word says it is one), one over decades at a two-digit power of ten, else every figure its room keeps. */
   const longestReading = (binding: Binding, inTurn: boolean): number =>
-    binding.word !== undefined ? 100 : binding.decades === true ? 8.8e-11 : widest(binding, inTurn ? READING_CHARACTERS + 1 : READING_CHARACTERS)
+    binding.word !== undefined ? 100 : binding.decades === true ? 8.8e-11 : widest(binding, inTurn ? IN_TURN_FIGURES : VALUE_FIGURES)
   /** A state at its longest declared word. */
   const longestState = (binding: Binding): string => [...binding.states!].sort((left, right) => right.label.length - left.label.length)[0]!.value
   const outside = (objectId: string, request: TopologyRequest | 'overview', loops: number): ReadonlyArray<string> => {
@@ -303,7 +310,7 @@ describe('text room (UX audit #68; plan §5.5, containment)', () => {
     const served = servedPlantTopology(objectId as never, plant)
     const declared = new Map(plantDeclaration(objectId as never, plant, null).observables.map(observable => [observable.ref, observable]))
     const scoped = request === 'overview' ? overviewOf(served)! : (() => { const result = scopeTopology(served, request); if (!result.ok) throw new Error(result.refusal.code); return result.scoped })()
-    const section = topologySection(objectId, 'process-plant', scoped, flowLayout(scoped, ROOM)!, 38, ref => declared.get(ref)) as Topology
+    const section = topologySection(objectId, 'process-plant', scoped, flowLayout(scoped, ROOM, ref => declared.get(ref))!, 38, ref => declared.get(ref)) as Topology
     const inTurn = new Set(section.nodes.flatMap(node => itemText(node.bindings).readings.filter(reading => reading.length > 1).flat().map(binding => binding.ref)))
     // Each instrument of a quantity read in turn in range once: its flag and every flag before it hold.
     const steps = Math.max(1, ...section.nodes.flatMap(node => itemText(node.bindings).readings.map(reading => reading.length)))
@@ -337,8 +344,8 @@ describe('text room (UX audit #68; plan §5.5, containment)', () => {
       })
       return [...unwritten, ...drawing.texts.flatMap(text => [
         ...(text.x < 0 || text.x + text.width > drawing.width ? [`${text.id}: its box leaves the drawing`] : []),
-        ...text.lines.filter(line => line.text.length * FLOW_TEXT_LINE.perCharacter > text.width)
-          .map(line => `${text.id}: "${line.text}" needs ${line.text.length * FLOW_TEXT_LINE.perCharacter} px of its ${text.width}`),
+        ...text.lines.filter(line => textWidth(line.text, line.style) > text.width)
+          .map(line => `${text.id}: "${line.text}" needs ${textWidth(line.text, line.style)} px of its ${text.width}`),
       ])]
     })
   }
@@ -356,7 +363,7 @@ describe('text room (UX audit #68; plan §5.5, containment)', () => {
 describe('scaled drawings', () => {
   test('a drawing the composer scaled to fit (a chat column) shows at the scale its card says, within its rows, its attribution under it', () => {
     const model = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:overview', loopCount: 4 }))
-    const { layout } = flowLayout(overviewOf(servedPlantTopology('plant:overview' as never, model))!, ROOM)!
+    const { layout } = flowLayout(overviewOf(servedPlantTopology('plant:overview' as never, model))!, ROOM, declaredBy('plant:overview', model))!
     // The composer's rows (compose.ts): the grid rows the layout reaches into and its attribution, scaled to no less than a third or eight.
     const natural = Math.ceil(layout.height) + 1
     const rows = Math.max(8, Math.ceil((natural - 1) / 3) + 1)
@@ -378,7 +385,7 @@ describe('a part an item inserts, from the plant\'s reading to the drawn bar', (
     // The unit's declared overview, the drawing the core stands in at the top of every unit's display.
     const scoped = overviewOf(servedPlantTopology(objectId, plant))!
     const declared = new Map(derivedObservables(objectId, plant).map(observable => [observable.ref, observable]))
-    const section = topologySection('plant:rods', 'process-plant', scoped, flowLayout(scoped, ROOM)!, 37, ref => declared.get(ref)) as Topology
+    const section = topologySection('plant:rods', 'process-plant', scoped, flowLayout(scoped, ROOM, declaredBy('plant:rods', plant))!, 37, ref => declared.get(ref)) as Topology
     const core = section.nodes.find(node => node.id === 'core')!
     const banks = core.bindings.filter(binding => binding.role === 'position')
     expect(banks).toHaveLength(8)

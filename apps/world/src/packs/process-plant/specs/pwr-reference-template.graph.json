@@ -276,6 +276,7 @@
         "presentation": {
           "shortLabel": "Core",
           "names": { "coreExitTemperatureC": "CET", "powerRangePercent": "reactor power" },
+          "shortNames": { "intermediateRangeCurrentAmps": "IR current", "sourceRangeCountRateCps": "SR count rate", "intermediateRangeStartupRateDpm": "IR startup rate", "sourceRangeStartupRateDpm": "SR startup rate", "rodStepsWithdrawn": "Rod steps" },
           "states": {
             "sourceRangeEnergized": { "on": "Source-range HV on", "off": "Source-range HV off" },
             "aboveP6": { "on": "Above P-6", "off": "Below P-6" },
@@ -371,7 +372,8 @@
       "metadata": {
         "presentation": {
           "shortLabel": "RV",
-          "names": { "meanPrimaryCoolantTemperatureC": "Tavg" }
+          "names": { "meanPrimaryCoolantTemperatureC": "Tavg" },
+          "shortNames": { "subcoolingMarginC": "Subcooling", "collapsedLiquidLevelPercent": "RVLIS level" }
         }
       }
     },
@@ -677,7 +679,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "SG A"
+          "shortLabel": "SG A",
+          "shortNames": { "levelPercent": "SG A NR level", "wideRangeLevelPercent": "SG A WR level", "secondaryRadiationMSvPerH": "SG A N-16", "feedwaterFlowKgPerS": "SG A feed flow" }
         }
       }
     },
@@ -761,7 +764,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "SG B"
+          "shortLabel": "SG B",
+          "shortNames": { "levelPercent": "SG B NR level", "wideRangeLevelPercent": "SG B WR level", "secondaryRadiationMSvPerH": "SG B N-16", "feedwaterFlowKgPerS": "SG B feed flow" }
         }
       }
     },
@@ -845,7 +849,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "SG C"
+          "shortLabel": "SG C",
+          "shortNames": { "levelPercent": "SG C NR level", "wideRangeLevelPercent": "SG C WR level", "secondaryRadiationMSvPerH": "SG C N-16", "feedwaterFlowKgPerS": "SG C feed flow" }
         }
       }
     },
@@ -929,7 +934,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "SG D"
+          "shortLabel": "SG D",
+          "shortNames": { "levelPercent": "SG D NR level", "wideRangeLevelPercent": "SG D WR level", "secondaryRadiationMSvPerH": "SG D N-16", "feedwaterFlowKgPerS": "SG D feed flow" }
         }
       }
     },
@@ -1013,7 +1019,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "SG E"
+          "shortLabel": "SG E",
+          "shortNames": { "levelPercent": "SG E NR level", "wideRangeLevelPercent": "SG E WR level", "secondaryRadiationMSvPerH": "SG E N-16", "feedwaterFlowKgPerS": "SG E feed flow" }
         }
       }
     },
@@ -1097,7 +1104,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "SG F"
+          "shortLabel": "SG F",
+          "shortNames": { "levelPercent": "SG F NR level", "wideRangeLevelPercent": "SG F WR level", "secondaryRadiationMSvPerH": "SG F N-16", "feedwaterFlowKgPerS": "SG F feed flow" }
         }
       }
     },
@@ -1962,7 +1970,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "AFW header"
+          "shortLabel": "AFW header",
+          "shortNames": { "outletFlowKgPerS": "AFW flow" }
         }
       }
     },
@@ -2634,7 +2643,8 @@
       },
       "metadata": {
         "presentation": {
-          "shortLabel": "Turbine stop valves"
+          "shortLabel": "Turbine stop valves",
+          "shortNames": { "effectivePositionFraction": "Stop valves position" }
         }
       },
       "variables": [
@@ -2694,7 +2704,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "Turbine bypass"
+          "shortLabel": "Turbine bypass",
+          "shortNames": { "effectivePositionFraction": "Bypass position" }
         }
       }
     },
@@ -2795,7 +2806,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "Condenser"
+          "shortLabel": "Condenser",
+          "shortNames": { "condensateLevelPercent": "Hotwell level" }
         }
       }
     },
@@ -3226,7 +3238,8 @@
       },
       "metadata": {
         "presentation": {
-          "shortLabel": "SI header"
+          "shortLabel": "SI header",
+          "shortNames": { "outletFlowKgPerS": "SI flow" }
         }
       }
     },
@@ -3310,7 +3323,8 @@
       },
       "metadata": {
         "presentation": {
-          "shortLabel": "CS header"
+          "shortLabel": "CS header",
+          "shortNames": { "outletFlowKgPerS": "CS flow" }
         }
       }
     },

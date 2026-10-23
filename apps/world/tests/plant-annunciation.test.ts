@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { annunciationSchema } from '../src/core/observation/annunciation.ts'
 import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
 import { expectedAfterGroup } from '../src/packs/process-plant/ic/alarm-philosophy.ts'
+import { processPlantIcLifecyclePayloadSchema } from '../src/packs/process-plant/commands.ts'
 import { plantAnnunciation } from '../src/packs/process-plant/observation/annunciation.ts'
 import { plantDeclaration } from '../src/packs/process-plant/observation/declarations.ts'
 import { processPlantIcLifecycleStateSchema, type ProcessPlantIcLifecycleState } from '../src/packs/process-plant/runtime/index.ts'
@@ -39,6 +40,8 @@ describe('the reference PWR\'s annunciation', () => {
     ]).toEqual([['LO-LO · RX TRIP'], ['LO-3 · SI', 'LO-3 · RX TRIP', 'LO-3 · FWI', 'LO-3 · AFW START'], ['LO · ALM'], ['RX TRIP'], ['LO-LO · ALM'], ['DEAD · ALM']])
     // HMI review of run 23: a pump not running, a level low with low feed flow, as a drawing's words name them.
     expect([tagsOf('rcp-a-trip'), tagsOf('sg-b-feedwater-low'), tagsOf('pzr-porv-flow')]).toEqual([['NOT RUN · ALM'], ['L LO & F LO · ALM'], ['RELIEF VALVE FLOWING · ALM']])
+    // A pump commanded to run, its bus live, that does not: what is wrong with it, not its command and permissive.
+    expect(tagsOf('motor-driven-afw-pump-a-fails-to-start')).toEqual(['NOT RUN · ALM'])
     expect(tagsOf('reactor-trip-low-tavg-feedwater-isolation')).toEqual(['LO · FWI'])
     expect(annunciation.alerts.map(alert => alert.tag)).not.toContain('ALM')
     expect(of('safety-injection-low-pzr-pressure').map(alert => alert.group)).toEqual(['safety-injection', 'reactor-trip', 'feedwater-isolation', 'auxiliary-feedwater'])
@@ -46,7 +49,14 @@ describe('the reference PWR\'s annunciation', () => {
 
   test('every alert names one of the declared annunciator systems, listed in their declared order', () => {
     expect(annunciation.categories.map(category => category.id)).toEqual(plant.automation.annunciatorSystems.map(system => system.id))
+    // Each by its label and its short label, a narrow tile's (W2.2).
+    expect(annunciation.categories.map(category => category.short)).toEqual(plant.automation.annunciatorSystems.map(system => system.shortLabel))
     expect(annunciation.alerts.filter(alert => alert.category === undefined)).toEqual([])
+  })
+
+  test('a person acknowledges an alarm or a trip by its lifecycle, through the Plant\'s lifecycle command (W2.7, D-E)', () => {
+    expect(annunciation.acknowledge).toEqual({ capabilityId: 'world.process-plant.ic.lifecycle', input: { action: 'acknowledge' }, objectField: 'plantId', alertField: 'lifecycleId' })
+    expect(processPlantIcLifecyclePayloadSchema.parse({ ...annunciation.acknowledge!.input, plantId: 'plant:x', lifecycleId: annunciation.alerts[0]!.id })).toMatchObject({ action: 'acknowledge' })
   })
 
   test('each alert\'s expected window is its annunciator\'s', () => {

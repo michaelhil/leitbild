@@ -4,12 +4,22 @@
 // each by a bare import, which is what defines it. A type or enum import
 // beside one never stands in for it.
 import '@oicl/openbridge-webcomponents/dist/openbridge.css'
+// Its font, the subset whose widths the composer reserves text by.
+import './noto-sans.ts'
 import '@oicl/openbridge-webcomponents/dist/icons/icon-ai.js'
 import '@oicl/openbridge-webcomponents/dist/building-blocks/readout-block/readout-block.js'
+// A values row's declared span bar where it has no record (W4.2, W9.3).
 import '@oicl/openbridge-webcomponents/dist/building-blocks/bar-horizontal/bar-horizontal.js'
+// A values section's rows (W4.2): OpenBridge's readout list aligns their values and units.
+import '@oicl/openbridge-webcomponents/dist/navigation-instruments/readout-list/readout-list.js'
+import '@oicl/openbridge-webcomponents/dist/navigation-instruments/readout-list-item/readout-list-item.js'
 import '@oicl/openbridge-webcomponents/dist/components/status-indicator/status-indicator.js'
 import '@oicl/openbridge-webcomponents/dist/components/button/button.js'
 import '@oicl/openbridge-webcomponents/dist/components/alert-icon/alert-icon.js'
+// An alerts section's counts and tiles (W2.1, W2.2).
+import '@oicl/openbridge-webcomponents/dist/components/alert-counter-item/alert-counter-item.js'
+import '@oicl/openbridge-webcomponents/dist/components/alert-subsystem-counter/alert-subsystem-counter.js'
+import '@oicl/openbridge-webcomponents/dist/components/badge/badge.js'
 import '@oicl/openbridge-webcomponents/dist/automation/bus/bus.js'
 import '@oicl/openbridge-webcomponents/dist/automation/switch/switch.js'
 import '@oicl/openbridge-webcomponents/dist/automation/transformer/transformer.js'

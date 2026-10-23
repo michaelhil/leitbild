@@ -14,7 +14,10 @@
  * Checks, tagged by the release that must pass them (later releases keep the earlier checks):
  *   R1  alerts-rows   the alerts list has rows within one sample of the upset, and keeps them (95 % of reads after)
  *       frames        an alarmed drawn item is framed within one sample, and stays framed; at the end every drawn
- *                     element with an active plant alert of caution or worse is framed
+ *                     element with an active plant alert of caution or worse is marked: framed, or (W2.3, by design)
+ *                     outlined dashed where World's sample marks all its active alerts expected after a first-out
+ *                     (an "abnormal" outline, a command not followed, takes that outline's place); the two are
+ *                     reported apart, and an outline on an element with an alert that is news fails
  *       worst-chip    the frame's worst chip shows within one sample, and stays
  *       leads         each time World's lead set for the unit changes while the Run plays (POST displays/default,
  *                     read every second), the display shows the new set within one sample; it ends on World's set
@@ -184,6 +187,9 @@ const runSize = async (config: {
     const viewState = await shownViewState(page)
     const view = viewState === null || !vignette ? null : await api.view(copy, viewState)
     const plantAlerts: ReadonlyArray<any> = (await api.objects(copy)).find(object => object.id === subject)?.alerts ?? []
+    // World's own expected marks at the end (AlertRow.expected), for the shown display: which alerts are expected.
+    const endSample = viewState === null || !vignette ? null : await api.sample(copy, viewState).catch(() => null)
+    const expectedIds = new Set<string>((endSample?.alerts ?? []).filter((row: any) => row.expected !== undefined).map((row: any) => String(row.alert?.id)))
     await api.pause(copy)
     const after = fresh === null ? null : await api.defaultView(copy, subject)
     const postTripExpected = after === null ? null : leadLabels(after.view)
@@ -191,11 +197,19 @@ const runSize = async (config: {
     const elementOfItem = new Map<string, string>(nodes.map((node: any) => [String(node.id), String(node.element ?? node.id)]))
     const drawnElements = new Set(nodes.map((node: any) => String(node.element ?? node.id)))
     // The plant's own active alerts of caution or worse on elements the drawing draws (from the Run, not the display).
-    const alerted = new Set<string>(plantAlerts.filter(alert => alert.returned !== true && (PRIORITY_RANK[alert.priority ?? ''] ?? 0) >= 1)
-      .map(alert => alert.subject?.element).filter((element: unknown): element is string => typeof element === 'string' && drawnElements.has(element)))
+    const active = plantAlerts.filter(alert => alert.returned !== true && (PRIORITY_RANK[alert.priority ?? ''] ?? 0) >= 1)
+    const alerted = new Set<string>(active.map(alert => alert.subject?.element).filter((element: unknown): element is string => typeof element === 'string' && drawnElements.has(element)))
+    /** Every active alert of caution or worse on the element is one World's sample marks expected after a first-out. */
+    const allExpected = (element: string) => active.filter(alert => alert.subject?.element === element).every(alert => expectedIds.has(String(alert.id)))
     const last = polls.at(-1)!.state
     const framedElements = new Set(last.framed.map(item => elementOfItem.get(item.item) ?? item.item))
-    const unframed = [...alerted].filter(element => !framedElements.has(element))
+    const outlineOf = new Map(last.outlined.map(item => [elementOfItem.get(item.item) ?? item.item, item.kind] as const))
+    // Marked: framed; or outlined (dashed "expected", or "abnormal" in its place) where all its alerts are expected.
+    const outlinedExpected = [...alerted].filter(element => !framedElements.has(element) && outlineOf.get(element) === 'expected' && allExpected(element))
+    const outlinedAbnormal = [...alerted].filter(element => !framedElements.has(element) && outlineOf.get(element) === 'abnormal' && allExpected(element))
+    const outlinedNews = [...alerted].filter(element => !framedElements.has(element) && outlineOf.has(element) && !allExpected(element))
+    const unframed = [...alerted].filter(element => !framedElements.has(element) && !outlinedExpected.includes(element) && !outlinedAbnormal.includes(element))
+    const framedAlerted = [...alerted].filter(element => framedElements.has(element))
 
     // ---- checks ----
     const afterUpset = polls.filter(poll => upsetMs !== null && poll.simMs !== null && poll.simMs >= upsetMs)
@@ -251,7 +265,11 @@ const runSize = async (config: {
     const endViewport = viewport(last, lastPoll.screen, sizeSpec(String(size)))
     const checks: Check[] = [
       { id: 'alerts-rows', release: 'R1', pass: upsetMs === null ? null : held(rowsLag), detail: upsetMs === null ? 'no upset seen' : `first rows ${rowsLag.lagS === null ? 'never' : `${rowsLag.lagS} s`} after the upset, kept in ${kept(rowsLag)} of reads after; at the end ${last.alerts === null ? 'no alerts section' : `"${last.alerts.heading}", ${last.alerts.rows.length} rows${last.alerts.more ? `, ${last.alerts.more}` : ''}`}`, shot: shots['1-first-sample-after-upset'] },
-      { id: 'frames', release: 'R1', pass: upsetMs === null ? null : held(framesLag) && unframed.length === 0, detail: `first frame ${framesLag.lagS === null ? 'never' : `${framesLag.lagS} s`} after the upset, kept in ${kept(framesLag)} of reads after; at the end ${last.framed.length} drawn items marked (${last.framedSymbols} symbols framed); ${alerted.size} drawn elements carry an active plant alert of caution or worse${nodes.length === 0 ? ' (no World topology to name the drawn elements: the pre-swap mimic)' : ''}${unframed.length === 0 ? '' : `, unframed: ${unframed.join(', ')}`}`, shot: shots['2-upset+10s'] },
+      {
+        id: 'frames', release: 'R1', pass: upsetMs === null ? null : held(framesLag) && unframed.length === 0,
+        detail: `first frame ${framesLag.lagS === null ? 'never' : `${framesLag.lagS} s`} after the upset, kept in ${kept(framesLag)} of reads after; at the end ${last.framed.length} drawn items framed (${last.framedSymbols} symbols), ${last.outlined.length} outlined (${last.outlined.map(item => item.kind).sort().join(', ') || 'none'}); ${alerted.size} drawn elements carry an active plant alert of caution or worse${nodes.length === 0 ? ' (no World topology to name the drawn elements: the pre-swap mimic)' : `: ${framedAlerted.length} framed, ${outlinedExpected.length} outlined as expected (all their alerts expected${outlinedExpected.length === 0 ? '' : `: ${outlinedExpected.join(', ')}`}), ${outlinedAbnormal.length} outlined as a command not followed in the expected outline's place${outlinedAbnormal.length === 0 ? '' : ` (${outlinedAbnormal.join(', ')})`}`}${outlinedNews.length === 0 ? '' : `; outlined though an alert is news: ${outlinedNews.join(', ')}`}${unframed.length === 0 ? '' : `; unmarked: ${unframed.join(', ')}`}`,
+        shot: shots['2-upset+10s'],
+      },
       { id: 'worst-chip', release: 'R1', pass: upsetMs === null ? null : held(chipLag), detail: `worst chip ${chipLag.lagS === null ? 'never' : `${chipLag.lagS} s`} after the upset, kept in ${kept(chipLag)} of reads after; at the end "${last.worst ?? '-'}"`, shot: shots['1-first-sample-after-upset'] },
       {
         id: 'leads', release: 'R1',
@@ -279,7 +297,7 @@ const runSize = async (config: {
       atPower: { worst: atPower.worst, leads: atPower.leads, alerts: atPower.alerts, word: atPower.word, badValues: badValues(atPower) },
       worldLeads: worldLeads.map(entry => ({ at: new Date(entry.simMs).toISOString(), labels: entry.labels })),
       leadChanges,
-      end: { worst: last.worst, leads: last.leads, alerts: last.alerts, framed: last.framed, framedSymbols: last.framedSymbols, word: last.word, sim: last.sim, badValues: badValues(last), scrolled: last.values.filter(value => value.status.startsWith('scrolled')).length },
+      end: { worst: last.worst, leads: last.leads, alerts: last.alerts, framed: last.framed, framedSymbols: last.framedSymbols, outlined: last.outlined, marks: { framed: framedAlerted, outlinedExpected, outlinedAbnormal, outlinedNews, unmarked: unframed, expectedAlerts: expectedIds.size }, word: last.word, sim: last.sim, badValues: badValues(last), scrolled: last.values.filter(value => value.status.startsWith('scrolled')).length },
       checks,
       timeline: polls.map(poll => ({ wall: poll.wall, sim: poll.state.sim, word: poll.state.word, worst: poll.state.worst, rows: poll.state.alerts?.rows.length ?? null, framed: poll.state.framed.length, leads: poll.state.leads.map(lead => lead.label).join(' | '), bad: badValues(poll.state).length })),
       shots,

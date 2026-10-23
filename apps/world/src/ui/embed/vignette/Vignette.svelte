@@ -7,7 +7,8 @@
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
   import { embeddedDisplayFrame, hostDisplayFrame } from '../view-host.ts'
   import { alertsTarget, worstChip } from './alerts.ts'
-  import { clockText, provenanceMark } from './format.ts'
+  import { clockText, provenanceMark, provenanceMarks } from './format.ts'
+  import { firstFitting, wholeWords } from './fit-words.ts'
   import { fillsWindow, VIGNETTE_ROW_PX } from './grid.ts'
   import { toneOf } from './readout.ts'
   import { chipOrder, stateChipLook } from './state-chip.ts'
@@ -106,9 +107,9 @@
   }
 </script>
 
-<article class="vignette" class:fill={fills} style:min-height={fills && room !== null ? `${room}px` : undefined} style:--row={`${VIGNETTE_ROW_PX}px`} aria-label={view?.title ?? envelope.title}>
+<article class="vignette" class:fill={fills} style:height={fills && room !== null ? `${room}px` : undefined} style:--row={`${VIGNETTE_ROW_PX}px`} aria-label={view?.title ?? envelope.title}>
   <header>
-    <h1 title={view?.title ?? envelope.title}>{view?.title ?? envelope.title}</h1>
+    <h1 title={view?.title ?? envelope.title} use:wholeWords={view?.title ?? envelope.title}></h1>
     {#if view?.by === 'assistant'}<span class="ai" title="Composed by the Assistant from what the Run declares"><obi-ai></obi-ai>Assistant</span>{/if}
     {#if worst !== null || chips.length > 0}
       <!-- The worst it shows (a press opens every alert, by category), then the object's own states (an operating mode first), right-aligned; they wrap, never cut. -->
@@ -143,8 +144,8 @@
   <footer title={footer.why}>
     <span class={`clock ${footer.word.toLowerCase()}`}>{footer.word}</span>
     {#if latest !== undefined}<span>{latest.at.clock === 'simulation' ? 'sim' : 'wall'} {clockText(latest.at.at)}</span>{/if}
-    {#if footer.why !== undefined}<span class="why">{footer.why}</span>{/if}
-    <span class="mark">{provenanceMark(view)}</span>
+    {#if footer.why !== undefined}<span class="why" use:wholeWords={footer.why}></span>{/if}
+    <span class="mark" title={provenanceMark(view)} aria-label={provenanceMark(view)} use:firstFitting={provenanceMarks(view)}>{provenanceMark(view)}</span>
   </footer>
   <!-- Said once when the display freezes and once when it is live again: what is drawn has stopped following the Run. -->
   <p class="announce" role="status">{frozen ? `Display frozen${footer.why === undefined ? '' : `: ${footer.why}`}. Values, trends and alerts are the last received${latest === undefined ? '' : `, at ${clockText(latest.at.at)}`}.` : ''}</p>
@@ -152,15 +153,16 @@
 
 <style>
   .vignette { --muted: var(--element-neutral-color); --text: var(--element-active-color); padding: 0 8px; font-size: 13px; }
-  /* Alerts only: as tall as the frame a person sees at least, its sections' row taking what the title, a status, the trip
-     line and the footer leave, no less than their composed rows; a grid, so that row's height is definite for the list. */
+  /* Alerts only: as tall as the frame a person sees, its sections' row taking what the title, a status, the trip line and
+     the footer leave, no less than their composed rows; a grid, so that row's height is definite for the list, which
+     fits it or scrolls in it (the full alerts view), and the window need not zoom the display out. */
   .vignette.fill { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto 1fr auto; box-sizing: border-box; }
-  .vignette.fill > :global(.sections) { grid-row: 4; }
+  .vignette.fill > :global(.sections) { grid-row: 4; min-height: 0; }
   .vignette.fill > footer { grid-row: 5; }
   footer { display: flex; align-items: center; gap: 8px; height: var(--row); min-width: 0; white-space: nowrap; }
-  /* The title gives way first, down to a few words; then the states wrap onto rows of their own under it. */
+  /* The title gives way first, by whole words (the whole in its title), down to a few; then the states wrap onto rows of their own under it. */
   header { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; min-height: var(--row); min-width: 0; }
-  h1 { flex: 1 1 12em; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: var(--row); font-size: 14px; font-weight: 600; }
+  h1 { flex: 1 1 12em; min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; line-height: var(--row); font-size: 14px; font-weight: 600; }
   .ai { flex: none; display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--element-neutral-color); }
   .ai obi-ai { width: 16px; height: 16px; }
   .states { flex: 0 1 auto; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 2px 3px; min-width: 0; margin-left: auto; padding: 2px 0; }
@@ -178,8 +180,9 @@
   .clock { font-weight: 700; letter-spacing: 0.04em; color: var(--element-active-color); }
   .clock.frozen { color: var(--element-neutral-color); }
   /* Where the row is short, the reason a sample froze gives way before the mark does. */
-  .why { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .mark { flex: 0 1 auto; min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; }
+  .why { flex: 0 100 auto; min-width: 0; overflow: hidden; }
+  /* The mark says it shorter where the footer is narrow (provenanceMarks), never cut. */
+  .mark { flex: 0 1 auto; min-width: 0; margin-left: auto; overflow: hidden; }
   /* Read by assistive technology, not shown. */
   .announce { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 </style>

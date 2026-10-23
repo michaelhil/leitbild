@@ -2,18 +2,17 @@
   import type { AlertTone, ReadingLook } from './readout.ts'
 
   // A number on one row (architecture B): its label, the chip of the limit it
-  // is past, the value in OpenBridge's readout block with its unit, what it is
-  // heading for, and OpenBridge's bar with each limit as an advice zone. Past
+  // is past, the value in OpenBridge's readout block with its unit and what it
+  // is heading for (a values section's rows are ValueRows.svelte). Past
   // a limit the block takes OpenBridge's alert frame at the observation's
   // priority; a doubtful value reads in its low-integrity style. Without a
-  // label it is a cell of a grouped table, without its bar: there its chip
+  // label it is a cell of a grouped table: there its chip
   // gives way where the cell is too narrow for both, never the value, and its
   // words stay in the cell's title.
   let { look, label }: { look: ReadingLook; label?: string } = $props()
 
   /** OpenBridge's alert type for each priority drawn in colour; emergency is its critical level. */
   const ALERT_TYPE: Readonly<Record<AlertTone, string>> = { caution: 'caution', warning: 'warning', alarm: 'alarm', critical: 'level-critical' }
-  const BAR = { width: 64, thickness: 8 }
 </script>
 
 <span class="readout" class:cell={label === undefined} title={label === undefined && look.chip !== null ? `${look.title} · ${look.chip.text}` : look.title}>
@@ -36,24 +35,7 @@
     ></obc-readout-block>
     {#if look.unit !== ''}<span class="unit">{look.unit}</span>{/if}
   </span>
-  {#if look.note !== null && label !== undefined}<span class="note">{look.note}</span>{/if}
-  {#if look.bar !== null && label !== undefined}
-    <obc-bar-horizontal
-      class="bar"
-      width={BAR.width}
-      minValue={look.bar.min}
-      maxValue={look.bar.max}
-      value={look.bar.value}
-      hasBar={true}
-      hasScale={false}
-      showLabels={false}
-      barThickness={BAR.thickness}
-      paddingLeft={0}
-      paddingRight={0}
-      advices={look.bar.advices}
-      advicePosition="center"
-    ></obc-bar-horizontal>
-  {/if}
+  {#if look.reason !== null && label !== undefined}<span class="note" title={look.reason}>({look.reason})</span>{:else if look.note !== null && label !== undefined}<span class="note">{look.note}</span>{/if}
 </span>
 
 <style>
@@ -68,10 +50,9 @@
   .chip.warning { background: var(--display-warning-fill); color: var(--display-on-warning); border-color: var(--alert-warning-color); }
   .chip.alarm { background: var(--display-alarm-fill); color: var(--display-on-alarm); border-color: var(--alert-alarm-color); }
   .chip.critical { background: var(--display-critical-fill); color: var(--display-on-critical); border-color: var(--alert-critical-color); }
-  .bar { flex: none; display: block; }
   /* A cell: its value at the right; its chip, left of it, wraps out of the cell's one row where both do not fit. */
   .cell { flex-direction: row-reverse; flex-wrap: wrap; justify-content: flex-start; align-content: flex-start; overflow: hidden; }
   .cell .reading { order: -1; }
-  /* A phone keeps the label, the chip and the value; the countdown and the bar give way. */
-  @media (max-width: 479px) { .note, .bar { display: none; } }
+  /* A phone keeps the label, the chip and the value; the countdown gives way. */
+  @media (max-width: 479px) { .note { display: none; } }
 </style>

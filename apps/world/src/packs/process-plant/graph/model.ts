@@ -310,6 +310,13 @@ export const processGraphPresentationSchema = z.object({
    */
   names: z.record(z.string().min(1), z.string().min(1).max(60)).optional(),
   /**
+   * What a row, a chip or a card line names its readings by where room is
+   * short, by local variable path, where the name derived from its label and
+   * the component's short name would not read as crews say it
+   * (observation/short-labels.ts): "Subcooling", "RVLIS level", "AFW flow".
+   */
+  shortNames: z.record(z.string().min(1), z.string().min(1).max(24)).optional(),
+  /**
    * Its pushbuttons, by local variable path: on/off commands that spring back
    * once pressed (an SI block, a manual trip), so an operator presses them
    * rather than switching them on or off. Never the command or isolation

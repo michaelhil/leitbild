@@ -222,13 +222,12 @@ const electricQuantities: ReadonlySet<Quantity> = new Set(['electric-power', 'fr
 export const defaultViews = async (run: ComposeRun, subject: Subject): Promise<ReadonlyArray<DraftView>> => {
   if (subject.kind === 'object' && subject.observed) {
     const object = visibleObject(run, subject.objectId)!
-    // Its lead values as its Pack judges them each sample (a lead request, never refs fixed now); its trend and the
-    // element its drawing centres on are chosen from those it leads with as it opens.
+    // Its lead values as its Pack judges them each sample (a lead request, never refs fixed now), each with its 10-min
+    // sparkline, rate and margin, so no trend stands under them (W4.2); the element its drawing centres on is chosen
+    // from those it leads with as it opens.
     const lead = (await leadNow(run, { objectId: object.id })).refs.slice(0, LEAD_ROWS)
-    const trend = await recordedOf(run, lead, 4)
     return [
       { kind: 'values', lead: { objectId: object.id } },
-      ...(trend.length > 0 ? [{ kind: 'trend', refs: [...trend], horizon: '10m' } as DraftView] : []),
       // Always its alerts, "none" while it has none: a default opened before an upset shows the upset's alerts as they come.
       alertsView([object.id]),
       ...await objectTopology(run, object, lead),
