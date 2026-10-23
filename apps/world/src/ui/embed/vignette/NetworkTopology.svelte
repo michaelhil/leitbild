@@ -15,11 +15,11 @@
   // obc-transformer and obc-source over it; names and readings as text. At
   // one grid unit a row, scrolled sideways where it is wider than its frame,
   // and scaled as the composer scaled it where its rows are fewer than its
-  // height (a chat column). Its attribution closes it.
-  let { section, observations, palette, frozen = false }: { section: Extract<VignetteSection, { kind: 'topology' }>; observations: ReadonlyArray<Observation>; palette: Palette; frozen?: boolean } = $props()
+  // height (a chat column), and further to a chat's width (`fit`, W7.3). Its attribution closes it.
+  let { section, observations, palette, frozen = false, fit = 1 }: { section: Extract<VignetteSection, { kind: 'topology' }>; observations: ReadonlyArray<Observation>; palette: Palette; frozen?: boolean; fit?: number } = $props()
 
   const drawing = $derived(networkDrawing(section, observations, frozen))
-  const scale = $derived(drawingScale(section))
+  const scale = $derived(drawingScale(section) * fit)
   let zoom = $state(1)
   runOnMount(() => embeddedDisplayFrame().subscribe(presentation => { zoom = presentation.zoom }))
 

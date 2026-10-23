@@ -9,6 +9,7 @@
   import { underTitle } from './format.ts'
   import { frameLayout, standsBeside, VIGNETTE_ROW_PX } from './grid.ts'
   import { drawingScale } from './network.ts'
+  import { vignetteOpening } from './opening.svelte.ts'
   import { valueLook, type ReadingLook } from './readout.ts'
   import type { VignetteSnapshot } from './vignette-client.ts'
   import AlertsSection from './AlertsSection.svelte'
@@ -63,6 +64,17 @@
   /** The band's alerts: their head, three rows and the count of the rest. */
   const BAND_ALERT_ROWS = 5
 
+  // In a chat a drawing is scaled to the frame's width as well as its rows (W7.3), never below 0.6 of its size: below
+  // that "View drawing ›" opens it in the window, where there is one; where there is none it stays at 0.6 and scrolls.
+  const opening = vignetteOpening()
+  const CHAT_DRAWING_FLOOR = 0.6
+  const inChat = $derived(opening !== undefined && opening.where !== 'window')
+  /** A topology's further scale to the frame's width in a chat: 1 elsewhere, and where it fits. */
+  const chatFit = (section: Extract<VignetteSection, { kind: 'topology' }>): number => {
+    const natural = (section.layout.width + 1) * VIGNETTE_ROW_PX * drawingScale(section)
+    return !inChat || width <= 0 ? 1 : Math.min(1, width / natural)
+  }
+
   /** Which ends of a scrolled drawing are out of sight, judged on every scroll and every change of its or its drawing's size. */
   let more = $state({ left: false, right: false })
   const sensed = (scroller: HTMLElement) => {
@@ -84,7 +96,7 @@
         <div class="values">
           {#each section.values as value (value.ref)}
             {@const look = shown(valueLook(value, observations, value.ref))}
-            {#if look.kind === 'criterion'}<CriterionRow {look} label={underTitle(value.label, view.title)} />{:else if look.kind === 'state'}<StateWord {look} label={underTitle(value.label, view.title)} />{:else}<Readout {look} label={underTitle(value.label, view.title)} />{/if}
+            {#if look.kind === 'criterion'}<CriterionRow {look} label={underTitle(value.label, view.title, view.subject)} />{:else if look.kind === 'state'}<StateWord {look} label={underTitle(value.label, view.title, view.subject)} />{:else}<Readout {look} label={underTitle(value.label, view.title, view.subject)} />{/if}
           {/each}
         </div>
         {#if section.table !== undefined}<GroupedValues section={section.table} {observations} {frozen} />{/if}
@@ -92,7 +104,7 @@
         <GroupedValues {section} {observations} {frozen} />
       {:else if section.kind === 'trend'}
         {#each section.strips as pens, strip (strip)}
-          <TrendStrip {pens} title={view.title} series={snapshot.series} {observations} {now} horizonMs={section.horizonMs} rows={Math.max(3, pens.length)} axis={strip === section.strips.length - 1} {frozen} />
+          <TrendStrip {pens} title={view.subject?.object ?? view.title} series={snapshot.series} {observations} {now} horizonMs={section.horizonMs} rows={Math.max(3, pens.length)} axis={strip === section.strips.length - 1} {frozen} />
         {/each}
       {:else if section.kind === 'alerts'}
         <AlertsSection rows={latest?.alerts ?? []} {section} room={rows ?? section.rows} />
@@ -103,7 +115,7 @@
           {#each section.slots as slot (slot.key)}
             <!-- Core slots and telemetry carry no observation priority: they read neutral. -->
             {@const look = shown(slotLook(slot, latest?.slots[section.objectId]?.[slot.key]))}
-            {#if look.kind === 'state'}<StateWord {look} label={underTitle(slot.label, view.title)} />{:else}<Readout {look} label={underTitle(slot.label, view.title)} />{/if}
+            {#if look.kind === 'state'}<StateWord {look} label={underTitle(slot.label, view.title, view.subject)} />{:else}<Readout {look} label={underTitle(slot.label, view.title, view.subject)} />{/if}
           {/each}
         </div>
       {:else if section.kind === 'map'}
@@ -111,7 +123,7 @@
       {:else if section.family === 'flow'}
         <FlowTopology {section} {observations} alerts={latest?.alerts ?? []} {palette} {frozen} {runId} {from} {fit} />
       {:else}
-        <NetworkTopology {section} {observations} {palette} {frozen} />
+        <NetworkTopology {section} {observations} {palette} {frozen} {fit} />
       {/if}
     </div>
 {/snippet}
@@ -148,7 +160,19 @@
       </div>
     </div>
   {:else}
-    {#each view.sections as section, index (index)}{@render one(section, index)}{/each}
+    {#each view.sections as section, index (index)}
+      {@const fit = section.kind === 'topology' ? chatFit(section) : 1}
+      {#if section.kind === 'topology' && fit * drawingScale(section) < CHAT_DRAWING_FLOOR && opening?.where === 'relay'}
+        <!-- Too small to read here: the window shows it whole. -->
+        <div class="section view-drawing" style:height={`${2 * VIGNETTE_ROW_PX}px`}>
+          <button type="button" onclick={() => opening.self()}>View drawing ›</button>
+          <span>too wide to read in this chat</span>
+        </div>
+      {:else if section.kind === 'topology' && fit < 1}
+        {@const scaled = Math.max(fit, CHAT_DRAWING_FLOOR / drawingScale(section))}
+        <div class="scroll">{@render one(section, index, Math.ceil(section.rows * scaled), scaled)}</div>
+      {:else}{@render one(section, index)}{/if}
+    {/each}
   {/if}
 </div>
 
@@ -181,4 +205,7 @@
   .continues { position: absolute; z-index: 1; top: 4px; padding: 0 8px; border: 1px solid var(--border-outline-color); border-radius: 12px; background: var(--container-background-color); color: var(--element-active-color); font-size: 12px; line-height: 20px; white-space: nowrap; pointer-events: none; }
   .continues.left { left: 4px; }
   .continues.right { right: 4px; }
+  /* A chat's drawing too small to read: a link to the window in its place, on the drawing's first row. */
+  .view-drawing { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--element-neutral-color); }
+  .view-drawing button { height: 32px; padding: 0 12px; border: 1px solid var(--border-outline-color); border-radius: 4px; background: var(--container-background-color); color: var(--element-active-color); font: inherit; font-weight: 600; cursor: pointer; }
 </style>

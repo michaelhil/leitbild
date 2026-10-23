@@ -17,6 +17,7 @@ import { composeVignette } from '../src/features/displays/compose/compose.ts'
 import { blockRows, elementBlocks } from '../src/features/displays/compose/element-groups.ts'
 import type { VignetteElement, VignetteSection, VignetteValue } from '../src/features/displays/compose/model.ts'
 import { compileVignette, type ViewRun } from '../src/features/displays/compose/view.ts'
+import { underTitle } from '../src/ui/embed/vignette/format.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { builtinScenarioDefinitions } from '../src/scenarios/definitions.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
@@ -26,7 +27,7 @@ guardPlantTests()
 // An answer's vignette on four-loop Halden five minutes into a loss of offsite power (plan v5 W7, W8.2): its card
 // lists the subjects' readings before alerts, the subjects' own alerts first and, past readings, the worst three
 // with a count of the rest; it writes a demand as the command it is; each line names its object once. Its view
-// groups its values by element.
+// names the one object it is on and groups its values by element.
 
 const routing = createDirectRoutingAdapter()
 const assembly = createWorldApplicationAssembly({ routing })
@@ -109,7 +110,7 @@ const e0 = {
   subjects: [plantId], views: [{ kind: 'values', signals: ['RTB-A', 'RTB-B', 'AFW-A-FLOW', 'AFW-B-FLOW', 'AFW-C-FLOW', 'AFW-D-FLOW', 'RCP-A-RUNNING', 'RCP-B-RUNNING', 'RCP-C-RUNNING', 'RCP-D-RUNNING'].map(tag => `${plantId}#${tag}`) }],
 }
 
-describe('an answer\'s view (W7.4)', () => {
+describe('an answer\'s view (W7.3, W7.4)', () => {
   test('its values grouped by element: several on one under its name, parallel ones as one table named as they read, in the rows composed', async () => {
     const { state } = await compose(e0)
     const view = await compileVignette(await runNow(), state)
@@ -119,6 +120,15 @@ describe('an answer\'s view (W7.4)', () => {
       .toEqual(['RTB A: 2', 'RTB B: 2', 'table flow × AFW valve A → SG A,AFW valve B → SG B,AFW valve C → SG C,AFW valve D → SG D', 'table Run command × RCP A,RCP B,RCP C,RCP D'])
     expect(values.rows).toBe(blockRows(blocks))
     expect(state.views[0]!.rows).toBe(blockRows(blocks))
+    // Every part is on Halden Unit 1: a label drops it, as under a title that names it (W7.3).
+    expect(view.subject).toEqual({ object: 'Halden Unit 1' })
+    expect(underTitle(values.values[0]!.label, view.title, view.subject)).toBe('Breaker closed · RTB A')
+    // An answer about one element: its values drop the element too.
+    const valve = await compose({ title: 'Unit 1 · AFW valve A', question: 'How is AFW valve A?', subjects: [`${plantId}#auxFeedwaterValveA`], views: [{ kind: 'values', signals: [`${plantId}#AFW-A-CV-POS`] }] })
+    const one = await compileVignette(await runNow(), valve.state)
+    expect(one.subject).toEqual({ object: 'Halden Unit 1', element: 'AFW valve A' })
+    const row = (one.sections[0] as Extract<VignetteSection, { kind: 'values' }>).values[0]!
+    expect(underTitle(row.label, one.title, one.subject)).not.toContain('AFW valve A')
   }, 120_000)
 
   test('only parallel trains make a table: an SG\'s feed and its steam, both of train A, read as rows', () => {

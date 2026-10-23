@@ -11,12 +11,15 @@ export const quantityText = (value: number, unit: string): string => {
 
 /**
  * A label without the object the vignette is titled by: "<object> · <observable>" reads "<observable>" under a title
- * "<object>", or "<object> · <element>"; the whole label stays in the tooltip.
+ * "<object>", or "<object> · <element>", or where `subject` names the one object every part is on (an answer's
+ * title names it its own way, W7.3), and without the element every value is on ("· AFW valve A"); the whole label
+ * stays in the tooltip.
  */
-export const underTitle = (label: string, title: string): string => {
+export const underTitle = (label: string, title: string, subject?: { readonly object: string; readonly element?: string }): string => {
   const object = title.split(' · ')[0]!
-  const shown = [title, object].find(prefix => label.startsWith(`${prefix} · `))
-  return shown === undefined ? label : label.slice(shown.length + 3)
+  const shown = [title, object, ...subject === undefined ? [] : [subject.object]].find(prefix => label.startsWith(`${prefix} · `))
+  const own = shown === undefined ? label : label.slice(shown.length + 3)
+  return subject?.element !== undefined && own.endsWith(` · ${subject.element}`) ? own.slice(0, -(subject.element.length + 3)) : own
 }
 
 /** A Run time as the footer and "since" read it: hh:mm:ss. */

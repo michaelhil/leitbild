@@ -166,6 +166,8 @@ export type VignetteSection =
  */
 export interface VignetteView {
   readonly title: string; readonly by?: 'assistant'; readonly chips?: ReadonlyArray<VignetteValue>; readonly beside?: true; readonly sections: ReadonlyArray<VignetteSection>
+  /** The one object every part is on, by its label, and the one element every value is on, as labels name it: a label drops them (W7.3). */
+  readonly subject?: { readonly object: string; readonly element?: string }
 }
 
 /** A recorded point: Run time in epoch ms and the value then. */

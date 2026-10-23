@@ -22,8 +22,8 @@
   } = $props()
 
   const shown = (look: ReadingLook): ReadingLook => (frozen ? { ...look, doubtful: true } : look)
-  /** Under its element's name a row drops the object and that name; otherwise only what the title names. */
-  const label = (value: VignetteValue, named: boolean): string => named ? bareLabel(value, view.title.split(' · ')[0]) : underTitle(value.label, view.title)
+  /** Under its element's name a row drops the object and that name; otherwise only what the title or subject names. */
+  const label = (value: VignetteValue, named: boolean): string => named ? bareLabel(value, view.subject?.object) : underTitle(value.label, view.title, view.subject)
 </script>
 
 {#each blocks as block, index (index)}

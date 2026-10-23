@@ -26,6 +26,8 @@ export interface VignetteOpening {
   readonly element: (objectId: string, elementId: string, how?: 'select' | 'detail') => Promise<string | null>
   /** Opens the full alerts view of these objects (or the Run's) after this display. */
   readonly alerts: (objectIds: ReadonlyArray<string> | 'run', title: string) => boolean
+  /** Opens this display itself in the window: a drawing too small to read in a chat (W7.3). */
+  readonly self: () => boolean
 }
 
 const KEY = Symbol('vignette-opening')
@@ -61,6 +63,10 @@ export const provideOpening = (config: {
       const state: VignetteState = { title: title.slice(0, 80), at, views: [{ kind: 'alerts', objectIds: objectIds === 'run' ? 'run' : [...objectIds] as ObjectId[], rows: VIGNETTE_MAX_ROWS - FRAME_ROWS, all: true }] }
       const text = JSON.stringify(state)
       return host.openDisplay({ state: text, title: state.title, listing: () => openedListing({ ...from(), envelope: config.envelope() }, { state: text, title: state.title }) })
+    },
+    self: () => {
+      const { state, title } = config.envelope()
+      return host.openDisplay({ state, title, listing: () => openedListing({ ...from(), envelope: config.envelope() }, { state, title }) })
     },
   }
   setContext(KEY, opening)

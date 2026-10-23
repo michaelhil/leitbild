@@ -243,7 +243,17 @@ export const compileVignette = async (run: ComposeRun, state: VignetteState): Pr
     } else sections.push({ kind: 'map', rows: view.rows })
   }
   const chips = values(state.chips ?? [])
-  return { title: state.title, ...(state.by === undefined ? {} : { by: state.by }), ...(chips.length === 0 ? {} : { chips }), ...(state.beside === undefined ? {} : { beside: true }), sections }
+  // The one object every part of it is on, and the one element every value and pen is on, which a label drops (W7.3).
+  const objects = new Set([...readsOf(state, leads).refs.map(refObjectId), ...readsOf(state, leads).objectIds])
+  const object = objects.size === 1 ? visibleObject(run, [...objects][0]!)?.label : undefined
+  const shown = sections.flatMap(section => section.kind === 'values' ? section.values : section.kind === 'trend' ? section.strips.flat() : [])
+  const elements = new Set(shown.map(value => value.element?.id))
+  const element = elements.size === 1 && !elements.has(undefined) ? shown[0]!.element! : undefined
+  const subject = object === undefined ? undefined : { object, ...(element === undefined ? {} : { element: element.shortLabel ?? element.label }) }
+  return {
+    title: state.title, ...(state.by === undefined ? {} : { by: state.by }), ...(chips.length === 0 ? {} : { chips }), ...(state.beside === undefined ? {} : { beside: true }), sections,
+    ...(subject === undefined ? {} : { subject }),
+  }
 }
 
 /**
