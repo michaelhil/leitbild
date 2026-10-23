@@ -9,7 +9,7 @@ import { servedPlantTopology } from '../src/packs/process-plant/observation/topo
 import { recordedPlantVariables } from '../src/packs/process-plant/recording.ts'
 import { flowDrawing } from '../src/ui/embed/vignette/flow-symbols.ts'
 import { shownSeries } from '../src/ui/embed/vignette/kept-series.ts'
-import { SPARK_WINDOW_MS } from '../src/ui/embed/vignette/sparkline.ts'
+import { SPARK_WINDOW_MS } from '../src/ui/sparkline.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 
 guardPlantTests()
