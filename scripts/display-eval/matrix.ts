@@ -62,7 +62,9 @@ export const navigation = async (page: Page, home: ReturnType<typeof homeOf>, re
   const before = home.position
   const { outcome, after } = await press(page, body)
   const drawing = after.lines.filter(line => line.region === 'drawing').length
-  const next = (() => { const a = before?.match(/(\d+)\s*\/\s*(\d+)/), b = outcome.kind === 'detail' ? outcome.position?.match(/(\d+)\s*\/\s*(\d+)/) : null; return a && b ? Number(b[1]) === Number(a[1]) + 1 : false })()
+  // The next deck entry: right after the display it came from (2 / 6 from 1 / 5), or the deck's new last entry (6 / 6
+  // from 1 / 5: R2 appends a detail after the unit overviews, with Back to where it came from).
+  const next = (() => { const a = before?.match(/(\d+)\s*\/\s*(\d+)/), b = outcome.kind === 'detail' ? outcome.position?.match(/(\d+)\s*\/\s*(\d+)/) : null; return a && b ? Number(b[1]) === Number(a[1]) + 1 || (Number(b[2]) === Number(a[2]) + 1 && Number(b[1]) === Number(b[2])) : false })()
   await page.shot(shotPath)
   let escaped = false, escTitle: string | null = null
   if (outcome.kind === 'detail') {
@@ -75,7 +77,7 @@ export const navigation = async (page: Page, home: ReturnType<typeof homeOf>, re
   const restored = await goHome(page, home)
   if (!restored.home) await reopen()
   const pass = outcome.kind === 'detail' && /SG A|Steam Generator A/i.test(outcome.title ?? '') && drawing > 0 && next && escaped
-  return { id: 'navigation', release: 'R2', pass, detail: `SG A body press → ${describe(outcome)}${outcome.kind === 'detail' ? `; ${drawing > 0 ? `with its drawing (${drawing} drawn lines)` : 'no drawing'}; ${next ? 'the next deck entry' : `not the next entry (from ${before})`}; Esc → "${escTitle ?? '?'}"${escaped ? ' (Back)' : ''}` : ''}`, shot: shotPath }
+  return { id: 'navigation', release: 'R2', pass, detail: `SG A body press → ${describe(outcome)}${outcome.kind === 'detail' ? `; ${drawing > 0 ? `with its drawing (${drawing} drawn lines)` : 'no drawing'}; ${next ? `a new deck entry (${outcome.kind === 'detail' ? outcome.position : ''} from ${before})` : `not the next entry (from ${before})`}; Esc → "${escTitle ?? '?'}"${escaped ? ' (Back)' : ''}` : ''}`, shot: shotPath }
 }
 
 /** A point on the app's top bar (the Host page's own, 20 px down), outside the display window, on no control and no
