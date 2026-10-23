@@ -13,7 +13,7 @@ import type { ObjectId, OperationalObject } from '../../../core/model/index.ts'
 import type { ElementTable, StoppedLead } from '../../../core/observation/capabilities.ts'
 import type { Observable, Observation, Quantity } from '../../../core/observation/model.ts'
 import type { TopologyGraph } from '../../../core/observation/topology.ts'
-import { declarationOf, declaredRefs, visibleObject } from './declared.ts'
+import { declarationOf, declaredRefs, visibleObject, type Declared } from './declared.ts'
 import { overviewOf } from './topology.ts'
 import type { LeadRequest, ResolvedView } from './model.ts'
 import { presentedOf } from './present.ts'
@@ -175,9 +175,17 @@ export const ownStates = async (run: ComposeRun, objectId: ObjectId): Promise<Re
   return known
 }
 
-export const recordedOf = async (run: ComposeRun, refs: ReadonlyArray<string>, count: number): Promise<ReadonlyArray<string>> => {
+/**
+ * The recorded among refs a trend draws, at most `count`: measured quantities first (an element's own before other
+ * elements' where it is about `element`), then counts (a staircase of steps or units), then states (bands); the Pack's
+ * order within each kind, so a detail trends what it measures, not what its rows already say in words.
+ */
+export const recordedOf = async (run: ComposeRun, refs: ReadonlyArray<string>, count: number, element?: string): Promise<ReadonlyArray<string>> => {
   const declared = await declaredRefs(run, refs)
-  return refs.filter(ref => declared.get(ref)?.observable.series != null).slice(0, count)
+  const kind = ({ observable }: Declared): number => observable.valueType !== 'number' && observable.valueType !== 'duration' ? 3
+    : observable.quantity === 'count' ? 2 : element !== undefined && observable.element !== element ? 1 : 0
+  return refs.filter(ref => declared.get(ref)?.observable.series != null).map((ref, order) => ({ ref, order, kind: kind(declared.get(ref)!) }))
+    .sort((left, right) => left.kind - right.kind || left.order - right.order).slice(0, count).map(entry => entry.ref)
 }
 
 const rankOf = (alert: AlertState): number => alert.priority === undefined ? -1 : priorityLevels.indexOf(alert.priority)
@@ -243,7 +251,7 @@ export const defaultViews = async (run: ComposeRun, subject: Subject): Promise<R
     const lead = { objectId: subject.objectId, element: subject.elementId }
     const graph = await topologyOf(run, subject.objectId)
     const plan = await planLead(run, lead)
-    const trend = await recordedOf(run, (await readLeads(run, [plan])).led[0]!.refs.slice(0, LEAD_ROWS), 4)
+    const trend = await recordedOf(run, (await readLeads(run, [plan])).led[0]!.refs.slice(0, LEAD_ROWS), 4, subject.elementId)
     return [
       { kind: 'values', lead, ...(plan.table === undefined ? {} : { table: true as const }) },
       ...(trend.length > 0 ? [{ kind: 'trend', refs: [...trend], horizon: '10m' } as DraftView] : []),

@@ -44,7 +44,7 @@ const signalRefs = async (run: ComposeRun, names: ReadonlyArray<string>, path: s
     const found = subject.kind === 'element' ? await elementRefs(run, subject.objectId, subject.elementId)
       : subject.kind === 'object' && subject.observed ? await leadRefs(run, subject.objectId) : null
     if (found === null) return notObserved(`${path}.${index}`, `"${name}" names no measured values; name it as a subject for its default`)
-    refs.push(...(recorded ? await recordedOf(run, found, 4) : found))
+    refs.push(...(recorded ? await recordedOf(run, found, 4, subject.kind === 'element' ? subject.elementId : undefined) : found))
   }
   if (recorded) {
     const declared = await declaredRefs(run, refs)
@@ -203,6 +203,8 @@ const covers = (views: ReadonlyArray<ResolvedView>, subject: Subject): boolean =
 
 const atLeastCaution = (priority: string | undefined): boolean => priority !== undefined && priorityLevels.indexOf(priority as never) >= priorityLevels.indexOf('caution')
 const countAdjustment = (adjusted: DisplayCardAdjustment[], adjustment: DisplayCardAdjustment): void => { if (adjusted.length < MAX_ADJUSTMENTS) adjusted.push(adjustment) }
+/** "1 pen", "3 pens": a count with its noun. */
+const counted = (count: number, noun: string): string => `${count} ${count === 1 ? noun : `${noun}s`}`
 
 /** Completion, fit, card and state: the shared second half of a composed vignette and a World default. */
 /** The alert lines a World default's own alerts view keeps though none are raised yet, so an upset's first alerts show as they come. */
@@ -244,9 +246,9 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
     const hidden = refs.length - readable.length
     if (hidden > 0) countAdjustment(adjusted, { kind: 'access', text: `${hidden} values this caller may not read are not shown` })
     const named = readable.filter(ref => kept.refs.has(ref))
-    if (named.length > cap) { issues.push(unfit(path, `${named.length} named ${what} exceed the ${cap} one view shows`)); return [] }
+    if (named.length > cap) { issues.push(unfit(path, `${named.length} named ${what}s exceed the ${cap} one view shows`)); return [] }
     const keep = [...named, ...readable.filter(ref => !kept.refs.has(ref))].slice(0, cap)
-    if (readable.length > keep.length) { dropped += readable.length - keep.length; countAdjustment(adjusted, { kind: 'layout', text: `${readable.length - keep.length} ${what} not shown` }) }
+    if (readable.length > keep.length) { dropped += readable.length - keep.length; countAdjustment(adjusted, { kind: 'layout', text: `${counted(readable.length - keep.length, what)} not shown` }) }
     return readable.filter(ref => keep.includes(ref))
   }
   for (const [index, view] of views.entries()) {
@@ -255,7 +257,7 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
       // A lead request reserves its rows now for whatever it leads with later: its named values, then as many as it
       // may lead with (stopped or not), at most its own cap or the column's eight.
       // Each criterion it may lead with takes a row beyond the column's eight; its element's table its own rows after them.
-      const refs = trim(path, view.refs ?? [], 16, 'values')
+      const refs = trim(path, view.refs ?? [], 16, 'value')
       const plan = await planLead(run, view.lead)
       const led = (await readLeads(run, [plan])).led[0]!
       const pool = led.pool.filter(ref => !refs.includes(ref))
@@ -263,17 +265,17 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
       const table = view.table === true ? tableRows(plan.table) : 0
       if (rows > 0) fitted.push({ kind: 'values', ...(refs.length === 0 ? {} : { refs: [...refs] }), lead: view.lead, ...(table > 0 ? { table: true } : {}), rows: rows + table })
     } else if (view.kind === 'values') {
-      const refs = trim(path, view.refs ?? [], 16, 'values')
+      const refs = trim(path, view.refs ?? [], 16, 'value')
       const values = refs.map(ref => declared.get(ref)!)
       if (refs.length > 0) fitted.push({ kind: 'values', refs: [...refs], rows: groupValues(values.map(valueOf))?.rows ?? refs.length })
     } else if (view.kind === 'trend') {
       const recorded = view.refs.filter(ref => declared.get(ref)?.observable.series != null)
-      const refs = trim(path, recorded, 12, 'pens')
+      const refs = trim(path, recorded, 12, 'pen')
       const strips = stripsOf(refs.map(ref => valueOf(declared.get(ref)!)))
       const inStrips = strips.slice(0, 4).flat().map(value => value.ref)
       if (refs.some(ref => kept.refs.has(ref) && !inStrips.includes(ref))) issues.push(unfit(path, 'the named pens need more than four strips of four'))
       else if (inStrips.length > 0) {
-        if (inStrips.length < refs.length) { dropped += refs.length - inStrips.length; countAdjustment(adjusted, { kind: 'layout', text: `${refs.length - inStrips.length} pens not shown` }) }
+        if (inStrips.length < refs.length) { dropped += refs.length - inStrips.length; countAdjustment(adjusted, { kind: 'layout', text: `${counted(refs.length - inStrips.length, 'pen')} not shown` }) }
         fitted.push({ ...view, refs: inStrips, rows: trendRows(strips.slice(0, 4)) })
       }
     } else if (view.kind === 'alerts') {
@@ -382,13 +384,13 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
     for (const view of fitted) {
       if (view.kind !== 'trend') continue
       let strips = stripsOf(view.refs.map(ref => valueOf(declared.get(ref)!)))
+      let cut = 0
       while (overflows() && strips.length > 1 && !strips.at(-1)!.some(pen => kept.refs.has(pen.ref))) {
-        const cut = strips.at(-1)!.length
+        cut += strips.at(-1)!.length
         strips = strips.slice(0, -1)
         Object.assign(view, { refs: strips.flat().map(pen => pen.ref), rows: trendRows(strips) })
-        dropped += cut
-        countAdjustment(adjusted, { kind: 'layout', text: `${cut} pens not shown` })
       }
+      if (cut > 0) { dropped += cut; countAdjustment(adjusted, { kind: 'layout', text: `${counted(cut, 'pen')} not shown` }) }
     }
   }
   // Beside a drawing, a column too tall for the frame gives way first, whatever the drawing's size.
