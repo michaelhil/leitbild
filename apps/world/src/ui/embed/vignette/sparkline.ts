@@ -28,6 +28,34 @@ const MIN_SPAN_FRACTION = 0.04
 const PAD_FRACTION = 0.08
 
 /**
+ * The points a line draws the same as all of them (W8.5: a record a second over ten minutes is 600 points in 52 px):
+ * in each pixel column its first, lowest, highest and last, in time order, and every point on either side of a gap
+ * longer than the hold, so each break stays where it is.
+ */
+const thinned = (points: ReadonlyArray<SeriesPoint>, x: (t: number) => number, holdMs: number): ReadonlyArray<SeriesPoint> => {
+  const kept: SeriesPoint[] = []
+  let column: SeriesPoint[] = []
+  let at = Number.NaN
+  const flush = (): void => {
+    if (column.length > 4) {
+      let [low, high] = [column[0]!, column[0]!]
+      for (const point of column) { if (point.v < low.v) low = point; if (point.v > high.v) high = point }
+      kept.push(...[...new Set([column[0]!, low, high, column.at(-1)!])].sort((left, right) => left.t - right.t))
+    } else kept.push(...column)
+    column = []
+  }
+  for (const point of points) {
+    const pixel = Math.floor(x(point.t))
+    const last = column.at(-1)
+    if (last !== undefined && (pixel !== at || point.t - last.t > holdMs)) flush()
+    at = pixel
+    column.push(point)
+  }
+  flush()
+  return kept
+}
+
+/**
  * The line over one window ending now; null where nothing recorded reaches into it. `holdMs`: how long a recorded value
  * holds until the next (the Historian's, served with the record); `silentFrom`: from when its reading measured nothing,
  * which its last value holds no further.
@@ -51,7 +79,7 @@ export const sparkline = (points: ReadonlyArray<SeriesPoint>, now: number, windo
   const last = drawn.at(-1)!
   const holding = (silentFrom === undefined || silentFrom < last.t) && last.t >= now - holdMs
   return {
-    path: stepPath(drawn, x, y, { start, end: now }, holdMs, silentFrom),
+    path: stepPath(thinned(drawn, x, holdMs), x, y, { start, end: now }, holdMs, silentFrom),
     end: holding ? { x: x(now), y: y(last.v) } : null,
     range,
     broken: drawn.some((point, index) => index > 0 && point.t - drawn[index - 1]!.t > holdMs),
