@@ -76,8 +76,13 @@ describe('the tiles (W2.2)', () => {
 
   test('without a declaration, the categories its rows name; several objects, a tile per object; one object in no category, none', () => {
     expect(alertTiles(rows).map(tile => tile.key)).toEqual(['category:rps', 'category:rcs', 'category:sg', 'category:elec', 'category:fw', 'group:unit'])
-    const grid = { ...row('line', 'alarm'), key: 'grid|line', objectId: 'grid' as ObjectId, objectLabel: 'Grid', group: { objectId: 'grid' as ObjectId, subjectGroup: 'Substation Nord' } }
-    expect(alertTiles([...rows, grid], SYSTEMS).map(tile => [tile.label, tile.rows.length])).toEqual([['Unit 1', rows.length], ['Substation Nord', 1]])
+    const grid = { ...row('line', 'alarm'), key: 'grid|line', objectId: 'grid' as ObjectId, objectLabel: 'Grid', group: { objectId: 'grid' as ObjectId, subjectGroup: 'island:bus:7@420', label: 'Island at Hasle 420 kV' } }
+    expect(alertTiles([...rows, grid], SYSTEMS).map(tile => [tile.label, tile.rows.length])).toEqual([['Unit 1', rows.length], ['Island at Hasle 420 kV', 1]])
+    // One object's alerts: a tile per named subject group, and the object's own for the rest; a group its Pack does not
+    // name stays with its object, so no tile shows an id (W9.3).
+    const unnamed = { ...grid, key: 'grid|lfdd', group: { objectId: 'grid' as ObjectId, subjectGroup: 'island:bus:9@420' } }
+    const branch = { ...grid, key: 'grid|branch', group: { objectId: 'grid' as ObjectId } }
+    expect(alertTiles([grid, unnamed, branch]).map(tile => [tile.label, tile.rows.map(entry => entry.key)])).toEqual([['Island at Hasle 420 kV', ['grid|line']], ['Grid', ['grid|branch', 'grid|lfdd']]])
     expect(alertTiles([row('a', 'alarm'), row('b', 'warning')])).toEqual([])
   })
 
