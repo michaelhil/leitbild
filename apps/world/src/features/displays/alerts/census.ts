@@ -61,21 +61,25 @@ export interface AlertTile {
 
 /**
  * A list's tiles. A list of one object whose Pack declares categories (`declared`, else those its rows name) has one
- * per category, in their declared order, and after them one per object or subject group of an alert in none; a list
- * of several objects one per object or subject group, in the order they come. Where every alert falls in one group
- * and nothing is declared, a tile would only repeat the list: there are none.
+ * per category, in their declared order, and after them one per object or named subject group of an alert in none; a
+ * list of several objects one per object or named subject group, in the order they come (a subject group its Pack does
+ * not name stays with its object: no tile shows an id). Where every alert falls in one group and nothing is declared,
+ * a tile would only repeat the list: there are none.
  */
 export const alertTiles = (rows: ReadonlyArray<AlertRow>, declared?: ReadonlyArray<DeclaredCategory>): ReadonlyArray<AlertTile> => {
   const single = new Set(rows.map(row => row.objectId)).size <= 1
-  const named: ReadonlyArray<DeclaredCategory> = [...new Map(rows.flatMap(row => row.category === undefined ? [] : [[row.category.id, row.category] as const])).values()]
+  const declaredByRows: ReadonlyArray<DeclaredCategory> = [...new Map(rows.flatMap(row => row.category === undefined ? [] : [[row.category.id, row.category] as const])).values()]
     .sort((left, right) => left.order - right.order).map(category => ({ id: category.id, label: category.label }))
-  const categories = !single ? [] : declared !== undefined && declared.length > 0 ? declared : named
+  const categories = !single ? [] : declared !== undefined && declared.length > 0 ? declared : declaredByRows
   const known = new Set(categories.map(category => category.id))
-  const keyOf = (row: AlertRow): string => row.category !== undefined && known.has(row.category.id) ? `category:${row.category.id}` : `group:${groupKey(row)}`
+  // A subject group its Pack names (group.label) has its tile; one it does not name stays with its object, never shown by its id.
+  const named = (row: AlertRow): boolean => row.group.subjectGroup !== undefined && row.group.label !== undefined
+  const keyOf = (row: AlertRow): string => row.category !== undefined && known.has(row.category.id) ? `category:${row.category.id}`
+    : named(row) ? `group:${groupKey(row)}` : `group:${row.objectId}`
   const groups = new Map<string, { label: string; rows: AlertRow[] }>(categories.map(category => [`category:${category.id}`, { label: category.label, rows: [] }]))
   for (const row of rows) {
     const key = keyOf(row)
-    const group = groups.get(key) ?? groups.set(key, { label: row.group.label ?? row.group.subjectGroup ?? row.objectLabel, rows: [] }).get(key)!
+    const group = groups.get(key) ?? groups.set(key, { label: named(row) ? row.group.label! : row.objectLabel, rows: [] }).get(key)!
     group.rows.push(row)
   }
   if (categories.length === 0 && groups.size <= 1) return []

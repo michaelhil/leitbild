@@ -12,6 +12,7 @@ import { compileScenarioDefinition } from '../src/core/scenarios/compiler.ts'
 import { scenarioDefinitionSchema } from '../src/core/scenarios/definition.ts'
 import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
 import { createSimulationRunRegistry, type SimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
+import { alertCensus, alertTiles } from '../src/features/displays/alerts/census.ts'
 import { alertRows, priorityRank } from '../src/features/displays/alerts/rows.ts'
 import { listOrder } from '../src/features/displays/alerts/list.ts'
 import { inSection } from '../src/ui/embed/vignette/alerts.ts'
@@ -114,6 +115,39 @@ describe('a run-wide alerts view', () => {
     }
     const { sample } = await drawn(busy)
     expect(sample.alerts.slice(0, 3).map(row => [row.objectId, row.alert.id])).toEqual([['plant:halden-2', 'pzr-pressure'], ['weather-probe:halden-complex', 'fog'], ['unit:halden-1', 'late']])
+  })
+
+  test('W9.3 tiles on other Packs: a list of several objects has a tile per object, by its name; one object\'s own alerts in one group have none, its counts heading them', async () => {
+    const raised = (id: string, priority: 'caution' | 'warning' | 'alarm', facets: Partial<AlertState> = {}): AlertState => ({
+      id, kind: 'test', severity: priority === 'alarm' ? 'critical' : 'warning', message: `${id} raised`, raisedAt: run.clock!.currentTime as AlertState['raisedAt'], acknowledged: false, priority, clock: 'simulation', ...facets,
+    })
+    const weather = run.objects.find(object => object.packId === 'weather')!
+    const einsatz = run.objects.find(object => object.packId === 'einsatz')!
+    const extra: Readonly<Record<string, ReadonlyArray<AlertState>>> = {
+      [weather.id]: [raised('fog', 'warning', { advisory: true }), raised('ice', 'caution', { advisory: true })],
+      [einsatz.id]: [raised('late', 'caution')],
+    }
+    const busy: ViewRun = { ...run, objects: run.objects.map(object => ({ ...object, alerts: [...object.alerts, ...extra[object.id] ?? []] })) }
+    const tilesOf = async (state: VignetteState, objectIds: ReadonlyArray<string> | 'run') => {
+      const sample = await sampleVignette(busy, state)
+      const own = sample.alerts.filter(row => objectIds === 'run' || objectIds.includes(row.objectId))
+      return { own, tiles: alertTiles(own, objectIds !== 'run' && objectIds.length === 1 ? sample.categories?.[objectIds[0]!] : undefined) }
+    }
+    // The Run's alerts: a tile per object (and named subject group), labelled by name, never an id.
+    const { sample: wide } = await drawn(busy)
+    const runWideTiles = alertTiles(wide.alerts)
+    expect(runWideTiles.map(tile => tile.label)).toEqual(expect.arrayContaining([weather.label, einsatz.label]))
+    for (const tile of runWideTiles) expect(tile.label).not.toMatch(/^[a-z-]+:[\w:@.-]+$/)
+    // Each object's own default: its own alerts in one group, so its counts head them and no tile repeats them.
+    for (const [object, apart] of [[weather, 2], [einsatz, 0]] as const) {
+      const outcome = await composeDefault(busy, object.id)
+      if (!outcome.ok) throw new Error(JSON.stringify(outcome.issues))
+      const section = outcome.state.views.find(view => view.kind === 'alerts')
+      expect(section, object.packId).toBeDefined()
+      const { own, tiles } = await tilesOf(outcome.state, section!.kind === 'alerts' ? section!.objectIds : [])
+      expect([object.packId, own.length, tiles.length]).toEqual([object.packId, extra[object.id]!.length + object.alerts.length, 0])
+      expect(alertCensus(own).advisory).toBe(apart)
+    }
   })
 
   test('needs no subject, covers every subject named, and shows nothing of what the caller may not inspect', async () => {
