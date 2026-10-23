@@ -10,7 +10,7 @@ import type { ObjectId } from '../../../core/model/index.ts'
 import type { DisplaySpec, View } from '../../../core/observation/spec.ts'
 import { alertItem, assembleCard, entityItem, slotItems, valueItem } from './card.ts'
 import { declarationOf, declaredRefs, same, valueOf, visibleObject } from './declared.ts'
-import { defaultViews, elementRefs, LEAD_ROWS, leadNow, leadRefs, ownStates, recordedOf, type DraftView } from './defaults.ts'
+import { defaultViews, elementRefs, LEAD_ROWS, leadNow, leadRefs, ownStates, planLead, readLeads, recordedOf, tableRows, type DraftView } from './defaults.ts'
 import { FRAME_ROWS, VIGNETTE_MAX_ROWS, vignetteStateSchema, type ComposeIssue, type ResolvedView, type VignetteState } from './model.ts'
 import { isIssue, resolveSubject, subjectObjects, type ComposeRun, type Subject } from './resolve.ts'
 import { TOPOLOGY_REACH } from '../topology/scope.ts'
@@ -253,10 +253,14 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
     if (view.kind === 'values' && view.lead !== undefined) {
       // A lead request reserves its rows now for whatever it leads with later: its named values, then as many as it
       // may lead with (stopped or not), at most its own cap or the column's eight.
+      // Each criterion it may lead with takes a row beyond the column's eight; its element's table its own rows after them.
       const refs = trim(path, view.refs ?? [], 16, 'values')
-      const pool = (await leadNow(run, view.lead)).pool.filter(ref => !refs.includes(ref))
-      const rows = Math.min(view.rows ?? refs.length + LEAD_ROWS, refs.length + pool.length)
-      if (rows > 0) fitted.push({ kind: 'values', ...(refs.length === 0 ? {} : { refs: [...refs] }), lead: view.lead, rows })
+      const plan = await planLead(run, view.lead)
+      const led = (await readLeads(run, [plan])).led[0]!
+      const pool = led.pool.filter(ref => !refs.includes(ref))
+      const rows = Math.min(view.rows ?? refs.length + LEAD_ROWS + led.criteria.length, refs.length + pool.length)
+      const table = view.table === true ? tableRows(plan.table) : 0
+      if (rows > 0) fitted.push({ kind: 'values', ...(refs.length === 0 ? {} : { refs: [...refs] }), lead: view.lead, ...(table > 0 ? { table: true } : {}), rows: rows + table })
     } else if (view.kind === 'values') {
       const refs = trim(path, view.refs ?? [], 16, 'values')
       const values = refs.map(ref => declared.get(ref)!)

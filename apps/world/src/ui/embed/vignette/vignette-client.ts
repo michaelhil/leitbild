@@ -71,7 +71,7 @@ export const viewWithLeads = (view: VignetteView, sample: VignetteSample): Vigne
   if (leads === undefined) return view
   let changed = false
   const sections = view.sections.map(section => {
-    const now = section.kind === 'values' && section.lead !== undefined ? leads[section.lead]?.slice(0, section.rows) : undefined
+    const now = section.kind === 'values' && section.lead !== undefined ? leads[section.lead]?.slice(0, section.rows - (section.table?.rows ?? 0)) : undefined
     if (section.kind !== 'values' || now === undefined || (now.length === section.values.length && now.every((value, at) => value.ref === section.values[at]!.ref))) return section
     changed = true
     return { ...section, values: now }

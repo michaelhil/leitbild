@@ -10,7 +10,7 @@
  */
 import { priorityLevels, refObjectId, type AlertState } from '../../../core/model/alerts.ts'
 import type { ObjectId, OperationalObject } from '../../../core/model/index.ts'
-import type { StoppedLead } from '../../../core/observation/capabilities.ts'
+import type { ElementTable, StoppedLead } from '../../../core/observation/capabilities.ts'
 import type { Observable, Observation, Quantity } from '../../../core/observation/model.ts'
 import type { TopologyGraph } from '../../../core/observation/topology.ts'
 import { declarationOf, declaredRefs, visibleObject } from './declared.ts'
@@ -34,15 +34,20 @@ export interface LeadReading {
   readonly value: (ref: string) => Observation | undefined
   readonly led: (objectId: ObjectId) => ReadonlyArray<string>
 }
-/** What a lead request leads with now, ranked, and every value it may lead with (`pool`, what its rows are reserved for). */
-export interface Led { readonly refs: ReadonlyArray<string>; readonly pool: ReadonlyArray<string> }
 /**
- * A lead request planned from what its Pack declares: the refs it reads (an element's values it may lead with in its
- * rows, and its stop's commands), the object whose lead it reads, and what it leads with once that read answers (`now`).
+ * What a lead request leads with now, ranked, and every value it may lead with (`pool`, what its rows are reserved
+ * for); `criteria`: the criteria among them, each a row of its own beyond the column's eight.
+ */
+export interface Led { readonly refs: ReadonlyArray<string>; readonly pool: ReadonlyArray<string>; readonly criteria: ReadonlyArray<string> }
+/**
+ * A lead request planned from what its Pack declares: the refs it reads (an element's criteria, the values it may lead
+ * with in its rows and its stop's commands), the object whose lead it reads, its element's declared table, and what it
+ * leads with once that read answers (`now`).
  */
 export interface LeadPlan {
   readonly refs: ReadonlyArray<string>
   readonly lead?: ObjectId
+  readonly table?: ElementTable
   readonly now: (reading: LeadReading) => Promise<Led>
 }
 
@@ -84,8 +89,9 @@ const stoppedNow = (stopped: StoppedLead, reading: LeadReading): boolean =>
   stopped.when.some(set => set.every(entry => reading.value(entry.ref)?.value === entry.value))
 
 /**
- * An element's values (Q22), each sample: once it has been stopped (D-E), what verifies the stop as its Pack declares
- * (`stopped`: what says an energy source has stopped making energy); then what its detail leads with, as
+ * An element's values (Q22), each sample: first the criteria its Pack judges it by while one of their checks applies
+ * (D-E: the checks a procedure verifies on it); once it has been stopped (D-E), what verifies the stop as its
+ * Pack declares (`stopped`: what says an energy source has stopped making energy); then what its detail leads with, as
  * its Pack declares (`lead`, other elements' values among them); then its own instrument readings and states by its
  * Pack's declared rank; then its other own values by that rank. Never a demand or a simulator-only value (readable),
  * which a request names to show. A device only its topology node stands for: what its node binds. All of it is
@@ -98,7 +104,8 @@ const elementPlan = async (run: ComposeRun, objectId: ObjectId, elementId: strin
   const own = declaration?.observables.filter(observable => observable.element === elementId).map(observable => observable.ref) ?? []
   const refs = own.length > 0 ? own : (await topologyOf(run, objectId))?.nodes.find(node => node.id === elementId)?.bindings.map(binding => binding.ref) ?? []
   const stop = element?.stopped
-  const declared = await declaredRefs(run, [...stop?.lead ?? [], ...element?.lead ?? [], ...refs])
+  const declared = await declaredRefs(run, [...element?.criteria ?? [], ...stop?.lead ?? [], ...element?.lead ?? [], ...refs])
+  const criteria = (element?.criteria ?? []).filter(ref => declared.has(ref))
   const measured = (await declarationOf(run, objectId))?.observables.some(observable => observable.basis === 'instrument') === true
   const shown = (ref: string): boolean => declared.has(ref) && readable(measured)(declared.get(ref)!.observable)
   const rank = (ref: string): number => declared.get(ref)!.observable.lead ?? Infinity
@@ -108,8 +115,13 @@ const elementPlan = async (run: ComposeRun, objectId: ObjectId, elementId: strin
   const rest = [...new Set([...(element?.lead ?? []).filter(shown), ...ranked.filter(reading), ...ranked.filter(ref => !reading(ref))])]
   const pool = [...new Set([...stopping, ...rest])]
   return {
-    refs: [...new Set([...pool.slice(0, rows), ...rest.slice(0, rows), ...stop?.when.flat().map(entry => entry.ref) ?? []])],
-    now: async values => ({ refs: stop !== undefined && stoppedNow(stop, values) ? pool : rest, pool }),
+    refs: [...new Set([...criteria, ...pool.slice(0, rows), ...rest.slice(0, rows), ...stop?.when.flat().map(entry => entry.ref) ?? []])],
+    ...(element?.table === undefined ? {} : { table: element.table }),
+    now: async values => {
+      // A criterion none of whose checks applies now is no row: it takes one while it judges.
+      const judging = criteria.filter(ref => values.value(ref) !== undefined && values.value(ref)!.quality !== 'not-applicable')
+      return { refs: [...new Set([...judging, ...stop !== undefined && stoppedNow(stop, values) ? pool : rest])], pool: [...new Set([...criteria, ...pool])], criteria }
+    },
   }
 }
 
@@ -123,12 +135,12 @@ export const elementRefs = async (run: ComposeRun, objectId: ObjectId, elementId
  * level), then its own others.
  */
 export const planLead = async (run: ComposeRun, lead: LeadRequest, rows = LEAD_ROWS): Promise<LeadPlan> => {
-  if (visibleObject(run, lead.objectId) === undefined) return { refs: [], now: async () => ({ refs: [], pool: [] }) }
+  if (visibleObject(run, lead.objectId) === undefined) return { refs: [], now: async () => ({ refs: [], pool: [], criteria: [] }) }
   if (lead.element === undefined) {
     const own = new Set(await ownStates(run, lead.objectId))
     return { refs: [], lead: lead.objectId, now: async reading => {
       const refs = (await declaredOf(run, reading.led(lead.objectId))).filter(ref => !own.has(ref))
-      return { refs, pool: refs }
+      return { refs, pool: refs, criteria: [] }
     } }
   }
   const own = await elementPlan(run, lead.objectId, lead.element, rows)
@@ -137,12 +149,16 @@ export const planLead = async (run: ComposeRun, lead: LeadRequest, rows = LEAD_R
   const hosting = (list: ReadonlyArray<string>, host: ReadonlyArray<string>): ReadonlyArray<string> => [...new Set([...list.slice(0, 4), ...host, ...list.slice(4)])]
   return {
     refs: [...new Set([...own.refs, ...hosted?.refs ?? []])],
+    ...(own.table === undefined ? {} : { table: own.table }),
     now: async reading => {
-      const [mine, host] = await Promise.all([own.now(reading), hosted?.now(reading) ?? { refs: [], pool: [] }])
-      return { refs: hosting(mine.refs, host.refs), pool: hosting(mine.pool, host.pool) }
+      const [mine, host] = await Promise.all([own.now(reading), hosted?.now(reading) ?? { refs: [], pool: [], criteria: [] }])
+      return { refs: hosting(mine.refs, host.refs), pool: hosting(mine.pool, host.pool), criteria: [...new Set([...mine.criteria, ...host.criteria])] }
     },
   }
 }
+
+/** The rows an element's declared table takes: its head and a row a line; none without one. */
+export const tableRows = (table: ElementTable | undefined): number => (table === undefined ? 0 : 1 + table.lines.length)
 
 /** What a lead request leads with now, ranked, and every value it may lead with: its plan for `rows`, read. */
 export const leadNow = async (run: ComposeRun, lead: LeadRequest, rows = LEAD_ROWS): Promise<Led> => (await readLeads(run, [await planLead(run, lead, rows)])).led[0]!
@@ -222,12 +238,14 @@ export const defaultViews = async (run: ComposeRun, subject: Subject): Promise<R
     ]
   }
   if (subject.kind === 'element') {
-    // Its values as a lead request (leadNow), read each sample: once stopped, it leads with what verifies the stop.
+    // Its values as a lead request (leadNow), read each sample: once stopped, it leads with what verifies the stop;
+    // then the table its Pack declares of its parallel parts.
     const lead = { objectId: subject.objectId, element: subject.elementId }
     const graph = await topologyOf(run, subject.objectId)
-    const trend = await recordedOf(run, (await leadNow(run, lead)).refs.slice(0, LEAD_ROWS), 4)
+    const plan = await planLead(run, lead)
+    const trend = await recordedOf(run, (await readLeads(run, [plan])).led[0]!.refs.slice(0, LEAD_ROWS), 4)
     return [
-      { kind: 'values', lead },
+      { kind: 'values', lead, ...(plan.table === undefined ? {} : { table: true as const }) },
       ...(trend.length > 0 ? [{ kind: 'trend', refs: [...trend], horizon: '10m' } as DraftView] : []),
       // Its own alerts, then its object's lead alerts, which say why it is where it is (a trip's first-out).
       // Always, "none" while there are none: a pop-over opened at power shows the trip's alerts within one sample.
