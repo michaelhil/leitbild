@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ChevronDown, ChevronRight, Ellipsis, FileText, GitBranch, History, Library, ShieldCheck, Sparkles, X, Zap } from 'lucide-svelte'
+  import { ChevronDown, ChevronRight, ClipboardList, Ellipsis, FileText, GitBranch, History, Library, ShieldCheck, Sparkles, X, Zap } from 'lucide-svelte'
   import type { PackWindowToolsProps } from '../../../../core/packs/protocol.ts'
   import { invokeSimulationRunCapability } from '../../../../ui/simulation-run-client.ts'
   import { runOnMount } from '../../../../ui/svelte-lifecycle.svelte.ts'
@@ -250,8 +250,21 @@
   </button>
 {/snippet}
 
-<!-- The window's More menu, while the header is short of room: every tool, the Instructor's apart under its label. -->
+<!-- The window's More menu, while the header is short of room: the procedure a safety function calls for after the
+     window's procedures, then every tool, the Instructor's apart under its label. -->
 {#snippet foldedTools(done: () => void)}
+  {#if unit?.notRunning}
+    {@const called = unit.notRunning}
+    <button
+      type="button"
+      class="display-window-menu-item menu-called"
+      title={`${called.why}\nOpen ${called.procedureId} in the procedure window`}
+      onclick={() => { done(); openProcedure(called.procedureId) }}
+    >
+      <ClipboardList size={16} aria-hidden="true" />
+      <span>{called.procedureId} not running: open it</span>
+    </button>
+  {/if}
   <button
     type="button"
     class="display-window-menu-item"
@@ -281,7 +294,8 @@
     <span class="not-started" role="status" title="The Plant's runtime has not started yet: its display has no readings, alarms or procedures to show">Not started</span>
   {/if}
   <ProposalsChip entries={proposals} failure={proposalsFailure} open={entry => openDisplay(reviewSubject(objectId, entry))} />
-  {#if unit?.notRunning}
+  <!-- Folded, it is the first of the tools' items in the window's More menu, so the window's title keeps its room. -->
+  {#if unit?.notRunning && !folded}
     {@const called = unit.notRunning}
     <button
       type="button"
@@ -290,8 +304,7 @@
       title={`${called.why}\nOpen ${called.procedureId} in the procedure window`}
       onclick={() => openProcedure(called.procedureId)}
     >
-      <!-- Folded, the words give way to the window's title; the procedure stays, its full name read out. -->
-      <span>{room === 'folded' ? called.procedureId : `${called.procedureId} not running`}</span>
+      <span>{called.procedureId} not running</span>
       <ChevronRight size={14} aria-hidden="true" />
     </button>
   {/if}
@@ -418,6 +431,11 @@
     border-color: color-mix(in srgb, var(--accent) 55%, transparent);
     color: var(--accent);
     background: color-mix(in srgb, var(--accent) 12%, transparent);
+    font-weight: 650;
+  }
+
+  .display-window-menu-item.menu-called {
+    color: var(--accent);
     font-weight: 650;
   }
 

@@ -106,6 +106,8 @@ describe('the Plant\'s window tools offer what the card offered, each by the car
     const chips = header.slice(header.indexOf('<div class="display-window-plant"'), header.indexOf('{#if !folded}'))
     expect(chips).toContain('Not started')
     expect(chips).toContain('<ProposalsChip')
+    // The procedure a safety function calls for stands in the header while there is room, else first in the window's More.
+    expect(chips).toMatch(/\{#if unit\?\.notRunning && !folded\}/)
     expect(chips).toMatch(/onclick=\{\(\) => openProcedure\(called\.procedureId\)\}/)
     expect(tools).toMatch(/const folded = \$derived\(room === 'folded'\)/)
     expect(tools).toMatch(/menu\(folded \? foldedTools : null\)/)
@@ -113,6 +115,8 @@ describe('the Plant\'s window tools offer what the card offered, each by the car
     expect(tools).toMatch(/\{#if room === 'wide'\}<span>Instructor<\/span>\{\/if\}/)
     const folded = tools.slice(tools.indexOf('{#snippet foldedTools'), tools.indexOf('{/snippet}', tools.indexOf('{#snippet foldedTools')))
     for (const item of ['Operations log', '<span>Assistant</span>', '{@render engineeringItems(done, undefined)}', '{@render instructorItem(done, undefined)}']) expect(folded).toContain(item)
+    expect(folded.indexOf('{#if unit?.notRunning}')).toBeLessThan(folded.indexOf('Operations log'))
+    expect(folded).toMatch(/onclick=\{\(\) => \{ done\(\); openProcedure\(called\.procedureId\) \}\}/)
   })
 
   test('the window passes them the screen\'s controller role, the Host\'s Assistant, the active procedures and its narrow widths, and lists their items in its More menu', () => {
