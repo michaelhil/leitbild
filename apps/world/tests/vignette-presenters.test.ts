@@ -281,6 +281,29 @@ describe('trend strip', () => {
     expect(drawing.values.find(tick => tick.label.endsWith(' MPa'))!.y).toBe(Math.min(...drawing.values.map(tick => tick.y)))
   })
 
+  test('a strip is scaled and written in the unit its values are shown in: pascals in kilopascals', () => {
+    const vacuum: VignetteValue = { ...level, ref: 'unit-1#vacuum', label: 'Unit 1 · Condenser pressure', quantity: 'pressure', unit: 'Pa', thresholds: [threshold('vac', 'high', 1, 10_000, { consequence: 'ALM' })] }
+    const drawn = stripDrawing({
+      pens: [vacuum], series: new Map([[vacuum.ref, { holdMs: 90_000, points: [{ t: 0, v: 7_000 }, { t: 300_000, v: 8_500 }, { t: 600_000, v: 7_534 }] }]]),
+      observations: [], now: 600_000, horizonMs: 600_000, width: 240, height: 120, ...laid,
+    })!
+    expect(drawn.values.map(tick => tick.label)).toEqual(['7', '8', '9', '10 kPa'])
+    expect(drawn.labels.map(label => label.rows.flat().map(run => run.text).join(''))).toEqual(['HI 10.0 · ALM'])
+  })
+
+  test('a strip of values read over decades is scaled by their powers of ten, gridlines at whole powers', () => {
+    const current: VignetteValue = { ...level, ref: 'unit-1#current', label: 'Unit 1 · Current', quantity: 'current', unit: 'A', decades: true, thresholds: [] }
+    const drawn = stripDrawing({
+      pens: [current], series: new Map([[current.ref, { holdMs: 90_000, points: [{ t: 0, v: 1e-4 }, { t: 300_000, v: 1e-6 }, { t: 400_000, v: 4.4e-7 }] }]]),
+      observations: [], now: 600_000, horizonMs: 600_000, width: 240, height: 120, ...laid,
+    })!
+    expect(drawn.values.map(tick => tick.label)).toEqual(['10⁻⁶', '10⁻⁵', '10⁻⁴ A'])
+    // A hundredfold fall reads as a fall, not a cliff to a flat zero: the 10⁻⁶ step stands well above the foot.
+    const levels = [...drawn.pens[0]!.path.matchAll(/ (\d+\.\d)(?= |$)/g)].map(match => Number(match[1]))
+    expect(new Set(levels).size).toBe(3)
+    expect(Math.max(...levels) - Math.min(...levels)).toBeGreaterThan(60)
+  })
+
   test('a rate is read where the last 30 s and 2 min agree in direction, each at least a step; a state reads as a band', () => {
     const series = (values: ReadonlyArray<[number, number]>) => ({ holdMs: 90_000, points: values.map(([t, v]) => ({ t, v })) })
     expect(rateNow(series([[0, 15], [480_000, 14.9], [570_000, 14.8], [600_000, 14.7]]), 600_000, 0.01)).toBeCloseTo(-0.2, 6)
