@@ -19,6 +19,7 @@ import { FRAME_ROWS, type VignetteElement, type VignetteSection, type VignetteVa
 import { compileVignette, sampleVignette, type ViewRun } from '../src/features/displays/compose/view.ts'
 import { answerNotices, resetSeen } from '../src/ui/embed/vignette/answer-notice.ts'
 import { underTitle } from '../src/ui/embed/vignette/format.ts'
+import { ownLabel } from '../src/ui/embed/vignette/value-rows.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { builtinScenarioDefinitions } from '../src/scenarios/definitions.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
@@ -131,6 +132,10 @@ describe('an answer\'s view (W7.3, W7.4, W8.2)', () => {
     expect(one.subject).toEqual({ object: 'Halden Unit 1', element: 'AFW valve A' })
     const row = (one.sections[0] as Extract<VignetteSection, { kind: 'values' }>).values[0]!
     expect(underTitle(row.label, one.title, one.subject)).not.toContain('AFW valve A')
+    // A Pack's short label drops the subject element's short name too, as in the element's own detail.
+    const element = { id: 'auxFeedwaterValveA', class: 'valve', label: 'Auxiliary Feedwater Valve A', shortLabel: 'AFW valve A' }
+    expect(ownLabel({ shortLabel: 'AFW valve A position', label: 'Halden Unit 1 · Process valve effective position · AFW valve A', element }, 'Unit 1 · AFW valve A', one.subject)).toBe('Position')
+    expect(ownLabel({ shortLabel: 'AFW valve A position', label: 'Halden Unit 1 · Process valve effective position · AFW valve A', element }, 'Unit 1 · E-0 checks', { object: 'Halden Unit 1' })).toBe('AFW valve A position')
   }, 120_000)
 
   test('only parallel trains make a table: an SG\'s feed and its steam, both of train A, read as rows', () => {

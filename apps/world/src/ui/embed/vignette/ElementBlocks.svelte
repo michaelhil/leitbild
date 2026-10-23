@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Observation } from '../../../core/observation/model.ts'
   import { bareLabel } from '../../../features/displays/compose/element-groups.ts'
-  import type { ValueBlock, VignetteView } from '../../../features/displays/compose/model.ts'
+  import type { ValueBlock, VignetteValue, VignetteView } from '../../../features/displays/compose/model.ts'
   import type { DrawnSeries } from './trend.ts'
   import { wholeWords } from './fit-words.ts'
   import { valueRows, type ValueRow } from './value-rows.ts'
@@ -22,10 +22,19 @@
     frozen: boolean
   } = $props()
 
-  /** A block's rows; under its element's name a row drops the object and that name, as the heading says them. */
+  /** A row's name under its element's heading: its short label without the element's short name ("RTB A closed" reads "Closed"), else its label without the object and the element. */
+  const underHeading = (value: VignetteValue): string => {
+    const short = value.shortLabel
+    if (short === undefined) return bareLabel(value, view.subject?.object)
+    const prefix = value.element?.shortLabel === undefined ? undefined : `${value.element.shortLabel} `
+    if (prefix === undefined || !short.toLowerCase().startsWith(prefix.toLowerCase()) || short.length === prefix.length) return short
+    const rest = short.slice(prefix.length)
+    return `${rest.charAt(0).toUpperCase()}${rest.slice(1)}`
+  }
+  /** A block's rows; under its element's name a row drops what the heading says. */
   const rowsOf = (block: Extract<ValueBlock, { kind: 'element' }>): ReadonlyArray<ValueRow> => {
     const rows = valueRows({ values: block.values, observations, series, now, title: view.title, ...(view.subject === undefined ? {} : { subject: view.subject }), frozen })
-    return block.element === null ? rows : rows.map((row, at) => (block.values[at]!.shortLabel === undefined ? { ...row, label: bareLabel(block.values[at]!, view.subject?.object) } : row))
+    return block.element === null ? rows : rows.map((row, at) => ({ ...row, label: underHeading(block.values[at]!) }))
   }
 </script>
 
