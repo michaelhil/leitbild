@@ -83,16 +83,16 @@
     return { update: paint }
   }
 
-  const items = $derived(new Map([...drawing.devices, ...drawing.vessels].map(item => [item.id, item])))
+  /** Every named item as the drawing describes it (contract 3): what a press on it opens, the box it covers. */
   const texts = $derived(new Map(drawing.texts.map(text => [text.id, text])))
-  const nameOf = (id: string): string => texts.get(id)?.lines[0]?.text ?? items.get(id)?.title ?? id
-  const nodes = $derived(new Map(section.nodes.map(node => [node.id, node])))
-  /** A drawn group's members (alike items drawn as one symbol), each by its element and name; one for a lone item. */
+  /** The items drawn with a symbol of their own (a device, a tank, an exchanger, the vessel). */
+  const symbols = $derived(new Set([...drawing.devices, ...drawing.vessels].map(item => item.id)))
+  /** Whether an item opens anything: a refused default (no targets) stays a plain item, never a button. */
+  const opens = (id: string): boolean => (texts.get(id)?.targets.length ?? 0) > 0
+  const nameOf = (id: string): string => texts.get(id)?.lines[0]?.text ?? texts.get(id)?.title ?? id
+  /** What a press on an item opens: its element, a group's members, a stop's far ends, each by element and name. */
   const membersOf = (id: string): ReadonlyArray<{ readonly element: string; readonly name: string }> =>
-    (section.layout.nodes.find(node => node.id === id)?.members ?? [id]).flatMap(member => {
-      const node = nodes.get(member)
-      return node === undefined ? [] : [{ element: node.element ?? node.id, name: node.shortLabel ?? node.label }]
-    })
+    (texts.get(id)?.targets ?? []).map(target => ({ element: target.element, name: target.label }))
 
   // Each item's button and text block as drawn: focus returns there, a faceplate stands beside them, the magnifier measures the name.
   const buttons = new Map<string, HTMLElement>()
@@ -121,9 +121,9 @@
   let overlays = $state.raw<ReadonlyArray<PinnedOverlay>>([])
   let heights = $state.raw<Readonly<Record<string, number>>>({})
   let notice = $state<string | null>(null)
-  const elementOf = (key: string): string => key.startsWith('#') ? key.slice(1) : items.get(key)?.element ?? key
+  const elementOf = (key: string): string => key.startsWith('#') ? key.slice(1) : texts.get(key)?.targets[0]?.element ?? key
   const pinned = (key: string): boolean => overlays.some(overlay => overlay.item === key)
-  const groupKey = (key: string): boolean => !key.startsWith('#') && membersOf(key).length > 1
+  const groupKey = (key: string): boolean => !key.startsWith('#') && texts.get(key)?.kind === 'group'
   /** Where a faceplate stands as drawn, for the one it opens in its place. */
   const cardPlace = (key: string, overlay: PinnedOverlay | null): { readonly x: number; readonly y: number } => {
     if (overlay !== null) return { x: overlay.x, y: overlay.y }
@@ -215,7 +215,7 @@
   // --- L3: the detail, the element's World default after this display -------------------------------------------------
   const openDetail = async (element: string, item: string | null): Promise<void> => {
     // A chat answer or a tag's dialog has no window to walk in: there the body opens the faceplate too.
-    if (opening !== 'window') { if (item !== null) openFaceplate(item); return }
+    if (opening !== 'window') { openFaceplate(item ?? `#${element}`); return }
     try {
       if (!(await openElementDetail(embeddedDisplayFrame(), runId, from, section.objectId, element)) && item !== null) openFaceplate(item)
       notice = null
@@ -223,12 +223,52 @@
       notice = `${element} cannot be opened: ${error instanceof Error ? error.message : String(error)}`
     }
   }
-  const bodyPress = (id: string): void => { void openDetail(items.get(id)?.element ?? id, id) }
+  /** A press on an item's body: its one target's detail, or a chooser where it names several (a group, a stop). */
+  const bodyPress = (id: string): void => {
+    const targets = texts.get(id)?.targets ?? []
+    if (targets.length === 1 && texts.get(id)?.kind === 'stop') {
+      elementNames = { ...elementNames, [`#${targets[0]!.element}`]: targets[0]!.label }
+      void openDetail(targets[0]!.element, null)
+    } else if (targets.length === 1) void openDetail(targets[0]!.element, id)
+    else if (targets.length > 1) openChooser(id)
+  }
   const bodyKey = (id: string) => (event: KeyboardEvent): void => {
-    if (event.key === 'Enter' && event.shiftKey) { event.preventDefault(); openFaceplate(id); return }
+    if (event.key === 'Enter' && event.shiftKey) { event.preventDefault(); if (texts.get(id)?.kind !== 'stop') openFaceplate(id); return }
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
     bodyPress(id)
+  }
+
+  /** What makes an item's body a button: only an item that opens something; a refused default stays plain. */
+  const body = (id: string, title: string): Record<string, unknown> => !opens(id) ? {} : {
+    role: 'button', tabindex: 0, 'aria-label': `Open ${title}`, 'aria-haspopup': membersOf(id).length > 1 ? 'dialog' : undefined,
+    onclick: () => bodyPress(id), onkeydown: bodyKey(id), ...hover(id), ...focus(id),
+  }
+
+  // --- The chooser: a press on an item that names several things to open ---------------------------------------------
+  const CHOOSER_WIDTH = 260
+  let chooser = $state.raw<{ readonly id: string; readonly box: Box } | null>(null)
+  const openChooser = (id: string): void => {
+    const box = itemBox(id)
+    chooser = box === null ? null : { id, box }
+  }
+  const closeChooser = (returnFocus: boolean): void => {
+    const was = chooser
+    chooser = null
+    if (returnFocus && was !== null) buttons.get(was.id)?.focus()
+  }
+  /** One of them chosen: its detail in the window; elsewhere its faceplate where the list stood. */
+  const choose = (entry: { readonly element: string; readonly name: string }): void => {
+    const was = chooser
+    chooser = null
+    if (opening === 'window') { void openDetail(entry.element, null); return }
+    elementNames = { ...elementNames, [`#${entry.element}`]: entry.name }
+    openFaceplate(`#${entry.element}`, was === null ? null : { x: was.box.x, y: was.box.y })
+  }
+  /** The list takes focus as it opens, on its first entry. */
+  const chooserEntry = (node: HTMLElement, element: string) => {
+    if (chooser !== null && membersOf(chooser.id)[0]?.element === element) requestAnimationFrame(() => node.focus())
+    return {}
   }
 
   // --- What the Pack marks on the items: offered controls, pending proposals (W3.6) ------------------------------------
@@ -239,7 +279,10 @@
   const elementsOf = (key: string): ReadonlyArray<string> => key.startsWith('#') ? [key.slice(1)] : membersOf(key).map(member => member.element)
   const pendingOf = (key: string): { readonly ai: boolean } | undefined => elementsOf(key).map(element => pendingBy.get(element)).find(entry => entry !== undefined)
   /** The drawn item that stands for an element: its own, or the group it is a member of. */
-  const itemOf = (element: string): string | undefined => [...items.keys()].find(id => elementsOf(id).includes(element))
+  const itemOf = (element: string): string | undefined => {
+    const drawn = drawing.texts.filter(text => text.kind !== 'stop' && text.targets.some(target => target.element === element))
+    return (drawn.find(text => text.kind === 'item') ?? drawn[0])?.id
+  }
   // A display the window opened after another (an item's detail, a proposal to review) pins the faceplate of the
   // pending proposal it draws that lapses first, once each time it is shown, never over the person's own pins.
   let showing = 0
@@ -303,7 +346,8 @@
   }
   const magnifiers = $derived(new Map(drawing.texts.flatMap(text => {
     const width = named[text.id]
-    return width === undefined || !items.has(text.id) ? [] : [[text.id, magnifierAt(text, FLOW_LINE_PX, width, drawing)] as const]
+    // No magnifier on a stop: it names other equipment, whose faceplates stand on the displays it opens.
+    return width === undefined || !opens(text.id) || text.kind === 'stop' ? [] : [[text.id, magnifierAt(text, FLOW_LINE_PX, width, drawing)] as const]
   })))
   let hovered = $state<string | null>(null)
   let focused = $state<string | null>(null)
@@ -331,13 +375,26 @@
     ]
     // A press outside an open faceplate, its item and its magnifier closes it; so does focus leaving the display.
     const down = (event: PointerEvent): void => {
-      if (faceplate.kind !== 'open' || !(event.target instanceof Element)) return
+      if (!(event.target instanceof Element)) return
+      if (chooser !== null && event.target.closest('[data-chooser]') === null && buttons.get(chooser.id)?.contains(event.target) !== true && textBlocks.get(chooser.id)?.contains(event.target) !== true) closeChooser(false)
+      if (faceplate.kind !== 'open') return
       if (event.target.closest('[data-faceplate], [data-magnifier]') !== null) return
       const item = faceplate.item
       if (buttons.get(item)?.contains(event.target) === true || textBlocks.get(item)?.contains(event.target) === true) return
       show({ faceplate: FACEPLATE_CLOSED })
     }
-    const blurred = (): void => { if (faceplate.kind === 'open') show({ faceplate: FACEPLATE_CLOSED }) }
+    const blurred = (): void => {
+      chooser = null
+      if (faceplate.kind === 'open') show({ faceplate: FACEPLATE_CLOSED })
+    }
+    // Esc closes the chooser first, before a faceplate or Back.
+    const escape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || chooser === null) return
+      event.preventDefault()
+      event.stopPropagation()
+      closeChooser(true)
+    }
+    window.addEventListener('keydown', escape, { capture: true })
     // What waits on the items, read every MARKS_EVERY_MS while the window shows the display.
     void readMarks()
     const marking = setInterval(() => { void readMarks() }, MARKS_EVERY_MS)
@@ -361,6 +418,7 @@
       for (const session of sessions) session.close()
       document.removeEventListener('pointerdown', down, { capture: true })
       window.removeEventListener('blur', blurred)
+      window.removeEventListener('keydown', escape, { capture: true })
       window.removeEventListener('resize', resized)
       host.reportFaceplate(false)
     }
@@ -420,8 +478,8 @@
       <obc-bus class="placed" size="small" vertical={bus.vertical} label="" title={bus.title} style:left={`${bus.x}px`} style:top={`${bus.y}px`} style:width={`${bus.width}px`} style:height={`${bus.height}px`}></obc-bus>
     {/each}
     {#each drawing.vessels as item (item.id)}
-      <div class="placed box" class:hovered={hovered === item.id} class:activated={activated(item.id)} role="button" tabindex="0" aria-label={`Open ${item.title}`} title={item.title} use:button={item.id} style:left={`${item.x}px`} style:top={`${item.y}px`} style:width={`${item.width}px`} style:height={`${item.height}px`}
-        onclick={() => bodyPress(item.id)} onkeydown={bodyKey(item.id)} {...hover(item.id)} {...focus(item.id)}>
+      <div class="placed box" class:hovered={hovered === item.id} class:activated={activated(item.id)} title={item.title} use:button={item.id} style:left={`${item.x}px`} style:top={`${item.y}px`} style:width={`${item.width}px`} style:height={`${item.height}px`}
+        {...body(item.id, item.title)}>
         {#if item.kind === 'tank'}
           <obc-automation-tank type="generic" orientation="vertical" positioning="button" compact medium="normal" max={100} value={item.level ?? 0} static={item.unknown || item.level === null} showTrendSymbol={false} clickable={false} tag="" alert={item.tone !== null} alertFrameStatus={item.tone === null ? 'caution' : ALERT_TYPE[item.tone]} alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false} style:width="100%" style:height="100%"><span slot="readout"></span>{#if pendingOf(item.id) !== undefined}<obc-automation-badge slot="badges" mode="enhanced" title="A proposal waits on it">{@render waiting(pendingOf(item.id)!)}</obc-automation-badge>{/if}</obc-automation-tank>
         {:else if item.kind === 'exchanger'}
@@ -433,8 +491,8 @@
       {@render magnifier(item.id)}
     {/each}
     {#each drawing.devices as device (device.id)}
-      <div class="placed device" role="button" tabindex="0" aria-label={`Open ${device.title}`} title={device.title} use:button={device.id} style:left={`${device.x - SYMBOL_PX / 2}px`} style:top={`${device.y - SYMBOL_PX / 2}px`}
-        onclick={() => bodyPress(device.id)} onkeydown={bodyKey(device.id)} {...hover(device.id)} {...focus(device.id)}>
+      <div class="placed device" title={device.title} use:button={device.id} style:left={`${device.x - SYMBOL_PX / 2}px`} style:top={`${device.y - SYMBOL_PX / 2}px`}
+        {...body(device.id, device.title)}>
         <div class="point"><obc-automation-button variant="regular" positioning="point" showReadoutStack={false} state={device.on ? 'open' : 'closed'} static={device.unknown} orientation={device.orientation} activated={activated(device.id)} progress={false} hasBadgeSpacer={false} alert={device.tone !== null} alertFrameStatus={device.tone === null ? 'caution' : ALERT_TYPE[device.tone]} alertFrameMode="acked-active" alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false}>
           {#if device.glyph?.tag === 'obc-valve-analog-two-way-icon'}
             <obc-valve-analog-two-way-icon slot="icon" value={device.glyph.value} closed={device.glyph.value === 0} vertical={device.vertical}></obc-valve-analog-two-way-icon>
@@ -447,10 +505,17 @@
       {@render magnifier(device.id)}
     {/each}
     {#each drawing.texts as text (text.id)}
+      {#if opens(text.id) && !symbols.has(text.id)}
+        <!-- A named item drawn as a line, a bar or a stop (a header, a bus, a junction, a stop's far ends): its box and
+             its text are its button, under the symbols drawn on it. -->
+        <div class="placed area" class:hovered={hovered === text.id} class:activated={activated(text.id)} title={text.title} use:button={text.id}
+          style:left={`${text.area.x}px`} style:top={`${text.area.y}px`} style:width={`${text.area.width}px`} style:height={`${text.area.height}px`} {...body(text.id, text.title)}></div>
+        {@render magnifier(text.id)}
+      {/if}
       <!-- An item's text is part of its body: a press on it opens the item's detail, as a press on its symbol does. -->
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class={`text ${text.tone ?? ''}`} class:body={items.has(text.id)} data-item={text.id} use:textBlock={text.id} use:nameWidth={{ id: text.id, name: text.lines[0]?.text ?? '', scale }} style:left={`${text.x}px`} style:top={`${text.y}px`} style:width={`${text.width}px`} style:--line={`${FLOW_LINE_PX}px`} title={text.title}
-        onclick={items.has(text.id) ? () => bodyPress(text.id) : undefined} {...(items.has(text.id) ? hover(text.id) : {})}>
+      <div class={`text ${text.tone ?? ''}`} class:body={opens(text.id)} data-item={text.id} use:textBlock={text.id} use:nameWidth={{ id: text.id, name: text.lines[0]?.text ?? '', scale }} style:left={`${text.x}px`} style:top={`${text.y}px`} style:width={`${text.width}px`} style:--line={`${FLOW_LINE_PX}px`} title={text.title}
+        onclick={opens(text.id) ? () => bodyPress(text.id) : undefined} {...(opens(text.id) ? hover(text.id) : {})}>
         {#each text.lines as line, at (at)}<span class={line.kind}>{line.text}</span>{/each}
       </div>
       {#if text.outline !== null}<div class={`outline ${text.outline}`} aria-hidden="true" style:left={`${text.area.x - 2}px`} style:top={`${text.area.y - 2}px`} style:width={`${text.area.width + 4}px`} style:height={`${text.area.height + 4}px`}></div>{/if}
@@ -463,6 +528,20 @@
   {#each overlays as overlay (overlay.item)}{@render card(overlay.item, overlay)}{/each}
   {#if faceplate.kind === 'open' && !pinned(faceplate.item)}
     {#key faceplate.item}{@render card(faceplate.item, null)}{/key}
+  {/if}
+  {#if chooser !== null}
+    {@const entries = membersOf(chooser.id)}
+    {@const place = faceplatePlacement(chooser.box, { width: CHOOSER_WIDTH, height: entries.length * 40 + 12 }, room, zoom)}
+    <!-- Several things a press could open (a group's members, a stop's far ends): a short list, each opening its detail. -->
+    <div class="chooser" data-chooser={chooser.id} role="dialog" aria-label={`${nameOf(chooser.id)}: open which`} style:left={`${place.x}px`} style:top={`${place.y}px`} style:width={`${CHOOSER_WIDTH}px`} style:transform={`scale(${1 / zoom})`}>
+      <obc-card showTitle={false}>
+        <ul>
+          {#each entries as entry (entry.element)}
+            <li><button type="button" use:chooserEntry={entry.element} onclick={() => choose(entry)}>{entry.name} ›</button></li>
+          {/each}
+        </ul>
+      </obc-card>
+    </div>
   {/if}
 </div>
 {#if section.attribution !== undefined}<p class="attribution">{section.attribution}</p>{/if}
@@ -480,8 +559,15 @@
   [role='button'] { cursor: pointer; }
   [role='button']:focus-visible { outline: 2px solid var(--border-focus-color); outline-offset: 2px; }
   /* A vessel takes OpenBridge's flat hover and activated surfaces, as its button would: it is pressed for its detail, opened for its faceplate. */
-  .box:hover, .box.hovered { background: var(--flat-hover-background-color); }
-  .box.activated { background: var(--flat-activated-background-color); outline: 1px solid var(--border-outline-color); }
+  .box:hover, .box.hovered, .area:hover, .area.hovered { background: var(--flat-hover-background-color); }
+  .box.activated, .area.activated { background: var(--flat-activated-background-color); outline: 1px solid var(--border-outline-color); }
+  /* A line's, a bar's or a stop's button lies under the symbols drawn on it, which keep their own presses. */
+  .area { z-index: 1; border-radius: 4px; }
+  .chooser { position: fixed; z-index: 11; transform-origin: 0 0; box-shadow: var(--shadow-floating); border-radius: var(--ui-components-card-border-radius-regular, 8px); }
+  .chooser ul { width: 100%; margin: 0; padding: 6px 0; list-style: none; }
+  .chooser button { display: block; width: 100%; height: 40px; padding: 0 12px; border: none; background: none; font: inherit; font-size: 13px; text-align: left; color: var(--element-active-color); cursor: pointer; }
+  .chooser button:hover { background: var(--flat-hover-background-color); }
+  .chooser button:focus-visible { outline: 2px solid var(--border-focus-color); outline-offset: -2px; }
   /* A line may run a few pixels past the width the sizing reserved (8 px a character; capitals are wider): the layout keeps text clear of other items by more. */
   .text { position: absolute; display: flex; flex-direction: column; font-size: 12px; line-height: var(--line); white-space: nowrap; pointer-events: none; }
   /* The body's ink (its symbol and its text lines, each as wide as written) stands above the magnifier's hit area:

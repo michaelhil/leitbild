@@ -81,16 +81,26 @@ describe('the drawing\'s grammar', () => {
   const source = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/FlowTopology.svelte'), 'utf8')
 
   test('a body press opens the detail, in the window only; elsewhere the faceplate', () => {
-    expect(source).toContain("if (opening !== 'window') { if (item !== null) openFaceplate(item); return }")
+    expect(source).toContain("if (opening !== 'window') { openFaceplate(item ?? `#${element}`); return }")
     expect(source).toContain('openElementDetail(embeddedDisplayFrame(), runId, from, section.objectId, element)')
   })
 
   test('Shift+Enter on an item opens its faceplate; Enter and Space its detail', () => {
-    expect(source).toContain("if (event.key === 'Enter' && event.shiftKey) { event.preventDefault(); openFaceplate(id); return }")
+    expect(source).toContain("if (event.key === 'Enter' && event.shiftKey) { event.preventDefault(); if (texts.get(id)?.kind !== 'stop') openFaceplate(id); return }")
   })
 
   test('each magnifier is rendered straight after its item, so it follows the item in tab order', () => {
-    expect(source.match(/\{@render magnifier\((item|device)\.id\)\}/g)).toHaveLength(2)
+    expect(source.match(/\{@render magnifier\((item|device|text)\.id\)\}/g)).toHaveLength(3)
+  })
+
+  test('every named item that opens something is a button, its text part of it; a refused default stays plain (W6.1)', () => {
+    // What a press opens is the drawing's (contract 3, flow-symbols FlowItem.targets); none, and the item is no button.
+    expect(source).toContain("const body = (id: string, title: string): Record<string, unknown> => !opens(id) ? {} : {")
+    expect(source).toContain("onclick={opens(text.id) ? () => bodyPress(text.id) : undefined}")
+    // A line's, a bar's or a stop's box is its button; a stop has no magnifier; several targets open a chooser.
+    expect(source).toContain('{#if opens(text.id) && !symbols.has(text.id)}')
+    expect(source).toContain("!opens(text.id) || text.kind === 'stop' ? []")
+    expect(source).toContain('else if (targets.length > 1) openChooser(id)')
   })
 })
 
