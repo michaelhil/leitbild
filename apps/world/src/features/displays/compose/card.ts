@@ -14,7 +14,7 @@ import { DISPLAY_CARD_MAX_ITEMS, DISPLAY_CARD_MAX_TEXT, displayCardSchema, displ
 import { priorityLevels } from '../../../core/model/alerts.ts'
 import { criterionWords, distanceParts, durationParts, numberShown, numberText, unitSymbol, type Observation, type Quantity } from '../../../core/observation/model.ts'
 import type { AlertRow } from '../alerts/rows.ts'
-import type { Declared } from './declared.ts'
+import { qualifiedLabel, type Declared } from './declared.ts'
 import type { EntityRow, SlotDeclaration, VignetteSample } from './model.ts'
 
 type Item = Omit<DisplayCardItem, 'key'>
@@ -36,7 +36,7 @@ const objectOf = (label: string, object: string): { readonly object?: string } =
   object.length <= 80 && (label === object || label.startsWith(`${object} · `)) ? { object } : {}
 
 export const valueItem = ({ observable, object }: Declared, observation: Observation | undefined): Item => {
-  const label = `${object.label} · ${observable.label}`.slice(0, 80)
+  const label = qualifiedLabel(object.label, observable.label)
   const named = { label, ...objectOf(label, object.label) }
   // A criterion reads as a row writes it: how many of its checks that apply are met and those not yet met, or its comparison.
   if (observable.checks !== undefined) {

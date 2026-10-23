@@ -15,7 +15,7 @@
 </script>
 
 <span class="criterion" title={look.title}>
-  <span class="label">{label}</span>
+  <span class="label" aria-label={label} use:wholeWords={label}></span>
   <span class="detail" aria-hidden="true" use:wholeWords={look.detail ?? ''}></span>
   {#if look.detail !== null}<span class="full">{look.detail}</span>{/if}
   <span class="word"><StateWord {look} /></span>
@@ -23,7 +23,7 @@
 
 <style>
   .criterion { display: flex; align-items: center; gap: 6px; min-width: 0; height: var(--row); white-space: nowrap; }
-  .label { flex: 0 1 auto; min-width: 3em; overflow: hidden; text-overflow: ellipsis; color: var(--element-neutral-color); }
+  .label { flex: 0 1 auto; min-width: 3em; overflow: hidden; color: var(--element-neutral-color); }
   .word { flex: none; }
   .detail { flex: 1 1 0; min-width: 0; overflow: hidden; color: var(--element-neutral-color); }
   /* The whole list, read by assistive technology, not shown. */

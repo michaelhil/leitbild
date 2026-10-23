@@ -4,7 +4,8 @@ import { join } from 'node:path'
 import type { SimulationRunId } from '../src/core/model/ids.ts'
 import type { Observable, Observation } from '../src/core/observation/model.ts'
 import type { SeriesPoint, VignetteSample, VignetteValue, VignetteView } from '../src/features/displays/compose/model.ts'
-import { partsThatFit } from '../src/ui/embed/vignette/fit-words.ts'
+import { partsThatFit, wholeWordsThatFit } from '../src/ui/embed/vignette/fit-words.ts'
+import { qualifiedLabel } from '../src/features/displays/compose/declared.ts'
 import { keptAfter, shownSeries, unkept } from '../src/ui/embed/vignette/kept-series.ts'
 import { marginOf, slopePerMinute, tendencyOf } from '../src/ui/embed/vignette/margin.ts'
 import { rateNow, rateText } from '../src/ui/embed/vignette/trend.ts'
@@ -363,5 +364,47 @@ describe('a declared span bar (W4.2, W9.3)', () => {
     expect(spanBar(loading, 50, true)).toBeNull()
     expect(spanBar({ ...loading, span: undefined }, 50, false)).toBeNull()
     expect(spanBar({ ...loading, quantity: 'pressure' }, 50, false)).toBeNull()
+  })
+})
+
+describe('no word is cut (plan v5 §2 rule 2)', () => {
+  /** Every prefix a fitting may show of `text`: whole words, then "…", or nothing; never part of a word. */
+  const wholeOnly = (text: string, shown: string): boolean => {
+    const kept = shown.endsWith('…') ? shown.slice(0, -1) : shown
+    return shown === '' || kept === text || (text.startsWith(kept) && /^[\s,;:·]/.test(text.slice(kept.length)))
+  }
+
+  test('a label gives way by whole words at every width, and shows nothing where not one whole word fits', () => {
+    for (const text of ['Island at Hasle trafostasjon 420 kV · Frequency', 'Source-range detector high voltage on', 'PZR pressure']) {
+      for (let room = 0; room <= text.length + 1; room += 1) {
+        const shown = wholeWordsThatFit(text, candidate => candidate.length <= room)
+        expect(wholeOnly(text, shown), `${text} in ${room}: "${shown}"`).toBe(true)
+      }
+    }
+    expect(wholeWordsThatFit('Frequency', candidate => candidate.length <= 8)).toBe('')
+  })
+
+  test('a margin line gives way by whole parts, then whole words, never cutting a value or a limit', () => {
+    const past = marginOf(49.41, [{ id: 'lolo', direction: 'low', value: 49.5, order: 2, effect: 'trip', priority: 'alarm', consequence: 'LFDD' }], 'lolo', { short: -0.1, long: -0.1, rate: -0.1 }, { unit: 'Hz', quantity: 'frequency' })!
+    for (let room = 0; room <= past.text.length + 1; room += 1) {
+      const shown = partsThatFit(past.parts, past.giving, candidate => candidate.length <= room)
+      expect(shown === '' || shown.startsWith(past.parts[0]!) || wholeOnly(past.parts[0]!, shown), `${room}: "${shown}"`).toBe(true)
+    }
+  })
+
+  test('the column\'s parts never cut text with a CSS ellipsis: each gives way by whole words', () => {
+    const dir = join(import.meta.dir, '../src/ui/embed/vignette')
+    for (const file of ['ValueRows.svelte', 'StateWord.svelte', 'CriterionRow.svelte', 'Readout.svelte', 'Sections.svelte', 'GroupedValues.svelte', 'Vignette.svelte', 'Sparkline.svelte']) {
+      const style = readFileSync(join(dir, file), 'utf8').match(/<style>([\s\S]*)<\/style>/)?.[1] ?? ''
+      expect(style, file).not.toContain('text-overflow: ellipsis')
+    }
+  })
+})
+
+describe('a qualified label is never cut mid-word', () => {
+  test('object and observable where both fit 80 characters; else the observable\'s own label whole', () => {
+    expect(qualifiedLabel('Halden Unit 1', 'Pressurizer pressure')).toBe('Halden Unit 1 · Pressurizer pressure')
+    // 81 characters qualified: it read "… · Frequenc" in the grid's margin line.
+    expect(qualifiedLabel('Norway grid · Halden connection', 'Island at Hasle trafostasjon 420 kV · Frequency')).toBe('Island at Hasle trafostasjon 420 kV · Frequency')
   })
 })
