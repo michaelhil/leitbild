@@ -133,11 +133,13 @@ const judgeView = async (ctx: { readonly page: Page; readonly scratch: Page; rea
   }
 
   // Trends: pieces per pen (Run B), limit names in value order, no collisions or clipped texts, no legend name cut.
+  if (trends.strips.length === 0 && view !== 'overview' && !view.startsWith('deck')) checks.push(check('trend-labels', null, 'no trend strip read in this detail (none drawn, or markup the reader does not know)'))
   if (trends.strips.length > 0) {
     const pieces = trends.strips.flatMap(strip => strip.pens.filter(pen => pen.pieces > 2).map(pen => `strip ${strip.index} ${pen.cls} ${pen.pieces} pieces`))
     const order: string[] = [], collide: string[] = [], clipped: string[] = []
     for (const strip of trends.strips) {
-      const named = strip.texts.map(text => ({ ...text, value: Number((text.text.match(/(-?\d+(?:\.\d+)?)\s*$/) ?? [])[1]) })).filter(text => /\b(LO|HI|LOW|HIGH|TRIP|CTL|SP)\b/.test(text.text) && Number.isFinite(text.value))
+      // A limit's name and its value ("HI-HI 82.0 · FWI", "LO-LO 20.0 · AFW START", R2's "LO-LO 15.35").
+      const named = strip.texts.map(text => ({ ...text, value: Number((text.text.match(/\b(?:LO-LO|HI-HI|LO|HI|LOW|HIGH|TRIP|CTL|SP)\s+(-?\d+(?:\.\d+)?)/) ?? [])[1]) })).filter(text => Number.isFinite(text.value))
       const byValue = [...named].sort((a, b) => b.value - a.value)
       for (let i = 1; i < byValue.length; i += 1) if (byValue[i]!.y + byValue[i]!.h / 2 < byValue[i - 1]!.y + byValue[i - 1]!.h / 2 - 1) order.push(`strip ${strip.index}: "${byValue[i]!.text}" above "${byValue[i - 1]!.text}"`)
       for (let i = 0; i < strip.texts.length; i += 1) for (let j = i + 1; j < strip.texts.length; j += 1) {
