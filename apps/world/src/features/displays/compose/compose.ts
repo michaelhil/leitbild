@@ -15,7 +15,7 @@ import { FRAME_ROWS, VIGNETTE_MAX_ROWS, vignetteStateSchema, type ComposeIssue, 
 import { isIssue, resolveSubject, subjectObjects, type ComposeRun, type Subject } from './resolve.ts'
 import { TOPOLOGY_REACH } from '../topology/scope.ts'
 import { drawingOf, scopeWithin, topologyOf } from './topology.ts'
-import { alertRowsFor, alertsOf, entityRows, groupValues, leadsNow, readsOf, refsRead, slotsOf, stripsOf } from './view.ts'
+import { ALERT_LINES_AT_LEAST, alertRowsFor, alertsOf, entityRows, groupValues, leadsNow, readsOf, refsRead, slotsOf, stripsOf } from './view.ts'
 
 export type ComposeOutcome =
   | { readonly ok: true; readonly state: VignetteState; readonly card: DisplayCard; readonly rows: number }
@@ -366,7 +366,9 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   const sideBySide = (): number => Math.max(left?.rows ?? 0, fitted.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0))
   const beside = frame === 'window' && left !== undefined && FRAME_ROWS + (chips.length > 0 ? 1 : 0) + stacked() > VIGNETTE_MAX_ROWS
   const total = (): number => FRAME_ROWS + (chips.length > 0 ? 1 : 0) + (beside ? sideBySide() : stacked())
-  for (const view of fitted) if (total() > VIGNETTE_MAX_ROWS && (view.kind === 'alerts' || view.kind === 'entity' || view.kind === 'collection')) (view as { rows: number }).rows = Math.min(view.rows, view.kind === 'alerts' ? 3 : 5)
+  // A window's alerts keep a head, eight alerts and "+N more" (W2.5): its drawing is scaled first.
+  const alertsFloor = frame === 'window' ? 2 + ALERT_LINES_AT_LEAST : 3
+  for (const view of fitted) if (total() > VIGNETTE_MAX_ROWS && (view.kind === 'alerts' || view.kind === 'entity' || view.kind === 'collection')) (view as { rows: number }).rows = Math.min(view.rows, view.kind === 'alerts' ? alertsFloor : 5)
   // Then a drawing is scaled to the rows left, never below a third of its height or eight rows, and the card says so.
   for (const view of fitted) {
     if (total() <= VIGNETTE_MAX_ROWS || view.kind !== 'topology') continue
@@ -377,6 +379,10 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
     ;(view as { rows: number }).rows = rows
     countAdjustment(adjusted, { kind: 'layout', text: `drawing scaled to ${Math.round(100 * (rows - 1) / (natural - 1))} % to fit` })
   }
+  // Beside a drawing, the column's alerts take the rows it leaves under the other views: the list fills its frame (W2.5).
+  const list = beside ? fitted.find(view => view.kind === 'alerts') : undefined
+  const column = fitted.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0)
+  if (list !== undefined && left!.rows > column) (list as { rows: number }).rows += left!.rows - column
   if (total() > VIGNETTE_MAX_ROWS) return refuse([unfit('views', `the views need ${total()} rows; one vignette holds ${VIGNETTE_MAX_ROWS}`)])
   const uncovered = subjects.findIndex(subject => !covers(fitted, subject))
   if (fitted.length === 0 || uncovered >= 0) return refuse([unfit(uncovered >= 0 ? `subjects.${uncovered}` : 'views', 'nothing this vignette can show is about this subject')])

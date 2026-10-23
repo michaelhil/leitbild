@@ -8,7 +8,7 @@ import { refObjectId } from '../../../core/model/alerts.ts'
 import type { ObjectId, OperationalObject } from '../../../core/model/index.ts'
 import { routeDistanceMeters } from '../../../core/model/route.ts'
 import type { Observation } from '../../../core/observation/model.ts'
-import { alertRows, leadsObject, priorityRank, worstFirst, type AlertRow } from '../alerts/rows.ts'
+import { alertRows, priorityRank, worstFirst, type AlertRow } from '../alerts/rows.ts'
 import { annunciatedRows } from '../alerts/annunciated.ts'
 import { declarationOf, declaredRefs, valueOf, visibleObject, type Declared } from './declared.ts'
 import { leadNow, ownStates } from './defaults.ts'
@@ -158,7 +158,7 @@ export const compileVignette = async (run: ComposeRun, state: VignetteState): Pr
     else if (view.kind === 'trend') sections.push({ kind: 'trend', rows: view.rows, horizonMs: horizonMs(view.horizon), strips: stripsOf(values(view.refs).filter(value => value.series !== null)).slice(0, 4) })
     else if (view.kind === 'alerts') {
       const objectIds = view.objectIds === 'run' ? 'run' : view.objectIds.filter(id => visibleObject(run, id) !== undefined)
-      if (objectIds.length > 0) sections.push({ kind: 'alerts', rows: view.rows, objectIds, ...(view.elements === undefined ? {} : { elements: view.elements }), ...(view.refs === undefined ? {} : { refs: view.refs }), ...(view.lead === true ? { lead: true } : {}) })
+      if (objectIds.length > 0) sections.push({ kind: 'alerts', rows: view.rows, objectIds, ...(view.elements === undefined ? {} : { elements: view.elements }), ...(view.refs === undefined ? {} : { refs: view.refs }), ...(view.all === true ? { all: true } : {}) })
     }
     else if (view.kind === 'slots') {
       const object = visibleObject(run, view.objectId)
@@ -205,29 +205,26 @@ export const contextOrder = (run: Pick<ComposeRun, 'objects'>, rows: ReadonlyArr
 
 /**
  * The alert rows an alerts view shows, in the context's order: the Run's (every object the caller may see) or these
- * objects', or only those on its elements or observables. Asked for its objects' lead alerts too, those follow: first-outs
- * first. `leading`: the rows it shows before any other (each object's worst and first-out; with `lead`, all of its
- * own and every first-out).
+ * objects', or only those on its elements or observables (an element's own: its object's first-outs are its trip
+ * line's). `leading`: the rows it shows before any other (each object's worst and first-out).
  */
 const alertList = (run: ComposeRun, view: Extract<ResolvedView, { kind: 'alerts' }>): { readonly rows: ReadonlyArray<AlertRow>; readonly leading: number } => {
   const objects = view.objectIds === 'run' ? run.objects.filter(object => !run.denied.has(object.id)) : view.objectIds.flatMap(id => visibleObject(run, id) ?? [])
   const all = alertRows(objects, object => ({ label: object.label, categoryId: presentedOf(run, object)?.categoryId ?? '' }))
   const filtered = view.elements !== undefined || view.refs !== undefined
-  const own = contextOrder(run, all.filter(row => !filtered
+  return contextOrder(run, all.filter(row => !filtered
     || (row.alert.subject !== undefined && 'element' in row.alert.subject && view.elements?.includes(row.alert.subject.element) === true)
     || (row.alert.observable !== undefined && view.refs?.includes(row.alert.observable) === true)))
-  if (view.lead !== true || !filtered) return own
-  const listed = new Set(own.rows)
-  const leads = contextOrder(run, all.filter(row => !listed.has(row) && leadsObject(row.alert))).rows
-  const firstOuts = leads.filter(row => row.alert.firstOut !== undefined)
-  return { rows: [...own.rows, ...firstOuts, ...leads.filter(row => row.alert.firstOut === undefined)], leading: own.rows.length + firstOuts.length }
 }
 export const alertsOf = (run: ComposeRun, view: Extract<ResolvedView, { kind: 'alerts' }>): ReadonlyArray<AlertRow> => alertList(run, view).rows
-/** The rows an alerts view needs: a header, then what it leads with (alertList), and at least six alerts where there are. */
+/** The rows an alerts view needs: a header, then what it leads with (alertList), and at least eight alerts where there are (W2.5), and "+N more" where there are more. */
 export const alertRowsFor = (run: ComposeRun, view: Extract<ResolvedView, { kind: 'alerts' }>): number => {
   const { rows, leading } = alertList(run, view)
-  return 1 + Math.max(1, Math.min(rows.length, Math.max(6, leading)))
+  const lines = Math.max(1, Math.min(rows.length, Math.max(ALERT_LINES_AT_LEAST, leading)))
+  return 1 + lines + (rows.length > lines ? 1 : 0)
 }
+/** The fewest alerts a list shows where it has that many (W2.5), beside its head and its "+N more". */
+export const ALERT_LINES_AT_LEAST = 8
 
 /** The refs a state's views read now: its values and trends, what its lead requests lead with (leadsNow) and what its drawings bind. */
 export const refsRead = async (run: ComposeRun, state: VignetteState, leads?: ReadonlyMap<number, ReadonlyArray<string>>): Promise<ReadonlyArray<string>> => {

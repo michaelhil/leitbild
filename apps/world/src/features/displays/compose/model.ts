@@ -43,10 +43,10 @@ export const resolvedViewSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('values'), refs: z.array(observableRefSchema).min(1).max(16).optional(), lead: leadRequestSchema.optional(), rows }).strict()
     .refine(view => view.refs !== undefined || view.lead !== undefined, { message: 'a values view names refs or a lead request' }),
   z.object({ kind: z.literal('trend'), refs: z.array(observableRefSchema).min(1).max(12), horizon: z.enum(['2m', '10m', '30m']), rows }).strict(),
-  /** The objects' alerts, or only those on these elements or observables; `lead`: those first, then the objects' lead alerts (leadsObject). */
+  /** The objects' alerts, or only those on these elements or observables; `all`: the full alerts view (L4), every alert by category, filtered. */
   z.object({
     kind: z.literal('alerts'), objectIds: z.union([z.literal('run'), z.array(objectIdSchema).min(1).max(48)]),
-    elements: z.array(z.string().min(1).max(200)).min(1).max(8).optional(), refs: z.array(observableRefSchema).min(1).max(8).optional(), lead: z.literal(true).optional(), rows,
+    elements: z.array(z.string().min(1).max(200)).min(1).max(8).optional(), refs: z.array(observableRefSchema).min(1).max(8).optional(), all: z.literal(true).optional(), rows,
   }).strict(),
   /** An entity-floor object's core slots. */
   z.object({ kind: z.literal('slots'), objectId: objectIdSchema, rows }).strict(),
@@ -120,7 +120,7 @@ export type VignetteSection =
   | { readonly kind: 'grouped'; readonly rows: number; readonly quantities: ReadonlyArray<{ readonly label: string; readonly unit: string }>; readonly lines: ReadonlyArray<{ readonly element: VignetteElement; readonly values: ReadonlyArray<VignetteValue | null> }> }
   /** Pens drawn together share a strip: at most four strips of at most four pens. */
   | { readonly kind: 'trend'; readonly rows: number; readonly horizonMs: number; readonly strips: ReadonlyArray<ReadonlyArray<VignetteValue>> }
-  | { readonly kind: 'alerts'; readonly rows: number; readonly objectIds: ReadonlyArray<string> | 'run'; readonly elements?: ReadonlyArray<string>; readonly refs?: ReadonlyArray<string>; readonly lead?: true }
+  | { readonly kind: 'alerts'; readonly rows: number; readonly objectIds: ReadonlyArray<string> | 'run'; readonly elements?: ReadonlyArray<string>; readonly refs?: ReadonlyArray<string>; readonly all?: true }
   /** Its values are the sample's `slots[objectId]`. */
   | { readonly kind: 'slots'; readonly rows: number; readonly objectId: string; readonly slots: ReadonlyArray<SlotDeclaration> }
   /** Its rows are the sample's `entities[section]`. */

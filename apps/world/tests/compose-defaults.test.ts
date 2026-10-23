@@ -13,7 +13,8 @@ import { scenarioDefinitionSchema } from '../src/core/scenarios/definition.ts'
 import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
 import { createSimulationRunRegistry, type SimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import { alertRows, priorityRank } from '../src/features/displays/alerts/rows.ts'
-import { sectionLines } from '../src/ui/embed/vignette/alerts.ts'
+import { listOrder } from '../src/features/displays/alerts/list.ts'
+import { inSection } from '../src/ui/embed/vignette/alerts.ts'
 import type { AlertState } from '../src/core/model/alerts.ts'
 import { composeDefault, composeVignette } from '../src/features/displays/compose/compose.ts'
 import { leadRefs } from '../src/features/displays/compose/defaults.ts'
@@ -315,13 +316,14 @@ describe('a default opened before an upset', () => {
         // The same state, sampled once the alerts are raised: the section lists its own.
         const section = view.sections.find(entry => entry.kind === 'alerts')
         if (section?.kind !== 'alerts') throw new Error(`${kind}: no alerts section`)
-        shown[kind] = sectionLines((await sampleVignette(alarmed, state)).alerts, section, section.rows - 1).lines.map(line => line.row.alert.message)
+        shown[kind] = (await sampleVignette(alarmed, state)).alerts.filter(inSection(section)).sort(listOrder).map(row => row.alert.message)
       }
+      // An element's own alerts only (W2.5, F19): the unit's first-out is its trip line's, not its list's.
       expect(shown).toEqual({
-        element: ['Engine overspeed', 'Unit trip on overspeed'],
+        element: ['Engine overspeed'],
         observable: ['Engine overspeed'],
         entity: ['Base gate open'],
-        collection: ['Engine overspeed', 'Unit trip on overspeed', 'Tank low'],
+        collection: ['Unit trip on overspeed', 'Engine overspeed', 'Tank low'],
       })
     } finally { await fixture.close() }
   })

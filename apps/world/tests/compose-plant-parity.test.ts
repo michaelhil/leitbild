@@ -108,6 +108,9 @@ describe('P9: the plant default carries what the Unit Overview carries', () => {
     expect(drawing?.kind === 'topology' && drawing.layout.crossings).toBeLessThanOrEqual(12)
     expect(drawing?.kind === 'topology' && overlaps(drawing.layout)).toEqual([])
     expect(sample.observations.some(observation => observation.ref.includes('#csf.'))).toBe(true)
+    // Its alerts fill the column down to the drawing's foot (W2.5): no "+N more" over an empty column.
+    const rowsOf = (kind: string) => state.views.find(entry => entry.kind === kind)!.rows
+    expect(rowsOf('alerts')).toBe(rowsOf('topology') - rowsOf('values') - rowsOf('trend'))
     console.log(`plant default: rows ${state.views.map(entry => `${entry.kind} ${entry.rows}`).join(', ')}; drawing ${drawing?.kind === 'topology' ? `${drawing.layout.width}×${drawing.layout.height}, ${drawing.layout.crossings} crossings` : '-'}; card ${card.items.length} items + ${card.more}; ${card.adjusted.map(entry => entry.text).join('; ')}`)
   })
 })
@@ -150,14 +153,13 @@ describe('P9: an equipment default carries what the detail display carries', () 
     expect(drawn).toEqual(expect.arrayContaining(['auxFeedwaterTank', 'auxFeedwaterPumpMotor', 'auxFeedwaterPumpMotorB', 'auxFeedwaterPumpTurbine', 'mainFeedwaterPumpA', 'mainFeedwaterPumpB', 'turbine', 'condenser']))
     const topology = state.views.find(entry => entry.kind === 'topology')
     expect(topology?.kind === 'topology' && topology.request).toMatchObject({ around: ['sgA'], groups: ['A'], reach: 3 })
-    // Its own alerts first, then the unit's first-outs, the reactor trip among them, within the section's rows.
+    // Its own alerts only, within the section's rows (W2.5, F19): the unit's first-outs are its trip line's.
     const alerts = state.views.find(entry => entry.kind === 'alerts')
-    expect(alerts?.kind === 'alerts' && { elements: alerts.elements, lead: alerts.lead }).toEqual({ elements: ['sgA'], lead: true })
+    expect(alerts?.kind === 'alerts' && alerts.elements).toEqual(['sgA'])
     const listed = card.items.filter(item => item.subject !== undefined && 'alertId' in item.subject).map(item => item.reading)
+    expect(listed.length).toBeGreaterThan(0)
     expect(listed.length).toBeLessThanOrEqual(alerts!.rows - 1)
-    const own = listed.findIndex(reading => !reading.includes('Steam generator A'))
-    expect(own).toBeGreaterThan(0)
-    expect(listed.slice(own).some(reading => reading.includes('Reactor trip') && reading.includes('first out'))).toBe(true)
+    expect(listed.filter(reading => !/steam generator A/i.test(reading))).toEqual([])
     console.log(`SG A default: rows ${state.views.map(entry => `${entry.kind} ${entry.rows}`).join(', ')}; ${drawing.layout.width} x ${drawing.layout.height}, ${drawing.layout.crossings} crossings; card ${card.items.length} items + ${card.more}; ${card.adjusted.map(entry => entry.text).join('; ')}`)
   })
 

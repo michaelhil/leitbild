@@ -4,11 +4,12 @@
   import { severityStyle, severityTable, type Palette } from '../../displays/severity.ts'
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
   import { hostDisplayFrame } from '../view-host.ts'
-  import { worstChip } from './alerts.ts'
+  import { alertsTarget, worstChip } from './alerts.ts'
   import { clockText, provenanceMark, underTitle } from './format.ts'
   import { VIGNETTE_ROW_PX } from './grid.ts'
   import { toneOf, valueLook } from './readout.ts'
   import { createVignetteSession, sampleStale, vignetteRoutes, type VignetteSnapshot } from './vignette-client.ts'
+  import { provideOpening } from './opening.svelte.ts'
   import Sections from './Sections.svelte'
   import StateWord from './StateWord.svelte'
   import './openbridge.ts'
@@ -31,6 +32,8 @@
   const runId = $derived(simulationRunIdSchema.parse(envelope.subject.id))
   /** This display, as an element's pop-over names it when it opens the element's default in the display window. */
   const from = $derived({ key: envelope.state, title: envelope.title })
+  // What its alerts, trip line and worst chip open (opening.svelte.ts).
+  const { opening, stop: stopOpening } = provideOpening({ runId: () => runId, envelope: () => envelope, at: () => snapshot.latest?.at })
   runOnMount(() => {
     const session = createVignetteSession({
       runId,
@@ -51,12 +54,17 @@
     // The embedding page's theme choice changes the palette live (main.ts).
     const theme = new MutationObserver(() => { palette = readPalette() })
     theme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-obc-theme'] })
-    return () => { clearInterval(tick); theme.disconnect(); unhost(); session.close() }
+    return () => { clearInterval(tick); theme.disconnect(); unhost(); session.close(); stopOpening() }
   })
 
   const view = $derived(snapshot.view)
   const latest = $derived(snapshot.latest)
   const worst = $derived(latest === undefined ? null : worstChip(latest.observations, latest.alerts))
+  /** The worst chip opens the full alerts view of what the vignette's alerts list (W2.6), where one can be opened from here. */
+  const alertsOpen = $derived.by(() => {
+    const target = view === undefined ? null : alertsTarget(view, latest?.alerts ?? [])
+    return target === null || opening.where === null ? undefined : () => { opening.alerts(target.objectIds, target.title) }
+  })
   const footer = $derived.by((): { readonly word: 'LIVE' | 'PAUSED' | 'FROZEN'; readonly why?: string } => {
     const stale = sampleStale(snapshot, wallNow)
     if (snapshot.phase === 'live' && !stale) return { word: latest?.at.paused === true ? 'PAUSED' : 'LIVE' }
@@ -69,7 +77,9 @@
   <header>
     <h1 title={view?.title ?? envelope.title}>{view?.title ?? envelope.title}</h1>
     {#if view?.by === 'assistant'}<span class="ai" title="Composed by the Assistant from what the Run declares"><obi-ai></obi-ai>Assistant</span>{/if}
-    {#if worst?.kind === 'priority'}
+    {#if worst?.kind === 'priority' && alertsOpen !== undefined}
+      <button type="button" class={`chip ${toneOf(worst.priority)}`} title="Open every alert, by category" onclick={alertsOpen}>{severityTable[worst.priority].word}</button>
+    {:else if worst?.kind === 'priority'}
       <span class={`chip ${toneOf(worst.priority)}`}>{severityTable[worst.priority].word}</span>
     {:else if worst?.kind === 'undeclared'}
       <span class="chip neutral">{severityStyle(null, worst.severity)!.word}</span>
@@ -109,6 +119,7 @@
   .ai { flex: none; display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--element-neutral-color); }
   .ai obi-ai { width: 16px; height: 16px; }
   .chip { flex: none; padding: 0 6px; border: 1px solid; border-radius: 3px; font-size: 12px; font-weight: 700; letter-spacing: 0.03em; }
+  button.chip { font-family: inherit; line-height: inherit; cursor: pointer; }
   .chip.neutral { color: var(--element-active-color); border-color: var(--border-outline-color); }
   .chip.caution { background: var(--display-caution-fill); color: var(--display-on-caution); border-color: var(--alert-caution-color); }
   .chip.warning { background: var(--display-warning-fill); color: var(--display-on-warning); border-color: var(--alert-warning-color); }

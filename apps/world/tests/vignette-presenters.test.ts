@@ -5,7 +5,7 @@ import type { AlertState } from '../src/core/model/alerts.ts'
 import type { ObjectId } from '../src/core/model/ids.ts'
 import type { Observable, Observation } from '../src/core/observation/model.ts'
 import type { AlertRow } from '../src/features/displays/alerts/rows.ts'
-import { alertDetail, alertIcon, sectionLines, UNACK_WORD, unacknowledged, wordsThatFit, worstChip } from '../src/ui/embed/vignette/alerts.ts'
+import { alertDetail, alertIcon, alertsTarget, alertTitle, inSection, rowParts, rowWidth, UNACK_WORD, unacknowledged, wordsThatFit, worstChip } from '../src/ui/embed/vignette/alerts.ts'
 import { provenanceMark, quantityText } from '../src/ui/embed/vignette/format.ts'
 import type { VignetteValue } from '../src/features/displays/compose/model.ts'
 import { activeState, limitBar, orderWord, readingLook, valueLook } from '../src/ui/embed/vignette/readout.ts'
@@ -215,7 +215,9 @@ describe('alerts', () => {
     expect(alertIcon({ ...row('a', 'one', 'alarm'), state: 'returned-unack' })).toEqual({ type: 'alarm', acknowledged: true, active: false })
     expect(alertIcon(row('a', 'one', 'notice'))).toEqual({ word: 'Notice' })
     expect(alertIcon(row('a', 'one', null))).toEqual({ word: 'Warning · priority not declared' })
-    expect(alertDetail({ ...row('a', 'one', 'caution', { standing: true, acknowledged: true, acknowledgedBy: 'ai' }), state: 'active-ack' })).toBe('standing · acknowledged by Assistant · 10:00:00 UTC')
+    // Before a sample's time is known a row says its clock time; then its age in Run time.
+    expect(alertDetail({ ...row('a', 'one', 'caution', { standing: true, acknowledged: true, acknowledgedBy: 'ai' }), state: 'active-ack' }, Number.NaN)).toBe('standing · acknowledged by Assistant · 10:00:00 UTC')
+    expect(alertDetail(row('a', 'one', 'caution'), Date.parse(at) + 179_000)).toBe('2:59')
   })
 
   test('the word UNACK carries what the steady icon does not: on each unacknowledged row and in the section\'s counts; standing alarms and advisories never count (R43)', () => {
@@ -223,12 +225,19 @@ describe('alerts', () => {
       row('a', 'one', 'alarm'), { ...row('r', 'one', 'warning'), state: 'returned-unack' as const }, { ...row('k', 'one', 'alarm', { acknowledged: true }), state: 'active-ack' as const },
       row('s', 'one', 'caution', { standing: true }), row('x', 'one', 'warning'),
     ]
-    expect(rows.map(entry => [entry.alert.id, unacknowledged(entry), alertDetail(entry)])).toEqual([
+    expect(rows.map(entry => [entry.alert.id, unacknowledged(entry), alertDetail(entry, Number.NaN)])).toEqual([
       ['a', true, '10:00:00 UTC'], ['r', true, 'returned · 10:00:00 UTC'], ['k', false, 'acknowledged · 10:00:00 UTC'], ['s', false, 'standing · 10:00:00 UTC'], ['x', true, '10:00:00 UTC'],
     ])
     expect(UNACK_WORD).toBe('UNACK')
-    expect(sectionLines(rows, { objectIds: ['one'] }, 5).unacknowledged).toEqual({ all: 3, more: 0 })
-    expect(sectionLines(rows, { objectIds: ['one'] }, 3)).toMatchObject({ more: 3, unacknowledged: { all: 3, more: 1 } })
+    expect(rows.filter(unacknowledged)).toHaveLength(3)
+  })
+
+  test('a row says its tag and what it is expected after; a first-out\'s tag that only names its group is left to its mark', () => {
+    const now = Date.parse(at) + 65_000
+    expect(alertDetail({ ...row('ll', 'one', 'alarm'), tag: 'LO-LO · AFW START', expected: { after: 'RX TRIP' } }, now)).toBe('LO-LO · AFW START · after RX TRIP · 1:05')
+    const first = { ...row('t', 'one', 'alarm', { firstOut: { group: 'turbine-trip', rank: 1 } }), tag: 'TURB TRIP', action: { label: 'TURB TRIP' } }
+    expect(alertDetail(first, now)).toBe('1:05')
+    expect(alertTitle(first, now)).toBe('one: UNACK · 1st TURB TRIP: t · 1:05 · 10:00:00 UTC')
   })
 
   test('a row\'s message gives way by whole words before any ellipsis, a lone word too long cut last; what fits stays whole', () => {
@@ -250,24 +259,22 @@ describe('alerts', () => {
     expect(tried.slice(tried.findIndex(inFirstWord)).filter(wholeWords)).toEqual([])
   })
 
-  test('in an alert row only the message gives way: the icon, UNACK, a FIRST OUT mark, a heading, the state and the time never shrink', () => {
-    const source = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/AlertsSection.svelte'), 'utf8')
+  test('in an alert row only the message gives way: the icon, UNACK, a first-out mark, a heading, the tag and the age never shrink', () => {
+    const source = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/AlertRowLine.svelte'), 'utf8')
     const rule = (selector: string): string => source.match(new RegExp(`\\n\\s*${selector.replace('.', '\\.')}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
     expect(rule('.message')).toContain('flex: 1 1 0;')
     expect(rule('.message')).toContain('min-width: 0;')
     expect(rule('.detail')).toContain('flex: none;')
     expect(rule('.icon')).toContain('flex: none;')
-    expect(source).toMatch(/strong, \.mark, \.unack \{ flex: none; \}/)
-    expect(source).toContain('use:fitted={line.row.alert.message}')
+    expect(source).toMatch(/strong, \.mark, \.unack \{ flex: none;/)
+    expect(source).toContain('use:fitted={parts.message}')
   })
 
-  test('a section keeps the sample\'s order (the Run context\'s ranking), its objects only, within its room, the last line counting the rest', () => {
-    const rows = [row('a', 'two', 'alarm'), row('w', 'one', 'warning'), row('c', 'one', 'caution'), row('x', 'three', 'alarm')]
-    const own = sectionLines(rows, { objectIds: ['one', 'two'] }, 5)
-    expect(own.lines.map(line => [line.row.alert.id, line.heading])).toEqual([['a', 'two'], ['w', 'one'], ['c', 'one']])
-    const tight = sectionLines(rows, { objectIds: 'run' }, 2)
-    expect([tight.lines.map(line => line.row.alert.id), tight.more]).toEqual([['a'], 3])
-    expect(sectionLines([row('a', 'one', 'alarm', { firstOut: { group: 'g', rank: 1 } })], { objectIds: ['one'] }, 3).lines[0]).toMatchObject({ firstOut: true })
+  test('a row is written on one line where it fits whole, else on two', () => {
+    const parts = rowParts({ ...row('a', 'one', 'alarm', { firstOut: { group: 'g', rank: 1 } }), action: { label: 'RX TRIP' }, tag: 'LO · RX TRIP' }, Date.parse(at) + 1_000)
+    expect(parts).toMatchObject({ unack: true, mark: '1st RX TRIP', message: 'a', detail: 'LO · RX TRIP · 0:01' })
+    // A character 6 px wide: icon 20, UNACK 30, "1st RX TRIP:" 72, "a" 6, the detail 114, four gaps of 6.
+    expect(rowWidth(parts, text => text.length * 6)).toBe(20 + 30 + 72 + 6 + 114 + 4 * 6)
   })
 
   test('a section narrowed to elements or observables shows only the alerts on them', () => {
@@ -275,9 +282,19 @@ describe('alerts', () => {
       row('on-pump', 'one', 'warning', { subject: { element: 'pump-a' } }), row('on-level', 'one', 'alarm', { observable: 'one#level' }),
       row('elsewhere', 'one', 'caution', { subject: { element: 'pump-b' } }), row('other-object', 'two', 'alarm', { subject: { element: 'pump-a' } }),
     ]
-    expect(sectionLines(rows, { objectIds: ['one'], elements: ['pump-a'] }, 5).lines.map(line => line.row.alert.id)).toEqual(['on-pump'])
-    expect(sectionLines(rows, { objectIds: ['one'], refs: ['one#level'] }, 5).lines.map(line => line.row.alert.id)).toEqual(['on-level'])
-    expect(sectionLines(rows, { objectIds: ['one'], elements: ['pump-a'], refs: ['one#level'] }, 5).lines.map(line => line.row.alert.id)).toEqual(['on-pump', 'on-level'])
+    const ids = (section: Parameters<typeof inSection>[0]) => rows.filter(inSection(section)).map(entry => entry.alert.id)
+    expect(ids({ objectIds: ['one'], elements: ['pump-a'] })).toEqual(['on-pump'])
+    expect(ids({ objectIds: ['one'], refs: ['one#level'] })).toEqual(['on-level'])
+    expect(ids({ objectIds: ['one'], elements: ['pump-a'], refs: ['one#level'] })).toEqual(['on-pump', 'on-level'])
+    expect(ids({ objectIds: 'run' })).toEqual(['on-pump', 'on-level', 'elsewhere', 'other-object'])
+  })
+
+  test('the worst chip opens the full alerts view of what the vignette is about; the full view opens no other', () => {
+    const alerts = { kind: 'alerts' as const, rows: 5, objectIds: ['one'] }
+    expect(alertsTarget({ sections: [alerts] }, [row('a', 'one', 'alarm')])).toEqual({ objectIds: ['one'], title: 'Alerts · one' })
+    expect(alertsTarget({ sections: [{ ...alerts, objectIds: 'run' }] }, [])).toEqual({ objectIds: 'run', title: 'Alerts in the Run' })
+    expect(alertsTarget({ sections: [{ ...alerts, all: true }] }, [])).toBeNull()
+    expect(alertsTarget({ sections: [{ kind: 'map', rows: 2 }] }, [])).toBeNull()
   })
 })
 

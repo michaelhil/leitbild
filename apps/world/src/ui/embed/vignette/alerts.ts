@@ -1,22 +1,17 @@
 // A vignette's alerts and its header's worst chip (architecture B), over the
 // shared alert rows (features/displays/alerts/rows.ts), each drawn with
 // OpenBridge's own alert icon (register #23: the OpenBridge-free twin stays in
-// the main app's strip). Rows keep the sample's order, which ranks them as the
-// Run context does; a row without a priority is shown by its severity word,
-// "priority not declared", and never ranks as a priority (R1).
+// the main app's strip), in list order (features/displays/alerts/list.ts); a
+// row without a priority is shown by its severity word, "priority not
+// declared", and never ranks as a priority (R1).
 // Nothing here can acknowledge an alert yet (W2.7), so no icon flashes: each
 // is drawn steady, and the word UNACK carries the state (register deviation
 // alert-icon-steady-unacknowledged).
 import type { Observation } from '../../../core/observation/model.ts'
-import type { VignetteSection } from '../../../features/displays/compose/model.ts'
-import { asksAttention, leadsObject, priorityRank, stateWords, type AlertRow } from '../../../features/displays/alerts/rows.ts'
+import type { VignetteSection, VignetteView } from '../../../features/displays/compose/model.ts'
+import { ageText, firstOutMark } from '../../../features/displays/alerts/list.ts'
+import { asksAttention, priorityRank, stateWords, type AlertRow } from '../../../features/displays/alerts/rows.ts'
 import { severityStyle } from '../../displays/severity.ts'
-
-export interface AlertLine {
-  readonly row: AlertRow
-  readonly heading?: string
-  readonly firstOut: boolean
-}
 
 /**
  * OpenBridge's alert icon for a row (obc-alert-icon): its alert type by the
@@ -64,40 +59,63 @@ export const wordsThatFit = (text: string, fits: (shown: string) => boolean): st
   return cut(first.slice(0, most(first.length - 1, count => cut(first.slice(0, count)))))
 }
 
-/** What a row says after its message: its marks, its state where the word UNACK does not say it, its time. */
-export const alertDetail = (row: AlertRow): string => [
+/** What a row says after its message: its tag, what it is expected after, its marks, its state where UNACK does not, its age in Run time (else its clock time). */
+export const alertDetail = (row: AlertRow, nowMs: number): string => [
+  // A first-out's tag that only names its group says nothing its mark does not ("1st TURB TRIP").
+  ...(row.tag === undefined || (firstOutMark(row) !== null && row.tag === row.action?.label) ? [] : [row.tag]),
+  ...(row.expected === undefined ? [] : [`after ${row.expected.after}`]),
   ...(row.alert.standing === true ? ['standing'] : []),
   ...(row.alert.advisory === true ? ['advisory'] : []),
   ...(unacknowledged(row) ? (row.state === 'returned-unack' ? ['returned'] : []) : row.state === 'active-unack' ? [] : [stateWords(row)]),
-  row.raised?.clock === 'simulation' ? `${row.raised.at.slice(11, 19)} UTC` : 'time unknown',
+  ageText(nowMs, row) ?? (row.raised === null ? 'time unknown' : `${row.raised.at.slice(11, 19)} UTC`),
 ].join(' · ')
 
-type AlertsSection = Pick<Extract<VignetteSection, { kind: 'alerts' }>, 'objectIds' | 'elements' | 'refs' | 'lead'>
+/** A row's full words, as its title and assistive technology read them: its object, state, mark, message, detail and clock time. */
+export const alertTitle = (row: AlertRow, nowMs: number): string =>
+  `${row.objectLabel}: ${unacknowledged(row) ? `${UNACK_WORD} · ` : ''}${firstOutMark(row) === null ? '' : `${firstOutMark(row)}: `}${row.alert.message} · ${alertDetail(row, nowMs)}${row.raised === null || ageText(nowMs, row) === null ? '' : ` · ${row.raised.at.slice(11, 19)} UTC`}`
 
-/** Whether a row belongs to a section: one of its objects (any in the Run), and where it names elements or observables, on one of them or, with `lead`, one of its objects' lead alerts. */
-const inSection = (section: AlertsSection) => (row: AlertRow): boolean => {
+type AlertsSection = Pick<Extract<VignetteSection, { kind: 'alerts' }>, 'objectIds' | 'elements' | 'refs'>
+
+/** Whether a row belongs to a section: one of its objects (any in the Run), and where it names elements or observables, on one of them. */
+export const inSection = (section: AlertsSection) => (row: AlertRow): boolean => {
   if (section.objectIds !== 'run' && !section.objectIds.includes(row.objectId)) return false
-  if ((section.elements === undefined && section.refs === undefined) || (section.lead === true && leadsObject(row.alert))) return true
-  const subject = row.alert.subject
-  const element = subject !== undefined && 'element' in subject ? subject.element : undefined
-  return (element !== undefined && (section.elements ?? []).includes(element)) || (row.alert.observable !== undefined && (section.refs ?? []).includes(row.alert.observable))
+  if (section.elements === undefined && section.refs === undefined) return true
+  return (elementOf(row) !== undefined && (section.elements ?? []).includes(elementOf(row)!)) || (row.alert.observable !== undefined && (section.refs ?? []).includes(row.alert.observable))
+}
+
+/** The element an alert is on, where its record names one: what its row opens. */
+export const elementOf = (row: AlertRow): string | undefined => row.alert.subject !== undefined && 'element' in row.alert.subject ? row.alert.subject.element : undefined
+
+/** The parts of a row a line lays out, besides its icon, in the fonts they are written in. */
+export interface RowParts { readonly unack: boolean; readonly heading?: string; readonly mark: string | null; readonly message: string; readonly detail: string }
+export const rowParts = (row: AlertRow, nowMs: number, heading?: string | undefined): RowParts =>
+  ({ unack: unacknowledged(row), ...(heading === undefined ? {} : { heading }), mark: firstOutMark(row), message: row.alert.message, detail: alertDetail(row, nowMs) })
+
+/** A row's icon and the gaps between its parts, in px (AlertRowLine.svelte). */
+export const ROW_ICON_PX = 20
+export const ROW_GAP_PX = 6
+/** The fonts a row writes its parts in (AlertRowLine.svelte): its message, its marks (UNACK, 1st RX TRIP, a heading), its detail. */
+export type RowFont = 'message' | 'mark' | 'detail'
+
+/** How wide a row is on one line, its message whole, given how wide each part is written (`measure`). */
+export const rowWidth = (parts: RowParts, measure: (text: string, font: RowFont) => number): number => {
+  const widths = [ROW_ICON_PX, ...(parts.unack ? [measure(UNACK_WORD, 'mark')] : []), ...(parts.heading === undefined ? [] : [measure(parts.heading, 'mark')]),
+    ...(parts.mark === null ? [] : [measure(`${parts.mark}:`, 'mark')]), measure(parts.message, 'message'), measure(parts.detail, 'detail')]
+  return widths.reduce((sum, width) => sum + width, 0) + ROW_GAP_PX * (widths.length - 1)
 }
 
 /**
- * The rows a section shows within its rows (one is its head), in the sample's order, the last saying how many more
- * there are; and how many of all and of those not shown are unacknowledged.
+ * What a vignette's full alerts view lists (W2.6): the objects its alerts and drawings are about, or the Run's, and its
+ * title; null where it lists no alerts.
  */
-export const sectionLines = (rows: ReadonlyArray<AlertRow>, section: AlertsSection, room: number): {
-  readonly lines: ReadonlyArray<AlertLine>; readonly more: number; readonly unacknowledged: { readonly all: number; readonly more: number }
-} => {
-  const own = rows.filter(inSection(section))
-  const several = new Set(own.map(row => row.objectId)).size > 1
-  const shown = own.length <= room ? own : own.slice(0, Math.max(0, room - 1))
-  return {
-    lines: shown.map(row => ({ row, firstOut: row.alert.firstOut?.rank === 1, ...(several ? { heading: row.objectLabel } : {}) })),
-    more: own.length - shown.length,
-    unacknowledged: { all: own.filter(unacknowledged).length, more: own.slice(shown.length).filter(unacknowledged).length },
-  }
+export const alertsTarget = (view: Pick<VignetteView, 'sections'>, rows: ReadonlyArray<AlertRow>): { readonly objectIds: ReadonlyArray<string> | 'run'; readonly title: string } | null => {
+  // The full view itself opens no other.
+  if (view.sections.some(section => section.kind === 'alerts' && section.all === true)) return null
+  if (view.sections.some(section => section.kind === 'alerts' && section.objectIds === 'run')) return { objectIds: 'run', title: 'Alerts in the Run' }
+  const objectIds = [...new Set(view.sections.flatMap(section => section.kind === 'alerts' && section.objectIds !== 'run' ? section.objectIds : section.kind === 'topology' ? [section.objectId] : []))]
+  if (objectIds.length === 0) return null
+  const label = objectIds.length === 1 ? rows.find(row => row.objectId === objectIds[0])?.objectLabel : undefined
+  return { objectIds, title: label === undefined ? 'Alerts' : `Alerts · ${label}` }
 }
 
 export type WorstChip =
