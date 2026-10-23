@@ -161,6 +161,8 @@
   ]
 
   const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], inactive: [] }
+  /** How far the resize handles reach over the body's edges (style.css: 10 px edges, 18 px corners): a faceplate keeps clear. */
+  const RESIZE_HANDLE_REACH = 18
   const windowConstraints = { minWidth: 320, minHeight: 200, margin: 12 } as const
   const zoomWriteDelayMs = 400
   const runId = untrack(() => simulationRunId)
@@ -459,6 +461,13 @@
     returnTo = back.returns
     showEntry(back.to)
     focusShown()
+  }
+
+  // Displays with a faceplate standing on them: each is given the body's whole height meanwhile (W3.4).
+  let faceplates = $state.raw<ReadonlySet<string>>(new Set())
+  const frameFaceplate = (key: string, open: boolean): void => {
+    if (faceplates.has(key) === open) return
+    faceplates = open ? new Set([...faceplates, key]) : new Set([...faceplates].filter(candidate => candidate !== key))
   }
 
   const frameProblem = (_key: string, problem: string): void => {
@@ -986,6 +995,9 @@
           onProblem={frameProblem}
           back={returnTo.get(mounted.entry.key)?.title ?? null}
           focus={frameFocus?.key === mounted.entry.key ? frameFocus.sequence : 0}
+          handles={maximised ? 0 : RESIZE_HANDLE_REACH}
+          fill={faceplates.has(mounted.entry.key)}
+          onFaceplate={frameFaceplate}
           onOpen={frameOpen}
           onBack={frameBack}
           onMap={bounds => focusMap({ kind: 'bounds', bounds })}

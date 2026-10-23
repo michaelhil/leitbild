@@ -98,7 +98,9 @@ const adviceHeight = (context: DisplayZoomContext): number => context.extent?.he
  * Where a display's frame goes. A generated display gets the whole body at
  * its zoom (W/z x B/z, scaled by z), so it is drawn for exactly the room it
  * has. Advice keeps its height, stretches to the body width, and never gets
- * narrower than its content needs; the body scrolls what does not fit.
+ * narrower than its content needs; the body scrolls what does not fit. While
+ * a faceplate stands on it (`fill`), advice is at least as tall as the body,
+ * so the faceplate has the window's room, not only the display's (W3.4).
  */
 export const displayFrameGeometry = (config: {
   readonly kind: DisplayKind
@@ -106,13 +108,15 @@ export const displayFrameGeometry = (config: {
   readonly body: DisplaySize
   readonly extent: DisplayExtent | null
   readonly envelopeHeight: number
+  readonly fill?: boolean
 }): DisplayFrameGeometry => {
   const { zoom, body } = config
   if (config.kind === 'generated') {
     return { frameWidth: body.width / zoom, frameHeight: body.height / zoom, boxWidth: body.width, boxHeight: body.height, bodyScrolls: false }
   }
   const frameWidth = Math.max(body.width / zoom, config.extent?.minWidth ?? 0)
-  const frameHeight = config.extent?.height ?? config.envelopeHeight
+  const content = config.extent?.height ?? config.envelopeHeight
+  const frameHeight = config.fill === true ? Math.max(content, body.height / zoom) : content
   return { frameWidth, frameHeight, boxWidth: frameWidth * zoom, boxHeight: frameHeight * zoom, bodyScrolls: true }
 }
 
