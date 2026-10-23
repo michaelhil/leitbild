@@ -26,7 +26,8 @@
  *   T8  an alert row selects its element (faceplate or detail), and "+N more" opens the full list (L4)
  *   T9  overview → SG A → AFW header with one click per hop, then Esc = Back twice
  *   T10 the same gesture elsewhere: alert rows (T8) and drawn items on the plant; grid elements (R3, W9.1)
- *   T11 a press on the unit's map icon opens its overview display in the window, and no Plant card (R3, owner 23 Oct)
+ *   T11 a press on the unit's map icon opens its overview display in the window, and no Plant card (R3, owner 23 Oct);
+ *       T11-1046 the same with the chat open
  *
  * Writes <out>/<label>-walks.json and shots. Loopback only; no model is called. */
 import { join } from 'node:path'
@@ -537,6 +538,10 @@ const t11 = async (ctx: Ctx, sizeName = '1920'): Promise<TaskResult> => {
   await page.size(size.width, size.height)
   await page.goto(`${ctx.origin}/workspaces/${ctx.workspaceId}?world=${encodeURIComponent(runId)}`)
   await page.waitFor({ sel: 'button', text: `Open process display for ${ctx.unit}` }, 120_000)
+  if (size.chat) {
+    await page.click({ sel: 'button', text: 'Open Leitbild Assistant' })
+    await page.until(`lb.documents().some(d => d.frame && /\\/agents/.test(d.frame.getAttribute('src') || '') && lb.shown(d.frame))`, 60_000)
+  }
   await sleep(5_000)
   const steps: Step[] = []
   const fail = async (detail: string): Promise<TaskResult> => ({ id, title, verdict: '✖', budget: 1, clicks: null, path: steps, deadEnds: 0, searched: 0, detail, shots: [await shotOf(ctx, id)], size: sizeName })
@@ -578,7 +583,7 @@ const t7 = (): TaskResult => ({
   shots: [],
 })
 
-export const TASKS = ['T1', 'T1-live', 'T2', 'T3-1046', 'T3-1440x900+chat', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11'] as const
+export const TASKS = ['T1', 'T1-live', 'T2', 'T3-1046', 'T3-1440x900+chat', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T11-1046'] as const
 
 if (import.meta.main) {
   const argv = options(Bun.argv.slice(2))
