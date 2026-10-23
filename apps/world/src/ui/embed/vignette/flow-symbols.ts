@@ -25,7 +25,7 @@ import type { TopologyBinding, VignetteSection } from '../../../features/display
 import { groupName, itemText } from '../../../features/displays/topology/layout.ts'
 import { farState } from '../../../features/displays/topology/stops.ts'
 import { VIGNETTE_ROW_PX } from './grid.ts'
-import { chevronSegment, pipeSegments, pipeValue, stubEndSegment, type PipeLook } from './pipe-segments.ts'
+import { chevronSegment, endStraight, pipeSegments, pipeValue, stubEndSegment, type PipeLook } from './pipe-segments.ts'
 import { stub } from './network.ts'
 import { activeState, observedInput, readingLook, toneOf, type AlertTone } from './readout.ts'
 import type { VesselDrawing } from './vessel-symbol.ts'
@@ -194,6 +194,18 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
     return [[node.id, symbolOf(view, lines, thin(box))] as const]
   }))
   const states = new Map([...symbols.keys()].map(id => [id, stateOf(byId.get(id)!)]))
+  // A pipe to where the drawing stops ends on a straight of its own, never with its cap in a bend (W6.3).
+  const stopAt = (point: Point): Box | undefined => [...boxes].find(([id, box]) => symbols.get(id) === 'end' && inside(box)(point))?.[1]
+  const pipes = new Map(edges.map(edge => {
+    const [first, last] = [stopAt(edge.points[0]!), stopAt(edge.points.at(-1)!)]
+    const ended = last === undefined ? edge.points : endStraight(edge.points, 'last', last)
+    return [edge.id, first === undefined ? ended : endStraight(ended, 'first', first)] as const
+  }))
+  // Where a chevron may not stand: on the drawing's text, its symbols and its bars.
+  const avoid: ReadonlyArray<Box> = [
+    ...section.layout.nodes.flatMap(node => (node.text === undefined ? [] : [{ x: px(node.text.x), y: px(node.text.y), width: px(node.text.width), height: px(node.text.height) }])),
+    ...[...boxes].filter(([id]) => symbols.get(id) !== 'end').map(([, box]) => box),
+  ]
 
   // A pipe reads its flow where it is bound (a stop's, the lines it stands for: forward where any flows); else it is
   // open unless a switch at either end reads shut, never emptied by what is not known.
@@ -210,8 +222,9 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
     const look = lookOf(edge)
     const size = edge.view?.mediumKind.startsWith('electric') === true ? 'small' : 'medium'
     const value = look === 'open' ? 'open-generic' : pipeValue(look)
-    const chevron = look === 'forward' || look === 'reverse' ? chevronSegment(edge.id, edge.points, edge.gaps, value, size, look === 'reverse') : null
-    return [...pipeSegments(edge.id, edge.points, edge.gaps, value, size), ...(chevron === null ? [] : [chevron])]
+    const points = pipes.get(edge.id)!
+    const chevron = look === 'forward' || look === 'reverse' ? chevronSegment(edge.id, points, edge.gaps, value, size, look === 'reverse', avoid) : null
+    return [...pipeSegments(edge.id, points, edge.gaps, value, size), ...(chevron === null ? [] : [chevron])]
   })
 
   const drawing: { devices: FlowDrawing['devices'][number][]; vessels: FlowDrawing['vessels'][number][]; buses: FlowDrawing['buses'][number][]; texts: FlowItem[] } = { devices: [], vessels: [], buses: [], texts: [] }
@@ -339,7 +352,7 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
       for (const edge of endsAt(node.id)) {
         const out = inside(box)(edge.points.at(-1)!)
         const look = lookOf(edge)
-        segments.push(stubEndSegment(`${edge.id}:end`, edge.points, out ? 'out' : 'in', look === 'open' ? 'open-generic' : pipeValue(look), edge.view?.mediumKind.startsWith('electric') === true ? 'small' : 'medium', look === 'forward'))
+        segments.push(stubEndSegment(`${edge.id}:end`, pipes.get(edge.id)!, out ? 'out' : 'in', look === 'open' ? 'open-generic' : pipeValue(look), edge.view?.mediumKind.startsWith('electric') === true ? 'small' : 'medium'))
       }
     }
   }
