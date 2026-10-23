@@ -28,8 +28,8 @@ export interface ValueRow {
 }
 
 /**
- * What a row names a value by: its short label, without its element's short name in that element's own detail ("SG A
- * narrow-range level" reads "Narrow-range level" under the title "… · Steam Generator A"); else its label under the title.
+ * What a row names a value by: its short label, without its element's short name in that element's own detail ("Unit
+ * B pressure" reads "Pressure" under the title "… · Unit B"); else its label under the title.
  */
 export const ownLabel = (value: Pick<VignetteValue, 'shortLabel' | 'label' | 'element'>, title: string): string => {
   const short = value.shortLabel
