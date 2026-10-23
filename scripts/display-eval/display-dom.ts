@@ -587,7 +587,8 @@ export const readTargets = (): string => `((() => {${SCREEN_HELPERS}
     let kind = 'control'
     if (region === 'drawing') kind = (el.hasAttribute('data-magnifier') || (small(el) && /faceplate|quick look|magnif|details? of|inspect/i.test(name))) ? 'magnifier' : 'item'
     else if (region === 'chips' || (region === 'header' && closestUp(el, '.state, .chip', win))) kind = 'chip'
-    else if (region === 'alerts' && /^\\+\\s*\\d+|more\\b/i.test(name)) kind = 'more'
+    // "+11 more · 11 UNACK ›", whatever its title says ("Open every alert, by category").
+    else if (region === 'alerts' && (/^\\+\\s*\\d+|more\\b/i.test(name) || el.classList.contains('more') || /^\\+\\s*\\d+\\s+more\\b/i.test((el.innerText || '').trim()))) kind = 'more'
     else if (region === 'alerts' || region === 'trip') kind = 'row'
     else if (region === 'faceplate') kind = 'control'
     add(el, kind, kind === 'item' || kind === 'magnifier' ? bare(name) : name, itemOf(el), true)

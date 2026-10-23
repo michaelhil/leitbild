@@ -460,8 +460,9 @@ const t8 = async (ctx: Ctx): Promise<TaskResult> => {
     const result = await press(ctx.page, more)
     steps.push({ press: more.name, kind: 'more', outcome: describe(result.outcome) })
     list = result.outcome.kind === 'detail' && /alert/i.test(result.outcome.title ?? '')
-    const rows = result.after.lines.filter(line => line.region === 'alerts' && line.valueOn).length
-    moreDetail = `${where === '1920' ? '' : 'every row fits at 1920; at 1046 + chat '}"${more.name}" → ${describe(result.outcome)}${list ? `, ${rows} rows on screen` : ''}`
+    // The list's rows: lines on screen with their time (the L4 list is the display's body, not its alerts block).
+    const rows = result.after.lines.filter(line => line.valueOn && /\b\d{1,2}:\d{2}\b/.test(line.text) && ['alerts', 'body'].includes(line.region)).length
+    moreDetail = `${where === '1920' ? '' : 'every row fits at 1920; at 1046 + chat '}"${more.name}" → ${describe(result.outcome)}${list ? `, ${rows} timed rows on screen` : ''}`
   }
   const shots = [await shotOf(ctx, 'T8')]
   const back = await goHome(ctx.page, home)
