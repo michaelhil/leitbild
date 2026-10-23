@@ -26,12 +26,14 @@
  *   T8  an alert row selects its element (faceplate or detail), and "+N more" opens the full list (L4)
  *   T9  overview → SG A → AFW header with one click per hop, then Esc = Back twice
  *   T10 the same gesture elsewhere: alert rows (T8) and drawn items on the plant; grid elements (R3, W9.1)
+ *   T11 a press on the unit's map icon opens its overview display in the window, and no Plant card (R3, owner 23 Oct)
  *
  * Writes <out>/<label>-walks.json and shots. Loopback only; no model is called. */
 import { join } from 'node:path'
 import { ensureChrome, loopbackOrigin, openPage, options, sleep, type Page } from './browser.ts'
 import { onScreen, type PressTarget, type Screen } from './display-dom.ts'
 import { goHome, homeOf, openOverview, pageDialogs, press, screenOf, sizeSpec, targetsOf, waitForContent, type Home, type Outcome, type SizeSpec } from './display-press.ts'
+import { colourBlobs } from './pixels.ts'
 import { createStackApi, type StackApi } from './stack-api.ts'
 
 type Verdict = '✔' | '◐' | '✖' | 'R3' | 'n/a'
@@ -65,6 +67,8 @@ interface Ctx {
   readonly out: string
   readonly label: string
   readonly runA: string
+  /** The CDP port, for a scratch tab that decodes screenshots (T11). */
+  readonly port: number
   /** One paused copy of Run A that the walks which only look share (made on first use). */
   shared?: string
 }
@@ -516,13 +520,65 @@ const t10 = async (ctx: Ctx, t8Result: TaskResult | undefined, t6Result: TaskRes
   }
 }
 
+/** The process plant's map disk (its fill on the day map), and the least of it a disk shows around its glyph. */
+const PLANT_DISK = { fill: 'rgb(15, 143, 94)', minPixels: 300 } as const
+const POPUP_LABEL = `(() => { for (const d of lb.documents()) { const strong = d.doc && d.doc.querySelector('.maplibregl-popup-content strong'); if (strong) return strong.textContent.trim() } return null })()`
+const CARD = `lb.documents().some(d => d.doc && d.doc.querySelector('.plant-card, [class*="plant-card"]'))`
+
+/** T11: from the map with no window open, a press on the unit's icon opens its overview display; no card opens. The
+ * icon is found where a person sees it (the map's Plant disks, by their fill) and named by the map's own hover card. */
+const t11 = async (ctx: Ctx, sizeName = '1920'): Promise<TaskResult> => {
+  const id = sizeName === '1920' ? 'T11' : `T11-${sizeName}`
+  const title = "A press on the unit's map icon opens its overview display; no Plant card"
+  const size = sizeSpec(sizeName)
+  const runId = ctx.shared ??= await ctx.api.copy(ctx.runA, `walks (look only) · ${new Date().toISOString().slice(0, 19)}`)
+  await ctx.api.load(runId)
+  const { page } = ctx
+  await page.size(size.width, size.height)
+  await page.goto(`${ctx.origin}/workspaces/${ctx.workspaceId}?world=${encodeURIComponent(runId)}`)
+  await page.waitFor({ sel: 'button', text: `Open process display for ${ctx.unit}` }, 120_000)
+  await sleep(5_000)
+  const steps: Step[] = []
+  const fail = async (detail: string): Promise<TaskResult> => ({ id, title, verdict: '✖', budget: 1, clicks: null, path: steps, deadEnds: 0, searched: 0, detail, shots: [await shotOf(ctx, id)], size: sizeName })
+  if ((await screenOf(page)).window !== null) return fail('a display window is open before the press')
+  const scratch = await openPage(ctx.port, 400, 300)
+  const png = (await page.send('Page.captureScreenshot', { format: 'png' })).data as string
+  const disks = await colourBlobs(scratch, png, PLANT_DISK.fill, PLANT_DISK.minPixels).finally(() => scratch.close())
+  const named: string[] = []
+  let icon: { x: number; y: number } | null = null
+  for (const disk of disks.slice(0, 16)) {
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: disk.x, y: disk.y })
+    let label: string | null = null
+    for (let i = 0; i < 8 && label === null; i += 1) { await sleep(150); label = await page.eval<string | null>(POPUP_LABEL) }
+    named.push(`${label ?? '(no hover card)'} at ${disk.x},${disk.y}`)
+    if (label === ctx.unit) { icon = disk; break }
+  }
+  if (icon === null) return fail(`no map icon named "${ctx.unit}": ${disks.length} Plant disks found${named.length > 0 ? ` (${named.slice(0, 6).join('; ')})` : ''}`)
+  const pressed = Date.now()
+  for (const type of ['mousePressed', 'mouseReleased']) await page.send('Input.dispatchMouseEvent', { type, x: icon.x, y: icon.y, button: 'left', clickCount: 1 })
+  let opened: number | null = null
+  while (opened === null && Date.now() - pressed < 10_000) { if ((await screenOf(page)).window !== null) opened = Date.now() - pressed; else await sleep(150) }
+  const content = opened === null ? null : await waitForContent(page)
+  const screen = await screenOf(page)
+  const card = await page.eval<boolean>(CARD)
+  const windowTitle = (screen.window?.title ?? '').split(' · From ')[0]!
+  const overview = screen.window !== null && windowTitle.startsWith(ctx.unit) && (/overview/i.test(windowTitle) || !windowTitle.slice(ctx.unit.length).includes(' · '))
+  steps.push({ press: `map icon "${ctx.unit}" at ${icon.x},${icon.y}`, kind: 'map', outcome: screen.window === null ? (card ? 'a Plant card' : 'nothing') : `window "${windowTitle}" (${screen.window.position ?? ''})${card ? ' and a Plant card' : ''}` })
+  const shots = [await shotOf(ctx, id)]
+  return {
+    id, title, verdict: overview && !card ? '✔' : screen.window !== null ? '◐' : '✖', budget: 1, clicks: 1, path: steps, deadEnds: screen.window === null ? 1 : 0, searched: named.length,
+    detail: `${screen.window === null ? 'no display window opened' : `"${windowTitle}" opened${overview ? ' (its overview)' : ' (not its overview)'} ${opened} ms after the press, its content ${content === null ? 'not within 20 s' : `${content} ms later`}`}; ${card ? 'a Plant card opened' : 'no Plant card'}; the icon found among ${disks.length} Plant disks by its hover card`,
+    shots, size: sizeName,
+  }
+}
+
 const t7 = (): TaskResult => ({
   id: 'T7', title: '"Anything to worry about?": every cited key resolves', verdict: 'R3', budget: null, clicks: null, path: [], deadEnds: 0, searched: 0,
   detail: 'needs an Assistant answer with a vignette: chat-cards.ts judges T7 (every cited key resolves) on the paired AI eval\'s answers (R3, ≤ USD 4)',
   shots: [],
 })
 
-export const TASKS = ['T1', 'T1-live', 'T2', 'T3-1046', 'T3-1440x900+chat', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10'] as const
+export const TASKS = ['T1', 'T1-live', 'T2', 'T3-1046', 'T3-1440x900+chat', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11'] as const
 
 if (import.meta.main) {
   const argv = options(Bun.argv.slice(2))
@@ -535,7 +591,7 @@ if (import.meta.main) {
   const chrome = await ensureChrome({ port, profile: join(out, `chrome-${port}`) })
   const api = createStackApi(origin, workspaceId)
   const page = await openPage(port, 1920, 1080)
-  const ctx: Ctx = { page, api, origin, workspaceId, unit: argv.get('unit') ?? 'Halden Unit 1', plantId: argv.get('plant') ?? 'plant:halden-1', out, label, runA }
+  const ctx: Ctx = { page, api, origin, workspaceId, unit: argv.get('unit') ?? 'Halden Unit 1', plantId: argv.get('plant') ?? 'plant:halden-1', out, label, runA, port }
   // A rerun of some tasks keeps the others' results in the same file.
   const file = join(out, `${label}-walks.json`)
   const earlier: ReadonlyArray<TaskResult> = await Bun.file(file).exists() ? (JSON.parse(await Bun.file(file).text()).results ?? []) : []
@@ -549,7 +605,8 @@ if (import.meta.main) {
         result = task === 'T1' ? await t1(ctx, false) : task === 'T1-live' ? await t1(ctx, true) : task === 'T2' ? await t2(ctx)
           : task.startsWith('T3-') ? await t3(ctx, task.slice(3)) : task === 'T4' ? await t4(ctx) : task === 'T5' ? await t5(ctx) : task === 'T6' ? await t6(ctx)
             : task === 'T7' ? t7() : task === 'T8' ? await t8(ctx) : task === 'T9' ? await t9(ctx)
-              : task === 'T10' ? await t10(ctx, results.find(r => r.id === 'T8'), results.find(r => r.id === 'T6')) : (() => { throw new Error(`unknown task ${task}`) })()
+              : task === 'T10' ? await t10(ctx, results.find(r => r.id === 'T8'), results.find(r => r.id === 'T6'))
+                : task === 'T11' ? await t11(ctx) : task.startsWith('T11-') ? await t11(ctx, task.slice(4)) : (() => { throw new Error(`unknown task ${task}`) })()
       } catch (error) {
         result = { id: task, title: '(walk failed to run)', verdict: '✖', budget: null, clicks: null, path: [], deadEnds: 0, searched: 0, detail: `the walk threw: ${String(error).slice(0, 300)}`, shots: [await shotOf(ctx, `${task}-failed`).catch(() => '')] }
       }
