@@ -38,8 +38,9 @@ describe('Leitbild Assistant skills', () => {
     expect(displays.body).toContain('advisories and acknowledged alerts count (acknowledged is not resolved); name each pack\'s top item at caution or above with its alert text; then compose `{"subjects": [], "views": [{"kind": "alerts", "scope": "run"}]}`.')
     // E1 Q16: one pack's objects go to that pack's own display operation where the Run offers one, found at runtime.
     expect(displays.body).toContain("For one pack's objects, prefer that pack's own display-composing operation when the Run offers one; World's composer serves cross-pack views and packs without one.")
-    // After the swap a proposed operation is approved from the element's popover on its vignette.
-    expect(displays.body).toContain("After proposing an operation, show the element's vignette, whose popover holds it.")
+    // A proposed operation is approved from the element's faceplate in the display window (plan v5 §3).
+    expect(displays.body).toContain("After proposing an operation, show the element's display, whose faceplate holds it.")
+    expect(displays.body).not.toMatch(/pop-?over/i)
     // The skill names no pack.
     expect(`${displays.description}\n${displays.body}`).not.toMatch(/plant|grid|weather|einsatz|ambulance|drone|reactor|halden/i)
     // Plant equipment is operated by proposing it for a person's decision (plan C1 §4.4).
