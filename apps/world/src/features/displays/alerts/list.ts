@@ -1,14 +1,14 @@
 import { asksAttention, groupKey, priorityRank, simulationMs, type AlertRow } from './rows.ts'
 
-// An alert list as an operator reads it (plan v5 W2.5, W2.6), over the rows a
+// An alert list as an operator reads it (plan v5 W2.4–W2.6), over the rows a
 // sample carries, generic for every Pack: first the first-outs, in the order
 // they came in; then what challenges an object's own states (a safety
 // function); then new alarms that ask attention, the worst first and the
 // newest of each priority first; then those returned to normal still
 // unacknowledged; then one line per first-out that what came in as expected
 // after it folds into ("15 expected after RX TRIP"), and one for the standing
-// and advisory ones, each opening in place. The full list (L4: by category,
-// filtered) reads the same rows.
+// and advisory ones, each opening in place. The trip line and the full list
+// (L4: by category, filtered) read the same rows.
 
 /** Where a row stands in a list. */
 export type ListPart = 'first-out' | 'state' | 'new' | 'returned' | 'expected' | 'quiet'
@@ -103,6 +103,31 @@ export const ageText = (nowMs: number, row: AlertRow): string | null => {
   if (at === null || !Number.isFinite(nowMs)) return null
   const seconds = Math.max(0, Math.round((nowMs - at) / 1000))
   return seconds < 3600 ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` : `${Math.floor(seconds / 3600)} h ${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}`
+}
+
+export interface TripLine {
+  /** First-outs whose group stops an energy end (the trip), in the order they came in, each with what its label opens. */
+  readonly leads: ReadonlyArray<{ readonly row: AlertRow; readonly label?: string; readonly ends: ReadonlyArray<string> }>
+  /** The other groups that have actuated (an alert of theirs holds until reset), by label, in the order they came in. */
+  readonly actuated: ReadonlyArray<{ readonly label: string; readonly row: AlertRow }>
+}
+
+/**
+ * One object's trip line, in the strip's order. Where its Pack names its groups, each group whose actuations stop an
+ * energy end leads with its first-out (else its earliest held alert) and the others that hold are actuated; where it
+ * names none, its first-outs lead in the order they came in.
+ */
+export const tripLine = (rows: ReadonlyArray<AlertRow>, objectId: string): TripLine => {
+  const own = rows.filter(row => row.objectId === objectId).sort(earliest)
+  if (!own.some(row => row.action !== undefined)) return { leads: own.filter(row => row.alert.firstOut?.rank === 1).map(row => ({ row, ends: [] })), actuated: [] }
+  const held = own.filter(row => row.alert.latched === true && row.state !== 'returned-unack' && row.action !== undefined)
+  const labels = [...new Set([...own.filter(row => row.alert.firstOut?.rank === 1 && row.action !== undefined), ...held].sort(earliest).map(row => row.action!.label))]
+  const first = (label: string): AlertRow => own.find(row => row.action?.label === label && row.alert.firstOut?.rank === 1) ?? held.find(row => row.action!.label === label)!
+  const stops = (label: string): ReadonlyArray<string> => own.find(row => row.action?.label === label)?.action?.ends ?? []
+  return {
+    leads: labels.filter(label => stops(label).length > 0).map(label => ({ row: first(label), label, ends: stops(label) })).sort((left, right) => earliest(left.row, right.row)),
+    actuated: labels.filter(label => stops(label).length === 0 && held.some(row => row.action!.label === label)).map(label => ({ label, row: first(label) })),
+  }
 }
 
 /** The full list's filters, in the grid alarm list's words. */

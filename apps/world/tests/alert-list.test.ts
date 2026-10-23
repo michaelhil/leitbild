@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { AlertState } from '../src/core/model/alerts.ts'
 import type { ObjectId } from '../src/core/model/ids.ts'
-import { ageText, categoryGroups, firstOutMark, fitLines, listLines, listOrder, listPart, passes, type ListLine } from '../src/features/displays/alerts/list.ts'
+import { ageText, categoryGroups, firstOutMark, fitLines, listLines, listOrder, listPart, passes, tripLine, type ListLine } from '../src/features/displays/alerts/list.ts'
 import type { AlertRow } from '../src/features/displays/alerts/rows.ts'
 
 // The alerts organisation (plan v5 W2.4–W2.6) over the alert rows a sample
@@ -61,6 +61,28 @@ describe('the list (W2.5)', () => {
     expect(ageText(t0 + 179_000, row('a', 0))).toBe('2:59')
     expect(ageText(t0 + 3_900_000, row('a', 0))).toBe('1 h 05')
     expect(ageText(Number.NaN, row('a', 0))).toBeNull()
+  })
+})
+
+describe('the trip line (W2.4)', () => {
+  test('first-outs that stop an energy end lead as they came in, the other groups that hold are actuated, as OLD\'s banner and the strip order them', () => {
+    // Halden LOOP (Run A): the turbine tripped on loss of load, then the reactor on the turbine trip; AFW started and feedwater isolated.
+    const act = (id: string, seconds: number, label: string, ends?: ReadonlyArray<string>, firstOut = false) =>
+      row(id, seconds, { latched: true, kind: 'trip', ...(firstOut ? { firstOut: { group: label, rank: 1 } } : {}) }, { action: { label, ...(ends === undefined ? {} : { ends }) } })
+    const rows = [
+      act('rx-trip', 2, 'RX TRIP', ['core'], true), act('rx-trip-rcp', 2, 'RX TRIP', ['core']), act('afw', 3, 'AFW START', undefined, true),
+      act('p4', 3, 'TURB TRIP', ['turbine']), act('fwi', 12, 'FWI', undefined, true), act('turb-trip', 1, 'TURB TRIP', ['turbine'], true),
+      row('loop', 1), { ...row('other-unit', 0, { firstOut: { group: 'RX TRIP', rank: 1 } }), objectId: 'unit-2' as ObjectId },
+    ]
+    const line = tripLine(rows, 'unit')
+    expect(line.leads.map(lead => [lead.label, lead.row.alert.id, lead.ends])).toEqual([['TURB TRIP', 'turb-trip', ['turbine']], ['RX TRIP', 'rx-trip', ['core']]])
+    expect(line.actuated.map(entry => [entry.label, entry.row.alert.id])).toEqual([['AFW START', 'afw'], ['FWI', 'fwi']])
+    // Without a reactor or turbine trip nothing leads; the actuations still show. A reset one is no longer actuated.
+    const quiet = rows.filter(entry => !['rx-trip', 'rx-trip-rcp', 'p4', 'turb-trip'].includes(entry.alert.id))
+    expect(tripLine(quiet, 'unit').leads).toEqual([])
+    expect(tripLine(quiet.map(entry => entry.alert.id === 'fwi' ? { ...entry, state: 'returned-unack' as const } : entry), 'unit').actuated.map(entry => entry.label)).toEqual(['AFW START'])
+    // A Pack that names no groups: its first-outs lead as they came in.
+    expect(tripLine([row('b', 5, { firstOut: { group: 'g2', rank: 1 } }), row('a', 4, { firstOut: { group: 'g1', rank: 1 } }), row('c', 3)], 'unit').leads.map(lead => lead.row.alert.id)).toEqual(['a', 'b'])
   })
 })
 

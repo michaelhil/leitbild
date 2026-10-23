@@ -12,6 +12,7 @@
   import { provideOpening } from './opening.svelte.ts'
   import Sections from './Sections.svelte'
   import StateWord from './StateWord.svelte'
+  import TripLine from './TripLine.svelte'
   import './openbridge.ts'
 
   // A vignette's frame (architecture B): its title, the "Assistant" mark where
@@ -85,6 +86,7 @@
       <span class="chip neutral">{severityStyle(null, worst.severity)!.word}</span>
     {/if}
   </header>
+  {#if view !== undefined && latest !== undefined}<TripLine {view} rows={latest.alerts} />{/if}
 
   {#if view?.chips !== undefined}
     <!-- The object's own states (its safety functions, its mode), one row under the title. -->
