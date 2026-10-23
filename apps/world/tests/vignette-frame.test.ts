@@ -3,11 +3,12 @@ import type { Observation } from '../src/core/observation/model.ts'
 import type { VignetteValue } from '../src/features/displays/compose/model.ts'
 import { safetyFunctionReading } from '../src/packs/process-plant/observation/safety-function-reading.ts'
 import type { SafetyFunctionEvaluation } from '../src/packs/process-plant/safety-functions.ts'
+import { frameLayout } from '../src/ui/embed/vignette/grid.ts'
 import { chipOrder, stateChipLook } from '../src/ui/embed/vignette/state-chip.ts'
 
-// A vignette's frame (plan v5 W4.1): an object's own states as compact chips
-// on its title row, and the per-sample pointer and path the Plant reads them
-// with.
+// A vignette's frame (plan v5 W4.1, W4.3, W8.1): an object's own states as
+// compact chips on its title row, the per-sample pointer and path the Plant
+// reads them with, and the window frame's layout by its width.
 
 const at = '2026-10-22T10:00:00.000Z'
 const observation = (ref: string, value: Observation['value'], extra: Partial<Observation> = {}): Observation =>
@@ -90,5 +91,25 @@ describe('the safety function reading (W4.1, per sample)', () => {
     expect(why.startsWith('… · ')).toBe(true)
     expect(why.endsWith('GREEN: The heat sink is satisfied.')).toBe(true)
     expect(why).toContain('Question 7')
+  })
+})
+
+describe('the window frame by its width (W4.3)', () => {
+  // The whole-plant drawing is 1488 px; beside it, 16 px and the 360 px column.
+  test('side by side where drawing and column fit; until it is measured, as composed', () => {
+    expect(frameLayout({ width: 1864, drawingWidth: 1488, zoom: 1 })).toEqual({ kind: 'beside' })
+    expect(frameLayout({ width: 0, drawingWidth: 1488, zoom: 1 })).toEqual({ kind: 'beside' })
+  })
+
+  test('narrower, the column goes first as a band; the drawing stands whole where it fits', () => {
+    expect(frameLayout({ width: 1863, drawingWidth: 1488, zoom: 1 })).toEqual({ kind: 'band', drawing: 'whole' })
+    expect(frameLayout({ width: 1488, drawingWidth: 1488, zoom: 1 })).toEqual({ kind: 'band', drawing: 'whole' })
+  })
+
+  test('scaled to the width only where its whole fits with its text at 11 px or more on screen; else it scrolls, never both', () => {
+    expect(frameLayout({ width: 1400, drawingWidth: 1488, zoom: 1 })).toEqual({ kind: 'band', drawing: 'scaled', scale: 1400 / 1488 })
+    // At the window's 92 % its 12 px text is already 11 px: any further scale would go below the floor.
+    expect(frameLayout({ width: 1400, drawingWidth: 1488, zoom: 0.917 })).toEqual({ kind: 'band', drawing: 'scrolled' })
+    expect(frameLayout({ width: 1030, drawingWidth: 1488, zoom: 1 })).toEqual({ kind: 'band', drawing: 'scrolled' })
   })
 })

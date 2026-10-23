@@ -8,8 +8,9 @@
   // One trend strip (architecture B): its pens step-and-hold over the trend's
   // window for the hold served with their record, told apart by dash; the
   // time before the record starts hatched; the limits all of them share;
-  // beside it a legend row per pen with its value now. The last strip of a
-  // trend carries the time axis on the row below it.
+  // beside it a legend row per pen with its value now, never wider than a
+  // block of values (U-06). The last strip of a trend carries the time axis on
+  // the row below it.
   let { pens, title, series, observations, now, horizonMs, rows, axis }: {
     pens: ReadonlyArray<VignetteValue>
     /** The vignette's title: a pen's name drops the object it names. */
@@ -74,7 +75,7 @@
 </div>
 
 <style>
-  .strip { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 38%); column-gap: 8px; }
+  .strip { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, min(38%, 480px)); column-gap: 8px; }
   .plot { height: calc(var(--plot-rows) * var(--row)); min-width: 0; border: 1px solid var(--border-divider-color); border-radius: 3px; background: var(--container-section-color); }
   svg { display: block; overflow: visible; }
   .empty { margin: 0; padding: 4px 6px; color: var(--element-neutral-color); }
