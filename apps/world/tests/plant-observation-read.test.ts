@@ -105,11 +105,14 @@ describe('plant observation read (P3)', () => {
     expect(facts.undeclared).toMatchObject({ observations: [], unknown: [`${plant.plantId}#core.noSuchSignal`] })
   })
 
-  test('T35: the unit leads with what its mode needs, and a trip changes it', () => {
-    expect(facts.leadAtPower.map(path)).toEqual(['core.powerRangePercent', 'pressurizer.pressureMPa', 'vessel.subcoolingMarginC', 'vessel.collapsedLiquidLevelPercent', 'core.coreExitTemperatureC', 'turbine.electricMw', 'containment.pressureMPa', 'offsiteGrid.frequencyHz'])
+  test('T35: the unit leads with what its mode needs, and a trip changes it; the energy in and out follows in every mode', () => {
+    expect(facts.leadAtPower.map(path)).toEqual(['core.powerRangePercent', 'pressurizer.pressureMPa', 'vessel.subcoolingMarginC', 'vessel.collapsedLiquidLevelPercent', 'core.coreExitTemperatureC', 'turbine.electricMw', 'core.totalThermalPowerMw', 'containment.pressureMPa'])
     expect(facts.leadAtPower.every((observation: Observation | undefined) => observation !== undefined)).toBe(true)
     expect(facts.leadTripped.map(path).slice(0, 3)).toEqual(['vessel.subcoolingMarginC', 'core.coreExitTemperatureC', 'auxFeedwaterHeader.outletFlowKgPerS'])
-    expect(facts.leadTripped.map(path)).not.toContain('turbine.electricMw')
+    // After the trip no power the unit no longer makes leads: the energy in and out (the Plant card's readings, now the
+    // overview's) follows the six values its mode needs.
+    expect(facts.leadTripped.map(path).slice(0, 6)).not.toContain('turbine.electricMw')
+    expect(facts.leadTripped.map(path).slice(6)).toEqual(['core.totalThermalPowerMw', 'turbine.electricMw'])
   })
 
   test('timeToAct only where a named delay runs down to one of the value\'s limits', () => {

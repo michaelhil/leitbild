@@ -11,7 +11,9 @@ import {
   type PlantGraphSpec,
   type ProcessVariableLimits,
 } from '../src/packs/process-plant/index.ts'
-import { equipmentKeyValues, isDemand, overviewKeyValues, readsAsMeasured, type PlantNow } from '../src/packs/process-plant/ic/key-values.ts'
+import { equipmentKeyValues, isDemand, overviewKeyValues, plantNowOf, readsAsMeasured, type PlantNow } from '../src/packs/process-plant/ic/key-values.ts'
+import { leadPaths } from '../src/packs/process-plant/observation/read.ts'
+import { createProcessPlantRuntimeInstances } from '../src/packs/process-plant/sim/runtime-instance-factory.ts'
 import { createProcessPlantProtectionRunner, createProcessPlantRuntime, processPlantIcConfigSchema, processPlantOperatingMode } from '../src/packs/process-plant/runtime/index.ts'
 import type { SimulationRunId } from '../src/core/model/index.ts'
 import { guardPlantTests, PLANT_HANG_GUARD_MS } from './plant-hang-guard.ts'
@@ -113,6 +115,29 @@ describe('the values a unit overview leads with', () => {
       'pressurizer.levelPercent',
     ] as never)
     expect(relief.read('safetyInjectionHeader.outletFlowKgPerS' as never)).toBeGreaterThan(30)
+  }, PLANT_HANG_GUARD_MS)
+
+  test('its lead read gives, right after the overview\'s own values, the energy each source puts in and each sink takes out, in every mode', () => {
+    // A press on a unit opens its overview, whose column leads with this read: the rates the Plant card showed
+    // (owner, 23 Oct) are lead values at power and after a trip, the decay heat among them.
+    const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:lead-energy', loopCount: 4 }))
+    const system = createProcessPlantRuntimeInstances({ compiledPlants: [plant], runtimeState: null }).get(plant.id)!
+    const step = () => {
+      system.runtime.tick(1_000)
+      system.protection!.evaluate({ runtime: system.runtime, elapsedMs: system.runtime.elapsedMs(), simulationRunId: 'run-lead-energy' as SimulationRunId, sourceRuntimeId: 'process-plant.local' })
+    }
+    step()
+    const atPower = overviewKeyValues(plant, plantNowOf(system))
+    expect(atPower).toContain('turbine.electricMw' as never)
+    expect(leadPaths(system, 16).slice(0, 7)).toEqual([...atPower, 'core.totalThermalPowerMw'] as never)
+    for (const command of commandsForProcessPlantAction({ actionId: 'trip-reactor-coolant-pumps', parameters: {}, graph: plant.graph })) {
+      system.runtime.writeCommand({ type: 'setVariable', path: command.path, value: command.value })
+    }
+    for (let second = 0; second < 5; second += 1) step()
+    expect(plantNowOf(system).mode).toBe('hotStandby')
+    const tripped = overviewKeyValues(plant, plantNowOf(system))
+    expect(tripped).not.toContain('turbine.electricMw' as never)
+    expect(leadPaths(system, 16).slice(0, 8)).toEqual([...tripped, 'core.totalThermalPowerMw', 'turbine.electricMw'] as never)
   }, PLANT_HANG_GUARD_MS)
 })
 
