@@ -255,6 +255,8 @@
   }
   let markReader: ((runId: SimulationRunId, objectId: never) => Promise<PackElementMarks>) | null | undefined
   let marking = false
+  /** Why the last read of the marks failed, until one succeeds. */
+  let marksFailure = $state<string | null>(null)
   const readMarks = async (): Promise<void> => {
     if (marking || opening !== 'window' || !presentation.shown) return
     marking = true
@@ -262,9 +264,10 @@
       markReader ??= (await (await loadEmbedPack(section.packId))?.elementMarks?.())?.read as typeof markReader ?? null
       if (markReader === null || markReader === undefined) return
       marks = await markReader(runId, section.objectId as never)
+      marksFailure = null
       review()
     } catch (error) {
-      notice = `What waits on this display cannot be read: ${error instanceof Error ? error.message : String(error)}`
+      marksFailure = `What waits on this display cannot be read: ${error instanceof Error ? error.message : String(error)}`
     } finally {
       marking = false
     }
@@ -454,6 +457,7 @@
   </div>
   </div>
   {#if notice !== null}<p class="notice" role="status">{notice}</p>{/if}
+  {#if marksFailure !== null}<p class="notice" role="status">{marksFailure}</p>{/if}
   <!-- Outside the drawing: a scaled drawing's transform would otherwise hold the faceplates' fixed places. -->
   {#each overlays as overlay (overlay.item)}{@render card(overlay.item, overlay)}{/each}
   {#if faceplate.kind === 'open' && !pinned(faceplate.item)}
