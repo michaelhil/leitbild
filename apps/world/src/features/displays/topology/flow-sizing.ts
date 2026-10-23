@@ -6,9 +6,10 @@
 // and drawing ids are the graph's node and edge ids. A store stands two cells
 // by four, as OpenBridge's tank does, and the lanes' hub as the vessel it is
 // drawn as, its head above its nozzles. Each item writes its name and under
-// it its state word (or the command it does not follow) and, where there is
-// room, its readings (layout.ts itemText). A group writes how many of its
-// members run.
+// it its state (layout.ts itemText): its state word, or the word that says it
+// stopped, and on the line below the command it may not follow; then, where
+// there is room, its readings. A group writes its members' word and how many
+// of them say it, and the command they may not follow.
 // The ceilings are today's displays': a drawing across lanes keeps the unit
 // overview's twelve crossings, one within a lane an equipment detail's four;
 // three bends an edge, a fourth only where three draw nothing. The layout
@@ -16,22 +17,32 @@
 import { layoutDiagram, type DiagramProfile } from '../diagram/index.ts'
 import type { TopologyGraph, TopologyNode } from '../../../core/observation/topology.ts'
 import { flowPlan, type FlowSizing } from './flow.ts'
-import { groupName, itemText, readingWord, type TopologyLayout } from './layout.ts'
+import { groupName, itemText, type TopologyLayout } from './layout.ts'
 import type { ScopedTopology } from './scope.ts'
+import { stopLabel, stopStated, type DrawnStop } from './stops.ts'
 
 /**
  * The renderer's grid pitch and its text lines (16 high, about 8 a character), in the engine's units; a reading's
- * value takes up to ten characters ("15.51 MPa"). A level's reading is written after its word (layout.ts
- * readingWord) and reads its percent of span, by which it fills its vessel: at most seven characters ("LVL 100.0 %").
- * A level's room of word and ten characters would leave the four-loop overview no room for any reading.
+ * value takes up to ten characters ("15.51 MPa"). A reading its Pack writes a word before reads a share, since its
+ * unit would say what it reads otherwise: the word and seven characters ("LVL 100.0 %", "PWR 100.0 %"); a word
+ * and ten would leave the four-loop overview no room for any reading. A quantity read by instruments in turn reads
+ * on one of them a two-digit power of ten or a count to a million ("8.8×10⁻¹¹ A", "1000000 cps"): eleven.
  */
 const GRID = 24
 export const FLOW_TEXT_LINE = { height: 16, perCharacter: 8 } as const
 export const READING_CHARACTERS = 10
-const LEVEL_VALUE_CHARACTERS = '100.0 %'.length
-const readingCharacters = (word: string | null): number => (word === null ? READING_CHARACTERS : word.length + 1 + LEVEL_VALUE_CHARACTERS)
-/** A state word ("ON LINE", "part open"), or in its place the command the item does not follow ("CMD RUN", "CMD CLOSED", "CMD 40 %"). */
+const SHARE_CHARACTERS = '100.0 %'.length
+const IN_TURN_CHARACTERS = READING_CHARACTERS + 1
+const readingCharacters = (reading: ReadonlyArray<TopologyNode['bindings'][number]>): number =>
+  Math.max(...reading.map(binding => (binding.word !== undefined ? binding.word.length + 1 + SHARE_CHARACTERS : reading.length > 1 ? IN_TURN_CHARACTERS : READING_CHARACTERS)))
+/** A state word ("ON LINE", "part open"). */
 export const STATE_CHARACTERS = 10
+/** A group's state: its members' word and how many of them say it ("RUN 1/2", "STOP 2/2"), in a state word's room. */
+export const GROUP_CHARACTERS = STATE_CHARACTERS
+/** The word that says an item has stopped, or while a command to stop it stands unmet that it has not ("Rods off bottom"). */
+export const STOPPED_CHARACTERS = 15
+/** A command the item does not follow, on its own line under its state ("CMD RUN", "CMD CLOSED", "CMD 40 %", "CMD trip"). */
+export const COMMAND_CHARACTERS = 10
 /** The vessel's head and flange above its first nozzle, and its bottom below its last. */
 const VESSEL_ENDS = { top: 2 * GRID, bottom: GRID }
 
@@ -54,10 +65,9 @@ export const flowProfiles = {
 /** A header: a junction whose ports, more than two, are all one circuit. */
 const isHeader = (node: TopologyNode): boolean => node.class === 'junction' && node.ports.length > 2 && new Set(node.ports.map(port => port.circuit ?? port.id)).size === 1
 const TALL: ReadonlySet<string> = new Set(['store'])
-/** A stop names each far end once, however many of its ports the drawing stops at. */
-const farNames = (names: ReadonlyArray<string>): ReadonlyArray<string> => [...new Set(names)]
 
-export const flowSizing = (graph: TopologyGraph): FlowSizing<null> => {
+/** `directions`: whether a stop writes "to" or "from" before what it names (flowLayout drops them where they find no room). */
+export const flowSizing = (graph: TopologyGraph, directions = true): FlowSizing<null> => {
   const classOf = new Map(graph.nodes.map(node => [node.id, node.class]))
   // A bus joins more than two lines; one with fewer (a battery, an inverter, a load at the end of a line) is an item on its line.
   const lines = new Map<string, number>()
@@ -66,7 +76,7 @@ export const flowSizing = (graph: TopologyGraph): FlowSizing<null> => {
   const label = (node: TopologyNode): string => node.shortLabel ?? node.label
   const line = (characters: number, required: boolean) => ({ width: Math.max(GRID, characters * FLOW_TEXT_LINE.perCharacter), height: FLOW_TEXT_LINE.height, required })
   return {
-    key: 'vignette-flow-10',
+    key: 'vignette-flow-11',
     visible: () => true,
     silent: edge => ['sink', 'boundary'].includes(classOf.get(edge.to.node) ?? '') && !leaving.has(edge.to.node),
     bar: node => (node.class === 'bus' && (lines.get(node.id) ?? 0) > 2) || isHeader(node),
@@ -79,18 +89,22 @@ export const flowSizing = (graph: TopologyGraph): FlowSizing<null> => {
     item: item => {
       const grouped = item.members.length > 1
       const text = grouped ? groupName(item.members.map(label)) : label(item.node)
-      // A group says how many of its members run ("RUN 2/2"); a lone item its state word (or the command it does not
-      // follow) and its readings.
+      // A group says how many of its members run ("RUN 2/2"); a lone item its state and its readings. A state its item
+      // may not follow (a command it is given, a trip that stops it) keeps a line for the command under it.
       const written = itemText(item.node.bindings)
-      const lines = [line(text.length, true), ...(grouped ? [line(7, true)] : [
-        ...(written.state === null ? [] : [line(STATE_CHARACTERS, true)]),
-        ...written.readings.map(ref => line(readingCharacters(readingWord(item.node.bindings, ref)), false)),
+      const lines = [line(text.length, true), ...(grouped ? [line(GROUP_CHARACTERS, true), ...(item.members.some(member => itemText(member.bindings).commanded) ? [line(COMMAND_CHARACTERS, true)] : [])] : [
+        ...(written.state === null ? [] : [line(written.state.role === 'stopped' ? STOPPED_CHARACTERS : STATE_CHARACTERS, true), ...(written.commanded ? [line(COMMAND_CHARACTERS, true)] : [])]),
+        ...written.readings.map(reading => line(readingCharacters(reading), false)),
       ])]
       const vessel = item.role === 'hub'
       const cells = vessel || TALL.has(item.node.class) ? { width: 2, height: 4 } : { width: 2, height: 2 }
       return { label: text, node: { cells, portInset: 0, text: { lines }, frameable: false, ...(vessel ? { ends: VESSEL_ENDS } : {}) }, keep: null }
     },
-    stop: stop => ({ lines: [line(farNames(stop.others.map(other => label(graph.nodes.find(node => node.id === other.node)!))).join(', ').slice(0, 24).length, true)] }),
+    // A stop writes "to" or "from" and what lies beyond (stops.ts), and on a power line the state of what it names.
+    stop: stop => ({ lines: [
+      line(stopLabel(directions ? stop.direction : null, stop.others.map(other => label(graph.nodes.find(node => node.id === other.node)!))).length, true),
+      ...(stopStated(graph, stop) ? [line(STATE_CHARACTERS, true)] : []),
+    ] }),
   }
 }
 
@@ -101,12 +115,24 @@ const barsOnlyJoinBars = (graph: ReturnType<typeof flowPlan>['graph']): boolean 
   return graph.edges.some(edge => bars.has(edge.from.node) && bars.has(edge.to.node) && [edge.from.node, edge.to.node].every(bar => neighbours(bar).every(other => bars.has(other))))
 }
 
-/** Where a drawing stops, by its layout id: the labels of what lies beyond. */
-export type DrawnStops = Readonly<Record<string, { readonly direction: 'in' | 'out'; readonly others: ReadonlyArray<string>; readonly medium: string }>>
+/** Where a drawing stops, by its layout id. */
+export type DrawnStops = Readonly<Record<string, DrawnStop>>
 
-/** A scoped flow graph laid out for a room in grid units, or null where no drawing verifies within its ceilings. */
+/**
+ * A scoped flow graph laid out for a room in grid units, or null where no drawing verifies within its ceilings. Its
+ * stops write "to" and "from" where the drawing has room for them; where none does, they name what lies beyond bare,
+ * every name kept (the four-loop overview's stops in its loops: R2 W6.2; the words need the measured text of W6.5).
+ */
 export const flowLayout = (scoped: ScopedTopology, room: { readonly columns: number; readonly rows: number }): { readonly layout: TopologyLayout; readonly stops: DrawnStops } | null => {
-  const sizing = flowSizing(scoped.graph)
+  for (const directions of [true, false]) {
+    const drawn = flowLayoutWith(scoped, room, directions)
+    if (drawn !== 'no room') return drawn
+  }
+  return null
+}
+
+const flowLayoutWith = (scoped: ScopedTopology, room: { readonly columns: number; readonly rows: number }, directions: boolean): { readonly layout: TopologyLayout; readonly stops: DrawnStops } | null | 'no room' => {
+  const sizing = flowSizing(scoped.graph, directions)
   const planned = flowPlan(scoped, sizing)
   if (planned.graph.nodes.length === 0 || barsOnlyJoinBars(planned.graph)) return null
   const lanes = new Set(planned.graph.nodes.flatMap(node => (node.partition === undefined ? [] : [node.partition.key]))).size
@@ -114,12 +140,16 @@ export const flowLayout = (scoped: ScopedTopology, room: { readonly columns: num
   const fit = { maxWidth: room.columns * GRID, maxHeight: room.rows * GRID }
   const first = layoutDiagram(planned.graph, ladder[0], fit)
   const result = first.ok ? first : layoutDiagram(planned.graph, ladder[1], fit)
-  if (!result.ok) return null
+  if (!result.ok) return planned.stops.size === 0 || !directions ? null : 'no room'
   const grid = (value: number): number => value / GRID
   const box = <T extends { readonly x: number; readonly y: number; readonly width: number; readonly height: number }>(at: T) => ({ x: grid(at.x), y: grid(at.y), width: grid(at.width), height: grid(at.height) })
   const label = (id: string): string => sizing.label(scoped.graph.nodes.find(node => node.id === id)!)
   const mediumOf = (edge: string): string => scoped.graph.edges.find(entry => entry.id === edge)!.medium
-  const stops = Object.fromEntries([...planned.stops].map(([id, stop]) => [id, { direction: stop.direction, others: farNames(stop.others.map(other => label(other.node))), medium: mediumOf(stop.edges[0]!) }]))
+  // Each far end once, however many of its ports the drawing stops at.
+  const stops = Object.fromEntries([...planned.stops].map(([id, stop]) => [id, {
+    direction: stop.direction, label: stopLabel(directions ? stop.direction : null, stop.others.map(other => label(other.node))),
+    far: [...new Set(stop.others.map(other => other.node))], edges: stop.edges, medium: mediumOf(stop.edges[0]!),
+  }]))
   const membersOf = (id: string): ReadonlyArray<string> => planned.items.get(id)?.item.members.map(member => member.id) ?? []
   return { stops, layout: {
     family: 'flow', unit: 'grid', width: Math.ceil(grid(result.width)), height: Math.ceil(grid(result.height)),

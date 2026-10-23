@@ -39,24 +39,39 @@ describe('plant topology provider (P5)', () => {
 
   test('D1: nodes and lines are bound to what the Plant publishes, each binding a declared observable of the Plant', () => {
     const declared = new Map(plantDeclaration(objectId, plant, null).observables.map(observable => [observable.ref, observable]))
+    // Its key values first, as its kind ranks them (a drawing writes its readings in this order), then what its aspects drive.
     expect({
       pressurizer: bindings('pressurizer'), rcp: bindings('rcpA'), bus: bindings('safetyBusA'), valve: bindings('mainSteamIsolationValveA'), header: bindings('feedwaterHeader'),
     }).toEqual({
-      pressurizer: ['level pressurizer.levelPercent', 'value pressurizer.pressureMPa', 'value pressurizer.levelPercent'],
+      pressurizer: ['value pressurizer.pressureMPa', 'value pressurizer.levelPercent', 'level pressurizer.levelPercent'],
       rcp: ['running rcpA.state'],
-      bus: ['value safetyBusA.voltageKv', 'conducting safetyBusA.state'],
-      valve: ['position mainSteamIsolationValveA.effectivePositionFraction', 'conducting mainSteamIsolationValveA.state'],
+      bus: ['conducting safetyBusA.state', 'value safetyBusA.voltageKv'],
+      valve: ['conducting mainSteamIsolationValveA.state', 'position mainSteamIsolationValveA.effectivePositionFraction'],
       header: ['flow feedwaterHeader.outletFlowKgPerS'],
     })
-    // A position is a fraction of travel: a valve's opening, each of the core's rod banks' inserted share (the role's contract).
-    expect(bindings('core')).toEqual(['level vessel.collapsedLiquidLevelPercent', 'value core.coreExitTemperatureC',
+    // The core (W1.2): what says a trip stopped it, its flux on the instrument in range (counted by the source range, a
+    // current while P-6 holds, a percent while P-10 does), CET, the vessel's level, and its rod banks' inserted shares in
+    // their groups, shutdown banks then control banks. A position is a fraction of travel: a valve's opening, each bank's
+    // inserted share (the role's contract).
+    const core = served.nodes.find(candidate => candidate.id === 'core')!.bindings
+    expect(bindings('core')).toEqual(['stopped core.stopped', 'value core.sourceRangeCountRateCps', 'value core.intermediateRangeCurrentAmps', 'value core.powerRangePercent',
+      'value core.coreExitTemperatureC', 'level vessel.collapsedLiquidLevelPercent',
       ...['shutdownBankA', 'shutdownBankB', 'shutdownBankC', 'shutdownBankD', 'controlBankA', 'controlBankB', 'controlBankC', 'controlBankD'].map(bank => `position core.${bank}StepsWithdrawn.inserted`)])
+    expect(core.slice(1, 4).map(binding => [binding.while?.slice(binding.while.indexOf('#') + 1), binding.word])).toEqual([[undefined, undefined], ['core.aboveP6', undefined], ['core.aboveP10', 'PWR']])
+    expect(core.filter(binding => binding.role === 'position').map(binding => binding.group)).toEqual(['1', '1', '1', '1', '2', '2', '2', '2'])
+    // A share says what it reads where a drawing writes it (LVL, PWR); a value whose unit says it carries no word.
+    const worded = served.nodes.flatMap(entry => entry.bindings.filter(binding => ['level', 'value', 'flow', 'loading'].includes(binding.role)).map(binding => [declared.get(binding.ref)!.unit, binding.word] as const))
+    expect(worded.filter(([unit, word]) => (unit === '%' || unit === '1') !== (word !== undefined))).toEqual([])
+    expect([...new Set(worded.flatMap(([, word]) => word ?? []))].sort()).toEqual(['LVL', 'PWR'])
     const positions = served.nodes.flatMap(entry => entry.bindings.filter(binding => binding.role === 'position').map(binding => declared.get(binding.ref)!))
     expect(positions.length).toBeGreaterThan(20)
     expect(positions.filter(observable => observable.quantity !== 'fraction' || observable.unit !== '1').map(observable => observable.ref)).toEqual([])
     // Each item that runs, is live, or opens and shuts runs or conducts on its state observable, so a drawing writes its word and
     // the command it does not follow (RUN, SHUT, ON LINE); a valve's glyph opens with its position.
-    expect([bindings('offsiteBreakerA'), bindings('condensatePumpA'), bindings('turbine')]).toEqual([['conducting offsiteBreakerA.state'], ['running condensatePumpA.state'], ['value turbine.electricMw', 'running turbine.state']])
+    expect([bindings('offsiteBreakerA'), bindings('condensatePumpA'), bindings('turbine')]).toEqual([['conducting offsiteBreakerA.state'], ['running condensatePumpA.state'], ['running turbine.state', 'value turbine.electricMw']])
+    // W1.3: a state it is commanded to and may not follow keeps a line for the command (a pump, a breaker); the turbine's, which nothing commands, keeps none.
+    const commanded = (id: string) => served.nodes.find(candidate => candidate.id === id)!.bindings.find(binding => binding.role === 'running' || binding.role === 'conducting')!.commanded === true
+    expect([commanded('rcpA'), commanded('offsiteBreakerA'), commanded('mainSteamIsolationValveA'), commanded('turbine'), commanded('safetyBusA')]).toEqual([true, true, true, false, false])
     expect(served.nodes.filter(entry => declared.has(`${objectId}#${entry.id}.state`) && !entry.bindings.some(binding => binding.ref === `${objectId}#${entry.id}.state`)).map(entry => entry.id)).toEqual([])
     expect(served.edges.find(edge => edge.id === 'rcs-hot-leg-a')?.bindings).toEqual([{ role: 'flow', ref: `${objectId}#rcs-hot-leg-a.flowKgPerS` }])
     const refs = [...served.nodes, ...served.edges].flatMap(item => item.bindings.map(binding => binding.ref))
@@ -64,7 +79,7 @@ describe('plant topology provider (P5)', () => {
     // Q8: a running or conducting binding reads a boolean (true is on) or a state reading that marks its on state.
     const switching = served.nodes.flatMap(entry => entry.bindings.filter(binding => binding.role === 'running' || binding.role === 'conducting')).map(binding => declared.get(binding.ref)!)
     expect(switching.filter(observable => observable.valueType !== 'boolean' && !observable.states?.some(state => state.active === true)).map(observable => observable.ref)).toEqual([])
-    expect(new Set(served.nodes.flatMap(entry => entry.bindings.map(binding => binding.role)))).toEqual(new Set(['level', 'running', 'conducting', 'flow', 'position', 'value']))
+    expect(new Set(served.nodes.flatMap(entry => entry.bindings.map(binding => binding.role)))).toEqual(new Set(['level', 'running', 'conducting', 'flow', 'position', 'value', 'stopped']))
   })
 
   test('B3: a device its equipment bundles is a switch on the line its port feeds, the item a person operates (the PORV on the relief line)', () => {
@@ -78,8 +93,9 @@ describe('plant topology provider (P5)', () => {
     ])
     const porv = served.nodes.find(entry => entry.id === 'pressurizer.reliefValve')!
     expect(porv).toMatchObject({ class: 'switch', label: 'PORV', shortLabel: 'PORV' })
-    expect(porv.element).toBeUndefined()
-    expect(bindings('pressurizer.reliefValve')).toEqual(['flow pressurizer.reliefFlowKgPerS', 'position pressurizer.reliefValveEffectivePositionFraction', 'conducting pressurizer.reliefValve.state'])
+    // Its element is its own (W6.1): a press on it opens the device, not its host.
+    expect(porv.element).toBe('pressurizer.reliefValve')
+    expect(bindings('pressurizer.reliefValve')).toEqual(['conducting pressurizer.reliefValve.state', 'flow pressurizer.reliefFlowKgPerS', 'position pressurizer.reliefValveEffectivePositionFraction'])
     // Each is the item controls.list names, so the pop-over's element actions operate it.
     const items = new Set(plantControlsFor(plant).items.map(item => item.id))
     expect(served.nodes.filter(entry => entry.id.includes('.')).every(entry => items.has(entry.id))).toBe(true)

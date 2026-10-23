@@ -453,6 +453,7 @@
         onclick={items.has(text.id) ? () => bodyPress(text.id) : undefined} {...(items.has(text.id) ? hover(text.id) : {})}>
         {#each text.lines as line, at (at)}<span class={line.kind}>{line.text}</span>{/each}
       </div>
+      {#if text.outline !== null}<div class={`outline ${text.outline}`} aria-hidden="true" style:left={`${text.area.x - 2}px`} style:top={`${text.area.y - 2}px`} style:width={`${text.area.width + 4}px`} style:height={`${text.area.height + 4}px`}></div>{/if}
     {/each}
   </div>
   </div>
@@ -508,5 +509,10 @@
   .magnifier:focus-visible .glyph { outline: 2px solid var(--border-focus-color); }
   @media (pointer: coarse) { .magnifier { opacity: 1; } }
   .notice { margin: 0; font-size: 12px; color: var(--element-active-color); }
+  /* An item not following a command: outlined just outside its symbol and text in OpenBridge's enhanced neutral, never an alarm's colour; dashed and neutral where its alerts are all expected after a first-out. */
+  .outline { position: absolute; box-sizing: border-box; border: 2px solid var(--element-neutral-enhanced-color); border-radius: 4px; pointer-events: none; }
+  .outline.expected { border-style: dashed; border-color: var(--element-neutral-color); }
+  /* Frozen: where an alert stood, OpenBridge's low-integrity border in place of its frame (W8.1). */
+  .outline.low-integrity { border-color: var(--alert-low-integrity-border-color); }
   .attribution { margin: 0; height: var(--row); line-height: var(--row); font-size: 12px; color: var(--element-neutral-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>

@@ -12,10 +12,23 @@ import { objectIdSchema } from '../model/ids.ts'
 const id = z.string().min(1).max(200)
 const rank = z.string().min(1).max(120)
 const end = z.object({ node: id, port: id }).strict()
-/** What a binding drives in a drawing; `position` is a fraction of travel: a valve's opening (1 open), or a part's insertion (a rod bank's, 1 fully in). */
+/**
+ * What a binding drives in a drawing, in the order a drawing reads the node's readings; `position` is a fraction of
+ * travel: a valve's opening (1 open), or a part's insertion (a rod bank's, 1 fully in), drawn in its `group` (a core's
+ * shutdown banks, then its control banks); `stopped`, a state that says the item has stopped (a core's rods on the
+ * bottom), written while it holds and, while a command to stop it stands unmet (its observation's `why`), with that
+ * command. `word`: what a drawing writes before the reading, where its unit does not say what it reads ("LVL", "PWR").
+ * `while`: one quantity read by instruments in turn (a core's flux, counted, then a current, then a percent): the
+ * reading stands in for the one of its role before it while this flag reads true. `commanded`: a running or conducting
+ * state the item is commanded to and may not follow (a mover told to run), so a drawing keeps a line for the command.
+ */
 const bindings = z.array(z.object({
-  role: z.enum(['flow', 'loading', 'level', 'conducting', 'available', 'running', 'position', 'value']),
+  role: z.enum(['flow', 'loading', 'level', 'conducting', 'available', 'running', 'position', 'value', 'stopped']),
   ref: observableRefSchema,
+  word: z.string().min(1).max(4).optional(),
+  while: observableRefSchema.optional(),
+  group: z.string().min(1).max(40).optional(),
+  commanded: z.literal(true).optional(),
 }).strict()).max(16)
 
 export const topologyNodeClassSchema = z.enum(['source', 'sink', 'store', 'transfer', 'converter', 'switch', 'mover', 'bus', 'junction', 'boundary'])
@@ -102,7 +115,9 @@ export const topologyGraphSchema = z.object({
   // Every binding reads the graph's own object, so inspecting that object covers the whole graph.
   for (const item of [...graph.nodes, ...graph.edges]) {
     for (const binding of item.bindings) {
-      if (refObjectId(binding.ref) !== graph.objectId) issue(`${item.id} binds ${binding.ref} of another object`)
+      for (const ref of [binding.ref, ...(binding.while === undefined ? [] : [binding.while])]) {
+        if (refObjectId(ref) !== graph.objectId) issue(`${item.id} binds ${ref} of another object`)
+      }
     }
   }
 })
