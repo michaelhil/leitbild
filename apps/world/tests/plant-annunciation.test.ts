@@ -39,6 +39,8 @@ describe('the reference PWR\'s annunciation', () => {
     ]).toEqual([['LO-LO · RX TRIP'], ['LO-3 · SI', 'LO-3 · RX TRIP', 'LO-3 · FWI', 'LO-3 · AFW START'], ['LO · ALM'], ['RX TRIP'], ['LO-LO · ALM'], ['DEAD · ALM']])
     // HMI review of run 23: a pump not running, a level low with low feed flow, as a drawing's words name them.
     expect([tagsOf('rcp-a-trip'), tagsOf('sg-b-feedwater-low'), tagsOf('pzr-porv-flow')]).toEqual([['NOT RUN · ALM'], ['L LO & F LO · ALM'], ['RELIEF VALVE FLOWING · ALM']])
+    // A pump commanded to run, its bus live, that does not: what is wrong with it, not its command and permissive.
+    expect(tagsOf('motor-driven-afw-pump-a-fails-to-start')).toEqual(['NOT RUN · ALM'])
     expect(tagsOf('reactor-trip-low-tavg-feedwater-isolation')).toEqual(['LO · FWI'])
     expect(annunciation.alerts.map(alert => alert.tag)).not.toContain('ALM')
     expect(of('safety-injection-low-pzr-pressure').map(alert => alert.group)).toEqual(['safety-injection', 'reactor-trip', 'feedwater-isolation', 'auxiliary-feedwater'])

@@ -70,10 +70,26 @@ const discreteWords = (graph: CompiledPlantGraph, binding: ProcessSignalBinding,
           : (value ? flag : `NOT ${flag}`)
 }
 
+/**
+ * Where every condition is an on/off reading and some read the alerted equipment's own state, those alone: what is
+ * wrong with it ("NOT RUN" for a pump commanded to run, its bus live, that does not run), not the command and the
+ * permissives that make it wrong.
+ */
+const ownStateLeaves = (plant: CompiledProcessPlant, condition: ProcessPlantIcCondition, equipment: string | undefined): ReadonlyArray<Extract<ProcessPlantIcCondition, { type: 'comparison' }>> | null => {
+  const all = leaves(condition)
+  if (condition.type !== 'all' || equipment === undefined || all.length < 2 || all.some(leaf => typeof leaf.value !== 'boolean')) return null
+  const own = all.filter(leaf => {
+    const binding = resolveProcessPlantSignalBinding(plant.graph, leaf.signal)
+    const owner = binding.owner.type === 'component' ? plant.graph.components[binding.owner.componentIndex]! : undefined
+    return owner !== undefined && String(owner.id) === equipment && owner.semantics.aspects.some(aspect => aspect.state?.path === binding.path)
+  })
+  return own.length === 0 ? null : own
+}
+
 /** What a rule with no limit on one value watches, as its words name it: "L LO & F LO", "NOT RUN", "DEAD". */
-const watches = (plant: CompiledProcessPlant, rule: ProcessPlantIcRule): string => {
+const watches = (plant: CompiledProcessPlant, rule: ProcessPlantIcRule, equipment: string | undefined): string => {
   const gated = gatedLeaf(rule.condition)
-  const words = [...new Set((gated === null ? leaves(rule.condition) : [gated]).map(leaf => {
+  const words = [...new Set((gated === null ? ownStateLeaves(plant, rule.condition, equipment) ?? leaves(rule.condition) : [gated]).map(leaf => {
     const binding = resolveProcessPlantSignalBinding(plant.graph, leaf.signal)
     if (typeof leaf.value === 'boolean') return discreteWords(plant.graph, binding, leaf.operator === '!=' ? !leaf.value : leaf.value)
     const low = leaf.operator === '<' || leaf.operator === '<='
@@ -113,7 +129,7 @@ export const plantAnnunciation = (plant: CompiledProcessPlant): Annunciation => 
       const annunciator = effect.annunciator
       // What it does is its own group's, not its rule's.
       const action = effect.type === 'alarm.enter' ? 'ALM' : label.get(annunciator?.firstOutGroup ?? '') ?? UNDECLARED_ACTION
-      const tag = threshold !== undefined ? `${orderName(threshold)} · ${action}` : effect.type === 'alarm.enter' ? `${watches(plant, rule)} · ${action}` : action
+      const tag = threshold !== undefined ? `${orderName(threshold)} · ${action}` : effect.type === 'alarm.enter' ? `${watches(plant, rule, annunciator?.equipmentId)} · ${action}` : action
       return [{
         id: processPlantIcLifecycleIdFor(effect.type === 'alarm.enter' ? 'alarm' : 'trip', rule.id, effect.id),
         tag: tag.length <= 48 ? tag : action,
