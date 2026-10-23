@@ -186,6 +186,19 @@ describe('plant observation read (P3)', () => {
     expect(read('csf.subcriticality')).toMatchObject({ value: 'not-monitored', priority: 'none', quality: 'not-applicable', why: expect.stringMatching(/^NOT JUDGED: Judged once a reactor trip is demanded/) })
   })
 
+  test('idle: the limits that do not act now, an operating mode\'s or a condition\'s, which a trend draws faint (W5.3)', () => {
+    const idle = (from: ReadonlyArray<Observation>, of: string) => from.find(observation => path(observation) === of)?.idle ?? []
+    // At power the pressurizer's reactor trips act; after the trip, out of power operation, they do not.
+    expect(idle(facts.atPower, 'pressurizer.pressureMPa')).not.toContain('pzr-pressure-low-reactor-trip')
+    expect(idle(facts.tripped, 'pressurizer.pressureMPa')).toEqual(expect.arrayContaining(['pzr-pressure-low-reactor-trip', 'pzr-pressure-high-reactor-trip']))
+    // The feedwater isolation on low Tavg waits for a trip breaker to open: at power it does not act, after the trip it does.
+    expect(idle(facts.atPower, 'vessel.meanPrimaryCoolantTemperatureC')).toContain('reactor-trip-low-tavg-feedwater-isolation')
+    expect(idle(facts.tripped, 'vessel.meanPrimaryCoolantTemperatureC')).not.toContain('reactor-trip-low-tavg-feedwater-isolation')
+    // Only declared limits are named, and a value without limits names none.
+    for (const observation of facts.tripped as ReadonlyArray<Observation>) for (const id of observation.idle ?? []) expect(limitsOf.get(path(observation))).toContain(id)
+    expect((facts.tripped as ReadonlyArray<Observation>).filter(observation => observation.idle !== undefined && (limitsOf.get(path(observation)) ?? []).length === 0)).toEqual([])
+  })
+
   test('expected.after: an alarm the trip brings in leaves its value neutral and says so', () => {
     const level = facts.tripped.find((observation: Observation) => path(observation) === 'sgA.levelPercent')
     expect(level).toMatchObject({ priority: 'none', expected: { after: 'Reactor trip' }, why: 'Steam generator A low-low level, expected after Reactor trip' })
