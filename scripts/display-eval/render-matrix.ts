@@ -4,7 +4,8 @@
  *
  *   bun scripts/display-eval/render-matrix.ts --origin=http://127.0.0.1:<port> --workspace=<id> --runA=<Run A> --runB=<Run B>
  *       --out=<dir> [--label=<stack>] [--sizes=1920,1440,1280,1046] [--themes=day,dusk] [--runs=A,B]
- *       [--details=Pressurizer,Steam Generator A,Reactor Core] [--port=<CDP port>] [--unit="Halden Unit 1"]
+ *       [--details=Pressurizer,Steam Generator A,Reactor Core,deck:4] [--port=<CDP port>] [--unit="Halden Unit 1"]
+ * A detail "deck:<n>" is the n-th display after the overview in the window's deck (deck:4: the grid, W9.3).
  *
  * For each view it shoots the screen (<out>/<label>-<size>-<theme>-<run>-<view>.png) and judges, as a person sees it:
  *   viewport, csf-row   (overview) leads, counts and 3 alert rows on screen; CSF chips on the title row, ≤ 560 px
@@ -194,7 +195,7 @@ if (import.meta.main) {
   const sizes = (argv.get('sizes') ?? '1920,1440,1280,1046').split(',').map(sizeSpec)
   const themes = (argv.get('themes') ?? 'day,dusk').split(',') as Theme[]
   const runs = (argv.get('runs') ?? 'A,B').split(',') as RunName[]
-  const details = (argv.get('details') ?? 'Pressurizer,Steam Generator A,Reactor Core').split(',').filter(Boolean)
+  const details = (argv.get('details') ?? 'Pressurizer,Steam Generator A,Reactor Core,deck:4').split(',').filter(Boolean)
   const api = createStackApi(origin, workspaceId)
   const chrome = await ensureChrome({ port, profile: join(out, `chrome-${port}`) })
   const scratch = await openPage(port, 400, 300)
@@ -220,6 +221,17 @@ if (import.meta.main) {
           log(await judgeView({ ...ctx, view: 'overview' }))
           await save()
           for (const name of details) {
+            // "deck:<n>": the n-th display after the unit's overview in the window's deck (deck:4 is the grid).
+            const deck = name.match(/^deck:(\d+)$/)
+            if (deck !== null) {
+              for (let i = 0; i < Number(deck[1]); i += 1) { await page.click({ sel: 'button', text: 'Next display' }); await sleep(1_200) }
+              await sleep(3_000)
+              log(await judgeView({ ...ctx, view: `deck ${deck[1]}` }))
+              await save()
+              const back = await goHome(page, home)
+              if (!back.home) await reopen()
+              continue
+            }
             const target = (await targetsOf(page)).find(entry => entry.kind === 'item' && entry.name.toLowerCase().startsWith(name.toLowerCase()))
             if (target === undefined) { console.log(`${label} ${size.name} ${theme} ${run} ${name}: no item to press`); continue }
             const { outcome } = await press(page, target, 6_000)
