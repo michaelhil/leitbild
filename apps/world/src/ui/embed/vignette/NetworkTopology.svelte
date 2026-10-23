@@ -12,7 +12,6 @@
   import { vignetteOpening } from './opening.svelte.ts'
   import type { Box } from './popover.ts'
   import type { AlertTone } from './readout.ts'
-  import { symbolOnly } from './symbol-only.ts'
   import './openbridge.ts'
 
   // A network topology (architecture B2) in OpenBridge: lines, crossings and
@@ -51,11 +50,11 @@
     return node?.element === undefined || node.bindings.length === 0 ? [] : [{ element: node.element, name: node.label }]
   }
   const named = $derived(new Map([...drawing.texts.map(text => [text.id, text.title] as const), ...drawing.buses.map(bus => [bus.id, bus.title] as const)]))
-  /** The items a press opens, each over its laid-out box (its symbol or bar and its words). */
+  /** The items a press opens, each over its laid-out box (its symbol or bar and its words), in reading order for Tab (W8.3). */
   const items = $derived(opening === undefined || opening.where === null ? [] : section.layout.nodes.flatMap(node => {
     const title = named.get(node.id)
     return title === undefined || targetsOf(node.id).length === 0 ? [] : [{ id: node.id, title, x: node.x * VIGNETTE_ROW_PX, y: node.y * VIGNETTE_ROW_PX, width: node.width * VIGNETTE_ROW_PX, height: node.height * VIGNETTE_ROW_PX }]
-  }))
+  }).sort((left, right) => Math.round(left.y / VIGNETTE_ROW_PX) - Math.round(right.y / VIGNETTE_ROW_PX) || left.x - right.x))
   const buttons = new Map<string, HTMLElement>()
   const kept = (node: HTMLElement, id: string) => {
     buttons.set(id, node)
@@ -102,13 +101,14 @@
       <obc-bus class="placed" size="small" vertical={bus.vertical} label={bus.label} title={bus.title} style:left={`${bus.x}px`} style:top={`${bus.y}px`} style:width={`${bus.width}px`} style:height={`${bus.height}px`}></obc-bus>
     {/each}
     {#each drawing.devices as device (device.id)}
-      <div class="placed" style:left={`${device.x}px`} style:top={`${device.y}px`} title={device.title}>
+      <!-- Inert: OpenBridge's symbol draws a <button> of its own; the item's area is its button (W8.3). -->
+      <div class="placed" inert style:left={`${device.x}px`} style:top={`${device.y}px`} title={device.title}>
         {#if device.element === 'obc-switch'}
-          <obc-switch use:symbolOnly positioning="point" showReadoutStack={false} turnedOn={device.on} alert={device.tone !== null} alertFrameStatus={device.tone === null ? 'caution' : ALERT_TYPE[device.tone]} alertFrameMode="acked-active" alertFrameThickness="small"></obc-switch>
+          <obc-switch positioning="point" showReadoutStack={false} turnedOn={device.on} alert={device.tone !== null} alertFrameStatus={device.tone === null ? 'caution' : ALERT_TYPE[device.tone]} alertFrameMode="acked-active" alertFrameThickness="small"></obc-switch>
         {:else if device.element === 'obc-transformer'}
-          <obc-transformer use:symbolOnly positioning="point" showReadoutStack={false} turnedOn={device.on} alert={device.tone !== null} alertFrameStatus={device.tone === null ? 'caution' : ALERT_TYPE[device.tone]} alertFrameMode="acked-active" alertFrameThickness="small"></obc-transformer>
+          <obc-transformer positioning="point" showReadoutStack={false} turnedOn={device.on} alert={device.tone !== null} alertFrameStatus={device.tone === null ? 'caution' : ALERT_TYPE[device.tone]} alertFrameMode="acked-active" alertFrameThickness="small"></obc-transformer>
         {:else}
-          <obc-source use:symbolOnly positioning="point" showReadoutStack={false} turnedOn={device.on} alert={device.tone !== null} alertFrameStatus={device.tone === null ? 'caution' : ALERT_TYPE[device.tone]} alertFrameMode="acked-active" alertFrameThickness="small"></obc-source>
+          <obc-source positioning="point" showReadoutStack={false} turnedOn={device.on} alert={device.tone !== null} alertFrameStatus={device.tone === null ? 'caution' : ALERT_TYPE[device.tone]} alertFrameMode="acked-active" alertFrameThickness="small"></obc-source>
         {/if}
       </div>
     {/each}

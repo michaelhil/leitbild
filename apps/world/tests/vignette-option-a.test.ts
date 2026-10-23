@@ -173,9 +173,11 @@ describe('the network drawing\'s grammar (W9.1: grid elements open content, T6, 
     expect(source).toContain('const items = $derived(opening === undefined || opening.where === null ? [] :')
   })
 
-  test('the symbols\' own OpenBridge buttons are no tab stops in either drawing (W8.3)', () => {
+  test('the symbols\' own OpenBridge buttons are no tab stops in either drawing: their wrappers are inert (W8.3)', () => {
     const flow = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/FlowTopology.svelte'), 'utf8')
-    expect(flow).toContain('<obc-automation-button use:symbolOnly')
-    for (const symbol of ['obc-switch', 'obc-transformer', 'obc-source']) expect(source).toContain(`<${symbol} use:symbolOnly`)
+    expect(flow).toContain('<div class="point" inert><obc-automation-button')
+    expect(source).toContain('<div class="placed" inert style:left={`${device.x}px`}')
+    // Its items in reading order too.
+    expect(source).toContain('}).sort((left, right) => Math.round(left.y / VIGNETTE_ROW_PX) - Math.round(right.y / VIGNETTE_ROW_PX) || left.x - right.x))')
   })
 })

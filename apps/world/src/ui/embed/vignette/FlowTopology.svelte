@@ -23,7 +23,6 @@
   import type { AlertTone } from './readout.ts'
   import { VIGNETTE_ROW_PX } from './grid.ts'
   import { onElementRequest } from './selection.ts'
-  import { symbolOnly } from './symbol-only.ts'
   import { createVignetteSession, vignetteRoutes, type VignetteSession } from './vignette-client.ts'
   import Vessel from './Vessel.svelte'
   import './openbridge.ts'
@@ -501,9 +500,10 @@
         </div>
       {:else if entry.kind === 'device'}
         {@const device = entry.item}
-        <div class="placed device" title={device.title} use:button={device.id} style:left={`${device.x - SYMBOL_PX / 2}px`} style:top={`${device.y - SYMBOL_PX / 2}px`}
+        <div class="placed device" class:hovered={hovered === device.id} title={device.title} use:button={device.id} style:left={`${device.x - SYMBOL_PX / 2}px`} style:top={`${device.y - SYMBOL_PX / 2}px`}
           {...body(device.id, device.title)}>
-          <div class="point"><obc-automation-button use:symbolOnly variant="regular" positioning="point" showReadoutStack={false} state={device.on ? 'open' : 'closed'} static={device.unknown} orientation={device.orientation} activated={activated(device.id)} progress={false} hasBadgeSpacer={false} alert={device.tone !== null} alertFrameStatus={device.tone === null ? 'caution' : ALERT_TYPE[device.tone]} alertFrameMode="acked-active" alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false}>
+          <!-- Inert: OpenBridge's button draws a <button> of its own, a second nameless tab stop inside the item's (W8.3). -->
+          <div class="point" inert><obc-automation-button variant="regular" positioning="point" showReadoutStack={false} state={device.on ? 'open' : 'closed'} static={device.unknown} orientation={device.orientation} activated={activated(device.id)} progress={false} hasBadgeSpacer={false} alert={device.tone !== null} alertFrameStatus={device.tone === null ? 'caution' : ALERT_TYPE[device.tone]} alertFrameMode="acked-active" alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false}>
             {#if device.glyph?.tag === 'obc-valve-analog-two-way-icon'}
               <obc-valve-analog-two-way-icon slot="icon" value={device.glyph.value} closed={device.glyph.value === 0} vertical={device.vertical}></obc-valve-analog-two-way-icon>
             {:else if device.glyph !== null}
@@ -561,7 +561,8 @@
   [role='button'] { cursor: pointer; }
   [role='button']:focus-visible { outline: 2px solid var(--border-focus-color); outline-offset: 2px; }
   /* A vessel takes OpenBridge's flat hover and activated surfaces, as its button would: it is pressed for its detail, opened for its faceplate. */
-  .box:hover, .box.hovered, .area:hover, .area.hovered { background: var(--flat-hover-background-color); }
+  .box:hover, .box.hovered, .area:hover, .area.hovered, .device:hover, .device.hovered { background: var(--flat-hover-background-color); }
+  .device { border-radius: 4px; }
   .box.activated, .area.activated { background: var(--flat-activated-background-color); outline: 1px solid var(--border-outline-color); }
   /* A line's, a bar's or a stop's button lies under the symbols drawn on it, which keep their own presses. */
   .area { z-index: 1; border-radius: 4px; }
