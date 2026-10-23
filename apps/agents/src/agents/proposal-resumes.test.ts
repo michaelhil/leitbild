@@ -353,7 +353,8 @@ describe('resuming a procedure once its proposal is approved', () => {
     s.answered('turn-1')
     s.decide('command:trip', 'approved', 'actor:operator')
     await s.tick()
-    expect(s.turns[0]!.turn.cause).toEqual({ kind: PROPOSAL_RESUME_CAUSE, name: 'An operator approved TRIP RX-TRIP' })
+    // The chat says "Continued after an operator approved TRIP RX-TRIP".
+    expect(s.turns[0]!.turn.cause).toEqual({ kind: PROPOSAL_RESUME_CAUSE, name: 'an operator approved TRIP RX-TRIP' })
     expect(s.turns[0]!.turn.instruction).toStartWith('[Proposal approved] An operator approved your proposal TRIP RX-TRIP')
   })
 

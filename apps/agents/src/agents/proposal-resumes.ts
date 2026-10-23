@@ -82,10 +82,12 @@ const actionWords = (approved: Approved): string =>
 
 const approverOf = (approved: ReadonlyArray<Approved>): string => {
   const actors = [...new Set(approved.map(entry => entry.proposal.closed?.actorId).filter((actor): actor is string => actor !== undefined))]
-  const words = [...new Set(actors.map(actorWords))].join(' and ')
-  // A kind of actor opens the sentence capitalised ("An operator approved"); a person's name stays as it is.
-  return actors.length === 0 ? 'A person' : words.replace(/^(an|the) /, first => `${first.charAt(0).toUpperCase()}${first.slice(1)}`)
+  return actors.length === 0 ? 'a person' : [...new Set(actors.map(actorWords))].join(' and ')
 }
+
+/** Who approved, opening a sentence: a kind of actor capitalised ("An operator"); a person's name as it is. */
+const approverOpening = (approved: ReadonlyArray<Approved>): string =>
+  approverOf(approved).replace(/^(a|an|the) /, first => `${first.charAt(0).toUpperCase()}${first.slice(1)}`)
 
 /** The reply's cause: who approved what. */
 const proposalResumeCause = (approved: ReadonlyArray<Approved>): RequestedTurn['cause'] =>
@@ -97,7 +99,7 @@ const proposalResumeInstruction = (approved: ReadonlyArray<Approved>, answerId: 
     const step = entry.operation.procedureStep === undefined ? '' : ` for ${entry.operation.procedureStep}`
     return `${actionWords(entry)} on Plant ${entry.operation.plantId}${step}`
   })
-  return `[Proposal approved] ${approverOf(approved)} approved your ${items.length === 1 ? 'proposal' : 'proposals'} `
+  return `[Proposal approved] ${approverOpening(approved)} approved your ${items.length === 1 ? 'proposal' : 'proposals'} `
     + `${items.join('; ')} (your answer, messageId "${answerId}") in the display window, and World executed it. `
     // This turn starts seconds after the decision, before the plant has
     // responded (probe 2026-10-13: power still 5 % and subcriticality red
