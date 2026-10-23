@@ -9,6 +9,7 @@ import { defineSimulationQueryCapability } from '../../simulation/capabilities.t
 import type { SimulationCapability } from '../../simulation/protocol.ts'
 import { observableRefSchema, refObjectId } from '../model/alerts.ts'
 import { idSchema, objectIdSchema, type ObjectId } from '../model/ids.ts'
+import { annunciationSchema } from './annunciation.ts'
 import { observableSchema, observationSchema } from './model.ts'
 import { topologyGraphSchema } from './topology.ts'
 
@@ -63,6 +64,8 @@ export const observationDeclarationSchema = z.object({
   revision: revisionSchema,
   observables: z.array(observableSchema).max(4096),
   elements: z.array(observationElementSchema).max(20_000).default([]),
+  /** How its alerts are annunciated (annunciation.ts); absent where its Pack declares none. */
+  annunciation: annunciationSchema.optional(),
 }).strict().superRefine((declaration, context) => {
   const refs = declaration.observables.map(observable => observable.ref)
   if (new Set(refs).size !== refs.length) context.addIssue({ code: 'custom', message: 'duplicate observable ref' })

@@ -4,20 +4,18 @@
   import { simulationRunIdSchema } from '../../../core/model/index.ts'
   import type { VignetteValue } from '../../../features/displays/compose/model.ts'
   import { severityStyle, severityTable, type Palette } from '../../displays/severity.ts'
-  import { defaultDisplayEnvelope, readDefaultDisplay } from '../../process-display/default-display.ts'
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
-  import { activeWorkspaceId } from '../../workspace-context.ts'
-  import { embeddedDisplayFrame, hostDisplayFrame, type DisplayOpening } from '../view-host.ts'
-  import { worstChip } from './alerts.ts'
+  import { hostDisplayFrame } from '../view-host.ts'
+  import { alertsTarget, worstChip } from './alerts.ts'
   import { clockText, provenanceMark } from './format.ts'
   import { VIGNETTE_ROW_PX } from './grid.ts'
-  import { openElementDefault } from './popover.ts'
   import { toneOf } from './readout.ts'
-  import { requestElement } from './selection.ts'
   import { chipOrder, stateChipLook } from './state-chip.ts'
   import { createVignetteSession, sampleStale, vignetteRoutes, type VignetteSnapshot } from './vignette-client.ts'
+  import { provideOpening } from './opening.svelte.ts'
   import Sections from './Sections.svelte'
   import StateChip from './StateChip.svelte'
+  import TripLine from './TripLine.svelte'
   import './openbridge.ts'
 
   // A vignette's frame (architecture B): its title row (the title, the
@@ -37,13 +35,14 @@
   const readPalette = (): Palette => (document.documentElement.dataset.obcTheme as Palette | undefined) ?? 'day'
   let palette = $state<Palette>(readPalette())
   let wallNow = $state(Date.now())
-  let opening = $state<DisplayOpening | null>(null)
   /** Why the last chip press opened nothing. */
   let unopened = $state<string | null>(null)
 
   const runId = $derived(simulationRunIdSchema.parse(envelope.subject.id))
   /** This display, as an element's pop-over names it when it opens the element's default in the display window. */
   const from = $derived({ key: envelope.state, title: envelope.title })
+  // What its alerts, trip line and worst chip open (opening.svelte.ts).
+  const { opening, stop: stopOpening } = provideOpening({ runId: () => runId, envelope: () => envelope, at: () => snapshot.latest?.at })
   runOnMount(() => {
     const session = createVignetteSession({
       runId,
@@ -58,7 +57,6 @@
       setVisible: visible => session.setVisible(visible),
       presented: () => {},
     })
-    const stopOpening = embeddedDisplayFrame().subscribeOpening(where => { opening = where })
     session.start()
     // Staleness is judged on the wall clock, so it shows even while no sample arrives: a quarter-second tick freezes
     // the display within 5.25 s of its last sample (W8.1), not up to a second later.
@@ -66,12 +64,17 @@
     // The embedding page's theme choice changes the palette live (main.ts).
     const theme = new MutationObserver(() => { palette = readPalette() })
     theme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-obc-theme'] })
-    return () => { clearInterval(tick); theme.disconnect(); stopOpening(); unhost(); session.close() }
+    return () => { clearInterval(tick); theme.disconnect(); unhost(); session.close(); stopOpening() }
   })
 
   const view = $derived(snapshot.view)
   const latest = $derived(snapshot.latest)
   const worst = $derived(latest === undefined ? null : worstChip(latest.observations, latest.alerts))
+  /** The worst chip opens the full alerts view of what the vignette's alerts list (W2.6), where one can be opened from here. */
+  const alertsOpen = $derived.by(() => {
+    const target = view === undefined ? null : alertsTarget(view, latest?.alerts ?? [])
+    return target === null || opening.where === null ? undefined : () => { opening.alerts(target.objectIds, target.title) }
+  })
   const footer = $derived.by((): { readonly word: 'LIVE' | 'PAUSED' | 'FROZEN'; readonly why?: string } => {
     const stale = sampleStale(snapshot, wallNow)
     if (snapshot.phase === 'live' && !stale) return { word: latest?.at.paused === true ? 'PAUSED' : 'LIVE' }
@@ -82,24 +85,16 @@
   const chips = $derived(chipOrder(view?.chips ?? []))
 
   /**
-   * A chip's press opens what decides its state: in a drawing of this display that draws it (selection.ts), else its
-   * default after this display, in the window or through the page that frames this one. Null where nothing opens it.
+   * A chip's press opens the detail of what decides its state (opening.svelte.ts): through a drawing of this display
+   * that draws it (selection.ts), else as its default after this display. Null where nothing opens it.
    */
   const opener = (chip: VignetteValue): (() => void) | null => {
     const elementId = chip.decidingElement
-    if (elementId === undefined || opening === null) return null
+    if (elementId === undefined || opening.where === null) return null
     const objectId = refObjectId(chip.ref)
     return () => {
       unopened = null
-      if (requestElement({ objectId, elementId, how: 'detail' })) return
-      void (async () => {
-        try {
-          const shown = await readDefaultDisplay(runId, `${objectId}#${elementId}`)
-          if (!openElementDefault(embeddedDisplayFrame(), from, defaultDisplayEnvelope({ workspaceId: activeWorkspaceId(), simulationRunId: runId, view: shown }))) unopened = 'no display window takes it here'
-        } catch (error) {
-          unopened = error instanceof Error ? error.message : String(error)
-        }
-      })()
+      void opening.element(objectId, elementId, 'detail').then(why => { unopened = why })
     }
   }
 </script>
@@ -109,9 +104,11 @@
     <h1 title={view?.title ?? envelope.title}>{view?.title ?? envelope.title}</h1>
     {#if view?.by === 'assistant'}<span class="ai" title="Composed by the Assistant from what the Run declares"><obi-ai></obi-ai>Assistant</span>{/if}
     {#if worst !== null || chips.length > 0}
-      <!-- The worst it shows, then the object's own states (an operating mode first), right-aligned; they wrap, never cut. -->
+      <!-- The worst it shows (a press opens every alert, by category), then the object's own states (an operating mode first), right-aligned; they wrap, never cut. -->
       <div class="states" role="list" aria-label="States">
-        {#if worst?.kind === 'priority'}
+        {#if worst?.kind === 'priority' && alertsOpen !== undefined}
+          <span role="listitem"><button type="button" class={['chip', toneOf(worst.priority), { doubtful: frozen }]} title="Open every alert, by category" onclick={alertsOpen}>{severityTable[worst.priority].word}</button></span>
+        {:else if worst?.kind === 'priority'}
           <span role="listitem" class={['chip', toneOf(worst.priority), { doubtful: frozen }]}>{severityTable[worst.priority].word}</span>
         {:else if worst?.kind === 'undeclared'}
           <span role="listitem" class={['chip neutral', { doubtful: frozen }]}>{severityStyle(null, worst.severity)!.word}</span>
@@ -123,6 +120,7 @@
     {/if}
   </header>
   {#if unopened !== null}<p class="status" role="alert">Nothing opened: {unopened}</p>{/if}
+  {#if view !== undefined && latest !== undefined}<TripLine {view} rows={latest.alerts} />{/if}
 
   {#if view === undefined}
     <p class="status">
@@ -155,6 +153,7 @@
   .ai obi-ai { width: 16px; height: 16px; }
   .states { flex: 0 1 auto; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 2px 3px; min-width: 0; margin-left: auto; padding: 2px 0; }
   .chip { flex: none; padding: 0 6px; border: 1px solid; border-radius: 3px; font-size: 12px; font-weight: 700; line-height: 18px; letter-spacing: 0.03em; white-space: nowrap; }
+  button.chip { font-family: inherit; cursor: pointer; }
   .chip.neutral { color: var(--element-active-color); border-color: var(--border-outline-color); }
   .chip.caution { background: var(--display-caution-fill); color: var(--display-on-caution); border-color: var(--alert-caution-color); }
   .chip.warning { background: var(--display-warning-fill); color: var(--display-on-warning); border-color: var(--alert-warning-color); }

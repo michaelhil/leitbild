@@ -94,7 +94,7 @@ export const readPlant = (context: PlantReadContext, paths: ReadonlyArray<string
     const ruled = (ruleId: string): ReadonlyArray<Limit> => limits.get(ruleId) ?? []
     const reading = typeof variable.value === 'number' ? variable.value : null
     const on = snapshot === undefined || limits.size === 0 ? [] : alarms.filter(lifecycle => limits.has(lifecycle.ruleId) && colours(snapshot, lifecycle, ruled(lifecycle.ruleId), reading))
-      .map(lifecycle => ({ lifecycle, priority: plantAlarmPriority(lifecycle.severity, lifecycle.annunciator?.priority), after: expectedAfterGroup(plant, lifecycle, all) }))
+      .map(lifecycle => ({ lifecycle, priority: plantAlarmPriority(lifecycle.severity, lifecycle.annunciator?.priority), after: expectedAfterGroup(plant, lifecycle, all, system.runtime.elapsedMs()) }))
       .sort((left, right) => priorityOrder[right.priority] - priorityOrder[left.priority])
     const colouring = on.find(entry => entry.after === null)
     const expected = colouring === undefined ? on[0] : undefined

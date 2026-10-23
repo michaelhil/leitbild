@@ -152,7 +152,7 @@ export const deviations: ReadonlyArray<Deviation> = [
     does: 'Draws every alert icon in the vignette (its alerts sections in the window, in pop-overs and in chat) in OpenBridge\'s acknowledged form, a returned one rectified, so none flashes; an unacknowledged row and its section\'s counts carry the word UNACK.',
     sites: [
       { file: 'ui/embed/vignette/alerts.ts', mark: 'return { type, acknowledged: true, active:' },
-      { file: 'ui/embed/vignette/AlertsSection.svelte', mark: '<span class="unack">{UNACK_WORD}</span>' },
+      { file: 'ui/embed/vignette/AlertRowLine.svelte', mark: '<span class="unack">{UNACK_WORD}</span>' },
     ],
     component: 'obc-alert-icon',
     reason: 'No one can acknowledge in a vignette until W2.7 (D-B1), and a flash asks for acknowledgement (EEMUA 191, ISA-18.2): every unacknowledged icon flashed for ever, 29 on a tripped unit (UX audit H11, F18). OpenBridge 2.0.0 draws no steady unacknowledged icon, so the word carries the state (red team C6).',
@@ -184,6 +184,7 @@ export const surfaces: ReadonlyArray<Surface> = [
   { file: 'ui/embed/vignette/NetworkTopology.svelte', mark: 'use:lines', paints: 'connector-diagram' },
   { file: 'ui/embed/vignette/FlowTopology.svelte', mark: 'use:lines', paints: 'connector-diagram' },
   { file: 'ui/embed/vignette/lines.ts', mark: "canvas.getContext('2d')", paints: 'connector-diagram' },
+  { file: 'ui/embed/vignette/row-measure.ts', mark: "document.createElement('canvas').getContext('2d')", paints: 'nothing: measures text' },
 ]
 
 /** An OpenBridge internal the embed relies on outside the manifest (policy §5): where it is used, and where the installed package defines it. */

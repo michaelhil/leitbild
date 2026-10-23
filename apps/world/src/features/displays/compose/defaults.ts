@@ -182,8 +182,8 @@ export const recordedOf = async (run: ComposeRun, refs: ReadonlyArray<string>, c
 
 const rankOf = (alert: AlertState): number => alert.priority === undefined ? -1 : priorityLevels.indexOf(alert.priority)
 const worst = (alerts: ReadonlyArray<AlertState>): AlertState | undefined => [...alerts].sort((left, right) => rankOf(right) - rankOf(left))[0]
-const alertsView = (objectIds: ReadonlyArray<ObjectId>, filter: { readonly elements?: ReadonlyArray<string>; readonly refs?: ReadonlyArray<string>; readonly lead?: true } = {}): DraftView =>
-  ({ kind: 'alerts', objectIds: [...objectIds], ...(filter.elements === undefined ? {} : { elements: [...filter.elements] }), ...(filter.refs === undefined ? {} : { refs: [...filter.refs] }), ...(filter.lead === true ? { lead: true } : {}) })
+const alertsView = (objectIds: ReadonlyArray<ObjectId>, filter: { readonly elements?: ReadonlyArray<string>; readonly refs?: ReadonlyArray<string> } = {}): DraftView =>
+  ({ kind: 'alerts', objectIds: [...objectIds], ...(filter.elements === undefined ? {} : { elements: [...filter.elements] }), ...(filter.refs === undefined ? {} : { refs: [...filter.refs] }) })
 
 const nodeOf = (graph: TopologyGraph, elementId: string | undefined): string | undefined =>
   elementId === undefined ? undefined : graph.nodes.find(node => (node.element ?? node.id) === elementId)?.id
@@ -247,9 +247,9 @@ export const defaultViews = async (run: ComposeRun, subject: Subject): Promise<R
     return [
       { kind: 'values', lead, ...(plan.table === undefined ? {} : { table: true as const }) },
       ...(trend.length > 0 ? [{ kind: 'trend', refs: [...trend], horizon: '10m' } as DraftView] : []),
-      // Its own alerts, then its object's lead alerts, which say why it is where it is (a trip's first-out).
-      // Always, "none" while there are none: a pop-over opened at power shows the trip's alerts within one sample.
-      alertsView([subject.objectId], { elements: [subject.elementId], lead: true }),
+      // Its own alerts (W2.5, F19): why it is where it is, its object's first-outs, is the trip line's.
+      // Always, "none" while there are none: a pop-over opened at power shows its alerts within one sample.
+      alertsView([subject.objectId], { elements: [subject.elementId] }),
       ...(graph === null ? [] : aroundView(graph, nodeOf(graph, subject.elementId))),
     ]
   }

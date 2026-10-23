@@ -169,7 +169,8 @@ export const balanceOfPlantReferenceIcRules = (loops: ReadonlyArray<ProcessPlant
         id: 'reactor-trip-turbine-trip',
         title: 'Turbine trip on reactor trip (P-4)',
         message: 'The reactor trip breakers are open (P-4): the turbine stop valve shuts and the generator\'s load is rejected.',
-        annunciator: annunciator({ ...turbineAlarm, firstOutGroup: 'turbine-trip', priority: 'urgent', role: 'automaticAction' }),
+        // What every reactor trip brings in: expected after its first-out, unless it is the turbine trip's own first out.
+        annunciator: annunciator({ ...turbineAlarm, firstOutGroup: 'turbine-trip', priority: 'urgent', role: 'automaticAction', expectedAfter: expectedAfterReactorTrip }),
       }),
       ...turbineTripWrites('reactor-trip'),
     ],
