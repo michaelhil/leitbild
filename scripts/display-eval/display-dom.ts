@@ -57,6 +57,9 @@ export interface DisplayState {
   readonly framed: ReadonlyArray<{ readonly item: string; readonly tone: string; readonly name: string }>
   /** Drawn symbols (devices, tanks, exchangers) drawing OpenBridge's alert frame. */
   readonly framedSymbols: number
+  /** Drawn items outlined, not framed (R2, W2.3): "expected" (dashed: its active alerts are all expected after a
+   * first-out), "abnormal" (a command not followed; it takes the place of the expected outline), "low-integrity". */
+  readonly outlined: ReadonlyArray<{ readonly item: string; readonly kind: string; readonly name: string }>
   readonly values: ReadonlyArray<ValueBox>
   /** The drawing's and the frame's own text, for text checks (a trip line, "Rods on bottom"). */
   readonly text: string
@@ -73,7 +76,7 @@ const READER = `(scope) => {
   // The display window's frame: the largest shown embed (a chat card or a dialog is smaller).
   const area = d => { const r = d.frame.getBoundingClientRect(); return r.width * r.height }
   const shown = docs.sort((a, b) => area(b) - area(a))[0]
-  const empty = { generation: 'none', frame: null, title: null, word: null, sim: null, worst: null, chips: [], leads: [], alerts: null, framed: [], values: [], text: '', popover: null }
+  const empty = { generation: 'none', frame: null, title: null, word: null, sim: null, worst: null, chips: [], leads: [], alerts: null, framed: [], framedSymbols: 0, outlined: [], values: [], text: '', popover: null }
   if (!shown) return empty
   const doc = shown.doc
   const win = doc.defaultView
@@ -177,6 +180,12 @@ const READER = `(scope) => {
     const framed = [...article.querySelectorAll('.flow .text')].filter(t => ['caution', 'warning', 'alarm', 'critical'].some(c => t.classList.contains(c)))
       .map(t => ({ item: t.dataset.item, tone: ['critical', 'alarm', 'warning', 'caution'].find(c => t.classList.contains(c)), name: text(t.firstElementChild) }))
     const framedSymbols = [...article.querySelectorAll('.flow obc-automation-button, .flow obc-automation-tank, .flow obc-heat-exchanger')].filter(el => el.alert === true).length
+    // An item's outline is drawn right after its text block (FlowTopology): the block names the item.
+    const outlined = [...article.querySelectorAll('.flow div.outline')].map(outline => {
+      const block = outline.previousElementSibling
+      if (!block || !block.matches('.text[data-item]')) return null
+      return { item: block.dataset.item, kind: ['expected', 'abnormal', 'low-integrity'].find(c => outline.classList.contains(c)) || 'other', name: text(block.firstElementChild) }
+    }).filter(Boolean)
     const clock = footer?.querySelector('.clock')
     const sim = [...(footer?.querySelectorAll(':scope > span') ?? [])].map(text).find(t => /^(sim|wall) /.test(t)) ?? null
     return {
@@ -195,7 +204,7 @@ const READER = `(scope) => {
       ],
       leads,
       alerts: alertsSection ? { heading: text(alertsSection.querySelector('h2')), rows: [...alertsSection.querySelectorAll('li')].map(text), more: text(alertsSection.querySelector('.more')) || null } : null,
-      framed, framedSymbols,
+      framed, framedSymbols, outlined,
       values,
       text: text(article),
       popover: pop ? { title: pop.getAttribute('aria-label') || '', ready: pop.querySelector('.section') !== null } : null,
@@ -230,7 +239,7 @@ const READER = `(scope) => {
       chips: [...card.querySelectorAll('.csf')].map(chip => ({ label: chip.getAttribute('aria-label') || '', value: text(chip) })),
       leads,
       alerts: alarms ? { heading: text(alarms.querySelector('h2')) || text(alarms.querySelector('.empty')), rows: [...alarms.querySelectorAll('li')].map(text), more: text(alarms.querySelector('.more')) || null } : null,
-      framed, framedSymbols: framed.length,
+      framed, framedSymbols: framed.length, outlined: [],
       values,
       text: text(card),
       popover: look ? { title: look.getAttribute('aria-label') || '', ready: look.querySelector('section') !== null } : null,
