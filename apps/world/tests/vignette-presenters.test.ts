@@ -6,7 +6,7 @@ import type { ObjectId } from '../src/core/model/ids.ts'
 import type { Observable, Observation } from '../src/core/observation/model.ts'
 import type { AlertRow } from '../src/features/displays/alerts/rows.ts'
 import { alertDetail, alertIcon, alertsTarget, alertTitle, inSection, rowParts, rowWidth, UNACK_WORD, unacknowledged, wordsThatFit, worstChip } from '../src/ui/embed/vignette/alerts.ts'
-import { provenanceMark, quantityText } from '../src/ui/embed/vignette/format.ts'
+import { provenanceMark, provenanceMarks, quantityText } from '../src/ui/embed/vignette/format.ts'
 import type { VignetteValue } from '../src/features/displays/compose/model.ts'
 import { activeState, orderWord, readingLook, valueLook } from '../src/ui/embed/vignette/readout.ts'
 import { appendPoint, bandStretches, LABEL_LINE, labelRows, labelWidth, rateNow, rateText, sharedLines, stackLabels, stepPath, stripDrawing, stripDomain, timeTicks } from '../src/ui/embed/vignette/trend.ts'
@@ -408,6 +408,8 @@ describe('footer', () => {
     expect(provenanceMark({ by: 'assistant' })).toBe('AI-composed view · not an operating display')
     // Before its view is read, it does not yet say who made it.
     expect(provenanceMark(undefined)).toBe('not an operating display')
+    // A footer too narrow says the same shorter, never cut (a 360 px chat answer read "not an opera…").
+    expect([provenanceMarks({}), provenanceMarks({ by: 'assistant' })].map(marks => marks[1])).toEqual(['Model view · not for operating', 'AI view · not for operating'])
     // The frame every host shows (the window, a chat answer inline, a procedure tag's dialog) writes it in its footer.
     const frame = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Vignette.svelte'), 'utf8')
     expect(frame.slice(frame.indexOf('<footer'), frame.indexOf('</footer>'))).toContain('{provenanceMark(view)}')

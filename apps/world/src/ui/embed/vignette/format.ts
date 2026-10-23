@@ -32,6 +32,10 @@ export const distanceText = (metres: number): string => { const parts = distance
  * What every vignette's footer says it is, beside its clock: a view World generated from the model, or one the
  * Assistant composed; never an operating display. Until its view is read, only the latter.
  */
-export const provenanceMark = (view: { readonly by?: 'assistant' } | undefined): string =>
-  view === undefined ? 'not an operating display'
-    : view.by === 'assistant' ? 'AI-composed view · not an operating display' : 'Generated from the model · not an operating display'
+export const provenanceMark = (view: { readonly by?: 'assistant' } | undefined): string => provenanceMarks(view)[0]
+
+/** The mark in its words, then the same said shorter, for a footer too narrow for the first (a 360 px chat answer): never cut. */
+export const provenanceMarks = (view: { readonly by?: 'assistant' } | undefined): readonly [string, string] =>
+  view === undefined ? ['not an operating display', 'not for operating']
+    : view.by === 'assistant' ? ['AI-composed view · not an operating display', 'AI view · not for operating']
+      : ['Generated from the model · not an operating display', 'Model view · not for operating']

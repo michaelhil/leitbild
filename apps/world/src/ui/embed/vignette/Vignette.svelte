@@ -7,7 +7,8 @@
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
   import { embeddedDisplayFrame, hostDisplayFrame } from '../view-host.ts'
   import { alertsTarget, worstChip } from './alerts.ts'
-  import { clockText, provenanceMark } from './format.ts'
+  import { clockText, provenanceMark, provenanceMarks } from './format.ts'
+  import { firstFitting, wholeWords } from './fit-words.ts'
   import { fillsWindow, VIGNETTE_ROW_PX } from './grid.ts'
   import { toneOf } from './readout.ts'
   import { chipOrder, stateChipLook } from './state-chip.ts'
@@ -143,8 +144,8 @@
   <footer title={footer.why}>
     <span class={`clock ${footer.word.toLowerCase()}`}>{footer.word}</span>
     {#if latest !== undefined}<span>{latest.at.clock === 'simulation' ? 'sim' : 'wall'} {clockText(latest.at.at)}</span>{/if}
-    {#if footer.why !== undefined}<span class="why">{footer.why}</span>{/if}
-    <span class="mark">{provenanceMark(view)}</span>
+    {#if footer.why !== undefined}<span class="why" use:wholeWords={footer.why}></span>{/if}
+    <span class="mark" title={provenanceMark(view)} aria-label={provenanceMark(view)} use:firstFitting={provenanceMarks(view)}>{provenanceMark(view)}</span>
   </footer>
   <!-- Said once when the display freezes and once when it is live again: what is drawn has stopped following the Run. -->
   <p class="announce" role="status">{frozen ? `Display frozen${footer.why === undefined ? '' : `: ${footer.why}`}. Values, trends and alerts are the last received${latest === undefined ? '' : `, at ${clockText(latest.at.at)}`}.` : ''}</p>
@@ -178,8 +179,9 @@
   .clock { font-weight: 700; letter-spacing: 0.04em; color: var(--element-active-color); }
   .clock.frozen { color: var(--element-neutral-color); }
   /* Where the row is short, the reason a sample froze gives way before the mark does. */
-  .why { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .mark { flex: 0 1 auto; min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; }
+  .why { flex: 0 100 auto; min-width: 0; overflow: hidden; }
+  /* The mark says it shorter where the footer is narrow (provenanceMarks), never cut. */
+  .mark { flex: 0 1 auto; min-width: 0; margin-left: auto; overflow: hidden; }
   /* Read by assistive technology, not shown. */
   .announce { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 </style>
