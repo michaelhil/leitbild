@@ -9,7 +9,10 @@
 // and conducting turn a device on (ruling Q8), a position opens a valve and
 // inserts the vessel's parts, a flow fills its pipe and points its chevron.
 // An item takes OpenBridge's alert frame at the worst priority of its bound
-// readings and of the active alerts on its element the sample carries. A
+// readings and of the active alerts on its element the sample carries, those
+// expected after a first-out aside: an item whose every active alert is
+// expected is outlined dashed instead (W2.3). Every named item says what a
+// press opens (W6.1): its element, a group's members, a stop's far ends. A
 // reading that is missing, bad or stale, or a frozen sample, reads as
 // unknown: a static device or tank, a dashed pipe; never as off or empty. One
 // outside its declared validity draws as unknown and writes "—".
@@ -99,11 +102,29 @@ export interface FlowDrawing {
   /** A tank's or the vessel's level in percent, null where not known; a vessel's parts each inserted 0..1, null where not known, in their groups. */
   readonly vessels: ReadonlyArray<Box & { readonly id: string; readonly element: string; readonly kind: 'tank' | 'exchanger' | 'vessel'; readonly level: number | null; readonly unknown: boolean; readonly tone: AlertTone | null; readonly title: string; readonly drawing?: VesselDrawing; readonly parts?: ReadonlyArray<ReadonlyArray<number | null>> }>
   readonly buses: ReadonlyArray<Box & { readonly id: string; readonly vertical: boolean; readonly title: string }>
-  /**
-   * Each named item's text. `outline`: an item not following a command (told to run, it stopped; a trip has not
-   * stopped it) is outlined as abnormal, never in an alarm's colour, where no alarm frames it.
-   */
-  readonly texts: ReadonlyArray<{ readonly id: string; readonly element: string | null; readonly x: number; readonly y: number; readonly width: number; readonly lines: ReadonlyArray<FlowLine>; readonly tone: AlertTone | null; readonly title: string; readonly outline: 'abnormal' | null }>
+  /** Each named item: its text, and what it is to a person (plan v5 contract 3). */
+  readonly texts: ReadonlyArray<FlowItem>
+}
+
+/**
+ * A named item as drawn: its text at its place, and what a press on it opens (`targets`: the elements whose default
+ * it opens, one for an item, its members for a group, the equipment a stop names; none where it carries no element),
+ * the box its symbol and text cover (`area`, what a press and an outline take), and its `outline`: `abnormal` where
+ * it does not follow a command (told to run, it stopped; a trip has not stopped it), `expected` where every active
+ * alert on it is expected after a first-out, where no alarm frames it.
+ */
+export interface FlowItem {
+  readonly id: string
+  readonly kind: 'item' | 'group' | 'stop'
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly lines: ReadonlyArray<FlowLine>
+  readonly tone: AlertTone | null
+  readonly title: string
+  readonly targets: ReadonlyArray<{ readonly element: string; readonly label: string }>
+  readonly area: Box
+  readonly outline: 'abnormal' | 'expected' | null
 }
 
 export const flowDrawing = (section: Topology, observations: ReadonlyArray<Observation>, alerts: ReadonlyArray<AlertRow>, frozen: boolean): FlowDrawing => {
@@ -137,16 +158,19 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
     return on === null ? { kind: 'unknown' } : { kind: on ? 'on' : 'off' }
   }
   // Active alerts of the drawn object by the element they are on.
-  const alerted = new Map<string, Array<AlertRow['priority']>>()
+  const alerted = new Map<string, Array<AlertRow>>()
   for (const row of alerts) {
     const subject = row.alert.subject
     if (row.objectId !== section.objectId || row.state === 'returned-unack' || subject === undefined || !('element' in subject)) continue
-    alerted.set(subject.element, [...alerted.get(subject.element) ?? [], row.priority])
+    alerted.set(subject.element, [...alerted.get(subject.element) ?? [], row])
   }
+  const rowsAt = (nodes: ReadonlyArray<NodeView>): ReadonlyArray<AlertRow> => nodes.flatMap(node => alerted.get(node.element ?? node.id) ?? [])
+  // An alert expected after a first-out colours nothing: its item is outlined dashed instead, while every one is.
   const toneAt = (nodes: ReadonlyArray<NodeView>): AlertTone | null => {
-    const tones = nodes.flatMap(node => [...node.bindings.map(binding => toneOf(observed.get(binding.ref)?.priority)), ...(alerted.get(node.element ?? node.id) ?? []).map(priority => toneOf(priority ?? undefined))])
+    const tones = [...nodes.flatMap(node => node.bindings.map(binding => toneOf(observed.get(binding.ref)?.priority))), ...rowsAt(nodes).filter(row => row.expected === undefined).map(row => toneOf(row.priority ?? undefined))]
     return (['critical', 'alarm', 'warning', 'caution'] as const).find(level => tones.includes(level)) ?? null
   }
+  const expectedAt = (nodes: ReadonlyArray<NodeView>): boolean => rowsAt(nodes).length > 0 && rowsAt(nodes).every(row => row.expected !== undefined)
 
   const boxes = new Map(section.layout.nodes.map(node => [node.id, { x: px(node.x), y: px(node.y), width: px(node.width), height: px(node.height) }]))
   const inside = (box: Box) => (point: Point): boolean => point[0] >= box.x - 1 && point[0] <= box.x + box.width + 1 && point[1] >= box.y - 1 && point[1] <= box.y + box.height + 1
@@ -187,7 +211,7 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
     return [...pipeSegments(edge.id, edge.points, edge.gaps, value, size), ...(chevron === null ? [] : [chevron])]
   })
 
-  const drawing: { devices: FlowDrawing['devices'][number][]; vessels: FlowDrawing['vessels'][number][]; buses: FlowDrawing['buses'][number][]; texts: FlowDrawing['texts'][number][] } = { devices: [], vessels: [], buses: [], texts: [] }
+  const drawing: { devices: FlowDrawing['devices'][number][]; vessels: FlowDrawing['vessels'][number][]; buses: FlowDrawing['buses'][number][]; texts: FlowItem[] } = { devices: [], vessels: [], buses: [], texts: [] }
   for (const node of section.layout.nodes) {
     const view = byId.get(node.id)
     const symbol = symbols.get(node.id)
@@ -261,9 +285,16 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
     const title = [view.label, ...lines.slice(1).map(line => line.text)].join(' · ')
     if (node.text !== undefined) {
       const shown = sized.slice(0, Math.max(1, node.text.lines)).filter(line => line.text !== '')
-      // A command not followed is outlined where no alarm frames the item; the frame says more.
-      const outline = tone === null && lines.some(line => line.kind === 'command') ? 'abnormal' as const : null
-      drawing.texts.push({ id: node.id, element: view.class === 'stop' ? null : element, x: px(node.text.x), y: px(node.text.y), width: px(node.text.width), lines: shown, tone, title, outline })
+      // A command not followed is outlined, else alerts all expected, where no alarm frames the item; the frame says more.
+      const outline = tone !== null ? null : lines.some(line => line.kind === 'command') ? 'abnormal' as const : expectedAt(members) ? 'expected' as const : null
+      // What a press opens: a stop the equipment it names, a group its members, an item its element; nothing without one.
+      const targets = view.stop !== undefined ? view.stop.far.flatMap(end => (end.element === undefined ? [] : [{ element: end.element, label: end.label }]))
+        : members.flatMap(member => (member.element === undefined ? [] : [{ element: member.element, label: member.label }]))
+      const text = { x: px(node.text.x), y: px(node.text.y), width: px(node.text.width), height: px(node.text.height) }
+      // A device's symbol is its two cells at its centre; anything else covers its box.
+      const drawn = DEVICES.has(symbol) ? { x: box.x + box.width / 2 - VIGNETTE_ROW_PX, y: box.y + box.height / 2 - VIGNETTE_ROW_PX, width: 2 * VIGNETTE_ROW_PX, height: 2 * VIGNETTE_ROW_PX } : box
+      const area = { x: Math.min(drawn.x, text.x), y: Math.min(drawn.y, text.y), width: Math.max(drawn.x + drawn.width, text.x + text.width) - Math.min(drawn.x, text.x), height: Math.max(drawn.y + drawn.height, text.y + text.height) - Math.min(drawn.y, text.y) }
+      drawing.texts.push({ id: node.id, kind: view.stop !== undefined ? 'stop' : members.length > 1 ? 'group' : 'item', x: text.x, y: text.y, width: text.width, lines: shown, tone, title, targets, area, outline })
     }
     const counted = members.map(stateOf)
     const state: DeviceState = members.length > 1
