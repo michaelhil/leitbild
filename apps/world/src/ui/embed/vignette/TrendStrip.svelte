@@ -85,10 +85,13 @@
   }
 
   interface Fitted { readonly names: ReadonlyArray<string>; readonly chip: { readonly word: string; readonly text: string } | null; readonly rate: string }
+  /** Words a name never ends on once its last words give way: a joining word or mark that leads to what was dropped. */
+  const DANGLING = /(?:\s+(?:from|of|to|and|or|the|in|on|at|for|with|by|·|→|-|–|\())+$/i
   /**
    * A legend row keeps its name whole: the longest name that fits beside the value, the chip and the rate; else the
-   * shortest with the rate given way, then with the chip's order word alone; only where none fits, its first whole
-   * words. Fitted again whenever its room or its words change.
+   * shortest with the rate given way, then with the chip's order word alone; then as many of its first whole words as
+   * fit, never ending on a joining word; only where not one word fits, that word cut. The value never gives way.
+   * Fitted again whenever its room or its words change.
    */
   const legendFit = (node: HTMLElement, fitted: Fitted) => {
     let current = fitted
@@ -107,6 +110,11 @@
         if (chip !== null && current.chip !== null) chip.textContent = attempt.word ? current.chip.word : current.chip.text
         if (rate !== null) rate.textContent = attempt.rate ? current.rate : ''
         if (name.scrollWidth <= name.clientWidth) return
+      }
+      const words = shortest.split(' ')
+      for (let count = words.length - 1; count >= 1; count -= 1) {
+        name.textContent = words.slice(0, count).join(' ').replace(DANGLING, '')
+        if (name.textContent !== '' && name.scrollWidth <= name.clientWidth) return
       }
       name.textContent = wordsThatFit(shortest, shown => { name.textContent = shown; return name.scrollWidth <= name.clientWidth })
     }
