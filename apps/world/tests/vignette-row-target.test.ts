@@ -38,3 +38,23 @@ describe('what a press on an alert row opens', () => {
     expect(opening).toContain('subject: openDefault,')
   })
 })
+
+describe('an alert on a subject group its Pack declares as an element (a grid island)', () => {
+  const island = (id: string, label?: string) => ({ ...row({ subject: { group: id }, priority: 'alarm' }, 'grid:1'), group: { objectId: 'grid:1', subjectGroup: id, ...(label === undefined ? {} : { label }) } }) as unknown as AlertRow
+
+  test('its tile is named by the element, never by the group id', async () => {
+    const { alertTiles } = await import('../src/features/displays/alerts/census.ts')
+    const tiles = alertTiles([island('island:bus:a', 'Island at Hasle trafostasjon 420 kV'), island('island:bus:b', 'Island at Halden PWR switchyard')])
+    expect(tiles.map(tile => tile.label)).toEqual(['Island at Hasle trafostasjon 420 kV', 'Island at Halden PWR switchyard'])
+    const view = readFileSync(join(import.meta.dir, '../src/features/displays/compose/view.ts'), 'utf8')
+    expect(view).toContain('declared.get(row.objectId)?.declaration?.elements.find(element => element.id === row.group.subjectGroup)?.label')
+  })
+
+  test('the element\'s own alerts list it, in the sample and in the section', async () => {
+    const { inSection } = await import('../src/ui/embed/vignette/alerts.ts')
+    expect(inSection({ objectIds: ['grid:1'], elements: ['island:bus:a'] })(island('island:bus:a'))).toBe(true)
+    expect(inSection({ objectIds: ['grid:1'], elements: ['island:bus:b'] })(island('island:bus:a'))).toBe(false)
+    const view = readFileSync(join(import.meta.dir, '../src/features/displays/compose/view.ts'), 'utf8')
+    expect(view).toContain('|| (subjectOf(row) !== undefined && view.elements?.includes(subjectOf(row)!) === true)')
+  })
+})

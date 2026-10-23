@@ -18,7 +18,8 @@ export interface AlertRow {
   readonly objectLabel: string
   readonly packId: string
   readonly categoryId: string
-  readonly group: { readonly objectId: ObjectId; readonly subjectGroup?: string }
+  /** `label`: the subject group's name where its Pack declares the group as one of its object's elements (a sample adds it). */
+  readonly group: { readonly objectId: ObjectId; readonly subjectGroup?: string; readonly label?: string }
   /** Unmodified, facets included. */
   readonly alert: AlertState
   /** null: "priority not declared"; nothing derives one from `severity` (R1). */
@@ -77,6 +78,9 @@ export const alertRows = <T extends AlertObject>(objects: ReadonlyArray<T>, pres
       }]
     })
   })
+
+/** The element or group a row's alert is on, as its record names it. */
+export const subjectOf = (row: AlertRow): string | undefined => row.alert.subject === undefined ? undefined : 'element' in row.alert.subject ? row.alert.subject.element : row.alert.subject.group
 
 export const groupKey = (row: AlertRow): string => row.group.subjectGroup === undefined ? row.group.objectId : `${row.group.objectId}|${row.group.subjectGroup}`
 

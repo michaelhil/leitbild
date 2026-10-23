@@ -9,7 +9,7 @@ import type { ObjectId, OperationalObject } from '../../../core/model/index.ts'
 import { routeDistanceMeters } from '../../../core/model/route.ts'
 import type { ElementTable } from '../../../core/observation/capabilities.ts'
 import type { Observation } from '../../../core/observation/model.ts'
-import { alertRows, priorityRank, worstFirst, type AlertRow } from '../alerts/rows.ts'
+import { alertRows, priorityRank, subjectOf, worstFirst, type AlertRow } from '../alerts/rows.ts'
 import { annunciatedRows } from '../alerts/annunciated.ts'
 import { bundledDevices, declarationOf, declaredRefs, valueOf, visibleObject, type Declared } from './declared.ts'
 import { ownStates, planLead, readLeads, tableRows, type LeadPlan } from './defaults.ts'
@@ -276,8 +276,9 @@ const alertList = (run: ComposeRun, view: Extract<ResolvedView, { kind: 'alerts'
   const objects = view.objectIds === 'run' ? run.objects.filter(object => !run.denied.has(object.id)) : view.objectIds.flatMap(id => visibleObject(run, id) ?? [])
   const all = alertRows(objects, object => ({ label: object.label, categoryId: presentedOf(run, object)?.categoryId ?? '' }))
   const filtered = view.elements !== undefined || view.refs !== undefined
+  // A row on an element, or on a group its Pack declares as an element (a Grid island), is that element's.
   return contextOrder(run, all.filter(row => !filtered
-    || (row.alert.subject !== undefined && 'element' in row.alert.subject && view.elements?.includes(row.alert.subject.element) === true)
+    || (subjectOf(row) !== undefined && view.elements?.includes(subjectOf(row)!) === true)
     || (row.alert.observable !== undefined && view.refs?.includes(row.alert.observable) === true)))
 }
 export const alertsOf = (run: ComposeRun, view: Extract<ResolvedView, { kind: 'alerts' }>): ReadonlyArray<AlertRow> => alertList(run, view).rows
@@ -360,12 +361,17 @@ export const sampleVignette = async (run: ViewRun, state: VignetteState, history
  */
 const annunciate = async (run: ComposeRun, rows: ReadonlyArray<AlertRow>, at: VignetteSample['at'], shown: ReadonlyArray<string>): Promise<{ readonly rows: ReadonlyArray<AlertRow>; readonly categories?: VignetteSample['categories'] }> => {
   const objectIds = [...new Set([...rows.map(row => row.objectId), ...shown])].filter(id => visibleObject(run, id) !== undefined)
-  const declared = new Map(await Promise.all(objectIds.map(async id => [id, { annunciation: (await declarationOf(run, id))?.annunciation, own: new Set(await ownStates(run, id as ObjectId)) }] as const)))
+  const declared = new Map(await Promise.all(objectIds.map(async id => [id, { declaration: await declarationOf(run, id), own: new Set(await ownStates(run, id as ObjectId)) }] as const)))
+  // A row on a subject group its Pack declares as an element is named by that element (its tile's label, never its id).
+  const named = rows.map(row => {
+    const label = row.group.subjectGroup === undefined ? undefined : declared.get(row.objectId)?.declaration?.elements.find(element => element.id === row.group.subjectGroup)?.label
+    return label === undefined ? row : { ...row, group: { ...row.group, label } }
+  })
   const objectRows = new Map<string, ReadonlyArray<AlertRow>>()
-  const categories = Object.fromEntries(shown.flatMap(id => (declared.get(id)?.annunciation?.categories.length ?? 0) > 0 ? [[id, declared.get(id)!.annunciation!.categories] as const] : []))
+  const categories = Object.fromEntries(shown.flatMap(id => (declared.get(id)?.declaration?.annunciation?.categories.length ?? 0) > 0 ? [[id, declared.get(id)!.declaration!.annunciation!.categories] as const] : []))
   return {
-    rows: annunciatedRows(rows, {
-      annunciation: id => declared.get(id)?.annunciation,
+    rows: annunciatedRows(named, {
+      annunciation: id => declared.get(id)?.declaration?.annunciation,
       objectRows: id => objectRows.get(id) ?? objectRows.set(id, alertsOf(run, { kind: 'alerts', objectIds: [id as ObjectId], rows: 1 })).get(id)!,
       ownStates: id => declared.get(id)?.own ?? new Set(),
       nowMs: at.clock === 'simulation' ? Date.parse(at.at) : null,
