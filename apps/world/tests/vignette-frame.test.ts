@@ -174,3 +174,12 @@ describe('the trip line on its one row (W2.4, plan v5 §2 rules 2 and 4)', () =>
     expect(trip).toContain('tripFit(widths, room)')
   })
 })
+
+describe('a criterion\'s checks not yet met (W1.4)', () => {
+  test('give way by whole words, the whole list kept in the title and for assistive technology; a lone "…" shows nothing', () => {
+    const row = source('CriterionRow.svelte')
+    expect(row).toContain('<span class="detail" aria-hidden="true" use:wholeWords={look.detail ?? \'\'}></span>')
+    expect(row).toContain('<span class="full">{look.detail}</span>')
+    expect(readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/fit-words.ts'), 'utf8')).toContain("node.textContent = shown === '…' ? '' : shown")
+  })
+})
