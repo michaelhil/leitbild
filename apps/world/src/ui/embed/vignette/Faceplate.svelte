@@ -98,7 +98,6 @@
     : faceplatePlacement({ ...(at ?? { x: room.x, y: room.y }), width: 0, height: 0 }, { width, height }, room, zoom, avoid))
   const tallest = $derived(faceplateHeight(room, zoom))
 
-  let tabbing = false
   runOnMount(() => {
     let closed = false
     // The Pack's actions load only where a display window presents the display: nowhere else is the element operated.
@@ -109,7 +108,6 @@
       )
     }
     const key = (event: KeyboardEvent): void => {
-      if (event.key === 'Tab') { tabbing = true; setTimeout(() => { tabbing = false }, 0) }
       if (event.key !== 'Escape') return
       // A section that claims Esc (a selected command) has it first; a pinned overlay only when focus is in it.
       if (event.target instanceof Element && event.target.closest('[data-claims-escape]') !== null) return
@@ -126,7 +124,11 @@
       rest = card.offsetHeight - (readingsBox?.offsetHeight ?? 0)
       onsize(height)
     })
-    if (card !== undefined) { sized.observe(card); if (pinned === null) card.focus() }
+    // Focus moves in on its header once OpenBridge's card has drawn its slot: a Tab goes on to its first control.
+    if (card !== undefined) {
+      sized.observe(card)
+      if (pinned === null) { card.focus(); requestAnimationFrame(() => { if (card?.contains(document.activeElement) === true) header?.focus() }) }
+    }
     if (readingsBox !== undefined) sized.observe(readingsBox)
     return () => {
       closed = true
@@ -135,11 +137,14 @@
     }
   })
 
-  // Focus stays inside an open faceplate: a Tab past either end comes back to it, never to the page around the display.
-  const focusOut = (event: FocusEvent): void => {
-    if (pinned !== null || !tabbing || card === undefined) return
-    const next = event.relatedTarget
-    if (next === null || !(next instanceof Node) || !card.contains(next)) card.focus()
+  // Focus stays inside an open faceplate (W3.7): a Tab past its last stop comes back to its header, a Shift+Tab past
+  // its header to its last stop of its own, never to the page around the display.
+  let header: HTMLElement | undefined = $state()
+  let contentBox: HTMLElement | undefined = $state()
+  const wrapForward = (): void => { header?.focus() }
+  const wrapBack = (): void => {
+    const stops = [...(contentBox?.querySelectorAll<HTMLElement>('button:not([disabled]), summary, input:not([disabled]), select, textarea, a[href], [tabindex="0"]') ?? [])]
+    ;(stops.at(-1) ?? header)?.focus()
   }
 
   // A drag follows the pointer captured on the header or the corner until it is released (mouse, pen and touch alike).
@@ -185,12 +190,15 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div bind:this={card} class="faceplate" class:pinned={pinned !== null} role="dialog" aria-label={`${name}: ${pinned !== null ? 'pinned faceplate' : 'faceplate'}`} tabindex="-1" data-faceplate={elementId}
   style:left={`${place.x}px`} style:top={`${place.y}px`} style:width={`${width}px`} style:max-height={`${tallest}px`} style:transform={`scale(${1 / zoom})`} style:--row={`${VIGNETTE_ROW_PX}px`}
-  onpointerdown={() => ontouched()} onfocusout={focusOut}>
+  onpointerdown={() => ontouched()}>
+  <!-- Focus guards: reached only by Tab past either end, each sends focus back inside. -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  {#if pinned === null}<span class="sentinel" tabindex="0" aria-hidden="true" onfocus={wrapBack}></span>{/if}
   <obc-card showTitle={false}>
     <div class="body">
       <!-- Pinned, the header is the overlay's handle: focusable, moved by the arrow keys. -->
       <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_static_element_interactions -->
-      <header tabindex={pinned !== null ? 0 : -1} title={pinned !== null ? 'Drag to move (arrow keys: 8 px, Shift: 24 px); Shift+Alt+arrows resize' : undefined} onpointerdown={headerDown} onkeydown={headerKey}>
+      <header bind:this={header} tabindex="0" title={pinned !== null ? 'Drag to move (arrow keys: 8 px, Shift: 24 px); Shift+Alt+arrows resize' : undefined} onpointerdown={headerDown} onkeydown={headerKey}>
         {#if pinned !== null}<span class="handle" aria-hidden="true"><obi-drag-horizontal usecsscolor></obi-drag-horizontal></span>{/if}
         <span class="name">{name}</span>
         {#if word !== null}<span class="word">{word}</span>{/if}
@@ -206,7 +214,7 @@
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
         <obc-icon-button class="pin" variant="flat" activated={pinned !== null} ariaLabel={pinned !== null ? `Unpin ${name}` : `Pin ${name} on the display`} title={pinned !== null ? 'Unpin: close the overlay' : 'Pin on the display'} onclick={() => onpin(place)}>{#if pinned !== null}<obi-pin-selected-google usecsscolor></obi-pin-selected-google>{:else}<obi-pin-google usecsscolor></obi-pin-google>{/if}</obc-icon-button>
       </header>
-      <div class="content">
+      <div class="content" bind:this={contentBox}>
         {#if offer === 'actions' && Actions !== null}
           <div class="actions"><Actions {runId} objectId={objectIdSchema.parse(objectId)} {elementId} {frozen} pinned={pinned !== null} /></div>
         {/if}
@@ -245,6 +253,8 @@
       </div>
     </div>
   </obc-card>
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  {#if pinned === null}<span class="sentinel" tabindex="0" aria-hidden="true" onfocus={wrapForward}></span>{/if}
   {#if pinned !== null}
     <span class="corner" role="presentation" title="Drag to resize (Shift+Alt+arrows)" onpointerdown={cornerDown}><obi-resize-corner usecsscolor></obi-resize-corner></span>
   {/if}
@@ -254,6 +264,7 @@
   /* OpenBridge's card on its floating elevation, no arrow; it reads at 100 % whatever the display's zoom. */
   .faceplate { position: fixed; z-index: 10; display: flex; transform-origin: 0 0; outline: none; border-radius: var(--ui-components-card-border-radius-regular, 8px); box-shadow: var(--shadow-floating); color: var(--element-active-color); font-size: 13px; }
   .faceplate.pinned { z-index: 9; }
+  .sentinel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .faceplate:focus-visible { outline: 2px solid var(--border-focus-color); }
   obc-card { display: flex; flex: 1 1 auto; min-height: 0; }
   .body { display: flex; flex-direction: column; width: 100%; min-height: 0; max-height: inherit; }
