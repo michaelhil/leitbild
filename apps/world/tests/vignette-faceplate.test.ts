@@ -264,6 +264,20 @@ describe('what a faceplate reads', () => {
     expect(shortOfRoom(6, { rest: 227, row, pending: false, rows: 2 })).toBe(false)
   })
 
+  test('the fold is decided once at rest: a command a person selects never folds its controls, and folded controls stay open once opened', () => {
+    const faceplate = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Faceplate.svelte'), 'utf8')
+    expect(faceplate).toContain('if (!decided && Actions !== null && readings !== null && (actionsBox?.offsetHeight ?? 0) > 0) {')
+    expect(faceplate).toContain('decided = true')
+    expect(faceplate).not.toContain('short = true')
+    // Opening it never scrolls the page around the display.
+    expect(faceplate).toContain('card.focus({ preventScroll: true })')
+    expect(faceplate).toContain('header?.focus({ preventScroll: true })')
+    // A one-way `open={…}` is reassigned on every read (with the "Controls (n)" text) and closes what a person opened.
+    const actions = readFileSync(join(import.meta.dir, '../src/packs/process-plant/ui/displays/operation/ElementActions.svelte'), 'utf8')
+    expect(actions).toContain('<details class="folded" bind:open={unfolded}>')
+    expect(actions).toContain('draft = { write: proposal.write, at: Date.now() }; unfolded = true')
+  })
+
   test('a frozen display\'s faceplate keeps its last readings, in the low-integrity style, never "?"', () => {
     const source = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Faceplate.svelte'), 'utf8')
     expect(source).toContain('const observations = $derived(readings === null ? [] : readings.observations)')

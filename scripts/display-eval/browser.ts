@@ -58,19 +58,32 @@ export interface Hit { readonly x: number; readonly y: number; readonly w: numbe
  * and same-origin iframes with each element's page offset, and the finder over it. */
 export const PRELUDE = `(() => {
   if (window.__lb) return window.__lb
-  const walk = (root, ox, oy, out, frames) => {
+  // A frame's own scale on its page (a display window zoomed by transform: scale): its box over its layout width.
+  const scaleOf = frame => frame.offsetWidth > 0 ? frame.getBoundingClientRect().width / frame.offsetWidth : 1
+  // Each element with its document's place on the top page: x = ox + s * (its own viewport x), through every frame.
+  const walk = (root, ox, oy, out, frames, s = 1) => {
     for (const el of root.querySelectorAll('*')) {
-      out.push([el, ox, oy])
-      if (el.shadowRoot) walk(el.shadowRoot, ox, oy, out, frames)
+      out.push([el, ox, oy, s])
+      if (el.shadowRoot) walk(el.shadowRoot, ox, oy, out, frames, s)
       if (el.tagName === 'IFRAME') {
         try {
           const doc = el.contentDocument
-          if (doc) { const r = el.getBoundingClientRect(); frames.push(el); walk(doc, ox + r.left + el.clientLeft, oy + r.top + el.clientTop, out, frames) }
+          if (doc) { const r = el.getBoundingClientRect(); const fs = scaleOf(el); frames.push(el); walk(doc, ox + s * (r.left + el.clientLeft * fs), oy + s * (r.top + el.clientTop * fs), out, frames, s * fs) }
         } catch {}
       }
     }
     return out
   }
+  /** Where a document's viewport stands on the top page: top x = ox + s * x, through every (scaled) frame above it. */
+  const origin = doc => {
+    const chain = []
+    for (let f = doc.defaultView.frameElement; f; f = f.ownerDocument.defaultView.frameElement) chain.unshift(f)
+    let ox = 0, oy = 0, s = 1
+    for (const f of chain) { const r = f.getBoundingClientRect(); const fs = scaleOf(f); ox += s * (r.left + f.clientLeft * fs); oy += s * (r.top + f.clientTop * fs); s *= fs }
+    return { ox, oy, s }
+  }
+  /** An element's box on the top page. */
+  const toTop = el => { const o = origin(el.ownerDocument); const r = el.getBoundingClientRect(); return { x: o.ox + o.s * r.left, y: o.oy + o.s * r.top, w: o.s * r.width, h: o.s * r.height } }
   const everything = () => walk(document, 0, 0, [], [])
   const shown = el => { const r = el.getBoundingClientRect(); if (r.width <= 0 || r.height <= 0) return false; const s = el.ownerDocument.defaultView.getComputedStyle(el); return s.visibility !== 'hidden' && s.display !== 'none' }
   const textOf = el => ((el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title'))) || '') + ' ' + (el.innerText ?? el.textContent ?? '')
@@ -87,13 +100,13 @@ export const PRELUDE = `(() => {
     hits = hits.filter(([el]) => shown(el))
     const hit = hits[t.nth ?? 0]
     if (!hit) return null
-    const [el, ox, oy] = hit
+    const [el, ox, oy, s] = hit
     const r = el.getBoundingClientRect()
-    return { x: ox + r.left, y: oy + r.top, w: r.width, h: r.height, count: hits.length, tag: el.tagName.toLowerCase(), label: textOf(el).trim().slice(0, 120) }
+    return { x: ox + s * r.left, y: oy + s * r.top, w: s * r.width, h: s * r.height, count: hits.length, tag: el.tagName.toLowerCase(), label: textOf(el).trim().slice(0, 120) }
   }
   /** Every same-origin document: the page's and each iframe's, with the iframe's src. */
   const documents = () => { const frames = []; walk(document, 0, 0, [], frames); return [{ doc: document, frame: null }, ...frames.map(frame => ({ doc: frame.contentDocument, frame }))] }
-  window.__lb = { walk, everything, shown, textOf, inside, find, documents }
+  window.__lb = { walk, everything, shown, textOf, inside, find, documents, origin, toTop, scaleOf }
   return window.__lb
 })()`
 

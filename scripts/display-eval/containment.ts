@@ -87,7 +87,7 @@ const runSize = async (config: { origin: string; workspaceId: string; runId: str
         const card = seen.dialogs.at(-1)
         const body = (await targetsOf(page)).find(target => target.key === item.key) ?? item
         const geometry = card === undefined ? null : {
-          h: card.h, w: card.w, arrow: card.arrow === true,
+          h: card.h, w: card.w, arrow: card.arrow === true, arrowParts: card.arrowParts ?? [],
           inViewport: card.x >= 0 && card.y >= 0 && card.x + card.w <= size.width && card.y + card.h <= size.height,
           coversItem: !(card.x + card.w <= body.x - body.w / 2 || card.x >= body.x + body.w / 2 || card.y + card.h <= body.y - body.h / 2 || card.y >= body.y + body.h / 2),
         }
@@ -102,12 +102,12 @@ const runSize = async (config: { origin: string; workspaceId: string; runId: str
     if (config.matrix && faceplates.length > 0) {
       // W3.2's acceptance: ≤ 300 px without a proposal for SG A, RCP A, PZR, the core and the PORV; every card in the
       // viewport, not over its item, with no arrow.
-      const named = /^(Steam Generator A|SG A|Reactor Coolant Pump A|RCP A|Pressurizer|PZR|Reactor Core|Core|PORV)\b/i
-      const opened = faceplates.filter(entry => entry.opened && entry.geometry !== null) as Array<{ item: string; geometry: { h: number; w: number; arrow: boolean; inViewport: boolean; coversItem: boolean } }>
+      const named = /^(Open\s+)?(Steam Generator A|SG A|Reactor Coolant Pump A|RCP A|Pressurizer|PZR|Reactor Core|Core|PORV)\b/i
+      const opened = faceplates.filter(entry => entry.opened && entry.geometry !== null) as Array<{ item: string; geometry: { h: number; w: number; arrow: boolean; arrowParts: ReadonlyArray<string>; inViewport: boolean; coversItem: boolean } }>
       const tall = opened.filter(entry => named.test(entry.item) && entry.geometry.h > 300)
       const outside = opened.filter(entry => !entry.geometry.inViewport), covering = opened.filter(entry => entry.geometry.coversItem), arrows = opened.filter(entry => entry.geometry.arrow)
       matrix.push({ id: `faceplate-card-${size.name}`, release: 'R2', pass: opened.length > 0 && tall.length === 0 && outside.length === 0 && covering.length === 0 && arrows.length === 0,
-        detail: `${opened.length} faceplates: ${tall.length === 0 ? 'the named five ≤ 300 px' : `taller than 300 px: ${tall.map(entry => `${entry.item.split(' · ')[0]} ${entry.geometry.h} px`).join(', ')}`}; ${outside.length} outside the viewport; ${covering.length} over their item; ${arrows.length} with an arrow; widths ${Math.min(...opened.map(entry => entry.geometry.w))}–${Math.max(...opened.map(entry => entry.geometry.w))} px` })
+        detail: `${opened.length} faceplates: ${tall.length === 0 ? 'the named five ≤ 300 px' : `taller than 300 px: ${tall.map(entry => `${entry.item.split(' · ')[0]} ${entry.geometry.h} px`).join(', ')}`}; ${outside.length} outside the viewport; ${covering.length} over their item; ${arrows.length} with an arrow at the card's edge${arrows.length === 0 ? '' : ` (${arrows.slice(0, 3).map(entry => `${entry.item.split(' · ')[0]}: ${entry.geometry.arrowParts.filter(part => part.endsWith('(at the edge)')).join(', ')}`).join('; ')})`}${(() => { const inner = [...new Set(opened.flatMap(entry => entry.geometry.arrowParts.filter(part => !part.endsWith('(at the edge)'))))]; return inner.length === 0 ? '' : ` (inside cards, not pointers: ${inner.slice(0, 4).join(', ')})` })()}; widths ${Math.min(...opened.map(entry => entry.geometry.w))}–${Math.max(...opened.map(entry => entry.geometry.w))} px` })
     }
     if (config.matrix && (size.name === '1920' || size.name === '1046')) {
       matrix.push(await navigation(page, home, reopen, join(out, `${tag}-navigation.png`)))

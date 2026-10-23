@@ -57,12 +57,14 @@ export const csfRow = (screen: Screen, size: SizeSpec, run: 'A' | 'B'): MatrixCh
 /** The SG A item's body press: the element's default as the next deck entry with its drawing; Esc = Back. */
 export const navigation = async (page: Page, home: ReturnType<typeof homeOf>, reopen: () => Promise<Screen>, shotPath: string): Promise<MatrixCheck> => {
   const targets = await targetsOf(page)
-  const body = targets.find(target => target.kind === 'item' && /^(Steam Generator A|SG A)\b/i.test(target.name))
+  const body = targets.find(target => target.kind === 'item' && /^(Open\s+)?(Steam Generator A|SG A)\b/i.test(target.name))
   if (body === undefined) return { id: 'navigation', release: 'R2', pass: false, detail: 'no SG A item on screen' }
   const before = home.position
   const { outcome, after } = await press(page, body)
   const drawing = after.lines.filter(line => line.region === 'drawing').length
-  const next = (() => { const a = before?.match(/(\d+)\s*\/\s*(\d+)/), b = outcome.kind === 'detail' ? outcome.position?.match(/(\d+)\s*\/\s*(\d+)/) : null; return a && b ? Number(b[1]) === Number(a[1]) + 1 : false })()
+  // The next deck entry: right after the display it came from (2 / 6 from 1 / 5), or the deck's new last entry (6 / 6
+  // from 1 / 5: R2 appends a detail after the unit overviews, with Back to where it came from).
+  const next = (() => { const a = before?.match(/(\d+)\s*\/\s*(\d+)/), b = outcome.kind === 'detail' ? outcome.position?.match(/(\d+)\s*\/\s*(\d+)/) : null; return a && b ? Number(b[1]) === Number(a[1]) + 1 || (Number(b[2]) === Number(a[2]) + 1 && Number(b[1]) === Number(b[2])) : false })()
   await page.shot(shotPath)
   let escaped = false, escTitle: string | null = null
   if (outcome.kind === 'detail') {
@@ -75,16 +77,32 @@ export const navigation = async (page: Page, home: ReturnType<typeof homeOf>, re
   const restored = await goHome(page, home)
   if (!restored.home) await reopen()
   const pass = outcome.kind === 'detail' && /SG A|Steam Generator A/i.test(outcome.title ?? '') && drawing > 0 && next && escaped
-  return { id: 'navigation', release: 'R2', pass, detail: `SG A body press → ${describe(outcome)}${outcome.kind === 'detail' ? `; ${drawing > 0 ? `with its drawing (${drawing} drawn lines)` : 'no drawing'}; ${next ? 'the next deck entry' : `not the next entry (from ${before})`}; Esc → "${escTitle ?? '?'}"${escaped ? ' (Back)' : ''}` : ''}`, shot: shotPath }
+  return { id: 'navigation', release: 'R2', pass, detail: `SG A body press → ${describe(outcome)}${outcome.kind === 'detail' ? `; ${drawing > 0 ? `with its drawing (${drawing} drawn lines)` : 'no drawing'}; ${next ? `a new deck entry (${outcome.kind === 'detail' ? outcome.position : ''} from ${before})` : `not the next entry (from ${before})`}; Esc → "${escTitle ?? '?'}"${escaped ? ' (Back)' : ''}` : ''}`, shot: shotPath }
 }
+
+/** A point on the app's top bar (the Host page's own, 20 px down), outside the display window, on no control and no
+ * frame: scanned along the bar from the middle outward, each candidate checked with elementFromPoint. */
+const TOP_BAR_POINT = `(() => {
+  const y = 20
+  const mid = window.innerWidth / 2
+  for (let step = 0; step < 40; step += 1) {
+    const x = Math.round(mid + (step % 2 === 0 ? 1 : -1) * Math.ceil(step / 2) * 16)
+    const el = document.elementFromPoint(x, y)
+    if (el && !el.closest('button, a, input, select, textarea, iframe, [role=button], [role=link], [tabindex], [contenteditable=true]')) return { x, y }
+  }
+  return null
+})()`
 
 /** Presses: chips, a label, a stop with several far ends, a press in another frame, and refused defaults. */
 export const presses = async (page: Page, config: { readonly api: StackApi; readonly runId: string; readonly plantId: string; readonly home: ReturnType<typeof homeOf>; readonly reopen: () => Promise<Screen>; readonly chatOpen: boolean; readonly out: string; readonly tag: string }): Promise<ReadonlyArray<MatrixCheck>> => {
   const { home, reopen } = config
   const restore = async () => { const back = await goHome(page, home); if (!back.home) await reopen() }
   const checks: MatrixCheck[] = []
-  // Chips: each CSF or mode chip opens its target (W4.1: the deciding element).
-  const chips = (await targetsOf(page)).filter(target => target.kind === 'chip' && CSF.test(target.name))
+  // Chips: each CSF or mode chip drawn as a button opens its target (W4.1: the deciding element). A chip with no
+  // deciding element (the mode) is a plain chip, not a button (a refused default is not a button): reported apart.
+  const allChips = (await targetsOf(page)).filter(target => target.kind === 'chip' && CSF.test(target.name))
+  const chips = allChips.filter(target => target.pressable)
+  const plain = allChips.filter(target => !target.pressable)
   const chipResults: string[] = []
   let chipsOpen = 0
   for (const chip of chips) {
@@ -94,7 +112,7 @@ export const presses = async (page: Page, config: { readonly api: StackApi; read
     chipResults.push(`"${chip.name.slice(0, 20)}" → ${describe(outcome)}`)
     if (outcome.kind !== 'nothing') await restore()
   }
-  checks.push({ id: 'press-chips', release: 'R2', pass: chips.length > 0 && chipsOpen === chips.length, detail: `${chipsOpen} of ${chips.length} chips open a target: ${chipResults.slice(0, 7).join('; ')}` })
+  checks.push({ id: 'press-chips', release: 'R2', pass: chips.length > 0 && chipsOpen === chips.length, detail: `${chipsOpen} of ${chips.length} button chips open a target: ${chipResults.slice(0, 7).join('; ')}; ${plain.length} plain chips, not buttons (no deciding element)${plain.length === 0 ? '' : `: ${plain.map(chip => `"${chip.name.slice(0, 24)}"`).join(', ')}`}` })
   // A label press opens its item (as its body press does).
   const targets = await targetsOf(page)
   const label = targets.find(target => target.kind === 'label' && /^SG A$|^Steam Generator A$/i.test(target.name)) ?? targets.find(target => target.kind === 'label' && target.item !== null && targets.some(other => other.kind === 'item' && other.item === target.item))
@@ -117,10 +135,11 @@ export const presses = async (page: Page, config: { readonly api: StackApi; read
     if (outcome.kind !== 'nothing') await restore()
   }
   // A press in another frame closes an unpinned faceplate: open one on SG A (its magnifier, else its body), then
-  // press in the chat panel (or, without the chat, on the window's header title, which is the Run page's frame).
+  // press in the chat panel, or without the chat outside the display window on a part of the page that is no
+  // control: the app's top bar (lead ruling: the window's title is its drag handle, and dragging keeps the faceplate).
   {
     const all = await targetsOf(page)
-    const opener = all.find(target => target.kind === 'magnifier' && /SG A|Steam Generator A/i.test(target.name)) ?? all.find(target => target.kind === 'item' && /^(Steam Generator A|SG A)\b/i.test(target.name))
+    const opener = all.find(target => target.kind === 'magnifier' && /SG A|Steam Generator A/i.test(target.name)) ?? all.find(target => target.kind === 'item' && /^(Open\s+)?(Steam Generator A|SG A)\b/i.test(target.name))
     if (opener === undefined) checks.push({ id: 'press-other-frame', release: 'R2', pass: false, detail: 'no SG A opener' })
     else {
       const opened = await press(page, opener)
@@ -129,8 +148,8 @@ export const presses = async (page: Page, config: { readonly api: StackApi; read
         await restore()
       } else {
         const elsewhere = config.chatOpen
-          ? await page.eval<{ x: number; y: number } | null>(`(() => { const d = lb.documents().find(x => x.frame && /\\/agents/.test(x.frame.getAttribute('src') || '') && lb.shown(x.frame)); if (!d) return null; const r = d.frame.getBoundingClientRect(); let ox = 0, oy = 0; for (let f = d.frame.ownerDocument.defaultView.frameElement; f; f = f.ownerDocument.defaultView.frameElement) { const q = f.getBoundingClientRect(); ox += q.left; oy += q.top } return { x: ox + r.left + r.width / 2, y: oy + r.top + r.height * 0.4 } })()`)
-          : await page.find({ sel: '.display-window-title' }).then(hit => hit === null ? null : { x: hit.x + hit.w / 2, y: hit.y + hit.h / 2 })
+          ? await page.eval<{ x: number; y: number } | null>(`(() => { const d = lb.documents().find(x => x.frame && /\\/agents/.test(x.frame.getAttribute('src') || '') && lb.shown(x.frame)); if (!d) return null; const r = lb.toTop(d.frame); return { x: r.x + r.w / 2, y: r.y + r.h * 0.4 } })()`)
+          : await page.eval<{ x: number; y: number } | null>(TOP_BAR_POINT)
         if (elsewhere === null) checks.push({ id: 'press-other-frame', release: 'R2', pass: false, detail: 'no other frame to press' })
         else {
           await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: elsewhere.x, y: elsewhere.y })
@@ -139,7 +158,7 @@ export const presses = async (page: Page, config: { readonly api: StackApi; read
           await sleep(1_000)
           const after = await screenOf(page)
           const still = after.dialogs.filter(dialog => !dialog.pinned).length
-          checks.push({ id: 'press-other-frame', release: 'R2', pass: still === 0, detail: `faceplate "${'label' in opened.outcome ? opened.outcome.label.slice(0, 40) : ''}" ${still === 0 ? 'closed' : 'still open'} after a press in ${config.chatOpen ? 'the chat panel' : "the window's header"}` })
+          checks.push({ id: 'press-other-frame', release: 'R2', pass: still === 0, detail: `faceplate "${'label' in opened.outcome ? opened.outcome.label.slice(0, 40) : ''}" ${still === 0 ? 'closed' : 'still open'} after a press in ${config.chatOpen ? 'the chat panel' : `the app's top bar (${Math.round(elsewhere.x)}, ${Math.round(elsewhere.y)})`}` })
         }
         await restore()
       }
