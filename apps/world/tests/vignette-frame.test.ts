@@ -6,6 +6,7 @@ import type { VignetteValue } from '../src/features/displays/compose/model.ts'
 import { safetyFunctionReading } from '../src/packs/process-plant/observation/safety-function-reading.ts'
 import type { SafetyFunctionEvaluation } from '../src/packs/process-plant/safety-functions.ts'
 import { frameLayout } from '../src/ui/embed/vignette/grid.ts'
+import { tripFit, tripWidth } from '../src/ui/embed/vignette/trip-fit.ts'
 import { chipOrder, stateChipLook } from '../src/ui/embed/vignette/state-chip.ts'
 
 // A vignette's frame (plan v5 W4.1, W4.3, W8.1): an object's own states as
@@ -121,9 +122,9 @@ describe('the window frame by its width (W4.3)', () => {
   })
 })
 
-describe('a table of parallel values (W1.4 table, plan v5 §2 rule 2)', () => {
-  const source = (file: string): string => readFileSync(join(import.meta.dir, '../src/ui/embed/vignette', file), 'utf8')
+const source = (file: string): string => readFileSync(join(import.meta.dir, '../src/ui/embed/vignette', file), 'utf8')
 
+describe('a table of parallel values (W1.4 table, plan v5 §2 rule 2)', () => {
   test('its values take their room first and are never cut; names, headings and chips give way; it stands exactly in its rows', () => {
     const table = source('GroupedValues.svelte')
     // Each value column at least as wide as its widest value, the names' column what the values leave.
@@ -137,5 +138,39 @@ describe('a table of parallel values (W1.4 table, plan v5 §2 rule 2)', () => {
     expect(table).not.toMatch(/border-(top|bottom)/)
     // In a cell the value stands at the right and its chip, left of it, wraps out of the row where both do not fit.
     expect(source('Readout.svelte')).toMatch(/\.cell \{ flex-direction: row-reverse; flex-wrap: wrap;[^}]*overflow: hidden; \}\n\s*\.cell \.reading \{ order: -1; \}/)
+  })
+})
+
+describe('the trip line on its one row (W2.4, plan v5 §2 rules 2 and 4)', () => {
+  // Run A's parts at 13 px: TURB TRIP with its age 123 px, RX TRIP 105, a separator with its gaps 16, "+1" 14, the
+  // actuations listed ("ACTUATED: AFW START · FWI") 227, counted ("ACTUATED: 2") 95. The messages give way before any
+  // of these, so the fit weighs these alone.
+  const runA = { leads: [123, 105], actuated: { listed: 227, counted: 95 }, more: 14, sep: 16 }
+
+  test('everything where it fits; else the actuations counted; else the later leads as "+n"; the first lead always stands', () => {
+    expect(tripWidth(runA, { leads: 2, counted: false })).toBe(123 + 16 + 105 + 16 + 227)
+    expect(tripFit(runA, 1030)).toEqual({ leads: 2, counted: false })
+    expect(tripFit(runA, 487)).toEqual({ leads: 2, counted: false })
+    expect(tripFit(runA, 486)).toEqual({ leads: 2, counted: true })
+    expect(tripFit(runA, 355)).toEqual({ leads: 2, counted: true })
+    expect(tripFit(runA, 354)).toEqual({ leads: 1, counted: true })
+    expect(tripWidth(runA, { leads: 1, counted: true })).toBe(123 + 16 + 14 + 16 + 95)
+    // Narrower still nothing more gives way: the first lead, "+1" and the count stand, the row clips its end.
+    expect(tripFit(runA, 200)).toEqual({ leads: 1, counted: true })
+  })
+
+  test('without actuations the later leads fold from the last; with actuations alone they are counted', () => {
+    const three = { leads: [100, 100, 100], actuated: null, more: 14, sep: 16 }
+    expect(tripFit(three, 332)).toEqual({ leads: 3, counted: false })
+    expect(tripFit(three, 246)).toEqual({ leads: 2, counted: false })
+    expect(tripFit(three, 245)).toEqual({ leads: 1, counted: false })
+    expect(tripFit({ leads: [], actuated: { listed: 227, counted: 95 }, more: 14, sep: 16 }, 100)).toEqual({ leads: 0, counted: true })
+  })
+
+  test('a lead never shrinks below its measured label and age, so nothing draws over its neighbour', () => {
+    const trip = source('TripLine.svelte')
+    expect(trip).not.toMatch(/\.lead \{[^}]*min-width: 0/)
+    expect(trip).toContain('style:min-width={widths === null ? undefined : `${widths.leads[index]}px`}')
+    expect(trip).toContain('tripFit(widths, room)')
   })
 })
