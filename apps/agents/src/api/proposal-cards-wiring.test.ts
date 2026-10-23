@@ -43,6 +43,7 @@ describe('proposal card wiring', () => {
             reason: 'isolate', evidence: [], proposer: { actorId: 'actor:ai:x', origin: 'ai' }, proposedAtElapsedMs: 45_000, proposedAtWallMs: 1,
             expiresAtElapsedMs: 165_000, extended: false, status: 'approved', closed: { atElapsedMs: 65_000, actorId: 'actor:human:hilde', commandId: 'command:d1' },
           },
+          label: 'PZR block valve',
         }] } })
       },
     })

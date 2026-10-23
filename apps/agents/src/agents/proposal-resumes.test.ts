@@ -74,7 +74,7 @@ const setup = (options: { readonly skills?: ReadonlyArray<string>; readonly watc
         id, plantId: PLANT, write: { path: 'reactor.tripDemand', value: true }, item: 'reactor.trip', word: 'TRIP', reason: 'x', evidence: [],
         proposer: { actorId: `actor:ai:${agent.id}`, origin: 'ai' }, proposedAtElapsedMs: 45_000, proposedAtWallMs: 1, expiresAtElapsedMs: 165_000, extended: false,
         status: entry.status, ...(entry.status === 'pending' ? {} : { closed: { atElapsedMs: 65_000, ...(entry.actorId === undefined ? {} : { actorId: entry.actorId }) } }),
-      } })) } })
+      }, label: 'Reactor trip' })) } })
     }) as unknown as typeof fetch,
   })
 
@@ -344,6 +344,17 @@ describe('resuming a procedure once its proposal is approved', () => {
     s.decide('command:trip', 'approved')
     await s.tick()
     expect(s.turns).toHaveLength(0)
+  })
+
+  test('the display window\'s operator approves as "an operator", never by a raw id (W7.4)', async () => {
+    const s = setup()
+    s.turn('turn-1', [propose('call_0_0', 'command:trip')])
+    s.world.set('command:trip', { status: 'pending' })
+    s.answered('turn-1')
+    s.decide('command:trip', 'approved', 'actor:operator')
+    await s.tick()
+    expect(s.turns[0]!.turn.cause).toEqual({ kind: PROPOSAL_RESUME_CAUSE, name: 'An operator approved TRIP RX-TRIP' })
+    expect(s.turns[0]!.turn.instruction).toStartWith('[Proposal approved] An operator approved your proposal TRIP RX-TRIP')
   })
 
   test('two proposals approved together resume once naming both; one approved later resumes again', async () => {

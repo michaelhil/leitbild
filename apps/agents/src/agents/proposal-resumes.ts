@@ -25,7 +25,7 @@ import type { Room } from '../core/types/room.ts'
 import type { AIAgent, RequestedTurn, Team } from '../core/types/agent.ts'
 import { PROCEDURE_RUNNER_SKILL, PROPOSAL_RESUME_CAUSE } from '../core/proposal-resume.ts'
 import { collectTurnOperations, type TurnOperation } from './operation-claims.ts'
-import { PROPOSALS_OPERATION_ID, proposedOperationsOf, type ProposalCardReader, type ProposedOperation, type WorldProposal } from './proposal-cards.ts'
+import { actorWords, PROPOSALS_OPERATION_ID, proposedOperationsOf, type ProposalCardReader, type ProposedOperation, type WorldProposal } from './proposal-cards.ts'
 import { asAIAgent } from './shared.ts'
 
 /** Operations of a procedure Run (World); a turn that calls one works a procedure. */
@@ -76,16 +76,15 @@ interface Watch {
   approved: Approved[]
 }
 
-/** A person or agent as an actor id names them: "actor:human:hilde" → "hilde". */
-const actorName = (actorId: string): string => actorId.replace(/^actor:(?:human|ai|system|anonymous):/, '')
-
 /** What was approved, as World words the control: "TRIP RX-TRIP", "RESET Manual safety injection". */
 const actionWords = (approved: Approved): string =>
   approved.operation.reset === true ? approved.proposal.word : `${approved.proposal.word} ${approved.operation.target}`
 
 const approverOf = (approved: ReadonlyArray<Approved>): string => {
   const actors = [...new Set(approved.map(entry => entry.proposal.closed?.actorId).filter((actor): actor is string => actor !== undefined))]
-  return actors.length === 0 ? 'A person' : actors.map(actorName).join(' and ')
+  const words = [...new Set(actors.map(actorWords))].join(' and ')
+  // A kind of actor opens the sentence capitalised ("An operator approved"); a person's name stays as it is.
+  return actors.length === 0 ? 'A person' : words.replace(/^(an|the) /, first => `${first.charAt(0).toUpperCase()}${first.slice(1)}`)
 }
 
 /** The reply's cause: who approved what. */

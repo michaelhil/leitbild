@@ -119,18 +119,30 @@ const worldReviewSchema = z.object({
 const proposalsResultSchema = z.object({
   result: z.object({
     plantElapsedMs: z.number(),
-    proposals: z.array(z.object({ proposal: worldProposalSchema, review: worldReviewSchema.optional() })),
+    proposals: z.array(z.object({ proposal: worldProposalSchema, label: z.string().min(1), review: worldReviewSchema.optional() })),
   }),
 })
 export type WorldProposal = z.infer<typeof worldProposalSchema>
 export type WorldReview = z.infer<typeof worldReviewSchema>
+
+/**
+ * Who decided a proposal, as a person reads it (W7.4): a person by the name their actor id carries ("actor:human:hilde"
+ * → "hilde"), otherwise by kind, as World's display names actors: an operator, an AI agent, or the Run itself (its
+ * scenario timeline, the system); never a raw id ("actor:operator").
+ */
+export const actorWords = (actorId: string): string => {
+  const [, kind, name] = actorId.split(':')
+  if (kind === 'human' && name !== undefined && name !== '') return actorId.slice('actor:human:'.length)
+  return kind === 'ai' ? 'an AI agent' : kind === 'system' || kind === 'scenario-timeline' ? 'the Run' : 'an operator'
+}
 
 /** A card's data: what the turn proposed, and where World says it stands now. */
 export interface ProposalCard extends Omit<ProposedOperation, 'outcome'> {
   readonly outcome:
     | { readonly kind: 'refused'; readonly reason: string }
     /** `resource`: the Run it was proposed on, where a person reviews it (the window opens its element's default there). */
-    | { readonly kind: 'recorded'; readonly proposalId: string; readonly resource: WorkspaceResourceReference; readonly plantElapsedMs: number; readonly proposal: WorldProposal; readonly review?: WorldReview }
+    /** `label`: the drawn item it is on, as World labels it. */
+    | { readonly kind: 'recorded'; readonly proposalId: string; readonly resource: WorkspaceResourceReference; readonly plantElapsedMs: number; readonly proposal: WorldProposal; readonly label: string; readonly review?: WorldReview }
     | { readonly kind: 'unreadable'; readonly proposalId: string; readonly reason: string }
 }
 
@@ -176,7 +188,7 @@ export const createProposalCardReader = (deps: ProposalCardReaderDeps) => {
         if (!read.ok) return { ...proposed, outcome: { kind: 'unreadable', proposalId: outcome.proposalId, reason: read.reason } }
         const found = read.result.proposals.find(entry => entry.proposal.id === outcome.proposalId)
         if (found === undefined) return { ...proposed, outcome: { kind: 'unreadable', proposalId: outcome.proposalId, reason: 'the Plant no longer keeps this proposal' } }
-        return { ...proposed, outcome: { kind: 'recorded', proposalId: outcome.proposalId, resource: outcome.resource, plantElapsedMs: read.result.plantElapsedMs, proposal: found.proposal, ...(found.review === undefined ? {} : { review: found.review }) } }
+        return { ...proposed, outcome: { kind: 'recorded', proposalId: outcome.proposalId, resource: outcome.resource, plantElapsedMs: read.result.plantElapsedMs, proposal: found.proposal, label: found.label, ...(found.review === undefined ? {} : { review: found.review }) } }
       })
     },
   }

@@ -5,6 +5,7 @@ import { evaluateProcessPlantAssessments } from '../assessments.ts'
 import { processPlantControlWritePayloadSchema } from '../commands.ts'
 import { rejectCapabilityTarget } from '../../../simulation/capability-rejection.ts'
 import { validateOperatorWrite } from '../operations/command-guard.ts'
+import { plantControlsFor } from '../operations/controls.ts'
 import { listedControlsFor, listedResetsFor, proposalPortsFor } from '../operations/instance-ports.ts'
 import { reviewProposal } from '../operations/proposals.ts'
 import { evaluateProcessPlantIcCondition, processPlantIcConditionSchema } from '../runtime/index.ts'
@@ -94,12 +95,19 @@ export const answerProcessPlantControlQuery = (config: {
     if (unknown.length > 0) return rejectCapabilityTarget(`No proposal ${unknown.join(', ')} on Process Plant ${payload.plantId}; it holds ${held.map(proposal => proposal.id).join(', ') || 'none'}`)
     // A pending proposal is reviewed as a person or an agent would act on it now.
     const ports = proposalPortsFor(system, undefined)
+    // Each names its drawn item by the item's label, as a person reads it there (W7.4: labels, not ids).
+    const labels = new Map(plantControlsFor(system.plant).items.map(item => [item.id, item.label]))
+    const labelOf = (item: string): string => {
+      const label = labels.get(item)
+      if (label === undefined) throw new Error(`A proposal names ${item}, which Process Plant ${payload.plantId} does not draw`)
+      return label
+    }
     return {
       plantId: payload.plantId,
       plantElapsedMs: system.runtime.elapsedMs(),
       proposals: held
         .filter(proposal => payload.proposalIds === undefined || payload.proposalIds.includes(proposal.id))
-        .map(proposal => ({ proposal, ...(proposal.status === 'pending' ? { review: reviewProposal(proposal, ports) } : {}) })),
+        .map(proposal => ({ proposal, label: labelOf(proposal.item), ...(proposal.status === 'pending' ? { review: reviewProposal(proposal, ports) } : {}) })),
     }
   }
   if (config.request.capabilityId === 'world.process-plant.controls.list') {
