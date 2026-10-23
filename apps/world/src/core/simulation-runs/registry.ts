@@ -1,6 +1,7 @@
 import { semanticVersionSchema,type WorkspaceId } from '@leitbild/contracts'
 import { createOperationScope, createStorageBudget, type StorageBudget } from '@leitbild/module-runtime'
 import { createCaptureAdmission } from '../../features/historian/capture-admission.ts'
+import { readDashboards, writeDashboards, type DashboardFile } from '../../features/displays/dashboards/store.ts'
 import { lstat,readdir,rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z,ZodError } from 'zod'
@@ -131,6 +132,8 @@ export interface SimulationRunRegistry {
   readonly reset: (id: SimulationRunId) => Promise<SimulationRunRuntime>
   readonly delete: (id: SimulationRunId) => Promise<boolean>
   readonly rename: (id: SimulationRunId, name: string | null, expectedTitle: string) => Promise<SimulationRunSummary>
+  /** The Run's stored dashboards (runs/<id>/dashboards.json): read when asked, never on load; a change is one step of the Run's lifecycle. */
+  readonly dashboards: (id: SimulationRunId) => DashboardFile
   readonly get: (id: SimulationRunId) => SimulationRunRuntime | undefined
   readonly list: () => ReadonlyArray<SimulationRunRuntime>
   readonly listKnown: () => Promise<ReadonlyArray<SimulationRunSummary>>
@@ -1004,6 +1007,9 @@ export const createSimulationRunRegistry = (config: {
         }
         const sourceSummary = await summaryFor(sourceId)
         await writeRunDisplayName(join(simulationRunRoot, id, 'display-name.json'), input.name ?? `${sourceSummary.title} - copy ${copyNumber}`)
+        // A copy holds the source's dashboards as they stand (A4).
+        const dashboards = await readDashboards(join(simulationRunRoot, sourceId, 'dashboards.json'))
+        if (dashboards.dashboards.length > 0) await writeDashboards(join(simulationRunRoot, id, 'dashboards.json'), dashboards)
       })
       return await createRuntime({ manifest })
     })
@@ -1301,6 +1307,17 @@ export const createSimulationRunRegistry = (config: {
     reset,
     delete: deleteSimulationRun,
     rename: renameRun,
+    dashboards: id => {
+      const path = join(simulationRunRoot, id, 'dashboards.json')
+      return {
+        read: () => readDashboards(path),
+        change: apply => lifecycle.run(id, async () => {
+          const { next, result } = apply(await readDashboards(path))
+          if (next !== undefined) await writeDashboards(path, next)
+          return result
+        }),
+      }
+    },
     get: (id: SimulationRunId) => simulationRuns.get(id),
     list: () => [...simulationRuns.values()],
     listKnown,

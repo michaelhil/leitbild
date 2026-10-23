@@ -546,6 +546,20 @@ export const composeDefault = async (run: ComposeRun, name: string | Extract<Dis
   return finish(run, await titleOf(run, subject), undefined, [subject], await defaultViews(run, subject), kept, 'window', await chipsOf(run, [subject]))
 }
 
+/**
+ * An object's leads as a dashboard shows them (A4): what its Pack leads with each sample, then each list of `parts`
+ * (its parts' readings) as values, framed as a window frames a default.
+ */
+export const composeLeads = async (run: ComposeRun, objectId: ObjectId, parts: ReadonlyArray<ReadonlyArray<string>>): Promise<ComposeOutcome> => {
+  const subject = await resolveSubject(run, objectId, 'subject')
+  if (isIssue(subject)) return refuse([subject])
+  const drafts: DraftView[] = [{ kind: 'values', lead: { objectId } }, ...parts.slice(0, 3).map((refs): DraftView => ({ kind: 'values', refs: [...refs] }))]
+  return finish(run, await titleOf(run, subject), undefined, [subject], drafts, { refs: new Set(), explicit: new Set() }, 'window')
+}
+
+/** A state's card as it reads now: a stored dashboard pin's. */
+export const cardOfState = (run: ComposeRun, state: VignetteState): Promise<DisplayCard> => cardOf(run, state, { refs: new Set(), explicit: new Set() }, [], 0)
+
 /** A whole-object default's chips: each declared object's own states, at most eight. */
 const chipsOf = async (run: ComposeRun, subjects: ReadonlyArray<Subject>): Promise<ReadonlyArray<string>> =>
   (await Promise.all(subjects.flatMap(subject => subject.kind === 'object' && subject.observed ? [ownStates(run, subject.objectId)] : []))).flat().slice(0, 8)
