@@ -48,7 +48,8 @@ export const keptAfter = (kept: ReadonlyMap<string, DrawnSeries>, shown: Readonl
     if (recorded === undefined) continue
     const observation = sample.observations.find(reading => reading.ref === entry.ref)
     const value = observation?.quality === 'bad' || observation?.quality === 'not-applicable' ? undefined : observation?.value
-    next.set(entry.ref, typeof value === 'number' ? { holdMs: recorded.holdMs, points: appendPoint(recorded.points, { t: at, v: value }, at - entry.horizonMs) }
+    // A state's band reads on as 1, off as 0, as its record does (display-capabilities.ts).
+    next.set(entry.ref, typeof value === 'number' || typeof value === 'boolean' ? { holdMs: recorded.holdMs, points: appendPoint(recorded.points, { t: at, v: Number(value) }, at - entry.horizonMs) }
       : { ...recorded, silentFrom: recorded.silentFrom ?? at })
   }
   return next

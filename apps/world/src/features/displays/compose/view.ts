@@ -18,6 +18,7 @@ import {
   type VignetteSection, type VignetteState, type VignetteValue, type VignetteView, zoneRows,
 } from './model.ts'
 import { presentedOf } from './present.ts'
+import { stripsOf } from './strips.ts'
 import type { ComposeRun } from './resolve.ts'
 import { bindingRefs, drawingOf, scopeWithin, topologyOf, topologySection } from './topology.ts'
 
@@ -116,13 +117,6 @@ export const groupValues = (values: ReadonlyArray<VignetteValue>): Extract<Vigne
     lines: elements.map(element => ({ element, values: columns.map(column => cell(element.id, column)[0] ?? null) })),
   }
 }
-
-/** Pens by unit, at most four to a strip. */
-export const stripsOf = (values: ReadonlyArray<VignetteValue>): ReadonlyArray<ReadonlyArray<VignetteValue>> =>
-  [...new Set(values.map(value => value.unit))].flatMap(unit => {
-    const pens = values.filter(value => value.unit === unit)
-    return Array.from({ length: Math.ceil(pens.length / 4) }, (_, at) => pens.slice(at * 4, at * 4 + 4))
-  })
 
 const worstAlert = (object: OperationalObject): AlertRow | undefined => contextOrder({ objects: [object] }, alertRows([object], () => ({ label: object.label, categoryId: '' }))).rows[0]
 const positionAge = (run: ComposeRun, object: OperationalObject): number | undefined =>

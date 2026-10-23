@@ -192,6 +192,8 @@ export const observationSchema = stampSchema.extend({
   since: stampSchema.optional(),
   /** The id of the declared threshold of this observable the value is past: the one whose alarm colours it, or would if not expected after. */
   past: z.string().min(1).max(128).optional(),
+  /** The ids of its declared thresholds that do not act now (another mode, a condition that does not hold): drawn faint, never coloured. */
+  idle: z.array(z.string().min(1).max(128)).min(1).max(12).optional(),
   /** Read only, never journalled. */
   timeToAct: z.object({ threshold: z.string().min(1), seconds: z.number().nonnegative() }).strict().optional(),
   why: z.string().max(300).optional(),

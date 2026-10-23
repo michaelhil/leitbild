@@ -15,7 +15,8 @@ import { FRAME_ROWS, VIGNETTE_MAX_ROWS, vignetteStateSchema, zoneRows, type Comp
 import { isIssue, resolveSubject, subjectObjects, type ComposeRun, type Subject } from './resolve.ts'
 import { TOPOLOGY_REACH } from '../topology/scope.ts'
 import { drawingOf, scopeWithin, topologyOf } from './topology.ts'
-import { ALERT_LINES_AT_LEAST, alertRowsFor, alertsOf, entityRows, groupValues, readNow, readsOf, slotsOf, stripsOf } from './view.ts'
+import { stripsOf, trendRows } from './strips.ts'
+import { ALERT_LINES_AT_LEAST, alertRowsFor, alertsOf, entityRows, groupValues, readNow, readsOf, slotsOf } from './view.ts'
 
 export type ComposeOutcome =
   | { readonly ok: true; readonly state: VignetteState; readonly card: DisplayCard; readonly rows: number }
@@ -276,7 +277,7 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
       if (refs.some(ref => kept.refs.has(ref) && !inStrips.includes(ref))) issues.push(unfit(path, 'the named pens need more than four strips of four'))
       else if (inStrips.length > 0) {
         if (inStrips.length < refs.length) { dropped += refs.length - inStrips.length; countAdjustment(adjusted, { kind: 'layout', text: `${refs.length - inStrips.length} pens not shown` }) }
-        fitted.push({ ...view, refs: inStrips, rows: strips.slice(0, 4).reduce((sum, strip) => sum + Math.max(3, strip.length), 0) + 1 })
+        fitted.push({ ...view, refs: inStrips, rows: trendRows(strips.slice(0, 4)) })
       }
     } else if (view.kind === 'alerts') {
       // A state names at most 48 objects: those whose alerts lead in the context's order stay, the rest are counted.
@@ -378,6 +379,23 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   // A window's alerts keep a head, eight alerts and "+N more" (W2.5): its drawing is scaled first.
   const alertsFloor = frame === 'window' ? 2 + ALERT_LINES_AT_LEAST : 3
   for (const view of fitted) if (total() > VIGNETTE_MAX_ROWS && (view.kind === 'alerts' || view.kind === 'entity' || view.kind === 'collection')) (view as { rows: number }).rows = Math.min(view.rows, view.kind === 'alerts' ? alertsFloor : 5)
+  // A trend gives way a strip at a time from its last while `overflows`, keeping one and every strip with a named pen:
+  // a strip keeps its five rows (W5.4), and what it leaves out is counted.
+  const trendsGiveWay = (overflows: () => boolean): void => {
+    for (const view of fitted) {
+      if (view.kind !== 'trend') continue
+      let strips = stripsOf(view.refs.map(ref => valueOf(declared.get(ref)!)))
+      while (overflows() && strips.length > 1 && !strips.at(-1)!.some(pen => kept.refs.has(pen.ref))) {
+        const cut = strips.at(-1)!.length
+        strips = strips.slice(0, -1)
+        Object.assign(view, { refs: strips.flat().map(pen => pen.ref), rows: trendRows(strips) })
+        dropped += cut
+        countAdjustment(adjusted, { kind: 'layout', text: `${cut} pens not shown` })
+      }
+    }
+  }
+  // Beside a drawing, a column too tall for the frame gives way first, whatever the drawing's size.
+  if (beside) trendsGiveWay(() => FRAME_ROWS + (chips.length > 0 ? 1 : 0) + fitted.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0) > VIGNETTE_MAX_ROWS)
   // Then a drawing is scaled to the rows left, never below a third of its height or eight rows, and the card says so.
   for (const view of fitted) {
     if (total() <= VIGNETTE_MAX_ROWS || view.kind !== 'topology') continue
@@ -388,6 +406,8 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
     ;(view as { rows: number }).rows = rows
     countAdjustment(adjusted, { kind: 'layout', text: `drawing scaled to ${Math.round(100 * (rows - 1) / (natural - 1))} % to fit` })
   }
+  // Stacked, a trend gives way only after the drawing is scaled.
+  trendsGiveWay(() => total() > VIGNETTE_MAX_ROWS)
   // Beside a drawing, the column's alerts take the rows it leaves under the other views: the list fills its frame (W2.5).
   const list = beside ? fitted.find(view => view.kind === 'alerts') : undefined
   const column = fitted.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0)

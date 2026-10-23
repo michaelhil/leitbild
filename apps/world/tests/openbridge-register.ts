@@ -108,10 +108,11 @@ export const customShapes: ReadonlyArray<CustomShape> = [
   },
   {
     id: 'vignette-trend-strip',
-    draws: 'A vignette\'s trend strip: step-and-hold pens told apart by dash, each value held for the Historian\'s hold served with its record, the time before the record starts hatched, shared limits with their names, ▲ ▼ for limits beyond the scale, and the legend\'s pen swatches.',
+    draws: 'A vignette\'s trend: one quantity on each strip, step-and-hold pens told apart by dash, each value held for the Historian\'s hold served with its record, the time before the record starts hatched quietly, the alarm and trip limits all its pens share as neutral dashes (coloured only while a value is past one that acts, faint where one does not act now) named outside the plot in value order, ▲ ▼ for limits beyond the scale, faint control set point ticks in an element\'s own trend, the legend\'s pen swatches, and states as 6 px bands.',
     sites: [
       { file: 'ui/embed/vignette/TrendStrip.svelte', mark: 'aria-label={pens.map', drawn: 'svg' },
-      { file: 'ui/embed/vignette/TrendStrip.svelte', mark: '<svg width="20" height="8"', drawn: 'svg' },
+      { file: 'ui/embed/vignette/TrendStrip.svelte', mark: '<svg class="swatch"', drawn: 'svg' },
+      { file: 'ui/embed/vignette/TrendStrip.svelte', mark: '<svg class="band-track"', drawn: 'svg' },
     ],
     standsInFor: ['obc-line-graph', 'obc-graph-mini'],
     reason: 'A',
