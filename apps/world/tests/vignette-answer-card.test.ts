@@ -1,4 +1,4 @@
-import { newWorkspaceId } from '@leitbild/contracts'
+import { newWorkspaceId, type DisplayCardItem } from '@leitbild/contracts'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -14,7 +14,9 @@ import { createSimulationRunRegistry, type SimulationRunRegistry } from '../src/
 import type { SimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
 import { CARD_ALERTS } from '../src/features/displays/compose/card.ts'
 import { composeVignette } from '../src/features/displays/compose/compose.ts'
-import type { ViewRun } from '../src/features/displays/compose/view.ts'
+import { blockRows, elementBlocks } from '../src/features/displays/compose/element-groups.ts'
+import type { VignetteElement, VignetteSection, VignetteValue } from '../src/features/displays/compose/model.ts'
+import { compileVignette, type ViewRun } from '../src/features/displays/compose/view.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { builtinScenarioDefinitions } from '../src/scenarios/definitions.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
@@ -23,7 +25,8 @@ guardPlantTests()
 
 // An answer's vignette on four-loop Halden five minutes into a loss of offsite power (plan v5 W7, W8.2): its card
 // lists the subjects' readings before alerts, the subjects' own alerts first and, past readings, the worst three
-// with a count of the rest; it writes a demand as the command it is; each line names its object once.
+// with a count of the rest; it writes a demand as the command it is; each line names its object once. Its view
+// groups its values by element.
 
 const routing = createDirectRoutingAdapter()
 const assembly = createWorldApplicationAssembly({ routing })
@@ -56,8 +59,8 @@ const compose = async (spec: unknown) => {
   if (!outcome.ok) throw new Error(JSON.stringify(outcome.issues))
   return outcome
 }
-const isAlert = (item: { readonly subject?: object }): boolean => item.subject !== undefined && 'alertId' in item.subject
-const refOf = (item: { readonly subject?: object }): string | undefined => item.subject !== undefined && 'ref' in item.subject ? String(item.subject.ref) : undefined
+const isAlert = (item: DisplayCardItem): boolean => item.subject !== undefined && 'alertId' in item.subject
+const refOf = (item: DisplayCardItem): string | undefined => item.subject !== undefined && 'ref' in item.subject ? String(item.subject.ref) : undefined
 
 describe('an answer\'s card (W7.2)', () => {
   test('the subjects\' readings first, then their own alerts and at most three in all, the rest counted; each line names its object', async () => {
@@ -99,4 +102,32 @@ describe('an answer\'s card (W7.2)', () => {
     const { card } = await compose({ title: 'Unit 1 · RCPs', question: 'Are the RCPs asked to run?', subjects: [`${plantId}#RCP-A-RUNNING`], views: [{ kind: 'values', signals: [`${plantId}#RCP-A-RUNNING`] }] })
     expect(card.items[0]).toMatchObject({ label: expect.stringContaining('Run command'), reading: expect.stringMatching(/^CMD (yes|no)/) })
   }, 120_000)
+})
+
+const e0 = {
+  title: 'Unit 1 · E-0 checks', question: 'Verify the E-0 checks: reactor trip, heat sink with AFW flow to each SG, and RCP status.', need: 'The trip breakers, the AFW flow into each SG and the RCPs',
+  subjects: [plantId], views: [{ kind: 'values', signals: ['RTB-A', 'RTB-B', 'AFW-A-FLOW', 'AFW-B-FLOW', 'AFW-C-FLOW', 'AFW-D-FLOW', 'RCP-A-RUNNING', 'RCP-B-RUNNING', 'RCP-C-RUNNING', 'RCP-D-RUNNING'].map(tag => `${plantId}#${tag}`) }],
+}
+
+describe('an answer\'s view (W7.4)', () => {
+  test('its values grouped by element: several on one under its name, parallel ones as one table named as they read, in the rows composed', async () => {
+    const { state } = await compose(e0)
+    const view = await compileVignette(await runNow(), state)
+    const values = view.sections[0] as Extract<VignetteSection, { kind: 'values' }>
+    const blocks = values.blocks!
+    expect(blocks.map(block => block.kind === 'table' ? `table ${block.table.quantities.map(quantity => quantity.label).join('|')} × ${block.table.lines.map(line => line.element.shortLabel).join(',')}` : `${block.element?.shortLabel ?? 'rows'}: ${block.values.length}`))
+      .toEqual(['RTB A: 2', 'RTB B: 2', 'table flow × AFW valve A → SG A,AFW valve B → SG B,AFW valve C → SG C,AFW valve D → SG D', 'table Run command × RCP A,RCP B,RCP C,RCP D'])
+    expect(values.rows).toBe(blockRows(blocks))
+    expect(state.views[0]!.rows).toBe(blockRows(blocks))
+  }, 120_000)
+
+  test('only parallel trains make a table: an SG\'s feed and its steam, both of train A, read as rows', () => {
+    const flow = (ref: string, element: VignetteElement): VignetteValue => ({ ref, label: `Unit · ${ref}`, quantity: 'flow', unit: 'kg/s', valueType: 'number', thresholds: [], series: null, element })
+    const feed = { id: 'feed-a', class: 'fluidFlow', label: 'AFW to SG A', group: 'A' }
+    const steam = { id: 'steam-a', class: 'fluidFlow', label: 'SG A to MSIV A', group: 'A' }
+    expect(elementBlocks([flow('u#feed-a', feed), flow('u#steam-a', steam)])).toBeNull()
+    const blocks = elementBlocks([flow('u#feed-a', feed), flow('u#feed-b', { ...feed, id: 'feed-b', label: 'AFW to SG B', group: 'B' })])!
+    expect(blocks.map(block => block.kind)).toEqual(['table'])
+    expect(blockRows(blocks)).toBe(3)
+  })
 })

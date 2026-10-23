@@ -9,6 +9,7 @@ import { priorityLevels, refObjectId } from '../../../core/model/alerts.ts'
 import type { ObjectId } from '../../../core/model/index.ts'
 import type { DisplaySpec, View } from '../../../core/observation/spec.ts'
 import { alertItem, assembleCard, cardAlerts, entityItem, onSubjects, slotItems, valueItem, type CardSubjects } from './card.ts'
+import { blockRows, elementBlocks } from './element-groups.ts'
 import { declarationOf, declaredRefs, same, valueOf, visibleObject } from './declared.ts'
 import { defaultViews, elementRefs, LEAD_ROWS, leadNow, leadRefs, ownStates, planLead, readLeads, recordedOf, tableRows, type DraftView } from './defaults.ts'
 import { FRAME_ROWS, VIGNETTE_MAX_ROWS, vignetteStateSchema, type ComposeIssue, type ResolvedView, type VignetteState } from './model.ts'
@@ -264,7 +265,10 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
     } else if (view.kind === 'values') {
       const refs = trim(path, view.refs ?? [], 16, 'values')
       const values = refs.map(ref => declared.get(ref)!)
-      if (refs.length > 0) fitted.push({ kind: 'values', refs: [...refs], rows: groupValues(values.map(valueOf))?.rows ?? refs.length })
+      // Rows as they are drawn: one table of parallel values, or values grouped by element (W7.4), or a row each.
+      const named = values.map(valueOf)
+      const blocks = elementBlocks(named)
+      if (refs.length > 0) fitted.push({ kind: 'values', refs: [...refs], rows: groupValues(named)?.rows ?? (blocks === null ? refs.length : blockRows(blocks)) })
     } else if (view.kind === 'trend') {
       const recorded = view.refs.filter(ref => declared.get(ref)?.observable.series != null)
       const refs = trim(path, recorded, 12, 'pens')

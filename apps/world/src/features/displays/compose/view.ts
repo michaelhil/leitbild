@@ -19,6 +19,7 @@ import {
 } from './model.ts'
 import { presentedOf } from './present.ts'
 import type { ComposeRun } from './resolve.ts'
+import { elementBlocks } from './element-groups.ts'
 import { bindingRefs, drawingOf, scopeWithin, topologyOf, topologySection } from './topology.ts'
 
 /** A Run's record of one series between two instants and up to its hold before them (the value held into `from`), Run time ascending, with that hold. */
@@ -212,7 +213,12 @@ export const compileVignette = async (run: ComposeRun, state: VignetteState): Pr
       const devices = view.lead?.element === undefined ? [] : await bundledDevices(run, view.lead.objectId, view.lead.element)
       sections.push({ kind: 'values', rows: view.rows, values: values(leads.get(index)!), lead: index, ...(table === undefined ? {} : { table: tableSection(view.lead!.element!, table, declared) }), ...(devices.length === 0 ? {} : { devices }) })
     }
-    else if (view.kind === 'values') sections.push(groupValues(values(view.refs ?? [])) ?? { kind: 'values', rows: view.rows, values: values(view.refs ?? []) })
+    else if (view.kind === 'values') {
+      // Named values: parallel ones as one table; values of several elements grouped by element (W7.4); else rows.
+      const named = values(view.refs ?? [])
+      const blocks = elementBlocks(named, value => visibleObject(run, refObjectId(value.ref))?.label)
+      sections.push(groupValues(named) ?? { kind: 'values', rows: view.rows, values: named, ...(blocks === null ? {} : { blocks }) })
+    }
     else if (view.kind === 'trend') sections.push({ kind: 'trend', rows: view.rows, horizonMs: horizonMs(view.horizon), strips: stripsOf(values(view.refs).filter(value => value.series !== null)).slice(0, 4) })
     else if (view.kind === 'alerts') {
       const objectIds = view.objectIds === 'run' ? 'run' : view.objectIds.filter(id => visibleObject(run, id) !== undefined)

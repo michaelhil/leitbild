@@ -13,6 +13,7 @@
   import type { VignetteSnapshot } from './vignette-client.ts'
   import AlertsSection from './AlertsSection.svelte'
   import CriterionRow from './CriterionRow.svelte'
+  import ElementBlocks from './ElementBlocks.svelte'
   import EntityTable from './EntityTable.svelte'
   import FlowTopology from './FlowTopology.svelte'
   import GroupedValues from './GroupedValues.svelte'
@@ -77,7 +78,9 @@
 
 {#snippet one(section: VignetteSection, index: number, rows: number | null = section.rows, fit: number = 1)}
     <div class="section" class:frozen={frozen && (section.kind === 'alerts' || section.kind === 'entity')} style:height={rows === null || fills ? undefined : `${rows * VIGNETTE_ROW_PX}px`} style:min-height={rows !== null && fills ? `${rows * VIGNETTE_ROW_PX}px` : undefined}>
-      {#if section.kind === 'values'}
+      {#if section.kind === 'values' && section.blocks !== undefined}
+        <div class="values"><ElementBlocks blocks={section.blocks} {view} {observations} {frozen} /></div>
+      {:else if section.kind === 'values'}
         <div class="values">
           {#each section.values as value (value.ref)}
             {@const look = shown(valueLook(value, observations, value.ref))}

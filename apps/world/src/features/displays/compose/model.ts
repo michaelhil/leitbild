@@ -125,13 +125,19 @@ export interface GroupedSection {
   readonly lines: ReadonlyArray<{ readonly element: VignetteElement; readonly values: ReadonlyArray<VignetteValue | null> }>
 }
 
+/** Values of one element under its name (none: values on no element), or parallel elements as one table (W7.4). */
+export type ValueBlock =
+  | { readonly kind: 'element'; readonly element: VignetteElement | null; readonly values: ReadonlyArray<VignetteValue> }
+  | { readonly kind: 'table'; readonly table: GroupedSection }
+
 export type VignetteSection =
   /**
    * `lead`: the index of the state's view whose lead request it shows; its values now are the sample's `leads[lead]`,
    * in its rows but its table's. `table`: its element's declared table, in its last rows, its values the sample's.
    * `devices`: an element's lead request's, the devices the element bundles (declared with it as their parent, W3.5).
+   * `blocks`: an answer's values of several elements, grouped by element (W7.4), in its rows.
    */
-  | { readonly kind: 'values'; readonly rows: number; readonly values: ReadonlyArray<VignetteValue>; readonly lead?: number; readonly table?: GroupedSection; readonly devices?: ReadonlyArray<VignetteElement> }
+  | { readonly kind: 'values'; readonly rows: number; readonly values: ReadonlyArray<VignetteValue>; readonly lead?: number; readonly table?: GroupedSection; readonly devices?: ReadonlyArray<VignetteElement>; readonly blocks?: ReadonlyArray<ValueBlock> }
   | GroupedSection
   /** Pens drawn together share a strip: at most four strips of at most four pens. */
   | { readonly kind: 'trend'; readonly rows: number; readonly horizonMs: number; readonly strips: ReadonlyArray<ReadonlyArray<VignetteValue>> }
