@@ -9,6 +9,7 @@
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
   import { loadEmbedPack } from '../pack-embed-loader.ts'
   import { embeddedDisplayFrame, UNFRAMED_PRESENTATION, visibleRoom, type DisplayOpening, type DisplayPresentation } from '../view-host.ts'
+  import Chooser from './Chooser.svelte'
   import Faceplate from './Faceplate.svelte'
   import { faceplateStates, readingsOf, type FaceplateReadings } from './faceplate.ts'
   import { FLOW_LINE_PX, flowDrawing } from './flow-symbols.ts'
@@ -257,8 +258,7 @@
     onclick: () => bodyPress(id), onkeydown: bodyKey(id), ...hover(id), ...focus(id),
   }
 
-  // --- The chooser: a press on an item that names several things to open ---------------------------------------------
-  const CHOOSER_WIDTH = 260
+  // --- The chooser: a press on an item that names several things to open (Chooser.svelte) -----------------------------
   let chooser = $state.raw<{ readonly id: string; readonly box: Box } | null>(null)
   const openChooser = (id: string): void => {
     const box = itemBox(id)
@@ -276,11 +276,6 @@
     if (opening === 'window') { openDetail(entry.element, null); return }
     elementNames = { ...elementNames, [`#${entry.element}`]: entry.name }
     openFaceplate(`#${entry.element}`, was === null ? null : { x: was.box.x, y: was.box.y })
-  }
-  /** The list takes focus as it opens, on its first entry. */
-  const chooserEntry = (node: HTMLElement, element: string) => {
-    if (chooser !== null && membersOf(chooser.id)[0]?.element === element) requestAnimationFrame(() => node.focus())
-    return {}
   }
 
   // --- What the Pack marks on the items: pending proposals (W3.6) ----------------------------------------------------
@@ -388,7 +383,6 @@
     // A press outside an open faceplate, its item and its magnifier closes it; so does focus leaving the display.
     const down = (event: PointerEvent): void => {
       if (!(event.target instanceof Element)) return
-      if (chooser !== null && event.target.closest('[data-chooser]') === null && buttons.get(chooser.id)?.contains(event.target) !== true && textBlocks.get(chooser.id)?.contains(event.target) !== true) closeChooser(false)
       if (faceplate.kind !== 'open') return
       if (event.target.closest('[data-faceplate], [data-magnifier]') !== null) return
       const item = faceplate.item
@@ -396,17 +390,8 @@
       show({ faceplate: FACEPLATE_CLOSED })
     }
     const blurred = (): void => {
-      chooser = null
       if (faceplate.kind === 'open') show({ faceplate: FACEPLATE_CLOSED })
     }
-    // Esc closes the chooser first, before a faceplate or Back.
-    const escape = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape' || chooser === null) return
-      event.preventDefault()
-      event.stopPropagation()
-      closeChooser(true)
-    }
-    window.addEventListener('keydown', escape, { capture: true })
     // What waits on the items, read every MARKS_EVERY_MS while the window shows the display.
     void readMarks()
     const marking = setInterval(() => { void readMarks() }, MARKS_EVERY_MS)
@@ -430,7 +415,6 @@
       for (const session of sessions) session.close()
       document.removeEventListener('pointerdown', down, { capture: true })
       window.removeEventListener('blur', blurred)
-      window.removeEventListener('keydown', escape, { capture: true })
       window.removeEventListener('resize', resized)
       host.reportFill(fillReason, false)
     }
@@ -542,18 +526,10 @@
     {#key faceplate.item}{@render card(faceplate.item, null)}{/key}
   {/if}
   {#if chooser !== null}
-    {@const entries = membersOf(chooser.id)}
-    {@const place = faceplatePlacement(chooser.box, { width: CHOOSER_WIDTH, height: entries.length * 40 + 12 }, room, zoom)}
+    {@const id = chooser.id}
     <!-- Several things a press could open (a group's members, a stop's far ends): a short list, each opening its detail. -->
-    <div class="chooser" data-chooser={chooser.id} role="dialog" aria-label={`${nameOf(chooser.id)}: open which`} style:left={`${place.x}px`} style:top={`${place.y}px`} style:width={`${CHOOSER_WIDTH}px`} style:transform={`scale(${1 / zoom})`}>
-      <obc-card showTitle={false}>
-        <ul>
-          {#each entries as entry (entry.element)}
-            <li><button type="button" use:chooserEntry={entry.element} onclick={() => choose(entry)}>{entry.name} ›</button></li>
-          {/each}
-        </ul>
-      </obc-card>
-    </div>
+    <Chooser name={nameOf(id)} entries={membersOf(id).map(entry => ({ element: entry.element, name: entry.name }))} box={chooser.box} {room} {zoom}
+      item={() => [buttons.get(id), textBlocks.get(id)].flatMap(node => node ?? [])} onchoose={choose} onclose={closeChooser} />
   {/if}
 </div>
 {#if section.attribution !== undefined}<p class="attribution">{section.attribution}</p>{/if}
@@ -575,11 +551,6 @@
   .box.activated, .area.activated { background: var(--flat-activated-background-color); outline: 1px solid var(--border-outline-color); }
   /* A line's, a bar's or a stop's button lies under the symbols drawn on it, which keep their own presses. */
   .area { z-index: 1; border-radius: 4px; }
-  .chooser { position: fixed; z-index: 11; transform-origin: 0 0; box-shadow: var(--shadow-floating); border-radius: var(--ui-components-card-border-radius-regular, 8px); }
-  .chooser ul { width: 100%; margin: 0; padding: 6px 0; list-style: none; }
-  .chooser button { display: block; width: 100%; height: 40px; padding: 0 12px; border: none; background: none; font: inherit; font-size: 13px; text-align: left; color: var(--element-active-color); cursor: pointer; }
-  .chooser button:hover { background: var(--flat-hover-background-color); }
-  .chooser button:focus-visible { outline: 2px solid var(--border-focus-color); outline-offset: -2px; }
   /* A line may run a few pixels past the width the sizing reserved (8 px a character; capitals are wider): the layout keeps text clear of other items by more. */
   .text { position: absolute; display: flex; flex-direction: column; font-size: 12px; line-height: var(--line); white-space: nowrap; pointer-events: none; }
   /* The body's ink (its symbol and its text lines, each as wide as written) stands above the magnifier's hit area:

@@ -148,3 +148,21 @@ describe('a request to show an element (selection.ts, contract 1)', () => {
   })
 })
 
+
+describe('the network drawing\'s grammar (W9.1: grid elements open content, T6, T10)', () => {
+  const source = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/NetworkTopology.svelte'), 'utf8')
+
+  test('an item bound to what it measures is a button opening its element\'s default; a stop its far ends, several a chooser', () => {
+    // Its default leads with what the item is bound to (defaults.ts elementPlan): unbound, it would open an empty one.
+    expect(source).toContain('return node?.element === undefined || node.bindings.length === 0 ? [] : [{ element: node.element, name: node.label }]')
+    expect(source).toContain('if (node?.stop !== undefined) return node.stop.far.flatMap(end => end.element === undefined ? [] : [{ element: end.element, name: end.label }])')
+    expect(source).toContain("void opening?.element(section.objectId, element, 'detail')")
+    expect(source).toContain('if (targets.length === 1) open(targets[0]!.element, targets[0]!.name)')
+    expect(source).toContain('<Chooser name={named.get(id) ?? id} entries={targetsOf(id)}')
+    expect(source).toContain('role="group" aria-label="Network topology"')
+  })
+
+  test('nothing is a button where no page can open a display', () => {
+    expect(source).toContain('const items = $derived(opening === undefined || opening.where === null ? [] :')
+  })
+})
