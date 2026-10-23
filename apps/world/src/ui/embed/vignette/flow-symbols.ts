@@ -17,7 +17,7 @@ import type { Segment } from '@oicl/connector-diagram'
 import type { Observation } from '../../../core/observation/model.ts'
 import type { AlertRow } from '../../../features/displays/alerts/rows.ts'
 import type { TopologyBinding, VignetteSection } from '../../../features/displays/compose/model.ts'
-import { groupName, itemText, readingWord } from '../../../features/displays/topology/layout.ts'
+import { groupName, itemText } from '../../../features/displays/topology/layout.ts'
 import { VIGNETTE_ROW_PX } from './grid.ts'
 import { chevronSegment, pipeSegments, pipeValue, stubEndSegment, type PipeLook } from './pipe-segments.ts'
 import { stub } from './network.ts'
@@ -79,7 +79,7 @@ export const glyphOf = (symbol: FlowSymbol, state: DeviceState, vertical: boolea
   }
 }
 
-/** A line of an item's text: its name, its state word (or a group's count), the command it does not follow, a reading. */
+/** A line of an item's text: its name, its state word (or a group's count, or the word that says it stopped), the command it does not follow, a reading. */
 export interface FlowLine { readonly text: string; readonly kind: 'name' | 'word' | 'command' | 'reading' }
 
 const DEVICES: ReadonlySet<FlowSymbol> = new Set(['mover', 'generator', 'valve', 'breaker', 'transformer', 'source'])
@@ -95,8 +95,8 @@ export interface FlowDrawing {
   /** Each at its symbol's centre (OpenBridge's `point` positioning). */
   /** `orientation`: OpenBridge's turn of a vertical symbol (a mover's glyph turns itself). */
   readonly devices: ReadonlyArray<{ readonly id: string; readonly element: string; readonly glyph: Glyph | null; readonly x: number; readonly y: number; readonly on: boolean; readonly unknown: boolean; readonly vertical: boolean; readonly orientation: 'horizontal' | 'verticalRight'; readonly tone: AlertTone | null; readonly title: string }>
-  /** A tank's or the vessel's level in percent, null where not known; a vessel's parts each inserted 0..1, null where not known. */
-  readonly vessels: ReadonlyArray<Box & { readonly id: string; readonly element: string; readonly kind: 'tank' | 'exchanger' | 'vessel'; readonly level: number | null; readonly unknown: boolean; readonly tone: AlertTone | null; readonly title: string; readonly drawing?: VesselDrawing; readonly parts?: ReadonlyArray<number | null> }>
+  /** A tank's or the vessel's level in percent, null where not known; a vessel's parts each inserted 0..1, null where not known, in their groups. */
+  readonly vessels: ReadonlyArray<Box & { readonly id: string; readonly element: string; readonly kind: 'tank' | 'exchanger' | 'vessel'; readonly level: number | null; readonly unknown: boolean; readonly tone: AlertTone | null; readonly title: string; readonly drawing?: VesselDrawing; readonly parts?: ReadonlyArray<ReadonlyArray<number | null>> }>
   readonly buses: ReadonlyArray<Box & { readonly id: string; readonly vertical: boolean; readonly title: string }>
   readonly texts: ReadonlyArray<{ readonly id: string; readonly element: string | null; readonly x: number; readonly y: number; readonly width: number; readonly lines: ReadonlyArray<FlowLine>; readonly tone: AlertTone | null; readonly title: string }>
 }
@@ -192,27 +192,44 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
     const element = view.element ?? view.id
     const name = members.length > 1 ? groupName(members.map(member => member.shortLabel ?? member.label)) : view.shortLabel ?? view.label
     // A group says how many of its members run (or conduct); a lone item its state word in the words its observable
-    // declares, or the command it does not follow (the observation's why), and its readings: the lines the layout
-    // kept room for, in their order, an empty one left out.
-    const counted = members.length > 1 ? members.map(stateOf) : []
-    const role = members[0]!.bindings.some(binding => binding.role === 'running') ? 'RUN' : 'ON'
+    // declares, or in its place the command it does not follow (the observation's why), or the word that says it
+    // stopped with the trip it does not follow on the line under it; then its readings. Each line stands in the slot
+    // the layout kept for it, in its order; an empty one is left out.
     const readingOf = (binding: TopologyBinding, valueType: 'number' | 'enum') => readingLook(view.label, valueType, binding.states, observedInput({ ...binding, thresholds: [] }, shownReading(binding)))
     const written = itemText(view.bindings)
-    const stateBinding = view.bindings.find(binding => binding.ref === written.state)
+    const stateLines = (binding: TopologyBinding, commanded: boolean): ReadonlyArray<FlowLine> => {
+      const word = binding.states === undefined ? '' : readingOf(binding, 'enum').text
+      const why = usable(binding)?.why
+      const command: ReadonlyArray<FlowLine> = commanded ? [{ text: why ?? '', kind: 'command' }] : []
+      if (binding.role !== 'stopped') return [why !== undefined ? { text: why, kind: 'command' } : { text: word, kind: 'word' }]
+      // The word that says it stopped while it holds; while a command to stop it stands unmet its other word, with that
+      // command; else nothing ("?" or "—" where it is not known, or outside its validity).
+      const stopped = activeState(usable(binding)?.value, binding.states)
+      return [{ text: stopped === true || usable(binding) === null || why !== undefined ? word : '', kind: 'word' }, ...command]
+    }
+    const counted = members.length > 1 ? members.map(stateOf) : []
+    const role = members[0]!.bindings.some(binding => binding.role === 'running') ? 'RUN' : 'ON'
+    // A quantity read in turn reads on the widest instrument whose flag holds, else the narrowest; not known where a flag is not.
+    const inRange = (reading: ReadonlyArray<TopologyBinding>): TopologyBinding | null => {
+      for (let at = reading.length - 1; at > 0; at -= 1) {
+        const flag = usable({ ...reading[at]!, ref: reading[at]!.while! })?.value
+        if (typeof flag !== 'boolean') return null
+        if (flag) return reading[at]!
+      }
+      return reading[0]!
+    }
     const sized: ReadonlyArray<FlowLine> = members.length > 1
       ? [{ text: name, kind: 'name' }, { text: counted.some(state => state.kind === 'unknown') ? `${role} ?/${members.length}` : `${role} ${counted.filter(state => state.kind === 'on').length}/${members.length}`, kind: 'word' }]
       : [
         { text: name, kind: 'name' },
-        // The command it does not follow stands in its state word's place, as today's CMD word does; the glyph shows its state.
-        ...(written.state === null ? [] : [stateBinding === undefined ? { text: '', kind: 'word' as const }
-          : usable(stateBinding)?.why !== undefined ? { text: usable(stateBinding)!.why!, kind: 'command' as const }
-            : { text: stateBinding.states === undefined ? '' : readingOf(stateBinding, 'enum').text, kind: 'word' as const }]),
-        ...written.readings.map(ref => {
-          const look = readingOf(view.bindings.find(entry => entry.ref === ref)!, 'number')
+        ...(written.state === null ? [] : stateLines(written.state, written.commanded)),
+        ...written.readings.map(reading => {
+          const binding = inRange(reading)
+          if (binding === null) return { text: '?', kind: 'reading' as const }
+          const look = readingOf(binding, 'number')
           const value = look.unit === '' ? look.text : `${look.text} ${look.unit}`
-          // A level says it is one (layout.ts readingWord), in the room the sizing reserved for the word beside the value.
-          const word = readingWord(view.bindings, ref)
-          return { text: word === null ? value : `${word} ${value}`, kind: 'reading' as const }
+          // A share says what it reads (its Pack's word, "LVL", "PWR"), in the room the sizing reserved for the word beside the value.
+          return { text: binding.word === undefined ? value : `${binding.word} ${value}`, kind: 'reading' as const }
         }),
       ]
     const lines = sized.filter(line => line.text !== '')
@@ -231,8 +248,9 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
       drawing.devices.push({ id: node.id, element, glyph: glyphOf(symbol, state, vertical), x: centre[0], y: centre[1], on: passing(state), unknown: state.kind === 'unknown', vertical, orientation: vertical && symbol !== 'mover' ? 'verticalRight' : 'horizontal', tone, title })
     } else if (symbol === 'tank' || symbol === 'exchanger' || symbol === 'vessel') {
       const level = view.bindings.find(binding => binding.role === 'level')
-      // A vessel's parts hang in by their position bindings: a part's inserted share, 1 fully in, as the role declares.
-      const parts = view.bindings.filter(binding => binding.role === 'position').map(binding => { const value = percent(binding); return value === null ? null : value / 100 })
+      // A vessel's parts hang in by their position bindings, in their groups: a part's inserted share, 1 fully in, as the role declares.
+      const positions = view.bindings.filter(binding => binding.role === 'position')
+      const parts = [...new Set(positions.map(binding => binding.group))].map(group => positions.filter(binding => binding.group === group).map(binding => { const value = percent(binding); return value === null ? null : value / 100 }))
       const nozzles = Object.values(node.ports).map(port => ({ x: px(port.x), y: px(port.y), face: port.face as Face }))
       drawing.vessels.push({
         id: node.id, element, kind: symbol, ...box, level: level === undefined ? null : percent(level), unknown: level !== undefined && percent(level) === null, tone, title,

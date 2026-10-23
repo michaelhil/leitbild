@@ -19,8 +19,9 @@ export const TOPOLOGY_MAX_NODES = 60
 /**
  * The room a flow drawing is laid out for, in grid units (lead, 21 Oct: the four-loop reference overview lays out at
  * 60 × 33 within it, so the window frame fits 1920 px beside its 360 px column; a narrower frame scrolls sideways).
+ * R2 (W1.2): the core's "Rods off bottom" takes the four-loop overview to 64 columns.
  */
-export const FLOW_ROOM = { columns: 63, rows: 36 } as const
+export const FLOW_ROOM = { columns: 64, rows: 36 } as const
 
 const labelOf = (graph: TopologyGraph, id: string): string => {
   const node = graph.nodes.find(entry => entry.id === id)
@@ -152,8 +153,9 @@ export const topologySection = (objectId: string, packId: string, scoped: Scoped
   }
 }
 
-/** The values a drawing binds: every drawn node's and edge's binding refs. */
+/** The values a drawing binds: every drawn node's and edge's binding refs, and the flags a reading in turn stands in `while`. */
 export const bindingRefs = (scoped: ScopedTopology): ReadonlyArray<string> => {
   const [nodes, edges] = [new Set(scoped.nodes), new Set(scoped.edges)]
-  return [...new Set([...scoped.graph.nodes.filter(node => nodes.has(node.id)), ...scoped.graph.edges.filter(edge => edges.has(edge.id))].flatMap(item => item.bindings.map(binding => binding.ref)))]
+  return [...new Set([...scoped.graph.nodes.filter(node => nodes.has(node.id)), ...scoped.graph.edges.filter(edge => edges.has(edge.id))]
+    .flatMap(item => item.bindings.flatMap(binding => [binding.ref, ...(binding.while === undefined ? [] : [binding.while])])))]
 }

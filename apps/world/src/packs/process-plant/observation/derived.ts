@@ -3,6 +3,7 @@ import type { Observable, Observation } from '../../../core/observation/model.ts
 import { NO_FLOW_FRACTION } from '../equipment/link-flow.ts'
 import type { CompiledStateAspect, VariablePath } from '../graph/index.ts'
 import { challengePriority } from '../ic/alarm-philosophy.ts'
+import { stopCommands } from '../ic/key-values.ts'
 import { aspectStateWords, followAllowanceMs, plantControlsFor } from '../operations/controls.ts'
 import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
@@ -12,10 +13,12 @@ import { safetyFunctionStatusWords, safetyFunctionText, type SafetyFunctionEvalu
 // What a Plant declares beside its signals (plan v4 D1): each item of its
 // equipment that runs, is live, or opens and shuts, its state as one word, in
 // the words its controls use ("RUN", "SHUT", "ON LINE", "LIVE"), with the
-// command it does not follow where it does not; each critical safety
-// function's status, the procedure its colour sends operators to and what its
-// tree's path ends in; and the unit's operating mode, the first declared mode
-// that holds. None is a signal of its own: `<item>.state`, `csf.<function>`
+// command it does not follow where it does not; what says equipment a trip
+// stops has stopped, in its declared words ("Rods on bottom"), with the trip's
+// command while it stands unmet; each critical safety function's status, the
+// procedure its colour sends operators to and what its tree's path ends in;
+// and the unit's operating mode, the first declared mode that holds. None is a
+// signal of its own: `<item>.state`, `<component>.stopped`, `csf.<function>`
 // and `mode` are read here from the signals they rest on.
 
 interface ItemState {
@@ -97,12 +100,47 @@ const insertionParts = (plant: CompiledProcessPlant): ReadonlyMap<string, { read
     return [path, { element: String(component.id), source: part.path, range: part.range, insertedAt: component.semantics.insertion!.insertedAt, label: `${plant.graph.signalBindingByPath.get(part.path)!.label} · share inserted` }] as const
   })))
 
-/** The positions a drawing draws an element's parts at, by element: its parts' inserted shares. */
-export const insertionPositions = (plant: CompiledProcessPlant): ReadonlyMap<string, ReadonlyArray<string>> => {
-  const byElement = new Map<string, string[]>()
-  for (const [path, part] of insertionParts(plant)) byElement.set(part.element, [...byElement.get(part.element) ?? [], path])
-  return byElement
+/** The positions a drawing draws an element's parts at, by element, in its groups (a core's shutdown banks, then its control banks): its parts' inserted shares. */
+export const insertionPositions = (plant: CompiledProcessPlant): ReadonlyMap<string, ReadonlyArray<ReadonlyArray<string>>> =>
+  new Map(plant.graph.components.flatMap(component => (component.semantics.insertion === undefined ? []
+    : [[String(component.id), component.semantics.insertion.groups.map(group => group.map(part => `${part.path}.inserted`))] as const])))
+
+interface StopState {
+  readonly element: string
+  readonly label: string
+  /** The flag that says it has stopped, and its declared words for holding and not. */
+  readonly flag: VariablePath
+  readonly words: { readonly on: string; readonly off: string }
+  /** The commands of each trip that stops it (ic/key-values.ts stopCommands), one set per trip. */
+  readonly commands: ReadonlyArray<ReadonlyArray<{ readonly path: VariablePath; readonly value: unknown }>>
 }
+
+const stopStatesByPlant = new WeakMap<CompiledProcessPlant, ReadonlyMap<string, StopState>>()
+
+/**
+ * What says a component has stopped, by the path its observable reads at: the first of its shutdown readings that is
+ * a flag with declared words (a core's rods on the bottom), true once it has, where a trip stops it; never the state
+ * one of its aspects reads (a turbine's output breaker, ON LINE, is its state word already).
+ */
+const stopStates = (plant: CompiledProcessPlant): ReadonlyMap<string, StopState> => stopStatesByPlant.get(plant) ?? (() => {
+  const graph = plant.graph
+  const states = new Map(graph.components.flatMap(component => {
+    const local = (path: VariablePath): string => String(path).slice(String(component.id).length + 1)
+    const states = new Set(component.semantics.aspects.flatMap(aspect => aspect.state?.path ?? []))
+    const flag = component.semantics.shutdownReadings.find(path => !states.has(path) && graph.signalBindingByPath.get(path)?.quantity === 'boolean' && component.metadata?.presentation?.states?.[local(path)] !== undefined)
+    const commands = stopCommands(plant, component.index)
+    if (flag === undefined || commands.length === 0) return []
+    const path = `${component.id}.stopped`
+    if (graph.signalBindingByPath.has(path as VariablePath)) throw new Error(`${path} is a signal of the Plant and what says its equipment stopped`)
+    return [[path, { element: String(component.id), label: `Shutdown · ${component.metadata?.presentation?.shortLabel ?? component.label}`, flag, words: component.metadata!.presentation!.states![local(flag)]!, commands }] as const]
+  }))
+  stopStatesByPlant.set(plant, states)
+  return states
+})()
+
+/** What says each component a trip stops has stopped, by element: the path its observable reads at. */
+export const stoppedPaths = (plant: CompiledProcessPlant): ReadonlyMap<string, string> =>
+  new Map([...stopStates(plant)].map(([path, state]) => [state.element, path] as const))
 
 /** The path a critical safety function's status observable reads at. */
 export const safetyFunctionRef = (id: string): string => `csf.${id}`
@@ -117,6 +155,11 @@ export const derivedObservables = (objectId: ObjectId, plant: CompiledProcessPla
     ref: `${objectId}#${path}`, label: state.label, quantity: 'state', unit: '', valueType: 'enum', thresholds: [], series: null, element: state.element,
     // The states a running or conducting binding reads as on (Q8): on, and a valve part open, which passes flow.
     states: [{ value: 'on', label: state.words.on, active: true }, { value: 'off', label: state.words.off }, ...(state.numeric ? [{ value: 'between', label: 'part open', active: true as const }] : [])],
+  })),
+  // Active (stopped) while its flag holds: a drawing writes the word then, and the other word only with a trip's unmet command.
+  ...[...stopStates(plant)].map(([path, state]): Observable => ({
+    ref: `${objectId}#${path}`, label: state.label, quantity: 'state', unit: '', valueType: 'enum', thresholds: [], series: null, element: state.element,
+    states: [{ value: 'on', label: state.words.on, active: true }, { value: 'off', label: state.words.off }],
   })),
   ...plant.automation.safetyFunctions.map((safetyFunction): Observable => {
     if (plant.graph.signalBindingByPath.has(safetyFunctionRef(safetyFunction.id) as VariablePath)) throw new Error(`${safetyFunctionRef(safetyFunction.id)} is a signal of the Plant and a safety function`)
@@ -192,6 +235,14 @@ export const readDerived = (
     const why = now === null ? undefined : unfollowed(system, state, now)
     return { value: now, quality: now === null ? 'bad' : 'good', priority: 'none', ...(why === undefined ? {} : { why }) }
   }
+  const stop = stopStates(system.plant).get(path)
+  if (stop !== undefined) {
+    const flag = system.runtime.readVariableSnapshot(stop.flag).value
+    if (typeof flag !== 'boolean') return { value: null, quality: 'bad', priority: 'none' }
+    // A trip commanding it has acted (every command of one of its trips reads as written) and the flag does not hold.
+    const commanded = !flag && stop.commands.some(set => set.every(write => system.runtime.readVariableSnapshot(write.path).value === write.value))
+    return { value: flag ? 'on' : 'off', quality: 'good', priority: 'none', ...(commanded ? { why: commandNotFollowed('trip') } : {}) }
+  }
   const part = insertionParts(system.plant).get(path)
   if (part !== undefined) {
     const value = insertedShare(system.runtime.readVariableSnapshot(part.source).value, part.range, part.insertedAt)
@@ -202,7 +253,7 @@ export const readDerived = (
     return { value: mode?.id ?? NO_MODE, quality: 'good', priority: 'none' }
   }
   const evaluation = safetyFunctions().find(candidate => safetyFunctionRef(candidate.id) === path)
-  if (evaluation === undefined) throw new Error(`${path} is neither an item's state, a safety function nor the mode of the Plant`)
+  if (evaluation === undefined) throw new Error(`${path} is neither an item's state, what says equipment stopped, a safety function nor the mode of the Plant`)
   const priority: Priority = challengePriority[evaluation.status] ?? 'none'
   return { value: evaluation.status, quality: evaluation.status === 'unknown' ? 'uncertain' : 'good', priority, why: safetyFunctionText(evaluation) }
 }
