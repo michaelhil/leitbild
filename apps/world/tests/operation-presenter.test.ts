@@ -24,6 +24,7 @@ import {
   commandPhase,
   consequenceView,
   demandOption,
+  faceplateControls,
   itemControlView,
   moreActuations,
   operationNow,
@@ -31,6 +32,7 @@ import {
   pendingProposals,
   proposalCard,
   shownProposal,
+  type ItemControlView,
   type ListedItem,
   type OperationNow,
   type OperationRecord,
@@ -516,4 +518,30 @@ describe('C2a: protection pushbuttons, who acted, consequence lines and the revi
     const record = { commandId: 'cmd-reset', kind: 'reset' as const, ruleId: trip.ruleId, label: trip.label, holds: [...trip.holds], origin: 'person' as const, actorId: 'actor:operator', elapsedMs: plant.runtime.elapsedMs(), proposalId: proposal.id }
     expect(operationsLogRows([], [proposal], [owner], plant.now(), [record]).find(row => row.key === 'cmd-reset')).toMatchObject({ who: 'Operator', action: trip.word, chain: expect.stringMatching(/^approved an AI agent's proposal of /), result: expect.stringMatching(/^reset; the hold on \d+ commands? it wrote lifted$/) })
   }, PLANT_HANG_GUARD_MS)
+})
+
+describe('an item\'s controls in its faceplate (plan v5 W3.2, W3.3)', () => {
+  const control = (target: string, role?: 'trip' | 'actuation' | 'block') => ({
+    path: `x.${target}`, target, form: role === undefined ? 'twoState' : 'pushbutton', now: null, commanded: null, options: [], throttled: [], withheldOptions: [], travelMs: null,
+    ...(role === undefined ? {} : { protection: { role, gate: null } }),
+  }) as unknown as ItemControlView['controls'][number]
+  const view = (controls: ItemControlView['controls']): ItemControlView => ({ id: 'core', label: 'Core', controls, auto: [], position: null, withheld: [], resets: [] })
+  const core = view([control('Manual RX trip', 'trip'), control('Manual SI', 'actuation'), control('SI block logic', 'block')])
+
+  test('while no proposal waits, its protective pushbuttons fold behind one line, so the core faceplate stays short', () => {
+    const parts = faceplateControls(core, { pinned: false, proposalPending: false })
+    expect(parts.open).toBeNull()
+    expect(parts.folded?.controls.map(entry => entry.target)).toEqual(['Manual RX trip', 'Manual SI', 'SI block logic'])
+    expect(parts.count).toBe(3)
+    const pump = faceplateControls(view([control('RCP A')]), { pinned: false, proposalPending: false })
+    expect(pump.open?.controls.map(entry => entry.target)).toEqual(['RCP A'])
+    expect(pump.folded).toBeNull()
+  })
+
+  test('with a proposal pending nothing folds; in a pinned overlay everything does', () => {
+    expect(faceplateControls(core, { pinned: false, proposalPending: true }).folded).toBeNull()
+    const pinned = faceplateControls(view([control('RCP A'), control('Manual RX trip', 'trip')]), { pinned: true, proposalPending: true })
+    expect(pinned.open).toBeNull()
+    expect(pinned.folded?.controls).toHaveLength(2)
+  })
 })

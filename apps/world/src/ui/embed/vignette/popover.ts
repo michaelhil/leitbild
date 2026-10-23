@@ -2,48 +2,38 @@ import type { EmbeddedViewEnvelope } from '@leitbild/contracts'
 import type { SimulationRunId } from '../../../core/model/index.ts'
 import { defaultDisplayEnvelope, readDefaultDisplay } from '../../process-display/default-display.ts'
 import { activeWorkspaceId } from '../../workspace-context.ts'
-import { openedListing } from '../opened-display.ts'
+import { digest, openedListing } from '../opened-display.ts'
 import type { DisplayOpening, ViewHost } from '../view-host.ts'
 
-// The pop-over an interactive drawing opens on one of its items, and where it
-// stands: a press (a click, a tap, Enter or Space) opens the item's pop-over
-// (its actions only in the display window), and a second press on it closes it; hovering a moment
-// opens a quick look, which never takes over a pop-over a press opened;
-// leaving, Esc or a press outside close either. It never covers the item it
-// is about, and reads at 100 % whatever the display's zoom.
+// An element's faceplate (L2, plan v5 §3) an interactive drawing opens on one
+// of its items, the overlays a person pins from it, and where they stand. Its
+// magnifier, or Shift+Enter on the item, opens the item's faceplate; a second
+// press of the magnifier, Esc, a press outside it and its item, focus leaving
+// the display or the display being put away closes it. Its pin keeps it on
+// the display as an overlay a person drags by its header and resizes by its
+// corner, which stays until its pin is pressed again; several may stand at
+// once, the one touched last on top. A faceplate stands beside its item, never
+// over it, inside the part of the frame the window shows, and reads at 100 %
+// whatever the display's zoom.
+// The overlays' moves and resizes are OLD's (724ae2ac8, mimic/popover.ts),
+// ported with their tests (tests/vignette-faceplate.test.ts).
 
-/** How long the pointer rests on a dot before its quick look opens, and how long it may be away before the popover closes. */
-export const POPOVER_INTENT_MS = 300
-
-/** What a popover shows: its quick look (hovered), or everything an item offers, its controls too (pressed, or pinned). */
-export type PopoverMode = 'look' | 'operate'
-
-export type PopoverState =
+export type FaceplateState =
   | { readonly kind: 'closed' }
-  | { readonly kind: 'open'; readonly item: string; readonly mode: PopoverMode }
+  | { readonly kind: 'open'; readonly item: string }
 
-export type PopoverEvent =
-  /** The pointer rested on a dot for POPOVER_INTENT_MS. */
-  | { readonly kind: 'hovered'; readonly item: string }
-  /** The pointer left the dot and the popover for POPOVER_INTENT_MS, while nothing in the popover has focus. */
-  | { readonly kind: 'left' }
-  /** A click, a tap, Enter or Space on a dot. */
+export type FaceplateEvent =
+  /** The magnifier, Shift+Enter on the item, or a request to show the element (selection.ts). */
   | { readonly kind: 'pressed'; readonly item: string }
-  /** Esc, or a press outside the dot and the popover. */
+  /** Esc, a press outside it and its item, focus leaving the display, the display put away. */
   | { readonly kind: 'dismissed' }
 
-export const POPOVER_CLOSED: PopoverState = { kind: 'closed' }
+export const FACEPLATE_CLOSED: FaceplateState = { kind: 'closed' }
 
-/**
- * The next popover state. A press opens an item's popover with its controls,
- * and a second press on its dot closes it; hovering opens a quick look and
- * never takes over a popover a press opened; leaving closes either.
- */
-export const nextPopover = (state: PopoverState, event: PopoverEvent): PopoverState => {
-  if (event.kind === 'dismissed' || event.kind === 'left') return POPOVER_CLOSED
-  if (event.kind === 'hovered') return state.kind === 'open' && state.mode === 'operate' ? state : { kind: 'open', item: event.item, mode: 'look' }
-  if (state.kind === 'open' && state.item === event.item && state.mode === 'operate') return POPOVER_CLOSED
-  return { kind: 'open', item: event.item, mode: 'operate' }
+/** The next faceplate state: a press opens an item's faceplate, a second press on the same item closes it. */
+export const nextFaceplate = (state: FaceplateState, event: FaceplateEvent): FaceplateState => {
+  if (event.kind === 'dismissed') return FACEPLATE_CLOSED
+  return state.kind === 'open' && state.item === event.item ? FACEPLATE_CLOSED : { kind: 'open', item: event.item }
 }
 
 export interface Box {
@@ -53,69 +43,182 @@ export interface Box {
   readonly height: number
 }
 
-/** The room a popover keeps from the page's edges, in its own px (on screen whatever the zoom). */
-export const POPOVER_MARGIN = 8
+/** The room a faceplate keeps from the edges of the room it stands in, in its own px (on screen whatever the zoom). */
+export const FACEPLATE_MARGIN = 8
+
+/** A faceplate's width as it opens, and the widths an overlay is resized between: only its readings take the difference. */
+export const FACEPLATE_WIDTH = 380
+export const OVERLAY_WIDTH = { min: 280, max: 520 } as const
+/** A reading's row in a faceplate, in its own px: the rows a resize by height shows or drops. */
+export const FACEPLATE_ROW = 24
 
 /**
- * Where a popover goes, in the page's px: beside its item where it fits
+ * Where a faceplate goes, in the page's px: beside its item where it fits
  * (right, then left), else under or over it, so it never covers the item it
- * is about; shifted inside the page's margins where nothing fits. `scale` is
- * how much the page is magnified on screen: the popover is drawn at 1/scale,
- * so it reads at 100 % whatever the display's zoom, and takes that much more
- * room. Its height is never more than popoverRoom gives it.
+ * is about; shifted inside the room's margins where nothing fits. `room` is
+ * the part of the page a person can see (the window shows a tall display
+ * scrolled; DisplayPresentation.visible); where it can, it keeps clear of the
+ * faceplates pinned there (`avoid`). `scale` is how much the page is
+ * magnified on screen: a faceplate is drawn at 1/scale, so it reads at 100 %
+ * whatever the zoom, and takes that much more of the page.
  */
-export const popoverPlacement = (item: Box, popover: { readonly width: number; readonly height: number }, page: { readonly width: number; readonly height: number }, scale: number): { readonly x: number; readonly y: number } => {
-  const width = popover.width / scale
-  const height = popover.height / scale
+export const faceplatePlacement = (item: Box, size: { readonly width: number; readonly height: number }, room: Box, scale: number, avoid: ReadonlyArray<Box> = []): { readonly x: number; readonly y: number } => {
+  const width = size.width / scale
+  const height = size.height / scale
   const gap = 8 / scale
-  const margin = POPOVER_MARGIN / scale
-  const clampX = (x: number): number => Math.min(Math.max(margin, x), Math.max(margin, page.width - margin - width))
-  const clampY = (y: number): number => Math.min(Math.max(margin, y), Math.max(margin, page.height - margin - height))
+  const margin = FACEPLATE_MARGIN / scale
+  const [left, top, right, bottom] = [room.x + margin, room.y + margin, room.x + room.width - margin, room.y + room.height - margin]
+  const clampX = (x: number): number => Math.min(Math.max(left, x), Math.max(left, right - width))
+  const clampY = (y: number): number => Math.min(Math.max(top, y), Math.max(top, bottom - height))
   const candidates = [
-    { x: item.x + item.width + gap, y: clampY(item.y), fits: item.x + item.width + gap + width <= page.width - margin },
-    { x: item.x - gap - width, y: clampY(item.y), fits: item.x - gap - width >= margin },
-    { x: clampX(item.x), y: item.y + item.height + gap, fits: item.y + item.height + gap + height <= page.height - margin },
-    { x: clampX(item.x), y: item.y - gap - height, fits: item.y - gap - height >= margin },
+    { x: item.x + item.width + gap, y: clampY(item.y), fits: item.x + item.width + gap + width <= right },
+    { x: item.x - gap - width, y: clampY(item.y), fits: item.x - gap - width >= left },
+    { x: clampX(item.x), y: item.y + item.height + gap, fits: item.y + item.height + gap + height <= bottom },
+    { x: clampX(item.x), y: item.y - gap - height, fits: item.y - gap - height >= top },
   ]
-  const chosen = candidates.find(candidate => candidate.fits)
+  // Where it fits, it also keeps clear of the faceplates already pinned there.
+  const clear = (candidate: { readonly x: number; readonly y: number }): boolean => avoid.every(other =>
+    candidate.x >= other.x + other.width || candidate.x + width <= other.x || candidate.y >= other.y + other.height || candidate.y + height <= other.y)
+  const chosen = candidates.find(candidate => candidate.fits && clear(candidate)) ?? candidates.find(candidate => candidate.fits)
   return chosen === undefined ? { x: clampX(item.x + item.width + gap), y: clampY(item.y) } : { x: chosen.x, y: chosen.y }
 }
 
+/** The tallest a faceplate may be, in its own px: the room's height on screen less its margins; what it holds beyond scrolls inside it. */
+export const faceplateHeight = (room: Pick<Box, 'height'>, scale: number): number => Math.max(0, room.height * scale - 2 * FACEPLATE_MARGIN)
+
+// --- Pinned overlays (OLD mimic/popover.ts, 724ae2ac8) -------------------------------------------------------------------
+
 /**
- * The tallest a popover may be, in its own px: the page's height on screen
- * less its margins, so all of it stands on screen at any size and zoom; what
- * it holds beyond that scrolls inside it.
+ * An element's faceplate pinned on the display, by the drawn item it was
+ * opened on. `x`, `y`: where it stands in the page's px. `width`: its own px,
+ * drawn at 1/scale. `rows`: how many of its readings it shows once resized
+ * by height, the rest dropped from the bottom; null for all of them.
  */
-export const popoverRoom = (page: { readonly height: number }, scale: number): number => Math.max(0, page.height * scale - 2 * POPOVER_MARGIN)
+export interface PinnedOverlay {
+  readonly item: string
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly rows: number | null
+}
 
-/** A popover's width, in its own px. */
-export const POPOVER_WIDTH = 340
+/** Pins an item's faceplate where it stands, or, pinned already, closes its overlay. The overlay pinned last stands on top. */
+export const togglePinned = (overlays: ReadonlyArray<PinnedOverlay>, pinned: PinnedOverlay): ReadonlyArray<PinnedOverlay> =>
+  overlays.some(overlay => overlay.item === pinned.item) ? overlays.filter(overlay => overlay.item !== pinned.item) : [...overlays, pinned]
+
+/** The overlay a person touched last stands on top of the others. */
+export const raisedOverlay = (overlays: ReadonlyArray<PinnedOverlay>, item: string): ReadonlyArray<PinnedOverlay> => {
+  const touched = overlays.find(overlay => overlay.item === item)
+  return touched === undefined || overlays.at(-1) === touched ? overlays : [...overlays.filter(overlay => overlay !== touched), touched]
+}
 
 /**
- * What an element's pop-over offers under the element's default, by where its
- * display is shown (view-host.ts): its Pack's actions only in the display
- * window; framed by a page that opens displays for it (a chat answer's, which
- * relays to the Workspace's window, or a procedure tag dialog's), the way
- * there; in a frame no page hosts, nothing to act on.
+ * An overlay kept within the room a person sees: moved back inside it where
+ * a resize of the window, a scroll or a change of zoom left it partly
+ * outside. `drawnHeight` is its whole height as drawn, in its own px.
+ */
+export const keptInRoom = (overlay: PinnedOverlay, drawnHeight: number, room: Box, scale: number): PinnedOverlay => {
+  const x = Math.min(Math.max(room.x, overlay.x), Math.max(room.x, room.x + room.width - overlay.width / scale))
+  const y = Math.min(Math.max(room.y, overlay.y), Math.max(room.y, room.y + room.height - drawnHeight / scale))
+  return x === overlay.x && y === overlay.y ? overlay : { ...overlay, x, y }
+}
+
+/** An overlay dragged by its header from where it stood by the pointer's travel (page px), within the room. */
+export const movedOverlay = (from: PinnedOverlay, travel: { readonly dx: number; readonly dy: number }, drawnHeight: number, room: Box, scale: number): PinnedOverlay =>
+  keptInRoom({ ...from, x: from.x + travel.dx, y: from.y + travel.dy }, drawnHeight, room, scale)
+
+/**
+ * An overlay resized by its corner from the width and rows it had by the
+ * pointer's travel (page px; its own px grow by the travel times its scale):
+ * its width between OVERLAY_WIDTH and the room's right edge, its rows whole,
+ * from one to all `available`, never past the room's bottom edge
+ * (`drawnHeight`: its whole height as it began).
+ */
+export const resizedOverlay = (
+  from: PinnedOverlay,
+  start: { readonly width: number; readonly rows: number },
+  travel: { readonly dx: number; readonly dy: number },
+  available: number,
+  drawnHeight: number,
+  room: Box,
+  scale: number,
+): PinnedOverlay => {
+  const widest = Math.max(OVERLAY_WIDTH.min, Math.min(OVERLAY_WIDTH.max, (room.x + room.width - from.x) * scale))
+  const width = Math.round(Math.min(widest, Math.max(OVERLAY_WIDTH.min, start.width + travel.dx * scale)))
+  const below = (room.y + room.height - from.y) * scale - (drawnHeight - start.rows * FACEPLATE_ROW)
+  const tallest = Math.max(1, Math.min(available, Math.floor(below / FACEPLATE_ROW)))
+  const rows = Math.min(tallest, Math.max(1, Math.round(start.rows + (travel.dy * scale) / FACEPLATE_ROW)))
+  return { ...from, width, rows: rows >= available ? null : rows }
+}
+
+/**
+ * The overlays after the room changed (the window narrowed, the chat opened):
+ * each one that no longer stands wholly inside it goes beside its item again
+ * (faceplatePlacement, never over it), and is only pushed inside where its
+ * item is gone; one that still fits stays where the person put it.
+ */
+export const replacedOverlays = (
+  overlays: ReadonlyArray<PinnedOverlay>,
+  sized: (overlay: PinnedOverlay) => { readonly item: Box | null; readonly height: number },
+  room: Box,
+  scale: number,
+): ReadonlyArray<PinnedOverlay> => {
+  let changed = false
+  const next = overlays.map(overlay => {
+    const { item, height } = sized(overlay)
+    const inside = overlay.x >= room.x && overlay.y >= room.y && overlay.x + overlay.width / scale <= room.x + room.width && overlay.y + height / scale <= room.y + room.height
+    if (inside) return overlay
+    changed = true
+    if (item === null) return keptInRoom(overlay, height, room, scale)
+    const place = faceplatePlacement(item, { width: overlay.width, height }, room, scale)
+    return { ...overlay, ...place }
+  })
+  return changed ? next : overlays
+}
+
+/** Pins live with their display for the browser session, by the display's key (its state's digest) and the item each was opened on. */
+export const pinsKey = (displayKey: string): string => `leitbild.faceplates:${digest(displayKey)}`
+
+const pinSchema = (value: unknown): value is PinnedOverlay => {
+  if (typeof value !== 'object' || value === null) return false
+  const entry = value as Record<string, unknown>
+  return typeof entry.item === 'string' && [entry.x, entry.y, entry.width].every(number => typeof number === 'number' && Number.isFinite(number))
+    && (entry.rows === null || (typeof entry.rows === 'number' && Number.isInteger(entry.rows) && entry.rows >= 1))
+}
+
+/** A display's pins as this browser session kept them; a stored value that is not a list of pins is refused aloud. */
+export const readPins = (storage: Pick<Storage, 'getItem'>, displayKey: string): ReadonlyArray<PinnedOverlay> => {
+  const text = storage.getItem(pinsKey(displayKey))
+  if (text === null) return []
+  const parsed = JSON.parse(text) as unknown
+  if (!Array.isArray(parsed) || !parsed.every(pinSchema)) throw new Error(`The pinned faceplates of this display cannot be read: ${text.slice(0, 120)}`)
+  return parsed.map(({ item, x, y, width, rows }) => ({ item, x, y, width, rows }))
+}
+
+export const writePins = (storage: Pick<Storage, 'setItem' | 'removeItem'>, displayKey: string, overlays: ReadonlyArray<PinnedOverlay>): void => {
+  if (overlays.length === 0) storage.removeItem(pinsKey(displayKey))
+  else storage.setItem(pinsKey(displayKey), JSON.stringify(overlays))
+}
+
+/** A drag, a key step or a resize of a pinned overlay, as its card reports it. */
+export type OverlayChange =
+  | { readonly kind: 'move'; readonly travel: { readonly dx: number; readonly dy: number }; readonly end: boolean }
+  | { readonly kind: 'resize'; readonly travel: { readonly dx: number; readonly dy: number }; readonly end: boolean; readonly available: number }
+
+// --- What a faceplate offers ----------------------------------------------------------------------------------------------
+
+/**
+ * What an element's faceplate offers by where its display is shown
+ * (view-host.ts): its Pack's actions (its proposal and controls) only in the
+ * display window; framed by a page that opens displays for it (a chat
+ * answer's, which relays to the Workspace's window, or a procedure tag
+ * dialog's), the way there; in a frame no page hosts, nothing to act on.
  */
 export type ElementOffer = 'actions' | 'open-in-window' | 'nothing'
 export const elementOffer = (opening: DisplayOpening | null): ElementOffer =>
   opening === 'window' ? 'actions' : opening === 'relay' ? 'open-in-window' : 'nothing'
 
-/** What an element's pop-over holds, besides its title. */
-export type ElementPart = 'actions' | 'default' | 'open-in-window' | 'nothing'
-
-/**
- * Its parts in order: in the display window the Pack's actions first (a
- * pending proposal and its Approve with them), the element's default under
- * them; elsewhere the default first, then the way to the display window or
- * the line saying where the element is operated, pinned at the foot of its
- * scrolling body.
- */
-export const elementParts = (offer: ElementOffer): ReadonlyArray<ElementPart> =>
-  offer === 'actions' ? ['actions', 'default'] : ['default', offer]
-
-/** The display an element's pop-over opened from, as the listing of the element's default names it (opened-display.ts). */
+/** The display an element's faceplate opened from, as the listing of the element's default names it (opened-display.ts). */
 export interface OpenedFrom {
   /** Stable for that display: the element's default opened from it keeps one key. */
   readonly key: string

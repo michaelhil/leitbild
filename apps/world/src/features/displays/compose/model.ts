@@ -114,8 +114,11 @@ export interface TopologyNodeView extends Pick<TopologyNode, 'id' | 'label' | 's
 }
 
 export type VignetteSection =
-  /** `lead`: the index of the state's view whose lead request it shows; its values now are the sample's `leads[lead]`. */
-  | { readonly kind: 'values'; readonly rows: number; readonly values: ReadonlyArray<VignetteValue>; readonly lead?: number }
+  /**
+   * `lead`: the index of the state's view whose lead request it shows; its values now are the sample's `leads[lead]`.
+   * `devices`: an element's lead request's, the devices the element bundles (declared with it as their parent, W3.5).
+   */
+  | { readonly kind: 'values'; readonly rows: number; readonly values: ReadonlyArray<VignetteValue>; readonly lead?: number; readonly devices?: ReadonlyArray<VignetteElement> }
   /** Parallel values: one line per element, one column per quantity. */
   | { readonly kind: 'grouped'; readonly rows: number; readonly quantities: ReadonlyArray<{ readonly label: string; readonly unit: string }>; readonly lines: ReadonlyArray<{ readonly element: VignetteElement; readonly values: ReadonlyArray<VignetteValue | null> }> }
   /** Pens drawn together share a strip: at most four strips of at most four pens. */

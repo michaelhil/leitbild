@@ -687,17 +687,21 @@ export interface PackSurfaceLayout {
  * packs/<pack>/ui/embed.ts and ui/embed/pack-embed-loader.ts loads it, so nothing the main app loads reaches it.
  */
 export interface PackEmbedContribution {
-  /** The panel a display's element pop-over shows for this Pack's elements (operation, resets); World places it, the Pack implements it. */
+  /** The panel a display's element faceplate shows for this Pack's elements (proposal, controls, resets); World places it, the Pack implements it. */
   readonly elementActions?: () => Promise<{ readonly default: Component<PackElementActionsProps> }>
 }
 
-/** What a Pack's element-actions panel is mounted with: the element a display's pop-over shows. */
+/** What a Pack's element-actions panel is mounted with: the element a display's faceplate shows. */
 export interface PackElementActionsProps {
   /** The Run its panel calls (controls, validation, writes, resets, proposals, signal reads). */
   readonly runId: SimulationRunId
   readonly objectId: ObjectId
   /** The declared element id (a topology node's `element`, or its id). */
   readonly elementId: string
+  /** The display's samples are FROZEN (none for over 5 s, or failing): every control is disabled meanwhile (W8.1). */
+  readonly frozen: boolean
+  /** Pinned as an overlay: a monitoring overlay offers no command at a glance, its controls fold (W3.3). */
+  readonly pinned: boolean
 }
 
 /** What a Pack's display-window tools are mounted with: the Run and the object whose display the window shows. */

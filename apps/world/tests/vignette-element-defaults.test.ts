@@ -83,4 +83,10 @@ describe('element defaults on four-loop Halden', () => {
     const short = [...views].flatMap(([id, view]) => view.sections.flatMap(section => (section.kind === 'values' && section.rows < section.values.length ? [`${id}: ${section.values.length} values in ${section.rows} rows`] : [])))
     expect(short).toEqual([])
   })
+
+  test('a host\'s values name the devices it bundles, from their declared parent link, so its faceplate reaches them (W3.5)', () => {
+    const devices = (id: string) => views.get(id)?.sections.flatMap(section => (section.kind === 'values' ? section.devices ?? [] : []).map(device => device.id)) ?? []
+    expect(devices('pressurizer')).toEqual(expect.arrayContaining(['pressurizer.reliefValve', 'pressurizer.blockValve', 'pressurizer.safetyValves']))
+    expect(devices('sgA')).toEqual([])
+  })
 })

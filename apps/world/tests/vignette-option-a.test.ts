@@ -80,8 +80,8 @@ describe('the drawing\'s grammar', () => {
   const source = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/FlowTopology.svelte'), 'utf8')
 
   test('a body press opens the detail, in the window only; elsewhere the faceplate', () => {
-    expect(source).toContain("if (opening !== 'window') { openFaceplate(id); return }")
-    expect(source).toContain('openElementDetail(embeddedDisplayFrame(), runId, from, section.objectId')
+    expect(source).toContain("if (opening !== 'window') { if (item !== null) openFaceplate(item); return }")
+    expect(source).toContain('openElementDetail(embeddedDisplayFrame(), runId, from, section.objectId, element)')
   })
 
   test('Shift+Enter on an item opens its faceplate; Enter and Space its detail', () => {

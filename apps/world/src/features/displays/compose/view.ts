@@ -9,7 +9,7 @@ import type { OperationalObject } from '../../../core/model/index.ts'
 import { routeDistanceMeters } from '../../../core/model/route.ts'
 import type { Observation } from '../../../core/observation/model.ts'
 import { alertRows, leadsObject, priorityRank, worstFirst, type AlertRow } from '../alerts/rows.ts'
-import { declaredRefs, valueOf, visibleObject, type Declared } from './declared.ts'
+import { bundledDevices, declaredRefs, valueOf, visibleObject, type Declared } from './declared.ts'
 import { leadNow } from './defaults.ts'
 import {
   ENTITY_COLUMNS, horizonMs, type Collection, type EntityRow, type RecordedSeries, type ResolvedView, type SlotDeclaration, type VignetteSample,
@@ -152,7 +152,10 @@ export const compileVignette = async (run: ComposeRun, state: VignetteState): Pr
   const sections: VignetteSection[] = []
   for (const [index, view] of state.views.entries()) {
     // A lead request's rows keep their places whatever it leads with (never grouped); each sample brings its values now.
-    if (view.kind === 'values' && leads.has(index)) sections.push({ kind: 'values', rows: view.rows, values: values(leads.get(index)!), lead: index })
+    if (view.kind === 'values' && leads.has(index)) {
+      const devices = view.lead?.element === undefined ? [] : await bundledDevices(run, view.lead.objectId, view.lead.element)
+      sections.push({ kind: 'values', rows: view.rows, values: values(leads.get(index)!), lead: index, ...(devices.length === 0 ? {} : { devices }) })
+    }
     else if (view.kind === 'values') sections.push(groupValues(values(view.refs ?? [])) ?? { kind: 'values', rows: view.rows, values: values(view.refs ?? []) })
     else if (view.kind === 'trend') sections.push({ kind: 'trend', rows: view.rows, horizonMs: horizonMs(view.horizon), strips: stripsOf(values(view.refs).filter(value => value.series !== null)).slice(0, 4) })
     else if (view.kind === 'alerts') {

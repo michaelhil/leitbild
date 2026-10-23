@@ -18,7 +18,6 @@ import '@oicl/openbridge-webcomponents/dist/automation/automation-button/automat
 import '@oicl/openbridge-webcomponents/dist/automation/automation-tank/automation-tank.js'
 import '@oicl/openbridge-webcomponents/dist/automation/heat-exchanger/heat-exchanger.js'
 import '@oicl/openbridge-webcomponents/dist/automation/valve-analoge-two-way-icon/valve-analog-two-way-icon.js'
-import '@oicl/openbridge-webcomponents/dist/components/toggletip/toggletip.js'
 import '@oicl/openbridge-webcomponents/dist/icons/icon-pump-on-horizontal.js'
 import '@oicl/openbridge-webcomponents/dist/icons/icon-pump-off-horizontal.js'
 import '@oicl/openbridge-webcomponents/dist/icons/icon-pump-static-horizontal.js'
@@ -39,3 +38,10 @@ import '@oicl/openbridge-webcomponents/dist/icons/icon-sources-01-on.js'
 import '@oicl/openbridge-webcomponents/dist/icons/icon-sources-01-off.js'
 // Option A's magnifier after an item's name (plan v5 §3).
 import '@oicl/openbridge-webcomponents/dist/icons/icon-search.js'
+// The faceplate card (W3.2, W3.3): OpenBridge's card, its pin, handle and corner, and its buttons.
+import '@oicl/openbridge-webcomponents/dist/components/card/card.js'
+import '@oicl/openbridge-webcomponents/dist/components/icon-button/icon-button.js'
+import '@oicl/openbridge-webcomponents/dist/icons/icon-pin-google.js'
+import '@oicl/openbridge-webcomponents/dist/icons/icon-pin-selected-google.js'
+import '@oicl/openbridge-webcomponents/dist/icons/icon-drag-horizontal.js'
+import '@oicl/openbridge-webcomponents/dist/icons/icon-resize-corner.js'

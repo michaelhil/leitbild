@@ -10,23 +10,25 @@
   import { operationClient, type OperationOutcome, type PlantRead } from './operation-client.ts'
   import { operatedItems, readElementOperation } from './element-operation.ts'
   import { citedMargin, ratePerMinute, type CitedReading } from './cited-reading.ts'
-  import { itemControlView, operationNow, proposalCard, shownProposal, type ListedItem, type ListedReset, type OperationNow } from './operation-presenter.ts'
+  import { faceplateControls, itemControlView, operationNow, proposalCard, shownProposal, type ListedItem, type ListedReset, type OperationNow } from './operation-presenter.ts'
 
-  // The Plant's actions on one element, in a display's element pop-over (the
+  // The Plant's actions on one element, in a display's element faceplate (the
   // embed contribution ui/embed.ts): the item of equipment the element is (a
   // component, or a device it bundles drawn as its own node), its
   // proposal card while one is pending or just closed, its CONTROL section
   // and the RESETs of the actuations holding it, select-check-execute as the
-  // drawing's popover always offered them. World derives what may be operated
+  // drawing's popover always offered them. In a pinned overlay its controls
+  // fold behind one line; elsewhere, while no proposal waits, its protective
+  // pushbuttons do (faceplateControls). World derives what may be operated
   // and where it stands (controls.list); a command goes through World's one
   // validated queued write path as this screen's actor (control.write), a
   // decision on a proposal through control.decide. It reads the Run every
   // second while open: controls.list, control.proposals, and signals.read
   // with its operations on the paths its controls and proposals write and
-  // cite. A read that fails disables every control and says so, until the
-  // next one succeeds.
+  // cite. A read that fails, or the display's samples FROZEN, disables every
+  // control and says so, until it reads again.
 
-  let { runId, objectId, elementId }: PackElementActionsProps = $props()
+  let { runId, objectId, elementId, frozen, pinned }: PackElementActionsProps = $props()
 
   type Write = { readonly path: VariablePath; readonly value: ProcessVariableValue }
   const READ_EVERY_MS = 1_000
@@ -92,7 +94,7 @@
     return () => clearInterval(timer)
   })
 
-  const stale = $derived(failure !== null)
+  const stale = $derived(failure !== null || frozen)
   const now = $derived.by((): OperationNow | null => read === null ? null : operationNow(read.sample, read.units))
   const proposal = $derived(now === null ? undefined : shownProposal(elementId, proposals, now))
   // Each cited reading's margin to its limits and its last ten minutes, by tag (World's ranking, never the proposer's urgency).
@@ -134,8 +136,16 @@
     />
   {/if}
   {#if shown}
+    {@const parts = faceplateControls(itemControlView(item, now, resets), { pinned, proposalPending: proposal?.status === 'pending' })}
     {#key `${item.id}|${draft?.at ?? ''}`}
-      <ControlSection view={itemControlView(item, now, resets)} {now} {stale} {validate} {execute} {reset} draft={draft?.write ?? null} {acceptedAt} />
+      {#if parts.open !== null}<ControlSection view={parts.open} {now} {stale} {validate} {execute} {reset} draft={draft?.write ?? null} {acceptedAt} />{/if}
+      {#if parts.folded !== null}
+        <!-- Folded controls stay one line until a person opens them; a draft taken from a proposal opens them. -->
+        <details class="folded" open={draft !== null}>
+          <summary>Controls ({parts.count})</summary>
+          <ControlSection view={parts.folded} {now} {stale} {validate} {execute} {reset} draft={draft?.write ?? null} {acceptedAt} />
+        </details>
+      {/if}
     {/key}
   {/if}
 {/if}
@@ -143,4 +153,5 @@
 
 <style>
   .failure { margin: 2px 0 0; font-size: 11.5px; color: var(--element-active-color); }
+  .folded summary { min-height: 24px; line-height: 24px; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--element-active-color); }
 </style>
