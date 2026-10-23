@@ -1401,6 +1401,19 @@ body.rail-resizing {
   cursor: pointer;
 }
 
+/* On a touch screen the window's controls are 40 px press targets (W8.3), its zoom slider as tall. */
+@media (pointer: coarse) {
+  .display-window-header button:not([role="dialog"] *),
+  .display-window-popover button {
+    height: 40px;
+    min-width: 40px;
+  }
+
+  .display-window-header input[type="range"] {
+    height: 40px;
+  }
+}
+
 .display-window-header button:hover:not(:disabled):not([aria-disabled="true"]):not([role="dialog"] *),
 .display-window-popover button:hover:not(:disabled):not([aria-disabled="true"]) {
   color: var(--text);

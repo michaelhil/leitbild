@@ -335,6 +335,8 @@
   .more { display: block; height: var(--row); margin: 0; padding: 0; border: none; background: none; font: inherit; font-size: 12px; line-height: var(--row); text-align: left; color: var(--element-neutral-color); }
   button.more { cursor: pointer; color: var(--element-active-color); }
   button.more:hover { text-decoration: underline; }
+  /* On a touch screen its press target reaches 40 px, an unseen margin round its one row (W8.3). */
+  @media (pointer: coarse) { button.more { position: relative; } button.more::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 40px; transform: translateY(-50%); } }
   .related { display: flex; flex-wrap: wrap; gap: 0 12px; margin: 0; padding: 0; list-style: none; }
   .related li { display: inline-flex; align-items: center; }
   .related button { height: 40px; padding: 0 4px; border: none; background: none; font: inherit; color: var(--element-active-color); cursor: pointer; }

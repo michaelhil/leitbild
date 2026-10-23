@@ -94,6 +94,16 @@
   const symbols = $derived(new Set([...drawing.devices, ...drawing.vessels].map(item => item.id)))
   /** Whether an item opens anything: a refused default (no targets) stays a plain item, never a button. */
   const opens = (id: string): boolean => (texts.get(id)?.targets.length ?? 0) > 0
+  /**
+   * The items a person presses, in reading order: by the grid row their top stands on, then from the left (W8.3: Tab
+   * walks the drawing as it reads, each item followed by its magnifier). A line's, a bar's or a stop's area is one
+   * only where it opens something and has no symbol of its own.
+   */
+  const ordered = $derived([
+    ...drawing.vessels.map(item => ({ kind: 'vessel' as const, id: item.id, item, x: item.x, y: item.y })),
+    ...drawing.devices.map(item => ({ kind: 'device' as const, id: item.id, item, x: item.x - SYMBOL_PX / 2, y: item.y - SYMBOL_PX / 2 })),
+    ...drawing.texts.filter(text => opens(text.id) && !symbols.has(text.id)).map(item => ({ kind: 'area' as const, id: item.id, item, x: item.area.x, y: item.area.y })),
+  ].sort((left, right) => Math.round(left.y / VIGNETTE_ROW_PX) - Math.round(right.y / VIGNETTE_ROW_PX) || left.x - right.x))
   const nameOf = (id: string): string => texts.get(id)?.lines[0]?.text ?? texts.get(id)?.title ?? id
   /** What a press on an item opens: its element, a group's members, a stop's far ends, each by element and name. */
   const membersOf = (id: string): ReadonlyArray<{ readonly element: string; readonly name: string }> =>
@@ -469,46 +479,49 @@
 
 <div class="flow">
   <div class="fit" style:width={`${drawing.width * scale}px`} style:height={`${drawing.height * scale}px`}>
-  <div class="drawing" style:width={`${drawing.width}px`} style:height={`${drawing.height}px`} style:transform={scale < 1 ? `scale(${scale})` : undefined} style:--magnifier-glyph={`${MAGNIFIER.glyph}px`} style:--magnifier-hit={`${MAGNIFIER.hit}px`} role="group" aria-label="Flow topology">
+  <div class="drawing" style:width={`${drawing.width}px`} style:height={`${drawing.height}px`} style:transform={scale < 1 ? `scale(${scale})` : undefined} style:--magnifier-glyph={`${MAGNIFIER.glyph}px`} style:--magnifier-hit={`${MAGNIFIER.hit}px`} style:--unscale={1 / scale} role="group" aria-label="Flow topology">
     <canvas use:lines={{ segments: drawing.segments, width: drawing.width, height: drawing.height, palette, zoom }}></canvas>
     {#each drawing.buses as bus (bus.id)}
       <obc-bus class="placed" size="small" vertical={bus.vertical} label="" title={bus.title} style:left={`${bus.x}px`} style:top={`${bus.y}px`} style:width={`${bus.width}px`} style:height={`${bus.height}px`}></obc-bus>
     {/each}
-    {#each drawing.vessels as item (item.id)}
-      <div class="placed box" class:hovered={hovered === item.id} class:activated={activated(item.id)} title={item.title} use:button={item.id} style:left={`${item.x}px`} style:top={`${item.y}px`} style:width={`${item.width}px`} style:height={`${item.height}px`}
-        {...body(item.id, item.title)}>
-        {#if item.kind === 'tank'}
-          <obc-automation-tank type="generic" orientation="vertical" positioning="button" compact medium="normal" max={100} value={item.level ?? 0} static={item.unknown || item.level === null} showTrendSymbol={false} clickable={false} tag="" alert={item.tone !== null} alertFrameStatus={item.tone === null ? 'caution' : ALERT_TYPE[item.tone]} alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false} style:width="100%" style:height="100%"><span slot="readout"></span>{#if pendingOf(item.id) !== undefined}<obc-automation-badge slot="badges" mode="enhanced" title="A proposal waits on it">{@render waiting(pendingOf(item.id)!)}</obc-automation-badge>{/if}</obc-automation-tank>
-        {:else if item.kind === 'exchanger'}
-          <obc-heat-exchanger positioning="button" medium="graphic" static={item.unknown} clickable={false} showIcon tag="" alert={item.tone !== null} alertFrameStatus={item.tone === null ? 'caution' : ALERT_TYPE[item.tone]} alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false} style:width="100%" style:height="100%">{#if pendingOf(item.id) !== undefined}<obc-automation-badge slot="badges" mode="enhanced" title="A proposal waits on it">{@render waiting(pendingOf(item.id)!)}</obc-automation-badge>{/if}</obc-heat-exchanger>
-        {:else if item.drawing !== undefined}
-          <Vessel id={item.id} width={item.width} height={item.height} origin={{ x: item.x, y: item.y }} drawing={item.drawing} level={item.level} parts={item.parts ?? []} />
-        {/if}
-      </div>
-      {@render magnifier(item.id)}
-    {/each}
-    {#each drawing.devices as device (device.id)}
-      <div class="placed device" title={device.title} use:button={device.id} style:left={`${device.x - SYMBOL_PX / 2}px`} style:top={`${device.y - SYMBOL_PX / 2}px`}
-        {...body(device.id, device.title)}>
-        <div class="point"><obc-automation-button use:symbolOnly variant="regular" positioning="point" showReadoutStack={false} state={device.on ? 'open' : 'closed'} static={device.unknown} orientation={device.orientation} activated={activated(device.id)} progress={false} hasBadgeSpacer={false} alert={device.tone !== null} alertFrameStatus={device.tone === null ? 'caution' : ALERT_TYPE[device.tone]} alertFrameMode="acked-active" alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false}>
-          {#if device.glyph?.tag === 'obc-valve-analog-two-way-icon'}
-            <obc-valve-analog-two-way-icon slot="icon" value={device.glyph.value} closed={device.glyph.value === 0} vertical={device.vertical}></obc-valve-analog-two-way-icon>
-          {:else if device.glyph !== null}
-            <svelte:element this={device.glyph.tag} slot="icon" usecsscolor></svelte:element>
+    <!-- Every item a person presses, in reading order (top to bottom, then left to right), each followed by its
+         magnifier: Tab walks the drawing as it reads (W8.3). -->
+    {#each ordered as entry (entry.id)}
+      {#if entry.kind === 'vessel'}
+        {@const item = entry.item}
+        <div class="placed box" class:hovered={hovered === item.id} class:activated={activated(item.id)} title={item.title} use:button={item.id} style:left={`${item.x}px`} style:top={`${item.y}px`} style:width={`${item.width}px`} style:height={`${item.height}px`}
+          {...body(item.id, item.title)}>
+          {#if item.kind === 'tank'}
+            <obc-automation-tank type="generic" orientation="vertical" positioning="button" compact medium="normal" max={100} value={item.level ?? 0} static={item.unknown || item.level === null} showTrendSymbol={false} clickable={false} tag="" alert={item.tone !== null} alertFrameStatus={item.tone === null ? 'caution' : ALERT_TYPE[item.tone]} alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false} style:width="100%" style:height="100%"><span slot="readout"></span>{#if pendingOf(item.id) !== undefined}<obc-automation-badge slot="badges" mode="enhanced" title="A proposal waits on it">{@render waiting(pendingOf(item.id)!)}</obc-automation-badge>{/if}</obc-automation-tank>
+          {:else if item.kind === 'exchanger'}
+            <obc-heat-exchanger positioning="button" medium="graphic" static={item.unknown} clickable={false} showIcon tag="" alert={item.tone !== null} alertFrameStatus={item.tone === null ? 'caution' : ALERT_TYPE[item.tone]} alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false} style:width="100%" style:height="100%">{#if pendingOf(item.id) !== undefined}<obc-automation-badge slot="badges" mode="enhanced" title="A proposal waits on it">{@render waiting(pendingOf(item.id)!)}</obc-automation-badge>{/if}</obc-heat-exchanger>
+          {:else if item.drawing !== undefined}
+            <Vessel id={item.id} width={item.width} height={item.height} origin={{ x: item.x, y: item.y }} drawing={item.drawing} level={item.level} parts={item.parts ?? []} />
           {/if}
-          {#if pendingOf(device.id) !== undefined}<obc-automation-badge slot="badge-top-right" mode="enhanced" title="A proposal waits on it">{@render waiting(pendingOf(device.id)!)}</obc-automation-badge>{/if}
-        </obc-automation-button></div>
-      </div>
-      {@render magnifier(device.id)}
-    {/each}
-    {#each drawing.texts as text (text.id)}
-      {#if opens(text.id) && !symbols.has(text.id)}
+        </div>
+      {:else if entry.kind === 'device'}
+        {@const device = entry.item}
+        <div class="placed device" title={device.title} use:button={device.id} style:left={`${device.x - SYMBOL_PX / 2}px`} style:top={`${device.y - SYMBOL_PX / 2}px`}
+          {...body(device.id, device.title)}>
+          <div class="point"><obc-automation-button use:symbolOnly variant="regular" positioning="point" showReadoutStack={false} state={device.on ? 'open' : 'closed'} static={device.unknown} orientation={device.orientation} activated={activated(device.id)} progress={false} hasBadgeSpacer={false} alert={device.tone !== null} alertFrameStatus={device.tone === null ? 'caution' : ALERT_TYPE[device.tone]} alertFrameMode="acked-active" alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false}>
+            {#if device.glyph?.tag === 'obc-valve-analog-two-way-icon'}
+              <obc-valve-analog-two-way-icon slot="icon" value={device.glyph.value} closed={device.glyph.value === 0} vertical={device.vertical}></obc-valve-analog-two-way-icon>
+            {:else if device.glyph !== null}
+              <svelte:element this={device.glyph.tag} slot="icon" usecsscolor></svelte:element>
+            {/if}
+            {#if pendingOf(device.id) !== undefined}<obc-automation-badge slot="badge-top-right" mode="enhanced" title="A proposal waits on it">{@render waiting(pendingOf(device.id)!)}</obc-automation-badge>{/if}
+          </obc-automation-button></div>
+        </div>
+      {:else}
+        {@const text = entry.item}
         <!-- A named item drawn as a line, a bar or a stop (a header, a bus, a junction, a stop's far ends): its box and
              its text are its button, under the symbols drawn on it. -->
         <div class="placed area" class:hovered={hovered === text.id} class:activated={activated(text.id)} title={text.title} use:button={text.id}
           style:left={`${text.area.x}px`} style:top={`${text.area.y}px`} style:width={`${text.area.width}px`} style:height={`${text.area.height}px`} {...body(text.id, text.title)}></div>
-        {@render magnifier(text.id)}
       {/if}
+      {@render magnifier(entry.id)}
+    {/each}
+    {#each drawing.texts as text (text.id)}
       <!-- An item's text is part of its body: a press on it opens the item's detail, as a press on its symbol does. -->
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <div class={`text ${text.tone ?? ''}`} class:body={opens(text.id)} data-item={text.id} use:textBlock={text.id} use:nameWidth={{ id: text.id, name: text.lines[0]?.text ?? '', scale }} style:left={`${text.x}px`} style:top={`${text.y}px`} style:width={`${text.width}px`} style:--line={`${FLOW_LINE_PX}px`} title={text.title}
@@ -578,6 +591,13 @@
   .magnifier:focus-visible { outline: none; }
   .magnifier:focus-visible .glyph { outline: 2px solid var(--border-focus-color); }
   @media (pointer: coarse) { .magnifier { opacity: 1; } }
+  /* On a touch screen every press target reaches 40 px on screen, whatever the drawing's scale (W8.3): an unseen
+     margin round a line's, a bar's or a stop's area and round the magnifier, under the symbols and words beside it. */
+  /* The magnifier, shown at rest there, then stands over the end of its name, so its whole square is the faceplate's. */
+  @media (pointer: coarse) {
+    .area::before, .magnifier::before { content: ''; position: absolute; left: 50%; top: 50%; width: max(100%, calc(40px * var(--unscale))); height: max(100%, calc(40px * var(--unscale))); transform: translate(-50%, -50%); }
+    .magnifier { z-index: 3; }
+  }
   .notice { margin: 0; font-size: 12px; color: var(--element-active-color); }
   /* An item not following a command: outlined just outside its symbol and text in OpenBridge's enhanced neutral, never an alarm's colour; dashed and neutral where its alerts are all expected after a first-out. */
   .outline { position: absolute; box-sizing: border-box; border: 2px solid var(--element-neutral-enhanced-color); border-radius: 4px; pointer-events: none; }

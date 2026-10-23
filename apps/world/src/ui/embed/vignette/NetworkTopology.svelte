@@ -96,7 +96,7 @@
 
 <div class="network">
   <div class="fit" style:width={`${drawing.width * scale}px`} style:height={`${drawing.height * scale}px`}>
-  <div class="drawing" style:width={`${drawing.width}px`} style:height={`${drawing.height}px`} style:transform={scale < 1 ? `scale(${scale})` : undefined} role="group" aria-label="Network topology">
+  <div class="drawing" style:width={`${drawing.width}px`} style:height={`${drawing.height}px`} style:transform={scale < 1 ? `scale(${scale})` : undefined} style:--unscale={1 / scale} role="group" aria-label="Network topology">
     <canvas use:lines={{ segments: drawing.segments, width: drawing.width, height: drawing.height, palette, zoom }}></canvas>
     {#each drawing.buses as bus (bus.id)}
       <obc-bus class="placed" size="small" vertical={bus.vertical} label={bus.label} title={bus.title} style:left={`${bus.x}px`} style:top={`${bus.y}px`} style:width={`${bus.width}px`} style:height={`${bus.height}px`}></obc-bus>
@@ -142,6 +142,10 @@
   .area { z-index: 1; border-radius: 4px; cursor: pointer; }
   .area:hover { background: var(--flat-hover-background-color); }
   .area:focus-visible { outline: 2px solid var(--border-focus-color); outline-offset: 2px; }
+  /* On a touch screen an item's press target reaches 40 px on screen, whatever the drawing's scale (W8.3). */
+  @media (pointer: coarse) {
+    .area::before { content: ''; position: absolute; left: 50%; top: 50%; width: max(100%, calc(40px * var(--unscale))); height: max(100%, calc(40px * var(--unscale))); transform: translate(-50%, -50%); }
+  }
   .notice { margin: 0; font-size: 12px; color: var(--element-active-color); }
   .text { position: absolute; height: var(--row); line-height: 20px; font-size: 12px; white-space: nowrap; overflow: hidden; }
   .text.below { height: calc(2 * var(--row)); display: flex; flex-direction: column; justify-content: space-between; line-height: 18px; }
