@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { SimulationRunId } from '../src/core/model/ids.ts'
 import type { Observable, Observation } from '../src/core/observation/model.ts'
 import type { SeriesPoint, VignetteSample, VignetteValue, VignetteView } from '../src/features/displays/compose/model.ts'
@@ -289,5 +291,15 @@ describe('value words (W4.4)', () => {
     expect(observable('core.sourceRangeCountRateCps')).toMatchObject({ meaningfulWhile: 'while Source-range HV on', invalidWhile: 'Source-range HV off' })
     // Read over decades, the intermediate range declares no span to pin to.
     expect(observable('core.intermediateRangeCurrentAmps').span).toBeUndefined()
+  })
+})
+
+describe('the column moves nothing (W8.4)', () => {
+  test('its rows, sparklines and margins neither animate nor transition, so reduced motion has nothing to stop', () => {
+    const dir = join(import.meta.dir, '../src/ui/embed/vignette')
+    for (const file of ['ValueRows.svelte', 'Sparkline.svelte', 'Sections.svelte']) {
+      const style = readFileSync(join(dir, file), 'utf8').match(/<style>([\s\S]*)<\/style>/)?.[1] ?? ''
+      expect(style, file).not.toMatch(/\b(animation|transition)\s*:/)
+    }
   })
 })

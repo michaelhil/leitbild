@@ -5,7 +5,8 @@ import { join, relative } from 'node:path'
 // Every text/background pair the embedded displays draw with, read from the
 // OpenBridge palettes and the display tokens in embed.css, at 4.5:1 or more
 // (WCAG AA) in day, dusk and night (hmi audit: caution text read 1.27:1 and
-// orange chips 2.07:1 in day).
+// orange chips 2.07:1 in day); the column's chips, SIM badge, rates and margin
+// lines use these pairs (W8.4); its sparklines' lines read 3:1 on their frame.
 
 const root = join(import.meta.dir, '..')
 const openBridgeCss = readFileSync(join(root, 'node_modules/@oicl/openbridge-webcomponents/dist/openbridge.css'), 'utf8')
@@ -79,6 +80,29 @@ const TEXT_PAIRS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
   ['--display-alert-text', ['--alert-low-integrity-background-color']],
 ]
 
+/**
+ * Graphics a reading is read from, at 3:1 or more against what they are drawn on (WCAG 1.4.11): the lead rows'
+ * sparklines (W4.2, W8.4), their line and end dot in the neutral colour, or the active one while the value is in
+ * alert, on OpenBridge's mini graph frame. An alert colour would not hold: caution reads 1.36:1 there in day.
+ */
+const GRAPHIC_PAIRS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
+  ['--element-neutral-color', ['--instrument-frame-primary-color']],
+  ['--element-active-color', ['--instrument-frame-primary-color']],
+]
+
+describe('display graphics contrast', () => {
+  for (const palette of PALETTES) {
+    test(`every sparkline line reads 3:1 or more on its frame in ${palette}`, () => {
+      const tokens = paletteOf(palette)
+      const failing = GRAPHIC_PAIRS.flatMap(([line, backgrounds]) => backgrounds.flatMap(background => {
+        const ratio = contrast(resolve(tokens, line), resolve(tokens, background))
+        return ratio >= 3 ? [] : [`${line} on ${background}: ${ratio.toFixed(2)}:1`]
+      }))
+      expect(failing).toEqual([])
+    })
+  }
+})
+
 describe('display text contrast', () => {
   for (const palette of PALETTES) {
     test(`every text/background pair reads 4.5:1 or more in ${palette}`, () => {
@@ -93,6 +117,8 @@ describe('display text contrast', () => {
 
   test('the measurement reproduces the audit: caution yellow as text on the day background is 1.27:1', () => {
     const day = paletteOf('day')
+    // And why a sparkline never takes an alert colour: caution on the mini graph frame in day.
+    expect(contrast(resolve(day, '--alert-caution-color'), resolve(day, '--instrument-frame-primary-color'))).toBeLessThan(3)
     expect(contrast(resolve(day, '--alert-caution-color'), resolve(day, '--container-background-color'))).toBeCloseTo(1.27, 2)
     expect(contrast(resolve(day, '--container-background-color'), resolve(day, '--alert-warning-color'))).toBeCloseTo(2.07, 2)
   })
