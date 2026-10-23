@@ -21,7 +21,8 @@ export const shownSeries = (view: VignetteView): ReadonlyArray<ShownSeries> => {
   }
   for (const section of view.sections) {
     if (section.kind === 'trend') for (const pen of section.strips.flat()) { if (pen.series !== null) add(pen.ref, pen.series.seriesId, section.horizonMs) }
-    if (section.kind === 'values') for (const value of section.values) { if (value.series !== null && value.valueType !== 'criterion') add(value.ref, value.series.seriesId, SPARK_WINDOW_MS) }
+    // A values row draws a sparkline of a number only: a state or a criterion takes its whole row in words.
+    if (section.kind === 'values') for (const value of section.values) { if (value.series !== null && (value.valueType === 'number' || value.valueType === 'duration')) add(value.ref, value.series.seriesId, SPARK_WINDOW_MS) }
   }
   return [...shown.values()]
 }

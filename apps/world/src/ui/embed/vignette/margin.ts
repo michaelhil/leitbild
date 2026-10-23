@@ -1,13 +1,15 @@
 // How a values row reads its reading's recent record (plan v5 W4.2; owner
-// finding 1; #47, #48): its rate per minute, shown only where the last 30 s
-// and the last 2 min agree on the way it goes; and its margin to a limit in
-// force it is near or past, with which way it goes and, only where that trend
-// is established, the time to the limit or back across it. A limit in force
+// finding 1; #47, #48): its rate per minute is the trends' (trend.ts rateNow:
+// only where the last 30 s and the last 2 min agree on the way it goes); its
+// margin to a limit in force it is near or past says which way it goes and
+// how that changes, and, only where a rate is stated (the trend is
+// established), the time to the limit or back across it. A limit in force
 // is one the Pack says the value is past (`past`), or one it declares with no
 // condition (`when`): World never reads a condition's words.
 import { numberShown, numberText, unitSymbol, type Observable, type Quantity } from '../../../core/observation/model.ts'
 import type { SeriesPoint } from '../../../features/displays/compose/model.ts'
 import { orderWord } from './readout.ts'
+import { rateNow } from './trend.ts'
 
 type Threshold = Observable['thresholds'][number]
 
@@ -43,32 +45,22 @@ export const slopePerMinute = (points: ReadonlyArray<SeriesPoint>, now: number, 
 }
 
 export interface Tendency {
-  /** Per minute over the last 30 s and the last 2 min; null where the record spans too little. */
+  /** Per minute over the last 30 s and the last 2 min (least squares): which way it goes and how that changes. */
   readonly short: number | null
   readonly long: number | null
+  /** The rate a row and a trend state (trend.ts rateNow, W4.2's rule): its 30 s change a minute where the 30 s and 2 min changes agree; null otherwise. */
+  readonly rate: number | null
 }
 
-export const tendencyOf = (points: ReadonlyArray<SeriesPoint>, now: number, holdMs: number): Tendency =>
-  ({ short: slopePerMinute(points, now, SHORT_MS, holdMs), long: slopePerMinute(points, now, LONG_MS, holdMs) })
+/** A record's tendency now; `step`: the least change its value's written number shows (numberStep). */
+export const tendencyOf = (points: ReadonlyArray<SeriesPoint>, now: number, holdMs: number, step: number): Tendency =>
+  ({ short: slopePerMinute(points, now, SHORT_MS, holdMs), long: slopePerMinute(points, now, LONG_MS, holdMs), rate: rateNow({ points, holdMs }, now, step) })
 
 /** A reading's way of writing a number: its unit, its declared quantity, read over decades. */
 export interface Written { readonly unit: string; readonly quantity?: Quantity; readonly decades?: true }
 
 /** A rate that reads as zero at the value's decimals is steady. */
 const steady = (rate: number, written: Written): boolean => numberShown(Math.abs(rate), written.unit, written.quantity).value === 0
-
-/** Where the two slopes agree: both one way, neither steady. */
-const agreed = (tendency: Tendency, written: Written): 'rising' | 'falling' | null => {
-  const { short, long } = tendency
-  if (short === null || long === null || steady(short, written) || steady(long, written) || Math.sign(short) !== Math.sign(long)) return null
-  return short > 0 ? 'rising' : 'falling'
-}
-
-/** "▼ 0.12" a minute, at the value's decimals, where the 30 s and the 2 min slopes agree; null otherwise. Its column's heading says "/min". */
-export const rateText = (tendency: Tendency, written: Written): string | null => {
-  const way = agreed(tendency, written)
-  return way === null ? null : `${way === 'rising' ? '▲' : '▼'} ${numberText(Math.abs(tendency.short!), written.unit, written.quantity)}`
-}
 
 /** How the last 30 s go against the last 2 min: slowing, accelerating, reversing; null where they hold or are not known. */
 const changeOf = (tendency: Tendency, written: Written): 'slowing' | 'accelerating' | 'reversing' | null => {
@@ -111,17 +103,16 @@ const timeText = (minutes: number): string => (minutes < 2 ? `≈${Math.max(5, M
  * where it holds); null where none is near. `past`: the id of the limit the Pack says it is past now.
  */
 export const marginOf = (value: number, thresholds: ReadonlyArray<Threshold>, past: string | undefined, tendency: Tendency, written: Written & { readonly span?: { readonly min: number; readonly max: number } }): Margin | null => {
-  const way = agreed(tendency, written)
   const change = changeOf(tendency, written)
   const passed = past === undefined ? undefined : thresholds.find(threshold => threshold.id === past)
   const inForce = thresholds.filter(threshold => NAMED.has(threshold.effect) && threshold.when === undefined)
   const span = written.span
   const scale = (limit: number): number => (span === undefined ? Math.abs(limit) : span.max - span.min) || 1
   const nearShare = span === undefined ? NEAR_LIMIT_SHARE : NEAR_SPAN_SHARE
-  const rate = tendency.short
-  // Minutes to reach `limit` at the stated rate, where the trend is established: the 30 s and 2 min slopes agree.
+  const rate = tendency.rate
+  // Minutes to reach `limit` at the rate a row states, only where it states one: the trend is established.
   const minutesTo = (limit: number): number | null => {
-    if (way === null || rate === null || Math.sign(limit - value) !== Math.sign(rate)) return null
+    if (rate === null || Math.sign(limit - value) !== Math.sign(rate)) return null
     const minutes = (limit - value) / rate
     return minutes <= PROJECTED_MINUTES ? minutes : null
   }

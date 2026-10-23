@@ -102,6 +102,11 @@ export const numberShown = (value: number, unit: string, quantity?: Quantity, de
   const shown = Number(value.toFixed(decimals))
   return shown === 0 ? { value: 0, decimals: decimalsFor(unit, 0, quantity) } : { value: shown, decimals }
 }
+/** The least change of a value its written number shows (numberShown), in its own unit: one step of its decimals. */
+export const numberStep = (value: number, unit: string, quantity?: Quantity): number => {
+  const larger = readIn[unit as UnitCode]
+  return larger !== undefined ? 10 ** -larger.decimals / larger.factor : 10 ** -decimalsFor(unit, value, quantity)
+}
 /** A number as every display and card writes it (numberShown): at its decimals, as a zero below its step, over decades as a power of ten. */
 export const numberText = (value: number, unit: string, quantity?: Quantity, decades = false): string => {
   if (readIn[unit as UnitCode] === undefined && overDecades(value, decimalsFor(unit, value, quantity), decades)) return decadeParts(value).text

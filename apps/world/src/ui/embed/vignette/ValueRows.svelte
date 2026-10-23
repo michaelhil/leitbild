@@ -21,7 +21,7 @@
     rows: ReadonlyArray<ValueRow>
     /** The latest sample's Run time: where each sparkline ends. */
     now: number
-    /** A window default's lead rows stand under their heading, which names the rate's and the sparklines' units over their columns. */
+    /** A window default's lead rows stand under their heading, which names the sparklines' window over their column. */
     heading?: string
   } = $props()
 
@@ -50,7 +50,7 @@
 </script>
 
 {#if heading !== undefined}
-  <h2 class="row head" style:--chip={chipChars === 0 ? '0px' : `calc(${chipChars}ch + 10px)`}><span>{heading}</span><span></span><span></span><span class="unit" title="Rate per minute, shown where the last 30 s and the last 2 min agree on the way it goes">/min</span><span class="unit window" title="Each sparkline: the reading's last 10 min, scaled to its own range">10 min</span></h2>
+  <h2 class="row head" style:--chip={chipChars === 0 ? '0px' : `calc(${chipChars}ch + 10px)`}><span>{heading}</span><span></span><span></span><span></span><span class="unit" title="Each sparkline: the reading's last 10 min, scaled to its own range">10 min</span></h2>
 {/if}
 <obc-readout-list class="rows" use:aligned={rows} style:--chip={chipChars === 0 ? '0px' : `calc(${chipChars}ch + 10px)`}>
   {#each rows as row (row.ref)}
@@ -77,7 +77,7 @@
           alert={look.tone === null ? false : { status: ALERT_TYPE[look.tone], type: 'regular', thickness: 'small', mode: 'acked-active', showIcon: false, showAlertCategoryIcon: false }}
         ></obc-readout-list-item>
         <span class="chip-cell">{#if look.chip !== null}<span class={`chip ${look.chip.tone ?? 'neutral'}`} title={look.chip.text}>{look.chip.word}</span>{/if}</span>
-        <span class="rate" title={row.rate === null ? undefined : `${row.rate.startsWith('▲') ? 'Rising' : 'Falling'} ${row.rate.slice(2)} ${row.look.unit} a minute: the last 30 s and the last 2 min agree`}>{row.rate ?? ''}</span>
+        <span class="rate" title={row.rate === null ? undefined : `${row.rate.startsWith('▲') ? 'Rising' : 'Falling'} ${row.rate.slice(2).replace('/min', '')} ${row.look.unit} a minute: the last 30 s and the last 2 min agree`}>{row.rate ?? ''}</span>
         {#if row.recorded}<Sparkline series={row.series} {now} windowMs={SPARK_WINDOW_MS} size={SPARK} tone={look.tone} text={sparkText(row)} doubtful={look.doubtful} />{:else}<span></span>{/if}
       </div>
     {/if}
@@ -88,12 +88,11 @@
   /* One row a grid row: the list's 8 px default gap (room for two alarm frames) would make each 28 px. */
   .rows { display: block; --obc-readout-list-row-gap: 0px; }
   /* Label, value and unit (the list's columns, equal on every row), chip, rate, sparkline: every row's columns line up. */
-  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto var(--chip) 48px 56px; align-items: center; column-gap: 4px; height: var(--row); min-width: 0; white-space: nowrap; }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto var(--chip) 68px 56px; align-items: center; column-gap: 4px; height: var(--row); min-width: 0; white-space: nowrap; }
   .row.whole { display: block; }
   /* The heading, as the alerts' (AlertsSection), its units over the rate's and the sparklines' columns. */
   .head { margin: 0; font-size: 12px; font-weight: 600; color: var(--element-neutral-color); text-transform: uppercase; letter-spacing: 0.04em; overflow: hidden; }
-  .head .unit { font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; text-align: right; }
-  .head .window { text-align: left; }
+  .head .unit { font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; }
   .name { display: flex; align-items: center; gap: 4px; min-width: 0; }
   .label { flex: 1 1 0; min-width: 0; overflow: hidden; color: var(--element-neutral-color); }
   /* A value only the simulator computes (W4.4, #67): never cut, the label gives way first. */

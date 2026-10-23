@@ -4,12 +4,12 @@
 // where it has a series, its rate where the 30 s and 2 min slopes agree, and
 // its margin to a limit in force it is near or past. A frozen display's rows
 // are doubtful and state no rate or margin: they no longer follow the Run.
-import type { Observation } from '../../../core/observation/model.ts'
+import { numberStep, type Observation } from '../../../core/observation/model.ts'
 import type { VignetteValue } from '../../../features/displays/compose/model.ts'
 import { underTitle } from './format.ts'
-import { marginOf, rateText, tendencyOf, type Margin, type Written } from './margin.ts'
+import { marginOf, tendencyOf, type Margin, type Written } from './margin.ts'
 import { valueLook, type ReadingLook } from './readout.ts'
-import type { DrawnSeries } from './trend.ts'
+import { rateText, type DrawnSeries } from './trend.ts'
 
 export interface ValueRow {
   readonly ref: string
@@ -42,7 +42,7 @@ export const valueRows = (input: {
   const series = input.series.get(value.ref)
   // A rate and a margin are read off a value in its span: never off a pinned end, nor off a wider range standing in.
   const number = look.kind === 'number' && !look.doubtful && look.offSpan === null && typeof observation?.value === 'number' && observation.quality === 'good'
-  const tendency = number && series !== undefined && Number.isFinite(input.now) ? tendencyOf(series.points, input.now, series.holdMs) : null
+  const tendency = number && series !== undefined && Number.isFinite(input.now) ? tendencyOf(series.points, input.now, series.holdMs, numberStep(observation!.value as number, value.unit, value.quantity)) : null
   const written = { unit: value.unit, quantity: value.quantity, ...(value.decades === true ? { decades: true as const } : {}) }
   return {
     ref: value.ref,
@@ -50,10 +50,10 @@ export const valueRows = (input: {
     full: value.label,
     look,
     series,
-    recorded: value.series !== null && value.valueType !== 'criterion',
+    recorded: value.series !== null && (value.valueType === 'number' || value.valueType === 'duration'),
     written,
-    rate: tendency === null ? null : rateText(tendency, written),
-    margin: !number ? null : marginOf(observation!.value as number, value.thresholds, observation!.past, tendency ?? { short: null, long: null }, written),
+    rate: tendency?.rate === null || tendency === null ? null : rateText(tendency.rate, value.unit, value.quantity),
+    margin: !number ? null : marginOf(observation!.value as number, value.thresholds, observation!.past, tendency ?? { short: null, long: null, rate: null }, written),
   }
 })
 
