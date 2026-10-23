@@ -520,7 +520,7 @@ if (import.meta.main) {
   const workspaceId = argv.get('workspace'), runA = argv.get('run'), out = argv.get('out')
   if (workspaceId === undefined || runA === undefined || out === undefined) throw new Error('usage: walks.ts --origin=… --workspace=<id> --run=<Run A> --out=<dir> (see the header)')
   const label = argv.get('label') ?? new URL(origin).port
-  const port = Number(argv.get('port') ?? 44336)
+  const port = Number(argv.get('port') ?? 44324)
   const wanted = (argv.get('tasks') ?? TASKS.join(',')).split(',')
   const chrome = await ensureChrome({ port, profile: join(out, `chrome-${port}`) })
   const api = createStackApi(origin, workspaceId)

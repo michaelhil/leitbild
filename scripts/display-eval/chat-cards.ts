@@ -89,7 +89,7 @@ if (import.meta.main) {
   if (runs === undefined || out === undefined) throw new Error('usage: chat-cards.ts --origin=… --runs=<probe output dir> --out=<dir> (see the header)')
   const label = argv.get('label') ?? new URL(origin).port
   const width = Number(argv.get('width') ?? 480), height = Number(argv.get('height') ?? 900)
-  const port = Number(argv.get('port') ?? 44333)
+  const port = Number(argv.get('port') ?? 44325)
   const seed = JSON.parse(await Bun.file(join(runs, 'seed.json')).text())
   const workspaceId: string = seed.workspaceId ?? seed.workspace?.id
   const rows: any[] = []
