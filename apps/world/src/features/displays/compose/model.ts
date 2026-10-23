@@ -41,11 +41,13 @@ export type LeadRequest = z.output<typeof leadRequestSchema>
 export const resolvedViewSchema = z.discriminatedUnion('kind', [
   /**
    * Named values (`refs`) first, then what a lead request leads with now, in the `rows` it reserves; `table`: then its
-   * element's declared table of its parallel parts, in the rows after those.
+   * element's declared table of its parallel parts, in the rows after those; `zones` (a window default's): a heading
+   * over its rows and its margin lines under them, in rows of their own (zoneRows).
    */
-  z.object({ kind: z.literal('values'), refs: z.array(observableRefSchema).min(1).max(16).optional(), lead: leadRequestSchema.optional(), table: z.literal(true).optional(), rows }).strict()
+  z.object({ kind: z.literal('values'), refs: z.array(observableRefSchema).min(1).max(16).optional(), lead: leadRequestSchema.optional(), table: z.literal(true).optional(), zones: z.literal(true).optional(), rows }).strict()
     .refine(view => view.refs !== undefined || view.lead !== undefined, { message: 'a values view names refs or a lead request' })
-    .refine(view => view.table === undefined || view.lead?.element !== undefined, { message: 'only an element\'s lead request shows its table' }),
+    .refine(view => view.table === undefined || view.lead?.element !== undefined, { message: 'only an element\'s lead request shows its table' })
+    .refine(view => view.zones === undefined || view.lead !== undefined, { message: 'only a lead request\'s rows stand in zones' }),
   z.object({ kind: z.literal('trend'), refs: z.array(observableRefSchema).min(1).max(12), horizon: z.enum(['2m', '10m', '30m']), rows }).strict(),
   /** The objects' alerts, or only those on these elements or observables; `all`: the full alerts view (L4), every alert by category, filtered. */
   z.object({
@@ -70,6 +72,11 @@ export const resolvedViewSchema = z.discriminatedUnion('kind', [
   }).strict(),
 ])
 export type ResolvedView = z.output<typeof resolvedViewSchema>
+
+/** A window default's lead rows (W4.2): a heading over them, then a heading over the margins of those near or past a limit, and this many margin lines. */
+export const MARGIN_LINES = 3
+/** The rows a values view's zones take beside its values: none without zones. */
+export const zoneRows = (view: { readonly zones?: true | undefined }): number => (view.zones === true ? 2 + MARGIN_LINES : 0)
 export type Collection = z.output<typeof collectionSchema>
 
 export const vignetteStateSchema = z.object({
@@ -90,9 +97,11 @@ export type VignetteState = z.output<typeof vignetteStateSchema>
 export type VignetteElement = Omit<ObservationDeclaration['elements'][number], 'lead' | 'stopped' | 'criteria' | 'table'>
 
 /** A declared observable as a vignette names it: its label qualified with its object's ("<object> · <observable>", R25); `basis`: a demand reads as one (W1.3). */
-export type VignetteValue = Pick<Observable, 'ref' | 'quantity' | 'unit' | 'valueType' | 'states' | 'thresholds' | 'series' | 'decades' | 'checks' | 'basis' | 'shortLabel' | 'decidingElement'> & {
+export type VignetteValue = Pick<Observable, 'ref' | 'quantity' | 'unit' | 'valueType' | 'states' | 'thresholds' | 'series' | 'decades' | 'checks' | 'basis' | 'shortLabel' | 'decidingElement' | 'invalidWhile' | 'span' | 'wider' | 'travel'> & {
   readonly label: string
   readonly element?: VignetteElement
+  /** Only its simulator computes it, in an object that declares what its instruments measure: it reads SIM (W4.4, #67). */
+  readonly simulated?: true
 }
 
 type Stamp = { readonly at: string; readonly clock: 'simulation' | 'wall' }
@@ -110,13 +119,14 @@ export interface EntityRow {
 export interface SlotDeclaration { readonly key: string; readonly label: string; readonly unit: string }
 
 /** A binding the caller reads, with its observable's declared quantity, unit, states (a state marked `active` reads as on) and decades, so a drawing writes the reading as the card does. */
-export type TopologyBinding = TopologyNode['bindings'][number] & Pick<Observable, 'quantity' | 'unit' | 'states' | 'decades'>
+/** A drawing's binding with its declared unit and words; a traced one with its record's series. */
+export type TopologyBinding = TopologyNode['bindings'][number] & Pick<Observable, 'quantity' | 'unit' | 'states' | 'decades'> & { readonly series?: NonNullable<Observable['series']> }
 export interface TopologyNodeView extends Pick<TopologyNode, 'id' | 'label' | 'shortLabel' | 'element'> {
   /** A stop's label says "to" or "from" and names its far ends (topology/stops.ts). */
   readonly class: TopologyNode['class'] | 'stop'
   readonly bindings: ReadonlyArray<TopologyBinding>
-  /** A stop: whether flow leaves through it (`out`) or comes in, and each far end with its element and its state's binding where the stop writes it. */
-  readonly stop?: { readonly direction: 'in' | 'out'; readonly far: ReadonlyArray<{ readonly id: string; readonly label: string; readonly element?: string; readonly bindings: ReadonlyArray<TopologyBinding> }> }
+  /** A stop: whether flow leaves through it (`out`) or comes in, the lines its label is set in, and each far end with its element and its state's binding where the stop writes it. */
+  readonly stop?: { readonly direction: 'in' | 'out'; readonly lines: ReadonlyArray<string>; readonly far: ReadonlyArray<{ readonly id: string; readonly label: string; readonly element?: string; readonly bindings: ReadonlyArray<TopologyBinding> }> }
 }
 
 /** Parallel values: one line per element (or per line of an element's declared table), one column per quantity. */
@@ -130,8 +140,9 @@ export type VignetteSection =
    * `lead`: the index of the state's view whose lead request it shows; its values now are the sample's `leads[lead]`,
    * in its rows but its table's. `table`: its element's declared table, in its last rows, its values the sample's.
    * `devices`: an element's lead request's, the devices the element bundles (declared with it as their parent, W3.5).
+   * `zones`: its rows stand under a heading, its margin lines after them (zoneRows).
    */
-  | { readonly kind: 'values'; readonly rows: number; readonly values: ReadonlyArray<VignetteValue>; readonly lead?: number; readonly table?: GroupedSection; readonly devices?: ReadonlyArray<VignetteElement> }
+  | { readonly kind: 'values'; readonly rows: number; readonly values: ReadonlyArray<VignetteValue>; readonly lead?: number; readonly table?: GroupedSection; readonly devices?: ReadonlyArray<VignetteElement>; readonly zones?: true }
   | GroupedSection
   /** Pens drawn together share a strip: at most four strips of at most four pens. */
   | { readonly kind: 'trend'; readonly rows: number; readonly horizonMs: number; readonly strips: ReadonlyArray<ReadonlyArray<VignetteValue>> }
@@ -148,7 +159,8 @@ export type VignetteSection =
     /** `packId` is the object's Pack: the pop-over loads that Pack's element actions. */
     readonly kind: 'topology'; readonly rows: number; readonly objectId: string; readonly packId: string; readonly family: 'flow' | 'network'; readonly layout: TopologyLayout
     readonly nodes: ReadonlyArray<TopologyNodeView>
-    readonly edges: ReadonlyArray<{ readonly id: string; readonly mediumKind: TopologyGraph['media'][number]['kind']; readonly bindings: ReadonlyArray<TopologyBinding> }>
+    /** `auxiliary`: a line outside the principal equipment its graph declares (its overview), drawn small. */
+    readonly edges: ReadonlyArray<{ readonly id: string; readonly mediumKind: TopologyGraph['media'][number]['kind']; readonly bindings: ReadonlyArray<TopologyBinding>; readonly auxiliary?: true }>
     readonly attribution?: string
   }
   /** Its counts are the sample's `maps[section]`. */

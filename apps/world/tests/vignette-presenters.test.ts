@@ -8,7 +8,7 @@ import type { AlertRow } from '../src/features/displays/alerts/rows.ts'
 import { alertDetail, alertIcon, alertsTarget, alertTitle, inSection, rowParts, rowWidth, UNACK_WORD, unacknowledged, wordsThatFit, worstChip } from '../src/ui/embed/vignette/alerts.ts'
 import { provenanceMark, quantityText } from '../src/ui/embed/vignette/format.ts'
 import type { VignetteValue } from '../src/features/displays/compose/model.ts'
-import { activeState, limitBar, orderWord, readingLook, valueLook } from '../src/ui/embed/vignette/readout.ts'
+import { activeState, orderWord, readingLook, valueLook } from '../src/ui/embed/vignette/readout.ts'
 import { appendPoint, bandStretches, LABEL_LINE, labelRows, labelWidth, rateNow, rateText, sharedLines, stackLabels, stepPath, stripDrawing, stripDomain, timeTicks } from '../src/ui/embed/vignette/trend.ts'
 import { recordedHoldMs } from '../src/features/historian/policy.ts'
 import { stripRows, stripsOf, trendRows } from '../src/features/displays/compose/strips.ts'
@@ -52,32 +52,22 @@ describe('readout', () => {
 
   test('neutral telemetry: a value without an observation priority takes no colour and no emphasis', () => {
     const look = readingLook('Vehicle · Fuel', 'number', undefined, { value: 4.2, unit: '%', thresholds: [] })
-    expect(look).toMatchObject({ kind: 'number', text: '4.2', tone: null, emphasis: false, chip: null, bar: null })
+    expect(look).toMatchObject({ kind: 'number', text: '4.2', tone: null, emphasis: false, chip: null })
   })
 
   test('notice is bold without a hue; a bad reading is "?", one that does not apply "—"', () => {
     expect(valueLook(level, [observation(level.ref, 50, { priority: 'notice' })], level.ref)).toMatchObject({ tone: null, emphasis: true })
-    expect(valueLook(level, [observation(level.ref, 50, { quality: 'bad' })], level.ref)).toMatchObject({ text: '?', unit: '', bar: null })
+    expect(valueLook(level, [observation(level.ref, 50, { quality: 'bad' })], level.ref)).toMatchObject({ text: '?', unit: '' })
     expect(valueLook(level, [observation(level.ref, null, { quality: 'not-applicable' })], level.ref).text).toBe('—')
-    // Outside its declared validity a reading shows neither its value nor its unit, and draws no bar.
+    // Outside its declared validity a reading shows neither its value nor its unit.
     const invalid = valueLook(level, [observation(level.ref, 50, { quality: 'not-applicable' })], level.ref)
-    expect([invalid.text, invalid.unit, invalid.value, invalid.bar]).toEqual(['—', '', null, null])
+    expect([invalid.text, invalid.unit, invalid.value]).toEqual(['—', '', null])
     expect(valueLook(level, [], level.ref).text).toBe('?')
   })
 
   test('a countdown names the effect of the limit it runs to', () => {
     const look = valueLook(level, [observation(level.ref, 24, { priority: 'warning', timeToAct: { threshold: 'lolo', seconds: 240 } })], level.ref)
     expect(look.note).toBe('trip in 4 min')
-  })
-
-  test('the limit bar (obc-bar-horizontal) spans the limits, padded, reaches the value beyond them, and shows each limit as an advice zone, hinted until passed', () => {
-    expect(limitBar(50, level.thresholds, 'lolo')).toEqual({
-      min: 11, max: 89, value: 50,
-      advices: [{ min: 11, max: 30, type: 'caution', hinted: true }, { min: 11, max: 20, type: 'caution', hinted: false }, { min: 80, max: 89, type: 'caution', hinted: true }],
-    })
-    const below = limitBar(0, level.thresholds)!
-    expect([below.min, below.value]).toEqual([-12, 0])
-    expect(limitBar(5, [])).toBeNull()
   })
 
   test('the readout block gets the number and its decimals, or nothing and the word it shows instead', () => {

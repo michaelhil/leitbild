@@ -43,7 +43,8 @@ describe('plant topology provider (P5)', () => {
     expect({
       pressurizer: bindings('pressurizer'), rcp: bindings('rcpA'), bus: bindings('safetyBusA'), valve: bindings('mainSteamIsolationValveA'), header: bindings('feedwaterHeader'),
     }).toEqual({
-      pressurizer: ['value pressurizer.pressureMPa', 'value pressurizer.levelPercent', 'level pressurizer.levelPercent'],
+      // Its level traced (W6.6) and held to its level program, which the drawing marks on it.
+      pressurizer: ['value pressurizer.pressureMPa', 'value pressurizer.levelPercent', 'level pressurizer.levelPercent', 'program pressurizer.levelProgramPercent'],
       rcp: ['running rcpA.state'],
       bus: ['conducting safetyBusA.state', 'value safetyBusA.voltageKv'],
       valve: ['conducting mainSteamIsolationValveA.state', 'position mainSteamIsolationValveA.effectivePositionFraction'],
@@ -79,7 +80,7 @@ describe('plant topology provider (P5)', () => {
     // Q8: a running or conducting binding reads a boolean (true is on) or a state reading that marks its on state.
     const switching = served.nodes.flatMap(entry => entry.bindings.filter(binding => binding.role === 'running' || binding.role === 'conducting')).map(binding => declared.get(binding.ref)!)
     expect(switching.filter(observable => observable.valueType !== 'boolean' && !observable.states?.some(state => state.active === true)).map(observable => observable.ref)).toEqual([])
-    expect(new Set(served.nodes.flatMap(entry => entry.bindings.map(binding => binding.role)))).toEqual(new Set(['level', 'running', 'conducting', 'flow', 'position', 'value', 'stopped']))
+    expect(new Set(served.nodes.flatMap(entry => entry.bindings.map(binding => binding.role)))).toEqual(new Set(['level', 'running', 'conducting', 'flow', 'position', 'value', 'stopped', 'program']))
   })
 
   test('B3: a device its equipment bundles is a switch on the line its port feeds, the item a person operates (the PORV on the relief line)', () => {

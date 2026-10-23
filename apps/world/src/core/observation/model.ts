@@ -72,9 +72,11 @@ export const unitDecimals: Readonly<Partial<Record<UnitCode, number>>> = {
 export const quantityDecimals: Readonly<Partial<Record<Quantity, number>>> = { count: 0 }
 export const decimalsFor = (unit: string, value: number, quantity?: Quantity): number =>
   (quantity === undefined ? undefined : quantityDecimals[quantity]) ?? unitDecimals[unit as UnitCode] ?? (value === 0 ? 2 : Math.max(0, Math.min(6, 2 - Math.floor(Math.log10(Math.abs(value))))))
-const unitSymbols: Readonly<Partial<Record<UnitCode, string>>> = { degC: '°C', 'degC/s': '°C/s', deg: '°', m3: 'm³', '1': '' }
-/** A unit code as a reader sees it: degC reads °C; a dimensionless 1 and a state's '' read nothing; any other unit is its own symbol. */
+const unitSymbols: Readonly<Partial<Record<UnitCode, string>>> = { degC: '°C', 'degC/s': '°C/s', deg: '°', m3: 'm³', '1': '', Pa: 'kPa' }
+/** A unit code as a reader sees it: degC reads °C; pascals read in kilopascals; a dimensionless 1 and a state's '' read nothing; any other unit is its own symbol. */
 export const unitSymbol = (unit: string): string => unitSymbols[unit as UnitCode] ?? unit
+/** Codes read in a larger unit (W4.4, #45): a condenser's 7534 Pa reads 7.5 kPa, at that unit's decimals. */
+const readIn: Readonly<Partial<Record<UnitCode, { readonly factor: number; readonly decimals: number }>>> = { Pa: { factor: 1e-3, decimals: 1 } }
 const SUPERSCRIPTS: Readonly<Record<string, string>> = { '-': '⁻', 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹' }
 /** A value read over decades: two significant digits and its power of ten, "4.4×10⁻⁸". */
 export const decadeParts = (value: number): { readonly text: string; readonly value: number; readonly decimals: number } => {
@@ -90,6 +92,11 @@ const overDecades = (value: number, decimals: number, decades: boolean): boolean
  * power of ten, at its mantissa's decimals (4.4×10⁻⁷ A).
  */
 export const numberShown = (value: number, unit: string, quantity?: Quantity, decades = false): { readonly value: number; readonly decimals: number } => {
+  const larger = readIn[unit as UnitCode]
+  if (larger !== undefined) {
+    const shown = Number((value * larger.factor).toFixed(larger.decimals))
+    return { value: shown === 0 ? 0 : shown, decimals: larger.decimals }
+  }
   const decimals = decimalsFor(unit, value, quantity)
   if (overDecades(value, decimals, decades)) { const decade = decadeParts(value); return { value: decade.value, decimals: decade.decimals } }
   const shown = Number(value.toFixed(decimals))
@@ -97,7 +104,7 @@ export const numberShown = (value: number, unit: string, quantity?: Quantity, de
 }
 /** A number as every display and card writes it (numberShown): at its decimals, as a zero below its step, over decades as a power of ten. */
 export const numberText = (value: number, unit: string, quantity?: Quantity, decades = false): string => {
-  if (overDecades(value, decimalsFor(unit, value, quantity), decades)) return decadeParts(value).text
+  if (readIn[unit as UnitCode] === undefined && overDecades(value, decimalsFor(unit, value, quantity), decades)) return decadeParts(value).text
   const shown = numberShown(value, unit, quantity)
   return shown.value.toFixed(shown.decimals)
 }
@@ -147,6 +154,14 @@ export const observableSchema = z.object({
   thresholds: z.array(thresholdSchema).max(12).default([]),
   basis: z.enum(['instrument', 'model', 'command', 'planned']).optional(),
   meaningfulWhile: z.string().max(80).optional(),
+  /** What a reading outside its declared validity names as its reason beside its "—" ("Source-range HV off"). */
+  invalidWhile: z.string().min(1).max(40).optional(),
+  /** Its instrument's span: a reading at or beyond an end reads only that it is there ("<0 %"), and a span bar draws these ends. */
+  span: z.object({ min: z.number().finite(), max: z.number().finite() }).strict().refine(span => span.max > span.min, { message: 'a span runs from its min up to its max' }).optional(),
+  /** The wider-range reading of the same quantity that stands in where this one is at an end of its span, written after its word ("WR 24.0 %"). */
+  wider: z.object({ ref: observableRefSchema, word: z.string().min(1).max(4) }).strict().optional(),
+  /** A position over its travel: `low` below `below`, `high` above `above`, its opening in percent between them ("SHUT", "OPEN"). */
+  travel: z.object({ below: z.number().finite(), above: z.number().finite(), low: z.string().min(1).max(12), high: z.string().min(1).max(12) }).strict().optional(),
   /** Null: observable but not recorded, so no trend is promised. */
   series: z.object({ seriesId: z.string().min(1), intervalMs: z.number().int().positive() }).strict().nullable(),
   /** The Pack's tag, so `objectId#tag` resolves. */

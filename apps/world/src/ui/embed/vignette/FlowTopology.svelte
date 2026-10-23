@@ -10,7 +10,9 @@
   import { loadEmbedPack } from '../pack-embed-loader.ts'
   import { embeddedDisplayFrame, UNFRAMED_PRESENTATION, visibleRoom, type DisplayOpening, type DisplayPresentation } from '../view-host.ts'
   import Faceplate from './Faceplate.svelte'
+  import FlowLegend from './FlowLegend.svelte'
   import { faceplateStates, readingsOf, type FaceplateReadings } from './faceplate.ts'
+  import { FLOW_TEXT, FLOW_TRACE } from '../../../features/displays/topology/text.ts'
   import { FLOW_LINE_PX, flowDrawing } from './flow-symbols.ts'
   import { drawingScale } from './network.ts'
   import { paintLines } from './lines.ts'
@@ -24,6 +26,10 @@
   import { onElementRequest } from './selection.ts'
   import { createVignetteSession, vignetteRoutes, type VignetteSession } from './vignette-client.ts'
   import Vessel from './Vessel.svelte'
+  import Sparkline from './Sparkline.svelte'
+  import { SPARK_WINDOW_MS } from './sparkline.ts'
+  import type { DrawnSeries } from './trend.ts'
+  import { numberText, unitSymbol } from '../../../core/observation/model.ts'
   import './openbridge.ts'
 
   // A flow topology (architecture B3) in OpenBridge (flow-symbols.ts): pipes,
@@ -48,10 +54,13 @@
   // stay, by the item they were opened on, for the browser session
   // (popover.ts readPins). One sample a second reads every faceplate's
   // readings (faceplate.ts).
-  let { section, observations, alerts, palette, frozen, runId, from, fit = 1 }: {
+  let { section, observations, alerts, series, now, palette, frozen, runId, from, fit = 1 }: {
     section: Extract<VignetteSection, { kind: 'topology' }>
     observations: ReadonlyArray<Observation>
     alerts: ReadonlyArray<AlertRow>
+    /** The records it traces (W6.6), kept as the samples serve them (kept-series.ts), and the latest sample's Run time. */
+    series: ReadonlyMap<string, DrawnSeries>
+    now: number
     palette: Palette
     /** The sample is frozen: everything reads as unknown, and the faceplates' controls are disabled. */
     frozen: boolean
@@ -75,6 +84,24 @@
   const MARKS_EVERY_MS = 2_000
   /** A device symbol's two grid cells. */
   const SYMBOL_PX = 2 * VIGNETTE_ROW_PX
+  /** How far an outline stands off its item's symbol and text, within the drawing. */
+  const OUTLINE_PX = 4
+  /** An exchanger traces its level in its tile's area, inside its domed caps and frame (flow-symbols.ts SILHOUETTE), at most a trace high. */
+  const TILE_INSET = { x: 10, y: 15 }
+  /** What a trace shows, for its title and screen readers. */
+  const traceText = (ref: string, label: string) => (range: { readonly min: number; readonly max: number } | null, broken: boolean): string => {
+    if (range === null) return `${label}: no record in the last 10 min`
+    const binding = section.nodes.flatMap(node => node.bindings).find(entry => entry.ref === ref)
+    const unit = binding === undefined || unitSymbol(binding.unit) === '' ? '' : ` ${unitSymbol(binding.unit)}`
+    const write = (value: number): string => binding === undefined ? String(value) : numberText(value, binding.unit, binding.quantity, binding.decades === true)
+    const [low, high] = [write(range.min), write(range.max)]
+    const spread = low === high ? `steady at ${low}${unit}` : `${low} to ${high}${unit}`
+    return `${label}, last 10 min: ${spread}${broken ? ' · broken where nothing was recorded' : ''}`
+  }
+  const outlined = (area: Box): Box => {
+    const [x, y] = [Math.max(0, area.x - OUTLINE_PX), Math.max(0, area.y - OUTLINE_PX)]
+    return { x, y, width: Math.min(drawing.width, area.x + area.width + OUTLINE_PX) - x, height: Math.min(drawing.height, area.y + area.height + OUTLINE_PX) - y }
+  }
   /** OpenBridge's alert type for each priority drawn in colour; emergency is its critical level. */
   const ALERT_TYPE: Readonly<Record<AlertTone, string>> = { caution: 'caution', warning: 'warning', alarm: 'alarm', critical: 'level-critical' }
 
@@ -89,6 +116,8 @@
   const texts = $derived(new Map(drawing.texts.map(text => [text.id, text])))
   /** The items drawn with a symbol of their own (a device, a tank, an exchanger, the vessel). */
   const symbols = $derived(new Set([...drawing.devices, ...drawing.vessels].map(item => item.id)))
+  /** The items whose symbol carries OpenBridge's alert frame (a device, a tank, an exchanger; not the registered vessel). */
+  const framed = $derived(new Set([...drawing.devices, ...drawing.vessels.filter(vessel => vessel.kind !== 'vessel')].map(item => item.id)))
   /** Whether an item opens anything: a refused default (no targets) stays a plain item, never a button. */
   const opens = (id: string): boolean => (texts.get(id)?.targets.length ?? 0) > 0
   const nameOf = (id: string): string => texts.get(id)?.lines[0]?.text ?? texts.get(id)?.title ?? id
@@ -492,10 +521,16 @@
       <div class="placed box" class:hovered={hovered === item.id} class:activated={activated(item.id)} title={item.title} use:button={item.id} style:left={`${item.x}px`} style:top={`${item.y}px`} style:width={`${item.width}px`} style:height={`${item.height}px`}
         {...body(item.id, item.title)}>
         {#if item.kind === 'tank'}
-          <obc-automation-tank type="generic" orientation="vertical" positioning="button" compact medium="normal" max={100} value={item.level ?? 0} static={item.unknown || item.level === null} showTrendSymbol={false} clickable={false} tag="" alert={item.tone !== null} alertFrameStatus={item.tone === null ? 'caution' : ALERT_TYPE[item.tone]} alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false} style:width="100%" style:height="100%"><span slot="readout"></span>{#if pendingOf(item.id) !== undefined}<obc-automation-badge slot="badges" mode="enhanced" title="A proposal waits on it">{@render waiting(pendingOf(item.id)!)}</obc-automation-badge>{/if}</obc-automation-tank>
+          <obc-automation-tank type="generic" orientation="vertical" positioning="button" compact medium="normal" max={100} value={item.level ?? 0} setpoint={item.program ?? undefined} static={item.unknown || item.level === null} showTrendSymbol={false} clickable={false} tag="" alert={item.tone !== null} alertFrameStatus={item.tone === null ? 'caution' : ALERT_TYPE[item.tone]} alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false} style:width="100%" style:height="100%"><span slot="readout"></span>{#if pendingOf(item.id) !== undefined}<obc-automation-badge slot="badges" mode="enhanced" title="A proposal waits on it">{@render waiting(pendingOf(item.id)!)}</obc-automation-badge>{/if}</obc-automation-tank>
         {:else if item.kind === 'exchanger'}
-          <obc-heat-exchanger positioning="button" medium="graphic" static={item.unknown} clickable={false} showIcon tag="" alert={item.tone !== null} alertFrameStatus={item.tone === null ? 'caution' : ALERT_TYPE[item.tone]} alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false} style:width="100%" style:height="100%">{#if pendingOf(item.id) !== undefined}<obc-automation-badge slot="badges" mode="enhanced" title="A proposal waits on it">{@render waiting(pendingOf(item.id)!)}</obc-automation-badge>{/if}</obc-heat-exchanger>
-        {:else if item.drawing !== undefined}
+          <obc-heat-exchanger positioning="button" medium="regular" static={item.unknown} clickable={false} showIcon={item.trace === null} tag="" alert={item.tone !== null} alertFrameStatus={item.tone === null ? 'caution' : ALERT_TYPE[item.tone]} alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false} style:width="100%" style:height="100%">{#if pendingOf(item.id) !== undefined}<obc-automation-badge slot="badges" mode="enhanced" title="A proposal waits on it">{@render waiting(pendingOf(item.id)!)}</obc-automation-badge>{/if}</obc-heat-exchanger>
+        {/if}
+        {#if item.kind === 'exchanger' && item.trace !== null}
+          {@const size = { width: item.width - 2 * TILE_INSET.x, height: Math.min(FLOW_TRACE.height + 4, item.height - 2 * TILE_INSET.y) }}
+          <!-- Its level's last ten minutes in its tile (D-D; register sparkline). -->
+          <div class="tile-trace" style:left={`${TILE_INSET.x}px`} style:top={`${item.height - TILE_INSET.y - size.height}px`}><Sparkline series={series.get(item.trace)} {now} windowMs={SPARK_WINDOW_MS} {size} tone={item.tone} text={traceText(item.trace, item.title.split(' · ')[0] ?? '')} doubtful={frozen} /></div>
+        {/if}
+        {#if item.kind === 'vessel' && item.drawing !== undefined}
           <Vessel id={item.id} width={item.width} height={item.height} origin={{ x: item.x, y: item.y }} drawing={item.drawing} level={item.level} parts={item.parts ?? []} />
         {/if}
       </div>
@@ -525,11 +560,15 @@
       {/if}
       <!-- An item's text is part of its body: a press on it opens the item's detail, as a press on its symbol does. -->
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class={`text ${text.tone ?? ''}`} class:body={opens(text.id)} data-item={text.id} use:textBlock={text.id} use:nameWidth={{ id: text.id, name: text.lines[0]?.text ?? '', scale }} style:left={`${text.x}px`} style:top={`${text.y}px`} style:width={`${text.width}px`} style:--line={`${FLOW_LINE_PX}px`} title={text.title}
+      <div class={`text ${text.tone ?? ''}`} class:body={opens(text.id)} class:framed={framed.has(text.id)} data-item={text.id} use:textBlock={text.id} use:nameWidth={{ id: text.id, name: text.lines[0]?.text ?? '', scale }} style:left={`${text.x}px`} style:top={`${text.y}px`} style:width={`${text.width}px`} style:--line={`${FLOW_LINE_PX}px`} title={text.title}
         onclick={opens(text.id) ? () => bodyPress(text.id) : undefined} {...(opens(text.id) ? hover(text.id) : {})}>
-        {#each text.lines as line, at (at)}<span class={line.kind}>{line.text}</span>{/each}
+        {#each text.lines as line, at (at)}
+          {#if line.kind === 'trace' && line.ref !== undefined}
+            <span class="trace" style:height={`${FLOW_TRACE.line}px`}><Sparkline series={series.get(line.ref)} {now} windowMs={SPARK_WINDOW_MS} size={FLOW_TRACE} tone={text.tone} text={traceText(line.ref, text.title.split(' · ')[0] ?? '')} doubtful={frozen} /></span>
+          {:else}<span class={line.kind} style:font-size={`${FLOW_TEXT[line.style].size}px`} style:line-height={`${FLOW_TEXT[line.style].line}px`}>{line.text}</span>{/if}
+        {/each}
       </div>
-      {#if text.outline !== null}<div class={`outline ${text.outline}`} aria-hidden="true" style:left={`${text.area.x - 2}px`} style:top={`${text.area.y - 2}px`} style:width={`${text.area.width + 4}px`} style:height={`${text.area.height + 4}px`}></div>{/if}
+      {#if text.outline !== null}{@const box = outlined(text.area)}<div class={`outline ${text.outline}`} aria-hidden="true" style:left={`${box.x}px`} style:top={`${box.y}px`} style:width={`${box.width}px`} style:height={`${box.height}px`}></div>{/if}
     {/each}
   </div>
   </div>
@@ -555,7 +594,8 @@
     </div>
   {/if}
 </div>
-{#if section.attribution !== undefined}<p class="attribution">{section.attribution}</p>{/if}
+<!-- The row the composer keeps under a drawing: its attribution where it carries one, else its key (W6.7). -->
+{#if section.attribution !== undefined}<p class="attribution">{section.attribution}</p>{:else}<FlowLegend {drawing} {palette} {zoom} />{/if}
 
 <style>
   .flow { overflow-x: auto; overflow-y: hidden; }
@@ -579,19 +619,25 @@
   .chooser button { display: block; width: 100%; height: 40px; padding: 0 12px; border: none; background: none; font: inherit; font-size: 13px; text-align: left; color: var(--element-active-color); cursor: pointer; }
   .chooser button:hover { background: var(--flat-hover-background-color); }
   .chooser button:focus-visible { outline: 2px solid var(--border-focus-color); outline-offset: -2px; }
-  /* A line may run a few pixels past the width the sizing reserved (8 px a character; capitals are wider): the layout keeps text clear of other items by more. */
-  .text { position: absolute; display: flex; flex-direction: column; font-size: 12px; line-height: var(--line); white-space: nowrap; pointer-events: none; }
+  /* Set in Noto Sans at the sizes the composer reserved each line's room for (topology/text.ts). */
+  .text { position: absolute; display: flex; flex-direction: column; line-height: var(--line); white-space: nowrap; pointer-events: none; }
   /* The body's ink (its symbol and its text lines, each as wide as written) stands above the magnifier's hit area:
      a press on the item opens its detail, a press on the room round the glyph its faceplate. */
   .device, .box { z-index: 2; }
   .text.body { z-index: 2; align-items: flex-start; }
   .text.body span { pointer-events: auto; cursor: pointer; }
-  .text span { color: var(--element-neutral-color); font-variant-numeric: tabular-nums; }
-  .text .name, .text .word { color: var(--element-active-color); }
-  .text .word { font-weight: 600; }
-  /* A command the item does not follow: bold, as today's display writes its CMD word. */
-  .text .command { color: var(--element-active-color); font-weight: 700; }
-  .text.caution .name, .text.warning .name, .text.alarm .name, .text.critical .name { font-weight: 700; text-decoration: underline 2px; text-underline-offset: 2px; }
+  /* Its state and readings in the active colour, its name neutral (U-12). */
+  .text span { color: var(--element-active-color); font-weight: 400; font-variant-numeric: tabular-nums; }
+  .text .name { color: var(--element-neutral-color); }
+  /* A traced reading's sparkline under the readings (W6.6), on a line of its own. */
+  .text .trace { display: flex; align-items: center; }
+  /* An exchanger's trace over its tile's area, above the tile (W6.6). */
+  .tile-trace { position: absolute; z-index: 1; pointer-events: none; }
+  /* A command the item does not follow: bold, the one bold word at rest. */
+  .text .command { font-weight: 700; }
+  /* An alert on the item: its name bold in the active colour; underlined in its colour only where no frame marks the item (U-27). */
+  .text.caution .name, .text.warning .name, .text.alarm .name, .text.critical .name { font-weight: 700; color: var(--element-active-color); }
+  .text:not(.framed):is(.caution, .warning, .alarm, .critical) .name { text-decoration-line: underline; text-decoration-thickness: 2px; text-underline-offset: 2px; }
   .text.caution .name { text-decoration-color: var(--display-caution-mark); }
   .text.warning .name { text-decoration-color: var(--display-warning-mark); }
   .text.alarm .name { text-decoration-color: var(--display-alarm-mark); }
@@ -606,10 +652,11 @@
   .magnifier:focus-visible .glyph { outline: 2px solid var(--border-focus-color); }
   @media (pointer: coarse) { .magnifier { opacity: 1; } }
   .notice { margin: 0; font-size: 12px; color: var(--element-active-color); }
-  /* An item not following a command: outlined just outside its symbol and text in OpenBridge's enhanced neutral, never an alarm's colour; dashed and neutral where its alerts are all expected after a first-out. */
-  .outline { position: absolute; box-sizing: border-box; border: 2px solid var(--element-neutral-enhanced-color); border-radius: 4px; pointer-events: none; }
-  .outline.expected { border-style: dashed; border-color: var(--element-neutral-color); }
+  /* An item not following a command (its CMD word bold), or whose alerts are all expected after a first-out (dashed):
+     a hairline in OpenBridge's neutral, quieter than any alert frame, so the one alarm that is not expected stands out. */
+  .outline { position: absolute; box-sizing: border-box; border: 1px solid var(--element-neutral-color); border-radius: 4px; pointer-events: none; }
+  .outline.expected { border-style: dashed; }
   /* Frozen: where an alert stood, OpenBridge's low-integrity border in place of its frame (W8.1). */
-  .outline.low-integrity { border-color: var(--alert-low-integrity-border-color); }
+  .outline.low-integrity { border-width: 2px; border-color: var(--alert-low-integrity-border-color); }
   .attribution { margin: 0; height: var(--row); line-height: var(--row); font-size: 12px; color: var(--element-neutral-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>

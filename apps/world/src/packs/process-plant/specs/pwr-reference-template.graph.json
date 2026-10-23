@@ -276,6 +276,7 @@
         "presentation": {
           "shortLabel": "Core",
           "names": { "coreExitTemperatureC": "CET", "powerRangePercent": "reactor power" },
+          "shortNames": { "intermediateRangeCurrentAmps": "IR current", "sourceRangeCountRateCps": "SR count rate", "intermediateRangeStartupRateDpm": "IR startup rate", "sourceRangeStartupRateDpm": "SR startup rate", "rodStepsWithdrawn": "Rod steps" },
           "states": {
             "sourceRangeEnergized": { "on": "Source-range HV on", "off": "Source-range HV off" },
             "aboveP6": { "on": "Above P-6", "off": "Below P-6" },
@@ -371,7 +372,8 @@
       "metadata": {
         "presentation": {
           "shortLabel": "RV",
-          "names": { "meanPrimaryCoolantTemperatureC": "Tavg" }
+          "names": { "meanPrimaryCoolantTemperatureC": "Tavg" },
+          "shortNames": { "subcoolingMarginC": "Subcooling", "collapsedLiquidLevelPercent": "RVLIS level" }
         }
       }
     },
@@ -1962,7 +1964,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "AFW header"
+          "shortLabel": "AFW header",
+          "shortNames": { "outletFlowKgPerS": "AFW flow" }
         }
       }
     },
@@ -2634,7 +2637,8 @@
       },
       "metadata": {
         "presentation": {
-          "shortLabel": "Turbine stop valves"
+          "shortLabel": "Turbine stop valves",
+          "shortNames": { "effectivePositionFraction": "Stop valves position" }
         }
       },
       "variables": [
@@ -2694,7 +2698,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "Turbine bypass"
+          "shortLabel": "Turbine bypass",
+          "shortNames": { "effectivePositionFraction": "Bypass position" }
         }
       }
     },
@@ -2795,7 +2800,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "Condenser"
+          "shortLabel": "Condenser",
+          "shortNames": { "condensateLevelPercent": "Hotwell level" }
         }
       }
     },
@@ -3226,7 +3232,8 @@
       },
       "metadata": {
         "presentation": {
-          "shortLabel": "SI header"
+          "shortLabel": "SI header",
+          "shortNames": { "outletFlowKgPerS": "SI flow" }
         }
       }
     },
@@ -3310,7 +3317,8 @@
       },
       "metadata": {
         "presentation": {
-          "shortLabel": "CS header"
+          "shortLabel": "CS header",
+          "shortNames": { "outletFlowKgPerS": "CS flow" }
         }
       }
     },

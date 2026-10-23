@@ -4,9 +4,13 @@
 // each by a bare import, which is what defines it. A type or enum import
 // beside one never stands in for it.
 import '@oicl/openbridge-webcomponents/dist/openbridge.css'
+// Its font, the subset whose widths the composer reserves text by.
+import './noto-sans.ts'
 import '@oicl/openbridge-webcomponents/dist/icons/icon-ai.js'
 import '@oicl/openbridge-webcomponents/dist/building-blocks/readout-block/readout-block.js'
-import '@oicl/openbridge-webcomponents/dist/building-blocks/bar-horizontal/bar-horizontal.js'
+// A values section's rows (W4.2): OpenBridge's readout list aligns their values and units.
+import '@oicl/openbridge-webcomponents/dist/navigation-instruments/readout-list/readout-list.js'
+import '@oicl/openbridge-webcomponents/dist/navigation-instruments/readout-list-item/readout-list-item.js'
 import '@oicl/openbridge-webcomponents/dist/components/status-indicator/status-indicator.js'
 import '@oicl/openbridge-webcomponents/dist/components/button/button.js'
 import '@oicl/openbridge-webcomponents/dist/components/alert-icon/alert-icon.js'

@@ -20,3 +20,31 @@ export const wholeWords = (node: HTMLElement, text: string) => {
   resized.observe(node)
   return { update: (next: string) => { full = next; fit() }, destroy: () => resized.disconnect() }
 }
+
+/**
+ * The parts of a line that fit its room, joined by " · ": all where they fit; else without the parts `giving` names,
+ * one more each time, first first; then the first part's whole words (wordsThatFit). The parts' order never changes.
+ */
+export const partsThatFit = (parts: ReadonlyArray<string>, giving: ReadonlyArray<number>, fits: (shown: string) => boolean): string => {
+  const join = (dropped: ReadonlySet<number>): string => parts.filter((_, at) => !dropped.has(at)).join(' · ')
+  for (let count = 0; count <= giving.length; count += 1) {
+    const shown = join(new Set(giving.slice(0, count)))
+    if (fits(shown)) return shown
+  }
+  return wordsThatFit(join(new Set(giving)), fits)
+}
+
+/** A Svelte action: the node shows the parts that fit its room (partsThatFit), fitted again whenever its room or the parts change; the whole line belongs in its title or its accessible name. */
+export const wholeParts = (node: HTMLElement, line: { readonly parts: ReadonlyArray<string>; readonly giving: ReadonlyArray<number> }) => {
+  let current = line
+  const fit = (): void => {
+    node.textContent = partsThatFit(current.parts, current.giving, candidate => {
+      node.textContent = candidate
+      return node.scrollWidth <= node.clientWidth
+    })
+  }
+  fit()
+  const resized = new ResizeObserver(fit)
+  resized.observe(node)
+  return { update: (next: typeof line) => { current = next; fit() }, destroy: () => resized.disconnect() }
+}

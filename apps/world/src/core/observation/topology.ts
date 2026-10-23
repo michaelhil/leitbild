@@ -21,14 +21,18 @@ const end = z.object({ node: id, port: id }).strict()
  * `while`: one quantity read by instruments in turn (a core's flux, counted, then a current, then a percent): the
  * reading stands in for the one of its role before it while this flag reads true. `commanded`: a running or conducting
  * state the item is commanded to and may not follow (a mover told to run), so a drawing keeps a line for the command.
+ * `program`: the value its control holds the item's level to (a pressurizer's level program), marked on the drawn
+ * level. `trace`: a reading the drawing traces over its last ten minutes with its item (a tank's or an exchanger's
+ * level, a core's exit temperature).
  */
 const bindings = z.array(z.object({
-  role: z.enum(['flow', 'loading', 'level', 'conducting', 'available', 'running', 'position', 'value', 'stopped']),
+  role: z.enum(['flow', 'loading', 'level', 'conducting', 'available', 'running', 'position', 'value', 'stopped', 'program']),
   ref: observableRefSchema,
   word: z.string().min(1).max(4).optional(),
   while: observableRefSchema.optional(),
   group: z.string().min(1).max(40).optional(),
   commanded: z.literal(true).optional(),
+  trace: z.literal(true).optional(),
 }).strict()).max(16)
 
 export const topologyNodeClassSchema = z.enum(['source', 'sink', 'store', 'transfer', 'converter', 'switch', 'mover', 'bus', 'junction', 'boundary'])
