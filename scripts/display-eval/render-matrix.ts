@@ -133,11 +133,13 @@ const judgeView = async (ctx: { readonly page: Page; readonly scratch: Page; rea
   }
 
   // Trends: pieces per pen (Run B), limit names in value order, no collisions or clipped texts, no legend name cut.
+  if (trends.strips.length === 0 && view !== 'overview' && !view.startsWith('deck')) checks.push(check('trend-labels', null, 'no trend strip read in this detail (none drawn, or markup the reader does not know)'))
   if (trends.strips.length > 0) {
     const pieces = trends.strips.flatMap(strip => strip.pens.filter(pen => pen.pieces > 2).map(pen => `strip ${strip.index} ${pen.cls} ${pen.pieces} pieces`))
     const order: string[] = [], collide: string[] = [], clipped: string[] = []
     for (const strip of trends.strips) {
-      const named = strip.texts.map(text => ({ ...text, value: Number((text.text.match(/(-?\d+(?:\.\d+)?)\s*$/) ?? [])[1]) })).filter(text => /\b(LO|HI|LOW|HIGH|TRIP|CTL|SP)\b/.test(text.text) && Number.isFinite(text.value))
+      // A limit's name and its value ("HI-HI 82.0 · FWI", "LO-LO 20.0 · AFW START", R2's "LO-LO 15.35").
+      const named = strip.texts.map(text => ({ ...text, value: Number((text.text.match(/\b(?:LO-LO|HI-HI|LO|HI|LOW|HIGH|TRIP|CTL|SP)\s+(-?\d+(?:\.\d+)?)/) ?? [])[1]) })).filter(text => Number.isFinite(text.value))
       const byValue = [...named].sort((a, b) => b.value - a.value)
       for (let i = 1; i < byValue.length; i += 1) if (byValue[i]!.y + byValue[i]!.h / 2 < byValue[i - 1]!.y + byValue[i - 1]!.h / 2 - 1) order.push(`strip ${strip.index}: "${byValue[i]!.text}" above "${byValue[i - 1]!.text}"`)
       for (let i = 0; i < strip.texts.length; i += 1) for (let j = i + 1; j < strip.texts.length; j += 1) {
@@ -179,7 +181,9 @@ const judgeView = async (ctx: { readonly page: Page; readonly scratch: Page; rea
     const stateRows = column.rows.filter((row, index) => { const value = valueOf(row, index); return value?.series != null && value?.valueType !== undefined && value.valueType !== 'number' })
     const missing = column.rows.filter((row, index) => row.spark === null && seriesOf(row, index))
     const withSeries = { size: column.rows.filter((row, index) => seriesOf(row, index)).length }
-    checks.push(check('sparklines', missing.length === 0, `${column.rows.length} lead rows, ${column.rows.filter(row => row.spark !== null).length} with a sparkline; ${withSeries.size} numbers with a series (${byIndex ? 'row by row' : 'by label'}); with a series but no sparkline${listed(missing.map(row => `"${row.label}"`), 6) || ': none'}${stateRows.length === 0 ? '' : `; state rows with a series (not judged): ${stateRows.map(row => `"${row.label}"${row.spark === null ? '' : ' (sparkline)'}`).join(', ')}`}`))
+    // Rows matched to no lead value of the sample (an older sample's leads, other labels): not judged.
+    const matched = byIndex || column.rows.some((row, index) => valueOf(row, index) !== undefined)
+    checks.push(check('sparklines', !matched ? null : missing.length === 0, `${column.rows.length} lead rows, ${column.rows.filter(row => row.spark !== null).length} with a sparkline;${matched ? '' : ' no row matched to a lead value of the sample (not judged);'} ${withSeries.size} numbers with a series (${byIndex ? 'row by row' : 'by label'}); with a series but no sparkline${listed(missing.map(row => `"${row.label}"`), 6) || ': none'}${stateRows.length === 0 ? '' : `; state rows with a series (not judged): ${stateRows.map(row => `"${row.label}"${row.spark === null ? '' : ' (sparkline)'}`).join(', ')}`}`))
   }
   if (run === 'A' && view === 'overview') checks.push(check('margin-line', column.margins.length > 0, column.margins.length > 0 ? `"${column.margins.slice(0, 3).join('" · "')}"` : 'no margin line ("… above/below LO … ") in the display'))
   const live = words.filter(word => word.where === 'drawing' && /\b(LIVE|DEAD)\b/.test(word.text))

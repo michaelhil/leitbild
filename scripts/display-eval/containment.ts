@@ -124,7 +124,9 @@ const runSize = async (config: { origin: string; workspaceId: string; runId: str
     }
     const total = (field: string) => faceplates.reduce((sum, entry) => sum + Number(entry[field] ?? 0), 0)
     const faceplateValues = total('values'), faceplateFailing = total('failing')
-    const containmentPass = failing(window.values).length === 0 && faceplateFailing === 0 && faceplates.every(entry => entry.opened)
+    // Every item a faceplate opens for (its magnifier) opens one; an item with no magnifier whose body opens its detail
+    // (L3, Option A) is no failure.
+    const containmentPass = failing(window.values).length === 0 && faceplateFailing === 0 && faceplates.every(entry => entry.opened || /^body → detail$/.test(String(entry.how)))
     return {
       size, displayWidth: window.frame?.width ?? null, generation: window.generation,
       window: { ...summary(window.values), failingValues: failing(window.values) },

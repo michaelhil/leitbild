@@ -194,7 +194,9 @@ if (import.meta.main) {
     const drawn = polls.some(drawnNeedle)
     const expiryAt = (firstOutMs ?? upsetMs ?? 0) + windowS * 1_000
     const beforeExpiry = polls.filter(poll => poll.simMs !== null && poll.simMs < expiryAt && poll.simMs >= expiryAt - 20_000).at(-1)
-    const lowLowOwn = (poll: Poll) => listOf(poll.screen).some(row => /low-low level/i.test(row.text) && !/expected/i.test(row.text))
+    // An SG low-low as its own row: its message ("Steam generator A low-low level", cut by whole words where room is
+    // short: "Steam generator A…") or its tag ("LO-LO · AFW START"), outside the expected aggregate.
+    const lowLowOwn = (poll: Poll) => listOf(poll.screen).some(row => /(steam generator|\bSG\b)[^|]*(low-low|\bLO-LO\b)/i.test(row.text) && !/expected after/i.test(row.text))
     const countBefore = beforeExpiry === undefined ? null : aggregateCount(listOf(beforeExpiry.screen))
     const expiryLag = firstWithin(poll => lowLowOwn(poll) && (countBefore === null || (aggregateCount(listOf(poll.screen)) ?? 0) < countBefore), expiryAt)
     const sawAggregate = polls.some(poll => aggregateIndex(listOf(poll.screen)) >= 0)

@@ -367,6 +367,8 @@ const SCREEN_HELPERS = String.raw`
   const regionOf = (el, win) => {
     if (closestUp(el, DIALOG, win)) return 'faceplate'
     if (closestUp(el, '.trip, .trip-line, .tripline, [data-region=trip]', win)) return 'trip'
+    // The drawing's key (W6.7: "dashed = expected after RX TRIP"): neither a trip line nor a reading.
+    if (closestUp(el, 'p.legend, [data-region=legend]', win)) return 'legend'
     if (closestUp(el, '.chips, [data-region=chips]', win)) return 'chips'
     if (closestUp(el, 'section.alerts, .alerts, [data-region=alerts]', win)) return 'alerts'
     if (closestUp(el, '.flow, .drawing, .network, [data-region=drawing]', win)) return 'drawing'
