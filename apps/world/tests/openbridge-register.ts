@@ -84,11 +84,14 @@ export const customShapes: ReadonlyArray<CustomShape> = [
   // The Plant's operating panel (embed only).
   {
     id: 'sparkline',
-    draws: 'A reading\'s recent trend as a hand-drawn sparkline, standing in for OpenBridge\'s mini graph: a proposal\'s cited reading, its last ten minutes beside its margin to its limit.',
-    sites: [{ file: 'packs/process-plant/ui/displays/operation/ProposalSection.svelte', mark: '<svg class="spark"', drawn: 'svg' }],
+    draws: 'A reading\'s recent trend as a hand-drawn sparkline, standing in for OpenBridge\'s mini graph: the last ten minutes of each values row\'s reading in a vignette (W4.2, D-C), of the readings a flow drawing traces (W6.6: a tank\'s level and the core-exit temperature under their readings, D-C; an exchanger\'s level in its tile, D-D) and of a proposal\'s cited reading beside its margin to its limit; one geometry (ui/sparkline.ts).',
+    sites: [
+      { file: 'packs/process-plant/ui/displays/operation/ProposalSection.svelte', mark: '<svg class="spark"', drawn: 'svg' },
+      { file: 'ui/embed/vignette/Sparkline.svelte', mark: "<svg class={['spark'", drawn: 'svg' },
+    ],
     standsInFor: ['obc-graph-mini'],
     reason: 'A',
-    evidence: 'obc-graph-mini cannot break its line where nothing was recorded (wiki design-system page). Approved in Q11 for the old renderer\'s lead sparkline (ui/embed/composed-display/Sparkline.svelte, deleted at the swap); the proposal card\'s cited reading, the lead\'s D3 ruling 1 for its evidence, is the same shape for the same reason, and its one site since the swap.',
+    evidence: 'obc-graph-mini cannot break its line where nothing was recorded (wiki design-system page). Approved in Q11 for the old renderer\'s lead sparkline (ui/embed/composed-display/Sparkline.svelte, deleted at the swap); the proposal card\'s cited reading, the lead\'s D3 ruling 1 for its evidence, is the same shape for the same reason. D-C (owner, 22 Oct) brings it back at the lead rows (R3 W4.2), in OpenBridge\'s mini graph frame tokens.',
     decision: APPROVED,
     ends: 'kept',
   },
@@ -105,10 +108,11 @@ export const customShapes: ReadonlyArray<CustomShape> = [
   },
   {
     id: 'vignette-trend-strip',
-    draws: 'A vignette\'s trend strip: step-and-hold pens told apart by dash, each value held for the Historian\'s hold served with its record, the time before the record starts hatched, shared limits with their names, ▲ ▼ for limits beyond the scale, and the legend\'s pen swatches.',
+    draws: 'A vignette\'s trend: one quantity on each strip, step-and-hold pens told apart by dash, each value held for the Historian\'s hold served with its record, the time before the record starts hatched quietly, the alarm and trip limits all its pens share as neutral dashes (coloured only while a value is past one that acts, faint where one does not act now) named outside the plot in value order, ▲ ▼ for limits beyond the scale, faint control set point ticks in an element\'s own trend, the legend\'s pen swatches, and states as 6 px bands.',
     sites: [
       { file: 'ui/embed/vignette/TrendStrip.svelte', mark: 'aria-label={pens.map', drawn: 'svg' },
-      { file: 'ui/embed/vignette/TrendStrip.svelte', mark: '<svg width="20" height="8"', drawn: 'svg' },
+      { file: 'ui/embed/vignette/TrendStrip.svelte', mark: '<svg class="swatch"', drawn: 'svg' },
+      { file: 'ui/embed/vignette/TrendStrip.svelte', mark: '<svg class="band-track"', drawn: 'svg' },
     ],
     standsInFor: ['obc-line-graph', 'obc-graph-mini'],
     reason: 'A',
@@ -148,19 +152,6 @@ export interface Deviation {
 
 export const deviations: ReadonlyArray<Deviation> = [
   {
-    id: 'alert-icon-steady-unacknowledged',
-    does: 'Draws every alert icon in the vignette (its alerts sections in the window, in pop-overs and in chat) in OpenBridge\'s acknowledged form, a returned one rectified, so none flashes; an unacknowledged row and its section\'s counts carry the word UNACK.',
-    sites: [
-      { file: 'ui/embed/vignette/alerts.ts', mark: 'return { type, acknowledged: true, active:' },
-      { file: 'ui/embed/vignette/AlertRowLine.svelte', mark: '<span class="unack">{UNACK_WORD}</span>' },
-    ],
-    component: 'obc-alert-icon',
-    reason: 'No one can acknowledge in a vignette until W2.7 (D-B1), and a flash asks for acknowledgement (EEMUA 191, ISA-18.2): every unacknowledged icon flashed for ever, 29 on a tripped unit (UX audit H11, F18). OpenBridge 2.0.0 draws no steady unacknowledged icon, so the word carries the state (red team C6).',
-    evidence: 'obc-alert-icon 2.0.0 (dist/components/alert-icon/alert-icon.js): resolvedFlashingSpeed is fixed only when acknowledged, and at the fixed tempo render() draws nothing for an unacknowledged alarm. Measured on Run A at 04:05 (paused): the five icons on screen changed pixels between shots 300 ms apart.',
-    decision: { owner: 'approved', ref: 'Plan v5 W0.9, approved 22 Oct: a deviation until W2.7' },
-    until: 'W2.7',
-  },
-  {
     id: 'own-state-emergency-as-alarm',
     does: 'Draws a state at emergency priority as alarm, OpenBridge\'s worst status, not in D9\'s emergency magenta: a state word in obc-status-indicator, and an object\'s own state as a chip on the title row (its safety functions, its mode).',
     sites: [
@@ -183,6 +174,7 @@ export interface Surface extends Site {
 export const surfaces: ReadonlyArray<Surface> = [
   { file: 'ui/embed/vignette/NetworkTopology.svelte', mark: 'use:lines', paints: 'connector-diagram' },
   { file: 'ui/embed/vignette/FlowTopology.svelte', mark: 'use:lines', paints: 'connector-diagram' },
+  { file: 'ui/embed/vignette/FlowLegend.svelte', mark: 'use:lines', paints: 'connector-diagram' },
   { file: 'ui/embed/vignette/lines.ts', mark: "canvas.getContext('2d')", paints: 'connector-diagram' },
   { file: 'ui/embed/vignette/row-measure.ts', mark: "document.createElement('canvas').getContext('2d')", paints: 'nothing: measures text' },
 ]
@@ -218,8 +210,19 @@ export const internals: ReadonlyArray<Internal> = [
   part('label'),
   ...indicatorType.map(name =>
     property(name, 'obc-status-indicator', { file: 'ui/embed/vignette/StateWord.svelte', mark: `${name}:` }, 'dist/components/status-indicator/status-indicator.css.js', 'The indicator\'s word at a vignette row\'s 13/16 px.')),
+  // A values section's rows in OpenBridge's readout list (W4.2): one row a 24 px grid row, and down columns in the band.
+  {
+    kind: 'property', name: '--obc-readout-list-row-gap', element: 'obc-readout-list', used: { file: 'ui/embed/vignette/ValueRows.svelte', mark: '--obc-readout-list-row-gap:' },
+    defined: { file: 'dist/navigation-instruments/readout-list/readout-list.css.js', mark: 'var(--obc-readout-list-row-gap, 8px)' },
+    why: 'The list\'s documented row gap set to 0, so each row is one 24 px row of the vignette\'s grid (its 8 px default would make it 28 px).',
+  },
+  {
+    kind: 'part', name: 'list', element: 'obc-readout-list', used: { file: 'ui/embed/vignette/Sections.svelte', mark: '.rows::part(list)' },
+    defined: { file: 'dist/navigation-instruments/readout-list/readout-list.js', mark: 'part="list"' },
+    why: 'The list\'s documented stack set in columns of 340 px in the band (W4.3), its rows read down each column.',
+  },
   property('--font-family-main', 'every element', { file: 'ui/embed/embed.css', mark: '--font-family-main:' },
-    'dist/openbridge.css', 'System faces stand in for Noto Sans, which OpenBridge declares without a fallback.'),
+    'dist/openbridge.css', 'Noto Sans, the subset the embed ships (vignette/noto-sans.ts), then system faces for what it does not carry: OpenBridge declares it without a fallback.'),
   property('--global-typography-font-family', 'every element', { file: 'ui/embed/embed.css', mark: '--global-typography-font-family:' },
     'dist/components/status-indicator/status-indicator.css.js', 'Components read the family in their shadow roots through this token; re-derived per element so they take the same system faces.'),
 ]

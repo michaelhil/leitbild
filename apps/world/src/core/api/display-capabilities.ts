@@ -19,6 +19,7 @@ import { requestPort } from '../../features/displays/observation/port.ts'
 import { recordedHoldMs } from '../../features/historian/policy.ts'
 import { capabilityJsonSchema } from '../../simulation/capabilities.ts'
 import { VIGNETTE_ROW_PX } from '../../ui/embed/vignette/grid.ts'
+import { observableRefSchema } from '../model/alerts.ts'
 import type { ObjectId } from '../model/index.ts'
 import { displaySpecSchema, subjectSchema } from '../observation/spec.ts'
 import type { Actor } from '../simulation-runs/actors.ts'
@@ -72,7 +73,7 @@ const stateSchema = z.string().min(2).max(EMBEDDED_VIEW_STATE_MAX_LENGTH).transf
 })
 export const displayRouteInputs = {
   view: z.object({ state: stateSchema }).strict(),
-  sample: z.object({ state: stateSchema, history: z.object({ fromMs: z.number().int().nonnegative() }).strict().optional() }).strict(),
+  sample: z.object({ state: stateSchema, history: z.object({ fromMs: z.number().int().nonnegative(), refs: z.array(observableRefSchema).min(1).max(32).optional() }).strict().optional() }).strict(),
   default: z.object({ subject: subjectSchema }).strict(),
 } as const
 

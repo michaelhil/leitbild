@@ -8,10 +8,15 @@
 // equipment it names.
 import type { TopologyGraph, TopologyNode } from '../../../core/observation/topology.ts'
 
-/** Where a drawing stops: whether flow leaves through it ("to") or comes in ("from"), what it writes, its far ends' node ids, the lines it stands for and their medium. */
+/**
+ * Where a drawing stops: whether flow leaves through it ("to") or comes in ("from"), what it writes (`label`, and the
+ * `lines` it sets it in: whole, or its "to" or "from" on a line above what it names), its far ends' node ids, the
+ * lines it stands for and their medium.
+ */
 export interface DrawnStop {
   readonly direction: 'in' | 'out'
   readonly label: string
+  readonly lines: ReadonlyArray<string>
   readonly far: ReadonlyArray<string>
   readonly edges: ReadonlyArray<string>
   readonly medium: string
@@ -28,6 +33,13 @@ const stemOf = (name: string): string | null => {
   const designators = words.filter(word => DESIGNATOR.test(word))
   return words.length < 2 || designators.length !== 1 ? null : words.filter(word => word !== designators[0]).join(' ')
 }
+
+/** How a drawing writes its stops' labels: each on one line ("from AFW valve A"), its "to" or "from" on a line above what it names, or what it names only. */
+export type StopWords = 'inline' | 'stacked' | 'bare'
+
+/** The lines a stop's label is set in. */
+export const stopLines = (words: StopWords, direction: 'in' | 'out', names: ReadonlyArray<string>): ReadonlyArray<string> =>
+  words === 'stacked' ? [direction === 'out' ? 'to' : 'from', stopLabel(null, names)] : [stopLabel(words === 'bare' ? null : direction, names)]
 
 /**
  * What a stop writes: "from AFW valve A", "to PZR, SG B, SG C, SG D", "from RCP ×4", "from ACC check valve ×4 +4 more";
@@ -75,6 +87,7 @@ export const stopViews = <B>(graph: TopologyGraph, id: string, stop: DrawnStop, 
     id, class: 'stop' as const, label: stop.label, bindings: [] as ReadonlyArray<B>,
     stop: {
       direction: stop.direction,
+      lines: stop.lines,
       far: stop.far.map(at => {
         const node = graph.nodes.find(entry => entry.id === at)!
         const state = farState(node.bindings)

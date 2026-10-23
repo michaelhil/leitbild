@@ -4,13 +4,14 @@ import { join } from 'node:path'
 import type { AlertState } from '../src/core/model/alerts.ts'
 import type { ObjectId } from '../src/core/model/ids.ts'
 import type { Observable, Observation } from '../src/core/observation/model.ts'
-import type { AlertRow } from '../src/features/displays/alerts/rows.ts'
-import { alertDetail, alertIcon, alertsTarget, alertTitle, inSection, rowParts, rowWidth, UNACK_WORD, unacknowledged, wordsThatFit, worstChip } from '../src/ui/embed/vignette/alerts.ts'
-import { provenanceMark, quantityText } from '../src/ui/embed/vignette/format.ts'
+import { unacknowledged, type AlertRow } from '../src/features/displays/alerts/rows.ts'
+import { alertDetail, alertIcon, alertsTarget, alertTitle, detailText, fitRow, inSection, rowParts, rowWidth, UNACK_WORD, wordsThatFit, worstChip } from '../src/ui/embed/vignette/alerts.ts'
+import { provenanceMark, provenanceMarks, quantityText } from '../src/ui/embed/vignette/format.ts'
 import type { VignetteValue } from '../src/features/displays/compose/model.ts'
-import { activeState, limitBar, orderWord, readingLook, valueLook } from '../src/ui/embed/vignette/readout.ts'
-import { appendPoint, limitLabelYs, sharedLimits, stepPath, stripDrawing, stripDomain, timeTicks } from '../src/ui/embed/vignette/trend.ts'
+import { activeState, orderWord, readingLook, valueLook } from '../src/ui/embed/vignette/readout.ts'
+import { appendPoint, bandStretches, LABEL_LINE, labelRows, labelWidth, rateNow, rateText, sharedLines, stackLabels, stepPath, stripDrawing, stripDomain, timeTicks } from '../src/ui/embed/vignette/trend.ts'
 import { recordedHoldMs } from '../src/features/historian/policy.ts'
+import { stripRows, stripsOf, trendRows } from '../src/features/displays/compose/strips.ts'
 
 // The vignette renderer's presenters (architecture B1): the limit chip, the
 // step-and-hold trace, the limits a strip shares, neutral values without an
@@ -51,32 +52,22 @@ describe('readout', () => {
 
   test('neutral telemetry: a value without an observation priority takes no colour and no emphasis', () => {
     const look = readingLook('Vehicle · Fuel', 'number', undefined, { value: 4.2, unit: '%', thresholds: [] })
-    expect(look).toMatchObject({ kind: 'number', text: '4.2', tone: null, emphasis: false, chip: null, bar: null })
+    expect(look).toMatchObject({ kind: 'number', text: '4.2', tone: null, emphasis: false, chip: null })
   })
 
   test('notice is bold without a hue; a bad reading is "?", one that does not apply "—"', () => {
     expect(valueLook(level, [observation(level.ref, 50, { priority: 'notice' })], level.ref)).toMatchObject({ tone: null, emphasis: true })
-    expect(valueLook(level, [observation(level.ref, 50, { quality: 'bad' })], level.ref)).toMatchObject({ text: '?', unit: '', bar: null })
+    expect(valueLook(level, [observation(level.ref, 50, { quality: 'bad' })], level.ref)).toMatchObject({ text: '?', unit: '' })
     expect(valueLook(level, [observation(level.ref, null, { quality: 'not-applicable' })], level.ref).text).toBe('—')
-    // Outside its declared validity a reading shows neither its value nor its unit, and draws no bar.
+    // Outside its declared validity a reading shows neither its value nor its unit.
     const invalid = valueLook(level, [observation(level.ref, 50, { quality: 'not-applicable' })], level.ref)
-    expect([invalid.text, invalid.unit, invalid.value, invalid.bar]).toEqual(['—', '', null, null])
+    expect([invalid.text, invalid.unit, invalid.value]).toEqual(['—', '', null])
     expect(valueLook(level, [], level.ref).text).toBe('?')
   })
 
   test('a countdown names the effect of the limit it runs to', () => {
     const look = valueLook(level, [observation(level.ref, 24, { priority: 'warning', timeToAct: { threshold: 'lolo', seconds: 240 } })], level.ref)
     expect(look.note).toBe('trip in 4 min')
-  })
-
-  test('the limit bar (obc-bar-horizontal) spans the limits, padded, reaches the value beyond them, and shows each limit as an advice zone, hinted until passed', () => {
-    expect(limitBar(50, level.thresholds, 'lolo')).toEqual({
-      min: 11, max: 89, value: 50,
-      advices: [{ min: 11, max: 30, type: 'caution', hinted: true }, { min: 11, max: 20, type: 'caution', hinted: false }, { min: 80, max: 89, type: 'caution', hinted: true }],
-    })
-    const below = limitBar(0, level.thresholds)!
-    expect([below.min, below.value]).toEqual([-12, 0])
-    expect(limitBar(5, [])).toBeNull()
   })
 
   test('the readout block gets the number and its decimals, or nothing and the word it shows instead', () => {
@@ -110,6 +101,8 @@ describe('readout', () => {
 
 describe('trend strip', () => {
   const window = { start: 0, end: 10_000 }
+  // A strip as the renderer lays it out: a measure of 7 px a character, no set points unless asked.
+  const laid = { setPoints: false, room: 200, measure: (text: string): number => text.length * 7 }
   const x = (t: number): number => t / 100
   const y = (v: number): number => 100 - v
 
@@ -120,7 +113,7 @@ describe('trend strip', () => {
 
   test('the Historian\'s hold, served with the record: a steady value it stores 30 to 88 s apart draws as one piece over ten minutes; a silence past the hold breaks it', () => {
     const now = 600_000
-    const drawn = (points: ReadonlyArray<{ t: number; v: number }>) => stripDrawing({ pens: [level], series: new Map([[level.ref, { holdMs: recordedHoldMs, points }]]), observations: [], now, horizonMs: 600_000, width: 600, height: 72 })!
+    const drawn = (points: ReadonlyArray<{ t: number; v: number }>) => stripDrawing({ pens: [level], series: new Map([[level.ref, { holdMs: recordedHoldMs, points }]]), observations: [], now, horizonMs: 600_000, width: 600, height: 72, ...laid })!
     const pieces = (path: string): number => path.match(/M/g)?.length ?? 0
     // The heartbeat's stored samples of a steady value, with the longest gap measured on Halden (88 s), and the live point now.
     const steady = [0, 30_000, 118_000, 150_000, 210_000, 298_000, 330_000, 390_000, 450_000, 538_000, 570_000, 600_000].map(t => ({ t, v: 50 }))
@@ -135,7 +128,7 @@ describe('trend strip', () => {
   })
 
   test('the time before the record starts is hatched; a value held into the window\'s start leaves nothing hatched', () => {
-    const drawn = (points: ReadonlyArray<{ t: number; v: number }>) => stripDrawing({ pens: [level], series: new Map([[level.ref, { holdMs: recordedHoldMs, points }]]), observations: [], now: 600_000, horizonMs: 600_000, width: 600, height: 72 })!
+    const drawn = (points: ReadonlyArray<{ t: number; v: number }>) => stripDrawing({ pens: [level], series: new Map([[level.ref, { holdMs: recordedHoldMs, points }]]), observations: [], now: 600_000, horizonMs: 600_000, width: 600, height: 72, ...laid })!
     // A Run that started 90 s ago: hatched up to its first sample, and the trace starts there.
     const young = drawn([{ t: 510_000, v: 50 }, { t: 540_000, v: 50 }, { t: 600_000, v: 50 }])
     expect(young.unrecorded).toEqual({ width: 510 })
@@ -150,11 +143,36 @@ describe('trend strip', () => {
     expect(appendPoint([{ t: 0, v: 1 }, { t: 5, v: 2 }, { t: 9, v: 3 }], { t: 12, v: 4 }, 7)).toEqual([{ t: 5, v: 2 }, { t: 9, v: 3 }, { t: 12, v: 4 }])
   })
 
-  test('shared limits: a strip draws a limit only where every pen declares it under one id at one value', () => {
-    const other = { ...level, ref: 'unit-1#level-b', thresholds: [threshold('lo', 'low', 1, 30), threshold('lolo', 'low', 2, 25), threshold('hi', 'high', 1, 80)] }
-    expect(sharedLimits([level, other]).map(limit => limit.id)).toEqual(['lo', 'hi'])
-    expect(sharedLimits([level]).map(limit => limit.id)).toEqual(['lo', 'lolo', 'hi'])
-    expect(sharedLimits([level, { ...level, thresholds: [] }])).toEqual([])
+  test('a strip draws a limit where every pen declares one at that value and direction, whatever each calls it; set points apart', () => {
+    const other = { ...level, ref: 'unit-1#level-b', thresholds: [threshold('b-lo', 'low', 1, 30), threshold('b-lolo', 'low', 2, 25), threshold('b-hi', 'high', 1, 80), threshold('b-ctl', 'high', 1, 60, { effect: 'control' })] }
+    expect(sharedLines([level, other]).map(line => line.key)).toEqual(['low 30', 'high 80'])
+    expect(sharedLines([level]).map(line => line.key)).toEqual(['low 30', 'low 20', 'high 80'])
+    expect(sharedLines([level, { ...level, thresholds: [] }])).toEqual([])
+    expect(sharedLines([other], true).map(line => line.key)).toEqual(['high 60'])
+  })
+
+  test('one quantity per strip: pens share one only in one unit, with the same limits and within a factor of three of scale; states read as bands after them (W5.2)', () => {
+    const pen = (ref: string, quantity: VignetteValue['quantity'], unit: string, limits: ReadonlyArray<number>, extra: Partial<VignetteValue> = {}): VignetteValue =>
+      ({ ...level, ref, label: ref, quantity, unit, thresholds: limits.map((value, at) => threshold(`${ref}-${at}`, 'high', at + 1, value)), ...extra })
+    const cet = pen('cet', 'temperature', 'degC', [343])
+    const subcooling = pen('subcooling', 'temperature-difference', 'degC', [16.7])
+    const pzr = pen('pzr', 'pressure', 'MPa', [16.55, 12.7])
+    const sg = pen('sg', 'pressure', 'MPa', [8.1])
+    const sgs = ['a', 'b', 'c', 'd', 'e'].map(ref => pen(`sg-${ref}`, 'level', '%', [20, 30, 75]))
+    const wide = pen('sg-wide', 'level', '%', [])
+    const afw = pen('afw', 'flow', 'kg/s', [])
+    const steam = pen('steam', 'flow', 'kg/s', [])
+    const tenfold = (scale: number) => ({ thresholds: [threshold('x', 'high', 1, scale, { effect: 'control' })] })
+    const running = pen('running', 'count', '1', [], { valueType: 'boolean' })
+    const strips = (pens: ReadonlyArray<VignetteValue>) => stripsOf(pens).map(strip => strip.map(entry => entry.ref))
+    // Subcooling never shares CET's axis (H8); pressures whose limits differ each keep their own strip, and their limits.
+    expect(strips([cet, subcooling, pzr, sg])).toEqual([['cet'], ['subcooling'], ['pzr'], ['sg']])
+    // Four steam generator levels with one set of limits share a strip, at most four to it; the wide range, without them, its own.
+    expect(strips([...sgs, wide])).toEqual([['sg-a', 'sg-b', 'sg-c', 'sg-d'], ['sg-e'], ['sg-wide']])
+    // Without limits, scales a tenfold apart (their set points) do not share; within three they do. A state is a band, last.
+    expect(strips([running, { ...afw, ...tenfold(60) }, { ...steam, ...tenfold(600) }, { ...steam, ref: 'feed', ...tenfold(500) }])).toEqual([['afw'], ['steam', 'feed'], ['running']])
+    // A plot of five rows and a legend row per pen; a band a row; the time axis once.
+    expect([stripRows(sgs.slice(0, 2)), stripRows([running]), trendRows([sgs.slice(0, 2), [cet], [running]])]).toEqual([7, 1, 7 + 6 + 1 + 1])
   })
 
   test('the scale widens a steady value and reaches limits within reach only', () => {
@@ -165,28 +183,114 @@ describe('trend strip', () => {
     expect(reached.max).toBeLessThan(100)
   })
 
-  test('the drawing names the limit nearest each edge beyond its scale, and colours a pen only by its observation', () => {
+  test('beyond its scale a strip names the limit nearest each edge, at that edge; a pen takes colour only from its observation', () => {
     const pens = [level, { ...level, ref: 'unit-1#level-b', thresholds: level.thresholds.map(limit => (limit.id === 'hi' ? { ...limit, value: 80 } : limit)) }]
     const drawn = (values: ReadonlyArray<number>) => stripDrawing({
       pens, series: new Map([[level.ref, { holdMs: 90_000, points: values.map((v, index) => ({ t: index * 1_000, v })) }], ['unit-1#level-b', { holdMs: 90_000, points: [{ t: 0, v: values[0]! }] }]]),
-      observations: [observation('unit-1#level-b', values[0]!, { priority: 'caution' })], now: 10_000, horizonMs: 10_000, width: 100, height: 72,
+      observations: [observation('unit-1#level-b', values[0]!, { priority: 'caution' })], now: 10_000, horizonMs: 10_000, width: 100, height: 120, ...laid,
     })!
+    const names = (drawing: NonNullable<ReturnType<typeof drawn>>) => drawing.labels.map(label => label.rows.map(row => row.map(run => run.text).join('')).join(' / '))
     const wide = drawn([35, 50])
     expect(wide.pens.map(pen => [pen.dash, pen.tone])).toEqual([['', null], ['6 3', 'caution']])
-    expect([wide.limits.map(limit => limit.label), wide.beyond]).toEqual([['LO 30.0', 'LO-LO 20.0', 'HI 80.0'], []])
+    expect([wide.lines.length, names(wide)]).toEqual([3, ['HI 80.0', 'LO 30.0', 'LO-LO 20.0 · unit trip']])
     const steady = drawn([49, 51])
-    expect([steady.limits, steady.beyond.map(limit => `${limit.edge} ${limit.label}`)]).toEqual([[], ['top HI 80.0', 'bottom LO 30.0']])
-    expect(stripDrawing({ pens: [level], series: new Map(), observations: [], now: 1, horizonMs: 1, width: 1, height: 1 })).toBeNull()
+    expect([steady.lines, names(steady)]).toEqual([[], ['▲ HI 80.0', '▼ LO 30.0']])
+    expect(stripDrawing({ pens: [level], series: new Map(), observations: [], now: 1, horizonMs: 1, width: 1, height: 1, ...laid })).toBeNull()
   })
 
-  test('limit names never touch: above the line, below where the one above is near, else left to the line\'s title', () => {
-    const free = { height: 72, top: false, bottom: false }
-    expect(limitLabelYs([10, 15, 60], free)).toEqual([22, null, 58])
-    expect(limitLabelYs([60, 30], free)).toEqual([58, 28])
-    // Never past the strip's bottom, nor onto the names of limits beyond the scale at its edges.
-    expect(limitLabelYs([69], free)).toEqual([67])
-    expect(limitLabelYs([69], { ...free, bottom: true })).toEqual([null])
-    expect(limitLabelYs([5, 30], { ...free, top: true })).toEqual([null, 28])
+  // The pressurizer's limits after a trip in hot standby (H8, U-10): alarms and trips as neutral dashes named outside the
+  // plot in value order with their consequence; the heater and spray set points no limit; the trip of modes 1–2 idle.
+  const pressure: VignetteValue = {
+    ref: 'unit-1#pzr', label: 'Unit 1 · Pressurizer pressure', quantity: 'pressure', unit: 'MPa', valueType: 'number', series: { seriesId: 'unit-1.pzr', intervalMs: 1_000 },
+    thresholds: [
+      threshold('si', 'low', 3, 12.7, { effect: 'trip', priority: 'alarm', consequence: 'SI', when: 'SI-BLOCKED off' }),
+      threshold('rx-lo', 'low', 2, 13.8, { effect: 'trip', priority: 'alarm', consequence: 'RX TRIP', when: 'Power operation or Startup' }),
+      threshold('alm-lo', 'low', 1, 14.8, { consequence: 'ALM' }),
+      threshold('heaters', 'low', 2, 15.35, { effect: 'control', priority: 'notice', consequence: 'CTL' }),
+      threshold('spray-off', 'high', 1, 15.65, { effect: 'control', priority: 'notice', consequence: 'CTL' }),
+      threshold('alm-hi', 'high', 1, 16, { consequence: 'ALM' }),
+      threshold('porv', 'high', 2, 16.18, { effect: 'control', priority: 'notice', consequence: 'CTL' }),
+      threshold('rx-hi', 'high', 2, 16.55, { effect: 'trip', priority: 'alarm', consequence: 'RX TRIP' }),
+    ],
+  }
+  const tripped = (height: number, extra: Partial<Observation> = {}, setPoints = false) => stripDrawing({
+    pens: [pressure], series: new Map([[pressure.ref, { holdMs: 90_000, points: [{ t: 0, v: 15.5 }, { t: 360_000, v: 13.9 }, { t: 420_000, v: 13.66 }, { t: 600_000, v: 13.66 }] }]]),
+    observations: [observation(pressure.ref, 13.66, { priority: 'warning', past: 'alm-lo', idle: ['rx-lo'], ...extra })], now: 600_000, horizonMs: 600_000, width: 240, height, ...laid, setPoints,
+  })!
+  const heads = (drawing: NonNullable<ReturnType<typeof tripped>>) => drawing.labels.map(label => label.rows[0]!.filter(run => run.mark !== true)[0]!.text)
+
+  test('the pressurizer strip names its alarm and trip limits in value order, outside the plot, with their consequence, and no two names touch (W5.3)', () => {
+    const drawing = tripped(120)
+    expect(drawing.labels.map(label => label.rows.map(row => row.map(run => run.text).join('')).join(' / ')))
+      .toEqual(['HI-HI 16.55 · RX TRIP', 'HI 16.00 · ALM', '■ LO 14.80 · ALM', 'LO-LO 13.80 · RX TRIP', 'LO-LO-LO 12.70 · SI'])
+    expect(drawing.labels.map(label => label.y)).toEqual([...drawing.labels.map(label => label.y)].sort((left, right) => left - right))
+    drawing.labels.slice(1).forEach((label, index) => expect(label.y - drawing.labels[index]!.y).toBeGreaterThanOrEqual(LABEL_LINE))
+    // No set point is a limit: five lines, none of them a control set point, unless the element's own trend asks for them.
+    expect([drawing.lines.length, drawing.setPoints]).toEqual([5, []])
+    const marks = tripped(120, {}, true)
+    expect(marks.setPoints.map(mark => mark.title)).toEqual(['CTL 15.35: control set point', 'CTL 15.65: control set point', 'CTL 16.18: control set point'])
+    // Named faint only where no limit's name stands, and never moving one: the limits' names are where they were.
+    expect(marks.labels).toEqual(drawing.labels)
+    for (const mark of marks.setPoints.filter(entry => entry.labelY !== null)) for (const label of marks.labels) expect(Math.abs(mark.labelY! - label.y)).toBeGreaterThanOrEqual(LABEL_LINE)
+  })
+
+  test('a limit is a neutral dash, coloured only while a value is past it where it acts now; one that does not act now is faint', () => {
+    const lines = (drawing: NonNullable<ReturnType<typeof tripped>>) => Object.fromEntries(drawing.lines.map(line => [line.key, [line.tone, line.idle]]))
+    // Past LO 14.80, which acts: its alarm's colour. Past LO-LO 13.80 too, but the reactor trip does not act in hot standby: faint, never coloured.
+    expect(lines(tripped(120))).toMatchObject({ 'low 14.8': ['warning', false], 'low 13.8': [null, true], 'low 12.7': [null, false], 'high 16.55': [null, false] })
+    // An alarm expected after a first-out leaves the value uncoloured: so is its limit.
+    expect(lines(tripped(120, { priority: 'none' }))['low 14.8']).toEqual([null, false])
+    // Its name says why it is faint.
+    expect(tripped(120).lines.find(line => line.key === 'low 13.8')!.title).toBe('LO-LO 13.80 · RX TRIP (Power operation or Startup) · does not act now')
+  })
+
+  test('where names do not all fit, the least telling give way: never the one a value is past, nor the one it heads for', () => {
+    // Room for two names: the limit the value is past, and the one it heads for (held steady, the nearest), though that one does not act now.
+    expect(heads(tripped(2 * LABEL_LINE))).toEqual(['LO 14.80', 'LO-LO 13.80'])
+    // Falling, it heads below.
+    const falling = stripDrawing({
+      pens: [pressure], series: new Map([[pressure.ref, { holdMs: 90_000, points: [{ t: 0, v: 15.5 }, { t: 470_000, v: 15.2 }, { t: 560_000, v: 14.9 }, { t: 600_000, v: 14.7 }] }]]),
+      observations: [observation(pressure.ref, 14.7, { priority: 'warning', past: 'alm-lo' })], now: 600_000, horizonMs: 600_000, width: 240, height: 2 * LABEL_LINE, ...laid,
+    })!
+    expect(heads(falling)).toEqual(['LO 14.80', 'LO-LO 13.80'])
+    // Ported from OLD's stackLabels: at their lines, pushed clear of each other, inside the room; the most telling kept in a room too short for any.
+    const slot = (key: string, want: number, rank: number, size = 12) => ({ key, want, size, rank })
+    expect(stackLabels([slot('trip', 20, 1), slot('alarm', 28, 0)], { min: 0, max: 120 })).toEqual([{ key: 'trip', start: 20 }, { key: 'alarm', start: 32 }])
+    expect(stackLabels([slot('a', 100, 0), slot('b', 104, 1), slot('c', 108, 2)], { min: 0, max: 120 }).map(label => label.start)).toEqual([84, 96, 108])
+    expect(stackLabels([slot('hi-trip', 10, 3), slot('hi-alarm', 14, 1), slot('lo-alarm', 30, 0), slot('lo-trip', 34, 2)], { min: 0, max: 36 }).map(label => label.key)).toEqual(['hi-alarm', 'lo-alarm', 'lo-trip'])
+    expect(stackLabels([slot('a', 0, 1), slot('b', 0, 0)], { min: 0, max: 8 })).toEqual([{ key: 'b', start: -4 }])
+  })
+
+  test('limits at one value are one line, each consequence once, those acting first; a narrow margin wraps them by whole parts', () => {
+    const level4: VignetteValue = { ...level, thresholds: [threshold('afw', 'low', 2, 20, { effect: 'trip', priority: 'alarm', consequence: 'AFW START' }), threshold('rx', 'low', 2, 20, { effect: 'trip', priority: 'alarm', consequence: 'RX TRIP' })] }
+    const drawn = (idle: ReadonlyArray<string>, room: number) => stripDrawing({
+      pens: [level4], series: new Map([[level4.ref, { holdMs: 90_000, points: [{ t: 0, v: 24 }] }]]), observations: [observation(level4.ref, 24, idle.length === 0 ? {} : { idle: [...idle] })],
+      now: 60_000, horizonMs: 600_000, width: 200, height: 120, ...laid, room,
+    })!.labels[0]!.rows.map(row => row.map(run => `${run.idle ? '(' : ''}${run.text}${run.idle ? ')' : ''}`).join(''))
+    expect(drawn([], 400)).toEqual(['LO-LO 20.0 · AFW START + RX TRIP'])
+    expect(drawn(['rx'], 400)).toEqual(['LO-LO 20.0 · AFW START( + RX TRIP)'])
+    expect(drawn([], 170)).toEqual(['LO-LO 20.0 · AFW START', '+ RX TRIP'])
+    expect(labelRows([{ text: 'LONGER THAN THE ROOM', idle: false, tone: null }], 50, text => text.length * 7)).toHaveLength(1)
+    expect(labelWidth({ pens: [level4], series: new Map([[level4.ref, { holdMs: 90_000, points: [{ t: 0, v: 24 }] }]]), observations: [], now: 60_000, horizonMs: 600_000, height: 120, setPoints: false }, text => text.length)).toBe('LO-LO 20.0 · AFW START + RX TRIP'.length)
+  })
+
+  test('a gridline\'s value never leaves the plot: the top one is written under its line and names the unit (W5.4)', () => {
+    const drawing = tripped(120)
+    expect(drawing.values.every(tick => tick.labelY >= 14 && tick.labelY <= 120)).toBe(true)
+    expect(drawing.values.filter(tick => tick.label.endsWith(' MPa'))).toHaveLength(1)
+    expect(drawing.values.find(tick => tick.label.endsWith(' MPa'))!.y).toBe(Math.min(...drawing.values.map(tick => tick.y)))
+  })
+
+  test('a rate is read where the last 30 s and 2 min agree in direction, each at least a step; a state reads as a band', () => {
+    const series = (values: ReadonlyArray<[number, number]>) => ({ holdMs: 90_000, points: values.map(([t, v]) => ({ t, v })) })
+    expect(rateNow(series([[0, 15], [480_000, 14.9], [570_000, 14.8], [600_000, 14.7]]), 600_000, 0.01)).toBeCloseTo(-0.2, 6)
+    // Turned within the last 30 s: the two disagree, no rate.
+    expect(rateNow(series([[0, 15], [480_000, 14.9], [570_000, 14.5], [600_000, 14.7]]), 600_000, 0.01)).toBeNull()
+    // Below a step of its decimals, or a record shorter than 2 min: none.
+    expect(rateNow(series([[0, 15], [600_000, 15.001]]), 600_000, 0.01)).toBeNull()
+    expect(rateNow(series([[540_000, 15], [600_000, 14]]), 600_000, 0.01)).toBeNull()
+    expect([rateText(-0.2, 'MPa', 'pressure'), rateText(1.25, '%', 'level')]).toEqual(['▼ 0.20/min', '▲ 1.3/min'])
+    expect(bandStretches([{ t: 0, v: 1 }, { t: 4_000, v: 0 }], x, window, 90_000)).toEqual([{ x: 0, width: 40, on: true }, { x: 40, width: 60, on: false }])
   })
 
   test('time ticks count back from now in round steps', () => {
@@ -208,13 +312,17 @@ describe('alerts', () => {
     expect(worstChip([{ priority: 'notice' }], [])).toBeNull()
   })
 
-  test('each row takes OpenBridge\'s alert icon by its declared priority, drawn steady: acknowledged, or rectified once returned; notice and an undeclared priority read as words', () => {
-    // Nothing in a vignette acknowledges (W2.7): an unacknowledged icon would flash for ever (UX audit H11).
-    expect(alertIcon(row('a', 'one', 'emergency'))).toEqual({ type: 'level-critical', acknowledged: true, active: true })
-    expect(alertIcon({ ...row('a', 'one', 'warning'), state: 'active-ack' })).toEqual({ type: 'warning', acknowledged: true, active: true })
-    expect(alertIcon({ ...row('a', 'one', 'alarm'), state: 'returned-unack' })).toEqual({ type: 'alarm', acknowledged: true, active: false })
-    expect(alertIcon(row('a', 'one', 'notice'))).toEqual({ word: 'Notice' })
-    expect(alertIcon(row('a', 'one', null))).toEqual({ word: 'Warning · priority not declared' })
+  test('each row takes OpenBridge\'s alert icon as its record stands, so only unacknowledged news flashes; what asks no attention shows its priority steady; notice and an undeclared priority read as words', () => {
+    // People acknowledge in the display window (W2.7): an unacknowledged alarm flashes until they do (H11, F18).
+    expect(alertIcon(row('a', 'one', 'emergency'))).toEqual({ kind: 'icon', type: 'level-critical', acknowledged: false, active: true })
+    expect(alertIcon({ ...row('a', 'one', 'warning'), state: 'active-ack' })).toEqual({ kind: 'icon', type: 'warning', acknowledged: true, active: true })
+    expect(alertIcon({ ...row('a', 'one', 'alarm'), state: 'returned-unack' })).toEqual({ kind: 'icon', type: 'alarm', acknowledged: false, active: false })
+    // Expected after a first-out, standing, advisory: unacknowledged, steady, its priority alone.
+    expect(alertIcon({ ...row('a', 'one', 'alarm'), expected: { after: 'RX TRIP' } })).toEqual({ kind: 'badge', type: 'alarm' })
+    expect(alertIcon(row('a', 'one', 'caution', { standing: true }))).toEqual({ kind: 'badge', type: 'caution' })
+    expect(alertIcon({ ...row('a', 'one', 'alarm', { firstOut: { group: 'g', rank: 1 } }), expected: { after: 'RX TRIP' } })).toEqual({ kind: 'icon', type: 'alarm', acknowledged: false, active: true })
+    expect(alertIcon(row('a', 'one', 'notice'))).toEqual({ kind: 'word', word: 'Notice' })
+    expect(alertIcon(row('a', 'one', null))).toEqual({ kind: 'word', word: 'Warning · priority not declared' })
     // Before a sample's time is known a row says its clock time; then its age in Run time.
     expect(alertDetail({ ...row('a', 'one', 'caution', { standing: true, acknowledged: true, acknowledgedBy: 'ai' }), state: 'active-ack' }, Number.NaN)).toBe('standing · acknowledged by Assistant · 10:00:00 UTC')
     expect(alertDetail(row('a', 'one', 'caution'), Date.parse(at) + 179_000)).toBe('2:59')
@@ -270,11 +378,44 @@ describe('alerts', () => {
     expect(source).toContain('use:wholeWords={parts.message}')
   })
 
-  test('a row is written on one line where it fits whole, else on two', () => {
-    const parts = rowParts({ ...row('a', 'one', 'alarm', { firstOut: { group: 'g', rank: 1 } }), action: { label: 'RX TRIP' }, tag: 'LO · RX TRIP' }, Date.parse(at) + 1_000)
-    expect(parts).toMatchObject({ unack: true, mark: '1st RX TRIP', message: 'a', detail: 'LO · RX TRIP · 0:01' })
-    // A character 6 px wide: icon 20, UNACK 30, "1st RX TRIP:" 72, "a" 6, the detail 114, four gaps of 6.
-    expect(rowWidth(parts, text => text.length * 6)).toBe(20 + 30 + 72 + 6 + 114 + 4 * 6)
+  test('a row stands on one line: its notes give way before its message, its message by whole words, then its tag; the icon, UNACK, the mark and the age stand', () => {
+    const now = Date.parse(at) + 1_000
+    // A character 6 px wide.
+    const measure = (text: string): number => text.length * 6
+    const first = rowParts({ ...row('Reactor trip on turbine trip', 'one', 'alarm', { firstOut: { group: 'g', rank: 1 } }), action: { label: 'RX TRIP' }, tag: 'LO · RX TRIP' }, now)
+    // Its mark names its group, so its tag keeps only its limit.
+    expect(first).toMatchObject({ unack: true, mark: '1st RX TRIP', message: 'Reactor trip on turbine trip', detail: { tag: 'LO', notes: [], age: '0:01' } })
+    // Icon 20, UNACK 30, "1st RX TRIP:" 72, the message 168, "LO · 0:01" 54, four gaps of 6.
+    expect(rowWidth(first, measure)).toBe(20 + 30 + 72 + 168 + 54 + 4 * 6)
+    expect(fitRow(first, 400, measure)).toBe(first)
+    // Narrower, the message gives way on the row itself (wholeWords): it has no notes, and its tag stands while its first word fits.
+    expect(fitRow(first, 260, measure)).toEqual(first)
+    const expected = rowParts({ ...row('SG A level low-low', 'one', 'alarm', { acknowledged: true }), state: 'active-ack', tag: 'LO-LO · AFW START', expected: { after: 'RX TRIP' } }, now)
+    expect(detailText(expected.detail)).toBe('LO-LO · AFW START · after RX TRIP · acknowledged · 0:01')
+    expect(fitRow(expected, 500, measure)).toBe(expected)
+    // To keep its message whole, the notes go, the last first; then the message gives way ("SG…", then nothing); then the tag; the age stands.
+    expect(detailText(fitRow(expected, 440, measure).detail)).toBe('LO-LO · AFW START · after RX TRIP · 0:01')
+    expect(detailText(fitRow(expected, 300, measure).detail)).toBe('LO-LO · AFW START · 0:01')
+    expect(detailText(fitRow(expected, 200, measure).detail)).toBe('LO-LO · AFW START · 0:01')
+    expect(detailText(fitRow(expected, 150, measure).detail)).toBe('0:01')
+    // An object's name in a list of several goes last.
+    const named = rowParts(row('Loss of offsite power', 'one', 'alarm'), now, 'Halden Unit 1')
+    expect(fitRow(named, 120, measure)).toMatchObject({ unack: true, mark: null, detail: { notes: [], age: '0:01' } })
+    expect(fitRow(named, 120, measure).heading).toBeUndefined()
+    expect(fitRow(named, 240, measure).heading).toBe('Halden Unit 1')
+  })
+
+  test('people acknowledge in the display window only (D-B1, Q19): no ACK in a chat answer or a dialog, each through its row\'s command', () => {
+    const source = (file: string): string => readFileSync(join(import.meta.dir, `../src/ui/embed/vignette/${file}`), 'utf8')
+    const opening = source('opening.svelte.ts')
+    expect(opening).toContain("get acknowledges() { return where === 'window' }")
+    expect(opening).toContain("if (where !== 'window') return 'alerts are acknowledged in the display window'")
+    expect(opening).toContain('invokeSimulationRunCapability(config.runId(), { capabilityId: row.acknowledge.capabilityId, input: row.acknowledge.input })')
+    for (const file of ['AlertsSection.svelte', 'AlertsView.svelte']) expect(source(file)).toContain('const acks = $derived(opening?.acknowledges === true)')
+    expect(source('acknowledging.svelte.ts')).toContain('if (by === undefined || !by.acknowledges || asked.length === 0) return')
+    expect(source('AlertRowLine.svelte')).toContain('{#if parts.ack === true && onack !== undefined}')
+    // The column's rows open their element; its aggregates and an element's own rows (its faceplate) acknowledge.
+    expect(source('AlertsSection.svelte')).toContain('acks && !whole && row.acknowledge !== undefined')
   })
 
   test('a section narrowed to elements or observables shows only the alerts on them', () => {
@@ -304,6 +445,8 @@ describe('footer', () => {
     expect(provenanceMark({ by: 'assistant' })).toBe('AI-composed view · not an operating display')
     // Before its view is read, it does not yet say who made it.
     expect(provenanceMark(undefined)).toBe('not an operating display')
+    // A footer too narrow says the same shorter, never cut (a 360 px chat answer read "not an opera…").
+    expect([provenanceMarks({}), provenanceMarks({ by: 'assistant' })].map(marks => marks[1])).toEqual(['Model view · not for operating', 'AI view · not for operating'])
     // The frame every host shows (the window, a chat answer inline, a procedure tag's dialog) writes it in its footer.
     const frame = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Vignette.svelte'), 'utf8')
     expect(frame.slice(frame.indexOf('<footer'), frame.indexOf('</footer>'))).toContain('{provenanceMark(view)}')

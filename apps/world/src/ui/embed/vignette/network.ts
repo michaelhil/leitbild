@@ -7,7 +7,7 @@
 // priorities; "on" only from a boolean or a state declared active (ruling Q8).
 import type { Segment } from '@oicl/connector-diagram'
 import type { Observation } from '../../../core/observation/model.ts'
-import { pipeSegments, stubEndSegment } from './pipe-segments.ts'
+import { endStraight, pipeSegments, stubEndSegment } from './pipe-segments.ts'
 import { VIGNETTE_ROW_PX } from './grid.ts'
 import type { TopologyBinding, VignetteSection } from '../../../features/displays/compose/model.ts'
 import { activeState, readingLook, toneOf, type AlertTone } from './readout.ts'
@@ -92,14 +92,21 @@ export const networkDrawing = (section: Topology, observations: ReadonlyArray<Ob
     const binding = byId.get(id)?.bindings.find(entry => entry.role === 'conducting')
     return binding === undefined ? null : activeState(read(binding)?.value, binding.states)
   }
-  const edges = section.layout.edges.map(edge => ({ ...edge, points: edge.points.map(([x, y]) => [px(x), px(y)] as const), gaps: edge.gaps.map(([x, y]) => [px(x), px(y)] as const) }))
-  const ends = edges.flatMap(edge => [edge.points[0]!, edge.points.at(-1)!])
   const at = (box: Box) => (point: Point): boolean => point[0] >= box.x - 1 && point[0] <= box.x + box.width + 1 && point[1] >= box.y - 1 && point[1] <= box.y + box.height + 1
   const boxes = new Map(section.layout.nodes.map(node => [node.id, { x: px(node.x), y: px(node.y), width: px(node.width), height: px(node.height) }]))
+  // A line to where the drawing stops ends on a straight of its own, never with its cap in a bend (W6.3).
+  const stopAt = (point: Point): Box | undefined => [...boxes].find(([id, box]) => ['stop', 'boundary'].includes(byId.get(id)?.class ?? '') && at(box)(point))?.[1]
+  const edges = section.layout.edges.map(edge => {
+    const points = edge.points.map(([x, y]) => [px(x), px(y)] as const)
+    const [first, last] = [stopAt(points[0]!), stopAt(points.at(-1)!)]
+    const ended = last === undefined ? points : endStraight(points, 'last', last)
+    return { ...edge, points, drawn: first === undefined ? ended : endStraight(ended, 'first', first), gaps: edge.gaps.map(([x, y]) => [px(x), px(y)] as const) }
+  })
+  const ends = edges.flatMap(edge => [edge.points[0]!, edge.points.at(-1)!])
   const nodeAt = (point: Point): string | undefined => [...boxes].find(([, box]) => at(box)(point))?.[0]
   // A line goes empty where a node at either end reads off; else it is drawn as an open line.
   const lineValue = (points: ReadonlyArray<Point>) => [nodeAt(points[0]!), nodeAt(points.at(-1)!)].some(id => id !== undefined && conducting(id) === false) ? 'empty' : 'open-generic'
-  const segments: Segment[] = edges.flatMap(edge => pipeSegments(edge.id, edge.points, edge.gaps, lineValue(edge.points), 'small'))
+  const segments: Segment[] = edges.flatMap(edge => pipeSegments(edge.id, edge.drawn, edge.gaps, lineValue(edge.points), 'small'))
   const drawing: { buses: NetworkDrawing['buses'][number][]; devices: NetworkDrawing['devices'][number][]; texts: NetworkDrawing['texts'][number][] } = { buses: [], devices: [], texts: [] }
   for (const [id, box] of boxes) {
     const node = byId.get(id)
@@ -134,7 +141,7 @@ export const networkDrawing = (section: Topology, observations: ReadonlyArray<Ob
       // Where the drawing stops, or meets another graph: OpenBridge's end cap on the line that arrives.
       for (const edge of edges) {
         const into = at(box)(edge.points.at(-1)!) ? 'out' : at(box)(edge.points[0]!) ? 'in' : null
-        if (into !== null) segments.push(stubEndSegment(`${edge.id}:end`, edge.points, into, lineValue(edge.points), 'small', false))
+        if (into !== null) segments.push(stubEndSegment(`${edge.id}:end`, edge.drawn, into, lineValue(edge.points), 'small'))
       }
       text(box.x + 6, box.y, box.width - 6, 'beside')
     } else if (node.class !== 'junction') {

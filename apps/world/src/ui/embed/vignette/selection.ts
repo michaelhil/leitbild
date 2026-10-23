@@ -22,3 +22,16 @@ export const onElementRequest = (listener: Listener): (() => void) => {
 
 /** Asks this vignette's drawings to show the element; false where none draws it (the caller then opens its detail). */
 export const requestElement = (request: ElementRequest): boolean => [...listeners].some(listener => listener(request))
+
+/** The elements a pressed alert tile points out on a drawing of their object (W2.2); null clears them. */
+export interface ElementMarks { readonly objectId: string; readonly elementIds: ReadonlyArray<string> }
+const markers = new Set<(marks: ElementMarks | null) => void>()
+
+/** A drawing marks what it is told while it is mounted; the returned function stops it. */
+export const onElementMarks = (marker: (marks: ElementMarks | null) => void): (() => void) => {
+  markers.add(marker)
+  return () => { markers.delete(marker) }
+}
+
+/** Points out these elements on this vignette's drawings (the activated mark), or clears them with null. */
+export const markElements = (marks: ElementMarks | null): void => { for (const marker of markers) marker(marks) }

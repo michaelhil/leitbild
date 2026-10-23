@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { displaySpecSchema } from '../src/core/observation/spec.ts'
 import { composeDefault, composeVignette } from '../src/features/displays/compose/compose.ts'
-import type { VignetteSample, VignetteState, VignetteView } from '../src/features/displays/compose/model.ts'
+import { zoneRows, type VignetteSample, type VignetteState, type VignetteView } from '../src/features/displays/compose/model.ts'
 import { compileVignette, sampleVignette, type ViewRun } from '../src/features/displays/compose/view.ts'
 import { viewWithLeads } from '../src/ui/embed/vignette/vignette-client.ts'
 import { fixtureComposeRun } from './fixtures/compose-runs.ts'
@@ -72,7 +72,7 @@ describe('a default holds a lead request, read again each sample (W0.5)', () => 
   test('an object default: its state names the request and the rows it reserves, never refs; each sample leads as the Pack does now', async () => {
     const { state, view } = await opened('unit:one')
     // Its own state (status) is a chip, so its lead is the engine's two and its speed: three rows reserved.
-    expect<unknown>(state.views[0]).toEqual({ kind: 'values', lead: { objectId: 'unit:one' }, rows: 3 })
+    expect<unknown>(state.views[0]).toEqual({ kind: 'values', lead: { objectId: 'unit:one' }, zones: true, rows: 3 + zoneRows({ zones: true }) })
     expect(JSON.stringify(state)).not.toContain(ref('power'))
     expect(shown(view)).toEqual([ref('power'), ref('output'), ref('speed')])
     const atPower = await sampleVignette(run, state)
@@ -95,7 +95,7 @@ describe('a default holds a lead request, read again each sample (W0.5)', () => 
 
   test('an element default: its declared lead at power; once its stop\'s commands read as written, what verifies the stop first, in the same rows', async () => {
     const { state, view } = await opened('unit:one#engine')
-    expect<unknown>(state.views[0]).toEqual({ kind: 'values', lead: { objectId: 'unit:one', element: 'engine' }, rows: 5 })
+    expect<unknown>(state.views[0]).toEqual({ kind: 'values', lead: { objectId: 'unit:one', element: 'engine' }, zones: true, rows: 5 + zoneRows({ zones: true }) })
     // At power: its declared lead, then its readings (instruments and states) by rank, then the rest; never its command.
     expect(shown(view)).toEqual([ref('power'), ref('output'), ref('flux'), ref('rodsIn'), ref('speed')])
     expect(led(await sampleVignette(run, state))).toEqual(shown(view))

@@ -106,8 +106,10 @@ export const E0_CHECKS: ReadonlyArray<E0Check> = [
   {
     id: 'alarm-picture', n: '11', what: 'Alarm picture: at least 3 alert rows on screen, first-outs named by their group ("1st RX TRIP"), and the expected alerts gathered in an aggregate', mode: 'glance',
     judge: screen => {
-      const rows = screen.lines.filter(line => line.region === 'alerts' && line.valueOn && /\d{2}:\d{2}|\bago\b|\d+\s*(s|min)\b/.test(line.text))
-      const firstOuts = rows.filter(line => /\b1st\b|first out/i.test(line.text))
+      // A row's age: "04:02:02 UTC" (production) or "2:59" (R2, m:ss); R2 writes a row on two lines (message, then
+      // UNACK, tag and age), so first-outs are read on any of the list's lines on screen.
+      const rows = screen.lines.filter(line => line.region === 'alerts' && line.valueOn && /\b\d{1,2}:\d{2}\b|\bago\b|\d+\s*(s|min)\b/.test(line.text))
+      const firstOuts = screen.lines.filter(line => line.region === 'alerts' && line.valueOn && /\b1st\b|first out/i.test(line.text))
       const grouped = firstOuts.filter(line => /\b1st [A-Z]{2,}|first out [A-Z]{2,}\b.*:/.test(line.text))
       const aggregate = lines(screen, /\d+\s+expected\b/i)
       return { pass: rows.length >= 3 && (firstOuts.length === 0 || grouped.length === firstOuts.length) && aggregate.length > 0, evidence: `${rows.length} rows on screen; first-outs ${firstOuts.length} (${grouped.length} named by group${firstOuts.length > grouped.length ? `, e.g. "${firstOuts.find(line => !grouped.includes(line))!.text.slice(0, 60)}"` : ''}); expected aggregate ${aggregate.length > 0 ? quote(aggregate) : 'none'}` }
@@ -167,7 +169,7 @@ export const sweep = async (page: Page, config: { readonly checks: ReadonlyArray
       for (const id of fresh) firstHits[id] = entries.length
     }
     const back = outcome.kind === 'nothing' ? { home: true, via: [] } : await goHome(page, home)
-    entries.push({ target: { key: target.key, kind: target.kind, name: target.name, item: target.item, reaches: target.reaches, visible: target.visible }, outcome, ms, homeVia: back.via, satisfies, evidence: Object.fromEntries(judged.map(entry => [entry.id, entry.evidence])), ...(shot ? { shot } : {}) })
+    entries.push({ target: { key: target.key, kind: target.kind, name: target.name, item: target.item, reaches: target.reaches, visible: target.visible, pressable: target.pressable }, outcome, ms, homeVia: back.via, satisfies, evidence: Object.fromEntries(judged.map(entry => [entry.id, entry.evidence])), ...(shot ? { shot } : {}) })
     config.log?.(`  ${String(index).padStart(2)} ${target.kind.padEnd(9)} ${target.name.slice(0, 50).padEnd(50)} → ${outcome.kind}${'title' in outcome && outcome.title ? ` "${outcome.title}"` : 'label' in outcome ? ` "${outcome.label.slice(0, 40)}"` : ''}${satisfies.length > 0 ? `  ✔ ${satisfies.join(', ')}` : ''}`)
     if (!back.home) { config.log?.('    (not home after Esc and Back: reopening)'); homeScreen = await config.reopen() }
   }

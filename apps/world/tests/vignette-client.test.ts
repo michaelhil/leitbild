@@ -167,7 +167,7 @@ describe('vignette session', () => {
     expect(silent.silentFrom! - last.t).toBeLessThanOrEqual(1_000)
     // Drawn a minute later, 1 px a second: the line ends where the reading went silent, not at the strip's end.
     const now = last.t + 60_000
-    const drawn = stripDrawing({ pens: [levelPen], series: run.last().series, observations: [], now, horizonMs: 600_000, width: 600, height: 60 })
+    const drawn = stripDrawing({ pens: [levelPen], series: run.last().series, observations: [], now, horizonMs: 600_000, width: 600, height: 60, room: 0, setPoints: false, measure: text => text.length * 7 })
     const ends = [...drawn!.pens[0]!.path.matchAll(/L(\d+\.\d)/g)].map(match => Number(match[1]))
     expect(Math.max(...ends)).toBeCloseTo(600 - (now - silent.silentFrom!) / 1_000, 0)
     run.readsAs('bad')

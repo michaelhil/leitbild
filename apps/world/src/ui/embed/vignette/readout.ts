@@ -1,6 +1,6 @@
-// How one value reads (architecture B): a number with its limit bar and the
-// chip of the limit it is past, or a state as a word, in OpenBridge's
-// readout block, bar and status indicator. Colour comes only from the
+// How one value reads (architecture B): a number with the chip of the limit
+// it is past, or a state as a word, in OpenBridge's readout and status
+// indicator. Colour comes only from the
 // observation's own priority; a value without one (an entity's telemetry, a
 // core slot) is neutral, whatever its source calls it.
 import type { Priority } from '../../../core/model/alerts.ts'
@@ -36,44 +36,22 @@ export interface ReadingInput {
   readonly checks?: Observation['checks']
   /** A demand (its observable's basis is a command): never a filled state, written as the command it is ("CMD yes"). */
   readonly demand?: true
+  /** Value words (W4.4): its instrument's span, its travel, what it waits for outside its validity, and SIM. */
+  readonly span?: Observable['span']
+  readonly travel?: Observable['travel']
+  readonly invalidWhile?: string
+  readonly simulated?: true
+  /** Its wider range now, where the value is at an end of its span: it reads that instead ("WR 24.0 %"). */
+  readonly widerReading?: { readonly word: string; readonly value: number }
 }
+
+/** Where a reading stands at an end of its instrument's span: it says only that the quantity is there or beyond. */
+export const offSpan = (value: number, span: Observable['span']): 'below' | 'above' | null =>
+  span === undefined ? null : value <= span.min ? 'below' : value >= span.max ? 'above' : null
 
 /** LO, LO-LO, HI, HI-HI: the limit's direction once per order. */
 export const orderWord = (threshold: Pick<Threshold, 'direction' | 'order'>): string =>
   Array.from({ length: threshold.order }, () => (threshold.direction === 'low' ? 'LO' : 'HI')).join('-')
-
-/** An `obc-bar-horizontal`: its scale, the value, and each limit as an advice zone beyond it (OpenBridge's LinearAdvice). */
-export interface LimitBar {
-  readonly min: number
-  readonly max: number
-  readonly value: number
-  /** Hinted until the value is past that limit. */
-  readonly advices: ReadonlyArray<{ readonly min: number; readonly max: number; readonly type: 'caution'; readonly hinted: boolean }>
-}
-
-const BAR_PAD = 0.15
-
-/** The bar spans the limits, padded, and reaches the value only where it lies beyond them; no limits, no bar. */
-export const limitBar = (value: number, thresholds: ReadonlyArray<Threshold>, past?: string): LimitBar | null => {
-  if (thresholds.length === 0) return null
-  const limits = thresholds.map(threshold => threshold.value)
-  const low = Math.min(value, ...limits)
-  const high = Math.max(value, ...limits)
-  const span = high > low ? high - low : Math.max(Math.abs(low), 1)
-  const min = low - span * BAR_PAD
-  const max = high + span * BAR_PAD
-  return {
-    min,
-    max,
-    value,
-    advices: thresholds.map(threshold => ({
-      min: threshold.direction === 'high' ? threshold.value : min,
-      max: threshold.direction === 'high' ? max : threshold.value,
-      type: 'caution' as const,
-      hinted: threshold.id !== past,
-    })),
-  }
-}
 
 export interface ReadingLook {
   /** A criterion: how many of its checks that apply are met ("2/5"), or its comparison ("113 ≥ 27.8 kg/s"), with `detail`. */
@@ -100,8 +78,13 @@ export interface ReadingLook {
   /** The limit the value is past: its order word alone in a table cell, with value and consequence on a row. */
   readonly chip: { readonly word: string; readonly text: string; readonly tone: AlertTone | null } | null
   readonly note: string | null
-  readonly bar: LimitBar | null
   readonly title: string
+  /** At an end of its span, read as "<0" or ">100" in the low-integrity style; or stood in for by its wider range. */
+  readonly offSpan: 'below' | 'above' | 'wider' | null
+  /** Only its simulator computes it: its row reads SIM. */
+  readonly sim: boolean
+  /** Outside its validity, what it waits for, written beside its "—": "— (Source-range HV off)". */
+  readonly reason: string | null
 }
 
 /**
@@ -136,28 +119,41 @@ export const readingLook = (label: string, valueType: Observable['valueType'], s
   // A number or a duration reads as a number; a state, a text and an instant as a word.
   const state = (valueType !== 'number' && valueType !== 'duration') || typeof value === 'string' || typeof value === 'boolean'
   const decades = input.decades === true
-  const word = quality === 'not-applicable' ? '—' : unknown ? '?' : typeof value === 'number' ? numberText(value, input.unit, input.quantity, decades)
-    : valueType === 'instant' && typeof value === 'string' ? clockText(value) : stateWord(value, states)
+  const reading = !state && !unknown && quality !== 'not-applicable' && typeof value === 'number' ? value : null
+  const measured = reading !== null
+  // At an end of its span a reading says only that it is there ("<0 %"), unless its wider range reads where it is.
+  const end = reading === null ? null : offSpan(reading, input.span)
+  const wider = end === null ? undefined : input.widerReading
+  // A valve's position at the ends of its travel reads as its drawing words it; its opening in percent between them.
+  const travel = reading !== null && end === null && input.travel !== undefined ? (reading < input.travel.below ? input.travel.low : reading > input.travel.above ? input.travel.high : 'opening') : null
+  const opening = travel === 'opening' && reading !== null ? (input.unit === '%' ? reading : reading * 100) : null
+  const word = quality === 'not-applicable' ? '—' : unknown ? '?'
+    : wider !== undefined ? `${wider.word} ${numberText(wider.value, input.unit, input.quantity, decades)}`
+      // The span's end as declared, never padded to the value's decimals: "<0 %", ">100 %".
+      : end !== null ? `${end === 'below' ? '<' : '>'}${Number(numberText(end === 'below' ? input.span!.min : input.span!.max, input.unit, input.quantity, decades))}`
+        : travel !== null && opening === null ? travel : opening !== null ? numberText(opening, '%') : typeof value === 'number' ? numberText(value, input.unit, input.quantity, decades)
+          : valueType === 'instant' && typeof value === 'string' ? clockText(value) : stateWord(value, states)
   // A demand says what is asked, never that it is so (H14): "CMD yes", never a filled indicator.
   const text = input.demand === true && state && !unknown && quality !== 'not-applicable' ? `CMD ${word}` : word
-  const number = !state && !unknown && quality !== 'not-applicable' && typeof value === 'number'
   return {
     kind: state ? 'state' : 'number',
     text,
     detail: null,
-    // A numeral reads back as the number the block formats; a power of ten is no numeral (Number() would be NaN).
-    value: !number ? null : NUMERAL.test(text) ? Number(text) : text,
+    // A numeral reads back as the number the block formats; anything else (a power of ten, "<0", "WR 24.0", SHUT) is shown as written.
+    value: !measured ? null : NUMERAL.test(text) ? Number(text) : text,
     // The decimals the card writes it to: a value below its step reads as a zero does.
-    decimals: typeof value === 'number' ? numberShown(value, input.unit, input.quantity, decades).decimals : 0,
-    // No number, no unit: a state, a reading not known, or one outside its declared validity ("—").
-    unit: state || unknown || quality === 'not-applicable' ? '' : unitSymbol(input.unit),
+    decimals: opening !== null ? numberShown(opening, '%').decimals : typeof value === 'number' ? numberShown(value, input.unit, input.quantity, decades).decimals : 0,
+    // No number, no unit: a state, a reading not known, one outside its declared validity ("—"), a position's word.
+    unit: state || unknown || quality === 'not-applicable' || (travel !== null && opening === null) ? '' : opening !== null ? '%' : unitSymbol(input.unit),
     tone,
     emphasis: input.priority === 'notice',
-    doubtful: quality === 'uncertain' || quality === 'stale',
+    doubtful: quality === 'uncertain' || quality === 'stale' || (end !== null && wider === undefined),
+    offSpan: wider !== undefined ? 'wider' : end,
+    sim: input.simulated === true,
+    reason: quality === 'not-applicable' ? input.invalidWhile ?? null : null,
     fill: unknown ? 'unknown' : input.demand !== true && activeState(value, states) === true ? 'filled' : 'hollow',
     chip: passed === undefined || quality === 'not-applicable' ? null : { word: orderWord(passed), text: `${orderWord(passed)} ${numberText(passed.value, input.unit, input.quantity, decades)}${passed.consequence === undefined ? '' : ` · ${passed.consequence}`}`, tone },
     note,
-    bar: typeof value === 'number' && !unknown && quality !== 'not-applicable' ? limitBar(value, input.thresholds, input.past) : null,
     title: [label, quality === 'good' ? '' : `quality: ${quality}`, input.why ?? ''].filter(part => part !== '').join(' · '),
   }
 }
@@ -167,14 +163,22 @@ const criterionLook = (label: string, input: ReadingInput): ReadingLook => {
   const words = criterionWords(input.criterion ?? [], input.value === undefined && input.quality === undefined ? undefined : { quality: input.quality ?? 'good', ...(input.checks === undefined ? {} : { checks: input.checks }) })
   return {
     kind: 'criterion', text: words.text, detail: words.detail, value: null, decimals: 0, unit: '', tone: null, emphasis: false, doubtful: false,
-    fill: words.met === true ? 'filled' : 'hollow', chip: null, note: null, bar: null,
+    fill: words.met === true ? 'filled' : 'hollow', chip: null, note: null, offSpan: null, sim: false, reason: null,
     title: [label, words.detail ?? '', input.why ?? ''].filter(part => part !== '').join(' · '),
   }
 }
 
-/** How a declared value reads in a sample. */
-export const valueLook = (value: Pick<Observable, 'valueType' | 'states' | 'unit' | 'thresholds' | 'quantity' | 'decades' | 'checks' | 'basis'> & { readonly label: string }, observations: ReadonlyArray<Observation>, ref: string): ReadingLook =>
-  readingLook(value.label, value.valueType, value.states, observedInput(value, observations.find(observation => observation.ref === ref)))
+/** How a declared value reads in a sample: its wider range read where the sample has it (W4.4). */
+export const valueLook = (value: Pick<Observable, 'valueType' | 'states' | 'unit' | 'thresholds' | 'quantity' | 'decades' | 'checks' | 'basis'> & Partial<Pick<Observable, 'span' | 'wider' | 'travel' | 'invalidWhile'>> & { readonly label: string; readonly simulated?: true }, observations: ReadonlyArray<Observation>, ref: string): ReadingLook => {
+  const wider = value.wider === undefined ? undefined : observations.find(observation => observation.ref === value.wider!.ref)
+  const input = observedInput(value, observations.find(observation => observation.ref === ref))
+  return readingLook(value.label, value.valueType, value.states, {
+    ...input,
+    ...(value.span === undefined ? {} : { span: value.span }), ...(value.travel === undefined ? {} : { travel: value.travel }),
+    ...(value.invalidWhile === undefined ? {} : { invalidWhile: value.invalidWhile }), ...(value.simulated === true ? { simulated: true as const } : {}),
+    ...(wider?.quality === 'good' && typeof wider.value === 'number' ? { widerReading: { word: value.wider!.word, value: wider.value } } : {}),
+  })
+}
 
 /** An observation as a readout's input. */
 export const observedInput = (observable: Pick<Observable, 'unit' | 'thresholds' | 'quantity' | 'decades' | 'basis'> & Partial<Pick<Observable, 'checks'>>, observation: Observation | undefined): ReadingInput => ({

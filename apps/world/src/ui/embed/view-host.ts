@@ -11,7 +11,7 @@
 // itself, it asks that page to open a display there (the contract's view-open
 // message).
 import { EMBEDDED_VIEW_MAX_HEIGHT, EMBEDDED_VIEW_MIN_HEIGHT, embeddedViewHostMessageSchema, type EmbeddedViewHeightMessage, type EmbeddedViewListing, type EmbeddedViewOpenMessage } from '@leitbild/contracts'
-import { parseDisplayFramePresentation, type DisplayFrameMap, type DisplayFrameMessage, type DisplayFrameRoom } from './display-frame-protocol.ts'
+import { parseDisplayFramePresentation, parseDisplayFrameSelect, type DisplayFrameMap, type DisplayFrameMessage, type DisplayFrameRoom } from './display-frame-protocol.ts'
 import { EXTENT_SETTLE_MS, observeDisplayExtent, type DisplayExtent } from './display-extent.ts'
 
 export interface DisplayPresentation {
@@ -71,6 +71,7 @@ export const createViewHost = (ports: ViewHostPorts) => {
   const subscribers = new Set<(presentation: DisplayPresentation) => void>()
   const onWindow = new Set<() => void>()
   const openingSubscribers = new Set<(opening: DisplayOpening | null) => void>()
+  const selectSubscribers = new Set<(select: { readonly objectId: string; readonly elementId: string }) => void>()
   const post = (message: DisplayFrameMessage | EmbeddedViewOpenMessage | EmbeddedViewHeightMessage): void => ports.parent?.postMessage(message, ports.origin)
   const opening = (): DisplayOpening | null => presentedByWindow ? 'window' : relayed ? 'relay' : null
   const openingChanged = (): void => {
@@ -85,6 +86,12 @@ export const createViewHost = (ports: ViewHostPorts) => {
       if (relayed) return
       relayed = true
       openingChanged()
+      return
+    }
+    // The window asks the display to select an element once (W2.8).
+    const select = parseDisplayFrameSelect(message.data)
+    if (select !== null) {
+      for (const subscriber of [...selectSubscribers]) subscriber({ objectId: select.objectId, elementId: select.elementId })
       return
     }
     const next = parseDisplayFramePresentation(message.data)
@@ -115,6 +122,11 @@ export const createViewHost = (ports: ViewHostPorts) => {
       return stop
     },
     current: (): DisplayPresentation => presentation,
+    /** Hears each element the window asks the display to select. Returns the stop. */
+    subscribeSelect: (subscriber: (select: { readonly objectId: string; readonly elementId: string }) => void): (() => void) => {
+      selectSubscribers.add(subscriber)
+      return () => { selectSubscribers.delete(subscriber) }
+    },
     /** Runs `start` once a display window presents this view (at once if one already has). */
     whenPresented: (start: () => void): (() => void) => {
       if (presentedByWindow) { start(); return () => {} }

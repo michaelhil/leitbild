@@ -131,11 +131,11 @@ describe('fit caps and invariants', () => {
     expect(values?.rows).toBe(16)
   })
 
-  test('a named signal without a record refuses a trend; recorded pens fill strips of four', async () => {
+  test('a named signal without a record refuses a trend; recorded states fill bands of four, never a numeric axis', async () => {
     expect(await composeVignette(run, spec(['unit:u1'], [{ kind: 'trend', signals: ['unit:u1#speed'] }]))).toMatchObject({ ok: false, issues: [{ code: 'not_observed', path: 'views.0.signals' }] })
     const outcome = await composeVignette(run, spec(['unit:u1'], [{ kind: 'trend', signals: Array.from({ length: 6 }, (_, index) => `unit:u${index}#status`) }]))
-    // Six pens of one unit: strips of four and two, each at least three rows, and the axis.
-    expect(outcome.ok && outcome.state.views[0]).toMatchObject({ kind: 'trend', horizon: '10m', rows: 4 + 3 + 1 })
+    // Six states of one unit: bands of four and two, a row each, and the time axis (W5.4).
+    expect(outcome.ok && outcome.state.views[0]).toMatchObject({ kind: 'trend', horizon: '10m', rows: 4 + 2 + 1 })
   })
 
   test('a subject no fitted view shows is refused, never dropped', async () => {

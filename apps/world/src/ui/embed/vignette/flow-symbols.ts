@@ -24,8 +24,9 @@ import type { AlertRow } from '../../../features/displays/alerts/rows.ts'
 import type { TopologyBinding, VignetteSection } from '../../../features/displays/compose/model.ts'
 import { groupName, itemText } from '../../../features/displays/topology/layout.ts'
 import { farState } from '../../../features/displays/topology/stops.ts'
+import { FLOW_TEXT, FLOW_TRACE, TEXT_INSET, type FlowTextStyle } from '../../../features/displays/topology/text.ts'
 import { VIGNETTE_ROW_PX } from './grid.ts'
-import { chevronSegment, pipeSegments, pipeValue, stubEndSegment, type PipeLook } from './pipe-segments.ts'
+import { chevronSegment, endStraight, pipeSegments, pipeValue, stubEndSegment, type PipeLook } from './pipe-segments.ts'
 import { stub } from './network.ts'
 import { activeState, observedInput, readingLook, toneOf, type AlertTone } from './readout.ts'
 import type { VesselDrawing } from './vessel-symbol.ts'
@@ -85,10 +86,38 @@ export const glyphOf = (symbol: FlowSymbol, state: DeviceState, vertical: boolea
   }
 }
 
-/** A line of an item's text: its name, its state word (or a group's count, or the word that says it stopped), the command it does not follow, a reading. */
-export interface FlowLine { readonly text: string; readonly kind: 'name' | 'word' | 'command' | 'reading' }
+/**
+ * A line of an item's text: its name, its state word (or a group's count, or the word that says it stopped), the
+ * command it does not follow, a reading; and the style it is set in (topology/text.ts), a vessel's readings larger.
+ */
+export interface FlowLine { readonly text: string; readonly kind: 'name' | 'word' | 'command' | 'reading' | 'trace'; readonly style: FlowTextStyle; readonly ref?: string }
+
+/** A line's height as drawn: its style's, or a trace's (topology/text.ts). */
+export const lineHeight = (line: FlowLine): number => (line.kind === 'trace' ? FLOW_TRACE.line : FLOW_TEXT[line.style].line)
 
 const DEVICES: ReadonlySet<FlowSymbol> = new Set(['mover', 'generator', 'valve', 'breaker', 'transformer', 'source'])
+
+/**
+ * How far inside the box it fills OpenBridge's tile draws its silhouette, per face, in px (OpenBridge 2.0.0, measured
+ * in the drawing): a compact tank's and an exchanger's state container is padded 4 px within a 1 px border
+ * (--automation-components-tanks-state-container-padding); below a tank's frame its empty readout cell keeps a 4 px
+ * gap; an exchanger's domed caps stand 2 px inside its frame. A pipe runs on to it, so it meets the vessel (W6.4).
+ */
+export const SILHOUETTE: Readonly<Record<'tank' | 'exchanger', Readonly<Record<Face, number>>>> = {
+  tank: { top: 5, right: 5, bottom: 9, left: 5 },
+  exchanger: { top: 7, right: 5, bottom: 7, left: 5 },
+}
+
+/** A pipe's `end` that meets `box` on a face, run on along its last leg by that face's inset, to the silhouette inside it. */
+export const toSilhouette = (points: ReadonlyArray<Point>, end: 'first' | 'last', box: Box, inset: Readonly<Record<Face, number>>): ReadonlyArray<Point> => {
+  const ordered = end === 'last' ? [...points] : [...points].reverse()
+  const [x, y] = ordered.at(-1)!
+  const face: Face | null = Math.abs(x - box.x) < 1 ? 'left' : Math.abs(x - (box.x + box.width)) < 1 ? 'right' : Math.abs(y - box.y) < 1 ? 'top' : Math.abs(y - (box.y + box.height)) < 1 ? 'bottom' : null
+  if (face === null) return points
+  const by = inset[face]
+  ordered[ordered.length - 1] = face === 'left' ? [x + by, y] : face === 'right' ? [x - by, y] : face === 'top' ? [x, y + by] : [x, y - by]
+  return end === 'last' ? ordered : ordered.reverse()
+}
 /** A text line of the stacks the engine kept (flow-sizing.ts). */
 export const FLOW_LINE_PX = 16
 const passing = (state: DeviceState | undefined): boolean => state?.kind === 'on' || (state?.kind === 'position' && state.fraction > 0)
@@ -101,11 +130,20 @@ export interface FlowDrawing {
   /** Each at its symbol's centre (OpenBridge's `point` positioning). */
   /** `orientation`: OpenBridge's turn of a vertical symbol (a mover's glyph turns itself). */
   readonly devices: ReadonlyArray<{ readonly id: string; readonly element: string; readonly glyph: Glyph | null; readonly x: number; readonly y: number; readonly on: boolean; readonly unknown: boolean; readonly vertical: boolean; readonly orientation: 'horizontal' | 'verticalRight'; readonly tone: AlertTone | null; readonly title: string }>
-  /** A tank's or the vessel's level in percent, null where not known; a vessel's parts each inserted 0..1, null where not known, in their groups. */
-  readonly vessels: ReadonlyArray<Box & { readonly id: string; readonly element: string; readonly kind: 'tank' | 'exchanger' | 'vessel'; readonly level: number | null; readonly unknown: boolean; readonly tone: AlertTone | null; readonly title: string; readonly drawing?: VesselDrawing; readonly parts?: ReadonlyArray<ReadonlyArray<number | null>> }>
+  /**
+   * A tank's or the vessel's level in percent, null where not known, and the program it is held to (null where none or
+   * not known); the reading an exchanger traces in its tile; a vessel's parts each inserted 0..1, null where not known,
+   * in their groups.
+   */
+  readonly vessels: ReadonlyArray<Box & {
+    readonly id: string; readonly element: string; readonly kind: 'tank' | 'exchanger' | 'vessel'; readonly level: number | null; readonly unknown: boolean; readonly tone: AlertTone | null; readonly title: string
+    readonly program: number | null; readonly trace: string | null; readonly drawing?: VesselDrawing; readonly parts?: ReadonlyArray<ReadonlyArray<number | null>>
+  }>
   readonly buses: ReadonlyArray<Box & { readonly id: string; readonly vertical: boolean; readonly title: string }>
   /** Each named item: its text, and what it is to a person (plan v5 contract 3). */
   readonly texts: ReadonlyArray<FlowItem>
+  /** What the alerts of the items outlined as expected are expected after ("RX TRIP"), each once: the legend names it. */
+  readonly expectedAfter: ReadonlyArray<string>
 }
 
 /**
@@ -128,6 +166,8 @@ export interface FlowItem {
   readonly targets: ReadonlyArray<{ readonly element: string; readonly label: string }>
   readonly area: Box
   readonly outline: 'abnormal' | 'expected' | 'low-integrity' | null
+  /** Where its text stands beside its symbol: its first line keeps clear of the symbol's alert frame there. */
+  readonly side: 'top' | 'right' | 'bottom' | 'left'
 }
 
 export const flowDrawing = (section: Topology, observations: ReadonlyArray<Observation>, alerts: ReadonlyArray<AlertRow>, frozen: boolean): FlowDrawing => {
@@ -194,6 +234,26 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
     return [[node.id, symbolOf(view, lines, thin(box))] as const]
   }))
   const states = new Map([...symbols.keys()].map(id => [id, stateOf(byId.get(id)!)]))
+  // A pipe to where the drawing stops ends on a straight of its own, never with its cap in a bend (W6.3).
+  const stopAt = (point: Point): Box | undefined => [...boxes].find(([id, box]) => symbols.get(id) === 'end' && inside(box)(point))?.[1]
+  // A pipe to a tank or an exchanger runs on to its silhouette, inside the box OpenBridge's tile fills (W6.4).
+  const vesselAt = (point: Point): { readonly box: Box; readonly inset: Readonly<Record<Face, number>> } | undefined => {
+    const [id, box] = [...boxes].find(([key, entry]) => (symbols.get(key) === 'tank' || symbols.get(key) === 'exchanger') && inside(entry)(point)) ?? []
+    return id === undefined ? undefined : { box: box!, inset: SILHOUETTE[symbols.get(id) as 'tank' | 'exchanger'] }
+  }
+  const pipes = new Map(edges.map(edge => {
+    const [first, last] = [stopAt(edge.points[0]!), stopAt(edge.points.at(-1)!)]
+    const ended = last === undefined ? edge.points : endStraight(edge.points, 'last', last)
+    const both = first === undefined ? ended : endStraight(ended, 'first', first)
+    const [into, from] = [vesselAt(edge.points.at(-1)!), vesselAt(edge.points[0]!)]
+    const reached = into === undefined ? both : toSilhouette(both, 'last', into.box, into.inset)
+    return [edge.id, from === undefined ? reached : toSilhouette(reached, 'first', from.box, from.inset)] as const
+  }))
+  // Where a chevron may not stand: on the drawing's text, its symbols and its bars.
+  const avoid: ReadonlyArray<Box> = [
+    ...section.layout.nodes.flatMap(node => (node.text === undefined ? [] : [{ x: px(node.text.x), y: px(node.text.y), width: px(node.text.width), height: px(node.text.height) }])),
+    ...[...boxes].filter(([id]) => symbols.get(id) !== 'end').map(([, box]) => box),
+  ]
 
   // A pipe reads its flow where it is bound (a stop's, the lines it stands for: forward where any flows); else it is
   // open unless a switch at either end reads shut, never emptied by what is not known.
@@ -206,12 +266,15 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
     const ends = [edge.points[0]!, edge.points.at(-1)!].map(point => [...boxes].find(([, box]) => inside(box)(point))?.[0])
     return ends.some(id => id !== undefined && ['valve', 'breaker'].includes(symbols.get(id) ?? '') && shut(states.get(id))) ? 'none' : 'open'
   }
+  // Principal lines medium, auxiliary and electric ones small (U-20); headers large.
+  const sizeOf = (edge: (typeof edges)[number]): 'small' | 'medium' => edge.view?.mediumKind.startsWith('electric') === true || edge.view?.auxiliary === true ? 'small' : 'medium'
   const segments: Segment[] = edges.flatMap(edge => {
     const look = lookOf(edge)
-    const size = edge.view?.mediumKind.startsWith('electric') === true ? 'small' : 'medium'
+    const size = sizeOf(edge)
     const value = look === 'open' ? 'open-generic' : pipeValue(look)
-    const chevron = look === 'forward' || look === 'reverse' ? chevronSegment(edge.id, edge.points, edge.gaps, value, size, look === 'reverse') : null
-    return [...pipeSegments(edge.id, edge.points, edge.gaps, value, size), ...(chevron === null ? [] : [chevron])]
+    const points = pipes.get(edge.id)!
+    const chevron = look === 'forward' || look === 'reverse' ? chevronSegment(edge.id, points, edge.gaps, value, size, look === 'reverse', avoid) : null
+    return [...pipeSegments(edge.id, points, edge.gaps, value, size), ...(chevron === null ? [] : [chevron])]
   })
 
   const drawing: { devices: FlowDrawing['devices'][number][]; vessels: FlowDrawing['vessels'][number][]; buses: FlowDrawing['buses'][number][]; texts: FlowItem[] } = { devices: [], vessels: [], buses: [], texts: [] }
@@ -235,12 +298,12 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
     const stateLines = (binding: TopologyBinding, commanded: boolean): ReadonlyArray<FlowLine> => {
       const word = binding.states === undefined ? '' : readingOf(binding, 'enum').text
       const why = usable(binding)?.why
-      const command: ReadonlyArray<FlowLine> = commanded ? [{ text: why ?? '', kind: 'command' }] : []
-      if (binding.role !== 'stopped') return [{ text: word, kind: 'word' }, ...command]
+      const command: ReadonlyArray<FlowLine> = commanded ? [{ text: why ?? '', kind: 'command', style: 'command' }] : []
+      if (binding.role !== 'stopped') return [{ text: word, kind: 'word', style: 'word' }, ...command]
       // The word that says it stopped while it holds; while a command to stop it stands unmet its other word, with that
       // command; else nothing ("?" or "—" where it is not known, or outside its validity).
       const stopped = activeState(usable(binding)?.value, binding.states)
-      return [{ text: stopped === true || usable(binding) === null || why !== undefined ? word : '', kind: 'word' }, ...command]
+      return [{ text: stopped === true || usable(binding) === null || why !== undefined ? word : '', kind: 'word', style: 'word' }, ...command]
     }
     const groupLines = (): ReadonlyArray<FlowLine> => {
       const states = members.flatMap(member => itemText(member.bindings).state ?? [])
@@ -250,7 +313,7 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
       const running = looks.filter(state => passing(state)).length
       const count = looks.some(state => state.kind === 'unknown') ? `${on ?? ''} ?/${members.length}` : running > 0 || off === undefined ? `${on ?? ''} ${running}/${members.length}` : `${off} ${members.length}/${members.length}`
       const why = states.flatMap(state => usable(state)?.why ?? [])[0]
-      return [{ text: count.trim(), kind: 'word' }, ...(members.some(member => itemText(member.bindings).commanded) ? [{ text: why ?? '', kind: 'command' as const }] : [])]
+      return [{ text: count.trim(), kind: 'word', style: 'word' }, ...(members.some(member => itemText(member.bindings).commanded) ? [{ text: why ?? '', kind: 'command' as const, style: 'command' as const }] : [])]
     }
     // A stop on a power line writes the state of what it names, in their words: all of them ("LIVE"), none ("DEAD"),
     // or how many ("LIVE 1/2"); "?" while one is not known. Never the line's own, which its pipe draws.
@@ -272,35 +335,43 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
       }
       return reading[0]!
     }
-    const sized: ReadonlyArray<FlowLine> = view.stop !== undefined ? [{ text: name, kind: 'name' }, ...((node.text?.lines ?? 1) > 1 ? [{ text: stopWord(), kind: 'word' as const }] : [])]
-      : members.length > 1 ? [{ text: name, kind: 'name' }, ...groupLines()]
+    // A vessel (a tank, an exchanger, the lanes' hub) writes its readings larger.
+    const readingStyle: FlowTextStyle = symbol === 'tank' || symbol === 'exchanger' || symbol === 'vessel' ? 'vesselReading' : 'reading'
+    const sized: ReadonlyArray<FlowLine> = view.stop !== undefined
+      ? [...view.stop.lines.map(text => ({ text, kind: 'name' as const, style: 'name' as const })), ...((node.text?.lines ?? 1) > view.stop.lines.length ? [{ text: stopWord(), kind: 'word' as const, style: 'word' as const }] : [])]
+      : members.length > 1 ? [{ text: name, kind: 'name', style: 'name' }, ...groupLines()]
       : [
-        { text: name, kind: 'name' },
+        { text: name, kind: 'name', style: 'name' },
         ...(written.state === null ? [] : stateLines(written.state, written.commanded)),
         ...written.readings.map(reading => {
           const binding = inRange(reading)
-          if (binding === null) return { text: '?', kind: 'reading' as const }
+          if (binding === null) return { text: '?', kind: 'reading' as const, style: readingStyle }
           const look = readingOf(binding, 'number')
           const value = look.unit === '' ? look.text : `${look.text} ${look.unit}`
           // A share says what it reads (its Pack's word, "LVL", "PWR"), in the room the sizing reserved for the word beside the value.
-          return { text: binding.word === undefined ? value : `${binding.word} ${value}`, kind: 'reading' as const }
+          return { text: binding.word === undefined ? value : `${binding.word} ${value}`, kind: 'reading' as const, style: readingStyle }
         }),
+        // What it traces over its last ten minutes, under its readings (W6.6); an exchanger traces in its tile.
+        ...(view.class === 'transfer' ? [] : view.bindings.filter(binding => binding.trace === true).slice(0, 1).map(binding => ({ text: '', kind: 'trace' as const, style: readingStyle, ref: binding.ref }))),
       ]
-    const lines = sized.filter(line => line.text !== '')
-    const title = [view.label, ...lines.slice(1).map(line => line.text)].join(' · ')
+    const drawnLine = (line: FlowLine): boolean => line.text !== '' || line.kind === 'trace'
+    const lines = sized.filter(drawnLine)
+    const title = [view.label, ...lines.slice(1).filter(line => line.kind !== 'trace').map(line => line.text)].join(' · ')
     if (node.text !== undefined) {
-      const shown = sized.slice(0, Math.max(1, node.text.lines)).filter(line => line.text !== '')
+      const shown = sized.slice(0, Math.max(view.stop?.lines.length ?? 1, node.text.lines)).filter(drawnLine)
       // A command not followed is outlined, else alerts all expected, where no alarm frames the item; the frame says more.
       const outline = frozen ? (last !== null || expectedAt(members) ? 'low-integrity' as const : null)
         : tone !== null ? null : lines.some(line => line.kind === 'command') ? 'abnormal' as const : expectedAt(members) ? 'expected' as const : null
       // What a press opens: a stop the equipment it names, a group its members, an item its element; nothing without one.
       const targets = view.stop !== undefined ? view.stop.far.flatMap(end => (end.element === undefined ? [] : [{ element: end.element, label: end.label }]))
         : members.flatMap(member => (member.element === undefined ? [] : [{ element: member.element, label: member.label }]))
-      const text = { x: px(node.text.x), y: px(node.text.y), width: px(node.text.width), height: px(node.text.height) }
+      const laid = { x: px(node.text.x), y: px(node.text.y), width: px(node.text.width), height: px(node.text.height) }
+      // Its lines keep clear of the alert frame round its symbol by the inset the sizing reserved on that side (U-14).
+      const text = node.text.side === 'right' ? { ...laid, x: laid.x + TEXT_INSET, width: laid.width - TEXT_INSET } : node.text.side === 'left' ? { ...laid, width: laid.width - TEXT_INSET } : laid
       // A device's symbol is its two cells at its centre; anything else covers its box.
       const drawn = DEVICES.has(symbol) ? { x: box.x + box.width / 2 - VIGNETTE_ROW_PX, y: box.y + box.height / 2 - VIGNETTE_ROW_PX, width: 2 * VIGNETTE_ROW_PX, height: 2 * VIGNETTE_ROW_PX } : box
       const area = { x: Math.min(drawn.x, text.x), y: Math.min(drawn.y, text.y), width: Math.max(drawn.x + drawn.width, text.x + text.width) - Math.min(drawn.x, text.x), height: Math.max(drawn.y + drawn.height, text.y + text.height) - Math.min(drawn.y, text.y) }
-      drawing.texts.push({ id: node.id, kind: view.stop !== undefined ? 'stop' : members.length > 1 ? 'group' : 'item', x: text.x, y: text.y, width: text.width, lines: shown, tone, title, targets, area, outline })
+      drawing.texts.push({ id: node.id, kind: view.stop !== undefined ? 'stop' : members.length > 1 ? 'group' : 'item', x: text.x, y: text.y, width: text.width, lines: shown, tone, title, targets, area, outline, side: node.text.side })
     }
     const counted = members.map(stateOf)
     const state: DeviceState = members.length > 1
@@ -317,8 +388,12 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
       const positions = view.bindings.filter(binding => binding.role === 'position')
       const parts = [...new Set(positions.map(binding => binding.group))].map(group => positions.filter(binding => binding.group === group).map(binding => { const value = percent(binding); return value === null ? null : value / 100 }))
       const nozzles = Object.values(node.ports).map(port => ({ x: px(port.x), y: px(port.y), face: port.face as Face }))
+      // The program its level is held to, marked on it as OpenBridge's set point; an exchanger's traced level, in its tile (W6.6).
+      const program = view.bindings.find(binding => binding.role === 'program')
+      const traced = symbol === 'exchanger' ? view.bindings.find(binding => binding.trace === true) : undefined
       drawing.vessels.push({
         id: node.id, element, kind: symbol, ...box, level: level === undefined ? null : percent(level), unknown: level !== undefined && percent(level) === null, tone, title,
+        program: program === undefined ? null : percent(program), trace: traced?.ref ?? null,
         ...(symbol === 'vessel' ? { drawing: { span: { x: 0, width: box.width }, nozzles, core: parts.length > 0 ? 'overlap' as const : null }, parts } : {}),
       })
     } else if (symbol === 'bus' || symbol === 'header') {
@@ -332,16 +407,19 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
       for (const edge of endsAt(node.id)) {
         const end = inside(box)(edge.points[0]!) ? edge.points[0]! : edge.points.at(-1)!
         const look = lookOf(edge)
-        segments.push(...pipeSegments(`${node.id}:${end.join(',')}`, stub(end, centre, box), [], look === 'open' ? 'open-generic' : pipeValue(look), edge.view?.mediumKind.startsWith('electric') === true ? 'small' : 'medium'))
+        segments.push(...pipeSegments(`${node.id}:${end.join(',')}`, stub(end, centre, box), [], look === 'open' ? 'open-generic' : pipeValue(look), sizeOf(edge)))
       }
     } else if (symbol === 'end') {
       // Where the drawing stops, or meets another graph: OpenBridge's end cap on the line that arrives.
       for (const edge of endsAt(node.id)) {
         const out = inside(box)(edge.points.at(-1)!)
         const look = lookOf(edge)
-        segments.push(stubEndSegment(`${edge.id}:end`, edge.points, out ? 'out' : 'in', look === 'open' ? 'open-generic' : pipeValue(look), edge.view?.mediumKind.startsWith('electric') === true ? 'small' : 'medium', look === 'forward'))
+        segments.push(stubEndSegment(`${edge.id}:end`, pipes.get(edge.id)!, out ? 'out' : 'in', look === 'open' ? 'open-generic' : pipeValue(look), sizeOf(edge)))
       }
     }
   }
-  return { width: px(section.layout.width), height: px(section.layout.height), segments, ...drawing }
+  const outlinedExpected = new Set(drawing.texts.filter(text => text.outline === 'expected').map(text => text.id))
+  const expectedAfter = [...new Set(section.layout.nodes.filter(node => outlinedExpected.has(node.id))
+    .flatMap(node => rowsAt((node.members ?? [node.id]).flatMap(id => byId.get(id) ?? [])).flatMap(row => row.expected?.after ?? [])))]
+  return { width: px(section.layout.width), height: px(section.layout.height), segments, ...drawing, expectedAfter }
 }
