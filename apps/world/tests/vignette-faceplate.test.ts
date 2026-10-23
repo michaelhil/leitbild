@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { embeddedViewOpenMessageSchema, newWorkspaceId, type EmbeddedViewOpenMessage } from '@leitbild/contracts'
+import { embeddedViewOpenMessageSchema, newWorkspaceId, type EmbeddedViewHeightMessage, type EmbeddedViewOpenMessage } from '@leitbild/contracts'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { SimulationRunId } from '../src/core/model/index.ts'
@@ -24,8 +24,8 @@ const workspaceId = newWorkspaceId()
 const runId = 'run-1' as SimulationRunId
 
 const framed = () => {
-  const posted: Array<DisplayFrameMessage | EmbeddedViewOpenMessage> = []
-  const parent = { postMessage: (message: DisplayFrameMessage | EmbeddedViewOpenMessage) => { posted.push(message) } }
+  const posted: Array<DisplayFrameMessage | EmbeddedViewOpenMessage | EmbeddedViewHeightMessage> = []
+  const parent = { postMessage: (message: DisplayFrameMessage | EmbeddedViewOpenMessage | EmbeddedViewHeightMessage) => { posted.push(message) } }
   let receive: ((message: ReceivedMessage) => void) | null = null
   const host = createViewHost({ parent, origin, listen: next => { receive = next; return () => { receive = null } }, refused: () => {} })
   let opening: Parameters<typeof elementOffer>[0] = null

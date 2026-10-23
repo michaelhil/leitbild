@@ -10,9 +10,9 @@
 // Workspace's window, or World's procedure tag dialog, which opens the window
 // itself, it asks that page to open a display there (the contract's view-open
 // message).
-import { embeddedViewHostMessageSchema, type EmbeddedViewListing, type EmbeddedViewOpenMessage } from '@leitbild/contracts'
+import { EMBEDDED_VIEW_MAX_HEIGHT, EMBEDDED_VIEW_MIN_HEIGHT, embeddedViewHostMessageSchema, type EmbeddedViewHeightMessage, type EmbeddedViewListing, type EmbeddedViewOpenMessage } from '@leitbild/contracts'
 import { parseDisplayFramePresentation, type DisplayFrameMap, type DisplayFrameMessage, type DisplayFrameRoom } from './display-frame-protocol.ts'
-import { observeDisplayExtent, type DisplayExtent } from './display-extent.ts'
+import { EXTENT_SETTLE_MS, observeDisplayExtent, type DisplayExtent } from './display-extent.ts'
 
 export interface DisplayPresentation {
   readonly shown: boolean
@@ -45,7 +45,7 @@ export interface ReceivedMessage {
 /** The page a view host runs in; a test passes its own. */
 export interface ViewHostPorts {
   /** The window framing this page; null for a page of its own. */
-  readonly parent: { readonly postMessage: (message: DisplayFrameMessage | EmbeddedViewOpenMessage, targetOrigin: string) => void } | null
+  readonly parent: { readonly postMessage: (message: DisplayFrameMessage | EmbeddedViewOpenMessage | EmbeddedViewHeightMessage, targetOrigin: string) => void } | null
   readonly origin: string
   readonly listen: (receive: (message: ReceivedMessage) => void) => () => void
   /** Says that the framing window sent something this view cannot read. */
@@ -59,6 +59,7 @@ export const createViewHost = (ports: ViewHostPorts) => {
   let presentedByWindow = false
   let relayed = false
   let reported: string | null = null
+  let heightReported: number | null = null
   // What asks the window for the body's whole height (a standing faceplate, an alerts-only display), and what it was told.
   const fills = new Set<string>()
   let filled = false
@@ -70,7 +71,7 @@ export const createViewHost = (ports: ViewHostPorts) => {
   const subscribers = new Set<(presentation: DisplayPresentation) => void>()
   const onWindow = new Set<() => void>()
   const openingSubscribers = new Set<(opening: DisplayOpening | null) => void>()
-  const post = (message: DisplayFrameMessage | EmbeddedViewOpenMessage): void => ports.parent?.postMessage(message, ports.origin)
+  const post = (message: DisplayFrameMessage | EmbeddedViewOpenMessage | EmbeddedViewHeightMessage): void => ports.parent?.postMessage(message, ports.origin)
   const opening = (): DisplayOpening | null => presentedByWindow ? 'window' : relayed ? 'relay' : null
   const openingChanged = (): void => {
     for (const subscriber of [...openingSubscribers]) subscriber(opening())
@@ -164,6 +165,17 @@ export const createViewHost = (ports: ViewHostPorts) => {
      * Asks the window for the body's whole height while any part of the display does (`reason` names that part: a
      * drawing's standing faceplates, an alerts-only display), or stops asking; told once presented and on each change.
      */
+    /**
+     * Tells the page that frames this view inline (a chat answer's) the height its content takes, so the frame keeps
+     * no empty band under it (W7.3); a window sizes its frames itself, so nothing is told once one presents the view.
+     */
+    reportHeight: (height: number): void => {
+      if (ports.parent === null || presentedByWindow) return
+      const whole = Math.min(EMBEDDED_VIEW_MAX_HEIGHT, Math.max(EMBEDDED_VIEW_MIN_HEIGHT, Math.ceil(height)))
+      if (whole === heightReported) return
+      heightReported = whole
+      post({ type: 'leitbild:view-height', height: whole })
+    },
     reportFill: (reason: string, fill: boolean): void => {
       if (fill) fills.add(reason)
       else fills.delete(reason)
@@ -410,6 +422,34 @@ export const escapeGoesBack = (host: Pick<ViewHost, 'back'>, target: Pick<Window
  * window the room its content needs, passes zoom gestures to the window, and
  * steps Back on Esc.
  */
+/** The height a page needs to show the card whole: down to its bottom, with the page's own margin under it. */
+export const inlineHeight = (card: { readonly bottom: number }, page: { readonly scrollY: number; readonly marginBottom: number }): number =>
+  Math.ceil(card.bottom + page.scrollY + page.marginBottom)
+
+/**
+ * Reports the card's height whenever it settles after a change, once the view has drawn (before that it would say the
+ * height of "Connecting…" and the frame would jump). The view host drops the reports once a window presents it.
+ */
+const observeInlineHeight = (config: {
+  readonly card: HTMLElement
+  readonly drawing: () => object | undefined
+  readonly report: (height: number) => void
+}): (() => void) => {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const settle = (): void => {
+    if (config.drawing() === undefined) return
+    config.report(inlineHeight(config.card.getBoundingClientRect(), { scrollY: window.scrollY, marginBottom: Number.parseFloat(getComputedStyle(document.body).marginBottom) || 0 }))
+  }
+  const schedule = (): void => {
+    clearTimeout(timer)
+    timer = setTimeout(settle, EXTENT_SETTLE_MS)
+  }
+  const resized = new ResizeObserver(schedule)
+  resized.observe(config.card)
+  schedule()
+  return () => { clearTimeout(timer); resized.disconnect() }
+}
+
 export const hostDisplayFrame = (config: {
   readonly kind: 'advice' | 'generated'
   readonly card: HTMLElement | null
@@ -451,6 +491,8 @@ export const hostDisplayFrame = (config: {
     host.whenPresented(() => {
       windowStops.push(forwardZoomGestures(host), escapeGoesBack(host, window), observeDisplayExtent({ kind: config.kind, card, drawing: config.drawing, report: host.reportExtent }))
     }),
+    // Inline (no window presents it): the frame fits the content's height, once it has drawn (inlineHeight).
+    observeInlineHeight({ card, drawing: config.drawing, report: host.reportHeight }),
     host.listen(),
   ]
   return () => { for (const stop of [...stops, ...windowStops]) stop() }

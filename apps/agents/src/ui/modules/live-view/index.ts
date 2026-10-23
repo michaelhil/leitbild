@@ -17,13 +17,14 @@ import { openView } from './open.ts'
 import {
   createViewListPublisher,
   createViewListSync,
+  inlineHeightRequest,
   inlineHostAnnouncement,
   inlineOpenRequest,
   isViewHostAnnouncement,
   workspaceRoomHref,
   type ViewHostMessage,
 } from './host-link.ts'
-import { inlineFrameWindows, relayInlineOpens } from './inline.ts'
+import { fitInline, inlineFrameWindows, relayInlineOpens } from './inline.ts'
 import { citeKeys, createChipHost, fenceNotice, promoteUnhostedChips, showAvailable, showPreparing, showRefused, showUnhosted, type ChipActions, type ChipCard } from './chip.ts'
 
 // Long enough for a burst of re-renders and resolutions to settle into one
@@ -146,6 +147,12 @@ addPostRenderProcessor('leitbild-view', renderViewBlocks)
 addPostRenderProcessor('leitbild-card-keys', renderCitedKeys)
 
 window.addEventListener('message', event => {
+  // An inline display says how tall its content is: its frame fits it, hosted or not (W7.3).
+  const height = inlineHeightRequest(event, { origin: location.origin, inlineFrames: inlineFrameWindows() })
+  if (height !== null) {
+    fitInline(event.source, height)
+    return
+  }
   // An inline display asks for another in the window (C1 E5: a chip or banner label on it): relayed while hosted.
   const open = hosted ? inlineOpenRequest(event, { origin: location.origin, workspaceId: currentWorkspaceId(), inlineFrames: inlineFrameWindows() }) : null
   if (open !== null) {

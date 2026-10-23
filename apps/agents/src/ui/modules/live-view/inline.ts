@@ -1,9 +1,11 @@
 // A display shown inline in its answer, on the reader's request, as well as
 // in the Workspace's process display window. The frame is World's embed page
-// at the height the display was published with. It samples only while it can
-// be seen: it mounts when its slot scrolls into view and is dropped after the
-// slot has been out of view for a while; the slot keeps its height meanwhile,
-// so the conversation does not jump.
+// at the height the display was published with, until the display says what
+// its content takes (a drawing too wide for the chat gave way to a link,
+// W7.3): then the frame and its slot take that, no empty band and nothing cut. It
+// samples only while it can be seen: it mounts when its slot scrolls into view
+// and is dropped after the slot has been out of view for a while; the slot
+// keeps its height meanwhile, so the conversation does not jump.
 import type { EmbeddedViewEnvelope } from '@leitbild/contracts'
 import { embeddedViewFragment, embeddedViewPath } from '@leitbild/contracts/embedded-view-route'
 
@@ -18,6 +20,8 @@ interface InlineSlot {
   readonly envelope: EmbeddedViewEnvelope
   readonly observer: IntersectionObserver
   frame: HTMLIFrameElement | null
+  /** The height the display last said its content takes; the published one until it says. */
+  height: number
   offscreenTimer: ReturnType<typeof setTimeout> | undefined
 }
 
@@ -37,12 +41,12 @@ export const relayInlineOpens = (announce: (frame: HTMLIFrameElement) => void): 
 export const inlineFrameWindows = (): ReadonlyArray<Window> =>
   [...slots.values()].flatMap(inline => inline.frame?.contentWindow == null ? [] : [inline.frame.contentWindow])
 
-const frameFor = (envelope: EmbeddedViewEnvelope): HTMLIFrameElement => {
+const frameFor = (envelope: EmbeddedViewEnvelope, height: number): HTMLIFrameElement => {
   const frame = document.createElement('iframe')
   frame.addEventListener('load', () => announceTo?.(frame))
   frame.src = embeddedViewPath(envelope) + embeddedViewFragment(envelope)
   frame.title = `Live display: ${envelope.title}`
-  frame.style.cssText = `display:block;width:100%;height:${envelope.height}px;border:0;`
+  frame.style.cssText = `display:block;width:100%;height:${height}px;border:0;`
   // The chat page may hold camera permission for biometrics; a display never gets it.
   frame.setAttribute('allow', "camera 'none'; microphone 'none'; geolocation 'none'; display-capture 'none'")
   frame.setAttribute('referrerpolicy', 'same-origin')
@@ -60,7 +64,7 @@ const mount = (inline: InlineSlot): void => {
   clearTimeout(inline.offscreenTimer)
   inline.offscreenTimer = undefined
   if (inline.frame !== null) return
-  inline.frame = frameFor(inline.envelope)
+  inline.frame = frameFor(inline.envelope, inline.height)
   inline.slot.replaceChildren(inline.frame)
 }
 
@@ -92,6 +96,7 @@ export const showInline = (slot: HTMLElement, envelope: EmbeddedViewEnvelope): v
     slot,
     envelope,
     frame: null,
+    height: envelope.height,
     offscreenTimer: undefined,
     observer: new IntersectionObserver(entries => {
       for (const entry of entries) onVisibility(inline, entry.isIntersecting)
@@ -100,6 +105,16 @@ export const showInline = (slot: HTMLElement, envelope: EmbeddedViewEnvelope): v
   slots.set(slot, inline)
   inline.observer.observe(slot)
   sweepTimer ??= setInterval(sweep, SWEEP_MS)
+}
+
+/** Fits the inline frame whose window said its content's height (inlineHeightRequest) to it, and its slot with it. */
+export const fitInline = (source: unknown, reported: number): void => {
+  const inline = [...slots.values()].find(candidate => candidate.frame?.contentWindow === source)
+  const frame = inline?.frame
+  if (inline === undefined || frame == null) return
+  inline.height = reported
+  inline.slot.style.height = `${inline.height}px`
+  frame.style.height = `${inline.height}px`
 }
 
 export const hideInline = (slot: HTMLElement): void => {

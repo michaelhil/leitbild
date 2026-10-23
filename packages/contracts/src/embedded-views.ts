@@ -92,6 +92,17 @@ export const embeddedViewSubjectOpenMessageSchema = z.object({
 }).strict()
 export type EmbeddedViewSubjectOpenMessage = z.infer<typeof embeddedViewSubjectOpenMessageSchema>
 
+/**
+ * A view framed inline (a chat answer's display) -> the page framing it: the height its content takes now, within
+ * the heights a view may have, so the page fits the frame to what it shows: no empty band under it (a drawing too
+ * wide for a chat gives way to a link), and no row of it cut off.
+ */
+export const embeddedViewHeightMessageSchema = z.object({
+  type: z.literal('leitbild:view-height'),
+  height: z.number().int().min(EMBEDDED_VIEW_MIN_HEIGHT).max(EMBEDDED_VIEW_MAX_HEIGHT),
+}).strict()
+export type EmbeddedViewHeightMessage = z.infer<typeof embeddedViewHeightMessageSchema>
+
 /** Host -> Module UI on frame load: views listed or opened from this frame reach a window. */
 export const embeddedViewHostMessageSchema = z.object({
   type: z.literal('leitbild:view-host'),
