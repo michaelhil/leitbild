@@ -76,6 +76,12 @@
   const MARKS_EVERY_MS = 2_000
   /** A device symbol's two grid cells. */
   const SYMBOL_PX = 2 * VIGNETTE_ROW_PX
+  /** How far an outline stands off its item's symbol and text, within the drawing. */
+  const OUTLINE_PX = 4
+  const outlined = (area: Box): Box => {
+    const [x, y] = [Math.max(0, area.x - OUTLINE_PX), Math.max(0, area.y - OUTLINE_PX)]
+    return { x, y, width: Math.min(drawing.width, area.x + area.width + OUTLINE_PX) - x, height: Math.min(drawing.height, area.y + area.height + OUTLINE_PX) - y }
+  }
   /** OpenBridge's alert type for each priority drawn in colour; emergency is its critical level. */
   const ALERT_TYPE: Readonly<Record<AlertTone, string>> = { caution: 'caution', warning: 'warning', alarm: 'alarm', critical: 'level-critical' }
 
@@ -530,7 +536,7 @@
         onclick={opens(text.id) ? () => bodyPress(text.id) : undefined} {...(opens(text.id) ? hover(text.id) : {})}>
         {#each text.lines as line, at (at)}<span class={line.kind} style:font-size={`${FLOW_TEXT[line.style].size}px`} style:line-height={`${FLOW_TEXT[line.style].line}px`}>{line.text}</span>{/each}
       </div>
-      {#if text.outline !== null}<div class={`outline ${text.outline}`} aria-hidden="true" style:left={`${text.area.x - 2}px`} style:top={`${text.area.y - 2}px`} style:width={`${text.area.width + 4}px`} style:height={`${text.area.height + 4}px`}></div>{/if}
+      {#if text.outline !== null}{@const box = outlined(text.area)}<div class={`outline ${text.outline}`} aria-hidden="true" style:left={`${box.x}px`} style:top={`${box.y}px`} style:width={`${box.width}px`} style:height={`${box.height}px`}></div>{/if}
     {/each}
   </div>
   </div>
@@ -609,10 +615,11 @@
   .magnifier:focus-visible .glyph { outline: 2px solid var(--border-focus-color); }
   @media (pointer: coarse) { .magnifier { opacity: 1; } }
   .notice { margin: 0; font-size: 12px; color: var(--element-active-color); }
-  /* An item not following a command: outlined just outside its symbol and text in OpenBridge's enhanced neutral, never an alarm's colour; dashed and neutral where its alerts are all expected after a first-out. */
-  .outline { position: absolute; box-sizing: border-box; border: 2px solid var(--element-neutral-enhanced-color); border-radius: 4px; pointer-events: none; }
-  .outline.expected { border-style: dashed; border-color: var(--element-neutral-color); }
+  /* An item not following a command (its CMD word bold), or whose alerts are all expected after a first-out (dashed):
+     a hairline in OpenBridge's neutral, quieter than any alert frame, so the one alarm that is not expected stands out. */
+  .outline { position: absolute; box-sizing: border-box; border: 1px solid var(--element-neutral-color); border-radius: 4px; pointer-events: none; }
+  .outline.expected { border-style: dashed; }
   /* Frozen: where an alert stood, OpenBridge's low-integrity border in place of its frame (W8.1). */
-  .outline.low-integrity { border-color: var(--alert-low-integrity-border-color); }
+  .outline.low-integrity { border-width: 2px; border-color: var(--alert-low-integrity-border-color); }
   .attribution { margin: 0; height: var(--row); line-height: var(--row); font-size: 12px; color: var(--element-neutral-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
