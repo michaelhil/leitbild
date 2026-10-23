@@ -233,4 +233,11 @@ describe('what a faceplate reads', () => {
     expect(shownReadings(6, { rest: 200, row, pending: false, rows: 2 })).toEqual({ shown: 2, more: 4 })
     expect(shownReadings(3, { rest: 600, row, pending: false, rows: null })).toEqual({ shown: 1, more: 2 })
   })
+
+  test('a frozen display\'s faceplate keeps its last readings, in the low-integrity style, never "?"', () => {
+    const source = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Faceplate.svelte'), 'utf8')
+    expect(source).toContain('const observations = $derived(readings === null ? [] : readings.observations)')
+    expect(source).toContain('const shown = (look: ReadingLook): ReadingLook => (frozen ? { ...look, doubtful: true } : look)')
+    expect(source).toContain('{@const look = shown(valueLook(value, observations, value.ref))}')
+  })
 })
