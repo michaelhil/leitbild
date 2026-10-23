@@ -97,6 +97,13 @@ export const lineHeight = (line: FlowLine): number => (line.kind === 'trace' ? F
 
 const DEVICES: ReadonlySet<FlowSymbol> = new Set(['mover', 'generator', 'valve', 'breaker', 'transformer', 'source'])
 
+/** How thick a header's or a bus's bar is drawn and pressed (a bus is OpenBridge's 16 px bar; a header the large pipe in it). */
+export const BAR_PX = 16
+/** A header's or a bus's bar along the middle of its box, the longer way. */
+export const barOf = (box: Box): Box => box.width >= box.height
+  ? { x: box.x, y: box.y + box.height / 2 - BAR_PX / 2, width: box.width, height: BAR_PX }
+  : { x: box.x + box.width / 2 - BAR_PX / 2, y: box.y, width: BAR_PX, height: box.height }
+
 /**
  * How far inside the box it fills OpenBridge's tile draws its silhouette, per face, in px (OpenBridge 2.0.0, measured
  * in the drawing): a compact tank's and an exchanger's state container is padded 4 px within a 1 px border
@@ -165,6 +172,11 @@ export interface FlowItem {
   readonly title: string
   readonly targets: ReadonlyArray<{ readonly element: string; readonly label: string }>
   readonly area: Box
+  /**
+   * What a press on its drawing takes besides its words (which press it themselves): its symbol; a header's or a bus's
+   * bar, never its whole layout box, which can hold other items' lines and words; else its box.
+   */
+  readonly press: Box
   readonly outline: 'abnormal' | 'expected' | 'low-integrity' | null
   /** Where its text stands beside its symbol: its first line keeps clear of the symbol's alert frame there. */
   readonly side: 'top' | 'right' | 'bottom' | 'left'
@@ -371,7 +383,8 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
       // A device's symbol is its two cells at its centre; anything else covers its box.
       const drawn = DEVICES.has(symbol) ? { x: box.x + box.width / 2 - VIGNETTE_ROW_PX, y: box.y + box.height / 2 - VIGNETTE_ROW_PX, width: 2 * VIGNETTE_ROW_PX, height: 2 * VIGNETTE_ROW_PX } : box
       const area = { x: Math.min(drawn.x, text.x), y: Math.min(drawn.y, text.y), width: Math.max(drawn.x + drawn.width, text.x + text.width) - Math.min(drawn.x, text.x), height: Math.max(drawn.y + drawn.height, text.y + text.height) - Math.min(drawn.y, text.y) }
-      drawing.texts.push({ id: node.id, kind: view.stop !== undefined ? 'stop' : members.length > 1 ? 'group' : 'item', x: text.x, y: text.y, width: text.width, lines: shown, tone, title, targets, area, outline, side: node.text.side })
+      const press = symbol === 'header' || symbol === 'bus' ? barOf(box) : drawn
+      drawing.texts.push({ id: node.id, kind: view.stop !== undefined ? 'stop' : members.length > 1 ? 'group' : 'item', x: text.x, y: text.y, width: text.width, lines: shown, tone, title, targets, area, press, outline, side: node.text.side })
     }
     const counted = members.map(stateOf)
     const state: DeviceState = members.length > 1
@@ -400,7 +413,7 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
       const horizontal = box.width >= box.height
       const at = horizontal ? box.y + box.height / 2 : box.x + box.width / 2
       if (symbol === 'header') segments.push({ kind: 'straight', connectionId: node.id, value: 'open-generic', size: 'large', ...(horizontal ? { x1: box.x, y1: at, x2: box.x + box.width, y2: at } : { x1: at, y1: box.y, x2: at, y2: box.y + box.height }) })
-      else drawing.buses.push({ id: node.id, vertical: !horizontal, title, ...(horizontal ? { x: box.x, y: at - 8, width: box.width, height: 16 } : { x: at - 8, y: box.y, width: 16, height: box.height }) })
+      else drawing.buses.push({ id: node.id, vertical: !horizontal, title, ...barOf(box) })
     } else if (symbol === 'junction') {
       // A junction drawn as a box: its lines meet at its centre.
       const centre = [box.x + box.width / 2, box.y + box.height / 2] as const
