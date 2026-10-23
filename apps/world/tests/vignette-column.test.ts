@@ -265,15 +265,19 @@ describe('value words (W4.4)', () => {
     expect(look({ unit: 'Pa', quantity: 'pressure' }, { value: 7534 })).toMatchObject({ text: '7.5', value: 7.5, unit: 'kPa', decimals: 1 })
   })
 
-  test('at an end of its span a reading reads only that it is there, in the low-integrity style; its wider range stands in where it has one', () => {
+  test('beyond its span a reading reads only that it is there, in the low-integrity style; at an end it reads its value; its wider range stands in at or beyond an end where it has one', () => {
     const span = { min: 0, max: 100 }
-    expect(look({ span }, { value: 0 })).toMatchObject({ text: '<0', value: '<0', unit: '%', doubtful: true, offSpan: 'below' })
-    expect(look({ span }, { value: 100 })).toMatchObject({ text: '>100', offSpan: 'above', doubtful: true })
+    expect(look({ span }, { value: -0.4 })).toMatchObject({ text: '<0', value: '<0', unit: '%', doubtful: true, offSpan: 'below' })
+    expect(look({ span }, { value: 100.3 })).toMatchObject({ text: '>100', offSpan: 'above', doubtful: true })
     expect(look({ span }, { value: 37.2 })).toMatchObject({ text: '37.2', offSpan: null, doubtful: false })
+    // Exactly at an end (an open line at 0 % loading, a full tank at 100 %) it reads its value, never "<0 %".
+    expect(look({ span, quantity: 'loading' }, { value: 0 })).toMatchObject({ text: '0.0', value: 0, unit: '%', doubtful: false, offSpan: null })
+    expect(look({ span }, { value: 100 })).toMatchObject({ text: '100.0', offSpan: null, doubtful: false })
     const wide: Observation = { ref: 'u#wr', value: 24.04, quality: 'good', priority: 'none', at: new Date(now).toISOString(), clock: 'simulation' }
     expect(look({ span, wider: { ref: 'u#wr', word: 'WR' } }, { value: 0 }, [wide])).toMatchObject({ text: 'WR 24.0', value: 'WR 24.0', unit: '%', doubtful: false, offSpan: 'wider' })
-    // A wider range not read, or not good, leaves the pinned end.
-    expect(look({ span, wider: { ref: 'u#wr', word: 'WR' } }, { value: 0 }, [{ ...wide, quality: 'bad' }]).text).toBe('<0')
+    // A wider range not read, or not good, leaves its value at the end, or pinned beyond it.
+    expect(look({ span, wider: { ref: 'u#wr', word: 'WR' } }, { value: 0 }, [{ ...wide, quality: 'bad' }]).text).toBe('0.0')
+    expect(look({ span, wider: { ref: 'u#wr', word: 'WR' } }, { value: -1 }, [{ ...wide, quality: 'bad' }]).text).toBe('<0')
   })
 
   test('outside its validity a reading names what it waits for; a value only the simulator computes reads SIM', () => {
