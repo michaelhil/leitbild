@@ -40,6 +40,8 @@ export interface AlertRow {
   readonly category?: { readonly id: string; readonly label: string; readonly order: number }
   /** On one of its object's own states (a safety function's status, its mode): a challenge to the object as a whole. */
   readonly ownState?: true
+  /** Unacknowledged and its Pack lets a person acknowledge it: the command that does (W2.7). */
+  readonly acknowledge?: { readonly capabilityId: string; readonly input: Readonly<Record<string, string | number | boolean>> }
 }
 
 export type AlertObject = Pick<OperationalObject, 'id' | 'packId' | 'lifecycle' | 'alerts'>

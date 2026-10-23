@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { annunciationSchema } from '../src/core/observation/annunciation.ts'
 import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
 import { expectedAfterGroup } from '../src/packs/process-plant/ic/alarm-philosophy.ts'
+import { processPlantIcLifecyclePayloadSchema } from '../src/packs/process-plant/commands.ts'
 import { plantAnnunciation } from '../src/packs/process-plant/observation/annunciation.ts'
 import { plantDeclaration } from '../src/packs/process-plant/observation/declarations.ts'
 import { processPlantIcLifecycleStateSchema, type ProcessPlantIcLifecycleState } from '../src/packs/process-plant/runtime/index.ts'
@@ -51,6 +52,11 @@ describe('the reference PWR\'s annunciation', () => {
     // Each by its label and its short label, a narrow tile's (W2.2).
     expect(annunciation.categories.map(category => category.short)).toEqual(plant.automation.annunciatorSystems.map(system => system.shortLabel))
     expect(annunciation.alerts.filter(alert => alert.category === undefined)).toEqual([])
+  })
+
+  test('a person acknowledges an alarm or a trip by its lifecycle, through the Plant\'s lifecycle command (W2.7, D-E)', () => {
+    expect(annunciation.acknowledge).toEqual({ capabilityId: 'world.process-plant.ic.lifecycle', input: { action: 'acknowledge' }, objectField: 'plantId', alertField: 'lifecycleId' })
+    expect(processPlantIcLifecyclePayloadSchema.parse({ ...annunciation.acknowledge!.input, plantId: 'plant:x', lifecycleId: annunciation.alerts[0]!.id })).toMatchObject({ action: 'acknowledge' })
   })
 
   test('each alert\'s expected window is its annunciator\'s', () => {

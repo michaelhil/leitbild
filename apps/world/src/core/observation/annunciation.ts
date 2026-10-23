@@ -1,9 +1,9 @@
 /**
  * How an object's alerts are annunciated (plan v5 W2.3–W2.6, D-E): a static declaration beside its observables, kept
  * by the declaration's revision, so nothing is stored per Run. World reads each alert slot's facets with it per sample:
- * a row's tag, the first-out group it is annunciated in and that group's label ("RX TRIP"), its category, and whether
- * it came in as the expected consequence of a first-out, inside the declared window. Words are the Pack's; World adds
- * none.
+ * a row's tag, the first-out group it is annunciated in and that group's label ("RX TRIP"), its category, whether
+ * it came in as the expected consequence of a first-out, inside the declared window, and how a person acknowledges it.
+ * Words are the Pack's; World adds none.
  */
 import { z } from 'zod'
 
@@ -38,6 +38,16 @@ export const annunciationSchema = z.object({
     category: categoryIdSchema.optional(),
     expectedAfter: z.object({ group: groupIdSchema, withinMs: z.number().int().positive() }).strict().optional(),
   }).strict()).max(2048),
+  /**
+   * How a person acknowledges one of `alerts` (D-B1, D-E): the object's command Capability, the input it always takes,
+   * and the fields that take the object's id and the alert's. A display offers it only in the display window (Q19).
+   */
+  acknowledge: z.object({
+    capabilityId: z.string().min(1).max(200),
+    input: z.record(z.string().min(1).max(64), z.union([z.string().max(200), z.number(), z.boolean()])),
+    objectField: z.string().min(1).max(64),
+    alertField: z.string().min(1).max(64),
+  }).strict().optional(),
 }).strict().superRefine((annunciation, context) => {
   const groups = new Set(annunciation.groups.map(group => group.id))
   const categories = new Set(annunciation.categories.map(category => category.id))

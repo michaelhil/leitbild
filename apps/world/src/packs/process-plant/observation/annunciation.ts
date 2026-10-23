@@ -3,6 +3,7 @@ import { energyEnds, type CompiledPlantGraph, type ProcessSignalBinding } from '
 import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import { processPlantIcLifecycleIdFor, type ProcessPlantIcCondition, type ProcessPlantIcRule } from '../runtime/index.ts'
 import { resolveProcessPlantSignalBinding } from '../signals.ts'
+import { processPlantIcLifecycleCommandKind } from '../command-kinds.ts'
 import { automaticActions } from '../ic/actuations.ts'
 import { ruleLimits } from '../ic/alarm-philosophy.ts'
 import { icRuleKind, icThresholdsForSignal, UNDECLARED_ACTION } from '../ic/thresholds.ts'
@@ -23,7 +24,8 @@ import { icRuleKind, icThresholdsForSignal, UNDECLARED_ACTION } from '../ic/thre
 //   limit words ("NOT RUN · ALM", "L LO & F LO · ALM", never a bare ALM), or
 //   for a trip with none, what it does; the group it is annunciated in; its
 //   system; and the first-out group whose actuation brings it in as expected,
-//   within how long (expectedAfter).
+//   within how long (expectedAfter);
+// - how a person acknowledges one: the Plant's lifecycle command (D-B1, D-E).
 
 /** LO, LO-LO, LO-3; HI, HI-HI: a limit's direction once per order away from normal. */
 const orderName = (threshold: { readonly direction: 'low' | 'high'; readonly order: number }): string => {
@@ -140,6 +142,8 @@ export const plantAnnunciation = (plant: CompiledProcessPlant): Annunciation => 
     })
   })
   const annunciation: Annunciation = {
+    // A person acknowledges an alarm or a trip through the Plant's lifecycle command, by its lifecycle (the alert's id).
+    acknowledge: { capabilityId: processPlantIcLifecycleCommandKind, input: { action: 'acknowledge' }, objectField: 'plantId', alertField: 'lifecycleId' },
     groups,
     categories: plant.automation.annunciatorSystems.map(system => ({ id: system.id, label: system.label, ...(system.shortLabel === undefined ? {} : { short: system.shortLabel }) })),
     alerts,

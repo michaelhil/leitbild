@@ -7,6 +7,8 @@
   import { fitRow, rowParts, UNACK_WORD, type RowParts } from './alerts.ts'
   import AlertRowLine from './AlertRowLine.svelte'
   import AlertTiles from './AlertTiles.svelte'
+  import { acknowledging } from './acknowledging.svelte.ts'
+  import { vignetteOpening } from './opening.svelte.ts'
   import { rowMeasure } from './row-measure.ts'
   import { tileLayout } from './tile-fit.ts'
 
@@ -18,7 +20,9 @@
   // order; else by object) under headings that stay in view, each group in
   // list order (first-outs, own states, new, returned, then those expected
   // after a first-out, faded and saying so, and the standing ones). It
-  // scrolls; a row on an element opens it.
+  // scrolls; a row on an element opens it. In the display window a person
+  // acknowledges each row (ACK) and every one it shows ("Acknowledge 12
+  // shown", the grid alarm list's words).
   let { rows, categories, nowMs, several, press }: {
     rows: ReadonlyArray<AlertRow>
     categories?: Readonly<Record<string, ReadonlyArray<DeclaredCategory>>> | undefined
@@ -47,8 +51,13 @@
   // Its groups are its tiles that hold a row it shows; a list its tiles would only repeat is one group, its object.
   const groups = $derived((tiles.length === 0 ? [{ key: 'all', label: rows[0]?.objectLabel ?? '', rows }] : tiles)
     .map(group => ({ ...group, rows: group.rows.filter(row => shown.includes(row)) })).filter(group => group.rows.length > 0))
+  const opening = vignetteOpening()
+  let failure = $state<string | null>(null)
+  const { acking, ack } = acknowledging(() => opening, reason => { failure = reason })
+  const acks = $derived(opening?.acknowledges === true)
+  const ackable = $derived(acks ? shown.filter(row => row.acknowledge !== undefined) : [])
   const fitted = (row: AlertRow): RowParts => {
-    const parts = rowParts(row, nowMs, several ? row.objectLabel : undefined)
+    const parts = rowParts(row, nowMs, several ? row.objectLabel : undefined, acks && row.acknowledge !== undefined)
     return width === null ? parts : fitRow(parts, width, measure)
   }
 </script>
@@ -62,7 +71,9 @@
     {#each LIST_FILTERS as option (option.value)}
       <button type="button" role="tab" aria-selected={tab === option.value} class:active={tab === option.value} onclick={() => { tab = option.value }}>{option.label} {counts[option.value]}</button>
     {/each}
+    {#if ackable.length > 0}<button type="button" class="all-ack" disabled={ackable.every(acking)} onclick={ack(ackable)}>Acknowledge {ackable.length} shown</button>{/if}
   </div>
+  {#if failure !== null}<p class="failure" role="status">{failure}</p>{/if}
   <div class="list">
     {#if groups.length === 0}
       <p class="empty">{rows.length === 0 ? 'No alerts.' : `No ${LIST_FILTERS.find(option => option.value === tab)!.label.toLowerCase()} alerts.`}</p>
@@ -72,7 +83,7 @@
       <h3>{group.label} · {group.rows.length}{#if asking > 0}{' · '}<span class="unack">{asking} {UNACK_WORD}</span>{/if}</h3>
       <ul>
         {#each group.rows as row (row.key)}
-          <li><AlertRowLine {row} parts={fitted(row)} {nowMs} faded={listPart(row) === 'expected'} onopen={press(row)} /></li>
+          <li><AlertRowLine {row} parts={fitted(row)} {nowMs} faded={listPart(row) === 'expected'} onopen={press(row)} onack={ack([row])} acking={acking(row)} /></li>
         {/each}
       </ul>
     {/each}
@@ -88,6 +99,9 @@
   .filters button { height: 22px; padding: 0 8px; border: 1px solid var(--border-outline-color); border-radius: 3px; background: var(--container-section-color); color: var(--element-active-color); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
   .filters button.active { border-color: var(--element-active-color); font-weight: 700; }
   .filters button:focus-visible { outline: 2px solid var(--border-focus-color); outline-offset: 1px; }
+  .filters .all-ack { margin-left: auto; font-weight: 700; }
+  .filters .all-ack:disabled { color: var(--element-disabled-color); cursor: progress; }
+  .failure { flex: none; margin: 0; font-size: 12px; color: var(--element-neutral-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
   /* A group's heading stays in view while its rows scroll under it. */
   h3 { position: sticky; top: 0; z-index: 1; margin: 0; height: var(--row); line-height: var(--row); background: var(--container-background-color); font-size: 12px; font-weight: 600; color: var(--element-neutral-color); text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; }

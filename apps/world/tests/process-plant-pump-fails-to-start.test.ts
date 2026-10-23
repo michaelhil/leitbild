@@ -30,6 +30,7 @@ import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance 
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { builtinScenarioDefinitions } from '../src/scenarios/definitions.ts'
 import { flowDrawing } from '../src/ui/embed/vignette/flow-symbols.ts'
+import { alertIcon } from '../src/ui/embed/vignette/alerts.ts'
 import { tileBadge } from '../src/ui/embed/vignette/tile-fit.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 
@@ -161,11 +162,11 @@ describe('the needle in the haystack (plan v5 §5.2) on a Run like C', () => {
       if (outcome.kind === 'command' && !outcome.result.ok) throw new Error(JSON.stringify(outcome.result))
     }
     await play(240)
-    return displayRunOf(registry, runtime, person, new Set())
+    return { run: await displayRunOf(registry, runtime, person, new Set()), runtime }
   }
 
   test('MD AFW A framed in its drawing by a new alarm on it, not expected after the reactor trip; without the fault, none', async () => {
-    const run = await played(true)
+    const { run, runtime } = await played(true)
     const object = run.objects.find(entry => entry.id === plantId)!
     const alert = object.alerts.find(entry => entry.subject !== undefined && 'element' in entry.subject && entry.subject.element === 'auxFeedwaterPumpMotor')
     expect(alert).toMatchObject({ id: `alarm:${RULE.A}:fails-to-start`, message: 'MD AFW A fails to start', priority: 'warning' })
@@ -198,8 +199,17 @@ describe('the needle in the haystack (plan v5 §5.2) on a Run like C', () => {
     expect(own.filter(entry => entry.category !== undefined).length / own.length).toBeGreaterThanOrEqual(0.9)
     const census = alertCensus(own)
     expect(census.news.reduce((sum, entry) => sum + entry.count, 0) + census.expected + census.standing + census.advisory).toBe(own.length)
+    // A person acknowledges it in the display window through the command its row carries (W2.7): its icon stops flashing.
+    const needleRow = own.find(entry => entry.alert.id === alert!.id)!
+    expect(alertIcon(needleRow)).toMatchObject({ kind: 'icon', acknowledged: false })
+    const acked = await runtime.invokeCapability(person, { capabilityId: needleRow.acknowledge!.capabilityId, input: needleRow.acknowledge!.input })
+    expect(acked.kind === 'command' && acked.result.ok).toBe(true)
+    const after = await sampleVignette(await displayRunOf(registry, runtime, person, new Set()), overview.state)
+    const ackedRow = after.alerts.find(entry => entry.alert.id === alert!.id)!
+    expect([ackedRow.state, ackedRow.alert.acknowledgedBy, ackedRow.acknowledge]).toEqual(['active-ack', 'person', undefined])
+    expect(alertIcon(ackedRow)).toMatchObject({ kind: 'icon', acknowledged: true })
     // The same Run without the fault: the pump runs, nothing is raised on it.
-    const control = await played(false)
+    const control = (await played(false)).run
     expect(control.objects.find(entry => entry.id === plantId)!.alerts.filter(entry => entry.subject !== undefined && 'element' in entry.subject && entry.subject.element === 'auxFeedwaterPumpMotor')).toEqual([])
   }, 300_000)
 })

@@ -1,21 +1,25 @@
 import type { EmbeddedViewEnvelope } from '@leitbild/contracts'
 import { getContext, setContext } from 'svelte'
 import type { ObjectId, SimulationRunId } from '../../../core/model/index.ts'
+import type { AlertRow } from '../../../features/displays/alerts/rows.ts'
 import { FRAME_ROWS, VIGNETTE_MAX_ROWS, type VignetteState } from '../../../features/displays/compose/model.ts'
 import { defaultDisplayEnvelope, readDefaultDisplay } from '../../process-display/default-display.ts'
+import { invokeSimulationRunCapability } from '../../simulation-run-client.ts'
 import { activeWorkspaceId } from '../../workspace-context.ts'
 import { openedListing } from '../opened-display.ts'
 import { embeddedDisplayFrame, type DisplayOpening } from '../view-host.ts'
 import { openElementDefault } from './popover.ts'
 import { requestElement } from './selection.ts'
 
-// What a vignette's alerts, trip line and worst chip open (plan v5 W2.4–W2.6):
+// What a vignette's alerts, trip line and worst chip open (plan v5 W2.4–W2.7):
 // an element, which a drawing of this vignette selects where it draws it
 // (selection.ts) and which otherwise opens as its default after this display,
 // as an element's pop-over opens it in the display window; and the full
 // alerts view (L4) of some objects, after this display, with Back. Both open
 // through the page that frames the vignette (view-host.ts): nowhere where
-// none does, so what would open nothing is no button there.
+// none does, so what would open nothing is no button there. In the display
+// window, and only there, a person acknowledges alerts through their Packs'
+// commands, as the screen's own actor.
 
 export interface VignetteOpening {
   /** Where this vignette opens a display: its window, the Workspace's window through the page framing it, or nowhere. */
@@ -26,6 +30,10 @@ export interface VignetteOpening {
   readonly element: (objectId: string, elementId: string, how?: 'select' | 'detail') => Promise<string | null>
   /** Opens the full alerts view of these objects (or the Run's) after this display. */
   readonly alerts: (objectIds: ReadonlyArray<string> | 'run', title: string) => boolean
+  /** Whether a person acknowledges alerts here: in the display window only (D-B1, Q19), never in a chat answer or a dialog. */
+  readonly acknowledges: boolean
+  /** Acknowledges these alerts as the person, each through its Pack's command (AlertRow.acknowledge); resolves to why one was not, or null. */
+  readonly acknowledge: (rows: ReadonlyArray<AlertRow>) => Promise<string | null>
 }
 
 const KEY = Symbol('vignette-opening')
@@ -54,6 +62,21 @@ export const provideOpening = (config: {
       } catch (error) {
         return error instanceof Error ? error.message : String(error)
       }
+    },
+    get acknowledges() { return where === 'window' },
+    acknowledge: async rows => {
+      if (where !== 'window') return 'alerts are acknowledged in the display window'
+      for (const row of rows) {
+        if (row.acknowledge === undefined) continue
+        try {
+          const response = await invokeSimulationRunCapability(config.runId(), { capabilityId: row.acknowledge.capabilityId, input: row.acknowledge.input })
+          if (response.kind !== 'command') return `${row.alert.message}: not acknowledged`
+          if (!response.result.ok) return `${row.alert.message}: ${response.result.reason}`
+        } catch (error) {
+          return `${row.alert.message}: ${error instanceof Error ? error.message : String(error)}`
+        }
+      }
+      return null
     },
     alerts: (objectIds, title) => {
       const sampled = config.at()

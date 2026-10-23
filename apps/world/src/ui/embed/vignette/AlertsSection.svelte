@@ -11,11 +11,12 @@
   import AlertTiles from './AlertTiles.svelte'
   import { VIGNETTE_ROW_PX } from './grid.ts'
   import { rowMeasure } from './row-measure.ts'
+  import { acknowledging } from './acknowledging.svelte.ts'
   import { markElements } from './selection.ts'
   import { tileLayout, tilesHeight } from './tile-fit.ts'
   import { vignetteOpening } from './opening.svelte.ts'
 
-  // A vignette's alerts (plan v5 W2.1, W2.2, W2.5): its objects' alert rows
+  // A vignette's alerts (plan v5 W2.1, W2.2, W2.5, W2.7): its objects' alert rows
   // (or the whole Run's), or only those on its elements or observables, in
   // list order (features/displays/alerts/list.ts): first-outs ("1st RX TRIP:
   // …"), what challenges an object's own states, new alarms by priority,
@@ -28,8 +29,10 @@
   // width (fitRow); what does not fit is counted on "+N more", which opens the
   // full alerts view (L4) after this display, and the closing aggregates keep
   // their lines. A row on an element opens it: its drawing here selects it,
-  // else its default opens after this display (opening.svelte.ts). The full
-  // view itself is AlertsView.
+  // else its default opens after this display (opening.svelte.ts). In the
+  // display window a person acknowledges what an aggregate folds ("ACK 15")
+  // and, in an element's own alerts (its faceplate), each row. The full view
+  // itself is AlertsView.
   let { rows, categories, section, room }: {
     rows: ReadonlyArray<AlertRow>
     /** By object: the categories its Pack declares (the sample's), its tiles. */
@@ -73,11 +76,14 @@
   const listed = $derived(filter === null ? own : filtered(own, filter, tiles))
   const nowMs = $derived(opening?.now ?? Number.NaN)
   const measure = rowMeasure()
+  /** A person acknowledges here: in the display window (D-B1, Q19), each row of an element's own alerts, and what an aggregate folds. */
+  const acks = $derived(opening?.acknowledges === true)
   /** What of a row stands on its one line in the section's width. */
   const fitted = (row: AlertRow): RowParts => {
-    const parts = rowParts(row, nowMs, several ? row.objectLabel : undefined)
+    const parts = rowParts(row, nowMs, several ? row.objectLabel : undefined, acks && !whole && row.acknowledge !== undefined)
     return size === null ? parts : fitRow(parts, size.width, measure)
   }
+  const { acking, ack } = acknowledging(() => opening, reason => { failure = reason })
   const layout = $derived(size === null ? null : tileLayout(tiles, size.width, measure))
   // Narrowed, every aggregate stands open: the rows it was narrowed to are what it shows.
   const lines = $derived(listLines(listed, filter === null ? open : 'all'))
@@ -106,12 +112,13 @@
 
 {#snippet line(entry: ListLine)}
   {#if entry.kind === 'row'}
-    <li><AlertRowLine row={entry.row} parts={fitted(entry.row)} {nowMs} faded={entry.part === 'expected'} onopen={press(entry.row)} /></li>
+    <li><AlertRowLine row={entry.row} parts={fitted(entry.row)} {nowMs} faded={entry.part === 'expected'} onopen={press(entry.row)} onack={ack([entry.row])} acking={acking(entry.row)} /></li>
   {:else}
     {@const asking = entry.rows.filter(unacknowledged).length}
-    <li><button type="button" class="aggregate" class:expected={entry.part === 'expected'} aria-expanded={entry.open} onclick={() => toggle(entry.key)}>
+    {@const ackable = acks ? entry.rows.filter(row => row.acknowledge !== undefined) : []}
+    <li class="folds"><button type="button" class="aggregate" class:expected={entry.part === 'expected'} aria-expanded={entry.open} onclick={() => toggle(entry.key)}>
       <span class="label">{entry.label}</span>{#if asking > 0}<span class="unack">{asking} {UNACK_WORD}</span>{/if}<span class="caret" aria-hidden="true">{entry.open ? '▾' : '▸'}</span>
-    </button></li>
+    </button>{#if ackable.length > 0}<button type="button" class="ack" disabled={ackable.every(acking)} title={`Acknowledge the ${ackable.length} ${entry.label}`} onclick={ack(ackable)}>ACK {ackable.length}</button>{/if}</li>
   {/if}
 {/snippet}
 
@@ -155,6 +162,12 @@
   /* The lines take what the head leaves: the room the list measures. */
   ul { flex: 1 1 0; min-height: 0; list-style: none; margin: 0; padding: 0; }
   .unack { font-weight: 700; color: var(--element-active-color); text-transform: uppercase; letter-spacing: 0.03em; }
+  .folds { display: flex; align-items: center; gap: 6px; }
+  .folds .aggregate { flex: 1 1 0; min-width: 0; }
+  /* A person's acknowledgement of what an aggregate folds, in the display window. */
+  .ack { flex: none; height: 20px; padding: 0 6px; border: 1px solid var(--border-outline-color); border-radius: 3px; background: var(--container-section-color); color: var(--element-active-color); font: inherit; font-size: 11px; font-weight: 700; letter-spacing: 0.03em; white-space: nowrap; cursor: pointer; }
+  .ack:hover { background: var(--flat-hover-background-color); }
+  .ack:disabled { color: var(--element-disabled-color); cursor: progress; }
   .aggregate, .more { display: flex; align-items: center; gap: 6px; width: 100%; height: var(--row); margin: 0; padding: 0 0 0 26px; border: 0; background: none; color: var(--element-active-color); font: inherit; font-size: 12px; text-align: left; white-space: nowrap; overflow: hidden; }
   button.aggregate, button.more { cursor: pointer; }
   button.aggregate:hover, button.more:hover { background: var(--flat-hover-background-color); }
