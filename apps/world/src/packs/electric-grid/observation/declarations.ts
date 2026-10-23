@@ -15,6 +15,7 @@ import type { GridBranchDefinition } from '../grid-model.ts'
 import type { GridRuntimeInstance } from '../runtime/instance.ts'
 import { solvedGridIslands } from '../runtime/island-lifecycle.ts'
 import { generatorLifecycleCodes } from '../runtime/state/arrays.ts'
+import { readableLabels } from './names.ts'
 
 export type GridReading = Pick<Observation, 'value' | 'quality'>
 export interface GridSignal {
@@ -71,22 +72,26 @@ export const gridWideSignals: ReadonlyArray<GridSignal & { readonly signalId: st
 }))
 export const gridSignalId = (elementClass: string, id: string, key: string): string => elementClass === 'island' ? `island.${id}.${key}` : `${id}.${key}`
 const catalogues = new WeakMap<GridRuntimeInstance['definition'], { readonly elements: ReadonlyArray<Element>; readonly byId: ReadonlyMap<string, Element>; readonly names: ReadonlyMap<string, string> }>()
-/** Elements of the Grid's model, with a name per element (≤ 52 characters, unique, in catalogue order) for observable labels. */
+/**
+ * Elements of the Grid's model, with a name per element (≤ 52 characters, unique, in catalogue order) for observable
+ * labels, alert messages and the network drawing; an unnamed substation named by where it is (names.ts).
+ */
 const catalogueOf = (grid: GridRuntimeInstance) => catalogues.get(grid.definition) ?? (() => {
   const { buses, branches, generators, connectionPoints, hvdcLinks, externalSystems } = grid.definition.model
+  const readable = readableLabels(buses)
   const stationName = (label: string): string => label.replace(/\s+\d+(?:[.,]\d+)?\s*kV$/i, '')
   const short = (label: string): { shortLabel?: string } => (label.length <= 24 ? { shortLabel: label } : {})
   const stations = new Map<string, string>()
-  for (const bus of [...buses].sort((a, b) => b.nominalKv - a.nominalKv)) if (bus.sourceFeatureId !== undefined && !stations.has(bus.sourceFeatureId)) stations.set(bus.sourceFeatureId, stationName(bus.label))
+  for (const bus of [...buses].sort((a, b) => b.nominalKv - a.nominalKv)) if (bus.sourceFeatureId !== undefined && !stations.has(bus.sourceFeatureId)) stations.set(bus.sourceFeatureId, stationName(readable(bus.label)))
   const station = (busId: string): { group?: string } => { const id = grid.definition.index.busById.get(busId)?.sourceFeatureId; return id === undefined ? {} : { group: `station:${id}` } }
   const elements: Element[] = [
     ...[...stations].map(([id, label]): Element => ({ id: `station:${id}`, class: 'station', label, ...short(label) })),
-    ...buses.map((bus): Element => ({ id: bus.id, class: 'bus', label: bus.label, ...station(bus.id) })),
-    ...branches.map((branch): Element => ({ id: branch.id, class: 'branch', label: branch.label })),
-    ...generators.map((generator): Element => ({ id: generator.id, class: 'generator', label: generator.label, ...station(generator.busId) })),
-    ...connectionPoints.map((point): Element => ({ id: point.id, class: 'connection-point', label: point.label, ...station(point.busId) })),
-    ...hvdcLinks.map((link): Element => ({ id: link.id, class: 'hvdc-link', label: link.label })),
-    ...externalSystems.map((system): Element => ({ id: system.id, class: 'external-system', label: system.label })),
+    ...buses.map((bus): Element => ({ id: bus.id, class: 'bus', label: readable(bus.label), ...station(bus.id) })),
+    ...branches.map((branch): Element => ({ id: branch.id, class: 'branch', label: readable(branch.label) })),
+    ...generators.map((generator): Element => ({ id: generator.id, class: 'generator', label: readable(generator.label), ...station(generator.busId) })),
+    ...connectionPoints.map((point): Element => ({ id: point.id, class: 'connection-point', label: readable(point.label), ...station(point.busId) })),
+    ...hvdcLinks.map((link): Element => ({ id: link.id, class: 'hvdc-link', label: readable(link.label) })),
+    ...externalSystems.map((system): Element => ({ id: system.id, class: 'external-system', label: readable(system.label) })),
   ]
   const cut = (label: string, room: number): string => (label.length <= room ? label : `${label.slice(0, room - 1)}…`)
   const [counts, seen] = [new Map<string, number>(), new Map<string, number>()]
@@ -96,7 +101,9 @@ const catalogueOf = (grid: GridRuntimeInstance) => catalogues.get(grid.definitio
     seen.set(name, n)
     return [element.id, counts.get(name) === 1 ? name : `${cut(element.label, 49 - `${n}`.length)} (${n})`]
   }))
-  const catalogue = { elements, byId: new Map(elements.map(element => [element.id, element])), names }
+  // An element whose name others share is labelled as its values and alerts name it, "Sylling - Tegneby (1)".
+  const labelled = elements.map(element => counts.get(cut(element.label, 52)) === 1 ? element : { ...element, label: names.get(element.id)! })
+  const catalogue = { elements: labelled, byId: new Map(labelled.map(element => [element.id, element])), names }
   catalogues.set(grid.definition, catalogue)
   return catalogue
 })()
