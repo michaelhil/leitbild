@@ -85,6 +85,19 @@ describe('the drawing\'s grammar', () => {
     expect(source).toContain('openElementDetail(embeddedDisplayFrame(), runId, from, section.objectId, element)')
   })
 
+  test('a faceplate\'s own way to the window opens it from a chat answer or a tag\'s dialog too (relay), never a faceplate again', () => {
+    // Its header link, "+N more in its detail" and its devices' links call ondetail: the element's default through
+    // whatever opens displays here (openElementDetail: the window's own, or the relay), with no gate on the window.
+    expect(source).toContain('ondetail={target => { if (overlay === null) closeFaceplate(false); void openDefault(target, null) }}')
+    const openDefault = source.slice(source.indexOf('const openDefault = async'), source.indexOf('const openDetail = '))
+    expect(openDefault).toContain('openElementDetail(embeddedDisplayFrame(), runId, from, section.objectId, element)')
+    expect(openDefault).not.toContain('opening')
+    // Where nothing opens it, the faceplate shows no such button: its header link is absent, "+N more" plain text.
+    const faceplate = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Faceplate.svelte'), 'utf8')
+    expect(faceplate).toContain("{#if offer !== 'nothing'}")
+    expect(faceplate).toContain("{#if offer === 'nothing'}<p class=\"more\">+{fit.more} more in its detail</p>")
+  })
+
   test('Shift+Enter on an item opens its faceplate; Enter and Space its detail', () => {
     expect(source).toContain("if (event.key === 'Enter' && event.shiftKey) { event.preventDefault(); if (texts.get(id)?.kind !== 'stop') openFaceplate(id); return }")
   })
@@ -123,7 +136,7 @@ describe('a request to show an element (selection.ts, contract 1)', () => {
   test('the flow drawing listens while mounted: a select opens the item\'s faceplate, a detail its default', () => {
     const source = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/FlowTopology.svelte'), 'utf8')
     expect(source).toContain('const stopRequests = onElementRequest(request => {')
-    expect(source).toContain("if (request.how === 'detail') void openDetail(request.elementId, id)")
+    expect(source).toContain("if (request.how === 'detail') openDetail(request.elementId, id)")
     expect(source).toContain('stopRequests()')
   })
 })
