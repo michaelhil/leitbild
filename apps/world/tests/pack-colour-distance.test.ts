@@ -30,7 +30,6 @@ const editedFiles = [
   'packs/einsatz/chain-path.ts',
   'packs/electric-grid/ui-pack.ts',
   'packs/process-plant/presentation.ts',
-  'ui/status-presentation.ts',
 ] as const
 
 /** `path literal` → why it still fails. */

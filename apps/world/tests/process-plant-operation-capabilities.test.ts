@@ -60,7 +60,7 @@ const query = async <T,>(run: SimulationRunRuntime, actor: Actor, capabilityId: 
   return outcome.result as T
 }
 const proposals = async (run: SimulationRunRuntime, plantId: string) =>
-  (await query<{ readonly proposals: ReadonlyArray<{ readonly proposal: ProcessPlantProposal; readonly review?: ProposalReview }> }>(run, agent, 'world.process-plant.control.proposals', { plantId })).proposals
+  (await query<{ readonly proposals: ReadonlyArray<{ readonly proposal: ProcessPlantProposal; readonly label: string; readonly review?: ProposalReview }> }>(run, agent, 'world.process-plant.control.proposals', { plantId })).proposals
 /** A propose result read as accepted: what the agent sees of its proposal. */
 type ProposeAccepted = Extract<ProcessPlantControlProposeResult, { readonly ok: true }>
 const signalTypes = (run: SimulationRunRuntime) => run.events().flatMap(event => event.type === 'interaction.signal.received' && event.signal.type.startsWith('process-plant.proposal.') ? [event.signal.type] : [])
@@ -144,6 +144,8 @@ describe('a modulating valve set to a % (owner feedback, plan-final §12 item 3)
       const proposed = await command(run, agent, 'world.process-plant.control.propose', throttle)
       expect(proposed.ok).toBe(true)
       expect((await proposals(run, plantId))[0]!.proposal).toMatchObject({ word: 'OPEN to 40 %', item: 'auxFeedwaterValveA', write: { value: 0.4 } })
+      // The read names the item as a person reads it on the drawing (W7.4: labels, not ids).
+      expect((await proposals(run, plantId))[0]!.label).toBe('AFW valve A')
       expect((await command(run, operator, 'world.process-plant.control.decide', { plantId, proposalId: proposed.commandId, decision: 'approve' })).ok).toBe(true)
       // Within a second: the fixture's own feedwater line-up trips the unit on steam generator A level a second later.
       const startedAt = Date.parse(run.snapshot().clock!.currentTime)

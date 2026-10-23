@@ -14,6 +14,7 @@
   import { chipOrder, stateChipLook } from './state-chip.ts'
   import { createVignetteSession, sampleStale, vignetteRoutes, type VignetteSnapshot } from './vignette-client.ts'
   import { provideOpening } from './opening.svelte.ts'
+  import AnswerNotice from './AnswerNotice.svelte'
   import Sections from './Sections.svelte'
   import StateChip from './StateChip.svelte'
   import TripLine from './TripLine.svelte'
@@ -127,8 +128,10 @@
       </div>
     {/if}
   </header>
+  <!-- An answer's vignette: what makes it stale, when it was composed and why, in its reserved row (W8.2). -->
+  {#if view?.answer !== undefined}<AnswerNotice answer={view.answer} at={latest?.at} />{/if}
   {#if unopened !== null}<p class="status" role="alert">Nothing opened: {unopened}</p>{/if}
-  {#if view !== undefined}<TripLine {view} rows={latest?.alerts ?? []} reserve={view.chips !== undefined} />{/if}
+  {#if view !== undefined}<TripLine {view} rows={latest?.alerts ?? []} reserve={view.tripLine === true} />{/if}
 
   {#if view === undefined}
     <p class="status">

@@ -1372,17 +1372,13 @@ body.rail-resizing {
   font-size: 12px;
 }
 
+/* No asset to read a status of: an empty ring where the rail's status indicator stands for one. */
 .process-display-asset-dot {
   flex: 0 0 auto;
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--panel) 80%, transparent);
-}
-
-.process-display-asset-dot.unknown {
   border: 1.5px solid var(--muted);
-  background: transparent;
 }
 
 .display-window-header button:not([role="dialog"] *),
@@ -1403,6 +1399,19 @@ body.rail-resizing {
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
+}
+
+/* On a touch screen the window's controls are 40 px press targets (W8.3), its zoom slider as tall. */
+@media (pointer: coarse) {
+  .display-window-header button:not([role="dialog"] *),
+  .display-window-popover button {
+    height: 40px;
+    min-width: 40px;
+  }
+
+  .display-window-header input[type="range"] {
+    height: 40px;
+  }
 }
 
 .display-window-header button:hover:not(:disabled):not([aria-disabled="true"]):not([role="dialog"] *),

@@ -21,6 +21,8 @@ export const displayCardItemSchema = z.object({
   key: z.string().regex(/^k\d+$/),
   /** "<object> · <observable>", or an object's or alert's own words. */
   label: z.string().min(1).max(80),
+  /** The label of the object the label begins with, so a reader can name the object once; the card's lines keep it. */
+  object: z.string().min(1).max(80).optional(),
   reading: z.string().min(1).max(120),
   unit: z.string().max(16).optional(),
   /** Every number the reading shows, at the precision it shows it. */
@@ -34,7 +36,9 @@ export const displayCardItemSchema = z.object({
     z.object({ objectId: idSchema }).strict(),
     z.object({ objectId: idSchema, alertId: idSchema }).strict(),
   ]).optional(),
-}).strict()
+}).strict().refine(item => item.object === undefined || item.label === item.object || item.label.startsWith(`${item.object} · `), {
+  message: 'an item\'s object is the label its label begins with', path: ['object'],
+})
 export type DisplayCardItem = z.infer<typeof displayCardItemSchema>
 
 export const displayCardAdjustmentSchema = z.object({

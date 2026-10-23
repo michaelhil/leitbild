@@ -6,7 +6,7 @@ import type { TopologyGraph } from '../../../core/observation/topology.ts'
 import { gridModelAttribution } from '../model.ts'
 import { gridFor, type GridRuntimes } from '../queries/common.ts'
 import type { GridRuntimeInstance } from '../runtime/instance.ts'
-import { gridElement, gridSignalId } from './declarations.ts'
+import { gridElement, gridElementName, gridSignalId } from './declarations.ts'
 
 type Node = TopologyGraph['nodes'][number]
 const graphs = new WeakMap<GridRuntimeInstance['definition'], TopologyGraph>()
@@ -19,6 +19,8 @@ export const gridTopology = (grid: GridRuntimeInstance): TopologyGraph => graphs
   const bind = (role: Node['bindings'][number]['role'], id: string, key: string) => ({ role, ref: `${gridId}#${gridSignalId('', id, key)}` })
   const at = (prefix: string, position: number): string => `${prefix}${String(position).padStart(5, '0')}`
   const group = (id: string): { group?: string } => { const station = gridElement(grid, id)?.group; return station === undefined ? {} : { group: station } }
+  /** The catalogue's name: unique within the Grid as its alert messages and values name it, an unnamed substation by where it is. */
+  const name = (id: string): string => gridElementName(grid, id)!
   const links = [
     ...model.branches.map(branch => ({ ...branch, class: branch.kind === 'transformer' ? 'converter' as const : 'transfer' as const, keys: ['flow', 'loading', 'state'] })),
     ...model.hvdcLinks.map(link => ({ ...link, kind: 'hvdc', class: 'converter' as const, keys: ['transfer', 'state'] })),
@@ -31,15 +33,15 @@ export const gridTopology = (grid: GridRuntimeInstance): TopologyGraph => graphs
     groups: [...new Set(model.buses.flatMap(bus => group(bus.id).group ?? []))].map(id => { const station = gridElement(grid, id)!; return { id, label: station.label, kind: 'station', ...(station.shortLabel ? { shortLabel: station.shortLabel } : {}) } }),
     nodes: [
       ...model.buses.map((bus, position): Node => ({
-        id: bus.id, element: bus.id, class: bus.kind === 'junction' || bus.kind === 'boundary' ? bus.kind : 'bus', kind: bus.kind, label: bus.label, rank: at('b', position), ...group(bus.id),
+        id: bus.id, element: bus.id, class: bus.kind === 'junction' || bus.kind === 'boundary' ? bus.kind : 'bus', kind: bus.kind, label: name(bus.id), rank: at('b', position), ...group(bus.id),
         ports: [port('bus', bus.id)], bindings: [bind('level', bus.id, 'voltage'), bind('conducting', bus.id, 'energized')],
       })),
       ...links.map((link, position): Node => ({
-        id: link.id, element: link.id, class: link.class, kind: link.kind, label: link.label, rank: at('l', position),
+        id: link.id, element: link.id, class: link.class, kind: link.kind, label: name(link.id), rank: at('l', position),
         ports: [port('a', link.fromBusId), port('b', link.toBusId)], bindings: link.keys.map(key => bind(key === 'state' ? 'conducting' : key === 'loading' ? 'loading' : 'flow', link.id, key)),
       })),
       ...model.connectionPoints.map((point, position): Node => ({
-        id: point.id, element: point.id, class: 'boundary', kind: 'connection-point', label: point.label, rank: at('c', position), ...group(point.id),
+        id: point.id, element: point.id, class: 'boundary', kind: 'connection-point', label: name(point.id), rank: at('c', position), ...group(point.id),
         ports: [port('bus', point.busId), port('system', point.busId)], bindings: [bind('flow', point.id, 'exchange')],
       })),
     ],
