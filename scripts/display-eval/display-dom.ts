@@ -272,12 +272,34 @@ const SCREEN_HELPERS = String.raw`
     const chain = []
     for (let f = frame; f; f = f.ownerDocument.defaultView.frameElement) chain.unshift(f)
     for (const f of chain) {
+      // The boxes in the frame's own document that clip it (a window body that scrolls): what they hide is not shown.
+      const fwin = f.ownerDocument.defaultView
+      for (let a = f.parentElement; a && a !== f.ownerDocument.documentElement; a = a.parentElement) {
+        const s = fwin.getComputedStyle(a)
+        if (s.overflowX === 'visible' && s.overflowY === 'visible') continue
+        const q = a.getBoundingClientRect()
+        const al = ox + q.left + a.clientLeft, at = oy + q.top + a.clientTop
+        if (s.overflowX !== 'visible') vis = { ...vis, l: Math.max(vis.l, al), r: Math.min(vis.r, al + a.clientWidth) }
+        if (s.overflowY !== 'visible') vis = { ...vis, t: Math.max(vis.t, at), b: Math.min(vis.b, at + a.clientHeight) }
+      }
       const r = f.getBoundingClientRect()
       const l = ox + r.left + f.clientLeft, t = oy + r.top + f.clientTop
       vis = { l: Math.max(vis.l, l), t: Math.max(vis.t, t), r: Math.min(vis.r, l + f.clientWidth), b: Math.min(vis.b, t + f.clientHeight) }
       ox = l; oy = t
     }
     return { ox, oy, vis }
+  }
+  // What a press at a point of the top page lands on, through the frames (a window toolbar or a page dialog over the
+  // display takes the press, not the display under it).
+  const deepHit = (x, y) => {
+    let doc = document, px = x, py = y, hit = doc.elementFromPoint(px, py)
+    while (hit && hit.tagName === 'IFRAME' && hit.contentDocument) {
+      const r = hit.getBoundingClientRect()
+      px -= r.left + hit.clientLeft; py -= r.top + hit.clientTop
+      doc = hit.contentDocument
+      hit = doc.elementFromPoint(px, py)
+    }
+    return hit
   }
   const parentOf = (n, win) => n.assignedSlot || (n.parentNode instanceof win.ShadowRoot ? n.parentNode.host : n.parentNode)
   // The visible part of a rectangle (page coordinates) through the ancestors of node that clip or scroll it, as CSS
@@ -396,7 +418,7 @@ const SCREEN_HELPERS = String.raw`
     const visible = v.r - v.l > 2 && v.b - v.t > 2
     let reaches = false
     if (visible) {
-      const hit = el.ownerDocument.elementFromPoint(cx - box.ox, cy - box.oy)
+      const hit = deepHit(cx, cy)
       for (let n = hit; n; n = n.parentNode instanceof el.ownerDocument.defaultView.ShadowRoot ? n.parentNode.host : n.parentNode) { if (n === el) { reaches = true; break } }
       if (!reaches && hit && el.contains && el.contains(hit)) reaches = true
       if (!reaches && hit && hit.shadowRoot && el.getRootNode && el.getRootNode() === hit.shadowRoot) reaches = true

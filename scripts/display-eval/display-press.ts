@@ -106,24 +106,44 @@ const atHome = (screen: Screen, home: Home) => screen.window !== null && screen.
  * "Previous display" while the position differs. True when home. Records how it got there. */
 export const goHome = async (page: Page, home: Home): Promise<{ readonly home: boolean; readonly via: ReadonlyArray<string> }> => {
   const via: string[] = []
+  const settledHome = async () => atHome(await screenOf(page), home) && (await pageDialogs(page)).length === 0
   for (let i = 0; i < 4; i += 1) {
-    const screen = await screenOf(page)
-    if (atHome(screen, home) && (await pageDialogs(page)).length === 0) return { home: true, via }
+    if (await settledHome()) return { home: true, via }
     await page.key('Escape')
     via.push('Esc')
     await sleep(500)
   }
+  // A page window Esc does not close (the procedure window): its own close control, as a person closes it.
+  for (let i = 0; i < 3 && (await pageDialogs(page)).length > 0; i += 1) {
+    const close = await page.eval<{ x: number; y: number; label: string } | null>(PAGE_DIALOG_CLOSE)
+    if (close === null) break
+    for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased'] as const) await page.send('Input.dispatchMouseEvent', { type, x: close.x, y: close.y, ...(type === 'mouseMoved' ? {} : { button: 'left', clickCount: 1 }) })
+    via.push(close.label.slice(0, 30))
+    await sleep(600)
+  }
   for (let i = 0; i < 4; i += 1) {
-    const screen = await screenOf(page)
-    if (atHome(screen, home)) return { home: true, via }
+    if (await settledHome()) return { home: true, via }
     const back = await page.find({ sel: 'button', text: 'Back' }) ?? await page.find({ sel: 'button', text: 'Previous display' })
     if (back === null) break
     await page.click(back)
     via.push(back.label.slice(0, 30))
     await sleep(800)
   }
-  return { home: atHome(await screenOf(page), home), via }
+  return { home: await settledHome(), via }
 }
+/** The close control of a dialog on the Run page outside the display (its button named "Close …"), at its centre. */
+const PAGE_DIALOG_CLOSE = `(() => {
+  const dialogs = lb.everything().map(([el]) => el).filter(el => el.getAttribute && el.getAttribute('role') === 'dialog' && lb.shown(el) && !/\\/world\\/embed\\//.test(el.ownerDocument.location.pathname))
+  for (const dialog of dialogs.reverse()) {
+    const button = [...dialog.querySelectorAll('button')].find(b => lb.shown(b) && /^close\\b/i.test((b.getAttribute('aria-label') || b.getAttribute('title') || b.innerText || '').trim()))
+    if (!button) continue
+    let x = 0, y = 0
+    for (let f = button.ownerDocument.defaultView.frameElement; f; f = f.ownerDocument.defaultView.frameElement) { const q = f.getBoundingClientRect(); x += q.left + f.clientLeft; y += q.top + f.clientTop }
+    const r = button.getBoundingClientRect()
+    return { x: x + r.left + r.width / 2, y: y + r.top + r.height / 2, label: button.getAttribute('aria-label') || button.getAttribute('title') || 'Close' }
+  }
+  return null
+})()`
 
 /** A screen size of the rendering matrix (§5.5): the viewport and whether the Assistant's chat is open. The legacy
  * names stay: 1920 (1920 × 1080), 1046 (1920 × 1080 with the chat open, which leaves the display 1046 px), 1440
