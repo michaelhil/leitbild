@@ -550,14 +550,15 @@ export const composeDefault = async (run: ComposeRun, name: string | Extract<Dis
 
 /**
  * An object's leads as a dashboard shows them (A4): what its Pack leads with each sample, then each list of `parts`
- * (its parts' readings) as values, framed as a window frames a default; no alerts view, as the dashboard's run frame
- * shows them.
+ * (its parts' readings) as values, named so they lead its card, framed as a window frames a default; no alerts view, as
+ * the dashboard's run frame shows them.
  */
 export const composeLeads = async (run: ComposeRun, objectId: ObjectId, parts: ReadonlyArray<ReadonlyArray<string>>): Promise<ComposeOutcome> => {
   const subject = await resolveSubject(run, objectId, 'subject')
   if (isIssue(subject)) return refuse([subject])
-  const drafts: DraftView[] = [{ kind: 'values', lead: { objectId } }, ...parts.slice(0, 3).map((refs): DraftView => ({ kind: 'values', refs: [...refs] }))]
-  return finish(run, await titleOf(run, subject), undefined, [subject], drafts, { refs: new Set(), explicit: new Set() }, 'window', [], undefined, true)
+  const named = parts.slice(0, 3)
+  const drafts: DraftView[] = [{ kind: 'values', lead: { objectId } }, ...named.map((refs): DraftView => ({ kind: 'values', refs: [...refs] }))]
+  return finish(run, await titleOf(run, subject), undefined, [subject], drafts, { refs: new Set(named.flat()), explicit: new Set() }, 'window', [], undefined, true)
 }
 
 /** The rows a fitted state takes, its frame counted as finish counts it: a stored dashboard pin's. */
@@ -567,8 +568,9 @@ export const stateRows = async (run: ComposeRun, state: VignetteState): Promise<
   return FRAME_ROWS + (await keepsTripLine(run, state.views) ? 1 : 0) + (state.by === 'assistant' ? 1 : 0) + Math.max(left?.rows ?? 0, column)
 }
 
-/** A state's card as it reads now: a stored dashboard pin's. */
-export const cardOfState = (run: ComposeRun, state: VignetteState): Promise<DisplayCard> => cardOf(run, state, { refs: new Set(), explicit: new Set() }, [], 0, { elements: [], refs: [] })
+/** A state's card as it reads now, the values it names first: a stored dashboard pin's. */
+export const cardOfState = (run: ComposeRun, state: VignetteState): Promise<DisplayCard> =>
+  cardOf(run, state, { refs: new Set(state.views.flatMap(view => view.kind === 'values' ? view.refs ?? [] : [])), explicit: new Set() }, [], 0, { elements: [], refs: [] })
 
 /** A whole-object default's chips: each declared object's own states, at most eight. */
 const chipsOf = async (run: ComposeRun, subjects: ReadonlyArray<Subject>): Promise<ReadonlyArray<string>> =>

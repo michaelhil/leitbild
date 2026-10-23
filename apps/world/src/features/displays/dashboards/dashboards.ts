@@ -68,7 +68,8 @@ const resolveScope = async (run: ComposeRun, input: ScopeInput): Promise<Dashboa
 /**
  * What an object's drawing writes on its parallel parts, which its Pack keeps on their symbols and out of its leads: the
  * parts its declared overview draws that stand in declared groups, but those whose symbol draws their state (a switch,
- * a mover). One list a class, each part's readings, so the composer sets each as a table of a line a part.
+ * a mover). One list a class, the composer sets each as a table of a line a part; column by column (each part's first
+ * reading, then each one's second), so a card that cannot hold the table keeps its first column whole.
  */
 const partsOf = async (run: ComposeRun, objectId: ObjectId): Promise<ReadonlyArray<ReadonlyArray<string>>> => {
   const graph = await topologyOf(run, objectId)
@@ -83,7 +84,7 @@ const partsOf = async (run: ComposeRun, objectId: ObjectId): Promise<ReadonlyArr
     byClass.set(element.class, [...byClass.get(element.class) ?? [], [...new Set(node.bindings.map(binding => binding.ref))]])
   }
   return [...byClass.values()].filter(parts => parts.length > 1)
-    .map(parts => [...new Set(parts.flat())].slice(0, 16))
+    .map(parts => [...new Set(Array.from({ length: Math.max(...parts.map(part => part.length)) }, (_, column) => parts.flatMap(part => part[column] ?? [])).flat())].slice(0, 16))
 }
 
 const sectionOf = (title: string, outcome: ComposeOutcome): Built => outcome.ok
