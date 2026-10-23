@@ -9,7 +9,7 @@ import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/p
 import { plantDeclaration } from '../src/packs/process-plant/observation/declarations.ts'
 import { servedPlantTopology } from '../src/packs/process-plant/observation/topology.ts'
 import { FLOW_TEXT } from '../src/features/displays/topology/text.ts'
-import { flowDrawing } from '../src/ui/embed/vignette/flow-symbols.ts'
+import { flowDrawing, SILHOUETTE, toSilhouette } from '../src/ui/embed/vignette/flow-symbols.ts'
 import { legendKeys } from '../src/ui/embed/vignette/flow-legend.ts'
 import { STUB_STRAIGHT } from '../src/ui/embed/vignette/pipe-segments.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
@@ -131,5 +131,38 @@ describe('the drawing\'s key and pipe sizes (W6.7; U-05, U-20, #35)', () => {
     expect(keys).toEqual([['pipe', 'flow'], ['command', 'command not followed'], ['expected', 'expected after RX TRIP']])
     // Nothing flowing, nothing outlined: only what is drawn.
     expect(legendKeys(flowDrawing(section, [], [], false)).map(key => key.text)).toEqual(['not known'])
+  })
+})
+
+describe('pipes meet the vessels they connect (W6.4, owner finding 9, U-19)', () => {
+  test('a pipe to a tank or an exchanger runs on into its box to the silhouette OpenBridge draws there; a device keeps its button disc', () => {
+    for (const request of REQUESTS) {
+      const section = sectionOf(request)
+      const drawing = flowDrawing(section, [], [], false)
+      const vessels = drawing.vessels.filter(vessel => vessel.kind === 'tank' || vessel.kind === 'exchanger')
+      const ends = drawing.segments.flatMap(segment => (segment.kind === 'straight' ? [[segment.x1, segment.y1], [segment.x2, segment.y2]] as const : []))
+      let met = 0
+      for (const vessel of vessels) {
+        const inset = SILHOUETTE[vessel.kind as 'tank' | 'exchanger']
+        // No pipe ends in the band between the box and the silhouette: each one that reaches the box reaches the silhouette.
+        const short = ends.filter(([x, y]) => {
+          const onSide = y > vessel.y && y < vessel.y + vessel.height
+          const onTop = x > vessel.x && x < vessel.x + vessel.width
+          return (onSide && ((x >= vessel.x - 0.5 && x < vessel.x + inset.left - 0.5) || (x <= vessel.x + vessel.width + 0.5 && x > vessel.x + vessel.width - inset.right + 0.5)))
+            || (onTop && ((y >= vessel.y - 0.5 && y < vessel.y + inset.top - 0.5) || (y <= vessel.y + vessel.height + 0.5 && y > vessel.y + vessel.height - inset.bottom + 0.5)))
+        })
+        expect({ request, vessel: vessel.id, short }).toEqual({ request, vessel: vessel.id, short: [] })
+        met += ends.filter(([x, y]) => (Math.abs(x - (vessel.x + inset.left)) < 0.5 || Math.abs(x - (vessel.x + vessel.width - inset.right)) < 0.5) && y > vessel.y && y < vessel.y + vessel.height
+          || (Math.abs(y - (vessel.y + inset.top)) < 0.5 || Math.abs(y - (vessel.y + vessel.height - inset.bottom)) < 0.5) && x > vessel.x && x < vessel.x + vessel.width).length
+      }
+      expect(met).toBeGreaterThan(0)
+    }
+  })
+
+  test('the run on is along the pipe\'s last leg, by its face\'s inset', () => {
+    const box = { x: 100, y: 100, width: 48, height: 96 }
+    expect(toSilhouette([[124, 40], [124, 100]], 'last', box, SILHOUETTE.tank)).toEqual([[124, 40], [124, 105]])
+    expect(toSilhouette([[124, 196], [124, 260]], 'first', box, SILHOUETTE.tank)).toEqual([[124, 187], [124, 260]])
+    expect(toSilhouette([[40, 120], [100, 120]], 'last', box, SILHOUETTE.exchanger)).toEqual([[40, 120], [105, 120]])
   })
 })

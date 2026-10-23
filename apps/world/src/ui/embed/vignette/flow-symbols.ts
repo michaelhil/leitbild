@@ -93,6 +93,28 @@ export const glyphOf = (symbol: FlowSymbol, state: DeviceState, vertical: boolea
 export interface FlowLine { readonly text: string; readonly kind: 'name' | 'word' | 'command' | 'reading'; readonly style: FlowTextStyle }
 
 const DEVICES: ReadonlySet<FlowSymbol> = new Set(['mover', 'generator', 'valve', 'breaker', 'transformer', 'source'])
+
+/**
+ * How far inside the box it fills OpenBridge's tile draws its silhouette, per face, in px (OpenBridge 2.0.0, measured
+ * in the drawing): a compact tank's and an exchanger's state container is padded 4 px within a 1 px border
+ * (--automation-components-tanks-state-container-padding); below a tank's frame its empty readout cell keeps a 4 px
+ * gap; an exchanger's domed caps stand 2 px inside its frame. A pipe runs on to it, so it meets the vessel (W6.4).
+ */
+export const SILHOUETTE: Readonly<Record<'tank' | 'exchanger', Readonly<Record<Face, number>>>> = {
+  tank: { top: 5, right: 5, bottom: 9, left: 5 },
+  exchanger: { top: 7, right: 5, bottom: 7, left: 5 },
+}
+
+/** A pipe's `end` that meets `box` on a face, run on along its last leg by that face's inset, to the silhouette inside it. */
+export const toSilhouette = (points: ReadonlyArray<Point>, end: 'first' | 'last', box: Box, inset: Readonly<Record<Face, number>>): ReadonlyArray<Point> => {
+  const ordered = end === 'last' ? [...points] : [...points].reverse()
+  const [x, y] = ordered.at(-1)!
+  const face: Face | null = Math.abs(x - box.x) < 1 ? 'left' : Math.abs(x - (box.x + box.width)) < 1 ? 'right' : Math.abs(y - box.y) < 1 ? 'top' : Math.abs(y - (box.y + box.height)) < 1 ? 'bottom' : null
+  if (face === null) return points
+  const by = inset[face]
+  ordered[ordered.length - 1] = face === 'left' ? [x + by, y] : face === 'right' ? [x - by, y] : face === 'top' ? [x, y + by] : [x, y - by]
+  return end === 'last' ? ordered : ordered.reverse()
+}
 /** A text line of the stacks the engine kept (flow-sizing.ts). */
 export const FLOW_LINE_PX = 16
 const passing = (state: DeviceState | undefined): boolean => state?.kind === 'on' || (state?.kind === 'position' && state.fraction > 0)
@@ -204,10 +226,18 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
   const states = new Map([...symbols.keys()].map(id => [id, stateOf(byId.get(id)!)]))
   // A pipe to where the drawing stops ends on a straight of its own, never with its cap in a bend (W6.3).
   const stopAt = (point: Point): Box | undefined => [...boxes].find(([id, box]) => symbols.get(id) === 'end' && inside(box)(point))?.[1]
+  // A pipe to a tank or an exchanger runs on to its silhouette, inside the box OpenBridge's tile fills (W6.4).
+  const vesselAt = (point: Point): { readonly box: Box; readonly inset: Readonly<Record<Face, number>> } | undefined => {
+    const [id, box] = [...boxes].find(([key, entry]) => (symbols.get(key) === 'tank' || symbols.get(key) === 'exchanger') && inside(entry)(point)) ?? []
+    return id === undefined ? undefined : { box: box!, inset: SILHOUETTE[symbols.get(id) as 'tank' | 'exchanger'] }
+  }
   const pipes = new Map(edges.map(edge => {
     const [first, last] = [stopAt(edge.points[0]!), stopAt(edge.points.at(-1)!)]
     const ended = last === undefined ? edge.points : endStraight(edge.points, 'last', last)
-    return [edge.id, first === undefined ? ended : endStraight(ended, 'first', first)] as const
+    const both = first === undefined ? ended : endStraight(ended, 'first', first)
+    const [into, from] = [vesselAt(edge.points.at(-1)!), vesselAt(edge.points[0]!)]
+    const reached = into === undefined ? both : toSilhouette(both, 'last', into.box, into.inset)
+    return [edge.id, from === undefined ? reached : toSilhouette(reached, 'first', from.box, from.inset)] as const
   }))
   // Where a chevron may not stand: on the drawing's text, its symbols and its bars.
   const avoid: ReadonlyArray<Box> = [
