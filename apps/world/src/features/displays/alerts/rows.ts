@@ -31,6 +31,15 @@ export interface AlertRow {
    * A drawn item whose every active alert is expected takes a neutral dashed outline, not a frame.
    */
   readonly expected?: { readonly after: string }
+  // What a sample adds from its Pack's annunciation (annunciated.ts), read with the alert slot, never stored.
+  /** Its limit and what it does, as a chip names them ("LO-LO · RX TRIP"), or what it watches ("NOT RUN · ALM"). */
+  readonly tag?: string
+  /** The first-out group it is annunciated in, by its label ("RX TRIP"), and the elements the group's actuations stop. */
+  readonly action?: { readonly label: string; readonly ends?: ReadonlyArray<string> }
+  /** Its category (its Pack's annunciator system) and the place its Pack declares it in. */
+  readonly category?: { readonly id: string; readonly label: string; readonly order: number }
+  /** On one of its object's own states (a safety function's status, its mode): a challenge to the object as a whole. */
+  readonly ownState?: true
 }
 
 export type AlertObject = Pick<OperationalObject, 'id' | 'packId' | 'lifecycle' | 'alerts'>

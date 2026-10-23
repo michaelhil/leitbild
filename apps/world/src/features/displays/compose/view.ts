@@ -5,12 +5,13 @@
  * the alert slot, object state and recorded series.
  */
 import { refObjectId } from '../../../core/model/alerts.ts'
-import type { OperationalObject } from '../../../core/model/index.ts'
+import type { ObjectId, OperationalObject } from '../../../core/model/index.ts'
 import { routeDistanceMeters } from '../../../core/model/route.ts'
 import type { Observation } from '../../../core/observation/model.ts'
 import { alertRows, leadsObject, priorityRank, worstFirst, type AlertRow } from '../alerts/rows.ts'
-import { declaredRefs, valueOf, visibleObject, type Declared } from './declared.ts'
-import { leadNow } from './defaults.ts'
+import { annunciatedRows } from '../alerts/annunciated.ts'
+import { declarationOf, declaredRefs, valueOf, visibleObject, type Declared } from './declared.ts'
+import { leadNow, ownStates } from './defaults.ts'
 import {
   ENTITY_COLUMNS, horizonMs, type Collection, type EntityRow, type RecordedSeries, type ResolvedView, type SlotDeclaration, type VignetteSample,
   type VignetteSection, type VignetteState, type VignetteValue, type VignetteView,
@@ -283,5 +284,18 @@ export const sampleVignette = async (run: ViewRun, state: VignetteState, history
     return Object.fromEntries([...declared.values()].flatMap(entry => entry.observable.series === null ? []
       : [[entry.observable.series.seriesId, run.series(entry.observable.series.seriesId, new Date(history.fromMs).toISOString(), at.at)] as const]))
   })()
-  return { at, observations, alerts: [...alerts.values()], entities, slots, maps, ...(series === undefined ? {} : { series }), ...(led.size === 0 ? {} : { leads }) }
+  return { at, observations, alerts: await annunciate(run, [...alerts.values()], at), entities, slots, maps, ...(series === undefined ? {} : { series }), ...(led.size === 0 ? {} : { leads }) }
+}
+
+/** Alert rows as their Packs annunciate them now (annunciated.ts): from each object's declaration, read once per request. */
+const annunciate = async (run: ComposeRun, rows: ReadonlyArray<AlertRow>, at: VignetteSample['at']): Promise<ReadonlyArray<AlertRow>> => {
+  const objectIds = [...new Set(rows.map(row => row.objectId))]
+  const declared = new Map(await Promise.all(objectIds.map(async id => [id, { annunciation: (await declarationOf(run, id))?.annunciation, own: new Set(await ownStates(run, id)) }] as const)))
+  const objectRows = new Map<string, ReadonlyArray<AlertRow>>()
+  return annunciatedRows(rows, {
+    annunciation: id => declared.get(id as ObjectId)?.annunciation,
+    objectRows: id => objectRows.get(id) ?? objectRows.set(id, alertsOf(run, { kind: 'alerts', objectIds: [id as ObjectId], rows: 1 })).get(id)!,
+    ownStates: id => declared.get(id as ObjectId)?.own ?? new Set(),
+    nowMs: at.clock === 'simulation' ? Date.parse(at.at) : null,
+  })
 }
