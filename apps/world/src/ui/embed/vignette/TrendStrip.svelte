@@ -153,7 +153,10 @@
               <rect class="unrecorded" x="1" y="1" width={Math.max(0, drawing.unrecorded.width - 1)} height={PLOT_HEIGHT - 2} fill={`url(#${hatch})`}><title>No record yet</title></rect>
             {/if}
             {#each drawing.values as tick (tick.label)}<line class="grid" x1="1" x2={plotWidth - 1} y1={tick.y} y2={tick.y} />{/each}
-            {#each drawing.setPoints as mark (mark.key)}<line class="set-point" x1={plotWidth - 9} x2={plotWidth - 1} y1={mark.y} y2={mark.y}><title>{mark.title}</title></line>{/each}
+            {#each drawing.setPoints as mark (mark.key)}
+              <line class="set-point" x1={plotWidth - 9} x2={plotWidth - 1} y1={mark.y} y2={mark.y}><title>{mark.title}</title></line>
+              {#if mark.labelY !== null}<text class="name set-point-name" x={plotWidth + LABEL_GAP} y={mark.labelY} dominant-baseline="central"><title>{mark.title}</title>{mark.label}</text>{/if}
+            {/each}
             {#each drawing.lines as line (line.key)}<line class={`limit ${line.tone ?? ''}`} class:idle={line.idle} x1="1" x2={plotWidth - 1} y1={line.y} y2={line.y}><title>{line.title}</title></line>{/each}
             {#each drawing.values as tick (tick.label)}<text class="tick" x="4" y={tick.labelY}>{tick.label}</text>{/each}
             {#each drawing.pens as pen (pen.ref)}<path class={`pen ${pen.tone ?? ''}`} d={pen.path} stroke-dasharray={pen.dash === '' ? undefined : pen.dash} />{/each}
@@ -203,6 +206,7 @@
   .limit.alarm { stroke: var(--alert-alarm-color); stroke-opacity: 1; stroke-width: 1.5; }
   .limit.critical { stroke: var(--alert-critical-color); stroke-opacity: 1; stroke-width: 1.5; }
   .set-point { stroke: var(--element-neutral-color); stroke-width: 2; stroke-opacity: 0.4; }
+  text.set-point-name { fill-opacity: 0.55; }
   .leader { fill: none; stroke: var(--element-neutral-color); stroke-width: 1; stroke-opacity: 0.6; }
   .name { font-size: 12px; font-variant-numeric: tabular-nums; white-space: pre; }
   text.name { fill: var(--element-neutral-color); }

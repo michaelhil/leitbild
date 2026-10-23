@@ -321,7 +321,7 @@ const readStrip = (input: StripInput) => {
 /** The widest one-row name a strip writes beside its plot (0 without any): the strips of one trend share the widest as their margin. */
 export const labelWidth = (input: StripInput, measure: (text: string) => number): number => {
   const read = readStrip(input)
-  return Math.max(0, ...(read?.named ?? []).map(entry => measure(entry.runs.map(run => run.text).join(''))))
+  return Math.max(0, ...(read?.named ?? []).map(entry => measure(entry.runs.map(run => run.text).join(''))), ...(read?.setPoints ?? []).map(line => measure(`CTL ${read!.number(line.value)}`)))
 }
 
 export interface StripDrawing {
@@ -330,8 +330,8 @@ export interface StripDrawing {
   readonly lines: ReadonlyArray<{ readonly key: string; readonly y: number; readonly idle: boolean; readonly tone: AlertTone | null; readonly title: string }>
   /** Each kept name beside the plot: its rows from `y` (the first row's middle), and its line's `y` (null beyond the scale). */
   readonly labels: ReadonlyArray<{ readonly key: string; readonly lineY: number | null; readonly y: number; readonly rows: ReadonlyArray<ReadonlyArray<LabelRun>>; readonly title: string }>
-  /** Control set points, a faint tick at the plot's edge. */
-  readonly setPoints: ReadonlyArray<{ readonly key: string; readonly y: number; readonly title: string }>
+  /** Control set points: a faint tick at the plot's edge, named faint ("CTL 15.35") only where no limit's name stands (`labelY` null otherwise). */
+  readonly setPoints: ReadonlyArray<{ readonly key: string; readonly y: number; readonly label: string; readonly labelY: number | null; readonly title: string }>
   /** Gridlines, and where each one's value is written: above it, or below where it would leave the plot. */
   readonly values: ReadonlyArray<{ readonly y: number; readonly labelY: number; readonly label: string }>
   /** The window's time before any pen's record starts, from its left edge: "No record yet"; null where a record reaches its start. */
@@ -352,6 +352,7 @@ export const stripDrawing = (input: StripInput & { readonly width: number; reado
     return { key: entry.key, want: entry.edge === 'top' ? 0 : entry.edge === 'bottom' ? input.height - size : y(entry.value) - LABEL_LINE / 2, size, rank: ranked.indexOf(index) }
   }), { min: 0, max: input.height })
   const byKey = new Map(named.map(entry => [entry.key, entry] as const))
+  const taken = placed.map(label => [label.start, label.start + rows.get(label.key)!.length * LABEL_LINE] as [number, number])
   const ticks = valueTicks(domain)
   const top = Math.min(...ticks.map(tick => y(tick.value)))
   const unit = unitSymbol(input.pens[0]!.unit)
@@ -370,10 +371,17 @@ export const stripDrawing = (input: StripInput & { readonly width: number; reado
       const entry = byKey.get(label.key)!
       return { key: label.key, lineY: entry.edge === null ? y(entry.value) : null, y: label.start + LABEL_LINE / 2, rows: rows.get(label.key)!, title: entry.title }
     }),
-    setPoints: read.setPoints.map(line => ({
-      key: line.key, y: y(line.value),
-      title: `CTL ${read.number(line.value)}${[...new Set(line.byPen.flat().flatMap(limit => limit.consequence === undefined || limit.consequence === 'CTL' ? [] : [limit.consequence]))].map(text => ` · ${text}`).join('')}: control set point`,
-    })),
+    setPoints: read.setPoints.map(line => {
+      const at = y(line.value)
+      // A set point's name takes only room no limit's name stands in, at its own line: it never moves one.
+      const start = at - LABEL_LINE / 2
+      const free = start >= 0 && start + LABEL_LINE <= input.height && !taken.some(([from, to]) => start < to && from < start + LABEL_LINE)
+      if (free) taken.push([start, start + LABEL_LINE])
+      return {
+        key: line.key, y: at, label: `CTL ${read.number(line.value)}`, labelY: free ? at : null,
+        title: `CTL ${read.number(line.value)}${[...new Set(line.byPen.flat().flatMap(limit => limit.consequence === undefined || limit.consequence === 'CTL' ? [] : [limit.consequence]))].map(text => ` · ${text}`).join('')}: control set point`,
+      }
+    }),
     // The top value names the unit; a value too near the top is written under its line, so none leaves the plot.
     values: ticks.map(tick => {
       const at = y(tick.value)

@@ -237,7 +237,11 @@ describe('trend strip', () => {
     drawing.labels.slice(1).forEach((label, index) => expect(label.y - drawing.labels[index]!.y).toBeGreaterThanOrEqual(LABEL_LINE))
     // No set point is a limit: five lines, none of them a control set point, unless the element's own trend asks for them.
     expect([drawing.lines.length, drawing.setPoints]).toEqual([5, []])
-    expect(tripped(120, {}, true).setPoints.map(mark => mark.title)).toEqual(['CTL 15.35: control set point', 'CTL 15.65: control set point', 'CTL 16.18: control set point'])
+    const marks = tripped(120, {}, true)
+    expect(marks.setPoints.map(mark => mark.title)).toEqual(['CTL 15.35: control set point', 'CTL 15.65: control set point', 'CTL 16.18: control set point'])
+    // Named faint only where no limit's name stands, and never moving one: the limits' names are where they were.
+    expect(marks.labels).toEqual(drawing.labels)
+    for (const mark of marks.setPoints.filter(entry => entry.labelY !== null)) for (const label of marks.labels) expect(Math.abs(mark.labelY! - label.y)).toBeGreaterThanOrEqual(LABEL_LINE)
   })
 
   test('a limit is a neutral dash, coloured only while a value is past it where it acts now; one that does not act now is faint', () => {
