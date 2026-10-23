@@ -185,8 +185,10 @@ const READER = `(scope) => {
       title: text(article.querySelector(':scope > header h1')),
       word: clock ? text(clock) : null,
       sim,
-      // The worst chip: the header's chip that names no state (R2's own-state chips carry an aria-label "name: state").
-      worst: text(article.querySelector(':scope > header .chip:not([aria-label]):not(button)')) || null,
+      // The worst chip: the header's chip that names no state (own-state chips carry an aria-label "name: state"). R2
+      // draws it as a button (it opens every alert, by category) inside a listitem of .states; a frame with no alert
+      // press draws it as a span.
+      worst: text(article.querySelector(':scope > header .chip:not([aria-label])')) || null,
       chips: [
         ...[...article.querySelectorAll(':scope > .chips > .state')].map(chip => ({ label: text(chip.querySelector('.label')), value: deepText(chip.querySelector('obc-status-indicator, .unknown') ?? doc.createElement('i')) })),
         ...[...article.querySelectorAll(':scope > header .chip[aria-label]')].map(chip => ({ label: (chip.getAttribute('aria-label') || '').split(':')[0].trim(), value: text(chip) })),
