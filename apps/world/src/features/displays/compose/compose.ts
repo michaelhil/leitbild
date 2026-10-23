@@ -241,6 +241,8 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   const fitted: ResolvedView[] = []
   /** The fitted views that draw a flow topology. */
   const flows = new Set<ResolvedView>()
+  /** Each fitted alerts view's rows for the alerts it has now (its head, every alert up to eight, "+N more"). */
+  const alertsNeed = new Map<ResolvedView, number>()
   const declared = await declaredRefs(run, views.flatMap(view => view.kind === 'values' || view.kind === 'trend' ? view.refs ?? [] : []))
   const trim = (path: string, refs: ReadonlyArray<string>, cap: number, what: string): ReadonlyArray<string> => {
     const readable = refs.filter(ref => declared.has(ref))
@@ -299,7 +301,9 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
       }
       const needed = alertRowsFor(run, { ...view, objectIds, rows: 1 })
       // A World default is watched: its alerts keep room for the first of those still to come (an element's, an observable's too).
-      fitted.push({ ...view, objectIds, rows: frame === 'window' ? Math.max(1 + WATCHED_ALERT_LINES, needed) : needed })
+      const watched: ResolvedView = { ...view, objectIds, rows: frame === 'window' ? Math.max(1 + WATCHED_ALERT_LINES, needed) : needed }
+      alertsNeed.set(watched, needed)
+      fitted.push(watched)
     } else if (view.kind === 'slots') {
       const object = visibleObject(run, view.objectId)
       if (object !== undefined) fitted.push({ ...view, rows: Math.max(1, slotsOf(run, object).length) })
@@ -377,7 +381,7 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   const chips = chipped.filter(ref => readableChips.has(ref))
   // The frame: title and footer, the trip line's row of a view about one object that can trip (keepsTripLine: empty at
   // rest, so nothing moves when one trips), an answer's notice line (W8.2).
-  const frameRows = FRAME_ROWS + (await keepsTripLine(run, views) ? 1 : 0) + (by === 'assistant' ? 1 : 0)
+  const frameRows = FRAME_ROWS + (await keepsTripLine(run, fitted) ? 1 : 0) + (by === 'assistant' ? 1 : 0)
   const stacked = (): number => fitted.reduce((sum, view) => sum + view.rows, 0)
   // In a window, a flow drawing taller than the stack leaves stands beside a column of every other view (Q20).
   const left = fitted.find(view => view.kind === 'topology' && flows.has(view))
@@ -387,14 +391,21 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   // A window's alerts keep a head, eight alerts and "+N more" (W2.5): its drawing is scaled first.
   const alertsFloor = frame === 'window' ? 2 + ALERT_LINES_AT_LEAST : 3
   for (const view of fitted) if (total() > VIGNETTE_MAX_ROWS && (view.kind === 'alerts' || view.kind === 'entity' || view.kind === 'collection')) (view as { rows: number }).rows = Math.min(view.rows, view.kind === 'alerts' ? alertsFloor : 5)
-  // A trend gives way a strip at a time from its last while `overflows`, keeping one and every strip with a named pen:
-  // a strip keeps its five rows (W5.4), and what it leaves out is counted.
-  const trendsGiveWay = (overflows: () => boolean): void => {
+  // A trend gives way a strip at a time from its last while the frame is `over` its rows, keeping one and every strip
+  // with a named pen: a strip keeps its five rows (W5.4), and what it leaves out is counted. Before a pen drops, a
+  // watched alerts list gives the empty lines it keeps beyond the alerts it has now, where they are enough to keep it:
+  // every alert it has still shows, each on its row.
+  const trendsGiveWay = (over: () => number): void => {
+    const spare = (): number => [...alertsNeed].reduce((sum, [list, need]) => sum + Math.max(0, list.rows - need), 0)
     for (const view of fitted) {
       if (view.kind !== 'trend') continue
       let strips = stripsOf(view.refs.map(ref => valueOf(declared.get(ref)!)))
       let cut = 0
-      while (overflows() && strips.length > 1 && !strips.at(-1)!.some(pen => kept.refs.has(pen.ref))) {
+      while (over() > 0 && strips.length > 1 && !strips.at(-1)!.some(pen => kept.refs.has(pen.ref))) {
+        if (spare() >= over()) {
+          for (const [list, need] of alertsNeed) (list as { rows: number }).rows -= Math.min(over(), Math.max(0, list.rows - need))
+          break
+        }
         cut += strips.at(-1)!.length
         strips = strips.slice(0, -1)
         Object.assign(view, { refs: strips.flat().map(pen => pen.ref), rows: trendRows(strips) })
@@ -403,7 +414,7 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
     }
   }
   // Beside a drawing, a column too tall for the frame gives way first, whatever the drawing's size.
-  if (beside) trendsGiveWay(() => frameRows + fitted.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0) > VIGNETTE_MAX_ROWS)
+  if (beside) trendsGiveWay(() => frameRows + fitted.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0) - VIGNETTE_MAX_ROWS)
   // Then a drawing is scaled to the rows left, never below a third of its height or eight rows, and the card says so.
   for (const view of fitted) {
     if (total() <= VIGNETTE_MAX_ROWS || view.kind !== 'topology') continue
@@ -415,7 +426,7 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
     countAdjustment(adjusted, { kind: 'layout', text: `drawing scaled to ${Math.round(100 * (rows - 1) / (natural - 1))} % to fit` })
   }
   // Stacked, a trend gives way only after the drawing is scaled.
-  trendsGiveWay(() => total() > VIGNETTE_MAX_ROWS)
+  trendsGiveWay(() => total() - VIGNETTE_MAX_ROWS)
   // Beside a drawing, the column's alerts take the rows it leaves under the other views: the list fills its frame (W2.5).
   const list = beside ? fitted.find(view => view.kind === 'alerts') : undefined
   const column = fitted.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0)
