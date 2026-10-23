@@ -138,7 +138,14 @@ describe('plant observation declarations (P2)', () => {
     expect(observable('csf.heat-sink')).toEqual({
       ref: `${objectId}#csf.heat-sink`, label: 'Heat sink (CSF)', shortLabel: 'HEAT SINK', quantity: 'state', unit: '', valueType: 'enum', thresholds: [], series: null,
       states: ['green=GREEN', 'yellow=YELLOW', 'orange=ORANGE', 'red=RED', 'unknown=UNKNOWN', 'not-monitored=NOT JUDGED'].map(entry => ({ value: entry.split('=')[0]!, label: entry.split('=')[1]! })),
+      decidingElement: 'sgA',
     })
+  })
+
+  test('W4.1: each safety function names the equipment most of its tree reads on, the first in the Plant\'s order among equals; nothing else names one', () => {
+    expect(Object.fromEntries(declaration.observables.filter(entry => entry.decidingElement !== undefined).map(entry => [entry.ref.slice(objectId.length + 1), entry.decidingElement])))
+      .toEqual({ 'csf.subcriticality': 'core', 'csf.core-cooling': 'core', 'csf.heat-sink': 'sgA', 'csf.rcs-integrity': 'rcpA', 'csf.containment': 'containment', 'csf.rcs-inventory': 'pressurizer' })
+    expect(declaration.elements.map(element => element.id)).toEqual(expect.arrayContaining(['core', 'sgA', 'rcpA', 'containment', 'pressurizer']))
   })
 
   test('limits are projected from the I&C rules: a moved limit moves, a removed rule is gone (mutation)', () => {

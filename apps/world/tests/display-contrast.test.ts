@@ -73,6 +73,10 @@ const TEXT_PAIRS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
   ['--display-on-critical', ['--display-critical-fill']],
   // A vignette's filled state word: the panel's background on the active text colour.
   ['--container-background-color', ['--element-active-color']],
+  // A stale reading, or any while its display is frozen, on OpenBridge's low-integrity colour (its readout block's).
+  ['--element-active-color', ['--alert-low-integrity-background-color']],
+  ['--element-neutral-color', ['--alert-low-integrity-background-color']],
+  ['--display-alert-text', ['--alert-low-integrity-background-color']],
 ]
 
 describe('display text contrast', () => {

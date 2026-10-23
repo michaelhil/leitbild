@@ -26,7 +26,7 @@
   // rows are fewer than its height (a chat column). Each item is a button: a
   // press (or Enter or Space) opens its pop-over (ElementPopover.svelte); a
   // second press, Esc or a press outside closes it.
-  let { section, observations, alerts, palette, frozen, runId, from }: {
+  let { section, observations, alerts, palette, frozen, runId, from, fit = 1 }: {
     section: Extract<VignetteSection, { kind: 'topology' }>
     observations: ReadonlyArray<Observation>
     alerts: ReadonlyArray<AlertRow>
@@ -36,10 +36,12 @@
     runId: SimulationRunId
     /** The display this drawing stands in (ElementPopover.svelte). */
     from: OpenedFrom
+    /** Scaled further to its frame's width (Sections.svelte, grid.ts frameLayout). */
+    fit?: number
   } = $props()
 
   const drawing = $derived(flowDrawing(section, observations, alerts, frozen))
-  const scale = $derived(drawingScale(section))
+  const scale = $derived(drawingScale(section) * fit)
   let zoom = $state(1)
   runOnMount(() => embeddedDisplayFrame().subscribe(presentation => { zoom = presentation.zoom }))
 

@@ -72,6 +72,9 @@ export const observationDeclarationSchema = z.object({
   if (new Set(labels).size !== labels.length) context.addIssue({ code: 'custom', message: 'duplicate observable label' })
   const elements = declaration.elements.map(element => element.id)
   if (new Set(elements).size !== elements.length) context.addIssue({ code: 'custom', message: 'duplicate element id' })
+  if (declaration.observables.some(observable => observable.decidingElement !== undefined && (observable.element !== undefined || !elements.includes(observable.decidingElement)))) {
+    context.addIssue({ code: 'custom', message: 'a deciding element belongs to an own state and is a declared element' })
+  }
 })
 
 /** The most refs one read names: a whole-unit overview's values and bindings with its lead, in one call. */

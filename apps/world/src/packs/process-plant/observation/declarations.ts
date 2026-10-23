@@ -11,6 +11,7 @@ import { icThresholdsForSignal, type ComposedDisplayThreshold } from '../ic/thre
 import { logarithmicSpan } from '../quantity-text.ts'
 import { criterionObservables, elementCriteria, elementTables } from './criteria.ts'
 import { derivedObservables } from './derived.ts'
+import { withDecidingElements } from './deciding.ts'
 import { elementLeads, elementStops, leadDigest } from './leads.ts'
 
 // What a Plant declares to World's observation layer (plan v3.1 §2.2, A1):
@@ -244,11 +245,11 @@ export const plantDeclaration = (objectId: ObjectId, plant: CompiledProcessPlant
   declarationCache.set(plant, known)
   const whole = known.get(revision) ?? (() => {
     const graph = plant.graph
-    const observables = [
+    const observables = withDecidingElements(plant, [
       ...graph.signalBindings.filter(binding => declares(plant, recording, binding)).map(binding => observableOf(objectId, plant, recording, binding)),
       ...derivedObservables(objectId, plant),
       ...criterionObservables(objectId, plant, unitOf),
-    ]
+    ])
     const declared = new Set(observables.map(observable => observable.ref))
     // What an energy end's detail judges it by and the table of its loops (criteria.ts, W1.4).
     const [criteria, tables] = [elementCriteria(objectId, plant, unitOf), elementTables(objectId, plant, path => declared.has(`${objectId}#${path}`))]

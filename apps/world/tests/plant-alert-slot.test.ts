@@ -200,7 +200,10 @@ describe('critical safety function challenges in the slot (Q7)', () => {
         id: 'csf:heat-sink:nyyyyn', kind: 'safety-function', severity: 'warning', priority: 'caution', acknowledged: false, clock: 'simulation', raisedAt: '2026-01-01T10:00:34.000Z',
         message: expect.stringMatching(/^Heat sink \(FR-H\.5\): A steam generator's narrow-range level is below span/), observable: `${fed.plantId}#csf.heat-sink`,
       }])
-      expect(challenge.read).toMatchObject({ value: 'yellow', priority: 'caution', why: challenge.alerts[0].message })
+      // Its status reads the procedure as its pointer, and the tree's path that decided it with its readings (W4.1).
+      const why: unknown = challenge.read.why
+      expect(typeof why === 'string' && /: no \(SG-A-LVL-NR [\d.]+ %.* · YELLOW · FR-H\.5: A steam generator's narrow-range level is below span/.test(why)).toBe(true)
+      expect(challenge.read).toMatchObject({ value: 'yellow', priority: 'caution', note: 'FR-H.5' })
     })
 
     test('the challenge holds one alert JSON over a hundred steps off the Plant\'s step', () => {

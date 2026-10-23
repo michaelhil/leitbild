@@ -90,7 +90,7 @@ export type VignetteState = z.output<typeof vignetteStateSchema>
 export type VignetteElement = Omit<ObservationDeclaration['elements'][number], 'lead' | 'stopped' | 'criteria' | 'table'>
 
 /** A declared observable as a vignette names it: its label qualified with its object's ("<object> · <observable>", R25); `basis`: a demand reads as one (W1.3). */
-export type VignetteValue = Pick<Observable, 'ref' | 'quantity' | 'unit' | 'valueType' | 'states' | 'thresholds' | 'series' | 'decades' | 'checks' | 'basis'> & {
+export type VignetteValue = Pick<Observable, 'ref' | 'quantity' | 'unit' | 'valueType' | 'states' | 'thresholds' | 'series' | 'decades' | 'checks' | 'basis' | 'shortLabel' | 'decidingElement'> & {
   readonly label: string
   readonly element?: VignetteElement
 }

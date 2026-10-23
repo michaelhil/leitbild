@@ -160,6 +160,19 @@ export const deviations: ReadonlyArray<Deviation> = [
     decision: { owner: 'approved', ref: 'Plan v5 W0.9, approved 22 Oct: a deviation until W2.7' },
     until: 'W2.7',
   },
+  {
+    id: 'own-state-emergency-as-alarm',
+    does: 'Draws a state at emergency priority as alarm, OpenBridge\'s worst status, not in D9\'s emergency magenta: a state word in obc-status-indicator, and an object\'s own state as a chip on the title row (its safety functions, its mode).',
+    sites: [
+      { file: 'ui/embed/vignette/StateWord.svelte', mark: "critical: 'alarm' }" },
+      { file: 'ui/embed/vignette/state-chip.ts', mark: "tone: tone === 'critical' ? 'alarm' : tone" },
+    ],
+    component: 'obc-status-indicator',
+    reason: 'D9 asks for magenta at emergency; obc-status-indicator 2.0.0 has no emergency status, so a state is drawn at most as alarm, and its chip follows the indicator\'s statuses (red team, review of plan v5: the emergency gap).',
+    evidence: 'obc-status-indicator 2.0.0 (dist/components/status-indicator/status-indicator.d.ts): statuses active, inactive, caution, warning, alarm and running. The Plant\'s safety functions reach alarm at most (red, ic/alarm-philosophy.ts challengePriority), so no Plant state draws emergency today.',
+    decision: { owner: 'approved', ref: 'Plan v5 W4.1 and D-K (D9), approved 22 Oct: emergency draws as alarm, the gap recorded' },
+    until: 'an OpenBridge status indicator with an emergency status',
+  },
 ]
 
 /** An SVG or canvas that draws no custom shape: OpenBridge's own pipe renderer paints it, or it only measures text. */

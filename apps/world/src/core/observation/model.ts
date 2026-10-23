@@ -159,6 +159,8 @@ export const observableSchema = z.object({
   decades: z.literal(true).optional(),
   /** A criterion's checks, in order (valueType `criterion` only). */
   checks: z.array(criterionCheckSchema).min(1).max(16).optional(),
+  /** An object's own state (no `element`): the declared element that decides it, which a press on its chip opens. */
+  decidingElement: z.string().min(1).max(200).optional(),
 }).strict().refine(observable => (quantityUnits[observable.quantity] as ReadonlyArray<string>).includes(observable.unit), {
   path: ['unit'], message: 'the unit is not a code listed for this quantity',
 }).refine(observable => (observable.valueType === 'criterion') === (observable.checks !== undefined) && (observable.valueType !== 'criterion' || (observable.quantity === 'count' && observable.thresholds.length === 0)), {
@@ -184,6 +186,8 @@ export const observationSchema = stampSchema.extend({
    * applicable) where none applies.
    */
   checks: z.array(z.object({ check: z.number().int().min(0).max(15), met: z.enum(['yes', 'no', 'unknown']), measured: z.number().finite().optional() }).strict()).min(1).max(16).optional(),
+  /** Where the state sends people now, in at most 16 characters ("FR-H.3"): its chip writes it beside its short label. */
+  note: z.string().min(1).max(16).optional(),
 }).strict()
 
 export type Observable = z.output<typeof observableSchema>
