@@ -89,8 +89,8 @@ export type VignetteState = z.output<typeof vignetteStateSchema>
 /** A declared element an observable is measured on, as a vignette names it: never what it leads with. */
 export type VignetteElement = Omit<ObservationDeclaration['elements'][number], 'lead' | 'stopped' | 'criteria' | 'table'>
 
-/** A declared observable as a vignette names it: its label qualified with its object's ("<object> · <observable>", R25). */
-export type VignetteValue = Pick<Observable, 'ref' | 'quantity' | 'unit' | 'valueType' | 'states' | 'thresholds' | 'series' | 'decades' | 'checks'> & {
+/** A declared observable as a vignette names it: its label qualified with its object's ("<object> · <observable>", R25); `basis`: a demand reads as one (W1.3). */
+export type VignetteValue = Pick<Observable, 'ref' | 'quantity' | 'unit' | 'valueType' | 'states' | 'thresholds' | 'series' | 'decades' | 'checks' | 'basis'> & {
   readonly label: string
   readonly element?: VignetteElement
 }
@@ -112,9 +112,11 @@ export interface SlotDeclaration { readonly key: string; readonly label: string;
 /** A binding the caller reads, with its observable's declared quantity, unit, states (a state marked `active` reads as on) and decades, so a drawing writes the reading as the card does. */
 export type TopologyBinding = TopologyNode['bindings'][number] & Pick<Observable, 'quantity' | 'unit' | 'states' | 'decades'>
 export interface TopologyNodeView extends Pick<TopologyNode, 'id' | 'label' | 'shortLabel' | 'element'> {
-  /** A stop's label names its far ends (at most 24 characters). */
+  /** A stop's label says "to" or "from" and names its far ends (topology/stops.ts). */
   readonly class: TopologyNode['class'] | 'stop'
   readonly bindings: ReadonlyArray<TopologyBinding>
+  /** A stop: whether flow leaves through it (`out`) or comes in, and each far end with its element and its state's binding where the stop writes it. */
+  readonly stop?: { readonly direction: 'in' | 'out'; readonly far: ReadonlyArray<{ readonly id: string; readonly label: string; readonly element?: string; readonly bindings: ReadonlyArray<TopologyBinding> }> }
 }
 
 /** Parallel values: one line per element (or per line of an element's declared table), one column per quantity. */

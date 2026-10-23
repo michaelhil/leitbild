@@ -4,7 +4,8 @@
   // The registered vessel shape (register: reactor-vessel) in OpenBridge's
   // instrument tokens: its level as the fill, and where the drawing binds its
   // parts' positions, each part hanging into its core region by its inserted
-  // length. A level not known fills it as unknown, never as empty.
+  // length, in its groups (shutdown banks, then control banks). A level not
+  // known fills it as unknown, never as empty.
   let { id, width, height, origin, drawing, level, parts }: {
     id: string
     width: number
@@ -12,10 +13,10 @@
     origin: { readonly x: number; readonly y: number }
     drawing: VesselDrawing
     level: number | null
-    parts: ReadonlyArray<number | null>
+    parts: ReadonlyArray<ReadonlyArray<number | null>>
   } = $props()
 
-  const shape = $derived(vesselGeometry({ height, origin, drawing, level, groups: parts.length === 0 ? [] : [parts] }))
+  const shape = $derived(vesselGeometry({ height, origin, drawing, level, groups: parts }))
   const clip = $derived(`vessel-${id}`)
 </script>
 

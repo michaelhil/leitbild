@@ -79,7 +79,7 @@ export const valueOf = ({ observable, object, element }: Declared): VignetteValu
   valueType: observable.valueType, thresholds: observable.thresholds, series: observable.series,
   ...(observable.states === undefined ? {} : { states: observable.states }), ...(observable.decades === true ? { decades: true } : {}),
   ...(observable.checks === undefined ? {} : { checks: observable.checks }),
-  ...(element === undefined ? {} : { element: named(element) }),
+  ...(observable.basis === undefined ? {} : { basis: observable.basis }), ...(element === undefined ? {} : { element: named(element) }),
 })
 /** An element as a value names it: what it leads with stays in its declaration. */
 const named = ({ id, class: kind, label, shortLabel, group, parent }: VignetteElement): VignetteElement =>

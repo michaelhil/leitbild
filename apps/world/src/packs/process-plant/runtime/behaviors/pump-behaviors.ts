@@ -44,9 +44,15 @@ const driveSteamAdmitted = (system: CompiledProcessPlant, component: CompiledCom
   return supplies.reduce((total, link) => total + context.readNumber(processLinkVariablePath(link, 'flowKgPerS')), 0) >= minimum
 }
 
-/** A pump runs while it is commanded to, its motor has power, and its drive turbine, if it has one, has steam. */
+// A pump the instructor has failed to start (startFailureActive, a fault the
+// scenario injects) does not start on its command: stopped, it stays stopped
+// with its command standing; one already running runs on.
+const failsToStart = (component: CompiledComponent, context: Pick<ProcessPlantBehaviorContext, 'readBoolean'>): boolean =>
+  context.readBoolean(componentVariablePath(component, 'startFailureActive')) && !context.readBoolean(componentVariablePath(component, 'runningState'))
+
+/** A pump runs while it is commanded to, its motor has power, its drive turbine, if it has one, has steam, and it has not failed to start. */
 const pumpCanRun = (system: CompiledProcessPlant, component: CompiledComponent, context: ElectricalReadContext): boolean =>
-  componentHasElectricalPower(system, component, context) && driveSteamAdmitted(system, component, context)
+  componentHasElectricalPower(system, component, context) && driveSteamAdmitted(system, component, context) && !failsToStart(component, context)
 
 // A pump on a service whose flow the valves downstream of it set (main
 // feedwater through the feed regulating valves) delivers no more than they
@@ -126,7 +132,7 @@ export const pumpBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition>
     id: 'centrifugal-pump-flow',
     phase: 'solveFluidFlowComponents',
     componentKind: 'centrifugalPump',
-    reads: ['running', 'speedFraction', 'speedRpm', 'flow demand?', 'incoming electrical energized?', 'incoming drive steam flowKgPerS?', 'pressurizer.pressureMPa?', 'pressure-balanced header branches?', 'downstream demand valves?'],
+    reads: ['running', 'runningState', 'startFailureActive', 'speedFraction', 'speedRpm', 'flow demand?', 'incoming electrical energized?', 'incoming drive steam flowKgPerS?', 'pressurizer.pressureMPa?', 'pressure-balanced header branches?', 'downstream demand valves?'],
     writes: ['runningState', 'flowKgPerS', 'speedRpm', 'demandMw', 'speedFraction'],
     update: (input): void => {
       const { system, component, context } = input
@@ -155,7 +161,7 @@ export const pumpBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition>
     id: 'centrifugal-pump-primary-loop-flow',
     phase: 'solveFluidFlowComponents',
     componentKind: 'centrifugalPump',
-    reads: ['running', 'speedFraction', 'speedRpm', 'loopFlowKgPerS', 'loopReverseFlowKgPerS', 'incoming electrical energized?', 'every primary loop pump speedRpm', 'every primary loop leg temperatureC', 'pressurizer.pressureMPa?'],
+    reads: ['running', 'runningState', 'startFailureActive', 'speedFraction', 'speedRpm', 'loopFlowKgPerS', 'loopReverseFlowKgPerS', 'incoming electrical energized?', 'every primary loop pump speedRpm', 'every primary loop leg temperatureC', 'pressurizer.pressureMPa?'],
     writes: ['developedHeadPa', 'loopFlowTargetKgPerS', 'loopFlowKgPerS', 'loopReverseFlowKgPerS'],
     update: ({ system, component, context }): void => {
       const loop = primaryLoopOf(system, component)
@@ -182,7 +188,7 @@ export const pumpInitialReconciliationDefinitions: ReadonlyArray<ComponentInitia
   {
     id: 'centrifugal-pump-initial-state',
     componentKind: 'centrifugalPump',
-    reads: ['running', 'speedFraction', 'flow demand?', 'every primary loop pump speedRpm', 'every primary loop leg temperatureC', 'pressurizer.pressureMPa?'],
+    reads: ['running', 'runningState', 'startFailureActive', 'speedFraction', 'flow demand?', 'every primary loop pump speedRpm', 'every primary loop leg temperatureC', 'pressurizer.pressureMPa?'],
     writes: ['runningState', 'speedFraction', 'flowKgPerS', 'speedRpm', 'developedHeadPa', 'demandMw', 'loopFlowTargetKgPerS', 'loopFlowKgPerS', 'loopReverseFlowKgPerS'],
     reconcile: ({ system, component, context }): void => {
       const running = context.readBoolean(componentVariablePath(component, 'running')) && pumpCanRun(system, component, context)

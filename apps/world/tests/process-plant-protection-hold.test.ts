@@ -124,7 +124,8 @@ describe('a throttle under an actuation that drove a demand to an end of its spa
     ])
     for (const rule of floored) expect(rule.throttleFloor!.basis).toContain('FR-H.1')
     expect(plant.modelDigest).toBe('47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea')
-    expect(plant.graph.variables.length).toBe(1691)
+    // 1711 since each of the 20 centrifugal pumps gained the fault that fails it to start (R2, plan v5 §5.2).
+    expect(plant.graph.variables.length).toBe(1711)
     // The same graph under the I&C config without any floor: the same digest and variables.
     const withoutFloors = compileResolvedProcessPlant({
       id: plant.id, modelRef: plant.modelRef, operatingPointRef: plant.operatingPointRef, automationRef: plant.automationRef,

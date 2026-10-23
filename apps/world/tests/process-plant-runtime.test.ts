@@ -366,6 +366,9 @@ describe('process plant runtime', () => {
       ]],
       // With the grid available, making it available brings nothing in.
       ['restore-offsite-power', []],
+      // At power a motor-driven AFW pump stands by: failing its start brings nothing in until it is demanded.
+      ['motor-driven-afw-pump-a-fails-to-start', []],
+      ['motor-driven-afw-pump-b-fails-to-start', []],
     ])
 
     for (const action of processPlantActions) {
@@ -429,6 +432,9 @@ describe('process plant runtime', () => {
       ]],
       // With the grid available, making it available brings nothing in.
       ['restore-offsite-power', []],
+      // At power a motor-driven AFW pump stands by: failing its start brings nothing in until it is demanded.
+      ['motor-driven-afw-pump-a-fails-to-start', []],
+      ['motor-driven-afw-pump-b-fails-to-start', []],
     ])
 
     for (const action of processPlantActions) {

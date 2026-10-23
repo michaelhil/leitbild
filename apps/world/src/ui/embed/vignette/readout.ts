@@ -34,6 +34,8 @@ export interface ReadingInput {
   /** A criterion's declared checks, and those that apply now. */
   readonly criterion?: Observable['checks']
   readonly checks?: Observation['checks']
+  /** A demand (its observable's basis is a command): never a filled state, written as the command it is ("CMD yes"). */
+  readonly demand?: true
 }
 
 /** LO, LO-LO, HI, HI-HI: the limit's direction once per order. */
@@ -134,8 +136,10 @@ export const readingLook = (label: string, valueType: Observable['valueType'], s
   // A number or a duration reads as a number; a state, a text and an instant as a word.
   const state = (valueType !== 'number' && valueType !== 'duration') || typeof value === 'string' || typeof value === 'boolean'
   const decades = input.decades === true
-  const text = quality === 'not-applicable' ? '—' : unknown ? '?' : typeof value === 'number' ? numberText(value, input.unit, input.quantity, decades)
+  const word = quality === 'not-applicable' ? '—' : unknown ? '?' : typeof value === 'number' ? numberText(value, input.unit, input.quantity, decades)
     : valueType === 'instant' && typeof value === 'string' ? clockText(value) : stateWord(value, states)
+  // A demand says what is asked, never that it is so (H14): "CMD yes", never a filled indicator.
+  const text = input.demand === true && state && !unknown && quality !== 'not-applicable' ? `CMD ${word}` : word
   const number = !state && !unknown && quality !== 'not-applicable' && typeof value === 'number'
   return {
     kind: state ? 'state' : 'number',
@@ -150,7 +154,7 @@ export const readingLook = (label: string, valueType: Observable['valueType'], s
     tone,
     emphasis: input.priority === 'notice',
     doubtful: quality === 'uncertain' || quality === 'stale',
-    fill: unknown ? 'unknown' : activeState(value, states) === true ? 'filled' : 'hollow',
+    fill: unknown ? 'unknown' : input.demand !== true && activeState(value, states) === true ? 'filled' : 'hollow',
     chip: passed === undefined || quality === 'not-applicable' ? null : { word: orderWord(passed), text: `${orderWord(passed)} ${numberText(passed.value, input.unit, input.quantity, decades)}${passed.consequence === undefined ? '' : ` · ${passed.consequence}`}`, tone },
     note,
     bar: typeof value === 'number' && !unknown && quality !== 'not-applicable' ? limitBar(value, input.thresholds, input.past) : null,
@@ -169,16 +173,17 @@ const criterionLook = (label: string, input: ReadingInput): ReadingLook => {
 }
 
 /** How a declared value reads in a sample. */
-export const valueLook = (value: Pick<Observable, 'valueType' | 'states' | 'unit' | 'thresholds' | 'quantity' | 'decades' | 'checks'> & { readonly label: string }, observations: ReadonlyArray<Observation>, ref: string): ReadingLook =>
+export const valueLook = (value: Pick<Observable, 'valueType' | 'states' | 'unit' | 'thresholds' | 'quantity' | 'decades' | 'checks' | 'basis'> & { readonly label: string }, observations: ReadonlyArray<Observation>, ref: string): ReadingLook =>
   readingLook(value.label, value.valueType, value.states, observedInput(value, observations.find(observation => observation.ref === ref)))
 
 /** An observation as a readout's input. */
-export const observedInput = (observable: Pick<Observable, 'unit' | 'thresholds' | 'quantity' | 'decades'> & Partial<Pick<Observable, 'checks'>>, observation: Observation | undefined): ReadingInput => ({
+export const observedInput = (observable: Pick<Observable, 'unit' | 'thresholds' | 'quantity' | 'decades' | 'basis'> & Partial<Pick<Observable, 'checks'>>, observation: Observation | undefined): ReadingInput => ({
   value: observation?.value,
   unit: observable.unit,
   ...(observable.checks === undefined ? {} : { criterion: observable.checks }),
   quantity: observable.quantity,
   ...(observable.decades === true ? { decades: true as const } : {}),
+  ...(observable.basis === 'command' ? { demand: true as const } : {}),
   thresholds: observable.thresholds,
   ...(observation === undefined ? {} : {
     quality: observation.quality,

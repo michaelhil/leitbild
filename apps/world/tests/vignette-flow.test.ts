@@ -6,7 +6,7 @@ import type { TopologyGraph } from '../src/core/observation/topology.ts'
 import type { VignetteSection } from '../src/features/displays/compose/model.ts'
 import { FLOW_ROOM, overviewOf, topologySection } from '../src/features/displays/compose/topology.ts'
 import { FLOW_TEXT_LINE, flowLayout, READING_CHARACTERS } from '../src/features/displays/topology/flow-sizing.ts'
-import { groupName, type TopologyLayout } from '../src/features/displays/topology/layout.ts'
+import { groupName, itemText, type TopologyLayout } from '../src/features/displays/topology/layout.ts'
 import { scopeTopology, type TopologyRequest } from '../src/features/displays/topology/scope.ts'
 import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
 import { plantDeclaration } from '../src/packs/process-plant/observation/declarations.ts'
@@ -15,6 +15,7 @@ import { servedPlantTopology } from '../src/packs/process-plant/observation/topo
 import { plantControlsFor } from '../src/packs/process-plant/operations/controls.ts'
 import type { ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
 import { flowDrawing, glyphOf, symbolOf } from '../src/ui/embed/vignette/flow-symbols.ts'
+import { valueLook } from '../src/ui/embed/vignette/readout.ts'
 import { vesselGeometry } from '../src/ui/embed/vignette/vessel-symbol.ts'
 import { VIGNETTE_ROW_PX } from '../src/ui/embed/vignette/grid.ts'
 import { drawingScale } from '../src/ui/embed/vignette/network.ts'
@@ -115,6 +116,7 @@ type Topology = Extract<VignetteSection, { kind: 'topology' }>
 const at = '2026-10-21T12:00:00.000Z'
 const observation = (ref: string, value: Observation['value'], quality: Observation['quality'] = 'good'): Observation => ({ ref, at, clock: 'simulation', value, quality, priority: 'none' })
 
+const runWords = [{ value: 'on', label: 'RUN', active: true as const }, { value: 'off', label: 'STOP' }]
 // A tank feeding two alike movers into a valve and a header: the layout as the engine would give it, in grid units.
 const section: Topology = {
   kind: 'topology', rows: 8, objectId: 'unit:x', packId: 'fixture', family: 'flow',
@@ -122,7 +124,7 @@ const section: Topology = {
     family: 'flow', unit: 'grid', width: 20, height: 6, crossings: 0, hash: 'h',
     nodes: [
       { id: 'tank', x: 0, y: 1, width: 2, height: 4, ports: { out: { x: 2, y: 3, face: 'right' } }, text: { x: 0, y: 5, width: 3, height: 1, lines: 2, side: 'bottom' } },
-      { id: 'mover', x: 5, y: 2, width: 2, height: 2, ports: { in: { x: 5, y: 3, face: 'left' }, out: { x: 7, y: 3, face: 'right' } }, members: ['mover', 'moverB'], text: { x: 5, y: 4, width: 3, height: 1, lines: 2, side: 'bottom' } },
+      { id: 'mover', x: 5, y: 2, width: 2, height: 2, ports: { in: { x: 5, y: 3, face: 'left' }, out: { x: 7, y: 3, face: 'right' } }, members: ['mover', 'moverB'], text: { x: 5, y: 4, width: 4, height: 2, lines: 3, side: 'bottom' } },
       { id: 'valve', x: 10, y: 2, width: 2, height: 2, ports: { in: { x: 10, y: 3, face: 'left' }, out: { x: 12, y: 3, face: 'right' } } },
       { id: 's0', x: 16, y: 2.5, width: 2, height: 1, ports: { end: { x: 16, y: 3, face: 'left' } } },
     ],
@@ -133,9 +135,9 @@ const section: Topology = {
     ],
   },
   nodes: [
-    { id: 'tank', class: 'store', label: 'Supply tank', shortLabel: 'Tank', bindings: [{ role: 'level', ref: 'unit:x#level', quantity: 'level', unit: '%' }] },
-    { id: 'mover', class: 'mover', label: 'Mover A', bindings: [{ role: 'running', ref: 'unit:x#runA', quantity: 'state', unit: '' }] },
-    { id: 'moverB', class: 'mover', label: 'Mover B', bindings: [{ role: 'running', ref: 'unit:x#runB', quantity: 'state', unit: '' }] },
+    { id: 'tank', class: 'store', label: 'Supply tank', shortLabel: 'Tank', bindings: [{ role: 'level', ref: 'unit:x#level', quantity: 'level', unit: '%', word: 'LVL' }] },
+    { id: 'mover', class: 'mover', label: 'Mover A', bindings: [{ role: 'running', ref: 'unit:x#runA', quantity: 'state', unit: '', states: runWords, commanded: true }] },
+    { id: 'moverB', class: 'mover', label: 'Mover B', bindings: [{ role: 'running', ref: 'unit:x#runB', quantity: 'state', unit: '', states: runWords, commanded: true }] },
     { id: 'valve', class: 'switch', label: 'Valve', bindings: [{ role: 'position', ref: 'unit:x#open', quantity: 'fraction', unit: '1' }] },
     { id: 's0', class: 'stop', label: 'Header', bindings: [] },
   ],
@@ -145,7 +147,7 @@ const section: Topology = {
     { id: 's0.edge', mediumKind: 'fluid', bindings: [] },
   ],
 }
-const live = [observation('unit:x#level', 62), observation('unit:x#runA', true), observation('unit:x#runB', false), observation('unit:x#open', 0.4), observation('unit:x#flowA', 12.5)]
+const live = [observation('unit:x#level', 62), observation('unit:x#runA', 'on'), observation('unit:x#runB', 'off'), observation('unit:x#open', 0.4), observation('unit:x#flowA', 12.5)]
 
 describe('flow symbols', () => {
   test('OpenBridge equipment by class first, then the drawn lines: a mover generates only where a power line leaves it', () => {
@@ -193,7 +195,7 @@ describe('flow symbols', () => {
     expect(glyphOf('valve', { kind: 'unknown' }, false)).toEqual({ tag: 'obi-twoway-digital-static' })
   })
 
-  test('bindings drive the drawing: a level fills the tank and is written as one (LVL), a group counts its running members, a position opens the valve, a flow fills its pipe', () => {
+  test('bindings drive the drawing: a level fills the tank and is written with its Pack\'s word (LVL), a group counts its running members, a position opens the valve, a flow fills its pipe', () => {
     const drawing = flowDrawing(section, live, [], false)
     expect(drawing.vessels).toMatchObject([{ id: 'tank', kind: 'tank', level: 62, unknown: false }])
     expect(drawing.devices.map(device => [device.id, device.on, device.unknown, device.glyph])).toEqual([
@@ -207,20 +209,46 @@ describe('flow symbols', () => {
     expect(drawing.segments.some(segment => segment.kind === 'endpoint')).toBe(true)
   })
 
-  test('a lone item writes its state in its observable\'s declared words, or in their place the command it does not follow; unknown reads "?"', () => {
+  test('a lone item writes its state in its observable\'s declared words and, on the line under it, the command it does not follow (W1.3); unknown reads "?"', () => {
     const lone: Topology = {
       ...section,
       layout: { ...section.layout, nodes: section.layout.nodes.map(node => (node.id === 'mover' ? { id: 'mover', x: 5, y: 2, width: 2, height: 2, ports: node.ports, text: { x: 7, y: 2, width: 4, height: 2, lines: 3, side: 'right' as const } } : node)) },
-      nodes: section.nodes.map(node => (node.id === 'mover' ? { ...node, bindings: [{ role: 'running' as const, ref: 'unit:x#runA', quantity: 'state' as const, unit: '', states: [{ value: 'on', label: 'RUN', active: true as const }, { value: 'off', label: 'STOP' }] }] } : node)),
+      nodes: section.nodes.map(node => (node.id === 'mover' ? { ...node, bindings: [{ role: 'running' as const, ref: 'unit:x#runA', quantity: 'state' as const, unit: '', states: runWords, commanded: true as const }] } : node)),
     }
-    const words = (observations: ReadonlyArray<Observation>) => flowDrawing(lone, observations, [], false).texts.find(text => text.id === 'mover')!.lines.map(line => `${line.kind}:${line.text}`)
-    expect(words([{ ...observation('unit:x#runA', 'off'), why: 'CMD RUN' }])).toEqual(['name:Mover A', 'command:CMD RUN'])
+    const drawn = (observations: ReadonlyArray<Observation>) => flowDrawing(lone, observations, [], false).texts.find(text => text.id === 'mover')!
+    const words = (observations: ReadonlyArray<Observation>) => drawn(observations).lines.map(line => `${line.kind}:${line.text}`)
+    // A pump told to run that stopped reads STOP, then CMD RUN, outlined as abnormal: never as running.
+    expect(words([{ ...observation('unit:x#runA', 'off'), why: 'CMD RUN' }])).toEqual(['name:Mover A', 'word:STOP', 'command:CMD RUN'])
+    expect(drawn([{ ...observation('unit:x#runA', 'off'), why: 'CMD RUN' }]).outline).toBe('abnormal')
+    expect(flowDrawing(lone, [{ ...observation('unit:x#runA', 'off'), why: 'CMD RUN' }], [], false).devices.find(device => device.id === 'mover')!.on).toBe(false)
     expect(words([observation('unit:x#runA', 'off')])).toEqual(['name:Mover A', 'word:STOP'])
+    expect(drawn([observation('unit:x#runA', 'off')]).outline).toBeNull()
     expect(words([observation('unit:x#runA', 'on')])).toEqual(['name:Mover A', 'word:RUN'])
     expect(words([observation('unit:x#runA', 'on', 'bad')])).toEqual(['name:Mover A', 'word:?'])
     // Outside the validity its observable declares, a state reads "—" and draws as not known.
     expect(words([observation('unit:x#runA', null, 'not-applicable')])).toEqual(['name:Mover A', 'word:—'])
     expect(flowDrawing(lone, [observation('unit:x#runA', null, 'not-applicable')], [], false).devices.find(device => device.id === 'mover')!.unknown).toBe(true)
+  })
+
+  test('a group writes its members\' word and how many say it, and the command they do not follow under it: STOP 2/2 · CMD RUN (W1.3)', () => {
+    const group = (observations: ReadonlyArray<Observation>) => flowDrawing(section, observations, [], false).texts.find(text => text.id === 'mover')!
+    expect(group([observation('unit:x#runA', 'on'), observation('unit:x#runB', 'off')]).lines.map(line => line.text)).toEqual([groupName(['Mover A', 'Mover B']), 'RUN 1/2'])
+    expect(group([observation('unit:x#runA', 'on'), observation('unit:x#runB', 'on')]).lines.map(line => line.text)).toEqual([groupName(['Mover A', 'Mover B']), 'RUN 2/2'])
+    const stopped = group([{ ...observation('unit:x#runA', 'off'), why: 'CMD RUN' }, { ...observation('unit:x#runB', 'off'), why: 'CMD RUN' }])
+    expect(stopped.lines.map(line => `${line.kind}:${line.text}`)).toEqual([`name:${groupName(['Mover A', 'Mover B'])}`, 'word:STOP 2/2', 'command:CMD RUN'])
+    expect(stopped.outline).toBe('abnormal')
+    // An alarm frames it instead: the frame says more, so no outline.
+    const row = { key: 'unit:x|a', objectId: 'unit:x', objectLabel: 'Unit', packId: 'fixture', categoryId: 'unit', group: { objectId: 'unit:x' }, priority: 'alarm', state: 'active-unack', raised: null,
+      alert: { id: 'a', kind: 'alarm', severity: 'critical', message: 'm', raisedAt: at, acknowledged: false, priority: 'alarm', subject: { element: 'mover' } } } as never
+    expect(flowDrawing(section, [{ ...observation('unit:x#runA', 'off'), why: 'CMD RUN' }, observation('unit:x#runB', 'off')], [row], false).texts.find(text => text.id === 'mover')!.outline).toBeNull()
+  })
+
+  test('a demand never reads as a filled state, in a drawing or a values view, AI vignettes included (W1.3, H14): "CMD yes", hollow', () => {
+    const demand = { label: 'Unit · Run command · Mover A', valueType: 'boolean' as const, unit: '', quantity: 'state' as const, thresholds: [], basis: 'command' as const }
+    const running = { ...demand, label: 'Unit · Running · Mover A', basis: 'instrument' as const }
+    const looks = [demand, running].map(value => valueLook(value, [observation('unit:x#v', true)], 'unit:x#v'))
+    expect(looks.map(look => [look.text, look.fill])).toEqual([['CMD yes', 'hollow'], ['yes', 'filled']])
+    expect(valueLook(demand, [observation('unit:x#v', true, 'bad')], 'unit:x#v').text).toBe('?')
   })
 
   test('an active alert on an item\'s element frames it at its priority; a returned one, or one on another object, does not', () => {
@@ -234,7 +262,7 @@ describe('flow symbols', () => {
   })
 
   test('missing, bad or stale readings and a frozen sample read as unknown, never as off or empty', () => {
-    const stale = flowDrawing(section, [observation('unit:x#level', 62, 'stale'), observation('unit:x#runA', true, 'bad'), observation('unit:x#flowA', 0)], [], false)
+    const stale = flowDrawing(section, [observation('unit:x#level', 62, 'stale'), observation('unit:x#runA', 'on', 'bad'), observation('unit:x#flowA', 0)], [], false)
     expect(stale.vessels[0]).toMatchObject({ level: null, unknown: true })
     expect(stale.devices.map(device => [device.id, device.unknown])).toEqual([['mover', true], ['valve', true]])
     expect(stale.texts[1]!.lines[1]!.text).toBe('RUN ?/2')
@@ -251,48 +279,63 @@ describe('flow symbols', () => {
 
 describe('text room (UX audit #68; plan §5.5, containment)', () => {
   // Every line a drawn item writes stays inside the box its layout kept for it, at the sizing's width a character:
-  // its name, its state word or the command it does not follow ("commanded RUN" ran 32 px past the RCPs' boxes on
-  // Run A), and each reading at the longest value the sizing reserves a reading for, a level full with its word
-  // before it ("LVL 100.0 %" ran one character past its box); and every level is written, so no room taken for a
-  // word costs a drawing its readings. Generic: every item of the declared overview at two to four loops and of the
-  // neighbourhoods an element's default draws.
-  type Declared = Pick<Observable, 'quantity' | 'unit' | 'states'>
-  /** A value whose reading takes all of the characters the sizing reserves for a value (READING_CHARACTERS). */
-  const widest = (declared: Declared): number => {
+  // its name; its state word, or the word that says it stopped ("Rods off bottom"), and under it the command it does
+  // not follow ("commanded RUN" ran 32 px past the RCPs' boxes on Run A); each reading at the longest value the sizing
+  // reserves for it: a share full with its word before it ("LVL 100.0 %" ran one character past its box), a quantity
+  // read in turn on each of its instruments ("8.8×10⁻¹¹ A", "PWR 100.0 %"); and every reading the layout kept a line
+  // for is written, so no room taken for a word costs a drawing its readings. Generic: every item of the declared
+  // overview at two to four loops and of the neighbourhoods an element's default draws.
+  type Binding = Topology['nodes'][number]['bindings'][number]
+  /** A value whose reading takes all of these characters. */
+  const widest = (declared: Pick<Observable, 'quantity' | 'unit'>, characters: number): number => {
     const symbol = unitSymbol(declared.unit)
     const decimals = decimalsFor(declared.unit, 10 ** 6, declared.quantity)
-    const digits = READING_CHARACTERS - (symbol === '' ? 0 : symbol.length + 1) - (decimals === 0 ? 0 : decimals + 1)
+    const digits = characters - (symbol === '' ? 0 : symbol.length + 1) - (decimals === 0 ? 0 : decimals + 1)
     return Number(`${'9'.repeat(Math.max(1, digits))}${decimals === 0 ? '' : `.${'9'.repeat(decimals)}`}`)
   }
+  /** A reading at its longest: a share full (its word says it is one), one over decades at a two-digit power of ten, else every character its room keeps. */
+  const longestReading = (binding: Binding, inTurn: boolean): number =>
+    binding.word !== undefined ? 100 : binding.decades === true ? 8.8e-11 : widest(binding, inTurn ? READING_CHARACTERS + 1 : READING_CHARACTERS)
   /** A state at its longest declared word. */
-  const longestState = (declared: Declared): string | null =>
-    declared.states === undefined || declared.states.length === 0 ? null : [...declared.states].sort((left, right) => right.label.length - left.label.length)[0]!.value
+  const longestState = (binding: Binding): string => [...binding.states!].sort((left, right) => right.label.length - left.label.length)[0]!.value
   const outside = (objectId: string, request: TopologyRequest | 'overview', loops: number): ReadonlyArray<string> => {
     const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: objectId, loopCount: loops }))
     const served = servedPlantTopology(objectId as never, plant)
     const declared = new Map(plantDeclaration(objectId as never, plant, null).observables.map(observable => [observable.ref, observable]))
     const scoped = request === 'overview' ? overviewOf(served)! : (() => { const result = scopeTopology(served, request); if (!result.ok) throw new Error(result.refusal.code); return result.scoped })()
-    const section = topologySection(objectId, 'process-plant', scoped, flowLayout(scoped, ROOM)!, 37, ref => declared.get(ref)) as Topology
-    /** A reading bound as a level (under any of its bindings) reads its percent of span: at its fullest, 100 %. */
-    const levels = new Set(section.nodes.flatMap(node => node.bindings.filter(binding => binding.role === 'level').map(binding => binding.ref)))
-    // Each state at its longest word, then each item not following a command to either end of its travel, which
-    // stands in its state word's place (derived.ts commandNotFollowed); every reading at its longest.
-    const read = (state: (binding: Topology['nodes'][number]['bindings'][number]) => Observation | null) =>
-      section.nodes.flatMap(node => node.bindings.map(binding => (binding.states === undefined ? null : state(binding)) ?? observation(binding.ref, levels.has(binding.ref) ? 100 : widest(binding))))
-    // The items whose state can stand apart from their command: a control commands it and it travels (derived.ts unfollowed).
-    const commandable = new Set(plantControlsFor(plant).items.filter(item => {
-      const component = plant.graph.components[item.item.component]!
-      const device = item.item.kind === 'device' ? component.semantics.embedded.find(candidate => item.item.kind === 'device' && candidate.id === item.item.device) : undefined
-      return (device?.aspects ?? component.semantics.aspects).some(aspect => aspect.command !== undefined && aspect.travel !== undefined)
-    }).map(item => `${objectId}#${item.id}.state`))
-    const commanded = (end: 'on' | 'off') => (binding: Topology['nodes'][number]['bindings'][number]): Observation | null => {
+    const section = topologySection(objectId, 'process-plant', scoped, flowLayout(scoped, ROOM)!, 38, ref => declared.get(ref)) as Topology
+    const inTurn = new Set(section.nodes.flatMap(node => itemText(node.bindings).readings.filter(reading => reading.length > 1).flat().map(binding => binding.ref)))
+    // Each instrument of a quantity read in turn in range once: its flag and every flag before it hold.
+    const steps = Math.max(1, ...section.nodes.flatMap(node => itemText(node.bindings).readings.map(reading => reading.length)))
+    const flags = (step: number): ReadonlyArray<Observation> => section.nodes.flatMap(node => itemText(node.bindings).readings.flatMap(reading => reading.slice(1).map((binding, at) => observation(binding.while!, at < step))))
+    // Each state at its longest word; each item not following a command to either end (derived.ts commandNotFollowed),
+    // which writes its state and the command under it; what says an item stopped not holding while a trip commands it.
+    // A stop on a power line writes how many of what it names are on ("CLOSED 1/3"): every other one is.
+    const far = (at: number) => section.nodes.flatMap(node => (node.stop?.far ?? []).flatMap((end, index) => end.bindings.map(binding => {
+      const on = binding.states?.find(state => state.active === true)?.value
+      const off = binding.states?.find(state => state.active !== true)?.value
+      return observation(binding.ref, (index + at) % 2 === 0 ? on ?? true : off ?? false)
+    })))
+    const read = (state: (binding: Binding) => Observation, step: number) => [...flags(step), ...far(step),
+      ...section.nodes.flatMap(node => node.bindings.map(binding => (binding.states !== undefined ? state(binding) : observation(binding.ref, longestReading(binding, inTurn.has(binding.ref))))))]
+    const commanded = (end: 'on' | 'off') => (binding: Binding): Observation => {
       const wanted = binding.states!.find(state => state.value === (end === 'on' ? 'off' : 'on'))
-      return wanted === undefined || !commandable.has(binding.ref) ? null : { ...observation(binding.ref, end), why: commandNotFollowed(wanted.label) }
+      if (binding.role === 'stopped') return { ...observation(binding.ref, 'off'), why: commandNotFollowed('trip') }
+      return wanted === undefined || binding.commanded !== true ? observation(binding.ref, longestState(binding)) : { ...observation(binding.ref, end), why: commandNotFollowed(wanted.label) }
     }
-    return [read(binding => observation(binding.ref, longestState(binding)!)), read(commanded('on')), read(commanded('off'))].flatMap(observations => {
+    const samples = Array.from({ length: Math.max(2, steps) }, (_, step) => [read(binding => observation(binding.ref, longestState(binding)), step), read(commanded('on'), step), read(commanded('off'), step)]).flat()
+    return samples.flatMap(observations => {
       const drawing = flowDrawing(section, observations, [], false)
-      const levelled = section.nodes.filter(node => node.bindings.some(binding => binding.role === 'level')).map(node => node.id)
-      return [...levelled.filter(id => drawing.texts.some(text => text.id === id) && !drawing.texts.some(text => text.id === id && text.lines.some(line => line.text.startsWith('LVL ')))).map(id => `${id}: its level is not written`), ...drawing.texts.flatMap(text => [
+      // The readings each item's layout kept a line for, after its name, its state and the command it may not follow.
+      const unwritten = section.layout.nodes.flatMap(node => {
+        const view = section.nodes.find(entry => entry.id === node.id)
+        if (view === undefined || node.text === undefined || node.members !== undefined) return []
+        const text = itemText(view.bindings)
+        const kept = Math.min(text.readings.length, node.text.lines - 1 - (text.state === null ? 0 : 1) - (text.commanded ? 1 : 0))
+        const written = drawing.texts.find(entry => entry.id === node.id)?.lines.filter(line => line.kind === 'reading').length ?? 0
+        return written < kept ? [`${node.id}: ${written} of the ${kept} readings it keeps a line for are written`] : []
+      })
+      return [...unwritten, ...drawing.texts.flatMap(text => [
         ...(text.x < 0 || text.x + text.width > drawing.width ? [`${text.id}: its box leaves the drawing`] : []),
         ...text.lines.filter(line => line.text.length * FLOW_TEXT_LINE.perCharacter > text.width)
           .map(line => `${text.id}: "${line.text}" needs ${line.text.length * FLOW_TEXT_LINE.perCharacter} px of its ${text.width}`),
@@ -300,9 +343,9 @@ describe('text room (UX audit #68; plan §5.5, containment)', () => {
     })
   }
 
-  test('every line an item writes fits its box: names, state words or the command not followed, and readings with their word, at their longest', () => {
+  test('every line an item writes fits its box: names, state words and the command not followed, and readings with their word, at their longest', () => {
     for (const loops of [2, 3, 4]) expect(outside(`plant:room-${loops}`, 'overview', loops)).toEqual([])
-    const around: ReadonlyArray<readonly [string, number]> = [['sgA', 1], ['pressurizer', 1], ['condenser', 2], ['turbine', 3], ['safetyBusA', 2], ['feedwaterTank', 3], ['rcpA', 2]]
+    const around: ReadonlyArray<readonly [string, number]> = [['sgA', 1], ['pressurizer', 1], ['condenser', 2], ['turbine', 2], ['safetyBusA', 2], ['feedwaterTank', 3], ['rcpA', 2]]
     for (const [element, reach] of around) {
       const request = { around: [element], reach }
       expect(outside('plant:room', request, 4)).toEqual([])
@@ -344,15 +387,19 @@ describe('a part an item inserts, from the plant\'s reading to the drawn bar', (
       const system = { plant, runtime: { readVariableSnapshot: () => ({ value: steps }) } } as unknown as ProcessPlantRuntimeInstance
       const observations = banks.map(binding => ({ ref: binding.ref, ...readDerived(system, binding.ref.slice(binding.ref.indexOf('#') + 1), () => []), at: at, clock: 'simulation' as const }))
       const vessel = flowDrawing(section, observations, [], false).vessels.find(item => item.id === 'core')!
-      return { parts: vessel.parts, bars: vesselGeometry({ height: vessel.height, origin: { x: vessel.x, y: vessel.y }, drawing: vessel.drawing!, level: null, groups: [vessel.parts!] }).core!.bars }
+      return { parts: vessel.parts, bars: vesselGeometry({ height: vessel.height, origin: { x: vessel.x, y: vessel.y }, drawing: vessel.drawing!, level: null, groups: vessel.parts! }).core!.bars }
     }
-    // At power the banks stand out (228 steps withdrawn): no bar hangs in the core, each shows withdrawn above it.
+    // At power the banks stand out (228 steps withdrawn): no bar hangs in the core, each shows withdrawn above it. The
+    // banks hang in their groups (W1.2): the shutdown banks, then the control banks, a group's gap between them.
     const out = drawnAt(228)
-    expect(out.parts).toEqual(Array(8).fill(0))
+    expect(out.parts).toEqual([Array(4).fill(0), Array(4).fill(0)])
     expect(out.bars.every(bar => bar.inserted === 0 && bar.withdrawn! > 0)).toBe(true)
+    const pitch = out.bars.slice(1).map((bar, at) => Math.round(bar.x - out.bars[at]!.x))
+    expect(pitch[3]).toBeGreaterThan(pitch[0]!)
+    expect(new Set([...pitch.slice(0, 3), ...pitch.slice(4)]).size).toBe(1)
     // Tripped (0 steps withdrawn): every bar hangs the core's full height, nothing withdrawn.
     const tripped = drawnAt(0)
-    expect(tripped.parts).toEqual(Array(8).fill(1))
+    expect(tripped.parts).toEqual([Array(4).fill(1), Array(4).fill(1)])
     expect(tripped.bars.every(bar => bar.inserted! > 0 && bar.withdrawn === 0)).toBe(true)
   })
 })

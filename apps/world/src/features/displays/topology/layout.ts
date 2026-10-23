@@ -21,27 +21,28 @@ export interface TopologyLayout {
   readonly crossings: number; readonly hash: string; readonly attribution?: string
 }
 
-/** The roles a flow item writes as readings under its name, at most two, one per observable. */
-export const READING_ROLES: ReadonlyArray<TopologyNode['bindings'][number]['role']> = ['level', 'value', 'flow', 'loading']
+/** The roles a flow item writes as readings under its name, at most two, one per observable, in its bindings' order. */
+const READING_ROLES: ReadonlySet<TopologyNode['bindings'][number]['role']> = new Set(['level', 'value', 'flow', 'loading'])
 export const MAX_READINGS = 2
-type Bound = Pick<TopologyNode['bindings'][number], 'role' | 'ref'>
+type Bound = Pick<TopologyNode['bindings'][number], 'role' | 'ref' | 'word' | 'while' | 'commanded'>
 /**
- * What a flow item writes under its name: the word of its state (its running or conducting binding, in the words
- * its observable declares), or in its place the command it does not follow; then its readings.
+ * What a flow item writes under its name: its state (its running, conducting or stopped binding, in the words its
+ * observable declares) and, where it may not follow a command (`commanded`: one it is given; a trip that stops it), a
+ * line under it for that command; then its readings, in the order its Pack binds them. A reading is one binding, or
+ * one quantity its instruments read in turn: the bindings that stand in for the one before them `while` a flag holds
+ * (a core's flux: counted, then a current, then a percent), narrowest first.
  */
-export const itemText = (bindings: ReadonlyArray<Bound>): { readonly state: string | null; readonly readings: ReadonlyArray<string> } => {
-  const state = bindings.find(binding => binding.role === 'running' || binding.role === 'conducting')?.ref ?? null
-  return { state, readings: [...new Set(READING_ROLES.flatMap(role => bindings.filter(binding => binding.role === role && binding.ref !== state).map(binding => binding.ref)))].slice(0, MAX_READINGS) }
+export const itemText = <T extends Bound>(bindings: ReadonlyArray<T>): { readonly state: T | null; readonly commanded: boolean; readonly readings: ReadonlyArray<ReadonlyArray<T>> } => {
+  const state = bindings.find(binding => binding.role === 'running' || binding.role === 'conducting' || binding.role === 'stopped') ?? null
+  const readings: T[][] = []
+  for (const binding of bindings) {
+    if (!READING_ROLES.has(binding.role) || binding.ref === state?.ref || readings.some(chain => chain.some(entry => entry.ref === binding.ref))) continue
+    const before = binding.while === undefined ? undefined : [...readings].reverse().find(chain => chain[0]!.role === binding.role)
+    if (before === undefined) readings.push([binding])
+    else before.push(binding)
+  }
+  return { state, commanded: state !== null && (state.role === 'stopped' || state.commanded === true), readings: readings.slice(0, MAX_READINGS) }
 }
-
-/** The word a level reading is written with on a drawing (ISA's abbreviation). */
-const LEVEL_WORD = 'LVL'
-/**
- * The word a flow item writes before a reading, or null: a level says it is one, since its percent alone would read
- * as a power or an opening (a core's "100.0 %" after a trip). The sizing reserves its room beside the value's.
- */
-export const readingWord = (bindings: ReadonlyArray<Bound>, ref: string): string | null =>
-  bindings.some(binding => binding.ref === ref && binding.role === 'level') ? LEVEL_WORD : null
 
 /** "MFW A/B" for MFW A and MFW B: the words their names share in front, then what tells each apart; names sharing no leading word are joined whole. */
 export const groupName = (names: ReadonlyArray<string>): string => {

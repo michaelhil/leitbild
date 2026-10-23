@@ -1,13 +1,13 @@
 import type { ObjectId } from '../../../core/model/index.ts'
 import type { TopologyGraph } from '../../../core/observation/topology.ts'
 import { words } from '../../../core/model/text-search.ts'
-import type { CompiledComponent, CompiledPlantGraph, CompiledStateAspect, ComponentId, StateAspect, VariablePath } from '../graph/index.ts'
+import type { CompiledComponent, CompiledPlantGraph, CompiledStateAspect, ComponentId, ProcessSignalBinding, StateAspect, VariablePath } from '../graph/index.ts'
 import { equipmentItemLabel } from '../equipment/items.ts'
 import { linkCarrier } from '../graph/index.ts'
 import { plantCarriers, plantLoops, principalCircuits } from '../equipment/circuits.ts'
 import { electricalExternalPortId } from '../electrical-ports.ts'
 import type { CompiledProcessPlant } from '../plant-compiler.ts'
-import { insertionPositions, itemStateRoles } from './derived.ts'
+import { insertionPositions, itemStateRoles, stoppedPaths } from './derived.ts'
 
 // The Plant as World's `flow` topology (plan v3.1 §2.9, architecture A5):
 // equipment as nodes with the ports its pipes and cables join, each port's
@@ -17,9 +17,12 @@ import { insertionPositions, itemStateRoles } from './derived.ts'
 // drawing narrows by them; groups are the loops, laned in their order. Nodes
 // and edges keep the model's order, which every drawing's order follows.
 // Bindings read the signals the Plant publishes, so a drawing shows live
-// state: a store's level, a mover running, a breaker's contacts or a supply
-// live (conducting), what passes a header, a valve's position and the values
-// its kind reads first (value); a pipe's flow, a cable live. A grid source
+// state: the values its kind reads first (value), in that order, which a
+// drawing writes; a store's level, a mover running, a breaker's contacts or a
+// supply live (conducting), what passes a header, a valve's position; a
+// pipe's flow, a cable live. A share (a level, a power in percent) carries the
+// word a drawing writes before it, since its unit does not say what it reads.
+// A grid source
 // with an external port is the boundary a Scenario connection joins. The
 // overview is the principal circuits (equipment/circuits.ts), as the unit
 // overview has always drawn them; World adds where the drawing stops.
@@ -36,10 +39,23 @@ const classOf = (component: CompiledComponent): TopologyGraph['nodes'][number]['
 const capitalized = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}`
 
 type Bindings = TopologyGraph['nodes'][number]['bindings']
-/** The roles whose signal the Plant publishes, each role and signal once. */
+/** The word a drawing writes before a share (a percent or a fraction), by what it measures; the rest say it in their unit. */
+const SHARE_WORDS: Readonly<Record<string, string>> = { level: 'LVL', power: 'PWR' }
+const READINGS: ReadonlySet<string> = new Set(['level', 'value', 'flow', 'loading'])
+const wordOf = (signal: ProcessSignalBinding): string | undefined => {
+  if (signal.unit !== 'percent' && signal.unit !== 'fraction') return undefined
+  const word = SHARE_WORDS[signal.quantity === 'ratio' ? signal.measurand ?? '' : signal.quantity]
+  if (word === undefined) throw new Error(`${signal.path} is a share a drawing reads, and no word says what it reads`)
+  return word
+}
+/** The roles whose signal the Plant publishes, each role and signal once; a reading of a share with its word. */
 const bound = (objectId: ObjectId, graph: CompiledPlantGraph, roles: ReadonlyArray<readonly [Bindings[number]['role'], VariablePath | undefined]>): Bindings =>
-  roles.flatMap(([role, path], index) => path === undefined || graph.signalBindingByPath.get(path)?.published !== true
-    || roles.slice(0, index).some(([other, at]) => other === role && at === path) ? [] : [{ role, ref: `${objectId}#${path}` }])
+  roles.flatMap(([role, path], index) => {
+    const signal = path === undefined ? undefined : graph.signalBindingByPath.get(path)
+    if (signal?.published !== true || roles.slice(0, index).some(([other, at]) => other === role && at === path)) return []
+    const word = READINGS.has(role) ? wordOf(signal) : undefined
+    return [{ role, ref: `${objectId}#${path}`, ...(word === undefined ? {} : { word }) }]
+  })
 
 /** What an item's state aspects drive: its level, running, contacts or supply (conducting), what passes it, a valve's opening (position). */
 const aspectRoles = (aspects: ReadonlyArray<CompiledStateAspect>): ReadonlyArray<readonly [Bindings[number]['role'], VariablePath | undefined]> => {
@@ -54,10 +70,33 @@ const aspectRoles = (aspects: ReadonlyArray<CompiledStateAspect>): ReadonlyArray
   ]
 }
 
+/** Its key values first, as its kind ranks them (a drawing writes its readings in this order), then what its aspects drive. */
 const nodeBindings = (objectId: ObjectId, graph: CompiledPlantGraph, component: CompiledComponent): Bindings => bound(objectId, graph, [
-  ...aspectRoles(component.semantics.aspects),
   ...component.semantics.keyValues.map(path => ['value', path] as const),
+  ...aspectRoles(component.semantics.aspects),
 ])
+
+/**
+ * What a component's instruments read in turn (a core's neutron flux: counted by its source range, read as a current
+ * by its intermediate range while P-6 holds and in percent by its power range while P-10 does), narrowest first,
+ * each wider one while its flag holds; a chain any of whose signals or flags the Plant does not publish is left out.
+ */
+const inTurn = (objectId: ObjectId, graph: CompiledPlantGraph, component: CompiledComponent): Bindings => {
+  const switched = component.semantics.widerRanges.filter(range => range.while !== undefined)
+  const next = new Map(switched.map(range => [range.reading, range]))
+  const widened = new Set(switched.map(range => range.wider))
+  const published = (path: VariablePath): boolean => graph.signalBindingByPath.get(path)?.published === true
+  // The compiler holds each chain free of returns, so following it ends.
+  return switched.filter(range => !widened.has(range.reading)).flatMap(root => {
+    const steps: Array<{ readonly path: VariablePath; readonly while?: VariablePath }> = [{ path: root.reading }]
+    for (let range = next.get(root.reading); range !== undefined; range = next.get(range.wider)) steps.push({ path: range.wider, while: range.while! })
+    if (!steps.every(step => published(step.path) && (step.while === undefined || published(step.while)))) return []
+    return steps.map(step => {
+      const word = wordOf(graph.signalBindingByPath.get(step.path)!)
+      return { role: 'value' as const, ref: `${objectId}#${step.path}`, ...(step.while === undefined ? {} : { while: `${objectId}#${step.while}` }), ...(word === undefined ? {} : { word }) }
+    })
+  })
+}
 
 const graphs = new WeakMap<CompiledPlantGraph, TopologyGraph>()
 
@@ -140,7 +179,7 @@ const withDevices = (objectId: ObjectId, graph: CompiledPlantGraph, topology: To
         const id = `${component.id}.${device.id}`
         const label = equipmentItemLabel(component, device)
         const ports = (['in', 'out'] as const).map(direction => ({ id: direction, rank: direction, media: port.media, direction, circuit: 'through' }))
-        return { id, class: 'switch' as const, kind: device.function, label, ...(label.length <= 24 ? { shortLabel: label } : {}), rank: `${host.rank}|${device.id}`, ...(host.group === undefined ? {} : { group: host.group }), ports, bindings: bound(objectId, graph, aspectRoles(device.aspects)) }
+        return { id, element: id, class: 'switch' as const, kind: device.function, label, ...(label.length <= 24 ? { shortLabel: label } : {}), rank: `${host.rank}|${device.id}`, ...(host.group === undefined ? {} : { group: host.group }), ports, bindings: bound(objectId, graph, aspectRoles(device.aspects)) }
       })
       nodes.push(...chain)
       const media = [...new Set(edges.filter(edge => (outward ? edge.from : edge.to).node === host.id && (outward ? edge.from : edge.to).port === port.id).map(edge => edge.medium))]
@@ -162,10 +201,15 @@ const served = new WeakMap<CompiledProcessPlant, TopologyGraph>()
 
 /**
  * The topology the Plant serves World: its graph's, with the devices its
- * equipment bundles drawn on their lines, and each item that runs, is live,
- * or opens and shuts bound to its state observable (derived.ts) for running
- * or conducting, so a drawing writes its word (RUN, SHUT, ON LINE) and the
- * command it does not follow; a valve's glyph still opens with its position.
+ * equipment bundles drawn on their lines; each item that runs, is live, or
+ * opens and shuts bound to its state observable (derived.ts) for running or
+ * conducting, so a drawing writes its word (RUN, SHUT, ON LINE) and the
+ * command it does not follow (a valve's glyph still opens with its position);
+ * equipment a trip stops bound to what says it stopped ("Rods on bottom"),
+ * with the trip it does not follow; what its instruments read in turn (a
+ * core's flux on the instrument in range) its first reading; and what it
+ * inserts, part by part in its groups (a core's shutdown banks, then its
+ * control banks).
  */
 export const servedPlantTopology = (objectId: ObjectId, plant: CompiledProcessPlant): TopologyGraph => {
   const known = served.get(plant)
@@ -173,14 +217,21 @@ export const servedPlantTopology = (objectId: ObjectId, plant: CompiledProcessPl
   const topology = withDevices(objectId, plant.graph, plantTopology(objectId, plant.graph, plant.modelDigest))
   const roles = itemStateRoles(plant)
   const parts = insertionPositions(plant)
+  const stopped = stoppedPaths(plant)
   const bound: TopologyGraph = { ...topology, nodes: topology.nodes.map(node => {
+    const index = plant.graph.componentIndexById.get(node.id as ComponentId)
     const state = roles.get(node.id)
-    // What it inserts (a core's rod banks), each part at the share of its range it stands inserted (1 fully in).
-    const positions = (parts.get(node.id) ?? []).map(path => ({ role: 'position' as const, ref: `${objectId}#${path}` }))
+    const stop = stopped.get(node.id)
+    const turns = index === undefined ? [] : inTurn(objectId, plant.graph, plant.graph.components[index]!)
     // Its state observable runs or conducts it in place of the signal it rests on: its word, and the command it does not follow.
-    const kept = state === undefined ? node.bindings : node.bindings.filter(binding => binding.role !== state.role)
-    const stated = state === undefined ? [] : [{ role: state.role, ref: `${objectId}#${state.path}` }]
-    return stated.length === 0 && positions.length === 0 ? node : { ...node, bindings: [...kept, ...stated, ...positions] }
+    const stated = [
+      ...(state === undefined ? [] : [{ role: state.role, ref: `${objectId}#${state.path}`, ...(state.commanded ? { commanded: true as const } : {}) }]),
+      ...(stop === undefined ? [] : [{ role: 'stopped' as const, ref: `${objectId}#${stop}` }]),
+    ]
+    const kept = node.bindings.filter(binding => (state === undefined || binding.role !== state.role) && !turns.some(turn => turn.ref === binding.ref))
+    // What it inserts (a core's rod banks), each part at the share of its range it stands inserted (1 fully in), in its group.
+    const positions = (parts.get(node.id) ?? []).flatMap((group, at) => group.map(path => ({ role: 'position' as const, ref: `${objectId}#${path}`, group: String(at + 1) })))
+    return stated.length === 0 && turns.length === 0 && positions.length === 0 ? node : { ...node, bindings: [...stated, ...turns, ...kept, ...positions] }
   }) }
   served.set(plant, bound)
   return bound
