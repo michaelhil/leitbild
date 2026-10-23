@@ -189,7 +189,7 @@
     sessions = faceplateStates(section.objectId, elements, at).map(chunk => {
       const session = createVignetteSession({
         runId, state: chunk.state, routes: vignetteRoutes,
-        onChange: snapshot => { readings = new Map([...readings, ...readingsOf(chunk.elements, snapshot.view, snapshot.latest)]) },
+        onChange: snapshot => { readings = new Map([...readings, ...readingsOf(chunk.elements, snapshot.view, snapshot.latest, snapshot.series)]) },
       })
       session.setVisible(presentation.shown)
       session.start()

@@ -9,12 +9,11 @@
   import type { DisplayOpening } from '../view-host.ts'
   import AlertsSection from './AlertsSection.svelte'
   import { worstChip } from './alerts.ts'
-  import { FACEPLATE_ALERTS, FACEPLATE_READINGS, ownAlerts, readingLabel, shortOfRoom, shownReadings, type FaceplateReadings } from './faceplate.ts'
+  import { FACEPLATE_ALERTS, FACEPLATE_READINGS, faceplateRows, ownAlerts, shortOfRoom, shownReadings, type FaceplateReadings } from './faceplate.ts'
   import { VIGNETTE_ROW_PX } from './grid.ts'
   import { elementOffer, faceplateHeight, faceplatePlacement, FACEPLATE_ROW, FACEPLATE_WIDTH, type Box, type OverlayChange, type PinnedOverlay } from './popover.ts'
-  import { toneOf, valueLook, type ReadingLook } from './readout.ts'
-  import Readout from './Readout.svelte'
-  import StateWord from './StateWord.svelte'
+  import { toneOf } from './readout.ts'
+  import ValueRows from './ValueRows.svelte'
 
   // An element's faceplate (L2, plan v5 §3, W3.2): a card in OpenBridge's card
   // look, no arrow, beside its item and never over it. Its header names the
@@ -100,10 +99,8 @@
   let decided = false
   let rest = $state(0)
   const fit = $derived(shownReadings(readings?.values.length ?? 0, { rest, row: FACEPLATE_ROW, pending, rows: pinned?.rows ?? null }))
-  const listed = $derived(readings === null ? [] : readings.values.slice(0, fit.shown))
-  const observations = $derived(readings === null ? [] : readings.observations)
-  /** A frozen display's readings are the last it had: shown in OpenBridge's low-integrity style, as the display's own values. */
-  const shown = (look: ReadingLook): ReadingLook => (frozen ? { ...look, doubtful: true } : look)
+  /** Its readings as the column's lead rows read, sparklines included (D-C); frozen, the last it had, low-integrity. */
+  const rows = $derived(readings === null ? [] : faceplateRows(readings, fit.shown, { title, elementId, frozen }))
   const width = $derived(pinned?.width ?? FACEPLATE_WIDTH)
   const place = $derived(pinned !== null ? { x: pinned.x, y: pinned.y } : anchor !== null ? faceplatePlacement(anchor, { width, height }, room, zoom, avoid)
     : faceplatePlacement({ ...(at ?? { x: room.x, y: room.y }), width: 0, height: 0 }, { width, height }, room, zoom, avoid))
@@ -264,12 +261,9 @@
         {:else if readings === null}
           <p class="status">Reading {name}…</p>
         {:else}
-          <!-- Its readings, one row each; the sparkline slot is the row's right (D-C, R3). -->
+          <!-- Its readings, one row each, as the column's lead rows: its 10-min sparkline at the row's right (D-C). -->
           <div class="readings" bind:this={readingsBox}>
-            {#each listed as value (value.ref)}
-              {@const look = shown(valueLook(value, observations, value.ref))}
-              {#if look.kind === 'state'}<StateWord {look} label={readingLabel(value, title, elementId)} />{:else}<Readout {look} label={readingLabel(value, title, elementId)} />{/if}
-            {/each}
+            <ValueRows {rows} now={readings.now} />
             {#if fit.more > 0}
               {#if offer === 'nothing'}<p class="more">+{fit.more} more in its detail</p>
               {:else}<button type="button" class="more" onclick={() => ondetail(elementId)}>+{fit.more} more in its detail ›</button>{/if}
