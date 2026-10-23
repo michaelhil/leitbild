@@ -175,8 +175,8 @@ const judgeView = async (ctx: { readonly page: Page; readonly scratch: Page; rea
     const valueOf = (row: ColumnRead['rows'][number], index: number): any => byIndex ? leadValues[index]
       : leadValues.find(entry => { const label = String(entry?.label ?? ''); return (row.full !== '' && label === row.full) || label.includes(row.label) })
     // A number with a series draws its sparkline (D-C); a state word (on/off, a mode) is reported apart.
-    const seriesOf = (row: ColumnRead['rows'][number], index: number): boolean => { const value = valueOf(row, index); return value?.series !== undefined && (value?.valueType ?? 'number') === 'number' }
-    const stateRows = column.rows.filter((row, index) => { const value = valueOf(row, index); return value?.series !== undefined && value?.valueType !== undefined && value.valueType !== 'number' })
+    const seriesOf = (row: ColumnRead['rows'][number], index: number): boolean => { const value = valueOf(row, index); return value?.series != null && (value?.valueType ?? 'number') === 'number' }
+    const stateRows = column.rows.filter((row, index) => { const value = valueOf(row, index); return value?.series != null && value?.valueType !== undefined && value.valueType !== 'number' })
     const missing = column.rows.filter((row, index) => row.spark === null && seriesOf(row, index))
     const withSeries = { size: column.rows.filter((row, index) => seriesOf(row, index)).length }
     checks.push(check('sparklines', missing.length === 0, `${column.rows.length} lead rows, ${column.rows.filter(row => row.spark !== null).length} with a sparkline; ${withSeries.size} numbers with a series (${byIndex ? 'row by row' : 'by label'}); with a series but no sparkline${listed(missing.map(row => `"${row.label}"`), 6) || ': none'}${stateRows.length === 0 ? '' : `; state rows with a series (not judged): ${stateRows.map(row => `"${row.label}"${row.spark === null ? '' : ' (sparkline)'}`).join(', ')}`}`))

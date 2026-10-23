@@ -15,7 +15,7 @@
  * Writes <out>/<label>-e0.json and shots. Loopback only; reads only (the Run is not changed); no model is called. */
 import { join } from 'node:path'
 import { ensureChrome, loopbackOrigin, openPage, options, sleep, type Page } from './browser.ts'
-import { behindAffordance, onScreen, type PressTarget, type Screen, type ScreenLine } from './display-dom.ts'
+import { behindAffordance, graphicsOnScreen, onScreen, type PressTarget, type Screen, type ScreenLine } from './display-dom.ts'
 import { goHome, homeOf, openOverview, press, sizeSpec, targetsOf, type Outcome, type SizeSpec } from './display-press.ts'
 
 export interface Judged { readonly pass: boolean; readonly evidence: string }
@@ -87,8 +87,10 @@ export const E0_CHECKS: ReadonlyArray<E0Check> = [
       // strip's legend and its axis ticks as lines of the column).
       const legend = screen.lines.filter(line => line.valueOn && /^Pres/.test(line.text) && /MPa/.test(line.text) && line.x > (pressure[0]?.x ?? 0) + 100)
       const ticks = screen.lines.filter(line => line.on && /^(LO|HI)(-(LO|HI))? \d/.test(line.text))
-      const trend = legend.length > 0 || ticks.length > 0
-      return { pass: pressure.length > 0 && level.length > 0 && trend, evidence: `pressure ${pressure.length > 0 ? quote(pressure) : 'not on screen'}; level ${level.length > 0 ? quote(level) : 'not on screen'}; trend ${trend ? (legend.length > 0 ? quote(legend) : `limit ticks ${quote(ticks)}`) : 'none on screen'}` }
+      // R3: the pressure row's own sparkline (its words: "PZR pressure, last 10 min: …").
+      const spark = graphicsOnScreen(screen, /^(PZR pressure|Pressuri[sz]er pressure)\b.*\bmin\b/i, ['column', 'body'])
+      const trend = legend.length > 0 || ticks.length > 0 || spark.length > 0
+      return { pass: pressure.length > 0 && level.length > 0 && trend, evidence: `pressure ${pressure.length > 0 ? quote(pressure) : 'not on screen'}; level ${level.length > 0 ? quote(level) : 'not on screen'}; trend ${trend ? (spark.length > 0 ? `sparkline "${spark[0]!.text.slice(10, 90)}"` : legend.length > 0 ? quote(legend) : `limit ticks ${quote(ticks)}`) : 'none on screen'}` }
     },
   },
   {

@@ -51,7 +51,8 @@ export interface DisplayState {
   readonly sim: string | null
   readonly worst: string | null
   readonly chips: ReadonlyArray<{ readonly label: string; readonly value: string }>
-  readonly leads: ReadonlyArray<{ readonly label: string; readonly value: string }>
+  /** `full`: the row's whole label where it writes a short one (R3: the visually hidden .full). */
+  readonly leads: ReadonlyArray<{ readonly label: string; readonly value: string; readonly full?: string }>
   readonly alerts: { readonly heading: string; readonly rows: ReadonlyArray<string>; readonly more: string | null } | null
   /** Drawn items framed or marked by an alert: their item ids, by tone. */
   readonly framed: ReadonlyArray<{ readonly item: string; readonly tone: string; readonly name: string }>
@@ -178,7 +179,7 @@ const READER = `(scope) => {
     // R3's column: obc-readout-list rows (.row) in the .values block.
     const ROWS = ':scope > .readout, :scope > .state, :scope > .values > .readout, :scope > .values > .state, :scope > .values > obc-readout-list > .row:not(.head)'
     const leadSection = sections.find(s => s.querySelector(ROWS))
-    const leads = leadSection ? [...leadSection.querySelectorAll(ROWS)].map(row => ({ label: text(row.querySelector(':scope > .label, :scope > .name > .label')) || text(row.querySelector(':scope > .full')) || text(row).slice(0, 60), value: deepText(row.querySelector(':scope > .reading, :scope > obc-status-indicator, :scope > .unknown, :scope > obc-readout-list-item') ?? row.querySelector('obc-readout-list-item, obc-status-indicator, .reading') ?? doc.createElement('i')) })) : []
+    const leads = leadSection ? [...leadSection.querySelectorAll(ROWS)].map(row => ({ full: (row.querySelector(':scope > .full')?.textContent || '').replace(/\\s+/g, ' ').trim() || undefined, label: text(row.querySelector(':scope > .label, :scope > .name > .label')) || text(row.querySelector(':scope > .full')) || text(row).slice(0, 60), value: deepText(row.querySelector(':scope > .reading, :scope > obc-status-indicator, :scope > .unknown, :scope > obc-readout-list-item') ?? row.querySelector('obc-readout-list-item, obc-status-indicator, .reading') ?? doc.createElement('i')) })) : []
     const alertsSection = [...article.querySelectorAll('section.alerts')].find(s => !s.closest('.popover, [role=dialog]'))
     const framed = [...article.querySelectorAll('.flow .text')].filter(t => ['caution', 'warning', 'alarm', 'critical'].some(c => t.classList.contains(c)))
       .map(t => ({ item: t.dataset.item, tone: ['critical', 'alarm', 'warning', 'caution'].find(c => t.classList.contains(c)), name: text(t.firstElementChild) }))
@@ -472,6 +473,15 @@ export const readScreen = (): string => `((() => {${SCREEN_HELPERS}
   const box = frameBox(shown.frame)
   const fr = shown.frame.getBoundingClientRect()
   const lines = linesOf(shown.doc, shown.frame)
+  // Graphics a person reads (sparklines and traces: svg role=img with their words), as lines of their own, marked.
+  for (const el of shown.doc.querySelectorAll('svg[role=img][aria-label]')) {
+    if (!lb.shown(el)) continue
+    const r = el.getBoundingClientRect()
+    const rect = { l: box.ox + box.s * r.left, t: box.oy + box.s * r.top, r: box.ox + box.s * r.right, b: box.oy + box.s * r.bottom }
+    const v = visiblePart(el, rect, box, shown.doc.defaultView)
+    const on = whole(rect, v)
+    lines.push({ text: '⟨graphic⟩ ' + el.getAttribute('aria-label'), region: regionOf(el, shown.doc.defaultView), on, valueOn: on, x: Math.round(rect.l), y: Math.round(rect.t), w: Math.round(rect.r - rect.l), h: Math.round(rect.b - rect.t) })
+  }
   // Dialogs: inside the display (faceplates, choosers) and on the Run page over it (a tag dialog, the procedures).
   const dialogs = []
   for (const el of shown.doc.querySelectorAll('[role=dialog], [role=menu], [role=listbox], .popover, .faceplate')) {
@@ -490,8 +500,13 @@ export const readScreen = (): string => `((() => {${SCREEN_HELPERS}
 
 /** Lines whose values show on screen, or stand behind the drawing's scroll affordance, and whose text matches, in the
  * regions given (all when none). */
+/** A graphic's line (a sparkline's or trace's own words, its aria-label), as readScreen lists it beside the text. */
+export const GRAPHIC = '⟨graphic⟩ '
 export const onScreen = (screen: Screen, pattern: RegExp, regions?: ReadonlyArray<string>): ReadonlyArray<ScreenLine> =>
-  screen.lines.filter(line => (line.valueOn || line.behind === true) && pattern.test(line.text) && (regions === undefined || regions.includes(line.region)))
+  screen.lines.filter(line => !line.text.startsWith(GRAPHIC) && (line.valueOn || line.behind === true) && pattern.test(line.text) && (regions === undefined || regions.includes(line.region)))
+/** The graphics on screen (sparklines, traces) whose words match, in the regions given. */
+export const graphicsOnScreen = (screen: Screen, pattern: RegExp, regions?: ReadonlyArray<string>): ReadonlyArray<ScreenLine> =>
+  screen.lines.filter(line => line.text.startsWith(GRAPHIC) && line.on && pattern.test(line.text.slice(GRAPHIC.length)) && (regions === undefined || regions.includes(line.region)))
 /** Of these lines, the ones that need the drawing's scroll (behind its affordance), for evidence. */
 export const behindAffordance = (lines: ReadonlyArray<ScreenLine>): ReadonlyArray<ScreenLine> => lines.filter(line => !line.valueOn && line.behind === true)
 
