@@ -290,7 +290,14 @@ const SCREEN_HELPERS = String.raw`
   }
   // Whether the whole rectangle shows: 0.5 px across, 3 px up and down (a text box's content area overflows a tight line box).
   const whole = (rect, v) => v.l <= rect.l + 0.5 && v.r >= rect.r - 0.5 && v.t <= rect.t + 3 && v.b >= rect.b - 3 && v.r > v.l && v.b > v.t
-  const hiddenEl = (el, win) => { const s = win.getComputedStyle(el); return s.visibility === 'hidden' || s.display === 'none' || Number(s.opacity) === 0 }
+  // Hidden, or there only for assistive technology (a visually hidden copy of a message: a 1 px box clipped away).
+  const hiddenEl = (el, win) => {
+    const s = win.getComputedStyle(el)
+    if (s.visibility === 'hidden' || s.display === 'none' || Number(s.opacity) === 0) return true
+    if (s.position !== 'absolute' && s.position !== 'fixed') return false
+    const r = el.getBoundingClientRect()
+    return (r.width <= 1 && r.height <= 1) || /inset\(50%/.test(s.clipPath) || /^rect\(0/.test(s.clip)
+  }
   // Every rendered text node under root (through shadow roots), not an SVG title or a hidden spacer.
   const textNodesOf = (root, win) => {
     const out = []
@@ -344,7 +351,8 @@ const SCREEN_HELPERS = String.raw`
       const rect = nodeRect(node, box)
       if (rect === null) continue
       const parent = parentOf(node, win)
-      const row = closestUp(parent, ROW, win) || parent
+      // The trip line under the title row reads as one line; its labels and messages are its parts.
+      const row = closestUp(parent, '.trip, .trip-line', win) || closestUp(parent, ROW, win) || parent
       let entry = rows.get(row)
       if (!entry) { entry = { row, parts: [], on: true, valueOn: true, cut: 0, behind: 0, l: Infinity, t: Infinity, r: -Infinity, b: -Infinity }; rows.set(row, entry) }
       entry.parts.push(node.textContent)

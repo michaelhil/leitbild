@@ -88,7 +88,7 @@ export const press = async (page: Page, given: Pick<PressTarget, 'x' | 'y' | 'na
     await sleep(300)
     const now = await screenOf(page)
     const sig = signature(now) + shapeOf(now)
-    if (sig === last && !/Reading the element|Loading|Composing/i.test(textOf(now))) { after = now; break }
+    if (sig === last && !/Reading the element|Reading [^\n]{1,40}…|Loading|Composing|Connecting to the Run/i.test(textOf(now))) { after = now; break }
     last = sig
     after = now
   }
