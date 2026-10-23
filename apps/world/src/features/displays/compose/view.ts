@@ -212,10 +212,10 @@ export const framedBy = (run: ComposeRun, view: Extract<ResolvedView, { kind: 'm
  * draws, else the one its alerts list, as the trip line takes it) whose Pack declares first-out groups. The row stands
  * empty at rest, so nothing moves when one trips; the composer counts it and the view says so (`tripLine`).
  */
-export const keepsTripLine = async (run: ComposeRun, views: ReadonlyArray<ResolvedView>): Promise<boolean> => {
+export const keepsTripLine = async (run: ComposeRun, views: ReadonlyArray<{ readonly kind: string; readonly objectId?: string | undefined; readonly objectIds?: 'run' | ReadonlyArray<string> | undefined }>): Promise<boolean> => {
   const drawn = views.find(view => view.kind === 'topology')
-  const listed = [...new Set(views.flatMap(view => view.kind === 'alerts' && view.objectIds !== 'run' ? view.objectIds : []))]
-  const objectId = drawn?.kind === 'topology' ? drawn.objectId : listed.length === 1 ? listed[0]! : undefined
+  const listed = [...new Set(views.flatMap(view => view.kind === 'alerts' && view.objectIds !== undefined && view.objectIds !== 'run' ? view.objectIds : []))]
+  const objectId = drawn?.objectId ?? (listed.length === 1 ? listed[0]! : undefined)
   if (objectId === undefined || visibleObject(run, objectId) === undefined) return false
   return ((await declarationOf(run, objectId))?.annunciation?.groups.length ?? 0) > 0
 }

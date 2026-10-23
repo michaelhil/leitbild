@@ -153,15 +153,24 @@ export interface TrendsRead {
 export const readTrends = (): string => String.raw`((() => {${SHOWN}
   if (!shown) return { strips: [] }
   const doc = shown.doc, win = doc.defaultView
-  const strips = [...doc.querySelectorAll('.strip')].filter(el => !el.closest('.popover, [role=dialog]')).map((strip, index) => {
-    const svg = strip.querySelector('.plot svg')
-    const box = svg ? svg.getBoundingClientRect() : strip.getBoundingClientRect()
+  // R3 (W5): a .trend holds one .plot per strip, each followed by its ul.legend (states draw as .band rows); R2 drew a
+  // .strip with its .plot and legend inside.
+  const plots = [...doc.querySelectorAll('.trend .plot, .strip .plot')].filter(el => !el.closest('.popover, [role=dialog]'))
+  const legendOf = plot => {
+    const strip = plot.closest('.strip')
+    if (strip) return strip.querySelector('.legend')
+    for (let n = plot.nextElementSibling; n; n = n.nextElementSibling) { if (n.matches('ul.legend')) return n; if (n.matches('.plot')) return null }
+    return null
+  }
+  const strips = plots.map((plot, index) => {
+    const svg = plot.querySelector('svg')
+    const box = svg ? svg.getBoundingClientRect() : plot.getBoundingClientRect()
     const pens = svg ? [...svg.querySelectorAll('path.pen')].map(p => ({ cls: [...p.classList].filter(c => !/^svelte-/.test(c)).join('.'), pieces: ((p.getAttribute('d') || '').match(/M/gi) || []).length, dash: p.getAttribute('stroke-dasharray') })) : []
-    const texts = svg ? [...svg.querySelectorAll('text')].map(t => { const r = t.getBoundingClientRect(); return { text: (t.textContent || '').trim(), x: r.left - box.left, y: r.top - box.top, w: r.width, h: r.height, anchor: t.getAttribute('text-anchor') || 'start' } }) : []
+    const texts = svg ? [...svg.querySelectorAll('text')].map(t => { const r = t.getBoundingClientRect(); return { text: (t.textContent || '').replace(/\s+/g, ' ').trim(), x: r.left - box.left, y: r.top - box.top, w: r.width, h: r.height, anchor: t.getAttribute('text-anchor') || 'start' } }).filter(t => t.text !== '') : []
     const limits = svg ? [...svg.querySelectorAll('line.limit')].map(l => ({ cls: [...l.classList].filter(c => !/^svelte-/.test(c)).join('.'), y: Number(l.getAttribute('y1')), stroke: win.getComputedStyle(l).stroke, dash: win.getComputedStyle(l).strokeDasharray, title: ((l.querySelector('title') || {}).textContent || '').trim() })) : []
-    // Cut: an ellipsis written, or a box (not an inline span, whose client width is 0) narrower than its text.
-    const legend = [...strip.querySelectorAll('.legend li')].map(li => { const name = li.querySelector('.name') || li; const inline = win.getComputedStyle(name).display === 'inline'; return { name: textOf(name), cut: (!inline && name.scrollWidth > name.clientWidth + 1) || /…$/.test(textOf(name)), now: textOf(li.querySelector('.now')) } })
-    return { index, width: Math.round(box.width), height: Math.round(box.height), pens, texts, limits, legend, empty: textOf(strip.querySelector('.empty')) || null }
+    const legendEl = legendOf(plot)
+    const legend = legendEl ? [...legendEl.querySelectorAll('li')].map(li => { const name = li.querySelector('.name') || li; const inline = win.getComputedStyle(name).display === 'inline'; return { name: textOf(name), cut: (!inline && name.scrollWidth > name.clientWidth + 1) || /…$/.test(textOf(name)), now: textOf(li.querySelector('.now')) } }) : []
+    return { index, width: Math.round(box.width), height: Math.round(box.height), pens, texts, limits, legend, empty: textOf(plot.querySelector('.empty')) || null }
   })
   return { strips }
 })())`
