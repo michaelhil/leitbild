@@ -57,7 +57,7 @@ export const csfRow = (screen: Screen, size: SizeSpec, run: 'A' | 'B'): MatrixCh
 /** The SG A item's body press: the element's default as the next deck entry with its drawing; Esc = Back. */
 export const navigation = async (page: Page, home: ReturnType<typeof homeOf>, reopen: () => Promise<Screen>, shotPath: string): Promise<MatrixCheck> => {
   const targets = await targetsOf(page)
-  const body = targets.find(target => target.kind === 'item' && /^(Steam Generator A|SG A)\b/i.test(target.name))
+  const body = targets.find(target => target.kind === 'item' && /^(Open\s+)?(Steam Generator A|SG A)\b/i.test(target.name))
   if (body === undefined) return { id: 'navigation', release: 'R2', pass: false, detail: 'no SG A item on screen' }
   const before = home.position
   const { outcome, after } = await press(page, body)
@@ -120,7 +120,7 @@ export const presses = async (page: Page, config: { readonly api: StackApi; read
   // press in the chat panel (or, without the chat, on the window's header title, which is the Run page's frame).
   {
     const all = await targetsOf(page)
-    const opener = all.find(target => target.kind === 'magnifier' && /SG A|Steam Generator A/i.test(target.name)) ?? all.find(target => target.kind === 'item' && /^(Steam Generator A|SG A)\b/i.test(target.name))
+    const opener = all.find(target => target.kind === 'magnifier' && /SG A|Steam Generator A/i.test(target.name)) ?? all.find(target => target.kind === 'item' && /^(Open\s+)?(Steam Generator A|SG A)\b/i.test(target.name))
     if (opener === undefined) checks.push({ id: 'press-other-frame', release: 'R2', pass: false, detail: 'no SG A opener' })
     else {
       const opened = await press(page, opener)

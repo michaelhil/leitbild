@@ -432,7 +432,7 @@ export interface Screen {
 /** An expression for `Page.eval`: what the display window shows on screen now (see Screen). */
 export const readScreen = (): string => `((() => {${SCREEN_HELPERS}
   const shown = windowDoc()
-  const header = lb.everything().map(([el]) => el).find(el => el.className && typeof el.className === 'string' && /(^|\s)display-window-header(\s|$)/.test(el.className) && lb.shown(el))
+  const header = lb.everything().map(([el]) => el).find(el => el.className && typeof el.className === 'string' && /(^|\\s)display-window-header(\\s|$)/.test(el.className) && lb.shown(el))
   const position = header && header.querySelector('.display-window-position')
   const title = header && header.querySelector('.display-window-title')
   const back = !!(header && [...header.querySelectorAll('button, [role=button]')].some(b => lb.shown(b) && /^back\\b|go back|‹ /i.test((b.getAttribute('aria-label') || b.getAttribute('title') || b.innerText || '').trim())))
@@ -522,7 +522,8 @@ export const readTargets = (): string => `((() => {${SCREEN_HELPERS}
       .sort((a, b) => (a.r.left - r.right) - (b.r.left - r.right))[0]
     return near ? near.id : null
   }
-  const bare = name => name.replace(/^(Open|Faceplate:|Quick look:?)\s+/i, '')
+  // Written \\s: this template is not raw, and a lone \s would reach the page as "s".
+  const bare = name => name.replace(/^(Open|Faceplate:|Quick look:?)\\s+/i, '')
   const small = el => { const r = el.getBoundingClientRect(); return r.width <= 44 && r.height <= 44 }
   for (const el of doc.querySelectorAll(PRESSABLE)) {
     if (!lb.shown(el) || el.closest('[aria-hidden=true]') || el.matches('[disabled], [aria-disabled=true]')) continue
