@@ -456,20 +456,28 @@ const t8 = async (ctx: Ctx): Promise<TaskResult> => {
 const t9 = async (ctx: Ctx): Promise<TaskResult> => {
   const { home } = await session(ctx, 'T9', sizeSpec('1920'))
   const steps: Step[] = []
+  // Each hop presses the item's body where a press reaches it, else its label (the part of it a person can press);
+  // a body covered by another item's box is reported, as a person pressing it there opens the other item.
+  const covered: string[] = []
+  let opened = 0
   const hop = async (name: RegExp, want: RegExp): Promise<boolean> => {
     const targets = await targetsOf(ctx.page)
-    const body = targets.find(target => target.kind === 'item' && name.test(target.name)) ?? targets.find(target => target.kind === 'label' && name.test(target.name))
-    if (body === undefined) { steps.push({ press: String(name), kind: '-', outcome: 'not on screen' }); return false }
-    const result = await press(ctx.page, body)
-    steps.push({ press: body.name.slice(0, 60), kind: body.kind, outcome: `${describe(result.outcome)}${result.latencyMs === null ? '' : ` (${result.latencyMs} ms)`}` })
-    if (result.outcome.kind === 'detail') await waitForContent(ctx.page)
+    const body = targets.find(target => target.kind === 'item' && name.test(target.name))
+    const label = targets.find(target => target.kind === 'label' && name.test(target.name))
+    if (body !== undefined && !body.reaches) covered.push(`${body.name.slice(0, 40)}'s body is covered at its centre`)
+    const pick = body !== undefined && body.reaches ? body : label ?? body
+    if (pick === undefined) { steps.push({ press: String(name), kind: '-', outcome: 'not on screen' }); return false }
+    const result = await press(ctx.page, pick)
+    steps.push({ press: pick.name.slice(0, 60), kind: pick.kind, outcome: `${describe(result.outcome)}${result.latencyMs === null ? '' : ` (${result.latencyMs} ms)`}` })
+    if (result.outcome.kind === 'detail') { opened += 1; await waitForContent(ctx.page) }
     return result.outcome.kind === 'detail' && titleIs(await screenOf(ctx.page), want)
   }
   const first = await hop(/^(SG A|Steam Generator A)\b/i, /\bSG A\b|Steam Generator A/i)
   const second = first && await hop(/^(AFW header|Auxiliary Feedwater Header)\b/i, /AFW header|Auxiliary Feedwater Header/i)
   let escBack = 0
   if (first) {
-    for (const want of second ? [/\bSG A\b|Steam Generator A/i, /Overview/] : [/Overview/]) {
+    // Esc = Back through every detail opened (a second hop that opened another detail returns to SG A first).
+    for (const want of opened >= 2 ? [/\bSG A\b|Steam Generator A/i, /Overview/] : [/Overview/]) {
       await ctx.page.key('Escape')
       // Esc = Back: poll up to 3.5 s for the window to show the display it came from.
       const started = Date.now()
@@ -482,7 +490,8 @@ const t9 = async (ctx: Ctx): Promise<TaskResult> => {
   const shots = [await shotOf(ctx, 'T9')]
   await goHome(ctx.page, home)
   const verdict: Verdict = first && second && escBack === 2 ? '✔' : first ? '◐' : '✖'
-  return { id: 'T9', title: 'Walk the plant: overview → SG A → AFW header, one click per hop; Esc = Back', verdict, budget: 2, clicks: steps.filter(step => step.kind !== 'key').length, path: steps, deadEnds: steps.filter(step => step.outcome === 'nothing').length, searched: steps.length, detail: `${first ? 'SG A opened as the next display' : 'a press on SG A does not open its detail'}${first ? `; ${second ? 'AFW header opened from it' : 'AFW header not opened from it'}` : ''}${first ? `; Esc returned ${escBack} of ${second ? 2 : 1} hops` : ''}`, shots }
+  const coveredNote = covered.length === 0 ? '' : `; ${covered.join('; ')}`
+  return { id: 'T9', title: 'Walk the plant: overview → SG A → AFW header, one click per hop; Esc = Back', verdict, budget: 2, clicks: steps.filter(step => step.kind !== 'key').length, path: steps, deadEnds: steps.filter(step => step.outcome === 'nothing').length, searched: steps.length, detail: `${first ? 'SG A opened as the next display' : 'a press on SG A does not open its detail'}${first ? `; ${second ? 'AFW header opened from it' : 'AFW header not opened from it'}` : ''}${first ? `; Esc returned ${escBack} of ${opened} hops` : ''}${coveredNote}`, shots }
 }
 
 const t10 = async (ctx: Ctx, t8Result: TaskResult | undefined, t6Result: TaskResult | undefined): Promise<TaskResult> => {
