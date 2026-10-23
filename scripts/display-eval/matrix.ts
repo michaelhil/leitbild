@@ -148,7 +148,7 @@ export const presses = async (page: Page, config: { readonly api: StackApi; read
         await restore()
       } else {
         const elsewhere = config.chatOpen
-          ? await page.eval<{ x: number; y: number } | null>(`(() => { const d = lb.documents().find(x => x.frame && /\\/agents/.test(x.frame.getAttribute('src') || '') && lb.shown(x.frame)); if (!d) return null; const r = d.frame.getBoundingClientRect(); let ox = 0, oy = 0; for (let f = d.frame.ownerDocument.defaultView.frameElement; f; f = f.ownerDocument.defaultView.frameElement) { const q = f.getBoundingClientRect(); ox += q.left; oy += q.top } return { x: ox + r.left + r.width / 2, y: oy + r.top + r.height * 0.4 } })()`)
+          ? await page.eval<{ x: number; y: number } | null>(`(() => { const d = lb.documents().find(x => x.frame && /\\/agents/.test(x.frame.getAttribute('src') || '') && lb.shown(x.frame)); if (!d) return null; const r = lb.toTop(d.frame); return { x: r.x + r.w / 2, y: r.y + r.h * 0.4 } })()`)
           : await page.eval<{ x: number; y: number } | null>(TOP_BAR_POINT)
         if (elsewhere === null) checks.push({ id: 'press-other-frame', release: 'R2', pass: false, detail: 'no other frame to press' })
         else {

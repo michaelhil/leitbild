@@ -265,9 +265,10 @@ const SCREEN_HELPERS = String.raw`
   const areaOf = d => { const r = d.frame.getBoundingClientRect(); return r.width * r.height }
   // The display window's frame: the largest shown embed that is not inside a dialog (a tag dialog or a chat card is smaller).
   const windowDoc = () => embedDocs().sort((a, b) => areaOf(b) - areaOf(a))[0] || null
-  // A frame's offset on the top page, and the part of the top viewport it shows (intersected up the frame chain).
+  // A frame's document on the top page: top x = ox + s * (its viewport x), s its frames' scales (a zoomed display
+  // window scales its frame with transform: scale), and the part of the top viewport it shows (up the frame chain).
   const frameBox = frame => {
-    let ox = 0, oy = 0
+    let ox = 0, oy = 0, sc = 1
     let vis = { l: 0, t: 0, r: window.innerWidth, b: window.innerHeight }
     const chain = []
     for (let f = frame; f; f = f.ownerDocument.defaultView.frameElement) chain.unshift(f)
@@ -278,16 +279,19 @@ const SCREEN_HELPERS = String.raw`
         const s = fwin.getComputedStyle(a)
         if (s.overflowX === 'visible' && s.overflowY === 'visible') continue
         const q = a.getBoundingClientRect()
-        const al = ox + q.left + a.clientLeft, at = oy + q.top + a.clientTop
-        if (s.overflowX !== 'visible') vis = { ...vis, l: Math.max(vis.l, al), r: Math.min(vis.r, al + a.clientWidth) }
-        if (s.overflowY !== 'visible') vis = { ...vis, t: Math.max(vis.t, at), b: Math.min(vis.b, at + a.clientHeight) }
+        const as = a.offsetWidth > 0 ? q.width / a.offsetWidth : 1
+        const al = ox + sc * (q.left + a.clientLeft * as), at = oy + sc * (q.top + a.clientTop * as)
+        if (s.overflowX !== 'visible') vis = { ...vis, l: Math.max(vis.l, al), r: Math.min(vis.r, al + sc * as * a.clientWidth) }
+        if (s.overflowY !== 'visible') vis = { ...vis, t: Math.max(vis.t, at), b: Math.min(vis.b, at + sc * as * a.clientHeight) }
       }
       const r = f.getBoundingClientRect()
-      const l = ox + r.left + f.clientLeft, t = oy + r.top + f.clientTop
-      vis = { l: Math.max(vis.l, l), t: Math.max(vis.t, t), r: Math.min(vis.r, l + f.clientWidth), b: Math.min(vis.b, t + f.clientHeight) }
+      const fs = lb.scaleOf(f)
+      const l = ox + sc * (r.left + f.clientLeft * fs), t = oy + sc * (r.top + f.clientTop * fs)
+      sc *= fs
+      vis = { l: Math.max(vis.l, l), t: Math.max(vis.t, t), r: Math.min(vis.r, l + sc * f.clientWidth), b: Math.min(vis.b, t + sc * f.clientHeight) }
       ox = l; oy = t
     }
-    return { ox, oy, vis }
+    return { ox, oy, s: sc, vis }
   }
   // What a press at a point of the top page lands on, through the frames (a window toolbar or a page dialog over the
   // display takes the press, not the display under it).
@@ -295,7 +299,8 @@ const SCREEN_HELPERS = String.raw`
     let doc = document, px = x, py = y, hit = doc.elementFromPoint(px, py)
     while (hit && hit.tagName === 'IFRAME' && hit.contentDocument) {
       const r = hit.getBoundingClientRect()
-      px -= r.left + hit.clientLeft; py -= r.top + hit.clientTop
+      const fs = lb.scaleOf(hit)
+      px = (px - r.left) / fs - hit.clientLeft; py = (py - r.top) / fs - hit.clientTop
       doc = hit.contentDocument
       hit = doc.elementFromPoint(px, py)
     }
@@ -315,9 +320,10 @@ const SCREEN_HELPERS = String.raw`
       escaping = s.position === 'absolute' ? 'absolute' : s.position === 'fixed' ? 'fixed' : null
       if (s.display === 'contents' || root) continue
       const r = el.getBoundingClientRect()
-      const l = box.ox + r.left + el.clientLeft, t = box.oy + r.top + el.clientTop
-      if (s.overflowX !== 'visible') v = { ...v, l: Math.max(v.l, l), r: Math.min(v.r, l + el.clientWidth) }
-      if (s.overflowY !== 'visible') v = { ...v, t: Math.max(v.t, t), b: Math.min(v.b, t + el.clientHeight) }
+      const es = el.offsetWidth > 0 ? r.width / el.offsetWidth : 1
+      const l = box.ox + box.s * (r.left + el.clientLeft * es), t = box.oy + box.s * (r.top + el.clientTop * es)
+      if (s.overflowX !== 'visible') v = { ...v, l: Math.max(v.l, l), r: Math.min(v.r, l + box.s * es * el.clientWidth) }
+      if (s.overflowY !== 'visible') v = { ...v, t: Math.max(v.t, t), b: Math.min(v.b, t + box.s * es * el.clientHeight) }
     }
     return v
   }
@@ -349,7 +355,7 @@ const SCREEN_HELPERS = String.raw`
     const range = node.ownerDocument.createRange()
     range.selectNodeContents(node)
     const r = range.getBoundingClientRect()
-    return r.width > 0 && r.height > 0 ? { l: box.ox + r.left, t: box.oy + r.top, r: box.ox + r.right, b: box.oy + r.bottom } : null
+    return r.width > 0 && r.height > 0 ? { l: box.ox + box.s * r.left, t: box.oy + box.s * r.top, r: box.ox + box.s * r.right, b: box.oy + box.s * r.bottom } : null
   }
   const closestUp = (el, sel, win) => { for (let n = el; n && n.nodeType === 1; n = parentOf(n, win)) { if (n.matches && n.matches(sel)) return n } return null }
   const ROW = 'li, tr, dt, dd, h1, h2, h3, h4, p, button, a, label, figcaption, summary, [role=button], [role=row], [role=listitem], [role=option], [role=menuitem], [role=status], [role=heading], .readout, .state, .text, .row, .line, .chip'
@@ -378,7 +384,7 @@ const SCREEN_HELPERS = String.raw`
   // whether all of it is on screen.
   const linesOf = (doc, frame) => {
     const win = doc.defaultView
-    const box = frame ? frameBox(frame) : { ox: 0, oy: 0, vis: { l: 0, t: 0, r: window.innerWidth, b: window.innerHeight } }
+    const box = frame ? frameBox(frame) : { ox: 0, oy: 0, s: 1, vis: { l: 0, t: 0, r: window.innerWidth, b: window.innerHeight } }
     const rows = new Map()
     for (const node of textNodesOf(doc.body || doc.documentElement, win)) {
       const rect = nodeRect(node, box)
@@ -397,7 +403,7 @@ const SCREEN_HELPERS = String.raw`
         entry.cut += 1
         // Sideways only, in the drawing's scroller while its affordance shows: reachable by that scroll.
         const scroller = affordanceScroller(node, win)
-        if (scroller) { const sr = scroller.getBoundingClientRect(); const top = box.oy + sr.top, bottom = top + scroller.clientHeight; if (rect.t >= top - 3 && rect.b <= bottom + 3) entry.behind += 1 }
+        if (scroller) { const sr = scroller.getBoundingClientRect(); const top = box.oy + box.s * sr.top, bottom = top + box.s * scroller.clientHeight; if (rect.t >= top - 3 && rect.b <= bottom + 3) entry.behind += 1 }
       }
       // A value: a number, or a state word in capitals ("OPEN", "STOP · CMD RUN"), not a label that holds an acronym.
       if (cut && (/\d/.test(node.textContent) || /^[A-Z][A-Z0-9 .·\/%-]{1,30}$/.test(node.textContent.trim()))) entry.valueOn = false
@@ -410,9 +416,9 @@ const SCREEN_HELPERS = String.raw`
   }
   // A control's page rectangle and whether a press at its centre reaches it (nothing on top of it, on screen).
   const pointOf = (el, frame) => {
-    const box = frame ? frameBox(frame) : { ox: 0, oy: 0, vis: { l: 0, t: 0, r: window.innerWidth, b: window.innerHeight } }
+    const box = frame ? frameBox(frame) : { ox: 0, oy: 0, s: 1, vis: { l: 0, t: 0, r: window.innerWidth, b: window.innerHeight } }
     const r = el.getBoundingClientRect()
-    const rect = { l: box.ox + r.left, t: box.oy + r.top, r: box.ox + r.right, b: box.oy + r.bottom }
+    const rect = { l: box.ox + box.s * r.left, t: box.oy + box.s * r.top, r: box.ox + box.s * r.right, b: box.oy + box.s * r.bottom }
     const v = visiblePart(el, rect, box, el.ownerDocument.defaultView)
     const cx = (Math.max(rect.l, v.l) + Math.min(rect.r, v.r)) / 2, cy = (Math.max(rect.t, v.t) + Math.min(rect.b, v.b)) / 2
     const visible = v.r - v.l > 2 && v.b - v.t > 2
@@ -423,7 +429,7 @@ const SCREEN_HELPERS = String.raw`
       if (!reaches && hit && el.contains && el.contains(hit)) reaches = true
       if (!reaches && hit && hit.shadowRoot && el.getRootNode && el.getRootNode() === hit.shadowRoot) reaches = true
     }
-    return { x: cx, y: cy, w: r.width, h: r.height, visible, reaches, whole: whole(rect, v) }
+    return { x: cx, y: cy, w: box.s * r.width, h: box.s * r.height, visible, reaches, whole: whole(rect, v) }
   }
   const nameOf = el => ((el.getAttribute('aria-label') || el.getAttribute('title') || el.innerText || el.textContent || '') + '').replace(/\s+/g, ' ').trim()
   const PRESSABLE = 'button, a[href], [role=button], [role=link], [role=menuitem], [role=menuitemradio], [role=option], [role=tab], [role=switch], summary, obc-button, obc-toggle-button-option, obc-icon-button, obc-automation-button, [tabindex="0"]'
@@ -474,7 +480,7 @@ export const readScreen = (): string => `((() => {${SCREEN_HELPERS}
     const walk = root => { for (const n of root.querySelectorAll('*')) { const cls = ((n.getAttribute('class') || '') + ' ' + (n.getAttribute('part') || '')).trim(); if (/arrow|caret|beak/i.test(cls) && lb.shown(n)) { const q = n.getBoundingClientRect(); const edge = q.width <= 32 && q.height <= 32 && (q.left < r.left + 2 || q.right > r.right - 2 || q.top < r.top + 2 || q.bottom > r.bottom - 2); parts.push((n.tagName.toLowerCase() + '.' + cls.split(/\\s+/).filter(c => !/^svelte-/.test(c)).join('.')).slice(0, 60) + (edge ? ' (at the edge)' : '')) } if (n.shadowRoot) walk(n.shadowRoot) } }
     walk(el); if (el.shadowRoot) walk(el.shadowRoot)
     const arrow = parts.some(part => part.endsWith('(at the edge)'))
-    dialogs.push({ el, label: nameOf(el).slice(0, 120), where: 'display', x: Math.round(box.ox + r.left), y: Math.round(box.oy + r.top), w: Math.round(r.width), h: Math.round(r.height), pinned: !!el.closest('[data-pinned], .pinned') || /pinned/i.test(el.className + '') || !!el.querySelector('[aria-pressed=true][aria-label*="pin" i], [aria-pressed=true][title*="pin" i]'), arrow, arrowParts: [...new Set(parts)].slice(0, 6) })
+    dialogs.push({ el, label: nameOf(el).slice(0, 120), where: 'display', x: Math.round(box.ox + box.s * r.left), y: Math.round(box.oy + box.s * r.top), w: Math.round(box.s * r.width), h: Math.round(box.s * r.height), pinned: !!el.closest('[data-pinned], .pinned') || /pinned/i.test(el.className + '') || !!el.querySelector('[aria-pressed=true][aria-label*="pin" i], [aria-pressed=true][title*="pin" i]'), arrow, arrowParts: [...new Set(parts)].slice(0, 6) })
   }
   return { frame: { x: Math.round(box.ox), y: Math.round(box.oy), w: Math.round(fr.width), h: Math.round(fr.height), visibleW: Math.round(box.vis.r - box.vis.l), visibleH: Math.round(box.vis.b - box.vis.t) }, window: windowState, lines, dialogs: dialogs.map(({ el, ...d }) => d) }
 })())`

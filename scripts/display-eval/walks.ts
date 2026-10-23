@@ -282,10 +282,9 @@ const t3 = async (ctx: Ctx, sizeName: string): Promise<TaskResult> => {
     const approveOnScreen = async () => ctx.page.eval<{ whole: boolean; reaches: boolean } | null>(`(() => {
       const el = lb.everything().map(([e]) => e).find(e => e.getAttribute && /^approve\\b/i.test((e.getAttribute('aria-label') || e.innerText || '').trim()) && lb.shown(e))
       if (!el) return null
-      let ox = 0, oy = 0
-      for (let f = el.ownerDocument.defaultView.frameElement; f; f = f.ownerDocument.defaultView.frameElement) { const r = f.getBoundingClientRect(); ox += r.left + f.clientLeft; oy += r.top + f.clientTop }
+      const t = lb.toTop(el)
       const r = el.getBoundingClientRect()
-      const whole = ox + r.left >= 0 && oy + r.top >= 0 && ox + r.right <= innerWidth && oy + r.bottom <= innerHeight
+      const whole = t.x >= 0 && t.y >= 0 && t.x + t.w <= innerWidth && t.y + t.h <= innerHeight
       const hit = el.ownerDocument.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
       return { whole, reaches: !!hit && (hit === el || el.contains(hit) || (el.shadowRoot && el.shadowRoot.contains(hit))) }
     })()`)

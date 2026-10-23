@@ -137,10 +137,8 @@ const PAGE_DIALOG_CLOSE = `(() => {
   for (const dialog of dialogs.reverse()) {
     const button = [...dialog.querySelectorAll('button')].find(b => lb.shown(b) && /^close\\b/i.test((b.getAttribute('aria-label') || b.getAttribute('title') || b.innerText || '').trim()))
     if (!button) continue
-    let x = 0, y = 0
-    for (let f = button.ownerDocument.defaultView.frameElement; f; f = f.ownerDocument.defaultView.frameElement) { const q = f.getBoundingClientRect(); x += q.left + f.clientLeft; y += q.top + f.clientTop }
-    const r = button.getBoundingClientRect()
-    return { x: x + r.left + r.width / 2, y: y + r.top + r.height / 2, label: button.getAttribute('aria-label') || button.getAttribute('title') || 'Close' }
+    const r = lb.toTop(button)
+    return { x: r.x + r.w / 2, y: r.y + r.h / 2, label: button.getAttribute('aria-label') || button.getAttribute('title') || 'Close' }
   }
   return null
 })()`
