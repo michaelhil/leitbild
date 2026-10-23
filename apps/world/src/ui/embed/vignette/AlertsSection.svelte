@@ -92,7 +92,8 @@
     && size.height - size.head - tilesHeight(tiles, layout.columns) - 4 >= Math.min(listLines(own, open).length, LINES_BESIDE_TILES) * VIGNETTE_ROW_PX)
   /** Grid rows for lines: what its list measures, else its composed rows less its head. */
   const budget = $derived(Math.max(1, size === null ? room - 1 - (failure === null ? 0 : 1) : Math.floor(size.lines / VIGNETTE_ROW_PX)))
-  const fit = $derived(fitLines(lines, budget))
+  // Where its counts head it, they say what its aggregates fold, which then give way before its third row.
+  const fit = $derived(fitLines(lines, budget, whole))
   const hiddenUnack = $derived(fit.hidden.filter(unacknowledged).length)
   const title = $derived(section.objectIds === 'run' || several ? 'Alerts in the Run' : `Alerts · ${own[0]?.objectLabel ?? ''}`)
 

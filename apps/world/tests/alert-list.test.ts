@@ -49,6 +49,11 @@ describe('the list (W2.5)', () => {
     const tight = fitLines(lines, 6)
     // Two aggregates and "+N more" take three rows; three rows are left for the list's head.
     expect([shown(tight.shown), shown(tight.pinned), tight.hidden.map(entry => entry.alert.id)]).toEqual([['turb-trip', 'rx-trip', 'csf-heat-sink'], ['[3 expected after RX TRIP ▸]', '[1 standing ▸]'], ['loop', 'rcp-a', 'bus-a']])
+    // Where the list's counts say what its aggregates fold, they give way before the list shows fewer than three rows.
+    const counted = fitLines(lines, 5, true)
+    expect([shown(counted.shown), counted.pinned, counted.hidden.map(entry => entry.alert.id)]).toEqual([['turb-trip', 'rx-trip', 'csf-heat-sink', 'loop'], [], ['rcp-a', 'bus-a']])
+    expect(shown(fitLines(lines, 7, true).shown)).toEqual(['turb-trip', 'rx-trip', 'csf-heat-sink', 'loop'])
+    expect(shown(fitLines(lines, 6, true).shown)).toEqual(['turb-trip', 'rx-trip', 'csf-heat-sink'])
     // An opened aggregate stays in view with as many of its rows as half the room holds; the rows before it give way.
     const opened = fitLines(listLines(rows, new Set(['expected:RX TRIP'])), 8)
     expect([shown(opened.shown), shown(opened.pinned), opened.hidden.map(entry => entry.alert.id)]).toEqual([

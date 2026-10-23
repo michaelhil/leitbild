@@ -68,16 +68,31 @@ export const listLines = (rows: ReadonlyArray<AlertRow>, open: ReadonlySet<strin
 /** The rows a line stands for: a row itself, an aggregate those it folds (shown under it when open). */
 const rowsOf = (line: ListLine): ReadonlyArray<AlertRow> => line.kind === 'row' ? [line.row] : line.open ? [] : line.rows
 
+/** The fewest rows a list shows before its aggregates where its counts already say what they fold (plan v5 §5.5: three). */
+export const ROWS_BEFORE_AGGREGATES = 3
+
 /**
  * The lines that fit `room` grid rows, one each. Where they do not all fit, a row says how many more there are ("+N
  * more"), and the aggregates that end the list keep their lines (`pinned`, shown after it), as they say what most of
  * the list is; an opened one keeps the rows it opened to as far as half the room, or what the rows before it leave.
- * `hidden`: the alerts not shown.
+ * Where the list's counts say what the aggregates fold (`counted`: "15 expected" heads it) and keeping them would leave
+ * fewer than ROWS_BEFORE_AGGREGATES rows, they give way to rows, and "+N more" counts only the rows before them.
+ * `hidden`: the alerts not shown, the counted ones aside.
  */
-export const fitLines = (lines: ReadonlyArray<ListLine>, room: number): {
+export const fitLines = (lines: ReadonlyArray<ListLine>, room: number, counted = false): {
   readonly shown: ReadonlyArray<ListLine>; readonly pinned: ReadonlyArray<ListLine>; readonly hidden: ReadonlyArray<AlertRow>
 } => {
   if (lines.length <= room) return { shown: lines, pinned: [], hidden: [] }
+  const tail = lines.findIndex(line => line.kind === 'aggregate')
+  if (counted && tail > 0 && room - 1 - lines.slice(tail).filter(line => line.kind === 'aggregate').length < ROWS_BEFORE_AGGREGATES) {
+    const head = lines.slice(0, tail)
+    const shown = head.length <= room ? head : head.slice(0, Math.max(1, room - 1))
+    return { shown, pinned: [], hidden: head.slice(shown.length).flatMap(rowsOf) }
+  }
+  return fitWithAggregates(lines, room)
+}
+
+const fitWithAggregates = (lines: ReadonlyArray<ListLine>, room: number): ReturnType<typeof fitLines> => {
   const tail = lines.findIndex(line => line.kind === 'aggregate')
   const [head, end] = tail < 0 ? [lines, []] : [lines.slice(0, tail), lines.slice(tail)]
   const budget = room - 1
