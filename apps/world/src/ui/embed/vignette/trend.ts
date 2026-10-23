@@ -346,8 +346,11 @@ export interface StripDrawing {
   readonly labels: ReadonlyArray<{ readonly key: string; readonly lineY: number | null; readonly y: number; readonly rows: ReadonlyArray<ReadonlyArray<LabelRun>>; readonly title: string }>
   /** Control set points: a faint tick at the plot's edge, named faint ("CTL 15.35") only where no limit's name stands (`labelY` null otherwise). */
   readonly setPoints: ReadonlyArray<{ readonly key: string; readonly y: number; readonly label: string; readonly labelY: number | null; readonly title: string }>
-  /** Gridlines, and where each one's value is written: above it, or below where it would leave the plot. */
-  readonly values: ReadonlyArray<{ readonly y: number; readonly labelY: number; readonly label: string }>
+  /**
+   * Gridlines, and where each one's value is written: above it, or below where it would leave the plot; null where it
+   * would touch the value above it (the top one, which names the unit, is always written).
+   */
+  readonly values: ReadonlyArray<{ readonly y: number; readonly labelY: number; readonly label: string | null }>
   /** The window's time before any pen's record starts, from its left edge: "No record yet"; null where a record reaches its start. */
   readonly unrecorded: { readonly width: number } | null
 }
@@ -398,12 +401,25 @@ export const stripDrawing = (input: StripInput & { readonly width: number; reado
       }
     }),
     // The top value names the unit; a value too near the top is written under its line, so none leaves the plot.
-    values: ticks.map(tick => {
+    values: thinned(ticks.map(tick => {
       const level = at(tick.value)
       return { y: level, labelY: level - 3 < 14 ? level + 12 : level - 3, label: level === top && unit !== '' ? `${tick.label} ${unit}` : tick.label }
-    }),
+    })),
     unrecorded: read.recordStart > window.start ? { width: x(read.recordStart) } : null,
   }
+}
+
+/** A 12 px value's box about its baseline (Noto Sans): its ascent above, its descent below. */
+const TICK_BOX = { above: 13, below: 4 }
+/** Gridline values written top down, each only where its box stays a pixel clear of the one written above it. */
+const thinned = <T extends { readonly y: number; readonly labelY: number; readonly label: string }>(values: ReadonlyArray<T>): ReadonlyArray<Omit<T, 'label'> & { readonly label: string | null }> => {
+  const hidden = new Set<T>()
+  let bottom = -Infinity
+  for (const value of [...values].sort((upper, lower) => upper.y - lower.y)) {
+    if (value.labelY - TICK_BOX.above < bottom + 1) hidden.add(value)
+    else bottom = value.labelY + TICK_BOX.below
+  }
+  return values.map(value => (hidden.has(value) ? { ...value, label: null } : value))
 }
 
 const compareRanks = (left: ReadonlyArray<number>, right: ReadonlyArray<number>): number => {
