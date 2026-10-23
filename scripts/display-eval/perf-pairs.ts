@@ -77,6 +77,7 @@ if (import.meta.main) {
     log.push(`compare ${candidate.label} against ${baseline.label} (+20 % gate): ${pass ? 'PASS' : 'FAIL'}`, compared.out)
   }
   await Bun.write(join(out, 'compare.txt'), log.join('\n') + '\n')
-  console.log(log.slice(-3).join('\n'))
+  // The measurements were printed as they came; now the summaries and the comparison.
+  console.log(log.filter(line => !line.startsWith('pair ')).join('\n'))
   process.exit(pass ? 0 : 1)
 }
