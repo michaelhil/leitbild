@@ -13,11 +13,15 @@
   // neutral badge (tileBadge), its title saying which. A tile with alerts is a
   // button that narrows the list to them and, pressed again, widens it. Tiles
   // stand in the fewest rows their labels allow whole (tile-fit.ts): a narrow
-  // tile writes its short label, the whole one in its title.
-  let { tiles, layout, filter, onfilter }: {
+  // tile writes its short label, the whole one in its title. Where full tiles
+  // would leave the list too few rows (a narrow display's band), they stand
+  // as one compact row (`strip`, tileStrip): the worst first, each a chip of
+  // its label and a regular obc-badge, the rest counted ("+2").
+  let { tiles, layout, strip, filter, onfilter }: {
     tiles: ReadonlyArray<AlertTile>
-    /** Its columns and each tile's label (tileLayout). */
-    layout: { readonly columns: number; readonly labels: ReadonlyArray<string> }
+    /** Its columns and each tile's label (tileLayout); or, as one compact row, the chips that row holds (tileStrip). */
+    layout?: { readonly columns: number; readonly labels: ReadonlyArray<string> } | undefined
+    strip?: { readonly shown: ReadonlyArray<{ readonly tile: AlertTile; readonly label: string }>; readonly more: ReadonlyArray<AlertTile> } | undefined
     filter: AlertFilter | null
     onfilter: (filter: AlertFilter | null) => void
   } = $props()
@@ -42,15 +46,27 @@
   </obc-alert-subsystem-counter>
 {/snippet}
 
-<div class="tiles" role="group" aria-label="Alerts by system" style:grid-template-columns={`repeat(${layout.columns}, minmax(0, 1fr))`}>
-  {#each tiles as tile, at (tile.key)}
-    {#if tile.rows.length > 0}
-      <button type="button" class="tile" aria-pressed={sameFilter(filter, { kind: 'tile', key: tile.key })} title={`${title(tile)}: show only these`} onclick={press(tile)}>{@render counter(tile, layout.labels[at]!)}</button>
-    {:else}
-      <div class="tile" title={title(tile)}>{@render counter(tile, layout.labels[at]!)}</div>
-    {/if}
-  {/each}
-</div>
+{#if layout !== undefined}
+  <div class="tiles" role="group" aria-label="Alerts by system" style:grid-template-columns={`repeat(${layout.columns}, minmax(0, 1fr))`}>
+    {#each tiles as tile, at (tile.key)}
+      {#if tile.rows.length > 0}
+        <button type="button" class="tile" aria-pressed={sameFilter(filter, { kind: 'tile', key: tile.key })} title={`${title(tile)}: show only these`} onclick={press(tile)}>{@render counter(tile, layout.labels[at]!)}</button>
+      {:else}
+        <div class="tile" title={title(tile)}>{@render counter(tile, layout.labels[at]!)}</div>
+      {/if}
+    {/each}
+  </div>
+{:else if strip !== undefined}
+  <div class="strip" role="group" aria-label="Alerts by system, the worst first">
+    {#each strip.shown as { tile, label } (tile.key)}
+      {@const badge = tileBadge(tile)!}
+      <button type="button" class="tile chip" class:lit={badge.priority !== 'quiet'} aria-pressed={sameFilter(filter, { kind: 'tile', key: tile.key })} title={`${title(tile)}: show only these`} onclick={press(tile)}>
+        <span class="label">{label}</span><obc-badge type={badge.priority === 'quiet' ? 'regular' : badgeType(badge.priority)} number={badge.count}></obc-badge>
+      </button>
+    {/each}
+    {#if strip.more.length > 0}<span class="more" title={strip.more.map(title).join(' · ')}>+{strip.more.length}</span>{/if}
+  </div>
+{/if}
 
 <style>
   .tiles { display: grid; gap: 4px; }
@@ -59,4 +75,12 @@
   button.tile:focus-visible { outline: 2px solid var(--border-focus-color); outline-offset: 1px; }
   /* The tile the list is narrowed to. */
   .tile[aria-pressed='true'] { outline: 2px solid var(--element-active-color); outline-offset: 1px; }
+  /* One compact row: chips of a label and a badge, never wrapping, never cut (tileStrip counts what does not stand). */
+  .strip { display: flex; align-items: center; gap: 4px; height: var(--row); white-space: nowrap; overflow: hidden; }
+  .chip { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 4px; border: 1px solid var(--border-outline-color); border-radius: 4px; background: var(--container-section-color); color: var(--element-neutral-color); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .chip.lit { color: var(--element-active-color); }
+  .chip:hover { background: var(--flat-hover-background-color); }
+  .chip:focus-visible { outline: 2px solid var(--border-focus-color); outline-offset: 1px; }
+  .chip[aria-pressed='true'] { border-color: var(--element-active-color); outline: 1px solid var(--element-active-color); outline-offset: 0; }
+  .more { flex: none; font-size: 12px; font-weight: 700; color: var(--element-neutral-color); }
 </style>

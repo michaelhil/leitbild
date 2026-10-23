@@ -3,7 +3,7 @@ import type { AlertState } from '../src/core/model/alerts.ts'
 import type { ObjectId } from '../src/core/model/ids.ts'
 import { alertCensus, alertTiles, filtered, sameFilter } from '../src/features/displays/alerts/census.ts'
 import type { AlertRow } from '../src/features/displays/alerts/rows.ts'
-import { tileBadge, tileLayout, tilesHeight } from '../src/ui/embed/vignette/tile-fit.ts'
+import { tileBadge, tileLayout, tilesHeight, tileStrip, worstTiles } from '../src/ui/embed/vignette/tile-fit.ts'
 
 // An alert list's counts and tiles (plan v5 W2.1, W2.2), generic for every Pack: the counts are its census, each a
 // filter; the tiles are its Pack's declared categories, all of them, in their order, lit by the worst news only.
@@ -100,5 +100,19 @@ describe('the tiles (W2.2)', () => {
     expect(tileLayout(tiles, 2000, measure)).toEqual({ columns: 7, labels: tiles.map(tile => tile.label) })
     for (const [at, label] of narrow.labels.entries()) expect([tiles[at]!.label, tiles[at]!.short]).toContain(label)
     expect(tilesHeight(tiles, 3)).toBe(3 * 42 + 2 * 4)
+  })
+
+  test('a narrow band shows its tiles as one compact row: those with alerts, the worst first, as many as stand whole, the rest counted', () => {
+    const measure = (text: string) => text.length * 8
+    const tiles = alertTiles(rows, SYSTEMS)
+    // Lit by alarm (ELEC 2, then RPS 1), by warning (RCS, FW, the object's own), then only expected (SG); SI has none.
+    expect(worstTiles(tiles).map(tile => tile.short ?? tile.label)).toEqual(['ELEC', 'RPS', 'RCS', 'FW', 'Unit 1', 'SG'])
+    // A chip: its short label, its badge (at least 16 px), 14 px of frame; 4 px between; "+n" kept room for.
+    const wide = tileStrip(tiles, 720, measure)
+    expect([wide.shown.map(entry => entry.label), wide.more.length]).toEqual([['ELEC', 'RPS', 'RCS', 'FW', 'Unit 1', 'SG'], 0])
+    const narrow = tileStrip(tiles, 160, measure)
+    expect([narrow.shown.map(entry => entry.label), narrow.more.map(tile => tile.short ?? tile.label)]).toEqual([['ELEC', 'RPS'], ['RCS', 'FW', 'Unit 1', 'SG']])
+    const used = narrow.shown.reduce((sum, entry) => sum + 14 + measure(entry.label) + Math.max(16, measure(String(tileBadge(entry.tile)!.count)) + 8), 0) + 4 * narrow.shown.length + measure(`+${narrow.more.length}`)
+    expect(used).toBeLessThanOrEqual(160)
   })
 })
