@@ -150,7 +150,7 @@ describe('an answer\'s view (W7.3, W7.4, W8.2)', () => {
     // The frame keeps a row for the notice: title, notice, footer and the views.
     expect(outcome.rows).toBe(FRAME_ROWS + 1 + outcome.state.views.reduce((sum, view) => sum + view.rows, 0))
     const view = await compileVignette(await runNow(), outcome.state)
-    expect(view.answer).toEqual({ why: outcome.state.why, at: outcome.state.at })
+    expect(view.answer).toEqual({ why: outcome.state.why!, at: outcome.state.at })
   }, 120_000)
 
   test('revision: a model that changed after the answer is said; World defaults say nothing of an answer', async () => {
