@@ -94,7 +94,8 @@
     const binding = section.nodes.flatMap(node => node.bindings).find(entry => entry.ref === ref)
     const unit = binding === undefined || unitSymbol(binding.unit) === '' ? '' : ` ${unitSymbol(binding.unit)}`
     const write = (value: number): string => binding === undefined ? String(value) : numberText(value, binding.unit, binding.quantity, binding.decades === true)
-    const spread = range.min === range.max ? `steady at ${write(range.min)}${unit}` : `${write(range.min)} to ${write(range.max)}${unit}`
+    const [low, high] = [write(range.min), write(range.max)]
+    const spread = low === high ? `steady at ${low}${unit}` : `${low} to ${high}${unit}`
     return `${label}, last 10 min: ${spread}${broken ? ' · broken where nothing was recorded' : ''}`
   }
   const outlined = (area: Box): Box => {
