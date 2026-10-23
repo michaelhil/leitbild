@@ -82,9 +82,8 @@
       {#if section.kind === 'values'}
         {@const rows = valueRows({ values: section.values, observations, series: snapshot.series, now, title: view.title, frozen })}
         {#if section.zones === true}
-          <!-- A window's column, top down (W4.2): its lead rows under their heading, which spans their sparklines' window once. -->
-          <h2 class="zone"><span>Lead values</span><span class="window" title="Each sparkline: the reading's last 10 min, scaled to its own range">10 min</span></h2>
-          <div class="values" style:height={`${(section.rows - zoneRows(section) - (section.table?.rows ?? 0)) * VIGNETTE_ROW_PX}px`}><ValueRows {rows} {now} /></div>
+          <!-- A window's column, top down (W4.2): its lead rows under their heading, which names the rate's and the sparklines' units once. -->
+          <div class="values" style:height={`${(section.rows - zoneRows(section) - (section.table?.rows ?? 0) + 1) * VIGNETTE_ROW_PX}px`}><ValueRows {rows} {now} heading="Lead values" /></div>
         {:else}
           <div class="values"><ValueRows {rows} {now} /></div>
         {/if}
@@ -168,10 +167,9 @@
   .sections.fill > .section { flex: 1 1 auto; }
   /* A block of values reads label beside value: never stretched across a wide frame (U-06). */
   .values { max-width: 480px; }
-  /* Each zone's heading, as the alerts' (AlertsSection): the lead rows' names their sparklines' window over them. */
+  /* Each zone's heading, as the alerts' (AlertsSection). */
   .zone { display: flex; justify-content: space-between; align-items: center; max-width: 480px; margin: 0; height: var(--row); font-size: 12px; font-weight: 600; color: var(--element-neutral-color); text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; }
   .zone .quiet { font-weight: 400; text-transform: none; letter-spacing: 0; }
-  .window { flex: none; font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; }
   /* A margin line: its row's short label, then how far from which limit, giving way by whole parts (wholeParts). */
   .margin { display: flex; gap: 6px; max-width: 480px; margin: 0; height: var(--row); line-height: var(--row); white-space: nowrap; color: var(--element-active-color); }
   .margin.past .what { font-weight: 600; }
@@ -188,8 +186,6 @@
   .band-values { flex: 2 1 704px; min-width: 0; }
   .band-values > .section > .values { max-width: none; height: auto !important; }
   .band-values > .section > .values :global(.rows::part(list)) { display: block; column-width: 340px; column-gap: 24px; }
-  /* Over columns of rows one window label would stand over no sparkline. */
-  .band-values .window { display: none; }
   .band-values > .section > .values :global(.row) { break-inside: avoid; max-width: 420px; }
   .band-alerts { flex: 1 1 320px; min-width: 0; max-width: 720px; }
   /* The drawing scrolls sideways in the frame's width, an edge fading where it continues; the window body scrolls down. */

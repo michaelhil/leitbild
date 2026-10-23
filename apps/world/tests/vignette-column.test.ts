@@ -8,6 +8,11 @@ import { marginOf, rateText, slopePerMinute, tendencyOf } from '../src/ui/embed/
 import { SPARK_WINDOW_MS, sparkline } from '../src/ui/embed/vignette/sparkline.ts'
 import { marginLines, valueRows } from '../src/ui/embed/vignette/value-rows.ts'
 import { createVignetteSession, type VignetteSnapshot } from '../src/ui/embed/vignette/vignette-client.ts'
+import { valueLook } from '../src/ui/embed/vignette/readout.ts'
+import { recordingSeriesIdFor, type ObjectId } from '../src/core/model/index.ts'
+import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
+import { plantDeclaration } from '../src/packs/process-plant/observation/declarations.ts'
+import { recordedPlantVariables } from '../src/packs/process-plant/recording.ts'
 
 // The window's column (plan v5 W4.2, W8.5; owner finding 1; #47, #48): each
 // lead row its short label, value and unit, its 10-min sparkline (the
@@ -99,7 +104,7 @@ describe('rate and margin (#47, #48)', () => {
   })
 
   test('a rate shows only where the 30 s and the 2 min slopes agree, at the value\'s decimals', () => {
-    expect(rateText(tendencyOf(falling, now, HOLD), mpa)).toBe('▼ 0.30/min')
+    expect(rateText(tendencyOf(falling, now, HOLD), mpa)).toBe('▼ 0.30')
     // Just turned: 2 min falling, the last 30 s rising.
     const turned = [...every(1_000, now - 180_000, now - 30_000, t => 15.4 - (0.3 * (t - (now - 180_000))) / 60_000), ...every(1_000, now - 29_000, now, t => 14.65 + (0.2 * (t - (now - 30_000))) / 60_000)]
     expect(rateText(tendencyOf(turned, now, HOLD), mpa)).toBeNull()
@@ -162,7 +167,7 @@ describe('a values section\'s rows', () => {
       series: new Map([['u#pzr', { holdMs: HOLD, points: rising }]]),
       now, title: 'Unit 1', frozen: false,
     })
-    expect(rows.map(row => [row.label, row.recorded, row.rate])).toEqual([['PZR pressure', true, '▲ 0.30/min'], ['prt', false, null], ['far', true, null]])
+    expect(rows.map(row => [row.label, row.recorded, row.rate])).toEqual([['PZR pressure', true, '▲ 0.30'], ['prt', false, null], ['far', true, null]])
     expect(rows[0]!.look.chip?.word).toBe('LO')
     expect(marginLines(rows, 3).map(row => row.label)).toEqual(['PZR pressure', 'prt'])
     // Frozen: no rate, no margin, every value doubtful.
@@ -231,5 +236,58 @@ describe('kept series (W8.5)', () => {
     expect(asked).toEqual([`all ${SPARK_WINDOW_MS}`, 'none', 'none', 'refs u#b', 'none'])
     const last = snapshots.at(-1)!
     expect(last.series.get('u#b')!.points[0]).toEqual({ t: now + 3_000 - 60_000, v: 9 })
+  })
+})
+
+describe('value words (W4.4)', () => {
+  const look = (extra: Partial<Parameters<typeof valueLook>[0]>, observation: Partial<Observation> & { readonly value: Observation['value'] }, others: ReadonlyArray<Observation> = []) =>
+    valueLook({ label: 'Unit 1 · reading', valueType: 'number', unit: '%', quantity: 'level', thresholds: [], ...extra } as Parameters<typeof valueLook>[0],
+      [{ ref: 'u#r', quality: 'good', priority: 'none', at: new Date(now).toISOString(), clock: 'simulation', ...observation }, ...others], 'u#r')
+  const travel = { below: 0.05, above: 0.95, low: 'SHUT', high: 'OPEN' }
+
+  test('a valve\'s travel reads SHUT and OPEN at its ends, its opening in percent between them', () => {
+    expect([look({ unit: '1', quantity: 'fraction', travel }, { value: 0.02 }), look({ unit: '1', quantity: 'fraction', travel }, { value: 0.99 })].map(entry => [entry.text, entry.value, entry.unit])).toEqual([['SHUT', 'SHUT', ''], ['OPEN', 'OPEN', '']])
+    expect(look({ unit: '1', quantity: 'fraction', travel }, { value: 0.5 })).toMatchObject({ text: '50.0', value: 50, unit: '%', decimals: 1 })
+  })
+
+  test('an on/off signal reads its declared words', () => {
+    const states = [{ value: 'true', label: 'Source-range HV on', active: true as const }, { value: 'false', label: 'Source-range HV off' }]
+    expect(look({ valueType: 'boolean', unit: '', quantity: 'state', states }, { value: false })).toMatchObject({ kind: 'state', text: 'Source-range HV off', fill: 'hollow' })
+    expect(look({ valueType: 'boolean', unit: '', quantity: 'state', states }, { value: true })).toMatchObject({ text: 'Source-range HV on', fill: 'filled' })
+  })
+
+  test('pascals read in kilopascals', () => {
+    expect(look({ unit: 'Pa', quantity: 'pressure' }, { value: 7534 })).toMatchObject({ text: '7.5', value: 7.5, unit: 'kPa', decimals: 1 })
+  })
+
+  test('at an end of its span a reading reads only that it is there, in the low-integrity style; its wider range stands in where it has one', () => {
+    const span = { min: 0, max: 100 }
+    expect(look({ span }, { value: 0 })).toMatchObject({ text: '<0', value: '<0', unit: '%', doubtful: true, offSpan: 'below' })
+    expect(look({ span }, { value: 100 })).toMatchObject({ text: '>100', offSpan: 'above', doubtful: true })
+    expect(look({ span }, { value: 37.2 })).toMatchObject({ text: '37.2', offSpan: null, doubtful: false })
+    const wide: Observation = { ref: 'u#wr', value: 24.04, quality: 'good', priority: 'none', at: new Date(now).toISOString(), clock: 'simulation' }
+    expect(look({ span, wider: { ref: 'u#wr', word: 'WR' } }, { value: 0 }, [wide])).toMatchObject({ text: 'WR 24.0', value: 'WR 24.0', unit: '%', doubtful: false, offSpan: 'wider' })
+    // A wider range not read, or not good, leaves the pinned end.
+    expect(look({ span, wider: { ref: 'u#wr', word: 'WR' } }, { value: 0 }, [{ ...wide, quality: 'bad' }]).text).toBe('<0')
+  })
+
+  test('outside its validity a reading names what it waits for; a value only the simulator computes reads SIM', () => {
+    expect(look({ invalidWhile: 'Source-range HV off' }, { value: null, quality: 'not-applicable' })).toMatchObject({ text: '— (Source-range HV off)', value: null, unit: '' })
+    expect(look({}, { value: null, quality: 'not-applicable' }).text).toBe('—')
+    expect(look({ simulated: true }, { value: 3 }).sim).toBe(true)
+    expect(look({}, { value: 3 }).sim).toBe(false)
+  })
+
+  test('the Plant declares them: span and wider range of a narrow range, a valve\'s travel, on/off words, what a reading waits for', () => {
+    const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:words', loopCount: 4 }))
+    const recording = { seriesIds: new Set(recordedPlantVariables(plant, 'operations').map(variable => recordingSeriesIdFor(plant.id, variable.path))), intervalMs: 1_000 }
+    const declared = plantDeclaration('plant:words' as ObjectId, plant, recording)
+    const observable = (path: string) => declared.observables.find(entry => entry.ref === `plant:words#${path}`)!
+    expect(observable('sgA.levelPercent')).toMatchObject({ span: { min: 0, max: 100 }, wider: { ref: 'plant:words#sgA.wideRangeLevelPercent', word: 'WR' } })
+    expect(observable('turbineStopValve.effectivePositionFraction').travel).toEqual({ below: 0.05, above: 0.95, low: 'SHUT', high: 'OPEN' })
+    expect(observable('core.rodsOnBottom').states).toEqual([{ value: 'true', label: 'Rods on bottom', active: true }, { value: 'false', label: 'Rods off bottom' }])
+    expect(observable('core.sourceRangeCountRateCps')).toMatchObject({ meaningfulWhile: 'while Source-range HV on', invalidWhile: 'Source-range HV off' })
+    // Read over decades, the intermediate range declares no span to pin to.
+    expect(observable('core.intermediateRangeCurrentAmps').span).toBeUndefined()
   })
 })

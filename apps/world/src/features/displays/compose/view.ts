@@ -291,8 +291,18 @@ export const ALERT_LINES_AT_LEAST = 8
  * that appeared.
  */
 export const sampleVignette = async (run: ViewRun, state: VignetteState, history?: { readonly fromMs: number; readonly refs?: ReadonlyArray<string> | undefined }): Promise<VignetteSample> => {
-  const { leads: led, observations } = await readNow(run, state)
+  const { leads: led, observations: read } = await readNow(run, state)
   const leadDeclared = led.size === 0 ? new Map<string, Declared>() : await declaredRefs(run, [...led.values()].flat())
+  // A lead row at an end of its span reads its wider range instead (W4.4): read only then, so a sample at rest asks its
+  // Pack once.
+  const value = (ref: string) => read.find(observation => observation.ref === ref)?.value
+  const wider = [...leadDeclared.values()].flatMap(({ observable }) => {
+    const reading = value(observable.ref)
+    const span = observable.span
+    return observable.wider === undefined || span === undefined || typeof reading !== 'number' || (reading > span.min && reading < span.max)
+      || read.some(observation => observation.ref === observable.wider!.ref) ? [] : [observable.wider.ref]
+  })
+  const observations = wider.length === 0 ? read : [...read, ...(await run.port.read({ refs: wider })).observations]
   const leads = Object.fromEntries([...led].map(([index, list]) => [index, list.flatMap(ref => leadDeclared.has(ref) ? [valueOf(leadDeclared.get(ref)!)] : [])] as const))
   const alerts = new Map<string, AlertRow>()
   const entities: Record<number, { rows: ReadonlyArray<EntityRow>; more: number }> = {}

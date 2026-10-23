@@ -276,7 +276,7 @@
         "presentation": {
           "shortLabel": "Core",
           "names": { "coreExitTemperatureC": "CET", "powerRangePercent": "reactor power" },
-          "shortNames": { "intermediateRangeCurrentAmps": "IR current", "sourceRangeCountRateCps": "SR count rate", "intermediateRangeStartupRateDpm": "IR startup rate", "sourceRangeStartupRateDpm": "SR startup rate" },
+          "shortNames": { "intermediateRangeCurrentAmps": "IR current", "sourceRangeCountRateCps": "SR count rate", "intermediateRangeStartupRateDpm": "IR startup rate", "sourceRangeStartupRateDpm": "SR startup rate", "rodStepsWithdrawn": "Rod steps" },
           "states": {
             "sourceRangeEnergized": { "on": "Source-range HV on", "off": "Source-range HV off" },
             "aboveP6": { "on": "Above P-6", "off": "Below P-6" },
@@ -2637,7 +2637,8 @@
       },
       "metadata": {
         "presentation": {
-          "shortLabel": "Turbine stop valves"
+          "shortLabel": "Turbine stop valves",
+          "shortNames": { "effectivePositionFraction": "Stop valves position" }
         }
       },
       "variables": [
@@ -2697,7 +2698,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "Turbine bypass"
+          "shortLabel": "Turbine bypass",
+          "shortNames": { "effectivePositionFraction": "Bypass position" }
         }
       }
     },

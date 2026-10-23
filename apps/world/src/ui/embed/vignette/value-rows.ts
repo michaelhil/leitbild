@@ -40,7 +40,8 @@ export const valueRows = (input: {
   const read = valueLook(value, input.observations, value.ref)
   const look: ReadingLook = input.frozen ? { ...read, doubtful: true } : read
   const series = input.series.get(value.ref)
-  const number = look.kind === 'number' && !look.doubtful && typeof observation?.value === 'number' && observation.quality === 'good'
+  // A rate and a margin are read off a value in its span: never off a pinned end, nor off a wider range standing in.
+  const number = look.kind === 'number' && !look.doubtful && look.offSpan === null && typeof observation?.value === 'number' && observation.quality === 'good'
   const tendency = number && series !== undefined && Number.isFinite(input.now) ? tendencyOf(series.points, input.now, series.holdMs) : null
   const written = { unit: value.unit, quantity: value.quantity, ...(value.decades === true ? { decades: true as const } : {}) }
   return {

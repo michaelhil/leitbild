@@ -97,9 +97,11 @@ export type VignetteState = z.output<typeof vignetteStateSchema>
 export type VignetteElement = Omit<ObservationDeclaration['elements'][number], 'lead' | 'stopped' | 'criteria' | 'table'>
 
 /** A declared observable as a vignette names it: its label qualified with its object's ("<object> · <observable>", R25); `basis`: a demand reads as one (W1.3). */
-export type VignetteValue = Pick<Observable, 'ref' | 'quantity' | 'unit' | 'valueType' | 'states' | 'thresholds' | 'series' | 'decades' | 'checks' | 'basis' | 'shortLabel' | 'decidingElement'> & {
+export type VignetteValue = Pick<Observable, 'ref' | 'quantity' | 'unit' | 'valueType' | 'states' | 'thresholds' | 'series' | 'decades' | 'checks' | 'basis' | 'shortLabel' | 'decidingElement' | 'invalidWhile' | 'span' | 'wider' | 'travel'> & {
   readonly label: string
   readonly element?: VignetteElement
+  /** Only its simulator computes it, in an object that declares what its instruments measure: it reads SIM (W4.4, #67). */
+  readonly simulated?: true
 }
 
 type Stamp = { readonly at: string; readonly clock: 'simulation' | 'wall' }

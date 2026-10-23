@@ -14,6 +14,7 @@ import { criterionObservables, elementCriteria, elementTables } from './criteria
 import { derivedObservables } from './derived.ts'
 import { withDecidingElements } from './deciding.ts'
 import { shortLabelOf } from './short-labels.ts'
+import { invalidWhileOf, readingWords } from './reading-words.ts'
 import { elementLeads, elementStops, leadDigest } from './leads.ts'
 
 // What a Plant declares to World's observation layer (plan v3.1 §2.2, A1):
@@ -203,12 +204,17 @@ const observableOf = (objectId: ObjectId, plant: CompiledProcessPlant, recording
     quantity: quantityOf(binding),
     unit: unitCodes[binding.unit],
     valueType: steps !== null ? 'enum' : binding.quantity === 'boolean' ? 'boolean' : 'number',
+    // Its words where a number alone would mislead (W4.4): on/off words, its span, its wider range, a valve's travel.
+    ...readingWords(objectId, plant, binding, path => { const other = plant.graph.signalBindingByPath.get(path as VariablePath); return other !== undefined && declares(plant, recording, other) }),
     ...(steps === null ? {} : { states: steps }),
     thresholds: steps === null ? thresholdsOf(plant, thresholds) : [],
     basis: isDemand(binding) ? 'command' : readsAsMeasured(binding) && binding.simulatorOnly !== true ? 'instrument' : 'model',
     series: recording !== null && recording.seriesIds.has(seriesId) ? { seriesId, intervalMs: recording.intervalMs } : null,
     ...(binding.tagId === undefined ? {} : { tag: binding.tagId }),
-    ...(qualifiedReadings(plant).has(String(binding.path)) ? { meaningfulWhile: `while ${qualifiedReadings(plant).get(String(binding.path))!.words}`.slice(0, 80) } : {}),
+    ...(qualifiedReadings(plant).has(String(binding.path)) ? {
+      meaningfulWhile: `while ${qualifiedReadings(plant).get(String(binding.path))!.words}`.slice(0, 80),
+      invalidWhile: invalidWhileOf(plant, String(qualifiedReadings(plant).get(String(binding.path))!.flag)),
+    } : {}),
     // A reading over a span of decades (an intermediate-range current) is written as a power of ten below its step (H9).
     ...(logarithmicSpan(binding.limits?.instrumentSpan ?? binding.limits?.hardRange) ? { decades: true as const } : {}),
     element: elementOf(plant, binding),

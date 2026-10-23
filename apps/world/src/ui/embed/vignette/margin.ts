@@ -64,10 +64,10 @@ const agreed = (tendency: Tendency, written: Written): 'rising' | 'falling' | nu
   return short > 0 ? 'rising' : 'falling'
 }
 
-/** "▼ 0.12/min" at the value's decimals, where the 30 s and the 2 min slopes agree; null otherwise. */
+/** "▼ 0.12" a minute, at the value's decimals, where the 30 s and the 2 min slopes agree; null otherwise. Its column's heading says "/min". */
 export const rateText = (tendency: Tendency, written: Written): string | null => {
   const way = agreed(tendency, written)
-  return way === null ? null : `${way === 'rising' ? '▲' : '▼'} ${numberText(Math.abs(tendency.short!), written.unit, written.quantity)}/min`
+  return way === null ? null : `${way === 'rising' ? '▲' : '▼'} ${numberText(Math.abs(tendency.short!), written.unit, written.quantity)}`
 }
 
 /** How the last 30 s go against the last 2 min: slowing, accelerating, reversing; null where they hold or are not known. */
