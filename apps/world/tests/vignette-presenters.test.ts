@@ -9,7 +9,7 @@ import { alertDetail, alertIcon, alertsTarget, alertTitle, inSection, rowParts, 
 import { provenanceMark, quantityText } from '../src/ui/embed/vignette/format.ts'
 import type { VignetteValue } from '../src/features/displays/compose/model.ts'
 import { activeState, limitBar, orderWord, readingLook, valueLook } from '../src/ui/embed/vignette/readout.ts'
-import { appendPoint, bandStretches, labelRows, labelWidth, rateNow, rateText, sharedLines, stackLabels, stepPath, stripDrawing, stripDomain, timeTicks } from '../src/ui/embed/vignette/trend.ts'
+import { appendPoint, bandStretches, LABEL_LINE, labelRows, labelWidth, rateNow, rateText, sharedLines, stackLabels, stepPath, stripDrawing, stripDomain, timeTicks } from '../src/ui/embed/vignette/trend.ts'
 import { recordedHoldMs } from '../src/features/historian/policy.ts'
 import { stripRows, stripsOf, trendRows } from '../src/features/displays/compose/strips.ts'
 
@@ -234,7 +234,7 @@ describe('trend strip', () => {
     expect(drawing.labels.map(label => label.rows.map(row => row.map(run => run.text).join('')).join(' / ')))
       .toEqual(['HI-HI 16.55 · RX TRIP', 'HI 16.00 · ALM', '■ LO 14.80 · ALM', 'LO-LO 13.80 · RX TRIP', 'LO-LO-LO 12.70 · SI'])
     expect(drawing.labels.map(label => label.y)).toEqual([...drawing.labels.map(label => label.y)].sort((left, right) => left - right))
-    drawing.labels.slice(1).forEach((label, index) => expect(label.y - drawing.labels[index]!.y).toBeGreaterThanOrEqual(14))
+    drawing.labels.slice(1).forEach((label, index) => expect(label.y - drawing.labels[index]!.y).toBeGreaterThanOrEqual(LABEL_LINE))
     // No set point is a limit: five lines, none of them a control set point, unless the element's own trend asks for them.
     expect([drawing.lines.length, drawing.setPoints]).toEqual([5, []])
     expect(tripped(120, {}, true).setPoints.map(mark => mark.title)).toEqual(['CTL 15.35: control set point', 'CTL 15.65: control set point', 'CTL 16.18: control set point'])
@@ -252,11 +252,11 @@ describe('trend strip', () => {
 
   test('where names do not all fit, the least telling give way: never the one a value is past, nor the one it heads for', () => {
     // Room for two names: the limit the value is past, and the one it heads for (held steady, the nearest), though that one does not act now.
-    expect(heads(tripped(30))).toEqual(['LO 14.80', 'LO-LO 13.80'])
+    expect(heads(tripped(2 * LABEL_LINE))).toEqual(['LO 14.80', 'LO-LO 13.80'])
     // Falling, it heads below.
     const falling = stripDrawing({
       pens: [pressure], series: new Map([[pressure.ref, { holdMs: 90_000, points: [{ t: 0, v: 15.5 }, { t: 470_000, v: 15.2 }, { t: 560_000, v: 14.9 }, { t: 600_000, v: 14.7 }] }]]),
-      observations: [observation(pressure.ref, 14.7, { priority: 'warning', past: 'alm-lo' })], now: 600_000, horizonMs: 600_000, width: 240, height: 30, ...laid,
+      observations: [observation(pressure.ref, 14.7, { priority: 'warning', past: 'alm-lo' })], now: 600_000, horizonMs: 600_000, width: 240, height: 2 * LABEL_LINE, ...laid,
     })!
     expect(heads(falling)).toEqual(['LO 14.80', 'LO-LO 13.80'])
     // Ported from OLD's stackLabels: at their lines, pushed clear of each other, inside the room; the most telling kept in a room too short for any.
@@ -282,7 +282,7 @@ describe('trend strip', () => {
 
   test('a gridline\'s value never leaves the plot: the top one is written under its line and names the unit (W5.4)', () => {
     const drawing = tripped(120)
-    expect(drawing.values.every(tick => tick.labelY >= 11 && tick.labelY <= 120)).toBe(true)
+    expect(drawing.values.every(tick => tick.labelY >= 14 && tick.labelY <= 120)).toBe(true)
     expect(drawing.values.filter(tick => tick.label.endsWith(' MPa'))).toHaveLength(1)
     expect(drawing.values.find(tick => tick.label.endsWith(' MPa'))!.y).toBe(Math.min(...drawing.values.map(tick => tick.y)))
   })

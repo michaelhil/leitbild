@@ -215,8 +215,8 @@ export const labelRows = (runs: ReadonlyArray<LabelRun>, room: number, measure: 
   return rows
 }
 
-/** Text sizes the strip draws with (TrendStrip.svelte): the names of limits and ticks are one line of 12 px. */
-export const LABEL_LINE = 14
+/** A limit name's row (TrendStrip.svelte): 12 px text with its line's room, so the boxes of two rows never meet. */
+export const LABEL_LINE = 16
 /** A name's inset from the plot, after its leader; continued rows indent further. */
 export const LABEL_GAP = 8
 export const LABEL_INDENT = 8
@@ -377,7 +377,7 @@ export const stripDrawing = (input: StripInput & { readonly width: number; reado
     // The top value names the unit; a value too near the top is written under its line, so none leaves the plot.
     values: ticks.map(tick => {
       const at = y(tick.value)
-      return { y: at, labelY: at - 3 < 11 ? at + 12 : at - 3, label: at === top && unit !== '' ? `${tick.label} ${unit}` : tick.label }
+      return { y: at, labelY: at - 3 < 14 ? at + 12 : at - 3, label: at === top && unit !== '' ? `${tick.label} ${unit}` : tick.label }
     }),
     unrecorded: read.recordStart > window.start ? { width: x(read.recordStart) } : null,
   }
