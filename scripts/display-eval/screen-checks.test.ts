@@ -73,6 +73,11 @@ describe('E-0 at a glance', () => {
     const graphicOnly = screen([line('⟨graphic⟩ PZR level, last 10 min: 33 to 35 %', 'column', 267), line('PZR pressure 13.66 MPa', 'column', 243), line('⟨graphic⟩ PZR pressure, last 10 min: 13.6 to 15.4 MPa', 'column', 243, { x: 400 })])
     expect(judge('pzr-trend', graphicOnly).pass).toBe(false)
   })
+  test("R3's SG A detail names the AFW flow into it by its own valve", () => {
+    const sgA = screen([line('AFW valve A → SG… 28 kg/s', 'column', 300)], { title: 'Halden Unit 1 · Steam Generator A · From Halden Unit 1' })
+    expect(judge('afw-sg-a', sgA).pass).toBe(true)
+    expect(judge('afw-sg-b', sgA).pass).toBe(false)
+  })
   test('a turbine trip named only in an alert row is no turbine state', () => {
     const rowOnly = screen([line('first out Reactor trip on turbine trip 04:02:02 UTC', 'alerts', 628)])
     expect(judge('turbine-tripped', rowOnly).pass).toBe(false)

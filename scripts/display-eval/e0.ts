@@ -32,7 +32,9 @@ const runningLine = (screen: Screen, name: RegExp): ScreenLine | undefined => li
   return count === null || count[1] === count[2]
 })
 const sgs = ['A', 'B', 'C', 'D'] as const
-const afwToSg = (sg: string) => new RegExp(`(auxiliary feedwater|AFW)[^|]*(\\bSG ${sg}\\b|steam generator ${sg}\\b)`, 'i')
+// The AFW flow into one SG: named by the SG, or by its own AFW valve (R3's short label "AFW valve A → SG…" in SG A's
+// detail: the valve feeds that SG alone).
+const afwToSg = (sg: string) => new RegExp(`(auxiliary feedwater|AFW)[^|]*(\\bSG ${sg}\\b|steam generator ${sg}\\b|\\bvalve ${sg}\\b)`, 'i')
 /** A first-out line written in the frame (not only an alerts row): the trip line or the title row. */
 const tripLine = (screen: Screen) => lines(screen, /\bRX TRIP\b|\b1st\b.*TRIP|FIRST OUT.*·|reactor trip/i).filter(line => line.region !== 'alerts' && line.region !== 'drawing')
 
