@@ -1,4 +1,4 @@
-import { asksAttention, groupKey, priorityRank, simulationMs, type AlertRow } from './rows.ts'
+import { asksAttention, priorityRank, simulationMs, unacknowledged, type AlertRow } from './rows.ts'
 
 // An alert list as an operator reads it (plan v5 W2.4–W2.6), over the rows a
 // sample carries, generic for every Pack: first the first-outs, in the order
@@ -41,14 +41,15 @@ export type ListLine =
   /** What several rows fold into: those expected after one first-out, or the standing and advisory ones. */
   | { readonly kind: 'aggregate'; readonly key: string; readonly part: 'expected' | 'quiet'; readonly label: string; readonly rows: ReadonlyArray<AlertRow>; readonly open: boolean }
 
-/** A list's lines in order, each aggregate whose key is in `open` followed by its rows. */
-export const listLines = (rows: ReadonlyArray<AlertRow>, open: ReadonlySet<string>): ReadonlyArray<ListLine> => {
+/** A list's lines in order, each aggregate whose key is in `open` (every one: 'all') followed by its rows. */
+export const listLines = (rows: ReadonlyArray<AlertRow>, open: ReadonlySet<string> | 'all'): ReadonlyArray<ListLine> => {
   const sorted = [...rows].sort(listOrder)
   const lines: ListLine[] = sorted.filter(row => listPart(row) !== 'expected' && listPart(row) !== 'quiet').map(row => ({ kind: 'row', row, part: listPart(row) }))
   const fold = (key: string, part: 'expected' | 'quiet', label: string, members: ReadonlyArray<AlertRow>): void => {
     if (members.length === 0) return
-    lines.push({ kind: 'aggregate', key, part, label, rows: members, open: open.has(key) })
-    if (open.has(key)) lines.push(...members.map(row => ({ kind: 'row' as const, row, part })))
+    const opened = open === 'all' || open.has(key)
+    lines.push({ kind: 'aggregate', key, part, label, rows: members, open: opened })
+    if (opened) lines.push(...members.map(row => ({ kind: 'row' as const, row, part })))
   }
   // One line per first-out, in the order their first expected alerts came in.
   const expected = sorted.filter(row => listPart(row) === 'expected')
@@ -136,20 +137,5 @@ export type ListFilter = (typeof LIST_FILTERS)[number]['value']
 export const passes = (filter: ListFilter, row: AlertRow): boolean =>
   filter === 'all' ? true
     : filter === 'active' ? row.state !== 'returned-unack'
-      : filter === 'unacknowledged' ? row.state !== 'active-ack' && asksAttention(row)
+      : filter === 'unacknowledged' ? unacknowledged(row)
         : row.alert.standing === true || row.alert.advisory === true
-
-/**
- * The full list's groups: by category where its Pack declares one, in the declared order, else by object (and subject
- * group) in the order they come; each group's rows in list order.
- */
-export const categoryGroups = (rows: ReadonlyArray<AlertRow>): ReadonlyArray<{ readonly key: string; readonly label: string; readonly rows: ReadonlyArray<AlertRow> }> => {
-  const groups = new Map<string, { key: string; label: string; order: number; rows: AlertRow[] }>()
-  for (const [at, row] of rows.entries()) {
-    const key = row.category === undefined ? `object:${groupKey(row)}` : `category:${row.category.id}`
-    const group = groups.get(key) ?? { key, label: row.category?.label ?? row.objectLabel, order: row.category === undefined ? 1_000 + at : row.category.order, rows: [] }
-    group.rows.push(row)
-    groups.set(key, group)
-  }
-  return [...groups.values()].sort((left, right) => left.order - right.order).map(group => ({ key: group.key, label: group.label, rows: [...group.rows].sort(listOrder) }))
-}

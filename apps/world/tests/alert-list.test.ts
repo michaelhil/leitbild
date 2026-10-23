@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import type { AlertState } from '../src/core/model/alerts.ts'
 import type { ObjectId } from '../src/core/model/ids.ts'
-import { ageText, categoryGroups, firstOutMark, fitLines, listLines, listOrder, listPart, passes, tripLine, type ListLine } from '../src/features/displays/alerts/list.ts'
+import { alertTiles } from '../src/features/displays/alerts/census.ts'
+import { ageText, firstOutMark, fitLines, listLines, listOrder, listPart, passes, tripLine, type ListLine } from '../src/features/displays/alerts/list.ts'
 import type { AlertRow } from '../src/features/displays/alerts/rows.ts'
 
 // The alerts organisation (plan v5 W2.4–W2.6) over the alert rows a sample
@@ -93,8 +94,12 @@ describe('the full alerts view (W2.6)', () => {
       { ...row('grid', 2), objectId: 'grid' as ObjectId, objectLabel: 'Grid', key: 'grid|grid', group: { objectId: 'grid' as ObjectId } },
       row('standing', 0, { standing: true, acknowledged: true }, { state: 'active-ack', category: { id: 'sg', label: 'Steam generators', order: 2 } }),
     ]
-    expect(categoryGroups(rows).map(group => [group.label, group.rows.map(entry => entry.alert.id)])).toEqual([
-      ['Reactor coolant system', ['rcs', 'rcs-old']], ['Steam generators', ['sg', 'standing']], ['Grid', ['grid']],
+    // Several objects: a tile, and a group, per object.
+    expect(alertTiles(rows).map(group => [group.label, group.rows.map(entry => entry.alert.id)])).toEqual([['Unit 1', ['rcs', 'sg', 'rcs-old', 'standing']], ['Grid', ['grid']]])
+    // One object: by its categories in their order, the rest by object.
+    const unit = rows.filter(entry => entry.objectId === 'unit')
+    expect(alertTiles(unit).map(group => [group.label, group.rows.map(entry => entry.alert.id)])).toEqual([
+      ['Reactor coolant system', ['rcs', 'rcs-old']], ['Steam generators', ['sg', 'standing']],
     ])
     const ids = (filter: Parameters<typeof passes>[0]) => rows.filter(entry => passes(filter, entry)).map(entry => entry.alert.id)
     expect(ids('active')).toEqual(['sg', 'rcs', 'grid', 'standing'])

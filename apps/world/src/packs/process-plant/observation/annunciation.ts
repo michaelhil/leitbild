@@ -15,7 +15,7 @@ import { icRuleKind, icThresholdsForSignal, UNDECLARED_ACTION } from '../ic/thre
 //   the turbine), which lead the trip line and which its label opens; a group
 //   that stops none (AFW START starts pumps) is listed as actuated;
 // - its annunciator systems, in declared order, the categories alerts are
-//   listed under;
+//   listed under and a display's tiles, each by its label and short label;
 // - each alarm and trip, by the id of its alert: its tag, as a chip and a
 //   trend line name its limit, its order and what it annunciates does ("LO-LO ·
 //   RX TRIP": the reactor trip safety injection causes is a reactor trip, its
@@ -125,7 +125,7 @@ export const plantAnnunciation = (plant: CompiledProcessPlant): Annunciation => 
   })
   const annunciation: Annunciation = {
     groups,
-    categories: plant.automation.annunciatorSystems.map(system => ({ id: system.id, label: system.label })),
+    categories: plant.automation.annunciatorSystems.map(system => ({ id: system.id, label: system.label, ...(system.shortLabel === undefined ? {} : { short: system.shortLabel }) })),
     alerts,
   }
   annunciationByPlant.set(plant, annunciation)

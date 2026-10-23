@@ -87,6 +87,9 @@ export const simulationMs = (row: AlertRow): number | null => row.raised?.clock 
 /** Standing alarms and advisories never ask for attention (R43): they never count as unacknowledged nor hold a row. */
 export const asksAttention = (row: AlertRow): boolean => row.alert.standing !== true && row.alert.advisory !== true
 
+/** Whether a row is unacknowledged and asks for attention: standing alarms and advisories never count as unacknowledged (R43). */
+export const unacknowledged = (row: AlertRow): boolean => row.state !== 'active-ack' && asksAttention(row)
+
 /** Worst first (R12): what asks no attention last, then by priority, then the latest raised, unknown times after known ones. */
 export const worstFirst = (left: AlertRow, right: AlertRow): number =>
   Number(!asksAttention(left)) - Number(!asksAttention(right))

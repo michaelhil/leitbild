@@ -21,8 +21,11 @@ export const annunciationSchema = z.object({
     label: z.string().min(1).max(24),
     ends: z.array(z.string().min(1).max(200)).min(1).max(8).optional(),
   }).strict()).max(32),
-  /** The categories (annunciator systems) alerts are listed under, in their declared order. */
-  categories: z.array(z.object({ id: categoryIdSchema, label: z.string().min(1).max(80) }).strict()).max(32),
+  /**
+   * The categories (annunciator systems) alerts are listed under, in their declared order: the fixed set of tiles a
+   * display shows of the object, each by its label, else (where its tile is narrow) by its short label ("RCS").
+   */
+  categories: z.array(z.object({ id: categoryIdSchema, label: z.string().min(1).max(80), short: z.string().min(1).max(8).optional() }).strict()).max(32),
   /**
    * Each alert the object can raise, by its alert id: its tag ("LO-LO · RX TRIP", "L LO & F LO · ALM"), its group,
    * its category, and the first-out group whose actuation brings it in as expected, within how long (`withinMs`, from

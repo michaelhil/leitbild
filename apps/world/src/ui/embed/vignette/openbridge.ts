@@ -10,6 +10,10 @@ import '@oicl/openbridge-webcomponents/dist/building-blocks/bar-horizontal/bar-h
 import '@oicl/openbridge-webcomponents/dist/components/status-indicator/status-indicator.js'
 import '@oicl/openbridge-webcomponents/dist/components/button/button.js'
 import '@oicl/openbridge-webcomponents/dist/components/alert-icon/alert-icon.js'
+// An alerts section's counts and tiles (W2.1, W2.2).
+import '@oicl/openbridge-webcomponents/dist/components/alert-counter-item/alert-counter-item.js'
+import '@oicl/openbridge-webcomponents/dist/components/alert-subsystem-counter/alert-subsystem-counter.js'
+import '@oicl/openbridge-webcomponents/dist/components/badge/badge.js'
 import '@oicl/openbridge-webcomponents/dist/automation/bus/bus.js'
 import '@oicl/openbridge-webcomponents/dist/automation/switch/switch.js'
 import '@oicl/openbridge-webcomponents/dist/automation/transformer/transformer.js'

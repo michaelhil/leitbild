@@ -7,10 +7,11 @@
 // Nothing here can acknowledge an alert yet (W2.7), so no icon flashes: each
 // is drawn steady, and the word UNACK carries the state (register deviation
 // alert-icon-steady-unacknowledged).
+import type { Priority } from '../../../core/model/alerts.ts'
 import type { Observation } from '../../../core/observation/model.ts'
 import type { VignetteSection, VignetteView } from '../../../features/displays/compose/model.ts'
 import { ageText, firstOutMark } from '../../../features/displays/alerts/list.ts'
-import { asksAttention, priorityRank, stateWords, type AlertRow } from '../../../features/displays/alerts/rows.ts'
+import { priorityRank, stateWords, unacknowledged, type AlertRow } from '../../../features/displays/alerts/rows.ts'
 import { severityStyle } from '../../displays/severity.ts'
 
 /**
@@ -28,11 +29,23 @@ export const alertIcon = (row: AlertRow): { readonly type: 'level-critical' | 'a
   return { type, acknowledged: true, active: row.state !== 'returned-unack' }
 }
 
+/**
+ * A priority's count as obc-alert-counter-item takes it (emergency is OpenBridge's critical level, notice its
+ * diagnostic one); null for none or a priority not declared, which OpenBridge has no count for and a word says.
+ */
+export const counterCounts = (priority: Priority | null, count: number): Readonly<Record<string, number>> | null =>
+  priority === 'emergency' ? { countLevelCritical: count } : priority === 'alarm' ? { countAlarm: count } : priority === 'warning' ? { countWarning: count }
+    : priority === 'caution' ? { countCaution: count } : priority === 'notice' ? { countLevelDiagnostic: count } : null
+
+/** A priority's obc-badge type, as obc-alert-counter-item draws it; a neutral badge for none or a priority not declared. */
+export const badgeType = (priority: Priority | null): string =>
+  priority === 'emergency' ? 'level-critical' : priority === 'alarm' || priority === 'warning' || priority === 'caution' ? priority : priority === 'notice' ? 'level-diagnostic' : 'regular'
+
+/** A priority in words: "alarm", "priority not declared". */
+export const priorityWords = (priority: Priority | null): string => priority === null ? 'priority not declared' : priority === 'none' ? 'no priority' : priority
+
 /** The word an unacknowledged alert's row and its section's count carry, its steady icon not saying so. */
 export const UNACK_WORD = 'UNACK'
-
-/** Whether a row is unacknowledged and asks for attention: standing alarms and advisories never count as unacknowledged (R43). */
-export const unacknowledged = (row: AlertRow): boolean => row.state !== 'active-ack' && asksAttention(row)
 
 /**
  * The most of a label that fits where `fits` says: the whole of it, else its first whole words with "…" (a trailing
@@ -122,8 +135,8 @@ export const rowParts = (row: AlertRow, nowMs: number, heading?: string | undefi
 /** A row's icon and the gaps between its parts, in px (AlertRowLine.svelte). */
 export const ROW_ICON_PX = 20
 export const ROW_GAP_PX = 6
-/** The fonts a row writes its parts in (AlertRowLine.svelte): its message, its marks (UNACK, 1st RX TRIP, a heading), its detail, an icon's word. */
-export type RowFont = 'message' | 'mark' | 'detail' | 'word'
+/** The fonts a row writes its parts in (AlertRowLine.svelte): its message, its marks (UNACK, 1st RX TRIP, a heading), its detail, an icon's word; a tile's label and a badge's number (AlertTiles.svelte). */
+export type RowFont = 'message' | 'mark' | 'detail' | 'word' | 'tile' | 'badge'
 
 /** How wide a row is on its one line with `message` shown (its whole message by default), given how wide each part is written (`measure`). */
 export const rowWidth = (parts: RowParts, measure: (text: string, font: RowFont) => number, message = parts.message): number => {

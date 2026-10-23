@@ -21,7 +21,7 @@
   } from './popover.ts'
   import type { AlertTone } from './readout.ts'
   import { VIGNETTE_ROW_PX } from './grid.ts'
-  import { onElementRequest } from './selection.ts'
+  import { onElementMarks, onElementRequest } from './selection.ts'
   import { createVignetteSession, vignetteRoutes, type VignetteSession } from './vignette-client.ts'
   import Vessel from './Vessel.svelte'
   import './openbridge.ts'
@@ -362,7 +362,9 @@
   })))
   let hovered = $state<string | null>(null)
   let focused = $state<string | null>(null)
-  const activated = (id: string): boolean => (faceplate.kind === 'open' && faceplate.item === id) || pinned(id)
+  /** The items an alert tile points out (W2.2), drawn activated like an open faceplate's. */
+  let marked = $state<ReadonlySet<string>>(new Set())
+  const activated = (id: string): boolean => (faceplate.kind === 'open' && faceplate.item === id) || pinned(id) || marked.has(id)
   const shown = (id: string): boolean => hovered === id || focused === id || activated(id) || elementsOf(id).some(element => operated.has(element)) || pendingOf(id) !== undefined
   const hover = (id: string) => ({ onpointerenter: () => { hovered = id }, onpointerleave: () => { if (hovered === id) hovered = null } })
   const focus = (id: string) => ({ onfocus: () => { focused = id }, onblur: () => { if (focused === id) focused = null } })
@@ -418,6 +420,9 @@
       else selectItem(id)
       return true
     })
+    const stopMarks = onElementMarks(marks => {
+      marked = new Set(marks === null || marks.objectId !== section.objectId ? [] : marks.elementIds.flatMap(element => itemOf(element) ?? []))
+    })
     const resized = (): void => { viewport = { width: window.innerWidth, height: window.innerHeight }; roomChanged() }
     document.addEventListener('pointerdown', down, { capture: true })
     window.addEventListener('blur', blurred)
@@ -425,6 +430,7 @@
     return () => {
       for (const stop of stops) stop()
       stopRequests()
+      stopMarks()
       clearInterval(marking)
       for (const session of sessions) session.close()
       document.removeEventListener('pointerdown', down, { capture: true })

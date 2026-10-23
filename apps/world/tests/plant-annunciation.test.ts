@@ -46,6 +46,8 @@ describe('the reference PWR\'s annunciation', () => {
 
   test('every alert names one of the declared annunciator systems, listed in their declared order', () => {
     expect(annunciation.categories.map(category => category.id)).toEqual(plant.automation.annunciatorSystems.map(system => system.id))
+    // Each by its label and its short label, a narrow tile's (W2.2).
+    expect(annunciation.categories.map(category => category.short)).toEqual(plant.automation.annunciatorSystems.map(system => system.shortLabel))
     expect(annunciation.alerts.filter(alert => alert.category === undefined)).toEqual([])
   })
 
