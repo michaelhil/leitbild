@@ -77,7 +77,7 @@ const NAMED: ReadonlySet<Threshold['effect']> = new Set(['alarm', 'trip'])
  * Near a limit: within this share of its instrument's span where one is declared, else of the limit's own size (a
  * pressure at power 0.5 MPa under its high alarm is not near it); or reached within this time at an established rate.
  */
-const NEAR_SPAN_SHARE = 0.05
+const NEAR_SPAN_SHARE = 0.03
 const NEAR_LIMIT_SHARE = 0.01
 const NEAR_MINUTES = 10
 /** A time further off than this says little about the minutes ahead: not shown. */
