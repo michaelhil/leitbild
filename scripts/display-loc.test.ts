@@ -23,7 +23,7 @@ describe('display LOC counting', () => {
     const report = measure('fixture', [
       { path: 'apps/world/src/packs/process-plant/displays/compose.ts', text: lines(10) },
       { path: 'apps/world/src/packs/process-plant/ui/displays/VesselGlyph.svelte', text: lines(4) },
-      { path: 'apps/world/src/packs/process-plant/ui/plant-card/PlantCard.svelte', text: lines(100) },
+      { path: 'apps/world/src/packs/process-plant/ui/ProcessPlantCatalogModal.svelte', text: lines(100) },
       { path: 'apps/world/src/packs/process-plant/ic/thresholds.ts', text: lines(100) },
       { path: 'apps/world/src/packs/electric-grid/observation/branches.ts', text: lines(3) },
       { path: 'apps/world/src/core/model/alerts.ts', text: lines(2) },
@@ -32,7 +32,7 @@ describe('display LOC counting', () => {
     expect(report.total).toBe(19)
     expect(report.groups.find(group => group.name === 'World display-serving pack UI')?.lines).toBe(4)
     expect(report.groups.find(group => group.name === 'World pack observation')?.lines).toBe(3)
-    expect(report.files.map(file => file.path)).not.toContain('apps/world/src/packs/process-plant/ui/plant-card/PlantCard.svelte')
+    expect(report.files.map(file => file.path)).not.toContain('apps/world/src/packs/process-plant/ui/ProcessPlantCatalogModal.svelte')
     expect(report.groups.find(group => group.name === 'Host view relay')?.emptyPatterns).toEqual(['apps/leitbild/src/ui/view-relay.ts'])
   })
 

@@ -181,7 +181,7 @@
 </script>
 
 <div class="process-artifact-backdrop" role="presentation">
-  <section class="process-artifact-modal process-credibility-modal" aria-label="Process plant credibility evidence">
+  <div class="process-artifact-modal process-credibility-modal" role="dialog" aria-modal="true" tabindex="-1" aria-label="Process plant credibility evidence">
     <header class="process-artifact-header">
       <div>
         <strong>Process plant credibility</strong>
@@ -291,5 +291,5 @@
         </div>
       {/if}
     </div>
-  </section>
+  </div>
 </div>

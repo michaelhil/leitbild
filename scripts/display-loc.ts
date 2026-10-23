@@ -15,7 +15,7 @@ export interface ScopeGroup {
   readonly include: ReadonlyArray<string>
 }
 
-/** Display-serving pack UI (encodings, window and proposal panels) lives in `packs/<pack>/ui/displays/`; other pack UI, such as PlantCard and the plant modals, leaves the count. */
+/** Display-serving pack UI (encodings, window and proposal panels) lives in `packs/<pack>/ui/displays/`; other pack UI, such as the plant modals, leaves the count. */
 export const displayScope: ReadonlyArray<ScopeGroup> = [
   { name: 'World plant displays', include: ['apps/world/src/packs/process-plant/displays/**'] },
   { name: 'World display query', include: ['apps/world/src/packs/process-plant/queries/composed-display-query.ts'] },

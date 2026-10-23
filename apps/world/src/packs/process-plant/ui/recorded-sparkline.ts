@@ -3,10 +3,10 @@ import { workspaceApiPath } from '../../../ui/workspace-context.ts'
 import { displayValue, formatQuantity, formatValue } from '../quantity-text.ts'
 import { sparkline as drawnSparkline, type Sparkline } from '../../../ui/sparkline.ts'
 
-// A Plant card's energy lines: the Run's recorded points of a rate, how a
-// line extends with the projection's readings, and the sparkline it draws,
-// step and hold with no axes, which way the rate is going at a glance. Time
-// is Simulation Run time in epoch milliseconds; values are the rate's unit.
+// A recorded value's line: the Run's recorded points of a Plant value, how a
+// line extends with newer readings, and the sparkline it draws, step and hold
+// with no axes, which way the value is going at a glance. Time is Simulation
+// Run time in epoch milliseconds; values are the value's unit.
 
 export interface TrendPoint {
   readonly t: number

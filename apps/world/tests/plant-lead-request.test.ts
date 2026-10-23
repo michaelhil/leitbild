@@ -108,10 +108,12 @@ describe('a display opened at power and left open through a trip (W0.5)', () => 
         drawn[subject] = next
       }
     }
-    // After the reactor trip: the unit leads with the heat sink and inventory, no longer with a power it does not make.
+    // After the reactor trip: the unit leads with the heat sink and inventory, no longer with a power it does not make;
+    // the energy in and out (the Plant card's readings, now the overview's) follows its six values in every mode.
     const post = valuesOf(drawn[plantId]!)
     expect(post.slice(0, 3)).toEqual(['vessel.subcoolingMarginC', 'core.coreExitTemperatureC', 'auxFeedwaterHeader.outletFlowKgPerS'])
-    expect(post).not.toContain('turbine.electricMw')
+    expect(post.slice(0, 6)).not.toContain('turbine.electricMw')
+    expect(post.slice(6)).toEqual(['core.totalThermalPowerMw', 'turbine.electricMw'])
     // Each lead row named as crews say it, never cut (W4.2; OLD process-plant-overview's post-trip heat path, re-expressed):
     // at power reactor power and the pressurizer's pressure lead; after the trip the heat path.
     const named = (view: VignetteView) => { const section = view.sections.find(entry => entry.kind === 'values'); return section?.kind === 'values' ? section.values.map(value => value.shortLabel) : [] }

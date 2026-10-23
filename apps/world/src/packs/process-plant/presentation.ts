@@ -23,9 +23,9 @@ const parseUnitData = (object: OperationalObject): ProcessPlantUnitPackData | nu
   return parsed.success ? parsed.data : null
 }
 
-// What the Plant's card leads with: its status and the operating mode it is
-// in, then the energy its sources put in and its sinks take out. A Plant whose
-// runtime is pending has no energy to state yet.
+// What the Plant's hover card leads with: its status and the operating mode
+// it is in, then the energy its sources put in and its sinks take out. A Plant
+// whose runtime is pending has no energy to state yet.
 const glanceOf = (projection: ProcessPlantUnitProjection): ReadonlyArray<string> => projection.statusTone === 'idle'
   ? [projection.statusLabel]
   : [projection.modeLabel === undefined ? projection.statusLabel : `${projection.statusLabel} · ${projection.modeLabel}`, projection.summary]
