@@ -111,7 +111,7 @@ export const E0_CHECKS: ReadonlyArray<E0Check> = [
       const rows = screen.lines.filter(line => line.region === 'alerts' && line.valueOn && /\b\d{1,2}:\d{2}\b|\bago\b|\d+\s*(s|min)\b/.test(line.text))
       const firstOuts = screen.lines.filter(line => line.region === 'alerts' && line.valueOn && /\b1st\b|first out/i.test(line.text))
       const grouped = firstOuts.filter(line => /\b1st [A-Z]{2,}|first out [A-Z]{2,}\b.*:/.test(line.text))
-      const aggregate = lines(screen, /\d+\s+expected\b/i)
+      const aggregate = lines(screen, /\d+\s+expected after\b/i)
       return { pass: rows.length >= 3 && (firstOuts.length === 0 || grouped.length === firstOuts.length) && aggregate.length > 0, evidence: `${rows.length} rows on screen; first-outs ${firstOuts.length} (${grouped.length} named by group${firstOuts.length > grouped.length ? `, e.g. "${firstOuts.find(line => !grouped.includes(line))!.text.slice(0, 60)}"` : ''}); expected aggregate ${aggregate.length > 0 ? quote(aggregate) : 'none'}` }
     },
   },

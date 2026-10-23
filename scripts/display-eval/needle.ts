@@ -46,8 +46,8 @@ const simOf = (state: DisplayState, day: string): number | null => {
 }
 /** The alert list's rows in order, as the display shows them (on screen or not), with the aggregate's place. */
 const listOf = (screen: Screen) => screen.lines.filter(line => line.region === 'alerts' && !/^alerts\b/i.test(line.text))
-const aggregateIndex = (rows: ReadonlyArray<{ text: string }>) => rows.findIndex(row => /\d+\s+expected\b/i.test(row.text))
-const aggregateCount = (rows: ReadonlyArray<{ text: string }>) => { const row = rows.find(entry => /\d+\s+expected\b/i.test(entry.text)); return row === undefined ? null : Number(row.text.match(/(\d+)\s+expected/i)![1]) }
+const aggregateIndex = (rows: ReadonlyArray<{ text: string }>) => rows.findIndex(row => /\d+\s+expected after\b/i.test(row.text))
+const aggregateCount = (rows: ReadonlyArray<{ text: string }>) => { const row = rows.find(entry => /\d+\s+expected after\b/i.test(entry.text)); return row === undefined ? null : Number(row.text.match(/(\d+)\s+expected/i)![1]) }
 
 if (import.meta.main) {
   const argv = options(Bun.argv.slice(2))

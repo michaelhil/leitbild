@@ -264,7 +264,7 @@ const runSize = async (config: {
     // R2: the trip line, "Rods on bottom" and the expected aggregate, as a person sees them (on screen).
     const tripLineOf = (poll: Poll) => onScreen(poll.screen, /\bRX TRIP\b|\b1st\b.*TRIP|reactor trip/i).filter(line => line.region !== 'alerts' && line.region !== 'drawing')
     const rodsOf = (poll: Poll) => onScreen(poll.screen, /rods on bottom/i).filter(line => /\d(\.\d+)?\s*(×10[⁻⁰¹²³⁴⁵⁶⁷⁸⁹]+\s*A|%|cps)/.test(line.text))
-    const aggregateOf = (poll: Poll) => onScreen(poll.screen, /\d+\s+expected\b/i, ['alerts', 'column', 'body', 'trip'])
+    const aggregateOf = (poll: Poll) => onScreen(poll.screen, /\d+\s+expected after\b/i, ['alerts', 'column', 'body', 'trip'])
     const lagScreen = (condition: (poll: Poll) => boolean, from: number | null) => {
       if (from === null) return { lagS: null as number | null, kept: null as number | null }
       const later = polls.filter(poll => poll.simMs !== null && poll.simMs >= from)
