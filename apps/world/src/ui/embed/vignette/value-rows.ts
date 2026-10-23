@@ -53,12 +53,17 @@ export const spanBar = (value: Pick<VignetteValue, 'span' | 'quantity' | 'travel
  */
 export const ownLabel = (value: Pick<VignetteValue, 'shortLabel' | 'label' | 'element'>, title: string, subject?: VignetteView['subject']): string => {
   const short = value.shortLabel
-  if (short === undefined) return underTitle(value.label, title, subject)
   const element = value.element
-  const prefix = element?.shortLabel === undefined ? undefined : `${element.shortLabel} `
   // In its element's own detail, or in an answer about that one element (its subject, W7.3).
   const own = element !== undefined && (title.endsWith(` · ${element.label}`) || subject?.element === (element.shortLabel ?? element.label))
-  if (!own || prefix === undefined || !short.toLowerCase().startsWith(prefix.toLowerCase()) || short.length === prefix.length) return short
+  if (short === undefined) {
+    // Without a short label, its label under the title, its element's name dropped in that element's own detail ("State").
+    const label = underTitle(value.label, title, subject)
+    const suffix = element === undefined ? undefined : ` · ${element.shortLabel ?? element.label}`
+    return own && suffix !== undefined && label.endsWith(suffix) && label.length > suffix.length ? label.slice(0, -suffix.length) : label
+  }
+  const prefix = element?.shortLabel === undefined ? undefined : `${element.shortLabel} `
+  if (element === undefined || prefix === undefined || !own || !short.toLowerCase().startsWith(prefix.toLowerCase()) || short.length === prefix.length) return short
   const rest = short.slice(prefix.length)
   return `${rest.charAt(0).toUpperCase()}${rest.slice(1)}`
 }

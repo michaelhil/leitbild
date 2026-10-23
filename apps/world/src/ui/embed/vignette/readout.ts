@@ -45,9 +45,12 @@ export interface ReadingInput {
   readonly widerReading?: { readonly word: string; readonly value: number }
 }
 
-/** Where a reading stands at an end of its instrument's span: it says only that the quantity is there or beyond. */
+/** Where a reading stands beyond its instrument's span (strictly: at an end it reads its value): it says only that the quantity is beyond. */
 export const offSpan = (value: number, span: Observable['span']): 'below' | 'above' | null =>
-  span === undefined ? null : value <= span.min ? 'below' : value >= span.max ? 'above' : null
+  span === undefined ? null : value < span.min ? 'below' : value > span.max ? 'above' : null
+
+/** Whether a reading stands at or beyond an end of its span: there a narrow range cannot say how far, and its wider range, where declared, reads instead. */
+const atEnd = (value: number, span: Observable['span']): boolean => span !== undefined && (value <= span.min || value >= span.max)
 
 /** LO, LO-LO, HI, HI-HI: the limit's direction once per order. */
 export const orderWord = (threshold: Pick<Threshold, 'direction' | 'order'>): string =>
@@ -121,9 +124,10 @@ export const readingLook = (label: string, valueType: Observable['valueType'], s
   const decades = input.decades === true
   const reading = !state && !unknown && quality !== 'not-applicable' && typeof value === 'number' ? value : null
   const measured = reading !== null
-  // At an end of its span a reading says only that it is there ("<0 %"), unless its wider range reads where it is.
-  const end = reading === null ? null : offSpan(reading, input.span)
-  const wider = end === null ? undefined : input.widerReading
+  // At or beyond an end of its span its wider range reads where it is ("WR 24.0 %"), where it has one; beyond its span
+  // a reading says only that it is there ("<0 %"); at an end it reads its value (an open line at 0 % loading).
+  const wider = reading === null || !atEnd(reading, input.span) ? undefined : input.widerReading
+  const end = reading === null || wider !== undefined ? null : offSpan(reading, input.span)
   // A valve's position at the ends of its travel reads as its drawing words it; its opening in percent between them.
   const travel = reading !== null && end === null && input.travel !== undefined ? (reading < input.travel.below ? input.travel.low : reading > input.travel.above ? input.travel.high : 'opening') : null
   const opening = travel === 'opening' && reading !== null ? (input.unit === '%' ? reading : reading * 100) : null
