@@ -33,10 +33,13 @@ for (const plant of plants) {
   const lifecycles: ReadonlyArray<any> = [...(ic?.alarms ?? []), ...(ic?.trips ?? [])]
   if (lifecycles.length === 0) throw new Error(`no I&C lifecycles for ${plant.id}: ${JSON.stringify(status).slice(0, 300)}`)
   const byId = new Map(lifecycles.map(lifecycle => [String(lifecycle.id), lifecycle]))
+  // The Plant's time now: an alert's Run time less its lifecycle's Plant time is when the Plant started.
+  const dated = (plant.alerts as ReadonlyArray<any>).find(alert => byId.get(String(alert.id))?.lastActiveElapsedMs !== undefined)
+  const elapsedMs = dated === undefined ? 0 : Date.parse(at) - (Date.parse(dated.raisedAt) - byId.get(String(dated.id)).lastActiveElapsedMs)
   const rows = (plant.alerts as ReadonlyArray<any>).map(alert => {
     const lifecycle = byId.get(String(alert.id))
     const system = lifecycle?.annunciator?.system as string | undefined
-    const expected = lifecycle === undefined ? null : expectedAfterGroup(compiled, lifecycle, lifecycles)
+    const expected = lifecycle === undefined ? null : expectedAfterGroup(compiled, lifecycle, lifecycles, elapsedMs)
     return {
       id: String(alert.id), message: String(alert.message), kind: String(alert.kind), priority: alert.priority ?? null,
       state: alert.returned === true ? 'returned' : alert.acknowledged === true ? 'active-ack' : 'active-unack',

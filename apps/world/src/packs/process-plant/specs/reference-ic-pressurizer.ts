@@ -10,7 +10,8 @@ const pzrAlarm = annunciator({
   role: 'symptom',
 })
 
-// The pressure reactor trips are the reactor protection system's, in the reactor trip's first-out group.
+// The pressure reactor trips are the reactor protection system's, in the reactor trip's first-out group: expected
+// after its first-out unless one of them is it, as every reactor trip but the first out is.
 const pzrReactorTrip = annunciator({
   system: 'reactorProtection',
   equipmentId: 'pressurizer',
@@ -18,6 +19,7 @@ const pzrReactorTrip = annunciator({
   firstOutGroup: 'reactor-trip',
   priority: 'urgent',
   role: 'automaticAction',
+  expectedAfter: expectedAfterReactorTrip,
 })
 
 // Pressurizer pressure ladder of the reference four-loop plant, absolute, with

@@ -43,21 +43,25 @@ export const annunciating = (snapshot: ProcessPlantIcSnapshot): ReadonlyArray<Pr
   [...snapshot.alarms, ...snapshot.trips].filter(lifecycle => lifecycle.active && !lifecycle.shelved && !lifecycle.suppressed && !lifecycle.outOfService)
 
 /**
- * The first-out group an alarm came in as the expected consequence of, or
- * null (panel-presenters.ts expectedAfter, the same rule): its annunciator
- * declares it expected after that group's actuation; it is not first out
- * itself; it came in after the group's first-out, or with it on other
- * equipment, within the declared time.
+ * The first-out group an alarm is the expected consequence of now, or null
+ * (features/displays/alerts/expected.ts, the same rule over the alert slot):
+ * its annunciator declares it expected after that group's actuation; it is
+ * not first out itself; it came in after the group's first-out, or with it on
+ * other equipment, within the declared time; and that time has not run out
+ * since the first-out (`elapsedMs`, plan v5 W2.3): what still stands then is
+ * news again, as a steam generator that does not recover because its feed
+ * failed.
  */
 export const expectedAfterGroup = (
   plant: CompiledProcessPlant,
   lifecycle: ProcessPlantIcLifecycleState,
   all: ReadonlyArray<ProcessPlantIcLifecycleState>,
+  elapsedMs: number,
 ): ProcessPlantIcFirstOutGroup | null => {
   const expected = lifecycle.annunciator?.expectedAfter
   if (expected === undefined || lifecycle.firstOut || lifecycle.firstActiveElapsedMs === undefined) return null
   const trigger = all.find(candidate => candidate.firstOut && candidate.annunciator?.firstOutGroup === expected.firstOutGroup && candidate.firstActiveElapsedMs !== undefined)
-  if (trigger === undefined) return null
+  if (trigger === undefined || elapsedMs - trigger.firstActiveElapsedMs! > expected.withinMs) return null
   const lag = lifecycle.firstActiveElapsedMs - trigger.firstActiveElapsedMs!
   const own = lifecycle.annunciator?.equipmentId !== undefined && lifecycle.annunciator.equipmentId === trigger.annunciator?.equipmentId
   return (lag > 0 || (lag === 0 && !own)) && lag <= expected.withinMs ? plant.automation.firstOutGroups.find(group => group.id === expected.firstOutGroup) ?? null : null

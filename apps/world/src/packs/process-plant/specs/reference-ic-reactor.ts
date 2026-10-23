@@ -1,6 +1,7 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
 import type { ProcessPlantReferenceLoop } from './reference-loop.ts'
 import { alarm, all, annunciator, any, comparison, reactorTripBreakerWrites, rule, trip, vote, write } from './reference-ic-helpers.ts'
+import { expectedAfterReactorTrip } from './reference-ic-first-out-groups.ts'
 
 const reactorAlarm = annunciator({
   system: 'reactorProtection',
@@ -10,6 +11,8 @@ const reactorAlarm = annunciator({
   role: 'symptom',
 })
 
+// Every reactor trip but the first out comes in on a reactor already tripping: a first-out panel shows it as
+// subsequent, so it is expected after the reactor trip's first-out (expectedAfterReactorTrip), never news of its own.
 const reactorAction = annunciator({
   system: 'reactorProtection',
   equipmentId: 'core',
@@ -17,6 +20,7 @@ const reactorAction = annunciator({
   firstOutGroup: 'reactor-trip',
   priority: 'urgent',
   role: 'automaticAction',
+  expectedAfter: expectedAfterReactorTrip,
 })
 
 const lowRcpFlowVoteThresholdFor = (loops: ReadonlyArray<ProcessPlantReferenceLoop>): number =>

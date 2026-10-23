@@ -67,7 +67,7 @@ export const readPlant = (context: PlantReadContext, paths: ReadonlyArray<string
     const limitsOf = (ruleId: string) => declared.thresholds.filter(threshold => threshold.id === ruleId || threshold.id.startsWith(`${ruleId}#`))
     const reading = typeof variable.value === 'number' ? variable.value : null
     const on = snapshot === undefined ? [] : alarms.filter(lifecycle => colours(snapshot, lifecycle, limitsOf(lifecycle.ruleId), reading))
-      .map(lifecycle => ({ lifecycle, priority: plantAlarmPriority(lifecycle.severity, lifecycle.annunciator?.priority), after: expectedAfterGroup(plant, lifecycle, all) }))
+      .map(lifecycle => ({ lifecycle, priority: plantAlarmPriority(lifecycle.severity, lifecycle.annunciator?.priority), after: expectedAfterGroup(plant, lifecycle, all, system.runtime.elapsedMs()) }))
       .sort((left, right) => priorityOrder[right.priority] - priorityOrder[left.priority])
     const colouring = on.find(entry => entry.after === null)
     const expected = colouring === undefined ? on[0] : undefined

@@ -3,6 +3,7 @@ import { alarm, all, annunciator, comparison, feedwaterIsolationWrites, reactorT
 import { containmentPressureHigh1MPa } from './reference-ic-containment.ts'
 import type { ProcessPlantReferenceLoop } from './reference-loop.ts'
 import { auxiliaryFeedwaterThrottleFloor } from './reference-ic-afw-throttle.ts'
+import { expectedAfterReactorTrip } from './reference-ic-first-out-groups.ts'
 
 // Safety injection on low pressurizer pressure: below 12.7 MPa (about
 // 1,830 psig, within the 1,807 to 1,870 psig Westinghouse plants set it at)
@@ -28,12 +29,14 @@ const siAction = annunciator({
 
 // The SI signal also trips the reactor: annunciated as its own trip in the
 // reactor trip's first-out group, where a first-out panel shows SI among the
-// reactor trip's causes, while the SI actuation stands apart in its group.
+// reactor trip's causes, while the SI actuation stands apart in its group. Not
+// first out, it is expected after the reactor trip's first-out, as every
+// reactor trip but the first out is; the SI actuation never is.
 const reactorTripOnSafetyInjection = (cause: string) => trip({
   id: 'reactor-trip',
   title: `Reactor trip on safety injection, ${cause}`,
   message: `The safety injection signal, on ${cause}, trips the reactor.`,
-  annunciator: annunciator({ ...siAction, firstOutGroup: 'reactor-trip' }),
+  annunciator: annunciator({ ...siAction, firstOutGroup: 'reactor-trip', expectedAfter: expectedAfterReactorTrip }),
 })
 
 // The SI signal also isolates main feedwater (NUREG-1431 Table 3.3.2-1,
