@@ -27,6 +27,8 @@ const degraded = 'alarm:offsite-grid-degraded-voltage:offsite-grid-degraded-volt
 const find = (alerts: ReadonlyArray<AlertState>, id: string) => alerts.find(alert => alert.id === id)
 const reference = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:standing', loopCount: 4 }))
 
+// Thirteen minutes of a Plant's Run in one hook: the suite's 120 s watchdog, not the 30 s hook default (it takes about
+// 16 s alone and passed 30 s only under a full suite beside other builds).
 beforeAll(async () => {
   plant = await createSteadyPlantRun()
   await plant.runTo(10_000)
@@ -56,7 +58,7 @@ beforeAll(async () => {
   await plant.shutdown()
   const runtimes = (await readdir(join(plant.dataDir), { recursive: true })).filter(file => String(file).endsWith('process-plant.local.json'))
   facts.runtimeState = await Bun.file(join(plant.dataDir, String(runtimes[0]))).json()
-})
+}, 120_000)
 
 afterAll(async () => { await plant.remove() })
 
