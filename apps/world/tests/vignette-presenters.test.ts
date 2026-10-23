@@ -277,8 +277,17 @@ describe('trend strip', () => {
   test('a gridline\'s value never leaves the plot: the top one is written under its line and names the unit (W5.4)', () => {
     const drawing = tripped(120)
     expect(drawing.values.every(tick => tick.labelY >= 14 && tick.labelY <= 120)).toBe(true)
-    expect(drawing.values.filter(tick => tick.label.endsWith(' MPa'))).toHaveLength(1)
-    expect(drawing.values.find(tick => tick.label.endsWith(' MPa'))!.y).toBe(Math.min(...drawing.values.map(tick => tick.y)))
+    expect(drawing.values.filter(tick => tick.label?.endsWith(' MPa'))).toHaveLength(1)
+    expect(drawing.values.find(tick => tick.label?.endsWith(' MPa'))!.y).toBe(Math.min(...drawing.values.map(tick => tick.y)))
+    // No written value touches another: where the top one is written under its line, the one under it gives way.
+    const level: VignetteValue = { ...pressure, ref: 'unit-1#sg', unit: '%', quantity: 'level', thresholds: [threshold('ff', 'high', 2, 82), threshold('lolo', 'low', 2, 20)] }
+    const crowded = stripDrawing({
+      pens: [level], series: new Map([[level.ref, { holdMs: 90_000, points: [{ t: 0, v: 55 }, { t: 400_000, v: 15 }, { t: 600_000, v: 27 }] }]]),
+      observations: [], now: 600_000, horizonMs: 600_000, width: 240, height: 120, ...laid,
+    })!
+    const written = crowded.values.filter(tick => tick.label !== null).sort((upper, lower) => upper.y - lower.y)
+    written.slice(1).forEach((tick, index) => expect(tick.labelY - 13).toBeGreaterThanOrEqual(written[index]!.labelY + 4 + 1))
+    expect(written[0]!.label).toMatch(/ %$/)
   })
 
   test('a strip is scaled and written in the unit its values are shown in: pascals in kilopascals', () => {
@@ -287,7 +296,7 @@ describe('trend strip', () => {
       pens: [vacuum], series: new Map([[vacuum.ref, { holdMs: 90_000, points: [{ t: 0, v: 7_000 }, { t: 300_000, v: 8_500 }, { t: 600_000, v: 7_534 }] }]]),
       observations: [], now: 600_000, horizonMs: 600_000, width: 240, height: 120, ...laid,
     })!
-    expect(drawn.values.map(tick => tick.label)).toEqual(['7', '8', '9', '10 kPa'])
+    expect(drawn.values.map(tick => tick.label)).toEqual(['7', '8', null, '10 kPa'])
     expect(drawn.labels.map(label => label.rows.flat().map(run => run.text).join(''))).toEqual(['HI 10.0 · ALM'])
   })
 

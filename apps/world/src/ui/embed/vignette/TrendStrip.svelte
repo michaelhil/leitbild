@@ -119,8 +119,11 @@
       name.textContent = wordsThatFit(shortest, shown => { name.textContent = shown; return name.scrollWidth <= name.clientWidth })
     }
     fit()
+    // Its value is written by the page each sample: a wider value takes room from the name, which fits again.
     const resized = new ResizeObserver(fit)
     resized.observe(node)
+    const value = node.querySelector<HTMLElement>('.now')
+    if (value !== null) resized.observe(value)
     return { update: (next: Fitted) => { current = next; fit() }, destroy: () => resized.disconnect() }
   }
 </script>
@@ -160,13 +163,13 @@
               <defs><pattern id={hatch} width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line class="hatch" x1="0" y1="0" x2="0" y2="8" /></pattern></defs>
               <rect class="unrecorded" x="1" y="1" width={Math.max(0, drawing.unrecorded.width - 1)} height={PLOT_HEIGHT - 2} fill={`url(#${hatch})`}><title>No record yet</title></rect>
             {/if}
-            {#each drawing.values as tick (tick.label)}<line class="grid" x1="1" x2={plotWidth - 1} y1={tick.y} y2={tick.y} />{/each}
+            {#each drawing.values as tick (tick.y)}<line class="grid" x1="1" x2={plotWidth - 1} y1={tick.y} y2={tick.y} />{/each}
             {#each drawing.setPoints as mark (mark.key)}
               <line class="set-point" x1={plotWidth - 9} x2={plotWidth - 1} y1={mark.y} y2={mark.y}><title>{mark.title}</title></line>
               {#if mark.labelY !== null}<text class="name set-point-name" x={plotWidth + LABEL_GAP} y={mark.labelY} dominant-baseline="central"><title>{mark.title}</title>{mark.label}</text>{/if}
             {/each}
             {#each drawing.lines as line (line.key)}<line class={`limit ${line.tone ?? ''}`} class:idle={line.idle} x1="1" x2={plotWidth - 1} y1={line.y} y2={line.y}><title>{line.title}</title></line>{/each}
-            {#each drawing.values as tick (tick.label)}<text class="tick" x="4" y={tick.labelY}>{tick.label}</text>{/each}
+            {#each drawing.values as tick (tick.y)}{#if tick.label !== null}<text class="tick" x="4" y={tick.labelY}>{tick.label}</text>{/if}{/each}
             {#each drawing.pens as pen (pen.ref)}<path class={`pen ${pen.tone ?? ''}`} d={pen.path} stroke-dasharray={pen.dash === '' ? undefined : pen.dash} />{/each}
             <!-- Names beside the plot, each at its line or led to it. -->
             {#each drawing.labels as label (label.key)}
