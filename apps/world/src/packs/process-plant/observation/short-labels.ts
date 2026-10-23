@@ -9,9 +9,10 @@ import type { CompiledProcessPlant } from '../plant-compiler.ts'
 // ("Thot A"); else the component's short name with what the label measures,
 // the words the label shares with the component's own name or kind dropped
 // ("Pressurizer pressure" → "PZR pressure", "Bus voltage" → "Bus A
-// voltage", "Tank level" → "CST level"), a line's by its ends ("AFW valve A
-// → SG A flow"); else the label where it is short enough; else none, and a
-// display gives the whole label room by whole words.
+// voltage", "Tank level" → "CST level"), a line's flow by what feeds it
+// ("AFW valve A flow"), another line reading by its ends; else the label
+// where it is short enough; else none, and a display gives the whole label
+// room by whole words.
 
 /** The most characters a short label has (core's Observable shortLabel). */
 const MOST = 24
@@ -28,9 +29,11 @@ export const shortLabelOf = (plant: CompiledProcessPlant, binding: ProcessSignal
     const link = graph.links[binding.owner.linkIndex]!
     const loop = link.metadata?.loopId
     if (name !== undefined) return fits(loop === undefined ? name : `${name} ${loop}`)
-    // A line's reading by its ends and what it measures: "AFW valve A → SG A flow".
+    // A line's flow by what feeds it ("AFW valve A flow"); another reading by its ends and what it measures ("PZR →
+    // Relief header temperature").
     const end = (index: number): string => graph.components[index]!.metadata?.presentation?.shortLabel ?? graph.components[index]!.label
-    return fits(`${end(link.fromComponentIndex)} → ${end(link.toComponentIndex)} ${binding.label.split(' ').at(-1)!}`)
+    const measures = binding.label.split(' ').at(-1)!
+    return fits(measures === 'flow' ? `${end(link.fromComponentIndex)} flow` : `${end(link.fromComponentIndex)} → ${end(link.toComponentIndex)} ${measures}`)
   }
   const component = graph.components[binding.owner.componentIndex]!
   const presentation = component.metadata?.presentation

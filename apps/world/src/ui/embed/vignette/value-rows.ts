@@ -27,6 +27,20 @@ export interface ValueRow {
   readonly margin: Margin | null
 }
 
+/**
+ * What a row names a value by: its short label, without its element's short name in that element's own detail ("SG A
+ * narrow-range level" reads "Narrow-range level" under the title "… · Steam Generator A"); else its label under the title.
+ */
+export const ownLabel = (value: Pick<VignetteValue, 'shortLabel' | 'label' | 'element'>, title: string): string => {
+  const short = value.shortLabel
+  if (short === undefined) return underTitle(value.label, title)
+  const element = value.element
+  const prefix = element?.shortLabel === undefined ? undefined : `${element.shortLabel} `
+  if (element === undefined || prefix === undefined || !title.endsWith(` · ${element.label}`) || !short.toLowerCase().startsWith(prefix.toLowerCase()) || short.length === prefix.length) return short
+  const rest = short.slice(prefix.length)
+  return `${rest.charAt(0).toUpperCase()}${rest.slice(1)}`
+}
+
 export const valueRows = (input: {
   readonly values: ReadonlyArray<VignetteValue>
   readonly observations: ReadonlyArray<Observation>
@@ -46,7 +60,7 @@ export const valueRows = (input: {
   const written = { unit: value.unit, quantity: value.quantity, ...(value.decades === true ? { decades: true as const } : {}) }
   return {
     ref: value.ref,
-    label: value.shortLabel ?? underTitle(value.label, input.title),
+    label: ownLabel(value, input.title),
     full: value.label,
     look,
     series,

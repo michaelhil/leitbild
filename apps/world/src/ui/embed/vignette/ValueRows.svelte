@@ -27,7 +27,7 @@
 
   /** OpenBridge's alert type for each priority drawn in colour; emergency is its critical level. */
   const ALERT_TYPE: Readonly<Record<AlertTone, string>> = { caution: 'caution', warning: 'warning', alarm: 'alarm', critical: 'level-critical' }
-  const SPARK = { width: 56, height: 20 }
+  const SPARK = { width: 52, height: 20 }
   /** The chip column, as wide as the longest chip of any row, while one has one. */
   const chipChars = $derived(Math.max(0, ...rows.map(row => (row.look.kind === 'number' ? row.look.chip?.word.length ?? 0 : 0))))
 
@@ -93,7 +93,7 @@
   /* One row a grid row: the list's 8 px default gap (room for two alarm frames) would make each 28 px. */
   .rows { display: block; --obc-readout-list-row-gap: 0px; }
   /* Label, value and unit (the list's columns, equal on every row), chip, rate, sparkline: every row's columns line up. */
-  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto var(--chip) 68px 56px; align-items: center; column-gap: 4px; height: var(--row); min-width: 0; white-space: nowrap; }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto var(--chip) 60px 52px; align-items: center; column-gap: 3px; height: var(--row); min-width: 0; white-space: nowrap; }
   .row.whole { display: block; }
   /* The heading, as the alerts' (AlertsSection), its units over the rate's and the sparklines' columns. */
   .head { margin: 0; font-size: 12px; font-weight: 600; color: var(--element-neutral-color); text-transform: uppercase; letter-spacing: 0.04em; overflow: hidden; }
@@ -112,5 +112,5 @@
   .chip.alarm { background: var(--display-alarm-fill); color: var(--display-on-alarm); border-color: var(--alert-alarm-color); }
   .chip.critical { background: var(--display-critical-fill); color: var(--display-on-critical); border-color: var(--alert-critical-color); }
   .reason { grid-column: 4 / 6; min-width: 0; overflow: hidden; font-size: 12px; color: var(--element-neutral-color); }
-  .rate { font-size: 12px; text-align: right; color: var(--element-neutral-color); font-variant-numeric: tabular-nums; overflow: hidden; }
+  .rate { font-size: 11px; text-align: right; color: var(--element-neutral-color); font-variant-numeric: tabular-nums; overflow: hidden; }
 </style>

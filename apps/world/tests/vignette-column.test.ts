@@ -9,7 +9,7 @@ import { keptAfter, shownSeries, unkept } from '../src/ui/embed/vignette/kept-se
 import { marginOf, slopePerMinute, tendencyOf } from '../src/ui/embed/vignette/margin.ts'
 import { rateNow, rateText } from '../src/ui/embed/vignette/trend.ts'
 import { SPARK_WINDOW_MS, sparkline } from '../src/ui/embed/vignette/sparkline.ts'
-import { marginLines, valueRows } from '../src/ui/embed/vignette/value-rows.ts'
+import { marginLines, ownLabel, valueRows } from '../src/ui/embed/vignette/value-rows.ts'
 import { createVignetteSession, type VignetteSnapshot } from '../src/ui/embed/vignette/vignette-client.ts'
 import { valueLook } from '../src/ui/embed/vignette/readout.ts'
 import { recordingSeriesIdFor, type ObjectId } from '../src/core/model/index.ts'
@@ -304,5 +304,16 @@ describe('the column moves nothing (W8.4)', () => {
       const style = readFileSync(join(dir, file), 'utf8').match(/<style>([\s\S]*)<\/style>/)?.[1] ?? ''
       expect(style, file).not.toMatch(/\b(animation|transition)\s*:/)
     }
+  })
+})
+
+describe('a row\'s name in its element\'s own detail', () => {
+  test('drops the element\'s short name the title already says, and keeps every other', () => {
+    const element = { id: 'sgA', class: 'steamGenerator', label: 'Steam Generator A', shortLabel: 'SG A' }
+    const value = { label: 'Halden Unit 1 · Steam generator narrow-range level · SG A', shortLabel: 'SG A narrow-range level', element }
+    expect(ownLabel(value, 'Halden Unit 1 · Steam Generator A')).toBe('Narrow-range level')
+    expect(ownLabel(value, 'Halden Unit 1')).toBe('SG A narrow-range level')
+    expect(ownLabel({ ...value, shortLabel: 'AFW valve A flow', element: { ...element, id: 'auxFeedwaterValveA', label: 'Auxiliary Feedwater Valve A', shortLabel: 'AFW valve A' } }, 'Halden Unit 1 · Steam Generator A')).toBe('AFW valve A flow')
+    expect(ownLabel({ label: 'Halden Unit 1 · Pressurizer pressure' }, 'Halden Unit 1')).toBe('Pressurizer pressure')
   })
 })
