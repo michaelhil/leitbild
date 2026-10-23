@@ -74,7 +74,8 @@ const PRESS_KEY = (key: string, index: number) => String.raw`(() => {
 })()`
 const LINE_SHOWN = (key: string) => String.raw`(() => {
   for (const { doc } of lb.documents()) {
-    const line = doc && doc.body ? doc.querySelector('[data-card-keys~="' + ${JSON.stringify(key)} + '"]') : null
+    // R3 marks a card line with all its keys (data-card-keys); R1 and R2 with one (data-card-key).
+    const line = doc && doc.body ? doc.querySelector('[data-card-keys~="' + ${JSON.stringify(key)} + '"], [data-card-key="' + ${JSON.stringify(key)} + '"]') : null
     if (!line) continue
     const r = lb.toTop(line)
     return { found: true, shown: !line.hidden && !line.closest('[hidden]') && r.h > 0 && r.y >= 0 && r.y + r.h <= innerHeight, marked: line.classList.contains('bg-surface-strong') }
@@ -123,6 +124,18 @@ if (import.meta.main) {
       const shot = join(out, `${label}-card-480-${String(index).padStart(2, '0')}.png`)
       await page.shot(shot)
       if (!galleryShot && read.cards.length > 0) { await page.shot(join(out, `${label}-card-480.png`)); galleryShot = true }
+      // The first display card at twice the pixels, cropped (the gallery's chat-card defect): R3's frozen card, or the
+      // chip that stands for a display before it.
+      const box = await page.eval<{ x: number; y: number; w: number; h: number } | null>(String.raw`(() => { for (const { doc } of lb.documents()) { const el = doc && doc.body ? [...doc.querySelectorAll('[data-live-card], [data-live-view]')].find(e => lb.shown(e)) : null; if (el) { el.scrollIntoView({ block: 'center' }); return lb.toTop(el) } } return null })()`)
+      if (box !== null && box.w > 0 && box.h > 0) {
+        await sleep(400)
+        const fresh = await page.eval<{ x: number; y: number; w: number; h: number } | null>(String.raw`(() => { for (const { doc } of lb.documents()) { const el = doc && doc.body ? [...doc.querySelectorAll('[data-live-card], [data-live-view]')].find(e => lb.shown(e)) : null; if (el) return lb.toTop(el) } return null })()`) ?? box
+        const clip = { x: Math.max(0, fresh.x - 4), y: Math.max(0, fresh.y - 4), width: Math.min(fresh.w + 8, width), height: Math.min(fresh.h + 8, height), scale: 2 }
+        const crop = await page.send('Page.captureScreenshot', { format: 'png', clip })
+        const file = join(out, `${label}-card-crop-${String(index).padStart(2, '0')}.png`)
+        await Bun.write(file, Buffer.from(crop.data, 'base64'))
+        if (!(await Bun.file(join(out, `${label}-card-crop.png`)).exists())) await Bun.write(join(out, `${label}-card-crop.png`), Buffer.from(crop.data, 'base64'))
+      }
       const cut = read.cards.flatMap(card => card.lines.filter(line => line.cut.length > 0).map(line => `"${line.label}" | "${line.value}": ${line.cut.join(', ')}`))
       const toggles = read.cards.filter(card => card.toggle !== null && (card.toggle.w > 32 || card.toggle.h > 32)).map(card => `${card.title}: ${card.toggle!.w} × ${card.toggle!.h}`)
       const result = {
