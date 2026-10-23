@@ -18,8 +18,17 @@ export type Outcome =
 
 export interface Press { readonly target: PressTarget; readonly outcome: Outcome; readonly ms: number }
 
-export const screenOf = (page: Page): Promise<Screen> => page.eval<Screen>(readScreen())
-export const targetsOf = (page: Page): Promise<ReadonlyArray<PressTarget>> => page.eval<ReadonlyArray<PressTarget>>(readTargets())
+/** An in-page read, tried again while a frame is between documents (a deck switch, a detail loading). */
+const settled = async <T>(page: Page, expression: string): Promise<T> => {
+  for (let attempt = 1; ; attempt += 1) {
+    try { return await page.eval<T>(expression) } catch (error) {
+      if (attempt >= 4) throw error
+      await sleep(400)
+    }
+  }
+}
+export const screenOf = (page: Page): Promise<Screen> => settled<Screen>(page, readScreen())
+export const targetsOf = (page: Page): Promise<ReadonlyArray<PressTarget>> => settled<ReadonlyArray<PressTarget>>(page, readTargets())
 
 /** Dialogs on the Run page itself (a tag dialog, the procedure window), outside the display frame. */
 const PAGE_DIALOGS = `lb.everything().map(([el]) => el).filter(el => el.getAttribute && el.getAttribute('role') === 'dialog' && lb.shown(el) && !/\\/world\\/embed\\//.test(el.ownerDocument.location.pathname)).map(el => (el.getAttribute('aria-label') || el.innerText || '').replace(/\\s+/g, ' ').slice(0, 100))`

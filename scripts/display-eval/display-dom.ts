@@ -87,6 +87,7 @@ const READER = `(scope) => {
   const textNodes = root => {
     const out = []
     const walk = node => {
+      if (!node) return
       if (node.nodeType === 3) { if (node.textContent.trim()) out.push(node); return }
       if (node.nodeType !== 1 && node.nodeType !== 11) return
       if (node.nodeType === 1 && (node.tagName.toLowerCase() === 'title' || hidden(node))) return
@@ -248,7 +249,8 @@ const READER = `(scope) => {
  * frames, and whether a page rectangle is visible through every clipping ancestor. */
 const SCREEN_HELPERS = String.raw`
   const lb = window.__lb
-  const embedDocs = () => lb.documents().filter(d => d.frame && /\/world\/embed\//.test(d.frame.getAttribute('src') || '') && lb.shown(d.frame))
+  // A frame that is loading has no body yet: not a display to read.
+  const embedDocs = () => lb.documents().filter(d => d.frame && d.doc && d.doc.body && /\/world\/embed\//.test(d.frame.getAttribute('src') || '') && lb.shown(d.frame))
   const areaOf = d => { const r = d.frame.getBoundingClientRect(); return r.width * r.height }
   // The display window's frame: the largest shown embed that is not inside a dialog (a tag dialog or a chat card is smaller).
   const windowDoc = () => embedDocs().sort((a, b) => areaOf(b) - areaOf(a))[0] || null
@@ -293,6 +295,7 @@ const SCREEN_HELPERS = String.raw`
   const textNodesOf = (root, win) => {
     const out = []
     const walk = node => {
+      if (!node) return
       if (node.nodeType === 3) { if (node.textContent.trim()) out.push(node); return }
       if (node.nodeType !== 1 && node.nodeType !== 11) return
       if (node.nodeType === 1 && (node.tagName.toLowerCase() === 'title' || node.tagName.toLowerCase() === 'style' || node.tagName.toLowerCase() === 'script' || hiddenEl(node, win))) return

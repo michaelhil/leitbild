@@ -163,7 +163,9 @@ const t1 = async (ctx: Ctx, live: boolean): Promise<TaskResult> => {
     if (already !== null) return { id: live ? 'T1-live' : 'T1', title: "MD AFW A's state in ≤ 2 clicks", verdict: '✔', budget: 2, clicks: 0, path: [], deadEnds: 0, searched: 0, detail: `at a glance: "${already}"`, shots: [await shotOf(ctx, live ? 'T1-live' : 'T1')], live }
     const found = await search(ctx, { home, reopen, goal, width: [10, 6, 4], rank: keywords([/MD AFW|AFW pump|auxiliary feedwater pump/i, 10], [/\bAFW\b|aux/i, 6], [/feed|SG [A-D]|steam generator/i, 2], [/bus [AB]|EDG|diesel/i, 1]) })
     const clicks = found.path?.length ?? null
-    const shots = found.path === null ? [] : [await shotOf(ctx, live ? 'T1-live' : 'T1')]
+    // Not found: the overview it started from, for the gallery's pair.
+    if (found.path === null) await goHome(ctx.page, home)
+    const shots = [await shotOf(ctx, live ? 'T1-live' : 'T1')]
     return {
       id: live ? 'T1-live' : 'T1', title: "MD AFW A's state in ≤ 2 clicks", live,
       verdict: clicks === null ? '✖' : clicks <= 2 ? '✔' : '◐', budget: 2, clicks, path: found.path === null ? [] : stepsOf(found.path), deadEnds: found.deadEnds, searched: found.searched,
@@ -237,7 +239,14 @@ const t3 = async (ctx: Ctx, sizeName: string): Promise<TaskResult> => {
     const opened = await press(ctx.page, { x: chip.x + chip.w / 2, y: chip.y + chip.h / 2, name: chip.label })
     steps.push({ press: chip.label, kind: 'window', outcome: describe(opened.outcome) })
     // An entry naming the proposal (its word or item) in the chip's list, where the chip opens a list.
-    const entry = await ctx.page.find({ sel: 'li button, [role=menuitem], [role=option]', text: 'THROTTLE' }) ?? await ctx.page.find({ sel: 'li button, [role=menuitem], [role=option]', text: 'AFW valve A' })
+    // Its list (where the chip opens one) draws a moment later; press the chip again if it closed.
+    const entryOf = () => ctx.page.waitFor({ sel: 'li button, [role=menuitem], [role=option]', text: 'THROTTLE' }, 4_000).catch(() => null)
+    let entry = opened.outcome.kind === 'detail' ? null : await entryOf()
+    if (entry === null && opened.outcome.kind !== 'detail') {
+      await ctx.page.click(chip)
+      steps.push({ press: chip.label, kind: 'window', outcome: 'pressed again: its list did not show' })
+      entry = await entryOf()
+    }
     if (entry !== null && opened.outcome.kind !== 'detail') {
       const reviewed = await press(ctx.page, { x: entry.x + entry.w / 2, y: entry.y + entry.h / 2, name: entry.label })
       steps.push({ press: entry.label.slice(0, 60), kind: 'window', outcome: describe(reviewed.outcome) })
@@ -482,8 +491,11 @@ if (import.meta.main) {
   const api = createStackApi(origin, workspaceId)
   const page = await openPage(port, 1920, 1080)
   const ctx: Ctx = { page, api, origin, workspaceId, unit: argv.get('unit') ?? 'Halden Unit 1', plantId: argv.get('plant') ?? 'plant:halden-1', out, label, runA }
-  const results: TaskResult[] = []
-  const write = () => Bun.write(join(out, `${label}-walks.json`), JSON.stringify({ label, origin, runA, results, score: { done: results.filter(r => r.verdict === '✔').length, workaround: results.filter(r => r.verdict === '◐').length, failed: results.filter(r => r.verdict === '✖').length, r3: results.filter(r => r.verdict === 'R3').length } }, null, 2))
+  // A rerun of some tasks keeps the others' results in the same file.
+  const file = join(out, `${label}-walks.json`)
+  const earlier: ReadonlyArray<TaskResult> = await Bun.file(file).exists() ? (JSON.parse(await Bun.file(file).text()).results ?? []) : []
+  const results: TaskResult[] = earlier.filter(result => !wanted.includes(result.id))
+  const write = () => Bun.write(file, JSON.stringify({ label, origin, runA, results: [...results].sort((a, b) => TASKS.indexOf(a.id as typeof TASKS[number]) - TASKS.indexOf(b.id as typeof TASKS[number])), score: { done: results.filter(r => r.verdict === '✔').length, workaround: results.filter(r => r.verdict === '◐').length, failed: results.filter(r => r.verdict === '✖').length, r3: results.filter(r => r.verdict === 'R3').length } }, null, 2))
   try {
     for (const task of wanted) {
       const started = Date.now()
