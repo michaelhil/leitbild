@@ -2341,6 +2341,7 @@
     simulationRunId={displayWindowRunId}
     runJoin={displayRunJoin}
     assetObjects={observedAssetObjects}
+    statusOf={statusPresentationFor}
     listings={conversationDisplays}
     request={displayWindowRequest}
     runsProcedures={object => procedureScopeForObject(object) !== null}

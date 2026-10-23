@@ -1372,17 +1372,13 @@ body.rail-resizing {
   font-size: 12px;
 }
 
+/* No asset to read a status of: an empty ring where the rail's status indicator stands for one. */
 .process-display-asset-dot {
   flex: 0 0 auto;
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--panel) 80%, transparent);
-}
-
-.process-display-asset-dot.unknown {
   border: 1.5px solid var(--muted);
-  background: transparent;
 }
 
 .display-window-header button:not([role="dialog"] *),
