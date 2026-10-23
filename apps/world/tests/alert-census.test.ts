@@ -88,10 +88,11 @@ describe('the tiles (W2.2)', () => {
     const narrow = tileLayout(tiles, 360, measure)
     expect(narrow.columns).toBe(3)
     expect(narrow.labels).toEqual(['RPS', 'RCS', 'SG', 'SI', 'ELEC', 'FW', 'Unit 1'])
-    // Wide, two rows: the widest tiles that make them, and whole labels where they fit.
+    // Wide, two rows: the widest tiles that make them; every label whole where all fit, else every one short.
     const wide = tileLayout(tiles, 760, measure)
     expect(wide.columns).toBe(4)
-    expect(wide.labels).toContain('Electrical')
+    expect(wide.labels).toEqual(['RPS', 'RCS', 'SG', 'SI', 'ELEC', 'FW', 'Unit 1'])
+    expect(tileLayout(tiles, 2000, measure)).toEqual({ columns: 7, labels: tiles.map(tile => tile.label) })
     for (const [at, label] of narrow.labels.entries()) expect([tiles[at]!.label, tiles[at]!.short]).toContain(label)
     expect(tilesHeight(tiles, 3)).toBe(3 * 42 + 2 * 4)
   })
