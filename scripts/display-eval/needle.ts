@@ -20,7 +20,8 @@
  *                  the row. The script presses the row once, after the row check's window, reads the detail and goes
  *                  back; the overview's own tile for it is R3 (W2.2).
  *   needle-row     within one sample, its row stands above the expected aggregate row in the list
- *   needle-tile    (R3, W2.2) a category tile on the overview is lit for it, within one sample of its alert
+ *   needle-tile    (R3, W2.2) its category's tile on the overview (the category World's sample names for its row) is
+ *                  lit by an alert's badge, not the neutral one of expected alerts, within one sample of its alert
  *   expiry         at the declared window (`--window`, s after the first-out) an expected SG low-low that still
  *                  stands leaves the aggregate within one sample: its own row shows and the aggregate count drops
  *   coverage       the share of the unit's alerts expected after a first-out, and how many name no observable
@@ -31,12 +32,14 @@ import { join } from 'node:path'
 import { ensureChrome, loopbackOrigin, openPage, options, sleep } from './browser.ts'
 import { readDisplay, readScreen, type DisplayState, type Screen } from './display-dom.ts'
 import { goHome, homeOf, openOverview, press, screenOf, sizeSpec, targetsOf } from './display-press.ts'
+import { TILES } from './matrix.ts'
 import { createStackApi } from './stack-api.ts'
 
 const ONE_SAMPLE_S = 2
 const POLL_MS = 400
 
-interface Poll { readonly wall: number; readonly simMs: number | null; readonly state: DisplayState; readonly screen: Screen }
+interface Tile { readonly title: string; readonly button: boolean; readonly badge: { readonly type: string | null; readonly count: number } | null }
+interface Poll { readonly wall: number; readonly simMs: number | null; readonly state: DisplayState; readonly screen: Screen; readonly tiles: ReadonlyArray<Tile> }
 const simOf = (state: DisplayState, day: string): number | null => {
   const match = state.sim?.match(/(\d{2}):(\d{2}):(\d{2})/)
   return match ? Date.parse(`${day}T${match[1]}:${match[2]}:${match[3]}.000Z`) : null
@@ -87,6 +90,7 @@ if (import.meta.main) {
     await api.playRealtime(copy)
     let upsetMs: number | null = null, firstOutMs: number | null = null, needleAlert: { readonly id: string; readonly message: string; readonly raisedMs: number } | null = null
     let elementState: Record<string, unknown> | null = null
+    let needleCategory: string | null = null
     const nameRe = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b|${element}`, 'i')
     const framedNeedle = (poll: Pick<Poll, 'state'>) => poll.state.framed.find(item => item.item === element || nameRe.test(item.name))
     const rowAbove = (poll: Poll) => {
@@ -126,8 +130,9 @@ if (import.meta.main) {
     while (Date.now() < stopAt) {
       const state = await page.eval<DisplayState>(readDisplay())
       const screen = await page.eval<Screen>(readScreen())
+      const tiles = await page.eval<ReadonlyArray<Tile>>(TILES).catch(() => [])
       const simMs = simOf(state, day)
-      polls.push({ wall: Date.now(), simMs, state, screen })
+      polls.push({ wall: Date.now(), simMs, state, screen, tiles })
       if (Date.now() - lastApi > 1_000) {
         lastApi = Date.now()
         const plant = (await api.objects(copy)).find(object => object.id === plantId)
@@ -139,7 +144,14 @@ if (import.meta.main) {
         const firstOuts = raised.filter((alert: any) => alert.firstOut === true || /first.?out/i.test(String(alert.kind ?? '')) || alert.firstOut?.group !== undefined)
         if (firstOutMs === null && firstOuts.length > 0) firstOutMs = Math.min(...firstOuts.map((alert: any) => Date.parse(alert.raisedAt)))
         const onElement = raised.find((alert: any) => alert.subject?.element === element)
-        if (needleAlert === null && onElement !== undefined) needleAlert = { id: String(onElement.id), message: String(onElement.message), raisedMs: Date.parse(onElement.raisedAt) }
+        if (needleAlert === null && onElement !== undefined) {
+          needleAlert = { id: String(onElement.id), message: String(onElement.message), raisedMs: Date.parse(onElement.raisedAt) }
+          // Its category as World's sample names it (the tile that must light, W2.2).
+          const fresh = await api.defaultView(copy, plantId).catch(() => null)
+          const sample = fresh === null ? null : await api.sample(copy, fresh.state).catch(() => null)
+          const row = (sample?.alerts ?? []).find((entry: any) => String(entry.alert?.id) === needleAlert!.id)
+          needleCategory = row?.category?.label ?? null
+        }
       }
       if (upsetMs !== null && simMs !== null) {
         for (const [key, at] of [['1-first-sample', upsetMs], ['2-upset+60s', upsetMs + 60_000], ['3-before-expiry', (firstOutMs ?? upsetMs) + windowS * 1_000 - 5_000], ['4-after-expiry', (firstOutMs ?? upsetMs) + windowS * 1_000 + 5_000]] as const) {
@@ -175,6 +187,9 @@ if (import.meta.main) {
     const drawnNeedle = (poll: Poll) => poll.screen.lines.some(line => line.region === 'drawing' && nameRe.test(line.text))
     const firstWithin = (condition: (poll: Poll) => boolean, from: number | null) => { const hit = after(from).find(condition); return hit === undefined || from === null ? null : (hit.simMs! - from) / 1000 }
     const frameLag = needleAlert === null ? null : firstWithin(poll => framedNeedle(poll) !== undefined, needleAlert.raisedMs)
+    // The needle's tile lit: the tile of its category, its badge an alert's (not the neutral one of expected alerts).
+    const litTile = (poll: Poll) => poll.tiles.find(tile => needleCategory !== null && tile.title.toLowerCase().startsWith(needleCategory.toLowerCase()) && tile.badge !== null && tile.badge.count > 0 && tile.badge.type !== null && tile.badge.type !== 'regular')
+    const tileLag = needleAlert === null ? null : firstWithin(poll => litTile(poll) !== undefined, needleAlert.raisedMs)
     const rowLag = needleAlert === null ? null : firstWithin(rowAbove, needleAlert.raisedMs)
     const drawn = polls.some(drawnNeedle)
     const expiryAt = (firstOutMs ?? upsetMs ?? 0) + windowS * 1_000
@@ -194,7 +209,11 @@ if (import.meta.main) {
           : `${name} is not drawn on the overview (its tile there is R3, W2.2); one press on its row → ${detail === null ? 'never pressed' : `${detail.outcome}${detail.title === null ? ' (not its detail)' : ''}; ${detail.tone === null ? `${name} not framed there` : `framed ${detail.tone} at the first read${detail.framedSimMs === null ? '' : `, ${(detail.framedSimMs - needleAlert.raisedMs) / 1000} s of Run time after its alert`}`}; back home: ${detail.home}`}`,
       },
       { id: 'needle-row', release: 'R2', pass: needleAlert === null ? false : rowLag !== null && rowLag <= ONE_SAMPLE_S, detail: needleAlert === null ? 'no alert, so no row' : rowLag === null ? `its row never stood above an expected aggregate (aggregate ${sawAggregate ? 'seen' : 'never shown'})` : `above the aggregate ${rowLag} s after its alert` },
-      { id: 'needle-tile', release: 'R3', pass: null, detail: 'category tiles are W2.2 (R3): not judged' },
+      {
+        id: 'needle-tile', release: 'R3', pass: needleAlert === null ? false : tileLag !== null && tileLag <= ONE_SAMPLE_S,
+        detail: needleAlert === null ? 'no alert, so no tile' : polls.every(poll => poll.tiles.length === 0) ? 'no alert tiles in the display (W2.2)'
+          : `its category ${needleCategory === null ? '(none in the sample)' : `"${needleCategory}"`}: ${tileLag === null ? 'its tile never lit' : `tile lit ${tileLag} s after its alert ("${litTile(after(needleAlert.raisedMs).find(poll => litTile(poll) !== undefined)!)!.title}")`}`,
+      },
       { id: 'expiry', release: 'R2', pass: sawAggregate && expiryLag !== null && expiryLag <= ONE_SAMPLE_S, detail: !sawAggregate ? 'no expected aggregate was ever shown' : `window ends ${new Date(expiryAt).toISOString().slice(11, 19)}; aggregate ${countBefore ?? '?'} before; an SG low-low ${expiryLag === null ? 'never left it' : `left it ${expiryLag} s after`}` },
       { id: 'coverage', release: 'R2', pass: null, detail: unitCoverage === null ? `coverage.ts failed: ${coverage.stderr.toString().slice(0, 200)}` : `${unitCoverage.alerts} alerts on ${plantId}: ${unitCoverage.expected.count} (${unitCoverage.expected.share} %) expected after a first-out by the Pack's rule, ${unitCoverage.noObservable.count} (${unitCoverage.noObservable.share} %) name no observable; the display's sample marks ${marked.length} of ${sampleRows.length} rows expected` },
     ]
