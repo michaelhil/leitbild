@@ -42,10 +42,10 @@
     readonly focus: number
     /** How far the window's resize handles reach over the body's left, right and bottom edges (0 maximised). */
     readonly handles: number
-    /** A faceplate stands on the display: the frame is given the body's whole height meanwhile. */
+    /** The display asks for the body's whole height: the frame is given it meanwhile. */
     readonly fill: boolean
-    /** The display says whether a faceplate stands on it. */
-    readonly onFaceplate: (key: string, open: boolean) => void
+    /** The display says whether it asks for the body's whole height (a standing faceplate, an alerts-only display). */
+    readonly onFill: (key: string, fill: boolean) => void
     /** The frame's page listens (or loaded): it can be shown without leaving a blank. */
     readonly onUp: (key: string) => void
     /** The frame went away; its extent and readiness go with it. */
@@ -61,7 +61,7 @@
     readonly onMap: (bounds: DisplayFrameMap['bounds']) => void
   }
 
-  let { entryKey, envelope, title, shown, zoom, kind, extent, back, focus, handles, fill, onFaceplate, onUp, onDown, onExtent, onZoomRequest, onProblem, onOpen, onBack, onMap }: Props = $props()
+  let { entryKey, envelope, title, shown, zoom, kind, extent, back, focus, handles, fill, onFill, onUp, onDown, onExtent, onZoomRequest, onProblem, onOpen, onBack, onMap }: Props = $props()
 
   // A frame's page is fixed for its life; a new envelope is a new entry.
   const source = untrack(() => `${embeddedViewPath(envelope)}${embeddedViewFragment(envelope)}`)
@@ -173,8 +173,8 @@
         onMap(message.bounds)
         return
       }
-      if (message.type === 'world:display-faceplate') {
-        onFaceplate(key, message.open)
+      if (message.type === 'world:display-fill') {
+        onFill(key, message.fill)
         return
       }
       onZoomRequest(key, message)
@@ -194,7 +194,7 @@
       layer?.removeEventListener('scroll', scroll)
       cancelAnimationFrame(scrolled)
       window.removeEventListener('message', receive)
-      onFaceplate(key, false)
+      onFill(key, false)
       onDown(key)
     }
   })

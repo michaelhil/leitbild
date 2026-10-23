@@ -5,10 +5,10 @@
   import type { VignetteValue } from '../../../features/displays/compose/model.ts'
   import { severityStyle, severityTable, type Palette } from '../../displays/severity.ts'
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
-  import { hostDisplayFrame } from '../view-host.ts'
+  import { embeddedDisplayFrame, hostDisplayFrame } from '../view-host.ts'
   import { alertsTarget, worstChip } from './alerts.ts'
   import { clockText, provenanceMark } from './format.ts'
-  import { VIGNETTE_ROW_PX } from './grid.ts'
+  import { fillsWindow, VIGNETTE_ROW_PX } from './grid.ts'
   import { toneOf } from './readout.ts'
   import { chipOrder, stateChipLook } from './state-chip.ts'
   import { createVignetteSession, sampleStale, vignetteRoutes, type VignetteSnapshot } from './vignette-client.ts'
@@ -35,6 +35,8 @@
   const readPalette = (): Palette => (document.documentElement.dataset.obcTheme as Palette | undefined) ?? 'day'
   let palette = $state<Palette>(readPalette())
   let wallNow = $state(Date.now())
+  /** The height of the frame a person sees in a display window (its presentation's `visible`), which an alerts-only display fills. */
+  let room = $state<number | null>(null)
   /** Why the last chip press opened nothing. */
   let unopened = $state<string | null>(null)
 
@@ -48,7 +50,8 @@
       runId,
       state: envelope.state,
       routes: vignetteRoutes,
-      onChange: next => { snapshot = next },
+      // An alerts-only display asks a window presenting it for the body's whole height, so its list fills it (W2.5).
+      onChange: next => { snapshot = next; if (next.view !== undefined) embeddedDisplayFrame().reportFill('alerts', fillsWindow(next.view)) },
     })
     const unhost = hostDisplayFrame({
       kind: 'advice',
@@ -57,6 +60,8 @@
       setVisible: visible => session.setVisible(visible),
       presented: () => {},
     })
+    // The room it fills follows the window's body, never its own height: the window gives the frame no less (W2.5).
+    const unroom = embeddedDisplayFrame().subscribe(next => { room = next.visible?.height ?? null })
     session.start()
     // Staleness is judged on the wall clock, so it shows even while no sample arrives: a quarter-second tick freezes
     // the display within 5.25 s of its last sample (W8.1), not up to a second later.
@@ -64,7 +69,7 @@
     // The embedding page's theme choice changes the palette live (main.ts).
     const theme = new MutationObserver(() => { palette = readPalette() })
     theme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-obc-theme'] })
-    return () => { clearInterval(tick); theme.disconnect(); unhost(); session.close(); stopOpening() }
+    return () => { clearInterval(tick); theme.disconnect(); unroom(); unhost(); session.close(); stopOpening() }
   })
 
   const view = $derived(snapshot.view)
@@ -83,6 +88,8 @@
   })
   const frozen = $derived(footer.word === 'FROZEN')
   const chips = $derived(chipOrder(view?.chips ?? []))
+  /** Alerts only in a display window: as tall as the part of its frame a person sees; in chat or a dialog, its composed rows. */
+  const fills = $derived(opening.where === 'window' && view !== undefined && fillsWindow(view))
 
   /**
    * A chip's press opens the detail of what decides its state (opening.svelte.ts): through a drawing of this display
@@ -99,7 +106,7 @@
   }
 </script>
 
-<article class="vignette" style:--row={`${VIGNETTE_ROW_PX}px`} aria-label={view?.title ?? envelope.title}>
+<article class="vignette" class:fill={fills} style:min-height={fills && room !== null ? `${room}px` : undefined} style:--row={`${VIGNETTE_ROW_PX}px`} aria-label={view?.title ?? envelope.title}>
   <header>
     <h1 title={view?.title ?? envelope.title}>{view?.title ?? envelope.title}</h1>
     {#if view?.by === 'assistant'}<span class="ai" title="Composed by the Assistant from what the Run declares"><obi-ai></obi-ai>Assistant</span>{/if}
@@ -130,7 +137,7 @@
       {:else}Connecting to the Run…{/if}
     </p>
   {:else}
-    <Sections {view} {snapshot} {palette} {frozen} {runId} {from} />
+    <Sections {view} {snapshot} {palette} {frozen} {runId} {from} {fills} />
   {/if}
 
   <footer title={footer.why}>
@@ -145,6 +152,11 @@
 
 <style>
   .vignette { --muted: var(--element-neutral-color); --text: var(--element-active-color); padding: 0 8px; font-size: 13px; }
+  /* Alerts only: as tall as the frame a person sees at least, its sections' row taking what the title, a status, the trip
+     line and the footer leave, no less than their composed rows; a grid, so that row's height is definite for the list. */
+  .vignette.fill { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto 1fr auto; box-sizing: border-box; }
+  .vignette.fill > :global(.sections) { grid-row: 4; }
+  .vignette.fill > footer { grid-row: 5; }
   footer { display: flex; align-items: center; gap: 8px; height: var(--row); min-width: 0; white-space: nowrap; }
   /* The title gives way first, down to a few words; then the states wrap onto rows of their own under it. */
   header { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; min-height: var(--row); min-width: 0; }

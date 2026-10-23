@@ -156,6 +156,8 @@
     })
   }
   let pinsRead = false
+  /** This drawing's own reason to ask the window for the body's whole height: its standing faceplates. */
+  const fillReason = `faceplates:${Math.random().toString(36).slice(2)}`
   const show = (next: { readonly faceplate?: FaceplateState; readonly overlays?: ReadonlyArray<PinnedOverlay> }): void => {
     if (next.faceplate !== undefined) faceplate = next.faceplate
     if (next.overlays !== undefined && next.overlays !== overlays) {
@@ -166,7 +168,7 @@
     }
     sample()
     // The window gives the frame its whole body while a faceplate stands on the display (W3.4).
-    embeddedDisplayFrame().reportFaceplate(faceplate.kind === 'open' || overlays.length > 0)
+    embeddedDisplayFrame().reportFill(fillReason, faceplate.kind === 'open' || overlays.length > 0)
   }
 
   const openFaceplate = (key: string, at: { readonly x: number; readonly y: number } | null = null): void => {
@@ -422,7 +424,7 @@
       window.removeEventListener('blur', blurred)
       window.removeEventListener('keydown', escape, { capture: true })
       window.removeEventListener('resize', resized)
-      host.reportFaceplate(false)
+      host.reportFill(fillReason, false)
     }
   })
   const sameRoom = (left: DisplayPresentation, right: DisplayPresentation): boolean => {

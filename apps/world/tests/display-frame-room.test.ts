@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { parseDisplayFrameMessage, parseDisplayFramePresentation, type DisplayFrameMessage } from '../src/ui/embed/display-frame-protocol.ts'
 import { createViewHost, visibleRoom, type ReceivedMessage } from '../src/ui/embed/view-host.ts'
+import { fillsWindow } from '../src/ui/embed/vignette/grid.ts'
 import { displayFrameGeometry } from '../src/ui/process-display/display-zoom.ts'
 
 // The room a display's faceplate has (plan v5 W3.3, W3.4; the R1 spike's must-fix 1 and 2): the window tells each
@@ -26,23 +29,50 @@ describe('the part of a display a person sees', () => {
     expect(visibleRoom({ shown: true, zoom: 1 }, { width: 1046, height: 900 })).toEqual({ x: 0, y: 0, width: 1046, height: 900 })
   })
 
-  test('while a faceplate stands, the window gives the frame its body\'s whole height (W3.4)', () => {
+  test('while the display asks for it (a faceplate stands, W3.4; alerts only, W2.5), the window gives the frame its body\'s whole height', () => {
     const short = { kind: 'advice' as const, zoom: 1, body: { width: 1200, height: 900 }, extent: { kind: 'advice' as const, minWidth: 360, width: 1200, height: 560 }, envelopeHeight: 560 }
     expect(displayFrameGeometry(short).frameHeight).toBe(560)
     expect(displayFrameGeometry({ ...short, fill: true }).frameHeight).toBe(900)
     expect(displayFrameGeometry({ ...short, fill: true, extent: { ...short.extent, height: 1400 } }).frameHeight).toBe(1400)
-    expect(parseDisplayFrameMessage({ type: 'world:display-faceplate', open: true })).toEqual({ type: 'world:display-faceplate', open: true })
-    expect(parseDisplayFrameMessage({ type: 'world:display-faceplate', open: 'yes' })).toBeNull()
+    expect(parseDisplayFrameMessage({ type: 'world:display-fill', fill: true })).toEqual({ type: 'world:display-fill', fill: true })
+    expect(parseDisplayFrameMessage({ type: 'world:display-fill', fill: 'yes' })).toBeNull()
   })
 
-  test('the frame tells the window once each time a faceplate comes or goes', () => {
+  test('the frame asks while any part of it does, and tells the window once each time that changes', () => {
     const page = framed()
     page.fromParent({ type: 'world:display-frame', shown: true, zoom: 1 })
     page.posted.length = 0
-    page.host.reportFaceplate(true)
-    page.host.reportFaceplate(true)
-    page.host.reportFaceplate(false)
-    expect(page.posted).toEqual([{ type: 'world:display-faceplate', open: true }, { type: 'world:display-faceplate', open: false }])
+    page.host.reportFill('faceplates:a', true)
+    page.host.reportFill('alerts', true)
+    page.host.reportFill('faceplates:a', false)
+    page.host.reportFill('alerts', false)
+    expect(page.posted).toEqual([{ type: 'world:display-fill', fill: true }, { type: 'world:display-fill', fill: false }])
+  })
+
+  test('an alerts-only display asks before its window presents it: it is told once the window does', () => {
+    const page = framed()
+    page.host.reportFill('alerts', true)
+    expect(page.posted).toEqual([])
+    page.fromParent({ type: 'world:display-frame', shown: true, zoom: 1 })
+    expect(page.posted).toEqual([{ type: 'world:display-fill', fill: true }])
+  })
+
+  test('alerts only fill a display window; in chat or a dialog they keep their composed rows (W2.5)', () => {
+    expect(fillsWindow({ sections: [{ kind: 'alerts' }] })).toBe(true)
+    expect(fillsWindow({ sections: [{ kind: 'alerts' }, { kind: 'alerts' }] })).toBe(true)
+    expect(fillsWindow({ sections: [{ kind: 'alerts' }, { kind: 'values' }] })).toBe(false)
+    expect(fillsWindow({ sections: [] })).toBe(false)
+    const vignette = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Vignette.svelte'), 'utf8')
+    expect(vignette).toContain("const fills = $derived(opening.where === 'window' && view !== undefined && fillsWindow(view))")
+    expect(vignette).toContain("embeddedDisplayFrame().reportFill('alerts', fillsWindow(next.view))")
+    expect(vignette).toContain('<Sections {view} {snapshot} {palette} {frozen} {runId} {from} {fills} />')
+    // It fills the part of the frame a person sees, which follows the window's body: never its own height, which the
+    // window's frame height (at least the content's) would feed back so the frame could never shrink.
+    expect(vignette).toContain('const unroom = embeddedDisplayFrame().subscribe(next => { room = next.visible?.height ?? null })')
+    expect(vignette).toContain('style:min-height={fills && room !== null ? `${room}px` : undefined}')
+    expect(vignette).not.toContain('100vh')
+    const sections = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Sections.svelte'), 'utf8')
+    expect(sections).toContain('style:height={rows === null || fills ? undefined : `${rows * VIGNETTE_ROW_PX}px`} style:min-height={rows !== null && fills ? `${rows * VIGNETTE_ROW_PX}px` : undefined}')
   })
 
   test('a frame hears what a person sees with its presentation, and only a change of it is news', () => {
