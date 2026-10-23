@@ -58,7 +58,7 @@ describe('T08: the Run context never cuts a ref', () => {
     test(`${scenarioId}: every ref in the context is whole, and dropped refs are counted`, async () => {
       const run = await runOf(scenarioId, seconds)
       const snapshot = run.snapshot()
-      const { text } = await assembleRunContext({ title: scenarioId, objects: snapshot.objects, denied: new Set(), clock: snapshot.clock, packs: run.packs(), port: run.observations(person) })
+      const { text } = await assembleRunContext({ title: scenarioId, objects: snapshot.objects, denied: new Set(), clock: snapshot.clock, packs: run.packs(), port: run.observations(person), dashboards: [] })
       const leads = text.split('\n').flatMap(line => line.includes(' · lead: ') ? [line.slice(line.indexOf(' · lead: ') + ' · lead: '.length).split(', ')] : [])
       expect(leads.length).toBeGreaterThan(0)
       const refs = leads.flat().filter(entry => !/^\+\d+ refs$/.test(entry) && entry !== 'none declared')

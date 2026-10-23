@@ -155,6 +155,12 @@ describe('dashboards (A4)', () => {
     expect(after.sections.map((section: any) => section.refused?.code ?? 'live')).toEqual(['live', 'unknown_name', 'live'])
     expect(after.sections[1]).toMatchObject({ title: 'Unit two speed', refused: { message: 'unit:two is no longer in this Run' } })
     expect(after.sections[1]).not.toHaveProperty('view')
+    // The Run context names the scopes that hold pins.
+    const context = await call(`/internal/workspaces/${workspaceId}/capabilities/world.simulation-run.context/invoke`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspaceId, capabilityId: 'world.simulation-run.context', resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }, input: {}, access: access('ai') }),
+    })
+    expect(context.body.result.context.text).toContain('Dashboards stored: run (3 pins); other scopes show World\'s default')
   })
 
   test('a copy holds the dashboards, a reset keeps them, and the file is read when asked, never on load', async () => {
