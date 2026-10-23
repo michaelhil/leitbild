@@ -91,6 +91,11 @@ describe('the safety function reading (W4.1, per sample)', () => {
     expect(why.startsWith('… · ')).toBe(true)
     expect(why.endsWith('GREEN: The heat sink is satisfied.')).toBe(true)
     expect(why).toContain('Question 7')
+    // A meaning too long to stand beside the question that decided it gives way by whole words, never that question.
+    const decided = safetyFunctionReading(evaluation({ status: 'yellow', procedure: 'FR-H.5', meaning: 'A steam generator\'s narrow-range level is below span while feed holds the heat sink. '.repeat(4), path: long.slice(0, 2) })).why!
+    expect(decided.length).toBeLessThanOrEqual(300)
+    expect(decided).toContain('Question 1 about a steam generator\'s narrow-range level on span: yes (SG-1-LVL-NR 55.0 %) · YELLOW · FR-H.5: A steam generator')
+    expect(decided.endsWith('…')).toBe(true)
   })
 })
 

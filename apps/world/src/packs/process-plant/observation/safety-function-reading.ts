@@ -8,7 +8,8 @@ import { safetyFunctionStatusWords, type SafetyFunctionComparison, type SafetyFu
 // W4.1): coloured at its challenge's priority; the restoration procedure its
 // colour sends operators to as its chip's pointer (`note`, "FR-H.3"); its
 // tree's path with the readings that answered each question, then what the
-// path ends in, as its title (`why`, the old chips' tooltip). A function not
+// path ends in, as its title (`why`, the old chips' tooltip; within 300
+// characters the question that decided it stays). A function not
 // judged in this state reads outside its validity ("—", D-89), one that
 // cannot be judged as uncertain. Read per sample, never stored.
 
@@ -30,15 +31,26 @@ const stepText = (step: SafetyFunctionStep): string => {
   return `${step.question}: ${step.answer} (${(deciding.length > 0 ? deciding : step.comparisons).map(readText).join(', ')})`
 }
 
-/** The path to the status, then the status and what it means; within WHY_MAX, the earliest questions give way first. */
+/** Whole words of a text within `most` characters, "…" where any give way. */
+const wordsWithin = (text: string, most: number): string => {
+  if (text.length <= most) return text
+  const cut = text.slice(0, most - 1)
+  return `${cut.slice(0, Math.max(0, cut.lastIndexOf(' '))).replace(/[\s,;:.]+$/, '')}…`
+}
+
+/**
+ * The path to the status, then the status and what it means. Within WHY_MAX the earliest questions give way first,
+ * then the meaning's last words: the question that decided the status, with its readings, always stays.
+ */
 const pathText = (evaluation: SafetyFunctionEvaluation): string => {
-  const ends = `${safetyFunctionStatusWords(evaluation.status)}${evaluation.procedure === undefined ? '' : ` · ${evaluation.procedure}`}: ${evaluation.meaning}`
+  const status = `${safetyFunctionStatusWords(evaluation.status)}${evaluation.procedure === undefined ? '' : ` · ${evaluation.procedure}`}`
   const steps = evaluation.path.map(stepText)
-  for (let from = 0; from <= steps.length; from += 1) {
-    const text = [...(from === 0 ? [] : ['…']), ...steps.slice(from), ends].join(' · ')
+  for (let from = 0; from < steps.length; from += 1) {
+    const text = [...(from === 0 ? [] : ['…']), ...steps.slice(from), `${status}: ${evaluation.meaning}`].join(' · ')
     if (text.length <= WHY_MAX) return text
   }
-  return `${ends.slice(0, WHY_MAX - 1)}…`
+  const kept = [...(steps.length > 1 ? ['…'] : []), ...steps.slice(-1), status].join(' · ')
+  return kept.length + 2 >= WHY_MAX ? wordsWithin(kept, WHY_MAX) : `${kept}: ${wordsWithin(evaluation.meaning, WHY_MAX - kept.length - 2)}`
 }
 
 /** A safety function's status observation now, but for its ref and time. */
