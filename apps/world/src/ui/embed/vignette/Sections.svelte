@@ -20,18 +20,15 @@
 
   // A vignette's sections, each within the rows the composer allotted: in its
   // frame (Vignette.svelte), stacked, or in a window frame (`beside`, Q20) its
-  // flow drawing beside a column of the others; or in an element's pop-over
-  // (ElementPopover.svelte), which leaves out its topologies: it stands beside
-  // the drawing it opened from.
-  let { view, snapshot, palette, frozen, runId, from, drawings = true }: {
+  // flow drawing beside a column of the others.
+  let { view, snapshot, palette, frozen, runId, from }: {
     view: VignetteView
     snapshot: VignetteSnapshot
     palette: Palette
     frozen: boolean
     runId: SimulationRunId
-    /** The display these sections stand in, as an element's pop-over names it when it opens the element elsewhere. */
+    /** The display these sections stand in, as an element's detail opened from it names it. */
     from: OpenedFrom
-    drawings?: boolean
   } = $props()
 
   const latest = $derived(snapshot.latest)
@@ -42,7 +39,6 @@
 </script>
 
 {#snippet one(section: VignetteSection, index: number)}
-  {#if drawings || section.kind !== 'topology'}
     <div class="section" style:height={`${section.rows * VIGNETTE_ROW_PX}px`}>
       {#if section.kind === 'values'}
         {#each section.values as value (value.ref)}
@@ -73,10 +69,9 @@
         <NetworkTopology {section} {observations} {palette} />
       {/if}
     </div>
-  {/if}
 {/snippet}
 
-{#if standsBeside(view, drawings)}
+{#if standsBeside(view)}
   <!-- A window frame (Q20): the drawing at its own width, every other view in a column beside it. -->
   <div class="beside">
     <div class="drawing">{@render one(view.sections[drawing]!, drawing)}</div>
