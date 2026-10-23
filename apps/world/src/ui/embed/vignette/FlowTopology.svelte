@@ -23,6 +23,7 @@
   import type { AlertTone } from './readout.ts'
   import { VIGNETTE_ROW_PX } from './grid.ts'
   import { onElementRequest } from './selection.ts'
+  import { symbolOnly } from './symbol-only.ts'
   import { createVignetteSession, vignetteRoutes, type VignetteSession } from './vignette-client.ts'
   import Vessel from './Vessel.svelte'
   import './openbridge.ts'
@@ -489,7 +490,7 @@
     {#each drawing.devices as device (device.id)}
       <div class="placed device" title={device.title} use:button={device.id} style:left={`${device.x - SYMBOL_PX / 2}px`} style:top={`${device.y - SYMBOL_PX / 2}px`}
         {...body(device.id, device.title)}>
-        <div class="point"><obc-automation-button variant="regular" positioning="point" showReadoutStack={false} state={device.on ? 'open' : 'closed'} static={device.unknown} orientation={device.orientation} activated={activated(device.id)} progress={false} hasBadgeSpacer={false} alert={device.tone !== null} alertFrameStatus={device.tone === null ? 'caution' : ALERT_TYPE[device.tone]} alertFrameMode="acked-active" alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false}>
+        <div class="point"><obc-automation-button use:symbolOnly variant="regular" positioning="point" showReadoutStack={false} state={device.on ? 'open' : 'closed'} static={device.unknown} orientation={device.orientation} activated={activated(device.id)} progress={false} hasBadgeSpacer={false} alert={device.tone !== null} alertFrameStatus={device.tone === null ? 'caution' : ALERT_TYPE[device.tone]} alertFrameMode="acked-active" alertFrameThickness="small" alertFrameType="regular" showAlertCategoryIcon={false} showAlertIcon={false}>
           {#if device.glyph?.tag === 'obc-valve-analog-two-way-icon'}
             <obc-valve-analog-two-way-icon slot="icon" value={device.glyph.value} closed={device.glyph.value === 0} vertical={device.vertical}></obc-valve-analog-two-way-icon>
           {:else if device.glyph !== null}

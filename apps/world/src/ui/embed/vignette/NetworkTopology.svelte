@@ -12,6 +12,7 @@
   import { vignetteOpening } from './opening.svelte.ts'
   import type { Box } from './popover.ts'
   import type { AlertTone } from './readout.ts'
+  import { symbolOnly } from './symbol-only.ts'
   import './openbridge.ts'
 
   // A network topology (architecture B2) in OpenBridge: lines, crossings and
@@ -103,11 +104,11 @@
     {#each drawing.devices as device (device.id)}
       <div class="placed" style:left={`${device.x}px`} style:top={`${device.y}px`} title={device.title}>
         {#if device.element === 'obc-switch'}
-          <obc-switch positioning="point" showReadoutStack={false} turnedOn={device.on} alert={device.tone !== null} alertFrameStatus={device.tone === null ? 'caution' : ALERT_TYPE[device.tone]} alertFrameMode="acked-active" alertFrameThickness="small"></obc-switch>
+          <obc-switch use:symbolOnly positioning="point" showReadoutStack={false} turnedOn={device.on} alert={device.tone !== null} alertFrameStatus={device.tone === null ? 'caution' : ALERT_TYPE[device.tone]} alertFrameMode="acked-active" alertFrameThickness="small"></obc-switch>
         {:else if device.element === 'obc-transformer'}
-          <obc-transformer positioning="point" showReadoutStack={false} turnedOn={device.on} alert={device.tone !== null} alertFrameStatus={device.tone === null ? 'caution' : ALERT_TYPE[device.tone]} alertFrameMode="acked-active" alertFrameThickness="small"></obc-transformer>
+          <obc-transformer use:symbolOnly positioning="point" showReadoutStack={false} turnedOn={device.on} alert={device.tone !== null} alertFrameStatus={device.tone === null ? 'caution' : ALERT_TYPE[device.tone]} alertFrameMode="acked-active" alertFrameThickness="small"></obc-transformer>
         {:else}
-          <obc-source positioning="point" showReadoutStack={false} turnedOn={device.on} alert={device.tone !== null} alertFrameStatus={device.tone === null ? 'caution' : ALERT_TYPE[device.tone]} alertFrameMode="acked-active" alertFrameThickness="small"></obc-source>
+          <obc-source use:symbolOnly positioning="point" showReadoutStack={false} turnedOn={device.on} alert={device.tone !== null} alertFrameStatus={device.tone === null ? 'caution' : ALERT_TYPE[device.tone]} alertFrameMode="acked-active" alertFrameThickness="small"></obc-source>
         {/if}
       </div>
     {/each}
