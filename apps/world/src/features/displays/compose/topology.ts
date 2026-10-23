@@ -12,6 +12,7 @@ import { flowLayout, type DrawnStops } from '../topology/flow-sizing.ts'
 import type { TopologyLayout } from '../topology/layout.ts'
 import { networkLayout, type NetworkSizing } from '../topology/network.ts'
 import { drawingStops, scopeTopology, TOPOLOGY_REACH, withOtherMediaStopped, type ScopedTopology, type TopologyRequest } from '../topology/scope.ts'
+import { stopRefs, stopViews } from '../topology/stops.ts'
 import type { SearchRun } from '../observation/search.ts'
 import type { VignetteSection } from './model.ts'
 
@@ -28,7 +29,7 @@ const labelOf = (graph: TopologyGraph, id: string): string => {
   const node = graph.nodes.find(entry => entry.id === id)
   return node?.shortLabel ?? node?.label ?? id
 }
-/** A stop's label: the names of what lies beyond, at most 24 characters. */
+/** A network stop's label: the names of what lies beyond, at most 24 characters (a flow drawing's, topology/stops.ts). */
 export const stopLabel = (names: ReadonlyArray<string>): string => names.join(', ').slice(0, 24)
 /** Boxes that keep every drawn name whole at the renderer's 12 text (about 7 a character, 6 of padding, 24 a grid unit); a symbol (two units) stands over its name. */
 const box = (text: string, height: number) => ({ width: Math.max(2, Math.ceil((text.length * 7 + 6) / 24)), height })
@@ -119,7 +120,9 @@ export const drawingOf = (scoped: ScopedTopology): Promise<Drawing | null> => dr
   if (scoped.graph.family === 'flow') return flowLayout(scoped, FLOW_ROOM)
   const layout = await networkLayout(scoped, networkSizing(scoped.graph))
   const mediumOf = (edge: string): string => scoped.graph.edges.find(entry => entry.id === edge)!.medium
-  return { layout, stops: Object.fromEntries(scoped.stubs.map((stop, at) => [`s${at}`, { direction: stop.direction, others: stop.others.map(other => labelOf(scoped.graph, other.node)), medium: mediumOf(stop.edges[0]!) }])) }
+  return { layout, stops: Object.fromEntries(scoped.stubs.map((stop, at) => [`s${at}`, {
+    direction: stop.direction, label: stopLabel(stop.others.map(other => labelOf(scoped.graph, other.node))), far: [...new Set(stop.others.map(other => other.node))], edges: stop.edges, medium: mediumOf(stop.edges[0]!),
+  }])) }
 })
 
 export const topologyOf = async (run: SearchRun, objectId: ObjectId): Promise<TopologyGraph | null> => {
@@ -128,7 +131,7 @@ export const topologyOf = async (run: SearchRun, objectId: ObjectId): Promise<To
   return 'refused' in graph ? null : graph
 }
 
-/** What the renderer draws: the layout, every drawn node (stops as `s<n>`, labelled by their far ends) and edge with its medium's kind, and bindings the caller reads, with their declared units. */
+/** What the renderer draws: the layout, every drawn node (stops as `s<n>`, with their far ends) and edge with its medium's kind, and bindings the caller reads, with their declared units. */
 export const topologySection = (objectId: string, packId: string, scoped: ScopedTopology, drawing: Drawing, rows: number, declaredOf: (ref: string) => Pick<Observable, 'quantity' | 'unit' | 'states' | 'decades'> | undefined): VignetteSection => {
   const { graph } = scoped
   const [nodes, edges] = [new Set(scoped.nodes), new Set(scoped.edges)]
@@ -144,19 +147,19 @@ export const topologySection = (objectId: string, packId: string, scoped: Scoped
         id: node.id, class: node.class, label: node.label, bindings: bound(node.bindings),
         ...(node.shortLabel === undefined ? {} : { shortLabel: node.shortLabel }), ...(node.element === undefined ? {} : { element: node.element }),
       })),
-      ...Object.entries(drawing.stops).map(([id, stop]) => ({ id, class: 'stop' as const, label: stopLabel(stop.others) || id, bindings: [] })),
+      ...Object.entries(drawing.stops).map(([id, stop]) => stopViews(graph, id, stop, bound).node),
     ],
     edges: [
       ...graph.edges.filter(edge => edges.has(edge.id)).map(edge => ({ id: edge.id, mediumKind: kindOf(edge.medium), bindings: bound(edge.bindings) })),
-      ...Object.entries(drawing.stops).map(([id, stop]) => ({ id: `${id}.edge`, mediumKind: kindOf(stop.medium), bindings: [] })),
+      ...Object.entries(drawing.stops).map(([id, stop]) => stopViews(graph, id, stop, bound).edge),
     ],
     ...(graph.attribution === undefined ? {} : { attribution: graph.attribution }),
   }
 }
 
-/** The values a drawing binds: every drawn node's and edge's binding refs, and the flags a reading in turn stands in `while`. */
+/** The values a drawing binds: every drawn node's and edge's binding refs, the flags a reading in turn stands in `while`, and what its stops read. */
 export const bindingRefs = (scoped: ScopedTopology): ReadonlyArray<string> => {
   const [nodes, edges] = [new Set(scoped.nodes), new Set(scoped.edges)]
-  return [...new Set([...scoped.graph.nodes.filter(node => nodes.has(node.id)), ...scoped.graph.edges.filter(edge => edges.has(edge.id))]
-    .flatMap(item => item.bindings.flatMap(binding => [binding.ref, ...(binding.while === undefined ? [] : [binding.while])])))]
+  return [...new Set([...[...scoped.graph.nodes.filter(node => nodes.has(node.id)), ...scoped.graph.edges.filter(edge => edges.has(edge.id))]
+    .flatMap(item => item.bindings.flatMap(binding => [binding.ref, ...(binding.while === undefined ? [] : [binding.while])])), ...stopRefs(scoped.graph, scoped.stubs)])]
 }

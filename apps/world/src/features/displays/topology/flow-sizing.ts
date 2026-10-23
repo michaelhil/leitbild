@@ -19,6 +19,7 @@ import type { TopologyGraph, TopologyNode } from '../../../core/observation/topo
 import { flowPlan, type FlowSizing } from './flow.ts'
 import { groupName, itemText, type TopologyLayout } from './layout.ts'
 import type { ScopedTopology } from './scope.ts'
+import { stopLabel, stopStated, type DrawnStop } from './stops.ts'
 
 /**
  * The renderer's grid pitch and its text lines (16 high, about 8 a character), in the engine's units; a reading's
@@ -64,10 +65,9 @@ export const flowProfiles = {
 /** A header: a junction whose ports, more than two, are all one circuit. */
 const isHeader = (node: TopologyNode): boolean => node.class === 'junction' && node.ports.length > 2 && new Set(node.ports.map(port => port.circuit ?? port.id)).size === 1
 const TALL: ReadonlySet<string> = new Set(['store'])
-/** A stop names each far end once, however many of its ports the drawing stops at. */
-const farNames = (names: ReadonlyArray<string>): ReadonlyArray<string> => [...new Set(names)]
 
-export const flowSizing = (graph: TopologyGraph): FlowSizing<null> => {
+/** `directions`: whether a stop writes "to" or "from" before what it names (flowLayout drops them where they find no room). */
+export const flowSizing = (graph: TopologyGraph, directions = true): FlowSizing<null> => {
   const classOf = new Map(graph.nodes.map(node => [node.id, node.class]))
   // A bus joins more than two lines; one with fewer (a battery, an inverter, a load at the end of a line) is an item on its line.
   const lines = new Map<string, number>()
@@ -100,7 +100,11 @@ export const flowSizing = (graph: TopologyGraph): FlowSizing<null> => {
       const cells = vessel || TALL.has(item.node.class) ? { width: 2, height: 4 } : { width: 2, height: 2 }
       return { label: text, node: { cells, portInset: 0, text: { lines }, frameable: false, ...(vessel ? { ends: VESSEL_ENDS } : {}) }, keep: null }
     },
-    stop: stop => ({ lines: [line(farNames(stop.others.map(other => label(graph.nodes.find(node => node.id === other.node)!))).join(', ').slice(0, 24).length, true)] }),
+    // A stop writes "to" or "from" and what lies beyond (stops.ts), and on a power line the state of what it names.
+    stop: stop => ({ lines: [
+      line(stopLabel(directions ? stop.direction : null, stop.others.map(other => label(graph.nodes.find(node => node.id === other.node)!))).length, true),
+      ...(stopStated(graph, stop) ? [line(STATE_CHARACTERS, true)] : []),
+    ] }),
   }
 }
 
@@ -111,12 +115,24 @@ const barsOnlyJoinBars = (graph: ReturnType<typeof flowPlan>['graph']): boolean 
   return graph.edges.some(edge => bars.has(edge.from.node) && bars.has(edge.to.node) && [edge.from.node, edge.to.node].every(bar => neighbours(bar).every(other => bars.has(other))))
 }
 
-/** Where a drawing stops, by its layout id: the labels of what lies beyond. */
-export type DrawnStops = Readonly<Record<string, { readonly direction: 'in' | 'out'; readonly others: ReadonlyArray<string>; readonly medium: string }>>
+/** Where a drawing stops, by its layout id. */
+export type DrawnStops = Readonly<Record<string, DrawnStop>>
 
-/** A scoped flow graph laid out for a room in grid units, or null where no drawing verifies within its ceilings. */
+/**
+ * A scoped flow graph laid out for a room in grid units, or null where no drawing verifies within its ceilings. Its
+ * stops write "to" and "from" where the drawing has room for them; where none does, they name what lies beyond bare,
+ * every name kept (the four-loop overview's stops in its loops: R2 W6.2; the words need the measured text of W6.5).
+ */
 export const flowLayout = (scoped: ScopedTopology, room: { readonly columns: number; readonly rows: number }): { readonly layout: TopologyLayout; readonly stops: DrawnStops } | null => {
-  const sizing = flowSizing(scoped.graph)
+  for (const directions of [true, false]) {
+    const drawn = flowLayoutWith(scoped, room, directions)
+    if (drawn !== 'no room') return drawn
+  }
+  return null
+}
+
+const flowLayoutWith = (scoped: ScopedTopology, room: { readonly columns: number; readonly rows: number }, directions: boolean): { readonly layout: TopologyLayout; readonly stops: DrawnStops } | null | 'no room' => {
+  const sizing = flowSizing(scoped.graph, directions)
   const planned = flowPlan(scoped, sizing)
   if (planned.graph.nodes.length === 0 || barsOnlyJoinBars(planned.graph)) return null
   const lanes = new Set(planned.graph.nodes.flatMap(node => (node.partition === undefined ? [] : [node.partition.key]))).size
@@ -124,12 +140,16 @@ export const flowLayout = (scoped: ScopedTopology, room: { readonly columns: num
   const fit = { maxWidth: room.columns * GRID, maxHeight: room.rows * GRID }
   const first = layoutDiagram(planned.graph, ladder[0], fit)
   const result = first.ok ? first : layoutDiagram(planned.graph, ladder[1], fit)
-  if (!result.ok) return null
+  if (!result.ok) return planned.stops.size === 0 || !directions ? null : 'no room'
   const grid = (value: number): number => value / GRID
   const box = <T extends { readonly x: number; readonly y: number; readonly width: number; readonly height: number }>(at: T) => ({ x: grid(at.x), y: grid(at.y), width: grid(at.width), height: grid(at.height) })
   const label = (id: string): string => sizing.label(scoped.graph.nodes.find(node => node.id === id)!)
   const mediumOf = (edge: string): string => scoped.graph.edges.find(entry => entry.id === edge)!.medium
-  const stops = Object.fromEntries([...planned.stops].map(([id, stop]) => [id, { direction: stop.direction, others: farNames(stop.others.map(other => label(other.node))), medium: mediumOf(stop.edges[0]!) }]))
+  // Each far end once, however many of its ports the drawing stops at.
+  const stops = Object.fromEntries([...planned.stops].map(([id, stop]) => [id, {
+    direction: stop.direction, label: stopLabel(directions ? stop.direction : null, stop.others.map(other => label(other.node))),
+    far: [...new Set(stop.others.map(other => other.node))], edges: stop.edges, medium: mediumOf(stop.edges[0]!),
+  }]))
   const membersOf = (id: string): ReadonlyArray<string> => planned.items.get(id)?.item.members.map(member => member.id) ?? []
   return { stops, layout: {
     family: 'flow', unit: 'grid', width: Math.ceil(grid(result.width)), height: Math.ceil(grid(result.height)),

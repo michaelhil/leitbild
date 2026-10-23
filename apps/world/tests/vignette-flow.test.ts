@@ -310,14 +310,20 @@ describe('text room (UX audit #68; plan §5.5, containment)', () => {
     const flags = (step: number): ReadonlyArray<Observation> => section.nodes.flatMap(node => itemText(node.bindings).readings.flatMap(reading => reading.slice(1).map((binding, at) => observation(binding.while!, at < step))))
     // Each state at its longest word; each item not following a command to either end (derived.ts commandNotFollowed),
     // which writes its state and the command under it; what says an item stopped not holding while a trip commands it.
-    const read = (state: (binding: Binding) => Observation, step: number) => [...flags(step),
+    // A stop on a power line writes how many of what it names are on ("CLOSED 1/3"): every other one is.
+    const far = (at: number) => section.nodes.flatMap(node => (node.stop?.far ?? []).flatMap((end, index) => end.bindings.map(binding => {
+      const on = binding.states?.find(state => state.active === true)?.value
+      const off = binding.states?.find(state => state.active !== true)?.value
+      return observation(binding.ref, (index + at) % 2 === 0 ? on ?? true : off ?? false)
+    })))
+    const read = (state: (binding: Binding) => Observation, step: number) => [...flags(step), ...far(step),
       ...section.nodes.flatMap(node => node.bindings.map(binding => (binding.states !== undefined ? state(binding) : observation(binding.ref, longestReading(binding, inTurn.has(binding.ref))))))]
     const commanded = (end: 'on' | 'off') => (binding: Binding): Observation => {
       const wanted = binding.states!.find(state => state.value === (end === 'on' ? 'off' : 'on'))
       if (binding.role === 'stopped') return { ...observation(binding.ref, 'off'), why: commandNotFollowed('trip') }
       return wanted === undefined || binding.commanded !== true ? observation(binding.ref, longestState(binding)) : { ...observation(binding.ref, end), why: commandNotFollowed(wanted.label) }
     }
-    const samples = Array.from({ length: steps }, (_, step) => [read(binding => observation(binding.ref, longestState(binding)), step), read(commanded('on'), step), read(commanded('off'), step)]).flat()
+    const samples = Array.from({ length: Math.max(2, steps) }, (_, step) => [read(binding => observation(binding.ref, longestState(binding)), step), read(commanded('on'), step), read(commanded('off'), step)]).flat()
     return samples.flatMap(observations => {
       const drawing = flowDrawing(section, observations, [], false)
       // The readings each item's layout kept a line for, after its name, its state and the command it may not follow.

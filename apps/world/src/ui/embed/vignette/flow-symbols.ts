@@ -18,6 +18,7 @@ import type { Observation } from '../../../core/observation/model.ts'
 import type { AlertRow } from '../../../features/displays/alerts/rows.ts'
 import type { TopologyBinding, VignetteSection } from '../../../features/displays/compose/model.ts'
 import { groupName, itemText } from '../../../features/displays/topology/layout.ts'
+import { farState } from '../../../features/displays/topology/stops.ts'
 import { VIGNETTE_ROW_PX } from './grid.ts'
 import { chevronSegment, pipeSegments, pipeValue, stubEndSegment, type PipeLook } from './pipe-segments.ts'
 import { stub } from './network.ts'
@@ -167,12 +168,13 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
   }))
   const states = new Map([...symbols.keys()].map(id => [id, stateOf(byId.get(id)!)]))
 
-  // A pipe reads its flow where it is bound; else it is open unless a switch at either end reads shut, never emptied by what is not known.
+  // A pipe reads its flow where it is bound (a stop's, the lines it stands for: forward where any flows); else it is
+  // open unless a switch at either end reads shut, never emptied by what is not known.
   const lookOf = (edge: (typeof edges)[number]): PipeLook | 'open' => {
-    const flow = edge.view?.bindings.find(binding => binding.role === 'flow')
-    if (flow !== undefined) {
-      const value = usable(flow)?.value
-      return typeof value !== 'number' ? 'unknown' : value === 0 ? 'none' : value > 0 ? 'forward' : 'reverse'
+    const flows = edge.view?.bindings.filter(binding => binding.role === 'flow') ?? []
+    if (flows.length > 0) {
+      const values = flows.map(flow => usable(flow)?.value)
+      return values.some(value => typeof value !== 'number') ? 'unknown' : values.some(value => (value as number) > 0) ? 'forward' : values.some(value => (value as number) < 0) ? 'reverse' : 'none'
     }
     const ends = [edge.points[0]!, edge.points.at(-1)!].map(point => [...boxes].find(([, box]) => inside(box)(point))?.[0])
     return ends.some(id => id !== undefined && ['valve', 'breaker'].includes(symbols.get(id) ?? '') && shut(states.get(id))) ? 'none' : 'open'
@@ -221,6 +223,17 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
       const why = states.flatMap(state => usable(state)?.why ?? [])[0]
       return [{ text: count.trim(), kind: 'word' }, ...(members.some(member => itemText(member.bindings).commanded) ? [{ text: why ?? '', kind: 'command' as const }] : [])]
     }
+    // A stop on a power line writes the state of what it names, in their words: all of them ("LIVE"), none ("DEAD"),
+    // or how many ("LIVE 1/2"); "?" while one is not known. Never the line's own, which its pipe draws.
+    const stopWord = (): string => {
+      const states = (view.stop?.far ?? []).map(end => farState(end.bindings))
+      const declared = states[0]?.states ?? []
+      if (states.length === 0 || states.some(state => state === undefined || JSON.stringify(state.states) !== JSON.stringify(declared))) return ''
+      const on = states.map(state => activeState(usable(state!)?.value, state!.states))
+      const [live, dead] = [declared.find(state => state.active === true)?.label ?? '', declared.find(state => state.active !== true)?.label ?? '']
+      const count = on.filter(state => state === true).length
+      return on.some(state => state === null) ? '?' : count === on.length ? live : count === 0 ? dead : `${live} ${count}/${on.length}`
+    }
     // A quantity read in turn reads on the widest instrument whose flag holds, else the narrowest; not known where a flag is not.
     const inRange = (reading: ReadonlyArray<TopologyBinding>): TopologyBinding | null => {
       for (let at = reading.length - 1; at > 0; at -= 1) {
@@ -230,8 +243,8 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
       }
       return reading[0]!
     }
-    const sized: ReadonlyArray<FlowLine> = members.length > 1
-      ? [{ text: name, kind: 'name' }, ...groupLines()]
+    const sized: ReadonlyArray<FlowLine> = view.stop !== undefined ? [{ text: name, kind: 'name' }, ...((node.text?.lines ?? 1) > 1 ? [{ text: stopWord(), kind: 'word' as const }] : [])]
+      : members.length > 1 ? [{ text: name, kind: 'name' }, ...groupLines()]
       : [
         { text: name, kind: 'name' },
         ...(written.state === null ? [] : stateLines(written.state, written.commanded)),
