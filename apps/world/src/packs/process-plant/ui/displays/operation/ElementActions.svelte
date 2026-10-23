@@ -28,7 +28,7 @@
   // cite. A read that fails, or the display's samples FROZEN, disables every
   // control and says so, until it reads again.
 
-  let { runId, objectId, elementId, frozen, pinned }: PackElementActionsProps = $props()
+  let { runId, objectId, elementId, frozen, pinned, short }: PackElementActionsProps = $props()
 
   type Write = { readonly path: VariablePath; readonly value: ProcessVariableValue }
   const READ_EVERY_MS = 1_000
@@ -136,7 +136,7 @@
     />
   {/if}
   {#if shown}
-    {@const parts = faceplateControls(itemControlView(item, now, resets), { pinned, proposalPending: proposal?.status === 'pending' })}
+    {@const parts = faceplateControls(itemControlView(item, now, resets), { pinned, short, proposalPending: proposal?.status === 'pending' })}
     {#key `${item.id}|${draft?.at ?? ''}`}
       {#if parts.open !== null}<ControlSection view={parts.open} {now} {stale} {validate} {execute} {reset} draft={draft?.write ?? null} {acceptedAt} />{/if}
       {#if parts.folded !== null}

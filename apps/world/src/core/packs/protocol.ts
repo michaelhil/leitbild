@@ -704,6 +704,8 @@ export interface PackElementActionsProps {
   readonly frozen: boolean
   /** Pinned as an overlay: a monitoring overlay offers no command at a glance, its controls fold (W3.3). */
   readonly pinned: boolean
+  /** The faceplate at rest is short of room: while no proposal waits its controls fold too, so its readings show (W3.2). */
+  readonly short: boolean
 }
 
 /**

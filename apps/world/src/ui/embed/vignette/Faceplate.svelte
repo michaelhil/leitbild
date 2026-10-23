@@ -9,10 +9,10 @@
   import type { DisplayOpening } from '../view-host.ts'
   import AlertsSection from './AlertsSection.svelte'
   import { worstChip } from './alerts.ts'
-  import { FACEPLATE_ALERTS, FACEPLATE_READINGS, ownAlerts, readingLabel, shownReadings, type FaceplateReadings } from './faceplate.ts'
+  import { FACEPLATE_ALERTS, FACEPLATE_READINGS, ownAlerts, readingLabel, shortOfRoom, shownReadings, type FaceplateReadings } from './faceplate.ts'
   import { VIGNETTE_ROW_PX } from './grid.ts'
   import { elementOffer, faceplateHeight, faceplatePlacement, FACEPLATE_ROW, FACEPLATE_WIDTH, type Box, type OverlayChange, type PinnedOverlay } from './popover.ts'
-  import { toneOf, valueLook } from './readout.ts'
+  import { toneOf, valueLook, type ReadingLook } from './readout.ts'
   import Readout from './Readout.svelte'
   import StateWord from './StateWord.svelte'
 
@@ -22,7 +22,8 @@
   // ("Open detail ›", or the way to the display window from a chat answer or
   // a tag's dialog) and pins it; under it, in the display window only, its
   // Pack's proposal and controls (a monitoring overlay folds them); then at
-  // most six of its readings, its lead values each sample; at most three of
+  // most six of its readings, its lead values each sample (while the display
+  // is FROZEN the last ones, in OpenBridge's low-integrity style); at most three of
   // its own alerts; and the devices it bundles or, for a group symbol, its
   // members, each opening its detail or, by its magnifier, its faceplate in
   // this one's place. Focus moves in and stays in while it is open; Esc
@@ -89,10 +90,14 @@
   const worst = $derived(worstChip(readings === null ? [] : readings.observations.filter(observation => readings!.values.some(value => value.ref === observation.ref)), own))
   // Its readings: whole rows from the top, as many as keep it at its height at rest or as a person resized it.
   let readingsBox: HTMLElement | undefined = $state()
+  /** Its controls fold to keep its readings (shortOfRoom), decided once its controls and readings have drawn. */
+  let short = $state(false)
   let rest = $state(0)
   const fit = $derived(shownReadings(readings?.values.length ?? 0, { rest, row: FACEPLATE_ROW, pending, rows: pinned?.rows ?? null }))
   const listed = $derived(readings === null ? [] : readings.values.slice(0, fit.shown))
-  const observations = $derived(frozen || readings === null ? [] : readings.observations)
+  const observations = $derived(readings === null ? [] : readings.observations)
+  /** A frozen display's readings are the last it had: shown in OpenBridge's low-integrity style, as the display's own values. */
+  const shown = (look: ReadingLook): ReadingLook => (frozen ? { ...look, doubtful: true } : look)
   const width = $derived(pinned?.width ?? FACEPLATE_WIDTH)
   const place = $derived(pinned !== null ? { x: pinned.x, y: pinned.y } : anchor !== null ? faceplatePlacement(anchor, { width, height }, room, zoom, avoid)
     : faceplatePlacement({ ...(at ?? { x: room.x, y: room.y }), width: 0, height: 0 }, { width, height }, room, zoom, avoid))
@@ -122,6 +127,8 @@
       if (card === undefined) return
       height = card.offsetHeight
       rest = card.offsetHeight - (readingsBox?.offsetHeight ?? 0)
+      // Short of room at rest beside its controls as they stand: they fold behind one line, for as long as it is open.
+      if (!short && Actions !== null && readings !== null && shortOfRoom(readings.values.length, { rest, row: FACEPLATE_ROW, pending, rows: pinned?.rows ?? null })) short = true
       onsize(height)
     })
     // Focus moves in on its header once OpenBridge's card has drawn its slot: a Tab goes on to its first control.
@@ -239,7 +246,7 @@
       </header>
       <div class="content" bind:this={contentBox}>
         {#if offer === 'actions' && Actions !== null}
-          <div class="actions"><Actions {runId} objectId={objectIdSchema.parse(objectId)} {elementId} {frozen} pinned={pinned !== null} /></div>
+          <div class="actions"><Actions {runId} objectId={objectIdSchema.parse(objectId)} {elementId} {frozen} pinned={pinned !== null} {short} /></div>
         {/if}
         {#if failure !== null}<p class="status" role="status">{failure}</p>{/if}
         {#if group}
@@ -250,7 +257,7 @@
           <!-- Its readings, one row each; the sparkline slot is the row's right (D-C, R3). -->
           <div class="readings" bind:this={readingsBox}>
             {#each listed as value (value.ref)}
-              {@const look = valueLook(value, observations, value.ref)}
+              {@const look = shown(valueLook(value, observations, value.ref))}
               {#if look.kind === 'state'}<StateWord {look} label={readingLabel(value, title, elementId)} />{:else}<Readout {look} label={readingLabel(value, title, elementId)} />{/if}
             {/each}
             {#if fit.more > 0}
@@ -261,7 +268,7 @@
         {/if}
         {#if own.length > 0}
           <!-- Its own alerts in the alerts view's rows; the header's chip says the worst, so the view's own head stands down. -->
-          <div class="alerts" style:height={`${Math.min(FACEPLATE_ALERTS, own.length) * VIGNETTE_ROW_PX}px`}>
+          <div class="alerts" class:frozen style:height={`${Math.min(FACEPLATE_ALERTS, own.length) * VIGNETTE_ROW_PX}px`}>
             <AlertsSection rows={alerts} section={{ objectIds: [objectId], elements: [...alertElements] }} room={1 + Math.min(FACEPLATE_ALERTS, own.length)} />
           </div>
         {/if}
@@ -313,6 +320,8 @@
   .status { margin: 0; line-height: var(--row); color: var(--element-neutral-color); }
   .alerts { overflow: hidden; }
   .alerts :global(h2) { display: none; }
+  /* A frozen display's alerts: OpenBridge's low-integrity colours around what they last showed, as the display's own (Sections). */
+  .alerts.frozen { background: var(--alert-low-integrity-background-color); box-shadow: 0 0 0 2px var(--alert-low-integrity-background-color), 0 0 0 3px var(--alert-low-integrity-border-color); }
   .more { display: block; height: var(--row); margin: 0; padding: 0; border: none; background: none; font: inherit; font-size: 12px; line-height: var(--row); text-align: left; color: var(--element-neutral-color); }
   button.more { cursor: pointer; color: var(--element-active-color); }
   button.more:hover { text-decoration: underline; }

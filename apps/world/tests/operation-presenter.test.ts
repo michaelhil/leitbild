@@ -529,19 +529,27 @@ describe('an item\'s controls in its faceplate (plan v5 W3.2, W3.3)', () => {
   const core = view([control('Manual RX trip', 'trip'), control('Manual SI', 'actuation'), control('SI block logic', 'block')])
 
   test('while no proposal waits, its protective pushbuttons fold behind one line, so the core faceplate stays short', () => {
-    const parts = faceplateControls(core, { pinned: false, proposalPending: false })
+    const parts = faceplateControls(core, { pinned: false, short: false, proposalPending: false })
     expect(parts.open).toBeNull()
     expect(parts.folded?.controls.map(entry => entry.target)).toEqual(['Manual RX trip', 'Manual SI', 'SI block logic'])
     expect(parts.count).toBe(3)
-    const pump = faceplateControls(view([control('RCP A')]), { pinned: false, proposalPending: false })
+    const pump = faceplateControls(view([control('RCP A')]), { pinned: false, short: false, proposalPending: false })
     expect(pump.open?.controls.map(entry => entry.target)).toEqual(['RCP A'])
     expect(pump.folded).toBeNull()
   })
 
   test('with a proposal pending nothing folds; in a pinned overlay everything does', () => {
-    expect(faceplateControls(core, { pinned: false, proposalPending: true }).folded).toBeNull()
-    const pinned = faceplateControls(view([control('RCP A'), control('Manual RX trip', 'trip')]), { pinned: true, proposalPending: true })
+    expect(faceplateControls(core, { pinned: false, short: false, proposalPending: true }).folded).toBeNull()
+    const pinned = faceplateControls(view([control('RCP A'), control('Manual RX trip', 'trip')]), { pinned: true, short: false, proposalPending: true })
     expect(pinned.open).toBeNull()
     expect(pinned.folded?.controls).toHaveLength(2)
+  })
+
+  test('a faceplate short of room at rest folds every control while no proposal waits, so its readings show', () => {
+    const pzr = view([control('PZR heaters')])
+    const short = faceplateControls(pzr, { pinned: false, short: true, proposalPending: false })
+    expect(short.open).toBeNull()
+    expect(short.folded?.controls.map(entry => entry.target)).toEqual(['PZR heaters'])
+    expect(faceplateControls(pzr, { pinned: false, short: true, proposalPending: true }).open?.controls).toHaveLength(1)
   })
 })

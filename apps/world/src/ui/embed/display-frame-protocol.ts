@@ -84,15 +84,16 @@ export interface DisplayFrameBack {
 }
 
 /**
- * Frame -> window: whether a faceplate stands open or pinned on the display. Meanwhile the window gives the frame its
- * body's whole height (a short display's faceplate is not cut at the frame's foot while the window has room, W3.4).
+ * Frame -> window: whether the display asks for the body's whole height: a faceplate stands open or pinned on it (not
+ * cut at a short display's foot while the window has room, W3.4), or it shows alerts only, its list filling the window
+ * (W2.5). Meanwhile the window gives the frame at least the body's height.
  */
-export interface DisplayFrameFaceplate {
-  readonly type: 'world:display-faceplate'
-  readonly open: boolean
+export interface DisplayFrameFill {
+  readonly type: 'world:display-fill'
+  readonly fill: boolean
 }
 
-export type DisplayFrameMessage = DisplayFrameReady | DisplayFrameExtent | DisplayFrameZoomRequest | DisplayFrameOpen | DisplayFrameMap | DisplayFrameBack | DisplayFrameFaceplate
+export type DisplayFrameMessage = DisplayFrameReady | DisplayFrameExtent | DisplayFrameZoomRequest | DisplayFrameOpen | DisplayFrameMap | DisplayFrameBack | DisplayFrameFill
 
 /** The longest state and title an open request carries (a detail's state is far shorter). */
 const OPEN_STATE_MAX = 4_096
@@ -157,6 +158,6 @@ export const parseDisplayFrameMessage = (value: unknown): DisplayFrameMessage | 
     return { type: 'world:display-map', bounds: [[southWest[0], southWest[1]], [northEast[0], northEast[1]]] }
   }
   if (value.type === 'world:display-back') return hasKeys(value, ['type']) ? { type: 'world:display-back' } : null
-  if (value.type === 'world:display-faceplate') return hasKeys(value, ['type', 'open']) && typeof value.open === 'boolean' ? { type: 'world:display-faceplate', open: value.open } : null
+  if (value.type === 'world:display-fill') return hasKeys(value, ['type', 'fill']) && typeof value.fill === 'boolean' ? { type: 'world:display-fill', fill: value.fill } : null
   return null
 }

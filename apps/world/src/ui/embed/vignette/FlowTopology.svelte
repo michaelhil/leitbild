@@ -156,6 +156,8 @@
     })
   }
   let pinsRead = false
+  /** This drawing's own reason to ask the window for the body's whole height: its standing faceplates. */
+  const fillReason = `faceplates:${Math.random().toString(36).slice(2)}`
   const show = (next: { readonly faceplate?: FaceplateState; readonly overlays?: ReadonlyArray<PinnedOverlay> }): void => {
     if (next.faceplate !== undefined) faceplate = next.faceplate
     if (next.overlays !== undefined && next.overlays !== overlays) {
@@ -166,7 +168,7 @@
     }
     sample()
     // The window gives the frame its whole body while a faceplate stands on the display (W3.4).
-    embeddedDisplayFrame().reportFaceplate(faceplate.kind === 'open' || overlays.length > 0)
+    embeddedDisplayFrame().reportFill(fillReason, faceplate.kind === 'open' || overlays.length > 0)
   }
 
   const openFaceplate = (key: string, at: { readonly x: number; readonly y: number } | null = null): void => {
@@ -215,9 +217,11 @@
   }
 
   // --- L3: the detail, the element's World default after this display -------------------------------------------------
-  const openDetail = async (element: string, item: string | null): Promise<void> => {
-    // A chat answer or a tag's dialog has no window to walk in: there the body opens the faceplate too.
-    if (opening !== 'window') { openFaceplate(item ?? `#${element}`); return }
+  /**
+   * The element's default in a display window: this display's own, or, from a chat answer or a tag's dialog, the
+   * Workspace's through the page framing it (relay). Where nothing opens it, the faceplate of the item pressed.
+   */
+  const openDefault = async (element: string, item: string | null): Promise<void> => {
     try {
       if (!(await openElementDetail(embeddedDisplayFrame(), runId, from, section.objectId, element)) && item !== null) openFaceplate(item)
       notice = null
@@ -225,13 +229,18 @@
       notice = `${element} cannot be opened: ${error instanceof Error ? error.message : String(error)}`
     }
   }
+  /** A press on an item's body or a row naming it: its detail in the window; with no window to walk in, its faceplate. */
+  const openDetail = (element: string, item: string | null): void => {
+    if (opening !== 'window') { openFaceplate(item ?? `#${element}`); return }
+    void openDefault(element, item)
+  }
   /** A press on an item's body: its one target's detail, or a chooser where it names several (a group, a stop). */
   const bodyPress = (id: string): void => {
     const targets = texts.get(id)?.targets ?? []
     if (targets.length === 1 && texts.get(id)?.kind === 'stop') {
       elementNames = { ...elementNames, [`#${targets[0]!.element}`]: targets[0]!.label }
-      void openDetail(targets[0]!.element, null)
-    } else if (targets.length === 1) void openDetail(targets[0]!.element, id)
+      openDetail(targets[0]!.element, null)
+    } else if (targets.length === 1) openDetail(targets[0]!.element, id)
     else if (targets.length > 1) openChooser(id)
   }
   const bodyKey = (id: string) => (event: KeyboardEvent): void => {
@@ -263,7 +272,7 @@
   const choose = (entry: { readonly element: string; readonly name: string }): void => {
     const was = chooser
     chooser = null
-    if (opening === 'window') { void openDetail(entry.element, null); return }
+    if (opening === 'window') { openDetail(entry.element, null); return }
     elementNames = { ...elementNames, [`#${entry.element}`]: entry.name }
     openFaceplate(`#${entry.element}`, was === null ? null : { x: was.box.x, y: was.box.y })
   }
@@ -405,7 +414,7 @@
       if (request.objectId !== section.objectId) return false
       const id = itemOf(request.elementId)
       if (id === undefined) return false
-      if (request.how === 'detail') void openDetail(request.elementId, id)
+      if (request.how === 'detail') openDetail(request.elementId, id)
       else selectItem(id)
       return true
     })
@@ -422,7 +431,7 @@
       window.removeEventListener('blur', blurred)
       window.removeEventListener('keydown', escape, { capture: true })
       window.removeEventListener('resize', resized)
-      host.reportFaceplate(false)
+      host.reportFill(fillReason, false)
     }
   })
   const sameRoom = (left: DisplayPresentation, right: DisplayPresentation): boolean => {
@@ -468,7 +477,7 @@
     anchor={overlay === null ? (key.startsWith('#') ? null : anchor) : null} at={overlay === null ? openedAt : null} avoid={overlay === null ? overlays.map(entry => ({ x: entry.x, y: entry.y, width: entry.width / zoom, height: (heights[entry.item] ?? 160) / zoom })) : []} {zoom} {room} {frozen} {opening} pending={pendingOf(key) !== undefined} pinned={overlay}
     onclose={closeFaceplate} onpin={place => pin(key, place)} onoverlay={(change, height) => changeOverlay(key, change, height)} ontouched={() => { if (overlay !== null) show({ overlays: raisedOverlay(overlays, key) }) }}
     onsize={height => grown(key, overlay, height)}
-    ondetail={target => { if (overlay === null) closeFaceplate(false); void openDetail(target, null) }}
+    ondetail={target => { if (overlay === null) closeFaceplate(false); void openDefault(target, null) }}
     onfaceplate={(target, name) => { elementNames = { ...elementNames, [`#${target}`]: name }; openFaceplate(`#${target}`, cardPlace(key, overlay)) }} />
 {/snippet}
 

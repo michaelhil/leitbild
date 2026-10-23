@@ -30,7 +30,7 @@
   // its size, scaled to the width or scrolled sideways under an edge fade
   // that says it continues. Frozen, values, trends and alerts read in
   // OpenBridge's low-integrity style: they no longer follow the Run.
-  let { view, snapshot, palette, frozen, runId, from }: {
+  let { view, snapshot, palette, frozen, runId, from, fills }: {
     view: VignetteView
     snapshot: VignetteSnapshot
     palette: Palette
@@ -38,6 +38,8 @@
     runId: SimulationRunId
     /** The display these sections stand in, as an element's detail opened from it names it. */
     from: OpenedFrom
+    /** Alerts only in a display window (grid.ts fillsWindow): its list fills the frame, its composed rows the least it has. */
+    fills: boolean
   } = $props()
 
   const latest = $derived(snapshot.latest)
@@ -74,7 +76,7 @@
 </script>
 
 {#snippet one(section: VignetteSection, index: number, rows: number | null = section.rows, fit: number = 1)}
-    <div class="section" class:frozen={frozen && (section.kind === 'alerts' || section.kind === 'entity')} style:height={rows === null ? undefined : `${rows * VIGNETTE_ROW_PX}px`}>
+    <div class="section" class:frozen={frozen && (section.kind === 'alerts' || section.kind === 'entity')} style:height={rows === null || fills ? undefined : `${rows * VIGNETTE_ROW_PX}px`} style:min-height={rows !== null && fills ? `${rows * VIGNETTE_ROW_PX}px` : undefined}>
       {#if section.kind === 'values'}
         <div class="values">
           {#each section.values as value (value.ref)}
@@ -111,7 +113,7 @@
     </div>
 {/snippet}
 
-<div class="sections" bind:clientWidth={width}>
+<div class="sections" class:fill={fills} bind:clientWidth={width}>
   {#if layout?.kind === 'band'}
     <!-- The column first, as a band: its values in columns beside its alerts' head and first rows, then the drawing. -->
     <div class="band">
@@ -149,6 +151,9 @@
 
 <style>
   .section { overflow: hidden; }
+  /* Alerts only: the sections take the frame's height left under the title (Vignette), the alerts their share of it. */
+  .sections.fill { display: flex; flex-direction: column; }
+  .sections.fill > .section { flex: 1 1 auto; }
   /* A block of values reads label beside value: never stretched across a wide frame (U-06). */
   .values { max-width: 480px; }
   /* Alerts and tables of a frozen display: OpenBridge's low-integrity colours around what they last showed, a little outside it so no word moves. */

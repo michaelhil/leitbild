@@ -8,7 +8,7 @@ import type { VignetteSample, VignetteValue, VignetteView } from '../src/feature
 import { defaultDisplayEnvelope } from '../src/ui/process-display/default-display.ts'
 import type { DisplayFrameMessage } from '../src/ui/embed/display-frame-protocol.ts'
 import { createViewHost, type ReceivedMessage } from '../src/ui/embed/view-host.ts'
-import { FACEPLATE_HEIGHT_AT_REST, faceplateStates, FACEPLATES_PER_STATE, ownAlerts, readingLabel, readingsOf, shownReadings } from '../src/ui/embed/vignette/faceplate.ts'
+import { FACEPLATE_HEIGHT_AT_REST, FACEPLATE_LEAD_ROWS, faceplateStates, FACEPLATES_PER_STATE, hostFirst, ownAlerts, readingLabel, readingsOf, shortOfRoom, shownReadings } from '../src/ui/embed/vignette/faceplate.ts'
 import {
   elementOffer, FACEPLATE_CLOSED, FACEPLATE_MARGIN, FACEPLATE_ROW, FACEPLATE_WIDTH, faceplateHeight, faceplatePlacement, keptInRoom, movedOverlay, nextFaceplate,
   openElementDefault, OVERLAY_WIDTH, raisedOverlay, readPins, replacedOverlays, resizedOverlay, togglePinned, writePins, type PinnedOverlay,
@@ -68,13 +68,13 @@ describe('an element\'s faceplate by where its display is shown', () => {
     expect(page.posted).toEqual([])
   })
 
-  test('it loads its Pack\'s actions only under the display window\'s offer, and hands them the FROZEN state and its pin', () => {
+  test('it loads its Pack\'s actions only under the display window\'s offer, and hands them the FROZEN state, its pin and whether it is short of room', () => {
     const source = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Faceplate.svelte'), 'utf8')
     expect(source.match(/loadEmbedPack\(/g)).toHaveLength(1)
     const guard = source.indexOf("if (offer === 'actions' && !group) {")
     expect(guard).toBeGreaterThan(0)
     expect(source.indexOf('loadEmbedPack(packId)')).toBeGreaterThan(guard)
-    expect(source).toContain('<Actions {runId} objectId={objectIdSchema.parse(objectId)} {elementId} {frozen} pinned={pinned !== null} />')
+    expect(source).toContain('<Actions {runId} objectId={objectIdSchema.parse(objectId)} {elementId} {frozen} pinned={pinned !== null} {short} />')
   })
 })
 
@@ -197,7 +197,7 @@ describe('what a faceplate reads', () => {
     const states = faceplateStates('plant:a', ['sgA', 'rcpA', 'sgA', 'core', 'pressurizer', 'turbine'], '2026-10-23T04:05:00.000Z')
     expect(states.map(state => state.elements)).toEqual([['sgA', 'rcpA', 'core', 'pressurizer'], ['turbine']])
     expect(states[0]!.elements).toHaveLength(FACEPLATES_PER_STATE)
-    expect(JSON.parse(states[1]!.state)).toEqual({ title: 'Faceplates', at: { at: '2026-10-23T04:05:00.000Z', clock: 'wall' }, views: [{ kind: 'values', lead: { objectId: 'plant:a', element: 'turbine' }, rows: 6 }] })
+    expect(JSON.parse(states[1]!.state)).toEqual({ title: 'Faceplates', at: { at: '2026-10-23T04:05:00.000Z', clock: 'wall' }, views: [{ kind: 'values', lead: { objectId: 'plant:a', element: 'turbine' }, rows: FACEPLATE_LEAD_ROWS }] })
   })
 
   test('each element\'s readings come from its view and the latest sample, with the devices it bundles', () => {
@@ -232,5 +232,42 @@ describe('what a faceplate reads', () => {
     expect(shownReadings(6, { rest: 200, row, pending: true, rows: null })).toEqual({ shown: 6, more: 0 })
     expect(shownReadings(6, { rest: 200, row, pending: false, rows: 2 })).toEqual({ shown: 2, more: 4 })
     expect(shownReadings(3, { rest: 600, row, pending: false, rows: null })).toEqual({ shown: 1, more: 2 })
+  })
+
+  test('a host\'s own readings and its lines\' lead before those of the devices it bundles, which it lists as links', () => {
+    const value = (ref: string, element: { id: string; parent?: string }) => ({ ref, label: ref, quantity: 'pressure', unit: 'MPa', valueType: 'number', thresholds: [], series: null, element: { class: 'x', label: element.id, ...element } }) as VignetteValue
+    // The pressurizer's lead as its Pack ranks it: pressure, then readings on the PORV and the safety valves among its own.
+    const lead = [
+      value('pressure', { id: 'pressurizer' }), value('porv acoustic', { id: 'pressurizer.reliefValve', parent: 'pressurizer' }),
+      value('tailpipe', { id: 'pressurizer-relief-to-tank' }), value('safety valves open', { id: 'pressurizer.safetyValves', parent: 'pressurizer' }),
+      value('level deviation', { id: 'pressurizer' }), value('level', { id: 'pressurizer' }), value('level program', { id: 'pressurizer' }), value('heaters', { id: 'pressurizer' }),
+    ]
+    expect(hostFirst(lead, 'pressurizer').map(entry => entry.ref)).toEqual(['pressure', 'tailpipe', 'level deviation', 'level', 'level program', 'heaters', 'porv acoustic', 'safety valves open'])
+    // A device's own faceplate keeps its lead as it is.
+    expect(hostFirst(lead, 'pressurizer.reliefValve')).toEqual(lead)
+    const view = { title: 'Faceplates', sections: [{ kind: 'values', rows: FACEPLATE_LEAD_ROWS, values: lead, lead: 0 }] } as unknown as VignetteView
+    expect(readingsOf(['pressurizer'], view, { observations: [] } as unknown as VignetteSample).get('pressurizer')!.values.map(entry => entry.ref))
+      .toEqual(['pressure', 'tailpipe', 'level deviation', 'level', 'level program', 'heaters'])
+  })
+
+  test('at rest, a faceplate whose controls would leave it fewer than three readings is short of room: its controls fold', () => {
+    const row = 24
+    // The pressurizer beside its heater control, its devices and an alert: 227 px leave three rows, two readings and the count.
+    expect(shortOfRoom(6, { rest: 227, row, pending: false, rows: null })).toBe(true)
+    // Folded, 178 px leave five rows: four readings, level among them.
+    expect(shownReadings(6, { rest: 178, row, pending: false, rows: null })).toEqual({ shown: 4, more: 2 })
+    expect(shortOfRoom(6, { rest: 178, row, pending: false, rows: null })).toBe(false)
+    // RCP A beside its START/STOP keeps four: its control stays.
+    expect(shortOfRoom(6, { rest: 165, row, pending: false, rows: null })).toBe(false)
+    // A proposal pending, or a resized overlay, never folds for room.
+    expect(shortOfRoom(6, { rest: 227, row, pending: true, rows: null })).toBe(false)
+    expect(shortOfRoom(6, { rest: 227, row, pending: false, rows: 2 })).toBe(false)
+  })
+
+  test('a frozen display\'s faceplate keeps its last readings, in the low-integrity style, never "?"', () => {
+    const source = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Faceplate.svelte'), 'utf8')
+    expect(source).toContain('const observations = $derived(readings === null ? [] : readings.observations)')
+    expect(source).toContain('const shown = (look: ReadingLook): ReadingLook => (frozen ? { ...look, doubtful: true } : look)')
+    expect(source).toContain('{@const look = shown(valueLook(value, observations, value.ref))}')
   })
 })

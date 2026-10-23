@@ -30,3 +30,10 @@ export const frameLayout = (frame: { readonly width: number; readonly drawingWid
   const scale = width / drawingWidth
   return DRAWING_TEXT_PX * zoom * scale >= TEXT_FLOOR_PX ? { kind: 'band', drawing: 'scaled', scale } : { kind: 'band', drawing: 'scrolled' }
 }
+
+/**
+ * Whether a view shows alerts only (a Run's or an object's alerts, the full alerts view, an answer's alerts vignette):
+ * in a display window its list fills the window's height, never fewer rows than the composer gave it (W2.5).
+ */
+export const fillsWindow = (view: { readonly sections: ReadonlyArray<{ readonly kind: string }> }): boolean =>
+  view.sections.length > 0 && view.sections.every(section => section.kind === 'alerts')

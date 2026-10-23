@@ -59,7 +59,14 @@ export const createViewHost = (ports: ViewHostPorts) => {
   let presentedByWindow = false
   let relayed = false
   let reported: string | null = null
-  let faceplate = false
+  // What asks the window for the body's whole height (a standing faceplate, an alerts-only display), and what it was told.
+  const fills = new Set<string>()
+  let filled = false
+  const sendFill = (): void => {
+    if (!presentedByWindow || (fills.size > 0) === filled) return
+    filled = fills.size > 0
+    post({ type: 'world:display-fill', fill: filled })
+  }
   const subscribers = new Set<(presentation: DisplayPresentation) => void>()
   const onWindow = new Set<() => void>()
   const openingSubscribers = new Set<(opening: DisplayOpening | null) => void>()
@@ -89,6 +96,8 @@ export const createViewHost = (ports: ViewHostPorts) => {
       for (const started of [...onWindow]) started()
       onWindow.clear()
       openingChanged()
+      // What asked for the body's whole height before a window presented the display is told now.
+      sendFill()
     }
     if (next.shown === presentation.shown && next.zoom === presentation.zoom && next.back === presentation.back && sameRoom(next.visible, presentation.visible)) return
     presentation = { shown: next.shown, zoom: next.zoom, ...(next.back === undefined ? {} : { back: next.back }), ...(next.visible === undefined ? {} : { visible: next.visible }) }
@@ -151,11 +160,14 @@ export const createViewHost = (ports: ViewHostPorts) => {
       post({ type: 'world:display-map', bounds })
       return true
     },
-    /** Tells the window whether a faceplate stands on the display, when that changed: it gives the frame room meanwhile. */
-    reportFaceplate: (open: boolean): void => {
-      if (!presentedByWindow || open === faceplate) return
-      faceplate = open
-      post({ type: 'world:display-faceplate', open })
+    /**
+     * Asks the window for the body's whole height while any part of the display does (`reason` names that part: a
+     * drawing's standing faceplates, an alerts-only display), or stops asking; told once presented and on each change.
+     */
+    reportFill: (reason: string, fill: boolean): void => {
+      if (fill) fills.add(reason)
+      else fills.delete(reason)
+      sendFill()
     },
     /** Back to the display the window opened this one from (DisplayPresentation.back). */
     back: (): void => {

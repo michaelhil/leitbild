@@ -99,8 +99,9 @@ const adviceHeight = (context: DisplayZoomContext): number => context.extent?.he
  * its zoom (W/z x B/z, scaled by z), so it is drawn for exactly the room it
  * has. Advice keeps its height, stretches to the body width, and never gets
  * narrower than its content needs; the body scrolls what does not fit. While
- * a faceplate stands on it (`fill`), advice is at least as tall as the body,
- * so the faceplate has the window's room, not only the display's (W3.4).
+ * the display asks for it (`fill`: a faceplate stands on it, W3.4, or it shows
+ * alerts only, W2.5), advice is at least as tall as the body, so the faceplate
+ * or the list has the window's room, not only the display's.
  */
 export const displayFrameGeometry = (config: {
   readonly kind: DisplayKind

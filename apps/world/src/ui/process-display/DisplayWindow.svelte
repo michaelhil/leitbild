@@ -472,11 +472,12 @@
     focusShown()
   }
 
-  // Displays with a faceplate standing on them: each is given the body's whole height meanwhile (W3.4).
-  let faceplates = $state.raw<ReadonlySet<string>>(new Set())
-  const frameFaceplate = (key: string, open: boolean): void => {
-    if (faceplates.has(key) === open) return
-    faceplates = open ? new Set([...faceplates, key]) : new Set([...faceplates].filter(candidate => candidate !== key))
+  // Displays that ask for the body's whole height (a faceplate stands on one, W3.4; one shows alerts only, its list
+  // filling the window, W2.5): each is given it meanwhile.
+  let filling = $state.raw<ReadonlySet<string>>(new Set())
+  const frameFill = (key: string, fill: boolean): void => {
+    if (filling.has(key) === fill) return
+    filling = fill ? new Set([...filling, key]) : new Set([...filling].filter(candidate => candidate !== key))
   }
 
   const frameProblem = (_key: string, problem: string): void => {
@@ -1010,8 +1011,8 @@
           back={returnTo.get(mounted.entry.key)?.title ?? null}
           focus={frameFocus?.key === mounted.entry.key ? frameFocus.sequence : 0}
           handles={maximised ? 0 : RESIZE_HANDLE_REACH}
-          fill={faceplates.has(mounted.entry.key)}
-          onFaceplate={frameFaceplate}
+          fill={filling.has(mounted.entry.key)}
+          onFill={frameFill}
           onOpen={frameOpen}
           onBack={frameBack}
           onMap={bounds => focusMap({ kind: 'bounds', bounds })}
