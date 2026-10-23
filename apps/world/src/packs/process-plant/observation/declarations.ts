@@ -13,6 +13,7 @@ import { plantAnnunciation } from './annunciation.ts'
 import { criterionObservables, elementCriteria, elementTables } from './criteria.ts'
 import { derivedObservables } from './derived.ts'
 import { withDecidingElements } from './deciding.ts'
+import { shortLabelOf } from './short-labels.ts'
 import { elementLeads, elementStops, leadDigest } from './leads.ts'
 
 // What a Plant declares to World's observation layer (plan v3.1 §2.2, A1):
@@ -194,9 +195,11 @@ const observableOf = (objectId: ObjectId, plant: CompiledProcessPlant, recording
   const thresholds = icThresholdsForSignal(plant, binding.path).thresholds
   const steps = programSteps(binding, thresholds)
   const seriesId = recordingSeriesIdFor(plant.id, binding.path)
+  const short = shortLabelOf(plant, binding, operatorName(plant, binding))
   return {
     ref: `${objectId}#${binding.path}`,
     label: labelOf(plant, binding),
+    ...(short === undefined ? {} : { shortLabel: short }),
     quantity: quantityOf(binding),
     unit: unitCodes[binding.unit],
     valueType: steps !== null ? 'enum' : binding.quantity === 'boolean' ? 'boolean' : 'number',
