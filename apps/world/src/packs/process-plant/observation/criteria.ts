@@ -77,10 +77,10 @@ export const elementCriteria = (objectId: ObjectId, plant: CompiledProcessPlant,
  * A criterion now, from its function's evaluation: how many of its checks that apply are met, each check by its place
  * with what a comparing one measured; not applicable while none applies. Null for a path that is no criterion.
  */
-export const readCriterion = (plant: CompiledProcessPlant, path: string, safetyFunctions: () => ReadonlyArray<SafetyFunctionEvaluation>): Pick<Observation, 'value' | 'quality' | 'priority' | 'why' | 'checks'> | null => {
+export const readCriterion = (plant: CompiledProcessPlant, path: string, judge: (safetyFunction: ProcessPlantIcSafetyFunction) => SafetyFunctionEvaluation): Pick<Observation, 'value' | 'quality' | 'priority' | 'why' | 'checks'> | null => {
   const declared = plant.automation.safetyFunctions.find(safetyFunction => criterionPath(safetyFunction.id) === path)
   if (declared === undefined || declared.checks.length === 0 || JUDGED_ON[declared.id] === undefined) return null
-  const evaluation = safetyFunctions().find(candidate => candidate.id === declared.id)!
+  const evaluation = judge(declared)
   const applying = evaluation.checks.map(check => {
     const at = declared.checks.findIndex(entry => entry.label === check.label)
     const compared = comparedValue(declared.checks[at]!.condition)
