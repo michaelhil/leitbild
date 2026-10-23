@@ -73,10 +73,15 @@ const itemStates = (plant: CompiledProcessPlant): ReadonlyMap<string, ItemState>
 
 /**
  * What each item's state drives on a drawing, by element: it runs, or it conducts (contacts closed, a supply live, a
- * valve not shut). The state observable is the binding, so a drawing writes its word and the command it does not follow.
+ * valve not shut); and whether it takes a command it may not follow. The state observable is the binding, so a drawing
+ * writes its word and the command it does not follow.
  */
-export const itemStateRoles = (plant: CompiledProcessPlant): ReadonlyMap<string, { readonly role: 'running' | 'conducting'; readonly path: string }> =>
-  new Map([...itemStates(plant)].map(([path, state]) => [state.element, { role: state.aspect.aspect === 'running' ? 'running' as const : 'conducting' as const, path }] as const))
+export const itemStateRoles = (plant: CompiledProcessPlant): ReadonlyMap<string, { readonly role: 'running' | 'conducting'; readonly path: string; readonly commanded: boolean }> =>
+  new Map([...itemStates(plant)].map(([path, state]) => [state.element, {
+    role: state.aspect.aspect === 'running' ? 'running' as const : 'conducting' as const, path,
+    // A command it may not follow (unfollowed): one is issued to it, and it travels.
+    commanded: state.aspect.command !== undefined && state.aspect.travel !== undefined,
+  }] as const))
 
 /**
  * How far a part is in: its reading over its declared range, from the end it is out at to the end its insertion
@@ -198,7 +203,7 @@ const endOf = (state: ItemState, value: unknown, unit: string | undefined): 'on'
 /**
  * How a command an item does not follow is written: "CMD RUN", as the Plant's control panel writes a demand, and for a
  * valve commanded to part of its travel the opening it was commanded to ("CMD 40 %"), in the room a drawing keeps for
- * the state word it stands in for ("CMD part open" would not fit it).
+ * it under the state word ("CMD part open" would not fit it): "STOP", then "CMD RUN".
  */
 export const commandNotFollowed = (word: string): string => `CMD ${word}`
 

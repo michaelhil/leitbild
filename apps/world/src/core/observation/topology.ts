@@ -19,7 +19,8 @@ const end = z.object({ node: id, port: id }).strict()
  * bottom), written while it holds and, while a command to stop it stands unmet (its observation's `why`), with that
  * command. `word`: what a drawing writes before the reading, where its unit does not say what it reads ("LVL", "PWR").
  * `while`: one quantity read by instruments in turn (a core's flux, counted, then a current, then a percent): the
- * reading stands in for the one of its role before it while this flag reads true.
+ * reading stands in for the one of its role before it while this flag reads true. `commanded`: a running or conducting
+ * state the item is commanded to and may not follow (a mover told to run), so a drawing keeps a line for the command.
  */
 const bindings = z.array(z.object({
   role: z.enum(['flow', 'loading', 'level', 'conducting', 'available', 'running', 'position', 'value', 'stopped']),
@@ -27,6 +28,7 @@ const bindings = z.array(z.object({
   word: z.string().min(1).max(4).optional(),
   while: observableRefSchema.optional(),
   group: z.string().min(1).max(40).optional(),
+  commanded: z.literal(true).optional(),
 }).strict()).max(16)
 
 export const topologyNodeClassSchema = z.enum(['source', 'sink', 'store', 'transfer', 'converter', 'switch', 'mover', 'bus', 'junction', 'boundary'])

@@ -225,7 +225,7 @@ export const servedPlantTopology = (objectId: ObjectId, plant: CompiledProcessPl
     const turns = index === undefined ? [] : inTurn(objectId, plant.graph, plant.graph.components[index]!)
     // Its state observable runs or conducts it in place of the signal it rests on: its word, and the command it does not follow.
     const stated = [
-      ...(state === undefined ? [] : [{ role: state.role, ref: `${objectId}#${state.path}` }]),
+      ...(state === undefined ? [] : [{ role: state.role, ref: `${objectId}#${state.path}`, ...(state.commanded ? { commanded: true as const } : {}) }]),
       ...(stop === undefined ? [] : [{ role: 'stopped' as const, ref: `${objectId}#${stop}` }]),
     ]
     const kept = node.bindings.filter(binding => (state === undefined || binding.role !== state.role) && !turns.some(turn => turn.ref === binding.ref))

@@ -18,7 +18,7 @@ guardPlantTests()
 // W1.2 (H2, #38, U-13, U-16): the trip verified at a glance on the unit's overview. The core writes its flux on the
 // instrument in range (power range in percent at power, the intermediate range's current after a trip), "Rods on
 // bottom" once they are, and its rod banks hang in by group; a trip it does not follow reads "Rods off bottom" with
-// the trip's command under it. Read as World reads the Plant (read.ts), drawn as the window draws it.
+// the trip's command under it, outlined. Read as World reads the Plant (read.ts), drawn as the window draws it.
 
 type Topology = Extract<VignetteSection, { kind: 'topology' }>
 const objectId = 'plant:core-trip' as ObjectId
@@ -60,6 +60,7 @@ describe('the core on the unit overview (W1.2)', () => {
     expect(lines[1]).toMatch(/^reading:PWR 10\d\.\d %$/)
     expect(lines[2]).toMatch(/^reading:3\d\d\.\d °C$/)
     expect(lines).toHaveLength(3)
+    expect(text.outline).toBeNull()
     expect(vessel.parts).toEqual([[0, 0, 0, 0], [expect.any(Number), expect.any(Number), expect.any(Number), expect.any(Number)]])
     expect(vessel.parts![0]!.every(part => part === 0)).toBe(true)
   })
@@ -74,10 +75,11 @@ describe('the core on the unit overview (W1.2)', () => {
     expect(lines.slice(0, 2)).toEqual(['Core', 'Rods on bottom'])
     // Three minutes after a loss of offsite power, as Run A stands: "Rods on bottom 4.4×10⁻⁷ A" (plan v5 W1.2).
     expect(`${lines[1]} ${lines[2]}`).toMatch(/^Rods on bottom \d\.\d×10⁻[¹²³⁴⁵⁶⁷⁸⁹⁰]+ A$/)
+    expect(text.outline).toBeNull()
     expect(vessel.parts).toEqual([[1, 1, 1, 1], [1, 1, 1, 1]])
   })
 
-  test('a trip it has not followed: "Rods off bottom" with the trip\'s command under it; a flag of the range not known reads "?"', () => {
+  test('a trip it has not followed: "Rods off bottom" with the trip\'s command under it, outlined as abnormal; a flag of the range not known reads "?"', () => {
     const plantRun = started()
     plantRun.run(2)
     const observations = plantRun.sampled()
@@ -85,6 +87,7 @@ describe('the core on the unit overview (W1.2)', () => {
     const unmet = observations.map(observation => (observation === stopped ? { ...stopped, value: 'off', why: 'CMD trip' } : observation))
     const { text } = core(unmet)
     expect(text.lines.slice(0, 3).map(line => `${line.kind}:${line.text}`)).toEqual(['name:Core', 'word:Rods off bottom', 'command:CMD trip'])
+    expect(text.outline).toBe('abnormal')
     const unknown = observations.map(observation => (observation.ref === `${objectId}#core.aboveP10` ? { ...observation, quality: 'bad' as const } : observation))
     expect(core(unknown).text.lines[1]!.text).toBe('?')
   })

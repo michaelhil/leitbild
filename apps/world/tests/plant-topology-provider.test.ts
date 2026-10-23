@@ -69,6 +69,9 @@ describe('plant topology provider (P5)', () => {
     // Each item that runs, is live, or opens and shuts runs or conducts on its state observable, so a drawing writes its word and
     // the command it does not follow (RUN, SHUT, ON LINE); a valve's glyph opens with its position.
     expect([bindings('offsiteBreakerA'), bindings('condensatePumpA'), bindings('turbine')]).toEqual([['conducting offsiteBreakerA.state'], ['running condensatePumpA.state'], ['running turbine.state', 'value turbine.electricMw']])
+    // W1.3: a state it is commanded to and may not follow keeps a line for the command (a pump, a breaker); the turbine's, which nothing commands, keeps none.
+    const commanded = (id: string) => served.nodes.find(candidate => candidate.id === id)!.bindings.find(binding => binding.role === 'running' || binding.role === 'conducting')!.commanded === true
+    expect([commanded('rcpA'), commanded('offsiteBreakerA'), commanded('mainSteamIsolationValveA'), commanded('turbine'), commanded('safetyBusA')]).toEqual([true, true, true, false, false])
     expect(served.nodes.filter(entry => declared.has(`${objectId}#${entry.id}.state`) && !entry.bindings.some(binding => binding.ref === `${objectId}#${entry.id}.state`)).map(entry => entry.id)).toEqual([])
     expect(served.edges.find(edge => edge.id === 'rcs-hot-leg-a')?.bindings).toEqual([{ role: 'flow', ref: `${objectId}#rcs-hot-leg-a.flowKgPerS` }])
     const refs = [...served.nodes, ...served.edges].flatMap(item => item.bindings.map(binding => binding.ref))

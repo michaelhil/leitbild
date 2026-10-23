@@ -6,10 +6,10 @@
 // and drawing ids are the graph's node and edge ids. A store stands two cells
 // by four, as OpenBridge's tank does, and the lanes' hub as the vessel it is
 // drawn as, its head above its nozzles. Each item writes its name and under
-// it its state (layout.ts itemText): its state word (or in its place the
-// command it does not follow), or the word that says it stopped and on the
-// line below the trip it may not follow; then, where there is room, its
-// readings. A group writes how many of its members run.
+// it its state (layout.ts itemText): its state word, or the word that says it
+// stopped, and on the line below the command it may not follow; then, where
+// there is room, its readings. A group writes its members' word and how many
+// of them say it, and the command they may not follow.
 // The ceilings are today's displays': a drawing across lanes keeps the unit
 // overview's twelve crossings, one within a lane an equipment detail's four;
 // three bends an edge, a fourth only where three draw nothing. The layout
@@ -34,11 +34,13 @@ const SHARE_CHARACTERS = '100.0 %'.length
 const IN_TURN_CHARACTERS = READING_CHARACTERS + 1
 const readingCharacters = (reading: ReadonlyArray<TopologyNode['bindings'][number]>): number =>
   Math.max(...reading.map(binding => (binding.word !== undefined ? binding.word.length + 1 + SHARE_CHARACTERS : reading.length > 1 ? IN_TURN_CHARACTERS : READING_CHARACTERS)))
-/** A state word ("ON LINE", "part open"), or in its place the command the item does not follow ("CMD RUN", "CMD CLOSED", "CMD 40 %"). */
+/** A state word ("ON LINE", "part open"). */
 export const STATE_CHARACTERS = 10
+/** A group's state: its members' word and how many of them say it ("RUN 1/2", "STOP 2/2"), in a state word's room. */
+export const GROUP_CHARACTERS = STATE_CHARACTERS
 /** The word that says an item has stopped, or while a command to stop it stands unmet that it has not ("Rods off bottom"). */
 export const STOPPED_CHARACTERS = 15
-/** The trip a stopped item does not follow, on its own line under the word that says so ("CMD trip"). */
+/** A command the item does not follow, on its own line under its state ("CMD RUN", "CMD CLOSED", "CMD 40 %", "CMD trip"). */
 export const COMMAND_CHARACTERS = 10
 /** The vessel's head and flange above its first nozzle, and its bottom below its last. */
 const VESSEL_ENDS = { top: 2 * GRID, bottom: GRID }
@@ -87,10 +89,10 @@ export const flowSizing = (graph: TopologyGraph): FlowSizing<null> => {
     item: item => {
       const grouped = item.members.length > 1
       const text = grouped ? groupName(item.members.map(label)) : label(item.node)
-      // A group says how many of its members run ("RUN 2/2"); a lone item its state and its readings. What says it
-      // stopped keeps a line under it for the trip it may not follow.
+      // A group says how many of its members run ("RUN 2/2"); a lone item its state and its readings. A state its item
+      // may not follow (a command it is given, a trip that stops it) keeps a line for the command under it.
       const written = itemText(item.node.bindings)
-      const lines = [line(text.length, true), ...(grouped ? [line(7, true)] : [
+      const lines = [line(text.length, true), ...(grouped ? [line(GROUP_CHARACTERS, true), ...(item.members.some(member => itemText(member.bindings).commanded) ? [line(COMMAND_CHARACTERS, true)] : [])] : [
         ...(written.state === null ? [] : [line(written.state.role === 'stopped' ? STOPPED_CHARACTERS : STATE_CHARACTERS, true), ...(written.commanded ? [line(COMMAND_CHARACTERS, true)] : [])]),
         ...written.readings.map(reading => line(readingCharacters(reading), false)),
       ])]

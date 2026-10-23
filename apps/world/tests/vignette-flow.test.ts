@@ -15,6 +15,7 @@ import { servedPlantTopology } from '../src/packs/process-plant/observation/topo
 import { plantControlsFor } from '../src/packs/process-plant/operations/controls.ts'
 import type { ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
 import { flowDrawing, glyphOf, symbolOf } from '../src/ui/embed/vignette/flow-symbols.ts'
+import { valueLook } from '../src/ui/embed/vignette/readout.ts'
 import { vesselGeometry } from '../src/ui/embed/vignette/vessel-symbol.ts'
 import { VIGNETTE_ROW_PX } from '../src/ui/embed/vignette/grid.ts'
 import { drawingScale } from '../src/ui/embed/vignette/network.ts'
@@ -123,7 +124,7 @@ const section: Topology = {
     family: 'flow', unit: 'grid', width: 20, height: 6, crossings: 0, hash: 'h',
     nodes: [
       { id: 'tank', x: 0, y: 1, width: 2, height: 4, ports: { out: { x: 2, y: 3, face: 'right' } }, text: { x: 0, y: 5, width: 3, height: 1, lines: 2, side: 'bottom' } },
-      { id: 'mover', x: 5, y: 2, width: 2, height: 2, ports: { in: { x: 5, y: 3, face: 'left' }, out: { x: 7, y: 3, face: 'right' } }, members: ['mover', 'moverB'], text: { x: 5, y: 4, width: 3, height: 1, lines: 2, side: 'bottom' } },
+      { id: 'mover', x: 5, y: 2, width: 2, height: 2, ports: { in: { x: 5, y: 3, face: 'left' }, out: { x: 7, y: 3, face: 'right' } }, members: ['mover', 'moverB'], text: { x: 5, y: 4, width: 4, height: 2, lines: 3, side: 'bottom' } },
       { id: 'valve', x: 10, y: 2, width: 2, height: 2, ports: { in: { x: 10, y: 3, face: 'left' }, out: { x: 12, y: 3, face: 'right' } } },
       { id: 's0', x: 16, y: 2.5, width: 2, height: 1, ports: { end: { x: 16, y: 3, face: 'left' } } },
     ],
@@ -135,8 +136,8 @@ const section: Topology = {
   },
   nodes: [
     { id: 'tank', class: 'store', label: 'Supply tank', shortLabel: 'Tank', bindings: [{ role: 'level', ref: 'unit:x#level', quantity: 'level', unit: '%', word: 'LVL' }] },
-    { id: 'mover', class: 'mover', label: 'Mover A', bindings: [{ role: 'running', ref: 'unit:x#runA', quantity: 'state', unit: '', states: runWords }] },
-    { id: 'moverB', class: 'mover', label: 'Mover B', bindings: [{ role: 'running', ref: 'unit:x#runB', quantity: 'state', unit: '', states: runWords }] },
+    { id: 'mover', class: 'mover', label: 'Mover A', bindings: [{ role: 'running', ref: 'unit:x#runA', quantity: 'state', unit: '', states: runWords, commanded: true }] },
+    { id: 'moverB', class: 'mover', label: 'Mover B', bindings: [{ role: 'running', ref: 'unit:x#runB', quantity: 'state', unit: '', states: runWords, commanded: true }] },
     { id: 'valve', class: 'switch', label: 'Valve', bindings: [{ role: 'position', ref: 'unit:x#open', quantity: 'fraction', unit: '1' }] },
     { id: 's0', class: 'stop', label: 'Header', bindings: [] },
   ],
@@ -208,20 +209,46 @@ describe('flow symbols', () => {
     expect(drawing.segments.some(segment => segment.kind === 'endpoint')).toBe(true)
   })
 
-  test('a lone item writes its state in its observable\'s declared words, or in their place the command it does not follow; unknown reads "?"', () => {
+  test('a lone item writes its state in its observable\'s declared words and, on the line under it, the command it does not follow (W1.3); unknown reads "?"', () => {
     const lone: Topology = {
       ...section,
       layout: { ...section.layout, nodes: section.layout.nodes.map(node => (node.id === 'mover' ? { id: 'mover', x: 5, y: 2, width: 2, height: 2, ports: node.ports, text: { x: 7, y: 2, width: 4, height: 2, lines: 3, side: 'right' as const } } : node)) },
-      nodes: section.nodes.map(node => (node.id === 'mover' ? { ...node, bindings: [{ role: 'running' as const, ref: 'unit:x#runA', quantity: 'state' as const, unit: '', states: runWords }] } : node)),
+      nodes: section.nodes.map(node => (node.id === 'mover' ? { ...node, bindings: [{ role: 'running' as const, ref: 'unit:x#runA', quantity: 'state' as const, unit: '', states: runWords, commanded: true as const }] } : node)),
     }
-    const words = (observations: ReadonlyArray<Observation>) => flowDrawing(lone, observations, [], false).texts.find(text => text.id === 'mover')!.lines.map(line => `${line.kind}:${line.text}`)
-    expect(words([{ ...observation('unit:x#runA', 'off'), why: 'CMD RUN' }])).toEqual(['name:Mover A', 'command:CMD RUN'])
+    const drawn = (observations: ReadonlyArray<Observation>) => flowDrawing(lone, observations, [], false).texts.find(text => text.id === 'mover')!
+    const words = (observations: ReadonlyArray<Observation>) => drawn(observations).lines.map(line => `${line.kind}:${line.text}`)
+    // A pump told to run that stopped reads STOP, then CMD RUN, outlined as abnormal: never as running.
+    expect(words([{ ...observation('unit:x#runA', 'off'), why: 'CMD RUN' }])).toEqual(['name:Mover A', 'word:STOP', 'command:CMD RUN'])
+    expect(drawn([{ ...observation('unit:x#runA', 'off'), why: 'CMD RUN' }]).outline).toBe('abnormal')
+    expect(flowDrawing(lone, [{ ...observation('unit:x#runA', 'off'), why: 'CMD RUN' }], [], false).devices.find(device => device.id === 'mover')!.on).toBe(false)
     expect(words([observation('unit:x#runA', 'off')])).toEqual(['name:Mover A', 'word:STOP'])
+    expect(drawn([observation('unit:x#runA', 'off')]).outline).toBeNull()
     expect(words([observation('unit:x#runA', 'on')])).toEqual(['name:Mover A', 'word:RUN'])
     expect(words([observation('unit:x#runA', 'on', 'bad')])).toEqual(['name:Mover A', 'word:?'])
     // Outside the validity its observable declares, a state reads "—" and draws as not known.
     expect(words([observation('unit:x#runA', null, 'not-applicable')])).toEqual(['name:Mover A', 'word:—'])
     expect(flowDrawing(lone, [observation('unit:x#runA', null, 'not-applicable')], [], false).devices.find(device => device.id === 'mover')!.unknown).toBe(true)
+  })
+
+  test('a group writes its members\' word and how many say it, and the command they do not follow under it: STOP 2/2 · CMD RUN (W1.3)', () => {
+    const group = (observations: ReadonlyArray<Observation>) => flowDrawing(section, observations, [], false).texts.find(text => text.id === 'mover')!
+    expect(group([observation('unit:x#runA', 'on'), observation('unit:x#runB', 'off')]).lines.map(line => line.text)).toEqual([groupName(['Mover A', 'Mover B']), 'RUN 1/2'])
+    expect(group([observation('unit:x#runA', 'on'), observation('unit:x#runB', 'on')]).lines.map(line => line.text)).toEqual([groupName(['Mover A', 'Mover B']), 'RUN 2/2'])
+    const stopped = group([{ ...observation('unit:x#runA', 'off'), why: 'CMD RUN' }, { ...observation('unit:x#runB', 'off'), why: 'CMD RUN' }])
+    expect(stopped.lines.map(line => `${line.kind}:${line.text}`)).toEqual([`name:${groupName(['Mover A', 'Mover B'])}`, 'word:STOP 2/2', 'command:CMD RUN'])
+    expect(stopped.outline).toBe('abnormal')
+    // An alarm frames it instead: the frame says more, so no outline.
+    const row = { key: 'unit:x|a', objectId: 'unit:x', objectLabel: 'Unit', packId: 'fixture', categoryId: 'unit', group: { objectId: 'unit:x' }, priority: 'alarm', state: 'active-unack', raised: null,
+      alert: { id: 'a', kind: 'alarm', severity: 'critical', message: 'm', raisedAt: at, acknowledged: false, priority: 'alarm', subject: { element: 'mover' } } } as never
+    expect(flowDrawing(section, [{ ...observation('unit:x#runA', 'off'), why: 'CMD RUN' }, observation('unit:x#runB', 'off')], [row], false).texts.find(text => text.id === 'mover')!.outline).toBeNull()
+  })
+
+  test('a demand never reads as a filled state, in a drawing or a values view, AI vignettes included (W1.3, H14): "CMD yes", hollow', () => {
+    const demand = { label: 'Unit · Run command · Mover A', valueType: 'boolean' as const, unit: '', quantity: 'state' as const, thresholds: [], basis: 'command' as const }
+    const running = { ...demand, label: 'Unit · Running · Mover A', basis: 'instrument' as const }
+    const looks = [demand, running].map(value => valueLook(value, [observation('unit:x#v', true)], 'unit:x#v'))
+    expect(looks.map(look => [look.text, look.fill])).toEqual([['CMD yes', 'hollow'], ['yes', 'filled']])
+    expect(valueLook(demand, [observation('unit:x#v', true, 'bad')], 'unit:x#v').text).toBe('?')
   })
 
   test('an active alert on an item\'s element frames it at its priority; a returned one, or one on another object, does not', () => {
@@ -282,18 +309,13 @@ describe('text room (UX audit #68; plan §5.5, containment)', () => {
     const steps = Math.max(1, ...section.nodes.flatMap(node => itemText(node.bindings).readings.map(reading => reading.length)))
     const flags = (step: number): ReadonlyArray<Observation> => section.nodes.flatMap(node => itemText(node.bindings).readings.flatMap(reading => reading.slice(1).map((binding, at) => observation(binding.while!, at < step))))
     // Each state at its longest word; each item not following a command to either end (derived.ts commandNotFollowed),
-    // which stands in its state word's place; what says an item stopped not holding while a trip commands it.
-    const commandable = new Set(plantControlsFor(plant).items.filter(item => {
-      const component = plant.graph.components[item.item.component]!
-      const device = item.item.kind === 'device' ? component.semantics.embedded.find(candidate => item.item.kind === 'device' && candidate.id === item.item.device) : undefined
-      return (device?.aspects ?? component.semantics.aspects).some(aspect => aspect.command !== undefined && aspect.travel !== undefined)
-    }).map(item => `${objectId}#${item.id}.state`))
+    // which writes its state and the command under it; what says an item stopped not holding while a trip commands it.
     const read = (state: (binding: Binding) => Observation, step: number) => [...flags(step),
       ...section.nodes.flatMap(node => node.bindings.map(binding => (binding.states !== undefined ? state(binding) : observation(binding.ref, longestReading(binding, inTurn.has(binding.ref))))))]
     const commanded = (end: 'on' | 'off') => (binding: Binding): Observation => {
       const wanted = binding.states!.find(state => state.value === (end === 'on' ? 'off' : 'on'))
       if (binding.role === 'stopped') return { ...observation(binding.ref, 'off'), why: commandNotFollowed('trip') }
-      return wanted === undefined || !commandable.has(binding.ref) ? observation(binding.ref, longestState(binding)) : { ...observation(binding.ref, end), why: commandNotFollowed(wanted.label) }
+      return wanted === undefined || binding.commanded !== true ? observation(binding.ref, longestState(binding)) : { ...observation(binding.ref, end), why: commandNotFollowed(wanted.label) }
     }
     const samples = Array.from({ length: steps }, (_, step) => [read(binding => observation(binding.ref, longestState(binding)), step), read(commanded('on'), step), read(commanded('off'), step)]).flat()
     return samples.flatMap(observations => {
@@ -315,7 +337,7 @@ describe('text room (UX audit #68; plan §5.5, containment)', () => {
     })
   }
 
-  test('every line an item writes fits its box: names, state words or the command not followed, and readings with their word, at their longest', () => {
+  test('every line an item writes fits its box: names, state words and the command not followed, and readings with their word, at their longest', () => {
     for (const loops of [2, 3, 4]) expect(outside(`plant:room-${loops}`, 'overview', loops)).toEqual([])
     const around: ReadonlyArray<readonly [string, number]> = [['sgA', 1], ['pressurizer', 1], ['condenser', 2], ['turbine', 2], ['safetyBusA', 2], ['feedwaterTank', 3], ['rcpA', 2]]
     for (const [element, reach] of around) {

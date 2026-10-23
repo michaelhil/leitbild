@@ -24,11 +24,11 @@ export interface TopologyLayout {
 /** The roles a flow item writes as readings under its name, at most two, one per observable, in its bindings' order. */
 const READING_ROLES: ReadonlySet<TopologyNode['bindings'][number]['role']> = new Set(['level', 'value', 'flow', 'loading'])
 export const MAX_READINGS = 2
-type Bound = Pick<TopologyNode['bindings'][number], 'role' | 'ref' | 'word' | 'while'>
+type Bound = Pick<TopologyNode['bindings'][number], 'role' | 'ref' | 'word' | 'while' | 'commanded'>
 /**
  * What a flow item writes under its name: its state (its running, conducting or stopped binding, in the words its
- * observable declares) and, where it may not follow a command (`commanded`: a trip that stops it), a line under it
- * for that command; then its readings, in the order its Pack binds them. A reading is one binding, or
+ * observable declares) and, where it may not follow a command (`commanded`: one it is given; a trip that stops it), a
+ * line under it for that command; then its readings, in the order its Pack binds them. A reading is one binding, or
  * one quantity its instruments read in turn: the bindings that stand in for the one before them `while` a flag holds
  * (a core's flux: counted, then a current, then a percent), narrowest first.
  */
@@ -41,7 +41,7 @@ export const itemText = <T extends Bound>(bindings: ReadonlyArray<T>): { readonl
     if (before === undefined) readings.push([binding])
     else before.push(binding)
   }
-  return { state, commanded: state?.role === 'stopped', readings: readings.slice(0, MAX_READINGS) }
+  return { state, commanded: state !== null && (state.role === 'stopped' || state.commanded === true), readings: readings.slice(0, MAX_READINGS) }
 }
 
 /** "MFW A/B" for MFW A and MFW B: the words their names share in front, then what tells each apart; names sharing no leading word are joined whole. */

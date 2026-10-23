@@ -85,8 +85,8 @@ export type VignetteState = z.output<typeof vignetteStateSchema>
 /** A declared element an observable is measured on, as a vignette names it: never what it leads with. */
 export type VignetteElement = Omit<ObservationDeclaration['elements'][number], 'lead' | 'stopped'>
 
-/** A declared observable as a vignette names it: its label qualified with its object's ("<object> · <observable>", R25). */
-export type VignetteValue = Pick<Observable, 'ref' | 'quantity' | 'unit' | 'valueType' | 'states' | 'thresholds' | 'series' | 'decades'> & {
+/** A declared observable as a vignette names it: its label qualified with its object's ("<object> · <observable>", R25); `basis`: a demand reads as one (W1.3). */
+export type VignetteValue = Pick<Observable, 'ref' | 'quantity' | 'unit' | 'valueType' | 'states' | 'thresholds' | 'series' | 'decades' | 'basis'> & {
   readonly label: string
   readonly element?: VignetteElement
 }

@@ -19,9 +19,10 @@ export const TOPOLOGY_MAX_NODES = 60
 /**
  * The room a flow drawing is laid out for, in grid units (lead, 21 Oct: the four-loop reference overview lays out at
  * 60 × 33 within it, so the window frame fits 1920 px beside its 360 px column; a narrower frame scrolls sideways).
- * R2 (W1.2): the core's "Rods off bottom" takes the four-loop overview to 64 columns.
+ * R2 (W1.2, W1.3): the core's "Rods off bottom" and a line under each commanded item's state for the command it does
+ * not follow take the four-loop overview to 64 × 37; with its attribution and frame, the 40 rows a vignette holds.
  */
-export const FLOW_ROOM = { columns: 64, rows: 36 } as const
+export const FLOW_ROOM = { columns: 64, rows: 37 } as const
 
 const labelOf = (graph: TopologyGraph, id: string): string => {
   const node = graph.nodes.find(entry => entry.id === id)
