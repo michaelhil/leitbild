@@ -35,6 +35,8 @@ export interface VignetteOpening {
   readonly subject: (subject: string) => Promise<string | null>
   /** Opens the full alerts view of these objects (or the Run's) after this display. */
   readonly alerts: (objectIds: ReadonlyArray<string> | 'run', title: string) => boolean
+  /** Opens this display itself in the window: a drawing too small to read in a chat (W7.3). */
+  readonly self: () => boolean
   /** Whether a person acknowledges alerts here: in the display window only (D-B1, Q19), never in a chat answer or a dialog. */
   readonly acknowledges: boolean
   /** Acknowledges these alerts as the person, each through its Pack's command (AlertRow.acknowledge); resolves to why one was not, or null. */
@@ -111,6 +113,10 @@ export const provideOpening = (config: {
       const state: VignetteState = { title: title.slice(0, 80), at, views: [{ kind: 'alerts', objectIds: objectIds === 'run' ? 'run' : [...objectIds] as ObjectId[], rows: ALERTS_VIEW_ROWS, all: true }] }
       const text = JSON.stringify(state)
       return host.openDisplay({ state: text, title: state.title, listing: () => openedListing({ ...from(), envelope: config.envelope() }, { state: text, title: state.title }) })
+    },
+    self: () => {
+      const { state, title } = config.envelope()
+      return host.openDisplay({ state, title, listing: () => openedListing({ ...from(), envelope: config.envelope() }, { state, title }) })
     },
   }
   setContext(KEY, opening)

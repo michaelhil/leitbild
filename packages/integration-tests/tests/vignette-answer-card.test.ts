@@ -201,9 +201,10 @@ describe('a vignette answer card with real Modules', () => {
     if (read.kind !== 'cards') throw new Error(read.message)
     expect(read.cards.map(entry => entry.viewRef)).toEqual(['call_0_0/first', 'call_1_0/second'])
     const presented = read.cards.find(entry => entry.viewRef === viewRefFor(fence.ref.callId, fence.ref.key))!
-    const frozen = frozenCard(presented.card)
-    expect(frozen.caption).toMatch(/^FROZEN · sim \d{2}:\d{2}:\d{2}$/)
-    expect(frozen.lines.map(entry => entry.text)).toContain(line)
+    const frozen = frozenCard(presented.card, [key])
+    expect(frozen.meta).toMatch(/^Frozen at sim \d{2}:\d{2}:\d{2} · AI-composed, not an operating display$/)
+    // The cited line leads the card, its reading whole.
+    expect(frozen.lines[0]).toMatchObject({ keys: [key], value: line.split(' · ').at(-1), cited: true })
     expect(itemOf(read.cards, key)?.label).toBe(line.split(' · ').slice(1, 3).join(' · '))
     expect(itemOf(read.cards, `k${read.cards.flatMap(entry => entry.card.items).length + 1}`)).toBeUndefined()
   }, 60_000)

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { EmbeddedViewListing, EmbeddedViewOpenMessage } from '@leitbild/contracts'
+import { embeddedViewHeightMessageSchema, type EmbeddedViewHeightMessage, type EmbeddedViewListing, type EmbeddedViewOpenMessage } from '@leitbild/contracts'
 import { parseDisplayFrameMessage, type DisplayFrameMessage } from '../src/ui/embed/display-frame-protocol.ts'
 import {
   ADVICE_MIN_WIDTH,
@@ -16,6 +16,7 @@ import {
   createViewHost,
   createZoomAccumulator,
   followPresentation,
+  inlineHeight,
   pageOnScreen,
   trackVisibility,
   wheelZoomFactor,
@@ -27,9 +28,9 @@ import {
 const origin = 'https://leitbild.test'
 
 const framedPage = () => {
-  const posted: Array<{ readonly message: DisplayFrameMessage | EmbeddedViewOpenMessage; readonly targetOrigin: string }> = []
+  const posted: Array<{ readonly message: DisplayFrameMessage | EmbeddedViewOpenMessage | EmbeddedViewHeightMessage; readonly targetOrigin: string }> = []
   const refused: unknown[] = []
-  const parent = { postMessage: (message: DisplayFrameMessage | EmbeddedViewOpenMessage, targetOrigin: string) => { posted.push({ message, targetOrigin }) } }
+  const parent = { postMessage: (message: DisplayFrameMessage | EmbeddedViewOpenMessage | EmbeddedViewHeightMessage, targetOrigin: string) => { posted.push({ message, targetOrigin }) } }
   let receive: ((message: ReceivedMessage) => void) | null = null
   const host = createViewHost({
     parent,
@@ -195,6 +196,25 @@ describe('a view framed by the display window', () => {
     page.posted.length = 0
     expect(page.host.openDisplay(request)).toBe(true)
     expect(page.posted.map(post => post.message)).toEqual([{ type: 'leitbild:view-open', view: listing }])
+  })
+
+  test('inline in a chat answer it says the height its content takes, so its frame keeps no empty band; once a window presents it, nothing (W7.3)', () => {
+    const page = framedPage()
+    page.host.listen()
+    page.posted.length = 0
+    // A drawing too wide for the chat gave way to "View drawing ›": the content ends 412.3 px down the page.
+    page.host.reportHeight(inlineHeight({ bottom: 404.3 }, { scrollY: 0, marginBottom: 8 }))
+    page.host.reportHeight(413)
+    expect(page.posted.map(post => post.message)).toEqual([{ type: 'leitbild:view-height', height: 413 }])
+    expect(embeddedViewHeightMessageSchema.parse(page.posted[0]!.message)).toEqual({ type: 'leitbild:view-height', height: 413 })
+    // A view too tall or too small for a frame says the most or least a frame may be.
+    page.host.reportHeight(4_000)
+    page.host.reportHeight(10)
+    expect(page.posted.slice(1).map(post => post.message)).toEqual([{ type: 'leitbild:view-height', height: 960 }, { type: 'leitbild:view-height', height: 120 }])
+    page.posted.length = 0
+    page.fromWindow({ type: 'world:display-frame', shown: true, zoom: 1 })
+    page.host.reportHeight(500)
+    expect(page.posted.map(post => post.message)).toEqual([])
   })
 
   test('a frame no window presents (a chat answer\'s inline display) says only that it listens', () => {

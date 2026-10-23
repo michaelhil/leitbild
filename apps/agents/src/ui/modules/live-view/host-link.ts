@@ -4,6 +4,7 @@
 // rejection itself. Agents frames no World page. Pure apart from injected
 // timers and posting, so it is tested without a DOM.
 import {
+  embeddedViewHeightMessageSchema,
   embeddedViewOpenMessageSchema,
   embeddedViewSubjectOpenMessageSchema,
   type EmbeddedViewHostMessage,
@@ -64,6 +65,20 @@ export const inlineOpenRequest = (
   const parsed = embeddedViewOpenMessageSchema.safeParse(event.data)
   if (!parsed.success || parsed.data.view.envelope.subject.workspaceId !== page.workspaceId) return null
   return parsed.data
+}
+
+/**
+ * A display framed inline in an answer says how tall its content is (W7.3): an exact contract height message, on this
+ * origin, from one of the inline frames this page made. Its frame takes that height (inline.ts fitInline). Null for
+ * anything else.
+ */
+export const inlineHeightRequest = (
+  event: ViewHostEvent,
+  page: { readonly origin: string; readonly inlineFrames: ReadonlyArray<unknown> },
+): number | null => {
+  if (event.origin !== page.origin || !page.inlineFrames.includes(event.source)) return null
+  const parsed = embeddedViewHeightMessageSchema.safeParse(event.data)
+  return parsed.success ? parsed.data.height : null
 }
 
 /** What this page tells an inline display once the Host relays for it: what it opens reaches the window. */

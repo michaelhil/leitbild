@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   embeddedViewEnvelopeSchema,
   embeddedViewFragment,
+  embeddedViewHeightMessageSchema,
   embeddedViewPath,
   embeddedViewPublicationSchema,
   parseEmbeddedViewFragment,
@@ -10,6 +11,8 @@ import {
   embeddedViewsMessageSchema,
   embeddedViewWindowMaximiseMessageSchema,
   EMBEDDED_VIEW_LISTING_MAX,
+  EMBEDDED_VIEW_MAX_HEIGHT,
+  EMBEDDED_VIEW_MIN_HEIGHT,
   EMBEDDED_VIEW_STATE_MAX_LENGTH,
 } from './embedded-views.ts'
 
@@ -93,6 +96,14 @@ describe('embedded view window messages', () => {
     expect(embeddedViewSubjectOpenMessageSchema.safeParse({ ...open, resource: { ...run, type: 'agents.room' } }).success).toBe(false)
     expect(embeddedViewSubjectOpenMessageSchema.safeParse({ ...open, view: listing }).success).toBe(false)
     expect(embeddedViewSubjectOpenMessageSchema.safeParse({ ...open, title: '' }).success).toBe(false)
+  })
+
+  test('an inline view says the whole pixels its content takes, within the heights a view may have', () => {
+    expect(embeddedViewHeightMessageSchema.parse({ type: 'leitbild:view-height', height: 420 }).height).toBe(420)
+    for (const height of [EMBEDDED_VIEW_MIN_HEIGHT - 1, EMBEDDED_VIEW_MAX_HEIGHT + 1, 420.5]) {
+      expect(embeddedViewHeightMessageSchema.safeParse({ type: 'leitbild:view-height', height }).success).toBe(false)
+    }
+    expect(embeddedViewHeightMessageSchema.safeParse({ type: 'leitbild:view-height', height: 420, width: 480 }).success).toBe(false)
   })
 
   test('maximise names the wanted state', () => {

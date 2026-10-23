@@ -20,6 +20,7 @@ import {
 import { presentedOf } from './present.ts'
 import { stripsOf } from './strips.ts'
 import type { ComposeRun } from './resolve.ts'
+import { elementBlocks } from './element-groups.ts'
 import { bindingRefs, drawingOf, scopeWithin, topologyOf, topologySection, tracedRefs } from './topology.ts'
 
 /** A Run's record of one series between two instants and up to its hold before them (the value held into `from`), Run time ascending, with that hold. */
@@ -218,7 +219,12 @@ export const compileVignette = async (run: ComposeRun, state: VignetteState): Pr
       const devices = view.lead?.element === undefined ? [] : await bundledDevices(run, view.lead.objectId, view.lead.element)
       sections.push({ kind: 'values', rows: view.rows, values: values(leads.get(index)!), lead: index, ...(table === undefined ? {} : { table: tableSection(view.lead!.element!, table, declared) }), ...(devices.length === 0 ? {} : { devices }), ...(view.zones === true ? { zones: true } : {}) })
     }
-    else if (view.kind === 'values') sections.push(groupValues(values(view.refs ?? [])) ?? { kind: 'values', rows: view.rows, values: values(view.refs ?? []) })
+    else if (view.kind === 'values') {
+      // Named values: parallel ones as one table; values of several elements grouped by element (W7.4); else rows.
+      const named = values(view.refs ?? [])
+      const blocks = elementBlocks(named, value => visibleObject(run, refObjectId(value.ref))?.label)
+      sections.push(groupValues(named) ?? { kind: 'values', rows: view.rows, values: named, ...(blocks === null ? {} : { blocks }) })
+    }
     else if (view.kind === 'trend') sections.push({ kind: 'trend', rows: view.rows, horizonMs: horizonMs(view.horizon), strips: stripsOf(values(view.refs).filter(value => value.series !== null)).slice(0, 4) })
     else if (view.kind === 'alerts') {
       const objectIds = view.objectIds === 'run' ? 'run' : view.objectIds.filter(id => visibleObject(run, id) !== undefined)
@@ -243,7 +249,20 @@ export const compileVignette = async (run: ComposeRun, state: VignetteState): Pr
     } else sections.push({ kind: 'map', rows: view.rows })
   }
   const chips = values(state.chips ?? [])
-  return { title: state.title, ...(state.by === undefined ? {} : { by: state.by }), ...(chips.length === 0 ? {} : { chips }), ...(state.beside === undefined ? {} : { beside: true }), sections }
+  // The one object every part of it is on, and the one element every value and pen is on, which a label drops (W7.3).
+  const objects = new Set([...readsOf(state, leads).refs.map(refObjectId), ...readsOf(state, leads).objectIds])
+  const object = objects.size === 1 ? visibleObject(run, [...objects][0]!)?.label : undefined
+  const shown = sections.flatMap(section => section.kind === 'values' ? section.values : section.kind === 'trend' ? section.strips.flat() : [])
+  const elements = new Set(shown.map(value => value.element?.id))
+  const element = elements.size === 1 && !elements.has(undefined) ? shown[0]!.element! : undefined
+  const subject = object === undefined ? undefined : { object, ...(element === undefined ? {} : { element: element.shortLabel ?? element.label }) }
+  // An answer's vignette: why and when it was composed, and whether a model it reads changed since (W8.2).
+  const changed = await Promise.all(Object.entries(state.models ?? {}).map(async ([objectId, revision]) => (await topologyOf(run, objectId as ObjectId))?.revision !== revision))
+  const answer = state.by !== 'assistant' ? undefined : { ...(state.why === undefined ? {} : { why: state.why }), at: state.at, ...(changed.includes(true) ? { modelChanged: true as const } : {}) }
+  return {
+    title: state.title, ...(state.by === undefined ? {} : { by: state.by }), ...(chips.length === 0 ? {} : { chips }), ...(state.beside === undefined ? {} : { beside: true }), sections,
+    ...(subject === undefined ? {} : { subject }), ...(answer === undefined ? {} : { answer }),
+  }
 }
 
 /**

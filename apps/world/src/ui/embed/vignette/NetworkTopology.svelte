@@ -19,17 +19,17 @@
   // obc-transformer and obc-source over it; names and readings as text. At
   // one grid unit a row, scrolled sideways where it is wider than its frame,
   // and scaled as the composer scaled it where its rows are fewer than its
-  // height (a chat column). Its attribution closes it.
+  // height (a chat column), and further to a chat's width (`fit`, W7.3). Its attribution closes it.
   // Each named item (a bus, a line, a transformer, a connection point) whose
   // element is bound to what it measures is a button over its box (W9.1): a
   // press, Enter or Space opens the element's default after this display
   // (L3, Back returns), through the page that frames it; a stop opens the
   // line it names, or a chooser where it names several. Where no page can
   // open a display (a frame no page hosts), nothing is a button.
-  let { section, observations, palette, frozen = false }: { section: Extract<VignetteSection, { kind: 'topology' }>; observations: ReadonlyArray<Observation>; palette: Palette; frozen?: boolean } = $props()
+  let { section, observations, palette, frozen = false, fit = 1 }: { section: Extract<VignetteSection, { kind: 'topology' }>; observations: ReadonlyArray<Observation>; palette: Palette; frozen?: boolean; fit?: number } = $props()
 
   const drawing = $derived(networkDrawing(section, observations, frozen))
-  const scale = $derived(drawingScale(section))
+  const scale = $derived(drawingScale(section) * fit)
   let presentation = $state.raw<DisplayPresentation>(UNFRAMED_PRESENTATION)
   let viewport = $state.raw({ width: window.innerWidth, height: window.innerHeight })
   const zoom = $derived(presentation.zoom)

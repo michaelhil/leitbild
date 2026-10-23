@@ -1,24 +1,36 @@
 // The display chip that stands in place of a ```leitbild-view fence in a posted
-// answer. Its main button opens the display in the Workspace's one process
-// display window; its Inline button shows the same live display in the answer
-// too, below the chip, until the reader hides it. A vignette's chip shows its
-// frozen card, the lines the answer cites, and each ⟦k⟧ in the answer becomes
-// a chip linked to its line. Neutral and accent colours only; a refusal is not
-// a process alarm.
+// answer. Its Open action opens the display in the Workspace's one process
+// display window; its 32 px Inline toggle shows the same live display in the
+// answer too, below the chip, until the reader hides it. A vignette's chip is
+// its frozen card (W7.1): one meta line, the lines the answer cites first as
+// label | value with their keys, at most three before "N more lines", and the
+// card's lines fold away while the live display is shown inline. Each ⟦k⟧ in
+// the answer becomes a chip that opens the card at its line. In an answer
+// that proposed an operation, reviewing the proposal is the primary action
+// (proposal card) and Open live is secondary. Neutral and accent colours
+// only; a refusal is not a process alarm.
 import type { EmbeddedViewListing } from '@leitbild/contracts'
 import { icon, type IconName } from '../icon.ts'
 import { hideInline, showInline } from './inline.ts'
-import { frozenCardText, itemOf, type frozenCard, type TurnCardsRead } from './cards.ts'
+import { cardLineText, itemOf, type CardLine, type FrozenCard, type TurnCardsRead } from './cards.ts'
 
 /** What a chip shows of its vignette's card: the frozen card, or why it cannot. */
-export type ChipCard = ReturnType<typeof frozenCard> | { readonly refused: string }
+export type ChipCard = FrozenCard | { readonly refused: string }
+
+/** How a chip's answer frames it: an answer that proposed an operation reviews it first (its proposal card). */
+export interface ChipContext {
+  readonly proposal: boolean
+}
 
 type ChipState = 'preparing' | 'available' | 'refused' | 'unhosted'
 
-const ROW = 'flex items-stretch gap-2 w-full max-w-[520px]'
+const ROW = 'flex items-start gap-2 w-full max-w-[520px]'
 const CHIP = 'flex items-center gap-3 flex-1 min-w-0 min-h-[44px] px-3 py-1.5 rounded-md border border-border bg-surface text-left no-underline'
 const INTERACTIVE = 'interactive cursor-pointer hover:bg-surface-strong hover:border-accent'
-const SIDE_BUTTON = 'shrink-0 inline-flex items-center gap-1 min-h-[44px] px-3 rounded-md border border-border bg-surface text-xs font-medium text-text-muted interactive cursor-pointer hover:bg-surface-strong hover:border-accent hover:text-accent'
+const CARD = 'flex flex-col gap-1 w-full max-w-[520px] px-3 py-2 rounded-md border border-border bg-surface'
+const TOGGLE = 'shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-md border border-border bg-surface text-text-muted interactive cursor-pointer hover:bg-surface-strong hover:border-accent hover:text-accent'
+const PRIMARY = 'inline-flex items-center gap-1 h-8 px-3 rounded-md text-xs font-medium bg-accent text-white no-underline interactive cursor-pointer hover:bg-accent-hover'
+const SECONDARY = 'inline-flex items-center gap-1 h-8 px-3 rounded-md border border-border bg-surface text-xs font-medium text-text-muted no-underline interactive cursor-pointer hover:bg-surface-strong hover:border-accent hover:text-accent'
 const SUBTITLE = 'Live process display · AI-composed'
 
 /** What a chip that offers its display does when the reader asks. */
@@ -29,55 +41,31 @@ export interface ChipActions {
   readonly setInlineShown: (key: string, shown: boolean) => void
 }
 
-// A shown chip's listing, so chips rendered before the Host announced itself
-// can become Open buttons when it does.
+// A shown chip's listing, card and framing, so chips rendered before the Host announced itself can become Open
+// buttons when it does.
 const chipListings = new WeakMap<HTMLElement, EmbeddedViewListing>()
 const chipCards = new WeakMap<HTMLElement, ChipCard>()
+const chipContexts = new WeakMap<HTMLElement, ChipContext>()
 // The element below a chip that holds its inline display, made on first use.
 const inlineSlots = new WeakMap<HTMLElement, HTMLElement>()
+// A frozen card's lines: whether all show ("N more lines" pressed, or a key chip opened one), and its repaint.
+const cardViews = new WeakMap<HTMLElement, { expanded: boolean; paint: () => void }>()
 let inlineSlotSequence = 0
-let cardTextSequence = 0
+let cardSequence = 0
 
-/**
- * A chip with a frozen card is named by its action alone; the card's title,
- * time, lines and "+N" are its description, which the action's label would
- * otherwise hide from assistive technology. A card that could not be read is
- * described by why.
- */
-const nameAndDescribe = (control: HTMLElement, action: string, title: string, card: ChipCard | undefined): void => {
-  if (card === undefined) return
-  const description = document.createElement('span')
-  cardTextSequence += 1
-  description.id = `live-view-card-${cardTextSequence}`
-  description.className = 'sr-only'
-  description.textContent = 'refused' in card ? card.refused : frozenCardText(title, card)
-  control.append(description)
-  if (!('refused' in card)) control.setAttribute('aria-label', action)
-  control.setAttribute('aria-describedby', description.id)
+const element = <K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] => {
+  const made = document.createElement(tag)
+  made.className = className
+  if (text !== undefined) made.textContent = text
+  return made
 }
 
-const lines = (title: string, subtitle: string, options: { readonly titleTooltip: boolean; readonly wrapSubtitle: boolean; readonly card?: ChipCard }): HTMLElement => {
-  const text = document.createElement('span')
-  text.className = 'flex-1 min-w-0 flex flex-col leading-tight'
-  const first = document.createElement('span')
-  first.className = 'block truncate text-[13px] font-semibold text-text-strong'
-  first.textContent = title
+/** A chip with no frozen card: its title and one line under it (preparing, refused, a Pack's own display). */
+const lines = (title: string, subtitle: string, options: { readonly titleTooltip: boolean; readonly wrapSubtitle: boolean }): HTMLElement => {
+  const text = element('span', 'flex-1 min-w-0 flex flex-col leading-tight')
+  const first = element('span', 'block truncate text-[13px] font-semibold text-text-strong', title)
   if (options.titleTooltip) first.title = title
-  const second = document.createElement('span')
-  second.className = `block text-[11.5px] text-text-subtle${options.wrapSubtitle ? ' break-words' : ' truncate'}`
-  second.textContent = options.card === undefined ? subtitle : 'refused' in options.card ? `${subtitle} · ${options.card.refused}` : options.card.caption
-  text.append(first, second)
-  if (options.card !== undefined && !('refused' in options.card)) {
-    text.append(Object.assign(document.createElement('span'), { className: 'block text-[11.5px] text-text-subtle', textContent: options.card.mark }))
-    for (const line of options.card.lines) {
-      const row = document.createElement('span')
-      row.className = 'block truncate text-[11.5px] text-text-muted rounded'
-      row.dataset.cardKey = line.key
-      row.textContent = line.text
-      text.append(row)
-    }
-    if (options.card.more > 0) text.append(Object.assign(document.createElement('span'), { className: 'block text-[11.5px] text-text-subtle', textContent: `+${options.card.more}` }))
-  }
+  text.append(first, element('span', `block text-[11.5px] text-text-subtle${options.wrapSubtitle ? ' break-words' : ' truncate'}`, subtitle))
   return text
 }
 
@@ -125,11 +113,12 @@ const dropInline = (host: HTMLElement): void => {
   slot.remove()
 }
 
-const inlineButton = (host: HTMLElement, listing: EmbeddedViewListing, actions: ChipActions): HTMLButtonElement => {
+/** The 32 px toggle that shows the live display in the answer, below the chip, and hides it again. */
+const inlineToggle = (host: HTMLElement, listing: EmbeddedViewListing, actions: ChipActions, changed: () => void): HTMLButtonElement => {
   const title = listing.envelope.title
-  const button = document.createElement('button')
+  const button = element('button', TOGGLE)
   button.type = 'button'
-  button.className = SIDE_BUTTON
+  button.dataset.inline = ''
   const paint = (): void => {
     const shown = actions.inlineShown(listing.key)
     button.setAttribute('aria-expanded', String(shown))
@@ -137,10 +126,10 @@ const inlineButton = (host: HTMLElement, listing: EmbeddedViewListing, actions: 
     if (shown) button.setAttribute('aria-controls', inlineSlotOf(host).id)
     else button.removeAttribute('aria-controls')
     button.setAttribute('aria-label', `${shown ? 'Hide' : 'Show'} the live display in this answer: ${title}`)
-    button.title = shown ? 'Hide the display in this answer' : 'Show the display in this answer'
-    const glyph = icon('chevron-down', { size: 14, className: shown ? 'rotate-180' : '' })
+    button.title = shown ? 'Hide the live display here' : 'Show the live display here'
+    const glyph = icon(shown ? 'eye-off' : 'eye', { size: 16 })
     glyph.setAttribute('aria-hidden', 'true')
-    button.replaceChildren(glyph, shown ? 'Hide' : 'Inline')
+    button.replaceChildren(glyph)
   }
   button.onclick = event => {
     event.stopPropagation()
@@ -148,64 +137,149 @@ const inlineButton = (host: HTMLElement, listing: EmbeddedViewListing, actions: 
     actions.setInlineShown(listing.key, shown)
     applyInline(host, listing, shown)
     paint()
+    changed()
   }
   paint()
   return button
 }
 
-const offerRow = (host: HTMLElement, listing: EmbeddedViewListing, main: HTMLElement, actions: ChipActions): HTMLElement => {
-  const row = document.createElement('div')
-  row.className = ROW
-  row.append(main, inlineButton(host, listing, actions))
-  chipListings.set(host, listing)
-  // An answer rendered again shows inline what the reader showed inline before.
-  if (actions.inlineShown(listing.key) && inlineSlots.get(host)?.parentElement !== host) applyInline(host, listing, true)
+/** A card line: label | value, never cut (the label wraps first), and its keys, small. */
+const lineRow = (line: CardLine): HTMLElement => {
+  const row = element('div', 'flex items-baseline gap-2 px-1 -mx-1 rounded text-[12px] leading-snug transition-colors')
+  row.setAttribute('role', 'listitem')
+  row.dataset.cardKeys = line.keys.join(' ')
+  row.setAttribute('aria-label', cardLineText(line))
+  if (line.label !== '') row.append(element('span', 'flex-1 min-w-[30%] text-text-muted break-words', line.label))
+  row.append(element('span', `${line.label === '' ? 'flex-1' : 'max-w-[70%] text-right'} text-text-strong font-medium break-words tabular-nums`, line.value))
+  row.append(element('span', 'shrink-0 text-[10px] font-mono text-text-subtle whitespace-nowrap', line.keys.join(' ')))
   return row
 }
 
-/** The element that replaces the fence's `<pre>`; it keeps its place while the chip changes state. */
-export const createChipHost = (): HTMLElement => {
-  const host = document.createElement('div')
-  host.className = 'my-2'
-  return host
+/**
+ * A vignette's frozen card: its title with the inline toggle, one meta line, its lines (the cited first, three before
+ * "N more lines"), what only the live display shows, and its actions; the lines fold while the display is inline.
+ */
+const frozenElement = (host: HTMLElement, listing: EmbeddedViewListing, actions: ChipActions, frozen: FrozenCard, open: HTMLElement): HTMLElement => {
+  const title = listing.envelope.title
+  const card = element('div', CARD)
+  card.dataset.liveCard = ''
+  card.setAttribute('role', 'group')
+  card.setAttribute('aria-label', `AI-composed display: ${title}`)
+  // Kept across a re-render of the chip (the Host announcing itself): a card the reader opened stays open.
+  const view = { expanded: cardViews.get(host)?.expanded ?? false, paint: (): void => {} }
+  cardViews.set(host, view)
+  const heading = element('span', 'flex-1 min-w-0 truncate text-[13px] font-semibold text-text-strong', title)
+  heading.title = title
+  const head = element('div', 'flex items-center gap-2 min-w-0')
+  head.append(leadingIcon('monitor-cog', 'text-accent'), heading, inlineToggle(host, listing, actions, () => paint()))
+  const list = element('div', 'flex flex-col gap-0.5')
+  cardSequence += 1
+  list.id = `live-view-card-${cardSequence}`
+  list.setAttribute('role', 'list')
+  const rows = frozen.lines.map(lineRow)
+  list.append(...rows)
+  const hidden = frozen.lines.length - frozen.shown
+  const more = element('button', 'self-start text-[11.5px] font-medium text-accent interactive cursor-pointer hover:underline')
+  more.type = 'button'
+  more.dataset.more = ''
+  more.setAttribute('aria-controls', list.id)
+  more.onclick = event => {
+    event.stopPropagation()
+    view.expanded = !view.expanded
+    paint()
+  }
+  const elsewhere = element('span', 'text-[11.5px] text-text-subtle', `${frozen.elsewhere} more on the live display`)
+  const footer = element('div', 'flex items-center gap-2 mt-1')
+  footer.append(open)
+  const paint = (): void => {
+    // Shown inline, the live display holds every line: the card keeps its title, meta and actions, unless a key opened it.
+    const folded = actions.inlineShown(listing.key) && !view.expanded
+    list.hidden = folded
+    rows.forEach((row, index) => { row.hidden = index >= frozen.shown && !view.expanded })
+    more.hidden = folded || hidden === 0
+    more.textContent = view.expanded ? 'Fewer lines' : `${hidden} more ${hidden === 1 ? 'line' : 'lines'}`
+    more.setAttribute('aria-expanded', String(view.expanded))
+    elsewhere.hidden = folded || frozen.elsewhere === 0 || (hidden > 0 && !view.expanded)
+  }
+  card.append(head, element('span', 'text-[11.5px] text-text-subtle', frozen.meta), list, more, elsewhere, footer)
+  view.paint = paint
+  paint()
+  return card
 }
 
+/** Opens the frozen card that holds a key's line, shows that line and marks it; false where no shown card holds it. */
+const revealLine = (container: HTMLElement, key: string): boolean => {
+  const line = container.querySelector<HTMLElement>(`[data-card-keys~="${key}"]`)
+  const host = line?.closest<HTMLElement>('[data-live-view]')
+  const view = host === null || host === undefined ? undefined : cardViews.get(host)
+  if (line === null || view === undefined) return false
+  view.expanded = true
+  view.paint()
+  line.scrollIntoView({ block: 'nearest' })
+  line.classList.add('bg-surface-strong')
+  setTimeout(() => line.classList.remove('bg-surface-strong'), 1_500)
+  return true
+}
+
+const offerRow = (host: HTMLElement, listing: EmbeddedViewListing, main: HTMLElement, actions: ChipActions): HTMLElement => {
+  const row = element('div', ROW)
+  row.append(main, inlineToggle(host, listing, actions, () => {}))
+  return row
+}
+
+/** A chip (or frozen card) that offers its display: the inline display comes back where the reader showed it before. */
+const offer = (host: HTMLElement, state: 'available' | 'unhosted', listing: EmbeddedViewListing, actions: ChipActions, card: ChipCard | undefined, context: ChipContext,
+  open: { readonly frozen: HTMLElement; readonly chip: () => HTMLElement }): void => {
+  chipListings.set(host, listing)
+  chipContexts.set(host, context)
+  if (card !== undefined) chipCards.set(host, card)
+  const frozen = card !== undefined && !('refused' in card) ? card : undefined
+  const shown = frozen === undefined ? offerRow(host, listing, open.chip(), actions) : frozenElement(host, listing, actions, frozen, open.frozen)
+  show(host, state, shown)
+  // An answer rendered again shows inline what the reader showed inline before.
+  if (actions.inlineShown(listing.key) && inlineSlots.get(host)?.parentElement !== host) applyInline(host, listing, true)
+}
+
+/** The element that replaces the fence's `<pre>`; it keeps its place while the chip changes state. */
+export const createChipHost = (): HTMLElement => element('div', 'my-2')
+
 export const showPreparing = (host: HTMLElement): void => {
-  const chip = document.createElement('button')
+  const chip = element('button', `${CHIP} max-w-[520px] cursor-wait`)
   chip.type = 'button'
   chip.disabled = true
-  chip.className = `${CHIP} max-w-[520px] cursor-wait`
-  const spinner = leadingIcon('loader-circle', 'text-text-muted animate-spin')
-  chip.append(spinner, lines('Preparing display…', SUBTITLE, { titleTooltip: false, wrapSubtitle: false }))
+  chip.append(leadingIcon('loader-circle', 'text-text-muted animate-spin'), lines('Preparing display…', SUBTITLE, { titleTooltip: false, wrapSubtitle: false }))
   chipListings.delete(host)
   chipCards.delete(host)
   dropInline(host)
   show(host, 'preparing', chip)
 }
 
-export const showAvailable = (host: HTMLElement, listing: EmbeddedViewListing, actions: ChipActions, card = chipCards.get(host)): void => {
+export const showAvailable = (host: HTMLElement, listing: EmbeddedViewListing, actions: ChipActions, card = chipCards.get(host), context = chipContexts.get(host) ?? { proposal: false }): void => {
   const title = listing.envelope.title
-  if (card !== undefined) chipCards.set(host, card)
-  const frozen = card !== undefined && !('refused' in card)
-  const chip = document.createElement('button')
-  chip.type = 'button'
-  chip.className = `${CHIP} ${INTERACTIVE}`
-  chip.setAttribute('aria-label', `Open live display in the display window: ${title}`)
-  const action = document.createElement('span')
-  action.className = 'shrink-0 text-xs font-medium text-accent'
-  action.textContent = frozen ? 'Open live' : 'Open'
-  chip.append(leadingIcon('monitor-cog', 'text-accent'), lines(title, SUBTITLE, { titleTooltip: true, wrapSubtitle: false, ...(card === undefined ? {} : { card }) }), action)
-  nameAndDescribe(chip, 'Open live in the display window', title, card)
-  chip.onclick = event => {
-    event.stopPropagation()
-    actions.open(listing)
+  const opener = (button: HTMLButtonElement): HTMLButtonElement => {
+    button.type = 'button'
+    button.setAttribute('aria-label', `Open live display in the display window: ${title}`)
+    button.onclick = event => {
+      event.stopPropagation()
+      actions.open(listing)
+    }
+    return button
   }
-  show(host, 'available', offerRow(host, listing, chip, actions))
+  offer(host, 'available', listing, actions, card, context, {
+    // In an answer that proposed, the proposal card's review is the primary action and opening the display secondary.
+    frozen: opener(element('button', context.proposal ? SECONDARY : PRIMARY, context.proposal ? 'Open live' : 'Open live ›')),
+    chip: () => {
+      const chip = opener(element('button', `${CHIP} ${INTERACTIVE}`))
+      const refused = card !== undefined && 'refused' in card ? card.refused : undefined
+      chip.append(leadingIcon('monitor-cog', 'text-accent'), lines(title, refused === undefined ? SUBTITLE : `${SUBTITLE} · ${refused}`, { titleTooltip: true, wrapSubtitle: false }),
+        element('span', 'shrink-0 text-xs font-medium text-accent', 'Open'))
+      return chip
+    },
+  })
 }
 
 export const showRefused = (host: HTMLElement, code: string, message: string): void => {
-  const chip = document.createElement('div')
-  chip.className = `${CHIP} max-w-[520px]`
+  const chip = element('div', `${CHIP} max-w-[520px]`)
   chip.append(leadingIcon('monitor-off', 'text-text-muted'), lines('Display not shown', `${message} (${code})`, { titleTooltip: false, wrapSubtitle: true }))
   chipListings.delete(host)
   dropInline(host)
@@ -213,20 +287,26 @@ export const showRefused = (host: HTMLElement, code: string, message: string): v
 }
 
 /** Outside the Host no window shows displays: link to the Workspace page with this room; Inline still shows the display here. */
-export const showUnhosted = (host: HTMLElement, listing: EmbeddedViewListing, href: string, actions: ChipActions, card?: ChipCard): void => {
+export const showUnhosted = (host: HTMLElement, listing: EmbeddedViewListing, href: string, actions: ChipActions, card?: ChipCard, context: ChipContext = { proposal: false }): void => {
   const title = listing.envelope.title
-  if (card !== undefined) chipCards.set(host, card)
-  const chip = document.createElement('a')
-  chip.href = href
-  chip.target = '_top'
-  chip.className = `${CHIP} ${INTERACTIVE} text-text`
-  chip.setAttribute('aria-label', `Open live display in the workspace: ${title}`)
-  const action = document.createElement('span')
-  action.className = 'shrink-0 inline-flex items-center gap-1 text-xs font-medium text-accent'
-  action.append('Open workspace', icon('external-link', { size: 14 }))
-  chip.append(leadingIcon('monitor-cog', 'text-accent'), lines(title, 'Process displays open in the Leitbild workspace', { titleTooltip: true, wrapSubtitle: false, ...(card === undefined ? {} : { card }) }), action)
-  nameAndDescribe(chip, 'Open live in the workspace', title, card)
-  show(host, 'unhosted', offerRow(host, listing, chip, actions))
+  const link = (className: string): HTMLAnchorElement => {
+    const anchor = element('a', className)
+    anchor.href = href
+    anchor.target = '_top'
+    anchor.setAttribute('aria-label', `Open live display in the workspace: ${title}`)
+    return anchor
+  }
+  offer(host, 'unhosted', listing, actions, card, context, {
+    frozen: (() => { const anchor = link(SECONDARY); anchor.append('Open workspace', icon('external-link', { size: 14 })); return anchor })(),
+    chip: () => {
+      const chip = link(`${CHIP} ${INTERACTIVE} text-text`)
+      const refused = card !== undefined && 'refused' in card ? card.refused : undefined
+      const action = element('span', 'shrink-0 inline-flex items-center gap-1 text-xs font-medium text-accent')
+      action.append('Open workspace', icon('external-link', { size: 14 }))
+      chip.append(leadingIcon('monitor-cog', 'text-accent'), lines(title, refused === undefined ? 'Process displays open in the Leitbild workspace' : refused, { titleTooltip: true, wrapSubtitle: false }), action)
+      return chip
+    },
+  })
 }
 
 /** Once the Host has announced itself, every chip that linked to the Workspace page opens the display instead. */
@@ -245,39 +325,39 @@ export const firstAvailableListing = (root: ParentNode): EmbeddedViewListing | n
 }
 
 /** Fences outside a posted answer (human messages, comparison reruns) never become displays. */
-export const fenceNotice = (text: string): HTMLElement => {
-  const element = document.createElement('div')
-  element.className = 'my-2 px-3 py-2 rounded border border-border text-xs text-text-muted'
-  element.textContent = text
-  return element
-}
+export const fenceNotice = (text: string): HTMLElement => element('div', 'my-2 px-3 py-2 rounded border border-border text-xs text-text-muted', text)
 
 const KEY_TOKEN = /⟦(k\d+)⟧/g
 
-/** A chip for one cited key: its line's words, and a click that brings its frozen line into view; an unknown key says so. */
-const keyChip = (container: HTMLElement, key: string, read: TurnCardsRead): HTMLElement => {
+/**
+ * A chip for one cited key: its line's words, and a press that opens the frozen card at its line. A key on a card this
+ * answer shows is a button; a key on no card, or on a card whose display the answer does not show, says so.
+ */
+const keyChip = (container: HTMLElement, key: string, read: TurnCardsRead, presented: ReadonlySet<string>): HTMLElement => {
+  const found = read.kind === 'cards' ? read.cards.find(({ card }) => card.items.some(item => item.key === key)) : undefined
   const item = read.kind === 'cards' ? itemOf(read.cards, key) : undefined
-  const chip = document.createElement(item === undefined ? 'span' : 'button')
+  const shown = found !== undefined && presented.has(found.viewRef)
+  const chip = element(shown ? 'button' : 'span',
+    `inline-flex items-center px-1 mx-0.5 rounded border text-[11px] font-mono leading-tight ${item === undefined ? 'border-dashed border-border-strong text-text-subtle' : shown ? 'border-border text-text-muted interactive cursor-pointer hover:border-accent hover:text-accent' : 'border-border text-text-subtle'}`)
   chip.dataset.cites = key
-  chip.className = `inline-flex items-center px-1 mx-0.5 rounded border text-[11px] font-mono leading-tight ${item === undefined ? 'border-dashed border-border-strong text-text-subtle' : 'border-border text-text-muted interactive cursor-pointer hover:border-accent hover:text-accent'}`
   chip.textContent = item === undefined ? `${key}?` : key
-  chip.title = item !== undefined ? `${key} · ${item.label} · ${item.reading}` : read.kind === 'refused' ? `${key}: ${read.message}` : `${key} is on no card of this answer`
+  chip.title = item === undefined ? (read.kind === 'refused' ? `${key}: ${read.message}` : `${key} is on no card of this answer`)
+    : `${key} · ${item.label} · ${item.reading}${shown ? '' : ' (on a display this answer does not show)'}`
   if (chip instanceof HTMLButtonElement) {
     chip.type = 'button'
     chip.onclick = event => {
       event.stopPropagation()
-      const line = container.querySelector<HTMLElement>(`[data-card-key="${key}"]`)
-      if (line === null) return
-      line.scrollIntoView({ block: 'nearest' })
-      line.classList.add('bg-surface-strong')
-      setTimeout(() => line.classList.remove('bg-surface-strong'), 1_500)
+      revealLine(container, key)
     }
   }
   return chip
 }
 
-/** Replaces each ⟦k⟧ in an answer's prose (never in code or a display chip) with its key chip. */
-export const citeKeys = (container: HTMLElement, read: TurnCardsRead): void => {
+/**
+ * Replaces each ⟦k⟧ in an answer's prose (never in code or a display chip) with its key chip; `presented` holds the
+ * viewRefs of the displays the answer shows, whose cards hold their lines.
+ */
+export const citeKeys = (container: HTMLElement, read: TurnCardsRead, presented: ReadonlySet<string>): void => {
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
   const texts: Text[] = []
   for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
@@ -287,7 +367,7 @@ export const citeKeys = (container: HTMLElement, read: TurnCardsRead): void => {
     const parts: Array<string | HTMLElement> = []
     let last = 0
     for (const match of text.data.matchAll(KEY_TOKEN)) {
-      parts.push(text.data.slice(last, match.index), keyChip(container, match[1]!, read))
+      parts.push(text.data.slice(last, match.index), keyChip(container, match[1]!, read, presented))
       last = match.index! + match[0].length
     }
     text.replaceWith(...parts, text.data.slice(last))

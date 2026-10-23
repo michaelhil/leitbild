@@ -3,10 +3,12 @@
  * written as the renderer writes it (one number format, core/observation).
  * A value reads "<number> <unit>", its priority word at caution or above,
  * "since hh:mm:ss" for a state and "<effect> in 4 min" from its time to act;
+ * a demand reads as the command it is ("CMD yes"), as a values view writes it;
  * its limits are its declared thresholds. An alert reads "<priority> ·
- * <message>" with its marks and no numbers; an object its core slots. The
- * named items come first; what 48 items or 2,400 characters leave out is
- * counted in `more`.
+ * <message>" with its marks and no numbers; an object its core slots. Each
+ * item names the object its label begins with (`object`). The named items
+ * come first; what 48 items or 1,900 characters leave out is counted in
+ * `more`.
  */
 import { DISPLAY_CARD_MAX_ITEMS, DISPLAY_CARD_MAX_TEXT, displayCardSchema, displayCardTextLength, type DisplayCard, type DisplayCardAdjustment, type DisplayCardItem } from '@leitbild/contracts'
 import { priorityLevels } from '../../../core/model/alerts.ts'
@@ -29,13 +31,18 @@ const distance = (metres: number): Words => { const { value, unit } = distancePa
 const slotWords = (value: number, unit: string): Words => unit === 's' ? duration(value) : unit === 'm' ? distance(value) : { text: quantity(value, unit), number: shown(value, unit) }
 const atLeastCaution = (priority: string | null | undefined): boolean => priority != null && priorityLevels.indexOf(priority as never) >= priorityLevels.indexOf('caution')
 
+/** The object an item's label begins with, where its label holds it whole. */
+const objectOf = (label: string, object: string): { readonly object?: string } =>
+  object.length <= 80 && (label === object || label.startsWith(`${object} · `)) ? { object } : {}
+
 export const valueItem = ({ observable, object }: Declared, observation: Observation | undefined): Item => {
   const label = `${object.label} · ${observable.label}`.slice(0, 80)
+  const named = { label, ...objectOf(label, object.label) }
   // A criterion reads as a row writes it: how many of its checks that apply are met and those not yet met, or its comparison.
   if (observable.checks !== undefined) {
     const words = criterionWords(observable.checks, observation)
     return {
-      label, reading: [words.text, ...(words.detail === null ? [] : [words.detail])].join(' · ').slice(0, 120), ...(words.unit === undefined ? {} : { unit: words.unit }),
+      ...named, reading: [words.text, ...(words.detail === null ? [] : [words.detail])].join(' · ').slice(0, 120), ...(words.unit === undefined ? {} : { unit: words.unit }),
       numbers: [...words.numbers], ...(observation === undefined ? {} : { priority: observation.priority }), subject: { ref: observable.ref },
     }
   }
@@ -44,10 +51,12 @@ export const valueItem = ({ observable, object }: Declared, observation: Observa
   // A reading that measures nothing now (meaningfulWhile off) reads "—", as a readout shows it.
   const notApplicable = observation?.quality === 'not-applicable'
   const decades = observable.decades === true
+  const stated = observable.states?.find(state => state.value === String(value))?.label ?? (typeof value === 'boolean' ? (value ? 'yes' : 'no') : String(value))
   const word = notApplicable ? '—'
     : typeof value === 'number' ? (numbers.push(shown(value, observable.unit, observable.quantity, decades)), quantity(value, observable.unit, observable.quantity, decades))
     : value === null ? 'no reading'
-      : observable.states?.find(state => state.value === String(value))?.label ?? (typeof value === 'boolean' ? (value ? 'yes' : 'no') : String(value))
+      // A demand says what is asked, never that it is so (H14), as a values view writes it (readout.ts).
+      : observable.basis === 'command' ? `CMD ${stated}` : stated
   const threshold = observable.thresholds.find(entry => entry.id === observation?.timeToAct?.threshold)
   const toAct = observation?.timeToAct === undefined ? undefined : duration(observation.timeToAct.seconds)
   if (toAct !== undefined) numbers.push(toAct.number)
@@ -60,7 +69,7 @@ export const valueItem = ({ observable, object }: Declared, observation: Observa
   const limits = [...observable.thresholds].sort((left, right) => Number(right.id === observation?.past) - Number(left.id === observation?.past) || near(left.value) - near(right.value))
     .slice(0, 4).map(entry => shown(entry.value, observable.unit, observable.quantity, decades))
   return {
-    label, reading: parts.join(' · ').slice(0, 120), ...(observable.unit === '' ? {} : { unit: observable.unit }), numbers,
+    ...named, reading: parts.join(' · ').slice(0, 120), ...(observable.unit === '' ? {} : { unit: observable.unit }), numbers,
     ...(limits.length === 0 ? {} : { limits }), ...(observation === undefined ? {} : { priority: observation.priority }), subject: { ref: observable.ref },
   }
 }
@@ -68,8 +77,9 @@ export const valueItem = ({ observable, object }: Declared, observation: Observa
 export const alertItem = (row: AlertRow): Item => {
   const marks = [...(row.alert.firstOut !== undefined ? ['first out'] : []), ...(row.alert.advisory === true ? ['advisory'] : []),
     ...(row.alert.acknowledged ? ['acknowledged'] : []), ...(row.alert.returned === true ? ['returned'] : [])]
+  const label = row.objectLabel.slice(0, 80)
   return {
-    label: row.objectLabel.slice(0, 80), reading: [row.priority ?? 'priority not declared', row.alert.message, ...marks].join(' · ').slice(0, 120), numbers: [],
+    label, ...objectOf(label, row.objectLabel), reading: [row.priority ?? 'priority not declared', row.alert.message, ...marks].join(' · ').slice(0, 120), numbers: [],
     ...(row.priority === null ? {} : { priority: row.priority }), subject: { objectId: row.objectId, alertId: row.alert.id },
   }
 }
@@ -84,8 +94,9 @@ export const entityItem = (row: EntityRow): Item => {
     ...(row.ageS === undefined ? [] : [(words => ({ text: `fix ${words.text} old`, number: words.number }))(duration(row.ageS))]),
     ...(row.closed === true ? [{ text: 'closed' }] : []),
   ]
+  const label = row.label.slice(0, 80)
   return {
-    label: row.label.slice(0, 80), reading: (parts.map(part => part.text).join(' · ') || 'no slots').slice(0, 120),
+    label, ...objectOf(label, row.label), reading: (parts.map(part => part.text).join(' · ') || 'no slots').slice(0, 120),
     numbers: parts.flatMap(part => part.number === undefined ? [] : [part.number]).slice(0, 8), subject: { objectId: row.objectId },
   }
 }
@@ -96,11 +107,44 @@ export const slotItems = (objectId: string, label: string, slots: ReadonlyArray<
   if (value === undefined) return []
   const words = typeof value === 'number' ? slotWords(value, slot.unit) : null
   const since = values[slot.key]?.since
+  const named = `${label} · ${slot.label}`.slice(0, 80)
   return [{
-    label: `${label} · ${slot.label}`.slice(0, 80), reading: `${words?.text ?? (value === null ? 'no reading' : String(value))}${since === undefined ? '' : ` · since ${clock(since.at)}`}`.slice(0, 120),
+    label: named, ...objectOf(named, label), reading: `${words?.text ?? (value === null ? 'no reading' : String(value))}${since === undefined ? '' : ` · since ${clock(since.at)}`}`.slice(0, 120),
     ...(slot.unit === '' || words === null ? {} : { unit: slot.unit }), numbers: words === null ? [] : [words.number], subject: { objectId },
   }]
 })
+
+/** What a card is about, as its vignette's subjects name it: elements (with the devices they bundle) and observables. */
+export interface CardSubjects {
+  readonly elements: ReadonlyArray<{ readonly objectId: string; readonly elementId: string }>
+  readonly refs: ReadonlyArray<string>
+}
+
+/** A reading on a subject: a named observable, or one measured on a subject element or a device it bundles. */
+export const onSubjects = (subjects: CardSubjects, declared: Declared | undefined): boolean => declared !== undefined
+  && (subjects.refs.includes(declared.observable.ref) || subjects.elements.some(({ objectId, elementId }) => declared.object.id === objectId
+    && (declared.element?.id === elementId || declared.element?.parent === elementId)))
+
+/** An alert on a subject: on a named observable, or raised on a subject element or a device it bundles. */
+const alertOnSubjects = (subjects: CardSubjects, row: AlertRow, parentOf: (objectId: string, elementId: string) => string | undefined): boolean => {
+  const observable = row.alert.observable
+  const element = row.alert.subject !== undefined && 'element' in row.alert.subject ? row.alert.subject.element : undefined
+  return (observable !== undefined && subjects.refs.includes(observable)) || (element !== undefined && subjects.elements.some(entry => entry.objectId === row.objectId
+    && (entry.elementId === element || parentOf(row.objectId, element) === entry.elementId)))
+}
+
+/** The most alerts a card lists after readings (W7.2): the rest are counted, never listed. */
+export const CARD_ALERTS = 3
+
+/**
+ * The alerts a card lists, in its list's order with the subjects' own first. Where readings lead the card, the worst
+ * three and a count of the rest; an alerts-only card lists what its list shows.
+ */
+export const cardAlerts = (rows: ReadonlyArray<AlertRow>, shown: number, readings: boolean, subjects: CardSubjects, parentOf: (objectId: string, elementId: string) => string | undefined): ReadonlyArray<AlertRow> => {
+  if (!readings) return rows.slice(0, shown)
+  const own = rows.filter(row => alertOnSubjects(subjects, row, parentOf))
+  return [...own, ...rows.filter(row => !own.includes(row))].slice(0, Math.min(shown, CARD_ALERTS))
+}
 
 /**
  * Items in order, keyed from `firstKey`, within 48 items and the card's characters; `hidden` items the views left out

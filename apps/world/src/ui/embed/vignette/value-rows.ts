@@ -5,7 +5,7 @@
 // its margin to a limit in force it is near or past. A frozen display's rows
 // are doubtful and state no rate or margin: they no longer follow the Run.
 import { numberStep, type Observation } from '../../../core/observation/model.ts'
-import type { VignetteValue } from '../../../features/displays/compose/model.ts'
+import type { VignetteValue, VignetteView } from '../../../features/displays/compose/model.ts'
 import { underTitle } from './format.ts'
 import { marginOf, tendencyOf, type Margin, type Written } from './margin.ts'
 import { valueLook, type ReadingLook } from './readout.ts'
@@ -51,12 +51,14 @@ export const spanBar = (value: Pick<VignetteValue, 'span' | 'quantity' | 'travel
  * What a row names a value by: its short label, without its element's short name in that element's own detail ("Unit
  * B pressure" reads "Pressure" under the title "… · Unit B"); else its label under the title.
  */
-export const ownLabel = (value: Pick<VignetteValue, 'shortLabel' | 'label' | 'element'>, title: string): string => {
+export const ownLabel = (value: Pick<VignetteValue, 'shortLabel' | 'label' | 'element'>, title: string, subject?: VignetteView['subject']): string => {
   const short = value.shortLabel
-  if (short === undefined) return underTitle(value.label, title)
+  if (short === undefined) return underTitle(value.label, title, subject)
   const element = value.element
   const prefix = element?.shortLabel === undefined ? undefined : `${element.shortLabel} `
-  if (element === undefined || prefix === undefined || !title.endsWith(` · ${element.label}`) || !short.toLowerCase().startsWith(prefix.toLowerCase()) || short.length === prefix.length) return short
+  // In its element's own detail, or in an answer about that one element (its subject, W7.3).
+  const own = element !== undefined && (title.endsWith(` · ${element.label}`) || subject?.element === (element.shortLabel ?? element.label))
+  if (!own || prefix === undefined || !short.toLowerCase().startsWith(prefix.toLowerCase()) || short.length === prefix.length) return short
   const rest = short.slice(prefix.length)
   return `${rest.charAt(0).toUpperCase()}${rest.slice(1)}`
 }
@@ -68,6 +70,8 @@ export const valueRows = (input: {
   /** The latest sample's Run time. */
   readonly now: number
   readonly title: string
+  /** The one object (and element) the vignette is about, which a label drops (W7.3). */
+  readonly subject?: VignetteView['subject']
   readonly frozen: boolean
 }): ReadonlyArray<ValueRow> => input.values.map(value => {
   const observation = input.observations.find(entry => entry.ref === value.ref)
@@ -81,7 +85,7 @@ export const valueRows = (input: {
   const recorded = value.series !== null && (value.valueType === 'number' || value.valueType === 'duration')
   return {
     ref: value.ref,
-    label: ownLabel(value, input.title),
+    label: ownLabel(value, input.title, input.subject),
     full: value.label,
     look,
     series,

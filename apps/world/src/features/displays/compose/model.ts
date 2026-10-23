@@ -90,6 +90,10 @@ export const vignetteStateSchema = z.object({
   chips: z.array(observableRefSchema).min(1).max(8).optional(),
   /** A drawing taller than the stack leaves stands beside a column of the other views (a window frame, Q20). */
   beside: z.literal(true).optional(),
+  /** An answer's vignette: why the Assistant composed it, its question and need, said on it (W8.2). */
+  why: z.string().min(1).max(603).optional(),
+  /** An answer's vignette: the model each drawn object had when it was composed (its topology's revision), so it can say the model changed since. */
+  models: z.record(objectIdSchema, z.string().min(1).max(128)).optional(),
   views: z.array(resolvedViewSchema).min(1).max(4),
 }).strict()
 export type VignetteState = z.output<typeof vignetteStateSchema>
@@ -136,14 +140,20 @@ export interface GroupedSection {
   readonly lines: ReadonlyArray<{ readonly element: VignetteElement; readonly values: ReadonlyArray<VignetteValue | null> }>
 }
 
+/** Values of one element under its name (none: values on no element), or parallel elements as one table (W7.4). */
+export type ValueBlock =
+  | { readonly kind: 'element'; readonly element: VignetteElement | null; readonly values: ReadonlyArray<VignetteValue> }
+  | { readonly kind: 'table'; readonly table: GroupedSection }
+
 export type VignetteSection =
   /**
    * `lead`: the index of the state's view whose lead request it shows; its values now are the sample's `leads[lead]`,
    * in its rows but its table's. `table`: its element's declared table, in its last rows, its values the sample's.
    * `devices`: an element's lead request's, the devices the element bundles (declared with it as their parent, W3.5).
+   * `blocks`: an answer's values of several elements, grouped by element (W7.4), in its rows.
    * `zones`: its rows stand under a heading, its margin lines after them (zoneRows).
    */
-  | { readonly kind: 'values'; readonly rows: number; readonly values: ReadonlyArray<VignetteValue>; readonly lead?: number; readonly table?: GroupedSection; readonly devices?: ReadonlyArray<VignetteElement>; readonly zones?: true }
+  | { readonly kind: 'values'; readonly rows: number; readonly values: ReadonlyArray<VignetteValue>; readonly lead?: number; readonly table?: GroupedSection; readonly devices?: ReadonlyArray<VignetteElement>; readonly blocks?: ReadonlyArray<ValueBlock>; readonly zones?: true }
   | GroupedSection
   /** Pens drawn together share a strip: at most four strips of at most four pens. */
   | { readonly kind: 'trend'; readonly rows: number; readonly horizonMs: number; readonly strips: ReadonlyArray<ReadonlyArray<VignetteValue>> }
@@ -173,6 +183,10 @@ export type VignetteSection =
  */
 export interface VignetteView {
   readonly title: string; readonly by?: 'assistant'; readonly chips?: ReadonlyArray<VignetteValue>; readonly beside?: true; readonly sections: ReadonlyArray<VignetteSection>
+  /** The one object every part is on, by its label, and the one element every value is on, as labels name it: a label drops them (W7.3). */
+  readonly subject?: { readonly object: string; readonly element?: string }
+  /** An answer's vignette: why it was composed, when, and whether a drawn object's model changed since (W8.2). */
+  readonly answer?: { readonly why?: string; readonly at: Stamp; readonly modelChanged?: true }
 }
 
 /** A recorded point: Run time in epoch ms and the value then. */
