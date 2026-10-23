@@ -150,7 +150,8 @@ const stateOf = (screen: Screen, name: RegExp): string | null => {
   return line === undefined ? null : line.text.slice(0, 120)
 }
 const shotOf = async (ctx: Ctx, name: string): Promise<string> => { const path = join(ctx.out, `${ctx.label}-walk-${name}.png`); await ctx.page.shot(path); return path }
-const titleIs = (screen: Screen, pattern: RegExp) => pattern.test(screen.window?.title ?? '')
+/** The window's own title, without the display it came from ("… · From Halden Unit 1 · Steam Generator A"). */
+const titleIs = (screen: Screen, pattern: RegExp) => pattern.test((screen.window?.title ?? '').split(' · From ')[0]!)
 
 // ---------------- the tasks ----------------
 
