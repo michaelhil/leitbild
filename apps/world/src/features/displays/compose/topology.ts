@@ -144,6 +144,9 @@ export const topologySection = (objectId: string, packId: string, scoped: Scoped
   const { graph } = scoped
   const [nodes, edges] = [new Set(scoped.nodes), new Set(scoped.edges)]
   const kindOf = (medium: string) => graph.media.find(entry => entry.id === medium)!.kind
+  // Lines outside the principal equipment the graph declares are auxiliary (U-20); a graph that declares none has none.
+  const principal = new Set(graph.overview?.edges ?? [])
+  const auxiliary = (lines: ReadonlyArray<string>): boolean => graph.overview !== undefined && !lines.some(line => principal.has(line))
   const bound = (bindings: TopologyGraph['nodes'][number]['bindings']) => bindings.flatMap(binding => {
     const declared = declaredOf(binding.ref)
     return declared === undefined ? [] : [{ ...binding, quantity: declared.quantity, unit: declared.unit, ...(declared.states === undefined ? {} : { states: declared.states }), ...(declared.decades === true ? { decades: true as const } : {}) }]
@@ -158,8 +161,8 @@ export const topologySection = (objectId: string, packId: string, scoped: Scoped
       ...Object.entries(drawing.stops).map(([id, stop]) => stopViews(graph, id, stop, bound).node),
     ],
     edges: [
-      ...graph.edges.filter(edge => edges.has(edge.id)).map(edge => ({ id: edge.id, mediumKind: kindOf(edge.medium), bindings: bound(edge.bindings) })),
-      ...Object.entries(drawing.stops).map(([id, stop]) => stopViews(graph, id, stop, bound).edge),
+      ...graph.edges.filter(edge => edges.has(edge.id)).map(edge => ({ id: edge.id, mediumKind: kindOf(edge.medium), bindings: bound(edge.bindings), ...(auxiliary([edge.id]) ? { auxiliary: true as const } : {}) })),
+      ...Object.entries(drawing.stops).map(([id, stop]) => ({ ...stopViews(graph, id, stop, bound).edge, ...(auxiliary(stop.edges) ? { auxiliary: true as const } : {}) })),
     ],
     ...(graph.attribution === undefined ? {} : { attribution: graph.attribution }),
   }

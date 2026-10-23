@@ -10,6 +10,7 @@ import { plantDeclaration } from '../src/packs/process-plant/observation/declara
 import { servedPlantTopology } from '../src/packs/process-plant/observation/topology.ts'
 import { FLOW_TEXT } from '../src/features/displays/topology/text.ts'
 import { flowDrawing } from '../src/ui/embed/vignette/flow-symbols.ts'
+import { legendKeys } from '../src/ui/embed/vignette/flow-legend.ts'
 import { STUB_STRAIGHT } from '../src/ui/embed/vignette/pipe-segments.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 
@@ -99,5 +100,36 @@ describe('text (W6.5): clear of pipes, symbols and other text', () => {
       ])
       expect(against).toEqual([])
     }
+  })
+})
+
+describe('the drawing\'s key and pipe sizes (W6.7; U-05, U-20, #35)', () => {
+  test('principal lines draw medium, lines outside the principal equipment (a stop to the AFW valves, the accumulators) small', () => {
+    const section = sectionOf('overview')
+    const { segments } = flowDrawing(section, [], [], false)
+    const sizes = (id: string) => new Set(segments.filter(segment => segment.connectionId === id || segment.connectionId === `${id}:end`).map(segment => segment.size))
+    const auxiliary = section.edges.filter(edge => edge.auxiliary === true).map(edge => edge.id)
+    const principal = section.edges.filter(edge => edge.auxiliary !== true && !edge.mediumKind.startsWith('electric')).map(edge => edge.id)
+    expect(principal.length).toBeGreaterThan(20)
+    expect(auxiliary.length).toBeGreaterThan(4)
+    // Every stop of the overview stands for lines outside it.
+    expect(section.edges.filter(edge => /^s\d+\.edge$/.test(edge.id)).every(edge => edge.auxiliary === true)).toBe(true)
+    for (const id of auxiliary) for (const drawn of section.layout.edges.filter(edge => edge.id === id || edge.id.replace(/\.\d+$/, '') === id)) expect(sizes(drawn.id)).toEqual(new Set(['small']))
+    for (const id of principal) for (const drawn of section.layout.edges.filter(edge => edge.id === id || edge.id.replace(/\.\d+$/, '') === id)) expect(sizes(drawn.id)).toEqual(new Set(['medium']))
+  })
+
+  test('its key names what it draws: the pipe looks it uses, the command not followed, the expected outline and after what', () => {
+    const section = sectionOf('overview')
+    const at = '2026-10-23T12:00:00.000Z'
+    // Every bound flow flowing; a pump told to run that stopped; the SGs' alerts all expected after RX TRIP.
+    const rcp = section.nodes.find(node => node.id === 'rcpA')!.bindings.find(binding => binding.role === 'running')!
+    const observations = [...flowing(section), { ref: rcp.ref, value: 'off', quality: 'good', at, why: 'CMD RUN' } as never]
+    const sg = section.nodes.find(node => node.id === 'sgA')!
+    const expected = { key: 'k', objectId: section.objectId, objectLabel: 'Unit', packId: 'process-plant', categoryId: 'unit', group: { objectId: section.objectId }, priority: 'alarm', state: 'active-unack', raised: null,
+      alert: { id: 'sg-lo-lo', kind: 'alarm', severity: 'critical', message: 'm', raisedAt: at, acknowledged: false, priority: 'alarm', subject: { element: sg.element } }, expected: { after: 'RX TRIP' } } as never
+    const keys = legendKeys(flowDrawing(section, observations, [expected], false)).map(key => [key.kind, key.text])
+    expect(keys).toEqual([['pipe', 'flow'], ['command', 'command not followed'], ['expected', 'expected after RX TRIP']])
+    // Nothing flowing, nothing outlined: only what is drawn.
+    expect(legendKeys(flowDrawing(section, [], [], false)).map(key => key.text)).toEqual(['not known'])
   })
 })

@@ -110,6 +110,8 @@ export interface FlowDrawing {
   readonly buses: ReadonlyArray<Box & { readonly id: string; readonly vertical: boolean; readonly title: string }>
   /** Each named item: its text, and what it is to a person (plan v5 contract 3). */
   readonly texts: ReadonlyArray<FlowItem>
+  /** What the alerts of the items outlined as expected are expected after ("RX TRIP"), each once: the legend names it. */
+  readonly expectedAfter: ReadonlyArray<string>
 }
 
 /**
@@ -224,9 +226,11 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
     const ends = [edge.points[0]!, edge.points.at(-1)!].map(point => [...boxes].find(([, box]) => inside(box)(point))?.[0])
     return ends.some(id => id !== undefined && ['valve', 'breaker'].includes(symbols.get(id) ?? '') && shut(states.get(id))) ? 'none' : 'open'
   }
+  // Principal lines medium, auxiliary and electric ones small (U-20); headers large.
+  const sizeOf = (edge: (typeof edges)[number]): 'small' | 'medium' => edge.view?.mediumKind.startsWith('electric') === true || edge.view?.auxiliary === true ? 'small' : 'medium'
   const segments: Segment[] = edges.flatMap(edge => {
     const look = lookOf(edge)
-    const size = edge.view?.mediumKind.startsWith('electric') === true ? 'small' : 'medium'
+    const size = sizeOf(edge)
     const value = look === 'open' ? 'open-generic' : pipeValue(look)
     const points = pipes.get(edge.id)!
     const chevron = look === 'forward' || look === 'reverse' ? chevronSegment(edge.id, points, edge.gaps, value, size, look === 'reverse', avoid) : null
@@ -356,16 +360,19 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
       for (const edge of endsAt(node.id)) {
         const end = inside(box)(edge.points[0]!) ? edge.points[0]! : edge.points.at(-1)!
         const look = lookOf(edge)
-        segments.push(...pipeSegments(`${node.id}:${end.join(',')}`, stub(end, centre, box), [], look === 'open' ? 'open-generic' : pipeValue(look), edge.view?.mediumKind.startsWith('electric') === true ? 'small' : 'medium'))
+        segments.push(...pipeSegments(`${node.id}:${end.join(',')}`, stub(end, centre, box), [], look === 'open' ? 'open-generic' : pipeValue(look), sizeOf(edge)))
       }
     } else if (symbol === 'end') {
       // Where the drawing stops, or meets another graph: OpenBridge's end cap on the line that arrives.
       for (const edge of endsAt(node.id)) {
         const out = inside(box)(edge.points.at(-1)!)
         const look = lookOf(edge)
-        segments.push(stubEndSegment(`${edge.id}:end`, pipes.get(edge.id)!, out ? 'out' : 'in', look === 'open' ? 'open-generic' : pipeValue(look), edge.view?.mediumKind.startsWith('electric') === true ? 'small' : 'medium'))
+        segments.push(stubEndSegment(`${edge.id}:end`, pipes.get(edge.id)!, out ? 'out' : 'in', look === 'open' ? 'open-generic' : pipeValue(look), sizeOf(edge)))
       }
     }
   }
-  return { width: px(section.layout.width), height: px(section.layout.height), segments, ...drawing }
+  const outlinedExpected = new Set(drawing.texts.filter(text => text.outline === 'expected').map(text => text.id))
+  const expectedAfter = [...new Set(section.layout.nodes.filter(node => outlinedExpected.has(node.id))
+    .flatMap(node => rowsAt((node.members ?? [node.id]).flatMap(id => byId.get(id) ?? [])).flatMap(row => row.expected?.after ?? [])))]
+  return { width: px(section.layout.width), height: px(section.layout.height), segments, ...drawing, expectedAfter }
 }

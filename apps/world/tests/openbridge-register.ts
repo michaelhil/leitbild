@@ -183,6 +183,7 @@ export interface Surface extends Site {
 export const surfaces: ReadonlyArray<Surface> = [
   { file: 'ui/embed/vignette/NetworkTopology.svelte', mark: 'use:lines', paints: 'connector-diagram' },
   { file: 'ui/embed/vignette/FlowTopology.svelte', mark: 'use:lines', paints: 'connector-diagram' },
+  { file: 'ui/embed/vignette/FlowLegend.svelte', mark: 'use:lines', paints: 'connector-diagram' },
   { file: 'ui/embed/vignette/lines.ts', mark: "canvas.getContext('2d')", paints: 'connector-diagram' },
   { file: 'ui/embed/vignette/row-measure.ts', mark: "document.createElement('canvas').getContext('2d')", paints: 'nothing: measures text' },
 ]
@@ -219,7 +220,7 @@ export const internals: ReadonlyArray<Internal> = [
   ...indicatorType.map(name =>
     property(name, 'obc-status-indicator', { file: 'ui/embed/vignette/StateWord.svelte', mark: `${name}:` }, 'dist/components/status-indicator/status-indicator.css.js', 'The indicator\'s word at a vignette row\'s 13/16 px.')),
   property('--font-family-main', 'every element', { file: 'ui/embed/embed.css', mark: '--font-family-main:' },
-    'dist/openbridge.css', 'System faces stand in for Noto Sans, which OpenBridge declares without a fallback.'),
+    'dist/openbridge.css', 'Noto Sans, the subset the embed ships (vignette/noto-sans.ts), then system faces for what it does not carry: OpenBridge declares it without a fallback.'),
   property('--global-typography-font-family', 'every element', { file: 'ui/embed/embed.css', mark: '--global-typography-font-family:' },
     'dist/components/status-indicator/status-indicator.css.js', 'Components read the family in their shadow roots through this token; re-derived per element so they take the same system faces.'),
 ]

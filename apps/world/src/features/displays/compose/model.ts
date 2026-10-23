@@ -148,7 +148,8 @@ export type VignetteSection =
     /** `packId` is the object's Pack: the pop-over loads that Pack's element actions. */
     readonly kind: 'topology'; readonly rows: number; readonly objectId: string; readonly packId: string; readonly family: 'flow' | 'network'; readonly layout: TopologyLayout
     readonly nodes: ReadonlyArray<TopologyNodeView>
-    readonly edges: ReadonlyArray<{ readonly id: string; readonly mediumKind: TopologyGraph['media'][number]['kind']; readonly bindings: ReadonlyArray<TopologyBinding> }>
+    /** `auxiliary`: a line outside the principal equipment its graph declares (its overview), drawn small. */
+    readonly edges: ReadonlyArray<{ readonly id: string; readonly mediumKind: TopologyGraph['media'][number]['kind']; readonly bindings: ReadonlyArray<TopologyBinding>; readonly auxiliary?: true }>
     readonly attribution?: string
   }
   /** Its counts are the sample's `maps[section]`. */

@@ -10,6 +10,7 @@
   import { loadEmbedPack } from '../pack-embed-loader.ts'
   import { embeddedDisplayFrame, UNFRAMED_PRESENTATION, visibleRoom, type DisplayOpening, type DisplayPresentation } from '../view-host.ts'
   import Faceplate from './Faceplate.svelte'
+  import FlowLegend from './FlowLegend.svelte'
   import { faceplateStates, readingsOf, type FaceplateReadings } from './faceplate.ts'
   import { FLOW_TEXT } from '../../../features/displays/topology/text.ts'
   import { FLOW_LINE_PX, flowDrawing } from './flow-symbols.ts'
@@ -562,7 +563,8 @@
     </div>
   {/if}
 </div>
-{#if section.attribution !== undefined}<p class="attribution">{section.attribution}</p>{/if}
+<!-- The row the composer keeps under a drawing: its attribution where it carries one, else its key (W6.7). -->
+{#if section.attribution !== undefined}<p class="attribution">{section.attribution}</p>{:else}<FlowLegend {drawing} {palette} {zoom} />{/if}
 
 <style>
   .flow { overflow-x: auto; overflow-y: hidden; }
