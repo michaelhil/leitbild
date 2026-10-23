@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { decimalsFor, type Observation } from '../../../core/observation/model.ts'
+  import { numberStep, type Observation } from '../../../core/observation/model.ts'
   import type { VignetteSection, VignetteValue } from '../../../features/displays/compose/model.ts'
   import { isState, PLOT_ROWS } from '../../../features/displays/compose/strips.ts'
   import { wordsThatFit } from './alerts.ts'
@@ -80,7 +80,7 @@
     const recorded = series.get(pen.ref)
     const value = observations.find(observation => observation.ref === pen.ref)?.value
     if (recorded === undefined || typeof value !== 'number') return ''
-    const rate = rateNow(recorded, now, 10 ** -decimalsFor(pen.unit, value, pen.quantity))
+    const rate = rateNow(recorded, now, numberStep(value, pen.unit, pen.quantity))
     return rate === null ? '' : rateText(rate, pen.unit, pen.quantity)
   }
 

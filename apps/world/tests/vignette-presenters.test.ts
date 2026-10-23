@@ -281,6 +281,16 @@ describe('trend strip', () => {
     expect(drawing.values.find(tick => tick.label.endsWith(' MPa'))!.y).toBe(Math.min(...drawing.values.map(tick => tick.y)))
   })
 
+  test('a strip is scaled and written in the unit its values are shown in: pascals in kilopascals', () => {
+    const vacuum: VignetteValue = { ...level, ref: 'unit-1#vacuum', label: 'Unit 1 · Condenser pressure', quantity: 'pressure', unit: 'Pa', thresholds: [threshold('vac', 'high', 1, 10_000, { consequence: 'ALM' })] }
+    const drawn = stripDrawing({
+      pens: [vacuum], series: new Map([[vacuum.ref, { holdMs: 90_000, points: [{ t: 0, v: 7_000 }, { t: 300_000, v: 8_500 }, { t: 600_000, v: 7_534 }] }]]),
+      observations: [], now: 600_000, horizonMs: 600_000, width: 240, height: 120, ...laid,
+    })!
+    expect(drawn.values.map(tick => tick.label)).toEqual(['7', '8', '9', '10 kPa'])
+    expect(drawn.labels.map(label => label.rows.flat().map(run => run.text).join(''))).toEqual(['HI 10.0 · ALM'])
+  })
+
   test('a strip of values read over decades is scaled by their powers of ten, gridlines at whole powers', () => {
     const current: VignetteValue = { ...level, ref: 'unit-1#current', label: 'Unit 1 · Current', quantity: 'current', unit: 'A', decades: true, thresholds: [] }
     const drawn = stripDrawing({

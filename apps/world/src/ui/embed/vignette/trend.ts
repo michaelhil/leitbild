@@ -8,7 +8,7 @@
 // way, never one a value is past or heading for. An element's own trend marks its control set points faint ("CTL").
 // Pens are told apart by dash, colour is kept for alerts.
 import { priorityLevels } from '../../../core/model/alerts.ts'
-import { decadeParts, decimalsFor, numberText, unitSymbol, type Observable, type Observation, type Quantity } from '../../../core/observation/model.ts'
+import { decadeParts, numberShown, numberStep, numberText, shownFactor, unitSymbol, type Observable, type Observation, type Quantity } from '../../../core/observation/model.ts'
 import type { RecordedSeries, SeriesPoint, VignetteValue } from '../../../features/displays/compose/model.ts'
 import { drawsAsLimit } from '../../../features/displays/compose/strips.ts'
 import { orderWord, toneOf, type AlertTone } from './readout.ts'
@@ -261,18 +261,19 @@ const readStrip = (input: StripInput) => {
   if (shown.length === 0) return null
   const recordStart = Math.max(window.start, Math.min(...held.flatMap(points => (points.length === 0 ? [] : [points[0]!.t]))))
   const { unit, quantity, decades } = input.pens[0]!
-  // A strip of values read over decades is scaled by their powers of ten, at least two decades tall; a value of none
-  // stands at its foot.
-  const scaled = (value: number): number => (decades !== true ? value : value > 0 ? Math.log10(value) : -Infinity)
+  // A strip is scaled in the unit its values are shown in (pascals in kilopascals); one of values read over decades by
+  // their powers of ten, at least two decades tall, a value of none at its foot.
+  const factor = shownFactor(unit)
+  const scaled = (value: number): number => (decades !== true ? value * factor : value > 0 ? Math.log10(value) : -Infinity)
   const seenScaled = shown.map(scaled).filter(Number.isFinite)
   if (seenScaled.length === 0) return null
   const seen = { min: Math.min(...seenScaled), max: Math.max(...seenScaled) }
   const lines = sharedLines(input.pens)
-  const domain = stripDomain(seen, lines.map(line => scaled(line.value)).filter(Number.isFinite), decades === true ? 1 : decimalsFor(unit, (seen.min + seen.max) / 2, quantity))
+  const domain = stripDomain(seen, lines.map(line => scaled(line.value)).filter(Number.isFinite), decades === true ? 1 : numberShown(Math.max(...shown.map(Math.abs)), unit, quantity).decimals)
   const observed = input.pens.map(pen => input.observations.find(observation => observation.ref === pen.ref))
   const idle = (pen: number, limit: Threshold): boolean => observed[pen]?.idle?.includes(limit.id) === true
   const valueNow = (pen: number): number | undefined => (typeof observed[pen]?.value === 'number' ? observed[pen]!.value as number : undefined)
-  const step = 10 ** -decimalsFor(unit, Math.max(...shown), quantity)
+  const step = numberStep(Math.max(...shown.map(Math.abs)), unit, quantity)
   const rates = input.pens.map(pen => { const recorded = input.series.get(pen.ref); return recorded === undefined ? null : rateNow(recorded, input.now, step) })
   const number = (value: number): string => numberText(value, unit, quantity, decades === true)
   // A value heads for the nearest limit ahead in the way it moves; held steady, for the nearest on either side.
