@@ -210,7 +210,7 @@ const WATCHED_ALERT_LINES = 4
 
 /** Where a vignette is shown: a chat answer stacks its views in 40 rows; a window may stand a tall drawing beside them (Q20). */
 type Frame = 'chat' | 'window'
-const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefined, subjects: ReadonlyArray<Subject>, drafts: ReadonlyArray<DraftView>, kept: Kept, frame: Frame, chipped: ReadonlyArray<string> = []): Promise<ComposeOutcome> => {
+const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefined, subjects: ReadonlyArray<Subject>, drafts: ReadonlyArray<DraftView>, kept: Kept, frame: Frame, chipped: ReadonlyArray<string> = [], why?: string): Promise<ComposeOutcome> => {
   const adjusted: DisplayCardAdjustment[] = []
   /** What the fit leaves out, counted on the card (Q15: never silent). */
   let dropped = 0
@@ -370,12 +370,14 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   // with chips keeps one row under the title for its trip line (W2.4), empty at rest, so nothing moves when one trips.
   const readableChips = await declaredRefs(run, chipped)
   const chips = chipped.filter(ref => readableChips.has(ref))
+  // The frame: title and footer, the trip line under a whole object's chips, an answer's notice line (W8.2).
+  const frameRows = FRAME_ROWS + (chips.length > 0 ? 1 : 0) + (by === 'assistant' ? 1 : 0)
   const stacked = (): number => fitted.reduce((sum, view) => sum + view.rows, 0)
   // In a window, a flow drawing taller than the stack leaves stands beside a column of every other view (Q20).
   const left = fitted.find(view => view.kind === 'topology' && flows.has(view))
   const sideBySide = (): number => Math.max(left?.rows ?? 0, fitted.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0))
-  const beside = frame === 'window' && left !== undefined && FRAME_ROWS + (chips.length > 0 ? 1 : 0) + stacked() > VIGNETTE_MAX_ROWS
-  const total = (): number => FRAME_ROWS + (chips.length > 0 ? 1 : 0) + (beside ? sideBySide() : stacked())
+  const beside = frame === 'window' && left !== undefined && frameRows + stacked() > VIGNETTE_MAX_ROWS
+  const total = (): number => frameRows + (beside ? sideBySide() : stacked())
   // A window's alerts keep a head, eight alerts and "+N more" (W2.5): its drawing is scaled first.
   const alertsFloor = frame === 'window' ? 2 + ALERT_LINES_AT_LEAST : 3
   for (const view of fitted) if (total() > VIGNETTE_MAX_ROWS && (view.kind === 'alerts' || view.kind === 'entity' || view.kind === 'collection')) (view as { rows: number }).rows = Math.min(view.rows, view.kind === 'alerts' ? alertsFloor : 5)
@@ -384,7 +386,7 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
     if (total() <= VIGNETTE_MAX_ROWS || view.kind !== 'topology') continue
     const natural = view.rows
     const rows = Math.max(8, Math.ceil((natural - 1) / 3) + 1, natural - (total() - VIGNETTE_MAX_ROWS))
-    if (beside && view === left && fitted.reduce((sum, other) => sum + (other === left ? 0 : other.rows), 0) + FRAME_ROWS + (chips.length > 0 ? 1 : 0) > VIGNETTE_MAX_ROWS) continue
+    if (beside && view === left && fitted.reduce((sum, other) => sum + (other === left ? 0 : other.rows), 0) + frameRows > VIGNETTE_MAX_ROWS) continue
     if (rows >= natural) continue
     ;(view as { rows: number }).rows = rows
     countAdjustment(adjusted, { kind: 'layout', text: `drawing scaled to ${Math.round(100 * (rows - 1) / (natural - 1))} % to fit` })
@@ -398,7 +400,16 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   if (fitted.length === 0 || uncovered >= 0) return refuse([unfit(uncovered >= 0 ? `subjects.${uncovered}` : 'views', 'nothing this vignette can show is about this subject')])
 
   const at = run.clock === undefined ? { at: new Date().toISOString(), clock: 'wall' as const } : { at: run.clock.currentTime, clock: 'simulation' as const }
-  const state = vignetteStateSchema.parse({ title: title.slice(0, 80), ...(by === undefined ? {} : { by }), at, ...(chips.length === 0 ? {} : { chips }), ...(beside ? { beside: true } : {}), views: fitted })
+  // An answer's vignette keeps the model each object it reads or draws had (its topology's revision, which changes only
+  // with the model, never with a mode or a sample), to say when it changed after the answer (W8.2).
+  const modelled = [...new Set(fitted.flatMap(view => view.kind === 'values' ? [...(view.refs ?? []).map(refObjectId), ...view.lead === undefined ? [] : [view.lead.objectId]]
+    : view.kind === 'trend' ? view.refs.map(refObjectId) : view.kind === 'topology' || view.kind === 'slots' ? [view.objectId] : []))]
+  const models = by !== 'assistant' ? {} : Object.fromEntries((await Promise.all(modelled.map(async objectId => [objectId, (await topologyOf(run, objectId))?.revision] as const)))
+    .filter((entry): entry is readonly [ObjectId, string] => entry[1] !== undefined))
+  const state = vignetteStateSchema.parse({
+    title: title.slice(0, 80), ...(by === undefined ? {} : { by }), at, ...(chips.length === 0 ? {} : { chips }), ...(beside ? { beside: true } : {}),
+    ...(why === undefined ? {} : { why }), ...(Object.keys(models).length === 0 ? {} : { models }), views: fitted,
+  })
   if (JSON.stringify(state).length > MAX_STATE) return refuse([unfit('views', `the vignette names more than its ${MAX_STATE}-character state holds`)])
   const about: CardSubjects = {
     elements: subjects.flatMap(subject => subject.kind === 'element' ? [{ objectId: subject.objectId, elementId: subject.elementId }] : []),
@@ -477,7 +488,7 @@ export const composeVignette = async (run: ComposeRun, spec: DisplaySpec): Promi
   if (spec.views.length === 0) {
     const defaults = await Promise.all(subjects.map(async subject => answered(run, await defaultViews(run, subject))))
     const quiet = (view: DraftView): boolean => view.kind === 'alerts' && view.objectIds !== 'run' && alertsOf(run, { ...view, rows: 1 }).length === 0
-    return finish(run, spec.title, 'assistant', subjects, mergeDefaults(defaults, quiet), kept, 'chat', await chipsOf(run, subjects))
+    return finish(run, spec.title, 'assistant', subjects, mergeDefaults(defaults, quiet), kept, 'chat', await chipsOf(run, subjects), whyOf(spec))
   }
   const views: DraftView[] = []
   for (const [index, view] of spec.views.entries()) {
@@ -485,8 +496,11 @@ export const composeVignette = async (run: ComposeRun, spec: DisplaySpec): Promi
     if (isIssue(resolved)) issues.push(resolved)
     else { if (view.kind === 'topology' && (view.from ?? view.to ?? view.around ?? view.media) !== undefined) kept.explicit.add(views.length); views.push(resolved) }
   }
-  return issues.length > 0 ? refuse(issues) : finish(run, spec.title, 'assistant', subjects, views, kept, 'chat')
+  return issues.length > 0 ? refuse(issues) : finish(run, spec.title, 'assistant', subjects, views, kept, 'chat', [], whyOf(spec))
 }
+
+/** Why an answer's vignette was composed: its question, and its need where given (W8.2). */
+const whyOf = (spec: DisplaySpec): string => spec.need === undefined ? spec.question : `${spec.question} — ${spec.need}`
 
 /** A subject's World default: what a person opens from the map, a procedure tag or the display window. */
 export const composeDefault = async (run: ComposeRun, name: string | Extract<DisplaySpec['subjects'][number], { of: unknown }>): Promise<ComposeOutcome> => {

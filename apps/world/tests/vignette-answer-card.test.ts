@@ -15,8 +15,9 @@ import type { SimulationRunRuntime } from '../src/core/simulation-runs/runtime.t
 import { CARD_ALERTS } from '../src/features/displays/compose/card.ts'
 import { composeVignette } from '../src/features/displays/compose/compose.ts'
 import { blockRows, elementBlocks } from '../src/features/displays/compose/element-groups.ts'
-import type { VignetteElement, VignetteSection, VignetteValue } from '../src/features/displays/compose/model.ts'
-import { compileVignette, type ViewRun } from '../src/features/displays/compose/view.ts'
+import { FRAME_ROWS, type VignetteElement, type VignetteSection, type VignetteValue } from '../src/features/displays/compose/model.ts'
+import { compileVignette, sampleVignette, type ViewRun } from '../src/features/displays/compose/view.ts'
+import { answerNotices, resetSeen } from '../src/ui/embed/vignette/answer-notice.ts'
 import { underTitle } from '../src/ui/embed/vignette/format.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { builtinScenarioDefinitions } from '../src/scenarios/definitions.ts'
@@ -27,7 +28,8 @@ guardPlantTests()
 // An answer's vignette on four-loop Halden five minutes into a loss of offsite power (plan v5 W7, W8.2): its card
 // lists the subjects' readings before alerts, the subjects' own alerts first and, past readings, the worst three
 // with a count of the rest; it writes a demand as the command it is; each line names its object once. Its view
-// names the one object it is on and groups its values by element.
+// names the one object it is on, groups its values by element, and says why and when it was composed, and when the
+// Run was reset or a model changed after it.
 
 const routing = createDirectRoutingAdapter()
 const assembly = createWorldApplicationAssembly({ routing })
@@ -110,7 +112,7 @@ const e0 = {
   subjects: [plantId], views: [{ kind: 'values', signals: ['RTB-A', 'RTB-B', 'AFW-A-FLOW', 'AFW-B-FLOW', 'AFW-C-FLOW', 'AFW-D-FLOW', 'RCP-A-RUNNING', 'RCP-B-RUNNING', 'RCP-C-RUNNING', 'RCP-D-RUNNING'].map(tag => `${plantId}#${tag}`) }],
 }
 
-describe('an answer\'s view (W7.3, W7.4)', () => {
+describe('an answer\'s view (W7.3, W7.4, W8.2)', () => {
   test('its values grouped by element: several on one under its name, parallel ones as one table named as they read, in the rows composed', async () => {
     const { state } = await compose(e0)
     const view = await compileVignette(await runNow(), state)
@@ -140,4 +142,38 @@ describe('an answer\'s view (W7.3, W7.4)', () => {
     expect(blocks.map(block => block.kind)).toEqual(['table'])
     expect(blockRows(blocks)).toBe(3)
   })
+
+  test('it says why and when it was composed, in a row of its own; the model it read stays the model', async () => {
+    const outcome = await compose(e0)
+    expect(outcome.state.why).toBe(`${e0.question} — ${e0.need}`)
+    expect(Object.keys(outcome.state.models ?? {})).toEqual([plantId])
+    // The frame keeps a row for the notice: title, notice, footer and the views.
+    expect(outcome.rows).toBe(FRAME_ROWS + 1 + outcome.state.views.reduce((sum, view) => sum + view.rows, 0))
+    const view = await compileVignette(await runNow(), outcome.state)
+    expect(view.answer).toEqual({ why: outcome.state.why, at: outcome.state.at })
+  }, 120_000)
+
+  test('revision: a model that changed after the answer is said; World defaults say nothing of an answer', async () => {
+    const { state } = await compose(e0)
+    const changed = await compileVignette(await runNow(), { ...state, models: { [plantId]: 'an-earlier-model' } } as typeof state)
+    expect(changed.answer).toMatchObject({ modelChanged: true })
+    expect(answerNotices({ reset: false, modelChanged: changed.answer!.modelChanged === true })).toEqual(['Model changed after this answer'])
+    const { by: _by, why: _why, models: _models, ...asDefault } = state
+    expect((await compileVignette(await runNow(), asDefault as typeof state)).answer).toBeUndefined()
+  }, 120_000)
+
+  test('reset: a sample behind the answer\'s time, or behind the one before it, says the Run was reset after the answer', async () => {
+    const at = (clock: string) => ({ at: `2026-07-12T${clock}.000Z`, clock: 'simulation' as const })
+    expect(resetSeen(at('04:05:00'), undefined, at('04:05:00'))).toBe(false)
+    expect(resetSeen(at('04:05:00'), at('04:05:00'), at('04:06:00'))).toBe(false)
+    expect(resetSeen(at('04:05:00'), undefined, at('04:00:30'))).toBe(true)
+    expect(resetSeen(at('04:05:00'), at('04:09:00'), at('04:06:00'))).toBe(true)
+    expect(resetSeen(at('04:05:00'), undefined, { at: '2026-07-12T04:00:00.000Z', clock: 'wall' })).toBe(false)
+    // The Run reset: its first sample stands at the scenario's start, behind the answer composed five minutes in.
+    const { state } = await compose(e0)
+    runtime = await registry.reset(runtime.id)
+    const sample = await sampleVignette(await runNow(), state)
+    expect(resetSeen(state.at, undefined, sample.at)).toBe(true)
+    expect(answerNotices({ reset: true, modelChanged: false })).toEqual(['Run reset after this answer'])
+  }, 120_000)
 })

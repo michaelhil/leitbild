@@ -82,6 +82,10 @@ export const vignetteStateSchema = z.object({
   chips: z.array(observableRefSchema).min(1).max(8).optional(),
   /** A drawing taller than the stack leaves stands beside a column of the other views (a window frame, Q20). */
   beside: z.literal(true).optional(),
+  /** An answer's vignette: why the Assistant composed it, its question and need, said on it (W8.2). */
+  why: z.string().min(1).max(603).optional(),
+  /** An answer's vignette: the model each drawn object had when it was composed (its topology's revision), so it can say the model changed since. */
+  models: z.record(objectIdSchema, z.string().min(1).max(128)).optional(),
   views: z.array(resolvedViewSchema).min(1).max(4),
 }).strict()
 export type VignetteState = z.output<typeof vignetteStateSchema>
@@ -168,6 +172,8 @@ export interface VignetteView {
   readonly title: string; readonly by?: 'assistant'; readonly chips?: ReadonlyArray<VignetteValue>; readonly beside?: true; readonly sections: ReadonlyArray<VignetteSection>
   /** The one object every part is on, by its label, and the one element every value is on, as labels name it: a label drops them (W7.3). */
   readonly subject?: { readonly object: string; readonly element?: string }
+  /** An answer's vignette: why it was composed, when, and whether a drawn object's model changed since (W8.2). */
+  readonly answer?: { readonly why?: string; readonly at: Stamp; readonly modelChanged?: true }
 }
 
 /** A recorded point: Run time in epoch ms and the value then. */

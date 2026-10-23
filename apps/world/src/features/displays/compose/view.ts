@@ -250,9 +250,12 @@ export const compileVignette = async (run: ComposeRun, state: VignetteState): Pr
   const elements = new Set(shown.map(value => value.element?.id))
   const element = elements.size === 1 && !elements.has(undefined) ? shown[0]!.element! : undefined
   const subject = object === undefined ? undefined : { object, ...(element === undefined ? {} : { element: element.shortLabel ?? element.label }) }
+  // An answer's vignette: why and when it was composed, and whether a model it reads changed since (W8.2).
+  const changed = await Promise.all(Object.entries(state.models ?? {}).map(async ([objectId, revision]) => (await topologyOf(run, objectId as ObjectId))?.revision !== revision))
+  const answer = state.by !== 'assistant' ? undefined : { ...(state.why === undefined ? {} : { why: state.why }), at: state.at, ...(changed.includes(true) ? { modelChanged: true as const } : {}) }
   return {
     title: state.title, ...(state.by === undefined ? {} : { by: state.by }), ...(chips.length === 0 ? {} : { chips }), ...(state.beside === undefined ? {} : { beside: true }), sections,
-    ...(subject === undefined ? {} : { subject }),
+    ...(subject === undefined ? {} : { subject }), ...(answer === undefined ? {} : { answer }),
   }
 }
 
