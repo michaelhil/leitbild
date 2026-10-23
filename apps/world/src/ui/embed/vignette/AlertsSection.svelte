@@ -12,7 +12,7 @@
   import { VIGNETTE_ROW_PX } from './grid.ts'
   import { rowMeasure } from './row-measure.ts'
   import { acknowledging } from './acknowledging.svelte.ts'
-  import { markElements } from './selection.ts'
+  import { drawsElement, markElements, onDrawingsChange, requestElement } from './selection.ts'
   import { tileLayout, tilesHeight } from './tile-fit.ts'
   import { vignetteOpening } from './opening.svelte.ts'
   import { alertRowTarget } from './row-target.ts'
@@ -49,6 +49,13 @@
   const LINES_BESIDE_TILES = 5
 
   const opening = vignetteOpening()
+  /** Counts the display's drawings starting or stopping to listen (selection.ts): a row on its own element asks again. */
+  let drawings = $state(0)
+  runOnMount(() => {
+    // Once mounted (a drawing mounted before this list is listening by now), and whenever one starts or stops.
+    drawings += 1
+    return onDrawingsChange(() => { drawings += 1 })
+  })
   let root: HTMLElement | undefined = $state()
   let head: HTMLElement | undefined = $state()
   let list: HTMLElement | undefined = $state()
@@ -107,7 +114,10 @@
   const toggle = (key: string): void => { open = open.has(key) ? new Set([...open].filter(entry => entry !== key)) : new Set([...open, key]) }
   /** What a row opens (row-target.ts): its element, group or observable, or in a list of several objects its object. */
   const press = (row: AlertRow): (() => void) | undefined => {
-    const target = alertRowTarget(row, section.objectIds === 'run' || section.objectIds.length > 1)
+    const target = alertRowTarget(row, section.objectIds === 'run' || section.objectIds.length > 1, section.elements)
+    // On the display's own element: selected in place where drawn (its outline, its faceplate), never opened again;
+    // asked again as the display's drawings mount (`drawings`).
+    if (target?.kind === 'in-place') return drawings >= 0 && drawsElement(target.objectId, target.elementId) ? () => { requestElement({ objectId: target.objectId, elementId: target.elementId, how: 'select' }) } : undefined
     if (opening === undefined || target === null || opening.where === null) return undefined
     const opened = (): Promise<string | null> => target.kind === 'element' ? opening.element(target.objectId, target.elementId) : opening.subject(target.subject)
     return () => { void opened().then(reason => { failure = reason === null ? null : `${row.alert.message} cannot be opened: ${reason}` }) }
