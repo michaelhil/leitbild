@@ -7,15 +7,15 @@
   import { slotLook } from './collection.ts'
   import type { OpenedFrom } from './popover.ts'
   import { underTitle } from './format.ts'
-  import { scrollEnds, type ScrollEnds } from './scroll-ends.ts'
-  import { frameLayout, standsBeside, VIGNETTE_ROW_PX } from './grid.ts'
+  import { NO_SCROLL_ENDS, scrollEnds, type ScrollEnds } from './scroll-ends.ts'
+  import { drawnScale, frameLayout, standsBeside, VIGNETTE_ROW_PX } from './grid.ts'
   import { wholeParts, wholeWords } from './fit-words.ts'
   import { marginLines, valueRows } from './value-rows.ts'
-  import { drawingScale } from './network.ts'
   import { vignetteOpening } from './opening.svelte.ts'
   import type { ReadingLook } from './readout.ts'
   import type { VignetteSnapshot } from './vignette-client.ts'
   import AlertsSection from './AlertsSection.svelte'
+  import Continues from './Continues.svelte'
   import ElementBlocks from './ElementBlocks.svelte'
   import EntityTable from './EntityTable.svelte'
   import FlowTopology from './FlowTopology.svelte'
@@ -64,7 +64,7 @@
   const layout = $derived.by(() => {
     if (!standsBeside(view)) return null
     const flow = view.sections[drawing] as Extract<VignetteSection, { kind: 'topology' }>
-    return frameLayout({ width, drawingWidth: flow.layout.width * VIGNETTE_ROW_PX * drawingScale(flow), zoom })
+    return frameLayout({ width, drawingWidth: flow.layout.width * VIGNETTE_ROW_PX * drawnScale(flow, zoom), drawn: drawnScale(flow, zoom), zoom })
   })
   /** The band's alerts: their head, three rows, the count of the rest and the expected aggregate (§5.5 viewport: 3 alert rows). */
   const BAND_ALERT_ROWS = 6
@@ -76,12 +76,12 @@
   const inChat = $derived(opening !== undefined && opening.where !== 'window')
   /** A topology's further scale to the frame's width in a chat: 1 elsewhere, and where it fits. */
   const chatFit = (section: Extract<VignetteSection, { kind: 'topology' }>): number => {
-    const natural = (section.layout.width + 1) * VIGNETTE_ROW_PX * drawingScale(section)
+    const natural = (section.layout.width + 1) * VIGNETTE_ROW_PX * drawnScale(section, zoom)
     return !inChat || width <= 0 ? 1 : Math.min(1, width / natural)
   }
 
   /** Which ends of a scrolled drawing are out of sight, judged on every scroll and every change of its or its drawing's size. */
-  let more = $state<ScrollEnds>({ left: false, right: false })
+  let more = $state<ScrollEnds>(NO_SCROLL_ENDS)
 </script>
 
 {#snippet one(section: VignetteSection, index: number, rows: number | null = section.rows, fit: number = 1)}
@@ -148,10 +148,9 @@
       {/each}
     </div>
     {#if layout.drawing === 'scrolled'}
-      <div class="scroll-wrap" class:more-left={more.left} class:more-right={more.right}>
+      <div class="scroll-wrap">
         <div class="scroll" use:scrollEnds={ends => { more = ends }}>{@render one(view.sections[drawing]!, drawing)}</div>
-        {#if more.left}<span class="continues left" aria-hidden="true">‹ drawing continues</span>{/if}
-        {#if more.right}<span class="continues right" aria-hidden="true">drawing continues ›</span>{/if}
+        <Continues ends={more} />
       </div>
     {:else}
       {@render one(view.sections[drawing]!, drawing, layout.drawing === 'scaled' ? Math.ceil(view.sections[drawing]!.rows * layout.scale) : view.sections[drawing]!.rows, layout.drawing === 'scaled' ? layout.scale : 1)}
@@ -170,14 +169,14 @@
   {:else}
     {#each view.sections as section, index (index)}
       {@const fit = section.kind === 'topology' ? chatFit(section) : 1}
-      {#if section.kind === 'topology' && fit * drawingScale(section) < CHAT_DRAWING_FLOOR && opening?.where === 'relay'}
+      {#if section.kind === 'topology' && fit * drawnScale(section, zoom) < CHAT_DRAWING_FLOOR && opening?.where === 'relay'}
         <!-- Too small to read here: the window shows it whole. -->
         <div class="section view-drawing" style:height={`${2 * VIGNETTE_ROW_PX}px`}>
           <button type="button" onclick={() => opening.self()}>View drawing ›</button>
           <span>too wide to read in this chat</span>
         </div>
       {:else if section.kind === 'topology' && fit < 1}
-        {@const scaled = Math.max(fit, CHAT_DRAWING_FLOOR / drawingScale(section))}
+        {@const scaled = Math.max(fit, CHAT_DRAWING_FLOOR / drawnScale(section, zoom))}
         <div class="scroll">{@render one(section, index, Math.ceil(section.rows * scaled), scaled)}</div>
       {:else}{@render one(section, index)}{/if}
     {/each}
@@ -218,12 +217,6 @@
   .scroll { overflow-x: auto; overflow-y: hidden; }
   /* Its own section only, never a section nested inside the drawing. */
   .scroll > .section { width: max-content; }
-  .scroll-wrap.more-left::before, .scroll-wrap.more-right::after { content: ''; position: absolute; top: 0; bottom: 0; width: 32px; pointer-events: none; }
-  .scroll-wrap.more-left::before { left: 0; background: linear-gradient(to left, transparent, var(--container-background-color)); }
-  .scroll-wrap.more-right::after { right: 0; background: linear-gradient(to right, transparent, var(--container-background-color)); }
-  .continues { position: absolute; z-index: 1; top: 4px; padding: 0 8px; border: 1px solid var(--border-outline-color); border-radius: 12px; background: var(--container-background-color); color: var(--element-active-color); font-size: 12px; line-height: 20px; white-space: nowrap; pointer-events: none; }
-  .continues.left { left: 4px; }
-  .continues.right { right: 4px; }
   /* A chat's drawing too small to read: a link to the window in its place, on the drawing's first row. */
   .view-drawing { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--element-neutral-color); }
   .view-drawing button { height: 32px; padding: 0 12px; border: 1px solid var(--border-outline-color); border-radius: 4px; background: var(--container-background-color); color: var(--element-active-color); font: inherit; font-weight: 600; cursor: pointer; }
