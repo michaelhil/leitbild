@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { EmbeddedViewEnvelope } from '@leitbild/contracts'
   import { DASHBOARD_VIEW_TYPE, VIGNETTE_VIEW_TYPE } from '../process-display/display-window-messages.ts'
-  import Dashboard from './dashboard/Dashboard.svelte'
   import Vignette from './vignette/Vignette.svelte'
 
   let { envelope }: { envelope: EmbeddedViewEnvelope } = $props()
@@ -14,7 +13,12 @@
 {#if vignette}
   <Vignette {envelope} />
 {:else if dashboard}
-  <Dashboard {envelope} />
+  <!-- A dashboard's frame loads its own code: a display's frame never does (§5.8). -->
+  {#await import('./dashboard/Dashboard.svelte') then { default: Dashboard }}
+    <Dashboard {envelope} />
+  {:catch error}
+    <p class="embed-failure">This dashboard cannot be shown: {error instanceof Error ? error.message : String(error)}</p>
+  {/await}
 {:else}
   <p class="embed-failure">Unsupported view: {envelope.viewType} on {envelope.subject.type}.</p>
 {/if}

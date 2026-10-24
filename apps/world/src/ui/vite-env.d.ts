@@ -4,7 +4,7 @@ declare module '*.mjs?url' {
   export default url
 }
 declare module 'virtual:noto-sans-subset' {
-  /** The embed's Noto Sans subset as a data URL (ui/embed/noto-sans-font.ts). */
+  /** The URL of the embed's Noto Sans subset, a font file the build emits (ui/embed/noto-sans-font.ts). */
   const url: string
   export default url
   /** The characters it carries. */

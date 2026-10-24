@@ -12,6 +12,7 @@ import { rateNow, rateText } from '../src/ui/embed/vignette/trend.ts'
 import { SPARK_WINDOW_MS, sparkline } from '../src/ui/sparkline.ts'
 import { marginLines, ownLabel, spanBar, valueRows } from '../src/ui/embed/vignette/value-rows.ts'
 import { createVignetteSession, type VignetteSnapshot } from '../src/ui/embed/vignette/vignette-client.ts'
+import { encodeSample } from '../src/features/displays/compose/wire.ts'
 import { valueLook } from '../src/ui/embed/vignette/readout.ts'
 import { recordingSeriesIdFor, type ObjectId } from '../src/core/model/index.ts'
 import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
@@ -211,27 +212,29 @@ describe('kept series (W8.5)', () => {
     let leads: ReadonlyArray<string> = ['u#a']
     const asked: Array<string> = []
     const snapshots: VignetteSnapshot[] = []
-    const timers: Array<() => void> = []
+    const timers: Array<{ readonly run: () => void; readonly delayMs: number }> = []
     const session = createVignetteSession({
       runId: 'run-1' as SimulationRunId,
       state: '{}',
       routes: {
         presence: async () => ({ loaded: true, at: new Date(runMs).toISOString() }),
         view: async () => section(['u#a']),
-        sample: async (_run, _state, history) => {
+        sample: async (_run, _state, history, held) => {
           asked.push(history === undefined ? 'none' : history.refs === undefined ? `all ${runMs - history.fromMs}` : `refs ${history.refs.join(',')}`)
           const served = history === undefined ? undefined : Object.fromEntries(leads.filter(ref => history.refs === undefined || history.refs.includes(ref)).map(ref => [ref.replace('#', '.'), { holdMs: HOLD, points: [{ t: runMs - 60_000, v: 9 }] }]))
-          return sampleAt(runMs, Object.fromEntries(leads.map(ref => [ref, 1])), served, leads)
+          return encodeSample(sampleAt(runMs, Object.fromEntries(leads.map(ref => [ref, 1])), served, leads), new Set(held))
         },
       },
       onChange: snapshot => { snapshots.push(snapshot) },
       wallNow: () => runMs,
-      schedule: (run) => { timers.push(run); return () => {} },
+      schedule: (run, delayMs) => { timers.push({ run, delayMs }); return () => {} },
     })
     const settle = async (): Promise<void> => { for (let turn = 0; turn < 20; turn += 1) await Promise.resolve() }
-    const tick = async (): Promise<void> => { runMs += 1_000; timers.shift()?.(); await settle() }
+    const tick = async (): Promise<void> => { const timer = timers.shift(); runMs += timer?.delayMs ?? 0; timer?.run(); await settle() }
     session.start()
     await settle()
+    // Its values first, its records with the sample asked at once, then a sample a second.
+    await tick()
     await tick()
     // The trip: the Pack now leads with another value too.
     leads = ['u#a', 'u#b']
@@ -239,7 +242,7 @@ describe('kept series (W8.5)', () => {
     await tick()
     await tick()
     session.close()
-    expect(asked).toEqual([`all ${SPARK_WINDOW_MS}`, 'none', 'none', 'refs u#b', 'none'])
+    expect(asked).toEqual(['none', `all ${SPARK_WINDOW_MS}`, 'none', 'none', 'refs u#b', 'none'])
     const last = snapshots.at(-1)!
     expect(last.series.get('u#b')!.points[0]).toEqual({ t: now + 3_000 - 60_000, v: 9 })
   })

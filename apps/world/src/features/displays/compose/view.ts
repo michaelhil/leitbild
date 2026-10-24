@@ -23,6 +23,9 @@ import type { ComposeRun } from './resolve.ts'
 import { elementBlocks } from './element-groups.ts'
 import { bindingRefs, drawingOf, scopeWithin, topologyOf, topologySection, tracedRefs } from './topology.ts'
 
+/** Lets the server's other work run before going on (a record read is synchronous). */
+const nextTurn = (): Promise<void> => new Promise(resolve => { setImmediate(resolve) })
+
 /** A Run's record of one series between two instants and up to its hold before them (the value held into `from`), Run time ascending, with that hold. */
 export type SeriesPort = (seriesId: string, from: string, to: string) => RecordedSeries
 export interface ViewRun extends ComposeRun { readonly series: SeriesPort }
@@ -376,8 +379,15 @@ export const sampleVignette = async (run: ViewRun, state: VignetteState, history
     const traced = await tracesOf(run, state)
     const drawn = [...state.views.flatMap((view, index) => view.kind === 'trend' ? view.refs : view.kind === 'values' ? led.get(index) ?? view.refs ?? [] : []), ...traced]
     const declared = await declaredRefs(run, history.refs === undefined ? drawn : drawn.filter(ref => history.refs!.includes(ref)))
-    return Object.fromEntries([...declared.values()].flatMap(entry => entry.observable.series === null ? []
-      : [[entry.observable.series.seriesId, run.series(entry.observable.series.seriesId, new Date(history.fromMs).toISOString(), at.at)] as const]))
+    const read: Array<readonly [string, RecordedSeries]> = []
+    for (const { observable } of declared.values()) {
+      if (observable.series === null) continue
+      // Each record on a turn of its own: ten minutes of a unit's fourteen records reach a mature Run's Historian pages
+      // for 200-350 ms, which would hold every other request (another display opening, the Run's own steps) (§5.8).
+      await nextTurn()
+      read.push([observable.series.seriesId, run.series(observable.series.seriesId, new Date(history.fromMs).toISOString(), at.at)])
+    }
+    return Object.fromEntries(read)
   })()
   const shown = state.views.flatMap(view => view.kind === 'alerts' && view.objectIds !== 'run' ? view.objectIds : view.kind === 'topology' ? [view.objectId] : [])
   const annunciated = await annunciate(run, [...alerts.values()], at, shown)

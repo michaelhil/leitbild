@@ -266,8 +266,10 @@ describe('the dashboard\'s components', () => {
     })
   }
 
-  test('the embed dispatches the dashboard view type; the window shows it beside vignettes', () => {
-    expect(read('ui/embed/EmbeddedView.svelte')).toContain('{:else if dashboard}\n  <Dashboard {envelope} />')
+  test('the embed dispatches the dashboard view type, loading its code only in a dashboard\'s frame; the window shows it beside vignettes', () => {
+    const embedded = read('ui/embed/EmbeddedView.svelte')
+    expect(embedded).toContain("{:else if dashboard}\n  <!-- A dashboard's frame loads its own code: a display's frame never does (§5.8). -->\n  {#await import('./dashboard/Dashboard.svelte') then { default: Dashboard }}\n    <Dashboard {envelope} />")
+    expect(embedded).not.toMatch(/import Dashboard from/)
     expect(embeddedViewListingSchema.parse({ key: 'k', caption: 'c', envelope: dashboard() }).envelope.viewType as string).toBe(DASHBOARD_VIEW_TYPE)
   })
 })

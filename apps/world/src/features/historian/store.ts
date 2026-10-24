@@ -68,6 +68,14 @@ const sampleFromRow = (row: SampleRow): RecordedSample => ({
   quality: row.quality,
 })
 
+/** A series by its id alone (in every runtime that records it) between two simulation times, newest first up to the limit. */
+export interface SeriesSamplesQuery {
+  readonly seriesId: string
+  readonly from: string
+  readonly to: string
+  readonly limit: number
+}
+
 export interface SeriesWindowQuery {
   readonly runtimeId: string
   readonly seriesId: string
@@ -84,6 +92,11 @@ export interface RunHistorian {
   readonly query: (query: RecordingSeriesQuery) => RecordingPage
   /** One runtime's series between two simulation times, the newest up to the limit (and the oldest, `withOldest`): raw rows only, without the window summary a query computes. */
   readonly seriesWindow: (query: SeriesWindowQuery) => ReadonlyArray<RecordedSample>
+  /**
+   * A series by id between two simulation times, newest first up to the limit: the rows a raw query by series id on
+   * simulation time returns, without its window summary and retained bounds (a display draws the rows only).
+   */
+  readonly seriesSamples: (query: SeriesSamplesQuery) => ReadonlyArray<RecordedSample>
   readonly status: () => RunHistorianStatus
   readonly close: () => void
 }
@@ -153,7 +166,7 @@ export const openRunHistorian = (path: string, options: Parameters<typeof create
       limits,
     })
     const unavailable = (): never => { throw Object.assign(new Error(message), { code: 'history_unavailable', status: status() }) }
-    return { record: (_runtimeId, batch) => { discardedSinceOpen += batch.samples.length }, status, listSeries: unavailable, query: unavailable, seriesWindow: unavailable, close: () => {} }
+    return { record: (_runtimeId, batch) => { discardedSinceOpen += batch.samples.length }, status, listSeries: unavailable, query: unavailable, seriesWindow: unavailable, seriesSamples: unavailable, close: () => {} }
   }
 }
 
@@ -577,6 +590,17 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Hi
         .get(query.runtimeId, query.seriesId, from, to)
       return oldest === null || newest.some(sample => sample.sequence === oldest.sequence) ? newest : [...newest, sampleFromRow(oldest)]
     },
+    // A display's read: the raw query's rows (its series selection, simulation-time window, order and limit), never its
+    // window summary and retained bounds, which reach every retained sample of the series again (§5.8).
+    seriesSamples: (query): ReadonlyArray<RecordedSample> => database.query<SampleRow, [string, string, string, number]>(`
+      SELECT sequence, runtime_id, series_id, observed_at, simulation_time, elapsed_ms,
+             value_type, value_number, value_text, value_boolean, quality
+      FROM recording_samples
+      WHERE (runtime_id, series_id) IN (SELECT runtime_id, series_id FROM recording_series WHERE series_id = ?)
+        AND simulation_time >= ? AND simulation_time <= ?
+      ORDER BY sequence DESC
+      LIMIT ?
+    `).all(query.seriesId, new Date(query.from).toISOString(), new Date(query.to).toISOString(), query.limit).map(sampleFromRow),
     status: (): RunHistorianStatus => {
       const first = frozenBounds ? { observed_at: frozenBounds.first } : database.query<{ observed_at: string }, []>('SELECT observed_at FROM recording_samples ORDER BY observed_at LIMIT 1').get()
       const last = frozenBounds ? { observed_at: frozenBounds.last } : database.query<{ observed_at: string }, []>('SELECT observed_at FROM recording_samples ORDER BY observed_at DESC LIMIT 1').get()

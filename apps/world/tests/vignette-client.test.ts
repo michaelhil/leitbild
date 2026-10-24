@@ -1,12 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import type { SimulationRunId } from '../src/core/model/ids.ts'
 import type { VignetteSample, VignetteView } from '../src/features/displays/compose/model.ts'
+import type { WireSample } from '../src/features/displays/compose/wire.ts'
 import { stripDrawing } from '../src/ui/embed/vignette/trend.ts'
 import { createVignetteSession, GAP_MS, INACTIVE_RETRY_MS, SAMPLE_BACKOFF_MS, SAMPLE_INTERVAL_MS, sampleStale, STALE_AFTER_MS, type RunPresence, type VignetteSnapshot } from '../src/ui/embed/vignette/vignette-client.ts'
 
 // The vignette's link to its Run (architecture B1): presence before anything,
-// never loading a Run; the view once; history with the first sample only, and
-// again after a gap; one sample a second while shown, none while hidden.
+// never loading a Run; the view once; the values first, then the history with
+// the sample asked straight after them, on open and again after a gap; one
+// sample a second while shown, none while hidden.
 
 type Pen = Extract<VignetteView['sections'][number], { kind: 'trend' }>['strips'][number][number]
 const levelPen: Pen = { ref: 'unit-1#level', label: 'Unit 1 · Level', quantity: 'level', unit: '%', valueType: 'number', thresholds: [], series: { seriesId: 'unit-1.level', intervalMs: 1_000 } }
@@ -25,7 +27,7 @@ const harness = (presence: (at: string) => RunPresence | null) => {
   const later = <T>(value: () => T): Promise<T> => latencyMs === 0 ? Promise.resolve(value())
     : new Promise(resolve => { timers.push({ at: wall + latencyMs, run: () => resolve(value()), cancelled: false }) })
   const snapshots: VignetteSnapshot[] = []
-  const sample = (history?: { readonly fromMs: number }): VignetteSample => ({
+  const sample = (history?: { readonly fromMs: number }): WireSample => ({
     at: { at: new Date(runMs).toISOString(), clock: 'simulation', paused: false },
     observations: [{ ref: 'unit-1#level', at: new Date(runMs).toISOString(), clock: 'simulation', value: 40 + (runMs % 10_000) / 1_000, quality, priority: 'none' }],
     alerts: [], entities: {}, slots: {}, maps: {},
@@ -72,35 +74,69 @@ const harness = (presence: (at: string) => RunPresence | null) => {
 const loaded = (at: string): RunPresence => ({ loaded: true, at })
 
 describe('vignette session', () => {
-  test('presence first, the view once, history with the first sample only, then a sample a second', async () => {
+  test('presence first, the view once, the values, the history with the sample straight after, then a sample a second', async () => {
     const run = harness(loaded)
     run.session.start()
     await run.settle()
-    expect(run.calls).toEqual(['presence', 'view', 'history 600000'])
-    expect(run.last().phase).toBe('live')
+    // The values are drawn from a sample without the records (perf, §5.8): the records are due, none drawn yet.
+    expect(run.calls).toEqual(['presence', 'view', 'sample'])
+    expect([run.last().phase, run.last().recordsDue, run.last().series.size]).toEqual(['live', true, 0])
+    // Asked at once, not a second later.
+    await run.advance(0)
+    expect(run.calls).toEqual(['presence', 'view', 'sample', 'history 600000'])
+    expect(run.last().recordsDue).toBeUndefined()
     // The record keeps the hold the Run served it with.
     expect(run.last().series.get('unit-1#level')).toMatchObject({ holdMs: 90_000 })
     expect(run.last().series.get('unit-1#level')?.points.length).toBe(2)
     await run.advance(3 * SAMPLE_INTERVAL_MS)
-    expect(run.calls.slice(3)).toEqual(['sample', 'sample', 'sample'])
+    expect(run.calls.slice(4)).toEqual(['sample', 'sample', 'sample'])
     expect(run.last().series.get('unit-1#level')?.points.length).toBe(5)
     expect(run.last().series.get('unit-1#level')?.holdMs).toBe(90_000)
     run.session.close()
   })
 
-  test('hidden, it asks the Run nothing; shown again after a gap it reads presence and the history again', async () => {
+  test('hidden, it asks the Run nothing; shown again after a gap it reads presence, its values, then the history again', async () => {
     const run = harness(loaded)
     run.session.start()
     await run.settle()
+    await run.advance(0)
     run.session.setVisible(false)
     expect(run.pending()).toBe(0)
     const before = run.calls.length
+    const kept = run.last().series.get('unit-1#level')!
     await run.advance(GAP_MS * 4)
     expect(run.calls.length).toBe(before)
     run.session.setVisible(true)
     await run.settle()
-    expect(run.calls.slice(before)).toEqual(['presence', 'history 600000'])
+    // Its values at once; its record as it was, not drawn on across the gap, until it is read again.
+    expect(run.calls.slice(before)).toEqual(['presence', 'sample'])
+    expect([run.last().recordsDue, run.last().series.get('unit-1#level')]).toEqual([true, kept])
+    await run.advance(0)
+    expect(run.calls.slice(before)).toEqual(['presence', 'sample', 'history 600000'])
+    expect(run.last().recordsDue).toBeUndefined()
     run.session.close()
+  })
+
+  test('a view that draws no record reads no history: one sample, then a sample a second', async () => {
+    const calls: string[] = []
+    const at = '2026-10-21T10:00:00.000Z'
+    const timers: Array<{ delayMs: number; run: () => void }> = []
+    const plain: VignetteView = { title: 'Level', sections: [{ kind: 'values', rows: 2, values: [{ ...levelPen, series: null }] }] }
+    const session = createVignetteSession({
+      runId: 'run-1' as SimulationRunId, state: '{"title":"Level"}', onChange: () => {}, wallNow: () => 0, schedule: (run, delayMs) => { timers.push({ delayMs, run }); return () => {} },
+      routes: {
+        presence: async () => { calls.push('presence'); return loaded(at) },
+        view: async () => { calls.push('view'); return plain },
+        sample: async (_runId, _state, history) => {
+          calls.push(history === undefined ? 'sample' : 'history')
+          return { at: { at, clock: 'simulation', paused: false }, observations: [], alerts: [], entities: {}, slots: {}, maps: {} }
+        },
+      },
+    })
+    session.start()
+    for (let turn = 0; turn < 20; turn += 1) await Promise.resolve()
+    expect([calls, timers.map(timer => timer.delayMs)]).toEqual([['presence', 'view', 'sample'], [SAMPLE_INTERVAL_MS]])
+    session.close()
   })
 
   test('a Run that is not loaded is never loaded: it is asked about again, and drawn once someone loads it', async () => {
@@ -113,7 +149,7 @@ describe('vignette session', () => {
     expect(run.calls).toEqual(['presence', 'presence'])
     isLoaded = true
     await run.advance(INACTIVE_RETRY_MS)
-    expect(run.calls.slice(2)).toEqual(['presence', 'view', 'history 600000'])
+    expect(run.calls.slice(2)).toEqual(['presence', 'view', 'sample', 'history 600000'])
     expect(run.last().phase).toBe('live')
     run.session.close()
   })
@@ -186,7 +222,8 @@ describe('vignette session', () => {
     const at = '2026-10-21T10:00:00.000Z'
     const snapshots: VignetteSnapshot[] = []
     const session = createVignetteSession({
-      runId: 'run-1' as SimulationRunId, state: '{"title":"Level"}', onChange: snapshot => { snapshots.push(snapshot) }, wallNow: () => 0, schedule: () => () => {},
+      // Only the sample asked at once for the records runs: no other.
+      runId: 'run-1' as SimulationRunId, state: '{"title":"Level"}', onChange: snapshot => { snapshots.push(snapshot) }, wallNow: () => 0, schedule: (run, delayMs) => { if (delayMs === 0) queueMicrotask(run); return () => {} },
       routes: {
         presence: async () => loaded(at),
         view: async () => withFlow,

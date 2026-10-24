@@ -17,6 +17,7 @@ import { composeDefault, composeVignette, type ComposeOutcome } from '../../feat
 import { vignetteStateSchema, type VignetteState } from '../../features/displays/compose/model.ts'
 import { isIssue } from '../../features/displays/compose/resolve.ts'
 import { compileVignette, sampleVignette, type ViewRun } from '../../features/displays/compose/view.ts'
+import { encodeSample } from '../../features/displays/compose/wire.ts'
 import { visibleObject } from '../../features/displays/compose/declared.ts'
 import { changeDashboard, readDashboard, scopeInputSchema, type DashboardSection } from '../../features/displays/dashboards/dashboards.ts'
 import { dashboardScopeSchema, DASHBOARD_MAX_PINS, pinIdSchema, type DashboardScope } from '../../features/displays/dashboards/store.ts'
@@ -27,6 +28,7 @@ import { VIGNETTE_ROW_PX } from '../../ui/embed/vignette/grid.ts'
 import { DASHBOARD_VIEW_TYPE } from '../../ui/process-display/display-window-messages.ts'
 import { observableRefSchema } from '../model/alerts.ts'
 import type { ObjectId } from '../model/index.ts'
+import { OBSERVATION_READ_REFS } from '../observation/capabilities.ts'
 import { displaySpecSchema, subjectSchema } from '../observation/spec.ts'
 import type { Actor } from '../simulation-runs/actors.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
@@ -53,15 +55,13 @@ export const displayRunOf = async (registry: SimulationRunRegistry, runtime: Sim
   return {
     objects: snapshot.objects, denied, packs: runtime.packs(), port: requestPort(runtime.observations(actor)), clock: snapshot.clock,
     connections: registry.loadedCompiledScenario(runtime.id).connections,
-    // The Historian's record, from one hold before `from`, so the value held into the window's start is drawn; with that hold.
-    series: (seriesId, from, to) => {
-      const page = runtime.recordedSamples({ mode: 'raw', seriesId, from: new Date(Date.parse(from) - recordedHoldMs).toISOString(), to, timeAxis: 'simulation', limit: 2_000 })
-      return {
-        holdMs: recordedHoldMs,
-        points: page.mode !== 'raw' ? [] : page.samples.flatMap(sample => typeof sample.value === 'number' || typeof sample.value === 'boolean'
-          ? [{ t: Date.parse(sample.simulationTime ?? sample.observedAt), v: Number(sample.value) }] : []).reverse(),
-      }
-    },
+    // The Historian's record, from one hold before `from`, so the value held into the window's start is drawn; with that
+    // hold. Its rows only: a raw page's summaries would reach every retained sample of the series again (§5.8).
+    series: (seriesId, from, to) => ({
+      holdMs: recordedHoldMs,
+      points: runtime.recordedSeriesSamples({ seriesId, from: new Date(Date.parse(from) - recordedHoldMs).toISOString(), to, limit: 2_000 })
+        .flatMap(sample => typeof sample.value === 'number' || typeof sample.value === 'boolean' ? [{ t: Date.parse(sample.simulationTime ?? sample.observedAt), v: Number(sample.value) }] : []).reverse(),
+    }),
   }
 }
 
@@ -79,7 +79,11 @@ const stateSchema = z.string().min(2).max(EMBEDDED_VIEW_STATE_MAX_LENGTH).transf
 })
 export const displayRouteInputs = {
   view: z.object({ state: stateSchema }).strict(),
-  sample: z.object({ state: stateSchema, history: z.object({ fromMs: z.number().int().nonnegative(), refs: z.array(observableRefSchema).min(1).max(32).optional() }).strict().optional() }).strict(),
+  /** `held`: the lead values whose declarations the caller holds, which the sample then names by ref (compose/wire.ts). */
+  sample: z.object({
+    state: stateSchema, history: z.object({ fromMs: z.number().int().nonnegative(), refs: z.array(observableRefSchema).min(1).max(32).optional() }).strict().optional(),
+    held: z.array(observableRefSchema).max(OBSERVATION_READ_REFS).optional(),
+  }).strict(),
   default: z.object({ subject: subjectSchema }).strict(),
 } as const
 
@@ -88,7 +92,7 @@ export const handleDisplayRoute = async (kind: string, body: unknown, run: ViewR
   if (kind === 'view') return json({ view: await compileVignette(run, displayRouteInputs.view.parse(body).state) })
   if (kind === 'sample') {
     const input = displayRouteInputs.sample.parse(body)
-    return json({ sample: await sampleVignette(run, input.state, input.history) })
+    return json({ sample: encodeSample(await sampleVignette(run, input.state, input.history), new Set(input.held)) })
   }
   if (kind === 'default') return composedResponse(await composeDefault(run, displayRouteInputs.default.parse(body).subject))
   return null
