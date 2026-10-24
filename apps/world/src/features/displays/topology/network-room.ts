@@ -35,7 +35,8 @@ export const networkRoom = (node: Pick<TopologyNode, 'class' | 'label' | 'shortL
   if (node.class === 'bus') return { width: cells(Math.max(textWidth(name, 'busLabel') + NETWORK.barPadding, textWidth(name, 'name') + NETWORK.bar + NETWORK.gap)), height: 2 }
   if (node.class === 'boundary') return { width: cells(stopRoom(name)), height: 1 }
   if (node.class === 'junction') return { width: 1, height: 1 }
-  return { width: cells(Math.max(textWidth(name, 'name'), reading)), height: 2 }
+  // A line element's words keep the gap clear of a line that turns back along its box's face.
+  return { width: cells(Math.max(textWidth(name, 'name'), reading) + NETWORK.gap), height: 2 }
 }
 
 /** A stop's or a boundary's room: its cap, the gap, its label. */

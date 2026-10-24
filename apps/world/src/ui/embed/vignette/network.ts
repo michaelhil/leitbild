@@ -188,11 +188,8 @@ export const networkDrawing = (section: Topology, observations: ReadonlyArray<Ob
       const faces = new Set(here.map(([x, y]) => (Math.abs(x - box.x) < 1 ? 'left' : Math.abs(x - (box.x + box.width)) < 1 ? 'right' : Math.abs(y - box.y) < 1 ? 'top' : 'bottom')))
       const centre = [box.x + box.width / 2, here.length > 0 ? here.reduce((sum, end) => sum + end[1], 0) / here.length : box.y + box.height / 2] as const
       const value = conducting(id) === false ? 'empty' : 'open-generic'
-      if (here.length === 2 && faces.size === 1 && (faces.has('left') || faces.has('right'))) {
-        const inside = faces.has('left') ? box.x + NETWORK.symbol / 4 : box.x + box.width - NETWORK.symbol / 4
-        const [a, b] = here as unknown as [Point, Point]
-        segments.push(...pipeSegments(`${id}:turn`, [a, [inside, a[1]], [inside, b[1]], b], [], value, 'small'))
-      } else segments.push(...here.flatMap(end => pipeSegments(`${id}:${end.join(',')}`, stub(end, centre, box), [], value, 'small')))
+      if (here.length === 2 && faces.size === 1) segments.push(...pipeSegments(`${id}:turn`, here, [], value, 'small'))
+      else segments.push(...here.flatMap(end => pipeSegments(`${id}:${end.join(',')}`, stub(end, centre, box), [], value, 'small')))
       words([
         { x: box.x, y: box.y, width: box.width, height: NETWORK_ROW, align: 'start', parts: [named] },
         ...(readingPart.length === 0 ? [] : [{ x: box.x, y: box.y + box.height - NETWORK_ROW, width: box.width, height: NETWORK_ROW, align: 'start' as const, parts: readingPart }]),

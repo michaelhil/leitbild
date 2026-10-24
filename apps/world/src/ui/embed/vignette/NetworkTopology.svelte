@@ -175,7 +175,7 @@
   }
   .notice { margin: 0; font-size: 12px; color: var(--element-active-color); }
   /* Each row in the room the composer kept for it (topology/network-room.ts), whole, in Noto Sans: names 12 px neutral, readings 14 px in the active colour. */
-  .text { position: absolute; display: flex; align-items: center; white-space: nowrap; pointer-events: none; }
+  .text { position: absolute; display: flex; align-items: center; white-space: pre; pointer-events: none; }
   .text.end { justify-content: flex-end; }
   .text .name { font-size: 12px; color: var(--element-neutral-color); }
   .reading { color: var(--element-active-color); font-variant-numeric: tabular-nums; }
