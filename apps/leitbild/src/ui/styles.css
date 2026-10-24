@@ -297,12 +297,12 @@ button:disabled { opacity: .55; cursor: wait; }
 
 @media (max-width: 760px) {
   main:not(.workspace-main) { padding-top: 2rem; }
-  .workspace-composer { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  /* Panes stack, one equal row per shown pane, so a lone World or chat takes the whole height. */
+  .workspace-composer { grid-template-columns: minmax(0, 1fr) !important; grid-auto-rows: minmax(0, 1fr); }
   .split-handle, .reopen-handle { display: none; }
   .module-pane.collapsed { display: block; }
   .module-pane.hidden-pane { display: none; }
   /* A maximised process display window takes the chat's row too. */
-  .workspace-composer.window-maximised { grid-template-rows: minmax(0, 1fr); }
   .workspace-composer.window-maximised .agents-pane { display: none; }
 }
 
