@@ -1,0 +1,269 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -4 100 63" width="1400" height="900"><rect x="-200" y="-200" width="600" height="600" fill="#f4f3ed"/><style>text{font-family:Arial,sans-serif;fill:#344349} .fine{stroke:#637175;stroke-width:.045;fill:none} .body{stroke:#2b454d;stroke-width:.09;fill:#c0d0d2} .wall{stroke:#25383d;stroke-width:.1;fill:#c2c5bf} .label{font-size:.62px;letter-spacing:.03px}</style>
+<g transform="translate(0.4 0.4) rotate(0)"><rect class="fine" x="0" y="0" width="88" height="36" fill="#e8e9e3"/></g>
+<g transform="translate(8.8 37.2) rotate(0)"><rect class="fine" x="0" y="0" width="32" height="16" fill="#e8e9e3"/></g>
+<g data-element-id="hall-north/lower" transform="translate(0 0) rotate(0)">
+<rect class="wall" x="0" y="0" width="74" height="0.4" />
+<rect class="wall" x="75.2" y="0" width="13.6" height="0.4" />
+</g>
+<g data-element-id="hall-west/lower" transform="translate(0.4 0.4) rotate(90)">
+<rect class="wall" x="0" y="0" width="23.6" height="0.4" />
+<rect class="wall" x="26" y="0" width="10" height="0.4" />
+</g>
+<g data-element-id="hall-east/lower" transform="translate(88.80000000000001 0.4) rotate(90)">
+<rect class="wall" x="0" y="0" width="25.6" height="0.4" />
+<rect class="wall" x="31.6" y="0" width="4.4" height="0.4" />
+</g>
+<g data-element-id="hall-south/lower" transform="translate(0 36.4) rotate(0)">
+<rect class="wall" x="0" y="0" width="12.4" height="0.4" />
+<rect class="wall" x="14.8" y="0" width="74" height="0.4" />
+</g>
+<g data-element-id="annex-north/lower" transform="translate(8.4 36.8) rotate(0)">
+<rect class="wall" x="0" y="0" width="4" height="0.4" />
+<rect class="wall" x="6.4" y="0" width="26.4" height="0.4" />
+</g>
+<g data-element-id="annex-west/lower" transform="translate(8.8 37.2) rotate(90)">
+<rect class="wall" x="0" y="0" width="4.6" height="0.4" />
+<rect class="wall" x="10.6" y="0" width="5.4" height="0.4" />
+</g>
+<g data-element-id="annex-east/lower" transform="translate(41.199999999999996 37.2) rotate(90)">
+<rect class="wall" x="0" y="0" width="16" height="0.4" />
+</g>
+<g data-element-id="annex-south/lower" transform="translate(8.4 53.2) rotate(0)">
+<rect class="wall" x="0" y="0" width="27.2" height="0.4" />
+<rect class="wall" x="29.6" y="0" width="3.2" height="0.4" />
+</g>
+<g data-element-id="D-N1/hall-north/lower/door" transform="translate(74 -0.01) rotate(0)"><path d="M 0 0 L 0 1.2 M 1.2 0 A 1.2 1.2 0 0 1 0 1.2" fill="none" stroke="#54666a" stroke-width=".065"/><path d="M 0 0 L 0 1.2" stroke="#31494e" stroke-width=".11"/></g>
+<g data-element-id="D-W1/hall-west/lower/door" transform="translate(0.4100000000000015 24) rotate(90)"><path d="M 0 0 L 0 2.4 M 2.4 0 A 2.4 2.4 0 0 1 0 2.4" fill="none" stroke="#54666a" stroke-width=".065"/><path d="M 0 0 L 0 2.4" stroke="#31494e" stroke-width=".11"/></g>
+<g data-element-id="D-E1/hall-east/lower/door" transform="translate(88.81000000000002 26) rotate(90)"><path d="M 0 0 L 0 6 M 6 0 A 6 6 0 0 1 0 6" fill="none" stroke="#54666a" stroke-width=".065"/><path d="M 0 0 L 0 6" stroke="#31494e" stroke-width=".11"/></g>
+<g data-element-id="D-P1/hall-south/lower/door" transform="translate(12.4 36.39) rotate(0)"><path d="M 0 0 L 0 2.4 M 2.4 0 A 2.4 2.4 0 0 1 0 2.4" fill="none" stroke="#54666a" stroke-width=".065"/><path d="M 0 0 L 0 2.4" stroke="#31494e" stroke-width=".11"/></g>
+<g data-element-id="D-P1b/annex-north/lower/door" transform="translate(12.4 36.79) rotate(0)"><path d="M 0 0 L 0 2.4 M 2.4 0 A 2.4 2.4 0 0 1 0 2.4" fill="none" stroke="#54666a" stroke-width=".065"/><path d="M 0 0 L 0 2.4" stroke="#31494e" stroke-width=".11"/></g>
+<g data-element-id="D-P2/annex-west/lower/door" transform="translate(8.81 41.800000000000004) rotate(90)"><path d="M 0 0 L 0 6 M 6 0 A 6 6 0 0 1 0 6" fill="none" stroke="#54666a" stroke-width=".065"/><path d="M 0 0 L 0 6" stroke="#31494e" stroke-width=".11"/></g>
+<g data-element-id="D-P3/annex-south/lower/door" transform="translate(35.6 53.190000000000005) rotate(0)"><path d="M 0 0 L 0 2.4 M 2.4 0 A 2.4 2.4 0 0 1 0 2.4" fill="none" stroke="#54666a" stroke-width=".065"/><path d="M 0 0 L 0 2.4" stroke="#31494e" stroke-width=".11"/></g>
+<g data-element-id="cp-a" transform="translate(55.5 19.2) rotate(0)">
+<rect class="fine" x="-0.18" y="-0.15" width="5.56" height="2.9" fill="#e0e4df"/>
+<path class="body" d="M .15 0.5980000000000001 Q 0.8840000000000001 -0.13 2.028 0.5980000000000001 L 2.028 2.0020000000000002 Q 0.8840000000000001 2.7300000000000004 .15 2.0020000000000002 Z"/>
+<rect class="body" x="2.86" y="0.338" width="2.34" height="1.924" />
+<path class="fine" d="M 3.068 0.23399999999999999 V 2.366"/>
+<path class="fine" d="M 3.318 0.23399999999999999 V 2.366"/>
+<path class="fine" d="M 3.568 0.23399999999999999 V 2.366"/>
+<path class="fine" d="M 3.818 0.23399999999999999 V 2.366"/>
+<path class="fine" d="M 4.068 0.23399999999999999 V 2.366"/>
+<path class="fine" d="M 4.318 0.23399999999999999 V 2.366"/>
+<path class="fine" d="M 4.568 0.23399999999999999 V 2.366"/>
+<path class="fine" d="M 4.818 0.23399999999999999 V 2.366"/>
+<rect class="fine" x="2.028" y="0.936" width="0.832" height="0.728" fill="#c8b990"/>
+<path class="fine" d="M 0.52 0 V 0.52 M 1.7680000000000002 2.6 V 2.08"/>
+<text class="label" x="2.6" y="3.6" text-anchor="middle">cp-a</text>
+</g>
+<g data-element-id="cp-b" transform="translate(63.5 24.2) rotate(0)">
+<rect class="fine" x="-0.18" y="-0.15" width="5.56" height="2.9" fill="#e0e4df"/>
+<path class="body" d="M .15 0.5980000000000001 Q 0.8840000000000001 -0.13 2.028 0.5980000000000001 L 2.028 2.0020000000000002 Q 0.8840000000000001 2.7300000000000004 .15 2.0020000000000002 Z"/>
+<rect class="body" x="2.86" y="0.338" width="2.34" height="1.924" />
+<path class="fine" d="M 3.068 0.23399999999999999 V 2.366"/>
+<path class="fine" d="M 3.318 0.23399999999999999 V 2.366"/>
+<path class="fine" d="M 3.568 0.23399999999999999 V 2.366"/>
+<path class="fine" d="M 3.818 0.23399999999999999 V 2.366"/>
+<path class="fine" d="M 4.068 0.23399999999999999 V 2.366"/>
+<path class="fine" d="M 4.318 0.23399999999999999 V 2.366"/>
+<path class="fine" d="M 4.568 0.23399999999999999 V 2.366"/>
+<path class="fine" d="M 4.818 0.23399999999999999 V 2.366"/>
+<rect class="fine" x="2.028" y="0.936" width="0.832" height="0.728" fill="#c8b990"/>
+<path class="fine" d="M 0.52 0 V 0.52 M 1.7680000000000002 2.6 V 2.08"/>
+<text class="label" x="2.6" y="3.6" text-anchor="middle">cp-b</text>
+</g>
+<g data-element-id="mfw-a" transform="translate(17 40.4) rotate(0)">
+<rect class="fine" x="-0.18" y="-0.15" width="12.36" height="3" fill="#e0e4df"/>
+<path class="body" d="M .15 0.6210000000000001 Q 2.04 -0.135 4.68 0.6210000000000001 L 4.68 2.079 Q 2.04 2.8350000000000004 .15 2.079 Z"/>
+<rect class="body" x="6.6" y="0.351" width="5.4" height="1.998" />
+<path class="fine" d="M 7.08 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 7.44 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 7.800000000000001 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 8.16 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 8.52 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 8.879999999999999 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 9.239999999999998 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 9.599999999999998 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 9.959999999999997 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 10.319999999999997 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 10.679999999999996 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 11.039999999999996 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 11.399999999999995 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 11.759999999999994 0.243 V 2.4570000000000003"/>
+<rect class="fine" x="4.68" y="0.972" width="1.92" height="0.756" fill="#c8b990"/>
+<path class="fine" d="M 1.2000000000000002 0 V 0.54 M 4.08 2.7 V 2.16"/>
+<text class="label" x="6" y="3.7" text-anchor="middle">mfw-a</text>
+</g>
+<g data-element-id="mfw-b" transform="translate(17 48.1) rotate(0)">
+<rect class="fine" x="-0.18" y="-0.15" width="12.36" height="3" fill="#e0e4df"/>
+<path class="body" d="M .15 0.6210000000000001 Q 2.04 -0.135 4.68 0.6210000000000001 L 4.68 2.079 Q 2.04 2.8350000000000004 .15 2.079 Z"/>
+<rect class="body" x="6.6" y="0.351" width="5.4" height="1.998" />
+<path class="fine" d="M 7.08 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 7.44 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 7.800000000000001 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 8.16 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 8.52 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 8.879999999999999 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 9.239999999999998 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 9.599999999999998 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 9.959999999999997 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 10.319999999999997 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 10.679999999999996 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 11.039999999999996 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 11.399999999999995 0.243 V 2.4570000000000003"/>
+<path class="fine" d="M 11.759999999999994 0.243 V 2.4570000000000003"/>
+<rect class="fine" x="4.68" y="0.972" width="1.92" height="0.756" fill="#c8b990"/>
+<path class="fine" d="M 1.2000000000000002 0 V 0.54 M 4.08 2.7 V 2.16"/>
+<text class="label" x="6" y="3.7" text-anchor="middle">mfw-b</text>
+</g>
+<g data-element-id="feedwater-route" transform="translate(0 0) rotate(0)">
+<polyline points="8.8,39.9 15.1,39.9 15.1,40.5 18.2,40.5" fill="none" stroke="#668f96" stroke-width="0.36"/>
+</g>
+<g data-element-id="cable-riser-route" transform="translate(0 0) rotate(0)">
+<polyline points="82,30 82,30 82,20" fill="none" stroke="#668f96" stroke-width="0.24"/>
+</g>
+<g data-element-id="condenser-1" transform="translate(20 10.5) rotate(0)">
+<rect class="body" x="0" y="0" width="9" height="15.8" />
+<rect class="fine" x="0.5" y="1.4" width="8" height="13" />
+<path class="fine" d="M .8 1.8 H 8.2"/>
+<path class="fine" d="M .8 2.5 H 8.2"/>
+<path class="fine" d="M .8 3.2 H 8.2"/>
+<path class="fine" d="M .8 3.9000000000000004 H 8.2"/>
+<path class="fine" d="M .8 4.6000000000000005 H 8.2"/>
+<path class="fine" d="M .8 5.300000000000001 H 8.2"/>
+<path class="fine" d="M .8 6.000000000000001 H 8.2"/>
+<path class="fine" d="M .8 6.700000000000001 H 8.2"/>
+<path class="fine" d="M .8 7.400000000000001 H 8.2"/>
+<path class="fine" d="M .8 8.100000000000001 H 8.2"/>
+<path class="fine" d="M .8 8.8 H 8.2"/>
+<path class="fine" d="M .8 9.5 H 8.2"/>
+<path class="fine" d="M .8 10.2 H 8.2"/>
+<path class="fine" d="M .8 10.899999999999999 H 8.2"/>
+<path class="fine" d="M .8 11.599999999999998 H 8.2"/>
+<path class="fine" d="M .8 12.299999999999997 H 8.2"/>
+<path class="fine" d="M .8 12.999999999999996 H 8.2"/>
+<path class="fine" d="M .8 13.699999999999996 H 8.2"/>
+<text class="label" x="4.5" y="16.8" text-anchor="middle">condenser-1</text>
+</g>
+<g data-element-id="condenser-2" transform="translate(31 10.5) rotate(0)">
+<rect class="body" x="0" y="0" width="9" height="15.8" />
+<rect class="fine" x="0.5" y="1.4" width="8" height="13" />
+<path class="fine" d="M .8 1.8 H 8.2"/>
+<path class="fine" d="M .8 2.5 H 8.2"/>
+<path class="fine" d="M .8 3.2 H 8.2"/>
+<path class="fine" d="M .8 3.9000000000000004 H 8.2"/>
+<path class="fine" d="M .8 4.6000000000000005 H 8.2"/>
+<path class="fine" d="M .8 5.300000000000001 H 8.2"/>
+<path class="fine" d="M .8 6.000000000000001 H 8.2"/>
+<path class="fine" d="M .8 6.700000000000001 H 8.2"/>
+<path class="fine" d="M .8 7.400000000000001 H 8.2"/>
+<path class="fine" d="M .8 8.100000000000001 H 8.2"/>
+<path class="fine" d="M .8 8.8 H 8.2"/>
+<path class="fine" d="M .8 9.5 H 8.2"/>
+<path class="fine" d="M .8 10.2 H 8.2"/>
+<path class="fine" d="M .8 10.899999999999999 H 8.2"/>
+<path class="fine" d="M .8 11.599999999999998 H 8.2"/>
+<path class="fine" d="M .8 12.299999999999997 H 8.2"/>
+<path class="fine" d="M .8 12.999999999999996 H 8.2"/>
+<path class="fine" d="M .8 13.699999999999996 H 8.2"/>
+<text class="label" x="4.5" y="16.8" text-anchor="middle">condenser-2</text>
+</g>
+<g data-element-id="condenser-3" transform="translate(42 10.5) rotate(0)">
+<rect class="body" x="0" y="0" width="9" height="15.8" />
+<rect class="fine" x="0.5" y="1.4" width="8" height="13" />
+<path class="fine" d="M .8 1.8 H 8.2"/>
+<path class="fine" d="M .8 2.5 H 8.2"/>
+<path class="fine" d="M .8 3.2 H 8.2"/>
+<path class="fine" d="M .8 3.9000000000000004 H 8.2"/>
+<path class="fine" d="M .8 4.6000000000000005 H 8.2"/>
+<path class="fine" d="M .8 5.300000000000001 H 8.2"/>
+<path class="fine" d="M .8 6.000000000000001 H 8.2"/>
+<path class="fine" d="M .8 6.700000000000001 H 8.2"/>
+<path class="fine" d="M .8 7.400000000000001 H 8.2"/>
+<path class="fine" d="M .8 8.100000000000001 H 8.2"/>
+<path class="fine" d="M .8 8.8 H 8.2"/>
+<path class="fine" d="M .8 9.5 H 8.2"/>
+<path class="fine" d="M .8 10.2 H 8.2"/>
+<path class="fine" d="M .8 10.899999999999999 H 8.2"/>
+<path class="fine" d="M .8 11.599999999999998 H 8.2"/>
+<path class="fine" d="M .8 12.299999999999997 H 8.2"/>
+<path class="fine" d="M .8 12.999999999999996 H 8.2"/>
+<path class="fine" d="M .8 13.699999999999996 H 8.2"/>
+<text class="label" x="4.5" y="16.8" text-anchor="middle">condenser-3</text>
+</g>
+<g data-element-id="stair-s1" transform="translate(3.6 27.4) rotate(0)">
+<rect class="fine" x="0" y="0" width="5.2" height="7.4" />
+<path class="fine" d="M .2 1.4 H 2.5 M 2.8000000000000003 1.4 H 5"/>
+<path class="fine" d="M .2 1.6875 H 2.5 M 2.8000000000000003 1.6875 H 5"/>
+<path class="fine" d="M .2 1.975 H 2.5 M 2.8000000000000003 1.975 H 5"/>
+<path class="fine" d="M .2 2.2625 H 2.5 M 2.8000000000000003 2.2625 H 5"/>
+<path class="fine" d="M .2 2.5500000000000003 H 2.5 M 2.8000000000000003 2.5500000000000003 H 5"/>
+<path class="fine" d="M .2 2.8375000000000004 H 2.5 M 2.8000000000000003 2.8375000000000004 H 5"/>
+<path class="fine" d="M .2 3.1250000000000004 H 2.5 M 2.8000000000000003 3.1250000000000004 H 5"/>
+<path class="fine" d="M .2 3.4125000000000005 H 2.5 M 2.8000000000000003 3.4125000000000005 H 5"/>
+<path class="fine" d="M .2 3.7000000000000006 H 2.5 M 2.8000000000000003 3.7000000000000006 H 5"/>
+<path class="fine" d="M .2 3.9875000000000007 H 2.5 M 2.8000000000000003 3.9875000000000007 H 5"/>
+<path class="fine" d="M .2 4.275 H 2.5 M 2.8000000000000003 4.275 H 5"/>
+<path class="fine" d="M .2 4.5625 H 2.5 M 2.8000000000000003 4.5625 H 5"/>
+<path class="fine" d="M .2 4.85 H 2.5 M 2.8000000000000003 4.85 H 5"/>
+<path class="fine" d="M .2 5.137499999999999 H 2.5 M 2.8000000000000003 5.137499999999999 H 5"/>
+<path class="fine" d="M .2 5.424999999999999 H 2.5 M 2.8000000000000003 5.424999999999999 H 5"/>
+<path class="fine" d="M .2 5.712499999999999 H 2.5 M 2.8000000000000003 5.712499999999999 H 5"/>
+<path class="fine" d="M .2 5.999999999999998 H 2.5 M 2.8000000000000003 5.999999999999998 H 5"/>
+<path class="fine" d="M 1.3 6.4 V 1 L 1 1.5 M 1.3 1 L 1.6 1.5"/>
+</g>
+<g data-element-id="column-0-0" transform="translate(0 0) rotate(0)">
+<rect class="wall" x="0" y="0" width="0.8" height="0.8" />
+</g>
+<g data-element-id="column-0-36" transform="translate(0 36) rotate(0)">
+<rect class="wall" x="0" y="0" width="0.8" height="0.8" />
+</g>
+<g data-element-id="column-1-0" transform="translate(11 0) rotate(0)">
+<rect class="wall" x="0" y="0" width="0.8" height="0.8" />
+</g>
+<g data-element-id="column-1-36" transform="translate(11 36) rotate(0)">
+<rect class="wall" x="0" y="0" width="0.8" height="0.8" />
+</g>
+<g data-element-id="column-2-0" transform="translate(22 0) rotate(0)">
+<rect class="wall" x="0" y="0" width="0.8" height="0.8" />
+</g>
+<g data-element-id="column-2-36" transform="translate(22 36) rotate(0)">
+<rect class="wall" x="0" y="0" width="0.8" height="0.8" />
+</g>
+<g data-element-id="column-3-0" transform="translate(33 0) rotate(0)">
+<rect class="wall" x="0" y="0" width="0.8" height="0.8" />
+</g>
+<g data-element-id="column-3-36" transform="translate(33 36) rotate(0)">
+<rect class="wall" x="0" y="0" width="0.8" height="0.8" />
+</g>
+<g data-element-id="column-4-0" transform="translate(44 0) rotate(0)">
+<rect class="wall" x="0" y="0" width="0.8" height="0.8" />
+</g>
+<g data-element-id="column-4-36" transform="translate(44 36) rotate(0)">
+<rect class="wall" x="0" y="0" width="0.8" height="0.8" />
+</g>
+<g data-element-id="column-5-0" transform="translate(55 0) rotate(0)">
+<rect class="wall" x="0" y="0" width="0.8" height="0.8" />
+</g>
+<g data-element-id="column-5-36" transform="translate(55 36) rotate(0)">
+<rect class="wall" x="0" y="0" width="0.8" height="0.8" />
+</g>
+<g data-element-id="column-6-0" transform="translate(66 0) rotate(0)">
+<rect class="wall" x="0" y="0" width="0.8" height="0.8" />
+</g>
+<g data-element-id="column-6-36" transform="translate(66 36) rotate(0)">
+<rect class="wall" x="0" y="0" width="0.8" height="0.8" />
+</g>
+<g data-element-id="column-7-0" transform="translate(77 0) rotate(0)">
+<rect class="wall" x="0" y="0" width="0.8" height="0.8" />
+</g>
+<g data-element-id="column-7-36" transform="translate(77 36) rotate(0)">
+<rect class="wall" x="0" y="0" width="0.8" height="0.8" />
+</g>
+<g data-element-id="column-8-0" transform="translate(88 0) rotate(0)">
+<rect class="wall" x="0" y="0" width="0.8" height="0.8" />
+</g>
+<g data-element-id="column-8-36" transform="translate(88 36) rotate(0)">
+<rect class="wall" x="0" y="0" width="0.8" height="0.8" />
+</g>
+<text x="0" y="-1.8" font-size="1.05">CONDENSER / FEEDWATER DECK · +0.000 m</text><text x="23" y="8" font-size="1.1">TURBINE HALL</text><text x="21" y="39" font-size=".9">FEEDWATER PUMP ROOM</text><path d="M 0 56 H 10 M 0 55.7 V 56.3 M 5 55.7 V 56.3 M 10 55.7 V 56.3" stroke="#344349" stroke-width=".1"/><text x="0" y="57.5" font-size=".65">0              5             10 m</text><text x="24" y="57.5" font-size=".6">Illustrative geometry · saved IFC source · no engineering qualification</text>
+</svg>

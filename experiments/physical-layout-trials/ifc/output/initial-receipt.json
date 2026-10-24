@@ -1,0 +1,1176 @@
+{
+  "candidate": "IFC4X3_ADD2-authority",
+  "completedAt": "2026-10-24T18:23:40.528Z",
+  "durationMs": 20562.948458,
+  "runtime": {
+    "bun": "1.4.0",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "requirements": {
+    "id": "independent-height-requirement",
+    "revision": "requirements-1",
+    "maxClearHeightM": 9
+  },
+  "sourceBytes": 1239038,
+  "sourceSha256": "979c6c355182022c598118963c9c4e10c3f8dcd3f4bbee70720fa239f257a864",
+  "checks": [
+    {
+      "id": "F1-identities",
+      "status": "passed",
+      "evidence": {
+        "occurrences": 16,
+        "uniqueOperationalSubjects": [
+          "condensatePumpA",
+          "condensatePumpB",
+          "mainFeedwaterPumpA",
+          "mainFeedwaterPumpB",
+          "turbine",
+          "turbineStopValve",
+          "condenser"
+        ],
+        "native": {
+          "IfcProject": 1,
+          "IfcSite": 1,
+          "IfcBuildingStorey": 3,
+          "IfcWall": 13,
+          "IfcPump": 4,
+          "IfcDistributionPort": 8,
+          "IfcRelVoidsElement": 16,
+          "IfcRelFillsElement": 8,
+          "IfcRelSpaceBoundary": 12,
+          "IfcRelDefinesByType": 16,
+          "IfcRelContainedInSpatialStructure": 3,
+          "IfcTriangulatedFaceSet": 100
+        }
+      }
+    },
+    {
+      "id": "F1-shaped-machinery",
+      "status": "passed",
+      "evidence": {
+        "pumpTriangles": 2960
+      }
+    },
+    {
+      "id": "edit-door",
+      "status": "passed",
+      "evidence": {
+        "kind": "add-door",
+        "beforeSha": "979c6c355182022c598118963c9c4e10c3f8dcd3f4bbee70720fa239f257a864",
+        "afterSha": "3c3235d6fc4c9026ef0e6343ccba78d5480aa18fe9655a91ba5d69795ffccfd4",
+        "beforeRevision": "physical-1",
+        "afterRevision": "physical-8ac419fd560d",
+        "intended": [
+          "access-door",
+          "access-opening",
+          "edit-wall"
+        ],
+        "actual": [
+          "access-door",
+          "access-opening",
+          "edit-wall"
+        ],
+        "unchangedIdentityCount": 91,
+        "studyApplicability": "old results retained against old source; stale for new design",
+        "impacts": [
+          "Access/portal applicability needs review; fire/egress classification not inferred"
+        ],
+        "interfacesBefore": [],
+        "interfacesAfter": []
+      }
+    },
+    {
+      "id": "edit-roof",
+      "status": "passed",
+      "evidence": {
+        "kind": "raise-roof",
+        "beforeSha": "979c6c355182022c598118963c9c4e10c3f8dcd3f4bbee70720fa239f257a864",
+        "afterSha": "46ca3e37fe1ce0e4ff0caf79b772947aea56c2a0af22e726a6e835beb63c0467",
+        "beforeRevision": "physical-1",
+        "afterRevision": "physical-8eb30d5d3b46",
+        "intended": [
+          "edit-roof",
+          "edit-space-a",
+          "edit-space-b",
+          "edit-wall"
+        ],
+        "actual": [
+          "edit-roof",
+          "edit-space-a",
+          "edit-space-b",
+          "edit-wall"
+        ],
+        "unchangedIdentityCount": 88,
+        "studyApplicability": "old results retained against old source; stale for new design",
+        "impacts": [
+          "Crane/beam/handling headroom requires evidence; roof-only does not move deck, crane or pumps"
+        ],
+        "interfacesBefore": [],
+        "interfacesAfter": []
+      }
+    },
+    {
+      "id": "edit-deck",
+      "status": "passed",
+      "evidence": {
+        "kind": "raise-deck",
+        "beforeSha": "979c6c355182022c598118963c9c4e10c3f8dcd3f4bbee70720fa239f257a864",
+        "afterSha": "391866f5fee1b1006bf03639a87e557cd0ed81b06af2b8cf25d278b32a3171ff",
+        "beforeRevision": "physical-1",
+        "afterRevision": "physical-fcb3954fe656",
+        "intended": [
+          "edit-deck",
+          "edit-landing",
+          "edit-riser",
+          "edit-stair",
+          "edit-support"
+        ],
+        "actual": [
+          "edit-deck",
+          "edit-landing",
+          "edit-riser",
+          "edit-stair",
+          "edit-support"
+        ],
+        "unchangedIdentityCount": 87,
+        "studyApplicability": "old results retained against old source; stale for new design",
+        "impacts": [
+          "Enumerated stair/landing/riser/support dependency set only; arbitrary structure propagation unsupported"
+        ],
+        "interfacesBefore": [],
+        "interfacesAfter": []
+      }
+    },
+    {
+      "id": "edit-pump-type",
+      "status": "passed",
+      "evidence": {
+        "kind": "pump-type",
+        "beforeSha": "979c6c355182022c598118963c9c4e10c3f8dcd3f4bbee70720fa239f257a864",
+        "afterSha": "476ae2e232e6bef54dc261be893e68d150ddf82e13425d44ff8b66b0fbcc2bce",
+        "beforeRevision": "physical-1",
+        "afterRevision": "physical-a4ceafb7cc2b",
+        "intended": [
+          "mfw-a",
+          "mfw-b"
+        ],
+        "actual": [
+          "mfw-a",
+          "mfw-b"
+        ],
+        "unchangedIdentityCount": 90,
+        "studyApplicability": "old results retained against old source; stale for new design",
+        "impacts": [
+          "Physical nozzle/service-envelope changes; routes stale, no numerical retuning"
+        ],
+        "interfacesBefore": [
+          {
+            "id": "mfw-a/inlet",
+            "position": [
+              18.2,
+              40.4,
+              1.768
+            ],
+            "direction": [
+              0,
+              -1,
+              0
+            ]
+          },
+          {
+            "id": "mfw-a/outlet",
+            "position": [
+              21.08,
+              43.1,
+              1.768
+            ],
+            "direction": [
+              0,
+              1,
+              0
+            ]
+          },
+          {
+            "id": "mfw-b/inlet",
+            "position": [
+              18.2,
+              48.1,
+              1.768
+            ],
+            "direction": [
+              0,
+              -1,
+              0
+            ]
+          },
+          {
+            "id": "mfw-b/outlet",
+            "position": [
+              21.08,
+              50.800000000000004,
+              1.768
+            ],
+            "direction": [
+              0,
+              1,
+              0
+            ]
+          }
+        ],
+        "interfacesAfter": [
+          {
+            "id": "mfw-a/inlet",
+            "position": [
+              18.32,
+              40.4,
+              1.768
+            ],
+            "direction": [
+              0,
+              -1,
+              0
+            ]
+          },
+          {
+            "id": "mfw-a/outlet",
+            "position": [
+              21.488,
+              43.1,
+              1.768
+            ],
+            "direction": [
+              0,
+              1,
+              0
+            ]
+          },
+          {
+            "id": "mfw-b/inlet",
+            "position": [
+              18.32,
+              48.1,
+              1.768
+            ],
+            "direction": [
+              0,
+              -1,
+              0
+            ]
+          },
+          {
+            "id": "mfw-b/outlet",
+            "position": [
+              21.488,
+              50.800000000000004,
+              1.768
+            ],
+            "direction": [
+              0,
+              1,
+              0
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "edit-pump-variant",
+      "status": "passed",
+      "evidence": {
+        "kind": "pump-variant",
+        "beforeSha": "979c6c355182022c598118963c9c4e10c3f8dcd3f4bbee70720fa239f257a864",
+        "afterSha": "39941bf8e55760fb9cda106f9e6ca2a2a9622a40d2ea4fe02b68ddac89f46589",
+        "beforeRevision": "physical-1",
+        "afterRevision": "physical-b70fa1e5cb93",
+        "intended": [
+          "mfw-a"
+        ],
+        "actual": [
+          "mfw-a"
+        ],
+        "unchangedIdentityCount": 91,
+        "studyApplicability": "old results retained against old source; stale for new design",
+        "impacts": [
+          "A-only override; inherited B dimensions preserved"
+        ],
+        "interfacesBefore": [
+          {
+            "id": "mfw-a/inlet",
+            "position": [
+              18.2,
+              40.4,
+              1.768
+            ],
+            "direction": [
+              0,
+              -1,
+              0
+            ]
+          },
+          {
+            "id": "mfw-a/outlet",
+            "position": [
+              21.08,
+              43.1,
+              1.768
+            ],
+            "direction": [
+              0,
+              1,
+              0
+            ]
+          }
+        ],
+        "interfacesAfter": [
+          {
+            "id": "mfw-a/inlet",
+            "position": [
+              18.25,
+              40.4,
+              1.768
+            ],
+            "direction": [
+              0,
+              -1,
+              0
+            ]
+          },
+          {
+            "id": "mfw-a/outlet",
+            "position": [
+              21.25,
+              43.1,
+              1.768
+            ],
+            "direction": [
+              0,
+              1,
+              0
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "edit-move-pump",
+      "status": "passed",
+      "evidence": {
+        "kind": "move-pump",
+        "beforeSha": "979c6c355182022c598118963c9c4e10c3f8dcd3f4bbee70720fa239f257a864",
+        "afterSha": "4cda870921937e2dcfc0897e2eeb7a1ad2d97929dc272c05b86accb5d7c2d262",
+        "beforeRevision": "physical-1",
+        "afterRevision": "physical-965a77fdee11",
+        "intended": [
+          "mfw-a"
+        ],
+        "actual": [
+          "mfw-a"
+        ],
+        "unchangedIdentityCount": 91,
+        "studyApplicability": "old results retained against old source; stale for new design",
+        "impacts": [
+          "Nozzle/interface/envelope moved; routing/support/access studies stale, graph parameters preserved"
+        ],
+        "interfacesBefore": [
+          {
+            "id": "mfw-a/inlet",
+            "position": [
+              18.2,
+              40.4,
+              1.768
+            ],
+            "direction": [
+              0,
+              -1,
+              0
+            ]
+          },
+          {
+            "id": "mfw-a/outlet",
+            "position": [
+              21.08,
+              43.1,
+              1.768
+            ],
+            "direction": [
+              0,
+              1,
+              0
+            ]
+          }
+        ],
+        "interfacesAfter": [
+          {
+            "id": "mfw-a/inlet",
+            "position": [
+              20.2,
+              40.4,
+              1.768
+            ],
+            "direction": [
+              0,
+              -1,
+              0
+            ]
+          },
+          {
+            "id": "mfw-a/outlet",
+            "position": [
+              23.08,
+              43.1,
+              1.768
+            ],
+            "direction": [
+              0,
+              1,
+              0
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "rotated-door-native-void",
+      "status": "passed",
+      "evidence": {
+        "doorRayHits": 0,
+        "solidWallRayHits": 2,
+        "wallYawDegrees": 29.999999999999996,
+        "openingPosition": [
+          116.06717782649108,
+          3.491339745962155,
+          0
+        ],
+        "doorFills": "access-opening",
+        "adjacent": [
+          "edit-space-a",
+          "edit-space-b"
+        ],
+        "native": {
+          "IfcProject": 1,
+          "IfcSite": 1,
+          "IfcBuildingStorey": 3,
+          "IfcWall": 13,
+          "IfcPump": 4,
+          "IfcDistributionPort": 8,
+          "IfcRelVoidsElement": 17,
+          "IfcRelFillsElement": 9,
+          "IfcRelSpaceBoundary": 14,
+          "IfcRelDefinesByType": 16,
+          "IfcRelContainedInSpatialStructure": 3,
+          "IfcTriangulatedFaceSet": 102
+        }
+      }
+    },
+    {
+      "id": "roof-preserves-deck-pump-vessel",
+      "status": "passed",
+      "evidence": {
+        "unmoved": [
+          "edit-deck",
+          "mfw-a",
+          "fixed-vessel"
+        ]
+      }
+    },
+    {
+      "id": "type-and-variant-generative",
+      "status": "passed",
+      "evidence": {
+        "typePortBefore": [
+          {
+            "id": "mfw-b/inlet",
+            "position": [
+              18.2,
+              48.1,
+              1.768
+            ],
+            "direction": [
+              0,
+              -1,
+              0
+            ]
+          },
+          {
+            "id": "mfw-b/outlet",
+            "position": [
+              21.08,
+              50.800000000000004,
+              1.768
+            ],
+            "direction": [
+              0,
+              1,
+              0
+            ]
+          }
+        ],
+        "typePortAfter": [
+          {
+            "id": "mfw-b/inlet",
+            "position": [
+              18.32,
+              48.1,
+              1.768
+            ],
+            "direction": [
+              0,
+              -1,
+              0
+            ]
+          },
+          {
+            "id": "mfw-b/outlet",
+            "position": [
+              21.488,
+              50.800000000000004,
+              1.768
+            ],
+            "direction": [
+              0,
+              1,
+              0
+            ]
+          }
+        ],
+        "envelopes": [
+          {
+            "role": "ServiceEnvelope",
+            "bodyHash": "8e0ec1378e640a81d083886b1b21c0babde91ab22258b4730fe887e242615ffe",
+            "evidence": "authored allowance, not OEM-qualified"
+          },
+          {
+            "role": "RemovalEnvelope",
+            "bodyHash": "ea9916c507bd3f6303ed48d699b943b4ff0c640080c70f26baabec3750e14e28",
+            "evidence": "generated proxy; rigging/support facts unknown"
+          }
+        ]
+      }
+    },
+    {
+      "id": "composition-identity",
+      "status": "passed",
+      "evidence": {
+        "unitPumpSubjects": [
+          {
+            "id": "unit-a/mfw-a",
+            "member": "unit-a",
+            "component": "mainFeedwaterPumpA",
+            "position": [
+              17,
+              40.4,
+              0
+            ]
+          },
+          {
+            "id": "unit-b/mfw-a",
+            "member": "unit-b",
+            "component": "mainFeedwaterPumpA",
+            "position": [
+              177,
+              40.4,
+              0
+            ]
+          }
+        ],
+        "directSite": [
+          "shared-yard",
+          "shared-transformer",
+          "first-support"
+        ],
+        "firstSupportCircuits": "circuit-a|circuit-b",
+        "independentRuntimeKeys": [
+          "composed-site/instance-a/unit-a/mfw-a",
+          "composed-site/instance-b/unit-a/mfw-a"
+        ],
+        "globalIds": 183
+      }
+    },
+    {
+      "id": "reject-stale-base",
+      "status": "passed",
+      "evidence": {
+        "refusal": "Error: EXPECTED_BASE_CONFLICT"
+      }
+    },
+    {
+      "id": "reject-collateral",
+      "status": "passed",
+      "evidence": {
+        "refusal": "Error: COLLATERAL_CHANGE:fixed-vessel,mfw-a"
+      }
+    },
+    {
+      "id": "reject-unsupported-dependency",
+      "status": "passed",
+      "evidence": {
+        "refusal": "Error: UNSUPPORTED_DECK_DEPENDENCY"
+      }
+    },
+    {
+      "id": "reject-independent-height",
+      "status": "passed",
+      "evidence": {
+        "refusal": "Error: INDEPENDENT_HEIGHT_LIMIT"
+      }
+    },
+    {
+      "id": "reject-stale-model",
+      "status": "passed",
+      "evidence": {
+        "refusal": "Error: STALE_MODEL_BINDING"
+      }
+    },
+    {
+      "id": "reject-stale-study",
+      "status": "passed",
+      "evidence": {
+        "refusal": "Error: STALE_STUDY_BASELINE"
+      }
+    },
+    {
+      "id": "reject-inconsistent-param-body",
+      "status": "passed",
+      "evidence": {
+        "refusal": "Error: PORT_PARAMETER_MISMATCH"
+      }
+    },
+    {
+      "id": "import-retain-phase-a.ifc",
+      "status": "passed",
+      "evidence": {
+        "sha256": "4ab0c69b4ebc642af26019c81c1c1abada089b6bc690e06fad93f7f69b2eac9d",
+        "facts": {
+          "IfcRoot": 80,
+          "IfcPump": 2,
+          "IfcTank": 1,
+          "IfcWall": 1,
+          "IfcDoor": 0,
+          "IfcOpeningElement": 1,
+          "IfcDistributionPort": 1,
+          "IfcRelVoidsElement": 1,
+          "IfcRelFillsElement": 0,
+          "IfcShapeAspect": 18
+        },
+        "native": {
+          "meshes": 12,
+          "triangles": 568,
+          "nativeBounds": [
+            0,
+            -4.300000005960464,
+            -16,
+            20,
+            3.5,
+            0
+          ],
+          "meshFactsSha256": "eeb95c95a370078eadf50a494879fb37f9fdfef9678f259cbc08cf3d96ad477f"
+        },
+        "editability": "read-only retained raw IFC; no trial family parameters; no claim to recover construction history"
+      }
+    },
+    {
+      "id": "reject-edit-import-phase-a.ifc",
+      "status": "failed",
+      "evidence": {
+        "refusal": "Error: UNSUPPORTED_PROFILE_PROPERTYSET"
+      }
+    },
+    {
+      "id": "import-retain-phase-a-edited.ifc",
+      "status": "passed",
+      "evidence": {
+        "sha256": "4b1091fcc3b33ab57180f1a926971f31f074f397d000a76433fed628e08479c5",
+        "facts": {
+          "IfcRoot": 80,
+          "IfcPump": 2,
+          "IfcTank": 1,
+          "IfcWall": 1,
+          "IfcDoor": 0,
+          "IfcOpeningElement": 1,
+          "IfcDistributionPort": 1,
+          "IfcRelVoidsElement": 1,
+          "IfcRelFillsElement": 0,
+          "IfcShapeAspect": 18
+        },
+        "native": {
+          "meshes": 12,
+          "triangles": 568,
+          "nativeBounds": [
+            0,
+            -4.300000005960464,
+            -16,
+            20,
+            3.5,
+            0
+          ],
+          "meshFactsSha256": "41487f15255389c6d0e82dcdae9c18d4a91397a0f4cb999fba77571813440fba"
+        },
+        "editability": "read-only retained raw IFC; no trial family parameters; no claim to recover construction history"
+      }
+    },
+    {
+      "id": "reject-edit-import-phase-a-edited.ifc",
+      "status": "failed",
+      "evidence": {
+        "refusal": "Error: UNSUPPORTED_PROFILE_PROPERTYSET"
+      }
+    },
+    {
+      "id": "import-retain-unsupported-content.ifc",
+      "status": "passed",
+      "evidence": {
+        "sha256": "b816e8ddd2474db0592216ad6d56454073eec315e8acd47a9b7c0a72b2123028",
+        "facts": {
+          "IfcRoot": 81,
+          "IfcPump": 2,
+          "IfcTank": 1,
+          "IfcWall": 1,
+          "IfcDoor": 0,
+          "IfcOpeningElement": 1,
+          "IfcDistributionPort": 1,
+          "IfcRelVoidsElement": 1,
+          "IfcRelFillsElement": 0,
+          "IfcShapeAspect": 18
+        },
+        "native": {
+          "meshes": 13,
+          "triangles": 604,
+          "nativeBounds": [
+            0,
+            -4.300000005960464,
+            -16,
+            20,
+            3.5,
+            0
+          ],
+          "meshFactsSha256": "89171674787ac6fa731421624fc642247511bfb841a12b5dae4c2101aaf6659b"
+        },
+        "editability": "read-only retained raw IFC; no trial family parameters; no claim to recover construction history"
+      }
+    },
+    {
+      "id": "reject-edit-import-unsupported-content.ifc",
+      "status": "failed",
+      "evidence": {
+        "refusal": "Error: UNSUPPORTED_PROFILE_PROPERTYSET"
+      }
+    },
+    {
+      "id": "source-only-fresh-process",
+      "status": "passed",
+      "evidence": {
+        "stdout": "{\n  \"objects\": 71,\n  \"triangles\": 30256,\n  \"sceneBytes\": 958795,\n  \"nativeEntityCounts\": {\n    \"IfcProject\": 1,\n    \"IfcSite\": 1,\n    \"IfcBuildingStorey\": 3,\n    \"IfcWall\": 13,\n    \"IfcPump\": 4,\n    \"IfcDistributionPort\": 8,\n    \"IfcRelVoidsElement\": 16,\n    \"IfcRelFillsElement\": 8,\n    \"IfcRelSpaceBoundary\": 12,\n    \"IfcRelDefinesByType\": 16,\n    \"IfcRelContainedInSpatialStructure\": 3,\n    \"IfcTriangulatedFaceSet\": 100\n  }\n}\n",
+        "stderr": "",
+        "code": 0,
+        "sceneSha256": "fa51fec154e53e9576ca2ddfe1d2186bc63fc70a88339668a310839846644dcc",
+        "fixtureImportedByRebuilder": false
+      }
+    }
+  ],
+  "passed": 23,
+  "failed": 3,
+  "timings": {
+    "authorSaveMs": 1165.745625,
+    "reopenParseTessellateMs": 250.33424999999988,
+    "baselineDeliveryMs": 267.600584,
+    "doorEditSaveReopenMs": 1871.2992090000002,
+    "roofEditSaveReopenMs": 1793.3085420000002,
+    "deckEditSaveReopenMs": 1850.1594160000004,
+    "pump-typeEditSaveReopenMs": 1845.46825,
+    "pump-variantEditSaveReopenMs": 1898.2117080000007,
+    "move-pumpEditSaveReopenMs": 1771.0294589999994,
+    "freshProcessRebuildMs": 374.6254999999983
+  },
+  "processPeakRssBytes": 1008877568,
+  "dependency": {
+    "name": "web-ifc",
+    "version": "0.0.78",
+    "placement": "offline experiment build/authoring only; not browser/runtime",
+    "license": "MPL-2.0",
+    "addedProductionDependencies": 0
+  },
+  "maintainedCode": {
+    "files": [
+      "rebuild.ts",
+      "model.ts",
+      "edit.ts",
+      "ifc.ts",
+      "trial.ts",
+      "delivery.ts",
+      "fixture.ts"
+    ],
+    "bytes": 62136,
+    "responsibilities": [
+      "IFC profile writer/parser and native relation validation",
+      "finite parametric family/mesh generation",
+      "typed edit/admission and collateral diff",
+      "architectural vector plan and delivery",
+      "import preservation inspection",
+      "fixtures/tests"
+    ]
+  },
+  "gateLimits": [
+    "Independent browser visual/style review pending coordinator; SVG validity and triangle count are not visual acceptance",
+    "No general IFC geometry editing or recovery of imported family history",
+    "F4 preserves raw read-only imports and inspects native tessellation; no arbitrary IFC conversion claimed",
+    "Task envelopes are illustrative dimensional derivatives, not outage clearance qualification",
+    "Standalone authoring trial; no World Pack/Run/live telemetry integration"
+  ],
+  "edits": [
+    {
+      "kind": "add-door",
+      "beforeSha": "979c6c355182022c598118963c9c4e10c3f8dcd3f4bbee70720fa239f257a864",
+      "afterSha": "3c3235d6fc4c9026ef0e6343ccba78d5480aa18fe9655a91ba5d69795ffccfd4",
+      "beforeRevision": "physical-1",
+      "afterRevision": "physical-8ac419fd560d",
+      "intended": [
+        "access-door",
+        "access-opening",
+        "edit-wall"
+      ],
+      "actual": [
+        "access-door",
+        "access-opening",
+        "edit-wall"
+      ],
+      "unchangedIdentityCount": 91,
+      "studyApplicability": "old results retained against old source; stale for new design",
+      "impacts": [
+        "Access/portal applicability needs review; fire/egress classification not inferred"
+      ],
+      "interfacesBefore": [],
+      "interfacesAfter": []
+    },
+    {
+      "kind": "raise-roof",
+      "beforeSha": "979c6c355182022c598118963c9c4e10c3f8dcd3f4bbee70720fa239f257a864",
+      "afterSha": "46ca3e37fe1ce0e4ff0caf79b772947aea56c2a0af22e726a6e835beb63c0467",
+      "beforeRevision": "physical-1",
+      "afterRevision": "physical-8eb30d5d3b46",
+      "intended": [
+        "edit-roof",
+        "edit-space-a",
+        "edit-space-b",
+        "edit-wall"
+      ],
+      "actual": [
+        "edit-roof",
+        "edit-space-a",
+        "edit-space-b",
+        "edit-wall"
+      ],
+      "unchangedIdentityCount": 88,
+      "studyApplicability": "old results retained against old source; stale for new design",
+      "impacts": [
+        "Crane/beam/handling headroom requires evidence; roof-only does not move deck, crane or pumps"
+      ],
+      "interfacesBefore": [],
+      "interfacesAfter": []
+    },
+    {
+      "kind": "raise-deck",
+      "beforeSha": "979c6c355182022c598118963c9c4e10c3f8dcd3f4bbee70720fa239f257a864",
+      "afterSha": "391866f5fee1b1006bf03639a87e557cd0ed81b06af2b8cf25d278b32a3171ff",
+      "beforeRevision": "physical-1",
+      "afterRevision": "physical-fcb3954fe656",
+      "intended": [
+        "edit-deck",
+        "edit-landing",
+        "edit-riser",
+        "edit-stair",
+        "edit-support"
+      ],
+      "actual": [
+        "edit-deck",
+        "edit-landing",
+        "edit-riser",
+        "edit-stair",
+        "edit-support"
+      ],
+      "unchangedIdentityCount": 87,
+      "studyApplicability": "old results retained against old source; stale for new design",
+      "impacts": [
+        "Enumerated stair/landing/riser/support dependency set only; arbitrary structure propagation unsupported"
+      ],
+      "interfacesBefore": [],
+      "interfacesAfter": []
+    },
+    {
+      "kind": "pump-type",
+      "beforeSha": "979c6c355182022c598118963c9c4e10c3f8dcd3f4bbee70720fa239f257a864",
+      "afterSha": "476ae2e232e6bef54dc261be893e68d150ddf82e13425d44ff8b66b0fbcc2bce",
+      "beforeRevision": "physical-1",
+      "afterRevision": "physical-a4ceafb7cc2b",
+      "intended": [
+        "mfw-a",
+        "mfw-b"
+      ],
+      "actual": [
+        "mfw-a",
+        "mfw-b"
+      ],
+      "unchangedIdentityCount": 90,
+      "studyApplicability": "old results retained against old source; stale for new design",
+      "impacts": [
+        "Physical nozzle/service-envelope changes; routes stale, no numerical retuning"
+      ],
+      "interfacesBefore": [
+        {
+          "id": "mfw-a/inlet",
+          "position": [
+            18.2,
+            40.4,
+            1.768
+          ],
+          "direction": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "id": "mfw-a/outlet",
+          "position": [
+            21.08,
+            43.1,
+            1.768
+          ],
+          "direction": [
+            0,
+            1,
+            0
+          ]
+        },
+        {
+          "id": "mfw-b/inlet",
+          "position": [
+            18.2,
+            48.1,
+            1.768
+          ],
+          "direction": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "id": "mfw-b/outlet",
+          "position": [
+            21.08,
+            50.800000000000004,
+            1.768
+          ],
+          "direction": [
+            0,
+            1,
+            0
+          ]
+        }
+      ],
+      "interfacesAfter": [
+        {
+          "id": "mfw-a/inlet",
+          "position": [
+            18.32,
+            40.4,
+            1.768
+          ],
+          "direction": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "id": "mfw-a/outlet",
+          "position": [
+            21.488,
+            43.1,
+            1.768
+          ],
+          "direction": [
+            0,
+            1,
+            0
+          ]
+        },
+        {
+          "id": "mfw-b/inlet",
+          "position": [
+            18.32,
+            48.1,
+            1.768
+          ],
+          "direction": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "id": "mfw-b/outlet",
+          "position": [
+            21.488,
+            50.800000000000004,
+            1.768
+          ],
+          "direction": [
+            0,
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "pump-variant",
+      "beforeSha": "979c6c355182022c598118963c9c4e10c3f8dcd3f4bbee70720fa239f257a864",
+      "afterSha": "39941bf8e55760fb9cda106f9e6ca2a2a9622a40d2ea4fe02b68ddac89f46589",
+      "beforeRevision": "physical-1",
+      "afterRevision": "physical-b70fa1e5cb93",
+      "intended": [
+        "mfw-a"
+      ],
+      "actual": [
+        "mfw-a"
+      ],
+      "unchangedIdentityCount": 91,
+      "studyApplicability": "old results retained against old source; stale for new design",
+      "impacts": [
+        "A-only override; inherited B dimensions preserved"
+      ],
+      "interfacesBefore": [
+        {
+          "id": "mfw-a/inlet",
+          "position": [
+            18.2,
+            40.4,
+            1.768
+          ],
+          "direction": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "id": "mfw-a/outlet",
+          "position": [
+            21.08,
+            43.1,
+            1.768
+          ],
+          "direction": [
+            0,
+            1,
+            0
+          ]
+        }
+      ],
+      "interfacesAfter": [
+        {
+          "id": "mfw-a/inlet",
+          "position": [
+            18.25,
+            40.4,
+            1.768
+          ],
+          "direction": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "id": "mfw-a/outlet",
+          "position": [
+            21.25,
+            43.1,
+            1.768
+          ],
+          "direction": [
+            0,
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "move-pump",
+      "beforeSha": "979c6c355182022c598118963c9c4e10c3f8dcd3f4bbee70720fa239f257a864",
+      "afterSha": "4cda870921937e2dcfc0897e2eeb7a1ad2d97929dc272c05b86accb5d7c2d262",
+      "beforeRevision": "physical-1",
+      "afterRevision": "physical-965a77fdee11",
+      "intended": [
+        "mfw-a"
+      ],
+      "actual": [
+        "mfw-a"
+      ],
+      "unchangedIdentityCount": 91,
+      "studyApplicability": "old results retained against old source; stale for new design",
+      "impacts": [
+        "Nozzle/interface/envelope moved; routing/support/access studies stale, graph parameters preserved"
+      ],
+      "interfacesBefore": [
+        {
+          "id": "mfw-a/inlet",
+          "position": [
+            18.2,
+            40.4,
+            1.768
+          ],
+          "direction": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "id": "mfw-a/outlet",
+          "position": [
+            21.08,
+            43.1,
+            1.768
+          ],
+          "direction": [
+            0,
+            1,
+            0
+          ]
+        }
+      ],
+      "interfacesAfter": [
+        {
+          "id": "mfw-a/inlet",
+          "position": [
+            20.2,
+            40.4,
+            1.768
+          ],
+          "direction": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "id": "mfw-a/outlet",
+          "position": [
+            23.08,
+            43.1,
+            1.768
+          ],
+          "direction": [
+            0,
+            1,
+            0
+          ]
+        }
+      ]
+    }
+  ]
+}

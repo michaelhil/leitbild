@@ -1,0 +1,26 @@
+{
+  "kind": "raise-roof",
+  "beforeSha": "6c28ed351642cf904d6caf473b05a866bf6d5505207cca1dcae72d8848478a13",
+  "afterSha": "b902fe335aebc454160504e7fcc3bf304080cc3cdb058212cf7f3494464f1be2",
+  "beforeRevision": "physical-1",
+  "afterRevision": "physical-8eb30d5d3b46",
+  "intended": [
+    "edit-roof",
+    "edit-space-a",
+    "edit-space-b",
+    "edit-wall"
+  ],
+  "actual": [
+    "edit-roof",
+    "edit-space-a",
+    "edit-space-b",
+    "edit-wall"
+  ],
+  "unchangedIdentityCount": 88,
+  "studyApplicability": "old results retained against old source; stale for new design",
+  "impacts": [
+    "Crane/beam/handling headroom requires evidence; roof-only does not move deck, crane or pumps"
+  ],
+  "interfacesBefore": [],
+  "interfacesAfter": []
+}

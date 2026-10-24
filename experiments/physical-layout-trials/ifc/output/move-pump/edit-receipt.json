@@ -1,0 +1,74 @@
+{
+  "kind": "move-pump",
+  "beforeSha": "6c28ed351642cf904d6caf473b05a866bf6d5505207cca1dcae72d8848478a13",
+  "afterSha": "4f44f98f1a7700068f9393fec990c166f6f4813e328cea7153c5b0734f24007b",
+  "beforeRevision": "physical-1",
+  "afterRevision": "physical-965a77fdee11",
+  "intended": [
+    "mfw-a"
+  ],
+  "actual": [
+    "mfw-a"
+  ],
+  "unchangedIdentityCount": 91,
+  "studyApplicability": "old results retained against old source; stale for new design",
+  "impacts": [
+    "Nozzle/interface/envelope moved; routing/support/access studies stale, graph parameters preserved"
+  ],
+  "interfacesBefore": [
+    {
+      "id": "mfw-a/inlet",
+      "position": [
+        18.2,
+        40.4,
+        1.768
+      ],
+      "direction": [
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "mfw-a/outlet",
+      "position": [
+        21.08,
+        43.1,
+        1.768
+      ],
+      "direction": [
+        0,
+        1,
+        0
+      ]
+    }
+  ],
+  "interfacesAfter": [
+    {
+      "id": "mfw-a/inlet",
+      "position": [
+        20.2,
+        40.4,
+        1.768
+      ],
+      "direction": [
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "mfw-a/outlet",
+      "position": [
+        23.08,
+        43.1,
+        1.768
+      ],
+      "direction": [
+        0,
+        1,
+        0
+      ]
+    }
+  ]
+}

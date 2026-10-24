@@ -1,0 +1,9 @@
+{
+  "name": "leitbild-ifc-authoring-comparison",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.0",
+  "workspaces": [],
+  "scripts": {"trial": "bun run trial.ts", "test": "bun test", "rebuild": "bun run rebuild.ts"},
+  "dependencies": {"web-ifc": "0.0.78"}
+}

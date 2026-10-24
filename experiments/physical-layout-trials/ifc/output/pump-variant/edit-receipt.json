@@ -1,0 +1,74 @@
+{
+  "kind": "pump-variant",
+  "beforeSha": "6c28ed351642cf904d6caf473b05a866bf6d5505207cca1dcae72d8848478a13",
+  "afterSha": "5023d5161400293d97102d10adb329be78fcc55d0e51568704eecb81b667936e",
+  "beforeRevision": "physical-1",
+  "afterRevision": "physical-b70fa1e5cb93",
+  "intended": [
+    "mfw-a"
+  ],
+  "actual": [
+    "mfw-a"
+  ],
+  "unchangedIdentityCount": 91,
+  "studyApplicability": "old results retained against old source; stale for new design",
+  "impacts": [
+    "A-only override; inherited B dimensions preserved"
+  ],
+  "interfacesBefore": [
+    {
+      "id": "mfw-a/inlet",
+      "position": [
+        18.2,
+        40.4,
+        1.768
+      ],
+      "direction": [
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "mfw-a/outlet",
+      "position": [
+        21.08,
+        43.1,
+        1.768
+      ],
+      "direction": [
+        0,
+        1,
+        0
+      ]
+    }
+  ],
+  "interfacesAfter": [
+    {
+      "id": "mfw-a/inlet",
+      "position": [
+        18.25,
+        40.4,
+        1.768
+      ],
+      "direction": [
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "mfw-a/outlet",
+      "position": [
+        21.25,
+        43.1,
+        1.768
+      ],
+      "direction": [
+        0,
+        1,
+        0
+      ]
+    }
+  ]
+}
