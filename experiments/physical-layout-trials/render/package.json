@@ -1,0 +1,8 @@
+{
+  "name": "physical-layout-render-trial",
+  "private": true,
+  "type": "module",
+  "scripts": {"build":"bun run build.ts", "start":"bun run server.ts", "test":"bun test"},
+  "dependencies": {"maplibre-gl":"6.0.0-11","@babylonjs/core":"9.23.0"},
+  "devDependencies": {"bun-types":"1.4.0","typescript":"^5.9.3"}
+}

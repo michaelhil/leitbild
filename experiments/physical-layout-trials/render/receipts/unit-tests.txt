@@ -1,0 +1,17 @@
+bun test v1.4.0 (34cbb9a40)
+
+src/contract.test.ts:
+(pass) same renderer-neutral workload > F1 has sixteen equipment occurrences and seven subjects [23.04ms]
+(pass) same renderer-neutral workload > 500 workload shares actual shaped family geometry but qualified identity [18.28ms]
+(pass) same renderer-neutral workload > campus has one shared yard and instance-qualified subjects [16.61ms]
+(pass) same renderer-neutral workload > level visibility and separation never rewrite source coordinates [16.12ms]
+(pass) geometry-backed visibility > opaque unselectable solid blocks underlying equipment [0.27ms]
+(pass) geometry-backed visibility > imported-wall inspection cut clips fragments while preserving physical source [0.20ms]
+(pass) geometry-backed visibility > map precision survives local-origin cancellation and inverse [0.23ms]
+(pass) explicit source-delivery adapter > Z-up metres convert once and identity is retained [0.19ms]
+(pass) explicit source-delivery adapter > malformed indices/duplicate identities/nonfinite source refuse [0.10ms]
+
+ 9 pass
+ 0 fail
+ 44 expect() calls
+Ran 9 tests across 1 file. [81.00ms]

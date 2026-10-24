@@ -1,0 +1,174 @@
+{
+  "versions": {
+    "maplibre": "6.0.0-11",
+    "babylon": "9.23.0",
+    "bun": "1.4.0"
+  },
+  "outputs": [
+    {
+      "file": "app-s5dsew05.js",
+      "bytes": 191564,
+      "gzipBytes": 40576
+    },
+    {
+      "file": "app-9pa1gd2w.js",
+      "bytes": 24751,
+      "gzipBytes": 8182
+    },
+    {
+      "file": "app-qccyjbtp.js",
+      "bytes": 7052,
+      "gzipBytes": 2471
+    },
+    {
+      "file": "app-n56f0pmj.js",
+      "bytes": 19605,
+      "gzipBytes": 5401
+    },
+    {
+      "file": "app-2n37phhg.js",
+      "bytes": 27709,
+      "gzipBytes": 7756
+    },
+    {
+      "file": "app-whpzh38q.js",
+      "bytes": 15538,
+      "gzipBytes": 4383
+    },
+    {
+      "file": "app-jnbx94n9.js",
+      "bytes": 103157,
+      "gzipBytes": 25433
+    },
+    {
+      "file": "app-ehcstzxx.js",
+      "bytes": 7288,
+      "gzipBytes": 2714
+    },
+    {
+      "file": "app-vd83tdpm.js",
+      "bytes": 678,
+      "gzipBytes": 349
+    },
+    {
+      "file": "app.js",
+      "bytes": 974020,
+      "gzipBytes": 262374
+    },
+    {
+      "file": "app-ajfdjc38.js",
+      "bytes": 128,
+      "gzipBytes": 125
+    },
+    {
+      "file": "app-j4arak99.js",
+      "bytes": 128368,
+      "gzipBytes": 30720
+    },
+    {
+      "file": "app-zttjn0wx.js",
+      "bytes": 8245,
+      "gzipBytes": 2187
+    },
+    {
+      "file": "app-9xanjpw2.js",
+      "bytes": 17792,
+      "gzipBytes": 6096
+    },
+    {
+      "file": "app-hn0wgdkn.js",
+      "bytes": 1890,
+      "gzipBytes": 834
+    },
+    {
+      "file": "app-a597jezn.js",
+      "bytes": 465,
+      "gzipBytes": 175
+    },
+    {
+      "file": "app-gq4p0kq2.js",
+      "bytes": 269,
+      "gzipBytes": 195
+    },
+    {
+      "file": "hdrTextureLoader-927732x7.js",
+      "bytes": 2417,
+      "gzipBytes": 1151
+    },
+    {
+      "file": "ktxTextureLoader-ngnym0qj.js",
+      "bytes": 16668,
+      "gzipBytes": 4807
+    },
+    {
+      "file": "tgaTextureLoader-vrd94xef.js",
+      "bytes": 3448,
+      "gzipBytes": 1376
+    },
+    {
+      "file": "exrTextureLoader-38v5vakw.js",
+      "bytes": 14060,
+      "gzipBytes": 5207
+    },
+    {
+      "file": "mesh.vertexData.functions-bnywyzs3.js",
+      "bytes": 977,
+      "gzipBytes": 515
+    },
+    {
+      "file": "babylon-jyzs1vjy.js",
+      "bytes": 418150,
+      "gzipBytes": 99820
+    },
+    {
+      "file": "iesTextureLoader-g1n44d4q.js",
+      "bytes": 2502,
+      "gzipBytes": 1107
+    },
+    {
+      "file": "ddsTextureLoader-s1eha31c.js",
+      "bytes": 1545,
+      "gzipBytes": 707
+    },
+    {
+      "file": "basisTextureLoader-ra9rzad0.js",
+      "bytes": 8467,
+      "gzipBytes": 3313
+    },
+    {
+      "file": "rgbdDecode.fragment-x4wyk3c3.js",
+      "bytes": 7069,
+      "gzipBytes": 2422
+    },
+    {
+      "file": "rgbdDecode.fragment-fshzz8an.js",
+      "bytes": 7233,
+      "gzipBytes": 2499
+    },
+    {
+      "file": "envTextureLoader-0sjycfvm.js",
+      "bytes": 7732,
+      "gzipBytes": 3083
+    },
+    {
+      "file": "dds.pure-1m37zqbn.js",
+      "bytes": 373,
+      "gzipBytes": 182
+    },
+    {
+      "file": "postprocess.vertex-tz7wc7w7.js",
+      "bytes": 605,
+      "gzipBytes": 371
+    },
+    {
+      "file": "postprocess.vertex-fqt2j4y4.js",
+      "bytes": 481,
+      "gzipBytes": 321
+    },
+    {
+      "file": "thinEngine.pure-kqz4k433.js",
+      "bytes": 194,
+      "gzipBytes": 131
+    }
+  ]
+}

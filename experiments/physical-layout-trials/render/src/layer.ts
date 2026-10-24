@@ -1,0 +1,15 @@
+import type {CustomLayerInterface,Map as MapLibreMap} from 'maplibre-gl';
+import {createNative} from './native';import type {Backend} from './backend';
+import {capture,restore,diff} from './gl-state';
+import {inverse,localMatrix,multiply64,transform} from './matrix';
+import {visibleInstances,type Instance,type TrialView} from './workload';
+import {screenPick} from './picking';import type {V3} from './reference/math';
+export type BackendName='native'|'babylon';
+export function createTrialLayer(name:BackendName,all:Instance[],anchor:{x:number;y:number;unitsPerMetre:number},view:()=>TrialView,status:()=>ReadonlySet<string>,reportError:(e:unknown)=>void,clearFault:()=>boolean=()=>false){
+ let backend:Backend|undefined,map:MapLibreMap,gl:WebGL2RenderingContext,live:Instance[]=[],vp:Float64Array|undefined,disposed=false,pending:Promise<void>|undefined;
+ const times:number[]=[],stateMismatches:Array<{frame:number;fields:string[]}>=[],glErrors:number[]=[];let frames=0,initialMs=0;
+ const boot=async(g:WebGL2RenderingContext)=>{const start=performance.now(),before=capture(g);try{backend=name==='native'?createNative(g):(await import('./babylon')).createBabylon(g);initialMs=performance.now()-start;}catch(e){reportError(e);}finally{restore(g,before);}if(disposed){backend?.dispose();backend=undefined;}else map.triggerRepaint();};
+ const dispose=()=>{disposed=true;backend?.dispose();backend=undefined;live=[];vp=undefined;};
+ const layer:CustomLayerInterface={id:'trial-scene',type:'custom',renderingMode:'3d',onAdd(m,g){map=m;gl=g;disposed=false;pending=boot(g);},render(g,input){if(!backend||disposed)return;const start=performance.now(),before=capture(g);try{vp=multiply64(input.defaultProjectionData.mainMatrix,localMatrix(anchor.x,anchor.y,anchor.unitsPerMetre));const eye=transform(inverse(vp),[0,0,-1]);live=visibleInstances(all,view(),eye);backend.draw(new Float32Array(vp),live,status());if(clearFault()){g.depthMask(true);g.stencilMask(0xff);g.clear(g.COLOR_BUFFER_BIT|g.DEPTH_BUFFER_BIT|g.STENCIL_BUFFER_BIT);}}catch(e){reportError(e);}finally{restore(g,before);const mismatch=diff(before,capture(g));if(mismatch.length)stateMismatches.push({frame:frames,fields:mismatch});const err=g.getError();if(err!==g.NO_ERROR)glErrors.push(err);times.push(performance.now()-start);frames++;}},onRemove:dispose};
+ return{layer,dispose,get backend(){return backend;},get ready(){return Boolean(backend);},get geometry(){return live;},get metrics(){return{backend:name,frames,initialMs,cpuFrameMs:[...times],stateMismatches:[...stateMismatches],glErrors:[...glErrors],resources:backend?{...backend.metrics}:null};},async waitReady(){await pending;},pick(x:number,y:number){if(!vp)return null;const r=map.getCanvas().getBoundingClientRect();return screenPick(live,vp,x,y,r.width,r.height).id;},project(p:V3){if(!vp)return null;const q=transform(vp,p),r=map.getCanvas().getBoundingClientRect();return{x:(q[0]+1)*r.width/2,y:(1-q[1])*r.height/2,visible:Math.abs(q[0])<1&&Math.abs(q[1])<1&&Math.abs(q[2])<1};},get gl(){return gl;}};
+}

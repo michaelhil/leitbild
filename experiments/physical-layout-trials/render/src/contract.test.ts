@@ -1,0 +1,19 @@
+import {describe,test,expect} from 'bun:test';
+import {buildWorkload,visibleInstances,defaultView,importScene,clipWallBelow} from './workload';
+import {Mesh,palette} from './reference/mesh';import {rayPick} from './picking';
+import {inverse,multiply64,localMatrix,transform} from './matrix';
+describe('same renderer-neutral workload',()=>{
+ test('F1 has sixteen equipment occurrences and seven subjects',()=>{const a=buildWorkload('slice').filter(o=>o.kind==='equipment');expect(a).toHaveLength(16);expect(new Set(a.map(o=>o.subjectId).filter(Boolean)).size).toBe(7);});
+ test('500 workload shares actual shaped family geometry but qualified identity',()=>{const a=buildWorkload('500');expect(a).toHaveLength(500);expect(new Set(a.map(o=>o.id)).size).toBe(500);expect(new Set(a.map(o=>o.mesh)).size).toBe(1);expect(a[0]!.mesh.vertices.length/27).toBeGreaterThan(1000);});
+ test('campus has one shared yard and instance-qualified subjects',()=>{const a=buildWorkload('campus');expect(a.filter(o=>o.id==='shared-yard')).toHaveLength(1);expect(a.filter(o=>o.id.endsWith('tg-hp'))).toHaveLength(4);expect(new Set(a.map(o=>o.id)).size).toBe(a.length);});
+ test('level visibility and separation never rewrite source coordinates',()=>{const a=buildWorkload('slice'),b=a.find(o=>o.id==='tg-hp')!,original=[...b.mesh.vertices];const lower=visibleInstances(a,{...defaultView,level:'lower'},[100,100,100]);expect(lower.find(o=>o.id==='tg-hp')).toBeUndefined();const separated=visibleInstances(a,{...defaultView,explode:12},[100,100,100]);expect(separated.find(o=>o.id==='tg-hp')?.offset[1]).toBe(12);expect(b.mesh.vertices).toEqual(original);expect(b.offset[1]).toBe(0);});
+});
+describe('geometry-backed visibility',()=>{
+ test('opaque unselectable solid blocks underlying equipment',()=>{const item=new Mesh();item.box(0,0,0,2,2,2,palette.machine);const slab=new Mesh();slab.box(-1,3,-1,4,.3,4,palette.floor);const objects=[{id:'pump',kind:'equipment',level:'lower',mesh:item,offset:[0,0,0] as const},{id:'slab',kind:'floor',level:'upper',mesh:slab,offset:[0,0,0] as const}];expect(rayPick(objects,[1,10,1],[0,-1,0]).id).toBe(null);expect(rayPick(objects.slice(0,1),[1,10,1],[0,-1,0]).id).toBe('pump');});
+ test('imported-wall inspection cut clips fragments while preserving physical source',()=>{const wall=new Mesh();wall.box(0,3,0,10,6,.3,palette.wall);const before=[...wall.vertices],cut=clipWallBelow(wall,4.1);expect(cut.bounds.max[1]).toBeCloseTo(4.1);expect(cut.bounds.min[1]).toBe(3);expect(wall.bounds.max[1]).toBe(9);expect(wall.vertices).toEqual(before);});
+ test('map precision survives local-origin cancellation and inverse',()=>{const m=localMatrix(.531,.289,5e-8),p=[44.4,17.2,26.8] as const,q=transform(inverse(m),transform(m,p));for(let i=0;i<3;i++)expect(Math.abs(q[i]!-p[i]!)).toBeLessThan(1e-7);const id=multiply64(m,inverse(m));for(let i=0;i<16;i++)expect(Math.abs(id[i]!-(i%5===0?1:0))).toBeLessThan(1e-7);});
+});
+describe('explicit source-delivery adapter',()=>{
+ test('Z-up metres convert once and identity is retained',()=>{const a=importScene({schema:'layout-trial-mesh',axes:'Z-up',units:'m',objects:[{id:'a',levelId:'basement',positions:[0,0,-3,1,0,-3,0,1,-3],color:[.2,.3,.4]}]});expect(a[0]!.mesh.bounds.min[1]).toBe(-3);expect(a[0]!.level).toBe('basement');expect(a[0]!.id).toBe('a');});
+ test('malformed indices/duplicate identities/nonfinite source refuse',()=>{const base={schema:'layout-trial-mesh',axes:'Z-up',units:'m'} as const;expect(()=>importScene({...base,objects:[{id:'a',levelId:'x',positions:[0,0,0,1,0,0,0,1,0],indices:[0,1,9]}]})).toThrow('Invalid mesh index');expect(()=>importScene({...base,objects:[{id:'a',levelId:'x',positions:[NaN,0,0]}]})).toThrow();expect(()=>importScene({...base,objects:[{id:'a',levelId:'x',positions:[]},{id:'a',levelId:'x',positions:[]}]})).toThrow();});
+});
